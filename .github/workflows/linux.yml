@@ -1,0 +1,120 @@
+name: Linux
+
+on:
+  push:
+    branches: [master,develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.planning/**'
+  pull_request:
+    branches: [master,develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.planning/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc-13
+            cc: gcc-13
+            cxx: g++-13
+            coverage: false
+          - compiler: gcc-14
+            cc: gcc-14
+            cxx: g++-14
+            coverage: true
+            gcov_executable: gcov-14
+          - compiler: clang-18
+            cc: clang-18
+            cxx: clang++-18
+            coverage: true
+            gcov_executable: "llvm-cov-18 gcov"
+
+    runs-on: ubuntu-24.04
+    name: ${{ matrix.compiler }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gcovr
+        if: matrix.coverage
+        run: pip install gcovr
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          if [ "${{ matrix.coverage }}" = "true" ]; then
+            cmake . -B build -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_CXX_FLAGS="--coverage" \
+              -DCMAKE_C_FLAGS="--coverage" \
+              -DCPPCTRL_BUILD_TESTS=ON \
+              -DCPPCTRL_BUILD_EXAMPLES=OFF \
+              -DCPPCTRL_ENABLE_EIGEN_POLICY=ON \
+              -DCPPCTRL_CMAKE_FETCH_DEPS=ON
+          else
+            cmake . -B build -DCMAKE_BUILD_TYPE=Release \
+              -DCPPCTRL_BUILD_TESTS=ON \
+              -DCPPCTRL_BUILD_EXAMPLES=ON \
+              -DCPPCTRL_ENABLE_EIGEN_POLICY=ON \
+              -DCPPCTRL_CMAKE_FETCH_DEPS=ON
+          fi
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: cd build && ctest --output-on-failure
+
+      - name: Generate coverage
+        if: matrix.coverage
+        run: |
+          gcovr build \
+            --root . \
+            --gcov-executable "${{ matrix.gcov_executable }}" \
+            --filter 'lib/ctrlpp/' \
+            --filter 'lib/ctrlpp-eigen/' \
+            --gcov-ignore-errors=source_not_found \
+            --xml coverage.xml
+
+      - name: Upload to Codecov
+        if: matrix.coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  install-test:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and install
+        run: |
+          cmake . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
+            -DCPPCTRL_ENABLE_EIGEN_POLICY=ON \
+            -DCPPCTRL_CMAKE_FETCH_DEPS=ON
+          cmake --build build
+          cmake --install build
+
+      - name: Build consumer project
+        run: |
+          cmake tests/integration/consumer -B build-consumer \
+            -DCMAKE_PREFIX_PATH=${{ github.workspace }}/install \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-consumer
+
+      - name: Run consumer test
+        run: |
+          ./build-consumer/integration_test_core
+          ./build-consumer/integration_test_eigen
