@@ -1,213 +1,235 @@
-// LQR with Observer Example
-//
-// Demonstrates external composition of observers and LQR controller:
-// - KalmanFilter and LuenbergerObserver on the same discrete double-integrator plant
-// - Concept-based polymorphism via ObserverPolicy
-// - observer.state() fed to lqr.compute() (external composition pattern)
+#include "ctrlpp/implot/app.h"
+#include "ctrlpp/implot/sim_harness.h"
+#include "ctrlpp/implot/signal_recorder.h"
+#include "ctrlpp/implot/scrolling_plot.h"
+#include "ctrlpp/implot/static_plot.h"
 
 #include "ctrlpp/ctrlpp.h"
 #include "ctrlpp/ctrlpp_eigen.h"
 
-#include <iomanip>
-#include <iostream>
-#include <string>
+#include "imgui.h"
 
-// Dimensions: 2 states (position, velocity), 1 input (force), 1 output (position)
-constexpr std::size_t NX = 2;
-constexpr std::size_t NU = 1;
-constexpr std::size_t NY = 1;
-
-using Scalar = double;
-using Mat2 = Eigen::Matrix<Scalar, 2, 2>;
-using Vec2 = Eigen::Matrix<Scalar, 2, 1>;
-using Mat1 = Eigen::Matrix<Scalar, 1, 1>;
-using MatC = Eigen::Matrix<Scalar, 1, 2>;
-using MatB = Eigen::Matrix<Scalar, 2, 1>;
-using MatD = Eigen::Matrix<Scalar, 1, 1>;
-
-using System = ctrlpp::DiscreteStateSpace<Scalar, NX, NU, NY, ctrlpp::EigenLinalgPolicy>;
-
-// Generic simulation loop accepting any ObserverPolicy observer.
-// Demonstrates concept-based interchangeability: the same function works with
-// KalmanFilter and LuenbergerObserver without runtime polymorphism.
-template<ctrlpp::ObserverPolicy Observer>
-void run_simulation(
-    const System& sys,
-    const ctrlpp::Lqr<Scalar, NX, NU>& lqr,
-    Observer& observer,
-    const std::string& name,
-    const Vec2& x0_true,
-    std::size_t steps)
-{
-    std::cout << "\n=== " << name << " ===\n\n";
-    std::cout << std::setw(5) << "step"
-              << std::setw(12) << "x1_true"
-              << std::setw(12) << "x2_true"
-              << std::setw(12) << "x1_est"
-              << std::setw(12) << "x2_est"
-              << std::setw(12) << "u"
-              << "\n";
-    std::cout << std::string(65, '-') << "\n";
-
-    Vec2 x_true = x0_true;
-    Eigen::Matrix<Scalar, 1, 1> u_ctrl = Eigen::Matrix<Scalar, 1, 1>::Zero();
-
-    for (std::size_t k = 0; k < steps; ++k) {
-        // 1. Observer prediction step with previous control input
-        observer.predict(u_ctrl);
-
-        // 2. Simulate true plant dynamics
-        x_true = (sys.A * x_true + sys.B * u_ctrl).eval();
-
-        // 3. Measure output from true state
-        Eigen::Matrix<Scalar, 1, 1> z = (sys.C * x_true).eval();
-
-        // 4. Observer measurement update
-        observer.update(z);
-
-        // 5. External composition: observer estimate feeds LQR controller
-        u_ctrl = lqr.compute(observer.state());
-
-        // 6. Print state
-        if (k % 5 == 0 || k < 5) {
-            const auto& x_est = observer.state();
-            std::cout << std::setw(5) << k
-                      << std::fixed << std::setprecision(4)
-                      << std::setw(12) << x_true(0)
-                      << std::setw(12) << x_true(1)
-                      << std::setw(12) << x_est(0)
-                      << std::setw(12) << x_est(1)
-                      << std::setw(12) << u_ctrl(0)
-                      << "\n";
-        }
-    }
-
-    const auto& x_est = observer.state();
-    std::cout << "\nFinal true state:     [" << x_true(0) << ", " << x_true(1) << "]\n";
-    std::cout << "Final estimated state: [" << x_est(0) << ", " << x_est(1) << "]\n";
-    std::cout << "Estimation error norm: " << (x_true - x_est).norm() << "\n";
-}
+#include <array>
+#include <cmath>
+#include <complex>
+#include <optional>
 
 int main()
 {
-    // -----------------------------------------------------------------------
-    // 1. Define discrete-time double integrator (dt = 0.1 s)
-    //    x = [position, velocity]
-    //    x_{k+1} = A x_k + B u_k
-    //    y_k     = C x_k
-    // -----------------------------------------------------------------------
-    constexpr Scalar dt = 0.1;
+    constexpr std::size_t NX = 2;
+    constexpr std::size_t NU = 1;
+    constexpr std::size_t NY = 1;
+    constexpr double dt = 0.1;
 
+    using Scalar = double;
+    using Mat2 = Eigen::Matrix<Scalar, 2, 2>;
+    using Vec2 = Eigen::Matrix<Scalar, 2, 1>;
+    using Mat1 = Eigen::Matrix<Scalar, 1, 1>;
+    using MatC = Eigen::Matrix<Scalar, 1, 2>;
+    using MatB = Eigen::Matrix<Scalar, 2, 1>;
+    using MatD = Eigen::Matrix<Scalar, 1, 1>;
+    using MatK = Eigen::Matrix<Scalar, 1, 2>;
+    using MatL = Eigen::Matrix<Scalar, 2, 1>;
+    using System = ctrlpp::DiscreteStateSpace<Scalar, NX, NU, NY, ctrlpp::EigenLinalgPolicy>;
+
+    // Double integrator
     Mat2 A;
     A << 1.0, dt,
          0.0, 1.0;
-
     MatB B;
     B << 0.5 * dt * dt,
          dt;
-
     MatC C;
     C << 1.0, 0.0;
-
     MatD D = MatD::Zero();
-
     System sys{A, B, C, D};
 
-    std::cout << "LQR with Observer Example\n";
-    std::cout << "=========================\n\n";
-    std::cout << "Plant: discrete double integrator (dt=" << dt << "s)\n";
-    std::cout << "States: [position, velocity], Input: [force], Output: [position]\n\n";
+    // LQR design
+    float q00 = 10.0f;
+    float q11 = 1.0f;
+    float r00 = 1.0f;
 
-    // -----------------------------------------------------------------------
-    // 2. Check controllability and observability
-    // -----------------------------------------------------------------------
-    bool controllable = ctrlpp::is_controllable<Scalar, NX, NU, ctrlpp::EigenLinalgPolicy>(A, B);
-    bool observable = ctrlpp::is_observable<Scalar, NX, NY, ctrlpp::EigenLinalgPolicy>(A, C);
+    auto make_Q = [](float q0, float q1) {
+        Mat2 Q = Mat2::Zero();
+        Q(0, 0) = q0;
+        Q(1, 1) = q1;
+        return Q;
+    };
+    auto make_R = [](float r) {
+        Mat1 R;
+        R << static_cast<Scalar>(r);
+        return R;
+    };
 
-    std::cout << "Controllability: " << (controllable ? "YES" : "NO") << "\n";
-    std::cout << "Observability:   " << (observable ? "YES" : "NO") << "\n\n";
+    auto K_opt = ctrlpp::lqr_gain<Scalar, NX, NU>(A, B, make_Q(q00, q11), make_R(r00));
+    if (!K_opt) return 1;
+    auto lqr = ctrlpp::Lqr<Scalar, NX, NU>(*K_opt);
 
-    // -----------------------------------------------------------------------
-    // 3. Design LQR gain: Q = diag(10, 1), R = 1
-    // -----------------------------------------------------------------------
-    Mat2 Q = Mat2::Zero();
-    Q(0, 0) = 10.0;
-    Q(1, 1) = 1.0;
+    // Kalman filter
+    float q_proc_diag = 0.01f;
+    float r_meas_val = 0.1f;
 
-    Mat1 R;
-    R << 1.0;
+    auto make_Qproc = [](float q) { return Mat2::Identity() * static_cast<Scalar>(q); };
+    auto make_Rmeas = [](float r) {
+        Mat1 R;
+        R << static_cast<Scalar>(r);
+        return R;
+    };
 
-    auto K_opt = ctrlpp::lqr_gain<Scalar, NX, NU>(A, B, Q, R);
-    if (!K_opt) {
-        std::cerr << "LQR design failed (non-stabilizable system)\n";
-        return 1;
-    }
-
-    ctrlpp::Lqr<Scalar, NX, NU> lqr(*K_opt);
-
-    std::cout << "LQR gain K = [" << (*K_opt)(0, 0) << ", " << (*K_opt)(0, 1) << "]\n";
-
-    // Verify closed-loop stability
-    bool cl_stable = ctrlpp::is_stable_closed_loop<Scalar, NX, NU, ctrlpp::EigenLinalgPolicy>(
-        A, B, *K_opt);
-    std::cout << "Closed-loop stable: " << (cl_stable ? "YES" : "NO") << "\n";
-
-    // -----------------------------------------------------------------------
-    // 4. Initial conditions: true state starts at [1, 0], estimate at [0, 0]
-    // -----------------------------------------------------------------------
+    Mat2 P0 = Mat2::Identity();
     Vec2 x0_true;
     x0_true << 1.0, 0.0;
-
     Vec2 x0_est = Vec2::Zero();
 
-    constexpr std::size_t sim_steps = 50;
+    // Mutable initial conditions for reset
+    float x1_true_init = 1.0f;
+    float x2_true_init = 0.0f;
 
-    // -----------------------------------------------------------------------
-    // 5. Run with Kalman filter
-    //    Process noise Q_proc = 0.01*I, measurement noise R_meas = 0.1
-    // -----------------------------------------------------------------------
-    {
-        Mat2 Q_proc = 0.01 * Mat2::Identity();
-        Mat1 R_meas;
-        R_meas << 0.1;
-        Mat2 P0 = Mat2::Identity();
+    auto kf = ctrlpp::KalmanFilter<Scalar, NX, NU, NY>(
+        sys, make_Qproc(q_proc_diag), make_Rmeas(r_meas_val), x0_est, P0);
 
-        ctrlpp::KalmanFilter<Scalar, NX, NU, NY> kf(sys, Q_proc, R_meas, x0_est, P0);
+    // Luenberger observer
+    float obs_pole1 = 0.3f;
+    float obs_pole2 = 0.4f;
 
-        run_simulation(sys, lqr, kf, "Kalman Filter Observer", x0_true, sim_steps);
-    }
-
-    // -----------------------------------------------------------------------
-    // 6. Run with Luenberger observer
-    //    Observer poles at 0.3 and 0.4 (faster than open-loop plant poles)
-    // -----------------------------------------------------------------------
-    {
-        std::array<std::complex<Scalar>, NX> obs_poles = {
-            std::complex<Scalar>{0.3, 0.0},
-            std::complex<Scalar>{0.4, 0.0}
+    auto make_poles = [](float p1, float p2) {
+        return std::array<std::complex<Scalar>, NX>{
+            std::complex<Scalar>{p1, 0.0},
+            std::complex<Scalar>{p2, 0.0}
         };
+    };
 
-        auto L_opt = ctrlpp::place_observer<Scalar, NX, NY>(A, C, obs_poles);
-        if (!L_opt) {
-            std::cerr << "Observer pole placement failed\n";
-            return 1;
+    auto L_opt = ctrlpp::place_observer<Scalar, NX, NY>(A, C, make_poles(obs_pole1, obs_pole2));
+    if (!L_opt) return 1;
+    auto luenberger = ctrlpp::LuenbergerObserver<Scalar, NX, NU, NY>(sys, *L_opt, x0_est);
+
+    // Simulation state
+    Vec2 x_true = x0_true;
+    Mat1 u_ctrl = Mat1::Zero();
+
+    ctrlpp::implot::SignalRecorder recorder(4000);
+
+    ctrlpp::implot::SimHarness sim(dt,
+        [&](double t) {
+            kf.predict(u_ctrl);
+            luenberger.predict(u_ctrl);
+
+            x_true = (A * x_true + B * u_ctrl).eval();
+            Mat1 z = (C * x_true).eval();
+
+            kf.update(z);
+            luenberger.update(z);
+
+            u_ctrl = lqr.compute(kf.state());
+
+            recorder.record("x1_true", t, x_true(0));
+            recorder.record("x2_true", t, x_true(1));
+            recorder.record("x1_kf", t, kf.state()(0));
+            recorder.record("x2_kf", t, kf.state()(1));
+            recorder.record("x1_luenberger", t, luenberger.state()(0));
+            recorder.record("x2_luenberger", t, luenberger.state()(1));
+            recorder.record("control", t, u_ctrl(0, 0));
+            recorder.record("kf_err", t, (x_true - kf.state()).norm());
+            recorder.record("luenberger_err", t, (x_true - luenberger.state()).norm());
+        },
+        [&] {
+            x_true << static_cast<Scalar>(x1_true_init),
+                      static_cast<Scalar>(x2_true_init);
+            u_ctrl = Mat1::Zero();
+            recorder.clear();
+
+            // Reconstruct observers (no state-reset API)
+            kf = ctrlpp::KalmanFilter<Scalar, NX, NU, NY>(
+                sys, make_Qproc(q_proc_diag), make_Rmeas(r_meas_val), x0_est, P0);
+            luenberger = ctrlpp::LuenbergerObserver<Scalar, NX, NU, NY>(
+                sys, L_opt.value_or(MatL::Zero()), x0_est);
+        });
+
+    ctrlpp::implot::App app(1400, 800, "LQR + Observer Comparison");
+
+    app.run([&] {
+        sim.advance(ImGui::GetIO().DeltaTime);
+
+        // Simulation controls
+        ImGui::Begin("Simulation");
+        sim.draw_controls();
+        ImGui::End();
+
+        // LQR parameters
+        ImGui::Begin("LQR Parameters");
+        ImGui::SliderFloat("Q(0,0)", &q00, 0.1f, 100.0f, "%.2f",
+            ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Q(1,1)", &q11, 0.1f, 100.0f, "%.2f",
+            ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("R(0,0)", &r00, 0.01f, 10.0f, "%.3f",
+            ImGuiSliderFlags_Logarithmic);
+        if (ImGui::Button("Recompute LQR Gain")) {
+            auto new_K = ctrlpp::lqr_gain<Scalar, NX, NU>(
+                A, B, make_Q(q00, q11), make_R(r00));
+            if (new_K) {
+                K_opt = new_K;
+                lqr = ctrlpp::Lqr<Scalar, NX, NU>(*K_opt);
+            }
         }
+        ImGui::Text("K = [%.4f, %.4f]", K_opt->coeff(0, 0), K_opt->coeff(0, 1));
+        ImGui::End();
 
-        std::cout << "\nLuenberger observer gain L = [" << (*L_opt)(0, 0)
-                  << ", " << (*L_opt)(1, 0) << "]^T\n";
+        // Kalman filter parameters
+        ImGui::Begin("Kalman Filter");
+        bool kf_changed = false;
+        kf_changed |= ImGui::SliderFloat("Q_proc", &q_proc_diag, 0.001f, 1.0f,
+            "%.4f", ImGuiSliderFlags_Logarithmic);
+        kf_changed |= ImGui::SliderFloat("R_meas", &r_meas_val, 0.01f, 10.0f,
+            "%.3f", ImGuiSliderFlags_Logarithmic);
+        if (kf_changed)
+            kf.set_noise(make_Qproc(q_proc_diag), make_Rmeas(r_meas_val));
+        ImGui::Text("Est. error: %.6f", (x_true - kf.state()).norm());
+        ImGui::End();
 
-        // Verify observer stability
-        bool obs_stable = ctrlpp::is_stable_observer<Scalar, NX, NY, ctrlpp::EigenLinalgPolicy>(
-            A, *L_opt, C);
-        std::cout << "Observer stable: " << (obs_stable ? "YES" : "NO") << "\n";
+        // Luenberger observer parameters
+        ImGui::Begin("Luenberger Observer");
+        ImGui::SliderFloat("Pole 1", &obs_pole1, 0.01f, 0.99f);
+        ImGui::SliderFloat("Pole 2", &obs_pole2, 0.01f, 0.99f);
+        if (ImGui::Button("Recompute Observer Gain")) {
+            auto new_L = ctrlpp::place_observer<Scalar, NX, NY>(
+                A, C, make_poles(obs_pole1, obs_pole2));
+            if (new_L) {
+                L_opt = new_L;
+                luenberger.set_gain(*L_opt);
+            }
+        }
+        if (L_opt)
+            ImGui::Text("L = [%.4f, %.4f]^T", L_opt->coeff(0, 0), L_opt->coeff(1, 0));
+        ImGui::Text("Est. error: %.6f", (x_true - luenberger.state()).norm());
+        ImGui::End();
 
-        ctrlpp::LuenbergerObserver<Scalar, NX, NU, NY> luenberger(sys, *L_opt, x0_est);
+        // Initial conditions (take effect on reset)
+        ImGui::Begin("Initial Conditions");
+        ImGui::SliderFloat("x1_true", &x1_true_init, -5.0f, 5.0f);
+        ImGui::SliderFloat("x2_true", &x2_true_init, -5.0f, 5.0f);
+        ImGui::TextDisabled("(Applied on Reset)");
+        ImGui::End();
 
-        run_simulation(sys, lqr, luenberger, "Luenberger Observer", x0_true, sim_steps);
-    }
+        // SVG export
+        ImGui::Begin("Export");
+        if (ImGui::Button("Export SVG"))
+            ctrlpp::implot::write_svg("lqr_observer.svg", recorder,
+                {"x1_true", "x1_kf", "x1_luenberger", "control"});
+        ImGui::End();
 
-    std::cout << "\nBoth observers converge to the true state while LQR regulates to zero.\n";
-    std::cout << "The same run_simulation() template works with either observer via ObserverPolicy.\n";
-
-    return 0;
+        // Plots
+        auto t = static_cast<float>(sim.sim_time());
+        ctrlpp::implot::scrolling_plot(
+            {"Position (x1)", "Time (s)", "x1", 10.0f},
+            recorder, {"x1_true", "x1_kf", "x1_luenberger"}, t);
+        ctrlpp::implot::scrolling_plot(
+            {"Velocity (x2)", "Time (s)", "x2", 10.0f},
+            recorder, {"x2_true", "x2_kf", "x2_luenberger"}, t);
+        ctrlpp::implot::scrolling_plot(
+            {"Control Signal", "Time (s)", "u", 10.0f},
+            recorder, {"control"}, t);
+        ctrlpp::implot::scrolling_plot(
+            {"Estimation Error", "Time (s)", "||e||", 10.0f},
+            recorder, {"kf_err", "luenberger_err"}, t);
+    });
 }
