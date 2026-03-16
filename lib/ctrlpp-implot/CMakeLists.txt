@@ -59,6 +59,7 @@ add_library(ctrlpp_implot STATIC
     src/sim_harness.cpp
     src/signal_recorder.cpp
     src/scrolling_plot.cpp
+    src/static_plot.cpp
 )
 add_library(ctrlpp::implot ALIAS ctrlpp_implot)
 
