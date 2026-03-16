@@ -1,3 +1,7 @@
 add_executable(ctrlpp_lqr_observer main.cpp)
-target_link_libraries(ctrlpp_lqr_observer PRIVATE ctrlpp::eigen)
+if (CTRLPP_BUILD_IMPLOT)
+    target_link_libraries(ctrlpp_lqr_observer PRIVATE ctrlpp::implot ctrlpp::eigen)
+else()
+    target_link_libraries(ctrlpp_lqr_observer PRIVATE ctrlpp::eigen)
+endif()
 target_compile_options(ctrlpp_lqr_observer PRIVATE ${CTRLPP_WARNING_FLAGS})
