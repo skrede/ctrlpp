@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_CTRLPP_H
-#define HPP_GUARD_CPPCTRL_CTRLPP_H
+#ifndef HPP_GUARD_CTRLPP_CTRLPP_H
+#define HPP_GUARD_CTRLPP_CTRLPP_H
 
 #include "ctrlpp/pid.h"
 #include "ctrlpp/analysis.h"

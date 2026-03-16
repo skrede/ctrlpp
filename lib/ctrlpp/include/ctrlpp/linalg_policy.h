@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_LINALG_POLICY_H
-#define HPP_GUARD_CPPCTRL_LINALG_POLICY_H
+#ifndef HPP_GUARD_CTRLPP_LINALG_POLICY_H
+#define HPP_GUARD_CTRLPP_LINALG_POLICY_H
 
 #include <cstddef>
 #include <concepts>

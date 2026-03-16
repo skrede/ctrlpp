@@ -1,4 +1,4 @@
-if (CPPCTRL_CMAKE_FETCH_DEPS)
+if (CTRLPP_CMAKE_FETCH_DEPS)
     FetchContent_Declare(
         Eigen3
         GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git

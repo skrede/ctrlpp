@@ -1,5 +1,5 @@
-if (CPPCTRL_BUILD_TESTS)
-    if (CPPCTRL_CMAKE_FETCH_DEPS)
+if (CTRLPP_BUILD_TESTS)
+    if (CTRLPP_CMAKE_FETCH_DEPS)
         FetchContent_Declare(
             Catch2
             GIT_REPOSITORY https://github.com/catchorg/Catch2.git
@@ -14,7 +14,7 @@ if (CPPCTRL_BUILD_TESTS)
     add_subdirectory(integration)
 endif ()
 
-if (CPPCTRL_BUILD_FUZZ_TESTS)
+if (CTRLPP_BUILD_FUZZ_TESTS)
     if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         message(FATAL_ERROR "Fuzz targets require Clang with libFuzzer support")
     endif ()

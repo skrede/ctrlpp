@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_EIGEN_LQR_H
-#define HPP_GUARD_CPPCTRL_EIGEN_LQR_H
+#ifndef HPP_GUARD_CTRLPP_EIGEN_LQR_H
+#define HPP_GUARD_CTRLPP_EIGEN_LQR_H
 
 #include "ctrlpp/eigen_dare.h"
 #include "ctrlpp/eigen_linalg.h"

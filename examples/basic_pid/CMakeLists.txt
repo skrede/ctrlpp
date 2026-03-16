@@ -1,3 +1,3 @@
-add_executable(basic_pid main.cpp)
-target_link_libraries(basic_pid PRIVATE ctrlpp::eigen)
-target_compile_options(basic_pid PRIVATE ${CPPCTRL_WARNING_FLAGS})
+add_executable(ctrlpp_basic_pid main.cpp)
+target_link_libraries(ctrlpp_basic_pid PRIVATE ctrlpp::eigen)
+target_compile_options(ctrlpp_basic_pid PRIVATE ${CTRLPP_WARNING_FLAGS})
