@@ -60,10 +60,10 @@ void run_simulation(
         x_true = (sys.A * x_true + sys.B * u_ctrl).eval();
 
         // 3. Measure output from true state
-        Eigen::Matrix<Scalar, 1, 1> y = (sys.C * x_true).eval();
+        Eigen::Matrix<Scalar, 1, 1> z = (sys.C * x_true).eval();
 
         // 4. Observer measurement update
-        observer.update(y);
+        observer.update(z);
 
         // 5. External composition: observer estimate feeds LQR controller
         u_ctrl = lqr.compute(observer.state());

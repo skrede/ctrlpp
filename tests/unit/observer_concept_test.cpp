@@ -72,10 +72,10 @@ TEST_CASE("MockMinimalObserver satisfies ObserverPolicy", "[observer]")
 {
     MockMinimalObserver obs;
     MockMinimalObserver::input_vector_t u{1.0};
-    MockMinimalObserver::output_vector_t y{2.0};
+    MockMinimalObserver::output_vector_t z{2.0};
 
     obs.predict(u);
-    obs.update(y);
+    obs.update(z);
 
     auto& s = obs.state();
     REQUIRE(s[0] == 0.0);
@@ -86,10 +86,10 @@ TEST_CASE("MockCovarianceObserver satisfies CovarianceObserver", "[observer]")
 {
     MockCovarianceObserver obs;
     MockCovarianceObserver::input_vector_t u{1.0};
-    MockCovarianceObserver::output_vector_t y{2.0};
+    MockCovarianceObserver::output_vector_t z{2.0};
 
     obs.predict(u);
-    obs.update(y);
+    obs.update(z);
 
     auto& s = obs.state();
     auto& cov = obs.covariance();

@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_OBSERVER_POLICY_H
-#define HPP_GUARD_CPPCTRL_OBSERVER_POLICY_H
+#ifndef HPP_GUARD_CTRLPP_OBSERVER_POLICY_H
+#define HPP_GUARD_CTRLPP_OBSERVER_POLICY_H
 
 #include <concepts>
 #include <variant>
@@ -14,9 +14,9 @@ concept ObserverPolicy = requires {
     typename O::output_vector_t;
 } && requires(O obs,
               const typename O::input_vector_t& u,
-              const typename O::output_vector_t& y) {
+              const typename O::output_vector_t& z) {
     obs.predict(u);
-    obs.update(y);
+    obs.update(z);
     { obs.state() } -> std::convertible_to<const typename O::state_vector_t&>;
 };
 

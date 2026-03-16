@@ -37,9 +37,9 @@ public:
         x_ = (sys_.A * x_ + sys_.B * u).eval();
     }
 
-    void update(const output_vector_t& y)
+    void update(const output_vector_t& z)
     {
-        x_ = (x_ + L_ * (y - sys_.C * x_)).eval();
+        x_ = (x_ + L_ * (z - sys_.C * x_)).eval();
     }
 
     [[nodiscard]] auto state() const -> const state_vector_t& { return x_; }

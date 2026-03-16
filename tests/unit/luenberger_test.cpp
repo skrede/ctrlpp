@@ -43,12 +43,12 @@ TEST_CASE("luenberger observer convergence with known gain") {
         u << 0.0;
 
         // Simulate true system
-        Eigen::Matrix<double, 1, 1> y = sys.C * x_true;
+        Eigen::Matrix<double, 1, 1> z = sys.C * x_true;
         x_true = sys.A * x_true + sys.B * u;
 
         // Observer predict-update
         obs.predict(u);
-        obs.update(y);
+        obs.update(z);
     }
 
     auto est = obs.state();
@@ -122,11 +122,11 @@ TEST_CASE("place_observer produces gain for convergent observer") {
     for (int i = 0; i < 20; ++i) {
         Eigen::Matrix<double, 1, 1> u;
         u << 0.0;
-        Eigen::Matrix<double, 1, 1> y = sys.C * x_true;
+        Eigen::Matrix<double, 1, 1> z = sys.C * x_true;
         x_true = sys.A * x_true + sys.B * u;
 
         obs.predict(u);
-        obs.update(y);
+        obs.update(z);
     }
 
     auto est = obs.state();
@@ -179,9 +179,9 @@ TEST_CASE("luenberger MIMO observer with manual gain") {
         u << 0.1;
         obs.predict(u);
 
-        Eigen::Vector2d y;
-        y << 1.0, 0.5;
-        obs.update(y);
+        Eigen::Vector2d z;
+        z << 1.0, 0.5;
+        obs.update(z);
     }
 
     auto est = obs.state();

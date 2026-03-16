@@ -49,10 +49,10 @@ public:
         P_ = (sys_.A * P_ * sys_.A.transpose() + Q_).eval();
     }
 
-    void update(const output_vector_t& y)
+    void update(const output_vector_t& z)
     {
         // Innovation
-        innovation_ = (y - sys_.C * x_).eval();
+        innovation_ = (z - sys_.C * x_).eval();
 
         // Innovation covariance S = C P C^T + R
         meas_cov_matrix_t S = (sys_.C * P_ * sys_.C.transpose() + R_).eval();

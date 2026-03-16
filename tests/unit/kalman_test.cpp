@@ -51,9 +51,9 @@ TEST_CASE("kalman filter convergence on constant velocity model") {
         kf.predict(u);
 
         // Noisy measurement of position (no actual random noise, just a small fixed offset)
-        Eigen::Matrix<double, 1, 1> y;
-        y << true_pos + 0.1 * std::sin(static_cast<double>(i));
-        kf.update(y);
+        Eigen::Matrix<double, 1, 1> z;
+        z << true_pos + 0.1 * std::sin(static_cast<double>(i));
+        kf.update(z);
     }
 
     auto est = kf.state();
@@ -77,9 +77,9 @@ TEST_CASE("kalman filter covariance remains symmetric and PSD") {
         u << 0.0;
         kf.predict(u);
 
-        Eigen::Matrix<double, 1, 1> y;
-        y << static_cast<double>(i) * 0.1;
-        kf.update(y);
+        Eigen::Matrix<double, 1, 1> z;
+        z << static_cast<double>(i) * 0.1;
+        kf.update(z);
 
         auto P = kf.covariance();
         // Symmetric
@@ -106,9 +106,9 @@ TEST_CASE("kalman filter NEES is finite and positive after update") {
     u << 0.0;
     kf.predict(u);
 
-    Eigen::Matrix<double, 1, 1> y;
-    y << 1.0;
-    kf.update(y);
+    Eigen::Matrix<double, 1, 1> z;
+    z << 1.0;
+    kf.update(z);
 
     CHECK(kf.nees() >= 0.0);
     CHECK(std::isfinite(kf.nees()));
@@ -132,9 +132,9 @@ TEST_CASE("kalman filter steady state detection") {
         u << 0.0;
         kf.predict(u);
 
-        Eigen::Matrix<double, 1, 1> y;
-        y << static_cast<double>(i) * 0.1;
-        kf.update(y);
+        Eigen::Matrix<double, 1, 1> z;
+        z << static_cast<double>(i) * 0.1;
+        kf.update(z);
     }
 
     // Check the relative change is small
@@ -160,9 +160,9 @@ TEST_CASE("kalman filter reset covariance") {
         Eigen::Matrix<double, 1, 1> u;
         u << 0.0;
         kf.predict(u);
-        Eigen::Matrix<double, 1, 1> y;
-        y << 1.0;
-        kf.update(y);
+        Eigen::Matrix<double, 1, 1> z;
+        z << 1.0;
+        kf.update(z);
     }
 
     // Covariance should have changed from P0
@@ -199,9 +199,9 @@ TEST_CASE("kalman filter MIMO predict-update cycle") {
         u << 0.1, 0.2;
         kf.predict(u);
 
-        Eigen::Vector2d y;
-        y << 1.0, 0.5;
-        kf.update(y);
+        Eigen::Vector2d z;
+        z << 1.0, 0.5;
+        kf.update(z);
     }
 
     // Just verify it ran without error and state is finite
@@ -237,9 +237,9 @@ TEST_CASE("kalman filter set_model updates system") {
     kf.reset_covariance(P0);
 
     // Re-test with nonzero state via update
-    Eigen::Matrix<double, 1, 1> y;
-    y << 1.0;
-    kf.update(y);
+    Eigen::Matrix<double, 1, 1> z;
+    z << 1.0;
+    kf.update(z);
 
     CHECK(std::isfinite(kf.state()(0)));
 }
