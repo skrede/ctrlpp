@@ -24,10 +24,10 @@ jobs:
       - name: Configure
         run: |
           cmake . -B build -A x64 `
-            -DCPPCTRL_BUILD_TESTS=ON `
-            -DCPPCTRL_BUILD_EXAMPLES=ON `
-            -DCPPCTRL_ENABLE_EIGEN_POLICY=ON `
-            -DCPPCTRL_CMAKE_FETCH_DEPS=ON `
+            -DCTRLPP_BUILD_TESTS=ON `
+            -DCTRLPP_BUILD_EXAMPLES=ON `
+            -DCTRLPP_ENABLE_EIGEN_POLICY=ON `
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
 
       - name: Build
@@ -45,8 +45,8 @@ jobs:
         run: |
           cmake . -B build -A x64 `
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/install" `
-            -DCPPCTRL_ENABLE_EIGEN_POLICY=ON `
-            -DCPPCTRL_CMAKE_FETCH_DEPS=ON `
+            -DCTRLPP_ENABLE_EIGEN_POLICY=ON `
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
 
       - name: Build and install
