@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_EIGEN_KALMAN_H
-#define HPP_GUARD_CPPCTRL_EIGEN_KALMAN_H
+#ifndef HPP_GUARD_CTRLPP_EIGEN_KALMAN_H
+#define HPP_GUARD_CTRLPP_EIGEN_KALMAN_H
 
 #include "ctrlpp/eigen_linalg.h"
 
@@ -24,7 +24,7 @@ public:
     using output_vector_t = Eigen::Matrix<Scalar, ny, 1>;
     using cov_matrix_t = Eigen::Matrix<Scalar, nx, nx>;
     using meas_cov_matrix_t = Eigen::Matrix<Scalar, ny, ny>;
-    using system_t = DiscreteStateSpace<EigenLinalgPolicy, Scalar, NX, NU, NY>;
+    using system_t = DiscreteStateSpace<Scalar, NX, NU, NY, EigenLinalgPolicy>;
 
     KalmanFilter(system_t sys,
                  cov_matrix_t Q,

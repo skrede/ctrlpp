@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_EIGEN_DISCRETISE_H
-#define HPP_GUARD_CPPCTRL_EIGEN_DISCRETISE_H
+#ifndef HPP_GUARD_CTRLPP_EIGEN_DISCRETISE_H
+#define HPP_GUARD_CTRLPP_EIGEN_DISCRETISE_H
 
 #include "ctrlpp/eigen_linalg.h"
 
@@ -16,8 +16,8 @@ namespace ctrlpp {
 // Forms the augmented matrix M = [[A*dt, B*dt], [0, 0]], computes exp(M),
 // then extracts Ad and Bd from the result. Cd = C, Dd = D.
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-auto discretise(ZOH, const ContinuousStateSpace<EigenLinalgPolicy, Scalar, NX, NU, NY>& sys,
-                Scalar dt) -> DiscreteStateSpace<EigenLinalgPolicy, Scalar, NX, NU, NY>
+auto discretise(ZOH, const ContinuousStateSpace<Scalar, NX, NU, NY, EigenLinalgPolicy>& sys,
+                Scalar dt) -> DiscreteStateSpace<Scalar, NX, NU, NY, EigenLinalgPolicy>
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
@@ -43,8 +43,8 @@ auto discretise(ZOH, const ContinuousStateSpace<EigenLinalgPolicy, Scalar, NX, N
 
 // Convenience wrapper matching the generic discretise<Method>(...) signature.
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-auto discretise(const ContinuousStateSpace<EigenLinalgPolicy, Scalar, NX, NU, NY>& sys,
-                Scalar dt, ZOH = {}) -> DiscreteStateSpace<EigenLinalgPolicy, Scalar, NX, NU, NY>
+auto discretise(const ContinuousStateSpace<Scalar, NX, NU, NY, EigenLinalgPolicy>& sys,
+                Scalar dt, ZOH = {}) -> DiscreteStateSpace<Scalar, NX, NU, NY, EigenLinalgPolicy>
 {
     return discretise(ZOH{}, sys, dt);
 }

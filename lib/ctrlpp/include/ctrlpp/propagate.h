@@ -1,13 +1,13 @@
-#ifndef HPP_GUARD_CPPCTRL_PROPAGATE_H
-#define HPP_GUARD_CPPCTRL_PROPAGATE_H
+#ifndef HPP_GUARD_CTRLPP_PROPAGATE_H
+#define HPP_GUARD_CTRLPP_PROPAGATE_H
 
 #include "ctrlpp/state_space.h"
 
 namespace ctrlpp {
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, LinalgPolicy Policy>
 constexpr auto propagate(
-    const DiscreteStateSpace<Policy, Scalar, NX, NU, NY>& sys,
+    const DiscreteStateSpace<Scalar, NX, NU, NY, Policy>& sys,
     const typename Policy::template vector_type<Scalar, NX>& x,
     const typename Policy::template vector_type<Scalar, NU>& u)
     -> typename Policy::template vector_type<Scalar, NX>
@@ -15,9 +15,9 @@ constexpr auto propagate(
     return Policy::add(Policy::multiply(sys.A, x), Policy::multiply(sys.B, u));
 }
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, LinalgPolicy Policy>
 constexpr auto output(
-    const DiscreteStateSpace<Policy, Scalar, NX, NU, NY>& sys,
+    const DiscreteStateSpace<Scalar, NX, NU, NY, Policy>& sys,
     const typename Policy::template vector_type<Scalar, NX>& x,
     const typename Policy::template vector_type<Scalar, NU>& u)
     -> typename Policy::template vector_type<Scalar, NY>
@@ -25,9 +25,9 @@ constexpr auto output(
     return Policy::add(Policy::multiply(sys.C, x), Policy::multiply(sys.D, u));
 }
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, LinalgPolicy Policy>
 constexpr auto output(
-    const ContinuousStateSpace<Policy, Scalar, NX, NU, NY>& sys,
+    const ContinuousStateSpace<Scalar, NX, NU, NY, Policy>& sys,
     const typename Policy::template vector_type<Scalar, NX>& x,
     const typename Policy::template vector_type<Scalar, NU>& u)
     -> typename Policy::template vector_type<Scalar, NY>

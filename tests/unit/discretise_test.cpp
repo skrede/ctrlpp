@@ -7,7 +7,7 @@ using Policy = ctrlpp::EigenLinalgPolicy;
 
 TEST_CASE("ZOH discretise double integrator") {
     // Continuous double integrator: x' = [[0,1],[0,0]]*x + [[0],[1]]*u
-    ctrlpp::ContinuousStateSpace<Policy, double, 2, 1, 1> sys{};
+    ctrlpp::ContinuousStateSpace<double, 2, 1, 1, Policy> sys{};
     sys.A(0, 0) = 0.0; sys.A(0, 1) = 1.0;
     sys.A(1, 0) = 0.0; sys.A(1, 1) = 0.0;
     sys.B(0, 0) = 0.0; sys.B(1, 0) = 1.0;
@@ -30,7 +30,7 @@ TEST_CASE("ZOH discretise double integrator") {
 }
 
 TEST_CASE("ZOH discretise preserves C and D") {
-    ctrlpp::ContinuousStateSpace<Policy, double, 2, 1, 1> sys{};
+    ctrlpp::ContinuousStateSpace<double, 2, 1, 1, Policy> sys{};
     sys.A(0, 0) = 0.0; sys.A(0, 1) = 1.0;
     sys.A(1, 0) = 0.0; sys.A(1, 1) = 0.0;
     sys.B(0, 0) = 0.0; sys.B(1, 0) = 1.0;

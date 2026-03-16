@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_CONVERSION_H
-#define HPP_GUARD_CPPCTRL_CONVERSION_H
+#ifndef HPP_GUARD_CTRLPP_CONVERSION_H
+#define HPP_GUARD_CTRLPP_CONVERSION_H
 
 #include "ctrlpp/state_space.h"
 #include "ctrlpp/transfer_function.h"
@@ -11,7 +11,7 @@ namespace ctrlpp {
 
 namespace detail {
 
-template<typename Policy, typename Scalar, std::size_t N>
+template<typename Scalar, std::size_t N, typename Policy>
 concept ElementAccessPolicy = LinalgPolicy<Policy> && requires(
     typename Policy::template matrix_type<Scalar, N, N> m,
     Scalar val
@@ -20,7 +20,7 @@ concept ElementAccessPolicy = LinalgPolicy<Policy> && requires(
     Policy::set_element(m, std::size_t{}, std::size_t{}, val);
 };
 
-template<typename Policy, typename Scalar, std::size_t N>
+template<typename Scalar, std::size_t N, typename Policy>
 concept TracePolicy = requires(
     typename Policy::template matrix_type<Scalar, N, N> m
 ) {
@@ -33,11 +33,11 @@ concept TracePolicy = requires(
 // H(s) = num(s) / den(s), coefficients highest-degree-first (MATLAB convention).
 // Requires NumDeg <= DenDeg (proper transfer function).
 // Returns ContinuousStateSpace with NX = DenDeg states.
-template<LinalgPolicy Policy, typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
+template<typename Scalar, std::size_t NumDeg, std::size_t DenDeg, LinalgPolicy Policy>
     requires (NumDeg <= DenDeg) &&
-             detail::ElementAccessPolicy<Policy, Scalar, DenDeg>
-constexpr auto tf2ss(const TransferFunction<Policy, Scalar, NumDeg, DenDeg>& tf)
-    -> ContinuousStateSpace<Policy, Scalar, DenDeg, 1, 1>
+             detail::ElementAccessPolicy<Scalar, DenDeg, Policy>
+constexpr auto tf2ss(const TransferFunction<Scalar, NumDeg, DenDeg, Policy>& tf)
+    -> ContinuousStateSpace<Scalar, DenDeg, 1, 1, Policy>
 {
     static_assert(DenDeg >= 1, "Denominator degree must be at least 1");
 
@@ -110,13 +110,13 @@ constexpr auto tf2ss(const TransferFunction<Policy, Scalar, NumDeg, DenDeg>& tf)
 
 // ss2tf: State-space to transfer function via Leverrier-Faddeev algorithm.
 // Computes H(s) = C*(sI - A)^{-1}*B + D for SISO systems.
-// Returns TransferFunction<Policy, Scalar, NX, NX> (numerator degree = denominator degree = NX).
+// Returns TransferFunction<Scalar, NX, NX, Policy> (numerator degree = denominator degree = NX).
 // Coefficients are highest-degree-first.
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX>
-    requires detail::ElementAccessPolicy<Policy, Scalar, NX> &&
-             detail::TracePolicy<Policy, Scalar, NX>
-auto ss2tf(const ContinuousStateSpace<Policy, Scalar, NX, 1, 1>& sys)
-    -> TransferFunction<Policy, Scalar, NX, NX>
+template<typename Scalar, std::size_t NX, LinalgPolicy Policy>
+    requires detail::ElementAccessPolicy<Scalar, NX, Policy> &&
+             detail::TracePolicy<Scalar, NX, Policy>
+auto ss2tf(const ContinuousStateSpace<Scalar, NX, 1, 1, Policy>& sys)
+    -> TransferFunction<Scalar, NX, NX, Policy>
 {
     constexpr auto n = NX;
     using mat_nn = typename Policy::template matrix_type<Scalar, n, n>;

@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_PID_H
-#define HPP_GUARD_CPPCTRL_PID_H
+#ifndef HPP_GUARD_CTRLPP_PID_H
+#define HPP_GUARD_CTRLPP_PID_H
 
 #include "ctrlpp/pid_config.h"
 #include "ctrlpp/pid_policies.h"
@@ -15,7 +15,7 @@ namespace ctrlpp {
 
 namespace detail {
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t N>
+template<typename Scalar, std::size_t N, LinalgPolicy Policy>
 constexpr auto make_zero_vector() -> typename Policy::template vector_type<Scalar, N>
 {
     typename Policy::template vector_type<Scalar, N> v{};
@@ -89,11 +89,11 @@ constexpr bool any_not_equal(const Vec& a, const Vec& b)
 
 }
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY,
-         typename... Policies>
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY,
+         LinalgPolicy Policy, typename... Policies>
 class Pid {
 public:
-    using config_type = PidConfig<Policy, Scalar, NY, Policies...>;
+    using config_type = PidConfig<Scalar, NY, Policy, Policies...>;
     using vector_t = typename Policy::template vector_type<Scalar, NY>;
 
     explicit Pid(const config_type& cfg)
@@ -258,7 +258,7 @@ public:
             auto p = detail::element_multiply<NY>(kp_, ep);
 
             // I term -- always uses full error (sp - meas)
-            auto integral_increment = detail::make_zero_vector<Policy, Scalar, NY>();
+            auto integral_increment = detail::make_zero_vector<Scalar, NY, Policy>();
             if (!integral_frozen_) {
                 if constexpr (detail::contains_v<ForwardEuler, Policies...>) {
                     auto ki_eprev = detail::element_multiply<NY>(ki_, prev_error_);
@@ -277,7 +277,7 @@ public:
             }
 
             // D term with optional setpoint weighting (c parameter) and derivative filter
-            vector_t d = detail::make_zero_vector<Policy, Scalar, NY>();
+            vector_t d = detail::make_zero_vector<Scalar, NY, Policy>();
             if (!first_step_) {
                 if (cfg_.derivative_on_error) {
                     vector_t ed_curr{};
@@ -292,7 +292,7 @@ public:
                     auto dm = detail::element_subtract<NY>(filtered_meas, prev_meas_);
                     auto dm_dt = detail::element_divide<NY>(dm, dt);
                     d = detail::element_subtract<NY>(
-                        detail::make_zero_vector<Policy, Scalar, NY>(),
+                        detail::make_zero_vector<Scalar, NY, Policy>(),
                         detail::element_multiply<NY>(kd_, dm_dt));
                 }
 
@@ -471,20 +471,20 @@ public:
 
     void reset()
     {
-        integral_ = detail::make_zero_vector<Policy, Scalar, NY>();
-        prev_error_ = detail::make_zero_vector<Policy, Scalar, NY>();
-        prev_meas_ = detail::make_zero_vector<Policy, Scalar, NY>();
-        prev_sp_ = detail::make_zero_vector<Policy, Scalar, NY>();
-        prev_output_ = detail::make_zero_vector<Policy, Scalar, NY>();
-        prev_prev_error_ = detail::make_zero_vector<Policy, Scalar, NY>();
+        integral_ = detail::make_zero_vector<Scalar, NY, Policy>();
+        prev_error_ = detail::make_zero_vector<Scalar, NY, Policy>();
+        prev_meas_ = detail::make_zero_vector<Scalar, NY, Policy>();
+        prev_sp_ = detail::make_zero_vector<Scalar, NY, Policy>();
+        prev_output_ = detail::make_zero_vector<Scalar, NY, Policy>();
+        prev_prev_error_ = detail::make_zero_vector<Scalar, NY, Policy>();
         if constexpr (detail::contains_v<SetpointFilter, Policies...>) {
-            filtered_sp_ = detail::make_zero_vector<Policy, Scalar, NY>();
+            filtered_sp_ = detail::make_zero_vector<Scalar, NY, Policy>();
         }
         if constexpr (detail::contains_v<PvFilter, Policies...>) {
-            filtered_meas_ = detail::make_zero_vector<Policy, Scalar, NY>();
+            filtered_meas_ = detail::make_zero_vector<Scalar, NY, Policy>();
         }
         if constexpr (detail::contains_v<DerivFilter, Policies...>) {
-            prev_deriv_filtered_ = detail::make_zero_vector<Policy, Scalar, NY>();
+            prev_deriv_filtered_ = detail::make_zero_vector<Scalar, NY, Policy>();
         }
         first_step_ = true;
         integral_frozen_ = false;
@@ -538,38 +538,38 @@ public:
     {
         using PA = detail::find_policy_t<PerfAssessment, Policies...>;
         if constexpr (detail::perf_has_metric_v<IAE, PA>)
-            iae_ = detail::make_zero_vector<Policy, Scalar, NY>();
+            iae_ = detail::make_zero_vector<Scalar, NY, Policy>();
         if constexpr (detail::perf_has_metric_v<ISE, PA>)
-            ise_ = detail::make_zero_vector<Policy, Scalar, NY>();
+            ise_ = detail::make_zero_vector<Scalar, NY, Policy>();
         if constexpr (detail::perf_has_metric_v<ITAE, PA>)
-            itae_ = detail::make_zero_vector<Policy, Scalar, NY>();
+            itae_ = detail::make_zero_vector<Scalar, NY, Policy>();
         if constexpr (detail::perf_has_metric_v<OscillationDetect, PA>) {
-            zero_crossings_ = detail::make_zero_vector<Policy, Scalar, NY>();
-            prev_error_sign_ = detail::make_zero_vector<Policy, Scalar, NY>();
+            zero_crossings_ = detail::make_zero_vector<Scalar, NY, Policy>();
+            prev_error_sign_ = detail::make_zero_vector<Scalar, NY, Policy>();
         }
         accumulated_time_ = Scalar{0};
     }
 
 private:
     config_type cfg_;
-    vector_t kp_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t ki_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t kd_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t kb_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t integral_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t prev_error_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t prev_prev_error_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t prev_meas_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t prev_sp_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t prev_output_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t filtered_sp_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t filtered_meas_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t prev_deriv_filtered_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t iae_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t ise_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t itae_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t zero_crossings_ = detail::make_zero_vector<Policy, Scalar, NY>();
-    vector_t prev_error_sign_ = detail::make_zero_vector<Policy, Scalar, NY>();
+    vector_t kp_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t ki_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t kd_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t kb_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t integral_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t prev_error_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t prev_prev_error_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t prev_meas_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t prev_sp_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t prev_output_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t filtered_sp_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t filtered_meas_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t prev_deriv_filtered_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t iae_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t ise_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t itae_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t zero_crossings_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t prev_error_sign_ = detail::make_zero_vector<Scalar, NY, Policy>();
     Scalar accumulated_time_{0};
     Scalar osc_threshold_{5.0};
     bool first_step_{true};

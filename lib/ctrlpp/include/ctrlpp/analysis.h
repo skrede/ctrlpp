@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_ANALYSIS_H
-#define HPP_GUARD_CPPCTRL_ANALYSIS_H
+#ifndef HPP_GUARD_CTRLPP_ANALYSIS_H
+#define HPP_GUARD_CTRLPP_ANALYSIS_H
 
 #include "ctrlpp/state_space.h"
 
@@ -12,7 +12,7 @@ namespace ctrlpp {
 
 namespace detail {
 
-template<typename Policy, typename Scalar, std::size_t N>
+template<typename Scalar, std::size_t N, typename Policy>
 concept EigenvaluePolicy = LinalgPolicy<Policy> && requires(
     typename Policy::template matrix_type<Scalar, N, N> A
 ) {
@@ -22,26 +22,26 @@ concept EigenvaluePolicy = LinalgPolicy<Policy> && requires(
 }
 
 // poles: returns eigenvalues of the A matrix (system poles).
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-    requires detail::EigenvaluePolicy<Policy, Scalar, NX>
-auto poles(const ContinuousStateSpace<Policy, Scalar, NX, NU, NY>& sys)
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, LinalgPolicy Policy>
+    requires detail::EigenvaluePolicy<Scalar, NX, Policy>
+auto poles(const ContinuousStateSpace<Scalar, NX, NU, NY, Policy>& sys)
     -> std::array<std::complex<Scalar>, NX>
 {
     return Policy::eigenvalues(sys.A);
 }
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-    requires detail::EigenvaluePolicy<Policy, Scalar, NX>
-auto poles(const DiscreteStateSpace<Policy, Scalar, NX, NU, NY>& sys)
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, LinalgPolicy Policy>
+    requires detail::EigenvaluePolicy<Scalar, NX, Policy>
+auto poles(const DiscreteStateSpace<Scalar, NX, NU, NY, Policy>& sys)
     -> std::array<std::complex<Scalar>, NX>
 {
     return Policy::eigenvalues(sys.A);
 }
 
 // is_stable: continuous system is stable iff all poles have negative real part.
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-    requires detail::EigenvaluePolicy<Policy, Scalar, NX>
-auto is_stable(const ContinuousStateSpace<Policy, Scalar, NX, NU, NY>& sys) -> bool
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, LinalgPolicy Policy>
+    requires detail::EigenvaluePolicy<Scalar, NX, Policy>
+auto is_stable(const ContinuousStateSpace<Scalar, NX, NU, NY, Policy>& sys) -> bool
 {
     auto p = poles(sys);
     for (const auto& pole : p)
@@ -51,9 +51,9 @@ auto is_stable(const ContinuousStateSpace<Policy, Scalar, NX, NU, NY>& sys) -> b
 }
 
 // is_stable: discrete system is stable iff all poles have magnitude < 1.
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-    requires detail::EigenvaluePolicy<Policy, Scalar, NX>
-auto is_stable(const DiscreteStateSpace<Policy, Scalar, NX, NU, NY>& sys) -> bool
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, LinalgPolicy Policy>
+    requires detail::EigenvaluePolicy<Scalar, NX, Policy>
+auto is_stable(const DiscreteStateSpace<Scalar, NX, NU, NY, Policy>& sys) -> bool
 {
     auto p = poles(sys);
     for (const auto& pole : p)
@@ -65,7 +65,7 @@ auto is_stable(const DiscreteStateSpace<Policy, Scalar, NX, NU, NY>& sys) -> boo
 // is_controllable: checks rank of controllability matrix [B, AB, A^2 B, ..., A^{n-1} B].
 // Returns true if rank equals NX (full state controllability).
 // Requires Policy to provide rank() for an NX x (NX*NU) matrix.
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU>
+template<typename Scalar, std::size_t NX, std::size_t NU, LinalgPolicy Policy>
     requires requires(typename Policy::template matrix_type<Scalar, NX, NX * NU> M) {
         { Policy::rank(M) } -> std::convertible_to<std::size_t>;
     }
@@ -104,7 +104,7 @@ auto is_controllable(
 
 // is_observable: checks rank of observability matrix [C; CA; CA^2; ...; CA^{n-1}].
 // Returns true if rank equals NX (full state observability).
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NY>
+template<typename Scalar, std::size_t NX, std::size_t NY, LinalgPolicy Policy>
     requires requires(typename Policy::template matrix_type<Scalar, NX * NY, NX> M) {
         { Policy::rank(M) } -> std::convertible_to<std::size_t>;
     }
@@ -143,8 +143,8 @@ auto is_observable(
 
 // is_stable_closed_loop: checks if all eigenvalues of (A - B*K) are inside the unit circle.
 // For discrete-time closed-loop stability verification.
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU>
-    requires detail::EigenvaluePolicy<Policy, Scalar, NX>
+template<typename Scalar, std::size_t NX, std::size_t NU, LinalgPolicy Policy>
+    requires detail::EigenvaluePolicy<Scalar, NX, Policy>
 auto is_stable_closed_loop(
     const typename Policy::template matrix_type<Scalar, NX, NX>& A,
     const typename Policy::template matrix_type<Scalar, NX, NU>& B,
@@ -160,8 +160,8 @@ auto is_stable_closed_loop(
 
 // is_stable_observer: checks if all eigenvalues of (A - L*C) are inside the unit circle.
 // For discrete-time observer stability verification.
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NY>
-    requires detail::EigenvaluePolicy<Policy, Scalar, NX>
+template<typename Scalar, std::size_t NX, std::size_t NY, LinalgPolicy Policy>
+    requires detail::EigenvaluePolicy<Scalar, NX, Policy>
 auto is_stable_observer(
     const typename Policy::template matrix_type<Scalar, NX, NX>& A,
     const typename Policy::template matrix_type<Scalar, NX, NY>& L,

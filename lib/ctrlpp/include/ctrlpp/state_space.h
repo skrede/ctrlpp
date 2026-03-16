@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_STATE_SPACE_H
-#define HPP_GUARD_CPPCTRL_STATE_SPACE_H
+#ifndef HPP_GUARD_CTRLPP_STATE_SPACE_H
+#define HPP_GUARD_CTRLPP_STATE_SPACE_H
 
 #include "ctrlpp/linalg_policy.h"
 
@@ -7,7 +7,7 @@
 
 namespace ctrlpp {
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, LinalgPolicy Policy>
 struct ContinuousStateSpace {
     typename Policy::template matrix_type<Scalar, NX, NX> A;
     typename Policy::template matrix_type<Scalar, NX, NU> B;
@@ -15,7 +15,7 @@ struct ContinuousStateSpace {
     typename Policy::template matrix_type<Scalar, NY, NU> D;
 };
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, LinalgPolicy Policy>
 struct DiscreteStateSpace {
     typename Policy::template matrix_type<Scalar, NX, NX> A;
     typename Policy::template matrix_type<Scalar, NX, NU> B;
@@ -23,11 +23,11 @@ struct DiscreteStateSpace {
     typename Policy::template matrix_type<Scalar, NY, NU> D;
 };
 
-template<LinalgPolicy P, typename S, std::size_t NX>
-using SISOContinuousStateSpace = ContinuousStateSpace<P, S, NX, 1, 1>;
+template<typename S, std::size_t NX, LinalgPolicy P>
+using SISOContinuousStateSpace = ContinuousStateSpace<S, NX, 1, 1, P>;
 
-template<LinalgPolicy P, typename S, std::size_t NX>
-using SISODiscreteStateSpace = DiscreteStateSpace<P, S, NX, 1, 1>;
+template<typename S, std::size_t NX, LinalgPolicy P>
+using SISODiscreteStateSpace = DiscreteStateSpace<S, NX, 1, 1, P>;
 
 }
 

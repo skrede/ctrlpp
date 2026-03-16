@@ -10,7 +10,7 @@ int main()
     using Vec = Eigen::Matrix<double, 1, 1>;
 
     // Outer loop: temperature PI with anti-windup and IAE performance metric
-    using OuterPid = ctrlpp::Pid<Policy, double, 1, 1, 1,
+    using OuterPid = ctrlpp::Pid<double, 1, 1, 1, Policy,
         ctrlpp::AntiWindup<ctrlpp::BackCalc>,
         ctrlpp::PerfAssessment<ctrlpp::IAE>>;
 
@@ -24,7 +24,7 @@ int main()
     OuterPid outer(outer_cfg);
 
     // Inner loop: heater power PID with derivative filter
-    using InnerPid = ctrlpp::Pid<Policy, double, 1, 1, 1,
+    using InnerPid = ctrlpp::Pid<double, 1, 1, 1, Policy,
         ctrlpp::DerivFilter>;
 
     InnerPid::config_type inner_cfg{};

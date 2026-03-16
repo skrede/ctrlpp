@@ -6,8 +6,8 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <type_traits>
 
-using DSS = ctrlpp::DiscreteStateSpace<NaiveLinalg, double, 2, 1, 1>;
-using CSS = ctrlpp::ContinuousStateSpace<NaiveLinalg, double, 2, 1, 1>;
+using DSS = ctrlpp::DiscreteStateSpace<double, 2, 1, 1, NaiveLinalg>;
+using CSS = ctrlpp::ContinuousStateSpace<double, 2, 1, 1, NaiveLinalg>;
 
 TEST_CASE("DiscreteStateSpace aggregate initialization", "[state_space]")
 {
@@ -87,10 +87,10 @@ TEST_CASE("output computes y = C*x + D*u", "[state_space]")
 TEST_CASE("SISO alias template works", "[state_space]")
 {
     static_assert(std::is_same_v<
-        ctrlpp::SISODiscreteStateSpace<NaiveLinalg, double, 2>,
-        ctrlpp::DiscreteStateSpace<NaiveLinalg, double, 2, 1, 1>>);
+        ctrlpp::SISODiscreteStateSpace<double, 2, NaiveLinalg>,
+        ctrlpp::DiscreteStateSpace<double, 2, 1, 1, NaiveLinalg>>);
     static_assert(std::is_same_v<
-        ctrlpp::SISOContinuousStateSpace<NaiveLinalg, double, 2>,
-        ctrlpp::ContinuousStateSpace<NaiveLinalg, double, 2, 1, 1>>);
+        ctrlpp::SISOContinuousStateSpace<double, 2, NaiveLinalg>,
+        ctrlpp::ContinuousStateSpace<double, 2, 1, 1, NaiveLinalg>>);
     SUCCEED();
 }

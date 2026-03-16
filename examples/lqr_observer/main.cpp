@@ -25,7 +25,7 @@ using MatC = Eigen::Matrix<Scalar, 1, 2>;
 using MatB = Eigen::Matrix<Scalar, 2, 1>;
 using MatD = Eigen::Matrix<Scalar, 1, 1>;
 
-using System = ctrlpp::DiscreteStateSpace<ctrlpp::EigenLinalgPolicy, Scalar, NX, NU, NY>;
+using System = ctrlpp::DiscreteStateSpace<Scalar, NX, NU, NY, ctrlpp::EigenLinalgPolicy>;
 
 // Generic simulation loop accepting any ObserverPolicy observer.
 // Demonstrates concept-based interchangeability: the same function works with
@@ -121,8 +121,8 @@ int main()
     // -----------------------------------------------------------------------
     // 2. Check controllability and observability
     // -----------------------------------------------------------------------
-    bool controllable = ctrlpp::is_controllable<ctrlpp::EigenLinalgPolicy, Scalar, NX, NU>(A, B);
-    bool observable = ctrlpp::is_observable<ctrlpp::EigenLinalgPolicy, Scalar, NX, NY>(A, C);
+    bool controllable = ctrlpp::is_controllable<Scalar, NX, NU, ctrlpp::EigenLinalgPolicy>(A, B);
+    bool observable = ctrlpp::is_observable<Scalar, NX, NY, ctrlpp::EigenLinalgPolicy>(A, C);
 
     std::cout << "Controllability: " << (controllable ? "YES" : "NO") << "\n";
     std::cout << "Observability:   " << (observable ? "YES" : "NO") << "\n\n";
@@ -148,7 +148,7 @@ int main()
     std::cout << "LQR gain K = [" << (*K_opt)(0, 0) << ", " << (*K_opt)(0, 1) << "]\n";
 
     // Verify closed-loop stability
-    bool cl_stable = ctrlpp::is_stable_closed_loop<ctrlpp::EigenLinalgPolicy, Scalar, NX, NU>(
+    bool cl_stable = ctrlpp::is_stable_closed_loop<Scalar, NX, NU, ctrlpp::EigenLinalgPolicy>(
         A, B, *K_opt);
     std::cout << "Closed-loop stable: " << (cl_stable ? "YES" : "NO") << "\n";
 
@@ -197,7 +197,7 @@ int main()
                   << ", " << (*L_opt)(1, 0) << "]^T\n";
 
         // Verify observer stability
-        bool obs_stable = ctrlpp::is_stable_observer<ctrlpp::EigenLinalgPolicy, Scalar, NX, NY>(
+        bool obs_stable = ctrlpp::is_stable_observer<Scalar, NX, NY, ctrlpp::EigenLinalgPolicy>(
             A, *L_opt, C);
         std::cout << "Observer stable: " << (obs_stable ? "YES" : "NO") << "\n";
 

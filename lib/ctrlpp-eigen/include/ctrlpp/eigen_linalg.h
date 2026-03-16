@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_EIGEN_LINALG_H
-#define HPP_GUARD_CPPCTRL_EIGEN_LINALG_H
+#ifndef HPP_GUARD_CTRLPP_EIGEN_LINALG_H
+#define HPP_GUARD_CTRLPP_EIGEN_LINALG_H
 
 #include <ctrlpp/linalg_policy.h>
 
@@ -142,7 +142,7 @@ static_assert(
 
 namespace detail {
 
-template<typename Policy, typename Scalar, std::size_t N>
+template<typename Scalar, std::size_t N, typename Policy>
 concept SchurPolicy = LinalgPolicy<Policy> && requires(
     typename Policy::template matrix_type<Scalar, N, N> A
 ) {
@@ -151,7 +151,7 @@ concept SchurPolicy = LinalgPolicy<Policy> && requires(
                   typename Policy::template matrix_type<Scalar, N, N>>>;
 };
 
-template<typename Policy, typename Scalar, std::size_t R, std::size_t C>
+template<typename Scalar, std::size_t R, std::size_t C, typename Policy>
 concept RankPolicy = LinalgPolicy<Policy> && requires(
     typename Policy::template matrix_type<Scalar, R, C> A
 ) {

@@ -11,7 +11,7 @@ int main()
 #ifdef TEST_CORE_ONLY
     std::cout << "ctrlpp core integration test PASSED\n";
 #else
-    ctrlpp::DiscreteStateSpace<ctrlpp::EigenLinalgPolicy, double, 2, 1, 1> sys{
+    ctrlpp::DiscreteStateSpace<double, 2, 1, 1, ctrlpp::EigenLinalgPolicy> sys{
         .A = Eigen::Matrix2d::Identity(),
         .B = Eigen::Vector2d::Zero(),
         .C = Eigen::RowVector2d::Zero(),

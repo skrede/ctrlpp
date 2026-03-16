@@ -11,7 +11,7 @@ using Policy = ctrlpp::EigenLinalgPolicy;
 TEST_CASE("tf2ss converts first-order transfer function") {
     // H(s) = 1 / (s + 2)
     // Coefficients highest-degree-first: num = {1}, den = {1, 2}
-    ctrlpp::TransferFunction<Policy, double, 0, 1> tf{
+    ctrlpp::TransferFunction<double, 0, 1, Policy> tf{
         .numerator = {1.0},
         .denominator = {1.0, 2.0}
     };
@@ -29,7 +29,7 @@ TEST_CASE("tf2ss converts second-order transfer function") {
     // H(s) = (s + 1) / (s^2 + 3s + 2)
     // num = {1, 1}, den = {1, 3, 2}
     // NumDeg = 1, DenDeg = 2
-    ctrlpp::TransferFunction<Policy, double, 1, 2> tf{
+    ctrlpp::TransferFunction<double, 1, 2, Policy> tf{
         .numerator = {1.0, 1.0},
         .denominator = {1.0, 3.0, 2.0}
     };
@@ -53,7 +53,7 @@ TEST_CASE("tf2ss converts second-order transfer function") {
 
 TEST_CASE("ss2tf recovers transfer function coefficients") {
     // Known state-space in CCF for H(s) = 1/(s+2): A=[-2], B=[1], C=[1], D=[0]
-    using SS = ctrlpp::ContinuousStateSpace<Policy, double, 1, 1, 1>;
+    using SS = ctrlpp::ContinuousStateSpace<double, 1, 1, 1, Policy>;
     SS sys{};
     sys.A(0, 0) = -2.0;
     sys.B(0, 0) = 1.0;
@@ -73,7 +73,7 @@ TEST_CASE("ss2tf recovers transfer function coefficients") {
 
 TEST_CASE("tf2ss -> ss2tf roundtrip preserves coefficients") {
     // H(s) = (s + 1) / (s^2 + 3s + 2)
-    ctrlpp::TransferFunction<Policy, double, 1, 2> tf_original{
+    ctrlpp::TransferFunction<double, 1, 2, Policy> tf_original{
         .numerator = {1.0, 1.0},
         .denominator = {1.0, 3.0, 2.0}
     };
@@ -95,7 +95,7 @@ TEST_CASE("tf2ss -> ss2tf roundtrip preserves coefficients") {
 
 TEST_CASE("tf2ss handles proper transfer function with equal degrees") {
     // H(s) = (2s + 5) / (s + 3) -- NumDeg == DenDeg == 1
-    ctrlpp::TransferFunction<Policy, double, 1, 1> tf{
+    ctrlpp::TransferFunction<double, 1, 1, Policy> tf{
         .numerator = {2.0, 5.0},
         .denominator = {1.0, 3.0}
     };

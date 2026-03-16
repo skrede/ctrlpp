@@ -16,7 +16,7 @@ TEST_CASE("is_controllable with controllable double integrator") {
     B << 0.5,
          1.0;
 
-    CHECK(ctrlpp::is_controllable<Policy, double, 2, 1>(A, B));
+    CHECK(ctrlpp::is_controllable<double, 2, 1, Policy>(A, B));
 }
 
 TEST_CASE("is_controllable with uncontrollable system") {
@@ -30,7 +30,7 @@ TEST_CASE("is_controllable with uncontrollable system") {
     B << 0.0,
          1.0;
 
-    CHECK_FALSE(ctrlpp::is_controllable<Policy, double, 2, 1>(A, B));
+    CHECK_FALSE(ctrlpp::is_controllable<double, 2, 1, Policy>(A, B));
 }
 
 TEST_CASE("is_observable with observable system") {
@@ -42,7 +42,7 @@ TEST_CASE("is_observable with observable system") {
          0.0, 1.0;
     C << 1.0, 0.0;
 
-    CHECK(ctrlpp::is_observable<Policy, double, 2, 1>(A, C));
+    CHECK(ctrlpp::is_observable<double, 2, 1, Policy>(A, C));
 }
 
 TEST_CASE("is_observable with unobservable system") {
@@ -54,7 +54,7 @@ TEST_CASE("is_observable with unobservable system") {
          0.0, 0.5;
     C << 0.0, 1.0;
 
-    CHECK_FALSE(ctrlpp::is_observable<Policy, double, 2, 1>(A, C));
+    CHECK_FALSE(ctrlpp::is_observable<double, 2, 1, Policy>(A, C));
 }
 
 TEST_CASE("observability duality with controllability") {
@@ -68,8 +68,8 @@ TEST_CASE("observability duality with controllability") {
     auto At = A.transpose().eval();
     auto Ct = C.transpose().eval();
 
-    bool obs = ctrlpp::is_observable<Policy, double, 2, 1>(A, C);
-    bool ctrl_dual = ctrlpp::is_controllable<Policy, double, 2, 1>(At, Ct);
+    bool obs = ctrlpp::is_observable<double, 2, 1, Policy>(A, C);
+    bool ctrl_dual = ctrlpp::is_controllable<double, 2, 1, Policy>(At, Ct);
     CHECK(obs == ctrl_dual);
 }
 
@@ -97,7 +97,7 @@ TEST_CASE("is_stable_closed_loop with stabilizing gain") {
 
     // Only test if K actually stabilizes (it should for these values)
     if (all_stable)
-        CHECK(ctrlpp::is_stable_closed_loop<Policy, double, 2, 1>(A, B, K));
+        CHECK(ctrlpp::is_stable_closed_loop<double, 2, 1, Policy>(A, B, K));
 }
 
 TEST_CASE("is_stable_closed_loop with zero gain on unstable system") {
@@ -111,7 +111,7 @@ TEST_CASE("is_stable_closed_loop with zero gain on unstable system") {
          0.0;
     K << 0.0, 0.0;
 
-    CHECK_FALSE(ctrlpp::is_stable_closed_loop<Policy, double, 2, 1>(A, B, K));
+    CHECK_FALSE(ctrlpp::is_stable_closed_loop<double, 2, 1, Policy>(A, B, K));
 }
 
 TEST_CASE("is_stable_observer with stabilizing observer gain") {
@@ -127,7 +127,7 @@ TEST_CASE("is_stable_observer with stabilizing observer gain") {
     L << 0.5,
          0.1;
 
-    CHECK(ctrlpp::is_stable_observer<Policy, double, 2, 1>(A, L, C));
+    CHECK(ctrlpp::is_stable_observer<double, 2, 1, Policy>(A, L, C));
 }
 
 TEST_CASE("is_controllable with MIMO system") {
@@ -142,5 +142,5 @@ TEST_CASE("is_controllable with MIMO system") {
          0.0, 1.0;
 
     // States 1 and 3 directly actuated; state 2 reachable through A coupling
-    CHECK(ctrlpp::is_controllable<Policy, double, 3, 2>(A, B));
+    CHECK(ctrlpp::is_controllable<double, 3, 2, Policy>(A, B));
 }

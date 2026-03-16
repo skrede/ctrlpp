@@ -6,7 +6,7 @@
 int main()
 {
     using Policy = ctrlpp::EigenLinalgPolicy;
-    using Pid = ctrlpp::Pid<Policy, double, 1, 1, 1>;
+    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy>;
     using Vec = Pid::vector_t;
 
     // Configure a simple PID controller

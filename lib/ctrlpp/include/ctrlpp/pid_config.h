@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_PID_CONFIG_H
-#define HPP_GUARD_CPPCTRL_PID_CONFIG_H
+#ifndef HPP_GUARD_CTRLPP_PID_CONFIG_H
+#define HPP_GUARD_CTRLPP_PID_CONFIG_H
 
 #include "ctrlpp/pid_policies.h"
 #include "ctrlpp/linalg_policy.h"
@@ -80,7 +80,7 @@ using policy_configs_tuple_t =
 
 }
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NY, typename... Policies>
+template<typename Scalar, std::size_t NY, LinalgPolicy Policy, typename... Policies>
 struct PidConfig {
     using vector_t = typename Policy::template vector_type<Scalar, NY>;
     using policies_tuple_t = detail::policy_configs_tuple_t<Scalar, NY, Policies...>;

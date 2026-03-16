@@ -17,7 +17,7 @@ using Policy = ctrlpp::EigenLinalgPolicy;
 
 TEST_CASE("luenberger observer convergence with known gain") {
     // Simple 2-state system: x(k+1) = A x(k) + B u(k), y(k) = C x(k)
-    ctrlpp::DiscreteStateSpace<Policy, double, 2, 1, 1> sys;
+    ctrlpp::DiscreteStateSpace<double, 2, 1, 1, Policy> sys;
     sys.A << 0.9, 0.1,
              0.0, 0.8;
     sys.B << 0.0,
@@ -94,7 +94,7 @@ TEST_CASE("place produces correct eigenvalues for 2-state SISO") {
 
 TEST_CASE("place_observer produces gain for convergent observer") {
     // Discrete system
-    ctrlpp::DiscreteStateSpace<Policy, double, 2, 1, 1> sys;
+    ctrlpp::DiscreteStateSpace<double, 2, 1, 1, Policy> sys;
     sys.A << 1.0, 0.1,
              0.0, 1.0;
     sys.B << 0.005,
@@ -153,7 +153,7 @@ TEST_CASE("place on uncontrollable system returns nullopt") {
 
 TEST_CASE("luenberger MIMO observer with manual gain") {
     // NX=3, NU=1, NY=2
-    ctrlpp::DiscreteStateSpace<Policy, double, 3, 1, 2> sys;
+    ctrlpp::DiscreteStateSpace<double, 3, 1, 2, Policy> sys;
     sys.A << 0.9, 0.1, 0.0,
              0.0, 0.8, 0.2,
              0.0, 0.0, 0.7;
@@ -190,7 +190,7 @@ TEST_CASE("luenberger MIMO observer with manual gain") {
 }
 
 TEST_CASE("luenberger set_model and set_gain") {
-    ctrlpp::DiscreteStateSpace<Policy, double, 2, 1, 1> sys;
+    ctrlpp::DiscreteStateSpace<double, 2, 1, 1, Policy> sys;
     sys.A << 0.9, 0.1,
              0.0, 0.8;
     sys.B << 0.0,

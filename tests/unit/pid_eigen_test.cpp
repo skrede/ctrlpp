@@ -17,7 +17,7 @@ constexpr double tol = 1e-10;
 
 TEST_CASE("SISO PID with Eigen - P-only", "[pid][eigen][siso]")
 {
-    using Pid = ctrlpp::Pid<Policy, double, 1, 1, 1>;
+    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -30,7 +30,7 @@ TEST_CASE("SISO PID with Eigen - P-only", "[pid][eigen][siso]")
 
 TEST_CASE("SISO PID with Eigen - PI", "[pid][eigen][siso]")
 {
-    using Pid = ctrlpp::Pid<Policy, double, 1, 1, 1>;
+    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -49,7 +49,7 @@ TEST_CASE("SISO PID with Eigen - PI", "[pid][eigen][siso]")
 
 TEST_CASE("SISO PID with Eigen - PID", "[pid][eigen][siso]")
 {
-    using Pid = ctrlpp::Pid<Policy, double, 1, 1, 1>;
+    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -70,7 +70,7 @@ TEST_CASE("SISO PID with Eigen - PID", "[pid][eigen][siso]")
 
 TEST_CASE("MIMO PID with Eigen - 2-channel independence", "[pid][eigen][mimo]")
 {
-    using Pid = ctrlpp::Pid<Policy, double, 2, 2, 2>;
+    using Pid = ctrlpp::Pid<double, 2, 2, 2, Policy>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -93,7 +93,7 @@ TEST_CASE("MIMO PID with Eigen - 2-channel independence", "[pid][eigen][mimo]")
 
 TEST_CASE("MIMO PID with Eigen - per-channel PI gains", "[pid][eigen][mimo]")
 {
-    using Pid = ctrlpp::Pid<Policy, double, 2, 2, 2>;
+    using Pid = ctrlpp::Pid<double, 2, 2, 2, Policy>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -121,7 +121,7 @@ TEST_CASE("MIMO PID with Eigen - per-channel PI gains", "[pid][eigen][mimo]")
 TEST_CASE("Full-featured PID with Eigen - AntiWindup + DerivFilter + PerfAssessment",
           "[pid][eigen][full]")
 {
-    using Pid = ctrlpp::Pid<Policy, double, 1, 1, 1,
+    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy,
         ctrlpp::AntiWindup<ctrlpp::BackCalc>,
         ctrlpp::DerivFilter,
         ctrlpp::PerfAssessment<ctrlpp::IAE>>;
@@ -154,7 +154,7 @@ TEST_CASE("Full-featured PID with Eigen - AntiWindup + DerivFilter + PerfAssessm
 
 TEST_CASE("SISO with all composable policies - compile and run", "[pid][eigen][compose]")
 {
-    using Pid = ctrlpp::Pid<Policy, double, 1, 1, 1,
+    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy,
         ctrlpp::AntiWindup<ctrlpp::BackCalc>,
         ctrlpp::DerivFilter,
         ctrlpp::SetpointFilter,
