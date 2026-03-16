@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
-set(CPPCTRL_WARNING_FLAGS
+set(CTRLPP_WARNING_FLAGS
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /utf-8>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:
         -fPIC
@@ -27,11 +27,12 @@ set(CPPCTRL_WARNING_FLAGS
     >
 )
 
-option(CPPCTRL_BUILD_TESTS "Build unit and compile tests" OFF)
-option(CPPCTRL_BUILD_EXAMPLES "Build examples" OFF)
-option(CPPCTRL_BUILD_FUZZ_TESTS "Build fuzz test targets" OFF)
-option(CPPCTRL_CMAKE_FETCH_DEPS "Use CMake FetchContent to download and install dependencies" OFF)
-option(CPPCTRL_ENABLE_EIGEN_POLICY "Build ctrlpp::eigen backed by Eigen" OFF)
+option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)
+option(CTRLPP_BUILD_EXAMPLES "Build examples" OFF)
+option(CTRLPP_BUILD_FUZZ_TESTS "Build fuzz test targets" OFF)
+option(CTRLPP_CMAKE_FETCH_DEPS "Use CMake FetchContent to download and install dependencies" OFF)
+option(CTRLPP_ENABLE_EIGEN_POLICY "Build ctrlpp::eigen backed by Eigen" OFF)
+option(CTRLPP_BUILD_IMPLOT "Build ctrlpp::implot visualization library (requires OpenGL)" OFF)
 
 include(FetchContent)
 include(GNUInstallDirs)
@@ -39,11 +40,11 @@ include(CMakePackageConfigHelpers)
 
 add_subdirectory(lib)
 
-if (CPPCTRL_BUILD_EXAMPLES)
+if (CTRLPP_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif ()
 
-if (CPPCTRL_BUILD_TESTS OR CPPCTRL_BUILD_FUZZ_TESTS)
+if (CTRLPP_BUILD_TESTS OR CTRLPP_BUILD_FUZZ_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif ()

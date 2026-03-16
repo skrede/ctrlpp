@@ -55,16 +55,16 @@ jobs:
             cmake . -B build -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_CXX_FLAGS="--coverage" \
               -DCMAKE_C_FLAGS="--coverage" \
-              -DCPPCTRL_BUILD_TESTS=ON \
-              -DCPPCTRL_BUILD_EXAMPLES=OFF \
-              -DCPPCTRL_ENABLE_EIGEN_POLICY=ON \
-              -DCPPCTRL_CMAKE_FETCH_DEPS=ON
+              -DCTRLPP_BUILD_TESTS=ON \
+              -DCTRLPP_BUILD_EXAMPLES=OFF \
+              -DCTRLPP_ENABLE_EIGEN_POLICY=ON \
+              -DCTRLPP_CMAKE_FETCH_DEPS=ON
           else
             cmake . -B build -DCMAKE_BUILD_TYPE=Release \
-              -DCPPCTRL_BUILD_TESTS=ON \
-              -DCPPCTRL_BUILD_EXAMPLES=ON \
-              -DCPPCTRL_ENABLE_EIGEN_POLICY=ON \
-              -DCPPCTRL_CMAKE_FETCH_DEPS=ON
+              -DCTRLPP_BUILD_TESTS=ON \
+              -DCTRLPP_BUILD_EXAMPLES=ON \
+              -DCTRLPP_ENABLE_EIGEN_POLICY=ON \
+              -DCTRLPP_CMAKE_FETCH_DEPS=ON
           fi
 
       - name: Build
@@ -92,6 +92,24 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
+  implot-compile:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OpenGL and X11 development headers
+        run: sudo apt-get update && sudo apt-get install -y xorg-dev libgl-dev
+
+      - name: Configure
+        run: |
+          cmake . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCTRLPP_BUILD_IMPLOT=ON \
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON
+
+      - name: Build
+        run: cmake --build build
+
   install-test:
     runs-on: ubuntu-24.04
 
@@ -102,8 +120,8 @@ jobs:
         run: |
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
-            -DCPPCTRL_ENABLE_EIGEN_POLICY=ON \
-            -DCPPCTRL_CMAKE_FETCH_DEPS=ON
+            -DCTRLPP_ENABLE_EIGEN_POLICY=ON \
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON
           cmake --build build
           cmake --install build
 
