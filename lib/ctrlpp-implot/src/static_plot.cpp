@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -40,7 +41,7 @@ auto read_chronological(const RingBuffer& buf) -> std::vector<ChronoPoint>
     pts.reserve(static_cast<std::size_t>(buf.size));
     for (int i = 0; i < buf.size; ++i) {
         int idx = (buf.offset - buf.size + i + buf.max_size) % buf.max_size;
-        pts.push_back({buf.data[idx].x, buf.data[idx].y});
+        pts.push_back({buf.data[idx].first, buf.data[idx].second});
     }
     return pts;
 }
@@ -60,8 +61,8 @@ auto compute_range(const SignalRecorder& recorder,
         has_data = true;
         for (int i = 0; i < buf->size; ++i) {
             int idx = (buf->offset - buf->size + i + buf->max_size) % buf->max_size;
-            float t = buf->data[idx].x;
-            float v = buf->data[idx].y;
+            float t = buf->data[idx].first;
+            float v = buf->data[idx].second;
             t_min = std::min(t_min, t);
             t_max = std::max(t_max, t);
             y_min = std::min(y_min, v);
@@ -94,10 +95,10 @@ void write_tick_labels(std::ofstream& out, int plot_w, int plot_h,
         float py = static_cast<float>(plot_h) * (1.0f - frac);
         out << "    <line x1=\"-4\" y1=\"" << std::fixed << std::setprecision(2) << py
             << "\" x2=\"0\" y2=\"" << py
-            << "\" stroke=\"#333\" stroke-width=\"1\"/>\n";
+            << "\" stroke=\"#333\" stroke-width=\"1\"/>" << std::endl;
         out << "    <text x=\"-8\" y=\"" << py + 4.0f
             << "\" font-size=\"11\" fill=\"#333\" text-anchor=\"end\">"
-            << std::setprecision(2) << val << "</text>\n";
+            << std::setprecision(2) << val << "</text>" << std::endl;
     }
 
     // X-axis ticks
@@ -109,11 +110,11 @@ void write_tick_labels(std::ofstream& out, int plot_w, int plot_h,
             << "\" y1=\"" << plot_h
             << "\" x2=\"" << px
             << "\" y2=\"" << plot_h + 4
-            << "\" stroke=\"#333\" stroke-width=\"1\"/>\n";
+            << "\" stroke=\"#333\" stroke-width=\"1\"/>" << std::endl;
         out << "    <text x=\"" << px
             << "\" y=\"" << plot_h + 18
             << "\" font-size=\"11\" fill=\"#333\" text-anchor=\"middle\">"
-            << std::setprecision(2) << val << "</text>\n";
+            << std::setprecision(2) << val << "</text>" << std::endl;
     }
 }
 
@@ -136,18 +137,18 @@ void write_svg(const char* path,
     out << std::fixed << std::setprecision(2);
 
     // SVG header
-    out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" << std::endl
         << "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 "
-        << config.width << " " << config.height << "\">\n"
+        << config.width << " " << config.height << "\">" << std::endl
         << "  <rect width=\"" << config.width << "\" height=\""
-        << config.height << "\" fill=\"white\"/>\n"
-        << "  <g transform=\"translate(" << margin_l << "," << margin_t << ")\">\n";
+        << config.height << "\" fill=\"white\"/>" << std::endl
+        << "  <g transform=\"translate(" << margin_l << "," << margin_t << ")\">" << std::endl;
 
     // Axes
     out << "    <line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"" << plot_h
-        << "\" stroke=\"#333\" stroke-width=\"1\"/>\n";
+        << "\" stroke=\"#333\" stroke-width=\"1\"/>" << std::endl;
     out << "    <line x1=\"0\" y1=\"" << plot_h << "\" x2=\"" << plot_w
-        << "\" y2=\"" << plot_h << "\" stroke=\"#333\" stroke-width=\"1\"/>\n";
+        << "\" y2=\"" << plot_h << "\" stroke=\"#333\" stroke-width=\"1\"/>" << std::endl;
 
     // Tick marks and labels
     write_tick_labels(out, plot_w, plot_h, *range);
@@ -155,19 +156,19 @@ void write_svg(const char* path,
     // Title
     out << "    <text x=\"" << plot_w / 2
         << "\" y=\"-10\" font-size=\"14\" font-weight=\"bold\" fill=\"#333\" text-anchor=\"middle\">"
-        << config.title << "</text>\n";
+        << config.title << "</text>" << std::endl;
 
     // X-axis label
     out << "    <text x=\"" << plot_w / 2
         << "\" y=\"" << plot_h + 40
         << "\" font-size=\"12\" fill=\"#333\" text-anchor=\"middle\">"
-        << config.x_label << "</text>\n";
+        << config.x_label << "</text>" << std::endl;
 
     // Y-axis label (rotated)
     out << "    <text x=\"-55\" y=\"" << plot_h / 2
         << "\" font-size=\"12\" fill=\"#333\" text-anchor=\"middle\""
         << " transform=\"rotate(-90,-55," << plot_h / 2 << ")\">"
-        << config.y_label << "</text>\n";
+        << config.y_label << "</text>" << std::endl;
 
     // Signal polylines
     float t_span = range->t_max - range->t_min;
@@ -198,21 +199,21 @@ void write_svg(const char* path,
             out << px << "," << py;
         }
 
-        out << "\"/>\n";
+        out << "\"/>" << std::endl;
 
         // Legend entry
         int lx = plot_w - 120;
         out << "    <line x1=\"" << lx << "\" y1=\"" << legend_y
             << "\" x2=\"" << lx + 20 << "\" y2=\"" << legend_y
-            << "\" stroke=\"" << color << "\" stroke-width=\"2\"/>\n";
+            << "\" stroke=\"" << color << "\" stroke-width=\"2\"/>" << std::endl;
         out << "    <text x=\"" << lx + 25 << "\" y=\"" << legend_y + 4
-            << "\" font-size=\"11\" fill=\"#333\">" << name << "</text>\n";
+            << "\" font-size=\"11\" fill=\"#333\">" << name << "</text>" << std::endl;
 
         legend_y += 18;
         ++color_idx;
     }
 
-    out << "  </g>\n</svg>\n";
+    out << "  </g>" << std::endl << "</svg>" << std::endl;
 }
 
 }

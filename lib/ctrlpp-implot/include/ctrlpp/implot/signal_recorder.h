@@ -1,18 +1,19 @@
 #ifndef HPP_GUARD_CTRLPP_IMPLOT_SIGNAL_RECORDER_H
 #define HPP_GUARD_CTRLPP_IMPLOT_SIGNAL_RECORDER_H
 
-#include "imgui.h"
-
 #include <cstddef>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace ctrlpp::implot {
 
+using Point2f = std::pair<float, float>;
+
 struct RingBuffer {
-    std::vector<ImVec2> data;
+    std::vector<Point2f> data;
     int size{0};
     int offset{0};
     int max_size;

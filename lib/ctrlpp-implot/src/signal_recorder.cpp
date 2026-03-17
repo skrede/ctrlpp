@@ -13,11 +13,11 @@ RingBuffer::RingBuffer(int capacity)
 void RingBuffer::push(float t, float v)
 {
     if (size < max_size) {
-        data[static_cast<std::size_t>(size)] = ImVec2(t, v);
+        data[static_cast<std::size_t>(size)] = Point2f{t, v};
         ++size;
         offset = size % max_size;
     } else {
-        data[static_cast<std::size_t>(offset)] = ImVec2(t, v);
+        data[static_cast<std::size_t>(offset)] = Point2f{t, v};
         offset = (offset + 1) % max_size;
     }
 }

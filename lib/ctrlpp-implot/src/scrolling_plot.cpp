@@ -4,6 +4,8 @@
 
 namespace ctrlpp::implot {
 
+static_assert(sizeof(ctrlpp::implot::Point2f) == 2 * sizeof(float));
+
 void scrolling_plot(const PlotConfig& config, const SignalRecorder& recorder,
                     std::initializer_list<const char*> signal_names,
                     float current_time)
@@ -18,9 +20,9 @@ void scrolling_plot(const PlotConfig& config, const SignalRecorder& recorder,
         for (const auto* name : signal_names) {
             const auto* buf = recorder.channel(name);
             if (buf && buf->size > 0) {
-                ImPlot::PlotLine(name, &buf->data[0].x, &buf->data[0].y,
+                ImPlot::PlotLine(name, &buf->data[0].first, &buf->data[0].second,
                                  buf->size, 0, buf->offset,
-                                 sizeof(ImVec2));
+                                 sizeof(Point2f));
             }
         }
 
