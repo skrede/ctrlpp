@@ -55,11 +55,11 @@ int main()
     app.run([&] {
         sim.advance(ImGui::GetIO().DeltaTime);
 
-        ImGui::Begin("Simulation");
-        sim.draw_controls();
-        ImGui::End();
-
         ImGui::Begin("PID Parameters");
+        if (ImGui::CollapsingHeader("Simulation", ImGuiTreeNodeFlags_DefaultOpen)) {
+            sim.draw_controls();
+        }
+        ImGui::Separator();
 
         auto sp_f = static_cast<float>(setpoint);
         if (ImGui::SliderFloat("Setpoint", &sp_f, -5.0f, 5.0f))

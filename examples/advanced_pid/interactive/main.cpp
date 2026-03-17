@@ -86,12 +86,12 @@ int main()
     app.run([&] {
         sim.advance(ImGui::GetIO().DeltaTime);
 
-        ImGui::Begin("Simulation");
-        sim.draw_controls();
-        ImGui::End();
-
         // Outer loop parameters
         ImGui::Begin("Outer Loop (Temperature PI)");
+        if (ImGui::CollapsingHeader("Simulation", ImGuiTreeNodeFlags_DefaultOpen)) {
+            sim.draw_controls();
+        }
+        ImGui::Separator();
 
         auto sp_f = static_cast<float>(temp_setpoint);
         if (ImGui::SliderFloat("Setpoint", &sp_f, 0.0f, 100.0f))
@@ -114,6 +114,10 @@ int main()
         auto iae = outer.metric<ctrlpp::IAE>();
         ImGui::Text("IAE: %.4f", iae[0]);
 
+        ImGui::Separator();
+        if (ImGui::Button("Export SVG"))
+            ctrlpp::implot::write_svg("advanced_pid.svg", recorder,
+                {"temp_setpoint", "temperature", "heater_sp", "heater_power", "control"});
         ImGui::End();
 
         // Inner loop parameters
@@ -143,13 +147,6 @@ int main()
             inner.set_params(inner_cfg);
         }
 
-        ImGui::End();
-
-        // SVG export
-        ImGui::Begin("Export");
-        if (ImGui::Button("Export SVG"))
-            ctrlpp::implot::write_svg("advanced_pid.svg", recorder,
-                {"temp_setpoint", "temperature", "heater_sp", "heater_power", "control"});
         ImGui::End();
 
         // Plots

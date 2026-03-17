@@ -150,13 +150,12 @@ int main()
     app.run([&] {
         sim.advance(ImGui::GetIO().DeltaTime);
 
-        // Simulation controls
-        ImGui::Begin("Simulation");
-        sim.draw_controls();
-        ImGui::End();
-
         // LQR parameters
         ImGui::Begin("LQR Parameters");
+        if (ImGui::CollapsingHeader("Simulation", ImGuiTreeNodeFlags_DefaultOpen)) {
+            sim.draw_controls();
+        }
+        ImGui::Separator();
         ImGui::SliderFloat("Q(0,0)", &q00, 0.1f, 100.0f, "%.2f",
             ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Q(1,1)", &q11, 0.1f, 100.0f, "%.2f",
@@ -172,6 +171,11 @@ int main()
             }
         }
         ImGui::Text("K = [%.4f, %.4f]", K_opt->coeff(0, 0), K_opt->coeff(0, 1));
+
+        ImGui::Separator();
+        if (ImGui::Button("Export SVG"))
+            ctrlpp::implot::write_svg("lqr_observer.svg", recorder,
+                {"x1_true", "x1_kf", "x1_luenberger", "control"});
         ImGui::End();
 
         // Kalman filter parameters
@@ -208,13 +212,6 @@ int main()
         ImGui::SliderFloat("x1_true", &x1_true_init, -5.0f, 5.0f);
         ImGui::SliderFloat("x2_true", &x2_true_init, -5.0f, 5.0f);
         ImGui::TextDisabled("(Applied on Reset)");
-        ImGui::End();
-
-        // SVG export
-        ImGui::Begin("Export");
-        if (ImGui::Button("Export SVG"))
-            ctrlpp::implot::write_svg("lqr_observer.svg", recorder,
-                {"x1_true", "x1_kf", "x1_luenberger", "control"});
         ImGui::End();
 
         // Plots

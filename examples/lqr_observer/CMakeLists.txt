@@ -1,7 +1,11 @@
-add_executable(ctrlpp_lqr_observer main.cpp)
+# Console variant -- always built when examples are enabled
+add_executable(ctrlpp_lqr_observer_console console/main.cpp)
+target_link_libraries(ctrlpp_lqr_observer_console PRIVATE ctrlpp::eigen)
+target_compile_options(ctrlpp_lqr_observer_console PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+# Interactive variant -- only when implot is available
 if (CTRLPP_BUILD_IMPLOT)
+    add_executable(ctrlpp_lqr_observer interactive/main.cpp)
     target_link_libraries(ctrlpp_lqr_observer PRIVATE ctrlpp::implot ctrlpp::eigen)
-else()
-    target_link_libraries(ctrlpp_lqr_observer PRIVATE ctrlpp::eigen)
-endif()
-target_compile_options(ctrlpp_lqr_observer PRIVATE ${CTRLPP_WARNING_FLAGS})
+    target_compile_options(ctrlpp_lqr_observer PRIVATE ${CTRLPP_WARNING_FLAGS})
+endif ()
