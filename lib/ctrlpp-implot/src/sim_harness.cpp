@@ -39,8 +39,6 @@ void SimHarness::advance(double real_dt)
 
 void SimHarness::draw_controls()
 {
-    ImGui::Begin("Simulation Controls");
-
     if (ImGui::Button(running_ ? "Pause" : "Play")) {
         running_ = !running_;
     }
@@ -61,8 +59,6 @@ void SimHarness::draw_controls()
     speed_ = static_cast<double>(speed_f);
 
     ImGui::Text("Time: %.3f s", sim_time_);
-
-    ImGui::End();
 }
 
 double SimHarness::sim_time() const
