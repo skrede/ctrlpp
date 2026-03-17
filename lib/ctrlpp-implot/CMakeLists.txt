@@ -99,17 +99,19 @@ target_link_libraries(ctrlpp_implot PUBLIC ctrlpp::ctrlpp ${_CTRLPP_IMPLOT_LINK_
 
 target_compile_options(ctrlpp_implot PRIVATE ${CTRLPP_WARNING_FLAGS})
 
-install(TARGETS ctrlpp_implot EXPORT ctrlppImplotTargets
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
+if (NOT CTRLPP_CMAKE_FETCH_DEPS)
+    install(TARGETS ctrlpp_implot EXPORT ctrlppImplotTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
 
-install(DIRECTORY include/ctrlpp/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ctrlpp
-)
+    install(DIRECTORY include/ctrlpp/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ctrlpp
+    )
 
-install(EXPORT ctrlppImplotTargets
-    FILE ctrlppImplotTargets.cmake
-    NAMESPACE ctrlpp::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ctrlpp
-)
+    install(EXPORT ctrlppImplotTargets
+        FILE ctrlppImplotTargets.cmake
+        NAMESPACE ctrlpp::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ctrlpp
+    )
+endif ()
