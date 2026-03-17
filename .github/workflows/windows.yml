@@ -36,6 +36,23 @@ jobs:
       - name: Test
         run: cd build && ctest -C Release --output-on-failure --timeout 30
 
+  implot-compile:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake . -B build -A x64 `
+            -DCTRLPP_BUILD_IMPLOT=ON `
+            -DCTRLPP_ENABLE_EIGEN_POLICY=ON `
+            -DCTRLPP_BUILD_EXAMPLES=ON `
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON `
+            '-DCMAKE_CXX_FLAGS=/std:c++latest'
+
+      - name: Build
+        run: cmake --build build --config Release
+
   install-test:
     runs-on: windows-2022
     steps:
