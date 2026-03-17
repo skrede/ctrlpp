@@ -32,7 +32,6 @@ option(CTRLPP_BUILD_IMPLOT "Build ctrlpp::implot visualization library (requires
 option(CTRLPP_BUILD_EXAMPLES "Build examples" OFF)
 option(CTRLPP_BUILD_FUZZ_TESTS "Build fuzz test targets" OFF)
 option(CTRLPP_CMAKE_FETCH_DEPS "Use CMake FetchContent to download and install dependencies" OFF)
-option(CTRLPP_ENABLE_EIGEN_POLICY "Build ctrlpp::eigen backed by Eigen" OFF)
 
 include(FetchContent)
 include(GNUInstallDirs)

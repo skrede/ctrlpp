@@ -2,15 +2,13 @@
 // Redirect: ./ctrlpp_basic_pid_console > output.csv
 
 #include "ctrlpp/pid.h"
-#include "ctrlpp/eigen_linalg.h"
 
 #include <iomanip>
 #include <iostream>
 
 int main()
 {
-    using Policy = ctrlpp::EigenLinalgPolicy;
-    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy>;
+    using Pid = ctrlpp::Pid<double, 1, 1, 1>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};

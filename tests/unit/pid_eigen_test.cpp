@@ -1,6 +1,5 @@
 #include <ctrlpp/pid.h>
 #include <ctrlpp/pid_policies.h>
-#include <ctrlpp/eigen_linalg.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -9,7 +8,6 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using Policy = ctrlpp::EigenLinalgPolicy;
 constexpr double dt = 0.01;
 constexpr double tol = 1e-10;
 
@@ -17,7 +15,7 @@ constexpr double tol = 1e-10;
 
 TEST_CASE("SISO PID with Eigen - P-only", "[pid][eigen][siso]")
 {
-    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy>;
+    using Pid = ctrlpp::Pid<double, 1, 1, 1>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -30,7 +28,7 @@ TEST_CASE("SISO PID with Eigen - P-only", "[pid][eigen][siso]")
 
 TEST_CASE("SISO PID with Eigen - PI", "[pid][eigen][siso]")
 {
-    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy>;
+    using Pid = ctrlpp::Pid<double, 1, 1, 1>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -38,18 +36,16 @@ TEST_CASE("SISO PID with Eigen - PI", "[pid][eigen][siso]")
     cfg.ki = Vec::Constant(0.5);
     Pid pid(cfg);
 
-    // Step 1: e=1.0, P=1.0, I=0.5*1.0*0.01=0.005
     auto u1 = pid.compute(Vec::Constant(1.0), Vec::Constant(0.0), dt);
     REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
 
-    // Step 2: same error, integral accumulates
     auto u2 = pid.compute(Vec::Constant(1.0), Vec::Constant(0.0), dt);
     REQUIRE_THAT(u2[0], WithinAbs(1.01, tol));
 }
 
 TEST_CASE("SISO PID with Eigen - PID", "[pid][eigen][siso]")
 {
-    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy>;
+    using Pid = ctrlpp::Pid<double, 1, 1, 1>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -59,18 +55,16 @@ TEST_CASE("SISO PID with Eigen - PID", "[pid][eigen][siso]")
     cfg.derivative_on_error = true;
     Pid pid(cfg);
 
-    // First step: D term is zero (first_step_ = true)
     auto u1 = pid.compute(Vec::Constant(1.0), Vec::Constant(0.0), dt);
     REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
 
-    // Second step: e=1.0 still, de/dt=0 -> D=0
     auto u2 = pid.compute(Vec::Constant(1.0), Vec::Constant(0.0), dt);
     REQUIRE_THAT(u2[0], WithinAbs(1.01, tol));
 }
 
 TEST_CASE("MIMO PID with Eigen - 2-channel independence", "[pid][eigen][mimo]")
 {
-    using Pid = ctrlpp::Pid<double, 2, 2, 2, Policy>;
+    using Pid = ctrlpp::Pid<double, 2, 2, 2>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -85,15 +79,13 @@ TEST_CASE("MIMO PID with Eigen - 2-channel independence", "[pid][eigen][mimo]")
 
     auto u = pid.compute(sp, meas, dt);
 
-    // Channel 0: kp=1.0 * e=1.0 = 1.0
     REQUIRE_THAT(u[0], WithinAbs(1.0, tol));
-    // Channel 1: kp=2.0 * e=2.0 = 4.0
     REQUIRE_THAT(u[1], WithinAbs(4.0, tol));
 }
 
 TEST_CASE("MIMO PID with Eigen - per-channel PI gains", "[pid][eigen][mimo]")
 {
-    using Pid = ctrlpp::Pid<double, 2, 2, 2, Policy>;
+    using Pid = ctrlpp::Pid<double, 2, 2, 2>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -107,12 +99,9 @@ TEST_CASE("MIMO PID with Eigen - per-channel PI gains", "[pid][eigen][mimo]")
 
     auto u = pid.compute(sp, meas, dt);
 
-    // Channel 0: P=1.0*1.0 + I=0.5*1.0*0.01 = 1.005
     REQUIRE_THAT(u[0], WithinAbs(1.005, tol));
-    // Channel 1: P=2.0*1.0 + I=1.0*1.0*0.01 = 2.01
     REQUIRE_THAT(u[1], WithinAbs(2.01, tol));
 
-    // Second step: integral accumulates independently
     auto u2 = pid.compute(sp, meas, dt);
     REQUIRE_THAT(u2[0], WithinAbs(1.01, tol));
     REQUIRE_THAT(u2[1], WithinAbs(2.02, tol));
@@ -121,7 +110,7 @@ TEST_CASE("MIMO PID with Eigen - per-channel PI gains", "[pid][eigen][mimo]")
 TEST_CASE("Full-featured PID with Eigen - AntiWindup + DerivFilter + PerfAssessment",
           "[pid][eigen][full]")
 {
-    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy,
+    using Pid = ctrlpp::Pid<double, 1, 1, 1,
         ctrlpp::AntiWindup<ctrlpp::BackCalc>,
         ctrlpp::DerivFilter,
         ctrlpp::PerfAssessment<ctrlpp::IAE>>;
@@ -137,7 +126,6 @@ TEST_CASE("Full-featured PID with Eigen - AntiWindup + DerivFilter + PerfAssessm
 
     Pid pid(cfg);
 
-    // Run a few steps and verify output is finite and IAE accumulates
     Vec sp = Vec::Constant(1.0);
     Vec meas = Vec::Constant(0.0);
 
@@ -154,7 +142,7 @@ TEST_CASE("Full-featured PID with Eigen - AntiWindup + DerivFilter + PerfAssessm
 
 TEST_CASE("SISO with all composable policies - compile and run", "[pid][eigen][compose]")
 {
-    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy,
+    using Pid = ctrlpp::Pid<double, 1, 1, 1,
         ctrlpp::AntiWindup<ctrlpp::BackCalc>,
         ctrlpp::DerivFilter,
         ctrlpp::SetpointFilter,
@@ -179,7 +167,6 @@ TEST_CASE("SISO with all composable policies - compile and run", "[pid][eigen][c
     Vec sp = Vec::Constant(1.0);
     Vec meas = Vec::Constant(0.0);
 
-    // Run 10 steps, verify finite output
     for (int k = 0; k < 10; ++k) {
         auto u = pid.compute(sp, meas, dt);
         REQUIRE(std::isfinite(u[0]));

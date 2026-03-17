@@ -1,6 +1,6 @@
-#include "ctrlpp/eigen_lqr.h"
-#include "ctrlpp/eigen_dare.h"
-#include "ctrlpp/eigen_linalg.h"
+#include "ctrlpp/lqr.h"
+#include "ctrlpp/dare.h"
+
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>

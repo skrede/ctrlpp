@@ -3,17 +3,15 @@
 
 #include "ctrlpp/pid.h"
 #include "ctrlpp/pid_policies.h"
-#include "ctrlpp/eigen_linalg.h"
 
 #include <iomanip>
 #include <iostream>
 
 int main()
 {
-    using Policy = ctrlpp::EigenLinalgPolicy;
     using Vec = Eigen::Matrix<double, 1, 1>;
 
-    using OuterPid = ctrlpp::Pid<double, 1, 1, 1, Policy,
+    using OuterPid = ctrlpp::Pid<double, 1, 1, 1,
         ctrlpp::AntiWindup<ctrlpp::BackCalc>,
         ctrlpp::PerfAssessment<ctrlpp::IAE>>;
 
@@ -26,7 +24,7 @@ int main()
 
     OuterPid outer(outer_cfg);
 
-    using InnerPid = ctrlpp::Pid<double, 1, 1, 1, Policy,
+    using InnerPid = ctrlpp::Pid<double, 1, 1, 1,
         ctrlpp::DerivFilter>;
 
     InnerPid::config_type inner_cfg{};

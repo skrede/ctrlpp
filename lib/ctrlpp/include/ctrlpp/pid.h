@@ -1,16 +1,9 @@
 #ifndef HPP_GUARD_CTRLPP_PID_H
 #define HPP_GUARD_CTRLPP_PID_H
 
-// Element-wise loops use std::size_t but Eigen::operator[] takes signed
-// Eigen::Index. The conversion is always safe (small non-negative values).
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-#endif
-
 #include "ctrlpp/pid_config.h"
 #include "ctrlpp/pid_policies.h"
-#include "ctrlpp/linalg_policy.h"
+#include "ctrlpp/types.h"
 
 #include <algorithm>
 #include <cmath>
@@ -20,94 +13,18 @@
 
 namespace ctrlpp {
 
-namespace detail {
-
-template<typename Scalar, std::size_t N, LinalgPolicy Policy>
-constexpr auto make_zero_vector() -> typename Policy::template vector_type<Scalar, N>
-{
-    typename Policy::template vector_type<Scalar, N> v{};
-    for (std::size_t i = 0; i < N; ++i)
-        v[i] = Scalar{0};
-    return v;
-}
-
-template<std::size_t N, typename Vec>
-constexpr auto element_subtract(const Vec& a, const Vec& b) -> Vec
-{
-    Vec r{};
-    for (std::size_t i = 0; i < N; ++i)
-        r[i] = a[i] - b[i];
-    return r;
-}
-
-template<std::size_t N, typename Vec>
-constexpr auto element_add(const Vec& a, const Vec& b) -> Vec
-{
-    Vec r{};
-    for (std::size_t i = 0; i < N; ++i)
-        r[i] = a[i] + b[i];
-    return r;
-}
-
-template<std::size_t N, typename Vec>
-constexpr auto element_multiply(const Vec& a, const Vec& b) -> Vec
-{
-    Vec r{};
-    for (std::size_t i = 0; i < N; ++i)
-        r[i] = a[i] * b[i];
-    return r;
-}
-
-template<std::size_t N, typename Vec, typename Scalar>
-constexpr auto element_scale(const Vec& v, Scalar s) -> Vec
-{
-    Vec r{};
-    for (std::size_t i = 0; i < N; ++i)
-        r[i] = v[i] * s;
-    return r;
-}
-
-template<std::size_t N, typename Vec>
-constexpr auto element_clamp(const Vec& v, const Vec& lo, const Vec& hi) -> Vec
-{
-    Vec r{};
-    for (std::size_t i = 0; i < N; ++i)
-        r[i] = std::clamp(v[i], lo[i], hi[i]);
-    return r;
-}
-
-template<std::size_t N, typename Vec, typename Scalar>
-constexpr auto element_divide(const Vec& v, Scalar s) -> Vec
-{
-    Vec r{};
-    for (std::size_t i = 0; i < N; ++i)
-        r[i] = v[i] / s;
-    return r;
-}
-
-template<std::size_t N, typename Vec>
-constexpr bool any_not_equal(const Vec& a, const Vec& b)
-{
-    for (std::size_t i = 0; i < N; ++i)
-        if (a[i] != b[i])
-            return true;
-    return false;
-}
-
-}
-
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY,
-         LinalgPolicy Policy, typename... Policies>
+         typename... Policies>
 class Pid {
 public:
-    using config_type = PidConfig<Scalar, NY, Policy, Policies...>;
-    using vector_t = typename Policy::template vector_type<Scalar, NY>;
+    using config_type = PidConfig<Scalar, NY, Policies...>;
+    using vector_t = Vector<Scalar, NY>;
 
     explicit Pid(const config_type& cfg)
         : cfg_{cfg}
     {
         if constexpr (detail::contains_v<IsaForm, Policies...>) {
-            for (std::size_t i = 0; i < NY; ++i) {
+            for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
                 if (cfg_.ki[i] != Scalar{0})
                     ki_[i] = cfg_.kp[i] / cfg_.ki[i];
                 else
@@ -125,9 +42,9 @@ public:
             using AW = detail::find_policy_t<AntiWindup, Policies...>;
             if constexpr (std::is_same_v<AW, AntiWindup<BackCalc>>) {
                 const auto& aw_cfg = cfg_.template policy<AW>();
-                for (std::size_t i = 0; i < NY; ++i) {
-                    if (aw_cfg.kb[i] != Scalar{0}) {
-                        kb_[i] = aw_cfg.kb[i];
+                for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
+                    if (aw_cfg.kb[static_cast<std::size_t>(i)] != Scalar{0}) {
+                        kb_[i] = aw_cfg.kb[static_cast<std::size_t>(i)];
                     } else {
                         if (kd_[i] != Scalar{0})
                             kb_[i] = std::sqrt(ki_[i] * kd_[i]);
@@ -148,9 +65,9 @@ public:
         auto filtered_sp = sp;
         if constexpr (detail::contains_v<SetpointFilter, Policies...>) {
             const auto& tf_sp = cfg_.template policy<SetpointFilter>().tf;
-            for (std::size_t i = 0; i < NY; ++i) {
-                if (tf_sp[i] > Scalar{0}) {
-                    auto alpha = tf_sp[i] / (tf_sp[i] + dt);
+            for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
+                if (tf_sp[static_cast<std::size_t>(i)] > Scalar{0}) {
+                    auto alpha = tf_sp[static_cast<std::size_t>(i)] / (tf_sp[static_cast<std::size_t>(i)] + dt);
                     filtered_sp_[i] = alpha * filtered_sp_[i] + (Scalar{1} - alpha) * sp[i];
                 } else {
                     filtered_sp_[i] = sp[i];
@@ -163,9 +80,9 @@ public:
         auto filtered_meas = meas;
         if constexpr (detail::contains_v<PvFilter, Policies...>) {
             const auto& tf_pv = cfg_.template policy<PvFilter>().tf;
-            for (std::size_t i = 0; i < NY; ++i) {
-                if (tf_pv[i] > Scalar{0}) {
-                    auto alpha = tf_pv[i] / (tf_pv[i] + dt);
+            for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
+                if (tf_pv[static_cast<std::size_t>(i)] > Scalar{0}) {
+                    auto alpha = tf_pv[static_cast<std::size_t>(i)] / (tf_pv[static_cast<std::size_t>(i)] + dt);
                     filtered_meas_[i] = alpha * filtered_meas_[i] + (Scalar{1} - alpha) * meas[i];
                 } else {
                     filtered_meas_[i] = meas[i];
@@ -175,7 +92,7 @@ public:
         }
 
         // Error (full, using filtered signals)
-        auto e = detail::element_subtract<NY>(filtered_sp, filtered_meas);
+        auto e = (filtered_sp - filtered_meas).eval();
 
         // Performance metric accumulation
         if constexpr (detail::has_policy_v<PerfAssessment, Policies...>) {
@@ -183,23 +100,23 @@ public:
             accumulated_time_ += dt;
 
             if constexpr (detail::perf_has_metric_v<IAE, PA>) {
-                for (std::size_t i = 0; i < NY; ++i) {
+                for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
                     Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
                     iae_[i] += abs_e * dt;
                 }
             }
             if constexpr (detail::perf_has_metric_v<ISE, PA>) {
-                for (std::size_t i = 0; i < NY; ++i)
+                for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
                     ise_[i] += e[i] * e[i] * dt;
             }
             if constexpr (detail::perf_has_metric_v<ITAE, PA>) {
-                for (std::size_t i = 0; i < NY; ++i) {
+                for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
                     Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
                     itae_[i] += accumulated_time_ * abs_e * dt;
                 }
             }
             if constexpr (detail::perf_has_metric_v<OscillationDetect, PA>) {
-                for (std::size_t i = 0; i < NY; ++i) {
+                for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
                     Scalar sign_e = (e[i] > Scalar{0}) ? Scalar{1}
                                   : (e[i] < Scalar{0}) ? Scalar{-1}
                                   : Scalar{0};
@@ -217,35 +134,28 @@ public:
         if constexpr (detail::contains_v<VelocityForm, Policies...>) {
             // Velocity (incremental) form: outputs delta_u per step
             // P contribution: Kp * (e(k) - e(k-1))
-            auto dp = detail::element_multiply<NY>(
-                kp_, detail::element_subtract<NY>(e, prev_error_));
+            auto dp = kp_.cwiseProduct(e - prev_error_).eval();
 
             // I contribution: Ki * e(k) * dt (no accumulator — naturally anti-windup)
-            auto di = detail::element_scale<NY>(
-                detail::element_multiply<NY>(ki_, e), dt);
+            auto di = (ki_.cwiseProduct(e) * dt).eval();
 
             // D contribution: Kd * (e(k) - 2*e(k-1) + e(k-2)) / dt
-            auto d_num = detail::element_add<NY>(
-                detail::element_subtract<NY>(e,
-                    detail::element_scale<NY>(prev_error_, Scalar{2})),
-                prev_prev_error_);
-            auto dd = detail::element_multiply<NY>(
-                kd_, detail::element_divide<NY>(d_num, dt));
+            auto d_num = (e - prev_error_ * Scalar{2} + prev_prev_error_).eval();
+            auto dd = kd_.cwiseProduct(d_num / dt).eval();
 
-            auto delta_u = detail::element_add<NY>(
-                detail::element_add<NY>(dp, di), dd);
+            auto delta_u = (dp + di + dd).eval();
 
             // Feed-forward (adds to delta_u)
             if constexpr (detail::has_policy_v<FeedForward, Policies...>) {
                 using ff_policy_t = detail::find_policy_t<FeedForward, Policies...>;
                 if constexpr (!std::is_same_v<ff_policy_t, FeedForward<void>>) {
                     auto ff = cfg_.template policy<ff_policy_t>().ff_func(sp, dt);
-                    delta_u = detail::element_add<NY>(delta_u, ff);
+                    delta_u = (delta_u + ff).eval();
                 }
             }
 
             // Output clamp on delta_u
-            delta_u = detail::element_clamp<NY>(delta_u, cfg_.output_min, cfg_.output_max);
+            delta_u = delta_u.cwiseMax(cfg_.output_min).cwiseMin(cfg_.output_max).eval();
 
             // Update state
             prev_prev_error_ = prev_error_;
@@ -259,56 +169,49 @@ public:
         } else {
             // Position (absolute) form
             // P term with setpoint weighting: ep = b*sp - meas
-            vector_t ep{};
-            for (std::size_t i = 0; i < NY; ++i)
+            vector_t ep;
+            for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
                 ep[i] = cfg_.b[i] * filtered_sp[i] - filtered_meas[i];
-            auto p = detail::element_multiply<NY>(kp_, ep);
+            auto p = kp_.cwiseProduct(ep).eval();
 
             // I term -- always uses full error (sp - meas)
-            auto integral_increment = detail::make_zero_vector<Scalar, NY, Policy>();
+            vector_t integral_increment = vector_t::Zero();
             if (!integral_frozen_) {
                 if constexpr (detail::contains_v<ForwardEuler, Policies...>) {
-                    auto ki_eprev = detail::element_multiply<NY>(ki_, prev_error_);
-                    integral_increment = detail::element_scale<NY>(ki_eprev, dt);
+                    integral_increment = (ki_.cwiseProduct(prev_error_) * dt).eval();
                 } else if constexpr (detail::contains_v<Tustin, Policies...>) {
-                    auto avg = detail::element_scale<NY>(
-                        detail::element_add<NY>(e, prev_error_),
-                        Scalar{0.5});
-                    auto ki_avg = detail::element_multiply<NY>(ki_, avg);
-                    integral_increment = detail::element_scale<NY>(ki_avg, dt);
+                    auto avg = ((e + prev_error_) * Scalar{0.5}).eval();
+                    integral_increment = (ki_.cwiseProduct(avg) * dt).eval();
                 } else {
-                    auto ki_e = detail::element_multiply<NY>(ki_, e);
-                    integral_increment = detail::element_scale<NY>(ki_e, dt);
+                    integral_increment = (ki_.cwiseProduct(e) * dt).eval();
                 }
-                integral_ = detail::element_add<NY>(integral_, integral_increment);
+                integral_ = (integral_ + integral_increment).eval();
             }
 
             // D term with optional setpoint weighting (c parameter) and derivative filter
-            vector_t d = detail::make_zero_vector<Scalar, NY, Policy>();
+            vector_t d = vector_t::Zero();
             if (!first_step_) {
                 if (cfg_.derivative_on_error) {
-                    vector_t ed_curr{};
-                    vector_t ed_prev{};
-                    for (std::size_t i = 0; i < NY; ++i) {
+                    vector_t ed_curr;
+                    vector_t ed_prev;
+                    for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
                         ed_curr[i] = cfg_.c[i] * filtered_sp[i] - filtered_meas[i];
                         ed_prev[i] = cfg_.c[i] * prev_sp_[i] - prev_meas_[i];
                     }
-                    auto de = detail::element_subtract<NY>(ed_curr, ed_prev);
-                    d = detail::element_multiply<NY>(kd_, detail::element_divide<NY>(de, dt));
+                    auto de = (ed_curr - ed_prev).eval();
+                    d = kd_.cwiseProduct(de / dt).eval();
                 } else {
-                    auto dm = detail::element_subtract<NY>(filtered_meas, prev_meas_);
-                    auto dm_dt = detail::element_divide<NY>(dm, dt);
-                    d = detail::element_subtract<NY>(
-                        detail::make_zero_vector<Scalar, NY, Policy>(),
-                        detail::element_multiply<NY>(kd_, dm_dt));
+                    auto dm = (filtered_meas - prev_meas_).eval();
+                    auto dm_dt = (dm / dt).eval();
+                    d = (-kd_.cwiseProduct(dm_dt)).eval();
                 }
 
                 // Derivative filter (first-order low-pass)
                 if constexpr (detail::contains_v<DerivFilter, Policies...>) {
                     const auto& df_cfg = cfg_.template policy<DerivFilter>();
-                    for (std::size_t i = 0; i < NY; ++i) {
-                        if (df_cfg.n[i] > Scalar{0} && kp_[i] != Scalar{0}) {
-                            Scalar tf = kd_[i] / (kp_[i] * df_cfg.n[i]);
+                    for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
+                        if (df_cfg.n[static_cast<std::size_t>(i)] > Scalar{0} && kp_[i] != Scalar{0}) {
+                            Scalar tf = kd_[i] / (kp_[i] * df_cfg.n[static_cast<std::size_t>(i)]);
                             Scalar alpha = tf / (tf + dt);
                             d[i] = alpha * prev_deriv_filtered_[i] + (Scalar{1} - alpha) * d[i];
                         }
@@ -322,55 +225,53 @@ public:
             }
 
             // Sum
-            auto u_raw = detail::element_add<NY>(
-                detail::element_add<NY>(p, integral_), d);
+            auto u_raw = (p + integral_ + d).eval();
 
             // Feed-forward
             if constexpr (detail::has_policy_v<FeedForward, Policies...>) {
                 using ff_policy_t = detail::find_policy_t<FeedForward, Policies...>;
                 if constexpr (!std::is_same_v<ff_policy_t, FeedForward<void>>) {
                     auto ff = cfg_.template policy<ff_policy_t>().ff_func(sp, dt);
-                    u_raw = detail::element_add<NY>(u_raw, ff);
+                    u_raw = (u_raw + ff).eval();
                 }
             }
 
             // Rate limit (if RateLimit policy present)
             if constexpr (detail::contains_v<RateLimit, Policies...>) {
                 const auto& rl_cfg = cfg_.template policy<RateLimit>();
-                auto delta = detail::element_subtract<NY>(u_raw, prev_output_);
-                vector_t max_delta{};
-                vector_t neg_max_delta{};
-                for (std::size_t i = 0; i < NY; ++i) {
-                    if (rl_cfg.rate_max[i] > Scalar{0} &&
-                        rl_cfg.rate_max[i] != std::numeric_limits<Scalar>::infinity()) {
-                        max_delta[i] = rl_cfg.rate_max[i] * dt;
+                auto delta = (u_raw - prev_output_).eval();
+                vector_t max_delta;
+                vector_t neg_max_delta;
+                for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
+                    if (rl_cfg.rate_max[static_cast<std::size_t>(i)] > Scalar{0} &&
+                        rl_cfg.rate_max[static_cast<std::size_t>(i)] != std::numeric_limits<Scalar>::infinity()) {
+                        max_delta[i] = rl_cfg.rate_max[static_cast<std::size_t>(i)] * dt;
                         neg_max_delta[i] = -max_delta[i];
                     } else {
                         max_delta[i] = std::numeric_limits<Scalar>::max();
                         neg_max_delta[i] = std::numeric_limits<Scalar>::lowest();
                     }
                 }
-                auto clamped_delta = detail::element_clamp<NY>(delta, neg_max_delta, max_delta);
-                u_raw = detail::element_add<NY>(prev_output_, clamped_delta);
+                auto clamped_delta = delta.cwiseMax(neg_max_delta).cwiseMin(max_delta).eval();
+                u_raw = (prev_output_ + clamped_delta).eval();
             }
 
             // Output clamp
-            auto u_sat = detail::element_clamp<NY>(u_raw, cfg_.output_min, cfg_.output_max);
+            auto u_sat = u_raw.cwiseMax(cfg_.output_min).cwiseMin(cfg_.output_max).eval();
 
             // Saturated flag
-            saturated_ = detail::any_not_equal<NY>(u_sat, u_raw);
+            saturated_ = (u_sat.array() != u_raw.array()).any();
 
             // Anti-windup feedback (adjusts integral for next step)
             if constexpr (detail::has_policy_v<AntiWindup, Policies...>) {
                 using AW = detail::find_policy_t<AntiWindup, Policies...>;
                 if constexpr (std::is_same_v<AW, AntiWindup<BackCalc>>) {
-                    auto sat_diff = detail::element_subtract<NY>(u_sat, u_raw);
-                    auto feedback = detail::element_multiply<NY>(kb_, sat_diff);
-                    integral_ = detail::element_add<NY>(
-                        integral_, detail::element_scale<NY>(feedback, dt));
+                    auto sat_diff = (u_sat - u_raw).eval();
+                    auto feedback = kb_.cwiseProduct(sat_diff).eval();
+                    integral_ = (integral_ + feedback * dt).eval();
                 } else if constexpr (std::is_same_v<AW, AntiWindup<Clamping>>) {
                     if (saturated_) {
-                        for (std::size_t i = 0; i < NY; ++i) {
+                        for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
                             if ((e[i] > Scalar{0} && integral_[i] > Scalar{0}) ||
                                 (e[i] < Scalar{0} && integral_[i] < Scalar{0})) {
                                 integral_[i] -= integral_increment[i];
@@ -379,9 +280,9 @@ public:
                     }
                 } else if constexpr (std::is_same_v<AW, AntiWindup<ConditionalIntegration>>) {
                     const auto& ci_cfg = cfg_.template policy<AW>();
-                    for (std::size_t i = 0; i < NY; ++i) {
+                    for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
                         Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
-                        if (abs_e > ci_cfg.error_threshold[i]) {
+                        if (abs_e > ci_cfg.error_threshold[static_cast<std::size_t>(i)]) {
                             integral_[i] -= integral_increment[i];
                         }
                     }
@@ -410,11 +311,8 @@ public:
 
         if constexpr (!detail::contains_v<VelocityForm, Policies...>) {
             // Tracking: set integral so that output matches tracking_signal
-            // u = p + integral + d + ff
-            // integral_target = tracking_signal - (u - integral)
-            // i.e. integral = tracking_signal - p - d - ff
-            auto non_integral = detail::element_subtract<NY>(u, integral_);
-            integral_ = detail::element_subtract<NY>(tracking_signal, non_integral);
+            auto non_integral = (u - integral_).eval();
+            integral_ = (tracking_signal - non_integral).eval();
         }
 
         return u;
@@ -430,7 +328,7 @@ public:
 
         // Recompute internal gains
         if constexpr (detail::contains_v<IsaForm, Policies...>) {
-            for (std::size_t i = 0; i < NY; ++i) {
+            for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
                 if (new_cfg.ki[i] != Scalar{0})
                     ki_[i] = new_cfg.kp[i] / new_cfg.ki[i];
                 else
@@ -445,7 +343,7 @@ public:
         }
 
         // Rescale integral for bumpless gain change
-        for (std::size_t i = 0; i < NY; ++i) {
+        for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
             if (ki_[i] != Scalar{0} && ki_old[i] != Scalar{0})
                 integral_[i] = integral_[i] * ki_old[i] / ki_[i];
             else if (ki_[i] == Scalar{0})
@@ -457,9 +355,9 @@ public:
             using AW = detail::find_policy_t<AntiWindup, Policies...>;
             if constexpr (std::is_same_v<AW, AntiWindup<BackCalc>>) {
                 const auto& aw_cfg = cfg_.template policy<AW>();
-                for (std::size_t i = 0; i < NY; ++i) {
-                    if (aw_cfg.kb[i] != Scalar{0}) {
-                        kb_[i] = aw_cfg.kb[i];
+                for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
+                    if (aw_cfg.kb[static_cast<std::size_t>(i)] != Scalar{0}) {
+                        kb_[i] = aw_cfg.kb[static_cast<std::size_t>(i)];
                     } else {
                         if (kd_[i] != Scalar{0})
                             kb_[i] = std::sqrt(ki_[i] * kd_[i]);
@@ -478,20 +376,20 @@ public:
 
     void reset()
     {
-        integral_ = detail::make_zero_vector<Scalar, NY, Policy>();
-        prev_error_ = detail::make_zero_vector<Scalar, NY, Policy>();
-        prev_meas_ = detail::make_zero_vector<Scalar, NY, Policy>();
-        prev_sp_ = detail::make_zero_vector<Scalar, NY, Policy>();
-        prev_output_ = detail::make_zero_vector<Scalar, NY, Policy>();
-        prev_prev_error_ = detail::make_zero_vector<Scalar, NY, Policy>();
+        integral_ = vector_t::Zero();
+        prev_error_ = vector_t::Zero();
+        prev_meas_ = vector_t::Zero();
+        prev_sp_ = vector_t::Zero();
+        prev_output_ = vector_t::Zero();
+        prev_prev_error_ = vector_t::Zero();
         if constexpr (detail::contains_v<SetpointFilter, Policies...>) {
-            filtered_sp_ = detail::make_zero_vector<Scalar, NY, Policy>();
+            filtered_sp_ = vector_t::Zero();
         }
         if constexpr (detail::contains_v<PvFilter, Policies...>) {
-            filtered_meas_ = detail::make_zero_vector<Scalar, NY, Policy>();
+            filtered_meas_ = vector_t::Zero();
         }
         if constexpr (detail::contains_v<DerivFilter, Policies...>) {
-            prev_deriv_filtered_ = detail::make_zero_vector<Scalar, NY, Policy>();
+            prev_deriv_filtered_ = vector_t::Zero();
         }
         first_step_ = true;
         integral_frozen_ = false;
@@ -532,7 +430,7 @@ public:
         if (accumulated_time_ <= Scalar{0})
             return false;
 
-        for (std::size_t i = 0; i < NY; ++i) {
+        for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i) {
             if (zero_crossings_[i] / accumulated_time_ >
                 static_cast<Scalar>(osc_threshold_))
                 return true;
@@ -545,38 +443,38 @@ public:
     {
         using PA = detail::find_policy_t<PerfAssessment, Policies...>;
         if constexpr (detail::perf_has_metric_v<IAE, PA>)
-            iae_ = detail::make_zero_vector<Scalar, NY, Policy>();
+            iae_ = vector_t::Zero();
         if constexpr (detail::perf_has_metric_v<ISE, PA>)
-            ise_ = detail::make_zero_vector<Scalar, NY, Policy>();
+            ise_ = vector_t::Zero();
         if constexpr (detail::perf_has_metric_v<ITAE, PA>)
-            itae_ = detail::make_zero_vector<Scalar, NY, Policy>();
+            itae_ = vector_t::Zero();
         if constexpr (detail::perf_has_metric_v<OscillationDetect, PA>) {
-            zero_crossings_ = detail::make_zero_vector<Scalar, NY, Policy>();
-            prev_error_sign_ = detail::make_zero_vector<Scalar, NY, Policy>();
+            zero_crossings_ = vector_t::Zero();
+            prev_error_sign_ = vector_t::Zero();
         }
         accumulated_time_ = Scalar{0};
     }
 
 private:
     config_type cfg_;
-    vector_t kp_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t ki_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t kd_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t kb_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t integral_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t prev_error_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t prev_prev_error_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t prev_meas_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t prev_sp_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t prev_output_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t filtered_sp_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t filtered_meas_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t prev_deriv_filtered_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t iae_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t ise_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t itae_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t zero_crossings_ = detail::make_zero_vector<Scalar, NY, Policy>();
-    vector_t prev_error_sign_ = detail::make_zero_vector<Scalar, NY, Policy>();
+    vector_t kp_ = vector_t::Zero();
+    vector_t ki_ = vector_t::Zero();
+    vector_t kd_ = vector_t::Zero();
+    vector_t kb_ = vector_t::Zero();
+    vector_t integral_ = vector_t::Zero();
+    vector_t prev_error_ = vector_t::Zero();
+    vector_t prev_prev_error_ = vector_t::Zero();
+    vector_t prev_meas_ = vector_t::Zero();
+    vector_t prev_sp_ = vector_t::Zero();
+    vector_t prev_output_ = vector_t::Zero();
+    vector_t filtered_sp_ = vector_t::Zero();
+    vector_t filtered_meas_ = vector_t::Zero();
+    vector_t prev_deriv_filtered_ = vector_t::Zero();
+    vector_t iae_ = vector_t::Zero();
+    vector_t ise_ = vector_t::Zero();
+    vector_t itae_ = vector_t::Zero();
+    vector_t zero_crossings_ = vector_t::Zero();
+    vector_t prev_error_sign_ = vector_t::Zero();
     Scalar accumulated_time_{0};
     Scalar osc_threshold_{5.0};
     bool first_step_{true};
@@ -585,9 +483,5 @@ private:
 };
 
 }
-
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 #endif

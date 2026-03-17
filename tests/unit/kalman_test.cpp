@@ -1,5 +1,5 @@
-#include "ctrlpp/eigen_kalman.h"
-#include "ctrlpp/eigen_linalg.h"
+#include "ctrlpp/kalman.h"
+
 #include "ctrlpp/observer_policy.h"
 #include "ctrlpp/state_space.h"
 
@@ -10,13 +10,12 @@
 
 #include <cmath>
 
-using Policy = ctrlpp::EigenLinalgPolicy;
 
 // Helper: constant velocity model
 // State: [position, velocity], input: acceleration, output: position
 static auto make_const_velocity_system()
 {
-    ctrlpp::DiscreteStateSpace<double, 2, 1, 1, Policy> sys;
+    ctrlpp::DiscreteStateSpace<double, 2, 1, 1> sys;
     double dt = 0.1;
     sys.A << 1.0, dt,
              0.0, 1.0;
@@ -175,7 +174,7 @@ TEST_CASE("kalman filter reset covariance") {
 
 TEST_CASE("kalman filter MIMO predict-update cycle") {
     // 3-state, 2-input, 2-output system
-    ctrlpp::DiscreteStateSpace<double, 3, 2, 2, Policy> sys;
+    ctrlpp::DiscreteStateSpace<double, 3, 2, 2> sys;
     sys.A << 0.9, 0.1, 0.0,
              0.0, 0.8, 0.2,
              0.0, 0.0, 0.7;

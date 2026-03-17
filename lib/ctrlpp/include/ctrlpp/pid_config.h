@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_PID_CONFIG_H
 
 #include "ctrlpp/pid_policies.h"
-#include "ctrlpp/linalg_policy.h"
+#include "ctrlpp/types.h"
 
 #include <cstddef>
 #include <limits>
@@ -80,32 +80,19 @@ using policy_configs_tuple_t =
 
 }
 
-namespace detail {
-
-template<typename Vec, typename Scalar, std::size_t N>
-constexpr auto fill_vector(Scalar val) -> Vec
-{
-    Vec v{};
-    for (std::size_t i = 0; i < N; ++i)
-        v[i] = val;
-    return v;
-}
-
-}
-
-template<typename Scalar, std::size_t NY, LinalgPolicy Policy, typename... Policies>
+template<typename Scalar, std::size_t NY, typename... Policies>
 struct PidConfig {
-    using vector_t = typename Policy::template vector_type<Scalar, NY>;
+    using vector_t = Vector<Scalar, NY>;
     using policies_tuple_t = detail::policy_configs_tuple_t<Scalar, NY, Policies...>;
 
-    vector_t kp{};
-    vector_t ki{};
-    vector_t kd{};
-    vector_t output_min = detail::fill_vector<vector_t, Scalar, NY>(std::numeric_limits<Scalar>::lowest());
-    vector_t output_max = detail::fill_vector<vector_t, Scalar, NY>(std::numeric_limits<Scalar>::max());
+    vector_t kp = vector_t::Zero();
+    vector_t ki = vector_t::Zero();
+    vector_t kd = vector_t::Zero();
+    vector_t output_min = vector_t::Constant(std::numeric_limits<Scalar>::lowest());
+    vector_t output_max = vector_t::Constant(std::numeric_limits<Scalar>::max());
     bool derivative_on_error = false;
-    vector_t b = detail::fill_vector<vector_t, Scalar, NY>(Scalar{1});
-    vector_t c = detail::fill_vector<vector_t, Scalar, NY>(Scalar{1});
+    vector_t b = vector_t::Constant(Scalar{1});
+    vector_t c = vector_t::Constant(Scalar{1});
 
     policies_tuple_t policies{};
 

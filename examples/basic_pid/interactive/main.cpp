@@ -5,14 +5,12 @@
 #include "ctrlpp/implot/static_plot.h"
 
 #include "ctrlpp/pid.h"
-#include "ctrlpp/eigen_linalg.h"
 
 #include "imgui.h"
 
 int main()
 {
-    using Policy = ctrlpp::EigenLinalgPolicy;
-    using Pid = ctrlpp::Pid<double, 1, 1, 1, Policy>;
+    using Pid = ctrlpp::Pid<double, 1, 1, 1>;
     using Vec = Pid::vector_t;
 
     // Controller config (mutable for slider binding)

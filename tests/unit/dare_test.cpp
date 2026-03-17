@@ -1,12 +1,11 @@
-#include "ctrlpp/eigen_dare.h"
-#include "ctrlpp/eigen_linalg.h"
+#include "ctrlpp/dare.h"
+
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
 
-using Policy = ctrlpp::EigenLinalgPolicy;
 
 TEST_CASE("dare scalar integrator golden ratio") {
     // A=1, B=1, Q=1, R=1 => P = (1+sqrt(5))/2 (golden ratio)

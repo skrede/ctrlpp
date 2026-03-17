@@ -34,7 +34,6 @@ jobs:
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCTRLPP_BUILD_TESTS=ON \
             -DCTRLPP_BUILD_EXAMPLES=ON \
-            -DCTRLPP_ENABLE_EIGEN_POLICY=ON \
             -DCTRLPP_CMAKE_FETCH_DEPS=ON
 
       - name: Build
@@ -52,7 +51,6 @@ jobs:
         run: |
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCTRLPP_BUILD_IMPLOT=ON \
-            -DCTRLPP_ENABLE_EIGEN_POLICY=ON \
             -DCTRLPP_BUILD_EXAMPLES=ON \
             -DCTRLPP_CMAKE_FETCH_DEPS=ON
 
@@ -68,7 +66,6 @@ jobs:
         run: |
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
-            -DCTRLPP_ENABLE_EIGEN_POLICY=ON \
             -DCTRLPP_CMAKE_FETCH_DEPS=ON
           cmake --build build
           cmake --install build
@@ -82,5 +79,4 @@ jobs:
 
       - name: Run consumer test
         run: |
-          ./build-consumer/integration_test_core
-          ./build-consumer/integration_test_eigen
+          ./build-consumer/integration_test

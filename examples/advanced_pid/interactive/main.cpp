@@ -6,17 +6,15 @@
 
 #include "ctrlpp/pid.h"
 #include "ctrlpp/pid_policies.h"
-#include "ctrlpp/eigen_linalg.h"
 
 #include "imgui.h"
 
 int main()
 {
-    using Policy = ctrlpp::EigenLinalgPolicy;
     using Vec = Eigen::Matrix<double, 1, 1>;
 
     // Outer loop: temperature PI with anti-windup and IAE
-    using OuterPid = ctrlpp::Pid<double, 1, 1, 1, Policy,
+    using OuterPid = ctrlpp::Pid<double, 1, 1, 1,
         ctrlpp::AntiWindup<ctrlpp::BackCalc>,
         ctrlpp::PerfAssessment<ctrlpp::IAE>>;
 
@@ -30,7 +28,7 @@ int main()
     OuterPid outer(outer_cfg);
 
     // Inner loop: heater power PID with derivative filter
-    using InnerPid = ctrlpp::Pid<double, 1, 1, 1, Policy,
+    using InnerPid = ctrlpp::Pid<double, 1, 1, 1,
         ctrlpp::DerivFilter>;
 
     InnerPid::config_type inner_cfg{};

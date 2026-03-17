@@ -26,7 +26,6 @@ jobs:
           cmake . -B build -A x64 `
             -DCTRLPP_BUILD_TESTS=ON `
             -DCTRLPP_BUILD_EXAMPLES=ON `
-            -DCTRLPP_ENABLE_EIGEN_POLICY=ON `
             -DCTRLPP_CMAKE_FETCH_DEPS=ON `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
 
@@ -45,7 +44,6 @@ jobs:
         run: |
           cmake . -B build -A x64 `
             -DCTRLPP_BUILD_IMPLOT=ON `
-            -DCTRLPP_ENABLE_EIGEN_POLICY=ON `
             -DCTRLPP_BUILD_EXAMPLES=ON `
             -DCTRLPP_CMAKE_FETCH_DEPS=ON `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
@@ -62,7 +60,6 @@ jobs:
         run: |
           cmake . -B build -A x64 `
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/install" `
-            -DCTRLPP_ENABLE_EIGEN_POLICY=ON `
             -DCTRLPP_CMAKE_FETCH_DEPS=ON `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
 
@@ -80,5 +77,4 @@ jobs:
 
       - name: Run consumer test
         run: |
-          build-consumer/Release/integration_test_core.exe
-          build-consumer/Release/integration_test_eigen.exe
+          build-consumer/Release/integration_test.exe

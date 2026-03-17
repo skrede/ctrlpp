@@ -1,7 +1,7 @@
-#ifndef HPP_GUARD_CTRLPP_EIGEN_PLACE_H
-#define HPP_GUARD_CTRLPP_EIGEN_PLACE_H
+#ifndef HPP_GUARD_CTRLPP_PLACE_H
+#define HPP_GUARD_CTRLPP_PLACE_H
 
-#include "ctrlpp/eigen_linalg.h"
+#include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
 
@@ -123,7 +123,6 @@ auto place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
         // alpha(A) = A^n + alpha_{n-1} A^{n-1} + ... + alpha_1 A + alpha_0 I
         Eigen::Matrix<Scalar, n, n> alphaA = Eigen::Matrix<Scalar, n, n>::Identity();
         // Horner: start from highest power
-        // p(A) = ((... (I * A + alpha_{n-1} I) * A + alpha_{n-2} I) ... ) * A + alpha_0 I
         for (int k = n - 1; k >= 0; --k)
             alphaA = (alphaA * A + alpha[static_cast<std::size_t>(k)] *
                       Eigen::Matrix<Scalar, n, n>::Identity()).eval();

@@ -2,7 +2,6 @@
 // Redirect: ./ctrlpp_lqr_observer_console > output.csv
 
 #include "ctrlpp/ctrlpp.h"
-#include "ctrlpp/ctrlpp_eigen.h"
 
 #include <iomanip>
 #include <iostream>
@@ -21,7 +20,7 @@ int main()
     using MatC = Eigen::Matrix<Scalar, 1, 2>;
     using MatB = Eigen::Matrix<Scalar, 2, 1>;
     using MatD = Eigen::Matrix<Scalar, 1, 1>;
-    using System = ctrlpp::DiscreteStateSpace<Scalar, NX, NU, NY, ctrlpp::EigenLinalgPolicy>;
+    using System = ctrlpp::DiscreteStateSpace<Scalar, NX, NU, NY>;
 
     Mat2 A;
     A << 1.0, dt,

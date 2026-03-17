@@ -1,10 +1,9 @@
-#ifndef HPP_GUARD_CTRLPP_EIGEN_LUENBERGER_H
-#define HPP_GUARD_CTRLPP_EIGEN_LUENBERGER_H
+#ifndef HPP_GUARD_CTRLPP_LUENBERGER_H
+#define HPP_GUARD_CTRLPP_LUENBERGER_H
 
-#include "ctrlpp/eigen_linalg.h"
-
-#include <ctrlpp/state_space.h>
-#include <ctrlpp/observer_policy.h>
+#include "ctrlpp/types.h"
+#include "ctrlpp/state_space.h"
+#include "ctrlpp/observer_policy.h"
 
 #include <cstddef>
 #include <utility>
@@ -23,7 +22,7 @@ public:
     using input_vector_t = Eigen::Matrix<Scalar, nu, 1>;
     using output_vector_t = Eigen::Matrix<Scalar, ny, 1>;
     using gain_matrix_t = Eigen::Matrix<Scalar, nx, ny>;
-    using system_t = DiscreteStateSpace<Scalar, NX, NU, NY, EigenLinalgPolicy>;
+    using system_t = DiscreteStateSpace<Scalar, NX, NU, NY>;
 
     LuenbergerObserver(system_t sys, gain_matrix_t L, state_vector_t x0)
         : sys_{std::move(sys)}

@@ -5,7 +5,6 @@
 #include "ctrlpp/implot/static_plot.h"
 
 #include "ctrlpp/ctrlpp.h"
-#include "ctrlpp/ctrlpp_eigen.h"
 
 #include "imgui.h"
 
@@ -29,7 +28,7 @@ int main()
     using MatB = Eigen::Matrix<Scalar, 2, 1>;
     using MatD = Eigen::Matrix<Scalar, 1, 1>;
     using MatL = Eigen::Matrix<Scalar, 2, 1>;
-    using System = ctrlpp::DiscreteStateSpace<Scalar, NX, NU, NY, ctrlpp::EigenLinalgPolicy>;
+    using System = ctrlpp::DiscreteStateSpace<Scalar, NX, NU, NY>;
 
     // Double integrator
     Mat2 A;
