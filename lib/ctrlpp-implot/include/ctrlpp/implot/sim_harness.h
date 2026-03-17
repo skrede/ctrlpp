@@ -8,7 +8,7 @@ namespace ctrlpp::implot {
 
 class SimHarness {
 public:
-    SimHarness(double dt, std::function<void(double)> step_fn,
+    SimHarness(double dt, std::function<void(double, double)> step_fn,
                std::function<void()> reset_fn);
 
     void advance(double real_dt);
@@ -16,10 +16,9 @@ public:
 
     [[nodiscard]] double sim_time() const;
     [[nodiscard]] bool running() const;
-    void set_speed(double speed);
 
 private:
-    std::function<void(double)> step_fn_;
+    std::function<void(double, double)> step_fn_;
     std::function<void()> reset_fn_;
     double dt_;
     double sim_time_{0.0};

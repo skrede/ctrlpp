@@ -115,11 +115,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Eigen
+        run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
+
       - name: Build and install
         run: |
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
-            -DCTRLPP_CMAKE_FETCH_DEPS=ON
+            -DCTRLPP_CMAKE_FETCH_DEPS=OFF
           cmake --build build
           cmake --install build
 

@@ -2,11 +2,9 @@
 
 #include "imgui.h"
 
-#include <algorithm>
-
 namespace ctrlpp::implot {
 
-SimHarness::SimHarness(double dt, std::function<void(double)> step_fn,
+SimHarness::SimHarness(double dt, std::function<void(double, double)> step_fn,
                        std::function<void()> reset_fn)
     : step_fn_{std::move(step_fn)}
     , reset_fn_{std::move(reset_fn)}
@@ -31,7 +29,7 @@ void SimHarness::advance(double real_dt)
         std::min(accumulator_, static_cast<double>(kMaxStepsPerFrame) * dt_);
 
     while (accumulator_ >= dt_) {
-        step_fn_(dt_);
+        step_fn_(sim_time_, dt_);
         sim_time_ += dt_;
         accumulator_ -= dt_;
     }
@@ -69,11 +67,6 @@ double SimHarness::sim_time() const
 bool SimHarness::running() const
 {
     return running_;
-}
-
-void SimHarness::set_speed(double speed)
-{
-    speed_ = speed;
 }
 
 }

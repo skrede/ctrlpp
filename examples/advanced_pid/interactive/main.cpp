@@ -50,7 +50,7 @@ int main()
     ctrlpp::implot::SignalRecorder recorder(6000);
 
     ctrlpp::implot::SimHarness sim(dt,
-        [&](double t) {
+        [&](double t, double /*dt*/) {
             Vec sp_outer = Vec::Constant(temp_setpoint);
             Vec meas_outer = Vec::Constant(temperature);
             Vec inner_output = Vec::Constant(heater_power);

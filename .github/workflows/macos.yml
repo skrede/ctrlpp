@@ -62,11 +62,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Eigen
+        run: brew install eigen
+
       - name: Build and install
         run: |
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
-            -DCTRLPP_CMAKE_FETCH_DEPS=ON
+            -DCTRLPP_CMAKE_FETCH_DEPS=OFF
           cmake --build build
           cmake --install build
 

@@ -32,7 +32,7 @@ int main()
     ctrlpp::implot::SignalRecorder recorder(4000);
 
     ctrlpp::implot::SimHarness sim(dt,
-        [&](double t) {
+        [&](double t, double /*dt*/) {
             Vec sp = Vec::Constant(setpoint);
             Vec meas = Vec::Constant(y);
             auto u = pid.compute(sp, meas, dt);

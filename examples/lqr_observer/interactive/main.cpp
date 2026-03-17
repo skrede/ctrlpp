@@ -108,7 +108,7 @@ int main()
     ctrlpp::implot::SignalRecorder recorder(4000);
 
     ctrlpp::implot::SimHarness sim(dt,
-        [&](double t) {
+        [&](double t, double /*dt*/) {
             kf.predict(u_ctrl);
             luenberger.predict(u_ctrl);
 

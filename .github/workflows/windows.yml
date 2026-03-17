@@ -56,11 +56,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Eigen
+        run: vcpkg install eigen3:x64-windows
+
       - name: Configure
         run: |
           cmake . -B build -A x64 `
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/install" `
-            -DCTRLPP_CMAKE_FETCH_DEPS=ON `
+            -DCTRLPP_CMAKE_FETCH_DEPS=OFF `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
 
       - name: Build and install
@@ -72,6 +76,7 @@ jobs:
         run: |
           cmake tests/integration/consumer -B build-consumer -A x64 `
             -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
           cmake --build build-consumer --config Release
 
