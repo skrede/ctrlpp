@@ -14,7 +14,10 @@ if (CTRLPP_CMAKE_FETCH_DEPS)
         "${eigen3_SOURCE_DIR}"
     )
 else ()
-    find_package(Eigen3 3.4 CONFIG REQUIRED)
+    find_package(Eigen3 CONFIG REQUIRED)
+    if (Eigen3_VERSION VERSION_LESS "3.4")
+        message(FATAL_ERROR "ctrlpp requires Eigen >= 3.4, found ${Eigen3_VERSION}")
+    endif ()
 
     get_target_property(_eigen_aliased Eigen3::Eigen ALIASED_TARGET)
     if (_eigen_aliased)
