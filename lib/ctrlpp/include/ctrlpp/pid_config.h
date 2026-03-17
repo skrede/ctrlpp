@@ -53,6 +53,13 @@ template<typename P, typename Scalar, std::size_t N>
 inline constexpr bool has_any_config_v =
     has_template_config<P, Scalar, N>::value || has_plain_config<P>::value;
 
+// Check if a type appears in a tuple
+template<typename T, typename Tuple>
+inline constexpr bool tuple_has_v = false;
+
+template<typename T, typename... Ts>
+inline constexpr bool tuple_has_v<T, std::tuple<Ts...>> = (std::is_same_v<T, Ts> || ...);
+
 // Build a tuple of config types from policies, filtering out those without config
 template<typename Scalar, std::size_t N, typename EnabledList, typename... Policies>
 struct policy_configs_builder;
@@ -97,14 +104,16 @@ struct PidConfig {
     policies_tuple_t policies{};
 
     template<typename P>
-        requires detail::has_any_config_v<P, Scalar, NY>
+        requires (detail::has_any_config_v<P, Scalar, NY> &&
+                  detail::tuple_has_v<typename detail::policy_config_type<P, Scalar, NY>::type, policies_tuple_t>)
     constexpr auto& policy() {
         using cfg_t = typename detail::policy_config_type<P, Scalar, NY>::type;
         return std::get<cfg_t>(policies);
     }
 
     template<typename P>
-        requires detail::has_any_config_v<P, Scalar, NY>
+        requires (detail::has_any_config_v<P, Scalar, NY> &&
+                  detail::tuple_has_v<typename detail::policy_config_type<P, Scalar, NY>::type, policies_tuple_t>)
     constexpr const auto& policy() const {
         using cfg_t = typename detail::policy_config_type<P, Scalar, NY>::type;
         return std::get<cfg_t>(policies);
