@@ -4,6 +4,7 @@ if (CTRLPP_CMAKE_FETCH_DEPS)
         GIT_REPOSITORY https://github.com/ocornut/imgui.git
         GIT_TAG        v1.92.6
         GIT_SHALLOW    TRUE
+        EXCLUDE_FROM_ALL
     )
     FetchContent_MakeAvailable(imgui)
 
@@ -12,6 +13,7 @@ if (CTRLPP_CMAKE_FETCH_DEPS)
         GIT_REPOSITORY https://github.com/epezent/implot.git
         GIT_TAG        v0.17
         GIT_SHALLOW    TRUE
+        EXCLUDE_FROM_ALL
     )
     FetchContent_MakeAvailable(implot)
 
@@ -20,6 +22,7 @@ if (CTRLPP_CMAKE_FETCH_DEPS)
         GIT_REPOSITORY https://github.com/glfw/glfw.git
         GIT_TAG        3.4
         GIT_SHALLOW    TRUE
+        EXCLUDE_FROM_ALL
     )
     set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)

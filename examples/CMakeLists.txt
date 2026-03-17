@@ -1,6 +1,3 @@
-# ctrlpp examples
-# Add example subdirectories here as they are created.
-
 if (CTRLPP_ENABLE_EIGEN_POLICY)
     add_subdirectory(basic_pid)
     add_subdirectory(advanced_pid)

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.28)
 project(ctrlpp VERSION 0.1.0)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -28,11 +28,11 @@ set(CTRLPP_WARNING_FLAGS
 )
 
 option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)
+option(CTRLPP_BUILD_IMPLOT "Build ctrlpp::implot visualization library (requires OpenGL)" OFF)
 option(CTRLPP_BUILD_EXAMPLES "Build examples" OFF)
 option(CTRLPP_BUILD_FUZZ_TESTS "Build fuzz test targets" OFF)
 option(CTRLPP_CMAKE_FETCH_DEPS "Use CMake FetchContent to download and install dependencies" OFF)
 option(CTRLPP_ENABLE_EIGEN_POLICY "Build ctrlpp::eigen backed by Eigen" OFF)
-option(CTRLPP_BUILD_IMPLOT "Build ctrlpp::implot visualization library (requires OpenGL)" OFF)
 
 include(FetchContent)
 include(GNUInstallDirs)

@@ -4,6 +4,7 @@ if (CTRLPP_CMAKE_FETCH_DEPS)
         GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
         GIT_TAG 3.4.0
         GIT_SHALLOW TRUE
+        EXCLUDE_FROM_ALL
     )
     set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
     set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
