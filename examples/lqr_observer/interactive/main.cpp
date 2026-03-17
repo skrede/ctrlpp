@@ -28,7 +28,6 @@ int main()
     using MatC = Eigen::Matrix<Scalar, 1, 2>;
     using MatB = Eigen::Matrix<Scalar, 2, 1>;
     using MatD = Eigen::Matrix<Scalar, 1, 1>;
-    using MatK = Eigen::Matrix<Scalar, 1, 2>;
     using MatL = Eigen::Matrix<Scalar, 2, 1>;
     using System = ctrlpp::DiscreteStateSpace<Scalar, NX, NU, NY, ctrlpp::EigenLinalgPolicy>;
 

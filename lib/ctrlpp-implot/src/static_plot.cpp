@@ -41,7 +41,8 @@ auto read_chronological(const RingBuffer& buf) -> std::vector<ChronoPoint>
     pts.reserve(static_cast<std::size_t>(buf.size));
     for (int i = 0; i < buf.size; ++i) {
         int idx = (buf.offset - buf.size + i + buf.max_size) % buf.max_size;
-        pts.push_back({buf.data[idx].first, buf.data[idx].second});
+        auto uidx = static_cast<std::size_t>(idx);
+        pts.push_back({buf.data[uidx].first, buf.data[uidx].second});
     }
     return pts;
 }
@@ -61,8 +62,9 @@ auto compute_range(const SignalRecorder& recorder,
         has_data = true;
         for (int i = 0; i < buf->size; ++i) {
             int idx = (buf->offset - buf->size + i + buf->max_size) % buf->max_size;
-            float t = buf->data[idx].first;
-            float v = buf->data[idx].second;
+            auto uidx = static_cast<std::size_t>(idx);
+            float t = buf->data[uidx].first;
+            float v = buf->data[uidx].second;
             t_min = std::min(t_min, t);
             t_max = std::max(t_max, t);
             y_min = std::min(y_min, v);

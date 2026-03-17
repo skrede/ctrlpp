@@ -32,6 +32,7 @@ App::App(int width, int height, const char* title)
 #else
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 #endif
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
 
     window_ = glfwCreateWindow(width, height, title, nullptr, nullptr);
     if (!window_) {
@@ -44,6 +45,12 @@ App::App(int width, int height, const char* title)
 
     ImGui::CreateContext();
     ImPlot::CreateContext();
+
+    float x_scale = 1.0f;
+    float y_scale = 1.0f;
+    glfwGetWindowContentScale(window_, &x_scale, &y_scale);
+    ImGui::GetIO().FontGlobalScale = x_scale;
+
     ImGui_ImplGlfw_InitForOpenGL(window_, true);
     ImGui_ImplOpenGL3_Init(kGlslVersion);
 }

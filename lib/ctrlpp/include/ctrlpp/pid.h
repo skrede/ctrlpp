@@ -1,6 +1,13 @@
 #ifndef HPP_GUARD_CTRLPP_PID_H
 #define HPP_GUARD_CTRLPP_PID_H
 
+// Element-wise loops use std::size_t but Eigen::operator[] takes signed
+// Eigen::Index. The conversion is always safe (small non-negative values).
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
+
 #include "ctrlpp/pid_config.h"
 #include "ctrlpp/pid_policies.h"
 #include "ctrlpp/linalg_policy.h"
@@ -578,5 +585,9 @@ private:
 };
 
 }
+
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 #endif

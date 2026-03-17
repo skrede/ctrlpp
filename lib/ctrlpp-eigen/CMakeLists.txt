@@ -5,25 +5,28 @@ if (CTRLPP_CMAKE_FETCH_DEPS)
         GIT_TAG 3.4.0
         GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL
+        SOURCE_SUBDIR this-directory-does-not-exist
     )
-    set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-    set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
-    set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(Eigen3)
+    add_library(eigen_headers INTERFACE)
+    add_library(Eigen3::Eigen ALIAS eigen_headers)
+    target_include_directories(eigen_headers SYSTEM INTERFACE
+        "${eigen3_SOURCE_DIR}"
+    )
 else ()
     find_package(Eigen3 3.4 CONFIG REQUIRED)
-endif ()
 
-get_target_property(_eigen_aliased Eigen3::Eigen ALIASED_TARGET)
-if (_eigen_aliased)
-    set(_eigen_target ${_eigen_aliased})
-else ()
-    set(_eigen_target Eigen3::Eigen)
+    get_target_property(_eigen_aliased Eigen3::Eigen ALIASED_TARGET)
+    if (_eigen_aliased)
+        set(_eigen_target ${_eigen_aliased})
+    else ()
+        set(_eigen_target Eigen3::Eigen)
+    endif ()
+    get_target_property(_eigen_inc ${_eigen_target} INTERFACE_INCLUDE_DIRECTORIES)
+    set_target_properties(${_eigen_target} PROPERTIES
+        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_eigen_inc}"
+    )
 endif ()
-get_target_property(_eigen_inc ${_eigen_target} INTERFACE_INCLUDE_DIRECTORIES)
-set_target_properties(${_eigen_target} PROPERTIES
-    INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_eigen_inc}"
-)
 
 set(INCLUDE_DIRECTORY include)
 
@@ -42,8 +45,10 @@ target_link_libraries(ctrlpp_eigen
     Eigen3::Eigen
 )
 
-install(TARGETS ctrlpp_eigen EXPORT ctrlppTargets)
+if (NOT CTRLPP_CMAKE_FETCH_DEPS)
+    install(TARGETS ctrlpp_eigen EXPORT ctrlppTargets)
 
-install(DIRECTORY ${INCLUDE_DIRECTORY}/ctrlpp/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ctrlpp
-)
+    install(DIRECTORY ${INCLUDE_DIRECTORY}/ctrlpp/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ctrlpp
+    )
+endif ()
