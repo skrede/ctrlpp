@@ -47,6 +47,32 @@ target_link_libraries(ctrlpp
     Eigen3::Eigen
 )
 
+# --- OSQP solver backend (optional) ---
+if (CTRLPP_BUILD_OSQP)
+    FetchContent_Declare(
+        osqp
+        GIT_REPOSITORY https://github.com/osqp/osqp.git
+        GIT_TAG v1.0.0
+        EXCLUDE_FROM_ALL
+    )
+    set(OSQP_BUILD_DEMO OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(osqp)
+
+    add_library(ctrlpp_osqp INTERFACE)
+    add_library(ctrlpp::osqp ALIAS ctrlpp_osqp)
+
+    target_link_libraries(ctrlpp_osqp
+        INTERFACE
+        ctrlpp::ctrlpp
+        osqpstatic
+    )
+
+    target_compile_definitions(ctrlpp_osqp
+        INTERFACE
+        CTRLPP_HAS_OSQP=1
+    )
+endif ()
+
 if (NOT CTRLPP_CMAKE_FETCH_DEPS)
     install(TARGETS ctrlpp
         EXPORT ctrlppTargets

@@ -1,7 +1,8 @@
 // Usage: ./ctrlpp_lqr_observer_console | gnuplot -p -e "plot '-' using 1:3 with lines"
 // Redirect: ./ctrlpp_lqr_observer_console > output.csv
 
-#include "ctrlpp/ctrlpp.h"
+#include "ctrlpp/lqr.h"
+#include "ctrlpp/kalman.h"
 
 #include <iomanip>
 #include <iostream>

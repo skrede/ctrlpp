@@ -4,7 +4,10 @@
 #include "ctrlpp/implot/scrolling_plot.h"
 #include "ctrlpp/implot/static_plot.h"
 
-#include "ctrlpp/ctrlpp.h"
+#include "ctrlpp/lqr.h"
+#include "ctrlpp/place.h"
+#include "ctrlpp/kalman.h"
+#include "ctrlpp/luenberger.h"
 
 #include "imgui.h"
 

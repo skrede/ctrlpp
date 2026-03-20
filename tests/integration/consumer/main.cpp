@@ -1,4 +1,5 @@
-#include <ctrlpp/ctrlpp.h>
+#include <ctrlpp/propagate.h>
+#include <ctrlpp/state_space.h>
 
 #include <iostream>
 

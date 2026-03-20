@@ -31,6 +31,8 @@ option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)
 option(CTRLPP_BUILD_IMPLOT "Build ctrlpp::implot visualization library (requires OpenGL)" OFF)
 option(CTRLPP_BUILD_EXAMPLES "Build examples" OFF)
 option(CTRLPP_BUILD_FUZZ_TESTS "Build fuzz test targets" OFF)
+option(CTRLPP_BUILD_OSQP "Build OSQP solver backend for MPC" OFF)
+option(CTRLPP_BUILD_NLOPT "Build NLopt solver backend for NMPC" OFF)
 option(CTRLPP_CMAKE_FETCH_DEPS "Use CMake FetchContent to download and install dependencies" OFF)
 
 include(FetchContent)
