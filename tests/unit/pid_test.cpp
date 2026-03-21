@@ -1,5 +1,4 @@
 #include "ctrlpp/pid.h"
-#include "ctrlpp/ctrlpp.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -10,7 +9,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using SisoPid = ctrlpp::Pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 constexpr double dt = 0.01;
@@ -54,7 +53,7 @@ TEST_CASE("PI backward Euler accumulation", "[pid][siso][backward-euler]")
 
 TEST_CASE("PI forward Euler uses previous error", "[pid][siso][forward-euler]")
 {
-    using FEPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::ForwardEuler>;
+    using FEPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::forward_euler>;
     FEPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
@@ -72,9 +71,9 @@ TEST_CASE("PI forward Euler uses previous error", "[pid][siso][forward-euler]")
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.005, tol));
 }
 
-TEST_CASE("PI Tustin uses trapezoidal average", "[pid][siso][tustin]")
+TEST_CASE("PI tustin uses trapezoidal average", "[pid][siso][tustin]")
 {
-    using TPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::Tustin>;
+    using TPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::tustin>;
     TPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
@@ -154,7 +153,7 @@ TEST_CASE("ISA form converts to parallel form", "[pid][siso][isa]")
 {
     // ISA form: Kp=2, Ti=4, Td=0.05
     // Parallel: Kp=2, Ki=2/4=0.5, Kd=2*0.05=0.1
-    using IsaPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::IsaForm>;
+    using IsaPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::isa_form>;
     IsaPid::config_type isa_cfg{};
     isa_cfg.kp = vec1(2.0);
     isa_cfg.ki = vec1(4.0);  // This is Ti for ISA form
@@ -179,7 +178,7 @@ TEST_CASE("ISA form converts to parallel form", "[pid][siso][isa]")
 
 TEST_CASE("MIMO NY=2 independent channels", "[pid][mimo]")
 {
-    using MimoPid = ctrlpp::Pid<double, 1, 2, 2>;
+    using MimoPid = ctrlpp::pid<double, 1, 2, 2>;
     using Vec2 = ctrlpp::Vector<double, 2>;
 
     auto vec2 = [](double a, double b) { Vec2 v; v << a, b; return v; };
@@ -284,10 +283,10 @@ TEST_CASE("Output clamping", "[pid][siso]")
     REQUIRE_THAT(u2[0], WithinAbs(-5.0, tol));
 }
 
-TEST_CASE("Bare Pid with zero policies compiles", "[pid][siso][compile]")
+TEST_CASE("Bare pid with zero policies compiles", "[pid][siso][compile]")
 {
     // This test verifies the zero-overhead case compiles
-    using BarePid = ctrlpp::Pid<double, 1, 1, 1>;
+    using BarePid = ctrlpp::pid<double, 1, 1, 1>;
     BarePid::config_type cfg{};
     cfg.kp = vec1(1.0);
     BarePid pid(cfg);
@@ -309,12 +308,12 @@ TEST_CASE("error() returns last error", "[pid][siso]")
 // Plan 03: Input filtering, feed-forward
 // =============================================================================
 
-TEST_CASE("SetpointFilter smooths step setpoint", "[pid][siso][setpoint-filter]")
+TEST_CASE("setpoint_filter smooths step setpoint", "[pid][siso][setpoint-filter]")
 {
-    using SpfPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::SetpointFilter>;
+    using SpfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::setpoint_filter>;
     SpfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    cfg.template policy<ctrlpp::SetpointFilter>().tf = {0.1};
+    cfg.template policy<ctrlpp::setpoint_filter>().tf = {0.1};
     SpfPid pid(cfg);
 
     // alpha = 0.1 / (0.1 + 0.01) = 10/11 ~ 0.9091
@@ -336,12 +335,12 @@ TEST_CASE("SetpointFilter smooths step setpoint", "[pid][siso][setpoint-filter]"
     REQUIRE(fsp < 1.0);
 }
 
-TEST_CASE("PvFilter smooths step measurement", "[pid][siso][pv-filter]")
+TEST_CASE("pv_filter smooths step measurement", "[pid][siso][pv-filter]")
 {
-    using PvfPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::PvFilter>;
+    using PvfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::pv_filter>;
     PvfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    cfg.template policy<ctrlpp::PvFilter>().tf = {0.05};
+    cfg.template policy<ctrlpp::pv_filter>().tf = {0.05};
     PvfPid pid(cfg);
 
     double alpha = 0.05 / (0.05 + dt);
@@ -362,12 +361,12 @@ TEST_CASE("PvFilter smooths step measurement", "[pid][siso][pv-filter]")
     REQUIRE(fm < 1.0);
 }
 
-TEST_CASE("FeedForward adds callable output to control signal", "[pid][siso][feed-forward]")
+TEST_CASE("feed_forward adds callable output to control signal", "[pid][siso][feed-forward]")
 {
     // Feed-forward: ff(sp, dt) = sp (identity)
     auto ff_func = [](const Vec1& sp, double) -> Vec1 { return sp; };
-    using FF = ctrlpp::FeedForward<decltype(ff_func)>;
-    using FfPid = ctrlpp::Pid<double, 1, 1, 1, FF>;
+    using FF = ctrlpp::feed_forward<decltype(ff_func)>;
+    using FfPid = ctrlpp::pid<double, 1, 1, 1, FF>;
 
     FfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -379,14 +378,14 @@ TEST_CASE("FeedForward adds callable output to control signal", "[pid][siso][fee
     REQUIRE_THAT(u[0], WithinAbs(2.0, tol));
 }
 
-TEST_CASE("SetpointFilter + PvFilter combined", "[pid][siso][filter-combo]")
+TEST_CASE("setpoint_filter + pv_filter combined", "[pid][siso][filter-combo]")
 {
-    using ComboPid = ctrlpp::Pid<double, 1, 1, 1,
-        ctrlpp::SetpointFilter, ctrlpp::PvFilter>;
+    using ComboPid = ctrlpp::pid<double, 1, 1, 1,
+        ctrlpp::setpoint_filter, ctrlpp::pv_filter>;
     ComboPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    cfg.template policy<ctrlpp::SetpointFilter>().tf = {0.1};
-    cfg.template policy<ctrlpp::PvFilter>().tf = {0.05};
+    cfg.template policy<ctrlpp::setpoint_filter>().tf = {0.1};
+    cfg.template policy<ctrlpp::pv_filter>().tf = {0.05};
     ComboPid pid(cfg);
 
     double alpha_sp = 0.1 / (0.1 + dt);
@@ -413,12 +412,12 @@ TEST_CASE("No filter policies: output unchanged from baseline", "[pid][siso][no-
     REQUIRE_THAT(u[0], WithinAbs(2.005, tol));
 }
 
-TEST_CASE("SetpointFilter reset clears filter state", "[pid][siso][setpoint-filter][reset]")
+TEST_CASE("setpoint_filter reset clears filter state", "[pid][siso][setpoint-filter][reset]")
 {
-    using SpfPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::SetpointFilter>;
+    using SpfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::setpoint_filter>;
     SpfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    cfg.template policy<ctrlpp::SetpointFilter>().tf = {0.1};
+    cfg.template policy<ctrlpp::setpoint_filter>().tf = {0.1};
     SpfPid pid(cfg);
 
     double alpha = 0.1 / (0.1 + dt);
@@ -457,7 +456,7 @@ TEST_CASE("saturated() returns true when output is clamped", "[pid][siso][satura
     REQUIRE(pid.saturated() == false);
 }
 
-TEST_CASE("Without AntiWindup: integral winds up unboundedly", "[pid][siso][windup]")
+TEST_CASE("Without anti_windup: integral winds up unboundedly", "[pid][siso][windup]")
 {
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -474,11 +473,11 @@ TEST_CASE("Without AntiWindup: integral winds up unboundedly", "[pid][siso][wind
     REQUIRE_THAT(pid.integral()[0], WithinAbs(100.0, 1e-6));
 }
 
-TEST_CASE("BackCalc anti-windup limits integral growth during saturation",
+TEST_CASE("back_calc anti-windup limits integral growth during saturation",
     "[pid][siso][anti-windup][backcalc]")
 {
-    using AW = ctrlpp::AntiWindup<ctrlpp::BackCalc>;
-    using AwPid = ctrlpp::Pid<double, 1, 1, 1, AW>;
+    using AW = ctrlpp::anti_windup<ctrlpp::back_calc>;
+    using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
 
     AwPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -496,12 +495,12 @@ TEST_CASE("BackCalc anti-windup limits integral growth during saturation",
     REQUIRE(pid.integral()[0] < 50.0);
 }
 
-TEST_CASE("BackCalc default Kb auto-computation", "[pid][siso][anti-windup][backcalc][auto-kb]")
+TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][backcalc][auto-kb]")
 {
-    using AW = ctrlpp::AntiWindup<ctrlpp::BackCalc>;
+    using AW = ctrlpp::anti_windup<ctrlpp::back_calc>;
 
     SECTION("Kb = sqrt(Ki*Kd) when Kd != 0") {
-        using AwPid = ctrlpp::Pid<double, 1, 1, 1, AW>;
+        using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
         AwPid::config_type cfg{};
         cfg.kp = vec1(2.0);
         cfg.ki = vec1(4.0);
@@ -519,7 +518,7 @@ TEST_CASE("BackCalc default Kb auto-computation", "[pid][siso][anti-windup][back
     }
 
     SECTION("Kb = Ki when Kd == 0") {
-        using AwPid = ctrlpp::Pid<double, 1, 1, 1, AW>;
+        using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
         AwPid::config_type cfg{};
         cfg.kp = vec1(1.0);
         cfg.ki = vec1(2.0);
@@ -534,11 +533,11 @@ TEST_CASE("BackCalc default Kb auto-computation", "[pid][siso][anti-windup][back
     }
 }
 
-TEST_CASE("Clamping anti-windup freezes integral during saturation",
+TEST_CASE("clamping anti-windup freezes integral during saturation",
     "[pid][siso][anti-windup][clamping]")
 {
-    using AW = ctrlpp::AntiWindup<ctrlpp::Clamping>;
-    using AwPid = ctrlpp::Pid<double, 1, 1, 1, AW>;
+    using AW = ctrlpp::anti_windup<ctrlpp::clamping>;
+    using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
 
     AwPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -567,11 +566,11 @@ TEST_CASE("Clamping anti-windup freezes integral during saturation",
     REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_at_saturation, tol));
 }
 
-TEST_CASE("ConditionalIntegration freezes integral when error exceeds threshold",
+TEST_CASE("conditional_integration freezes integral when error exceeds threshold",
     "[pid][siso][anti-windup][conditional]")
 {
-    using AW = ctrlpp::AntiWindup<ctrlpp::ConditionalIntegration>;
-    using AwPid = ctrlpp::Pid<double, 1, 1, 1, AW>;
+    using AW = ctrlpp::anti_windup<ctrlpp::conditional_integration>;
+    using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
 
     AwPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -591,12 +590,12 @@ TEST_CASE("ConditionalIntegration freezes integral when error exceeds threshold"
     REQUIRE_THAT(pid.integral()[0], WithinAbs(1.0 * 1.0 * dt, tol));
 }
 
-TEST_CASE("RateLimit constrains output change per step", "[pid][siso][rate-limit]")
+TEST_CASE("rate_limit constrains output change per step", "[pid][siso][rate-limit]")
 {
-    using RlPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::RateLimit>;
+    using RlPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::rate_limit>;
     RlPid::config_type cfg{};
     cfg.kp = vec1(100.0);
-    cfg.template policy<ctrlpp::RateLimit>().rate_max = {10.0};
+    cfg.template policy<ctrlpp::rate_limit>().rate_max = {10.0};
     RlPid pid(cfg);
 
     // Step 1: prev_output = 0, raw = 100*1 = 100
@@ -611,13 +610,13 @@ TEST_CASE("RateLimit constrains output change per step", "[pid][siso][rate-limit
     REQUIRE_THAT(u2[0], WithinAbs(0.2, tol));
 }
 
-TEST_CASE("RateLimit applies before output clamp", "[pid][siso][rate-limit][pipeline-order]")
+TEST_CASE("rate_limit applies before output clamp", "[pid][siso][rate-limit][pipeline-order]")
 {
-    using RlPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::RateLimit>;
+    using RlPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::rate_limit>;
     RlPid::config_type cfg{};
     cfg.kp = vec1(100.0);
     cfg.output_max = vec1(0.05);
-    cfg.template policy<ctrlpp::RateLimit>().rate_max = {10.0};
+    cfg.template policy<ctrlpp::rate_limit>().rate_max = {10.0};
     RlPid pid(cfg);
 
     // Raw = 100, rate limited to 0.1, then clamped to 0.05
@@ -718,7 +717,7 @@ TEST_CASE("Setpoint weighting c=0 with derivative on error uses only measurement
     REQUIRE_THAT(u2[0], WithinAbs(3.0, tol));
 }
 
-TEST_CASE("DerivFilter reduces peak derivative on step input",
+TEST_CASE("deriv_filter reduces peak derivative on step input",
     "[pid][siso][deriv-filter]")
 {
     // Unfiltered PID
@@ -728,11 +727,11 @@ TEST_CASE("DerivFilter reduces peak derivative on step input",
     SisoPid pid_unfiltered(cfg_unfiltered);
 
     // Filtered PID
-    using DfPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::DerivFilter>;
+    using DfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::deriv_filter>;
     DfPid::config_type cfg_filtered{};
     cfg_filtered.kp = vec1(1.0);
     cfg_filtered.kd = vec1(1.0);
-    cfg_filtered.template policy<ctrlpp::DerivFilter>().n = {10.0};
+    cfg_filtered.template policy<ctrlpp::deriv_filter>().n = {10.0};
     DfPid pid_filtered(cfg_filtered);
 
     // Step 1: first step, D=0 for both
@@ -762,14 +761,14 @@ TEST_CASE("DerivFilter reduces peak derivative on step input",
     REQUIRE(std::abs(u_filtered[0]) < std::abs(u_unfiltered[0]));
 }
 
-TEST_CASE("DerivFilter with N parameter smooths derivative over multiple steps",
+TEST_CASE("deriv_filter with N parameter smooths derivative over multiple steps",
     "[pid][siso][deriv-filter]")
 {
-    using DfPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::DerivFilter>;
+    using DfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::deriv_filter>;
     DfPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.kd = vec1(0.5);
-    cfg.template policy<ctrlpp::DerivFilter>().n = {20.0};
+    cfg.template policy<ctrlpp::deriv_filter>().n = {20.0};
     DfPid pid(cfg);
 
     // Tf = Kd / (Kp * N) = 0.5 / (2.0 * 20.0) = 0.0125
@@ -796,10 +795,10 @@ TEST_CASE("DerivFilter with N parameter smooths derivative over multiple steps",
     REQUIRE_THAT(u3[0], WithinAbs(p3 + d_filt2, 1e-6));
 }
 
-TEST_CASE("Without DerivFilter policy, unfiltered derivative is used",
+TEST_CASE("Without deriv_filter policy, unfiltered derivative is used",
     "[pid][siso][deriv-filter][compile]")
 {
-    // This ensures that without DerivFilter, no filter overhead occurs
+    // This ensures that without deriv_filter, no filter overhead occurs
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.kd = vec1(1.0);
@@ -816,9 +815,9 @@ TEST_CASE("Without DerivFilter policy, unfiltered derivative is used",
 // Plan 03: Velocity form PID
 // =============================================================================
 
-TEST_CASE("VelocityForm P-only: delta_u = Kp*(e(k)-e(k-1))", "[pid][siso][velocity-form]")
+TEST_CASE("velocity_form P-only: delta_u = Kp*(e(k)-e(k-1))", "[pid][siso][velocity-form]")
 {
-    using VPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::VelocityForm>;
+    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     VPid pid(cfg);
@@ -839,9 +838,9 @@ TEST_CASE("VelocityForm P-only: delta_u = Kp*(e(k)-e(k-1))", "[pid][siso][veloci
     REQUIRE_THAT(u3[0], WithinAbs(-1.0, tol));
 }
 
-TEST_CASE("VelocityForm PI: includes Ki*e*dt incremental term", "[pid][siso][velocity-form]")
+TEST_CASE("velocity_form PI: includes Ki*e*dt incremental term", "[pid][siso][velocity-form]")
 {
-    using VPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::VelocityForm>;
+    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
@@ -863,10 +862,10 @@ TEST_CASE("VelocityForm PI: includes Ki*e*dt incremental term", "[pid][siso][vel
     REQUIRE_THAT(u3[0], WithinAbs(-0.5 + 0.0025, tol));
 }
 
-TEST_CASE("VelocityForm PID: full formula with second-order D difference",
+TEST_CASE("velocity_form PID: full formula with second-order D difference",
     "[pid][siso][velocity-form]")
 {
-    using VPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::VelocityForm>;
+    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.5);
@@ -895,10 +894,10 @@ TEST_CASE("VelocityForm PID: full formula with second-order D difference",
     REQUIRE_THAT(u3[0], WithinAbs(du3, tol));
 }
 
-TEST_CASE("VelocityForm steady-state: delta_u converges to Ki*e*dt",
+TEST_CASE("velocity_form steady-state: delta_u converges to Ki*e*dt",
     "[pid][siso][velocity-form]")
 {
-    using VPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::VelocityForm>;
+    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(2.0);
@@ -920,25 +919,25 @@ TEST_CASE("VelocityForm steady-state: delta_u converges to Ki*e*dt",
     REQUIRE_THAT(u5[0], WithinAbs(0.02, tol));
 }
 
-TEST_CASE("VelocityForm + AntiWindup compiles and runs (anti-windup is no-op)",
+TEST_CASE("velocity_form + anti_windup compiles and runs (anti-windup is no-op)",
     "[pid][siso][velocity-form][anti-windup]")
 {
-    using VPid = ctrlpp::Pid<double, 1, 1, 1,
-        ctrlpp::VelocityForm, ctrlpp::AntiWindup<ctrlpp::BackCalc>>;
+    using VPid = ctrlpp::pid<double, 1, 1, 1,
+        ctrlpp::velocity_form, ctrlpp::anti_windup<ctrlpp::back_calc>>;
     VPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
     VPid pid(cfg);
 
-    // Should produce same result as without AntiWindup
+    // Should produce same result as without anti_windup
     auto u1 = pid.compute(vec1(1.0), vec1(0.0), dt);
     // dP = 1*(1-0) = 1, dI = 0.5*1*0.01 = 0.005
     REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
 }
 
-TEST_CASE("VelocityForm reset clears history", "[pid][siso][velocity-form][reset]")
+TEST_CASE("velocity_form reset clears history", "[pid][siso][velocity-form][reset]")
 {
-    using VPid = ctrlpp::Pid<double, 1, 1, 1, ctrlpp::VelocityForm>;
+    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.5);
@@ -1155,8 +1154,8 @@ TEST_CASE("params() returns current config after set_params",
 TEST_CASE("IAE accumulates integral of |error| * dt",
     "[pid][siso][perf-assessment][iae]")
 {
-    using PA = ctrlpp::PerfAssessment<ctrlpp::IAE>;
-    using PaPid = ctrlpp::Pid<double, 1, 1, 1, PA>;
+    using PA = ctrlpp::perf_assessment<ctrlpp::IAE>;
+    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -1172,8 +1171,8 @@ TEST_CASE("IAE accumulates integral of |error| * dt",
 TEST_CASE("ISE accumulates integral of error^2 * dt",
     "[pid][siso][perf-assessment][ise]")
 {
-    using PA = ctrlpp::PerfAssessment<ctrlpp::ISE>;
-    using PaPid = ctrlpp::Pid<double, 1, 1, 1, PA>;
+    using PA = ctrlpp::perf_assessment<ctrlpp::ISE>;
+    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -1189,8 +1188,8 @@ TEST_CASE("ISE accumulates integral of error^2 * dt",
 TEST_CASE("ITAE accumulates integral of t * |error| * dt",
     "[pid][siso][perf-assessment][itae]")
 {
-    using PA = ctrlpp::PerfAssessment<ctrlpp::ITAE>;
-    using PaPid = ctrlpp::Pid<double, 1, 1, 1, PA>;
+    using PA = ctrlpp::perf_assessment<ctrlpp::ITAE>;
+    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -1209,8 +1208,8 @@ TEST_CASE("ITAE accumulates integral of t * |error| * dt",
 TEST_CASE("Multiple metrics accumulate simultaneously",
     "[pid][siso][perf-assessment][multi]")
 {
-    using PA = ctrlpp::PerfAssessment<ctrlpp::IAE, ctrlpp::ISE>;
-    using PaPid = ctrlpp::Pid<double, 1, 1, 1, PA>;
+    using PA = ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::ISE>;
+    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -1224,11 +1223,11 @@ TEST_CASE("Multiple metrics accumulate simultaneously",
     REQUIRE_THAT(pid.metric<ctrlpp::ISE>()[0], WithinAbs(4.0, 1e-10));
 }
 
-TEST_CASE("OscillationDetect counts zero-crossings and detects oscillation",
+TEST_CASE("oscillation_detect counts zero-crossings and detects oscillation",
     "[pid][siso][perf-assessment][oscillation]")
 {
-    using PA = ctrlpp::PerfAssessment<ctrlpp::OscillationDetect>;
-    using PaPid = ctrlpp::Pid<double, 1, 1, 1, PA>;
+    using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
+    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -1240,15 +1239,15 @@ TEST_CASE("OscillationDetect counts zero-crossings and detects oscillation",
         pid.compute(vec1(sp), vec1(0.0), 0.1);
     }
 
-    REQUIRE(pid.metric<ctrlpp::OscillationDetect>()[0] >= 9.0 - tol);
+    REQUIRE(pid.metric<ctrlpp::oscillation_detect>()[0] >= 9.0 - tol);
     REQUIRE(pid.oscillating() == true);
 }
 
-TEST_CASE("OscillationDetect: constant error sign -> not oscillating",
+TEST_CASE("oscillation_detect: constant error sign -> not oscillating",
     "[pid][siso][perf-assessment][oscillation]")
 {
-    using PA = ctrlpp::PerfAssessment<ctrlpp::OscillationDetect>;
-    using PaPid = ctrlpp::Pid<double, 1, 1, 1, PA>;
+    using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
+    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -1256,15 +1255,15 @@ TEST_CASE("OscillationDetect: constant error sign -> not oscillating",
     for (int i = 0; i < 10; ++i)
         pid.compute(vec1(1.0), vec1(0.0), 0.1);
 
-    REQUIRE_THAT(pid.metric<ctrlpp::OscillationDetect>()[0], WithinAbs(0.0, tol));
+    REQUIRE_THAT(pid.metric<ctrlpp::oscillation_detect>()[0], WithinAbs(0.0, tol));
     REQUIRE(pid.oscillating() == false);
 }
 
-TEST_CASE("OscillationDetect + IAE both accumulate",
+TEST_CASE("oscillation_detect + IAE both accumulate",
     "[pid][siso][perf-assessment][oscillation][iae]")
 {
-    using PA = ctrlpp::PerfAssessment<ctrlpp::OscillationDetect, ctrlpp::IAE>;
-    using PaPid = ctrlpp::Pid<double, 1, 1, 1, PA>;
+    using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect, ctrlpp::IAE>;
+    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -1274,7 +1273,7 @@ TEST_CASE("OscillationDetect + IAE both accumulate",
         pid.compute(vec1(sp), vec1(0.0), 0.1);
     }
 
-    REQUIRE(pid.metric<ctrlpp::OscillationDetect>()[0] >= 9.0 - tol);
+    REQUIRE(pid.metric<ctrlpp::oscillation_detect>()[0] >= 9.0 - tol);
     // IAE = sum(|1.0| * 0.1) = 1.0
     REQUIRE_THAT(pid.metric<ctrlpp::IAE>()[0], WithinAbs(1.0, 1e-10));
 }
@@ -1282,8 +1281,8 @@ TEST_CASE("OscillationDetect + IAE both accumulate",
 TEST_CASE("reset_metrics clears all metric accumulators",
     "[pid][siso][perf-assessment][reset]")
 {
-    using PA = ctrlpp::PerfAssessment<ctrlpp::IAE, ctrlpp::OscillationDetect>;
-    using PaPid = ctrlpp::Pid<double, 1, 1, 1, PA>;
+    using PA = ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::oscillation_detect>;
+    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -1294,20 +1293,20 @@ TEST_CASE("reset_metrics clears all metric accumulators",
     }
 
     REQUIRE(pid.metric<ctrlpp::IAE>()[0] > 0.0);
-    REQUIRE(pid.metric<ctrlpp::OscillationDetect>()[0] > 0.0);
+    REQUIRE(pid.metric<ctrlpp::oscillation_detect>()[0] > 0.0);
 
     pid.reset_metrics();
 
     REQUIRE_THAT(pid.metric<ctrlpp::IAE>()[0], WithinAbs(0.0, tol));
-    REQUIRE_THAT(pid.metric<ctrlpp::OscillationDetect>()[0], WithinAbs(0.0, tol));
+    REQUIRE_THAT(pid.metric<ctrlpp::oscillation_detect>()[0], WithinAbs(0.0, tol));
     REQUIRE(pid.oscillating() == false);
 }
 
 TEST_CASE("MIMO performance metrics computed per channel",
     "[pid][mimo][perf-assessment]")
 {
-    using MimoPid = ctrlpp::Pid<double, 1, 2, 2,
-        ctrlpp::PerfAssessment<ctrlpp::IAE>>;
+    using MimoPid = ctrlpp::pid<double, 1, 2, 2,
+        ctrlpp::perf_assessment<ctrlpp::IAE>>;
     using Vec2 = ctrlpp::Vector<double, 2>;
     auto vec2 = [](double a, double b) { Vec2 v; v << a, b; return v; };
     MimoPid::config_type cfg{};

@@ -1,5 +1,5 @@
-// Usage: ./ctrlpp_basic_pid_console | gnuplot -p -e "plot '-' using 1:3 with lines"
-// Redirect: ./ctrlpp_basic_pid_console > output.csv
+// Usage: ./ctrlpp_pid_01_basic | gnuplot -p -e "plot '-' using 1:3 with lines"
+// Redirect: ./ctrlpp_pid_01_basic > output.csv
 
 #include "ctrlpp/pid.h"
 
@@ -8,17 +8,17 @@
 
 int main()
 {
-    using Pid = ctrlpp::Pid<double, 1, 1, 1>;
+    using Pid = ctrlpp::pid<double, 1, 1, 1>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
     cfg.kp = Vec::Constant(2.0);
     cfg.ki = Vec::Constant(1.0);
-    cfg.kd = Vec::Constant(0.1);
+    cfg.kd = Vec::Constant(0.0);
     cfg.output_min = Vec::Constant(-10.0);
     cfg.output_max = Vec::Constant(10.0);
 
-    Pid pid(cfg);
+    Pid ctrl(cfg);
 
     double y = 0.0;
     constexpr double setpoint = 1.0;
@@ -26,15 +26,15 @@ int main()
     constexpr double a = 0.9;
     constexpr double duration = 10.0;
 
-    std::cout << "time,setpoint,measurement,control" << std::endl;
+    std::cout << "time,setpoint,measurement,control\n";
 
     for (double t = 0.0; t < duration; t += dt) {
-        Vec sp = Vec::Constant(setpoint);
-        Vec meas = Vec::Constant(y);
-        auto u = pid.compute(sp, meas, dt);
+        auto sp = Vec::Constant(setpoint);
+        auto meas = Vec::Constant(y);
+        auto u = ctrl.compute(sp, meas, dt);
         y = a * y + (1.0 - a) * u[0];
 
         std::cout << std::fixed << std::setprecision(4)
-                  << t << "," << setpoint << "," << y << "," << u[0] << std::endl;
+                  << t << "," << setpoint << "," << y << "," << u[0] << "\n";
     }
 }

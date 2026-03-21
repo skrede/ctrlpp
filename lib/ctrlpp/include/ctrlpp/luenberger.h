@@ -11,7 +11,7 @@
 namespace ctrlpp {
 
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-class LuenbergerObserver {
+class luenberger_observer {
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int nu = static_cast<int>(NU);
     static constexpr int ny = static_cast<int>(NY);
@@ -22,9 +22,9 @@ public:
     using input_vector_t = Eigen::Matrix<Scalar, nu, 1>;
     using output_vector_t = Eigen::Matrix<Scalar, ny, 1>;
     using gain_matrix_t = Eigen::Matrix<Scalar, nx, ny>;
-    using system_t = DiscreteStateSpace<Scalar, NX, NU, NY>;
+    using system_t = discrete_state_space<Scalar, NX, NU, NY>;
 
-    LuenbergerObserver(system_t sys, gain_matrix_t L, state_vector_t x0)
+    luenberger_observer(system_t sys, gain_matrix_t L, state_vector_t x0)
         : sys_{std::move(sys)}
         , L_{std::move(L)}
         , x_{std::move(x0)}
@@ -53,8 +53,8 @@ private:
     state_vector_t x_;
 };
 
-static_assert(ObserverPolicy<LuenbergerObserver<double, 2, 1, 1>>);
-static_assert(!CovarianceObserver<LuenbergerObserver<double, 2, 1, 1>>);
+static_assert(ObserverPolicy<luenberger_observer<double, 2, 1, 1>>);
+static_assert(!CovarianceObserver<luenberger_observer<double, 2, 1, 1>>);
 
 }
 

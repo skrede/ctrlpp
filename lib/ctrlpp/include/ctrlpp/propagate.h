@@ -7,7 +7,7 @@ namespace ctrlpp {
 
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 constexpr auto propagate(
-    const DiscreteStateSpace<Scalar, NX, NU, NY>& sys,
+    const discrete_state_space<Scalar, NX, NU, NY>& sys,
     const Vector<Scalar, NX>& x,
     const Vector<Scalar, NU>& u)
     -> Vector<Scalar, NX>
@@ -17,7 +17,7 @@ constexpr auto propagate(
 
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 constexpr auto output(
-    const DiscreteStateSpace<Scalar, NX, NU, NY>& sys,
+    const discrete_state_space<Scalar, NX, NU, NY>& sys,
     const Vector<Scalar, NX>& x,
     const Vector<Scalar, NU>& u)
     -> Vector<Scalar, NY>
@@ -27,7 +27,7 @@ constexpr auto output(
 
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 constexpr auto output(
-    const ContinuousStateSpace<Scalar, NX, NU, NY>& sys,
+    const continuous_state_space<Scalar, NX, NU, NY>& sys,
     const Vector<Scalar, NX>& x,
     const Vector<Scalar, NU>& u)
     -> Vector<Scalar, NY>

@@ -43,22 +43,22 @@ private:
 
 // --- Compile-time concept checks ---
 
-static_assert(ctrlpp::ObserverPolicy<ctrlpp::NullObserver>);
+static_assert(ctrlpp::ObserverPolicy<ctrlpp::null_observer>);
 static_assert(ctrlpp::ObserverPolicy<MockMinimalObserver>);
 static_assert(ctrlpp::ObserverPolicy<MockCovarianceObserver>);
 
 static_assert(ctrlpp::CovarianceObserver<MockCovarianceObserver>);
 static_assert(!ctrlpp::CovarianceObserver<MockMinimalObserver>);
-static_assert(!ctrlpp::CovarianceObserver<ctrlpp::NullObserver>);
+static_assert(!ctrlpp::CovarianceObserver<ctrlpp::null_observer>);
 
 static_assert(!ctrlpp::ObserverPolicy<int>);
 static_assert(!ctrlpp::ObserverPolicy<double>);
 
 // --- Runtime tests ---
 
-TEST_CASE("NullObserver predict/update/state do not crash", "[observer]")
+TEST_CASE("null_observer predict/update/state do not crash", "[observer]")
 {
-    ctrlpp::NullObserver obs;
+    ctrlpp::null_observer obs;
     std::monostate m;
 
     obs.predict(m);

@@ -12,11 +12,11 @@ namespace ctrlpp {
 // tf2ss: Transfer function to controllable canonical form state-space.
 // H(s) = num(s) / den(s), coefficients highest-degree-first (MATLAB convention).
 // Requires NumDeg <= DenDeg (proper transfer function).
-// Returns ContinuousStateSpace with NX = DenDeg states.
+// Returns continuous_state_space with NX = DenDeg states.
 template<typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
     requires (NumDeg <= DenDeg)
-constexpr auto tf2ss(const TransferFunction<Scalar, NumDeg, DenDeg>& tf)
-    -> ContinuousStateSpace<Scalar, DenDeg, 1, 1>
+constexpr auto tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
+    -> continuous_state_space<Scalar, DenDeg, 1, 1>
 {
     static_assert(DenDeg >= 1, "Denominator degree must be at least 1");
 
@@ -79,11 +79,11 @@ constexpr auto tf2ss(const TransferFunction<Scalar, NumDeg, DenDeg>& tf)
 
 // ss2tf: State-space to transfer function via Leverrier-Faddeev algorithm.
 // Computes H(s) = C*(sI - A)^{-1}*B + D for SISO systems.
-// Returns TransferFunction<Scalar, NX, NX> (numerator degree = denominator degree = NX).
+// Returns transfer_function<Scalar, NX, NX> (numerator degree = denominator degree = NX).
 // Coefficients are highest-degree-first.
 template<typename Scalar, std::size_t NX>
-auto ss2tf(const ContinuousStateSpace<Scalar, NX, 1, 1>& sys)
-    -> TransferFunction<Scalar, NX, NX>
+auto ss2tf(const continuous_state_space<Scalar, NX, 1, 1>& sys)
+    -> transfer_function<Scalar, NX, NX>
 {
     constexpr auto n = NX;
     using mat_nn = Matrix<Scalar, n, n>;
