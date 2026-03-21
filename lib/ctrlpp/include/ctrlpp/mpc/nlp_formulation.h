@@ -1,14 +1,13 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_NLP_FORMULATION_H
 #define HPP_GUARD_CTRLPP_MPC_NLP_FORMULATION_H
 
+#include "ctrlpp/detail/numerical_diff.h"
 #include "ctrlpp/mpc/nlp_solver.h"
 #include "ctrlpp/mpc/nmpc_config.h"
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
 
-#include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <functional>
 #include <limits>
@@ -26,65 +25,6 @@ struct nmpc_formulation_state {
 };
 
 namespace detail {
-
-template<typename Scalar>
-void finite_diff_gradient(const std::function<Scalar(std::span<const Scalar>)>& f,
-                          std::span<const Scalar> z,
-                          std::span<Scalar> grad)
-{
-    const auto eps = std::sqrt(std::numeric_limits<Scalar>::epsilon());
-    const auto n = z.size();
-
-    std::vector<Scalar> z_mut(z.begin(), z.end());
-
-    for (std::size_t j = 0; j < n; ++j) {
-        const Scalar h = eps * std::max(Scalar{1}, std::abs(z[j]));
-        const Scalar orig = z_mut[j];
-
-        z_mut[j] = orig + h;
-        const Scalar f_plus = f(std::span<const Scalar>{z_mut.data(), n});
-
-        z_mut[j] = orig - h;
-        const Scalar f_minus = f(std::span<const Scalar>{z_mut.data(), n});
-
-        grad[j] = (f_plus - f_minus) / (Scalar{2} * h);
-        z_mut[j] = orig;
-    }
-}
-
-template<typename Scalar>
-void finite_diff_jacobian(const std::function<void(std::span<const Scalar>, std::span<Scalar>)>& c,
-                          int n_constraints,
-                          std::span<const Scalar> z,
-                          std::span<Scalar> jac)
-{
-    const auto eps = std::sqrt(std::numeric_limits<Scalar>::epsilon());
-    const auto n = z.size();
-    const auto m = static_cast<std::size_t>(n_constraints);
-
-    std::vector<Scalar> z_mut(z.begin(), z.end());
-    std::vector<Scalar> c_plus(m);
-    std::vector<Scalar> c_minus(m);
-
-    for (std::size_t j = 0; j < n; ++j) {
-        const Scalar h = eps * std::max(Scalar{1}, std::abs(z[j]));
-        const Scalar orig = z_mut[j];
-
-        z_mut[j] = orig + h;
-        c(std::span<const Scalar>{z_mut.data(), n},
-          std::span<Scalar>{c_plus.data(), m});
-
-        z_mut[j] = orig - h;
-        c(std::span<const Scalar>{z_mut.data(), n},
-          std::span<Scalar>{c_minus.data(), m});
-
-        for (std::size_t i = 0; i < m; ++i) {
-            jac[i * n + j] = (c_plus[i] - c_minus[i]) / (Scalar{2} * h);
-        }
-
-        z_mut[j] = orig;
-    }
-}
 
 template<typename Scalar, std::size_t NX, std::size_t NU, typename Dynamics>
 auto build_nmpc_problem(const Dynamics& dynamics,

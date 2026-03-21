@@ -67,7 +67,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     ctrlpp::discrete_state_space<double, 2, 1, 1> sys{Ad, Bd, C, D};
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, Q, R, x0, P0);
+    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
     for (int step = 0; step < 10; ++step) {
         kf.predict(u);

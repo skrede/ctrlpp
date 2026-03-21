@@ -42,10 +42,10 @@ int main()
     // Kalman filter setup
     ctrlpp::kalman_filter<double, NX, NU, NY_OBS> kf(
         obs_sys,
-        Eigen::Matrix2d::Identity() * 0.01,
-        Eigen::Matrix<double, 1, 1>::Constant(0.1),
-        Eigen::Vector2d::Zero(),
-        Eigen::Matrix2d::Identity()
+        {.Q = Eigen::Matrix2d::Identity() * 0.01,
+         .R = Eigen::Matrix<double, 1, 1>::Constant(0.1),
+         .x0 = Eigen::Vector2d::Zero(),
+         .P0 = Eigen::Matrix2d::Identity()}
     );
 
     // MPC setup

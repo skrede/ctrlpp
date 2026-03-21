@@ -13,6 +13,14 @@
 namespace ctrlpp {
 
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+struct kalman_config {
+    Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
+    Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
+    Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};
+    Matrix<Scalar, NX, NX> P0{Matrix<Scalar, NX, NX>::Identity()};
+};
+
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 class kalman_filter {
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int nu = static_cast<int>(NU);
@@ -27,17 +35,13 @@ public:
     using meas_cov_matrix_t = Eigen::Matrix<Scalar, ny, ny>;
     using system_t = discrete_state_space<Scalar, NX, NU, NY>;
 
-    kalman_filter(system_t sys,
-                 cov_matrix_t Q,
-                 meas_cov_matrix_t R,
-                 state_vector_t x0,
-                 cov_matrix_t P0)
+    kalman_filter(system_t sys, kalman_config<Scalar, NX, NU, NY> config)
         : sys_{std::move(sys)}
-        , x_{std::move(x0)}
-        , P_{std::move(P0)}
+        , x_{std::move(config.x0)}
+        , P_{std::move(config.P0)}
         , P_post_prev_{P_}
-        , Q_{std::move(Q)}
-        , R_{std::move(R)}
+        , Q_{std::move(config.Q)}
+        , R_{std::move(config.R)}
         , innovation_{output_vector_t::Zero()}
     {
     }

@@ -1,0 +1,3 @@
+add_executable(ctrlpp_ekf_01_pendulum ctrlpp_ekf_01_pendulum.cpp)
+target_link_libraries(ctrlpp_ekf_01_pendulum PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_ekf_01_pendulum PRIVATE ${CTRLPP_WARNING_FLAGS})

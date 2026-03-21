@@ -52,7 +52,7 @@ int main()
     Eigen::Matrix<Scalar, 2, 1> x0_est;
     x0_est << 5.0, -2.0;
 
-    ctrlpp::kalman_filter<Scalar, NX, NU, NY> kf(sys_d, Q_proc, R_meas, x0_est, P0);
+    ctrlpp::kalman_filter<Scalar, NX, NU, NY> kf(sys_d, {.Q = Q_proc, .R = R_meas, .x0 = x0_est, .P0 = P0});
 
     Eigen::Matrix<Scalar, 2, 1> x_true = Eigen::Matrix<Scalar, 2, 1>::Zero();
 
