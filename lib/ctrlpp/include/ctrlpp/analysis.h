@@ -14,7 +14,7 @@ namespace ctrlpp {
 
 // poles: returns eigenvalues of the A matrix (system poles).
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-auto poles(const ContinuousStateSpace<Scalar, NX, NU, NY>& sys)
+auto poles(const continuous_state_space<Scalar, NX, NU, NY>& sys)
     -> std::array<std::complex<Scalar>, NX>
 {
     constexpr int n = static_cast<int>(NX);
@@ -27,7 +27,7 @@ auto poles(const ContinuousStateSpace<Scalar, NX, NU, NY>& sys)
 }
 
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-auto poles(const DiscreteStateSpace<Scalar, NX, NU, NY>& sys)
+auto poles(const discrete_state_space<Scalar, NX, NU, NY>& sys)
     -> std::array<std::complex<Scalar>, NX>
 {
     constexpr int n = static_cast<int>(NX);
@@ -41,7 +41,7 @@ auto poles(const DiscreteStateSpace<Scalar, NX, NU, NY>& sys)
 
 // is_stable: continuous system is stable iff all poles have negative real part.
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-auto is_stable(const ContinuousStateSpace<Scalar, NX, NU, NY>& sys) -> bool
+auto is_stable(const continuous_state_space<Scalar, NX, NU, NY>& sys) -> bool
 {
     auto p = poles(sys);
     for (const auto& pole : p)
@@ -52,7 +52,7 @@ auto is_stable(const ContinuousStateSpace<Scalar, NX, NU, NY>& sys) -> bool
 
 // is_stable: discrete system is stable iff all poles have magnitude < 1.
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-auto is_stable(const DiscreteStateSpace<Scalar, NX, NU, NY>& sys) -> bool
+auto is_stable(const discrete_state_space<Scalar, NX, NU, NY>& sys) -> bool
 {
     auto p = poles(sys);
     for (const auto& pole : p)

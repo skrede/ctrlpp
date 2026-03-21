@@ -6,7 +6,7 @@
 #include <cmath>
 
 TEST_CASE("tf2ss converts first-order transfer function") {
-    ctrlpp::TransferFunction<double, 0, 1> tf{
+    ctrlpp::transfer_function<double, 0, 1> tf{
         .numerator = {1.0},
         .denominator = {1.0, 2.0}
     };
@@ -20,7 +20,7 @@ TEST_CASE("tf2ss converts first-order transfer function") {
 }
 
 TEST_CASE("tf2ss converts second-order transfer function") {
-    ctrlpp::TransferFunction<double, 1, 2> tf{
+    ctrlpp::transfer_function<double, 1, 2> tf{
         .numerator = {1.0, 1.0},
         .denominator = {1.0, 3.0, 2.0}
     };
@@ -42,7 +42,7 @@ TEST_CASE("tf2ss converts second-order transfer function") {
 }
 
 TEST_CASE("ss2tf recovers transfer function coefficients") {
-    using SS = ctrlpp::ContinuousStateSpace<double, 1, 1, 1>;
+    using SS = ctrlpp::continuous_state_space<double, 1, 1, 1>;
     SS sys{};
     sys.A(0, 0) = -2.0;
     sys.B(0, 0) = 1.0;
@@ -58,7 +58,7 @@ TEST_CASE("ss2tf recovers transfer function coefficients") {
 }
 
 TEST_CASE("tf2ss -> ss2tf roundtrip preserves coefficients") {
-    ctrlpp::TransferFunction<double, 1, 2> tf_original{
+    ctrlpp::transfer_function<double, 1, 2> tf_original{
         .numerator = {1.0, 1.0},
         .denominator = {1.0, 3.0, 2.0}
     };
@@ -76,7 +76,7 @@ TEST_CASE("tf2ss -> ss2tf roundtrip preserves coefficients") {
 }
 
 TEST_CASE("tf2ss handles proper transfer function with equal degrees") {
-    ctrlpp::TransferFunction<double, 1, 1> tf{
+    ctrlpp::transfer_function<double, 1, 1> tf{
         .numerator = {2.0, 5.0},
         .denominator = {1.0, 3.0}
     };

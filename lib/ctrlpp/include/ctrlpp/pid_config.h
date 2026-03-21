@@ -88,7 +88,7 @@ using policy_configs_tuple_t =
 }
 
 template<typename Scalar, std::size_t NY, typename... Policies>
-struct PidConfig {
+struct pid_config {
     using vector_t = Vector<Scalar, NY>;
     using policies_tuple_t = detail::policy_configs_tuple_t<Scalar, NY, Policies...>;
 

@@ -12,12 +12,12 @@
 
 namespace ctrlpp {
 
-// ZOH discretisation using Van Loan augmented matrix exponential method.
+// zoh discretisation using Van Loan augmented matrix exponential method.
 // Forms the augmented matrix M = [[A*dt, B*dt], [0, 0]], computes exp(M),
 // then extracts Ad and Bd from the result. Cd = C, Dd = D.
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-auto discretise(ZOH, const ContinuousStateSpace<Scalar, NX, NU, NY>& sys,
-                Scalar dt) -> DiscreteStateSpace<Scalar, NX, NU, NY>
+auto discretise(zoh, const continuous_state_space<Scalar, NX, NU, NY>& sys,
+                Scalar dt) -> discrete_state_space<Scalar, NX, NU, NY>
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
@@ -41,10 +41,10 @@ auto discretise(ZOH, const ContinuousStateSpace<Scalar, NX, NU, NY>& sys,
 
 // Convenience wrapper matching the generic discretise<Method>(...) signature.
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-auto discretise(const ContinuousStateSpace<Scalar, NX, NU, NY>& sys,
-                Scalar dt, ZOH = {}) -> DiscreteStateSpace<Scalar, NX, NU, NY>
+auto discretise(const continuous_state_space<Scalar, NX, NU, NY>& sys,
+                Scalar dt, zoh = {}) -> discrete_state_space<Scalar, NX, NU, NY>
 {
-    return discretise(ZOH{}, sys, dt);
+    return discretise(zoh{}, sys, dt);
 }
 
 }

@@ -13,7 +13,7 @@
 namespace ctrlpp {
 
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-class KalmanFilter {
+class kalman_filter {
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int nu = static_cast<int>(NU);
     static constexpr int ny = static_cast<int>(NY);
@@ -25,9 +25,9 @@ public:
     using output_vector_t = Eigen::Matrix<Scalar, ny, 1>;
     using cov_matrix_t = Eigen::Matrix<Scalar, nx, nx>;
     using meas_cov_matrix_t = Eigen::Matrix<Scalar, ny, ny>;
-    using system_t = DiscreteStateSpace<Scalar, NX, NU, NY>;
+    using system_t = discrete_state_space<Scalar, NX, NU, NY>;
 
-    KalmanFilter(system_t sys,
+    kalman_filter(system_t sys,
                  cov_matrix_t Q,
                  meas_cov_matrix_t R,
                  state_vector_t x0,
@@ -118,8 +118,8 @@ private:
     Scalar nees_value_{0};
 };
 
-static_assert(ObserverPolicy<KalmanFilter<double, 2, 1, 1>>);
-static_assert(CovarianceObserver<KalmanFilter<double, 2, 1, 1>>);
+static_assert(ObserverPolicy<kalman_filter<double, 2, 1, 1>>);
+static_assert(CovarianceObserver<kalman_filter<double, 2, 1, 1>>);
 
 }
 

@@ -10,6 +10,16 @@ if (CTRLPP_BUILD_TESTS)
     else ()
         find_package(Catch2 CONFIG REQUIRED)
     endif ()
+    if (CTRLPP_BUILD_PROPERTY_TESTS)
+        FetchContent_Declare(
+            rapidcheck
+            GIT_REPOSITORY https://github.com/emil-e/rapidcheck.git
+            GIT_TAG b96a4e626ef4c7348dcd16c500353c2f997a9f3f
+            EXCLUDE_FROM_ALL
+        )
+        FetchContent_MakeAvailable(rapidcheck)
+        add_subdirectory(${rapidcheck_SOURCE_DIR}/extras/catch ${rapidcheck_BINARY_DIR}/extras/catch)
+    endif ()
     add_subdirectory(unit)
     add_subdirectory(compile)
     if (NOT CTRLPP_CMAKE_FETCH_DEPS)

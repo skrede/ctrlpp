@@ -1,0 +1,15 @@
+add_executable(ctrlpp_mpc_01_regulation ctrlpp_mpc_01_regulation.cpp)
+target_link_libraries(ctrlpp_mpc_01_regulation PRIVATE ctrlpp::osqp)
+target_compile_options(ctrlpp_mpc_01_regulation PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_mpc_02_observer_mpc ctrlpp_mpc_02_observer_mpc.cpp)
+target_link_libraries(ctrlpp_mpc_02_observer_mpc PRIVATE ctrlpp::osqp)
+target_compile_options(ctrlpp_mpc_02_observer_mpc PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_mpc_03_trajectory ctrlpp_mpc_03_trajectory.cpp)
+target_link_libraries(ctrlpp_mpc_03_trajectory PRIVATE ctrlpp::osqp)
+target_compile_options(ctrlpp_mpc_03_trajectory PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_mpc_04_mobile_robot ctrlpp_mpc_04_mobile_robot.cpp)
+target_link_libraries(ctrlpp_mpc_04_mobile_robot PRIVATE ctrlpp::osqp)
+target_compile_options(ctrlpp_mpc_04_mobile_robot PRIVATE ${CTRLPP_WARNING_FLAGS})

@@ -5,7 +5,7 @@
 
 int main()
 {
-    ctrlpp::DiscreteStateSpace<double, 2, 1, 1> sys{
+    ctrlpp::discrete_state_space<double, 2, 1, 1> sys{
         .A = Eigen::Matrix2d::Identity(),
         .B = Eigen::Vector2d::Zero(),
         .C = Eigen::RowVector2d::Zero(),

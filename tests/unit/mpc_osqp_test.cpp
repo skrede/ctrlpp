@@ -17,7 +17,7 @@ constexpr std::size_t NX = 2;
 constexpr std::size_t NU = 1;
 constexpr double dt = 0.1;
 
-auto make_double_integrator() -> ctrlpp::DiscreteStateSpace<double, NX, NU, NX> {
+auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX> {
     Eigen::Matrix2d A;
     A << 1.0, dt,
          0.0, 1.0;

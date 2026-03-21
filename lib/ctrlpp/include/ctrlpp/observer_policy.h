@@ -26,7 +26,7 @@ concept CovarianceObserver = ObserverPolicy<O> && requires(const O& obs) {
     { obs.innovation() };
 };
 
-struct NullObserver {
+struct null_observer {
     using observer_tag = void;
     using state_vector_t = std::monostate;
     using input_vector_t = std::monostate;

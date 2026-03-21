@@ -16,7 +16,7 @@ namespace ctrlpp {
 
 // LQI gain result: partitioned feedback gain for integral action.
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-struct LqiGain {
+struct lqi_result {
     Eigen::Matrix<Scalar, int(NU), int(NX)> Kx;
     Eigen::Matrix<Scalar, int(NU), int(NY)> Ki;
 };
@@ -127,14 +127,14 @@ auto lqr_tv_gains(const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>>& As
 
 // LQI gain: augments state with integral of tracking error.
 // Augmented system: A_aug = [[A, 0], [-C, I]], B_aug = [[B], [0]]
-// Returns LqiGain with partitioned Kx (NU x NX) and Ki (NU x NY).
+// Returns lqi_result with partitioned Kx (NU x NX) and Ki (NU x NY).
 template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 auto lqi_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
               const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
               const Eigen::Matrix<Scalar, int(NY), int(NX)>& C,
               const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>& Q_aug,
               const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
-    -> std::optional<LqiGain<Scalar, NX, NU, NY>>
+    -> std::optional<lqi_result<Scalar, NX, NU, NY>>
 {
     constexpr std::size_t NX_AUG = NX + NY;
     constexpr int nx = static_cast<int>(NX);
@@ -162,7 +162,7 @@ auto lqi_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
 
     auto& K_aug = *K_aug_opt;
 
-    LqiGain<Scalar, NX, NU, NY> result;
+    lqi_result<Scalar, NX, NU, NY> result;
     result.Kx = K_aug.template block<nu, nx>(0, 0);
     result.Ki = K_aug.template block<nu, ny>(0, nx);
     return result;
@@ -192,13 +192,13 @@ auto lqr_cost(std::span<const Eigen::Matrix<Scalar, int(NX), 1>> xs,
 
 // Thin LQR controller class storing a precomputed gain matrix.
 template<typename Scalar, std::size_t NX, std::size_t NU>
-class Lqr {
+class lqr {
 public:
     using gain_type = Eigen::Matrix<Scalar, int(NU), int(NX)>;
     using state_type = Eigen::Matrix<Scalar, int(NX), 1>;
     using input_type = Eigen::Matrix<Scalar, int(NU), 1>;
 
-    explicit Lqr(gain_type K) : K_(std::move(K)) {}
+    explicit lqr(gain_type K) : K_(std::move(K)) {}
 
     auto compute(const state_type& x) const -> input_type
     {
@@ -213,13 +213,13 @@ private:
 
 // Time-varying LQR controller storing a gain sequence.
 template<typename Scalar, std::size_t NX, std::size_t NU>
-class LqrTimeVarying {
+class lqr_time_varying {
 public:
     using gain_type = Eigen::Matrix<Scalar, int(NU), int(NX)>;
     using state_type = Eigen::Matrix<Scalar, int(NX), 1>;
     using input_type = Eigen::Matrix<Scalar, int(NU), 1>;
 
-    explicit LqrTimeVarying(std::vector<gain_type> gains)
+    explicit lqr_time_varying(std::vector<gain_type> gains)
         : gains_(std::move(gains))
     {}
 

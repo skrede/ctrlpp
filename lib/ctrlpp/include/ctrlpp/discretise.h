@@ -3,10 +3,10 @@
 
 namespace ctrlpp {
 
-struct ZOH {};
-struct Tustin {};
-struct ForwardEuler {};
-struct BackwardEuler {};
+struct zoh {};
+struct tustin {};
+struct forward_euler {};
+struct backward_euler {};
 
 }
 

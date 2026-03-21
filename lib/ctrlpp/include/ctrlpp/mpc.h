@@ -41,7 +41,7 @@ class mpc {
     static constexpr int nu = static_cast<int>(NU);
 
 public:
-    mpc(const DiscreteStateSpace<Scalar, NX, NU, NX>& system,
+    mpc(const discrete_state_space<Scalar, NX, NU, NX>& system,
         const mpc_config<Scalar, NX, NU>& config)
         : config_{config}
         , system_{system}
@@ -239,7 +239,7 @@ private:
 
     Solver solver_{};
     mpc_config<Scalar, NX, NU> config_;
-    DiscreteStateSpace<Scalar, NX, NU, NX> system_;
+    discrete_state_space<Scalar, NX, NU, NX> system_;
     Matrix<Scalar, NX, NX> Qf_actual_;
 
     qp_update<Scalar> update_{};

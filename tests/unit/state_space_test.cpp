@@ -4,10 +4,10 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <type_traits>
 
-using DSS = ctrlpp::DiscreteStateSpace<double, 2, 1, 1>;
-using CSS = ctrlpp::ContinuousStateSpace<double, 2, 1, 1>;
+using DSS = ctrlpp::discrete_state_space<double, 2, 1, 1>;
+using CSS = ctrlpp::continuous_state_space<double, 2, 1, 1>;
 
-TEST_CASE("DiscreteStateSpace aggregate initialization", "[state_space]")
+TEST_CASE("discrete_state_space aggregate initialization", "[state_space]")
 {
     DSS sys{};
     sys.A << 1.0, 1.0, 0.0, 1.0;
@@ -22,7 +22,7 @@ TEST_CASE("DiscreteStateSpace aggregate initialization", "[state_space]")
     REQUIRE(sys.B(1, 0) == 1.0);
 }
 
-TEST_CASE("ContinuousStateSpace is distinct from DiscreteStateSpace", "[state_space]")
+TEST_CASE("continuous_state_space is distinct from discrete_state_space", "[state_space]")
 {
     static_assert(!std::is_same_v<CSS, DSS>);
     SUCCEED();
@@ -70,7 +70,7 @@ TEST_CASE("output computes y = C*x + D*u", "[state_space]")
     auto y = ctrlpp::output(sys, x, u);
     REQUIRE_THAT(y[0], Catch::Matchers::WithinAbs(3.0, 1e-12));
 
-    // Also works on ContinuousStateSpace
+    // Also works on continuous_state_space
     CSS csys{};
     csys.A << 1.0, 1.0, 0.0, 1.0;
     csys.B << 0.0, 1.0;
@@ -85,10 +85,10 @@ TEST_CASE("output computes y = C*x + D*u", "[state_space]")
 TEST_CASE("SISO alias template works", "[state_space]")
 {
     static_assert(std::is_same_v<
-        ctrlpp::SISODiscreteStateSpace<double, 2>,
-        ctrlpp::DiscreteStateSpace<double, 2, 1, 1>>);
+        ctrlpp::siso_discrete_state_space<double, 2>,
+        ctrlpp::discrete_state_space<double, 2, 1, 1>>);
     static_assert(std::is_same_v<
-        ctrlpp::SISOContinuousStateSpace<double, 2>,
-        ctrlpp::ContinuousStateSpace<double, 2, 1, 1>>);
+        ctrlpp::siso_continuous_state_space<double, 2>,
+        ctrlpp::continuous_state_space<double, 2, 1, 1>>);
     SUCCEED();
 }
