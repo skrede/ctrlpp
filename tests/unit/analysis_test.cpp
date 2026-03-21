@@ -1,5 +1,4 @@
 #include "ctrlpp/analysis.h"
-#include "ctrlpp/eigen_linalg.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -7,10 +6,8 @@
 #include <algorithm>
 #include <cmath>
 
-using Policy = ctrlpp::EigenLinalgPolicy;
-
 TEST_CASE("poles of stable discrete system") {
-    ctrlpp::DiscreteStateSpace<Policy, double, 2, 1, 1> sys{};
+    ctrlpp::discrete_state_space<double, 2, 1, 1> sys{};
     sys.A(0, 0) = 0.5; sys.A(0, 1) = 0.0;
     sys.A(1, 0) = 0.0; sys.A(1, 1) = 0.3;
     sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
@@ -28,7 +25,7 @@ TEST_CASE("poles of stable discrete system") {
 }
 
 TEST_CASE("is_stable for stable discrete system") {
-    ctrlpp::DiscreteStateSpace<Policy, double, 2, 1, 1> sys{};
+    ctrlpp::discrete_state_space<double, 2, 1, 1> sys{};
     sys.A(0, 0) = 0.5; sys.A(0, 1) = 0.0;
     sys.A(1, 0) = 0.0; sys.A(1, 1) = 0.3;
     sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
@@ -39,7 +36,7 @@ TEST_CASE("is_stable for stable discrete system") {
 }
 
 TEST_CASE("is_stable for unstable discrete system") {
-    ctrlpp::DiscreteStateSpace<Policy, double, 2, 1, 1> sys{};
+    ctrlpp::discrete_state_space<double, 2, 1, 1> sys{};
     sys.A(0, 0) = 1.5; sys.A(0, 1) = 0.0;
     sys.A(1, 0) = 0.0; sys.A(1, 1) = 0.3;
     sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
@@ -50,7 +47,7 @@ TEST_CASE("is_stable for unstable discrete system") {
 }
 
 TEST_CASE("poles of continuous system") {
-    ctrlpp::ContinuousStateSpace<Policy, double, 2, 1, 1> sys{};
+    ctrlpp::continuous_state_space<double, 2, 1, 1> sys{};
     sys.A(0, 0) = -1.0; sys.A(0, 1) = 0.0;
     sys.A(1, 0) = 0.0;  sys.A(1, 1) = -2.0;
     sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
@@ -67,7 +64,7 @@ TEST_CASE("poles of continuous system") {
 }
 
 TEST_CASE("is_stable for stable continuous system") {
-    ctrlpp::ContinuousStateSpace<Policy, double, 2, 1, 1> sys{};
+    ctrlpp::continuous_state_space<double, 2, 1, 1> sys{};
     sys.A(0, 0) = -1.0; sys.A(0, 1) = 0.0;
     sys.A(1, 0) = 0.0;  sys.A(1, 1) = -2.0;
     sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
@@ -78,7 +75,7 @@ TEST_CASE("is_stable for stable continuous system") {
 }
 
 TEST_CASE("is_stable for unstable continuous system") {
-    ctrlpp::ContinuousStateSpace<Policy, double, 2, 1, 1> sys{};
+    ctrlpp::continuous_state_space<double, 2, 1, 1> sys{};
     sys.A(0, 0) = 1.0;  sys.A(0, 1) = 0.0;
     sys.A(1, 0) = 0.0;  sys.A(1, 1) = -2.0;
     sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;

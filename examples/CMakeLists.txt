@@ -1,8 +1,10 @@
-# ctrlpp examples
-# Add example subdirectories here as they are created.
+add_subdirectory(pid)
+add_subdirectory(lqr)
 
-if (CPPCTRL_ENABLE_EIGEN_POLICY)
-    add_subdirectory(basic_pid)
-    add_subdirectory(advanced_pid)
-    add_subdirectory(lqr_observer)
+if (CTRLPP_BUILD_OSQP)
+    add_subdirectory(mpc)
+endif ()
+
+if (CTRLPP_BUILD_NLOPT)
+    add_subdirectory(nmpc)
 endif ()

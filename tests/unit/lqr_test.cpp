@@ -1,6 +1,6 @@
-#include "ctrlpp/eigen_lqr.h"
-#include "ctrlpp/eigen_dare.h"
-#include "ctrlpp/eigen_linalg.h"
+#include "ctrlpp/lqr.h"
+#include "ctrlpp/dare.h"
+
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
@@ -149,7 +149,7 @@ TEST_CASE("lqr_tv_gains with constant matrices matches lqr_finite") {
         CHECK((gains_tv[k] - gains_finite[k]).norm() < 1e-12);
 }
 
-TEST_CASE("lqi_gain achieves zero steady-state error") {
+TEST_CASE("lqi_result achieves zero steady-state error") {
     // First-order system: A=0.9, B=1, C=1
     // With integral action, should eliminate steady-state error to step reference
     Eigen::Matrix<double, 1, 1> A, B, C;
@@ -237,7 +237,7 @@ TEST_CASE("lqr_cost evaluates trajectory cost") {
     CHECK_THAT(cost, Catch::Matchers::WithinAbs(expected, 1e-12));
 }
 
-TEST_CASE("Lqr class compute returns -K*x") {
+TEST_CASE("lqr class compute returns -K*x") {
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
@@ -253,7 +253,7 @@ TEST_CASE("Lqr class compute returns -K*x") {
     REQUIRE(K_opt.has_value());
     auto K = *K_opt;
 
-    ctrlpp::Lqr<double, 2, 1> lqr(K);
+    ctrlpp::lqr<double, 2, 1> lqr(K);
 
     Eigen::Matrix<double, 2, 1> x;
     x << 1.0, 0.5;
@@ -264,7 +264,7 @@ TEST_CASE("Lqr class compute returns -K*x") {
     CHECK((lqr.gain() - K).norm() < 1e-12);
 }
 
-TEST_CASE("LqrTimeVarying indexes correctly") {
+TEST_CASE("lqr_time_varying indexes correctly") {
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
@@ -280,7 +280,7 @@ TEST_CASE("LqrTimeVarying indexes correctly") {
     constexpr std::size_t horizon = 10;
     auto gains = ctrlpp::lqr_finite<double, 2, 1>(A, B, Q, R, Qf, horizon);
 
-    ctrlpp::LqrTimeVarying<double, 2, 1> lqr_tv(std::move(gains));
+    ctrlpp::lqr_time_varying<double, 2, 1> lqr_tv(std::move(gains));
     CHECK(lqr_tv.horizon() == horizon);
 
     Eigen::Matrix<double, 2, 1> x;

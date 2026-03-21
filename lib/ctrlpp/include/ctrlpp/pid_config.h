@@ -1,8 +1,8 @@
-#ifndef HPP_GUARD_CPPCTRL_PID_CONFIG_H
-#define HPP_GUARD_CPPCTRL_PID_CONFIG_H
+#ifndef HPP_GUARD_CTRLPP_PID_CONFIG_H
+#define HPP_GUARD_CTRLPP_PID_CONFIG_H
 
 #include "ctrlpp/pid_policies.h"
-#include "ctrlpp/linalg_policy.h"
+#include "ctrlpp/types.h"
 
 #include <cstddef>
 #include <limits>
@@ -53,6 +53,13 @@ template<typename P, typename Scalar, std::size_t N>
 inline constexpr bool has_any_config_v =
     has_template_config<P, Scalar, N>::value || has_plain_config<P>::value;
 
+// Check if a type appears in a tuple
+template<typename T, typename Tuple>
+inline constexpr bool tuple_has_v = false;
+
+template<typename T, typename... Ts>
+inline constexpr bool tuple_has_v<T, std::tuple<Ts...>> = (std::is_same_v<T, Ts> || ...);
+
 // Build a tuple of config types from policies, filtering out those without config
 template<typename Scalar, std::size_t N, typename EnabledList, typename... Policies>
 struct policy_configs_builder;
@@ -80,51 +87,33 @@ using policy_configs_tuple_t =
 
 }
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NY, typename... Policies>
-struct PidConfig {
-    using vector_t = typename Policy::template vector_type<Scalar, NY>;
+template<typename Scalar, std::size_t NY, typename... Policies>
+struct pid_config {
+    using vector_t = Vector<Scalar, NY>;
     using policies_tuple_t = detail::policy_configs_tuple_t<Scalar, NY, Policies...>;
 
-    vector_t kp{};
-    vector_t ki{};
-    vector_t kd{};
-    vector_t output_min = []() {
-        vector_t v{};
-        for (std::size_t i = 0; i < NY; ++i)
-            v[i] = std::numeric_limits<Scalar>::lowest();
-        return v;
-    }();
-    vector_t output_max = []() {
-        vector_t v{};
-        for (std::size_t i = 0; i < NY; ++i)
-            v[i] = std::numeric_limits<Scalar>::max();
-        return v;
-    }();
+    vector_t kp = vector_t::Zero();
+    vector_t ki = vector_t::Zero();
+    vector_t kd = vector_t::Zero();
+    vector_t output_min = vector_t::Constant(std::numeric_limits<Scalar>::lowest());
+    vector_t output_max = vector_t::Constant(std::numeric_limits<Scalar>::max());
     bool derivative_on_error = false;
-    vector_t b = []() {
-        vector_t v{};
-        for (std::size_t i = 0; i < NY; ++i)
-            v[i] = Scalar{1};
-        return v;
-    }();
-    vector_t c = []() {
-        vector_t v{};
-        for (std::size_t i = 0; i < NY; ++i)
-            v[i] = Scalar{1};
-        return v;
-    }();
+    vector_t b = vector_t::Constant(Scalar{1});
+    vector_t c = vector_t::Constant(Scalar{1});
 
     policies_tuple_t policies{};
 
     template<typename P>
-        requires detail::has_any_config_v<P, Scalar, NY>
+        requires (detail::has_any_config_v<P, Scalar, NY> &&
+                  detail::tuple_has_v<typename detail::policy_config_type<P, Scalar, NY>::type, policies_tuple_t>)
     constexpr auto& policy() {
         using cfg_t = typename detail::policy_config_type<P, Scalar, NY>::type;
         return std::get<cfg_t>(policies);
     }
 
     template<typename P>
-        requires detail::has_any_config_v<P, Scalar, NY>
+        requires (detail::has_any_config_v<P, Scalar, NY> &&
+                  detail::tuple_has_v<typename detail::policy_config_type<P, Scalar, NY>::type, policies_tuple_t>)
     constexpr const auto& policy() const {
         using cfg_t = typename detail::policy_config_type<P, Scalar, NY>::type;
         return std::get<cfg_t>(policies);

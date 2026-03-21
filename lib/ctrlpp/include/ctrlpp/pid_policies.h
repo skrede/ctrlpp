@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CPPCTRL_PID_POLICIES_H
-#define HPP_GUARD_CPPCTRL_PID_POLICIES_H
+#ifndef HPP_GUARD_CTRLPP_PID_POLICIES_H
+#define HPP_GUARD_CTRLPP_PID_POLICIES_H
 
 #include "ctrlpp/discretise.h"
 
@@ -11,17 +11,17 @@ namespace ctrlpp {
 
 // --- Anti-windup strategy tags ---
 
-struct BackCalc {};
-struct Clamping {};
-struct ConditionalIntegration {};
+struct back_calc {};
+struct clamping {};
+struct conditional_integration {};
 
 // --- Policy types ---
 
-template<typename Strategy = BackCalc>
-struct AntiWindup;
+template<typename Strategy = back_calc>
+struct anti_windup;
 
 template<>
-struct AntiWindup<BackCalc> {
+struct anti_windup<back_calc> {
     template<typename Scalar, std::size_t N>
     struct config {
         std::array<Scalar, N> kb{};
@@ -29,33 +29,33 @@ struct AntiWindup<BackCalc> {
 };
 
 template<>
-struct AntiWindup<Clamping> {
+struct anti_windup<clamping> {
     struct config {};
 };
 
 template<>
-struct AntiWindup<ConditionalIntegration> {
+struct anti_windup<conditional_integration> {
     template<typename Scalar, std::size_t N>
     struct config {
         std::array<Scalar, N> error_threshold{};
     };
 };
 
-struct DerivFilter {
+struct deriv_filter {
     template<typename Scalar, std::size_t N>
     struct config {
         std::array<Scalar, N> n{};
     };
 };
 
-struct SetpointFilter {
+struct setpoint_filter {
     template<typename Scalar, std::size_t N>
     struct config {
         std::array<Scalar, N> tf{};
     };
 };
 
-struct PvFilter {
+struct pv_filter {
     template<typename Scalar, std::size_t N>
     struct config {
         std::array<Scalar, N> tf{};
@@ -63,26 +63,26 @@ struct PvFilter {
 };
 
 template<typename Callable = void>
-struct FeedForward {
+struct feed_forward {
     struct config {
         Callable ff_func;
     };
 };
 
 template<>
-struct FeedForward<void> {
+struct feed_forward<void> {
     struct config {};
 };
 
-struct RateLimit {
+struct rate_limit {
     template<typename Scalar, std::size_t N>
     struct config {
         std::array<Scalar, N> rate_max{};
     };
 };
 
-struct VelocityForm {};
-struct IsaForm {};
+struct velocity_form {};
+struct isa_form {};
 
 // --- Performance assessment metric tags ---
 
@@ -90,14 +90,14 @@ struct IAE {};
 struct ISE {};
 struct ITAE {};
 
-struct OscillationDetect {
+struct oscillation_detect {
     struct config {
         double crossing_rate_threshold{5.0};
     };
 };
 
 template<typename... Metrics>
-struct PerfAssessment {
+struct perf_assessment {
     using metrics = std::tuple<Metrics...>;
     struct config {};
 };
@@ -149,13 +149,13 @@ struct find_policy<PolicyBase, First, Rest...>
 template<template<typename...> class PolicyBase, typename... Policies>
 using find_policy_t = typename find_policy<PolicyBase, Policies...>::type;
 
-// --- perf_has_metric: check if a metric type is in a PerfAssessment's Metrics pack ---
+// --- perf_has_metric: check if a metric type is in a perf_assessment's Metrics pack ---
 
 template<typename Metric, typename PA>
 struct perf_has_metric : std::false_type {};
 
 template<typename Metric, typename... Metrics>
-struct perf_has_metric<Metric, PerfAssessment<Metrics...>>
+struct perf_has_metric<Metric, perf_assessment<Metrics...>>
     : contains<Metric, Metrics...> {};
 
 template<typename Metric, typename PA>

@@ -43,22 +43,22 @@ private:
 
 // --- Compile-time concept checks ---
 
-static_assert(ctrlpp::ObserverPolicy<ctrlpp::NullObserver>);
+static_assert(ctrlpp::ObserverPolicy<ctrlpp::null_observer>);
 static_assert(ctrlpp::ObserverPolicy<MockMinimalObserver>);
 static_assert(ctrlpp::ObserverPolicy<MockCovarianceObserver>);
 
 static_assert(ctrlpp::CovarianceObserver<MockCovarianceObserver>);
 static_assert(!ctrlpp::CovarianceObserver<MockMinimalObserver>);
-static_assert(!ctrlpp::CovarianceObserver<ctrlpp::NullObserver>);
+static_assert(!ctrlpp::CovarianceObserver<ctrlpp::null_observer>);
 
 static_assert(!ctrlpp::ObserverPolicy<int>);
 static_assert(!ctrlpp::ObserverPolicy<double>);
 
 // --- Runtime tests ---
 
-TEST_CASE("NullObserver predict/update/state do not crash", "[observer]")
+TEST_CASE("null_observer predict/update/state do not crash", "[observer]")
 {
-    ctrlpp::NullObserver obs;
+    ctrlpp::null_observer obs;
     std::monostate m;
 
     obs.predict(m);
@@ -72,10 +72,10 @@ TEST_CASE("MockMinimalObserver satisfies ObserverPolicy", "[observer]")
 {
     MockMinimalObserver obs;
     MockMinimalObserver::input_vector_t u{1.0};
-    MockMinimalObserver::output_vector_t y{2.0};
+    MockMinimalObserver::output_vector_t z{2.0};
 
     obs.predict(u);
-    obs.update(y);
+    obs.update(z);
 
     auto& s = obs.state();
     REQUIRE(s[0] == 0.0);
@@ -86,10 +86,10 @@ TEST_CASE("MockCovarianceObserver satisfies CovarianceObserver", "[observer]")
 {
     MockCovarianceObserver obs;
     MockCovarianceObserver::input_vector_t u{1.0};
-    MockCovarianceObserver::output_vector_t y{2.0};
+    MockCovarianceObserver::output_vector_t z{2.0};
 
     obs.predict(u);
-    obs.update(y);
+    obs.update(z);
 
     auto& s = obs.state();
     auto& cov = obs.covariance();

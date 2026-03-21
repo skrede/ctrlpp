@@ -1,38 +1,38 @@
-#ifndef HPP_GUARD_CPPCTRL_PROPAGATE_H
-#define HPP_GUARD_CPPCTRL_PROPAGATE_H
+#ifndef HPP_GUARD_CTRLPP_PROPAGATE_H
+#define HPP_GUARD_CTRLPP_PROPAGATE_H
 
 #include "ctrlpp/state_space.h"
 
 namespace ctrlpp {
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 constexpr auto propagate(
-    const DiscreteStateSpace<Policy, Scalar, NX, NU, NY>& sys,
-    const typename Policy::template vector_type<Scalar, NX>& x,
-    const typename Policy::template vector_type<Scalar, NU>& u)
-    -> typename Policy::template vector_type<Scalar, NX>
+    const discrete_state_space<Scalar, NX, NU, NY>& sys,
+    const Vector<Scalar, NX>& x,
+    const Vector<Scalar, NU>& u)
+    -> Vector<Scalar, NX>
 {
-    return Policy::add(Policy::multiply(sys.A, x), Policy::multiply(sys.B, u));
+    return (sys.A * x + sys.B * u).eval();
 }
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 constexpr auto output(
-    const DiscreteStateSpace<Policy, Scalar, NX, NU, NY>& sys,
-    const typename Policy::template vector_type<Scalar, NX>& x,
-    const typename Policy::template vector_type<Scalar, NU>& u)
-    -> typename Policy::template vector_type<Scalar, NY>
+    const discrete_state_space<Scalar, NX, NU, NY>& sys,
+    const Vector<Scalar, NX>& x,
+    const Vector<Scalar, NU>& u)
+    -> Vector<Scalar, NY>
 {
-    return Policy::add(Policy::multiply(sys.C, x), Policy::multiply(sys.D, u));
+    return (sys.C * x + sys.D * u).eval();
 }
 
-template<LinalgPolicy Policy, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 constexpr auto output(
-    const ContinuousStateSpace<Policy, Scalar, NX, NU, NY>& sys,
-    const typename Policy::template vector_type<Scalar, NX>& x,
-    const typename Policy::template vector_type<Scalar, NU>& u)
-    -> typename Policy::template vector_type<Scalar, NY>
+    const continuous_state_space<Scalar, NX, NU, NY>& sys,
+    const Vector<Scalar, NX>& x,
+    const Vector<Scalar, NU>& u)
+    -> Vector<Scalar, NY>
 {
-    return Policy::add(Policy::multiply(sys.C, x), Policy::multiply(sys.D, u));
+    return (sys.C * x + sys.D * u).eval();
 }
 
 }

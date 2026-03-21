@@ -2,15 +2,20 @@ include(ExternalProject)
 
 set(_install_prefix "${CMAKE_BINARY_DIR}/integration-install")
 
+set(_toolchain_args "")
+if (CMAKE_TOOLCHAIN_FILE)
+    list(APPEND _toolchain_args "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
+endif ()
+
 ExternalProject_Add(ctrlpp_install
     SOURCE_DIR "${CMAKE_SOURCE_DIR}"
     CMAKE_ARGS
         -DCMAKE_INSTALL_PREFIX=${_install_prefix}
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-        -DCPPCTRL_ENABLE_EIGEN_POLICY=${CPPCTRL_ENABLE_EIGEN_POLICY}
-        -DCPPCTRL_CMAKE_FETCH_DEPS=${CPPCTRL_CMAKE_FETCH_DEPS}
-        -DCPPCTRL_BUILD_TESTS=OFF
-        -DCPPCTRL_BUILD_EXAMPLES=OFF
+        -DCTRLPP_CMAKE_FETCH_DEPS=OFF
+        -DCTRLPP_BUILD_TESTS=OFF
+        -DCTRLPP_BUILD_EXAMPLES=OFF
+        ${_toolchain_args}
     BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR>
     INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
     TEST_COMMAND ""
@@ -21,6 +26,7 @@ ExternalProject_Add(ctrlpp_consumer
     CMAKE_ARGS
         -DCMAKE_PREFIX_PATH=${_install_prefix}
         -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        ${_toolchain_args}
     DEPENDS ctrlpp_install
     INSTALL_COMMAND ""
     TEST_COMMAND ""

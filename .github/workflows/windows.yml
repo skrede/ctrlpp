@@ -24,10 +24,9 @@ jobs:
       - name: Configure
         run: |
           cmake . -B build -A x64 `
-            -DCPPCTRL_BUILD_TESTS=ON `
-            -DCPPCTRL_BUILD_EXAMPLES=ON `
-            -DCPPCTRL_ENABLE_EIGEN_POLICY=ON `
-            -DCPPCTRL_CMAKE_FETCH_DEPS=ON `
+            -DCTRLPP_BUILD_TESTS=ON `
+            -DCTRLPP_BUILD_EXAMPLES=ON `
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
 
       - name: Build
@@ -36,7 +35,7 @@ jobs:
       - name: Test
         run: cd build && ctest -C Release --output-on-failure --timeout 30
 
-  install-test:
+  implot-compile:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -44,9 +43,28 @@ jobs:
       - name: Configure
         run: |
           cmake . -B build -A x64 `
+            -DCTRLPP_BUILD_IMPLOT=ON `
+            -DCTRLPP_BUILD_EXAMPLES=ON `
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON `
+            '-DCMAKE_CXX_FLAGS=/std:c++latest'
+
+      - name: Build
+        run: cmake --build build --config Release
+
+  install-test:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Eigen
+        run: vcpkg install eigen3:x64-windows
+
+      - name: Configure
+        run: |
+          cmake . -B build -A x64 `
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/install" `
-            -DCPPCTRL_ENABLE_EIGEN_POLICY=ON `
-            -DCPPCTRL_CMAKE_FETCH_DEPS=ON `
+            -DCTRLPP_CMAKE_FETCH_DEPS=OFF `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
 
       - name: Build and install
@@ -58,10 +76,10 @@ jobs:
         run: |
           cmake tests/integration/consumer -B build-consumer -A x64 `
             -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
           cmake --build build-consumer --config Release
 
       - name: Run consumer test
         run: |
-          build-consumer/Release/integration_test_core.exe
-          build-consumer/Release/integration_test_eigen.exe
+          build-consumer/Release/integration_test.exe

@@ -1,12 +1,12 @@
-#ifndef HPP_GUARD_CPPCTRL_DISCRETISE_H
-#define HPP_GUARD_CPPCTRL_DISCRETISE_H
+#ifndef HPP_GUARD_CTRLPP_DISCRETISE_H
+#define HPP_GUARD_CTRLPP_DISCRETISE_H
 
 namespace ctrlpp {
 
-struct ZOH {};
-struct Tustin {};
-struct ForwardEuler {};
-struct BackwardEuler {};
+struct zoh {};
+struct tustin {};
+struct forward_euler {};
+struct backward_euler {};
 
 }
 

@@ -1,31 +1,28 @@
 #include "ctrlpp/propagate.h"
 
-#include "naive_linalg.h"
-
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <type_traits>
 
-using DSS = ctrlpp::DiscreteStateSpace<NaiveLinalg, double, 2, 1, 1>;
-using CSS = ctrlpp::ContinuousStateSpace<NaiveLinalg, double, 2, 1, 1>;
+using DSS = ctrlpp::discrete_state_space<double, 2, 1, 1>;
+using CSS = ctrlpp::continuous_state_space<double, 2, 1, 1>;
 
-TEST_CASE("DiscreteStateSpace aggregate initialization", "[state_space]")
+TEST_CASE("discrete_state_space aggregate initialization", "[state_space]")
 {
-    DSS sys{
-        .A = {{{1.0, 1.0}, {0.0, 1.0}}},
-        .B = {{{0.0}, {1.0}}},
-        .C = {{{1.0, 0.0}}},
-        .D = {{{0.0}}}
-    };
+    DSS sys{};
+    sys.A << 1.0, 1.0, 0.0, 1.0;
+    sys.B << 0.0, 1.0;
+    sys.C << 1.0, 0.0;
+    sys.D << 0.0;
 
-    REQUIRE(sys.A[0][0] == 1.0);
-    REQUIRE(sys.A[0][1] == 1.0);
-    REQUIRE(sys.A[1][0] == 0.0);
-    REQUIRE(sys.A[1][1] == 1.0);
-    REQUIRE(sys.B[1][0] == 1.0);
+    REQUIRE(sys.A(0, 0) == 1.0);
+    REQUIRE(sys.A(0, 1) == 1.0);
+    REQUIRE(sys.A(1, 0) == 0.0);
+    REQUIRE(sys.A(1, 1) == 1.0);
+    REQUIRE(sys.B(1, 0) == 1.0);
 }
 
-TEST_CASE("ContinuousStateSpace is distinct from DiscreteStateSpace", "[state_space]")
+TEST_CASE("continuous_state_space is distinct from discrete_state_space", "[state_space]")
 {
     static_assert(!std::is_same_v<CSS, DSS>);
     SUCCEED();
@@ -34,15 +31,16 @@ TEST_CASE("ContinuousStateSpace is distinct from DiscreteStateSpace", "[state_sp
 TEST_CASE("propagate computes x_next = A*x + B*u", "[state_space]")
 {
     // Double integrator: A = [[1,1],[0,1]], B = [[0],[1]]
-    DSS sys{
-        .A = {{{1.0, 1.0}, {0.0, 1.0}}},
-        .B = {{{0.0}, {1.0}}},
-        .C = {{{1.0, 0.0}}},
-        .D = {{{0.0}}}
-    };
+    DSS sys{};
+    sys.A << 1.0, 1.0, 0.0, 1.0;
+    sys.B << 0.0, 1.0;
+    sys.C << 1.0, 0.0;
+    sys.D << 0.0;
 
-    NaiveLinalg::vector_type<double, 2> x = {0.0, 0.0};
-    NaiveLinalg::vector_type<double, 1> u = {1.0};
+    ctrlpp::Vector<double, 2> x;
+    x << 0.0, 0.0;
+    ctrlpp::Vector<double, 1> u;
+    u << 1.0;
 
     // Step 1: x_next = A*[0,0] + B*[1] = [0,0] + [0,1] = [0,1]
     auto x1 = ctrlpp::propagate(sys, x, u);
@@ -57,27 +55,27 @@ TEST_CASE("propagate computes x_next = A*x + B*u", "[state_space]")
 
 TEST_CASE("output computes y = C*x + D*u", "[state_space]")
 {
-    DSS sys{
-        .A = {{{1.0, 1.0}, {0.0, 1.0}}},
-        .B = {{{0.0}, {1.0}}},
-        .C = {{{1.0, 0.0}}},
-        .D = {{{0.0}}}
-    };
+    DSS sys{};
+    sys.A << 1.0, 1.0, 0.0, 1.0;
+    sys.B << 0.0, 1.0;
+    sys.C << 1.0, 0.0;
+    sys.D << 0.0;
 
-    NaiveLinalg::vector_type<double, 2> x = {3.0, 5.0};
-    NaiveLinalg::vector_type<double, 1> u = {1.0};
+    ctrlpp::Vector<double, 2> x;
+    x << 3.0, 5.0;
+    ctrlpp::Vector<double, 1> u;
+    u << 1.0;
 
     // y = C*x + D*u = [1,0]*[3,5] + [0]*[1] = [3]
     auto y = ctrlpp::output(sys, x, u);
     REQUIRE_THAT(y[0], Catch::Matchers::WithinAbs(3.0, 1e-12));
 
-    // Also works on ContinuousStateSpace
-    CSS csys{
-        .A = {{{1.0, 1.0}, {0.0, 1.0}}},
-        .B = {{{0.0}, {1.0}}},
-        .C = {{{2.0, 0.0}}},
-        .D = {{{1.0}}}
-    };
+    // Also works on continuous_state_space
+    CSS csys{};
+    csys.A << 1.0, 1.0, 0.0, 1.0;
+    csys.B << 0.0, 1.0;
+    csys.C << 2.0, 0.0;
+    csys.D << 1.0;
 
     // y = C*x + D*u = [2,0]*[3,5] + [1]*[1] = [6] + [1] = [7]
     auto y2 = ctrlpp::output(csys, x, u);
@@ -87,10 +85,10 @@ TEST_CASE("output computes y = C*x + D*u", "[state_space]")
 TEST_CASE("SISO alias template works", "[state_space]")
 {
     static_assert(std::is_same_v<
-        ctrlpp::SISODiscreteStateSpace<NaiveLinalg, double, 2>,
-        ctrlpp::DiscreteStateSpace<NaiveLinalg, double, 2, 1, 1>>);
+        ctrlpp::siso_discrete_state_space<double, 2>,
+        ctrlpp::discrete_state_space<double, 2, 1, 1>>);
     static_assert(std::is_same_v<
-        ctrlpp::SISOContinuousStateSpace<NaiveLinalg, double, 2>,
-        ctrlpp::ContinuousStateSpace<NaiveLinalg, double, 2, 1, 1>>);
+        ctrlpp::siso_continuous_state_space<double, 2>,
+        ctrlpp::continuous_state_space<double, 2, 1, 1>>);
     SUCCEED();
 }

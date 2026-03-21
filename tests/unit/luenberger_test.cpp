@@ -1,6 +1,6 @@
-#include "ctrlpp/eigen_luenberger.h"
-#include "ctrlpp/eigen_place.h"
-#include "ctrlpp/eigen_linalg.h"
+#include "ctrlpp/luenberger.h"
+#include "ctrlpp/place.h"
+
 #include "ctrlpp/observer_policy.h"
 #include "ctrlpp/state_space.h"
 
@@ -13,11 +13,10 @@
 #include <cmath>
 #include <complex>
 
-using Policy = ctrlpp::EigenLinalgPolicy;
 
 TEST_CASE("luenberger observer convergence with known gain") {
     // Simple 2-state system: x(k+1) = A x(k) + B u(k), y(k) = C x(k)
-    ctrlpp::DiscreteStateSpace<Policy, double, 2, 1, 1> sys;
+    ctrlpp::discrete_state_space<double, 2, 1, 1> sys;
     sys.A << 0.9, 0.1,
              0.0, 0.8;
     sys.B << 0.0,
@@ -32,7 +31,7 @@ TEST_CASE("luenberger observer convergence with known gain") {
 
     // Initial estimate off from true state
     Eigen::Vector2d x0_est = Eigen::Vector2d::Zero();
-    ctrlpp::LuenbergerObserver<double, 2, 1, 1> obs(sys, L, x0_est);
+    ctrlpp::luenberger_observer<double, 2, 1, 1> obs(sys, L, x0_est);
 
     // True state
     Eigen::Vector2d x_true;
@@ -43,12 +42,12 @@ TEST_CASE("luenberger observer convergence with known gain") {
         u << 0.0;
 
         // Simulate true system
-        Eigen::Matrix<double, 1, 1> y = sys.C * x_true;
+        Eigen::Matrix<double, 1, 1> z = sys.C * x_true;
         x_true = sys.A * x_true + sys.B * u;
 
         // Observer predict-update
         obs.predict(u);
-        obs.update(y);
+        obs.update(z);
     }
 
     auto est = obs.state();
@@ -94,7 +93,7 @@ TEST_CASE("place produces correct eigenvalues for 2-state SISO") {
 
 TEST_CASE("place_observer produces gain for convergent observer") {
     // Discrete system
-    ctrlpp::DiscreteStateSpace<Policy, double, 2, 1, 1> sys;
+    ctrlpp::discrete_state_space<double, 2, 1, 1> sys;
     sys.A << 1.0, 0.1,
              0.0, 1.0;
     sys.B << 0.005,
@@ -113,7 +112,7 @@ TEST_CASE("place_observer produces gain for convergent observer") {
 
     auto L = *L_opt;
     Eigen::Vector2d x0_est = Eigen::Vector2d::Zero();
-    ctrlpp::LuenbergerObserver<double, 2, 1, 1> obs(sys, L, x0_est);
+    ctrlpp::luenberger_observer<double, 2, 1, 1> obs(sys, L, x0_est);
 
     // True state
     Eigen::Vector2d x_true;
@@ -122,11 +121,11 @@ TEST_CASE("place_observer produces gain for convergent observer") {
     for (int i = 0; i < 20; ++i) {
         Eigen::Matrix<double, 1, 1> u;
         u << 0.0;
-        Eigen::Matrix<double, 1, 1> y = sys.C * x_true;
+        Eigen::Matrix<double, 1, 1> z = sys.C * x_true;
         x_true = sys.A * x_true + sys.B * u;
 
         obs.predict(u);
-        obs.update(y);
+        obs.update(z);
     }
 
     auto est = obs.state();
@@ -153,7 +152,7 @@ TEST_CASE("place on uncontrollable system returns nullopt") {
 
 TEST_CASE("luenberger MIMO observer with manual gain") {
     // NX=3, NU=1, NY=2
-    ctrlpp::DiscreteStateSpace<Policy, double, 3, 1, 2> sys;
+    ctrlpp::discrete_state_space<double, 3, 1, 2> sys;
     sys.A << 0.9, 0.1, 0.0,
              0.0, 0.8, 0.2,
              0.0, 0.0, 0.7;
@@ -171,7 +170,7 @@ TEST_CASE("luenberger MIMO observer with manual gain") {
          0.0, 0.1;
 
     Eigen::Vector3d x0_est = Eigen::Vector3d::Zero();
-    ctrlpp::LuenbergerObserver<double, 3, 1, 2> obs(sys, L, x0_est);
+    ctrlpp::luenberger_observer<double, 3, 1, 2> obs(sys, L, x0_est);
 
     // Run a few cycles
     for (int i = 0; i < 10; ++i) {
@@ -179,9 +178,9 @@ TEST_CASE("luenberger MIMO observer with manual gain") {
         u << 0.1;
         obs.predict(u);
 
-        Eigen::Vector2d y;
-        y << 1.0, 0.5;
-        obs.update(y);
+        Eigen::Vector2d z;
+        z << 1.0, 0.5;
+        obs.update(z);
     }
 
     auto est = obs.state();
@@ -190,7 +189,7 @@ TEST_CASE("luenberger MIMO observer with manual gain") {
 }
 
 TEST_CASE("luenberger set_model and set_gain") {
-    ctrlpp::DiscreteStateSpace<Policy, double, 2, 1, 1> sys;
+    ctrlpp::discrete_state_space<double, 2, 1, 1> sys;
     sys.A << 0.9, 0.1,
              0.0, 0.8;
     sys.B << 0.0,
@@ -201,7 +200,7 @@ TEST_CASE("luenberger set_model and set_gain") {
     Eigen::Matrix<double, 2, 1> L;
     L << 0.5, 0.3;
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
-    ctrlpp::LuenbergerObserver<double, 2, 1, 1> obs(sys, L, x0);
+    ctrlpp::luenberger_observer<double, 2, 1, 1> obs(sys, L, x0);
 
     // Change gain
     Eigen::Matrix<double, 2, 1> L2;
@@ -224,8 +223,8 @@ TEST_CASE("luenberger set_model and set_gain") {
 }
 
 TEST_CASE("luenberger concept satisfaction") {
-    static_assert(ctrlpp::ObserverPolicy<ctrlpp::LuenbergerObserver<double, 2, 1, 1>>);
-    static_assert(!ctrlpp::CovarianceObserver<ctrlpp::LuenbergerObserver<double, 2, 1, 1>>);
+    static_assert(ctrlpp::ObserverPolicy<ctrlpp::luenberger_observer<double, 2, 1, 1>>);
+    static_assert(!ctrlpp::CovarianceObserver<ctrlpp::luenberger_observer<double, 2, 1, 1>>);
     CHECK(true);
 }
 
