@@ -1,7 +1,18 @@
+#include "ctrlpp/ukf.h"
+#include "ctrlpp/particle_filter.h"
+#include "ctrlpp/observer_policy.h"
 #include "ctrlpp/mpc/differentiable_dynamics.h"
 #include "ctrlpp/mpc/differentiable_measurement.h"
 #include "ctrlpp/mpc/measurement_model.h"
 #include "ctrlpp/mpc/dynamics_model.h"
+#include "ctrlpp/sigma_points/sigma_point_strategy.h"
+#include "ctrlpp/sigma_points/merwe_sigma_points.h"
+#include "ctrlpp/sigma_points/julier_sigma_points.h"
+#include "ctrlpp/resampling/resampling_strategy.h"
+#include "ctrlpp/resampling/systematic_resampling.h"
+#include "ctrlpp/resampling/multinomial_resampling.h"
+
+#include <random>
 
 using namespace ctrlpp;
 
@@ -90,6 +101,28 @@ static_assert(differentiable_measurement<DiffMeasurement, double, 2, 1>);
 // LinearMeasurement satisfies measurement_model but NOT differentiable_measurement
 static_assert(measurement_model<LinearMeasurement, double, 2, 1>);
 static_assert(!differentiable_measurement<LinearMeasurement, double, 2, 1>);
+
+// -- UKF observer concept checks --
+
+using ukf_test_t = ukf<double, 2, 1, 1, SimpleDynamics, LinearMeasurement>;
+static_assert(ObserverPolicy<ukf_test_t>);
+static_assert(CovarianceObserver<ukf_test_t>);
+
+// -- Particle filter observer concept checks --
+
+using pf_test_t = particle_filter<double, 2, 1, 1, 10, SimpleDynamics, LinearMeasurement>;
+static_assert(ObserverPolicy<pf_test_t>);
+static_assert(!CovarianceObserver<pf_test_t>);
+
+// -- Sigma point strategy concept checks --
+
+static_assert(sigma_point_strategy<merwe_sigma_points<double, 2>, double, 2>);
+static_assert(sigma_point_strategy<julier_sigma_points<double, 2>, double, 2>);
+
+// -- Resampling strategy concept checks --
+
+static_assert(resampling_strategy<systematic_resampling, std::mt19937_64, 10>);
+static_assert(resampling_strategy<multinomial_resampling, std::mt19937_64, 10>);
 
 int main() {
     return 0;

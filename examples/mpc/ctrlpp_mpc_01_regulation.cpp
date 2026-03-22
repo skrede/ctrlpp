@@ -27,13 +27,13 @@ int main()
 
     ctrlpp::mpc_config<double, NX, NU> cfg{
         .horizon = 20,
-        .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
-        .R = Eigen::Matrix<double, 1, 1>::Identity(),
-        .Qf = std::nullopt,
-        .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
-        .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
-        .x_min = Eigen::Vector2d(-std::numeric_limits<double>::infinity(), -2.0),
-        .x_max = Eigen::Vector2d(std::numeric_limits<double>::infinity(), 2.0)
+        .Q       = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
+        .R       = Eigen::Matrix<double, 1, 1>::Identity(),
+        .Qf      = std::nullopt,
+        .u_min   = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
+        .u_max   = Eigen::Matrix<double, 1, 1>::Constant(1.0),
+        .x_min   = Eigen::Vector2d(-std::numeric_limits<double>::infinity(), -2.0),
+        .x_max   = Eigen::Vector2d(std::numeric_limits<double>::infinity(), 2.0)
     };
 
     ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(sys, cfg);
@@ -43,9 +43,11 @@ int main()
 
     std::cout << "time,x_0,x_1,control,cost\n";
 
-    for (double t = 0.0; t < duration; t += dt) {
+    for(double t = 0.0; t < duration; t += dt)
+    {
         auto u_opt = controller.solve(x);
-        if (!u_opt) {
+        if(!u_opt)
+        {
             std::cerr << "MPC solve failed at t=" << t << "\n";
             return EXIT_FAILURE;
         }
@@ -54,8 +56,8 @@ int main()
         Eigen::Matrix<double, 1, 1> u = *u_opt;
 
         std::cout << std::fixed << std::setprecision(4)
-                  << t << "," << x[0] << "," << x[1] << ","
-                  << u[0] << "," << diag.cost << "\n";
+            << t << "," << x[0] << "," << x[1] << ","
+            << u[0] << "," << diag.cost << "\n";
 
         x = ctrlpp::propagate(sys, x, u);
     }
