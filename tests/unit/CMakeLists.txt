@@ -30,6 +30,11 @@ if (CTRLPP_BUILD_OSQP)
     target_link_libraries(mpc_osqp_test PRIVATE ctrlpp::osqp Catch2::Catch2WithMain)
     target_compile_options(mpc_osqp_test PRIVATE ${CTRLPP_WARNING_FLAGS})
     add_test(NAME mpc_osqp_test COMMAND mpc_osqp_test)
+
+    add_executable(terminal_set_test "${CMAKE_CURRENT_LIST_DIR}/terminal_set_test.cpp")
+    target_link_libraries(terminal_set_test PRIVATE ctrlpp::osqp Catch2::Catch2WithMain)
+    target_compile_options(terminal_set_test PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME terminal_set_test COMMAND terminal_set_test)
 endif ()
 
 if (CTRLPP_BUILD_NLOPT)
@@ -37,6 +42,11 @@ if (CTRLPP_BUILD_NLOPT)
     target_link_libraries(nmpc_nlopt_test PRIVATE ctrlpp::nlopt Catch2::Catch2WithMain)
     target_compile_options(nmpc_nlopt_test PRIVATE ${CTRLPP_WARNING_FLAGS})
     add_test(NAME nmpc_nlopt_test COMMAND nmpc_nlopt_test)
+
+    add_executable(nmpc_constraint_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_constraint_test.cpp")
+    target_link_libraries(nmpc_constraint_test PRIVATE ctrlpp::nlopt Catch2::Catch2WithMain)
+    target_compile_options(nmpc_constraint_test PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME nmpc_constraint_test COMMAND nmpc_constraint_test)
 endif ()
 
 if (CTRLPP_BUILD_PROPERTY_TESTS)

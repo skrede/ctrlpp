@@ -2,15 +2,20 @@
 #define HPP_GUARD_CTRLPP_MPC_QP_FORMULATION_H
 
 #include "ctrlpp/mpc/qp_types.h"
+#include "ctrlpp/mpc/terminal_set.h"
 #include "ctrlpp/types.h"
 
+#include <Eigen/Dense>
 #include <Eigen/Sparse>
 
+#include <cmath>
 #include <cstddef>
 #include <limits>
 #include <optional>
 #include <span>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace ctrlpp::detail {
@@ -25,7 +30,8 @@ template<typename Scalar, std::size_t NX, std::size_t NU>
     const Matrix<Scalar, NU, NU>& R,
     const Matrix<Scalar, NX, NX>& Qf,
     bool has_soft_constraints,
-    Scalar soft_penalty) -> Eigen::SparseMatrix<Scalar, Eigen::ColMajor>
+    Scalar soft_penalty,
+    const std::optional<Vector<Scalar, NX>>& soft_state_penalty = {}) -> Eigen::SparseMatrix<Scalar, Eigen::ColMajor>
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
@@ -72,15 +78,18 @@ template<typename Scalar, std::size_t NX, std::size_t NU>
         }
     }
 
-    // Slack penalty blocks: rho * I for each of N steps
+    // Slack penalty blocks: rho * I (or per-state diagonal) for each of N steps
     if (has_soft_constraints) {
         int slack_offset = n_x_total + n_u_total;
         for (int k = 0; k < N; ++k) {
             for (int i = 0; i < nx; ++i) {
+                Scalar penalty = soft_state_penalty.has_value()
+                    ? (*soft_state_penalty)(i)
+                    : soft_penalty;
                 triplets.emplace_back(
                     slack_offset + k * nx + i,
                     slack_offset + k * nx + i,
-                    soft_penalty);
+                    penalty);
             }
         }
     }
@@ -104,7 +113,8 @@ template<typename Scalar, std::size_t NX, std::size_t NU>
     bool has_state_bounds,
     bool has_soft_constraints,
     bool has_input_bounds,
-    bool has_rate_bounds) -> Eigen::SparseMatrix<Scalar, Eigen::ColMajor>
+    bool has_rate_bounds,
+    const std::optional<terminal_set<Scalar, NX>>& terminal_constraint = {}) -> Eigen::SparseMatrix<Scalar, Eigen::ColMajor>
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
@@ -118,7 +128,20 @@ template<typename Scalar, std::size_t NX, std::size_t NU>
     int n_state = has_state_bounds ? N * nx : 0;
     int n_input = has_input_bounds ? N * nu : 0;
     int n_rate = has_rate_bounds ? N * nu : 0;
-    int n_con = n_dyn + n_state + n_input + n_rate;
+
+    int n_terminal = 0;
+    if (terminal_constraint.has_value()) {
+        n_terminal = std::visit([](const auto& s) -> int {
+            using T = std::decay_t<decltype(s)>;
+            if constexpr (std::is_same_v<T, ellipsoidal_set<Scalar, NX>>) {
+                return 2 * nx;
+            } else {
+                return static_cast<int>(s.H.rows());
+            }
+        }, terminal_constraint.value());
+    }
+
+    int n_con = n_dyn + n_state + n_input + n_rate + n_terminal;
 
     std::vector<Eigen::Triplet<Scalar>> triplets;
     triplets.reserve(static_cast<std::size_t>(
@@ -206,6 +229,44 @@ template<typename Scalar, std::size_t NX, std::size_t NU>
         }
     }
 
+    // Block 5: Terminal set constraints on x_N (hard constraints)
+    if (terminal_constraint.has_value()) {
+        int x_N_offset = N * nx;
+        std::visit([&](const auto& s) {
+            using T = std::decay_t<decltype(s)>;
+            if constexpr (std::is_same_v<T, ellipsoidal_set<Scalar, NX>>) {
+                // Linearize ellipsoid into inner-approximation box along principal axes.
+                // Eigendecompose P = V D V', add constraint v_i' x_N <= sqrt(alpha/d_i)
+                // for each principal axis (both + and - directions).
+                Eigen::SelfAdjointEigenSolver<Matrix<Scalar, NX, NX>> eig(s.P);
+                auto V = eig.eigenvectors();
+                auto D = eig.eigenvalues();
+
+                for (int i = 0; i < nx; ++i) {
+                    for (int j = 0; j < nx; ++j) {
+                        if (V(j, i) != Scalar{0}) {
+                            // +v_i' x_N
+                            triplets.emplace_back(row + 2 * i, x_N_offset + j, V(j, i));
+                            // -v_i' x_N
+                            triplets.emplace_back(row + 2 * i + 1, x_N_offset + j, -V(j, i));
+                        }
+                    }
+                }
+                row += 2 * nx;
+            } else {
+                // Polytopic: H x_N <= h -- add H as constraint coefficients on x_N
+                int n_faces = static_cast<int>(s.H.rows());
+                for (int i = 0; i < n_faces; ++i) {
+                    for (int j = 0; j < nx; ++j) {
+                        if (s.H(i, j) != Scalar{0})
+                            triplets.emplace_back(row + i, x_N_offset + j, s.H(i, j));
+                    }
+                }
+                row += n_faces;
+            }
+        }, terminal_constraint.value());
+    }
+
     Eigen::SparseMatrix<Scalar, Eigen::ColMajor> A(n_con, n_dec);
     A.setFromTriplets(triplets.begin(), triplets.end());
     return A;
@@ -221,7 +282,8 @@ template<typename Scalar, std::size_t NX, std::size_t NU>
     const std::optional<Vector<Scalar, NU>>& u_min,
     const std::optional<Vector<Scalar, NU>>& u_max,
     const std::optional<Vector<Scalar, NU>>& du_max,
-    bool has_soft_constraints) -> std::pair<Eigen::VectorX<Scalar>, Eigen::VectorX<Scalar>>
+    bool has_soft_constraints,
+    const std::optional<terminal_set<Scalar, NX>>& terminal_constraint = {}) -> std::pair<Eigen::VectorX<Scalar>, Eigen::VectorX<Scalar>>
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
@@ -235,7 +297,20 @@ template<typename Scalar, std::size_t NX, std::size_t NU>
     int n_state = has_state_bounds ? N * nx : 0;
     int n_input = has_input_bounds ? N * nu : 0;
     int n_rate = has_rate_bounds ? N * nu : 0;
-    int n_con = n_dyn + n_state + n_input + n_rate;
+
+    int n_terminal = 0;
+    if (terminal_constraint.has_value()) {
+        n_terminal = std::visit([](const auto& s) -> int {
+            using T = std::decay_t<decltype(s)>;
+            if constexpr (std::is_same_v<T, ellipsoidal_set<Scalar, NX>>) {
+                return 2 * nx;
+            } else {
+                return static_cast<int>(s.H.rows());
+            }
+        }, terminal_constraint.value());
+    }
+
+    int n_con = n_dyn + n_state + n_input + n_rate + n_terminal;
 
     Eigen::VectorX<Scalar> l(n_con);
     Eigen::VectorX<Scalar> u(n_con);
@@ -288,6 +363,34 @@ template<typename Scalar, std::size_t NX, std::size_t NU>
             u.segment(row, nu) = du_max.value();
             row += nu;
         }
+    }
+
+    // Terminal set constraint bounds
+    if (terminal_constraint.has_value()) {
+        std::visit([&](const auto& s) {
+            using T = std::decay_t<decltype(s)>;
+            if constexpr (std::is_same_v<T, ellipsoidal_set<Scalar, NX>>) {
+                // Bounds for linearized ellipsoid: -sqrt(alpha/d_i) <= v_i'x <= sqrt(alpha/d_i)
+                Eigen::SelfAdjointEigenSolver<Matrix<Scalar, NX, NX>> eig(s.P);
+                auto D = eig.eigenvalues();
+                for (int i = 0; i < nx; ++i) {
+                    Scalar bound = std::sqrt(s.alpha / D(i));
+                    l(row + 2 * i) = -bound;
+                    u(row + 2 * i) = bound;
+                    l(row + 2 * i + 1) = -bound;
+                    u(row + 2 * i + 1) = bound;
+                }
+                row += 2 * nx;
+            } else {
+                // Polytopic: Hx <= h means -large <= Hx <= h
+                // Use large finite bound instead of -inf for OSQP numerical stability
+                constexpr Scalar large_bound = Scalar{1e20};
+                int n_faces = static_cast<int>(s.H.rows());
+                l.segment(row, n_faces).setConstant(-large_bound);
+                u.segment(row, n_faces) = s.h;
+                row += n_faces;
+            }
+        }, terminal_constraint.value());
     }
 
     return {l, u};

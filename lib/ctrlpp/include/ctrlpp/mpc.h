@@ -5,6 +5,7 @@
 #include "ctrlpp/mpc/qp_formulation.h"
 #include "ctrlpp/mpc/qp_solver.h"
 #include "ctrlpp/mpc/qp_types.h"
+#include "ctrlpp/mpc/terminal_set.h"
 
 #include "ctrlpp/dare.h"
 #include "ctrlpp/state_space.h"
@@ -16,6 +17,7 @@
 #include <optional>
 #include <span>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace ctrlpp {
@@ -32,6 +34,8 @@ struct mpc_config {
     std::optional<Vector<Scalar, NX>> x_max{};
     std::optional<Vector<Scalar, NU>> du_max{};
     Scalar soft_penalty{Scalar{1e4}};
+    std::optional<Vector<Scalar, NX>> soft_state_penalty{};
+    std::optional<terminal_set<Scalar, NX>> terminal_constraint_set{};
     bool hard_state_constraints{false};
 };
 
@@ -58,10 +62,25 @@ public:
 
         bool has_input_bounds = config_.u_min.has_value() || config_.u_max.has_value();
         bool has_rate_bounds = config_.du_max.has_value();
+
+        // Terminal set constraint rows
+        int n_terminal = 0;
+        if (config_.terminal_constraint_set.has_value()) {
+            n_terminal = std::visit([](const auto& s) -> int {
+                using T = std::decay_t<decltype(s)>;
+                if constexpr (std::is_same_v<T, ellipsoidal_set<Scalar, NX>>) {
+                    return 2 * nx; // inner box approximation: 2 halfplanes per axis
+                } else {
+                    return static_cast<int>(s.H.rows());
+                }
+            }, config_.terminal_constraint_set.value());
+        }
+
         n_con_ = (N + 1) * nx
             + (has_state_bounds ? N * nx : 0)
             + (has_input_bounds ? N * nu : 0)
-            + (has_rate_bounds ? N * nu : 0);
+            + (has_rate_bounds ? N * nu : 0)
+            + n_terminal;
 
         // Compute terminal cost Qf
         Matrix<Scalar, NX, NX> Qf_actual;
@@ -75,17 +94,20 @@ public:
 
         // Build QP structure (cold path)
         auto P = detail::build_cost_matrix<Scalar, NX, NU>(
-            N, config_.Q, config_.R, Qf_actual, use_soft, config_.soft_penalty);
+            N, config_.Q, config_.R, Qf_actual, use_soft,
+            config_.soft_penalty, config_.soft_state_penalty);
         auto A = detail::build_constraint_matrix<Scalar, NX, NU>(
             N, system_.A, system_.B,
-            has_state_bounds, use_soft, has_input_bounds, has_rate_bounds);
+            has_state_bounds, use_soft, has_input_bounds, has_rate_bounds,
+            config_.terminal_constraint_set);
 
         Vector<Scalar, NX> x0_dummy = Vector<Scalar, NX>::Zero();
         auto [l, u] = detail::build_bounds_vectors<Scalar, NX, NU>(
             N, x0_dummy,
             config_.x_min, config_.x_max,
             config_.u_min, config_.u_max,
-            config_.du_max, use_soft);
+            config_.du_max, use_soft,
+            config_.terminal_constraint_set);
 
         auto q = detail::build_cost_vector<Scalar, NX, NU>(N, n_dec_, config_.Q, Qf_actual);
 
@@ -183,7 +205,8 @@ private:
             config_.u_min, config_.u_max,
             config_.du_max,
             (config_.x_min.has_value() || config_.x_max.has_value())
-                && !config_.hard_state_constraints);
+                && !config_.hard_state_constraints,
+            config_.terminal_constraint_set);
         update_.l = std::move(l);
         update_.u = std::move(u);
 

@@ -16,6 +16,9 @@ struct mpc_diagnostics {
     Scalar primal_residual;
     Scalar dual_residual;
     Scalar max_constraint_violation;
+    Scalar max_path_constraint_violation{};
+    Scalar max_terminal_constraint_violation{};
+    Scalar total_slack{};
 };
 
 }

@@ -26,29 +26,63 @@ struct nmpc_formulation_state {
 
 namespace detail {
 
-template<typename Scalar, std::size_t NX, std::size_t NU, typename Dynamics>
+template<typename Scalar, std::size_t NX, std::size_t NU,
+         std::size_t NC = 0, std::size_t NTC = 0, typename Dynamics>
 auto build_nmpc_problem(const Dynamics& dynamics,
-                        const nmpc_config<Scalar, NX, NU>& config,
+                        const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
                         std::shared_ptr<nmpc_formulation_state<Scalar, NX, NU>> state)
     -> nlp_problem<Scalar>
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
+    constexpr int nc = static_cast<int>(NC);
+    constexpr int ntc = static_cast<int>(NTC);
     const int N = config.horizon;
-    const int n_vars = (N + 1) * nx + N * nu;
+
+    // Decision vector layout:
+    //   [x_0, ..., x_N, u_0, ..., u_{N-1}, s_path_0, ..., s_path_{N-1}, s_term]
+    // where s_path_k is Vector<NC> slack at node k, s_term is Vector<NTC> slack at terminal.
+    // Slack variables only present when soft_constraints=true and NC>0 / NTC>0.
+    const bool has_path_slack = config.soft_constraints && NC > 0 && config.path_constraint;
+    const bool has_term_slack = config.soft_constraints && NTC > 0 && config.terminal_constraint;
+    const int n_path_slack = has_path_slack ? N * nc : 0;
+    const int n_term_slack = has_term_slack ? ntc : 0;
+    const int n_vars = (N + 1) * nx + N * nu + n_path_slack + n_term_slack;
+
+    // Offsets into decision vector
+    const int x_offset = 0;
+    const int u_offset = (N + 1) * nx;
+    const int path_slack_offset = u_offset + N * nu;
+    const int term_slack_offset = path_slack_offset + n_path_slack;
 
     // Constraint count
+    //   Equality: (N+1)*NX (initial state + continuity)
+    //   Rate inequality: du_max ? N*NU*2 : 0
+    //   Path constraint inequality: path_constraint ? N*NC : 0
+    //   Terminal constraint inequality: terminal_constraint ? NTC : 0
     const int n_eq = (N + 1) * nx;
-    const int n_ineq = config.du_max ? N * nu * 2 : 0;
-    const int n_constraints = n_eq + n_ineq;
+    const int n_rate = config.du_max ? N * nu * 2 : 0;
+    const int n_path_con = config.path_constraint ? N * nc : 0;
+    const int n_term_con = config.terminal_constraint ? ntc : 0;
+    const int n_constraints = n_eq + n_rate + n_path_con + n_term_con;
+
+    // Constraint offset map:
+    //   [0, n_eq): equality constraints
+    //   [n_eq, n_eq + n_rate): rate inequality
+    //   [n_eq + n_rate, n_eq + n_rate + n_path_con): path constraints
+    //   [n_eq + n_rate + n_path_con, ...): terminal constraints
+    const int eq_start = 0;
+    const int rate_start = n_eq;
+    const int path_con_start = rate_start + n_rate;
+    const int term_con_start = path_con_start + n_path_con;
 
     // Cost callback
-    auto cost_fn = [dynamics, config, state, N, n_vars](std::span<const Scalar> z) -> Scalar {
+    auto cost_fn = [=](std::span<const Scalar> z) -> Scalar {
         Scalar total{0};
 
         for (int k = 0; k < N; ++k) {
-            Eigen::Map<const Vector<Scalar, NX>> xk(z.data() + k * nx);
-            Eigen::Map<const Vector<Scalar, NU>> uk(z.data() + (N + 1) * nx + k * nu);
+            Eigen::Map<const Vector<Scalar, NX>> xk(z.data() + x_offset + k * nx);
+            Eigen::Map<const Vector<Scalar, NU>> uk(z.data() + u_offset + k * nu);
 
             if (config.stage_cost) {
                 total += (*config.stage_cost)(xk, uk);
@@ -63,7 +97,7 @@ auto build_nmpc_problem(const Dynamics& dynamics,
         }
 
         // Terminal cost
-        Eigen::Map<const Vector<Scalar, NX>> xN(z.data() + N * nx);
+        Eigen::Map<const Vector<Scalar, NX>> xN(z.data() + x_offset + N * nx);
         if (config.terminal_cost) {
             total += (*config.terminal_cost)(xN);
         } else {
@@ -73,6 +107,19 @@ auto build_nmpc_problem(const Dynamics& dynamics,
                 : Vector<Scalar, NX>::Zero();
             Vector<Scalar, NX> dx = xN - x_ref_N;
             total += Scalar{0.5} * dx.dot(Qf * dx);
+        }
+
+        // L1 penalty on slack variables
+        if (has_path_slack) {
+            for (int k = 0; k < N; ++k) {
+                Eigen::Map<const Vector<Scalar, NC>> sk(
+                    z.data() + path_slack_offset + k * nc);
+                total += config.path_penalty.dot(sk);
+            }
+        }
+        if (has_term_slack) {
+            Eigen::Map<const Vector<Scalar, NTC>> st(z.data() + term_slack_offset);
+            total += config.terminal_penalty.dot(st);
         }
 
         return total;
@@ -88,51 +135,95 @@ auto build_nmpc_problem(const Dynamics& dynamics,
 
     // Constraint callback
     std::function<void(std::span<const Scalar>, std::span<Scalar>)> constraints =
-        [dynamics, config, state, N](std::span<const Scalar> z, std::span<Scalar> c) {
+        [=](std::span<const Scalar> z, std::span<Scalar> c) {
             // Initial state constraint: z[0..nx] - x0 = 0
             for (int i = 0; i < nx; ++i) {
-                c[static_cast<std::size_t>(i)] = z[static_cast<std::size_t>(i)] - state->x0[i];
+                c[static_cast<std::size_t>(eq_start + i)] =
+                    z[static_cast<std::size_t>(x_offset + i)] - state->x0[i];
             }
 
             // Continuity constraints: z[(k+1)*nx..] - f(xk, uk) = 0
             for (int k = 0; k < N; ++k) {
-                Eigen::Map<const Vector<Scalar, NX>> xk(z.data() + k * nx);
-                Eigen::Map<const Vector<Scalar, NU>> uk(z.data() + (N + 1) * nx + k * nu);
+                Eigen::Map<const Vector<Scalar, NX>> xk(
+                    z.data() + x_offset + k * nx);
+                Eigen::Map<const Vector<Scalar, NU>> uk(
+                    z.data() + u_offset + k * nu);
 
                 Vector<Scalar, NX> x_next = dynamics(xk, uk);
 
                 for (int i = 0; i < nx; ++i) {
-                    c[static_cast<std::size_t>((k + 1) * nx + i)] =
-                        z[static_cast<std::size_t>((k + 1) * nx + i)] - x_next[i];
+                    c[static_cast<std::size_t>(eq_start + (k + 1) * nx + i)] =
+                        z[static_cast<std::size_t>(x_offset + (k + 1) * nx + i)] - x_next[i];
                 }
             }
 
             // Rate constraints: one-sided formulation
             if (config.du_max) {
-                const int n_eq = (N + 1) * nx;
                 const auto& du_max = *config.du_max;
 
                 for (int k = 0; k < N; ++k) {
                     Eigen::Map<const Vector<Scalar, NU>> uk(
-                        z.data() + (N + 1) * nx + k * nu);
+                        z.data() + u_offset + k * nu);
 
                     Vector<Scalar, NU> uk_prev;
                     if (k == 0) {
                         uk_prev = state->u_prev;
                     } else {
                         uk_prev = Eigen::Map<const Vector<Scalar, NU>>(
-                            z.data() + (N + 1) * nx + (k - 1) * nu);
+                            z.data() + u_offset + (k - 1) * nu);
                     }
 
                     for (int j = 0; j < nu; ++j) {
                         Scalar du = uk[j] - uk_prev[j];
                         // (uk - uk_prev) - du_max <= 0
-                        c[static_cast<std::size_t>(n_eq + k * nu * 2 + j * 2)] =
+                        c[static_cast<std::size_t>(rate_start + k * nu * 2 + j * 2)] =
                             du - du_max[j];
                         // -(uk - uk_prev) - du_max <= 0
-                        c[static_cast<std::size_t>(n_eq + k * nu * 2 + j * 2 + 1)] =
+                        c[static_cast<std::size_t>(rate_start + k * nu * 2 + j * 2 + 1)] =
                             -du - du_max[j];
                     }
+                }
+            }
+
+            // Path constraints: g(x_k, u_k) - s_k <= 0 (soft) or g(x_k, u_k) <= 0 (hard)
+            if (config.path_constraint) {
+                const auto& g = *config.path_constraint;
+                for (int k = 0; k < N; ++k) {
+                    Eigen::Map<const Vector<Scalar, NX>> xk(
+                        z.data() + x_offset + k * nx);
+                    Eigen::Map<const Vector<Scalar, NU>> uk(
+                        z.data() + u_offset + k * nu);
+
+                    Vector<Scalar, NC> gk = g(xk, uk);
+
+                    if (has_path_slack) {
+                        Eigen::Map<const Vector<Scalar, NC>> sk(
+                            z.data() + path_slack_offset + k * nc);
+                        gk -= sk;
+                    }
+
+                    for (int i = 0; i < nc; ++i) {
+                        c[static_cast<std::size_t>(path_con_start + k * nc + i)] = gk[i];
+                    }
+                }
+            }
+
+            // Terminal constraints: h(x_N) - s_N <= 0 (soft) or h(x_N) <= 0 (hard)
+            if (config.terminal_constraint) {
+                const auto& h = *config.terminal_constraint;
+                Eigen::Map<const Vector<Scalar, NX>> xN(
+                    z.data() + x_offset + N * nx);
+
+                Vector<Scalar, NTC> hN = h(xN);
+
+                if (has_term_slack) {
+                    Eigen::Map<const Vector<Scalar, NTC>> st(
+                        z.data() + term_slack_offset);
+                    hN -= st;
+                }
+
+                for (int i = 0; i < ntc; ++i) {
+                    c[static_cast<std::size_t>(term_con_start + i)] = hN[i];
                 }
             }
         };
@@ -146,21 +237,29 @@ auto build_nmpc_problem(const Dynamics& dynamics,
     // State bounds (x0 is NOT pinned by variable bounds; equality constraint handles it)
     for (int k = 0; k <= N; ++k) {
         if (config.x_min) {
-            x_lower.segment(k * nx, nx) = *config.x_min;
+            x_lower.segment(x_offset + k * nx, nx) = *config.x_min;
         }
         if (config.x_max) {
-            x_upper.segment(k * nx, nx) = *config.x_max;
+            x_upper.segment(x_offset + k * nx, nx) = *config.x_max;
         }
     }
 
     // Input bounds
     for (int k = 0; k < N; ++k) {
         if (config.u_min) {
-            x_lower.segment((N + 1) * nx + k * nu, nu) = *config.u_min;
+            x_lower.segment(u_offset + k * nu, nu) = *config.u_min;
         }
         if (config.u_max) {
-            x_upper.segment((N + 1) * nx + k * nu, nu) = *config.u_max;
+            x_upper.segment(u_offset + k * nu, nu) = *config.u_max;
         }
+    }
+
+    // Slack variable bounds: s >= 0 (lower = 0, upper = +inf, already set)
+    if (has_path_slack) {
+        x_lower.segment(path_slack_offset, n_path_slack).setZero();
+    }
+    if (has_term_slack) {
+        x_lower.segment(term_slack_offset, n_term_slack).setZero();
     }
 
     // Constraint bounds
@@ -170,9 +269,18 @@ auto build_nmpc_problem(const Dynamics& dynamics,
     // Equality constraints: c_lower = c_upper = 0 (already set)
 
     // Inequality constraints (rate): c_lower = -inf, c_upper = 0
-    for (int i = n_eq; i < n_constraints; ++i) {
+    for (int i = rate_start; i < rate_start + n_rate; ++i) {
         c_lower[i] = -std::numeric_limits<Scalar>::infinity();
-        // c_upper[i] already 0
+    }
+
+    // Path constraints: c_lower = -inf, c_upper = 0
+    for (int i = path_con_start; i < path_con_start + n_path_con; ++i) {
+        c_lower[i] = -std::numeric_limits<Scalar>::infinity();
+    }
+
+    // Terminal constraints: c_lower = -inf, c_upper = 0
+    for (int i = term_con_start; i < term_con_start + n_term_con; ++i) {
+        c_lower[i] = -std::numeric_limits<Scalar>::infinity();
     }
 
     return nlp_problem<Scalar>{
