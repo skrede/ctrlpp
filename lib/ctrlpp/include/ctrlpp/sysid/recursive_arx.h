@@ -1,9 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_SYSID_RECURSIVE_ARX_H
 #define HPP_GUARD_CTRLPP_SYSID_RECURSIVE_ARX_H
 
-#include "ctrlpp/sysid/rls.h"
-#include "ctrlpp/state_space.h"
 #include "ctrlpp/types.h"
+#include "ctrlpp/state_space.h"
+
+#include "ctrlpp/sysid/rls.h"
 
 #include <Eigen/Dense>
 
@@ -12,13 +13,14 @@
 
 namespace ctrlpp {
 
-template<typename Scalar, std::size_t NA, std::size_t NB, std::size_t NU = 1, std::size_t NY = 1>
-class recursive_arx {
-  public:
+template <typename Scalar, std::size_t NA, std::size_t NB, std::size_t NU = 1, std::size_t NY = 1>
+class recursive_arx
+{
+public:
     static constexpr std::size_t NP = NA * NY + NB * NU;
 
     explicit recursive_arx(rls_config<Scalar, NP> config = {})
-        : rls_{config}
+        : m_rls{config}
     {
     }
 
@@ -27,36 +29,38 @@ class recursive_arx {
         Vector<Scalar, NP> phi = Vector<Scalar, NP>::Zero();
 
         // Build regressor: [y(t-1), ..., y(t-NA), u(t-1), ..., u(t-NB)]
-        for (std::size_t i = 0; i < NA; ++i) {
-            std::size_t idx = (write_idx_ + NA - 1 - i) % NA;
-            phi(static_cast<int>(i)) = y_hist_[idx];
+        for(std::size_t i = 0; i < NA; ++i)
+        {
+            std::size_t idx = (m_write_idx + NA - 1 - i) % NA;
+            phi(static_cast<int>(i)) = m_y_hist[idx];
         }
-        for (std::size_t i = 0; i < NB; ++i) {
-            std::size_t idx = (write_idx_ + NB - 1 - i) % NB;
-            phi(static_cast<int>(NA + i)) = u_hist_[idx];
+        for(std::size_t i = 0; i < NB; ++i)
+        {
+            std::size_t idx = (m_write_idx + NB - 1 - i) % NB;
+            phi(static_cast<int>(NA + i)) = m_u_hist[idx];
         }
 
-        rls_.update(y, phi);
+        m_rls.update(y, phi);
 
-        y_hist_[write_idx_ % NA] = y;
-        u_hist_[write_idx_ % NB] = u;
-        ++write_idx_;
-        ++sample_count_;
+        m_y_hist[m_write_idx % NA] = y;
+        m_u_hist[m_write_idx % NB] = u;
+        ++m_write_idx;
+        ++m_sample_count;
     }
 
-    [[nodiscard]] auto parameters() const -> const Vector<Scalar, NP>&
+    const Vector<Scalar, NP> &parameters() const
     {
-        return rls_.parameters();
+        return m_rls.parameters();
     }
 
-    [[nodiscard]] auto covariance() const -> const Matrix<Scalar, NP, NP>&
+    const Matrix<Scalar, NP, NP> &covariance() const
     {
-        return rls_.covariance();
+        return m_rls.covariance();
     }
 
-    [[nodiscard]] auto to_state_space() const -> discrete_state_space<Scalar, NA, NU, NY>
+    discrete_state_space<Scalar, NA, NU, NY> to_state_space() const
     {
-        auto theta = rls_.parameters();
+        auto theta = m_rls.parameters();
 
         Matrix<Scalar, NA, NA> A = Matrix<Scalar, NA, NA>::Zero();
         Matrix<Scalar, NA, NU> B = Matrix<Scalar, NA, NU>::Zero();
@@ -72,17 +76,14 @@ class recursive_arx {
         //       [aNa 0  0 ...]        [bNa (or 0)]
         //
         // A: first column = a-coefficients, superdiagonal = 1
-        for (std::size_t i = 0; i < NA; ++i) {
+        for(std::size_t i = 0; i < NA; ++i)
             A(static_cast<int>(i), 0) = theta(static_cast<int>(i));
-        }
-        for (std::size_t i = 0; i + 1 < NA; ++i) {
+        for(std::size_t i = 0; i + 1 < NA; ++i)
             A(static_cast<int>(i), static_cast<int>(i + 1)) = Scalar{1};
-        }
 
         // B column: b-coefficients, zero-padded if NB < NA
-        for (std::size_t i = 0; i < NB && i < NA; ++i) {
+        for(std::size_t i = 0; i < NB && i < NA; ++i)
             B(static_cast<int>(i), 0) = theta(static_cast<int>(NA + i));
-        }
 
         // C = [1, 0, ..., 0]
         C(0, 0) = Scalar{1};
@@ -90,12 +91,12 @@ class recursive_arx {
         return {.A = A, .B = B, .C = C, .D = D};
     }
 
-  private:
-    rls<Scalar, NP> rls_;
-    std::array<Scalar, NA> y_hist_{};
-    std::array<Scalar, NB> u_hist_{};
-    std::size_t write_idx_{0};
-    std::size_t sample_count_{0};
+private:
+    rls<Scalar, NP> m_rls;
+    std::array<Scalar, NA> m_y_hist{};
+    std::array<Scalar, NB> m_u_hist{};
+    std::size_t m_write_idx{0};
+    std::size_t m_sample_count{0};
 };
 
 }

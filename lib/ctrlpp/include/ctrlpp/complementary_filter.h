@@ -10,9 +10,9 @@
 // Reference: Mahony, Hamel, Pflimlin, "Nonlinear Complementary Filters on the
 //            Special Orthogonal Group", IEEE TAC, 2008.
 
-#include "ctrlpp/observer_policy.h"
 #include "ctrlpp/so3.h"
 #include "ctrlpp/types.h"
+#include "ctrlpp/observer_policy.h"
 
 #include <Eigen/Geometry>
 
@@ -20,20 +20,22 @@
 
 namespace ctrlpp {
 
-template<typename Scalar>
-struct cf_config {
+template <typename Scalar>
+struct cf_config
+{
     Scalar k_p{Scalar{2}};
     Scalar k_i{Scalar{0.005}};
     Scalar dt{Scalar{0.01}};
     Eigen::Quaternion<Scalar> q0{Eigen::Quaternion<Scalar>::Identity()};
 };
 
-template<typename Scalar>
-class complementary_filter {
+template <typename Scalar>
+class complementary_filter
+{
 public:
-    using observer_tag    = struct complementary_filter_tag;
-    using state_vector_t  = Vector<Scalar, 7>;
-    using input_vector_t  = Vector<Scalar, 3>;
+    using observer_tag = struct complementary_filter_tag;
+    using state_vector_t = Vector<Scalar, 7>;
+    using input_vector_t = Vector<Scalar, 3>;
     using output_vector_t = Vector<Scalar, 3>;
 
     explicit complementary_filter(cf_config<Scalar> config)
@@ -48,13 +50,13 @@ public:
     }
 
     // Natural IMU update (6-DOF): gyro + accelerometer.
-    void update(const Vector<Scalar, 3>& gyro,
-                const Vector<Scalar, 3>& accel,
+    void update(const Vector<Scalar, 3> &gyro,
+                const Vector<Scalar, 3> &accel,
                 Scalar dt)
     {
         // Normalize accelerometer
         Scalar norm = accel.norm();
-        if (norm < Scalar{1e-10}) return;
+        if(norm < Scalar{1e-10}) return;
         auto acc_n = (accel / norm).eval();
 
         // Gravity direction in body frame from current attitude
@@ -77,14 +79,14 @@ public:
     }
 
     // Natural MARG update (9-DOF): gyro + accelerometer + magnetometer.
-    void update(const Vector<Scalar, 3>& gyro,
-                const Vector<Scalar, 3>& accel,
-                const Vector<Scalar, 3>& mag,
+    void update(const Vector<Scalar, 3> &gyro,
+                const Vector<Scalar, 3> &accel,
+                const Vector<Scalar, 3> &mag,
                 Scalar dt)
     {
         // Normalize accelerometer
         Scalar norm = accel.norm();
-        if (norm < Scalar{1e-10}) return;
+        if(norm < Scalar{1e-10}) return;
         auto acc_n = (accel / norm).eval();
 
         // Gravity direction in body frame
@@ -95,7 +97,8 @@ public:
 
         // Normalize magnetometer; fall back to IMU if degenerate
         Scalar mag_norm = mag.norm();
-        if (mag_norm < Scalar{1e-10}) {
+        if(mag_norm < Scalar{1e-10})
+        {
             update(gyro, accel, dt);
             return;
         }
@@ -129,18 +132,18 @@ public:
     }
 
     // ObserverPolicy wrappers (use config dt)
-    void predict(const input_vector_t& u) { gyro_buf_ = u; }
-    void update(const output_vector_t& z) { update(gyro_buf_, z, dt_); }
+    void predict(const input_vector_t &u) { gyro_buf_ = u; }
+    void update(const output_vector_t &z) { update(gyro_buf_, z, dt_); }
 
-    [[nodiscard]] auto state() const -> const state_vector_t& { return state_cache_; }
+    [[nodiscard]] auto state() const -> const state_vector_t & { return state_cache_; }
     [[nodiscard]] auto attitude() const -> Eigen::Quaternion<Scalar> { return q_; }
-    [[nodiscard]] auto bias() const -> const Vector<Scalar, 3>& { return bias_; }
+    [[nodiscard]] auto bias() const -> const Vector<Scalar, 3> & { return bias_; }
 
 private:
     void update_state_cache()
     {
         state_cache_ << q_.w(), q_.x(), q_.y(), q_.z(),
-                        bias_(0), bias_(1), bias_(2);
+            bias_(0), bias_(1), bias_(2);
     }
 
     Eigen::Quaternion<Scalar> q_;
@@ -152,7 +155,7 @@ private:
     state_vector_t state_cache_;
 };
 
-template<typename Scalar>
+template <typename Scalar>
 complementary_filter(cf_config<Scalar>) -> complementary_filter<Scalar>;
 
 static_assert(ObserverPolicy<complementary_filter<double>>);

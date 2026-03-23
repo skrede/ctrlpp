@@ -9,59 +9,62 @@
 
 namespace ctrlpp {
 
-template<typename Scalar, std::size_t NP>
-struct rls_config {
+template <typename Scalar, std::size_t NP>
+struct rls_config
+{
     Scalar lambda{Scalar{0.99}};
     Matrix<Scalar, NP, NP> P0{Matrix<Scalar, NP, NP>::Identity() * Scalar{1000}};
     Scalar cov_upper_bound{Scalar{1e6}};
 };
 
-template<typename Scalar, std::size_t NP>
-class rls {
-  public:
+template <typename Scalar, std::size_t NP>
+class rls
+{
+public:
     explicit rls(rls_config<Scalar, NP> config = {})
-        : lambda_{config.lambda}
-        , cov_upper_bound_{config.cov_upper_bound}
-        , theta_{Vector<Scalar, NP>::Zero()}
-        , P_{config.P0}
+        : m_lambda{config.lambda}
+        , m_cov_upper_bound{config.cov_upper_bound}
+        , m_theta{Vector<Scalar, NP>::Zero()}
+        , m_P{config.P0}
     {
     }
 
-    void update(Scalar y, const Vector<Scalar, NP>& phi)
+    void update(Scalar y, const Vector<Scalar, NP> &phi)
     {
-        Scalar e = y - phi.dot(theta_);
+        Scalar e = y - phi.dot(m_theta);
 
-        Vector<Scalar, NP> P_phi = P_ * phi;
-        Scalar denom = lambda_ + phi.dot(P_phi);
+        Vector<Scalar, NP> P_phi = m_P * phi;
+        Scalar denom = m_lambda + phi.dot(P_phi);
         Vector<Scalar, NP> k = P_phi / denom;
 
-        theta_ += k * e;
+        m_theta += k * e;
 
-        P_ = (P_ - k * P_phi.transpose()).eval() / lambda_;
-        P_ = (P_ + P_.transpose()) * Scalar{0.5};
+        m_P = (m_P - k * P_phi.transpose()).eval() / m_lambda;
+        m_P = (m_P + m_P.transpose()) * Scalar{0.5};
 
-        Scalar trace = P_.trace();
-        Scalar trace_bound = cov_upper_bound_ * static_cast<Scalar>(NP);
-        if (trace > trace_bound) {
-            P_ *= trace_bound / trace;
+        Scalar trace = m_P.trace();
+        Scalar trace_bound = m_cov_upper_bound * static_cast<Scalar>(NP);
+        if(trace > trace_bound)
+        {
+            m_P *= trace_bound / trace;
         }
     }
 
-    [[nodiscard]] auto parameters() const -> const Vector<Scalar, NP>&
+    const Vector<Scalar, NP> &parameters() const
     {
-        return theta_;
+        return m_theta;
     }
 
-    [[nodiscard]] auto covariance() const -> const Matrix<Scalar, NP, NP>&
+    const Matrix<Scalar, NP, NP> &covariance() const
     {
-        return P_;
+        return m_P;
     }
 
-  private:
-    Scalar lambda_;
-    Scalar cov_upper_bound_;
-    Vector<Scalar, NP> theta_;
-    Matrix<Scalar, NP, NP> P_;
+private:
+    Scalar m_lambda;
+    Scalar m_cov_upper_bound;
+    Vector<Scalar, NP> m_theta;
+    Matrix<Scalar, NP, NP> m_P;
 };
 
 }

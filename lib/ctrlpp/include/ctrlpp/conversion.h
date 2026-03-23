@@ -13,10 +13,8 @@ namespace ctrlpp {
 // H(s) = num(s) / den(s), coefficients highest-degree-first (MATLAB convention).
 // Requires NumDeg <= DenDeg (proper transfer function).
 // Returns continuous_state_space with NX = DenDeg states.
-template<typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
-    requires (NumDeg <= DenDeg)
-constexpr auto tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
-    -> continuous_state_space<Scalar, DenDeg, 1, 1>
+template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg> requires (NumDeg <= DenDeg)
+constexpr continuous_state_space<Scalar, DenDeg, 1, 1> tf2ss(const transfer_function<Scalar, NumDeg, DenDeg> &tf)
 {
     static_assert(DenDeg >= 1, "Denominator degree must be at least 1");
 
@@ -32,24 +30,24 @@ constexpr auto tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
     Scalar a0 = tf.denominator[0];
 
     std::array<Scalar, n + 1> den{};
-    for (std::size_t i = 0; i <= n; ++i)
+    for(std::size_t i = 0; i <= n; ++i)
         den[i] = tf.denominator[i] / a0;
 
     // Pad numerator to length n+1 (right-aligned, higher degrees get zeros)
     std::array<Scalar, n + 1> num{};
     std::size_t offset = n - NumDeg;
-    for (std::size_t i = 0; i <= NumDeg; ++i)
+    for(std::size_t i = 0; i <= NumDeg; ++i)
         num[offset + i] = tf.numerator[i] / a0;
 
     // Controllable canonical form (MATLAB convention)
     mat_a A = mat_a::Zero();
 
     // Superdiagonal of 1s
-    for (int i = 0; i + 1 < ni; ++i)
+    for(int i = 0; i + 1 < ni; ++i)
         A(i, i + 1) = Scalar{1};
 
     // Last row: [-a_n, -a_{n-1}, ..., -a_1]
-    for (int j = 0; j < ni; ++j)
+    for(int j = 0; j < ni; ++j)
         A(ni - 1, j) = -den[n - static_cast<std::size_t>(j)];
 
     // B = [0, 0, ..., 1]^T
@@ -60,17 +58,20 @@ constexpr auto tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
     mat_c C = mat_c::Zero();
     mat_d D = mat_d::Zero();
 
-    if constexpr (NumDeg == DenDeg) {
+    if constexpr(NumDeg == DenDeg)
+    {
         // D = b_0 (leading numerator coefficient, normalized)
         D(0, 0) = num[0];
         // C[j] = num[n-j] - num[0]*den[n-j] for j = 0..n-1
-        for (int j = 0; j < ni; ++j)
+        for(int j = 0; j < ni; ++j)
             C(0, j) = num[n - static_cast<std::size_t>(j)] - num[0] * den[n - static_cast<std::size_t>(j)];
-    } else {
+    }
+    else
+    {
         // Strictly proper: D = 0
         D(0, 0) = Scalar{0};
         // C[j] = num[n-j] for j = 0..n-1
-        for (int j = 0; j < ni; ++j)
+        for(int j = 0; j < ni; ++j)
             C(0, j) = num[n - static_cast<std::size_t>(j)];
     }
 
@@ -81,9 +82,8 @@ constexpr auto tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
 // Computes H(s) = C*(sI - A)^{-1}*B + D for SISO systems.
 // Returns transfer_function<Scalar, NX, NX> (numerator degree = denominator degree = NX).
 // Coefficients are highest-degree-first.
-template<typename Scalar, std::size_t NX>
-auto ss2tf(const continuous_state_space<Scalar, NX, 1, 1>& sys)
-    -> transfer_function<Scalar, NX, NX>
+template <typename Scalar, std::size_t NX>
+transfer_function<Scalar, NX, NX> ss2tf(const continuous_state_space<Scalar, NX, 1, 1> &sys)
 {
     constexpr auto n = NX;
     using mat_nn = Matrix<Scalar, n, n>;
@@ -98,7 +98,8 @@ auto ss2tf(const continuous_state_space<Scalar, NX, 1, 1>& sys)
 
     mat_nn M = mat_nn::Identity();
 
-    for (std::size_t k = 0; k < n; ++k) {
+    for(std::size_t k = 0; k < n; ++k)
+    {
         // C * M_k * B
         auto CMkB = (sys.C * M * sys.B).eval();
         Scalar cmkb = CMkB(0, 0);
@@ -114,9 +115,8 @@ auto ss2tf(const continuous_state_space<Scalar, NX, 1, 1>& sys)
         numer[k + 1] = cmkb + d_val * pk1;
 
         // M_{k+1} = A*M_k + p_{k+1}*I
-        if (k + 1 < n) {
+        if(k + 1 < n)
             M = (AM + pk1 * mat_nn::Identity()).eval();
-        }
     }
 
     return {numer, den};

@@ -3,8 +3,9 @@
 
 namespace ctrlpp {
 
-template<typename P>
-concept SolverPolicy = requires {
+template <typename P>
+concept SolverPolicy = requires
+{
     typename P::solver_tag;
 };
 

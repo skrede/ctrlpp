@@ -1,29 +1,30 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_H
 #define HPP_GUARD_CTRLPP_MPC_H
 
-#include "ctrlpp/mpc/diagnostics.h"
-#include "ctrlpp/mpc/qp_formulation.h"
-#include "ctrlpp/mpc/qp_solver.h"
-#include "ctrlpp/mpc/qp_types.h"
-#include "ctrlpp/mpc/terminal_set.h"
-
 #include "ctrlpp/dare.h"
-#include "ctrlpp/state_space.h"
 #include "ctrlpp/types.h"
+#include "ctrlpp/state_space.h"
+
+#include "ctrlpp/mpc/qp_types.h"
+#include "ctrlpp/mpc/qp_solver.h"
+#include "ctrlpp/mpc/diagnostics.h"
+#include "ctrlpp/mpc/terminal_set.h"
+#include "ctrlpp/mpc/qp_formulation.h"
 
 #include <Eigen/Dense>
 
-#include <cstddef>
-#include <optional>
 #include <span>
+#include <vector>
+#include <cstddef>
 #include <utility>
 #include <variant>
-#include <vector>
+#include <optional>
 
 namespace ctrlpp {
 
-template<typename Scalar, std::size_t NX, std::size_t NU>
-struct mpc_config {
+template <typename Scalar, std::size_t NX, std::size_t NU>
+struct mpc_config
+{
     int horizon{1};
     Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
     Matrix<Scalar, NU, NU> R{Matrix<Scalar, NU, NU>::Identity()};
@@ -39,14 +40,15 @@ struct mpc_config {
     bool hard_state_constraints{false};
 };
 
-template<typename Scalar, std::size_t NX, std::size_t NU, qp_solver Solver>
-class mpc {
+template <typename Scalar, std::size_t NX, std::size_t NU, qp_solver Solver>
+class mpc
+{
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int nu = static_cast<int>(NU);
 
 public:
-    mpc(const discrete_state_space<Scalar, NX, NU, NX>& system,
-        const mpc_config<Scalar, NX, NU>& config)
+    mpc(const discrete_state_space<Scalar, NX, NU, NX> &system,
+        const mpc_config<Scalar, NX, NU> &config)
         : config_{config}
         , system_{system}
         , u_prev_{Vector<Scalar, NU>::Zero()}
@@ -65,12 +67,17 @@ public:
 
         // Terminal set constraint rows
         int n_terminal = 0;
-        if (config_.terminal_constraint_set.has_value()) {
-            n_terminal = std::visit([](const auto& s) -> int {
+        if(config_.terminal_constraint_set.has_value())
+        {
+            n_terminal = std::visit([](const auto &s) -> int
+            {
                 using T = std::decay_t<decltype(s)>;
-                if constexpr (std::is_same_v<T, ellipsoidal_set<Scalar, NX>>) {
+                if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
+                {
                     return 2 * nx; // inner box approximation: 2 halfplanes per axis
-                } else {
+                }
+                else
+                {
                     return static_cast<int>(s.H.rows());
                 }
             }, config_.terminal_constraint_set.value());
@@ -84,9 +91,12 @@ public:
 
         // Compute terminal cost Qf
         Matrix<Scalar, NX, NX> Qf_actual;
-        if (config_.Qf.has_value()) {
+        if(config_.Qf.has_value())
+        {
             Qf_actual = config_.Qf.value();
-        } else {
+        }
+        else
+        {
             auto dare_result = dare<Scalar, NX, NU>(system_.A, system_.B, config_.Q, config_.R);
             Qf_actual = dare_result.value_or(config_.Q);
         }
@@ -131,21 +141,21 @@ public:
         // warm_x and warm_y intentionally left empty (size 0) until first successful solve
     }
 
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0) -> std::optional<Vector<Scalar, NU>>
+    [[nodiscard]] auto solve(const Vector<Scalar, NX> &x0) -> std::optional<Vector<Scalar, NU>>
     {
         // Origin regulation: q is all zeros
         update_.q.setZero();
         return solve_impl(x0);
     }
 
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0,
-                             const Vector<Scalar, NX>& x_ref) -> std::optional<Vector<Scalar, NU>>
+    [[nodiscard]] auto solve(const Vector<Scalar, NX> &x0,
+                             const Vector<Scalar, NX> &x_ref) -> std::optional<Vector<Scalar, NU>>
     {
         int N = config_.horizon;
 
         // Update q vector for setpoint tracking
         Vector<Scalar, NX> Qxr = config_.Q * x_ref;
-        for (int k = 0; k < N; ++k)
+        for(int k = 0; k < N; ++k)
             update_.q.segment(k * nx, nx) = -Qxr;
         update_.q.segment(N * nx, nx) = -(Qf_actual_ * x_ref);
 
@@ -155,13 +165,13 @@ public:
         return solve_impl(x0);
     }
 
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0,
+    [[nodiscard]] auto solve(const Vector<Scalar, NX> &x0,
                              std::span<const Vector<Scalar, NX>> x_ref) -> std::optional<Vector<Scalar, NU>>
     {
         int N = config_.horizon;
 
         // Update q vector for trajectory tracking
-        for (int k = 0; k < N; ++k)
+        for(int k = 0; k < N; ++k)
             update_.q.segment(k * nx, nx) = -(config_.Q * x_ref[static_cast<std::size_t>(k)]);
         update_.q.segment(N * nx, nx) = -(Qf_actual_ * x_ref[static_cast<std::size_t>(N)]);
 
@@ -180,9 +190,9 @@ public:
         states.reserve(static_cast<std::size_t>(N + 1));
         inputs.reserve(static_cast<std::size_t>(N));
 
-        for (int k = 0; k <= N; ++k)
+        for(int k = 0; k <= N; ++k)
             states.push_back(last_primal_.segment(k * nx, nx));
-        for (int k = 0; k < N; ++k)
+        for(int k = 0; k < N; ++k)
             inputs.push_back(last_primal_.segment(n_x_total_ + k * nu, nu));
 
         return {std::move(states), std::move(inputs)};
@@ -194,7 +204,7 @@ public:
     }
 
 private:
-    [[nodiscard]] auto solve_impl(const Vector<Scalar, NX>& x0) -> std::optional<Vector<Scalar, NU>>
+    [[nodiscard]] auto solve_impl(const Vector<Scalar, NX> &x0) -> std::optional<Vector<Scalar, NU>>
     {
         int N = config_.horizon;
 
@@ -205,13 +215,14 @@ private:
             config_.u_min, config_.u_max,
             config_.du_max,
             (config_.x_min.has_value() || config_.x_max.has_value())
-                && !config_.hard_state_constraints,
+            && !config_.hard_state_constraints,
             config_.terminal_constraint_set);
         update_.l = std::move(l);
         update_.u = std::move(u);
 
         // Update rate constraint bounds for k=0 using u_prev_
-        if (config_.du_max.has_value()) {
+        if(config_.du_max.has_value())
+        {
             int n_dyn = (N + 1) * nx;
             bool has_state_bounds = config_.x_min.has_value() || config_.x_max.has_value();
             bool has_input_bounds = config_.u_min.has_value() || config_.u_max.has_value();
@@ -225,7 +236,8 @@ private:
         }
 
         // Warm-start from previous solution
-        if (has_solution_) {
+        if(has_solution_)
+        {
             update_.warm_x = last_primal_;
             update_.warm_y = last_dual_;
         }
@@ -234,17 +246,18 @@ private:
 
         // Populate diagnostics
         last_diagnostics_ = mpc_diagnostics<Scalar>{
-            .status = result.status,
-            .iterations = result.iterations,
-            .solve_time = result.solve_time,
-            .cost = result.objective,
-            .primal_residual = result.primal_residual,
-            .dual_residual = result.dual_residual,
+            .status                   = result.status,
+            .iterations               = result.iterations,
+            .solve_time               = result.solve_time,
+            .cost                     = result.objective,
+            .primal_residual          = result.primal_residual,
+            .dual_residual            = result.dual_residual,
             .max_constraint_violation = Scalar{0}
         };
 
-        if (result.status != solve_status::optimal
-            && result.status != solve_status::solved_inaccurate) {
+        if(result.status != solve_status::optimal
+            && result.status != solve_status::solved_inaccurate)
+        {
             return std::nullopt;
         }
 

@@ -6,8 +6,9 @@
 
 namespace ctrlpp {
 
-template<typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
-struct transfer_function {
+template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
+struct transfer_function
+{
     std::array<Scalar, NumDeg + 1> numerator;
     std::array<Scalar, DenDeg + 1> denominator;
 };

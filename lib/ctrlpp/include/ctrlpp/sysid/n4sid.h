@@ -1,41 +1,38 @@
 #ifndef HPP_GUARD_CTRLPP_SYSID_N4SID_H
 #define HPP_GUARD_CTRLPP_SYSID_N4SID_H
 
+#include "ctrlpp/types.h"
+#include "ctrlpp/state_space.h"
+
 #include "ctrlpp/sysid/fit_metrics.h"
 #include "ctrlpp/sysid/sysid_result.h"
-#include "ctrlpp/state_space.h"
-#include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
 
-#include <algorithm>
 #include <cstddef>
+#include <algorithm>
 
 namespace ctrlpp {
 
 namespace detail {
 
-template<typename Derived>
-[[nodiscard]] auto block_hankel(const Eigen::MatrixBase<Derived>& signal,
-                                Eigen::Index start,
-                                Eigen::Index block_rows,
-                                Eigen::Index cols) -> Eigen::MatrixX<typename Derived::Scalar>
+template <typename Derived>
+Eigen::MatrixX<typename Derived::Scalar> block_hankel(const Eigen::MatrixBase<Derived> &signal, Eigen::Index start, Eigen::Index block_rows, Eigen::Index cols)
 {
     auto ny = signal.rows();
     Eigen::MatrixX<typename Derived::Scalar> H(ny * block_rows, cols);
 
-    for (Eigen::Index bi = 0; bi < block_rows; ++bi) {
-        for (Eigen::Index c = 0; c < cols; ++c) {
+    for(Eigen::Index bi = 0; bi < block_rows; ++bi)
+        for(Eigen::Index c = 0; c < cols; ++c)
             H.block(bi * ny, c, ny, 1) = signal.col(start + bi + c);
-        }
-    }
     return H;
 }
 
 // N4SID core: build Hankel matrices and compute weighted oblique projection via LQ.
 // Returns the matrix whose SVD reveals observability structure.
-template<typename Scalar>
-struct n4sid_lq_result {
+template <typename Scalar>
+struct n4sid_lq_result
+{
     Eigen::MatrixX<Scalar> O_i;
     Eigen::MatrixX<Scalar> Y_future;
     Eigen::MatrixX<Scalar> U_future;
@@ -43,11 +40,8 @@ struct n4sid_lq_result {
     Eigen::Index j;
 };
 
-template<typename Derived1, typename Derived2>
-[[nodiscard]] auto n4sid_oblique_projection(const Eigen::MatrixBase<Derived1>& Y,
-                                             const Eigen::MatrixBase<Derived2>& U,
-                                             Eigen::Index i)
-    -> n4sid_lq_result<typename Derived1::Scalar>
+template <typename Derived1, typename Derived2>
+n4sid_lq_result<typename Derived1::Scalar> n4sid_oblique_projection(const Eigen::MatrixBase<Derived1> &Y, const Eigen::MatrixBase<Derived2> &U, Eigen::Index i)
 {
     using Scalar = typename Derived1::Scalar;
 
@@ -57,16 +51,16 @@ template<typename Derived1, typename Derived2>
     Eigen::Index j = N - 2 * i + 1;
 
     // Build block Hankel matrices
-    auto Y_past   = block_hankel(Y, 0, i, j);
+    auto Y_past = block_hankel(Y, 0, i, j);
     auto Y_future = block_hankel(Y, i, i, j);
-    auto U_past   = block_hankel(U, 0, i, j);
+    auto U_past = block_hankel(U, 0, i, j);
     auto U_future = block_hankel(U, i, i, j);
 
     // Stack: H = [U_f; W_p; Y_f] where W_p = [U_past; Y_past]
     // Row partition sizes:
-    auto r1 = nu * i;   // U_future rows
-    auto r2 = (nu + ny) * i;  // W_p rows
-    auto r3 = ny * i;   // Y_future rows
+    auto r1 = nu * i;        // U_future rows
+    auto r2 = (nu + ny) * i; // W_p rows
+    auto r3 = ny * i;        // Y_future rows
 
     Eigen::MatrixX<Scalar> H(r1 + r2 + r3, j);
     H.topRows(r1) = U_future;
@@ -80,7 +74,7 @@ template<typename Derived1, typename Derived2>
     auto total_rows = r1 + r2 + r3;
     auto r_size = std::min(j, total_rows);
     Eigen::MatrixX<Scalar> R_h = qr.matrixQR().topRows(r_size).template triangularView<Eigen::Upper>();
-    Eigen::MatrixX<Scalar> L = R_h.transpose();  // L is lower triangular (total_rows x r_size)
+    Eigen::MatrixX<Scalar> L = R_h.transpose(); // L is lower triangular (total_rows x r_size)
 
     // Extract L blocks according to row partitioning:
     // L11: rows 0..r1-1, cols 0..r1-1           (U_f on U_f)
@@ -102,9 +96,8 @@ template<typename Derived1, typename Derived2>
     auto c2 = std::min(r2, l_cols - c1);
     auto br3 = std::min(r3, l_rows - r1 - r2);
 
-    if (c2 <= 0 || br3 <= 0) {
+    if(c2 <= 0 || br3 <= 0)
         return {Eigen::MatrixX<Scalar>::Zero(r3, 1), Y_future, U_future, i, j};
-    }
 
     Eigen::MatrixX<Scalar> L32 = L.block(r1 + r2, c1, br3, c2);
 
@@ -113,24 +106,19 @@ template<typename Derived1, typename Derived2>
 
 }
 
-template<typename Derived1, typename Derived2>
-[[nodiscard]] auto n4sid_singular_values(const Eigen::MatrixBase<Derived1>& Y,
-                                         const Eigen::MatrixBase<Derived2>& U,
-                                         std::size_t block_rows = 0)
-    -> Eigen::VectorX<typename Derived1::Scalar>
+template <typename Derived1, typename Derived2>
+Eigen::VectorX<typename Derived1::Scalar> n4sid_singular_values(const Eigen::MatrixBase<Derived1> &Y, const Eigen::MatrixBase<Derived2> &U, std::size_t block_rows = 0)
 {
     using Scalar = typename Derived1::Scalar;
 
     auto N = Y.cols();
     auto i = static_cast<Eigen::Index>(block_rows);
-    if (i == 0) {
+    if(i == 0)
         i = std::min(static_cast<Eigen::Index>(N / 4), Eigen::Index{30});
-    }
 
     Eigen::Index j = N - 2 * i + 1;
-    if (j <= 0) {
+    if(j <= 0)
         return Eigen::VectorX<Scalar>{};
-    }
 
     auto [O_i, Y_f, U_f, bi, bj] = detail::n4sid_oblique_projection(Y, U, i);
 
@@ -139,11 +127,9 @@ template<typename Derived1, typename Derived2>
     return svd.singularValues();
 }
 
-template<std::size_t NX, typename Derived1, typename Derived2>
-[[nodiscard]] auto n4sid(const Eigen::MatrixBase<Derived1>& Y,
-                         const Eigen::MatrixBase<Derived2>& U,
-                         std::size_t block_rows = 0)
-    -> n4sid_result<typename Derived1::Scalar, NX, 1, 1>
+template <std::size_t NX, typename Derived1, typename Derived2>
+n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<Derived1> &Y, const Eigen::MatrixBase<Derived2> &U, std::size_t block_rows = 0)
+
 {
     using Scalar = typename Derived1::Scalar;
     static constexpr auto nx = static_cast<Eigen::Index>(NX);
@@ -153,9 +139,8 @@ template<std::size_t NX, typename Derived1, typename Derived2>
     auto nu = U.rows();
 
     auto i = static_cast<Eigen::Index>(block_rows);
-    if (i == 0) {
+    if(i == 0)
         i = std::min(static_cast<Eigen::Index>(N / 4), Eigen::Index{30});
-    }
 
     auto [O_i, Y_future, U_future, bi, bj] = detail::n4sid_oblique_projection(Y, U, i);
 
@@ -167,22 +152,20 @@ template<std::size_t NX, typename Derived1, typename Derived2>
 
     // Condition number from the NX singular values
     Scalar cond = (sv.size() >= nx && sv(nx - 1) > Scalar{0})
-        ? sv(0) / sv(nx - 1)
-        : std::numeric_limits<Scalar>::infinity();
+                      ? sv(0) / sv(nx - 1)
+                      : std::numeric_limits<Scalar>::infinity();
 
     // Observability matrix Gamma: first NX columns of U_svd * diag(sqrt(S))
     Eigen::Index rank = std::min(static_cast<Eigen::Index>(sv.size()), nx);
     Eigen::MatrixX<Scalar> Gamma(U_svd.rows(), nx);
     Gamma.setZero();
-    for (Eigen::Index c = 0; c < rank; ++c) {
+    for(Eigen::Index c = 0; c < rank; ++c)
         Gamma.col(c) = U_svd.col(c) * std::sqrt(sv(c));
-    }
 
     // C from first ny rows of Gamma
     Matrix<Scalar, 1, NX> C;
-    for (Eigen::Index c = 0; c < nx; ++c) {
+    for(Eigen::Index c = 0; c < nx; ++c)
         C(0, c) = Gamma(c);
-    }
 
     // A from shift relation on observability matrix:
     // Gamma = [C; CA; CA^2; ...; CA^{i-1}]
@@ -197,11 +180,9 @@ template<std::size_t NX, typename Derived1, typename Derived2>
     Eigen::MatrixX<Scalar> A_dyn = Gamma_trunc.colPivHouseholderQr().solve(Gamma_shifted);
 
     Matrix<Scalar, NX, NX> A;
-    for (Eigen::Index r = 0; r < nx; ++r) {
-        for (Eigen::Index c = 0; c < nx; ++c) {
+    for(Eigen::Index r = 0; r < nx; ++r)
+        for(Eigen::Index c = 0; c < nx; ++c)
             A(r, c) = A_dyn(r, c);
-        }
-    }
 
     // Recover B and D from original time-domain data via least squares.
     // With A, C known, solve for B, D that minimize simulation error.
@@ -255,23 +236,22 @@ template<std::size_t NX, typename Derived1, typename Derived2>
 
     // State basis propagation: x_j(t+1) = A * x_j(t) + e_j * u(t)
     // Then Phi_B(t, j) = C * x_j(t) and Phi_D(t) = u(t)
-    Eigen::MatrixX<Scalar> x_basis = Eigen::MatrixX<Scalar>::Zero(nx, nx);  // columns = basis states
+    Eigen::MatrixX<Scalar> x_basis = Eigen::MatrixX<Scalar>::Zero(nx, nx); // columns = basis states
 
-    for (Eigen::Index t = 0; t < N; ++t) {
+    for(Eigen::Index t = 0; t < N; ++t)
+    {
         Scalar u_t = U(0, t);
         y_target(t) = Y(0, t);
 
         // Phi row: [C * x_basis(:, 0), C * x_basis(:, 1), ..., u(t)]
-        for (Eigen::Index j = 0; j < nx; ++j) {
+        for(Eigen::Index j = 0; j < nx; ++j)
             Phi(t, j) = (C * x_basis.col(j))(0, 0);
-        }
         Phi(t, nx) = u_t;
 
         // Propagate all basis states: x_j(t+1) = A * x_j(t) + e_j * u(t)
         Eigen::MatrixX<Scalar> x_basis_new = A_dyn * x_basis;
-        for (Eigen::Index j = 0; j < nx; ++j) {
+        for(Eigen::Index j = 0; j < nx; ++j)
             x_basis_new(j, j) += u_t;
-        }
         x_basis = x_basis_new;
     }
 
@@ -279,9 +259,8 @@ template<std::size_t NX, typename Derived1, typename Derived2>
     Eigen::VectorX<Scalar> bd = Phi.colPivHouseholderQr().solve(y_target);
 
     Matrix<Scalar, NX, 1> B;
-    for (Eigen::Index r = 0; r < nx; ++r) {
+    for(Eigen::Index r = 0; r < nx; ++r)
         B(r, 0) = bd(r);
-    }
 
     Matrix<Scalar, 1, 1> D;
     D(0, 0) = bd(nx);
@@ -293,7 +272,8 @@ template<std::size_t NX, typename Derived1, typename Derived2>
     Eigen::VectorX<Scalar> y_predicted(N);
     Eigen::VectorX<Scalar> y_actual(N);
 
-    for (Eigen::Index t = 0; t < N; ++t) {
+    for(Eigen::Index t = 0; t < N; ++t)
+    {
         Matrix<Scalar, 1, 1> u_vec;
         u_vec(0, 0) = U(0, t);
         auto y_hat = (C * x + D * u_vec).eval();

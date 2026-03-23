@@ -11,10 +11,11 @@
 //   - Markley, "Attitude Error Representations for Kalman Filtering" (2003)
 //   - Sola, "Quaternion kinematics for the error-state Kalman filter" (2017)
 
-#include "ctrlpp/observer_policy.h"
 #include "ctrlpp/so3.h"
-#include "ctrlpp/detail/numerical_mekf_diff.h"
 #include "ctrlpp/types.h"
+#include "ctrlpp/observer_policy.h"
+
+#include "ctrlpp/detail/numerical_mekf_diff.h"
 
 #include <Eigen/Geometry>
 
@@ -25,23 +26,26 @@
 
 namespace ctrlpp {
 
-template<typename M, typename Scalar, std::size_t NB, std::size_t NY>
+template <typename M, typename Scalar, std::size_t NB, std::size_t NY>
 concept mekf_measurement_model =
-    requires(const M& m, const Eigen::Quaternion<Scalar>& q,
-             const Vector<Scalar, NB>& b) {
+    requires(const M &m, const Eigen::Quaternion<Scalar> &q,
+             const Vector<Scalar, NB> &b)
+    {
         { m(q, b) } -> std::convertible_to<Vector<Scalar, NY>>;
     };
 
-template<typename M, typename Scalar, std::size_t NB, std::size_t NY>
+template <typename M, typename Scalar, std::size_t NB, std::size_t NY>
 concept differentiable_mekf_measurement =
     mekf_measurement_model<M, Scalar, NB, NY> &&
-    requires(const M& m, const Eigen::Quaternion<Scalar>& q,
-             const Vector<Scalar, NB>& b) {
+    requires(const M &m, const Eigen::Quaternion<Scalar> &q,
+             const Vector<Scalar, NB> &b)
+    {
         { m.jacobian(q, b) } -> std::convertible_to<Matrix<Scalar, NY, 3 + NB>>;
     };
 
-template<typename Scalar, std::size_t NB, std::size_t NY>
-struct mekf_config {
+template <typename Scalar, std::size_t NB, std::size_t NY>
+struct mekf_config
+{
     static constexpr std::size_t NE = 3 + NB;
     Matrix<Scalar, NE, NE> Q{Matrix<Scalar, NE, NE>::Identity()};
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
@@ -52,21 +56,22 @@ struct mekf_config {
     Scalar numerical_eps{std::sqrt(std::numeric_limits<Scalar>::epsilon())};
 };
 
-template<typename Scalar, std::size_t NB, std::size_t NY, typename Measurement>
-requires mekf_measurement_model<Measurement, Scalar, NB, NY>
-class mekf {
+template <typename Scalar, std::size_t NB, std::size_t NY, typename Measurement>
+    requires mekf_measurement_model<Measurement, Scalar, NB, NY>
+class mekf
+{
     static constexpr std::size_t NE = 3 + NB;
     static constexpr int ne = static_cast<int>(NE);
     static constexpr int ny = static_cast<int>(NY);
     static constexpr int nb = static_cast<int>(NB);
 
 public:
-    using observer_tag    = struct mekf_tag;
-    using state_vector_t  = Vector<Scalar, 4 + NB>;
-    using input_vector_t  = Vector<Scalar, 3>;
+    using observer_tag = struct mekf_tag;
+    using state_vector_t = Vector<Scalar, 4 + NB>;
+    using input_vector_t = Vector<Scalar, 3>;
     using output_vector_t = Vector<Scalar, NY>;
-    using cov_matrix_t    = Matrix<Scalar, NE, NE>;
-    using meas_cov_t      = Matrix<Scalar, NY, NY>;
+    using cov_matrix_t = Matrix<Scalar, NE, NE>;
+    using meas_cov_t = Matrix<Scalar, NY, NY>;
 
     mekf(Measurement measurement, mekf_config<Scalar, NB, NY> config)
         : measurement_{std::move(measurement)}
@@ -83,17 +88,17 @@ public:
         update_state_cache();
     }
 
-    void predict(const input_vector_t& omega)
+    void predict(const input_vector_t &omega)
     {
         predict_impl(omega, dt_);
     }
 
-    void predict(const input_vector_t& omega, Scalar dt)
+    void predict(const input_vector_t &omega, Scalar dt)
     {
         predict_impl(omega, dt);
     }
 
-    void update(const output_vector_t& z)
+    void update(const output_vector_t &z)
     {
         // Predicted measurement
         auto z_pred = measurement_(q_, b_);
@@ -101,9 +106,12 @@ public:
 
         // Measurement Jacobian H (NY x NE)
         Matrix<Scalar, NY, NE> H;
-        if constexpr (differentiable_mekf_measurement<Measurement, Scalar, NB, NY>) {
+        if constexpr(differentiable_mekf_measurement<Measurement, Scalar, NB, NY>)
+        {
             H = measurement_.jacobian(q_, b_);
-        } else {
+        }
+        else
+        {
             H = detail::numerical_mekf_jacobian<Scalar, NB, NY>(measurement_, q_, b_, eps_);
         }
 
@@ -136,14 +144,14 @@ public:
         update_state_cache();
     }
 
-    [[nodiscard]] auto state()      const -> const state_vector_t&  { return state_cache_; }
-    [[nodiscard]] auto covariance() const -> const cov_matrix_t&    { return P_; }
-    [[nodiscard]] auto innovation() const -> const output_vector_t& { return innovation_; }
-    [[nodiscard]] auto attitude()   const -> Eigen::Quaternion<Scalar> { return q_; }
-    [[nodiscard]] auto bias()       const -> const Vector<Scalar, NB>& { return b_; }
+    [[nodiscard]] auto state() const -> const state_vector_t & { return state_cache_; }
+    [[nodiscard]] auto covariance() const -> const cov_matrix_t & { return P_; }
+    [[nodiscard]] auto innovation() const -> const output_vector_t & { return innovation_; }
+    [[nodiscard]] auto attitude() const -> Eigen::Quaternion<Scalar> { return q_; }
+    [[nodiscard]] auto bias() const -> const Vector<Scalar, NB> & { return b_; }
 
 private:
-    void predict_impl(const input_vector_t& omega, Scalar dt)
+    void predict_impl(const input_vector_t &omega, Scalar dt)
     {
         // Corrected angular velocity (remove estimated bias)
         Vector<Scalar, 3> omega_corr = omega - b_.template head<3>();
@@ -172,7 +180,8 @@ private:
         state_cache_(1) = q_.x();
         state_cache_(2) = q_.y();
         state_cache_(3) = q_.z();
-        for (std::size_t i = 0; i < NB; ++i) {
+        for(std::size_t i = 0; i < NB; ++i)
+        {
             state_cache_(static_cast<Eigen::Index>(4 + i)) = b_(static_cast<Eigen::Index>(i));
         }
     }
@@ -190,15 +199,16 @@ private:
 };
 
 // CTAD deduction guide
-template<typename Measurement, typename Scalar, std::size_t NB, std::size_t NY>
+template <typename Measurement, typename Scalar, std::size_t NB, std::size_t NY>
 mekf(Measurement, mekf_config<Scalar, NB, NY>)
     -> mekf<Scalar, NB, NY, Measurement>;
 
 namespace detail {
 
-struct mekf_sa_measurement {
-    auto operator()(const Eigen::Quaternion<double>&,
-                    const Vector<double, 3>&) const -> Vector<double, 3>
+struct mekf_sa_measurement
+{
+    auto operator()(const Eigen::Quaternion<double> &,
+                    const Vector<double, 3> &) const -> Vector<double, 3>
     {
         return Vector<double, 3>::Zero();
     }
