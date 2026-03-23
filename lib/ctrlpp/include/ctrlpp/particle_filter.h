@@ -111,7 +111,7 @@ public:
     {
         for(std::size_t i = 0; i < NP; ++i)
         {
-            m_particles[i] = dynamics_(m_particles[i], u);
+            m_particles[i] = m_dynamics(m_particles[i], u);
             m_particles[i] += sample_process_noise();
         }
     }
@@ -256,7 +256,7 @@ private:
         // Update log weights
         for(std::size_t i = 0; i < NP; ++i)
         {
-            output_vector_t z_pred = measurement_(m_particles[i]);
+            output_vector_t z_pred = m_measurement(m_particles[i]);
             m_log_weights[i] += log_likelihood(z, z_pred);
         }
 
@@ -299,7 +299,7 @@ private:
     {
         for(std::size_t i = 0; i < NP; ++i)
         {
-            output_vector_t z_pred = measurement_(m_particles[i]);
+            output_vector_t z_pred = m_measurement(m_particles[i]);
             Scalar ll = log_likelihood(z, z_pred);
             m_linear_weights[i] *= std::exp(ll);
         }

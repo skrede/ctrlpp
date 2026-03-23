@@ -96,7 +96,7 @@ public:
         // Propagate sigma points through dynamics
         std::array<state_vector_t, num_sigma> propagated;
         for(std::size_t i = 0; i < num_sigma; ++i)
-            propagated[i] = dynamics_(sigma.points[i], u);
+            propagated[i] = m_dynamics(sigma.points[i], u);
 
         // Weighted mean
         state_vector_t x_pred = state_vector_t::Zero();
@@ -125,7 +125,7 @@ public:
         // Transform sigma points through measurement model
         std::array<output_vector_t, num_sigma> z_sigma;
         for(std::size_t i = 0; i < num_sigma; ++i)
-            z_sigma[i] = measurement_(sigma.points[i]);
+            z_sigma[i] = m_measurement(sigma.points[i]);
 
         // Predicted measurement (weighted mean)
         output_vector_t z_pred = output_vector_t::Zero();
@@ -155,8 +155,7 @@ public:
         if(m_decomposition == gain_decomposition::ldlt)
         {
             // K = Pxz * S^-1  =>  S^T * K^T = Pxz^T  =>  solve for K^T
-            Eigen::Matrix<Scalar, ny, nx> KT =
-                S.ldlt().solve(Pxz.transpose());
+            Eigen::Matrix<Scalar, ny, nx> KT = S.ldlt().solve(Pxz.transpose());
             K = KT.transpose();
         }
         else

@@ -60,7 +60,7 @@ public:
     {
         auto x_prev = m_x;
 
-        m_x = dynamics_(x_prev, u);
+        m_x = m_dynamics(x_prev, u);
 
         Matrix<Scalar, NX, NX> F;
         if constexpr(differentiable_dynamics<Dynamics, Scalar, NX, NU>)
@@ -74,7 +74,7 @@ public:
 
     void update(const output_vector_t &z)
     {
-        auto z_pred = measurement_(m_x);
+        auto z_pred = m_measurement(m_x);
 
         m_innovation = (z - z_pred).eval();
 
