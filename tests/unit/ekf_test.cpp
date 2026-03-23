@@ -8,6 +8,7 @@
 #include <Eigen/Eigenvalues>
 
 #include <cmath>
+#include <numbers>
 
 using namespace ctrlpp;
 
@@ -244,7 +245,7 @@ TEST_CASE("ekf nonlinear pendulum tracking") {
     ekf filter(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
     Vector<double, 2> x_true;
-    x_true << M_PI / 4.0, 0.0;
+    x_true << std::numbers::pi / 4.0, 0.0;
 
     for (int i = 0; i < 200; ++i) {
         Vector<double, 1> u = Vector<double, 1>::Zero();

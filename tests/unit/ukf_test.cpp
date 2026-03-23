@@ -11,6 +11,7 @@
 #include <Eigen/Eigenvalues>
 
 #include <cmath>
+#include <numbers>
 #include <numeric>
 
 using namespace ctrlpp;
@@ -254,7 +255,7 @@ TEST_CASE("ukf tracks nonlinear system") {
     ukf filter(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
     Vector<double, 2> x_true;
-    x_true << M_PI / 4.0, 0.0;
+    x_true << std::numbers::pi / 4.0, 0.0;
 
     for (int i = 0; i < 200; ++i) {
         Vector<double, 1> u = Vector<double, 1>::Zero();

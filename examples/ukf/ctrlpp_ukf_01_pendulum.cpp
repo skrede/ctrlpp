@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <iostream>
 
 namespace {
@@ -84,7 +85,7 @@ int main()
 
     // True initial state: pendulum at 45 degrees, at rest
     ctrlpp::Vector<double, 2> x_true;
-    x_true << M_PI / 4.0, 0.0;
+    x_true << std::numbers::pi / 4.0, 0.0;
 
     lcg_noise noise_gen{42};
 
