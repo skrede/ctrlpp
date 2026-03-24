@@ -8,6 +8,7 @@ coverage:
         informational: true
 
 ignore:
-  - "**/example/**"
-  - "**/tests/**"
-  - "**/lib/ctrlpp-eigen/**"
+  - "docs/**"
+  - "examples/**"
+  - "tests/**"
+  - ".planning/**"
