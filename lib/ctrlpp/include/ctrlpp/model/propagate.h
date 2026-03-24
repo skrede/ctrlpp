@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_PROPAGATE_H
 #define HPP_GUARD_CTRLPP_MODEL_PROPAGATE_H
 
+/// @brief Discrete state-space propagation and RK4 integration helpers.
+///
+/// @cite simon2006 -- Simon, "Optimal State Estimation", 2006
+
 #include "ctrlpp/model/state_space.h"
 
 namespace ctrlpp {

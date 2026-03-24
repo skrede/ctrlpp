@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_ANALYSIS_H
 #define HPP_GUARD_CTRLPP_MODEL_ANALYSIS_H
 
+/// @brief State-space analysis: poles, controllability, observability.
+///
+/// @cite anderson1990 -- Anderson & Moore, "Optimal Control: Linear Quadratic Methods", 1990
+
 #include "ctrlpp/model/state_space.h"
 
 #include <Eigen/Eigenvalues>

@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_DSP_FIR_H
 #define HPP_GUARD_CTRLPP_DSP_FIR_H
 
+/// @brief Finite Impulse Response filter.
+///
+/// @cite oppenheim1997 -- Oppenheim & Willsky, "Signals and Systems", 1997
+
 #include "ctrlpp/dsp/discrete_filter.h"
 
 #include <array>

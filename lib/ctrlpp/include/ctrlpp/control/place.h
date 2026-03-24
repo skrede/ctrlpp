@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_PLACE_H
 #define HPP_GUARD_CTRLPP_CONTROL_PLACE_H
 
+/// @brief Pole placement via Ackermann's formula for single-input systems.
+///
+/// @cite kautsky1985 -- Kautsky, Nichols & Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
+
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>

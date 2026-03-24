@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_MHE_MHE_QP_FORMULATION_H
 #define HPP_GUARD_CTRLPP_MHE_MHE_QP_FORMULATION_H
 
+/// @brief QP formulation for linear Moving Horizon Estimation.
+///
+/// @cite rao2003 -- Rao et al., "Constrained State Estimation for Nonlinear Discrete-Time Systems", 2003
+
 #include "ctrlpp/types.h"
 
 #include "ctrlpp/mpc/qp_types.h"

@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_LQR_H
 #define HPP_GUARD_CTRLPP_CONTROL_LQR_H
 
+/// @brief Linear Quadratic Regulator: infinite/finite/time-varying/integral-action.
+///
+/// @cite anderson1990 -- Anderson & Moore, "Optimal Control: Linear Quadratic Methods", 1990
+
 #include "ctrlpp/control/dare.h"
 #include "ctrlpp/types.h"
 

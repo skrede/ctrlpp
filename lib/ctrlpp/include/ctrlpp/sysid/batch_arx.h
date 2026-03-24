@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_SYSID_BATCH_ARX_H
 #define HPP_GUARD_CTRLPP_SYSID_BATCH_ARX_H
 
+/// @brief Batch ARX model identification via QR decomposition.
+///
+/// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999, Ch. 4
+
 #include "ctrlpp/types.h"
 #include "ctrlpp/model/state_space.h"
 

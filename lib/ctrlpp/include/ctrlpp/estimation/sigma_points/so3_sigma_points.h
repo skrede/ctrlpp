@@ -1,6 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_SO3_SIGMA_POINTS_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_SO3_SIGMA_POINTS_H
 
+/// @brief SO(3) manifold sigma point generation via tangent-space lifting.
+///
+/// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
+/// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
 

@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_NLP_FORMULATION_H
 #define HPP_GUARD_CTRLPP_MPC_NLP_FORMULATION_H
 
+/// @brief NLP formulation for nonlinear MPC with multiple shooting.
+///
+/// @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017
+
 #include "ctrlpp/detail/numerical_diff.h"
 #include "ctrlpp/mpc/nlp_solver.h"
 #include "ctrlpp/mpc/nmpc_config.h"

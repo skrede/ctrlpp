@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_QP_FORMULATION_H
 #define HPP_GUARD_CTRLPP_MPC_QP_FORMULATION_H
 
+/// @brief Sparse QP formulation for linear MPC (condensed/sparse form).
+///
+/// @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017, Ch. 2
+
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/terminal_set.h"
 #include "ctrlpp/types.h"

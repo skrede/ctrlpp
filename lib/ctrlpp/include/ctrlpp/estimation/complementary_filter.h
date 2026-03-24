@@ -1,14 +1,12 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_COMPLEMENTARY_FILTER_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_COMPLEMENTARY_FILTER_H
 
-// Mahony complementary filter for attitude estimation.
-//
-// Provides computationally lightweight (~10 flops/update) attitude estimation
-// from IMU (gyro + accel) or MARG (gyro + accel + mag) sensor data.
-// Satisfies ObserverPolicy for integration with the ctrlpp observer framework.
-//
-// Reference: Mahony, Hamel, Pflimlin, "Nonlinear Complementary Filters on the
-//            Special Orthogonal Group", IEEE TAC, 2008.
+/// @brief Mahony nonlinear complementary filter for attitude estimation on SO(3).
+///
+/// Provides computationally lightweight attitude estimation from IMU (gyro + accel)
+/// or MARG (gyro + accel + mag) sensor data. Satisfies ObserverPolicy.
+///
+/// @cite mahony2008 -- Mahony et al., "Nonlinear Complementary Filters on the Special Orthogonal Group", 2008
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"

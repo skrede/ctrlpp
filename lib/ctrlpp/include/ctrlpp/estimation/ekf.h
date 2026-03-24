@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_EKF_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_EKF_H
 
+/// @brief Extended Kalman Filter with analytical/numerical Jacobian dispatch.
+///
+/// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13
+
 #include "ctrlpp/types.h"
 #include "ctrlpp/estimation/observer_policy.h"
 

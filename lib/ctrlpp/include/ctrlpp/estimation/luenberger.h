@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_LUENBERGER_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_LUENBERGER_H
 
+/// @brief Discrete-time Luenberger state observer with fixed gain.
+///
+/// @cite luenberger1971 -- Luenberger, "An Introduction to Observers", 1971
+
 #include "ctrlpp/types.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/estimation/observer_policy.h"

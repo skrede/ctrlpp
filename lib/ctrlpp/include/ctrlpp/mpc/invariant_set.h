@@ -1,6 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_INVARIANT_SET_H
 #define HPP_GUARD_CTRLPP_MPC_INVARIANT_SET_H
 
+/// @brief Ellipsoidal and polytopic invariant set computation for terminal MPC constraints.
+///
+/// @cite mayne2000 -- Mayne et al., "Constrained model predictive control: Stability and optimality", 2000
+/// @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017
+
 #include "ctrlpp/mpc/terminal_set.h"
 #include "ctrlpp/control/dare.h"
 #include "ctrlpp/types.h"

@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_PID_H
 #define HPP_GUARD_CTRLPP_CONTROL_PID_H
 
+/// @brief Policy-based PID controller with compile-time feature composition.
+///
+/// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006
+
 #include "ctrlpp/types.h"
 #include "ctrlpp/control/pid_config.h"
 #include "ctrlpp/control/pid_policies.h"

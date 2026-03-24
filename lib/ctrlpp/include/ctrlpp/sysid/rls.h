@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_SYSID_RLS_H
 #define HPP_GUARD_CTRLPP_SYSID_RLS_H
 
+/// @brief Recursive Least Squares with bounded covariance and forgetting factor.
+///
+/// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999
+
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>

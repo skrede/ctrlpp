@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_PID_POLICIES_H
 #define HPP_GUARD_CTRLPP_CONTROL_PID_POLICIES_H
 
+/// @brief PID policy types: anti-windup, derivative filter, setpoint weighting.
+///
+/// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3-4
+
 #include "ctrlpp/model/discretise.h"
 
 #include <array>

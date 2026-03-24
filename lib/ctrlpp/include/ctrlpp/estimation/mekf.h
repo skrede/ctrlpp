@@ -1,15 +1,14 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_MEKF_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_MEKF_H
 
-// Multiplicative Extended Kalman Filter (MEKF) for attitude estimation.
-//
-// Two-track state: 7D nominal (quaternion + bias) with 6D tangent-space
-// error-state covariance. The mandatory post-update covariance reset via
-// frame-change Jacobian G is the key correctness concern.
-//
-// References:
-//   - Markley, "Attitude Error Representations for Kalman Filtering" (2003)
-//   - Sola, "Quaternion kinematics for the error-state Kalman filter" (2017)
+/// @brief Multiplicative Extended Kalman Filter for attitude estimation.
+///
+/// Two-track state: 7D nominal (quaternion + bias) with 6D tangent-space
+/// error-state covariance. The mandatory post-update covariance reset via
+/// frame-change Jacobian G is the key correctness concern.
+///
+/// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
+/// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"

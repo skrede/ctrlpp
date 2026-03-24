@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_KALMAN_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_KALMAN_H
 
+/// @brief Linear discrete-time Kalman filter with Joseph-form covariance update.
+///
+/// @cite kalman1960 -- Kalman, "A New Approach to Linear Filtering and Prediction Problems", 1960
+
 #include "ctrlpp/types.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/estimation/observer_policy.h"

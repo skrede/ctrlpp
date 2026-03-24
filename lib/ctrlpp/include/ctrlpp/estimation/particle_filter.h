@@ -1,6 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_PARTICLE_FILTER_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_PARTICLE_FILTER_H
 
+/// @brief Bootstrap SIR particle filter with ESS-adaptive resampling and roughening.
+///
+/// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993
+/// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002
+
 #include "ctrlpp/types.h"
 #include "ctrlpp/estimation/observer_policy.h"
 

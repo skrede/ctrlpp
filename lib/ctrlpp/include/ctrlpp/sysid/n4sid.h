@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_SYSID_N4SID_H
 #define HPP_GUARD_CTRLPP_SYSID_N4SID_H
 
+/// @brief N4SID subspace system identification via BDCSVD.
+///
+/// @cite vanoverschee1994 -- Van Overschee & De Moor, "N4SID: Subspace Algorithms for the Identification of Combined Deterministic-Stochastic Systems", 1994
+
 #include "ctrlpp/types.h"
 #include "ctrlpp/model/state_space.h"
 

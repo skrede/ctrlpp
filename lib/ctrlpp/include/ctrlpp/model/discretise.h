@@ -1,6 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_DISCRETISE_H
 #define HPP_GUARD_CTRLPP_MODEL_DISCRETISE_H
 
+/// @brief Continuous-to-discrete state-space conversion (ZOH, Tustin, Euler, RK4).
+///
+/// @cite franklin2015 -- Franklin et al., "Feedback Control of Dynamic Systems", 2015
+/// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006
+
 #include "ctrlpp/types.h"
 #include "ctrlpp/model/state_space.h"
 

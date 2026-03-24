@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_MERWE_SIGMA_POINTS_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_MERWE_SIGMA_POINTS_H
 
+/// @brief Scaled sigma point generation (Van der Merwe variant).
+///
+/// @cite vandermerwe2004 -- Van der Merwe, "Sigma-Point Kalman Filters", PhD thesis, 2004
+
 #include "ctrlpp/types.h"
 
 #include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"

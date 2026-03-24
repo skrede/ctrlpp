@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_JULIER_SIGMA_POINTS_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_JULIER_SIGMA_POINTS_H
 
+/// @brief Symmetric sigma point generation (Julier-Uhlmann variant).
+///
+/// @cite julier2004 -- Julier & Uhlmann, "Unscented Filtering and Nonlinear Estimation", 2004
+
 #include "ctrlpp/types.h"
 
 #include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"

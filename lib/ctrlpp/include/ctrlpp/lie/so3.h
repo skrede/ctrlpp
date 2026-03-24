@@ -1,18 +1,17 @@
 #ifndef HPP_GUARD_CTRLPP_LIE_SO3_H
 #define HPP_GUARD_CTRLPP_LIE_SO3_H
 
-// SO(3) Lie group primitives using unit quaternions.
-//
-// Convention: Hamilton convention throughout.
-//   - Quaternion product q1*q2 corresponds to rotation q1 followed by q2.
-//   - User-facing serialization is w-first: [w, x, y, z] (see to_vec/from_vec).
-//   - Internally we use Eigen::Quaternion<Scalar>, which stores coefficients
-//     in [x, y, z, w] order. We NEVER expose coeffs() directly to avoid the
-//     w-last storage trap. Always use q.w(), q.vec(), q.x(), q.y(), q.z().
-//
-// References:
-//   - Sola, "Quaternion kinematics for the error-state Kalman filter" (2017)
-//   - Barfoot, "State Estimation for Robotics" (2017)
+/// @brief SO(3) Lie group primitives using unit quaternions.
+///
+/// Convention: Hamilton convention throughout.
+///   - Quaternion product q1*q2 corresponds to rotation q1 followed by q2.
+///   - User-facing serialization is w-first: [w, x, y, z] (see to_vec/from_vec).
+///   - Internally we use Eigen::Quaternion<Scalar>, which stores coefficients
+///     in [x, y, z, w] order. We NEVER expose coeffs() directly to avoid the
+///     w-last storage trap. Always use q.w(), q.vec(), q.x(), q.y(), q.z().
+///
+/// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
+/// @cite barfoot2017 -- Barfoot, "State Estimation for Robotics", 2017
 
 #include "ctrlpp/types.h"
 
@@ -22,8 +21,9 @@
 
 namespace ctrlpp::so3 {
 
-// Exponential map: rotation vector (angle-axis, phi) -> unit quaternion.
-// Uses Rodrigues formula with Taylor expansion near zero to avoid division by zero.
+/// Exponential map: rotation vector (angle-axis, phi) -> unit quaternion.
+/// Uses Rodrigues formula with Taylor expansion near zero to avoid division by zero.
+/// @cite sola2018 Eq. 101
 template <typename Scalar>
 Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3> &phi)
 {
@@ -42,8 +42,9 @@ Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3> &phi)
     return q;
 }
 
-// Logarithmic map: unit quaternion -> rotation vector.
-// Canonicalizes to w >= 0 hemisphere first for unique output.
+/// Logarithmic map: unit quaternion -> rotation vector.
+/// Canonicalizes to w >= 0 hemisphere first for unique output.
+/// @cite sola2018 Eq. 105
 template <typename Scalar>
 Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar> &q)
 {
@@ -89,7 +90,8 @@ Eigen::Quaternion<Scalar> normalize(const Eigen::Quaternion<Scalar> &q)
     return q.normalized();
 }
 
-// Skew-symmetric matrix from a 3-vector: [v]_x such that [v]_x * u = v x u.
+/// Skew-symmetric matrix from a 3-vector: [v]_x such that [v]_x * u = v x u.
+/// @cite sola2018 Eq. 10
 template <typename Scalar>
 Matrix<Scalar, 3, 3> skew(const Vector<Scalar, 3> &v)
 {

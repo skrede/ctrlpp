@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_UKF_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_UKF_H
 
+/// @brief Unscented Kalman Filter with swappable sigma point strategies.
+///
+/// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001
+
 #include "ctrlpp/types.h"
 #include "ctrlpp/estimation/observer_policy.h"
 

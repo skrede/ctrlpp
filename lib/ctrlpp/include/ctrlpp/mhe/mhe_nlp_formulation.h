@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_MHE_MHE_NLP_FORMULATION_H
 #define HPP_GUARD_CTRLPP_MHE_MHE_NLP_FORMULATION_H
 
+/// @brief NLP formulation for nonlinear Moving Horizon Estimation with multiple shooting.
+///
+/// @cite diehl2009 -- Diehl et al., "Efficient Numerical Methods for Nonlinear MPC and Moving Horizon Estimation", 2009
+
 #include "ctrlpp/mhe/mhe_config.h"
 
 #include "ctrlpp/detail/numerical_diff.h"

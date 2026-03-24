@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_DARE_H
 #define HPP_GUARD_CTRLPP_CONTROL_DARE_H
 
+/// @brief Discrete Algebraic Riccati Equation solver via symplectic Schur decomposition.
+///
+/// @cite laub1979 -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
+
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>

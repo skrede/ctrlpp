@@ -1,6 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_MANIFOLD_UKF_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_MANIFOLD_UKF_H
 
+/// @brief Unscented Kalman Filter on SO(3) manifold with geodesic mean computation.
+///
+/// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+/// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
+
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
 #include "ctrlpp/estimation/observer_policy.h"
