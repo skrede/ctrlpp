@@ -145,6 +145,6 @@ TEST_CASE("estimator property tests", "[estimator][property]")
             }
 
             double final_err = std::abs(filter.state()(0) - true_pos);
-            RC_ASSERT(final_err < initial_err + 0.1); // convergence with margin });
+            RC_ASSERT(final_err < initial_err + 0.1); });
     }
 }

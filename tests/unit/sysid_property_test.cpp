@@ -66,14 +66,14 @@ TEST_CASE("sysid property tests", "[sysid][property]")
 
             auto result = batch_arx<NA, NB>(Y, U);
 
-            // a coefficients should have NA entries, b should have NB
-            RC_ASSERT(result.a.cols() == static_cast<Eigen::Index>(NA));
-            RC_ASSERT(result.b.cols() == static_cast<Eigen::Index>(NB));
+            // State-space system A should be NA x NA, B should be NA x 1
+            RC_ASSERT(result.system.A.rows() == static_cast<Eigen::Index>(NA));
+            RC_ASSERT(result.system.A.cols() == static_cast<Eigen::Index>(NA));
+            RC_ASSERT(result.system.B.rows() == static_cast<Eigen::Index>(NA));
+            RC_ASSERT(result.system.B.cols() == 1);
 
-            // All coefficients should be finite
-            for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NA); ++i)
-                RC_ASSERT(std::isfinite(result.a(0, i)));
-            for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NB); ++i)
-                RC_ASSERT(std::isfinite(result.b(0, i))); });
+            // All system matrices should be finite
+            RC_ASSERT(std::isfinite(result.system.A.norm()));
+            RC_ASSERT(std::isfinite(result.system.B.norm())); });
     }
 }
