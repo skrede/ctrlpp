@@ -19,13 +19,14 @@
 
 #include <cmath>
 
-namespace ctrlpp::so3 {
+namespace ctrlpp::so3
+{
 
 /// Exponential map: rotation vector (angle-axis, phi) -> unit quaternion.
 /// Uses Rodrigues formula with Taylor expansion near zero to avoid division by zero.
 /// @cite sola2018 Eq. 101
 template <typename Scalar>
-Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3> &phi)
+Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3>& phi)
 {
     Scalar theta = phi.norm();
     Scalar half_theta = theta / Scalar{2};
@@ -46,7 +47,7 @@ Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3> &phi)
 /// Canonicalizes to w >= 0 hemisphere first for unique output.
 /// @cite sola2018 Eq. 105
 template <typename Scalar>
-Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar> &q)
+Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar>& q)
 {
     // Canonicalize: ensure w >= 0 (antipodal quaternions represent the same rotation)
     Eigen::Quaternion<Scalar> qc = q;
@@ -71,21 +72,21 @@ Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar> &q)
 
 // Hamilton quaternion product: compose two rotations.
 template <typename Scalar>
-Eigen::Quaternion<Scalar> compose(const Eigen::Quaternion<Scalar> &q1, const Eigen::Quaternion<Scalar> &q2)
+Eigen::Quaternion<Scalar> compose(const Eigen::Quaternion<Scalar>& q1, const Eigen::Quaternion<Scalar>& q2)
 {
     return q1 * q2;
 }
 
 // Quaternion conjugate (inverse for unit quaternions).
 template <typename Scalar>
-Eigen::Quaternion<Scalar> conjugate(const Eigen::Quaternion<Scalar> &q)
+Eigen::Quaternion<Scalar> conjugate(const Eigen::Quaternion<Scalar>& q)
 {
     return q.conjugate();
 }
 
 // Normalize quaternion to unit norm.
 template <typename Scalar>
-Eigen::Quaternion<Scalar> normalize(const Eigen::Quaternion<Scalar> &q)
+Eigen::Quaternion<Scalar> normalize(const Eigen::Quaternion<Scalar>& q)
 {
     return q.normalized();
 }
@@ -93,18 +94,16 @@ Eigen::Quaternion<Scalar> normalize(const Eigen::Quaternion<Scalar> &q)
 /// Skew-symmetric matrix from a 3-vector: [v]_x such that [v]_x * u = v x u.
 /// @cite sola2018 Eq. 10
 template <typename Scalar>
-Matrix<Scalar, 3, 3> skew(const Vector<Scalar, 3> &v)
+Matrix<Scalar, 3, 3> skew(const Vector<Scalar, 3>& v)
 {
     Matrix<Scalar, 3, 3> S;
-    S << Scalar{0}, -v(2), v(1),
-        v(2), Scalar{0}, -v(0),
-        -v(1), v(0), Scalar{0};
+    S << Scalar{0}, -v(2), v(1), v(2), Scalar{0}, -v(0), -v(1), v(0), Scalar{0};
     return S;
 }
 
 // Quaternion to w-first vector: [w, x, y, z].
 template <typename Scalar>
-Vector<Scalar, 4> to_vec(const Eigen::Quaternion<Scalar> &q)
+Vector<Scalar, 4> to_vec(const Eigen::Quaternion<Scalar>& q)
 {
     Vector<Scalar, 4> v;
     v << q.w(), q.vec();
@@ -113,7 +112,7 @@ Vector<Scalar, 4> to_vec(const Eigen::Quaternion<Scalar> &q)
 
 // W-first vector [w, x, y, z] to quaternion.
 template <typename Scalar>
-Eigen::Quaternion<Scalar> from_vec(const Vector<Scalar, 4> &v)
+Eigen::Quaternion<Scalar> from_vec(const Vector<Scalar, 4>& v)
 {
     Eigen::Quaternion<Scalar> q;
     q.w() = v(0);
@@ -121,6 +120,6 @@ Eigen::Quaternion<Scalar> from_vec(const Vector<Scalar, 4> &v)
     return q;
 }
 
-}
+} // namespace ctrlpp::so3
 
 #endif

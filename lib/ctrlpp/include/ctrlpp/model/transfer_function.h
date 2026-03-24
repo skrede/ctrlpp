@@ -8,7 +8,8 @@
 #include <array>
 #include <cstddef>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
 struct transfer_function
@@ -17,6 +18,6 @@ struct transfer_function
     std::array<Scalar, DenDeg + 1> denominator;
 };
 
-}
+} // namespace ctrlpp
 
 #endif

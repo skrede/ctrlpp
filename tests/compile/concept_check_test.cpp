@@ -19,30 +19,29 @@ using namespace ctrlpp;
 // -- measurement_model --
 
 // A lambda-like callable satisfying measurement_model<M, double, 2, 1>
-struct LinearMeasurement {
-    auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1> {
-        return Vector<double, 1>{x[0]};
-    }
+struct LinearMeasurement
+{
+    auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1> { return Vector<double, 1>{x[0]}; }
 };
 
 static_assert(measurement_model<LinearMeasurement, double, 2, 1>);
 
 // Linear C matrix wrapper trivially satisfies measurement_model
-struct CMatrixWrapper {
+struct CMatrixWrapper
+{
     Matrix<double, 1, 2> C{Matrix<double, 1, 2>::Identity()};
 
-    auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1> {
-        return C * x;
-    }
+    auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1> { return C * x; }
 };
 
 static_assert(measurement_model<CMatrixWrapper, double, 2, 1>);
 
 // -- dynamics_model --
 
-struct SimpleDynamics {
-    auto operator()(const Vector<double, 2>& x,
-                    const Vector<double, 1>& u) const -> Vector<double, 2> {
+struct SimpleDynamics
+{
+    auto operator()(const Vector<double, 2>& x, const Vector<double, 1>& u) const -> Vector<double, 2>
+    {
         Vector<double, 2> result;
         result[0] = x[0] + u[0];
         result[1] = x[1];
@@ -54,22 +53,20 @@ static_assert(dynamics_model<SimpleDynamics, double, 2, 1>);
 
 // -- differentiable_dynamics --
 
-struct DiffDynamics {
-    auto operator()(const Vector<double, 2>& x,
-                    const Vector<double, 1>& u) const -> Vector<double, 2> {
+struct DiffDynamics
+{
+    auto operator()(const Vector<double, 2>& x, const Vector<double, 1>& u) const -> Vector<double, 2>
+    {
         Vector<double, 2> result;
         result[0] = x[0] + u[0];
         result[1] = x[1];
         return result;
     }
 
-    auto jacobian_x(const Vector<double, 2>&,
-                    const Vector<double, 1>&) const -> Matrix<double, 2, 2> {
-        return Matrix<double, 2, 2>::Identity();
-    }
+    auto jacobian_x(const Vector<double, 2>&, const Vector<double, 1>&) const -> Matrix<double, 2, 2> { return Matrix<double, 2, 2>::Identity(); }
 
-    auto jacobian_u(const Vector<double, 2>&,
-                    const Vector<double, 1>&) const -> Matrix<double, 2, 1> {
+    auto jacobian_u(const Vector<double, 2>&, const Vector<double, 1>&) const -> Matrix<double, 2, 1>
+    {
         Matrix<double, 2, 1> B;
         B << 1.0, 0.0;
         return B;
@@ -84,12 +81,12 @@ static_assert(!differentiable_dynamics<SimpleDynamics, double, 2, 1>);
 
 // -- differentiable_measurement --
 
-struct DiffMeasurement {
-    auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1> {
-        return Vector<double, 1>{x[0]};
-    }
+struct DiffMeasurement
+{
+    auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1> { return Vector<double, 1>{x[0]}; }
 
-    auto jacobian(const Vector<double, 2>&) const -> Matrix<double, 1, 2> {
+    auto jacobian(const Vector<double, 2>&) const -> Matrix<double, 1, 2>
+    {
         Matrix<double, 1, 2> H;
         H << 1.0, 0.0;
         return H;
@@ -124,6 +121,7 @@ static_assert(sigma_point_strategy<julier_sigma_points<double, 2>, double, 2>);
 static_assert(resampling_strategy<systematic_resampling, std::mt19937_64, 10>);
 static_assert(resampling_strategy<multinomial_resampling, std::mt19937_64, 10>);
 
-int main() {
+int main()
+{
     return 0;
 }

@@ -14,7 +14,8 @@
 #include <cmath>
 #include <cstddef>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar>
 struct julier_options
@@ -32,12 +33,9 @@ public:
     static constexpr std::size_t num_points = 2 * NX + 1;
     using options_t = julier_options<Scalar>;
 
-    explicit julier_sigma_points(options_t opts = options_t{})
-        : m_kappa{opts.kappa}
-    {
-    }
+    explicit julier_sigma_points(options_t opts = options_t{}) : m_kappa{opts.kappa} {}
 
-    sigma_result<Scalar, NX, num_points> generate(const Vector<Scalar, NX> &x, const Matrix<Scalar, NX, NX> &P) const
+    sigma_result<Scalar, NX, num_points> generate(const Vector<Scalar, NX>& x, const Matrix<Scalar, NX, NX>& P) const
     {
         sigma_result<Scalar, NX, num_points> result;
 
@@ -87,6 +85,6 @@ private:
     Scalar m_kappa;
 };
 
-}
+} // namespace ctrlpp
 
 #endif

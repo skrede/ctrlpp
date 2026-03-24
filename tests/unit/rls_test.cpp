@@ -11,7 +11,8 @@
 
 using Catch::Matchers::WithinAbs;
 
-TEST_CASE("RLS converges to true parameters on known linear system") {
+TEST_CASE("RLS converges to true parameters on known linear system")
+{
     // y = 2*x1 + 3*x2 + noise
     constexpr std::size_t NP = 2;
     ctrlpp::rls<double, NP> estimator;
@@ -23,7 +24,8 @@ TEST_CASE("RLS converges to true parameters on known linear system") {
     Eigen::Vector2d true_theta;
     true_theta << 2.0, 3.0;
 
-    for (int i = 0; i < 200; ++i) {
+    for(int i = 0; i < 200; ++i)
+    {
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = true_theta.dot(phi) + noise(gen);
@@ -35,7 +37,8 @@ TEST_CASE("RLS converges to true parameters on known linear system") {
     REQUIRE_THAT(theta_hat(1), WithinAbs(3.0, 0.1));
 }
 
-TEST_CASE("RLS with forgetting tracks time-varying parameters") {
+TEST_CASE("RLS with forgetting tracks time-varying parameters")
+{
     constexpr std::size_t NP = 2;
     ctrlpp::rls_config<double, NP> cfg;
     cfg.lambda = 0.95;
@@ -51,7 +54,8 @@ TEST_CASE("RLS with forgetting tracks time-varying parameters") {
     theta2 << -1.0, 5.0;
 
     // Phase 1: true params = [2, 3]
-    for (int i = 0; i < 100; ++i) {
+    for(int i = 0; i < 100; ++i)
+    {
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = theta1.dot(phi) + noise(gen);
@@ -59,7 +63,8 @@ TEST_CASE("RLS with forgetting tracks time-varying parameters") {
     }
 
     // Phase 2: true params change to [-1, 5]
-    for (int i = 0; i < 200; ++i) {
+    for(int i = 0; i < 200; ++i)
+    {
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = theta2.dot(phi) + noise(gen);
@@ -71,7 +76,8 @@ TEST_CASE("RLS with forgetting tracks time-varying parameters") {
     REQUIRE_THAT(theta_hat(1), WithinAbs(5.0, 0.3));
 }
 
-TEST_CASE("RLS covariance stays bounded under low excitation") {
+TEST_CASE("RLS covariance stays bounded under low excitation")
+{
     constexpr std::size_t NP = 2;
     constexpr double bound = 1e4;
     ctrlpp::rls_config<double, NP> cfg;
@@ -82,7 +88,8 @@ TEST_CASE("RLS covariance stays bounded under low excitation") {
     Eigen::Vector2d phi;
     phi << 1.0, 0.0;
 
-    for (int i = 0; i < 1000; ++i) {
+    for(int i = 0; i < 1000; ++i)
+    {
         estimator.update(1.0, phi);
     }
 
@@ -90,14 +97,16 @@ TEST_CASE("RLS covariance stays bounded under low excitation") {
     REQUIRE(trace <= bound * static_cast<double>(NP) + 1e-6);
 }
 
-TEST_CASE("RLS covariance is symmetric after every update") {
+TEST_CASE("RLS covariance is symmetric after every update")
+{
     constexpr std::size_t NP = 3;
     ctrlpp::rls<double, NP> estimator;
 
     std::mt19937 gen(77);
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
 
-    for (int i = 0; i < 50; ++i) {
+    for(int i = 0; i < 50; ++i)
+    {
         Eigen::Vector3d phi;
         phi << dist(gen), dist(gen), dist(gen);
         double y = dist(gen);
@@ -109,7 +118,8 @@ TEST_CASE("RLS covariance is symmetric after every update") {
     }
 }
 
-TEST_CASE("RLS default construction produces reasonable initial state") {
+TEST_CASE("RLS default construction produces reasonable initial state")
+{
     constexpr std::size_t NP = 2;
     ctrlpp::rls<double, NP> estimator;
 
@@ -122,7 +132,8 @@ TEST_CASE("RLS default construction produces reasonable initial state") {
     REQUIRE(estimator.covariance()(1, 1) > 100.0);
 }
 
-TEST_CASE("RLS with forgetting factor 1.0 converges monotonically on stationary data") {
+TEST_CASE("RLS with forgetting factor 1.0 converges monotonically on stationary data")
+{
     constexpr std::size_t NP = 2;
     ctrlpp::rls_config<double, NP> cfg;
     cfg.lambda = 1.0;
@@ -138,7 +149,8 @@ TEST_CASE("RLS with forgetting factor 1.0 converges monotonically on stationary 
     double prev_error = std::numeric_limits<double>::max();
     int monotonic_violations = 0;
 
-    for (int i = 0; i < 100; ++i) {
+    for(int i = 0; i < 100; ++i)
+    {
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = true_theta.dot(phi) + noise(gen);
@@ -146,7 +158,8 @@ TEST_CASE("RLS with forgetting factor 1.0 converges monotonically on stationary 
 
         double error = (estimator.parameters() - true_theta).norm();
         // Allow small noise-induced violations, but track them
-        if (error > prev_error + 0.05) {
+        if(error > prev_error + 0.05)
+        {
             ++monotonic_violations;
         }
         prev_error = error;

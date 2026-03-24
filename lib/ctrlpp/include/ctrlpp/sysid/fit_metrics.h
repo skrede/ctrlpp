@@ -9,7 +9,8 @@
 #include <limits>
 #include <cstddef>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar>
 struct fit_metrics
@@ -19,7 +20,7 @@ struct fit_metrics
 };
 
 template <typename DerivedA, typename DerivedB>
-fit_metrics<typename DerivedA::Scalar> compute_fit_metrics(const Eigen::MatrixBase<DerivedA> &y_actual, const Eigen::MatrixBase<DerivedB> &y_predicted)
+fit_metrics<typename DerivedA::Scalar> compute_fit_metrics(const Eigen::MatrixBase<DerivedA>& y_actual, const Eigen::MatrixBase<DerivedB>& y_predicted)
 {
     using Scalar = typename DerivedA::Scalar;
 
@@ -69,6 +70,6 @@ fit_metrics<typename DerivedA::Scalar> compute_fit_metrics(const Eigen::MatrixBa
     return {.nrmse = nrmse, .vaf = vaf};
 }
 
-}
+} // namespace ctrlpp
 
 #endif

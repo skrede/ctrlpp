@@ -19,9 +19,14 @@
 #include <cstddef>
 #include <utility>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-enum class gain_decomposition { ldlt, qr };
+enum class gain_decomposition
+{
+    ldlt,
+    qr
+};
 
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct ukf_config
@@ -49,8 +54,7 @@ public:
     using cov_matrix_t = Matrix<Scalar, NX, NX>;
     using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 
-    ukf(Dynamics dynamics, Measurement measurement,
-        ukf_config<Scalar, NX, NU, NY> config)
+    ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config)
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_x{std::move(config.x0)}
@@ -63,9 +67,7 @@ public:
     {
     }
 
-    ukf(Dynamics dynamics, Measurement measurement,
-        ukf_config<Scalar, NX, NU, NY> config,
-        typename Strategy::options_t strategy_options)
+    ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_x{std::move(config.x0)}
@@ -78,9 +80,7 @@ public:
     {
     }
 
-    ukf(Dynamics dynamics, Measurement measurement,
-        ukf_config<Scalar, NX, NU, NY> config,
-        Strategy strategy)
+    ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, Strategy strategy)
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_x{std::move(config.x0)}
@@ -93,7 +93,7 @@ public:
     {
     }
 
-    void predict(const input_vector_t &u)
+    void predict(const input_vector_t& u)
     {
         auto sigma = m_strategy.generate(m_x, m_P);
 
@@ -121,7 +121,7 @@ public:
         m_P = (Scalar{0.5} * (P_pred + P_pred.transpose())).eval();
     }
 
-    void update(const output_vector_t &z)
+    void update(const output_vector_t& z)
     {
         // Regenerate sigma points from predicted state
         auto sigma = m_strategy.generate(m_x, m_P);
@@ -181,20 +181,11 @@ public:
         m_P = (Scalar{0.5} * (P_new + P_new.transpose())).eval();
     }
 
-    const state_vector_t &state() const
-    {
-        return m_x;
-    }
+    const state_vector_t& state() const { return m_x; }
 
-    const cov_matrix_t &covariance() const
-    {
-        return m_P;
-    }
+    const cov_matrix_t& covariance() const { return m_P; }
 
-    const output_vector_t &innovation() const
-    {
-        return m_innovation;
-    }
+    const output_vector_t& innovation() const { return m_innovation; }
 
 private:
     Dynamics m_dynamics;
@@ -212,29 +203,24 @@ private:
 template <typename Dynamics, typename Measurement, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 ukf(Dynamics, Measurement, ukf_config<Scalar, NX, NU, NY>) -> ukf<Scalar, NX, NU, NY, Dynamics, Measurement, merwe_sigma_points<Scalar, NX>>;
 
-namespace detail {
+namespace detail
+{
 
 struct ukf_sa_dynamics
 {
-    auto operator()(const Vector<double, 2> &, const Vector<double, 1> &) const -> Vector<double, 2>
-    {
-        return Vector<double, 2>::Zero();
-    }
+    auto operator()(const Vector<double, 2>&, const Vector<double, 1>&) const -> Vector<double, 2> { return Vector<double, 2>::Zero(); }
 };
 
 struct ukf_sa_measurement
 {
-    auto operator()(const Vector<double, 2> &) const -> Vector<double, 1>
-    {
-        return Vector<double, 1>::Zero();
-    }
+    auto operator()(const Vector<double, 2>&) const -> Vector<double, 1> { return Vector<double, 1>::Zero(); }
 };
 
-}
+} // namespace detail
 
 static_assert(ObserverPolicy<ukf<double, 2, 1, 1, detail::ukf_sa_dynamics, detail::ukf_sa_measurement>>);
 static_assert(CovarianceObserver<ukf<double, 2, 1, 1, detail::ukf_sa_dynamics, detail::ukf_sa_measurement>>);
 
-}
+} // namespace ctrlpp
 
 #endif

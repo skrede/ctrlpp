@@ -12,7 +12,8 @@
 #include <numbers>
 #include <iostream>
 
-namespace {
+namespace
+{
 
 // Physical parameters
 constexpr double g = 9.81;
@@ -29,9 +30,9 @@ constexpr double meas_noise_amp = 0.05;
 /// Pendulum dynamics satisfying dynamics_model (but NOT differentiable_dynamics).
 /// Forward-Euler discretisation: x_{k+1} = f(x_k, u_k).
 /// No Jacobians -- UKF propagates sigma points through the nonlinear model directly.
-struct pendulum_dynamics {
-    auto operator()(const ctrlpp::Vector<double, 2>& x,
-                    const ctrlpp::Vector<double, 1>& u) const -> ctrlpp::Vector<double, 2>
+struct pendulum_dynamics
+{
+    auto operator()(const ctrlpp::Vector<double, 2>& x, const ctrlpp::Vector<double, 1>& u) const -> ctrlpp::Vector<double, 2>
     {
         double theta = x(0);
         double omega = x(1);
@@ -44,7 +45,8 @@ struct pendulum_dynamics {
 };
 
 /// Angle-only measurement satisfying measurement_model (no Jacobian).
-struct angle_measurement {
+struct angle_measurement
+{
     auto operator()(const ctrlpp::Vector<double, 2>& x) const -> ctrlpp::Vector<double, 1>
     {
         ctrlpp::Vector<double, 1> z;
@@ -54,7 +56,8 @@ struct angle_measurement {
 };
 
 /// Simple deterministic pseudo-noise for reproducibility (linear congruential).
-struct lcg_noise {
+struct lcg_noise
+{
     std::uint32_t state;
 
     explicit lcg_noise(std::uint32_t seed) : state{seed} {}
@@ -67,7 +70,7 @@ struct lcg_noise {
     }
 };
 
-}
+} // namespace
 
 int main()
 {
@@ -80,8 +83,7 @@ int main()
     ctrlpp::Vector<double, 2> x0 = ctrlpp::Vector<double, 2>::Zero();
     ctrlpp::Matrix<double, 2, 2> P0 = ctrlpp::Matrix<double, 2, 2>::Identity() * 1.0;
 
-    ctrlpp::ukf filter(dyn, meas,
-        ctrlpp::ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    ctrlpp::ukf filter(dyn, meas, ctrlpp::ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
     // True initial state: pendulum at 45 degrees, at rest
     ctrlpp::Vector<double, 2> x_true;
@@ -92,7 +94,8 @@ int main()
     // CSV header
     std::cout << "step,true_theta,true_omega,est_theta,est_omega,P00,P11\n";
 
-    for (std::size_t k = 0; k < n_steps; ++k) {
+    for(std::size_t k = 0; k < n_steps; ++k)
+    {
         // Zero torque input (free swing)
         ctrlpp::Vector<double, 1> u = ctrlpp::Vector<double, 1>::Zero();
 
@@ -100,8 +103,7 @@ int main()
         double theta = x_true(0);
         double omega = x_true(1);
         x_true(0) = theta + omega * dt + process_noise_amp * noise_gen.next();
-        x_true(1) = omega + (-g / l * std::sin(theta) - b_damp * omega) * dt
-                     + process_noise_amp * noise_gen.next();
+        x_true(1) = omega + (-g / l * std::sin(theta) - b_damp * omega) * dt + process_noise_amp * noise_gen.next();
 
         // UKF predict
         filter.predict(u);
@@ -117,10 +119,7 @@ int main()
         auto est = filter.state();
         auto P = filter.covariance();
 
-        std::cout << k << ','
-                  << x_true(0) << ',' << x_true(1) << ','
-                  << est(0) << ',' << est(1) << ','
-                  << P(0, 0) << ',' << P(1, 1) << '\n';
+        std::cout << k << ',' << x_true(0) << ',' << x_true(1) << ',' << est(0) << ',' << est(1) << ',' << P(0, 0) << ',' << P(1, 1) << '\n';
     }
 
     // Final estimation error

@@ -11,7 +11,8 @@
 
 using Catch::Matchers::WithinAbs;
 
-TEST_CASE("Batch ARX identifies first-order SISO system") {
+TEST_CASE("Batch ARX identifies first-order SISO system")
+{
     // True system: y(t) = 0.8*y(t-1) + 0.5*u(t-1)
     constexpr std::size_t N = 500;
     Eigen::Matrix<double, 1, static_cast<int>(N)> Y;
@@ -22,7 +23,8 @@ TEST_CASE("Batch ARX identifies first-order SISO system") {
 
     double y = 0.0;
     double u_prev = 0.0;
-    for (std::size_t t = 0; t < N; ++t) {
+    for(std::size_t t = 0; t < N; ++t)
+    {
         double u = u_dist(gen);
         double y_new = 0.8 * y + 0.5 * u_prev;
         Y(0, static_cast<int>(t)) = y_new;
@@ -43,7 +45,8 @@ TEST_CASE("Batch ARX identifies first-order SISO system") {
     REQUIRE(result.metrics.vaf > 99.0);
 }
 
-TEST_CASE("Batch ARX identifies second-order system") {
+TEST_CASE("Batch ARX identifies second-order system")
+{
     // True system: y(t) = 1.2*y(t-1) - 0.5*y(t-2) + 0.3*u(t-1) + 0.1*u(t-2)
     constexpr std::size_t N = 500;
     Eigen::Matrix<double, 1, static_cast<int>(N)> Y;
@@ -57,7 +60,8 @@ TEST_CASE("Batch ARX identifies second-order system") {
     double u_prev1 = 0.0;
     double u_prev2 = 0.0;
 
-    for (std::size_t t = 0; t < N; ++t) {
+    for(std::size_t t = 0; t < N; ++t)
+    {
         double u = u_dist(gen);
         double y_new = 1.2 * y_prev1 - 0.5 * y_prev2 + 0.3 * u_prev1 + 0.1 * u_prev2;
         Y(0, static_cast<int>(t)) = y_new;
@@ -79,7 +83,8 @@ TEST_CASE("Batch ARX identifies second-order system") {
     REQUIRE(result.metrics.vaf > 99.0);
 }
 
-TEST_CASE("Batch ARX state-space simulation reproduces original data") {
+TEST_CASE("Batch ARX state-space simulation reproduces original data")
+{
     constexpr std::size_t N = 500;
     Eigen::Matrix<double, 1, static_cast<int>(N)> Y;
     Eigen::Matrix<double, 1, static_cast<int>(N)> U;
@@ -89,7 +94,8 @@ TEST_CASE("Batch ARX state-space simulation reproduces original data") {
 
     double y = 0.0;
     double u_prev = 0.0;
-    for (std::size_t t = 0; t < N; ++t) {
+    for(std::size_t t = 0; t < N; ++t)
+    {
         double u = u_dist(gen);
         double y_new = 0.8 * y + 0.5 * u_prev;
         Y(0, static_cast<int>(t)) = y_new;
@@ -104,19 +110,22 @@ TEST_CASE("Batch ARX state-space simulation reproduces original data") {
     // Simulate state-space model
     Eigen::Matrix<double, 1, 1> x = Eigen::Matrix<double, 1, 1>::Zero();
     double max_error = 0.0;
-    for (std::size_t t = 0; t < N; ++t) {
+    for(std::size_t t = 0; t < N; ++t)
+    {
         Eigen::Matrix<double, 1, 1> u_vec;
         u_vec << U(0, static_cast<int>(t));
         auto y_hat = (ss.C * x + ss.D * u_vec).eval();
         x = (ss.A * x + ss.B * u_vec).eval();
-        if (t > 5) {
+        if(t > 5)
+        {
             max_error = std::max(max_error, std::abs(y_hat(0, 0) - Y(0, static_cast<int>(t))));
         }
     }
     REQUIRE(max_error < 0.05);
 }
 
-TEST_CASE("Batch ARX with noisy data produces reasonable fit") {
+TEST_CASE("Batch ARX with noisy data produces reasonable fit")
+{
     constexpr std::size_t N = 500;
     Eigen::Matrix<double, 1, static_cast<int>(N)> Y;
     Eigen::Matrix<double, 1, static_cast<int>(N)> U;
@@ -127,7 +136,8 @@ TEST_CASE("Batch ARX with noisy data produces reasonable fit") {
 
     double y = 0.0;
     double u_prev = 0.0;
-    for (std::size_t t = 0; t < N; ++t) {
+    for(std::size_t t = 0; t < N; ++t)
+    {
         double u = u_dist(gen);
         double y_new = 0.8 * y + 0.5 * u_prev + noise(gen);
         Y(0, static_cast<int>(t)) = y_new;

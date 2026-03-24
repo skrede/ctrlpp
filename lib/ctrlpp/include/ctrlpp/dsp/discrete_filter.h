@@ -7,13 +7,14 @@
 
 #include <concepts>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-template<typename F>
+template <typename F>
 concept discrete_filter = requires(F f, typename F::scalar_type x) {
     { f.process(x) } -> std::convertible_to<typename F::scalar_type>;
 };
 
-}
+} // namespace ctrlpp
 
 #endif

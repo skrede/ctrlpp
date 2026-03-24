@@ -17,17 +17,16 @@
 #include <cstddef>
 #include <utility>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename M, typename Scalar, std::size_t NY>
-concept manifold_ukf_measurement_model = requires(const M &m, const Eigen::Quaternion<Scalar> &q)
-{
+concept manifold_ukf_measurement_model = requires(const M& m, const Eigen::Quaternion<Scalar>& q) {
     { m(q) } -> std::convertible_to<Vector<Scalar, NY>>;
 };
 
 template <typename D, typename Scalar>
-concept manifold_ukf_dynamics_model = requires(const D &d, const Eigen::Quaternion<Scalar> &q, const Vector<Scalar, 3> &u)
-{
+concept manifold_ukf_dynamics_model = requires(const D& d, const Eigen::Quaternion<Scalar>& q, const Vector<Scalar, 3>& u) {
     { d(q, u) } -> std::convertible_to<Eigen::Quaternion<Scalar>>;
 };
 
@@ -43,10 +42,11 @@ struct manifold_ukf_config
     Scalar geodesic_mean_tol{Scalar{1e-9}};
 };
 
-namespace detail {
+namespace detail
+{
 
 template <typename Scalar, std::size_t NP>
-Eigen::Quaternion<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<Scalar>, NP> &qs, const std::array<Scalar, NP> &Wm, std::size_t max_iter, Scalar tol)
+Eigen::Quaternion<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<Scalar>, NP>& qs, const std::array<Scalar, NP>& Wm, std::size_t max_iter, Scalar tol)
 {
     auto q_mean = qs[0];
     for(std::size_t iter = 0; iter < max_iter; ++iter)
@@ -71,7 +71,7 @@ Eigen::Quaternion<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<
     return q_mean;
 }
 
-}
+} // namespace detail
 
 template <typename Scalar, std::size_t NY, typename Dynamics, typename Measurement, typename Strategy = so3_merwe_sigma_points<Scalar>>
     requires manifold_ukf_dynamics_model<Dynamics, Scalar> && manifold_ukf_measurement_model<Measurement, Scalar, NY> && manifold_sigma_point_strategy<Strategy, Scalar>
@@ -103,7 +103,7 @@ public:
     {
     }
 
-    void predict(const input_vector_t &omega)
+    void predict(const input_vector_t& omega)
     {
         auto sigma = m_strategy.generate(m_q, m_P);
 
@@ -137,7 +137,7 @@ public:
         update_state_cache();
     }
 
-    void update(const output_vector_t &z)
+    void update(const output_vector_t& z)
     {
         auto sigma = m_strategy.generate(m_q, m_P);
 
@@ -186,25 +186,13 @@ public:
         update_state_cache();
     }
 
-    const state_vector_t &state() const
-    {
-        return m_state_cache;
-    }
+    const state_vector_t& state() const { return m_state_cache; }
 
-    const cov_matrix_t &covariance() const
-    {
-        return m_P;
-    }
+    const cov_matrix_t& covariance() const { return m_P; }
 
-    const output_vector_t &innovation() const
-    {
-        return m_innovation;
-    }
+    const output_vector_t& innovation() const { return m_innovation; }
 
-    const Eigen::Quaternion<Scalar> &attitude() const
-    {
-        return m_q;
-    }
+    const Eigen::Quaternion<Scalar>& attitude() const { return m_q; }
 
 private:
     Scalar m_tol;
@@ -219,33 +207,30 @@ private:
     output_vector_t m_innovation;
     Eigen::Quaternion<Scalar> m_q;
 
-    void update_state_cache()
-    {
-        m_state_cache = so3::to_vec(m_q);
-    }
-
+    void update_state_cache() { m_state_cache = so3::to_vec(m_q); }
 };
 
 template <typename Dynamics, typename Measurement, typename Scalar, std::size_t NY>
 manifold_ukf(Dynamics, Measurement, manifold_ukf_config<Scalar, NY>) -> manifold_ukf<Scalar, NY, Dynamics, Measurement, so3_merwe_sigma_points<Scalar>>;
 
-namespace detail {
+namespace detail
+{
 
 struct mukf_sa_dynamics
 {
-    auto operator()(const Eigen::Quaternion<double> &q, const Vector<double, 3> &) const -> Eigen::Quaternion<double> { return q; }
+    auto operator()(const Eigen::Quaternion<double>& q, const Vector<double, 3>&) const -> Eigen::Quaternion<double> { return q; }
 };
 
 struct mukf_sa_measurement
 {
-    auto operator()(const Eigen::Quaternion<double> &) const -> Vector<double, 3> { return Vector<double, 3>::Zero(); }
+    auto operator()(const Eigen::Quaternion<double>&) const -> Vector<double, 3> { return Vector<double, 3>::Zero(); }
 };
 
-}
+} // namespace detail
 
 static_assert(ObserverPolicy<manifold_ukf<double, 3, detail::mukf_sa_dynamics, detail::mukf_sa_measurement>>);
 static_assert(CovarianceObserver<manifold_ukf<double, 3, detail::mukf_sa_dynamics, detail::mukf_sa_measurement>>);
 
-}
+} // namespace ctrlpp
 
 #endif

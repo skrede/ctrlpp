@@ -16,7 +16,8 @@
 #include <utility>
 #include <optional>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 // LQI gain result: partitioned feedback gain for integral action.
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
@@ -29,14 +30,14 @@ struct lqi_result
 // Infinite-horizon LQR gain via DARE.
 // Returns K = (R + B^T P B)^{-1} B^T P A where P solves the DARE.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B,
-                                                                const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q, const Eigen::Matrix<Scalar, int(NU), int(NU)> &R)
+std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>>
+lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q, const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
 {
     auto P_opt = dare<Scalar, NX, NU>(A, B, Q, R);
     if(!P_opt)
         return std::nullopt;
 
-    auto &P = *P_opt;
+    auto& P = *P_opt;
     auto BtP = (B.transpose() * P).eval();
     auto S = (R + BtP * B).eval();
     auto K = S.colPivHouseholderQr().solve(BtP * A).eval();
@@ -46,14 +47,17 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Mat
 // Infinite-horizon LQR gain with cross-weight N.
 // K = (R + B^T P B)^{-1} (B^T P A + N^T)
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q,
-                                                                const Eigen::Matrix<Scalar, int(NU), int(NU)> &R, const Eigen::Matrix<Scalar, int(NX), int(NU)> &N)
+std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
+                                                                const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+                                                                const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
+                                                                const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
+                                                                const Eigen::Matrix<Scalar, int(NX), int(NU)>& N)
 {
     auto P_opt = dare<Scalar, NX, NU>(A, B, Q, R, N);
     if(!P_opt)
         return std::nullopt;
 
-    auto &P = *P_opt;
+    auto& P = *P_opt;
     auto BtP = (B.transpose() * P).eval();
     auto S = (R + BtP * B).eval();
     Eigen::Matrix<Scalar, int(NU), int(NX)> rhs = (BtP * A + N.transpose()).eval();
@@ -64,7 +68,12 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Mat
 // Finite-horizon LQR via backward Riccati recursion.
 // Returns gain sequence {K_0, K_1, ..., K_{N-1}} indexed by time step.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_finite(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q, const Eigen::Matrix<Scalar, int(NU), int(NU)> &R, const Eigen::Matrix<Scalar, int(NX), int(NX)> &Qf, std::size_t horizon)
+std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_finite(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
+                                                                const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+                                                                const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
+                                                                const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
+                                                                const Eigen::Matrix<Scalar, int(NX), int(NX)>& Qf,
+                                                                std::size_t horizon)
 
 {
     using MatNxN = Eigen::Matrix<Scalar, int(NX), int(NX)>;
@@ -88,8 +97,12 @@ std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_finite(const Eigen::Mat
 // Time-varying LQR via backward Riccati recursion with per-step matrices.
 // Returns gain sequence {K_0, K_1, ..., K_{N-1}}.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_tv_gains(const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>> &As, const std::vector<Eigen::Matrix<Scalar, int(NX), int(NU)>> &Bs, const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>> &Qs,
-                                                                  const std::vector<Eigen::Matrix<Scalar, int(NU), int(NU)>> &Rs, const Eigen::Matrix<Scalar, int(NX), int(NX)> &Qf, std::size_t horizon)
+std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_tv_gains(const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>>& As,
+                                                                  const std::vector<Eigen::Matrix<Scalar, int(NX), int(NU)>>& Bs,
+                                                                  const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>>& Qs,
+                                                                  const std::vector<Eigen::Matrix<Scalar, int(NU), int(NU)>>& Rs,
+                                                                  const Eigen::Matrix<Scalar, int(NX), int(NX)>& Qf,
+                                                                  std::size_t horizon)
 {
     using MatNxN = Eigen::Matrix<Scalar, int(NX), int(NX)>;
     using MatK = Eigen::Matrix<Scalar, int(NU), int(NX)>;
@@ -100,10 +113,10 @@ std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_tv_gains(const std::vec
     for(std::size_t i = horizon; i > 0; --i)
     {
         std::size_t k = i - 1;
-        const auto &Ak = As[k];
-        const auto &Bk = Bs[k];
-        const auto &Qk = Qs[k];
-        const auto &Rk = Rs[k];
+        const auto& Ak = As[k];
+        const auto& Bk = Bs[k];
+        const auto& Qk = Qs[k];
+        const auto& Rk = Rs[k];
 
         auto BtP = (Bk.transpose() * P).eval();
         auto S = (Rk + BtP * Bk).eval();
@@ -119,8 +132,11 @@ std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_tv_gains(const std::vec
 // Augmented system: A_aug = [[A, 0], [-C, I]], B_aug = [[B], [0]]
 // Returns lqi_result with partitioned Kx (NU x NX) and Ki (NU x NY).
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-std::optional<lqi_result<Scalar, NX, NU, NY>> lqi_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NY), int(NX)> &C,
-                                                       const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)> &Q_aug, const Eigen::Matrix<Scalar, int(NU), int(NU)> &R)
+std::optional<lqi_result<Scalar, NX, NU, NY>> lqi_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
+                                                       const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+                                                       const Eigen::Matrix<Scalar, int(NY), int(NX)>& C,
+                                                       const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>& Q_aug,
+                                                       const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
 {
     constexpr std::size_t NX_AUG = NX + NY;
     constexpr int nx = static_cast<int>(NX);
@@ -146,7 +162,7 @@ std::optional<lqi_result<Scalar, NX, NU, NY>> lqi_gain(const Eigen::Matrix<Scala
     if(!K_aug_opt)
         return std::nullopt;
 
-    auto &K_aug = *K_aug_opt;
+    auto& K_aug = *K_aug_opt;
 
     lqi_result<Scalar, NX, NU, NY> result;
     result.Kx = K_aug.template block<nu, nx>(0, 0);
@@ -159,8 +175,8 @@ std::optional<lqi_result<Scalar, NX, NU, NY>> lqi_gain(const Eigen::Matrix<Scala
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto lqr_cost(std::span<const Eigen::Matrix<Scalar, int(NX), 1>> xs,
               std::span<const Eigen::Matrix<Scalar, int(NU), 1>> us,
-              const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q,
-              const Eigen::Matrix<Scalar, int(NU), int(NU)> &R) -> Scalar
+              const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
+              const Eigen::Matrix<Scalar, int(NU), int(NU)>& R) -> Scalar
 {
     Scalar cost{0};
 
@@ -186,16 +202,11 @@ public:
     using state_type = Eigen::Matrix<Scalar, int(NX), 1>;
     using input_type = Eigen::Matrix<Scalar, int(NU), 1>;
 
-    explicit lqr(gain_type K) : K_(std::move(K))
-    {
-    }
+    explicit lqr(gain_type K) : K_(std::move(K)) {}
 
-    auto compute(const state_type &x) const -> input_type
-    {
-        return (-K_ * x).eval();
-    }
+    auto compute(const state_type& x) const -> input_type { return (-K_ * x).eval(); }
 
-    auto gain() const -> const gain_type & { return K_; }
+    auto gain() const -> const gain_type& { return K_; }
 
 private:
     gain_type K_;
@@ -210,17 +221,11 @@ public:
     using state_type = Eigen::Matrix<Scalar, int(NX), 1>;
     using input_type = Eigen::Matrix<Scalar, int(NU), 1>;
 
-    explicit lqr_time_varying(std::vector<gain_type> gains)
-        : gains_(std::move(gains))
-    {
-    }
+    explicit lqr_time_varying(std::vector<gain_type> gains) : gains_(std::move(gains)) {}
 
-    auto compute(const state_type &x, std::size_t k) const -> input_type
-    {
-        return (-gains_[k] * x).eval();
-    }
+    auto compute(const state_type& x, std::size_t k) const -> input_type { return (-gains_[k] * x).eval(); }
 
-    auto gain(std::size_t k) const -> const gain_type & { return gains_[k]; }
+    auto gain(std::size_t k) const -> const gain_type& { return gains_[k]; }
 
     auto horizon() const -> std::size_t { return gains_.size(); }
 
@@ -228,6 +233,6 @@ private:
     std::vector<gain_type> gains_;
 };
 
-}
+} // namespace ctrlpp
 
 #endif

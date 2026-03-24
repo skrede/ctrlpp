@@ -1,6 +1,6 @@
 ---
 Language: Cpp
-Standard: c++23
+Standard: Latest
 BasedOnStyle: LLVM
 
 # Core formatting (D-01, D-02, D-03)

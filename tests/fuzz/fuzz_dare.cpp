@@ -8,15 +8,16 @@
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
 {
     // Need 88 bytes: A(2x2=32) + B(2x1=16) + Q(2x2=32) + R(1x1=8)
-    if (size < 88)
+    if(size < 88)
         return 0;
 
     double buf[11];
     std::memcpy(buf, data, 88);
 
     // Reject non-finite inputs early
-    for (int i = 0; i < 11; ++i) {
-        if (!std::isfinite(buf[i]))
+    for(int i = 0; i < 11; ++i)
+    {
+        if(!std::isfinite(buf[i]))
             return 0;
     }
 
@@ -39,11 +40,14 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
 
-    if (result.has_value()) {
+    if(result.has_value())
+    {
         const auto& P = result.value();
-        for (int i = 0; i < 2; ++i) {
-            for (int j = 0; j < 2; ++j) {
-                if (!std::isfinite(P(i, j)))
+        for(int i = 0; i < 2; ++i)
+        {
+            for(int j = 0; j < 2; ++j)
+            {
+                if(!std::isfinite(P(i, j)))
                     __builtin_trap();
             }
         }

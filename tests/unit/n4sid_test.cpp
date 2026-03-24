@@ -11,7 +11,8 @@
 
 using Catch::Matchers::WithinAbs;
 
-namespace {
+namespace
+{
 
 // Known 2nd-order discrete state-space system (discretized spring-mass-damper)
 // Eigenvalues inside unit circle for stability
@@ -20,7 +21,8 @@ constexpr double a12 = 0.1;
 constexpr double a21 = -0.1;
 constexpr double a22 = 0.85;
 
-struct test_data {
+struct test_data
+{
     Eigen::Matrix<double, 1, Eigen::Dynamic> Y;
     Eigen::Matrix<double, 1, Eigen::Dynamic> U;
 };
@@ -40,12 +42,14 @@ auto generate_data(std::size_t N, double noise_std = 0.0) -> test_data
     std::mt19937 gen(42);
     std::uniform_real_distribution<double> u_dist(-1.0, 1.0);
     Eigen::Vector2d x = Eigen::Vector2d::Zero();
-    for (std::size_t t = 0; t < N; ++t) {
+    for(std::size_t t = 0; t < N; ++t)
+    {
         double u = u_dist(gen);
         U(0, static_cast<Eigen::Index>(t)) = u;
 
         double y = (C * x)(0);
-        if (noise_std > 0.0) {
+        if(noise_std > 0.0)
+        {
             std::normal_distribution<double> noise(0.0, noise_std);
             y += noise(gen);
         }
@@ -57,9 +61,10 @@ auto generate_data(std::size_t N, double noise_std = 0.0) -> test_data
     return {Y, U};
 }
 
-}
+} // namespace
 
-TEST_CASE("N4SID singular values show clear gap for 2nd-order system") {
+TEST_CASE("N4SID singular values show clear gap for 2nd-order system")
+{
     auto [Y, U] = generate_data(1500);
 
     auto sv = ctrlpp::n4sid_singular_values(Y, U);
@@ -68,13 +73,15 @@ TEST_CASE("N4SID singular values show clear gap for 2nd-order system") {
     // First two should be significantly larger than the rest
     REQUIRE(sv(0) > sv(1));
     // Gap: ratio of 2nd to 3rd singular value should be large
-    if (sv.size() > 2) {
+    if(sv.size() > 2)
+    {
         double ratio = sv(1) / sv(2);
         REQUIRE(ratio > 5.0);
     }
 }
 
-TEST_CASE("N4SID identifies 2nd-order system with good fit") {
+TEST_CASE("N4SID identifies 2nd-order system with good fit")
+{
     auto [Y, U] = generate_data(1500);
 
     auto result = ctrlpp::n4sid<2>(Y, U);
@@ -83,7 +90,8 @@ TEST_CASE("N4SID identifies 2nd-order system with good fit") {
     REQUIRE(result.metrics.nrmse < 0.1);
 }
 
-TEST_CASE("N4SID condition number is finite and positive") {
+TEST_CASE("N4SID condition number is finite and positive")
+{
     auto [Y, U] = generate_data(1500);
 
     auto result = ctrlpp::n4sid<2>(Y, U);
@@ -92,7 +100,8 @@ TEST_CASE("N4SID condition number is finite and positive") {
     REQUIRE(std::isfinite(result.condition_number));
 }
 
-TEST_CASE("N4SID VAF > 90 for clean data") {
+TEST_CASE("N4SID VAF > 90 for clean data")
+{
     auto [Y, U] = generate_data(1500);
 
     auto result = ctrlpp::n4sid<2>(Y, U);
@@ -100,7 +109,8 @@ TEST_CASE("N4SID VAF > 90 for clean data") {
     REQUIRE(result.metrics.vaf > 90.0);
 }
 
-TEST_CASE("N4SID with measurement noise produces degraded but positive VAF") {
+TEST_CASE("N4SID with measurement noise produces degraded but positive VAF")
+{
     auto [Y, U] = generate_data(1500, 0.05);
 
     auto result = ctrlpp::n4sid<2>(Y, U);

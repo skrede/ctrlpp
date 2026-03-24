@@ -14,7 +14,8 @@
 #include <numbers>
 #include <random>
 
-namespace {
+namespace
+{
 
 constexpr double dt = 0.1;
 constexpr std::size_t n_steps = 200;
@@ -25,9 +26,9 @@ constexpr double sensor_x = 0.0;
 constexpr double sensor_y = 0.0;
 
 /// Constant velocity dynamics: x_{k+1} = A * x_k (no control input used).
-struct cv_dynamics {
-    auto operator()(const ctrlpp::Vector<double, 4>& x,
-                    const ctrlpp::Vector<double, 1>& /*u*/) const -> ctrlpp::Vector<double, 4>
+struct cv_dynamics
+{
+    auto operator()(const ctrlpp::Vector<double, 4>& x, const ctrlpp::Vector<double, 1>& /*u*/) const -> ctrlpp::Vector<double, 4>
     {
         ctrlpp::Vector<double, 4> x_next;
         x_next(0) = x(0) + x(2) * dt;
@@ -39,7 +40,8 @@ struct cv_dynamics {
 };
 
 /// Bearing measurement: theta = atan2(py - sy, px - sx).
-struct bearing_measurement {
+struct bearing_measurement
+{
     double sx;
     double sy;
 
@@ -52,7 +54,8 @@ struct bearing_measurement {
 };
 
 /// Simple deterministic pseudo-noise for reproducibility (linear congruential).
-struct lcg_noise {
+struct lcg_noise
+{
     std::uint32_t state;
 
     explicit lcg_noise(std::uint32_t seed) : state{seed} {}
@@ -64,7 +67,7 @@ struct lcg_noise {
     }
 };
 
-}
+} // namespace
 
 int main()
 {
@@ -73,7 +76,7 @@ int main()
 
     // Process noise: small velocity perturbations
     ctrlpp::Matrix<double, 4, 4> Q = ctrlpp::Matrix<double, 4, 4>::Zero();
-    Q(0, 0) = 0.01;  // position noise
+    Q(0, 0) = 0.01; // position noise
     Q(1, 1) = 0.01;
     Q(2, 2) = 0.001; // velocity noise
     Q(3, 3) = 0.001;
@@ -89,11 +92,9 @@ int main()
     // Fairly uncertain initial covariance
     ctrlpp::Matrix<double, 4, 4> P0 = ctrlpp::Matrix<double, 4, 4>::Identity() * 4.0;
 
-    ctrlpp::pf_config<double, 4, 1, 1> config{
-        .Q = Q, .R = R, .x0 = x0, .P0 = P0};
+    ctrlpp::pf_config<double, 4, 1, 1> config{.Q = Q, .R = R, .x0 = x0, .P0 = P0};
 
-    auto filter = ctrlpp::make_particle_filter<n_particles>(
-        dyn, meas, config, std::mt19937_64{42});
+    auto filter = ctrlpp::make_particle_filter<n_particles>(dyn, meas, config, std::mt19937_64{42});
 
     // True initial state (offset from estimate to test convergence)
     ctrlpp::Vector<double, 4> x_true;
@@ -104,7 +105,8 @@ int main()
     // CSV header
     std::cout << "step,true_px,true_py,est_px,est_py,true_vx,true_vy,est_vx,est_vy\n";
 
-    for (std::size_t k = 0; k < n_steps; ++k) {
+    for(std::size_t k = 0; k < n_steps; ++k)
+    {
         // Zero input (constant velocity model)
         ctrlpp::Vector<double, 1> u = ctrlpp::Vector<double, 1>::Zero();
 
@@ -123,8 +125,10 @@ int main()
         double meas_bearing = true_bearing + 0.1 * noise_gen.next();
 
         // Wrap to [-pi, pi]
-        while (meas_bearing > std::numbers::pi) meas_bearing -= 2.0 * std::numbers::pi;
-        while (meas_bearing < -std::numbers::pi) meas_bearing += 2.0 * std::numbers::pi;
+        while(meas_bearing > std::numbers::pi)
+            meas_bearing -= 2.0 * std::numbers::pi;
+        while(meas_bearing < -std::numbers::pi)
+            meas_bearing += 2.0 * std::numbers::pi;
 
         ctrlpp::Vector<double, 1> z;
         z << meas_bearing;
@@ -134,18 +138,12 @@ int main()
 
         auto est = filter.state();
 
-        std::cout << k << ','
-                  << x_true(0) << ',' << x_true(1) << ','
-                  << est(0) << ',' << est(1) << ','
-                  << x_true(2) << ',' << x_true(3) << ','
-                  << est(2) << ',' << est(3) << '\n';
+        std::cout << k << ',' << x_true(0) << ',' << x_true(1) << ',' << est(0) << ',' << est(1) << ',' << x_true(2) << ',' << x_true(3) << ',' << est(2) << ',' << est(3) << '\n';
     }
 
     // Final position error
     auto est_final = filter.state();
-    double err_pos = std::sqrt(
-        (x_true(0) - est_final(0)) * (x_true(0) - est_final(0)) +
-        (x_true(1) - est_final(1)) * (x_true(1) - est_final(1)));
+    double err_pos = std::sqrt((x_true(0) - est_final(0)) * (x_true(0) - est_final(0)) + (x_true(1) - est_final(1)) * (x_true(1) - est_final(1)));
     std::cerr << "Final position error: " << err_pos << " m\n";
 
     return 0;

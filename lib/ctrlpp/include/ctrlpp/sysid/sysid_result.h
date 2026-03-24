@@ -7,7 +7,8 @@
 
 #include <Eigen/Dense>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct arx_result
@@ -25,6 +26,6 @@ struct n4sid_result
     Scalar condition_number{};
 };
 
-}
+} // namespace ctrlpp
 
 #endif

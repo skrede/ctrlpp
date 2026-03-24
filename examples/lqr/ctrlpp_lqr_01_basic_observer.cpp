@@ -53,17 +53,14 @@ int main()
 
     std::cout << "time,x_true_0,x_true_1,x_est_0,x_est_1,control\n";
 
-    for (Scalar t = 0.0; t < duration; t += dt) {
+    for(Scalar t = 0.0; t < duration; t += dt)
+    {
         auto x_est = kf.state();
         auto u = controller.compute(x_est);
 
         Eigen::Matrix<Scalar, 1, 1> z = sys_d.C * x_true;
 
-        std::cout << std::fixed << std::setprecision(4)
-                  << t << ","
-                  << x_true(0) << "," << x_true(1) << ","
-                  << x_est(0) << "," << x_est(1) << ","
-                  << u(0) << "\n";
+        std::cout << std::fixed << std::setprecision(4) << t << "," << x_true(0) << "," << x_true(1) << "," << x_est(0) << "," << x_est(1) << "," << u(0) << "\n";
 
         kf.predict(u);
         x_true = ctrlpp::propagate(sys_d, x_true, u);

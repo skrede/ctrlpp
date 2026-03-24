@@ -20,7 +20,8 @@
 #include <optional>
 #include <algorithm>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t NX, std::size_t NU, nlp_solver Solver, dynamics_model<Scalar, NX, NU> Dynamics, std::size_t NC = 0, std::size_t NTC = 0>
 class nmpc
@@ -31,7 +32,7 @@ class nmpc
     static constexpr int ntc = static_cast<int>(NTC);
 
 public:
-    nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC> &config)
+    nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
         : m_dynamics{std::move(dynamics)}
         , m_config{config}
         , m_N{config.horizon}
@@ -54,23 +55,23 @@ public:
         m_warm_z = Eigen::VectorX<Scalar>::Zero(m_num_vars);
     }
 
-    std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX> &x0)
+    std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0)
     {
         // Regulation: reference is all zeros
-        for(auto &ref : m_state->x_ref)
+        for(auto& ref : m_state->x_ref)
             ref.setZero();
         return solve_impl(x0);
     }
 
-    std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX> &x0, const Vector<Scalar, NX> &x_ref)
+    std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NX>& x_ref)
     {
         // Setpoint tracking: constant reference
-        for(auto &ref : m_state->x_ref)
+        for(auto& ref : m_state->x_ref)
             ref = x_ref;
         return solve_impl(x0);
     }
 
-    std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX> &x0, std::span<const Vector<Scalar, NX>> x_ref)
+    std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NX>> x_ref)
     {
         // Trajectory tracking: copy reference sequence
         const auto len = std::min(x_ref.size(), m_state->x_ref.size());
@@ -99,13 +100,10 @@ public:
         return {std::move(states), std::move(inputs)};
     }
 
-    mpc_diagnostics<Scalar> diagnostics() const
-    {
-        return m_last_diagnostics;
-    }
+    mpc_diagnostics<Scalar> diagnostics() const { return m_last_diagnostics; }
 
 private:
-    std::optional<Vector<Scalar, NU>> solve_impl(const Vector<Scalar, NX> &x0)
+    std::optional<Vector<Scalar, NU>> solve_impl(const Vector<Scalar, NX>& x0)
     {
         // Update formulation state (lambdas read from this shared state)
         m_state->x0 = x0;
@@ -118,18 +116,16 @@ private:
         auto result = m_solver.solve(update);
 
         // Populate diagnostics
-        m_last_diagnostics = mpc_diagnostics<Scalar>{
-            .status                            = result.status,
-            .iterations                        = result.iterations,
-            .solve_time                        = result.solve_time,
-            .cost                              = result.objective,
-            .primal_residual                   = result.primal_residual,
-            .dual_residual                     = Scalar{0},
-            .max_constraint_violation          = result.primal_residual,
-            .max_path_constraint_violation     = Scalar{0},
-            .max_terminal_constraint_violation = Scalar{0},
-            .total_slack                       = Scalar{0}
-        };
+        m_last_diagnostics = mpc_diagnostics<Scalar>{.status = result.status,
+                                                     .iterations = result.iterations,
+                                                     .solve_time = result.solve_time,
+                                                     .cost = result.objective,
+                                                     .primal_residual = result.primal_residual,
+                                                     .dual_residual = Scalar{0},
+                                                     .max_constraint_violation = result.primal_residual,
+                                                     .max_path_constraint_violation = Scalar{0},
+                                                     .max_terminal_constraint_violation = Scalar{0},
+                                                     .total_slack = Scalar{0}};
 
         if(result.status != solve_status::optimal && result.status != solve_status::solved_inaccurate)
             return std::nullopt;
@@ -177,7 +173,7 @@ private:
         return u0;
     }
 
-    void populate_constraint_diagnostics(const Eigen::VectorX<Scalar> &z)
+    void populate_constraint_diagnostics(const Eigen::VectorX<Scalar>& z)
     {
         const int u_offset = (m_N + 1) * nx;
 
@@ -186,7 +182,7 @@ private:
         {
             if(m_config.path_constraint)
             {
-                const auto &g = *m_config.path_constraint;
+                const auto& g = *m_config.path_constraint;
                 Scalar max_viol{0};
 
                 for(int k = 0; k < m_N; ++k)
@@ -208,7 +204,7 @@ private:
         {
             if(m_config.terminal_constraint)
             {
-                const auto &h = *m_config.terminal_constraint;
+                const auto& h = *m_config.terminal_constraint;
                 Eigen::Map<const Vector<Scalar, NX>> xN(z.data() + m_N * nx);
                 Vector<Scalar, NTC> hN = h(xN);
 
@@ -259,6 +255,6 @@ private:
     Vector<Scalar, NU> m_u_prev{Vector<Scalar, NU>::Zero()};
 };
 
-}
+} // namespace ctrlpp
 
 #endif

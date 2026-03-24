@@ -84,11 +84,7 @@ TEST_CASE("output computes y = C*x + D*u", "[state_space]")
 
 TEST_CASE("SISO alias template works", "[state_space]")
 {
-    static_assert(std::is_same_v<
-        ctrlpp::siso_discrete_state_space<double, 2>,
-        ctrlpp::discrete_state_space<double, 2, 1, 1>>);
-    static_assert(std::is_same_v<
-        ctrlpp::siso_continuous_state_space<double, 2>,
-        ctrlpp::continuous_state_space<double, 2, 1, 1>>);
+    static_assert(std::is_same_v<ctrlpp::siso_discrete_state_space<double, 2>, ctrlpp::discrete_state_space<double, 2, 1, 1>>);
+    static_assert(std::is_same_v<ctrlpp::siso_continuous_state_space<double, 2>, ctrlpp::continuous_state_space<double, 2, 1, 1>>);
     SUCCEED();
 }

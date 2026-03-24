@@ -23,24 +23,18 @@
 #include <limits>
 #include <utility>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename M, typename Scalar, std::size_t NB, std::size_t NY>
-concept mekf_measurement_model =
-    requires(const M &m, const Eigen::Quaternion<Scalar> &q,
-             const Vector<Scalar, NB> &b)
-    {
-        { m(q, b) } -> std::convertible_to<Vector<Scalar, NY>>;
-    };
+concept mekf_measurement_model = requires(const M& m, const Eigen::Quaternion<Scalar>& q, const Vector<Scalar, NB>& b) {
+    { m(q, b) } -> std::convertible_to<Vector<Scalar, NY>>;
+};
 
 template <typename M, typename Scalar, std::size_t NB, std::size_t NY>
-concept differentiable_mekf_measurement =
-    mekf_measurement_model<M, Scalar, NB, NY> &&
-    requires(const M &m, const Eigen::Quaternion<Scalar> &q,
-             const Vector<Scalar, NB> &b)
-    {
-        { m.jacobian(q, b) } -> std::convertible_to<Matrix<Scalar, NY, 3 + NB>>;
-    };
+concept differentiable_mekf_measurement = mekf_measurement_model<M, Scalar, NB, NY> && requires(const M& m, const Eigen::Quaternion<Scalar>& q, const Vector<Scalar, NB>& b) {
+    { m.jacobian(q, b) } -> std::convertible_to<Matrix<Scalar, NY, 3 + NB>>;
+};
 
 template <typename Scalar, std::size_t NB, std::size_t NY>
 struct mekf_config
@@ -87,17 +81,11 @@ public:
         update_state_cache();
     }
 
-    void predict(const input_vector_t &omega)
-    {
-        predict_impl(omega, dt_);
-    }
+    void predict(const input_vector_t& omega) { predict_impl(omega, dt_); }
 
-    void predict(const input_vector_t &omega, Scalar dt)
-    {
-        predict_impl(omega, dt);
-    }
+    void predict(const input_vector_t& omega, Scalar dt) { predict_impl(omega, dt); }
 
-    void update(const output_vector_t &z)
+    void update(const output_vector_t& z)
     {
         // Predicted measurement
         auto z_pred = measurement_(q_, b_);
@@ -143,14 +131,14 @@ public:
         update_state_cache();
     }
 
-    [[nodiscard]] auto state() const -> const state_vector_t & { return state_cache_; }
-    [[nodiscard]] auto covariance() const -> const cov_matrix_t & { return P_; }
-    [[nodiscard]] auto innovation() const -> const output_vector_t & { return innovation_; }
+    [[nodiscard]] auto state() const -> const state_vector_t& { return state_cache_; }
+    [[nodiscard]] auto covariance() const -> const cov_matrix_t& { return P_; }
+    [[nodiscard]] auto innovation() const -> const output_vector_t& { return innovation_; }
     [[nodiscard]] auto attitude() const -> Eigen::Quaternion<Scalar> { return q_; }
-    [[nodiscard]] auto bias() const -> const Vector<Scalar, NB> & { return b_; }
+    [[nodiscard]] auto bias() const -> const Vector<Scalar, NB>& { return b_; }
 
 private:
-    void predict_impl(const input_vector_t &omega, Scalar dt)
+    void predict_impl(const input_vector_t& omega, Scalar dt)
     {
         // Corrected angular velocity (remove estimated bias)
         Vector<Scalar, 3> omega_corr = omega - b_.template head<3>();
@@ -199,25 +187,21 @@ private:
 
 // CTAD deduction guide
 template <typename Measurement, typename Scalar, std::size_t NB, std::size_t NY>
-mekf(Measurement, mekf_config<Scalar, NB, NY>)
-    -> mekf<Scalar, NB, NY, Measurement>;
+mekf(Measurement, mekf_config<Scalar, NB, NY>) -> mekf<Scalar, NB, NY, Measurement>;
 
-namespace detail {
+namespace detail
+{
 
 struct mekf_sa_measurement
 {
-    auto operator()(const Eigen::Quaternion<double> &,
-                    const Vector<double, 3> &) const -> Vector<double, 3>
-    {
-        return Vector<double, 3>::Zero();
-    }
+    auto operator()(const Eigen::Quaternion<double>&, const Vector<double, 3>&) const -> Vector<double, 3> { return Vector<double, 3>::Zero(); }
 };
 
-}
+} // namespace detail
 
 static_assert(ObserverPolicy<mekf<double, 3, 3, detail::mekf_sa_measurement>>);
 static_assert(CovarianceObserver<mekf<double, 3, 3, detail::mekf_sa_measurement>>);
 
-}
+} // namespace ctrlpp
 
 #endif

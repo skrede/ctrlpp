@@ -15,7 +15,8 @@
 #include <array>
 #include <cstddef>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t NA, std::size_t NB, std::size_t NU = 1, std::size_t NY = 1>
 class recursive_arx
@@ -23,10 +24,7 @@ class recursive_arx
 public:
     static constexpr std::size_t NP = NA * NY + NB * NU;
 
-    explicit recursive_arx(rls_config<Scalar, NP> config = {})
-        : m_rls{config}
-    {
-    }
+    explicit recursive_arx(rls_config<Scalar, NP> config = {}) : m_rls{config} {}
 
     void update(Scalar y, Scalar u)
     {
@@ -52,15 +50,9 @@ public:
         ++m_sample_count;
     }
 
-    const Vector<Scalar, NP> &parameters() const
-    {
-        return m_rls.parameters();
-    }
+    const Vector<Scalar, NP>& parameters() const { return m_rls.parameters(); }
 
-    const Matrix<Scalar, NP, NP> &covariance() const
-    {
-        return m_rls.covariance();
-    }
+    const Matrix<Scalar, NP, NP>& covariance() const { return m_rls.covariance(); }
 
     discrete_state_space<Scalar, NA, NU, NY> to_state_space() const
     {
@@ -103,6 +95,6 @@ private:
     std::size_t m_sample_count{0};
 };
 
-}
+} // namespace ctrlpp
 
 #endif

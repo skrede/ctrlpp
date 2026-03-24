@@ -7,7 +7,8 @@
 
 // --- Mock observers for concept testing ---
 
-struct MockMinimalObserver {
+struct MockMinimalObserver
+{
     using observer_tag = void;
     using state_vector_t = std::array<double, 2>;
     using input_vector_t = std::array<double, 1>;
@@ -21,7 +22,8 @@ private:
     state_vector_t state_{};
 };
 
-struct MockCovarianceObserver {
+struct MockCovarianceObserver
+{
     using observer_tag = void;
     using state_vector_t = std::array<double, 2>;
     using input_vector_t = std::array<double, 1>;

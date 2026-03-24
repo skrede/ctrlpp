@@ -7,14 +7,16 @@
 #include <array>
 #include <cstddef>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 // tf2ss: Transfer function to controllable canonical form state-space.
 // H(s) = num(s) / den(s), coefficients highest-degree-first (MATLAB convention).
 // Requires NumDeg <= DenDeg (proper transfer function).
 // Returns continuous_state_space with NX = DenDeg states.
-template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg> requires (NumDeg <= DenDeg)
-constexpr continuous_state_space<Scalar, DenDeg, 1, 1> tf2ss(const transfer_function<Scalar, NumDeg, DenDeg> &tf)
+template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
+    requires(NumDeg <= DenDeg)
+constexpr continuous_state_space<Scalar, DenDeg, 1, 1> tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
 {
     static_assert(DenDeg >= 1, "Denominator degree must be at least 1");
 
@@ -83,7 +85,7 @@ constexpr continuous_state_space<Scalar, DenDeg, 1, 1> tf2ss(const transfer_func
 // Returns transfer_function<Scalar, NX, NX> (numerator degree = denominator degree = NX).
 // Coefficients are highest-degree-first.
 template <typename Scalar, std::size_t NX>
-transfer_function<Scalar, NX, NX> ss2tf(const continuous_state_space<Scalar, NX, 1, 1> &sys)
+transfer_function<Scalar, NX, NX> ss2tf(const continuous_state_space<Scalar, NX, 1, 1>& sys)
 {
     constexpr auto n = NX;
     using mat_nn = Matrix<Scalar, n, n>;
@@ -122,6 +124,6 @@ transfer_function<Scalar, NX, NX> ss2tf(const continuous_state_space<Scalar, NX,
     return {numer, den};
 }
 
-}
+} // namespace ctrlpp
 
 #endif

@@ -41,8 +41,7 @@ int main()
     ctrlpp::lqr<Scalar, NX, NU> controller(*K_opt);
 
     Eigen::Matrix<Scalar, 2, 2> I2 = Eigen::Matrix<Scalar, 2, 2>::Identity();
-    Eigen::Matrix<Scalar, 1, 1> u_ff =
-        sys_d.B.colPivHouseholderQr().solve((I2 - sys_d.A) * Eigen::Matrix<Scalar, 2, 1>{{2.0}, {0.0}});
+    Eigen::Matrix<Scalar, 1, 1> u_ff = sys_d.B.colPivHouseholderQr().solve((I2 - sys_d.A) * Eigen::Matrix<Scalar, 2, 1>{{2.0}, {0.0}});
 
     Eigen::Matrix<Scalar, 2, 2> Q_proc = Eigen::Matrix<Scalar, 2, 2>::Identity() * 0.01;
     Eigen::Matrix<Scalar, 1, 1> R_meas;
@@ -61,18 +60,14 @@ int main()
 
     std::cout << "time,x_true_0,x_true_1,x_est_0,x_est_1,x_ref_0,control\n";
 
-    for (Scalar t = 0.0; t < duration; t += dt) {
+    for(Scalar t = 0.0; t < duration; t += dt)
+    {
         auto x_est = kf.state();
         Eigen::Matrix<Scalar, 1, 1> u = controller.compute(x_est - x_ref) + u_ff;
 
         Eigen::Matrix<Scalar, 1, 1> z = sys_d.C * x_true;
 
-        std::cout << std::fixed << std::setprecision(4)
-                  << t << ","
-                  << x_true(0) << "," << x_true(1) << ","
-                  << x_est(0) << "," << x_est(1) << ","
-                  << x_ref(0) << ","
-                  << u(0) << "\n";
+        std::cout << std::fixed << std::setprecision(4) << t << "," << x_true(0) << "," << x_true(1) << "," << x_est(0) << "," << x_est(1) << "," << x_ref(0) << "," << u(0) << "\n";
 
         kf.predict(u);
         x_true = ctrlpp::propagate(sys_d, x_true, u);

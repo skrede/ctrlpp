@@ -18,7 +18,8 @@
 #include <cstddef>
 #include <concepts>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t NP>
 struct manifold_sigma_result
@@ -29,16 +30,12 @@ struct manifold_sigma_result
 };
 
 template <typename S, typename Scalar>
-concept manifold_sigma_point_strategy =
-    requires
-    {
-        { S::num_points } -> std::convertible_to<std::size_t>;
-        typename S::options_t;
-    } &&
-    requires(const S &s, const Eigen::Quaternion<Scalar> &q, const Matrix<Scalar, 3, 3> &P)
-    {
-        { s.generate(q, P) } -> std::convertible_to<manifold_sigma_result<Scalar, S::num_points>>;
-    };
+concept manifold_sigma_point_strategy = requires {
+    { S::num_points } -> std::convertible_to<std::size_t>;
+    typename S::options_t;
+} && requires(const S& s, const Eigen::Quaternion<Scalar>& q, const Matrix<Scalar, 3, 3>& P) {
+    { s.generate(q, P) } -> std::convertible_to<manifold_sigma_result<Scalar, S::num_points>>;
+};
 
 template <typename Scalar>
 class so3_merwe_sigma_points
@@ -49,12 +46,9 @@ public:
     static constexpr std::size_t num_points = merwe_sigma_points<Scalar, tangent_dim>::num_points;
     using options_t = merwe_options<Scalar>;
 
-    explicit so3_merwe_sigma_points(options_t opts = options_t{})
-        : m_inner{opts}
-    {
-    }
+    explicit so3_merwe_sigma_points(options_t opts = options_t{}) : m_inner{opts} {}
 
-    manifold_sigma_result<Scalar, num_points> generate(const Eigen::Quaternion<Scalar> &q_mean, const Matrix<Scalar, 3, 3> &P) const
+    manifold_sigma_result<Scalar, num_points> generate(const Eigen::Quaternion<Scalar>& q_mean, const Matrix<Scalar, 3, 3>& P) const
 
     {
         auto tangent = m_inner.generate(Vector<Scalar, tangent_dim>::Zero(), P);
@@ -79,6 +73,6 @@ private:
 
 static_assert(manifold_sigma_point_strategy<so3_merwe_sigma_points<double>, double>);
 
-}
+} // namespace ctrlpp
 
 #endif

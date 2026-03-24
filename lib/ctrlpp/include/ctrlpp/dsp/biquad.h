@@ -13,23 +13,27 @@
 #include <cstddef>
 #include <numbers>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-template<typename Scalar>
-struct biquad_coeffs {
+template <typename Scalar>
+struct biquad_coeffs
+{
     Scalar b0{}, b1{}, b2{};
     Scalar a1{}, a2{};
 };
 
-template<typename Scalar>
-class biquad {
+template <typename Scalar>
+class biquad
+{
 public:
     using scalar_type = Scalar;
 
     constexpr biquad() = default;
     explicit constexpr biquad(biquad_coeffs<Scalar> c) : c_{c} {}
 
-    auto process(Scalar x) -> Scalar {
+    auto process(Scalar x) -> Scalar
+    {
         auto const y = c_.b0 * x + w_[0];
         w_[0] = c_.b1 * x - c_.a1 * y + w_[1];
         w_[1] = c_.b2 * x - c_.a2 * y;
@@ -38,9 +42,11 @@ public:
 
     void reset() { w_.fill(Scalar{0}); }
 
-    void reset(Scalar value) {
+    void reset(Scalar value)
+    {
         auto const denom = Scalar{1} + c_.a1 + c_.a2;
-        if (std::abs(denom) < Scalar{1e-12}) {
+        if(std::abs(denom) < Scalar{1e-12})
+        {
             w_.fill(Scalar{0});
             return;
         }
@@ -50,11 +56,10 @@ public:
         w_[1] = value * c_.b2 - y_ss * c_.a2;
     }
 
-    [[nodiscard]] auto coefficients() const -> biquad_coeffs<Scalar> const& {
-        return c_;
-    }
+    [[nodiscard]] auto coefficients() const -> biquad_coeffs<Scalar> const& { return c_; }
 
-    static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> biquad {
+    static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> biquad
+    {
         auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * cutoff_hz / sample_hz;
         auto const cos_w0 = std::cos(w0);
         auto const sin_w0 = std::sin(w0);
@@ -70,7 +75,8 @@ public:
         }};
     }
 
-    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> biquad {
+    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> biquad
+    {
         auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * freq_hz / sample_hz;
         auto const cos_w0 = std::cos(w0);
         auto const alpha = std::sin(w0) / (Scalar{2} * q);
@@ -85,9 +91,9 @@ public:
         }};
     }
 
-    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> biquad {
-        auto const wc = Scalar{2} * sample_hz
-                      * std::tan(std::numbers::pi_v<Scalar> * bandwidth_hz / sample_hz);
+    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> biquad
+    {
+        auto const wc = Scalar{2} * sample_hz * std::tan(std::numbers::pi_v<Scalar> * bandwidth_hz / sample_hz);
         auto const k = Scalar{2} * sample_hz;
         auto const a0_inv = Scalar{1} / (k + wc);
         return biquad{biquad_coeffs<Scalar>{
@@ -104,69 +110,74 @@ private:
     std::array<Scalar, 2> w_{};
 };
 
-template<typename Scalar>
+template <typename Scalar>
 biquad(biquad_coeffs<Scalar>) -> biquad<Scalar>;
 
-template<typename Scalar, std::size_t N>
-    requires (N >= 1)
-class cascaded_biquad {
+template <typename Scalar, std::size_t N>
+    requires(N >= 1)
+class cascaded_biquad
+{
 public:
     using scalar_type = Scalar;
 
-    explicit constexpr cascaded_biquad(std::array<biquad<Scalar>, N> sections)
-        : sections_{sections} {}
+    explicit constexpr cascaded_biquad(std::array<biquad<Scalar>, N> sections) : sections_{sections} {}
 
-    auto process(Scalar x) -> Scalar {
-        for (auto& s : sections_) {
+    auto process(Scalar x) -> Scalar
+    {
+        for(auto& s : sections_)
+        {
             x = s.process(x);
         }
         return x;
     }
 
-    void reset() {
-        for (auto& s : sections_) {
+    void reset()
+    {
+        for(auto& s : sections_)
+        {
             s.reset();
         }
     }
 
-    void reset(Scalar value) {
-        for (auto& s : sections_) {
+    void reset(Scalar value)
+    {
+        for(auto& s : sections_)
+        {
             s.reset(value);
             auto const& c = s.coefficients();
             auto const denom = Scalar{1} + c.a1 + c.a2;
-            if (std::abs(denom) < Scalar{1e-12}) {
+            if(std::abs(denom) < Scalar{1e-12})
+            {
                 value = Scalar{0};
-            } else {
+            }
+            else
+            {
                 value *= (c.b0 + c.b1 + c.b2) / denom;
             }
         }
     }
 
-    [[nodiscard]] auto section(std::size_t i) const -> biquad<Scalar> const& {
-        return sections_[i];
-    }
+    [[nodiscard]] auto section(std::size_t i) const -> biquad<Scalar> const& { return sections_[i]; }
 
-    auto section(std::size_t i) -> biquad<Scalar>& {
-        return sections_[i];
-    }
+    auto section(std::size_t i) -> biquad<Scalar>& { return sections_[i]; }
 
 private:
     std::array<biquad<Scalar>, N> sections_{};
 };
 
-template<std::size_t Order, typename Scalar>
-    requires (Order % 2 == 0 && Order >= 2)
-auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz) -> cascaded_biquad<Scalar, Order / 2> {
+template <std::size_t Order, typename Scalar>
+    requires(Order % 2 == 0 && Order >= 2)
+auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz) -> cascaded_biquad<Scalar, Order / 2>
+{
     constexpr auto num_sections = Order / 2;
     auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * cutoff_hz / sample_hz;
     auto const cos_w0 = std::cos(w0);
     auto const sin_w0 = std::sin(w0);
 
     std::array<biquad<Scalar>, num_sections> sections{};
-    for (std::size_t k = 0; k < num_sections; ++k) {
-        auto const theta = std::numbers::pi_v<Scalar>
-                         * static_cast<Scalar>(2 * k + 1)
-                         / static_cast<Scalar>(2 * Order);
+    for(std::size_t k = 0; k < num_sections; ++k)
+    {
+        auto const theta = std::numbers::pi_v<Scalar> * static_cast<Scalar>(2 * k + 1) / static_cast<Scalar>(2 * Order);
         auto const q_k = Scalar{1} / (Scalar{2} * std::cos(theta));
         auto const alpha = sin_w0 / (Scalar{2} * q_k);
 
@@ -182,10 +193,10 @@ auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz) -> cascaded_biquad<Sca
     return cascaded_biquad<Scalar, num_sections>{sections};
 }
 
-template<std::size_t Order, typename Scalar>
-    requires (Order % 2 == 0 && Order >= 2)
-auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
-    -> cascaded_biquad<Scalar, Order / 2> {
+template <std::size_t Order, typename Scalar>
+    requires(Order % 2 == 0 && Order >= 2)
+auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db) -> cascaded_biquad<Scalar, Order / 2>
+{
     constexpr auto num_sections = Order / 2;
 
     auto const eps = std::sqrt(std::pow(Scalar{10}, ripple_db / Scalar{10}) - Scalar{1});
@@ -194,14 +205,12 @@ auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
     auto const cosh_v = std::cosh(v);
 
     // Pre-warp cutoff frequency for bilinear transform
-    auto const wc = Scalar{2} * sample_hz
-                  * std::tan(std::numbers::pi_v<Scalar> * cutoff_hz / sample_hz);
+    auto const wc = Scalar{2} * sample_hz * std::tan(std::numbers::pi_v<Scalar> * cutoff_hz / sample_hz);
 
     std::array<biquad<Scalar>, num_sections> sections{};
-    for (std::size_t k = 0; k < num_sections; ++k) {
-        auto const theta = std::numbers::pi_v<Scalar>
-                         * static_cast<Scalar>(2 * k + 1)
-                         / static_cast<Scalar>(2 * Order);
+    for(std::size_t k = 0; k < num_sections; ++k)
+    {
+        auto const theta = std::numbers::pi_v<Scalar> * static_cast<Scalar>(2 * k + 1) / static_cast<Scalar>(2 * Order);
         auto const sigma = -sinh_v * std::sin(theta);
         auto const omega = cosh_v * std::cos(theta);
 
@@ -250,14 +259,16 @@ auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
     // The DC gain of the cascade without normalization differs from unity.
     // Compute actual DC gain and compensate on the first section.
     auto dc_gain = Scalar{1};
-    for (auto const& s : sections) {
+    for(auto const& s : sections)
+    {
         auto const& c = s.coefficients();
         dc_gain *= (c.b0 + c.b1 + c.b2) / (Scalar{1} + c.a1 + c.a2);
     }
     // Target DC gain for even-order Chebyshev: 1/sqrt(1+eps^2) (passband edge)
     // To match MATLAB cheby1: max passband gain = 0 dB, DC gain = -ripple_db
     auto const target_dc = Scalar{1} / std::sqrt(Scalar{1} + eps * eps);
-    if (std::abs(dc_gain) > Scalar{1e-15}) {
+    if(std::abs(dc_gain) > Scalar{1e-15})
+    {
         auto const correction = target_dc / dc_gain;
         auto& c0 = sections[0];
         auto const old = c0.coefficients();
@@ -273,14 +284,15 @@ auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
     return cascaded_biquad<Scalar, num_sections>{sections};
 }
 
-namespace detail {
+namespace detail
+{
 
 static_assert(discrete_filter<biquad<double>>);
 static_assert(discrete_filter<biquad<float>>);
 static_assert(discrete_filter<cascaded_biquad<double, 2>>);
 
-}
+} // namespace detail
 
-}
+} // namespace ctrlpp
 
 #endif

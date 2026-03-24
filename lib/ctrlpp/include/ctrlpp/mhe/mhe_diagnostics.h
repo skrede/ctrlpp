@@ -3,11 +3,13 @@
 
 #include "ctrlpp/mpc/qp_types.h"
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 /// Diagnostics for MHE solves, mirroring mpc_diagnostics with MHE-specific fields.
-template<typename Scalar>
-struct mhe_diagnostics {
+template <typename Scalar>
+struct mhe_diagnostics
+{
     solve_status status{solve_status::error};
     int iterations{};
     Scalar solve_time{};
@@ -20,6 +22,6 @@ struct mhe_diagnostics {
     bool used_ekf_fallback{false};
 };
 
-}
+} // namespace ctrlpp
 
 #endif

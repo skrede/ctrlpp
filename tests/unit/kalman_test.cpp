@@ -17,16 +17,15 @@ static auto make_const_velocity_system()
 {
     ctrlpp::discrete_state_space<double, 2, 1, 1> sys;
     double dt = 0.1;
-    sys.A << 1.0, dt,
-             0.0, 1.0;
-    sys.B << 0.5 * dt * dt,
-             dt;
+    sys.A << 1.0, dt, 0.0, 1.0;
+    sys.B << 0.5 * dt * dt, dt;
     sys.C << 1.0, 0.0;
     sys.D << 0.0;
     return sys;
 }
 
-TEST_CASE("kalman filter convergence on constant velocity model") {
+TEST_CASE("kalman filter convergence on constant velocity model")
+{
     auto sys = make_const_velocity_system();
 
     Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity() * 0.01;
@@ -42,7 +41,8 @@ TEST_CASE("kalman filter convergence on constant velocity model") {
     double true_vel = 1.0;
     double dt = 0.1;
 
-    for (int i = 0; i < 50; ++i) {
+    for(int i = 0; i < 50; ++i)
+    {
         true_pos += true_vel * dt;
 
         Eigen::Matrix<double, 1, 1> u;
@@ -60,7 +60,8 @@ TEST_CASE("kalman filter convergence on constant velocity model") {
     CHECK_THAT(est(1), Catch::Matchers::WithinAbs(true_vel, 0.5));
 }
 
-TEST_CASE("kalman filter covariance remains symmetric and PSD") {
+TEST_CASE("kalman filter covariance remains symmetric and PSD")
+{
     auto sys = make_const_velocity_system();
 
     Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity() * 0.01;
@@ -71,7 +72,8 @@ TEST_CASE("kalman filter covariance remains symmetric and PSD") {
 
     ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
-    for (int i = 0; i < 50; ++i) {
+    for(int i = 0; i < 50; ++i)
+    {
         Eigen::Matrix<double, 1, 1> u;
         u << 0.0;
         kf.predict(u);
@@ -85,12 +87,13 @@ TEST_CASE("kalman filter covariance remains symmetric and PSD") {
         CHECK((P - P.transpose()).norm() < 1e-10);
         // Positive semi-definite
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(P, Eigen::EigenvaluesOnly);
-        for (int j = 0; j < 2; ++j)
+        for(int j = 0; j < 2; ++j)
             CHECK(eigsolver.eigenvalues()(j) >= -1e-10);
     }
 }
 
-TEST_CASE("kalman filter NEES is finite and positive after update") {
+TEST_CASE("kalman filter NEES is finite and positive after update")
+{
     auto sys = make_const_velocity_system();
 
     Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity() * 0.01;
@@ -113,7 +116,8 @@ TEST_CASE("kalman filter NEES is finite and positive after update") {
     CHECK(std::isfinite(kf.nees()));
 }
 
-TEST_CASE("kalman filter steady state detection") {
+TEST_CASE("kalman filter steady state detection")
+{
     auto sys = make_const_velocity_system();
 
     Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity() * 0.01;
@@ -126,7 +130,8 @@ TEST_CASE("kalman filter steady state detection") {
 
     // Should not be steady state initially (P0 is large)
     // Run many iterations to converge
-    for (int i = 0; i < 500; ++i) {
+    for(int i = 0; i < 500; ++i)
+    {
         Eigen::Matrix<double, 1, 1> u;
         u << 0.0;
         kf.predict(u);
@@ -143,7 +148,8 @@ TEST_CASE("kalman filter steady state detection") {
     CHECK(kf.is_steady_state(1e-2));
 }
 
-TEST_CASE("kalman filter reset covariance") {
+TEST_CASE("kalman filter reset covariance")
+{
     auto sys = make_const_velocity_system();
 
     Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity() * 0.01;
@@ -155,7 +161,8 @@ TEST_CASE("kalman filter reset covariance") {
     ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
     // Run a few iterations
-    for (int i = 0; i < 10; ++i) {
+    for(int i = 0; i < 10; ++i)
+    {
         Eigen::Matrix<double, 1, 1> u;
         u << 0.0;
         kf.predict(u);
@@ -172,17 +179,13 @@ TEST_CASE("kalman filter reset covariance") {
     CHECK((kf.covariance() - P0).norm() < 1e-10);
 }
 
-TEST_CASE("kalman filter MIMO predict-update cycle") {
+TEST_CASE("kalman filter MIMO predict-update cycle")
+{
     // 3-state, 2-input, 2-output system
     ctrlpp::discrete_state_space<double, 3, 2, 2> sys;
-    sys.A << 0.9, 0.1, 0.0,
-             0.0, 0.8, 0.2,
-             0.0, 0.0, 0.7;
-    sys.B << 1.0, 0.0,
-             0.0, 1.0,
-             0.0, 0.0;
-    sys.C << 1.0, 0.0, 0.0,
-             0.0, 1.0, 0.0;
+    sys.A << 0.9, 0.1, 0.0, 0.0, 0.8, 0.2, 0.0, 0.0, 0.7;
+    sys.B << 1.0, 0.0, 0.0, 1.0, 0.0, 0.0;
+    sys.C << 1.0, 0.0, 0.0, 0.0, 1.0, 0.0;
     sys.D = Eigen::Matrix<double, 2, 2>::Zero();
 
     Eigen::Matrix<double, 3, 3> Q = Eigen::Matrix<double, 3, 3>::Identity() * 0.01;
@@ -193,7 +196,8 @@ TEST_CASE("kalman filter MIMO predict-update cycle") {
     ctrlpp::kalman_filter<double, 3, 2, 2> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
     // Run 10 predict-update cycles
-    for (int i = 0; i < 10; ++i) {
+    for(int i = 0; i < 10; ++i)
+    {
         Eigen::Vector2d u;
         u << 0.1, 0.2;
         kf.predict(u);
@@ -205,11 +209,12 @@ TEST_CASE("kalman filter MIMO predict-update cycle") {
 
     // Just verify it ran without error and state is finite
     auto est = kf.state();
-    for (int i = 0; i < 3; ++i)
+    for(int i = 0; i < 3; ++i)
         CHECK(std::isfinite(est(i)));
 }
 
-TEST_CASE("kalman filter set_model updates system") {
+TEST_CASE("kalman filter set_model updates system")
+{
     auto sys = make_const_velocity_system();
 
     Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity() * 0.01;
@@ -222,7 +227,7 @@ TEST_CASE("kalman filter set_model updates system") {
 
     // Change model
     auto sys2 = sys;
-    sys2.A(0, 1) = 0.2;  // Different dt
+    sys2.A(0, 1) = 0.2; // Different dt
     kf.set_model(sys2);
 
     // Predict with new model
@@ -244,7 +249,8 @@ TEST_CASE("kalman filter set_model updates system") {
 }
 
 // Static assertions are in the header; this test verifies they compile
-TEST_CASE("kalman filter concept satisfaction") {
+TEST_CASE("kalman filter concept satisfaction")
+{
     static_assert(ctrlpp::ObserverPolicy<ctrlpp::kalman_filter<double, 2, 1, 1>>);
     static_assert(ctrlpp::CovarianceObserver<ctrlpp::kalman_filter<double, 2, 1, 1>>);
     CHECK(true);

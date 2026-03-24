@@ -5,7 +5,8 @@
 
 #include <cstddef>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct continuous_state_space
@@ -31,6 +32,6 @@ using siso_continuous_state_space = continuous_state_space<S, NX, 1, 1>;
 template <typename S, std::size_t NX>
 using siso_discrete_state_space = discrete_state_space<S, NX, 1, 1>;
 
-}
+} // namespace ctrlpp
 
 #endif

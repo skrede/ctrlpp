@@ -16,7 +16,8 @@
 
 #include <cmath>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar>
 struct cf_config
@@ -36,25 +37,18 @@ public:
     using input_vector_t = Vector<Scalar, 3>;
     using output_vector_t = Vector<Scalar, 3>;
 
-    explicit complementary_filter(cf_config<Scalar> config)
-        : q_{config.q0}
-        , bias_{Vector<Scalar, 3>::Zero()}
-        , k_p_{config.k_p}
-        , k_i_{config.k_i}
-        , dt_{config.dt}
-        , gyro_buf_{Vector<Scalar, 3>::Zero()}
+    explicit complementary_filter(cf_config<Scalar> config) : q_{config.q0}, bias_{Vector<Scalar, 3>::Zero()}, k_p_{config.k_p}, k_i_{config.k_i}, dt_{config.dt}, gyro_buf_{Vector<Scalar, 3>::Zero()}
     {
         update_state_cache();
     }
 
     // Natural IMU update (6-DOF): gyro + accelerometer.
-    void update(const Vector<Scalar, 3> &gyro,
-                const Vector<Scalar, 3> &accel,
-                Scalar dt)
+    void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt)
     {
         // Normalize accelerometer
         Scalar norm = accel.norm();
-        if(norm < Scalar{1e-10}) return;
+        if(norm < Scalar{1e-10})
+            return;
         auto acc_n = (accel / norm).eval();
 
         // Gravity direction in body frame from current attitude
@@ -77,14 +71,12 @@ public:
     }
 
     // Natural MARG update (9-DOF): gyro + accelerometer + magnetometer.
-    void update(const Vector<Scalar, 3> &gyro,
-                const Vector<Scalar, 3> &accel,
-                const Vector<Scalar, 3> &mag,
-                Scalar dt)
+    void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, const Vector<Scalar, 3>& mag, Scalar dt)
     {
         // Normalize accelerometer
         Scalar norm = accel.norm();
-        if(norm < Scalar{1e-10}) return;
+        if(norm < Scalar{1e-10})
+            return;
         auto acc_n = (accel / norm).eval();
 
         // Gravity direction in body frame
@@ -130,19 +122,15 @@ public:
     }
 
     // ObserverPolicy wrappers (use config dt)
-    void predict(const input_vector_t &u) { gyro_buf_ = u; }
-    void update(const output_vector_t &z) { update(gyro_buf_, z, dt_); }
+    void predict(const input_vector_t& u) { gyro_buf_ = u; }
+    void update(const output_vector_t& z) { update(gyro_buf_, z, dt_); }
 
-    [[nodiscard]] auto state() const -> const state_vector_t & { return state_cache_; }
+    [[nodiscard]] auto state() const -> const state_vector_t& { return state_cache_; }
     [[nodiscard]] auto attitude() const -> Eigen::Quaternion<Scalar> { return q_; }
-    [[nodiscard]] auto bias() const -> const Vector<Scalar, 3> & { return bias_; }
+    [[nodiscard]] auto bias() const -> const Vector<Scalar, 3>& { return bias_; }
 
 private:
-    void update_state_cache()
-    {
-        state_cache_ << q_.w(), q_.x(), q_.y(), q_.z(),
-            bias_(0), bias_(1), bias_(2);
-    }
+    void update_state_cache() { state_cache_ << q_.w(), q_.x(), q_.y(), q_.z(), bias_(0), bias_(1), bias_(2); }
 
     Eigen::Quaternion<Scalar> q_;
     Vector<Scalar, 3> bias_;
@@ -158,6 +146,6 @@ complementary_filter(cf_config<Scalar>) -> complementary_filter<Scalar>;
 
 static_assert(ObserverPolicy<complementary_filter<double>>);
 
-}
+} // namespace ctrlpp
 
 #endif

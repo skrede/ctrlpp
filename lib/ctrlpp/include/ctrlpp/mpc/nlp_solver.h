@@ -9,10 +9,12 @@
 #include <functional>
 #include <span>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-template<typename Scalar>
-struct nlp_problem {
+template <typename Scalar>
+struct nlp_problem
+{
     int n_vars;
     int n_constraints;
     std::function<Scalar(std::span<const Scalar>)> cost;
@@ -24,13 +26,15 @@ struct nlp_problem {
     Eigen::VectorX<Scalar> c_upper;
 };
 
-template<typename Scalar>
-struct nlp_update {
+template <typename Scalar>
+struct nlp_update
+{
     Eigen::VectorX<Scalar> x0;
 };
 
-template<typename Scalar>
-struct nlp_result {
+template <typename Scalar>
+struct nlp_result
+{
     solve_status status;
     Eigen::VectorX<Scalar> x;
     Scalar objective;
@@ -39,15 +43,12 @@ struct nlp_result {
     Scalar primal_residual;
 };
 
-template<typename S>
-concept nlp_solver = requires {
-    typename S::scalar_type;
-} && requires(S solver, const nlp_problem<typename S::scalar_type>& prob,
-              const nlp_update<typename S::scalar_type>& upd) {
+template <typename S>
+concept nlp_solver = requires { typename S::scalar_type; } && requires(S solver, const nlp_problem<typename S::scalar_type>& prob, const nlp_update<typename S::scalar_type>& upd) {
     { solver.setup(prob) } -> std::same_as<void>;
     { solver.solve(upd) } -> std::same_as<nlp_result<typename S::scalar_type>>;
 };
 
-}
+} // namespace ctrlpp
 
 #endif

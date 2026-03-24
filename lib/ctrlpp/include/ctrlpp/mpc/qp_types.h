@@ -5,9 +5,11 @@
 
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-enum class solve_status : std::uint8_t {
+enum class solve_status : std::uint8_t
+{
     optimal,
     solved_inaccurate,
     infeasible,
@@ -18,8 +20,9 @@ enum class solve_status : std::uint8_t {
     error
 };
 
-template<typename Scalar>
-struct qp_problem {
+template <typename Scalar>
+struct qp_problem
+{
     Eigen::SparseMatrix<Scalar, Eigen::ColMajor> P;
     Eigen::VectorX<Scalar> q;
     Eigen::SparseMatrix<Scalar, Eigen::ColMajor> A;
@@ -27,8 +30,9 @@ struct qp_problem {
     Eigen::VectorX<Scalar> u;
 };
 
-template<typename Scalar>
-struct qp_update {
+template <typename Scalar>
+struct qp_update
+{
     Eigen::VectorX<Scalar> q;
     Eigen::VectorX<Scalar> l;
     Eigen::VectorX<Scalar> u;
@@ -36,8 +40,9 @@ struct qp_update {
     Eigen::VectorX<Scalar> warm_y;
 };
 
-template<typename Scalar>
-struct qp_result {
+template <typename Scalar>
+struct qp_result
+{
     solve_status status{solve_status::error};
     Eigen::VectorX<Scalar> x{};
     Eigen::VectorX<Scalar> y{};
@@ -48,6 +53,6 @@ struct qp_result {
     Scalar dual_residual{};
 };
 
-}
+} // namespace ctrlpp
 
 #endif

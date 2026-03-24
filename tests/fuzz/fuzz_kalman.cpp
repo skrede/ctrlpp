@@ -11,14 +11,15 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // Ad(2x2=32) + Bd(2x1=16) + C(1x2=16) + D(1x1=8) + Q(2x2=32) + R(1x1=8)
     // + x0(2x1=16) + u(1x1=8) + z(1x1=8) = 144 bytes
     constexpr std::size_t needed = 144;
-    if (size < needed)
+    if(size < needed)
         return 0;
 
     double buf[18];
     std::memcpy(buf, data, needed);
 
-    for (int i = 0; i < 18; ++i) {
-        if (!std::isfinite(buf[i]))
+    for(int i = 0; i < 18; ++i)
+    {
+        if(!std::isfinite(buf[i]))
             return 0;
     }
 
@@ -69,18 +70,21 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
-    for (int step = 0; step < 10; ++step) {
+    for(int step = 0; step < 10; ++step)
+    {
         kf.predict(u);
         kf.update(z);
 
         const auto& x_est = kf.state();
         const auto& P_est = kf.covariance();
 
-        for (int i = 0; i < 2; ++i) {
-            if (!std::isfinite(x_est(i)))
+        for(int i = 0; i < 2; ++i)
+        {
+            if(!std::isfinite(x_est(i)))
                 __builtin_trap();
-            for (int j = 0; j < 2; ++j) {
-                if (!std::isfinite(P_est(i, j)))
+            for(int j = 0; j < 2; ++j)
+            {
+                if(!std::isfinite(P_est(i, j)))
                     __builtin_trap();
             }
         }

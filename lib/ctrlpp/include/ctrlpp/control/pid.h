@@ -15,7 +15,8 @@
 #include <algorithm>
 #include <type_traits>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename... Policies>
 class pid
@@ -24,8 +25,7 @@ public:
     using config_type = pid_config<Scalar, NY, Policies...>;
     using vector_t = Vector<Scalar, NY>;
 
-    explicit pid(const config_type &cfg)
-        : m_cfg{cfg}
+    explicit pid(const config_type& cfg) : m_cfg{cfg}
     {
         if constexpr(detail::contains_v<isa_form, Policies...>)
         {
@@ -51,7 +51,7 @@ public:
             using AW = detail::find_policy_t<anti_windup, Policies...>;
             if constexpr(std::is_same_v<AW, anti_windup<back_calc>>)
             {
-                const auto &aw_cfg = m_cfg.template policy<AW>();
+                const auto& aw_cfg = m_cfg.template policy<AW>();
                 for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
                 {
                     if(aw_cfg.kb[static_cast<std::size_t>(i)] != Scalar{0})
@@ -68,7 +68,7 @@ public:
         }
     }
 
-    auto compute(const vector_t &sp, const vector_t &meas, Scalar dt) -> vector_t
+    auto compute(const vector_t& sp, const vector_t& meas, Scalar dt) -> vector_t
     {
         if(dt <= Scalar{0})
             return m_prev_output;
@@ -77,7 +77,7 @@ public:
         auto filtered_sp = sp;
         if constexpr(detail::contains_v<setpoint_filter, Policies...>)
         {
-            const auto &tf_sp = m_cfg.template policy<setpoint_filter>().tf;
+            const auto& tf_sp = m_cfg.template policy<setpoint_filter>().tf;
             for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             {
                 if(tf_sp[static_cast<std::size_t>(i)] > Scalar{0})
@@ -95,7 +95,7 @@ public:
         auto filtered_meas = meas;
         if constexpr(detail::contains_v<pv_filter, Policies...>)
         {
-            const auto &tf_pv = m_cfg.template policy<pv_filter>().tf;
+            const auto& tf_pv = m_cfg.template policy<pv_filter>().tf;
             for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             {
                 if(tf_pv[static_cast<std::size_t>(i)] > Scalar{0})
@@ -143,11 +143,7 @@ public:
             {
                 for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
                 {
-                    Scalar sign_e = (e[i] > Scalar{0})
-                                        ? Scalar{1}
-                                        : (e[i] < Scalar{0})
-                                        ? Scalar{-1}
-                                        : Scalar{0};
+                    Scalar sign_e = (e[i] > Scalar{0}) ? Scalar{1} : (e[i] < Scalar{0}) ? Scalar{-1} : Scalar{0};
                     if(!m_first_step && sign_e != Scalar{0} && m_prev_error_sign[i] != Scalar{0} && sign_e != m_prev_error_sign[i])
                         m_zero_crossings[i] += Scalar{1};
                     if(sign_e != Scalar{0})
@@ -246,7 +242,7 @@ public:
                 // Derivative filter (first-order low-pass)
                 if constexpr(detail::contains_v<deriv_filter, Policies...>)
                 {
-                    const auto &df_cfg = m_cfg.template policy<deriv_filter>();
+                    const auto& df_cfg = m_cfg.template policy<deriv_filter>();
                     for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
                         if(df_cfg.n[static_cast<std::size_t>(i)] > Scalar{0} && m_kp[i] != Scalar{0})
                         {
@@ -277,14 +273,13 @@ public:
             // Rate limit (if rate_limit policy present)
             if constexpr(detail::contains_v<rate_limit, Policies...>)
             {
-                const auto &rl_cfg = m_cfg.template policy<rate_limit>();
+                const auto& rl_cfg = m_cfg.template policy<rate_limit>();
                 auto delta = (u_raw - m_prev_output).eval();
                 vector_t max_delta;
                 vector_t neg_max_delta;
                 for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
                 {
-                    if(rl_cfg.rate_max[static_cast<std::size_t>(i)] > Scalar{0} &&
-                        rl_cfg.rate_max[static_cast<std::size_t>(i)] != std::numeric_limits<Scalar>::infinity())
+                    if(rl_cfg.rate_max[static_cast<std::size_t>(i)] > Scalar{0} && rl_cfg.rate_max[static_cast<std::size_t>(i)] != std::numeric_limits<Scalar>::infinity())
                     {
                         max_delta[i] = rl_cfg.rate_max[static_cast<std::size_t>(i)] * dt;
                         neg_max_delta[i] = -max_delta[i];
@@ -321,8 +316,7 @@ public:
                     {
                         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
                         {
-                            if((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) ||
-                                (e[i] < Scalar{0} && m_integral[i] < Scalar{0}))
+                            if((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0}))
                             {
                                 m_integral[i] -= integral_increment[i];
                             }
@@ -331,7 +325,7 @@ public:
                 }
                 else if constexpr(std::is_same_v<AW, anti_windup<conditional_integration>>)
                 {
-                    const auto &ci_cfg = m_cfg.template policy<AW>();
+                    const auto& ci_cfg = m_cfg.template policy<AW>();
                     for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
                     {
                         Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
@@ -354,7 +348,7 @@ public:
         }
     }
 
-    vector_t compute(const vector_t &sp, const vector_t &meas, Scalar dt, const vector_t &tracking_signal)
+    vector_t compute(const vector_t& sp, const vector_t& meas, Scalar dt, const vector_t& tracking_signal)
     {
         // Compute normal output first
         auto u = compute(sp, meas, dt);
@@ -372,7 +366,7 @@ public:
         return u;
     }
 
-    void set_params(const config_type &new_cfg)
+    void set_params(const config_type& new_cfg)
     {
         // Bumpless integral rescaling: integral_new = integral_old * ki_old / ki_new
         vector_t ki_old = m_ki;
@@ -415,7 +409,7 @@ public:
             using AW = detail::find_policy_t<anti_windup, Policies...>;
             if constexpr(std::is_same_v<AW, anti_windup<back_calc>>)
             {
-                const auto &aw_cfg = m_cfg.template policy<AW>();
+                const auto& aw_cfg = m_cfg.template policy<AW>();
                 for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
                 {
                     if(aw_cfg.kb[static_cast<std::size_t>(i)] != Scalar{0})
@@ -432,25 +426,13 @@ public:
         }
     }
 
-    const vector_t &error() const
-    {
-        return m_prev_error;
-    }
+    const vector_t& error() const { return m_prev_error; }
 
-    const vector_t &integral() const
-    {
-        return m_integral;
-    }
+    const vector_t& integral() const { return m_integral; }
 
-    const config_type &params() const
-    {
-        return m_cfg;
-    }
+    const config_type& params() const { return m_cfg; }
 
-    bool saturated() const
-    {
-        return m_saturated;
-    }
+    bool saturated() const { return m_saturated; }
 
     void reset()
     {
@@ -473,18 +455,13 @@ public:
             reset_metrics();
     }
 
-    void freeze_integral(bool freeze = true)
-    {
-        m_integral_frozen = freeze;
-    }
+    void freeze_integral(bool freeze = true) { m_integral_frozen = freeze; }
 
-    void set_integral(const vector_t &val)
-    {
-        m_integral = val;
-    }
+    void set_integral(const vector_t& val) { m_integral = val; }
 
     template <typename Metric>
-    const vector_t &metric() const requires detail::has_policy_v<perf_assessment, Policies...>
+    const vector_t& metric() const
+        requires detail::has_policy_v<perf_assessment, Policies...>
     {
         using PA = detail::find_policy_t<perf_assessment, Policies...>;
         static_assert(detail::perf_has_metric_v<Metric, PA>, "Metric type not in perf_assessment pack");
@@ -499,7 +476,8 @@ public:
             return m_zero_crossings;
     }
 
-    bool oscillating() const requires detail::has_policy_v<perf_assessment, Policies...>
+    bool oscillating() const
+        requires detail::has_policy_v<perf_assessment, Policies...>
     {
         using PA = detail::find_policy_t<perf_assessment, Policies...>;
         static_assert(detail::perf_has_metric_v<oscillation_detect, PA>, "oscillation_detect not in perf_assessment pack");
@@ -515,7 +493,8 @@ public:
         return false;
     }
 
-    void reset_metrics() requires detail::has_policy_v<perf_assessment, Policies...>
+    void reset_metrics()
+        requires detail::has_policy_v<perf_assessment, Policies...>
     {
         using PA = detail::find_policy_t<perf_assessment, Policies...>;
         if constexpr(detail::perf_has_metric_v<IAE, PA>)
@@ -559,6 +538,6 @@ private:
     bool m_saturated{false};
 };
 
-}
+} // namespace ctrlpp
 
 #endif

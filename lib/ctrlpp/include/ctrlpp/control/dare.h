@@ -15,9 +15,11 @@
 #include <cstddef>
 #include <optional>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-namespace detail {
+namespace detail
+{
 
 // Swap two adjacent 1x1 blocks at positions p and p+1 in the upper triangular
 // complex Schur form T, applying the corresponding unitary transformation to U.
@@ -25,10 +27,7 @@ namespace detail {
 // Given M = [[a, c], [0, b]], find unitary G such that G^H M G = [[b, c'], [0, a]].
 // Method: solve a*x - x*b = -c => x = c/(b-a), then construct Givens from [x, 1].
 template <typename Scalar, int N>
-void swap_complex_schur_1x1(
-    Eigen::Matrix<std::complex<Scalar>, N, N> &T,
-    Eigen::Matrix<std::complex<Scalar>, N, N> &U,
-    int p)
+void swap_complex_schur_1x1(Eigen::Matrix<std::complex<Scalar>, N, N>& T, Eigen::Matrix<std::complex<Scalar>, N, N>& U, int p)
 {
     using Complex = std::complex<Scalar>;
 
@@ -91,10 +90,7 @@ void swap_complex_schur_1x1(
 // Reorder a complex Schur decomposition so that stable eigenvalues (|lambda| < 1)
 // appear in the top-left block. Returns the number of stable eigenvalues placed.
 template <typename Scalar, int N>
-auto reorder_complex_schur_stable_first(
-    Eigen::Matrix<std::complex<Scalar>, N, N> &T,
-    Eigen::Matrix<std::complex<Scalar>, N, N> &U,
-    int required_stable) -> int
+auto reorder_complex_schur_stable_first(Eigen::Matrix<std::complex<Scalar>, N, N>& T, Eigen::Matrix<std::complex<Scalar>, N, N>& U, int required_stable) -> int
 {
     int stable_count = 0;
 
@@ -126,16 +122,13 @@ auto reorder_complex_schur_stable_first(
     return stable_count;
 }
 
-}
+} // namespace detail
 
 // Discrete Algebraic Riccati Equation solver using symplectic Schur decomposition.
 // Solves: A^T P A - P - A^T P B (R + B^T P B)^{-1} B^T P A + Q = 0
 // Returns the stabilizing solution P, or std::nullopt if the system is not stabilizable.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A,
-          const Eigen::Matrix<Scalar, int(NX), int(NU)> &B,
-          const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q,
-          const Eigen::Matrix<Scalar, int(NU), int(NU)> &R)
+auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q, const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
     -> std::optional<Eigen::Matrix<Scalar, int(NX), int(NX)>>
 {
     constexpr int n = static_cast<int>(NX);
@@ -156,9 +149,7 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A,
     MatNxN AinvT = qr_At.solve(I).eval();
 
     // G = B R^{-1} B^T
-    MatNxN G = (B * R.colPivHouseholderQr().solve(
-        Eigen::Matrix<Scalar, int(NU), int(NX)>(B.transpose())
-    )).eval();
+    MatNxN G = (B * R.colPivHouseholderQr().solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(B.transpose()))).eval();
 
     // Form symplectic matrix Z (2n x 2n)
     Mat2Nx2N Z;
@@ -209,9 +200,11 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A,
 // DARE with cross-weight N:
 // Transforms to standard form via Q' = Q - N R^{-1} N^T, A' = A - B R^{-1} N^T
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::optional<Eigen::Matrix<Scalar, int(NX), int(NX)>> dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B,
-                                                            const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q, const Eigen::Matrix<Scalar, int(NU), int(NU)> &R,
-                                                            const Eigen::Matrix<Scalar, int(NX), int(NU)> &N)
+std::optional<Eigen::Matrix<Scalar, int(NX), int(NX)>> dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
+                                                            const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+                                                            const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
+                                                            const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
+                                                            const Eigen::Matrix<Scalar, int(NX), int(NU)>& N)
 {
     auto Rinv_Nt = R.colPivHouseholderQr().solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(N.transpose())).eval();
 
@@ -221,6 +214,6 @@ std::optional<Eigen::Matrix<Scalar, int(NX), int(NX)>> dare(const Eigen::Matrix<
     return dare<Scalar, NX, NU>(Ap, B, Qp, R);
 }
 
-}
+} // namespace ctrlpp
 
 #endif

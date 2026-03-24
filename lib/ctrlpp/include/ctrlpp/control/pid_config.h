@@ -9,9 +9,11 @@
 #include <cstddef>
 #include <type_traits>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-namespace detail {
+namespace detail
+{
 
 // --- Detect whether a policy P has a nested config type ---
 // Policies may have either P::config (non-template) or P::template config<Scalar, N> (template).
@@ -75,22 +77,22 @@ struct policy_configs_builder<Scalar, N, std::tuple<Collected...>>
     using type = std::tuple<Collected...>;
 };
 
-template <typename Scalar, std::size_t N, typename... Collected, typename P, typename... Rest> requires has_any_config_v<P, Scalar, N>
-struct policy_configs_builder<Scalar, N, std::tuple<Collected...>, P, Rest...>
-    : policy_configs_builder<Scalar, N, std::tuple<Collected..., typename policy_config_type<P, Scalar, N>::type>, Rest...>
+template <typename Scalar, std::size_t N, typename... Collected, typename P, typename... Rest>
+    requires has_any_config_v<P, Scalar, N>
+struct policy_configs_builder<Scalar, N, std::tuple<Collected...>, P, Rest...> : policy_configs_builder<Scalar, N, std::tuple<Collected..., typename policy_config_type<P, Scalar, N>::type>, Rest...>
 {
 };
 
-template <typename Scalar, std::size_t N, typename... Collected, typename P, typename... Rest> requires (!has_any_config_v<P, Scalar, N>)
-struct policy_configs_builder<Scalar, N, std::tuple<Collected...>, P, Rest...>
-    : policy_configs_builder<Scalar, N, std::tuple<Collected...>, Rest...>
+template <typename Scalar, std::size_t N, typename... Collected, typename P, typename... Rest>
+    requires(!has_any_config_v<P, Scalar, N>)
+struct policy_configs_builder<Scalar, N, std::tuple<Collected...>, P, Rest...> : policy_configs_builder<Scalar, N, std::tuple<Collected...>, Rest...>
 {
 };
 
 template <typename Scalar, std::size_t N, typename... Policies>
 using policy_configs_tuple_t = typename policy_configs_builder<Scalar, N, std::tuple<>, Policies...>::type;
 
-}
+} // namespace detail
 
 template <typename Scalar, std::size_t NY, typename... Policies>
 struct pid_config
@@ -109,21 +111,23 @@ struct pid_config
 
     policies_tuple_t policies{};
 
-    template <typename P> requires (detail::has_any_config_v<P, Scalar, NY> && detail::tuple_has_v<typename detail::policy_config_type<P, Scalar, NY>::type, policies_tuple_t>)
-    constexpr auto &policy()
+    template <typename P>
+        requires(detail::has_any_config_v<P, Scalar, NY> && detail::tuple_has_v<typename detail::policy_config_type<P, Scalar, NY>::type, policies_tuple_t>)
+    constexpr auto& policy()
     {
         using cfg_t = typename detail::policy_config_type<P, Scalar, NY>::type;
         return std::get<cfg_t>(policies);
     }
 
-    template <typename P> requires (detail::has_any_config_v<P, Scalar, NY> && detail::tuple_has_v<typename detail::policy_config_type<P, Scalar, NY>::type, policies_tuple_t>)
-    constexpr const auto &policy() const
+    template <typename P>
+        requires(detail::has_any_config_v<P, Scalar, NY> && detail::tuple_has_v<typename detail::policy_config_type<P, Scalar, NY>::type, policies_tuple_t>)
+    constexpr const auto& policy() const
     {
         using cfg_t = typename detail::policy_config_type<P, Scalar, NY>::type;
         return std::get<cfg_t>(policies);
     }
 };
 
-}
+} // namespace ctrlpp
 
 #endif

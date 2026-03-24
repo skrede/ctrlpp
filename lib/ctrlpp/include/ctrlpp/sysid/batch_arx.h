@@ -16,10 +16,11 @@
 #include <cstddef>
 #include <algorithm>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <std::size_t NA, std::size_t NB, typename Derived1, typename Derived2>
-arx_result<typename Derived1::Scalar, NA, 1, 1> batch_arx(const Eigen::MatrixBase<Derived1> &Y, const Eigen::MatrixBase<Derived2> &U)
+arx_result<typename Derived1::Scalar, NA, 1, 1> batch_arx(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U)
 {
     using Scalar = typename Derived1::Scalar;
     static constexpr std::size_t NP = NA + NB;
@@ -39,8 +40,7 @@ arx_result<typename Derived1::Scalar, NA, 1, 1> batch_arx(const Eigen::MatrixBas
         // y-regressors: [Y(0, row-1), Y(0, row-2), ..., Y(0, row-NA)]
         for(std::size_t j = 0; j < NA; ++j)
         {
-            Phi(i, static_cast<Eigen::Index>(j)) =
-                Y(0, row - static_cast<Eigen::Index>(j + 1));
+            Phi(i, static_cast<Eigen::Index>(j)) = Y(0, row - static_cast<Eigen::Index>(j + 1));
         }
         // u-regressors: [U(0, row-1), U(0, row-2), ..., U(0, row-NB)]
         for(std::size_t j = 0; j < NB; ++j)
@@ -50,8 +50,7 @@ arx_result<typename Derived1::Scalar, NA, 1, 1> batch_arx(const Eigen::MatrixBas
     }
 
     // Solve via QR decomposition
-    Eigen::Matrix<Scalar, static_cast<int>(NP), 1> theta =
-        Phi.colPivHouseholderQr().solve(Y_target);
+    Eigen::Matrix<Scalar, static_cast<int>(NP), 1> theta = Phi.colPivHouseholderQr().solve(Y_target);
 
     // Observer canonical form for ARX
     Matrix<Scalar, NA, NA> A = Matrix<Scalar, NA, NA>::Zero();
@@ -97,6 +96,6 @@ arx_result<typename Derived1::Scalar, NA, 1, 1> batch_arx(const Eigen::MatrixBas
     return {.system = sys, .metrics = metrics};
 }
 
-}
+} // namespace ctrlpp
 
 #endif

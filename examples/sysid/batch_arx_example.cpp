@@ -18,7 +18,8 @@ int main()
 
     double y = 0.0;
     double u_prev = 0.0;
-    for (std::size_t t = 0; t < N; ++t) {
+    for(std::size_t t = 0; t < N; ++t)
+    {
         double u = u_dist(gen);
         double y_new = 0.7 * y + 0.3 * u_prev;
         Y(0, static_cast<int>(t)) = y_new;
@@ -44,7 +45,8 @@ int main()
 
     // Compare with online recursive ARX
     ctrlpp::recursive_arx<double, 1, 1> online_arx;
-    for (std::size_t t = 0; t < N; ++t) {
+    for(std::size_t t = 0; t < N; ++t)
+    {
         online_arx.update(Y(0, static_cast<int>(t)), U(0, static_cast<int>(t)));
     }
 

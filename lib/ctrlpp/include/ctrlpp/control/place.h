@@ -15,13 +15,15 @@
 #include <cstddef>
 #include <optional>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-namespace detail {
+namespace detail
+{
 
 // Validate that complex poles come in conjugate pairs (required for real coefficients).
 template <typename Scalar, std::size_t N>
-bool validate_conjugate_pairs(const std::array<std::complex<Scalar>, N> &poles)
+bool validate_conjugate_pairs(const std::array<std::complex<Scalar>, N>& poles)
 {
     // Track which poles have been matched
     std::array<bool, N> matched{};
@@ -62,7 +64,7 @@ bool validate_conjugate_pairs(const std::array<std::complex<Scalar>, N> &poles)
 // Returns coefficients [a_0, a_1, ..., a_{N-1}] of:
 // p(s) = s^N + a_{N-1} s^{N-1} + ... + a_1 s + a_0
 template <typename Scalar, std::size_t N>
-std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N> &poles)
+std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>& poles)
 {
     // Start with p(s) = 1, multiply by (s - p_i) one at a time.
     // coeffs[k] stores coefficient of s^k in the accumulated polynomial.
@@ -88,13 +90,13 @@ std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>
     return result;
 }
 
-}
+} // namespace detail
 
 // Pole placement using Ackermann's formula for single-input systems (NU == 1).
 // Computes K such that eigenvalues of (A - B*K) equal the desired poles.
 // Returns std::nullopt if the system is uncontrollable or NU > 1.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const std::array<std::complex<Scalar>, NX> &desired_poles)
+std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const std::array<std::complex<Scalar>, NX>& desired_poles)
 {
     constexpr int n = static_cast<int>(NX);
 
@@ -132,8 +134,7 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix
         Eigen::Matrix<Scalar, n, n> alphaA = Eigen::Matrix<Scalar, n, n>::Identity();
         // Horner: start from highest power
         for(int k = n - 1; k >= 0; --k)
-            alphaA = (alphaA * A + alpha[static_cast<std::size_t>(k)] *
-                Eigen::Matrix<Scalar, n, n>::Identity()).eval();
+            alphaA = (alphaA * A + alpha[static_cast<std::size_t>(k)] * Eigen::Matrix<Scalar, n, n>::Identity()).eval();
 
         // K = e_n^T * C_ctrl^{-1} * alpha(A)
         // e_n^T = last row of identity = [0, 0, ..., 0, 1]
@@ -149,7 +150,8 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix
 // Convenience: compute observer gain L via duality.
 // L = place(A^T, C^T, desired_poles)^T
 template <typename Scalar, std::size_t NX, std::size_t NY>
-std::optional<Eigen::Matrix<Scalar, int(NX), int(NY)>> place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NY), int(NX)> &C, const std::array<std::complex<Scalar>, NX> &desired_poles)
+std::optional<Eigen::Matrix<Scalar, int(NX), int(NY)>>
+place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NY), int(NX)>& C, const std::array<std::complex<Scalar>, NX>& desired_poles)
 {
     if constexpr(NY != 1)
     {
@@ -169,6 +171,6 @@ std::optional<Eigen::Matrix<Scalar, int(NX), int(NY)>> place_observer(const Eige
     }
 }
 
-}
+} // namespace ctrlpp
 
 #endif

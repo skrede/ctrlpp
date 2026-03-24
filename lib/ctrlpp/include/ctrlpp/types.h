@@ -4,7 +4,8 @@
 #include <Eigen/Dense>
 #include <cstddef>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t Rows, std::size_t Cols>
 using Matrix = Eigen::Matrix<Scalar, static_cast<int>(Rows), static_cast<int>(Cols)>;
@@ -12,6 +13,6 @@ using Matrix = Eigen::Matrix<Scalar, static_cast<int>(Rows), static_cast<int>(Co
 template <typename Scalar, std::size_t Rows>
 using Vector = Eigen::Matrix<Scalar, static_cast<int>(Rows), 1>;
 
-}
+} // namespace ctrlpp
 
 #endif

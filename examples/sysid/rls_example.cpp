@@ -26,14 +26,16 @@ int main()
     std::cout << "True parameters: [" << true_params.transpose() << "]\n";
     std::cout << "Forgetting factor: " << lambda << "\n\n";
 
-    for (int t = 1; t <= 200; ++t) {
+    for(int t = 1; t <= 200; ++t)
+    {
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = true_params.dot(phi) + noise(gen);
 
         estimator.update(y, phi);
 
-        if (t % 50 == 0) {
+        if(t % 50 == 0)
+        {
             auto theta = estimator.parameters();
             auto P = estimator.covariance();
             std::cout << "Step " << t << ":\n";
@@ -44,8 +46,7 @@ int main()
 
     auto final_params = estimator.parameters();
     std::cout << "Final parameters: [" << final_params.transpose() << "]\n";
-    std::cout << "Parameter error:  ["
-              << (final_params - true_params).transpose() << "]\n";
+    std::cout << "Parameter error:  [" << (final_params - true_params).transpose() << "]\n";
 
     return 0;
 }

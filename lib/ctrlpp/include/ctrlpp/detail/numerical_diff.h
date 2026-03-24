@@ -11,23 +11,23 @@
 #include <span>
 #include <vector>
 
-namespace ctrlpp::detail {
+namespace ctrlpp::detail
+{
 
 // ---------------------------------------------------------------------------
 // Span-based finite-difference utilities (NLopt compatibility)
 // ---------------------------------------------------------------------------
 
-template<typename Scalar>
-void finite_diff_gradient(const std::function<Scalar(std::span<const Scalar>)>& f,
-                          std::span<const Scalar> z,
-                          std::span<Scalar> grad)
+template <typename Scalar>
+void finite_diff_gradient(const std::function<Scalar(std::span<const Scalar>)>& f, std::span<const Scalar> z, std::span<Scalar> grad)
 {
     const auto eps = std::sqrt(std::numeric_limits<Scalar>::epsilon());
     const auto n = z.size();
 
     std::vector<Scalar> z_mut(z.begin(), z.end());
 
-    for (std::size_t j = 0; j < n; ++j) {
+    for(std::size_t j = 0; j < n; ++j)
+    {
         const Scalar h = eps * std::max(Scalar{1}, std::abs(z[j]));
         const Scalar orig = z_mut[j];
 
@@ -42,11 +42,8 @@ void finite_diff_gradient(const std::function<Scalar(std::span<const Scalar>)>& 
     }
 }
 
-template<typename Scalar>
-void finite_diff_jacobian(const std::function<void(std::span<const Scalar>, std::span<Scalar>)>& c,
-                          int n_constraints,
-                          std::span<const Scalar> z,
-                          std::span<Scalar> jac)
+template <typename Scalar>
+void finite_diff_jacobian(const std::function<void(std::span<const Scalar>, std::span<Scalar>)>& c, int n_constraints, std::span<const Scalar> z, std::span<Scalar> jac)
 {
     const auto eps = std::sqrt(std::numeric_limits<Scalar>::epsilon());
     const auto n = z.size();
@@ -56,19 +53,19 @@ void finite_diff_jacobian(const std::function<void(std::span<const Scalar>, std:
     std::vector<Scalar> c_plus(m);
     std::vector<Scalar> c_minus(m);
 
-    for (std::size_t j = 0; j < n; ++j) {
+    for(std::size_t j = 0; j < n; ++j)
+    {
         const Scalar h = eps * std::max(Scalar{1}, std::abs(z[j]));
         const Scalar orig = z_mut[j];
 
         z_mut[j] = orig + h;
-        c(std::span<const Scalar>{z_mut.data(), n},
-          std::span<Scalar>{c_plus.data(), m});
+        c(std::span<const Scalar>{z_mut.data(), n}, std::span<Scalar>{c_plus.data(), m});
 
         z_mut[j] = orig - h;
-        c(std::span<const Scalar>{z_mut.data(), n},
-          std::span<Scalar>{c_minus.data(), m});
+        c(std::span<const Scalar>{z_mut.data(), n}, std::span<Scalar>{c_minus.data(), m});
 
-        for (std::size_t i = 0; i < m; ++i) {
+        for(std::size_t i = 0; i < m; ++i)
+        {
             jac[i * n + j] = (c_plus[i] - c_minus[i]) / (Scalar{2} * h);
         }
 
@@ -82,17 +79,14 @@ void finite_diff_jacobian(const std::function<void(std::span<const Scalar>, std:
 
 /// Compute dF/dx via central differences for f(x, u) -> x_next.
 /// Returns a fixed-size NX x NX Jacobian matrix.
-template<typename Scalar, std::size_t NX, std::size_t NU, typename F>
-auto numerical_jacobian_x(const F& f,
-                          const Vector<Scalar, NX>& x,
-                          const Vector<Scalar, NU>& u,
-                          Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon()))
-    -> Matrix<Scalar, NX, NX>
+template <typename Scalar, std::size_t NX, std::size_t NU, typename F>
+auto numerical_jacobian_x(const F& f, const Vector<Scalar, NX>& x, const Vector<Scalar, NU>& u, Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon())) -> Matrix<Scalar, NX, NX>
 {
     Matrix<Scalar, NX, NX> jac;
     Vector<Scalar, NX> x_perturbed = x;
 
-    for (std::size_t j = 0; j < NX; ++j) {
+    for(std::size_t j = 0; j < NX; ++j)
+    {
         const auto idx = static_cast<Eigen::Index>(j);
         const Scalar h = eps * std::max(Scalar{1}, std::abs(x[idx]));
 
@@ -112,17 +106,14 @@ auto numerical_jacobian_x(const F& f,
 
 /// Compute dF/du via central differences for f(x, u) -> x_next.
 /// Returns a fixed-size NX x NU Jacobian matrix.
-template<typename Scalar, std::size_t NX, std::size_t NU, typename F>
-auto numerical_jacobian_u(const F& f,
-                          const Vector<Scalar, NX>& x,
-                          const Vector<Scalar, NU>& u,
-                          Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon()))
-    -> Matrix<Scalar, NX, NU>
+template <typename Scalar, std::size_t NX, std::size_t NU, typename F>
+auto numerical_jacobian_u(const F& f, const Vector<Scalar, NX>& x, const Vector<Scalar, NU>& u, Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon())) -> Matrix<Scalar, NX, NU>
 {
     Matrix<Scalar, NX, NU> jac;
     Vector<Scalar, NU> u_perturbed = u;
 
-    for (std::size_t j = 0; j < NU; ++j) {
+    for(std::size_t j = 0; j < NU; ++j)
+    {
         const auto idx = static_cast<Eigen::Index>(j);
         const Scalar h = eps * std::max(Scalar{1}, std::abs(u[idx]));
 
@@ -142,16 +133,14 @@ auto numerical_jacobian_u(const F& f,
 
 /// Compute dH/dx via central differences for h(x) -> y.
 /// Returns a fixed-size NY x NX Jacobian matrix.
-template<typename Scalar, std::size_t NX, std::size_t NY, typename H>
-auto numerical_jacobian_h(const H& h,
-                          const Vector<Scalar, NX>& x,
-                          Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon()))
-    -> Matrix<Scalar, NY, NX>
+template <typename Scalar, std::size_t NX, std::size_t NY, typename H>
+auto numerical_jacobian_h(const H& h, const Vector<Scalar, NX>& x, Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon())) -> Matrix<Scalar, NY, NX>
 {
     Matrix<Scalar, NY, NX> jac;
     Vector<Scalar, NX> x_perturbed = x;
 
-    for (std::size_t j = 0; j < NX; ++j) {
+    for(std::size_t j = 0; j < NX; ++j)
+    {
         const auto idx = static_cast<Eigen::Index>(j);
         const Scalar step = eps * std::max(Scalar{1}, std::abs(x[idx]));
 
@@ -172,19 +161,16 @@ auto numerical_jacobian_h(const H& h,
 /// Compute dg/d[x;u] via central differences for g(x, u) -> Vector<NC>.
 /// Returns a fixed-size NC x (NX+NU) combined Jacobian matrix.
 /// Columns 0..NX-1 correspond to dg/dx, columns NX..NX+NU-1 to dg/du.
-template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NC, typename G>
-auto numerical_jacobian_g(const G& g,
-                          const Vector<Scalar, NX>& x,
-                          const Vector<Scalar, NU>& u,
-                          Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon()))
-    -> Matrix<Scalar, NC, NX + NU>
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NC, typename G>
+auto numerical_jacobian_g(const G& g, const Vector<Scalar, NX>& x, const Vector<Scalar, NU>& u, Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon())) -> Matrix<Scalar, NC, NX + NU>
 {
     Matrix<Scalar, NC, NX + NU> jac;
     Vector<Scalar, NX> x_perturbed = x;
     Vector<Scalar, NU> u_perturbed = u;
 
     // Perturb state variables (columns 0..NX-1)
-    for (std::size_t j = 0; j < NX; ++j) {
+    for(std::size_t j = 0; j < NX; ++j)
+    {
         const auto idx = static_cast<Eigen::Index>(j);
         const Scalar h = eps * std::max(Scalar{1}, std::abs(x[idx]));
 
@@ -200,7 +186,8 @@ auto numerical_jacobian_g(const G& g,
     }
 
     // Perturb input variables (columns NX..NX+NU-1)
-    for (std::size_t j = 0; j < NU; ++j) {
+    for(std::size_t j = 0; j < NU; ++j)
+    {
         const auto idx = static_cast<Eigen::Index>(j);
         const auto col = static_cast<Eigen::Index>(NX + j);
         const Scalar h = eps * std::max(Scalar{1}, std::abs(u[idx]));
@@ -221,15 +208,12 @@ auto numerical_jacobian_g(const G& g,
 
 /// Compute dh/dx via central differences for terminal constraint h(x) -> Vector<NTC>.
 /// Returns a fixed-size NTC x NX Jacobian matrix.
-template<typename Scalar, std::size_t NX, std::size_t NTC, typename H>
-auto numerical_jacobian_tc(const H& h,
-                           const Vector<Scalar, NX>& x,
-                           Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon()))
-    -> Matrix<Scalar, NTC, NX>
+template <typename Scalar, std::size_t NX, std::size_t NTC, typename H>
+auto numerical_jacobian_tc(const H& h, const Vector<Scalar, NX>& x, Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon())) -> Matrix<Scalar, NTC, NX>
 {
     return numerical_jacobian_h<Scalar, NX, NTC>(h, x, eps);
 }
 
-}
+} // namespace ctrlpp::detail
 
 #endif

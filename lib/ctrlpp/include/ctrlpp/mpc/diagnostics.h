@@ -5,10 +5,12 @@
 
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-template<typename Scalar>
-struct mpc_diagnostics {
+template <typename Scalar>
+struct mpc_diagnostics
+{
     solve_status status{solve_status::error};
     int iterations{};
     Scalar solve_time{};
@@ -21,6 +23,6 @@ struct mpc_diagnostics {
     Scalar total_slack{};
 };
 
-}
+} // namespace ctrlpp
 
 #endif

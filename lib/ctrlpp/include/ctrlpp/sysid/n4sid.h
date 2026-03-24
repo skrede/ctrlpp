@@ -16,12 +16,14 @@
 #include <cstddef>
 #include <algorithm>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-namespace detail {
+namespace detail
+{
 
 template <typename Derived>
-Eigen::MatrixX<typename Derived::Scalar> block_hankel(const Eigen::MatrixBase<Derived> &signal, Eigen::Index start, Eigen::Index block_rows, Eigen::Index cols)
+Eigen::MatrixX<typename Derived::Scalar> block_hankel(const Eigen::MatrixBase<Derived>& signal, Eigen::Index start, Eigen::Index block_rows, Eigen::Index cols)
 {
     auto ny = signal.rows();
     Eigen::MatrixX<typename Derived::Scalar> H(ny * block_rows, cols);
@@ -45,7 +47,7 @@ struct n4sid_lq_result
 };
 
 template <typename Derived1, typename Derived2>
-n4sid_lq_result<typename Derived1::Scalar> n4sid_oblique_projection(const Eigen::MatrixBase<Derived1> &Y, const Eigen::MatrixBase<Derived2> &U, Eigen::Index i)
+n4sid_lq_result<typename Derived1::Scalar> n4sid_oblique_projection(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, Eigen::Index i)
 {
     using Scalar = typename Derived1::Scalar;
 
@@ -108,10 +110,10 @@ n4sid_lq_result<typename Derived1::Scalar> n4sid_oblique_projection(const Eigen:
     return {L32, Y_future, U_future, i, j};
 }
 
-}
+} // namespace detail
 
 template <typename Derived1, typename Derived2>
-Eigen::VectorX<typename Derived1::Scalar> n4sid_singular_values(const Eigen::MatrixBase<Derived1> &Y, const Eigen::MatrixBase<Derived2> &U, std::size_t block_rows = 0)
+Eigen::VectorX<typename Derived1::Scalar> n4sid_singular_values(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
 {
     using Scalar = typename Derived1::Scalar;
 
@@ -132,7 +134,7 @@ Eigen::VectorX<typename Derived1::Scalar> n4sid_singular_values(const Eigen::Mat
 }
 
 template <std::size_t NX, typename Derived1, typename Derived2>
-n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<Derived1> &Y, const Eigen::MatrixBase<Derived2> &U, std::size_t block_rows = 0)
+n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
 
 {
     using Scalar = typename Derived1::Scalar;
@@ -155,9 +157,7 @@ n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<
     auto U_svd = svd.matrixU();
 
     // Condition number from the NX singular values
-    Scalar cond = (sv.size() >= nx && sv(nx - 1) > Scalar{0})
-                      ? sv(0) / sv(nx - 1)
-                      : std::numeric_limits<Scalar>::infinity();
+    Scalar cond = (sv.size() >= nx && sv(nx - 1) > Scalar{0}) ? sv(0) / sv(nx - 1) : std::numeric_limits<Scalar>::infinity();
 
     // Observability matrix Gamma: first NX columns of U_svd * diag(sqrt(S))
     Eigen::Index rank = std::min(static_cast<Eigen::Index>(sv.size()), nx);
@@ -291,6 +291,6 @@ n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<
     return {.system = sys, .singular_values = sv, .metrics = metrics, .condition_number = cond};
 }
 
-}
+} // namespace ctrlpp
 
 #endif

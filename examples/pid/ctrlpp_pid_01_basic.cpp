@@ -28,13 +28,13 @@ int main()
 
     std::cout << "time,setpoint,measurement,control\n";
 
-    for (double t = 0.0; t < duration; t += dt) {
+    for(double t = 0.0; t < duration; t += dt)
+    {
         auto sp = Vec::Constant(setpoint);
         auto meas = Vec::Constant(y);
         auto u = ctrl.compute(sp, meas, dt);
         y = a * y + (1.0 - a) * u[0];
 
-        std::cout << std::fixed << std::setprecision(4)
-                  << t << "," << setpoint << "," << y << "," << u[0] << "\n";
+        std::cout << std::fixed << std::setprecision(4) << t << "," << setpoint << "," << y << "," << u[0] << "\n";
     }
 }

@@ -19,11 +19,11 @@ using namespace ctrlpp;
 // ---------------------------------------------------------------------------
 // Test dynamics: linear constant-velocity (double integrator)
 // ---------------------------------------------------------------------------
-struct ukf_linear_dynamics {
+struct ukf_linear_dynamics
+{
     double dt = 0.1;
 
-    auto operator()(const Vector<double, 2>& x,
-                    const Vector<double, 1>& u) const -> Vector<double, 2>
+    auto operator()(const Vector<double, 2>& x, const Vector<double, 1>& u) const -> Vector<double, 2>
     {
         Vector<double, 2> x_next;
         x_next(0) = x(0) + dt * x(1) + 0.5 * dt * dt * u(0);
@@ -35,7 +35,8 @@ struct ukf_linear_dynamics {
 // ---------------------------------------------------------------------------
 // Test measurement: position observation
 // ---------------------------------------------------------------------------
-struct ukf_position_measurement {
+struct ukf_position_measurement
+{
     auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1>
     {
         Vector<double, 1> z;
@@ -47,15 +48,15 @@ struct ukf_position_measurement {
 // ---------------------------------------------------------------------------
 // Test dynamics/measurement: pendulum (nonlinear)
 // ---------------------------------------------------------------------------
-struct ukf_pendulum_dynamics {
+struct ukf_pendulum_dynamics
+{
     static constexpr double g = 9.81;
     static constexpr double l = 1.0;
     static constexpr double b = 0.1;
     static constexpr double m = 1.0;
     static constexpr double dt = 0.01;
 
-    auto operator()(const Vector<double, 2>& x,
-                    const Vector<double, 1>& u) const -> Vector<double, 2>
+    auto operator()(const Vector<double, 2>& x, const Vector<double, 1>& u) const -> Vector<double, 2>
     {
         double theta = x(0);
         double omega = x(1);
@@ -67,7 +68,8 @@ struct ukf_pendulum_dynamics {
     }
 };
 
-struct ukf_angle_measurement {
+struct ukf_angle_measurement
+{
     auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1>
     {
         Vector<double, 1> z;
@@ -89,7 +91,8 @@ static_assert(CovarianceObserver<ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_p
 // Tests
 // ---------------------------------------------------------------------------
 
-TEST_CASE("merwe sigma points generate correct weights") {
+TEST_CASE("merwe sigma points generate correct weights")
+{
     constexpr std::size_t NX = 2;
     merwe_sigma_points<double, NX> sp{merwe_options<double>{.alpha = 1e-3, .beta = 2.0, .kappa = 0.0}};
 
@@ -101,12 +104,14 @@ TEST_CASE("merwe sigma points generate correct weights") {
 
     // Wm should sum to 1.0
     double wm_sum = 0.0;
-    for (auto w : result.Wm) wm_sum += w;
+    for(auto w : result.Wm)
+        wm_sum += w;
     CHECK_THAT(wm_sum, Catch::Matchers::WithinAbs(1.0, 1e-10));
 
     // Wc sum: Wc_0 = Wm_0 + (1 - alpha^2 + beta), so Wc sums to Wm_sum + (1 - alpha^2 + beta)
     double wc_sum = 0.0;
-    for (auto w : result.Wc) wc_sum += w;
+    for(auto w : result.Wc)
+        wc_sum += w;
     double expected_wc_sum = 1.0 + (1.0 - 1e-3 * 1e-3 + 2.0);
     CHECK_THAT(wc_sum, Catch::Matchers::WithinAbs(expected_wc_sum, 1e-10));
 
@@ -124,27 +129,29 @@ TEST_CASE("merwe sigma points generate correct weights") {
 
     // Verify Wm_i = Wc_i = 1/(2*(n+lambda))
     double expected_wi = 1.0 / (2.0 * (n + lambda));
-    for (std::size_t i = 1; i < merwe_sigma_points<double, NX>::num_points; ++i) {
+    for(std::size_t i = 1; i < merwe_sigma_points<double, NX>::num_points; ++i)
+    {
         CHECK_THAT(result.Wm[i], Catch::Matchers::WithinAbs(expected_wi, 1e-12));
         CHECK_THAT(result.Wc[i], Catch::Matchers::WithinAbs(expected_wi, 1e-12));
     }
 }
 
-TEST_CASE("merwe sigma points capture mean and covariance") {
+TEST_CASE("merwe sigma points capture mean and covariance")
+{
     constexpr std::size_t NX = 2;
     merwe_sigma_points<double, NX> sp{merwe_options<double>{.alpha = 1e-1, .beta = 2.0, .kappa = 0.0}};
 
     Vector<double, NX> x;
     x << 3.0, -1.0;
     Matrix<double, NX, NX> P;
-    P << 4.0, 1.0,
-         1.0, 2.0;
+    P << 4.0, 1.0, 1.0, 2.0;
 
     auto result = sp.generate(x, P);
 
     // Weighted mean should reconstruct x
     Vector<double, NX> x_recon = Vector<double, NX>::Zero();
-    for (std::size_t i = 0; i < merwe_sigma_points<double, NX>::num_points; ++i) {
+    for(std::size_t i = 0; i < merwe_sigma_points<double, NX>::num_points; ++i)
+    {
         x_recon += result.Wm[i] * result.points[i];
     }
     CHECK_THAT(x_recon(0), Catch::Matchers::WithinAbs(x(0), 1e-10));
@@ -152,7 +159,8 @@ TEST_CASE("merwe sigma points capture mean and covariance") {
 
     // Weighted covariance should reconstruct P
     Matrix<double, NX, NX> P_recon = Matrix<double, NX, NX>::Zero();
-    for (std::size_t i = 0; i < merwe_sigma_points<double, NX>::num_points; ++i) {
+    for(std::size_t i = 0; i < merwe_sigma_points<double, NX>::num_points; ++i)
+    {
         auto diff = (result.points[i] - x_recon).eval();
         P_recon += result.Wc[i] * diff * diff.transpose();
     }
@@ -162,7 +170,8 @@ TEST_CASE("merwe sigma points capture mean and covariance") {
     CHECK_THAT(P_recon(1, 1), Catch::Matchers::WithinAbs(P(1, 1), 1e-8));
 }
 
-TEST_CASE("julier sigma points satisfy concept and generate") {
+TEST_CASE("julier sigma points satisfy concept and generate")
+{
     constexpr std::size_t NX = 2;
     static_assert(sigma_point_strategy<julier_sigma_points<double, NX>, double, NX>);
 
@@ -176,12 +185,14 @@ TEST_CASE("julier sigma points satisfy concept and generate") {
 
     // Wm should sum to 1.0
     double wm_sum = 0.0;
-    for (auto w : result.Wm) wm_sum += w;
+    for(auto w : result.Wm)
+        wm_sum += w;
     CHECK_THAT(wm_sum, Catch::Matchers::WithinAbs(1.0, 1e-10));
 
     // Wc should sum to 1.0
     double wc_sum = 0.0;
-    for (auto w : result.Wc) wc_sum += w;
+    for(auto w : result.Wc)
+        wc_sum += w;
     CHECK_THAT(wc_sum, Catch::Matchers::WithinAbs(1.0, 1e-10));
 
     // Verify Wm_0 = Wc_0 = kappa/(NX + kappa)
@@ -193,13 +204,15 @@ TEST_CASE("julier sigma points satisfy concept and generate") {
 
     // Verify Wm_i = Wc_i = 1/(2*(n+kappa))
     double expected_wi = 1.0 / (2.0 * (n + kappa));
-    for (std::size_t i = 1; i < julier_sigma_points<double, NX>::num_points; ++i) {
+    for(std::size_t i = 1; i < julier_sigma_points<double, NX>::num_points; ++i)
+    {
         CHECK_THAT(result.Wm[i], Catch::Matchers::WithinAbs(expected_wi, 1e-12));
         CHECK_THAT(result.Wc[i], Catch::Matchers::WithinAbs(expected_wi, 1e-12));
     }
 }
 
-TEST_CASE("ukf tracks linear system") {
+TEST_CASE("ukf tracks linear system")
+{
     ukf_linear_dynamics dyn;
     ukf_position_measurement meas;
 
@@ -217,7 +230,8 @@ TEST_CASE("ukf tracks linear system") {
 
     double initial_trace = filter.covariance().trace();
 
-    for (int i = 0; i < 50; ++i) {
+    for(int i = 0; i < 50; ++i)
+    {
         true_pos += true_vel * dt;
 
         Vector<double, 1> u = Vector<double, 1>::Zero();
@@ -236,7 +250,8 @@ TEST_CASE("ukf tracks linear system") {
     CHECK(filter.covariance().trace() < initial_trace);
 }
 
-TEST_CASE("ukf tracks nonlinear system") {
+TEST_CASE("ukf tracks nonlinear system")
+{
     ukf_pendulum_dynamics dyn;
     ukf_angle_measurement meas;
 
@@ -257,7 +272,8 @@ TEST_CASE("ukf tracks nonlinear system") {
     Vector<double, 2> x_true;
     x_true << std::numbers::pi / 4.0, 0.0;
 
-    for (int i = 0; i < 200; ++i) {
+    for(int i = 0; i < 200; ++i)
+    {
         Vector<double, 1> u = Vector<double, 1>::Zero();
 
         Vector<double, 2> x_true_next;
@@ -277,7 +293,8 @@ TEST_CASE("ukf tracks nonlinear system") {
     CHECK_THAT(est(1), Catch::Matchers::WithinAbs(x_true(1), 0.5));
 }
 
-TEST_CASE("ukf covariance remains PSD") {
+TEST_CASE("ukf covariance remains PSD")
+{
     ukf_linear_dynamics dyn;
     ukf_position_measurement meas;
 
@@ -289,7 +306,8 @@ TEST_CASE("ukf covariance remains PSD") {
 
     ukf filter(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
-    for (int i = 0; i < 150; ++i) {
+    for(int i = 0; i < 150; ++i)
+    {
         Vector<double, 1> u = Vector<double, 1>::Zero();
         filter.predict(u);
 
@@ -300,12 +318,13 @@ TEST_CASE("ukf covariance remains PSD") {
         auto P = filter.covariance();
         CHECK((P - P.transpose()).norm() < 1e-10);
         Eigen::SelfAdjointEigenSolver<Matrix<double, 2, 2>> eigsolver(P, Eigen::EigenvaluesOnly);
-        for (int j = 0; j < 2; ++j)
+        for(int j = 0; j < 2; ++j)
             CHECK(eigsolver.eigenvalues()(j) >= -1e-10);
     }
 }
 
-TEST_CASE("ukf with julier strategy") {
+TEST_CASE("ukf with julier strategy")
+{
     ukf_linear_dynamics dyn;
     ukf_position_measurement meas;
 
@@ -315,17 +334,15 @@ TEST_CASE("ukf with julier strategy") {
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement,
-        julier_sigma_points<double, 2>> filter(
-        dyn, meas,
-        ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0},
-        julier_options<double>{.kappa = 1.0});
+    ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement, julier_sigma_points<double, 2>> filter(
+        dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}, julier_options<double>{.kappa = 1.0});
 
     double true_pos = 0.0;
     double true_vel = 1.0;
     constexpr double dt = 0.1;
 
-    for (int i = 0; i < 50; ++i) {
+    for(int i = 0; i < 50; ++i)
+    {
         true_pos += true_vel * dt;
 
         Vector<double, 1> u = Vector<double, 1>::Zero();
@@ -341,7 +358,8 @@ TEST_CASE("ukf with julier strategy") {
     CHECK_THAT(est(1), Catch::Matchers::WithinAbs(true_vel, 0.5));
 }
 
-TEST_CASE("ukf with qr gain decomposition") {
+TEST_CASE("ukf with qr gain decomposition")
+{
     ukf_linear_dynamics dyn;
     ukf_position_measurement meas;
 
@@ -351,15 +369,14 @@ TEST_CASE("ukf with qr gain decomposition") {
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ukf filter(dyn, meas, ukf_config<double, 2, 1, 1>{
-        .Q = Q, .R = R, .x0 = x0, .P0 = P0,
-        .decomposition = gain_decomposition::qr});
+    ukf filter(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0, .decomposition = gain_decomposition::qr});
 
     double true_pos = 0.0;
     double true_vel = 1.0;
     constexpr double dt = 0.1;
 
-    for (int i = 0; i < 50; ++i) {
+    for(int i = 0; i < 50; ++i)
+    {
         true_pos += true_vel * dt;
 
         Vector<double, 1> u = Vector<double, 1>::Zero();
@@ -375,9 +392,10 @@ TEST_CASE("ukf with qr gain decomposition") {
     CHECK_THAT(est(1), Catch::Matchers::WithinAbs(true_vel, 0.5));
 }
 
-TEST_CASE("ukf shares dynamics_model with ekf") {
-    auto shared_dynamics = [](const Vector<double, 2>& x,
-                              const Vector<double, 1>& u) -> Vector<double, 2> {
+TEST_CASE("ukf shares dynamics_model with ekf")
+{
+    auto shared_dynamics = [](const Vector<double, 2>& x, const Vector<double, 1>& u) -> Vector<double, 2>
+    {
         constexpr double dt = 0.1;
         Vector<double, 2> x_next;
         x_next(0) = x(0) + dt * x(1) + 0.5 * dt * dt * u(0);
@@ -385,7 +403,8 @@ TEST_CASE("ukf shares dynamics_model with ekf") {
         return x_next;
     };
 
-    auto shared_meas = [](const Vector<double, 2>& x) -> Vector<double, 1> {
+    auto shared_meas = [](const Vector<double, 2>& x) -> Vector<double, 1>
+    {
         Vector<double, 1> z;
         z(0) = x(0);
         return z;
@@ -412,7 +431,8 @@ TEST_CASE("ukf shares dynamics_model with ekf") {
     CHECK(std::isfinite(ukf_filter.state()(0)));
 }
 
-TEST_CASE("ukf satisfies ObserverPolicy and CovarianceObserver") {
+TEST_CASE("ukf satisfies ObserverPolicy and CovarianceObserver")
+{
     // Compile-time concept checks (also covered by static_assert at file scope)
     static_assert(ObserverPolicy<ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>>);
     static_assert(CovarianceObserver<ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>>);

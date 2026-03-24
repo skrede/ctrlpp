@@ -9,12 +9,13 @@
 #include <random>
 #include <cstddef>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 struct systematic_resampling
 {
     template <typename Scalar, std::size_t NP, typename Rng>
-    void resample(const std::array<Scalar, NP> &weights, std::array<std::size_t, NP> &indices, Rng &rng) const
+    void resample(const std::array<Scalar, NP>& weights, std::array<std::size_t, NP>& indices, Rng& rng) const
     {
         std::array<Scalar, NP> cumsum;
         cumsum[0] = weights[0];
@@ -35,6 +36,6 @@ struct systematic_resampling
     }
 };
 
-}
+} // namespace ctrlpp
 
 #endif

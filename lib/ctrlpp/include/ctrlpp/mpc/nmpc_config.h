@@ -7,27 +7,32 @@
 #include <functional>
 #include <optional>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-namespace detail {
+namespace detail
+{
 
-template<typename Scalar, std::size_t N>
+template <typename Scalar, std::size_t N>
 constexpr auto default_penalty() -> Vector<Scalar, N>
 {
-    if constexpr (N == 0) {
+    if constexpr(N == 0)
+    {
         return Vector<Scalar, 0>{};
-    } else {
+    }
+    else
+    {
         return Vector<Scalar, N>::Constant(Scalar{1e4});
     }
 }
 
-}
+} // namespace detail
 
 /// Configuration for nonlinear MPC, mirroring mpc_config with additional
 /// custom cost override fields for nonlinear objectives.
-template<typename Scalar, std::size_t NX, std::size_t NU,
-         std::size_t NC = 0, std::size_t NTC = 0>
-struct nmpc_config {
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NC = 0, std::size_t NTC = 0>
+struct nmpc_config
+{
     int horizon{1};
     Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
     Matrix<Scalar, NU, NU> R{Matrix<Scalar, NU, NU>::Identity()};
@@ -40,8 +45,7 @@ struct nmpc_config {
 
     /// Custom stage cost override. When set, replaces the quadratic
     /// cost x'Qx + u'Ru entirely for each stage.
-    std::optional<std::function<Scalar(const Vector<Scalar, NX>&,
-                                       const Vector<Scalar, NU>&)>> stage_cost{};
+    std::optional<std::function<Scalar(const Vector<Scalar, NX>&, const Vector<Scalar, NU>&)>> stage_cost{};
 
     /// Custom terminal cost override. When set, replaces the quadratic
     /// terminal cost x'Qf*x entirely.
@@ -49,8 +53,7 @@ struct nmpc_config {
 
     /// Path constraint callable g(x, u) -> Vector<NC>, only meaningful when NC > 0.
     /// Constraint is satisfied when g(x, u) <= 0 element-wise.
-    std::optional<std::function<Vector<Scalar, NC>(const Vector<Scalar, NX>&,
-                                                    const Vector<Scalar, NU>&)>> path_constraint{};
+    std::optional<std::function<Vector<Scalar, NC>(const Vector<Scalar, NX>&, const Vector<Scalar, NU>&)>> path_constraint{};
 
     /// Terminal constraint callable h(x) -> Vector<NTC>, only meaningful when NTC > 0.
     /// Constraint is satisfied when h(x_N) <= 0 element-wise.
@@ -67,6 +70,6 @@ struct nmpc_config {
     Vector<Scalar, NTC> terminal_penalty{detail::default_penalty<Scalar, NTC>()};
 };
 
-}
+} // namespace ctrlpp
 
 #endif

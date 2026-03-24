@@ -27,7 +27,8 @@
 #include <algorithm>
 #include <type_traits>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 enum class extraction_method
 {
@@ -67,8 +68,7 @@ public:
     using input_vector_t = Vector<Scalar, NU>;
     using output_vector_t = Vector<Scalar, NY>;
 
-    particle_filter(Dynamics dynamics, Measurement measurement,
-                    pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{})
+    particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{})
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_resampler{}
@@ -77,11 +77,7 @@ public:
         , m_R{std::move(config.R)}
         , m_R_inv{m_R.colPivHouseholderQr().inverse()}
         , m_log_det_2piR{compute_log_det_2piR()}
-        , m_ess_threshold{
-              config.ess_threshold < Scalar{0}
-                  ? static_cast<Scalar>(NP) / Scalar{2}
-                  : config.ess_threshold
-          }
+        , m_ess_threshold{config.ess_threshold < Scalar{0} ? static_cast<Scalar>(NP) / Scalar{2} : config.ess_threshold}
         , m_roughening_scale{config.roughening_scale}
         , m_extraction{config.extraction}
         , m_weight_mode{config.weights}
@@ -89,9 +85,7 @@ public:
         initialize_particles(config.x0, config.P0);
     }
 
-    particle_filter(Dynamics dynamics, Measurement measurement,
-                    pf_config<Scalar, NX, NU, NY> config,
-                    Resampler resampler, Rng rng = Rng{})
+    particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Resampler resampler, Rng rng = Rng{})
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_resampler{std::move(resampler)}
@@ -100,11 +94,7 @@ public:
         , m_R{std::move(config.R)}
         , m_R_inv{m_R.colPivHouseholderQr().inverse()}
         , m_log_det_2piR{compute_log_det_2piR()}
-        , m_ess_threshold{
-              config.ess_threshold < Scalar{0}
-                  ? static_cast<Scalar>(NP) / Scalar{2}
-                  : config.ess_threshold
-          }
+        , m_ess_threshold{config.ess_threshold < Scalar{0} ? static_cast<Scalar>(NP) / Scalar{2} : config.ess_threshold}
         , m_roughening_scale{config.roughening_scale}
         , m_extraction{config.extraction}
         , m_weight_mode{config.weights}
@@ -112,7 +102,7 @@ public:
         initialize_particles(config.x0, config.P0);
     }
 
-    void predict(const input_vector_t &u)
+    void predict(const input_vector_t& u)
     {
         for(std::size_t i = 0; i < NP; ++i)
         {
@@ -121,7 +111,7 @@ public:
         }
     }
 
-    void update(const output_vector_t &z)
+    void update(const output_vector_t& z)
     {
         if(m_weight_mode == weight_representation::log)
             update_log(z);
@@ -183,7 +173,7 @@ public:
         return m_particles[best];
     }
 
-    [[nodiscard]] auto particles() const -> const std::array<state_vector_t, NP> & { return m_particles; }
+    [[nodiscard]] auto particles() const -> const std::array<state_vector_t, NP>& { return m_particles; }
 
 private:
     Dynamics m_dynamics;
@@ -213,7 +203,7 @@ private:
         return static_cast<Scalar>(NY) * std::log(Scalar{2} * std::numbers::pi_v<Scalar>) + log_det;
     }
 
-    void initialize_particles(const state_vector_t &x0, const Matrix<Scalar, NX, NX> &P0)
+    void initialize_particles(const state_vector_t& x0, const Matrix<Scalar, NX, NX>& P0)
     {
         // LLT decomposition of P0 for sampling
         Eigen::LLT<Eigen::Matrix<Scalar, nx, nx>> llt_P0(P0);
@@ -249,14 +239,14 @@ private:
         return m_Q_L * noise;
     }
 
-    Scalar log_likelihood(const output_vector_t &z, const output_vector_t &z_pred) const
+    Scalar log_likelihood(const output_vector_t& z, const output_vector_t& z_pred) const
     {
         output_vector_t innov = z - z_pred;
         Scalar mahal = (innov.transpose() * m_R_inv * innov)(0, 0);
         return Scalar{-0.5} * mahal - Scalar{0.5} * m_log_det_2piR;
     }
 
-    void update_log(const output_vector_t &z)
+    void update_log(const output_vector_t& z)
     {
         // Update log weights
         for(std::size_t i = 0; i < NP; ++i)
@@ -271,7 +261,7 @@ private:
         for(std::size_t i = 0; i < NP; ++i)
             sum_exp += std::exp(m_log_weights[i] - max_log_w);
         Scalar log_sum = max_log_w + std::log(sum_exp);
-        for(auto &lw : m_log_weights)
+        for(auto& lw : m_log_weights)
             lw -= log_sum;
 
         // Compute ESS
@@ -300,7 +290,7 @@ private:
         }
     }
 
-    void update_linear(const output_vector_t &z)
+    void update_linear(const output_vector_t& z)
     {
         for(std::size_t i = 0; i < NP; ++i)
         {
@@ -311,14 +301,16 @@ private:
 
         // Normalize
         Scalar sum = Scalar{0};
-        for(auto w : m_linear_weights) sum += w;
+        for(auto w : m_linear_weights)
+            sum += w;
         if(sum > Scalar{0})
-            for(auto &w : m_linear_weights)
+            for(auto& w : m_linear_weights)
                 w /= sum;
 
         // Compute ESS
         Scalar sum_w2 = Scalar{0};
-        for(auto w : m_linear_weights) sum_w2 += w * w;
+        for(auto w : m_linear_weights)
+            sum_w2 += w * w;
         Scalar ess = Scalar{1} / sum_w2;
 
         if(ess < m_ess_threshold)
@@ -342,7 +334,7 @@ private:
         return lin;
     }
 
-    void reindex_particles(const std::array<std::size_t, NP> &indices)
+    void reindex_particles(const std::array<std::size_t, NP>& indices)
     {
         std::array<state_vector_t, NP> resampled;
         for(std::size_t i = 0; i < NP; ++i)
@@ -352,7 +344,8 @@ private:
 
     void apply_roughening()
     {
-        if(m_roughening_scale <= Scalar{0}) return;
+        if(m_roughening_scale <= Scalar{0})
+            return;
 
         Scalar np_factor = std::pow(static_cast<Scalar>(NP), Scalar{-1} / static_cast<Scalar>(NX));
 
@@ -386,38 +379,30 @@ private:
 template <std::size_t NP, typename Dynamics, typename Measurement, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64>
 auto make_particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{})
 {
-    return particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng>
-    (
-        std::move(dynamics), std::move(measurement), std::move(config), std::move(rng)
-    );
+    return particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng>(std::move(dynamics), std::move(measurement), std::move(config), std::move(rng));
 }
 
 // Static assert helpers
-namespace detail {
+namespace detail
+{
 
 struct pf_sa_dynamics
 {
-    Vector<double, 2> operator()(const Vector<double, 2> &, const Vector<double, 1> &) const
-    {
-        return Vector<double, 2>::Zero();
-    }
+    Vector<double, 2> operator()(const Vector<double, 2>&, const Vector<double, 1>&) const { return Vector<double, 2>::Zero(); }
 };
 
 struct pf_sa_measurement
 {
-    Vector<double, 1> operator()(const Vector<double, 2> &) const
-    {
-        return Vector<double, 1>::Zero();
-    }
+    Vector<double, 1> operator()(const Vector<double, 2>&) const { return Vector<double, 1>::Zero(); }
 };
 
 using pf_test_type = particle_filter<double, 2, 1, 1, 10, pf_sa_dynamics, pf_sa_measurement>;
 
-}
+} // namespace detail
 
 static_assert(ObserverPolicy<detail::pf_test_type>);
 static_assert(!CovarianceObserver<detail::pf_test_type>);
 
-}
+} // namespace ctrlpp
 
 #endif

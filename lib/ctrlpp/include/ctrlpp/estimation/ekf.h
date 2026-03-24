@@ -20,7 +20,8 @@
 #include <cstddef>
 #include <utility>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct ekf_config
@@ -60,7 +61,7 @@ public:
     {
     }
 
-    void predict(const input_vector_t &u)
+    void predict(const input_vector_t& u)
     {
         auto x_prev = m_x;
 
@@ -76,7 +77,7 @@ public:
         m_P = (Scalar{0.5} * (m_P + m_P.transpose())).eval();
     }
 
-    void update(const output_vector_t &z)
+    void update(const output_vector_t& z)
     {
         auto z_pred = m_measurement(m_x);
 
@@ -102,25 +103,13 @@ public:
         m_nees = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
     }
 
-    const state_vector_t &state() const
-    {
-        return m_x;
-    }
+    const state_vector_t& state() const { return m_x; }
 
-    const cov_matrix_t &covariance() const
-    {
-        return m_P;
-    }
+    const cov_matrix_t& covariance() const { return m_P; }
 
-    const output_vector_t &innovation() const
-    {
-        return m_innovation;
-    }
+    const output_vector_t& innovation() const { return m_innovation; }
 
-    Scalar nees() const
-    {
-        return m_nees;
-    }
+    Scalar nees() const { return m_nees; }
 
 private:
     Scalar m_eps;
@@ -136,32 +125,26 @@ private:
 
 // CTAD deduction guide
 template <typename Dynamics, typename Measurement, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-ekf(Dynamics, Measurement, ekf_config<Scalar, NX, NU, NY>)
-    -> ekf<Scalar, NX, NU, NY, Dynamics, Measurement>;
+ekf(Dynamics, Measurement, ekf_config<Scalar, NX, NU, NY>) -> ekf<Scalar, NX, NU, NY, Dynamics, Measurement>;
 
-namespace detail {
+namespace detail
+{
 
 struct ekf_sa_dynamics
 {
-    Vector<double, 2> operator()(const Vector<double, 2> &, const Vector<double, 1> &) const
-    {
-        return Vector<double, 2>::Zero();
-    }
+    Vector<double, 2> operator()(const Vector<double, 2>&, const Vector<double, 1>&) const { return Vector<double, 2>::Zero(); }
 };
 
 struct ekf_sa_measurement
 {
-    Vector<double, 1> operator()(const Vector<double, 2> &) const
-    {
-        return Vector<double, 1>::Zero();
-    }
+    Vector<double, 1> operator()(const Vector<double, 2>&) const { return Vector<double, 1>::Zero(); }
 };
 
-}
+} // namespace detail
 
 static_assert(ObserverPolicy<ekf<double, 2, 1, 1, detail::ekf_sa_dynamics, detail::ekf_sa_measurement>>);
 static_assert(CovarianceObserver<ekf<double, 2, 1, 1, detail::ekf_sa_dynamics, detail::ekf_sa_measurement>>);
 
-}
+} // namespace ctrlpp
 
 #endif

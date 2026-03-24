@@ -14,7 +14,8 @@
 #include <cmath>
 #include <cstddef>
 
-namespace {
+namespace
+{
 
 using Catch::Matchers::WithinAbs;
 
@@ -25,11 +26,9 @@ constexpr double dt = 0.1;
 auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX>
 {
     Eigen::Matrix2d A;
-    A << 1.0, dt,
-         0.0, 1.0;
+    A << 1.0, dt, 0.0, 1.0;
     Eigen::Vector2d B;
-    B << 0.5 * dt * dt,
-         dt;
+    B << 0.5 * dt * dt, dt;
     Eigen::Matrix2d C = Eigen::Matrix2d::Identity();
     Eigen::Matrix<double, 2, 1> D = Eigen::Matrix<double, 2, 1>::Zero();
     return {A, B, C, D};
@@ -37,9 +36,10 @@ auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX
 
 using OsqpMpc = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>;
 
-}
+} // namespace
 
-TEST_CASE("terminal_ingredients on stable double integrator", "[terminal_set]") {
+TEST_CASE("terminal_ingredients on stable double integrator", "[terminal_set]")
+{
     auto sys = make_double_integrator();
     Eigen::Matrix2d Q = Eigen::Matrix2d::Identity();
     Eigen::Matrix<double, 1, 1> R;
@@ -55,7 +55,7 @@ TEST_CASE("terminal_ingredients on stable double integrator", "[terminal_set]") 
 
     // Qf should be positive semi-definite
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> eig(result->Qf);
-    for (int i = 0; i < 2; ++i)
+    for(int i = 0; i < 2; ++i)
         CHECK(eig.eigenvalues()(i) >= -1e-10);
 
     // alpha should be positive and finite
@@ -63,7 +63,8 @@ TEST_CASE("terminal_ingredients on stable double integrator", "[terminal_set]") 
     CHECK(std::isfinite(result->set.alpha));
 }
 
-TEST_CASE("compute_ellipsoidal_set with known DARE solution", "[terminal_set]") {
+TEST_CASE("compute_ellipsoidal_set with known DARE solution", "[terminal_set]")
+{
     // Simple 2x2 system: P = I, K = [k1, k2]
     // alpha_i = min(u_max^2, u_min^2) / (k_i' P^{-1} k_i)
     // With P = I, P^{-1} = I, so alpha = u_bound^2 / ||k||^2
@@ -81,15 +82,13 @@ TEST_CASE("compute_ellipsoidal_set with known DARE solution", "[terminal_set]") 
     CHECK_THAT(eset.alpha, WithinAbs(2.0, 1e-10));
 }
 
-TEST_CASE("compute_polytopic_invariant_set on 2D system", "[terminal_set]") {
+TEST_CASE("compute_polytopic_invariant_set on 2D system", "[terminal_set]")
+{
     auto sys = make_double_integrator();
 
     // Box state constraints: |x_i| <= 5
     Eigen::Matrix<double, 4, 2> H_state;
-    H_state << 1.0, 0.0,
-              -1.0, 0.0,
-               0.0, 1.0,
-               0.0,-1.0;
+    H_state << 1.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, -1.0;
     Eigen::Vector4d h_state;
     h_state << 5.0, 5.0, 5.0, 5.0;
     ctrlpp::polytopic_set<double, NX> state_constr{.H = H_state, .h = h_state};
@@ -101,8 +100,7 @@ TEST_CASE("compute_polytopic_invariant_set on 2D system", "[terminal_set]") {
     h_input << 1.0, 1.0;
     ctrlpp::polytopic_set<double, NU> input_constr{.H = H_input, .h = h_input};
 
-    auto result = ctrlpp::compute_polytopic_invariant_set<double, NX, NU>(
-        sys.A, sys.B, state_constr, input_constr, 50);
+    auto result = ctrlpp::compute_polytopic_invariant_set<double, NX, NU>(sys.A, sys.B, state_constr, input_constr, 50);
 
     REQUIRE(result.has_value());
 
@@ -111,11 +109,12 @@ TEST_CASE("compute_polytopic_invariant_set on 2D system", "[terminal_set]") {
     CHECK(result->h.size() == result->H.rows());
 
     // Origin should be inside the invariant set (H*0 <= h => all h >= 0)
-    for (int i = 0; i < static_cast<int>(result->h.size()); ++i)
+    for(int i = 0; i < static_cast<int>(result->h.size()); ++i)
         CHECK(result->h(i) >= -1e-10);
 }
 
-TEST_CASE("MPC with terminal_ingredients integration", "[terminal_set][mpc]") {
+TEST_CASE("MPC with terminal_ingredients integration", "[terminal_set][mpc]")
+{
     auto sys = make_double_integrator();
     constexpr int N = 20;
 
@@ -144,7 +143,8 @@ TEST_CASE("MPC with terminal_ingredients integration", "[terminal_set][mpc]") {
 
     // Closed-loop regulation: verify stability (small initial state for feasibility)
     Eigen::Vector2d x{0.1, 0.05};
-    for (int step = 0; step < 50; ++step) {
+    for(int step = 0; step < 50; ++step)
+    {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
         x = sys.A * x + sys.B * u.value();
@@ -153,16 +153,14 @@ TEST_CASE("MPC with terminal_ingredients integration", "[terminal_set][mpc]") {
     CHECK(x.norm() < 0.05);
 }
 
-TEST_CASE("MPC with polytopic terminal set", "[terminal_set][mpc]") {
+TEST_CASE("MPC with polytopic terminal set", "[terminal_set][mpc]")
+{
     auto sys = make_double_integrator();
     constexpr int N = 20;
 
     // Terminal box: |x_i| <= 1.0
     Eigen::Matrix<double, 4, 2> H_term;
-    H_term << 1.0, 0.0,
-             -1.0, 0.0,
-              0.0, 1.0,
-              0.0,-1.0;
+    H_term << 1.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, -1.0;
     Eigen::Vector4d h_term;
     h_term << 1.0, 1.0, 1.0, 1.0;
 
@@ -189,11 +187,12 @@ TEST_CASE("MPC with polytopic terminal set", "[terminal_set][mpc]") {
     auto [states, inputs] = controller.trajectory();
     auto x_N = states.back();
     Eigen::VectorXd Hx = H_term * x_N;
-    for (int i = 0; i < 4; ++i)
+    for(int i = 0; i < 4; ++i)
         CHECK(Hx(i) <= h_term(i) + 0.02);
 }
 
-TEST_CASE("MPC backward compatibility without terminal_constraint_set", "[terminal_set][mpc]") {
+TEST_CASE("MPC backward compatibility without terminal_constraint_set", "[terminal_set][mpc]")
+{
     auto sys = make_double_integrator();
     constexpr int N = 10;
 
@@ -214,7 +213,8 @@ TEST_CASE("MPC backward compatibility without terminal_constraint_set", "[termin
     CHECK(diag.status == ctrlpp::solve_status::optimal);
 }
 
-TEST_CASE("Per-state soft penalty", "[terminal_set][mpc]") {
+TEST_CASE("Per-state soft penalty", "[terminal_set][mpc]")
+{
     auto sys = make_double_integrator();
     constexpr int N = 10;
 

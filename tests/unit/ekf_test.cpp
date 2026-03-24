@@ -15,11 +15,11 @@ using namespace ctrlpp;
 // ---------------------------------------------------------------------------
 // Test dynamics: linear constant-velocity model with analytical Jacobians
 // ---------------------------------------------------------------------------
-struct linear_dynamics {
+struct linear_dynamics
+{
     double dt = 0.1;
 
-    auto operator()(const Vector<double, 2>& x,
-                    const Vector<double, 1>& u) const -> Vector<double, 2>
+    auto operator()(const Vector<double, 2>& x, const Vector<double, 1>& u) const -> Vector<double, 2>
     {
         Vector<double, 2> x_next;
         x_next(0) = x(0) + dt * x(1) + 0.5 * dt * dt * u(0);
@@ -27,21 +27,17 @@ struct linear_dynamics {
         return x_next;
     }
 
-    auto jacobian_x(const Vector<double, 2>& /*x*/,
-                    const Vector<double, 1>& /*u*/) const -> Matrix<double, 2, 2>
+    auto jacobian_x(const Vector<double, 2>& /*x*/, const Vector<double, 1>& /*u*/) const -> Matrix<double, 2, 2>
     {
         Matrix<double, 2, 2> F;
-        F << 1.0, dt,
-             0.0, 1.0;
+        F << 1.0, dt, 0.0, 1.0;
         return F;
     }
 
-    auto jacobian_u(const Vector<double, 2>& /*x*/,
-                    const Vector<double, 1>& /*u*/) const -> Matrix<double, 2, 1>
+    auto jacobian_u(const Vector<double, 2>& /*x*/, const Vector<double, 1>& /*u*/) const -> Matrix<double, 2, 1>
     {
         Matrix<double, 2, 1> G;
-        G << 0.5 * dt * dt,
-             dt;
+        G << 0.5 * dt * dt, dt;
         return G;
     }
 };
@@ -49,7 +45,8 @@ struct linear_dynamics {
 // ---------------------------------------------------------------------------
 // Test measurement: position observation with analytical Jacobian
 // ---------------------------------------------------------------------------
-struct position_measurement {
+struct position_measurement
+{
     auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1>
     {
         Vector<double, 1> z;
@@ -68,15 +65,15 @@ struct position_measurement {
 // ---------------------------------------------------------------------------
 // Test dynamics/measurement: pendulum with analytical Jacobians
 // ---------------------------------------------------------------------------
-struct pendulum_dynamics {
+struct pendulum_dynamics
+{
     static constexpr double g = 9.81;
     static constexpr double l = 1.0;
     static constexpr double b = 0.1;
     static constexpr double m = 1.0;
     static constexpr double dt = 0.01;
 
-    auto operator()(const Vector<double, 2>& x,
-                    const Vector<double, 1>& u) const -> Vector<double, 2>
+    auto operator()(const Vector<double, 2>& x, const Vector<double, 1>& u) const -> Vector<double, 2>
     {
         Vector<double, 2> x_next;
         double theta = x(0);
@@ -87,26 +84,23 @@ struct pendulum_dynamics {
         return x_next;
     }
 
-    auto jacobian_x(const Vector<double, 2>& x,
-                    const Vector<double, 1>& /*u*/) const -> Matrix<double, 2, 2>
+    auto jacobian_x(const Vector<double, 2>& x, const Vector<double, 1>& /*u*/) const -> Matrix<double, 2, 2>
     {
         Matrix<double, 2, 2> F;
-        F << 1.0, dt,
-             -g / l * std::cos(x(0)) * dt, 1.0 - b * dt;
+        F << 1.0, dt, -g / l * std::cos(x(0)) * dt, 1.0 - b * dt;
         return F;
     }
 
-    auto jacobian_u(const Vector<double, 2>& /*x*/,
-                    const Vector<double, 1>& /*u*/) const -> Matrix<double, 2, 1>
+    auto jacobian_u(const Vector<double, 2>& /*x*/, const Vector<double, 1>& /*u*/) const -> Matrix<double, 2, 1>
     {
         Matrix<double, 2, 1> G;
-        G << 0.0,
-             dt / (m * l * l);
+        G << 0.0, dt / (m * l * l);
         return G;
     }
 };
 
-struct angle_measurement {
+struct angle_measurement
+{
     auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1>
     {
         Vector<double, 1> z;
@@ -150,7 +144,8 @@ static_assert(CovarianceObserver<ekf<double, 2, 1, 1, lambda_dyn_t, lambda_meas_
 // Tests
 // ---------------------------------------------------------------------------
 
-TEST_CASE("ekf with analytical Jacobians converges on linear system") {
+TEST_CASE("ekf with analytical Jacobians converges on linear system")
+{
     linear_dynamics dyn;
     position_measurement meas;
 
@@ -166,7 +161,8 @@ TEST_CASE("ekf with analytical Jacobians converges on linear system") {
     double true_vel = 1.0;
     constexpr double dt = 0.1;
 
-    for (int i = 0; i < 50; ++i) {
+    for(int i = 0; i < 50; ++i)
+    {
         true_pos += true_vel * dt;
 
         Vector<double, 1> u = Vector<double, 1>::Zero();
@@ -182,9 +178,10 @@ TEST_CASE("ekf with analytical Jacobians converges on linear system") {
     CHECK_THAT(est(1), Catch::Matchers::WithinAbs(true_vel, 0.5));
 }
 
-TEST_CASE("ekf with numerical Jacobians converges on linear system") {
-    auto dyn = [](const Vector<double, 2>& x,
-                  const Vector<double, 1>& u) -> Vector<double, 2> {
+TEST_CASE("ekf with numerical Jacobians converges on linear system")
+{
+    auto dyn = [](const Vector<double, 2>& x, const Vector<double, 1>& u) -> Vector<double, 2>
+    {
         constexpr double dt = 0.1;
         Vector<double, 2> x_next;
         x_next(0) = x(0) + dt * x(1) + 0.5 * dt * dt * u(0);
@@ -192,7 +189,8 @@ TEST_CASE("ekf with numerical Jacobians converges on linear system") {
         return x_next;
     };
 
-    auto meas = [](const Vector<double, 2>& x) -> Vector<double, 1> {
+    auto meas = [](const Vector<double, 2>& x) -> Vector<double, 1>
+    {
         Vector<double, 1> z;
         z(0) = x(0);
         return z;
@@ -210,7 +208,8 @@ TEST_CASE("ekf with numerical Jacobians converges on linear system") {
     double true_vel = 1.0;
     constexpr double dt = 0.1;
 
-    for (int i = 0; i < 50; ++i) {
+    for(int i = 0; i < 50; ++i)
+    {
         true_pos += true_vel * dt;
 
         Vector<double, 1> u = Vector<double, 1>::Zero();
@@ -226,7 +225,8 @@ TEST_CASE("ekf with numerical Jacobians converges on linear system") {
     CHECK_THAT(est(1), Catch::Matchers::WithinAbs(true_vel, 0.5));
 }
 
-TEST_CASE("ekf nonlinear pendulum tracking") {
+TEST_CASE("ekf nonlinear pendulum tracking")
+{
     pendulum_dynamics dyn;
     angle_measurement meas;
 
@@ -247,7 +247,8 @@ TEST_CASE("ekf nonlinear pendulum tracking") {
     Vector<double, 2> x_true;
     x_true << std::numbers::pi / 4.0, 0.0;
 
-    for (int i = 0; i < 200; ++i) {
+    for(int i = 0; i < 200; ++i)
+    {
         Vector<double, 1> u = Vector<double, 1>::Zero();
 
         Vector<double, 2> x_true_next;
@@ -267,7 +268,8 @@ TEST_CASE("ekf nonlinear pendulum tracking") {
     CHECK_THAT(est(1), Catch::Matchers::WithinAbs(x_true(1), 0.5));
 }
 
-TEST_CASE("ekf covariance stays symmetric and PSD over 100+ cycles") {
+TEST_CASE("ekf covariance stays symmetric and PSD over 100+ cycles")
+{
     linear_dynamics dyn;
     position_measurement meas;
 
@@ -279,7 +281,8 @@ TEST_CASE("ekf covariance stays symmetric and PSD over 100+ cycles") {
 
     ekf filter(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
-    for (int i = 0; i < 150; ++i) {
+    for(int i = 0; i < 150; ++i)
+    {
         Vector<double, 1> u = Vector<double, 1>::Zero();
         filter.predict(u);
 
@@ -290,12 +293,13 @@ TEST_CASE("ekf covariance stays symmetric and PSD over 100+ cycles") {
         auto P = filter.covariance();
         CHECK((P - P.transpose()).norm() < 1e-10);
         Eigen::SelfAdjointEigenSolver<Matrix<double, 2, 2>> eigsolver(P, Eigen::EigenvaluesOnly);
-        for (int j = 0; j < 2; ++j)
+        for(int j = 0; j < 2; ++j)
             CHECK(eigsolver.eigenvalues()(j) >= -1e-10);
     }
 }
 
-TEST_CASE("ekf NEES is finite and positive") {
+TEST_CASE("ekf NEES is finite and positive")
+{
     linear_dynamics dyn;
     position_measurement meas;
 
@@ -318,9 +322,10 @@ TEST_CASE("ekf NEES is finite and positive") {
     CHECK(std::isfinite(filter.nees()));
 }
 
-TEST_CASE("ekf with shared dynamics_model lambda compiles and runs") {
-    auto shared_dynamics = [](const Vector<double, 2>& x,
-                              const Vector<double, 1>& u) -> Vector<double, 2> {
+TEST_CASE("ekf with shared dynamics_model lambda compiles and runs")
+{
+    auto shared_dynamics = [](const Vector<double, 2>& x, const Vector<double, 1>& u) -> Vector<double, 2>
+    {
         constexpr double dt = 0.1;
         Vector<double, 2> x_next;
         x_next(0) = x(0) + dt * x(1) + 0.5 * dt * dt * u(0);
@@ -328,7 +333,8 @@ TEST_CASE("ekf with shared dynamics_model lambda compiles and runs") {
         return x_next;
     };
 
-    auto meas = [](const Vector<double, 2>& x) -> Vector<double, 1> {
+    auto meas = [](const Vector<double, 2>& x) -> Vector<double, 1>
+    {
         Vector<double, 1> z;
         z(0) = x(0);
         return z;

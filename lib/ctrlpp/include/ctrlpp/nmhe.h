@@ -41,7 +41,8 @@
 #include <utility>
 #include <algorithm>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t N, nlp_solver Solver, typename Dynamics, typename Measurement, std::size_t NC = 0>
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY>
@@ -59,21 +60,10 @@ public:
     using output_vector_t = Vector<Scalar, NY>;
     using cov_matrix_t = Matrix<Scalar, NX, NX>;
 
-    nmhe(Dynamics dynamics, Measurement measurement,
-         const nmhe_config<Scalar, NX, NU, NY, N, NC> &config)
+    nmhe(Dynamics dynamics, Measurement measurement, const nmhe_config<Scalar, NX, NU, NY, N, NC>& config)
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
-        , m_ekf{
-              m_dynamics,
-              m_measurement,
-              ekf_config<Scalar, NX, NU, NY>{
-                  .Q             = config.Q,
-                  .R             = config.R,
-                  .x0            = config.x0,
-                  .P0            = config.P0,
-                  .numerical_eps = config.numerical_eps
-              }
-          }
+        , m_ekf{m_dynamics, m_measurement, ekf_config<Scalar, NX, NU, NY>{.Q = config.Q, .R = config.R, .x0 = config.x0, .P0 = config.P0, .numerical_eps = config.numerical_eps}}
         , m_arrival_cost_weight{config.arrival_cost_weight}
         , m_Q_inv{config.Q.inverse()}
         , m_R_inv{config.R.inverse()}
@@ -101,7 +91,7 @@ public:
             m_warm_z.segment(k * nx, nx) = config.x0;
     }
 
-    void predict(const input_vector_t &u)
+    void predict(const input_vector_t& u)
     {
         m_ekf.predict(u);
 
@@ -115,7 +105,7 @@ public:
         ++m_step_count;
     }
 
-    void update(const output_vector_t &z)
+    void update(const output_vector_t& z)
     {
         m_ekf.update(z);
 
@@ -131,10 +121,7 @@ public:
         {
             m_x_window[m_step_count] = m_ekf.state();
             m_innovation = m_ekf.innovation();
-            m_diagnostics = mhe_diagnostics<Scalar>{
-                .status            = solve_status::optimal,
-                .used_ekf_fallback = true
-            };
+            m_diagnostics = mhe_diagnostics<Scalar>{.status = solve_status::optimal, .used_ekf_fallback = true};
             return;
         }
 
@@ -142,53 +129,28 @@ public:
         solve_nmhe();
     }
 
-    const state_vector_t &state() const
-    {
-        return m_x_window[N];
-    }
+    const state_vector_t& state() const { return m_x_window[N]; }
 
-    const cov_matrix_t &covariance() const
-    {
-        return m_ekf.covariance();
-    }
+    const cov_matrix_t& covariance() const { return m_ekf.covariance(); }
 
-    const output_vector_t &innovation() const
-    {
-        return m_innovation;
-    }
+    const output_vector_t& innovation() const { return m_innovation; }
 
-    std::span<const state_vector_t> trajectory() const
-    {
-        return {m_x_window.data(), N + 1};
-    }
+    std::span<const state_vector_t> trajectory() const { return {m_x_window.data(), N + 1}; }
 
-    const state_vector_t &arrival_state() const
-    {
-        return m_x_window[0];
-    }
+    const state_vector_t& arrival_state() const { return m_x_window[0]; }
 
-    const cov_matrix_t &arrival_covariance() const
-    {
-        return m_ekf.covariance();
-    }
+    const cov_matrix_t& arrival_covariance() const { return m_ekf.covariance(); }
 
-    bool is_initialized() const
-    {
-        return m_step_count >= N;
-    }
+    bool is_initialized() const { return m_step_count >= N; }
 
-    const mhe_diagnostics<Scalar> &diagnostics() const
-    {
-        return m_diagnostics;
-    }
+    const mhe_diagnostics<Scalar>& diagnostics() const { return m_diagnostics; }
 
 private:
     void solve_nmhe()
     {
         // Update arrival cost from companion EKF
         m_state->arrival_state = m_ekf.state();
-        m_state->arrival_P_inv = m_ekf.covariance().ldlt().solve(
-            cov_matrix_t::Identity());
+        m_state->arrival_P_inv = m_ekf.covariance().ldlt().solve(cov_matrix_t::Identity());
 
         // Warm-start solve
         nlp_update<Scalar> update{.x0 = m_warm_z};
@@ -197,14 +159,12 @@ private:
         {
             auto result = m_solver.solve(update);
 
-            if(result.status == solve_status::optimal ||
-                result.status == solve_status::solved_inaccurate)
+            if(result.status == solve_status::optimal || result.status == solve_status::solved_inaccurate)
             {
                 // Extract state trajectory from solution
                 for(int k = 0; k <= Ni; ++k)
                 {
-                    m_x_window[static_cast<std::size_t>(k)] =
-                        result.x.segment(k * nx, nx);
+                    m_x_window[static_cast<std::size_t>(k)] = result.x.segment(k * nx, nx);
                 }
 
                 // Compute innovation from latest estimate
@@ -215,27 +175,19 @@ private:
 
                 // Populate diagnostics
                 m_diagnostics = mhe_diagnostics<Scalar>{
-                    .status            = result.status,
-                    .iterations        = result.iterations,
-                    .solve_time        = result.solve_time,
-                    .cost              = result.objective,
-                    .primal_residual   = result.primal_residual,
-                    .used_ekf_fallback = false
-                };
+                    .status = result.status, .iterations = result.iterations, .solve_time = result.solve_time, .cost = result.objective, .primal_residual = result.primal_residual, .used_ekf_fallback = false};
 
                 // Compute total slack
                 if constexpr(NC > 0)
                 {
-                    bool has_path_slack = m_config.soft_constraints
-                        && m_config.path_constraint.has_value();
+                    bool has_path_slack = m_config.soft_constraints && m_config.path_constraint.has_value();
                     if(has_path_slack)
                     {
                         int slack_off = (Ni + 1) * nx;
                         Scalar total{0};
                         for(int k = 0; k <= Ni; ++k)
                         {
-                            Eigen::Map<const Vector<Scalar, NC>> sk(
-                                result.x.data() + slack_off + k * nc);
+                            Eigen::Map<const Vector<Scalar, NC>> sk(result.x.data() + slack_off + k * nc);
                             total += sk.sum();
                         }
                         m_diagnostics.total_slack = total;
@@ -258,13 +210,10 @@ private:
     {
         m_x_window[N] = m_ekf.state();
         m_innovation = m_ekf.innovation();
-        m_diagnostics = mhe_diagnostics<Scalar>{
-            .status            = solve_status::error,
-            .used_ekf_fallback = true
-        };
+        m_diagnostics = mhe_diagnostics<Scalar>{.status = solve_status::error, .used_ekf_fallback = true};
     }
 
-    void shift_warm_start(const Eigen::VectorX<Scalar> &sol)
+    void shift_warm_start(const Eigen::VectorX<Scalar>& sol)
     {
         // Shift states: warm[k] = sol[k+1] for k=0..N-1, warm[N] = EKF prediction
         for(int k = 0; k < Ni; ++k)
@@ -311,40 +260,33 @@ private:
 // Note: No CTAD deduction guide -- Solver cannot be deduced from constructor
 // arguments. Users must specify all template parameters explicitly.
 
-namespace detail {
+namespace detail
+{
 
 struct nmhe_sa_dynamics
 {
-    Vector<double, 2> operator()(const Vector<double, 2> &x, const Vector<double, 1> &) const
-    {
-        return x;
-    }
+    Vector<double, 2> operator()(const Vector<double, 2>& x, const Vector<double, 1>&) const { return x; }
 };
 
 struct nmhe_sa_measurement
 {
-    Vector<double, 1> operator()(const Vector<double, 2> &x) const
-    {
-        return x.template head<1>();
-    }
+    Vector<double, 1> operator()(const Vector<double, 2>& x) const { return x.template head<1>(); }
 };
 
 struct nmhe_sa_solver
 {
     using scalar_type = double;
 
-    void setup(const nlp_problem<double> &)
-    {
-    }
+    void setup(const nlp_problem<double>&) {}
 
-    nlp_result<double> solve(const nlp_update<double> &) { return {}; }
+    nlp_result<double> solve(const nlp_update<double>&) { return {}; }
 };
 
-}
+} // namespace detail
 
 static_assert(ObserverPolicy<nmhe<double, 2, 1, 1, 5, detail::nmhe_sa_solver, detail::nmhe_sa_dynamics, detail::nmhe_sa_measurement>>);
 static_assert(CovarianceObserver<nmhe<double, 2, 1, 1, 5, detail::nmhe_sa_solver, detail::nmhe_sa_dynamics, detail::nmhe_sa_measurement>>);
 
-}
+} // namespace ctrlpp
 
 #endif

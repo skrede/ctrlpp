@@ -6,12 +6,17 @@
 #include <algorithm>
 #include <cmath>
 
-TEST_CASE("poles of stable discrete system") {
+TEST_CASE("poles of stable discrete system")
+{
     ctrlpp::discrete_state_space<double, 2, 1, 1> sys{};
-    sys.A(0, 0) = 0.5; sys.A(0, 1) = 0.0;
-    sys.A(1, 0) = 0.0; sys.A(1, 1) = 0.3;
-    sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
-    sys.C(0, 0) = 1.0; sys.C(0, 1) = 0.0;
+    sys.A(0, 0) = 0.5;
+    sys.A(0, 1) = 0.0;
+    sys.A(1, 0) = 0.0;
+    sys.A(1, 1) = 0.3;
+    sys.B(0, 0) = 1.0;
+    sys.B(1, 0) = 0.0;
+    sys.C(0, 0) = 1.0;
+    sys.C(0, 1) = 0.0;
     sys.D(0, 0) = 0.0;
 
     auto p = ctrlpp::poles(sys);
@@ -24,34 +29,49 @@ TEST_CASE("poles of stable discrete system") {
     CHECK_THAT(magnitudes[1], Catch::Matchers::WithinAbs(0.5, 1e-10));
 }
 
-TEST_CASE("is_stable for stable discrete system") {
+TEST_CASE("is_stable for stable discrete system")
+{
     ctrlpp::discrete_state_space<double, 2, 1, 1> sys{};
-    sys.A(0, 0) = 0.5; sys.A(0, 1) = 0.0;
-    sys.A(1, 0) = 0.0; sys.A(1, 1) = 0.3;
-    sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
-    sys.C(0, 0) = 1.0; sys.C(0, 1) = 0.0;
+    sys.A(0, 0) = 0.5;
+    sys.A(0, 1) = 0.0;
+    sys.A(1, 0) = 0.0;
+    sys.A(1, 1) = 0.3;
+    sys.B(0, 0) = 1.0;
+    sys.B(1, 0) = 0.0;
+    sys.C(0, 0) = 1.0;
+    sys.C(0, 1) = 0.0;
     sys.D(0, 0) = 0.0;
 
     CHECK(ctrlpp::is_stable(sys));
 }
 
-TEST_CASE("is_stable for unstable discrete system") {
+TEST_CASE("is_stable for unstable discrete system")
+{
     ctrlpp::discrete_state_space<double, 2, 1, 1> sys{};
-    sys.A(0, 0) = 1.5; sys.A(0, 1) = 0.0;
-    sys.A(1, 0) = 0.0; sys.A(1, 1) = 0.3;
-    sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
-    sys.C(0, 0) = 1.0; sys.C(0, 1) = 0.0;
+    sys.A(0, 0) = 1.5;
+    sys.A(0, 1) = 0.0;
+    sys.A(1, 0) = 0.0;
+    sys.A(1, 1) = 0.3;
+    sys.B(0, 0) = 1.0;
+    sys.B(1, 0) = 0.0;
+    sys.C(0, 0) = 1.0;
+    sys.C(0, 1) = 0.0;
     sys.D(0, 0) = 0.0;
 
     CHECK_FALSE(ctrlpp::is_stable(sys));
 }
 
-TEST_CASE("poles of continuous system") {
+TEST_CASE("poles of continuous system")
+{
     ctrlpp::continuous_state_space<double, 2, 1, 1> sys{};
-    sys.A(0, 0) = -1.0; sys.A(0, 1) = 0.0;
-    sys.A(1, 0) = 0.0;  sys.A(1, 1) = -2.0;
-    sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
-    sys.C(0, 0) = 1.0; sys.C(0, 1) = 0.0;
+    sys.A(0, 0) = -1.0;
+    sys.A(0, 1) = 0.0;
+    sys.A(1, 0) = 0.0;
+    sys.A(1, 1) = -2.0;
+    sys.B(0, 0) = 1.0;
+    sys.B(1, 0) = 0.0;
+    sys.C(0, 0) = 1.0;
+    sys.C(0, 1) = 0.0;
     sys.D(0, 0) = 0.0;
 
     auto p = ctrlpp::poles(sys);
@@ -63,23 +83,33 @@ TEST_CASE("poles of continuous system") {
     CHECK_THAT(reals[1], Catch::Matchers::WithinAbs(-1.0, 1e-10));
 }
 
-TEST_CASE("is_stable for stable continuous system") {
+TEST_CASE("is_stable for stable continuous system")
+{
     ctrlpp::continuous_state_space<double, 2, 1, 1> sys{};
-    sys.A(0, 0) = -1.0; sys.A(0, 1) = 0.0;
-    sys.A(1, 0) = 0.0;  sys.A(1, 1) = -2.0;
-    sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
-    sys.C(0, 0) = 1.0; sys.C(0, 1) = 0.0;
+    sys.A(0, 0) = -1.0;
+    sys.A(0, 1) = 0.0;
+    sys.A(1, 0) = 0.0;
+    sys.A(1, 1) = -2.0;
+    sys.B(0, 0) = 1.0;
+    sys.B(1, 0) = 0.0;
+    sys.C(0, 0) = 1.0;
+    sys.C(0, 1) = 0.0;
     sys.D(0, 0) = 0.0;
 
     CHECK(ctrlpp::is_stable(sys));
 }
 
-TEST_CASE("is_stable for unstable continuous system") {
+TEST_CASE("is_stable for unstable continuous system")
+{
     ctrlpp::continuous_state_space<double, 2, 1, 1> sys{};
-    sys.A(0, 0) = 1.0;  sys.A(0, 1) = 0.0;
-    sys.A(1, 0) = 0.0;  sys.A(1, 1) = -2.0;
-    sys.B(0, 0) = 1.0; sys.B(1, 0) = 0.0;
-    sys.C(0, 0) = 1.0; sys.C(0, 1) = 0.0;
+    sys.A(0, 0) = 1.0;
+    sys.A(0, 1) = 0.0;
+    sys.A(1, 0) = 0.0;
+    sys.A(1, 1) = -2.0;
+    sys.B(0, 0) = 1.0;
+    sys.B(1, 0) = 0.0;
+    sys.C(0, 0) = 1.0;
+    sys.C(0, 1) = 0.0;
     sys.D(0, 0) = 0.0;
 
     CHECK_FALSE(ctrlpp::is_stable(sys));

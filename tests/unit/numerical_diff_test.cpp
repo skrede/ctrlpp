@@ -10,36 +10,34 @@
 using namespace ctrlpp;
 using namespace ctrlpp::detail;
 
-namespace {
+namespace
+{
 
 constexpr double tol = 1e-7;
 
 // Linear dynamics: f(x, u) = A*x + B*u
-struct LinearDynamics {
+struct LinearDynamics
+{
     Matrix<double, 2, 2> A;
     Matrix<double, 2, 1> B;
 
-    auto operator()(const Vector<double, 2>& x,
-                    const Vector<double, 1>& u) const -> Vector<double, 2> {
-        return A * x + B * u;
-    }
+    auto operator()(const Vector<double, 2>& x, const Vector<double, 1>& u) const -> Vector<double, 2> { return A * x + B * u; }
 };
 
 // Linear measurement: h(x) = C*x
-struct LinearMeasurement {
+struct LinearMeasurement
+{
     Matrix<double, 1, 2> C;
 
-    auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1> {
-        return C * x;
-    }
+    auto operator()(const Vector<double, 2>& x) const -> Vector<double, 1> { return C * x; }
 };
 
-}
+} // namespace
 
-TEST_CASE("numerical_jacobian_x returns A for linear dynamics", "[numerical_diff]") {
+TEST_CASE("numerical_jacobian_x returns A for linear dynamics", "[numerical_diff]")
+{
     Matrix<double, 2, 2> A;
-    A << 0.9, 0.1,
-        -0.2, 0.8;
+    A << 0.9, 0.1, -0.2, 0.8;
     Matrix<double, 2, 1> B;
     B << 1.0, 0.5;
 
@@ -51,17 +49,19 @@ TEST_CASE("numerical_jacobian_x returns A for linear dynamics", "[numerical_diff
 
     auto jac = numerical_jacobian_x<double, 2, 1>(dyn, x, u);
 
-    for (Eigen::Index i = 0; i < 2; ++i) {
-        for (Eigen::Index j = 0; j < 2; ++j) {
+    for(Eigen::Index i = 0; i < 2; ++i)
+    {
+        for(Eigen::Index j = 0; j < 2; ++j)
+        {
             REQUIRE_THAT(jac(i, j), Catch::Matchers::WithinAbs(A(i, j), tol));
         }
     }
 }
 
-TEST_CASE("numerical_jacobian_u returns B for linear dynamics", "[numerical_diff]") {
+TEST_CASE("numerical_jacobian_u returns B for linear dynamics", "[numerical_diff]")
+{
     Matrix<double, 2, 2> A;
-    A << 0.9, 0.1,
-        -0.2, 0.8;
+    A << 0.9, 0.1, -0.2, 0.8;
     Matrix<double, 2, 1> B;
     B << 1.0, 0.5;
 
@@ -73,14 +73,17 @@ TEST_CASE("numerical_jacobian_u returns B for linear dynamics", "[numerical_diff
 
     auto jac = numerical_jacobian_u<double, 2, 1>(dyn, x, u);
 
-    for (Eigen::Index i = 0; i < 2; ++i) {
-        for (Eigen::Index j = 0; j < 1; ++j) {
+    for(Eigen::Index i = 0; i < 2; ++i)
+    {
+        for(Eigen::Index j = 0; j < 1; ++j)
+        {
             REQUIRE_THAT(jac(i, j), Catch::Matchers::WithinAbs(B(i, j), tol));
         }
     }
 }
 
-TEST_CASE("numerical_jacobian_h returns C for linear measurement", "[numerical_diff]") {
+TEST_CASE("numerical_jacobian_h returns C for linear measurement", "[numerical_diff]")
+{
     Matrix<double, 1, 2> C;
     C << 0.7, -0.3;
 
@@ -90,17 +93,20 @@ TEST_CASE("numerical_jacobian_h returns C for linear measurement", "[numerical_d
 
     auto jac = numerical_jacobian_h<double, 2, 1>(meas, x);
 
-    for (Eigen::Index i = 0; i < 1; ++i) {
-        for (Eigen::Index j = 0; j < 2; ++j) {
+    for(Eigen::Index i = 0; i < 1; ++i)
+    {
+        for(Eigen::Index j = 0; j < 2; ++j)
+        {
             REQUIRE_THAT(jac(i, j), Catch::Matchers::WithinAbs(C(i, j), tol));
         }
     }
 }
 
-TEST_CASE("numerical_jacobian_x for nonlinear f(x) = x^2", "[numerical_diff]") {
+TEST_CASE("numerical_jacobian_x for nonlinear f(x) = x^2", "[numerical_diff]")
+{
     // f(x, u) = [x0^2, x1^2] -- Jacobian is diag(2*x0, 2*x1)
-    auto nonlinear = [](const Vector<double, 2>& x,
-                        const Vector<double, 1>&) -> Vector<double, 2> {
+    auto nonlinear = [](const Vector<double, 2>& x, const Vector<double, 1>&) -> Vector<double, 2>
+    {
         Vector<double, 2> result;
         result[0] = x[0] * x[0];
         result[1] = x[1] * x[1];
@@ -121,8 +127,10 @@ TEST_CASE("numerical_jacobian_x for nonlinear f(x) = x^2", "[numerical_diff]") {
     REQUIRE_THAT(jac(1, 1), Catch::Matchers::WithinAbs(-4.0, tol));
 }
 
-TEST_CASE("numerical_jacobian_h for nonlinear h(x) = [sin(x0), cos(x1)]", "[numerical_diff]") {
-    auto nonlinear_h = [](const Vector<double, 2>& x) -> Vector<double, 2> {
+TEST_CASE("numerical_jacobian_h for nonlinear h(x) = [sin(x0), cos(x1)]", "[numerical_diff]")
+{
+    auto nonlinear_h = [](const Vector<double, 2>& x) -> Vector<double, 2>
+    {
         Vector<double, 2> result;
         result[0] = std::sin(x[0]);
         result[1] = std::cos(x[1]);

@@ -43,8 +43,10 @@ int main()
 
     std::cout << "time,pos_sp,position,velocity,vel_sp,torque\n";
 
-    for (double t = 0.0; t < duration; t += dt_inner) {
-        if (counter == 0) {
+    for(double t = 0.0; t < duration; t += dt_inner)
+    {
+        if(counter == 0)
+        {
             auto sp = Vec::Constant(pos_sp);
             auto meas = Vec::Constant(position);
             auto tracking = Vec::Constant(velocity);
@@ -62,8 +64,6 @@ int main()
 
         counter = (counter + 1) % decimation;
 
-        std::cout << std::fixed << std::setprecision(4)
-                  << t << "," << pos_sp << "," << position << ","
-                  << velocity << "," << vel_sp << "," << torque << "\n";
+        std::cout << std::fixed << std::setprecision(4) << t << "," << pos_sp << "," << position << "," << velocity << "," << vel_sp << "," << torque << "\n";
     }
 }

@@ -10,7 +10,8 @@
 #include <limits>
 #include <optional>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 /// Configuration for linear MHE (QP-based).
 ///
@@ -20,9 +21,9 @@ namespace ctrlpp {
 ///   NU     - input dimension
 ///   NY     - measurement dimension
 ///   N      - horizon length (number of measurement steps in window)
-template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY,
-         std::size_t N>
-struct mhe_config {
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t N>
+struct mhe_config
+{
     Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
     Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};
@@ -39,9 +40,9 @@ struct mhe_config {
 /// Configuration for nonlinear MHE (NLP-based).
 ///
 /// Extends mhe_config with general nonlinear path constraints g(x) <= 0.
-template<typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY,
-         std::size_t N, std::size_t NC = 0>
-struct nmhe_config {
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t N, std::size_t NC = 0>
+struct nmhe_config
+{
     Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
     Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};
@@ -57,6 +58,6 @@ struct nmhe_config {
     Vector<Scalar, NC> path_penalty{detail::default_penalty<Scalar, NC>()};
 };
 
-}
+} // namespace ctrlpp
 
 #endif

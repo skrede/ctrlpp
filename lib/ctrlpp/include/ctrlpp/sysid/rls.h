@@ -11,7 +11,8 @@
 
 #include <cstddef>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 template <typename Scalar, std::size_t NP>
 struct rls_config
@@ -25,15 +26,9 @@ template <typename Scalar, std::size_t NP>
 class rls
 {
 public:
-    explicit rls(rls_config<Scalar, NP> config = {})
-        : m_lambda{config.lambda}
-        , m_cov_upper_bound{config.cov_upper_bound}
-        , m_theta{Vector<Scalar, NP>::Zero()}
-        , m_P{config.P0}
-    {
-    }
+    explicit rls(rls_config<Scalar, NP> config = {}) : m_lambda{config.lambda}, m_cov_upper_bound{config.cov_upper_bound}, m_theta{Vector<Scalar, NP>::Zero()}, m_P{config.P0} {}
 
-    void update(Scalar y, const Vector<Scalar, NP> &phi)
+    void update(Scalar y, const Vector<Scalar, NP>& phi)
     {
         Scalar e = y - phi.dot(m_theta);
 
@@ -54,15 +49,9 @@ public:
         }
     }
 
-    const Vector<Scalar, NP> &parameters() const
-    {
-        return m_theta;
-    }
+    const Vector<Scalar, NP>& parameters() const { return m_theta; }
 
-    const Matrix<Scalar, NP, NP> &covariance() const
-    {
-        return m_P;
-    }
+    const Matrix<Scalar, NP, NP>& covariance() const { return m_P; }
 
 private:
     Scalar m_lambda;
@@ -71,6 +60,6 @@ private:
     Matrix<Scalar, NP, NP> m_P;
 };
 
-}
+} // namespace ctrlpp
 
 #endif

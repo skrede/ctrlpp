@@ -9,50 +9,47 @@
 #include <cstddef>
 #include <type_traits>
 
-namespace ctrlpp::detail {
+namespace ctrlpp::detail
+{
 
 // ---------------------------------------------------------------------------
 // Butcher tableaux for fixed-step Runge-Kutta methods
 // ---------------------------------------------------------------------------
 
-struct euler_tableau {
+struct euler_tableau
+{
     static constexpr std::size_t stages = 1;
     static constexpr std::array<double, 1> c{0.0};
     static constexpr std::array<double, 1> b{1.0};
     static constexpr std::array<std::array<double, 1>, 1> a{{{0.0}}};
 };
 
-struct rk2_midpoint_tableau {
+struct rk2_midpoint_tableau
+{
     static constexpr std::size_t stages = 2;
     static constexpr std::array<double, 2> c{0.0, 0.5};
     static constexpr std::array<double, 2> b{0.0, 1.0};
-    static constexpr std::array<std::array<double, 2>, 2> a{{
-        {0.0, 0.0},
-        {0.5, 0.0}
-    }};
+    static constexpr std::array<std::array<double, 2>, 2> a{{{0.0, 0.0}, {0.5, 0.0}}};
 };
 
-struct rk4_tableau {
+struct rk4_tableau
+{
     static constexpr std::size_t stages = 4;
     static constexpr std::array<double, 4> c{0.0, 0.5, 0.5, 1.0};
     static constexpr std::array<double, 4> b{1.0 / 6.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 6.0};
-    static constexpr std::array<std::array<double, 4>, 4> a{{
-        {0.0,  0.0, 0.0, 0.0},
-        {0.5,  0.0, 0.0, 0.0},
-        {0.0,  0.5, 0.0, 0.0},
-        {0.0,  0.0, 1.0, 0.0}
-    }};
+    static constexpr std::array<std::array<double, 4>, 4> a{{{0.0, 0.0, 0.0, 0.0}, {0.5, 0.0, 0.0, 0.0}, {0.0, 0.5, 0.0, 0.0}, {0.0, 0.0, 1.0, 0.0}}};
 };
 
 // ---------------------------------------------------------------------------
 // Traits to extract dimensions from Eigen column vectors
 // ---------------------------------------------------------------------------
 
-template<typename T>
+template <typename T>
 struct vector_traits;
 
-template<typename Scalar, int Rows>
-struct vector_traits<Eigen::Matrix<Scalar, Rows, 1>> {
+template <typename Scalar, int Rows>
+struct vector_traits<Eigen::Matrix<Scalar, Rows, 1>>
+{
     using scalar_type = Scalar;
     static constexpr std::size_t size = static_cast<std::size_t>(Rows);
 };
@@ -61,31 +58,31 @@ struct vector_traits<Eigen::Matrix<Scalar, Rows, 1>> {
 // Generic fixed-step Runge-Kutta integrator
 // ---------------------------------------------------------------------------
 
-template<typename Tableau, typename F, typename StateVec, typename InputVec>
+template <typename Tableau, typename F, typename StateVec, typename InputVec>
     requires std::is_same_v<StateVec, std::remove_cvref_t<StateVec>>
-auto rk_step(const F& f,
-             const StateVec& x,
-             const InputVec& u,
-             typename vector_traits<StateVec>::scalar_type dt) -> StateVec
+auto rk_step(const F& f, const StateVec& x, const InputVec& u, typename vector_traits<StateVec>::scalar_type dt) -> StateVec
 {
     using Scalar = typename vector_traits<StateVec>::scalar_type;
     constexpr std::size_t S = Tableau::stages;
     std::array<StateVec, S> k;
 
-    for (std::size_t i = 0; i < S; ++i) {
+    for(std::size_t i = 0; i < S; ++i)
+    {
         StateVec x_stage = x;
-        for (std::size_t j = 0; j < i; ++j) {
+        for(std::size_t j = 0; j < i; ++j)
+        {
             auto aij = static_cast<Scalar>(Tableau::a[i][j]);
-            if (aij != Scalar{0})
+            if(aij != Scalar{0})
                 x_stage += (dt * aij) * k[j];
         }
         k[i] = f(x_stage, u);
     }
 
     StateVec x_next = x;
-    for (std::size_t i = 0; i < S; ++i) {
+    for(std::size_t i = 0; i < S; ++i)
+    {
         auto bi = static_cast<Scalar>(Tableau::b[i]);
-        if (bi != Scalar{0})
+        if(bi != Scalar{0})
             x_next += (dt * bi) * k[i];
     }
     return x_next;
@@ -95,29 +92,20 @@ auto rk_step(const F& f,
 // Convenience wrappers
 // ---------------------------------------------------------------------------
 
-template<typename F, typename StateVec, typename InputVec>
-auto euler_step(const F& f,
-                const StateVec& x,
-                const InputVec& u,
-                typename vector_traits<StateVec>::scalar_type dt) -> StateVec
+template <typename F, typename StateVec, typename InputVec>
+auto euler_step(const F& f, const StateVec& x, const InputVec& u, typename vector_traits<StateVec>::scalar_type dt) -> StateVec
 {
     return rk_step<euler_tableau>(f, x, u, dt);
 }
 
-template<typename F, typename StateVec, typename InputVec>
-auto rk2_step(const F& f,
-              const StateVec& x,
-              const InputVec& u,
-              typename vector_traits<StateVec>::scalar_type dt) -> StateVec
+template <typename F, typename StateVec, typename InputVec>
+auto rk2_step(const F& f, const StateVec& x, const InputVec& u, typename vector_traits<StateVec>::scalar_type dt) -> StateVec
 {
     return rk_step<rk2_midpoint_tableau>(f, x, u, dt);
 }
 
-template<typename F, typename StateVec, typename InputVec>
-auto rk4_step(const F& f,
-              const StateVec& x,
-              const InputVec& u,
-              typename vector_traits<StateVec>::scalar_type dt) -> StateVec
+template <typename F, typename StateVec, typename InputVec>
+auto rk4_step(const F& f, const StateVec& x, const InputVec& u, typename vector_traits<StateVec>::scalar_type dt) -> StateVec
 {
     return rk_step<rk4_tableau>(f, x, u, dt);
 }
@@ -126,27 +114,25 @@ auto rk4_step(const F& f,
 // Dormand-Prince RK45 adaptive step-size integrator
 // ---------------------------------------------------------------------------
 
-template<typename Scalar>
-struct rk45_config {
+template <typename Scalar>
+struct rk45_config
+{
     Scalar atol = Scalar{1e-6};
     Scalar rtol = Scalar{1e-6};
     Scalar dt_min = Scalar{1e-12};
     Scalar dt_max = Scalar{1.0};
 };
 
-template<typename Scalar, std::size_t NX>
-struct rk45_result {
+template <typename Scalar, std::size_t NX>
+struct rk45_result
+{
     Vector<Scalar, NX> x_next;
     Scalar dt_actual;
     Scalar dt_next;
 };
 
-template<typename F, typename StateVec, typename InputVec>
-auto rk45_step(const F& f,
-               const StateVec& x,
-               const InputVec& u,
-               typename vector_traits<StateVec>::scalar_type dt,
-               const rk45_config<typename vector_traits<StateVec>::scalar_type>& cfg = {})
+template <typename F, typename StateVec, typename InputVec>
+auto rk45_step(const F& f, const StateVec& x, const InputVec& u, typename vector_traits<StateVec>::scalar_type dt, const rk45_config<typename vector_traits<StateVec>::scalar_type>& cfg = {})
     -> rk45_result<typename vector_traits<StateVec>::scalar_type, vector_traits<StateVec>::size>
 {
     using Scalar = typename vector_traits<StateVec>::scalar_type;
@@ -154,10 +140,10 @@ auto rk45_step(const F& f,
 
     // Dormand-Prince coefficients
     static constexpr double a21 = 1.0 / 5.0;
-    static constexpr double a31 = 3.0 / 40.0,     a32 = 9.0 / 40.0;
-    static constexpr double a41 = 44.0 / 45.0,    a42 = -56.0 / 15.0,   a43 = 32.0 / 9.0;
+    static constexpr double a31 = 3.0 / 40.0, a32 = 9.0 / 40.0;
+    static constexpr double a41 = 44.0 / 45.0, a42 = -56.0 / 15.0, a43 = 32.0 / 9.0;
     static constexpr double a51 = 19372.0 / 6561.0, a52 = -25360.0 / 2187.0, a53 = 64448.0 / 6561.0, a54 = -212.0 / 729.0;
-    static constexpr double a61 = 9017.0 / 3168.0,  a62 = -355.0 / 33.0,     a63 = 46732.0 / 5247.0, a64 = 49.0 / 176.0,  a65 = -5103.0 / 18656.0;
+    static constexpr double a61 = 9017.0 / 3168.0, a62 = -355.0 / 33.0, a63 = 46732.0 / 5247.0, a64 = 49.0 / 176.0, a65 = -5103.0 / 18656.0;
 
     // 5th order weights
     static constexpr double b1 = 35.0 / 384.0, b3 = 500.0 / 1113.0, b4 = 125.0 / 192.0, b5 = -2187.0 / 6784.0, b6 = 11.0 / 84.0;
@@ -167,7 +153,8 @@ auto rk45_step(const F& f,
 
     Scalar h = std::clamp(dt, cfg.dt_min, cfg.dt_max);
 
-    for (;;) {
+    for(;;)
+    {
         StateVec k1 = f(x, u);
         StateVec k2 = f(StateVec{(x + h * Scalar(a21) * k1).eval()}, u);
         StateVec k3 = f(StateVec{(x + h * (Scalar(a31) * k1 + Scalar(a32) * k2)).eval()}, u);
@@ -185,18 +172,18 @@ auto rk45_step(const F& f,
 
         // Compute scaled error norm (mixed absolute/relative tolerance)
         Scalar err{0};
-        for (std::size_t i = 0; i < NX; ++i) {
+        for(std::size_t i = 0; i < NX; ++i)
+        {
             Scalar sc = cfg.atol + cfg.rtol * std::abs(x(static_cast<int>(i)));
             Scalar ei = err_vec(static_cast<int>(i)) / sc;
             err += ei * ei;
         }
         err = std::sqrt(err / Scalar(NX));
 
-        if (err <= Scalar{1} || h <= cfg.dt_min) {
+        if(err <= Scalar{1} || h <= cfg.dt_min)
+        {
             // Accept step
-            Scalar h_new = (err > Scalar{0})
-                ? h * std::clamp(Scalar{0.84} * std::pow(Scalar{1} / err, Scalar{0.2}), Scalar{0.1}, Scalar{4})
-                : h * Scalar{4};
+            Scalar h_new = (err > Scalar{0}) ? h * std::clamp(Scalar{0.84} * std::pow(Scalar{1} / err, Scalar{0.2}), Scalar{0.1}, Scalar{4}) : h * Scalar{4};
             h_new = std::clamp(h_new, cfg.dt_min, cfg.dt_max);
 
             return {x5, h, h_new};
@@ -208,6 +195,6 @@ auto rk45_step(const F& f,
     }
 }
 
-}
+} // namespace ctrlpp::detail
 
 #endif

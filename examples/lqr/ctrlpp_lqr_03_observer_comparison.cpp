@@ -28,13 +28,9 @@ int main()
     constexpr Scalar denom = M_cart + m_pend;
 
     ctrlpp::continuous_state_space<Scalar, NX, NU, NY> sys_c{};
-    sys_c.A << 0.0, 1.0, 0.0, 0.0,
-               0.0, 0.0, -m_pend * g / denom, 0.0,
-               0.0, 0.0, 0.0, 1.0,
-               0.0, 0.0, (denom * g) / (denom * l), 0.0;
+    sys_c.A << 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -m_pend * g / denom, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, (denom * g) / (denom * l), 0.0;
     sys_c.B << 0.0, 1.0 / denom, 0.0, -1.0 / (denom * l);
-    sys_c.C << 1.0, 0.0, 0.0, 0.0,
-               0.0, 0.0, 1.0, 0.0;
+    sys_c.C << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0;
     sys_c.D.setZero();
 
     auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, dt);
@@ -59,8 +55,7 @@ int main()
 
     Eigen::Matrix<Scalar, 4, 4> Q_obs = Eigen::Matrix<Scalar, 4, 4>::Identity() * 100.0;
     Eigen::Matrix<Scalar, 2, 2> R_obs = Eigen::Matrix<Scalar, 2, 2>::Identity();
-    auto L_dual = ctrlpp::lqr_gain<Scalar, NX, NY>(
-        sys_d.A.transpose(), sys_d.C.transpose(), Q_obs, R_obs);
+    auto L_dual = ctrlpp::lqr_gain<Scalar, NX, NY>(sys_d.A.transpose(), sys_d.C.transpose(), Q_obs, R_obs);
     Eigen::Matrix<Scalar, 4, 2> L = L_dual->transpose();
 
     ctrlpp::luenberger_observer<Scalar, NX, NU, NY> luen(sys_d, L, x0_est);
@@ -74,22 +69,16 @@ int main()
               << "luenberger_0,luenberger_1,luenberger_2,luenberger_3,"
               << "control\n";
 
-    for (Scalar t = 0.0; t < duration; t += dt) {
+    for(Scalar t = 0.0; t < duration; t += dt)
+    {
         auto x_kf = kf.state();
         auto x_lu = luen.state();
         auto u = controller.compute(x_kf);
 
         Eigen::Matrix<Scalar, 2, 1> z = sys_d.C * x_true;
 
-        std::cout << std::fixed << std::setprecision(4)
-                  << t << ","
-                  << x_true(0) << "," << x_true(1) << ","
-                  << x_true(2) << "," << x_true(3) << ","
-                  << x_kf(0) << "," << x_kf(1) << ","
-                  << x_kf(2) << "," << x_kf(3) << ","
-                  << x_lu(0) << "," << x_lu(1) << ","
-                  << x_lu(2) << "," << x_lu(3) << ","
-                  << u(0) << "\n";
+        std::cout << std::fixed << std::setprecision(4) << t << "," << x_true(0) << "," << x_true(1) << "," << x_true(2) << "," << x_true(3) << "," << x_kf(0) << "," << x_kf(1) << "," << x_kf(2) << "," << x_kf(3) << ","
+                  << x_lu(0) << "," << x_lu(1) << "," << x_lu(2) << "," << x_lu(3) << "," << u(0) << "\n";
 
         kf.predict(u);
         luen.predict(u);
