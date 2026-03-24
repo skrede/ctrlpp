@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_nmpc_01_pendulum | gnuplot -p -e "plot '-' using 1:2 with lines"
+// Usage: ./ctrlpp_nmpc_01_pendulum | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines"
 // Redirect: ./ctrlpp_nmpc_01_pendulum > output.csv
 
 #include "ctrlpp/mpc/nlopt_solver.h"

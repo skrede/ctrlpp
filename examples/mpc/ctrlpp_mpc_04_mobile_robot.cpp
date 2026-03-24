@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_mpc_04_mobile_robot | gnuplot -p -e "plot '-' using 2:3 with lines"
+// Usage: ./ctrlpp_mpc_04_mobile_robot | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 2:3 with lines"
 // Redirect: ./ctrlpp_mpc_04_mobile_robot > output.csv
 
 #include "ctrlpp/mpc.h"

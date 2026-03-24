@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_nmpc_02_swingup | gnuplot -p -e "plot '-' using 1:2 with lines"
+// Usage: ./ctrlpp_nmpc_02_swingup | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines"
 // Redirect: ./ctrlpp_nmpc_02_swingup > output.csv
 
 #include "ctrlpp/mpc/nlopt_solver.h"

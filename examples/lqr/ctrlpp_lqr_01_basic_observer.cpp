@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_lqr_01_basic_observer | gnuplot -p -e "plot '-' using 1:2 with lines"
+// Usage: ./ctrlpp_lqr_01_basic_observer | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines"
 // Redirect: ./ctrlpp_lqr_01_basic_observer > output.csv
 
 #include "ctrlpp/model/discretise.h"

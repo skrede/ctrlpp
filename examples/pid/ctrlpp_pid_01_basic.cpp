@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_pid_01_basic | gnuplot -p -e "plot '-' using 1:3 with lines"
+// Usage: ./ctrlpp_pid_01_basic | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:3 with lines"
 // Redirect: ./ctrlpp_pid_01_basic > output.csv
 
 #include "ctrlpp/control/pid.h"

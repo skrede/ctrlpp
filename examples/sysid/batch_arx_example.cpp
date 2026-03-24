@@ -1,4 +1,4 @@
-// Usage: ./batch_arx_example | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'actual', '' using 1:3 with lines title 'predicted'"
+// Usage: ./batch_arx_example | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines title 'actual', '' using 1:3 with lines title 'predicted'"
 // Redirect: ./batch_arx_example > output.csv
 /// @file batch_arx_example.cpp
 /// @brief Batch ARX system identification: identifies y(t) = 0.7*y(t-1) + 0.3*u(t-1)

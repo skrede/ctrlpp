@@ -60,7 +60,7 @@ struct position_measurement
     }
 };
 
-using MheType = mhe<double, NX, NU, NY, N, osqp_solver<double>, linear_dynamics, position_measurement>;
+using MheType = mhe<double, NX, NU, NY, N, osqp_solver, linear_dynamics, position_measurement>;
 
 } // namespace
 

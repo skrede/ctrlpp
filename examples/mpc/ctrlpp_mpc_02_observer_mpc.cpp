@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_mpc_02_observer_mpc | gnuplot -p -e "plot '-' using 1:2 with lines"
+// Usage: ./ctrlpp_mpc_02_observer_mpc | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines"
 // Redirect: ./ctrlpp_mpc_02_observer_mpc > output.csv
 
 #include "ctrlpp/estimation/kalman.h"
