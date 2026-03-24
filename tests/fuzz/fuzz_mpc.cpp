@@ -1,6 +1,6 @@
 #include "ctrlpp/mpc.h"
 #include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/state_space.h"
 
 #include <cmath>
 #include <cstddef>

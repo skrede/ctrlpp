@@ -5,7 +5,7 @@
 /// The dynamics struct satisfies differentiable_dynamics, so analytical Jacobians are used.
 /// The same dynamics callable also satisfies dynamics_model -- usable with NMPC.
 
-#include "ctrlpp/ekf.h"
+#include "ctrlpp/estimation/ekf.h"
 
 #include <cmath>
 #include <cstddef>

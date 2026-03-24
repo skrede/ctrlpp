@@ -1,5 +1,5 @@
-#include "ctrlpp/kalman.h"
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/estimation/kalman.h"
+#include "ctrlpp/model/state_space.h"
 
 #include <cmath>
 #include <cstddef>

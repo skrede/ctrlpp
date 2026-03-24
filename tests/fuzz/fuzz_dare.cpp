@@ -1,4 +1,4 @@
-#include "ctrlpp/dare.h"
+#include "ctrlpp/control/dare.h"
 
 #include <cmath>
 #include <cstddef>

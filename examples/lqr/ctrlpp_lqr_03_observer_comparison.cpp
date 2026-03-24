@@ -1,12 +1,12 @@
 // Usage: ./ctrlpp_lqr_03_observer_comparison | gnuplot -p -e "plot '-' using 1:6 with lines"
 // Redirect: ./ctrlpp_lqr_03_observer_comparison > output.csv
 
-#include "ctrlpp/discretise_impl.h"
-#include "ctrlpp/kalman.h"
-#include "ctrlpp/luenberger.h"
-#include "ctrlpp/lqr.h"
-#include "ctrlpp/propagate.h"
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/estimation/kalman.h"
+#include "ctrlpp/estimation/luenberger.h"
+#include "ctrlpp/control/lqr.h"
+#include "ctrlpp/model/propagate.h"
+#include "ctrlpp/model/state_space.h"
 
 #include <iomanip>
 #include <iostream>

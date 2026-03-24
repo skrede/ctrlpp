@@ -1,11 +1,11 @@
 // Usage: ./ctrlpp_lqr_01_basic_observer | gnuplot -p -e "plot '-' using 1:2 with lines"
 // Redirect: ./ctrlpp_lqr_01_basic_observer > output.csv
 
-#include "ctrlpp/discretise_impl.h"
-#include "ctrlpp/kalman.h"
-#include "ctrlpp/lqr.h"
-#include "ctrlpp/propagate.h"
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/estimation/kalman.h"
+#include "ctrlpp/control/lqr.h"
+#include "ctrlpp/model/propagate.h"
+#include "ctrlpp/model/state_space.h"
 
 #include <iomanip>
 #include <iostream>

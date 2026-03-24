@@ -1,4 +1,4 @@
-#include "ctrlpp/mpc/constraint_model.h"
+#include "ctrlpp/model/constraint_model.h"
 #include "ctrlpp/mpc/differentiable_constraint.h"
 #include "ctrlpp/mpc/nlopt_solver.h"
 #include "ctrlpp/nmpc.h"

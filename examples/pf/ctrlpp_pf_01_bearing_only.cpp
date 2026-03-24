@@ -6,7 +6,7 @@
 /// measurement creates a banana-shaped posterior that KF/EKF/UKF cannot represent
 /// well, making this the classic particle filter showcase.
 
-#include "ctrlpp/particle_filter.h"
+#include "ctrlpp/estimation/particle_filter.h"
 
 #include <cmath>
 #include <cstddef>

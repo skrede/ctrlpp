@@ -3,7 +3,7 @@
 
 #include "ctrlpp/mpc.h"
 #include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/propagate.h"
+#include "ctrlpp/model/propagate.h"
 
 #include <Eigen/Dense>
 

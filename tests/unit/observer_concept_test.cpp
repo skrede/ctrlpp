@@ -1,4 +1,4 @@
-#include "ctrlpp/observer_policy.h"
+#include "ctrlpp/estimation/observer_policy.h"
 
 #include <catch2/catch_test_macros.hpp>
 

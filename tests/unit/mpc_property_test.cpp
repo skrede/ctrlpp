@@ -1,6 +1,6 @@
 #include "ctrlpp/mpc.h"
 #include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/state_space.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <rapidcheck/catch.h>

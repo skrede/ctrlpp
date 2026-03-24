@@ -1,10 +1,10 @@
 // Usage: ./ctrlpp_mpc_02_observer_mpc | gnuplot -p -e "plot '-' using 1:2 with lines"
 // Redirect: ./ctrlpp_mpc_02_observer_mpc > output.csv
 
-#include "ctrlpp/kalman.h"
+#include "ctrlpp/estimation/kalman.h"
 #include "ctrlpp/mpc.h"
 #include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/propagate.h"
+#include "ctrlpp/model/propagate.h"
 
 #include <Eigen/Dense>
 

@@ -1,7 +1,7 @@
 // Usage: ./ctrlpp_pid_01_basic | gnuplot -p -e "plot '-' using 1:3 with lines"
 // Redirect: ./ctrlpp_pid_01_basic > output.csv
 
-#include "ctrlpp/pid.h"
+#include "ctrlpp/control/pid.h"
 
 #include <iomanip>
 #include <iostream>

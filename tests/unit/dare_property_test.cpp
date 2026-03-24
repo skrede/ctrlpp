@@ -1,6 +1,6 @@
-#include "ctrlpp/dare.h"
-#include "ctrlpp/lqr.h"
-#include "ctrlpp/analysis.h"
+#include "ctrlpp/control/dare.h"
+#include "ctrlpp/control/lqr.h"
+#include "ctrlpp/model/analysis.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <rapidcheck.h>

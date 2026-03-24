@@ -1,5 +1,5 @@
-#include <ctrlpp/propagate.h>
-#include <ctrlpp/state_space.h>
+#include <ctrlpp/model/propagate.h>
+#include <ctrlpp/model/state_space.h>
 
 #include <iostream>
 

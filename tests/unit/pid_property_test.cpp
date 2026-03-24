@@ -1,5 +1,5 @@
-#include "ctrlpp/pid.h"
-#include "ctrlpp/pid_policies.h"
+#include "ctrlpp/control/pid.h"
+#include "ctrlpp/control/pid_policies.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <rapidcheck/catch.h>

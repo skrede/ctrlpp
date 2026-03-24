@@ -5,7 +5,7 @@
 /// measurement = [theta]) but using UKF -- no Jacobians needed. The dynamics and
 /// measurement are plain callables satisfying dynamics_model and measurement_model.
 
-#include "ctrlpp/ukf.h"
+#include "ctrlpp/estimation/ukf.h"
 
 #include <cmath>
 #include <cstddef>

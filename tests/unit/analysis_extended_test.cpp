@@ -1,4 +1,4 @@
-#include "ctrlpp/analysis.h"
+#include "ctrlpp/model/analysis.h"
 
 #include <catch2/catch_test_macros.hpp>
 

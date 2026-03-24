@@ -1,6 +1,6 @@
-#include "ctrlpp/kalman.h"
-#include "ctrlpp/analysis.h"
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/estimation/kalman.h"
+#include "ctrlpp/model/analysis.h"
+#include "ctrlpp/model/state_space.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <rapidcheck.h>

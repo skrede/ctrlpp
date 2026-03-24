@@ -1,5 +1,5 @@
-#include "ctrlpp/lqr.h"
-#include "ctrlpp/dare.h"
+#include "ctrlpp/control/lqr.h"
+#include "ctrlpp/control/dare.h"
 
 
 #include <Eigen/Dense>

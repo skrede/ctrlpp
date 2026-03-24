@@ -3,7 +3,7 @@
 #include "ctrlpp/mpc/osqp_solver.h"
 #include "ctrlpp/mpc/terminal_set.h"
 
-#include "ctrlpp/dare.h"
+#include "ctrlpp/control/dare.h"
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>

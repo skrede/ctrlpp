@@ -1,7 +1,7 @@
 // Usage: ./ctrlpp_pid_04_joint_servo | gnuplot -p -e "plot '-' using 1:4 with lines"
 // Redirect: ./ctrlpp_pid_04_joint_servo > output.csv
 
-#include "ctrlpp/pid.h"
+#include "ctrlpp/control/pid.h"
 
 #include <iomanip>
 #include <iostream>

@@ -1,6 +1,6 @@
-#include "ctrlpp/ekf.h"
+#include "ctrlpp/estimation/ekf.h"
 
-#include "ctrlpp/observer_policy.h"
+#include "ctrlpp/estimation/observer_policy.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

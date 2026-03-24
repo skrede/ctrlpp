@@ -1,8 +1,8 @@
-#include "ctrlpp/particle_filter.h"
-#include "ctrlpp/observer_policy.h"
-#include "ctrlpp/resampling/resampling_strategy.h"
-#include "ctrlpp/resampling/systematic_resampling.h"
-#include "ctrlpp/resampling/multinomial_resampling.h"
+#include "ctrlpp/estimation/particle_filter.h"
+#include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/resampling/resampling_strategy.h"
+#include "ctrlpp/estimation/resampling/systematic_resampling.h"
+#include "ctrlpp/estimation/resampling/multinomial_resampling.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
