@@ -28,7 +28,6 @@ set(CTRLPP_WARNING_FLAGS
 )
 
 option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)
-option(CTRLPP_BUILD_IMPLOT "Build ctrlpp::implot visualization library (requires OpenGL)" OFF)
 option(CTRLPP_BUILD_EXAMPLES "Build examples" OFF)
 option(CTRLPP_BUILD_FUZZ_TESTS "Build fuzz test targets" OFF)
 option(CTRLPP_BUILD_PROPERTY_TESTS "Build property-based test targets (requires RapidCheck)" OFF)
