@@ -6,12 +6,13 @@
 
 using Catch::Matchers::WithinAbs;
 
-namespace {
+namespace
+{
 
 constexpr double dt = 0.01;
 constexpr double tol = 1e-10;
 
-}
+} // namespace
 
 TEST_CASE("SISO PID with Eigen - P-only", "[pid][eigen][siso]")
 {
@@ -107,13 +108,9 @@ TEST_CASE("MIMO PID with Eigen - per-channel PI gains", "[pid][eigen][mimo]")
     REQUIRE_THAT(u2[1], WithinAbs(2.02, tol));
 }
 
-TEST_CASE("Full-featured PID with Eigen - anti_windup + deriv_filter + perf_assessment",
-          "[pid][eigen][full]")
+TEST_CASE("Full-featured PID with Eigen - anti_windup + deriv_filter + perf_assessment", "[pid][eigen][full]")
 {
-    using pid = ctrlpp::pid<double, 1, 1, 1,
-        ctrlpp::anti_windup<ctrlpp::back_calc>,
-        ctrlpp::deriv_filter,
-        ctrlpp::perf_assessment<ctrlpp::IAE>>;
+    using pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::anti_windup<ctrlpp::back_calc>, ctrlpp::deriv_filter, ctrlpp::perf_assessment<ctrlpp::IAE>>;
     using Vec = pid::vector_t;
 
     pid::config_type cfg{};
@@ -142,13 +139,8 @@ TEST_CASE("Full-featured PID with Eigen - anti_windup + deriv_filter + perf_asse
 
 TEST_CASE("SISO with all composable policies - compile and run", "[pid][eigen][compose]")
 {
-    using pid = ctrlpp::pid<double, 1, 1, 1,
-        ctrlpp::anti_windup<ctrlpp::back_calc>,
-        ctrlpp::deriv_filter,
-        ctrlpp::setpoint_filter,
-        ctrlpp::pv_filter,
-        ctrlpp::rate_limit,
-        ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::ISE>>;
+    using pid =
+        ctrlpp::pid<double, 1, 1, 1, ctrlpp::anti_windup<ctrlpp::back_calc>, ctrlpp::deriv_filter, ctrlpp::setpoint_filter, ctrlpp::pv_filter, ctrlpp::rate_limit, ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::ISE>>;
     using Vec = pid::vector_t;
 
     pid::config_type cfg{};
@@ -167,7 +159,8 @@ TEST_CASE("SISO with all composable policies - compile and run", "[pid][eigen][c
     Vec sp = Vec::Constant(1.0);
     Vec meas = Vec::Constant(0.0);
 
-    for (int k = 0; k < 10; ++k) {
+    for(int k = 0; k < 10; ++k)
+    {
         auto u = ctrl.compute(sp, meas, dt);
         REQUIRE(std::isfinite(u[0]));
     }

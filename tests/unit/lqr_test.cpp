@@ -1,5 +1,5 @@
-#include "ctrlpp/lqr.h"
-#include "ctrlpp/dare.h"
+#include "ctrlpp/control/lqr.h"
+#include "ctrlpp/control/dare.h"
 
 
 #include <Eigen/Dense>
@@ -11,7 +11,8 @@
 #include <cmath>
 #include <vector>
 
-TEST_CASE("lqr_gain scalar integrator") {
+TEST_CASE("lqr_gain scalar integrator")
+{
     // A=1, B=1, Q=1, R=1
     // DARE gives P = golden ratio, K = P / (1 + P)
     Eigen::Matrix<double, 1, 1> A, B, Q, R;
@@ -28,15 +29,14 @@ TEST_CASE("lqr_gain scalar integrator") {
     CHECK_THAT((*result)(0, 0), Catch::Matchers::WithinAbs(expected_K, 1e-10));
 }
 
-TEST_CASE("lqr_gain double integrator stabilizes system") {
+TEST_CASE("lqr_gain double integrator stabilizes system")
+{
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 1.0, 1.0,
-         0.0, 1.0;
-    B << 0.5,
-         1.0;
+    A << 1.0, 1.0, 0.0, 1.0;
+    B << 0.5, 1.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
@@ -46,23 +46,21 @@ TEST_CASE("lqr_gain double integrator stabilizes system") {
     auto K = *result;
     Eigen::Matrix<double, 2, 2> Acl = A - B * K;
     Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> solver(Acl, false);
-    for (int i = 0; i < 2; ++i)
+    for(int i = 0; i < 2; ++i)
         CHECK(std::abs(solver.eigenvalues()(i)) < 1.0);
 }
 
-TEST_CASE("lqr_gain with cross-weight N") {
+TEST_CASE("lqr_gain with cross-weight N")
+{
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B, N;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 1.0, 1.0,
-         0.0, 1.0;
-    B << 0.5,
-         1.0;
+    A << 1.0, 1.0, 0.0, 1.0;
+    B << 0.5, 1.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
-    N << 0.1,
-         0.2;
+    N << 0.1, 0.2;
 
     auto result = ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R, N);
     REQUIRE(result.has_value());
@@ -71,20 +69,19 @@ TEST_CASE("lqr_gain with cross-weight N") {
     auto K = *result;
     Eigen::Matrix<double, 2, 2> Acl = A - B * K;
     Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> solver(Acl, false);
-    for (int i = 0; i < 2; ++i)
+    for(int i = 0; i < 2; ++i)
         CHECK(std::abs(solver.eigenvalues()(i)) < 1.0);
 }
 
-TEST_CASE("lqr_gain non-stabilizable returns nullopt") {
+TEST_CASE("lqr_gain non-stabilizable returns nullopt")
+{
     // A has unstable mode at eigenvalue 2, B cannot reach it
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 2.0, 0.0,
-         0.0, 0.5;
-    B << 0.0,
-         1.0;
+    A << 2.0, 0.0, 0.0, 0.5;
+    B << 0.0, 1.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
@@ -92,15 +89,14 @@ TEST_CASE("lqr_gain non-stabilizable returns nullopt") {
     CHECK_FALSE(result.has_value());
 }
 
-TEST_CASE("lqr_finite converges to infinite-horizon gain") {
+TEST_CASE("lqr_finite converges to infinite-horizon gain")
+{
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 1.0, 1.0,
-         0.0, 1.0;
-    B << 0.5,
-         1.0;
+    A << 1.0, 1.0, 0.0, 1.0;
+    B << 0.5, 1.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
@@ -119,15 +115,14 @@ TEST_CASE("lqr_finite converges to infinite-horizon gain") {
     CHECK((gains[0] - K_inf).norm() < 1e-6);
 }
 
-TEST_CASE("lqr_tv_gains with constant matrices matches lqr_finite") {
+TEST_CASE("lqr_tv_gains with constant matrices matches lqr_finite")
+{
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 1.0, 1.0,
-         0.0, 1.0;
-    B << 0.5,
-         1.0;
+    A << 1.0, 1.0, 0.0, 1.0;
+    B << 0.5, 1.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
     auto Qf = Q;
@@ -145,11 +140,12 @@ TEST_CASE("lqr_tv_gains with constant matrices matches lqr_finite") {
     auto gains_tv = ctrlpp::lqr_tv_gains<double, 2, 1>(As, Bs, Qs, Rs, Qf, horizon);
 
     REQUIRE(gains_tv.size() == gains_finite.size());
-    for (std::size_t k = 0; k < horizon; ++k)
+    for(std::size_t k = 0; k < horizon; ++k)
         CHECK((gains_tv[k] - gains_finite[k]).norm() < 1e-12);
 }
 
-TEST_CASE("lqi_result achieves zero steady-state error") {
+TEST_CASE("lqi_result achieves zero steady-state error")
+{
     // First-order system: A=0.9, B=1, C=1
     // With integral action, should eliminate steady-state error to step reference
     Eigen::Matrix<double, 1, 1> A, B, C;
@@ -174,15 +170,14 @@ TEST_CASE("lqi_result achieves zero steady-state error") {
     // K_aug = [Kx, Ki]
     // A_cl = A_aug - B_aug * K_aug
     Eigen::Matrix<double, 2, 2> A_aug;
-    A_aug << A(0, 0), 0.0,
-             -C(0, 0), 1.0;
+    A_aug << A(0, 0), 0.0, -C(0, 0), 1.0;
     Eigen::Matrix<double, 2, 1> B_aug;
     B_aug << B(0, 0), 0.0;
     Eigen::Matrix<double, 1, 2> K_aug;
     K_aug << Kx(0, 0), Ki(0, 0);
     Eigen::Matrix<double, 2, 2> A_cl = A_aug - B_aug * K_aug;
     Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(A_cl, false);
-    for (int i = 0; i < 2; ++i)
+    for(int i = 0; i < 2; ++i)
         REQUIRE(std::abs(eigsolver.eigenvalues()(i)) < 1.0);
 
     // Simulate closed loop with step reference r=1.0
@@ -192,7 +187,8 @@ TEST_CASE("lqi_result achieves zero steady-state error") {
     double xi = 0.0;
     double r = 1.0;
 
-    for (int step = 0; step < 500; ++step) {
+    for(int step = 0; step < 500; ++step)
+    {
         double u = -(Kx(0, 0) * x + Ki(0, 0) * xi);
         double x_next = A(0, 0) * x + B(0, 0) * u;
         double y = C(0, 0) * x;
@@ -204,7 +200,8 @@ TEST_CASE("lqi_result achieves zero steady-state error") {
     CHECK_THAT(y_final, Catch::Matchers::WithinAbs(r, 1e-4));
 }
 
-TEST_CASE("lqr_cost evaluates trajectory cost") {
+TEST_CASE("lqr_cost evaluates trajectory cost")
+{
     Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity();
     Eigen::Matrix<double, 1, 1> R;
     R(0, 0) = 1.0;
@@ -229,23 +226,19 @@ TEST_CASE("lqr_cost evaluates trajectory cost") {
     // Terminal: x2^T Q x2 = 0.01 + 0.0025 = 0.0125
     expected += 0.1 * 0.1 + 0.05 * 0.05;
 
-    auto cost = ctrlpp::lqr_cost<double, 2, 1>(
-        std::span<const Eigen::Matrix<double, 2, 1>>{xs},
-        std::span<const Eigen::Matrix<double, 1, 1>>{us},
-        Q, R);
+    auto cost = ctrlpp::lqr_cost<double, 2, 1>(std::span<const Eigen::Matrix<double, 2, 1>>{xs}, std::span<const Eigen::Matrix<double, 1, 1>>{us}, Q, R);
 
     CHECK_THAT(cost, Catch::Matchers::WithinAbs(expected, 1e-12));
 }
 
-TEST_CASE("lqr class compute returns -K*x") {
+TEST_CASE("lqr class compute returns -K*x")
+{
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 1.0, 1.0,
-         0.0, 1.0;
-    B << 0.5,
-         1.0;
+    A << 1.0, 1.0, 0.0, 1.0;
+    B << 0.5, 1.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
@@ -264,15 +257,14 @@ TEST_CASE("lqr class compute returns -K*x") {
     CHECK((lqr.gain() - K).norm() < 1e-12);
 }
 
-TEST_CASE("lqr_time_varying indexes correctly") {
+TEST_CASE("lqr_time_varying indexes correctly")
+{
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 1.0, 1.0,
-         0.0, 1.0;
-    B << 0.5,
-         1.0;
+    A << 1.0, 1.0, 0.0, 1.0;
+    B << 0.5, 1.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
     auto Qf = Q;
@@ -289,7 +281,8 @@ TEST_CASE("lqr_time_varying indexes correctly") {
     // Recompute gains for verification
     auto gains_ref = ctrlpp::lqr_finite<double, 2, 1>(A, B, Q, R, Qf, horizon);
 
-    for (std::size_t k = 0; k < horizon; ++k) {
+    for(std::size_t k = 0; k < horizon; ++k)
+    {
         auto u = lqr_tv.compute(x, k);
         Eigen::Matrix<double, 1, 1> expected = -gains_ref[k] * x;
         CHECK((u - expected).norm() < 1e-12);

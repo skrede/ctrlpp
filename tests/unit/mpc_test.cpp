@@ -7,11 +7,13 @@
 
 #include <cstddef>
 
-namespace {
+namespace
+{
 
 using Catch::Matchers::WithinAbs;
 
-struct mock_qp_solver {
+struct mock_qp_solver
+{
     using scalar_type = double;
 
     mutable ctrlpp::qp_problem<double> last_setup{};
@@ -19,11 +21,10 @@ struct mock_qp_solver {
     mutable int solve_count{0};
     mutable ctrlpp::solve_status next_status{ctrlpp::solve_status::optimal};
 
-    void setup(const ctrlpp::qp_problem<double>& problem) {
-        last_setup = problem;
-    }
+    void setup(const ctrlpp::qp_problem<double>& problem) { last_setup = problem; }
 
-    auto solve(const ctrlpp::qp_update<double>& update) -> ctrlpp::qp_result<double> {
+    auto solve(const ctrlpp::qp_update<double>& update) -> ctrlpp::qp_result<double>
+    {
         last_update = update;
         ++solve_count;
         ctrlpp::qp_result<double> result;
@@ -44,19 +45,19 @@ constexpr std::size_t NX = 2;
 constexpr std::size_t NU = 1;
 constexpr double dt = 0.1;
 
-auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX> {
+auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX>
+{
     Eigen::Matrix2d A;
-    A << 1.0, dt,
-         0.0, 1.0;
+    A << 1.0, dt, 0.0, 1.0;
     Eigen::Vector2d B;
-    B << 0.5 * dt * dt,
-         dt;
+    B << 0.5 * dt * dt, dt;
     Eigen::Matrix2d C = Eigen::Matrix2d::Identity();
     Eigen::Matrix<double, 2, 1> D = Eigen::Matrix<double, 2, 1>::Zero();
     return {A, B, C, D};
 }
 
-auto make_config(int horizon = 5) -> ctrlpp::mpc_config<double, NX, NU> {
+auto make_config(int horizon = 5) -> ctrlpp::mpc_config<double, NX, NU>
+{
     return {
         .horizon = horizon,
         .Q = Eigen::Matrix2d::Identity(),
@@ -66,18 +67,20 @@ auto make_config(int horizon = 5) -> ctrlpp::mpc_config<double, NX, NU> {
 
 using Mpc = ctrlpp::mpc<double, NX, NU, mock_qp_solver>;
 
+} // namespace
+
+TEST_CASE("mock_qp_solver satisfies qp_solver concept")
+{
+    static_assert(ctrlpp::qp_solver<mock_qp_solver>, "mock_qp_solver must satisfy qp_solver concept");
 }
 
-TEST_CASE("mock_qp_solver satisfies qp_solver concept") {
-    static_assert(ctrlpp::qp_solver<mock_qp_solver>,
-        "mock_qp_solver must satisfy qp_solver concept");
-}
-
-TEST_CASE("mpc with mock solver", "[mpc]") {
+TEST_CASE("mpc with mock solver", "[mpc]")
+{
     auto sys = make_double_integrator();
     constexpr int N = 5;
 
-    SECTION("QP dimensions are correct for unconstrained problem") {
+    SECTION("QP dimensions are correct for unconstrained problem")
+    {
         auto cfg = make_config(N);
         Mpc controller(sys, cfg);
 
@@ -93,7 +96,8 @@ TEST_CASE("mpc with mock solver", "[mpc]") {
         // the trajectory and diagnostics that the solve went through correctly
     }
 
-    SECTION("solve(x0) calls solver and returns u_0") {
+    SECTION("solve(x0) calls solver and returns u_0")
+    {
         auto cfg = make_config(N);
         Mpc controller(sys, cfg);
 
@@ -105,7 +109,8 @@ TEST_CASE("mpc with mock solver", "[mpc]") {
         CHECK_THAT((*result)(0), WithinAbs(0.0, 1e-12));
     }
 
-    SECTION("solve(x0, x_ref) produces non-zero q vector for reference tracking") {
+    SECTION("solve(x0, x_ref) produces non-zero q vector for reference tracking")
+    {
         auto cfg = make_config(N);
         Mpc controller(sys, cfg);
 
@@ -115,7 +120,8 @@ TEST_CASE("mpc with mock solver", "[mpc]") {
         REQUIRE(result.has_value());
     }
 
-    SECTION("solve returns nullopt when solver reports infeasible") {
+    SECTION("solve returns nullopt when solver reports infeasible")
+    {
         auto cfg = make_config(N);
         Mpc controller(sys, cfg);
 
@@ -131,16 +137,16 @@ TEST_CASE("mpc with mock solver", "[mpc]") {
         // Actually, the mock is default-constructed inside mpc. To test infeasibility,
         // we use a variant mock that always returns infeasible.
 
-        struct infeasible_mock {
+        struct infeasible_mock
+        {
             using scalar_type = double;
 
             mutable ctrlpp::qp_problem<double> last_setup{};
 
-            void setup(const ctrlpp::qp_problem<double>& problem) {
-                last_setup = problem;
-            }
+            void setup(const ctrlpp::qp_problem<double>& problem) { last_setup = problem; }
 
-            auto solve(const ctrlpp::qp_update<double>&) -> ctrlpp::qp_result<double> {
+            auto solve(const ctrlpp::qp_update<double>&) -> ctrlpp::qp_result<double>
+            {
                 ctrlpp::qp_result<double> result;
                 result.status = ctrlpp::solve_status::infeasible;
                 result.x = Eigen::VectorXd::Zero(last_setup.P.cols());
@@ -161,7 +167,8 @@ TEST_CASE("mpc with mock solver", "[mpc]") {
         CHECK_FALSE(infeasible_result.has_value());
     }
 
-    SECTION("trajectory extracts correct number of state and input vectors") {
+    SECTION("trajectory extracts correct number of state and input vectors")
+    {
         auto cfg = make_config(N);
         Mpc controller(sys, cfg);
 
@@ -174,13 +181,14 @@ TEST_CASE("mpc with mock solver", "[mpc]") {
         CHECK(inputs.size() == static_cast<std::size_t>(N));
 
         // Each state vector has NX elements, each input has NU elements
-        for (const auto& s : states)
+        for(const auto& s : states)
             CHECK(s.size() == static_cast<Eigen::Index>(NX));
-        for (const auto& u : inputs)
+        for(const auto& u : inputs)
             CHECK(u.size() == static_cast<Eigen::Index>(NU));
     }
 
-    SECTION("diagnostics returns values from last solve") {
+    SECTION("diagnostics returns values from last solve")
+    {
         auto cfg = make_config(N);
         Mpc controller(sys, cfg);
 
@@ -196,11 +204,13 @@ TEST_CASE("mpc with mock solver", "[mpc]") {
         CHECK_THAT(diag.dual_residual, WithinAbs(1e-6, 1e-12));
     }
 
-    SECTION("second solve passes warm-start from first solution") {
+    SECTION("second solve passes warm-start from first solution")
+    {
         auto cfg = make_config(N);
 
         // Use a mock that tracks warm-start presence
-        struct warmstart_mock {
+        struct warmstart_mock
+        {
             using scalar_type = double;
 
             mutable ctrlpp::qp_problem<double> last_setup{};
@@ -208,11 +218,10 @@ TEST_CASE("mpc with mock solver", "[mpc]") {
             mutable bool had_warm_y{false};
             mutable int solve_count{0};
 
-            void setup(const ctrlpp::qp_problem<double>& problem) {
-                last_setup = problem;
-            }
+            void setup(const ctrlpp::qp_problem<double>& problem) { last_setup = problem; }
 
-            auto solve(const ctrlpp::qp_update<double>& update) -> ctrlpp::qp_result<double> {
+            auto solve(const ctrlpp::qp_update<double>& update) -> ctrlpp::qp_result<double>
+            {
                 ++solve_count;
                 had_warm_x = update.warm_x.size() > 0;
                 had_warm_y = update.warm_y.size() > 0;
@@ -249,7 +258,8 @@ TEST_CASE("mpc with mock solver", "[mpc]") {
         CHECK(diag.iterations == 3);
     }
 
-    SECTION("soft state constraints produce larger QP with slack variables") {
+    SECTION("soft state constraints produce larger QP with slack variables")
+    {
         auto cfg = make_config(N);
         cfg.x_min = Eigen::Vector2d{-10.0, -10.0};
         cfg.x_max = Eigen::Vector2d{10.0, 10.0};
@@ -269,7 +279,8 @@ TEST_CASE("mpc with mock solver", "[mpc]") {
         CHECK(inputs.size() == static_cast<std::size_t>(N));
     }
 
-    SECTION("du_max produces additional rate constraint rows") {
+    SECTION("du_max produces additional rate constraint rows")
+    {
         auto cfg = make_config(N);
         cfg.u_min = Eigen::Matrix<double, 1, 1>{-5.0};
         cfg.u_max = Eigen::Matrix<double, 1, 1>{5.0};

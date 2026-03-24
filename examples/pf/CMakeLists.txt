@@ -1,0 +1,3 @@
+add_executable(ctrlpp_pf_01_bearing_only ctrlpp_pf_01_bearing_only.cpp)
+target_link_libraries(ctrlpp_pf_01_bearing_only PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_pf_01_bearing_only PRIVATE ${CTRLPP_WARNING_FLAGS})

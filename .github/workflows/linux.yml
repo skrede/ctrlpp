@@ -90,25 +90,6 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
-  implot-compile:
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install OpenGL and X11 development headers
-        run: sudo apt-get update && sudo apt-get install -y xorg-dev libgl-dev
-
-      - name: Configure
-        run: |
-          cmake . -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCTRLPP_BUILD_IMPLOT=ON \
-            -DCTRLPP_BUILD_EXAMPLES=ON \
-            -DCTRLPP_CMAKE_FETCH_DEPS=ON
-
-      - name: Build
-        run: cmake --build build
-
   install-test:
     runs-on: ubuntu-24.04
 

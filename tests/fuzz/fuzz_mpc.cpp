@@ -1,6 +1,6 @@
 #include "ctrlpp/mpc.h"
 #include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/state_space.h"
 
 #include <cmath>
 #include <cstddef>
@@ -11,7 +11,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 {
     // horizon_byte(1) + Q_diag(2*8=16) + R(8) + u_min(8) + u_max(8) +
     // x0(2*8=16) + x_ref(2*8=16) = 73 bytes
-    if (size < 73)
+    if(size < 73)
         return 0;
 
     std::size_t offset = 0;
@@ -23,8 +23,9 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     double buf[9];
     std::memcpy(buf, data + offset, 72);
 
-    for (int i = 0; i < 9; ++i) {
-        if (!std::isfinite(buf[i]))
+    for(int i = 0; i < 9; ++i)
+    {
+        if(!std::isfinite(buf[i]))
             return 0;
     }
 
@@ -42,7 +43,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     double u_min_val = buf[3];
     double u_max_val = buf[4];
-    if (u_min_val >= u_max_val) {
+    if(u_min_val >= u_max_val)
+    {
         u_min_val = -1.0;
         u_max_val = 1.0;
     }
@@ -77,18 +79,23 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     cfg.u_min = umin;
     cfg.u_max = umax;
 
-    try {
+    try
+    {
         ctrlpp::mpc<double, 2, 1, ctrlpp::osqp_solver> controller(sys, cfg);
         auto result = controller.solve(x0, x_ref);
 
-        if (result.has_value()) {
+        if(result.has_value())
+        {
             const auto& u = result.value();
-            for (int i = 0; i < 1; ++i) {
-                if (!std::isfinite(u(i)))
+            for(int i = 0; i < 1; ++i)
+            {
+                if(!std::isfinite(u(i)))
                     __builtin_trap();
             }
         }
-    } catch (...) {
+    }
+    catch(...)
+    {
         // OSQP setup or solve may throw for degenerate inputs; that is acceptable
     }
 

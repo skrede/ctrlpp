@@ -1,16 +1,14 @@
-// Usage: ./ctrlpp_pid_02_policies | gnuplot -p -e "plot '-' using 1:3 with lines"
+// Usage: ./ctrlpp_pid_02_policies | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:3 with lines"
 // Redirect: ./ctrlpp_pid_02_policies > output.csv
 
-#include "ctrlpp/pid.h"
+#include "ctrlpp/control/pid.h"
 
 #include <iomanip>
 #include <iostream>
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1,
-        ctrlpp::anti_windup<ctrlpp::back_calc>,
-        ctrlpp::deriv_filter>;
+    using Pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::anti_windup<ctrlpp::back_calc>, ctrlpp::deriv_filter>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -31,7 +29,8 @@ int main()
 
     std::cout << "time,setpoint,measurement,control\n";
 
-    for (double t = 0.0; t < duration; t += dt) {
+    for(double t = 0.0; t < duration; t += dt)
+    {
         double disturbance = (t >= 5.0) ? -0.5 : 0.0;
 
         auto sp = Vec::Constant(setpoint);
@@ -39,7 +38,6 @@ int main()
         auto u = ctrl.compute(sp, meas, dt);
         y = a * y + (1.0 - a) * u[0];
 
-        std::cout << std::fixed << std::setprecision(4)
-                  << t << "," << setpoint << "," << y << "," << u[0] << "\n";
+        std::cout << std::fixed << std::setprecision(4) << t << "," << setpoint << "," << y << "," << u[0] << "\n";
     }
 }

@@ -1,7 +1,7 @@
-// Usage: ./ctrlpp_pid_03_cascade | gnuplot -p -e "plot '-' using 1:4 with lines"
+// Usage: ./ctrlpp_pid_03_cascade | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:4 with lines"
 // Redirect: ./ctrlpp_pid_03_cascade > output.csv
 
-#include "ctrlpp/pid.h"
+#include "ctrlpp/control/pid.h"
 
 #include <iomanip>
 #include <iostream>
@@ -43,8 +43,10 @@ int main()
 
     std::cout << "time,pos_sp,position,velocity,vel_sp,torque\n";
 
-    for (double t = 0.0; t < duration; t += dt_inner) {
-        if (counter == 0) {
+    for(double t = 0.0; t < duration; t += dt_inner)
+    {
+        if(counter == 0)
+        {
             auto sp = Vec::Constant(pos_sp);
             auto meas = Vec::Constant(position);
             auto tracking = Vec::Constant(velocity);
@@ -62,8 +64,6 @@ int main()
 
         counter = (counter + 1) % decimation;
 
-        std::cout << std::fixed << std::setprecision(4)
-                  << t << "," << pos_sp << "," << position << ","
-                  << velocity << "," << vel_sp << "," << torque << "\n";
+        std::cout << std::fixed << std::setprecision(4) << t << "," << pos_sp << "," << position << "," << velocity << "," << vel_sp << "," << torque << "\n";
     }
 }

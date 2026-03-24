@@ -9,7 +9,8 @@
 #include <cmath>
 #include <cstddef>
 
-namespace {
+namespace
+{
 
 using Catch::Matchers::WithinAbs;
 
@@ -17,13 +18,12 @@ constexpr std::size_t NX = 2;
 constexpr std::size_t NU = 1;
 constexpr double dt = 0.1;
 
-auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX> {
+auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX>
+{
     Eigen::Matrix2d A;
-    A << 1.0, dt,
-         0.0, 1.0;
+    A << 1.0, dt, 0.0, 1.0;
     Eigen::Vector2d B;
-    B << 0.5 * dt * dt,
-         dt;
+    B << 0.5 * dt * dt, dt;
     Eigen::Matrix2d C = Eigen::Matrix2d::Identity();
     Eigen::Matrix<double, 2, 1> D = Eigen::Matrix<double, 2, 1>::Zero();
     return {A, B, C, D};
@@ -31,13 +31,15 @@ auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX
 
 using OsqpMpc = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>;
 
-}
+} // namespace
 
-TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
+TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
+{
     auto sys = make_double_integrator();
     constexpr int N = 10;
 
-    SECTION("regulation drives state toward origin") {
+    SECTION("regulation drives state toward origin")
+    {
         ctrlpp::mpc_config<double, NX, NU> cfg{
             .horizon = N,
             .Q = Eigen::Matrix2d::Identity(),
@@ -51,13 +53,15 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
 
         // Simulate closed-loop for 50 steps
         int monotonic_after = 5; // allow transient in first few steps
-        for (int step = 0; step < 50; ++step) {
+        for(int step = 0; step < 50; ++step)
+        {
             auto u = controller.solve(x);
             REQUIRE(u.has_value());
             x = sys.A * x + sys.B * u.value();
 
             double norm = x.norm();
-            if (step >= monotonic_after) {
+            if(step >= monotonic_after)
+            {
                 CHECK(norm <= prev_norm + 1e-6);
             }
             prev_norm = norm;
@@ -66,7 +70,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         CHECK(x.norm() < 0.1);
     }
 
-    SECTION("setpoint tracking converges to reference") {
+    SECTION("setpoint tracking converges to reference")
+    {
         ctrlpp::mpc_config<double, NX, NU> cfg{
             .horizon = N,
             .Q = Eigen::Matrix2d::Identity(),
@@ -84,7 +89,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         CHECK(std::abs((*u0)(0)) > 1e-6);
 
         // Simulate closed-loop for 50 steps
-        for (int step = 0; step < 50; ++step) {
+        for(int step = 0; step < 50; ++step)
+        {
             auto u = controller.solve(x, x_ref);
             REQUIRE(u.has_value());
             x = sys.A * x + sys.B * u.value();
@@ -93,7 +99,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         CHECK((x - x_ref).norm() < 0.1);
     }
 
-    SECTION("input bounds are respected") {
+    SECTION("input bounds are respected")
+    {
         ctrlpp::mpc_config<double, NX, NU> cfg{
             .horizon = N,
             .Q = Eigen::Matrix2d::Identity(),
@@ -106,7 +113,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
 
         Eigen::Vector2d x{5.0, 0.0}; // large initial state to push solver hard
 
-        for (int step = 0; step < 20; ++step) {
+        for(int step = 0; step < 20; ++step)
+        {
             auto u = controller.solve(x);
             REQUIRE(u.has_value());
             CHECK((*u)(0) >= -0.5 - 1e-4);
@@ -115,7 +123,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         }
     }
 
-    SECTION("soft state constraints allow feasible solution from outside bounds") {
+    SECTION("soft state constraints allow feasible solution from outside bounds")
+    {
         ctrlpp::mpc_config<double, NX, NU> cfg{
             .horizon = N,
             .Q = Eigen::Matrix2d::Identity(),
@@ -132,7 +141,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         REQUIRE(u.has_value());
     }
 
-    SECTION("hard state constraints make out-of-bounds initial state infeasible") {
+    SECTION("hard state constraints make out-of-bounds initial state infeasible")
+    {
         ctrlpp::mpc_config<double, NX, NU> cfg{
             .horizon = N,
             .Q = Eigen::Matrix2d::Identity(),
@@ -149,7 +159,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         CHECK_FALSE(result.has_value());
     }
 
-    SECTION("warm-starting reduces iterations on second solve") {
+    SECTION("warm-starting reduces iterations on second solve")
+    {
         ctrlpp::mpc_config<double, NX, NU> cfg{
             .horizon = N,
             .Q = Eigen::Matrix2d::Identity(),
@@ -176,7 +187,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         CHECK(iter2 <= iter1);
     }
 
-    SECTION("diagnostics populated after successful solve") {
+    SECTION("diagnostics populated after successful solve")
+    {
         ctrlpp::mpc_config<double, NX, NU> cfg{
             .horizon = N,
             .Q = Eigen::Matrix2d::Identity(),
@@ -195,7 +207,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         CHECK(diag.cost >= 0.0);
     }
 
-    SECTION("trajectory returns consistent states and inputs") {
+    SECTION("trajectory returns consistent states and inputs")
+    {
         ctrlpp::mpc_config<double, NX, NU> cfg{
             .horizon = N,
             .Q = Eigen::Matrix2d::Identity(),
@@ -217,17 +230,16 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         CHECK_THAT(states[0](1), WithinAbs(x0(1), 1e-3));
 
         // States should propagate approximately via dynamics
-        for (int k = 0; k < N; ++k) {
-            Eigen::Vector2d x_next = sys.A * states[static_cast<std::size_t>(k)]
-                + sys.B * inputs[static_cast<std::size_t>(k)];
-            CHECK_THAT(states[static_cast<std::size_t>(k + 1)](0),
-                       WithinAbs(x_next(0), 1e-2));
-            CHECK_THAT(states[static_cast<std::size_t>(k + 1)](1),
-                       WithinAbs(x_next(1), 1e-2));
+        for(int k = 0; k < N; ++k)
+        {
+            Eigen::Vector2d x_next = sys.A * states[static_cast<std::size_t>(k)] + sys.B * inputs[static_cast<std::size_t>(k)];
+            CHECK_THAT(states[static_cast<std::size_t>(k + 1)](0), WithinAbs(x_next(0), 1e-2));
+            CHECK_THAT(states[static_cast<std::size_t>(k + 1)](1), WithinAbs(x_next(1), 1e-2));
         }
     }
 
-    SECTION("rate constraints limit control change between solves") {
+    SECTION("rate constraints limit control change between solves")
+    {
         ctrlpp::mpc_config<double, NX, NU> cfg{
             .horizon = N,
             .Q = Eigen::Matrix2d::Identity(),
@@ -242,7 +254,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         Eigen::Vector2d x{5.0, 0.0};
         double u_prev = 0.0; // initial u_prev_ is zero in mpc
 
-        for (int step = 0; step < 15; ++step) {
+        for(int step = 0; step < 15; ++step)
+        {
             auto u = controller.solve(x);
             REQUIRE(u.has_value());
             double u_cur = (*u)(0);
@@ -254,7 +267,8 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]") {
         }
     }
 
-    SECTION("DARE default Qf solves without explicit Qf") {
+    SECTION("DARE default Qf solves without explicit Qf")
+    {
         ctrlpp::mpc_config<double, NX, NU> cfg{
             .horizon = N,
             .Q = Eigen::Matrix2d::Identity(),

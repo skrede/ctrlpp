@@ -1,4 +1,4 @@
-#include "ctrlpp/dare.h"
+#include "ctrlpp/control/dare.h"
 
 
 #include <catch2/catch_test_macros.hpp>
@@ -7,7 +7,8 @@
 #include <cmath>
 
 
-TEST_CASE("dare scalar integrator golden ratio") {
+TEST_CASE("dare scalar integrator golden ratio")
+{
     // A=1, B=1, Q=1, R=1 => P = (1+sqrt(5))/2 (golden ratio)
     Eigen::Matrix<double, 1, 1> A, B, Q, R;
     A(0, 0) = 1.0;
@@ -22,16 +23,15 @@ TEST_CASE("dare scalar integrator golden ratio") {
     CHECK_THAT((*result)(0, 0), Catch::Matchers::WithinAbs(golden, 1e-10));
 }
 
-TEST_CASE("dare double integrator 2x2") {
+TEST_CASE("dare double integrator 2x2")
+{
     // Double integrator: A=[[1,1],[0,1]], B=[[0.5],[1]], Q=I, R=1
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 1.0, 1.0,
-         0.0, 1.0;
-    B << 0.5,
-         1.0;
+    A << 1.0, 1.0, 0.0, 1.0;
+    B << 0.5, 1.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
@@ -57,22 +57,19 @@ TEST_CASE("dare double integrator 2x2") {
     Eigen::Matrix<double, 1, 2> K = S.inverse() * B.transpose() * P * A;
     Eigen::Matrix<double, 2, 2> Acl = A - B * K;
     Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> solver(Acl, false);
-    for (int i = 0; i < 2; ++i)
+    for(int i = 0; i < 2; ++i)
         CHECK(std::abs(solver.eigenvalues()(i)) < 1.0);
 }
 
-TEST_CASE("dare 3-state system") {
+TEST_CASE("dare 3-state system")
+{
     // 3-state system: A rotational + damping
     Eigen::Matrix<double, 3, 3> A, Q;
     Eigen::Matrix<double, 3, 1> B;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 0.9, 0.1, 0.0,
-         0.0, 0.8, 0.2,
-         0.0, 0.0, 0.7;
-    B << 0.0,
-         0.0,
-         1.0;
+    A << 0.9, 0.1, 0.0, 0.0, 0.8, 0.2, 0.0, 0.0, 0.7;
+    B << 0.0, 0.0, 1.0;
     Q = Eigen::Matrix<double, 3, 3>::Identity();
     R(0, 0) = 1.0;
 
@@ -94,20 +91,19 @@ TEST_CASE("dare 3-state system") {
 
     // Verify positive semi-definite (all eigenvalues >= 0)
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 3, 3>> eigsolver(P);
-    for (int i = 0; i < 3; ++i)
+    for(int i = 0; i < 3; ++i)
         CHECK(eigsolver.eigenvalues()(i) >= -1e-10);
 }
 
-TEST_CASE("dare non-stabilizable returns nullopt") {
+TEST_CASE("dare non-stabilizable returns nullopt")
+{
     // A has unstable mode at eigenvalue 2, B cannot reach it
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 2.0, 0.0,
-         0.0, 0.5;
-    B << 0.0,
-         1.0;
+    A << 2.0, 0.0, 0.0, 0.5;
+    B << 0.0, 1.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
@@ -115,20 +111,18 @@ TEST_CASE("dare non-stabilizable returns nullopt") {
     CHECK_FALSE(result.has_value());
 }
 
-TEST_CASE("dare with N cross-weight") {
+TEST_CASE("dare with N cross-weight")
+{
     // Verify DARE with cross-weight N: solution should match transformed standard DARE
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B, N;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 1.0, 1.0,
-         0.0, 1.0;
-    B << 0.5,
-         1.0;
+    A << 1.0, 1.0, 0.0, 1.0;
+    B << 0.5, 1.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
-    N << 0.1,
-         0.2;
+    N << 0.1, 0.2;
 
     auto result_with_n = ctrlpp::dare<double, 2, 1>(A, B, Q, R, N);
     REQUIRE(result_with_n.has_value());
@@ -144,15 +138,14 @@ TEST_CASE("dare with N cross-weight") {
     CHECK((*result_with_n - *result_standard).norm() < 1e-10);
 }
 
-TEST_CASE("dare solution is symmetric") {
+TEST_CASE("dare solution is symmetric")
+{
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 0.9, 0.1,
-         0.0, 0.8;
-    B << 1.0,
-         0.0;
+    A << 0.9, 0.1, 0.0, 0.8;
+    B << 1.0, 0.0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
