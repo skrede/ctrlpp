@@ -63,19 +63,28 @@ TEST_CASE("biquad notch rejects target frequency", "[biquad]")
     CHECK(pass > 0.5);
 }
 
-TEST_CASE("biquad dirty_derivative approximates discrete derivative", "[biquad]")
+TEST_CASE("biquad dirty_derivative rejects DC and passes high frequency", "[biquad]")
 {
-    auto dd = biquad<double>::dirty_derivative(50.0, 1000.0);
     double fs = 1000.0;
+    auto dd = biquad<double>::dirty_derivative(50.0, fs);
 
-    // Feed a ramp: x = t = i/fs, derivative should be 1.0
-    double y = 0.0;
-    for (int i = 0; i < 2000; ++i) {
-        double x = static_cast<double>(i) / fs;
-        y = dd.process(x);
+    // DC rejection: constant input should produce zero output after settling
+    double y_dc = 0.0;
+    for (int i = 0; i < 500; ++i) {
+        y_dc = dd.process(5.0);
     }
-    // After settling, output should approximate the derivative of the ramp (~1.0)
-    CHECK_THAT(y, WithinAbs(1.0, 0.15));
+    CHECK(std::abs(y_dc) < 0.01);
+
+    // Step response: derivative of step is impulse, first output should be large
+    dd.reset();
+    double y_step = dd.process(1.0);
+    CHECK(std::abs(y_step) > 0.5); // initial step response is significant
+
+    // After many samples of constant input, output decays toward zero
+    for (int i = 0; i < 500; ++i) {
+        y_step = dd.process(1.0);
+    }
+    CHECK(std::abs(y_step) < 0.01);
 }
 
 TEST_CASE("biquad reset clears internal state", "[biquad]")

@@ -22,7 +22,8 @@ auto quat_angle(const Eigen::Quaterniond& q1, const Eigen::Quaterniond& q2) -> d
 
 TEST_CASE("so3 exp of zero vector returns identity quaternion", "[so3]")
 {
-    auto q = so3::exp(Vector<double, 3>::Zero());
+    Vector<double, 3> zero = Vector<double, 3>::Zero();
+    auto q = so3::exp(zero);
     CHECK_THAT(q.w(), WithinAbs(1.0, 1e-15));
     CHECK(q.vec().norm() < 1e-15);
 }
@@ -69,7 +70,7 @@ TEST_CASE("so3 compose is quaternion multiplication", "[so3]")
     auto q2 = so3::exp(phi2);
 
     auto composed = so3::compose(q1, q2);
-    auto direct = (q1 * q2).eval();
+    Eigen::Quaterniond direct = q1 * q2;
 
     // Verify via rotation matrices
     auto R_composed = composed.toRotationMatrix();
