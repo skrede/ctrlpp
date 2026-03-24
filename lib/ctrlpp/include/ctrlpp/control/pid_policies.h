@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_PID_POLICIES_H
 #define HPP_GUARD_CTRLPP_CONTROL_PID_POLICIES_H
 
-#include "ctrlpp/discretise.h"
+#include "ctrlpp/model/discretise.h"
 
 #include <array>
 #include <cstddef>

@@ -23,14 +23,14 @@
 #include "ctrlpp/mhe/mhe_diagnostics.h"
 #include "ctrlpp/mhe/mhe_nlp_formulation.h"
 
-#include "ctrlpp/ekf.h"
+#include "ctrlpp/estimation/ekf.h"
 #include "ctrlpp/types.h"
-#include "ctrlpp/observer_policy.h"
+#include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/nlp_solver.h"
-#include "ctrlpp/mpc/dynamics_model.h"
-#include "ctrlpp/mpc/measurement_model.h"
+#include "ctrlpp/model/dynamics_model.h"
+#include "ctrlpp/model/measurement_model.h"
 
 #include <Eigen/Dense>
 

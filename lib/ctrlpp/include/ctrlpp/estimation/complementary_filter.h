@@ -10,9 +10,9 @@
 // Reference: Mahony, Hamel, Pflimlin, "Nonlinear Complementary Filters on the
 //            Special Orthogonal Group", IEEE TAC, 2008.
 
-#include "ctrlpp/so3.h"
+#include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
-#include "ctrlpp/observer_policy.h"
+#include "ctrlpp/estimation/observer_policy.h"
 
 #include <Eigen/Geometry>
 

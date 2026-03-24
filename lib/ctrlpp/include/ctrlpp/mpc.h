@@ -1,9 +1,9 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_H
 #define HPP_GUARD_CTRLPP_MPC_H
 
-#include "ctrlpp/dare.h"
+#include "ctrlpp/control/dare.h"
 #include "ctrlpp/types.h"
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/state_space.h"
 
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/qp_solver.h"

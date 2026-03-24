@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_LQR_H
 #define HPP_GUARD_CTRLPP_CONTROL_LQR_H
 
-#include "ctrlpp/dare.h"
+#include "ctrlpp/control/dare.h"
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>

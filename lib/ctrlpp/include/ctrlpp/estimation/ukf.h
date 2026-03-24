@@ -2,13 +2,13 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_UKF_H
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/observer_policy.h"
+#include "ctrlpp/estimation/observer_policy.h"
 
-#include "ctrlpp/mpc/dynamics_model.h"
-#include "ctrlpp/mpc/measurement_model.h"
+#include "ctrlpp/model/dynamics_model.h"
+#include "ctrlpp/model/measurement_model.h"
 
-#include "ctrlpp/sigma_points/merwe_sigma_points.h"
-#include "ctrlpp/sigma_points/sigma_point_strategy.h"
+#include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
+#include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
 
 #include <Eigen/Cholesky>
 

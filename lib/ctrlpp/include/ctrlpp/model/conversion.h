@@ -1,8 +1,8 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_CONVERSION_H
 #define HPP_GUARD_CTRLPP_MODEL_CONVERSION_H
 
-#include "ctrlpp/state_space.h"
-#include "ctrlpp/transfer_function.h"
+#include "ctrlpp/model/state_space.h"
+#include "ctrlpp/model/transfer_function.h"
 
 #include <array>
 #include <cstddef>

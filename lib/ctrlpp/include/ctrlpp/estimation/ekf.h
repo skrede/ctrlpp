@@ -2,14 +2,14 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_EKF_H
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/observer_policy.h"
+#include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/detail/numerical_diff.h"
 
-#include "ctrlpp/mpc/dynamics_model.h"
-#include "ctrlpp/mpc/measurement_model.h"
-#include "ctrlpp/mpc/differentiable_dynamics.h"
-#include "ctrlpp/mpc/differentiable_measurement.h"
+#include "ctrlpp/model/dynamics_model.h"
+#include "ctrlpp/model/measurement_model.h"
+#include "ctrlpp/model/differentiable_dynamics.h"
+#include "ctrlpp/model/differentiable_measurement.h"
 
 #include <cmath>
 #include <limits>

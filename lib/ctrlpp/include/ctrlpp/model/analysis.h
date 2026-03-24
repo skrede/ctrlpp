@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_ANALYSIS_H
 #define HPP_GUARD_CTRLPP_MODEL_ANALYSIS_H
 
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/state_space.h"
 
 #include <Eigen/Eigenvalues>
 

@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_PROPAGATE_H
 #define HPP_GUARD_CTRLPP_MODEL_PROPAGATE_H
 
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/state_space.h"
 
 namespace ctrlpp {
 

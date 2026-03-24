@@ -11,9 +11,9 @@
 //   - Markley, "Attitude Error Representations for Kalman Filtering" (2003)
 //   - Sola, "Quaternion kinematics for the error-state Kalman filter" (2017)
 
-#include "ctrlpp/so3.h"
+#include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
-#include "ctrlpp/observer_policy.h"
+#include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/detail/numerical_mekf_diff.h"
 

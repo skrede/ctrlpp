@@ -3,7 +3,7 @@
 
 #include "ctrlpp/types.h"
 
-#include "ctrlpp/sigma_points/sigma_point_strategy.h"
+#include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
 
 #include <Eigen/Cholesky>
 

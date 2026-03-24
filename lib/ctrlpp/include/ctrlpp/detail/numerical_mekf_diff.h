@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_DETAIL_NUMERICAL_MEKF_DIFF_H
 #define HPP_GUARD_CTRLPP_DETAIL_NUMERICAL_MEKF_DIFF_H
 
-#include "ctrlpp/so3.h"
+#include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
 
 #include <Eigen/Geometry>

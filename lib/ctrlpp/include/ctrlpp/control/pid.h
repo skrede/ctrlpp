@@ -2,8 +2,8 @@
 #define HPP_GUARD_CTRLPP_CONTROL_PID_H
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/pid_config.h"
-#include "ctrlpp/pid_policies.h"
+#include "ctrlpp/control/pid_config.h"
+#include "ctrlpp/control/pid_policies.h"
 
 #include <cmath>
 #include <limits>

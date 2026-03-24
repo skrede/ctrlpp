@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_CONTROL_PID_CONFIG_H
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/pid_policies.h"
+#include "ctrlpp/control/pid_policies.h"
 
 #include <tuple>
 #include <limits>

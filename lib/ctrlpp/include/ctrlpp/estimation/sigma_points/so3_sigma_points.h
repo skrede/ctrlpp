@@ -1,11 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_SO3_SIGMA_POINTS_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_SO3_SIGMA_POINTS_H
 
-#include "ctrlpp/so3.h"
+#include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
 
-#include "ctrlpp/sigma_points/merwe_sigma_points.h"
-#include "ctrlpp/sigma_points/sigma_point_strategy.h"
+#include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
+#include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
 
 #include <Eigen/Geometry>
 

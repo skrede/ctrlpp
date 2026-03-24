@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_DIFFERENTIABLE_MEASUREMENT_H
 #define HPP_GUARD_CTRLPP_MODEL_DIFFERENTIABLE_MEASUREMENT_H
 
-#include "ctrlpp/mpc/measurement_model.h"
+#include "ctrlpp/model/measurement_model.h"
 
 #include <cstddef>
 

@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_SYSID_N4SID_H
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/state_space.h"
 
 #include "ctrlpp/sysid/fit_metrics.h"
 #include "ctrlpp/sysid/sysid_result.h"

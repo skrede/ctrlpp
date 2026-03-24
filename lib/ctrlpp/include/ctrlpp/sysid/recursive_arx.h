@@ -2,7 +2,7 @@
 #define HPP_GUARD_CTRLPP_SYSID_RECURSIVE_ARX_H
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/state_space.h"
 
 #include "ctrlpp/sysid/rls.h"
 

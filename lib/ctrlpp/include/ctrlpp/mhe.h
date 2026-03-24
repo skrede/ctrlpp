@@ -16,9 +16,9 @@
 ///   - C.V. Rao, J.B. Rawlings, J.H. Lee, "Constrained linear state estimation,"
 ///     Int. J. Robust Nonlinear Control, 13(10), 2003.
 
-#include "ctrlpp/ekf.h"
+#include "ctrlpp/estimation/ekf.h"
 #include "ctrlpp/types.h"
-#include "ctrlpp/observer_policy.h"
+#include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/mhe/mhe_config.h"
 #include "ctrlpp/mhe/mhe_diagnostics.h"
@@ -28,10 +28,10 @@
 
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/qp_solver.h"
-#include "ctrlpp/mpc/dynamics_model.h"
-#include "ctrlpp/mpc/measurement_model.h"
-#include "ctrlpp/mpc/differentiable_dynamics.h"
-#include "ctrlpp/mpc/differentiable_measurement.h"
+#include "ctrlpp/model/dynamics_model.h"
+#include "ctrlpp/model/measurement_model.h"
+#include "ctrlpp/model/differentiable_dynamics.h"
+#include "ctrlpp/model/differentiable_measurement.h"
 
 #include <Eigen/Dense>
 

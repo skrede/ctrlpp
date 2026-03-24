@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_SYSID_SYSID_RESULT_H
 #define HPP_GUARD_CTRLPP_SYSID_SYSID_RESULT_H
 
-#include "ctrlpp/state_space.h"
+#include "ctrlpp/model/state_space.h"
 
 #include "ctrlpp/sysid/fit_metrics.h"
 

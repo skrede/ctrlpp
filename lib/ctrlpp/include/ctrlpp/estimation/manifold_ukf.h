@@ -1,10 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_MANIFOLD_UKF_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_MANIFOLD_UKF_H
 
-#include "ctrlpp/so3.h"
+#include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
-#include "ctrlpp/observer_policy.h"
-#include "ctrlpp/sigma_points/so3_sigma_points.h"
+#include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
 
 #include <Eigen/Geometry>
 

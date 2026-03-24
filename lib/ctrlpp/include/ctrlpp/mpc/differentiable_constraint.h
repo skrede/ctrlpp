@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_DIFFERENTIABLE_CONSTRAINT_H
 #define HPP_GUARD_CTRLPP_MPC_DIFFERENTIABLE_CONSTRAINT_H
 
-#include "ctrlpp/mpc/constraint_model.h"
+#include "ctrlpp/model/constraint_model.h"
 
 #include <cstddef>
 

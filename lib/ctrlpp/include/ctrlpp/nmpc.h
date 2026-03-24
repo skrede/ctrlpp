@@ -6,7 +6,7 @@
 #include "ctrlpp/mpc/nlp_solver.h"
 #include "ctrlpp/mpc/nmpc_config.h"
 #include "ctrlpp/mpc/diagnostics.h"
-#include "ctrlpp/mpc/dynamics_model.h"
+#include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/mpc/nlp_formulation.h"
 
 #include <Eigen/Dense>

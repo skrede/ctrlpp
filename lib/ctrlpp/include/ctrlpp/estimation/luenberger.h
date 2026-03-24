@@ -2,8 +2,8 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_LUENBERGER_H
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/state_space.h"
-#include "ctrlpp/observer_policy.h"
+#include "ctrlpp/model/state_space.h"
+#include "ctrlpp/estimation/observer_policy.h"
 
 #include <cstddef>
 #include <utility>

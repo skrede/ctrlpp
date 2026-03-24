@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_DIFFERENTIABLE_DYNAMICS_H
 #define HPP_GUARD_CTRLPP_MODEL_DIFFERENTIABLE_DYNAMICS_H
 
-#include "ctrlpp/mpc/dynamics_model.h"
+#include "ctrlpp/model/dynamics_model.h"
 
 #include <cstddef>
 

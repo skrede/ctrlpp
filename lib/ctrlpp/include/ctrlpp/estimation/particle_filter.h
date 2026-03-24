@@ -2,13 +2,13 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_PARTICLE_FILTER_H
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/observer_policy.h"
+#include "ctrlpp/estimation/observer_policy.h"
 
-#include "ctrlpp/mpc/dynamics_model.h"
-#include "ctrlpp/mpc/measurement_model.h"
+#include "ctrlpp/model/dynamics_model.h"
+#include "ctrlpp/model/measurement_model.h"
 
-#include "ctrlpp/resampling/resampling_strategy.h"
-#include "ctrlpp/resampling/systematic_resampling.h"
+#include "ctrlpp/estimation/resampling/resampling_strategy.h"
+#include "ctrlpp/estimation/resampling/systematic_resampling.h"
 
 #include <Eigen/Dense>
 
