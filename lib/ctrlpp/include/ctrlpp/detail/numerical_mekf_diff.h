@@ -30,8 +30,10 @@ auto numerical_mekf_jacobian(const H& h, const Eigen::Quaternion<Scalar>& q, con
         Vector<Scalar, 3> e_i = Vector<Scalar, 3>::Zero();
         e_i(static_cast<Eigen::Index>(i)) = Scalar{1};
 
-        auto q_plus = (q * so3::exp(eps * e_i)).normalized();
-        auto q_minus = (q * so3::exp(-eps * e_i)).normalized();
+        Vector<Scalar, 3> pe = (eps * e_i).eval();
+        Vector<Scalar, 3> me = (-eps * e_i).eval();
+        auto q_plus = (q * so3::exp(pe)).normalized();
+        auto q_minus = (q * so3::exp(me)).normalized();
 
         jac.col(static_cast<Eigen::Index>(i)) = (h(q_plus, b) - h(q_minus, b)) * inv_2eps;
     }

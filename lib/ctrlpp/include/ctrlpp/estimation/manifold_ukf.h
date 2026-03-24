@@ -97,9 +97,9 @@ public:
         , m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_max_iter{config.geodesic_mean_max_iter}
+        , m_q{config.q0.normalized()}
         , m_state_cache{so3::to_vec(m_q)}
         , m_innovation{output_vector_t::Zero()}
-        , m_q{config.q0.normalized()}
     {
     }
 
@@ -110,7 +110,7 @@ public:
         std::array<Eigen::Quaternion<Scalar>, num_sigma> q_prop;
         for(std::size_t i = 0; i < num_sigma; ++i)
         {
-            q_prop[i] = dynamics_(sigma.points[i], omega);
+            q_prop[i] = m_dynamics(sigma.points[i], omega);
             q_prop[i].normalize();
         }
 
@@ -143,7 +143,7 @@ public:
 
         std::array<output_vector_t, num_sigma> z_sigma;
         for(std::size_t i = 0; i < num_sigma; ++i)
-            z_sigma[i] = measurement_(sigma.points[i]);
+            z_sigma[i] = m_measurement(sigma.points[i]);
 
         output_vector_t z_pred = output_vector_t::Zero();
         for(std::size_t i = 0; i < num_sigma; ++i)
@@ -203,9 +203,9 @@ private:
     Dynamics m_dynamics;
     Measurement m_measurement;
     std::size_t m_max_iter;
+    Eigen::Quaternion<Scalar> m_q;
     state_vector_t m_state_cache;
     output_vector_t m_innovation;
-    Eigen::Quaternion<Scalar> m_q;
 
     void update_state_cache() { m_state_cache = so3::to_vec(m_q); }
 };
