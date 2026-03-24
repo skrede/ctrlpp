@@ -113,7 +113,8 @@ public:
         Vector<Scalar, NE> delta_xi = K * innovation_;
 
         // Multiplicative quaternion injection
-        q_ = (q_ * so3::exp(delta_xi.template head<3>())).normalized();
+        Vector<Scalar, 3> delta_att = delta_xi.template head<3>().eval();
+        q_ = (q_ * so3::exp(delta_att)).normalized();
         b_ += delta_xi.template tail<NB>();
 
         // Joseph-form covariance update
@@ -122,7 +123,7 @@ public:
 
         // Mandatory covariance reset via frame-change Jacobian G
         cov_matrix_t G = cov_matrix_t::Identity();
-        G.template block<3, 3>(0, 0) -= Scalar{0.5} * so3::skew(delta_xi.template head<3>());
+        G.template block<3, 3>(0, 0) -= Scalar{0.5} * so3::skew(delta_att);
         P_ = (G * P_ * G.transpose()).eval();
 
         // Symmetrize
@@ -144,10 +145,11 @@ private:
         Vector<Scalar, 3> omega_corr = omega - b_.template head<3>();
 
         // Nominal quaternion propagation
-        q_ = (q_ * so3::exp(omega_corr * dt)).normalized();
+        Vector<Scalar, 3> omega_dt = (omega_corr * dt).eval();
+        q_ = (q_ * so3::exp(omega_dt)).normalized();
 
         // Rotation matrix from corrected angular increment
-        Eigen::Matrix<Scalar, 3, 3> C = so3::exp(omega_corr * dt).toRotationMatrix();
+        Eigen::Matrix<Scalar, 3, 3> C = so3::exp(omega_dt).toRotationMatrix();
 
         // Error-state transition matrix F (NE x NE)
         cov_matrix_t F = cov_matrix_t::Identity();
