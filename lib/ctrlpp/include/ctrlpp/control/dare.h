@@ -7,6 +7,8 @@
 
 #include "ctrlpp/types.h"
 
+#include "ctrlpp/detail/covariance_ops.h"
+
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
 
@@ -184,7 +186,7 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<
     MatNxN P = Pc.real();
 
     // Symmetrize
-    P = (Scalar{0.5} * (P + P.transpose())).eval();
+    P = detail::symmetrize(P);
 
     // Validate positive semi-definite
     Eigen::SelfAdjointEigenSolver<MatNxN> eigsolver(P, Eigen::EigenvaluesOnly);

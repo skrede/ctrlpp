@@ -1,3 +1,5 @@
+// Usage: ./ctrlpp_ukf_01_pendulum | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'true theta', '' using 1:3 with lines title 'estimated theta'"
+// Redirect: ./ctrlpp_ukf_01_pendulum > output.csv
 /// @file ctrlpp_ukf_01_pendulum.cpp
 /// @brief Demonstrates UKF tracking a damped pendulum with noisy angle-only measurements.
 ///
@@ -92,7 +94,7 @@ int main()
     lcg_noise noise_gen{42};
 
     // CSV header
-    std::cout << "step,true_theta,true_omega,est_theta,est_omega,P00,P11\n";
+    std::cout << "# time,true_theta,est_theta,true_omega,est_omega,P00,P11\n";
 
     for(std::size_t k = 0; k < n_steps; ++k)
     {
@@ -119,7 +121,7 @@ int main()
         auto est = filter.state();
         auto P = filter.covariance();
 
-        std::cout << k << ',' << x_true(0) << ',' << x_true(1) << ',' << est(0) << ',' << est(1) << ',' << P(0, 0) << ',' << P(1, 1) << '\n';
+        std::cout << static_cast<double>(k) * dt << ',' << x_true(0) << ',' << est(0) << ',' << x_true(1) << ',' << est(1) << ',' << P(0, 0) << ',' << P(1, 1) << '\n';
     }
 
     // Final estimation error

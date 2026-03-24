@@ -6,14 +6,12 @@
 /// Two-track state: 7D nominal (quaternion + bias) with 6D tangent-space
 /// error-state covariance. The mandatory post-update covariance reset via
 /// frame-change Jacobian G is the key correctness concern.
-///
-/// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
-/// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
 #include "ctrlpp/estimation/observer_policy.h"
 
+#include "ctrlpp/detail/covariance_ops.h"
 #include "ctrlpp/detail/numerical_mekf_diff.h"
 
 #include <Eigen/Geometry>
@@ -87,48 +85,15 @@ public:
 
     void update(const output_vector_t& z)
     {
-        // Predicted measurement
         auto z_pred = measurement_(q_, b_);
         innovation_ = (z - z_pred).eval();
 
-        // Measurement Jacobian H (NY x NE)
-        Matrix<Scalar, NY, NE> H;
-        if constexpr(differentiable_mekf_measurement<Measurement, Scalar, NB, NY>)
-        {
-            H = measurement_.jacobian(q_, b_);
-        }
-        else
-        {
-            H = detail::numerical_mekf_jacobian<Scalar, NB, NY>(measurement_, q_, b_, eps_);
-        }
+        auto H = compute_measurement_jacobian();
+        auto S = compute_innovation_covariance(H);
+        auto K = compute_kalman_gain(H, S);
 
-        // Innovation covariance
-        meas_cov_t S = (H * P_ * H.transpose() + R_).eval();
-
-        // Kalman gain via transpose-solve
-        Eigen::Matrix<Scalar, ny, ne> KT = S.transpose().colPivHouseholderQr().solve(H * P_);
-        Eigen::Matrix<Scalar, ne, ny> K = KT.transpose().eval();
-
-        // Error-state correction
-        Vector<Scalar, NE> delta_xi = K * innovation_;
-
-        // Multiplicative quaternion injection
-        Vector<Scalar, 3> delta_att = delta_xi.template head<3>().eval();
-        q_ = (q_ * so3::exp(delta_att)).normalized();
-        b_ += delta_xi.template tail<NB>();
-
-        // Joseph-form covariance update
-        cov_matrix_t IKH = cov_matrix_t::Identity() - K * H;
-        P_ = (IKH * P_ * IKH.transpose() + K * R_ * K.transpose()).eval();
-
-        // Mandatory covariance reset via frame-change Jacobian G
-        cov_matrix_t G = cov_matrix_t::Identity();
-        G.template block<3, 3>(0, 0) -= Scalar{0.5} * so3::skew(delta_att);
-        P_ = (G * P_ * G.transpose()).eval();
-
-        // Symmetrize
-        P_ = (Scalar{0.5} * (P_ + P_.transpose())).eval();
-
+        auto delta_xi = apply_multiplicative_correction(K);
+        update_covariance(K, H, delta_xi);
         update_state_cache();
     }
 
@@ -139,28 +104,77 @@ public:
     [[nodiscard]] auto bias() const -> const Vector<Scalar, NB>& { return b_; }
 
 private:
+    /// @brief Propagate nominal quaternion and error-state covariance.
+    ///
+    /// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
+    /// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
     void predict_impl(const input_vector_t& omega, Scalar dt)
     {
-        // Corrected angular velocity (remove estimated bias)
         Vector<Scalar, 3> omega_corr = omega - b_.template head<3>();
-
-        // Nominal quaternion propagation
         Vector<Scalar, 3> omega_dt = (omega_corr * dt).eval();
         q_ = (q_ * so3::exp(omega_dt)).normalized();
 
-        // Rotation matrix from corrected angular increment
         Eigen::Matrix<Scalar, 3, 3> C = so3::exp(omega_dt).toRotationMatrix();
 
-        // Error-state transition matrix F (NE x NE)
         cov_matrix_t F = cov_matrix_t::Identity();
         F.template block<3, 3>(0, 0) = C;
         F.template block<3, nb>(0, 3) = -Eigen::Matrix<Scalar, 3, nb>::Identity() * dt;
 
-        // Propagate covariance
-        P_ = (F * P_ * F.transpose() + Q_).eval();
-        P_ = (Scalar{0.5} * (P_ + P_.transpose())).eval();
-
+        P_ = detail::symmetrize((F * P_ * F.transpose() + Q_).eval());
         update_state_cache();
+    }
+
+    /// @brief Compute measurement Jacobian H (analytical or numerical).
+    ///
+    /// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003, Eq. 34
+    [[nodiscard]] auto compute_measurement_jacobian() const -> Matrix<Scalar, NY, NE>
+    {
+        if constexpr(differentiable_mekf_measurement<Measurement, Scalar, NB, NY>)
+            return measurement_.jacobian(q_, b_);
+        else
+            return detail::numerical_mekf_jacobian<Scalar, NB, NY>(measurement_, q_, b_, eps_);
+    }
+
+    /// @brief Compute innovation covariance: S = H*P*H^T + R.
+    [[nodiscard]] auto compute_innovation_covariance(const Matrix<Scalar, NY, NE>& H) const -> meas_cov_t
+    {
+        return (H * P_ * H.transpose() + R_).eval();
+    }
+
+    /// @brief Compute Kalman gain via transpose-solve.
+    ///
+    /// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
+    [[nodiscard]] auto compute_kalman_gain(const Matrix<Scalar, NY, NE>& H, const meas_cov_t& S) const -> Eigen::Matrix<Scalar, ne, ny>
+    {
+        Eigen::Matrix<Scalar, ny, ne> KT = S.transpose().colPivHouseholderQr().solve(H * P_);
+        return KT.transpose().eval();
+    }
+
+    /// @brief Apply multiplicative quaternion correction and bias update.
+    ///
+    /// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003, Eq. 46
+    auto apply_multiplicative_correction(const Eigen::Matrix<Scalar, ne, ny>& K) -> Vector<Scalar, NE>
+    {
+        Vector<Scalar, NE> delta_xi = K * innovation_;
+        Vector<Scalar, 3> delta_att = delta_xi.template head<3>().eval();
+        q_ = (q_ * so3::exp(delta_att)).normalized();
+        b_ += delta_xi.template tail<NB>();
+        return delta_xi;
+    }
+
+    /// @brief Joseph-form covariance update with mandatory frame-change reset.
+    ///
+    /// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003, Eq. 68
+    void update_covariance(const Eigen::Matrix<Scalar, ne, ny>& K, const Matrix<Scalar, NY, NE>& H, const Vector<Scalar, NE>& delta_xi)
+    {
+        cov_matrix_t IKH = cov_matrix_t::Identity() - K * H;
+        P_ = (IKH * P_ * IKH.transpose() + K * R_ * K.transpose()).eval();
+
+        // Mandatory covariance reset via frame-change Jacobian G
+        Vector<Scalar, 3> delta_att = delta_xi.template head<3>();
+        cov_matrix_t G = cov_matrix_t::Identity();
+        G.template block<3, 3>(0, 0) -= Scalar{0.5} * so3::skew(delta_att);
+        P_ = detail::symmetrize((G * P_ * G.transpose()).eval());
     }
 
     void update_state_cache()
@@ -199,11 +213,11 @@ struct mekf_sa_measurement
     auto operator()(const Eigen::Quaternion<double>&, const Vector<double, 3>&) const -> Vector<double, 3> { return Vector<double, 3>::Zero(); }
 };
 
-} // namespace detail
+}
 
 static_assert(ObserverPolicy<mekf<double, 3, 3, detail::mekf_sa_measurement>>);
 static_assert(CovarianceObserver<mekf<double, 3, 3, detail::mekf_sa_measurement>>);
 
-} // namespace ctrlpp
+}
 
 #endif

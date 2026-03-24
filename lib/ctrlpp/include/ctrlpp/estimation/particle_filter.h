@@ -2,9 +2,6 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_PARTICLE_FILTER_H
 
 /// @brief Bootstrap SIR particle filter with ESS-adaptive resampling and roughening.
-///
-/// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993
-/// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/estimation/observer_policy.h"
@@ -102,15 +99,17 @@ public:
         initialize_particles(config.x0, config.P0);
     }
 
+    /// @brief Propagate all particles through dynamics with process noise.
+    ///
+    /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Eq. 6
     void predict(const input_vector_t& u)
     {
-        for(std::size_t i = 0; i < NP; ++i)
-        {
-            m_particles[i] = m_dynamics(m_particles[i], u);
-            m_particles[i] += sample_process_noise();
-        }
+        propagate_particles(u);
     }
 
+    /// @brief Update particle weights with measurement and resample if ESS is low.
+    ///
+    /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Alg. 1
     void update(const output_vector_t& z)
     {
         if(m_weight_mode == weight_representation::log)
@@ -133,16 +132,12 @@ public:
         {
             auto lin = log_to_linear();
             for(std::size_t i = 0; i < NP; ++i)
-            {
                 mean += lin[i] * m_particles[i];
-            }
         }
         else
         {
             for(std::size_t i = 0; i < NP; ++i)
-            {
                 mean += m_linear_weights[i] * m_particles[i];
-            }
         }
         return mean;
     }
@@ -155,9 +150,7 @@ public:
             for(std::size_t i = 1; i < NP; ++i)
             {
                 if(m_log_weights[i] > m_log_weights[best])
-                {
                     best = i;
-                }
             }
         }
         else
@@ -165,9 +158,7 @@ public:
             for(std::size_t i = 1; i < NP; ++i)
             {
                 if(m_linear_weights[i] > m_linear_weights[best])
-                {
                     best = i;
-                }
             }
         }
         return m_particles[best];
@@ -205,11 +196,9 @@ private:
 
     void initialize_particles(const state_vector_t& x0, const Matrix<Scalar, NX, NX>& P0)
     {
-        // LLT decomposition of P0 for sampling
         Eigen::LLT<Eigen::Matrix<Scalar, nx, nx>> llt_P0(P0);
         Eigen::Matrix<Scalar, nx, nx> sqrt_P0 = llt_P0.matrixL();
 
-        // LLT decomposition of Q for process noise
         Eigen::LLT<Eigen::Matrix<Scalar, nx, nx>> llt_Q(m_Q);
         m_Q_L = llt_Q.matrixL();
 
@@ -223,7 +212,6 @@ private:
             m_particles[i] = x0 + sqrt_P0 * noise;
         }
 
-        // Uniform weights
         Scalar log_uniform = -std::log(static_cast<Scalar>(NP));
         Scalar lin_uniform = Scalar{1} / static_cast<Scalar>(NP);
         m_log_weights.fill(log_uniform);
@@ -239,6 +227,21 @@ private:
         return m_Q_L * noise;
     }
 
+    /// @brief Propagate all particles through dynamics model with additive process noise.
+    ///
+    /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Eq. 6
+    void propagate_particles(const input_vector_t& u)
+    {
+        for(std::size_t i = 0; i < NP; ++i)
+        {
+            m_particles[i] = m_dynamics(m_particles[i], u);
+            m_particles[i] += sample_process_noise();
+        }
+    }
+
+    /// @brief Compute Gaussian log-likelihood of innovation.
+    ///
+    /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Eq. 63
     Scalar log_likelihood(const output_vector_t& z, const output_vector_t& z_pred) const
     {
         output_vector_t innov = z - z_pred;
@@ -246,16 +249,21 @@ private:
         return Scalar{-0.5} * mahal - Scalar{0.5} * m_log_det_2piR;
     }
 
-    void update_log(const output_vector_t& z)
+    /// @brief Compute log-weights for all particles given measurement.
+    void compute_log_weights(const output_vector_t& z)
     {
-        // Update log weights
         for(std::size_t i = 0; i < NP; ++i)
         {
             output_vector_t z_pred = m_measurement(m_particles[i]);
             m_log_weights[i] += log_likelihood(z, z_pred);
         }
+    }
 
-        // Log-sum-exp normalization
+    /// @brief Normalize log-weights via log-sum-exp trick.
+    ///
+    /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Sec. III-A
+    void normalize_log_weights()
+    {
         Scalar max_log_w = *std::max_element(m_log_weights.begin(), m_log_weights.end());
         Scalar sum_exp = Scalar{0};
         for(std::size_t i = 0; i < NP; ++i)
@@ -263,34 +271,10 @@ private:
         Scalar log_sum = max_log_w + std::log(sum_exp);
         for(auto& lw : m_log_weights)
             lw -= log_sum;
-
-        // Compute ESS
-        Scalar sum_w2 = Scalar{0};
-        for(std::size_t i = 0; i < NP; ++i)
-        {
-            Scalar w = std::exp(m_log_weights[i]);
-            sum_w2 += w * w;
-        }
-        Scalar ess = Scalar{1} / sum_w2;
-
-        if(ess < m_ess_threshold)
-        {
-            // Convert to linear for resampling
-            auto lin = log_to_linear();
-
-            std::array<std::size_t, NP> indices{};
-            m_resampler.resample(lin, indices, m_rng);
-
-            reindex_particles(indices);
-            apply_roughening();
-
-            // Reset to uniform
-            Scalar log_uniform = -std::log(static_cast<Scalar>(NP));
-            m_log_weights.fill(log_uniform);
-        }
     }
 
-    void update_linear(const output_vector_t& z)
+    /// @brief Compute linear weights for all particles given measurement.
+    void compute_linear_weights(const output_vector_t& z)
     {
         for(std::size_t i = 0; i < NP; ++i)
         {
@@ -298,32 +282,83 @@ private:
             Scalar ll = log_likelihood(z, z_pred);
             m_linear_weights[i] *= std::exp(ll);
         }
+    }
 
-        // Normalize
+    /// @brief Normalize linear weights.
+    void normalize_linear_weights()
+    {
         Scalar sum = Scalar{0};
         for(auto w : m_linear_weights)
             sum += w;
         if(sum > Scalar{0})
             for(auto& w : m_linear_weights)
                 w /= sum;
+    }
 
-        // Compute ESS
+    /// @brief Compute Effective Sample Size from current weights.
+    ///
+    /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Eq. 51
+    Scalar compute_ess_from_log() const
+    {
+        Scalar sum_w2 = Scalar{0};
+        for(std::size_t i = 0; i < NP; ++i)
+        {
+            Scalar w = std::exp(m_log_weights[i]);
+            sum_w2 += w * w;
+        }
+        return Scalar{1} / sum_w2;
+    }
+
+    /// @brief Compute Effective Sample Size from linear weights.
+    Scalar compute_ess_from_linear() const
+    {
         Scalar sum_w2 = Scalar{0};
         for(auto w : m_linear_weights)
             sum_w2 += w * w;
-        Scalar ess = Scalar{1} / sum_w2;
+        return Scalar{1} / sum_w2;
+    }
 
-        if(ess < m_ess_threshold)
-        {
-            std::array<std::size_t, NP> indices{};
-            m_resampler.resample(m_linear_weights, indices, m_rng);
+    /// @brief Resample particles and reset to uniform weights (log mode).
+    void resample_log()
+    {
+        auto lin = log_to_linear();
+        std::array<std::size_t, NP> indices{};
+        m_resampler.resample(lin, indices, m_rng);
+        reindex_particles(indices);
+        apply_roughening();
 
-            reindex_particles(indices);
-            apply_roughening();
+        Scalar log_uniform = -std::log(static_cast<Scalar>(NP));
+        m_log_weights.fill(log_uniform);
+    }
 
-            Scalar uniform = Scalar{1} / static_cast<Scalar>(NP);
-            m_linear_weights.fill(uniform);
-        }
+    /// @brief Resample particles and reset to uniform weights (linear mode).
+    void resample_linear()
+    {
+        std::array<std::size_t, NP> indices{};
+        m_resampler.resample(m_linear_weights, indices, m_rng);
+        reindex_particles(indices);
+        apply_roughening();
+
+        Scalar uniform = Scalar{1} / static_cast<Scalar>(NP);
+        m_linear_weights.fill(uniform);
+    }
+
+    /// @brief Log-weight update: compute weights, normalize, resample if ESS low.
+    void update_log(const output_vector_t& z)
+    {
+        compute_log_weights(z);
+        normalize_log_weights();
+        if(compute_ess_from_log() < m_ess_threshold)
+            resample_log();
+    }
+
+    /// @brief Linear-weight update: compute weights, normalize, resample if ESS low.
+    void update_linear(const output_vector_t& z)
+    {
+        compute_linear_weights(z);
+        normalize_linear_weights();
+        if(compute_ess_from_linear() < m_ess_threshold)
+            resample_linear();
     }
 
     std::array<Scalar, NP> log_to_linear() const
@@ -342,6 +377,9 @@ private:
         m_particles = resampled;
     }
 
+    /// @brief Roughening: add jitter to resampled particles to prevent degeneracy.
+    ///
+    /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Sec. 5
     void apply_roughening()
     {
         if(m_roughening_scale <= Scalar{0})
@@ -398,11 +436,11 @@ struct pf_sa_measurement
 
 using pf_test_type = particle_filter<double, 2, 1, 1, 10, pf_sa_dynamics, pf_sa_measurement>;
 
-} // namespace detail
+}
 
 static_assert(ObserverPolicy<detail::pf_test_type>);
 static_assert(!CovarianceObserver<detail::pf_test_type>);
 
-} // namespace ctrlpp
+}
 
 #endif

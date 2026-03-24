@@ -1,3 +1,5 @@
+// Usage: ./ctrlpp_pf_01_bearing_only | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'true px', '' using 1:3 with lines title 'estimated px'"
+// Redirect: ./ctrlpp_pf_01_bearing_only > output.csv
 /// @file ctrlpp_pf_01_bearing_only.cpp
 /// @brief Demonstrates particle filter tracking a target from bearing-only measurements.
 ///
@@ -103,7 +105,7 @@ int main()
     lcg_noise noise_gen{123};
 
     // CSV header
-    std::cout << "step,true_px,true_py,est_px,est_py,true_vx,true_vy,est_vx,est_vy\n";
+    std::cout << "# time,true_px,est_px,true_py,est_py,true_vx,est_vx,true_vy,est_vy\n";
 
     for(std::size_t k = 0; k < n_steps; ++k)
     {
@@ -138,7 +140,7 @@ int main()
 
         auto est = filter.state();
 
-        std::cout << k << ',' << x_true(0) << ',' << x_true(1) << ',' << est(0) << ',' << est(1) << ',' << x_true(2) << ',' << x_true(3) << ',' << est(2) << ',' << est(3) << '\n';
+        std::cout << static_cast<double>(k) * dt << ',' << x_true(0) << ',' << est(0) << ',' << x_true(1) << ',' << est(1) << ',' << x_true(2) << ',' << est(2) << ',' << x_true(3) << ',' << est(3) << '\n';
     }
 
     // Final position error

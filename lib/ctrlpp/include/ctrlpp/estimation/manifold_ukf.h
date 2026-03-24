@@ -2,14 +2,13 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_MANIFOLD_UKF_H
 
 /// @brief Unscented Kalman Filter on SO(3) manifold with geodesic mean computation.
-///
-/// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
-/// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
+
+#include "ctrlpp/detail/covariance_ops.h"
 
 #include <Eigen/Geometry>
 
@@ -45,6 +44,9 @@ struct manifold_ukf_config
 namespace detail
 {
 
+/// @brief Compute geodesic (intrinsic) mean on SO(3) via iterative tangent-space averaging.
+///
+/// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Alg. 1
 template <typename Scalar, std::size_t NP>
 Eigen::Quaternion<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<Scalar>, NP>& qs, const std::array<Scalar, NP>& Wm, std::size_t max_iter, Scalar tol)
 {
@@ -71,7 +73,7 @@ Eigen::Quaternion<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<
     return q_mean;
 }
 
-} // namespace detail
+}
 
 template <typename Scalar, std::size_t NY, typename Dynamics, typename Measurement, typename Strategy = so3_merwe_sigma_points<Scalar>>
     requires manifold_ukf_dynamics_model<Dynamics, Scalar> && manifold_ukf_measurement_model<Measurement, Scalar, NY> && manifold_sigma_point_strategy<Strategy, Scalar>
@@ -106,83 +108,23 @@ public:
     void predict(const input_vector_t& omega)
     {
         auto sigma = m_strategy.generate(m_q, m_P);
-
-        std::array<Eigen::Quaternion<Scalar>, num_sigma> q_prop;
-        for(std::size_t i = 0; i < num_sigma; ++i)
-        {
-            q_prop[i] = m_dynamics(sigma.points[i], omega);
-            q_prop[i].normalize();
-        }
-
-        auto q_new = detail::geodesic_mean_impl(q_prop, sigma.Wm, m_max_iter, m_tol);
-
-        cov_matrix_t P_pred = cov_matrix_t::Zero();
-        for(std::size_t i = 0; i < num_sigma; ++i)
-        {
-            Eigen::Quaternion<Scalar> qi = q_prop[i];
-            if(qi.dot(q_new) < Scalar{0})
-            {
-                qi.w() = -qi.w();
-                qi.x() = -qi.x();
-                qi.y() = -qi.y();
-                qi.z() = -qi.z();
-            }
-            Vector<Scalar, 3> e = so3::log(q_new.conjugate() * qi);
-            P_pred += sigma.Wc[i] * e * e.transpose();
-        }
-        P_pred += m_Q;
-
+        auto q_prop = propagate_manifold_sigma_points(sigma.points, omega);
+        auto q_new = compute_manifold_predicted_mean(q_prop, sigma.Wm);
+        m_P = compute_manifold_predicted_covariance(q_prop, q_new, sigma.Wc);
         m_q = q_new;
-        m_P = (Scalar{0.5} * (P_pred + P_pred.transpose())).eval();
         update_state_cache();
     }
 
     void update(const output_vector_t& z)
     {
         auto sigma = m_strategy.generate(m_q, m_P);
-
-        std::array<output_vector_t, num_sigma> z_sigma;
-        for(std::size_t i = 0; i < num_sigma; ++i)
-            z_sigma[i] = m_measurement(sigma.points[i]);
-
-        output_vector_t z_pred = output_vector_t::Zero();
-        for(std::size_t i = 0; i < num_sigma; ++i)
-            z_pred += sigma.Wm[i] * z_sigma[i];
-
-        meas_cov_t S = meas_cov_t::Zero();
-        for(std::size_t i = 0; i < num_sigma; ++i)
-        {
-            auto dz = (z_sigma[i] - z_pred).eval();
-            S += sigma.Wc[i] * dz * dz.transpose();
-        }
-        S += m_R;
-
-        Eigen::Matrix<Scalar, 3, ny> Pxz = Eigen::Matrix<Scalar, 3, ny>::Zero();
-        for(std::size_t i = 0; i < num_sigma; ++i)
-        {
-            Eigen::Quaternion<Scalar> qi = sigma.points[i];
-            if(qi.dot(m_q) < Scalar{0})
-            {
-                qi.w() = -qi.w();
-                qi.x() = -qi.x();
-                qi.y() = -qi.y();
-                qi.z() = -qi.z();
-            }
-            Vector<Scalar, 3> dx = so3::log(m_q.conjugate() * qi);
-            auto dz = (z_sigma[i] - z_pred).eval();
-            Pxz += sigma.Wc[i] * dx * dz.transpose();
-        }
-
-        Eigen::Matrix<Scalar, ny, 3> KT = S.transpose().colPivHouseholderQr().solve(Pxz.transpose());
-        Eigen::Matrix<Scalar, 3, ny> K = KT.transpose().eval();
+        auto z_sigma = compute_measurement_sigma_points(sigma.points);
+        auto z_pred = compute_predicted_measurement(sigma.Wm, z_sigma);
+        auto [S, Pxz] = compute_innovation_and_cross_covariance(sigma, z_sigma, z_pred);
+        auto K = compute_kalman_gain(Pxz, S);
 
         m_innovation = (z - z_pred).eval();
-
-        Vector<Scalar, 3> delta_phi = K * m_innovation;
-        m_q = (m_q * so3::exp(delta_phi)).normalized();
-
-        cov_matrix_t P_new = (m_P - K * S * K.transpose()).eval();
-        m_P = (Scalar{0.5} * (P_new + P_new.transpose())).eval();
+        apply_manifold_correction(K, S);
         update_state_cache();
     }
 
@@ -195,6 +137,120 @@ public:
     const Eigen::Quaternion<Scalar>& attitude() const { return m_q; }
 
 private:
+    /// @brief Propagate sigma point quaternions through dynamics model.
+    ///
+    /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Sec. 3.2
+    auto propagate_manifold_sigma_points(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& points, const input_vector_t& omega) const -> std::array<Eigen::Quaternion<Scalar>, num_sigma>
+    {
+        std::array<Eigen::Quaternion<Scalar>, num_sigma> q_prop;
+        for(std::size_t i = 0; i < num_sigma; ++i)
+        {
+            q_prop[i] = m_dynamics(points[i], omega);
+            q_prop[i].normalize();
+        }
+        return q_prop;
+    }
+
+    /// @brief Compute geodesic mean of propagated quaternions.
+    ///
+    /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Alg. 1
+    auto compute_manifold_predicted_mean(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& q_prop, const std::array<Scalar, num_sigma>& Wm) const -> Eigen::Quaternion<Scalar>
+    {
+        return detail::geodesic_mean_impl(q_prop, Wm, m_max_iter, m_tol);
+    }
+
+    /// @brief Compute tangent-space covariance around geodesic mean.
+    ///
+    /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Eq. 10
+    auto compute_manifold_predicted_covariance(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& q_prop, const Eigen::Quaternion<Scalar>& q_mean, const std::array<Scalar, num_sigma>& Wc) const -> cov_matrix_t
+    {
+        cov_matrix_t P_pred = cov_matrix_t::Zero();
+        for(std::size_t i = 0; i < num_sigma; ++i)
+        {
+            Eigen::Quaternion<Scalar> qi = q_prop[i];
+            if(qi.dot(q_mean) < Scalar{0})
+            {
+                qi.w() = -qi.w();
+                qi.x() = -qi.x();
+                qi.y() = -qi.y();
+                qi.z() = -qi.z();
+            }
+            Vector<Scalar, 3> e = so3::log(q_mean.conjugate() * qi);
+            P_pred += Wc[i] * e * e.transpose();
+        }
+        P_pred += m_Q;
+        return detail::symmetrize(P_pred);
+    }
+
+    /// @brief Transform sigma point quaternions through measurement model.
+    auto compute_measurement_sigma_points(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& points) const -> std::array<output_vector_t, num_sigma>
+    {
+        std::array<output_vector_t, num_sigma> z_sigma;
+        for(std::size_t i = 0; i < num_sigma; ++i)
+            z_sigma[i] = m_measurement(points[i]);
+        return z_sigma;
+    }
+
+    /// @brief Compute weighted mean of measurement sigma points.
+    ///
+    /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+    auto compute_predicted_measurement(const std::array<Scalar, num_sigma>& Wm, const std::array<output_vector_t, num_sigma>& z_sigma) const -> output_vector_t
+    {
+        output_vector_t z_pred = output_vector_t::Zero();
+        for(std::size_t i = 0; i < num_sigma; ++i)
+            z_pred += Wm[i] * z_sigma[i];
+        return z_pred;
+    }
+
+    /// @brief Compute innovation covariance S and manifold cross-covariance Pxz.
+    ///
+    /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Eq. 12-13
+    auto compute_innovation_and_cross_covariance(const auto& sigma, const std::array<output_vector_t, num_sigma>& z_sigma, const output_vector_t& z_pred) const
+        -> std::pair<meas_cov_t, Eigen::Matrix<Scalar, 3, ny>>
+    {
+        meas_cov_t S = meas_cov_t::Zero();
+        Eigen::Matrix<Scalar, 3, ny> Pxz = Eigen::Matrix<Scalar, 3, ny>::Zero();
+
+        for(std::size_t i = 0; i < num_sigma; ++i)
+        {
+            auto dz = (z_sigma[i] - z_pred).eval();
+            S += sigma.Wc[i] * dz * dz.transpose();
+
+            Eigen::Quaternion<Scalar> qi = sigma.points[i];
+            if(qi.dot(m_q) < Scalar{0})
+            {
+                qi.w() = -qi.w();
+                qi.x() = -qi.x();
+                qi.y() = -qi.y();
+                qi.z() = -qi.z();
+            }
+            Vector<Scalar, 3> dx = so3::log(m_q.conjugate() * qi);
+            Pxz += sigma.Wc[i] * dx * dz.transpose();
+        }
+        S += m_R;
+
+        return {S, Pxz};
+    }
+
+    /// @brief Compute Kalman gain via column-pivoting QR solve.
+    ///
+    /// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
+    auto compute_kalman_gain(const Eigen::Matrix<Scalar, 3, ny>& Pxz, const meas_cov_t& S) const -> Eigen::Matrix<Scalar, 3, ny>
+    {
+        Eigen::Matrix<Scalar, ny, 3> KT = S.transpose().colPivHouseholderQr().solve(Pxz.transpose());
+        return KT.transpose().eval();
+    }
+
+    /// @brief Apply manifold correction and update covariance.
+    ///
+    /// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
+    void apply_manifold_correction(const Eigen::Matrix<Scalar, 3, ny>& K, const meas_cov_t& S)
+    {
+        Vector<Scalar, 3> delta_phi = K * m_innovation;
+        m_q = (m_q * so3::exp(delta_phi)).normalized();
+        m_P = detail::symmetrize((m_P - K * S * K.transpose()).eval());
+    }
+
     Scalar m_tol;
     meas_cov_t m_R;
     cov_matrix_t m_P;
@@ -226,11 +282,11 @@ struct mukf_sa_measurement
     auto operator()(const Eigen::Quaternion<double>&) const -> Vector<double, 3> { return Vector<double, 3>::Zero(); }
 };
 
-} // namespace detail
+}
 
 static_assert(ObserverPolicy<manifold_ukf<double, 3, detail::mukf_sa_dynamics, detail::mukf_sa_measurement>>);
 static_assert(CovarianceObserver<manifold_ukf<double, 3, detail::mukf_sa_dynamics, detail::mukf_sa_measurement>>);
 
-} // namespace ctrlpp
+}
 
 #endif

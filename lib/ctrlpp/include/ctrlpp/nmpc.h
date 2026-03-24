@@ -43,21 +43,14 @@ public:
         , m_num_vars{(m_N + 1) * nx + m_N * nu + m_num_path_slack + m_num_term_slack}
         , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>()}
     {
-        // Initialize reference trajectory to zeros (regulation)
         m_state->x_ref.resize(static_cast<std::size_t>(m_N + 1), Vector<Scalar, NX>::Zero());
-
-        // Build NLP problem with formulation state captured in lambdas
         m_problem = detail::build_nmpc_problem<Scalar, NX, NU, NC, NTC>(m_dynamics, m_config, m_state);
-
         m_solver.setup(m_problem);
-
-        // Pre-allocate warm-start vector (zeros for first solve)
         m_warm_z = Eigen::VectorX<Scalar>::Zero(m_num_vars);
     }
 
     std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0)
     {
-        // Regulation: reference is all zeros
         for(auto& ref : m_state->x_ref)
             ref.setZero();
         return solve_impl(x0);
@@ -65,7 +58,6 @@ public:
 
     std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NX>& x_ref)
     {
-        // Setpoint tracking: constant reference
         for(auto& ref : m_state->x_ref)
             ref = x_ref;
         return solve_impl(x0);
@@ -73,11 +65,9 @@ public:
 
     std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NX>> x_ref)
     {
-        // Trajectory tracking: copy reference sequence
         const auto len = std::min(x_ref.size(), m_state->x_ref.size());
         for(std::size_t k = 0; k < len; ++k)
             m_state->x_ref[k] = x_ref[k];
-        // If span is shorter, repeat last element
         if(!x_ref.empty())
             for(std::size_t k = len; k < m_state->x_ref.size(); ++k)
                 m_state->x_ref[k] = x_ref.back();
@@ -105,17 +95,26 @@ public:
 private:
     std::optional<Vector<Scalar, NU>> solve_impl(const Vector<Scalar, NX>& x0)
     {
-        // Update formulation state (lambdas read from this shared state)
         m_state->x0 = x0;
         m_state->u_prev = m_u_prev;
 
-        // Build update with warm-start initial guess
         nlp_update<Scalar> update;
         update.x0 = m_warm_z;
 
         auto result = m_solver.solve(update);
+        populate_diagnostics(result);
 
-        // Populate diagnostics
+        if(result.status != solve_status::optimal && result.status != solve_status::solved_inaccurate)
+            return std::nullopt;
+
+        m_last_solution = result.x;
+        populate_constraint_diagnostics(result.x);
+        shift_warm_start(result.x);
+        return extract_first_input(result.x);
+    }
+
+    void populate_diagnostics(const nlp_result<Scalar>& result)
+    {
         m_last_diagnostics = mpc_diagnostics<Scalar>{.status = result.status,
                                                      .iterations = result.iterations,
                                                      .solve_time = result.solve_time,
@@ -126,58 +125,18 @@ private:
                                                      .max_path_constraint_violation = Scalar{0},
                                                      .max_terminal_constraint_violation = Scalar{0},
                                                      .total_slack = Scalar{0}};
-
-        if(result.status != solve_status::optimal && result.status != solve_status::solved_inaccurate)
-            return std::nullopt;
-
-        // Store full solution
-        m_last_solution = result.x;
-
-        // Populate constraint diagnostics from solution
-        populate_constraint_diagnostics(result.x);
-
-        // Warm-start shift: move trajectory forward by one step
-        m_warm_z = result.x;
-
-        // Shift states: x[k] <- x[k+1] for k=0..N-1, duplicate last
-        for(int k = 0; k < m_N; ++k)
-            m_warm_z.segment(k * nx, nx) = result.x.segment((k + 1) * nx, nx);
-        // Last state stays (already in place from copy)
-
-        // Shift inputs: u[k] <- u[k+1] for k=0..N-2, duplicate last
-        const int u_offset = (m_N + 1) * nx;
-        for(int k = 0; k < m_N - 1; ++k)
-            m_warm_z.segment(u_offset + k * nu, nu) = result.x.segment(u_offset + (k + 1) * nu, nu);
-        // Last input stays (already in place from copy)
-
-        // Shift path slack: s[k] <- s[k+1] for k=0..N-2, zero last
-        if(m_has_path_slack)
-        {
-            const int slack_off = u_offset + m_N * nu;
-            for(int k = 0; k < m_N - 1; ++k)
-                m_warm_z.segment(slack_off + k * nc, nc) = result.x.segment(slack_off + (k + 1) * nc, nc);
-            m_warm_z.segment(slack_off + (m_N - 1) * nc, nc).setZero();
-        }
-
-        // Zero terminal slack
-        if(m_has_term_slack)
-        {
-            const int term_off = u_offset + m_N * nu + m_num_path_slack;
-            m_warm_z.segment(term_off, ntc).setZero();
-        }
-
-        // Extract u_0
-        Vector<Scalar, NU> u0 = m_last_solution.segment(u_offset, nu);
-        m_u_prev = u0;
-
-        return u0;
     }
 
     void populate_constraint_diagnostics(const Eigen::VectorX<Scalar>& z)
     {
         const int u_offset = (m_N + 1) * nx;
+        compute_path_constraint_violation(z, u_offset);
+        compute_terminal_constraint_violation(z);
+        compute_total_slack(z, u_offset);
+    }
 
-        // Path constraint violations
+    void compute_path_constraint_violation(const Eigen::VectorX<Scalar>& z, int u_offset)
+    {
         if constexpr(NC > 0)
         {
             if(m_config.path_constraint)
@@ -198,8 +157,10 @@ private:
                 m_last_diagnostics.max_path_constraint_violation = max_viol;
             }
         }
+    }
 
-        // Terminal constraint violations
+    void compute_terminal_constraint_violation(const Eigen::VectorX<Scalar>& z)
+    {
         if constexpr(NTC > 0)
         {
             if(m_config.terminal_constraint)
@@ -215,8 +176,10 @@ private:
                 m_last_diagnostics.max_terminal_constraint_violation = max_viol;
             }
         }
+    }
 
-        // Total slack
+    void compute_total_slack(const Eigen::VectorX<Scalar>& z, int u_offset)
+    {
         Scalar total{0};
         if(m_has_path_slack)
         {
@@ -234,6 +197,56 @@ private:
             total += st.sum();
         }
         m_last_diagnostics.total_slack = total;
+    }
+
+    void shift_warm_start(const Eigen::VectorX<Scalar>& sol)
+    {
+        m_warm_z = sol;
+        shift_warm_states(sol);
+        shift_warm_inputs(sol);
+        shift_warm_path_slack(sol);
+        zero_warm_terminal_slack();
+    }
+
+    void shift_warm_states(const Eigen::VectorX<Scalar>& sol)
+    {
+        for(int k = 0; k < m_N; ++k)
+            m_warm_z.segment(k * nx, nx) = sol.segment((k + 1) * nx, nx);
+    }
+
+    void shift_warm_inputs(const Eigen::VectorX<Scalar>& sol)
+    {
+        const int u_offset = (m_N + 1) * nx;
+        for(int k = 0; k < m_N - 1; ++k)
+            m_warm_z.segment(u_offset + k * nu, nu) = sol.segment(u_offset + (k + 1) * nu, nu);
+    }
+
+    void shift_warm_path_slack(const Eigen::VectorX<Scalar>& sol)
+    {
+        if(!m_has_path_slack)
+            return;
+        const int u_offset = (m_N + 1) * nx;
+        const int slack_off = u_offset + m_N * nu;
+        for(int k = 0; k < m_N - 1; ++k)
+            m_warm_z.segment(slack_off + k * nc, nc) = sol.segment(slack_off + (k + 1) * nc, nc);
+        m_warm_z.segment(slack_off + (m_N - 1) * nc, nc).setZero();
+    }
+
+    void zero_warm_terminal_slack()
+    {
+        if(!m_has_term_slack)
+            return;
+        const int u_offset = (m_N + 1) * nx;
+        const int term_off = u_offset + m_N * nu + m_num_path_slack;
+        m_warm_z.segment(term_off, ntc).setZero();
+    }
+
+    auto extract_first_input(const Eigen::VectorX<Scalar>& sol) -> Vector<Scalar, NU>
+    {
+        const int u_offset = (m_N + 1) * nx;
+        Vector<Scalar, NU> u0 = sol.segment(u_offset, nu);
+        m_u_prev = u0;
+        return u0;
     }
 
     Dynamics m_dynamics;
@@ -255,6 +268,6 @@ private:
     Vector<Scalar, NU> m_u_prev{Vector<Scalar, NU>::Zero()};
 };
 
-} // namespace ctrlpp
+}
 
 #endif

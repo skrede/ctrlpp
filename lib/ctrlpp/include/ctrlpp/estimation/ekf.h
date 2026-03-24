@@ -2,13 +2,12 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_EKF_H
 
 /// @brief Extended Kalman Filter with analytical/numerical Jacobian dispatch.
-///
-/// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/detail/numerical_diff.h"
+#include "ctrlpp/detail/covariance_ops.h"
 
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/model/measurement_model.h"
@@ -64,41 +63,21 @@ public:
     void predict(const input_vector_t& u)
     {
         auto x_prev = m_x;
-
-        m_x = m_dynamics(x_prev, u);
-
-        Matrix<Scalar, NX, NX> F;
-        if constexpr(differentiable_dynamics<Dynamics, Scalar, NX, NU>)
-            F = m_dynamics.jacobian_x(x_prev, u);
-        else
-            F = detail::numerical_jacobian_x<Scalar, NX, NU>(m_dynamics, x_prev, u, m_eps);
-
-        m_P = (F * m_P * F.transpose() + m_Q).eval();
-        m_P = (Scalar{0.5} * (m_P + m_P.transpose())).eval();
+        propagate_state(x_prev, u);
+        propagate_covariance(x_prev, u);
     }
 
     void update(const output_vector_t& z)
     {
         auto z_pred = m_measurement(m_x);
-
         m_innovation = (z - z_pred).eval();
 
-        Matrix<Scalar, NY, NX> H;
-        if constexpr(differentiable_measurement<Measurement, Scalar, NX, NY>)
-            H = m_measurement.jacobian(m_x);
-        else
-            H = detail::numerical_jacobian_h<Scalar, NX, NY>(m_measurement, m_x, m_eps);
+        auto H = compute_measurement_jacobian();
+        auto S = compute_innovation_covariance(H);
+        auto K = compute_kalman_gain(H, S);
 
-        meas_cov_matrix_t S = (H * m_P * H.transpose() + m_R).eval();
-
-        Eigen::Matrix<Scalar, ny, nx> KT_solved = S.transpose().colPivHouseholderQr().solve(H * m_P);
-        Eigen::Matrix<Scalar, nx, ny> K = KT_solved.transpose().eval();
-
-        m_x = (m_x + K * m_innovation).eval();
-
-        cov_matrix_t IKH = cov_matrix_t::Identity() - K * H;
-        m_P = (IKH * m_P * IKH.transpose() + K * m_R * K.transpose()).eval();
-        m_P = (Scalar{0.5} * (m_P + m_P.transpose())).eval();
+        apply_state_correction(K, z, z_pred);
+        update_covariance(K, H);
 
         m_nees = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
     }
@@ -112,6 +91,67 @@ public:
     Scalar nees() const { return m_nees; }
 
 private:
+    /// @brief Propagate state through dynamics model.
+    void propagate_state(const state_vector_t& x_prev, const input_vector_t& u)
+    {
+        m_x = m_dynamics(x_prev, u);
+    }
+
+    /// @brief Propagate covariance through linearized dynamics: P = F*P*F^T + Q.
+    ///
+    /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.1
+    void propagate_covariance(const state_vector_t& x_prev, const input_vector_t& u)
+    {
+        Matrix<Scalar, NX, NX> F;
+        if constexpr(differentiable_dynamics<Dynamics, Scalar, NX, NU>)
+            F = m_dynamics.jacobian_x(x_prev, u);
+        else
+            F = detail::numerical_jacobian_x<Scalar, NX, NU>(m_dynamics, x_prev, u, m_eps);
+
+        m_P = detail::symmetrize((F * m_P * F.transpose() + m_Q).eval());
+    }
+
+    /// @brief Compute measurement Jacobian H at current state (analytical or numerical).
+    [[nodiscard]] auto compute_measurement_jacobian() const -> Matrix<Scalar, NY, NX>
+    {
+        if constexpr(differentiable_measurement<Measurement, Scalar, NX, NY>)
+            return m_measurement.jacobian(m_x);
+        else
+            return detail::numerical_jacobian_h<Scalar, NX, NY>(m_measurement, m_x, m_eps);
+    }
+
+    /// @brief Compute innovation covariance: S = H*P*H^T + R.
+    ///
+    /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.2
+    [[nodiscard]] auto compute_innovation_covariance(const Matrix<Scalar, NY, NX>& H) const -> meas_cov_matrix_t
+    {
+        return (H * m_P * H.transpose() + m_R).eval();
+    }
+
+    /// @brief Compute Kalman gain: K = P*H^T*S^{-1} via column-pivoting QR solve.
+    ///
+    /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.2
+    [[nodiscard]] auto compute_kalman_gain(const Matrix<Scalar, NY, NX>& H, const meas_cov_matrix_t& S) const -> Eigen::Matrix<Scalar, nx, ny>
+    {
+        Eigen::Matrix<Scalar, ny, nx> KT_solved = S.transpose().colPivHouseholderQr().solve(H * m_P);
+        return KT_solved.transpose().eval();
+    }
+
+    /// @brief Apply state correction: x += K * innovation.
+    void apply_state_correction(const Eigen::Matrix<Scalar, nx, ny>& K, const output_vector_t& z, const output_vector_t& z_pred)
+    {
+        m_x = (m_x + K * m_innovation).eval();
+    }
+
+    /// @brief Joseph-form covariance update: P = (I-KH)*P*(I-KH)^T + K*R*K^T.
+    ///
+    /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.3
+    void update_covariance(const Eigen::Matrix<Scalar, nx, ny>& K, const Matrix<Scalar, NY, NX>& H)
+    {
+        cov_matrix_t IKH = cov_matrix_t::Identity() - K * H;
+        m_P = detail::symmetrize((IKH * m_P * IKH.transpose() + K * m_R * K.transpose()).eval());
+    }
+
     Scalar m_eps;
     Scalar m_nees{0};
     Dynamics m_dynamics;
@@ -140,11 +180,11 @@ struct ekf_sa_measurement
     Vector<double, 1> operator()(const Vector<double, 2>&) const { return Vector<double, 1>::Zero(); }
 };
 
-} // namespace detail
+}
 
 static_assert(ObserverPolicy<ekf<double, 2, 1, 1, detail::ekf_sa_dynamics, detail::ekf_sa_measurement>>);
 static_assert(CovarianceObserver<ekf<double, 2, 1, 1, detail::ekf_sa_dynamics, detail::ekf_sa_measurement>>);
 
-} // namespace ctrlpp
+}
 
 #endif
