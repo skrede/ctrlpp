@@ -17,6 +17,7 @@ Guides and API reference for the ctrlpp C++23 control library.
 ### Deep Dives
 
 - [PID Composition](guides/pid/composition.md) -- Policy-based composition for anti-windup, filtering, and more
+- [Cascade Control](guides/pid/cascade.md) -- Inner/outer loop cascade PID
 - [Solver Injection](guides/mpc/solver-injection.md) -- Concept-based QP/NLP solver backends
 - [Observer-Controller Patterns](guides/estimation/observer-controller.md) -- Composing observers with controllers
 - [Sysid Workflow](guides/sysid/workflow.md) -- Identify, model, and control
