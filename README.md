@@ -1,5 +1,7 @@
 # ctrlpp
-
+[![Linux](https://github.com/skrede/ctrlpp/actions/workflows/linux.yml/badge.svg?branch=master)](https://github.com/skrede/ctrlpp/actions/workflows/linux.yml)
+[![macOS](https://github.com/skrede/ctrlpp/actions/workflows/macos.yml/badge.svg?branch=master)](https://github.com/skrede/ctrlpp/actions/workflows/macos.yml)
+[![Windows](https://github.com/skrede/ctrlpp/actions/workflows/windows.yml/badge.svg?branch=master)](https://github.com/skrede/ctrlpp/actions/workflows/windows.yml)
 [![codecov](https://codecov.io/gh/skrede/ctrlpp/branch/master/graph/badge.svg)](https://codecov.io/gh/skrede/ctrlpp)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
