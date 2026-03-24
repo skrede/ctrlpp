@@ -2,7 +2,7 @@
 
 Model predictive control (MPC) and moving horizon estimation (MHE) types. Linear
 variants solve quadratic programs via OSQP; nonlinear variants solve nonlinear
-programs via NLopt. Solver backends are injected via C++23 concepts -- you can
+programs via NLopt. Solver backends are injected via C++20 concepts -- you can
 swap in your own QP or NLP solver without changing controller code.
 
 ## Types
