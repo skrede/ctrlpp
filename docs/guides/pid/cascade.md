@@ -20,7 +20,8 @@ execute per outer step.
 ## Complete Program
 
 ```cpp
-#include "ctrlpp/pid.h"
+// Usage: ./cascade_pid | gnuplot -p -e "set datafile separator ','; plot '-' skip 1 using 1:3 with lines title 'position', '' using 1:4 with lines title 'velocity'"
+#include <ctrlpp/control/pid.h>
 
 #include <iomanip>
 #include <iostream>

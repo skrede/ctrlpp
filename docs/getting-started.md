@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- C++20 compiler: GCC 10+, Clang 10+, MSVC 19.29+
+- C++23 compiler: GCC 13+, Clang 18+, MSVC 17.10+, Xcode 15.4+
 - CMake 3.25+
 - Eigen 3.4+ (fetched automatically via FetchContent)
 
@@ -39,7 +39,8 @@ simple first-order plant for 10 seconds, printing the response every half
 second.
 
 ```cpp
-#include "ctrlpp/pid.h"
+// Usage: ./first_pid | gnuplot -p -e "set datafile separator ' '; plot '-' using 1:2 with lines title 'output'"
+#include <ctrlpp/control/pid.h>
 
 #include <iostream>
 
