@@ -47,7 +47,7 @@ The performance assessment policy accumulates metrics passively during each `com
 ## Usage Example
 
 ```cpp
-#include <ctrlpp/pid.h>
+#include <ctrlpp/control/pid.h>
 
 #include <iomanip>
 #include <iostream>

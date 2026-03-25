@@ -12,7 +12,7 @@ underlying design tools that LQR builds on.
 - [dare](dare.md) -- Discrete algebraic Riccati equation solver (complex Schur method)
 - [place](place.md) -- Pole placement via Ackermann's formula
 
-## When to use
+## When to Use
 
 Pick **PID** when you have a single-loop SISO or MIMO regulation problem and want
 to compose exactly the features you need (anti-windup, derivative filtering,
@@ -28,4 +28,5 @@ Pick **place** when you need direct pole assignment rather than cost-based tunin
 
 ## Theory
 
-For the mathematical background, see [PID Theory](../reference/pid-theory.md).
+- [PID Theory](../reference/pid-theory.md) -- PID mathematical background
+- [Optimal Control Theory](../reference/optimal-control-theory.md) -- LQR, DARE, Riccati equations
