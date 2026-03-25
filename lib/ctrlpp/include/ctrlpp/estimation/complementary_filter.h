@@ -43,82 +43,36 @@ public:
     }
 
     // Natural IMU update (6-DOF): gyro + accelerometer.
+    /// @cite mahony2008 -- Mahony et al., 2008, Sec. III (IMU complementary filter)
     void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt)
     {
-        // Normalize accelerometer
         Scalar norm = accel.norm();
         if(norm < Scalar{1e-10})
             return;
-        auto acc_n = (accel / norm).eval();
 
-        // Gravity direction in body frame from current attitude
-        Vector<Scalar, 3> g_body = q_.toRotationMatrix().transpose().col(2);
-
-        // Error via cross product
-        Vector<Scalar, 3> e = acc_n.cross(g_body);
-
-        // Integral bias update
-        bias_ += k_i_ * e * dt;
-
-        // Corrected angular velocity
-        Vector<Scalar, 3> omega_c = gyro - bias_ + k_p_ * e;
-
-        // Quaternion integration via exponential map
-        Vector<Scalar, 3> phi = (Scalar{0.5} * dt) * omega_c;
-        q_ = (q_ * so3::exp(phi)).normalized();
-
-        update_state_cache();
+        auto e = compute_gravity_correction(accel / norm);
+        integrate_gyro(gyro, e, dt);
     }
 
     // Natural MARG update (9-DOF): gyro + accelerometer + magnetometer.
+    /// @cite mahony2008 -- Mahony et al., 2008, Sec. IV (MARG complementary filter)
     void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, const Vector<Scalar, 3>& mag, Scalar dt)
     {
-        // Normalize accelerometer
         Scalar norm = accel.norm();
         if(norm < Scalar{1e-10})
             return;
-        auto acc_n = (accel / norm).eval();
 
-        // Gravity direction in body frame
-        Vector<Scalar, 3> g_body = q_.toRotationMatrix().transpose().col(2);
+        auto e_acc = compute_gravity_correction(accel / norm);
 
-        // Accelerometer error
-        Vector<Scalar, 3> e_acc = acc_n.cross(g_body);
-
-        // Normalize magnetometer; fall back to IMU if degenerate
         Scalar mag_norm = mag.norm();
         if(mag_norm < Scalar{1e-10})
         {
-            update(gyro, accel, dt);
+            integrate_gyro(gyro, e_acc, dt);
             return;
         }
-        auto mag_n = (mag / mag_norm).eval();
 
-        // Reference magnetic field direction in world frame
-        auto R = q_.toRotationMatrix();
-        Vector<Scalar, 3> h = R * mag_n;
-        Vector<Scalar, 3> b{std::sqrt(h(0) * h(0) + h(1) * h(1)), Scalar{0}, h(2)};
-
-        // Reference direction in body frame
-        Vector<Scalar, 3> b_body = R.transpose() * b;
-
-        // Magnetometer error
-        Vector<Scalar, 3> e_mag = mag_n.cross(b_body);
-
-        // Combined error
-        Vector<Scalar, 3> e = e_acc + e_mag;
-
-        // Integral bias update
-        bias_ += k_i_ * e * dt;
-
-        // Corrected angular velocity
-        Vector<Scalar, 3> omega_c = gyro - bias_ + k_p_ * e;
-
-        // Quaternion integration via exponential map
-        Vector<Scalar, 3> phi = (Scalar{0.5} * dt) * omega_c;
-        q_ = (q_ * so3::exp(phi)).normalized();
-
-        update_state_cache();
+        auto e_mag = compute_magnetic_correction(mag / mag_norm);
+        integrate_gyro(gyro, e_acc + e_mag, dt);
     }
 
     // ObserverPolicy wrappers (use config dt)
@@ -130,6 +84,33 @@ public:
     [[nodiscard]] auto bias() const -> const Vector<Scalar, 3>& { return bias_; }
 
 private:
+    /// @cite mahony2008 -- Mahony et al., 2008, Eq. 12 (gravity error via cross product)
+    auto compute_gravity_correction(const Vector<Scalar, 3>& acc_n) const -> Vector<Scalar, 3>
+    {
+        Vector<Scalar, 3> g_body = q_.toRotationMatrix().transpose().col(2);
+        return acc_n.cross(g_body);
+    }
+
+    /// @cite mahony2008 -- Mahony et al., 2008, Eq. 48 (magnetic field error)
+    auto compute_magnetic_correction(const Vector<Scalar, 3>& mag_n) const -> Vector<Scalar, 3>
+    {
+        auto R = q_.toRotationMatrix();
+        Vector<Scalar, 3> h = R * mag_n;
+        Vector<Scalar, 3> b{std::sqrt(h(0) * h(0) + h(1) * h(1)), Scalar{0}, h(2)};
+        Vector<Scalar, 3> b_body = R.transpose() * b;
+        return mag_n.cross(b_body);
+    }
+
+    /// @cite mahony2008 -- Mahony et al., 2008, Eq. 6 (quaternion integration with PI correction)
+    void integrate_gyro(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& e, Scalar dt)
+    {
+        bias_ += k_i_ * e * dt;
+        Vector<Scalar, 3> omega_c = gyro - bias_ + k_p_ * e;
+        Vector<Scalar, 3> phi = (Scalar{0.5} * dt) * omega_c;
+        q_ = (q_ * so3::exp(phi)).normalized();
+        update_state_cache();
+    }
+
     void update_state_cache() { state_cache_ << q_.w(), q_.x(), q_.y(), q_.z(), bias_(0), bias_(1), bias_(2); }
 
     Eigen::Quaternion<Scalar> q_;
