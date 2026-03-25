@@ -83,7 +83,7 @@ void swap_complex_schur_1x1(Eigen::Matrix<std::complex<Scalar>, N, N>& T, Eigen:
         return;
 
     auto [cs, sn] = compute_schur_swap_givens(T(p, p), T(p + 1, p + 1), T(p, p + 1));
-    apply_schur_givens(T, U, p, cs, sn);
+    apply_schur_givens<Scalar, N>(T, U, p, cs, sn);
 }
 
 // Reorder a complex Schur decomposition so that stable eigenvalues (|lambda| < 1)
