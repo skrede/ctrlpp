@@ -158,17 +158,14 @@ auto numerical_jacobian_h(const H& h, const Vector<Scalar, NX>& x, Scalar eps = 
     return jac;
 }
 
-/// Compute dg/d[x;u] via central differences for g(x, u) -> Vector<NC>.
-/// Returns a fixed-size NC x (NX+NU) combined Jacobian matrix.
-/// Columns 0..NX-1 correspond to dg/dx, columns NX..NX+NU-1 to dg/du.
+/// Compute dg/dx via central differences for g(x, u) -> Vector<NC>.
+/// Returns a fixed-size NC x NX Jacobian sub-block.
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NC, typename G>
-auto numerical_jacobian_g(const G& g, const Vector<Scalar, NX>& x, const Vector<Scalar, NU>& u, Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon())) -> Matrix<Scalar, NC, NX + NU>
+auto numerical_jacobian_gx(const G& g, const Vector<Scalar, NX>& x, const Vector<Scalar, NU>& u, Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon())) -> Matrix<Scalar, NC, NX>
 {
-    Matrix<Scalar, NC, NX + NU> jac;
+    Matrix<Scalar, NC, NX> jac;
     Vector<Scalar, NX> x_perturbed = x;
-    Vector<Scalar, NU> u_perturbed = u;
 
-    // Perturb state variables (columns 0..NX-1)
     for(std::size_t j = 0; j < NX; ++j)
     {
         const auto idx = static_cast<Eigen::Index>(j);
@@ -181,15 +178,23 @@ auto numerical_jacobian_g(const G& g, const Vector<Scalar, NX>& x, const Vector<
         const Vector<Scalar, NC> g_minus = g(x_perturbed, u);
 
         jac.col(idx) = (g_plus - g_minus) / (Scalar{2} * h);
-
         x_perturbed[idx] = x[idx];
     }
 
-    // Perturb input variables (columns NX..NX+NU-1)
+    return jac;
+}
+
+/// Compute dg/du via central differences for g(x, u) -> Vector<NC>.
+/// Returns a fixed-size NC x NU Jacobian sub-block.
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NC, typename G>
+auto numerical_jacobian_gu(const G& g, const Vector<Scalar, NX>& x, const Vector<Scalar, NU>& u, Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon())) -> Matrix<Scalar, NC, NU>
+{
+    Matrix<Scalar, NC, NU> jac;
+    Vector<Scalar, NU> u_perturbed = u;
+
     for(std::size_t j = 0; j < NU; ++j)
     {
         const auto idx = static_cast<Eigen::Index>(j);
-        const auto col = static_cast<Eigen::Index>(NX + j);
         const Scalar h = eps * std::max(Scalar{1}, std::abs(u[idx]));
 
         u_perturbed[idx] = u[idx] + h;
@@ -198,11 +203,22 @@ auto numerical_jacobian_g(const G& g, const Vector<Scalar, NX>& x, const Vector<
         u_perturbed[idx] = u[idx] - h;
         const Vector<Scalar, NC> g_minus = g(x, u_perturbed);
 
-        jac.col(col) = (g_plus - g_minus) / (Scalar{2} * h);
-
+        jac.col(idx) = (g_plus - g_minus) / (Scalar{2} * h);
         u_perturbed[idx] = u[idx];
     }
 
+    return jac;
+}
+
+/// Compute dg/d[x;u] via central differences for g(x, u) -> Vector<NC>.
+/// Returns a fixed-size NC x (NX+NU) combined Jacobian matrix.
+/// Columns 0..NX-1 correspond to dg/dx, columns NX..NX+NU-1 to dg/du.
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NC, typename G>
+auto numerical_jacobian_g(const G& g, const Vector<Scalar, NX>& x, const Vector<Scalar, NU>& u, Scalar eps = std::sqrt(std::numeric_limits<Scalar>::epsilon())) -> Matrix<Scalar, NC, NX + NU>
+{
+    Matrix<Scalar, NC, NX + NU> jac;
+    jac.template leftCols<NX>() = numerical_jacobian_gx<Scalar, NX, NU, NC>(g, x, u, eps);
+    jac.template rightCols<NU>() = numerical_jacobian_gu<Scalar, NX, NU, NC>(g, x, u, eps);
     return jac;
 }
 
