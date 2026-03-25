@@ -82,9 +82,10 @@ OSQP operates in double precision only.
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/mpc.h"
-#include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/model/propagate.h"
+// gnuplot: plot "< ./osqp_demo" using 1:3 with lines title "state"
+#include <ctrlpp/mpc.h>
+#include <ctrlpp/mpc/osqp_solver.h>
+#include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
 
@@ -132,3 +133,4 @@ int main()
 - [mhe](mhe.md) -- linear MHE using OSQP
 - [nlopt-solver](nlopt-solver.md) -- NLopt NLP solver backend
 - [guides/mpc/solver-injection](../guides/mpc/solver-injection.md) -- solver injection guide
+- [reference/mpc-theory](../reference/mpc-theory.md) -- QP formulation and theory

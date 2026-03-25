@@ -386,30 +386,40 @@ private:
             return;
 
         Scalar np_factor = std::pow(static_cast<Scalar>(NP), Scalar{-1} / static_cast<Scalar>(NX));
-
         std::normal_distribution<Scalar> normal(Scalar{0}, Scalar{1});
 
         for(std::size_t d = 0; d < NX; ++d)
         {
-            Scalar min_val = m_particles[0](static_cast<int>(d));
-            Scalar max_val = min_val;
-            for(std::size_t i = 1; i < NP; ++i)
-            {
-                Scalar v = m_particles[i](static_cast<int>(d));
-                min_val = std::min(min_val, v);
-                max_val = std::max(max_val, v);
-            }
-            Scalar spread = max_val - min_val;
-            Scalar sigma = m_roughening_scale * spread * np_factor;
-
-            // Fallback: if all particles collapsed, use process noise scale
-            if(sigma <= Scalar{0})
-                sigma = m_roughening_scale * std::sqrt(m_Q(static_cast<int>(d), static_cast<int>(d)));
-
+            Scalar sigma = compute_roughening_sigma(d, np_factor);
             if(sigma > Scalar{0})
-                for(std::size_t i = 0; i < NP; ++i)
-                    m_particles[i](static_cast<int>(d)) += sigma * normal(m_rng);
+                apply_particle_jitter(d, sigma, normal);
         }
+    }
+
+    Scalar compute_roughening_sigma(std::size_t d, Scalar np_factor) const
+    {
+        int di = static_cast<int>(d);
+        Scalar min_val = m_particles[0](di);
+        Scalar max_val = min_val;
+        for(std::size_t i = 1; i < NP; ++i)
+        {
+            Scalar v = m_particles[i](di);
+            min_val = std::min(min_val, v);
+            max_val = std::max(max_val, v);
+        }
+        Scalar sigma = m_roughening_scale * (max_val - min_val) * np_factor;
+
+        // Fallback: if all particles collapsed, use process noise scale
+        if(sigma <= Scalar{0})
+            sigma = m_roughening_scale * std::sqrt(m_Q(di, di));
+        return sigma;
+    }
+
+    void apply_particle_jitter(std::size_t d, Scalar sigma, std::normal_distribution<Scalar>& normal)
+    {
+        int di = static_cast<int>(d);
+        for(std::size_t i = 0; i < NP; ++i)
+            m_particles[i](di) += sigma * normal(m_rng);
     }
 };
 

@@ -31,19 +31,15 @@ using cov_matrix_t      = Matrix<Scalar, NX, NX>;
 using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 ```
 
-## Config
+## Config (`ekf_config`)
 
-```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-struct ekf_config
-{
-    Matrix<Scalar, NX, NX> Q;             // process noise covariance (default: identity)
-    Matrix<Scalar, NY, NY> R;             // measurement noise covariance (default: identity)
-    Vector<Scalar, NX>     x0;            // initial state estimate (default: zero)
-    Matrix<Scalar, NX, NX> P0;            // initial covariance (default: identity)
-    Scalar numerical_eps;                  // perturbation for numerical Jacobians (default: sqrt(eps))
-};
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Q` | `Matrix<Scalar, NX, NX>` | Identity | Process noise covariance |
+| `R` | `Matrix<Scalar, NY, NY>` | Identity | Measurement noise covariance |
+| `x0` | `Vector<Scalar, NX>` | Zero | Initial state estimate |
+| `P0` | `Matrix<Scalar, NX, NX>` | Identity | Initial error covariance |
+| `numerical_eps` | `Scalar` | `sqrt(eps)` | Perturbation step for numerical Jacobians (only used when analytical Jacobians are not provided) |
 
 ## Constructor
 
@@ -115,6 +111,8 @@ To provide analytical Jacobians, add a `jacobian_x(x, u)` method to your dynamic
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'true', '' using 1:3 with lines title 'estimate'"
+
 #include <ctrlpp/estimation/ekf.h>
 
 #include <Eigen/Dense>
@@ -181,3 +179,4 @@ int main()
 - [kalman](kalman.md) -- linear Kalman filter for LTI systems
 - [observer-policy](observer-policy.md) -- concept satisfied by this type
 - [reference/ekf-ukf-theory](../reference/ekf-ukf-theory.md) -- EKF derivation and comparison
+- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- composing observers with controllers

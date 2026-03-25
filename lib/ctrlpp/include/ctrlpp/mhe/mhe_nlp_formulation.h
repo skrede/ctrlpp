@@ -76,7 +76,6 @@ auto build_nmhe_problem(const Dynamics& dynamics,
     // Decision variable layout
     const bool has_path_constraint = NC > 0 && config.path_constraint.has_value();
     const bool has_path_slack = config.soft_constraints && has_path_constraint;
-    const bool has_box = config.x_min.has_value() || config.x_max.has_value();
     const bool has_residual = config.residual_bound.has_value();
 
     const int n_states = (Ni + 1) * nx;
@@ -97,8 +96,6 @@ auto build_nmhe_problem(const Dynamics& dynamics,
     const int residual_con_start = path_con_start + n_path_con;
 
     const Scalar arrival_weight = config.arrival_cost_weight;
-    const Scalar soft_penalty = config.soft_penalty;
-
     // Cost function
     std::function<Scalar(std::span<const Scalar>)> cost = [=](std::span<const Scalar> z) -> Scalar
     {

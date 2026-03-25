@@ -25,9 +25,10 @@ A = [1  dt ]    B = [0.5*dt^2]
 ## Complete Program
 
 ```cpp
-#include "ctrlpp/mpc.h"
-#include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/model/propagate.h"
+// Usage: ./your_first_mpc | gnuplot -p -e "set datafile separator ','; plot '-' skip 1 using 1:2 with lines title 'position', '' using 1:3 with lines title 'velocity', '' using 1:4 with lines title 'control'"
+#include <ctrlpp/mpc.h>
+#include <ctrlpp/mpc/osqp_solver.h>
+#include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
 

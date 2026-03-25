@@ -109,8 +109,9 @@ Returns solver diagnostics including constraint violation metrics and total slac
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/nmpc.h"
-#include "ctrlpp/mpc/nlopt_solver.h"
+// gnuplot: plot "< ./nmpc_pendulum" using 1:2 with lines title "theta"
+#include <ctrlpp/nmpc.h>
+#include <ctrlpp/mpc/nlopt_solver.h>
 
 #include <Eigen/Dense>
 
@@ -180,4 +181,5 @@ int main()
 - [nlopt-solver](nlopt-solver.md) -- NLopt NLP solver backend
 - [dynamics-model](../model/dynamics-model.md) -- dynamics model concept
 - [constraint-model](../model/constraint-model.md) -- constraint model concepts
+- [guides/mpc/solver-injection](../guides/mpc/solver-injection.md) -- solver injection guide
 - [reference/mpc-theory](../reference/mpc-theory.md) -- MPC theory and background

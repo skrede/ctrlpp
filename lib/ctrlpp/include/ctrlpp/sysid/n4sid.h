@@ -44,16 +44,12 @@ struct n4sid_lq_result
     Eigen::Index j;
 };
 
-/// @cite vanoverschee1994 -- Oblique projection via LQ decomposition
-template <typename Derived1, typename Derived2>
-n4sid_lq_result<typename Derived1::Scalar> n4sid_oblique_projection(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, Eigen::Index i)
+/// @cite vanoverschee1994 -- Assemble stacked Hankel matrix [U_f; U_p; Y_p; Y_f]
+template <typename Scalar, typename Derived1, typename Derived2>
+Eigen::MatrixX<Scalar> assemble_n4sid_hankel(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, Eigen::Index i, Eigen::Index j)
 {
-    using Scalar = typename Derived1::Scalar;
-
-    auto N = Y.cols();
     auto ny = Y.rows();
     auto nu = U.rows();
-    Eigen::Index j = N - 2 * i + 1;
 
     auto Y_past = block_hankel(Y, 0, i, j);
     auto Y_future = block_hankel(Y, i, i, j);
@@ -69,25 +65,51 @@ n4sid_lq_result<typename Derived1::Scalar> n4sid_oblique_projection(const Eigen:
     H.middleRows(r1, nu * i) = U_past;
     H.middleRows(r1 + nu * i, ny * i) = Y_past;
     H.bottomRows(r3) = Y_future;
+    return H;
+}
 
-    Eigen::HouseholderQR<Eigen::MatrixX<Scalar>> qr(H.transpose());
+/// @cite vanoverschee1994 -- Extract oblique projection L32 from LQ factorisation
+template <typename Scalar>
+Eigen::MatrixX<Scalar> extract_oblique_projection(const Eigen::MatrixX<Scalar>& H, Eigen::Index r1, Eigen::Index r2, Eigen::Index r3, Eigen::Index j)
+{
     auto total_rows = r1 + r2 + r3;
     auto r_size = std::min(j, total_rows);
+    Eigen::HouseholderQR<Eigen::MatrixX<Scalar>> qr(H.transpose());
     Eigen::MatrixX<Scalar> R_h = qr.matrixQR().topRows(r_size).template triangularView<Eigen::Upper>();
     Eigen::MatrixX<Scalar> L = R_h.transpose();
 
-    auto l_rows = L.rows();
-    auto l_cols = L.cols();
-    auto c1 = std::min(r1, l_cols);
-    auto c2 = std::min(r2, l_cols - c1);
-    auto br3 = std::min(r3, l_rows - r1 - r2);
+    auto c1 = std::min(r1, L.cols());
+    auto c2 = std::min(r2, L.cols() - c1);
+    auto br3 = std::min(r3, L.rows() - r1 - r2);
 
     if(c2 <= 0 || br3 <= 0)
-        return {Eigen::MatrixX<Scalar>::Zero(r3, 1), Y_future, U_future, i, j};
+        return Eigen::MatrixX<Scalar>::Zero(r3, 1);
 
-    Eigen::MatrixX<Scalar> L32 = L.block(r1 + r2, c1, br3, c2);
+    return L.block(r1 + r2, c1, br3, c2);
+}
 
-    return {L32, Y_future, U_future, i, j};
+/// @cite vanoverschee1994 -- Oblique projection via LQ decomposition
+template <typename Derived1, typename Derived2>
+n4sid_lq_result<typename Derived1::Scalar> n4sid_oblique_projection(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, Eigen::Index i)
+{
+    using Scalar = typename Derived1::Scalar;
+
+    auto N = Y.cols();
+    auto ny = Y.rows();
+    auto nu = U.rows();
+    Eigen::Index j = N - 2 * i + 1;
+
+    auto r1 = nu * i;
+    auto r2 = (nu + ny) * i;
+    auto r3 = ny * i;
+
+    auto H = assemble_n4sid_hankel<Scalar>(Y, U, i, j);
+    auto O_i = extract_oblique_projection<Scalar>(H, r1, r2, r3, j);
+
+    auto Y_future = block_hankel(Y, i, i, j);
+    auto U_future = block_hankel(U, i, i, j);
+
+    return {O_i, Y_future, U_future, i, j};
 }
 
 /// Extract system matrix A from observability matrix via shift relation.

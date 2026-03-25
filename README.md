@@ -8,6 +8,8 @@
 
 **ctrlpp** is a C++20 control systems library with policy-based composition and concept-constrained interfaces. Header-only, Eigen-backed, and designed for hot-path use in real-time systems. PID controllers compose from orthogonal policies (anti-windup, derivative filtering, rate limiting); estimators and MPC/MHE inject solver backends through concepts; system identification runs online or offline with unified result types.
 
+**NB:** This library is still under development and have not undergone rigorous real-world testing beyond the extensive test suite under `tests/`. Reports and experiences from use or testing of this library will be appreciated.
+
 ## Features
 
 - **Policy-based PID** -- compose anti-windup, derivative filtering, setpoint filtering, velocity form, ISA form, feed-forward, and rate limiting from orthogonal policy types.

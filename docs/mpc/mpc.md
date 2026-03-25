@@ -105,9 +105,10 @@ Returns solver diagnostics from the last solve, including status, iteration coun
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/mpc.h"
-#include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/model/propagate.h"
+// gnuplot: plot "< ./mpc_regulation" using 1:3 with lines title "position"
+#include <ctrlpp/mpc.h>
+#include <ctrlpp/mpc/osqp_solver.h>
+#include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
 
@@ -163,4 +164,5 @@ int main()
 - [osqp-solver](osqp-solver.md) -- OSQP QP solver backend
 - [mhe](mhe.md) -- linear moving horizon estimation
 - [guides/mpc/solver-injection](../guides/mpc/solver-injection.md) -- solver injection guide
+- [guides/intro/your-first-mpc](../guides/intro/your-first-mpc.md) -- introductory MPC tutorial
 - [reference/mpc-theory](../reference/mpc-theory.md) -- MPC theory and background

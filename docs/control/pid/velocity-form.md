@@ -23,7 +23,9 @@ Instead of computing u(k) directly, the controller computes the change delta_u(k
 ## Usage Example
 
 ```cpp
-#include <ctrlpp/pid.h>
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'output', '' using 1:3 with lines title 'delta_u', '' using 1:4 with lines title 'u_accum'"
+
+#include <ctrlpp/control/pid.h>
 
 #include <iostream>
 
@@ -59,4 +61,5 @@ int main()
 - [PID overview](README.md) -- parent PID documentation
 - [anti-windup](anti-windup.md) -- explicit anti-windup for position form
 - [isa-form](isa-form.md) -- ISA standard PID parameterisation
+- [guides/pid/composition](../../guides/pid/composition.md) -- composing policies
 - [reference/pid-theory](../../reference/pid-theory.md) -- velocity form derivation

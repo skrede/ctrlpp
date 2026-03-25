@@ -45,7 +45,7 @@ The identified system is in observer canonical form with `NX = NA` states. The `
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/sysid/batch_arx.h"
+#include <ctrlpp/sysid/batch_arx.h>
 
 #include <Eigen/Dense>
 
@@ -89,3 +89,5 @@ int main()
 - [n4sid](n4sid.md) -- subspace identification
 - [fit-metrics](fit-metrics.md) -- goodness-of-fit metrics
 - [sysid-result](sysid-result.md) -- result container types
+- [guides/sysid/workflow](../guides/sysid/workflow.md) -- system identification workflow guide
+- [reference/sysid-theory](../reference/sysid-theory.md) -- sysid theory and background

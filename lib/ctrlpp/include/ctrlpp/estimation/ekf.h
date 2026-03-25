@@ -138,7 +138,7 @@ private:
     }
 
     /// @brief Apply state correction: x += K * innovation.
-    void apply_state_correction(const Eigen::Matrix<Scalar, nx, ny>& K, const output_vector_t& z, const output_vector_t& z_pred)
+    void apply_state_correction(const Eigen::Matrix<Scalar, nx, ny>& K, const output_vector_t& /*z*/, const output_vector_t& /*z_pred*/)
     {
         m_x = (m_x + K * m_innovation).eval();
     }

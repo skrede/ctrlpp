@@ -57,6 +57,19 @@ inline void add_diagonal_block(std::vector<Eigen::Triplet<Scalar>>& trips, int o
 }
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
+inline void add_soft_constraint_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int N, int slack_offset,
+                                         Scalar soft_penalty, const std::optional<Vector<Scalar, NX>>& soft_state_penalty)
+{
+    constexpr int nx = static_cast<int>(NX);
+    for(int k = 0; k < N; ++k)
+        for(int i = 0; i < nx; ++i)
+        {
+            Scalar penalty = soft_state_penalty.has_value() ? (*soft_state_penalty)(i) : soft_penalty;
+            trips.emplace_back(slack_offset + k * nx + i, slack_offset + k * nx + i, penalty);
+        }
+}
+
+template <typename Scalar, std::size_t NX, std::size_t NU>
 [[nodiscard]] auto build_cost_matrix(int N,
                                      const Matrix<Scalar, NX, NX>& Q,
                                      const Matrix<Scalar, NU, NU>& R,
@@ -78,22 +91,11 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
 
     for(int k = 0; k < N; ++k)
         add_diagonal_block<Scalar, NX, NU>(triplets, k * nx, Q, nx);
-
     add_diagonal_block<Scalar, NX, NU>(triplets, N * nx, Qf, nx);
-
     for(int k = 0; k < N; ++k)
         add_diagonal_block<Scalar, NX, NU>(triplets, n_x_total + k * nu, R, nu);
-
     if(has_soft_constraints)
-    {
-        int slack_offset = n_x_total + n_u_total;
-        for(int k = 0; k < N; ++k)
-            for(int i = 0; i < nx; ++i)
-            {
-                Scalar penalty = soft_state_penalty.has_value() ? (*soft_state_penalty)(i) : soft_penalty;
-                triplets.emplace_back(slack_offset + k * nx + i, slack_offset + k * nx + i, penalty);
-            }
-    }
+        add_soft_constraint_triplets<Scalar, NX, NU>(triplets, N, n_x_total + n_u_total, soft_penalty, soft_state_penalty);
 
     Eigen::SparseMatrix<Scalar, Eigen::ColMajor> P(n_dec, n_dec);
     P.setFromTriplets(triplets.begin(), triplets.end());
@@ -193,38 +195,44 @@ inline void add_rate_bound_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, 
 }
 
 template <typename Scalar, std::size_t NX>
-inline void add_terminal_set_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int x_N_offset, const terminal_set<Scalar, NX>& tset)
+inline void add_ellipsoidal_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int x_N_offset, const ellipsoidal_set<Scalar, NX>& s)
 {
     constexpr int nx = static_cast<int>(NX);
-    std::visit(
-        [&](const auto& s)
-        {
-            using T = std::decay_t<decltype(s)>;
-            if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
-            {
-                Eigen::SelfAdjointEigenSolver<Matrix<Scalar, NX, NX>> eig(s.P);
-                auto V = eig.eigenvectors();
+    Eigen::SelfAdjointEigenSolver<Matrix<Scalar, NX, NX>> eig(s.P);
+    auto V = eig.eigenvectors();
 
-                for(int i = 0; i < nx; ++i)
-                    for(int j = 0; j < nx; ++j)
-                        if(V(j, i) != Scalar{0})
-                        {
-                            trips.emplace_back(row + 2 * i, x_N_offset + j, V(j, i));
-                            trips.emplace_back(row + 2 * i + 1, x_N_offset + j, -V(j, i));
-                        }
-                row += 2 * nx;
-            }
-            else
+    for(int i = 0; i < nx; ++i)
+        for(int j = 0; j < nx; ++j)
+            if(V(j, i) != Scalar{0})
             {
-                int n_faces = static_cast<int>(s.H.rows());
-                for(int i = 0; i < n_faces; ++i)
-                    for(int j = 0; j < nx; ++j)
-                        if(s.H(i, j) != Scalar{0})
-                            trips.emplace_back(row + i, x_N_offset + j, s.H(i, j));
-                row += n_faces;
+                trips.emplace_back(row + 2 * i, x_N_offset + j, V(j, i));
+                trips.emplace_back(row + 2 * i + 1, x_N_offset + j, -V(j, i));
             }
-        },
-        tset);
+    row += 2 * nx;
+}
+
+template <typename Scalar, std::size_t NX>
+inline void add_polytopic_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int x_N_offset, const polytopic_set<Scalar, NX>& s)
+{
+    constexpr int nx = static_cast<int>(NX);
+    int n_faces = static_cast<int>(s.H.rows());
+    for(int i = 0; i < n_faces; ++i)
+        for(int j = 0; j < nx; ++j)
+            if(s.H(i, j) != Scalar{0})
+                trips.emplace_back(row + i, x_N_offset + j, s.H(i, j));
+    row += n_faces;
+}
+
+template <typename Scalar, std::size_t NX>
+inline void add_terminal_set_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int x_N_offset, const terminal_set<Scalar, NX>& tset)
+{
+    std::visit([&](const auto& s) {
+        using T = std::decay_t<decltype(s)>;
+        if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
+            add_ellipsoidal_triplets<Scalar, NX>(trips, row, x_N_offset, s);
+        else
+            add_polytopic_triplets<Scalar, NX>(trips, row, x_N_offset, s);
+    }, tset);
 }
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
@@ -327,37 +335,42 @@ inline void set_rate_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u
 }
 
 template <typename Scalar, std::size_t NX>
-inline void set_terminal_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, const terminal_set<Scalar, NX>& tset)
+inline void set_ellipsoidal_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, const ellipsoidal_set<Scalar, NX>& s)
 {
     constexpr int nx = static_cast<int>(NX);
-    std::visit(
-        [&](const auto& s)
-        {
-            using T = std::decay_t<decltype(s)>;
-            if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
-            {
-                Eigen::SelfAdjointEigenSolver<Matrix<Scalar, NX, NX>> eig(s.P);
-                auto D = eig.eigenvalues();
-                for(int i = 0; i < nx; ++i)
-                {
-                    Scalar bound = std::sqrt(s.alpha / D(i));
-                    l(row + 2 * i) = -bound;
-                    u(row + 2 * i) = bound;
-                    l(row + 2 * i + 1) = -bound;
-                    u(row + 2 * i + 1) = bound;
-                }
-                row += 2 * nx;
-            }
-            else
-            {
-                constexpr Scalar large_bound = Scalar{1e20};
-                int n_faces = static_cast<int>(s.H.rows());
-                l.segment(row, n_faces).setConstant(-large_bound);
-                u.segment(row, n_faces) = s.h;
-                row += n_faces;
-            }
-        },
-        tset);
+    Eigen::SelfAdjointEigenSolver<Matrix<Scalar, NX, NX>> eig(s.P);
+    auto D = eig.eigenvalues();
+    for(int i = 0; i < nx; ++i)
+    {
+        Scalar bound = std::sqrt(s.alpha / D(i));
+        l(row + 2 * i) = -bound;
+        u(row + 2 * i) = bound;
+        l(row + 2 * i + 1) = -bound;
+        u(row + 2 * i + 1) = bound;
+    }
+    row += 2 * nx;
+}
+
+template <typename Scalar, std::size_t NX>
+inline void set_polytopic_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, const polytopic_set<Scalar, NX>& s)
+{
+    constexpr Scalar large_bound = Scalar{1e20};
+    int n_faces = static_cast<int>(s.H.rows());
+    l.segment(row, n_faces).setConstant(-large_bound);
+    u.segment(row, n_faces) = s.h;
+    row += n_faces;
+}
+
+template <typename Scalar, std::size_t NX>
+inline void set_terminal_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, const terminal_set<Scalar, NX>& tset)
+{
+    std::visit([&](const auto& s) {
+        using T = std::decay_t<decltype(s)>;
+        if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
+            set_ellipsoidal_bounds<Scalar, NX>(l, u, row, s);
+        else
+            set_polytopic_bounds<Scalar, NX>(l, u, row, s);
+    }, tset);
 }
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
@@ -368,7 +381,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
                                         const std::optional<Vector<Scalar, NU>>& u_min,
                                         const std::optional<Vector<Scalar, NU>>& u_max,
                                         const std::optional<Vector<Scalar, NU>>& du_max,
-                                        bool has_soft_constraints,
+                                        bool /*has_soft_constraints*/,
                                         const std::optional<terminal_set<Scalar, NX>>& terminal_constraint = {}) -> std::pair<Eigen::VectorX<Scalar>, Eigen::VectorX<Scalar>>
 {
     constexpr int nx = static_cast<int>(NX);
@@ -400,7 +413,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
 // --- Cost vector building ---
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-[[nodiscard]] auto build_cost_vector(int N, int n_dec, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NX, NX>& Qf) -> Eigen::VectorX<Scalar>
+[[nodiscard]] auto build_cost_vector(int /*N*/, int n_dec, const Matrix<Scalar, NX, NX>& /*Q*/, const Matrix<Scalar, NX, NX>& /*Qf*/) -> Eigen::VectorX<Scalar>
 {
     return Eigen::VectorX<Scalar>::Zero(n_dec);
 }

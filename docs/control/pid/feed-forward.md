@@ -28,18 +28,26 @@ The feed-forward callable is evaluated at each control step and its output is ad
 ## Usage Example
 
 ```cpp
-#include <ctrlpp/pid.h>
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'reference', '' using 1:3 with lines title 'output', '' using 1:4 with lines title 'control'"
+
+#include <ctrlpp/control/pid.h>
+
+#include <Eigen/Dense>
 
 #include <iostream>
 
 int main()
 {
-    // Feed-forward function: scales setpoint by inverse plant gain
-    auto ff = [](double setpoint) { return 0.5 * setpoint; };
+    using Vec = Eigen::Matrix<double, 1, 1>;
+
+    // Feed-forward function: scales setpoint by inverse plant gain.
+    // Signature must be (const vector_t&, Scalar) -> vector_t.
+    auto ff = [](const Vec& sp, double /*dt*/) -> Vec {
+        return Vec::Constant(0.5 * sp[0]);
+    };
     using FF = decltype(ff);
 
     using Pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::feed_forward<FF>>;
-    using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
     cfg.kp = Vec::Constant(2.0);
@@ -52,7 +60,9 @@ int main()
     double y = 0.0;
     constexpr double dt = 0.01;
 
-    for (double t = 0.0; t < 5.0; t += dt) {
+    for (int k = 0; k < 500; ++k)
+    {
+        double t = k * dt;
         double r = (t >= 1.0) ? 1.0 : 0.0;
         auto sp = Vec::Constant(r);
         auto meas = Vec::Constant(y);
@@ -67,4 +77,5 @@ int main()
 
 - [PID overview](README.md) -- parent PID documentation
 - [setpoint-filter](setpoint-filter.md) -- reference shaping alternative
+- [guides/pid/composition](../../guides/pid/composition.md) -- composing policies
 - [reference/pid-theory](../../reference/pid-theory.md) -- feed-forward design theory

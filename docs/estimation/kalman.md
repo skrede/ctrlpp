@@ -29,18 +29,14 @@ using meas_cov_matrix_t = Eigen::Matrix<Scalar, ny, ny>;
 using system_t          = discrete_state_space<Scalar, NX, NU, NY>;
 ```
 
-## Config
+## Config (`kalman_config`)
 
-```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-struct kalman_config
-{
-    Matrix<Scalar, NX, NX> Q;   // process noise covariance (default: identity)
-    Matrix<Scalar, NY, NY> R;   // measurement noise covariance (default: identity)
-    Vector<Scalar, NX>     x0;  // initial state estimate (default: zero)
-    Matrix<Scalar, NX, NX> P0;  // initial covariance (default: identity)
-};
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Q` | `Matrix<Scalar, NX, NX>` | Identity | Process noise covariance |
+| `R` | `Matrix<Scalar, NY, NY>` | Identity | Measurement noise covariance |
+| `x0` | `Vector<Scalar, NX>` | Zero | Initial state estimate |
+| `P0` | `Matrix<Scalar, NX, NX>` | Identity | Initial error covariance |
 
 ## Constructor
 
@@ -48,7 +44,7 @@ struct kalman_config
 kalman_filter(system_t sys, kalman_config<Scalar, NX, NU, NY> config);
 ```
 
-Constructs the filter from a discrete state-space model and configuration. Uses C++20 designated initialisers for config.
+Constructs the filter from a discrete state-space model and configuration. Uses C++23 designated initialisers for config.
 
 ## Methods
 
@@ -135,6 +131,8 @@ Updates the process and measurement noise covariances.
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'true', '' using 1:3 with lines title 'estimate'"
+
 #include <ctrlpp/estimation/kalman.h>
 #include <ctrlpp/model/state_space.h>
 
@@ -191,4 +189,6 @@ int main()
 - [luenberger](luenberger.md) -- fixed-gain observer alternative
 - [ekf](ekf.md) -- nonlinear extension via linearisation
 - [observer-policy](observer-policy.md) -- concept satisfied by this type
+- [guides/intro/your-first-estimator](../guides/intro/your-first-estimator.md) -- introductory Kalman filter tutorial
+- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- composing observers with controllers
 - [reference/kalman-theory](../reference/kalman-theory.md) -- mathematical derivation

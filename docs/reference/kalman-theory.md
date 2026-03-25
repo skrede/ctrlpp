@@ -5,48 +5,76 @@ noise. It recursively estimates the state of a dynamic system from a sequence
 of noisy measurements, producing the minimum-variance unbiased estimate at
 each time step.
 
-## Key Concepts
+## State Estimation Problem
 
-### State Estimation Problem
+Given a discrete linear time-invariant system:
 
-Given a discrete linear system:
+$$
+x_{k+1} = A \, x_k + B \, u_k + w_k
+$$
 
-```
-x[k+1] = A * x[k] + B * u[k] + w[k]     (process model)
-z[k]   = C * x[k] + v[k]                  (measurement model)
-```
+$$
+z_k = C \, x_k + v_k
+$$
 
-where w[k] ~ N(0, Q) and v[k] ~ N(0, R) are zero-mean Gaussian noise, the
-Kalman filter finds the state estimate x_hat[k] that minimises the expected
-squared estimation error.
+where $w_k \sim \mathcal{N}(0, Q)$ is process noise and
+$v_k \sim \mathcal{N}(0, R)$ is measurement noise, the Kalman filter computes
+the state estimate $\hat{x}_k$ that minimises the expected squared estimation
+error $\mathbb{E}\bigl[\lVert x_k - \hat{x}_k \rVert^2\bigr]$.
 
-### Prediction Step
+## Prediction Step
 
-The prediction propagates the state estimate and covariance forward in time:
+The prediction propagates the state estimate and error covariance forward:
 
-```
-x_hat[k|k-1] = A * x_hat[k-1|k-1] + B * u[k-1]
-P[k|k-1]     = A * P[k-1|k-1] * A^T + Q
-```
+$$
+\hat{x}_{k|k-1} = A \, \hat{x}_{k-1|k-1} + B \, u_{k-1}
+$$
 
-The covariance P grows during prediction, reflecting increased uncertainty.
+$$
+P_{k|k-1} = A \, P_{k-1|k-1} \, A^\top + Q
+$$
 
-### Update (Correction) Step
+The covariance $P_{k|k-1}$ grows during prediction, reflecting increased
+uncertainty about the state.
 
-When a measurement arrives, the Kalman gain determines the optimal blend
-between prediction and measurement:
+## Update (Correction) Step
 
-```
-K[k]         = P[k|k-1] * C^T * (C * P[k|k-1] * C^T + R)^{-1}
-x_hat[k|k]   = x_hat[k|k-1] + K[k] * (z[k] - C * x_hat[k|k-1])
-P[k|k]       = (I - K[k] * C) * P[k|k-1]
-```
+When a measurement $z_k$ arrives, the filter computes the innovation
+(measurement residual):
 
-The innovation z[k] - C * x_hat[k|k-1] measures how much the measurement
-deviates from the prediction. The Kalman gain weights this innovation
-according to the relative uncertainties.
+$$
+\tilde{y}_k = z_k - C \, \hat{x}_{k|k-1}
+$$
 
-### Optimality
+The innovation covariance is:
+
+$$
+S_k = C \, P_{k|k-1} \, C^\top + R
+$$
+
+The Kalman gain optimally blends prediction and measurement:
+
+$$
+K_k = P_{k|k-1} \, C^\top \, S_k^{-1}
+$$
+
+The corrected state estimate and covariance are:
+
+$$
+\hat{x}_{k|k} = \hat{x}_{k|k-1} + K_k \, \tilde{y}_k
+$$
+
+$$
+P_{k|k} = (I - K_k \, C) \, P_{k|k-1}
+$$
+
+The Joseph form of the covariance update is numerically more stable:
+
+$$
+P_{k|k} = (I - K_k C) \, P_{k|k-1} \, (I - K_k C)^\top + K_k \, R \, K_k^\top
+$$
+
+## Optimality
 
 For linear systems with Gaussian noise, the Kalman filter is:
 
@@ -54,31 +82,31 @@ For linear systems with Gaussian noise, the Kalman filter is:
   estimation error covariance
 - **Maximum likelihood**: the estimate is the most probable state given all
   measurements
-- **Recursive**: processes measurements one at a time without storing
-  history
+- **Recursive**: processes measurements one at a time without storing history
 
-### Covariance Propagation
+## Covariance Propagation
 
-The error covariance P encodes the estimator's confidence. It depends only on
-the system matrices and noise covariances, not on the actual measurements.
-This means the Kalman gain sequence can be precomputed for time-invariant
-systems.
+The error covariance $P$ encodes the estimator's confidence. It depends only
+on the system matrices $(A, C)$ and noise covariances $(Q, R)$, not on the
+actual measurements. This means the Kalman gain sequence can be precomputed
+for time-invariant systems, converging to the steady-state gain
+$K_\infty = P_\infty C^\top (C P_\infty C^\top + R)^{-1}$ where $P_\infty$
+satisfies the discrete algebraic Riccati equation.
 
 ## References
 
-- **Kalman, R. E.** "A New Approach to Linear Filtering and Prediction
-  Problems." *Journal of Basic Engineering*, 82(1):35--45, 1960.
-  DOI: 10.1115/1.3662552.
+- Kalman, R. E. (1960). "A New Approach to Linear Filtering and Prediction
+  Problems." *Journal of Basic Engineering*, 82(1):35--45. [`kalman1960`]
   The foundational paper establishing recursive optimal estimation for linear
   systems.
 
-- **Simon, D.** *Optimal State Estimation: Kalman, H-Infinity, and Nonlinear
-  Approaches.* Wiley, 2006. ISBN 978-0-471-70858-2.
+- Simon, D. (2006). *Optimal State Estimation: Kalman, H-Infinity, and
+  Nonlinear Approaches.* Wiley. [`simon2006`]
   Comprehensive reference covering the Kalman filter, its extensions, and
   connections to other estimation frameworks.
 
-- **Kailath, T., Sayed, A. H., and Hassibi, B.** *Linear Estimation.*
-  Prentice Hall, 2000. ISBN 978-0-13-022464-4.
+- Kailath, T., Sayed, A. H., and Hassibi, B. (2000). *Linear Estimation.*
+  Prentice Hall. [`kailath2000`]
   Rigorous treatment of linear estimation theory including square-root and
   information filter variants.
 
@@ -90,3 +118,5 @@ systems.
   observer (Kalman filter without stochastic tuning)
 - [Your First Estimator](../guides/intro/your-first-estimator.md) --
   introductory tutorial
+- [Observer-Controller Guide](../guides/estimation/observer-controller.md) --
+  composing observers with controllers

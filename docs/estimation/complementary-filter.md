@@ -107,6 +107,8 @@ Returns the estimated gyroscope bias.
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'attitude error (rad)'"
+
 #include <ctrlpp/estimation/complementary_filter.h>
 #include <ctrlpp/lie/so3.h>
 
@@ -162,4 +164,5 @@ int main()
 
 - [mekf](mekf.md) -- optimal attitude estimation with bias tracking
 - [manifold-ukf](manifold-ukf.md) -- sigma-point filter on SO(3)
+- [so3](../lie/so3.md) -- SO(3) quaternion utilities
 - [reference/attitude-estimation-theory](../reference/attitude-estimation-theory.md) -- complementary filter derivation

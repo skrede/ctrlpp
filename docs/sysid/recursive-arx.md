@@ -70,7 +70,7 @@ Converts the current parameter estimate to observer canonical form state-space m
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/sysid/recursive_arx.h"
+#include <ctrlpp/sysid/recursive_arx.h>
 
 #include <Eigen/Dense>
 
@@ -118,3 +118,6 @@ int main()
 
 - [batch-arx](batch-arx.md) -- offline batch ARX identification
 - [rls](rls.md) -- underlying recursive least squares estimator
+- [sysid-result](sysid-result.md) -- result container types
+- [guides/sysid/workflow](../guides/sysid/workflow.md) -- system identification workflow guide
+- [reference/sysid-theory](../reference/sysid-theory.md) -- sysid theory and background

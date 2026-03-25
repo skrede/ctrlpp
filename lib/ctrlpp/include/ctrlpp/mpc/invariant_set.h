@@ -51,6 +51,37 @@ auto compute_ellipsoidal_set(const Matrix<Scalar, NX, NX>& P, const Matrix<Scala
 namespace detail
 {
 
+/// Try to find a vertex at the intersection of the given hyperplane subset.
+/// Returns std::nullopt if the system is singular or the vertex is infeasible.
+template <typename Scalar, std::size_t NU>
+auto try_vertex_at_intersection(const polytopic_set<Scalar, NU>& constraints,
+                                const std::vector<int>& indices,
+                                Scalar tol) -> std::optional<Vector<Scalar, NU>>
+{
+    constexpr int nu = static_cast<int>(NU);
+    int m = static_cast<int>(constraints.H.rows());
+
+    Eigen::Matrix<Scalar, nu, nu> H_sub;
+    Eigen::Matrix<Scalar, nu, 1> h_sub;
+    for(int i = 0; i < nu; ++i)
+    {
+        H_sub.row(i) = constraints.H.row(indices[static_cast<std::size_t>(i)]);
+        h_sub(i) = constraints.h(indices[static_cast<std::size_t>(i)]);
+    }
+
+    auto qr = H_sub.colPivHouseholderQr();
+    if(!qr.isInvertible())
+        return std::nullopt;
+
+    Vector<Scalar, NU> v = qr.solve(h_sub);
+
+    for(int j = 0; j < m; ++j)
+        if(constraints.H.row(j).dot(v) > constraints.h(j) + tol)
+            return std::nullopt;
+
+    return v;
+}
+
 /// Enumerate vertices of a polytopic constraint set via hyperplane intersection.
 template <typename Scalar, std::size_t NU>
 auto enumerate_polytope_vertices(const polytopic_set<Scalar, NU>& constraints, Scalar tol) -> std::vector<Vector<Scalar, NU>>
@@ -83,32 +114,8 @@ auto enumerate_polytope_vertices(const polytopic_set<Scalar, NU>& constraints, S
 
     do
     {
-        Eigen::Matrix<Scalar, nu, nu> H_sub;
-        Eigen::Matrix<Scalar, nu, 1> h_sub;
-        for(int i = 0; i < nu; ++i)
-        {
-            H_sub.row(i) = constraints.H.row(indices[static_cast<std::size_t>(i)]);
-            h_sub(i) = constraints.h(indices[static_cast<std::size_t>(i)]);
-        }
-
-        auto qr = H_sub.colPivHouseholderQr();
-        if(!qr.isInvertible())
-            continue;
-
-        Vector<Scalar, NU> v = qr.solve(h_sub);
-
-        bool feasible = true;
-        for(int j = 0; j < m; ++j)
-        {
-            if(constraints.H.row(j).dot(v) > constraints.h(j) + tol)
-            {
-                feasible = false;
-                break;
-            }
-        }
-
-        if(feasible)
-            vertices.push_back(v);
+        if(auto v = try_vertex_at_intersection<Scalar, NU>(constraints, indices, tol))
+            vertices.push_back(*v);
     } while(next_combination());
 
     return vertices;
@@ -143,50 +150,39 @@ auto compute_pre_image(const Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<i
     return {H_pre, h_pre};
 }
 
-/// Remove redundant halfplanes from a polytopic H-representation.
+/// Check whether halfplane i is redundant w.r.t. already-kept halfplanes.
 template <typename Scalar, std::size_t NX>
-auto filter_redundant_halfplanes(const Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>& H,
-                                 const Eigen::VectorX<Scalar>& h,
-                                 Scalar convergence_tol) -> std::pair<Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>, Eigen::VectorX<Scalar>>
+auto is_halfplane_redundant(const Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>& H,
+                            const Eigen::VectorX<Scalar>& h,
+                            int i,
+                            const std::vector<int>& keep,
+                            Scalar convergence_tol) -> bool
+{
+    Scalar row_norm = H.row(i).norm();
+    Scalar h_normalized = h(i) / row_norm;
+    Vector<Scalar, NX> dir_i = H.row(i).transpose() / row_norm;
+
+    for(int j : keep)
+    {
+        Scalar row_norm_j = H.row(j).norm();
+        Vector<Scalar, NX> dir_j = H.row(j).transpose() / row_norm_j;
+        if(dir_i.dot(dir_j) > Scalar{1} - Scalar{1e-8})
+        {
+            Scalar h_norm_j = h(j) / row_norm_j;
+            if(h_normalized >= h_norm_j - convergence_tol)
+                return true;
+        }
+    }
+    return false;
+}
+
+/// Extract a subset of rows from an H-representation.
+template <typename Scalar, std::size_t NX>
+auto extract_rows(const Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>& H,
+                  const Eigen::VectorX<Scalar>& h,
+                  const std::vector<int>& keep) -> std::pair<Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>, Eigen::VectorX<Scalar>>
 {
     constexpr int nx = static_cast<int>(NX);
-    int n_rows = static_cast<int>(H.rows());
-
-    std::vector<int> keep;
-    keep.reserve(static_cast<std::size_t>(n_rows));
-
-    for(int i = 0; i < n_rows; ++i)
-    {
-        Scalar row_norm = H.row(i).norm();
-        if(row_norm < Scalar{1e-14})
-            continue;
-
-        Scalar h_normalized = h(i) / row_norm;
-        bool is_redundant = false;
-
-        for(int j : keep)
-        {
-            Scalar row_norm_j = H.row(j).norm();
-            Vector<Scalar, NX> dir_i = H.row(i).transpose() / row_norm;
-            Vector<Scalar, NX> dir_j = H.row(j).transpose() / row_norm_j;
-            if(dir_i.dot(dir_j) > Scalar{1} - Scalar{1e-8})
-            {
-                Scalar h_norm_j = h(j) / row_norm_j;
-                if(h_normalized >= h_norm_j - convergence_tol)
-                {
-                    is_redundant = true;
-                    break;
-                }
-            }
-        }
-        if(!is_redundant)
-            keep.push_back(i);
-    }
-
-    constexpr int max_halfplanes = 500;
-    if(static_cast<int>(keep.size()) > max_halfplanes)
-        keep.resize(static_cast<std::size_t>(max_halfplanes));
-
     Eigen::Matrix<Scalar, Eigen::Dynamic, nx> H_out(static_cast<int>(keep.size()), nx);
     Eigen::VectorX<Scalar> h_out(static_cast<int>(keep.size()));
     for(int i = 0; i < static_cast<int>(keep.size()); ++i)
@@ -194,10 +190,66 @@ auto filter_redundant_halfplanes(const Eigen::Matrix<Scalar, Eigen::Dynamic, sta
         H_out.row(i) = H.row(keep[static_cast<std::size_t>(i)]);
         h_out(i) = h(keep[static_cast<std::size_t>(i)]);
     }
-
     return {H_out, h_out};
 }
 
+/// Remove redundant halfplanes from a polytopic H-representation.
+template <typename Scalar, std::size_t NX>
+auto filter_redundant_halfplanes(const Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>& H,
+                                 const Eigen::VectorX<Scalar>& h,
+                                 Scalar convergence_tol) -> std::pair<Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>, Eigen::VectorX<Scalar>>
+{
+    int n_rows = static_cast<int>(H.rows());
+
+    std::vector<int> keep;
+    keep.reserve(static_cast<std::size_t>(n_rows));
+
+    for(int i = 0; i < n_rows; ++i)
+    {
+        if(H.row(i).norm() < Scalar{1e-14})
+            continue;
+        if(!is_halfplane_redundant<Scalar, NX>(H, h, i, keep, convergence_tol))
+            keep.push_back(i);
+    }
+
+    constexpr int max_halfplanes = 500;
+    if(static_cast<int>(keep.size()) > max_halfplanes)
+        keep.resize(static_cast<std::size_t>(max_halfplanes));
+
+    return extract_rows<Scalar, NX>(H, h, keep);
+}
+
+}
+
+/// Perform one backward-reachability iteration: compute pre-image, merge, and filter.
+/// Returns true if the set has converged (no new halfplanes added).
+template <typename Scalar, std::size_t NX, std::size_t NU>
+auto backward_reachability_step(Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>& H_curr,
+                                Eigen::VectorX<Scalar>& h_curr,
+                                const Matrix<Scalar, NX, NX>& A_sys,
+                                const Matrix<Scalar, NX, NU>& B_sys,
+                                const std::vector<Vector<Scalar, NU>>& u_vertices,
+                                Scalar convergence_tol) -> bool
+{
+    constexpr int nx = static_cast<int>(NX);
+    auto [H_pre, h_pre] = detail::compute_pre_image<Scalar, NX, NU>(H_curr, h_curr, A_sys, B_sys, u_vertices);
+
+    int old_rows = static_cast<int>(H_curr.rows());
+    int pre_rows = static_cast<int>(H_pre.rows());
+
+    Eigen::Matrix<Scalar, Eigen::Dynamic, nx> H_next(old_rows + pre_rows, nx);
+    Eigen::VectorX<Scalar> h_next(old_rows + pre_rows);
+    H_next.topRows(old_rows) = H_curr;
+    h_next.head(old_rows) = h_curr;
+    H_next.bottomRows(pre_rows) = H_pre;
+    h_next.tail(pre_rows) = h_pre;
+
+    auto [H_filtered, h_filtered] = detail::filter_redundant_halfplanes<Scalar, NX>(H_next, h_next, convergence_tol);
+    bool converged = (static_cast<int>(H_filtered.rows()) == old_rows);
+
+    H_curr = std::move(H_filtered);
+    h_curr = std::move(h_filtered);
+    return converged;
 }
 
 /// Compute polytopic maximal control-invariant set via backward reachability.
@@ -211,40 +263,17 @@ auto compute_polytopic_invariant_set(const Matrix<Scalar, NX, NX>& A_sys,
                                      Scalar convergence_tol = Scalar{1e-6}) -> std::optional<polytopic_set<Scalar, NX>>
 {
     static_assert(NX <= 4, "Polytopic invariant set computation restricted to NX <= 4");
-    constexpr int nx = static_cast<int>(NX);
 
     auto u_vertices = detail::enumerate_polytope_vertices<Scalar, NU>(input_constraints, convergence_tol);
     if(u_vertices.empty())
         return std::nullopt;
 
-    using HMatrix = Eigen::Matrix<Scalar, Eigen::Dynamic, nx>;
-    using hVector = Eigen::VectorX<Scalar>;
-
-    HMatrix H_curr = state_constraints.H;
-    hVector h_curr = state_constraints.h;
+    auto H_curr = state_constraints.H;
+    auto h_curr = state_constraints.h;
 
     for(int iter = 0; iter < max_iterations; ++iter)
-    {
-        auto [H_pre, h_pre] = detail::compute_pre_image<Scalar, NX, NU>(H_curr, h_curr, A_sys, B_sys, u_vertices);
-
-        int old_rows = static_cast<int>(H_curr.rows());
-        int pre_rows = static_cast<int>(H_pre.rows());
-
-        HMatrix H_next(old_rows + pre_rows, nx);
-        hVector h_next(old_rows + pre_rows);
-        H_next.topRows(old_rows) = H_curr;
-        h_next.head(old_rows) = h_curr;
-        H_next.bottomRows(pre_rows) = H_pre;
-        h_next.tail(pre_rows) = h_pre;
-
-        auto [H_filtered, h_filtered] = detail::filter_redundant_halfplanes<Scalar, NX>(H_next, h_next, convergence_tol);
-
-        if(static_cast<int>(H_filtered.rows()) == old_rows)
-            return polytopic_set<Scalar, NX>{.H = std::move(H_filtered), .h = std::move(h_filtered)};
-
-        H_curr = std::move(H_filtered);
-        h_curr = std::move(h_filtered);
-    }
+        if(backward_reachability_step<Scalar, NX, NU>(H_curr, h_curr, A_sys, B_sys, u_vertices, convergence_tol))
+            return polytopic_set<Scalar, NX>{.H = std::move(H_curr), .h = std::move(h_curr)};
 
     return polytopic_set<Scalar, NX>{.H = std::move(H_curr), .h = std::move(h_curr)};
 }

@@ -31,21 +31,17 @@ using output_vector_t = Vector<Scalar, NY>;
 using cov_matrix_t    = Matrix<Scalar, 3, 3>;   // tangent-space covariance
 ```
 
-## Config
+## Config (`manifold_ukf_config`)
 
-```cpp
-template <typename Scalar, std::size_t NY>
-struct manifold_ukf_config
-{
-    Matrix<Scalar, 3, 3>        Q;                    // process noise in tangent space (default: identity)
-    Matrix<Scalar, NY, NY>      R;                    // measurement noise (default: identity)
-    Eigen::Quaternion<Scalar>   q0;                   // initial quaternion (default: identity)
-    Matrix<Scalar, 3, 3>        P0;                   // initial tangent-space covariance (default: identity)
-    Scalar dt;                                         // time step (default: 0.01)
-    std::size_t geodesic_mean_max_iter;               // max iterations for mean (default: 30)
-    Scalar geodesic_mean_tol;                          // convergence tolerance (default: 1e-9)
-};
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Q` | `Matrix<Scalar, 3, 3>` | Identity | Process noise covariance in tangent space |
+| `R` | `Matrix<Scalar, NY, NY>` | Identity | Measurement noise covariance |
+| `q0` | `Eigen::Quaternion<Scalar>` | Identity | Initial quaternion estimate |
+| `P0` | `Matrix<Scalar, 3, 3>` | Identity | Initial tangent-space covariance |
+| `dt` | `Scalar` | `0.01` | Time step |
+| `geodesic_mean_max_iter` | `std::size_t` | `30` | Maximum iterations for geodesic mean computation |
+| `geodesic_mean_tol` | `Scalar` | `1e-9` | Convergence tolerance for geodesic mean |
 
 ## Constructor
 
@@ -115,6 +111,8 @@ Header: `#include <ctrlpp/estimation/sigma_points/so3_sigma_points.h>`
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'attitude error (rad)'"
+
 #include <ctrlpp/estimation/manifold_ukf.h>
 #include <ctrlpp/lie/so3.h>
 
@@ -179,4 +177,5 @@ int main()
 - [mekf](mekf.md) -- multiplicative EKF alternative for attitude estimation
 - [ukf](ukf.md) -- Euclidean UKF for non-manifold problems
 - [complementary-filter](complementary-filter.md) -- lightweight sensor fusion
+- [so3](../lie/so3.md) -- SO(3) quaternion utilities used by manifold UKF
 - [reference/attitude-estimation-theory](../reference/attitude-estimation-theory.md) -- manifold filtering theory

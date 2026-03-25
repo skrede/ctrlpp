@@ -39,7 +39,7 @@ Edge cases: constant signals (zero variance) return NRMSE = 0 and VAF = 100% whe
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/sysid/fit_metrics.h"
+#include <ctrlpp/sysid/fit_metrics.h>
 
 #include <Eigen/Dense>
 
@@ -63,4 +63,7 @@ int main()
 ## See Also
 
 - [sysid-result](sysid-result.md) -- result containers that include fit_metrics
+- [batch-arx](batch-arx.md) -- batch ARX identification
+- [n4sid](n4sid.md) -- subspace identification
 - [rls](rls.md) -- recursive least squares
+- [reference/sysid-theory](../reference/sysid-theory.md) -- sysid theory and background

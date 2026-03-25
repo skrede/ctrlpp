@@ -40,7 +40,9 @@ Additionally, the policy adds a filter time constant:
 ## Usage Example
 
 ```cpp
-#include <ctrlpp/pid.h>
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'reference', '' using 1:3 with lines title 'output', '' using 1:4 with lines title 'control'"
+
+#include <ctrlpp/control/pid.h>
 
 #include <iostream>
 
@@ -76,4 +78,5 @@ int main()
 
 - [PID overview](README.md) -- parent PID documentation
 - [derivative-filter](derivative-filter.md) -- noise attenuation on the derivative term
+- [guides/pid/composition](../../guides/pid/composition.md) -- composing policies
 - [reference/pid-theory](../../reference/pid-theory.md) -- setpoint weighting theory

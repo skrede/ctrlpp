@@ -88,8 +88,9 @@ Solves the NLP from the initial guess in `update.x0`. Returns the solution, obje
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/nmpc.h"
-#include "ctrlpp/mpc/nlopt_solver.h"
+// gnuplot: plot "< ./nlopt_demo" using 1:3 with lines title "state"
+#include <ctrlpp/nmpc.h>
+#include <ctrlpp/mpc/nlopt_solver.h>
 
 #include <Eigen/Dense>
 
@@ -156,3 +157,4 @@ int main()
 - [nmhe](nmhe.md) -- nonlinear MHE using NLopt
 - [osqp-solver](osqp-solver.md) -- OSQP QP solver backend
 - [guides/mpc/solver-injection](../guides/mpc/solver-injection.md) -- solver injection guide
+- [reference/mpc-theory](../reference/mpc-theory.md) -- NLP formulation and theory

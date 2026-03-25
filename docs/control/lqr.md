@@ -190,6 +190,8 @@ struct lqi_result
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'position', '' using 1:3 with lines title 'control'"
+
 #include <ctrlpp/control/lqr.h>
 #include <ctrlpp/model/discretise.h>
 #include <ctrlpp/model/state_space.h>
@@ -243,4 +245,4 @@ int main()
 - [dare](dare.md) -- discrete algebraic Riccati equation solver used internally
 - [place](place.md) -- pole placement alternative to optimal control
 - [kalman](../estimation/kalman.md) -- Kalman filter for observer-controller composition
-- [reference/optimal-control-theory](../reference/optimal-control-theory.md) -- mathematical background
+- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- observer-controller composition patterns

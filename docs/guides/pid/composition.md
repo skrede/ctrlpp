@@ -28,7 +28,8 @@ This example composes `anti_windup<back_calc>`, `deriv_filter`, and
 - **Rate limiting**: bounds the rate of change of the control signal
 
 ```cpp
-#include "ctrlpp/pid.h"
+// Usage: ./pid_composition | gnuplot -p -e "set datafile separator ','; plot '-' skip 1 using 1:3 with lines title 'measurement', '' using 1:4 with lines title 'control'"
+#include <ctrlpp/control/pid.h>
 
 #include <iomanip>
 #include <iostream>

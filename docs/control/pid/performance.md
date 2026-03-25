@@ -47,7 +47,7 @@ The performance assessment policy accumulates metrics passively during each `com
 ## Usage Example
 
 ```cpp
-#include <ctrlpp/pid.h>
+#include <ctrlpp/control/pid.h>
 
 #include <iomanip>
 #include <iostream>
@@ -86,4 +86,5 @@ int main()
 - [PID overview](README.md) -- parent PID documentation
 - [anti-windup](anti-windup.md) -- performance depends on proper windup handling
 - [derivative-filter](derivative-filter.md) -- noise filtering affects performance metrics
+- [guides/pid/composition](../../guides/pid/composition.md) -- composing policies
 - [reference/pid-theory](../../reference/pid-theory.md) -- performance index definitions

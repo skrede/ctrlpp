@@ -233,3 +233,157 @@ TEST_CASE("place with real poles")
     CHECK_THAT(computed_real[0], Catch::Matchers::WithinAbs(-6.0, 1e-8));
     CHECK_THAT(computed_real[1], Catch::Matchers::WithinAbs(-5.0, 1e-8));
 }
+
+TEST_CASE("place with unpaired complex pole returns nullopt")
+{
+    // Only one complex pole without its conjugate -> invalid
+    Eigen::Matrix<double, 2, 2> A;
+    A << 0.0, 1.0, -2.0, -3.0;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 0.0, 1.0;
+
+    // Two complex poles that are NOT conjugate pairs
+    std::array<std::complex<double>, 2> desired = {std::complex<double>{-1.0, 1.0}, std::complex<double>{-2.0, 1.0}};
+
+    auto result = ctrlpp::place<double, 2, 1>(A, B, desired);
+    CHECK_FALSE(result.has_value());
+}
+
+TEST_CASE("place with single unpaired imaginary pole returns nullopt")
+{
+    // One real, one complex without conjugate
+    Eigen::Matrix<double, 2, 2> A;
+    A << 0.0, 1.0, -2.0, -3.0;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 0.0, 1.0;
+
+    std::array<std::complex<double>, 2> desired = {std::complex<double>{-1.0, 0.0}, std::complex<double>{-2.0, 3.0}};
+
+    auto result = ctrlpp::place<double, 2, 1>(A, B, desired);
+    CHECK_FALSE(result.has_value());
+}
+
+TEST_CASE("place with repeated real poles")
+{
+    // Repeated poles should still work for controllable SISO systems
+    Eigen::Matrix<double, 2, 2> A;
+    A << 0.0, 1.0, -2.0, -3.0;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 0.0, 1.0;
+
+    std::array<std::complex<double>, 2> desired = {std::complex<double>{-3.0, 0.0}, std::complex<double>{-3.0, 0.0}};
+
+    auto result = ctrlpp::place<double, 2, 1>(A, B, desired);
+    REQUIRE(result.has_value());
+
+    auto K = *result;
+    Eigen::Matrix<double, 2, 2> Acl = A - B * K;
+    Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> solver(Acl, false);
+    auto evals = solver.eigenvalues();
+
+    std::array<double, 2> computed_real = {evals(0).real(), evals(1).real()};
+    std::sort(computed_real.begin(), computed_real.end());
+    CHECK_THAT(computed_real[0], Catch::Matchers::WithinAbs(-3.0, 1e-6));
+    CHECK_THAT(computed_real[1], Catch::Matchers::WithinAbs(-3.0, 1e-6));
+}
+
+TEST_CASE("place partially uncontrollable system returns nullopt")
+{
+    // B only controls one state -> controllability matrix is rank-deficient
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 0.0, 0.0, 2.0; // diagonal -> [B, AB] = [[1,1],[0,0]] rank 1
+    Eigen::Matrix<double, 2, 1> B;
+    B << 1.0, 0.0;
+
+    std::array<std::complex<double>, 2> desired = {std::complex<double>{-1.0, 0.0}, std::complex<double>{-2.0, 0.0}};
+
+    auto result = ctrlpp::place<double, 2, 1>(A, B, desired);
+    CHECK_FALSE(result.has_value());
+}
+
+TEST_CASE("place 3-state system with complex conjugate pair")
+{
+    // 3x3 system with one real pole and one conjugate pair
+    Eigen::Matrix<double, 3, 3> A;
+    A << 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, -6.0, -11.0, -6.0;
+    Eigen::Matrix<double, 3, 1> B;
+    B << 0.0, 0.0, 1.0;
+
+    std::array<std::complex<double>, 3> desired = {
+        std::complex<double>{-2.0, 0.0}, std::complex<double>{-1.0, 1.0}, std::complex<double>{-1.0, -1.0}};
+
+    auto result = ctrlpp::place<double, 3, 1>(A, B, desired);
+    REQUIRE(result.has_value());
+
+    auto K = *result;
+    Eigen::Matrix<double, 3, 3> Acl = A - B * K;
+    Eigen::EigenSolver<Eigen::Matrix<double, 3, 3>> solver(Acl, false);
+    auto evals = solver.eigenvalues();
+
+    // Sort eigenvalues and desired by real then imaginary
+    std::array<std::complex<double>, 3> computed = {evals(0), evals(1), evals(2)};
+    auto sort_fn = [](auto a, auto b) {
+        if(std::abs(a.real() - b.real()) > 1e-6)
+            return a.real() < b.real();
+        return a.imag() < b.imag();
+    };
+    std::sort(computed.begin(), computed.end(), sort_fn);
+    auto desired_sorted = desired;
+    std::sort(desired_sorted.begin(), desired_sorted.end(), sort_fn);
+
+    for(std::size_t i = 0; i < 3; ++i)
+    {
+        CHECK_THAT(computed[i].real(), Catch::Matchers::WithinAbs(desired_sorted[i].real(), 1e-6));
+        CHECK_THAT(computed[i].imag(), Catch::Matchers::WithinAbs(desired_sorted[i].imag(), 1e-6));
+    }
+}
+
+TEST_CASE("place_observer on uncontrollable dual returns nullopt")
+{
+    // System where A^T, C^T is uncontrollable -> place_observer returns nullopt
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 0.0, 0.0, 2.0;
+    Eigen::Matrix<double, 1, 2> C;
+    C << 0.0, 0.0; // zero C -> unobservable
+
+    std::array<std::complex<double>, 2> desired = {std::complex<double>{0.3, 0.0}, std::complex<double>{0.2, 0.0}};
+
+    auto result = ctrlpp::place_observer<double, 2, 1>(A, C, desired);
+    CHECK_FALSE(result.has_value());
+}
+
+TEST_CASE("place_observer with unpaired complex poles returns nullopt")
+{
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 0.1, 0.0, 1.0;
+    Eigen::Matrix<double, 1, 2> C;
+    C << 1.0, 0.0;
+
+    // Unpaired complex poles
+    std::array<std::complex<double>, 2> desired = {std::complex<double>{0.3, 0.5}, std::complex<double>{0.2, 0.1}};
+
+    auto result = ctrlpp::place_observer<double, 2, 1>(A, C, desired);
+    CHECK_FALSE(result.has_value());
+}
+
+TEST_CASE("place with poles at origin")
+{
+    // Deadbeat: all poles at 0
+    Eigen::Matrix<double, 2, 2> A;
+    A << 0.0, 1.0, -2.0, -3.0;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 0.0, 1.0;
+
+    std::array<std::complex<double>, 2> desired = {std::complex<double>{0.0, 0.0}, std::complex<double>{0.0, 0.0}};
+
+    auto result = ctrlpp::place<double, 2, 1>(A, B, desired);
+    REQUIRE(result.has_value());
+
+    auto K = *result;
+    Eigen::Matrix<double, 2, 2> Acl = A - B * K;
+    Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> solver(Acl, false);
+    auto evals = solver.eigenvalues();
+
+    for(int i = 0; i < 2; ++i)
+        CHECK(std::abs(evals(i)) < 1e-6);
+}

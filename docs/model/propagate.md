@@ -51,8 +51,9 @@ Computes `y = C*x + D*u`.
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/model/propagate.h"
-#include "ctrlpp/model/state_space.h"
+// gnuplot: plot "< ./propagate_demo" using 1:2 with lines title "position"
+#include <ctrlpp/model/propagate.h>
+#include <ctrlpp/model/state_space.h>
 
 #include <Eigen/Dense>
 
@@ -86,3 +87,4 @@ int main()
 
 - [state-space](state-space.md) -- state-space representation
 - [dynamics-model](dynamics-model.md) -- nonlinear dynamics model concept
+- [discretise](discretise.md) -- continuous-to-discrete conversion

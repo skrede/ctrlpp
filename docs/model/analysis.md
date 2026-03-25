@@ -82,8 +82,8 @@ Checks if all eigenvalues of `A - L*C` are inside the unit circle (discrete-time
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/model/analysis.h"
-#include "ctrlpp/model/state_space.h"
+#include <ctrlpp/model/analysis.h>
+#include <ctrlpp/model/state_space.h>
 
 #include <Eigen/Dense>
 
@@ -119,3 +119,5 @@ int main()
 ## See Also
 
 - [state-space](state-space.md) -- state-space representation
+- [lqr](../control/lqr.md) -- LQR design requires controllability
+- [place](../control/place.md) -- pole placement for control/observer design

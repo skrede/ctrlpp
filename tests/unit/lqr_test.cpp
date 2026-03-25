@@ -257,6 +257,38 @@ TEST_CASE("lqr class compute returns -K*x")
     CHECK((lqr.gain() - K).norm() < 1e-12);
 }
 
+TEST_CASE("lqr_gain with N returns nullopt when DARE fails")
+{
+    // Non-stabilizable system with cross-weight N
+    Eigen::Matrix<double, 2, 2> A, Q;
+    Eigen::Matrix<double, 2, 1> B, N;
+    Eigen::Matrix<double, 1, 1> R;
+
+    A << 2.0, 0.0, 0.0, 0.5;
+    B << 0.0, 1.0;
+    Q = Eigen::Matrix<double, 2, 2>::Identity();
+    R(0, 0) = 1.0;
+    N << 0.1, 0.2;
+
+    auto result = ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R, N);
+    CHECK_FALSE(result.has_value());
+}
+
+TEST_CASE("lqr_gain with singular A returns nullopt")
+{
+    Eigen::Matrix<double, 2, 2> A, Q;
+    Eigen::Matrix<double, 2, 1> B;
+    Eigen::Matrix<double, 1, 1> R;
+
+    A << 1.0, 0.0, 0.0, 0.0; // singular
+    B << 1.0, 1.0;
+    Q = Eigen::Matrix<double, 2, 2>::Identity();
+    R(0, 0) = 1.0;
+
+    auto result = ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R);
+    CHECK_FALSE(result.has_value());
+}
+
 TEST_CASE("lqr_time_varying indexes correctly")
 {
     Eigen::Matrix<double, 2, 2> A, Q;

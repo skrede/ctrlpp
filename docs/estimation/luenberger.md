@@ -89,6 +89,8 @@ Resets the state estimate to a new initial value.
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'true', '' using 1:3 with lines title 'estimate'"
+
 #include <ctrlpp/estimation/luenberger.h>
 #include <ctrlpp/control/place.h>
 #include <ctrlpp/model/state_space.h>
@@ -144,3 +146,5 @@ int main()
 - [kalman](kalman.md) -- optimal stochastic observer
 - [observer-policy](observer-policy.md) -- concept satisfied by this type
 - [place](../control/place.md) -- pole placement for observer gain design
+- [reference/kalman-theory](../reference/kalman-theory.md) -- observer theory and comparison with Kalman filter
+- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- composing observers with controllers

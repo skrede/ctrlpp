@@ -32,22 +32,18 @@ using input_vector_t  = Vector<Scalar, NU>;
 using output_vector_t = Vector<Scalar, NY>;
 ```
 
-## Config
+## Config (`pf_config`)
 
-```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-struct pf_config
-{
-    Matrix<Scalar, NX, NX> Q;            // process noise covariance (default: identity)
-    Matrix<Scalar, NY, NY> R;            // measurement noise covariance (default: identity)
-    Vector<Scalar, NX>     x0;           // initial state mean (default: zero)
-    Matrix<Scalar, NX, NX> P0;           // initial dispersion covariance (default: identity)
-    Scalar ess_threshold;                 // ESS below which resampling triggers (default: NP/2)
-    Scalar roughening_scale;              // jitter scale after resampling (default: 0.2)
-    extraction_method extraction;         // weighted_mean or map (default: weighted_mean)
-    weight_representation weights;        // log or linear (default: log)
-};
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Q` | `Matrix<Scalar, NX, NX>` | Identity | Process noise covariance (used for noise sampling) |
+| `R` | `Matrix<Scalar, NY, NY>` | Identity | Measurement noise covariance (used for likelihood) |
+| `x0` | `Vector<Scalar, NX>` | Zero | Initial particle mean |
+| `P0` | `Matrix<Scalar, NX, NX>` | Identity | Initial particle dispersion covariance |
+| `ess_threshold` | `Scalar` | `NP/2` | Effective Sample Size below which resampling triggers |
+| `roughening_scale` | `Scalar` | `0.2` | Jitter scale applied after resampling to prevent degeneracy |
+| `extraction` | `extraction_method` | `weighted_mean` | State extraction method (`weighted_mean` or `map`) |
+| `weights` | `weight_representation` | `log` | Weight storage mode (`log` for numerical stability, `linear` for simplicity) |
 
 ## Constructors
 
@@ -151,6 +147,8 @@ Log-space avoids numerical underflow for large particle counts. Linear is simple
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'true', '' using 1:3 with lines title 'estimate'"
+
 #include <ctrlpp/estimation/particle_filter.h>
 
 #include <Eigen/Dense>
@@ -215,3 +213,4 @@ int main()
 - [ekf](ekf.md) -- linearisation-based filter for smooth systems
 - [observer-policy](observer-policy.md) -- concept satisfied by this type
 - [reference/particle-filter-theory](../reference/particle-filter-theory.md) -- SIR derivation
+- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- composing observers with controllers

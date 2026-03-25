@@ -34,8 +34,8 @@ struct transfer_function {
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/model/transfer_function.h"
-#include "ctrlpp/model/conversion.h"
+#include <ctrlpp/model/transfer_function.h>
+#include <ctrlpp/model/conversion.h>
 
 #include <iostream>
 
@@ -72,3 +72,4 @@ int main()
 
 - [state-space](state-space.md) -- state-space representation
 - [conversion](conversion.md) -- TF to SS and SS to TF conversion
+- [discretise](discretise.md) -- continuous-to-discrete conversion

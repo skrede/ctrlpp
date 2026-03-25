@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 set(CTRLPP_WARNING_FLAGS
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /utf-8>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /utf-8 /EHsc>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:
         -fPIC
         -Wall

@@ -45,7 +45,9 @@ No additional config fields. The integrator is simply frozen when the output is 
 ## Usage Example
 
 ```cpp
-#include <ctrlpp/pid.h>
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'output', '' using 1:3 with lines title 'control'"
+
+#include <ctrlpp/control/pid.h>
 
 #include <iostream>
 
@@ -82,4 +84,5 @@ int main()
 - [PID overview](README.md) -- parent PID documentation
 - [velocity-form](velocity-form.md) -- bumpless transfer via incremental output
 - [rate-limit](rate-limit.md) -- output rate limiting
+- [guides/pid/composition](../../guides/pid/composition.md) -- composing policies
 - [reference/pid-theory](../../reference/pid-theory.md) -- anti-windup theory

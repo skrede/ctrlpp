@@ -264,7 +264,6 @@ private:
     }
 
     // --- Performance metric accumulation ---
-    /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE, ISE, ITAE)
 
     void accumulate_performance_metrics(const vector_t& e, Scalar dt)
     {
@@ -284,6 +283,7 @@ private:
         }
     }
 
+    /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE)
     void accumulate_iae(const vector_t& e, Scalar dt)
     {
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
@@ -293,12 +293,14 @@ private:
         }
     }
 
+    /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (ISE)
     void accumulate_ise(const vector_t& e, Scalar dt)
     {
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             m_ise[i] += e[i] * e[i] * dt;
     }
 
+    /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (ITAE)
     void accumulate_itae(const vector_t& e, Scalar dt)
     {
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
@@ -476,62 +478,80 @@ private:
     {
         if constexpr(detail::contains_v<rate_limit, Policies...>)
         {
-            const auto& rl_cfg = m_cfg.template policy<rate_limit>();
             auto delta = (u_raw - m_prev_output).eval();
-            vector_t max_delta;
-            vector_t neg_max_delta;
-            for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-            {
-                if(rl_cfg.rate_max[static_cast<std::size_t>(i)] > Scalar{0} && rl_cfg.rate_max[static_cast<std::size_t>(i)] != std::numeric_limits<Scalar>::infinity())
-                {
-                    max_delta[i] = rl_cfg.rate_max[static_cast<std::size_t>(i)] * dt;
-                    neg_max_delta[i] = -max_delta[i];
-                }
-                else
-                {
-                    max_delta[i] = std::numeric_limits<Scalar>::max();
-                    neg_max_delta[i] = std::numeric_limits<Scalar>::lowest();
-                }
-            }
-            auto clamped_delta = delta.cwiseMax(neg_max_delta).cwiseMin(max_delta).eval();
+            auto [lo, hi] = compute_rate_delta_bounds(dt);
+            auto clamped_delta = delta.cwiseMax(lo).cwiseMin(hi).eval();
             return (m_prev_output + clamped_delta).eval();
         }
         return u_raw;
     }
 
-    /// @cite astrom2006 -- Ch. 3.5 (anti-windup: back-calculation, clamping, conditional integration)
+    auto compute_rate_delta_bounds(Scalar dt) const -> std::pair<vector_t, vector_t>
+    {
+        const auto& rl_cfg = m_cfg.template policy<rate_limit>();
+        vector_t max_delta;
+        vector_t neg_max_delta;
+        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
+        {
+            if(rl_cfg.rate_max[static_cast<std::size_t>(i)] > Scalar{0} && rl_cfg.rate_max[static_cast<std::size_t>(i)] != std::numeric_limits<Scalar>::infinity())
+            {
+                max_delta[i] = rl_cfg.rate_max[static_cast<std::size_t>(i)] * dt;
+                neg_max_delta[i] = -max_delta[i];
+            }
+            else
+            {
+                max_delta[i] = std::numeric_limits<Scalar>::max();
+                neg_max_delta[i] = std::numeric_limits<Scalar>::lowest();
+            }
+        }
+        return {neg_max_delta, max_delta};
+    }
+
     void apply_anti_windup(const vector_t& u_sat, const vector_t& u_raw, const vector_t& e, const vector_t& integral_increment, Scalar dt)
     {
         if constexpr(detail::has_policy_v<anti_windup, Policies...>)
         {
             using AW = detail::find_policy_t<anti_windup, Policies...>;
             if constexpr(std::is_same_v<AW, anti_windup<back_calc>>)
-            {
-                auto sat_diff = (u_sat - u_raw).eval();
-                auto feedback = kb_.cwiseProduct(sat_diff).eval();
-                m_integral = (m_integral + feedback * dt).eval();
-            }
+                apply_back_calc_windup(u_sat, u_raw, dt);
             else if constexpr(std::is_same_v<AW, anti_windup<clamping>>)
-            {
-                if(m_saturated)
-                {
-                    for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-                    {
-                        if((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0}))
-                            m_integral[i] -= integral_increment[i];
-                    }
-                }
-            }
+                apply_clamping_windup(e, integral_increment);
             else if constexpr(std::is_same_v<AW, anti_windup<conditional_integration>>)
+                apply_conditional_integration_windup(e, integral_increment);
+        }
+    }
+
+    /// @cite astrom2006 -- Ch. 3.5 (back-calculation anti-windup)
+    void apply_back_calc_windup(const vector_t& u_sat, const vector_t& u_raw, Scalar dt)
+    {
+        auto sat_diff = (u_sat - u_raw).eval();
+        auto feedback = kb_.cwiseProduct(sat_diff).eval();
+        m_integral = (m_integral + feedback * dt).eval();
+    }
+
+    /// @cite astrom2006 -- Ch. 3.5 (clamping anti-windup)
+    void apply_clamping_windup(const vector_t& e, const vector_t& integral_increment)
+    {
+        if(m_saturated)
+        {
+            for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             {
-                const auto& ci_cfg = m_cfg.template policy<AW>();
-                for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-                {
-                    Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
-                    if(abs_e > ci_cfg.error_threshold[static_cast<std::size_t>(i)])
-                        m_integral[i] -= integral_increment[i];
-                }
+                if((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0}))
+                    m_integral[i] -= integral_increment[i];
             }
+        }
+    }
+
+    /// @cite astrom2006 -- Ch. 3.5 (conditional integration anti-windup)
+    void apply_conditional_integration_windup(const vector_t& e, const vector_t& integral_increment)
+    {
+        using AW = detail::find_policy_t<anti_windup, Policies...>;
+        const auto& ci_cfg = m_cfg.template policy<AW>();
+        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
+        {
+            Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
+            if(abs_e > ci_cfg.error_threshold[static_cast<std::size_t>(i)])
+                m_integral[i] -= integral_increment[i];
         }
     }
 

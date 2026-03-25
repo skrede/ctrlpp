@@ -140,7 +140,8 @@ Designs an `Order`-th order Chebyshev Type I low-pass filter with the specified 
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/dsp/biquad.h"
+// gnuplot: plot "< ./biquad_filter" using 1:2 with lines title "noisy", "" using 1:3 with lines title "filtered"
+#include <ctrlpp/dsp/biquad.h>
 
 #include <cmath>
 #include <iostream>

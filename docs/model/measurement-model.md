@@ -1,6 +1,6 @@
 # measurement_model
 
-C++20 concept constraining measurement callables. Used throughout the library to type-check measurement functions passed to estimators (EKF, UKF, particle filter, MHE, NMHE).
+C++23 concept constraining measurement callables. Used throughout the library to type-check measurement functions passed to estimators (EKF, UKF, particle filter, MHE, NMHE).
 
 ## Header
 
@@ -28,7 +28,7 @@ A type `M` satisfies `measurement_model<M, Scalar, NX, NY>` when it provides a c
 ## Example Model Implementation
 
 ```cpp
-#include "ctrlpp/model/measurement_model.h"
+#include <ctrlpp/model/measurement_model.h>
 
 #include <Eigen/Dense>
 

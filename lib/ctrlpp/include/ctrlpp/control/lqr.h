@@ -128,9 +128,60 @@ std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_tv_gains(const std::vec
     return gains;
 }
 
+namespace detail
+{
+
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+auto build_lqi_augmented_system(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
+                                const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+                                const Eigen::Matrix<Scalar, int(NY), int(NX)>& C)
+{
+    constexpr int nx = static_cast<int>(NX);
+    constexpr int ny = static_cast<int>(NY);
+    constexpr int nu = static_cast<int>(NU);
+    constexpr int nx_aug = static_cast<int>(NX + NY);
+
+    using MatAug = Eigen::Matrix<Scalar, nx_aug, nx_aug>;
+    using MatBaug = Eigen::Matrix<Scalar, nx_aug, nu>;
+
+    MatAug A_aug = MatAug::Zero();
+    A_aug.template block<nx, nx>(0, 0) = A;
+    A_aug.template block<ny, nx>(nx, 0) = -C;
+    A_aug.template block<ny, ny>(nx, nx) = Eigen::Matrix<Scalar, ny, ny>::Identity();
+
+    MatBaug B_aug = MatBaug::Zero();
+    B_aug.template block<nx, nu>(0, 0) = B;
+
+    return std::pair{A_aug, B_aug};
+}
+
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+auto partition_lqi_gain(const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>& A_aug,
+                        const Eigen::Matrix<Scalar, int(NX + NY), int(NU)>& B_aug,
+                        const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>& Q_aug,
+                        const Eigen::Matrix<Scalar, int(NU), int(NU)>& R) -> std::optional<lqi_result<Scalar, NX, NU, NY>>
+{
+    constexpr int nx = static_cast<int>(NX);
+    constexpr int ny = static_cast<int>(NY);
+    constexpr int nu = static_cast<int>(NU);
+
+    auto K_aug_opt = lqr_gain<Scalar, NX + NY, NU>(A_aug, B_aug, Q_aug, R);
+    if(!K_aug_opt)
+        return std::nullopt;
+
+    auto& K_aug = *K_aug_opt;
+    lqi_result<Scalar, NX, NU, NY> result;
+    result.Kx = K_aug.template block<nu, nx>(0, 0);
+    result.Ki = K_aug.template block<nu, ny>(0, nx);
+    return result;
+}
+
+} // namespace detail
+
 // LQI gain: augments state with integral of tracking error.
 // Augmented system: A_aug = [[A, 0], [-C, I]], B_aug = [[B], [0]]
 // Returns lqi_result with partitioned Kx (NU x NX) and Ki (NU x NY).
+/// @cite anderson1990 -- Anderson & Moore, "Optimal Control: Linear Quadratic Methods", 1990, Ch. 9 (integral action)
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 std::optional<lqi_result<Scalar, NX, NU, NY>> lqi_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
                                                        const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
@@ -138,36 +189,8 @@ std::optional<lqi_result<Scalar, NX, NU, NY>> lqi_gain(const Eigen::Matrix<Scala
                                                        const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>& Q_aug,
                                                        const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
 {
-    constexpr std::size_t NX_AUG = NX + NY;
-    constexpr int nx = static_cast<int>(NX);
-    constexpr int ny = static_cast<int>(NY);
-    constexpr int nu = static_cast<int>(NU);
-    constexpr int nx_aug = static_cast<int>(NX_AUG);
-
-    using MatAug = Eigen::Matrix<Scalar, nx_aug, nx_aug>;
-    using MatBaug = Eigen::Matrix<Scalar, nx_aug, nu>;
-
-    // Build augmented A: [[A, 0], [-C, I]]
-    MatAug A_aug = MatAug::Zero();
-    A_aug.template block<nx, nx>(0, 0) = A;
-    A_aug.template block<ny, nx>(nx, 0) = -C;
-    A_aug.template block<ny, ny>(nx, nx) = Eigen::Matrix<Scalar, ny, ny>::Identity();
-
-    // Build augmented B: [[B], [0]]
-    MatBaug B_aug = MatBaug::Zero();
-    B_aug.template block<nx, nu>(0, 0) = B;
-
-    // Solve augmented LQR
-    auto K_aug_opt = lqr_gain<Scalar, NX_AUG, NU>(A_aug, B_aug, Q_aug, R);
-    if(!K_aug_opt)
-        return std::nullopt;
-
-    auto& K_aug = *K_aug_opt;
-
-    lqi_result<Scalar, NX, NU, NY> result;
-    result.Kx = K_aug.template block<nu, nx>(0, 0);
-    result.Ki = K_aug.template block<nu, ny>(0, nx);
-    return result;
+    auto [A_aug, B_aug] = detail::build_lqi_augmented_system<Scalar, NX, NU, NY>(A, B, C);
+    return detail::partition_lqi_gain<Scalar, NX, NU, NY>(A_aug, B_aug, Q_aug, R);
 }
 
 // Evaluate quadratic trajectory cost: sum of x^T Q x + u^T R u.

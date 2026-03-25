@@ -68,7 +68,7 @@ Returns the current covariance matrix.
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/sysid/rls.h"
+#include <ctrlpp/sysid/rls.h>
 
 #include <Eigen/Dense>
 

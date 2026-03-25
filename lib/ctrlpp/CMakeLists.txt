@@ -88,6 +88,12 @@ if (CTRLPP_BUILD_NLOPT)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(nlopt)
 
+    # Suppress warnings from NLopt headers (third-party code)
+    get_target_property(_nlopt_inc nlopt INTERFACE_INCLUDE_DIRECTORIES)
+    if (_nlopt_inc)
+        set_target_properties(nlopt PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_nlopt_inc}")
+    endif ()
+
     add_library(ctrlpp_nlopt INTERFACE)
     add_library(ctrlpp::nlopt ALIAS ctrlpp_nlopt)
 

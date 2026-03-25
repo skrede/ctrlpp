@@ -1,6 +1,6 @@
 # ctrlpp Documentation
 
-Guides and API reference for the ctrlpp C++20 control library.
+Guides and API reference for the ctrlpp C++23 control library.
 
 ## Getting Started
 
@@ -57,7 +57,7 @@ Guides and API reference for the ctrlpp C++20 control library.
 
 - [biquad](dsp/biquad.md) -- IIR second-order section filter
 - [fir](dsp/fir.md) -- Finite impulse response filter
-- [discrete_filter](dsp/discrete-filter.md) -- Cascaded biquad filter
+- [discrete_filter](dsp/discrete-filter.md) -- Discrete filter concept
 
 ### System Identification
 
