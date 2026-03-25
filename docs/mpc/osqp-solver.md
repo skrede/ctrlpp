@@ -132,3 +132,4 @@ int main()
 - [mhe](mhe.md) -- linear MHE using OSQP
 - [nlopt-solver](nlopt-solver.md) -- NLopt NLP solver backend
 - [guides/mpc/solver-injection](../guides/mpc/solver-injection.md) -- solver injection guide
+- [reference/mpc-theory](../reference/mpc-theory.md) -- QP formulation and theory

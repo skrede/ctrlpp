@@ -90,3 +90,5 @@ systems.
   observer (Kalman filter without stochastic tuning)
 - [Your First Estimator](../guides/intro/your-first-estimator.md) --
   introductory tutorial
+- [Observer-Controller Guide](../guides/estimation/observer-controller.md) --
+  composing observers with controllers

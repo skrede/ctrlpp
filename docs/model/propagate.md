@@ -86,3 +86,4 @@ int main()
 
 - [state-space](state-space.md) -- state-space representation
 - [dynamics-model](dynamics-model.md) -- nonlinear dynamics model concept
+- [discretise](discretise.md) -- continuous-to-discrete conversion

@@ -1,6 +1,6 @@
 # discrete_filter
 
-C++20 concept defining the minimal interface for composable digital filters. Any type satisfying this concept can be used interchangeably in filter chains, generic signal processing pipelines, and policy-based compositions.
+C++23 concept defining the minimal interface for composable digital filters. Any type satisfying this concept can be used interchangeably in filter chains, generic signal processing pipelines, and policy-based compositions.
 
 ## Header
 
@@ -82,3 +82,4 @@ int main()
 
 - [biquad](biquad.md) -- second-order IIR filter
 - [fir](fir.md) -- finite impulse response filter
+- [reference/dsp-theory](../reference/dsp-theory.md) -- DSP theory and background

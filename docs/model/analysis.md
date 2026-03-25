@@ -119,3 +119,5 @@ int main()
 ## See Also
 
 - [state-space](state-space.md) -- state-space representation
+- [lqr](../control/lqr.md) -- LQR design requires controllability
+- [place](../control/place.md) -- pole placement for control/observer design

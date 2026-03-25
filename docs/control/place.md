@@ -90,4 +90,4 @@ int main()
 
 - [lqr](lqr.md) -- optimal gain design as an alternative to pole placement
 - [dare](dare.md) -- Riccati equation solver used by LQR
-- [reference/optimal-control-theory](../reference/optimal-control-theory.md) -- mathematical background
+- [luenberger](../estimation/luenberger.md) -- observer using place_observer for gain design

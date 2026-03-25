@@ -180,4 +180,5 @@ int main()
 - [nlopt-solver](nlopt-solver.md) -- NLopt NLP solver backend
 - [dynamics-model](../model/dynamics-model.md) -- dynamics model concept
 - [constraint-model](../model/constraint-model.md) -- constraint model concepts
+- [guides/mpc/solver-injection](../guides/mpc/solver-injection.md) -- solver injection guide
 - [reference/mpc-theory](../reference/mpc-theory.md) -- MPC theory and background

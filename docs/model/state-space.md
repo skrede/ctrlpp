@@ -108,3 +108,4 @@ int main()
 - [conversion](conversion.md) -- TF to SS and SS to TF
 - [analysis](analysis.md) -- stability, controllability, observability
 - [propagate](propagate.md) -- state propagation utilities
+- [guides/sysid/workflow](../guides/sysid/workflow.md) -- identification produces state-space models

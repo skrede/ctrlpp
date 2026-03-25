@@ -84,4 +84,4 @@ int main()
 
 - [lqr](lqr.md) -- uses DARE internally to compute optimal gains
 - [place](place.md) -- pole placement as an alternative design method
-- [reference/optimal-control-theory](../reference/optimal-control-theory.md) -- Riccati equation derivation
+- [mpc](../mpc/mpc.md) -- MPC uses DARE for terminal cost computation

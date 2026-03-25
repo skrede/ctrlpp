@@ -84,3 +84,4 @@ of dimensionality"). They are most effective for low-dimensional state spaces
   particle filter with compile-time particle count and ESS-adaptive
   resampling
 - [EKF/UKF Theory](ekf-ukf-theory.md) -- alternative nonlinear estimators
+- [Observer-Controller Guide](../guides/estimation/observer-controller.md) -- composing observers with controllers

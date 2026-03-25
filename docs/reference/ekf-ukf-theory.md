@@ -95,3 +95,4 @@ when Jacobians are expensive to compute, the UKF is the better choice.
 - [ukf](../estimation/ukf.md) -- Unscented Kalman filter with swappable
   sigma-point strategies
 - [Kalman Theory](kalman-theory.md) -- linear estimation foundation
+- [Observer-Controller Guide](../guides/estimation/observer-controller.md) -- composing observers with controllers

@@ -106,3 +106,5 @@ terminal sets from the system matrices.
 - [nlopt_solver](../mpc/nlopt-solver.md) -- NLopt NLP solver backend
 - [Solver Injection Guide](../guides/mpc/solver-injection.md) -- swapping
   solver backends
+- [Your First MPC Guide](../guides/intro/your-first-mpc.md) -- introductory
+  MPC tutorial

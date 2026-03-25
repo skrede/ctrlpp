@@ -1,7 +1,7 @@
 # Concept-Based Solver Injection
 
 ctrlpp's MPC and NMPC controllers accept their optimisation backend as a
-template parameter. The backend must satisfy one of two C++20 concepts:
+template parameter. The backend must satisfy one of two C++23 concepts:
 `qp_solver` for linear MPC, or `nlp_solver` for nonlinear MPC. This design
 gives you compile-time solver dispatch with zero virtual overhead.
 

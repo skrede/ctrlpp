@@ -181,3 +181,4 @@ int main()
 - [kalman](kalman.md) -- linear Kalman filter for LTI systems
 - [observer-policy](observer-policy.md) -- concept satisfied by this type
 - [reference/ekf-ukf-theory](../reference/ekf-ukf-theory.md) -- EKF derivation and comparison
+- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- composing observers with controllers

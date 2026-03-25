@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- C++20 compiler: GCC 10+, Clang 10+, MSVC 19.29+
+- C++23 compiler: GCC 13+, Clang 16+, MSVC 19.36+
 - CMake 3.25+
 - Eigen 3.4+ (fetched automatically via FetchContent)
 

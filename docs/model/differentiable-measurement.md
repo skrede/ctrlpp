@@ -1,6 +1,6 @@
 # differentiable_measurement
 
-C++20 concept refining `measurement_model` by additionally requiring an analytic Jacobian of the measurement function with respect to state. When satisfied, estimators use the analytic Jacobian directly instead of numerical differentiation.
+C++23 concept refining `measurement_model` by additionally requiring an analytic Jacobian of the measurement function with respect to state. When satisfied, estimators use the analytic Jacobian directly instead of numerical differentiation.
 
 ## Header
 

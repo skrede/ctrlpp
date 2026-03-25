@@ -76,4 +76,5 @@ int main()
 
 - [PID overview](README.md) -- parent PID documentation
 - [derivative-filter](derivative-filter.md) -- noise attenuation on the derivative term
+- [guides/pid/composition](../../guides/pid/composition.md) -- composing policies
 - [reference/pid-theory](../../reference/pid-theory.md) -- setpoint weighting theory

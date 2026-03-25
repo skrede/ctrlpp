@@ -48,7 +48,7 @@ struct kalman_config
 kalman_filter(system_t sys, kalman_config<Scalar, NX, NU, NY> config);
 ```
 
-Constructs the filter from a discrete state-space model and configuration. Uses C++20 designated initialisers for config.
+Constructs the filter from a discrete state-space model and configuration. Uses C++23 designated initialisers for config.
 
 ## Methods
 
@@ -191,4 +191,6 @@ int main()
 - [luenberger](luenberger.md) -- fixed-gain observer alternative
 - [ekf](ekf.md) -- nonlinear extension via linearisation
 - [observer-policy](observer-policy.md) -- concept satisfied by this type
+- [guides/intro/your-first-estimator](../guides/intro/your-first-estimator.md) -- introductory Kalman filter tutorial
+- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- composing observers with controllers
 - [reference/kalman-theory](../reference/kalman-theory.md) -- mathematical derivation

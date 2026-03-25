@@ -88,3 +88,7 @@ iterative and application-specific.
   first-order derivative low-pass filter
 - [PID Composition Guide](../guides/pid/composition.md) -- composing
   multiple policies
+- [Your First PID Guide](../guides/intro/your-first-pid.md) -- introductory
+  PID tutorial
+- [Cascade Control Guide](../guides/pid/cascade.md) -- inner/outer loop
+  cascade PID
