@@ -1,7 +1,7 @@
 # Concept-Based Solver Injection
 
 ctrlpp's MPC and NMPC controllers accept their optimisation backend as a
-template parameter. The backend must satisfy one of two C++20 concepts:
+template parameter. The backend must satisfy one of two C++23 concepts:
 `qp_solver` for linear MPC, or `nlp_solver` for nonlinear MPC. This design
 gives you compile-time solver dispatch with zero virtual overhead.
 
@@ -48,9 +48,10 @@ ctrlpp provides two solver backends: OSQP for QP and NLopt for NLP.
 > **Requires OSQP.** Enable with `-DCTRLPP_BUILD_OSQP=ON`.
 
 ```cpp
-#include "ctrlpp/mpc.h"
-#include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/model/propagate.h"
+// Usage: ./solver_injection | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'position', '' using 1:3 with lines title 'velocity'"
+#include <ctrlpp/mpc.h>
+#include <ctrlpp/mpc/osqp_solver.h>
+#include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
 
@@ -108,8 +109,8 @@ int main()
 Swap the solver template parameter and provide nonlinear dynamics:
 
 ```cpp
-#include "ctrlpp/nmpc.h"
-#include "ctrlpp/mpc/nlopt_solver.h"
+#include <ctrlpp/nmpc.h>
+#include <ctrlpp/mpc/nlopt_solver.h>
 
 // ... define dynamics_model and nmpc_config ...
 

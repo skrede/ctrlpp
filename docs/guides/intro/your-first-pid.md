@@ -20,7 +20,8 @@ where `a = 0.9` sets the time constant.
 ## Complete Program
 
 ```cpp
-#include "ctrlpp/pid.h"
+// Usage: ./your_first_pid | gnuplot -p -e "set datafile separator ','; plot '-' skip 1 using 1:3 with lines title 'measurement', '' using 1:2 with lines title 'setpoint'"
+#include <ctrlpp/control/pid.h>
 
 #include <iomanip>
 #include <iostream>
@@ -84,6 +85,8 @@ The bare `pid` has no anti-windup or derivative filtering. Adding a policy is
 a compile-time template parameter -- zero runtime cost when not used:
 
 ```cpp
+#include <ctrlpp/control/pid.h>
+
 using Pid = ctrlpp::pid<double, 1, 1, 1,
                          ctrlpp::anti_windup<ctrlpp::back_calc>,
                          ctrlpp::deriv_filter>;

@@ -39,9 +39,10 @@ This example identifies a system from data and immediately uses the result
 for LQR control design.
 
 ```cpp
-#include "ctrlpp/sysid.h"
-#include "ctrlpp/control/lqr.h"
-#include "ctrlpp/model/propagate.h"
+// Usage: ./sysid_workflow | gnuplot -p -e "set datafile separator ','; plot '-' skip 1 using 1:2 with lines title 'state', '' using 1:3 with lines title 'control'"
+#include <ctrlpp/sysid.h>
+#include <ctrlpp/control/lqr.h>
+#include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
 
@@ -117,7 +118,8 @@ int main()
 For systems with slowly varying parameters, use RLS to track changes online:
 
 ```cpp
-#include "ctrlpp/sysid.h"
+// Usage: ./rls_online | gnuplot -p -e "set datafile separator ','; plot '-' skip 1 using 1:2 with lines title 'param 1', '' using 1:3 with lines title 'param 2'"
+#include <ctrlpp/sysid.h>
 
 #include <Eigen/Dense>
 

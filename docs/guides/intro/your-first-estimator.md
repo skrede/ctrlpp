@@ -26,8 +26,9 @@ A = [1  dt]    B = [0]    C = [1  0]
 ## Complete Program
 
 ```cpp
-#include "ctrlpp/kalman.h"
-#include "ctrlpp/model/state_space.h"
+// Usage: ./your_first_estimator | gnuplot -p -e "set datafile separator ','; plot '-' skip 1 using 1:2 with lines title 'true', '' using 1:4 with lines title 'estimated', '' using 1:6 with points pt 7 ps 0.3 title 'measured'"
+#include <ctrlpp/estimation/kalman.h>
+#include <ctrlpp/model/state_space.h>
 
 #include <Eigen/Dense>
 

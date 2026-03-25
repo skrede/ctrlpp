@@ -25,11 +25,12 @@ from position and angle measurements, then feeds the estimate into an LQR
 controller.
 
 ```cpp
-#include "ctrlpp/estimation/kalman.h"
-#include "ctrlpp/model/discretise.h"
-#include "ctrlpp/control/lqr.h"
-#include "ctrlpp/model/propagate.h"
-#include "ctrlpp/model/state_space.h"
+// Usage: ./observer_controller | gnuplot -p -e "set datafile separator ','; plot '-' skip 1 using 1:2 with lines title 'true pos', '' using 1:3 with lines title 'est pos'"
+#include <ctrlpp/estimation/kalman.h>
+#include <ctrlpp/model/discretise.h>
+#include <ctrlpp/control/lqr.h>
+#include <ctrlpp/model/propagate.h>
+#include <ctrlpp/model/state_space.h>
 
 #include <iomanip>
 #include <iostream>
