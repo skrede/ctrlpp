@@ -63,4 +63,5 @@ int main()
 - [PID overview](README.md) -- parent PID documentation
 - [velocity-form](velocity-form.md) -- incremental output form
 - [performance](performance.md) -- controller performance metrics
+- [guides/pid/composition](../../guides/pid/composition.md) -- composing policies
 - [reference/pid-theory](../../reference/pid-theory.md) -- ISA standard form derivation

@@ -77,4 +77,5 @@ int main()
 
 - [PID overview](README.md) -- parent PID documentation
 - [setpoint-filter](setpoint-filter.md) -- reference shaping alternative
+- [guides/pid/composition](../../guides/pid/composition.md) -- composing policies
 - [reference/pid-theory](../../reference/pid-theory.md) -- feed-forward design theory

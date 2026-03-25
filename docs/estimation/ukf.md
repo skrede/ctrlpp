@@ -194,3 +194,4 @@ int main()
 - [manifold-ukf](manifold-ukf.md) -- UKF on SO(3) manifold for attitude estimation
 - [observer-policy](observer-policy.md) -- concept satisfied by this type
 - [reference/ekf-ukf-theory](../reference/ekf-ukf-theory.md) -- unscented transform derivation
+- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- composing observers with controllers

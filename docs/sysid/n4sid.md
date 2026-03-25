@@ -116,4 +116,7 @@ int main()
 
 - [batch-arx](batch-arx.md) -- ARX identification
 - [model/state-space](../model/state-space.md) -- state-space representation
+- [sysid-result](sysid-result.md) -- result container types
+- [fit-metrics](fit-metrics.md) -- NRMSE and VAF metrics
+- [guides/sysid/workflow](../guides/sysid/workflow.md) -- system identification workflow guide
 - [reference/sysid-theory](../reference/sysid-theory.md) -- sysid theory and background

@@ -82,3 +82,4 @@ int main()
 
 - [biquad](biquad.md) -- second-order IIR filter
 - [fir](fir.md) -- finite impulse response filter
+- [reference/dsp-theory](../reference/dsp-theory.md) -- DSP theory and background

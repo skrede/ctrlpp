@@ -178,4 +178,5 @@ int main()
 
 - [manifold-ukf](manifold-ukf.md) -- sigma-point alternative on SO(3)
 - [complementary-filter](complementary-filter.md) -- lightweight IMU fusion
+- [so3](../lie/so3.md) -- SO(3) quaternion utilities used by MEKF
 - [reference/attitude-estimation-theory](../reference/attitude-estimation-theory.md) -- MEKF derivation

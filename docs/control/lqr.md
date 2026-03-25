@@ -245,4 +245,4 @@ int main()
 - [dare](dare.md) -- discrete algebraic Riccati equation solver used internally
 - [place](place.md) -- pole placement alternative to optimal control
 - [kalman](../estimation/kalman.md) -- Kalman filter for observer-controller composition
-- [reference/optimal-control-theory](../reference/optimal-control-theory.md) -- mathematical background
+- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- observer-controller composition patterns

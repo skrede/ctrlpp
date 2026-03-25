@@ -89,3 +89,5 @@ int main()
 - [n4sid](n4sid.md) -- subspace identification
 - [fit-metrics](fit-metrics.md) -- goodness-of-fit metrics
 - [sysid-result](sysid-result.md) -- result container types
+- [guides/sysid/workflow](../guides/sysid/workflow.md) -- system identification workflow guide
+- [reference/sysid-theory](../reference/sysid-theory.md) -- sysid theory and background
