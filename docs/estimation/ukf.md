@@ -32,19 +32,15 @@ using cov_matrix_t      = Matrix<Scalar, NX, NX>;
 using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 ```
 
-## Config
+## Config (`ukf_config`)
 
-```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-struct ukf_config
-{
-    Matrix<Scalar, NX, NX> Q;   // process noise covariance (default: identity)
-    Matrix<Scalar, NY, NY> R;   // measurement noise covariance (default: identity)
-    Vector<Scalar, NX>     x0;  // initial state estimate (default: zero)
-    Matrix<Scalar, NX, NX> P0;  // initial covariance (default: identity)
-    gain_decomposition decomposition;  // ldlt (default) or qr
-};
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Q` | `Matrix<Scalar, NX, NX>` | Identity | Process noise covariance |
+| `R` | `Matrix<Scalar, NY, NY>` | Identity | Measurement noise covariance |
+| `x0` | `Vector<Scalar, NX>` | Zero | Initial state estimate |
+| `P0` | `Matrix<Scalar, NX, NX>` | Identity | Initial error covariance |
+| `decomposition` | `gain_decomposition` | `ldlt` | Kalman gain decomposition method (`ldlt` or `qr`) |
 
 ## Constructors
 
@@ -131,6 +127,8 @@ Selects the decomposition for K = Pxz * S^{-1}. LDLT is faster for well-conditio
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'true', '' using 1:3 with lines title 'estimate'"
+
 #include <ctrlpp/estimation/ukf.h>
 
 #include <Eigen/Dense>

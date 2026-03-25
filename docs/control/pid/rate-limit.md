@@ -25,7 +25,9 @@ Rate limiting interacts with anti-windup: if both are active, anti-windup sees t
 ## Usage Example
 
 ```cpp
-#include <ctrlpp/pid.h>
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'output', '' using 1:3 with lines title 'control'"
+
+#include <ctrlpp/control/pid.h>
 
 #include <iostream>
 
