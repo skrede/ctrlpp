@@ -36,9 +36,9 @@ Converts a SISO continuous state-space to a transfer function using the Leverrie
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/model/conversion.h"
-#include "ctrlpp/model/transfer_function.h"
-#include "ctrlpp/model/state_space.h"
+#include <ctrlpp/model/conversion.h>
+#include <ctrlpp/model/transfer_function.h>
+#include <ctrlpp/model/state_space.h>
 
 #include <iostream>
 

@@ -1,6 +1,6 @@
 # differentiable_measurement
 
-C++20 concept refining `measurement_model` by additionally requiring an analytic Jacobian of the measurement function with respect to state. When satisfied, estimators use the analytic Jacobian directly instead of numerical differentiation.
+C++23 concept refining `measurement_model` by additionally requiring an analytic Jacobian of the measurement function with respect to state. When satisfied, estimators use the analytic Jacobian directly instead of numerical differentiation.
 
 ## Header
 
@@ -30,7 +30,7 @@ When a measurement model does **not** satisfy this concept, the EKF and MHE fall
 ## Example Model Implementation
 
 ```cpp
-#include "ctrlpp/model/differentiable_measurement.h"
+#include <ctrlpp/model/differentiable_measurement.h>
 
 #include <Eigen/Dense>
 

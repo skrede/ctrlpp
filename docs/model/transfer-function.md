@@ -34,8 +34,8 @@ struct transfer_function {
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/model/transfer_function.h"
-#include "ctrlpp/model/conversion.h"
+#include <ctrlpp/model/transfer_function.h>
+#include <ctrlpp/model/conversion.h>
 
 #include <iostream>
 

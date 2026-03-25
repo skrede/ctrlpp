@@ -13,14 +13,14 @@ estimators, and identification algorithms operate on.
 
 ### Operations
 
-- [discretise](discretise.md) -- Continuous-to-discrete conversion (ZOH, FOH, Tustin, impulse invariance)
+- [discretise](discretise.md) -- Continuous-to-discrete conversion (ZOH via Van Loan matrix exponential)
 - [conversion](conversion.md) -- Transfer function to state-space and back
 - [analysis](analysis.md) -- Stability, controllability, and observability checks
-- [propagate](propagate.md) -- State propagation utilities (Euler, RK4)
+- [propagate](propagate.md) -- State propagation and output computation utilities
 
 ### Concepts
 
-These are C++20 concepts used as template constraints by EKF, UKF, particle
+These are C++23 concepts used as template constraints by EKF, UKF, particle
 filter, NMPC, MHE, and other algorithm types. They define what a user-provided
 model must look like.
 
