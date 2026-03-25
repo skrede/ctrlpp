@@ -103,9 +103,6 @@ TEST_CASE("pid robustness - extreme inputs do not crash", "[pid][property]")
                  auto ki = *bounded_double(0.0, 1e6);
                  auto kd = *bounded_double(0.0, 1e6);
                  auto dt = *bounded_double(1e-10, 100.0);
-                 auto sp = *bounded_double(-1e6, 1e6);
-                 auto pv = *bounded_double(-1e6, 1e6);
-
                  using PidType = ctrlpp::pid<double, 1, 1, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
                  typename PidType::config_type cfg{};
                  cfg.kp = vec1(kp);

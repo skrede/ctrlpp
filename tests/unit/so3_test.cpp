@@ -13,10 +13,6 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-auto quat_angle(const Eigen::Quaterniond& q1, const Eigen::Quaterniond& q2) -> double
-{
-    return 2.0 * std::acos(std::min(1.0, std::abs(q1.dot(q2))));
-}
 
 } // namespace
 

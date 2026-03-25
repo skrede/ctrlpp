@@ -197,8 +197,8 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<
         return std::nullopt;
 
     Eigen::ComplexSchur<Eigen::Matrix<Scalar, n2, n2>> schur(*Z_opt);
-    auto T = schur.matrixT().eval();
-    auto U = schur.matrixU().eval();
+    Eigen::Matrix<std::complex<Scalar>, n2, n2> T = schur.matrixT();
+    Eigen::Matrix<std::complex<Scalar>, n2, n2> U = schur.matrixU();
 
     int stable = detail::reorder_complex_schur_stable_first(T, U, n);
     if(stable < n)

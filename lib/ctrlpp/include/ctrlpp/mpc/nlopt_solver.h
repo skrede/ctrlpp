@@ -51,7 +51,7 @@ public:
     void setup(const nlp_problem<Scalar>& problem)
     {
         problem_ = &problem;
-        opt_ = nlopt::opt(to_nlopt_algorithm(settings_.algorithm), problem.n_vars);
+        opt_ = nlopt::opt(to_nlopt_algorithm(settings_.algorithm), static_cast<unsigned>(problem.n_vars));
         configure_variable_bounds(problem);
         opt_.set_min_objective(objective_callback, this);
         partition_constraints(problem);

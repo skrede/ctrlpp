@@ -381,7 +381,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
                                         const std::optional<Vector<Scalar, NU>>& u_min,
                                         const std::optional<Vector<Scalar, NU>>& u_max,
                                         const std::optional<Vector<Scalar, NU>>& du_max,
-                                        bool has_soft_constraints,
+                                        bool /*has_soft_constraints*/,
                                         const std::optional<terminal_set<Scalar, NX>>& terminal_constraint = {}) -> std::pair<Eigen::VectorX<Scalar>, Eigen::VectorX<Scalar>>
 {
     constexpr int nx = static_cast<int>(NX);
@@ -413,7 +413,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
 // --- Cost vector building ---
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-[[nodiscard]] auto build_cost_vector(int N, int n_dec, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NX, NX>& Qf) -> Eigen::VectorX<Scalar>
+[[nodiscard]] auto build_cost_vector(int /*N*/, int n_dec, const Matrix<Scalar, NX, NX>& /*Q*/, const Matrix<Scalar, NX, NX>& /*Qf*/) -> Eigen::VectorX<Scalar>
 {
     return Eigen::VectorX<Scalar>::Zero(n_dec);
 }
