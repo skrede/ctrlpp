@@ -89,6 +89,8 @@ Resets the state estimate to a new initial value.
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'true', '' using 1:3 with lines title 'estimate'"
+
 #include <ctrlpp/estimation/luenberger.h>
 #include <ctrlpp/control/place.h>
 #include <ctrlpp/model/state_space.h>

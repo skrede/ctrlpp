@@ -107,6 +107,8 @@ Returns the estimated gyroscope bias.
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'attitude error (rad)'"
+
 #include <ctrlpp/estimation/complementary_filter.h>
 #include <ctrlpp/lie/so3.h>
 

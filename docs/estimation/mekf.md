@@ -30,21 +30,19 @@ using output_vector_t = Vector<Scalar, NY>;
 using cov_matrix_t   = Matrix<Scalar, NE, NE>;    // 6x6 for NB=3
 ```
 
-## Config
+## Config (`mekf_config`)
 
-```cpp
-template <typename Scalar, std::size_t NB, std::size_t NY>
-struct mekf_config
-{
-    Matrix<Scalar, NE, NE>      Q;    // error-state process noise (default: identity)
-    Matrix<Scalar, NY, NY>      R;    // measurement noise (default: identity)
-    Eigen::Quaternion<Scalar>   q0;   // initial quaternion (default: identity)
-    Vector<Scalar, NB>          b0;   // initial bias (default: zero)
-    Matrix<Scalar, NE, NE>      P0;   // initial error-state covariance (default: identity)
-    Scalar dt;                         // default time step (default: 0.01)
-    Scalar numerical_eps;              // perturbation for numerical Jacobians
-};
-```
+Where NE = 3 + NB (3 rotation dimensions + NB bias dimensions).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Q` | `Matrix<Scalar, NE, NE>` | Identity | Error-state process noise covariance |
+| `R` | `Matrix<Scalar, NY, NY>` | Identity | Measurement noise covariance |
+| `q0` | `Eigen::Quaternion<Scalar>` | Identity | Initial quaternion estimate |
+| `b0` | `Vector<Scalar, NB>` | Zero | Initial gyroscope bias estimate |
+| `P0` | `Matrix<Scalar, NE, NE>` | Identity | Initial error-state covariance |
+| `dt` | `Scalar` | `0.01` | Default time step for the single-argument `predict()` overload |
+| `numerical_eps` | `Scalar` | `sqrt(eps)` | Perturbation for numerical measurement Jacobians |
 
 ## Constructor
 
@@ -112,6 +110,8 @@ Returns the current gyroscope bias estimate.
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'attitude error (rad)'"
+
 #include <ctrlpp/estimation/mekf.h>
 #include <ctrlpp/lie/so3.h>
 
