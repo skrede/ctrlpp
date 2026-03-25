@@ -82,8 +82,8 @@ Checks if all eigenvalues of `A - L*C` are inside the unit circle (discrete-time
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/model/analysis.h"
-#include "ctrlpp/model/state_space.h"
+#include <ctrlpp/model/analysis.h>
+#include <ctrlpp/model/state_space.h>
 
 #include <Eigen/Dense>
 

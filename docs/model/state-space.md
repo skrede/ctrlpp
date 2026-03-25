@@ -60,10 +60,11 @@ using siso_discrete_state_space = discrete_state_space<S, NX, 1, 1>;
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/model/state_space.h"
-#include "ctrlpp/model/analysis.h"
-#include "ctrlpp/model/discretise.h"
-#include "ctrlpp/model/propagate.h"
+// gnuplot: plot "< ./state_space_demo" using 1:3 with lines title "output"
+#include <ctrlpp/model/state_space.h>
+#include <ctrlpp/model/analysis.h>
+#include <ctrlpp/model/discretise.h>
+#include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
 

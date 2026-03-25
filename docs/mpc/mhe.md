@@ -129,8 +129,9 @@ Returns `true` once the estimation window is full (at least N measurement steps 
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/mhe.h"
-#include "ctrlpp/mpc/osqp_solver.h"
+// gnuplot: plot "< ./mhe_estimation" using 1:4 with lines title "estimate"
+#include <ctrlpp/mhe.h>
+#include <ctrlpp/mpc/osqp_solver.h>
 
 #include <Eigen/Dense>
 

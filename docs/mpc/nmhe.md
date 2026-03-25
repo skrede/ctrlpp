@@ -125,8 +125,9 @@ Returns `true` once the estimation window is full.
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/nmhe.h"
-#include "ctrlpp/mpc/nlopt_solver.h"
+// gnuplot: plot "< ./nmhe_estimation" using 1:4 with lines title "estimate"
+#include <ctrlpp/nmhe.h>
+#include <ctrlpp/mpc/nlopt_solver.h>
 
 #include <Eigen/Dense>
 

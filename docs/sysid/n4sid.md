@@ -60,8 +60,8 @@ Returns just the singular values without performing full identification. Useful 
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/sysid/n4sid.h"
-#include "ctrlpp/model/analysis.h"
+#include <ctrlpp/sysid/n4sid.h>
+#include <ctrlpp/model/analysis.h>
 
 #include <Eigen/Dense>
 

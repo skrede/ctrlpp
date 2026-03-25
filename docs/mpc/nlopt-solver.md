@@ -88,8 +88,9 @@ Solves the NLP from the initial guess in `update.x0`. Returns the solution, obje
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/nmpc.h"
-#include "ctrlpp/mpc/nlopt_solver.h"
+// gnuplot: plot "< ./nlopt_demo" using 1:3 with lines title "state"
+#include <ctrlpp/nmpc.h>
+#include <ctrlpp/mpc/nlopt_solver.h>
 
 #include <Eigen/Dense>
 

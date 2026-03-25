@@ -1,6 +1,6 @@
 # constraint_model
 
-C++20 concepts for nonlinear inequality constraints used in NMPC and NMHE. Defines both path constraints (applied at each time step) and terminal constraints (applied at the final time step).
+C++23 concepts for nonlinear inequality constraints used in NMPC and NMHE. Defines both path constraints (applied at each time step) and terminal constraints (applied at the final time step).
 
 ## Header
 
@@ -47,7 +47,7 @@ Represents NTC nonlinear terminal inequality constraints `h(x_N) <= 0` applied a
 ## Example Model Implementation
 
 ```cpp
-#include "ctrlpp/model/constraint_model.h"
+#include <ctrlpp/model/constraint_model.h>
 
 #include <Eigen/Dense>
 

@@ -39,7 +39,7 @@ Edge cases: constant signals (zero variance) return NRMSE = 0 and VAF = 100% whe
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/sysid/fit_metrics.h"
+#include <ctrlpp/sysid/fit_metrics.h>
 
 #include <Eigen/Dense>
 

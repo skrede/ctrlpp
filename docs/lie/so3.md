@@ -91,7 +91,7 @@ Deserialises a w-first 4-vector `[w, x, y, z]` back to a quaternion.
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/lie/so3.h"
+#include <ctrlpp/lie/so3.h>
 
 #include <Eigen/Geometry>
 

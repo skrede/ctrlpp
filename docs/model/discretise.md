@@ -45,10 +45,11 @@ Same as above with the tag as the first argument.
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/model/discretise.h"
-#include "ctrlpp/model/state_space.h"
-#include "ctrlpp/model/analysis.h"
-#include "ctrlpp/model/propagate.h"
+// gnuplot: plot "< ./discretise_demo" using 1:2 with lines title "step response"
+#include <ctrlpp/model/discretise.h>
+#include <ctrlpp/model/state_space.h>
+#include <ctrlpp/model/analysis.h>
+#include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
 

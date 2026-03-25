@@ -62,7 +62,8 @@ Returns the tap coefficient array.
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/dsp/fir.h"
+// gnuplot: plot "< ./fir_filter" using 1:2 with lines title "noisy", "" using 1:3 with lines title "filtered"
+#include <ctrlpp/dsp/fir.h>
 
 #include <array>
 #include <cmath>

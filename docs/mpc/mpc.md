@@ -105,9 +105,10 @@ Returns solver diagnostics from the last solve, including status, iteration coun
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/mpc.h"
-#include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/model/propagate.h"
+// gnuplot: plot "< ./mpc_regulation" using 1:3 with lines title "position"
+#include <ctrlpp/mpc.h>
+#include <ctrlpp/mpc/osqp_solver.h>
+#include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
 

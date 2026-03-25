@@ -1,6 +1,6 @@
 # differentiable_dynamics
 
-C++20 concept refining `dynamics_model` by additionally requiring analytic Jacobians with respect to state and input. When a dynamics model satisfies this concept, estimators (EKF, MHE) use the analytic Jacobians directly instead of falling back to numerical differentiation.
+C++23 concept refining `dynamics_model` by additionally requiring analytic Jacobians with respect to state and input. When a dynamics model satisfies this concept, estimators (EKF, MHE) use the analytic Jacobians directly instead of falling back to numerical differentiation.
 
 ## Header
 
@@ -34,7 +34,7 @@ When a dynamics model does **not** satisfy this concept, the EKF and MHE automat
 ## Example Model Implementation
 
 ```cpp
-#include "ctrlpp/model/differentiable_dynamics.h"
+#include <ctrlpp/model/differentiable_dynamics.h>
 
 #include <Eigen/Dense>
 

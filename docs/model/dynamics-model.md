@@ -1,6 +1,6 @@
 # dynamics_model
 
-C++20 concept constraining discrete-time dynamics callables. Used throughout the library to type-check dynamics functions passed to estimators (EKF, UKF, particle filter) and controllers (NMPC, NMHE).
+C++23 concept constraining discrete-time dynamics callables. Used throughout the library to type-check dynamics functions passed to estimators (EKF, UKF, particle filter) and controllers (NMPC, NMHE).
 
 ## Header
 
@@ -31,7 +31,7 @@ Any callable works: a struct with `operator()`, a lambda, or a function pointer 
 ## Example Model Implementation
 
 ```cpp
-#include "ctrlpp/model/dynamics_model.h"
+#include <ctrlpp/model/dynamics_model.h>
 
 #include <Eigen/Dense>
 
