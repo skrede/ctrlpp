@@ -45,7 +45,7 @@ The identified system is in observer canonical form with `NX = NA` states. The `
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/sysid/batch_arx.h"
+#include <ctrlpp/sysid/batch_arx.h>
 
 #include <Eigen/Dense>
 

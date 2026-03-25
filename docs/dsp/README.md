@@ -8,7 +8,7 @@ applications.
 
 - [biquad](biquad.md) -- IIR second-order section with factory functions for low-pass, high-pass, band-pass, notch, and dirty derivative
 - [fir](fir.md) -- Finite impulse response filter with compile-time tap count
-- [discrete_filter](discrete-filter.md) -- Cascaded biquad filter for higher-order IIR responses
+- [discrete_filter](discrete-filter.md) -- C++23 concept for composable digital filters
 
 ## When to use
 
@@ -19,8 +19,9 @@ computation.
 Pick **fir** for linear-phase filtering or when you have specific impulse response
 coefficients.
 
-Pick **discrete_filter** when you need higher-order IIR responses built from
-cascaded second-order sections.
+Use **cascaded_biquad** (from biquad.h) when you need higher-order IIR responses
+built from cascaded second-order sections. The **discrete_filter** concept lets
+you write generic code that accepts any filter type.
 
 ## Theory
 

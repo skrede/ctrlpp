@@ -51,8 +51,8 @@ Returned by `n4sid`. Contains the identified system, the oblique projection sing
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/sysid/batch_arx.h"
-#include "ctrlpp/sysid/n4sid.h"
+#include <ctrlpp/sysid/batch_arx.h>
+#include <ctrlpp/sysid/n4sid.h>
 
 #include <Eigen/Dense>
 

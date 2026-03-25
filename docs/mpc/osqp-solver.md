@@ -82,9 +82,10 @@ OSQP operates in double precision only.
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/mpc.h"
-#include "ctrlpp/mpc/osqp_solver.h"
-#include "ctrlpp/model/propagate.h"
+// gnuplot: plot "< ./osqp_demo" using 1:3 with lines title "state"
+#include <ctrlpp/mpc.h>
+#include <ctrlpp/mpc/osqp_solver.h>
+#include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
 

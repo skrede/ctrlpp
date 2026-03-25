@@ -1,6 +1,6 @@
 # discrete_filter
 
-C++20 concept defining the minimal interface for composable digital filters. Any type satisfying this concept can be used interchangeably in filter chains, generic signal processing pipelines, and policy-based compositions.
+C++23 concept defining the minimal interface for composable digital filters. Any type satisfying this concept can be used interchangeably in filter chains, generic signal processing pipelines, and policy-based compositions.
 
 ## Header
 
@@ -36,7 +36,7 @@ The concept does not require `reset()` -- that is a convention followed by the l
 ## Example Model Implementation
 
 ```cpp
-#include "ctrlpp/dsp/discrete_filter.h"
+#include <ctrlpp/dsp/discrete_filter.h>
 
 #include <iostream>
 

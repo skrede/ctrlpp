@@ -70,7 +70,7 @@ Converts the current parameter estimate to observer canonical form state-space m
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/sysid/recursive_arx.h"
+#include <ctrlpp/sysid/recursive_arx.h>
 
 #include <Eigen/Dense>
 
