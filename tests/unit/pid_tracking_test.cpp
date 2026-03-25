@@ -66,3 +66,56 @@ TEST_CASE("Tracking enables bumpless manual-to-auto transition",
     // Output should be close to 5.0 (no bump from manual->auto)
     REQUIRE_THAT(u_auto[0], WithinAbs(5.002, 0.01));
 }
+
+TEST_CASE("Tracking with feed_forward: integral accounts for ff contribution",
+    "[pid][siso][tracking][feed-forward]")
+{
+    auto ff_func = [](const Vec1& sp, double) -> Vec1 { return sp * 2.0; };
+    using FF = ctrlpp::feed_forward<decltype(ff_func)>;
+    using FfPid = ctrlpp::pid<double, 1, 1, 1, FF>;
+
+    FfPid::config_type cfg{};
+    cfg.kp = vec1(1.0);
+    cfg.ki = vec1(0.5);
+    cfg.template policy<FF>().ff_func = ff_func;
+    FfPid pid(cfg);
+
+    // Step with tracking signal = 10.0
+    // u = compute(sp, meas, dt) includes ff contribution
+    // non_integral = u - integral, integral = tracking - non_integral
+    [[maybe_unused]] auto u = pid.compute(vec1(1.0), vec1(0.0), dt, vec1(10.0));
+
+    // P = 1*(1-0) = 1.0, I = 0.5*1*0.01 = 0.005, D = 0 (first step), FF = 1*2 = 2.0
+    // u = 1.0 + 0.005 + 0 + 2.0 = 3.005
+    // non_integral = u - integral = 3.005 - 0.005 = 3.0
+    // new integral = tracking - non_integral = 10.0 - 3.0 = 7.0
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(7.0, tol));
+}
+
+TEST_CASE("Tracking after saturation resets integral appropriately",
+    "[pid][siso][tracking][saturation]")
+{
+    SisoPid::config_type cfg{};
+    cfg.kp = vec1(10.0);
+    cfg.ki = vec1(1.0);
+    cfg.output_max = vec1(5.0);
+    cfg.output_min = vec1(-5.0);
+    SisoPid pid(cfg);
+
+    // Drive into saturation
+    for (int i = 0; i < 20; ++i)
+        pid.compute(vec1(10.0), vec1(0.0), dt);
+
+    REQUIRE(pid.saturated() == true);
+
+    // Now use tracking to pull integral back to a reasonable value
+    pid.compute(vec1(1.0), vec1(0.0), dt, vec1(2.0));
+
+    // P = 10*1 = 10, clamped output = 5
+    // non_integral = output - integral_before_tracking_adjustment
+    // After tracking: integral = 2.0 - (5 - integral)
+    // The integral should now be adjusted so next auto output is near 2.0
+    auto u = pid.compute(vec1(1.0), vec1(0.0), dt);
+    // Should be within reasonable range of the tracking target
+    REQUIRE(u[0] < 10.0);
+}

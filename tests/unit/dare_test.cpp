@@ -155,3 +155,103 @@ TEST_CASE("dare solution is symmetric")
     auto P = *result;
     CHECK((P - P.transpose()).norm() < 1e-10);
 }
+
+TEST_CASE("dare singular A returns nullopt")
+{
+    // A is singular (non-invertible) -> should return nullopt early
+    Eigen::Matrix<double, 2, 2> A, Q;
+    Eigen::Matrix<double, 2, 1> B;
+    Eigen::Matrix<double, 1, 1> R;
+
+    A << 1.0, 0.0, 0.0, 0.0; // rank 1, not invertible
+    B << 1.0, 1.0;
+    Q = Eigen::Matrix<double, 2, 2>::Identity();
+    R(0, 0) = 1.0;
+
+    auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+    CHECK_FALSE(result.has_value());
+}
+
+TEST_CASE("dare zero A returns nullopt")
+{
+    // A is all zeros -> singular
+    Eigen::Matrix<double, 2, 2> A, Q;
+    Eigen::Matrix<double, 2, 1> B;
+    Eigen::Matrix<double, 1, 1> R;
+
+    A = Eigen::Matrix<double, 2, 2>::Zero();
+    B << 1.0, 0.0;
+    Q = Eigen::Matrix<double, 2, 2>::Identity();
+    R(0, 0) = 1.0;
+
+    auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+    CHECK_FALSE(result.has_value());
+}
+
+TEST_CASE("dare with cross-weight N on non-stabilizable system returns nullopt")
+{
+    // After transformation with N, the system should still be non-stabilizable
+    Eigen::Matrix<double, 2, 2> A, Q;
+    Eigen::Matrix<double, 2, 1> B, N;
+    Eigen::Matrix<double, 1, 1> R;
+
+    A << 2.0, 0.0, 0.0, 0.5;
+    B << 0.0, 1.0;
+    Q = Eigen::Matrix<double, 2, 2>::Identity();
+    R(0, 0) = 1.0;
+    N << 0.1, 0.2;
+
+    auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R, N);
+    CHECK_FALSE(result.has_value());
+}
+
+TEST_CASE("dare 1x1 zero Q gives zero P")
+{
+    // With Q=0, stable A<1, the DARE solution should be P=0
+    Eigen::Matrix<double, 1, 1> A, B, Q, R;
+    A(0, 0) = 0.5;
+    B(0, 0) = 1.0;
+    Q(0, 0) = 0.0;
+    R(0, 0) = 1.0;
+
+    auto result = ctrlpp::dare<double, 1, 1>(A, B, Q, R);
+    REQUIRE(result.has_value());
+    CHECK_THAT((*result)(0, 0), Catch::Matchers::WithinAbs(0.0, 1e-10));
+}
+
+TEST_CASE("dare large R penalizes control heavily")
+{
+    // Very large R -> P approaches solution of Lyapunov equation A^T P A - P + Q = 0
+    Eigen::Matrix<double, 1, 1> A, B, Q, R;
+    A(0, 0) = 0.5;
+    B(0, 0) = 1.0;
+    Q(0, 0) = 1.0;
+    R(0, 0) = 1e12;
+
+    auto result = ctrlpp::dare<double, 1, 1>(A, B, Q, R);
+    REQUIRE(result.has_value());
+
+    // Lyapunov solution: P = Q / (1 - a^2) = 1 / (1 - 0.25) = 4/3
+    double P_lyap = 1.0 / (1.0 - 0.25);
+    CHECK_THAT((*result)(0, 0), Catch::Matchers::WithinAbs(P_lyap, 1e-2));
+}
+
+TEST_CASE("dare with cross-weight N zero reduces to standard dare")
+{
+    Eigen::Matrix<double, 2, 2> A, Q;
+    Eigen::Matrix<double, 2, 1> B, N;
+    Eigen::Matrix<double, 1, 1> R;
+
+    A << 1.0, 1.0, 0.0, 1.0;
+    B << 0.5, 1.0;
+    Q = Eigen::Matrix<double, 2, 2>::Identity();
+    R(0, 0) = 1.0;
+    N = Eigen::Matrix<double, 2, 1>::Zero();
+
+    auto result_with_n = ctrlpp::dare<double, 2, 1>(A, B, Q, R, N);
+    auto result_standard = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+
+    REQUIRE(result_with_n.has_value());
+    REQUIRE(result_standard.has_value());
+    CHECK((*result_with_n - *result_standard).norm() < 1e-10);
+}

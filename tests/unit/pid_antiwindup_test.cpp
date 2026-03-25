@@ -10,7 +10,7 @@ namespace {
 using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
-constexpr double dt = 0.01;
+constexpr double Ts = 0.01;
 constexpr double tol = 1e-12;
 
 Vec1 vec1(double v) { Vec1 r; r << v; return r; }
@@ -27,10 +27,10 @@ TEST_CASE("Without anti_windup: integral winds up unboundedly", "[pid][siso][win
 
     // Constant error of 1.0 for many steps
     for (int i = 0; i < 1000; ++i)
-        pid.compute(vec1(10.0), vec1(0.0), dt);
+        pid.compute(vec1(10.0), vec1(0.0), Ts);
 
     // Integral should be large (no anti-windup to stop it)
-    // I = Ki * e * dt * 1000 = 1 * 10 * 0.01 * 1000 ~ 100
+    // I = Ki * e * Ts * 1000 = 1 * 10 * 0.01 * 1000 ~ 100
     REQUIRE_THAT(pid.integral()[0], WithinAbs(100.0, 1e-6));
 }
 
@@ -49,7 +49,7 @@ TEST_CASE("back_calc anti-windup limits integral growth during saturation",
 
     // Run many steps with large error to cause saturation
     for (int i = 0; i < 1000; ++i)
-        pid.compute(vec1(10.0), vec1(0.0), dt);
+        pid.compute(vec1(10.0), vec1(0.0), Ts);
 
     // Integral should be bounded (back-calc feedback limits growth)
     // Without anti-windup it would be 100.0
@@ -72,7 +72,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
 
         // Run until saturation
         for (int i = 0; i < 100; ++i)
-            pid.compute(vec1(10.0), vec1(0.0), dt);
+            pid.compute(vec1(10.0), vec1(0.0), Ts);
 
         // Verify anti-windup is active (integral bounded)
         REQUIRE(pid.integral()[0] < 50.0);
@@ -88,7 +88,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
         AwPid pid(cfg);
 
         for (int i = 0; i < 100; ++i)
-            pid.compute(vec1(10.0), vec1(0.0), dt);
+            pid.compute(vec1(10.0), vec1(0.0), Ts);
 
         REQUIRE(pid.integral()[0] < 50.0);
     }
@@ -110,7 +110,7 @@ TEST_CASE("clamping anti-windup freezes integral during saturation",
     double integral_at_saturation = 0.0;
     bool found_saturation = false;
     for (int i = 0; i < 100; ++i) {
-        pid.compute(vec1(10.0), vec1(0.0), dt);
+        pid.compute(vec1(10.0), vec1(0.0), Ts);
         if (pid.saturated() && !found_saturation) {
             found_saturation = true;
             integral_at_saturation = pid.integral()[0];
@@ -121,7 +121,7 @@ TEST_CASE("clamping anti-windup freezes integral during saturation",
     // After many more steps during saturation, integral should be frozen
     // (error > 0 and integral > 0 during saturation -> undo increment)
     for (int i = 0; i < 100; ++i)
-        pid.compute(vec1(10.0), vec1(0.0), dt);
+        pid.compute(vec1(10.0), vec1(0.0), Ts);
 
     // Integral should have stayed near the saturation point
     REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_at_saturation, tol));
@@ -141,12 +141,12 @@ TEST_CASE("conditional_integration freezes integral when error exceeds threshold
 
     // Error = 5 > threshold 2 -> integral should not accumulate
     for (int i = 0; i < 100; ++i)
-        pid.compute(vec1(5.0), vec1(0.0), dt);
+        pid.compute(vec1(5.0), vec1(0.0), Ts);
 
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
 
     // Error = 1 < threshold 2 -> integral should accumulate
     pid.reset();
-    pid.compute(vec1(1.0), vec1(0.0), dt);
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(1.0 * 1.0 * dt, tol));
+    pid.compute(vec1(1.0), vec1(0.0), Ts);
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(1.0 * 1.0 * Ts, tol));
 }

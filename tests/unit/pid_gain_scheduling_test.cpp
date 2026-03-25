@@ -154,3 +154,81 @@ TEST_CASE("freeze_integral prevents integral growth",
     pid.compute(vec1(1.0), vec1(0.0), dt);
     REQUIRE(pid.integral()[0] > integral_val);
 }
+
+TEST_CASE("set_params from Ki=0 to Ki!=0 preserves zero integral",
+    "[pid][siso][gain-scheduling][edge-case]")
+{
+    SisoPid::config_type cfg{};
+    cfg.kp = vec1(1.0);
+    cfg.ki = vec1(0.0);
+    SisoPid pid(cfg);
+
+    // Run some steps with Ki=0 -> integral stays 0
+    for (int i = 0; i < 10; ++i)
+        pid.compute(vec1(1.0), vec1(0.0), dt);
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
+
+    // Switch to Ki=2.0: ki_old==0, so the else-if branch (m_ki==0 -> clear) is NOT taken
+    // because the NEW ki is non-zero. The condition ki_old[i]!=0 fails -> no rescale.
+    // Integral stays at 0.
+    SisoPid::config_type new_cfg = cfg;
+    new_cfg.ki = vec1(2.0);
+    pid.set_params(new_cfg);
+
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
+
+    // Now integral should accumulate with new Ki
+    pid.compute(vec1(1.0), vec1(0.0), dt);
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(2.0 * 1.0 * dt, tol));
+}
+
+TEST_CASE("ISA form set_params rescales integral correctly",
+    "[pid][siso][gain-scheduling][isa]")
+{
+    using IsaPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::isa_form>;
+    IsaPid::config_type cfg{};
+    cfg.kp = vec1(2.0);
+    cfg.ki = vec1(4.0);  // Ti=4 -> internal Ki = Kp/Ti = 0.5
+    cfg.kd = vec1(0.0);
+    IsaPid pid(cfg);
+
+    // Accumulate integral: 10 steps, e=1.0, internal Ki=0.5
+    // integral = 0.5 * 1.0 * 0.01 * 10 = 0.05
+    for (int i = 0; i < 10; ++i)
+        pid.compute(vec1(1.0), vec1(0.0), dt);
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.05, tol));
+
+    // Change Ti from 4.0 to 2.0 -> new internal Ki = 2/2 = 1.0
+    // Bumpless rescale: integral_new = integral_old * ki_old/ki_new = 0.05 * 0.5/1.0 = 0.025
+    IsaPid::config_type new_cfg = cfg;
+    new_cfg.ki = vec1(2.0);
+    pid.set_params(new_cfg);
+
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.025, tol));
+}
+
+TEST_CASE("set_params with both Ki changing simultaneously (non-trivial rescale)",
+    "[pid][siso][gain-scheduling][edge-case]")
+{
+    SisoPid::config_type cfg{};
+    cfg.kp = vec1(1.0);
+    cfg.ki = vec1(1.0);
+    SisoPid pid(cfg);
+
+    // Accumulate integral = Ki*e*dt*5 = 1.0*1.0*0.01*5 = 0.05
+    for (int i = 0; i < 5; ++i)
+        pid.compute(vec1(1.0), vec1(0.0), dt);
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.05, tol));
+
+    // Double the Ki: integral should halve to keep Ki*integral constant
+    SisoPid::config_type new_cfg = cfg;
+    new_cfg.ki = vec1(2.0);
+    pid.set_params(new_cfg);
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.025, tol));
+
+    // Halve Ki back to 1.0: integral should double
+    SisoPid::config_type newer_cfg = cfg;
+    newer_cfg.ki = vec1(1.0);
+    pid.set_params(newer_cfg);
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.05, tol));
+}

@@ -155,3 +155,85 @@ TEST_CASE("velocity_form reset clears history", "[pid][siso][velocity-form][rese
     // dP = 2*(1-0) = 2, dI = 0.5*1*0.01 = 0.005, dD = 0 (Kd=0)
     REQUIRE_THAT(u[0], WithinAbs(2.005, tol));
 }
+
+TEST_CASE("velocity_form with feed_forward adds ff delta to output",
+    "[pid][siso][velocity-form][feed-forward]")
+{
+    auto ff_func = [](const Vec1& sp, double) -> Vec1 { return sp * 0.5; };
+    using FF = ctrlpp::feed_forward<decltype(ff_func)>;
+    using VFfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form, FF>;
+
+    VFfPid::config_type cfg{};
+    cfg.kp = vec1(1.0);
+    cfg.ki = vec1(0.0);
+    cfg.template policy<FF>().ff_func = ff_func;
+    VFfPid pid(cfg);
+
+    // Step 1: e=1, prev_e=0
+    // dP = 1*(1-0) = 1.0, dI = 0, dD = 0
+    // ff = sp * 0.5 = 0.5
+    // delta_u = 1.0 + 0.5 = 1.5
+    auto u1 = pid.compute(vec1(1.0), vec1(0.0), dt);
+    REQUIRE_THAT(u1[0], WithinAbs(1.5, tol));
+
+    // Step 2: e=1, prev_e=1
+    // dP = 1*(1-1) = 0, dI = 0, dD = 0
+    // ff = sp * 0.5 = 0.5
+    // delta_u = 0 + 0.5 = 0.5
+    auto u2 = pid.compute(vec1(1.0), vec1(0.0), dt);
+    REQUIRE_THAT(u2[0], WithinAbs(0.5, tol));
+}
+
+TEST_CASE("velocity_form tracking signal is a no-op (integral not modified)",
+    "[pid][siso][velocity-form][tracking]")
+{
+    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    VPid::config_type cfg{};
+    cfg.kp = vec1(1.0);
+    cfg.ki = vec1(0.5);
+    VPid pid(cfg);
+
+    // Run a step with tracking; velocity form should ignore tracking signal
+    // (the if constexpr branch for !velocity_form is not entered)
+    auto u1 = pid.compute(vec1(1.0), vec1(0.0), dt, vec1(99.0));
+    // dP = 1*(1-0) = 1, dI = 0.5*1*0.01 = 0.005
+    REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
+
+    // Integral should be zero (velocity form doesn't maintain position-form integral)
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
+}
+
+TEST_CASE("velocity_form output clamping respects output_min and output_max",
+    "[pid][siso][velocity-form][clamping]")
+{
+    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    VPid::config_type cfg{};
+    cfg.kp = vec1(100.0);
+    cfg.output_min = vec1(-0.5);
+    cfg.output_max = vec1(0.5);
+    VPid pid(cfg);
+
+    // Step 1: dP = 100*(1-0) = 100 -> clamped to 0.5
+    auto u1 = pid.compute(vec1(1.0), vec1(0.0), dt);
+    REQUIRE_THAT(u1[0], WithinAbs(0.5, tol));
+
+    // Step 2: dP = 100*((-1)-1) = -200 -> clamped to -0.5
+    auto u2 = pid.compute(vec1(0.0), vec1(1.0), dt);
+    REQUIRE_THAT(u2[0], WithinAbs(-0.5, tol));
+}
+
+TEST_CASE("velocity_form zero dt returns previous output",
+    "[pid][siso][velocity-form][edge-case]")
+{
+    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    VPid::config_type cfg{};
+    cfg.kp = vec1(2.0);
+    VPid pid(cfg);
+
+    auto u1 = pid.compute(vec1(1.0), vec1(0.0), dt);
+    REQUIRE_THAT(u1[0], WithinAbs(2.0, tol));
+
+    // Zero dt returns previous output
+    auto u2 = pid.compute(vec1(5.0), vec1(0.0), 0.0);
+    REQUIRE_THAT(u2[0], WithinAbs(2.0, tol));
+}

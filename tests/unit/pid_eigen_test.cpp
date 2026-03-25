@@ -9,7 +9,7 @@ using Catch::Matchers::WithinAbs;
 namespace
 {
 
-constexpr double dt = 0.01;
+constexpr double Ts = 0.01;
 constexpr double tol = 1e-10;
 
 } // namespace
@@ -23,7 +23,7 @@ TEST_CASE("SISO PID with Eigen - P-only", "[pid][eigen][siso]")
     cfg.kp = Vec::Constant(2.5);
     pid ctrl(cfg);
 
-    auto u = ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), dt);
+    auto u = ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), Ts);
     REQUIRE_THAT(u[0], WithinAbs(2.5, tol));
 }
 
@@ -37,10 +37,10 @@ TEST_CASE("SISO PID with Eigen - PI", "[pid][eigen][siso]")
     cfg.ki = Vec::Constant(0.5);
     pid ctrl(cfg);
 
-    auto u1 = ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), dt);
+    auto u1 = ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), Ts);
     REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
 
-    auto u2 = ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), dt);
+    auto u2 = ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), Ts);
     REQUIRE_THAT(u2[0], WithinAbs(1.01, tol));
 }
 
@@ -56,10 +56,10 @@ TEST_CASE("SISO PID with Eigen - PID", "[pid][eigen][siso]")
     cfg.derivative_on_error = true;
     pid ctrl(cfg);
 
-    auto u1 = ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), dt);
+    auto u1 = ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), Ts);
     REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
 
-    auto u2 = ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), dt);
+    auto u2 = ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), Ts);
     REQUIRE_THAT(u2[0], WithinAbs(1.01, tol));
 }
 
@@ -78,7 +78,7 @@ TEST_CASE("MIMO PID with Eigen - 2-channel independence", "[pid][eigen][mimo]")
     Vec sp = (Vec() << 1.0, 3.0).finished();
     Vec meas = (Vec() << 0.0, 1.0).finished();
 
-    auto u = ctrl.compute(sp, meas, dt);
+    auto u = ctrl.compute(sp, meas, Ts);
 
     REQUIRE_THAT(u[0], WithinAbs(1.0, tol));
     REQUIRE_THAT(u[1], WithinAbs(4.0, tol));
@@ -98,12 +98,12 @@ TEST_CASE("MIMO PID with Eigen - per-channel PI gains", "[pid][eigen][mimo]")
     Vec sp = (Vec() << 1.0, 1.0).finished();
     Vec meas = Vec::Zero();
 
-    auto u = ctrl.compute(sp, meas, dt);
+    auto u = ctrl.compute(sp, meas, Ts);
 
     REQUIRE_THAT(u[0], WithinAbs(1.005, tol));
     REQUIRE_THAT(u[1], WithinAbs(2.01, tol));
 
-    auto u2 = ctrl.compute(sp, meas, dt);
+    auto u2 = ctrl.compute(sp, meas, Ts);
     REQUIRE_THAT(u2[0], WithinAbs(1.01, tol));
     REQUIRE_THAT(u2[1], WithinAbs(2.02, tol));
 }
@@ -126,11 +126,11 @@ TEST_CASE("Full-featured PID with Eigen - anti_windup + deriv_filter + perf_asse
     Vec sp = Vec::Constant(1.0);
     Vec meas = Vec::Constant(0.0);
 
-    auto u1 = ctrl.compute(sp, meas, dt);
+    auto u1 = ctrl.compute(sp, meas, Ts);
     REQUIRE(std::isfinite(u1[0]));
     REQUIRE(u1[0] > 0.0);
 
-    auto u2 = ctrl.compute(sp, meas, dt);
+    auto u2 = ctrl.compute(sp, meas, Ts);
     REQUIRE(std::isfinite(u2[0]));
 
     auto iae = ctrl.metric<ctrlpp::IAE>();
@@ -161,7 +161,7 @@ TEST_CASE("SISO with all composable policies - compile and run", "[pid][eigen][c
 
     for(int k = 0; k < 10; ++k)
     {
-        auto u = ctrl.compute(sp, meas, dt);
+        auto u = ctrl.compute(sp, meas, Ts);
         REQUIRE(std::isfinite(u[0]));
     }
 

@@ -135,3 +135,60 @@ TEST_CASE("error() returns last error", "[pid][siso]")
     pid.compute(vec1(3.0), vec1(1.0), dt);
     REQUIRE_THAT(pid.error()[0], WithinAbs(2.0, tol));
 }
+
+TEST_CASE("ISA form with Ti=0 sets Ki to zero (no integral action)",
+    "[pid][siso][isa][edge-case]")
+{
+    using IsaPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::isa_form>;
+    IsaPid::config_type cfg{};
+    cfg.kp = vec1(2.0);
+    cfg.ki = vec1(0.0);  // Ti=0 in ISA form -> Ki should be 0 (no divide-by-zero)
+    cfg.kd = vec1(0.05);
+    IsaPid pid(cfg);
+
+    // With Ki=0, integral should stay at zero after multiple steps
+    for (int i = 0; i < 10; ++i)
+        pid.compute(vec1(1.0), vec1(0.0), dt);
+
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
+}
+
+TEST_CASE("Tracking signal with zero dt returns previous output without modifying integral",
+    "[pid][siso][tracking][edge-case]")
+{
+    SisoPid::config_type cfg{};
+    cfg.kp = vec1(1.0);
+    cfg.ki = vec1(0.5);
+    SisoPid pid(cfg);
+
+    // Run one normal step
+    pid.compute(vec1(1.0), vec1(0.0), dt);
+    double integral_before = pid.integral()[0];
+
+    // Tracking with dt=0: should return previous output and NOT modify integral
+    [[maybe_unused]] auto u = pid.compute(vec1(1.0), vec1(0.0), 0.0, vec1(10.0));
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
+
+    // Tracking with negative dt: same behavior
+    [[maybe_unused]] auto u2 = pid.compute(vec1(1.0), vec1(0.0), -0.01, vec1(10.0));
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
+}
+
+TEST_CASE("Tracking signal with negative error adjusts integral correctly",
+    "[pid][siso][tracking][negative-error]")
+{
+    SisoPid::config_type cfg{};
+    cfg.kp = vec1(1.0);
+    cfg.ki = vec1(0.5);
+    SisoPid pid(cfg);
+
+    // sp=0, meas=1 -> negative error
+    [[maybe_unused]] auto u = pid.compute(vec1(0.0), vec1(1.0), dt, vec1(2.0));
+
+    // p = kp * (b*sp - meas) = 1*(0 - 1) = -1
+    // non_integral = u - integral
+    // integral = tracking - non_integral = 2.0 - (u - integral)
+    // The integral should be set so that on next auto step, output is near tracking
+    // integral after tracking = tracking - p = 2.0 - (-1.0) = 3.0
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(3.0, tol));
+}
