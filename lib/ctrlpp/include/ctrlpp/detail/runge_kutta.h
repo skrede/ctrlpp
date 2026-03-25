@@ -131,65 +131,70 @@ struct rk45_result
     Scalar dt_next;
 };
 
-template <typename F, typename StateVec, typename InputVec>
-auto rk45_step(const F& f, const StateVec& x, const InputVec& u, typename vector_traits<StateVec>::scalar_type dt, const rk45_config<typename vector_traits<StateVec>::scalar_type>& cfg = {})
-    -> rk45_result<typename vector_traits<StateVec>::scalar_type, vector_traits<StateVec>::size>
+/// Dormand-Prince coefficients for RK45 adaptive integrator.
+struct dormand_prince_coeffs
 {
-    using Scalar = typename vector_traits<StateVec>::scalar_type;
-    constexpr std::size_t NX = vector_traits<StateVec>::size;
-
-    // Dormand-Prince coefficients
     static constexpr double a21 = 1.0 / 5.0;
     static constexpr double a31 = 3.0 / 40.0, a32 = 9.0 / 40.0;
     static constexpr double a41 = 44.0 / 45.0, a42 = -56.0 / 15.0, a43 = 32.0 / 9.0;
     static constexpr double a51 = 19372.0 / 6561.0, a52 = -25360.0 / 2187.0, a53 = 64448.0 / 6561.0, a54 = -212.0 / 729.0;
     static constexpr double a61 = 9017.0 / 3168.0, a62 = -355.0 / 33.0, a63 = 46732.0 / 5247.0, a64 = 49.0 / 176.0, a65 = -5103.0 / 18656.0;
 
-    // 5th order weights
     static constexpr double b1 = 35.0 / 384.0, b3 = 500.0 / 1113.0, b4 = 125.0 / 192.0, b5 = -2187.0 / 6784.0, b6 = 11.0 / 84.0;
 
-    // Error weights: e_i = b_i - b*_i (difference between 5th and 4th order)
     static constexpr double e1 = 71.0 / 57600.0, e3 = -71.0 / 16695.0, e4 = 71.0 / 1920.0, e5 = -17253.0 / 339200.0, e6 = 22.0 / 525.0, e7 = -1.0 / 40.0;
+};
+
+/// Compute scaled error norm for mixed absolute/relative tolerance.
+template <typename Scalar, std::size_t NX, typename StateVec>
+Scalar rk45_error_norm(const StateVec& err_vec, const StateVec& x, Scalar atol, Scalar rtol)
+{
+    Scalar err{0};
+    for(std::size_t i = 0; i < NX; ++i)
+    {
+        Scalar sc = atol + rtol * std::abs(x(static_cast<int>(i)));
+        Scalar ei = err_vec(static_cast<int>(i)) / sc;
+        err += ei * ei;
+    }
+    return std::sqrt(err / Scalar(NX));
+}
+
+/// Compute optimal step-size scaling factor from error estimate.
+template <typename Scalar>
+Scalar rk45_step_scale(Scalar err, Scalar h, Scalar dt_min, Scalar dt_max)
+{
+    Scalar h_new = (err > Scalar{0}) ? h * std::clamp(Scalar{0.84} * std::pow(Scalar{1} / err, Scalar{0.2}), Scalar{0.1}, Scalar{4}) : h * Scalar{4};
+    return std::clamp(h_new, dt_min, dt_max);
+}
+
+template <typename F, typename StateVec, typename InputVec>
+auto rk45_step(const F& f, const StateVec& x, const InputVec& u, typename vector_traits<StateVec>::scalar_type dt, const rk45_config<typename vector_traits<StateVec>::scalar_type>& cfg = {})
+    -> rk45_result<typename vector_traits<StateVec>::scalar_type, vector_traits<StateVec>::size>
+{
+    using Scalar = typename vector_traits<StateVec>::scalar_type;
+    constexpr std::size_t NX = vector_traits<StateVec>::size;
+    using C = dormand_prince_coeffs;
 
     Scalar h = std::clamp(dt, cfg.dt_min, cfg.dt_max);
 
     for(;;)
     {
         StateVec k1 = f(x, u);
-        StateVec k2 = f(StateVec{(x + h * Scalar(a21) * k1).eval()}, u);
-        StateVec k3 = f(StateVec{(x + h * (Scalar(a31) * k1 + Scalar(a32) * k2)).eval()}, u);
-        StateVec k4 = f(StateVec{(x + h * (Scalar(a41) * k1 + Scalar(a42) * k2 + Scalar(a43) * k3)).eval()}, u);
-        StateVec k5 = f(StateVec{(x + h * (Scalar(a51) * k1 + Scalar(a52) * k2 + Scalar(a53) * k3 + Scalar(a54) * k4)).eval()}, u);
-        StateVec k6 = f(StateVec{(x + h * (Scalar(a61) * k1 + Scalar(a62) * k2 + Scalar(a63) * k3 + Scalar(a64) * k4 + Scalar(a65) * k5)).eval()}, u);
+        StateVec k2 = f(StateVec{(x + h * Scalar(C::a21) * k1).eval()}, u);
+        StateVec k3 = f(StateVec{(x + h * (Scalar(C::a31) * k1 + Scalar(C::a32) * k2)).eval()}, u);
+        StateVec k4 = f(StateVec{(x + h * (Scalar(C::a41) * k1 + Scalar(C::a42) * k2 + Scalar(C::a43) * k3)).eval()}, u);
+        StateVec k5 = f(StateVec{(x + h * (Scalar(C::a51) * k1 + Scalar(C::a52) * k2 + Scalar(C::a53) * k3 + Scalar(C::a54) * k4)).eval()}, u);
+        StateVec k6 = f(StateVec{(x + h * (Scalar(C::a61) * k1 + Scalar(C::a62) * k2 + Scalar(C::a63) * k3 + Scalar(C::a64) * k4 + Scalar(C::a65) * k5)).eval()}, u);
 
-        // 5th order solution
-        StateVec x5 = (x + h * (Scalar(b1) * k1 + Scalar(b3) * k3 + Scalar(b4) * k4 + Scalar(b5) * k5 + Scalar(b6) * k6)).eval();
-
+        StateVec x5 = (x + h * (Scalar(C::b1) * k1 + Scalar(C::b3) * k3 + Scalar(C::b4) * k4 + Scalar(C::b5) * k5 + Scalar(C::b6) * k6)).eval();
         StateVec k7 = f(x5, u);
 
-        // Error estimate
-        StateVec err_vec = (h * (Scalar(e1) * k1 + Scalar(e3) * k3 + Scalar(e4) * k4 + Scalar(e5) * k5 + Scalar(e6) * k6 + Scalar(e7) * k7)).eval();
-
-        // Compute scaled error norm (mixed absolute/relative tolerance)
-        Scalar err{0};
-        for(std::size_t i = 0; i < NX; ++i)
-        {
-            Scalar sc = cfg.atol + cfg.rtol * std::abs(x(static_cast<int>(i)));
-            Scalar ei = err_vec(static_cast<int>(i)) / sc;
-            err += ei * ei;
-        }
-        err = std::sqrt(err / Scalar(NX));
+        StateVec err_vec = (h * (Scalar(C::e1) * k1 + Scalar(C::e3) * k3 + Scalar(C::e4) * k4 + Scalar(C::e5) * k5 + Scalar(C::e6) * k6 + Scalar(C::e7) * k7)).eval();
+        Scalar err = rk45_error_norm<Scalar, NX>(err_vec, x, cfg.atol, cfg.rtol);
 
         if(err <= Scalar{1} || h <= cfg.dt_min)
-        {
-            // Accept step
-            Scalar h_new = (err > Scalar{0}) ? h * std::clamp(Scalar{0.84} * std::pow(Scalar{1} / err, Scalar{0.2}), Scalar{0.1}, Scalar{4}) : h * Scalar{4};
-            h_new = std::clamp(h_new, cfg.dt_min, cfg.dt_max);
+            return {x5, h, rk45_step_scale(err, h, cfg.dt_min, cfg.dt_max)};
 
-            return {x5, h, h_new};
-        }
-
-        // Reject step: shrink h and retry
         Scalar h_new = h * std::max(Scalar{0.84} * std::pow(Scalar{1} / err, Scalar{0.2}), Scalar{0.1});
         h = std::max(h_new, cfg.dt_min);
     }
