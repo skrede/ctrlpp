@@ -10,7 +10,7 @@ namespace {
 using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
-constexpr double dt = 0.01;
+constexpr double Ts = 0.01;
 constexpr double tol = 1e-12;
 
 Vec1 vec1(double v) { Vec1 r; r << v; return r; }
@@ -26,15 +26,15 @@ TEST_CASE("Tracking signal drives integral for bumpless transfer",
     SisoPid pid(cfg);
 
     // Run a few normal steps to accumulate integral
-    pid.compute(vec1(1.0), vec1(0.0), dt);
-    pid.compute(vec1(1.0), vec1(0.0), dt);
+    pid.compute(vec1(1.0), vec1(0.0), Ts);
+    pid.compute(vec1(1.0), vec1(0.0), Ts);
 
     // Now supply tracking signal = 3.0
     // integral should be set so output matches tracking:
     // tracking = p + integral + d + ff
     // integral = tracking - p - d
     // With e=1.0: p = kp*ep = 1.0*1.0 = 1.0, d=0 (measurement unchanged)
-    [[maybe_unused]] auto u = pid.compute(vec1(1.0), vec1(0.0), dt, vec1(3.0));
+    [[maybe_unused]] auto u = pid.compute(vec1(1.0), vec1(0.0), Ts, vec1(3.0));
 
     // After tracking: integral = 3.0 - p_term - d_term
     // p_term = kp * (b*sp - meas) = 1.0 * (1*1 - 0) = 1.0
@@ -54,14 +54,14 @@ TEST_CASE("Tracking enables bumpless manual-to-auto transition",
     // Simulate manual mode: operator holds output at 5.0
     // Track the manual output for several steps
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.8), dt, vec1(5.0));
+        pid.compute(vec1(1.0), vec1(0.8), Ts, vec1(5.0));
 
     // Switch to auto: next compute without tracking should produce smooth output
     // Because integral was set to tracking - p - d:
     // p = kp * (b*sp - meas) = 2*(1*1 - 0.8) = 0.4
     // integral ~ 5.0 - 0.4 = 4.6  (d ~ 0 since meas stable)
     // Auto output: p + integral + I_increment = 0.4 + 4.6 + ki*e*dt = 5.0 + 1*0.2*0.01 ~ 5.002
-    auto u_auto = pid.compute(vec1(1.0), vec1(0.8), dt);
+    auto u_auto = pid.compute(vec1(1.0), vec1(0.8), Ts);
 
     // Output should be close to 5.0 (no bump from manual->auto)
     REQUIRE_THAT(u_auto[0], WithinAbs(5.002, 0.01));
@@ -81,9 +81,9 @@ TEST_CASE("Tracking with feed_forward: integral accounts for ff contribution",
     FfPid pid(cfg);
 
     // Step with tracking signal = 10.0
-    // u = compute(sp, meas, dt) includes ff contribution
+    // u = compute(sp, meas, Ts) includes ff contribution
     // non_integral = u - integral, integral = tracking - non_integral
-    [[maybe_unused]] auto u = pid.compute(vec1(1.0), vec1(0.0), dt, vec1(10.0));
+    [[maybe_unused]] auto u = pid.compute(vec1(1.0), vec1(0.0), Ts, vec1(10.0));
 
     // P = 1*(1-0) = 1.0, I = 0.5*1*0.01 = 0.005, D = 0 (first step), FF = 1*2 = 2.0
     // u = 1.0 + 0.005 + 0 + 2.0 = 3.005
@@ -104,18 +104,18 @@ TEST_CASE("Tracking after saturation resets integral appropriately",
 
     // Drive into saturation
     for (int i = 0; i < 20; ++i)
-        pid.compute(vec1(10.0), vec1(0.0), dt);
+        pid.compute(vec1(10.0), vec1(0.0), Ts);
 
     REQUIRE(pid.saturated() == true);
 
     // Now use tracking to pull integral back to a reasonable value
-    pid.compute(vec1(1.0), vec1(0.0), dt, vec1(2.0));
+    pid.compute(vec1(1.0), vec1(0.0), Ts, vec1(2.0));
 
     // P = 10*1 = 10, clamped output = 5
     // non_integral = output - integral_before_tracking_adjustment
     // After tracking: integral = 2.0 - (5 - integral)
     // The integral should now be adjusted so next auto output is near 2.0
-    auto u = pid.compute(vec1(1.0), vec1(0.0), dt);
+    auto u = pid.compute(vec1(1.0), vec1(0.0), Ts);
     // Should be within reasonable range of the tracking target
     REQUIRE(u[0] < 10.0);
 }

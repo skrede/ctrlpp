@@ -113,7 +113,7 @@ auto reorder_complex_schur_stable_first(Eigen::Matrix<std::complex<Scalar>, N, N
 
         // Bubble from pos to stable_count via adjacent swaps
         for(int k = pos; k > stable_count; --k)
-            swap_complex_schur_1x1(T, U, k - 1);
+            swap_complex_schur_1x1<Scalar, N>(T, U, k - 1);
 
         ++stable_count;
     }

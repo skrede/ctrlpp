@@ -10,7 +10,7 @@ namespace {
 using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
-constexpr double dt = 0.01;
+constexpr double Ts = 0.01;
 constexpr double tol = 1e-12;
 
 Vec1 vec1(double v) { Vec1 r; r << v; return r; }
@@ -28,7 +28,7 @@ TEST_CASE("set_params rescales integral for bumpless gain change",
     // Accumulate some integral: 10 steps of e=1, Ki=2
     // integral = sum(Ki*e*dt) = 2*1*0.01*10 = 0.2
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), dt);
+        pid.compute(vec1(1.0), vec1(0.0), Ts);
 
     double integral_before = pid.integral()[0];
     REQUIRE_THAT(integral_before, WithinAbs(0.2, tol));
@@ -52,7 +52,7 @@ TEST_CASE("set_params with Ki going to zero clears integral",
     SisoPid pid(cfg);
 
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), dt);
+        pid.compute(vec1(1.0), vec1(0.0), Ts);
 
     REQUIRE(pid.integral()[0] != 0.0);
 
@@ -74,14 +74,14 @@ TEST_CASE("set_params Kp change produces no output discontinuity",
     // Run until steady output
     Vec1 u_before{};
     for (int i = 0; i < 20; ++i)
-        u_before = pid.compute(vec1(1.0), vec1(0.5), dt);
+        u_before = pid.compute(vec1(1.0), vec1(0.5), Ts);
 
     // Change Kp from 1 to 2
     SisoPid::config_type new_cfg = cfg;
     new_cfg.kp = vec1(2.0);
     pid.set_params(new_cfg);
 
-    auto u_after = pid.compute(vec1(1.0), vec1(0.5), dt);
+    auto u_after = pid.compute(vec1(1.0), vec1(0.5), Ts);
 
     // P changed from 1*0.5=0.5 to 2*0.5=1.0 (+0.5 step)
     // Ki unchanged so integral unchanged -- output jumps by Kp change on proportional
@@ -121,7 +121,7 @@ TEST_CASE("set_integral sets integral to known value",
     REQUIRE_THAT(pid.integral()[0], WithinAbs(5.0, tol));
 
     // Next output should include this integral
-    auto u = pid.compute(vec1(1.0), vec1(0.0), dt);
+    auto u = pid.compute(vec1(1.0), vec1(0.0), Ts);
     // P=1*1=1, I=5.0 + ki*e*dt = 5.01, D=0
     REQUIRE_THAT(u[0], WithinAbs(6.01, tol));
 }
@@ -135,7 +135,7 @@ TEST_CASE("freeze_integral prevents integral growth",
     SisoPid pid(cfg);
 
     // Accumulate some integral
-    pid.compute(vec1(1.0), vec1(0.0), dt);
+    pid.compute(vec1(1.0), vec1(0.0), Ts);
     double integral_val = pid.integral()[0];
 
     // Freeze
@@ -143,7 +143,7 @@ TEST_CASE("freeze_integral prevents integral growth",
 
     // Run 10 more steps -- integral should not change
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), dt);
+        pid.compute(vec1(1.0), vec1(0.0), Ts);
 
     REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_val, tol));
 
@@ -151,7 +151,7 @@ TEST_CASE("freeze_integral prevents integral growth",
     pid.freeze_integral(false);
 
     // Integral should resume
-    pid.compute(vec1(1.0), vec1(0.0), dt);
+    pid.compute(vec1(1.0), vec1(0.0), Ts);
     REQUIRE(pid.integral()[0] > integral_val);
 }
 
@@ -165,7 +165,7 @@ TEST_CASE("set_params from Ki=0 to Ki!=0 preserves zero integral",
 
     // Run some steps with Ki=0 -> integral stays 0
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), dt);
+        pid.compute(vec1(1.0), vec1(0.0), Ts);
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
 
     // Switch to Ki=2.0: ki_old==0, so the else-if branch (m_ki==0 -> clear) is NOT taken
@@ -178,8 +178,8 @@ TEST_CASE("set_params from Ki=0 to Ki!=0 preserves zero integral",
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
 
     // Now integral should accumulate with new Ki
-    pid.compute(vec1(1.0), vec1(0.0), dt);
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(2.0 * 1.0 * dt, tol));
+    pid.compute(vec1(1.0), vec1(0.0), Ts);
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(2.0 * 1.0 * Ts, tol));
 }
 
 TEST_CASE("ISA form set_params rescales integral correctly",
@@ -195,7 +195,7 @@ TEST_CASE("ISA form set_params rescales integral correctly",
     // Accumulate integral: 10 steps, e=1.0, internal Ki=0.5
     // integral = 0.5 * 1.0 * 0.01 * 10 = 0.05
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), dt);
+        pid.compute(vec1(1.0), vec1(0.0), Ts);
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.05, tol));
 
     // Change Ti from 4.0 to 2.0 -> new internal Ki = 2/2 = 1.0
@@ -217,7 +217,7 @@ TEST_CASE("set_params with both Ki changing simultaneously (non-trivial rescale)
 
     // Accumulate integral = Ki*e*dt*5 = 1.0*1.0*0.01*5 = 0.05
     for (int i = 0; i < 5; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), dt);
+        pid.compute(vec1(1.0), vec1(0.0), Ts);
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.05, tol));
 
     // Double the Ki: integral should halve to keep Ki*integral constant
