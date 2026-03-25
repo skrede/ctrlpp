@@ -51,83 +51,12 @@ public:
     void setup(const nlp_problem<Scalar>& problem)
     {
         problem_ = &problem;
-
         opt_ = nlopt::opt(to_nlopt_algorithm(settings_.algorithm), problem.n_vars);
-
-        // Variable bounds
-        if(problem.x_lower.size() > 0)
-        {
-            opt_.set_lower_bounds(to_stdvec(problem.x_lower));
-        }
-        if(problem.x_upper.size() > 0)
-        {
-            opt_.set_upper_bounds(to_stdvec(problem.x_upper));
-        }
-
-        // Objective
+        configure_variable_bounds(problem);
         opt_.set_min_objective(objective_callback, this);
-
-        // Partition constraints into equality and inequality
-        if(problem.n_constraints > 0)
-        {
-            eq_indices_.clear();
-            ineq_lower_indices_.clear();
-            ineq_upper_indices_.clear();
-
-            for(int i = 0; i < problem.n_constraints; ++i)
-            {
-                if(problem.c_lower[i] == problem.c_upper[i])
-                {
-                    eq_indices_.push_back(i);
-                }
-                else
-                {
-                    if(std::isfinite(static_cast<double>(problem.c_upper[i])))
-                    {
-                        ineq_upper_indices_.push_back(i);
-                    }
-                    if(std::isfinite(static_cast<double>(problem.c_lower[i])))
-                    {
-                        ineq_lower_indices_.push_back(i);
-                    }
-                }
-            }
-
-            if(settings_.algorithm == nlopt_algorithm::mma && !eq_indices_.empty())
-            {
-                throw std::invalid_argument("MMA algorithm does not support equality constraints");
-            }
-
-            // Equality constraints: c(x) - target = 0
-            if(!eq_indices_.empty())
-            {
-                std::vector<double> eq_tol(eq_indices_.size(), static_cast<double>(settings_.constraint_tol));
-                opt_.add_equality_mconstraint(equality_callback, this, eq_tol);
-            }
-
-            // Inequality constraints: c(x) - c_upper <= 0
-            if(!ineq_upper_indices_.empty())
-            {
-                std::vector<double> tol(ineq_upper_indices_.size(), static_cast<double>(settings_.constraint_tol));
-                opt_.add_inequality_mconstraint(ineq_upper_callback, this, tol);
-            }
-
-            // Inequality constraints: c_lower - c(x) <= 0
-            if(!ineq_lower_indices_.empty())
-            {
-                std::vector<double> tol(ineq_lower_indices_.size(), static_cast<double>(settings_.constraint_tol));
-                opt_.add_inequality_mconstraint(ineq_lower_callback, this, tol);
-            }
-        }
-
-        // Stopping criteria
-        opt_.set_ftol_rel(static_cast<double>(settings_.ftol_rel));
-        opt_.set_xtol_rel(static_cast<double>(settings_.xtol_rel));
-        opt_.set_maxeval(settings_.max_eval);
-        if(settings_.max_time > Scalar{0})
-        {
-            opt_.set_maxtime(static_cast<double>(settings_.max_time));
-        }
+        partition_constraints(problem);
+        configure_constraint_callbacks();
+        configure_stopping_criteria();
     }
 
     auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
@@ -187,6 +116,70 @@ private:
             return nlopt::GN_ISRES;
         }
         return nlopt::LD_SLSQP;
+    }
+
+    void configure_variable_bounds(const nlp_problem<Scalar>& problem)
+    {
+        if(problem.x_lower.size() > 0)
+            opt_.set_lower_bounds(to_stdvec(problem.x_lower));
+        if(problem.x_upper.size() > 0)
+            opt_.set_upper_bounds(to_stdvec(problem.x_upper));
+    }
+
+    void partition_constraints(const nlp_problem<Scalar>& problem)
+    {
+        if(problem.n_constraints == 0)
+            return;
+
+        eq_indices_.clear();
+        ineq_lower_indices_.clear();
+        ineq_upper_indices_.clear();
+
+        for(int i = 0; i < problem.n_constraints; ++i)
+        {
+            if(problem.c_lower[i] == problem.c_upper[i])
+            {
+                eq_indices_.push_back(i);
+            }
+            else
+            {
+                if(std::isfinite(static_cast<double>(problem.c_upper[i])))
+                    ineq_upper_indices_.push_back(i);
+                if(std::isfinite(static_cast<double>(problem.c_lower[i])))
+                    ineq_lower_indices_.push_back(i);
+            }
+        }
+
+        if(settings_.algorithm == nlopt_algorithm::mma && !eq_indices_.empty())
+            throw std::invalid_argument("MMA algorithm does not support equality constraints");
+    }
+
+    void configure_constraint_callbacks()
+    {
+        if(!eq_indices_.empty())
+        {
+            std::vector<double> eq_tol(eq_indices_.size(), static_cast<double>(settings_.constraint_tol));
+            opt_.add_equality_mconstraint(equality_callback, this, eq_tol);
+        }
+        if(!ineq_upper_indices_.empty())
+        {
+            std::vector<double> tol(ineq_upper_indices_.size(), static_cast<double>(settings_.constraint_tol));
+            opt_.add_inequality_mconstraint(ineq_upper_callback, this, tol);
+        }
+        if(!ineq_lower_indices_.empty())
+        {
+            std::vector<double> tol(ineq_lower_indices_.size(), static_cast<double>(settings_.constraint_tol));
+            opt_.add_inequality_mconstraint(ineq_lower_callback, this, tol);
+        }
+    }
+
+    void configure_stopping_criteria()
+    {
+        opt_.set_ftol_rel(static_cast<double>(settings_.ftol_rel));
+        opt_.set_xtol_rel(static_cast<double>(settings_.xtol_rel));
+        opt_.set_maxeval(settings_.max_eval);
+        if(settings_.max_time > Scalar{0})
+            opt_.set_maxtime(static_cast<double>(settings_.max_time));
     }
 
     static auto to_stdvec(const Eigen::VectorX<Scalar>& v) -> std::vector<double>

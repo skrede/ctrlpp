@@ -71,41 +71,8 @@ public:
     void setup(const qp_problem<double>& problem)
     {
         cleanup();
-
-        p_upper_ = problem.P.template triangularView<Eigen::Upper>();
-        p_upper_.makeCompressed();
-
-        a_ = problem.A.template cast<OSQPFloat>();
-        a_.makeCompressed();
-
-        n_ = static_cast<OSQPInt>(problem.P.cols());
-        m_ = static_cast<OSQPInt>(problem.A.rows());
-
-        auto p_csc = make_csc(p_upper_);
-        auto a_csc = make_csc(a_);
-
-        auto* settings = OSQPSettings_new();
-        if(!settings)
-        {
-            throw std::runtime_error("OSQP settings allocation failed");
-        }
-
-        settings->eps_abs = eps_abs_;
-        settings->eps_rel = eps_rel_;
-        settings->max_iter = max_iter_;
-        settings->verbose = verbose_;
-        settings->warm_starting = warm_starting_;
-        settings->polishing = polishing_;
-
-        auto exit_flag = osqp_setup(&solver_, &p_csc, const_cast<OSQPFloat*>(problem.q.data()), &a_csc, const_cast<OSQPFloat*>(problem.l.data()), const_cast<OSQPFloat*>(problem.u.data()), m_, n_, settings);
-
-        OSQPSettings_free(settings);
-
-        if(exit_flag != 0)
-        {
-            solver_ = nullptr;
-            throw std::runtime_error("OSQP setup failed");
-        }
+        prepare_sparse_matrices(problem);
+        configure_and_create_solver(problem);
     }
 
     auto solve(const qp_update<double>& update) -> qp_result<double>
@@ -133,6 +100,45 @@ public:
     }
 
 private:
+    void prepare_sparse_matrices(const qp_problem<double>& problem)
+    {
+        p_upper_ = problem.P.template triangularView<Eigen::Upper>();
+        p_upper_.makeCompressed();
+
+        a_ = problem.A.template cast<OSQPFloat>();
+        a_.makeCompressed();
+
+        n_ = static_cast<OSQPInt>(problem.P.cols());
+        m_ = static_cast<OSQPInt>(problem.A.rows());
+    }
+
+    void configure_and_create_solver(const qp_problem<double>& problem)
+    {
+        auto p_csc = make_csc(p_upper_);
+        auto a_csc = make_csc(a_);
+
+        auto* settings = OSQPSettings_new();
+        if(!settings)
+            throw std::runtime_error("OSQP settings allocation failed");
+
+        settings->eps_abs = eps_abs_;
+        settings->eps_rel = eps_rel_;
+        settings->max_iter = max_iter_;
+        settings->verbose = verbose_;
+        settings->warm_starting = warm_starting_;
+        settings->polishing = polishing_;
+
+        auto exit_flag = osqp_setup(&solver_, &p_csc, const_cast<OSQPFloat*>(problem.q.data()), &a_csc, const_cast<OSQPFloat*>(problem.l.data()), const_cast<OSQPFloat*>(problem.u.data()), m_, n_, settings);
+
+        OSQPSettings_free(settings);
+
+        if(exit_flag != 0)
+        {
+            solver_ = nullptr;
+            throw std::runtime_error("OSQP setup failed");
+        }
+    }
+
     void cleanup()
     {
         if(solver_)
