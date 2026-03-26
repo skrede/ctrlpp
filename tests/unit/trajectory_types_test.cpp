@@ -37,20 +37,20 @@ TEST_CASE("trajectory_point<double, 3> has 3D vector fields", "[traj][types]")
     CHECK_THAT(pt.acceleration[0], WithinAbs(7.0, 1e-15));
 }
 
-// --- motion_law_point tests ---
+// --- path_point tests ---
 
-TEST_CASE("motion_law_point default-initializes to zero", "[traj][types]")
+TEST_CASE("path_point default-initializes to zero", "[traj][types]")
 {
-    motion_law_point<double> pt{};
+    path_point<double> pt{};
     CHECK_THAT(pt.q, WithinAbs(0.0, 1e-15));
     CHECK_THAT(pt.dq, WithinAbs(0.0, 1e-15));
     CHECK_THAT(pt.ddq, WithinAbs(0.0, 1e-15));
     CHECK_THAT(pt.dddq, WithinAbs(0.0, 1e-15));
 }
 
-TEST_CASE("motion_law_point stores assigned values", "[traj][types]")
+TEST_CASE("path_point stores assigned values", "[traj][types]")
 {
-    motion_law_point<double> pt{.q = 0.5, .dq = 1.5, .ddq = -3.0, .dddq = 12.0};
+    path_point<double> pt{.q = 0.5, .dq = 1.5, .ddq = -3.0, .dddq = 12.0};
     CHECK_THAT(pt.q, WithinAbs(0.5, 1e-15));
     CHECK_THAT(pt.dq, WithinAbs(1.5, 1e-15));
     CHECK_THAT(pt.ddq, WithinAbs(-3.0, 1e-15));
