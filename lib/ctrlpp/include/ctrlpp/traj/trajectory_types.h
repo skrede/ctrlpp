@@ -4,8 +4,8 @@
 /// @brief Core output types for trajectory generation.
 ///
 /// trajectory_point<Scalar, ND> holds position, velocity, and acceleration vectors
-/// for an ND-dimensional trajectory. motion_law_point<Scalar> holds normalized
-/// scalar values (q, dq, ddq, dddq) for a motion law mapping tau in [0,1].
+/// for an ND-dimensional trajectory. path_point<Scalar> holds normalized scalar
+/// values (q, dq, ddq, dddq) for a path mapping tau in [0,1].
 ///
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 5.2.1, eq. (2.16)
@@ -26,12 +26,12 @@ struct trajectory_point
     Vector<Scalar, ND> acceleration{};
 };
 
-/// @brief Normalized motion law output for tau in [0,1].
+/// @brief Normalized path output for tau in [0,1].
 ///
 /// Fields represent normalized position, velocity, acceleration, and jerk.
 /// Physical values are obtained via scaling: vel = h/T * dq, acc = h/T^2 * ddq, etc.
 template <typename Scalar>
-struct motion_law_point
+struct path_point
 {
     Scalar q{};
     Scalar dq{};
