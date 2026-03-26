@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 
-**ctrlpp** is a C++20 control systems library with policy-based composition and concept-constrained interfaces. Header-only, Eigen-backed, and designed for hot-path use in real-time systems. PID controllers compose from orthogonal policies (anti-windup, derivative filtering, rate limiting); estimators and MPC/MHE inject solver backends through concepts; system identification runs online or offline with unified result types.
+**ctrlpp** is a C++20 control systems library with policy-based composition and concept-constrained interfaces. Header-only and Eigen-backed. PID controllers compose from orthogonal policies (anti-windup, derivative filtering, rate limiting); estimators and MPC/MHE inject solver backends through concepts; system identification runs online or offline with unified result types.
 
 **NB:** This library is still under development and have not undergone rigorous real-world testing beyond the extensive test suite under `tests/`. Reports and experiences from use or testing of this library will be appreciated.
 

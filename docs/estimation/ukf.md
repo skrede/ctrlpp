@@ -1,6 +1,6 @@
 # ukf
 
-Unscented Kalman Filter with swappable sigma point strategies and configurable gain decomposition. The UKF avoids explicit Jacobian computation by propagating a deterministic set of sigma points through the nonlinear dynamics and measurement models, then recovering mean and covariance from the transformed points. All sigma point storage uses `std::array` for zero-heap allocation in the hot path.
+Unscented Kalman Filter with swappable sigma point strategies and configurable gain decomposition. The UKF avoids explicit Jacobian computation by propagating a deterministic set of sigma points through the nonlinear dynamics and measurement models, then recovering mean and covariance from the transformed points. All sigma point storage uses `std::array` to avoid heap allocation.
 
 ## Header and Alias
 
