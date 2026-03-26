@@ -24,6 +24,8 @@
 #include "ctrlpp/traj/septic_trajectory.h"
 #include "ctrlpp/traj/trapezoidal_trajectory.h"
 #include "ctrlpp/traj/double_s_trajectory.h"
+#include "ctrlpp/traj/modified_trap_trajectory.h"
+#include "ctrlpp/traj/modified_sin_trajectory.h"
 #include "ctrlpp/traj/time_scaling.h"
 #include "ctrlpp/traj/piecewise_path.h"
 #include "ctrlpp/traj/piecewise_trajectory.h"
