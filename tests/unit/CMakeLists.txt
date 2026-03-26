@@ -56,6 +56,7 @@ make_test(polynomial_trajectory_test)
 make_test(trajectory_adapter_test)
 make_test(piecewise_trajectory_test)
 make_test(trapezoidal_trajectory_test)
+make_test(time_scaling_test)
 
 if (CTRLPP_BUILD_OSQP)
     add_executable(mpc_osqp_test "${CMAKE_CURRENT_LIST_DIR}/mpc_osqp_test.cpp")
