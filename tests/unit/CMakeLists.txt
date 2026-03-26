@@ -54,6 +54,7 @@ make_test(trajectory_types_test)
 make_test(motion_laws_test)
 make_test(polynomial_segment_test)
 make_test(scaled_segment_test)
+make_test(piecewise_test)
 
 if (CTRLPP_BUILD_OSQP)
     add_executable(mpc_osqp_test "${CMAKE_CURRENT_LIST_DIR}/mpc_osqp_test.cpp")
