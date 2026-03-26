@@ -178,7 +178,7 @@ TEST_CASE("double_s: phase boundary continuity", "[traj][double_s]")
 
     auto const pd = traj.phase_durations();
     double boundary = 0.0;
-    constexpr double tiny = 1e-12;
+    constexpr double tiny = 1e-13;
     constexpr double tol = 1e-10;
 
     for (std::size_t i = 0; i < 6; ++i) {
