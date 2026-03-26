@@ -23,6 +23,7 @@
 #include "ctrlpp/traj/quintic_trajectory.h"
 #include "ctrlpp/traj/septic_trajectory.h"
 #include "ctrlpp/traj/modified_trap_trajectory.h"
+#include "ctrlpp/traj/modified_sin_trajectory.h"
 #include "ctrlpp/traj/piecewise_path.h"
 #include "ctrlpp/traj/piecewise_trajectory.h"
 

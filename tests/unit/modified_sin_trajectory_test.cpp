@@ -47,12 +47,12 @@ TEST_CASE("Modified sinusoidal: zero endpoint velocities", "[traj][modified_sin]
 
 TEST_CASE("Modified sinusoidal: peak velocity ~= 1.76*h/T", "[traj][modified_sin]")
 {
-    // B&M Sec 3.8: max velocity = 2*pi*h / ((pi+4)*T) ~= 1.7596*h/T
+    // B&M Sec 3.8: max velocity = 4*pi*h / ((pi+4)*T) ~= 1.7596*h/T
     // h=10, T=2 -> max_vel ~= 8.798
     ctrlpp::modified_sin_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
     constexpr double pi = 3.14159265358979323846;
-    double const expected_peak_vel = 2.0 * pi * 10.0 / ((pi + 4.0) * 2.0);
+    double const expected_peak_vel = 4.0 * pi * 10.0 / ((pi + 4.0) * 2.0);
 
     CHECK_THAT(traj.peak_velocity(), WithinAbs(expected_peak_vel, 1e-10));
 
@@ -63,19 +63,17 @@ TEST_CASE("Modified sinusoidal: peak velocity ~= 1.76*h/T", "[traj][modified_sin
 
 TEST_CASE("Modified sinusoidal: peak acceleration ~= 5.528*h/T^2", "[traj][modified_sin]")
 {
-    // B&M Sec 3.8: max acc = 2*pi^2*h / ((pi+4)^2 * T^2) * (pi+4)/pi ... need exact
-    // a_max from B&M: max acc = 8*pi^2*h / (3*(pi+4)^2*T^2) ... let me compute from code
-    // Actually from RESEARCH.md: max_acc = 5.528*h/T^2
-    // For h=10, T=2: max_acc = 5.528*10/4 = 13.82
+    // B&M Sec 3.8: max acc = 4*pi^2*h / ((pi+4)*T^2) ~= 5.528*h/T^2
+    // For h=10, T=2: max_acc ~= 5.528*10/4 = 13.82
+    // Peak acceleration occurs at T/8 (boundary between cycloidal and sinusoidal regions)
     ctrlpp::modified_sin_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
-    // Sample around T/4 where acceleration should be near maximum
-    auto const pt = traj.evaluate(0.5);
+    constexpr double pi = 3.14159265358979323846;
+    double const expected_max_acc = 4.0 * pi * pi * 10.0 / ((pi + 4.0) * 4.0);
 
-    // Check that it's in the right ballpark (within 5% of 5.528*h/T^2)
-    double const expected_approx = 5.528 * 10.0 / 4.0;
-    CHECK(pt.acceleration[0] > expected_approx * 0.95);
-    CHECK(pt.acceleration[0] < expected_approx * 1.05);
+    // Sample at T/8 where acceleration is at its peak
+    auto const pt = traj.evaluate(0.25);
+    CHECK_THAT(pt.acceleration[0], WithinAbs(expected_max_acc, 1e-8));
 }
 
 TEST_CASE("Modified sinusoidal: phase boundary continuity", "[traj][modified_sin]")
