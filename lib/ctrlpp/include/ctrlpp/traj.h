@@ -22,7 +22,9 @@
 #include "ctrlpp/traj/cubic_trajectory.h"
 #include "ctrlpp/traj/quintic_trajectory.h"
 #include "ctrlpp/traj/septic_trajectory.h"
+#include "ctrlpp/traj/trapezoidal_trajectory.h"
 #include "ctrlpp/traj/double_s_trajectory.h"
+#include "ctrlpp/traj/time_scaling.h"
 #include "ctrlpp/traj/piecewise_path.h"
 #include "ctrlpp/traj/piecewise_trajectory.h"
 
