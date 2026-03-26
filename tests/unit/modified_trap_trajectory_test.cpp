@@ -65,7 +65,9 @@ TEST_CASE("Modified trapezoidal: peak acceleration == 4.888*h/T^2", "[traj][modi
     ctrlpp::modified_trap_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
     constexpr double pi = 3.14159265358979323846;
-    double const expected_max_acc = 2.0 * 10.0 * (2.0 + pi) / (pi * 4.0);
+    // a_max = hp * 8*pi/T^2, where hp = h/(2+pi)
+    // = h * 8*pi / ((2+pi) * T^2)
+    double const expected_max_acc = 10.0 * 8.0 * pi / ((2.0 + pi) * 4.0);
 
     // Sample acceleration at T/4 where it should be at maximum (constant accel region)
     auto const pt = traj.evaluate(0.5);
