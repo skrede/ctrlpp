@@ -86,9 +86,34 @@ Guides and API reference for the ctrlpp C++23 control library.
 - [differentiable_measurement](api/model/differentiable-measurement.md) -- Differentiable measurement concept
 - [constraint_model](api/model/constraint-model.md) -- Constraint model concept
 
-### Trajectory (coming soon)
+### Trajectory
 
-Trajectory generation primitives will be documented in [api/traj/](api/traj/) once implemented.
+- [Trajectory API Overview](api/traj/README.md) -- Complete trajectory module index
+- [trajectory](api/traj/trajectory.md) -- Trajectory convenience header and concept
+- [trajectory_segment](api/traj/trajectory-segment.md) -- Trajectory segment concept definition
+- [trajectory_types](api/traj/trajectory-types.md) -- trajectory_point, Vector type aliases
+- [path_segment](api/traj/path-segment.md) -- Path segment concept
+- [piecewise_path](api/traj/piecewise-path.md) -- Piecewise path composition
+- [piecewise_trajectory](api/traj/piecewise-trajectory.md) -- Piecewise trajectory composition
+- [time_scaling](api/traj/time-scaling.md) -- Time scaling functions
+- [trapezoidal_trajectory](api/traj/trapezoidal-trajectory.md) -- Trapezoidal velocity profile
+- [double_s_trajectory](api/traj/double-s-trajectory.md) -- Double-S (jerk-limited) velocity profile
+- [modified_trap_trajectory](api/traj/modified-trap-trajectory.md) -- Modified trapezoidal velocity profile
+- [modified_sin_trajectory](api/traj/modified-sin-trajectory.md) -- Modified sinusoidal velocity profile
+- [cubic_path](api/traj/cubic-path.md) -- Cubic polynomial path
+- [cubic_trajectory](api/traj/cubic-trajectory.md) -- Cubic polynomial trajectory
+- [quintic_path](api/traj/quintic-path.md) -- Quintic polynomial path
+- [quintic_trajectory](api/traj/quintic-trajectory.md) -- Quintic polynomial trajectory
+- [septic_path](api/traj/septic-path.md) -- Septic polynomial path
+- [septic_trajectory](api/traj/septic-trajectory.md) -- Septic polynomial trajectory
+- [harmonic_path](api/traj/harmonic-path.md) -- Harmonic path segment
+- [cycloidal_path](api/traj/cycloidal-path.md) -- Cycloidal path segment
+- [cubic_spline](api/traj/cubic-spline.md) -- Cubic spline interpolation (natural, clamped, periodic)
+- [smoothing_spline](api/traj/smoothing-spline.md) -- Smoothing spline approximation
+- [bspline_trajectory](api/traj/bspline-trajectory.md) -- B-spline trajectory with compile-time degree
+- [online_planner_2nd](api/traj/online-planner-2nd.md) -- 2nd-order online trajectory planner
+- [online_planner_3rd](api/traj/online-planner-3rd.md) -- 3rd-order online trajectory planner
+- [synchronize](api/traj/synchronize.md) -- Multi-axis trajectory synchronization
 
 ## Background Theory
 
@@ -103,3 +128,4 @@ Standalone theory and mathematical background for the algorithms in ctrlpp.
 - [MHE Theory](background/mhe.md) -- Moving horizon cost function, arrival cost approximation, duality with MPC
 - [System Identification Theory](background/sysid.md) -- ARX regression model, RLS recursive update, N4SID Hankel matrix
 - [DSP Theory](background/dsp.md) -- Biquad transfer function, bilinear transform, FIR convolution, cascading
+- [Trajectory Generation Theory](background/trajectory-generation.md) -- Polynomial trajectories, velocity profiles, splines, online planners, synchronization
