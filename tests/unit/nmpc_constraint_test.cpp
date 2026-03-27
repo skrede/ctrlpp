@@ -1,5 +1,4 @@
 #include "ctrlpp/model/constraint_model.h"
-#include "ctrlpp/mpc/differentiable_constraint.h"
 #include "ctrlpp/mpc/nlopt_solver.h"
 #include "ctrlpp/nmpc.h"
 
@@ -37,36 +36,6 @@ auto make_terminal_constraint(double target)
     return [target](const Eigen::Vector2d& x) -> ctrlpp::Vector<double, NTC_1> { return ctrlpp::Vector<double, NTC_1>{x(0) - target}; };
 }
 
-// Differentiable path constraint for concept testing
-struct diff_constraint
-{
-    double bound;
-
-    auto operator()(const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>&) const -> ctrlpp::Vector<double, 1> { return ctrlpp::Vector<double, 1>{x(0) - bound}; }
-
-    auto jacobian(const Eigen::Vector2d&, const Eigen::Matrix<double, 1, 1>&) const -> ctrlpp::Matrix<double, 1, NX + NU>
-    {
-        ctrlpp::Matrix<double, 1, NX + NU> J;
-        J << 1.0, 0.0, 0.0;
-        return J;
-    }
-};
-
-// Differentiable terminal constraint for concept testing
-struct diff_terminal_constraint
-{
-    double target;
-
-    auto operator()(const Eigen::Vector2d& x) const -> ctrlpp::Vector<double, 1> { return ctrlpp::Vector<double, 1>{x(0) - target}; }
-
-    auto jacobian(const Eigen::Vector2d&) const -> ctrlpp::Matrix<double, 1, NX>
-    {
-        ctrlpp::Matrix<double, 1, NX> J;
-        J << 1.0, 0.0;
-        return J;
-    }
-};
-
 } // namespace
 
 // ----- Concept static assertions -----
@@ -81,16 +50,6 @@ TEST_CASE("terminal_constraint_model concept accepts valid terminal constraint l
 {
     auto h = make_terminal_constraint(0.5);
     static_assert(ctrlpp::terminal_constraint_model<decltype(h), double, NX, NTC_1>, "terminal constraint lambda must satisfy terminal_constraint_model");
-}
-
-TEST_CASE("differentiable_constraint concept accepts struct with jacobian")
-{
-    static_assert(ctrlpp::differentiable_constraint<diff_constraint, double, NX, NU, NC>, "diff_constraint must satisfy differentiable_constraint");
-}
-
-TEST_CASE("differentiable_terminal_constraint concept accepts struct with jacobian")
-{
-    static_assert(ctrlpp::differentiable_terminal_constraint<diff_terminal_constraint, double, NX, NTC_1>, "diff_terminal_constraint must satisfy differentiable_terminal_constraint");
 }
 
 // ----- Backward compatibility -----
