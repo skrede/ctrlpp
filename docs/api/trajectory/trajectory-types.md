@@ -46,4 +46,4 @@ ctrlpp::path_point<double> pp{.q = 0.5, .dq = 1.0, .ddq = 0.0, .dddq = 0.0};
 
 - [trajectory-segment](trajectory-segment.md) -- concept using `trajectory_point`
 - [path-segment](path-segment.md) -- concept using `path_point`
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

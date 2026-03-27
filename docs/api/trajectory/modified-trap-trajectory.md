@@ -75,4 +75,4 @@ auto pt = traj.evaluate(1.0);  // midpoint
 
 - [trapezoidal-trajectory](trapezoidal-trajectory.md) -- standard trapezoidal (discontinuous acceleration)
 - [modified-sin-trajectory](modified-sin-trajectory.md) -- alternative smooth profile
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

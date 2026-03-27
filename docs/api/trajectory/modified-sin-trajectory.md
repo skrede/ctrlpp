@@ -77,4 +77,4 @@ auto pt = traj.evaluate(1.0);  // midpoint
 - [modified-trap-trajectory](modified-trap-trajectory.md) -- alternative smooth profile
 - [harmonic-path](harmonic-path.md) -- elementary harmonic motion law
 - [cycloidal-path](cycloidal-path.md) -- elementary cycloidal motion law
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

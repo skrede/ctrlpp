@@ -63,4 +63,4 @@ void sample(Traj const& traj, double dt) {
 
 - [trajectory-types](trajectory-types.md) -- `trajectory_point` struct
 - [path-segment](path-segment.md) -- analogous concept for normalized paths
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

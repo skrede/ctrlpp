@@ -50,4 +50,4 @@ double evaluate_midpoint(Path const& p) {
 - [trajectory-segment](trajectory-segment.md) -- analogous concept for physical trajectories
 - [trajectory-types](trajectory-types.md) -- `path_point` struct
 - [piecewise-path](piecewise-path.md) -- variadic composition of path segments
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

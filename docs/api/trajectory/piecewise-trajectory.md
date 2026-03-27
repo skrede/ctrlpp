@@ -56,4 +56,4 @@ auto pt = pw.evaluate(1.5);  // in second segment
 
 - [piecewise-path](piecewise-path.md) -- analogous composition for normalized paths
 - [trajectory-segment](trajectory-segment.md) -- concept each segment must satisfy
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

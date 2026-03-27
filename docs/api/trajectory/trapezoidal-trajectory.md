@@ -72,4 +72,4 @@ auto [T_a, T_v, T_d] = traj.phase_durations();
 - [double-s-trajectory](double-s-trajectory.md) -- jerk-limited alternative (7-segment)
 - [modified-trap-trajectory](modified-trap-trajectory.md) -- smooth acceleration variant
 - [time-scaling](time-scaling.md) -- duration computation for elementary paths
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

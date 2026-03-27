@@ -58,4 +58,4 @@ auto traj = ctrlpp::make_trajectory(ctrlpp::quintic_path<double>, q0, q1, 3.0);
 - [cubic-path](cubic-path.md) -- lower continuity (C1)
 - [septic-path](septic-path.md) -- higher continuity (C3)
 - [time-scaling](time-scaling.md) -- uses peak derivatives for duration computation
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

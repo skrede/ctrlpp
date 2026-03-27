@@ -79,4 +79,4 @@ double T_sync = ctrlpp::compute_min_duration_sync(displacements, peaks, 2.0, 10.
 - [cubic-path](cubic-path.md), [quintic-path](quintic-path.md), [septic-path](septic-path.md) -- paths providing peak derivatives
 - [harmonic-path](harmonic-path.md), [cycloidal-path](cycloidal-path.md) -- trigonometric paths
 - [trajectory](trajectory.md) -- adapter using computed duration
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

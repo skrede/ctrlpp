@@ -66,4 +66,4 @@ auto traj = ctrlpp::make_trajectory(ctrlpp::harmonic_path<double>, q0, q1, 3.0);
 - [cycloidal-path](cycloidal-path.md) -- zero acceleration at endpoints (C2)
 - [cubic-path](cubic-path.md) -- polynomial alternative (C1)
 - [time-scaling](time-scaling.md) -- uses peak derivatives for duration computation
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

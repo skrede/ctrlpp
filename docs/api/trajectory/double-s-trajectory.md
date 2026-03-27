@@ -88,4 +88,4 @@ auto phases = traj.phase_durations();
 
 - [trapezoidal-trajectory](trapezoidal-trajectory.md) -- simpler 3-segment alternative
 - [modified-trap-trajectory](modified-trap-trajectory.md) -- smooth acceleration variant
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

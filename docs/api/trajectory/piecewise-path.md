@@ -52,4 +52,4 @@ Time `t` is clamped to `[0, total_duration]`. The correct segment is found by co
 
 - [piecewise-trajectory](piecewise-trajectory.md) -- analogous composition for trajectories
 - [path-segment](path-segment.md) -- concept each segment must satisfy
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

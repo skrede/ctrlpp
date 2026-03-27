@@ -88,32 +88,32 @@ Guides and API reference for the ctrlpp C++23 control library.
 
 ### Trajectory
 
-- [Trajectory API Overview](api/traj/README.md) -- Complete trajectory module index
-- [trajectory](api/traj/trajectory.md) -- Trajectory convenience header and concept
-- [trajectory_segment](api/traj/trajectory-segment.md) -- Trajectory segment concept definition
-- [trajectory_types](api/traj/trajectory-types.md) -- trajectory_point, Vector type aliases
-- [path_segment](api/traj/path-segment.md) -- Path segment concept
-- [piecewise_path](api/traj/piecewise-path.md) -- Piecewise path composition
-- [piecewise_trajectory](api/traj/piecewise-trajectory.md) -- Piecewise trajectory composition
-- [time_scaling](api/traj/time-scaling.md) -- Time scaling functions
-- [trapezoidal_trajectory](api/traj/trapezoidal-trajectory.md) -- Trapezoidal velocity profile
-- [double_s_trajectory](api/traj/double-s-trajectory.md) -- Double-S (jerk-limited) velocity profile
-- [modified_trap_trajectory](api/traj/modified-trap-trajectory.md) -- Modified trapezoidal velocity profile
-- [modified_sin_trajectory](api/traj/modified-sin-trajectory.md) -- Modified sinusoidal velocity profile
-- [cubic_path](api/traj/cubic-path.md) -- Cubic polynomial path
-- [cubic_trajectory](api/traj/cubic-trajectory.md) -- Cubic polynomial trajectory
-- [quintic_path](api/traj/quintic-path.md) -- Quintic polynomial path
-- [quintic_trajectory](api/traj/quintic-trajectory.md) -- Quintic polynomial trajectory
-- [septic_path](api/traj/septic-path.md) -- Septic polynomial path
-- [septic_trajectory](api/traj/septic-trajectory.md) -- Septic polynomial trajectory
-- [harmonic_path](api/traj/harmonic-path.md) -- Harmonic path segment
-- [cycloidal_path](api/traj/cycloidal-path.md) -- Cycloidal path segment
-- [cubic_spline](api/traj/cubic-spline.md) -- Cubic spline interpolation (natural, clamped, periodic)
-- [smoothing_spline](api/traj/smoothing-spline.md) -- Smoothing spline approximation
-- [bspline_trajectory](api/traj/bspline-trajectory.md) -- B-spline trajectory with compile-time degree
-- [online_planner_2nd](api/traj/online-planner-2nd.md) -- 2nd-order online trajectory planner
-- [online_planner_3rd](api/traj/online-planner-3rd.md) -- 3rd-order online trajectory planner
-- [synchronize](api/traj/synchronize.md) -- Multi-axis trajectory synchronization
+- [Trajectory API Overview](api/trajectory/README.md) -- Complete trajectory module index
+- [trajectory](api/trajectory/trajectory.md) -- Trajectory convenience header and concept
+- [trajectory_segment](api/trajectory/trajectory-segment.md) -- Trajectory segment concept definition
+- [trajectory_types](api/trajectory/trajectory-types.md) -- trajectory_point, Vector type aliases
+- [path_segment](api/trajectory/path-segment.md) -- Path segment concept
+- [piecewise_path](api/trajectory/piecewise-path.md) -- Piecewise path composition
+- [piecewise_trajectory](api/trajectory/piecewise-trajectory.md) -- Piecewise trajectory composition
+- [time_scaling](api/trajectory/time-scaling.md) -- Time scaling functions
+- [trapezoidal_trajectory](api/trajectory/trapezoidal-trajectory.md) -- Trapezoidal velocity profile
+- [double_s_trajectory](api/trajectory/double-s-trajectory.md) -- Double-S (jerk-limited) velocity profile
+- [modified_trap_trajectory](api/trajectory/modified-trap-trajectory.md) -- Modified trapezoidal velocity profile
+- [modified_sin_trajectory](api/trajectory/modified-sin-trajectory.md) -- Modified sinusoidal velocity profile
+- [cubic_path](api/trajectory/cubic-path.md) -- Cubic polynomial path
+- [cubic_trajectory](api/trajectory/cubic-trajectory.md) -- Cubic polynomial trajectory
+- [quintic_path](api/trajectory/quintic-path.md) -- Quintic polynomial path
+- [quintic_trajectory](api/trajectory/quintic-trajectory.md) -- Quintic polynomial trajectory
+- [septic_path](api/trajectory/septic-path.md) -- Septic polynomial path
+- [septic_trajectory](api/trajectory/septic-trajectory.md) -- Septic polynomial trajectory
+- [harmonic_path](api/trajectory/harmonic-path.md) -- Harmonic path segment
+- [cycloidal_path](api/trajectory/cycloidal-path.md) -- Cycloidal path segment
+- [cubic_spline](api/trajectory/cubic-spline.md) -- Cubic spline interpolation (natural, clamped, periodic)
+- [smoothing_spline](api/trajectory/smoothing-spline.md) -- Smoothing spline approximation
+- [bspline_trajectory](api/trajectory/bspline-trajectory.md) -- B-spline trajectory with compile-time degree
+- [online_planner_2nd](api/trajectory/online-planner-2nd.md) -- 2nd-order online trajectory planner
+- [online_planner_3rd](api/trajectory/online-planner-3rd.md) -- 3rd-order online trajectory planner
+- [synchronize](api/trajectory/synchronize.md) -- Multi-axis trajectory synchronization
 
 ## Background Theory
 
@@ -121,7 +121,8 @@ Standalone theory and mathematical background for the algorithms in ctrlpp.
 
 - [PID Theory](background/pid.md) -- Parallel form, derivative filter, anti-windup clamping and back-calculation
 - [Kalman Theory](background/kalman.md) -- Linear Kalman filter predict/update equations, optimality, innovation
-- [EKF/UKF Theory](background/ekf-ukf.md) -- EKF Jacobian linearisation, UKF sigma-point generation and weights
+- [EKF Theory](background/ekf.md) -- Extended Kalman filter: Jacobian linearisation, prediction and update equations, numerical stability
+- [UKF Theory](background/ukf.md) -- Unscented Kalman filter: sigma-point generation, weights, unscented transform
 - [Particle Filter Theory](background/particle-filter.md) -- Importance sampling, weight update, systematic resampling, ESS
 - [Attitude Estimation Theory](background/attitude-estimation.md) -- Quaternion kinematics, MEKF error-state, manifold UKF
 - [MPC Theory](background/mpc.md) -- QP/NLP optimisation formulation, terminal cost and constraints, stability
@@ -129,3 +130,8 @@ Standalone theory and mathematical background for the algorithms in ctrlpp.
 - [System Identification Theory](background/sysid.md) -- ARX regression model, RLS recursive update, N4SID Hankel matrix
 - [DSP Theory](background/dsp.md) -- Biquad transfer function, bilinear transform, FIR convolution, cascading
 - [Trajectory Generation Theory](background/trajectory-generation.md) -- Polynomial trajectories, velocity profiles, splines, online planners, synchronization
+- [LQR Theory](background/lqr.md) -- Linear quadratic regulator: DARE, cost function, optimal gain
+- [Observers Theory](background/observers.md) -- State observer design: Luenberger, pole placement, duality
+- [NMPC Theory](background/nmpc.md) -- Nonlinear MPC: NLP formulation, direct multiple shooting, terminal constraints
+- [NMHE Theory](background/nmhe.md) -- Nonlinear MHE: arrival cost, nonlinear optimization, EKF approximation
+- [SO(3) Theory](background/so3.md) -- Special orthogonal group: rotation representations, quaternion algebra, exponential map

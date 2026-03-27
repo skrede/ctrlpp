@@ -61,4 +61,4 @@ auto pt = traj.evaluate(1.0);  // midpoint
 
 - [trajectory-segment](trajectory-segment.md) -- concept this type satisfies
 - [path-segment](path-segment.md) -- concept for the `Law` parameter
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

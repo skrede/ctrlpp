@@ -1,11 +1,11 @@
-# septic_trajectory
+# quintic_trajectory
 
-Septic polynomial trajectory segment with arbitrary boundary conditions up to jerk. Interpolates between two points using a degree-7 polynomial in normalized time `tau = t/T`.
+Quintic polynomial trajectory segment with arbitrary velocity and acceleration boundary conditions. Interpolates between two points using a degree-5 polynomial in normalized time `tau = t/T`.
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/septic_trajectory.h` |
-| **Factory** | `ctrlpp::make_septic_trajectory` |
+| **Header** | `ctrlpp/traj/quintic_trajectory.h` |
+| **Factory** | `ctrlpp::make_quintic_trajectory` |
 
 ## Template Parameters
 
@@ -18,7 +18,7 @@ Septic polynomial trajectory segment with arbitrary boundary conditions up to je
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `coeffs` | `std::array<Vector<Scalar, ND>, 8>` | Normalized polynomial coefficients `[c0..c7]` |
+| `coeffs` | `std::array<Vector<Scalar, ND>, 6>` | Normalized polynomial coefficients `[c0..c5]` |
 | `dur` | `Scalar` | Segment duration in seconds |
 
 ## Member Functions
@@ -32,31 +32,27 @@ Septic polynomial trajectory segment with arbitrary boundary conditions up to je
 
 ```cpp
 template <typename Scalar, int Rows>
-auto make_septic_trajectory(
+auto make_quintic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,   // start position
     Eigen::Matrix<Scalar, Rows, 1> const& q1,   // end position
     Eigen::Matrix<Scalar, Rows, 1> const& v0,   // start velocity
     Eigen::Matrix<Scalar, Rows, 1> const& v1,   // end velocity
     Eigen::Matrix<Scalar, Rows, 1> const& a0,   // start acceleration
     Eigen::Matrix<Scalar, Rows, 1> const& a1,   // end acceleration
-    Eigen::Matrix<Scalar, Rows, 1> const& j0,   // start jerk
-    Eigen::Matrix<Scalar, Rows, 1> const& j1,   // end jerk
     Scalar duration
-) -> septic_trajectory<Scalar, ND>;
+) -> quintic_trajectory<Scalar, ND>;
 ```
 
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/septic_trajectory.h"
+#include "ctrlpp/traj/quintic_trajectory.h"
 
 using Vec1 = Eigen::Matrix<double, 1, 1>;
-Vec1 zero{0.0};
-auto traj = ctrlpp::make_septic_trajectory(
+auto traj = ctrlpp::make_quintic_trajectory(
     Vec1{0.0}, Vec1{1.0},   // q0, q1
-    zero, zero,              // v0, v1
-    zero, zero,              // a0, a1
-    zero, zero,              // j0, j1
+    Vec1{0.0}, Vec1{0.0},   // v0, v1
+    Vec1{0.0}, Vec1{0.0},   // a0, a1
     2.0);                    // duration
 
 auto pt = traj.evaluate(1.0);
@@ -64,7 +60,7 @@ auto pt = traj.evaluate(1.0);
 
 ## See Also
 
-- [septic-path](septic-path.md) -- normalized septic (zero BCs only)
-- [quintic-trajectory](quintic-trajectory.md) -- lower degree (no jerk BCs)
-- [piecewise-trajectory](piecewise-trajectory.md) -- multi-segment composition
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [quintic-path](quintic-path.md) -- normalized quintic (zero BCs only)
+- [cubic-trajectory](cubic-trajectory.md) -- lower degree (velocity BCs only)
+- [septic-trajectory](septic-trajectory.md) -- higher degree (adds jerk BCs)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

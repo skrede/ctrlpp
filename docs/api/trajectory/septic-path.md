@@ -57,4 +57,4 @@ auto traj = ctrlpp::make_trajectory(ctrlpp::septic_path<double>, q0, q1, 4.0);
 - [septic-trajectory](septic-trajectory.md) -- polynomial with arbitrary BCs up to jerk
 - [quintic-path](quintic-path.md) -- lower continuity (C2)
 - [time-scaling](time-scaling.md) -- uses peak derivatives for duration computation
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

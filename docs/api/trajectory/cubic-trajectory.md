@@ -65,4 +65,4 @@ auto pt = traj.evaluate(1.0);
 - [cubic-path](cubic-path.md) -- normalized cubic (zero-velocity BCs only)
 - [quintic-trajectory](quintic-trajectory.md) -- adds acceleration BCs
 - [piecewise-trajectory](piecewise-trajectory.md) -- multi-segment composition
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

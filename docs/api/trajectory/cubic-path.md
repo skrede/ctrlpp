@@ -59,4 +59,4 @@ auto traj = ctrlpp::make_trajectory(ctrlpp::cubic_path<double>, q0, q1, 2.0);
 - [cubic-trajectory](cubic-trajectory.md) -- polynomial with arbitrary velocity BCs
 - [quintic-path](quintic-path.md) -- higher continuity (C2)
 - [time-scaling](time-scaling.md) -- uses peak derivatives for duration computation
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)

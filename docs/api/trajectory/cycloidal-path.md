@@ -69,4 +69,4 @@ auto pt = traj.evaluate(T / 2);
 - [harmonic-path](harmonic-path.md) -- sinusoidal velocity (non-zero endpoint acceleration)
 - [quintic-path](quintic-path.md) -- polynomial alternative (C2)
 - [time-scaling](time-scaling.md) -- uses peak derivatives for duration computation
-- [Trajectory Generation Theory](../../reference/trajectory-generation.md)
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)
