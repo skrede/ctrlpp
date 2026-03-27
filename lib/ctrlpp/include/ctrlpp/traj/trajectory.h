@@ -59,6 +59,9 @@ private:
 /// @brief Create a trajectory from a path, start/end positions, and duration.
 ///
 /// Internally stores displacement h = q1 - q0.
+///
+/// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
+///   Machines and Robots", 2009, Ch. 2-5 -- complete trajectory generation framework
 template <typename Law, typename Scalar, int Rows>
 auto make_trajectory(
     Law law,

@@ -18,6 +18,10 @@ namespace ctrlpp
 {
 
 /// @brief Point on an ND-dimensional trajectory with position, velocity, acceleration.
+///
+/// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
+///   Machines and Robots", 2009, Sec. 2.1, eq. (2.1)-(2.3) -- trajectory representation
+///   with position q(t), velocity q'(t), acceleration q''(t)
 template <typename Scalar, std::size_t ND>
 struct trajectory_point
 {

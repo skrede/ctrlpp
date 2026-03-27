@@ -21,6 +21,9 @@ namespace ctrlpp
 ///
 /// Segments are evaluated in sequence with automatic time offset. At breakpoints,
 /// the next segment is evaluated at local t=0 to ensure continuity.
+///
+/// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
+///   Machines and Robots", 2009, Sec. 4.1, eq. (4.1) -- multi-segment path construction
 template <typename Scalar, typename... Segments>
     requires(path_segment<Segments, Scalar> && ...)
 class piecewise_path

@@ -18,6 +18,9 @@ namespace ctrlpp
 {
 
 /// @brief Constrains a type to be a path segment with evaluate(tau) and duration().
+///
+/// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
+///   Machines and Robots", 2009, Sec. 5.2.1 -- motion law abstraction tau in [0,1]
 template <typename S, typename Scalar>
 concept path_segment = requires(const S& seg, Scalar tau) {
     { seg.evaluate(tau) } -> std::convertible_to<path_point<Scalar>>;

@@ -26,6 +26,7 @@ namespace ctrlpp
 /// that accepts a new target duration.
 ///
 /// @cite biagiotti2009 -- Sec. 5.3
+/// @cite biagiotti2009 -- Sec. 5.3.1, eq. (5.15) -- duration-based rescaling preserves shape
 template <typename T>
 concept syncable_profile = requires(T& p, typename T::scalar_type dur) {
     { p.duration() } -> std::convertible_to<typename T::scalar_type>;
@@ -38,7 +39,7 @@ concept syncable_profile = requires(T& p, typename T::scalar_type dur) {
 /// duration. Each profile's rescale_to() is responsible for maintaining
 /// constraint satisfaction (v_max, a_max, j_max).
 ///
-/// @cite biagiotti2009 -- Sec. 5.3
+/// @cite biagiotti2009 -- Sec. 5.3, eq. (5.13)-(5.14) -- rescale_to concept for synchronization
 template <syncable_profile... Profiles>
 void synchronize(Profiles&... profiles)
 {
@@ -50,8 +51,9 @@ void synchronize(Profiles&... profiles)
 /// @brief Synchronize a vector of homogeneous profiles to finish simultaneously.
 ///
 /// Runtime-sized variant for collections of identical profile types.
+/// Uses rescale_to() which preserves kinematic limit satisfaction.
 ///
-/// @cite biagiotti2009 -- Sec. 5.3
+/// @cite biagiotti2009 -- Sec. 5.3, eq. (5.14) -- time scaling for synchronization
 template <syncable_profile Profile>
 void synchronize(std::vector<Profile>& profiles)
 {

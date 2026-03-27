@@ -54,6 +54,7 @@ auto compute_min_duration(
 /// computed from the same path type and kinematic limits.
 ///
 /// @cite biagiotti2009 -- Sec. 5.2.1, eq. (5.6), p.230
+/// @cite biagiotti2009 -- Sec. 5.2.2 -- per-DOF timing extends scalar formulation to vector case
 template <typename Scalar, std::size_t N>
 auto compute_min_duration(
     std::array<Scalar, N> const& h,
@@ -72,9 +73,9 @@ auto compute_min_duration(
 /// @brief Compute synchronized (maximum) minimum duration across all DOFs.
 ///
 /// Returns a single T suitable for synchronizing all joints to complete
-/// their motion simultaneously.
+/// their motion simultaneously. Minimum-time computation satisfying kinematic limits.
 ///
-/// @cite biagiotti2009 -- Sec. 5.2.1, eq. (5.6), p.230
+/// @cite biagiotti2009 -- Sec. 5.2.1, eq. (5.5)-(5.6), p.230 -- kinematic limit satisfaction
 template <typename Scalar, std::size_t N>
 auto compute_min_duration_sync(
     std::array<Scalar, N> const& h,
