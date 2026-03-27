@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_lqr_02_setpoint_tracking | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_lqr_02_setpoint_tracking' using 1:2 with lines title 'true x0', '' using 1:6 with lines title 'reference', '' using 1:7 with lines title 'control'"
 // Redirect: ./ctrlpp_lqr_02_setpoint_tracking > output.csv
 
 #include "ctrlpp/model/discretise.h"

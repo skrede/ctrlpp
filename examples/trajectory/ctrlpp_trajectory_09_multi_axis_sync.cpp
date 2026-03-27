@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_trajectory_09_multi_axis_sync | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines title 'x_pos', '' using 1:4 with lines title 'y_pos', '' using 1:6 with lines title 'z_pos'"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_trajectory_09_multi_axis_sync' using 1:2 with lines title 'x_pos', '' using 1:4 with lines title 'y_pos', '' using 1:6 with lines title 'z_pos'"
 // Redirect: ./ctrlpp_trajectory_09_multi_axis_sync > output.csv
 
 #include <ctrlpp/trajectory/synchronize.h>

@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_mpc_03_trajectory | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_mpc_03_trajectory' using 1:2 with lines title 'actual', '' using 1:4 with lines title 'reference', '' using 1:5 with lines title 'control'"
 // Redirect: ./ctrlpp_mpc_03_trajectory > output.csv
 
 #include "ctrlpp/mpc.h"

@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_ukf_01_pendulum | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines title 'true theta', '' using 1:3 with lines title 'estimated theta'"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_ukf_01_pendulum' using 1:2 with lines title 'true theta', '' using 1:3 with lines title 'estimated theta'"
 // Redirect: ./ctrlpp_ukf_01_pendulum > output.csv
 /// @file ctrlpp_ukf_01_pendulum.cpp
 /// @brief Demonstrates UKF tracking a damped pendulum with noisy angle-only measurements.

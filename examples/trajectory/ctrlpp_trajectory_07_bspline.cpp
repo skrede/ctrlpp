@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_trajectory_07_bspline | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines title 'position', '' using 1:3 with lines title 'velocity'"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_trajectory_07_bspline' using 1:2 with lines title 'position', '' using 1:3 with lines title 'velocity'"
 // Redirect: ./ctrlpp_trajectory_07_bspline > output.csv
 
 #include <ctrlpp/trajectory/bspline_trajectory.h>

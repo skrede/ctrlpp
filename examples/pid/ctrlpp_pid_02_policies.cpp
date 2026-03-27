@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_pid_02_policies | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:3 with lines"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_pid_02_policies' using 1:2 with lines title 'setpoint', '' using 1:3 with lines title 'measurement', '' using 1:4 with lines title 'control'"
 // Redirect: ./ctrlpp_pid_02_policies > output.csv
 
 #include "ctrlpp/control/pid.h"

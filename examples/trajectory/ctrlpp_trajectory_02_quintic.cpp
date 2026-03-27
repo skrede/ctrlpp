@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_trajectory_02_quintic | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines title 'position', '' using 1:3 with lines title 'velocity', '' using 1:4 with lines title 'acceleration'"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_trajectory_02_quintic' using 1:2 with lines title 'position', '' using 1:3 with lines title 'velocity', '' using 1:4 with lines title 'acceleration'"
 // Redirect: ./ctrlpp_trajectory_02_quintic > output.csv
 
 #include <ctrlpp/trajectory/quintic_trajectory.h>

@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_trajectory_08_online_planner | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines title 'position', '' using 1:4 with lines title 'target'"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_trajectory_08_online_planner' using 1:2 with lines title 'position', '' using 1:4 with lines title 'target'"
 // Redirect: ./ctrlpp_trajectory_08_online_planner > output.csv
 
 #include <ctrlpp/trajectory/online_planner_2nd.h>

@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_pf_01_bearing_only | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines title 'true px', '' using 1:3 with lines title 'estimated px'"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_pf_01_bearing_only' using 1:2 with lines title 'true px', '' using 1:3 with lines title 'estimated px'"
 // Redirect: ./ctrlpp_pf_01_bearing_only > output.csv
 /// @file ctrlpp_pf_01_bearing_only.cpp
 /// @brief Demonstrates particle filter tracking a target from bearing-only measurements.

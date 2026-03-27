@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_trajectory_10_mpc_tracking | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines title 'actual', '' using 1:4 with lines title 'reference'"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_trajectory_10_mpc_tracking' using 1:2 with lines title 'actual', '' using 1:4 with lines title 'reference'"
 // Redirect: ./ctrlpp_trajectory_10_mpc_tracking > output.csv
 
 #include <ctrlpp/trajectory/trapezoidal_trajectory.h>

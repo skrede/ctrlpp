@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_trajectory_05_modified_profiles | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:4 with lines title 'trap_acc', '' using 1:7 with lines title 'sin_acc'"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_trajectory_05_modified_profiles' using 1:4 with lines title 'trap_acc', '' using 1:7 with lines title 'sin_acc'"
 // Redirect: ./ctrlpp_trajectory_05_modified_profiles > output.csv
 
 #include <ctrlpp/trajectory/modified_sin_trajectory.h>
