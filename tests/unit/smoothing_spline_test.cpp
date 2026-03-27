@@ -30,7 +30,7 @@ TEST_CASE("smoothing_spline mu=0.5 approximates noisy data", "[smoothing_spline]
 {
     // 10 noisy waypoints -- mu=0.5 should NOT pass exactly through them
     // but should stay within noise amplitude
-    double const noise_amplitude = 0.35;
+    double const noise_amplitude = 0.3;
     std::vector<double> times     = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5};
     // Underlying signal is sin(t), with added noise
     std::vector<double> positions = {
