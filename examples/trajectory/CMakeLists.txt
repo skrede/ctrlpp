@@ -13,3 +13,9 @@ target_compile_options(ctrlpp_trajectory_08_online_planner PRIVATE ${CTRLPP_WARN
 add_executable(ctrlpp_trajectory_09_multi_axis_sync ctrlpp_trajectory_09_multi_axis_sync.cpp)
 target_link_libraries(ctrlpp_trajectory_09_multi_axis_sync PRIVATE ctrlpp::ctrlpp)
 target_compile_options(ctrlpp_trajectory_09_multi_axis_sync PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+if (CTRLPP_BUILD_OSQP)
+    add_executable(ctrlpp_trajectory_10_mpc_tracking ctrlpp_trajectory_10_mpc_tracking.cpp)
+    target_link_libraries(ctrlpp_trajectory_10_mpc_tracking PRIVATE ctrlpp::osqp)
+    target_compile_options(ctrlpp_trajectory_10_mpc_tracking PRIVATE ${CTRLPP_WARNING_FLAGS})
+endif ()
