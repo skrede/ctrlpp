@@ -65,6 +65,7 @@ make_test(online_planner_2nd_test)
 make_test(online_planner_3rd_test)
 make_test(bspline_trajectory_test)
 make_test(smoothing_spline_test)
+make_test(synchronize_test)
 
 if (CTRLPP_BUILD_OSQP)
     add_executable(mpc_osqp_test "${CMAKE_CURRENT_LIST_DIR}/mpc_osqp_test.cpp")
