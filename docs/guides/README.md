@@ -15,3 +15,4 @@ Deep dives build on the introductions and explore advanced patterns.
 - [MPC Guides](mpc/README.md) -- Concept-based solver injection
 - [System Identification Guides](sysid/README.md) -- Identify, model, and control workflow
 - [Design Pattern Guides](patterns/README.md) -- Cross-cutting composition patterns
+- [Trajectory Guides](trajectory/README.md) -- Trajectory generation and motion planning

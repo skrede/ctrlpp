@@ -22,6 +22,10 @@ Guides and API reference for the ctrlpp C++23 control library.
 - [Observer-Controller Patterns](guides/estimation/observer-controller.md) -- Composing observers with controllers
 - [Sysid Workflow](guides/sysid/workflow.md) -- Identify, model, and control
 - [Composition Patterns](guides/patterns/composition.md) -- Cross-cutting design patterns
+- [Point-to-Point Motion](guides/trajectory/point-to-point.md) -- Choosing the right trajectory profile
+- [Multi-Waypoint Paths](guides/trajectory/multi-waypoint.md) -- Splines and B-splines for waypoint sequences
+- [Real-Time Replanning](guides/trajectory/real-time.md) -- Online trajectory planners
+- [Multi-Axis Coordination](guides/trajectory/multi-axis.md) -- Synchronizing multiple axes
 
 ## API Reference
 
