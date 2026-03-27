@@ -61,14 +61,22 @@ The second half is computed via symmetry: `q(t) = h - q(T-t)`.
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
+
 #include "ctrlpp/traj/modified_trap_trajectory.h"
 
-ctrlpp::modified_trap_trajectory<double> traj({
-    .q0 = 0.0, .q1 = 5.0, .T = 2.0
-});
+#include <iostream>
 
-auto pt = traj.evaluate(1.0);  // midpoint
-// Continuous acceleration profile -- no discontinuities
+int main()
+{
+    ctrlpp::modified_trap_trajectory<double> traj({
+        .q0 = 0.0, .q1 = 5.0, .T = 2.0
+    });
+    for (double t = 0; t <= traj.duration(); t += 0.01) {
+        auto pt = traj.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "," << pt.acceleration(0) << "\n";
+    }
+}
 ```
 
 ## See Also

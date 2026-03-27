@@ -48,16 +48,26 @@ Coefficients are computed in normalized time to prevent ill-conditioning.
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
+
 #include "ctrlpp/traj/cubic_trajectory.h"
 
-using Vec1 = Eigen::Matrix<double, 1, 1>;
-auto traj = ctrlpp::make_cubic_trajectory(
-    Vec1{0.0}, Vec1{1.0},   // q0, q1
-    Vec1{0.0}, Vec1{0.0},   // v0, v1 (rest-to-rest)
-    2.0);                    // duration
+#include <Eigen/Dense>
 
-auto pt = traj.evaluate(1.0);
-// pt.position, pt.velocity, pt.acceleration
+#include <iostream>
+
+int main()
+{
+    using Vec1 = Eigen::Matrix<double, 1, 1>;
+    auto traj = ctrlpp::make_cubic_trajectory(
+        Vec1{0.0}, Vec1{1.0},   // q0, q1
+        Vec1{0.0}, Vec1{0.0},   // v0, v1 (rest-to-rest)
+        2.0);                    // duration
+    for (double t = 0; t <= traj.duration(); t += 0.01) {
+        auto pt = traj.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "," << pt.acceleration(0) << "\n";
+    }
+}
 ```
 
 ## See Also

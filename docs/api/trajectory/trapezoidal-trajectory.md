@@ -50,21 +50,23 @@ When the displacement is too small for the profile to reach `v_max`, the cruise 
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
+
 #include "ctrlpp/traj/trapezoidal_trajectory.h"
 
-ctrlpp::trapezoidal_trajectory<double> traj({
-    .q0 = 0.0, .q1 = 10.0,
-    .v_max = 5.0, .a_max = 2.0
-});
+#include <iostream>
 
-auto pt = traj.evaluate(1.0);
-// pt.position, pt.velocity, pt.acceleration
-
-if (traj.is_triangular()) {
-    // cruise phase was too short -- triangular profile used
+int main()
+{
+    ctrlpp::trapezoidal_trajectory<double> traj({
+        .q0 = 0.0, .q1 = 10.0,
+        .v_max = 5.0, .a_max = 2.0
+    });
+    for (double t = 0; t <= traj.duration(); t += 0.01) {
+        auto pt = traj.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "," << pt.acceleration(0) << "\n";
+    }
 }
-
-auto [T_a, T_v, T_d] = traj.phase_durations();
 ```
 
 ## See Also

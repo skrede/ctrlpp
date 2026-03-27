@@ -59,19 +59,28 @@ Returns a single T (maximum of per-DOF durations) suitable for synchronizing all
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
+
 #include "ctrlpp/traj/time_scaling.h"
 #include "ctrlpp/traj/quintic_path.h"
 #include "ctrlpp/traj/trajectory.h"
 
-auto peaks = ctrlpp::quintic_path_peak_derivatives<double>();
-double T = ctrlpp::compute_min_duration(5.0, peaks, 2.0, 10.0, 100.0);
+#include <Eigen/Dense>
 
-Eigen::Vector2d q0{0, 0}, q1{3, 4};
-auto traj = ctrlpp::make_trajectory(ctrlpp::quintic_path<double>, q0, q1, T);
+#include <iostream>
 
-// Multi-axis synchronization
-std::array<double, 3> displacements{5.0, 3.0, 1.0};
-double T_sync = ctrlpp::compute_min_duration_sync(displacements, peaks, 2.0, 10.0, 100.0);
+int main()
+{
+    auto peaks = ctrlpp::quintic_path_peak_derivatives<double>();
+    double T = ctrlpp::compute_min_duration(5.0, peaks, 2.0, 10.0, 100.0);
+
+    Eigen::Matrix<double, 1, 1> q0{0.0}, q1{5.0};
+    auto traj = ctrlpp::make_trajectory(ctrlpp::quintic_path<double>, q0, q1, T);
+    for (double t = 0; t <= traj.duration(); t += 0.01) {
+        auto pt = traj.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
+    }
+}
 ```
 
 ## See Also

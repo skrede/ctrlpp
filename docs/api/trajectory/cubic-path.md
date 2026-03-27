@@ -43,15 +43,19 @@ Returns `{dq_max, ddq_max, dddq_max}` = `{1.5, 6.0, 12.0}`. Used by `compute_min
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'q', '' using 1:3 with lines title 'dq', '' using 1:4 with lines title 'ddq'"
+
 #include "ctrlpp/traj/cubic_path.h"
-#include "ctrlpp/traj/trajectory.h"
 
-// As standalone path evaluation
-auto pp = ctrlpp::cubic_path(0.5);  // pp.q == 0.5, pp.dq == 1.5
+#include <iostream>
 
-// Lifted to physical trajectory via adapter
-Eigen::Vector2d q0{0, 0}, q1{1, 2};
-auto traj = ctrlpp::make_trajectory(ctrlpp::cubic_path<double>, q0, q1, 2.0);
+int main()
+{
+    for (double tau = 0; tau <= 1.0; tau += 0.005) {
+        auto pp = ctrlpp::cubic_path(tau);
+        std::cout << tau << "," << pp.q << "," << pp.dq << "," << pp.ddq << "\n";
+    }
+}
 ```
 
 ## See Also

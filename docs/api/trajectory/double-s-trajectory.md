@@ -72,16 +72,23 @@ The profile degenerates when kinematic limits cannot all be reached:
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
+
 #include "ctrlpp/traj/double_s_trajectory.h"
 
-ctrlpp::double_s_trajectory<double> traj({
-    .q0 = 0.0, .q1 = 10.0,
-    .v_max = 5.0, .a_max = 10.0, .j_max = 50.0
-});
+#include <iostream>
 
-auto pt = traj.evaluate(0.5);
-auto phases = traj.phase_durations();
-// phases[0]: T_j1, phases[3]: T_cruise, etc.
+int main()
+{
+    ctrlpp::double_s_trajectory<double> traj({
+        .q0 = 0.0, .q1 = 10.0,
+        .v_max = 5.0, .a_max = 10.0, .j_max = 50.0
+    });
+    for (double t = 0; t <= traj.duration(); t += 0.01) {
+        auto pt = traj.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "," << pt.acceleration(0) << "\n";
+    }
+}
 ```
 
 ## See Also
