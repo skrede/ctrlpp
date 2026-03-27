@@ -32,6 +32,8 @@ template <typename Scalar>
 class trapezoidal_trajectory
 {
   public:
+    using scalar_type = Scalar;
+
     struct config
     {
         Scalar q0, q1;
@@ -163,6 +165,63 @@ class trapezoidal_trajectory
 
     /// @brief Phase durations {T_accel, T_cruise, T_decel}.
     auto phase_durations() const -> std::array<Scalar, 3> { return {T_a_, T_v_, T_d_}; }
+
+    /// @brief Rescale profile to a new (longer) duration for multi-axis synchronization.
+    ///
+    /// Recomputes cruise velocity and phase durations to achieve T_new while
+    /// maintaining the same start/end positions and constraint satisfaction.
+    /// Only slowing down is valid (T_new >= current duration).
+    ///
+    /// @cite biagiotti2009 -- Sec. 5.3
+    void rescale_to(Scalar T_new)
+    {
+        if (T_new <= T_) {
+            return; // Already at or faster than requested -- no-op
+        }
+
+        auto const abs_h = std::abs(q1_ - q0_);
+        if (abs_h < std::numeric_limits<Scalar>::epsilon()) {
+            T_ = T_new;
+            return;
+        }
+
+        // For zero BCs: solve quadratic for new cruise velocity v_cruise
+        // T_new = v_cruise/a + abs_h/v_cruise  (accel + cruise + decel)
+        // => v_cruise^2 - T_new * a * v_cruise + a * abs_h = 0  (multiply by a, rearrange... no)
+        // Actually: T_new = v/a + abs_h/v + v/a  for symmetric case with v0=v1=0
+        // Simplification: T_a = v/a, T_d = v/a, T_v = (abs_h - v^2/a) / v = abs_h/v - v/a
+        // T_new = T_a + T_v + T_d = v/a + abs_h/v - v/a + v/a = abs_h/v + v/a
+        // => v^2/a - T_new*v + abs_h = 0
+        // => v = (T_new*a - sqrt(T_new^2*a^2 - 4*a*abs_h)) / (2)  (take smaller root)
+
+        auto const a = a_a_; // Use existing acceleration limit
+        auto const disc = T_new * T_new * a * a - Scalar{4} * a * abs_h;
+
+        Scalar v_cruise{};
+        if (disc < Scalar{0}) {
+            // Should not happen if T_new >= T_, but handle gracefully
+            // Use triangular limit
+            v_cruise = std::sqrt(a * abs_h);
+        } else {
+            v_cruise = (T_new * a - std::sqrt(disc)) / Scalar{2};
+        }
+
+        // Clamp v_cruise to avoid negative or zero
+        v_cruise = std::max(v_cruise, std::numeric_limits<Scalar>::epsilon());
+
+        // Recompute phase durations
+        v_v_ = v_cruise;
+        T_a_ = (v_cruise - v0_) / a;
+        T_d_ = (v_cruise - v1_) / a;
+        T_v_ = abs_h / v_cruise - (v_cruise - v0_) / (Scalar{2} * a) - (v_cruise - v1_) / (Scalar{2} * a);
+
+        if (T_v_ < Scalar{0}) {
+            T_v_ = Scalar{0};
+        }
+
+        T_ = T_a_ + T_v_ + T_d_;
+        triangular_ = (T_v_ <= Scalar{0});
+    }
 
   private:
     Scalar q0_{};

@@ -29,6 +29,8 @@ template <typename Scalar>
 class double_s_trajectory
 {
 public:
+    using scalar_type = Scalar;
+
     struct config
     {
         Scalar q0, q1;
@@ -111,6 +113,30 @@ public:
 
     /// @brief Actual peak velocity achieved by the profile.
     auto peak_velocity() const -> Scalar { return v_lim_; }
+
+    /// @brief Rescale profile to a new (longer) duration for multi-axis synchronization.
+    ///
+    /// Extends the cruise phase to fill the time gap while keeping acceleration
+    /// and deceleration phases unchanged. This preserves all constraint limits
+    /// (v_max, a_max, j_max) since the accel/decel phases are not modified.
+    ///
+    /// @cite biagiotti2009 -- Sec. 5.3
+    void rescale_to(Scalar T_new)
+    {
+        if (T_new <= T_) {
+            return; // Already at or faster than requested -- no-op
+        }
+
+        // Insert additional cruise time: keep T_a and T_d fixed, extend T_v
+        auto const T_non_cruise = T_a_ + T_d_;
+        T_v_ = T_new - T_non_cruise;
+
+        if (T_v_ < Scalar{0}) {
+            T_v_ = Scalar{0};
+        }
+
+        T_ = T_a_ + T_v_ + T_d_;
+    }
 
     /// @brief Phase durations for the 7 segments.
     ///
