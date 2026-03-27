@@ -41,11 +41,28 @@ Time `t` is clamped to `[0, total_duration]`. The correct segment is found by co
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/piecewise_path.h"
-#include "ctrlpp/traj/cubic_path.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-// Compose two path segments (requires types satisfying path_segment concept)
-// For free-function paths, use the trajectory adapter instead.
+#include "ctrlpp/traj/piecewise_trajectory.h"
+#include "ctrlpp/traj/cubic_trajectory.h"
+
+#include <Eigen/Dense>
+
+#include <iostream>
+
+int main()
+{
+    // piecewise_path requires types satisfying path_segment concept.
+    // Elementary paths are free functions, so demonstrate piecewise_trajectory instead.
+    using Vec1 = Eigen::Matrix<double, 1, 1>;
+    auto seg1 = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{0.5}, Vec1{0.0}, Vec1{0.3}, 1.0);
+    auto seg2 = ctrlpp::make_cubic_trajectory(Vec1{0.5}, Vec1{1.0}, Vec1{0.3}, Vec1{0.0}, 1.0);
+    ctrlpp::piecewise_trajectory<double, 1, decltype(seg1), decltype(seg2)> pw(seg1, seg2);
+    for (double t = 0; t <= pw.duration(); t += 0.005) {
+        auto pt = pw.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
+    }
+}
 ```
 
 ## See Also

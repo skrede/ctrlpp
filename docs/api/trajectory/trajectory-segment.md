@@ -48,13 +48,21 @@ All trajectory types in `ctrlpp/traj/` satisfy this concept:
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/trajectory_segment.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
+
 #include "ctrlpp/traj/cubic_trajectory.h"
 
-template <ctrlpp::trajectory_segment<double, 1> Traj>
-void sample(Traj const& traj, double dt) {
-    for (double t = 0; t <= traj.duration(); t += dt) {
-        auto pt = traj.evaluate(t);
+#include <Eigen/Dense>
+
+#include <iostream>
+
+int main()
+{
+    using Vec1 = Eigen::Matrix<double, 1, 1>;
+    auto seg = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.0}, 2.0);
+    for (double t = 0; t <= seg.duration(); t += 0.01) {
+        auto pt = seg.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "," << pt.acceleration(0) << "\n";
     }
 }
 ```

@@ -37,11 +37,18 @@ The elementary path functions (`cubic_path`, `quintic_path`, etc.) are free func
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/path_segment.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'q', '' using 1:3 with lines title 'dq'"
 
-template <ctrlpp::path_segment<double> Path>
-double evaluate_midpoint(Path const& p) {
-    return p.evaluate(0.5).q;
+#include "ctrlpp/traj/cubic_path.h"
+
+#include <iostream>
+
+int main()
+{
+    for (double tau = 0; tau <= 1.0; tau += 0.005) {
+        auto pp = ctrlpp::cubic_path(tau);
+        std::cout << tau << "," << pp.q << "," << pp.dq << "\n";
+    }
 }
 ```
 

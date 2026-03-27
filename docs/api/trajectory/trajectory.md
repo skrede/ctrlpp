@@ -48,13 +48,24 @@ Computes displacement `h = q1 - q0` internally.
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
+
 #include "ctrlpp/traj/trajectory.h"
 #include "ctrlpp/traj/cycloidal_path.h"
 
-Eigen::Vector2d q0{0.0, 0.0}, q1{1.0, 2.0};
-auto traj = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, q0, q1, 2.0);
-auto pt = traj.evaluate(1.0);  // midpoint
-// pt.position, pt.velocity, pt.acceleration are Eigen::Vector2d
+#include <Eigen/Dense>
+
+#include <iostream>
+
+int main()
+{
+    Eigen::Matrix<double, 1, 1> q0{0.0}, q1{1.0};
+    auto traj = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, q0, q1, 2.0);
+    for (double t = 0; t <= traj.duration(); t += 0.01) {
+        auto pt = traj.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
+    }
+}
 ```
 
 ## See Also

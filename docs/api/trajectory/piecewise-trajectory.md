@@ -38,18 +38,26 @@ Segments are moved into internal storage. Breakpoints are computed from cumulati
 ## Usage Example
 
 ```cpp
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
+
 #include "ctrlpp/traj/piecewise_trajectory.h"
 #include "ctrlpp/traj/cubic_trajectory.h"
 
-using Vec1 = Eigen::Matrix<double, 1, 1>;
-Vec1 q0{0.0}, q1{1.0}, q2{3.0}, v0{0.0}, v1{0.5}, v2{0.0};
+#include <Eigen/Dense>
 
-auto seg1 = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 1.0);
-auto seg2 = ctrlpp::make_cubic_trajectory(q1, q2, v1, v2, 1.5);
+#include <iostream>
 
-ctrlpp::piecewise_trajectory<double, 1, decltype(seg1), decltype(seg2)> pw(seg1, seg2);
-auto pt = pw.evaluate(1.5);  // in second segment
-// pw.duration() == 2.5
+int main()
+{
+    using Vec1 = Eigen::Matrix<double, 1, 1>;
+    auto seg1 = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.5}, 1.0);
+    auto seg2 = ctrlpp::make_cubic_trajectory(Vec1{1.0}, Vec1{3.0}, Vec1{0.5}, Vec1{0.0}, 1.5);
+    ctrlpp::piecewise_trajectory<double, 1, decltype(seg1), decltype(seg2)> pw(seg1, seg2);
+    for (double t = 0; t <= pw.duration(); t += 0.01) {
+        auto pt = pw.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
+    }
+}
 ```
 
 ## See Also

@@ -32,14 +32,23 @@ Physical values are obtained via kinematic scaling: `vel = h/T * dq`, `acc = h/T
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/trajectory_types.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-ctrlpp::trajectory_point<double, 3> pt;
-pt.position = Eigen::Vector3d{1.0, 2.0, 3.0};
-pt.velocity = Eigen::Vector3d::Zero();
-pt.acceleration = Eigen::Vector3d::Zero();
+#include "ctrlpp/traj/cubic_trajectory.h"
 
-ctrlpp::path_point<double> pp{.q = 0.5, .dq = 1.0, .ddq = 0.0, .dddq = 0.0};
+#include <Eigen/Dense>
+
+#include <iostream>
+
+int main()
+{
+    using Vec1 = Eigen::Matrix<double, 1, 1>;
+    auto traj = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.0}, 2.0);
+    for (double t = 0; t <= 2.0; t += 0.01) {
+        auto pt = traj.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
+    }
+}
 ```
 
 ## See Also
