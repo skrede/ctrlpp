@@ -23,13 +23,13 @@
 namespace ctrlpp
 {
 
-template <typename Scalar, std::size_t NX, std::size_t NU>
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY = NX>
 struct mpc_config
 {
     int horizon{1};
-    Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
+    Matrix<Scalar, NY, NY> Q{Matrix<Scalar, NY, NY>::Identity()};
     Matrix<Scalar, NU, NU> R{Matrix<Scalar, NU, NU>::Identity()};
-    std::optional<Matrix<Scalar, NX, NX>> Qf{};
+    std::optional<Matrix<Scalar, NY, NY>> Qf{};
     std::optional<Vector<Scalar, NU>> u_min{};
     std::optional<Vector<Scalar, NU>> u_max{};
     std::optional<Vector<Scalar, NX>> x_min{};
@@ -41,15 +41,17 @@ struct mpc_config
     bool hard_state_constraints{false};
 };
 
-template <typename Scalar, std::size_t NX, std::size_t NU, qp_solver Solver>
+template <typename Scalar, std::size_t NX, std::size_t NU, qp_solver Solver, std::size_t NY = NX>
 class mpc
 {
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int nu = static_cast<int>(NU);
+    static constexpr int ny = static_cast<int>(NY);
 
 public:
-    mpc(const discrete_state_space<Scalar, NX, NU, NX>& system, const mpc_config<Scalar, NX, NU>& config) : config_{config}, system_{system}, u_prev_{Vector<Scalar, NU>::Zero()}
+    mpc(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config) : config_{config}, system_{system}, u_prev_{Vector<Scalar, NU>::Zero()}
     {
+        precompute_output_weights();
         compute_dimensions();
         compute_terminal_cost();
         build_initial_qp();
@@ -62,23 +64,23 @@ public:
         return solve_impl(x0);
     }
 
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NX>& x_ref) -> std::optional<Vector<Scalar, NU>>
+    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NY>& y_ref) -> std::optional<Vector<Scalar, NU>>
     {
         int N = config_.horizon;
-        Vector<Scalar, NX> Qxr = config_.Q * x_ref;
+        Vector<Scalar, NX> CtQ_yref = CtQ_ * y_ref;
         for(int k = 0; k < N; ++k)
-            update_.q.segment(k * nx, nx) = -Qxr;
-        update_.q.segment(N * nx, nx) = -(Qf_actual_ * x_ref);
+            update_.q.segment(k * nx, nx) = -CtQ_yref;
+        update_.q.segment(N * nx, nx) = -(Qf_linear_ * y_ref);
         update_.q.segment(n_x_total_, n_dec_ - n_x_total_).setZero();
         return solve_impl(x0);
     }
 
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NX>> x_ref) -> std::optional<Vector<Scalar, NU>>
+    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NY>> y_ref) -> std::optional<Vector<Scalar, NU>>
     {
         int N = config_.horizon;
         for(int k = 0; k < N; ++k)
-            update_.q.segment(k * nx, nx) = -(config_.Q * x_ref[static_cast<std::size_t>(k)]);
-        update_.q.segment(N * nx, nx) = -(Qf_actual_ * x_ref[static_cast<std::size_t>(N)]);
+            update_.q.segment(k * nx, nx) = -(CtQ_ * y_ref[static_cast<std::size_t>(k)]);
+        update_.q.segment(N * nx, nx) = -(Qf_linear_ * y_ref[static_cast<std::size_t>(N)]);
         update_.q.segment(n_x_total_, n_dec_ - n_x_total_).setZero();
         return solve_impl(x0);
     }
@@ -137,16 +139,27 @@ private:
             config_.terminal_constraint_set.value());
     }
 
+    void precompute_output_weights()
+    {
+        Q_state_ = system_.C.transpose() * config_.Q * system_.C;
+        CtQ_ = system_.C.transpose() * config_.Q;
+    }
+
     void compute_terminal_cost()
     {
         if(config_.Qf.has_value())
         {
-            Qf_actual_ = config_.Qf.value();
+            Qf_state_ = system_.C.transpose() * config_.Qf.value() * system_.C;
+            Qf_linear_ = system_.C.transpose() * config_.Qf.value();
         }
         else
         {
-            auto dare_result = dare<Scalar, NX, NU>(system_.A, system_.B, config_.Q, config_.R);
-            Qf_actual_ = dare_result.value_or(config_.Q);
+            auto dare_result = dare<Scalar, NX, NU>(system_.A, system_.B, Q_state_, config_.R);
+            Qf_state_ = dare_result.value_or(Q_state_);
+            // Map state-space Qf back to output space for the linear tracking term:
+            // linear term = -Qf_state * C_pinv * y_ref, where C_pinv = C' * (C*C')^{-1}
+            Matrix<Scalar, NY, NY> CCt = system_.C * system_.C.transpose();
+            Qf_linear_ = Qf_state_ * system_.C.transpose() * CCt.colPivHouseholderQr().solve(Matrix<Scalar, NY, NY>::Identity());
         }
     }
 
@@ -156,13 +169,13 @@ private:
         bool has_state_bounds = config_.x_min.has_value() || config_.x_max.has_value();
         bool use_soft = has_state_bounds && !config_.hard_state_constraints;
 
-        auto P = detail::build_cost_matrix<Scalar, NX, NU>(N, config_.Q, config_.R, Qf_actual_, use_soft, config_.soft_penalty, config_.soft_state_penalty);
+        auto P = detail::build_cost_matrix<Scalar, NX, NU>(N, Q_state_, config_.R, Qf_state_, use_soft, config_.soft_penalty, config_.soft_state_penalty);
         auto A = detail::build_constraint_matrix<Scalar, NX, NU>(N, system_.A, system_.B, has_state_bounds, use_soft, config_.u_min.has_value() || config_.u_max.has_value(), config_.du_max.has_value(), config_.terminal_constraint_set);
 
         Vector<Scalar, NX> x0_dummy = Vector<Scalar, NX>::Zero();
         auto [l, u] = detail::build_bounds_vectors<Scalar, NX, NU>(N, x0_dummy, config_.x_min, config_.x_max, config_.u_min, config_.u_max, config_.du_max, use_soft, config_.terminal_constraint_set);
 
-        auto q = detail::build_cost_vector<Scalar, NX, NU>(N, n_dec_, config_.Q, Qf_actual_);
+        auto q = detail::build_cost_vector<Scalar, NX, NU>(N, n_dec_, Q_state_, Qf_state_);
 
         qp_problem<Scalar> problem{.P = std::move(P), .q = std::move(q), .A = std::move(A), .l = std::move(l), .u = std::move(u)};
         solver_.setup(problem);
@@ -257,9 +270,12 @@ private:
     }
 
     Solver solver_{};
-    mpc_config<Scalar, NX, NU> config_;
-    discrete_state_space<Scalar, NX, NU, NX> system_;
-    Matrix<Scalar, NX, NX> Qf_actual_;
+    mpc_config<Scalar, NX, NU, NY> config_;
+    discrete_state_space<Scalar, NX, NU, NY> system_;
+    Matrix<Scalar, NX, NX> Q_state_{};
+    Matrix<Scalar, NX, NX> Qf_state_{};
+    Matrix<Scalar, NX, NY> CtQ_{};
+    Matrix<Scalar, NX, NY> Qf_linear_{};
 
     qp_update<Scalar> update_{};
     Eigen::VectorX<Scalar> last_primal_{};

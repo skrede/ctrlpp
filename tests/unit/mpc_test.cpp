@@ -1,4 +1,5 @@
 #include "ctrlpp/mpc.h"
+#include "ctrlpp/model/state_space.h"
 
 #include <Eigen/Dense>
 
@@ -6,6 +7,8 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cstddef>
+#include <span>
+#include <vector>
 
 namespace
 {
@@ -298,5 +301,125 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         auto [states, inputs] = controller.trajectory();
         CHECK(states.size() == static_cast<std::size_t>(N + 1));
         CHECK(inputs.size() == static_cast<std::size_t>(N));
+    }
+}
+
+// --- NY < NX output tracking tests ---
+
+TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
+{
+    // 4-state, 2-input, 2-output system (double integrator with position-only output)
+    // States: [x, y, vx, vy], Inputs: [ax, ay], Outputs: [x, y]
+    constexpr std::size_t NX4 = 4;
+    constexpr std::size_t NU2 = 2;
+    constexpr std::size_t NY2 = 2;
+    constexpr double dt4 = 0.1;
+
+    // C = [I_2 0_2] selects positions only
+    Eigen::Matrix<double, 4, 4> A4;
+    A4 << 1.0, 0.0, dt4, 0.0,
+          0.0, 1.0, 0.0, dt4,
+          0.0, 0.0, 1.0, 0.0,
+          0.0, 0.0, 0.0, 1.0;
+
+    Eigen::Matrix<double, 4, 2> B4;
+    B4 << 0.5 * dt4 * dt4, 0.0,
+          0.0, 0.5 * dt4 * dt4,
+          dt4, 0.0,
+          0.0, dt4;
+
+    Eigen::Matrix<double, 2, 4> C4;
+    C4 << 1.0, 0.0, 0.0, 0.0,
+          0.0, 1.0, 0.0, 0.0;
+
+    Eigen::Matrix<double, 2, 2> D4 = Eigen::Matrix<double, 2, 2>::Zero();
+
+    ctrlpp::discrete_state_space<double, NX4, NU2, NY2> sys4{A4, B4, C4, D4};
+
+    SECTION("NY<NX mpc_config template compiles and Q is NY x NY")
+    {
+        ctrlpp::mpc_config<double, NX4, NU2, NY2> cfg{
+            .horizon = 5,
+            .Q = Eigen::Matrix2d::Identity(),
+            .R = Eigen::Matrix2d::Identity() * 0.1,
+        };
+
+        // Q should be 2x2 (NY x NY), not 4x4
+        static_assert(decltype(cfg.Q)::RowsAtCompileTime == 2);
+        static_assert(decltype(cfg.Q)::ColsAtCompileTime == 2);
+
+        ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2> controller(sys4, cfg);
+
+        Eigen::Vector4d x0 = Eigen::Vector4d::Zero();
+        auto result = controller.solve(x0);
+        REQUIRE(result.has_value());
+    }
+
+    SECTION("NY<NX single reference tracking passes NY-dimensional y_ref")
+    {
+        ctrlpp::mpc_config<double, NX4, NU2, NY2> cfg{
+            .horizon = 5,
+            .Q = Eigen::Matrix2d::Identity(),
+            .R = Eigen::Matrix2d::Identity() * 0.1,
+        };
+
+        ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2> controller(sys4, cfg);
+
+        Eigen::Vector4d x0 = Eigen::Vector4d::Zero();
+        Eigen::Vector2d y_ref{1.0, 2.0}; // 2D output reference (position only)
+        auto result = controller.solve(x0, y_ref);
+        REQUIRE(result.has_value());
+    }
+
+    SECTION("NY<NX span reference tracking passes NY-dimensional y_ref sequence")
+    {
+        constexpr int N = 5;
+        ctrlpp::mpc_config<double, NX4, NU2, NY2> cfg{
+            .horizon = N,
+            .Q = Eigen::Matrix2d::Identity(),
+            .R = Eigen::Matrix2d::Identity() * 0.1,
+        };
+
+        ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2> controller(sys4, cfg);
+
+        Eigen::Vector4d x0 = Eigen::Vector4d::Zero();
+        std::vector<Eigen::Vector2d> y_refs(static_cast<std::size_t>(N + 1), Eigen::Vector2d{1.0, 2.0});
+        std::span<const Eigen::Vector2d> ref_span(y_refs);
+        auto result = controller.solve(x0, ref_span);
+        REQUIRE(result.has_value());
+    }
+
+    SECTION("sysid-compatible: discrete_state_space<S, NX, NU, NY> accepted directly")
+    {
+        // Verify that a state_space with NY != NX can be passed to mpc constructor
+        // This simulates a sysid::recursive_arx::to_state_space() return type
+        constexpr std::size_t SYSID_NX = 2;
+        constexpr std::size_t SYSID_NU = 1;
+        constexpr std::size_t SYSID_NY = 1;
+
+        ctrlpp::discrete_state_space<double, SYSID_NX, SYSID_NU, SYSID_NY> sysid_sys{
+            .A = Eigen::Matrix2d::Identity(),
+            .B = Eigen::Vector2d::Ones(),
+            .C = (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(),
+            .D = Eigen::Matrix<double, 1, 1>::Zero()};
+
+        ctrlpp::mpc_config<double, SYSID_NX, SYSID_NU, SYSID_NY> cfg{
+            .horizon = 5,
+            .Q = Eigen::Matrix<double, 1, 1>::Identity(),
+            .R = Eigen::Matrix<double, 1, 1>::Identity() * 0.1,
+        };
+
+        // This should compile -- sysid return type feeds directly to MPC
+        ctrlpp::mpc<double, SYSID_NX, SYSID_NU, mock_qp_solver, SYSID_NY> controller(sysid_sys, cfg);
+
+        Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
+        auto result = controller.solve(x0);
+        REQUIRE(result.has_value());
+
+        // Track a 1D output reference
+        Eigen::Matrix<double, 1, 1> y_ref;
+        y_ref << 1.0;
+        auto tracking_result = controller.solve(x0, y_ref);
+        REQUIRE(tracking_result.has_value());
     }
 }
