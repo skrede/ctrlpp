@@ -1,0 +1,15 @@
+add_executable(ctrlpp_trajectory_06_cubic_spline ctrlpp_trajectory_06_cubic_spline.cpp)
+target_link_libraries(ctrlpp_trajectory_06_cubic_spline PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_06_cubic_spline PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_07_bspline ctrlpp_trajectory_07_bspline.cpp)
+target_link_libraries(ctrlpp_trajectory_07_bspline PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_07_bspline PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_08_online_planner ctrlpp_trajectory_08_online_planner.cpp)
+target_link_libraries(ctrlpp_trajectory_08_online_planner PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_08_online_planner PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_09_multi_axis_sync ctrlpp_trajectory_09_multi_axis_sync.cpp)
+target_link_libraries(ctrlpp_trajectory_09_multi_axis_sync PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_09_multi_axis_sync PRIVATE ${CTRLPP_WARNING_FLAGS})
