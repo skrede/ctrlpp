@@ -37,10 +37,15 @@ void thomas_solve(std::vector<Scalar> const& a,
                   std::vector<Scalar>& d)
 {
     auto const n = b.size();
-    assert(n >= 2);
+    assert(n >= 1);
     assert(a.size() == n);
     assert(c.size() == n);
     assert(d.size() == n);
+
+    if (n == 1) {
+        d[0] /= b[0];
+        return;
+    }
 
     // Forward sweep
     for (std::size_t i = 1; i < n; ++i) {
