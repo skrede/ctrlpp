@@ -60,6 +60,7 @@ make_test(double_s_trajectory_test)
 make_test(modified_trap_trajectory_test)
 make_test(modified_sin_trajectory_test)
 make_test(time_scaling_test)
+make_test(cubic_spline_test)
 
 if (CTRLPP_BUILD_OSQP)
     add_executable(mpc_osqp_test "${CMAKE_CURRENT_LIST_DIR}/mpc_osqp_test.cpp")
