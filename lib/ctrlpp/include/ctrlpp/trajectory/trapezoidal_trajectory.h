@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_TRAPEZOIDAL_TRAJECTORY_H
-#define HPP_GUARD_CTRLPP_TRAJ_TRAPEZOIDAL_TRAJECTORY_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_TRAPEZOIDAL_TRAJECTORY_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_TRAPEZOIDAL_TRAJECTORY_H
 
 /// @brief Trapezoidal velocity profile (LSPB) with degenerate case handling.
 ///
@@ -11,8 +11,8 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 3.2, eq. (3.9)-(3.16), p.65-73
 
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <algorithm>
 #include <array>

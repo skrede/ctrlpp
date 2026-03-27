@@ -4,7 +4,7 @@ Cycloidal motion law: `q(tau) = tau - sin(2*pi*tau) / (2*pi)`. Zero acceleration
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/cycloidal_path.h` |
+| **Header** | `ctrlpp/trajectory/cycloidal_path.h` |
 
 ## Template Parameters
 
@@ -54,9 +54,9 @@ Zero acceleration at both endpoints makes this path C2-continuous at segment bou
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include <ctrlpp/traj/cycloidal_path.h>
-#include <ctrlpp/traj/time_scaling.h>
-#include <ctrlpp/traj/trajectory.h>
+#include <ctrlpp/trajectory/cycloidal_path.h>
+#include <ctrlpp/trajectory/time_scaling.h>
+#include <ctrlpp/trajectory/trajectory.h>
 
 #include <Eigen/Dense>
 

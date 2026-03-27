@@ -5,7 +5,7 @@ B-spline trajectory with compile-time degree and de Boor evaluation. Supports co
 ## Header
 
 ```cpp
-#include "ctrlpp/traj/bspline_trajectory.h"
+#include "ctrlpp/trajectory/bspline_trajectory.h"
 ```
 
 ## Template Parameters
@@ -85,7 +85,7 @@ Evaluate the B-spline basis function B_{i,p}(t) using Cox-de Boor recursion. Pri
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-#include <ctrlpp/traj/bspline_trajectory.h>
+#include <ctrlpp/trajectory/bspline_trajectory.h>
 
 #include <iostream>
 

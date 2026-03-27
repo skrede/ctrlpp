@@ -4,7 +4,7 @@ Modified sinusoidal velocity profile with harmonic+cycloidal blend. Uses a sinus
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/modified_sin_trajectory.h` |
+| **Header** | `ctrlpp/trajectory/modified_sin_trajectory.h` |
 
 ## Template Parameters
 
@@ -64,7 +64,7 @@ Normalized velocity profile (tau = t/T) with `A = pi/(pi+4)`:
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include "ctrlpp/traj/modified_sin_trajectory.h"
+#include "ctrlpp/trajectory/modified_sin_trajectory.h"
 
 #include <iostream>
 

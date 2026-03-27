@@ -2,10 +2,10 @@
 ///
 /// Verifies boundary conditions, midpoint symmetry, clamping, and concept satisfaction.
 
-#include "ctrlpp/traj/cubic_trajectory.h"
-#include "ctrlpp/traj/quintic_trajectory.h"
-#include "ctrlpp/traj/septic_trajectory.h"
-#include "ctrlpp/traj/trajectory_segment.h"
+#include "ctrlpp/trajectory/cubic_trajectory.h"
+#include "ctrlpp/trajectory/quintic_trajectory.h"
+#include "ctrlpp/trajectory/septic_trajectory.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

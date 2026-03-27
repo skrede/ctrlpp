@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_QUINTIC_PATH_H
-#define HPP_GUARD_CTRLPP_TRAJ_QUINTIC_PATH_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_QUINTIC_PATH_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_QUINTIC_PATH_H
 
 /// @brief Quintic polynomial path: q_N(tau) = 10*tau^3 - 15*tau^4 + 6*tau^5
 ///
@@ -9,7 +9,7 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Table 2.1, p.37; eq. 5.9-5.10
 
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <array>
 #include <cmath>

@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_CUBIC_SPLINE_H
-#define HPP_GUARD_CTRLPP_TRAJ_CUBIC_SPLINE_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_CUBIC_SPLINE_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_CUBIC_SPLINE_H
 
 /// @brief Cubic spline interpolation with natural, clamped, and periodic BCs.
 ///
@@ -11,9 +11,9 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 4.4, eq. (4.10)-(4.11)
 
-#include "ctrlpp/traj/detail/tridiagonal.h"
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/detail/tridiagonal.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <algorithm>
 #include <array>

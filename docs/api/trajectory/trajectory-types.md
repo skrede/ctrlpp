@@ -4,7 +4,7 @@ Core output types for trajectory generation. `trajectory_point` holds ND-dimensi
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/trajectory_types.h` |
+| **Header** | `ctrlpp/trajectory/trajectory_types.h` |
 
 ## Type: `trajectory_point<Scalar, ND>`
 
@@ -34,7 +34,7 @@ Physical values are obtained via kinematic scaling: `vel = h/T * dq`, `acc = h/T
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-#include "ctrlpp/traj/cubic_trajectory.h"
+#include "ctrlpp/trajectory/cubic_trajectory.h"
 
 #include <Eigen/Dense>
 

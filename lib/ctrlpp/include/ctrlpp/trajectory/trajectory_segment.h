@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_TRAJECTORY_SEGMENT_H
-#define HPP_GUARD_CTRLPP_TRAJ_TRAJECTORY_SEGMENT_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_TRAJECTORY_SEGMENT_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_TRAJECTORY_SEGMENT_H
 
 /// @brief Concept constraining trajectory segment types.
 ///
@@ -9,7 +9,7 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009
 
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <concepts>
 #include <cstddef>

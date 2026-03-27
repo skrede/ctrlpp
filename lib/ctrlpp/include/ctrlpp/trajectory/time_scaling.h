@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_TIME_SCALING_H
-#define HPP_GUARD_CTRLPP_TRAJ_TIME_SCALING_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_TIME_SCALING_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_TIME_SCALING_H
 
 /// @brief Kinematic time scaling for normalized paths.
 ///

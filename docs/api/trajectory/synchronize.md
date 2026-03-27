@@ -5,7 +5,7 @@ Multi-axis trajectory synchronization. Rescales multiple independent trajectory 
 ## Header
 
 ```cpp
-#include "ctrlpp/traj/synchronize.h"
+#include "ctrlpp/trajectory/synchronize.h"
 ```
 
 ## Concept
@@ -58,8 +58,8 @@ The time scaling preserves the profile shape -- the trajectory maintains its vel
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'x', '' using 1:3 with lines title 'y', '' using 1:4 with lines title 'z'"
 
-#include <ctrlpp/traj/synchronize.h>
-#include <ctrlpp/traj/trapezoidal_trajectory.h>
+#include <ctrlpp/trajectory/synchronize.h>
+#include <ctrlpp/trajectory/trapezoidal_trajectory.h>
 
 #include <iostream>
 

@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_PIECEWISE_TRAJECTORY_H
-#define HPP_GUARD_CTRLPP_TRAJ_PIECEWISE_TRAJECTORY_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_PIECEWISE_TRAJECTORY_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_PIECEWISE_TRAJECTORY_H
 
 /// @brief Variadic piecewise trajectory composition.
 ///
@@ -11,10 +11,10 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Ch. 4 (composite trajectories)
 
-#include "ctrlpp/traj/cubic_trajectory.h"
-#include "ctrlpp/traj/detail/piecewise_dispatch.h"
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/cubic_trajectory.h"
+#include "ctrlpp/trajectory/detail/piecewise_dispatch.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <cstddef>
 

@@ -4,7 +4,7 @@ Modified trapezoidal velocity profile with cycloidal acceleration phases. Replac
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/modified_trap_trajectory.h` |
+| **Header** | `ctrlpp/trajectory/modified_trap_trajectory.h` |
 
 ## Template Parameters
 
@@ -63,7 +63,7 @@ The second half is computed via symmetry: `q(t) = h - q(T-t)`.
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include "ctrlpp/traj/modified_trap_trajectory.h"
+#include "ctrlpp/trajectory/modified_trap_trajectory.h"
 
 #include <iostream>
 

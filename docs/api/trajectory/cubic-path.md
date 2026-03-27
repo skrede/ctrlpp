@@ -4,7 +4,7 @@ Normalized cubic polynomial path: `q(tau) = 3*tau^2 - 2*tau^3`. C1-continuous wi
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/cubic_path.h` |
+| **Header** | `ctrlpp/trajectory/cubic_path.h` |
 
 ## Template Parameters
 
@@ -45,7 +45,7 @@ Returns `{dq_max, ddq_max, dddq_max}` = `{1.5, 6.0, 12.0}`. Used by `compute_min
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'q', '' using 1:3 with lines title 'dq', '' using 1:4 with lines title 'ddq'"
 
-#include "ctrlpp/traj/cubic_path.h"
+#include "ctrlpp/trajectory/cubic_path.h"
 
 #include <iostream>
 

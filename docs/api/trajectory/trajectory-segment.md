@@ -4,7 +4,7 @@ Concept constraining types that represent a trajectory segment with timed evalua
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/trajectory_segment.h` |
+| **Header** | `ctrlpp/trajectory/trajectory_segment.h` |
 
 ## Template Parameters
 
@@ -33,7 +33,7 @@ concept trajectory_segment = requires(const S& seg, Scalar t) {
 
 ## Satisfying Types
 
-All trajectory types in `ctrlpp/traj/` satisfy this concept:
+All trajectory types in `ctrlpp/trajectory/` satisfy this concept:
 
 - `trajectory<Law, Scalar, ND>`
 - `cubic_trajectory<Scalar, ND>`
@@ -50,7 +50,7 @@ All trajectory types in `ctrlpp/traj/` satisfy this concept:
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include "ctrlpp/traj/cubic_trajectory.h"
+#include "ctrlpp/trajectory/cubic_trajectory.h"
 
 #include <Eigen/Dense>
 

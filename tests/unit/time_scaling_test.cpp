@@ -1,8 +1,8 @@
-#include "ctrlpp/traj/time_scaling.h"
-#include "ctrlpp/traj/cubic_path.h"
-#include "ctrlpp/traj/cycloidal_path.h"
-#include "ctrlpp/traj/septic_path.h"
-#include "ctrlpp/traj/trajectory.h"
+#include "ctrlpp/trajectory/time_scaling.h"
+#include "ctrlpp/trajectory/cubic_path.h"
+#include "ctrlpp/trajectory/cycloidal_path.h"
+#include "ctrlpp/trajectory/septic_path.h"
+#include "ctrlpp/trajectory/trajectory.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

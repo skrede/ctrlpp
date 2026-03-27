@@ -4,7 +4,7 @@ Harmonic motion law: `q(tau) = (1 - cos(pi*tau)) / 2`. Produces a sinusoidal vel
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/harmonic_path.h` |
+| **Header** | `ctrlpp/trajectory/harmonic_path.h` |
 
 ## Template Parameters
 
@@ -54,8 +54,8 @@ Non-zero acceleration at endpoints means this path is C1 but not C2 at segment b
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include <ctrlpp/traj/harmonic_path.h>
-#include <ctrlpp/traj/trajectory.h>
+#include <ctrlpp/trajectory/harmonic_path.h>
+#include <ctrlpp/trajectory/trajectory.h>
 
 #include <Eigen/Dense>
 

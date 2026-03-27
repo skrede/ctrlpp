@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_SMOOTHING_SPLINE_H
-#define HPP_GUARD_CTRLPP_TRAJ_SMOOTHING_SPLINE_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_SMOOTHING_SPLINE_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_SMOOTHING_SPLINE_H
 
 /// @brief Smoothing spline with configurable mu tradeoff parameter.
 ///
@@ -16,8 +16,8 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 4.4.5
 
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <Eigen/Dense>
 

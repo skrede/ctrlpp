@@ -4,7 +4,7 @@ Kinematic time scaling for normalized paths. Computes the minimum trajectory dur
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/time_scaling.h` |
+| **Header** | `ctrlpp/trajectory/time_scaling.h` |
 
 ## Functions
 
@@ -61,9 +61,9 @@ Returns a single T (maximum of per-DOF durations) suitable for synchronizing all
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-#include "ctrlpp/traj/time_scaling.h"
-#include "ctrlpp/traj/quintic_path.h"
-#include "ctrlpp/traj/trajectory.h"
+#include "ctrlpp/trajectory/time_scaling.h"
+#include "ctrlpp/trajectory/quintic_path.h"
+#include "ctrlpp/trajectory/trajectory.h"
 
 #include <Eigen/Dense>
 

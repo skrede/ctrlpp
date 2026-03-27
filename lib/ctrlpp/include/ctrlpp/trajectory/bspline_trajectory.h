@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_BSPLINE_TRAJECTORY_H
-#define HPP_GUARD_CTRLPP_TRAJ_BSPLINE_TRAJECTORY_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_BSPLINE_TRAJECTORY_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_BSPLINE_TRAJECTORY_H
 
 /// @brief B-spline trajectory with compile-time degree and de Boor evaluation.
 ///
@@ -11,8 +11,8 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 4.5
 
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <Eigen/Dense>
 

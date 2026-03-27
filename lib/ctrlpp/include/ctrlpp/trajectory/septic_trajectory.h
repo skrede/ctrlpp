@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_SEPTIC_TRAJECTORY_H
-#define HPP_GUARD_CTRLPP_TRAJ_SEPTIC_TRAJECTORY_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_SEPTIC_TRAJECTORY_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_SEPTIC_TRAJECTORY_H
 
 /// @brief Septic polynomial trajectory segment with arbitrary BCs up to jerk.
 ///
@@ -9,9 +9,9 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 2.1.6, eq. (2.6), p.29
 
-#include "ctrlpp/traj/detail/polynomial_eval.h"
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/detail/polynomial_eval.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <algorithm>
 #include <array>

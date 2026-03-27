@@ -4,7 +4,7 @@ Cubic polynomial trajectory segment with arbitrary velocity boundary conditions.
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/cubic_trajectory.h` |
+| **Header** | `ctrlpp/trajectory/cubic_trajectory.h` |
 | **Factory** | `ctrlpp::make_cubic_trajectory` |
 
 ## Template Parameters
@@ -50,7 +50,7 @@ Coefficients are computed in normalized time to prevent ill-conditioning.
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include "ctrlpp/traj/cubic_trajectory.h"
+#include "ctrlpp/trajectory/cubic_trajectory.h"
 
 #include <Eigen/Dense>
 

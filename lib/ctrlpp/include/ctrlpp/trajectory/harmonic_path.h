@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_HARMONIC_PATH_H
-#define HPP_GUARD_CTRLPP_TRAJ_HARMONIC_PATH_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_HARMONIC_PATH_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_HARMONIC_PATH_H
 
 /// @brief Harmonic path: q_N(tau) = (1 - cos(pi*tau)) / 2
 ///
@@ -9,7 +9,7 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 2.2.1, eq. (2.21), p.43; p.236
 
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <array>
 #include <cmath>

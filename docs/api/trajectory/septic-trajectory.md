@@ -4,7 +4,7 @@ Septic polynomial trajectory segment with arbitrary boundary conditions up to je
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/septic_trajectory.h` |
+| **Header** | `ctrlpp/trajectory/septic_trajectory.h` |
 | **Factory** | `ctrlpp::make_septic_trajectory` |
 
 ## Template Parameters
@@ -50,7 +50,7 @@ auto make_septic_trajectory(
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include <ctrlpp/traj/septic_trajectory.h>
+#include <ctrlpp/trajectory/septic_trajectory.h>
 
 #include <Eigen/Dense>
 

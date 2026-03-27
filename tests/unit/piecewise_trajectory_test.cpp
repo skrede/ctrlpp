@@ -1,12 +1,12 @@
-#include <ctrlpp/traj/cubic_path.h>
-#include <ctrlpp/traj/cubic_trajectory.h>
-#include <ctrlpp/traj/cycloidal_path.h>
-#include <ctrlpp/traj/piecewise_path.h>
-#include <ctrlpp/traj/piecewise_trajectory.h>
-#include <ctrlpp/traj/quintic_path.h>
-#include <ctrlpp/traj/quintic_trajectory.h>
-#include <ctrlpp/traj/trajectory.h>
-#include <ctrlpp/traj/trajectory_segment.h>
+#include <ctrlpp/trajectory/cubic_path.h>
+#include <ctrlpp/trajectory/cubic_trajectory.h>
+#include <ctrlpp/trajectory/cycloidal_path.h>
+#include <ctrlpp/trajectory/piecewise_path.h>
+#include <ctrlpp/trajectory/piecewise_trajectory.h>
+#include <ctrlpp/trajectory/quintic_path.h>
+#include <ctrlpp/trajectory/quintic_trajectory.h>
+#include <ctrlpp/trajectory/trajectory.h>
+#include <ctrlpp/trajectory/trajectory_segment.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

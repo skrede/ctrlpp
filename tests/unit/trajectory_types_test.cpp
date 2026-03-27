@@ -1,6 +1,6 @@
-#include "ctrlpp/traj/trajectory_types.h"
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/detail/polynomial_eval.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/detail/polynomial_eval.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

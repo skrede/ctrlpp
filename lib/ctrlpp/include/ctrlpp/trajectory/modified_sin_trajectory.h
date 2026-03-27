@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_MODIFIED_SIN_TRAJECTORY_H
-#define HPP_GUARD_CTRLPP_TRAJ_MODIFIED_SIN_TRAJECTORY_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_MODIFIED_SIN_TRAJECTORY_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_MODIFIED_SIN_TRAJECTORY_H
 
 /// @brief Modified sinusoidal velocity profile with harmonic+cycloidal blend.
 ///
@@ -22,8 +22,8 @@
 ///
 /// @cite biagiotti2009 -- Sec. 3.8, p.124-127
 
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <algorithm>
 #include <cmath>

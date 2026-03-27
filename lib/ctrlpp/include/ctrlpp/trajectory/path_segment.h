@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_PATH_SEGMENT_H
-#define HPP_GUARD_CTRLPP_TRAJ_PATH_SEGMENT_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_PATH_SEGMENT_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_PATH_SEGMENT_H
 
 /// @brief Concept constraining normalized path segment types.
 ///
@@ -10,7 +10,7 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Ch. 2 (motion laws)
 
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <concepts>
 

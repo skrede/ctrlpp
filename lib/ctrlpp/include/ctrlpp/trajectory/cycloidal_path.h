@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_CYCLOIDAL_PATH_H
-#define HPP_GUARD_CTRLPP_TRAJ_CYCLOIDAL_PATH_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_CYCLOIDAL_PATH_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_CYCLOIDAL_PATH_H
 
 /// @brief Cycloidal path: q_N(tau) = tau - sin(2*pi*tau) / (2*pi)
 ///
@@ -9,7 +9,7 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 2.2.2, eq. (2.22), p.44; p.235
 
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <array>
 #include <cmath>

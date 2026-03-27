@@ -4,7 +4,7 @@ Double-S (7-segment) velocity profile with jerk-limited motion. Computes a time-
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/double_s_trajectory.h` |
+| **Header** | `ctrlpp/trajectory/double_s_trajectory.h` |
 
 ## Template Parameters
 
@@ -74,7 +74,7 @@ The profile degenerates when kinematic limits cannot all be reached:
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include "ctrlpp/traj/double_s_trajectory.h"
+#include "ctrlpp/trajectory/double_s_trajectory.h"
 
 #include <iostream>
 

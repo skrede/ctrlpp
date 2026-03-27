@@ -4,7 +4,7 @@ Adapter that lifts a normalized path (evaluating in [0,1]) into a physical traje
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/trajectory.h` |
+| **Header** | `ctrlpp/trajectory/trajectory.h` |
 | **Factory** | `ctrlpp::make_trajectory` |
 
 ## Template Parameters
@@ -50,8 +50,8 @@ Computes displacement `h = q1 - q0` internally.
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-#include "ctrlpp/traj/trajectory.h"
-#include "ctrlpp/traj/cycloidal_path.h"
+#include "ctrlpp/trajectory/trajectory.h"
+#include "ctrlpp/trajectory/cycloidal_path.h"
 
 #include <Eigen/Dense>
 

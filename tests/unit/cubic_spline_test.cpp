@@ -1,5 +1,5 @@
-#include "ctrlpp/traj/cubic_spline.h"
-#include "ctrlpp/traj/detail/tridiagonal.h"
+#include "ctrlpp/trajectory/cubic_spline.h"
+#include "ctrlpp/trajectory/detail/tridiagonal.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_DOUBLE_S_TRAJECTORY_H
-#define HPP_GUARD_CTRLPP_TRAJ_DOUBLE_S_TRAJECTORY_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_DOUBLE_S_TRAJECTORY_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_DOUBLE_S_TRAJECTORY_H
 
 /// @brief Double-S (7-segment) velocity profile with jerk-limited motion.
 ///
@@ -12,8 +12,8 @@
 ///
 /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.17)-(3.33), Fig. 3.18, p.79-96
 
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <algorithm>
 #include <array>

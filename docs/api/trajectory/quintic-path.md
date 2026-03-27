@@ -4,7 +4,7 @@ Normalized quintic polynomial path: `q(tau) = 10*tau^3 - 15*tau^4 + 6*tau^5`. C2
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/quintic_path.h` |
+| **Header** | `ctrlpp/trajectory/quintic_path.h` |
 
 ## Template Parameters
 
@@ -45,8 +45,8 @@ Returns `{dq_max, ddq_max, dddq_max}` = `{15/8, 10*sqrt(3)/3, 60}`. Not constexp
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include <ctrlpp/traj/quintic_path.h>
-#include <ctrlpp/traj/trajectory.h>
+#include <ctrlpp/trajectory/quintic_path.h>
+#include <ctrlpp/trajectory/trajectory.h>
 
 #include <Eigen/Dense>
 

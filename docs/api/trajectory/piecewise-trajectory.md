@@ -4,7 +4,7 @@ Variadic composition of heterogeneous trajectory segments into a single trajecto
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/piecewise_trajectory.h` |
+| **Header** | `ctrlpp/trajectory/piecewise_trajectory.h` |
 
 ## Template Parameters
 
@@ -40,8 +40,8 @@ Segments are moved into internal storage. Breakpoints are computed from cumulati
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-#include "ctrlpp/traj/piecewise_trajectory.h"
-#include "ctrlpp/traj/cubic_trajectory.h"
+#include "ctrlpp/trajectory/piecewise_trajectory.h"
+#include "ctrlpp/trajectory/cubic_trajectory.h"
 
 #include <Eigen/Dense>
 

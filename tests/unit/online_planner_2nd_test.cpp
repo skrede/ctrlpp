@@ -1,4 +1,4 @@
-#include "ctrlpp/traj/online_planner_2nd.h"
+#include "ctrlpp/trajectory/online_planner_2nd.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

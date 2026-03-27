@@ -4,7 +4,7 @@ Trapezoidal velocity profile (LSPB) with three phases: acceleration, cruise, dec
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/trapezoidal_trajectory.h` |
+| **Header** | `ctrlpp/trajectory/trapezoidal_trajectory.h` |
 
 ## Template Parameters
 
@@ -52,7 +52,7 @@ When the displacement is too small for the profile to reach `v_max`, the cruise 
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include "ctrlpp/traj/trapezoidal_trajectory.h"
+#include "ctrlpp/trajectory/trapezoidal_trajectory.h"
 
 #include <iostream>
 

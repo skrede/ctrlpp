@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_CUBIC_TRAJECTORY_H
-#define HPP_GUARD_CTRLPP_TRAJ_CUBIC_TRAJECTORY_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_CUBIC_TRAJECTORY_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_CUBIC_TRAJECTORY_H
 
 /// @brief Cubic polynomial trajectory segment with arbitrary velocity BCs.
 ///
@@ -10,9 +10,9 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 2.1.4, eq. (2.2), p.24
 
-#include "ctrlpp/traj/detail/polynomial_eval.h"
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/detail/polynomial_eval.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <algorithm>
 #include <array>

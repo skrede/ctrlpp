@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_ONLINE_PLANNER_3RD_H
-#define HPP_GUARD_CTRLPP_TRAJ_ONLINE_PLANNER_3RD_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_ONLINE_PLANNER_3RD_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_ONLINE_PLANNER_3RD_H
 
 /// @brief 3rd-order online trajectory planner (velocity, acceleration, and jerk bounded).
 ///
@@ -15,7 +15,7 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 4.6.1
 
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <algorithm>
 #include <cmath>

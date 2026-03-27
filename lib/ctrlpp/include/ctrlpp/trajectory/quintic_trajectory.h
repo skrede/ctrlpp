@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_QUINTIC_TRAJECTORY_H
-#define HPP_GUARD_CTRLPP_TRAJ_QUINTIC_TRAJECTORY_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_QUINTIC_TRAJECTORY_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_QUINTIC_TRAJECTORY_H
 
 /// @brief Quintic polynomial trajectory segment with arbitrary velocity and acceleration BCs.
 ///
@@ -9,9 +9,9 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 2.1.5, eq. (2.5), p.27
 
-#include "ctrlpp/traj/detail/polynomial_eval.h"
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/detail/polynomial_eval.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <algorithm>
 #include <array>

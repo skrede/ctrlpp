@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_SEPTIC_PATH_H
-#define HPP_GUARD_CTRLPP_TRAJ_SEPTIC_PATH_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_SEPTIC_PATH_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_SEPTIC_PATH_H
 
 /// @brief Septic polynomial path: q_N(tau) = 35*tau^4 - 84*tau^5 + 70*tau^6 - 20*tau^7
 ///
@@ -9,7 +9,7 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Table 2.1, p.37; eq. 5.11-5.12
 
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <array>
 #include <cmath>

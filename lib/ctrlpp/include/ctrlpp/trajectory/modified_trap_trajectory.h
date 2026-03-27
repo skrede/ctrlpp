@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_MODIFIED_TRAP_TRAJECTORY_H
-#define HPP_GUARD_CTRLPP_TRAJ_MODIFIED_TRAP_TRAJECTORY_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_MODIFIED_TRAP_TRAJECTORY_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_MODIFIED_TRAP_TRAJECTORY_H
 
 /// @brief Modified trapezoidal velocity profile with cycloidal acceleration phases.
 ///
@@ -18,8 +18,8 @@
 ///
 /// @cite biagiotti2009 -- Sec. 3.7, eq. (3.49)-(3.51), p.119-122
 
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <algorithm>
 #include <cmath>

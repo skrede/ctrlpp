@@ -3,10 +3,10 @@
 /// Verifies harmonic and cycloidal paths produce correct endpoint conditions
 /// and derivative scaling when used with the trajectory adapter.
 
-#include "ctrlpp/traj/cycloidal_path.h"
-#include "ctrlpp/traj/harmonic_path.h"
-#include "ctrlpp/traj/trajectory.h"
-#include "ctrlpp/traj/trajectory_segment.h"
+#include "ctrlpp/trajectory/cycloidal_path.h"
+#include "ctrlpp/trajectory/harmonic_path.h"
+#include "ctrlpp/trajectory/trajectory.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

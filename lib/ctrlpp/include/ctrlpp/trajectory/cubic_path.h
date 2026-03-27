@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_CUBIC_PATH_H
-#define HPP_GUARD_CTRLPP_TRAJ_CUBIC_PATH_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_CUBIC_PATH_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_CUBIC_PATH_H
 
 /// @brief Cubic polynomial path: q_N(tau) = 3*tau^2 - 2*tau^3
 ///
@@ -9,7 +9,7 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Table 2.1, p.37; eq. 5.7-5.8
 
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <array>
 

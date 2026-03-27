@@ -7,7 +7,7 @@ Unlike pre-computed trajectory segments, online planners are stateful filters wi
 ## Header
 
 ```cpp
-#include "ctrlpp/traj/online_planner_2nd.h"
+#include "ctrlpp/trajectory/online_planner_2nd.h"
 ```
 
 ## Template Parameters
@@ -82,7 +82,7 @@ For short displacements where `v_max` cannot be reached, the profile degenerates
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-#include <ctrlpp/traj/online_planner_2nd.h>
+#include <ctrlpp/trajectory/online_planner_2nd.h>
 
 #include <iostream>
 

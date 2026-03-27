@@ -4,7 +4,7 @@ Normalized septic polynomial path: `q(tau) = 35*tau^4 - 84*tau^5 + 70*tau^6 - 20
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/septic_path.h` |
+| **Header** | `ctrlpp/trajectory/septic_path.h` |
 
 ## Template Parameters
 
@@ -45,8 +45,8 @@ Returns `{dq_max, ddq_max, dddq_max}` = `{35/16, ~7.5132, 52.5}`. The ddq_max va
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-#include <ctrlpp/traj/septic_path.h>
-#include <ctrlpp/traj/trajectory.h>
+#include <ctrlpp/trajectory/septic_path.h>
+#include <ctrlpp/trajectory/trajectory.h>
 
 #include <Eigen/Dense>
 

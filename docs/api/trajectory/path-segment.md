@@ -4,7 +4,7 @@ Concept constraining types that represent a normalized path segment evaluated ov
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/traj/path_segment.h` |
+| **Header** | `ctrlpp/trajectory/path_segment.h` |
 
 ## Template Parameters
 
@@ -39,7 +39,7 @@ The elementary path functions (`cubic_path`, `quintic_path`, etc.) are free func
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'q', '' using 1:3 with lines title 'dq'"
 
-#include "ctrlpp/traj/cubic_path.h"
+#include "ctrlpp/trajectory/cubic_path.h"
 
 #include <iostream>
 

@@ -5,7 +5,7 @@ Smoothing spline approximation with configurable mu tradeoff parameter. Construc
 ## Header
 
 ```cpp
-#include "ctrlpp/traj/smoothing_spline.h"
+#include "ctrlpp/trajectory/smoothing_spline.h"
 ```
 
 ## Template Parameters
@@ -71,7 +71,7 @@ Returns total spline duration: t_n - t_0.
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-#include <ctrlpp/traj/smoothing_spline.h>
+#include <ctrlpp/trajectory/smoothing_spline.h>
 
 #include <iostream>
 

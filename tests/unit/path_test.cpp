@@ -1,8 +1,8 @@
-#include "ctrlpp/traj/cubic_path.h"
-#include "ctrlpp/traj/cycloidal_path.h"
-#include "ctrlpp/traj/harmonic_path.h"
-#include "ctrlpp/traj/quintic_path.h"
-#include "ctrlpp/traj/septic_path.h"
+#include "ctrlpp/trajectory/cubic_path.h"
+#include "ctrlpp/trajectory/cycloidal_path.h"
+#include "ctrlpp/trajectory/harmonic_path.h"
+#include "ctrlpp/trajectory/quintic_path.h"
+#include "ctrlpp/trajectory/septic_path.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

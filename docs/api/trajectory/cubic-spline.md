@@ -5,7 +5,7 @@ Cubic spline interpolation through waypoints with C2 continuity. Supports natura
 ## Header
 
 ```cpp
-#include "ctrlpp/traj/cubic_spline.h"
+#include "ctrlpp/trajectory/cubic_spline.h"
 ```
 
 ## Template Parameters
@@ -73,7 +73,7 @@ Returns total spline duration: t_n - t_0.
 ```cpp
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-#include <ctrlpp/traj/cubic_spline.h>
+#include <ctrlpp/trajectory/cubic_spline.h>
 
 #include <iostream>
 

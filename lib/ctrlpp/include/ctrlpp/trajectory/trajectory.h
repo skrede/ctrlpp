@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_TRAJ_TRAJECTORY_H
-#define HPP_GUARD_CTRLPP_TRAJ_TRAJECTORY_H
+#ifndef HPP_GUARD_CTRLPP_TRAJECTORY_TRAJECTORY_H
+#define HPP_GUARD_CTRLPP_TRAJECTORY_TRAJECTORY_H
 
 /// @brief Adapter lifting normalized paths into physical trajectory segments.
 ///
@@ -12,9 +12,9 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 5.2.1, eq. (2.16)-(2.17), p.34
 
-#include "ctrlpp/traj/cycloidal_path.h"
-#include "ctrlpp/traj/trajectory_segment.h"
-#include "ctrlpp/traj/trajectory_types.h"
+#include "ctrlpp/trajectory/cycloidal_path.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+#include "ctrlpp/trajectory/trajectory_types.h"
 
 #include <algorithm>
 #include <cstddef>
