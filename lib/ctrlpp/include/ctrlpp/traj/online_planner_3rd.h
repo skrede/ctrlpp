@@ -231,7 +231,6 @@ class online_planner_3rd
         // Compute stopping distance: distance to bring v0 to 0 using a_max, j_max
         auto const stop_info = compute_stop(v0);
         auto const stop_dist = stop_info.dist;
-        auto const stop_sign = (v0 > Scalar{0}) ? Scalar{1} : Scalar{-1};
 
         // Check if velocity points wrong way or overshoots
         bool const wrong_way = (h_signed > eps && v0 < -eps)
@@ -348,7 +347,7 @@ class online_planner_3rd
             ++n_phases_;
 
             // Phase 2: constant deceleration (jerk = 0)
-            if (T_const > Scalar{1e-15}) {
+            if (T_const > Scalar(1e-15)) {
                 T_ph_[n_phases_] = T_const;
                 j_ph_[n_phases_] = Scalar{0};
                 ++n_phases_;
