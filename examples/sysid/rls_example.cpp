@@ -1,4 +1,4 @@
-// Usage: ./rls_example | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines title 'param 1', '' using 1:3 with lines title 'param 2'"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./rls_example' using 1:2 with lines title 'param 1', '' using 1:3 with lines title 'param 2'"
 // Redirect: ./rls_example > output.csv
 /// @file rls_example.cpp
 /// @brief Online RLS identification: converges to true parameters [2.0, 0.5]

@@ -170,10 +170,10 @@ changing the controller code.
 
 ## Next Steps
 
-- [ObserverPolicy API](../../estimation/observer-policy.md) -- concept
+- [ObserverPolicy API](../../api/estimation/observer-policy.md) -- concept
   definition and null_observer
-- [Kalman Filter API](../../estimation/kalman.md) -- linear observer
-- [EKF API](../../estimation/ekf.md) -- nonlinear observer
-- [LQR API](../../control/lqr.md) -- linear-quadratic regulator
-- [Kalman Theory](../../reference/kalman-theory.md) -- optimality and
+- [Kalman Filter API](../../api/estimation/kalman.md) -- linear observer
+- [EKF API](../../api/estimation/ekf.md) -- nonlinear observer
+- [LQR API](../../api/control/lqr.md) -- linear-quadratic regulator
+- [Kalman Theory](../../background/kalman.md) -- optimality and
   convergence

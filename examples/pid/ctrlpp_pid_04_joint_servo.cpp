@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_pid_04_joint_servo | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:4 with lines"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_pid_04_joint_servo' using 1:2 with lines title 'pos setpoint', '' using 1:3 with lines title 'position', '' using 1:6 with lines title 'torque'"
 // Redirect: ./ctrlpp_pid_04_joint_servo > output.csv
 
 #include "ctrlpp/control/pid.h"

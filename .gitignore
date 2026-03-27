@@ -61,9 +61,11 @@ build*/
 build_*/
 Testing/
 .claude/
+.userfiles/
 .gemini/
 .planning/
 claude.json
 CLAUDE.md
 GEMINI.md
 tmp/
+.cache/

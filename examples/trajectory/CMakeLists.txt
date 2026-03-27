@@ -1,0 +1,41 @@
+add_executable(ctrlpp_trajectory_01_cubic ctrlpp_trajectory_01_cubic.cpp)
+target_link_libraries(ctrlpp_trajectory_01_cubic PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_01_cubic PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_02_quintic ctrlpp_trajectory_02_quintic.cpp)
+target_link_libraries(ctrlpp_trajectory_02_quintic PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_02_quintic PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_03_trapezoidal ctrlpp_trajectory_03_trapezoidal.cpp)
+target_link_libraries(ctrlpp_trajectory_03_trapezoidal PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_03_trapezoidal PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_04_double_s ctrlpp_trajectory_04_double_s.cpp)
+target_link_libraries(ctrlpp_trajectory_04_double_s PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_04_double_s PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_05_modified_profiles ctrlpp_trajectory_05_modified_profiles.cpp)
+target_link_libraries(ctrlpp_trajectory_05_modified_profiles PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_05_modified_profiles PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_06_cubic_spline ctrlpp_trajectory_06_cubic_spline.cpp)
+target_link_libraries(ctrlpp_trajectory_06_cubic_spline PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_06_cubic_spline PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_07_bspline ctrlpp_trajectory_07_bspline.cpp)
+target_link_libraries(ctrlpp_trajectory_07_bspline PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_07_bspline PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_08_online_planner ctrlpp_trajectory_08_online_planner.cpp)
+target_link_libraries(ctrlpp_trajectory_08_online_planner PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_08_online_planner PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_trajectory_09_multi_axis_sync ctrlpp_trajectory_09_multi_axis_sync.cpp)
+target_link_libraries(ctrlpp_trajectory_09_multi_axis_sync PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_trajectory_09_multi_axis_sync PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+if (CTRLPP_BUILD_OSQP)
+    add_executable(ctrlpp_trajectory_10_mpc_tracking ctrlpp_trajectory_10_mpc_tracking.cpp)
+    target_link_libraries(ctrlpp_trajectory_10_mpc_tracking PRIVATE ctrlpp::osqp)
+    target_compile_options(ctrlpp_trajectory_10_mpc_tracking PRIVATE ${CTRLPP_WARNING_FLAGS})
+endif ()

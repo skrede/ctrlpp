@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_nmpc_02_swingup | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_nmpc_02_swingup' using 1:2 with lines title 'theta', '' using 1:3 with lines title 'theta_dot', '' using 1:4 with lines title 'torque'"
 // Redirect: ./ctrlpp_nmpc_02_swingup > output.csv
 
 #include "ctrlpp/mpc/nlopt_solver.h"

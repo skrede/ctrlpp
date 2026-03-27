@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_mpc_01_regulation | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:2 with lines"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_mpc_01_regulation' using 1:2 with lines title 'x0', '' using 1:3 with lines title 'x1', '' using 1:4 with lines title 'control'"
 // Redirect: ./ctrlpp_mpc_01_regulation > output.csv
 
 #include "ctrlpp/mpc.h"

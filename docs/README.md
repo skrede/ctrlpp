@@ -22,70 +22,120 @@ Guides and API reference for the ctrlpp C++23 control library.
 - [Observer-Controller Patterns](guides/estimation/observer-controller.md) -- Composing observers with controllers
 - [Sysid Workflow](guides/sysid/workflow.md) -- Identify, model, and control
 - [Composition Patterns](guides/patterns/composition.md) -- Cross-cutting design patterns
+- [Point-to-Point Motion](guides/trajectory/point-to-point.md) -- Choosing the right trajectory profile
+- [Multi-Waypoint Paths](guides/trajectory/multi-waypoint.md) -- Splines and B-splines for waypoint sequences
+- [Real-Time Replanning](guides/trajectory/real-time.md) -- Online trajectory planners
+- [Multi-Axis Coordination](guides/trajectory/multi-axis.md) -- Synchronizing multiple axes
 
 ## API Reference
 
 ### Control
 
-- [PID](control/pid/README.md) -- Policy-based PID controller
-- [lqr](control/lqr.md) -- Linear-quadratic regulator
-- [dare](control/dare.md) -- Discrete algebraic Riccati equation solver
-- [place](control/place.md) -- Pole placement
+- [PID](api/control/pid/README.md) -- Policy-based PID controller
+- [lqr](api/control/lqr.md) -- Linear-quadratic regulator
+- [dare](api/control/dare.md) -- Discrete algebraic Riccati equation solver
+- [place](api/control/place.md) -- Pole placement
 
 ### Estimation
 
-- [kalman](estimation/kalman.md) -- Linear Kalman filter
-- [luenberger](estimation/luenberger.md) -- Luenberger observer
-- [ekf](estimation/ekf.md) -- Extended Kalman filter
-- [ukf](estimation/ukf.md) -- Unscented Kalman filter
-- [particle_filter](estimation/particle-filter.md) -- Bootstrap SIR particle filter
-- [mekf](estimation/mekf.md) -- Multiplicative extended Kalman filter (SO(3))
-- [manifold_ukf](estimation/manifold-ukf.md) -- Manifold unscented Kalman filter (SO(3))
-- [complementary_filter](estimation/complementary-filter.md) -- Mahony complementary filter
-- [observer_policy](estimation/observer-policy.md) -- Observer concept interface
+- [kalman](api/estimation/kalman.md) -- Linear Kalman filter
+- [luenberger](api/estimation/luenberger.md) -- Luenberger observer
+- [ekf](api/estimation/ekf.md) -- Extended Kalman filter
+- [ukf](api/estimation/ukf.md) -- Unscented Kalman filter
+- [particle_filter](api/estimation/particle-filter.md) -- Bootstrap SIR particle filter
+- [mekf](api/estimation/mekf.md) -- Multiplicative extended Kalman filter (SO(3))
+- [manifold_ukf](api/estimation/manifold-ukf.md) -- Manifold unscented Kalman filter (SO(3))
+- [complementary_filter](api/estimation/complementary-filter.md) -- Mahony complementary filter
+- [observer_policy](api/estimation/observer-policy.md) -- Observer concept interface
 
 ### MPC and MHE
 
-- [mpc](mpc/mpc.md) -- Linear model predictive control (OSQP)
-- [nmpc](mpc/nmpc.md) -- Nonlinear model predictive control (NLopt)
-- [mhe](mpc/mhe.md) -- Linear moving horizon estimation (OSQP)
-- [nmhe](mpc/nmhe.md) -- Nonlinear moving horizon estimation (NLopt)
-- [osqp_solver](mpc/osqp-solver.md) -- OSQP QP solver backend
-- [nlopt_solver](mpc/nlopt-solver.md) -- NLopt NLP solver backend
+- [mpc](api/mpc/mpc.md) -- Linear model predictive control (OSQP)
+- [nmpc](api/mpc/nmpc.md) -- Nonlinear model predictive control (NLopt)
+- [mhe](api/mpc/mhe.md) -- Linear moving horizon estimation (OSQP)
+- [nmhe](api/mpc/nmhe.md) -- Nonlinear moving horizon estimation (NLopt)
+- [osqp_solver](api/mpc/osqp-solver.md) -- OSQP QP solver backend
+- [nlopt_solver](api/mpc/nlopt-solver.md) -- NLopt NLP solver backend
 
 ### Signal Processing
 
-- [biquad](dsp/biquad.md) -- IIR second-order section filter
-- [fir](dsp/fir.md) -- Finite impulse response filter
-- [discrete_filter](dsp/discrete-filter.md) -- Discrete filter concept
+- [biquad](api/dsp/biquad.md) -- IIR second-order section filter
+- [fir](api/dsp/fir.md) -- Finite impulse response filter
+- [discrete_filter](api/dsp/discrete-filter.md) -- Discrete filter concept
 
 ### System Identification
 
-- [rls](sysid/rls.md) -- Recursive least squares
-- [batch_arx](sysid/batch-arx.md) -- Batch ARX identification (QR)
-- [recursive_arx](sysid/recursive-arx.md) -- Recursive ARX identification
-- [n4sid](sysid/n4sid.md) -- Subspace identification (BDCSVD)
-- [fit_metrics](sysid/fit-metrics.md) -- Goodness-of-fit metrics (NRMSE, VAF)
-- [sysid_result](sysid/sysid-result.md) -- Identification result container
+- [rls](api/sysid/rls.md) -- Recursive least squares
+- [batch_arx](api/sysid/batch-arx.md) -- Batch ARX identification (QR)
+- [recursive_arx](api/sysid/recursive-arx.md) -- Recursive ARX identification
+- [n4sid](api/sysid/n4sid.md) -- Subspace identification (BDCSVD)
+- [fit_metrics](api/sysid/fit-metrics.md) -- Goodness-of-fit metrics (NRMSE, VAF)
+- [sysid_result](api/sysid/sysid-result.md) -- Identification result container
 
 ### Lie Groups
 
-- [so3](lie/so3.md) -- SO(3) quaternion rotation utilities
+- [so3](api/lie/so3.md) -- SO(3) quaternion rotation utilities
 
 ### Model Utilities
 
-- [state_space](model/state-space.md) -- Linear state-space model
-- [transfer_function](model/transfer-function.md) -- Transfer function representation
-- [discretise](model/discretise.md) -- Continuous-to-discrete conversion
-- [conversion](model/conversion.md) -- Transfer function / state-space conversion
-- [analysis](model/analysis.md) -- Stability and controllability analysis
-- [propagate](model/propagate.md) -- State propagation utilities
-- [dynamics_model](model/dynamics-model.md) -- Dynamics model concept
-- [measurement_model](model/measurement-model.md) -- Measurement model concept
-- [differentiable_dynamics](model/differentiable-dynamics.md) -- Differentiable dynamics concept
-- [differentiable_measurement](model/differentiable-measurement.md) -- Differentiable measurement concept
-- [constraint_model](model/constraint-model.md) -- Constraint model concept
+- [state_space](api/model/state-space.md) -- Linear state-space model
+- [transfer_function](api/model/transfer-function.md) -- Transfer function representation
+- [discretise](api/model/discretise.md) -- Continuous-to-discrete conversion
+- [conversion](api/model/conversion.md) -- Transfer function / state-space conversion
+- [analysis](api/model/analysis.md) -- Stability and controllability analysis
+- [propagate](api/model/propagate.md) -- State propagation utilities
+- [dynamics_model](api/model/dynamics-model.md) -- Dynamics model concept
+- [measurement_model](api/model/measurement-model.md) -- Measurement model concept
+- [differentiable_dynamics](api/model/differentiable-dynamics.md) -- Differentiable dynamics concept
+- [differentiable_measurement](api/model/differentiable-measurement.md) -- Differentiable measurement concept
+- [constraint_model](api/model/constraint-model.md) -- Constraint model concept
 
-## Reference
+### Trajectory
 
-- [Reference](reference/README.md) -- Theory and mathematical background for all algorithms
+- [Trajectory API Overview](api/trajectory/README.md) -- Complete trajectory module index
+- [trajectory](api/trajectory/trajectory.md) -- Trajectory convenience header and concept
+- [trajectory_segment](api/trajectory/trajectory-segment.md) -- Trajectory segment concept definition
+- [trajectory_types](api/trajectory/trajectory-types.md) -- trajectory_point, Vector type aliases
+- [path_segment](api/trajectory/path-segment.md) -- Path segment concept
+- [piecewise_path](api/trajectory/piecewise-path.md) -- Piecewise path composition
+- [piecewise_trajectory](api/trajectory/piecewise-trajectory.md) -- Piecewise trajectory composition
+- [time_scaling](api/trajectory/time-scaling.md) -- Time scaling functions
+- [trapezoidal_trajectory](api/trajectory/trapezoidal-trajectory.md) -- Trapezoidal velocity profile
+- [double_s_trajectory](api/trajectory/double-s-trajectory.md) -- Double-S (jerk-limited) velocity profile
+- [modified_trap_trajectory](api/trajectory/modified-trap-trajectory.md) -- Modified trapezoidal velocity profile
+- [modified_sin_trajectory](api/trajectory/modified-sin-trajectory.md) -- Modified sinusoidal velocity profile
+- [cubic_path](api/trajectory/cubic-path.md) -- Cubic polynomial path
+- [cubic_trajectory](api/trajectory/cubic-trajectory.md) -- Cubic polynomial trajectory
+- [quintic_path](api/trajectory/quintic-path.md) -- Quintic polynomial path
+- [quintic_trajectory](api/trajectory/quintic-trajectory.md) -- Quintic polynomial trajectory
+- [septic_path](api/trajectory/septic-path.md) -- Septic polynomial path
+- [septic_trajectory](api/trajectory/septic-trajectory.md) -- Septic polynomial trajectory
+- [harmonic_path](api/trajectory/harmonic-path.md) -- Harmonic path segment
+- [cycloidal_path](api/trajectory/cycloidal-path.md) -- Cycloidal path segment
+- [cubic_spline](api/trajectory/cubic-spline.md) -- Cubic spline interpolation (natural, clamped, periodic)
+- [smoothing_spline](api/trajectory/smoothing-spline.md) -- Smoothing spline approximation
+- [bspline_trajectory](api/trajectory/bspline-trajectory.md) -- B-spline trajectory with compile-time degree
+- [online_planner_2nd](api/trajectory/online-planner-2nd.md) -- 2nd-order online trajectory planner
+- [online_planner_3rd](api/trajectory/online-planner-3rd.md) -- 3rd-order online trajectory planner
+- [synchronize](api/trajectory/synchronize.md) -- Multi-axis trajectory synchronization
+
+## Background Theory
+
+Standalone theory and mathematical background for the algorithms in ctrlpp.
+
+- [PID Theory](background/pid.md) -- Parallel form, derivative filter, anti-windup clamping and back-calculation
+- [Kalman Theory](background/kalman.md) -- Linear Kalman filter predict/update equations, optimality, innovation
+- [EKF Theory](background/ekf.md) -- Extended Kalman filter: Jacobian linearisation, prediction and update equations, numerical stability
+- [UKF Theory](background/ukf.md) -- Unscented Kalman filter: sigma-point generation, weights, unscented transform
+- [Particle Filter Theory](background/particle-filter.md) -- Importance sampling, weight update, systematic resampling, ESS
+- [Attitude Estimation Theory](background/attitude-estimation.md) -- Quaternion kinematics, MEKF error-state, manifold UKF
+- [MPC Theory](background/mpc.md) -- QP/NLP optimisation formulation, terminal cost and constraints, stability
+- [MHE Theory](background/mhe.md) -- Moving horizon cost function, arrival cost approximation, duality with MPC
+- [System Identification Theory](background/sysid.md) -- ARX regression model, RLS recursive update, N4SID Hankel matrix
+- [DSP Theory](background/dsp.md) -- Biquad transfer function, bilinear transform, FIR convolution, cascading
+- [Trajectory Generation Theory](background/trajectory-generation.md) -- Polynomial trajectories, velocity profiles, splines, online planners, synchronization
+- [LQR Theory](background/lqr.md) -- Linear quadratic regulator: DARE, cost function, optimal gain
+- [Observers Theory](background/observers.md) -- State observer design: Luenberger, pole placement, duality
+- [NMPC Theory](background/nmpc.md) -- Nonlinear MPC: NLP formulation, direct multiple shooting, terminal constraints
+- [NMHE Theory](background/nmhe.md) -- Nonlinear MHE: arrival cost, nonlinear optimization, EKF approximation
+- [SO(3) Theory](background/so3.md) -- Special orthogonal group: rotation representations, quaternion algebra, exponential map

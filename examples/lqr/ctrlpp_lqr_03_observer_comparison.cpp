@@ -1,4 +1,4 @@
-// Usage: ./ctrlpp_lqr_03_observer_comparison | gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '-' using 1:6 with lines"
+// Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_lqr_03_observer_comparison' using 1:2 with lines title 'true x0', '' using 1:6 with lines title 'kalman x0', '' using 1:10 with lines title 'luenberger x0'"
 // Redirect: ./ctrlpp_lqr_03_observer_comparison > output.csv
 
 #include "ctrlpp/model/discretise.h"

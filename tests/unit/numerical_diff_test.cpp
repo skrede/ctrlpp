@@ -236,7 +236,7 @@ TEST_CASE("finite_diff_jacobian at zero point", "[numerical_diff]")
     std::vector<double> jac(4, 0.0);
     finite_diff_jacobian<double>(c, 2, z, jac);
 
-    for(int i = 0; i < 4; ++i)
+    for(std::size_t i = 0; i < 4; ++i)
     {
         REQUIRE_THAT(jac[i], Catch::Matchers::WithinAbs(0.0, tol));
     }

@@ -4,6 +4,7 @@ add_subdirectory(ekf)
 add_subdirectory(ukf)
 add_subdirectory(pf)
 add_subdirectory(sysid)
+add_subdirectory(trajectory)
 
 if (CTRLPP_BUILD_OSQP)
     add_subdirectory(mpc)
