@@ -128,9 +128,9 @@ true velocity closely.
 
 ## Next Steps
 
-- [Kalman Filter API](../../estimation/kalman.md) -- full interface reference
-- [EKF API](../../estimation/ekf.md) -- for nonlinear systems
+- [Kalman Filter API](../../api/estimation/kalman.md) -- full interface reference
+- [EKF API](../../api/estimation/ekf.md) -- for nonlinear systems
 - [Observer-Controller Composition](../estimation/observer-controller.md) --
   feeding estimates into a controller
-- [Kalman Theory](../../reference/kalman-theory.md) -- derivation and
+- [Kalman Theory](../../background/kalman.md) -- derivation and
   optimality properties

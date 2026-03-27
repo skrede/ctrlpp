@@ -125,6 +125,6 @@ instead.
 
 ## Next Steps
 
-- [PID API Reference](../../control/pid/README.md) -- bumpless transfer and
+- [PID API Reference](../../api/control/pid/README.md) -- bumpless transfer and
   tracking mode
 - [PID Composition](composition.md) -- adding policies to cascade loops

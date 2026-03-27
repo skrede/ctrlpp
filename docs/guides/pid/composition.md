@@ -132,8 +132,8 @@ into a single function body.
 
 ## Next Steps
 
-- [Anti-Windup](../../control/pid/anti-windup.md) -- detailed anti-windup API
-- [Derivative Filter](../../control/pid/derivative-filter.md) -- filter bandwidth selection
-- [Rate Limit](../../control/pid/rate-limit.md) -- rate limiter API
-- [PID API Reference](../../control/pid/README.md) -- full method signatures
-- [PID Theory](../../reference/pid-theory.md) -- mathematical background
+- [Anti-Windup](../../api/control/pid/anti-windup.md) -- detailed anti-windup API
+- [Derivative Filter](../../api/control/pid/derivative-filter.md) -- filter bandwidth selection
+- [Rate Limit](../../api/control/pid/rate-limit.md) -- rate limiter API
+- [PID API Reference](../../api/control/pid/README.md) -- full method signatures
+- [PID Theory](../../background/pid.md) -- mathematical background

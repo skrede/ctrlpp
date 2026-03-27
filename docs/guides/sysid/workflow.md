@@ -172,10 +172,10 @@ LQR, MPC, or Kalman filter constructors.
 
 ## Next Steps
 
-- [Batch ARX API](../../sysid/batch-arx.md) -- offline identification
-- [N4SID API](../../sysid/n4sid.md) -- subspace identification
-- [RLS API](../../sysid/rls.md) -- recursive least squares
-- [Fit Metrics API](../../sysid/fit-metrics.md) -- NRMSE, VAF
-- [State Space API](../../model/state-space.md) -- model representation
-- [Sysid Theory](../../reference/sysid-theory.md) -- ARX, subspace,
+- [Batch ARX API](../../api/sysid/batch-arx.md) -- offline identification
+- [N4SID API](../../api/sysid/n4sid.md) -- subspace identification
+- [RLS API](../../api/sysid/rls.md) -- recursive least squares
+- [Fit Metrics API](../../api/sysid/fit-metrics.md) -- NRMSE, VAF
+- [State Space API](../../api/model/state-space.md) -- model representation
+- [Sysid Theory](../../background/sysid.md) -- ARX, subspace,
   recursive estimation theory
