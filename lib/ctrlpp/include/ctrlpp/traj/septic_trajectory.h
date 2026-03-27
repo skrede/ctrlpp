@@ -21,6 +21,8 @@ namespace ctrlpp
 {
 
 /// @brief Septic polynomial trajectory segment: c0 + c1*tau + ... + c7*tau^7
+///
+/// @cite biagiotti2009 -- Sec. 2.1.6, eq. (2.6), p.29: eight-coefficient septic in normalized time
 template <typename Scalar, std::size_t ND>
 struct septic_trajectory
 {
@@ -43,6 +45,7 @@ struct septic_trajectory
 
 /// @brief Create septic trajectory from boundary conditions q, dq, ddq, d3q at both endpoints.
 ///
+/// @cite biagiotti2009 -- Sec. 2.1.6, eq. (2.6), p.29: coefficient derivation from 8 BCs
 /// Coefficients derived from B&M eq. (2.6) in normalized time tau = t/T.
 template <typename Scalar, int Rows>
 auto make_septic_trajectory(
@@ -66,6 +69,7 @@ auto make_septic_trajectory(
     Vector<Scalar, ND> const c1 = (v0 * T).eval();
     Vector<Scalar, ND> const c2 = (a0 * T2 / Scalar{2}).eval();
     Vector<Scalar, ND> const c3 = (j0 * T3 / Scalar{6}).eval();
+    // @cite biagiotti2009 -- Sec. 2.1.6, eq. (2.6), p.29: c4-c7 from BC linear system
     Vector<Scalar, ND> const c4 =
         ((Scalar{210} * h
           - T * ((Scalar{30} * a0 - Scalar{15} * a1) * T + (Scalar{4} * j0 + j1) * T2

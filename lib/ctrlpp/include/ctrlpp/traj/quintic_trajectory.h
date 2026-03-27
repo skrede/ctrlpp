@@ -21,6 +21,8 @@ namespace ctrlpp
 {
 
 /// @brief Quintic polynomial trajectory segment: c0 + c1*tau + ... + c5*tau^5
+///
+/// @cite biagiotti2009 -- Sec. 2.1.5, eq. (2.5), p.27: six-coefficient quintic in normalized time
 template <typename Scalar, std::size_t ND>
 struct quintic_trajectory
 {
@@ -43,6 +45,7 @@ struct quintic_trajectory
 
 /// @brief Create quintic trajectory from boundary conditions q, dq, ddq at both endpoints.
 ///
+/// @cite biagiotti2009 -- Sec. 2.1.5, eq. (2.5), p.27: coefficient derivation from 6 BCs
 /// Coefficients derived from B&M eq. (2.5) in normalized time tau = t/T.
 template <typename Scalar, int Rows>
 auto make_quintic_trajectory(
@@ -62,6 +65,7 @@ auto make_quintic_trajectory(
     Vector<Scalar, ND> const c0 = q0;
     Vector<Scalar, ND> const c1 = (v0 * T).eval();
     Vector<Scalar, ND> const c2 = (a0 * T2 / Scalar{2}).eval();
+    // @cite biagiotti2009 -- Sec. 2.1.5, eq. (2.5), p.27: c3-c5 from BC linear system
     Vector<Scalar, ND> const c3 = ((Scalar{20} * h - (Scalar{8} * v1 + Scalar{12} * v0) * T
                                      - (Scalar{3} * a0 - a1) * T2)
                                     / Scalar{2})
