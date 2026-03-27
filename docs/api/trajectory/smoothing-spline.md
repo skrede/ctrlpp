@@ -69,17 +69,28 @@ Returns total spline duration: t_n - t_0.
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/smoothing_spline.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-// Noisy waypoints -- smoothing removes noise while preserving shape
-ctrlpp::smoothing_spline<double> spline({
-    .times = {0.0, 1.0, 2.0, 3.0, 4.0},
-    .positions = {0.0, 1.1, 0.4, 1.6, 2.0},  // noisy measurements
-    .mu = 0.7,  // moderate smoothing
-});
+#include <ctrlpp/traj/smoothing_spline.h>
 
-auto pt = spline.evaluate(2.5);
-// pt.position is smoothed approximation (may not pass exactly through waypoints)
+#include <iostream>
+
+int main()
+{
+    // Noisy waypoints -- smoothing removes noise while preserving shape
+    ctrlpp::smoothing_spline<double> spline({
+        .times = {0.0, 1.0, 2.0, 3.0, 4.0},
+        .positions = {0.0, 1.1, 0.4, 1.6, 2.0},  // noisy measurements
+        .mu = 0.7,  // moderate smoothing
+    });
+
+    double T = spline.duration();
+    constexpr double dt = 0.01;
+    for (double t = 0.0; t <= T; t += dt) {
+        auto pt = spline.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
+    }
+}
 ```
 
 ## See Also

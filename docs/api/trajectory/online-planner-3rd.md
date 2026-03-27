@@ -85,21 +85,26 @@ Degenerate cases (v_max or a_max not reached) automatically reduce the number of
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/online_planner_3rd.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-ctrlpp::online_planner_3rd<double> planner({
-    .v_max = 1.0,
-    .a_max = 5.0,
-    .j_max = 50.0,
-});
+#include <ctrlpp/traj/online_planner_3rd.h>
 
-planner.update(10.0);  // move to position 10
+#include <iostream>
 
-double dt = 0.001;
-for (double t = 0.0; !planner.is_settled(); t += dt) {
-    auto pt = planner.sample(t);
-    // Send pt.position to servo loop
-    // pt.acceleration is continuous (no discontinuities)
+int main()
+{
+    ctrlpp::online_planner_3rd<double> planner({
+        .v_max = 1.0,
+        .a_max = 5.0,
+        .j_max = 50.0,
+    });
+    planner.update(10.0);  // move to position 10
+
+    constexpr double dt = 0.001;
+    for (double t = 0.0; !planner.is_settled(); t += dt) {
+        auto pt = planner.sample(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
+    }
 }
 ```
 
