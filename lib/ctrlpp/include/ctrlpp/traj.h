@@ -29,5 +29,11 @@
 #include "ctrlpp/traj/time_scaling.h"
 #include "ctrlpp/traj/piecewise_path.h"
 #include "ctrlpp/traj/piecewise_trajectory.h"
+#include "ctrlpp/traj/cubic_spline.h"
+#include "ctrlpp/traj/smoothing_spline.h"
+#include "ctrlpp/traj/bspline_trajectory.h"
+#include "ctrlpp/traj/online_planner_2nd.h"
+#include "ctrlpp/traj/online_planner_3rd.h"
+#include "ctrlpp/traj/synchronize.h"
 
 #endif
