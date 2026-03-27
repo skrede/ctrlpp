@@ -43,13 +43,28 @@ Returns `{dq_max, ddq_max, dddq_max}` = `{35/16, ~7.5132, 52.5}`. The ddq_max va
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/septic_path.h"
-#include "ctrlpp/traj/trajectory.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-auto pp = ctrlpp::septic_path(0.5);  // pp.q == 0.5
+#include <ctrlpp/traj/septic_path.h>
+#include <ctrlpp/traj/trajectory.h>
 
-Eigen::Vector2d q0{0, 0}, q1{5, 3};
-auto traj = ctrlpp::make_trajectory(ctrlpp::septic_path<double>, q0, q1, 4.0);
+#include <Eigen/Dense>
+
+#include <iostream>
+
+int main()
+{
+    Eigen::Vector2d q0{0.0, 0.0}, q1{5.0, 3.0};
+    double T = 4.0;
+    auto traj = ctrlpp::make_trajectory(ctrlpp::septic_path<double>, q0, q1, T);
+
+    constexpr double dt = 0.01;
+    for (double t = 0.0; t <= T; t += dt) {
+        auto pt = traj.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0)
+                  << "," << pt.acceleration(0) << "\n";
+    }
+}
 ```
 
 ## See Also

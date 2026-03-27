@@ -52,16 +52,31 @@ Zero acceleration at both endpoints makes this path C2-continuous at segment bou
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/cycloidal_path.h"
-#include "ctrlpp/traj/trajectory.h"
-#include "ctrlpp/traj/time_scaling.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-auto peaks = ctrlpp::cycloidal_path_peak_derivatives<double>();
-double T = ctrlpp::compute_min_duration(2.0, peaks, 1.0, 5.0, 50.0);
+#include <ctrlpp/traj/cycloidal_path.h>
+#include <ctrlpp/traj/time_scaling.h>
+#include <ctrlpp/traj/trajectory.h>
 
-Eigen::Vector2d q0{0, 0}, q1{2, 0};
-auto traj = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, q0, q1, T);
-auto pt = traj.evaluate(T / 2);
+#include <Eigen/Dense>
+
+#include <iostream>
+
+int main()
+{
+    auto peaks = ctrlpp::cycloidal_path_peak_derivatives<double>();
+    double T = ctrlpp::compute_min_duration(2.0, peaks, 1.0, 5.0, 50.0);
+
+    Eigen::Vector2d q0{0.0, 0.0}, q1{2.0, 0.0};
+    auto traj = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, q0, q1, T);
+
+    constexpr double dt = 0.01;
+    for (double t = 0.0; t <= T; t += dt) {
+        auto pt = traj.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0)
+                  << "," << pt.acceleration(0) << "\n";
+    }
+}
 ```
 
 ## See Also
