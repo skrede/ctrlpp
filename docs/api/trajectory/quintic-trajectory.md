@@ -46,16 +46,31 @@ auto make_quintic_trajectory(
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/quintic_trajectory.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel', '' using 1:4 with lines title 'acc'"
 
-using Vec1 = Eigen::Matrix<double, 1, 1>;
-auto traj = ctrlpp::make_quintic_trajectory(
-    Vec1{0.0}, Vec1{1.0},   // q0, q1
-    Vec1{0.0}, Vec1{0.0},   // v0, v1
-    Vec1{0.0}, Vec1{0.0},   // a0, a1
-    2.0);                    // duration
+#include <ctrlpp/traj/quintic_trajectory.h>
 
-auto pt = traj.evaluate(1.0);
+#include <Eigen/Dense>
+
+#include <iostream>
+
+int main()
+{
+    using Vec1 = Eigen::Matrix<double, 1, 1>;
+    double T = 2.0;
+    auto traj = ctrlpp::make_quintic_trajectory(
+        Vec1{0.0}, Vec1{1.0},   // q0, q1
+        Vec1{0.0}, Vec1{0.0},   // v0, v1
+        Vec1{0.0}, Vec1{0.0},   // a0, a1
+        T);                      // duration
+
+    constexpr double dt = 0.01;
+    for (double t = 0.0; t <= T; t += dt) {
+        auto pt = traj.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0)
+                  << "," << pt.acceleration(0) << "\n";
+    }
+}
 ```
 
 ## See Also

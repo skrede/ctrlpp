@@ -71,16 +71,27 @@ Returns total spline duration: t_n - t_0.
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/cubic_spline.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-ctrlpp::cubic_spline<double> spline({
-    .times = {0.0, 1.0, 2.0, 3.0, 4.0},
-    .positions = {0.0, 1.0, 0.5, 1.5, 2.0},
-    .bc = ctrlpp::boundary_condition::natural,
-});
+#include <ctrlpp/traj/cubic_spline.h>
 
-auto pt = spline.evaluate(1.5);
-// pt.position, pt.velocity, pt.acceleration
+#include <iostream>
+
+int main()
+{
+    ctrlpp::cubic_spline<double> spline({
+        .times = {0.0, 1.0, 2.0, 3.0, 4.0},
+        .positions = {0.0, 1.0, 0.5, 1.5, 2.0},
+        .bc = ctrlpp::boundary_condition::natural,
+    });
+
+    double T = spline.duration();
+    constexpr double dt = 0.01;
+    for (double t = 0.0; t <= T; t += dt) {
+        auto pt = spline.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
+    }
+}
 ```
 
 ## See Also

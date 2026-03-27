@@ -83,21 +83,27 @@ Evaluate the B-spline basis function B_{i,p}(t) using Cox-de Boor recursion. Pri
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/bspline_trajectory.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'pos', '' using 1:3 with lines title 'vel'"
 
-// Cubic B-spline through waypoints via interpolation factory
-auto bspline = ctrlpp::make_bspline_interpolation<double, 3>(
-    {0.0, 1.0, 2.0, 3.0, 4.0},  // parameter values
-    {0.0, 1.0, 0.5, 1.5, 2.0}   // positions
-);
+#include <ctrlpp/traj/bspline_trajectory.h>
 
-auto pt = bspline.evaluate(1.5);
-// pt.position, pt.velocity, pt.acceleration
+#include <iostream>
 
-// Or construct directly with known control points
-ctrlpp::bspline_trajectory<double, 3> manual({
-    .control_points = {0.0, 0.5, 1.0, 1.5, 2.0},
-});
+int main()
+{
+    // Cubic B-spline through waypoints via interpolation factory
+    auto bspline = ctrlpp::make_bspline_interpolation<double, 3>(
+        {0.0, 1.0, 2.0, 3.0, 4.0},  // parameter values
+        {0.0, 1.0, 0.5, 1.5, 2.0}   // positions
+    );
+
+    double T = bspline.duration();
+    constexpr double dt = 0.01;
+    for (double t = 0.0; t <= T; t += dt) {
+        auto pt = bspline.evaluate(t);
+        std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
+    }
+}
 ```
 
 ## See Also

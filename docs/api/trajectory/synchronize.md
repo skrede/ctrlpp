@@ -56,23 +56,33 @@ The time scaling preserves the profile shape -- the trajectory maintains its vel
 ## Usage Example
 
 ```cpp
-#include "ctrlpp/traj/synchronize.h"
-#include "ctrlpp/traj/trapezoidal_trajectory.h"
+// Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'x', '' using 1:3 with lines title 'y', '' using 1:4 with lines title 'z'"
 
-// Three-axis motion: each axis has different displacement
-ctrlpp::trapezoidal_trajectory<double> x_axis({.q0 = 0, .q1 = 10, .v_max = 2, .a_max = 5});
-ctrlpp::trapezoidal_trajectory<double> y_axis({.q0 = 0, .q1 = 3,  .v_max = 2, .a_max = 5});
-ctrlpp::trapezoidal_trajectory<double> z_axis({.q0 = 0, .q1 = 7,  .v_max = 2, .a_max = 5});
+#include <ctrlpp/traj/synchronize.h>
+#include <ctrlpp/traj/trapezoidal_trajectory.h>
 
-// Before: each axis has different duration
-// After: all axes finish at the same time
-ctrlpp::synchronize(x_axis, y_axis, z_axis);
+#include <iostream>
 
-// Evaluate all axes at the same time points
-for (double t = 0; t <= x_axis.duration(); t += 0.01) {
-    auto px = x_axis.evaluate(t);
-    auto py = y_axis.evaluate(t);
-    auto pz = z_axis.evaluate(t);
+int main()
+{
+    // Three-axis motion: each axis has different displacement
+    ctrlpp::trapezoidal_trajectory<double> x_axis({.q0 = 0, .q1 = 10, .v_max = 2, .a_max = 5});
+    ctrlpp::trapezoidal_trajectory<double> y_axis({.q0 = 0, .q1 = 3,  .v_max = 2, .a_max = 5});
+    ctrlpp::trapezoidal_trajectory<double> z_axis({.q0 = 0, .q1 = 7,  .v_max = 2, .a_max = 5});
+
+    // Before: each axis has different duration
+    // After: all axes finish at the same time
+    ctrlpp::synchronize(x_axis, y_axis, z_axis);
+
+    double T = x_axis.duration();
+    constexpr double dt = 0.01;
+    for (double t = 0.0; t <= T; t += dt) {
+        auto px = x_axis.evaluate(t);
+        auto py = y_axis.evaluate(t);
+        auto pz = z_axis.evaluate(t);
+        std::cout << t << "," << px.position(0) << "," << py.position(0)
+                  << "," << pz.position(0) << "\n";
+    }
 }
 ```
 
