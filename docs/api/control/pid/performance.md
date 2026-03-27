@@ -86,5 +86,5 @@ int main()
 - [PID overview](README.md) -- parent PID documentation
 - [anti-windup](anti-windup.md) -- performance depends on proper windup handling
 - [derivative-filter](derivative-filter.md) -- noise filtering affects performance metrics
-- [guides/pid/composition](../../guides/pid/composition.md) -- composing policies
-- [reference/pid-theory](../../reference/pid-theory.md) -- performance index definitions
+- [guides/pid/composition](../../../guides/pid/composition.md) -- composing policies
+- [background/pid](../../../background/pid.md) -- performance index definitions

@@ -212,5 +212,5 @@ int main()
 - [ukf](ukf.md) -- sigma-point filter for moderate nonlinearity
 - [ekf](ekf.md) -- linearisation-based filter for smooth systems
 - [observer-policy](observer-policy.md) -- concept satisfied by this type
-- [reference/particle-filter-theory](../reference/particle-filter-theory.md) -- SIR derivation
-- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- composing observers with controllers
+- [background/particle-filter](../../background/particle-filter.md) -- SIR derivation
+- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md) -- composing observers with controllers

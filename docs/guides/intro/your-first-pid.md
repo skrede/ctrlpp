@@ -108,8 +108,8 @@ multiple policies together.
 
 ## Next Steps
 
-- [PID API Reference](../../control/pid/README.md) -- full method signatures
+- [PID API Reference](../../api/control/pid/README.md) -- full method signatures
   and all config fields
 - [PID Composition Guide](../pid/composition.md) -- composing anti-windup,
   derivative filtering, rate limiting and more
-- [PID Theory](../../reference/pid-theory.md) -- the math behind PID control
+- [PID Theory](../../background/pid.md) -- the math behind PID control

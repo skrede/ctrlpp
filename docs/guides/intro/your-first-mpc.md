@@ -117,11 +117,11 @@ At every time step:
 
 ## Next Steps
 
-- [MPC API Reference](../../mpc/mpc.md) -- full interface, diagnostics, warm
+- [MPC API Reference](../../api/mpc/mpc.md) -- full interface, diagnostics, warm
   starting
 - [Solver Injection Guide](../mpc/solver-injection.md) -- swapping QP/NLP
   solver backends
 - [Observer-Controller Composition](../estimation/observer-controller.md) --
   MPC with state estimation
-- [MPC Theory](../../reference/mpc-theory.md) -- QP formulation, stability,
+- [MPC Theory](../../background/mpc.md) -- QP formulation, stability,
   terminal constraints

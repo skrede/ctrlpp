@@ -134,4 +134,4 @@ int main()
 
 - [estimation/mekf](../estimation/mekf.md) -- multiplicative EKF using SO(3)
 - [estimation/manifold-ukf](../estimation/manifold-ukf.md) -- manifold UKF using SO(3)
-- [reference/attitude-estimation-theory](../reference/attitude-estimation-theory.md) -- attitude estimation theory
+- [background/attitude-estimation](../../background/attitude-estimation.md) -- attitude estimation theory

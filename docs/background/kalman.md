@@ -112,9 +112,9 @@ satisfies the discrete algebraic Riccati equation.
 
 ## Related API Pages
 
-- [kalman_filter](../estimation/kalman.md) -- linear Kalman filter
+- [kalman_filter](../api/estimation/kalman.md) -- linear Kalman filter
   implementation
-- [luenberger_observer](../estimation/luenberger.md) -- deterministic
+- [luenberger_observer](../api/estimation/luenberger.md) -- deterministic
   observer (Kalman filter without stochastic tuning)
 - [Your First Estimator](../guides/intro/your-first-estimator.md) --
   introductory tutorial

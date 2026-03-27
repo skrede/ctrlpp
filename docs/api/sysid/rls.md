@@ -124,5 +124,5 @@ int main()
 
 - [recursive-arx](recursive-arx.md) -- recursive ARX identification using RLS
 - [batch-arx](batch-arx.md) -- batch ARX identification
-- [guides/sysid/workflow](../guides/sysid/workflow.md) -- system identification workflow guide
-- [reference/sysid-theory](../reference/sysid-theory.md) -- sysid theory and background
+- [guides/sysid/workflow](../../guides/sysid/workflow.md) -- system identification workflow guide
+- [background/sysid](../../background/sysid.md) -- sysid theory and background

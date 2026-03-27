@@ -167,8 +167,8 @@ diagnostics.
 
 ## Next Steps
 
-- [OSQP Solver API](../../mpc/osqp-solver.md) -- OSQP wrapper details
-- [NLopt Solver API](../../mpc/nlopt-solver.md) -- NLopt wrapper details
-- [MPC API Reference](../../mpc/mpc.md) -- linear MPC interface
-- [NMPC API Reference](../../mpc/nmpc.md) -- nonlinear MPC interface
-- [MPC Theory](../../reference/mpc-theory.md) -- QP/NLP formulation details
+- [OSQP Solver API](../../api/mpc/osqp-solver.md) -- OSQP wrapper details
+- [NLopt Solver API](../../api/mpc/nlopt-solver.md) -- NLopt wrapper details
+- [MPC API Reference](../../api/mpc/mpc.md) -- linear MPC interface
+- [NMPC API Reference](../../api/mpc/nmpc.md) -- nonlinear MPC interface
+- [MPC Theory](../../background/mpc.md) -- QP/NLP formulation details

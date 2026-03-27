@@ -28,5 +28,5 @@ Pick **place** when you need direct pole assignment rather than cost-based tunin
 
 ## Theory
 
-- [PID Theory](../reference/pid-theory.md) -- PID mathematical background
-- [Optimal Control Theory](../reference/optimal-control-theory.md) -- LQR, DARE, Riccati equations
+- [PID Theory](../../background/pid.md) -- PID mathematical background
+

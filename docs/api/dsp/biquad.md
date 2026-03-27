@@ -183,4 +183,4 @@ int main()
 
 - [fir](fir.md) -- finite impulse response filter
 - [discrete-filter](discrete-filter.md) -- discrete filter concept
-- [reference/dsp-theory](../reference/dsp-theory.md) -- DSP theory and background
+- [background/dsp](../../background/dsp.md) -- DSP theory and background

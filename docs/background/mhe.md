@@ -96,6 +96,6 @@ Both formulations support box constraints on states.
 
 ## Related API Pages
 
-- [mhe](../mpc/mhe.md) -- linear moving horizon estimation (OSQP)
-- [nmhe](../mpc/nmhe.md) -- nonlinear moving horizon estimation (NLopt)
-- [MPC Theory](mpc-theory.md) -- the control dual of MHE
+- [mhe](../api/mpc/mhe.md) -- linear moving horizon estimation (OSQP)
+- [nmhe](../api/mpc/nmhe.md) -- nonlinear moving horizon estimation (NLopt)
+- [MPC Theory](mpc.md) -- the control dual of MHE

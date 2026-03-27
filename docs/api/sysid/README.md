@@ -39,4 +39,4 @@ model directly without specifying model orders.
 ## Theory
 
 For the mathematical background, see
-[System Identification Theory](../reference/sysid-theory.md).
+[System Identification Theory](../../background/sysid.md).

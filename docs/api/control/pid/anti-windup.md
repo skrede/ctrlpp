@@ -84,5 +84,5 @@ int main()
 - [PID overview](README.md) -- parent PID documentation
 - [velocity-form](velocity-form.md) -- bumpless transfer via incremental output
 - [rate-limit](rate-limit.md) -- output rate limiting
-- [guides/pid/composition](../../guides/pid/composition.md) -- composing policies
-- [reference/pid-theory](../../reference/pid-theory.md) -- anti-windup theory
+- [guides/pid/composition](../../../guides/pid/composition.md) -- composing policies
+- [background/pid](../../../background/pid.md) -- anti-windup theory

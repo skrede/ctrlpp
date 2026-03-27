@@ -18,4 +18,4 @@ between 3-vector perturbations and unit quaternions.
 ## Theory
 
 For the mathematical background, see
-[Attitude Estimation Theory](../reference/attitude-estimation-theory.md).
+[Attitude Estimation Theory](../../background/attitude-estimation.md).

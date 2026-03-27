@@ -45,7 +45,7 @@ SO(3). Pick **complementary filter** for lightweight IMU/MARG sensor fusion.
 ## Theory
 
 For the mathematical background, see
-[Kalman Theory](../reference/kalman-theory.md),
-[EKF/UKF Theory](../reference/ekf-ukf-theory.md),
-[Particle Filter Theory](../reference/particle-filter-theory.md), and
-[Attitude Estimation Theory](../reference/attitude-estimation-theory.md).
+[Kalman Theory](../../background/kalman.md),
+[EKF/UKF Theory](../../background/ekf-ukf.md),
+[Particle Filter Theory](../../background/particle-filter.md), and
+[Attitude Estimation Theory](../../background/attitude-estimation.md).

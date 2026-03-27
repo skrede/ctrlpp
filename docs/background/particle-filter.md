@@ -110,8 +110,8 @@ dimensions).
 
 ## Related API Pages
 
-- [particle_filter](../estimation/particle-filter.md) -- bootstrap SIR
+- [particle_filter](../api/estimation/particle-filter.md) -- bootstrap SIR
   particle filter with compile-time particle count and ESS-adaptive
   resampling
-- [EKF/UKF Theory](ekf-ukf-theory.md) -- alternative nonlinear estimators
+- [EKF/UKF Theory](ekf-ukf.md) -- alternative nonlinear estimators
 - [Observer-Controller Guide](../guides/estimation/observer-controller.md) -- composing observers with controllers

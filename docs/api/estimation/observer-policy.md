@@ -152,4 +152,4 @@ int main()
 - [ukf](ukf.md) -- unscented Kalman filter
 - [particle-filter](particle-filter.md) -- particle filter
 - [luenberger](luenberger.md) -- Luenberger observer
-- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- composition patterns
+- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md) -- composition patterns

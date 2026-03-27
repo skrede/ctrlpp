@@ -253,5 +253,5 @@ int main()
 ## See Also
 
 - [lqr](../lqr.md) -- optimal state-feedback for multi-variable systems
-- [PID Composition Guide](../../guides/pid/composition.md) -- combining multiple policies
-- [PID Theory](../../reference/pid-theory.md) -- mathematical background
+- [PID Composition Guide](../../../guides/pid/composition.md) -- combining multiple policies
+- [PID Theory](../../../background/pid.md) -- mathematical background

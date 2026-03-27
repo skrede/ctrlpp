@@ -117,10 +117,10 @@ check for overfitting.
 
 ## Related API Pages
 
-- [batch_arx](../sysid/batch-arx.md) -- offline batch ARX identification (QR)
-- [n4sid](../sysid/n4sid.md) -- subspace identification (BDCSVD)
-- [rls](../sysid/rls.md) -- recursive least squares
-- [recursive_arx](../sysid/recursive-arx.md) -- recursive ARX identification
-- [fit_metrics](../sysid/fit-metrics.md) -- NRMSE and VAF
+- [batch_arx](../api/sysid/batch-arx.md) -- offline batch ARX identification (QR)
+- [n4sid](../api/sysid/n4sid.md) -- subspace identification (BDCSVD)
+- [rls](../api/sysid/rls.md) -- recursive least squares
+- [recursive_arx](../api/sysid/recursive-arx.md) -- recursive ARX identification
+- [fit_metrics](../api/sysid/fit-metrics.md) -- NRMSE and VAF
 - [Sysid Workflow Guide](../guides/sysid/workflow.md) -- identify, model,
   and control pipeline

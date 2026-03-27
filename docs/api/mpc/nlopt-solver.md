@@ -156,5 +156,5 @@ int main()
 - [nmpc](nmpc.md) -- nonlinear MPC using NLopt
 - [nmhe](nmhe.md) -- nonlinear MHE using NLopt
 - [osqp-solver](osqp-solver.md) -- OSQP QP solver backend
-- [guides/mpc/solver-injection](../guides/mpc/solver-injection.md) -- solver injection guide
-- [reference/mpc-theory](../reference/mpc-theory.md) -- NLP formulation and theory
+- [guides/mpc/solver-injection](../../guides/mpc/solver-injection.md) -- solver injection guide
+- [background/mpc](../../background/mpc.md) -- NLP formulation and theory

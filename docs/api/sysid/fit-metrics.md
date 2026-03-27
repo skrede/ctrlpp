@@ -66,4 +66,4 @@ int main()
 - [batch-arx](batch-arx.md) -- batch ARX identification
 - [n4sid](n4sid.md) -- subspace identification
 - [rls](rls.md) -- recursive least squares
-- [reference/sysid-theory](../reference/sysid-theory.md) -- sysid theory and background
+- [background/sysid](../../background/sysid.md) -- sysid theory and background

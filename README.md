@@ -104,7 +104,7 @@ set(CTRLPP_ENABLE_NLOPT OFF)
 - [Getting Started](docs/getting-started.md) -- Install ctrlpp and run your first PID controller
 - [Guides](docs/guides/README.md) -- Tutorials and deep dives
 - [API Reference](docs/README.md#api-reference) -- Full type documentation
-- [Reference](docs/reference/README.md) -- Theory and mathematical background
+- [Background Theory](docs/README.md#background-theory) -- Theory and mathematical background
 
 ## License
 

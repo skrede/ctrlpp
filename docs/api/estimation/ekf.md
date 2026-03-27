@@ -178,5 +178,5 @@ int main()
 - [ukf](ukf.md) -- sigma-point alternative avoiding explicit Jacobians
 - [kalman](kalman.md) -- linear Kalman filter for LTI systems
 - [observer-policy](observer-policy.md) -- concept satisfied by this type
-- [reference/ekf-ukf-theory](../reference/ekf-ukf-theory.md) -- EKF derivation and comparison
-- [guides/estimation/observer-controller](../guides/estimation/observer-controller.md) -- composing observers with controllers
+- [background/ekf-ukf](../../background/ekf-ukf.md) -- EKF derivation and comparison
+- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md) -- composing observers with controllers

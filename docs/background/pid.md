@@ -119,11 +119,11 @@ iterative and application-specific.
 
 ## Related API Pages
 
-- [PID Controller](../control/pid/README.md) -- policy-based PID with
+- [PID Controller](../api/control/pid/README.md) -- policy-based PID with
   compile-time feature selection
-- [Anti-Windup Policy](../control/pid/anti-windup.md) -- back-calculation,
+- [Anti-Windup Policy](../api/control/pid/anti-windup.md) -- back-calculation,
   clamping, conditional integration
-- [Derivative Filter Policy](../control/pid/derivative-filter.md) --
+- [Derivative Filter Policy](../api/control/pid/derivative-filter.md) --
   first-order derivative low-pass filter
 - [PID Composition Guide](../guides/pid/composition.md) -- composing
   multiple policies

@@ -25,4 +25,4 @@ you write generic code that accepts any filter type.
 
 ## Theory
 
-For the mathematical background, see [DSP Theory](../reference/dsp-theory.md).
+For the mathematical background, see [DSP Theory](../../background/dsp.md).

@@ -27,65 +27,79 @@ Guides and API reference for the ctrlpp C++23 control library.
 
 ### Control
 
-- [PID](control/pid/README.md) -- Policy-based PID controller
-- [lqr](control/lqr.md) -- Linear-quadratic regulator
-- [dare](control/dare.md) -- Discrete algebraic Riccati equation solver
-- [place](control/place.md) -- Pole placement
+- [PID](api/control/pid/README.md) -- Policy-based PID controller
+- [lqr](api/control/lqr.md) -- Linear-quadratic regulator
+- [dare](api/control/dare.md) -- Discrete algebraic Riccati equation solver
+- [place](api/control/place.md) -- Pole placement
 
 ### Estimation
 
-- [kalman](estimation/kalman.md) -- Linear Kalman filter
-- [luenberger](estimation/luenberger.md) -- Luenberger observer
-- [ekf](estimation/ekf.md) -- Extended Kalman filter
-- [ukf](estimation/ukf.md) -- Unscented Kalman filter
-- [particle_filter](estimation/particle-filter.md) -- Bootstrap SIR particle filter
-- [mekf](estimation/mekf.md) -- Multiplicative extended Kalman filter (SO(3))
-- [manifold_ukf](estimation/manifold-ukf.md) -- Manifold unscented Kalman filter (SO(3))
-- [complementary_filter](estimation/complementary-filter.md) -- Mahony complementary filter
-- [observer_policy](estimation/observer-policy.md) -- Observer concept interface
+- [kalman](api/estimation/kalman.md) -- Linear Kalman filter
+- [luenberger](api/estimation/luenberger.md) -- Luenberger observer
+- [ekf](api/estimation/ekf.md) -- Extended Kalman filter
+- [ukf](api/estimation/ukf.md) -- Unscented Kalman filter
+- [particle_filter](api/estimation/particle-filter.md) -- Bootstrap SIR particle filter
+- [mekf](api/estimation/mekf.md) -- Multiplicative extended Kalman filter (SO(3))
+- [manifold_ukf](api/estimation/manifold-ukf.md) -- Manifold unscented Kalman filter (SO(3))
+- [complementary_filter](api/estimation/complementary-filter.md) -- Mahony complementary filter
+- [observer_policy](api/estimation/observer-policy.md) -- Observer concept interface
 
 ### MPC and MHE
 
-- [mpc](mpc/mpc.md) -- Linear model predictive control (OSQP)
-- [nmpc](mpc/nmpc.md) -- Nonlinear model predictive control (NLopt)
-- [mhe](mpc/mhe.md) -- Linear moving horizon estimation (OSQP)
-- [nmhe](mpc/nmhe.md) -- Nonlinear moving horizon estimation (NLopt)
-- [osqp_solver](mpc/osqp-solver.md) -- OSQP QP solver backend
-- [nlopt_solver](mpc/nlopt-solver.md) -- NLopt NLP solver backend
+- [mpc](api/mpc/mpc.md) -- Linear model predictive control (OSQP)
+- [nmpc](api/mpc/nmpc.md) -- Nonlinear model predictive control (NLopt)
+- [mhe](api/mpc/mhe.md) -- Linear moving horizon estimation (OSQP)
+- [nmhe](api/mpc/nmhe.md) -- Nonlinear moving horizon estimation (NLopt)
+- [osqp_solver](api/mpc/osqp-solver.md) -- OSQP QP solver backend
+- [nlopt_solver](api/mpc/nlopt-solver.md) -- NLopt NLP solver backend
 
 ### Signal Processing
 
-- [biquad](dsp/biquad.md) -- IIR second-order section filter
-- [fir](dsp/fir.md) -- Finite impulse response filter
-- [discrete_filter](dsp/discrete-filter.md) -- Discrete filter concept
+- [biquad](api/dsp/biquad.md) -- IIR second-order section filter
+- [fir](api/dsp/fir.md) -- Finite impulse response filter
+- [discrete_filter](api/dsp/discrete-filter.md) -- Discrete filter concept
 
 ### System Identification
 
-- [rls](sysid/rls.md) -- Recursive least squares
-- [batch_arx](sysid/batch-arx.md) -- Batch ARX identification (QR)
-- [recursive_arx](sysid/recursive-arx.md) -- Recursive ARX identification
-- [n4sid](sysid/n4sid.md) -- Subspace identification (BDCSVD)
-- [fit_metrics](sysid/fit-metrics.md) -- Goodness-of-fit metrics (NRMSE, VAF)
-- [sysid_result](sysid/sysid-result.md) -- Identification result container
+- [rls](api/sysid/rls.md) -- Recursive least squares
+- [batch_arx](api/sysid/batch-arx.md) -- Batch ARX identification (QR)
+- [recursive_arx](api/sysid/recursive-arx.md) -- Recursive ARX identification
+- [n4sid](api/sysid/n4sid.md) -- Subspace identification (BDCSVD)
+- [fit_metrics](api/sysid/fit-metrics.md) -- Goodness-of-fit metrics (NRMSE, VAF)
+- [sysid_result](api/sysid/sysid-result.md) -- Identification result container
 
 ### Lie Groups
 
-- [so3](lie/so3.md) -- SO(3) quaternion rotation utilities
+- [so3](api/lie/so3.md) -- SO(3) quaternion rotation utilities
 
 ### Model Utilities
 
-- [state_space](model/state-space.md) -- Linear state-space model
-- [transfer_function](model/transfer-function.md) -- Transfer function representation
-- [discretise](model/discretise.md) -- Continuous-to-discrete conversion
-- [conversion](model/conversion.md) -- Transfer function / state-space conversion
-- [analysis](model/analysis.md) -- Stability and controllability analysis
-- [propagate](model/propagate.md) -- State propagation utilities
-- [dynamics_model](model/dynamics-model.md) -- Dynamics model concept
-- [measurement_model](model/measurement-model.md) -- Measurement model concept
-- [differentiable_dynamics](model/differentiable-dynamics.md) -- Differentiable dynamics concept
-- [differentiable_measurement](model/differentiable-measurement.md) -- Differentiable measurement concept
-- [constraint_model](model/constraint-model.md) -- Constraint model concept
+- [state_space](api/model/state-space.md) -- Linear state-space model
+- [transfer_function](api/model/transfer-function.md) -- Transfer function representation
+- [discretise](api/model/discretise.md) -- Continuous-to-discrete conversion
+- [conversion](api/model/conversion.md) -- Transfer function / state-space conversion
+- [analysis](api/model/analysis.md) -- Stability and controllability analysis
+- [propagate](api/model/propagate.md) -- State propagation utilities
+- [dynamics_model](api/model/dynamics-model.md) -- Dynamics model concept
+- [measurement_model](api/model/measurement-model.md) -- Measurement model concept
+- [differentiable_dynamics](api/model/differentiable-dynamics.md) -- Differentiable dynamics concept
+- [differentiable_measurement](api/model/differentiable-measurement.md) -- Differentiable measurement concept
+- [constraint_model](api/model/constraint-model.md) -- Constraint model concept
 
-## Reference
+### Trajectory (coming soon)
 
-- [Reference](reference/README.md) -- Theory and mathematical background for all algorithms
+Trajectory generation primitives will be documented in [api/traj/](api/traj/) once implemented.
+
+## Background Theory
+
+Standalone theory and mathematical background for the algorithms in ctrlpp.
+
+- [PID Theory](background/pid.md) -- Parallel form, derivative filter, anti-windup clamping and back-calculation
+- [Kalman Theory](background/kalman.md) -- Linear Kalman filter predict/update equations, optimality, innovation
+- [EKF/UKF Theory](background/ekf-ukf.md) -- EKF Jacobian linearisation, UKF sigma-point generation and weights
+- [Particle Filter Theory](background/particle-filter.md) -- Importance sampling, weight update, systematic resampling, ESS
+- [Attitude Estimation Theory](background/attitude-estimation.md) -- Quaternion kinematics, MEKF error-state, manifold UKF
+- [MPC Theory](background/mpc.md) -- QP/NLP optimisation formulation, terminal cost and constraints, stability
+- [MHE Theory](background/mhe.md) -- Moving horizon cost function, arrival cost approximation, duality with MPC
+- [System Identification Theory](background/sysid.md) -- ARX regression model, RLS recursive update, N4SID Hankel matrix
+- [DSP Theory](background/dsp.md) -- Biquad transfer function, bilinear transform, FIR convolution, cascading

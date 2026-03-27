@@ -141,10 +141,10 @@ the ellipsoidal terminal set from the system matrices.
 
 ## Related API Pages
 
-- [mpc](../mpc/mpc.md) -- linear MPC with sparse QP formulation
-- [nmpc](../mpc/nmpc.md) -- nonlinear MPC with multiple shooting
-- [osqp_solver](../mpc/osqp-solver.md) -- OSQP QP solver backend
-- [nlopt_solver](../mpc/nlopt-solver.md) -- NLopt NLP solver backend
+- [mpc](../api/mpc/mpc.md) -- linear MPC with sparse QP formulation
+- [nmpc](../api/mpc/nmpc.md) -- nonlinear MPC with multiple shooting
+- [osqp_solver](../api/mpc/osqp-solver.md) -- OSQP QP solver backend
+- [nlopt_solver](../api/mpc/nlopt-solver.md) -- NLopt NLP solver backend
 - [Solver Injection Guide](../guides/mpc/solver-injection.md) -- swapping
   solver backends
 - [Your First MPC Guide](../guides/intro/your-first-mpc.md) -- introductory

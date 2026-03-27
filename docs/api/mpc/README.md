@@ -38,5 +38,5 @@ concentrations).
 ## Theory
 
 For the mathematical background, see
-[MPC Theory](../reference/mpc-theory.md) and
-[MHE Theory](../reference/mhe-theory.md).
+[MPC Theory](../../background/mpc.md) and
+[MHE Theory](../../background/mhe.md).

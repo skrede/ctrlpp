@@ -183,10 +183,10 @@ filters are simpler and cheaper than MEKF but less optimal.
 
 ## Related API Pages
 
-- [so3](../lie/so3.md) -- quaternion SO(3) utilities (exp, log, compose,
+- [so3](../api/lie/so3.md) -- quaternion SO(3) utilities (exp, log, compose,
   skew)
-- [mekf](../estimation/mekf.md) -- multiplicative extended Kalman filter
-- [manifold_ukf](../estimation/manifold-ukf.md) -- manifold unscented
+- [mekf](../api/estimation/mekf.md) -- multiplicative extended Kalman filter
+- [manifold_ukf](../api/estimation/manifold-ukf.md) -- manifold unscented
   Kalman filter
-- [complementary_filter](../estimation/complementary-filter.md) -- Mahony
+- [complementary_filter](../api/estimation/complementary-filter.md) -- Mahony
   complementary filter

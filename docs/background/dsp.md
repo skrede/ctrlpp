@@ -115,8 +115,8 @@ $\angle H$ gives the phase shift.
 
 ## Related API Pages
 
-- [biquad](../dsp/biquad.md) -- IIR second-order section filter, cascaded
+- [biquad](../api/dsp/biquad.md) -- IIR second-order section filter, cascaded
   biquad, Butterworth factory
-- [fir](../dsp/fir.md) -- finite impulse response filter
-- [discrete_filter](../dsp/discrete-filter.md) -- filter concept and
+- [fir](../api/dsp/fir.md) -- finite impulse response filter
+- [discrete_filter](../api/dsp/discrete-filter.md) -- filter concept and
   cascading

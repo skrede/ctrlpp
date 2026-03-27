@@ -207,4 +207,4 @@ int main()
 - [nlopt-solver](nlopt-solver.md) -- NLopt NLP solver backend
 - [dynamics-model](../model/dynamics-model.md) -- dynamics model concept
 - [measurement-model](../model/measurement-model.md) -- measurement model concept
-- [reference/mhe-theory](../reference/mhe-theory.md) -- MHE theory and background
+- [background/mhe](../../background/mhe.md) -- MHE theory and background
