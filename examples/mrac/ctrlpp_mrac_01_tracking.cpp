@@ -28,8 +28,8 @@ int main()
 
     config cfg{};
     cfg.reference_model = ref_model;
-    cfg.gamma = 0.5;
-    cfg.sign_b = 1.0;
+    cfg.gamma_x << 0.5;
+    cfg.gamma_r << 0.5;
 
     controller ctrl(cfg);
 
@@ -50,17 +50,17 @@ int main()
         ctrlpp::Vector<double, 1> x;
         x[0] = x_plant;
 
-        double u = ctrl.evaluate(x, r);
+        auto u = ctrl.evaluate(x, r);
 
         std::cout << std::fixed << std::setprecision(6)
                   << k << ","
                   << r_val << ","
                   << x_plant << ","
                   << ctrl.x_model()[0] << ","
-                  << u << ","
-                  << ctrl.theta_x() << ","
-                  << ctrl.theta_r() << "\n";
+                  << u[0] << ","
+                  << ctrl.theta_x()(0, 0) << ","
+                  << ctrl.theta_r()(0, 0) << "\n";
 
-        x_plant = a_p * x_plant + b_p * u;
+        x_plant = a_p * x_plant + b_p * u[0];
     }
 }

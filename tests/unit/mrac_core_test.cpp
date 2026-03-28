@@ -35,13 +35,13 @@ TEST_CASE("MRAC default construction and accessors", "[mrac]")
 {
     ctrlpp::mrac_controller<double>::config_type cfg{};
     cfg.reference_model = make_ref_model();
-    cfg.gamma = 0.5;
-    cfg.sign_b = 1.0;
+    cfg.gamma_x << 0.5;
+    cfg.gamma_r << 0.5;
 
     ctrlpp::mrac_controller<double> ctrl(cfg);
 
-    REQUIRE_THAT(ctrl.theta_x(), WithinAbs(0.0, 1e-15));
-    REQUIRE_THAT(ctrl.theta_r(), WithinAbs(0.0, 1e-15));
+    REQUIRE_THAT(ctrl.theta_x()(0, 0), WithinAbs(0.0, 1e-15));
+    REQUIRE_THAT(ctrl.theta_r()(0, 0), WithinAbs(0.0, 1e-15));
     REQUIRE_THAT(ctrl.x_model()[0], WithinAbs(0.0, 1e-15));
     REQUIRE_THAT(ctrl.tracking_error()[0], WithinAbs(0.0, 1e-15));
 }
@@ -50,8 +50,8 @@ TEST_CASE("MRAC tracks step reference within 5% of reference model", "[mrac]")
 {
     ctrlpp::mrac_controller<double>::config_type cfg{};
     cfg.reference_model = make_ref_model();
-    cfg.gamma = 0.5;
-    cfg.sign_b = 1.0;
+    cfg.gamma_x << 0.5;
+    cfg.gamma_r << 0.5;
 
     ctrlpp::mrac_controller<double> ctrl(cfg);
 
@@ -60,32 +60,32 @@ TEST_CASE("MRAC tracks step reference within 5% of reference model", "[mrac]")
     for(int k = 0; k < 500; ++k)
     {
         auto u = ctrl.evaluate(vec1(x), vec1(1.0));
-        x = 0.8 * x + 0.5 * u;
+        x = 0.8 * x + 0.5 * u[0];
     }
 
     auto x_m = ctrl.x_model()[0];
     REQUIRE(std::abs(x - x_m) < 0.05 * std::abs(x_m));
 }
 
-TEST_CASE("MRAC evaluate returns scalar control signal", "[mrac]")
+TEST_CASE("MRAC evaluate returns vector control signal", "[mrac]")
 {
     ctrlpp::mrac_controller<double>::config_type cfg{};
     cfg.reference_model = make_ref_model();
-    cfg.gamma = 0.5;
-    cfg.sign_b = 1.0;
+    cfg.gamma_x << 0.5;
+    cfg.gamma_r << 0.5;
 
     ctrlpp::mrac_controller<double> ctrl(cfg);
 
     auto u = ctrl.evaluate(vec1(0.0), vec1(1.0));
-    REQUIRE(std::isfinite(u));
+    REQUIRE(std::isfinite(u[0]));
 }
 
 TEST_CASE("MRAC adaptation modifies theta_x and theta_r", "[mrac]")
 {
     ctrlpp::mrac_controller<double>::config_type cfg{};
     cfg.reference_model = make_ref_model();
-    cfg.gamma = 0.5;
-    cfg.sign_b = 1.0;
+    cfg.gamma_x << 0.5;
+    cfg.gamma_r << 0.5;
 
     ctrlpp::mrac_controller<double> ctrl(cfg);
 
@@ -93,21 +93,19 @@ TEST_CASE("MRAC adaptation modifies theta_x and theta_r", "[mrac]")
     for(int k = 0; k < 10; ++k)
     {
         auto u = ctrl.evaluate(vec1(x), vec1(1.0));
-        x = 0.8 * x + 0.5 * u;
+        x = 0.8 * x + 0.5 * u[0];
     }
 
-    CHECK(ctrl.theta_x() != 0.0);
-    CHECK(ctrl.theta_r() != 0.0);
+    CHECK(ctrl.theta_x()(0, 0) != 0.0);
+    CHECK(ctrl.theta_r()(0, 0) != 0.0);
 }
 
 TEST_CASE("MRAC reset restores initial state", "[mrac]")
 {
     ctrlpp::mrac_controller<double>::config_type cfg{};
     cfg.reference_model = make_ref_model();
-    cfg.gamma = 0.5;
-    cfg.sign_b = 1.0;
-    cfg.theta_x_0 = 0.0;
-    cfg.theta_r_0 = 0.0;
+    cfg.gamma_x << 0.5;
+    cfg.gamma_r << 0.5;
 
     ctrlpp::mrac_controller<double> ctrl(cfg);
 
@@ -115,15 +113,15 @@ TEST_CASE("MRAC reset restores initial state", "[mrac]")
     for(int k = 0; k < 50; ++k)
     {
         auto u = ctrl.evaluate(vec1(x), vec1(1.0));
-        x = 0.8 * x + 0.5 * u;
+        x = 0.8 * x + 0.5 * u[0];
     }
 
-    REQUIRE(ctrl.theta_x() != 0.0);
+    REQUIRE(ctrl.theta_x()(0, 0) != 0.0);
 
     ctrl.reset();
 
-    REQUIRE_THAT(ctrl.theta_x(), WithinAbs(0.0, 1e-15));
-    REQUIRE_THAT(ctrl.theta_r(), WithinAbs(0.0, 1e-15));
+    REQUIRE_THAT(ctrl.theta_x()(0, 0), WithinAbs(0.0, 1e-15));
+    REQUIRE_THAT(ctrl.theta_r()(0, 0), WithinAbs(0.0, 1e-15));
     REQUIRE_THAT(ctrl.x_model()[0], WithinAbs(0.0, 1e-15));
     REQUIRE_THAT(ctrl.tracking_error()[0], WithinAbs(0.0, 1e-15));
 }
@@ -132,8 +130,8 @@ TEST_CASE("MRAC reference model state advances each step", "[mrac]")
 {
     ctrlpp::mrac_controller<double>::config_type cfg{};
     cfg.reference_model = make_ref_model();
-    cfg.gamma = 0.5;
-    cfg.sign_b = 1.0;
+    cfg.gamma_x << 0.5;
+    cfg.gamma_r << 0.5;
 
     ctrlpp::mrac_controller<double> ctrl(cfg);
 
