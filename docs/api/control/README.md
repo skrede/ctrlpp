@@ -11,6 +11,7 @@ underlying design tools that LQR builds on.
 - [lqr](lqr.md) -- Linear-quadratic regulator (infinite, finite, time-varying, integral action)
 - [dare](dare.md) -- Discrete algebraic Riccati equation solver (complex Schur method)
 - [place](place.md) -- Pole placement via Ackermann's formula
+- [mrac](mrac.md) -- Model reference adaptive controller with dead-zone, sigma-modification, and e-modification robustification
 
 ## When to Use
 
@@ -26,7 +27,13 @@ equation outside of LQR (e.g., for terminal cost computation in MPC).
 
 Pick **place** when you need direct pole assignment rather than cost-based tuning.
 
+Pick **MRAC** when you have an unknown or uncertain plant and want to track a
+reference model adaptively. MRAC adapts online without requiring a plant model,
+supporting both SISO and MIMO configurations with compile-time robustification
+policy selection.
+
 ## Theory
 
 - [PID Theory](../../background/pid.md) -- PID mathematical background
+- [Adaptive Control Theory](../../background/adaptive-control.md) -- MRAC and L1 mathematical background
 
