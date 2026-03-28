@@ -9,8 +9,9 @@ Generating trajectories on-the-fly with online planners.
 | [2nd-order](../../api/trajectory/online-planner-2nd.md) | Trapezoidal-like | v_max + a_max | Simpler real-time motion with acceleration limits |
 | [3rd-order](../../api/trajectory/online-planner-3rd.md) | Double-S-like | v_max + a_max + j_max | Smoother real-time motion with jerk limits |
 
-Both planners are designed for control-loop integration: call `update()` each
-cycle and get the current reference position, velocity, and acceleration.
+Both planners are designed for control-loop integration: call `update()` with
+the current target each cycle and `sample()` at the current time to get the
+reference position, velocity, and acceleration.
 
 ## Quick Start: 2nd-Order Planner
 
@@ -22,18 +23,15 @@ updated with new targets at any time:
 
 #include <iostream>
 
-ctrlpp::online_planner_2nd_config<double> cfg{};
-cfg.v_max = 5.0;
-cfg.a_max = 2.0;
-
-ctrlpp::online_planner_2nd<double> planner(cfg);
-planner.set_target(10.0);
+ctrlpp::online_planner_2nd<double> planner({.v_max = 5.0, .a_max = 2.0});
 
 double dt = 0.01;  // 100 Hz control loop
+double target = 10.0;
 for (int i = 0; i < 500; ++i) {
-    planner.update(dt);
-    auto [pos, vel, acc] = planner.sample();
-    std::cout << pos << "," << vel << "\n";
+    double t = i * dt;
+    planner.update(target);
+    auto pt = planner.sample(t);
+    std::cout << pt.position[0] << "," << pt.velocity[0] << "\n";
 }
 ```
 
@@ -54,9 +52,9 @@ the 3rd-order planner additionally limits jerk during the deceleration phase.
 
 ```cpp
 // Change target while moving -- planner handles it safely
-planner.set_target(10.0);
+planner.update(10.0);
 // ... some time later, before reaching 10.0 ...
-planner.set_target(-5.0);  // brakes to zero, then heads to -5.0
+planner.update(-5.0);  // brakes to zero, then heads to -5.0
 ```
 
 ## Integration with Controllers
@@ -66,11 +64,11 @@ reference signal. Each cycle, sample the planner state and use it as the
 setpoint:
 
 ```cpp
-planner.update(dt);
-auto [ref_pos, ref_vel, ref_acc] = planner.sample();
+planner.update(target);
+auto pt = planner.sample(t);
 
-// Use ref_pos as PID setpoint, or ref_pos + ref_vel + ref_acc as
-// feedforward terms in an MPC cost function.
+// Use pt.position[0] as PID setpoint, or position + velocity + acceleration
+// as feedforward terms in an MPC cost function.
 ```
 
 See [example 10](../../../examples/trajectory/ctrlpp_trajectory_10_mpc_tracking.cpp)
