@@ -15,6 +15,11 @@ concept discrete_filter = requires(F f, typename F::scalar_type x) {
     { f.process(x) } -> std::convertible_to<typename F::scalar_type>;
 };
 
-} // namespace ctrlpp
+template <typename F, typename Vec>
+concept vector_discrete_filter = requires(F f, Vec v) {
+    { f.process(v) } -> std::convertible_to<Vec>;
+};
+
+}
 
 #endif
