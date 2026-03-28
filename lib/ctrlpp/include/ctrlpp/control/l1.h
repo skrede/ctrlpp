@@ -1,0 +1,118 @@
+#ifndef HPP_GUARD_CTRLPP_CONTROL_L1_H
+#define HPP_GUARD_CTRLPP_CONTROL_L1_H
+
+/// @brief L1 adaptive controller with state predictor, projection-based adaptation,
+/// and low-pass filtered control output.
+///
+/// @cite hovakimyan2010 -- Hovakimyan & Cao, "L1 Adaptive Control Theory", 2010, Ch. 2
+
+#include "ctrlpp/types.h"
+
+#include "ctrlpp/control/l1_config.h"
+
+#include "ctrlpp/dsp/vector_biquad.h"
+#include "ctrlpp/dsp/discrete_filter.h"
+
+#include "ctrlpp/model/propagate.h"
+#include "ctrlpp/model/state_space.h"
+
+#include <cstddef>
+#include <utility>
+
+namespace ctrlpp
+{
+
+template <typename Scalar, std::size_t NX = 1, std::size_t NU = 1,
+          typename Filter = vector_biquad<Scalar, NU>>
+    requires vector_discrete_filter<Filter, Vector<Scalar, NU>>
+class l1_controller
+{
+public:
+    using config_type = l1_config<Scalar, NX, NU>;
+    using state_type = Vector<Scalar, NX>;
+    using input_type = Vector<Scalar, NU>;
+
+    l1_controller(const config_type& cfg, Scalar cutoff_hz, Scalar sample_hz)
+        : m_cfg{cfg}
+        , m_filter{Filter::low_pass(cutoff_hz, sample_hz)}
+        , m_x_hat{cfg.x_hat_0}
+        , m_sigma_hat{cfg.sigma_hat_0}
+    {
+        compute_k_r();
+    }
+
+    l1_controller(const config_type& cfg, Filter filter)
+        : m_cfg{cfg}
+        , m_filter{std::move(filter)}
+        , m_x_hat{cfg.x_hat_0}
+        , m_sigma_hat{cfg.sigma_hat_0}
+    {
+        compute_k_r();
+    }
+
+    auto evaluate(const state_type& x, const input_type& r) -> input_type
+    {
+        // 1. State predictor: x_hat = A_m * x_hat + B * (u_prev + sigma_hat)
+        m_x_hat = propagate(m_cfg.predictor_model, m_x_hat,
+                            (m_u_prev + m_sigma_hat).eval());
+
+        // 2. Prediction error (Hovakimyan convention)
+        m_x_tilde = m_x_hat - x;
+
+        // 3. Adaptation with projection (elementwise clamp)
+        m_sigma_hat.noalias() -= m_cfg.gamma
+            * (m_cfg.predictor_model.B.transpose() * m_x_tilde);
+        m_sigma_hat = m_sigma_hat.cwiseMax(m_cfg.theta_min).cwiseMin(m_cfg.theta_max);
+
+        // 4. Raw control: reference feedforward minus uncertainty estimate
+        auto u_raw = (m_k_r * r - m_sigma_hat).eval();
+
+        // 5. Low-pass filter (L1 robustification mechanism)
+        auto u_filtered = m_filter.process(u_raw);
+
+        // 6. Store for next predictor step
+        m_u_prev = u_filtered;
+
+        return u_filtered;
+    }
+
+    auto x_hat() const -> const state_type& { return m_x_hat; }
+
+    auto sigma_hat() const -> const input_type& { return m_sigma_hat; }
+
+    auto tracking_error() const -> const state_type& { return m_x_tilde; }
+
+    auto theta() const -> const input_type& { return m_sigma_hat; }
+
+    void reset()
+    {
+        m_x_hat = m_cfg.x_hat_0;
+        m_sigma_hat = m_cfg.sigma_hat_0;
+        m_x_tilde = state_type::Zero();
+        m_u_prev = input_type::Zero();
+        m_filter.reset();
+    }
+
+private:
+    void compute_k_r()
+    {
+        if constexpr(NX == NU)
+        {
+            auto a_m_minus_i = (m_cfg.predictor_model.A
+                - Matrix<Scalar, NX, NX>::Identity()).eval();
+            m_k_r = -(a_m_minus_i.fullPivLu().solve(m_cfg.predictor_model.B));
+        }
+    }
+
+    config_type m_cfg;
+    Filter m_filter;
+    state_type m_x_hat{};
+    state_type m_x_tilde{};
+    input_type m_sigma_hat{};
+    input_type m_u_prev{};
+    Matrix<Scalar, NU, NU> m_k_r = Matrix<Scalar, NU, NU>::Identity();
+};
+
+}
+
+#endif

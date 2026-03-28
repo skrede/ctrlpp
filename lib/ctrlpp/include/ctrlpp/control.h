@@ -7,6 +7,8 @@
 #include "ctrlpp/control/mrac.h"
 #include "ctrlpp/control/mrac_config.h"
 #include "ctrlpp/control/mrac_policies.h"
+#include "ctrlpp/control/l1.h"
+#include "ctrlpp/control/l1_config.h"
 #include "ctrlpp/control/lqr.h"
 #include "ctrlpp/control/dare.h"
 #include "ctrlpp/control/place.h"
