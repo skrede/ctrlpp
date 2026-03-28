@@ -98,18 +98,21 @@ private:
     {
         if constexpr(NX == NU)
         {
-            auto a_m_minus_i = (m_cfg.predictor_model.A
-                - Matrix<Scalar, NX, NX>::Identity()).eval();
-            m_k_r = -(a_m_minus_i.fullPivLu().solve(m_cfg.predictor_model.B));
+            // DC gain of predictor: G_dc = (I - A_m)^{-1} * B
+            // K_r = G_dc^{-1} so that in steady state x_ss = r
+            auto i_minus_a = (Matrix<Scalar, NX, NX>::Identity()
+                - m_cfg.predictor_model.A).eval();
+            auto dc_gain = i_minus_a.fullPivLu().solve(m_cfg.predictor_model.B);
+            m_k_r = dc_gain.fullPivLu().solve(Matrix<Scalar, NU, NU>::Identity());
         }
     }
 
     config_type m_cfg;
     Filter m_filter;
-    state_type m_x_hat{};
-    state_type m_x_tilde{};
-    input_type m_sigma_hat{};
-    input_type m_u_prev{};
+    state_type m_x_hat = state_type::Zero();
+    state_type m_x_tilde = state_type::Zero();
+    input_type m_sigma_hat = input_type::Zero();
+    input_type m_u_prev = input_type::Zero();
     Matrix<Scalar, NU, NU> m_k_r = Matrix<Scalar, NU, NU>::Identity();
 };
 

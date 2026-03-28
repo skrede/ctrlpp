@@ -69,6 +69,7 @@ make_test(mrac_core_test)
 make_test(mrac_robustification_test)
 make_test(mrac_mimo_test)
 make_test(vector_biquad_test)
+make_test(l1_test)
 
 if (CTRLPP_BUILD_OSQP)
     add_executable(mpc_osqp_test "${CMAKE_CURRENT_LIST_DIR}/mpc_osqp_test.cpp")
