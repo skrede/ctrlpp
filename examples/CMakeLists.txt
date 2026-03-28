@@ -6,6 +6,7 @@ add_subdirectory(pf)
 add_subdirectory(sysid)
 add_subdirectory(trajectory)
 add_subdirectory(mrac)
+add_subdirectory(l1)
 
 if (CTRLPP_BUILD_OSQP)
     add_subdirectory(mpc)

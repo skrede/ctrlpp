@@ -1,0 +1,7 @@
+add_executable(ctrlpp_l1_01_tracking ctrlpp_l1_01_tracking.cpp)
+target_link_libraries(ctrlpp_l1_01_tracking PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_l1_01_tracking PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_l1_02_l1_vs_mrac ctrlpp_l1_02_l1_vs_mrac.cpp)
+target_link_libraries(ctrlpp_l1_02_l1_vs_mrac PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_l1_02_l1_vs_mrac PRIVATE ${CTRLPP_WARNING_FLAGS})
