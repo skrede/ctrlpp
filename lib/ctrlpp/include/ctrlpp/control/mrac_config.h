@@ -41,11 +41,13 @@ template <typename Scalar, std::size_t NX, std::size_t NU,
 struct mrac_config
 {
     discrete_state_space<Scalar, NX, NU, NX> reference_model{};
-    Scalar gamma{};
-    Scalar sign_b{1};
-    Scalar theta_x_0{};
-    Scalar theta_r_0{};
+    Matrix<Scalar, NX, NX> gamma_x{};
+    Matrix<Scalar, NU, NU> gamma_r{};
+    Matrix<Scalar, NU, NU> sign_b = Matrix<Scalar, NU, NU>::Identity();
+    Matrix<Scalar, NU, NX> theta_x_0{};
+    Matrix<Scalar, NU, NU> theta_r_0{};
     Vector<Scalar, NX> x_model_0 = Vector<Scalar, NX>::Zero();
+    Matrix<Scalar, NX, NX> W = Matrix<Scalar, NX, NX>::Identity();
     detail::robustification_options_t<Robustification, Scalar> robustification{};
 };
 

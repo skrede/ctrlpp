@@ -28,6 +28,8 @@ public:
     using config_type = mrac_config<Scalar, NX, NU, Robustification>;
     using state_type = Vector<Scalar, NX>;
     using input_type = Vector<Scalar, NU>;
+    using theta_x_type = Matrix<Scalar, NU, NX>;
+    using theta_r_type = Matrix<Scalar, NU, NU>;
 
     explicit mrac_controller(const config_type& cfg)
         : m_cfg{cfg}
@@ -37,47 +39,51 @@ public:
     {
     }
 
-    auto evaluate(const state_type& x, const input_type& r) -> Scalar
+    auto evaluate(const state_type& x, const input_type& r) -> input_type
     {
         m_x_model = propagate(m_cfg.reference_model, m_x_model, r);
 
         m_tracking_error = x - m_x_model;
 
-        Scalar e = m_tracking_error[0];
+        input_type u = m_theta_x * x + m_theta_r * r;
 
-        Scalar u = m_theta_x * x[0] + m_theta_r * r[0];
+        auto e_proj = (m_cfg.reference_model.B.transpose() * m_tracking_error).eval();
 
         if constexpr(std::is_same_v<Robustification, no_robustification>)
         {
-            m_theta_x -= m_cfg.gamma * m_cfg.sign_b * e * x[0];
-            m_theta_r -= m_cfg.gamma * m_cfg.sign_b * e * r[0];
+            m_theta_x.noalias() -= m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x;
+            m_theta_r.noalias() -= m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r;
         }
         else if constexpr(std::is_same_v<Robustification, dead_zone>)
         {
-            if(std::abs(e) > m_cfg.robustification.threshold)
+            if(compute_error_norm(m_tracking_error) > m_cfg.robustification.threshold)
             {
-                m_theta_x -= m_cfg.gamma * m_cfg.sign_b * e * x[0];
-                m_theta_r -= m_cfg.gamma * m_cfg.sign_b * e * r[0];
+                m_theta_x.noalias() -= m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x;
+                m_theta_r.noalias() -= m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r;
             }
         }
         else if constexpr(std::is_same_v<Robustification, sigma_modification>)
         {
-            m_theta_x -= m_cfg.gamma * (m_cfg.sign_b * e * x[0] + m_cfg.robustification.sigma * m_theta_x);
-            m_theta_r -= m_cfg.gamma * (m_cfg.sign_b * e * r[0] + m_cfg.robustification.sigma * m_theta_r);
+            m_theta_x.noalias() -= m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x
+                                   + m_cfg.robustification.sigma * m_theta_x;
+            m_theta_r.noalias() -= m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r
+                                   + m_cfg.robustification.sigma * m_theta_r;
         }
         else if constexpr(std::is_same_v<Robustification, e_modification>)
         {
-            auto abs_e = std::abs(e);
-            m_theta_x -= m_cfg.gamma * (m_cfg.sign_b * e * x[0] + m_cfg.robustification.delta * abs_e * m_theta_x);
-            m_theta_r -= m_cfg.gamma * (m_cfg.sign_b * e * r[0] + m_cfg.robustification.delta * abs_e * m_theta_r);
+            auto e_norm = compute_error_norm(m_tracking_error);
+            m_theta_x.noalias() -= m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x
+                                   + m_cfg.robustification.delta * e_norm * m_theta_x;
+            m_theta_r.noalias() -= m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r
+                                   + m_cfg.robustification.delta * e_norm * m_theta_r;
         }
 
         return u;
     }
 
-    auto theta_x() const -> Scalar { return m_theta_x; }
+    auto theta_x() const -> const theta_x_type& { return m_theta_x; }
 
-    auto theta_r() const -> Scalar { return m_theta_r; }
+    auto theta_r() const -> const theta_r_type& { return m_theta_r; }
 
     auto tracking_error() const -> const state_type& { return m_tracking_error; }
 
@@ -92,11 +98,16 @@ public:
     }
 
 private:
+    auto compute_error_norm(const state_type& e) const -> Scalar
+    {
+        return std::sqrt((e.transpose() * m_cfg.W * e)(0, 0));
+    }
+
     config_type m_cfg;
     state_type m_x_model{};
     state_type m_tracking_error{};
-    Scalar m_theta_x{};
-    Scalar m_theta_r{};
+    theta_x_type m_theta_x{};
+    theta_r_type m_theta_r{};
 };
 
 }
