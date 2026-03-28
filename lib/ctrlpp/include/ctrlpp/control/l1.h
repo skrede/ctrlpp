@@ -102,7 +102,7 @@ private:
             // K_r = G_dc^{-1} so that in steady state x_ss = r
             auto i_minus_a = (Matrix<Scalar, NX, NX>::Identity()
                 - m_cfg.predictor_model.A).eval();
-            auto dc_gain = i_minus_a.fullPivLu().solve(m_cfg.predictor_model.B);
+            Matrix<Scalar, NX, NU> dc_gain = i_minus_a.fullPivLu().solve(m_cfg.predictor_model.B);
             m_k_r = dc_gain.fullPivLu().solve(Matrix<Scalar, NU, NU>::Identity());
         }
     }
