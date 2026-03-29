@@ -184,7 +184,8 @@ TEST_CASE("N4SID with near-zero singular values", "[n4sid][hardening][negative]"
 
     // Still identify a model -- should not crash
     auto result = ctrlpp::n4sid<2>(Y, U);
-    REQUIRE((std::isfinite(result.condition_number) || std::isinf(result.condition_number)));
+    bool const cond_valid = std::isfinite(result.condition_number) || std::isinf(result.condition_number);
+    REQUIRE(cond_valid);
 }
 
 TEST_CASE("N4SID with wrong model order", "[n4sid][hardening][negative]")

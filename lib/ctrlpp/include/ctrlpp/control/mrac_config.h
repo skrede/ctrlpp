@@ -16,23 +16,20 @@ namespace ctrlpp
 namespace detail
 {
 
-template <typename Robustification, typename Scalar, typename = void>
-struct robustification_options;
+template <typename R, typename Scalar>
+concept has_scalar_options = requires { typename R::template options_t<Scalar>; };
 
 template <typename R, typename Scalar>
-struct robustification_options<R, Scalar, std::void_t<typename R::options_t>>
+consteval auto deduce_robustification_options()
 {
-    using type = typename R::options_t;
-};
+    if constexpr (has_scalar_options<R, Scalar>)
+        return std::type_identity<typename R::template options_t<Scalar>>{};
+    else
+        return std::type_identity<typename R::options_t>{};
+}
 
 template <typename R, typename Scalar>
-struct robustification_options<R, Scalar, std::void_t<typename R::template options_t<Scalar>>>
-{
-    using type = typename R::template options_t<Scalar>;
-};
-
-template <typename R, typename Scalar>
-using robustification_options_t = typename robustification_options<R, Scalar>::type;
+using robustification_options_t = typename decltype(deduce_robustification_options<R, Scalar>())::type;
 
 }
 
