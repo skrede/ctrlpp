@@ -98,7 +98,7 @@ TEST_CASE("MRAC known first-order gain after one step", "[mrac][hardening][preci
     // e_proj = B^T * tracking_error = 0.1 * (-0.1) = -0.01
     // theta_x -= sign_b * e_proj * x^T * gamma_x = 1 * (-0.01) * 0 * 0.5 = 0
     // theta_r -= sign_b * e_proj * r^T * gamma_r = 1 * (-0.01) * 1 * 0.5 = 0.005
-    auto u = ctrl.evaluate(vec1(0.0), vec1(1.0));
+    ctrl.evaluate(vec1(0.0), vec1(1.0));
 
     REQUIRE_THAT(ctrl.theta_x()(0, 0), WithinAbs(0.0, 1e-15));
     REQUIRE_THAT(ctrl.theta_r()(0, 0), WithinAbs(0.005, 1e-14));
