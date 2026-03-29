@@ -12,4 +12,8 @@ if(NOT ruckig_FOUND)
     FetchContent_MakeAvailable(ruckig)
 endif()
 
-# Plan 03 adds benchmark executables here
+add_executable(bench_trajectory_vs_ruckig bench_trajectory_vs_ruckig.cpp)
+target_link_libraries(bench_trajectory_vs_ruckig PRIVATE
+    ctrlpp::ctrlpp
+    nanobench
+    ruckig)
