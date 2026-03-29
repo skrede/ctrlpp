@@ -58,7 +58,7 @@ mhe(Dynamics dynamics, Measurement measurement,
     const mhe_config<Scalar, NX, NU, NY, N>& config);
 ```
 
-Constructs the estimator from dynamics and measurement models plus configuration. Initialises the internal EKF for arrival cost propagation and the measurement/input windows.
+Constructs the estimator from dynamics and measurement models plus configuration. Initializes the internal EKF for arrival cost propagation and the measurement/input windows.
 
 ## Methods
 

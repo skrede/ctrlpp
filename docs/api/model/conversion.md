@@ -21,7 +21,7 @@ constexpr continuous_state_space<Scalar, DenDeg, 1, 1>
 tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf);
 ```
 
-Converts a transfer function to controllable canonical form state-space. Requires a proper transfer function (`NumDeg <= DenDeg`). The state dimension equals `DenDeg`. Coefficients are automatically normalised to a monic denominator.
+Converts a transfer function to controllable canonical form state-space. Requires a proper transfer function (`NumDeg <= DenDeg`). The state dimension equals `DenDeg`. Coefficients are automatically normalized to a monic denominator.
 
 ### ss2tf
 

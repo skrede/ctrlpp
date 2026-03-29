@@ -1,6 +1,6 @@
 # state_space
 
-Linear state-space model representations for continuous-time and discrete-time systems. The fundamental building block for control design, estimation, discretisation, and system identification throughout the library.
+Linear state-space model representations for continuous-time and discrete-time systems. The fundamental building block for control design, estimation, discretization, and system identification throughout the library.
 
 ## Header and Alias
 

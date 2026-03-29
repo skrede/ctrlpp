@@ -59,7 +59,7 @@ Creates a second-order Butterworth low-pass filter at the given cutoff frequency
 static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> biquad;
 ```
 
-Creates a notch (band-reject) filter centred at `freq_hz` with quality factor `q`.
+Creates a notch (band-reject) filter centered at `freq_hz` with quality factor `q`.
 
 ### dirty_derivative
 
@@ -86,7 +86,7 @@ void reset();
 void reset(Scalar value);
 ```
 
-Resets internal state to zero, or initialises the filter state such that a constant input of `value` would produce the corresponding steady-state output.
+Resets internal state to zero, or initializes the filter state such that a constant input of `value` would produce the corresponding steady-state output.
 
 ### coefficients
 
@@ -110,7 +110,7 @@ Chains N biquad sections in series. Each `process()` call passes the sample thro
 
 - `process(Scalar x) -> Scalar`, filters one sample through all sections
 - `reset()`, resets all sections
-- `reset(Scalar value)`, steady-state initialisation propagated through the cascade
+- `reset(Scalar value)`, steady-state initialization propagated through the cascade
 - `section(std::size_t i) -> biquad<Scalar>&`, access individual sections
 
 ## Convenience Design Functions

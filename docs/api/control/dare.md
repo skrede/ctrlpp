@@ -1,6 +1,6 @@
 # dare
 
-Discrete Algebraic Riccati Equation solver using symplectic Schur decomposition. Finds the stabilising solution P to A'PA - P - A'PB(R + B'PB)^{-1}B'PA + Q = 0. This is the workhorse behind `lqr_gain` and the terminal cost computation in MPC.
+Discrete Algebraic Riccati Equation solver using symplectic Schur decomposition. Finds the stabilizing solution P to A'PA - P - A'PB(R + B'PB)^{-1}B'PA + Q = 0. This is the workhorse behind `lqr_gain` and the terminal cost computation in MPC.
 
 ## Header and Alias
 

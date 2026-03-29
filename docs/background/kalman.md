@@ -29,7 +29,7 @@ $z_k$ is the measurement, $w_k \sim \mathcal{N}(0, Q)$ is process noise, and
 $v_k \sim \mathcal{N}(0, R)$ is measurement noise. The noise sequences are
 assumed white, zero-mean, and mutually uncorrelated.
 
-The goal is to compute the estimate $\hat{x}_{k|k}$ that minimises the
+The goal is to compute the estimate $\hat{x}_{k|k}$ that minimizes the
 expected squared estimation error
 $\mathbb{E}\bigl[\lVert x_k - \hat{x}_k \rVert^2\bigr]$.
 

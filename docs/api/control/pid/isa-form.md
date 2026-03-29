@@ -1,6 +1,6 @@
 # isa_form
 
-Switches the PID to ISA (Instrument Society of America) standard form, where the controller is parameterised with proportional gain Kp, integral time Ti, and derivative time Td instead of the independent gains Kp, Ki, Kd. The ISA form uses u = Kp * (e + (1/Ti) * integral(e) + Td * de/dt), tying integral and derivative action to the proportional gain.
+Switches the PID to ISA (Instrument Society of America) standard form, where the controller is parametrized with proportional gain Kp, integral time Ti, and derivative time Td instead of the independent gains Kp, Ki, Kd. The ISA form uses u = Kp * (e + (1/Ti) * integral(e) + Td * de/dt), tying integral and derivative action to the proportional gain.
 
 ## Header
 

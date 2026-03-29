@@ -1,14 +1,14 @@
 # Moving Horizon Estimation
 
 Moving Horizon Estimation (MHE) is the estimation dual of Model Predictive
-Control. Instead of optimising future inputs over a prediction horizon, MHE
-optimises past state estimates over a fixed window of recent measurements. It
+Control. Instead of optimizing future inputs over a prediction horizon, MHE
+optimizes past state estimates over a fixed window of recent measurements. It
 provides optimal state estimation for constrained systems where the Kalman
 filter cannot enforce physical bounds on states
 [1, Sec. 4, pp. 248--252].
 
-MHE was formalised by Rao, Rawlings, and Mayne [1] and shares the same
-receding-horizon philosophy as MPC: solve a finite-window optimisation at each
+MHE was formalized by Rao, Rawlings, and Mayne [1] and shares the same
+receding-horizon philosophy as MPC: solve a finite-window optimization at each
 step, use only the most recent estimate, and slide the window forward.
 
 ## The MHE Cost Function
@@ -38,13 +38,13 @@ where the weighted norm is $\lVert a \rVert^2_M = a^\top M \, a$.
 
 The three terms balance:
 1. **Arrival cost**: consistency with prior information before the window
-2. **Process noise**: penalising deviations from the model
+2. **Process noise**: penalizing deviations from the model
 3. **Measurement fit**: consistency with observations
 
 ## Arrival Cost
 
 The first term $\lVert x_{k-N} - \bar{x}_{k-N} \rVert^2_{P_{\text{arr}}^{-1}}$
-is the arrival cost. It summarises all information from measurements before
+is the arrival cost. It summarizes all information from measurements before
 the estimation window into a single quadratic penalty
 [1, Sec. 3.1, pp. 250--251].
 
@@ -80,7 +80,7 @@ x_{\min} \le x_i \le x_{\max}
 $$
 
 This is the key advantage of MHE: state constraints are handled naturally
-within the optimisation. Physical constraints such as non-negative
+within the optimization. Physical constraints such as non-negative
 concentrations, bounded temperatures, or positive definite covariances
 can be directly enforced.
 

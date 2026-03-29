@@ -1,6 +1,6 @@
 # ekf
 
-Extended Kalman Filter with compile-time dispatch between analytical and numerical Jacobians. The EKF linearises nonlinear dynamics and measurement models around the current state estimate at each step. If the dynamics or measurement model satisfies the `differentiable_dynamics` or `differentiable_measurement` concept (provides a `jacobian_x` / `jacobian` method), the analytical Jacobian is used at zero overhead. Otherwise, numerical central differences are computed automatically.
+Extended Kalman Filter with compile-time dispatch between analytical and numerical Jacobians. The EKF linearizes nonlinear dynamics and measurement models around the current state estimate at each step. If the dynamics or measurement model satisfies the `differentiable_dynamics` or `differentiable_measurement` concept (provides a `jacobian_x` / `jacobian` method), the analytical Jacobian is used at zero overhead. Otherwise, numerical central differences are computed automatically.
 
 ## Header and Alias
 
@@ -57,7 +57,7 @@ CTAD deduction guide available: template parameters are deduced from the config 
 void predict(const input_vector_t& u);
 ```
 
-Propagates state through the dynamics model and linearises to propagate covariance. If `Dynamics` satisfies `differentiable_dynamics`, calls `dynamics.jacobian_x(x, u)` for the state Jacobian F. Otherwise, computes F via numerical central differences.
+Propagates state through the dynamics model and linearizes to propagate covariance. If `Dynamics` satisfies `differentiable_dynamics`, calls `dynamics.jacobian_x(x, u)` for the state Jacobian F. Otherwise, computes F via numerical central differences.
 
 ### update
 
@@ -91,7 +91,7 @@ const output_vector_t& innovation() const;
 Scalar nees() const;
 ```
 
-Normalised Estimation Error Squared from the last update.
+Normalized Estimation Error Squared from the last update.
 
 ## Jacobian Dispatch
 

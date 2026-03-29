@@ -112,8 +112,8 @@ cd validation && ./validate.sh
 | `harmonic_path` / `cycloidal_path` | 1 | Trigonometric primitives; unit tested |
 | `trapezoidal_trajectory` | 1 | Velocity profile; no Octave equivalent |
 | `double_s_trajectory` | 1 | 7-segment S-curve; no Octave equivalent |
-| `modified_sin_trajectory` / `modified_trap_trajectory` | 1 | Specialised profiles; no Octave equivalent |
+| `modified_sin_trajectory` / `modified_trap_trajectory` | 1 | Specialized profiles; no Octave equivalent |
 | `bspline_trajectory` | 1 | B-spline evaluation; unit tested |
-| `smoothing_spline` | 1 | Regularised spline; unit tested |
+| `smoothing_spline` | 1 | Regularized spline; unit tested |
 | `online_planner_2nd` / `online_planner_3rd` | 1 | Real-time planners; unit tested |
 | `time_scaling` / `synchronize` | 1 | Trajectory utilities; unit tested |

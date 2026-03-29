@@ -8,7 +8,7 @@ without paying for what you don't use.
 
 The base PID provides proportional, integral, and derivative action with output
 clamping and setpoint weighting (b, c parameters). Each policy extends the
-controller with one additional behaviour, composed at compile time via variadic
+controller with one additional behavior, composed at compile time via variadic
 template packs.
 
 ## Header and Alias
@@ -86,7 +86,7 @@ cfg.template policy<feed_forward<FF>>().ff_func = my_ff_func;
 explicit pid(const config_type& cfg);
 ```
 
-Constructs the controller from a config struct. Computes internal gains and initialises policy state.
+Constructs the controller from a config struct. Computes internal gains and initializes policy state.
 
 ## Methods
 
@@ -245,7 +245,7 @@ int main()
 - [derivative-filter](derivative-filter.md)<br/>low-pass filtered derivative term
 - [setpoint-filter](setpoint-filter.md)<br/>setpoint weighting and process variable filtering
 - [velocity-form](velocity-form.md)<br/>incremental (velocity) form PID
-- [isa-form](isa-form.md)<br/>ISA standard form (Ti, Td parameterisation)
+- [isa-form](isa-form.md)<br/>ISA standard form (Ti, Td parametrization)
 - [feed-forward](feed-forward.md)<br/>additive feed-forward policy
 - [rate-limit](rate-limit.md)<br/>control signal rate limiting
 - [performance](performance.md)<br/>IAE, ISE, ITAE, and oscillation detection

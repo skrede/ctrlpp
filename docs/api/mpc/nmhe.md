@@ -62,7 +62,7 @@ nmhe(Dynamics dynamics, Measurement measurement,
      const nmhe_config<Scalar, NX, NU, NY, N, NC>& config);
 ```
 
-Constructs the estimator from dynamics and measurement models plus configuration. Builds the NLP formulation and initialises the internal EKF for arrival cost propagation.
+Constructs the estimator from dynamics and measurement models plus configuration. Builds the NLP formulation and initializes the internal EKF for arrival cost propagation.
 
 ## Methods
 

@@ -45,7 +45,7 @@ template <syncable_profile Profile>
 void synchronize(std::vector<Profile>& profiles);
 ```
 
-Runtime-sized variant for collections of identical profile types. Same behaviour as the variadic version.
+Runtime-sized variant for collections of identical profile types. Same behavior as the variadic version.
 
 ## Multi-Axis Coordination
 

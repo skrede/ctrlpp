@@ -1,14 +1,14 @@
 # Extended Kalman Filter
 
 The Extended Kalman Filter (EKF) extends the linear Kalman filter to nonlinear
-systems by linearising the dynamics and measurement models around the current
+systems by linearizing the dynamics and measurement models around the current
 state estimate at each time step. It is the most widely used nonlinear state
 estimator due to its simplicity and efficiency for mildly nonlinear systems
 [1, Ch. 13, pp. 393--420].
 
 The EKF was developed in the 1960s for aerospace navigation and remains the
 workhorse estimator in many applications including GPS, inertial navigation,
-and robotic localisation.
+and robotic localization.
 
 ## Nonlinear System Model
 
@@ -50,7 +50,7 @@ how well the first-order approximation captures the true nonlinearity.
 ## EKF Prediction
 
 The state prediction uses the full nonlinear model, while the covariance
-prediction uses the linearised dynamics [1, Sec. 13.2, pp. 400--403]:
+prediction uses the linearized dynamics [1, Sec. 13.2, pp. 400--403]:
 
 $$
 \hat{x}_{k+1|k} = f(\hat{x}_{k|k}, u_k)
@@ -60,7 +60,7 @@ $$
 P_{k+1|k} = F_k \, P_{k|k} \, F_k^\top + Q
 $$
 
-Note that the state propagation applies $f$ directly (not its linearisation),
+Note that the state propagation applies $f$ directly (not its linearization),
 preserving accuracy in the mean. Only the covariance propagation uses the
 Jacobian approximation.
 
@@ -91,7 +91,7 @@ P_{k|k} = (I - K_k \, H_k) \, P_{k|k-1}
 $$
 
 The innovation $\tilde{y}_k$ uses the nonlinear function $h$ evaluated at
-the predicted state, not a linearised version.
+the predicted state, not a linearized version.
 
 ## Jacobian Computation
 
@@ -125,7 +125,7 @@ perturbation. Central differences provide second-order accuracy in $\delta$.
 The EKF has several well-known limitations
 [1, Sec. 13.4, pp. 411--415]:
 
-1. **First-order accuracy**: the linearisation captures only the first
+1. **First-order accuracy**: the linearization captures only the first
    derivative, introducing errors proportional to the neglected higher-order
    terms. For strongly nonlinear systems, these errors can cause divergence.
 
@@ -133,7 +133,7 @@ The EKF has several well-known limitations
    computationally expensive for high-dimensional systems.
 
 3. **Non-guaranteed convergence**: unlike the linear Kalman filter, the EKF
-   has no general convergence guarantees. Initialisation errors, model
+   has no general convergence guarantees. Initialization errors, model
    mismatch, or strong nonlinearities can cause the filter to diverge.
 
 4. **Gaussian assumption**: the EKF assumes the posterior distribution
@@ -142,10 +142,10 @@ The EKF has several well-known limitations
 
 ## Iterated EKF
 
-The iterated EKF (IEKF) re-linearises the measurement model around the
+The iterated EKF (IEKF) re-linearizes the measurement model around the
 updated state estimate and repeats the update step until convergence
 [1, Sec. 13.5, pp. 416--418]. This is equivalent to performing a
-Gauss-Newton optimisation on the measurement update and can improve
+Gauss-Newton optimization on the measurement update and can improve
 accuracy for strongly nonlinear measurement functions.
 
 ## Consistency Monitoring
@@ -153,10 +153,10 @@ accuracy for strongly nonlinear measurement functions.
 The innovation sequence $\tilde{y}_k$ provides a diagnostic for filter
 health. For a well-tuned EKF [2, Sec. 8.4, pp. 232--235]:
 
-- The normalised innovation squared (NIS):
+- The normalized innovation squared (NIS):
   $\epsilon_k = \tilde{y}_k^\top S_k^{-1} \tilde{y}_k$ should follow a
   $\chi^2$ distribution with $m$ degrees of freedom
-- The normalised estimation error squared (NEES):
+- The normalized estimation error squared (NEES):
   $\epsilon_k = \tilde{x}_k^\top P_{k|k}^{-1} \tilde{x}_k$ should follow
   $\chi^2$ with $n$ degrees of freedom (when true state is available)
 

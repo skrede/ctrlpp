@@ -190,7 +190,7 @@ int main()
 
 ## See Also
 
-- [ekf](ekf.md)<br/> linearisation-based alternative
+- [ekf](ekf.md)<br/> linearization-based alternative
 - [manifold-ukf](manifold-ukf.md)<br/> UKF on SO(3) manifold for attitude estimation
 - [observer-policy](observer-policy.md)<br/> concept satisfied by this type
 - [background/ekf-ukf](../../background/ekf-ukf.md)<br/> unscented transform derivation

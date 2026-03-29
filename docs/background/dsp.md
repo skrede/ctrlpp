@@ -66,7 +66,7 @@ $$
 
 IIR filters achieve steep frequency rolloff with few coefficients but can be
 unstable if the poles move outside the unit circle due to coefficient
-quantisation or poor design.
+quantization or poor design.
 
 ## Biquad (Second-Order Section)
 
@@ -109,7 +109,7 @@ Standard biquad coefficient formulas [2]:
 - **Low-pass**: attenuates frequencies above cutoff $f_c$ with quality
   factor $Q$ controlling the resonance peak
 - **High-pass**: attenuates frequencies below cutoff $f_c$
-- **Band-pass**: passes a frequency band centred at $f_0$ with bandwidth
+- **Band-pass**: passes a frequency band centered at $f_0$ with bandwidth
   determined by $Q$
 - **Notch (band-reject)**: rejects a specific frequency $f_0$
 - **Dirty derivative**: differentiator with built-in low-pass rolloff,
@@ -131,15 +131,15 @@ discrete poles) and maps the entire imaginary axis to the unit circle.
 ### Frequency Warping
 
 The bilinear transform introduces a nonlinear frequency mapping between
-analogue frequency $\omega_a$ and digital frequency $\omega_d$:
+analog frequency $\omega_a$ and digital frequency $\omega_d$:
 
 $$
 \omega_a = \frac{2}{T_s} \tan\!\left(\frac{\omega_d T_s}{2}\right)
 $$
 
 Pre-warping compensates for this distortion: given a desired digital cutoff
-frequency $\omega_d$, compute the pre-warped analogue frequency $\omega_a$
-and design the analogue prototype at $\omega_a$.
+frequency $\omega_d$, compute the pre-warped analog frequency $\omega_a$
+and design the analog prototype at $\omega_a$.
 
 ## FIR Filters
 

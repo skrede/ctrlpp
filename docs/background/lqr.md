@@ -19,7 +19,7 @@ x_{k+1} = A \, x_k + B \, u_k
 $$
 
 The LQR problem seeks the control sequence $\{u_0, u_1, \ldots\}$ that
-minimises the infinite-horizon quadratic cost [2, Sec. 3.2, pp. 43--50]:
+minimizes the infinite-horizon quadratic cost [2, Sec. 3.2, pp. 43--50]:
 
 $$
 J = \sum_{k=0}^{\infty} \left( x_k^\top Q \, x_k + u_k^\top R \, u_k \right)
@@ -27,9 +27,9 @@ $$
 
 where:
 
-- $Q \succeq 0$ (positive semi-definite) is the state weight matrix, penalising
+- $Q \succeq 0$ (positive semi-definite) is the state weight matrix, penalizing
   deviation from the origin
-- $R \succ 0$ (positive definite) is the input weight matrix, penalising
+- $R \succ 0$ (positive definite) is the input weight matrix, penalizing
   control effort
 
 The weight matrices $Q$ and $R$ encode the designer's trade-off: larger $Q$
@@ -53,7 +53,7 @@ $(A, B)$ is stabilisable and $(A, Q^{1/2})$ is detectable
 
 ### Schur Method
 
-The DARE can be solved reliably using the generalised Schur (QZ) decomposition
+The DARE can be solved reliably using the generalized Schur (QZ) decomposition
 of the symplectic pencil [3, pp. 913--921]:
 
 $$
@@ -80,7 +80,7 @@ u_k = -K \, x_k
 $$
 
 This is a static linear state-feedback law: the gain matrix $K$ is computed
-offline and applied at each time step with no online optimisation required.
+offline and applied at each time step with no online optimization required.
 
 ## Stability Properties
 
@@ -147,11 +147,11 @@ The choice of $Q$ and $R$ determines the controller characteristics
 
 - **Bryson's rule**: set $Q_{ii} = 1 / x_{i,\max}^2$ and
   $R_{jj} = 1 / u_{j,\max}^2$, where $x_{i,\max}$ and $u_{j,\max}$ are the
-  maximum acceptable values. This normalises the cost terms.
+  maximum acceptable values. This normalizes the cost terms.
 - **Iterative tuning**: start with identity matrices and adjust based on
   closed-loop simulation.
-- **Cross-weight $N$**: the generalised cost
-  $J = \sum (x^\top Q x + u^\top R u + 2 x^\top N u)$ allows penalising
+- **Cross-weight $N$**: the generalized cost
+  $J = \sum (x^\top Q x + u^\top R u + 2 x^\top N u)$ allows penalizing
   state-input correlations.
 
 ## References

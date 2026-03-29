@@ -19,7 +19,7 @@ and e-modification [1, Sec. 8.6, pp. 367--380].
 
 Model Reference Adaptive Control (MRAC) is the most widely studied direct
 adaptive control approach. The controller adjusts its parameters so that the
-closed-loop plant behaviour matches a designer-specified reference model,
+closed-loop plant behavior matches a designer-specified reference model,
 without explicitly identifying the plant parameters.
 
 ### Problem Statement
@@ -32,7 +32,7 @@ $$
 
 where the coefficients $a_p$ and $b_p$ are unknown but the sign of $b_p$ is
 assumed known. The designer specifies a stable reference model that captures
-the desired closed-loop behaviour:
+the desired closed-loop behavior:
 
 $$
 x_{m,k+1} = a_m \, x_{m,k} + b_m \, r_k
@@ -99,7 +99,7 @@ parameter boundedness.
 #### Dead-Zone Modification
 
 Dead-zone modification freezes adaptation when the tracking error is small,
-preventing parameter drift driven by noise or modelling errors rather than
+preventing parameter drift driven by noise or modeling errors rather than
 genuine tracking deviation [1, Sec. 8.6.1, pp. 368--371]:
 
 $$
@@ -182,7 +182,7 @@ The L1 architecture consists of three components:
 - **State predictor**: a model that predicts the plant state based on current
   parameter estimates, producing a prediction error that drives adaptation.
 - **Adaptation law**: a fast (potentially arbitrarily fast) parameter update
-  that minimises the prediction error. Unlike MRAC, the adaptation rate does
+  that minimizes the prediction error. Unlike MRAC, the adaptation rate does
   not directly affect the closed-loop bandwidth.
 - **Low-pass filter**: a control filter $C(z)$ that limits the bandwidth of
   the control signal, preventing high-frequency content from exciting

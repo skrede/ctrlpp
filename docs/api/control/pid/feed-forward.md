@@ -19,7 +19,7 @@ Adds a feed-forward term to the PID output. Feed-forward injects a control actio
 
 ### feed_forward\<void\>
 
-No additional config fields. The void specialisation is a no-op placeholder.
+No additional config fields. The void specialization is a no-op placeholder.
 
 ## Behavior
 

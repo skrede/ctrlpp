@@ -133,11 +133,11 @@ Standalone theory and mathematical background for the algorithms in ctrlpp.
 
 - [PID Theory](background/pid.md)<br/>Parallel form, derivative filter, anti-windup clamping and back-calculation
 - [Kalman Theory](background/kalman.md)<br/>Linear Kalman filter predict/update equations, optimality, innovation
-- [EKF Theory](background/ekf.md)<br/>Extended Kalman filter: Jacobian linearisation, prediction and update equations, numerical stability
+- [EKF Theory](background/ekf.md)<br/>Extended Kalman filter: Jacobian linearization, prediction and update equations, numerical stability
 - [UKF Theory](background/ukf.md)<br/>Unscented Kalman filter: sigma-point generation, weights, unscented transform
 - [Particle Filter Theory](background/particle-filter.md)<br/>Importance sampling, weight update, systematic resampling, ESS
 - [Attitude Estimation Theory](background/attitude-estimation.md)<br/>Quaternion kinematics, MEKF error-state, manifold UKF
-- [MPC Theory](background/mpc.md)<br/>QP/NLP optimisation formulation, terminal cost and constraints, stability
+- [MPC Theory](background/mpc.md)<br/>QP/NLP optimization formulation, terminal cost and constraints, stability
 - [MHE Theory](background/mhe.md)<br/>Moving horizon cost function, arrival cost approximation, duality with MPC
 - [System Identification Theory](background/sysid.md)<br/>ARX regression model, RLS recursive update, N4SID Hankel matrix
 - [DSP Theory](background/dsp.md)<br/>Biquad transfer function, bilinear transform, FIR convolution, cascading

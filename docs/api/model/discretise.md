@@ -1,6 +1,6 @@
 # discretise
 
-Continuous-to-discrete state-space conversion. Converts a `continuous_state_space` to a `discrete_state_space` using zero-order hold (ZOH) via the Van Loan augmented matrix exponential method. Additional discretisation methods (Tustin, Euler) are available as tag types.
+Continuous-to-discrete state-space conversion. Converts a `continuous_state_space` to a `discrete_state_space` using zero-order hold (ZOH) via the Van Loan augmented matrix exponential method. Additional discretization methods (Tustin, Euler) are available as tag types.
 
 ## Header and Alias
 
@@ -29,7 +29,7 @@ discretise(const continuous_state_space<Scalar, NX, NU, NY>& sys,
            Scalar dt, zoh = {});
 ```
 
-Discretises using ZOH via the augmented matrix exponential. Forms the block matrix `[[A*dt, B*dt], [0, 0]]`, computes its matrix exponential, and extracts `Ad` and `Bd`. Output matrices `C` and `D` are passed through unchanged.
+Discretizes using ZOH via the augmented matrix exponential. Forms the block matrix `[[A*dt, B*dt], [0, 0]]`, computes its matrix exponential, and extracts `Ad` and `Bd`. Output matrices `C` and `D` are passed through unchanged.
 
 ### discretise (explicit tag)
 
@@ -93,4 +93,4 @@ int main()
 ## See Also
 
 - [state-space](state-space.md)<br/> state-space representations
-- [propagate](propagate.md)<br/> propagate discretised systems
+- [propagate](propagate.md)<br/> propagate discretized systems

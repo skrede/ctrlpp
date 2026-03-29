@@ -60,6 +60,6 @@ int main()
 
 - [PID overview](README.md)<br/> parent PID documentation
 - [anti-windup](anti-windup.md)<br/> explicit anti-windup for position form
-- [isa-form](isa-form.md)<br/>ISA standard PID parameterisation
+- [isa-form](isa-form.md)<br/>ISA standard PID parametrization
 - [guides/pid/composition](../../../guides/pid/composition.md)<br/>composing policies
 - [background/pid](../../../background/pid.md)<br/>velocity form derivation

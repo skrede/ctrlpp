@@ -51,7 +51,7 @@ int main()
 
     constexpr Scalar denom = M_cart + m_pend;
 
-    // Linearised cart-pendulum continuous model
+    // Linearized cart-pendulum continuous model
     ctrlpp::continuous_state_space<Scalar, NX, NU, NY> sys_c{};
     sys_c.A << 0.0, 1.0, 0.0, 0.0,
                0.0, 0.0, -m_pend * g / denom, 0.0,

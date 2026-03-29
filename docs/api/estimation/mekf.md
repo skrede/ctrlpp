@@ -61,7 +61,7 @@ void predict(const input_vector_t& omega);
 void predict(const input_vector_t& omega, Scalar dt);
 ```
 
-Propagates the nominal quaternion by integrating bias-corrected angular velocity via the SO(3) exponential map, and propagates the error-state covariance through the linearised dynamics.
+Propagates the nominal quaternion by integrating bias-corrected angular velocity via the SO(3) exponential map, and propagates the error-state covariance through the linearized dynamics.
 
 ### update
 

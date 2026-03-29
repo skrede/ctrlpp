@@ -68,7 +68,7 @@ int main()
 ## What Is Happening
 
 1. **Template parameters** `pid<double, 1, 1, 1>`<br/> Scalar type `double`,
-   one state, one input, one output. This is the SISO specialisation.
+   one state, one input, one output. This is the SISO specialization.
 
 2. **Configuration**<br/>`kp`, `ki`, `kd` are `Eigen::Vector` types (here
    1-dimensional). Output limits prevent actuator saturation.

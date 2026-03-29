@@ -37,7 +37,7 @@ Configuration struct `rls_config<Scalar, NP>` passed at construction.
 explicit rls(rls_config<Scalar, NP> config = {});
 ```
 
-Constructs the estimator from configuration. Parameters initialised to zero, covariance to `P0`.
+Constructs the estimator from configuration. Parameters initialized to zero, covariance to `P0`.
 
 ## Methods
 

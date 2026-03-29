@@ -14,7 +14,7 @@ datasets.
 
 ### Offline
 
-- [batch_arx](batch-arx.md)<br/> Batch ARX identification via QR factorisation
+- [batch_arx](batch-arx.md)<br/> Batch ARX identification via QR factorization
 - [n4sid](n4sid.md)<br/> Subspace identification via BDCSVD
 
 ### Utilities
@@ -31,7 +31,7 @@ Pick **recursive ARX** when you need an online ARX model that can be converted
 to state-space for direct use with Kalman filters or MPC.
 
 Pick **batch ARX** for offline identification of ARX models from a collected
-dataset &mdash; uses QR factorisation for numerical stability.
+dataset &mdash; uses QR factorization for numerical stability.
 
 Pick **N4SID** for offline subspace identification when you want a state-space
 model directly without specifying model orders.

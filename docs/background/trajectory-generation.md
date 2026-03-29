@@ -1,6 +1,6 @@
 # Trajectory Generation
 
-Trajectory generation computes time-parameterised motion profiles that
+Trajectory generation computes time-parametrized motion profiles that
 guide a system from one configuration to another while respecting kinematic
 and dynamic constraints. It is a fundamental component of motion control for
 industrial machines, robots, and autonomous vehicles
@@ -61,12 +61,12 @@ acceleration at both $t = 0$ and $t = T$.
 
 ### Minimum-Jerk and Minimum-Snap
 
-Higher-order polynomials minimise specific motion derivatives
+Higher-order polynomials minimize specific motion derivatives
 [1, Sec. 3.4, pp. 63--66]:
 
-- **Minimum-jerk** (5th order): minimises $\int_0^T \dddot{q}^2 \, dt$,
+- **Minimum-jerk** (5th order): minimizes $\int_0^T \dddot{q}^2 \, dt$,
   producing smooth, human-like motions
-- **Minimum-snap** (7th order): minimises $\int_0^T q^{(4)2} \, dt$,
+- **Minimum-snap** (7th order): minimizes $\int_0^T q^{(4)2} \, dt$,
   common in quadrotor trajectory planning where snap is proportional to
   motor force rate
 
@@ -178,7 +178,7 @@ The planner constructs a sequence of constant-jerk phases:
 When the target changes mid-motion, the planner re-evaluates from the current
 state, using a brake-to-zero-then-replan strategy for robustness.
 
-## Multi-Axis Synchronisation
+## Multi-Axis Synchronization
 
 When multiple axes must reach their targets simultaneously (e.g., a multi-DOF
 robot), the fastest axis determines the total motion time $T$, and slower

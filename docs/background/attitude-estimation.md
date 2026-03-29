@@ -4,7 +4,7 @@ Attitude estimation determines the orientation of a rigid body in
 three-dimensional space. Unlike Euclidean state estimation, orientations live
 on the SO(3) manifold &mdash; a curved space where standard vector addition does
 not apply. Special formulations are needed to respect this geometry and avoid
-singularities inherent in minimal rotation parameterisations
+singularities inherent in minimal rotation parametrizations
 [1, Ch. 7, pp. 211--266].
 
 Attitude estimation is fundamental to aerospace, robotics, and motion capture
@@ -94,7 +94,7 @@ with a sinc-expansion near $\theta = 0$ for numerical stability.
 The MEKF is the standard approach for quaternion-based attitude estimation.
 It maintains the attitude estimate as a unit quaternion but performs Kalman
 filtering on a 3-vector error state $\delta\theta$ in the tangent space. This
-avoids the over-parameterisation of using a 4-dimensional quaternion state in
+avoids the over-parametrization of using a 4-dimensional quaternion state in
 the filter [3, pp. 311--317].
 
 ### Error-State Definition
@@ -154,7 +154,7 @@ $$
 
 The key insight is that the error state is unconstrained in $\mathbb{R}^3$,
 so the standard Kalman filter applies without modification. The quaternion is
-re-normalised after each correction to maintain the unit-norm constraint.
+re-normalized after each correction to maintain the unit-norm constraint.
 
 ## Manifold UKF
 

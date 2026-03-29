@@ -3,10 +3,10 @@
 Nonlinear Model Predictive Control (NMPC) extends the MPC framework to
 systems with nonlinear dynamics and constraints. Instead of solving a
 quadratic program at each time step, NMPC solves a nonlinear program (NLP),
-enabling direct handling of nonlinear process models without linearisation
+enabling direct handling of nonlinear process models without linearization
 [1, Ch. 12, pp. 221--250].
 
-NMPC is essential for systems where linearisation around an operating point
+NMPC is essential for systems where linearization around an operating point
 is insufficiently accurate, such as chemical reactors, aerospace vehicles,
 and robotic manipulators operating over wide operating envelopes
 [2, Sec. 8, pp. 391--417].
@@ -70,8 +70,8 @@ $$
 - **Robustness**: each shooting segment can be integrated independently,
   avoiding the numerical sensitivity of single shooting
 - **Parallelism**: segment integrations are independent and can be
-  parallelised
-- **Structure**: the NLP has a sparse, banded Jacobian that specialised
+  parallelized
+- **Structure**: the NLP has a sparse, banded Jacobian that specialized
   solvers can exploit
 - **Warm-starting**: the previous solution provides an excellent initial
   guess for the next time step by shifting the trajectory forward
@@ -102,7 +102,7 @@ The real-time iteration scheme performs only a single SQP iteration per
 control time step, using the warm-started solution from the previous step
 [2, Sec. 5, pp. 405--410]. This trades optimality for computational speed:
 
-1. **Preparation phase**: prepare the QP linearisation using the predicted
+1. **Preparation phase**: prepare the QP linearization using the predicted
    trajectory (can be done before the new measurement arrives)
 2. **Feedback phase**: update only the initial state constraint with the
    new measurement and solve the QP
@@ -136,9 +136,9 @@ Stability analysis for NMPC follows the same framework as linear MPC but with
 stronger assumptions [3, Sec. 5, pp. 800--808]:
 
 1. **Terminal cost**: $V_f(x)$ must be a local control Lyapunov function
-   in a neighbourhood of the origin
+   in a neighborhood of the origin
 2. **Terminal constraint**: $x_N$ must be constrained to a region where
-   a local stabilising controller exists
+   a local stabilizing controller exists
 3. **Continuity**: the stage cost and dynamics must be continuous
 
 When these conditions hold, the NMPC value function is a Lyapunov function
@@ -149,7 +149,7 @@ and the closed loop is asymptotically stable.
 | Aspect           | Linear MPC           | NMPC                        |
 | ---------------- | -------------------- | --------------------------- |
 | Plant model      | Linear               | Nonlinear                   |
-| Optimisation     | QP (convex)          | NLP (non-convex)            |
+| Optimization     | QP (convex)          | NLP (non-convex)            |
 | Global optimum   | Guaranteed           | Local only                  |
 | Computation      | Milliseconds         | Milliseconds to seconds     |
 | Warm-starting    | Very effective       | Critical for convergence    |

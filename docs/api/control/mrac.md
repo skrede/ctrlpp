@@ -114,7 +114,7 @@ cfg.robustification.delta = 0.05;
 explicit mrac_controller(const config_type& cfg);
 ```
 
-Constructs the controller from a configuration struct. Stores the reference model and initialises adapted parameters to their initial values.
+Constructs the controller from a configuration struct. Stores the reference model and initializes adapted parameters to their initial values.
 
 ### evaluate
 

@@ -34,7 +34,7 @@ Pick **kalman** or **luenberger** for linear systems with known dynamics.
 
 Pick **EKF** when you have a nonlinear model and can provide (or auto-generate)
 Jacobians. Pick **UKF** when Jacobians are unavailable or the nonlinearity is
-severe &mdash; sigma points handle it without linearisation.
+severe &mdash; sigma points handle it without linearization.
 
 Pick **particle filter** for highly nonlinear or multimodal distributions where
 Gaussian assumptions break down.

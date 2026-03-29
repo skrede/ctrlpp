@@ -6,7 +6,7 @@ can be combined freely.
 
 ## 1. Policy Composition (PID)
 
-Template parameter packs add behaviours at compile time. Each policy extends
+Template parameter packs add behaviors at compile time. Each policy extends
 the config struct with its own fields. You compose exactly the features you
 need; unused policies cost nothing.
 
@@ -63,7 +63,7 @@ A real system might use all three mechanisms simultaneously:
 - **EKF observer** providing state estimates to both controllers
 
 Each mechanism is orthogonal: policies configure a single controller, solver
-injection selects an optimisation backend, and observer-controller composition
+injection selects an optimization backend, and observer-controller composition
 connects estimators to controllers. They compose without interference.
 
 ## Next Steps

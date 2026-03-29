@@ -82,7 +82,7 @@ Propagates all NP particles through the dynamics model with additive Gaussian pr
 void update(const output_vector_t& z);
 ```
 
-Updates particle weights using the Gaussian measurement likelihood, normalises, and resamples (with roughening) if the Effective Sample Size drops below `ess_threshold`.
+Updates particle weights using the Gaussian measurement likelihood, normalizes, and resamples (with roughening) if the Effective Sample Size drops below `ess_threshold`.
 
 ### state
 
@@ -114,7 +114,7 @@ Returns the particle with the highest weight (maximum a posteriori).
 auto particles() const -> const std::array<state_vector_t, NP>&;
 ```
 
-Returns a const reference to the particle array for inspection or visualisation.
+Returns a const reference to the particle array for inspection or visualization.
 
 ## Supporting Types
 
@@ -210,7 +210,7 @@ int main()
 ## See Also
 
 - [ukf](ukf.md)<br/> sigma-point filter for moderate nonlinearity
-- [ekf](ekf.md)<br/> linearisation-based filter for smooth systems
+- [ekf](ekf.md)<br/> linearization-based filter for smooth systems
 - [observer-policy](observer-policy.md)<br/> concept satisfied by this type
 - [background/particle-filter](../../background/particle-filter.md)<br/> SIR derivation
 - [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md)<br/> composing observers with controllers

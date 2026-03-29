@@ -169,7 +169,7 @@ The right Jacobian is $J_r(\phi) = J_l(-\phi) = J_l(\phi)^\top$. These
 Jacobians appear in:
 
 - Error-state Kalman filter (MEKF) covariance propagation
-- Optimisation on manifolds (pose graph SLAM)
+- Optimization on manifolds (pose graph SLAM)
 - Interpolation between rotations
 
 ## Composition and Perturbation

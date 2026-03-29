@@ -59,7 +59,7 @@ Configuration struct `nmpc_config<Scalar, NX, NU, NC, NTC>` passed at constructi
 nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config);
 ```
 
-Constructs the controller from a dynamics model and configuration. Builds the NLP formulation and initialises the solver.
+Constructs the controller from a dynamics model and configuration. Builds the NLP formulation and initializes the solver.
 
 ## Methods
 

@@ -68,7 +68,7 @@ void reset(Scalar q0);
 
 Reset state to position `q0` with zero velocity and zero acceleration.
 
-## Profile Behaviour
+## Profile Behavior
 
 The planner produces double-S velocity profiles composed of constant-jerk phases (up to 11 phases total):
 

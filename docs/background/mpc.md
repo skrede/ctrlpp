@@ -1,6 +1,6 @@
 # Model Predictive Control
 
-Model Predictive Control (MPC) is an optimisation-based control strategy that
+Model Predictive Control (MPC) is an optimization-based control strategy that
 solves a finite-horizon optimal control problem at each time step, applies
 only the first element of the optimal input sequence, and repeats at the next
 step. This receding horizon approach handles state and input constraints
@@ -18,7 +18,7 @@ At each time step $k$, MPC performs four operations
 [1, Sec. 11.1, pp. 188--190]:
 
 1. Measure (or estimate) the current state $x_k$
-2. Solve an optimisation problem over a horizon of $N$ steps
+2. Solve an optimization problem over a horizon of $N$ steps
 3. Apply only the first optimal input $u_0^\star$ to the plant
 4. Advance to step $k + 1$ and repeat
 
@@ -47,9 +47,9 @@ $$
 
 where:
 
-- $Q \succeq 0$ penalises state deviation from the target
-- $R \succ 0$ penalises control effort
-- $Q_f \succeq 0$ penalises the terminal state
+- $Q \succeq 0$ penalizes state deviation from the target
+- $R \succ 0$ penalizes control effort
+- $Q_f \succeq 0$ penalizes the terminal state
 - The inequality constraints encode actuator limits and safety bounds
 
 ## QP Standard Form
@@ -88,7 +88,7 @@ l \le z \le u \quad \text{(bounds)}
 $$
 
 This has $N \cdot (n_x + n_u) + n_x$ decision variables but the matrices are
-block-sparse, enabling efficient specialised solvers. The sparse formulation
+block-sparse, enabling efficient specialized solvers. The sparse formulation
 preserves problem structure, is more efficient for long horizons, and enables
 warm-starting between time steps [1, Sec. 11.3, p. 203].
 
@@ -147,7 +147,7 @@ guarantee recursive feasibility and asymptotic stability of the origin.
 
 ## Reference Tracking
 
-For setpoint tracking, the cost function penalises deviation from a target
+For setpoint tracking, the cost function penalizes deviation from a target
 $(x_{\text{ref}}, u_{\text{ref}})$ rather than from the origin
 [1, Sec. 11.5, pp. 213--215]:
 

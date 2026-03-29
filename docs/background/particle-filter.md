@@ -36,7 +36,7 @@ $$
 p(x_k \mid z_{1:k}) \approx \sum_{i=1}^{N_p} w_k^{(i)} \, \delta(x_k - x_k^{(i)})
 $$
 
-where $x_k^{(i)}$ is the $i$-th particle, $w_k^{(i)}$ is its normalised
+where $x_k^{(i)}$ is the $i$-th particle, $w_k^{(i)}$ is its normalized
 weight, and $\delta$ is the Dirac delta. Each particle represents a hypothesis
 about the true state; particles with higher weights are more consistent with
 the observations.
@@ -78,7 +78,7 @@ $$
 \tilde{w}_k^{(i)} \propto \exp\!\left(-\frac{1}{2} (z_k - h(x_k^{(i)}))^\top R^{-1} (z_k - h(x_k^{(i)}))\right)
 $$
 
-**3. Normalise**<br/>scale weights to sum to one:
+**3. Normalize**<br/>scale weights to sum to one:
 
 $$
 w_k^{(i)} = \frac{\tilde{w}_k^{(i)}}{\sum_{j=1}^{N_p} \tilde{w}_k^{(j)}}
@@ -146,7 +146,7 @@ required for a given accuracy grows exponentially with state dimension &mdash; t
 
 In practice, particle filters are most effective for low-dimensional state
 spaces (typically fewer than 6--10 dimensions). For higher dimensions,
-Rao-Blackwellisation can be used to marginalise out linear sub-states
+Rao-Blackwellization can be used to marginalize out linear sub-states
 analytically [1, Sec. 15.6, pp. 485--488].
 
 ## References

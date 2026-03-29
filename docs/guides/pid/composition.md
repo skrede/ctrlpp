@@ -1,7 +1,7 @@
 # Policy-Based PID Composition
 
 ctrlpp's PID controller uses compile-time policy composition. Each policy
-adds a specific behaviour &mdash; anti-windup, derivative filtering, rate limiting
+adds a specific behavior &mdash; anti-windup, derivative filtering, rate limiting
 -- as a template parameter. You pay zero runtime cost for policies you do not
 use.
 
@@ -127,7 +127,7 @@ no policies compiles to a minimal P+I+D computation. Adding `deriv_filter`
 adds only the filter arithmetic &mdash; no virtual dispatch, no branch on policy
 presence.
 
-The optimiser sees through the template instantiation and inlines everything
+The optimizer sees through the template instantiation and inlines everything
 into a single function body.
 
 ## Next Steps

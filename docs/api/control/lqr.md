@@ -1,6 +1,6 @@
 # lqr
 
-Linear Quadratic Regulator providing infinite-horizon, finite-horizon, time-varying, and integral-action (LQI) gain computation, plus thin controller wrappers that store a precomputed gain matrix. The infinite-horizon variant solves the discrete algebraic Riccati equation (DARE) internally and returns the optimal state-feedback gain K such that u = -Kx minimises the quadratic cost J = sum(x'Qx + u'Ru).
+Linear Quadratic Regulator providing infinite-horizon, finite-horizon, time-varying, and integral-action (LQI) gain computation, plus thin controller wrappers that store a precomputed gain matrix. The infinite-horizon variant solves the discrete algebraic Riccati equation (DARE) internally and returns the optimal state-feedback gain K such that u = -Kx minimizes the quadratic cost J = sum(x'Qx + u'Ru).
 
 ## Header and Alias
 
@@ -38,7 +38,7 @@ lqr_gain(const Matrix<Scalar, NX, NX>& A,
          const Matrix<Scalar, NU, NU>& R);
 ```
 
-Computes the infinite-horizon LQR gain K = (R + B'PB)^{-1} B'PA where P is the stabilising solution of the DARE. Returns `std::nullopt` if the system is not stabilisable.
+Computes the infinite-horizon LQR gain K = (R + B'PB)^{-1} B'PA where P is the stabilizing solution of the DARE. Returns `std::nullopt` if the system is not stabilizable.
 
 ### lqr_gain (with cross-weight)
 

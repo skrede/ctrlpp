@@ -6,7 +6,7 @@ can be measured directly, observers provide estimates of the full state vector
 for use in state-feedback control laws such as LQR
 [1, Sec. 12.5, pp. 685--700].
 
-The observer concept was introduced by Luenberger in 1964 and formalised in
+The observer concept was introduced by Luenberger in 1964 and formalized in
 his 1971 paper [2], establishing a deterministic dual to the Kalman filter.
 
 ## The Observation Problem
@@ -91,7 +91,7 @@ polynomial evaluated at $A$.
 
 For multi-output systems, more general algorithms such as the method of
 Kautsky, Nichols, and Van Dooren [3, pp. 1129--1155] are used. This method
-iteratively selects eigenvectors to minimise sensitivity while placing
+iteratively selects eigenvectors to minimize sensitivity while placing
 eigenvalues at the specified locations.
 
 ## Observer Design Guidelines
@@ -100,7 +100,7 @@ The choice of observer poles involves a trade-off
 [1, Sec. 12.5, pp. 696--698]:
 
 - **Fast poles** (close to origin): rapid convergence but high sensitivity to
-  measurement noise and modelling errors.
+  measurement noise and modeling errors.
 - **Slow poles** (close to unit circle): smooth estimates but slow tracking
   of actual state changes.
 
@@ -131,7 +131,7 @@ nonlinear systems in general.
 The Kalman filter is a stochastic observer that computes the gain $L = K_k$
 (the Kalman gain) optimally from noise statistics $(Q, R)$. The Luenberger
 observer is its deterministic counterpart where $L$ is chosen by pole
-placement rather than optimisation [1, Sec. 12.7, pp. 705--708].
+placement rather than optimization [1, Sec. 12.7, pp. 705--708].
 
 When the noise covariances are known, the Kalman filter is preferred. When
 they are unknown or the designer wants direct control over convergence speed,

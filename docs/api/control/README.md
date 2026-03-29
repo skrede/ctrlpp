@@ -21,7 +21,7 @@ to compose exactly the features you need (anti-windup, derivative filtering,
 feed-forward) without paying for what you don't.
 
 Pick **LQR** when you have a state-space model and want optimal full-state feedback
-that minimises a quadratic cost. LQR calls DARE internally.
+that minimizes a quadratic cost. LQR calls DARE internally.
 
 Pick **DARE** directly when you need the solution to the discrete algebraic Riccati
 equation outside of LQR (e.g., for terminal cost computation in MPC).
@@ -35,7 +35,7 @@ policy selection.
 
 Pick **L1** when you need guaranteed bounded transient performance independent of the
 adaptation gain. L1 decouples adaptation speed from robustness through its low-pass
-filter &mdash; suitable when fast adaptation and predictable transient behaviour are both
+filter &mdash; suitable when fast adaptation and predictable transient behavior are both
 required.
 
 ## Theory

@@ -12,7 +12,7 @@ OSQP enabled.
 
 ## The System
 
-A double integrator discretised with sampling time `dt`:
+A double integrator discretized with sampling time `dt`:
 
 ```
 x = [position, velocity]
@@ -98,7 +98,7 @@ At every time step:
 
 1. **Solve**<br/>`controller.solve(x)` formulates a quadratic program (QP) over
    the prediction horizon. It finds the optimal sequence of inputs that
-   minimises the cost while satisfying constraints.
+   minimizes the cost while satisfying constraints.
 
 2. **Apply first input**<br/>only the first input from the optimal sequence is
    applied. This is the *receding horizon* principle.
@@ -110,8 +110,8 @@ At every time step:
 | Field     | Purpose                                         |
 | --------- | ----------------------------------------------- |
 | `horizon` | Number of prediction steps                      |
-| `Q`       | State cost weight (penalise deviation from zero)|
-| `R`       | Input cost weight (penalise control effort)     |
+| `Q`       | State cost weight (penalize deviation from zero)|
+| `R`       | Input cost weight (penalize control effort)     |
 | `u_min/max` | Input constraints (actuator limits)           |
 | `x_min/max` | State constraints (e.g., velocity limits)     |
 

@@ -1,8 +1,8 @@
 # so3
 
-SO(3) Lie group primitives using Hamilton-convention unit quaternions. Provides free functions for exponential/logarithmic maps, quaternion composition, skew-symmetric matrix construction, and serialisation. These primitives underpin the MEKF and manifold-UKF estimators.
+SO(3) Lie group primitives using Hamilton-convention unit quaternions. Provides free functions for exponential/logarithmic maps, quaternion composition, skew-symmetric matrix construction, and serialization. These primitives underpin the MEKF and manifold-UKF estimators.
 
-Convention: Hamilton convention throughout. Quaternion product `q1 * q2` corresponds to rotation `q1` followed by `q2`. User-facing serialisation is w-first: `[w, x, y, z]`. Internally, Eigen stores quaternion coefficients in `[x, y, z, w]` order.
+Convention: Hamilton convention throughout. Quaternion product `q1 * q2` corresponds to rotation `q1` followed by `q2`. User-facing serialization is w-first: `[w, x, y, z]`. Internally, Eigen stores quaternion coefficients in `[x, y, z, w]` order.
 
 ## Header and Alias
 
@@ -31,7 +31,7 @@ template <typename Scalar>
 Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar>& q);
 ```
 
-Logarithmic map: unit quaternion to rotation vector. Canonicalises to the `w >= 0` hemisphere for unique output.
+Logarithmic map: unit quaternion to rotation vector. Canonicalizes to the `w >= 0` hemisphere for unique output.
 
 ### compose
 
@@ -59,7 +59,7 @@ template <typename Scalar>
 Eigen::Quaternion<Scalar> normalize(const Eigen::Quaternion<Scalar>& q);
 ```
 
-Normalises a quaternion to unit norm.
+Normalizes a quaternion to unit norm.
 
 ### skew
 
@@ -77,7 +77,7 @@ template <typename Scalar>
 Vector<Scalar, 4> to_vec(const Eigen::Quaternion<Scalar>& q);
 ```
 
-Serialises a quaternion to a w-first 4-vector: `[w, x, y, z]`.
+Serializes a quaternion to a w-first 4-vector: `[w, x, y, z]`.
 
 ### from_vec
 
@@ -86,7 +86,7 @@ template <typename Scalar>
 Eigen::Quaternion<Scalar> from_vec(const Vector<Scalar, 4>& v);
 ```
 
-Deserialises a w-first 4-vector `[w, x, y, z]` back to a quaternion.
+Deserializes a w-first 4-vector `[w, x, y, z]` back to a quaternion.
 
 ## Usage Example
 

@@ -61,7 +61,7 @@ Constructs the solver with OSQP settings. Default values provide a good balance 
 void setup(const qp_problem<double>& problem);
 ```
 
-Initialises the OSQP workspace from a QP problem (cost matrices P, q and constraint matrices A, l, u). Throws `std::runtime_error` on allocation or setup failure.
+Initializes the OSQP workspace from a QP problem (cost matrices P, q and constraint matrices A, l, u). Throws `std::runtime_error` on allocation or setup failure.
 
 ### solve
 

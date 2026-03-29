@@ -34,7 +34,7 @@ $$
 The key differences from linear MHE are:
 - The dynamics constraint uses the nonlinear model $f$ instead of linear $Ax + Bu$
 - The measurement residual uses the nonlinear observation $h(x)$ instead of $Cx$
-- The resulting optimisation is a nonlinear program, not a QP
+- The resulting optimization is a nonlinear program, not a QP
 
 ## NLP Structure
 
@@ -63,7 +63,7 @@ exploits the least-squares structure of the cost function
 
 ## Arrival Cost for Nonlinear Systems
 
-The arrival cost in NMHE must summarise information from all measurements
+The arrival cost in NMHE must summarize information from all measurements
 before the estimation window. For nonlinear systems, the exact arrival cost
 is intractable, so approximations are used [1, Sec. 4.3, pp. 256--258]:
 

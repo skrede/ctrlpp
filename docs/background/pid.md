@@ -27,7 +27,7 @@ gains respectively.
 
 ### Standard (Series) Form
 
-An alternative parameterisation uses the proportional gain as a common factor
+An alternative parametrization uses the proportional gain as a common factor
 [1, eq. (1.2), p. 4]:
 
 $$

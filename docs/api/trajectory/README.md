@@ -28,7 +28,7 @@ Single-segment point-to-point motion primitives with analytical velocity profile
 Polynomial motion primitives defined by boundary conditions on position and derivatives.
 
 - [cubic-path](cubic-path.md)<br/> Cubic polynomial path (position + velocity BCs)
-- [cubic-trajectory](cubic-trajectory.md)<br/>Cubic polynomial trajectory (time-parameterised)
+- [cubic-trajectory](cubic-trajectory.md)<br/>Cubic polynomial trajectory (time-parametrized)
 - [quintic-path](quintic-path.md)<br/>Quintic polynomial path (position + velocity + acceleration BCs)
 - [quintic-trajectory](quintic-trajectory.md)<br/>Quintic polynomial trajectory
 - [septic-path](septic-path.md)<br/>Septic polynomial path (up to jerk BCs)

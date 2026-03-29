@@ -44,7 +44,7 @@ using system_t          = discrete_state_space<Scalar, NX, NU, NY>;
 kalman_filter(system_t sys, kalman_config<Scalar, NX, NU, NY> config);
 ```
 
-Constructs the filter from a discrete state-space model and configuration. Uses C++23 designated initialisers for config.
+Constructs the filter from a discrete state-space model and configuration. Uses C++23 designated initializers for config.
 
 ## Methods
 
@@ -94,7 +94,7 @@ Returns the most recent measurement innovation (z - Cx).
 Scalar nees() const;
 ```
 
-Returns the Normalised Estimation Error Squared from the last update.
+Returns the Normalized Estimation Error Squared from the last update.
 
 ### is_steady_state
 
@@ -187,7 +187,7 @@ int main()
 ## See Also
 
 - [luenberger](luenberger.md)<br/> fixed-gain observer alternative
-- [ekf](ekf.md)<br/> nonlinear extension via linearisation
+- [ekf](ekf.md)<br/> nonlinear extension via linearization
 - [observer-policy](observer-policy.md)<br/> concept satisfied by this type
 - [guides/intro/your-first-estimator](../../guides/intro/your-first-estimator.md)<br/> introductory Kalman filter tutorial
 - [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md)<br/> composing observers with controllers

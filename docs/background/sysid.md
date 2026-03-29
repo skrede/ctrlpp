@@ -2,20 +2,20 @@
 
 System identification builds mathematical models of dynamic systems from
 measured input-output data. The goal is to find a model that accurately
-predicts the system's behaviour, suitable for control design (LQR, MPC) or
+predicts the system's behavior, suitable for control design (LQR, MPC) or
 state estimation (Kalman filter, MHE)
 [1, Ch. 1, pp. 1--18].
 
 System identification is essential when first-principles models are
 unavailable, too complex, or insufficiently accurate. It provides a
-data-driven alternative that can capture the actual behaviour of physical
+data-driven alternative that can capture the actual behavior of physical
 systems including unmodelled dynamics and nonlinearities.
 
 ## The Identification Problem
 
 Given a sequence of input-output measurements $\{u(t), y(t)\}_{t=1}^{N}$,
 the identification problem is to find a model $\hat{y}(t) = g(u(t), \theta)$
-parameterised by $\theta$ that minimises the prediction error
+parametrized by $\theta$ that minimizes the prediction error
 [1, Ch. 7, pp. 197--234]:
 
 $$
@@ -51,7 +51,7 @@ criteria (AIC, BIC) [1, Ch. 16, pp. 487--514].
 ## Batch Least Squares
 
 For offline identification with $N$ data samples, the ARX parameters are
-estimated by minimising the sum of squared residuals
+estimated by minimizing the sum of squared residuals
 [1, Ch. 7, pp. 199--205]:
 
 $$
@@ -66,7 +66,7 @@ $$
 
 where $\Phi = [\varphi(1), \ldots, \varphi(N)]^\top$ is the regression
 matrix and $Y = [y(1), \ldots, y(N)]^\top$. For numerical stability, QR
-factorisation is preferred over the normal equations
+factorization is preferred over the normal equations
 [2, Sec. 6.3, pp. 203--208].
 
 ## Recursive Least Squares (RLS)
@@ -152,7 +152,7 @@ This state-space form can be directly used with Kalman filters, LQR, and MPC.
 Fit metrics quantify how well the identified model matches held-out data
 [1, Ch. 16, pp. 492--498]:
 
-- **NRMSE** (Normalised Root Mean Square Error):
+- **NRMSE** (Normalized Root Mean Square Error):
 
 $$
 \text{NRMSE} = 1 - \frac{\lVert y - \hat{y} \rVert}{\lVert y - \bar{y} \rVert}

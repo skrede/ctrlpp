@@ -51,7 +51,7 @@ mpc(const discrete_state_space<Scalar, NX, NU, NX>& system,
     const mpc_config<Scalar, NX, NU>& config);
 ```
 
-Constructs the controller from a discrete-time state-space model and configuration. Builds the QP matrices, computes terminal cost (via DARE if `Qf` is not set), and initialises the solver.
+Constructs the controller from a discrete-time state-space model and configuration. Builds the QP matrices, computes terminal cost (via DARE if `Qf` is not set), and initializes the solver.
 
 ## Methods
 

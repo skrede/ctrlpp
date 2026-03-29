@@ -67,7 +67,7 @@ void reset(Scalar q0);
 
 Reset state to position `q0` with zero velocity.
 
-## Profile Behaviour
+## Profile Behavior
 
 The planner produces trapezoidal velocity profiles with three phases:
 

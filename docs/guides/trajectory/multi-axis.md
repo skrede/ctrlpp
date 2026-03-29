@@ -7,7 +7,7 @@ Synchronizing multiple trajectory axes to move together.
 When multiple axes need to reach their targets simultaneously (e.g., a 3-axis
 CNC machine cutting a straight diagonal line), each axis typically has a
 different distance to travel. If each axis plans its own trajectory
-independently, they finish at different times -- causing curved tool paths
+independently, they finish at different times &mdash; causing curved tool paths
 instead of straight lines in Cartesian space.
 
 Synchronization solves this by stretching the faster axes so that all axes

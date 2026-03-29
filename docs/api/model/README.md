@@ -33,7 +33,7 @@ model must look like.
 ## When to use
 
 Use **state_space** and **transfer_function** for linear system representations.
-Convert between them with **conversion**, discretise continuous models with
+Convert between them with **conversion**, discretize continuous models with
 **discretise**, and check properties with **analysis**.
 
 Use **propagate** when you need explicit state propagation outside of a filter
