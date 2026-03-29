@@ -144,6 +144,6 @@ bool is_stable_observer(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX
     return true;
 }
 
-} // namespace ctrlpp
+}
 
 #endif

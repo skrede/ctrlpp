@@ -27,6 +27,6 @@ concept path_segment = requires(const S& seg, Scalar tau) {
     { seg.duration() } -> std::convertible_to<Scalar>;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

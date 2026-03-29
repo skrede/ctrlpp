@@ -69,6 +69,6 @@ auto make_cubic_trajectory(
 
 static_assert(trajectory_segment<cubic_trajectory<double, 1>, double, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

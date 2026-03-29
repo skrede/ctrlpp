@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -38,6 +39,9 @@ namespace ctrlpp
 template <typename Scalar>
 class modified_sin_trajectory
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "modified_sin_trajectory requires a floating-point Scalar type");
+
 public:
     struct config
     {
@@ -150,6 +154,6 @@ private:
 
 static_assert(trajectory_segment<modified_sin_trajectory<double>, double, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

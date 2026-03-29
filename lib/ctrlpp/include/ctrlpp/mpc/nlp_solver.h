@@ -49,6 +49,6 @@ concept nlp_solver = requires { typename S::scalar_type; } && requires(S solver,
     { solver.solve(upd) } -> std::same_as<nlp_result<typename S::scalar_type>>;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

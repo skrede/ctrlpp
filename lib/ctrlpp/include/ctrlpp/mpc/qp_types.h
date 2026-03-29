@@ -53,6 +53,6 @@ struct qp_result
     Scalar dual_residual{};
 };
 
-} // namespace ctrlpp
+}
 
 #endif

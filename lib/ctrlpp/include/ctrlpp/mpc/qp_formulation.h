@@ -78,6 +78,9 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
                                      Scalar soft_penalty,
                                      const std::optional<Vector<Scalar, NX>>& soft_state_penalty = {}) -> Eigen::SparseMatrix<Scalar, Eigen::ColMajor>
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "QP formulation requires a floating-point Scalar type");
+    static_assert(NX >= 1 && NU >= 1, "QP formulation requires NX >= 1 and NU >= 1");
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
 

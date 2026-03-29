@@ -15,6 +15,6 @@ concept differentiable_measurement = measurement_model<M, Scalar, NX, NY> && req
     { m.jacobian(x) } -> std::convertible_to<Matrix<Scalar, NY, NX>>;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

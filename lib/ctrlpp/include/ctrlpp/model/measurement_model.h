@@ -16,6 +16,6 @@ concept measurement_model = requires(const M& m, const Vector<Scalar, NX>& x) {
     { m(x) } -> std::convertible_to<Vector<Scalar, NY>>;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

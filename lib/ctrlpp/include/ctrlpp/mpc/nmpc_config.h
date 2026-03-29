@@ -26,7 +26,7 @@ constexpr auto default_penalty() -> Vector<Scalar, N>
     }
 }
 
-} // namespace detail
+}
 
 /// Configuration for nonlinear MPC, mirroring mpc_config with additional
 /// custom cost override fields for nonlinear objectives.
@@ -70,6 +70,6 @@ struct nmpc_config
     Vector<Scalar, NTC> terminal_penalty{detail::default_penalty<Scalar, NTC>()};
 };
 
-} // namespace ctrlpp
+}
 
 #endif

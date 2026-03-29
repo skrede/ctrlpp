@@ -377,6 +377,6 @@ private:
     mutable std::vector<double> fd_c_minus_;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

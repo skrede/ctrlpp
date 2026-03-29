@@ -28,6 +28,6 @@ constexpr Vector<Scalar, NY> output(const continuous_state_space<Scalar, NX, NU,
     return (sys.C * x + sys.D * u).eval();
 }
 
-} // namespace ctrlpp
+}
 
 #endif

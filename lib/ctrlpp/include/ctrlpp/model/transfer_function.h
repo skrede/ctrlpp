@@ -18,6 +18,6 @@ struct transfer_function
     std::array<Scalar, DenDeg + 1> denominator;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

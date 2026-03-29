@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstddef>
 #include <numbers>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -26,6 +27,9 @@ struct biquad_coeffs
 template <typename Scalar>
 class biquad
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "biquad requires a floating-point Scalar type");
+
 public:
     using scalar_type = Scalar;
 
@@ -252,7 +256,7 @@ void normalize_chebyshev1_dc(std::array<biquad<Scalar>, N>& sections, Scalar eps
     }
 }
 
-} // namespace detail
+}
 
 template <std::size_t Order, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
@@ -282,8 +286,8 @@ static_assert(discrete_filter<biquad<double>>);
 static_assert(discrete_filter<biquad<float>>);
 static_assert(discrete_filter<cascaded_biquad<double, 2>>);
 
-} // namespace detail
+}
 
-} // namespace ctrlpp
+}
 
 #endif

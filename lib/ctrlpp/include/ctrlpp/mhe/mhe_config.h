@@ -58,6 +58,6 @@ struct nmhe_config
     Vector<Scalar, NC> path_penalty{detail::default_penalty<Scalar, NC>()};
 };
 
-} // namespace ctrlpp
+}
 
 #endif

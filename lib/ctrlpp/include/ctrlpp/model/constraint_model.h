@@ -23,6 +23,6 @@ concept terminal_constraint_model = requires(const H& h, const Vector<Scalar, NX
     { h(x) } -> std::convertible_to<Vector<Scalar, NTC>>;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

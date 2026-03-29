@@ -12,6 +12,7 @@
 
 #include <array>
 #include <cstddef>
+#include <type_traits>
 #include <utility>
 
 namespace ctrlpp
@@ -38,6 +39,9 @@ template <typename Scalar, std::size_t N>
     requires(N >= 1)
 class vector_biquad
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "vector_biquad requires a floating-point Scalar type");
+
 public:
     using scalar_type = Scalar;
 
@@ -94,6 +98,9 @@ template <typename Scalar, std::size_t N, std::size_t Sections>
     requires(N >= 1 && Sections >= 1)
 class vector_cascaded_biquad
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "vector_cascaded_biquad requires a floating-point Scalar type");
+
 public:
     using scalar_type = Scalar;
 

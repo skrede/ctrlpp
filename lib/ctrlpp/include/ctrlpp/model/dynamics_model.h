@@ -16,6 +16,6 @@ concept dynamics_model = requires(const D& d, const Vector<Scalar, NX>& x, const
     { d(x, u) } -> std::convertible_to<Vector<Scalar, NX>>;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

@@ -38,6 +38,6 @@ struct polytopic_set
 template <typename Scalar, std::size_t NX>
 using terminal_set = std::variant<ellipsoidal_set<Scalar, NX>, polytopic_set<Scalar, NX>>;
 
-} // namespace ctrlpp
+}
 
 #endif

@@ -70,6 +70,6 @@ fit_metrics<typename DerivedA::Scalar> compute_fit_metrics(const Eigen::MatrixBa
     return {.nrmse = nrmse, .vaf = vaf};
 }
 
-} // namespace ctrlpp
+}
 
 #endif

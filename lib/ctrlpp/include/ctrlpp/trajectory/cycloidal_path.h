@@ -49,6 +49,6 @@ auto cycloidal_path_peak_derivatives() -> std::array<Scalar, 3>
     return {Scalar{2}, Scalar{2} * pi, Scalar{4} * pi2};
 }
 
-} // namespace ctrlpp
+}
 
 #endif

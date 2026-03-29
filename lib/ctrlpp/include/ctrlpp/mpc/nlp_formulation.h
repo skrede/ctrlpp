@@ -311,7 +311,7 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
                                .c_upper = std::move(c_upper)};
 }
 
-} // namespace detail
-} // namespace ctrlpp
+}
+}
 
 #endif

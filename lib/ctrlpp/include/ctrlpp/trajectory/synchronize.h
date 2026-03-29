@@ -70,6 +70,6 @@ void synchronize(std::vector<Profile>& profiles)
     }
 }
 
-} // namespace ctrlpp
+}
 
 #endif

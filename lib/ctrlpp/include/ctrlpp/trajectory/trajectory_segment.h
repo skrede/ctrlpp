@@ -27,6 +27,6 @@ concept trajectory_segment = requires(const S& seg, Scalar t) {
     { seg.duration() } -> std::convertible_to<Scalar>;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

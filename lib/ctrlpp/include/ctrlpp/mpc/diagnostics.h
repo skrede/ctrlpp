@@ -23,6 +23,6 @@ struct mpc_diagnostics
     Scalar total_slack{};
 };
 
-} // namespace ctrlpp
+}
 
 #endif
