@@ -11,4 +11,11 @@ FetchContent_Declare(hpipm_cpp
     EXCLUDE_FROM_ALL)
 FetchContent_MakeAvailable(hpipm_cpp)
 
-# Plan 03 adds benchmark executables here
+add_executable(bench_qp_vs_hpipm bench_qp_vs_hpipm.cpp)
+target_link_libraries(bench_qp_vs_hpipm PRIVATE
+    ctrlpp::ctrlpp
+    ctrlpp::osqp
+    nanobench
+    hpipm-cpp::hpipm-cpp
+    hpipm
+    blasfeo)
