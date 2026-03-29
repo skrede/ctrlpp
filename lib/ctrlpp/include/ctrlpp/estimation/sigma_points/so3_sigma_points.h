@@ -73,6 +73,6 @@ private:
 
 static_assert(manifold_sigma_point_strategy<so3_merwe_sigma_points<double>, double>);
 
-} // namespace ctrlpp
+}
 
 #endif

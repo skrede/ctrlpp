@@ -43,6 +43,6 @@ struct null_observer
     }
 };
 
-} // namespace ctrlpp
+}
 
 #endif

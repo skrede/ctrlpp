@@ -2,6 +2,8 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_UKF_H
 
 /// @brief Unscented Kalman Filter with swappable sigma point strategies.
+///
+/// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/estimation/observer_policy.h"
@@ -19,6 +21,7 @@
 #include <array>
 #include <cstddef>
 #include <utility>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -32,6 +35,10 @@ enum class gain_decomposition
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct ukf_config
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+    static_assert(NY > 0, "Output dimension NY must be positive");
     Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
     Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};
@@ -43,6 +50,11 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typen
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY> && sigma_point_strategy<Strategy, Scalar, NX>
 class ukf
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+    static_assert(NY > 0, "Output dimension NY must be positive");
+
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int ny = static_cast<int>(NY);
     static constexpr std::size_t num_sigma = Strategy::num_points;

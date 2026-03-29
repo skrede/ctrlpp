@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <limits>
 #include <utility>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -37,6 +38,9 @@ concept differentiable_mekf_measurement = mekf_measurement_model<M, Scalar, NB, 
 template <typename Scalar, std::size_t NB, std::size_t NY>
 struct mekf_config
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NB > 0, "Bias dimension NB must be positive");
+    static_assert(NY > 0, "Output dimension NY must be positive");
     static constexpr std::size_t NE = 3 + NB;
     Matrix<Scalar, NE, NE> Q{Matrix<Scalar, NE, NE>::Identity()};
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
@@ -51,6 +55,10 @@ template <typename Scalar, std::size_t NB, std::size_t NY, typename Measurement>
     requires mekf_measurement_model<Measurement, Scalar, NB, NY>
 class mekf
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NB > 0, "Bias dimension NB must be positive");
+    static_assert(NY > 0, "Output dimension NY must be positive");
+
     static constexpr std::size_t NE = 3 + NB;
     static constexpr int ne = static_cast<int>(NE);
     static constexpr int ny = static_cast<int>(NY);

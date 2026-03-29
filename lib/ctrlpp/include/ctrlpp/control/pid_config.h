@@ -92,11 +92,13 @@ struct policy_configs_builder<Scalar, N, std::tuple<Collected...>, P, Rest...> :
 template <typename Scalar, std::size_t N, typename... Policies>
 using policy_configs_tuple_t = typename policy_configs_builder<Scalar, N, std::tuple<>, Policies...>::type;
 
-} // namespace detail
+}
 
 template <typename Scalar, std::size_t NY, typename... Policies>
 struct pid_config
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NY > 0, "Output dimension NY must be positive");
     using vector_t = Vector<Scalar, NY>;
     using policies_tuple_t = detail::policy_configs_tuple_t<Scalar, NY, Policies...>;
 
@@ -128,6 +130,6 @@ struct pid_config
     }
 };
 
-} // namespace ctrlpp
+}
 
 #endif

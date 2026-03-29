@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <utility>
 #include <optional>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -23,6 +24,10 @@ namespace ctrlpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct lqi_result
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+    static_assert(NY > 0, "Output dimension NY must be positive");
     Eigen::Matrix<Scalar, int(NU), int(NX)> Kx;
     Eigen::Matrix<Scalar, int(NU), int(NY)> Ki;
 };
@@ -176,7 +181,7 @@ auto partition_lqi_gain(const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>&
     return result;
 }
 
-} // namespace detail
+}
 
 // LQI gain: augments state with integral of tracking error.
 // Augmented system: A_aug = [[A, 0], [-C, I]], B_aug = [[B], [0]]
@@ -220,6 +225,10 @@ auto lqr_cost(std::span<const Eigen::Matrix<Scalar, int(NX), 1>> xs,
 template <typename Scalar, std::size_t NX, std::size_t NU>
 class lqr
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+
 public:
     using gain_type = Eigen::Matrix<Scalar, int(NU), int(NX)>;
     using state_type = Eigen::Matrix<Scalar, int(NX), 1>;
@@ -239,6 +248,10 @@ private:
 template <typename Scalar, std::size_t NX, std::size_t NU>
 class lqr_time_varying
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+
 public:
     using gain_type = Eigen::Matrix<Scalar, int(NU), int(NX)>;
     using state_type = Eigen::Matrix<Scalar, int(NX), 1>;
@@ -256,6 +269,6 @@ private:
     std::vector<gain_type> gains_;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

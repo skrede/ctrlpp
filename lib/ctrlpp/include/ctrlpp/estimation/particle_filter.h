@@ -2,6 +2,8 @@
 #define HPP_GUARD_CTRLPP_ESTIMATION_PARTICLE_FILTER_H
 
 /// @brief Bootstrap SIR particle filter with ESS-adaptive resampling and roughening.
+///
+/// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/estimation/observer_policy.h"
@@ -42,6 +44,10 @@ enum class weight_representation
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct pf_config
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+    static_assert(NY > 0, "Output dimension NY must be positive");
     Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
     Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};
@@ -56,6 +62,12 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY> && std::uniform_random_bit_generator<Rng> && resampling_strategy<Resampler, Rng, NP>
 class particle_filter
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+    static_assert(NY > 0, "Output dimension NY must be positive");
+    static_assert(NP > 0, "Particle count NP must be positive");
+
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int ny = static_cast<int>(NY);
 

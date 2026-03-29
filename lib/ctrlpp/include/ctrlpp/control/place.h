@@ -14,6 +14,7 @@
 #include <complex>
 #include <cstddef>
 #include <optional>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -90,7 +91,7 @@ std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>
     return result;
 }
 
-} // namespace detail
+}
 
 // Pole placement using Ackermann's formula for single-input systems (NU == 1).
 // Computes K such that eigenvalues of (A - B*K) equal the desired poles.
@@ -98,6 +99,10 @@ std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>
 template <typename Scalar, std::size_t NX, std::size_t NU>
 std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const std::array<std::complex<Scalar>, NX>& desired_poles)
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+
     constexpr int n = static_cast<int>(NX);
 
     if constexpr(NU != 1)
@@ -171,6 +176,6 @@ place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Ma
     }
 }
 
-} // namespace ctrlpp
+}
 
 #endif

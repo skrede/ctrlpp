@@ -15,6 +15,7 @@
 #include <Eigen/Geometry>
 
 #include <cmath>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -22,6 +23,7 @@ namespace ctrlpp
 template <typename Scalar>
 struct cf_config
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     Scalar k_p{Scalar{2}};
     Scalar k_i{Scalar{0.005}};
     Scalar dt{Scalar{0.01}};
@@ -31,6 +33,8 @@ struct cf_config
 template <typename Scalar>
 class complementary_filter
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+
 public:
     using observer_tag = struct complementary_filter_tag;
     using state_vector_t = Vector<Scalar, 7>;
@@ -127,6 +131,6 @@ complementary_filter(cf_config<Scalar>) -> complementary_filter<Scalar>;
 
 static_assert(ObserverPolicy<complementary_filter<double>>);
 
-} // namespace ctrlpp
+}
 
 #endif

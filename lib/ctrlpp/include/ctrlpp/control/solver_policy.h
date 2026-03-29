@@ -7,6 +7,6 @@ namespace ctrlpp
 template <typename P>
 concept SolverPolicy = requires { typename P::solver_tag; };
 
-} // namespace ctrlpp
+}
 
 #endif
