@@ -70,6 +70,6 @@ int main()
 
 ## See Also
 
-- [state-space](state-space.md) -- state-space representation
-- [conversion](conversion.md) -- TF to SS and SS to TF conversion
-- [discretise](discretise.md) -- continuous-to-discrete conversion
+- [state-space](state-space.md)<br/> state-space representation
+- [conversion](conversion.md)<br/> TF to SS and SS to TF conversion
+- [discretise](discretise.md)<br/> continuous-to-discrete conversion

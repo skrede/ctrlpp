@@ -67,6 +67,6 @@ int main()
 
 ## See Also
 
-- [piecewise-trajectory](piecewise-trajectory.md) -- analogous composition for trajectories
-- [path-segment](path-segment.md) -- concept each segment must satisfy
+- [piecewise-trajectory](piecewise-trajectory.md)<br/> analogous composition for trajectories
+- [path-segment](path-segment.md)<br/> concept each segment must satisfy
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

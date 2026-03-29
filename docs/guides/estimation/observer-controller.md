@@ -3,7 +3,7 @@
 In many real systems, not all states are directly measurable. An observer
 estimates the full state vector from partial measurements, and a controller
 uses that estimate. ctrlpp keeps observers and controllers as separate objects
-that compose through the `ObserverPolicy` concept -- no coupling, no
+that compose through the `ObserverPolicy` concept &mdash; no coupling, no
 inheritance.
 
 ## The Pattern
@@ -11,7 +11,7 @@ inheritance.
 ```
 measurement --> [Observer] --> estimated_state --> [Controller] --> control
                     ^                                                  |
-                    |-------------- control (for predict) -------------|
+                    |-------------- control (for predict)<br/>-----------|
 ```
 
 The observer's `state()` feeds the controller's `compute()` or `solve()`.
@@ -154,8 +154,8 @@ concept ObserverPolicy = requires {
 };
 ```
 
-All ctrlpp observers -- `kalman_filter`, `luenberger_observer`, `ekf`, `ukf`,
-`particle_filter` -- satisfy this concept. You can swap observers without
+All ctrlpp observers &mdash; `kalman_filter`, `luenberger_observer`, `ekf`, `ukf`,
+`particle_filter` &mdash; satisfy this concept. You can swap observers without
 changing the controller code.
 
 ## Which Observer to Use
@@ -170,10 +170,10 @@ changing the controller code.
 
 ## Next Steps
 
-- [ObserverPolicy API](../../api/estimation/observer-policy.md) -- concept
+- [ObserverPolicy API](../../api/estimation/observer-policy.md)<br/> concept
   definition and null_observer
-- [Kalman Filter API](../../api/estimation/kalman.md) -- linear observer
-- [EKF API](../../api/estimation/ekf.md) -- nonlinear observer
-- [LQR API](../../api/control/lqr.md) -- linear-quadratic regulator
-- [Kalman Theory](../../background/kalman.md) -- optimality and
+- [Kalman Filter API](../../api/estimation/kalman.md)<br/> linear observer
+- [EKF API](../../api/estimation/ekf.md)<br/> nonlinear observer
+- [LQR API](../../api/control/lqr.md)<br/> linear-quadratic regulator
+- [Kalman Theory](../../background/kalman.md)<br/> optimality and
   convergence

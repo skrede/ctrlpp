@@ -15,7 +15,7 @@ Adds a feed-forward term to the PID output. Feed-forward injects a control actio
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `ff_func` | `Callable` | -- | A callable that computes the feed-forward contribution. Signature depends on the user's model. |
+| `ff_func` | `Callable` | &mdash; | A callable that computes the feed-forward contribution. Signature depends on the user's model. |
 
 ### feed_forward\<void\>
 
@@ -75,7 +75,7 @@ int main()
 
 ## See Also
 
-- [PID overview](README.md) -- parent PID documentation
-- [setpoint-filter](setpoint-filter.md) -- reference shaping alternative
-- [guides/pid/composition](../../../guides/pid/composition.md) -- composing policies
-- [background/pid](../../../background/pid.md) -- feed-forward design theory
+- [PID overview](README.md)<br/> parent PID documentation
+- [setpoint-filter](setpoint-filter.md)<br/> reference shaping alternative
+- [guides/pid/composition](../../../guides/pid/composition.md)<br/>composing policies
+- [background/pid](../../../background/pid.md)<br/>feed-forward design theory

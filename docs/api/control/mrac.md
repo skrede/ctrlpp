@@ -47,7 +47,7 @@ Header: `#include <ctrlpp/control/mrac_config.h>`
 | `theta_r_0` | `Matrix<Scalar, NU, NU>` | zero | Initial reference parameter estimate |
 | `x_model_0` | `Vector<Scalar, NX>` | zero | Initial reference model state |
 | `W` | `Matrix<Scalar, NX, NX>` | Identity | Error weight matrix for weighted norm in robustification (defaults to identity for standard Euclidean norm) |
-| `robustification` | (policy-dependent) | -- | Robustification options (see below) |
+| `robustification` | (policy-dependent) | &mdash; | Robustification options (see below) |
 
 The adaptation gains `gamma_x` and `gamma_r` must be symmetric positive definite for Lyapunov stability guarantees. Larger values give faster adaptation but may cause oscillation. The `sign_b` matrix captures the sign structure of the unknown plant input matrix; for most applications with positive-definite B_p, the default identity suffices.
 
@@ -59,7 +59,7 @@ Robustification prevents unbounded parameter drift caused by noise or unmodeled 
 
 Freezes adaptation when the tracking error norm falls below a threshold, preventing drift from measurement noise in steady state.
 
-**Config field:** `robustification.threshold` (Scalar) -- error norm below which adaptation is frozen.
+**Config field:** `robustification.threshold` (Scalar)<br/> error norm below which adaptation is frozen.
 
 **When to use:** Known noise bound. Set threshold slightly above the expected noise level. Most aggressive at preventing small-signal drift, but requires a noise bound estimate.
 
@@ -76,7 +76,7 @@ cfg.robustification.threshold = 0.01;
 
 Adds a leakage term proportional to the current parameter values, gradually decaying parameters toward zero when the adaptation gradient is small.
 
-**Config field:** `robustification.sigma` (Scalar) -- leakage rate (typical range 0.001--0.1).
+**Config field:** `robustification.sigma` (Scalar)<br/> leakage rate (typical range 0.001--0.1).
 
 **When to use:** Unknown noise bound. Provides global boundedness without needing a noise estimate. Simple to tune: one scalar parameter.
 
@@ -93,7 +93,7 @@ cfg.robustification.sigma = 0.01;
 
 Adds a leakage term proportional to both the parameter values and the tracking error norm, giving stronger leakage when the error is large and vanishing leakage at equilibrium.
 
-**Config field:** `robustification.delta` (Scalar) -- error-proportional leakage gain.
+**Config field:** `robustification.delta` (Scalar)<br/> error-proportional leakage gain.
 
 **When to use:** Desire error-proportional leakage that vanishes at equilibrium, preserving the ideal adaptation law when tracking is accurate.
 
@@ -283,7 +283,7 @@ int main()
 
 ## See Also
 
-- [Adaptive Control Theory](../../background/adaptive-control.md) -- background theory covering MRAC and L1
-- [PID](pid/README.md) -- structural parallel (stateful controller with compile-time policy composition)
-- [state_space](../model/state-space.md) -- reference model representation
+- [Adaptive Control Theory](../../background/adaptive-control.md)<br/> background theory covering MRAC and L1
+- [PID](pid/README.md)<br/> structural parallel (stateful controller with compile-time policy composition)
+- [state_space](../model/state-space.md)<br/> reference model representation
 - L1 Adaptive Control (coming in Phase 34)

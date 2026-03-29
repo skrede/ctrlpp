@@ -92,5 +92,5 @@ int main()
 
 ## See Also
 
-- [state-space](state-space.md) -- state-space representations
-- [propagate](propagate.md) -- propagate discretised systems
+- [state-space](state-space.md)<br/> state-space representations
+- [propagate](propagate.md)<br/> propagate discretised systems

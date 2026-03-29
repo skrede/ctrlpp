@@ -87,7 +87,7 @@ int main()
 
 ## See Also
 
-- [differentiable-dynamics](differentiable-dynamics.md) -- extended concept with Jacobians
-- [measurement-model](measurement-model.md) -- measurement model concept
-- [estimation/ekf](../estimation/ekf.md) -- EKF using dynamics_model
-- [mpc/nmpc](../mpc/nmpc.md) -- NMPC using dynamics_model
+- [differentiable-dynamics](differentiable-dynamics.md)<br/> extended concept with Jacobians
+- [measurement-model](measurement-model.md)<br/> measurement model concept
+- [estimation/ekf](../estimation/ekf.md)<br/> EKF using dynamics_model
+- [mpc/nmpc](../mpc/nmpc.md)<br/> NMPC using dynamics_model

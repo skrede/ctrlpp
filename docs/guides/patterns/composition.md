@@ -17,7 +17,7 @@ using Pid = ctrlpp::pid<double, 1, 1, 1,
                          ctrlpp::rate_limit>;
 ```
 
-The compiler resolves all policies at instantiation -- no virtual dispatch,
+The compiler resolves all policies at instantiation &mdash; no virtual dispatch,
 no runtime branching.
 
 **Details:** [PID Composition Guide](../pid/composition.md)
@@ -68,8 +68,8 @@ connects estimators to controllers. They compose without interference.
 
 ## Next Steps
 
-- [PID Composition](../pid/composition.md) -- policy details and examples
-- [Solver Injection](../mpc/solver-injection.md) -- concept definitions and
+- [PID Composition](../pid/composition.md)<br/> policy details and examples
+- [Solver Injection](../mpc/solver-injection.md)<br/> concept definitions and
   custom solvers
-- [Observer-Controller](../estimation/observer-controller.md) -- estimation
+- [Observer-Controller](../estimation/observer-controller.md)<br/> estimation
   and control loop integration

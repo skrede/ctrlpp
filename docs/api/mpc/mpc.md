@@ -160,9 +160,9 @@ int main()
 
 ## See Also
 
-- [nmpc](nmpc.md) -- nonlinear MPC
-- [osqp-solver](osqp-solver.md) -- OSQP QP solver backend
-- [mhe](mhe.md) -- linear moving horizon estimation
-- [guides/mpc/solver-injection](../../guides/mpc/solver-injection.md) -- solver injection guide
-- [guides/intro/your-first-mpc](../../guides/intro/your-first-mpc.md) -- introductory MPC tutorial
-- [background/mpc](../../background/mpc.md) -- MPC theory and background
+- [nmpc](nmpc.md)<br/> nonlinear MPC
+- [osqp-solver](osqp-solver.md)<br/> OSQP QP solver backend
+- [mhe](mhe.md)<br/> linear moving horizon estimation
+- [guides/mpc/solver-injection](../../guides/mpc/solver-injection.md)<br/> solver injection guide
+- [guides/intro/your-first-mpc](../../guides/intro/your-first-mpc.md)<br/> introductory MPC tutorial
+- [background/mpc](../../background/mpc.md)<br/> MPC theory and background

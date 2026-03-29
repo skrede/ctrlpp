@@ -146,7 +146,7 @@ tuning based on the expected magnitude of model uncertainty and disturbances.
 
 ## Observability
 
-The Kalman filter converges only if the system is observable -- that is, the
+The Kalman filter converges only if the system is observable &mdash; that is, the
 state can be uniquely determined from a finite sequence of measurements. The
 observability matrix [3, Sec. 12.3, pp. 683--690]:
 

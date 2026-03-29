@@ -96,6 +96,6 @@ int main()
 
 ## See Also
 
-- [smoothing-spline](smoothing-spline.md) -- Smoothing spline approximation with data/smoothness tradeoff
-- [bspline-trajectory](bspline-trajectory.md) -- B-spline trajectory with configurable degree
-- [Trajectory Generation Theory](../../background/trajectory-generation.md) -- Mathematical background for spline interpolation
+- [smoothing-spline](smoothing-spline.md)<br/> Smoothing spline approximation with data/smoothness tradeoff
+- [bspline-trajectory](bspline-trajectory.md)<br/> B-spline trajectory with configurable degree
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)<br/> Mathematical background for spline interpolation

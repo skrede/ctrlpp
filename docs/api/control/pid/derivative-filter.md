@@ -60,7 +60,7 @@ int main()
 
 ## See Also
 
-- [PID overview](README.md) -- parent PID documentation
-- [setpoint-filter](setpoint-filter.md) -- reference signal filtering
-- [guides/pid/composition](../../../guides/pid/composition.md) -- composing policies
-- [background/pid](../../../background/pid.md) -- derivative filtering theory
+- [PID overview](README.md)<br/> parent PID documentation
+- [setpoint-filter](setpoint-filter.md)<br/>reference signal filtering
+- [guides/pid/composition](../../../guides/pid/composition.md)<br/>composing policies
+- [background/pid](../../../background/pid.md)<br/>derivative filtering theory

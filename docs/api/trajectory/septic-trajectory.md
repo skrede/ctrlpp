@@ -79,7 +79,7 @@ int main()
 
 ## See Also
 
-- [septic-path](septic-path.md) -- normalized septic (zero BCs only)
-- [quintic-trajectory](quintic-trajectory.md) -- lower degree (no jerk BCs)
-- [piecewise-trajectory](piecewise-trajectory.md) -- multi-segment composition
+- [septic-path](septic-path.md)<br/> normalized septic (zero BCs only)
+- [quintic-trajectory](quintic-trajectory.md)<br/> lower degree (no jerk BCs)
+- [piecewise-trajectory](piecewise-trajectory.md)<br/> multi-segment composition
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

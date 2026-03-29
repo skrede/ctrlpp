@@ -100,6 +100,6 @@ int main()
 
 ## See Also
 
-- [biquad](biquad.md) -- second-order IIR filter
-- [discrete-filter](discrete-filter.md) -- discrete filter concept
-- [background/dsp](../../background/dsp.md) -- DSP theory and background
+- [biquad](biquad.md)<br/> second-order IIR filter
+- [discrete-filter](discrete-filter.md)<br/> discrete filter concept
+- [background/dsp](../../background/dsp.md)<br/> DSP theory and background

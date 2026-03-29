@@ -59,7 +59,7 @@ int main()
 
 ## See Also
 
-- [PID overview](README.md) -- parent PID documentation
-- [anti-windup](anti-windup.md) -- integrator saturation handling
-- [guides/pid/composition](../../../guides/pid/composition.md) -- composing policies
-- [background/pid](../../../background/pid.md) -- rate limiting theory
+- [PID overview](README.md)<br/> parent PID documentation
+- [anti-windup](anti-windup.md)<br/>integrator saturation handling
+- [guides/pid/composition](../../../guides/pid/composition.md)<br/>composing policies
+- [background/pid](../../../background/pid.md)<br/>rate limiting theory

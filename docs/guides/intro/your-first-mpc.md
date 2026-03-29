@@ -3,7 +3,7 @@
 > **Requires OSQP.** Enable with `-DCTRLPP_BUILD_OSQP=ON`.
 
 This tutorial builds a model predictive controller (MPC) for a double
-integrator -- a system with position and velocity states driven by a force
+integrator &mdash; a system with position and velocity states driven by a force
 input. MPC plans an optimal trajectory over a finite horizon while respecting
 state and input constraints.
 
@@ -96,14 +96,14 @@ int main()
 
 At every time step:
 
-1. **Solve** -- `controller.solve(x)` formulates a quadratic program (QP) over
+1. **Solve**<br/>`controller.solve(x)` formulates a quadratic program (QP) over
    the prediction horizon. It finds the optimal sequence of inputs that
    minimises the cost while satisfying constraints.
 
-2. **Apply first input** -- only the first input from the optimal sequence is
+2. **Apply first input**<br/>only the first input from the optimal sequence is
    applied. This is the *receding horizon* principle.
 
-3. **Propagate** -- the system advances one step, and the whole process repeats.
+3. **Propagate**<br/>the system advances one step, and the whole process repeats.
 
 ## Key Configuration
 
@@ -117,11 +117,11 @@ At every time step:
 
 ## Next Steps
 
-- [MPC API Reference](../../api/mpc/mpc.md) -- full interface, diagnostics, warm
+- [MPC API Reference](../../api/mpc/mpc.md)<br/> full interface, diagnostics, warm
   starting
-- [Solver Injection Guide](../mpc/solver-injection.md) -- swapping QP/NLP
+- [Solver Injection Guide](../mpc/solver-injection.md)<br/> swapping QP/NLP
   solver backends
-- [Observer-Controller Composition](../estimation/observer-controller.md) --
+- [Observer-Controller Composition](../estimation/observer-controller.md)<br/>
   MPC with state estimation
-- [MPC Theory](../../background/mpc.md) -- QP formulation, stability,
+- [MPC Theory](../../background/mpc.md)<br/> QP formulation, stability,
   terminal constraints

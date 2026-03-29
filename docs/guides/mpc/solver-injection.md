@@ -158,17 +158,17 @@ diagnostics.
 
 ## Why Concepts Instead of Virtual Dispatch
 
-- **Zero overhead** -- the solver type is known at compile time. The compiler
+- **Zero overhead**<br/>the solver type is known at compile time. The compiler
   inlines the solve call.
-- **Compile-time checking** -- a concept violation produces a clear error
+- **Compile-time checking**<br/>a concept violation produces a clear error
   message pointing to the missing method.
-- **No heap allocation** -- the solver lives inside the MPC object with no
+- **No heap allocation**<br/>the solver lives inside the MPC object with no
   pointer indirection.
 
 ## Next Steps
 
-- [OSQP Solver API](../../api/mpc/osqp-solver.md) -- OSQP wrapper details
-- [NLopt Solver API](../../api/mpc/nlopt-solver.md) -- NLopt wrapper details
-- [MPC API Reference](../../api/mpc/mpc.md) -- linear MPC interface
-- [NMPC API Reference](../../api/mpc/nmpc.md) -- nonlinear MPC interface
-- [MPC Theory](../../background/mpc.md) -- QP/NLP formulation details
+- [OSQP Solver API](../../api/mpc/osqp-solver.md)<br/> OSQP wrapper details
+- [NLopt Solver API](../../api/mpc/nlopt-solver.md)<br/> NLopt wrapper details
+- [MPC API Reference](../../api/mpc/mpc.md)<br/> linear MPC interface
+- [NMPC API Reference](../../api/mpc/nmpc.md)<br/> nonlinear MPC interface
+- [MPC Theory](../../background/mpc.md)<br/> QP/NLP formulation details

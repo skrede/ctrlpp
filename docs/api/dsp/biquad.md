@@ -108,10 +108,10 @@ Chains N biquad sections in series. Each `process()` call passes the sample thro
 
 ### Methods
 
-- `process(Scalar x) -> Scalar` -- filters one sample through all sections
-- `reset()` -- resets all sections
-- `reset(Scalar value)` -- steady-state initialisation propagated through the cascade
-- `section(std::size_t i) -> biquad<Scalar>&` -- access individual sections
+- `process(Scalar x) -> Scalar`, filters one sample through all sections
+- `reset()`, resets all sections
+- `reset(Scalar value)`, steady-state initialisation propagated through the cascade
+- `section(std::size_t i) -> biquad<Scalar>&`, access individual sections
 
 ## Convenience Design Functions
 
@@ -181,6 +181,6 @@ int main()
 
 ## See Also
 
-- [fir](fir.md) -- finite impulse response filter
-- [discrete-filter](discrete-filter.md) -- discrete filter concept
-- [background/dsp](../../background/dsp.md) -- DSP theory and background
+- [fir](fir.md)<br/> finite impulse response filter
+- [discrete-filter](discrete-filter.md)<br/> discrete filter concept
+- [background/dsp](../../background/dsp.md)<br/> DSP theory and background

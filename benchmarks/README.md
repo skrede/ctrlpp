@@ -3,7 +3,7 @@
 ## Overview
 
 Standalone benchmark suite for ctrlpp. Measures internal hot-path performance
-and competitive comparisons against external C++ control libraries.
+and comparison comparisons against external C++ control libraries.
 
 Uses [nanobench](https://nanobench.ankerl.com/) (v4.3.11) for microbenchmarking
 with automatic epoch tuning, statistical analysis, and Linux perf counter
@@ -17,7 +17,7 @@ integration.
 - C++23 compiler (GCC 15+, Clang 18+, MSVC 2022+)
 - Eigen3
 
-### Optional (Competitive Benchmarks)
+### Optional (Comparison Benchmarks)
 
 Each competitor is gated behind its own CMake option, all OFF by default.
 
@@ -50,7 +50,7 @@ cmake --build build -j$(nproc)
 ./build/internal/bench_lqr
 ```
 
-## Enabling Competitive Benchmarks
+## Enabling Comparison Benchmarks
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
@@ -62,10 +62,10 @@ cmake --build build -j$(nproc)
 Or via bench.sh:
 
 ```bash
-./bench.sh --competitive ruckig,osqp_eigen
+./bench.sh --comparison ruckig,osqp_eigen
 ```
 
-To run only internal benchmarks (skip competitive):
+To run only internal benchmarks (skip comparison):
 
 ```bash
 ./bench.sh --internal-only

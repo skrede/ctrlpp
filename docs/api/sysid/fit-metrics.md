@@ -62,8 +62,8 @@ int main()
 
 ## See Also
 
-- [sysid-result](sysid-result.md) -- result containers that include fit_metrics
-- [batch-arx](batch-arx.md) -- batch ARX identification
-- [n4sid](n4sid.md) -- subspace identification
-- [rls](rls.md) -- recursive least squares
-- [background/sysid](../../background/sysid.md) -- sysid theory and background
+- [sysid-result](sysid-result.md)<br/> result containers that include fit_metrics
+- [batch-arx](batch-arx.md)<br/> batch ARX identification
+- [n4sid](n4sid.md)<br/> subspace identification
+- [rls](rls.md)<br/> recursive least squares
+- [background/sysid](../../background/sysid.md)<br/> sysid theory and background

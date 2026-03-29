@@ -69,7 +69,7 @@ int main()
 
 ## See Also
 
-- [septic-trajectory](septic-trajectory.md) -- polynomial with arbitrary BCs up to jerk
-- [quintic-path](quintic-path.md) -- lower continuity (C2)
-- [time-scaling](time-scaling.md) -- uses peak derivatives for duration computation
+- [septic-trajectory](septic-trajectory.md)<br/> polynomial with arbitrary BCs up to jerk
+- [quintic-path](quintic-path.md)<br/> lower continuity (C2)
+- [time-scaling](time-scaling.md)<br/> uses peak derivatives for duration computation
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

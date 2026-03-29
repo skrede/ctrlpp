@@ -69,8 +69,8 @@ int main()
 
 ## See Also
 
-- [quintic-trajectory](quintic-trajectory.md) -- polynomial with arbitrary velocity+acceleration BCs
-- [cubic-path](cubic-path.md) -- lower continuity (C1)
-- [septic-path](septic-path.md) -- higher continuity (C3)
-- [time-scaling](time-scaling.md) -- uses peak derivatives for duration computation
+- [quintic-trajectory](quintic-trajectory.md)<br/> polynomial with arbitrary velocity+acceleration BCs
+- [cubic-path](cubic-path.md)<br/> lower continuity (C1)
+- [septic-path](septic-path.md)<br/> higher continuity (C3)
+- [time-scaling](time-scaling.md)<br/> uses peak derivatives for duration computation
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

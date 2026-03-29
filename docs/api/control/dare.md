@@ -82,6 +82,6 @@ int main()
 
 ## See Also
 
-- [lqr](lqr.md) -- uses DARE internally to compute optimal gains
-- [place](place.md) -- pole placement as an alternative design method
-- [mpc](../mpc/mpc.md) -- MPC uses DARE for terminal cost computation
+- [lqr](lqr.md)<br/> uses DARE internally to compute optimal gains
+- [place](place.md)<br/> pole placement as an alternative design method
+- [mpc](../mpc/mpc.md)<br/> MPC uses DARE for terminal cost computation

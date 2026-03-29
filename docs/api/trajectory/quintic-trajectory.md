@@ -75,7 +75,7 @@ int main()
 
 ## See Also
 
-- [quintic-path](quintic-path.md) -- normalized quintic (zero BCs only)
-- [cubic-trajectory](cubic-trajectory.md) -- lower degree (velocity BCs only)
-- [septic-trajectory](septic-trajectory.md) -- higher degree (adds jerk BCs)
+- [quintic-path](quintic-path.md)<br/> normalized quintic (zero BCs only)
+- [cubic-trajectory](cubic-trajectory.md)<br/> lower degree (velocity BCs only)
+- [septic-trajectory](septic-trajectory.md)<br/> higher degree (adds jerk BCs)
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

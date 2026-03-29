@@ -186,9 +186,9 @@ int main()
 
 ## See Also
 
-- [luenberger](luenberger.md) -- fixed-gain observer alternative
-- [ekf](ekf.md) -- nonlinear extension via linearisation
-- [observer-policy](observer-policy.md) -- concept satisfied by this type
-- [guides/intro/your-first-estimator](../../guides/intro/your-first-estimator.md) -- introductory Kalman filter tutorial
-- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md) -- composing observers with controllers
-- [background/kalman](../../background/kalman.md) -- mathematical derivation
+- [luenberger](luenberger.md)<br/> fixed-gain observer alternative
+- [ekf](ekf.md)<br/> nonlinear extension via linearisation
+- [observer-policy](observer-policy.md)<br/> concept satisfied by this type
+- [guides/intro/your-first-estimator](../../guides/intro/your-first-estimator.md)<br/> introductory Kalman filter tutorial
+- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md)<br/> composing observers with controllers
+- [background/kalman](../../background/kalman.md)<br/> mathematical derivation

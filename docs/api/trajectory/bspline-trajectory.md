@@ -108,6 +108,6 @@ int main()
 
 ## See Also
 
-- [cubic-spline](cubic-spline.md) -- Simpler cubic interpolation for moderate waypoint counts
-- [smoothing-spline](smoothing-spline.md) -- Spline approximation with noise filtering
-- [Trajectory Generation Theory](../../background/trajectory-generation.md) -- B-spline basis functions and de Boor's algorithm
+- [cubic-spline](cubic-spline.md)<br/> Simpler cubic interpolation for moderate waypoint counts
+- [smoothing-spline](smoothing-spline.md)<br/> Spline approximation with noise filtering
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)<br/> B-spline basis functions and de Boor's algorithm

@@ -74,6 +74,6 @@ int main()
 
 ## See Also
 
-- [differentiable-measurement](differentiable-measurement.md) -- extended concept with Jacobian
-- [dynamics-model](dynamics-model.md) -- dynamics model concept
-- [estimation/ekf](../estimation/ekf.md) -- EKF using measurement_model
+- [differentiable-measurement](differentiable-measurement.md)<br/> extended concept with Jacobian
+- [dynamics-model](dynamics-model.md)<br/> dynamics model concept
+- [estimation/ekf](../estimation/ekf.md)<br/> EKF using measurement_model

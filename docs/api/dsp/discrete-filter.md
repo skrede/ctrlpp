@@ -25,13 +25,13 @@ A type satisfies `discrete_filter` when it provides:
 1. A nested type alias `scalar_type` naming the numeric type (e.g., `double`, `float`).
 2. A member function `process(scalar_type) -> scalar_type` (or returning something convertible to `scalar_type`).
 
-The concept does not require `reset()` -- that is a convention followed by the library's built-in filters but not enforced at the concept level.
+The concept does not require `reset()`, this is a convention followed by the library's built-in filters but not enforced at the concept level.
 
 ## Types That Satisfy discrete_filter
 
-- `biquad<Scalar>` -- second-order IIR filter
-- `fir<Scalar, N>` -- finite impulse response filter
-- `cascaded_biquad<Scalar, N>` -- cascaded biquad sections
+- `biquad<Scalar>`, a second-order IIR filter
+- `fir<Scalar, N>`, a finite impulse response filter
+- `cascaded_biquad<Scalar, N>`, a cascaded biquad sections
 
 ## Example Model Implementation
 
@@ -80,6 +80,6 @@ int main()
 
 ## See Also
 
-- [biquad](biquad.md) -- second-order IIR filter
-- [fir](fir.md) -- finite impulse response filter
-- [background/dsp](../../background/dsp.md) -- DSP theory and background
+- [biquad](biquad.md)<br/> second-order IIR filter
+- [fir](fir.md)<br/> finite impulse response filter
+- [background/dsp](../../background/dsp.md)<br/> DSP theory and background

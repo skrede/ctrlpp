@@ -91,9 +91,9 @@ int main()
 
 ## See Also
 
-- [fit-metrics](fit-metrics.md) -- goodness-of-fit metric computation
-- [batch-arx](batch-arx.md) -- batch ARX identification
-- [n4sid](n4sid.md) -- subspace identification
-- [recursive-arx](recursive-arx.md) -- recursive ARX identification
-- [rls](rls.md) -- recursive least squares
-- [model/state-space](../model/state-space.md) -- state-space representation
+- [fit-metrics](fit-metrics.md)<br/> goodness-of-fit metric computation
+- [batch-arx](batch-arx.md)<br/> batch ARX identification
+- [n4sid](n4sid.md)<br/> subspace identification
+- [recursive-arx](recursive-arx.md)<br/> recursive ARX identification
+- [rls](rls.md)<br/> recursive least squares
+- [model/state-space](../model/state-space.md)<br/> state-space representation

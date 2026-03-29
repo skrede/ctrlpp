@@ -60,8 +60,8 @@ int main()
 
 ## See Also
 
-- [PID overview](README.md) -- parent PID documentation
-- [velocity-form](velocity-form.md) -- incremental output form
-- [performance](performance.md) -- controller performance metrics
-- [guides/pid/composition](../../../guides/pid/composition.md) -- composing policies
-- [background/pid](../../../background/pid.md) -- ISA standard form derivation
+- [PID overview](README.md)<br/> parent PID documentation
+- [velocity-form](velocity-form.md)<br/> incremental output form
+- [performance](performance.md)<br/>controller performance metrics
+- [guides/pid/composition](../../../guides/pid/composition.md)<br/>composing policies
+- [background/pid](../../../background/pid.md)<br/>ISA standard form derivation

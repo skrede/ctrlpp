@@ -6,9 +6,9 @@ and use that model for control design.
 
 ## The Three Phases
 
-1. **Collect data** -- apply excitation signals and record the response
-2. **Identify model** -- fit an ARX or state-space model to the data
-3. **Use model** -- feed the identified `discrete_state_space` into LQR, MPC,
+1. **Collect data**<br/>apply excitation signals and record the response
+2. **Identify model**<br/>fit an ARX or state-space model to the data
+3. **Use model**<br/>feed the identified `discrete_state_space` into LQR, MPC,
    or a Kalman filter
 
 ## Phase 1: Collect Data
@@ -172,10 +172,10 @@ LQR, MPC, or Kalman filter constructors.
 
 ## Next Steps
 
-- [Batch ARX API](../../api/sysid/batch-arx.md) -- offline identification
-- [N4SID API](../../api/sysid/n4sid.md) -- subspace identification
-- [RLS API](../../api/sysid/rls.md) -- recursive least squares
-- [Fit Metrics API](../../api/sysid/fit-metrics.md) -- NRMSE, VAF
-- [State Space API](../../api/model/state-space.md) -- model representation
-- [Sysid Theory](../../background/sysid.md) -- ARX, subspace,
+- [Batch ARX API](../../api/sysid/batch-arx.md)<br/> offline identification
+- [N4SID API](../../api/sysid/n4sid.md)<br/> subspace identification
+- [RLS API](../../api/sysid/rls.md)<br/> recursive least squares
+- [Fit Metrics API](../../api/sysid/fit-metrics.md)<br/> NRMSE, VAF
+- [State Space API](../../api/model/state-space.md)<br/> model representation
+- [Sysid Theory](../../background/sysid.md)<br/> ARX, subspace,
   recursive estimation theory

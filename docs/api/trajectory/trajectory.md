@@ -70,6 +70,6 @@ int main()
 
 ## See Also
 
-- [trajectory-segment](trajectory-segment.md) -- concept this type satisfies
-- [path-segment](path-segment.md) -- concept for the `Law` parameter
+- [trajectory-segment](trajectory-segment.md)<br/> concept this type satisfies
+- [path-segment](path-segment.md)<br/> concept for the `Law` parameter
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

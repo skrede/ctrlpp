@@ -72,7 +72,7 @@ int main()
 
 ## See Also
 
-- [cubic-path](cubic-path.md) -- normalized cubic (zero-velocity BCs only)
-- [quintic-trajectory](quintic-trajectory.md) -- adds acceleration BCs
-- [piecewise-trajectory](piecewise-trajectory.md) -- multi-segment composition
+- [cubic-path](cubic-path.md)<br/> normalized cubic (zero-velocity BCs only)
+- [quintic-trajectory](quintic-trajectory.md)<br/> adds acceleration BCs
+- [piecewise-trajectory](piecewise-trajectory.md)<br/> multi-segment composition
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

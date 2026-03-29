@@ -190,8 +190,8 @@ int main()
 
 ## See Also
 
-- [ekf](ekf.md) -- linearisation-based alternative
-- [manifold-ukf](manifold-ukf.md) -- UKF on SO(3) manifold for attitude estimation
-- [observer-policy](observer-policy.md) -- concept satisfied by this type
-- [background/ekf-ukf](../../background/ekf-ukf.md) -- unscented transform derivation
-- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md) -- composing observers with controllers
+- [ekf](ekf.md)<br/> linearisation-based alternative
+- [manifold-ukf](manifold-ukf.md)<br/> UKF on SO(3) manifold for attitude estimation
+- [observer-policy](observer-policy.md)<br/> concept satisfied by this type
+- [background/ekf-ukf](../../background/ekf-ukf.md)<br/> unscented transform derivation
+- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md)<br/> composing observers with controllers

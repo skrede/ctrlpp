@@ -2,7 +2,7 @@
 
 A policy-based PID controller with compile-time feature composition. The template
 signature `pid<Scalar, NX, NU, NY, Policies...>` lets you opt into exactly the
-features you need -- anti-windup, derivative filtering, setpoint weighting,
+features you need &mdash; anti-windup, derivative filtering, setpoint weighting,
 velocity form, ISA form, feed-forward, rate limiting, and performance assessment --
 without paying for what you don't use.
 
@@ -25,7 +25,7 @@ template packs.
 | `Scalar` | arithmetic type | Numeric type (`double`, `float`, `long double`) |
 | `NX` | `std::size_t` | State dimension (unused by PID internals, present for interface uniformity) |
 | `NU` | `std::size_t` | Input dimension (unused by PID internals, present for interface uniformity) |
-| `NY` | `std::size_t` | Output/measurement dimension -- determines the vector size for gains, setpoints, and measurements |
+| `NY` | `std::size_t` | Output/measurement dimension &mdash; determines the vector size for gains, setpoints, and measurements |
 | `Policies...` | policy types | Zero or more policy types from `pid_policies.h` |
 
 ## Type Aliases
@@ -241,17 +241,17 @@ int main()
 
 ## Policy Pages
 
-- [anti-windup](anti-windup.md) -- back-calculation, clamping, and conditional integration
-- [derivative-filter](derivative-filter.md) -- low-pass filtered derivative term
-- [setpoint-filter](setpoint-filter.md) -- setpoint weighting and process variable filtering
-- [velocity-form](velocity-form.md) -- incremental (velocity) form PID
-- [isa-form](isa-form.md) -- ISA standard form (Ti, Td parameterisation)
-- [feed-forward](feed-forward.md) -- additive feed-forward policy
-- [rate-limit](rate-limit.md) -- control signal rate limiting
-- [performance](performance.md) -- IAE, ISE, ITAE, and oscillation detection
+- [anti-windup](anti-windup.md)<br/> back-calculation, clamping, and conditional integration
+- [derivative-filter](derivative-filter.md)<br/>low-pass filtered derivative term
+- [setpoint-filter](setpoint-filter.md)<br/>setpoint weighting and process variable filtering
+- [velocity-form](velocity-form.md)<br/>incremental (velocity) form PID
+- [isa-form](isa-form.md)<br/>ISA standard form (Ti, Td parameterisation)
+- [feed-forward](feed-forward.md)<br/>additive feed-forward policy
+- [rate-limit](rate-limit.md)<br/>control signal rate limiting
+- [performance](performance.md)<br/>IAE, ISE, ITAE, and oscillation detection
 
 ## See Also
 
-- [lqr](../lqr.md) -- optimal state-feedback for multi-variable systems
-- [PID Composition Guide](../../../guides/pid/composition.md) -- combining multiple policies
-- [PID Theory](../../../background/pid.md) -- mathematical background
+- [lqr](../lqr.md)<br/>optimal state-feedback for multi-variable systems
+- [PID Composition Guide](../../../guides/pid/composition.md)<br/>combining multiple policies
+- [PID Theory](../../../background/pid.md)<br/>mathematical background

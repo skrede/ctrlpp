@@ -60,7 +60,7 @@ int main()
 
 ## See Also
 
-- [cubic-trajectory](cubic-trajectory.md) -- polynomial with arbitrary velocity BCs
-- [quintic-path](quintic-path.md) -- higher continuity (C2)
-- [time-scaling](time-scaling.md) -- uses peak derivatives for duration computation
+- [cubic-trajectory](cubic-trajectory.md)<br/> polynomial with arbitrary velocity BCs
+- [quintic-path](quintic-path.md)<br/> higher continuity (C2)
+- [time-scaling](time-scaling.md)<br/> uses peak derivatives for duration computation
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

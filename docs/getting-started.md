@@ -86,7 +86,7 @@ tracks the integral and derivative state internally between calls.
 
 ## What's next
 
-- [Your First Estimator](guides/intro/your-first-estimator.md) -- add an observer to your control loop
-- [Your First MPC](guides/intro/your-first-mpc.md) -- model predictive control with constraints
-- [PID Composition](guides/pid/composition.md) -- add anti-windup, derivative filtering, and more
-- [API Reference](README.md#api-reference) -- full type documentation
+- [Your First Estimator](guides/intro/your-first-estimator.md)<br/> add an observer to your control loop
+- [Your First MPC](guides/intro/your-first-mpc.md)<br/> model predictive control with constraints
+- [PID Composition](guides/pid/composition.md)<br/> add anti-windup, derivative filtering, and more
+- [API Reference](README.md#api-reference)<br/> full type documentation

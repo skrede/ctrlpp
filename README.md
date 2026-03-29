@@ -12,14 +12,14 @@
 
 ## Features
 
-- **Policy-based PID** -- compose anti-windup, derivative filtering, setpoint filtering, velocity form, ISA form, feed-forward, and rate limiting from orthogonal policy types.
-- **Estimation** -- Kalman, Luenberger, EKF, UKF, particle filter, MEKF, manifold UKF, and complementary filter with a unified observer concept interface.
-- **Model predictive control** -- linear MPC (OSQP) and nonlinear MPC (NLopt) with terminal constraints, soft constraints, and delta-u limiting.
-- **Moving horizon estimation** -- linear MHE (OSQP) and nonlinear MHE (NLopt) with arrival cost and box constraints.
-- **Signal processing** -- biquad IIR sections (Butterworth, Chebyshev), FIR filters, and cascaded filter chains.
-- **System identification** -- RLS, batch/recursive ARX, and N4SID subspace identification with fit metrics.
-- **Lie group utilities** -- SO(3) quaternion exponential/logarithm maps for attitude estimation.
-- **Model utilities** -- state-space and transfer function representations, discretisation, conversion, stability analysis, and C++20 concepts for dynamics, measurement, and constraint models.
+- **Policy-based PID**</br> Compose anti-windup, derivative filtering, setpoint filtering, velocity form, ISA form, feed-forward, and rate limiting from orthogonal policy types.
+- **Estimation**</br> Kalman, Luenberger, EKF, UKF, particle filter, MEKF, manifold UKF, and complementary filter with a unified observer concept interface.
+- **Model predictive control**</br> linear MPC (OSQP) and nonlinear MPC (NLopt) with terminal constraints, soft constraints, and delta-u limiting.
+- **Moving horizon estimation**</br> linear MHE (OSQP) and nonlinear MHE (NLopt) with arrival cost and box constraints.
+- **Signal processing**</br> biquad IIR sections (Butterworth, Chebyshev), FIR filters, and cascaded filter chains.
+- **System identification**</br> RLS, batch/recursive ARX, and N4SID subspace identification with fit metrics.
+- **Lie group utilities**</br> SO(3) quaternion exponential/logarithm maps for attitude estimation.
+- **Model utilities**</br> state-space and transfer function representations, discretisation, conversion, stability analysis, and C++20 concepts for dynamics, measurement, and constraint models.
 
 ## Quick Start
 
@@ -101,11 +101,16 @@ set(CTRLPP_ENABLE_NLOPT OFF)
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) -- Install ctrlpp and run your first PID controller
-- [Guides](docs/guides/README.md) -- Tutorials and deep dives
-- [API Reference](docs/README.md#api-reference) -- Full type documentation
-- [Background Theory](docs/README.md#background-theory) -- Theory and mathematical background
+- [Getting Started](docs/getting-started.md)</br> Install ctrlpp and run your first PID controller
+- [Guides](docs/guides/README.md)</br> Tutorials and deep dives
+- [API Reference](docs/README.md#api-reference)</br> Full type documentation
+- [Background Theory](docs/README.md#background-theory)</br> Theory and mathematical background
 
 ## License
 
-Apache 2.0 License -- see [LICENSE](LICENSE) for details.
+Apache 2.0 License &mdash; see [LICENSE](LICENSE) for details.
+
+## Declaration of AI use
+This library has been developed with extensive support from Claude Code in a hybrid of the Spiral Model and Extreme Programming using [GSD](https://github.com/gsd-build/get-shit-done). 
+
+

@@ -42,7 +42,7 @@ struct oscillation_detect {};  // counts error sign changes per unit time
 
 ## Behavior
 
-The performance assessment policy accumulates metrics passively during each `compute()` call. It does not modify the PID output -- it is read-only observation. The accumulated metrics can be queried at any time for logging, tuning evaluation, or online diagnostics.
+The performance assessment policy accumulates metrics passively during each `compute()` call. It does not modify the PID output &mdash; it is read-only observation. The accumulated metrics can be queried at any time for logging, tuning evaluation, or online diagnostics.
 
 ## Usage Example
 
@@ -83,8 +83,8 @@ int main()
 
 ## See Also
 
-- [PID overview](README.md) -- parent PID documentation
-- [anti-windup](anti-windup.md) -- performance depends on proper windup handling
-- [derivative-filter](derivative-filter.md) -- noise filtering affects performance metrics
-- [guides/pid/composition](../../../guides/pid/composition.md) -- composing policies
-- [background/pid](../../../background/pid.md) -- performance index definitions
+- [PID overview](README.md)<br/> parent PID documentation
+- [anti-windup](anti-windup.md)<br/> performance depends on proper windup handling
+- [derivative-filter](derivative-filter.md)<br/>noise filtering affects performance metrics
+- [guides/pid/composition](../../../guides/pid/composition.md)<br/>composing policies
+- [background/pid](../../../background/pid.md)<br/>performance index definitions

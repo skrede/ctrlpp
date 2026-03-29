@@ -53,6 +53,6 @@ int main()
 
 ## See Also
 
-- [trajectory-segment](trajectory-segment.md) -- concept using `trajectory_point`
-- [path-segment](path-segment.md) -- concept using `path_point`
+- [trajectory-segment](trajectory-segment.md)<br/> concept using `trajectory_point`
+- [path-segment](path-segment.md)<br/> concept using `path_point`
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

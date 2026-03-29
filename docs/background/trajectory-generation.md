@@ -118,7 +118,7 @@ and the displacement $h$ [1, Sec. 3.6.2, pp. 85--95].
 
 Degenerate cases arise when the displacement is too small for all phases
 to occur. The cruise phase may vanish, the constant-acceleration phases
-may vanish, or both -- requiring careful case analysis
+may vanish, or both &mdash; requiring careful case analysis
 [1, Sec. 3.6.3, pp. 96--100].
 
 ## Spline Interpolation

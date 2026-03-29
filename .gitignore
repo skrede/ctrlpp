@@ -60,6 +60,9 @@ cmake-build-*
 validation/cases/*/analysis/
 validation/analysis/
 
+# Benchmark output CSVs
+benchmarks/*.csv
+
 # Agents
 build*/
 build_*/

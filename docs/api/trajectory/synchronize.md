@@ -51,7 +51,7 @@ Runtime-sized variant for collections of identical profile types. Same behaviour
 
 When multiple axes must move together (e.g. a 3-axis Cartesian robot), each axis computes its own time-optimal profile independently. `synchronize()` then stretches the faster axes to match the slowest, ensuring all axes start and stop together.
 
-The time scaling preserves the profile shape -- the trajectory maintains its velocity/acceleration constraint structure, just stretched in time. Each profile's `rescale_to()` implementation handles the constraint-respecting time scaling internally.
+The time scaling preserves the profile shape &mdash; the trajectory maintains its velocity/acceleration constraint structure, just stretched in time. Each profile's `rescale_to()` implementation handles the constraint-respecting time scaling internally.
 
 ## Usage Example
 
@@ -88,6 +88,6 @@ int main()
 
 ## See Also
 
-- [trapezoidal-trajectory](trapezoidal-trajectory.md) -- Trapezoidal profile with `rescale_to()` support
-- [double-s-trajectory](double-s-trajectory.md) -- Double-S profile with `rescale_to()` support
-- [Trajectory Generation Theory](../../background/trajectory-generation.md) -- Multi-axis synchronization algorithms
+- [trapezoidal-trajectory](trapezoidal-trajectory.md)<br/> Trapezoidal profile with `rescale_to()` support
+- [double-s-trajectory](double-s-trajectory.md)<br/> Double-S profile with `rescale_to()` support
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)<br/> Multi-axis synchronization algorithms

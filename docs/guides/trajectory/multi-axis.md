@@ -36,7 +36,7 @@ auto ax_z = ctrlpp::trapezoidal_trajectory(cfg_z);
 // Synchronize: all axes now finish at the same time
 ctrlpp::synchronize(ax_x, ax_y, ax_z);
 
-// Evaluate at any time -- all axes are coordinated
+// Evaluate at any time &mdash; all axes are coordinated
 double t = 2.0;
 auto [px, vx, ax] = ax_x.evaluate(t);
 auto [py, vy, ay] = ax_y.evaluate(t);
@@ -54,7 +54,7 @@ The `synchronize()` function:
 1. Finds the maximum duration among all provided trajectories.
 2. Rescales each shorter trajectory to match that maximum duration via
    `rescale_to()`.
-3. Each axis's kinematic limits are still respected -- the rescaled profile
+3. Each axis's kinematic limits are still respected &mdash; the rescaled profile
    simply uses lower velocities and accelerations for shorter moves.
 
 The result is that all axes start and finish together, with coordinated
@@ -65,13 +65,11 @@ velocity profiles throughout the motion.
 Any trajectory type satisfying the `syncable_profile` concept can be
 synchronized. A type is syncable if it provides:
 
-- `duration()` -- returns the trajectory duration
-- `rescale_to(new_duration)` -- stretches the profile to a new duration
-- `scalar_type` -- the scalar type alias
+- `duration()`, which returns the trajectory duration
+- `rescale_to(new_duration)`, which stretches the profile to a new duration
+- `scalar_type`, which is the scalar type alias
 
-Currently, [trapezoidal](../../api/trajectory/trapezoidal-trajectory.md) and
-[double-S](../../api/trajectory/double-s-trajectory.md) profiles support
-synchronization out of the box.
+Currently, [trapezoidal](../../api/trajectory/trapezoidal-trajectory.md) and [double-S](../../api/trajectory/double-s-trajectory.md) profiles support synchronization out of the box.
 
 ## Links
 

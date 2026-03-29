@@ -48,12 +48,12 @@ strategy. When a new target is set while the planner is still moving:
 1. The planner decelerates to zero velocity (respecting kinematic limits).
 2. Once stopped, it plans a new profile toward the updated target.
 
-This approach is robust and predictable -- the system never attempts to
+This approach is robust and predictable &mdash; the system never attempts to
 reverse direction at speed. For applications that need smoother transitions,
 the 3rd-order planner additionally limits jerk during the deceleration phase.
 
 ```cpp
-// Change target while moving -- planner handles it safely
+// Change target while moving; the planner handles it safely
 planner.set_target(10.0);
 // ... some time later, before reaching 10.0 ...
 planner.set_target(-5.0);  // brakes to zero, then heads to -5.0

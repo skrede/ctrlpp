@@ -129,8 +129,8 @@ int main()
 
 ## See Also
 
-- [mpc](mpc.md) -- linear MPC using OSQP
-- [mhe](mhe.md) -- linear MHE using OSQP
-- [nlopt-solver](nlopt-solver.md) -- NLopt NLP solver backend
-- [guides/mpc/solver-injection](../../guides/mpc/solver-injection.md) -- solver injection guide
-- [background/mpc](../../background/mpc.md) -- QP formulation and theory
+- [mpc](mpc.md)<br/> linear MPC using OSQP
+- [mhe](mhe.md)<br/> linear MHE using OSQP
+- [nlopt-solver](nlopt-solver.md)<br/> NLopt NLP solver backend
+- [guides/mpc/solver-injection](../../guides/mpc/solver-injection.md)<br/> solver injection guide
+- [background/mpc](../../background/mpc.md)<br/> QP formulation and theory

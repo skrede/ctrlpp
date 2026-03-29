@@ -122,7 +122,7 @@ int main()
 
 ## See Also
 
-- [recursive-arx](recursive-arx.md) -- recursive ARX identification using RLS
-- [batch-arx](batch-arx.md) -- batch ARX identification
-- [guides/sysid/workflow](../../guides/sysid/workflow.md) -- system identification workflow guide
-- [background/sysid](../../background/sysid.md) -- sysid theory and background
+- [recursive-arx](recursive-arx.md)<br/> recursive ARX identification using RLS
+- [batch-arx](batch-arx.md)<br/> batch ARX identification
+- [guides/sysid/workflow](../../guides/sysid/workflow.md)<br/> system identification workflow guide
+- [background/sysid](../../background/sysid.md)<br/> sysid theory and background

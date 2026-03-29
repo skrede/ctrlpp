@@ -147,9 +147,9 @@ int main()
 
 ## See Also
 
-- [kalman](kalman.md) -- linear Kalman filter
-- [ekf](ekf.md) -- extended Kalman filter
-- [ukf](ukf.md) -- unscented Kalman filter
-- [particle-filter](particle-filter.md) -- particle filter
-- [luenberger](luenberger.md) -- Luenberger observer
-- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md) -- composition patterns
+- [kalman](kalman.md)<br/> linear Kalman filter
+- [ekf](ekf.md)<br/> extended Kalman filter
+- [ukf](ukf.md)<br/> unscented Kalman filter
+- [particle-filter](particle-filter.md)<br/> particle filter
+- [luenberger](luenberger.md)<br/> Luenberger observer
+- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md)<br/> composition patterns

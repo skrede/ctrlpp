@@ -54,7 +54,7 @@ CTAD deduction guide available.
 
 ## Methods
 
-### update (IMU -- 6-DOF)
+### update (IMU: 6&ndash;DOF)
 
 ```cpp
 void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt);
@@ -62,7 +62,7 @@ void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scala
 
 Natural IMU update fusing gyroscope angular velocity with accelerometer gravity reference. Computes the rotation error between the expected and measured gravity direction in body frame via cross product, applies PI correction to the gyroscope, and integrates the corrected angular velocity via the SO(3) exponential map.
 
-### update (MARG -- 9-DOF)
+### update (MARG: 9&ndash;DOF)
 
 ```cpp
 void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel,
@@ -162,7 +162,7 @@ int main()
 
 ## See Also
 
-- [mekf](mekf.md) -- optimal attitude estimation with bias tracking
-- [manifold-ukf](manifold-ukf.md) -- sigma-point filter on SO(3)
-- [so3](../lie/so3.md) -- SO(3) quaternion utilities
-- [background/attitude-estimation](../../background/attitude-estimation.md) -- complementary filter derivation
+- [mekf](mekf.md)<br/> optimal attitude estimation with bias tracking
+- [manifold-ukf](manifold-ukf.md)<br/> sigma-point filter on SO(3)
+- [so3](../lie/so3.md)<br/> SO(3) quaternion utilities
+- [background/attitude-estimation](../../background/attitude-estimation.md)<br/> complementary filter derivation

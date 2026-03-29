@@ -143,8 +143,8 @@ int main()
 
 ## See Also
 
-- [kalman](kalman.md) -- optimal stochastic observer
-- [observer-policy](observer-policy.md) -- concept satisfied by this type
-- [place](../control/place.md) -- pole placement for observer gain design
-- [background/kalman](../../background/kalman.md) -- observer theory and comparison with Kalman filter
-- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md) -- composing observers with controllers
+- [kalman](kalman.md)<br/> optimal stochastic observer
+- [observer-policy](observer-policy.md)<br/> concept satisfied by this type
+- [place](../control/place.md)<br/> pole placement for observer gain design
+- [background/kalman](../../background/kalman.md)<br/> observer theory and comparison with Kalman filter
+- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md)<br/> composing observers with controllers

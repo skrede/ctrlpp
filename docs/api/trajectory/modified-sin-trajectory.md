@@ -82,7 +82,7 @@ int main()
 
 ## See Also
 
-- [modified-trap-trajectory](modified-trap-trajectory.md) -- alternative smooth profile
-- [harmonic-path](harmonic-path.md) -- elementary harmonic motion law
-- [cycloidal-path](cycloidal-path.md) -- elementary cycloidal motion law
+- [modified-trap-trajectory](modified-trap-trajectory.md)<br/> alternative smooth profile
+- [harmonic-path](harmonic-path.md)<br/> elementary harmonic motion law
+- [cycloidal-path](cycloidal-path.md)<br/> elementary cycloidal motion law
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

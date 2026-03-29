@@ -99,14 +99,14 @@ int main()
 
 ## Key Details
 
-- **Decimation** -- the outer loop runs every `decimation` inner steps.
+- **Decimation**<br/>the outer loop runs every `decimation` inner steps.
   The inner loop sees a piecewise-constant setpoint between outer updates.
 
-- **Tracking signal** -- `outer.compute(sp, meas, dt, tracking)` accepts an
+- **Tracking signal**<br/>`outer.compute(sp, meas, dt, tracking)` accepts an
   optional fourth argument: the actual inner-loop measurement. This enables
   bumpless transfer when the inner loop saturates.
 
-- **Gain separation** -- the outer loop has larger proportional gain to
+- **Gain separation**<br/>the outer loop has larger proportional gain to
   command aggressive velocity changes; the inner loop has smaller gains
   appropriate for the faster sampling rate.
 
@@ -125,6 +125,6 @@ instead.
 
 ## Next Steps
 
-- [PID API Reference](../../api/control/pid/README.md) -- bumpless transfer and
+- [PID API Reference](../../api/control/pid/README.md)<br/> bumpless transfer and
   tracking mode
-- [PID Composition](composition.md) -- adding policies to cascade loops
+- [PID Composition](composition.md)<br/> adding policies to cascade loops

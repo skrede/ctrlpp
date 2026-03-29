@@ -103,6 +103,6 @@ int main()
 
 ## See Also
 
-- [mpc/nmpc](../mpc/nmpc.md) -- NMPC using constraint models
-- [mpc/nmhe](../mpc/nmhe.md) -- NMHE using constraint models
-- [dynamics-model](dynamics-model.md) -- dynamics model concept
+- [mpc/nmpc](../mpc/nmpc.md)<br/> NMPC using constraint models
+- [mpc/nmhe](../mpc/nmhe.md)<br/> NMHE using constraint models
+- [dynamics-model](dynamics-model.md)<br/> dynamics model concept

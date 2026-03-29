@@ -71,9 +71,9 @@ Reset state to position `q0` with zero velocity.
 
 The planner produces trapezoidal velocity profiles with three phases:
 
-1. **Acceleration** -- ramp velocity toward `v_max` at rate `a_max`
-2. **Cruise** -- hold at `v_max` (may be zero duration for short moves)
-3. **Deceleration** -- ramp velocity to zero at rate `a_max`
+1. **Acceleration**<br/>ramp velocity toward `v_max` at rate `a_max`
+2. **Cruise**<br/>hold at `v_max` (may be zero duration for short moves)
+3. **Deceleration**<br/>ramp velocity to zero at rate `a_max`
 
 For short displacements where `v_max` cannot be reached, the profile degenerates to a triangular velocity shape. Mid-motion target changes trigger replanning from the current state, with automatic brake-and-replan for overshoot scenarios.
 
@@ -101,6 +101,6 @@ int main()
 
 ## See Also
 
-- [online-planner-3rd](online-planner-3rd.md) -- 3rd-order variant with jerk limiting
-- [trapezoidal-trajectory](trapezoidal-trajectory.md) -- Pre-computed trapezoidal profile
-- [Trajectory Generation Theory](../../background/trajectory-generation.md) -- Online trajectory generation algorithms
+- [online-planner-3rd](online-planner-3rd.md)<br/> 3rd-order variant with jerk limiting
+- [trapezoidal-trajectory](trapezoidal-trajectory.md)<br/> Pre-computed trapezoidal profile
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)<br/> Online trajectory generation algorithms

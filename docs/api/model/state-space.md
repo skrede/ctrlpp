@@ -104,9 +104,9 @@ int main()
 
 ## See Also
 
-- [transfer-function](transfer-function.md) -- transfer function representation
-- [discretise](discretise.md) -- continuous-to-discrete conversion
-- [conversion](conversion.md) -- TF to SS and SS to TF
-- [analysis](analysis.md) -- stability, controllability, observability
-- [propagate](propagate.md) -- state propagation utilities
-- [guides/sysid/workflow](../../guides/sysid/workflow.md) -- identification produces state-space models
+- [transfer-function](transfer-function.md)<br/> transfer function representation
+- [discretise](discretise.md)<br/> continuous-to-discrete conversion
+- [conversion](conversion.md)<br/> TF to SS and SS to TF
+- [analysis](analysis.md)<br/> stability, controllability, observability
+- [propagate](propagate.md)<br/> state propagation utilities
+- [guides/sysid/workflow](../../guides/sysid/workflow.md)<br/> identification produces state-space models

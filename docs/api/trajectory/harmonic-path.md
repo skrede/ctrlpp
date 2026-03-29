@@ -78,7 +78,7 @@ int main()
 
 ## See Also
 
-- [cycloidal-path](cycloidal-path.md) -- zero acceleration at endpoints (C2)
-- [cubic-path](cubic-path.md) -- polynomial alternative (C1)
-- [time-scaling](time-scaling.md) -- uses peak derivatives for duration computation
+- [cycloidal-path](cycloidal-path.md)<br/> zero acceleration at endpoints (C2)
+- [cubic-path](cubic-path.md)<br/> polynomial alternative (C1)
+- [time-scaling](time-scaling.md)<br/> uses peak derivatives for duration computation
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

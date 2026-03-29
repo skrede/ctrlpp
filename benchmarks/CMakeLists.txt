@@ -42,4 +42,4 @@ if(nlopt_FOUND)
 endif()
 
 add_subdirectory(internal)
-add_subdirectory(competitive)
+add_subdirectory(comparison)

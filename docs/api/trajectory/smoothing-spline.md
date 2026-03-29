@@ -95,5 +95,5 @@ int main()
 
 ## See Also
 
-- [cubic-spline](cubic-spline.md) -- Exact interpolation with natural, clamped, or periodic BCs
-- [Trajectory Generation Theory](../../background/trajectory-generation.md) -- Smoothing spline regularisation formulation
+- [cubic-spline](cubic-spline.md)<br/> Exact interpolation with natural, clamped, or periodic BCs
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)<br/> Smoothing spline regularisation formulation

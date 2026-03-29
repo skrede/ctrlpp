@@ -6,6 +6,6 @@ practical example that you can follow from start to finish.
 
 ## Guides
 
-- [Your First PID](your-first-pid.md) -- A PID controller from scratch with step-by-step explanation
-- [Your First Estimator](your-first-estimator.md) -- Add an EKF observer to a control loop
-- [Your First MPC](your-first-mpc.md) -- Linear model predictive control with constraints
+- [Your First PID](your-first-pid.md)<br/> A PID controller from scratch with step-by-step explanation
+- [Your First Estimator](your-first-estimator.md)<br/> Add an EKF observer to a control loop
+- [Your First MPC](your-first-mpc.md)<br/> Linear model predictive control with constraints

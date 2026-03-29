@@ -8,6 +8,7 @@
 #include "ctrlpp/mpc/osqp_solver.h"
 #include "ctrlpp/model/state_space.h"
 
+#include <cassert>
 #include <mpc/LMPC.hpp>
 
 #include <fstream>
@@ -69,30 +70,42 @@ int main()
     ctrlpp_mpc.solve(x0);
 
     // ---- libmpc++ setup ----
-    mpc::LMPC<NX, NU, 0, N> libmpc_ctrl;
+    // Template: <NX, NU, Ndu, NY, Npred, Nctrl>
+    constexpr std::size_t NY = NX;
+    constexpr std::size_t Ndu = 0;
+    constexpr int Nctrl = N;
+    mpc::LMPC<NX, NU, Ndu, NY, N, Nctrl> libmpc_ctrl;
 
     mpc::mat<NX, NX> A_mpc = A;
     mpc::mat<NX, NU> B_mpc = B;
-    mpc::mat<NX, NX> C_mpc = mpc::mat<NX, NX>::Identity();
+    mpc::mat<NY, NX> C_mpc = mpc::mat<NY, NX>::Identity();
     libmpc_ctrl.setStateSpaceModel(A_mpc, B_mpc, C_mpc);
 
-    mpc::mat<NX, NX> Q_mpc = Q;
-    mpc::mat<NU, NU> R_mpc = R;
-    libmpc_ctrl.setObjectiveWeights(Q_mpc, R_mpc, Q_mpc);
+    // Weights: full matrices (NY x N) and (NU x Nctrl)
+    mpc::mat<NY, N> O_weight;
+    O_weight.colwise() = mpc::cvec<NY>::Ones();
+    mpc::mat<NU, Nctrl> U_weight;
+    U_weight.colwise() = 0.1 * mpc::cvec<NU>::Ones();
+    mpc::mat<NU, Nctrl> DU_weight = mpc::mat<NU, Nctrl>::Zero();
+    libmpc_ctrl.setObjectiveWeights(O_weight, U_weight, DU_weight);
 
-    mpc::cvec<NU> u_min_mpc;
-    u_min_mpc << -1.0, -1.0;
-    mpc::cvec<NU> u_max_mpc;
-    u_max_mpc << 1.0, 1.0;
-    libmpc_ctrl.setInputBounds(u_min_mpc, u_max_mpc);
+    // Bounds: full matrices (NX x N) and (NU x Nctrl)
+    mpc::mat<NX, N> X_min_mpc;
+    X_min_mpc.colwise() = mpc::cvec<NX>::Constant(-5.0);
+    mpc::mat<NX, N> X_max_mpc;
+    X_max_mpc.colwise() = mpc::cvec<NX>::Constant(5.0);
+    libmpc_ctrl.setStateBounds(X_min_mpc, X_max_mpc);
 
-    mpc::cvec<NX> x_min_mpc = mpc::cvec<NX>::Constant(-5.0);
-    mpc::cvec<NX> x_max_mpc = mpc::cvec<NX>::Constant(5.0);
-    libmpc_ctrl.setStateBounds(x_min_mpc, x_max_mpc);
+    mpc::mat<NU, Nctrl> U_min_mpc;
+    U_min_mpc.colwise() = mpc::cvec<NU>::Constant(-1.0);
+    mpc::mat<NU, Nctrl> U_max_mpc;
+    U_max_mpc.colwise() = mpc::cvec<NU>::Constant(1.0);
+    libmpc_ctrl.setInputBounds(U_min_mpc, U_max_mpc);
 
     mpc::cvec<NX> x0_mpc = x0;
+    mpc::cvec<NY> yref_mpc = mpc::cvec<NY>::Zero();
     // Warm up
-    libmpc_ctrl.step(x0_mpc, mpc::cvec<NX>::Zero());
+    libmpc_ctrl.optimize(x0_mpc, mpc::cvec<NU>::Zero());
 
     // ---- Benchmark ----
     ankerl::nanobench::Bench bench;
@@ -110,7 +123,7 @@ int main()
         .run("libmpc++::LMPC::step",
              [&]
              {
-                 auto r = libmpc_ctrl.step(x0_mpc, mpc::cvec<NX>::Zero());
+                 auto r = libmpc_ctrl.optimize(x0_mpc, mpc::cvec<NU>::Zero());
                  ankerl::nanobench::doNotOptimizeAway(r);
              });
 

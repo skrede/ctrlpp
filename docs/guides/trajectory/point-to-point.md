@@ -65,11 +65,11 @@ for a runnable version.
 
 ## Choosing by Smoothness
 
-- **Position control only** -- cubic is sufficient (C1 continuity).
-- **Smooth velocity needed** -- quintic guarantees continuous acceleration (C2).
-- **Acceleration matters** (e.g., force control) -- double-S or septic provide
+- **Position control only**<br/>cubic is sufficient (C1 continuity).
+- **Smooth velocity needed**<br/>quintic guarantees continuous acceleration (C2).
+- **Acceleration matters** (e.g., force control)<br/> double-S or septic provide
   jerk-limited or C3 profiles.
-- **Duration-based profiling** -- modified trapezoidal or modified sinusoidal
+- **Duration-based profiling**<br/>modified trapezoidal or modified sinusoidal
   when you know the total move time and want reduced residual vibration.
 
 ## Kinematic Time Scaling

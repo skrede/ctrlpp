@@ -1,6 +1,8 @@
 # time_scaling
 
-Kinematic time scaling for normalized paths. Computes the minimum trajectory duration T from displacement magnitude, peak normalized path derivatives, and kinematic limits (v_max, a_max, j_max). For use with elementary paths only -- composite profiles (trapezoidal, double-S) solve timing internally.
+Kinematic time scaling for normalized paths. Computes the minimum trajectory duration T from displacement magnitude, peak normalized path derivatives, and kinematic limits (v_max, a_max, j_max). 
+
+**NB: For use with elementary paths only &mdash; composite profiles (trapezoidal, double-S) solve timing internally.**
 
 | Property | Value |
 |----------|-------|
@@ -85,7 +87,7 @@ int main()
 
 ## See Also
 
-- [cubic-path](cubic-path.md), [quintic-path](quintic-path.md), [septic-path](septic-path.md) -- paths providing peak derivatives
-- [harmonic-path](harmonic-path.md), [cycloidal-path](cycloidal-path.md) -- trigonometric paths
-- [trajectory](trajectory.md) -- adapter using computed duration
+- [cubic-path](cubic-path.md), [quintic-path](quintic-path.md), [septic-path](septic-path.md)<br/> paths providing peak derivatives
+- [harmonic-path](harmonic-path.md), [cycloidal-path](cycloidal-path.md)<br/> trigonometric paths
+- [trajectory](trajectory.md)<br/> adapter using computed duration
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

@@ -72,13 +72,13 @@ Reset state to position `q0` with zero velocity and zero acceleration.
 
 The planner produces double-S velocity profiles composed of constant-jerk phases (up to 11 phases total):
 
-1. **Acceleration ramp-up** -- apply +j_max until a_max reached
-2. **Constant acceleration** -- hold at a_max (may be zero duration)
-3. **Acceleration ramp-down** -- apply -j_max to bring acceleration to zero
-4. **Cruise** -- hold at v_max with zero acceleration (may be zero duration)
-5. **Deceleration ramp-up** -- apply -j_max to build deceleration
-6. **Constant deceleration** -- hold at -a_max (may be zero duration)
-7. **Deceleration ramp-down** -- apply +j_max to bring acceleration and velocity to zero
+1. **Acceleration ramp-up**<br/>apply +j_max until a_max reached
+2. **Constant acceleration**<br/>hold at a_max (may be zero duration)
+3. **Acceleration ramp-down**<br/>apply -j_max to bring acceleration to zero
+4. **Cruise**<br/>hold at v_max with zero acceleration (may be zero duration)
+5. **Deceleration ramp-up**<br/>apply -j_max to build deceleration
+6. **Constant deceleration**<br/>hold at -a_max (may be zero duration)
+7. **Deceleration ramp-down**<br/>apply +j_max to bring acceleration and velocity to zero
 
 Degenerate cases (v_max or a_max not reached) automatically reduce the number of phases. Mid-motion replanning uses a brake-to-zero-then-replan strategy for robustness.
 
@@ -110,6 +110,6 @@ int main()
 
 ## See Also
 
-- [online-planner-2nd](online-planner-2nd.md) -- 2nd-order variant (faster, acceleration-limited only)
-- [double-s-trajectory](double-s-trajectory.md) -- Pre-computed double-S profile
-- [Trajectory Generation Theory](../../background/trajectory-generation.md) -- Double-S profile mathematics and jerk limitation
+- [online-planner-2nd](online-planner-2nd.md)<br/> 2nd-order variant (faster, acceleration-limited only)
+- [double-s-trajectory](double-s-trajectory.md)<br/> Pre-computed double-S profile
+- [Trajectory Generation Theory](../../background/trajectory-generation.md)<br/> Double-S profile mathematics and jerk limitation

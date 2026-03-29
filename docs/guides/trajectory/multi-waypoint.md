@@ -41,7 +41,7 @@ for a runnable version.
 
 ## Quick Start: B-spline
 
-B-splines offer local control -- moving one control point only affects
+B-splines offer local control &mdash; moving one control point only affects
 nearby segments. The degree parameter controls smoothness:
 
 ```cpp
@@ -70,8 +70,8 @@ for a runnable version.
 The [smoothing spline](../../api/trajectory/smoothing-spline.md) balances
 interpolation fidelity against curve smoothness via a single parameter `mu`:
 
-- `mu = 0` -- exact interpolation (passes through every waypoint)
-- `mu = 1` -- maximum smoothing (least-squares straight line)
+- `mu = 0` gives exact interpolation (passes through every waypoint)
+- `mu = 1` gives maximum smoothing (least-squares straight line)
 
 For noisy sensor data, values around `mu = 0.5` to `mu = 0.9` typically
 produce good results. The optimal value depends on the noise level relative

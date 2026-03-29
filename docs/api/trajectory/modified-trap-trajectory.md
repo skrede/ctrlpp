@@ -81,6 +81,6 @@ int main()
 
 ## See Also
 
-- [trapezoidal-trajectory](trapezoidal-trajectory.md) -- standard trapezoidal (discontinuous acceleration)
-- [modified-sin-trajectory](modified-sin-trajectory.md) -- alternative smooth profile
+- [trapezoidal-trajectory](trapezoidal-trajectory.md)<br/> standard trapezoidal (discontinuous acceleration)
+- [modified-sin-trajectory](modified-sin-trajectory.md)<br/> alternative smooth profile
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

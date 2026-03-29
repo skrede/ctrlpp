@@ -1,7 +1,7 @@
 # Policy-Based PID Composition
 
 ctrlpp's PID controller uses compile-time policy composition. Each policy
-adds a specific behaviour -- anti-windup, derivative filtering, rate limiting
+adds a specific behaviour &mdash; anti-windup, derivative filtering, rate limiting
 -- as a template parameter. You pay zero runtime cost for policies you do not
 use.
 
@@ -124,7 +124,7 @@ Access policy fields through `cfg.template policy<PolicyType>()`.
 
 Policies are resolved entirely at compile time. A `pid<double, 1, 1, 1>` with
 no policies compiles to a minimal P+I+D computation. Adding `deriv_filter`
-adds only the filter arithmetic -- no virtual dispatch, no branch on policy
+adds only the filter arithmetic &mdash; no virtual dispatch, no branch on policy
 presence.
 
 The optimiser sees through the template instantiation and inlines everything
@@ -132,8 +132,8 @@ into a single function body.
 
 ## Next Steps
 
-- [Anti-Windup](../../api/control/pid/anti-windup.md) -- detailed anti-windup API
-- [Derivative Filter](../../api/control/pid/derivative-filter.md) -- filter bandwidth selection
-- [Rate Limit](../../api/control/pid/rate-limit.md) -- rate limiter API
-- [PID API Reference](../../api/control/pid/README.md) -- full method signatures
-- [PID Theory](../../background/pid.md) -- mathematical background
+- [Anti-Windup](../../api/control/pid/anti-windup.md)<br/> detailed anti-windup API
+- [Derivative Filter](../../api/control/pid/derivative-filter.md)<br/> filter bandwidth selection
+- [Rate Limit](../../api/control/pid/rate-limit.md)<br/> rate limiter API
+- [PID API Reference](../../api/control/pid/README.md)<br/> full method signatures
+- [PID Theory](../../background/pid.md)<br/> mathematical background

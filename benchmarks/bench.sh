@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # bench.sh -- Configure, build, and run ctrlpp benchmarks.
 #
-# Usage: ./bench.sh [build_dir] [--internal-only] [--competitive lib1,lib2,...]
+# Usage: ./bench.sh [build_dir] [--internal-only] [--comparison lib1,lib2,...]
 #   build_dir       : CMake build directory (default: ./build)
-#   --internal-only : Skip competitive benchmarks entirely
-#   --competitive   : Enable specific competitors (comma-separated)
+#   --internal-only : Skip comparison benchmarks entirely
+#   --comparison   : Enable specific competitors (comma-separated)
 #                     Valid: libmpc,osqp_eigen,hpipm,ct,ruckig,drake
 
 set -euo pipefail
@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
             INTERNAL_ONLY=true
             shift
             ;;
-        --competitive)
+        --comparison)
             shift
             IFS=',' read -ra COMPETITORS <<< "${1:-}"
             for comp in "${COMPETITORS[@]}"; do
@@ -79,7 +79,7 @@ run_benchmarks_in "$BUILD_DIR/internal"
 
 # Competitive benchmarks (unless --internal-only)
 if [[ "$INTERNAL_ONLY" == false ]]; then
-    run_benchmarks_in "$BUILD_DIR/competitive"
+    run_benchmarks_in "$BUILD_DIR/comparison"
 fi
 
 # Collect CSV results

@@ -54,7 +54,7 @@ int main()
 
 ## See Also
 
-- [trajectory-segment](trajectory-segment.md) -- analogous concept for physical trajectories
-- [trajectory-types](trajectory-types.md) -- `path_point` struct
-- [piecewise-path](piecewise-path.md) -- variadic composition of path segments
+- [trajectory-segment](trajectory-segment.md)<br/> analogous concept for physical trajectories
+- [trajectory-types](trajectory-types.md)<br/> `path_point` struct
+- [piecewise-path](piecewise-path.md)<br/> variadic composition of path segments
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

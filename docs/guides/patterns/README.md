@@ -5,4 +5,4 @@ families.
 
 ## Guides
 
-- [composition.md](composition.md) -- Composition patterns: observer + controller, sysid + model + control, and policy stacking
+- [composition.md](composition.md)<br/> Composition patterns: observer + controller, sysid + model + control, and policy stacking

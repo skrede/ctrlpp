@@ -23,7 +23,7 @@ concept differentiable_measurement =
 
 A type satisfies `differentiable_measurement` when it satisfies `measurement_model` and additionally provides:
 
-1. `jacobian(x)` returning `Matrix<Scalar, NY, NX>` -- the Jacobian of `h(x)` with respect to `x`.
+1. `jacobian(x)` returning `Matrix<Scalar, NY, NX>`: the Jacobian of `h(x)` with respect to `x`.
 
 When a measurement model does **not** satisfy this concept, the EKF and MHE fall back to central finite-difference Jacobians.
 
@@ -68,6 +68,6 @@ int main()
 
 ## See Also
 
-- [measurement-model](measurement-model.md) -- base measurement concept
-- [differentiable-dynamics](differentiable-dynamics.md) -- analogous concept for dynamics
-- [estimation/ekf](../estimation/ekf.md) -- EKF preferring analytic Jacobians
+- [measurement-model](measurement-model.md)<br/> base measurement concept
+- [differentiable-dynamics](differentiable-dynamics.md)<br/> analogous concept for dynamics
+- [estimation/ekf](../estimation/ekf.md)<br/> EKF preferring analytic Jacobians

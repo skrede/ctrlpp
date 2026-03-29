@@ -69,6 +69,6 @@ int main()
 
 ## See Also
 
-- [trajectory-types](trajectory-types.md) -- `trajectory_point` struct
-- [path-segment](path-segment.md) -- analogous concept for normalized paths
+- [trajectory-types](trajectory-types.md)<br/> `trajectory_point` struct
+- [path-segment](path-segment.md)<br/> analogous concept for normalized paths
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

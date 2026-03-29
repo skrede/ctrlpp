@@ -58,8 +58,8 @@ int main()
 
 ## See Also
 
-- [PID overview](README.md) -- parent PID documentation
-- [anti-windup](anti-windup.md) -- explicit anti-windup for position form
-- [isa-form](isa-form.md) -- ISA standard PID parameterisation
-- [guides/pid/composition](../../../guides/pid/composition.md) -- composing policies
-- [background/pid](../../../background/pid.md) -- velocity form derivation
+- [PID overview](README.md)<br/> parent PID documentation
+- [anti-windup](anti-windup.md)<br/> explicit anti-windup for position form
+- [isa-form](isa-form.md)<br/>ISA standard PID parameterisation
+- [guides/pid/composition](../../../guides/pid/composition.md)<br/>composing policies
+- [background/pid](../../../background/pid.md)<br/>velocity form derivation

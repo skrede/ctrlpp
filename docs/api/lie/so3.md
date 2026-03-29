@@ -132,6 +132,6 @@ int main()
 
 ## See Also
 
-- [estimation/mekf](../estimation/mekf.md) -- multiplicative EKF using SO(3)
-- [estimation/manifold-ukf](../estimation/manifold-ukf.md) -- manifold UKF using SO(3)
-- [background/attitude-estimation](../../background/attitude-estimation.md) -- attitude estimation theory
+- [estimation/mekf](../estimation/mekf.md)<br/> multiplicative EKF using SO(3)
+- [estimation/manifold-ukf](../estimation/manifold-ukf.md)<br/> manifold UKF using SO(3)
+- [background/attitude-estimation](../../background/attitude-estimation.md)<br/> attitude estimation theory

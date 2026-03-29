@@ -55,7 +55,7 @@ $p(x_k \mid x_{k-1}^{(i)}, u_{k-1})$ as the proposal distribution
 
 ### Algorithm
 
-**1. Propagate** -- draw each particle through the dynamics model with process
+**1. Propagate**<br/>draw each particle through the dynamics model with process
 noise [1, Sec. 15.3, pp. 469--472]:
 
 $$
@@ -65,7 +65,7 @@ $$
 In practice: $x_k^{(i)} = f(x_{k-1}^{(i)}, u_{k-1}) + w_k^{(i)}$ where
 $w_k^{(i)}$ is drawn from the process noise distribution.
 
-**2. Weight** -- compute the likelihood of the measurement given each particle
+**2. Weight**<br/>compute the likelihood of the measurement given each particle
 [1, Sec. 15.3, pp. 472--474]:
 
 $$
@@ -78,13 +78,13 @@ $$
 \tilde{w}_k^{(i)} \propto \exp\!\left(-\frac{1}{2} (z_k - h(x_k^{(i)}))^\top R^{-1} (z_k - h(x_k^{(i)}))\right)
 $$
 
-**3. Normalise** -- scale weights to sum to one:
+**3. Normalise**<br/>scale weights to sum to one:
 
 $$
 w_k^{(i)} = \frac{\tilde{w}_k^{(i)}}{\sum_{j=1}^{N_p} \tilde{w}_k^{(j)}}
 $$
 
-**4. Resample** -- when triggered by the ESS criterion, draw $N_p$ particles
+**4. Resample**<br/>when triggered by the ESS criterion, draw $N_p$ particles
 with replacement, proportional to weights.
 
 ### State Estimate
@@ -141,7 +141,7 @@ prevents the particle set from collapsing to a single point.
 As $N_p \to \infty$, the particle approximation converges to the true
 posterior [1, Sec. 15.5, pp. 481--484]. The convergence rate is
 $O(1/\sqrt{N_p})$ independent of dimension. However, the number of particles
-required for a given accuracy grows exponentially with state dimension -- the
+required for a given accuracy grows exponentially with state dimension &mdash; the
 "curse of dimensionality" [3, Sec. 4, pp. 183--185].
 
 In practice, particle filters are most effective for low-dimensional state

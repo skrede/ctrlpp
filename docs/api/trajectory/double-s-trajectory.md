@@ -93,6 +93,6 @@ int main()
 
 ## See Also
 
-- [trapezoidal-trajectory](trapezoidal-trajectory.md) -- simpler 3-segment alternative
-- [modified-trap-trajectory](modified-trap-trajectory.md) -- smooth acceleration variant
+- [trapezoidal-trajectory](trapezoidal-trajectory.md)<br/> simpler 3-segment alternative
+- [modified-trap-trajectory](modified-trap-trajectory.md)<br/> smooth acceleration variant
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

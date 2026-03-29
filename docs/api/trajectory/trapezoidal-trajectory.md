@@ -71,7 +71,7 @@ int main()
 
 ## See Also
 
-- [double-s-trajectory](double-s-trajectory.md) -- jerk-limited alternative (7-segment)
-- [modified-trap-trajectory](modified-trap-trajectory.md) -- smooth acceleration variant
-- [time-scaling](time-scaling.md) -- duration computation for elementary paths
+- [double-s-trajectory](double-s-trajectory.md)<br/> jerk-limited alternative (7-segment)
+- [modified-trap-trajectory](modified-trap-trajectory.md)<br/> smooth acceleration variant
+- [time-scaling](time-scaling.md)<br/> duration computation for elementary paths
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

@@ -174,8 +174,8 @@ int main()
 
 ## See Also
 
-- [mekf](mekf.md) -- multiplicative EKF alternative for attitude estimation
-- [ukf](ukf.md) -- Euclidean UKF for non-manifold problems
-- [complementary-filter](complementary-filter.md) -- lightweight sensor fusion
-- [so3](../lie/so3.md) -- SO(3) quaternion utilities used by manifold UKF
-- [background/attitude-estimation](../../background/attitude-estimation.md) -- manifold filtering theory
+- [mekf](mekf.md)<br/> multiplicative EKF alternative for attitude estimation
+- [ukf](ukf.md)<br/> Euclidean UKF for non-manifold problems
+- [complementary-filter](complementary-filter.md)<br/> lightweight sensor fusion
+- [so3](../lie/so3.md)<br/> SO(3) quaternion utilities used by manifold UKF
+- [background/attitude-estimation](../../background/attitude-estimation.md)<br/> manifold filtering theory

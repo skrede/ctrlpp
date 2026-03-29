@@ -177,9 +177,9 @@ int main()
 
 ## See Also
 
-- [mpc](mpc.md) -- linear MPC
-- [nlopt-solver](nlopt-solver.md) -- NLopt NLP solver backend
-- [dynamics-model](../model/dynamics-model.md) -- dynamics model concept
-- [constraint-model](../model/constraint-model.md) -- constraint model concepts
-- [guides/mpc/solver-injection](../../guides/mpc/solver-injection.md) -- solver injection guide
-- [background/mpc](../../background/mpc.md) -- MPC theory and background
+- [mpc](mpc.md)<br/> linear MPC
+- [nlopt-solver](nlopt-solver.md)<br/> NLopt NLP solver backend
+- [dynamics-model](../model/dynamics-model.md)<br/> dynamics model concept
+- [constraint-model](../model/constraint-model.md)<br/> constraint model concepts
+- [guides/mpc/solver-injection](../../guides/mpc/solver-injection.md)<br/> solver injection guide
+- [background/mpc](../../background/mpc.md)<br/> MPC theory and background

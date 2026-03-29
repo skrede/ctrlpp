@@ -8,7 +8,12 @@
 
 #include "ctrlpp/control/lqr.h"
 
-#include <ct/optcon/optcon.h>
+#include <ct/core/types/StateVector.h>
+#include <ct/core/types/ControlVector.h>
+#include <ct/optcon/lqr/riccati/CARE.hpp>
+#include <ct/optcon/lqr/riccati/CARE-impl.hpp>
+#include <ct/optcon/lqr/LQR.hpp>
+#include <ct/optcon/lqr/LQR-impl.hpp>
 
 #include <Eigen/Dense>
 
@@ -51,13 +56,18 @@ int main()
 
     // ct_optcon LQR uses continuous-time Riccati; we provide the same matrices
     // for a fair discrete-time comparison of the DARE/Riccati solve path.
-    ct::core::StateMatrix<NX> Q_ct = Q;
-    ct::core::ControlMatrix<NU> R_ct = R;
-    ct::core::StateMatrix<NX> A_ct = A;
-    ct::core::StateControlMatrix<NX, NU> B_ct = B;
+    // ct types — use the LQR class typedefs directly
+    using LQR_t = ct::optcon::LQR<NX, NU>;
+    typename LQR_t::state_matrix_t Q_ct = Q;
+    typename LQR_t::control_matrix_t R_ct = R;
+    typename LQR_t::state_matrix_t A_ct = A;
+    Eigen::Matrix<double, NX, NU> B_ct = B;
+
+    // ct compute takes K as output parameter
+    Eigen::Matrix<double, NU, NX> K_ct;
 
     // Warm up
-    ct_lqr.compute(Q_ct, R_ct, A_ct, B_ct);
+    ct_lqr.compute(Q_ct, R_ct, A_ct, B_ct, K_ct);
 
     // ---- Benchmark ----
     ankerl::nanobench::Bench bench;
@@ -75,9 +85,8 @@ int main()
         .run("ct::optcon::LQR::compute",
              [&]
              {
-                 ct_lqr.compute(Q_ct, R_ct, A_ct, B_ct);
-                 auto K = ct_lqr.getSolution();
-                 ankerl::nanobench::doNotOptimizeAway(K);
+                 ct_lqr.compute(Q_ct, R_ct, A_ct, B_ct, K_ct);
+                 ankerl::nanobench::doNotOptimizeAway(K_ct);
              });
 
     std::ofstream csv("bench_lqr_vs_ct.csv");

@@ -108,29 +108,29 @@ int main()
 
 Every step in the loop follows the same two-phase pattern:
 
-1. **Predict** -- `kf.predict(u)` propagates the state estimate forward using
+1. **Predict**<br/>`kf.predict(u)` propagates the state estimate forward using
    the system model. The covariance grows (uncertainty increases).
 
-2. **Update** -- `kf.update(z)` incorporates the new measurement. The Kalman
+2. **Update**<br/>`kf.update(z)` incorporates the new measurement. The Kalman
    gain balances the predicted estimate against the measurement based on their
    relative uncertainties. The covariance shrinks.
 
-This cycle repeats at every time step. The filter converges quickly -- within
+This cycle repeats at every time step. The filter converges quickly &mdash; within
 a few steps the estimated velocity (which is not directly measured) tracks the
 true velocity closely.
 
 ## Tuning the Noise Covariances
 
-- **Q** (process noise) -- increase if the model is less trustworthy.
+- **Q** (process noise)<br/> increase if the model is less trustworthy.
   Larger Q makes the filter respond faster to changes but be noisier.
-- **R** (measurement noise) -- increase if measurements are noisy. Larger R
+- **R** (measurement noise)<br/> increase if measurements are noisy. Larger R
   makes the filter smoother but slower to react.
 
 ## Next Steps
 
-- [Kalman Filter API](../../api/estimation/kalman.md) -- full interface reference
-- [EKF API](../../api/estimation/ekf.md) -- for nonlinear systems
-- [Observer-Controller Composition](../estimation/observer-controller.md) --
+- [Kalman Filter API](../../api/estimation/kalman.md)<br/> full interface reference
+- [EKF API](../../api/estimation/ekf.md)<br/> for nonlinear systems
+- [Observer-Controller Composition](../estimation/observer-controller.md)<br/>
   feeding estimates into a controller
-- [Kalman Theory](../../background/kalman.md) -- derivation and
+- [Kalman Theory](../../background/kalman.md)<br/> derivation and
   optimality properties

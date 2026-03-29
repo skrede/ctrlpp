@@ -67,22 +67,22 @@ int main()
 
 ## What Is Happening
 
-1. **Template parameters** `pid<double, 1, 1, 1>` -- scalar type `double`,
+1. **Template parameters** `pid<double, 1, 1, 1>`<br/> Scalar type `double`,
    one state, one input, one output. This is the SISO specialisation.
 
-2. **Configuration** -- `kp`, `ki`, `kd` are `Eigen::Vector` types (here
+2. **Configuration**<br/>`kp`, `ki`, `kd` are `Eigen::Vector` types (here
    1-dimensional). Output limits prevent actuator saturation.
 
-3. **Control loop** -- `ctrl.compute(setpoint, measurement, dt)` returns the
+3. **Control loop**<br/>`ctrl.compute(setpoint, measurement, dt)` returns the
    control signal. The plant model advances one step, and the loop repeats.
 
-4. **CSV output** -- pipe to gnuplot or load in a spreadsheet to visualise the
+4. **CSV output**<br/>Pipe to gnuplot or load in a spreadsheet to visualise the
    step response.
 
 ## Adding a Policy
 
 The bare `pid` has no anti-windup or derivative filtering. Adding a policy is
-a compile-time template parameter -- zero runtime cost when not used:
+a compile-time template parameter &mdash; zero runtime cost when not used:
 
 ```cpp
 #include <ctrlpp/control/pid.h>
@@ -108,8 +108,8 @@ multiple policies together.
 
 ## Next Steps
 
-- [PID API Reference](../../api/control/pid/README.md) -- full method signatures
+- [PID API Reference](../../api/control/pid/README.md)<br/> full method signatures
   and all config fields
-- [PID Composition Guide](../pid/composition.md) -- composing anti-windup,
+- [PID Composition Guide](../pid/composition.md)<br/> composing anti-windup,
   derivative filtering, rate limiting and more
-- [PID Theory](../../background/pid.md) -- the math behind PID control
+- [PID Theory](../../background/pid.md)<br/> the math behind PID control

@@ -2,7 +2,7 @@
 
 Attitude estimation determines the orientation of a rigid body in
 three-dimensional space. Unlike Euclidean state estimation, orientations live
-on the SO(3) manifold -- a curved space where standard vector addition does
+on the SO(3) manifold &mdash; a curved space where standard vector addition does
 not apply. Special formulations are needed to respect this geometry and avoid
 singularities inherent in minimal rotation parameterisations
 [1, Ch. 7, pp. 211--266].
@@ -194,7 +194,7 @@ reference measurements.
 
 Complementary filters are less optimal than the MEKF but require no covariance
 propagation, no matrix inversions, and have deterministic constant-time
-execution -- making them suitable for resource-constrained embedded systems.
+execution &mdash; making them suitable for resource-constrained embedded systems.
 
 ## References
 

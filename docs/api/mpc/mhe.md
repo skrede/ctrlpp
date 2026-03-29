@@ -199,8 +199,8 @@ int main()
 
 ## See Also
 
-- [nmhe](nmhe.md) -- nonlinear moving horizon estimation
-- [osqp-solver](osqp-solver.md) -- OSQP QP solver backend
-- [dynamics-model](../model/dynamics-model.md) -- dynamics model concept
-- [measurement-model](../model/measurement-model.md) -- measurement model concept
-- [background/mhe](../../background/mhe.md) -- MHE theory and background
+- [nmhe](nmhe.md)<br/> nonlinear moving horizon estimation
+- [osqp-solver](osqp-solver.md)<br/> OSQP QP solver backend
+- [dynamics-model](../model/dynamics-model.md)<br/> dynamics model concept
+- [measurement-model](../model/measurement-model.md)<br/> measurement model concept
+- [background/mhe](../../background/mhe.md)<br/> MHE theory and background

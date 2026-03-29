@@ -242,7 +242,7 @@ int main()
 
 ## See Also
 
-- [dare](dare.md) -- discrete algebraic Riccati equation solver used internally
-- [place](place.md) -- pole placement alternative to optimal control
-- [kalman](../estimation/kalman.md) -- Kalman filter for observer-controller composition
-- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md) -- observer-controller composition patterns
+- [dare](dare.md)<br/> discrete algebraic Riccati equation solver used internally
+- [place](place.md)<br/> pole placement alternative to optimal control
+- [kalman](../estimation/kalman.md)<br/> Kalman filter for observer-controller composition
+- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md)<br/> observer-controller composition patterns

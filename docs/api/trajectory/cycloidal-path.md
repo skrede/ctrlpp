@@ -81,7 +81,7 @@ int main()
 
 ## See Also
 
-- [harmonic-path](harmonic-path.md) -- sinusoidal velocity (non-zero endpoint acceleration)
-- [quintic-path](quintic-path.md) -- polynomial alternative (C2)
-- [time-scaling](time-scaling.md) -- uses peak derivatives for duration computation
+- [harmonic-path](harmonic-path.md)<br/> sinusoidal velocity (non-zero endpoint acceleration)
+- [quintic-path](quintic-path.md)<br/> polynomial alternative (C2)
+- [time-scaling](time-scaling.md)<br/> uses peak derivatives for duration computation
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)

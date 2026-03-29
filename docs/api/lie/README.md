@@ -6,7 +6,7 @@ Hamilton convention with w-first user-facing representation.
 
 ## Types
 
-- [so3](so3.md) -- SO(3) rotation group: exp/log maps, compose, conjugate, normalize, skew
+- [so3](so3.md)<br/> SO(3) rotation group: exp/log maps, compose, conjugate, normalize, skew
 
 ## When to use
 

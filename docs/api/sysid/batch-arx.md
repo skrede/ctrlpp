@@ -85,9 +85,9 @@ int main()
 
 ## See Also
 
-- [recursive-arx](recursive-arx.md) -- online recursive variant
-- [n4sid](n4sid.md) -- subspace identification
-- [fit-metrics](fit-metrics.md) -- goodness-of-fit metrics
-- [sysid-result](sysid-result.md) -- result container types
-- [guides/sysid/workflow](../../guides/sysid/workflow.md) -- system identification workflow guide
-- [background/sysid](../../background/sysid.md) -- sysid theory and background
+- [recursive-arx](recursive-arx.md)<br/> online recursive variant
+- [n4sid](n4sid.md)<br/> subspace identification
+- [fit-metrics](fit-metrics.md)<br/> goodness-of-fit metrics
+- [sysid-result](sysid-result.md)<br/> result container types
+- [guides/sysid/workflow](../../guides/sysid/workflow.md)<br/> system identification workflow guide
+- [background/sysid](../../background/sysid.md)<br/> sysid theory and background

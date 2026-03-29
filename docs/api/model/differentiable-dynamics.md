@@ -26,8 +26,8 @@ concept differentiable_dynamics =
 
 A type satisfies `differentiable_dynamics` when it satisfies `dynamics_model` and additionally provides:
 
-1. `jacobian_x(x, u)` returning `Matrix<Scalar, NX, NX>` -- the Jacobian of `f(x, u)` with respect to `x`.
-2. `jacobian_u(x, u)` returning `Matrix<Scalar, NX, NU>` -- the Jacobian of `f(x, u)` with respect to `u`.
+1. `jacobian_x(x, u)` returning `Matrix<Scalar, NX, NX>`: the Jacobian of `f(x, u)` with respect to `x`.
+2. `jacobian_u(x, u)` returning `Matrix<Scalar, NX, NU>`: the Jacobian of `f(x, u)` with respect to `u`.
 
 When a dynamics model does **not** satisfy this concept, the EKF and MHE automatically compute Jacobians via central finite differences using the `numerical_eps` configuration parameter.
 
@@ -87,5 +87,5 @@ int main()
 
 ## See Also
 
-- [dynamics-model](dynamics-model.md) -- base dynamics concept
-- [estimation/ekf](../estimation/ekf.md) -- EKF preferring analytic Jacobians
+- [dynamics-model](dynamics-model.md)<br/> base dynamics concept
+- [estimation/ekf](../estimation/ekf.md)<br/> EKF preferring analytic Jacobians

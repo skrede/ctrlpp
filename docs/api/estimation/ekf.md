@@ -98,7 +98,7 @@ Normalised Estimation Error Squared from the last update.
 The EKF selects Jacobian computation at compile time via `if constexpr`:
 
 ```cpp
-// Analytical (zero overhead) -- if model provides jacobian_x:
+// Analytical (zero overhead)<br/> if model provides jacobian_x:
 if constexpr (differentiable_dynamics<Dynamics, Scalar, NX, NU>)
     F = dynamics.jacobian_x(x, u);
 // Numerical (automatic fallback):
@@ -175,8 +175,8 @@ int main()
 
 ## See Also
 
-- [ukf](ukf.md) -- sigma-point alternative avoiding explicit Jacobians
-- [kalman](kalman.md) -- linear Kalman filter for LTI systems
-- [observer-policy](observer-policy.md) -- concept satisfied by this type
-- [background/ekf-ukf](../../background/ekf-ukf.md) -- EKF derivation and comparison
-- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md) -- composing observers with controllers
+- [ukf](ukf.md)<br/> sigma-point alternative avoiding explicit Jacobians
+- [kalman](kalman.md)<br/> linear Kalman filter for LTI systems
+- [observer-policy](observer-policy.md)<br/> concept satisfied by this type
+- [background/ekf-ukf](../../background/ekf-ukf.md)<br/> EKF derivation and comparison
+- [guides/estimation/observer-controller](../../guides/estimation/observer-controller.md)<br/> composing observers with controllers

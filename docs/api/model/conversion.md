@@ -71,6 +71,6 @@ int main()
 
 ## See Also
 
-- [state-space](state-space.md) -- state-space representation
-- [transfer-function](transfer-function.md) -- transfer function representation
-- [discretise](discretise.md) -- continuous-to-discrete conversion
+- [state-space](state-space.md)<br/> state-space representation
+- [transfer-function](transfer-function.md)<br/> transfer function representation
+- [discretise](discretise.md)<br/> continuous-to-discrete conversion

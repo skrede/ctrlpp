@@ -116,8 +116,8 @@ int main()
 
 ## See Also
 
-- [batch-arx](batch-arx.md) -- offline batch ARX identification
-- [rls](rls.md) -- underlying recursive least squares estimator
-- [sysid-result](sysid-result.md) -- result container types
-- [guides/sysid/workflow](../../guides/sysid/workflow.md) -- system identification workflow guide
-- [background/sysid](../../background/sysid.md) -- sysid theory and background
+- [batch-arx](batch-arx.md)<br/> offline batch ARX identification
+- [rls](rls.md)<br/> underlying recursive least squares estimator
+- [sysid-result](sysid-result.md)<br/> result container types
+- [guides/sysid/workflow](../../guides/sysid/workflow.md)<br/> system identification workflow guide
+- [background/sysid](../../background/sysid.md)<br/> sysid theory and background

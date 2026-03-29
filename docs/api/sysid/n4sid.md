@@ -27,8 +27,8 @@ n4sid(const Eigen::MatrixBase<Derived1>& Y,
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `Y` | `Eigen::MatrixBase` | -- | Output data as a 1-by-N row matrix |
-| `U` | `Eigen::MatrixBase` | -- | Input data as a 1-by-N row matrix |
+| `Y` | `Eigen::MatrixBase` | &mdash; | Output data as a 1-by-N row matrix |
+| `U` | `Eigen::MatrixBase` | &mdash; | Input data as a 1-by-N row matrix |
 | `block_rows` | `std::size_t` | `0` | Block Hankel matrix row count. When 0, defaults to `min(N/4, 30)`. |
 
 ## Return Type
@@ -114,9 +114,9 @@ int main()
 
 ## See Also
 
-- [batch-arx](batch-arx.md) -- ARX identification
-- [model/state-space](../model/state-space.md) -- state-space representation
-- [sysid-result](sysid-result.md) -- result container types
-- [fit-metrics](fit-metrics.md) -- NRMSE and VAF metrics
-- [guides/sysid/workflow](../../guides/sysid/workflow.md) -- system identification workflow guide
-- [background/sysid](../../background/sysid.md) -- sysid theory and background
+- [batch-arx](batch-arx.md)<br/> ARX identification
+- [model/state-space](../model/state-space.md)<br/> state-space representation
+- [sysid-result](sysid-result.md)<br/> result container types
+- [fit-metrics](fit-metrics.md)<br/> NRMSE and VAF metrics
+- [guides/sysid/workflow](../../guides/sysid/workflow.md)<br/> system identification workflow guide
+- [background/sysid](../../background/sysid.md)<br/> sysid theory and background
