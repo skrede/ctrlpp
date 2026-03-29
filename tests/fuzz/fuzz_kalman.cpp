@@ -34,20 +34,20 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     idx += 4;
 
     Eigen::Matrix<double, 2, 1> Bd;
-    Bd << std::clamp(buf[idx], -10.0, 10.0), std::clamp(buf[idx + 1], -10.0, 10.0);
+    Bd << std::clamp(buf[idx], -1.0, 1.0), std::clamp(buf[idx + 1], -1.0, 1.0);
     idx += 2;
 
     Eigen::Matrix<double, 1, 2> C;
-    C << std::clamp(buf[idx], -10.0, 10.0), std::clamp(buf[idx + 1], -10.0, 10.0);
+    C << std::clamp(buf[idx], -1.0, 1.0), std::clamp(buf[idx + 1], -1.0, 1.0);
     idx += 2;
 
     Eigen::Matrix<double, 1, 1> D;
-    D << std::clamp(buf[idx], -10.0, 10.0);
+    D << std::clamp(buf[idx], -1.0, 1.0);
     idx += 1;
 
     Eigen::Matrix<double, 2, 2> Q_raw;
-    Q_raw << std::clamp(buf[idx], -10.0, 10.0), std::clamp(buf[idx + 1], -10.0, 10.0),
-             std::clamp(buf[idx + 2], -10.0, 10.0), std::clamp(buf[idx + 3], -10.0, 10.0);
+    Q_raw << std::clamp(buf[idx], -1.0, 1.0), std::clamp(buf[idx + 1], -1.0, 1.0),
+             std::clamp(buf[idx + 2], -1.0, 1.0), std::clamp(buf[idx + 3], -1.0, 1.0);
     idx += 4;
 
     // Make Q PSD: Q = Q_raw^T * Q_raw

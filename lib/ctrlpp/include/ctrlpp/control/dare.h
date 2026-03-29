@@ -209,8 +209,13 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<
         return std::nullopt;
 
     Eigen::ComplexSchur<Eigen::Matrix<Scalar, n2, n2>> schur(*Z_opt);
+    if(schur.info() != Eigen::Success)
+        return std::nullopt;
     Eigen::Matrix<std::complex<Scalar>, n2, n2> T = schur.matrixT();
     Eigen::Matrix<std::complex<Scalar>, n2, n2> U = schur.matrixU();
+
+    if(!T.allFinite() || !U.allFinite())
+        return std::nullopt;
 
     int stable = detail::reorder_complex_schur_stable_first<Scalar, n2>(T, U, n);
     if(stable < n)
