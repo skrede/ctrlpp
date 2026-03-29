@@ -36,6 +36,6 @@ struct systematic_resampling
     }
 };
 
-} // namespace ctrlpp
+}
 
 #endif

@@ -26,6 +26,6 @@ concept sigma_point_strategy = requires {
     { s.generate(x, P) } -> std::convertible_to<sigma_result<Scalar, NX, S::num_points>>;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

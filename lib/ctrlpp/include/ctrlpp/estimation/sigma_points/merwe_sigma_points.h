@@ -90,6 +90,6 @@ private:
     Scalar m_kappa;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

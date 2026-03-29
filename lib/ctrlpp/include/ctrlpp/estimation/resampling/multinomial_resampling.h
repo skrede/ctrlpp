@@ -39,6 +39,6 @@ struct multinomial_resampling
     }
 };
 
-} // namespace ctrlpp
+}
 
 #endif
