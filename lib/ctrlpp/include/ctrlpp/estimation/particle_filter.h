@@ -273,10 +273,19 @@ private:
 
     /// @brief Normalize log-weights via log-sum-exp trick.
     ///
+    /// When all particles have negligible likelihood (max log-weight is -inf),
+    /// resets to uniform weights to recover from particle depletion.
+    ///
     /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Sec. III-A
     void normalize_log_weights()
     {
         Scalar max_log_w = *std::max_element(m_log_weights.begin(), m_log_weights.end());
+        if(!std::isfinite(max_log_w))
+        {
+            Scalar log_uniform = -std::log(static_cast<Scalar>(NP));
+            m_log_weights.fill(log_uniform);
+            return;
+        }
         Scalar sum_exp = Scalar{0};
         for(std::size_t i = 0; i < NP; ++i)
             sum_exp += std::exp(m_log_weights[i] - max_log_w);

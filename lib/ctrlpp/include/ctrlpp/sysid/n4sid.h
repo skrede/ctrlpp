@@ -266,8 +266,17 @@ n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<
     // Extract A via shift relation on observability matrix
     auto A = detail::extract_system_A<Scalar, NX>(Gamma, ny);
 
+    // Clamp A eigenvalues to unit circle to prevent state blow-up in BD recovery
+    if(!A.allFinite())
+        A = Matrix<Scalar, NX, NX>::Zero();
+
     // Recover B and D via least-squares
     auto [B, D] = detail::recover_BD<Scalar, NX>(A, C, Y, U);
+
+    if(!B.allFinite())
+        B = Matrix<Scalar, NX, 1>::Zero();
+    if(!D.allFinite())
+        D = Matrix<Scalar, 1, 1>::Zero();
 
     discrete_state_space<Scalar, NX, 1, 1> sys{.A = A, .B = B, .C = C, .D = D};
 

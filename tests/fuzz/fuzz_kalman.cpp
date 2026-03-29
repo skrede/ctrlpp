@@ -25,8 +25,12 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     int idx = 0;
 
-    Eigen::Matrix<double, 2, 2> Ad;
-    Ad << buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3];
+    // Clamp system matrix for stability (matching fuzz_ekf pattern)
+    Eigen::Matrix<double, 2, 2> Ad = Eigen::Matrix<double, 2, 2>::Zero();
+    Ad(0, 0) = std::clamp(buf[idx], -0.99, 0.99);
+    Ad(1, 1) = std::clamp(buf[idx + 3], -0.99, 0.99);
+    Ad(0, 1) = std::clamp(buf[idx + 1], -0.5, 0.5);
+    Ad(1, 0) = std::clamp(buf[idx + 2], -0.5, 0.5);
     idx += 4;
 
     Eigen::Matrix<double, 2, 1> Bd;

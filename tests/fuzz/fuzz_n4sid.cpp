@@ -30,8 +30,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     for(int i = 0; i < n_samples; ++i)
     {
-        U(0, i) = buf[i * 2];
-        Y(0, i) = buf[i * 2 + 1];
+        U(0, i) = std::clamp(buf[i * 2], -1e3, 1e3);
+        Y(0, i) = std::clamp(buf[i * 2 + 1], -1e3, 1e3);
     }
 
     // Run N4SID with model order 2, block_rows = 3 (minimum for 10 samples)

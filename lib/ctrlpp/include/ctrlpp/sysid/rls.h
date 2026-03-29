@@ -9,6 +9,7 @@
 
 #include <Eigen/Dense>
 
+#include <cmath>
 #include <cstddef>
 #include <type_traits>
 
@@ -39,6 +40,8 @@ public:
 
         Vector<Scalar, NP> P_phi = m_P * phi;
         Scalar denom = m_lambda + phi.dot(P_phi);
+        if(!std::isfinite(denom) || std::abs(denom) < Scalar{1e-14})
+            return;
         Vector<Scalar, NP> k = P_phi / denom;
 
         m_theta += k * e;

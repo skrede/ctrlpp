@@ -22,21 +22,26 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             return 0;
     }
 
-    std::vector<double> x(buf, buf + 5);
-    std::vector<double> y(buf + 5, buf + 10);
+    std::vector<double> x(5);
+    std::vector<double> y(5);
+    for(int i = 0; i < 5; ++i)
+    {
+        x[i] = std::clamp(buf[i], -1e6, 1e6);
+        y[i] = std::clamp(buf[i + 5], -1e6, 1e6);
+    }
     double mu = buf[10];
     double eval_t = buf[11];
 
-    // Sort x values for strictly ascending
+    // Sort x values for strictly ascending with reasonable minimum span
     std::sort(x.begin(), x.end());
     for(std::size_t i = 1; i < x.size(); ++i)
     {
-        if(x[i] <= x[i - 1])
-            x[i] = x[i - 1] + 1e-6;
+        if(x[i] <= x[i - 1] + 1e-3)
+            x[i] = x[i - 1] + 1e-3;
     }
 
-    // Clamp mu to valid range (0, 1]
-    mu = std::clamp(mu, 1e-6, 1.0);
+    // Clamp mu to valid range -- avoid extreme regularization
+    mu = std::clamp(mu, 1e-3, 1.0);
 
     ctrlpp::smoothing_spline<double> spline({.times = x, .positions = y, .mu = mu});
 

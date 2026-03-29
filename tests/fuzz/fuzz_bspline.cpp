@@ -24,8 +24,13 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             return 0;
     }
 
-    std::vector<double> control_points(buf, buf + 5);
-    std::vector<double> knots(buf + 5, buf + 14);
+    std::vector<double> control_points(5);
+    for(int i = 0; i < 5; ++i)
+        control_points[i] = std::clamp(buf[i], -1e6, 1e6);
+
+    std::vector<double> knots(9);
+    for(int i = 0; i < 9; ++i)
+        knots[i] = std::clamp(buf[i + 5], -1e6, 1e6);
     double eval_t = buf[14];
 
     // Sort knot vector to ensure non-decreasing

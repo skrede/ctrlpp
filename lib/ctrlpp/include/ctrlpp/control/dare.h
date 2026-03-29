@@ -151,6 +151,10 @@ auto build_dare_symplectic(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     Z.template block<n, n>(0, n) = -G * AinvT;
     Z.template block<n, n>(n, 0) = -AinvT * Q;
     Z.template block<n, n>(n, n) = AinvT;
+
+    if(!Z.allFinite())
+        return std::nullopt;
+
     return Z;
 }
 
@@ -173,6 +177,9 @@ auto extract_dare_solution(const Eigen::Matrix<std::complex<Scalar>, N2, N2>& U)
         return std::nullopt;
 
     MatNxN P = detail::symmetrize((U21 * qr_U11.inverse()).eval().real());
+
+    if(!P.allFinite())
+        return std::nullopt;
 
     Eigen::SelfAdjointEigenSolver<MatNxN> eigsolver(P, Eigen::EigenvaluesOnly);
     for(int i = 0; i < n; ++i)

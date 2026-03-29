@@ -198,8 +198,8 @@ class bspline_trajectory
                 auto const denom =
                     U[static_cast<std::size_t>(idx + degree - r + 1)] -
                     U[static_cast<std::size_t>(idx)];
-                if (std::abs(denom) < std::numeric_limits<Scalar>::epsilon()) {
-                    // Zero-length knot span, keep value
+                if (std::abs(denom) < Scalar{1e-10} * (Scalar{1} + std::abs(U[static_cast<std::size_t>(idx)]))) {
+                    // Near-zero knot span relative to knot magnitude, keep value
                     continue;
                 }
                 auto const alpha = (t - U[static_cast<std::size_t>(idx)]) / denom;
@@ -255,7 +255,7 @@ class bspline_trajectory
             auto const denom =
                 U[static_cast<std::size_t>(i + deg + 1)] -
                 U[static_cast<std::size_t>(i + 1)];
-            if (std::abs(denom) < std::numeric_limits<Scalar>::epsilon()) {
+            if (std::abs(denom) < Scalar{1e-10} * (Scalar{1} + std::abs(U[static_cast<std::size_t>(i + 1)]))) {
                 d_points[static_cast<std::size_t>(i)] = Scalar{0};
             } else {
                 d_points[static_cast<std::size_t>(i)] =

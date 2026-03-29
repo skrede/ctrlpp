@@ -58,9 +58,10 @@ TEST_CASE("RLS with NaN regressor", "[rls][hardening][negative]")
     estimator.update(1.0, phi);
 
     auto theta = estimator.parameters();
-    // NaN input should propagate to NaN output
-    CHECK(std::isnan(theta(0)));
-    CHECK(std::isnan(theta(1)));
+    // NaN regressor causes degenerate denominator -- update is skipped,
+    // parameters remain at their initial value (zero)
+    CHECK(theta(0) == 0.0);
+    CHECK(theta(1) == 0.0);
 }
 
 TEST_CASE("RLS identifies known first-order system", "[rls][hardening][convergence]")

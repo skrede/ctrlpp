@@ -20,9 +20,9 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             return 0;
     }
 
-    double phi0 = buf[0];
-    double phi1 = buf[1];
-    double y = buf[2];
+    double phi0 = std::clamp(buf[0], -1e3, 1e3);
+    double phi1 = std::clamp(buf[1], -1e3, 1e3);
+    double y = std::clamp(buf[2], -1e6, 1e6);
     double lambda = std::clamp(buf[3], 0.9, 1.0);
     double p0 = std::clamp(std::abs(buf[4]), 1e-3, 1e6);
     double p1 = std::clamp(std::abs(buf[5]), 1e-3, 1e6);

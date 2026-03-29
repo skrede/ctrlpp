@@ -22,18 +22,23 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             return 0;
     }
 
-    // Extract x and y values
-    std::vector<double> x(buf, buf + 5);
-    std::vector<double> y(buf + 5, buf + 10);
+    // Extract x and y values, clamp to prevent overflow in slope computation
+    std::vector<double> x(5);
+    std::vector<double> y(5);
+    for(int i = 0; i < 5; ++i)
+    {
+        x[i] = std::clamp(buf[i], -1e6, 1e6);
+        y[i] = std::clamp(buf[i + 5], -1e6, 1e6);
+    }
 
     // Sort x values to ensure strictly ascending (spline requirement)
     std::sort(x.begin(), x.end());
 
-    // Ensure strictly increasing by adding small offsets for duplicates
+    // Ensure strictly increasing with reasonable minimum span width
     for(std::size_t i = 1; i < x.size(); ++i)
     {
-        if(x[i] <= x[i - 1])
-            x[i] = x[i - 1] + 1e-6;
+        if(x[i] <= x[i - 1] + 1e-3)
+            x[i] = x[i - 1] + 1e-3;
     }
 
     ctrlpp::cubic_spline<double> spline({.times = x, .positions = y});

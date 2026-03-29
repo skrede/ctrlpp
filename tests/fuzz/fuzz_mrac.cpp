@@ -22,14 +22,14 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             return 0;
     }
 
-    double x_val = buf[0];
-    double r_val = buf[1];
+    double x_val = std::clamp(buf[0], -1e3, 1e3);
+    double r_val = std::clamp(buf[1], -1e3, 1e3);
     double gamma = std::clamp(std::abs(buf[2]), 1e-3, 1e6);
     double a_m = std::clamp(buf[3], -0.999, 0.999);
     double sign_b = (buf[4] >= 0.0) ? 1.0 : -1.0;
     double dt = std::clamp(std::abs(buf[5]), 1e-6, 1.0);
-    double theta_x0 = buf[6];
-    double theta_r0 = buf[7];
+    double theta_x0 = std::clamp(buf[6], -1e3, 1e3);
+    double theta_r0 = std::clamp(buf[7], -1e3, 1e3);
 
     // SISO MRAC with dead-zone robustification
     using MracType = ctrlpp::mrac_controller<double, 1, 1, ctrlpp::dead_zone>;

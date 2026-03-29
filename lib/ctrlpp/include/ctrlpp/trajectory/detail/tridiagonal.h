@@ -12,6 +12,7 @@
 /// Automatic Machines and Robots", 2009, Sec. 4.4
 
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
@@ -47,16 +48,34 @@ void thomas_solve(std::vector<Scalar> const& a,
         return;
     }
 
-    // Forward sweep
+    // Forward sweep with pivot monitoring
     for (std::size_t i = 1; i < n; ++i) {
+        if (std::abs(b[i - 1]) < Scalar{1e-14} * (Scalar{1} + std::abs(a[i])))
+        {
+            // Near-zero pivot: zero out remaining unknowns
+            for (std::size_t j = i - 1; j < n; ++j)
+                d[j] = Scalar{0};
+            return;
+        }
         auto const w = a[i] / b[i - 1];
         b[i] -= w * c[i - 1];
         d[i] -= w * d[i - 1];
     }
 
     // Back substitution
+    if (std::abs(b[n - 1]) < Scalar{1e-14})
+    {
+        for (auto& di : d)
+            di = Scalar{0};
+        return;
+    }
     d[n - 1] /= b[n - 1];
     for (std::size_t i = n - 1; i > 0; --i) {
+        if (std::abs(b[i - 1]) < Scalar{1e-14})
+        {
+            d[i - 1] = Scalar{0};
+            continue;
+        }
         d[i - 1] = (d[i - 1] - c[i - 1] * d[i]) / b[i - 1];
     }
 }

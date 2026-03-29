@@ -22,7 +22,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     }
 
     Eigen::Matrix<double, 2, 1> z;
-    z << buf[0], buf[1];
+    z << std::clamp(buf[0], -1e3, 1e3), std::clamp(buf[1], -1e3, 1e3);
 
     double q0 = std::clamp(std::abs(buf[2]), 1e-10, 1e4);
     double q1 = std::clamp(std::abs(buf[3]), 1e-10, 1e4);
@@ -30,7 +30,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     double r1 = std::clamp(std::abs(buf[5]), 1e-10, 1e4);
 
     Eigen::Matrix<double, 2, 1> x0;
-    x0 << buf[6], buf[7];
+    x0 << std::clamp(buf[6], -1e3, 1e3), std::clamp(buf[7], -1e3, 1e3);
 
     Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Zero();
     Q(0, 0) = q0;

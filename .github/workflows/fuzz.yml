@@ -2,13 +2,13 @@ name: Fuzz testing
 
 on:
   push:
-    branches: [master,develop]
+    branches: [ master,develop,fuzz ]
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - '.planning/**'
   pull_request:
-    branches: [master,develop]
+    branches: [ master,develop ]
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -42,9 +42,18 @@ jobs:
 
       - name: Run fuzz targets (smoke test)
         run: |
+          failed=0
           for fuzz in build/tests/fuzz/fuzz_*; do
             [ -x "$fuzz" ] || continue
-            echo "--- $(basename $fuzz) ---"
-            timeout 35 "$fuzz" -max_total_time=30 -max_len=1024 2>&1 | tail -5
+            name=$(basename "$fuzz")
+            echo "--- $name ---"
+            if ! timeout 35 "$fuzz" -max_total_time=30 -max_len=1024 2>&1 | tail -5; then
+              echo "FAIL: $name"
+              failed=$((failed + 1))
+            fi
             echo ""
           done
+          if [ "$failed" -gt 0 ]; then
+            echo "$failed fuzz target(s) crashed"
+            exit 1
+          fi
