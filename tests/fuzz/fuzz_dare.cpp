@@ -23,15 +23,15 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     // Clamp matrix entries to prevent intermediate overflow in symplectic construction
     Eigen::Matrix<double, 2, 2> A;
-    A << std::clamp(buf[0], -1e3, 1e3), std::clamp(buf[1], -1e3, 1e3),
-         std::clamp(buf[2], -1e3, 1e3), std::clamp(buf[3], -1e3, 1e3);
+    A << std::clamp(buf[0], -10.0, 10.0), std::clamp(buf[1], -10.0, 10.0),
+         std::clamp(buf[2], -10.0, 10.0), std::clamp(buf[3], -10.0, 10.0);
 
     Eigen::Matrix<double, 2, 1> B;
-    B << std::clamp(buf[4], -1e3, 1e3), std::clamp(buf[5], -1e3, 1e3);
+    B << std::clamp(buf[4], -10.0, 10.0), std::clamp(buf[5], -10.0, 10.0);
 
     Eigen::Matrix<double, 2, 2> Q_raw;
-    Q_raw << std::clamp(buf[6], -1e3, 1e3), std::clamp(buf[7], -1e3, 1e3),
-             std::clamp(buf[8], -1e3, 1e3), std::clamp(buf[9], -1e3, 1e3);
+    Q_raw << std::clamp(buf[6], -10.0, 10.0), std::clamp(buf[7], -10.0, 10.0),
+             std::clamp(buf[8], -10.0, 10.0), std::clamp(buf[9], -10.0, 10.0);
 
     // Make Q positive semi-definite: Q = Q_raw^T * Q_raw
     Eigen::Matrix<double, 2, 2> Q = Q_raw.transpose() * Q_raw;

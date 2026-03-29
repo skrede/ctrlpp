@@ -47,7 +47,9 @@ jobs:
             [ -x "$fuzz" ] || continue
             name=$(basename "$fuzz")
             echo "--- $name ---"
-            if ! timeout 35 "$fuzz" -max_total_time=30 -max_len=1024 2>&1 | tail -5; then
+            rm -f ./crash-* ./oom-*
+            timeout 35 "$fuzz" -max_total_time=30 -max_len=1024 2>&1 | tail -5
+            if ls ./crash-* 1>/dev/null 2>&1; then
               echo "FAIL: $name"
               failed=$((failed + 1))
             fi

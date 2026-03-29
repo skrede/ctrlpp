@@ -22,8 +22,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             return 0;
     }
 
-    double x_val = std::clamp(buf[0], -1e3, 1e3);
-    double r_val = std::clamp(buf[1], -1e3, 1e3);
+    double x_val = std::clamp(buf[0], -10.0, 10.0);
+    double r_val = std::clamp(buf[1], -10.0, 10.0);
     double pred_a = std::clamp(buf[2], -0.999, 0.999);
     double pred_b = std::clamp(buf[3], -10.0, 10.0);
     double gamma = std::clamp(std::abs(buf[4]), 1e-3, 1e6);

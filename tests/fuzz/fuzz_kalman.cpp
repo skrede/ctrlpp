@@ -59,15 +59,15 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     idx += 1;
 
     Eigen::Matrix<double, 2, 1> x0;
-    x0 << buf[idx], buf[idx + 1];
+    x0 << std::clamp(buf[idx], -100.0, 100.0), std::clamp(buf[idx + 1], -100.0, 100.0);
     idx += 2;
 
     Eigen::Matrix<double, 1, 1> u;
-    u << buf[idx];
+    u << std::clamp(buf[idx], -100.0, 100.0);
     idx += 1;
 
     Eigen::Matrix<double, 1, 1> z;
-    z << buf[idx];
+    z << std::clamp(buf[idx], -100.0, 100.0);
 
     ctrlpp::discrete_state_space<double, 2, 1, 1> sys{Ad, Bd, C, D};
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity();

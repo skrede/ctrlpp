@@ -114,6 +114,11 @@ if (CTRLPP_BUILD_OSQP)
     target_link_libraries(mhe_hardening_test PRIVATE ctrlpp::osqp Catch2::Catch2WithMain)
     target_compile_options(mhe_hardening_test PRIVATE ${CTRLPP_WARNING_FLAGS})
     add_test(NAME mhe_hardening_test COMMAND mhe_hardening_test)
+
+    add_executable(mpc_coverage_test "${CMAKE_CURRENT_LIST_DIR}/mpc_coverage_test.cpp")
+    target_link_libraries(mpc_coverage_test PRIVATE ctrlpp::osqp Catch2::Catch2WithMain)
+    target_compile_options(mpc_coverage_test PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME mpc_coverage_test COMMAND mpc_coverage_test)
 endif ()
 
 if (CTRLPP_BUILD_NLOPT)
@@ -131,6 +136,11 @@ if (CTRLPP_BUILD_NLOPT)
     target_link_libraries(nmhe_test PRIVATE ctrlpp::nlopt Catch2::Catch2WithMain)
     target_compile_options(nmhe_test PRIVATE ${CTRLPP_WARNING_FLAGS})
     add_test(NAME nmhe_test COMMAND nmhe_test)
+
+    add_executable(nmpc_coverage_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_coverage_test.cpp")
+    target_link_libraries(nmpc_coverage_test PRIVATE ctrlpp::nlopt Catch2::Catch2WithMain)
+    target_compile_options(nmpc_coverage_test PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME nmpc_coverage_test COMMAND nmpc_coverage_test)
 endif ()
 
 if (CTRLPP_BUILD_PROPERTY_TESTS)
