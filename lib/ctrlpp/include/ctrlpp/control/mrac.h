@@ -38,6 +38,7 @@ public:
     explicit mrac_controller(const config_type& cfg)
         : m_cfg{cfg}
         , m_x_model{cfg.x_model_0}
+        , m_tracking_error{state_type::Zero()}
         , m_theta_x{cfg.theta_x_0}
         , m_theta_r{cfg.theta_r_0}
     {
