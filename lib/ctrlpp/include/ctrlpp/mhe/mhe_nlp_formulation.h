@@ -261,7 +261,7 @@ auto build_nmhe_problem(const Dynamics& dynamics,
                                .c_upper = std::move(c_upper)};
 }
 
-} // namespace detail
-} // namespace ctrlpp
+}
+}
 
 #endif

@@ -16,6 +16,6 @@ concept differentiable_dynamics = dynamics_model<D, Scalar, NX, NU> && requires(
     { d.jacobian_u(x, u) } -> std::convertible_to<Matrix<Scalar, NX, NU>>;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

@@ -124,6 +124,6 @@ transfer_function<Scalar, NX, NX> ss2tf(const continuous_state_space<Scalar, NX,
     return {numer, den};
 }
 
-} // namespace ctrlpp
+}
 
 #endif

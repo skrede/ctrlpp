@@ -202,6 +202,6 @@ private:
     bool polishing_;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

@@ -13,8 +13,11 @@
 
 #include <Eigen/Dense>
 
-#include <cstddef>
 #include <algorithm>
+#include <cstddef>
+#include <limits>
+#include <type_traits>
+#include <utility>
 
 namespace ctrlpp
 {
@@ -226,9 +229,11 @@ Eigen::VectorX<typename Derived1::Scalar> n4sid_singular_values(const Eigen::Mat
 
 template <std::size_t NX, typename Derived1, typename Derived2>
 n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
-
 {
     using Scalar = typename Derived1::Scalar;
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "n4sid requires a floating-point Scalar type");
+    static_assert(NX >= 1, "n4sid requires NX >= 1");
     static constexpr auto nx = static_cast<Eigen::Index>(NX);
 
     auto N = Y.cols();

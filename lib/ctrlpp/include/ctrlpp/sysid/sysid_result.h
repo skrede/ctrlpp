@@ -26,6 +26,6 @@ struct n4sid_result
     Scalar condition_number{};
 };
 
-} // namespace ctrlpp
+}
 
 #endif

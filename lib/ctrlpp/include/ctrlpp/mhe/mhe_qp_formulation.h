@@ -17,6 +17,7 @@
 #include <limits>
 #include <optional>
 #include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -402,6 +403,9 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
                                        const Eigen::VectorX<Scalar>& warm_x,
                                        const Eigen::VectorX<Scalar>& warm_y) -> qp_update<Scalar>
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "MHE QP formulation requires a floating-point Scalar type");
+
     int Ni = static_cast<int>(N);
     auto dims = compute_mhe_dims<NX, NY>(N, has_box_bounds, has_soft_constraints, has_residual_bounds);
 
@@ -411,6 +415,6 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
     return {std::move(q), std::move(l), std::move(u), warm_x, warm_y};
 }
 
-} // namespace ctrlpp::detail
+}
 
 #endif

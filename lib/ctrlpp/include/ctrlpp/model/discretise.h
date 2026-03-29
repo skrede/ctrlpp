@@ -66,6 +66,6 @@ discrete_state_space<Scalar, NX, NU, NY> discretise(const continuous_state_space
     return discretise(zoh{}, sys, dt);
 }
 
-} // namespace ctrlpp
+}
 
 #endif

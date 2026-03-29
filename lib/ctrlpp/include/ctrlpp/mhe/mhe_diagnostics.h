@@ -22,6 +22,6 @@ struct mhe_diagnostics
     bool used_ekf_fallback{false};
 };
 
-} // namespace ctrlpp
+}
 
 #endif

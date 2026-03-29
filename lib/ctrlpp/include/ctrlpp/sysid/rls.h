@@ -10,6 +10,7 @@
 #include <Eigen/Dense>
 
 #include <cstddef>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -25,6 +26,10 @@ struct rls_config
 template <typename Scalar, std::size_t NP>
 class rls
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "rls requires a floating-point Scalar type");
+    static_assert(NP >= 1, "rls requires at least one parameter");
+
 public:
     explicit rls(rls_config<Scalar, NP> config = {}) : m_lambda{config.lambda}, m_cov_upper_bound{config.cov_upper_bound}, m_theta{Vector<Scalar, NP>::Zero()}, m_P{config.P0} {}
 
@@ -60,6 +65,6 @@ private:
     Matrix<Scalar, NP, NP> m_P;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

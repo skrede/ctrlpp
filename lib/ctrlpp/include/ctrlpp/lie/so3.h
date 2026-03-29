@@ -18,6 +18,7 @@
 #include <Eigen/Geometry>
 
 #include <cmath>
+#include <type_traits>
 
 namespace ctrlpp::so3
 {
@@ -28,6 +29,8 @@ namespace ctrlpp::so3
 template <typename Scalar>
 Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3>& phi)
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "so3 operations require a floating-point Scalar type");
     Scalar theta = phi.norm();
     Scalar half_theta = theta / Scalar{2};
 
@@ -120,6 +123,6 @@ Eigen::Quaternion<Scalar> from_vec(const Vector<Scalar, 4>& v)
     return q;
 }
 
-} // namespace ctrlpp::so3
+}
 
 #endif

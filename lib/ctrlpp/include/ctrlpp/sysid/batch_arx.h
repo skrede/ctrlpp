@@ -96,6 +96,6 @@ arx_result<typename Derived1::Scalar, NA, 1, 1> batch_arx(const Eigen::MatrixBas
     return {.system = sys, .metrics = metrics};
 }
 
-} // namespace ctrlpp
+}
 
 #endif
