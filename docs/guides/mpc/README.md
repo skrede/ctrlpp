@@ -1,6 +1,6 @@
 # MPC Guides
 
-Deep dives into model predictive control design and solver integration.
+Detailed tutorials for model predictive control design and solver integration.
 
 ## Guides
 

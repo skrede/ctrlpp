@@ -1,6 +1,6 @@
 # Estimation Guides
 
-Deep dives into observer design and observer-controller composition.
+Detailed tutorials for observer design and observer-controller composition.
 
 ## Guides
 

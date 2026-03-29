@@ -1,6 +1,6 @@
 # PID Guides
 
-Deep dives into PID controller design and composition patterns.
+Detailed tutorials for PID controller design and composition patterns.
 
 ## Guides
 

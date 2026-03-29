@@ -14,7 +14,7 @@ Guides and API reference for the ctrlpp C++23 control library.
 - [Your First Estimator](guides/intro/your-first-estimator.md)<br/> Add an observer to your control loop
 - [Your First MPC](guides/intro/your-first-mpc.md)<br/> Model predictive control in under 30 lines
 
-### Deep Dives
+### Detailed tutorials
 
 - [PID Composition](guides/pid/composition.md)<br/> Policy-based composition for anti-windup, filtering, and more
 - [Cascade Control](guides/pid/cascade.md)<br/> Inner/outer loop cascade PID

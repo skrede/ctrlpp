@@ -2,13 +2,13 @@
 
 Tutorials and walkthroughs for learning ctrlpp. Introduction guides are fully
 standalone with zero prerequisites beyond [Getting Started](../getting-started.md).
-Deep dives build on the introductions and explore advanced patterns.
+Detailed tutorials build on the introductions and explore advanced patterns.
 
 ## Introduction
 
 - [Introduction Guides](intro/README.md)<br/> Your first PID, estimator, and MPC
 
-## Deep Dives
+## Detailed tutorials
 
 - [PID Guides](pid/README.md)<br/> Policy composition and cascade control
 - [Estimation Guides](estimation/README.md)<br/> Observer-controller patterns

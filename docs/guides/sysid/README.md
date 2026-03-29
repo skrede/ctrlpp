@@ -1,6 +1,6 @@
 # System Identification Guides
 
-Deep dives into system identification workflows and model building.
+Detailed tutorials for system identification workflows and model building.
 
 ## Guides
 

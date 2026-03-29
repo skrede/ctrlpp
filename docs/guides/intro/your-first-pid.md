@@ -103,7 +103,7 @@ cfg.template policy<ctrlpp::deriv_filter>().n = {10.0};
 ```
 
 The config struct automatically gains fields for each policy. See
-[PID Composition](../pid/composition.md) for a deep dive on composing
+[PID Composition](../pid/composition.md) for a details on composing
 multiple policies together.
 
 ## Next Steps

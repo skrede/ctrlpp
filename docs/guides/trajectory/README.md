@@ -1,6 +1,6 @@
 # Trajectory Guides
 
-Deep dives into trajectory generation and motion planning.
+Detailed tutorials for trajectory generation and motion planning.
 
 ## Guides
 
