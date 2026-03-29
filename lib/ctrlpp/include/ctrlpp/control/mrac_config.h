@@ -40,6 +40,9 @@ template <typename Scalar, std::size_t NX, std::size_t NU,
           typename Robustification = no_robustification>
 struct mrac_config
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
     discrete_state_space<Scalar, NX, NU, NX> reference_model{};
     Matrix<Scalar, NX, NX> gamma_x = Matrix<Scalar, NX, NX>::Zero();
     Matrix<Scalar, NU, NU> gamma_r = Matrix<Scalar, NU, NU>::Zero();

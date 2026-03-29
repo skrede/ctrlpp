@@ -18,6 +18,7 @@
 
 #include <cstddef>
 #include <utility>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -27,6 +28,10 @@ template <typename Scalar, std::size_t NX = 1, std::size_t NU = 1,
     requires vector_discrete_filter<Filter, Vector<Scalar, NU>>
 class l1_controller
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+
 public:
     using config_type = l1_config<Scalar, NX, NU>;
     using state_type = Vector<Scalar, NX>;

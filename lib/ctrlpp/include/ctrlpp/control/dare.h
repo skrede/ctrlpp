@@ -16,6 +16,7 @@
 #include <complex>
 #include <cstddef>
 #include <optional>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -121,7 +122,7 @@ auto reorder_complex_schur_stable_first(Eigen::Matrix<std::complex<Scalar>, N, N
     return stable_count;
 }
 
-} // namespace detail
+}
 
 /// @brief Build symplectic matrix Z for DARE from system matrices A, B, Q, R.
 ///
@@ -189,6 +190,10 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
 auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q, const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
     -> std::optional<Eigen::Matrix<Scalar, int(NX), int(NX)>>
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+
     constexpr int n = static_cast<int>(NX);
     constexpr int n2 = 2 * n;
 
@@ -224,6 +229,6 @@ std::optional<Eigen::Matrix<Scalar, int(NX), int(NX)>> dare(const Eigen::Matrix<
     return dare<Scalar, NX, NU>(Ap, B, Qp, R);
 }
 
-} // namespace ctrlpp
+}
 
 #endif

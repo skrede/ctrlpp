@@ -226,8 +226,8 @@ struct perf_has_metric<Metric, perf_assessment<Metrics...>> : contains<Metric, M
 template <typename Metric, typename PA>
 inline constexpr bool perf_has_metric_v = perf_has_metric<Metric, PA>::value;
 
-} // namespace detail
+}
 
-} // namespace ctrlpp
+}
 
 #endif
