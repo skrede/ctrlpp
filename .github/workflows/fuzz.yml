@@ -39,3 +39,12 @@ jobs:
 
       - name: Build fuzz targets
         run: cmake --build build -j$(nproc)
+
+      - name: Run fuzz targets (smoke test)
+        run: |
+          for fuzz in build/tests/fuzz/fuzz_*; do
+            [ -x "$fuzz" ] || continue
+            echo "--- $(basename $fuzz) ---"
+            timeout 35 "$fuzz" -max_total_time=30 -max_len=1024 2>&1 | tail -5
+            echo ""
+          done
