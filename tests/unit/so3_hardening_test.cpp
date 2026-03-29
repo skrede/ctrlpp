@@ -30,7 +30,7 @@ TEST_CASE("SO3 zero quaternion", "[so3][hardening][negative]")
     // normalize of zero quaternion
     auto qn = ctrlpp::so3::normalize(q);
     // Eigen normalized() of zero produces NaN
-    CHECK(std::isnan(qn.w()) || std::isfinite(qn.w()));
+    CHECK((std::isnan(qn.w()) || std::isfinite(qn.w())));
 }
 
 TEST_CASE("SO3 non-unit quaternion", "[so3][hardening][negative]")

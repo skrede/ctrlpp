@@ -3,6 +3,7 @@
 #include "ctrlpp/sysid/rls.h"
 #include "ctrlpp/sysid/batch_arx.h"
 #include "ctrlpp/sysid/n4sid.h"
+#include "ctrlpp/sysid/recursive_arx.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -144,8 +145,8 @@ TEST_CASE("Batch ARX identifies known AR/X coefficients", "[arx][hardening][conv
     }
 
     auto result = ctrlpp::batch_arx<1, 1>(Y, U);
-    // The ARX model should recover system dynamics
-    REQUIRE(result.metrics.nrmse > 0.9);
+    // NRMSE close to 0 indicates good fit (norm_error / norm_centered)
+    REQUIRE(result.metrics.nrmse < 0.1);
 }
 
 TEST_CASE("Batch ARX with rank-deficient regressors", "[arx][hardening][negative]")
@@ -183,7 +184,7 @@ TEST_CASE("N4SID with near-zero singular values", "[n4sid][hardening][negative]"
 
     // Still identify a model -- should not crash
     auto result = ctrlpp::n4sid<2>(Y, U);
-    REQUIRE(std::isfinite(result.condition_number) || std::isinf(result.condition_number));
+    REQUIRE((std::isfinite(result.condition_number) || std::isinf(result.condition_number)));
 }
 
 TEST_CASE("N4SID with wrong model order", "[n4sid][hardening][negative]")
@@ -229,5 +230,32 @@ TEST_CASE("N4SID identifies known state-space system", "[n4sid][hardening][conve
     }
 
     auto result = ctrlpp::n4sid<1>(Y, U);
-    REQUIRE(result.metrics.nrmse > 0.85);
+    // NRMSE close to 0 indicates good fit (norm_error / norm_centered)
+    REQUIRE(result.metrics.nrmse < 0.15);
+}
+
+TEST_CASE("Recursive ARX order 2 to_state_space superdiagonal",
+          "[recursive_arx][hardening][coverage]")
+{
+    // NA=2 exercises the superdiagonal initialization loop in to_state_space()
+    ctrlpp::recursive_arx<double, 2, 1> arx;
+
+    std::mt19937 gen(42);
+    std::uniform_real_distribution<double> input(-1.0, 1.0);
+
+    double y = 0.0, y_prev = 0.0;
+    double u_prev = 0.0;
+    for (int t = 0; t < 500; ++t) {
+        double u = input(gen);
+        double y_new = 0.6 * y + 0.2 * y_prev + 0.3 * u_prev;
+        arx.update(y_new, u);
+        y_prev = y;
+        y = y_new;
+        u_prev = u;
+    }
+
+    auto ss = arx.to_state_space();
+    // 2nd-order system: A is 2x2 with superdiagonal entry
+    REQUIRE(std::isfinite(ss.A(0, 1)));
+    REQUIRE(ss.A.rows() == 2);
 }

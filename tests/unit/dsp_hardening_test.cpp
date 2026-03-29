@@ -44,18 +44,20 @@ TEST_CASE("Biquad with NaN input sample", "[biquad][hardening][negative]")
     CHECK(std::isnan(y));
 }
 
-TEST_CASE("Biquad with unstable poles", "[biquad][hardening][negative]")
+TEST_CASE("Biquad with unstable poles diverges", "[biquad][hardening][negative]")
 {
-    // a1=3.0 produces poles outside unit circle
-    ctrlpp::biquad_coeffs<double> c{.b0 = 1.0, .b1 = 0.0, .b2 = 0.0, .a1 = 3.0, .a2 = 0.0};
+    // Poles at z = +2.0 and z = +1.5 -- well outside unit circle
+    // Denominator: z^2 - 3.5z + 3 => a1 = -3.5, a2 = 3.0
+    ctrlpp::biquad_coeffs<double> c{.b0 = 1.0, .b1 = 0.0, .b2 = 0.0, .a1 = -3.5, .a2 = 3.0};
     ctrlpp::biquad<double> filter(c);
 
-    // Feed constant input; output should grow unbounded
+    // Feed constant input; output magnitude should grow
     double y = 0.0;
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 50; ++i) {
         y = filter.process(1.0);
     }
-    CHECK(!std::isfinite(y));
+    // After 50 steps with poles outside unit circle, magnitude should be large
+    CHECK(std::abs(y) > 1e6);
 }
 
 TEST_CASE("Unity gain biquad passes input through exactly", "[biquad][hardening][precision]")
@@ -112,4 +114,18 @@ TEST_CASE("Single-tap FIR with coefficient 1.0 is identity", "[fir][hardening][p
     REQUIRE_THAT(filter.process(3.14), WithinAbs(3.14, 1e-15));
     REQUIRE_THAT(filter.process(-7.0), WithinAbs(-7.0, 1e-15));
     REQUIRE_THAT(filter.process(0.0), WithinAbs(0.0, 1e-15));
+}
+
+TEST_CASE("Biquad reset with near-zero denominator", "[biquad][hardening][coverage]")
+{
+    // a1 + a2 + 1 ~ 0 => denominator is near zero
+    ctrlpp::biquad_coeffs<double> c{.b0 = 1.0, .b1 = 0.0, .b2 = 0.0, .a1 = -0.5, .a2 = -0.5};
+    ctrlpp::biquad<double> filter(c);
+
+    filter.process(1.0);
+    filter.reset(5.0); // Should handle near-zero denominator gracefully
+
+    // After reset with degenerate denominator, state should be zeroed
+    double y = filter.process(0.0);
+    CHECK(std::isfinite(y));
 }

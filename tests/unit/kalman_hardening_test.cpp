@@ -233,3 +233,28 @@ TEST_CASE("Kalman ill-conditioned system matrix cond 1e10", "[kalman][hardening]
 
     REQUIRE(all_finite);
 }
+
+TEST_CASE("Kalman is_steady_state with near-zero covariance",
+          "[kalman][hardening][coverage]")
+{
+    constexpr std::size_t NX = 2, NU = 1, NY = 1;
+    using KF = ctrlpp::kalman_filter<double, NX, NU, NY>;
+
+    Eigen::Matrix2d A;
+    A << 1.0, 0.01, 0.0, 1.0;
+    Eigen::Vector2d B(0.0, 0.01);
+    Eigen::RowVector2d C(1.0, 0.0);
+    Eigen::Matrix<double, 1, 1> D = Eigen::Matrix<double, 1, 1>::Zero();
+    ctrlpp::discrete_state_space<double, NX, NU, NY> sys{A, B, C, D};
+
+    ctrlpp::kalman_config<double, NX, NU, NY> cfg{};
+    // Near-zero initial covariance triggers P.norm() < epsilon branch
+    cfg.P0 = Eigen::Matrix2d::Zero();
+    cfg.Q = Eigen::Matrix2d::Identity() * 1e-300;
+    cfg.R = Eigen::Matrix<double, 1, 1>::Identity();
+
+    KF kf(sys, cfg);
+
+    // With zero P, should immediately report steady state
+    CHECK(kf.is_steady_state());
+}

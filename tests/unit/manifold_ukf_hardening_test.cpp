@@ -185,3 +185,31 @@ TEST_CASE("Manifold UKF extreme rotation near gimbal lock",
 
     REQUIRE(all_finite);
 }
+
+TEST_CASE("Manifold UKF near pi rotation triggers hemisphere flip",
+          "[manifold_ukf][hardening][coverage]")
+{
+    // Initial quaternion near 180 degrees around z-axis -- sigma points will
+    // span both hemispheres, exercising the qi.dot(q_mean) < 0 branch.
+    Eigen::Quaterniond q_near_pi(Eigen::AngleAxisd(3.0, Eigen::Vector3d::UnitZ()));
+
+    ctrlpp::manifold_ukf_config<double, 3> cfg;
+    cfg.q0 = q_near_pi;
+    cfg.P0 *= 0.5; // Large covariance -> wide sigma spread
+    cfg.Q *= 0.01;
+    cfg.R *= 0.1;
+
+    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+
+    Eigen::Vector3d omega(0.1, 0.0, 0.5);
+
+    for(int k = 0; k < 50; ++k)
+    {
+        filter.predict(omega);
+        Eigen::Vector3d z = q_near_pi.toRotationMatrix().transpose().col(2);
+        filter.update(z);
+    }
+
+    // Filter should remain finite through hemisphere-spanning sigma points
+    REQUIRE(std::isfinite(filter.state()[0]));
+}

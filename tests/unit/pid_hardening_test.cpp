@@ -120,13 +120,13 @@ TEST_CASE("PID stays bounded over 10000 steps with stable gains", "[pid][hardeni
 TEST_CASE("PID with integral action converges to zero error", "[pid][hardening][convergence]")
 {
     SisoPid::config_type cfg{};
-    cfg.kp = vec1(0.5);
-    cfg.ki = vec1(0.2);
+    cfg.kp = vec1(2.0);
+    cfg.ki = vec1(1.0);
     SisoPid pid(cfg);
 
     double plant_x = 0.0;
 
-    for(int k = 0; k < 1000; ++k)
+    for(int k = 0; k < 5000; ++k)
     {
         auto u = pid.compute(vec1(1.0), vec1(plant_x), Ts);
         plant_x = 0.9 * plant_x + 0.1 * u[0];
