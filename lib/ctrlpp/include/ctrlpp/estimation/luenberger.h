@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <utility>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -18,6 +19,11 @@ namespace ctrlpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 class luenberger_observer
 {
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+    static_assert(NY > 0, "Output dimension NY must be positive");
+
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int nu = static_cast<int>(NU);
     static constexpr int ny = static_cast<int>(NY);
@@ -51,6 +57,6 @@ private:
 static_assert(ObserverPolicy<luenberger_observer<double, 2, 1, 1>>);
 static_assert(!CovarianceObserver<luenberger_observer<double, 2, 1, 1>>);
 
-} // namespace ctrlpp
+}
 
 #endif
