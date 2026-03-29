@@ -221,6 +221,9 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<
     if(stable < n)
         return std::nullopt;
 
+    if(!U.allFinite())
+        return std::nullopt;
+
     return extract_dare_solution<Scalar, n2>(U);
 }
 

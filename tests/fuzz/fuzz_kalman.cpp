@@ -53,8 +53,9 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // Make Q PSD: Q = Q_raw^T * Q_raw
     Eigen::Matrix<double, 2, 2> Q = Q_raw.transpose() * Q_raw;
 
-    // Make R PD: R = r^2 + epsilon
-    double r_val = buf[idx] * buf[idx] + 1e-6;
+    // Make R PD: R = r^2 + epsilon (clamp raw value to prevent overflow)
+    double r_raw = std::clamp(buf[idx], -100.0, 100.0);
+    double r_val = r_raw * r_raw + 1e-6;
     Eigen::Matrix<double, 1, 1> R;
     R << r_val;
     idx += 1;
