@@ -119,6 +119,10 @@ Guides and API reference for the ctrlpp C++23 control library.
 - [online_planner_3rd](api/trajectory/online-planner-3rd.md) -- 3rd-order online trajectory planner
 - [synchronize](api/trajectory/synchronize.md) -- Multi-axis trajectory synchronization
 
+## Validation
+
+- [Validation Status](validation.md) -- Testing levels and cross-validation against GNU Octave
+
 ## Background Theory
 
 Standalone theory and mathematical background for the algorithms in ctrlpp.

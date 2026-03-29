@@ -1,0 +1,2 @@
+add_executable(lqr_finite_horizon lqr_finite_horizon.cpp)
+target_link_libraries(lqr_finite_horizon PRIVATE ctrlpp::ctrlpp)

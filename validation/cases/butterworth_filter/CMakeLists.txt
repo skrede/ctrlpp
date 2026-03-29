@@ -1,0 +1,2 @@
+add_executable(butterworth_filter butterworth_filter.cpp)
+target_link_libraries(butterworth_filter PRIVATE ctrlpp::ctrlpp)
