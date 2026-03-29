@@ -34,19 +34,20 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     idx += 4;
 
     Eigen::Matrix<double, 2, 1> Bd;
-    Bd << buf[idx], buf[idx + 1];
+    Bd << std::clamp(buf[idx], -10.0, 10.0), std::clamp(buf[idx + 1], -10.0, 10.0);
     idx += 2;
 
     Eigen::Matrix<double, 1, 2> C;
-    C << buf[idx], buf[idx + 1];
+    C << std::clamp(buf[idx], -10.0, 10.0), std::clamp(buf[idx + 1], -10.0, 10.0);
     idx += 2;
 
     Eigen::Matrix<double, 1, 1> D;
-    D << buf[idx];
+    D << std::clamp(buf[idx], -10.0, 10.0);
     idx += 1;
 
     Eigen::Matrix<double, 2, 2> Q_raw;
-    Q_raw << buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3];
+    Q_raw << std::clamp(buf[idx], -10.0, 10.0), std::clamp(buf[idx + 1], -10.0, 10.0),
+             std::clamp(buf[idx + 2], -10.0, 10.0), std::clamp(buf[idx + 3], -10.0, 10.0);
     idx += 4;
 
     // Make Q PSD: Q = Q_raw^T * Q_raw

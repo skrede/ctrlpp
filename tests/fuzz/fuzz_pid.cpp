@@ -21,14 +21,14 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             return 0;
     }
 
-    double kp = std::clamp(buf[0], -1e6, 1e6);
-    double ki = std::clamp(buf[1], -1e6, 1e6);
-    double kd = std::clamp(buf[2], -1e6, 1e6);
-    double output_min = buf[3];
-    double output_max = buf[4];
+    double kp = std::clamp(buf[0], -100.0, 100.0);
+    double ki = std::clamp(buf[1], -100.0, 100.0);
+    double kd = std::clamp(buf[2], -100.0, 100.0);
+    double output_min = std::clamp(buf[3], -1e3, 1e3);
+    double output_max = std::clamp(buf[4], -1e3, 1e3);
     double dt = buf[5];
-    double setpoint = std::clamp(buf[6], -1e6, 1e6);
-    double measurement = std::clamp(buf[7], -1e6, 1e6);
+    double setpoint = std::clamp(buf[6], -100.0, 100.0);
+    double measurement = std::clamp(buf[7], -100.0, 100.0);
 
     // Ensure dt > 0
     if(dt < 1e-6)

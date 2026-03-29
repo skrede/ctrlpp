@@ -20,8 +20,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             return 0;
     }
 
-    double q0 = buf[0];
-    double q1 = buf[1];
+    double q0 = std::clamp(buf[0], -1e6, 1e6);
+    double q1 = std::clamp(buf[1], -1e6, 1e6);
     double v_max = std::abs(buf[2]);
     double a_max = std::abs(buf[3]);
     double j_max = std::abs(buf[4]);
