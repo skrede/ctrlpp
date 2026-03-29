@@ -8,12 +8,10 @@
 #include "ctrlpp/types.h"
 #include "ctrlpp/control/pid_config.h"
 #include "ctrlpp/control/pid_policies.h"
+#include "ctrlpp/control/pid_performance.h"
 
 #include <cmath>
 #include <limits>
-#include <cstddef>
-#include <algorithm>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -28,7 +26,6 @@ public:
     explicit pid(const config_type& cfg) : m_cfg{cfg}
     {
         compute_internal_gains(cfg);
-
         if constexpr(detail::has_policy_v<anti_windup, Policies...>)
             initialize_back_calc_gains();
     }
@@ -41,8 +38,7 @@ public:
         auto filtered_sp = apply_setpoint_filter(sp, dt);
         auto filtered_meas = apply_pv_filter(meas, dt);
         auto e = (filtered_sp - filtered_meas).eval();
-
-        accumulate_performance_metrics(e, dt);
+        m_perf.accumulate(e, dt);
 
         if constexpr(detail::contains_v<velocity_form, Policies...>)
             return compute_velocity_form(e, sp, filtered_sp, filtered_meas, dt);
@@ -50,19 +46,16 @@ public:
             return compute_position_form(e, sp, filtered_sp, filtered_meas, dt);
     }
 
-    vector_t compute(const vector_t& sp, const vector_t& meas, Scalar dt, const vector_t& tracking_signal)
+    auto compute(const vector_t& sp, const vector_t& meas, Scalar dt, const vector_t& tracking_signal) -> vector_t
     {
         auto u = compute(sp, meas, dt);
-
         if(dt <= Scalar{0})
             return u;
-
         if constexpr(!detail::contains_v<velocity_form, Policies...>)
         {
             auto non_integral = (u - m_integral).eval();
             m_integral = (tracking_signal - non_integral).eval();
         }
-
         return u;
     }
 
@@ -72,17 +65,13 @@ public:
         m_cfg = new_cfg;
         compute_internal_gains(new_cfg);
         rescale_integral_bumpless(ki_old);
-
         if constexpr(detail::has_policy_v<anti_windup, Policies...>)
             initialize_back_calc_gains();
     }
 
     const vector_t& error() const { return m_prev_error; }
-
     const vector_t& integral() const { return m_integral; }
-
     const config_type& params() const { return m_cfg; }
-
     bool saturated() const { return m_saturated; }
 
     void reset()
@@ -103,68 +92,35 @@ public:
         m_integral_frozen = false;
         m_saturated = false;
         if constexpr(detail::has_policy_v<perf_assessment, Policies...>)
-            reset_metrics();
+        {
+            m_perf.reset();
+            m_perf.set_first_step(true);
+        }
     }
 
     void freeze_integral(bool freeze = true) { m_integral_frozen = freeze; }
-
     void set_integral(const vector_t& val) { m_integral = val; }
 
     template <typename Metric>
-    const vector_t& metric() const
+    auto metric() const -> const vector_t&
         requires detail::has_policy_v<perf_assessment, Policies...>
     {
-        using PA = detail::find_policy_t<perf_assessment, Policies...>;
-        static_assert(detail::perf_has_metric_v<Metric, PA>, "Metric type not in perf_assessment pack");
-
-        if constexpr(std::is_same_v<Metric, IAE>)
-            return m_iae;
-        else if constexpr(std::is_same_v<Metric, ISE>)
-            return m_ise;
-        else if constexpr(std::is_same_v<Metric, ITAE>)
-            return m_itae;
-        else if constexpr(std::is_same_v<Metric, oscillation_detect>)
-            return m_zero_crossings;
+        return m_perf.template metric<Metric>();
     }
 
-    bool oscillating() const
+    auto oscillating() const -> bool
         requires detail::has_policy_v<perf_assessment, Policies...>
     {
-        using PA = detail::find_policy_t<perf_assessment, Policies...>;
-        static_assert(detail::perf_has_metric_v<oscillation_detect, PA>, "oscillation_detect not in perf_assessment pack");
-
-        if(m_accumulated_time <= Scalar{0})
-            return false;
-
-        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-        {
-            if(m_zero_crossings[i] / m_accumulated_time > static_cast<Scalar>(m_osc_threshold))
-                return true;
-        }
-        return false;
+        return m_perf.oscillating();
     }
 
     void reset_metrics()
         requires detail::has_policy_v<perf_assessment, Policies...>
     {
-        using PA = detail::find_policy_t<perf_assessment, Policies...>;
-        if constexpr(detail::perf_has_metric_v<IAE, PA>)
-            m_iae = vector_t::Zero();
-        if constexpr(detail::perf_has_metric_v<ISE, PA>)
-            m_ise = vector_t::Zero();
-        if constexpr(detail::perf_has_metric_v<ITAE, PA>)
-            m_itae = vector_t::Zero();
-        if constexpr(detail::perf_has_metric_v<oscillation_detect, PA>)
-        {
-            m_zero_crossings = vector_t::Zero();
-            m_prev_error_sign = vector_t::Zero();
-        }
-        m_accumulated_time = Scalar{0};
+        m_perf.reset();
     }
 
 private:
-    // --- Gain initialization sub-steps ---
-
     void compute_internal_gains(const config_type& cfg)
     {
         if constexpr(detail::contains_v<isa_form, Policies...>)
@@ -219,8 +175,6 @@ private:
         }
     }
 
-    // --- Input filtering sub-steps ---
-
     auto apply_setpoint_filter(const vector_t& sp, Scalar dt) -> vector_t
     {
         if constexpr(detail::contains_v<setpoint_filter, Policies...>)
@@ -263,67 +217,6 @@ private:
             return meas;
     }
 
-    // --- Performance metric accumulation ---
-
-    void accumulate_performance_metrics(const vector_t& e, Scalar dt)
-    {
-        if constexpr(detail::has_policy_v<perf_assessment, Policies...>)
-        {
-            using PA = detail::find_policy_t<perf_assessment, Policies...>;
-            m_accumulated_time += dt;
-
-            if constexpr(detail::perf_has_metric_v<IAE, PA>)
-                accumulate_iae(e, dt);
-            if constexpr(detail::perf_has_metric_v<ISE, PA>)
-                accumulate_ise(e, dt);
-            if constexpr(detail::perf_has_metric_v<ITAE, PA>)
-                accumulate_itae(e, dt);
-            if constexpr(detail::perf_has_metric_v<oscillation_detect, PA>)
-                accumulate_oscillation(e);
-        }
-    }
-
-    /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE)
-    void accumulate_iae(const vector_t& e, Scalar dt)
-    {
-        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-        {
-            Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
-            m_iae[i] += abs_e * dt;
-        }
-    }
-
-    /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (ISE)
-    void accumulate_ise(const vector_t& e, Scalar dt)
-    {
-        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-            m_ise[i] += e[i] * e[i] * dt;
-    }
-
-    /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (ITAE)
-    void accumulate_itae(const vector_t& e, Scalar dt)
-    {
-        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-        {
-            Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
-            m_itae[i] += m_accumulated_time * abs_e * dt;
-        }
-    }
-
-    void accumulate_oscillation(const vector_t& e)
-    {
-        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-        {
-            Scalar sign_e = (e[i] > Scalar{0}) ? Scalar{1} : (e[i] < Scalar{0}) ? Scalar{-1} : Scalar{0};
-            if(!m_first_step && sign_e != Scalar{0} && m_prev_error_sign[i] != Scalar{0} && sign_e != m_prev_error_sign[i])
-                m_zero_crossings[i] += Scalar{1};
-            if(sign_e != Scalar{0})
-                m_prev_error_sign[i] = sign_e;
-        }
-    }
-
-    // --- Velocity form computation ---
-
     auto compute_velocity_form(const vector_t& e, const vector_t& sp, const vector_t& filtered_sp, const vector_t& filtered_meas, Scalar dt) -> vector_t
     {
         auto dp = m_kp.cwiseProduct(e - m_prev_error).eval();
@@ -331,10 +224,8 @@ private:
         auto d_num = (e - m_prev_error * Scalar{2} + m_prev_prev_error).eval();
         auto dd = m_kd.cwiseProduct(d_num / dt).eval();
         auto delta_u = (dp + di + dd).eval();
-
         delta_u = apply_feed_forward_velocity(delta_u, sp, dt);
         delta_u = delta_u.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
-
         update_state(e, filtered_meas, filtered_sp, delta_u);
         return delta_u;
     }
@@ -353,9 +244,7 @@ private:
         return delta_u;
     }
 
-    // --- Position form computation ---
     /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3-4
-
     auto compute_position_form(const vector_t& e, const vector_t& sp, const vector_t& filtered_sp, const vector_t& filtered_meas, Scalar dt) -> vector_t
     {
         auto p = compute_proportional_term(filtered_sp, filtered_meas);
@@ -363,10 +252,8 @@ private:
         auto d = compute_derivative_term(filtered_sp, filtered_meas, dt);
         auto u_raw = compute_raw_output(p, updated_integral, d, sp, dt);
         u_raw = apply_rate_limit(u_raw, dt);
-
         auto u_sat = u_raw.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
         m_saturated = (u_sat.array() != u_raw.array()).any();
-
         apply_anti_windup(u_sat, u_raw, e, integral_increment, dt);
         update_state(e, filtered_meas, filtered_sp, u_sat);
         return u_sat;
@@ -419,20 +306,17 @@ private:
     {
         if(m_cfg.derivative_on_error)
         {
-            vector_t ed_curr;
-            vector_t ed_prev;
+            vector_t ed_curr, ed_prev;
             for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             {
                 ed_curr[i] = m_cfg.c[i] * filtered_sp[i] - filtered_meas[i];
                 ed_prev[i] = m_cfg.c[i] * m_prev_sp[i] - m_prev_meas[i];
             }
-            auto de = (ed_curr - ed_prev).eval();
-            return m_kd.cwiseProduct(de / dt).eval();
+            return m_kd.cwiseProduct((ed_curr - ed_prev) / dt).eval();
         }
         else
         {
-            auto dm = (filtered_meas - m_prev_meas).eval();
-            auto dm_dt = (dm / dt).eval();
+            auto dm_dt = ((filtered_meas - m_prev_meas) / dt).eval();
             return (-m_kd.cwiseProduct(dm_dt)).eval();
         }
     }
@@ -456,8 +340,7 @@ private:
 
     auto compute_raw_output(const vector_t& p, const vector_t& integral, const vector_t& d, const vector_t& sp, Scalar dt) -> vector_t
     {
-        auto u_raw = (p + integral + d).eval();
-        return apply_feed_forward(u_raw, sp, dt);
+        return apply_feed_forward((p + integral + d).eval(), sp, dt);
     }
 
     auto apply_feed_forward(vector_t u_raw, const vector_t& sp, Scalar dt) -> vector_t
@@ -479,32 +362,24 @@ private:
         if constexpr(detail::contains_v<rate_limit, Policies...>)
         {
             auto delta = (u_raw - m_prev_output).eval();
-            auto [lo, hi] = compute_rate_delta_bounds(dt);
-            auto clamped_delta = delta.cwiseMax(lo).cwiseMin(hi).eval();
-            return (m_prev_output + clamped_delta).eval();
+            const auto& rl_cfg = m_cfg.template policy<rate_limit>();
+            vector_t lo, hi;
+            for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
+            {
+                if(rl_cfg.rate_max[static_cast<std::size_t>(i)] > Scalar{0} && rl_cfg.rate_max[static_cast<std::size_t>(i)] != std::numeric_limits<Scalar>::infinity())
+                {
+                    hi[i] = rl_cfg.rate_max[static_cast<std::size_t>(i)] * dt;
+                    lo[i] = -hi[i];
+                }
+                else
+                {
+                    hi[i] = std::numeric_limits<Scalar>::max();
+                    lo[i] = std::numeric_limits<Scalar>::lowest();
+                }
+            }
+            return (m_prev_output + delta.cwiseMax(lo).cwiseMin(hi)).eval();
         }
         return u_raw;
-    }
-
-    auto compute_rate_delta_bounds(Scalar dt) const -> std::pair<vector_t, vector_t>
-    {
-        const auto& rl_cfg = m_cfg.template policy<rate_limit>();
-        vector_t max_delta;
-        vector_t neg_max_delta;
-        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-        {
-            if(rl_cfg.rate_max[static_cast<std::size_t>(i)] > Scalar{0} && rl_cfg.rate_max[static_cast<std::size_t>(i)] != std::numeric_limits<Scalar>::infinity())
-            {
-                max_delta[i] = rl_cfg.rate_max[static_cast<std::size_t>(i)] * dt;
-                neg_max_delta[i] = -max_delta[i];
-            }
-            else
-            {
-                max_delta[i] = std::numeric_limits<Scalar>::max();
-                neg_max_delta[i] = std::numeric_limits<Scalar>::lowest();
-            }
-        }
-        return {neg_max_delta, max_delta};
     }
 
     void apply_anti_windup(const vector_t& u_sat, const vector_t& u_raw, const vector_t& e, const vector_t& integral_increment, Scalar dt)
@@ -513,49 +388,29 @@ private:
         {
             using AW = detail::find_policy_t<anti_windup, Policies...>;
             if constexpr(std::is_same_v<AW, anti_windup<back_calc>>)
-                apply_back_calc_windup(u_sat, u_raw, dt);
-            else if constexpr(std::is_same_v<AW, anti_windup<clamping>>)
-                apply_clamping_windup(e, integral_increment);
-            else if constexpr(std::is_same_v<AW, anti_windup<conditional_integration>>)
-                apply_conditional_integration_windup(e, integral_increment);
-        }
-    }
-
-    /// @cite astrom2006 -- Ch. 3.5 (back-calculation anti-windup)
-    void apply_back_calc_windup(const vector_t& u_sat, const vector_t& u_raw, Scalar dt)
-    {
-        auto sat_diff = (u_sat - u_raw).eval();
-        auto feedback = kb_.cwiseProduct(sat_diff).eval();
-        m_integral = (m_integral + feedback * dt).eval();
-    }
-
-    /// @cite astrom2006 -- Ch. 3.5 (clamping anti-windup)
-    void apply_clamping_windup(const vector_t& e, const vector_t& integral_increment)
-    {
-        if(m_saturated)
-        {
-            for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             {
-                if((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0}))
-                    m_integral[i] -= integral_increment[i];
+                auto feedback = kb_.cwiseProduct((u_sat - u_raw).eval()).eval();
+                m_integral = (m_integral + feedback * dt).eval();
+            }
+            else if constexpr(std::is_same_v<AW, anti_windup<clamping>>)
+            {
+                if(m_saturated)
+                    for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
+                        if((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0}))
+                            m_integral[i] -= integral_increment[i];
+            }
+            else if constexpr(std::is_same_v<AW, anti_windup<conditional_integration>>)
+            {
+                const auto& ci_cfg = m_cfg.template policy<AW>();
+                for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
+                {
+                    Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
+                    if(abs_e > ci_cfg.error_threshold[static_cast<std::size_t>(i)])
+                        m_integral[i] -= integral_increment[i];
+                }
             }
         }
     }
-
-    /// @cite astrom2006 -- Ch. 3.5 (conditional integration anti-windup)
-    void apply_conditional_integration_windup(const vector_t& e, const vector_t& integral_increment)
-    {
-        using AW = detail::find_policy_t<anti_windup, Policies...>;
-        const auto& ci_cfg = m_cfg.template policy<AW>();
-        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-        {
-            Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
-            if(abs_e > ci_cfg.error_threshold[static_cast<std::size_t>(i)])
-                m_integral[i] -= integral_increment[i];
-        }
-    }
-
-    // --- State update ---
 
     void update_state(const vector_t& e, const vector_t& filtered_meas, const vector_t& filtered_sp, const vector_t& output)
     {
@@ -565,9 +420,8 @@ private:
         m_prev_sp = filtered_sp;
         m_prev_output = output;
         m_first_step = false;
+        m_perf.set_first_step(false);
     }
-
-    // --- Member data ---
 
     config_type m_cfg;
     vector_t m_kp = vector_t::Zero();
@@ -583,13 +437,7 @@ private:
     vector_t m_filtered_sp = vector_t::Zero();
     vector_t m_filtered_meas = vector_t::Zero();
     vector_t m_prev_deriv_filtered = vector_t::Zero();
-    vector_t m_iae = vector_t::Zero();
-    vector_t m_ise = vector_t::Zero();
-    vector_t m_itae = vector_t::Zero();
-    vector_t m_zero_crossings = vector_t::Zero();
-    vector_t m_prev_error_sign = vector_t::Zero();
-    Scalar m_accumulated_time{0};
-    Scalar m_osc_threshold{5.0};
+    pid_performance_tracker<Scalar, NY, Policies...> m_perf;
     bool m_first_step{true};
     bool m_integral_frozen{false};
     bool m_saturated{false};

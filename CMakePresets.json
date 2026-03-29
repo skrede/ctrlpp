@@ -44,6 +44,24 @@
                 "CTRLPP_ENABLE_COVERAGE": "ON",
                 "CTRLPP_CMAKE_FETCH_DEPS": "ON"
             }
+        },
+        {
+            "name": "coverage-full",
+            "displayName": "Full coverage (GCC + gcov + solvers + property tests)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/coverage-full",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_STANDARD": "23",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_CXX_FLAGS": "--coverage -fprofile-arcs -ftest-coverage",
+                "CTRLPP_BUILD_TESTS": "ON",
+                "CTRLPP_ENABLE_COVERAGE": "ON",
+                "CTRLPP_BUILD_OSQP": "ON",
+                "CTRLPP_BUILD_NLOPT": "ON",
+                "CTRLPP_BUILD_PROPERTY_TESTS": "ON",
+                "CTRLPP_CMAKE_FETCH_DEPS": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -58,6 +76,10 @@
         {
             "name": "coverage",
             "configurePreset": "coverage"
+        },
+        {
+            "name": "coverage-full",
+            "configurePreset": "coverage-full"
         }
     ],
     "testPresets": [
@@ -71,6 +93,13 @@
         {
             "name": "coverage",
             "configurePreset": "coverage",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "coverage-full",
+            "configurePreset": "coverage-full",
             "output": {
                 "outputOnFailure": true
             }
