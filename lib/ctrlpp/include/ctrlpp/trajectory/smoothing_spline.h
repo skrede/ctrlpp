@@ -25,6 +25,7 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <type_traits>
 #include <vector>
 
 namespace ctrlpp
@@ -40,6 +41,9 @@ namespace ctrlpp
 template <typename Scalar>
 class smoothing_spline
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "smoothing_spline requires a floating-point Scalar type");
+
   public:
     struct config
     {
@@ -258,6 +262,6 @@ class smoothing_spline
 
 static_assert(trajectory_segment<smoothing_spline<double>, double, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

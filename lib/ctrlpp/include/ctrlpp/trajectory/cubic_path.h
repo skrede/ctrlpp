@@ -40,6 +40,6 @@ auto cubic_path_peak_derivatives() -> std::array<Scalar, 3>
     return {Scalar{1.5}, Scalar{6.0}, Scalar{12.0}};
 }
 
-} // namespace ctrlpp
+}
 
 #endif

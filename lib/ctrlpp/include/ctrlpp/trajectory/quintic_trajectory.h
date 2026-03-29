@@ -82,6 +82,6 @@ auto make_quintic_trajectory(
 
 static_assert(trajectory_segment<quintic_trajectory<double, 1>, double, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

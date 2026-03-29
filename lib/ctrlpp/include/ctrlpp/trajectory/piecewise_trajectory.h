@@ -47,6 +47,6 @@ static_assert(trajectory_segment<
     piecewise_trajectory<double, 1, cubic_trajectory<double, 1>, cubic_trajectory<double, 1>>,
     double, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

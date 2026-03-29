@@ -49,6 +49,6 @@ auto quintic_path_peak_derivatives() -> std::array<Scalar, 3>
     };
 }
 
-} // namespace ctrlpp
+}
 
 #endif

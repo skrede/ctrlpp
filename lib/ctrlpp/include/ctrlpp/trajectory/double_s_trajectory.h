@@ -19,6 +19,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -28,6 +29,9 @@ namespace ctrlpp
 template <typename Scalar>
 class double_s_trajectory
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "double_s_trajectory requires a floating-point Scalar type");
+
 public:
     using scalar_type = Scalar;
 
@@ -274,97 +278,83 @@ private:
         v_lim_ = a_lim_a_ * T_j;
     }
 
-    /// @brief Evaluate in the positive-displacement frame (sigma=+1).
-    /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30g), p.85-86
-    void evaluate_positive_frame(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
+    /// @brief Evaluate acceleration-phase segments 1-3.
+    /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30c), p.85
+    void eval_accel_phase(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
         auto const j = j_max_;
-        auto const a_a = a_lim_a_;
-        auto const a_d = a_lim_d_;
-
-        // Phase boundaries
-        auto const t1 = T_j1_;                       // end of segment 1
-        auto const t2 = T_a_ - T_j1_;                // end of segment 2
-        auto const t3 = T_a_;                         // end of segment 3
-        auto const t4 = T_a_ + T_v_;                  // end of segment 4
-        auto const t5 = T_a_ + T_v_ + T_j2_;         // end of segment 5
-        // t6 = T_ - T_j2_ (end of segment 6, used implicitly via dt_end)
-        // t7 = T_ (end of segment 7)
+        auto const t1 = T_j1_;
+        auto const t2 = T_a_ - T_j1_;
 
         if (tc < t1) {
-            // Segment 1: positive jerk (+j_max)
-            // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a), p.85
-            auto const t = tc;
-            q = j * t * t * t / Scalar{6};
-            dq = j * t * t / Scalar{2};
-            ddq = j * t;
+            q = j * tc * tc * tc / Scalar{6};
+            dq = j * tc * tc / Scalar{2};
+            ddq = j * tc;
         } else if (tc < t2) {
-            // Segment 2: constant acceleration (a_lim_a)
-            // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30b), p.85
             auto const t = tc - T_j1_;
             auto const q1 = j * T_j1_ * T_j1_ * T_j1_ / Scalar{6};
             auto const dq1 = j * T_j1_ * T_j1_ / Scalar{2};
-            q = q1 + dq1 * t + a_a * t * t / Scalar{2};
-            dq = dq1 + a_a * t;
-            ddq = a_a;
-        } else if (tc < t3) {
-            // Segment 3: negative jerk (-j_max), end of acceleration
-            // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30c), p.85
+            q = q1 + dq1 * t + a_lim_a_ * t * t / Scalar{2};
+            dq = dq1 + a_lim_a_ * t;
+            ddq = a_lim_a_;
+        } else {
             auto const dt = T_a_ - tc;
-            // Evaluate from the end: at t3 we have velocity = v_lim, accel = 0
             auto const q_at_Ta = compute_q_at_Ta();
             q = q_at_Ta - v_lim_ * dt + j * dt * dt * dt / Scalar{6};
             dq = v_lim_ - j * dt * dt / Scalar{2};
             ddq = j * dt;
+        }
+    }
+
+    /// @brief Evaluate deceleration-phase segments 5-7.
+    /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.30e)-(3.30g), p.86
+    void eval_decel_phase(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
+    {
+        auto const j = j_max_;
+        auto const dt_end = T_ - tc;
+        auto const h = std::abs(q1_ - q0_);
+        auto const t5 = T_a_ + T_v_ + T_j2_;
+
+        if (dt_end > T_d_ - T_j2_) {
+            auto const q_at_Tv_end = compute_q_at_Ta() + v_lim_ * T_v_;
+            auto const t = tc - (T_a_ + T_v_);
+            q = q_at_Tv_end + v_lim_ * t - j * t * t * t / Scalar{6};
+            dq = v_lim_ - j * t * t / Scalar{2};
+            ddq = -j * t;
+        } else if (dt_end > T_j2_) {
+            auto const t5_local = T_j2_;
+            auto const v_at_t5 = v_lim_ - j * t5_local * t5_local / Scalar{2};
+            auto const a_at_t5 = -j * t5_local;
+            auto const q_at_t5 = compute_q_at_Ta() + v_lim_ * T_v_
+                                 + v_lim_ * t5_local - j * t5_local * t5_local * t5_local / Scalar{6};
+            auto const dt_from_t5 = tc - t5;
+            q = q_at_t5 + v_at_t5 * dt_from_t5 + a_at_t5 * dt_from_t5 * dt_from_t5 / Scalar{2};
+            dq = v_at_t5 + a_at_t5 * dt_from_t5;
+            ddq = a_at_t5;
+        } else {
+            q = h - j * dt_end * dt_end * dt_end / Scalar{6};
+            dq = j * dt_end * dt_end / Scalar{2};
+            ddq = -j * dt_end;
+        }
+    }
+
+    /// @brief Evaluate in the positive-displacement frame (sigma=+1).
+    /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30g), p.85-86
+    void evaluate_positive_frame(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
+    {
+        auto const t3 = T_a_;
+        auto const t4 = T_a_ + T_v_;
+
+        if (tc < t3) {
+            eval_accel_phase(tc, q, dq, ddq);
         } else if (tc < t4) {
-            // Segment 4: constant velocity (cruise)
-            // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30d), p.86
             auto const q_at_Ta = compute_q_at_Ta();
             auto const t = tc - T_a_;
             q = q_at_Ta + v_lim_ * t;
             dq = v_lim_;
             ddq = Scalar{0};
         } else {
-            // Segments 5-7: deceleration phase
-            // Use dt_end = T_ - tc for numerical precision (Pitfall 1)
-            auto const dt_end = T_ - tc;
-            auto const h = std::abs(q1_ - q0_);
-
-            if (dt_end > T_d_ - T_j2_) {
-                // Segment 5: negative jerk (-j_max), start of deceleration
-                // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30e), p.86
-                auto const q_at_Tv_end = compute_q_at_Ta() + v_lim_ * T_v_;
-                auto const t = tc - (T_a_ + T_v_);
-                q = q_at_Tv_end + v_lim_ * t - j * t * t * t / Scalar{6};
-                dq = v_lim_ - j * t * t / Scalar{2};
-                ddq = -j * t;
-            } else if (dt_end > T_j2_) {
-                // Segment 6: constant deceleration (-a_lim_d)
-                // Evaluate from the end for numerical precision
-                auto const dq_end = Scalar{0}; // v1 = 0
-                auto const q_end = h;
-                q = q_end - dq_end * dt_end - a_d * dt_end * dt_end / Scalar{2}
-                    - j * T_j2_ * T_j2_ * T_j2_ / Scalar{6}
-                    + j * T_j2_ * T_j2_ / Scalar{2} * dt_end;
-                // Simplified: evaluate carefully
-                // Use forward from segment 5 end instead
-                auto const t5_local = T_j2_;
-                auto const v_at_t5 = v_lim_ - j * t5_local * t5_local / Scalar{2};
-                auto const a_at_t5 = -j * t5_local;
-                auto const q_at_t5 = compute_q_at_Ta() + v_lim_ * T_v_
-                                     + v_lim_ * t5_local - j * t5_local * t5_local * t5_local / Scalar{6};
-                auto const dt_from_t5 = tc - t5;
-                q = q_at_t5 + v_at_t5 * dt_from_t5 + a_at_t5 * dt_from_t5 * dt_from_t5 / Scalar{2};
-                dq = v_at_t5 + a_at_t5 * dt_from_t5;
-                ddq = a_at_t5; // = -a_d
-            } else {
-                // Segment 7: positive jerk (+j_max), end of deceleration
-                // Evaluate from end for exact endpoint arrival (Pitfall 1)
-                // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30g), p.86
-                q = h - j * dt_end * dt_end * dt_end / Scalar{6};
-                dq = j * dt_end * dt_end / Scalar{2};
-                ddq = -j * dt_end;
-            }
+            eval_decel_phase(tc, q, dq, ddq);
         }
     }
 
@@ -388,6 +378,6 @@ private:
 static_assert(trajectory_segment<double_s_trajectory<double>, double, 1>);
 static_assert(trajectory_segment<double_s_trajectory<float>, float, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

@@ -88,6 +88,6 @@ auto compute_min_duration_sync(
     return *std::max_element(per_dof.begin(), per_dof.end());
 }
 
-} // namespace ctrlpp
+}
 
 #endif

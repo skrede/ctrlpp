@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -34,6 +35,9 @@ namespace ctrlpp
 template <typename Scalar>
 class online_planner_3rd
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "online_planner_3rd requires a floating-point Scalar type");
+
   public:
     struct config
     {
@@ -369,6 +373,17 @@ class online_planner_3rd
         }
     }
 
+    /// @brief Append a single constant-jerk phase if its duration is non-negligible.
+    void append_phase(Scalar duration, Scalar jerk)
+    {
+        auto constexpr eps = static_cast<Scalar>(1e-12);
+        if (duration > eps) {
+            T_ph_[n_phases_] = duration;
+            j_ph_[n_phases_] = jerk;
+            ++n_phases_;
+        }
+    }
+
     /// @brief Plan a rest-to-rest double-S profile from q0 to target_.
     ///
     /// Appends up to 7 constant-jerk phases to the phase array.
@@ -381,82 +396,72 @@ class online_planner_3rd
         auto const h_signed = target_ - q0;
 
         if (std::abs(h_signed) < eps) {
-            // Already at target
             return;
         }
 
         auto const sigma = (h_signed > Scalar{0}) ? Scalar{1} : Scalar{-1};
         auto const h = std::abs(h_signed);
 
-        // Compute double-S phase durations
-        // @cite biagiotti2009 -- Sec. 3.4.3
-        Scalar T_j1{};
-        Scalar T_a{};
-        Scalar T_v{};
-        Scalar T_d{};
-        Scalar T_j2{};
-
+        Scalar T_j1{}, T_a{}, T_v{}, T_d{}, T_j2{};
         compute_double_s_durations(h, T_j1, T_a, T_v, T_d, T_j2);
 
-        // Acceleration phase: 3 sub-phases
         auto const j_pos = sigma * j_max_;
         auto const j_neg = -sigma * j_max_;
 
-        auto const T_a_const = T_a - Scalar{2} * T_j1;
-        auto const T_d_const = T_d - Scalar{2} * T_j2;
+        // 7-phase double-S: accel(3) + cruise(1) + decel(3)
+        append_phase(T_j1, j_pos);
+        append_phase(T_a - Scalar{2} * T_j1, Scalar{0});
+        append_phase(T_j1, j_neg);
+        append_phase(T_v, Scalar{0});
+        append_phase(T_j2, j_neg);
+        append_phase(T_d - Scalar{2} * T_j2, Scalar{0});
+        append_phase(T_j2, j_pos);
+    }
 
-        // Phase 1: jerk (+j) for T_j1
-        if (T_j1 > eps) {
-            T_ph_[n_phases_] = T_j1;
-            j_ph_[n_phases_] = j_pos;
-            ++n_phases_;
-        }
+    /// @brief Assign doubly-degenerate durations (neither v_max nor a_max reached).
+    /// @cite biagiotti2009 -- Sec. 3.4.3, p.90
+    static void assign_doubly_degenerate(Scalar h, Scalar j,
+                                         Scalar& T_j1, Scalar& T_a,
+                                         Scalar& T_d, Scalar& T_j2)
+    {
+        auto const T_j_dd = std::cbrt(h / (Scalar{2} * j));
+        T_j1 = T_j_dd;
+        T_j2 = T_j_dd;
+        T_a = Scalar{2} * T_j_dd;
+        T_d = Scalar{2} * T_j_dd;
+    }
 
-        // Phase 2: constant acceleration (j=0) for T_a - 2*T_j1
-        if (T_a_const > eps) {
-            T_ph_[n_phases_] = T_a_const;
-            j_ph_[n_phases_] = Scalar{0};
-            ++n_phases_;
-        }
+    /// @brief Solve no-cruise case where v_max is not reached.
+    /// @cite biagiotti2009 -- Sec. 3.4.3, p.89-91
+    void solve_no_cruise(Scalar h, bool a_max_reached,
+                         Scalar& T_j1, Scalar& T_a, Scalar& T_v,
+                         Scalar& T_d, Scalar& T_j2) const
+    {
+        T_v = Scalar{0};
+        auto const a = a_max_;
+        auto const j = j_max_;
 
-        // Phase 3: jerk (-j) for T_j1
-        if (T_j1 > eps) {
-            T_ph_[n_phases_] = T_j1;
-            j_ph_[n_phases_] = j_neg;
-            ++n_phases_;
-        }
+        if (a_max_reached) {
+            auto const coeff_a = Scalar{1} / a;
+            auto const coeff_b = a / j;
+            auto const coeff_c = -h;
+            auto const disc = coeff_b * coeff_b - Scalar{4} * coeff_a * coeff_c;
+            auto const v_lim = (-coeff_b + std::sqrt(disc)) / (Scalar{2} * coeff_a);
 
-        // Phase 4: cruise (j=0) for T_v
-        if (T_v > eps) {
-            T_ph_[n_phases_] = T_v;
-            j_ph_[n_phases_] = Scalar{0};
-            ++n_phases_;
-        }
+            T_j1 = a / j;
+            T_j2 = T_j1;
+            T_a = T_j1 + v_lim / a;
+            T_d = T_a;
 
-        // Phase 5: jerk (-j) for T_j2
-        if (T_j2 > eps) {
-            T_ph_[n_phases_] = T_j2;
-            j_ph_[n_phases_] = j_neg;
-            ++n_phases_;
-        }
-
-        // Phase 6: constant deceleration (j=0) for T_d - 2*T_j2
-        if (T_d_const > eps) {
-            T_ph_[n_phases_] = T_d_const;
-            j_ph_[n_phases_] = Scalar{0};
-            ++n_phases_;
-        }
-
-        // Phase 7: jerk (+j) for T_j2
-        if (T_j2 > eps) {
-            T_ph_[n_phases_] = T_j2;
-            j_ph_[n_phases_] = j_pos;
-            ++n_phases_;
+            if (T_a < Scalar{2} * T_j1) {
+                assign_doubly_degenerate(h, j, T_j1, T_a, T_d, T_j2);
+            }
+        } else {
+            assign_doubly_degenerate(h, j, T_j1, T_a, T_d, T_j2);
         }
     }
 
     /// @brief Compute double-S phase durations for rest-to-rest displacement h.
-    ///
     /// @cite biagiotti2009 -- Sec. 3.4.3, p.88-91
     void compute_double_s_durations(Scalar h,
                                     Scalar& T_j1, Scalar& T_a, Scalar& T_v,
@@ -466,64 +471,20 @@ class online_planner_3rd
         auto const a = a_max_;
         auto const j = j_max_;
 
-        // Check if a_max is reached: need v_max * j_max >= a_max^2
         bool const a_max_reached = (v * j >= a * a);
 
-        Scalar T_j_val{};
-        Scalar T_a_val{};
-        Scalar T_v_val{};
-
-        if (a_max_reached) {
-            T_j_val = a / j;
-            T_a_val = T_j_val + v / a;
-            T_v_val = h / v - T_a_val;
-        } else {
-            T_j_val = std::sqrt(v / j);
-            T_a_val = Scalar{2} * T_j_val;
-            T_v_val = h / v - T_a_val;
-        }
+        Scalar T_j_val = a_max_reached ? (a / j) : std::sqrt(v / j);
+        Scalar T_a_val = a_max_reached ? (T_j_val + v / a) : (Scalar{2} * T_j_val);
+        Scalar T_v_val = h / v - T_a_val;
 
         if (T_v_val > Scalar{0}) {
-            // v_max is reached (cruise phase exists)
             T_j1 = T_j_val;
             T_j2 = T_j_val;
             T_a = T_a_val;
             T_d = T_a_val;
             T_v = T_v_val;
         } else {
-            // v_max not reached
-            T_v = Scalar{0};
-
-            if (a_max_reached) {
-                // a_max reached but v_max not: solve quadratic for v_lim
-                auto const coeff_a = Scalar{1} / a;
-                auto const coeff_b = a / j;
-                auto const coeff_c = -h;
-                auto const disc = coeff_b * coeff_b - Scalar{4} * coeff_a * coeff_c;
-                auto const v_lim = (-coeff_b + std::sqrt(disc)) / (Scalar{2} * coeff_a);
-
-                T_j1 = a / j;
-                T_j2 = T_j1;
-                T_a = T_j1 + v_lim / a;
-                T_d = T_a;
-
-                // Verify a_max is truly reached (T_a >= 2*T_j1)
-                if (T_a < Scalar{2} * T_j1) {
-                    // Doubly degenerate
-                    auto const T_j_dd = std::cbrt(h / (Scalar{2} * j));
-                    T_j1 = T_j_dd;
-                    T_j2 = T_j_dd;
-                    T_a = Scalar{2} * T_j_dd;
-                    T_d = Scalar{2} * T_j_dd;
-                }
-            } else {
-                // Doubly degenerate: neither v_max nor a_max reached
-                auto const T_j_dd = std::cbrt(h / (Scalar{2} * j));
-                T_j1 = T_j_dd;
-                T_j2 = T_j_dd;
-                T_a = Scalar{2} * T_j_dd;
-                T_d = Scalar{2} * T_j_dd;
-            }
+            solve_no_cruise(h, a_max_reached, T_j1, T_a, T_v, T_d, T_j2);
         }
     }
 
@@ -576,6 +537,6 @@ class online_planner_3rd
     }
 };
 
-} // namespace ctrlpp
+}
 
 #endif

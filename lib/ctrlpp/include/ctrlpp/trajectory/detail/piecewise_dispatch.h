@@ -100,6 +100,6 @@ private:
     }
 };
 
-} // namespace ctrlpp::detail
+}
 
 #endif

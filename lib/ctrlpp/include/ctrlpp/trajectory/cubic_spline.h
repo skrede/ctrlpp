@@ -19,6 +19,7 @@
 #include <array>
 #include <cassert>
 #include <cstddef>
+#include <type_traits>
 #include <vector>
 
 namespace ctrlpp
@@ -41,6 +42,9 @@ enum class boundary_condition
 template <typename Scalar>
 class cubic_spline
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "cubic_spline requires a floating-point Scalar type");
+
   public:
     struct config
     {
@@ -305,6 +309,6 @@ class cubic_spline
 
 static_assert(trajectory_segment<cubic_spline<double>, double, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

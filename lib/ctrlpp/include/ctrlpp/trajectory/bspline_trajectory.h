@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -41,6 +42,10 @@ namespace ctrlpp
 template <typename Scalar, int Degree>
 class bspline_trajectory
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "bspline_trajectory requires a floating-point Scalar type");
+    static_assert(Degree >= 1, "bspline_trajectory requires Degree >= 1");
+
   public:
     struct config
     {
@@ -317,7 +322,7 @@ auto bspline_basis(
     return left + right;
 }
 
-} // namespace detail
+}
 
 /// @brief Evaluate B-spline basis function B_{i,p}(t) (free function for interpolation).
 ///
@@ -415,6 +420,6 @@ auto make_bspline_interpolation(
 static_assert(trajectory_segment<bspline_trajectory<double, 3>, double, 1>);
 static_assert(trajectory_segment<bspline_trajectory<double, 5>, double, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

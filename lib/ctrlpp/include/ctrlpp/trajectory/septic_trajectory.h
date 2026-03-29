@@ -101,6 +101,6 @@ auto make_septic_trajectory(
 
 static_assert(trajectory_segment<septic_trajectory<double, 1>, double, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

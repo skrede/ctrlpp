@@ -38,6 +38,6 @@ public:
     using base::base;
 };
 
-} // namespace ctrlpp
+}
 
 #endif

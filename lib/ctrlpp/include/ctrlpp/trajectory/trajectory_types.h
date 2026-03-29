@@ -43,6 +43,6 @@ struct path_point
     Scalar dddq{};
 };
 
-} // namespace ctrlpp
+}
 
 #endif

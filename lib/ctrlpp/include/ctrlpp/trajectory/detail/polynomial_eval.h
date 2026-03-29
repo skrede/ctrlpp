@@ -72,6 +72,6 @@ auto horner_deriv3(const std::array<Vector<Scalar, ND>, N>& c, Scalar tau) -> Ve
     return result;
 }
 
-} // namespace ctrlpp::detail
+}
 
 #endif

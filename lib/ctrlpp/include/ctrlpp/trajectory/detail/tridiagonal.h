@@ -125,6 +125,6 @@ void cyclic_thomas_solve(std::vector<Scalar> const& a,
     }
 }
 
-} // namespace ctrlpp::detail
+}
 
 #endif

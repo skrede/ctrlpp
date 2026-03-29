@@ -18,6 +18,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -31,6 +32,9 @@ namespace ctrlpp
 template <typename Scalar>
 class trapezoidal_trajectory
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "trapezoidal_trajectory requires a floating-point Scalar type");
+
   public:
     using scalar_type = Scalar;
 
@@ -241,6 +245,6 @@ class trapezoidal_trajectory
 
 static_assert(trajectory_segment<trapezoidal_trajectory<double>, double, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

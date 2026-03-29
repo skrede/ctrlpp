@@ -50,6 +50,6 @@ auto harmonic_path_peak_derivatives() -> std::array<Scalar, 3>
     return {pi / Scalar{2}, pi2 / Scalar{2}, pi3 / Scalar{2}};
 }
 
-} // namespace ctrlpp
+}
 
 #endif

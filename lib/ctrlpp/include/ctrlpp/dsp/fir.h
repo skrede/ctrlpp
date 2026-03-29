@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstddef>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -16,6 +17,10 @@ namespace ctrlpp
 template <typename Scalar, std::size_t N>
 class fir
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "fir requires a floating-point Scalar type");
+    static_assert(N >= 1, "fir requires at least one tap");
+
 public:
     using scalar_type = Scalar;
 
@@ -55,8 +60,8 @@ namespace detail
 static_assert(discrete_filter<fir<double, 3>>);
 static_assert(discrete_filter<fir<float, 4>>);
 
-} // namespace detail
+}
 
-} // namespace ctrlpp
+}
 
 #endif

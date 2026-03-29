@@ -78,6 +78,6 @@ auto make_trajectory(
 static_assert(trajectory_segment<
     trajectory<path_point<double> (*)(double), double, 1>, double, 1>);
 
-} // namespace ctrlpp
+}
 
 #endif

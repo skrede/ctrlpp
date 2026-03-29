@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -34,6 +35,9 @@ namespace ctrlpp
 template <typename Scalar>
 class online_planner_2nd
 {
+    static_assert(std::is_floating_point_v<Scalar>,
+                  "online_planner_2nd requires a floating-point Scalar type");
+
   public:
     struct config
     {
@@ -151,6 +155,21 @@ class online_planner_2nd
     Scalar q_after_brake_{};
     Scalar v_after_brake_{};
 
+    /// @brief Zero out all profile parameters and mark as settled.
+    void set_settled_profile()
+    {
+        sigma_ = Scalar{1};
+        v_v_ = Scalar{0};
+        a_a_ = Scalar{0};
+        a_d_ = Scalar{0};
+        T_a_ = Scalar{0};
+        T_v_ = Scalar{0};
+        T_d_ = Scalar{0};
+        T_ = Scalar{0};
+        needs_brake_ = false;
+        settled_ = true;
+    }
+
     /// @brief Compute trapezoidal profile from (q_ref_, v_ref_) to (target_, 0).
     ///
     /// Handles overshoot recovery when current velocity points away from target
@@ -160,53 +179,31 @@ class online_planner_2nd
     void compute_profile()
     {
         auto const h_signed = target_ - q_ref_;
-
-        // Check if already at target with zero velocity
         auto constexpr eps = static_cast<Scalar>(1e-12);
+
         if (std::abs(h_signed) < eps && std::abs(v_ref_) < eps) {
-            sigma_ = Scalar{1};
-            v_v_ = Scalar{0};
-            a_a_ = Scalar{0};
-            a_d_ = Scalar{0};
-            T_a_ = Scalar{0};
-            T_v_ = Scalar{0};
-            T_d_ = Scalar{0};
-            T_ = Scalar{0};
-            needs_brake_ = false;
-            settled_ = true;
+            set_settled_profile();
             return;
         }
 
         settled_ = false;
-
-        // Determine direction
-        // If we have velocity, we may need to brake first
         auto const v0 = v_ref_;
-
-        // Stopping distance from current velocity
         auto const stop_dist = v0 * v0 / (Scalar{2} * a_max_);
 
-        // Check if velocity is pointing the wrong way or overshooting
         bool const wrong_direction = (h_signed > Scalar{0} && v0 < Scalar{0})
                                      || (h_signed < Scalar{0} && v0 > Scalar{0})
                                      || (std::abs(h_signed) < eps && std::abs(v0) > eps);
-
-        // Check if we would overshoot (can't decelerate in time)
         bool const overshoot = !wrong_direction
                                && (stop_dist > std::abs(h_signed) + eps)
                                && std::abs(v0) > eps;
 
         if (wrong_direction || overshoot) {
-            // Need to brake first: decelerate to zero, then plan from stopped position
             needs_brake_ = true;
             T_brake_ = std::abs(v0) / a_max_;
             q_after_brake_ = q_ref_ + v0 * T_brake_ / Scalar{2};
             v_after_brake_ = Scalar{0};
-
-            // Now plan from braked position to target
             compute_rest_to_rest(q_after_brake_, target_);
         } else {
-            // Can plan directly incorporating current velocity
             needs_brake_ = false;
             T_brake_ = Scalar{0};
             compute_with_initial_velocity(q_ref_, v0, target_);
@@ -422,6 +419,6 @@ class online_planner_2nd
     }
 };
 
-} // namespace ctrlpp
+}
 
 #endif
