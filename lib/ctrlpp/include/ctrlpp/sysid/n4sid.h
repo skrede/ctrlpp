@@ -266,17 +266,24 @@ n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<
     // Extract A via shift relation on observability matrix
     auto A = detail::extract_system_A<Scalar, NX>(Gamma, ny);
 
-    // Clamp A eigenvalues to unit circle to prevent state blow-up in BD recovery
+    // If A is non-finite from rank-deficient data, return degenerate result
+    // with infinity condition number so the caller can detect failure
     if(!A.allFinite())
-        A = Matrix<Scalar, NX, NX>::Zero();
+    {
+        discrete_state_space<Scalar, NX, 1, 1> sys{};
+        return {.system = sys, .singular_values = sv,
+                .metrics = fit_metrics<Scalar>{}, .condition_number = std::numeric_limits<Scalar>::infinity()};
+    }
 
     // Recover B and D via least-squares
     auto [B, D] = detail::recover_BD<Scalar, NX>(A, C, Y, U);
 
-    if(!B.allFinite())
-        B = Matrix<Scalar, NX, 1>::Zero();
-    if(!D.allFinite())
-        D = Matrix<Scalar, 1, 1>::Zero();
+    if(!B.allFinite() || !D.allFinite())
+    {
+        discrete_state_space<Scalar, NX, 1, 1> sys{.A = A, .C = C};
+        return {.system = sys, .singular_values = sv,
+                .metrics = fit_metrics<Scalar>{}, .condition_number = std::numeric_limits<Scalar>::infinity()};
+    }
 
     discrete_state_space<Scalar, NX, 1, 1> sys{.A = A, .B = B, .C = C, .D = D};
 

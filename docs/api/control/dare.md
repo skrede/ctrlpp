@@ -30,7 +30,7 @@ auto dare(const Matrix<Scalar, NX, NX>& A,
     -> std::optional<Matrix<Scalar, NX, NX>>;
 ```
 
-Solves the standard DARE. Forms the 2n x 2n symplectic matrix, computes its complex Schur decomposition, reorders stable eigenvalues to the top-left block, and extracts P = U21 * U11^{-1}. Returns `std::nullopt` if A is singular, the system is not stabilisable, or the solution is not positive semi-definite.
+Solves the standard DARE. Forms the 2n x 2n symplectic matrix, computes its complex Schur decomposition, reorders stable eigenvalues to the top-left block, and extracts P = U21 * U11^{-1}. Returns `std::nullopt` if A is singular, the system is not stabilizable, the Schur decomposition fails or produces non-finite results, the reordered matrices contain non-finite entries, or the solution is not positive semi-definite.
 
 ### dare (with cross-weight)
 

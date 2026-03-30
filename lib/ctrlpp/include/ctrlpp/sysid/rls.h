@@ -34,14 +34,14 @@ class rls
 public:
     explicit rls(rls_config<Scalar, NP> config = {}) : m_lambda{config.lambda}, m_cov_upper_bound{config.cov_upper_bound}, m_theta{Vector<Scalar, NP>::Zero()}, m_P{config.P0} {}
 
-    void update(Scalar y, const Vector<Scalar, NP>& phi)
+    bool update(Scalar y, const Vector<Scalar, NP>& phi)
     {
         Scalar e = y - phi.dot(m_theta);
 
         Vector<Scalar, NP> P_phi = m_P * phi;
         Scalar denom = m_lambda + phi.dot(P_phi);
         if(!std::isfinite(denom) || std::abs(denom) < Scalar{1e-14})
-            return;
+            return false;
         Vector<Scalar, NP> k = P_phi / denom;
 
         m_theta += k * e;
@@ -55,6 +55,7 @@ public:
         {
             m_P *= trace_bound / trace;
         }
+        return true;
     }
 
     const Vector<Scalar, NP>& parameters() const { return m_theta; }

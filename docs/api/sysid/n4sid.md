@@ -43,7 +43,7 @@ struct n4sid_result {
 };
 ```
 
-The `singular_values` field from the oblique projection SVD can be used to determine the appropriate model order (look for a gap in the singular value spectrum).
+The `singular_values` field from the oblique projection SVD can be used to determine the appropriate model order (look for a gap in the singular value spectrum). When the input data is rank-deficient or produces non-finite system matrices, `condition_number` is set to infinity and the system matrices will be default-initialized (zero). Check `std::isinf(result.condition_number)` to detect identification failure.
 
 ## Singular Value Helper
 

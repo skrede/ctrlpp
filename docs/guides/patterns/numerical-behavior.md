@@ -39,24 +39,28 @@ otherwise produce silent corruption through intermediate overflow:
 
 - **L1 DC gain inversion:** The L1 adaptive controller validates that the
   predictor model's DC gain is invertible before computing the feedforward gain
-  `K_r`. Falls back to identity if the inversion is ill-conditioned.
+  `K_r`. Throws `std::invalid_argument` at construction if the predictor model
+  has a unit eigenvalue, near-zero DC gain, or produces a non-finite `K_r`.
 
 - **Particle filter weight degeneracy:** When all particles have negligible
   likelihood (complete weight collapse), the log-weight normalizer resets to
   uniform weights rather than producing NaN from `-inf - (-inf)`.
 
-- **UKF covariance repair:** The unscented Kalman filter enforces positive
-  semi-definiteness of the state covariance after the update step by clamping
-  negative eigenvalues to zero. This prevents the covariance from going
-  indefinite due to the negative Merwe sigma point weights.
+- **UKF covariance stabilization:** The unscented Kalman filter uses a
+  numerically stabilized covariance update that adds `K*R*K^T` back after the
+  standard subtraction. This PSD compensation term prevents the covariance from
+  going indefinite due to negative Merwe sigma point weights, without requiring
+  an eigendecomposition.
 
 - **N4SID degenerate data:** The subspace identification algorithm checks
-  finiteness of extracted system matrices and zeros out non-finite results
-  rather than propagating NaN through downstream computations.
+  finiteness of extracted system matrices. When data is rank-deficient,
+  returns a result with `condition_number = infinity` and default-initialized
+  system matrices so the caller can detect and handle the failure.
 
 - **RLS overflow guard:** The recursive least squares estimator skips the
   update step when the quadratic form `phi^T * P * phi` overflows, preventing
-  NaN from `0 * Inf` in the gain computation.
+  NaN from `0 * Inf` in the gain computation. The `update()` method returns
+  `false` when this occurs so the caller can detect skipped updates.
 
 ## Summary
 

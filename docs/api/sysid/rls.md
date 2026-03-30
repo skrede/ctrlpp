@@ -44,10 +44,10 @@ Constructs the estimator from configuration. Parameters initialized to zero, cov
 ### update
 
 ```cpp
-void update(Scalar y, const Vector<Scalar, NP>& phi);
+bool update(Scalar y, const Vector<Scalar, NP>& phi);
 ```
 
-Incorporates a new observation. Given measurement `y` and regressor vector `phi`, updates the parameter estimate and covariance using the standard RLS gain computation with forgetting factor.
+Incorporates a new observation. Given measurement `y` and regressor vector `phi`, updates the parameter estimate and covariance using the standard RLS gain computation with forgetting factor. Returns `true` if the update was applied, or `false` if it was skipped because the denominator `phi^T * P * phi` overflowed or was near-zero. When `false` is returned, parameters and covariance are unchanged.
 
 ### parameters
 

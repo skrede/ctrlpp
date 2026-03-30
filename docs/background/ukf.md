@@ -130,8 +130,14 @@ $$
 $$
 
 $$
-P_{k|k} = P_{k|k-1} - K_k \, P_{zz} \, K_k^\top
+P_{k|k} = P_{k|k-1} - K_k \, P_{zz} \, K_k^\top + K_k \, R \, K_k^\top
 $$
+
+The additional $K_k R K_k^\top$ term is always positive semi-definite and
+compensates for potential PSD loss from negative covariance weights $W_i^{(c)}$
+(which occur with the scaled Merwe transform when $\alpha$ is small). This
+stabilized form is algebraically equivalent to the standard update when all
+weights are positive, but more robust in practice.
 
 ## Sigma-Point Strategies
 

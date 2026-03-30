@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <stdexcept>
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
 {
@@ -45,10 +46,12 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     cfg.theta_min(0) = theta_min;
     cfg.theta_max(0) = theta_max;
 
-    ctrlpp::l1_controller<double, 1, 1> ctrl(cfg, bandwidth, sample_hz);
+    try
+    {
+        ctrlpp::l1_controller<double, 1, 1> ctrl(cfg, bandwidth, sample_hz);
 
-    Eigen::Matrix<double, 1, 1> x;
-    Eigen::Matrix<double, 1, 1> r;
+        Eigen::Matrix<double, 1, 1> x;
+        Eigen::Matrix<double, 1, 1> r;
     r(0) = r_val;
 
     double plant_x = x_val;
@@ -64,6 +67,11 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
         // Simple plant: x[k+1] = 0.8 * x[k] + 0.5 * u[k]
         plant_x = 0.8 * plant_x + 0.5 * u(0);
+    }
+    }
+    catch(const std::invalid_argument&)
+    {
+        // Degenerate predictor model is expected for some fuzz inputs
     }
 
     return 0;

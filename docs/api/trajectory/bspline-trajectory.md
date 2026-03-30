@@ -42,7 +42,7 @@ Constructs a B-spline trajectory from control points and an optional knot vector
 auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>;
 ```
 
-Evaluate position, velocity, and acceleration at parameter `t` using de Boor's algorithm. The parameter is clamped to the active range [U[p], U[n+1]]. Velocity and acceleration are computed from derivative control points.
+Evaluate position, velocity, and acceleration at parameter `t` using de Boor's algorithm. The parameter is clamped to the active range [U[p], U[n+1]]. Velocity and acceleration are computed from derivative control points. Near-zero knot spans are handled with a relative epsilon threshold scaled by knot magnitude, preventing overflow when adjacent knots are very close but not identical.
 
 ### duration
 

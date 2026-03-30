@@ -72,7 +72,7 @@ Generates sigma points from current (x, P), propagates them through dynamics, an
 void update(const output_vector_t& z);
 ```
 
-Generates sigma points, transforms through measurement model, computes innovation covariance S and cross-covariance Pxz, then applies the Kalman gain correction.
+Generates sigma points, transforms through measurement model, computes innovation covariance S and cross-covariance Pxz, then applies the Kalman gain correction. The covariance update uses a numerically stabilized formula that adds `K*R*K^T` back after the subtraction, compensating for potential PSD loss from negative Merwe sigma point weights.
 
 ### state
 

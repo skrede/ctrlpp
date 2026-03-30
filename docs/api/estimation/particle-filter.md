@@ -82,7 +82,7 @@ Propagates all NP particles through the dynamics model with additive Gaussian pr
 void update(const output_vector_t& z);
 ```
 
-Updates particle weights using the Gaussian measurement likelihood, normalizes, and resamples (with roughening) if the Effective Sample Size drops below `ess_threshold`.
+Updates particle weights using the Gaussian measurement likelihood, normalizes, and resamples (with roughening) if the Effective Sample Size drops below `ess_threshold`. If all particles have negligible likelihood (complete weight collapse), the log-weight normalizer automatically resets to uniform weights to recover from particle depletion.
 
 ### state
 

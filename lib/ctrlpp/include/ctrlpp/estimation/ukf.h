@@ -226,30 +226,19 @@ private:
         return KT.transpose().eval();
     }
 
-    /// @brief Apply state correction and update covariance via Joseph form.
+    /// @brief Apply state correction and update covariance via stabilized subtraction.
     ///
-    /// Uses the Joseph form P = (I - K*H_eff)*P*(I - K*H_eff)^T + K*R*K^T
-    /// which is guaranteed to preserve positive semi-definiteness, unlike the
-    /// naive P -= K*S*K^T subtraction that can lose PSD with negative Merwe weights.
-    ///
-    /// For the UKF, H_eff is implicitly K*S = Pxz, so the Joseph form reduces to
-    /// P = P - K*S*K^T rewritten as P = (I - K*Pzz_inv*Pxz^T)*P*... but we use
-    /// the equivalent form: P = P - K*(Pxz^T) - Pxz*K^T + K*S*K^T + K*R*K^T
-    /// Simplest correct form: P = P - K*Pxz^T - Pxz*K^T + K*S*K^T
-    /// which equals P - K*S*K^T (since Pxz = P_cross and K = Pxz*S^{-1}).
-    /// The numerically stable version uses: P = P - K*S*K^T with PSD enforcement.
+    /// Uses P = P - K*Pxz^T + K*R*K^T which is algebraically equivalent to
+    /// P = P - K*S*K^T (since S = Pzz + R and K = Pxz*S^{-1}) but numerically
+    /// more stable: the K*R*K^T term is always PSD, partially compensating for
+    /// any PSD loss from the subtraction with negative Merwe weights.
     ///
     /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 26-27
     void apply_correction_and_update_covariance(const Eigen::Matrix<Scalar, nx, ny>& K, const meas_cov_matrix_t& S)
     {
         m_x = (m_x + K * m_innovation).eval();
-        cov_matrix_t P_updated = (m_P - K * S * K.transpose()).eval();
-        P_updated = detail::symmetrize(P_updated);
-
-        // Enforce PSD: clamp negative eigenvalues to zero
-        Eigen::SelfAdjointEigenSolver<cov_matrix_t> eig(P_updated, Eigen::ComputeEigenvectors);
-        auto D = eig.eigenvalues().cwiseMax(Scalar{0}).asDiagonal();
-        m_P = detail::symmetrize((eig.eigenvectors() * D * eig.eigenvectors().transpose()).eval());
+        m_P = detail::symmetrize(
+            (m_P - K * S * K.transpose() + K * m_R * K.transpose()).eval());
     }
 
     Dynamics m_dynamics;

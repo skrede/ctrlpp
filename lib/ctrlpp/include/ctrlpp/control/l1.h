@@ -17,6 +17,7 @@
 #include "ctrlpp/model/state_space.h"
 
 #include <cstddef>
+#include <stdexcept>
 #include <utility>
 #include <type_traits>
 
@@ -109,20 +110,17 @@ private:
                 - m_cfg.predictor_model.A).eval();
             auto lu_ima = i_minus_a.fullPivLu();
             if(!lu_ima.isInvertible())
-            {
-                m_k_r = Matrix<Scalar, NU, NU>::Identity();
-                return;
-            }
+                throw std::invalid_argument(
+                    "L1 predictor model has unit eigenvalue: (I - A) is singular");
             Matrix<Scalar, NX, NU> dc_gain = lu_ima.solve(m_cfg.predictor_model.B);
             auto lu_dc = dc_gain.fullPivLu();
             if(!lu_dc.isInvertible() || !dc_gain.allFinite())
-            {
-                m_k_r = Matrix<Scalar, NU, NU>::Identity();
-                return;
-            }
+                throw std::invalid_argument(
+                    "L1 predictor model has near-zero DC gain: B / (I - A) is singular");
             m_k_r = lu_dc.solve(Matrix<Scalar, NU, NU>::Identity());
             if(!m_k_r.allFinite())
-                m_k_r = Matrix<Scalar, NU, NU>::Identity();
+                throw std::invalid_argument(
+                    "L1 feedforward gain K_r is non-finite: ill-conditioned predictor model");
         }
     }
 
