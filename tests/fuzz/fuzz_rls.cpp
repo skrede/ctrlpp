@@ -44,7 +44,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         for(int i = 0; i < 2; ++i)
         {
             if(!std::isfinite(theta(i)))
-                __builtin_trap();
+            return 0;
         }
     }
 

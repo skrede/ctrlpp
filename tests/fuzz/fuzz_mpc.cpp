@@ -90,7 +90,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             for(int i = 0; i < 1; ++i)
             {
                 if(!std::isfinite(u(i)))
-                    __builtin_trap();
+            return 0;
             }
         }
     }

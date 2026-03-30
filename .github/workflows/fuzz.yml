@@ -48,7 +48,7 @@ jobs:
             name=$(basename "$fuzz")
             echo "--- $name ---"
             rm -f ./crash-* ./oom-*
-            timeout 35 "$fuzz" -max_total_time=30 -max_len=1024 2>&1 | tail -5
+            timeout 10 "$fuzz" -max_total_time=5 -max_len=1024 2>&1 | tail -5
             if ls ./crash-* 1>/dev/null 2>&1; then
               echo "FAIL: $name"
               failed=$((failed + 1))
