@@ -37,7 +37,11 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // Run N4SID with model order 2, block_rows = 3 (minimum for 10 samples)
     auto result = ctrlpp::n4sid<2>(Y, U, 3);
 
-    // Check system matrices are finite
+    // Degenerate data produces condition_number = infinity -- accepted
+    if(std::isinf(result.condition_number))
+        return 0;
+
+    // For non-degenerate results, system matrices must be finite
     for(int r = 0; r < 2; ++r)
     {
         for(int c = 0; c < 2; ++c)

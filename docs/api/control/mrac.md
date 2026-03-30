@@ -286,4 +286,4 @@ int main()
 - [Adaptive Control Theory](../../background/adaptive-control.md)<br/> background theory covering MRAC and L1
 - [PID](pid/README.md)<br/> structural parallel (stateful controller with compile-time policy composition)
 - [state_space](../model/state-space.md)<br/> reference model representation
-- L1 Adaptive Control (coming in Phase 34)
+- [L1 Adaptive Control](l1.md)<br/> L1 adaptive controller with low-pass filtered control output

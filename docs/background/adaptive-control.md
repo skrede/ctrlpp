@@ -194,8 +194,6 @@ error stays within a computable bound from the first time step) and allows
 systematic trade-off between performance and robustness through the filter
 design [4, Ch. 2, pp. 13--42].
 
-Implementation details for L1 adaptive control are planned for Phase 34.
-
 ## References
 
 [1] J.-J. E. Slotine and W. Li, "Applied Nonlinear Control," Prentice Hall,

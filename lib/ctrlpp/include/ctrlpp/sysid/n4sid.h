@@ -263,6 +263,13 @@ n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<
     for(Eigen::Index c = 0; c < nx; ++c)
         C(0, c) = Gamma(c);
 
+    if(!C.allFinite() || !Gamma.allFinite())
+    {
+        discrete_state_space<Scalar, NX, 1, 1> sys{};
+        return {.system = sys, .singular_values = sv,
+                .metrics = fit_metrics<Scalar>{}, .condition_number = std::numeric_limits<Scalar>::infinity()};
+    }
+
     // Extract A via shift relation on observability matrix
     auto A = detail::extract_system_A<Scalar, NX>(Gamma, ny);
 
