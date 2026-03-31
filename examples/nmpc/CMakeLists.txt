@@ -1,0 +1,7 @@
+add_executable(ctrlpp_nmpc_01_pendulum ctrlpp_nmpc_01_pendulum.cpp)
+target_link_libraries(ctrlpp_nmpc_01_pendulum PRIVATE ctrlpp::nlopt)
+target_compile_options(ctrlpp_nmpc_01_pendulum PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_nmpc_02_swingup ctrlpp_nmpc_02_swingup.cpp)
+target_link_libraries(ctrlpp_nmpc_02_swingup PRIVATE ctrlpp::nlopt)
+target_compile_options(ctrlpp_nmpc_02_swingup PRIVATE ${CTRLPP_WARNING_FLAGS})

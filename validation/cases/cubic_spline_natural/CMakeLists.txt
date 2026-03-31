@@ -1,0 +1,2 @@
+add_executable(cubic_spline_natural cubic_spline_natural.cpp)
+target_link_libraries(cubic_spline_natural PRIVATE ctrlpp::ctrlpp)

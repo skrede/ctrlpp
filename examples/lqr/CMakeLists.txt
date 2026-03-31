@@ -1,0 +1,11 @@
+add_executable(ctrlpp_lqr_01_basic_observer ctrlpp_lqr_01_basic_observer.cpp)
+target_link_libraries(ctrlpp_lqr_01_basic_observer PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_lqr_01_basic_observer PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_lqr_02_setpoint_tracking ctrlpp_lqr_02_setpoint_tracking.cpp)
+target_link_libraries(ctrlpp_lqr_02_setpoint_tracking PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_lqr_02_setpoint_tracking PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_lqr_03_observer_comparison ctrlpp_lqr_03_observer_comparison.cpp)
+target_link_libraries(ctrlpp_lqr_03_observer_comparison PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_lqr_03_observer_comparison PRIVATE ${CTRLPP_WARNING_FLAGS})

@@ -1,0 +1,52 @@
+#include "ctrlpp/sysid/rls.h"
+
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
+extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
+{
+    // 6 doubles: regressor(2), output, forgetting_factor, P_diag(2) = 48 bytes
+    if(size < 48)
+        return 0;
+
+    double buf[6];
+    std::memcpy(buf, data, 48);
+
+    for(int i = 0; i < 6; ++i)
+    {
+        if(!std::isfinite(buf[i]))
+            return 0;
+    }
+
+    double phi0 = std::clamp(buf[0], -1e3, 1e3);
+    double phi1 = std::clamp(buf[1], -1e3, 1e3);
+    double y = std::clamp(buf[2], -1e6, 1e6);
+    double lambda = std::clamp(buf[3], 0.9, 1.0);
+    double p0 = std::clamp(std::abs(buf[4]), 1e-3, 1e6);
+    double p1 = std::clamp(std::abs(buf[5]), 1e-3, 1e6);
+
+    Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Zero();
+    P0(0, 0) = p0;
+    P0(1, 1) = p1;
+
+    ctrlpp::rls<double, 2> estimator({.lambda = lambda, .P0 = P0});
+
+    Eigen::Matrix<double, 2, 1> phi;
+    phi << phi0, phi1;
+
+    for(int step = 0; step < 10; ++step)
+    {
+        estimator.update(y, phi);
+
+        auto const& theta = estimator.parameters();
+        for(int i = 0; i < 2; ++i)
+        {
+            if(!std::isfinite(theta(i)))
+            return 0;
+        }
+    }
+
+    return 0;
+}

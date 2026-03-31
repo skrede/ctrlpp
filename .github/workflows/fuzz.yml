@@ -1,0 +1,61 @@
+name: Fuzz testing
+
+on:
+  push:
+    branches: [ master,develop,fuzz ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.planning/**'
+  pull_request:
+    branches: [ master,develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.planning/**'
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    env:
+      CC: clang
+      CXX: clang++
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Clang and LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm
+
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_C_COMPILER=clang
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCTRLPP_BUILD_FUZZ_TESTS=ON
+          -DCTRLPP_CMAKE_FETCH_DEPS=ON
+
+      - name: Build fuzz targets
+        run: cmake --build build -j$(nproc)
+
+      - name: Run fuzz targets (smoke test)
+        run: |
+          failed=0
+          for fuzz in build/tests/fuzz/fuzz_*; do
+            [ -x "$fuzz" ] || continue
+            name=$(basename "$fuzz")
+            echo "--- $name ---"
+            rm -f ./crash-* ./oom-*
+            timeout 10 "$fuzz" -max_total_time=5 -max_len=1024 2>&1 | tail -5
+            if ls ./crash-* 1>/dev/null 2>&1; then
+              echo "FAIL: $name"
+              failed=$((failed + 1))
+            fi
+            echo ""
+          done
+          if [ "$failed" -gt 0 ]; then
+            echo "$failed fuzz target(s) crashed"
+            exit 1
+          fi

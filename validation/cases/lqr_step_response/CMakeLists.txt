@@ -1,0 +1,2 @@
+add_executable(lqr_step_response lqr_step_response.cpp)
+target_link_libraries(lqr_step_response PRIVATE ctrlpp::ctrlpp)

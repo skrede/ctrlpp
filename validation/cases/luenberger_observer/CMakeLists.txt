@@ -1,0 +1,2 @@
+add_executable(luenberger_observer luenberger_observer.cpp)
+target_link_libraries(luenberger_observer PRIVATE ctrlpp::ctrlpp)

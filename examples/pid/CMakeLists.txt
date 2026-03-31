@@ -1,0 +1,15 @@
+add_executable(ctrlpp_pid_01_basic ctrlpp_pid_01_basic.cpp)
+target_link_libraries(ctrlpp_pid_01_basic PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_pid_01_basic PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_pid_02_policies ctrlpp_pid_02_policies.cpp)
+target_link_libraries(ctrlpp_pid_02_policies PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_pid_02_policies PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_pid_03_cascade ctrlpp_pid_03_cascade.cpp)
+target_link_libraries(ctrlpp_pid_03_cascade PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_pid_03_cascade PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_pid_04_joint_servo ctrlpp_pid_04_joint_servo.cpp)
+target_link_libraries(ctrlpp_pid_04_joint_servo PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_pid_04_joint_servo PRIVATE ${CTRLPP_WARNING_FLAGS})
