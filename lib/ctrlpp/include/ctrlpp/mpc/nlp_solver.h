@@ -49,6 +49,12 @@ concept nlp_solver = requires { typename S::scalar_type; } && requires(S solver,
     { solver.solve(upd) } -> std::same_as<nlp_result<typename S::scalar_type>>;
 };
 
+template <typename S>
+concept nlp_stepper = nlp_solver<S> &&
+    requires(S solver, const nlp_update<typename S::scalar_type>& upd, int max_steps) {
+        { solver.step(upd, max_steps) } -> std::same_as<nlp_result<typename S::scalar_type>>;
+    };
+
 }
 
 #endif
