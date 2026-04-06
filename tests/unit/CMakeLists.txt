@@ -153,6 +153,11 @@ if (CTRLPP_BUILD_ARGMIN)
     target_link_libraries(argmin_stepper_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
     target_compile_options(argmin_stepper_test PRIVATE ${CTRLPP_WARNING_FLAGS})
     add_test(NAME argmin_stepper_test COMMAND argmin_stepper_test)
+
+    add_executable(nmhe_argmin_test "${CMAKE_CURRENT_LIST_DIR}/nmhe_argmin_test.cpp")
+    target_link_libraries(nmhe_argmin_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
+    target_compile_options(nmhe_argmin_test PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME nmhe_argmin_test COMMAND nmhe_argmin_test)
 endif ()
 
 if (CTRLPP_BUILD_PROPERTY_TESTS)

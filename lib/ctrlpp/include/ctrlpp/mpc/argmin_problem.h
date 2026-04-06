@@ -5,8 +5,8 @@
 
 #include <Eigen/Core>
 
-#include <cmath>
 #include <span>
+#include <cmath>
 #include <vector>
 #include <cstddef>
 #include <algorithm>
@@ -47,10 +47,7 @@ public:
         n_ineq_upper = static_cast<int>(ineq_upper_indices.size());
         n_ineq_lower = static_cast<int>(ineq_lower_indices.size());
 
-        auto nc = static_cast<std::size_t>(prob.n_constraints);
-        raw_buf_.resize(nc);
-        fd_c_plus_.resize(nc);
-        fd_c_minus_.resize(nc);
+        raw_buf_.resize(static_cast<std::size_t>(prob.n_constraints));
         fd_x_buf_.resize(prob.n_vars);
     }
 
@@ -154,8 +151,6 @@ private:
     }
 
     mutable std::vector<Scalar> raw_buf_;
-    mutable std::vector<Scalar> fd_c_plus_;
-    mutable std::vector<Scalar> fd_c_minus_;
     mutable Eigen::VectorX<Scalar> fd_x_buf_;
 };
 

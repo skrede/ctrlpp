@@ -5,9 +5,9 @@
 #include "ctrlpp/mpc/argmin_problem.h"
 #include "ctrlpp/mpc/argmin_policies.h"
 
-#include <nablapp/solver/basic_solver.h>
-#include <nablapp/solver/options.h>
 #include <nablapp/result/status.h>
+#include <nablapp/solver/options.h>
+#include <nablapp/solver/basic_solver.h>
 
 #include <cmath>
 #include <chrono>
