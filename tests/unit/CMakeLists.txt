@@ -143,6 +143,18 @@ if (CTRLPP_BUILD_NLOPT)
     add_test(NAME nmpc_coverage_test COMMAND nmpc_coverage_test)
 endif ()
 
+if (CTRLPP_BUILD_ARGMIN)
+    add_executable(nmpc_argmin_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_argmin_test.cpp")
+    target_link_libraries(nmpc_argmin_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
+    target_compile_options(nmpc_argmin_test PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME nmpc_argmin_test COMMAND nmpc_argmin_test)
+
+    add_executable(argmin_stepper_test "${CMAKE_CURRENT_LIST_DIR}/argmin_stepper_test.cpp")
+    target_link_libraries(argmin_stepper_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
+    target_compile_options(argmin_stepper_test PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME argmin_stepper_test COMMAND argmin_stepper_test)
+endif ()
+
 if (CTRLPP_BUILD_PROPERTY_TESTS)
     function(make_property_test TEST_FILE)
         add_executable(${TEST_FILE} "${CMAKE_CURRENT_LIST_DIR}/${TEST_FILE}.cpp")
