@@ -109,6 +109,42 @@ if (CTRLPP_BUILD_NLOPT)
     )
 endif ()
 
+# --- Argmin solver backend (optional) ---
+if (CTRLPP_BUILD_ARGMIN)
+    if (CTRLPP_ARGMIN_SOURCE_DIR)
+        FetchContent_Declare(
+            nablapp
+            SOURCE_DIR "${CTRLPP_ARGMIN_SOURCE_DIR}"
+            EXCLUDE_FROM_ALL
+        )
+    else ()
+        FetchContent_Declare(
+            nablapp
+            GIT_REPOSITORY https://github.com/skrede/nablapp.git
+            GIT_TAG milestone/v0.2.1
+            EXCLUDE_FROM_ALL
+        )
+    endif ()
+    set(NABLAPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(NABLAPP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(NABLAPP_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(nablapp)
+
+    add_library(ctrlpp_argmin INTERFACE)
+    add_library(ctrlpp::argmin ALIAS ctrlpp_argmin)
+
+    target_link_libraries(ctrlpp_argmin
+        INTERFACE
+        ctrlpp::ctrlpp
+        nablapp::nablapp
+    )
+
+    target_compile_definitions(ctrlpp_argmin
+        INTERFACE
+        CTRLPP_HAS_ARGMIN=1
+    )
+endif ()
+
 if (NOT CTRLPP_CMAKE_FETCH_DEPS)
     install(TARGETS ctrlpp
         EXPORT ctrlppTargets
