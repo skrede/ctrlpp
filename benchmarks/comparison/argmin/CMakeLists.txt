@@ -20,6 +20,13 @@ FetchContent_MakeAvailable(nablapp)
 
 find_package(NLopt REQUIRED)
 
+if(NOT TARGET ctrlpp::nlopt)
+    add_library(ctrlpp_argmin_bench_nlopt INTERFACE)
+    add_library(ctrlpp::nlopt ALIAS ctrlpp_argmin_bench_nlopt)
+    target_link_libraries(ctrlpp_argmin_bench_nlopt INTERFACE ctrlpp::ctrlpp nlopt)
+    target_compile_definitions(ctrlpp_argmin_bench_nlopt INTERFACE CTRLPP_HAS_NLOPT=1)
+endif()
+
 set(ARGMIN_BENCH_TARGETS
     bench_slsqp
     bench_mma
