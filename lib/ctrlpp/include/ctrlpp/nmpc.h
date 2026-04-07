@@ -91,6 +91,8 @@ public:
     }
 
     mpc_diagnostics<Scalar> diagnostics() const { return m_last_diagnostics; }
+    const nlp_problem<Scalar>& problem() const { return m_problem; }
+    const Eigen::VectorX<Scalar>& last_solution() const { return m_last_solution; }
 
 private:
     std::optional<Vector<Scalar, NU>> solve_impl(const Vector<Scalar, NX>& x0)
