@@ -145,6 +145,8 @@ public:
 private:
     void eval_raw(const Eigen::VectorX<Scalar>& x) const
     {
+        if(problem->n_constraints == 0 || !problem->constraints)
+            return;
         problem->constraints(
             std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
             std::span<Scalar>{raw_buf_.data(), raw_buf_.size()});
