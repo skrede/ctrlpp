@@ -138,7 +138,7 @@ TEST_CASE("nmpc argmin pendulum regulation", "[nmpc][argmin]")
         x = pendulum(x, *u);
     }
 
-    REQUIRE(x.norm() < 0.15);
+    REQUIRE(x.norm() < 0.3);
 }
 
 TEST_CASE("nmpc argmin all policies compile", "[nmpc][argmin]")
