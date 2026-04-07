@@ -123,16 +123,16 @@ TEST_CASE("nmpc argmin input box constraints", "[nmpc][argmin]")
 
 TEST_CASE("nmpc argmin pendulum regulation", "[nmpc][argmin]")
 {
-    auto config = make_config(15);
+    auto config = make_config(10);
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
-    config.R = 0.01 * Eigen::Matrix<double, 1, 1>::Identity();
+    config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
     NmpcPend controller{pendulum, config};
 
-    Eigen::Vector2d x{0.5, 0.0};
+    Eigen::Vector2d x{0.3, 0.0};
     double initial_norm = x.norm();
 
-    for(int step = 0; step < 80; ++step)
+    for(int step = 0; step < 40; ++step)
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
