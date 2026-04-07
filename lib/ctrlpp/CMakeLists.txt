@@ -121,7 +121,7 @@ if (CTRLPP_BUILD_ARGMIN)
         FetchContent_Declare(
             nablapp
             GIT_REPOSITORY https://github.com/skrede/nablapp.git
-            GIT_TAG milestone/v0.2.0
+            GIT_TAG milestone/v0.2.1
             EXCLUDE_FROM_ALL
         )
     endif ()
