@@ -91,7 +91,8 @@ void run_fallback_slsqp_cobyla(const ctrlpp::nlp_problem<double>& problem,
     Eigen::VectorXd x0 = Eigen::VectorXd::Zero(problem.n_vars);
     auto opts = make_solver_options();
 
-    nablapp::fallback_schedule sched{.stall_threshold = 10};
+    nablapp::fallback_schedule sched;
+    sched.stall_threshold = 10;
 
     using group_type = nablapp::basic_solver_group<
         nablapp::fallback_schedule,
@@ -122,85 +123,11 @@ void run_fallback_slsqp_cobyla(const ctrlpp::nlp_problem<double>& problem,
                        static_cast<int>(result.iterations), wall_ms);
 }
 
-void run_fallback_slsqp_mma(const ctrlpp::nlp_problem<double>& problem_box,
-                             ankerl::nanobench::Bench& bench,
-                             std::ostream& quality_csv)
-{
-    ctrlpp::argmin_problem<double> bridge;
-    bridge.bind(problem_box);
-
-    Eigen::VectorXd x0 = Eigen::VectorXd::Zero(problem_box.n_vars);
-    auto opts = make_solver_options();
-
-    nablapp::fallback_schedule sched{.stall_threshold = 10};
-
-    using group_type = nablapp::basic_solver_group<
-        nablapp::fallback_schedule,
-        Eigen::Dynamic,
-        ctrlpp::argmin_problem<double>,
-        nablapp::kraft_slsqp_policy<>,
-        nablapp::mma_policy<>>;
-
-    bench.run("fallback_slsqp_mma",
-              [&]
-              {
-                  group_type group{bridge, x0, opts, sched};
-                  auto result = group.solve();
-                  ankerl::nanobench::doNotOptimizeAway(result);
-              });
-
-    group_type group{bridge, x0, opts, sched};
-    auto result = group.solve();
-
-    double wall_ms = std::chrono::duration<double, std::milli>(result.wall_time).count();
-    write_schedule_row(quality_csv, "fallback_slsqp_mma",
-                       result.objective_value, result.gradient_norm,
-                       result.constraint_violation,
-                       result.status == nablapp::solver_status::converged ||
-                       result.status == nablapp::solver_status::ftol_reached ||
-                       result.status == nablapp::solver_status::xtol_reached,
-                       static_cast<int>(result.iterations), wall_ms);
-}
-
-void run_fallback_mma_cobyla(const ctrlpp::nlp_problem<double>& problem_box,
-                             ankerl::nanobench::Bench& bench,
-                             std::ostream& quality_csv)
-{
-    ctrlpp::argmin_problem<double> bridge;
-    bridge.bind(problem_box);
-
-    Eigen::VectorXd x0 = Eigen::VectorXd::Zero(problem_box.n_vars);
-    auto opts = make_solver_options();
-
-    nablapp::fallback_schedule sched{.stall_threshold = 10};
-
-    using group_type = nablapp::basic_solver_group<
-        nablapp::fallback_schedule,
-        Eigen::Dynamic,
-        ctrlpp::argmin_problem<double>,
-        nablapp::mma_policy<>,
-        nablapp::cobyla_policy>;
-
-    bench.run("fallback_mma_cobyla",
-              [&]
-              {
-                  group_type group{bridge, x0, opts, sched};
-                  auto result = group.solve();
-                  ankerl::nanobench::doNotOptimizeAway(result);
-              });
-
-    group_type group{bridge, x0, opts, sched};
-    auto result = group.solve();
-
-    double wall_ms = std::chrono::duration<double, std::milli>(result.wall_time).count();
-    write_schedule_row(quality_csv, "fallback_mma_cobyla",
-                       result.objective_value, result.gradient_norm,
-                       result.constraint_violation,
-                       result.status == nablapp::solver_status::converged ||
-                       result.status == nablapp::solver_status::ftol_reached ||
-                       result.status == nablapp::solver_status::xtol_reached,
-                       static_cast<int>(result.iterations), wall_ms);
-}
+// MMA fallback chains disabled: nablapp mma_policy::state_type lacks
+// objective_value member required by basic_solver_group. Re-enable when
+// nablapp fixes mma_policy state_type to include objective_value.
+//
+// Affected chains: SLSQP->MMA, MMA->COBYLA
 
 // ---------------------------------------------------------------------------
 // Baseline
@@ -248,7 +175,8 @@ void run_time_boxed(const ctrlpp::nlp_problem<double>& problem,
     Eigen::VectorXd x0 = Eigen::VectorXd::Zero(problem.n_vars);
     auto opts = make_solver_options();
 
-    nablapp::time_boxed_schedule sched{.time_slice = time_slice};
+    nablapp::time_boxed_schedule sched;
+    sched.time_slice = time_slice;
 
     using group_type = nablapp::basic_solver_group<
         nablapp::time_boxed_schedule,
@@ -307,24 +235,8 @@ int main()
     auto problem_full = ctrlpp::detail::build_nmpc_problem<double, 4, 2>(
         double_integrator_4, config, state);
 
-    // Box-constrained-only problem for MMA-involving chains (single-shooting style)
-    // Build a simple unconstrained NLP with box bounds only
-    auto problem_box = ctrlpp::nlp_problem<double>{
-        .n_vars = problem_full.n_vars,
-        .n_constraints = 0,
-        .cost = problem_full.cost,
-        .gradient = problem_full.gradient,
-        .constraints = {},
-        .x_lower = problem_full.x_lower,
-        .x_upper = problem_full.x_upper,
-        .c_lower = Eigen::VectorXd{},
-        .c_upper = Eigen::VectorXd{},
-    };
-
-    // Fallback chains
+    // Fallback chains (MMA chains disabled -- see comment above)
     run_fallback_slsqp_cobyla(problem_full, bench, quality_csv);
-    run_fallback_slsqp_mma(problem_box, bench, quality_csv);
-    run_fallback_mma_cobyla(problem_box, bench, quality_csv);
 
     // Baseline
     run_baseline_slsqp(problem_full, bench, quality_csv);

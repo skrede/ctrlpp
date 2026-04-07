@@ -144,7 +144,9 @@ auto run_nmhe_benchmark(
 // LM policy conditional support
 // ---------------------------------------------------------------------------
 
-#if __has_include(<nablapp/solver/lm_policy.h>)
+// LM policy disabled: nablapp lm_policy.h has unqualified concept names
+// (finite_difference.h bug). Re-enable when nablapp fixes this.
+#if 0
 #include <nablapp/solver/lm_policy.h>
 #define HAS_LM_POLICY 1
 
