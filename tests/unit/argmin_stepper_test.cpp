@@ -36,14 +36,16 @@ auto make_rosenbrock() -> ctrlpp::nlp_problem<double>
 TEST_CASE("argmin step concept satisfaction", "[argmin][stepper]")
 {
     static_assert(ctrlpp::nlp_stepper<ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp>>,
-                  "argmin_solver must satisfy nlp_stepper concept");
+                  "constrained argmin_solver must satisfy nlp_stepper concept");
+    static_assert(ctrlpp::nlp_stepper<ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false>>,
+                  "unconstrained argmin_solver must satisfy nlp_stepper concept");
 }
 
 TEST_CASE("argmin step budget exhaustion", "[argmin][stepper]")
 {
     auto prob = make_rosenbrock();
 
-    ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp> solver;
+    ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false> solver;
     solver.setup(prob);
 
     ctrlpp::nlp_update<double> update;
@@ -59,7 +61,7 @@ TEST_CASE("argmin step then solve converges", "[argmin][stepper]")
 {
     auto prob = make_rosenbrock();
 
-    ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp> solver;
+    ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false> solver;
     solver.setup(prob);
 
     ctrlpp::nlp_update<double> update;

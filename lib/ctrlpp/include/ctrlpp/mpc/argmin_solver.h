@@ -9,7 +9,6 @@
 #include <nablapp/solver/options.h>
 #include <nablapp/solver/basic_solver.h>
 
-#include <cmath>
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -19,13 +18,16 @@
 namespace ctrlpp
 {
 
-template <typename Scalar, typename Policy>
+template <typename Scalar, typename Policy, bool Constrained = true>
 class argmin_solver
 {
 public:
     using scalar_type = Scalar;
     using nablapp_policy = typename Policy::algorithm;
-    using solver_type = nablapp::basic_solver<nablapp_policy, Eigen::Dynamic, argmin_problem<Scalar>>;
+    using bridge_type = std::conditional_t<Constrained,
+        argmin_constrained_problem<Scalar>,
+        argmin_problem<Scalar>>;
+    using solver_type = nablapp::basic_solver<nablapp_policy, Eigen::Dynamic, bridge_type>;
 
     explicit argmin_solver(argmin_settings<Scalar> settings = {})
         : settings_{settings}
@@ -35,12 +37,20 @@ public:
     {
         problem_ = &problem;
         solver_ = std::nullopt;
-        bridge_.partition(problem);
 
-        if constexpr(std::is_same_v<Policy, argmin_mma>)
+        if constexpr(Constrained)
         {
-            if(bridge_.num_equality() > 0)
-                throw std::invalid_argument("MMA algorithm does not support equality constraints");
+            bridge_.partition(problem);
+
+            if constexpr(std::is_same_v<Policy, argmin_mma>)
+            {
+                if(bridge_.num_equality() > 0)
+                    throw std::invalid_argument("MMA algorithm does not support equality constraints");
+            }
+        }
+        else
+        {
+            bridge_.bind(problem);
         }
     }
 
@@ -85,8 +95,11 @@ private:
                 std::chrono::duration<double>(static_cast<double>(settings_.max_time)));
         }
 
-        if(settings_.constraint_tol > Scalar{0})
-            opts.constraint_tolerance = static_cast<double>(settings_.constraint_tol);
+        if constexpr(Constrained)
+        {
+            if(settings_.constraint_tol > Scalar{0})
+                opts.constraint_tolerance = static_cast<double>(settings_.constraint_tol);
+        }
 
         opts.set_objective_threshold(static_cast<double>(settings_.ftol_rel));
         opts.set_step_threshold(static_cast<double>(settings_.xtol_rel));
@@ -134,7 +147,7 @@ private:
 
     argmin_settings<Scalar> settings_;
     const nlp_problem<Scalar>* problem_{nullptr};
-    argmin_problem<Scalar> bridge_;
+    bridge_type bridge_;
     std::optional<solver_type> solver_;
 };
 

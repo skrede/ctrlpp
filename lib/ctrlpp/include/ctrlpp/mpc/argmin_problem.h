@@ -20,9 +20,54 @@ class argmin_problem
 public:
     static constexpr int problem_dimension = Eigen::Dynamic;
 
+    void bind(const nlp_problem<Scalar>& prob)
+    {
+        problem_ = &prob;
+    }
+
+    auto value(const Eigen::VectorX<Scalar>& x) const -> Scalar
+    {
+        return problem_->cost(
+            std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())});
+    }
+
+    auto dimension() const -> int
+    {
+        return problem_->n_vars;
+    }
+
+    void gradient(const Eigen::VectorX<Scalar>& x, Eigen::VectorX<Scalar>& g) const
+    {
+        problem_->gradient(
+            std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
+            std::span<Scalar>{g.data(), static_cast<std::size_t>(g.size())});
+    }
+
+    auto lower_bounds() const -> Eigen::VectorX<Scalar>
+    {
+        return problem_->x_lower;
+    }
+
+    auto upper_bounds() const -> Eigen::VectorX<Scalar>
+    {
+        return problem_->x_upper;
+    }
+
+protected:
+    const nlp_problem<Scalar>* problem_{nullptr};
+};
+
+template <typename Scalar>
+class argmin_constrained_problem : public argmin_problem<Scalar>
+{
+    using base = argmin_problem<Scalar>;
+
+public:
+    using base::problem_dimension;
+
     void partition(const nlp_problem<Scalar>& prob)
     {
-        problem = &prob;
+        base::bind(prob);
 
         eq_indices.clear();
         ineq_upper_indices.clear();
@@ -51,34 +96,6 @@ public:
         fd_x_buf_.resize(prob.n_vars);
     }
 
-    auto value(const Eigen::VectorX<Scalar>& x) const -> Scalar
-    {
-        return problem->cost(
-            std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())});
-    }
-
-    auto dimension() const -> int
-    {
-        return problem->n_vars;
-    }
-
-    void gradient(const Eigen::VectorX<Scalar>& x, Eigen::VectorX<Scalar>& g) const
-    {
-        problem->gradient(
-            std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
-            std::span<Scalar>{g.data(), static_cast<std::size_t>(g.size())});
-    }
-
-    auto lower_bounds() const -> Eigen::VectorX<Scalar>
-    {
-        return problem->x_lower;
-    }
-
-    auto upper_bounds() const -> Eigen::VectorX<Scalar>
-    {
-        return problem->x_upper;
-    }
-
     void constraints(const Eigen::VectorX<Scalar>& x, Eigen::VectorX<Scalar>& c_out) const
     {
         eval_raw(x);
@@ -86,13 +103,13 @@ public:
         int idx = 0;
 
         for(auto i : eq_indices)
-            c_out[idx++] = raw_buf_[static_cast<std::size_t>(i)] - problem->c_lower[i];
+            c_out[idx++] = raw_buf_[static_cast<std::size_t>(i)] - base::problem_->c_lower[i];
 
         for(auto i : ineq_upper_indices)
-            c_out[idx++] = raw_buf_[static_cast<std::size_t>(i)] - problem->c_upper[i];
+            c_out[idx++] = raw_buf_[static_cast<std::size_t>(i)] - base::problem_->c_upper[i];
 
         for(auto i : ineq_lower_indices)
-            c_out[idx++] = problem->c_lower[i] - raw_buf_[static_cast<std::size_t>(i)];
+            c_out[idx++] = base::problem_->c_lower[i] - raw_buf_[static_cast<std::size_t>(i)];
     }
 
     auto num_equality() const -> int
@@ -108,7 +125,7 @@ public:
     void constraint_jacobian(const Eigen::VectorX<Scalar>& x, Eigen::MatrixX<Scalar>& J) const
     {
         const int m = n_eq + n_ineq_upper + n_ineq_lower;
-        const int n = problem->n_vars;
+        const int n = base::problem_->n_vars;
         J.resize(m, n);
 
         const auto eps = std::sqrt(std::numeric_limits<Scalar>::epsilon());
@@ -134,7 +151,6 @@ public:
         }
     }
 
-    const nlp_problem<Scalar>* problem{nullptr};
     int n_eq{0};
     int n_ineq_upper{0};
     int n_ineq_lower{0};
@@ -145,9 +161,7 @@ public:
 private:
     void eval_raw(const Eigen::VectorX<Scalar>& x) const
     {
-        if(problem->n_constraints == 0 || !problem->constraints)
-            return;
-        problem->constraints(
+        base::problem_->constraints(
             std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
             std::span<Scalar>{raw_buf_.data(), raw_buf_.size()});
     }
