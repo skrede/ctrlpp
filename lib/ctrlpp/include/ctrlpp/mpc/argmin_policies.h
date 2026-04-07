@@ -3,6 +3,7 @@
 
 #include <nablapp/solver/mma_policy.h>
 #include <nablapp/solver/isres_policy.h>
+#include <nablapp/solver/lbfgsb_policy.h>
 #include <nablapp/solver/cobyla_policy.h>
 #include <nablapp/solver/kraft_slsqp_policy.h>
 
@@ -47,6 +48,11 @@ struct argmin_cobyla
 struct argmin_isres
 {
     using algorithm = nablapp::isres_policy<>;
+};
+
+struct argmin_lbfgsb
+{
+    using algorithm = nablapp::lbfgsb_policy<>;
 };
 
 }
