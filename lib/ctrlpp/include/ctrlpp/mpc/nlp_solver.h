@@ -20,6 +20,7 @@ struct nlp_problem
     std::function<Scalar(std::span<const Scalar>)> cost;
     std::function<void(std::span<const Scalar>, std::span<Scalar>)> gradient;
     std::function<void(std::span<const Scalar>, std::span<Scalar>)> constraints;
+    std::function<void(std::span<const Scalar>, std::span<Scalar>)> constraint_jacobian;
     Eigen::VectorX<Scalar> x_lower;
     Eigen::VectorX<Scalar> x_upper;
     Eigen::VectorX<Scalar> c_lower;
