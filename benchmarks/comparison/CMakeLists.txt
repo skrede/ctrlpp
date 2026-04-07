@@ -28,3 +28,9 @@ endif()
 if(CTRLPP_BENCH_DRAKE)
     add_subdirectory(drake)
 endif()
+
+option(CTRLPP_BENCH_ARGMIN "Build nablapp comparison benchmarks" OFF)
+
+if(CTRLPP_BENCH_ARGMIN)
+    add_subdirectory(argmin)
+endif()
