@@ -168,14 +168,16 @@ void run_benchmark(const std::string& system_name,
 
     q_nlopt.solve(x0);
     auto nlopt_diag = q_nlopt.diagnostics();
+    auto nlopt_grad = compute_gradient_norm<double, NX, NU>(q_nlopt);
 
     q_argmin.solve(x0);
     auto argmin_diag = q_argmin.diagnostics();
+    auto argmin_grad = compute_gradient_norm<double, NX, NU>(q_argmin);
 
     quality_metrics nlopt_qm{
         .objective = nlopt_diag.cost,
         .max_constraint_violation = nlopt_diag.max_constraint_violation,
-        .gradient_norm = 0.0,
+        .gradient_norm = nlopt_grad,
         .success = (nlopt_diag.status == ctrlpp::solve_status::optimal),
         .iterations = nlopt_diag.iterations,
         .solve_time_ms = nlopt_diag.solve_time * 1000.0,
@@ -184,7 +186,7 @@ void run_benchmark(const std::string& system_name,
     quality_metrics argmin_qm{
         .objective = argmin_diag.cost,
         .max_constraint_violation = argmin_diag.max_constraint_violation,
-        .gradient_norm = 0.0,
+        .gradient_norm = argmin_grad,
         .success = (argmin_diag.status == ctrlpp::solve_status::optimal),
         .iterations = argmin_diag.iterations,
         .solve_time_ms = argmin_diag.solve_time * 1000.0,
