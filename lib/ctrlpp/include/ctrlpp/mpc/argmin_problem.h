@@ -128,6 +128,24 @@ public:
         const int n = base::problem_->n_vars;
         J.resize(m, n);
 
+        if(base::problem_->constraint_jacobian)
+        {
+            Eigen::MatrixX<Scalar> J_raw(base::problem_->n_constraints, n);
+            base::problem_->constraint_jacobian(
+                std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
+                std::span<Scalar>{J_raw.data(), static_cast<std::size_t>(J_raw.size())});
+
+            int idx = 0;
+            for(auto i : eq_indices)
+                J.row(idx++) = J_raw.row(i);
+            for(auto i : ineq_upper_indices)
+                J.row(idx++) = J_raw.row(i);
+            for(auto i : ineq_lower_indices)
+                J.row(idx++) = -J_raw.row(i);
+
+            return;
+        }
+
         const auto eps = std::sqrt(std::numeric_limits<Scalar>::epsilon());
         Eigen::VectorX<Scalar> c_plus(m);
         Eigen::VectorX<Scalar> c_minus(m);
