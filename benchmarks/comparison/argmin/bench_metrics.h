@@ -68,6 +68,21 @@ inline auto compute_quality_metrics(const ctrlpp::nlp_problem<double>& problem,
     return m;
 }
 
+template <typename Scalar, std::size_t NX, std::size_t NU, typename NmpcType>
+auto compute_gradient_norm(const NmpcType& controller) -> double
+{
+    const auto& prob = controller.problem();
+    const auto& z = controller.last_solution();
+    auto n = static_cast<std::size_t>(prob.n_vars);
+    std::vector<double> grad(n);
+    std::vector<double> x_buf(z.data(), z.data() + z.size());
+    ctrlpp::detail::finite_diff_gradient<double>(
+        prob.cost,
+        std::span<const double>{x_buf.data(), n},
+        std::span<double>{grad.data(), n});
+    return Eigen::Map<Eigen::VectorXd>(grad.data(), static_cast<Eigen::Index>(n)).norm();
+}
+
 inline void write_quality_csv_header(std::ostream& os)
 {
     os << "system,solver,algorithm,warm_start,nx,horizon,objective,max_violation,gradient_norm,success,iterations,solve_time_ms\n";
