@@ -96,7 +96,7 @@ auto make_nmpc_config(int horizon) -> ctrlpp::nmpc_config<double, NX, NU>
 // ---------------------------------------------------------------------------
 
 using NloptSolver = ctrlpp::nlopt_solver<double>;
-using ArgminMma = ctrlpp::argmin_solver<double, ctrlpp::argmin_mma, false>;
+using ArgminMma = ctrlpp::argmin_solver<double, ctrlpp::argmin_mma, true>;
 
 auto warm_start_label(ctrlpp::warm_start_mode ws) -> std::string
 {
