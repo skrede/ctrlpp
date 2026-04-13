@@ -42,11 +42,6 @@ public:
         {
             bridge_.partition(problem);
 
-            if constexpr(std::is_same_v<Policy, argmin_mma> || std::is_same_v<Policy, argmin_gcmma>)
-            {
-                if(bridge_.num_equality() > 0)
-                    throw std::invalid_argument("MMA/GCMMA algorithms do not support equality constraints");
-            }
         }
         else
         {
