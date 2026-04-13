@@ -29,7 +29,6 @@ endif()
 
 set(ARGMIN_BENCH_TARGETS
     bench_slsqp
-    bench_mma
     bench_cobyla
     bench_isres
     bench_nmpc

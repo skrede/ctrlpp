@@ -1,8 +1,6 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_ARGMIN_POLICIES_H
 #define HPP_GUARD_CTRLPP_MPC_ARGMIN_POLICIES_H
 
-#include <nablapp/solver/mma_policy.h>
-#include <nablapp/solver/gcmma_policy.h>
 #include <nablapp/solver/isres_policy.h>
 #include <nablapp/solver/bobyqa_policy.h>
 #include <nablapp/solver/cobyla_policy.h>
@@ -60,16 +58,6 @@ struct argmin_filter_nw_sqp
 struct argmin_auglag
 {
     using algorithm = nablapp::augmented_lagrangian_policy<>;
-};
-
-struct argmin_mma
-{
-    using algorithm = nablapp::mma_policy<>;
-};
-
-struct argmin_gcmma
-{
-    using algorithm = nablapp::gcmma_policy<>;
 };
 
 struct argmin_cobyla
