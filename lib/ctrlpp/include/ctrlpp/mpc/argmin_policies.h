@@ -2,10 +2,17 @@
 #define HPP_GUARD_CTRLPP_MPC_ARGMIN_POLICIES_H
 
 #include <nablapp/solver/mma_policy.h>
+#include <nablapp/solver/gcmma_policy.h>
 #include <nablapp/solver/isres_policy.h>
-#include <nablapp/solver/lbfgsb_policy.h>
+#include <nablapp/solver/bobyqa_policy.h>
 #include <nablapp/solver/cobyla_policy.h>
+#include <nablapp/solver/lbfgsb_policy.h>
+#include <nablapp/solver/nw_sqp_policy.h>
+#include <nablapp/solver/byrd_lbfgsb_policy.h>
+#include <nablapp/solver/filter_slsqp_policy.h>
 #include <nablapp/solver/kraft_slsqp_policy.h>
+#include <nablapp/solver/filter_nw_sqp_policy.h>
+#include <nablapp/solver/augmented_lagrangian_policy.h>
 
 #include <cstdint>
 
@@ -35,9 +42,34 @@ struct argmin_slsqp
     using algorithm = nablapp::kraft_slsqp_policy<>;
 };
 
+struct argmin_nw_sqp
+{
+    using algorithm = nablapp::nw_sqp_policy<>;
+};
+
+struct argmin_filter_slsqp
+{
+    using algorithm = nablapp::filter_slsqp_policy<>;
+};
+
+struct argmin_filter_nw_sqp
+{
+    using algorithm = nablapp::filter_nw_sqp_policy<>;
+};
+
+struct argmin_auglag
+{
+    using algorithm = nablapp::augmented_lagrangian_policy<>;
+};
+
 struct argmin_mma
 {
     using algorithm = nablapp::mma_policy<>;
+};
+
+struct argmin_gcmma
+{
+    using algorithm = nablapp::gcmma_policy<>;
 };
 
 struct argmin_cobyla
@@ -53,6 +85,16 @@ struct argmin_isres
 struct argmin_lbfgsb
 {
     using algorithm = nablapp::lbfgsb_policy<>;
+};
+
+struct argmin_byrd_lbfgsb
+{
+    using algorithm = nablapp::byrd_lbfgsb_policy<>;
+};
+
+struct argmin_bobyqa
+{
+    using algorithm = nablapp::bobyqa_policy<>;
 };
 
 }
