@@ -36,9 +36,11 @@ set(ARGMIN_BENCH_TARGETS
     bench_nmhe
     bench_step_budget
     bench_lbfgsb
+    bench_bobyqa
     bench_profile
     bench_jacobian
     bench_schedule
+    bench_sqp_variants
 )
 
 foreach(target IN LISTS ARGMIN_BENCH_TARGETS)

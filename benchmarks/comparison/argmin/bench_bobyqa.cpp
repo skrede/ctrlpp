@@ -14,7 +14,7 @@
 #include <cstddef>
 #include <fstream>
 #include <functional>
-#include <limits>
+#include <random>
 #include <span>
 #include <string>
 #include <vector>
@@ -62,22 +62,9 @@ auto double_integrator_4 = [](const Eigen::Vector4d& x,
 };
 
 // ---------------------------------------------------------------------------
-// Type aliases
+// Single-shooting NLP problem builder (box-constrained, no gradient)
 // ---------------------------------------------------------------------------
 
-using LbfgsbSolver = ctrlpp::argmin_solver<double, ctrlpp::argmin_lbfgsb, false>;
-using ByrdLbfgsbSolver = ctrlpp::argmin_solver<double, ctrlpp::argmin_byrd_lbfgsb, false>;
-using NloptSolver = ctrlpp::nlopt_solver<double>;
-using ArgminSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false>;
-
-// ---------------------------------------------------------------------------
-// Single-shooting NLP problem builder
-// ---------------------------------------------------------------------------
-
-/// Build a single-shooting NLP for box-constrained solvers.
-/// Decision variable: u_0, ..., u_{N-1} (N*NU total).
-/// Objective: forward-simulate from x0, accumulate quadratic cost.
-/// No equality constraints (continuity enforced by forward simulation).
 template <std::size_t NX, std::size_t NU, typename Dynamics>
 auto build_single_shooting_problem(
     Dynamics dynamics,
@@ -88,11 +75,9 @@ auto build_single_shooting_problem(
     double u_min,
     double u_max) -> ctrlpp::nlp_problem<double>
 {
-    constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
     int n_vars = horizon * nu;
 
-    // Cost: forward simulate and accumulate quadratic cost
     auto cost_fn = [=](std::span<const double> z) -> double
     {
         double total = 0.0;
@@ -105,29 +90,24 @@ auto build_single_shooting_problem(
             xk = dynamics(xk, uk);
         }
 
-        // Terminal cost
         total += 0.5 * xk.dot(Q * xk);
         return total;
     };
 
     std::function<double(std::span<const double>)> cost = cost_fn;
 
-    // Gradient via finite differences
     std::function<void(std::span<const double>, std::span<double>)> gradient =
         [cost](std::span<const double> z, std::span<double> grad)
     {
         ctrlpp::detail::finite_diff_gradient<double>(cost, z, grad);
     };
 
-    // No constraints
     std::function<void(std::span<const double>, std::span<double>)> constraints =
         [](std::span<const double>, std::span<double>) {};
 
-    // Variable bounds: input bounds on all decision variables
     Eigen::VectorXd x_lower = Eigen::VectorXd::Constant(n_vars, u_min);
     Eigen::VectorXd x_upper = Eigen::VectorXd::Constant(n_vars, u_max);
 
-    // No constraint bounds (n_constraints = 0)
     Eigen::VectorXd c_lower;
     Eigen::VectorXd c_upper;
 
@@ -142,6 +122,14 @@ auto build_single_shooting_problem(
         .c_lower = std::move(c_lower),
         .c_upper = std::move(c_upper)};
 }
+
+// ---------------------------------------------------------------------------
+// Type aliases
+// ---------------------------------------------------------------------------
+
+using BobyqaSolver = ctrlpp::argmin_solver<double, ctrlpp::argmin_bobyqa, false>;
+using ArgminCobyla = ctrlpp::argmin_solver<double, ctrlpp::argmin_cobyla>;
+using NloptSolver = ctrlpp::nlopt_solver<double>;
 
 // ---------------------------------------------------------------------------
 // Benchmark runner
@@ -170,15 +158,17 @@ void run_benchmark(const std::string& system_name,
     auto title = system_name + " NX=" + std::to_string(NX)
                + " N=" + std::to_string(horizon);
 
-    // L-BFGS-B solver
+    // BOBYQA (nablapp, derivative-free, box-constrained)
     {
         auto problem = build_single_shooting_problem<NX, NU>(
             dynamics, x0, horizon, Q, R, u_min, u_max);
 
-        LbfgsbSolver solver{};
+        ctrlpp::argmin_settings<double> cfg{};
+        cfg.max_eval = 1000;
+        BobyqaSolver solver{cfg};
 
-        bench.warmup(50).minEpochIterations(50).title(title)
-            .run("lbfgsb",
+        bench.warmup(50).minEpochIterations(20).title(title)
+            .run("argmin_bobyqa",
                  [&]
                  {
                      solver.setup(problem);
@@ -188,25 +178,26 @@ void run_benchmark(const std::string& system_name,
                      ankerl::nanobench::doNotOptimizeAway(result);
                  });
 
-        // Quality: single clean solve
         solver.setup(problem);
         ctrlpp::nlp_update<double> update{};
         update.x0 = Eigen::VectorXd::Zero(n_vars);
         auto result = solver.solve(update);
         auto qm = compute_quality_metrics(problem, result);
 
-        write_quality_csv_row(quality_csv, system_name, "argmin", "lbfgsb",
+        write_quality_csv_row(quality_csv, system_name, "argmin", "bobyqa",
                               "cold", static_cast<int>(NX), horizon, qm);
     }
 
-    // Byrd L-BFGS-B solver (Armijo line search, 5-pair history)
+    // Argmin COBYLA (nablapp, derivative-free, uses constrained bridge with zero constraints)
     {
         auto problem = build_single_shooting_problem<NX, NU>(
             dynamics, x0, horizon, Q, R, u_min, u_max);
 
-        ByrdLbfgsbSolver solver{};
+        ctrlpp::argmin_settings<double> cfg{};
+        cfg.max_eval = 1000;
+        ArgminCobyla solver{cfg};
 
-        bench.run("byrd_lbfgsb",
+        bench.run("argmin_cobyla",
                   [&]
                   {
                       solver.setup(problem);
@@ -222,18 +213,21 @@ void run_benchmark(const std::string& system_name,
         auto result = solver.solve(update);
         auto qm = compute_quality_metrics(problem, result);
 
-        write_quality_csv_row(quality_csv, system_name, "argmin", "byrd_lbfgsb",
+        write_quality_csv_row(quality_csv, system_name, "argmin", "cobyla",
                               "cold", static_cast<int>(NX), horizon, qm);
     }
 
-    // Argmin SLSQP on same single-shooting problem
+    // NLopt COBYLA (derivative-free baseline)
     {
         auto problem = build_single_shooting_problem<NX, NU>(
             dynamics, x0, horizon, Q, R, u_min, u_max);
 
-        ArgminSlsqp solver{};
+        ctrlpp::nlopt_settings<double> nlopt_cfg{};
+        nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::cobyla;
+        nlopt_cfg.max_eval = 1000;
+        NloptSolver solver{nlopt_cfg};
 
-        bench.run("argmin_slsqp",
+        bench.run("nlopt_cobyla",
                   [&]
                   {
                       solver.setup(problem);
@@ -249,34 +243,7 @@ void run_benchmark(const std::string& system_name,
         auto result = solver.solve(update);
         auto qm = compute_quality_metrics(problem, result);
 
-        write_quality_csv_row(quality_csv, system_name, "argmin", "slsqp",
-                              "cold", static_cast<int>(NX), horizon, qm);
-    }
-
-    // NLopt SLSQP on same single-shooting problem
-    {
-        auto problem = build_single_shooting_problem<NX, NU>(
-            dynamics, x0, horizon, Q, R, u_min, u_max);
-
-        NloptSolver solver{};
-
-        bench.run("nlopt_slsqp",
-                  [&]
-                  {
-                      solver.setup(problem);
-                      ctrlpp::nlp_update<double> update{};
-                      update.x0 = Eigen::VectorXd::Zero(n_vars);
-                      auto result = solver.solve(update);
-                      ankerl::nanobench::doNotOptimizeAway(result);
-                  });
-
-        solver.setup(problem);
-        ctrlpp::nlp_update<double> update{};
-        update.x0 = Eigen::VectorXd::Zero(n_vars);
-        auto result = solver.solve(update);
-        auto qm = compute_quality_metrics(problem, result);
-
-        write_quality_csv_row(quality_csv, system_name, "nlopt", "slsqp",
+        write_quality_csv_row(quality_csv, system_name, "nlopt", "cobyla",
                               "cold", static_cast<int>(NX), horizon, qm);
     }
 }
@@ -288,16 +255,15 @@ int main()
     ankerl::nanobench::Bench bench;
     bench.performanceCounters(true).relative(true);
 
-    std::ofstream timing_csv("bench_lbfgsb_timing.csv");
-    std::ofstream quality_csv("bench_lbfgsb_quality.csv");
+    std::ofstream timing_csv("bench_bobyqa_timing.csv");
+    std::ofstream quality_csv("bench_bobyqa_quality.csv");
     write_quality_csv_header(quality_csv);
 
-    // Problem instances (box-constrained single-shooting)
+    // Box-constrained single-shooting problems
     run_benchmark<2, 1>("double_integrator", double_integrator_2, 10, bench, quality_csv);
     run_benchmark<4, 2>("double_integrator", double_integrator_4, 10, bench, quality_csv);
     run_benchmark<2, 1>("pendulum", pendulum_2, 10, bench, quality_csv);
     run_benchmark<4, 2>("double_integrator", double_integrator_4, 20, bench, quality_csv);
 
-    // Render timing CSV
     bench.render(comma_csv_tpl, timing_csv);
 }

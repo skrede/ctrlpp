@@ -97,6 +97,7 @@ auto make_nmpc_config(int horizon) -> ctrlpp::nmpc_config<double, NX, NU>
 
 using NloptSolver = ctrlpp::nlopt_solver<double>;
 using ArgminMma = ctrlpp::argmin_solver<double, ctrlpp::argmin_mma, true>;
+using ArgminGcmma = ctrlpp::argmin_solver<double, ctrlpp::argmin_gcmma, true>;
 
 auto warm_start_label(ctrlpp::warm_start_mode ws) -> std::string
 {
@@ -218,6 +219,37 @@ void run_benchmark(const std::string& system_name,
 
     write_quality_csv_row(quality_csv, system_name, "argmin", "mma_unconstrained", ws_label,
                           static_cast<int>(NX), horizon, argmin_qm);
+
+    // Argmin GCMMA (globally convergent MMA) -- same constraint limitation
+    ctrlpp::argmin_settings<double> gcmma_cfg{};
+    gcmma_cfg.warm_start = ws_mode;
+    ArgminGcmma gcmma_solver{gcmma_cfg};
+
+    ctrlpp::nmpc<double, NX, NU, ArgminGcmma, Dynamics> nmpc_gcmma{dynamics, config};
+
+    bench.run("argmin_gcmma_unconstrained",
+              [&]
+              {
+                  auto u = nmpc_gcmma.solve(x0);
+                  ankerl::nanobench::doNotOptimizeAway(u);
+              });
+
+    ctrlpp::nmpc<double, NX, NU, ArgminGcmma, Dynamics> q_gcmma{dynamics, config};
+    q_gcmma.solve(x0);
+    auto gcmma_diag = q_gcmma.diagnostics();
+    auto gcmma_grad = compute_gradient_norm<double, NX, NU>(q_gcmma);
+
+    quality_metrics gcmma_qm{
+        .objective = gcmma_diag.cost,
+        .max_constraint_violation = gcmma_diag.max_constraint_violation,
+        .gradient_norm = gcmma_grad,
+        .success = (gcmma_diag.status == ctrlpp::solve_status::optimal),
+        .iterations = gcmma_diag.iterations,
+        .solve_time_ms = gcmma_diag.solve_time * 1000.0,
+    };
+
+    write_quality_csv_row(quality_csv, system_name, "argmin", "gcmma_unconstrained", ws_label,
+                          static_cast<int>(NX), horizon, gcmma_qm);
 }
 
 // ---------------------------------------------------------------------------
@@ -240,8 +272,9 @@ void run_convergence(const std::string& system_name,
     write_incompatible_row(quality_csv, system_name, "nlopt", "convergence",
                            static_cast<int>(NX), horizon);
 
-    // Argmin MMA unconstrained: measure convergence of cost-only optimization
-    int argmin_successes = 0;
+    // Argmin MMA and GCMMA unconstrained: measure convergence of cost-only optimization
+    int mma_successes = 0;
+    int gcmma_successes = 0;
 
     for(int trial = 0; trial < num_trials; ++trial)
     {
@@ -249,26 +282,29 @@ void run_convergence(const std::string& system_name,
         for(std::size_t i = 0; i < NX; ++i)
             x0(static_cast<Eigen::Index>(i)) = dist(rng);
 
-        ctrlpp::nmpc<double, NX, NU, ArgminMma, Dynamics> nmpc_argmin{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminMma, Dynamics> nmpc_mma{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminGcmma, Dynamics> nmpc_gcmma{dynamics, config};
 
-        auto u_argmin = nmpc_argmin.solve(x0);
-        if(u_argmin.has_value())
-            ++argmin_successes;
+        if(nmpc_mma.solve(x0).has_value()) ++mma_successes;
+        if(nmpc_gcmma.solve(x0).has_value()) ++gcmma_successes;
     }
 
-    double argmin_rate = static_cast<double>(argmin_successes) / num_trials;
-
-    quality_metrics argmin_qm{
-        .objective = argmin_rate,
-        .max_constraint_violation = 0.0,
-        .gradient_norm = 0.0,
-        .success = true,
-        .iterations = num_trials,
-        .solve_time_ms = 0.0,
+    auto write_rate = [&](std::string_view algo, int successes)
+    {
+        double rate = static_cast<double>(successes) / num_trials;
+        write_quality_csv_row(quality_csv, system_name, "argmin", algo, "convergence",
+                              static_cast<int>(NX), horizon, quality_metrics{
+                                  .objective = rate,
+                                  .max_constraint_violation = 0.0,
+                                  .gradient_norm = 0.0,
+                                  .success = true,
+                                  .iterations = num_trials,
+                                  .solve_time_ms = 0.0,
+                              });
     };
 
-    write_quality_csv_row(quality_csv, system_name, "argmin", "mma_unconstrained", "convergence",
-                          static_cast<int>(NX), horizon, argmin_qm);
+    write_rate("mma_unconstrained", mma_successes);
+    write_rate("gcmma_unconstrained", gcmma_successes);
 }
 
 }
