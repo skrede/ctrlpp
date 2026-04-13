@@ -96,8 +96,8 @@ auto make_nmpc_config(int horizon) -> ctrlpp::nmpc_config<double, NX, NU>
 // ---------------------------------------------------------------------------
 
 using NloptSolver = ctrlpp::nlopt_solver<double>;
-using ArgminMma = ctrlpp::argmin_solver<double, ctrlpp::argmin_mma, true>;
-using ArgminGcmma = ctrlpp::argmin_solver<double, ctrlpp::argmin_gcmma, true>;
+using ArgminMma = ctrlpp::argmin_solver<double, ctrlpp::argmin_mma>;
+using ArgminGcmma = ctrlpp::argmin_solver<double, ctrlpp::argmin_gcmma>;
 
 auto warm_start_label(ctrlpp::warm_start_mode ws) -> std::string
 {
@@ -184,72 +184,61 @@ void run_benchmark(const std::string& system_name,
                                static_cast<int>(NX), horizon);
     }
 
-    // Argmin MMA with Constrained=false: unconstrained bridge ignores constraints,
-    // so the solver runs but produces solutions that do not respect dynamics.
-    ctrlpp::argmin_settings<double> argmin_cfg{};
-    argmin_cfg.warm_start = ws_mode;
-    ArgminMma argmin_solver{argmin_cfg};
+    // Argmin MMA: attempt NMPC construction -- will throw on equality constraints
+    try
+    {
+        ctrlpp::argmin_settings<double> argmin_cfg{};
+        argmin_cfg.warm_start = ws_mode;
+        ArgminMma argmin_solver{argmin_cfg};
 
-    ctrlpp::nmpc<double, NX, NU, ArgminMma, Dynamics> nmpc_argmin{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminMma, Dynamics> nmpc_argmin{dynamics, config};
+        nmpc_argmin.solve(x0);
 
-    int min_iters = (NX >= 8) ? 10 : 50;
+        auto argmin_diag = nmpc_argmin.diagnostics();
+        auto argmin_grad = compute_gradient_norm<double, NX, NU>(nmpc_argmin);
+        write_quality_csv_row(quality_csv, system_name, "argmin", "mma", ws_label,
+                              static_cast<int>(NX), horizon, quality_metrics{
+                                  .objective = argmin_diag.cost,
+                                  .max_constraint_violation = argmin_diag.max_constraint_violation,
+                                  .gradient_norm = argmin_grad,
+                                  .success = (argmin_diag.status == ctrlpp::solve_status::optimal),
+                                  .iterations = argmin_diag.iterations,
+                                  .solve_time_ms = argmin_diag.solve_time * 1000.0,
+                              });
+    }
+    catch(const std::invalid_argument&)
+    {
+        write_incompatible_row(quality_csv, system_name, "argmin_mma", ws_label,
+                               static_cast<int>(NX), horizon);
+    }
 
-    bench.warmup(50).minEpochIterations(min_iters).title(title)
-        .run("argmin_mma_unconstrained",
-             [&]
-             {
-                 auto u = nmpc_argmin.solve(x0);
-                 ankerl::nanobench::doNotOptimizeAway(u);
-             });
+    // Argmin GCMMA: same constraint limitation as MMA
+    try
+    {
+        ctrlpp::argmin_settings<double> gcmma_cfg{};
+        gcmma_cfg.warm_start = ws_mode;
+        ArgminGcmma gcmma_solver{gcmma_cfg};
 
-    // Quality measurement for unconstrained argmin MMA
-    ctrlpp::nmpc<double, NX, NU, ArgminMma, Dynamics> q_argmin{dynamics, config};
-    q_argmin.solve(x0);
-    auto argmin_diag = q_argmin.diagnostics();
-    auto argmin_grad = compute_gradient_norm<double, NX, NU>(q_argmin);
+        ctrlpp::nmpc<double, NX, NU, ArgminGcmma, Dynamics> nmpc_gcmma{dynamics, config};
+        nmpc_gcmma.solve(x0);
 
-    quality_metrics argmin_qm{
-        .objective = argmin_diag.cost,
-        .max_constraint_violation = argmin_diag.max_constraint_violation,
-        .gradient_norm = argmin_grad,
-        .success = (argmin_diag.status == ctrlpp::solve_status::optimal),
-        .iterations = argmin_diag.iterations,
-        .solve_time_ms = argmin_diag.solve_time * 1000.0,
-    };
-
-    write_quality_csv_row(quality_csv, system_name, "argmin", "mma_unconstrained", ws_label,
-                          static_cast<int>(NX), horizon, argmin_qm);
-
-    // Argmin GCMMA (globally convergent MMA) -- same constraint limitation
-    ctrlpp::argmin_settings<double> gcmma_cfg{};
-    gcmma_cfg.warm_start = ws_mode;
-    ArgminGcmma gcmma_solver{gcmma_cfg};
-
-    ctrlpp::nmpc<double, NX, NU, ArgminGcmma, Dynamics> nmpc_gcmma{dynamics, config};
-
-    bench.run("argmin_gcmma_unconstrained",
-              [&]
-              {
-                  auto u = nmpc_gcmma.solve(x0);
-                  ankerl::nanobench::doNotOptimizeAway(u);
-              });
-
-    ctrlpp::nmpc<double, NX, NU, ArgminGcmma, Dynamics> q_gcmma{dynamics, config};
-    q_gcmma.solve(x0);
-    auto gcmma_diag = q_gcmma.diagnostics();
-    auto gcmma_grad = compute_gradient_norm<double, NX, NU>(q_gcmma);
-
-    quality_metrics gcmma_qm{
-        .objective = gcmma_diag.cost,
-        .max_constraint_violation = gcmma_diag.max_constraint_violation,
-        .gradient_norm = gcmma_grad,
-        .success = (gcmma_diag.status == ctrlpp::solve_status::optimal),
-        .iterations = gcmma_diag.iterations,
-        .solve_time_ms = gcmma_diag.solve_time * 1000.0,
-    };
-
-    write_quality_csv_row(quality_csv, system_name, "argmin", "gcmma_unconstrained", ws_label,
-                          static_cast<int>(NX), horizon, gcmma_qm);
+        auto gcmma_diag = nmpc_gcmma.diagnostics();
+        auto gcmma_grad = compute_gradient_norm<double, NX, NU>(nmpc_gcmma);
+        write_quality_csv_row(quality_csv, system_name, "argmin", "gcmma", ws_label,
+                              static_cast<int>(NX), horizon, quality_metrics{
+                                  .objective = gcmma_diag.cost,
+                                  .max_constraint_violation = gcmma_diag.max_constraint_violation,
+                                  .gradient_norm = gcmma_grad,
+                                  .success = (gcmma_diag.status == ctrlpp::solve_status::optimal),
+                                  .iterations = gcmma_diag.iterations,
+                                  .solve_time_ms = gcmma_diag.solve_time * 1000.0,
+                              });
+    }
+    catch(const std::invalid_argument&)
+    {
+        write_incompatible_row(quality_csv, system_name, "argmin_gcmma", ws_label,
+                               static_cast<int>(NX), horizon);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -272,39 +261,11 @@ void run_convergence(const std::string& system_name,
     write_incompatible_row(quality_csv, system_name, "nlopt", "convergence",
                            static_cast<int>(NX), horizon);
 
-    // Argmin MMA and GCMMA unconstrained: measure convergence of cost-only optimization
-    int mma_successes = 0;
-    int gcmma_successes = 0;
-
-    for(int trial = 0; trial < num_trials; ++trial)
-    {
-        Eigen::Matrix<double, NX, 1> x0;
-        for(std::size_t i = 0; i < NX; ++i)
-            x0(static_cast<Eigen::Index>(i)) = dist(rng);
-
-        ctrlpp::nmpc<double, NX, NU, ArgminMma, Dynamics> nmpc_mma{dynamics, config};
-        ctrlpp::nmpc<double, NX, NU, ArgminGcmma, Dynamics> nmpc_gcmma{dynamics, config};
-
-        if(nmpc_mma.solve(x0).has_value()) ++mma_successes;
-        if(nmpc_gcmma.solve(x0).has_value()) ++gcmma_successes;
-    }
-
-    auto write_rate = [&](std::string_view algo, int successes)
-    {
-        double rate = static_cast<double>(successes) / num_trials;
-        write_quality_csv_row(quality_csv, system_name, "argmin", algo, "convergence",
-                              static_cast<int>(NX), horizon, quality_metrics{
-                                  .objective = rate,
-                                  .max_constraint_violation = 0.0,
-                                  .gradient_norm = 0.0,
-                                  .success = true,
-                                  .iterations = num_trials,
-                                  .solve_time_ms = 0.0,
-                              });
-    };
-
-    write_rate("mma_unconstrained", mma_successes);
-    write_rate("gcmma_unconstrained", gcmma_successes);
+    // Argmin MMA and GCMMA: incompatible with NMPC equality constraints
+    write_incompatible_row(quality_csv, system_name, "argmin_mma", "convergence",
+                           static_cast<int>(NX), horizon);
+    write_incompatible_row(quality_csv, system_name, "argmin_gcmma", "convergence",
+                           static_cast<int>(NX), horizon);
 }
 
 }
