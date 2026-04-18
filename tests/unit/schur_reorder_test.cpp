@@ -403,3 +403,121 @@ TEST_CASE("swap is overflow-safe for ill-scaled 1x1/1x1 inputs")
     CHECK(U.allFinite());
     CHECK(orthogonality_residual(U) < 10 * eps * N);
 }
+
+TEST_CASE("reorder_real_schur places stable eigenvalues on 4x4 diagonal T")
+{
+    constexpr int N = 4;
+    using Mat = Eigen::Matrix<double, N, N>;
+    Mat T = Mat::Zero();
+    T(0, 0) = 2.0;
+    T(1, 1) = 0.3;
+    T(2, 2) = 4.0;
+    T(3, 3) = 0.8;
+    Mat U = Mat::Identity();
+    const Mat T_before = T;
+    const double scale = infinity_norm(T);
+    const double eps = std::numeric_limits<double>::epsilon();
+
+    auto predicate = [](std::complex<double> lam) { return std::abs(lam) < 1.0; };
+    auto r = ctrlpp::detail::reorder_real_schur<double, N>(T, U, predicate);
+
+    REQUIRE(r.complete);
+    REQUIRE(r.placed == 2);
+    // The first two diagonal entries are the two stable eigenvalues.
+    CHECK(std::abs(T(0, 0)) < 1.0);
+    CHECK(std::abs(T(1, 1)) < 1.0);
+
+    // Eigenvalue multiset preserved: trace invariant.
+    CHECK_THAT(T.trace(), WithinAbs(T_before.trace(), 100 * eps * scale));
+
+    // U orthogonality preserved.
+    CHECK(orthogonality_residual(U) < 100 * eps * N);
+
+    // Similarity identity.
+    Mat reconstructed = U.transpose() * T_before * U;
+    CHECK((reconstructed - T).norm() < 1000 * eps * scale);
+}
+
+TEST_CASE("reorder_real_schur handles 2x2 complex-pair block correctly")
+{
+    constexpr int N = 3;
+    using Mat = Eigen::Matrix<double, N, N>;
+    Mat T = Mat::Zero();
+    // 1x1 block at (0, 0) with unstable eigenvalue 2.0
+    T(0, 0) = 2.0;
+    T(0, 1) = 0.1;
+    T(0, 2) = 0.2;
+    // 2x2 block at (1, 1) carrying eigenvalues 0.3 +/- 0.4i (|lambda| = 0.5, stable)
+    T(1, 1) = 0.3;
+    T(1, 2) = -0.4;
+    T(2, 1) = 0.4;
+    T(2, 2) = 0.3;
+    Mat U = Mat::Identity();
+    const Mat T_before = T;
+    const double scale = infinity_norm(T);
+    const double eps = std::numeric_limits<double>::epsilon();
+
+    auto predicate = [](std::complex<double> lam) { return std::abs(lam) < 1.0; };
+    auto r = ctrlpp::detail::reorder_real_schur<double, N>(T, U, predicate);
+
+    REQUIRE(r.complete);
+    // The 2x2 block counts as two eigenvalues.
+    CHECK(r.placed == 2);
+
+    // The 2x2 complex-pair block is now at position (0, 0); its eigenvalues
+    // still satisfy |lambda| < 1.
+    const double a = T(0, 0);
+    const double b = T(0, 1);
+    const double c = T(1, 0);
+    const double d = T(1, 1);
+    const double discr = (a + d) * (a + d) / 4.0 - (a * d - b * c);
+    const double abs_lam = (discr < 0.0)
+        ? std::sqrt(a * d - b * c)
+        : std::max(std::abs((a + d) / 2.0 + std::sqrt(discr)),
+                   std::abs((a + d) / 2.0 - std::sqrt(discr)));
+    CHECK(abs_lam < 1.0);
+
+    // Trace preserved, U orthogonal, similarity identity.
+    CHECK_THAT(T.trace(), WithinAbs(T_before.trace(), 100 * eps * scale));
+    CHECK(orthogonality_residual(U) < 100 * eps * N);
+    Mat reconstructed = U.transpose() * T_before * U;
+    CHECK((reconstructed - T).norm() < 1000 * eps * scale);
+}
+
+TEST_CASE("reorder_real_schur preserves U orthogonality across multiple swaps")
+{
+    constexpr int N = 8;
+    using Mat = Eigen::Matrix<double, N, N>;
+    // Build a random quasi-triangular T via RealSchur of a random 8x8.
+    Eigen::Matrix<double, N, N> A = Eigen::Matrix<double, N, N>::Random();
+    Eigen::RealSchur<Eigen::Matrix<double, N, N>> schur(A);
+    Mat T = schur.matrixT();
+    Mat U = schur.matrixU();
+    const Mat T_before = T;
+    const Mat U_before = U;
+    const double scale = infinity_norm(T);
+    const double eps = std::numeric_limits<double>::epsilon();
+
+    auto predicate = [](std::complex<double> lam) {
+        return std::abs(std::real(lam)) < 0.7;
+    };
+    auto r = ctrlpp::detail::reorder_real_schur<double, N>(T, U, predicate);
+
+    // Regardless of how many swaps were accepted or rejected, U must remain
+    // orthogonal and T must remain similar to the original via U.
+    CHECK(orthogonality_residual(U) < 1000 * eps * N);
+
+    // Invariant preserved by reorder_real_schur: if A = U_before T_before U_before^T
+    // then A = U_final T_final U_final^T after in-place update.
+    Mat A_before = U_before * T_before * U_before.transpose();
+    Mat A_after  = U * T * U.transpose();
+    CHECK((A_after - A_before).norm() < 10000 * eps * scale);
+
+    // The accumulated rotation Q_total = U_before^T * U_final is orthogonal.
+    Mat Q_total = U_before.transpose() * U;
+    CHECK(orthogonality_residual(Q_total) < 1000 * eps * N);
+
+    // r.placed >= 0 and r.subspace_separation > 0 regardless of outcome.
+    CHECK(r.placed >= 0);
+    CHECK(r.subspace_separation >= 0.0);
+}
