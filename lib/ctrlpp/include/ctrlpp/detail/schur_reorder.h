@@ -239,17 +239,269 @@ auto standardize_2x2_block(Eigen::Matrix<Scalar, N, N>& T,
     }
 }
 
-// --- Swap dispatcher placeholder (Task 3) ---
+// --- 1x1/1x1 closed-form swap (always succeeds per Bai-Demmel 1993, p.79) ---
+//
+// Solves the scalar Sylvester equation t11 * x - x * t22 = t12 for x, then
+// applies the overflow-safe Givens rotation (Golub-Van Loan Alg. 5.1.3) to
+// T (two-sided) and U (right-multiply). When eigenvalues coincide within
+// eps * max(|t11|, |t22|) the swap reduces to a no-op (LAPACK convention).
+
+template <typename Scalar, int N>
+auto swap_real_schur_1x1(Eigen::Matrix<Scalar, N, N>& T,
+                         Eigen::Matrix<Scalar, N, N>& U,
+                         int p, Scalar& pivot_ratio_out) -> bool
+{
+    using std::abs;
+    using std::sqrt;
+    using std::hypot;
+
+    const Scalar eps = std::numeric_limits<Scalar>::epsilon();
+
+    const Scalar t11 = T(p,     p);
+    const Scalar t22 = T(p + 1, p + 1);
+    const Scalar t12 = T(p,     p + 1);
+    const Scalar diff = t11 - t22;
+
+    // Coinciding eigenvalues -> no-op (LAPACK: swap is trivial).
+    if (abs(diff) < eps * std::max(abs(t11), abs(t22)))
+    {
+        pivot_ratio_out = Scalar{1};
+        return true;
+    }
+
+    // G = [[cs, -sn], [sn, cs]] chosen so that G^T * [[t11, t12], [0, t22]] * G
+    // has zero at position (1, 0). Solving for s/c == -diff/t12 gives
+    // (cs, sn) = (t12, -diff) / sqrt(t12^2 + diff^2); std::hypot avoids
+    // overflow/underflow for ill-scaled inputs.
+    const Scalar r = hypot(t12, diff);
+    const Scalar cs = t12 / r;
+    const Scalar sn = -diff / r;
+
+    // Similarity on rows (p, p+1) of T.
+    for (int j = 0; j < N; ++j)
+    {
+        const Scalar a0 = T(p,     j);
+        const Scalar a1 = T(p + 1, j);
+        T(p,     j) =  cs * a0 + sn * a1;
+        T(p + 1, j) = -sn * a0 + cs * a1;
+    }
+    // Similarity on cols (p, p+1) of T; U accumulates right-rotations.
+    for (int i = 0; i < N; ++i)
+    {
+        const Scalar a0 = T(i, p);
+        const Scalar a1 = T(i, p + 1);
+        T(i, p)     =  cs * a0 + sn * a1;
+        T(i, p + 1) = -sn * a0 + cs * a1;
+
+        const Scalar u0 = U(i, p);
+        const Scalar u1 = U(i, p + 1);
+        U(i, p)     =  cs * u0 + sn * u1;
+        U(i, p + 1) = -sn * u0 + cs * u1;
+    }
+
+    // Enforce exact zero on the new subdiagonal (1x1/1x1 always succeeds).
+    T(p + 1, p) = Scalar{0};
+    pivot_ratio_out = Scalar{1};
+    return true;
+}
+
+// --- Generalised Bai-Demmel swap via 4x4 Kronecker Sylvester (per D-05) ---
+//
+// Handles 1x1/2x2, 2x2/1x1, and 2x2/2x2 in a unified code path. Builds the
+// Kronecker operator K = I_{n2} kron A11 - A22^T kron I_{n1} on a fixed 4x4
+// Eigen matrix (padding unused entries with zero); the rank-revealing
+// ColPivHouseholderQR pivots unused columns to the back so
+// R(m-1, m-1) / R(0, 0) is the correct conditioning signal regardless of
+// the active subsystem size m = n1 * n2. Rejection applies both
+// conditioning-signal and LAPACK-style post-swap residual tests; when
+// accepted, the tentative similarity is written back into T and
+// accumulated into U.
+
+template <typename Scalar, int N>
+auto swap_real_schur_2x2_general(Eigen::Matrix<Scalar, N, N>& T,
+                                 Eigen::Matrix<Scalar, N, N>& U,
+                                 int p, int n1, int n2,
+                                 Scalar& pivot_ratio_out) -> bool
+{
+    using std::abs;
+
+    const Scalar eps = std::numeric_limits<Scalar>::epsilon();
+    const int m = n1 * n2;   // 2, 2, or 4
+    const int w = n1 + n2;   // 2, 3, or 4
+
+    // --- Assemble the Kronecker system K * vec(X) = vec(A12) on fixed 4x4. ---
+    Eigen::Matrix<Scalar, 4, 4> K   = Eigen::Matrix<Scalar, 4, 4>::Zero();
+    Eigen::Matrix<Scalar, 4, 1> rhs = Eigen::Matrix<Scalar, 4, 1>::Zero();
+
+    // vec-by-columns index of X(i, j) is row = j * n1 + i.
+    for (int j = 0; j < n2; ++j)
+    {
+        for (int i = 0; i < n1; ++i)
+        {
+            const int row = j * n1 + i;
+            // (I_{n2} kron A11) * vec(X): row += sum_k A11(i, k) * X(k, j)
+            for (int k = 0; k < n1; ++k)
+                K(row, j * n1 + k) += T(p + i, p + k);
+            // -(A22^T kron I_{n1}) * vec(X): row -= sum_l A22(l, j) * X(i, l)
+            for (int l = 0; l < n2; ++l)
+                K(row, l * n1 + i) -= T(p + n1 + l, p + n1 + j);
+            rhs(row) = T(p + i, p + n1 + j);
+        }
+    }
+
+    // --- Rank-revealing QR gives the conditioning signal for free. ---
+    Eigen::ColPivHouseholderQR<Eigen::Matrix<Scalar, 4, 4>> qr(K);
+    const auto R_mat = qr.matrixR();
+    const Scalar r_first = abs(R_mat(0,     0));
+    const Scalar r_last  = abs(R_mat(m - 1, m - 1));
+    pivot_ratio_out = (r_first > Scalar{0}) ? (r_last / r_first) : Scalar{0};
+
+    const Scalar scale_T = T.cwiseAbs().maxCoeff();
+    // Structural rejection: Sylvester operator effectively singular.
+    if (pivot_ratio_out < eps)
+        return false;
+
+    const Eigen::Matrix<Scalar, 4, 1> x_full = qr.solve(rhs);
+
+    // Unpack X (n1 x n2) from the column-stacked solution.
+    Eigen::Matrix<Scalar, 2, 2> X = Eigen::Matrix<Scalar, 2, 2>::Zero();
+    for (int j = 0; j < n2; ++j)
+        for (int i = 0; i < n1; ++i)
+            X(i, j) = x_full(j * n1 + i);
+
+    // --- Build orthogonal Q from QR of G = [[-X]; I_{n2}]  (shape (n1+n2) x n2). ---
+    Eigen::Matrix<Scalar, 4, 2> G = Eigen::Matrix<Scalar, 4, 2>::Zero();
+    for (int j = 0; j < n2; ++j)
+    {
+        for (int i = 0; i < n1; ++i)
+            G(i, j) = -X(i, j);
+        G(n1 + j, j) = Scalar{1};
+    }
+
+    // Fixed 4x2 Householder QR; reconstruct the (w x w) Q from the full
+    // 4x4 householderQ() by truncating to the active rows/cols and padding
+    // the trailing block with identity for clean 4x4 fused arithmetic below.
+    Eigen::HouseholderQR<Eigen::Matrix<Scalar, 4, 2>> qr_G(G);
+    const Eigen::Matrix<Scalar, 4, 4> Q_full = qr_G.householderQ();
+    Eigen::Matrix<Scalar, 4, 4> Q = Eigen::Matrix<Scalar, 4, 4>::Identity();
+    for (int i = 0; i < w; ++i)
+        for (int j = 0; j < w; ++j)
+            Q(i, j) = Q_full(i, j);
+
+    // --- Tentative similarity on the w x w block (computed on fixed 4x4). ---
+    Eigen::Matrix<Scalar, 4, 4> A_block = Eigen::Matrix<Scalar, 4, 4>::Zero();
+    for (int i = 0; i < w; ++i)
+        for (int j = 0; j < w; ++j)
+            A_block(i, j) = T(p + i, p + j);
+
+    // Compute A_new = Q^T * A_block * Q on the active w x w sub-region
+    // without Eigen slice expressions (avoids dynamic-size assignment into
+    // fixed 4x4 targets).
+    Eigen::Matrix<Scalar, 4, 4> QtA = Eigen::Matrix<Scalar, 4, 4>::Zero();
+    for (int i = 0; i < w; ++i)
+        for (int j = 0; j < w; ++j)
+        {
+            Scalar acc = Scalar{0};
+            for (int k = 0; k < w; ++k)
+                acc += Q(k, i) * A_block(k, j);  // Q^T(i, k) = Q(k, i)
+            QtA(i, j) = acc;
+        }
+    Eigen::Matrix<Scalar, 4, 4> A_new = Eigen::Matrix<Scalar, 4, 4>::Zero();
+    for (int i = 0; i < w; ++i)
+        for (int j = 0; j < w; ++j)
+        {
+            Scalar acc = Scalar{0};
+            for (int k = 0; k < w; ++k)
+                acc += QtA(i, k) * Q(k, j);
+            A_new(i, j) = acc;
+        }
+
+    // --- Post-swap residual rejection (LAPACK SLAEXC, Bai-Demmel 1993 p.79). ---
+    Scalar residual_norm = Scalar{0};
+    for (int i = n2; i < w; ++i)
+        for (int j = 0; j < n2; ++j)
+            residual_norm = std::max(residual_norm, abs(A_new(i, j)));
+    const Scalar reject_threshold =
+        detail_constants::rejection_multiplier<Scalar>() * eps * scale_T;
+    if (residual_norm > reject_threshold)
+        return false;
+
+    // --- Accept the swap: write A_new back into T with exact zero on the
+    //     new (2,1) block; propagate similarity to off-block rows/cols; and
+    //     accumulate the similarity into U. ---
+
+    // Write back the w x w block; zero the new (2,1) block exactly.
+    for (int i = 0; i < w; ++i)
+        for (int j = 0; j < w; ++j)
+            T(p + i, p + j) = A_new(i, j);
+    for (int i = n2; i < w; ++i)
+        for (int j = 0; j < n2; ++j)
+            T(p + i, p + j) = Scalar{0};
+
+    // Rows above/below the w-block (i.e. other cols within rows p..p+w-1
+    // were already covered by the block assignment above; the similarity
+    // on the full T also needs to update cols outside [p, p+w) for rows
+    // [p, p+w) and rows outside [p, p+w) for cols [p, p+w)).
+
+    // Left-multiply rows (p .. p+w-1) by Q^T across all N columns,
+    // skipping cols in [p, p+w) which were already handled by the block
+    // similarity above.
+    for (int j = 0; j < N; ++j)
+    {
+        if (j >= p && j < p + w)
+            continue;  // block region already handled
+        Scalar tmp[4] = {Scalar{0}, Scalar{0}, Scalar{0}, Scalar{0}};
+        for (int i = 0; i < w; ++i)
+            for (int k = 0; k < w; ++k)
+                tmp[i] += Q(k, i) * T(p + k, j);  // (Q^T)(i, k) = Q(k, i)
+        for (int i = 0; i < w; ++i)
+            T(p + i, j) = tmp[i];
+    }
+
+    // Right-multiply cols (p .. p+w-1) by Q across all N rows, skipping
+    // rows in [p, p+w) already handled by the block similarity.
+    for (int i = 0; i < N; ++i)
+    {
+        if (i >= p && i < p + w)
+            continue;
+        Scalar tmp[4] = {Scalar{0}, Scalar{0}, Scalar{0}, Scalar{0}};
+        for (int j = 0; j < w; ++j)
+            for (int k = 0; k < w; ++k)
+                tmp[j] += T(i, p + k) * Q(k, j);
+        for (int j = 0; j < w; ++j)
+            T(i, p + j) = tmp[j];
+    }
+
+    // Accumulate Q into U (U_new = U * Q) on cols (p .. p+w-1) across all rows.
+    for (int i = 0; i < N; ++i)
+    {
+        Scalar tmp[4] = {Scalar{0}, Scalar{0}, Scalar{0}, Scalar{0}};
+        for (int j = 0; j < w; ++j)
+            for (int k = 0; k < w; ++k)
+                tmp[j] += U(i, p + k) * Q(k, j);
+        for (int j = 0; j < w; ++j)
+            U(i, p + j) = tmp[j];
+    }
+
+    return true;
+}
+
+// --- Swap dispatcher: runtime branch on (n1, n2). ---
+//
+// The Cond tag is accepted for future policy dispatch (D-08). In this phase
+// only pivot_ratio_conditioning is reachable; hager_higham_conditioning is
+// blocked by the static_assert inside reorder_real_schur.
 
 template <typename Scalar, int N, typename Cond>
-auto swap_real_schur_blocks(Eigen::Matrix<Scalar, N, N>& /*T*/,
-                            Eigen::Matrix<Scalar, N, N>& /*U*/,
-                            int /*p*/, int /*n1*/, int /*n2*/,
+auto swap_real_schur_blocks(Eigen::Matrix<Scalar, N, N>& T,
+                            Eigen::Matrix<Scalar, N, N>& U,
+                            int p, int n1, int n2,
                             Cond /*tag*/,
                             Scalar& pivot_ratio_out) -> bool
 {
-    pivot_ratio_out = Scalar{1};
-    return true;  // Implementation in Task 3.
+    if (n1 == 1 && n2 == 1)
+        return swap_real_schur_1x1<Scalar, N>(T, U, p, pivot_ratio_out);
+    return swap_real_schur_2x2_general<Scalar, N>(T, U, p, n1, n2, pivot_ratio_out);
 }
 
 }

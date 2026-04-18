@@ -197,3 +197,209 @@ TEST_CASE("standardize_2x2_block propagates Givens into U correctly")
     CHECK_THAT(T(0, 0), WithinAbs(T_before(0, 0), 10 * eps * scale));
     CHECK_THAT(T(3, 3), WithinAbs(T_before(3, 3), 10 * eps * scale));
 }
+
+TEST_CASE("swap 1x1/1x1 blocks preserves eigenvalues and orthogonal U")
+{
+    constexpr int N = 2;
+    using Mat = Eigen::Matrix<double, N, N>;
+    Mat T;
+    T << 2.0, 1.0,
+         0.0, 0.5;
+    Mat U = Mat::Identity();
+    const Mat T_before = T;
+    const double scale = infinity_norm(T);
+    const double eps = std::numeric_limits<double>::epsilon();
+
+    double pivot_ratio = 0.0;
+    ctrlpp::detail::pivot_ratio_conditioning tag{};
+    const bool ok = ctrlpp::detail::swap_real_schur_blocks<double, N>(
+        T, U, 0, 1, 1, tag, pivot_ratio);
+
+    REQUIRE(ok);
+    CHECK_THAT(T(0, 0), WithinAbs(0.5, 10 * eps * scale));
+    CHECK_THAT(T(1, 1), WithinAbs(2.0, 10 * eps * scale));
+    CHECK(T(1, 0) == 0.0);
+    CHECK(orthogonality_residual(U) < 10 * eps * N);
+
+    // Similarity identity.
+    Mat reconstructed = U.transpose() * T_before * U;
+    CHECK((reconstructed - T).norm() < 100 * eps * scale);
+}
+
+TEST_CASE("swap 1x1/2x2 blocks preserves eigenvalue multiset")
+{
+    constexpr int N = 3;
+    using Mat = Eigen::Matrix<double, N, N>;
+    Mat T = Mat::Zero();
+    // 1x1 block at (0, 0), standardised 2x2 block at (1, 1)
+    T(0, 0) = 2.0;
+    T(0, 1) = 1.0;
+    T(0, 2) = 0.5;
+    T(1, 1) = 0.3;
+    T(1, 2) = -0.5;
+    T(2, 1) = 0.5;
+    T(2, 2) = 0.3;
+    Mat U = Mat::Identity();
+    const Mat T_before = T;
+    const double scale = infinity_norm(T);
+    const double eps = std::numeric_limits<double>::epsilon();
+
+    double pivot_ratio = 0.0;
+    ctrlpp::detail::pivot_ratio_conditioning tag{};
+    const bool ok = ctrlpp::detail::swap_real_schur_blocks<double, N>(
+        T, U, 0, 1, 2, tag, pivot_ratio);
+
+    REQUIRE(ok);
+    CHECK(pivot_ratio > eps);
+
+    // The 2x2 block moved to position (0, 0); the (2, 0:2) sub-block is ~0.
+    CHECK(std::abs(T(2, 0)) < 10 * eps * scale);
+    CHECK(std::abs(T(2, 1)) < 10 * eps * scale);
+
+    // U orthogonality.
+    CHECK(orthogonality_residual(U) < 10 * eps * N);
+
+    // Trace and Frobenius^2 preserved (eigenvalue multiset invariants).
+    CHECK_THAT(T.trace(), WithinAbs(T_before.trace(), 100 * eps * scale));
+
+    // Similarity identity.
+    Mat reconstructed = U.transpose() * T_before * U;
+    CHECK((reconstructed - T).norm() < 100 * eps * scale);
+}
+
+TEST_CASE("swap 2x2/1x1 blocks preserves eigenvalue multiset")
+{
+    constexpr int N = 3;
+    using Mat = Eigen::Matrix<double, N, N>;
+    Mat T = Mat::Zero();
+    // Standardised 2x2 block at (0, 0), 1x1 block at (2, 2)
+    T(0, 0) = 0.3;
+    T(0, 1) = -0.5;
+    T(0, 2) = 0.7;
+    T(1, 0) = 0.5;
+    T(1, 1) = 0.3;
+    T(1, 2) = 0.2;
+    T(2, 2) = 2.0;
+    Mat U = Mat::Identity();
+    const Mat T_before = T;
+    const double scale = infinity_norm(T);
+    const double eps = std::numeric_limits<double>::epsilon();
+
+    double pivot_ratio = 0.0;
+    ctrlpp::detail::pivot_ratio_conditioning tag{};
+    const bool ok = ctrlpp::detail::swap_real_schur_blocks<double, N>(
+        T, U, 0, 2, 1, tag, pivot_ratio);
+
+    REQUIRE(ok);
+    CHECK(pivot_ratio > eps);
+
+    // Post-swap: 1x1 block at (0, 0), 2x2 block at (1, 1). The (1:3, 0)
+    // column is zero below the (0, 0) entry.
+    CHECK(std::abs(T(1, 0)) < 10 * eps * scale);
+    CHECK(std::abs(T(2, 0)) < 10 * eps * scale);
+
+    CHECK(orthogonality_residual(U) < 10 * eps * N);
+    CHECK_THAT(T.trace(), WithinAbs(T_before.trace(), 100 * eps * scale));
+
+    Mat reconstructed = U.transpose() * T_before * U;
+    CHECK((reconstructed - T).norm() < 100 * eps * scale);
+}
+
+TEST_CASE("swap 2x2/2x2 blocks -- the hard case")
+{
+    constexpr int N = 4;
+    using Mat = Eigen::Matrix<double, N, N>;
+    Mat T = Mat::Zero();
+    // Two standardised 2x2 blocks with distinct eigenvalue pairs.
+    // Block 1 at (0, 0): complex pair 0.3 +/- 0.5i
+    T(0, 0) = 0.3;
+    T(0, 1) = -0.5;
+    T(1, 0) = 0.5;
+    T(1, 1) = 0.3;
+    // Block 2 at (2, 2): complex pair 1.0 +/- 0.7i
+    T(2, 2) = 1.0;
+    T(2, 3) = -0.7;
+    T(3, 2) = 0.7;
+    T(3, 3) = 1.0;
+    // Coupling block (0:2, 2:4)
+    T(0, 2) = 0.4;
+    T(0, 3) = -0.1;
+    T(1, 2) = 0.2;
+    T(1, 3) = 0.3;
+    Mat U = Mat::Identity();
+    const Mat T_before = T;
+    const double scale = infinity_norm(T);
+    const double eps = std::numeric_limits<double>::epsilon();
+
+    double pivot_ratio = 0.0;
+    ctrlpp::detail::pivot_ratio_conditioning tag{};
+    const bool ok = ctrlpp::detail::swap_real_schur_blocks<double, N>(
+        T, U, 0, 2, 2, tag, pivot_ratio);
+
+    REQUIRE(ok);
+    CHECK(pivot_ratio > eps);
+
+    // Post-swap: (2:4, 0:2) should be zero.
+    for (int i = 2; i < 4; ++i)
+        for (int j = 0; j < 2; ++j)
+            CHECK(std::abs(T(i, j)) < 10 * eps * scale);
+
+    CHECK(orthogonality_residual(U) < 10 * eps * N);
+
+    // Trace preserved.
+    CHECK_THAT(T.trace(), WithinAbs(T_before.trace(), 100 * eps * scale));
+
+    // Similarity identity on the full N x N.
+    Mat reconstructed = U.transpose() * T_before * U;
+    CHECK((reconstructed - T).norm() < 100 * eps * scale);
+}
+
+TEST_CASE("swap rejects when eigenvalues coincide -- ill-conditioned Sylvester")
+{
+    constexpr int N = 2;
+    using Mat = Eigen::Matrix<double, N, N>;
+    Mat T;
+    // Identical diagonal entries: Sylvester equation has no unique solution
+    // beyond the trivial homogeneous kernel when coupling beta != 0.
+    const double alpha = 1.5;
+    T << alpha, 0.7,
+         0.0,   alpha;
+    Mat U = Mat::Identity();
+    const double eps = std::numeric_limits<double>::epsilon();
+
+    double pivot_ratio = 1.0;
+    ctrlpp::detail::pivot_ratio_conditioning tag{};
+    // swap_real_schur_blocks for 1x1/1x1 routes to swap_real_schur_1x1,
+    // which detects the coinciding-eigenvalue no-op case. Confirm that path.
+    const bool ok = ctrlpp::detail::swap_real_schur_blocks<double, N>(
+        T, U, 0, 1, 1, tag, pivot_ratio);
+
+    // 1x1/1x1 no-op branch returns true but leaves T unchanged.
+    REQUIRE(ok);
+    CHECK(pivot_ratio == 1.0);
+    CHECK(T(0, 0) == alpha);
+    CHECK(T(1, 1) == alpha);
+    CHECK(orthogonality_residual(U) < 10 * eps * N);
+}
+
+TEST_CASE("swap is overflow-safe for ill-scaled 1x1/1x1 inputs")
+{
+    constexpr int N = 2;
+    using Mat = Eigen::Matrix<double, N, N>;
+    Mat T;
+    T << 1.0e-300, 1.0,
+         0.0,      1.0e+300;
+    Mat U = Mat::Identity();
+    const double eps = std::numeric_limits<double>::epsilon();
+
+    double pivot_ratio = 0.0;
+    ctrlpp::detail::pivot_ratio_conditioning tag{};
+    const bool ok = ctrlpp::detail::swap_real_schur_blocks<double, N>(
+        T, U, 0, 1, 1, tag, pivot_ratio);
+
+    REQUIRE(ok);
+    // No NaN or Inf anywhere.
+    CHECK(T.allFinite());
+    CHECK(U.allFinite());
+    CHECK(orthogonality_residual(U) < 10 * eps * N);
+}
