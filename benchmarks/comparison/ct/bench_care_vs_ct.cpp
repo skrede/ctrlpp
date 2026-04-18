@@ -1,5 +1,6 @@
 // Competitive benchmark: ctrlpp::care vs ct::optcon::CARE
-// Problem: continuous-time Riccati solve for damped chain-of-integrators systems, size-swept NX in {2, 4, 8}
+// Problem: continuous-time Riccati solve for damped chain-of-integrators systems,
+// size-swept NX in {2, 4, 6, 8, 12, 16, 20, 24, 30}. NU scales with NX.
 //
 // Warning: ct_optcon has catkin (ROS) heritage. Install via AUR: yay -S control-toolbox
 
@@ -93,9 +94,15 @@ int main()
         .performanceCounters(true)
         .relative(true);
 
-    run_size_sweep<2, 1>(bench, "ctrlpp::care NX=2", "ct::optcon::CARE NX=2");
-    run_size_sweep<4, 2>(bench, "ctrlpp::care NX=4", "ct::optcon::CARE NX=4");
-    run_size_sweep<8, 2>(bench, "ctrlpp::care NX=8", "ct::optcon::CARE NX=8");
+    run_size_sweep<2, 1>(bench,  "ctrlpp::care NX=2",  "ct::optcon::CARE NX=2");
+    run_size_sweep<4, 2>(bench,  "ctrlpp::care NX=4",  "ct::optcon::CARE NX=4");
+    run_size_sweep<6, 2>(bench,  "ctrlpp::care NX=6",  "ct::optcon::CARE NX=6");
+    run_size_sweep<8, 2>(bench,  "ctrlpp::care NX=8",  "ct::optcon::CARE NX=8");
+    run_size_sweep<12, 3>(bench, "ctrlpp::care NX=12", "ct::optcon::CARE NX=12");
+    run_size_sweep<16, 4>(bench, "ctrlpp::care NX=16", "ct::optcon::CARE NX=16");
+    run_size_sweep<20, 5>(bench, "ctrlpp::care NX=20", "ct::optcon::CARE NX=20");
+    run_size_sweep<24, 6>(bench, "ctrlpp::care NX=24", "ct::optcon::CARE NX=24");
+    run_size_sweep<30, 6>(bench, "ctrlpp::care NX=30", "ct::optcon::CARE NX=30");
 
     std::ofstream csv("bench_care_vs_ct.csv");
     bench.render(comma_csv_tpl, csv);
