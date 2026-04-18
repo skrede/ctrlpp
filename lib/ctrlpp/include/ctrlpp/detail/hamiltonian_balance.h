@@ -68,6 +68,10 @@ auto balance_hamiltonian(
     const Scalar factor_num = Scalar{19};
     const Scalar factor_den = Scalar{20};
     const Scalar factor     = factor_num / factor_den;
+    const Scalar sfmin      = std::numeric_limits<Scalar>::min();
+    const Scalar sfmax      = Scalar{1} / sfmin;
+    const Scalar sfmin2     = sfmin * sclfac;
+    const Scalar sfmax2     = sfmax / sclfac;
 
     D_out = Vec2N::Ones();
     bool noconv = true;
@@ -89,18 +93,26 @@ auto balance_hamiltonian(
 
             Scalar g = r / sclfac;
             Scalar f = Scalar{1};
-            Scalar s = c + r;
+            const Scalar s = c + r;
 
-            while (c < g)
+            while (c < g
+                   && std::max(f, c) < sfmax2
+                   && std::min(r, g) > sfmin2)
             {
                 f *= sclfac;
-                c *= sclfac * sclfac;
+                c *= sclfac;
+                r /= sclfac;
+                g /= sclfac;
             }
-            g = r * sclfac;
-            while (c >= g)
+            g = c / sclfac;
+            while (g >= r
+                   && std::max(r, g) < sfmax2
+                   && std::min({f, c, g}) > sfmin2)
             {
                 f /= sclfac;
-                c /= sclfac * sclfac;
+                c /= sclfac;
+                g /= sclfac;
+                r *= sclfac;
             }
 
             if ((c + r) < factor * s)
