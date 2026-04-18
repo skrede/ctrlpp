@@ -8,3 +8,10 @@ target_link_libraries(bench_lqr_vs_ct PRIVATE
     nanobench
     ct_optcon
 )
+
+add_executable(bench_dare_vs_ct bench_dare_vs_ct.cpp)
+target_link_libraries(bench_dare_vs_ct PRIVATE
+    ctrlpp::ctrlpp
+    nanobench
+    ct_optcon
+)
