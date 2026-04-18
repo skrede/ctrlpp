@@ -33,6 +33,10 @@ class nmpc
 
 public:
     nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
+        : nmpc{std::move(dynamics), config, Solver{}}
+    {}
+
+    nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
         : m_dynamics{std::move(dynamics)}
         , m_config{config}
         , m_N{config.horizon}
@@ -42,6 +46,7 @@ public:
         , m_num_term_slack{m_has_term_slack ? ntc : 0}
         , m_num_vars{(m_N + 1) * nx + m_N * nu + m_num_path_slack + m_num_term_slack}
         , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>()}
+        , m_solver{std::move(solver)}
     {
         m_state->x_ref.resize(static_cast<std::size_t>(m_N + 1), Vector<Scalar, NX>::Zero());
         m_problem = detail::build_nmpc_problem<Scalar, NX, NU, NC, NTC>(m_dynamics, m_config, m_state);

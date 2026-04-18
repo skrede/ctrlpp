@@ -11,6 +11,7 @@
 #include "ctrlpp/control/l1_config.h"
 #include "ctrlpp/control/lqr.h"
 #include "ctrlpp/control/dare.h"
+#include "ctrlpp/control/care.h"
 #include "ctrlpp/control/place.h"
 #include "ctrlpp/control/solver_policy.h"
 

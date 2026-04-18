@@ -119,16 +119,20 @@ void run_benchmark(const std::string& system_name,
     Eigen::Matrix<double, NX, 1> x0 = Eigen::Matrix<double, NX, 1>::Zero();
     x0(0) = 1.0;
 
-    int min_iters = (NX >= 8) ? 10 : 50;
+    int min_iters = (NX >= 8) ? ((horizon >= 20) ? 3 : 10) : 50;
+    int warmup_iters = (NX >= 8 && horizon >= 20) ? 5 : 50;
+
+    // Bound any single solve so a non-converging config cannot stall the run.
+    ctrlpp::argmin_settings<double> bounded_cfg{};
+    bounded_cfg.max_time = 2.0;
 
     // NLopt SLSQP baseline
     {
         ctrlpp::nlopt_settings<double> nlopt_cfg{};
         nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
-        NloptSolver nlopt_solver{nlopt_cfg};
-        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc{dynamics, config, NloptSolver{nlopt_cfg}};
 
-        bench.warmup(50).minEpochIterations(min_iters).title(title)
+        bench.warmup(warmup_iters).minEpochIterations(min_iters).title(title)
             .run("nlopt_slsqp",
                  [&]
                  {
@@ -136,7 +140,7 @@ void run_benchmark(const std::string& system_name,
                      ankerl::nanobench::doNotOptimizeAway(u);
                  });
 
-        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> q{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> q{dynamics, config, NloptSolver{nlopt_cfg}};
         q.solve(x0);
         auto diag = q.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(q);
@@ -154,8 +158,7 @@ void run_benchmark(const std::string& system_name,
 
     // Argmin Kraft SLSQP (reference)
     {
-        ArgminSlsqp solver{};
-        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc{dynamics, config, ArgminSlsqp{bounded_cfg}};
 
         bench.run("argmin_slsqp",
                   [&]
@@ -164,7 +167,7 @@ void run_benchmark(const std::string& system_name,
                       ankerl::nanobench::doNotOptimizeAway(u);
                   });
 
-        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> q{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> q{dynamics, config, ArgminSlsqp{bounded_cfg}};
         q.solve(x0);
         auto diag = q.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(q);
@@ -182,8 +185,7 @@ void run_benchmark(const std::string& system_name,
 
     // Argmin NW-SQP
     {
-        ArgminNwSqp solver{};
-        ctrlpp::nmpc<double, NX, NU, ArgminNwSqp, Dynamics> nmpc{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminNwSqp, Dynamics> nmpc{dynamics, config, ArgminNwSqp{bounded_cfg}};
 
         bench.run("argmin_nw_sqp",
                   [&]
@@ -192,7 +194,7 @@ void run_benchmark(const std::string& system_name,
                       ankerl::nanobench::doNotOptimizeAway(u);
                   });
 
-        ctrlpp::nmpc<double, NX, NU, ArgminNwSqp, Dynamics> q{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminNwSqp, Dynamics> q{dynamics, config, ArgminNwSqp{bounded_cfg}};
         q.solve(x0);
         auto diag = q.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(q);
@@ -210,8 +212,7 @@ void run_benchmark(const std::string& system_name,
 
     // Argmin Filter SLSQP
     {
-        ArgminFilterSlsqp solver{};
-        ctrlpp::nmpc<double, NX, NU, ArgminFilterSlsqp, Dynamics> nmpc{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminFilterSlsqp, Dynamics> nmpc{dynamics, config, ArgminFilterSlsqp{bounded_cfg}};
 
         bench.run("argmin_filter_slsqp",
                   [&]
@@ -220,7 +221,7 @@ void run_benchmark(const std::string& system_name,
                       ankerl::nanobench::doNotOptimizeAway(u);
                   });
 
-        ctrlpp::nmpc<double, NX, NU, ArgminFilterSlsqp, Dynamics> q{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminFilterSlsqp, Dynamics> q{dynamics, config, ArgminFilterSlsqp{bounded_cfg}};
         q.solve(x0);
         auto diag = q.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(q);
@@ -238,8 +239,7 @@ void run_benchmark(const std::string& system_name,
 
     // Argmin Filter NW-SQP
     {
-        ArgminFilterNwSqp solver{};
-        ctrlpp::nmpc<double, NX, NU, ArgminFilterNwSqp, Dynamics> nmpc{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminFilterNwSqp, Dynamics> nmpc{dynamics, config, ArgminFilterNwSqp{bounded_cfg}};
 
         bench.run("argmin_filter_nw_sqp",
                   [&]
@@ -248,7 +248,7 @@ void run_benchmark(const std::string& system_name,
                       ankerl::nanobench::doNotOptimizeAway(u);
                   });
 
-        ctrlpp::nmpc<double, NX, NU, ArgminFilterNwSqp, Dynamics> q{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminFilterNwSqp, Dynamics> q{dynamics, config, ArgminFilterNwSqp{bounded_cfg}};
         q.solve(x0);
         auto diag = q.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(q);
@@ -268,8 +268,8 @@ void run_benchmark(const std::string& system_name,
     {
         ctrlpp::argmin_settings<double> auglag_cfg{};
         auglag_cfg.max_eval = 1000;
-        ArgminAuglag solver{auglag_cfg};
-        ctrlpp::nmpc<double, NX, NU, ArgminAuglag, Dynamics> nmpc{dynamics, config};
+        auglag_cfg.max_time = 2.0;
+        ctrlpp::nmpc<double, NX, NU, ArgminAuglag, Dynamics> nmpc{dynamics, config, ArgminAuglag{auglag_cfg}};
 
         bench.run("argmin_auglag",
                   [&]
@@ -278,7 +278,7 @@ void run_benchmark(const std::string& system_name,
                       ankerl::nanobench::doNotOptimizeAway(u);
                   });
 
-        ctrlpp::nmpc<double, NX, NU, ArgminAuglag, Dynamics> q{dynamics, config};
+        ctrlpp::nmpc<double, NX, NU, ArgminAuglag, Dynamics> q{dynamics, config, ArgminAuglag{auglag_cfg}};
         q.solve(x0);
         auto diag = q.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(q);
@@ -324,16 +324,22 @@ void run_convergence(const std::string& system_name,
         for(std::size_t i = 0; i < NX; ++i)
             x0(static_cast<Eigen::Index>(i)) = dist(rng);
 
-        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config};
-        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_slsqp{dynamics, config};
-        ctrlpp::nmpc<double, NX, NU, ArgminNwSqp, Dynamics> nmpc_nw{dynamics, config};
-        ctrlpp::nmpc<double, NX, NU, ArgminFilterSlsqp, Dynamics> nmpc_fs{dynamics, config};
-        ctrlpp::nmpc<double, NX, NU, ArgminFilterNwSqp, Dynamics> nmpc_fnw{dynamics, config};
+        ctrlpp::nlopt_settings<double> nlopt_cfg{};
+        nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
+
+        ctrlpp::argmin_settings<double> bounded_cfg{};
+        bounded_cfg.max_time = 2.0;
 
         ctrlpp::argmin_settings<double> auglag_cfg{};
         auglag_cfg.max_eval = 1000;
-        ArgminAuglag auglag_solver{auglag_cfg};
-        ctrlpp::nmpc<double, NX, NU, ArgminAuglag, Dynamics> nmpc_aug{dynamics, config};
+        auglag_cfg.max_time = 2.0;
+
+        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config, NloptSolver{nlopt_cfg}};
+        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_slsqp{dynamics, config, ArgminSlsqp{bounded_cfg}};
+        ctrlpp::nmpc<double, NX, NU, ArgminNwSqp, Dynamics> nmpc_nw{dynamics, config, ArgminNwSqp{bounded_cfg}};
+        ctrlpp::nmpc<double, NX, NU, ArgminFilterSlsqp, Dynamics> nmpc_fs{dynamics, config, ArgminFilterSlsqp{bounded_cfg}};
+        ctrlpp::nmpc<double, NX, NU, ArgminFilterNwSqp, Dynamics> nmpc_fnw{dynamics, config, ArgminFilterNwSqp{bounded_cfg}};
+        ctrlpp::nmpc<double, NX, NU, ArgminAuglag, Dynamics> nmpc_aug{dynamics, config, ArgminAuglag{auglag_cfg}};
 
         if(nmpc_nlopt.solve(x0).has_value()) ++nlopt_successes;
         if(nmpc_slsqp.solve(x0).has_value()) ++slsqp_successes;
