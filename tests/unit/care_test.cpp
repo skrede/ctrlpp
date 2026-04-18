@@ -1,13 +1,21 @@
 #include "ctrlpp/control/care.h"
+#include "ctrlpp/detail/care_methods.h"
 
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <tuple>
 #include <cmath>
 
 
-TEST_CASE("care scalar integrator analytical")
+using care_method_tags = std::tuple<
+    ctrlpp::detail::schur_care_method,
+    ctrlpp::detail::sign_function_care_method>;
+
+
+TEMPLATE_LIST_TEST_CASE("care scalar integrator analytical", "[care]", care_method_tags)
 {
     // A=0, B=1, Q=1, R=1 => P^2 = 1 => P = 1
     Eigen::Matrix<double, 1, 1> A, B, Q, R;
@@ -16,13 +24,13 @@ TEST_CASE("care scalar integrator analytical")
     Q(0, 0) = 1.0;
     R(0, 0) = 1.0;
 
-    auto result = ctrlpp::care<double, 1, 1>(A, B, Q, R);
+    auto result = ctrlpp::care<double, 1, 1, TestType>(A, B, Q, R);
     REQUIRE(result.has_value());
 
     CHECK_THAT(result->P(0, 0), Catch::Matchers::WithinAbs(1.0, 1e-10));
 }
 
-TEST_CASE("care double integrator analytical")
+TEMPLATE_LIST_TEST_CASE("care double integrator analytical", "[care]", care_method_tags)
 {
     // Continuous double integrator: A=[[0,1],[0,0]], B=[[0],[1]], Q=I, R=1
     // Analytical P = [[sqrt(3), 1], [1, sqrt(3)]]
@@ -35,7 +43,7 @@ TEST_CASE("care double integrator analytical")
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
-    auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
+    auto result = ctrlpp::care<double, 2, 1, TestType>(A, B, Q, R);
     REQUIRE(result.has_value());
 
     const auto& P = result->P;
@@ -50,7 +58,7 @@ TEST_CASE("care double integrator analytical")
     CHECK(residual.norm() < 1e-10);
 }
 
-TEST_CASE("care 3-state damped system")
+TEMPLATE_LIST_TEST_CASE("care 3-state damped system", "[care]", care_method_tags)
 {
     Eigen::Matrix<double, 3, 3> A, Q;
     Eigen::Matrix<double, 3, 1> B;
@@ -63,7 +71,7 @@ TEST_CASE("care 3-state damped system")
     Q = Eigen::Matrix<double, 3, 3>::Identity();
     R(0, 0) = 1.0;
 
-    auto result = ctrlpp::care<double, 3, 1>(A, B, Q, R);
+    auto result = ctrlpp::care<double, 3, 1, TestType>(A, B, Q, R);
     REQUIRE(result.has_value());
 
     const auto& P = result->P;
@@ -78,7 +86,7 @@ TEST_CASE("care 3-state damped system")
         CHECK(eigsolver.eigenvalues()(i) >= -1e-10);
 }
 
-TEST_CASE("care closed-loop stable")
+TEMPLATE_LIST_TEST_CASE("care closed-loop stable", "[care]", care_method_tags)
 {
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
@@ -89,7 +97,7 @@ TEST_CASE("care closed-loop stable")
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
-    auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
+    auto result = ctrlpp::care<double, 2, 1, TestType>(A, B, Q, R);
     REQUIRE(result.has_value());
 
     const auto& P = result->P;
@@ -101,7 +109,7 @@ TEST_CASE("care closed-loop stable")
         CHECK(solver.eigenvalues()(i).real() < 0.0);
 }
 
-TEST_CASE("care non-stabilizable returns nullopt")
+TEMPLATE_LIST_TEST_CASE("care non-stabilizable returns nullopt", "[care]", care_method_tags)
 {
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
@@ -112,11 +120,11 @@ TEST_CASE("care non-stabilizable returns nullopt")
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
-    auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
+    auto result = ctrlpp::care<double, 2, 1, TestType>(A, B, Q, R);
     CHECK_FALSE(result.has_value());
 }
 
-TEST_CASE("care with N cross-weight")
+TEMPLATE_LIST_TEST_CASE("care with N cross-weight", "[care]", care_method_tags)
 {
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B, N;
@@ -128,20 +136,20 @@ TEST_CASE("care with N cross-weight")
     R(0, 0) = 1.0;
     N << 0.1, 0.2;
 
-    auto result_with_n = ctrlpp::care<double, 2, 1>(A, B, Q, R, N);
+    auto result_with_n = ctrlpp::care<double, 2, 1, TestType>(A, B, Q, R, N);
     REQUIRE(result_with_n.has_value());
 
     auto Rinv = R.inverse();
     Eigen::Matrix<double, 2, 2> Qp = Q - N * Rinv * N.transpose();
     Eigen::Matrix<double, 2, 2> Ap = A - B * Rinv * N.transpose();
 
-    auto result_standard = ctrlpp::care<double, 2, 1>(Ap, B, Qp, R);
+    auto result_standard = ctrlpp::care<double, 2, 1, TestType>(Ap, B, Qp, R);
     REQUIRE(result_standard.has_value());
 
     CHECK((result_with_n->P - result_standard->P).norm() < 1e-10);
 }
 
-TEST_CASE("care solution is symmetric")
+TEMPLATE_LIST_TEST_CASE("care solution is symmetric", "[care]", care_method_tags)
 {
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
@@ -152,7 +160,7 @@ TEST_CASE("care solution is symmetric")
     Q = Eigen::Matrix<double, 2, 2>::Identity();
     R(0, 0) = 1.0;
 
-    auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
+    auto result = ctrlpp::care<double, 2, 1, TestType>(A, B, Q, R);
     REQUIRE(result.has_value());
 
     CHECK((result->P - result->P.transpose()).norm() < 1e-10);
