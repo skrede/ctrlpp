@@ -20,7 +20,7 @@ TEST_CASE("dare scalar integrator golden ratio")
     REQUIRE(result.has_value());
 
     double golden = (1.0 + std::sqrt(5.0)) / 2.0;
-    CHECK_THAT((*result)(0, 0), Catch::Matchers::WithinAbs(golden, 1e-10));
+    CHECK_THAT(result->P(0, 0), Catch::Matchers::WithinAbs(golden, 1e-10));
 }
 
 TEST_CASE("dare double integrator 2x2")
@@ -38,7 +38,7 @@ TEST_CASE("dare double integrator 2x2")
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    auto P = *result;
+    auto P = result->P;
 
     // Verify P is symmetric
     CHECK((P - P.transpose()).norm() < 1e-10);
@@ -76,7 +76,7 @@ TEST_CASE("dare 3-state system")
     auto result = ctrlpp::dare<double, 3, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    auto P = *result;
+    auto P = result->P;
 
     // Verify symmetry
     CHECK((P - P.transpose()).norm() < 1e-10);
@@ -135,7 +135,7 @@ TEST_CASE("dare with N cross-weight")
     auto result_standard = ctrlpp::dare<double, 2, 1>(Ap, B, Qp, R);
     REQUIRE(result_standard.has_value());
 
-    CHECK((*result_with_n - *result_standard).norm() < 1e-10);
+    CHECK((result_with_n->P - result_standard->P).norm() < 1e-10);
 }
 
 TEST_CASE("dare solution is symmetric")
@@ -152,7 +152,7 @@ TEST_CASE("dare solution is symmetric")
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    auto P = *result;
+    auto P = result->P;
     CHECK((P - P.transpose()).norm() < 1e-10);
 }
 
@@ -216,7 +216,7 @@ TEST_CASE("dare 1x1 zero Q gives zero P")
 
     auto result = ctrlpp::dare<double, 1, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
-    CHECK_THAT((*result)(0, 0), Catch::Matchers::WithinAbs(0.0, 1e-10));
+    CHECK_THAT(result->P(0, 0), Catch::Matchers::WithinAbs(0.0, 1e-10));
 }
 
 TEST_CASE("dare large R penalizes control heavily")
@@ -233,7 +233,7 @@ TEST_CASE("dare large R penalizes control heavily")
 
     // Lyapunov solution: P = Q / (1 - a^2) = 1 / (1 - 0.25) = 4/3
     double P_lyap = 1.0 / (1.0 - 0.25);
-    CHECK_THAT((*result)(0, 0), Catch::Matchers::WithinAbs(P_lyap, 1e-2));
+    CHECK_THAT(result->P(0, 0), Catch::Matchers::WithinAbs(P_lyap, 1e-2));
 }
 
 TEST_CASE("dare with cross-weight N zero reduces to standard dare")
@@ -253,5 +253,5 @@ TEST_CASE("dare with cross-weight N zero reduces to standard dare")
 
     REQUIRE(result_with_n.has_value());
     REQUIRE(result_standard.has_value());
-    CHECK((*result_with_n - *result_standard).norm() < 1e-10);
+    CHECK((result_with_n->P - result_standard->P).norm() < 1e-10);
 }

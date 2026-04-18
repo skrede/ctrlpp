@@ -291,11 +291,11 @@ auto terminal_ingredients(
     const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R, const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max)
     -> std::optional<terminal_ingredients_result<Scalar, NX, NU>>
 {
-    auto P_opt = dare<Scalar, NX, NU>(A, B, Q, R);
-    if(!P_opt)
+    auto P_result = dare<Scalar, NX, NU>(A, B, Q, R);
+    if(!P_result)
         return std::nullopt;
 
-    auto P = P_opt.value();
+    auto P = P_result->P;
     Matrix<Scalar, NU, NU> RpBtPB = R + B.transpose() * P * B;
     Matrix<Scalar, NU, NX> K = -(RpBtPB.ldlt().solve(B.transpose() * P * A));
     auto eset = compute_ellipsoidal_set<Scalar, NX, NU>(P, K, u_min, u_max);

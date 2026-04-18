@@ -155,7 +155,7 @@ private:
         else
         {
             auto dare_result = dare<Scalar, NX, NU>(system_.A, system_.B, Q_state_, config_.R);
-            Qf_state_ = dare_result.value_or(Q_state_);
+            Qf_state_ = dare_result ? dare_result->P : Q_state_;
             // Map state-space Qf back to output space for the linear tracking term:
             // linear term = -Qf_state * C_pinv * y_ref, where C_pinv = C' * (C*C')^{-1}
             Matrix<Scalar, NY, NY> CCt = system_.C * system_.C.transpose();
