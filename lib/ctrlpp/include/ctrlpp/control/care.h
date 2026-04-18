@@ -25,6 +25,7 @@
 #include "ctrlpp/detail/schur_reorder.h"
 #include "ctrlpp/detail/riccati_solution.h"
 #include "ctrlpp/detail/care_sign_function.h"
+#include "ctrlpp/detail/hamiltonian_balance.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
@@ -144,10 +145,9 @@ auto care_solve_from_hamiltonian(
     {
         return detail::care_solve_via_sign_function<Scalar, NX>(H);
     }
-    else
+    else  // balanced_schur_care_method
     {
-        static_assert(!std::is_same_v<Method, balanced_schur_care_method>,
-                      "balanced_schur_care_method requires detail/hamiltonian_balance.h");
+        return detail::care_solve_via_balanced_schur<Scalar, NX, Cond>(H);
     }
 }
 
