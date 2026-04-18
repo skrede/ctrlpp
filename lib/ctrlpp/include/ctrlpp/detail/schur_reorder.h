@@ -97,7 +97,7 @@ template <typename Scalar, int N, typename Predicate,
 auto reorder_real_schur(Eigen::Matrix<Scalar, N, N>& T,
                         Eigen::Matrix<Scalar, N, N>& U,
                         Predicate&&                   predicate,
-                        Cond                          /*tag*/ = {})
+                        Cond                          tag = {})
     -> reorder_result<Scalar>
 {
     static_assert(std::is_same_v<Cond, pivot_ratio_conditioning>
@@ -109,17 +109,150 @@ auto reorder_real_schur(Eigen::Matrix<Scalar, N, N>& T,
                       "hager_higham_conditioning not yet implemented -- use pivot_ratio_conditioning");
     }
 
-    // Skeleton body: returns a trivial success for identity inputs so the
-    // Task 1 tests can compile and run. The full driver body is installed
-    // in Task 4; keeping the predicate silent here avoids unused-parameter
-    // warnings.
-    (void)T;
-    (void)U;
-    (void)predicate;
+    using std::abs;
+    using std::sqrt;
+
     reorder_result<Scalar> r{};
-    r.placed = N;
     r.complete = true;
     r.subspace_separation = Scalar{1};
+
+    const Scalar eps = std::numeric_limits<Scalar>::epsilon();
+    const Scalar scale_T = T.cwiseAbs().maxCoeff();
+
+    // Probe whether the block starting at position `pos` is 1x1 or 2x2 based
+    // on the subdiagonal entry T(pos+1, pos). Uses an epsilon-scaled
+    // threshold derived from both the global and the local block magnitude
+    // (D-12; RESEARCH.md Pitfall 3).
+    auto block_size_at = [&](int pos) -> int
+    {
+        if (pos + 1 >= N)
+            return 1;
+        const Scalar sub = T(pos + 1, pos);
+        const Scalar local_scale =
+            std::max(abs(T(pos, pos)), abs(T(pos + 1, pos + 1)));
+        return (abs(sub) > eps * std::max(scale_T, local_scale)) ? 2 : 1;
+    };
+
+    // Read eigenvalues from a block using trace and determinant, NOT from
+    // the raw diagonal entries (RESEARCH.md Pitfall 1: a 2x2 block's
+    // eigenvalues are (tr +/- sqrt(tr^2/4 - det)), not T(i, i) directly).
+    auto block_eigenvalues = [&](int pos, int n_block)
+        -> std::pair<std::complex<Scalar>, std::complex<Scalar>>
+    {
+        if (n_block == 1)
+        {
+            const std::complex<Scalar> lam(T(pos, pos), Scalar{0});
+            return {lam, lam};
+        }
+        const Scalar a = T(pos,     pos);
+        const Scalar b = T(pos,     pos + 1);
+        const Scalar c = T(pos + 1, pos);
+        const Scalar d = T(pos + 1, pos + 1);
+        const Scalar tr  = a + d;
+        const Scalar det = a * d - b * c;
+        const Scalar discr = tr * tr / Scalar{4} - det;
+        if (discr >= Scalar{0})
+        {
+            const Scalar s = sqrt(discr);
+            return {std::complex<Scalar>(tr / Scalar{2} + s, Scalar{0}),
+                    std::complex<Scalar>(tr / Scalar{2} - s, Scalar{0})};
+        }
+        const Scalar im = sqrt(-discr);
+        return {std::complex<Scalar>(tr / Scalar{2},  im),
+                std::complex<Scalar>(tr / Scalar{2}, -im)};
+    };
+
+    auto block_matches = [&](int pos, int n_block) -> bool
+    {
+        const auto [lam0, lam1] = block_eigenvalues(pos, n_block);
+        // For a 2x2 complex-conjugate pair, |lambda| and sign(Re lambda) are
+        // identical for both eigenvalues; querying lam0 is sufficient.
+        (void)lam1;
+        return predicate(lam0);
+    };
+
+    int placed_pos = 0;
+    while (placed_pos < N)
+    {
+        // Scan right from placed_pos for the first predicate-matching block.
+        int scan = placed_pos;
+        int scan_nb = 1;
+        bool found = false;
+        while (scan < N)
+        {
+            const int nb = block_size_at(scan);
+            if (block_matches(scan, nb))
+            {
+                scan_nb = nb;
+                found = true;
+                break;
+            }
+            scan += nb;
+        }
+
+        if (!found)
+            break;
+
+        // Bubble the found block from `scan` leftward to `placed_pos`.
+        int cur = scan;
+        while (cur > placed_pos)
+        {
+            // Determine the block immediately to the left of `cur`.
+            int left_nb = 1;
+            if (cur >= 2)
+            {
+                const Scalar sub       = T(cur - 1, cur - 2);
+                const Scalar local_scl =
+                    std::max(abs(T(cur - 2, cur - 2)), abs(T(cur - 1, cur - 1)));
+                if (abs(sub) > eps * std::max(scale_T, local_scl))
+                    left_nb = 2;
+            }
+            const int left_pos = cur - left_nb;
+
+            Scalar pivot_ratio = Scalar{1};
+            const bool ok = swap_real_schur_blocks<Scalar, N, Cond>(
+                T, U, left_pos, left_nb, scan_nb, tag, pivot_ratio);
+
+            if (!ok)
+            {
+                r.complete = false;
+                r.subspace_separation = std::min(r.subspace_separation, pivot_ratio);
+                break;  // Abort this bubble; partial reorder per D-11.
+            }
+
+            r.subspace_separation = std::min(r.subspace_separation, pivot_ratio);
+
+            // Standardise any 2x2 block touched by the swap (D-06).
+            if (scan_nb == 2)
+                standardize_2x2_block<Scalar, N>(T, U, left_pos);
+            if (left_nb == 2)
+                standardize_2x2_block<Scalar, N>(T, U, left_pos + scan_nb);
+
+            cur = left_pos;
+            // Re-probe scan_nb: standardisation can split a 2x2 block into
+            // two 1x1 blocks (complex pair degenerating to real eigenvalues).
+            scan_nb = block_size_at(cur);
+            if (!block_matches(cur, scan_nb))
+            {
+                // The bubbling block lost its predicate match due to a split;
+                // abort; the outer scan will find the next candidate.
+                break;
+            }
+        }
+
+        if (cur == placed_pos)
+        {
+            r.placed += scan_nb;
+            placed_pos += scan_nb;
+        }
+        else
+        {
+            // Bubble aborted before reaching placed_pos; resume scanning
+            // past the stuck block (progress guarantees termination).
+            placed_pos = cur + block_size_at(cur);
+        }
+    }
+
     return r;
 }
 
