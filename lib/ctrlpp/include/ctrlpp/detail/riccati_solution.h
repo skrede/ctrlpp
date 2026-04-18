@@ -42,24 +42,26 @@ enum class riccati_extract_error
     non_psd,
 };
 
-/// @brief Extract the stabilising Riccati solution from a reordered invariant subspace.
+/// @brief Extract the stabilising Riccati solution into a caller-supplied matrix.
 ///
 /// Given an orthogonal real U of size 2n x 2n with the stable invariant
 /// subspace in its leading n columns (output of reorder_real_schur), compute
-/// P = U21 * U11^-1, symmetrise, and validate positive semi-definiteness.
+/// P = U21 * U11^-1, symmetrise in place, and validate positive semi-definiteness.
+/// Writes directly into P_out so that callers can avoid the std::expected<Matrix>
+/// return-by-value copy on the hot path.
 ///
 /// The implementation prefers a back-substitution against U11 (solving
-/// U11^T * P^T = U21^T) over an explicit inverse for numerical accuracy:
-/// this is a single pass against the column-pivoted QR factor instead of
-/// forming and multiplying U11^-1.
+/// U11^T * P^T = U21^T) over an explicit inverse for numerical accuracy.
 ///
 /// The positive semi-definiteness floor is -eps * ||P||_inf, matching the
 /// LAPACK convention of scaling relative thresholds by the operand norm.
 ///
-/// @returns P on success; std::unexpected(riccati_extract_error) otherwise.
+/// @returns std::expected<void, riccati_extract_error>.
 template <typename Scalar, int N2>
-[[nodiscard]] auto extract_riccati_solution(const Eigen::Matrix<Scalar, N2, N2>& U)
-    -> std::expected<Eigen::Matrix<Scalar, N2 / 2, N2 / 2>, riccati_extract_error>
+[[nodiscard]] auto extract_riccati_solution_into(
+    Eigen::Matrix<Scalar, N2 / 2, N2 / 2>&    P_out,
+    const Eigen::Matrix<Scalar, N2, N2>&      U)
+    -> std::expected<void, riccati_extract_error>
 {
     static_assert(N2 > 0 && (N2 % 2 == 0), "U must have even size 2n x 2n");
 
@@ -73,23 +75,34 @@ template <typename Scalar, int N2>
     if (!qr_U11T.isInvertible())
         return std::unexpected(riccati_extract_error::singular_u11);
 
-    // Prefer solve over explicit inverse for numerical accuracy.
     // P = U21 * U11^-1  <=>  U11^T * P^T = U21^T  (solve against QR of U11^T).
     const MatNxN P_raw = qr_U11T.solve(U21.transpose()).transpose();
-    const MatNxN P = ctrlpp::detail::symmetrize(P_raw);
+    P_out = ctrlpp::detail::symmetrize(P_raw);
 
-    if (!P.allFinite())
+    if (!P_out.allFinite())
         return std::unexpected(riccati_extract_error::non_finite);
 
-    Eigen::SelfAdjointEigenSolver<MatNxN> eigs(P, Eigen::EigenvaluesOnly);
+    Eigen::SelfAdjointEigenSolver<MatNxN> eigs(P_out, Eigen::EigenvaluesOnly);
     const Scalar psd_floor =
-        -std::numeric_limits<Scalar>::epsilon() * P.cwiseAbs().maxCoeff();
+        -std::numeric_limits<Scalar>::epsilon() * P_out.cwiseAbs().maxCoeff();
     for (int i = 0; i < n; ++i)
     {
         if (eigs.eigenvalues()(i) < psd_floor)
             return std::unexpected(riccati_extract_error::non_psd);
     }
 
+    return {};
+}
+
+/// @brief Value-returning wrapper around `extract_riccati_solution_into`.
+template <typename Scalar, int N2>
+[[nodiscard]] auto extract_riccati_solution(const Eigen::Matrix<Scalar, N2, N2>& U)
+    -> std::expected<Eigen::Matrix<Scalar, N2 / 2, N2 / 2>, riccati_extract_error>
+{
+    Eigen::Matrix<Scalar, N2 / 2, N2 / 2> P;
+    auto err = extract_riccati_solution_into<Scalar, N2>(P, U);
+    if (!err)
+        return std::unexpected(err.error());
     return P;
 }
 
