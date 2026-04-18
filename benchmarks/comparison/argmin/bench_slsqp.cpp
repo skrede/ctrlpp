@@ -125,15 +125,15 @@ void run_benchmark(const std::string& system_name,
     // NLopt solver (always cold -- NLopt has no warm-start)
     ctrlpp::nlopt_settings<double> nlopt_cfg{};
     nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
-    NloptSolver nlopt_solver{nlopt_cfg};
 
-    // Argmin solver with requested warm-start
+    // Argmin settings with requested warm-start. max_time bounds each solve so
+    // a single non-converging config cannot stall the whole benchmark.
     ctrlpp::argmin_settings<double> argmin_cfg{};
     argmin_cfg.warm_start = ws_mode;
-    ArgminSlsqp argmin_solver{argmin_cfg};
+    argmin_cfg.max_time = 2.0;
 
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config};
-    ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_argmin{dynamics, config};
+    ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config, NloptSolver{nlopt_cfg}};
+    ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_argmin{dynamics, config, ArgminSlsqp{argmin_cfg}};
 
     Eigen::Matrix<double, NX, 1> x0 = Eigen::Matrix<double, NX, 1>::Zero();
     x0(0) = 1.0;
@@ -141,10 +141,11 @@ void run_benchmark(const std::string& system_name,
     auto title = system_name + " NX=" + std::to_string(NX)
                + " N=" + std::to_string(horizon) + " ws=" + ws_label;
 
-    int min_iters = (NX >= 8) ? 10 : 50;
+    int min_iters = (NX >= 8) ? ((horizon >= 20) ? 3 : 10) : 50;
+    int warmup_iters = (NX >= 8 && horizon >= 20) ? 5 : 50;
 
     // Timing: NLopt
-    bench.warmup(50).minEpochIterations(min_iters).title(title)
+    bench.warmup(warmup_iters).minEpochIterations(min_iters).title(title)
         .run("nlopt_slsqp",
              [&]
              {
@@ -162,8 +163,8 @@ void run_benchmark(const std::string& system_name,
 
     // Quality: single solve each for metrics
     // Re-create controllers for clean quality measurement
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> q_nlopt{dynamics, config};
-    ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> q_argmin{dynamics, config};
+    ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> q_nlopt{dynamics, config, NloptSolver{nlopt_cfg}};
+    ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> q_argmin{dynamics, config, ArgminSlsqp{argmin_cfg}};
 
     q_nlopt.solve(x0);
     auto nlopt_diag = q_nlopt.diagnostics();
@@ -222,8 +223,13 @@ void run_convergence(const std::string& system_name,
         for(std::size_t i = 0; i < NX; ++i)
             x0(static_cast<Eigen::Index>(i)) = dist(rng);
 
-        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config};
-        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_argmin{dynamics, config};
+        ctrlpp::nlopt_settings<double> nlopt_cfg{};
+        nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
+        ctrlpp::argmin_settings<double> argmin_cfg{};
+        argmin_cfg.max_time = 2.0;
+
+        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config, NloptSolver{nlopt_cfg}};
+        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_argmin{dynamics, config, ArgminSlsqp{argmin_cfg}};
 
         auto u_nlopt = nmpc_nlopt.solve(x0);
         if(u_nlopt.has_value())
