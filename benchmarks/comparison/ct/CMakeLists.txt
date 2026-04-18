@@ -15,3 +15,17 @@ target_link_libraries(bench_dare_vs_ct PRIVATE
     nanobench
     ct_optcon
 )
+
+add_executable(bench_care_vs_ct bench_care_vs_ct.cpp)
+target_link_libraries(bench_care_vs_ct PRIVATE
+    ctrlpp::ctrlpp
+    nanobench
+    ct_optcon
+)
+
+add_executable(bench_lqr_continuous_vs_ct bench_lqr_continuous_vs_ct.cpp)
+target_link_libraries(bench_lqr_continuous_vs_ct PRIVATE
+    ctrlpp::ctrlpp
+    nanobench
+    ct_optcon
+)
