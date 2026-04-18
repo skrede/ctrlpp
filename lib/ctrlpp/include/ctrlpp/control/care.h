@@ -74,6 +74,64 @@ auto build_care_hamiltonian(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     return H;
 }
 
+/// @brief Solve CARE from a pre-built Hamiltonian H: real-Schur, Bai-Demmel reorder to LHP,
+/// Riccati extract. Shared between `ctrlpp::care` and `ctrlpp::lqr_gain_continuous` so the
+/// latter can build H with a pre-computed R^{-1} and avoid recomputing it.
+template <typename Scalar, std::size_t NX,
+          conditioning_policy Cond = pivot_ratio_conditioning>
+auto care_solve_from_hamiltonian(
+    const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& H,
+    Cond /*tag*/ = {})
+    -> std::expected<care_result<Scalar, NX>, care_error>
+{
+    constexpr int n = static_cast<int>(NX);
+    constexpr int n2 = 2 * n;
+    using Mat2N = Eigen::Matrix<Scalar, n2, n2>;
+
+    Eigen::RealSchur<Mat2N> schur(H);
+    if (schur.info() != Eigen::Success)
+        return std::unexpected(care_error::schur_failed);
+
+    Mat2N T = schur.matrixT();
+    Mat2N U = schur.matrixU();
+    if (!T.allFinite() || !U.allFinite())
+        return std::unexpected(care_error::non_finite_input);
+
+    const Scalar scale = T.cwiseAbs().maxCoeff();
+    const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
+    const Scalar lhp_margin = eps * std::max(Scalar{1}, scale);
+    auto predicate = [lhp_margin](std::complex<Scalar> lam) -> bool
+    {
+        return lam.real() < -lhp_margin;
+    };
+
+    auto rr = reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
+    if (rr.placed < n)
+        return std::unexpected(care_error::non_lhp_stabilisable);
+    if (!T.allFinite() || !U.allFinite())
+        return std::unexpected(care_error::non_finite_input);
+
+    care_result<Scalar, NX> out;
+    auto P_err = extract_riccati_solution_into<Scalar, n2>(out.P, U);
+    if (!P_err)
+    {
+        switch (P_err.error())
+        {
+            case riccati_extract_error::singular_u11:
+                return std::unexpected(care_error::singular_u11);
+            case riccati_extract_error::non_finite:
+                return std::unexpected(care_error::non_finite_input);
+            case riccati_extract_error::non_psd:
+                return std::unexpected(care_error::non_psd_solution);
+        }
+        return std::unexpected(care_error::non_finite_input);
+    }
+
+    out.subspace_separation = rr.subspace_separation;
+    out.reorder_complete    = rr.complete;
+    return out;
+}
+
 }
 
 /// @brief Continuous-time Algebraic Riccati Equation solver.
@@ -95,58 +153,11 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 
-    constexpr int n = static_cast<int>(NX);
-    constexpr int n2 = 2 * n;
-    using Mat2N = Eigen::Matrix<Scalar, n2, n2>;
-
     auto H_result = detail::build_care_hamiltonian<Scalar, NX, NU>(A, B, Q, R);
     if (!H_result)
         return std::unexpected(H_result.error());
-    const Mat2N& H = *H_result;
 
-    Eigen::RealSchur<Mat2N> schur(H);
-    if (schur.info() != Eigen::Success)
-        return std::unexpected(care_error::schur_failed);
-
-    Mat2N T = schur.matrixT();
-    Mat2N U = schur.matrixU();
-    if (!T.allFinite() || !U.allFinite())
-        return std::unexpected(care_error::non_finite_input);
-
-    const Scalar scale = T.cwiseAbs().maxCoeff();
-    const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
-    const Scalar lhp_margin = eps * std::max(Scalar{1}, scale);
-    auto predicate = [lhp_margin](std::complex<Scalar> lam) -> bool
-    {
-        return lam.real() < -lhp_margin;
-    };
-
-    auto rr = detail::reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
-    if (rr.placed < n)
-        return std::unexpected(care_error::non_lhp_stabilisable);
-    if (!T.allFinite() || !U.allFinite())
-        return std::unexpected(care_error::non_finite_input);
-
-    auto P_result = detail::extract_riccati_solution<Scalar, n2>(U);
-    if (!P_result)
-    {
-        switch (P_result.error())
-        {
-            case detail::riccati_extract_error::singular_u11:
-                return std::unexpected(care_error::singular_u11);
-            case detail::riccati_extract_error::non_finite:
-                return std::unexpected(care_error::non_finite_input);
-            case detail::riccati_extract_error::non_psd:
-                return std::unexpected(care_error::non_psd_solution);
-        }
-        return std::unexpected(care_error::non_finite_input);
-    }
-
-    care_result<Scalar, NX> out;
-    out.P                   = *P_result;
-    out.subspace_separation = rr.subspace_separation;
-    out.reorder_complete    = rr.complete;
-    return out;
+    return detail::care_solve_from_hamiltonian<Scalar, NX, Cond>(*H_result);
 }
 
 /// @brief CARE with cross-weight N: reduces to standard form via

@@ -75,6 +75,64 @@ auto build_dare_symplectic(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     return Z;
 }
 
+/// @brief Solve DARE from a pre-built symplectic Z: real-Schur, Bai-Demmel reorder inside
+/// the unit disk, Riccati extract. Shared between `ctrlpp::dare` and callers that already
+/// have Z (or want to avoid recomputing R^{-1} and G = B R^{-1} B^T).
+template <typename Scalar, std::size_t NX,
+          conditioning_policy Cond = pivot_ratio_conditioning>
+auto dare_solve_from_symplectic(
+    const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& Z,
+    Cond /*tag*/ = {})
+    -> std::expected<dare_result<Scalar, NX>, dare_error>
+{
+    constexpr int n = static_cast<int>(NX);
+    constexpr int n2 = 2 * n;
+    using Mat2N = Eigen::Matrix<Scalar, n2, n2>;
+
+    Eigen::RealSchur<Mat2N> schur(Z);
+    if (schur.info() != Eigen::Success)
+        return std::unexpected(dare_error::schur_failed);
+
+    Mat2N T = schur.matrixT();
+    Mat2N U = schur.matrixU();
+    if (!T.allFinite() || !U.allFinite())
+        return std::unexpected(dare_error::non_finite_input);
+
+    const Scalar scale = T.cwiseAbs().maxCoeff();
+    const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
+    const Scalar unit_margin = eps * std::max(Scalar{1}, scale);
+    auto predicate = [unit_margin](std::complex<Scalar> lam) -> bool
+    {
+        return std::abs(lam) < Scalar{1} - unit_margin;
+    };
+
+    auto rr = reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
+    if (rr.placed < n)
+        return std::unexpected(dare_error::non_stabilisable);
+    if (!T.allFinite() || !U.allFinite())
+        return std::unexpected(dare_error::non_finite_input);
+
+    dare_result<Scalar, NX> out;
+    auto P_err = extract_riccati_solution_into<Scalar, n2>(out.P, U);
+    if (!P_err)
+    {
+        switch (P_err.error())
+        {
+            case riccati_extract_error::singular_u11:
+                return std::unexpected(dare_error::singular_u11);
+            case riccati_extract_error::non_finite:
+                return std::unexpected(dare_error::non_finite_input);
+            case riccati_extract_error::non_psd:
+                return std::unexpected(dare_error::non_psd_solution);
+        }
+        return std::unexpected(dare_error::non_finite_input);
+    }
+
+    out.subspace_separation = rr.subspace_separation;
+    out.reorder_complete    = rr.complete;
+    return out;
+}
+
 }
 
 /// @brief Discrete Algebraic Riccati Equation solver.
@@ -96,58 +154,11 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 
-    constexpr int n = static_cast<int>(NX);
-    constexpr int n2 = 2 * n;
-    using Mat2N = Eigen::Matrix<Scalar, n2, n2>;
-
     auto Z_result = detail::build_dare_symplectic<Scalar, NX, NU>(A, B, Q, R);
     if (!Z_result)
         return std::unexpected(Z_result.error());
-    const Mat2N& Z = *Z_result;
 
-    Eigen::RealSchur<Mat2N> schur(Z);
-    if (schur.info() != Eigen::Success)
-        return std::unexpected(dare_error::schur_failed);
-
-    Mat2N T = schur.matrixT();
-    Mat2N U = schur.matrixU();
-    if (!T.allFinite() || !U.allFinite())
-        return std::unexpected(dare_error::non_finite_input);
-
-    const Scalar scale = T.cwiseAbs().maxCoeff();
-    const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
-    const Scalar unit_margin = eps * std::max(Scalar{1}, scale);
-    auto predicate = [unit_margin](std::complex<Scalar> lam) -> bool
-    {
-        return std::abs(lam) < Scalar{1} - unit_margin;
-    };
-
-    auto rr = detail::reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
-    if (rr.placed < n)
-        return std::unexpected(dare_error::non_stabilisable);
-    if (!T.allFinite() || !U.allFinite())
-        return std::unexpected(dare_error::non_finite_input);
-
-    auto P_result = detail::extract_riccati_solution<Scalar, n2>(U);
-    if (!P_result)
-    {
-        switch (P_result.error())
-        {
-            case detail::riccati_extract_error::singular_u11:
-                return std::unexpected(dare_error::singular_u11);
-            case detail::riccati_extract_error::non_finite:
-                return std::unexpected(dare_error::non_finite_input);
-            case detail::riccati_extract_error::non_psd:
-                return std::unexpected(dare_error::non_psd_solution);
-        }
-        return std::unexpected(dare_error::non_finite_input);
-    }
-
-    dare_result<Scalar, NX> out;
-    out.P                   = *P_result;
-    out.subspace_separation = rr.subspace_separation;
-    out.reorder_complete    = rr.complete;
-    return out;
+    return detail::dare_solve_from_symplectic<Scalar, NX, Cond>(*Z_result);
 }
 
 /// @brief DARE with cross-weight N: reduces to standard form via
