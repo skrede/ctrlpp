@@ -6,6 +6,7 @@
 /// @cite anderson1990 -- Anderson & Moore, "Optimal Control: Linear Quadratic Methods", 1990
 
 #include "ctrlpp/control/dare.h"
+#include "ctrlpp/control/care.h"
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
@@ -68,6 +69,50 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Mat
     Eigen::Matrix<Scalar, int(NU), int(NX)> rhs = (BtP * A + N.transpose()).eval();
     auto K = S.colPivHouseholderQr().solve(rhs).eval();
     return K;
+}
+
+// Continuous-time infinite-horizon LQR gain via CARE.
+// K = R^{-1} B^T P where P solves A^T P + P A - P B R^{-1} B^T P + Q = 0.
+//
+// Computes R^{-1} once via ldlt (R is SPD for valid LQR problems), builds the
+// Hamiltonian using that pre-computed R^{-1}, and reuses it for the K formula --
+// one matrix factorisation of R instead of two.
+template <typename Scalar, std::size_t NX, std::size_t NU>
+std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>>
+lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
+                    const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+                    const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
+                    const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
+{
+    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
+    static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
+
+    constexpr int nx = static_cast<int>(NX);
+    constexpr int nu = static_cast<int>(NU);
+    constexpr int n2 = 2 * nx;
+    using MatU    = Eigen::Matrix<Scalar, nu, nu>;
+    using Mat2N   = Eigen::Matrix<Scalar, n2, n2>;
+
+    if(!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite())
+        return std::nullopt;
+
+    const MatU R_inv = R.ldlt().solve(MatU::Identity());
+
+    Mat2N H;
+    H.template block<nx, nx>(0, 0) = A;
+    H.template block<nx, nx>(0, nx) = -B * R_inv * B.transpose();
+    H.template block<nx, nx>(nx, 0) = -Q;
+    H.template block<nx, nx>(nx, nx) = -A.transpose();
+
+    if(!H.allFinite())
+        return std::nullopt;
+
+    auto result = detail::care_solve_from_hamiltonian<Scalar, NX>(H);
+    if(!result)
+        return std::nullopt;
+
+    return (R_inv * B.transpose() * result->P).eval();
 }
 
 // Finite-horizon LQR via backward Riccati recursion.
