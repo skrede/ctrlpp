@@ -21,8 +21,10 @@
 #include "ctrlpp/types.h"
 #include "ctrlpp/control/care_types.h"
 
+#include "ctrlpp/detail/care_methods.h"
 #include "ctrlpp/detail/schur_reorder.h"
 #include "ctrlpp/detail/riccati_solution.h"
+#include "ctrlpp/detail/care_sign_function.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
@@ -74,62 +76,79 @@ auto build_care_hamiltonian(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     return H;
 }
 
-/// @brief Solve CARE from a pre-built Hamiltonian H: real-Schur, Bai-Demmel reorder to LHP,
-/// Riccati extract. Shared between `ctrlpp::care` and `ctrlpp::lqr_gain_continuous` so the
-/// latter can build H with a pre-computed R^{-1} and avoid recomputing it.
+/// @brief Solve CARE from a pre-built Hamiltonian H, dispatching on the method tag.
+///
+/// Shared between `ctrlpp::care` and `ctrlpp::lqr_gain_continuous` so the latter can
+/// build H with a pre-computed R^{-1} and avoid recomputing it. The `Method` tag
+/// selects between the baseline real-Schur + Bai-Demmel reorder path (default),
+/// the matrix sign-function Newton iteration, and the balanced-Schur variant.
 template <typename Scalar, std::size_t NX,
-          conditioning_policy Cond = pivot_ratio_conditioning>
+          care_solve_method   Method = schur_care_method,
+          conditioning_policy Cond   = pivot_ratio_conditioning>
 auto care_solve_from_hamiltonian(
     const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& H,
-    Cond /*tag*/ = {})
+    Method /*method_tag*/ = {},
+    Cond   /*cond_tag*/   = {})
     -> std::expected<care_result<Scalar, NX>, care_error>
 {
-    constexpr int n = static_cast<int>(NX);
-    constexpr int n2 = 2 * n;
-    using Mat2N = Eigen::Matrix<Scalar, n2, n2>;
-
-    Eigen::RealSchur<Mat2N> schur(H);
-    if (schur.info() != Eigen::Success)
-        return std::unexpected(care_error::schur_failed);
-
-    Mat2N T = schur.matrixT();
-    Mat2N U = schur.matrixU();
-    if (!T.allFinite() || !U.allFinite())
-        return std::unexpected(care_error::non_finite_input);
-
-    const Scalar scale = T.cwiseAbs().maxCoeff();
-    const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
-    const Scalar lhp_margin = eps * std::max(Scalar{1}, scale);
-    auto predicate = [lhp_margin](std::complex<Scalar> lam) -> bool
+    if constexpr (std::is_same_v<Method, schur_care_method>)
     {
-        return lam.real() < -lhp_margin;
-    };
+        constexpr int n = static_cast<int>(NX);
+        constexpr int n2 = 2 * n;
+        using Mat2N = Eigen::Matrix<Scalar, n2, n2>;
 
-    auto rr = reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
-    if (rr.placed < n)
-        return std::unexpected(care_error::non_lhp_stabilisable);
-    if (!T.allFinite() || !U.allFinite())
-        return std::unexpected(care_error::non_finite_input);
+        Eigen::RealSchur<Mat2N> schur(H);
+        if (schur.info() != Eigen::Success)
+            return std::unexpected(care_error::schur_failed);
 
-    care_result<Scalar, NX> out;
-    auto P_err = extract_riccati_solution_into<Scalar, n2>(out.P, U);
-    if (!P_err)
-    {
-        switch (P_err.error())
+        Mat2N T = schur.matrixT();
+        Mat2N U = schur.matrixU();
+        if (!T.allFinite() || !U.allFinite())
+            return std::unexpected(care_error::non_finite_input);
+
+        const Scalar scale = T.cwiseAbs().maxCoeff();
+        const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
+        const Scalar lhp_margin = eps * std::max(Scalar{1}, scale);
+        auto predicate = [lhp_margin](std::complex<Scalar> lam) -> bool
         {
-            case riccati_extract_error::singular_u11:
-                return std::unexpected(care_error::singular_u11);
-            case riccati_extract_error::non_finite:
-                return std::unexpected(care_error::non_finite_input);
-            case riccati_extract_error::non_psd:
-                return std::unexpected(care_error::non_psd_solution);
-        }
-        return std::unexpected(care_error::non_finite_input);
-    }
+            return lam.real() < -lhp_margin;
+        };
 
-    out.subspace_separation = rr.subspace_separation;
-    out.reorder_complete    = rr.complete;
-    return out;
+        auto rr = reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
+        if (rr.placed < n)
+            return std::unexpected(care_error::non_lhp_stabilisable);
+        if (!T.allFinite() || !U.allFinite())
+            return std::unexpected(care_error::non_finite_input);
+
+        care_result<Scalar, NX> out;
+        auto P_err = extract_riccati_solution_into<Scalar, n2>(out.P, U);
+        if (!P_err)
+        {
+            switch (P_err.error())
+            {
+                case riccati_extract_error::singular_u11:
+                    return std::unexpected(care_error::singular_u11);
+                case riccati_extract_error::non_finite:
+                    return std::unexpected(care_error::non_finite_input);
+                case riccati_extract_error::non_psd:
+                    return std::unexpected(care_error::non_psd_solution);
+            }
+            return std::unexpected(care_error::non_finite_input);
+        }
+
+        out.subspace_separation = rr.subspace_separation;
+        out.reorder_complete    = rr.complete;
+        return out;
+    }
+    else if constexpr (std::is_same_v<Method, sign_function_care_method>)
+    {
+        return detail::care_solve_via_sign_function<Scalar, NX>(H);
+    }
+    else
+    {
+        static_assert(!std::is_same_v<Method, balanced_schur_care_method>,
+                      "balanced_schur_care_method requires detail/hamiltonian_balance.h");
+    }
 }
 
 }
@@ -141,12 +160,14 @@ auto care_solve_from_hamiltonian(
 /// min pivot ratio across accepted swaps; `result->reorder_complete` is true iff
 /// every swap was accepted.
 template <typename Scalar, std::size_t NX, std::size_t NU,
-          detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
+          detail::care_solve_method    Method = detail::schur_care_method,
+          detail::conditioning_policy  Cond   = detail::pivot_ratio_conditioning>
 auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
           const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
           const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
-          Cond                                           /*tag*/ = {})
+          Method                                         /*method_tag*/ = {},
+          Cond                                           /*cond_tag*/   = {})
     -> std::expected<care_result<Scalar, NX>, care_error>
 {
     static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
@@ -157,19 +178,21 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     if (!H_result)
         return std::unexpected(H_result.error());
 
-    return detail::care_solve_from_hamiltonian<Scalar, NX, Cond>(*H_result);
+    return detail::care_solve_from_hamiltonian<Scalar, NX, Method, Cond>(*H_result);
 }
 
 /// @brief CARE with cross-weight N: reduces to standard form via
 /// Q' = Q - N R^{-1} N^T, A' = A - B R^{-1} N^T, then forwards.
 template <typename Scalar, std::size_t NX, std::size_t NU,
-          detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
+          detail::care_solve_method    Method = detail::schur_care_method,
+          detail::conditioning_policy  Cond   = detail::pivot_ratio_conditioning>
 auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
           const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
           const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
           const Eigen::Matrix<Scalar, int(NX), int(NU)>& N,
-          Cond                                           tag = {})
+          Method                                         method_tag = {},
+          Cond                                           cond_tag   = {})
     -> std::expected<care_result<Scalar, NX>, care_error>
 {
     auto Rinv_Nt = R.colPivHouseholderQr()
@@ -179,7 +202,7 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     Eigen::Matrix<Scalar, int(NX), int(NX)> Qp = (Q - N * Rinv_Nt).eval();
     Eigen::Matrix<Scalar, int(NX), int(NX)> Ap = (A - B * Rinv_Nt).eval();
 
-    return care<Scalar, NX, NU, Cond>(Ap, B, Qp, R, tag);
+    return care<Scalar, NX, NU, Method, Cond>(Ap, B, Qp, R, method_tag, cond_tag);
 }
 
 }
