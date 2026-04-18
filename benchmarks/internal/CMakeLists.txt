@@ -23,7 +23,7 @@ endforeach()
 # Profile benches for CARE performance analysis; require ct_optcon; built under -fno-omit-frame-pointer
 find_package(ct_optcon QUIET)
 if(ct_optcon_FOUND)
-    foreach(bench bench_care_vs_ct_nx16 bench_care_vs_ct_nx30)
+    foreach(bench bench_care_vs_ct_nx16 bench_care_vs_ct_nx30 bench_care_methods)
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${bench}.cpp")
             add_executable(${bench} ${bench}.cpp)
             target_link_libraries(${bench} PRIVATE ctrlpp::ctrlpp nanobench ct_optcon)
