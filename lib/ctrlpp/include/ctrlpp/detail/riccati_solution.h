@@ -69,13 +69,13 @@ template <typename Scalar, int N2>
     const MatNxN U11 = U.template block<n, n>(0, 0);
     const MatNxN U21 = U.template block<n, n>(n, 0);
 
-    auto qr_U11 = U11.colPivHouseholderQr();
-    if (!qr_U11.isInvertible())
+    auto qr_U11T = U11.transpose().colPivHouseholderQr();
+    if (!qr_U11T.isInvertible())
         return std::unexpected(riccati_extract_error::singular_u11);
 
     // Prefer solve over explicit inverse for numerical accuracy.
-    // P = U21 * U11^-1  <=>  U11^T * P^T = U21^T.
-    const MatNxN P_raw = qr_U11.solve(U21.transpose()).transpose();
+    // P = U21 * U11^-1  <=>  U11^T * P^T = U21^T  (solve against QR of U11^T).
+    const MatNxN P_raw = qr_U11T.solve(U21.transpose()).transpose();
     const MatNxN P = ctrlpp::detail::symmetrize(P_raw);
 
     if (!P.allFinite())
