@@ -1,33 +1,37 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_CARE_H
 #define HPP_GUARD_CTRLPP_CONTROL_CARE_H
 
-/// @brief Continuous-time Algebraic Riccati Equation solver via Hamiltonian Schur decomposition.
+/// @brief Continuous-time Algebraic Riccati Equation solver via real-Schur Bai-Demmel reorder.
 ///
-/// Solves A^T P + P A - P B R^{-1} B^T P + Q = 0 for the stabilizing P.
+/// Solves A^T P + P A - P B R^{-1} B^T P + Q = 0 for the stabilising P.
 ///
-/// Builds the 2n x 2n Hamiltonian H = [[A, -B R^{-1} B^T], [-Q, -A^T]], computes its
-/// complex Schur decomposition, reorders eigenvalues with Re(lambda) < 0 (continuous-stable
-/// modes) to the top-left via a hand-rolled Givens-rotation bubble sort, and extracts
-/// P = real(U21 * U11^{-1}) from the corresponding invariant subspace basis.
+/// Builds the 2n x 2n Hamiltonian H = [[A, -B R^{-1} B^T], [-Q, -A^T]] (Laub 1979),
+/// computes its real Schur decomposition H = U T U^T, reorders T with a predicate
+/// `Re(lambda) < -eps * scale` (open left half-plane) via the Bai-Demmel 1993 swap
+/// kernel, and extracts P = U21 * U11^-1 from the resulting invariant subspace basis.
 ///
-/// Reuses the complex-Schur reordering primitives and the P-extraction helper from
-/// dare.h -- the continuous-time variant only differs in the Hamiltonian build and the
-/// stability criterion applied per eigenvalue.
+/// The continuous-time LQR gain is K = R^{-1} B^T P.
 ///
-/// @cite laub1979 -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
+/// Shares the real-Schur reorder primitive and the Riccati P-extraction helper with
+/// `ctrlpp::dare` via `ctrlpp::detail/`. Does not depend on `dare.h`.
+///
+/// @cite laub1979       -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
+/// @cite bai_demmel_1993 -- Bai & Demmel, "On swapping diagonal blocks in real Schur form", 1993
 
-#include "ctrlpp/control/dare.h"
 #include "ctrlpp/types.h"
+#include "ctrlpp/control/care_types.h"
 
-#include "ctrlpp/detail/covariance_ops.h"
+#include "ctrlpp/detail/schur_reorder.h"
+#include "ctrlpp/detail/riccati_solution.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
 
 #include <cmath>
+#include <limits>
 #include <complex>
 #include <cstddef>
-#include <optional>
+#include <expected>
 #include <type_traits>
 
 namespace ctrlpp
@@ -45,16 +49,18 @@ auto build_care_hamiltonian(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
                             const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
                             const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
                             const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
-    -> std::optional<Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>>
+    -> std::expected<Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>, care_error>
 {
     constexpr int n = static_cast<int>(NX);
     constexpr int n2 = 2 * n;
-    using MatNxN = Eigen::Matrix<Scalar, n, n>;
+    using MatNxN   = Eigen::Matrix<Scalar, n, n>;
     using Mat2Nx2N = Eigen::Matrix<Scalar, n2, n2>;
 
-    MatNxN S = (B * R.colPivHouseholderQr().solve(
-                        Eigen::Matrix<Scalar, int(NU), int(NX)>(B.transpose())))
-                   .eval();
+    if (!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite())
+        return std::unexpected(care_error::non_finite_input);
+
+    const MatNxN S = (B * R.colPivHouseholderQr().solve(
+                             Eigen::Matrix<Scalar, int(NU), int(NX)>(B.transpose()))).eval();
 
     Mat2Nx2N H;
     H.template block<n, n>(0, 0) = A;
@@ -62,66 +68,28 @@ auto build_care_hamiltonian(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     H.template block<n, n>(n, 0) = -Q;
     H.template block<n, n>(n, n) = -A.transpose();
 
-    if(!H.allFinite())
-        return std::nullopt;
+    if (!H.allFinite())
+        return std::unexpected(care_error::non_finite_input);
 
     return H;
 }
 
-/// @brief Reorder a complex Schur decomposition so eigenvalues with Re(lambda) < 0
-/// appear in the top-left block. Returns the number of stable eigenvalues placed.
-///
-/// Mirrors `reorder_complex_schur_stable_first` from dare.h but applies the continuous-time
-/// stability criterion instead of the discrete-time one.
-template <typename Scalar, int N>
-auto reorder_complex_schur_lhp_first(Eigen::Matrix<std::complex<Scalar>, N, N>& T,
-                                     Eigen::Matrix<std::complex<Scalar>, N, N>& U,
-                                     int required_stable) -> int
-{
-    int stable_count = 0;
-
-    while(stable_count < required_stable)
-    {
-        int pos = stable_count;
-        bool found = false;
-
-        while(pos < N)
-        {
-            if(T(pos, pos).real() < Scalar{0})
-            {
-                found = true;
-                break;
-            }
-            ++pos;
-        }
-
-        if(!found)
-            return stable_count;
-
-        for(int k = pos; k > stable_count; --k)
-            swap_complex_schur_1x1<Scalar, N>(T, U, k - 1);
-
-        ++stable_count;
-    }
-
-    return stable_count;
 }
 
-}
-
-/// @brief Continuous-time Algebraic Riccati Equation solver using Hamiltonian Schur decomposition.
+/// @brief Continuous-time Algebraic Riccati Equation solver.
 ///
-/// Solves A^T P + P A - P B R^{-1} B^T P + Q = 0 for the stabilizing P.
-/// Returns std::nullopt if the Hamiltonian build fails, fewer than n eigenvalues lie in
-/// the open left half-plane, or if the U11 Schur block is singular.
-///
-/// The continuous-time LQR gain is K = R^{-1} B^T P.
-template <typename Scalar, std::size_t NX, std::size_t NU>
+/// Returns `std::expected<care_result<Scalar, NX>, care_error>`. On success,
+/// `result->P` is the stabilising solution; `result->subspace_separation` is the
+/// min pivot ratio across accepted swaps; `result->reorder_complete` is true iff
+/// every swap was accepted.
+template <typename Scalar, std::size_t NX, std::size_t NU,
+          detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
 auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
           const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
-          const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
-    -> std::optional<Eigen::Matrix<Scalar, int(NX), int(NX)>>
+          const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
+          Cond                                           /*tag*/ = {})
+    -> std::expected<care_result<Scalar, NX>, care_error>
 {
     static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
@@ -129,40 +97,69 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
 
     constexpr int n = static_cast<int>(NX);
     constexpr int n2 = 2 * n;
+    using Mat2N = Eigen::Matrix<Scalar, n2, n2>;
 
-    auto H_opt = detail::build_care_hamiltonian<Scalar, NX, NU>(A, B, Q, R);
-    if(!H_opt)
-        return std::nullopt;
+    auto H_result = detail::build_care_hamiltonian<Scalar, NX, NU>(A, B, Q, R);
+    if (!H_result)
+        return std::unexpected(H_result.error());
+    const Mat2N& H = *H_result;
 
-    Eigen::ComplexSchur<Eigen::Matrix<Scalar, n2, n2>> schur(*H_opt);
-    if(schur.info() != Eigen::Success)
-        return std::nullopt;
+    Eigen::RealSchur<Mat2N> schur(H);
+    if (schur.info() != Eigen::Success)
+        return std::unexpected(care_error::schur_failed);
 
-    Eigen::Matrix<std::complex<Scalar>, n2, n2> T = schur.matrixT();
-    Eigen::Matrix<std::complex<Scalar>, n2, n2> U = schur.matrixU();
+    Mat2N T = schur.matrixT();
+    Mat2N U = schur.matrixU();
+    if (!T.allFinite() || !U.allFinite())
+        return std::unexpected(care_error::non_finite_input);
 
-    if(!T.allFinite() || !U.allFinite())
-        return std::nullopt;
+    const Scalar scale = T.cwiseAbs().maxCoeff();
+    const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
+    const Scalar lhp_margin = eps * std::max(Scalar{1}, scale);
+    auto predicate = [lhp_margin](std::complex<Scalar> lam) -> bool
+    {
+        return lam.real() < -lhp_margin;
+    };
 
-    int stable = detail::reorder_complex_schur_lhp_first<Scalar, n2>(T, U, n);
-    if(stable < n)
-        return std::nullopt;
+    auto rr = detail::reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
+    if (rr.placed < n)
+        return std::unexpected(care_error::non_lhp_stabilisable);
+    if (!T.allFinite() || !U.allFinite())
+        return std::unexpected(care_error::non_finite_input);
 
-    if(!U.allFinite())
-        return std::nullopt;
+    auto P_result = detail::extract_riccati_solution<Scalar, n2>(U);
+    if (!P_result)
+    {
+        switch (P_result.error())
+        {
+            case detail::riccati_extract_error::singular_u11:
+                return std::unexpected(care_error::singular_u11);
+            case detail::riccati_extract_error::non_finite:
+                return std::unexpected(care_error::non_finite_input);
+            case detail::riccati_extract_error::non_psd:
+                return std::unexpected(care_error::non_psd_solution);
+        }
+        return std::unexpected(care_error::non_finite_input);
+    }
 
-    return extract_dare_solution<Scalar, n2>(U);
+    care_result<Scalar, NX> out;
+    out.P                   = *P_result;
+    out.subspace_separation = rr.subspace_separation;
+    out.reorder_complete    = rr.complete;
+    return out;
 }
 
-/// @brief CARE with cross-weight N. Reduces to standard form via
-/// Q' = Q - N R^{-1} N^T, A' = A - B R^{-1} N^T, then forwards to the standard CARE solver.
-template <typename Scalar, std::size_t NX, std::size_t NU>
+/// @brief CARE with cross-weight N: reduces to standard form via
+/// Q' = Q - N R^{-1} N^T, A' = A - B R^{-1} N^T, then forwards.
+template <typename Scalar, std::size_t NX, std::size_t NU,
+          detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
 auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
           const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
           const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
-          const Eigen::Matrix<Scalar, int(NX), int(NU)>& N)
-    -> std::optional<Eigen::Matrix<Scalar, int(NX), int(NX)>>
+          const Eigen::Matrix<Scalar, int(NX), int(NU)>& N,
+          Cond                                           tag = {})
+    -> std::expected<care_result<Scalar, NX>, care_error>
 {
     auto Rinv_Nt = R.colPivHouseholderQr()
                        .solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(N.transpose()))
@@ -171,7 +168,7 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     Eigen::Matrix<Scalar, int(NX), int(NX)> Qp = (Q - N * Rinv_Nt).eval();
     Eigen::Matrix<Scalar, int(NX), int(NX)> Ap = (A - B * Rinv_Nt).eval();
 
-    return care<Scalar, NX, NU>(Ap, B, Qp, R);
+    return care<Scalar, NX, NU, Cond>(Ap, B, Qp, R, tag);
 }
 
 }

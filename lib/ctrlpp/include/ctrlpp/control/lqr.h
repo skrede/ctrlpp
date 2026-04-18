@@ -38,11 +38,11 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
 std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>>
 lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q, const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
 {
-    auto P_opt = dare<Scalar, NX, NU>(A, B, Q, R);
-    if(!P_opt)
+    auto P_result = dare<Scalar, NX, NU>(A, B, Q, R);
+    if(!P_result)
         return std::nullopt;
 
-    auto& P = *P_opt;
+    const auto& P = P_result->P;
     auto BtP = (B.transpose() * P).eval();
     auto S = (R + BtP * B).eval();
     auto K = S.colPivHouseholderQr().solve(BtP * A).eval();
@@ -58,11 +58,11 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Mat
                                                                 const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
                                                                 const Eigen::Matrix<Scalar, int(NX), int(NU)>& N)
 {
-    auto P_opt = dare<Scalar, NX, NU>(A, B, Q, R, N);
-    if(!P_opt)
+    auto P_result = dare<Scalar, NX, NU>(A, B, Q, R, N);
+    if(!P_result)
         return std::nullopt;
 
-    auto& P = *P_opt;
+    const auto& P = P_result->P;
     auto BtP = (B.transpose() * P).eval();
     auto S = (R + BtP * B).eval();
     Eigen::Matrix<Scalar, int(NU), int(NX)> rhs = (BtP * A + N.transpose()).eval();

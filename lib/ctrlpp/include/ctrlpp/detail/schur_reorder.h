@@ -22,6 +22,7 @@
 #include <cmath>
 #include <limits>
 #include <complex>
+#include <concepts>
 #include <utility>
 #include <algorithm>
 #include <type_traits>
@@ -44,6 +45,15 @@ struct pivot_ratio_conditioning
 struct hager_higham_conditioning
 {
 };
+
+/// Concept satisfied by the two conditioning policy tag types. Public API
+/// templates (dare, care) constrain their trailing Cond parameter on this so
+/// that overload resolution rejects foreign types in that slot -- preventing
+/// ambiguity with overloads that accept an additional matrix argument.
+template <typename T>
+concept conditioning_policy =
+    std::same_as<T, pivot_ratio_conditioning>
+ || std::same_as<T, hager_higham_conditioning>;
 
 // --- Precision-templated constexpr multipliers (per D-12: no bare literals) ---
 //

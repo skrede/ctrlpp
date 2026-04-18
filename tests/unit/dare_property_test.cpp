@@ -98,7 +98,7 @@ TEST_CASE("dare riccati identity holds for random controllable systems", "[dare]
                      RC_SUCCEED("dare returned nullopt for this system");
                  }
 
-                 auto& P = *P_opt;
+                 auto& P = P_opt->P;
                  auto BtP = (sys.B.transpose() * P).eval();
                  auto S = (R + BtP * sys.B).eval();
                  auto S_inv_BtPA = S.colPivHouseholderQr().solve(BtP * sys.A).eval();
@@ -126,7 +126,7 @@ TEST_CASE("dare solution is symmetric positive semi-definite", "[dare][property]
                      RC_SUCCEED("dare returned nullopt");
                  }
 
-                 auto& P = *P_opt;
+                 auto& P = P_opt->P;
 
                  // Symmetry
                  RC_ASSERT((P - P.transpose()).norm() < 1e-12);
@@ -184,7 +184,7 @@ TEST_CASE("dare robustness - degenerate inputs", "[dare][property]")
 
                  if(P_opt)
                  {
-                     auto& P = *P_opt;
+                     auto& P = P_opt->P;
                      // If returned, all entries must be finite
                      for(int i = 0; i < nx; ++i)
                          for(int j = 0; j < nx; ++j)

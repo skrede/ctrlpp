@@ -49,7 +49,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // are accepted without trapping -- the library should return
     // nullopt but Eigen internals may produce edge cases with
     // subnormal inputs that we cannot guard against.
-    if(result.has_value() && !result->allFinite())
+    if(result.has_value() && !result->P.allFinite())
         return 0;
 
     return 0;

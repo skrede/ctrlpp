@@ -53,7 +53,7 @@ TEST_CASE("DARE zero R (singular) returns nullopt", "[dare][hardening][negative]
         bool all_finite = true;
         for(int i = 0; i < 2; ++i)
             for(int j = 0; j < 2; ++j)
-                if(!std::isfinite((*result)(i, j)))
+                if(!std::isfinite(result->P(i, j)))
                     all_finite = false;
         // If it returns something, it should be finite or we accept nullopt
         CHECK(all_finite);
@@ -73,7 +73,7 @@ TEST_CASE("DARE known 2x2 solution is positive definite", "[dare][hardening][pre
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    auto& P = *result;
+    auto& P = result->P;
 
     // Verify positive definite
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(P);
@@ -97,7 +97,7 @@ TEST_CASE("DARE scalar analytical solution", "[dare][hardening][precision]")
 
     // Analytical: P = golden ratio = (1+sqrt(5))/2
     double golden = (1.0 + std::sqrt(5.0)) / 2.0;
-    REQUIRE_THAT((*result)(0, 0), WithinAbs(golden, 1e-10));
+    REQUIRE_THAT(result->P(0, 0), WithinAbs(golden, 1e-10));
 }
 
 TEST_CASE("DARE solution is positive definite for stable system", "[dare][hardening][stability]")
@@ -113,7 +113,7 @@ TEST_CASE("DARE solution is positive definite for stable system", "[dare][harden
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(*result);
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(result->P);
     for(int i = 0; i < 2; ++i)
         CHECK(eigsolver.eigenvalues()(i) > -1e-10);
 }
@@ -133,7 +133,7 @@ TEST_CASE("DARE ill-conditioned Q with cond 1e10", "[dare][hardening][robustness
     {
         for(int i = 0; i < 2; ++i)
             for(int j = 0; j < 2; ++j)
-                CHECK(std::isfinite((*result)(i, j)));
+                CHECK(std::isfinite(result->P(i, j)));
     }
 }
 

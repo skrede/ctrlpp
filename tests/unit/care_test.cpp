@@ -19,7 +19,7 @@ TEST_CASE("care scalar integrator analytical")
     auto result = ctrlpp::care<double, 1, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    CHECK_THAT((*result)(0, 0), Catch::Matchers::WithinAbs(1.0, 1e-10));
+    CHECK_THAT(result->P(0, 0), Catch::Matchers::WithinAbs(1.0, 1e-10));
 }
 
 TEST_CASE("care double integrator analytical")
@@ -38,7 +38,7 @@ TEST_CASE("care double integrator analytical")
     auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    const auto& P = *result;
+    const auto& P = result->P;
     const double s3 = std::sqrt(3.0);
 
     CHECK_THAT(P(0, 0), Catch::Matchers::WithinAbs(s3, 1e-10));
@@ -66,7 +66,7 @@ TEST_CASE("care 3-state damped system")
     auto result = ctrlpp::care<double, 3, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    const auto& P = *result;
+    const auto& P = result->P;
 
     CHECK((P - P.transpose()).norm() < 1e-10);
 
@@ -92,7 +92,7 @@ TEST_CASE("care closed-loop stable")
     auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    const auto& P = *result;
+    const auto& P = result->P;
     Eigen::Matrix<double, 1, 2> K = R.inverse() * B.transpose() * P;
     Eigen::Matrix<double, 2, 2> Acl = A - B * K;
 
@@ -138,7 +138,7 @@ TEST_CASE("care with N cross-weight")
     auto result_standard = ctrlpp::care<double, 2, 1>(Ap, B, Qp, R);
     REQUIRE(result_standard.has_value());
 
-    CHECK((*result_with_n - *result_standard).norm() < 1e-10);
+    CHECK((result_with_n->P - result_standard->P).norm() < 1e-10);
 }
 
 TEST_CASE("care solution is symmetric")
@@ -155,5 +155,5 @@ TEST_CASE("care solution is symmetric")
     auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    CHECK((*result - result->transpose()).norm() < 1e-10);
+    CHECK((result->P - result->P.transpose()).norm() < 1e-10);
 }
