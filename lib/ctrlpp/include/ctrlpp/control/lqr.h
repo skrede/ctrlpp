@@ -77,12 +77,14 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Mat
 // Computes R^{-1} once via ldlt (R is SPD for valid LQR problems), builds the
 // Hamiltonian using that pre-computed R^{-1}, and reuses it for the K formula --
 // one matrix factorisation of R instead of two.
-template <typename Scalar, std::size_t NX, std::size_t NU>
+template <typename Scalar, std::size_t NX, std::size_t NU,
+          detail::care_solve_method Method = detail::sign_function_care_method>
 std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>>
 lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
                     const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
                     const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
-                    const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
+                    const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
+                    Method                                         /*method_tag*/ = {})
 {
     static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
@@ -108,7 +110,7 @@ lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     if(!H.allFinite())
         return std::nullopt;
 
-    auto result = detail::care_solve_from_hamiltonian<Scalar, NX>(H);
+    auto result = detail::care_solve_from_hamiltonian<Scalar, NX, Method>(H);
     if(!result)
         return std::nullopt;
 
