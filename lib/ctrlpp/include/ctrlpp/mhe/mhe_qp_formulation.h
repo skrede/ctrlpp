@@ -5,22 +5,22 @@
 ///
 /// @cite rao2003 -- Rao et al., "Constrained State Estimation for Nonlinear Discrete-Time Systems", 2003
 
+#include "ctrlpp/types.h"
+
 #include "ctrlpp/mpc/qp_types.h"
 
 #include "ctrlpp/util/concepts.h"
 
-#include "ctrlpp/types.h"
-
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
-#include <array>
-#include <cstddef>
-#include <limits>
-#include <optional>
 #include <span>
-#include <utility>
+#include <array>
+#include <limits>
 #include <vector>
+#include <cstddef>
+#include <utility>
+#include <optional>
 
 namespace ctrlpp::detail
 {

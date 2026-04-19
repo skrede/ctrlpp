@@ -5,25 +5,28 @@
 ///
 /// @cite diehl2009 -- Diehl et al., "Efficient Numerical Methods for Nonlinear MPC and Moving Horizon Estimation", 2009
 
+#include "ctrlpp/types.h"
+
+#include "ctrlpp/mpc/nlp_solver.h"
+
 #include "ctrlpp/mhe/mhe_config.h"
 
-#include "ctrlpp/detail/numerical_diff.h"
-#include "ctrlpp/model/differentiable_dynamics.h"
-#include "ctrlpp/model/differentiable_measurement.h"
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/model/measurement_model.h"
-#include "ctrlpp/mpc/nlp_solver.h"
-#include "ctrlpp/types.h"
+#include "ctrlpp/model/differentiable_dynamics.h"
+#include "ctrlpp/model/differentiable_measurement.h"
+
+#include "ctrlpp/detail/numerical_diff.h"
 
 #include <Eigen/Dense>
 
+#include <span>
 #include <array>
 #include <cmath>
-#include <cstddef>
-#include <functional>
 #include <limits>
 #include <memory>
-#include <span>
+#include <cstddef>
+#include <functional>
 
 namespace ctrlpp
 {
