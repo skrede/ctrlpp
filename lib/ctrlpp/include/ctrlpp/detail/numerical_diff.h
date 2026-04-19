@@ -230,6 +230,6 @@ auto numerical_jacobian_tc(const H& h, const Vector<Scalar, NX>& x, Scalar eps =
     return numerical_jacobian_h<Scalar, NX, NTC>(h, x, eps);
 }
 
-} // namespace ctrlpp::detail
+}
 
 #endif
