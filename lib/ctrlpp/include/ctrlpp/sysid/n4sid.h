@@ -6,19 +6,20 @@
 /// @cite vanoverschee1994 -- Van Overschee & De Moor, "N4SID: Subspace Algorithms for the Identification of Combined Deterministic-Stochastic Systems", 1994
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/model/state_space.h"
 
 #include "ctrlpp/util/concepts.h"
+
+#include "ctrlpp/model/state_space.h"
 
 #include "ctrlpp/sysid/fit_metrics.h"
 #include "ctrlpp/sysid/sysid_result.h"
 
 #include <Eigen/Dense>
 
-#include <algorithm>
-#include <cstddef>
 #include <limits>
+#include <cstddef>
 #include <utility>
+#include <algorithm>
 
 namespace ctrlpp
 {

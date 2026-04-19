@@ -6,6 +6,7 @@
 /// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999, Ch. 4
 
 #include "ctrlpp/types.h"
+
 #include "ctrlpp/model/state_space.h"
 
 #include "ctrlpp/sysid/fit_metrics.h"

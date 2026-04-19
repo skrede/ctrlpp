@@ -5,9 +5,9 @@
 ///
 /// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999
 
-#include "ctrlpp/util/concepts.h"
-
 #include "ctrlpp/types.h"
+
+#include "ctrlpp/util/concepts.h"
 
 #include <Eigen/Dense>
 
