@@ -3,13 +3,13 @@
 
 #include "ctrlpp/types.h"
 
-#include <algorithm>
-#include <cmath>
-#include <cstddef>
-#include <functional>
-#include <limits>
 #include <span>
+#include <cmath>
+#include <limits>
 #include <vector>
+#include <cstddef>
+#include <algorithm>
+#include <functional>
 
 namespace ctrlpp::detail
 {

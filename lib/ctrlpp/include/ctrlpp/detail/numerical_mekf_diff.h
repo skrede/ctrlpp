@@ -1,14 +1,15 @@
 #ifndef HPP_GUARD_CTRLPP_DETAIL_NUMERICAL_MEKF_DIFF_H
 #define HPP_GUARD_CTRLPP_DETAIL_NUMERICAL_MEKF_DIFF_H
 
-#include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
+
+#include "ctrlpp/lie/so3.h"
 
 #include <Eigen/Geometry>
 
 #include <cmath>
-#include <cstddef>
 #include <limits>
+#include <cstddef>
 
 namespace ctrlpp::detail
 {
