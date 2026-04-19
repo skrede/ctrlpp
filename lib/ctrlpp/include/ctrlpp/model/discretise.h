@@ -7,6 +7,7 @@
 /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006
 
 #include "ctrlpp/types.h"
+
 #include "ctrlpp/model/state_space.h"
 
 #include <Eigen/Dense>
