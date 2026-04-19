@@ -7,6 +7,9 @@
 
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/terminal_set.h"
+
+#include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
@@ -69,7 +72,7 @@ inline void add_soft_constraint_triplets(std::vector<Eigen::Triplet<Scalar>>& tr
         }
 }
 
-template <typename Scalar, std::size_t NX, std::size_t NU>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
 [[nodiscard]] auto build_cost_matrix(int N,
                                      const Matrix<Scalar, NX, NX>& Q,
                                      const Matrix<Scalar, NU, NU>& R,
@@ -78,8 +81,6 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
                                      Scalar soft_penalty,
                                      const std::optional<Vector<Scalar, NX>>& soft_state_penalty = {}) -> Eigen::SparseMatrix<Scalar, Eigen::ColMajor>
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "QP formulation requires a floating-point Scalar type");
     static_assert(NX >= 1 && NU >= 1, "QP formulation requires NX >= 1 and NU >= 1");
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
