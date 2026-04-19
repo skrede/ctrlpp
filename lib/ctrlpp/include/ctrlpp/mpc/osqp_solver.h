@@ -7,9 +7,9 @@
 
 #include <osqp.h>
 
+#include <utility>
 #include <stdexcept>
 #include <type_traits>
-#include <utility>
 
 namespace ctrlpp
 {

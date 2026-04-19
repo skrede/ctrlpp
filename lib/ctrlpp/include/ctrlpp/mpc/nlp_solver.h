@@ -5,9 +5,9 @@
 
 #include <Eigen/Core>
 
+#include <span>
 #include <concepts>
 #include <functional>
-#include <span>
 
 namespace ctrlpp
 {

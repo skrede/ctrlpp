@@ -5,14 +5,14 @@
 
 #include <nlopt.hpp>
 
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <cstdint>
 #include <span>
+#include <cmath>
+#include <chrono>
+#include <vector>
+#include <cstdint>
+#include <algorithm>
 #include <stdexcept>
 #include <type_traits>
-#include <vector>
 
 namespace ctrlpp
 {
