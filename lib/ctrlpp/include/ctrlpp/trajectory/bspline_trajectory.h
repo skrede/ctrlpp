@@ -14,6 +14,8 @@
 #include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include <Eigen/Dense>
 
 #include <algorithm>
@@ -22,7 +24,6 @@
 #include <cstddef>
 #include <limits>
 #include <stdexcept>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -39,11 +40,9 @@ namespace ctrlpp
 /// @tparam Degree  B-spline degree (compile-time, e.g. 3 for cubic, 5 for quintic)
 ///
 /// @cite biagiotti2009 -- Sec. 4.5
-template <typename Scalar, int Degree>
+template <ctrlpp_floating_scalar Scalar, int Degree>
 class bspline_trajectory
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "bspline_trajectory requires a floating-point Scalar type");
     static_assert(Degree >= 1, "bspline_trajectory requires Degree >= 1");
 
   public:

@@ -15,23 +15,21 @@
 #include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <type_traits>
 
 namespace ctrlpp
 {
 
 /// @brief Double-S (7-segment) velocity profile bounding v, a, and j.
 /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.17)-(3.33), Fig. 3.18, p.79-96
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 class double_s_trajectory
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "double_s_trajectory requires a floating-point Scalar type");
-
 public:
     using scalar_type = Scalar;
 
