@@ -1,14 +1,15 @@
 #ifndef HPP_GUARD_CTRLPP_MHE_MHE_CONFIG_H
 #define HPP_GUARD_CTRLPP_MHE_MHE_CONFIG_H
 
-#include "ctrlpp/mpc/nmpc_config.h"
 #include "ctrlpp/types.h"
 
+#include "ctrlpp/mpc/nmpc_config.h"
+
 #include <cmath>
-#include <cstddef>
-#include <functional>
 #include <limits>
+#include <cstddef>
 #include <optional>
+#include <functional>
 
 namespace ctrlpp
 {
