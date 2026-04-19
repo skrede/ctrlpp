@@ -17,11 +17,12 @@
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -32,12 +33,9 @@ namespace ctrlpp
 /// that can be replanned mid-motion when a new target arrives.
 ///
 /// @cite biagiotti2009 -- Sec. 4.6.1
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 class online_planner_3rd
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "online_planner_3rd requires a floating-point Scalar type");
-
   public:
     struct config
     {

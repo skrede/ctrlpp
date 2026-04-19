@@ -14,11 +14,12 @@
 #include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -29,12 +30,9 @@ namespace ctrlpp
 /// Degenerate triangular case handled silently.
 ///
 /// @cite biagiotti2009 -- Sec. 3.2, eq. (3.9)-(3.16), p.65-73
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 class trapezoidal_trajectory
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "trapezoidal_trajectory requires a floating-point Scalar type");
-
   public:
     using scalar_type = Scalar;
 

@@ -25,10 +25,11 @@
 #include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -36,12 +37,9 @@ namespace ctrlpp
 /// @brief Modified sinusoidal trajectory with harmonic+cycloidal blend.
 ///
 /// @cite biagiotti2009 -- Sec. 3.8, p.124-127
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 class modified_sin_trajectory
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "modified_sin_trajectory requires a floating-point Scalar type");
-
 public:
     struct config
     {

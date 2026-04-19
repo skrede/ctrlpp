@@ -15,11 +15,12 @@
 #include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
-#include <type_traits>
 #include <vector>
 
 namespace ctrlpp
@@ -39,12 +40,9 @@ enum class boundary_condition
 /// piecewise cubic polynomials with C2 continuity at interior knots.
 ///
 /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 class cubic_spline
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "cubic_spline requires a floating-point Scalar type");
-
   public:
     struct config
     {

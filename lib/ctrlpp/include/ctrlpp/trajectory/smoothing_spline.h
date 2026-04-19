@@ -19,13 +19,14 @@
 #include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include <Eigen/Dense>
 
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
-#include <type_traits>
 #include <vector>
 
 namespace ctrlpp
@@ -38,12 +39,9 @@ namespace ctrlpp
 /// Natural-like endpoint conditions: d_0 = d_n = 0.
 ///
 /// @cite biagiotti2009 -- Sec. 4.4.5
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 class smoothing_spline
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "smoothing_spline requires a floating-point Scalar type");
-
   public:
     struct config
     {

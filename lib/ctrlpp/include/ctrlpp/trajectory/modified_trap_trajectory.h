@@ -21,10 +21,11 @@
 #include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -32,12 +33,9 @@ namespace ctrlpp
 /// @brief Modified trapezoidal trajectory with cycloidal acceleration phases.
 ///
 /// @cite biagiotti2009 -- Sec. 3.7, p.119-122
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 class modified_trap_trajectory
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "modified_trap_trajectory requires a floating-point Scalar type");
-
 public:
     struct config
     {
