@@ -5,10 +5,12 @@
 ///
 /// @cite anderson1990 -- Anderson & Moore, "Optimal Control: Linear Quadratic Methods", 1990
 
-#include "ctrlpp/control/dare.h"
-#include "ctrlpp/control/care.h"
-#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/types.h"
+
+#include "ctrlpp/util/concepts.h"
+
+#include "ctrlpp/control/care.h"
+#include "ctrlpp/control/dare.h"
 
 #include <Eigen/Dense>
 
