@@ -6,13 +6,14 @@
 /// @cite oppenheim1997 -- Oppenheim & Willsky, "Signals and Systems", 1997
 /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae for Audio EQ Biquad Filter Coefficients", 2005
 
+#include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/dsp/discrete_filter.h"
 
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <numbers>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -24,12 +25,9 @@ struct biquad_coeffs
     Scalar a1{}, a2{};
 };
 
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 class biquad
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "biquad requires a floating-point Scalar type");
-
 public:
     using scalar_type = Scalar;
 
