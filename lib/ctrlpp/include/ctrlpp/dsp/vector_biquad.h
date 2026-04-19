@@ -7,10 +7,10 @@
 
 #include "ctrlpp/types.h"
 
-#include "ctrlpp/util/concepts.h"
-
 #include "ctrlpp/dsp/biquad.h"
 #include "ctrlpp/dsp/discrete_filter.h"
+
+#include "ctrlpp/util/concepts.h"
 
 #include <array>
 #include <cstddef>
