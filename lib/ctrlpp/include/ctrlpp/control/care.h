@@ -84,7 +84,7 @@ auto build_care_hamiltonian(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
 /// selects between the baseline real-Schur + Bai-Demmel reorder path (default),
 /// the matrix sign-function Newton iteration, and the balanced-Schur variant.
 template <typename Scalar, std::size_t NX,
-          care_solve_method   Method = schur_care_method,
+          care_solve_method   Method = sign_function_care_method,
           conditioning_policy Cond   = pivot_ratio_conditioning>
 auto care_solve_from_hamiltonian(
     const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& H,
@@ -160,7 +160,7 @@ auto care_solve_from_hamiltonian(
 /// min pivot ratio across accepted swaps; `result->reorder_complete` is true iff
 /// every swap was accepted.
 template <typename Scalar, std::size_t NX, std::size_t NU,
-          detail::care_solve_method    Method = detail::schur_care_method,
+          detail::care_solve_method    Method = detail::sign_function_care_method,
           detail::conditioning_policy  Cond   = detail::pivot_ratio_conditioning>
 auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
@@ -184,7 +184,7 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
 /// @brief CARE with cross-weight N: reduces to standard form via
 /// Q' = Q - N R^{-1} N^T, A' = A - B R^{-1} N^T, then forwards.
 template <typename Scalar, std::size_t NX, std::size_t NU,
-          detail::care_solve_method    Method = detail::schur_care_method,
+          detail::care_solve_method    Method = detail::sign_function_care_method,
           detail::conditioning_policy  Cond   = detail::pivot_ratio_conditioning>
 auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
