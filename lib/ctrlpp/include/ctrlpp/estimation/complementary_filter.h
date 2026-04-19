@@ -10,31 +10,28 @@
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/estimation/observer_policy.h"
 
 #include <Eigen/Geometry>
 
 #include <cmath>
-#include <type_traits>
 
 namespace ctrlpp
 {
 
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 struct cf_config
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     Scalar k_p{Scalar{2}};
     Scalar k_i{Scalar{0.005}};
     Scalar dt{Scalar{0.01}};
     Eigen::Quaternion<Scalar> q0{Eigen::Quaternion<Scalar>::Identity()};
 };
 
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 class complementary_filter
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
-
 public:
     using observer_tag = struct complementary_filter_tag;
     using state_vector_t = Vector<Scalar, 7>;
@@ -126,7 +123,7 @@ private:
     state_vector_t state_cache_;
 };
 
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 complementary_filter(cf_config<Scalar>) -> complementary_filter<Scalar>;
 
 static_assert(ObserverPolicy<complementary_filter<double>>);

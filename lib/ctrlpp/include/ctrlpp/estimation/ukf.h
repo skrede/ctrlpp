@@ -6,6 +6,7 @@
 /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/detail/covariance_ops.h"
@@ -21,7 +22,6 @@
 #include <array>
 #include <cstddef>
 #include <utility>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -32,10 +32,9 @@ enum class gain_decomposition
     qr
 };
 
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct ukf_config
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
@@ -46,11 +45,10 @@ struct ukf_config
     gain_decomposition decomposition{gain_decomposition::ldlt};
 };
 
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Dynamics, typename Measurement, typename Strategy = merwe_sigma_points<Scalar, NX>>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Dynamics, typename Measurement, typename Strategy = merwe_sigma_points<Scalar, NX>>
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY> && sigma_point_strategy<Strategy, Scalar, NX>
 class ukf
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
@@ -253,7 +251,7 @@ private:
 };
 
 // CTAD deduction guide
-template <typename Dynamics, typename Measurement, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 ukf(Dynamics, Measurement, ukf_config<Scalar, NX, NU, NY>) -> ukf<Scalar, NX, NU, NY, Dynamics, Measurement, merwe_sigma_points<Scalar, NX>>;
 
 namespace detail

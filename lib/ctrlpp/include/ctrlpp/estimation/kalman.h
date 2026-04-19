@@ -6,6 +6,7 @@
 /// @cite kalman1960 -- Kalman, "A New Approach to Linear Filtering and Prediction Problems", 1960
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/estimation/observer_policy.h"
 
@@ -15,15 +16,13 @@
 #include <cstddef>
 #include <limits>
 #include <utility>
-#include <type_traits>
 
 namespace ctrlpp
 {
 
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct kalman_config
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
@@ -33,10 +32,9 @@ struct kalman_config
     Matrix<Scalar, NX, NX> P0{Matrix<Scalar, NX, NX>::Identity()};
 };
 
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 class kalman_filter
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
