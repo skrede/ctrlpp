@@ -2,6 +2,7 @@
 #define HPP_GUARD_CTRLPP_CONTROL_PID_CONFIG_H
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/control/pid_policies.h"
 
 #include <tuple>
@@ -94,10 +95,9 @@ using policy_configs_tuple_t = typename policy_configs_builder<Scalar, N, std::t
 
 }
 
-template <typename Scalar, std::size_t NY, typename... Policies>
+template <ctrlpp_floating_scalar Scalar, std::size_t NY, typename... Policies>
 struct pid_config
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NY > 0, "Output dimension NY must be positive");
     using vector_t = Vector<Scalar, NY>;
     using policies_tuple_t = detail::policy_configs_tuple_t<Scalar, NY, Policies...>;

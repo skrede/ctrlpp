@@ -6,6 +6,7 @@
 /// @cite kautsky1985 -- Kautsky, Nichols & Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 
 #include <Eigen/Dense>
 
@@ -14,7 +15,6 @@
 #include <complex>
 #include <cstddef>
 #include <optional>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -96,10 +96,9 @@ std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>
 // Pole placement using Ackermann's formula for single-input systems (NU == 1).
 // Computes K such that eigenvalues of (A - B*K) equal the desired poles.
 // Returns std::nullopt if the system is uncontrollable or NU > 1.
-template <typename Scalar, std::size_t NX, std::size_t NU>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
 std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const std::array<std::complex<Scalar>, NX>& desired_poles)
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 

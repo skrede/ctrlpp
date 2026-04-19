@@ -19,6 +19,7 @@
 /// @cite bai_demmel_1993 -- Bai & Demmel, "On swapping diagonal blocks in real Schur form", 1993
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/control/care_types.h"
 
 #include "ctrlpp/detail/care_methods.h"
@@ -159,7 +160,7 @@ auto care_solve_from_hamiltonian(
 /// `result->P` is the stabilising solution; `result->subspace_separation` is the
 /// min pivot ratio across accepted swaps; `result->reorder_complete` is true iff
 /// every swap was accepted.
-template <typename Scalar, std::size_t NX, std::size_t NU,
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
           detail::care_solve_method    Method = detail::sign_function_care_method,
           detail::conditioning_policy  Cond   = detail::pivot_ratio_conditioning>
 auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
@@ -170,7 +171,6 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           Cond                                           /*cond_tag*/   = {})
     -> std::expected<care_result<Scalar, NX>, care_error>
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 

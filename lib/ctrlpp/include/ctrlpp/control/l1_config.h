@@ -3,18 +3,18 @@
 
 #include "ctrlpp/types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/model/state_space.h"
 
 #include <cstddef>
-#include <type_traits>
 
 namespace ctrlpp
 {
 
-template <typename Scalar, std::size_t NX, std::size_t NU>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
 struct l1_config
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     discrete_state_space<Scalar, NX, NU, NX> predictor_model{};

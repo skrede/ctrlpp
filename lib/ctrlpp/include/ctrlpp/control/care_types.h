@@ -7,10 +7,11 @@
 /// `care_result` carries the solution P plus diagnostic scalars. Together they form
 /// the `std::expected<care_result, care_error>` contract of `ctrlpp::care`.
 
+#include "ctrlpp/util/concepts.h"
+
 #include <Eigen/Core>
 
 #include <cstddef>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -36,10 +37,9 @@ enum class care_error
 
 /// @brief Solution payload of `care`. Same shape as `dare_result`; see dare_types.h
 /// for field semantics.
-template <typename Scalar, std::size_t NX>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX>
 struct care_result
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
 
     Eigen::Matrix<Scalar, int(NX), int(NX)> P;
