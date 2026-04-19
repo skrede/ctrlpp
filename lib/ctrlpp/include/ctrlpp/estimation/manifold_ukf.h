@@ -7,6 +7,7 @@
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
 
@@ -17,7 +18,6 @@
 #include <array>
 #include <cstddef>
 #include <utility>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -32,10 +32,9 @@ concept manifold_ukf_dynamics_model = requires(const D& d, const Eigen::Quaterni
     { d(q, u) } -> std::convertible_to<Eigen::Quaternion<Scalar>>;
 };
 
-template <typename Scalar, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NY>
 struct manifold_ukf_config
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NY > 0, "Output dimension NY must be positive");
     Matrix<Scalar, 3, 3> Q{Matrix<Scalar, 3, 3>::Identity()};
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
@@ -80,11 +79,10 @@ Eigen::Quaternion<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<
 
 }
 
-template <typename Scalar, std::size_t NY, typename Dynamics, typename Measurement, typename Strategy = so3_merwe_sigma_points<Scalar>>
+template <ctrlpp_floating_scalar Scalar, std::size_t NY, typename Dynamics, typename Measurement, typename Strategy = so3_merwe_sigma_points<Scalar>>
     requires manifold_ukf_dynamics_model<Dynamics, Scalar> && manifold_ukf_measurement_model<Measurement, Scalar, NY> && manifold_sigma_point_strategy<Strategy, Scalar>
 class manifold_ukf
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NY > 0, "Output dimension NY must be positive");
 
     static constexpr int ny = static_cast<int>(NY);
@@ -274,7 +272,7 @@ private:
     void update_state_cache() { m_state_cache = so3::to_vec(m_q); }
 };
 
-template <typename Dynamics, typename Measurement, typename Scalar, std::size_t NY>
+template <typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NY>
 manifold_ukf(Dynamics, Measurement, manifold_ukf_config<Scalar, NY>) -> manifold_ukf<Scalar, NY, Dynamics, Measurement, so3_merwe_sigma_points<Scalar>>;
 
 namespace detail

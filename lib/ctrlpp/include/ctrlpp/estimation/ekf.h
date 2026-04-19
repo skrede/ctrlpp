@@ -6,6 +6,7 @@
 /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/detail/numerical_diff.h"
@@ -20,15 +21,13 @@
 #include <limits>
 #include <cstddef>
 #include <utility>
-#include <type_traits>
 
 namespace ctrlpp
 {
 
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct ekf_config
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
@@ -39,11 +38,10 @@ struct ekf_config
     Scalar numerical_eps{std::sqrt(std::numeric_limits<Scalar>::epsilon())};
 };
 
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Dynamics, typename Measurement>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Dynamics, typename Measurement>
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY>
 class ekf
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
@@ -176,7 +174,7 @@ private:
 };
 
 // CTAD deduction guide
-template <typename Dynamics, typename Measurement, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 ekf(Dynamics, Measurement, ekf_config<Scalar, NX, NU, NY>) -> ekf<Scalar, NX, NU, NY, Dynamics, Measurement>;
 
 namespace detail

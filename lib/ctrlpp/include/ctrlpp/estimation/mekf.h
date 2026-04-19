@@ -9,6 +9,7 @@
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/detail/covariance_ops.h"
@@ -20,7 +21,6 @@
 #include <cstddef>
 #include <limits>
 #include <utility>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -35,10 +35,9 @@ concept differentiable_mekf_measurement = mekf_measurement_model<M, Scalar, NB, 
     { m.jacobian(q, b) } -> std::convertible_to<Matrix<Scalar, NY, 3 + NB>>;
 };
 
-template <typename Scalar, std::size_t NB, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NB, std::size_t NY>
 struct mekf_config
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NB > 0, "Bias dimension NB must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
     static constexpr std::size_t NE = 3 + NB;
@@ -51,11 +50,10 @@ struct mekf_config
     Scalar numerical_eps{std::sqrt(std::numeric_limits<Scalar>::epsilon())};
 };
 
-template <typename Scalar, std::size_t NB, std::size_t NY, typename Measurement>
+template <ctrlpp_floating_scalar Scalar, std::size_t NB, std::size_t NY, typename Measurement>
     requires mekf_measurement_model<Measurement, Scalar, NB, NY>
 class mekf
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NB > 0, "Bias dimension NB must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
 
@@ -210,7 +208,7 @@ private:
 };
 
 // CTAD deduction guide
-template <typename Measurement, typename Scalar, std::size_t NB, std::size_t NY>
+template <typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NB, std::size_t NY>
 mekf(Measurement, mekf_config<Scalar, NB, NY>) -> mekf<Scalar, NB, NY, Measurement>;
 
 namespace detail

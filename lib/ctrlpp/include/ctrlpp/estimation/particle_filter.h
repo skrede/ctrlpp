@@ -6,6 +6,7 @@
 /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/model/dynamics_model.h"
@@ -24,7 +25,6 @@
 #include <numbers>
 #include <utility>
 #include <algorithm>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -41,10 +41,9 @@ enum class weight_representation
     linear
 };
 
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct pf_config
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
@@ -58,11 +57,10 @@ struct pf_config
     weight_representation weights{weight_representation::log};
 };
 
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t NP, typename Dynamics, typename Measurement, typename Resampler = systematic_resampling, typename Rng = std::mt19937_64>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t NP, typename Dynamics, typename Measurement, typename Resampler = systematic_resampling, typename Rng = std::mt19937_64>
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY> && std::uniform_random_bit_generator<Rng> && resampling_strategy<Resampler, Rng, NP>
 class particle_filter
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
@@ -445,7 +443,7 @@ private:
 };
 
 // Factory function since NP cannot be deduced via CTAD
-template <std::size_t NP, typename Dynamics, typename Measurement, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64>
+template <std::size_t NP, typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64>
 auto make_particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{})
 {
     return particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng>(std::move(dynamics), std::move(measurement), std::move(config), std::move(rng));
