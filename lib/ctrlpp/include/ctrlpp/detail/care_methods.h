@@ -7,19 +7,28 @@
 /// to solve the continuous-time algebraic Riccati equation. Three tag types
 /// are provided:
 ///
-///  * schur_care_method          : default, Schur + Bai-Demmel reorder
-///                                  (Laub 1979; Bai-Demmel 1993); the
-///                                  post-integration baseline.
-///  * sign_function_care_method  : Newton iteration on sign(H) with
+///  * sign_function_care_method  : default, Newton iteration on sign(H) with
 ///                                  determinantal scaling (Roberts 1980;
 ///                                  Byers 1987; Higham 2008).
+///  * schur_care_method          : Schur + Bai-Demmel reorder (Laub 1979;
+///                                  Bai-Demmel 1993). Retained for
+///                                  reproducibility; superseded by the
+///                                  sign-function path after the bakeoff.
 ///  * balanced_schur_care_method : Schur after a DGEBAL-style diagonal
 ///                                  balance of the Hamiltonian (LAPACK
-///                                  DGEBAL phase 2).
+///                                  DGEBAL phase 2). Retained for
+///                                  reproducibility; superseded by the
+///                                  sign-function path after the bakeoff.
 ///
 /// The `care_solve_method` concept constrains the trailing `Method` template
 /// parameter on `care_solve_from_hamiltonian`, `care`, and `lqr_gain_continuous`
 /// so overload resolution rejects foreign types.
+///
+/// The default assignment was picked by a governor-locked bakeoff archived at
+/// `.planning/benchmarks/2026-04-18_23-55_phase41-bakeoff/verdict.md`. The
+/// sign-function path reached 31.8 to 35.8 percent fewer median instructions
+/// than `ct::optcon::CARE` at every target NX in the 8 to 30 sweep; both
+/// Schur variants failed the primary gate by 39 to 41 percent.
 ///
 /// @cite laub1979      : Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
 /// @cite roberts1980   : Roberts, "Linear model reduction and solution of the algebraic Riccati equation by use of the sign function", 1980
@@ -28,19 +37,31 @@
 /// @cite lapack_dgebal : Reference LAPACK SRC/dgebal.f phase 2 (scaling) algorithm
 
 #include <concepts>
-#include <type_traits>
 
 namespace ctrlpp::detail
 {
 
-struct schur_care_method
-{
-};
-
+/// @brief Default CARE solve path: Newton iteration on sign(H) with determinantal scaling.
 struct sign_function_care_method
 {
 };
 
+/// @brief Schur + Bai-Demmel reorder CARE solve path.
+///
+/// @note Retained for reproducibility; superseded by `sign_function_care_method`
+///       per bakeoff archive `.planning/benchmarks/2026-04-18_23-55_phase41-bakeoff/verdict.md`.
+///       The Schur path fails the bakeoff primary gate by ~40 percent at NX=8 to 30.
+struct schur_care_method
+{
+};
+
+/// @brief DGEBAL-prebalanced Schur CARE solve path.
+///
+/// @note Retained for reproducibility; superseded by `sign_function_care_method`
+///       per bakeoff archive `.planning/benchmarks/2026-04-18_23-55_phase41-bakeoff/verdict.md`.
+///       DGEBAL balance is a near no-op on well-conditioned Hamiltonians (the diagonal D
+///       scaling stays near ones, see phase-41 subspace-residual archive), and the path
+///       tracks `schur_care_method` within 1 percent across the bakeoff sweep.
 struct balanced_schur_care_method
 {
 };
