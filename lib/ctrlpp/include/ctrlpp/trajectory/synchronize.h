@@ -11,10 +11,10 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 5.3
 
-#include <algorithm>
-#include <concepts>
-#include <type_traits>
 #include <vector>
+#include <concepts>
+#include <algorithm>
+#include <type_traits>
 
 namespace ctrlpp
 {

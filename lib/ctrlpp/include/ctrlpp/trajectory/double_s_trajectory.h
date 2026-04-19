@@ -12,15 +12,15 @@
 ///
 /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.17)-(3.33), Fig. 3.18, p.79-96
 
-#include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include "ctrlpp/util/concepts.h"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <algorithm>
 
 namespace ctrlpp
 {

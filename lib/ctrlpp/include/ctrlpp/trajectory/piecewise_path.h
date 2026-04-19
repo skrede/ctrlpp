@@ -10,9 +10,10 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Ch. 4 (composite trajectories)
 
-#include "ctrlpp/trajectory/detail/piecewise_dispatch.h"
 #include "ctrlpp/trajectory/path_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
+
+#include "ctrlpp/trajectory/detail/piecewise_dispatch.h"
 
 namespace ctrlpp
 {

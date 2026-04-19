@@ -18,14 +18,14 @@
 ///
 /// @cite biagiotti2009 -- Sec. 3.7, eq. (3.49)-(3.51), p.119-122
 
-#include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include "ctrlpp/util/concepts.h"
 
-#include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <algorithm>
 
 namespace ctrlpp
 {

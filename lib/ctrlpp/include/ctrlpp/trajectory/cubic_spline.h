@@ -11,17 +11,18 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 4.4, eq. (4.10)-(4.11)
 
-#include "ctrlpp/trajectory/detail/tridiagonal.h"
-#include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+
+#include "ctrlpp/trajectory/detail/tridiagonal.h"
 
 #include "ctrlpp/util/concepts.h"
 
-#include <algorithm>
 #include <array>
+#include <vector>
 #include <cassert>
 #include <cstddef>
-#include <vector>
+#include <algorithm>
 
 namespace ctrlpp
 {

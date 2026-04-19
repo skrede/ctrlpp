@@ -11,10 +11,10 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 4.4
 
-#include <cassert>
 #include <cmath>
-#include <cstddef>
 #include <vector>
+#include <cassert>
+#include <cstddef>
 
 namespace ctrlpp::detail
 {

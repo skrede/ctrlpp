@@ -11,8 +11,8 @@
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 
-#include <concepts>
 #include <cstddef>
+#include <concepts>
 
 namespace ctrlpp
 {

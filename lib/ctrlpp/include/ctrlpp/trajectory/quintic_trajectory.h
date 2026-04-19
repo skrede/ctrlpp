@@ -9,13 +9,14 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 2.1.5, eq. (2.5), p.27
 
-#include "ctrlpp/trajectory/detail/polynomial_eval.h"
-#include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
 
-#include <algorithm>
+#include "ctrlpp/trajectory/detail/polynomial_eval.h"
+
 #include <array>
 #include <cstddef>
+#include <algorithm>
 
 namespace ctrlpp
 {
