@@ -11,21 +11,21 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 4.5
 
-#include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include "ctrlpp/util/concepts.h"
 
 #include <Eigen/Dense>
 
-#include <algorithm>
-#include <cassert>
 #include <cmath>
-#include <cstddef>
 #include <limits>
-#include <stdexcept>
-#include <utility>
 #include <vector>
+#include <cassert>
+#include <cstddef>
+#include <utility>
+#include <algorithm>
+#include <stdexcept>
 
 namespace ctrlpp
 {

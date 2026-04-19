@@ -12,9 +12,10 @@
 /// Machines and Robots", 2009, Ch. 4 (composite trajectories)
 
 #include "ctrlpp/trajectory/cubic_trajectory.h"
-#include "ctrlpp/trajectory/detail/piecewise_dispatch.h"
-#include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
+
+#include "ctrlpp/trajectory/detail/piecewise_dispatch.h"
 
 #include <cstddef>
 

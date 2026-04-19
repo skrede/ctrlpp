@@ -14,10 +14,10 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 5.2.1, eq. (5.5)-(5.6), p.230-231
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <algorithm>
 
 namespace ctrlpp
 {

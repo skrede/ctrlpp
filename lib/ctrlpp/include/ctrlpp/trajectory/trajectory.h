@@ -13,12 +13,12 @@
 /// Machines and Robots", 2009, Sec. 5.2.1, eq. (2.16)-(2.17), p.34
 
 #include "ctrlpp/trajectory/cycloidal_path.h"
-#include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <utility>
+#include <algorithm>
 
 namespace ctrlpp
 {

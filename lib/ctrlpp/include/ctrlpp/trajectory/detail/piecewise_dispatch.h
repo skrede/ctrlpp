@@ -10,11 +10,11 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Ch. 4 (composite trajectories)
 
-#include <algorithm>
 #include <array>
-#include <cstddef>
 #include <tuple>
 #include <utility>
+#include <cstddef>
+#include <algorithm>
 
 namespace ctrlpp::detail
 {

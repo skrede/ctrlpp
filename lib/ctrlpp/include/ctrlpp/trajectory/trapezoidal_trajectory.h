@@ -11,15 +11,15 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 3.2, eq. (3.9)-(3.16), p.65-73
 
-#include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include "ctrlpp/util/concepts.h"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <algorithm>
 
 namespace ctrlpp
 {

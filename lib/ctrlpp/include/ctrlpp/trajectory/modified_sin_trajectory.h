@@ -22,14 +22,14 @@
 ///
 /// @cite biagiotti2009 -- Sec. 3.8, p.124-127
 
-#include "ctrlpp/trajectory/trajectory_segment.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include "ctrlpp/util/concepts.h"
 
-#include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <algorithm>
 
 namespace ctrlpp
 {
