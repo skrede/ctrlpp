@@ -5,9 +5,11 @@
 ///
 /// @cite rao2003 -- Rao et al., "Constrained State Estimation for Nonlinear Discrete-Time Systems", 2003
 
-#include "ctrlpp/types.h"
-
 #include "ctrlpp/mpc/qp_types.h"
+
+#include "ctrlpp/util/concepts.h"
+
+#include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
@@ -17,7 +19,6 @@
 #include <limits>
 #include <optional>
 #include <span>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -381,7 +382,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 
 /// Build per-solve QP update vectors (q, l, u) from current window data.
 /// @cite rao2003 -- Called each time the MHE window shifts and a new solve is needed
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 [[nodiscard]] auto build_mhe_qp_update(std::size_t N,
                                        Scalar arrival_weight,
                                        const Matrix<Scalar, NX, NX>& P_arr_inv,
@@ -403,9 +404,6 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
                                        const Eigen::VectorX<Scalar>& warm_x,
                                        const Eigen::VectorX<Scalar>& warm_y) -> qp_update<Scalar>
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "MHE QP formulation requires a floating-point Scalar type");
-
     int Ni = static_cast<int>(N);
     auto dims = compute_mhe_dims<NX, NY>(N, has_box_bounds, has_soft_constraints, has_residual_bounds);
 
