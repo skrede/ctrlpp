@@ -15,6 +15,7 @@
 /// @cite bai_demmel_1993 -- Bai & Demmel, "On swapping diagonal blocks in real Schur form", 1993
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/control/dare_types.h"
 
 #include "ctrlpp/detail/schur_reorder.h"
@@ -28,7 +29,6 @@
 #include <complex>
 #include <cstddef>
 #include <expected>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -141,7 +141,7 @@ auto dare_solve_from_symplectic(
 /// `result->P` is the stabilising solution; `result->subspace_separation` is the
 /// min pivot ratio across accepted swaps (LAPACK SEP analogue); `result->reorder_complete`
 /// is true iff every swap was accepted by the conditioning test.
-template <typename Scalar, std::size_t NX, std::size_t NU,
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
           detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
 auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
@@ -150,7 +150,6 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           Cond                                           /*tag*/ = {})
     -> std::expected<dare_result<Scalar, NX>, dare_error>
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 

@@ -8,6 +8,8 @@
 
 #include "ctrlpp/types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/control/l1_config.h"
 
 #include "ctrlpp/dsp/vector_biquad.h"
@@ -19,17 +21,15 @@
 #include <cstddef>
 #include <stdexcept>
 #include <utility>
-#include <type_traits>
 
 namespace ctrlpp
 {
 
-template <typename Scalar, std::size_t NX = 1, std::size_t NU = 1,
+template <ctrlpp_floating_scalar Scalar, std::size_t NX = 1, std::size_t NU = 1,
           typename Filter = vector_biquad<Scalar, NU>>
     requires vector_discrete_filter<Filter, Vector<Scalar, NU>>
 class l1_controller
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 

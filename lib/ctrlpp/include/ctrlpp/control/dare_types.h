@@ -8,10 +8,11 @@
 /// reorder completeness). Together they form the `std::expected<dare_result, dare_error>`
 /// contract of `ctrlpp::dare`.
 
+#include "ctrlpp/util/concepts.h"
+
 #include <Eigen/Core>
 
 #include <cstddef>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -49,10 +50,9 @@ enum class dare_error
 ///                          analogue). A partial reorder with a computable P is
 ///                          diagnostic, not an error; consult `subspace_separation`
 ///                          to decide whether P is trustworthy for the use case.
-template <typename Scalar, std::size_t NX>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX>
 struct dare_result
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
 
     Eigen::Matrix<Scalar, int(NX), int(NX)> P;

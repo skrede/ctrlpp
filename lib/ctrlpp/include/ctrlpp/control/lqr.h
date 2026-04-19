@@ -7,6 +7,7 @@
 
 #include "ctrlpp/control/dare.h"
 #include "ctrlpp/control/care.h"
+#include "ctrlpp/util/concepts.h"
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
@@ -16,16 +17,14 @@
 #include <cstddef>
 #include <utility>
 #include <optional>
-#include <type_traits>
 
 namespace ctrlpp
 {
 
 // LQI gain result: partitioned feedback gain for integral action.
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct lqi_result
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
@@ -77,7 +76,7 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Mat
 // Computes R^{-1} once via ldlt (R is SPD for valid LQR problems), builds the
 // Hamiltonian using that pre-computed R^{-1}, and reuses it for the K formula --
 // one matrix factorisation of R instead of two.
-template <typename Scalar, std::size_t NX, std::size_t NU,
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
           detail::care_solve_method Method = detail::sign_function_care_method>
 std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>>
 lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
@@ -86,7 +85,6 @@ lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
                     const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
                     Method                                         /*method_tag*/ = {})
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 
@@ -269,10 +267,9 @@ auto lqr_cost(std::span<const Eigen::Matrix<Scalar, int(NX), 1>> xs,
 }
 
 // Thin LQR controller class storing a precomputed gain matrix.
-template <typename Scalar, std::size_t NX, std::size_t NU>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
 class lqr
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 
@@ -292,10 +289,9 @@ private:
 };
 
 // Time-varying LQR controller storing a gain sequence.
-template <typename Scalar, std::size_t NX, std::size_t NU>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
 class lqr_time_varying
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 

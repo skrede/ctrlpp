@@ -7,6 +7,8 @@
 
 #include "ctrlpp/types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/control/mrac_config.h"
 #include "ctrlpp/control/mrac_policies.h"
 
@@ -20,11 +22,10 @@
 namespace ctrlpp
 {
 
-template <typename Scalar, std::size_t NX = 1, std::size_t NU = 1,
+template <ctrlpp_floating_scalar Scalar, std::size_t NX = 1, std::size_t NU = 1,
           typename Robustification = no_robustification>
 class mrac_controller
 {
-    static_assert(std::is_floating_point_v<Scalar>, "Scalar must be a floating-point type");
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 
