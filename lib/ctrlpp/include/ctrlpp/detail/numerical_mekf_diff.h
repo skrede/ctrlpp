@@ -53,6 +53,6 @@ auto numerical_mekf_jacobian(const H& h, const Eigen::Quaternion<Scalar>& q, con
     return jac;
 }
 
-} // namespace ctrlpp::detail
+}
 
 #endif
