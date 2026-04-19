@@ -5,19 +5,21 @@
 ///
 /// @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017
 
-#include "ctrlpp/detail/numerical_diff.h"
+#include "ctrlpp/types.h"
+
 #include "ctrlpp/mpc/nlp_solver.h"
 #include "ctrlpp/mpc/nmpc_config.h"
-#include "ctrlpp/types.h"
+
+#include "ctrlpp/detail/numerical_diff.h"
 
 #include <Eigen/Dense>
 
-#include <cstddef>
-#include <functional>
+#include <span>
 #include <limits>
 #include <memory>
-#include <span>
 #include <vector>
+#include <cstddef>
+#include <functional>
 
 namespace ctrlpp
 {

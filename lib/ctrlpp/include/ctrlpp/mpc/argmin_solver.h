@@ -6,6 +6,7 @@
 #include "ctrlpp/mpc/argmin_policies.h"
 
 #include <nablapp/result/status.h>
+
 #include <nablapp/solver/options.h>
 #include <nablapp/solver/basic_solver.h>
 

@@ -15,15 +15,15 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
-#include <cmath>
-#include <cstddef>
-#include <limits>
-#include <optional>
 #include <span>
-#include <type_traits>
+#include <cmath>
+#include <limits>
+#include <vector>
 #include <utility>
 #include <variant>
-#include <vector>
+#include <cstddef>
+#include <optional>
+#include <type_traits>
 
 namespace ctrlpp::detail
 {
