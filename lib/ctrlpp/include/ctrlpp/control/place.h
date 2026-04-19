@@ -6,6 +6,7 @@
 /// @cite kautsky1985 -- Kautsky, Nichols & Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
 
 #include "ctrlpp/types.h"
+
 #include "ctrlpp/util/concepts.h"
 
 #include <Eigen/Dense>

@@ -19,8 +19,8 @@
 #include "ctrlpp/model/state_space.h"
 
 #include <cstddef>
-#include <stdexcept>
 #include <utility>
+#include <stdexcept>
 
 namespace ctrlpp
 {

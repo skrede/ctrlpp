@@ -15,7 +15,9 @@
 /// @cite bai_demmel_1993 -- Bai & Demmel, "On swapping diagonal blocks in real Schur form", 1993
 
 #include "ctrlpp/types.h"
+
 #include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/control/dare_types.h"
 
 #include "ctrlpp/detail/schur_reorder.h"
