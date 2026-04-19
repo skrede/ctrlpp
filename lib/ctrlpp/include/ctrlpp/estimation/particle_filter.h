@@ -6,12 +6,13 @@
 /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993
 
 #include "ctrlpp/types.h"
+
 #include "ctrlpp/util/concepts.h"
-#include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/model/measurement_model.h"
 
+#include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/resampling/resampling_strategy.h"
 #include "ctrlpp/estimation/resampling/systematic_resampling.h"
 

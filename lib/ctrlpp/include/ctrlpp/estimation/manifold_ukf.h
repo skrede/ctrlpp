@@ -5,13 +5,16 @@
 ///
 /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
 
-#include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
+
+#include "ctrlpp/lie/so3.h"
+
 #include "ctrlpp/util/concepts.h"
-#include "ctrlpp/estimation/observer_policy.h"
-#include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
 
 #include "ctrlpp/detail/covariance_ops.h"
+
+#include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
 
 #include <Eigen/Geometry>
 

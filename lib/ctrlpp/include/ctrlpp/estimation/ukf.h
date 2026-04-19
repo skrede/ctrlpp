@@ -6,14 +6,15 @@
 /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/util/concepts.h"
-#include "ctrlpp/estimation/observer_policy.h"
 
-#include "ctrlpp/detail/covariance_ops.h"
+#include "ctrlpp/util/concepts.h"
 
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/model/measurement_model.h"
 
+#include "ctrlpp/detail/covariance_ops.h"
+
+#include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
 #include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
 

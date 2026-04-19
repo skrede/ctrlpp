@@ -8,9 +8,12 @@
 ///
 /// @cite mahony2008 -- Mahony et al., "Nonlinear Complementary Filters on the Special Orthogonal Group", 2008
 
-#include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
+
+#include "ctrlpp/lie/so3.h"
+
 #include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/estimation/observer_policy.h"
 
 #include <Eigen/Geometry>

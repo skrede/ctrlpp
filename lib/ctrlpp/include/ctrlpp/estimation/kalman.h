@@ -6,15 +6,18 @@
 /// @cite kalman1960 -- Kalman, "A New Approach to Linear Filtering and Prediction Problems", 1960
 
 #include "ctrlpp/types.h"
+
 #include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/model/state_space.h"
-#include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/detail/covariance_ops.h"
 
+#include "ctrlpp/estimation/observer_policy.h"
+
 #include <cmath>
-#include <cstddef>
 #include <limits>
+#include <cstddef>
 #include <utility>
 
 namespace ctrlpp
