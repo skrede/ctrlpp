@@ -8,22 +8,21 @@
 #include "ctrlpp/types.h"
 #include "ctrlpp/model/state_space.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/sysid/rls.h"
 
 #include <Eigen/Dense>
 
 #include <array>
 #include <cstddef>
-#include <type_traits>
 
 namespace ctrlpp
 {
 
-template <typename Scalar, std::size_t NA, std::size_t NB, std::size_t NU = 1, std::size_t NY = 1>
+template <ctrlpp_floating_scalar Scalar, std::size_t NA, std::size_t NB, std::size_t NU = 1, std::size_t NY = 1>
 class recursive_arx
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "recursive_arx requires a floating-point Scalar type");
     static_assert(NA >= 1 && NB >= 1, "recursive_arx requires NA >= 1 and NB >= 1");
 
 public:

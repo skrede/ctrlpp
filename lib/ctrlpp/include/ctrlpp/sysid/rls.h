@@ -5,13 +5,14 @@
 ///
 /// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999
 
+#include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
 
 #include <cmath>
 #include <cstddef>
-#include <type_traits>
 
 namespace ctrlpp
 {
@@ -24,11 +25,9 @@ struct rls_config
     Scalar cov_upper_bound{Scalar{1e6}};
 };
 
-template <typename Scalar, std::size_t NP>
+template <ctrlpp_floating_scalar Scalar, std::size_t NP>
 class rls
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "rls requires a floating-point Scalar type");
     static_assert(NP >= 1, "rls requires at least one parameter");
 
 public:
