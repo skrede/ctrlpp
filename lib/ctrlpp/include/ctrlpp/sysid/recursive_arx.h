@@ -6,11 +6,12 @@
 /// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999, Ch. 11
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/model/state_space.h"
+
+#include "ctrlpp/sysid/rls.h"
 
 #include "ctrlpp/util/concepts.h"
 
-#include "ctrlpp/sysid/rls.h"
+#include "ctrlpp/model/state_space.h"
 
 #include <Eigen/Dense>
 
