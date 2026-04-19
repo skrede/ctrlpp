@@ -7,19 +7,22 @@
 /// error-state covariance. The mandatory post-update covariance reset via
 /// frame-change Jacobian G is the key correctness concern.
 
-#include "ctrlpp/lie/so3.h"
 #include "ctrlpp/types.h"
+
+#include "ctrlpp/lie/so3.h"
+
 #include "ctrlpp/util/concepts.h"
-#include "ctrlpp/estimation/observer_policy.h"
 
 #include "ctrlpp/detail/covariance_ops.h"
 #include "ctrlpp/detail/numerical_mekf_diff.h"
 
+#include "ctrlpp/estimation/observer_policy.h"
+
 #include <Eigen/Geometry>
 
 #include <cmath>
-#include <cstddef>
 #include <limits>
+#include <cstddef>
 #include <utility>
 
 namespace ctrlpp

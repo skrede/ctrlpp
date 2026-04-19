@@ -6,16 +6,18 @@
 /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/util/concepts.h"
-#include "ctrlpp/estimation/observer_policy.h"
 
-#include "ctrlpp/detail/numerical_diff.h"
-#include "ctrlpp/detail/covariance_ops.h"
+#include "ctrlpp/util/concepts.h"
 
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/model/measurement_model.h"
 #include "ctrlpp/model/differentiable_dynamics.h"
 #include "ctrlpp/model/differentiable_measurement.h"
+
+#include "ctrlpp/detail/covariance_ops.h"
+#include "ctrlpp/detail/numerical_diff.h"
+
+#include "ctrlpp/estimation/observer_policy.h"
 
 #include <cmath>
 #include <limits>

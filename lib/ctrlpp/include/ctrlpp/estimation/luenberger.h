@@ -6,8 +6,11 @@
 /// @cite luenberger1971 -- Luenberger, "An Introduction to Observers", 1971
 
 #include "ctrlpp/types.h"
+
 #include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/model/state_space.h"
+
 #include "ctrlpp/estimation/observer_policy.h"
 
 #include <cstddef>
