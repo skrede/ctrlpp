@@ -1,7 +1,8 @@
-// Competitive benchmark: ctrlpp::lqr_gain (DARE-based discrete LQR) vs ct::optcon::LQR
-// (CARE-based continuous LQR, via Eigen::RealSchur + LAPACK dtrsen_). Note that the
-// two solve different equations on the same matrices; this is a DARE-vs-CARE racing
-// comparison of the Riccati solve path that an LQR wrapper chains to.
+// Competitive benchmark: ctrlpp::lqr_gain (DARE-based discrete LQR) vs
+// ctrlpp::lqr_gain_continuous (CARE-based, sign_function_care_method default) vs
+// ct::optcon::LQR (CARE-based continuous LQR). The three solve different equations
+// on the same discretized-integrator matrices; this is a Riccati solve path race,
+// not a correctness comparison.
 //
 // Size-swept NX in {2, 4, 6, 8, 12, 16, 20, 24, 30}. NU scales with NX.
 //
@@ -10,6 +11,7 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "ctrlpp/control/care.h"
 #include "ctrlpp/control/lqr.h"
 
 #include <cassert>  // must precede ct_optcon includes; DynamicRiccatiEquation.hpp uses assert() without <cassert>
@@ -55,13 +57,18 @@ auto build_chain_of_integrators(double dt)
 }
 
 template <std::size_t NX, std::size_t NU>
-void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, const char* label_ct)
+void run_size_sweep(ankerl::nanobench::Bench& bench,
+                    const char* label_ctrlpp_dare,
+                    const char* label_ctrlpp_care,
+                    const char* label_ct)
 {
     constexpr double dt = 0.05;
     auto [A, B, Q, R] = build_chain_of_integrators<NX, NU>(dt);
 
     auto warmup_ctrlpp = ctrlpp::lqr_gain<double, NX, NU>(A, B, Q, R);
     (void)warmup_ctrlpp;
+    auto warmup_ctrlpp_care = ctrlpp::lqr_gain_continuous<double, NX, NU>(A, B, Q, R);
+    (void)warmup_ctrlpp_care;
 
     ct::optcon::LQR<NX, NU> ct_lqr;
     typename ct::optcon::LQR<NX, NU>::state_matrix_t A_ct = A;
@@ -72,12 +79,18 @@ void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, c
 
     ct_lqr.compute(Q_ct, R_ct, A_ct, B_ct, K_ct);
 
-    bench.run(label_ctrlpp,
+    bench.run(label_ctrlpp_dare,
               [&]
               {
                   auto K = ctrlpp::lqr_gain<double, NX, NU>(A, B, Q, R);
                   ankerl::nanobench::doNotOptimizeAway(K);
               })
+        .run(label_ctrlpp_care,
+             [&]
+             {
+                 auto K = ctrlpp::lqr_gain_continuous<double, NX, NU>(A, B, Q, R);
+                 ankerl::nanobench::doNotOptimizeAway(K);
+             })
         .run(label_ct,
              [&]
              {
@@ -97,15 +110,15 @@ int main()
         .performanceCounters(true)
         .relative(true);
 
-    run_size_sweep<2, 1>(bench,  "ctrlpp::lqr_gain NX=2",  "ct::optcon::LQR NX=2");
-    run_size_sweep<4, 2>(bench,  "ctrlpp::lqr_gain NX=4",  "ct::optcon::LQR NX=4");
-    run_size_sweep<6, 2>(bench,  "ctrlpp::lqr_gain NX=6",  "ct::optcon::LQR NX=6");
-    run_size_sweep<8, 2>(bench,  "ctrlpp::lqr_gain NX=8",  "ct::optcon::LQR NX=8");
-    run_size_sweep<12, 3>(bench, "ctrlpp::lqr_gain NX=12", "ct::optcon::LQR NX=12");
-    run_size_sweep<16, 4>(bench, "ctrlpp::lqr_gain NX=16", "ct::optcon::LQR NX=16");
-    run_size_sweep<20, 5>(bench, "ctrlpp::lqr_gain NX=20", "ct::optcon::LQR NX=20");
-    run_size_sweep<24, 6>(bench, "ctrlpp::lqr_gain NX=24", "ct::optcon::LQR NX=24");
-    run_size_sweep<30, 6>(bench, "ctrlpp::lqr_gain NX=30", "ct::optcon::LQR NX=30");
+    run_size_sweep<2, 1>(bench,  "ctrlpp::lqr_gain NX=2",  "ctrlpp::lqr_gain_continuous NX=2",  "ct::optcon::LQR NX=2");
+    run_size_sweep<4, 2>(bench,  "ctrlpp::lqr_gain NX=4",  "ctrlpp::lqr_gain_continuous NX=4",  "ct::optcon::LQR NX=4");
+    run_size_sweep<6, 2>(bench,  "ctrlpp::lqr_gain NX=6",  "ctrlpp::lqr_gain_continuous NX=6",  "ct::optcon::LQR NX=6");
+    run_size_sweep<8, 2>(bench,  "ctrlpp::lqr_gain NX=8",  "ctrlpp::lqr_gain_continuous NX=8",  "ct::optcon::LQR NX=8");
+    run_size_sweep<12, 3>(bench, "ctrlpp::lqr_gain NX=12", "ctrlpp::lqr_gain_continuous NX=12", "ct::optcon::LQR NX=12");
+    run_size_sweep<16, 4>(bench, "ctrlpp::lqr_gain NX=16", "ctrlpp::lqr_gain_continuous NX=16", "ct::optcon::LQR NX=16");
+    run_size_sweep<20, 5>(bench, "ctrlpp::lqr_gain NX=20", "ctrlpp::lqr_gain_continuous NX=20", "ct::optcon::LQR NX=20");
+    run_size_sweep<24, 6>(bench, "ctrlpp::lqr_gain NX=24", "ctrlpp::lqr_gain_continuous NX=24", "ct::optcon::LQR NX=24");
+    run_size_sweep<30, 6>(bench, "ctrlpp::lqr_gain NX=30", "ctrlpp::lqr_gain_continuous NX=30", "ct::optcon::LQR NX=30");
 
     std::ofstream csv("bench_lqr_vs_ct.csv");
     bench.render(comma_csv_tpl, csv);
