@@ -15,10 +15,11 @@
 
 #include "ctrlpp/types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include <Eigen/Geometry>
 
 #include <cmath>
-#include <type_traits>
 
 namespace ctrlpp::so3
 {
@@ -26,11 +27,9 @@ namespace ctrlpp::so3
 /// Exponential map: rotation vector (angle-axis, phi) -> unit quaternion.
 /// Uses Rodrigues formula with Taylor expansion near zero to avoid division by zero.
 /// @cite sola2018 Eq. 101
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3>& phi)
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "so3 operations require a floating-point Scalar type");
     Scalar theta = phi.norm();
     Scalar half_theta = theta / Scalar{2};
 
