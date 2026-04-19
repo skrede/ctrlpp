@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """D-14 DARE non-regression gate.
 
-Instruction delta <= 1% and wall-clock delta <= 3% at NX in {8, 12, 16, 20, 24, 30}
-against a frozen baseline CSV (default: 2026-04-18_15-54_bench_dare_vs_ct_wide_sweep.csv).
+Instruction-count is the governor-independent primary metric: the symmetric
+band abs(instr_delta) <= 1% flags both slowdowns (regression) and unexpected
+speedups (algorithmic disturbance of a path we claim not to touch).
+
+Wall-clock is noise-dominated on boost-capable CPUs inside the performance
+governor; the gate enforces only the non-regression direction: a positive
+wall_delta above 3% fails, and a negative wall_delta (measurement run is
+faster than baseline) passes regardless of magnitude. This is strict
+non-regression as documented in D-14, not symmetric.
+
+Default target: NX in {8, 12, 16, 20, 24, 30} against the frozen baseline
+2026-04-18_15-54_bench_dare_vs_ct_wide_sweep.csv.
 
 Usage:  tools/dare_regress_check.py <baseline.csv> <current.csv> [--label ctrlpp::dare]
 """
@@ -50,10 +60,10 @@ def main():
         di = (cur_i[key] - base_i[key]) / base_i[key] if base_i[key] > 0 else float('inf')
         dw = (cur_w[key] - base_w[key]) / base_w[key] if base_w[key] > 0 else float('inf')
         instr_ok = abs(di) <= INSTR_TOL
-        wall_ok  = abs(dw) <= WALL_TOL
+        wall_ok  = dw <= WALL_TOL
         passed   = instr_ok and wall_ok
         print(f'{key:30s} instr_delta={di:+.2%} wall_delta={dw:+.2%} '
-              f'{"OK" if passed else "FAIL"} (instr_band={INSTR_TOL:.0%}, wall_band={WALL_TOL:.0%})')
+              f'{"OK" if passed else "FAIL"} (instr_band=+/-{INSTR_TOL:.0%}, wall_band<=+{WALL_TOL:.0%})')
         ok = ok and passed
     sys.exit(0 if ok else 1)
 
