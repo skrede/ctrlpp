@@ -6,9 +6,9 @@
 /// @cite oppenheim1997 -- Oppenheim & Willsky, "Signals and Systems", 1997
 /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae for Audio EQ Biquad Filter Coefficients", 2005
 
-#include "ctrlpp/util/concepts.h"
-
 #include "ctrlpp/dsp/discrete_filter.h"
+
+#include "ctrlpp/util/concepts.h"
 
 #include <array>
 #include <cmath>
