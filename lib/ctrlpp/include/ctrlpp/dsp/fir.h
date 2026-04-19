@@ -5,20 +5,19 @@
 ///
 /// @cite oppenheim1997 -- Oppenheim & Willsky, "Signals and Systems", 1997
 
+#include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/dsp/discrete_filter.h"
 
 #include <array>
 #include <cstddef>
-#include <type_traits>
 
 namespace ctrlpp
 {
 
-template <typename Scalar, std::size_t N>
+template <ctrlpp_floating_scalar Scalar, std::size_t N>
 class fir
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "fir requires a floating-point Scalar type");
     static_assert(N >= 1, "fir requires at least one tap");
 
 public:

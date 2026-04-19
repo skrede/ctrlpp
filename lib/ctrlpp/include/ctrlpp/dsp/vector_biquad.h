@@ -7,12 +7,13 @@
 
 #include "ctrlpp/types.h"
 
+#include "ctrlpp/util/concepts.h"
+
 #include "ctrlpp/dsp/biquad.h"
 #include "ctrlpp/dsp/discrete_filter.h"
 
 #include <array>
 #include <cstddef>
-#include <type_traits>
 #include <utility>
 
 namespace ctrlpp
@@ -35,13 +36,10 @@ constexpr auto filled_array(T const& value) -> std::array<T, N>
 
 }
 
-template <typename Scalar, std::size_t N>
+template <ctrlpp_floating_scalar Scalar, std::size_t N>
     requires(N >= 1)
 class vector_biquad
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "vector_biquad requires a floating-point Scalar type");
-
 public:
     using scalar_type = Scalar;
 
@@ -94,13 +92,10 @@ private:
     std::array<biquad<Scalar>, N> channels_{};
 };
 
-template <typename Scalar, std::size_t N, std::size_t Sections>
+template <ctrlpp_floating_scalar Scalar, std::size_t N, std::size_t Sections>
     requires(N >= 1 && Sections >= 1)
 class vector_cascaded_biquad
 {
-    static_assert(std::is_floating_point_v<Scalar>,
-                  "vector_cascaded_biquad requires a floating-point Scalar type");
-
 public:
     using scalar_type = Scalar;
 
