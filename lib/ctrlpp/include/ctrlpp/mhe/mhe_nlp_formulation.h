@@ -4,6 +4,8 @@
 /// @brief NLP formulation for nonlinear Moving Horizon Estimation with multiple shooting.
 ///
 /// @cite diehl2009 -- Diehl et al., "Efficient Numerical Methods for Nonlinear MPC and Moving Horizon Estimation", 2009
+/// @cite rawlings2017 -- Rawlings, Mayne & Diehl, "Model Predictive Control: Theory, Computation, and Design", 2nd ed., 2017, Ch. 4 (State Estimation)
+/// @cite rao2003 -- Rao et al., "Constrained State Estimation for Nonlinear Discrete-Time Systems", 2003
 
 #include "ctrlpp/types.h"
 
@@ -62,6 +64,10 @@ namespace detail
 ///   Continuity:  x_{k+1} - f(x_k, u_k) = 0    for k = 0..N-1
 ///   Path:        g(x_k) - s_k <= 0              for k = 0..N (if NC > 0)
 ///   Residual:    |z_k,i - h_i(x_k)| <= bound_i  for k = 0..N (if residual_bound set)
+///
+/// @cite rawlings2017 -- Rawlings, Mayne & Diehl, MPC, 2nd ed., 2017, Ch. 4 (NMHE multiple shooting formulation)
+/// @cite diehl2009 -- Diehl et al., 2009 (efficient numerical methods for NMPC/NMHE)
+/// @cite kuhl2011 -- Kuhl et al., 2011 (real-time arrival-cost reassembly)
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t N, std::size_t NC = 0, typename Dynamics, typename Measurement>
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY>
 auto build_nmhe_problem(const Dynamics& dynamics,
