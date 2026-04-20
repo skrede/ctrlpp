@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_STATE_SPACE_H
 #define HPP_GUARD_CTRLPP_MODEL_STATE_SPACE_H
 
+/// @brief Continuous- and discrete-time linear state-space representations.
+///
+/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Ch. 2 (state-space realization)
+
 #include "ctrlpp/types.h"
 
 #include "ctrlpp/util/concepts.h"

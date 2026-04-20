@@ -4,7 +4,7 @@
 /// @brief Continuous-to-discrete state-space conversion (ZOH, Tustin, Euler, RK4).
 ///
 /// @cite franklin2015 -- Franklin et al., "Feedback Control of Dynamic Systems", 2015
-/// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006
+/// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems: Theory and Design", 3rd ed., 1997, Ch. 3
 
 #include "ctrlpp/types.h"
 
@@ -34,9 +34,14 @@ struct backward_euler
 {
 };
 
-// zoh discretisation using Van Loan augmented matrix exponential method.
-// Forms the augmented matrix M = [[A*dt, B*dt], [0, 0]], computes exp(M),
-// then extracts Ad and Bd from the result. Cd = C, Dd = D.
+/// @brief Zero-order-hold discretisation via Van Loan's augmented matrix exponential method.
+///
+/// Forms the augmented matrix M = [[A*dt, B*dt], [0, 0]], computes exp(M), and extracts
+/// Ad and Bd from the upper blocks. Cd = C, Dd = D.
+///
+/// @cite vanloan1978 -- Van Loan, "Computing Integrals Involving the Matrix Exponential",
+///   IEEE Trans. Autom. Control 23(3):395-404, 1978
+/// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.2
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY> discretise(zoh, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {
