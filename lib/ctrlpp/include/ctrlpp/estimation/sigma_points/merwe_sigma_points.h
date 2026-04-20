@@ -37,6 +37,10 @@ public:
 
     explicit merwe_sigma_points(options_t opts = options_t{}) : m_alpha{opts.alpha}, m_beta{opts.beta}, m_kappa{opts.kappa} {}
 
+    /// @brief Generate scaled symmetric sigma point set with mean/covariance weights.
+    ///
+    /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 15
+    /// @cite vandermerwe2004 -- Van der Merwe, "Sigma-Point Kalman Filters", PhD thesis, 2004
     sigma_result<Scalar, NX, num_points> generate(const Vector<Scalar, NX>& x, const Matrix<Scalar, NX, NX>& P) const
     {
         sigma_result<Scalar, NX, num_points> result;
