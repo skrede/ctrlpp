@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_CONVERSION_H
 #define HPP_GUARD_CTRLPP_MODEL_CONVERSION_H
 
+/// @brief Transfer-function to/from state-space conversion (controllable canonical form, Leverrier-Faddeev).
+///
+/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Ch. 2-3
+
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/model/transfer_function.h"
 
@@ -10,10 +14,14 @@
 namespace ctrlpp
 {
 
-// tf2ss: Transfer function to controllable canonical form state-space.
-// H(s) = num(s) / den(s), coefficients highest-degree-first (MATLAB convention).
-// Requires NumDeg <= DenDeg (proper transfer function).
-// Returns continuous_state_space with NX = DenDeg states.
+/// @brief Transfer function to controllable canonical form state-space.
+///
+/// H(s) = num(s) / den(s), coefficients highest-degree-first (MATLAB convention).
+/// Requires NumDeg <= DenDeg (proper transfer function).
+/// Returns continuous_state_space with NX = DenDeg states.
+///
+/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Sec. 2.1 (controllable canonical form)
+/// @cite franklin2015 -- Franklin et al., "Feedback Control of Dynamic Systems", 2015, Ch. 7
 template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
     requires(NumDeg <= DenDeg)
 constexpr continuous_state_space<Scalar, DenDeg, 1, 1> tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
@@ -80,10 +88,13 @@ constexpr continuous_state_space<Scalar, DenDeg, 1, 1> tf2ss(const transfer_func
     return {A, B, C, D};
 }
 
-// ss2tf: State-space to transfer function via Leverrier-Faddeev algorithm.
-// Computes H(s) = C*(sI - A)^{-1}*B + D for SISO systems.
-// Returns transfer_function<Scalar, NX, NX> (numerator degree = denominator degree = NX).
-// Coefficients are highest-degree-first.
+/// @brief State-space to transfer function via the Leverrier-Faddeev algorithm.
+///
+/// Computes H(s) = C*(sI - A)^{-1}*B + D for SISO systems.
+/// Returns transfer_function<Scalar, NX, NX> (numerator degree = denominator degree = NX).
+/// Coefficients are highest-degree-first.
+///
+/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Sec. 2.4 (Leverrier-Faddeev recursion)
 template <typename Scalar, std::size_t NX>
 transfer_function<Scalar, NX, NX> ss2tf(const continuous_state_space<Scalar, NX, 1, 1>& sys)
 {

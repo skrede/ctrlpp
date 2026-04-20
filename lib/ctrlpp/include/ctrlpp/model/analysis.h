@@ -4,6 +4,8 @@
 /// @brief State-space analysis: poles, controllability, observability.
 ///
 /// @cite anderson1990 -- Anderson & Moore, "Optimal Control: Linear Quadratic Methods", 1990
+/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Sec. 2.4 / Sec. 3.4 (Kalman rank tests)
+/// @cite franklin2015 -- Franklin et al., "Feedback Control of Dynamic Systems", 2015, Ch. 3 (stability criteria)
 
 #include "ctrlpp/model/state_space.h"
 
@@ -17,7 +19,9 @@
 namespace ctrlpp
 {
 
-// poles: returns eigenvalues of the A matrix (system poles).
+/// @brief Returns eigenvalues of the A matrix (system poles).
+///
+/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Sec. 2.4
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 std::array<std::complex<Scalar>, NX> poles(const continuous_state_space<Scalar, NX, NU, NY>& sys)
 
@@ -44,7 +48,9 @@ std::array<std::complex<Scalar>, NX> poles(const discrete_state_space<Scalar, NX
     return result;
 }
 
-// is_stable: continuous system is stable iff all poles have negative real part.
+/// @brief Continuous system is stable iff all poles have negative real part.
+///
+/// @cite franklin2015 -- Franklin et al., "Feedback Control of Dynamic Systems", 2015, Ch. 3 (Hurwitz criterion)
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 bool is_stable(const continuous_state_space<Scalar, NX, NU, NY>& sys)
 {
@@ -55,7 +61,9 @@ bool is_stable(const continuous_state_space<Scalar, NX, NU, NY>& sys)
     return true;
 }
 
-// is_stable: discrete system is stable iff all poles have magnitude < 1.
+/// @brief Discrete system is stable iff all poles have magnitude < 1.
+///
+/// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.3 (unit-circle criterion)
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 bool is_stable(const discrete_state_space<Scalar, NX, NU, NY>& sys)
 {
@@ -66,8 +74,11 @@ bool is_stable(const discrete_state_space<Scalar, NX, NU, NY>& sys)
     return true;
 }
 
-// is_controllable: checks rank of controllability matrix [B, AB, A^2 B, ..., A^{n-1} B].
-// Returns true if rank equals NX (full state controllability).
+/// @brief Checks rank of controllability matrix [B, AB, A^2 B, ..., A^{n-1} B].
+///
+/// Returns true if rank equals NX (full state controllability).
+///
+/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Sec. 2.4 (Kalman rank test)
 template <typename Scalar, std::size_t NX, std::size_t NU>
 bool is_controllable(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B)
 {
@@ -90,8 +101,11 @@ bool is_controllable(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, N
     return static_cast<std::size_t>(Eigen::FullPivLU<Matrix<Scalar, NX, NX * NU>>(C).rank()) == NX;
 }
 
-// is_observable: checks rank of observability matrix [C; CA; CA^2; ...; CA^{n-1}].
-// Returns true if rank equals NX (full state observability).
+/// @brief Checks rank of observability matrix [C; CA; CA^2; ...; CA^{n-1}].
+///
+/// Returns true if rank equals NX (full state observability).
+///
+/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Sec. 3.4 (dual Kalman rank test)
 template <typename Scalar, std::size_t NX, std::size_t NY>
 bool is_observable(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NY, NX>& C)
 {

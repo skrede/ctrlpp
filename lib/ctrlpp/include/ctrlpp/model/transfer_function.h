@@ -4,6 +4,7 @@
 /// @brief SISO transfer function representation (numerator/denominator polynomial).
 ///
 /// @cite franklin2015 -- Franklin et al., "Feedback Control of Dynamic Systems", 2015
+/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Ch. 2 (rational transfer functions)
 
 #include <array>
 #include <cstddef>
