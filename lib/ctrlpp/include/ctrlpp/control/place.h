@@ -23,7 +23,13 @@ namespace ctrlpp
 namespace detail
 {
 
-// Validate that complex poles come in conjugate pairs (required for real coefficients).
+/// Validate that complex poles come in conjugate pairs (required for real coefficients).
+///
+/// A real-coefficient polynomial has roots that are either real or appear in
+/// complex-conjugate pairs; any other configuration would force complex
+/// coefficients in the closed-loop characteristic polynomial.
+///
+/// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7
 template <typename Scalar, std::size_t N>
 bool validate_conjugate_pairs(const std::array<std::complex<Scalar>, N>& poles)
 {
@@ -62,9 +68,16 @@ bool validate_conjugate_pairs(const std::array<std::complex<Scalar>, N>& poles)
     return true;
 }
 
-// Compute characteristic polynomial coefficients from desired poles.
-// Returns coefficients [a_0, a_1, ..., a_{N-1}] of:
-// p(s) = s^N + a_{N-1} s^{N-1} + ... + a_1 s + a_0
+/// Compute characteristic polynomial coefficients from desired poles.
+/// Returns coefficients [a_0, a_1, ..., a_{N-1}] of:
+/// p(s) = s^N + a_{N-1} s^{N-1} + ... + a_1 s + a_0.
+///
+/// Implements the standard expansion p(s) = prod_i (s - p_i) by repeated
+/// polynomial multiplication, which is the constructive form of Vieta's
+/// formulas relating elementary symmetric functions of the roots to the
+/// signed coefficients.
+///
+/// @cite strang2016 -- Strang, "Introduction to Linear Algebra", 2016, Ch. 6 (eigenvalues and characteristic polynomial)
 template <typename Scalar, std::size_t N>
 std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>& poles)
 {
@@ -94,9 +107,16 @@ std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>
 
 }
 
-// Pole placement using Ackermann's formula for single-input systems (NU == 1).
-// Computes K such that eigenvalues of (A - B*K) equal the desired poles.
-// Returns std::nullopt if the system is uncontrollable or NU > 1.
+/// Pole placement using Ackermann's formula for single-input systems (NU == 1).
+/// Computes K such that eigenvalues of (A - B*K) equal the desired poles.
+/// Returns std::nullopt if the system is uncontrollable or NU &gt; 1.
+///
+/// The single-input formula K = e_n^T * C_ctrl^{-1} * alpha(A) follows from
+/// transforming (A, B) into controller canonical form, assigning the desired
+/// characteristic polynomial alpha(s), and back-transforming the gain.
+///
+/// @cite kautsky1985 -- Kautsky, Nichols &amp; Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
+/// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (Ackermann's formula)
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
 std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const std::array<std::complex<Scalar>, NX>& desired_poles)
 {
@@ -152,8 +172,10 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix
     }
 }
 
-// Convenience: compute observer gain L via duality.
-// L = place(A^T, C^T, desired_poles)^T
+/// Convenience: compute observer gain L via duality.
+/// L = place(A^T, C^T, desired_poles)^T.
+///
+/// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (observer/regulator duality)
 template <typename Scalar, std::size_t NX, std::size_t NY>
 std::optional<Eigen::Matrix<Scalar, int(NX), int(NY)>>
 place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NY), int(NX)>& C, const std::array<std::complex<Scalar>, NX>& desired_poles)
