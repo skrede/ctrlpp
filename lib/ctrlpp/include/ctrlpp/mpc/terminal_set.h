@@ -5,6 +5,7 @@
 ///
 /// @cite mayne2000 -- Mayne et al., "Constrained model predictive control: Stability and optimality", 2000
 /// @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017
+/// @cite borrelli2017 -- Borrelli, Bemporad & Morari, "Predictive Control for Linear and Hybrid Systems", 2017, Ch. 12 (terminal sets and stability)
 
 #include "ctrlpp/types.h"
 

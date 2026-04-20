@@ -5,6 +5,8 @@
 ///
 /// @cite mayne2000 -- Mayne et al., "Constrained model predictive control: Stability and optimality", 2000
 /// @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017
+/// @cite blanchini1999 -- Blanchini, "Set Invariance in Control", Automatica 35(11), 1999 (canonical survey on invariant sets)
+/// @cite borrelli2017 -- Borrelli, Bemporad & Morari, "Predictive Control for Linear and Hybrid Systems", 2017, Ch. 10 (invariant-set computation, pre-image recursion)
 
 #include "ctrlpp/mpc/terminal_set.h"
 #include "ctrlpp/control/dare.h"

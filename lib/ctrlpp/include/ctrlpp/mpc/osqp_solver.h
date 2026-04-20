@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_OSQP_SOLVER_H
 #define HPP_GUARD_CTRLPP_MPC_OSQP_SOLVER_H
 
+/// @brief OSQP-backed QP solver wrapper for linear MPC.
+///
+/// @cite stellato2020 -- Stellato, Banjac, Goulart, Bemporad & Boyd, "OSQP: An Operator Splitting Solver for Quadratic Programs", Math. Prog. Comp. 12(4):637-672, 2020
+
 #include "ctrlpp/mpc/qp_types.h"
 
 #include <Eigen/Sparse>
