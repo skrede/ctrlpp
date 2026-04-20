@@ -18,14 +18,21 @@ namespace ctrlpp
 
 /// @brief Structured failure modes for `care`.
 ///
-///  * non_lhp_stabilisable : fewer than n eigenvalues of the Hamiltonian spectrum
-///                           lie in the open left half-plane.
-///  * non_finite_input     : A, B, Q, R or the assembled Hamiltonian H contains NaN/Inf.
-///  * singular_u11         : the top-left n x n block of the reordered invariant-subspace
-///                           basis U is singular; P cannot be extracted.
-///  * non_psd_solution     : extracted P is not positive semi-definite within an
-///                           epsilon-scaled tolerance.
-///  * schur_failed         : `Eigen::RealSchur` did not converge on the Hamiltonian.
+///  * non_lhp_stabilisable     : fewer than n eigenvalues of the Hamiltonian spectrum
+///                               lie in the open left half-plane.
+///  * non_finite_input         : A, B, Q, R or the assembled Hamiltonian H contains NaN/Inf.
+///  * singular_u11             : the top-left n x n block of the reordered invariant-subspace
+///                               basis U is singular; P cannot be extracted.
+///  * non_psd_solution         : extracted P is not positive semi-definite within an
+///                               epsilon-scaled tolerance.
+///  * schur_failed             : `Eigen::RealSchur` did not converge on the Hamiltonian
+///                               (Schur-based methods only).
+///  * sign_function_stagnated  : the matrix sign-function Newton iteration failed to
+///                               contract: either the determinantal scaling factor went
+///                               non-finite (singular Hamiltonian), the per-step contraction
+///                               ratio exceeded 1/2 after the warm-up window (divergence),
+///                               or the iteration budget was exhausted without meeting the
+///                               epsilon-scaled convergence tolerance. Sign-function path only.
 enum class care_error
 {
     non_lhp_stabilisable,
@@ -33,6 +40,7 @@ enum class care_error
     singular_u11,
     non_psd_solution,
     schur_failed,
+    sign_function_stagnated,
 };
 
 /// @brief Solution payload of `care`. Same shape as `dare_result`; see dare_types.h

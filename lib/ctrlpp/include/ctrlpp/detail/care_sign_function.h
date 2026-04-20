@@ -76,7 +76,7 @@ auto care_solve_via_sign_function(
         const Scalar mu = std::exp(-log_det_abs / Scalar{n2});
 
         if (!std::isfinite(mu))
-            return std::unexpected(care_error::schur_failed);
+            return std::unexpected(care_error::sign_function_stagnated);
 
         const Mat2N H_inv = lu.solve(Mat2N::Identity()).eval();
         H = ((Scalar{1} / Scalar{2}) * (mu * H + (Scalar{1} / mu) * H_inv)).eval();
@@ -90,11 +90,11 @@ auto care_solve_via_sign_function(
             break;
 
         if (k > 3 && delta_norm > (Scalar{1} / Scalar{2}) * last_delta_norm)
-            break;
+            return std::unexpected(care_error::sign_function_stagnated);
         last_delta_norm = delta_norm;
 
         if (k + 1 == max_iters)
-            return std::unexpected(care_error::schur_failed);
+            return std::unexpected(care_error::sign_function_stagnated);
     }
 
     const Mat2N P_LHP = ((Scalar{1} / Scalar{2}) * (Mat2N::Identity() - H)).eval();
