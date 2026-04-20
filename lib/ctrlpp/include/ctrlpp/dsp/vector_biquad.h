@@ -3,7 +3,7 @@
 
 /// @brief Vector-valued biquad filters wrapping N scalar biquads behind Eigen vector interface.
 ///
-/// @cite oppenheim1997 -- Oppenheim & Willsky, "Signals and Systems", 1997
+/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6 (DF-II / TDF-II structures)
 
 #include "ctrlpp/types.h"
 

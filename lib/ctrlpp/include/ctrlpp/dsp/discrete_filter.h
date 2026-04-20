@@ -3,7 +3,7 @@
 
 /// @brief Discrete filter concept: minimal interface for composable digital filters.
 ///
-/// @cite oppenheim1997 -- Oppenheim & Willsky, "Signals and Systems", 1997
+/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 2 (LTI difference equations and convolution)
 
 #include <concepts>
 

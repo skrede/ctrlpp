@@ -3,7 +3,7 @@
 
 /// @brief Second-order IIR (biquad) filter with transposed direct form II.
 ///
-/// @cite oppenheim1997 -- Oppenheim & Willsky, "Signals and Systems", 1997
+/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6 (DF-II / TDF-II structures)
 /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae for Audio EQ Biquad Filter Coefficients", 2005
 
 #include "ctrlpp/dsp/discrete_filter.h"
@@ -60,6 +60,11 @@ public:
 
     [[nodiscard]] auto coefficients() const -> biquad_coeffs<Scalar> const& { return c_; }
 
+    /// Second-order Butterworth low-pass biquad section via the RBJ cookbook
+    /// formulas (analog-prototype design mapped through the bilinear transform).
+    ///
+    /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (LPF section)
+    /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform of analog prototypes)
     static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> biquad
     {
         auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * cutoff_hz / sample_hz;
@@ -77,6 +82,10 @@ public:
         }};
     }
 
+    /// Notch (band-stop) biquad section via the RBJ cookbook formulas.
+    ///
+    /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (notch section)
+    /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6
     static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> biquad
     {
         auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * freq_hz / sample_hz;
@@ -93,6 +102,10 @@ public:
         }};
     }
 
+    /// "Dirty" derivative: a band-limited differentiator s/(s/wc + 1)
+    /// discretised by the bilinear transform with frequency pre-warping.
+    ///
+    /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform with pre-warping)
     static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> biquad
     {
         auto const wc = Scalar{2} * sample_hz * std::tan(std::numbers::pi_v<Scalar> * bandwidth_hz / sample_hz);
@@ -167,6 +180,14 @@ private:
     std::array<biquad<Scalar>, N> sections_{};
 };
 
+/// Cascade of second-order Butterworth low-pass sections.
+///
+/// Builds an even-order Butterworth filter as a product of biquad sections
+/// from the analog-prototype pole locations on the unit circle, mapped through
+/// the bilinear transform with frequency pre-warping.
+///
+/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (analog-prototype Butterworth, bilinear pre-warp)
+/// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (per-section LPF coefficients)
 template <std::size_t Order, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
 auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz) -> cascaded_biquad<Scalar, Order / 2>
@@ -200,7 +221,7 @@ namespace detail
 
 /// @brief Compute one Chebyshev Type I biquad section via bilinear transform.
 ///
-/// @cite oppenheim1997 -- Oppenheim & Willsky, "Signals and Systems", 1997, Ch. 7
+/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I analog prototype, bilinear pre-warp)
 template <typename Scalar, std::size_t Order>
 auto chebyshev1_section(std::size_t k, Scalar sinh_v, Scalar cosh_v, Scalar wc, Scalar sample_hz) -> biquad<Scalar>
 {
@@ -229,6 +250,7 @@ auto chebyshev1_section(std::size_t k, Scalar sinh_v, Scalar cosh_v, Scalar wc, 
 
 /// @brief Normalize cascade DC gain so max passband gain = 0 dB.
 ///
+/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I passband normalisation)
 /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005
 template <typename Scalar, std::size_t N>
 void normalize_chebyshev1_dc(std::array<biquad<Scalar>, N>& sections, Scalar eps)
@@ -256,6 +278,14 @@ void normalize_chebyshev1_dc(std::array<biquad<Scalar>, N>& sections, Scalar eps
 
 }
 
+/// Cascade of second-order Chebyshev Type I low-pass sections.
+///
+/// Builds an even-order Chebyshev Type I filter as a product of biquad
+/// sections from the analog-prototype poles on an ellipse parameterised by
+/// the passband ripple, mapped through the bilinear transform with frequency
+/// pre-warping. The DC gain is normalised so the max passband gain is 0 dB.
+///
+/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I IIR design)
 template <std::size_t Order, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
 auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db) -> cascaded_biquad<Scalar, Order / 2>
