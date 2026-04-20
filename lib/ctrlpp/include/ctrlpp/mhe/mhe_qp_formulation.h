@@ -4,6 +4,8 @@
 /// @brief QP formulation for linear Moving Horizon Estimation.
 ///
 /// @cite rao2003 -- Rao et al., "Constrained State Estimation for Nonlinear Discrete-Time Systems", 2003
+/// @cite rawlings2017 -- Rawlings, Mayne & Diehl, "Model Predictive Control: Theory, Computation, and Design", 2nd ed., 2017, Ch. 4 (State Estimation)
+/// @cite kuhl2011 -- Kuhl et al., "A Real-Time Algorithm for Moving Horizon State and Parameter Estimation", 2011
 
 #include "ctrlpp/types.h"
 
@@ -126,6 +128,9 @@ inline void build_mhe_hessian_cross_terms(std::vector<Eigen::Triplet<Scalar>>& t
 }
 
 /// Build MHE Hessian matrix from cost components.
+///
+/// @cite rao2003 -- Rao et al., "Constrained State Estimation for Nonlinear Discrete-Time Systems", 2003
+/// @cite rawlings2017 -- Rawlings, Mayne & Diehl, MPC, 2nd ed., 2017, Ch. 4 (block-sparse MHE Hessian structure)
 template <typename Scalar, std::size_t NX, std::size_t NY>
 [[nodiscard]] auto build_mhe_hessian(const mhe_qp_dims& dims,
                                      int Ni,
@@ -382,6 +387,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 
 /// Build per-solve QP update vectors (q, l, u) from current window data.
 /// @cite rao2003 -- Called each time the MHE window shifts and a new solve is needed
+/// @cite kuhl2011 -- Kuhl et al., "A Real-Time Algorithm for Moving Horizon State and Parameter Estimation", 2011 (real-time MHE reassembly with arrival-cost update)
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 [[nodiscard]] auto build_mhe_qp_update(std::size_t N,
                                        Scalar arrival_weight,
