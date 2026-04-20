@@ -1,6 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_SYSID_FIT_METRICS_H
 #define HPP_GUARD_CTRLPP_SYSID_FIT_METRICS_H
 
+/// @brief Model fit metrics (NRMSE, VAF) for system identification validation.
+///
+/// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 2nd ed., 1999, Ch. 16 (Model validation)
+/// @cite vanoverscheedemoor1996 -- Van Overschee & De Moor, "Subspace Identification for Linear Systems", 1996 (VAF in subspace ID literature)
+
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
@@ -12,6 +17,9 @@
 namespace ctrlpp
 {
 
+/// @brief Aggregate of model fit metrics: normalised RMSE and variance accounted for.
+///
+/// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 2nd ed., 1999, Ch. 16
 template <typename Scalar>
 struct fit_metrics
 {
@@ -19,6 +27,13 @@ struct fit_metrics
     Scalar vaf{};
 };
 
+/// @brief Compute NRMSE and VAF for predicted vs actual output trajectories.
+///
+/// NRMSE is the error norm divided by the centered-output norm (constant-signal fallback to 0 or infinity).
+/// VAF is 100 * (1 - var(error) / var(y)) as a percentage (constant-signal fallback to 100 or -infinity).
+///
+/// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 2nd ed., 1999, Ch. 16 (Model validation)
+/// @cite vanoverscheedemoor1996 -- Van Overschee & De Moor, "Subspace Identification for Linear Systems", 1996 (VAF definition)
 template <typename DerivedA, typename DerivedB>
 fit_metrics<typename DerivedA::Scalar> compute_fit_metrics(const Eigen::MatrixBase<DerivedA>& y_actual, const Eigen::MatrixBase<DerivedB>& y_predicted)
 {
