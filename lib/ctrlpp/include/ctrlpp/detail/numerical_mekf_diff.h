@@ -1,6 +1,18 @@
 #ifndef HPP_GUARD_CTRLPP_DETAIL_NUMERICAL_MEKF_DIFF_H
 #define HPP_GUARD_CTRLPP_DETAIL_NUMERICAL_MEKF_DIFF_H
 
+/// @brief MEKF measurement-Jacobian assembly via central differences on the SO(3) tangent space.
+///
+/// Rotational columns are formed by perturbing the nominal quaternion on the
+/// right by so3::exp(+/- eps * e_i); bias columns are perturbed in Euclidean
+/// space. This is the Markley 2003 / Sola 2018 error-state convention used
+/// by the multiplicative EKF.
+///
+/// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
+/// @cite sola2018    -- Sola, Deray & Atchuthan, "A Micro Lie Theory for State Estimation in Robotics", 2018, Sec. 5.1
+/// @cite fornberg1988 -- Fornberg, "Generation of finite difference formulas on arbitrarily spaced grids", Math. Comp. 51:184, 1988
+/// @cite nocedal2006  -- Nocedal & Wright, "Numerical Optimization", 2nd ed., 2006, Sec. 8.1
+
 #include "ctrlpp/types.h"
 
 #include "ctrlpp/lie/so3.h"

@@ -1,6 +1,19 @@
 #ifndef HPP_GUARD_CTRLPP_DETAIL_NUMERICAL_DIFF_H
 #define HPP_GUARD_CTRLPP_DETAIL_NUMERICAL_DIFF_H
 
+/// @brief Central-difference numerical Jacobian / gradient utilities.
+///
+/// Two API families are provided. The span-based family targets NLopt-shape
+/// callbacks (`std::function`, `std::span`, void return). The Eigen-native
+/// family targets the MPC / MHE / EKF path (templated callable, fixed-size
+/// matrices, no heap allocation). Both use the symmetric central-difference
+/// stencil with the standard step size h = sqrt(eps) * max(1, |x_j|), which
+/// balances truncation error O(h^2) against round-off error O(eps / h) for
+/// the central scheme.
+///
+/// @cite fornberg1988 -- Fornberg, "Generation of finite difference formulas on arbitrarily spaced grids", Math. Comp. 51:184, 1988
+/// @cite nocedal2006  -- Nocedal & Wright, "Numerical Optimization", 2nd ed., 2006, Sec. 8.1 (FD step h = sqrt(eps)*scale)
+
 #include "ctrlpp/types.h"
 
 #include <span>
