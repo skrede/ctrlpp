@@ -76,7 +76,8 @@ TEST_CASE("CARE A = 0, B = 0 yields a structured failure enum",
     CHECK((result.error() == ctrlpp::care_error::singular_u11
         || result.error() == ctrlpp::care_error::non_finite_input
         || result.error() == ctrlpp::care_error::non_lhp_stabilisable
-        || result.error() == ctrlpp::care_error::schur_failed));
+        || result.error() == ctrlpp::care_error::schur_failed
+        || result.error() == ctrlpp::care_error::sign_function_stagnated));
 }
 
 TEST_CASE("CARE negative-definite Q produces a structured failure enum",
@@ -97,7 +98,8 @@ TEST_CASE("CARE negative-definite Q produces a structured failure enum",
             || result.error() == ctrlpp::care_error::non_lhp_stabilisable
             || result.error() == ctrlpp::care_error::non_finite_input
             || result.error() == ctrlpp::care_error::singular_u11
-            || result.error() == ctrlpp::care_error::schur_failed));
+            || result.error() == ctrlpp::care_error::schur_failed
+            || result.error() == ctrlpp::care_error::sign_function_stagnated));
     }
 }
 
