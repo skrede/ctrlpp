@@ -11,7 +11,7 @@
 ///     w-last storage trap. Always use q.w(), q.vec(), q.x(), q.y(), q.z().
 ///
 /// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
-/// @cite barfoot2017 -- Barfoot, "State Estimation for Robotics", 2017
+/// @cite barfoot2017 -- Barfoot, "State Estimation for Robotics", 2017, Ch. 7 (rotations, hemisphere canonicalisation of the log map)
 
 #include "ctrlpp/types.h"
 
@@ -72,14 +72,19 @@ Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar>& q)
     return inv_sinc_half * qc.vec();
 }
 
-// Hamilton quaternion product: compose two rotations.
+/// Hamilton quaternion product: compose two rotations.
+///
+/// @cite sola2018 Sec. 4.3 (Hamilton quaternion product)
+/// @cite barfoot2017 Ch. 7 (quaternion composition under Hamilton convention)
 template <typename Scalar>
 Eigen::Quaternion<Scalar> compose(const Eigen::Quaternion<Scalar>& q1, const Eigen::Quaternion<Scalar>& q2)
 {
     return q1 * q2;
 }
 
-// Quaternion conjugate (inverse for unit quaternions).
+/// Quaternion conjugate (inverse for unit quaternions).
+///
+/// @cite sola2018 Sec. 4.3 (quaternion inverse via conjugation for unit quaternions)
 template <typename Scalar>
 Eigen::Quaternion<Scalar> conjugate(const Eigen::Quaternion<Scalar>& q)
 {
