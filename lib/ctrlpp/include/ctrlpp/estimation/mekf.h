@@ -6,6 +6,9 @@
 /// Two-track state: 7D nominal (quaternion + bias) with 6D tangent-space
 /// error-state covariance. The mandatory post-update covariance reset via
 /// frame-change Jacobian G is the key correctness concern.
+///
+/// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
+/// @cite crassidis2003 -- Crassidis & Markley, "Unscented Filtering for Spacecraft Attitude Estimation", J. Guidance Control Dyn 26(4), 2003
 
 #include "ctrlpp/types.h"
 

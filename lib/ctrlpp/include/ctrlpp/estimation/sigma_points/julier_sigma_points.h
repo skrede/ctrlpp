@@ -35,6 +35,10 @@ public:
 
     explicit julier_sigma_points(options_t opts = options_t{}) : m_kappa{opts.kappa} {}
 
+    /// @brief Generate symmetric sigma point set with single tuning parameter kappa.
+    ///
+    /// @cite julier1997 -- Julier & Uhlmann, "A New Extension of the Kalman Filter to Nonlinear Systems", SPIE, 1997, Eq. 12
+    /// @cite julier2004 -- Julier & Uhlmann, "Unscented Filtering and Nonlinear Estimation", 2004
     sigma_result<Scalar, NX, num_points> generate(const Vector<Scalar, NX>& x, const Matrix<Scalar, NX, NX>& P) const
     {
         sigma_result<Scalar, NX, num_points> result;
