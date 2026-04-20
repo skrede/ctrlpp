@@ -43,8 +43,24 @@ enum class care_error
     sign_function_stagnated,
 };
 
-/// @brief Solution payload of `care`. Same shape as `dare_result`; see dare_types.h
-/// for field semantics.
+/// @brief Solution payload of `care`.
+///
+///  * P                   : n x n symmetric positive-semidefinite stabilising solution.
+///  * subspace_separation : diagnostic of invariant-subspace conditioning. For Schur-based
+///                          methods this is the minimum rank-revealing QR pivot ratio across
+///                          all accepted block swaps during reordering (LAPACK SEP analogue);
+///                          a value close to 1 indicates a well-conditioned invariant
+///                          subspace, small positive values warn of near-degenerate spectra.
+///                          For methods that do not run a swap phase (e.g. the matrix
+///                          sign-function path), no pivot-ratio metric is defined and this
+///                          field is written as `std::numeric_limits&lt;Scalar&gt;::quiet_NaN()`
+///                          to signal "unavailable"; callers should branch on `std::isnan`
+///                          rather than comparing against a magnitude. Contrast with the
+///                          Schur path's partial-reorder marker where the smallest accepted
+///                          pivot is finite and positive.
+///  * reorder_complete    : true if every swap was accepted by the conditioning test or if
+///                          the method has no swap phase; false if one or more swaps were
+///                          declined during Schur reordering.
 template <ctrlpp_floating_scalar Scalar, std::size_t NX>
 struct care_result
 {
