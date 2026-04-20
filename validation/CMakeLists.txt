@@ -17,6 +17,7 @@ target_link_libraries(ctrlpp_validation_lib INTERFACE Eigen3::Eigen)
 
 # Control module
 add_subdirectory(cases/dare_solution)
+add_subdirectory(cases/care_solution)
 add_subdirectory(cases/lqr_step_response)
 add_subdirectory(cases/lqr_finite_horizon)
 add_subdirectory(cases/lqi_tracking)
