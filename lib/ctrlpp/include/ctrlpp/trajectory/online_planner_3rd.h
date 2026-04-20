@@ -14,6 +14,7 @@
 ///
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
 /// Automatic Machines and Robots", 2009, Sec. 4.6.1
+/// @cite lambrechts2005 -- Lambrechts, Boerlage & Steinbuch, "Trajectory Planning and Feedforward Design for Electromechanical Motion Systems", Control Engineering Practice 13(2), 2005 (jerk-limited online planning)
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 
