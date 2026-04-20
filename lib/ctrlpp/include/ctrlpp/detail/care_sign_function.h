@@ -124,7 +124,11 @@ auto care_solve_via_sign_function(
         return std::unexpected(care_error::non_finite_input);
     }
 
-    out.subspace_separation = Scalar{1};
+    // The sign-function path has no swap phase and hence no rank-revealing QR pivot ratio
+    // to report; writing quiet_NaN signals "unavailable for this method" per the
+    // care_result::subspace_separation contract, in contrast to the Schur path which
+    // reports a finite positive pivot ratio.
+    out.subspace_separation = std::numeric_limits<Scalar>::quiet_NaN();
     out.reorder_complete    = true;
     return out;
 }
