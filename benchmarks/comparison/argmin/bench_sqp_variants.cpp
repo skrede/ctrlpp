@@ -237,17 +237,11 @@ void run_benchmark(const std::string& system_name,
                               });
     }
 
-    // Argmin Filter NW-SQP
+    // Argmin Filter NW-SQP -- single-trace diagnostic only (no nanobench loop).
+    // Skipping the bench.run() avoids 60-700s wall on every cell hitting
+    // bounded_cfg.max_time = 2.0s; q.solve(x0) below still produces one row of
+    // quality metadata so the schema stays complete.
     {
-        ctrlpp::nmpc<double, NX, NU, ArgminFilterNwSqp, Dynamics> nmpc{dynamics, config, ArgminFilterNwSqp{bounded_cfg}};
-
-        bench.run("argmin_filter_nw_sqp",
-                  [&]
-                  {
-                      auto u = nmpc.solve(x0);
-                      ankerl::nanobench::doNotOptimizeAway(u);
-                  });
-
         ctrlpp::nmpc<double, NX, NU, ArgminFilterNwSqp, Dynamics> q{dynamics, config, ArgminFilterNwSqp{bounded_cfg}};
         q.solve(x0);
         auto diag = q.diagnostics();
@@ -315,7 +309,6 @@ void run_convergence(const std::string& system_name,
     int slsqp_successes = 0;
     int nw_sqp_successes = 0;
     int filter_slsqp_successes = 0;
-    int filter_nw_sqp_successes = 0;
     int auglag_successes = 0;
 
     for(int trial = 0; trial < num_trials; ++trial)
@@ -338,14 +331,12 @@ void run_convergence(const std::string& system_name,
         ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_slsqp{dynamics, config, ArgminSlsqp{bounded_cfg}};
         ctrlpp::nmpc<double, NX, NU, ArgminNwSqp, Dynamics> nmpc_nw{dynamics, config, ArgminNwSqp{bounded_cfg}};
         ctrlpp::nmpc<double, NX, NU, ArgminFilterSlsqp, Dynamics> nmpc_fs{dynamics, config, ArgminFilterSlsqp{bounded_cfg}};
-        ctrlpp::nmpc<double, NX, NU, ArgminFilterNwSqp, Dynamics> nmpc_fnw{dynamics, config, ArgminFilterNwSqp{bounded_cfg}};
         ctrlpp::nmpc<double, NX, NU, ArgminAuglag, Dynamics> nmpc_aug{dynamics, config, ArgminAuglag{auglag_cfg}};
 
         if(nmpc_nlopt.solve(x0).has_value()) ++nlopt_successes;
         if(nmpc_slsqp.solve(x0).has_value()) ++slsqp_successes;
         if(nmpc_nw.solve(x0).has_value()) ++nw_sqp_successes;
         if(nmpc_fs.solve(x0).has_value()) ++filter_slsqp_successes;
-        if(nmpc_fnw.solve(x0).has_value()) ++filter_nw_sqp_successes;
         if(nmpc_aug.solve(x0).has_value()) ++auglag_successes;
     }
 
@@ -367,7 +358,6 @@ void run_convergence(const std::string& system_name,
     write_rate("argmin", "slsqp", slsqp_successes);
     write_rate("argmin", "nw_sqp", nw_sqp_successes);
     write_rate("argmin", "filter_slsqp", filter_slsqp_successes);
-    write_rate("argmin", "filter_nw_sqp", filter_nw_sqp_successes);
     write_rate("argmin", "auglag", auglag_successes);
 }
 
