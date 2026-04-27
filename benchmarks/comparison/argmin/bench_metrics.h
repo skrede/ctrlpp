@@ -102,6 +102,7 @@ inline void write_quality_csv_row(std::ostream& os,
        << m.objective << ',' << m.max_constraint_violation << ','
        << m.gradient_norm << ',' << (m.success ? 1 : 0) << ','
        << m.iterations << ',' << m.solve_time_ms << '\n';
+    os.flush();
 }
 
 #endif
