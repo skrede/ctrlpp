@@ -1,5 +1,7 @@
-#ifndef HPP_GUARD_CTRLPP_BENCHMARKS_COMPARISON_ARGMIN_PERF_COMMON_H
-#define HPP_GUARD_CTRLPP_BENCHMARKS_COMPARISON_ARGMIN_PERF_COMMON_H
+#ifndef HPP_GUARD_BENCHMARKS_PROFILING_NMPC_PENDULUM_PERF_COMMON_H
+#define HPP_GUARD_BENCHMARKS_PROFILING_NMPC_PENDULUM_PERF_COMMON_H
+
+#include "nmpc/pendulum.h"
 
 #include "ctrlpp/nmpc.h"
 
@@ -18,29 +20,6 @@
 
 namespace ctrlpp::argmin_perf
 {
-
-inline auto pendulum_dynamics(const Eigen::Vector2d& x,
-                              const Eigen::Matrix<double, 1, 1>& u)
-    -> Eigen::Vector2d
-{
-    constexpr double dt = 0.05;
-    constexpr double g  = 9.81;
-    constexpr double l  = 1.0;
-    const double theta = x(0);
-    const double omega = x(1);
-    const double alpha = -g / l * std::sin(theta) + u(0);
-    return Eigen::Vector2d{theta + dt * omega, omega + dt * alpha};
-}
-
-inline auto make_pendulum_config(int horizon)
-    -> ctrlpp::nmpc_config<double, 2, 1>
-{
-    return {
-        .horizon = horizon,
-        .Q       = Eigen::Matrix2d::Identity(),
-        .R       = Eigen::Matrix<double, 1, 1>::Identity() * 0.1,
-    };
-}
 
 struct run_options
 {
@@ -106,12 +85,12 @@ auto run_pendulum_closed_loop(const run_options&      opts,
                               std::string_view        label)
     -> std::pair<Eigen::Vector2d, double>
 {
-    auto config = make_pendulum_config(opts.horizon);
+    auto config = ctrlpp::bench::problems::nmpc::make_pendulum_config(opts.horizon);
 
     using dynamics_fn = Eigen::Vector2d (*)(const Eigen::Vector2d&,
                                             const Eigen::Matrix<double, 1, 1>&);
-    ctrlpp::nmpc<double, 2, 1, Solver, dynamics_fn> controller{
-        &pendulum_dynamics, config};
+    constexpr dynamics_fn pendulum_fn = ctrlpp::bench::problems::nmpc::pendulum_2;
+    ctrlpp::nmpc<double, 2, 1, Solver, dynamics_fn> controller{pendulum_fn, config};
 
     Eigen::Vector2d x          = opts.x0;
     double          total_cost = 0.0;
@@ -147,7 +126,7 @@ auto run_pendulum_closed_loop(const run_options&      opts,
             });
         }
 
-        x = pendulum_dynamics(x, *u);
+        x = pendulum_fn(x, *u);
         ++solved_k;
     }
 

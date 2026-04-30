@@ -4,6 +4,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "lmpc/double_integrator.h"
+
 #include "ctrlpp/mpc.h"
 #include "ctrlpp/mpc/osqp_solver.h"
 #include "ctrlpp/model/state_space.h"
@@ -21,52 +23,21 @@ constexpr char const* comma_csv_tpl = R"TEMPLATE(
 {{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
 {{/result}})TEMPLATE";
 
-} // namespace
+}
 
 int main()
 {
-    // ---- Problem setup: discrete double-integrator, NX=4, NU=2 ----
-    // x = [p1, v1, p2, v2], u = [a1, a2]
-    // x_{k+1} = A x_k + B u_k, dt = 0.1
     constexpr std::size_t NX = 4;
     constexpr std::size_t NU = 2;
     constexpr int N = 10;
-    constexpr double dt = 0.1;
 
-    Eigen::Matrix4d A = Eigen::Matrix4d::Identity();
-    A(0, 1) = dt;
-    A(2, 3) = dt;
+    namespace problems = ctrlpp::bench::problems::lmpc;
 
-    Eigen::Matrix<double, 4, 2> B = Eigen::Matrix<double, 4, 2>::Zero();
-    B(0, 0) = 0.5 * dt * dt;
-    B(1, 0) = dt;
-    B(2, 1) = 0.5 * dt * dt;
-    B(3, 1) = dt;
-
-    Eigen::Matrix4d Q = Eigen::Matrix4d::Identity();
-    Eigen::Matrix2d R = 0.1 * Eigen::Matrix2d::Identity();
-
-    Eigen::Vector4d x0;
-    x0 << 1.0, 0.0, -0.5, 0.0;
-
-    // ---- ctrlpp MPC setup ----
-    ctrlpp::discrete_state_space<double, NX, NU, NX> sys{
-        .A = A,
-        .B = B,
-        .C = Eigen::Matrix4d::Identity(),
-        .D = Eigen::Matrix<double, 4, 2>::Zero()};
-
-    ctrlpp::mpc_config<double, NX, NU> cfg{};
-    cfg.horizon = N;
-    cfg.Q = Q;
-    cfg.R = R;
-    cfg.u_min = Eigen::Vector2d::Constant(-1.0);
-    cfg.u_max = Eigen::Vector2d::Constant(1.0);
-    cfg.x_min = Eigen::Vector4d::Constant(-5.0);
-    cfg.x_max = Eigen::Vector4d::Constant(5.0);
+    auto sys = problems::make_double_integrator_4_2_state_space();
+    auto cfg = problems::make_double_integrator_4_2_config(N);
+    auto x0 = problems::double_integrator_4_2_x0_default();
 
     ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> ctrlpp_mpc(sys, cfg);
-    // Warm up solver
     ctrlpp_mpc.solve(x0);
 
     // ---- libmpc++ setup ----
@@ -76,8 +47,8 @@ int main()
     constexpr int Nctrl = N;
     mpc::LMPC<NX, NU, Ndu, NY, N, Nctrl> libmpc_ctrl;
 
-    mpc::mat<NX, NX> A_mpc = A;
-    mpc::mat<NX, NU> B_mpc = B;
+    mpc::mat<NX, NX> A_mpc = sys.A;
+    mpc::mat<NX, NU> B_mpc = sys.B;
     mpc::mat<NY, NX> C_mpc = mpc::mat<NY, NX>::Identity();
     libmpc_ctrl.setStateSpaceModel(A_mpc, B_mpc, C_mpc);
 

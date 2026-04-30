@@ -27,6 +27,7 @@ endif ()
 add_executable(bench_mpc_vs_libmpc bench_mpc_vs_libmpc.cpp)
 target_link_libraries(bench_mpc_vs_libmpc PRIVATE
     ctrlpp::ctrlpp
+    ctrlpp::bench_problems
     ctrlpp::osqp
     nanobench
     mpc++

@@ -1,5 +1,8 @@
 #include "bench_metrics.h"
 
+#include "nmpc/double_integrator.h"
+#include "nmpc/pendulum.h"
+
 #include "ctrlpp/nmpc.h"
 #include "ctrlpp/mpc/nlopt_solver.h"
 #include "ctrlpp/mpc/argmin_solver.h"
@@ -23,71 +26,11 @@ constexpr char const* comma_csv_tpl = R"TEMPLATE(
 {{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
 {{/result}})TEMPLATE";
 
-// ---------------------------------------------------------------------------
-// Dynamics definitions
-// ---------------------------------------------------------------------------
-
-constexpr double di2_dt = 0.1;
-auto double_integrator_2 = [](const Eigen::Vector2d& x,
-                              const Eigen::Matrix<double, 1, 1>& u) -> Eigen::Vector2d
-{
-    return Eigen::Vector2d{x(0) + di2_dt * x(1), x(1) + di2_dt * u(0)};
-};
-
-auto pendulum_2 = [](const Eigen::Vector2d& x,
-                     const Eigen::Matrix<double, 1, 1>& u) -> Eigen::Vector2d
-{
-    constexpr double dt = 0.05;
-    constexpr double g = 9.81;
-    constexpr double l = 1.0;
-    double theta = x(0);
-    double omega = x(1);
-    double alpha = -g / l * std::sin(theta) + u(0);
-    return Eigen::Vector2d{theta + dt * omega, omega + dt * alpha};
-};
-
-constexpr double di4_dt = 0.1;
-auto double_integrator_4 = [](const Eigen::Vector4d& x,
-                              const Eigen::Vector2d& u) -> Eigen::Vector4d
-{
-    return Eigen::Vector4d{
-        x(0) + di4_dt * x(1),
-        x(1) + di4_dt * u(0),
-        x(2) + di4_dt * x(3),
-        x(3) + di4_dt * u(1)};
-};
-
-constexpr double di8_dt = 0.1;
-using Vec8 = Eigen::Matrix<double, 8, 1>;
-using Vec4 = Eigen::Vector4d;
-
-auto double_integrator_8 = [](const Vec8& x, const Vec4& u) -> Vec8
-{
-    Vec8 xn;
-    xn(0) = x(0) + di8_dt * x(1);
-    xn(1) = x(1) + di8_dt * u(0);
-    xn(2) = x(2) + di8_dt * x(3);
-    xn(3) = x(3) + di8_dt * u(1);
-    xn(4) = x(4) + di8_dt * x(5);
-    xn(5) = x(5) + di8_dt * u(2);
-    xn(6) = x(6) + di8_dt * x(7);
-    xn(7) = x(7) + di8_dt * u(3);
-    return xn;
-};
-
-// ---------------------------------------------------------------------------
-// NMPC config factory
-// ---------------------------------------------------------------------------
-
-template <std::size_t NX, std::size_t NU>
-auto make_nmpc_config(int horizon) -> ctrlpp::nmpc_config<double, NX, NU>
-{
-    return {
-        .horizon = horizon,
-        .Q = Eigen::Matrix<double, NX, NX>::Identity(),
-        .R = Eigen::Matrix<double, NU, NU>::Identity() * 0.1,
-    };
-}
+using ctrlpp::bench::problems::nmpc::pendulum_2;
+using ctrlpp::bench::problems::nmpc::double_integrator_2;
+using ctrlpp::bench::problems::nmpc::double_integrator_4;
+using ctrlpp::bench::problems::nmpc::double_integrator_8;
+using ctrlpp::bench::problems::nmpc::make_nmpc_quadratic_config;
 
 // ---------------------------------------------------------------------------
 // Type aliases
@@ -111,7 +54,7 @@ void run_benchmark(const std::string& system_name,
                    ankerl::nanobench::Bench& bench,
                    std::ostream& quality_csv)
 {
-    auto config = make_nmpc_config<NX, NU>(horizon);
+    auto config = make_nmpc_quadratic_config<NX, NU>(horizon);
 
     auto title = system_name + " NX=" + std::to_string(NX)
                + " N=" + std::to_string(horizon);
@@ -299,7 +242,7 @@ void run_convergence(const std::string& system_name,
                      int horizon,
                      std::ostream& quality_csv)
 {
-    auto config = make_nmpc_config<NX, NU>(horizon);
+    auto config = make_nmpc_quadratic_config<NX, NU>(horizon);
     constexpr int num_trials = 100;
 
     std::mt19937 rng(42);
