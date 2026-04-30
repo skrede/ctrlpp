@@ -32,3 +32,9 @@ target_link_libraries(bench_mpc_vs_libmpc PRIVATE
     nanobench
     mpc++
 )
+# libmpc++'s ProblemBuilder allocates a fixed-size Matrix<double, 207, 86> (~139 KB)
+# which exceeds Eigen's default 128 KB EIGEN_STACK_ALLOCATION_LIMIT. Lift the cap
+# for this target only so the bench can build with stock Eigen 3.4.x.
+target_compile_definitions(bench_mpc_vs_libmpc PRIVATE
+    EIGEN_STACK_ALLOCATION_LIMIT=300000
+)

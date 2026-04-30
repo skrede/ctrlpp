@@ -38,7 +38,7 @@ int main()
     auto x0 = problems::double_integrator_4_2_x0_default();
 
     ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> ctrlpp_mpc(sys, cfg);
-    ctrlpp_mpc.solve(x0);
+    [[maybe_unused]] auto warm = ctrlpp_mpc.solve(x0);
 
     // ---- libmpc++ setup ----
     // Template: <NX, NU, Ndu, NY, Npred, Nctrl>
