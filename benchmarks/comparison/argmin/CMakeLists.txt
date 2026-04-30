@@ -47,27 +47,9 @@ foreach(target IN LISTS ARGMIN_BENCH_TARGETS)
         add_executable(${target} ${target}.cpp)
         target_link_libraries(${target} PRIVATE
             ctrlpp::ctrlpp
+            ctrlpp::bench_problems
             ctrlpp::nlopt
             nanobench
-            nablapp::nablapp
-        )
-    endif()
-endforeach()
-
-# Tracing executables for perf(1) profiling. Mirror the same NMPC problem
-# across an NLopt-backed solver and a nablapp (argmin)-backed solver so that
-# perf record / perf stat output can be compared apples-to-apples.
-set(ARGMIN_PERF_TARGETS
-    perf_nlopt_slsqp
-    perf_argmin_slsqp
-)
-
-foreach(target IN LISTS ARGMIN_PERF_TARGETS)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${target}.cpp")
-        add_executable(${target} ${target}.cpp)
-        target_link_libraries(${target} PRIVATE
-            ctrlpp::ctrlpp
-            ctrlpp::nlopt
             nablapp::nablapp
         )
     endif()

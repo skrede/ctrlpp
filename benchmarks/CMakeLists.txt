@@ -15,6 +15,15 @@ target_include_directories(ctrlpp_benchmarks_lib INTERFACE
 )
 target_link_libraries(ctrlpp_benchmarks_lib INTERFACE Eigen3::Eigen)
 
+# Shared problem corpus consumed by both comparison/ and profiling/ harnesses.
+# Header-only; do not put cpp files here.
+add_library(ctrlpp_bench_problems INTERFACE)
+add_library(ctrlpp::bench_problems ALIAS ctrlpp_bench_problems)
+target_include_directories(ctrlpp_bench_problems INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/problems
+)
+target_link_libraries(ctrlpp_bench_problems INTERFACE ctrlpp::ctrlpp)
+
 # nanobench microbenchmark framework
 include(FetchContent)
 FetchContent_Declare(nanobench
@@ -43,3 +52,4 @@ endif()
 
 add_subdirectory(internal)
 add_subdirectory(comparison)
+add_subdirectory(profiling)
