@@ -158,7 +158,7 @@ void run_benchmark(const std::string& system_name,
     auto title = system_name + " NX=" + std::to_string(NX)
                + " N=" + std::to_string(horizon);
 
-    // BOBYQA (nablapp, derivative-free, box-constrained)
+    // BOBYQA (argmin, derivative-free, box-constrained)
     {
         auto problem = build_single_shooting_problem<NX, NU>(
             dynamics, x0, horizon, Q, R, u_min, u_max);
@@ -188,7 +188,7 @@ void run_benchmark(const std::string& system_name,
                               "cold", static_cast<int>(NX), horizon, qm);
     }
 
-    // Argmin COBYLA (nablapp, derivative-free, uses constrained bridge with zero constraints)
+    // Argmin COBYLA (derivative-free, uses constrained bridge with zero constraints)
     {
         auto problem = build_single_shooting_problem<NX, NU>(
             dynamics, x0, horizon, Q, R, u_min, u_max);

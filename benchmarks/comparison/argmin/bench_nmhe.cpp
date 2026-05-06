@@ -144,15 +144,15 @@ auto run_nmhe_benchmark(
 // LM policy conditional support
 // ---------------------------------------------------------------------------
 
-// LM policy disabled: nablapp lm_policy.h has unqualified concept names
-// (finite_difference.h bug). Re-enable when nablapp fixes this.
+// LM policy disabled: argmin lm_policy.h has unqualified concept names
+// (finite_difference.h bug). Re-enable when argmin fixes this.
 #if 0
-#include <nablapp/solver/lm_policy.h>
+#include <argmin/solver/lm_policy.h>
 #define HAS_LM_POLICY 1
 
 struct argmin_lm_local
 {
-    using algorithm = nablapp::lm_policy<>;
+    using algorithm = argmin::lm_policy<>;
 };
 using ArgminLm = ctrlpp::argmin_solver<double, argmin_lm_local>;
 #endif

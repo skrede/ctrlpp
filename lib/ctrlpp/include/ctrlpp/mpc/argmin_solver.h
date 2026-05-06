@@ -5,10 +5,10 @@
 #include "ctrlpp/mpc/argmin_problem.h"
 #include "ctrlpp/mpc/argmin_policies.h"
 
-#include <nablapp/result/status.h>
+#include <argmin/result/status.h>
 
-#include <nablapp/solver/options.h>
-#include <nablapp/solver/basic_solver.h>
+#include <argmin/solver/options.h>
+#include <argmin/solver/basic_solver.h>
 
 #include <chrono>
 #include <cstdint>
@@ -24,11 +24,11 @@ class argmin_solver
 {
 public:
     using scalar_type = Scalar;
-    using nablapp_policy = typename Policy::algorithm;
+    using argmin_policy = typename Policy::algorithm;
     using bridge_type = std::conditional_t<Constrained,
         argmin_constrained_problem<Scalar>,
         argmin_problem<Scalar>>;
-    using solver_type = nablapp::basic_solver<nablapp_policy, Eigen::Dynamic, bridge_type>;
+    using solver_type = argmin::basic_solver<argmin_policy, Eigen::Dynamic, bridge_type>;
 
     explicit argmin_solver(argmin_settings<Scalar> settings = {})
         : settings_{settings}
@@ -69,7 +69,7 @@ private:
     {
         if(!solver_)
         {
-            solver_.emplace(nablapp_policy{}, bridge_, x0, make_solver_options());
+            solver_.emplace(argmin_policy{}, bridge_, x0, make_solver_options());
         }
         else
         {
@@ -80,9 +80,9 @@ private:
         }
     }
 
-    auto make_solver_options() const -> nablapp::solver_options<>
+    auto make_solver_options() const -> argmin::solver_options<>
     {
-        nablapp::solver_options<> opts;
+        argmin::solver_options<> opts;
         opts.max_iterations = static_cast<std::uint32_t>(settings_.max_eval);
 
         if(settings_.max_time > Scalar{0})
@@ -103,33 +103,33 @@ private:
         return opts;
     }
 
-    static constexpr auto map_status(nablapp::solver_status s) -> solve_status
+    static constexpr auto map_status(argmin::solver_status s) -> solve_status
     {
         switch(s)
         {
-        case nablapp::solver_status::converged:
-        case nablapp::solver_status::ftol_reached:
-        case nablapp::solver_status::xtol_reached:
+        case argmin::solver_status::converged:
+        case argmin::solver_status::ftol_reached:
+        case argmin::solver_status::xtol_reached:
             return solve_status::optimal;
-        case nablapp::solver_status::max_iterations:
-        case nablapp::solver_status::budget_exhausted:
-        case nablapp::solver_status::maxeval_reached:
+        case argmin::solver_status::max_iterations:
+        case argmin::solver_status::budget_exhausted:
+        case argmin::solver_status::maxeval_reached:
             return solve_status::max_iterations;
-        case nablapp::solver_status::time_limit_reached:
+        case argmin::solver_status::time_limit_reached:
             return solve_status::time_limit;
-        case nablapp::solver_status::stalled:
-        case nablapp::solver_status::roundoff_limited:
-        case nablapp::solver_status::objective_stalled:
+        case argmin::solver_status::stalled:
+        case argmin::solver_status::roundoff_limited:
+        case argmin::solver_status::objective_stalled:
             return solve_status::solved_inaccurate;
-        case nablapp::solver_status::diverged:
-        case nablapp::solver_status::aborted:
-        case nablapp::solver_status::running:
+        case argmin::solver_status::diverged:
+        case argmin::solver_status::aborted:
+        case argmin::solver_status::running:
             return solve_status::error;
         }
         return solve_status::error;
     }
 
-    auto translate_result(const nablapp::solve_result<Scalar, Eigen::Dynamic>& r) const -> nlp_result<Scalar>
+    auto translate_result(const argmin::solve_result<Scalar, Eigen::Dynamic>& r) const -> nlp_result<Scalar>
     {
         return nlp_result<Scalar>{
             .status = map_status(r.status),

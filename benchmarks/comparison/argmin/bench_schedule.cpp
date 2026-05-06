@@ -7,8 +7,8 @@
 #include "ctrlpp/mpc/argmin_problem.h"
 #include "ctrlpp/mpc/nlp_formulation.h"
 
-#include <nablapp/schedule.h>
-#include <nablapp/solver/options.h>
+#include <argmin/schedule.h>
+#include <argmin/solver/options.h>
 
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
@@ -47,9 +47,9 @@ auto double_integrator_4 = [](const Eigen::Vector4d& x,
 // Helpers
 // ---------------------------------------------------------------------------
 
-auto make_solver_options() -> nablapp::solver_options<>
+auto make_solver_options() -> argmin::solver_options<>
 {
-    nablapp::solver_options<> opts;
+    argmin::solver_options<> opts;
     opts.max_iterations = 500;
     opts.set_objective_threshold(1e-6);
     opts.set_step_threshold(1e-6);
@@ -91,15 +91,15 @@ void run_fallback_slsqp_cobyla(const ctrlpp::nlp_problem<double>& problem,
     Eigen::VectorXd x0 = Eigen::VectorXd::Zero(problem.n_vars);
     auto opts = make_solver_options();
 
-    nablapp::fallback_schedule sched;
+    argmin::fallback_schedule sched;
     sched.stall_threshold = 10;
 
-    using group_type = nablapp::basic_solver_group<
-        nablapp::fallback_schedule,
+    using group_type = argmin::basic_solver_group<
+        argmin::fallback_schedule,
         Eigen::Dynamic,
         ctrlpp::argmin_constrained_problem<double>,
-        nablapp::kraft_slsqp_policy<>,
-        nablapp::cobyla_policy>;
+        argmin::kraft_slsqp_policy<>,
+        argmin::cobyla_policy>;
 
     bench.warmup(20).minEpochIterations(20).title("fallback chains")
         .run("fallback_slsqp_cobyla",
@@ -117,15 +117,15 @@ void run_fallback_slsqp_cobyla(const ctrlpp::nlp_problem<double>& problem,
     write_schedule_row(quality_csv, "fallback_slsqp_cobyla",
                        result.objective_value, result.gradient_norm,
                        result.constraint_violation,
-                       result.status == nablapp::solver_status::converged ||
-                       result.status == nablapp::solver_status::ftol_reached ||
-                       result.status == nablapp::solver_status::xtol_reached,
+                       result.status == argmin::solver_status::converged ||
+                       result.status == argmin::solver_status::ftol_reached ||
+                       result.status == argmin::solver_status::xtol_reached,
                        static_cast<int>(result.iterations), wall_ms);
 }
 
-// MMA fallback chains disabled: nablapp mma_policy::state_type lacks
+// MMA fallback chains disabled: argmin mma_policy::state_type lacks
 // objective_value member required by basic_solver_group. Re-enable when
-// nablapp fixes mma_policy state_type to include objective_value.
+// argmin fixes mma_policy state_type to include objective_value.
 //
 // Affected chains: SLSQP->MMA, MMA->COBYLA
 
@@ -175,15 +175,15 @@ void run_time_boxed(const ctrlpp::nlp_problem<double>& problem,
     Eigen::VectorXd x0 = Eigen::VectorXd::Zero(problem.n_vars);
     auto opts = make_solver_options();
 
-    nablapp::time_boxed_schedule sched;
+    argmin::time_boxed_schedule sched;
     sched.time_slice = time_slice;
 
-    using group_type = nablapp::basic_solver_group<
-        nablapp::time_boxed_schedule,
+    using group_type = argmin::basic_solver_group<
+        argmin::time_boxed_schedule,
         Eigen::Dynamic,
         ctrlpp::argmin_constrained_problem<double>,
-        nablapp::kraft_slsqp_policy<>,
-        nablapp::cobyla_policy>;
+        argmin::kraft_slsqp_policy<>,
+        argmin::cobyla_policy>;
 
     bench.warmup(20).minEpochIterations(20).title("time-boxed")
         .run(label,
@@ -201,9 +201,9 @@ void run_time_boxed(const ctrlpp::nlp_problem<double>& problem,
     write_schedule_row(quality_csv, label,
                        result.objective_value, result.gradient_norm,
                        result.constraint_violation,
-                       result.status == nablapp::solver_status::converged ||
-                       result.status == nablapp::solver_status::ftol_reached ||
-                       result.status == nablapp::solver_status::xtol_reached,
+                       result.status == argmin::solver_status::converged ||
+                       result.status == argmin::solver_status::ftol_reached ||
+                       result.status == argmin::solver_status::xtol_reached,
                        static_cast<int>(result.iterations), wall_ms);
 }
 

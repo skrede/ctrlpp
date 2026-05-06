@@ -4,7 +4,7 @@ option(CTRLPP_BENCH_HPIPM      "Build HPIPM comparison benchmarks"             O
 option(CTRLPP_BENCH_CT         "Build ETH Control Toolbox comparison benches"  OFF)
 option(CTRLPP_BENCH_RUCKIG     "Build ruckig comparison benchmarks"            OFF)
 option(CTRLPP_BENCH_DRAKE      "Build Drake comparison benchmarks"             OFF)
-option(CTRLPP_BENCH_ARGMIN     "Build nablapp comparison benchmarks"           OFF)
+option(CTRLPP_BENCH_ARGMIN     "Build argmin comparison benchmarks"            OFF)
 option(CTRLPP_BENCH_PROXSUITE  "Build proxsuite (ProxQP) comparison benchmarks" OFF)
 option(CTRLPP_BENCH_DAQP       "Build DAQP comparison benchmarks"              OFF)
 option(CTRLPP_BENCH_TINYMPC    "Build TinyMPC comparison benchmarks"           OFF)
