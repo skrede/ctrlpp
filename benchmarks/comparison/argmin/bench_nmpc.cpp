@@ -13,6 +13,8 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <utility>
+#include <type_traits>
 
 namespace
 {
@@ -76,6 +78,9 @@ auto make_nmpc_config(int horizon) -> ctrlpp::nmpc_config<double, NX, NU>
 
 using NloptSolver = ctrlpp::nlopt_solver<double>;
 using ArgminSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp>;
+using ArgminNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp>;
+using ArgminFilterSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_slsqp>;
+using ArgminFilterNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_nw_sqp>;
 
 // ---------------------------------------------------------------------------
 // Closed-loop simulation
@@ -86,9 +91,10 @@ auto run_closed_loop(
     Dynamics dynamics,
     const ctrlpp::nmpc_config<double, NX, NU>& config,
     Eigen::Vector<double, static_cast<int>(NX)> x0,
-    int sim_steps) -> std::pair<double, double>
+    int sim_steps,
+    Solver solver) -> std::pair<double, double>
 {
-    ctrlpp::nmpc<double, NX, NU, Solver, Dynamics> controller{dynamics, config};
+    ctrlpp::nmpc<double, NX, NU, Solver, Dynamics> controller{dynamics, config, std::move(solver)};
     double total_cost = 0.0;
     bool all_success = true;
 
@@ -125,33 +131,58 @@ void run_nmpc_benchmark(const std::string& system_name,
                + " N=" + std::to_string(config.horizon)
                + " steps=" + std::to_string(sim_steps);
 
-    // Timing: NLopt closed-loop
-    bench.title(title)
-        .run("nlopt_slsqp",
-             [&]
-             {
-                 auto result = run_closed_loop<NX, NU, NloptSolver>(dynamics, config, x0, sim_steps);
-                 ankerl::nanobench::doNotOptimizeAway(result);
-             });
+    auto write_row = [&](char const* label, double norm, double cost)
+    {
+        quality_csv << system_name << ',' << label << ',' << NX << ',' << config.horizon
+                    << ',' << sim_steps << ',' << norm << ',' << cost
+                    << ',' << (norm >= 0.0 ? 1 : 0) << '\n';
+    };
 
-    // Timing: argmin closed-loop
-    bench.run("argmin_slsqp",
-              [&]
-              {
-                  auto result = run_closed_loop<NX, NU, ArgminSlsqp>(dynamics, config, x0, sim_steps);
-                  ankerl::nanobench::doNotOptimizeAway(result);
-              });
+    bench.title(title);
 
-    // Quality: single run each
-    auto [nlopt_norm, nlopt_cost] = run_closed_loop<NX, NU, NloptSolver>(dynamics, config, x0, sim_steps);
-    auto [argmin_norm, argmin_cost] = run_closed_loop<NX, NU, ArgminSlsqp>(dynamics, config, x0, sim_steps);
+    // NLopt SLSQP baseline
+    {
+        ctrlpp::nlopt_settings<double> nlopt_cfg{};
+        nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
+        bench.run("nlopt_slsqp",
+                  [&]
+                  {
+                      auto result = run_closed_loop<NX, NU>(dynamics, config, x0, sim_steps, NloptSolver{nlopt_cfg});
+                      ankerl::nanobench::doNotOptimizeAway(result);
+                  });
+        auto [norm, cost] = run_closed_loop<NX, NU>(dynamics, config, x0, sim_steps, NloptSolver{nlopt_cfg});
+        write_row("nlopt_slsqp", norm, cost);
+    }
 
-    quality_csv << system_name << ",nlopt_slsqp," << NX << ',' << config.horizon
-                << ',' << sim_steps << ',' << nlopt_norm << ',' << nlopt_cost
-                << ',' << (nlopt_norm >= 0.0 ? 1 : 0) << '\n';
-    quality_csv << system_name << ",argmin_slsqp," << NX << ',' << config.horizon
-                << ',' << sim_steps << ',' << argmin_norm << ',' << argmin_cost
-                << ',' << (argmin_norm >= 0.0 ? 1 : 0) << '\n';
+    // Common argmin settings: bound per-step solve so a non-converging variant
+    // cannot stall the closed-loop run. 0.5s per step times sim_steps caps the
+    // worst-case wall per single closed-loop iteration.
+    ctrlpp::argmin_settings<double> argmin_cfg{};
+    argmin_cfg.max_time = 0.5;
+
+    auto bench_argmin_variant = [&]<typename Solver>(std::type_identity<Solver>,
+                                                      char const* bench_name,
+                                                      bool include_in_bench)
+    {
+        if (include_in_bench)
+        {
+            bench.run(bench_name,
+                      [&]
+                      {
+                          auto result = run_closed_loop<NX, NU>(dynamics, config, x0, sim_steps, Solver{argmin_cfg});
+                          ankerl::nanobench::doNotOptimizeAway(result);
+                      });
+        }
+        auto [norm, cost] = run_closed_loop<NX, NU>(dynamics, config, x0, sim_steps, Solver{argmin_cfg});
+        write_row(bench_name, norm, cost);
+    };
+
+    bench_argmin_variant(std::type_identity<ArgminSlsqp>{},        "argmin_slsqp",         true);
+    bench_argmin_variant(std::type_identity<ArgminNwSqp>{},        "argmin_nw_sqp",        true);
+    bench_argmin_variant(std::type_identity<ArgminFilterSlsqp>{},  "argmin_filter_slsqp",  true);
+    // filter_nw_sqp tends to hit max_time on every step on these cells; nanobench
+    // batched closed-loop balloons. Single-shot quality only.
+    bench_argmin_variant(std::type_identity<ArgminFilterNwSqp>{},  "argmin_filter_nw_sqp", false);
 }
 
 }

@@ -14,6 +14,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <type_traits>
 
 namespace
 {
@@ -95,6 +96,9 @@ auto make_nmpc_config(int horizon) -> ctrlpp::nmpc_config<double, NX, NU>
 
 using NloptSolver = ctrlpp::nlopt_solver<double>;
 using ArgminSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp>;
+using ArgminNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp>;
+using ArgminFilterSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_slsqp>;
+using ArgminFilterNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_nw_sqp>;
 
 auto warm_start_label(ctrlpp::warm_start_mode ws) -> std::string
 {
@@ -122,19 +126,6 @@ void run_benchmark(const std::string& system_name,
     auto config = make_nmpc_config<NX, NU>(horizon);
     auto ws_label = warm_start_label(ws_mode);
 
-    // NLopt solver (always cold -- NLopt has no warm-start)
-    ctrlpp::nlopt_settings<double> nlopt_cfg{};
-    nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
-
-    // Argmin settings with requested warm-start. max_time bounds each solve so
-    // a single non-converging config cannot stall the whole benchmark.
-    ctrlpp::argmin_settings<double> argmin_cfg{};
-    argmin_cfg.warm_start = ws_mode;
-    argmin_cfg.max_time = 2.0;
-
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config, NloptSolver{nlopt_cfg}};
-    ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_argmin{dynamics, config, ArgminSlsqp{argmin_cfg}};
-
     Eigen::Matrix<double, NX, 1> x0 = Eigen::Matrix<double, NX, 1>::Zero();
     x0(0) = 1.0;
 
@@ -144,58 +135,79 @@ void run_benchmark(const std::string& system_name,
     int min_iters = (NX >= 8) ? ((horizon >= 20) ? 3 : 10) : 50;
     int warmup_iters = (NX >= 8 && horizon >= 20) ? 5 : 50;
 
-    // Timing: NLopt
-    bench.warmup(warmup_iters).minEpochIterations(min_iters).title(title)
-        .run("nlopt_slsqp",
-             [&]
-             {
-                 auto u = nmpc_nlopt.solve(x0);
-                 ankerl::nanobench::doNotOptimizeAway(u);
-             });
+    bench.warmup(warmup_iters).minEpochIterations(min_iters).title(title);
 
-    // Timing: argmin
-    bench.run("argmin_slsqp",
-              [&]
-              {
-                  auto u = nmpc_argmin.solve(x0);
-                  ankerl::nanobench::doNotOptimizeAway(u);
-              });
+    // NLopt SLSQP baseline (no warm-start; runs at every ws_mode for parity)
+    {
+        ctrlpp::nlopt_settings<double> nlopt_cfg{};
+        nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
 
-    // Quality: single solve each for metrics
-    // Re-create controllers for clean quality measurement
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> q_nlopt{dynamics, config, NloptSolver{nlopt_cfg}};
-    ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> q_argmin{dynamics, config, ArgminSlsqp{argmin_cfg}};
+        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc{dynamics, config, NloptSolver{nlopt_cfg}};
+        bench.run("nlopt_slsqp",
+                  [&]
+                  {
+                      auto u = nmpc.solve(x0);
+                      ankerl::nanobench::doNotOptimizeAway(u);
+                  });
 
-    q_nlopt.solve(x0);
-    auto nlopt_diag = q_nlopt.diagnostics();
-    auto nlopt_grad = compute_gradient_norm<double, NX, NU>(q_nlopt);
+        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> q{dynamics, config, NloptSolver{nlopt_cfg}};
+        q.solve(x0);
+        auto diag = q.diagnostics();
+        auto grad = compute_gradient_norm<double, NX, NU>(q);
+        write_quality_csv_row(quality_csv, system_name, "nlopt", "slsqp", "cold",
+                              static_cast<int>(NX), horizon, quality_metrics{
+                                  .objective = diag.cost,
+                                  .max_constraint_violation = diag.max_constraint_violation,
+                                  .gradient_norm = grad,
+                                  .success = (diag.status == ctrlpp::solve_status::optimal),
+                                  .iterations = diag.iterations,
+                                  .solve_time_ms = diag.solve_time * 1000.0,
+                              });
+    }
 
-    q_argmin.solve(x0);
-    auto argmin_diag = q_argmin.diagnostics();
-    auto argmin_grad = compute_gradient_norm<double, NX, NU>(q_argmin);
+    // Common argmin settings: warm-start as requested, max_time bounds each
+    // solve so a non-converging cell cannot stall the bench.
+    ctrlpp::argmin_settings<double> argmin_cfg{};
+    argmin_cfg.warm_start = ws_mode;
+    argmin_cfg.max_time = 2.0;
 
-    quality_metrics nlopt_qm{
-        .objective = nlopt_diag.cost,
-        .max_constraint_violation = nlopt_diag.max_constraint_violation,
-        .gradient_norm = nlopt_grad,
-        .success = (nlopt_diag.status == ctrlpp::solve_status::optimal),
-        .iterations = nlopt_diag.iterations,
-        .solve_time_ms = nlopt_diag.solve_time * 1000.0,
+    auto run_argmin_variant = [&]<typename Solver>(std::type_identity<Solver>,
+                                                    char const* bench_name,
+                                                    char const* algo_short,
+                                                    bool include_in_bench)
+    {
+        if (include_in_bench)
+        {
+            ctrlpp::nmpc<double, NX, NU, Solver, Dynamics> nmpc{dynamics, config, Solver{argmin_cfg}};
+            bench.run(bench_name,
+                      [&]
+                      {
+                          auto u = nmpc.solve(x0);
+                          ankerl::nanobench::doNotOptimizeAway(u);
+                      });
+        }
+
+        ctrlpp::nmpc<double, NX, NU, Solver, Dynamics> q{dynamics, config, Solver{argmin_cfg}};
+        q.solve(x0);
+        auto diag = q.diagnostics();
+        auto grad = compute_gradient_norm<double, NX, NU>(q);
+        write_quality_csv_row(quality_csv, system_name, "argmin", algo_short, ws_label,
+                              static_cast<int>(NX), horizon, quality_metrics{
+                                  .objective = diag.cost,
+                                  .max_constraint_violation = diag.max_constraint_violation,
+                                  .gradient_norm = grad,
+                                  .success = (diag.status == ctrlpp::solve_status::optimal),
+                                  .iterations = diag.iterations,
+                                  .solve_time_ms = diag.solve_time * 1000.0,
+                              });
     };
 
-    quality_metrics argmin_qm{
-        .objective = argmin_diag.cost,
-        .max_constraint_violation = argmin_diag.max_constraint_violation,
-        .gradient_norm = argmin_grad,
-        .success = (argmin_diag.status == ctrlpp::solve_status::optimal),
-        .iterations = argmin_diag.iterations,
-        .solve_time_ms = argmin_diag.solve_time * 1000.0,
-    };
-
-    write_quality_csv_row(quality_csv, system_name, "nlopt", "slsqp", "cold",
-                          static_cast<int>(NX), horizon, nlopt_qm);
-    write_quality_csv_row(quality_csv, system_name, "argmin", "slsqp", ws_label,
-                          static_cast<int>(NX), horizon, argmin_qm);
+    run_argmin_variant(std::type_identity<ArgminSlsqp>{},        "argmin_slsqp",         "slsqp",         true);
+    run_argmin_variant(std::type_identity<ArgminNwSqp>{},        "argmin_nw_sqp",        "nw_sqp",        true);
+    run_argmin_variant(std::type_identity<ArgminFilterSlsqp>{},  "argmin_filter_slsqp",  "filter_slsqp",  true);
+    // filter_nw_sqp tends to hit max_time on these cells; nanobench batched
+    // timing balloons to minutes per cell. Single-shot quality only.
+    run_argmin_variant(std::type_identity<ArgminFilterNwSqp>{},  "argmin_filter_nw_sqp", "filter_nw_sqp", false);
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +227,10 @@ void run_convergence(const std::string& system_name,
     std::uniform_real_distribution<double> dist(-2.0, 2.0);
 
     int nlopt_successes = 0;
-    int argmin_successes = 0;
+    int slsqp_successes = 0;
+    int nw_sqp_successes = 0;
+    int filter_slsqp_successes = 0;
+    int filter_nw_sqp_successes = 0;
 
     for(int trial = 0; trial < num_trials; ++trial)
     {
@@ -229,42 +244,37 @@ void run_convergence(const std::string& system_name,
         argmin_cfg.max_time = 2.0;
 
         ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config, NloptSolver{nlopt_cfg}};
-        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_argmin{dynamics, config, ArgminSlsqp{argmin_cfg}};
+        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_slsqp{dynamics, config, ArgminSlsqp{argmin_cfg}};
+        ctrlpp::nmpc<double, NX, NU, ArgminNwSqp, Dynamics> nmpc_nw{dynamics, config, ArgminNwSqp{argmin_cfg}};
+        ctrlpp::nmpc<double, NX, NU, ArgminFilterSlsqp, Dynamics> nmpc_fs{dynamics, config, ArgminFilterSlsqp{argmin_cfg}};
+        ctrlpp::nmpc<double, NX, NU, ArgminFilterNwSqp, Dynamics> nmpc_fnw{dynamics, config, ArgminFilterNwSqp{argmin_cfg}};
 
-        auto u_nlopt = nmpc_nlopt.solve(x0);
-        if(u_nlopt.has_value())
-            ++nlopt_successes;
-
-        auto u_argmin = nmpc_argmin.solve(x0);
-        if(u_argmin.has_value())
-            ++argmin_successes;
+        if(nmpc_nlopt.solve(x0).has_value()) ++nlopt_successes;
+        if(nmpc_slsqp.solve(x0).has_value()) ++slsqp_successes;
+        if(nmpc_nw.solve(x0).has_value()) ++nw_sqp_successes;
+        if(nmpc_fs.solve(x0).has_value()) ++filter_slsqp_successes;
+        if(nmpc_fnw.solve(x0).has_value()) ++filter_nw_sqp_successes;
     }
 
-    double nlopt_rate = static_cast<double>(nlopt_successes) / num_trials;
-    double argmin_rate = static_cast<double>(argmin_successes) / num_trials;
-
-    quality_metrics nlopt_qm{
-        .objective = nlopt_rate,
-        .max_constraint_violation = 0.0,
-        .gradient_norm = 0.0,
-        .success = true,
-        .iterations = num_trials,
-        .solve_time_ms = 0.0,
+    auto write_rate = [&](char const* solver, char const* algo, int successes)
+    {
+        double rate = static_cast<double>(successes) / num_trials;
+        write_quality_csv_row(quality_csv, system_name, solver, algo, "convergence",
+                              static_cast<int>(NX), horizon, quality_metrics{
+                                  .objective = rate,
+                                  .max_constraint_violation = 0.0,
+                                  .gradient_norm = 0.0,
+                                  .success = true,
+                                  .iterations = num_trials,
+                                  .solve_time_ms = 0.0,
+                              });
     };
 
-    quality_metrics argmin_qm{
-        .objective = argmin_rate,
-        .max_constraint_violation = 0.0,
-        .gradient_norm = 0.0,
-        .success = true,
-        .iterations = num_trials,
-        .solve_time_ms = 0.0,
-    };
-
-    write_quality_csv_row(quality_csv, system_name, "nlopt", "slsqp", "convergence",
-                          static_cast<int>(NX), horizon, nlopt_qm);
-    write_quality_csv_row(quality_csv, system_name, "argmin", "slsqp", "convergence",
-                          static_cast<int>(NX), horizon, argmin_qm);
+    write_rate("nlopt",  "slsqp",         nlopt_successes);
+    write_rate("argmin", "slsqp",         slsqp_successes);
+    write_rate("argmin", "nw_sqp",        nw_sqp_successes);
+    write_rate("argmin", "filter_slsqp",  filter_slsqp_successes);
+    write_rate("argmin", "filter_nw_sqp", filter_nw_sqp_successes);
 }
 
 }
