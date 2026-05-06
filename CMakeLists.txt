@@ -30,7 +30,7 @@ set(CTRLPP_WARNING_FLAGS
 option(CTRLPP_BUILD_OSQP "Build OSQP solver backend for MPC" OFF)
 option(CTRLPP_BUILD_NLOPT "Build NLopt solver backend for NMPC" OFF)
 option(CTRLPP_BUILD_ARGMIN "Build with Argmin NLP solver backend" OFF)
-set(CTRLPP_ARGMIN_SOURCE_DIR "" CACHE PATH "Path to local Argmin (nablapp) source checkout")
+set(CTRLPP_ARGMIN_SOURCE_DIR "" CACHE PATH "Path to local Argmin source checkout")
 option(CTRLPP_CMAKE_FETCH_DEPS "Use CMake FetchContent to download and install dependencies" OFF)
 
 option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)

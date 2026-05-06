@@ -1,22 +1,22 @@
 include(FetchContent)
 
 if(CTRLPP_ARGMIN_SOURCE_DIR)
-    FetchContent_Declare(nablapp
+    FetchContent_Declare(argmin
         SOURCE_DIR ${CTRLPP_ARGMIN_SOURCE_DIR}
         EXCLUDE_FROM_ALL)
 else()
-    FetchContent_Declare(nablapp
-        GIT_REPOSITORY https://github.com/skrede/nablapp.git
+    FetchContent_Declare(argmin
+        GIT_REPOSITORY https://github.com/skrede/argmin.git
         GIT_TAG milestone/v0.2.1
         GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL)
 endif()
 
-set(NABLAPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(NABLAPP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(NABLAPP_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(ARGMIN_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ARGMIN_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ARGMIN_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(nablapp)
+FetchContent_MakeAvailable(argmin)
 
 find_package(NLopt REQUIRED)
 
@@ -50,7 +50,7 @@ foreach(target IN LISTS ARGMIN_BENCH_TARGETS)
             ctrlpp::bench_problems
             ctrlpp::nlopt
             nanobench
-            nablapp::nablapp
+            argmin::argmin
         )
     endif()
 endforeach()

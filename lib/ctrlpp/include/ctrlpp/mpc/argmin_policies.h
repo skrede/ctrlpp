@@ -1,16 +1,16 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_ARGMIN_POLICIES_H
 #define HPP_GUARD_CTRLPP_MPC_ARGMIN_POLICIES_H
 
-#include <nablapp/solver/isres_policy.h>
-#include <nablapp/solver/bobyqa_policy.h>
-#include <nablapp/solver/cobyla_policy.h>
-#include <nablapp/solver/lbfgsb_policy.h>
-#include <nablapp/solver/nw_sqp_policy.h>
-#include <nablapp/solver/byrd_lbfgsb_policy.h>
-#include <nablapp/solver/kraft_slsqp_policy.h>
-#include <nablapp/solver/filter_slsqp_policy.h>
-#include <nablapp/solver/filter_nw_sqp_policy.h>
-#include <nablapp/solver/augmented_lagrangian_policy.h>
+#include <argmin/solver/isres_policy.h>
+#include <argmin/solver/bobyqa_policy.h>
+#include <argmin/solver/cobyla_policy.h>
+#include <argmin/solver/lbfgsb_policy.h>
+#include <argmin/solver/nw_sqp_policy.h>
+#include <argmin/solver/byrd_lbfgsb_policy.h>
+#include <argmin/solver/kraft_slsqp_policy.h>
+#include <argmin/solver/filter_slsqp_policy.h>
+#include <argmin/solver/filter_nw_sqp_policy.h>
+#include <argmin/solver/augmented_lagrangian_policy.h>
 
 #include <cstdint>
 
@@ -37,52 +37,52 @@ struct argmin_settings
 
 struct argmin_slsqp
 {
-    using algorithm = nablapp::kraft_slsqp_policy<>;
+    using algorithm = argmin::kraft_slsqp_policy<>;
 };
 
 struct argmin_nw_sqp
 {
-    using algorithm = nablapp::nw_sqp_policy<>;
+    using algorithm = argmin::nw_sqp_policy<>;
 };
 
 struct argmin_filter_slsqp
 {
-    using algorithm = nablapp::filter_slsqp_policy<>;
+    using algorithm = argmin::filter_slsqp_policy<>;
 };
 
 struct argmin_filter_nw_sqp
 {
-    using algorithm = nablapp::filter_nw_sqp_policy<>;
+    using algorithm = argmin::filter_nw_sqp_policy<>;
 };
 
 struct argmin_auglag
 {
-    using algorithm = nablapp::augmented_lagrangian_policy<>;
+    using algorithm = argmin::augmented_lagrangian_policy<>;
 };
 
 struct argmin_cobyla
 {
-    using algorithm = nablapp::cobyla_policy;
+    using algorithm = argmin::cobyla_policy;
 };
 
 struct argmin_isres
 {
-    using algorithm = nablapp::isres_policy<>;
+    using algorithm = argmin::isres_policy<>;
 };
 
 struct argmin_lbfgsb
 {
-    using algorithm = nablapp::lbfgsb_policy<>;
+    using algorithm = argmin::lbfgsb_policy<>;
 };
 
 struct argmin_byrd_lbfgsb
 {
-    using algorithm = nablapp::byrd_lbfgsb_policy<>;
+    using algorithm = argmin::byrd_lbfgsb_policy<>;
 };
 
 struct argmin_bobyqa
 {
-    using algorithm = nablapp::bobyqa_policy<>;
+    using algorithm = argmin::bobyqa_policy<>;
 };
 
 }
