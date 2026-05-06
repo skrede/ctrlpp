@@ -121,7 +121,7 @@ if (CTRLPP_BUILD_ARGMIN)
         FetchContent_Declare(
             argmin
             GIT_REPOSITORY https://github.com/skrede/argmin.git
-            GIT_TAG milestone/v0.2.1
+            GIT_TAG ${CTRLPP_ARGMIN_GIT_TAG}
             EXCLUDE_FROM_ALL
         )
     endif ()

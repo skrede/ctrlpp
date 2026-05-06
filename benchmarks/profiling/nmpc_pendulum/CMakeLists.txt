@@ -7,7 +7,7 @@ if(CTRLPP_ARGMIN_SOURCE_DIR)
 else()
     FetchContent_Declare(argmin
         GIT_REPOSITORY https://github.com/skrede/argmin.git
-        GIT_TAG milestone/v0.2.1
+        GIT_TAG ${CTRLPP_ARGMIN_GIT_TAG}
         GIT_SHALLOW TRUE
         EXCLUDE_FROM_ALL)
 endif()
