@@ -166,8 +166,9 @@ int main()
     quality_csv << "system,solver,nx,horizon,sim_steps,final_state_norm,total_cost,success\n";
 
     // Double integrator NX=2
+    for (int h : {10, 20})
     {
-        auto config = make_nmpc_config<2, 1>(10);
+        auto config = make_nmpc_config<2, 1>(h);
         config.Q = Eigen::Matrix2d::Identity() * 10.0;
         config.R = Eigen::Matrix<double, 1, 1>::Identity() * 0.1;
         Eigen::Vector2d x0{1.0, 0.0};
@@ -175,8 +176,9 @@ int main()
     }
 
     // Pendulum NX=2
+    for (int h : {10, 20})
     {
-        auto config = make_nmpc_config<2, 1>(10);
+        auto config = make_nmpc_config<2, 1>(h);
         config.Q = Eigen::Matrix2d::Identity();
         config.R = Eigen::Matrix<double, 1, 1>::Identity();
         Eigen::Vector2d x0{0.3, 0.0};
@@ -184,8 +186,9 @@ int main()
     }
 
     // Double integrator NX=4
+    for (int h : {10, 20})
     {
-        auto config = make_nmpc_config<4, 2>(10);
+        auto config = make_nmpc_config<4, 2>(h);
         config.Q = Eigen::Matrix4d::Identity();
         config.R = Eigen::Matrix2d::Identity() * 0.1;
         Eigen::Vector4d x0{1.0, 0.0, -0.5, 0.0};
