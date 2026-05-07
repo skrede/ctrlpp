@@ -18,13 +18,19 @@ namespace ctrlpp
 {
 
 /// NLopt algorithm selection for the NMPC solver backend.
-/// Note: MMA does not support equality constraints.
+/// Note: raw `mma` and raw `ccsaq` do not support equality constraints.
+/// The `auglag_mma` and `auglag_ccsaq` variants wrap the inner solver
+/// in NLOPT_AUGLAG_EQ so equality constraints are absorbed into the
+/// outer penalty and inequalities pass through to the inner.
 enum class nlopt_algorithm : std::uint8_t
 {
     slsqp,
     mma,
     cobyla,
-    isres
+    isres,
+    auglag_mma,
+    auglag_ccsaq,
+    ccsaq
 };
 
 template <typename Scalar>
@@ -57,6 +63,18 @@ public:
         partition_constraints(problem);
         configure_constraint_callbacks();
         configure_stopping_criteria();
+
+        if(settings_.algorithm == nlopt_algorithm::auglag_mma
+           || settings_.algorithm == nlopt_algorithm::auglag_ccsaq)
+        {
+            nlopt::opt local(to_nlopt_inner(settings_.algorithm), static_cast<unsigned>(problem.n_vars));
+            local.set_ftol_rel(static_cast<double>(settings_.ftol_rel));
+            local.set_xtol_rel(static_cast<double>(settings_.xtol_rel));
+            local.set_maxeval(settings_.max_eval);
+            if(settings_.max_time > Scalar{0})
+                local.set_maxtime(static_cast<double>(settings_.max_time));
+            opt_.set_local_optimizer(local);
+        }
     }
 
     auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
@@ -114,8 +132,27 @@ private:
             return nlopt::LN_COBYLA;
         case nlopt_algorithm::isres:
             return nlopt::GN_ISRES;
+        case nlopt_algorithm::auglag_mma:
+            return nlopt::AUGLAG_EQ;
+        case nlopt_algorithm::auglag_ccsaq:
+            return nlopt::AUGLAG_EQ;
+        case nlopt_algorithm::ccsaq:
+            return nlopt::LD_CCSAQ;
         }
         return nlopt::LD_SLSQP;
+    }
+
+    static auto to_nlopt_inner(nlopt_algorithm alg) -> nlopt::algorithm
+    {
+        switch(alg)
+        {
+        case nlopt_algorithm::auglag_mma:
+            return nlopt::LD_MMA;
+        case nlopt_algorithm::auglag_ccsaq:
+            return nlopt::LD_CCSAQ;
+        default:
+            return nlopt::LD_SLSQP;
+        }
     }
 
     void configure_variable_bounds(const nlp_problem<Scalar>& problem)
@@ -152,6 +189,8 @@ private:
 
         if(settings_.algorithm == nlopt_algorithm::mma && !eq_indices_.empty())
             throw std::invalid_argument("MMA algorithm does not support equality constraints");
+        if(settings_.algorithm == nlopt_algorithm::ccsaq && !eq_indices_.empty())
+            throw std::invalid_argument("CCSAQ algorithm does not support equality constraints");
     }
 
     void configure_constraint_callbacks()

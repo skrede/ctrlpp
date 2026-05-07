@@ -1,4 +1,7 @@
 #include "ctrlpp/mpc/argmin_solver.h"
+#ifdef CTRLPP_HAS_NLOPT
+#include "ctrlpp/mpc/nlopt_solver.h"
+#endif
 #include "ctrlpp/nmpc.h"
 
 #include <Eigen/Dense>
@@ -158,6 +161,57 @@ TEST_CASE("nmpc argmin all policies compile", "[nmpc][argmin]")
     static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_auglag<ctrlpp::argmin_mma>>>);
     static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_auglag<ctrlpp::argmin_gcmma>>>);
 }
+
+#ifdef CTRLPP_HAS_NLOPT
+TEST_CASE("nlopt auglag_eq + ld_mma smoke", "[nmpc][argmin][nlopt]")
+{
+    // Drive the NLopt AUGLAG_EQ + LD_MMA composition directly on the
+    // NMPC-built nlp_problem. The smoke gate is solver-level: setup() must
+    // wire the inner local optimizer before optimize() is called, no
+    // exceptions are thrown, the solve returns a non-error status, and
+    // the solution vector is dimensionally correct with finite entries.
+    //
+    // We deliberately bypass the nmpc<>::solve optional-collapsing layer
+    // here: AUGLAG_EQ shares the outer max_eval budget with the inner
+    // LD_MMA local-solve (per NLopt semantics, evaluations are counted
+    // jointly), so a tight budget routinely terminates with status
+    // max_iterations rather than optimal. The bench layer documents this
+    // ambiguity in its CSV header; the unit-level gate here is just that
+    // the composition runs end-to-end without throwing or erroring.
+
+    using NloptSolver = ctrlpp::nlopt_solver<double>;
+    using NmpcDIN = ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator)>;
+
+    auto config = make_config(10);
+    config.Q = 10.0 * Eigen::Matrix2d::Identity();
+    config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
+
+    NmpcDIN controller{double_integrator, config};
+    const auto& problem = controller.problem();
+
+    ctrlpp::nlopt_settings<double> nlopt_cfg{};
+    nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::auglag_mma;
+    nlopt_cfg.ftol_rel = 1e-6;
+    nlopt_cfg.xtol_rel = 1e-6;
+    nlopt_cfg.max_eval = 500;
+    nlopt_cfg.constraint_tol = 1e-6;
+
+    NloptSolver solver{nlopt_cfg};
+    REQUIRE_NOTHROW(solver.setup(problem));
+
+    ctrlpp::nlp_update<double> update;
+    update.x0 = Eigen::VectorXd::Zero(problem.n_vars);
+
+    ctrlpp::nlp_result<double> result;
+    REQUIRE_NOTHROW(result = solver.solve(update));
+
+    CHECK(result.status != ctrlpp::solve_status::error);
+    CHECK(result.x.size() == problem.n_vars);
+    CHECK(std::isfinite(result.objective));
+    for(Eigen::Index i = 0; i < result.x.size(); ++i)
+        CHECK(std::isfinite(result.x[i]));
+}
+#endif
 
 TEST_CASE("nmpc argmin warm-start benefit", "[nmpc][argmin]")
 {
