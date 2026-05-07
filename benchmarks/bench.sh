@@ -5,7 +5,7 @@
 #   build_dir       : CMake build directory (default: ./build)
 #   --internal-only : Skip comparison benchmarks entirely
 #   --comparison   : Enable specific competitors (comma-separated)
-#                     Valid: libmpc,osqp_eigen,hpipm,ct,ruckig,drake,argmin
+#                     Valid: libmpc,osqp_eigen,hpipm,ct,ruckig,drake,argmin,argmin-mma,argmin-gcmma
 
 set -euo pipefail
 
@@ -32,7 +32,9 @@ while [[ $# -gt 0 ]]; do
                     ct)         CMAKE_OPTS+=" -DCTRLPP_BENCH_CT=ON" ;;
                     ruckig)     CMAKE_OPTS+=" -DCTRLPP_BENCH_RUCKIG=ON" ;;
                     drake)      CMAKE_OPTS+=" -DCTRLPP_BENCH_DRAKE=ON" ;;
-                    argmin)     CMAKE_OPTS+=" -DCTRLPP_BENCH_ARGMIN=ON" ;;
+                    argmin)         CMAKE_OPTS+=" -DCTRLPP_BENCH_ARGMIN=ON" ;;
+                    argmin-mma)     CMAKE_OPTS+=" -DCTRLPP_BENCH_ARGMIN=ON" ;;
+                    argmin-gcmma)   CMAKE_OPTS+=" -DCTRLPP_BENCH_ARGMIN=ON" ;;
                     *)          echo "Unknown competitor: $comp" >&2; exit 1 ;;
                 esac
             done
