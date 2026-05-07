@@ -40,6 +40,8 @@ set(ARGMIN_BENCH_TARGETS
     bench_jacobian
     bench_schedule
     bench_sqp_variants
+    bench_mma
+    bench_gcmma
 )
 
 foreach(target IN LISTS ARGMIN_BENCH_TARGETS)
