@@ -6,12 +6,13 @@
 
 #include <Eigen/Core>
 
-#include <algorithm>
-#include <cstddef>
-#include <ostream>
 #include <span>
-#include <string_view>
 #include <vector>
+#include <ostream>
+#include <cstddef>
+#include <algorithm>
+#include <string_view>
+#include <limits>
 
 struct quality_metrics
 {
@@ -74,6 +75,14 @@ auto compute_gradient_norm(const NmpcType& controller) -> double
     const auto& prob = controller.problem();
     const auto& z = controller.last_solution();
     auto n = static_cast<std::size_t>(prob.n_vars);
+
+    // ctrlpp::nmpc::solve_impl writes m_last_solution only on solve_status::optimal
+    // / solved_inaccurate. Solvers exiting time_limit / max_iterations / etc. leave
+    // last_solution() at its default-empty state, so a span sized to prob.n_vars
+    // would overrun the buffer in finite_diff_gradient. Sentinel out instead.
+    if(static_cast<std::size_t>(z.size()) != n)
+        return std::numeric_limits<double>::quiet_NaN();
+
     std::vector<double> grad(n);
     std::vector<double> x_buf(z.data(), z.data() + z.size());
     ctrlpp::detail::finite_diff_gradient<double>(
