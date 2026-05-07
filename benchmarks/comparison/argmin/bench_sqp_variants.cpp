@@ -41,7 +41,7 @@ using ArgminSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp>;
 using ArgminNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp>;
 using ArgminFilterSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_slsqp>;
 using ArgminFilterNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_nw_sqp>;
-using ArgminAuglag = ctrlpp::argmin_solver<double, ctrlpp::argmin_auglag>;
+using ArgminAuglag = ctrlpp::argmin_solver<double, ctrlpp::argmin_auglag<>>;
 
 // ---------------------------------------------------------------------------
 // Benchmark runner
