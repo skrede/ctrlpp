@@ -102,7 +102,11 @@ auto dare_solve_from_symplectic(
 
     const Scalar scale = T.cwiseAbs().maxCoeff();
     const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
-    const Scalar unit_margin = eps * std::max(Scalar{1}, scale);
+    // Eigenvalues of a backward-stable real Schur factor carry a perturbation
+    // on the order of the matrix size times unit roundoff times the factor
+    // norm, so the unit-disk predicate margin is that backward error: 2n times
+    // epsilon times the largest magnitude of T.
+    const Scalar unit_margin = Scalar{n2} * eps * scale;
     auto predicate = [unit_margin](std::complex<Scalar> lam) -> bool
     {
         return std::abs(lam) < Scalar{1} - unit_margin;

@@ -13,6 +13,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 #include <complex>
 #include <cstddef>
 #include <optional>
@@ -30,9 +31,26 @@ namespace detail
 /// coefficients in the closed-loop characteristic polynomial.
 ///
 /// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7
+///
+/// The conjugate-pair and real-pole tests are relative: a pole's imaginary part
+/// and the residual between a candidate pair are judged against the pole
+/// magnitude scaled by the instantiated Scalar's machine epsilon and an exposed
+/// dimensionless coefficient. This keeps the test correct at both float and
+/// double precision and for large-magnitude poles, where a fixed absolute
+/// tolerance would either reject valid float pairs or accept spurious double
+/// ones. The coefficient defaults to twice the pole count, reflecting the
+/// rounding that accumulates across the N pole values being compared, and is
+/// overridable by the caller.
 template <typename Scalar, std::size_t N>
-bool validate_conjugate_pairs(const std::array<std::complex<Scalar>, N>& poles)
+bool validate_conjugate_pairs(const std::array<std::complex<Scalar>, N>& poles,
+                              Scalar conj_tol_scale = Scalar{2} * Scalar{N})
 {
+    const Scalar eps = std::numeric_limits<Scalar>::epsilon();
+    // Magnitude floor so a zero-magnitude pole still receives an epsilon-level
+    // tolerance instead of a tolerance that collapses to zero; the floor is
+    // itself the Scalar's epsilon, so no absolute magic constant is introduced.
+    const Scalar mag_floor = eps;
+
     // Track which poles have been matched
     std::array<bool, N> matched{};
 
@@ -41,7 +59,8 @@ bool validate_conjugate_pairs(const std::array<std::complex<Scalar>, N>& poles)
         if(matched[i])
             continue;
 
-        if(std::abs(poles[i].imag()) < Scalar{1e-12})
+        const Scalar tol_i = conj_tol_scale * eps * std::max(std::abs(poles[i]), mag_floor);
+        if(std::abs(poles[i].imag()) <= tol_i)
         {
             // Real pole, no conjugate needed
             matched[i] = true;
@@ -54,7 +73,9 @@ bool validate_conjugate_pairs(const std::array<std::complex<Scalar>, N>& poles)
         {
             if(matched[j])
                 continue;
-            if(std::abs(poles[i].real() - poles[j].real()) < Scalar{1e-12} && std::abs(poles[i].imag() + poles[j].imag()) < Scalar{1e-12})
+            const Scalar scale = std::max(std::abs(poles[i]), std::abs(poles[j]));
+            const Scalar tol = conj_tol_scale * eps * std::max(scale, mag_floor);
+            if(std::abs(poles[i].real() - poles[j].real()) <= tol && std::abs(poles[i].imag() + poles[j].imag()) <= tol)
             {
                 matched[i] = true;
                 matched[j] = true;
@@ -118,7 +139,7 @@ std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>
 /// @cite kautsky1985 -- Kautsky, Nichols &amp; Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
 /// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (Ackermann's formula)
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
-std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const std::array<std::complex<Scalar>, NX>& desired_poles)
+std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const std::array<std::complex<Scalar>, NX>& desired_poles, Scalar conj_tol_scale = Scalar{2} * Scalar{NX})
 {
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
@@ -133,7 +154,7 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix
     else
     {
         // Validate conjugate pairs
-        if(!detail::validate_conjugate_pairs(desired_poles))
+        if(!detail::validate_conjugate_pairs(desired_poles, conj_tol_scale))
             return std::nullopt;
 
         // Build controllability matrix: C_ctrl = [B, AB, A^2 B, ..., A^{n-1} B]
@@ -178,7 +199,7 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix
 /// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (observer/regulator duality)
 template <typename Scalar, std::size_t NX, std::size_t NY>
 std::optional<Eigen::Matrix<Scalar, int(NX), int(NY)>>
-place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NY), int(NX)>& C, const std::array<std::complex<Scalar>, NX>& desired_poles)
+place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NY), int(NX)>& C, const std::array<std::complex<Scalar>, NX>& desired_poles, Scalar conj_tol_scale = Scalar{2} * Scalar{NX})
 {
     if constexpr(NY != 1)
     {
@@ -190,7 +211,7 @@ place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Ma
         Eigen::Matrix<Scalar, int(NX), int(NX)> At = A.transpose().eval();
         Eigen::Matrix<Scalar, int(NX), int(NY)> Ct = C.transpose().eval();
 
-        auto K_opt = place<Scalar, NX, NY>(At, Ct, desired_poles);
+        auto K_opt = place<Scalar, NX, NY>(At, Ct, desired_poles, conj_tol_scale);
         if(!K_opt)
             return std::nullopt;
 

@@ -1,14 +1,15 @@
-// Float-Scalar runtime tier: exercises the two hardcoded absolute tolerances
-// documented as float-fatal (review R5). Both `place.h`'s conjugate-pair
-// check and `biquad.h`'s near-singular DC-gain guards compare an accumulated
-// quantity against a fixed `1e-12` (or `1e-15`), a threshold calibrated for
-// double's ~2.22e-16 machine epsilon; at float's ~1.19e-7 machine epsilon,
-// ordinary rounding noise routinely exceeds it, so a value that should read
-// as "numerically zero at this Scalar's own precision" instead reads as
-// "significant", sending the code down the wrong branch. Both cases below
-// construct that scenario at Scalar=float, verified empirically to diverge
-// from the Scalar=double reference, and are held green with [!shouldfail]
-// until the numerics phase scales these tolerances by the Scalar's own
+// Float-Scalar runtime tier: exercises tolerances that were hardcoded as
+// fixed absolutes calibrated for double's ~2.22e-16 machine epsilon. At
+// float's ~1.19e-7 machine epsilon, ordinary rounding noise routinely
+// exceeds such a fixed threshold, so a value that should read as
+// "numerically zero at this Scalar's own precision" instead reads as
+// "significant", sending the code down the wrong branch.
+//
+// place.h's conjugate-pair check now scales its tolerance by the Scalar's
+// own machine epsilon, so the place() case below is an active regression
+// test that passes at float. biquad.h's near-singular DC-gain guard still
+// compares against a fixed absolute, so the biquad case below is held green
+// with [!shouldfail] until that tolerance is scaled by the Scalar's own
 // machine epsilon.
 
 #include "ctrlpp/dsp/biquad.h"
@@ -28,7 +29,7 @@
 using namespace ctrlpp;
 using Catch::Matchers::WithinAbs;
 
-TEST_CASE("place() accepts a numerically-conjugate float pole pair the way it does at double", "[float][anchor][!shouldfail]")
+TEST_CASE("place() accepts a numerically-conjugate float pole pair the way it does at double", "[float][anchor]")
 {
     // The pole pair below is the same closed-form conjugate pair computed two
     // independent (mathematically identical) ways -- sin(theta) and

@@ -19,12 +19,17 @@
 /// ctrlpp::detail::extract_riccati_solution_into primitive, matching the
 /// convention of the Schur-based path.
 ///
-/// Every threshold derives from std::numeric_limits<Scalar>::epsilon()
-/// scaled by the operand Frobenius norm or by the 2n factor. No bare
-/// numeric literal other than structural constants (the 1/2 from Eq. 5.16,
-/// the 2 from 2n = size(H), iteration cap 40 from Higham Table 5.2's
-/// worst-observed count with determinantal scaling) appears in the hot
-/// path.
+/// The Newton stopping test scales the square root of
+/// std::numeric_limits<Scalar>::epsilon() by a dimensionless factor from the
+/// size 2n: the iteration converges quadratically, so a relative change of
+/// sqrt(epsilon) leaves the current iterate accurate to epsilon, and a
+/// linear-in-epsilon gate would be unreachable on an ill-conditioned
+/// Hamiltonian before its rounding floor. The rank threshold handed to Eigen
+/// is the relative, dimensionless multiplier 2n times epsilon that its rank()
+/// compares against the largest pivot. No bare numeric literal other than
+/// structural constants (the 1/2 from Eq. 5.16, the 2 from 2n = size(H),
+/// iteration cap 40 from Higham Table 5.2's worst-observed count with
+/// determinantal scaling) appears in the hot path.
 ///
 /// @cite roberts1980 : Roberts, "Linear model reduction and solution of the algebraic Riccati equation by use of the sign function", 1980
 /// @cite byers1987   : Byers, "Solving the algebraic Riccati equation with the matrix sign function", 1987
@@ -62,7 +67,16 @@ auto care_solve_via_sign_function(
 
     const Scalar eps       = std::numeric_limits<Scalar>::epsilon();
     constexpr int max_iters = 40;
-    const Scalar conv_mult = Scalar{2} * Scalar{n2};
+    // The Newton sign iteration converges quadratically near the fixed point,
+    // so successive changes satisfy delta_{k+1} ~ delta_k^2: once the relative
+    // change reaches sqrt(epsilon), the current iterate already carries the
+    // full epsilon-level accuracy of sign(H). The stopping test therefore
+    // compares the relative change against sqrt(epsilon) times a dimensionless
+    // factor from the matrix size 2n, which stays reachable on ill-conditioned
+    // Hamiltonians where a linear-in-epsilon gate would sit below the rounding
+    // floor (Higham 2008 Sec. 5.5, scaled-Newton stopping test).
+    const Scalar conv_dim  = Scalar{2} * Scalar{n2};
+    const Scalar conv_tol  = std::sqrt(eps) * conv_dim;
     Scalar last_delta_norm = std::numeric_limits<Scalar>::infinity();
 
     for (int k = 0; k < max_iters; ++k)
@@ -86,9 +100,14 @@ auto care_solve_via_sign_function(
 
         const Scalar delta_norm = (H - H_prev).norm();
         const Scalar scale_H    = H.norm();
-        if (delta_norm <= eps * conv_mult * scale_H)
+        if (delta_norm <= conv_tol * scale_H)
             break;
 
+        // Genuine non-monotone growth: the relative change is increasing while
+        // still above the sqrt(epsilon) convergence plateau, which indicates
+        // divergence rather than settling. The break above already accepts an
+        // iterate that has reached the quadratic-convergence plateau, so this
+        // guard cannot fire on a converged solve merely sitting at the floor.
         if (k > 3 && delta_norm > (Scalar{1} / Scalar{2}) * last_delta_norm)
             return std::unexpected(care_error::sign_function_stagnated);
         last_delta_norm = delta_norm;
@@ -100,8 +119,13 @@ auto care_solve_via_sign_function(
     const Mat2N P_LHP = ((Scalar{1} / Scalar{2}) * (Mat2N::Identity() - H)).eval();
 
     Eigen::ColPivHouseholderQR<Mat2N> qr(P_LHP);
-    const Scalar scale_PLHP = P_LHP.cwiseAbs().maxCoeff();
-    qr.setThreshold(eps * scale_PLHP * Scalar{n2});
+    // Eigen's ColPivHouseholderQR::rank() compares each pivot against
+    // threshold() times the largest pivot, so setThreshold takes a relative,
+    // dimensionless multiplier. The backward-stable rank tolerance for a QR is
+    // the matrix size times unit roundoff (2n times epsilon); multiplying by an
+    // operand norm would apply the scale twice and inflate the cutoff on
+    // exactly the ill-conditioned stable subspaces this path must resolve.
+    qr.setThreshold(Scalar{n2} * eps);
     if (qr.rank() < n)
         return std::unexpected(care_error::non_lhp_stabilisable);
 

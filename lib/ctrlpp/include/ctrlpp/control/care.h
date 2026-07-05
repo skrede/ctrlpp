@@ -112,7 +112,12 @@ auto care_solve_from_hamiltonian(
 
         const Scalar scale = T.cwiseAbs().maxCoeff();
         const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
-        const Scalar lhp_margin = eps * std::max(Scalar{1}, scale);
+        // Eigenvalues of a backward-stable real Schur factor carry a
+        // perturbation on the order of the matrix size times unit roundoff
+        // times the factor norm, so the open-left-half-plane predicate margin
+        // is that backward error: 2n times epsilon times the largest magnitude
+        // of T.
+        const Scalar lhp_margin = Scalar{n2} * eps * scale;
         auto predicate = [lhp_margin](std::complex<Scalar> lam) -> bool
         {
             return lam.real() < -lhp_margin;
