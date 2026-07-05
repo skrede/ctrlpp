@@ -4,6 +4,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 using namespace ctrlpp;
@@ -180,6 +181,39 @@ TEST_CASE("ekf with numerical Jacobians converges on linear system")
     auto est = filter.state();
     CHECK_THAT(est(0), Catch::Matchers::WithinAbs(true_pos, 0.5));
     CHECK_THAT(est(1), Catch::Matchers::WithinAbs(true_vel, 0.5));
+
+    // Both the dynamics and measurement above are linear, so the exact
+    // analytic Jacobians F, G, H used by this same recursion are known
+    // closed forms; the standard linear Kalman recursion built from those
+    // closed forms is therefore an external, independent oracle for this
+    // filter's central-difference numerical Jacobian path. Two independent
+    // implementations of that recursion (numpy/scipy and Octave, see
+    // validation/cases/ekf_numerical_jacobian/oracle_kf.{py,m}) agree on
+    // the state after 50 predict/update steps to within a few ULP
+    // (observed max |disagreement| ~ 1e-15, i.e. within a handful of
+    // std::numeric_limits<double>::epsilon()), which is the expected
+    // agreement for two runs of the same associativity-sensitive
+    // floating-point recursion; the shared value below is that
+    // dual-oracle-agreed golden, not ctrlpp's own output.
+    //
+    // The central-difference stencil (detail/numerical_diff.h) applies a
+    // cbrt(eps) step; for an exactly linear map the truncation term
+    // vanishes and only the round-off floor eps^(2/3) remains per Jacobian
+    // entry (same accuracy floor derived and asserted analytically in
+    // numerical_diff_test.cpp). That per-entry floor accumulates additively
+    // and non-adversarially across the state dimension and the predict/
+    // update recursion length, bounded by the problem's own state-magnitude
+    // scale (the true position grows to n_steps * dt * true_vel = 5 over
+    // the run):
+    constexpr int n_steps = 50;
+    constexpr int nx = 2;
+    const double eps = std::numeric_limits<double>::epsilon();
+    const double jacobian_step_tol = static_cast<double>(n_steps) * static_cast<double>(nx) * std::pow(eps, 2.0 / 3.0) * (n_steps * dt * true_vel);
+
+    const double oracle_pos = 4.9849480216340529;
+    const double oracle_vel = 0.99088209456807685;
+    CHECK_THAT(est(0), Catch::Matchers::WithinAbs(oracle_pos, jacobian_step_tol));
+    CHECK_THAT(est(1), Catch::Matchers::WithinAbs(oracle_vel, jacobian_step_tol));
 }
 
 TEST_CASE("ekf nonlinear pendulum tracking")
