@@ -6,6 +6,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <limits>
 
 using namespace ctrlpp;
 using namespace ctrlpp::detail;
@@ -13,7 +14,14 @@ using namespace ctrlpp::detail;
 namespace
 {
 
-constexpr double tol = 1e-7;
+// Central-difference accuracy floor for the cbrt(eps) step: minimizing
+// truncation error O(h^2) against round-off error O(eps * |f| / h) over h
+// gives an optimal total error of ~ C * eps^(2/3), where C bounds the
+// magnitude of the function values sampled by the stencils below (the
+// largest is ~19, for the quadratic-gradient case); 20 covers that with
+// margin. eps^(2/3) is ~3.7e-11 in double, so this floor is ~7.3e-10, far
+// below the old sqrt(eps) step's round-off floor of ~sqrt(eps) ~1.5e-8.
+const double tol = 20.0 * std::pow(std::numeric_limits<double>::epsilon(), 2.0 / 3.0);
 
 // Linear dynamics: f(x, u) = A*x + B*u
 struct LinearDynamics

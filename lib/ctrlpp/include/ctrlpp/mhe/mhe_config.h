@@ -35,7 +35,7 @@ struct mhe_config
     std::optional<Vector<Scalar, NY>> residual_bound{};
     bool soft_constraints{true};
     Scalar soft_penalty{Scalar{1e4}};
-    Scalar numerical_eps{std::sqrt(std::numeric_limits<Scalar>::epsilon())};
+    Scalar numerical_eps{std::cbrt(std::numeric_limits<Scalar>::epsilon())};
 };
 
 /// Configuration for nonlinear MHE (NLP-based).
@@ -54,7 +54,7 @@ struct nmhe_config
     std::optional<Vector<Scalar, NY>> residual_bound{};
     bool soft_constraints{true};
     Scalar soft_penalty{Scalar{1e4}};
-    Scalar numerical_eps{std::sqrt(std::numeric_limits<Scalar>::epsilon())};
+    Scalar numerical_eps{std::cbrt(std::numeric_limits<Scalar>::epsilon())};
     std::optional<std::function<Vector<Scalar, NC>(const Vector<Scalar, NX>&)>> path_constraint{};
     Vector<Scalar, NC> path_penalty{detail::default_penalty<Scalar, NC>()};
 };

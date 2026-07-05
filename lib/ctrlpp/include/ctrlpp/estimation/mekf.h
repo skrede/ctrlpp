@@ -53,7 +53,7 @@ struct mekf_config
     Vector<Scalar, NB> b0{Vector<Scalar, NB>::Zero()};
     Matrix<Scalar, NE, NE> P0{Matrix<Scalar, NE, NE>::Identity()};
     Scalar dt{Scalar{0.01}};
-    Scalar numerical_eps{std::sqrt(std::numeric_limits<Scalar>::epsilon())};
+    Scalar numerical_eps{std::cbrt(std::numeric_limits<Scalar>::epsilon())};
 };
 
 template <ctrlpp_floating_scalar Scalar, std::size_t NB, std::size_t NY, typename Measurement>

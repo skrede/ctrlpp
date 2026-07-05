@@ -327,14 +327,16 @@ private:
     template <typename TransformFn, typename BoundFn>
     void fd_mconstraint_grad(unsigned m, unsigned n, const double* x, double* grad, const std::vector<int>& indices, TransformFn transform, BoundFn get_bound)
     {
-        const auto eps = std::sqrt(std::numeric_limits<double>::epsilon());
+        const auto step_scale = std::cbrt(std::numeric_limits<double>::epsilon());
         fd_x_buf_.assign(x, x + n);
         fd_c_plus_.resize(static_cast<std::size_t>(problem_->n_constraints));
         fd_c_minus_.resize(static_cast<std::size_t>(problem_->n_constraints));
 
         for(unsigned j = 0; j < n; ++j)
         {
-            const double h = eps * std::max(1.0, std::abs(x[j]));
+            const double h_raw = step_scale * std::max(1.0, std::abs(x[j]));
+            const double temp = x[j] + h_raw;
+            const double h = temp - x[j];
             const double orig = fd_x_buf_[j];
 
             fd_x_buf_[j] = orig + h;

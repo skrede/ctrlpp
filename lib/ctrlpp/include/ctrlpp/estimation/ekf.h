@@ -37,7 +37,7 @@ struct ekf_config
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
     Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};
     Matrix<Scalar, NX, NX> P0{Matrix<Scalar, NX, NX>::Identity()};
-    Scalar numerical_eps{std::sqrt(std::numeric_limits<Scalar>::epsilon())};
+    Scalar numerical_eps{std::cbrt(std::numeric_limits<Scalar>::epsilon())};
 };
 
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Dynamics, typename Measurement>

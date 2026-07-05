@@ -146,7 +146,7 @@ public:
             return;
         }
 
-        const auto eps = std::sqrt(std::numeric_limits<Scalar>::epsilon());
+        const auto step_scale = std::cbrt(std::numeric_limits<Scalar>::epsilon());
         Eigen::VectorX<Scalar> c_plus(m);
         Eigen::VectorX<Scalar> c_minus(m);
 
@@ -154,7 +154,9 @@ public:
 
         for(int j = 0; j < n; ++j)
         {
-            const Scalar h = eps * std::max(Scalar{1}, std::abs(x[j]));
+            const Scalar h_raw = step_scale * std::max(Scalar{1}, std::abs(x[j]));
+            const Scalar temp = x[j] + h_raw;
+            const Scalar h = temp - x[j];
             const Scalar orig = fd_x_buf_[j];
 
             fd_x_buf_[j] = orig + h;
