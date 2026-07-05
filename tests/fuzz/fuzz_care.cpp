@@ -1,4 +1,4 @@
-#include "ctrlpp/control/dare.h"
+#include "ctrlpp/control/care.h"
 
 #include <cmath>
 #include <limits>
@@ -42,24 +42,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         return std::abs(c) < zero_floor ? 0.0 : c;
     };
 
-    // Clamp matrix entries to prevent intermediate overflow in symplectic construction
+    // Clamp matrix entries to prevent intermediate overflow in Hamiltonian construction
     Eigen::Matrix<double, 2, 2> A;
     A << clamp_entry(buf[0]), clamp_entry(buf[1]),
          clamp_entry(buf[2]), clamp_entry(buf[3]);
-
-    // Reject a poorly-conditioned A via its own condition number. ctrlpp::dare
-    // builds AinvT = A^-T as an intermediate step (see dare.h, Laub 1979 Eq. 7);
-    // a near-singular A blows up AinvT's magnitude and propagates through the
-    // whole symplectic construction. Same order-of-magnitude threshold and SVD
-    // idiom as the controllability-matrix check below.
-    // The smallest singular value is also checked against zero_floor directly
-    // (not just the ratio to the largest): two commensurately tiny singular
-    // values still divide out to a benign-looking condition number even though
-    // the whole matrix is negligible against the problem's O(1)-O(2) scale.
-    Eigen::JacobiSVD<Eigen::Matrix<double, 2, 2>> a_svd(A);
-    const auto& a_sv = a_svd.singularValues();
-    if(a_sv(1) < zero_floor || a_sv(0) / a_sv(1) > 10.0)
-        return 0;
 
     Eigen::Matrix<double, 2, 1> B;
     B << clamp_entry(buf[4]), clamp_entry(buf[5]);
@@ -68,7 +54,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     Q_raw << clamp_entry(buf[6]), clamp_entry(buf[7]),
              clamp_entry(buf[8]), clamp_entry(buf[9]);
 
-    // Reject a rank-deficient Q_raw: DARE's stabilizing solution is only
+    // Reject a rank-deficient Q_raw: CARE's stabilizing solution is only
     // uniquely well-posed under detectability of (A, sqrt(Q)), and a full-rank
     // (invertible) Q_raw makes Q = Q_raw^T Q_raw strictly positive definite,
     // which trivially satisfies detectability for any A (an invertible output
@@ -88,9 +74,9 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // cheap-control amplification factor B^2/R (used in the tolerance below,
     // at B's clamp bound B^2 = 8) under a four-figure ceiling instead of
     // blowing up toward the reciprocal of machine epsilon, which is the
-    // extreme near-singular regime where a direct Schur solve's absolute
-    // (not relative) error necessarily grows without the oracle needing an
-    // ever-larger, ad hoc safety margin to keep pace.
+    // extreme near-singular regime where a direct Schur/sign-function solve's
+    // absolute (not relative) error necessarily grows without the oracle
+    // needing an ever-larger, ad hoc safety margin to keep pace.
     double r_raw = std::clamp(buf[10], -2.0, 2.0);
     const double R_floor = (b_clamp_bound * b_clamp_bound) / 1e3;
     double R_val = r_raw * r_raw + R_floor;
@@ -99,10 +85,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     // Reject poorly-conditioned (A, B) pairs via the controllability matrix's
     // own condition number (largest / smallest singular value of [B, AB]),
-    // rather than a binary invertibility test: the DARE stabilizing solution's
+    // rather than a binary invertibility test: the CARE stabilizing solution's
     // sensitivity to rounding grows with controllability conditioning (the
-    // closed-loop gain K = S^-1 B'PA that drives the residual below scales
-    // with it directly), so a moderately ill-conditioned pair -- not just an
+    // closed-loop gain K = R^-1 B'P that drives the residual below scales with
+    // it directly), so a moderately ill-conditioned pair -- not just an
     // exactly singular one -- can already blow up the absolute residual far
     // beyond what a fixed safety margin can absorb without becoming toothless.
     // The threshold is a single order of magnitude, comfortably above the
@@ -110,8 +96,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     Eigen::Matrix<double, 2, 2> ctrb;
     ctrb.col(0) = B;
     ctrb.col(1) = A * B;
-    // As with A above, the smallest singular value is also checked directly
-    // against zero_floor, not just its ratio to the largest.
+    // The smallest singular value is also checked against zero_floor directly
+    // (not just the ratio to the largest): two commensurately tiny singular
+    // values still divide out to a benign-looking condition number even though
+    // the whole matrix is negligible against the problem's O(1)-O(2) scale.
     Eigen::JacobiSVD<Eigen::Matrix<double, 2, 2>> ctrb_svd(ctrb);
     const auto& ctrb_sv = ctrb_svd.singularValues();
     if(ctrb_sv(1) < zero_floor || ctrb_sv(0) / ctrb_sv(1) > 10.0)
@@ -129,7 +117,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     if(std::abs(discriminant) < A.squaredNorm() / 100.0)
         return 0;
 
-    auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+    auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
 
     // The library correctly declining on an ill-posed input (non-stabilisable,
     // singular, non-finite intermediate, etc.) is not a property violation.
@@ -142,34 +130,34 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     if(!P.allFinite())
         abort();
 
-    // Live residual oracle: A'PA - P - A'PB (R + B'PB)^-1 B'PA + Q ~ 0.
-    Eigen::Matrix<double, 2, 2> AtPA = A.transpose() * P * A;
-    Eigen::Matrix<double, 1, 1> S = R + B.transpose() * P * B;
-    Eigen::Matrix<double, 2, 2> cross = A.transpose() * P * B * S.inverse() * B.transpose() * P * A;
-    Eigen::Matrix<double, 2, 2> resid = AtPA - P - cross + Q;
+    // Live residual oracle: A'P + PA - PB R^-1 B'P + Q ~ 0.
+    Eigen::Matrix<double, 2, 2> AtP = A.transpose() * P;
+    Eigen::Matrix<double, 1, 1> Rinv = R.inverse();
+    Eigen::Matrix<double, 2, 2> cross = P * B * Rinv * B.transpose() * P;
+    Eigen::Matrix<double, 2, 2> resid = AtP + AtP.transpose() - cross + Q;
 
     // Backward-error tolerance: the residual is a sum of four n x n terms, each
     // formed from a chain of matrix products; the standard floating-point
     // matrix-multiplication backward-error bound accumulates rounding error
     // proportional to n per term, so the sum of the terms' own norms (the
     // "term_scale" below) is the honest base scale rather than just the raw
-    // input norms -- this matters because AtPA and cross frequently sit at a
+    // input norms -- this matters because AtP and cross frequently sit at a
     // much larger common magnitude than their difference (the residual itself),
     // i.e. this is a catastrophic-cancellation regime, and a tolerance based on
-    // the cancelled result's own size would be far too tight. ctrlpp::dare's own
-    // construction additionally forms G = B R^-1 B^T and AinvT = A^-T (see
-    // dare.h, Laub 1979 Eq. 7) before the Schur decomposition of the symplectic
-    // Z, so G's scale B^2/R is folded into the same term-magnitude sum. The
-    // overall multiplicative margin below was calibrated empirically: run
+    // the cancelled result's own size would be far too tight. ctrlpp::care's own
+    // construction additionally forms the off-diagonal Hamiltonian block
+    // B R^-1 B^T (see care.h, Laub 1979) before the sign-function/Schur solve,
+    // so that block's scale B^2/R is folded into the same term-magnitude sum.
+    // The overall multiplicative margin below was calibrated empirically: run
     // against an extended fuzzing session (hundreds of thousands of random
     // controllable, well-scaled inputs) with no false-positive abort on the
-    // library's correct default DARE path, following the same "eps-and-norm-
+    // library's correct default CARE path, following the same "eps-and-norm-
     // normalized residual vs. a generous integer-multiple threshold" style LAPACK's
     // own eigenvalue/Schur test suite (e.g. dget*, ddrvst) uses to absorb the
     // constant factors backward-error theory leaves unspecified.
     constexpr double lapack_style_margin = 20000.0;
     const double control_weight_scale = B.squaredNorm() / R(0, 0);
-    const double term_scale = AtPA.norm() + P.norm() + cross.norm() + Q.norm() + control_weight_scale;
+    const double term_scale = 2.0 * AtP.norm() + P.norm() + cross.norm() + Q.norm() + control_weight_scale;
     const double n = static_cast<double>(P.rows());
     const double tol = lapack_style_margin
         * std::numeric_limits<double>::epsilon() * n * n * n * std::max(1.0, term_scale);

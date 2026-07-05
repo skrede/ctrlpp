@@ -32,6 +32,7 @@ function(make_fuzz_target_msan TARGET_NAME)
 endfunction()
 
 make_fuzz_target(fuzz_dare)
+make_fuzz_target(fuzz_care)
 make_fuzz_target(fuzz_kalman)
 make_fuzz_target(fuzz_pid)
 make_fuzz_target(fuzz_cubic_spline)

@@ -1,20 +1,23 @@
 #include "ctrlpp/trajectory/trapezoidal_trajectory.h"
 
 #include <cmath>
+#include <limits>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <algorithm>
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
 {
-    // 5 doubles: q0, q1, v_max, a_max, eval_time = 40 bytes
-    if(size < 40)
+    // 4 doubles: q0, q1, v_max, a_max = 32 bytes
+    if(size < 32)
         return 0;
 
-    double buf[5];
-    std::memcpy(buf, data, 40);
+    double buf[4];
+    std::memcpy(buf, data, 32);
 
-    for(int i = 0; i < 5; ++i)
+    for(int i = 0; i < 4; ++i)
     {
         if(!std::isfinite(buf[i]))
             return 0;
@@ -24,23 +27,136 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     double q1 = buf[1];
     double v_max = std::abs(buf[2]);
     double a_max = std::abs(buf[3]);
-    double eval_t = buf[4];
 
     // Clamp limits to positive
     v_max = std::clamp(v_max, 1e-6, 1e6);
     a_max = std::clamp(a_max, 1e-6, 1e6);
 
+    // The boundary velocities are forced to zero here: nonzero boundary-velocity
+    // trapezoidal trajectories are not yet exact, so this scan is restricted to
+    // zero start/end velocity; a later phase broadens the fuzzer domain to
+    // nonzero start/end velocities once that formula is corrected.
     ctrlpp::trapezoidal_trajectory<double> traj({
-        .q0 = q0, .q1 = q1, .v_max = v_max, .a_max = a_max});
+        .q0 = q0, .q1 = q1, .v_max = v_max, .a_max = a_max, .v0 = 0.0, .v1 = 0.0});
 
-    auto pt = traj.evaluate(eval_t);
+    const double T = traj.duration();
+    if(!std::isfinite(T) || T < 0.0)
+        return 0;
 
-    if(!std::isfinite(pt.position(0)))
+    // Dense scan of the time domain: enough samples to exercise every phase
+    // (accel/cruise/decel) multiple times regardless of the fuzzed duration.
+    constexpr int num_samples = 500;
+    const double dt = (T > 0.0) ? T / static_cast<double>(num_samples) : 0.0;
+
+    // Rounding-op margin: each evaluate() call chains several multiply-adds
+    // and a phase-boundary subtraction (backward time in the deceleration
+    // phase), each contributing up to one ULP of rounding at its own operand
+    // scale, not just the single operation a bare epsilon assumes; 16 is a
+    // generous round count of those chained operations (matching the
+    // second-order online planner's margin).
+    constexpr double rounding_op_margin = 16.0;
+
+    // Reject configurations whose position scale swamps the per-step motion:
+    // if a handful of ULPs of q0/q1's own magnitude (the same rounding-op
+    // margin used below) already exceeds the kinematic bound on how far the
+    // position can move in a single sample step, adding that step's motion to
+    // a position of this magnitude rounds away completely, and no continuity
+    // signal survives to check -- this is a floating-point representation
+    // limit, not a trajectory defect.
+    const double position_scale = std::max({std::abs(q0), std::abs(q1), 1.0});
+    const double continuity_bound_reject = v_max * dt + 0.5 * a_max * dt * dt;
+    if(std::numeric_limits<double>::epsilon() * rounding_op_margin * position_scale >= continuity_bound_reject)
+        return 0;
+
+    // Sample-time floor: advancing through num_samples discrete sample times
+    // carries its own fixed rounding floor of about one part in num_samples of
+    // machine epsilon once divided back out by dt in a finite difference,
+    // independent of which physical limit (v_max/a_max) is being checked; it
+    // only matters once that limit is itself very small.
+    const double time_resolution_floor
+        = std::numeric_limits<double>::epsilon() * rounding_op_margin * static_cast<double>(num_samples);
+
+    double prev_q = 0.0;
+    double prev_v = 0.0;
+    bool have_prev = false;
+
+    for(int i = 0; i <= num_samples; ++i)
+    {
+        const double t = static_cast<double>(i) * dt;
+        auto pt = traj.evaluate(t);
+
+        const double q = pt.position(0);
+        const double v = pt.velocity(0);
+        const double a = pt.acceleration(0);
+
+        if(!std::isfinite(q) || !std::isfinite(v) || !std::isfinite(a))
             return 0;
-    if(!std::isfinite(pt.velocity(0)))
-            return 0;
-    if(!std::isfinite(pt.acceleration(0)))
-            return 0;
+
+        // Envelope: the analytically-returned velocity/acceleration must not
+        // exceed the configured limits beyond a rounding-scaled tolerance.
+        // The velocity check adds an a_max*dt physical term: when the
+        // acceleration-to-cruise phase transition falls within a single
+        // dt-sized sampling step (coarse sampling relative to that phase's
+        // own, possibly tiny, duration), the returned v can differ from the
+        // clean v_max/0 value by up to one step's worth of acceleration.
+        const double v_env_tol = a_max * dt
+            + std::numeric_limits<double>::epsilon() * rounding_op_margin * v_max * static_cast<double>(num_samples)
+            + time_resolution_floor;
+        const double a_env_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin * a_max * static_cast<double>(num_samples)
+            + time_resolution_floor;
+        if(std::abs(v) > v_max + v_env_tol)
+            abort();
+        if(std::abs(a) > a_max + a_env_tol)
+            abort();
+
+        if(have_prev)
+        {
+            // Continuity: position cannot move faster than the kinematic bound
+            // set by bounded velocity and acceleration over one sample step.
+            const double continuity_bound = v_max * dt + 0.5 * a_max * dt * dt;
+            const double continuity_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin
+                * (std::abs(q) + std::abs(prev_q) + continuity_bound);
+            if(std::abs(q - prev_q) > continuity_bound + continuity_tol)
+                abort();
+
+            // Finite-difference velocity from the position trace: within a
+            // single accel/cruise/decel phase, position is quadratic in t so
+            // the central-like forward difference matches the true derivative
+            // up to a term bounded by one acceleration-phase jump (at most
+            // a_max) times the step; a small eps floor absorbs rounding. A
+            // sample pair straddling a phase boundary is evaluated by two
+            // distinct closed-form branches that meet exactly only in real
+            // arithmetic, so an extra term scaled by the position magnitude in
+            // play (the same rounding-op margin, divided back out by dt to
+            // land in velocity units) absorbs that seam's rounding.
+            const double v_fd = (q - prev_q) / dt;
+            const double seam_v_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin
+                * (std::abs(q) + std::abs(prev_q)) / dt;
+            const double v_fd_tol = a_max * dt
+                + std::numeric_limits<double>::epsilon() * rounding_op_margin * v_max * static_cast<double>(num_samples)
+                + time_resolution_floor + seam_v_tol;
+            if(std::abs(v_fd) > v_max + v_fd_tol)
+                abort();
+
+            // Finite-difference acceleration from the returned velocity trace:
+            // velocity is piecewise linear in t (constant acceleration per
+            // phase), so this difference is a convex combination of at most
+            // two phases' accelerations and is bounded by a_max up to
+            // rounding, plus the same phase-boundary seam term one derivative
+            // order up (scaled by the velocity magnitude in play).
+            const double a_fd = (v - prev_v) / dt;
+            const double seam_a_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin
+                * (std::abs(v) + std::abs(prev_v)) / dt;
+            const double a_fd_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin * a_max * static_cast<double>(num_samples)
+                + time_resolution_floor + seam_a_tol;
+            if(std::abs(a_fd) > a_max + a_fd_tol)
+                abort();
+        }
+
+        prev_q = q;
+        prev_v = v;
+        have_prev = true;
+    }
 
     return 0;
 }
