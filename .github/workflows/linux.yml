@@ -117,3 +117,24 @@ jobs:
       - name: Run consumer test
         run: |
           ./build-consumer/integration_test
+
+  backends:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: |
+          cmake . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCTRLPP_BUILD_TESTS=ON \
+            -DCTRLPP_BUILD_OSQP=ON \
+            -DCTRLPP_BUILD_NLOPT=ON \
+            -DCTRLPP_BUILD_ARGMIN=ON \
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: cd build && ctest --output-on-failure

@@ -120,6 +120,11 @@ if (CTRLPP_BUILD_OSQP)
     target_compile_options(mhe_test PRIVATE ${CTRLPP_WARNING_FLAGS})
     add_test(NAME mhe_test COMMAND mhe_test)
 
+    add_executable(mhe_kf_equivalence_test "${CMAKE_CURRENT_LIST_DIR}/mhe_kf_equivalence_test.cpp")
+    target_link_libraries(mhe_kf_equivalence_test PRIVATE ctrlpp::osqp Catch2::Catch2WithMain)
+    target_compile_options(mhe_kf_equivalence_test PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME mhe_kf_equivalence_test COMMAND mhe_kf_equivalence_test)
+
     add_executable(mpc_hardening_test "${CMAKE_CURRENT_LIST_DIR}/mpc_hardening_test.cpp")
     target_link_libraries(mpc_hardening_test PRIVATE ctrlpp::osqp Catch2::Catch2WithMain)
     target_compile_options(mpc_hardening_test PRIVATE ${CTRLPP_WARNING_FLAGS})
