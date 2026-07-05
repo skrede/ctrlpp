@@ -12,6 +12,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 #include <cstddef>
 #include <numbers>
 
@@ -24,6 +25,26 @@ struct biquad_coeffs
     Scalar b0{}, b1{}, b2{};
     Scalar a1{}, a2{};
 };
+
+namespace detail
+{
+
+/// Threshold below which a biquad DC-gain quantity (the "1 + a1 + a2"
+/// denominator, or an accumulated cascade DC gain) is treated as numerically
+/// singular. Scaled by the instantiated Scalar's own machine epsilon and the
+/// natural magnitude of the summed operands, rather than a fixed absolute
+/// calibrated only for double, so the guard fires correctly at both float and
+/// double precision. The default coefficient is twice the number of terms
+/// entangled in the sum being tested, the same "twice the operand count"
+/// convention used by the pole-placement conjugate-pair tolerance, reflecting
+/// the rounding that accumulates across those terms.
+template <typename Scalar>
+auto biquad_singular_tol(Scalar scale, Scalar coeff = Scalar{6}) -> Scalar
+{
+    return coeff * std::numeric_limits<Scalar>::epsilon() * scale;
+}
+
+}
 
 template <ctrlpp_floating_scalar Scalar>
 class biquad
@@ -47,7 +68,8 @@ public:
     void reset(Scalar value)
     {
         auto const denom = Scalar{1} + c_.a1 + c_.a2;
-        if(std::abs(denom) < Scalar{1e-12})
+        auto const denom_scale = Scalar{1} + std::abs(c_.a1) + std::abs(c_.a2);
+        if(std::abs(denom) < detail::biquad_singular_tol(denom_scale))
         {
             w_.fill(Scalar{0});
             return;
@@ -161,7 +183,8 @@ public:
             s.reset(value);
             auto const& c = s.coefficients();
             auto const denom = Scalar{1} + c.a1 + c.a2;
-            if(std::abs(denom) < Scalar{1e-12})
+            auto const denom_scale = Scalar{1} + std::abs(c.a1) + std::abs(c.a2);
+            if(std::abs(denom) < detail::biquad_singular_tol(denom_scale))
             {
                 value = Scalar{0};
             }
@@ -262,7 +285,7 @@ void normalize_chebyshev1_dc(std::array<biquad<Scalar>, N>& sections, Scalar eps
         dc_gain *= (c.b0 + c.b1 + c.b2) / (Scalar{1} + c.a1 + c.a2);
     }
     auto const target_dc = Scalar{1} / std::sqrt(Scalar{1} + eps * eps);
-    if(std::abs(dc_gain) > Scalar{1e-15})
+    if(std::abs(dc_gain) > biquad_singular_tol(target_dc, Scalar{2} * Scalar{N}))
     {
         auto const correction = target_dc / dc_gain;
         auto const old = sections[0].coefficients();

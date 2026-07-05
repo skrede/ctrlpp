@@ -5,12 +5,9 @@
 // "numerically zero at this Scalar's own precision" instead reads as
 // "significant", sending the code down the wrong branch.
 //
-// place.h's conjugate-pair check now scales its tolerance by the Scalar's
-// own machine epsilon, so the place() case below is an active regression
-// test that passes at float. biquad.h's near-singular DC-gain guard still
-// compares against a fixed absolute, so the biquad case below is held green
-// with [!shouldfail] until that tolerance is scaled by the Scalar's own
-// machine epsilon.
+// place.h's conjugate-pair check and biquad.h's near-singular DC-gain guard
+// now both scale their tolerances by the Scalar's own machine epsilon, so
+// the two cases below are active regression tests that pass at float.
 
 #include "ctrlpp/dsp/biquad.h"
 #include "ctrlpp/control/place.h"
@@ -69,7 +66,7 @@ TEST_CASE("place() accepts a numerically-conjugate float pole pair the way it do
     REQUIRE_THAT((*K_f)(0, 1), WithinAbs(static_cast<float>((*K_ref)(0, 1)), tol));
 }
 
-TEST_CASE("biquad steady-state reset() at float matches the double reference near a singular DC gain", "[float][anchor][!shouldfail]")
+TEST_CASE("biquad steady-state reset() at float matches the double reference near a singular DC gain", "[float][anchor]")
 {
     // Coefficients constructed so 1+a1+a2 (the DC-gain denominator) is
     // exactly "ten machine epsilons" of the instantiated Scalar -- as close
