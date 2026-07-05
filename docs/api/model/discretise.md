@@ -1,6 +1,6 @@
 # discretise
 
-Continuous-to-discrete state-space conversion. Converts a `continuous_state_space` to a `discrete_state_space` using zero-order hold (ZOH) via the Van Loan augmented matrix exponential method. Additional discretization methods (Tustin, Euler) are available as tag types.
+Continuous-to-discrete state-space conversion. Converts a `continuous_state_space` to a `discrete_state_space` using zero-order hold (ZOH), Tustin (bilinear, with optional frequency prewarping), forward Euler, or backward Euler.
 
 ## Header and Alias
 
@@ -14,6 +14,13 @@ Continuous-to-discrete state-space conversion. Converts a `continuous_state_spac
 ```cpp
 struct zoh {};            // Zero-order hold (default)
 struct tustin {};         // Bilinear transform (Tustin)
+
+template <typename Scalar>
+struct tustin_prewarp     // Bilinear transform with frequency prewarping
+{
+    Scalar w_c;            // critical frequency, rad/s
+};
+
 struct forward_euler {};  // Forward Euler
 struct backward_euler {}; // Backward Euler
 ```
@@ -41,6 +48,50 @@ discretise(zoh, const continuous_state_space<Scalar, NX, NU, NY>& sys,
 ```
 
 Same as above with the tag as the first argument.
+
+### discretise (Tustin / bilinear transform)
+
+```cpp
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+discrete_state_space<Scalar, NX, NU, NY>
+discretise(tustin, const continuous_state_space<Scalar, NX, NU, NY>& sys,
+           Scalar dt);
+```
+
+Discretizes using the bilinear (Tustin) transform: `Ad = (I - A*dt/2)^-1 (I + A*dt/2)`, `Bd = (I - A*dt/2)^-1 B*dt`, `Cd = C (I - A*dt/2)^-1`. Includes the biproper feed-through correction `Dd = D + C*Bd/2`, which accounts for the direct coupling the bilinear map introduces between input and output even when the continuous system is strictly proper (`D = 0`).
+
+### discretise (Tustin with frequency prewarping)
+
+```cpp
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+discrete_state_space<Scalar, NX, NU, NY>
+discretise(tustin_prewarp<Scalar> warp,
+           const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt);
+```
+
+Rescales the sample period to `dt_warp = (2/w_c) * tan(w_c*dt/2)` before applying the bilinear map, so the discrete and continuous frequency responses agree exactly at the critical frequency `w_c` (rad/s). Everywhere else the pole mapping trades some accuracy for that exactness at `w_c`.
+
+### discretise (forward Euler)
+
+```cpp
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+discrete_state_space<Scalar, NX, NU, NY>
+discretise(forward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys,
+           Scalar dt);
+```
+
+Discretizes using the forward Euler approximation: `Ad = I + A*dt`, `Bd = B*dt`, `Cd = C`, `Dd = D`. First-order accurate; does not require a matrix inversion, but is only conditionally stable for a stable continuous system (the sample period must be small enough relative to the fastest pole).
+
+### discretise (backward Euler)
+
+```cpp
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+discrete_state_space<Scalar, NX, NU, NY>
+discretise(backward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys,
+           Scalar dt);
+```
+
+Discretizes using the backward Euler approximation: `Ad = (I - A*dt)^-1`, `Bd = (I - A*dt)^-1 B*dt`, `Cd = C (I - A*dt)^-1`, `Dd = D + C (I - A*dt)^-1 B*dt`. First-order accurate and unconditionally stable for a stable continuous system, at the cost of a fixed-size matrix inversion.
 
 ## Usage Example
 
