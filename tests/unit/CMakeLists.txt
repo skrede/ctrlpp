@@ -95,6 +95,7 @@ make_test(dsp_hardening_test)
 make_test(trajectory_hardening_test)
 make_test(so3_hardening_test)
 make_test(state_space_hardening_test)
+make_test(shouldfail_smoke_test)
 
 if (CTRLPP_BUILD_OSQP)
     add_executable(mpc_osqp_test "${CMAKE_CURRENT_LIST_DIR}/mpc_osqp_test.cpp")
