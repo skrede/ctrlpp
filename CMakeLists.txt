@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(ctrlpp VERSION 0.3.1)
+project(ctrlpp VERSION 0.3.6)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_EXTENSIONS OFF)

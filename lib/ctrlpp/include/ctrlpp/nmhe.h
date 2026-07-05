@@ -19,16 +19,18 @@
 ///     for nonlinear discrete-time systems: stability and moving horizon
 ///     approximations," IEEE Trans. Automat. Control, 48(2), 2003.
 
+#include "ctrlpp/types.h"
+
+#include "ctrlpp/mpc/qp_types.h"
+#include "ctrlpp/mpc/nlp_solver.h"
+
+#include "ctrlpp/estimation/ekf.h"
+#include "ctrlpp/estimation/observer_policy.h"
+
 #include "ctrlpp/mhe/mhe_config.h"
 #include "ctrlpp/mhe/mhe_diagnostics.h"
 #include "ctrlpp/mhe/mhe_nlp_formulation.h"
 
-#include "ctrlpp/estimation/ekf.h"
-#include "ctrlpp/types.h"
-#include "ctrlpp/estimation/observer_policy.h"
-
-#include "ctrlpp/mpc/qp_types.h"
-#include "ctrlpp/mpc/nlp_solver.h"
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/model/measurement_model.h"
 

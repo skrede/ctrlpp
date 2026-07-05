@@ -1,15 +1,17 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_H
 #define HPP_GUARD_CTRLPP_MPC_H
 
-#include "ctrlpp/control/dare.h"
 #include "ctrlpp/types.h"
-#include "ctrlpp/model/state_space.h"
+
+#include "ctrlpp/control/dare.h"
 
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/qp_solver.h"
 #include "ctrlpp/mpc/diagnostics.h"
 #include "ctrlpp/mpc/terminal_set.h"
 #include "ctrlpp/mpc/qp_formulation.h"
+
+#include "ctrlpp/model/state_space.h"
 
 #include <Eigen/Dense>
 

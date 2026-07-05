@@ -8,19 +8,21 @@
 /// @cite blanchini1999 -- Blanchini, "Set Invariance in Control", Automatica 35(11), 1999 (canonical survey on invariant sets)
 /// @cite borrelli2017 -- Borrelli, Bemporad & Morari, "Predictive Control for Linear and Hybrid Systems", 2017, Ch. 10 (invariant-set computation, pre-image recursion)
 
-#include "ctrlpp/mpc/terminal_set.h"
-#include "ctrlpp/control/dare.h"
 #include "ctrlpp/types.h"
+
+#include "ctrlpp/control/dare.h"
+
+#include "ctrlpp/mpc/terminal_set.h"
 
 #include <Eigen/Dense>
 
-#include <algorithm>
 #include <cmath>
-#include <cstddef>
 #include <limits>
+#include <vector>
+#include <cstddef>
 #include <numeric>
 #include <optional>
-#include <vector>
+#include <algorithm>
 
 namespace ctrlpp
 {

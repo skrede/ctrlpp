@@ -12,8 +12,8 @@
 
 #include <array>
 #include <tuple>
-#include <utility>
 #include <cstddef>
+#include <utility>
 #include <algorithm>
 
 namespace ctrlpp::detail

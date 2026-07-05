@@ -2,6 +2,7 @@
 #define HPP_GUARD_CTRLPP_TYPES_H
 
 #include <Eigen/Dense>
+
 #include <cstddef>
 
 namespace ctrlpp

@@ -6,12 +6,12 @@
 /// @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017, Ch. 2 (sparse condensing)
 /// @cite borrelli2017 -- Borrelli, Bemporad & Morari, "Predictive Control for Linear and Hybrid Systems", 2017, Ch. 11 (linear MPC, soft-constraint slack penalties)
 
+#include "ctrlpp/types.h"
+
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/terminal_set.h"
 
 #include "ctrlpp/util/concepts.h"
-
-#include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
@@ -20,9 +20,9 @@
 #include <cmath>
 #include <limits>
 #include <vector>
+#include <cstddef>
 #include <utility>
 #include <variant>
-#include <cstddef>
 #include <optional>
 #include <type_traits>
 
