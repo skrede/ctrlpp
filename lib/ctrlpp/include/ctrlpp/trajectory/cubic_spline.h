@@ -19,7 +19,9 @@
 
 #include "ctrlpp/util/concepts.h"
 
+#include <cmath>
 #include <array>
+#include <limits>
 #include <vector>
 #include <cassert>
 #include <cstddef>
@@ -87,7 +89,15 @@ class cubic_spline
         } else if (cfg.bc == boundary_condition::clamped) {
             solve_clamped(h, delta, cfg.positions, vel, n_pts, n, cfg.v0, cfg.vn);
         } else {
-            assert(std::abs(cfg.positions.front() - cfg.positions.back()) < Scalar{1e-10});
+            // Periodic boundary conditions require matching end positions. Compare
+            // relative to the endpoint magnitude (not a bare absolute tolerance) so
+            // the check is correct across position scales and float precisions; the
+            // margin is the rounding budget of the endpoint difference.
+            [[maybe_unused]] constexpr Scalar periodic_match_ulps = Scalar{4};
+            [[maybe_unused]] auto const periodic_scale =
+                std::abs(cfg.positions.front()) + std::abs(cfg.positions.back());
+            assert(std::abs(cfg.positions.front() - cfg.positions.back())
+                   <= periodic_match_ulps * std::numeric_limits<Scalar>::epsilon() * periodic_scale);
             solve_periodic(h, delta, cfg.positions, vel, n_pts, n);
         }
 

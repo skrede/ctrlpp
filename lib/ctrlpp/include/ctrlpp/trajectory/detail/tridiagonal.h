@@ -12,12 +12,29 @@
 /// Automatic Machines and Robots", 2009, Sec. 4.4
 
 #include <cmath>
+#include <limits>
 #include <vector>
 #include <cassert>
 #include <cstddef>
 
 namespace ctrlpp::detail
 {
+
+// A tridiagonal pivot is treated as numerically singular when its magnitude
+// falls below the local row scale times a small multiple of the machine
+// epsilon. Scaling by the row coefficients (not a bare absolute constant) keeps
+// the test correct across problem magnitudes and float precisions; the multiple
+// is the rounding budget of the elimination step, which forms each reduced pivot
+// from a handful of multiply-adds.
+// @cite trefethenbau -- Trefethen & Bau, "Numerical Linear Algebra", 1997, Lec. 20-22
+template <typename Scalar>
+constexpr Scalar pivot_singular_ulps = Scalar{4};
+
+template <typename Scalar>
+auto tridiagonal_row_scale(Scalar a_k, Scalar b_k, Scalar c_k) -> Scalar
+{
+    return std::abs(a_k) + std::abs(b_k) + std::abs(c_k);
+}
 
 /// @brief Solve a tridiagonal system using the Thomas algorithm.
 ///
@@ -48,9 +65,14 @@ void thomas_solve(std::vector<Scalar> const& a,
         return;
     }
 
+    auto const eps = std::numeric_limits<Scalar>::epsilon();
+    auto const singular = [eps](Scalar pivot, Scalar row_scale) {
+        return std::abs(pivot) < pivot_singular_ulps<Scalar> * eps * row_scale;
+    };
+
     // Forward sweep with pivot monitoring
     for (std::size_t i = 1; i < n; ++i) {
-        if (std::abs(b[i - 1]) < Scalar{1e-14} * (Scalar{1} + std::abs(a[i])))
+        if (singular(b[i - 1], tridiagonal_row_scale(a[i - 1], b[i - 1], c[i - 1])))
         {
             // Near-zero pivot: zero out remaining unknowns
             for (std::size_t j = i - 1; j < n; ++j)
@@ -63,7 +85,7 @@ void thomas_solve(std::vector<Scalar> const& a,
     }
 
     // Back substitution
-    if (std::abs(b[n - 1]) < Scalar{1e-14})
+    if (singular(b[n - 1], tridiagonal_row_scale(a[n - 1], b[n - 1], c[n - 1])))
     {
         for (auto& di : d)
             di = Scalar{0};
@@ -71,7 +93,7 @@ void thomas_solve(std::vector<Scalar> const& a,
     }
     d[n - 1] /= b[n - 1];
     for (std::size_t i = n - 1; i > 0; --i) {
-        if (std::abs(b[i - 1]) < Scalar{1e-14})
+        if (singular(b[i - 1], tridiagonal_row_scale(a[i - 1], b[i - 1], c[i - 1])))
         {
             d[i - 1] = Scalar{0};
             continue;
