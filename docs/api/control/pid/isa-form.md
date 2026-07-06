@@ -35,7 +35,7 @@ The ISA form couples the integral and derivative actions to the proportional gai
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::isa_form>;
+    using Pid = ctrlpp::pid<double, 1, ctrlpp::isa_form>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};

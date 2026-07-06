@@ -9,7 +9,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 constexpr double Ts = 0.01;
@@ -68,7 +68,7 @@ TEST_CASE("deriv_filter reduces peak derivative on step input",
     SisoPid pid_unfiltered(cfg_unfiltered);
 
     // Filtered PID
-    using DfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::deriv_filter>;
+    using DfPid = ctrlpp::pid<double, 1, ctrlpp::deriv_filter>;
     DfPid::config_type cfg_filtered{};
     cfg_filtered.kp = vec1(1.0);
     cfg_filtered.kd = vec1(1.0);
@@ -105,7 +105,7 @@ TEST_CASE("deriv_filter reduces peak derivative on step input",
 TEST_CASE("deriv_filter with N parameter smooths derivative over multiple steps",
     "[pid][siso][deriv-filter]")
 {
-    using DfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::deriv_filter>;
+    using DfPid = ctrlpp::pid<double, 1, ctrlpp::deriv_filter>;
     DfPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.kd = vec1(0.5);

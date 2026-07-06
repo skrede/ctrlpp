@@ -46,7 +46,7 @@ second.
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1>;
+    using Pid = ctrlpp::pid<double, 1>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -72,7 +72,7 @@ int main()
 }
 ```
 
-`pid<double, 1, 1, 1>` is a single-input single-output PID controller with
+`pid<double, 1>` is a single-input single-output PID controller with
 `double` precision. The three `1`s are the state, input, and output dimensions
 -- all one for SISO. For MIMO systems, increase these to match your plant.
 

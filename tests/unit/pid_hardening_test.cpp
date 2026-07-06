@@ -12,7 +12,7 @@ using Catch::Matchers::WithinRel;
 
 namespace {
 
-using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 Vec1 vec1(double v)

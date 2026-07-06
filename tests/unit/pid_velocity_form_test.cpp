@@ -18,7 +18,7 @@ Vec1 vec1(double v) { Vec1 r; r << v; return r; }
 
 TEST_CASE("velocity_form P-only: delta_u = Kp*(e(k)-e(k-1))", "[pid][siso][velocity-form]")
 {
-    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     VPid pid(cfg);
@@ -41,7 +41,7 @@ TEST_CASE("velocity_form P-only: delta_u = Kp*(e(k)-e(k-1))", "[pid][siso][veloc
 
 TEST_CASE("velocity_form PI: includes Ki*e*dt incremental term", "[pid][siso][velocity-form]")
 {
-    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
@@ -66,7 +66,7 @@ TEST_CASE("velocity_form PI: includes Ki*e*dt incremental term", "[pid][siso][ve
 TEST_CASE("velocity_form PID: full formula with second-order D difference",
     "[pid][siso][velocity-form]")
 {
-    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.5);
@@ -98,7 +98,7 @@ TEST_CASE("velocity_form PID: full formula with second-order D difference",
 TEST_CASE("velocity_form steady-state: delta_u converges to Ki*e*dt",
     "[pid][siso][velocity-form]")
 {
-    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(2.0);
@@ -123,7 +123,7 @@ TEST_CASE("velocity_form steady-state: delta_u converges to Ki*e*dt",
 TEST_CASE("velocity_form + anti_windup compiles and runs (anti-windup is no-op)",
     "[pid][siso][velocity-form][anti-windup]")
 {
-    using VPid = ctrlpp::pid<double, 1, 1, 1,
+    using VPid = ctrlpp::pid<double, 1,
         ctrlpp::velocity_form, ctrlpp::anti_windup<ctrlpp::back_calc>>;
     VPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -138,7 +138,7 @@ TEST_CASE("velocity_form + anti_windup compiles and runs (anti-windup is no-op)"
 
 TEST_CASE("velocity_form reset clears history", "[pid][siso][velocity-form][reset]")
 {
-    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.5);
@@ -161,7 +161,7 @@ TEST_CASE("velocity_form injects the change in feed-forward so a constant feed-f
 {
     auto ff_func = [](const Vec1& sp, double) -> Vec1 { return sp * 0.5; };
     using FF = ctrlpp::feed_forward<decltype(ff_func)>;
-    using VFfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form, FF>;
+    using VFfPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form, FF>;
 
     VFfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -188,7 +188,7 @@ TEST_CASE("velocity_form injects the change in feed-forward so a constant feed-f
 TEST_CASE("velocity_form tracking signal is a no-op (integral not modified)",
     "[pid][siso][velocity-form][tracking]")
 {
-    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
@@ -207,7 +207,7 @@ TEST_CASE("velocity_form tracking signal is a no-op (integral not modified)",
 TEST_CASE("velocity_form clamps the accumulated output so it can rise and fall under an asymmetric limit",
     "[pid][siso][velocity-form][clamping]")
 {
-    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(10.0);
     cfg.output_min = vec1(0.0);   // valve-like: the output cannot go below zero
@@ -242,7 +242,7 @@ TEST_CASE("velocity_form clamps the accumulated output so it can rise and fall u
 TEST_CASE("velocity_form zero dt returns previous output",
     "[pid][siso][velocity-form][edge-case]")
 {
-    using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     VPid pid(cfg);

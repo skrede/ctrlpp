@@ -7,7 +7,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 constexpr double Ts = 0.01;
@@ -19,7 +19,7 @@ Vec1 vec1(double v) { Vec1 r; r << v; return r; }
 
 TEST_CASE("setpoint_filter smooths step setpoint", "[pid][siso][setpoint-filter]")
 {
-    using SpfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::setpoint_filter>;
+    using SpfPid = ctrlpp::pid<double, 1, ctrlpp::setpoint_filter>;
     SpfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.template policy<ctrlpp::setpoint_filter>().tf = {0.1};
@@ -46,7 +46,7 @@ TEST_CASE("setpoint_filter smooths step setpoint", "[pid][siso][setpoint-filter]
 
 TEST_CASE("pv_filter smooths step measurement", "[pid][siso][pv-filter]")
 {
-    using PvfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::pv_filter>;
+    using PvfPid = ctrlpp::pid<double, 1, ctrlpp::pv_filter>;
     PvfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.template policy<ctrlpp::pv_filter>().tf = {0.05};
@@ -75,7 +75,7 @@ TEST_CASE("feed_forward adds callable output to control signal", "[pid][siso][fe
     // Feed-forward: ff(sp, Ts) = sp (identity)
     auto ff_func = [](const Vec1& sp, double) -> Vec1 { return sp; };
     using FF = ctrlpp::feed_forward<decltype(ff_func)>;
-    using FfPid = ctrlpp::pid<double, 1, 1, 1, FF>;
+    using FfPid = ctrlpp::pid<double, 1, FF>;
 
     FfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -89,7 +89,7 @@ TEST_CASE("feed_forward adds callable output to control signal", "[pid][siso][fe
 
 TEST_CASE("setpoint_filter + pv_filter combined", "[pid][siso][filter-combo]")
 {
-    using ComboPid = ctrlpp::pid<double, 1, 1, 1,
+    using ComboPid = ctrlpp::pid<double, 1,
         ctrlpp::setpoint_filter, ctrlpp::pv_filter>;
     ComboPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -123,7 +123,7 @@ TEST_CASE("No filter policies: output unchanged from baseline", "[pid][siso][no-
 
 TEST_CASE("setpoint_filter reset clears filter state", "[pid][siso][setpoint-filter][reset]")
 {
-    using SpfPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::setpoint_filter>;
+    using SpfPid = ctrlpp::pid<double, 1, ctrlpp::setpoint_filter>;
     SpfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.template policy<ctrlpp::setpoint_filter>().tf = {0.1};

@@ -10,7 +10,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 constexpr double Ts = 0.01;
@@ -234,7 +234,7 @@ TEST_CASE("set_params from Ki=0 to Ki!=0 leaves the zero integral in place",
 TEST_CASE("ISA form set_params with a Ti change is bumpless",
     "[pid][siso][gain-scheduling][isa]")
 {
-    using IsaPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::isa_form>;
+    using IsaPid = ctrlpp::pid<double, 1, ctrlpp::isa_form>;
     const double kp = 2.0, ti_old = 4.0, ti_new = 2.0;
     const double sp = 1.0, meas = 0.0;
     const double e = sp - meas;

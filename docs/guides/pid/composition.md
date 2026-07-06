@@ -10,7 +10,7 @@ use.
 The `pid` class template accepts a variadic policy pack:
 
 ```cpp
-ctrlpp::pid<Scalar, NX, NU, NY, Policies...>
+ctrlpp::pid<Scalar, NY, Policies...>
 ```
 
 Each policy type in `Policies...` extends the controller's `config_type` with
@@ -36,7 +36,7 @@ This example composes `anti_windup<back_calc>`, `deriv_filter`, and
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1,
+    using Pid = ctrlpp::pid<double, 1,
                              ctrlpp::anti_windup<ctrlpp::back_calc>,
                              ctrlpp::deriv_filter,
                              ctrlpp::rate_limit>;
@@ -123,7 +123,7 @@ Access policy fields through `cfg.template policy<PolicyType>()`.
 
 ## Zero-Cost Abstraction
 
-Policies are resolved entirely at compile time. A `pid<double, 1, 1, 1>` with
+Policies are resolved entirely at compile time. A `pid<double, 1>` with
 no policies compiles to a minimal P+I+D computation. Adding `deriv_filter`
 adds only the filter arithmetic &mdash; no virtual dispatch, no branch on policy
 presence.

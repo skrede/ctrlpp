@@ -47,7 +47,7 @@ int main()
     };
     using FF = decltype(ff);
 
-    using Pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::feed_forward<FF>>;
+    using Pid = ctrlpp::pid<double, 1, ctrlpp::feed_forward<FF>>;
 
     Pid::config_type cfg{};
     cfg.kp = Vec::Constant(2.0);

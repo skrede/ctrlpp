@@ -48,7 +48,7 @@ Additionally, the policy adds a filter time constant:
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::setpoint_filter>;
+    using Pid = ctrlpp::pid<double, 1, ctrlpp::setpoint_filter>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};

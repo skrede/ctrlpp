@@ -28,7 +28,7 @@ execute per outer step.
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1>;
+    using Pid = ctrlpp::pid<double, 1>;
     using Vec = Pid::vector_t;
 
     // Outer loop: position control (slower, larger gains)

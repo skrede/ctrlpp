@@ -19,7 +19,7 @@ TEST_CASE("IAE accumulates integral of |error| * dt",
     "[pid][siso][perf-assessment][iae]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::IAE>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -36,7 +36,7 @@ TEST_CASE("ISE accumulates integral of error^2 * dt",
     "[pid][siso][perf-assessment][ise]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::ISE>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -53,7 +53,7 @@ TEST_CASE("ITAE accumulates integral of t * |error| * dt",
     "[pid][siso][perf-assessment][itae]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::ITAE>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -73,7 +73,7 @@ TEST_CASE("Multiple metrics accumulate simultaneously",
     "[pid][siso][perf-assessment][multi]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::ISE>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -91,7 +91,7 @@ TEST_CASE("oscillation_detect counts zero-crossings and detects oscillation",
     "[pid][siso][perf-assessment][oscillation]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -111,7 +111,7 @@ TEST_CASE("oscillation verdict follows the configurable crossing_rate_threshold"
     "[pid][siso][perf-assessment][oscillation]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
 
     // Alternating error sign for 10 steps at dt=0.1 gives 9 crossings over 1.0 s, a rate
     // of 9 crossings/s. The verdict must flip as the configured threshold crosses that
@@ -136,7 +136,7 @@ TEST_CASE("oscillation_detect: constant error sign -> not oscillating",
     "[pid][siso][perf-assessment][oscillation]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -152,7 +152,7 @@ TEST_CASE("oscillation_detect + IAE both accumulate",
     "[pid][siso][perf-assessment][oscillation][iae]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect, ctrlpp::IAE>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -171,7 +171,7 @@ TEST_CASE("reset_metrics clears all metric accumulators",
     "[pid][siso][perf-assessment][reset]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::oscillation_detect>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -195,7 +195,7 @@ TEST_CASE("IAE accumulates absolute value for negative errors",
     "[pid][siso][perf-assessment][iae][negative]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::IAE>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -212,7 +212,7 @@ TEST_CASE("ITAE weights later errors more heavily than earlier errors",
     "[pid][siso][perf-assessment][itae][negative]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::ITAE>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -231,7 +231,7 @@ TEST_CASE("oscillation_detect skips zero-error steps (no false crossing)",
     "[pid][siso][perf-assessment][oscillation][zero-error]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -252,7 +252,7 @@ TEST_CASE("oscillating() returns false when accumulated_time is zero",
     "[pid][siso][perf-assessment][oscillation][edge-case]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -265,7 +265,7 @@ TEST_CASE("All four metrics accumulate simultaneously",
     "[pid][siso][perf-assessment][all-metrics]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::ISE, ctrlpp::ITAE, ctrlpp::oscillation_detect>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);
@@ -289,7 +289,7 @@ TEST_CASE("reset() clears performance metrics when perf_assessment is enabled",
     "[pid][siso][perf-assessment][reset-full]")
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::ISE, ctrlpp::ITAE>;
-    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+    using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     PaPid pid(cfg);

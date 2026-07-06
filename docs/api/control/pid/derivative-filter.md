@@ -32,7 +32,7 @@ Replaces the pure derivative s*Kd with the filtered form Kd*N*s / (1 + N/s), imp
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::deriv_filter>;
+    using Pid = ctrlpp::pid<double, 1, ctrlpp::deriv_filter>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};

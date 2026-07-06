@@ -52,7 +52,7 @@ The performance assessment policy accumulates metrics passively during each `com
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1,
+    using Pid = ctrlpp::pid<double, 1,
         ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::ISE>>;
     using Vec = Pid::vector_t;
 

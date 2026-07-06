@@ -39,7 +39,7 @@ TEST_CASE("pid bibo stability property", "[pid][property]")
                  auto out_max = *bounded_double(1.0, 200.0);
                  auto n_steps = *rc::gen::inRange(10, 200);
 
-                 using PidType = ctrlpp::pid<double, 1, 1, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
+                 using PidType = ctrlpp::pid<double, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
                  typename PidType::config_type cfg{};
                  cfg.kp = vec1(kp);
                  cfg.ki = vec1(ki);
@@ -70,7 +70,7 @@ TEST_CASE("pid proportional-only constant error", "[pid][property]")
              {
                  auto kp = *bounded_double(0.01, 100.0);
 
-                 using PidType = ctrlpp::pid<double, 1, 1, 1>;
+                 using PidType = ctrlpp::pid<double, 1>;
                  typename PidType::config_type cfg{};
                  cfg.kp = vec1(kp);
 
@@ -103,7 +103,7 @@ TEST_CASE("pid robustness - extreme inputs do not crash", "[pid][property]")
                  auto ki = *bounded_double(0.0, 1e6);
                  auto kd = *bounded_double(0.0, 1e6);
                  auto dt = *bounded_double(1e-10, 100.0);
-                 using PidType = ctrlpp::pid<double, 1, 1, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
+                 using PidType = ctrlpp::pid<double, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
                  typename PidType::config_type cfg{};
                  cfg.kp = vec1(kp);
                  cfg.ki = vec1(ki);

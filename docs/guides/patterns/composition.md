@@ -11,7 +11,7 @@ the config struct with its own fields. You compose exactly the features you
 need; unused policies cost nothing.
 
 ```cpp
-using Pid = ctrlpp::pid<double, 1, 1, 1,
+using Pid = ctrlpp::pid<double, 1,
                          ctrlpp::anti_windup<ctrlpp::back_calc>,
                          ctrlpp::deriv_filter,
                          ctrlpp::rate_limit>;

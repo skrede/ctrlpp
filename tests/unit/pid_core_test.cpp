@@ -7,7 +7,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 constexpr double Ts = 0.01;
@@ -52,7 +52,7 @@ TEST_CASE("ISA form converts to parallel form", "[pid][siso][isa]")
 {
     // ISA form: Kp=2, Ti=4, Td=0.05
     // Parallel: Kp=2, Ki=2/4=0.5, Kd=2*0.05=0.1
-    using IsaPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::isa_form>;
+    using IsaPid = ctrlpp::pid<double, 1, ctrlpp::isa_form>;
     IsaPid::config_type isa_cfg{};
     isa_cfg.kp = vec1(2.0);
     isa_cfg.ki = vec1(4.0);  // This is Ti for ISA form
@@ -139,7 +139,7 @@ TEST_CASE("error() returns last error", "[pid][siso]")
 TEST_CASE("ISA form with Ti=0 sets Ki to zero (no integral action)",
     "[pid][siso][isa][edge-case]")
 {
-    using IsaPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::isa_form>;
+    using IsaPid = ctrlpp::pid<double, 1, ctrlpp::isa_form>;
     IsaPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.0);  // Ti=0 in ISA form -> Ki should be 0 (no divide-by-zero)

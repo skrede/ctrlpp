@@ -7,7 +7,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 constexpr double Ts = 0.01;
@@ -72,7 +72,7 @@ TEST_CASE("Tracking with feed_forward: integral accounts for ff contribution",
 {
     auto ff_func = [](const Vec1& sp, double) -> Vec1 { return sp * 2.0; };
     using FF = ctrlpp::feed_forward<decltype(ff_func)>;
-    using FfPid = ctrlpp::pid<double, 1, 1, 1, FF>;
+    using FfPid = ctrlpp::pid<double, 1, FF>;
 
     FfPid::config_type cfg{};
     cfg.kp = vec1(1.0);

@@ -28,7 +28,7 @@ where `a = 0.9` sets the time constant.
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1>;
+    using Pid = ctrlpp::pid<double, 1>;
     using Vec = Pid::vector_t;
 
     // Configure gains and output limits
@@ -67,7 +67,7 @@ int main()
 
 ## What Is Happening
 
-1. **Template parameters** `pid<double, 1, 1, 1>`<br/> Scalar type `double`,
+1. **Template parameters** `pid<double, 1>`<br/> Scalar type `double`,
    one state, one input, one output. This is the SISO specialization.
 
 2. **Configuration**<br/>`kp`, `ki`, `kd` are `Eigen::Vector` types (here
@@ -87,7 +87,7 @@ a compile-time template parameter &mdash; zero runtime cost when not used:
 ```cpp
 #include <ctrlpp/control/pid.h>
 
-using Pid = ctrlpp::pid<double, 1, 1, 1,
+using Pid = ctrlpp::pid<double, 1,
                          ctrlpp::anti_windup<ctrlpp::back_calc>,
                          ctrlpp::deriv_filter>;
 

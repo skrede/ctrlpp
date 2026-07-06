@@ -11,7 +11,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 constexpr double Ts = 0.01;
@@ -53,7 +53,7 @@ TEST_CASE("back_calc anti-windup limits integral growth during saturation",
     "[pid][siso][anti-windup][backcalc]")
 {
     using AW = ctrlpp::anti_windup<ctrlpp::back_calc>;
-    using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
+    using AwPid = ctrlpp::pid<double, 1, AW>;
 
     AwPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -89,7 +89,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
     const double e = sp - meas; // setpoint weight b defaults to 1
 
     SECTION("kb = sqrt(ki/kd) when kd != 0") {
-        using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
+        using AwPid = ctrlpp::pid<double, 1, AW>;
         const double kp = 2.0, ki = 8.0, kd = 2.0, out_max = 5.0;
 
         AwPid::config_type cfg{};
@@ -114,7 +114,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
     }
 
     SECTION("kb = ki/kp fallback when kd == 0") {
-        using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
+        using AwPid = ctrlpp::pid<double, 1, AW>;
         const double kp = 4.0, ki = 2.0, out_max = 5.0;
 
         AwPid::config_type cfg{};
@@ -136,7 +136,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
     }
 
     SECTION("pure-I controller disables back-calc (kb = 0) with kp == 0 and kd == 0") {
-        using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
+        using AwPid = ctrlpp::pid<double, 1, AW>;
         const double ki = 2.0, out_max = 0.1; // kp = kd = 0
 
         AwPid::config_type cfg{};
@@ -159,7 +159,7 @@ TEST_CASE("back_calc anti-windup limits windup during a rate-limited ramp",
     "[pid][siso][anti-windup][backcalc][rate-limit]")
 {
     using AW = ctrlpp::anti_windup<ctrlpp::back_calc>;
-    using RlPid = ctrlpp::pid<double, 1, 1, 1, AW, ctrlpp::rate_limit>;
+    using RlPid = ctrlpp::pid<double, 1, AW, ctrlpp::rate_limit>;
 
     RlPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -186,7 +186,7 @@ TEST_CASE("clamping anti-windup freezes integral during saturation",
     "[pid][siso][anti-windup][clamping]")
 {
     using AW = ctrlpp::anti_windup<ctrlpp::clamping>;
-    using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
+    using AwPid = ctrlpp::pid<double, 1, AW>;
 
     AwPid::config_type cfg{};
     cfg.kp = vec1(1.0);
@@ -219,7 +219,7 @@ TEST_CASE("conditional_integration freezes integral when error exceeds threshold
     "[pid][siso][anti-windup][conditional]")
 {
     using AW = ctrlpp::anti_windup<ctrlpp::conditional_integration>;
-    using AwPid = ctrlpp::pid<double, 1, 1, 1, AW>;
+    using AwPid = ctrlpp::pid<double, 1, AW>;
 
     AwPid::config_type cfg{};
     cfg.kp = vec1(1.0);

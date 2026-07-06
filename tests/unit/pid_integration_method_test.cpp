@@ -7,7 +7,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 constexpr double Ts = 0.01;
@@ -41,7 +41,7 @@ TEST_CASE("PI backward Euler accumulation", "[pid][siso][backward-euler]")
 
 TEST_CASE("PI forward Euler uses previous error", "[pid][siso][forward-euler]")
 {
-    using FEPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::forward_euler>;
+    using FEPid = ctrlpp::pid<double, 1, ctrlpp::forward_euler>;
     FEPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
@@ -61,7 +61,7 @@ TEST_CASE("PI forward Euler uses previous error", "[pid][siso][forward-euler]")
 
 TEST_CASE("PI tustin uses trapezoidal average", "[pid][siso][tustin]")
 {
-    using TPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::tustin>;
+    using TPid = ctrlpp::pid<double, 1, ctrlpp::tustin>;
     TPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);

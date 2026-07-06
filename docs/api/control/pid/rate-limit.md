@@ -33,7 +33,7 @@ Rate limiting interacts with anti-windup: if both are active, anti-windup sees t
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::rate_limit>;
+    using Pid = ctrlpp::pid<double, 1, ctrlpp::rate_limit>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};

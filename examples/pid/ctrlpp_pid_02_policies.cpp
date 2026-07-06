@@ -8,7 +8,7 @@
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::anti_windup<ctrlpp::back_calc>, ctrlpp::deriv_filter>;
+    using Pid = ctrlpp::pid<double, 1, ctrlpp::anti_windup<ctrlpp::back_calc>, ctrlpp::deriv_filter>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};

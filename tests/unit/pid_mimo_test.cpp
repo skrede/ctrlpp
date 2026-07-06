@@ -10,7 +10,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 constexpr double tol = 1e-12;
@@ -29,7 +29,7 @@ double accumulation_tol(int n_steps, double scale)
 
 TEST_CASE("MIMO NY=2 independent channels", "[pid][mimo]")
 {
-    using MimoPid = ctrlpp::pid<double, 1, 2, 2>;
+    using MimoPid = ctrlpp::pid<double, 2>;
     using Vec2 = ctrlpp::Vector<double, 2>;
 
     auto vec2 = [](double a, double b) { Vec2 v; v << a, b; return v; };
@@ -52,7 +52,7 @@ TEST_CASE("MIMO NY=2 independent channels", "[pid][mimo]")
 TEST_CASE("clamping anti-windup decouples MIMO channels", "[pid][mimo][anti-windup][clamping]")
 {
     using AW = ctrlpp::anti_windup<ctrlpp::clamping>;
-    using MimoPid = ctrlpp::pid<double, 1, 2, 2, AW>;
+    using MimoPid = ctrlpp::pid<double, 2, AW>;
     using Vec2 = ctrlpp::Vector<double, 2>;
     auto vec2 = [](double a, double b) { Vec2 v; v << a, b; return v; };
 
@@ -101,7 +101,7 @@ TEST_CASE("Variable dt per step", "[pid][siso]")
 TEST_CASE("MIMO performance metrics computed per channel",
     "[pid][mimo][perf-assessment]")
 {
-    using MimoPid = ctrlpp::pid<double, 1, 2, 2,
+    using MimoPid = ctrlpp::pid<double, 2,
         ctrlpp::perf_assessment<ctrlpp::IAE>>;
     using Vec2 = ctrlpp::Vector<double, 2>;
     auto vec2 = [](double a, double b) { Vec2 v; v << a, b; return v; };

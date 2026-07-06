@@ -59,7 +59,7 @@ No additional config fields. The integrator is simply frozen when the output is 
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::anti_windup<ctrlpp::back_calc>>;
+    using Pid = ctrlpp::pid<double, 1, ctrlpp::anti_windup<ctrlpp::back_calc>>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};

@@ -44,7 +44,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             return 0;
     }
 
-    using PidType = ctrlpp::pid<double, 1, 1, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
+    using PidType = ctrlpp::pid<double, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
     using ConfigType = PidType::config_type;
 
     ConfigType cfg;

@@ -33,7 +33,7 @@ Instead of computing u(k) directly, the controller computes the change delta_u(k
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
+    using Pid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};

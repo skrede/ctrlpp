@@ -17,7 +17,7 @@
 namespace ctrlpp
 {
 
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename... Policies>
+template <typename Scalar, std::size_t NY, typename... Policies>
 class pid
 {
 public:

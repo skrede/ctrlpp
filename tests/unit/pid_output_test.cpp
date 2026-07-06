@@ -7,7 +7,7 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-using SisoPid = ctrlpp::pid<double, 1, 1, 1>;
+using SisoPid = ctrlpp::pid<double, 1>;
 using Vec1 = ctrlpp::Vector<double, 1>;
 
 constexpr double Ts = 0.01;
@@ -54,7 +54,7 @@ TEST_CASE("saturated() returns true when output is clamped", "[pid][siso][satura
 TEST_CASE("Bare pid with zero policies compiles", "[pid][siso][compile]")
 {
     // This test verifies the zero-overhead case compiles
-    using BarePid = ctrlpp::pid<double, 1, 1, 1>;
+    using BarePid = ctrlpp::pid<double, 1>;
     BarePid::config_type cfg{};
     cfg.kp = vec1(1.0);
     BarePid pid(cfg);
@@ -152,7 +152,7 @@ TEST_CASE("Setpoint weighting c=0 with derivative on error uses only measurement
 
 TEST_CASE("rate_limit constrains output change per step", "[pid][siso][rate-limit]")
 {
-    using RlPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::rate_limit>;
+    using RlPid = ctrlpp::pid<double, 1, ctrlpp::rate_limit>;
     RlPid::config_type cfg{};
     cfg.kp = vec1(100.0);
     cfg.template policy<ctrlpp::rate_limit>().rate_max = {10.0};
@@ -172,7 +172,7 @@ TEST_CASE("rate_limit constrains output change per step", "[pid][siso][rate-limi
 
 TEST_CASE("rate_limit applies before output clamp", "[pid][siso][rate-limit][pipeline-order]")
 {
-    using RlPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::rate_limit>;
+    using RlPid = ctrlpp::pid<double, 1, ctrlpp::rate_limit>;
     RlPid::config_type cfg{};
     cfg.kp = vec1(100.0);
     cfg.output_max = vec1(0.05);

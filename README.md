@@ -30,7 +30,7 @@
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1>;
+    using Pid = ctrlpp::pid<double, 1>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
@@ -56,12 +56,12 @@ int main()
 }
 ```
 
-`pid<double, 1, 1, 1>` is a SISO PID with double precision. `config_type` sets gains and output limits. `compute()` takes setpoint, measurement, and timestep, returning the control signal. Add policies for richer behaviour:
+`pid<double, 1>` is a SISO PID with double precision. `config_type` sets gains and output limits. `compute()` takes setpoint, measurement, and timestep, returning the control signal. Add policies for richer behaviour:
 
 ```cpp
 #include "ctrlpp/control/pid.h"
 
-using Pid = ctrlpp::pid<double, 1, 1, 1,
+using Pid = ctrlpp::pid<double, 1,
     ctrlpp::anti_windup<ctrlpp::back_calc>,
     ctrlpp::deriv_filter,
     ctrlpp::rate_limit>;

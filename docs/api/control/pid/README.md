@@ -1,7 +1,7 @@
 # pid
 
 A policy-based PID controller with compile-time feature composition. The template
-signature `pid<Scalar, NX, NU, NY, Policies...>` lets you opt into exactly the
+signature `pid<Scalar, NY, Policies...>` lets you opt into exactly the
 features you need &mdash; anti-windup, derivative filtering, setpoint weighting,
 velocity form, ISA form, feed-forward, rate limiting, and performance assessment --
 without paying for what you don't use.
@@ -15,7 +15,7 @@ template packs.
 
 | Form | Header |
 |------|--------|
-| `ctrlpp::pid<Scalar, NX, NU, NY, Policies...>` | `#include <ctrlpp/control/pid.h>` |
+| `ctrlpp::pid<Scalar, NY, Policies...>` | `#include <ctrlpp/control/pid.h>` |
 | (convenience) | `#include <ctrlpp/pid.h>` |
 
 ## Template Parameters
@@ -208,7 +208,7 @@ Resets all performance metric accumulators to zero.
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1,
+    using Pid = ctrlpp::pid<double, 1,
         ctrlpp::anti_windup<ctrlpp::back_calc>,
         ctrlpp::deriv_filter>;
     using Vec = Pid::vector_t;

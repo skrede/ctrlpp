@@ -12,7 +12,7 @@ static constexpr char const* csv_tpl =
 
 int main()
 {
-    using Pid = ctrlpp::pid<double, 1, 1, 1>;
+    using Pid = ctrlpp::pid<double, 1>;
     using Vec = Pid::vector_t;
 
     Pid::config_type cfg{};
