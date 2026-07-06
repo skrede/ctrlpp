@@ -259,10 +259,12 @@ moesp_result<typename Derived1::Scalar, NX, 1, 1> moesp(const Eigen::MatrixBase<
     for(Eigen::Index c = 0; c < rank; ++c)
         Gamma.col(c) = U_svd.col(c) * std::sqrt(sv(c));
 
-    // Extract C from first ny rows
+    // Extract C from the first block row of the observability matrix Gamma.
+    // For SISO (NY = 1) this is Gamma's first row; reading the first column
+    // instead only coincides for NX = 1.
     Matrix<Scalar, 1, NX> C;
     for(Eigen::Index c = 0; c < nx; ++c)
-        C(0, c) = Gamma(c);
+        C(0, c) = Gamma(0, c);
 
     if(!C.allFinite() || !Gamma.allFinite())
     {
