@@ -11,7 +11,7 @@ Batch ARX model identification via QR decomposition. Given input/output data seq
 
 ```cpp
 template <std::size_t NA, std::size_t NB, typename Derived1, typename Derived2>
-arx_result<typename Derived1::Scalar, NA, 1, 1>
+arx_result<typename Derived1::Scalar, std::max(NA, NB), 1, 1>
 batch_arx(const Eigen::MatrixBase<Derived1>& Y,
           const Eigen::MatrixBase<Derived2>& U);
 ```
@@ -40,7 +40,7 @@ struct arx_result {
 };
 ```
 
-The identified system is in observer canonical form with `NX = NA` states. The `metrics` field contains NRMSE and VAF computed by simulating the identified model against the original data.
+The identified system is in observer canonical form with `NX = max(NA, NB)` states. The realization dimension is the larger of the auto-regressive and exogenous orders, so every b-coefficient is represented even when `NB > NA` (Ljung 1999, Ch. 4). The `metrics` field contains NRMSE and VAF computed by simulating the identified model against the original data.
 
 ## Usage Example
 

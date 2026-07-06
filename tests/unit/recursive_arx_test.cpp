@@ -6,6 +6,7 @@
 
 #include <Eigen/Dense>
 
+#include <array>
 #include <cmath>
 #include <random>
 
@@ -174,4 +175,57 @@ TEST_CASE("Recursive ARX initial updates before buffer is full do not crash")
     // Should have valid (though not converged) parameters
     auto theta = arx.parameters();
     REQUIRE(std::isfinite(theta(0)));
+}
+
+TEST_CASE("Recursive ARX with NB > NA realizes all b-coefficients (max(NA,NB) states)")
+{
+    // True system: y(t) = a1*y(t-1) + b1*u(t-1) + b2*u(t-2), so NA=1 < NB=2.
+    // to_state_space() must produce a max(NA,NB)=2 state realization that keeps
+    // b2; a NA-state realization would drop it and mispredict the response.
+    constexpr double a1 = 0.7;
+    constexpr double b1 = 0.5;
+    constexpr double b2 = -0.3;
+
+    constexpr std::size_t NA = 1;
+    constexpr std::size_t NB = 2;
+    ctrlpp::recursive_arx<double, NA, NB> arx;
+
+    std::mt19937 gen(7);
+    std::uniform_real_distribution<double> u_dist(-1.0, 1.0);
+
+    double y_prev1 = 0.0;
+    double u_prev1 = 0.0;
+    double u_prev2 = 0.0;
+    for(int t = 0; t < 800; ++t)
+    {
+        double u = u_dist(gen);
+        double y_new = a1 * y_prev1 + b1 * u_prev1 + b2 * u_prev2;
+        arx.update(y_new, u);
+        y_prev1 = y_new;
+        u_prev2 = u_prev1;
+        u_prev1 = u;
+    }
+
+    auto ss = arx.to_state_space();
+
+    // Realized state dimension is max(NA, NB) = 2, not NA = 1.
+    REQUIRE(ss.A.rows() == 2);
+    REQUIRE(ss.A.cols() == 2);
+    REQUIRE(ss.B.rows() == 2);
+
+    // The identified b2 coefficient survives into the realization and matches
+    // the pulse response h(2) = a1*b1 + b2 of the true plant.
+    Eigen::Matrix<double, 2, 1> x = Eigen::Matrix<double, 2, 1>::Zero();
+    std::array<double, 4> h{};
+    for(std::size_t k = 0; k < h.size(); ++k)
+    {
+        Eigen::Matrix<double, 1, 1> u_vec;
+        u_vec << (k == 0 ? 1.0 : 0.0);
+        h[k] = (ss.C * x + ss.D * u_vec).eval()(0, 0);
+        x = (ss.A * x + ss.B * u_vec).eval();
+    }
+
+    REQUIRE_THAT(h[1], WithinAbs(b1, 0.05));
+    REQUIRE_THAT(h[2], WithinAbs(a1 * b1 + b2, 0.05));
+    REQUIRE_THAT(ss.B(1, 0), WithinAbs(b2, 0.05));
 }

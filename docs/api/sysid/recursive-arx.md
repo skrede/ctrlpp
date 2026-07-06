@@ -62,10 +62,10 @@ Returns the current RLS covariance matrix.
 ### to_state_space
 
 ```cpp
-discrete_state_space<Scalar, NA, NU, NY> to_state_space() const;
+discrete_state_space<Scalar, std::max(NA, NB), NU, NY> to_state_space() const;
 ```
 
-Converts the current parameter estimate to observer canonical form state-space matrices (A, B, C, D).
+Converts the current parameter estimate to observer canonical form state-space matrices (A, B, C, D). The realization has `max(NA, NB)` states so that every b-coefficient is represented even when `NB > NA` (Ljung 1999, Ch. 4).
 
 ## Usage Example
 
