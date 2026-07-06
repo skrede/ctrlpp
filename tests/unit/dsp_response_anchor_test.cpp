@@ -64,7 +64,8 @@ TEST_CASE("Butterworth low-pass biquad reaches -3.01 dB at cutoff with a monoton
     const double fc = 100.0;
     const double fs = 1000.0;
     const auto lp = biquad<double>::low_pass(fc, fs);
-    const auto c = lp.coefficients();
+    REQUIRE(lp.has_value());
+    const auto c = lp->coefficients();
 
     // Rounding-op margin: evaluating |H(e^{jOmega})| from coefficients chains
     // a handful of complex multiply-adds and one complex division; each
@@ -105,7 +106,8 @@ TEST_CASE("dirty_derivative magnitude tracks 2*pi*f well below its bandwidth", "
     const double bandwidth_hz = 50.0;
     const double fs = 1000.0;
     const auto dd = biquad<double>::dirty_derivative(bandwidth_hz, fs);
-    const auto c = dd.coefficients();
+    REQUIRE(dd.has_value());
+    const auto c = dd->coefficients();
 
     // The bilinear transform maps the digital frequency Omega = 2*pi*f/fs to
     // an exact pre-warped analog frequency omega_a = 2*fs*tan(Omega/2)

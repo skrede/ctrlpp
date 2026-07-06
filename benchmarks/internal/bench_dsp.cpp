@@ -15,7 +15,7 @@ static constexpr char const* csv_tpl =
 int main()
 {
     // Biquad low-pass at 10 Hz, 1 kHz sample rate
-    auto bq = ctrlpp::biquad<double>::low_pass(10.0, 1000.0);
+    auto bq = ctrlpp::biquad<double>::low_pass(10.0, 1000.0).value();
     double sample = 0.5;
 
     // 32-tap FIR (simple moving average for benchmarking purposes)

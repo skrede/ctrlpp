@@ -2,6 +2,8 @@
 
 Second-order IIR (biquad) filter implemented with transposed direct form II. Provides factory functions for common filter types and satisfies the `discrete_filter` concept for composability. Individual biquad sections can be cascaded via `cascaded_biquad` for higher-order filters, and convenience functions `make_butterworth` and `make_chebyshev1` build complete cascaded designs from cutoff frequency and sample rate.
 
+Every design factory validates its parameters and returns `ctrlpp::expected<Filter, dsp_error>`: a filter on success, or the specific `dsp_error` enumerator describing the rejected design. See [Design Validation: dsp_error](#design-validation-dsp_error).
+
 ## Header and Alias
 
 | Form | Header |
@@ -43,31 +45,58 @@ explicit constexpr biquad(biquad_coeffs<Scalar> c);
 
 Construct from explicit coefficients, or use one of the factory functions below.
 
+## Design Validation: dsp_error
+
+Header: `#include <ctrlpp/dsp/dsp_types.h>` (pulled in by `biquad.h`)
+
+```cpp
+enum class dsp_error {
+    non_positive_sample_rate,
+    cutoff_exceeds_nyquist,
+    non_positive_q,
+    non_finite_input,
+};
+```
+
+Every design factory returns `ctrlpp::expected<Filter, dsp_error>` and rejects invalid parameters instead of computing garbage coefficients:
+
+| Enumerator | Rejected input |
+|------------|----------------|
+| `non_finite_input` | Any design parameter (frequency, sample rate, quality factor, ripple) is NaN or infinite |
+| `non_positive_sample_rate` | `sample_hz <= 0` |
+| `cutoff_exceeds_nyquist` | The design frequency lies outside the open interval `(0, sample_hz / 2)`. A discrete-time filter can only realize a response strictly below half the sample rate; at or above it the design frequency aliases (Nyquist criterion) |
+| `non_positive_q` | Notch quality factor `q <= 0` |
+
+The checks run in the order listed, so a design with several defects reports the first matching enumerator. The Nyquist bound is strict on both sides: `cutoff == sample_hz / 2` is rejected.
+
 ## Factory Functions
 
 ### low_pass
 
 ```cpp
-static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> biquad;
+[[nodiscard]] static auto low_pass(Scalar cutoff_hz, Scalar sample_hz)
+    -> ctrlpp::expected<biquad, dsp_error>;
 ```
 
-Creates a second-order Butterworth (maximally flat, quality factor `Q = 1/sqrt(2)`) low-pass filter at the given cutoff frequency. The response is monotone across the passband with no peaking and reaches -3.01 dB at the cutoff.
+Creates a second-order Butterworth (maximally flat, quality factor `Q = 1/sqrt(2)`) low-pass filter at the given cutoff frequency. The response is monotone across the passband with no peaking and reaches -3.01 dB at the cutoff. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)`.
 
 ### notch
 
 ```cpp
-static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> biquad;
+[[nodiscard]] static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q)
+    -> ctrlpp::expected<biquad, dsp_error>;
 ```
 
-Creates a notch (band-reject) filter centered at `freq_hz` with quality factor `q`.
+Creates a notch (band-reject) filter centered at `freq_hz` with quality factor `q`. `freq_hz` must lie in the open interval `(0, sample_hz / 2)` and `q` must be strictly positive.
 
 ### dirty_derivative
 
 ```cpp
-static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> biquad;
+[[nodiscard]] static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz)
+    -> ctrlpp::expected<biquad, dsp_error>;
 ```
 
-Creates a band-limited differentiator with analog prototype `H(s) = wc*s / (s + wc)`, discretized via the bilinear transform. It acts as a true differentiator (`|H(f)| -> 2*pi*f`) up to the bandwidth `wc = 2*pi*bandwidth_hz`, above which it rolls off.
+Creates a band-limited differentiator with analog prototype `H(s) = wc*s / (s + wc)`, discretized via the bilinear transform. It acts as a true differentiator (`|H(f)| -> 2*pi*f`) up to the bandwidth `wc = 2*pi*bandwidth_hz`, above which it rolls off. `bandwidth_hz` must lie in the open interval `(0, sample_hz / 2)`.
 
 ## Methods
 
@@ -120,22 +149,22 @@ Chains N biquad sections in series. Each `process()` call passes the sample thro
 ```cpp
 template <std::size_t Order, typename Scalar>
     requires (Order % 2 == 0 && Order >= 2)
-auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz)
-    -> cascaded_biquad<Scalar, Order / 2>;
+[[nodiscard]] auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz)
+    -> ctrlpp::expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>;
 ```
 
-Designs an `Order`-th order Butterworth low-pass filter as a cascade of `Order/2` biquad sections.
+Designs an `Order`-th order Butterworth low-pass filter as a cascade of `Order/2` biquad sections. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)`.
 
 ### make_chebyshev1
 
 ```cpp
 template <std::size_t Order, typename Scalar>
     requires (Order % 2 == 0 && Order >= 2)
-auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
-    -> cascaded_biquad<Scalar, Order / 2>;
+[[nodiscard]] auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
+    -> ctrlpp::expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>;
 ```
 
-Designs an `Order`-th order Chebyshev Type I low-pass filter with the specified passband ripple.
+Designs an `Order`-th order Chebyshev Type I low-pass filter with the specified passband ripple. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)` and `ripple_db` must be finite.
 
 ## Usage Example
 
@@ -152,11 +181,14 @@ int main()
     constexpr double sample_hz = 100.0;
     constexpr double cutoff_hz = 10.0;
 
-    // Create a second-order low-pass filter
-    auto lp = ctrlpp::biquad<double>::low_pass(cutoff_hz, sample_hz);
+    // Create a second-order low-pass filter. The factory returns
+    // ctrlpp::expected<biquad, dsp_error>; .value() unwraps in this
+    // exceptions-on snippet (embedded-clean code checks has_value()
+    // and dereferences instead).
+    auto lp = ctrlpp::biquad<double>::low_pass(cutoff_hz, sample_hz).value();
 
     // Create a 4th-order Butterworth low-pass
-    auto butter4 = ctrlpp::make_butterworth<4>(cutoff_hz, sample_hz);
+    auto butter4 = ctrlpp::make_butterworth<4>(cutoff_hz, sample_hz).value();
 
     // Filter a noisy sine wave
     constexpr double signal_hz = 5.0;

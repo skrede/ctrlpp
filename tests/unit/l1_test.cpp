@@ -5,6 +5,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
 
@@ -133,7 +134,9 @@ TEST_CASE("l1 direct constructor with vector_cascaded_biquad", "[l1]")
 {
     auto cfg = make_siso_config();
     auto filter = ctrlpp::make_vector_butterworth<4, 1>(15.0, 100.0);
-    ctrlpp::l1_controller<double, 1, 1, decltype(filter)> ctrl(cfg, std::move(filter));
+    REQUIRE(filter.has_value());
+    ctrlpp::l1_controller<double, 1, 1, ctrlpp::vector_cascaded_biquad<double, 1, 2>> ctrl(
+        cfg, *std::move(filter));
 
     auto r = vec1(1.0);
     double x_plant = 0.0;
@@ -146,6 +149,26 @@ TEST_CASE("l1 direct constructor with vector_cascaded_biquad", "[l1]")
     }
 
     REQUIRE(std::abs(x_plant - 1.0) < 0.15);
+}
+
+TEST_CASE("l1 try_create with a valid config matches the constructor-built controller", "[l1]")
+{
+    auto cfg = make_siso_config();
+    auto created = ctrlpp::l1_controller<double>::try_create(cfg, 15.0, 100.0);
+    REQUIRE(created.has_value());
+
+    ctrlpp::l1_controller<double> ctor_built(cfg, 15.0, 100.0);
+
+    double x_created = 0.0;
+    double x_ctor = 0.0;
+    for(int k = 0; k < 100; ++k)
+    {
+        auto u_created = created->evaluate(vec1(x_created), vec1(1.0));
+        auto u_ctor = ctor_built.evaluate(vec1(x_ctor), vec1(1.0));
+        REQUIRE(u_created[0] == u_ctor[0]);
+        x_created = 0.8 * x_created + 0.5 * u_created[0];
+        x_ctor = 0.8 * x_ctor + 0.5 * u_ctor[0];
+    }
 }
 
 TEST_CASE("l1 MIMO 2x2 tracking", "[l1]")

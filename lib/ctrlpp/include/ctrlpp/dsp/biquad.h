@@ -6,6 +6,9 @@
 /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6 (DF-II / TDF-II structures)
 /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae for Audio EQ Biquad Filter Coefficients", 2005
 
+#include "ctrlpp/expected.h"
+
+#include "ctrlpp/dsp/dsp_types.h"
 #include "ctrlpp/dsp/discrete_filter.h"
 
 #include "ctrlpp/util/concepts.h"
@@ -15,6 +18,7 @@
 #include <limits>
 #include <cstddef>
 #include <numbers>
+#include <optional>
 
 namespace ctrlpp
 {
@@ -42,6 +46,27 @@ template <typename Scalar>
 auto biquad_singular_tol(Scalar scale, Scalar coeff = Scalar{6}) -> Scalar
 {
     return coeff * std::numeric_limits<Scalar>::epsilon() * scale;
+}
+
+/// Validate the (design frequency, sample rate) pair shared by every biquad
+/// design factory. Every bound is a strict domain requirement, so no epsilon
+/// tolerance is involved: the sample rate of a sampled-data design must be
+/// strictly positive, and the design frequency must lie strictly inside the
+/// open interval (0, sample_hz / 2) because a discrete-time filter can only
+/// realize a response strictly below half the sample rate; at or above it the
+/// design frequency aliases (Nyquist criterion, oppenheim2010dsp Ch. 4).
+/// Returns the matching `dsp_error` for a rejected pair, or an empty optional
+/// for a valid one.
+template <typename Scalar>
+auto validate_biquad_design(Scalar freq_hz, Scalar sample_hz) -> std::optional<dsp_error>
+{
+    if(!std::isfinite(freq_hz) || !std::isfinite(sample_hz))
+        return dsp_error::non_finite_input;
+    if(sample_hz <= Scalar{0})
+        return dsp_error::non_positive_sample_rate;
+    if(freq_hz <= Scalar{0} || freq_hz >= sample_hz / Scalar{2})
+        return dsp_error::cutoff_exceeds_nyquist;
+    return std::nullopt;
 }
 
 }
@@ -85,10 +110,17 @@ public:
     /// Second-order Butterworth low-pass biquad section via the RBJ cookbook
     /// formulas (analog-prototype design mapped through the bilinear transform).
     ///
+    /// Rejects non-finite parameters, sample_hz <= 0, and cutoff_hz outside the
+    /// open interval (0, sample_hz / 2) (Nyquist criterion, oppenheim2010dsp
+    /// Ch. 4) with the matching `dsp_error`.
+    ///
     /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (LPF section)
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform of analog prototypes)
-    static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> biquad
+    [[nodiscard]] static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> expected<biquad, dsp_error>
     {
+        if(auto const err = detail::validate_biquad_design(cutoff_hz, sample_hz))
+            return unexpected(*err);
+
         auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * cutoff_hz / sample_hz;
         auto const cos_w0 = std::cos(w0);
         auto const sin_w0 = std::sin(w0);
@@ -111,10 +143,22 @@ public:
 
     /// Notch (band-stop) biquad section via the RBJ cookbook formulas.
     ///
+    /// Rejects non-finite parameters, sample_hz <= 0, freq_hz outside the open
+    /// interval (0, sample_hz / 2) (Nyquist criterion, oppenheim2010dsp Ch. 4),
+    /// and q <= 0 (the design bandwidth alpha = sin(w0) / (2 q) requires a
+    /// strictly positive quality factor) with the matching `dsp_error`.
+    ///
     /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (notch section)
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6
-    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> biquad
+    [[nodiscard]] static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> expected<biquad, dsp_error>
     {
+        if(!std::isfinite(q))
+            return unexpected(dsp_error::non_finite_input);
+        if(auto const err = detail::validate_biquad_design(freq_hz, sample_hz))
+            return unexpected(*err);
+        if(q <= Scalar{0})
+            return unexpected(dsp_error::non_positive_q);
+
         auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * freq_hz / sample_hz;
         auto const cos_w0 = std::cos(w0);
         auto const alpha = std::sin(w0) / (Scalar{2} * q);
@@ -139,9 +183,17 @@ public:
     /// numerator carries the differentiator gain, so the denominator is
     /// unchanged.
     ///
+    /// Rejects non-finite parameters, sample_hz <= 0, and bandwidth_hz outside
+    /// the open interval (0, sample_hz / 2) (Nyquist criterion, oppenheim2010dsp
+    /// Ch. 4; at half the sample rate the pre-warped cutoff tan(pi/2) also
+    /// diverges) with the matching `dsp_error`.
+    ///
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform with pre-warping)
-    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> biquad
+    [[nodiscard]] static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> expected<biquad, dsp_error>
     {
+        if(auto const err = detail::validate_biquad_design(bandwidth_hz, sample_hz))
+            return unexpected(*err);
+
         auto const wc = Scalar{2} * sample_hz * std::tan(std::numbers::pi_v<Scalar> * bandwidth_hz / sample_hz);
         auto const k = Scalar{2} * sample_hz;
         auto const a0_inv = Scalar{1} / (k + wc);
@@ -221,12 +273,20 @@ private:
 /// from the analog-prototype pole locations on the unit circle, mapped through
 /// the bilinear transform with frequency pre-warping.
 ///
+/// Rejects non-finite parameters, sample_hz <= 0, and cutoff_hz outside the
+/// open interval (0, sample_hz / 2) (Nyquist criterion, oppenheim2010dsp
+/// Ch. 4) with the matching `dsp_error`.
+///
 /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (analog-prototype Butterworth, bilinear pre-warp)
 /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (per-section LPF coefficients)
 template <std::size_t Order, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz) -> cascaded_biquad<Scalar, Order / 2>
+[[nodiscard]] auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz)
+    -> expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>
 {
+    if(auto const err = detail::validate_biquad_design(cutoff_hz, sample_hz))
+        return unexpected(*err);
+
     constexpr auto num_sections = Order / 2;
     auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * cutoff_hz / sample_hz;
     auto const cos_w0 = std::cos(w0);
@@ -320,11 +380,21 @@ void normalize_chebyshev1_dc(std::array<biquad<Scalar>, N>& sections, Scalar eps
 /// the passband ripple, mapped through the bilinear transform with frequency
 /// pre-warping. The DC gain is normalised so the max passband gain is 0 dB.
 ///
+/// Rejects non-finite parameters (including a NaN or infinite ripple_db),
+/// sample_hz <= 0, and cutoff_hz outside the open interval (0, sample_hz / 2)
+/// (Nyquist criterion, oppenheim2010dsp Ch. 4) with the matching `dsp_error`.
+///
 /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I IIR design)
 template <std::size_t Order, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db) -> cascaded_biquad<Scalar, Order / 2>
+[[nodiscard]] auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
+    -> expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>
 {
+    if(!std::isfinite(ripple_db))
+        return unexpected(dsp_error::non_finite_input);
+    if(auto const err = detail::validate_biquad_design(cutoff_hz, sample_hz))
+        return unexpected(*err);
+
     constexpr auto num_sections = Order / 2;
 
     auto const eps = std::sqrt(std::pow(Scalar{10}, ripple_db / Scalar{10}) - Scalar{1});

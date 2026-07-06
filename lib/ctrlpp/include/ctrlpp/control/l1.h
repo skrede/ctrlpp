@@ -7,6 +7,8 @@
 /// @cite hovakimyan2010 -- Hovakimyan & Cao, "L1 Adaptive Control Theory", 2010, Ch. 2
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -20,7 +22,6 @@
 
 #include <cstddef>
 #include <utility>
-#include <stdexcept>
 
 namespace ctrlpp
 {
@@ -42,23 +43,50 @@ public:
     using state_type = Vector<Scalar, NX>;
     using input_type = Vector<Scalar, NU>;
 
-    l1_controller(const config_type& cfg, Scalar cutoff_hz, Scalar sample_hz)
-        : m_cfg{cfg}
-        , m_filter{Filter::low_pass(cutoff_hz, sample_hz)}
-        , m_x_hat{cfg.x_hat_0}
-        , m_sigma_hat{cfg.sigma_hat_0}
+    /// Builds the output low-pass filter via `Filter::low_pass` and validates
+    /// the predictor model. Returns `l1_error::invalid_filter_config` when the
+    /// filter factory rejects the (cutoff_hz, sample_hz) design, or the
+    /// predictor validation error of the filter-taking overload below.
+    [[nodiscard]] static auto try_create(const config_type& cfg, Scalar cutoff_hz, Scalar sample_hz)
+        -> expected<l1_controller, l1_error>
     {
-        compute_k_r();
+        auto filter = Filter::low_pass(cutoff_hz, sample_hz);
+        if(!filter.has_value())
+            return unexpected(l1_error::invalid_filter_config);
+        return try_create(cfg, *std::move(filter));
     }
 
-    l1_controller(const config_type& cfg, Filter filter)
-        : m_cfg{cfg}
-        , m_filter{std::move(filter)}
-        , m_x_hat{cfg.x_hat_0}
-        , m_sigma_hat{cfg.sigma_hat_0}
+    /// Validates the predictor model and constructs the controller. Returns
+    /// `l1_error::singular_predictor` when (I - A_m) is singular,
+    /// `l1_error::singular_dc_gain` when the DC gain (I - A_m)^{-1} B is
+    /// singular or non-finite, and `l1_error::non_finite_gain` when the
+    /// feedforward gain K_r is non-finite.
+    [[nodiscard]] static auto try_create(const config_type& cfg, Filter filter)
+        -> expected<l1_controller, l1_error>
     {
-        compute_k_r();
+        auto k_r = compute_k_r(cfg);
+        if(!k_r.has_value())
+            return unexpected(k_r.error());
+        return l1_controller{cfg, std::move(filter), *std::move(k_r)};
     }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// Throwing convenience wrapper around `try_create`; throws the
+    /// `bad_expected_access` of the active `ctrlpp::expected` target when the
+    /// filter design or the predictor model is rejected.
+    l1_controller(const config_type& cfg, Scalar cutoff_hz, Scalar sample_hz)
+        : l1_controller{try_create(cfg, cutoff_hz, sample_hz).value()}
+    {
+    }
+
+    /// Throwing convenience wrapper around `try_create`; throws the
+    /// `bad_expected_access` of the active `ctrlpp::expected` target when the
+    /// predictor model is rejected.
+    l1_controller(const config_type& cfg, Filter filter)
+        : l1_controller{try_create(cfg, std::move(filter)).value()}
+    {
+    }
+#endif
 
     auto evaluate(const state_type& x, const input_type& r) -> input_type
     {
@@ -104,25 +132,33 @@ public:
     }
 
 private:
-    void compute_k_r()
+    l1_controller(const config_type& cfg, Filter filter, Matrix<Scalar, NU, NU> k_r)
+        : m_cfg{cfg}
+        , m_filter{std::move(filter)}
+        , m_x_hat{cfg.x_hat_0}
+        , m_sigma_hat{cfg.sigma_hat_0}
+        , m_k_r{std::move(k_r)}
+    {
+    }
+
+    static auto compute_k_r(const config_type& cfg)
+        -> expected<Matrix<Scalar, NU, NU>, l1_error>
     {
         // DC gain of predictor: G_dc = (I - A_m)^{-1} * B
         // K_r = G_dc^{-1} so that in steady state x_ss = r
         auto i_minus_a = (Matrix<Scalar, NX, NX>::Identity()
-            - m_cfg.predictor_model.A).eval();
+            - cfg.predictor_model.A).eval();
         auto lu_ima = i_minus_a.fullPivLu();
         if(!lu_ima.isInvertible())
-            throw std::invalid_argument(
-                "L1 predictor model has unit eigenvalue: (I - A) is singular");
-        Matrix<Scalar, NX, NU> dc_gain = lu_ima.solve(m_cfg.predictor_model.B);
+            return unexpected(l1_error::singular_predictor);
+        Matrix<Scalar, NX, NU> dc_gain = lu_ima.solve(cfg.predictor_model.B);
         auto lu_dc = dc_gain.fullPivLu();
         if(!lu_dc.isInvertible() || !dc_gain.allFinite())
-            throw std::invalid_argument(
-                "L1 predictor model has near-zero DC gain: B / (I - A) is singular");
-        m_k_r = lu_dc.solve(Matrix<Scalar, NU, NU>::Identity());
-        if(!m_k_r.allFinite())
-            throw std::invalid_argument(
-                "L1 feedforward gain K_r is non-finite: ill-conditioned predictor model");
+            return unexpected(l1_error::singular_dc_gain);
+        Matrix<Scalar, NU, NU> k_r = lu_dc.solve(Matrix<Scalar, NU, NU>::Identity());
+        if(!k_r.allFinite())
+            return unexpected(l1_error::non_finite_gain);
+        return k_r;
     }
 
     config_type m_cfg;

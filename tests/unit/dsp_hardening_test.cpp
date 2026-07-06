@@ -29,18 +29,19 @@ TEST_CASE("Biquad with all-zero coefficients", "[biquad][hardening][negative]")
 TEST_CASE("Biquad with NaN input sample", "[biquad][hardening][negative]")
 {
     auto lp = ctrlpp::biquad<double>::low_pass(100.0, 1000.0);
+    REQUIRE(lp.has_value());
 
     // Process some valid samples first
     for (int i = 0; i < 10; ++i) {
-        lp.process(1.0);
+        lp->process(1.0);
     }
 
     // Inject NaN
-    double y = lp.process(std::numeric_limits<double>::quiet_NaN());
+    double y = lp->process(std::numeric_limits<double>::quiet_NaN());
     CHECK(std::isnan(y));
 
     // Subsequent outputs should also be NaN (state contaminated)
-    y = lp.process(1.0);
+    y = lp->process(1.0);
     CHECK(std::isnan(y));
 }
 
@@ -73,13 +74,14 @@ TEST_CASE("Unity gain biquad passes input through exactly", "[biquad][hardening]
 TEST_CASE("Stable biquad output stays bounded over many samples", "[biquad][hardening][stability]")
 {
     auto lp = ctrlpp::biquad<double>::low_pass(100.0, 1000.0);
+    REQUIRE(lp.has_value());
 
     std::mt19937 gen(42);
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
 
     double max_output = 0.0;
     for (int i = 0; i < 10000; ++i) {
-        double y = lp.process(dist(gen));
+        double y = lp->process(dist(gen));
         max_output = std::max(max_output, std::abs(y));
     }
 
@@ -114,6 +116,37 @@ TEST_CASE("Single-tap FIR with coefficient 1.0 is identity", "[fir][hardening][p
     REQUIRE_THAT(filter.process(3.14), WithinAbs(3.14, 1e-15));
     REQUIRE_THAT(filter.process(-7.0), WithinAbs(-7.0, 1e-15));
     REQUIRE_THAT(filter.process(0.0), WithinAbs(0.0, 1e-15));
+}
+
+TEST_CASE("make_butterworth rejects invalid designs with the specific error", "[biquad][hardening][error]")
+{
+    auto zero_fs = ctrlpp::make_butterworth<4>(100.0, 0.0);
+    REQUIRE(!zero_fs.has_value());
+    CHECK(zero_fs.error() == ctrlpp::dsp_error::non_positive_sample_rate);
+
+    // The boundary itself is rejected: the design interval is open, (0, fs/2).
+    auto at_nyquist = ctrlpp::make_butterworth<4>(500.0, 1000.0);
+    REQUIRE(!at_nyquist.has_value());
+    CHECK(at_nyquist.error() == ctrlpp::dsp_error::cutoff_exceeds_nyquist);
+
+    auto nan_cutoff = ctrlpp::make_butterworth<4>(std::numeric_limits<double>::quiet_NaN(), 1000.0);
+    REQUIRE(!nan_cutoff.has_value());
+    CHECK(nan_cutoff.error() == ctrlpp::dsp_error::non_finite_input);
+}
+
+TEST_CASE("make_chebyshev1 rejects invalid designs with the specific error", "[biquad][hardening][error]")
+{
+    auto negative_fs = ctrlpp::make_chebyshev1<4>(100.0, -1000.0, 1.0);
+    REQUIRE(!negative_fs.has_value());
+    CHECK(negative_fs.error() == ctrlpp::dsp_error::non_positive_sample_rate);
+
+    auto above_nyquist = ctrlpp::make_chebyshev1<4>(600.0, 1000.0, 1.0);
+    REQUIRE(!above_nyquist.has_value());
+    CHECK(above_nyquist.error() == ctrlpp::dsp_error::cutoff_exceeds_nyquist);
+
+    auto nan_ripple = ctrlpp::make_chebyshev1<4>(100.0, 1000.0, std::numeric_limits<double>::quiet_NaN());
+    REQUIRE(!nan_ripple.has_value());
+    CHECK(nan_ripple.error() == ctrlpp::dsp_error::non_finite_input);
 }
 
 TEST_CASE("Biquad reset with near-zero denominator", "[biquad][hardening][coverage]")

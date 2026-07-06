@@ -35,6 +35,48 @@ auto make_siso_config() -> ctrlpp::l1_config<double, 1, 1>
 
 }
 
+TEST_CASE("L1 try_create rejects a unit-eigenvalue predictor with singular_predictor",
+          "[l1][hardening][error]")
+{
+    auto cfg = make_siso_config();
+    cfg.predictor_model.A << 1.0; // (I - A) is exactly singular
+    auto result = ctrlpp::l1_controller<double>::try_create(cfg, 15.0, 100.0);
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == ctrlpp::l1_error::singular_predictor);
+}
+
+TEST_CASE("L1 try_create rejects a zero-input predictor with singular_dc_gain",
+          "[l1][hardening][error]")
+{
+    auto cfg = make_siso_config();
+    cfg.predictor_model.B << 0.0; // DC gain (I - A)^{-1} B is exactly zero
+    auto result = ctrlpp::l1_controller<double>::try_create(cfg, 15.0, 100.0);
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == ctrlpp::l1_error::singular_dc_gain);
+}
+
+TEST_CASE("L1 try_create rejects an overflowing feedforward gain with non_finite_gain",
+          "[l1][hardening][error]")
+{
+    auto cfg = make_siso_config();
+    // A subnormal control effectiveness makes the DC gain finite and nonzero
+    // (so the singularity checks pass) while its reciprocal K_r = 1 / dc_gain
+    // overflows to infinity, exercising the non-finite gain rejection.
+    cfg.predictor_model.B << 1.0e-320;
+    auto result = ctrlpp::l1_controller<double>::try_create(cfg, 15.0, 100.0);
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == ctrlpp::l1_error::non_finite_gain);
+}
+
+TEST_CASE("L1 try_create rejects a filter design at the Nyquist frequency with invalid_filter_config",
+          "[l1][hardening][error]")
+{
+    auto cfg = make_siso_config();
+    auto result = ctrlpp::l1_controller<double>::try_create(cfg, 50.0, 100.0);
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == ctrlpp::l1_error::invalid_filter_config);
+}
+
 TEST_CASE("L1 NaN state produces no crash", "[l1][hardening][negative]")
 {
     auto cfg = make_siso_config();

@@ -118,11 +118,13 @@ TEST_CASE("l1 default output filter inherits the Butterworth low-pass", "[l1]")
     // coefficients and same state evolution give bit-identical output.
     auto vfilter = vector_biquad<double, 1>::low_pass(fc, fs);
     auto sfilter = biquad<double>::low_pass(fc, fs);
+    REQUIRE(vfilter.has_value());
+    REQUIRE(sfilter.has_value());
     for(int k = 0; k < 64; ++k)
     {
         const double x = (k == 0) ? 1.0 : 0.5;
-        const double yv = vfilter.process(vec1(x))[0];
-        const double ys = sfilter.process(x);
+        const double yv = vfilter->process(vec1(x))[0];
+        const double ys = sfilter->process(x);
         CAPTURE(k, yv, ys);
         REQUIRE(yv == ys);
     }
@@ -132,7 +134,9 @@ TEST_CASE("l1 default output filter inherits the Butterworth low-pass", "[l1]")
     // handful of complex multiply-adds and one division (each up to one ULP at
     // the O(1) magnitude scale) into a decibel tolerance via the local
     // derivative of 20*log10(x)/ln(10) at the target magnitude.
-    const auto c = biquad<double>::low_pass(fc, fs).coefficients();
+    const auto prototype = biquad<double>::low_pass(fc, fs);
+    REQUIRE(prototype.has_value());
+    const auto c = prototype->coefficients();
     constexpr double rounding_op_margin = 16.0;
     const double eps = std::numeric_limits<double>::epsilon();
     const double target_mag = 1.0 / std::numbers::sqrt2;

@@ -7,7 +7,7 @@
 
 int main()
 {
-    auto filt = ctrlpp::make_butterworth<4>(50.0, 1000.0);
+    auto filt = ctrlpp::make_butterworth<4>(50.0, 1000.0).value();
 
     constexpr int n_samples = 200;
 

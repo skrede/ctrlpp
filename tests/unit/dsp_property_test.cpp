@@ -41,13 +41,16 @@ TEST_CASE("dsp property tests", "[dsp][property]")
             auto f1 = biquad<double>::low_pass(10.0, 100.0);
             auto f2 = biquad<double>::low_pass(10.0, 100.0);
             auto f3 = biquad<double>::low_pass(10.0, 100.0);
+            RC_ASSERT(f1.has_value());
+            RC_ASSERT(f2.has_value());
+            RC_ASSERT(f3.has_value());
 
             double max_err = 0.0;
             for(std::size_t i = 0; i < N; ++i)
             {
-                double y_ax = f1.process(a * x_sig[i] + b * y_sig[i]);
-                double y_a = f2.process(x_sig[i]);
-                double y_b = f3.process(y_sig[i]);
+                double y_ax = f1->process(a * x_sig[i] + b * y_sig[i]);
+                double y_a = f2->process(x_sig[i]);
+                double y_b = f3->process(y_sig[i]);
                 double combined = a * y_a + b * y_b;
                 max_err = std::max(max_err, std::abs(y_ax - combined));
             }
@@ -91,12 +94,38 @@ TEST_CASE("dsp property tests", "[dsp][property]")
             auto dc_val = *bounded_double(0.1, 10.0);
 
             auto filter = biquad<double>::low_pass(20.0, 1000.0);
+            RC_ASSERT(filter.has_value());
 
             double output = 0.0;
             for(int i = 0; i < 500; ++i)
-                output = filter.process(dc_val);
+                output = filter->process(dc_val);
 
             // After settling, output should approach dc_val
             RC_ASSERT(std::abs(output - dc_val) < 0.01 * dc_val + 1e-10); });
+    }
+
+    SECTION("cascade factories accept exactly the open Nyquist interval (0, fs/2)")
+    {
+        rc::prop("cascade factory design domain", [](void)
+                 {
+            auto fs = *bounded_double(1.0, 10000.0);
+            auto ratio = *bounded_double(0.01, 2.0);
+            auto cutoff = ratio * fs / 2.0;
+
+            auto butter = make_butterworth<4>(cutoff, fs);
+            auto cheby = make_chebyshev1<4>(cutoff, fs, 1.0);
+
+            if(ratio > 0.0 && ratio < 1.0)
+            {
+                RC_ASSERT(butter.has_value());
+                RC_ASSERT(cheby.has_value());
+            }
+            else
+            {
+                RC_ASSERT(!butter.has_value());
+                RC_ASSERT(butter.error() == dsp_error::cutoff_exceeds_nyquist);
+                RC_ASSERT(!cheby.has_value());
+                RC_ASSERT(cheby.error() == dsp_error::cutoff_exceeds_nyquist);
+            } });
     }
 }

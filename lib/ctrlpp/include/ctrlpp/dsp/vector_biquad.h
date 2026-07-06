@@ -6,8 +6,10 @@
 /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6 (DF-II / TDF-II structures)
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/dsp/biquad.h"
+#include "ctrlpp/dsp/dsp_types.h"
 #include "ctrlpp/dsp/discrete_filter.h"
 
 #include "ctrlpp/util/concepts.h"
@@ -70,22 +72,29 @@ public:
         }
     }
 
-    static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> vector_biquad
+    [[nodiscard]] static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> expected<vector_biquad, dsp_error>
     {
         auto const proto = biquad<Scalar>::low_pass(cutoff_hz, sample_hz);
-        return vector_biquad{detail::filled_array<biquad<Scalar>, N>(proto)};
+        if(!proto.has_value())
+            return unexpected(proto.error());
+        return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};
     }
 
-    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> vector_biquad
+    [[nodiscard]] static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> expected<vector_biquad, dsp_error>
     {
         auto const proto = biquad<Scalar>::notch(freq_hz, sample_hz, q);
-        return vector_biquad{detail::filled_array<biquad<Scalar>, N>(proto)};
+        if(!proto.has_value())
+            return unexpected(proto.error());
+        return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};
     }
 
-    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> vector_biquad
+    [[nodiscard]] static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz)
+        -> expected<vector_biquad, dsp_error>
     {
         auto const proto = biquad<Scalar>::dirty_derivative(bandwidth_hz, sample_hz);
-        return vector_biquad{detail::filled_array<biquad<Scalar>, N>(proto)};
+        if(!proto.has_value())
+            return unexpected(proto.error());
+        return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};
     }
 
 private:
@@ -134,21 +143,26 @@ private:
 
 template <std::size_t Order, std::size_t N, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-auto make_vector_butterworth(Scalar cutoff_hz, Scalar sample_hz) -> vector_cascaded_biquad<Scalar, N, Order / 2>
+[[nodiscard]] auto make_vector_butterworth(Scalar cutoff_hz, Scalar sample_hz)
+    -> expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error>
 {
     auto const proto = make_butterworth<Order>(cutoff_hz, sample_hz);
+    if(!proto.has_value())
+        return unexpected(proto.error());
     return vector_cascaded_biquad<Scalar, N, Order / 2>{
-        detail::filled_array<cascaded_biquad<Scalar, Order / 2>, N>(proto)};
+        detail::filled_array<cascaded_biquad<Scalar, Order / 2>, N>(*proto)};
 }
 
 template <std::size_t Order, std::size_t N, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-auto make_vector_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
-    -> vector_cascaded_biquad<Scalar, N, Order / 2>
+[[nodiscard]] auto make_vector_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
+    -> expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error>
 {
     auto const proto = make_chebyshev1<Order>(cutoff_hz, sample_hz, ripple_db);
+    if(!proto.has_value())
+        return unexpected(proto.error());
     return vector_cascaded_biquad<Scalar, N, Order / 2>{
-        detail::filled_array<cascaded_biquad<Scalar, Order / 2>, N>(proto)};
+        detail::filled_array<cascaded_biquad<Scalar, Order / 2>, N>(*proto)};
 }
 
 namespace detail
