@@ -5,7 +5,7 @@
 ///
 /// `dare_error` enumerates the structured failure modes a DARE solve can produce;
 /// `dare_result` carries the solution P plus diagnostic scalars (subspace separation,
-/// reorder completeness). Together they form the `std::expected<dare_result, dare_error>`
+/// reorder completeness). Together they form the `ctrlpp::expected<dare_result, dare_error>`
 /// contract of `ctrlpp::dare`.
 
 #include "ctrlpp/util/concepts.h"

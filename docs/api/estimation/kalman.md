@@ -44,7 +44,7 @@ using system_t          = discrete_state_space<Scalar, NX, NU, NY>;
 kalman_filter(system_t sys, kalman_config<Scalar, NX, NU, NY> config);
 ```
 
-Constructs the filter from a discrete state-space model and configuration. Uses C++23 designated initializers for config.
+Constructs the filter from a discrete state-space model and configuration. Uses C++20 designated initializers for config.
 
 ## Methods
 

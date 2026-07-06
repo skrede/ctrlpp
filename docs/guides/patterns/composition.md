@@ -24,7 +24,7 @@ no runtime branching.
 
 ## 2. Concept-Based Injection (Solver Backends)
 
-C++23 concepts define what a solver backend must provide. MPC and NMPC accept
+C++20 concepts define what a solver backend must provide. MPC and NMPC accept
 any type satisfying `qp_solver` or `nlp_solver` as a template parameter:
 
 ```cpp

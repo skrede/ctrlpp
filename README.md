@@ -4,9 +4,9 @@
 [![Windows](https://github.com/skrede/ctrlpp/actions/workflows/windows.yml/badge.svg?branch=master)](https://github.com/skrede/ctrlpp/actions/workflows/windows.yml)
 [![codecov](https://codecov.io/gh/skrede/ctrlpp/branch/master/graph/badge.svg)](https://codecov.io/gh/skrede/ctrlpp)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 
-**ctrlpp** is a C++23 control systems library with policy-based composition and concept-constrained interfaces. Header-only and Eigen-backed. PID controllers compose from orthogonal policies (anti-windup, derivative filtering, rate limiting); estimators and MPC/MHE inject solver backends through concepts; system identification runs online or offline with unified result types.
+**ctrlpp** is a C++20 control systems library with policy-based composition and concept-constrained interfaces. Header-only and Eigen-backed. PID controllers compose from orthogonal policies (anti-windup, derivative filtering, rate limiting); estimators and MPC/MHE inject solver backends through concepts; system identification runs online or offline with unified result types.
 
 **NB:** This library is still under development and has not undergone rigorous real-world testing beyond the extensive test suite under `tests/`. Reports and experiences from use or testing of this library will be appreciated.
 
@@ -19,7 +19,7 @@
 - **Signal processing**<br/> biquad IIR sections (Butterworth, Chebyshev), FIR filters, and cascaded filter chains.
 - **System identification**<br/> RLS, batch/recursive ARX, and N4SID subspace identification with fit metrics.
 - **Lie group utilities**<br/> SO(3) quaternion exponential/logarithm maps for attitude estimation.
-- **Model utilities**<br/> state-space and transfer function representations, discretisation, conversion, stability analysis, and C++23 concepts for dynamics, measurement, and constraint models.
+- **Model utilities**<br/> state-space and transfer function representations, discretisation, conversion, stability analysis, and C++20 concepts for dynamics, measurement, and constraint models.
 
 ## Quick Start
 

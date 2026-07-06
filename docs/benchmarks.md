@@ -9,7 +9,7 @@ The benchmark suite is a standalone CMake project under `benchmarks/`.
 
 ### Prerequisites
 
-- C++23 compiler
+- C++20 compiler
 - Eigen 3.4+
 - OSQP 1.0+ and NLopt (for MPC/MHE benchmarks)
 - nanobench (fetched automatically via FetchContent)

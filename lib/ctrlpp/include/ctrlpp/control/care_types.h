@@ -5,7 +5,7 @@
 ///
 /// `care_error` enumerates the structured failure modes a CARE solve can produce;
 /// `care_result` carries the solution P plus diagnostic scalars. Together they form
-/// the `std::expected<care_result, care_error>` contract of `ctrlpp::care`.
+/// the `ctrlpp::expected<care_result, care_error>` contract of `ctrlpp::care`.
 
 #include "ctrlpp/util/concepts.h"
 

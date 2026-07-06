@@ -18,7 +18,7 @@ level 1 coverage.
 ## Cross-validation against GNU Octave
 
 The `validation/` directory contains 17 test cases that run identical
-scenarios in both ctrlpp (C++23) and GNU Octave (with the Control and Signal
+scenarios in both ctrlpp (C++20) and GNU Octave (with the Control and Signal
 packages), then compare outputs column-by-column.  The comparison uses a
 combined tolerance criterion: pass iff `|ref - cand| <= atol + rtol * |ref|`
 for every element (default `atol = 1e-10`, `rtol = 1e-8`).

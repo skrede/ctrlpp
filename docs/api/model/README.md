@@ -20,7 +20,7 @@ estimators, and identification algorithms operate on.
 
 ### Concepts
 
-These are C++23 concepts used as template constraints by EKF, UKF, particle
+These are C++20 concepts used as template constraints by EKF, UKF, particle
 filter, NMPC, MHE, and other algorithm types. They define what a user-provided
 model must look like.
 

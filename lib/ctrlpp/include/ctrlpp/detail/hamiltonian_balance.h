@@ -39,6 +39,8 @@
 /// @cite lapack_dgebal : Reference LAPACK SRC/dgebal.f phase 2 algorithm
 /// @cite benner2001    : Benner, "Symplectic Balancing of Hamiltonian Matrices", 2001 (structured alternative, deferred)
 
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/control/care_types.h"
 
 #include "ctrlpp/detail/schur_reorder.h"
@@ -51,7 +53,6 @@
 #include <limits>
 #include <complex>
 #include <cstddef>
-#include <expected>
 #include <algorithm>
 #include <type_traits>
 
@@ -138,7 +139,7 @@ template <typename Scalar, std::size_t NX,
           conditioning_policy Cond = pivot_ratio_conditioning>
 auto care_solve_via_balanced_schur(
     const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& H_in)
-    -> std::expected<care_result<Scalar, NX>, care_error>
+    -> ctrlpp::expected<care_result<Scalar, NX>, care_error>
 {
     constexpr int n  = int(NX);
     constexpr int n2 = 2 * n;
@@ -146,7 +147,7 @@ auto care_solve_via_balanced_schur(
     using Vec2N = Eigen::Matrix<Scalar, n2, 1>;
 
     if (!H_in.allFinite())
-        return std::unexpected(care_error::non_finite_input);
+        return ctrlpp::unexpected(care_error::non_finite_input);
 
     Mat2N H = H_in;
     Vec2N D;
@@ -154,12 +155,12 @@ auto care_solve_via_balanced_schur(
 
     Eigen::RealSchur<Mat2N> schur(H);
     if (schur.info() != Eigen::Success)
-        return std::unexpected(care_error::schur_failed);
+        return ctrlpp::unexpected(care_error::schur_failed);
 
     Mat2N T = schur.matrixT();
     Mat2N U = schur.matrixU();
     if (!T.allFinite() || !U.allFinite())
-        return std::unexpected(care_error::non_finite_input);
+        return ctrlpp::unexpected(care_error::non_finite_input);
 
     const Scalar scale      = T.cwiseAbs().maxCoeff();
     const Scalar eps        = std::numeric_limits<Scalar>::epsilon();
@@ -171,9 +172,9 @@ auto care_solve_via_balanced_schur(
 
     auto rr = reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
     if (rr.placed < n)
-        return std::unexpected(care_error::non_lhp_stabilisable);
+        return ctrlpp::unexpected(care_error::non_lhp_stabilisable);
     if (!T.allFinite() || !U.allFinite())
-        return std::unexpected(care_error::non_finite_input);
+        return ctrlpp::unexpected(care_error::non_finite_input);
 
     U.leftCols(n).array().colwise() *= D.array();
 
@@ -184,13 +185,13 @@ auto care_solve_via_balanced_schur(
         switch (P_err.error())
         {
             case riccati_extract_error::singular_u11:
-                return std::unexpected(care_error::singular_u11);
+                return ctrlpp::unexpected(care_error::singular_u11);
             case riccati_extract_error::non_finite:
-                return std::unexpected(care_error::non_finite_input);
+                return ctrlpp::unexpected(care_error::non_finite_input);
             case riccati_extract_error::non_psd:
-                return std::unexpected(care_error::non_psd_solution);
+                return ctrlpp::unexpected(care_error::non_psd_solution);
         }
-        return std::unexpected(care_error::non_finite_input);
+        return ctrlpp::unexpected(care_error::non_finite_input);
     }
 
     out.subspace_separation = rr.subspace_separation;

@@ -1,6 +1,6 @@
 # ctrlpp Documentation
 
-Guides and API reference for the ctrlpp C++23 control library.
+Guides and API reference for the ctrlpp C++20 control library.
 
 ## Getting Started
 

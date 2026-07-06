@@ -104,6 +104,7 @@ make_test(dsp_response_anchor_test)
 make_test(trajectory_envelope_anchor_test)
 make_test(float_tier_test)
 make_test(float_instantiation_test)
+make_test(expected_test)
 
 if (CTRLPP_BUILD_OSQP)
     add_executable(mpc_osqp_test "${CMAKE_CURRENT_LIST_DIR}/mpc_osqp_test.cpp")

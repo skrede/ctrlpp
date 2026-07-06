@@ -8,7 +8,7 @@ applications.
 
 - [biquad](biquad.md)<br/> IIR second-order section with factory functions for low-pass, high-pass, band-pass, notch, and dirty derivative
 - [fir](fir.md)<br/> Finite impulse response filter with compile-time tap count
-- [discrete_filter](discrete-filter.md)<br/> C++23 concept for composable digital filters
+- [discrete_filter](discrete-filter.md)<br/> C++20 concept for composable digital filters
 
 ## When to use
 

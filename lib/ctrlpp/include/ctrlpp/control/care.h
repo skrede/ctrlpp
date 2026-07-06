@@ -19,6 +19,7 @@
 /// @cite bai_demmel_1993 -- Bai & Demmel, "On swapping diagonal blocks in real Schur form", 1993
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -37,7 +38,6 @@
 #include <limits>
 #include <complex>
 #include <cstddef>
-#include <expected>
 #include <type_traits>
 
 namespace ctrlpp
@@ -55,7 +55,7 @@ auto build_care_hamiltonian(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
                             const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
                             const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
                             const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
-    -> std::expected<Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>, care_error>
+    -> ctrlpp::expected<Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>, care_error>
 {
     constexpr int n = static_cast<int>(NX);
     constexpr int n2 = 2 * n;
@@ -63,7 +63,7 @@ auto build_care_hamiltonian(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     using Mat2Nx2N = Eigen::Matrix<Scalar, n2, n2>;
 
     if (!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite())
-        return std::unexpected(care_error::non_finite_input);
+        return ctrlpp::unexpected(care_error::non_finite_input);
 
     const MatNxN S = (B * R.colPivHouseholderQr().solve(
                              Eigen::Matrix<Scalar, int(NU), int(NX)>(B.transpose()))).eval();
@@ -75,7 +75,7 @@ auto build_care_hamiltonian(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     H.template block<n, n>(n, n) = -A.transpose();
 
     if (!H.allFinite())
-        return std::unexpected(care_error::non_finite_input);
+        return ctrlpp::unexpected(care_error::non_finite_input);
 
     return H;
 }
@@ -93,7 +93,7 @@ auto care_solve_from_hamiltonian(
     const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& H,
     Method /*method_tag*/ = {},
     Cond   /*cond_tag*/   = {})
-    -> std::expected<care_result<Scalar, NX>, care_error>
+    -> ctrlpp::expected<care_result<Scalar, NX>, care_error>
 {
     if constexpr (std::is_same_v<Method, schur_care_method>)
     {
@@ -103,12 +103,12 @@ auto care_solve_from_hamiltonian(
 
         Eigen::RealSchur<Mat2N> schur(H);
         if (schur.info() != Eigen::Success)
-            return std::unexpected(care_error::schur_failed);
+            return ctrlpp::unexpected(care_error::schur_failed);
 
         Mat2N T = schur.matrixT();
         Mat2N U = schur.matrixU();
         if (!T.allFinite() || !U.allFinite())
-            return std::unexpected(care_error::non_finite_input);
+            return ctrlpp::unexpected(care_error::non_finite_input);
 
         const Scalar scale = T.cwiseAbs().maxCoeff();
         const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
@@ -125,9 +125,9 @@ auto care_solve_from_hamiltonian(
 
         auto rr = reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
         if (rr.placed < n)
-            return std::unexpected(care_error::non_lhp_stabilisable);
+            return ctrlpp::unexpected(care_error::non_lhp_stabilisable);
         if (!T.allFinite() || !U.allFinite())
-            return std::unexpected(care_error::non_finite_input);
+            return ctrlpp::unexpected(care_error::non_finite_input);
 
         care_result<Scalar, NX> out;
         auto P_err = extract_riccati_solution_into<Scalar, n2>(out.P, U);
@@ -136,13 +136,13 @@ auto care_solve_from_hamiltonian(
             switch (P_err.error())
             {
                 case riccati_extract_error::singular_u11:
-                    return std::unexpected(care_error::singular_u11);
+                    return ctrlpp::unexpected(care_error::singular_u11);
                 case riccati_extract_error::non_finite:
-                    return std::unexpected(care_error::non_finite_input);
+                    return ctrlpp::unexpected(care_error::non_finite_input);
                 case riccati_extract_error::non_psd:
-                    return std::unexpected(care_error::non_psd_solution);
+                    return ctrlpp::unexpected(care_error::non_psd_solution);
             }
-            return std::unexpected(care_error::non_finite_input);
+            return ctrlpp::unexpected(care_error::non_finite_input);
         }
 
         out.subspace_separation = rr.subspace_separation;
@@ -163,7 +163,7 @@ auto care_solve_from_hamiltonian(
 
 /// @brief Continuous-time Algebraic Riccati Equation solver.
 ///
-/// Returns `std::expected<care_result<Scalar, NX>, care_error>`. On success,
+/// Returns `ctrlpp::expected<care_result<Scalar, NX>, care_error>`. On success,
 /// `result->P` is the stabilising solution; `result->subspace_separation` is the
 /// min pivot ratio across accepted swaps; `result->reorder_complete` is true iff
 /// every swap was accepted.
@@ -176,14 +176,14 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
           Method                                         /*method_tag*/ = {},
           Cond                                           /*cond_tag*/   = {})
-    -> std::expected<care_result<Scalar, NX>, care_error>
+    -> ctrlpp::expected<care_result<Scalar, NX>, care_error>
 {
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 
     auto H_result = detail::build_care_hamiltonian<Scalar, NX, NU>(A, B, Q, R);
     if (!H_result)
-        return std::unexpected(H_result.error());
+        return ctrlpp::unexpected(H_result.error());
 
     return detail::care_solve_from_hamiltonian<Scalar, NX, Method, Cond>(*H_result);
 }
@@ -200,7 +200,7 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           const Eigen::Matrix<Scalar, int(NX), int(NU)>& N,
           Method                                         method_tag = {},
           Cond                                           cond_tag   = {})
-    -> std::expected<care_result<Scalar, NX>, care_error>
+    -> ctrlpp::expected<care_result<Scalar, NX>, care_error>
 {
     auto Rinv_Nt = R.colPivHouseholderQr()
                        .solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(N.transpose()))

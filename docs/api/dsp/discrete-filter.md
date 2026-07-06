@@ -1,6 +1,6 @@
 # discrete_filter
 
-C++23 concept defining the minimal interface for composable digital filters. Any type satisfying this concept can be used interchangeably in filter chains, generic signal processing pipelines, and policy-based compositions.
+C++20 concept defining the minimal interface for composable digital filters. Any type satisfying this concept can be used interchangeably in filter chains, generic signal processing pipelines, and policy-based compositions.
 
 ## Header
 
