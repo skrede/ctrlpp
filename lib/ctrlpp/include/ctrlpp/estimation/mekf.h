@@ -128,8 +128,13 @@ private:
 
         Eigen::Matrix<Scalar, 3, 3> C = so3::exp(omega_dt).toRotationMatrix();
 
+        // The filter carries a right (body-frame) multiplicative error
+        // (q = q_nominal * exp(delta_att), see apply_multiplicative_correction),
+        // so the attitude error propagates with the transpose of the incremental
+        // rotation: from exp(-omega_dt) * exp(delta) * exp(omega_dt) = exp(C^T delta)
+        // the attitude sub-block of F is C^T, not C.
         cov_matrix_t F = cov_matrix_t::Identity();
-        F.template block<3, 3>(0, 0) = C;
+        F.template block<3, 3>(0, 0) = C.transpose();
         F.template block<3, nb>(0, 3) = -Eigen::Matrix<Scalar, 3, nb>::Identity() * dt;
 
         P_ = detail::symmetrize((F * P_ * F.transpose() + Q_).eval());

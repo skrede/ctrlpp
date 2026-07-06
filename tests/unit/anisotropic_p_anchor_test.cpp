@@ -165,7 +165,7 @@ TEST_CASE("SO(3) manifold sigma points reconstruct a non-identity-pivot tangent 
     }
 }
 
-TEST_CASE("MEKF error-state transition matches the analytic covariance transform on an anisotropic P", "[estimation][anchor][!shouldfail]")
+TEST_CASE("MEKF error-state transition matches the analytic covariance transform on an anisotropic P", "[estimation][anchor]")
 {
     mekf_config<double, NB, NY> cfg;
     cfg.P0.setZero();

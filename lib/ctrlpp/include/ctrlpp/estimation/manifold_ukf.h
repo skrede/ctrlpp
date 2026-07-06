@@ -35,6 +35,18 @@ concept manifold_ukf_dynamics_model = requires(const D& d, const Eigen::Quaterni
     { d(q, u) } -> std::convertible_to<Eigen::Quaternion<Scalar>>;
 };
 
+/// @brief Filter-health status the caller can inspect after any step.
+///
+/// `ok` means every geodesic (Karcher) mean converged within the configured
+/// tolerance; `mean_not_converged` latches once a geodesic-mean iteration
+/// exhausted its budget without meeting the tolerance, signaling that the
+/// predicted attitude may be a non-converged iterate rather than the true mean.
+enum class manifold_ukf_health
+{
+    ok,
+    mean_not_converged
+};
+
 template <ctrlpp_floating_scalar Scalar, std::size_t NY>
 struct manifold_ukf_config
 {
@@ -43,7 +55,6 @@ struct manifold_ukf_config
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
     Eigen::Quaternion<Scalar> q0{Eigen::Quaternion<Scalar>::Identity()};
     Matrix<Scalar, 3, 3> P0{Matrix<Scalar, 3, 3>::Identity()};
-    Scalar dt{Scalar{0.01}};
     std::size_t geodesic_mean_max_iter{30};
     Scalar geodesic_mean_tol{Scalar{1e-9}};
 };
@@ -51,13 +62,29 @@ struct manifold_ukf_config
 namespace detail
 {
 
+/// @brief Outcome of a geodesic-mean iteration: the mean plus whether the
+/// tangent-space update converged within tolerance and the final residual norm.
+template <typename Scalar>
+struct geodesic_mean_result
+{
+    Eigen::Quaternion<Scalar> mean;
+    bool converged;
+    Scalar residual;
+};
+
 /// @brief Compute geodesic (intrinsic) mean on SO(3) via iterative tangent-space averaging.
+///
+/// Reports whether the tangent-space correction fell below tolerance within the
+/// iteration budget so the caller can flag a non-converged mean rather than
+/// silently accepting the last iterate.
 ///
 /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Alg. 1
 template <typename Scalar, std::size_t NP>
-Eigen::Quaternion<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<Scalar>, NP>& qs, const std::array<Scalar, NP>& Wm, std::size_t max_iter, Scalar tol)
+geodesic_mean_result<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<Scalar>, NP>& qs, const std::array<Scalar, NP>& Wm, std::size_t max_iter, Scalar tol)
 {
     auto q_mean = qs[0];
+    Scalar residual = Scalar{0};
+    bool converged = false;
     for(std::size_t iter = 0; iter < max_iter; ++iter)
     {
         Vector<Scalar, 3> eps = Vector<Scalar, 3>::Zero();
@@ -73,11 +100,15 @@ Eigen::Quaternion<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<
             }
             eps += Wm[i] * so3::log(q_mean.conjugate() * qi);
         }
-        if(eps.norm() < tol)
+        residual = eps.norm();
+        if(residual < tol)
+        {
+            converged = true;
             break;
+        }
         q_mean = (q_mean * so3::exp(eps)).normalized();
     }
-    return q_mean;
+    return {q_mean, converged, residual};
 }
 
 }
@@ -118,7 +149,10 @@ public:
     {
         auto sigma = m_strategy.generate(m_q, m_P);
         auto q_prop = propagate_manifold_sigma_points(sigma.points, omega);
-        auto q_new = compute_manifold_predicted_mean(q_prop, sigma.Wm);
+        auto mean_result = compute_manifold_predicted_mean(q_prop, sigma.Wm);
+        if(!mean_result.converged)
+            m_health = manifold_ukf_health::mean_not_converged;
+        auto q_new = mean_result.mean;
         m_P = compute_manifold_predicted_covariance(q_prop, q_new, sigma.Wc);
         m_q = q_new;
         update_state_cache();
@@ -145,6 +179,8 @@ public:
 
     const Eigen::Quaternion<Scalar>& attitude() const { return m_q; }
 
+    manifold_ukf_health health() const { return m_health; }
+
 private:
     /// @brief Propagate sigma point quaternions through dynamics model.
     ///
@@ -163,7 +199,7 @@ private:
     /// @brief Compute geodesic mean of propagated quaternions.
     ///
     /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Alg. 1
-    auto compute_manifold_predicted_mean(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& q_prop, const std::array<Scalar, num_sigma>& Wm) const -> Eigen::Quaternion<Scalar>
+    auto compute_manifold_predicted_mean(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& q_prop, const std::array<Scalar, num_sigma>& Wm) const -> detail::geodesic_mean_result<Scalar>
     {
         return detail::geodesic_mean_impl(q_prop, Wm, m_max_iter, m_tol);
     }
@@ -257,7 +293,13 @@ private:
     {
         Vector<Scalar, 3> delta_phi = K * m_innovation;
         m_q = (m_q * so3::exp(delta_phi)).normalized();
-        m_P = detail::symmetrize((m_P - K * S * K.transpose()).eval());
+
+        // Transport the tangent covariance into the corrected frame with the
+        // reset Jacobian G = I - 0.5 * skew(delta_phi), mirroring the MEKF reset.
+        // Without it the covariance stays anchored to the pre-correction frame
+        // and misreports confidence after a large correction.
+        cov_matrix_t G = cov_matrix_t::Identity() - Scalar{0.5} * so3::skew(delta_phi);
+        m_P = detail::symmetrize((G * (m_P - K * S * K.transpose()) * G.transpose()).eval());
     }
 
     Scalar m_tol;
@@ -271,6 +313,7 @@ private:
     Eigen::Quaternion<Scalar> m_q;
     state_vector_t m_state_cache;
     output_vector_t m_innovation;
+    manifold_ukf_health m_health{manifold_ukf_health::ok};
 
     void update_state_cache() { m_state_cache = so3::to_vec(m_q); }
 };

@@ -339,16 +339,15 @@ TEST_CASE("UKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
     REQUIRE(nis_avg <= nis_band.upper);
 }
 
-TEST_CASE("MEKF attitude NEES Monte-Carlo average lies within the chi-square consistency band on an anisotropic P", "[estimation][anchor][!shouldfail]")
+TEST_CASE("MEKF attitude NEES Monte-Carlo average lies within the chi-square consistency band on an anisotropic P", "[estimation][anchor]")
 {
-    // A4/E1: the error-state transition propagates the attitude sub-block
-    // with the incremental rotation where its own multiplicative-correction
-    // convention (apply_multiplicative_correction: q_ = q_ * exp(delta_att))
-    // requires the incremental rotation's transpose; the effect is invisible
-    // on isotropic covariance (a rotation commutes with a scalar multiple of
-    // identity) so an anisotropic initial attitude covariance is used here to
-    // expose it. This fails against pre-fix code, so [!shouldfail] reports it
-    // passing until the transition matrix is corrected.
+    // The error-state transition propagates the attitude sub-block with the
+    // transpose of the incremental rotation, matching the filter's right-error
+    // multiplicative-correction convention (apply_multiplicative_correction:
+    // q_ = q_ * exp(delta_att)). The effect is invisible on isotropic covariance
+    // (a rotation commutes with a scalar multiple of identity), so an anisotropic
+    // initial attitude covariance is used here to expose it; with the corrected
+    // transition the attitude NEES lands inside the chi-square consistency band.
     constexpr std::size_t NB = 3; // mekf's predict_impl requires a >=3-dim bias (b_.head<3>())
     constexpr std::size_t NY_MEKF = 3;
 
@@ -386,7 +385,14 @@ TEST_CASE("MEKF attitude NEES Monte-Carlo average lies within the chi-square con
     for(std::size_t m = 0; m < M; ++m)
     {
         mekf<double, NB, NY_MEKF, vector_observation_measurement> filt(meas, cfg);
-        Eigen::Quaternion<double> q_true = Eigen::Quaternion<double>::Identity();
+        // Sample the initial true attitude error from P0 so the NEES is
+        // consistent from t=0 (Bar-Shalom, Li & Kirubarajan 2001, Sec. 5.4).
+        // The single-vector measurement leaves one rotational DOF unobservable,
+        // so a zero initial error against a nonzero P0 would never wash out and
+        // would bias the NEES low. The filter estimate starts at q0 = Identity,
+        // so under the right-error convention q_true = q_est * exp(dtheta0).
+        Vector<double, 3> dtheta0 = sample_gaussian<3>(cfg.P0.template block<3, 3>(0, 0), gen);
+        Eigen::Quaternion<double> q_true = so3::exp(dtheta0);
 
         for(std::size_t t = 0; t < T; ++t)
         {
