@@ -46,10 +46,12 @@ otherwise produce silent corruption through intermediate overflow:
   likelihood (complete weight collapse), the log-weight normalizer resets to
   uniform weights rather than producing NaN from `-inf - (-inf)`.
 
-- **UKF covariance stabilization:** The unscented Kalman filter uses a
-  numerically stabilized covariance update that adds `K*R*K^T` back after the
-  standard subtraction. This PSD compensation term prevents the covariance from
-  going indefinite due to negative Merwe sigma point weights, without requiring
+- **UKF covariance update:** The unscented Kalman filter uses the algebraically
+  complete minimum mean-square-error reduction `P = P - K*S*K^T`, where
+  `S = Pzz + R` and `K = Pxz*S^{-1}`. Because `K*S*K^T = K*Pxz^T`, this term is
+  exactly the uncertainty the measurement removes and no extra `K*R*K^T` term is
+  added. The sigma points are built from a permutation-correct covariance square
+  root, so the reduction stays symmetric positive semidefinite without requiring
   an eigendecomposition.
 
 - **N4SID degenerate data:** The subspace identification algorithm checks

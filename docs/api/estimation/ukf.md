@@ -72,7 +72,7 @@ Generates sigma points from current (x, P), propagates them through dynamics, an
 void update(const output_vector_t& z);
 ```
 
-Generates sigma points, transforms through measurement model, computes innovation covariance S and cross-covariance Pxz, then applies the Kalman gain correction. The covariance update uses a numerically stabilized formula that adds `K*R*K^T` back after the subtraction, compensating for potential PSD loss from negative Merwe sigma point weights.
+Generates sigma points, transforms through measurement model, computes innovation covariance S and cross-covariance Pxz, then applies the Kalman gain correction. The covariance update uses the algebraically complete minimum mean-square-error reduction `P = P - K*S*K^T`, with `S = Pzz + R` and `K = Pxz*S^{-1}`. Since `K*S*K^T = K*Pxz^T`, this term is exactly the uncertainty the measurement removes, and no extra `K*R*K^T` term is added. The sigma points feeding this update are built from a permutation-correct covariance square root, so the reduction stays symmetric positive semidefinite.
 
 ### state
 
@@ -91,6 +91,22 @@ const cov_matrix_t& covariance() const;
 ```cpp
 const output_vector_t& innovation() const;
 ```
+
+### nis
+
+```cpp
+Scalar nis() const;
+```
+
+Returns the Normalized Innovation Squared from the last update, `innovation^T S^-1 innovation`, chi-square distributed with dof = NY under a consistent filter. Useful for online consistency monitoring.
+
+### health
+
+```cpp
+ukf_health health() const;
+```
+
+Returns the filter-health status, one of `ukf_health::ok` or `ukf_health::covariance_repaired`. The status starts at `ok` and latches to `covariance_repaired` the first time a non-positive-definite covariance had to be repaired to the nearest symmetric positive definite matrix during sigma-point generation, signaling that the estimate has entered a numerically degraded regime.
 
 ## Supporting Types
 

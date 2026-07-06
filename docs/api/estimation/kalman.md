@@ -62,7 +62,7 @@ Propagates state and covariance one step forward: x = Ax + Bu, P = APA' + Q.
 void update(const output_vector_t& z);
 ```
 
-Incorporates a measurement via the Kalman gain. Uses Joseph-form covariance update: P = (I-KC)P(I-KC)' + KRK'. Computes and stores the innovation and NEES.
+Incorporates a measurement via the Kalman gain. Uses Joseph-form covariance update: P = (I-KC)P(I-KC)' + KRK'. Computes and stores the innovation and NIS.
 
 ### state
 

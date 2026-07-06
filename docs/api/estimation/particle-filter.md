@@ -6,7 +6,7 @@ Bootstrap Sequential Importance Resampling (SIR) particle filter with compile-ti
 
 | Form | Header |
 |------|--------|
-| `ctrlpp::particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, Resampler, Rng>` | `#include <ctrlpp/estimation/particle_filter.h>` |
+| `ctrlpp::particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, Resampler, Rng, Likelihood>` | `#include <ctrlpp/estimation/particle_filter.h>` |
 
 No convenience header exists for this type. Use the categorical path.
 
@@ -23,6 +23,7 @@ No convenience header exists for this type. Use the categorical path.
 | `Measurement` | satisfies `measurement_model<Scalar, NX, NY>` | Callable: `(Vector<NX>) -> Vector<NY>` |
 | `Resampler` | satisfies `resampling_strategy<Rng, NP>` | Resampling algorithm (default: `systematic_resampling`) |
 | `Rng` | satisfies `std::uniform_random_bit_generator` | RNG type (default: `std::mt19937_64`) |
+| `Likelihood` | satisfies `pf_likelihood_model<Scalar, NY>` | Measurement-likelihood policy (default: `detail::gaussian_likelihood<Scalar, NY>`) |
 
 ## Type Aliases
 
@@ -49,22 +50,26 @@ using output_vector_t = Vector<Scalar, NY>;
 
 ```cpp
 particle_filter(Dynamics dynamics, Measurement measurement,
-                pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{});
+                pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{},
+                Likelihood likelihood = Likelihood{});
 
 particle_filter(Dynamics dynamics, Measurement measurement,
-                pf_config<Scalar, NX, NU, NY> config, Resampler resampler, Rng rng = Rng{});
+                pf_config<Scalar, NX, NU, NY> config, Resampler resampler,
+                Rng rng = Rng{}, Likelihood likelihood = Likelihood{});
 ```
 
 ### Factory Function
 
 ```cpp
 template <std::size_t NP, typename Dynamics, typename Measurement, typename Scalar,
-          std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64>
+          std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64,
+          typename Likelihood = detail::gaussian_likelihood<Scalar, NY>>
 auto make_particle_filter(Dynamics dynamics, Measurement measurement,
-                          pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{});
+                          pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{},
+                          Likelihood likelihood = Likelihood{});
 ```
 
-Since NP cannot be deduced via CTAD, this factory function provides a convenient construction interface.
+Since NP cannot be deduced via CTAD, this factory function provides a convenient construction interface. Passing a custom `Likelihood` as the trailing argument threads it through to the filter.
 
 ## Methods
 
@@ -82,7 +87,7 @@ Propagates all NP particles through the dynamics model with additive Gaussian pr
 void update(const output_vector_t& z);
 ```
 
-Updates particle weights using the Gaussian measurement likelihood, normalizes, and resamples (with roughening) if the Effective Sample Size drops below `ess_threshold`. If all particles have negligible likelihood (complete weight collapse), the log-weight normalizer automatically resets to uniform weights to recover from particle depletion.
+Updates particle weights using the configured measurement-likelihood policy (Gaussian by default), normalizes, and resamples (with roughening) if the Effective Sample Size drops below `ess_threshold`. If all particles have negligible likelihood (complete weight collapse), the normalizer resets to uniform weights to recover from particle depletion. This recovery applies to both weight modes: the log mode resets when the maximum log-weight is not finite, and the linear mode resets when the total weight underflows to a non-positive sum.
 
 ### state
 
@@ -143,6 +148,23 @@ enum class weight_representation { log, linear };
 ```
 
 Log-space avoids numerical underflow for large particle counts. Linear is simpler but may underflow.
+
+### Likelihood policy
+
+The measurement-likelihood policy is injectable through the last class template parameter and the trailing constructor / factory argument. A policy is a callable that returns a scalar log-likelihood for a single particle's innovation:
+
+```cpp
+Scalar operator()(const Vector<Scalar, NY>& z, const Vector<Scalar, NY>& z_pred,
+                  const Matrix<Scalar, NY, NY>& R_inv, Scalar log_det_2piR) const;
+```
+
+`R_inv` is the precomputed measurement precision and `log_det_2piR` is the precomputed log normalizer `log((2*pi)^NY det R)`, both derived once from the configured `R`. The default policy `detail::gaussian_likelihood<Scalar, NY>` reproduces the Gaussian log-likelihood exactly:
+
+```cpp
+return Scalar{-0.5} * (z - z_pred).transpose() * R_inv * (z - z_pred) - Scalar{0.5} * log_det_2piR;
+```
+
+A custom policy is the correct place to handle measurement topology. For a bearing sensor, for example, wrap the scalar innovation across the +/-pi cut with `std::remainder(z(0) - z_pred(0), 2*pi)` before forming the Gaussian, so a measurement near +pi and a prediction near -pi are treated as close rather than maximally distant. The policy must satisfy the `pf_likelihood_model<Scalar, NY>` concept.
 
 ## Usage Example
 

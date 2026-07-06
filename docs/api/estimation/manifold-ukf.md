@@ -39,7 +39,6 @@ using cov_matrix_t    = Matrix<Scalar, 3, 3>;   // tangent-space covariance
 | `R` | `Matrix<Scalar, NY, NY>` | Identity | Measurement noise covariance |
 | `q0` | `Eigen::Quaternion<Scalar>` | Identity | Initial quaternion estimate |
 | `P0` | `Matrix<Scalar, 3, 3>` | Identity | Initial tangent-space covariance |
-| `dt` | `Scalar` | `0.01` | Time step |
 | `geodesic_mean_max_iter` | `std::size_t` | `30` | Maximum iterations for geodesic mean computation |
 | `geodesic_mean_tol` | `Scalar` | `1e-9` | Convergence tolerance for geodesic mean |
 
@@ -60,7 +59,7 @@ CTAD deduction guide available: deduces to `so3_merwe_sigma_points` as default s
 void predict(const input_vector_t& omega);
 ```
 
-Generates manifold sigma points around the current quaternion, propagates each through the dynamics model, and computes the geodesic mean and tangent-space covariance of the propagated set.
+Generates manifold sigma points around the current quaternion, propagates each through the dynamics model, and computes the geodesic (Frechet) mean and tangent-space covariance of the propagated set. The time step is embedded in the dynamics model, so no `dt` is passed here. If the geodesic-mean iteration exhausts its budget without converging, the filter latches a degraded status reported through `health()`.
 
 ### update
 
@@ -68,7 +67,7 @@ Generates manifold sigma points around the current quaternion, propagates each t
 void update(const output_vector_t& z);
 ```
 
-Generates manifold sigma points, transforms through measurement model, computes innovation covariance S and manifold cross-covariance Pxz (using log-map deviations), then applies the Kalman gain correction via the exponential map.
+Generates manifold sigma points, transforms through measurement model, computes innovation covariance S and manifold cross-covariance Pxz (using log-map deviations), then applies the Kalman gain correction via the exponential map. After the correction, the tangent-space covariance is transported into the corrected frame with the reset Jacobian G = I - 0.5 * skew(delta_phi), mirroring the MEKF reset, so the reported covariance stays anchored to the updated attitude rather than the pre-correction frame.
 
 ### state
 
@@ -99,6 +98,14 @@ const Eigen::Quaternion<Scalar>& attitude() const;
 ```
 
 Returns the quaternion estimate directly.
+
+### health
+
+```cpp
+manifold_ukf_health health() const;
+```
+
+Returns the filter-health status, one of `manifold_ukf_health::ok` or `manifold_ukf_health::mean_not_converged`. The status starts at `ok` and latches to `mean_not_converged` the first time a geodesic (Karcher) mean iteration exhausts its iteration budget without meeting `geodesic_mean_tol`. A latched status signals that the predicted attitude may be a non-converged iterate rather than the true geodesic mean.
 
 ## Supporting Types
 
@@ -144,8 +151,7 @@ int main()
         .Q = Eigen::Matrix3d::Identity() * 0.001,
         .R = Eigen::Matrix3d::Identity() * 0.1,
         .q0 = Eigen::Quaterniond::Identity(),
-        .P0 = Eigen::Matrix3d::Identity() * 0.01,
-        .dt = dt
+        .P0 = Eigen::Matrix3d::Identity() * 0.01
     };
 
     ctrlpp::manifold_ukf filter(dynamics, measurement, cfg);
