@@ -36,13 +36,16 @@ int main()
                                             .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
                                             .R = Eigen::Matrix<double, 1, 1>::Constant(0.01),
                                             .Qf = Eigen::Vector2d(200.0, 20.0).asDiagonal(),
-                                            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-10.0),
-                                            .u_max = Eigen::Matrix<double, 1, 1>::Constant(10.0)};
+                                            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-2.0),
+                                            .u_max = Eigen::Matrix<double, 1, 1>::Constant(2.0)};
 
     ctrlpp::nmpc<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)> controller(dynamics, cfg);
 
-    Eigen::Vector2d x(0.0, 0.0);
-    Eigen::Vector2d x_ref(std::numbers::pi, 0.0);
+    // With theta_ddot = +(g/l) sin(theta), theta = 0 is the unstable upright
+    // equilibrium and theta = pi is the stable hanging one. Start hanging and
+    // swing up to upright.
+    Eigen::Vector2d x(std::numbers::pi, 0.0);
+    Eigen::Vector2d x_ref(0.0, 0.0);
     constexpr double duration = 15.0;
 
     std::cout << "time,theta,theta_dot,torque,energy\n";
@@ -58,7 +61,9 @@ int main()
 
         Eigen::Matrix<double, 1, 1> u = *u_opt;
 
-        double energy = 0.5 * m * l * l * x[1] * x[1] - m * g * l * std::cos(x[0]);
+        // Potential sign matches the +(g/l) sin dynamics: E is minimal (-m g l)
+        // at the stable hanging point theta = pi and maximal (+m g l) upright.
+        double energy = 0.5 * m * l * l * x[1] * x[1] + m * g * l * std::cos(x[0]);
 
         std::cout << std::fixed << std::setprecision(4) << t << "," << x[0] << "," << x[1] << "," << u[0] << "," << energy << "\n";
 

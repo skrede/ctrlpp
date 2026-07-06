@@ -51,19 +51,24 @@ int main()
     Eigen::Matrix<Scalar, 2, 1> x_true;
     x_true << 1.0, 0.0;
 
+    Eigen::Matrix<Scalar, 1, 1> u = Eigen::Matrix<Scalar, 1, 1>::Zero();
+
     std::cout << "time,x_true_0,x_true_1,x_est_0,x_est_1,control\n";
 
     for(Scalar t = 0.0; t < duration; t += dt)
     {
-        auto x_est = kf.state();
-        auto u = controller.compute(x_est);
-
-        Eigen::Matrix<Scalar, 1, 1> z = sys_d.C * x_true;
-
-        std::cout << std::fixed << std::setprecision(4) << t << "," << x_true(0) << "," << x_true(1) << "," << x_est(0) << "," << x_est(1) << "," << u(0) << "\n";
-
+        // Propagate the estimate and the true plant with the previous control.
         kf.predict(u);
         x_true = ctrlpp::propagate(sys_d, x_true, u);
+
+        // Fuse a measurement sampled from the freshly propagated true state.
+        Eigen::Matrix<Scalar, 1, 1> z = sys_d.C * x_true;
         kf.update(z);
+
+        // Compute the control from the freshly updated estimate.
+        auto x_est = kf.state();
+        u = controller.compute(x_est);
+
+        std::cout << std::fixed << std::setprecision(4) << t << "," << x_true(0) << "," << x_true(1) << "," << x_est(0) << "," << x_est(1) << "," << u(0) << "\n";
     }
 }

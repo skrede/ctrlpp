@@ -9,3 +9,7 @@ target_compile_options(ctrlpp_lqr_02_setpoint_tracking PRIVATE ${CTRLPP_WARNING_
 add_executable(ctrlpp_lqr_03_observer_comparison ctrlpp_lqr_03_observer_comparison.cpp)
 target_link_libraries(ctrlpp_lqr_03_observer_comparison PRIVATE ctrlpp::ctrlpp)
 target_compile_options(ctrlpp_lqr_03_observer_comparison PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_lqr_04_pendulum_swingup ctrlpp_lqr_04_pendulum_swingup.cpp)
+target_link_libraries(ctrlpp_lqr_04_pendulum_swingup PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_lqr_04_pendulum_swingup PRIVATE ${CTRLPP_WARNING_FLAGS})

@@ -131,7 +131,8 @@ struct pendulum_dynamics
     {
         double theta = x[0];
         double omega = x[1];
-        double alpha = -g / l * std::sin(theta) + u[0];
+        // theta = 0 is the unstable upright equilibrium under this convention.
+        double alpha = g / l * std::sin(theta) + u[0];
         return {theta + omega * dt, omega + alpha * dt};
     }
 };
@@ -154,7 +155,7 @@ int main()
         controller(dynamics, cfg);
 
     Eigen::Vector2d x(1.0, 0.0);  // Start at 1 radian
-    Eigen::Vector2d x_ref(0.0, 0.0);  // Swing up to vertical
+    Eigen::Vector2d x_ref(0.0, 0.0);  // Drive toward the upright vertical (theta = 0)
 
     for(int k = 0; k < 100; ++k)
     {
