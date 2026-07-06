@@ -60,8 +60,13 @@ namespace detail
 ///     + sum_{k=0}^{N}   0.5 * v_k^T R_inv v_k    where v_k = z_k - h(x_k)
 ///     + L1 slack penalties
 ///
+/// The dynamics enter the estimate through the process-noise term w_k of the
+/// cost, not through a continuity equality. A hard continuity constraint would
+/// pin every w_k to zero on the feasible set and make the process weighting
+/// irrelevant, so the states across the window are coupled softly by the
+/// weighted dynamics residual instead.
+///
 /// Constraints:
-///   Continuity:  x_{k+1} - f(x_k, u_k) = 0    for k = 0..N-1
 ///   Path:        g(x_k) - s_k <= 0              for k = 0..N (if NC > 0)
 ///   Residual:    |z_k,i - h_i(x_k)| <= bound_i  for k = 0..N (if residual_bound set)
 ///
@@ -95,13 +100,11 @@ auto build_nmhe_problem(const Dynamics& dynamics,
     const int path_slack_offset = n_states;
 
     // Constraint count
-    const int n_continuity = Ni * nx;
     const int n_path_con = has_path_constraint ? (Ni + 1) * nc : 0;
     const int n_residual_con = has_residual ? (Ni + 1) * ny * 2 : 0;
-    const int n_constraints = n_continuity + n_path_con + n_residual_con;
+    const int n_constraints = n_path_con + n_residual_con;
 
-    const int continuity_start = 0;
-    const int path_con_start = n_continuity;
+    const int path_con_start = 0;
     const int residual_con_start = path_con_start + n_path_con;
 
     const Scalar arrival_weight = config.arrival_cost_weight;
@@ -153,20 +156,6 @@ auto build_nmhe_problem(const Dynamics& dynamics,
     // Constraints
     std::function<void(std::span<const Scalar>, std::span<Scalar>)> constraints = [=](std::span<const Scalar> z, std::span<Scalar> c)
     {
-        // Continuity constraints: x_{k+1} - f(x_k, u_k) = 0
-        for(int k = 0; k < Ni; ++k)
-        {
-            Eigen::Map<const Vector<Scalar, NX>> xk(z.data() + x_offset + k * nx);
-            Eigen::Map<const Vector<Scalar, NX>> xk1(z.data() + x_offset + (k + 1) * nx);
-
-            Vector<Scalar, NX> x_next = dynamics(xk, state->u_window[static_cast<std::size_t>(k)]);
-
-            for(int i = 0; i < nx; ++i)
-            {
-                c[static_cast<std::size_t>(continuity_start + k * nx + i)] = xk1[i] - x_next[i];
-            }
-        }
-
         // Path constraints: g(x_k) - s_k <= 0 (soft) or g(x_k) <= 0 (hard)
         if constexpr(NC > 0)
         {
@@ -244,8 +233,6 @@ auto build_nmhe_problem(const Dynamics& dynamics,
     // Constraint bounds
     Eigen::VectorX<Scalar> c_lower = Eigen::VectorX<Scalar>::Zero(n_constraints);
     Eigen::VectorX<Scalar> c_upper = Eigen::VectorX<Scalar>::Zero(n_constraints);
-
-    // Continuity: equality (c_lower = c_upper = 0, already set)
 
     // Path constraints: c_lower = -inf, c_upper = 0
     for(int i = path_con_start; i < path_con_start + n_path_con; ++i)

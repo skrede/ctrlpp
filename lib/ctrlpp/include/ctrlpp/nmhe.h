@@ -89,14 +89,25 @@ public:
 
     void update(const output_vector_t& z)
     {
+        // Capture the predicted (prior) estimate at the current time, before the
+        // measurement correction, so the oldest entry holds the window-head prior
+        // formed only from data strictly before the window (no double-count).
+        std::rotate(m_prior_state_window.begin(), m_prior_state_window.begin() + 1, m_prior_state_window.end());
+        std::rotate(m_prior_cov_window.begin(), m_prior_cov_window.begin() + 1, m_prior_cov_window.end());
+        m_prior_state_window.back() = m_ekf.state();
+        m_prior_cov_window.back() = m_ekf.covariance();
+
         m_ekf.update(z);
         std::rotate(m_z_window.begin(), m_z_window.begin() + 1, m_z_window.end());
         m_z_window.back() = z;
         m_state->z_window = m_z_window;
+        ++m_update_count;
 
-        if(m_step_count < N)
+        if(m_update_count <= N)
         {
-            m_x_window[m_step_count] = m_ekf.state();
+            if(m_step_count < N)
+                m_x_window[m_step_count] = m_ekf.state();
+            m_x_window[N] = m_ekf.state();
             m_innovation = m_ekf.innovation();
             m_diagnostics = mhe_diagnostics<Scalar>{.status = solve_status::optimal, .used_ekf_fallback = true};
             return;
@@ -110,8 +121,8 @@ public:
     const output_vector_t& innovation() const { return m_innovation; }
     std::span<const state_vector_t> trajectory() const { return {m_x_window.data(), N + 1}; }
     const state_vector_t& arrival_state() const { return m_x_window[0]; }
-    const cov_matrix_t& arrival_covariance() const { return m_ekf.covariance(); }
-    bool is_initialized() const { return m_step_count >= N; }
+    const cov_matrix_t& arrival_covariance() const { return m_prior_cov_window[0]; }
+    bool is_initialized() const { return m_update_count > N; }
     const mhe_diagnostics<Scalar>& diagnostics() const { return m_diagnostics; }
 
 private:
@@ -120,6 +131,8 @@ private:
         m_x_window.fill(config.x0);
         m_u_window.fill(input_vector_t::Zero());
         m_z_window.fill(output_vector_t::Zero());
+        m_prior_state_window.fill(config.x0);
+        m_prior_cov_window.fill(config.P0);
         m_state->arrival_state = config.x0;
         m_state->arrival_P_inv = config.P0.inverse();
     }
@@ -161,8 +174,8 @@ private:
 
     void update_arrival_cost()
     {
-        m_state->arrival_state = m_ekf.state();
-        m_state->arrival_P_inv = m_ekf.covariance().ldlt().solve(cov_matrix_t::Identity());
+        m_state->arrival_state = m_prior_state_window[0];
+        m_state->arrival_P_inv = m_prior_cov_window[0].ldlt().solve(cov_matrix_t::Identity());
     }
 
     void extract_nmhe_solution(const nlp_result<Scalar>& result)
@@ -249,8 +262,11 @@ private:
     std::array<state_vector_t, N + 1> m_x_window;
     std::array<input_vector_t, N> m_u_window;
     std::array<output_vector_t, N + 1> m_z_window;
+    std::array<state_vector_t, N + 1> m_prior_state_window;
+    std::array<cov_matrix_t, N + 1> m_prior_cov_window;
 
     std::size_t m_step_count{0};
+    std::size_t m_update_count{0};
     Eigen::VectorX<Scalar> m_warm_z;
     mhe_diagnostics<Scalar> m_diagnostics{};
     output_vector_t m_innovation;

@@ -29,14 +29,22 @@ namespace ctrlpp::detail
 
 /// Compute dimensions for the MHE QP.
 ///
-/// Decision vector layout: z = [x_0, x_1, ..., x_N, s_0, ..., s_N]
-/// where s_k are slack variables for soft box constraints (present only when
-/// soft_constraints=true and bounds exist).
+/// Decision vector layout: z = [x_0, ..., x_N, s_lo_0, ..., s_lo_N, s_up_0, ..., s_up_N]
+/// where s_lo_k and s_up_k are the lower and upper box slack variables (present
+/// only when soft_constraints=true and bounds exist). Two non-negative slacks
+/// are needed to soften a two-sided box.
+///
+/// The dynamics enter the estimate through the process-noise term of the cost,
+/// not through an equality constraint: the block-tridiagonal Hessian already
+/// encodes sum ||x_{k+1} - A x_k - B u_k||^2 weighted by the inverse process
+/// covariance, so there is no dynamics-constraint block. Keeping the dynamics
+/// as a hard equality would force every residual to zero and make the process
+/// weighting irrelevant.
 ///
 /// Constraint layout:
-///   Block 1: Dynamics equality  -- N rows of NX (x_{k+1} = A_k x_k + B_k u_k)
-///   Block 2: State box bounds   -- (N+1)*NX rows (identity on each x_k, with -I on slack)
-///   Block 3: Residual bounds    -- (N+1)*NY rows per direction (when residual_bound present)
+///   Block 1: State box bounds   -- soft: lower and upper softened rows plus
+///            slack non-negativity rows; hard: one row per state
+///   Block 2: Residual bounds    -- (N+1)*NY rows (when residual_bound present)
 struct mhe_qp_dims
 {
     int n_states;
@@ -55,17 +63,17 @@ template <std::size_t NX, std::size_t NY>
     constexpr int ny = static_cast<int>(NY);
     int Ni = static_cast<int>(N);
 
-    int n_states = (Ni + 1) * nx;
+    int n_state_vars = (Ni + 1) * nx;
     bool need_slack = has_soft_constraints && has_box_bounds;
-    int n_slack = need_slack ? (Ni + 1) * nx : 0;
-    int n_dec = n_states + n_slack;
+    int n_slack = need_slack ? 2 * n_state_vars : 0;
+    int n_dec = n_state_vars + n_slack;
 
-    int n_dyn = Ni * nx;
-    int n_box = has_box_bounds ? (Ni + 1) * nx : 0;
+    int n_dyn = 0;
+    int n_box = has_box_bounds ? (need_slack ? 4 * n_state_vars : n_state_vars) : 0;
     int n_residual = has_residual_bounds ? (Ni + 1) * ny : 0;
     int n_con = n_dyn + n_box + n_residual;
 
-    return {n_states, n_slack, n_dec, n_dyn, n_box, n_residual, n_con};
+    return {n_state_vars, n_slack, n_dec, n_dyn, n_box, n_residual, n_con};
 }
 
 /// Add upper-triangular entries from a dense block to the triplet list.
@@ -166,42 +174,73 @@ template <typename Scalar, std::size_t NX, std::size_t NY>
     return P;
 }
 
-/// Build MHE dynamics constraint triplets: -A x_k + I x_{k+1} = B u_k
-template <typename Scalar, std::size_t NX>
-inline void add_mhe_dynamics_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int Ni, const Matrix<Scalar, NX, NX>& A)
-{
-    constexpr int nx = static_cast<int>(NX);
-    for(int k = 0; k < Ni; ++k)
-    {
-        int xk_off = k * nx;
-        int xk1_off = (k + 1) * nx;
-
-        for(int i = 0; i < nx; ++i)
-            for(int j = 0; j < nx; ++j)
-                if(A(i, j) != Scalar{0})
-                    trips.emplace_back(row + i, xk_off + j, -A(i, j));
-        for(int i = 0; i < nx; ++i)
-            trips.emplace_back(row + i, xk1_off + i, Scalar{1});
-        row += nx;
-    }
-}
-
-/// Build MHE box constraint triplets: I x_k - I s_k
+/// Build MHE box constraint triplets.
+///
+/// Hard box (need_slack=false): one identity row per state, bounded in [lb, ub].
+///
+/// Soft box (need_slack=true): the two-sided box lb - s_lo <= x <= ub + s_up is
+/// transcribed as four row blocks with two non-negative slacks s_lo, s_up:
+///   x_k + s_lo_k >= lb   (lower softened)
+///   x_k - s_up_k <= ub   (upper softened)
+///   s_lo_k >= 0
+///   s_up_k >= 0
+/// A single signed slack cannot two-side a box, and without the non-negativity
+/// rows the optimizer is rewarded for driving the slack negative.
 template <typename Scalar, std::size_t NX>
 inline void add_mhe_box_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int Ni, int n_states, bool need_slack)
 {
     constexpr int nx = static_cast<int>(NX);
+
+    if(!need_slack)
+    {
+        for(int k = 0; k <= Ni; ++k)
+        {
+            int xk_off = k * nx;
+            for(int i = 0; i < nx; ++i)
+                trips.emplace_back(row + i, xk_off + i, Scalar{1});
+            row += nx;
+        }
+        return;
+    }
+
+    int n_state_vars = (Ni + 1) * nx;
+    int s_lo_off = n_states;
+    int s_up_off = n_states + n_state_vars;
+
     for(int k = 0; k <= Ni; ++k)
     {
         int xk_off = k * nx;
+        int sk_off = s_lo_off + k * nx;
         for(int i = 0; i < nx; ++i)
-            trips.emplace_back(row + i, xk_off + i, Scalar{1});
-        if(need_slack)
         {
-            int sk_off = n_states + k * nx;
-            for(int i = 0; i < nx; ++i)
-                trips.emplace_back(row + i, sk_off + i, Scalar{-1});
+            trips.emplace_back(row + i, xk_off + i, Scalar{1});
+            trips.emplace_back(row + i, sk_off + i, Scalar{1});
         }
+        row += nx;
+    }
+    for(int k = 0; k <= Ni; ++k)
+    {
+        int xk_off = k * nx;
+        int sk_off = s_up_off + k * nx;
+        for(int i = 0; i < nx; ++i)
+        {
+            trips.emplace_back(row + i, xk_off + i, Scalar{1});
+            trips.emplace_back(row + i, sk_off + i, Scalar{-1});
+        }
+        row += nx;
+    }
+    for(int k = 0; k <= Ni; ++k)
+    {
+        int sk_off = s_lo_off + k * nx;
+        for(int i = 0; i < nx; ++i)
+            trips.emplace_back(row + i, sk_off + i, Scalar{1});
+        row += nx;
+    }
+    for(int k = 0; k <= Ni; ++k)
+    {
+        int sk_off = s_up_off + k * nx;
+        for(int i = 0; i < nx; ++i)
+            trips.emplace_back(row + i, sk_off + i, Scalar{1});
         row += nx;
     }
 }
@@ -234,11 +273,11 @@ template <typename Scalar, std::size_t NX, std::size_t NY>
                                                bool has_residual_bounds) -> Eigen::SparseMatrix<Scalar, Eigen::ColMajor>
 {
     constexpr int nx = static_cast<int>(NX);
+    (void)A;
     std::vector<Eigen::Triplet<Scalar>> a_trips;
-    a_trips.reserve(static_cast<std::size_t>(Ni * (nx * nx + nx) + dims.n_box * 2 + dims.n_residual * nx));
+    a_trips.reserve(static_cast<std::size_t>(dims.n_box * 2 + dims.n_residual * nx));
 
     int row = 0;
-    add_mhe_dynamics_triplets<Scalar, NX>(a_trips, row, Ni, A);
     if(has_box_bounds)
         add_mhe_box_triplets<Scalar, NX>(a_trips, row, Ni, dims.n_states, has_soft_constraints);
     if(has_residual_bounds)
@@ -298,8 +337,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
                                          const Matrix<Scalar, NY, NY>& R_inv,
                                          const Vector<Scalar, NX>& x_arrival,
                                          std::span<const Vector<Scalar, NU>> u_buf,
-                                         std::span<const Vector<Scalar, NY>> z_buf,
-                                         Scalar soft_penalty) -> Eigen::VectorX<Scalar>
+                                         std::span<const Vector<Scalar, NY>> z_buf) -> Eigen::VectorX<Scalar>
 {
     constexpr int nx = static_cast<int>(NX);
 
@@ -318,10 +356,6 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 
     for(int k = 0; k <= Ni; ++k)
         q.segment(k * nx, nx) -= HtRinv * z_buf[static_cast<std::size_t>(k)];
-
-    if(dims.n_slack > 0)
-        for(int i = 0; i < dims.n_slack; ++i)
-            q(dims.n_states + i) = soft_penalty;
 
     return q;
 }
@@ -342,28 +376,51 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
     constexpr int nx = static_cast<int>(NX);
     constexpr int ny = static_cast<int>(NY);
     constexpr auto inf = std::numeric_limits<Scalar>::infinity();
+    (void)B_lin;
+    (void)u_buf;
 
     Eigen::VectorX<Scalar> l(dims.n_con);
     Eigen::VectorX<Scalar> u(dims.n_con);
     int row = 0;
 
-    for(int k = 0; k < Ni; ++k)
-    {
-        Vector<Scalar, NX> rhs = B_lin * u_buf[static_cast<std::size_t>(k)];
-        l.segment(row, nx) = rhs;
-        u.segment(row, nx) = rhs;
-        row += nx;
-    }
-
     if(has_box_bounds)
     {
+        const bool need_slack = dims.n_slack > 0;
         Vector<Scalar, NX> lb = x_min.value_or(Vector<Scalar, NX>::Constant(-inf));
         Vector<Scalar, NX> ub = x_max.value_or(Vector<Scalar, NX>::Constant(inf));
-        for(int k = 0; k <= Ni; ++k)
+
+        if(!need_slack)
         {
-            l.segment(row, nx) = lb;
-            u.segment(row, nx) = ub;
-            row += nx;
+            for(int k = 0; k <= Ni; ++k)
+            {
+                l.segment(row, nx) = lb;
+                u.segment(row, nx) = ub;
+                row += nx;
+            }
+        }
+        else
+        {
+            // Lower softened rows: x_k + s_lo_k >= lb.
+            for(int k = 0; k <= Ni; ++k)
+            {
+                l.segment(row, nx) = lb;
+                u.segment(row, nx).setConstant(inf);
+                row += nx;
+            }
+            // Upper softened rows: x_k - s_up_k <= ub.
+            for(int k = 0; k <= Ni; ++k)
+            {
+                l.segment(row, nx).setConstant(-inf);
+                u.segment(row, nx) = ub;
+                row += nx;
+            }
+            // Slack non-negativity rows: s_lo_k >= 0 and s_up_k >= 0.
+            for(int k = 0; k < 2 * (Ni + 1); ++k)
+            {
+                l.segment(row, nx).setZero();
+                u.segment(row, nx).setConstant(inf);
+                row += nx;
+            }
         }
     }
 
@@ -411,9 +468,10 @@ template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::si
                                        const Eigen::VectorX<Scalar>& warm_y) -> qp_update<Scalar>
 {
     int Ni = static_cast<int>(N);
+    (void)soft_penalty;
     auto dims = compute_mhe_dims<NX, NY>(N, has_box_bounds, has_soft_constraints, has_residual_bounds);
 
-    auto q = build_mhe_linear_cost<Scalar, NX, NU, NY>(dims, Ni, arrival_weight, P_arr_inv, Q_inv, A_lin, B_lin, H_lin, R_inv, x_arrival, u_buf, z_buf, soft_penalty);
+    auto q = build_mhe_linear_cost<Scalar, NX, NU, NY>(dims, Ni, arrival_weight, P_arr_inv, Q_inv, A_lin, B_lin, H_lin, R_inv, x_arrival, u_buf, z_buf);
     auto [l, u] = build_mhe_update_bounds<Scalar, NX, NU, NY>(dims, Ni, B_lin, u_buf, z_buf, has_box_bounds, x_min, x_max, has_residual_bounds, residual_bound);
 
     return {std::move(q), std::move(l), std::move(u), warm_x, warm_y};

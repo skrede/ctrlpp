@@ -168,6 +168,40 @@ TEST_CASE("mhe satisfies CovarianceObserver", "[mhe][osqp]")
     static_assert(CovarianceObserver<MheType>);
 }
 
+TEST_CASE("mhe soft box constraint does not drag the estimate to the box floor", "[mhe][osqp]")
+{
+    mhe_config<double, NX, NU, NY, N> cfg;
+    cfg.Q = Matrix<double, NX, NX>::Identity() * 0.01;
+    cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
+    cfg.P0 = Matrix<double, NX, NX>::Identity() * 10.0;
+    cfg.x_min = Vector<double, NX>(-5.0, -5.0);
+    cfg.x_max = Vector<double, NX>(5.0, 5.0);
+    cfg.soft_constraints = true;
+
+    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+
+    // Constant position measurement well inside the box: the softened bounds are
+    // inactive, so a correct two-sided non-negative slack leaves the estimate on
+    // the measurement. A signed slack without a non-negativity bound would be
+    // driven negative and drag the position toward the lower box floor.
+    Vector<double, NU> u = Vector<double, NU>::Zero();
+    Vector<double, NY> z;
+    z << 0.5;
+
+    for(int i = 0; i < static_cast<int>(N) + 10; ++i)
+    {
+        estimator.predict(u);
+        estimator.update(z);
+    }
+
+    auto est = estimator.state();
+    REQUIRE(std::isfinite(est(0)));
+    REQUIRE(std::isfinite(est(1)));
+    REQUIRE(est(0) > cfg.x_min.value()(0) + 1.0);
+    REQUIRE(est(0) < cfg.x_max.value()(0) - 1.0);
+    REQUIRE_THAT(est(0), WithinAbs(0.5, 0.4));
+}
+
 TEST_CASE("mhe trajectory returns window states", "[mhe][osqp]")
 {
     mhe_config<double, NX, NU, NY, N> cfg;
