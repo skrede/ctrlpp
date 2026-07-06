@@ -150,7 +150,7 @@ auto make_random_configs() -> std::array<random_config, 6>
 } // namespace
 
 TEST_CASE("trapezoidal profile continuity and velocity/acceleration envelope hold over randomized nonzero-boundary-velocity configurations",
-    "[trajectory][anchor][!shouldfail]")
+    "[trajectory][anchor]")
 {
     for(const auto& cfg : make_random_configs())
     {

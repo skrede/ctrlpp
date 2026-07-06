@@ -72,8 +72,9 @@ class trapezoidal_trajectory
 
         // Compute cruise velocity and phase durations
         // @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a)-(3.13c), p.71
-        // T_a = (v_v - v0) / a, T_d = (v_v - v1) / a
-        // T_v = h/v_v - T_a/2 - T_d/2  (simplified)
+        // T_a = (v_v - v0) / a, T_d = (v_v - v1) / a; the cruise duration is the
+        // residual displacement (after the accel and decel distances) divided by
+        // the cruise velocity, which is exact for nonzero boundary velocities.
 
         // Check triangular degenerate case
         // When v_max cannot be reached: v_v = sqrt((2*a*h + v0^2 + v1^2) / 2)
@@ -100,8 +101,13 @@ class trapezoidal_trajectory
         if (triangular_) {
             T_v_ = Scalar{0};
         } else {
-            // Cruise duration: T_v = h/v_v - (v_v - v0)/(2*a) - (v_v - v1)/(2*a)
-            T_v_ = abs_h / v_v_ - (v_v_ - sv0) / (Scalar{2} * a_a_) - (v_v_ - sv1) / (Scalar{2} * a_d_);
+            // Cruise duration from the residual displacement: the accel and decel
+            // phases cover d_a = v0*T_a + a_a*T_a^2/2 and d_d = v1*T_d + a_d*T_d^2/2,
+            // so the cruise phase covers (abs_h - d_a - d_d) at v_v. This keeps the
+            // position continuous at the cruise-to-decel boundary for nonzero v0/v1.
+            auto const d_a = sv0 * T_a_ + Scalar{0.5} * a_a_ * T_a_ * T_a_;
+            auto const d_d = sv1 * T_d_ + Scalar{0.5} * a_d_ * T_d_ * T_d_;
+            T_v_ = (abs_h - d_a - d_d) / v_v_;
             if (T_v_ < Scalar{0}) {
                 T_v_ = Scalar{0};
             }
@@ -187,35 +193,37 @@ class trapezoidal_trajectory
             return;
         }
 
-        // For zero BCs: solve quadratic for new cruise velocity v_cruise
-        // T_new = v_cruise/a + abs_h/v_cruise  (accel + cruise + decel)
-        // => v_cruise^2 - T_new * a * v_cruise + a * abs_h = 0  (multiply by a, rearrange... no)
-        // Actually: T_new = v/a + abs_h/v + v/a  for symmetric case with v0=v1=0
-        // Simplification: T_a = v/a, T_d = v/a, T_v = (abs_h - v^2/a) / v = abs_h/v - v/a
-        // T_new = T_a + T_v + T_d = v/a + abs_h/v - v/a + v/a = abs_h/v + v/a
-        // => v^2/a - T_new*v + abs_h = 0
-        // => v = (T_new*a - sqrt(T_new^2*a^2 - 4*a*abs_h)) / (2)  (take smaller root)
-
+        // Solve for the new cruise velocity v that realizes total time T_new with the
+        // given boundary velocities. With T_a = (v - v0)/a, T_d = (v - v1)/a and the
+        // residual-displacement cruise duration T_v = (abs_h - d_a - d_d)/v, the total
+        // time T_new = T_a + T_v + T_d reduces to the quadratic
+        //   v^2 - [(v0 + v1) + a*T_new] * v + [a*abs_h + (v0^2 + v1^2)/2] = 0.
+        // The smaller root is the trapezoidal cruise velocity (the larger root exceeds
+        // v_max). This collapses to v^2 - a*T_new*v + a*abs_h = 0 when v0 = v1 = 0.
         auto const a = a_a_; // Use existing acceleration limit
-        auto const disc = T_new * T_new * a * a - Scalar{4} * a * abs_h;
+        auto const b_quad = (v0_ + v1_) + a * T_new;
+        auto const c_quad = a * abs_h + (v0_ * v0_ + v1_ * v1_) / Scalar{2};
+        auto const disc = b_quad * b_quad - Scalar{4} * c_quad;
 
         Scalar v_cruise{};
         if (disc < Scalar{0}) {
-            // Should not happen if T_new >= T_, but handle gracefully
-            // Use triangular limit
-            v_cruise = std::sqrt(a * abs_h);
+            // Should not happen if T_new >= T_, but handle gracefully with the
+            // triangular (unreachable-cruise) velocity for nonzero boundary velocities.
+            v_cruise = std::sqrt((Scalar{2} * a * abs_h + v0_ * v0_ + v1_ * v1_) / Scalar{2});
         } else {
-            v_cruise = (T_new * a - std::sqrt(disc)) / Scalar{2};
+            v_cruise = (b_quad - std::sqrt(disc)) / Scalar{2};
         }
 
         // Clamp v_cruise to avoid negative or zero
         v_cruise = std::max(v_cruise, std::numeric_limits<Scalar>::epsilon());
 
-        // Recompute phase durations
+        // Recompute phase durations with the residual-displacement cruise duration.
         v_v_ = v_cruise;
         T_a_ = (v_cruise - v0_) / a;
         T_d_ = (v_cruise - v1_) / a;
-        T_v_ = abs_h / v_cruise - (v_cruise - v0_) / (Scalar{2} * a) - (v_cruise - v1_) / (Scalar{2} * a);
+        auto const d_a = v0_ * T_a_ + Scalar{0.5} * a * T_a_ * T_a_;
+        auto const d_d = v1_ * T_d_ + Scalar{0.5} * a * T_d_ * T_d_;
+        T_v_ = (abs_h - d_a - d_d) / v_cruise;
 
         if (T_v_ < Scalar{0}) {
             T_v_ = Scalar{0};
