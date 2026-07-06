@@ -32,6 +32,10 @@ class l1_controller
 {
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
+    static_assert(NX == NU,
+        "L1 reference feedforward requires NX == NU (a square predictor). The "
+        "general non-square feedforward gain k_g = -(C (I - A_m)^{-1} B)^{-1} is "
+        "not yet implemented");
 
 public:
     using config_type = l1_config<Scalar, NX, NU>;
@@ -102,26 +106,23 @@ public:
 private:
     void compute_k_r()
     {
-        if constexpr(NX == NU)
-        {
-            // DC gain of predictor: G_dc = (I - A_m)^{-1} * B
-            // K_r = G_dc^{-1} so that in steady state x_ss = r
-            auto i_minus_a = (Matrix<Scalar, NX, NX>::Identity()
-                - m_cfg.predictor_model.A).eval();
-            auto lu_ima = i_minus_a.fullPivLu();
-            if(!lu_ima.isInvertible())
-                throw std::invalid_argument(
-                    "L1 predictor model has unit eigenvalue: (I - A) is singular");
-            Matrix<Scalar, NX, NU> dc_gain = lu_ima.solve(m_cfg.predictor_model.B);
-            auto lu_dc = dc_gain.fullPivLu();
-            if(!lu_dc.isInvertible() || !dc_gain.allFinite())
-                throw std::invalid_argument(
-                    "L1 predictor model has near-zero DC gain: B / (I - A) is singular");
-            m_k_r = lu_dc.solve(Matrix<Scalar, NU, NU>::Identity());
-            if(!m_k_r.allFinite())
-                throw std::invalid_argument(
-                    "L1 feedforward gain K_r is non-finite: ill-conditioned predictor model");
-        }
+        // DC gain of predictor: G_dc = (I - A_m)^{-1} * B
+        // K_r = G_dc^{-1} so that in steady state x_ss = r
+        auto i_minus_a = (Matrix<Scalar, NX, NX>::Identity()
+            - m_cfg.predictor_model.A).eval();
+        auto lu_ima = i_minus_a.fullPivLu();
+        if(!lu_ima.isInvertible())
+            throw std::invalid_argument(
+                "L1 predictor model has unit eigenvalue: (I - A) is singular");
+        Matrix<Scalar, NX, NU> dc_gain = lu_ima.solve(m_cfg.predictor_model.B);
+        auto lu_dc = dc_gain.fullPivLu();
+        if(!lu_dc.isInvertible() || !dc_gain.allFinite())
+            throw std::invalid_argument(
+                "L1 predictor model has near-zero DC gain: B / (I - A) is singular");
+        m_k_r = lu_dc.solve(Matrix<Scalar, NU, NU>::Identity());
+        if(!m_k_r.allFinite())
+            throw std::invalid_argument(
+                "L1 feedforward gain K_r is non-finite: ill-conditioned predictor model");
     }
 
     config_type m_cfg;

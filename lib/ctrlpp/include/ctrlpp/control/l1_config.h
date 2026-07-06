@@ -7,6 +7,7 @@
 
 #include "ctrlpp/model/state_space.h"
 
+#include <limits>
 #include <cstddef>
 
 namespace ctrlpp
@@ -19,8 +20,12 @@ struct l1_config
     static_assert(NU > 0, "Input dimension NU must be positive");
     discrete_state_space<Scalar, NX, NU, NX> predictor_model{};
     Matrix<Scalar, NU, NU> gamma = Matrix<Scalar, NU, NU>::Identity();
-    Vector<Scalar, NU> theta_min = Vector<Scalar, NU>::Zero();
-    Vector<Scalar, NU> theta_max = Vector<Scalar, NU>::Zero();
+    // Projection bounds default to an unbounded range so a default-constructed
+    // config adapts freely. Set finite bounds to enable elementwise projection.
+    Vector<Scalar, NU> theta_min =
+        Vector<Scalar, NU>::Constant(-std::numeric_limits<Scalar>::infinity());
+    Vector<Scalar, NU> theta_max =
+        Vector<Scalar, NU>::Constant(std::numeric_limits<Scalar>::infinity());
     Vector<Scalar, NX> x_hat_0 = Vector<Scalar, NX>::Zero();
     Vector<Scalar, NU> sigma_hat_0 = Vector<Scalar, NU>::Zero();
 };
