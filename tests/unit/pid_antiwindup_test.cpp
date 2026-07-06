@@ -155,6 +155,33 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
     }
 }
 
+TEST_CASE("back_calc anti-windup limits windup during a rate-limited ramp",
+    "[pid][siso][anti-windup][backcalc][rate-limit]")
+{
+    using AW = ctrlpp::anti_windup<ctrlpp::back_calc>;
+    using RlPid = ctrlpp::pid<double, 1, 1, 1, AW, ctrlpp::rate_limit>;
+
+    RlPid::config_type cfg{};
+    cfg.kp = vec1(1.0);
+    cfg.ki = vec1(1.0);
+    cfg.template policy<AW>().kb = {1.0};
+    cfg.template policy<ctrlpp::rate_limit>().rate_max = {1.0}; // slow actuator, no output clamp
+
+    RlPid pid(cfg);
+
+    // Large constant setpoint: the unconstrained command wants to jump far, but the
+    // rate limiter allows only rate_max*dt per step. Because back-calculation feeds back
+    // the difference against the unconstrained command (not the already rate-limited
+    // value), it sees the rate-limit constraint and holds the integrator.
+    for (int i = 0; i < 1000; ++i)
+        pid.compute(vec1(10.0), vec1(0.0), Ts);
+
+    // Feeding back only the rate-limited value would make the saturation error zero, so
+    // the integral would wind up to ki*e*dt*steps = 100. The rate-aware feedback keeps it
+    // bounded.
+    REQUIRE(pid.integral()[0] < 50.0);
+}
+
 TEST_CASE("clamping anti-windup freezes integral during saturation",
     "[pid][siso][anti-windup][clamping]")
 {

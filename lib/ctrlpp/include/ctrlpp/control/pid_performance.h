@@ -92,6 +92,11 @@ public:
 
     void set_first_step(bool first) { m_first_step = first; }
 
+    // Set the zero-crossing rate above which oscillating() reports a limit cycle.
+    // The owning controller wires this from perf_assessment::config so the exposed
+    // default is the single source of truth.
+    void set_oscillation_threshold(Scalar threshold) { m_osc_threshold = threshold; }
+
 private:
     /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE)
     void accumulate_iae(const vector_t& e, Scalar dt)
@@ -138,7 +143,7 @@ private:
     vector_t m_zero_crossings = vector_t::Zero();
     vector_t m_prev_error_sign = vector_t::Zero();
     Scalar m_accumulated_time{0};
-    Scalar m_osc_threshold{5.0};
+    Scalar m_osc_threshold{static_cast<Scalar>(default_crossing_rate_threshold)};
     bool m_first_step{true};
 };
 

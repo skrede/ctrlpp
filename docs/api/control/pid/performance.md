@@ -21,15 +21,13 @@ ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::oscillation_detect>  // mixed
 
 ## Config Fields
 
-### perf_assessment (all metric variants)
+### perf_assessment
 
-No additional config fields for IAE, ISE, or ITAE.
-
-### oscillation_detect
+The `perf_assessment` config carries the oscillation threshold. IAE, ISE, and ITAE need no additional fields.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `crossing_rate_threshold` | `double` | `5.0` | Zero-crossing rate (crossings/second) above which the controller is considered oscillating. |
+| `crossing_rate_threshold` | `double` | `5.0` | Zero-crossing rate (crossings/second) above which `oscillating()` reports a limit cycle. Applies only when `oscillation_detect` is among the metrics. Set it through the `perf_assessment` policy config, for example `cfg.template policy<PA>().crossing_rate_threshold = 8.0;`. |
 
 ## Metric Tags
 

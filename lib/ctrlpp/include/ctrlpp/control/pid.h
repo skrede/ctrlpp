@@ -29,6 +29,7 @@ public:
         compute_internal_gains(cfg);
         if constexpr(detail::has_policy_v<anti_windup, Policies...>)
             initialize_back_calc_gains();
+        initialize_perf_config();
     }
 
     auto compute(const vector_t& sp, const vector_t& meas, Scalar dt) -> vector_t
@@ -70,6 +71,7 @@ public:
         compute_internal_gains(new_cfg);
         if constexpr(detail::has_policy_v<anti_windup, Policies...>)
             initialize_back_calc_gains();
+        initialize_perf_config();
     }
 
     const vector_t& error() const { return m_prev_error; }
@@ -84,6 +86,8 @@ public:
         m_prev_meas = vector_t::Zero();
         m_prev_sp = vector_t::Zero();
         m_prev_output = vector_t::Zero();
+        m_accumulated_output = vector_t::Zero();
+        m_prev_ff = vector_t::Zero();
         m_prev_prev_error = vector_t::Zero();
         if constexpr(detail::contains_v<setpoint_filter, Policies...>)
             m_filtered_sp = vector_t::Zero();
@@ -179,6 +183,16 @@ private:
         }
     }
 
+    void initialize_perf_config()
+    {
+        if constexpr(detail::has_policy_v<perf_assessment, Policies...>)
+        {
+            using PA = detail::find_policy_t<perf_assessment, Policies...>;
+            m_perf.set_oscillation_threshold(
+                static_cast<Scalar>(m_cfg.template policy<PA>().crossing_rate_threshold));
+        }
+    }
+
     auto apply_setpoint_filter(const vector_t& sp, Scalar dt) -> vector_t
     {
         if constexpr(detail::contains_v<setpoint_filter, Policies...>)
@@ -229,9 +243,18 @@ private:
         auto dd = m_kd.cwiseProduct(d_num / dt).eval();
         auto delta_u = (dp + di + dd).eval();
         delta_u = apply_feed_forward_velocity(delta_u, sp, dt);
-        delta_u = delta_u.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
-        update_state(e, filtered_meas, filtered_sp, delta_u);
-        return delta_u;
+        // Clamp the accumulated output to the output limits, not the raw increment,
+        // then emit the increment that reaches the clamped accumulated output. Clamping
+        // the increment itself would forbid motion against an asymmetric limit (for
+        // example output_min = 0 would make the output monotone non-decreasing);
+        // clamping the accumulated output keeps it in range while still letting it rise
+        // and fall.
+        auto target = (m_accumulated_output + delta_u).eval();
+        auto clamped = target.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
+        auto emitted = (clamped - m_accumulated_output).eval();
+        m_accumulated_output = clamped;
+        update_state(e, filtered_meas, filtered_sp, emitted);
+        return emitted;
     }
 
     auto apply_feed_forward_velocity(vector_t delta_u, const vector_t& sp, Scalar dt) -> vector_t
@@ -241,8 +264,14 @@ private:
             using ff_policy_t = detail::find_policy_t<feed_forward, Policies...>;
             if constexpr(!std::is_same_v<ff_policy_t, feed_forward<void>>)
             {
-                auto ff = m_cfg.template policy<ff_policy_t>().ff_func(sp, dt);
-                return (delta_u + ff).eval();
+                auto ff = m_cfg.template policy<ff_policy_t>().ff_func(sp, dt).eval();
+                // The velocity form emits increments, so inject the change in the
+                // feed-forward level, not its absolute value; a constant feed-forward
+                // then contributes nothing to the increment and the actuator does not
+                // drift.
+                auto delta_ff = (ff - m_prev_ff).eval();
+                m_prev_ff = ff;
+                return (delta_u + delta_ff).eval();
             }
         }
         return delta_u;
@@ -254,11 +283,19 @@ private:
         auto p = compute_proportional_term(filtered_sp, filtered_meas);
         auto [integral_increment, updated_integral] = compute_integral_term(e, dt);
         auto d = compute_derivative_term(filtered_sp, filtered_meas, dt);
-        auto u_raw = compute_raw_output(p, updated_integral, d, sp, dt);
-        u_raw = apply_rate_limit(u_raw, dt);
-        auto u_sat = u_raw.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
-        m_saturated = (u_sat.array() != u_raw.array()).any();
-        apply_anti_windup(u_sat, u_raw, e, integral_increment, dt);
+        // Unconstrained control command, before rate limiting and output saturation.
+        auto u_unconstrained = compute_raw_output(p, updated_integral, d, sp, dt);
+        auto u_limited = apply_rate_limit(u_unconstrained, dt);
+        auto u_sat = u_limited.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
+        // saturated() reports output-limit saturation, the clamp against
+        // output_min/output_max.
+        m_saturated = (u_sat.array() != u_limited.array()).any();
+        // Anti-windup feeds back against the fully unconstrained command, so both the
+        // rate limiter and the output saturation contribute. Feeding back only the
+        // post-rate-limit value would let the integrator wind up freely along a
+        // rate-limited ramp, where the applied output already equals the rate-limited
+        // command.
+        apply_anti_windup(u_sat, u_unconstrained, e, integral_increment, dt);
         update_state(e, filtered_meas, filtered_sp, u_sat);
         return u_sat;
     }
@@ -386,22 +423,25 @@ private:
         return u_raw;
     }
 
-    void apply_anti_windup(const vector_t& u_sat, const vector_t& u_raw, const vector_t& e, const vector_t& integral_increment, Scalar dt)
+    void apply_anti_windup(const vector_t& u_sat, const vector_t& u_unconstrained, const vector_t& e, const vector_t& integral_increment, Scalar dt)
     {
         if constexpr(detail::has_policy_v<anti_windup, Policies...>)
         {
             using AW = detail::find_policy_t<anti_windup, Policies...>;
             if constexpr(std::is_same_v<AW, anti_windup<back_calc>>)
             {
-                auto feedback = kb_.cwiseProduct((u_sat - u_raw).eval()).eval();
+                auto feedback = kb_.cwiseProduct((u_sat - u_unconstrained).eval()).eval();
                 m_integral = (m_integral + feedback * dt).eval();
             }
             else if constexpr(std::is_same_v<AW, anti_windup<clamping>>)
             {
-                if(m_saturated)
-                    for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-                        if((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0}))
-                            m_integral[i] -= integral_increment[i];
+                // Gate the integral undo per channel on that channel's own constraint
+                // (applied output differs from the unconstrained command), so a
+                // saturated channel does not freeze an unsaturated one.
+                for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
+                    if(u_sat[i] != u_unconstrained[i]
+                        && ((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0})))
+                        m_integral[i] -= integral_increment[i];
             }
             else if constexpr(std::is_same_v<AW, anti_windup<conditional_integration>>)
             {
@@ -438,6 +478,8 @@ private:
     vector_t m_prev_meas = vector_t::Zero();
     vector_t m_prev_sp = vector_t::Zero();
     vector_t m_prev_output = vector_t::Zero();
+    vector_t m_accumulated_output = vector_t::Zero();
+    vector_t m_prev_ff = vector_t::Zero();
     vector_t m_filtered_sp = vector_t::Zero();
     vector_t m_filtered_meas = vector_t::Zero();
     vector_t m_prev_deriv_filtered = vector_t::Zero();

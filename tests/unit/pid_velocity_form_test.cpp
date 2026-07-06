@@ -156,7 +156,7 @@ TEST_CASE("velocity_form reset clears history", "[pid][siso][velocity-form][rese
     REQUIRE_THAT(u[0], WithinAbs(2.005, tol));
 }
 
-TEST_CASE("velocity_form with feed_forward adds ff delta to output",
+TEST_CASE("velocity_form injects the change in feed-forward so a constant feed-forward does not drift",
     "[pid][siso][velocity-form][feed-forward]")
 {
     auto ff_func = [](const Vec1& sp, double) -> Vec1 { return sp * 0.5; };
@@ -169,19 +169,20 @@ TEST_CASE("velocity_form with feed_forward adds ff delta to output",
     cfg.template policy<FF>().ff_func = ff_func;
     VFfPid pid(cfg);
 
-    // Step 1: e=1, prev_e=0
-    // dP = 1*(1-0) = 1.0, dI = 0, dD = 0
-    // ff = sp * 0.5 = 0.5
-    // delta_u = 1.0 + 0.5 = 1.5
+    // Step 1: dP = 1*(1-0) = 1.0. The feed-forward level rises from 0 to sp*0.5 = 0.5,
+    // so its increment is 0.5. delta_u = 1.0 + 0.5 = 1.5.
     auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts);
     REQUIRE_THAT(u1[0], WithinAbs(1.5, tol));
 
-    // Step 2: e=1, prev_e=1
-    // dP = 1*(1-1) = 0, dI = 0, dD = 0
-    // ff = sp * 0.5 = 0.5
-    // delta_u = 0 + 0.5 = 0.5
+    // Step 2 onward: dP = 0 and the feed-forward level is unchanged (constant sp), so
+    // the feed-forward increment is 0 and it contributes nothing to delta_u. Injecting
+    // the absolute feed-forward instead would emit 0.5 every step and the actuator would
+    // drift without bound.
     auto u2 = pid.compute(vec1(1.0), vec1(0.0), Ts);
-    REQUIRE_THAT(u2[0], WithinAbs(0.5, tol));
+    REQUIRE_THAT(u2[0], WithinAbs(0.0, tol));
+
+    auto u3 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    REQUIRE_THAT(u3[0], WithinAbs(0.0, tol));
 }
 
 TEST_CASE("velocity_form tracking signal is a no-op (integral not modified)",
@@ -203,23 +204,39 @@ TEST_CASE("velocity_form tracking signal is a no-op (integral not modified)",
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
 }
 
-TEST_CASE("velocity_form output clamping respects output_min and output_max",
+TEST_CASE("velocity_form clamps the accumulated output so it can rise and fall under an asymmetric limit",
     "[pid][siso][velocity-form][clamping]")
 {
     using VPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
-    cfg.kp = vec1(100.0);
-    cfg.output_min = vec1(-0.5);
-    cfg.output_max = vec1(0.5);
+    cfg.kp = vec1(10.0);
+    cfg.output_min = vec1(0.0);   // valve-like: the output cannot go below zero
+    cfg.output_max = vec1(1.0);
     VPid pid(cfg);
 
-    // Step 1: dP = 100*(1-0) = 100 -> clamped to 0.5
-    auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts);
-    REQUIRE_THAT(u1[0], WithinAbs(0.5, tol));
+    // The output limits bound the accumulated output, not the per-step increment, so
+    // the running sum of the emitted increments must stay in [output_min, output_max].
+    double accumulated = 0.0;
 
-    // Step 2: dP = 100*((-1)-1) = -200 -> clamped to -0.5
-    auto u2 = pid.compute(vec1(0.0), vec1(1.0), Ts);
-    REQUIRE_THAT(u2[0], WithinAbs(-0.5, tol));
+    // Step 1: e=1, dP=10 -> target accumulated 0+10=10, clamped to output_max=1,
+    // so the emitted increment is 1.0.
+    double d1 = pid.compute(vec1(1.0), vec1(0.0), Ts)[0];
+    accumulated += d1;
+    REQUIRE_THAT(accumulated, WithinAbs(1.0, tol));
+
+    // Step 2: e=1, prev_e=1, dP=0 -> accumulated stays at output_max, increment 0.
+    double d2 = pid.compute(vec1(1.0), vec1(0.0), Ts)[0];
+    accumulated += d2;
+    REQUIRE_THAT(accumulated, WithinAbs(1.0, tol));
+
+    // Step 3: error flips negative, dP=10*(-1-1)=-20 -> target 1-20=-19, clamped to
+    // output_min=0. The emitted increment is NEGATIVE (-1.0): the output falls back to
+    // its lower limit. The old increment clamp (delta_u >= output_min = 0) forbade this,
+    // pinning the output at output_max.
+    double d3 = pid.compute(vec1(0.0), vec1(1.0), Ts)[0];
+    accumulated += d3;
+    REQUIRE(d3 < 0.0);
+    REQUIRE_THAT(accumulated, WithinAbs(0.0, tol));
 }
 
 TEST_CASE("velocity_form zero dt returns previous output",

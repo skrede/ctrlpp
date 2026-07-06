@@ -3,6 +3,14 @@
 
 /// @brief Stateful MRAC controller with Lyapunov-based adaptation and compile-time robustification.
 ///
+/// The adaptation law projects the tracking error through B^T only, which is the
+/// Lyapunov gradient B^T P e specialized to P = I. This is exact when the reference
+/// model is chosen so that A_m^T + A_m is negative definite (P = I solves the
+/// Lyapunov equation A_m^T P + P A_m = -Q); for a general stable A_m a different P
+/// would be required, and no configurable P weighting is provided here. The update
+/// also carries no explicit dt factor, so the adaptation gains gamma_x and gamma_r
+/// absorb the sample time: rescale them proportionally if the sample rate changes.
+///
 /// @cite slotine1991 -- Slotine & Li, "Applied Nonlinear Control", 1991, Ch. 8
 
 #include "ctrlpp/types.h"

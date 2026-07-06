@@ -107,6 +107,31 @@ TEST_CASE("oscillation_detect counts zero-crossings and detects oscillation",
     REQUIRE(pid.oscillating() == true);
 }
 
+TEST_CASE("oscillation verdict follows the configurable crossing_rate_threshold",
+    "[pid][siso][perf-assessment][oscillation]")
+{
+    using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
+    using PaPid = ctrlpp::pid<double, 1, 1, 1, PA>;
+
+    // Alternating error sign for 10 steps at dt=0.1 gives 9 crossings over 1.0 s, a rate
+    // of 9 crossings/s. The verdict must flip as the configured threshold crosses that
+    // rate; the tracker previously ignored the config and used a hardcoded threshold.
+    auto oscillates_with_threshold = [](double threshold) {
+        PaPid::config_type cfg{};
+        cfg.kp = vec1(1.0);
+        cfg.template policy<PA>().crossing_rate_threshold = threshold;
+        PaPid pid(cfg);
+        for (int i = 0; i < 10; ++i) {
+            double sp = (i % 2 == 0) ? 1.0 : -1.0;
+            pid.compute(vec1(sp), vec1(0.0), 0.1);
+        }
+        return pid.oscillating();
+    };
+
+    REQUIRE(oscillates_with_threshold(5.0) == true);   // 9/s exceeds 5/s -> oscillating
+    REQUIRE(oscillates_with_threshold(20.0) == false); // 9/s is below 20/s -> not oscillating
+}
+
 TEST_CASE("oscillation_detect: constant error sign -> not oscillating",
     "[pid][siso][perf-assessment][oscillation]")
 {

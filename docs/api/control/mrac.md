@@ -51,6 +51,8 @@ Header: `#include <ctrlpp/control/mrac_config.h>`
 
 The adaptation gains `gamma_x` and `gamma_r` must be symmetric positive definite for Lyapunov stability guarantees. Larger values give faster adaptation but may cause oscillation. The `sign_b` matrix captures the sign structure of the unknown plant input matrix; for most applications with positive-definite B_p, the default identity suffices.
 
+**Adaptation law assumptions.** The parameter update projects the tracking error through `B_m^T` only. This is the Lyapunov gradient `B_m^T P e` with `P = I`, which is exact when the reference model is chosen so that `A_m^T + A_m` is negative definite (`P = I` solves `A_m^T P + P A_m = -Q`). For a general stable `A_m`, a different `P` would be required; no configurable `P` weighting is provided. The update also carries no explicit `dt` factor, so `gamma_x` and `gamma_r` absorb the sample time: rescale them proportionally if the sample rate changes.
+
 ## Robustification Modes
 
 Robustification prevents unbounded parameter drift caused by noise or unmodeled dynamics (the Rohrs counterexample). The robustification mode is selected at compile time via the fourth template parameter.

@@ -19,6 +19,8 @@ Instead of computing u(k) directly, the controller computes the change delta_u(k
 - No explicit integrator state is maintained internally, eliminating integrator windup.
 - Switching between manual and automatic control is bumpless: the incremental output starts from zero regardless of the previous manual setting.
 - The derivative term uses backward differences of the error rather than the filtered derivative.
+- `output_min` and `output_max` bound the accumulated output, not the individual increment. The emitted increment is the change needed to bring the accumulated output to that clamped value, so the output can both rise and fall against asymmetric limits (for example a valve with `output_min = 0`).
+- Feed-forward is injected incrementally: the emitted increment carries the change in the feed-forward level, so a constant feed-forward adds nothing to the increment and the actuator does not drift.
 
 ## Usage Example
 

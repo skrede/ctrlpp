@@ -44,8 +44,8 @@ No additional config fields. The integrator is simply frozen when the output is 
 
 ## Behavior
 
-- **back_calc**: When the PID output is clipped, the difference between the clipped and unclipped output is fed back through gain `kb` to adjust the integrator state. This provides smooth recovery from saturation.
-- **clamping**: The integrator is held at its current value whenever the output is saturated and the error would increase the saturation. Simple and robust.
+- **back_calc**: The difference between the applied output and the unconstrained command is fed back through gain `kb` to adjust the integrator state. The unconstrained command is taken before both the rate limiter and the output clamp, so a rate-limited ramp also engages the anti-windup, not only output saturation. This provides smooth recovery from saturation.
+- **clamping**: The integrator is held whenever the applied output is constrained and the error would increase the constraint. The decision is made per channel, so saturation in one channel of a MIMO controller does not freeze the integrators of unsaturated channels. Simple and robust.
 - **conditional_integration**: Integration is paused entirely when the error magnitude exceeds `error_threshold`. Useful for large setpoint changes where integration during the transient would cause overshoot.
 
 ## Usage Example

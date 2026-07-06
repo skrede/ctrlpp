@@ -3,6 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <cmath>
+#include <limits>
+
 using Catch::Matchers::WithinAbs;
 
 namespace {
@@ -13,6 +16,14 @@ using Vec1 = ctrlpp::Vector<double, 1>;
 constexpr double tol = 1e-12;
 
 Vec1 vec1(double v) { Vec1 r; r << v; return r; }
+
+// Bound for a sum of n_steps integral increments accumulated one at a time: each
+// addition rounds once, so the forward error is bounded by the step count times one
+// unit in the last place at the working scale.
+double accumulation_tol(int n_steps, double scale)
+{
+    return static_cast<double>(n_steps) * std::numeric_limits<double>::epsilon() * std::abs(scale);
+}
 
 }
 
@@ -36,6 +47,38 @@ TEST_CASE("MIMO NY=2 independent channels", "[pid][mimo]")
     // Channel 1: P=3*2=6.0, I=0.2*2*0.01=0.004
     REQUIRE_THAT(u[0], WithinAbs(1.001, tol));
     REQUIRE_THAT(u[1], WithinAbs(6.004, tol));
+}
+
+TEST_CASE("clamping anti-windup decouples MIMO channels", "[pid][mimo][anti-windup][clamping]")
+{
+    using AW = ctrlpp::anti_windup<ctrlpp::clamping>;
+    using MimoPid = ctrlpp::pid<double, 1, 2, 2, AW>;
+    using Vec2 = ctrlpp::Vector<double, 2>;
+    auto vec2 = [](double a, double b) { Vec2 v; v << a, b; return v; };
+
+    constexpr double Ts = 0.01;
+    constexpr int n_steps = 50;
+
+    MimoPid::config_type cfg{};
+    cfg.kp = vec2(100.0, 1.0);          // channel 0 high gain -> saturates; channel 1 does not
+    cfg.ki = vec2(1.0, 1.0);
+    cfg.output_min = vec2(-1.0, -1000.0);
+    cfg.output_max = vec2(1.0, 1000.0);  // channel 0 tight limit; channel 1 effectively unlimited
+    MimoPid pid(cfg);
+
+    // Both channels see a constant positive error; channel 0 saturates every step,
+    // channel 1 never does.
+    for(int i = 0; i < n_steps; ++i)
+        pid.compute(vec2(1.0, 1.0), vec2(0.0, 0.0), Ts);
+
+    // Channel 1 is never constrained, so its integrator accumulates the full ki*e*dt
+    // every step. The old scalar saturation flag would have frozen it whenever channel 0
+    // saturated (coupling the channels); the per-channel mask leaves it untouched.
+    const double expected_ch1 = 1.0 * 1.0 * Ts * n_steps;
+    REQUIRE_THAT(pid.integral()[1], WithinAbs(expected_ch1, accumulation_tol(n_steps, expected_ch1)));
+
+    // Channel 0 saturates, so its integrator is held well below the free-running value.
+    REQUIRE(pid.integral()[0] < expected_ch1);
 }
 
 TEST_CASE("Variable dt per step", "[pid][siso]")

@@ -138,11 +138,12 @@ struct ITAE
 
 struct oscillation_detect
 {
-    struct config
-    {
-        double crossing_rate_threshold{5.0};
-    };
 };
+
+// Default oscillation verdict threshold in zero-crossings per second. A sustained
+// error sign change rate above this marks a limit cycle.
+/// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3
+inline constexpr double default_crossing_rate_threshold = 5.0;
 
 template <typename... Metrics>
 struct perf_assessment
@@ -151,6 +152,9 @@ struct perf_assessment
 
     struct config
     {
+        // Zero-crossing rate (per second) above which oscillating() reports a limit
+        // cycle. Used only when oscillation_detect is among the metrics.
+        double crossing_rate_threshold{default_crossing_rate_threshold};
     };
 };
 
