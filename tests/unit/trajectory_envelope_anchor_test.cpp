@@ -162,7 +162,7 @@ TEST_CASE("trapezoidal profile continuity and velocity/acceleration envelope hol
 }
 
 TEST_CASE("double-S profile continuity and velocity/acceleration/jerk envelope hold over randomized nonzero-boundary-velocity configurations",
-    "[trajectory][anchor][!shouldfail]")
+    "[trajectory][anchor]")
 {
     for(const auto& cfg : make_random_configs())
     {

@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
@@ -275,4 +276,58 @@ TEST_CASE("double_s: zero displacement stationary profile", "[traj][double_s]")
     REQUIRE_THAT(pt.position[0], WithinAbs(5.0, 1e-12));
     REQUIRE_THAT(pt.velocity[0], WithinAbs(0.0, 1e-12));
     REQUIRE_THAT(pt.acceleration[0], WithinAbs(0.0, 1e-12));
+}
+
+// --------------------------------------------------------------------------
+// Test 14: Nonzero boundary velocities (B&M Example 3.9 parameters)
+// --------------------------------------------------------------------------
+TEST_CASE("double_s: nonzero boundary velocities", "[traj][double_s]")
+{
+    // Biagiotti & Melchiorri, Example 3.9, p.84: q0=0, q1=10, v0=1, v1=0,
+    // v_max=5, a_max=10, j_max=30. v_max is reached, so peak velocity is v_max.
+    ctrlpp::double_s_trajectory<double>::config cfg{
+        .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 30.0,
+        .v0 = 1.0, .v1 = 0.0};
+    ctrlpp::double_s_trajectory<double> traj(cfg);
+
+    auto const T = traj.duration();
+    REQUIRE(T > 0.0);
+
+    // Tolerances derived from input scale x machine epsilon: evaluate() chains a
+    // handful of multiply-adds and one phase-boundary subtraction, so allow a few
+    // ULP at each quantity's own scale.
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    constexpr double rounding_ops = 16.0;
+    double const q_tol = rounding_ops * eps * std::abs(cfg.q1 - cfg.q0);
+    double const v_tol = rounding_ops * eps * cfg.v_max;
+    double const a_tol = rounding_ops * eps * cfg.a_max;
+
+    // Boundary velocities honored exactly, zero acceleration at both ends.
+    auto const pt_start = traj.evaluate(0.0);
+    REQUIRE_THAT(pt_start.position[0], WithinAbs(cfg.q0, q_tol));
+    REQUIRE_THAT(pt_start.velocity[0], WithinAbs(cfg.v0, v_tol));
+    REQUIRE_THAT(pt_start.acceleration[0], WithinAbs(0.0, a_tol));
+
+    auto const pt_end = traj.evaluate(T);
+    REQUIRE_THAT(pt_end.position[0], WithinAbs(cfg.q1, q_tol));
+    REQUIRE_THAT(pt_end.velocity[0], WithinAbs(cfg.v1, v_tol));
+    REQUIRE_THAT(pt_end.acceleration[0], WithinAbs(0.0, a_tol));
+
+    // v_max is reached for these parameters.
+    REQUIRE_THAT(traj.peak_velocity(), WithinAbs(cfg.v_max, v_tol));
+
+    // The reported trace honors its boundary velocity in the interior too: one
+    // sample step past the start the velocity has moved off v0 by no more than
+    // the acceleration limit allows, i.e. it starts from v0 rather than 0.
+    double const dt = T / 1000.0;
+    auto const pt_near = traj.evaluate(dt);
+    REQUIRE(std::abs(pt_near.velocity[0] - cfg.v0) <= cfg.a_max * dt + v_tol);
+
+    // Constraints hold across a dense scan.
+    for (int i = 0; i <= 1000; ++i) {
+        double const t = T * static_cast<double>(i) / 1000.0;
+        auto const pt = traj.evaluate(t);
+        REQUIRE(std::abs(pt.velocity[0]) <= cfg.v_max + v_tol);
+        REQUIRE(std::abs(pt.acceleration[0]) <= cfg.a_max + a_tol);
+    }
 }

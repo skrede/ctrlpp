@@ -6,6 +6,8 @@
 /// Computes a time-optimal S-curve profile that respects velocity, acceleration,
 /// and jerk constraints simultaneously. Construction solves the B&M flowchart
 /// (Fig 3.18) including all degenerate cases where v_max or a_max cannot be reached.
+/// Nonzero initial and final velocities are supported via the general Sec 3.4.1
+/// formulation; the zero-velocity case reduces to the Sec 3.4.3 special case.
 /// Negative displacement is handled via sigma transformation (eq 3.31-3.33).
 ///
 /// The 7 segments are: jerk(+), const-accel, jerk(-), cruise, jerk(-), const-decel, jerk(+).
@@ -72,9 +74,21 @@ public:
         auto const v_max = cfg.v_max;
         auto const a_max = cfg.a_max;
 
-        // For zero initial/final velocities, use simplified algorithm
-        // @cite biagiotti2009 -- Sec. 3.4.3, p.88-91
-        compute_zero_bc(h, v_max, a_max, cfg.j_max);
+        // Boundary velocities in the positive-displacement frame: a move in the
+        // -q direction with v0 < 0 maps to +v0 here, so the same profile math
+        // serves both directions and evaluate() folds the sign back with sigma_.
+        pv0_ = sigma_ * cfg.v0;
+        pv1_ = sigma_ * cfg.v1;
+
+        if (cfg.v0 == Scalar{0} && cfg.v1 == Scalar{0}) {
+            // Zero boundary velocities: the symmetric special case.
+            // @cite biagiotti2009 -- Sec. 3.4.3, p.88-91
+            compute_zero_bc(h, v_max, a_max, cfg.j_max);
+        } else {
+            // General nonzero boundary velocities.
+            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.27), p.79-85
+            compute_general_bc(h, v_max, a_max, cfg.j_max);
+        }
     }
 
     /// @brief Evaluate trajectory at time t.
@@ -154,7 +168,8 @@ public:
 private:
     Scalar q0_{}, q1_{};
     Scalar sigma_{1};
-    Scalar v0_{}, v1_;
+    Scalar v0_{}, v1_{};
+    Scalar pv0_{}, pv1_{}; ///< boundary velocities in the positive-displacement frame
     Scalar v_lim_{};
     Scalar a_lim_a_{};
     Scalar a_lim_d_{};
@@ -256,6 +271,120 @@ private:
         T_ = T_a_ + T_v_ + T_d_;
     }
 
+    /// @brief Compute phase durations for the general nonzero-boundary-velocity case.
+    ///
+    /// Works entirely in the positive-displacement frame with the sigma-normalized
+    /// boundary velocities pv0_, pv1_. Reduces exactly to the zero-boundary special
+    /// case when pv0_ = pv1_ = 0.
+    ///
+    /// @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.27), Fig. 3.18, p.79-85
+    void compute_general_bc(Scalar h, Scalar v_max, Scalar a_max_in, Scalar j_max)
+    {
+        // B&M a_max back-off step: when the no-cruise sub-case cannot actually
+        // reach a_max on a side, B&M recommends lowering the acceleration bound
+        // and re-solving until a consistent profile is found (Sec. 3.4.1, p.83-84).
+        // The factor is a gentle geometric back-off; the loop is bounded so a
+        // pathological input cannot spin forever.
+        constexpr Scalar a_max_backoff_factor = Scalar{0.99};
+        constexpr int max_backoff_iterations = 1024;
+
+        auto a_max = a_max_in;
+
+        for (int iter = 0; iter < max_backoff_iterations; ++iter) {
+            // Step 1: acceleration phase pv0_ -> v_lim, assuming v_lim = v_max.
+            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19), p.80
+            Scalar T_j1{}, T_a{}, a_lim_a{};
+            if ((v_max - pv0_) * j_max < a_max * a_max) {
+                // a_max is not reached in the acceleration phase
+                T_j1 = std::sqrt((v_max - pv0_) / j_max);
+                T_a = Scalar{2} * T_j1;
+                a_lim_a = j_max * T_j1;
+            } else {
+                T_j1 = a_max / j_max;
+                T_a = (v_max - pv0_) / a_max + T_j1;
+                a_lim_a = a_max;
+            }
+
+            // Step 2: deceleration phase v_lim -> pv1_, assuming v_lim = v_max.
+            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.20), p.80
+            Scalar T_j2{}, T_d{}, a_lim_d{};
+            if ((v_max - pv1_) * j_max < a_max * a_max) {
+                // a_max is not reached in the deceleration phase
+                T_j2 = std::sqrt((v_max - pv1_) / j_max);
+                T_d = Scalar{2} * T_j2;
+                a_lim_d = j_max * T_j2;
+            } else {
+                T_j2 = a_max / j_max;
+                T_d = (v_max - pv1_) / a_max + T_j2;
+                a_lim_d = a_max;
+            }
+
+            // Step 3: cruise duration.
+            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.21), p.81
+            auto const T_v = h / v_max
+                           - (T_a / Scalar{2}) * (Scalar{1} + pv0_ / v_max)
+                           - (T_d / Scalar{2}) * (Scalar{1} + pv1_ / v_max);
+
+            if (T_v > Scalar{0}) {
+                // Step 4: v_max is reached; a cruise phase exists.
+                T_j1_ = T_j1;
+                T_a_ = T_a;
+                a_lim_a_ = a_lim_a;
+                T_j2_ = T_j2;
+                T_d_ = T_d;
+                a_lim_d_ = a_lim_d;
+                T_v_ = T_v;
+                v_lim_ = v_max;
+                degenerate_ = (a_lim_a < a_max) || (a_lim_d < a_max);
+                T_ = T_a_ + T_v_ + T_d_;
+                return;
+            }
+
+            // Step 5: v_max is not reached; no cruise. Assume a_max is reached on
+            // both sides, so T_j1 = T_j2 = a_max / j_max.
+            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.25)-(3.27), p.83-84
+            T_j1 = a_max / j_max;
+            T_j2 = a_max / j_max;
+            auto const T_ja = a_max / j_max;
+            auto const delta = (a_max * a_max * a_max * a_max) / (j_max * j_max)
+                             + Scalar{2} * (pv0_ * pv0_ + pv1_ * pv1_)
+                             + a_max * (Scalar{4} * h - Scalar{2} * T_ja * (pv0_ + pv1_));
+            auto const sqrt_delta = std::sqrt(delta);
+            T_a = ((a_max * a_max / j_max) - Scalar{2} * pv0_ + sqrt_delta) / (Scalar{2} * a_max);
+            T_d = ((a_max * a_max / j_max) - Scalar{2} * pv1_ + sqrt_delta) / (Scalar{2} * a_max);
+
+            // A boundary velocity already above the profile peak makes its ramp
+            // duration negative; drop that ramp and let the other side carry it.
+            if (T_a < Scalar{0}) {
+                T_a = Scalar{0};
+            }
+            if (T_d < Scalar{0}) {
+                T_d = Scalar{0};
+            }
+
+            // Store this no-cruise solution so the last (backed-off) one persists
+            // even if the iteration bound is reached.
+            T_j1_ = T_j1;
+            T_j2_ = T_j2;
+            T_a_ = T_a;
+            T_d_ = T_d;
+            a_lim_a_ = a_max;
+            a_lim_d_ = a_max;
+            v_lim_ = pv0_ + (T_a - T_j1) * a_max;
+            T_v_ = Scalar{0};
+            degenerate_ = true;
+            T_ = T_a_ + T_v_ + T_d_;
+
+            // If a_max is actually reached on both sides the solution is consistent.
+            if (T_a >= Scalar{2} * T_j1 && T_d >= Scalar{2} * T_j2) {
+                return;
+            }
+
+            // Otherwise a_max cannot be reached on a side: back it off and retry.
+            a_max *= a_max_backoff_factor;
+        }
+    }
+
     /// @brief Solve doubly degenerate case using bisection on gamma.
     /// @cite biagiotti2009 -- Sec. 3.4.3, p.90-91 (Pitfall 2 from RESEARCH.md)
     void solve_doubly_degenerate(Scalar h, Scalar /*a_max*/, Scalar j_max)
@@ -285,13 +414,15 @@ private:
         auto const t2 = T_a_ - T_j1_;
 
         if (tc < t1) {
-            q = j * tc * tc * tc / Scalar{6};
-            dq = j * tc * tc / Scalar{2};
+            // Segment 1: jerk(+), velocity starts at pv0_.
+            q = pv0_ * tc + j * tc * tc * tc / Scalar{6};
+            dq = pv0_ + j * tc * tc / Scalar{2};
             ddq = j * tc;
         } else if (tc < t2) {
+            // Segment 2: constant accel, carrying the pv0_ offset forward.
             auto const t = tc - T_j1_;
-            auto const q1 = j * T_j1_ * T_j1_ * T_j1_ / Scalar{6};
-            auto const dq1 = j * T_j1_ * T_j1_ / Scalar{2};
+            auto const q1 = pv0_ * T_j1_ + j * T_j1_ * T_j1_ * T_j1_ / Scalar{6};
+            auto const dq1 = pv0_ + j * T_j1_ * T_j1_ / Scalar{2};
             q = q1 + dq1 * t + a_lim_a_ * t * t / Scalar{2};
             dq = dq1 + a_lim_a_ * t;
             ddq = a_lim_a_;
@@ -330,8 +461,9 @@ private:
             dq = v_at_t5 + a_at_t5 * dt_from_t5;
             ddq = a_at_t5;
         } else {
-            q = h - j * dt_end * dt_end * dt_end / Scalar{6};
-            dq = j * dt_end * dt_end / Scalar{2};
+            // Segment 7: final jerk(+), velocity ends at pv1_ (not zero).
+            q = h - pv1_ * dt_end - j * dt_end * dt_end * dt_end / Scalar{6};
+            dq = pv1_ + j * dt_end * dt_end / Scalar{2};
             ddq = -j * dt_end;
         }
     }
@@ -359,17 +491,13 @@ private:
     /// @brief Compute position at end of acceleration phase (t = T_a).
     auto compute_q_at_Ta() const -> Scalar
     {
-        // At T_a, velocity = v_lim, acceleration = 0
-        // Position = integral of velocity from 0 to T_a
-        // For symmetric accel phase: q = v_lim * T_a / 2
-        // More precisely: q(T_a) = v_lim * (T_a - T_j1) + j_max * T_j1^3 / 6
-        //                         + (j_max * T_j1^2 / 2) * (T_a - 2*T_j1)
-        //                         + a_lim_a * (T_a - 2*T_j1)^2 / 2
-
-        // Simpler: for v0=0, q(T_a) = (v_lim/2) * T_a
-        // This follows from the area under the velocity curve
-        // which is a symmetric trapezoid from 0 to v_lim over time T_a
-        return v_lim_ * T_a_ / Scalar{2};
+        // At T_a, velocity = v_lim, acceleration = 0. The acceleration profile of
+        // the phase is symmetric about its midpoint, so the velocity ramp is
+        // point-symmetric and its mean value is (pv0_ + v_lim) / 2. The swept
+        // displacement is therefore the trapezoidal area (pv0_ + v_lim)/2 * T_a,
+        // which is exact for nonzero initial velocity and reduces to v_lim*T_a/2
+        // when pv0_ = 0.
+        return (pv0_ + v_lim_) * T_a_ / Scalar{2};
     }
 };
 

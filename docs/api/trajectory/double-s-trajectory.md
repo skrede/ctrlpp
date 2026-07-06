@@ -32,6 +32,8 @@ explicit double_s_trajectory(config const& cfg);
 
 Construction follows the B&M flowchart (Fig 3.18) to solve all phase durations. Handles negative displacement via sigma transformation. Zero displacement produces a stationary profile.
 
+Nonzero initial and final velocities `v0`, `v1` are supported through the general B&M Sec 3.4.1 formulation: the acceleration phase ramps from `v0` and the deceleration phase ramps to `v1`, so `evaluate(0)` reports `v0` and `evaluate(duration())` reports `v1`, both with zero acceleration. When `v0 = v1 = 0` the solver reduces exactly to the symmetric Sec 3.4.3 special case. In the no-cruise sub-case where `a_max` cannot be reached on a side, the acceleration bound is backed off geometrically and re-solved (B&M's recommended handling), so all three limits stay respected.
+
 ## 7-Segment Structure
 
 ```
