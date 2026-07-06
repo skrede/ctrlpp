@@ -80,6 +80,9 @@ make_test(dare_hardening_test)
 make_test(dare_error_test)
 make_test(care_error_test)
 make_test(dare_care_nomalloc_test)
+# Every *_nomalloc_test consumes the process-global allocation counter from
+# nomalloc_harness.h and must be registered RUN_SERIAL.
+set_tests_properties(dare_care_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
 make_test(lqr_continuous_test)
 make_test(mrac_hardening_test)
 make_test(l1_hardening_test)

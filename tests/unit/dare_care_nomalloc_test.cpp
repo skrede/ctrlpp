@@ -1,19 +1,28 @@
 // Verify the hot paths of ctrlpp::dare and ctrlpp::care do zero heap allocation
-// on fixed-size templated inputs. Uses Eigen's EIGEN_RUNTIME_NO_MALLOC + assert
-// contract: any heap alloc inside a `set_is_malloc_allowed(false)` window asserts.
+// on fixed-size templated inputs, using the belt-and-suspenders harness from
+// nomalloc_harness.h: a throwing eigen_assert that survives -DNDEBUG plus a
+// global allocation counter that catches heap traffic outside Eigen's own
+// bookkeeping. The harness header must stay the first include of this file.
 //
 // The check is surgical: we exclude the initial instantiation/warm-up and only
-// guard the steady-state call itself.
+// guard the steady-state call itself. A negative-control case proves that both
+// detection mechanisms fire, so the suite cannot silently false-pass.
 
-#define EIGEN_RUNTIME_NO_MALLOC
+#include "nomalloc_harness.h"
 
-#include "ctrlpp/control/dare.h"
 #include "ctrlpp/control/care.h"
+#include "ctrlpp/control/dare.h"
+
 #include "ctrlpp/detail/care_methods.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <Eigen/Dense>
+
+#include <new>
+#include <cstddef>
+#include <utility>
+#include <stdexcept>
 
 
 namespace
@@ -55,23 +64,76 @@ auto build_care_inputs()
     return std::tuple{A, B, Q, R};
 }
 
+// Runs the callable inside an armed no-malloc window and returns the number of
+// heap allocations it performed. The count is sampled before the guard is
+// released and before any test macro runs, so framework-internal allocations
+// cannot pollute it.
+template <typename Fn>
+std::size_t guarded_allocations(Fn&& fn)
+{
+    ctrlpp_test::scoped_no_malloc guard;
+    std::forward<Fn>(fn)();
+    return guard.allocations();
 }
 
+// Warm-up-then-arm pattern shared by every steady-state case: one solve
+// outside the window flushes lazy one-time instantiation, then the same solve
+// must complete inside the armed window without throwing (Eigen-side trap) and
+// without touching the global allocation counter.
+template <typename Solve>
+void require_alloc_free_steady_state(Solve&& solve)
+{
+    auto warmup = solve();
+    REQUIRE(warmup.has_value());
+
+    std::size_t allocations = 0;
+    bool solved = false;
+    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+        solved = solve().has_value();
+    }));
+
+    REQUIRE(allocations == 0);
+    REQUIRE(solved);
+}
+
+}
+
+
+TEST_CASE("harness detects heap allocation",
+          "[hardening][nomalloc]")
+{
+    SECTION("global counter fires on operator new inside the armed window")
+    {
+        std::size_t allocations = 0;
+        REQUIRE_NOTHROW(allocations = guarded_allocations([] {
+            // Call the replaced allocation function directly: unlike a
+            // new-expression, a plain function call cannot be elided.
+            void* heap_block = ::operator new(sizeof(double));
+            ::operator delete(heap_block);
+        }));
+
+        REQUIRE(allocations > 0);
+    }
+
+    SECTION("throwing eigen_assert fires on an Eigen allocation under -DNDEBUG")
+    {
+        ctrlpp_test::scoped_no_malloc guard;
+
+        // Constructing a dynamically sized vector goes through Eigen's
+        // aligned allocation check, which must throw while the window is
+        // armed even when the stock assert is compiled out.
+        REQUIRE_THROWS_AS(Eigen::VectorXd(1), std::runtime_error);
+    }
+}
 
 TEST_CASE("dare hot path performs zero heap allocation (NX=2, NU=1)",
           "[dare][hardening][nomalloc]")
 {
     auto [A, B, Q, R] = build_dare_inputs<2, 1>();
 
-    // Warm-up call outside the no-malloc window (instantiates any lazy members).
-    auto warmup = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("dare hot path performs zero heap allocation (NX=4, NU=2)",
@@ -79,14 +141,9 @@ TEST_CASE("dare hot path performs zero heap allocation (NX=4, NU=2)",
 {
     auto [A, B, Q, R] = build_dare_inputs<4, 2>();
 
-    auto warmup = ctrlpp::dare<double, 4, 2>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::dare<double, 4, 2>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::dare<double, 4, 2>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("dare hot path performs zero heap allocation (NX=8, NU=2)",
@@ -94,14 +151,9 @@ TEST_CASE("dare hot path performs zero heap allocation (NX=8, NU=2)",
 {
     auto [A, B, Q, R] = build_dare_inputs<8, 2>();
 
-    auto warmup = ctrlpp::dare<double, 8, 2>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::dare<double, 8, 2>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::dare<double, 8, 2>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("care hot path performs zero heap allocation (NX=2, NU=1)",
@@ -109,14 +161,9 @@ TEST_CASE("care hot path performs zero heap allocation (NX=2, NU=1)",
 {
     auto [A, B, Q, R] = build_care_inputs<2, 1>();
 
-    auto warmup = ctrlpp::care<double, 2, 1>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::care<double, 2, 1>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("care hot path performs zero heap allocation (NX=4, NU=2)",
@@ -124,14 +171,9 @@ TEST_CASE("care hot path performs zero heap allocation (NX=4, NU=2)",
 {
     auto [A, B, Q, R] = build_care_inputs<4, 2>();
 
-    auto warmup = ctrlpp::care<double, 4, 2>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::care<double, 4, 2>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::care<double, 4, 2>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("care hot path performs zero heap allocation (NX=8, NU=2)",
@@ -139,14 +181,9 @@ TEST_CASE("care hot path performs zero heap allocation (NX=8, NU=2)",
 {
     auto [A, B, Q, R] = build_care_inputs<8, 2>();
 
-    auto warmup = ctrlpp::care<double, 8, 2>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::care<double, 8, 2>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::care<double, 8, 2>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("care hot path performs zero heap allocation (NX=2, NU=1, sign_function)",
@@ -155,14 +192,9 @@ TEST_CASE("care hot path performs zero heap allocation (NX=2, NU=1, sign_functio
     using ctrlpp::detail::sign_function_care_method;
     auto [A, B, Q, R] = build_care_inputs<2, 1>();
 
-    auto warmup = ctrlpp::care<double, 2, 1, sign_function_care_method>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::care<double, 2, 1, sign_function_care_method>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::care<double, 2, 1, sign_function_care_method>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("care hot path performs zero heap allocation (NX=4, NU=2, sign_function)",
@@ -171,14 +203,9 @@ TEST_CASE("care hot path performs zero heap allocation (NX=4, NU=2, sign_functio
     using ctrlpp::detail::sign_function_care_method;
     auto [A, B, Q, R] = build_care_inputs<4, 2>();
 
-    auto warmup = ctrlpp::care<double, 4, 2, sign_function_care_method>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::care<double, 4, 2, sign_function_care_method>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::care<double, 4, 2, sign_function_care_method>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("care hot path performs zero heap allocation (NX=8, NU=2, sign_function)",
@@ -187,14 +214,9 @@ TEST_CASE("care hot path performs zero heap allocation (NX=8, NU=2, sign_functio
     using ctrlpp::detail::sign_function_care_method;
     auto [A, B, Q, R] = build_care_inputs<8, 2>();
 
-    auto warmup = ctrlpp::care<double, 8, 2, sign_function_care_method>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::care<double, 8, 2, sign_function_care_method>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::care<double, 8, 2, sign_function_care_method>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("care hot path performs zero heap allocation (NX=2, NU=1, balanced_schur)",
@@ -203,14 +225,9 @@ TEST_CASE("care hot path performs zero heap allocation (NX=2, NU=1, balanced_sch
     using ctrlpp::detail::balanced_schur_care_method;
     auto [A, B, Q, R] = build_care_inputs<2, 1>();
 
-    auto warmup = ctrlpp::care<double, 2, 1, balanced_schur_care_method>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::care<double, 2, 1, balanced_schur_care_method>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::care<double, 2, 1, balanced_schur_care_method>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("care hot path performs zero heap allocation (NX=4, NU=2, balanced_schur)",
@@ -219,14 +236,9 @@ TEST_CASE("care hot path performs zero heap allocation (NX=4, NU=2, balanced_sch
     using ctrlpp::detail::balanced_schur_care_method;
     auto [A, B, Q, R] = build_care_inputs<4, 2>();
 
-    auto warmup = ctrlpp::care<double, 4, 2, balanced_schur_care_method>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::care<double, 4, 2, balanced_schur_care_method>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::care<double, 4, 2, balanced_schur_care_method>(A, B, Q, R);
+    });
 }
 
 TEST_CASE("care hot path performs zero heap allocation (NX=8, NU=2, balanced_schur)",
@@ -235,12 +247,7 @@ TEST_CASE("care hot path performs zero heap allocation (NX=8, NU=2, balanced_sch
     using ctrlpp::detail::balanced_schur_care_method;
     auto [A, B, Q, R] = build_care_inputs<8, 2>();
 
-    auto warmup = ctrlpp::care<double, 8, 2, balanced_schur_care_method>(A, B, Q, R);
-    REQUIRE(warmup.has_value());
-
-    Eigen::internal::set_is_malloc_allowed(false);
-    auto result = ctrlpp::care<double, 8, 2, balanced_schur_care_method>(A, B, Q, R);
-    Eigen::internal::set_is_malloc_allowed(true);
-
-    REQUIRE(result.has_value());
+    require_alloc_free_steady_state([&] {
+        return ctrlpp::care<double, 8, 2, balanced_schur_care_method>(A, B, Q, R);
+    });
 }
