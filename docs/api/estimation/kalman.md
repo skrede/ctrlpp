@@ -88,13 +88,13 @@ const output_vector_t& innovation() const;
 
 Returns the most recent measurement innovation (z - Cx).
 
-### nees
+### nis
 
 ```cpp
-Scalar nees() const;
+Scalar nis() const;
 ```
 
-Returns the Normalized Estimation Error Squared from the last update.
+Returns the Normalized Innovation Squared from the last update (innovation^T S^-1 innovation), chi-square distributed with dof = NY under a consistent filter.
 
 ### is_steady_state
 

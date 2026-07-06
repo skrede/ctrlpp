@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <numbers>
 #include <utility>
+#include <concepts>
 #include <algorithm>
 
 namespace ctrlpp
@@ -58,8 +59,36 @@ struct pf_config
     weight_representation weights{weight_representation::log};
 };
 
-template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t NP, typename Dynamics, typename Measurement, typename Resampler = systematic_resampling, typename Rng = std::mt19937_64>
-    requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY> && std::uniform_random_bit_generator<Rng> && resampling_strategy<Resampler, Rng, NP>
+namespace detail
+{
+
+template <ctrlpp_floating_scalar Scalar, std::size_t NY>
+struct gaussian_likelihood
+{
+    /// Log Gaussian likelihood of the innovation z - z_pred under measurement
+    /// covariance R, given precomputed R^-1 and log((2 pi)^NY det R).
+    Scalar operator()(const Vector<Scalar, NY>& z, const Vector<Scalar, NY>& z_pred,
+                      const Matrix<Scalar, NY, NY>& R_inv, Scalar log_det_2piR) const
+    {
+        Vector<Scalar, NY> innov = z - z_pred;
+        Scalar mahal = (innov.transpose() * R_inv * innov)(0, 0);
+        return Scalar{-0.5} * mahal - Scalar{0.5} * log_det_2piR;
+    }
+};
+
+}
+
+/// @brief Constrains a measurement-likelihood policy usable by particle_filter.
+///
+/// A policy maps an innovation (z, z_pred) plus the precomputed measurement
+/// precision R^-1 and log normalizer to a scalar log-likelihood.
+template <typename L, typename Scalar, std::size_t NY>
+concept pf_likelihood_model = requires(const L& l, const Vector<Scalar, NY>& v, const Matrix<Scalar, NY, NY>& Rinv, Scalar s) {
+    { l(v, v, Rinv, s) } -> std::convertible_to<Scalar>;
+};
+
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t NP, typename Dynamics, typename Measurement, typename Resampler = systematic_resampling, typename Rng = std::mt19937_64, typename Likelihood = detail::gaussian_likelihood<Scalar, NY>>
+    requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY> && std::uniform_random_bit_generator<Rng> && resampling_strategy<Resampler, Rng, NP> && pf_likelihood_model<Likelihood, Scalar, NY>
 class particle_filter
 {
     static_assert(NX > 0, "State dimension NX must be positive");
@@ -76,11 +105,12 @@ public:
     using input_vector_t = Vector<Scalar, NU>;
     using output_vector_t = Vector<Scalar, NY>;
 
-    particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{})
+    particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_resampler{}
         , m_rng{std::move(rng)}
+        , m_likelihood{std::move(likelihood)}
         , m_Q{std::move(config.Q)}
         , m_R{std::move(config.R)}
         , m_R_inv{m_R.colPivHouseholderQr().inverse()}
@@ -93,11 +123,12 @@ public:
         initialize_particles(config.x0, config.P0);
     }
 
-    particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Resampler resampler, Rng rng = Rng{})
+    particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Resampler resampler, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_resampler{std::move(resampler)}
         , m_rng{std::move(rng)}
+        , m_likelihood{std::move(likelihood)}
         , m_Q{std::move(config.Q)}
         , m_R{std::move(config.R)}
         , m_R_inv{m_R.colPivHouseholderQr().inverse()}
@@ -182,6 +213,7 @@ private:
     Measurement m_measurement;
     Resampler m_resampler;
     Rng m_rng;
+    Likelihood m_likelihood;
 
     Matrix<Scalar, NX, NX> m_Q;
     Matrix<Scalar, NY, NY> m_R;
@@ -250,14 +282,16 @@ private:
         }
     }
 
-    /// @brief Compute Gaussian log-likelihood of innovation.
+    /// @brief Compute measurement log-likelihood of the innovation via the policy.
+    ///
+    /// The default policy reproduces the Gaussian log-likelihood exactly; a
+    /// custom policy (for example a bearing wrap) sees the same precomputed
+    /// precision m_R_inv and log normalizer m_log_det_2piR.
     ///
     /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Eq. 63
     Scalar log_likelihood(const output_vector_t& z, const output_vector_t& z_pred) const
     {
-        output_vector_t innov = z - z_pred;
-        Scalar mahal = (innov.transpose() * m_R_inv * innov)(0, 0);
-        return Scalar{-0.5} * mahal - Scalar{0.5} * m_log_det_2piR;
+        return m_likelihood(z, z_pred, m_R_inv, m_log_det_2piR);
     }
 
     /// @brief Compute log-weights for all particles given measurement.
@@ -305,6 +339,11 @@ private:
     }
 
     /// @brief Normalize linear weights.
+    ///
+    /// On total underflow (every likelihood collapsed to zero, so the sum is
+    /// not positive) the weights are reset to uniform 1/NP, mirroring the log
+    /// path's reset, so the filter recovers to the plain particle mean rather
+    /// than leaving stale or zero weights.
     void normalize_linear_weights()
     {
         Scalar sum = Scalar{0};
@@ -313,6 +352,8 @@ private:
         if(sum > Scalar{0})
             for(auto& w : m_linear_weights)
                 w /= sum;
+        else
+            m_linear_weights.fill(Scalar{1} / static_cast<Scalar>(NP));
     }
 
     /// @brief Compute Effective Sample Size from current weights.
@@ -444,10 +485,10 @@ private:
 };
 
 // Factory function since NP cannot be deduced via CTAD
-template <std::size_t NP, typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64>
-auto make_particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{})
+template <std::size_t NP, typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64, typename Likelihood = detail::gaussian_likelihood<Scalar, NY>>
+auto make_particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
 {
-    return particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng>(std::move(dynamics), std::move(measurement), std::move(config), std::move(rng));
+    return particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng, Likelihood>(std::move(dynamics), std::move(measurement), std::move(config), std::move(rng), std::move(likelihood));
 }
 
 // Static assert helpers

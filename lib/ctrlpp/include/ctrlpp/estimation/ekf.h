@@ -91,7 +91,7 @@ public:
         apply_state_correction(K, z, z_pred);
         update_covariance(K, H);
 
-        m_nees = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
+        m_nis = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
     }
 
     const state_vector_t& state() const { return m_x; }
@@ -100,7 +100,9 @@ public:
 
     const output_vector_t& innovation() const { return m_innovation; }
 
-    Scalar nees() const { return m_nees; }
+    /// @brief Normalized Innovation Squared: innovation^T S^{-1} innovation
+    /// (chi-square distributed with dof = NY under a consistent filter).
+    Scalar nis() const { return m_nis; }
 
 private:
     /// @brief Propagate state through dynamics model.
@@ -165,7 +167,7 @@ private:
     }
 
     Scalar m_eps;
-    Scalar m_nees{0};
+    Scalar m_nis{0};
     Dynamics m_dynamics;
     cov_matrix_t m_P;
     cov_matrix_t m_Q;

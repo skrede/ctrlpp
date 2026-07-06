@@ -137,6 +137,7 @@ public:
         auto K = compute_kalman_gain(Pxz, S);
 
         m_innovation = (z - z_pred).eval();
+        m_nis = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
         apply_correction_and_update_covariance(K, S);
     }
 
@@ -145,6 +146,10 @@ public:
     const cov_matrix_t& covariance() const { return m_P; }
 
     const output_vector_t& innovation() const { return m_innovation; }
+
+    /// @brief Normalized Innovation Squared: innovation^T S^{-1} innovation
+    /// (chi-square distributed with dof = NY under a consistent filter).
+    Scalar nis() const { return m_nis; }
 
     /// @brief Report whether the filter has had to repair a non-positive-definite
     /// covariance to the nearest symmetric positive definite matrix.
@@ -275,6 +280,7 @@ private:
     gain_decomposition m_decomposition;
     Strategy m_strategy;
     output_vector_t m_innovation;
+    Scalar m_nis{0};
     ukf_health m_health{ukf_health::ok};
 };
 

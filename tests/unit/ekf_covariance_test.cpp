@@ -115,7 +115,7 @@ TEST_CASE("ekf covariance stays symmetric and PSD over 100+ cycles")
     }
 }
 
-TEST_CASE("ekf NEES is finite and positive")
+TEST_CASE("ekf NIS is finite and positive")
 {
     linear_dynamics dyn;
     position_measurement meas;
@@ -135,6 +135,6 @@ TEST_CASE("ekf NEES is finite and positive")
     z << 1.0;
     filter.update(z);
 
-    CHECK(filter.nees() >= 0.0);
-    CHECK(std::isfinite(filter.nees()));
+    CHECK(filter.nis() >= 0.0);
+    CHECK(std::isfinite(filter.nis()));
 }

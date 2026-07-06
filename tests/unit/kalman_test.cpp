@@ -92,7 +92,7 @@ TEST_CASE("kalman filter covariance remains symmetric and PSD")
     }
 }
 
-TEST_CASE("kalman filter NEES is finite and positive after update")
+TEST_CASE("kalman filter NIS is finite and positive after update")
 {
     auto sys = make_const_velocity_system();
 
@@ -112,8 +112,8 @@ TEST_CASE("kalman filter NEES is finite and positive after update")
     z << 1.0;
     kf.update(z);
 
-    CHECK(kf.nees() >= 0.0);
-    CHECK(std::isfinite(kf.nees()));
+    CHECK(kf.nis() >= 0.0);
+    CHECK(std::isfinite(kf.nis()));
 }
 
 TEST_CASE("kalman filter steady state detection")

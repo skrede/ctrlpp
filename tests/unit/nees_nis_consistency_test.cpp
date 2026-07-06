@@ -20,16 +20,17 @@
 // level uses the standard normal 97.5th percentile z=1.959964 (Abramowitz &
 // Stegun, "Handbook of Mathematical Functions", 1964, Table 26.1).
 //
-// KF, EKF, and UKF are correct today: their sections are untagged and must
-// pass. The UKF's posterior covariance update is now the algebraically
+// KF, EKF, UKF, and MEKF are all correct now: every section is untagged and
+// must pass. The UKF's posterior covariance update is the algebraically
 // complete P - K*S*K^T reduction with no spurious K*R*K^T inflation, and its
 // sigma points are built from a square root that reconstructs the covariance
-// exactly, so its reported covariance is a statistically honest description of
-// its actual error. The MEKF is not yet corrected: its error-state transition
-// uses the incremental rotation where its own multiplicative-correction
-// convention requires the incremental rotation's transpose (invisible on
-// isotropic covariance, exposed here once the attitude covariance is
-// anisotropic), so its section is held green with [!shouldfail] until fixed.
+// exactly. The MEKF's error-state transition propagates the attitude sub-block
+// with the transpose of the incremental rotation, matching its right-error
+// multiplicative-correction convention (invisible on isotropic covariance,
+// exposed here once the attitude covariance is anisotropic). The MEKF section
+// samples its initial true attitude error from P0 (Sec. 5.4) so the single
+// unobservable rotational DOF of the vector measurement does not bias the NEES
+// low; with the corrected transition its NEES lies inside the band.
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/estimation/ekf.h"
@@ -196,7 +197,7 @@ TEST_CASE("KF NEES/NIS Monte-Carlo average lies within the chi-square consistenc
         Vector<double, NX> e = (x_true - filt.state()).eval();
         Vector<double, NX> Pinv_e = filt.covariance().ldlt().solve(e);
         nees_sum += (e.transpose() * Pinv_e)(0, 0);
-        nis_sum += filt.nees(); // filter's own name for innovation' * S^-1 * innovation, i.e. NIS
+        nis_sum += filt.nis(); // filter's Normalized Innovation Squared: innovation' * S^-1 * innovation
     }
 
     double nees_avg = nees_sum / static_cast<double>(M);
@@ -247,7 +248,7 @@ TEST_CASE("EKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
         Vector<double, NX> e = (x_true - filt.state()).eval();
         Vector<double, NX> Pinv_e = filt.covariance().ldlt().solve(e);
         nees_sum += (e.transpose() * Pinv_e)(0, 0);
-        nis_sum += filt.nees();
+        nis_sum += filt.nis();
     }
 
     double nees_avg = nees_sum / static_cast<double>(M);
@@ -315,10 +316,11 @@ TEST_CASE("UKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
         Vector<double, NX> Pinv_e = filt.covariance().ldlt().solve(e);
         nees_sum += (e.transpose() * Pinv_e)(0, 0);
 
-        // No nis()/nees() accessor on ukf (added in a later phase): reconstruct
-        // the innovation covariance S = C*P_prior*C^T + R ourselves from the
-        // known linear measurement map and the filter's own reported prior
-        // covariance, matching how the KF/EKF's own internal S is defined.
+        // Reconstruct the innovation covariance S = C*P_prior*C^T + R ourselves
+        // from the known linear measurement map and the filter's own reported
+        // prior covariance, matching how the KF/EKF's own internal S is defined.
+        // This independent reconstruction cross-checks the sigma-point path
+        // rather than reusing the filter's nis() accessor.
         Matrix<double, NY, NY> S = (C * P_prior * C.transpose() + cfg.R).eval();
         Vector<double, NY> innovation = filt.innovation();
         Vector<double, NY> Sinv_innovation = S.ldlt().solve(innovation);

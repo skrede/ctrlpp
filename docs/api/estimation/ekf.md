@@ -85,13 +85,13 @@ const cov_matrix_t& covariance() const;
 const output_vector_t& innovation() const;
 ```
 
-### nees
+### nis
 
 ```cpp
-Scalar nees() const;
+Scalar nis() const;
 ```
 
-Normalized Estimation Error Squared from the last update.
+Normalized Innovation Squared from the last update (innovation^T S^-1 innovation), chi-square distributed with dof = NY under a consistent filter.
 
 ## Jacobian Dispatch
 

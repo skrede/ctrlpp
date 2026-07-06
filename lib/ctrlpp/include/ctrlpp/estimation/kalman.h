@@ -77,7 +77,7 @@ public:
 
         apply_state_correction(K);
         update_covariance(K);
-        compute_nees(S);
+        compute_nis(S);
     }
 
     const state_vector_t& state() const { return m_x; }
@@ -86,7 +86,9 @@ public:
 
     const output_vector_t& innovation() const { return m_innovation; }
 
-    Scalar nees() const { return m_nees_value; }
+    /// @brief Normalized Innovation Squared: innovation^T S^{-1} innovation
+    /// (chi-square distributed with dof = NY under a consistent filter).
+    Scalar nis() const { return m_nis_value; }
 
     bool is_steady_state(Scalar tol = Scalar{1e-10}) const
     {
@@ -164,14 +166,15 @@ private:
         m_P = detail::symmetrize((IKC * m_P * IKC.transpose() + K * m_R * K.transpose()).eval());
     }
 
-    /// @brief Compute Normalized Estimation Error Squared: y^T * S^{-1} * y.
-    void compute_nees(const meas_cov_matrix_t& S)
+    /// @brief Compute Normalized Innovation Squared: innovation^T * S^{-1} * innovation
+    /// (chi-square distributed with dof = NY).
+    void compute_nis(const meas_cov_matrix_t& S)
     {
         output_vector_t Sinv_z = S.colPivHouseholderQr().solve(m_innovation).eval();
-        m_nees_value = (m_innovation.transpose() * Sinv_z)(0, 0);
+        m_nis_value = (m_innovation.transpose() * Sinv_z)(0, 0);
     }
 
-    Scalar m_nees_value{0};
+    Scalar m_nis_value{0};
     system_t m_sys;
     cov_matrix_t m_Q;
     cov_matrix_t m_P;
