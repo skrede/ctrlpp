@@ -80,7 +80,7 @@ Propagates the internal EKF one step and records the input in the sliding window
 void update(const output_vector_t& z);
 ```
 
-Incorporates a new measurement. During fill-up, delegates to the internal EKF. Once the window is full, solves the NMHE NLP.
+Incorporates a new measurement. During fill-up, delegates to the internal EKF. Once the window is full, solves the NMHE NLP. A solver setup failure at construction (reported through the solver's `try_setup`) or a non-optimal solve falls back to the internal EKF; `diagnostics()` reports the fallback.
 
 ### state
 

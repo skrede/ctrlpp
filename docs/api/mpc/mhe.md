@@ -76,7 +76,7 @@ Propagates the internal EKF one step and records the input in the sliding window
 void update(const output_vector_t& z);
 ```
 
-Incorporates a new measurement. During fill-up (fewer than N steps), delegates to the internal EKF. Once the window is full, solves the MHE QP to refine the state trajectory over the entire window.
+Incorporates a new measurement. During fill-up (fewer than N steps), delegates to the internal EKF. Once the window is full, solves the MHE QP to refine the state trajectory over the entire window. A solver setup failure (reported through the solver's `try_setup`) or a non-optimal solve falls back to the internal EKF; `diagnostics()` reports the fallback.
 
 ### state
 

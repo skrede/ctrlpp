@@ -9,9 +9,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <span>
 #include <cmath>
-#include <cstddef>
 #include <vector>
+#include <cstddef>
+#include <type_traits>
 
 namespace
 {
@@ -53,6 +55,7 @@ using NmpcPend = ctrlpp::nmpc<double, NX, NU, ArgminSolver, decltype(pendulum)>;
 TEST_CASE("argmin_solver satisfies nlp_solver concept", "[argmin]")
 {
     static_assert(ctrlpp::nlp_solver<ArgminSolver>, "argmin_solver<double, argmin_slsqp> must satisfy nlp_solver concept");
+    static_assert(std::is_same_v<decltype(ctrlpp::nlp_result<double>{}.status), ctrlpp::solve_status>, "nlp_result::status must stay a plain solve_status value");
 }
 
 TEST_CASE("argmin_solver satisfies nlp_stepper concept", "[argmin]")
@@ -210,6 +213,59 @@ TEST_CASE("nlopt auglag_eq + ld_mma smoke", "[nmpc][argmin][nlopt]")
     CHECK(std::isfinite(result.objective));
     for(Eigen::Index i = 0; i < result.x.size(); ++i)
         CHECK(std::isfinite(result.x[i]));
+}
+
+TEST_CASE("nlopt try_setup reports equality-constraint rejection as an expected error", "[nmpc][argmin][nlopt]")
+{
+    // A minimal NLP with a single equality constraint x0 + x1 = 1. Raw MMA and
+    // raw CCSAQ cannot handle equality constraints, so try_setup must return
+    // the incompatible_equality_constraints error as a value instead of
+    // throwing; the auglag-wrapped variant absorbs the equality constraint and
+    // must set up successfully on the same problem.
+    ctrlpp::nlp_problem<double> problem{};
+    problem.n_vars = 2;
+    problem.n_constraints = 1;
+    problem.cost = [](std::span<const double> x) { return x[0] * x[0] + x[1] * x[1]; };
+    problem.gradient = [](std::span<const double> x, std::span<double> g)
+    {
+        g[0] = 2.0 * x[0];
+        g[1] = 2.0 * x[1];
+    };
+    problem.constraints = [](std::span<const double> x, std::span<double> c) { c[0] = x[0] + x[1]; };
+    problem.c_lower = Eigen::VectorXd::Constant(1, 1.0);
+    problem.c_upper = Eigen::VectorXd::Constant(1, 1.0);
+
+    SECTION("mma rejects the equality constraint")
+    {
+        ctrlpp::nlopt_settings<double> settings{};
+        settings.algorithm = ctrlpp::nlopt_algorithm::mma;
+
+        ctrlpp::nlopt_solver<double> solver{settings};
+        auto result = solver.try_setup(problem);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::nlopt_setup_error::incompatible_equality_constraints);
+    }
+
+    SECTION("ccsaq rejects the equality constraint")
+    {
+        ctrlpp::nlopt_settings<double> settings{};
+        settings.algorithm = ctrlpp::nlopt_algorithm::ccsaq;
+
+        ctrlpp::nlopt_solver<double> solver{settings};
+        auto result = solver.try_setup(problem);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::nlopt_setup_error::incompatible_equality_constraints);
+    }
+
+    SECTION("auglag_mma absorbs the equality constraint")
+    {
+        ctrlpp::nlopt_settings<double> settings{};
+        settings.algorithm = ctrlpp::nlopt_algorithm::auglag_mma;
+
+        ctrlpp::nlopt_solver<double> solver{settings};
+        auto result = solver.try_setup(problem);
+        REQUIRE(result.has_value());
+    }
 }
 #endif
 

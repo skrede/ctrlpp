@@ -50,8 +50,11 @@ TEST_CASE("MPC infeasible constraints: lower > upper", "[mpc][hardening][negativ
         .u_max = Eigen::Matrix<double, 1, 1>{{-5.0}}, // lower > upper
     };
 
-    // OSQP rejects infeasible bounds at setup -- exception is the correct behavior
-    REQUIRE_THROWS(OsqpMpc(sys, cfg));
+    // OSQP rejects the infeasible bounds at setup. The failure is reported on the
+    // fail-closed channel: construction latches the setup error and solve returns
+    // no solution rather than throwing.
+    OsqpMpc controller(sys, cfg);
+    REQUIRE_FALSE(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
 }
 
 TEST_CASE("MPC minimal horizon N=1", "[mpc][hardening][negative]")
@@ -85,8 +88,11 @@ TEST_CASE("MPC with NaN in weight matrices", "[mpc][hardening][negative]")
         .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
     };
 
-    // NaN Q produces non-convex QP -- OSQP rejects at setup
-    REQUIRE_THROWS(OsqpMpc(sys, cfg));
+    // A NaN weight produces a non-convex QP. OSQP rejects it at setup and the
+    // failure is reported on the fail-closed channel: construction latches the
+    // setup error and solve returns no solution rather than throwing.
+    OsqpMpc controller(sys, cfg);
+    REQUIRE_FALSE(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
 }
 
 // ── MPC hardening: precision ───────────────────────────────────────────────────

@@ -69,7 +69,7 @@ Constructs the controller from a dynamics model and configuration. Builds the NL
 std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0);
 ```
 
-Solves the NLP for regulating state to the origin.
+Solves the NLP for regulating state to the origin. Returns the first optimal input or `std::nullopt` if the solver fails. If solver setup failed at construction (reported through the solver's `try_setup`), every `solve` overload returns `std::nullopt`.
 
 ### solve (constant reference)
 

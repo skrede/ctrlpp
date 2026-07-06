@@ -20,6 +20,19 @@ enum class solve_status : std::uint8_t
     error
 };
 
+/// @brief Structured failure modes for `osqp_solver::try_setup`.
+///
+///  * settings_allocation_failed : `OSQPSettings_new` returned null; the settings
+///                                 block could not be allocated.
+///  * setup_failed               : `osqp_setup` returned a nonzero exit flag; the
+///                                 problem data or settings were rejected, or the
+///                                 workspace could not be allocated.
+enum class osqp_setup_error : std::uint8_t
+{
+    settings_allocation_failed,
+    setup_failed
+};
+
 template <typename Scalar>
 struct qp_problem
 {

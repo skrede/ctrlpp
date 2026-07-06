@@ -50,7 +50,7 @@ public:
     {
         m_state->x_ref.resize(static_cast<std::size_t>(m_N + 1), Vector<Scalar, NX>::Zero());
         m_problem = detail::build_nmpc_problem<Scalar, NX, NU, NC, NTC>(m_dynamics, m_config, m_state);
-        m_solver.setup(m_problem);
+        m_setup_failed = !detail::setup_nlp_solver(m_solver, m_problem);
         m_warm_z = Eigen::VectorX<Scalar>::Zero(m_num_vars);
     }
 
@@ -102,6 +102,9 @@ public:
 private:
     std::optional<Vector<Scalar, NU>> solve_impl(const Vector<Scalar, NX>& x0)
     {
+        if(m_setup_failed)
+            return std::nullopt;
+
         m_state->x0 = x0;
         m_state->u_prev = m_u_prev;
 
@@ -273,6 +276,7 @@ private:
     Eigen::VectorX<Scalar> m_last_solution;
     mpc_diagnostics<Scalar> m_last_diagnostics{};
     Vector<Scalar, NU> m_u_prev{Vector<Scalar, NU>::Zero()};
+    bool m_setup_failed{false};
 };
 
 }

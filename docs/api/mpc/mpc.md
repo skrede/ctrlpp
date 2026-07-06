@@ -62,7 +62,7 @@ Constructs the controller from a discrete-time state-space model and configurati
     -> std::optional<Vector<Scalar, NU>>;
 ```
 
-Solves the QP for regulating state to the origin. Returns the first optimal input or `std::nullopt` if the solver fails.
+Solves the QP for regulating state to the origin. Returns the first optimal input or `std::nullopt` if the solver fails. If solver setup failed at construction (reported through the solver's `try_setup`), every `solve` overload returns `std::nullopt`.
 
 ### solve (constant reference)
 

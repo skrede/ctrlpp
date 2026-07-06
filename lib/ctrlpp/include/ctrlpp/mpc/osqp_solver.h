@@ -5,6 +5,9 @@
 ///
 /// @cite stellato2020 -- Stellato, Banjac, Goulart, Bemporad & Boyd, "OSQP: An Operator Splitting Solver for Quadratic Programs", Math. Prog. Comp. 12(4):637-672, 2020
 
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/mpc/qp_types.h"
 
 #include <Eigen/Sparse>
@@ -72,12 +75,29 @@ public:
         return *this;
     }
 
-    void setup(const qp_problem<double>& problem)
+    /// @brief Fallible setup: initializes the OSQP workspace from the problem data.
+    /// Returns an empty expected on success and an `osqp_setup_error` on failure.
+    [[nodiscard]] auto try_setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, osqp_setup_error>
     {
         cleanup();
         prepare_sparse_matrices(problem);
-        configure_and_create_solver(problem);
+        return configure_and_create_solver(problem);
     }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience wrapper over `try_setup`. Throws
+    /// `std::runtime_error` on allocation or setup failure.
+    void setup(const qp_problem<double>& problem)
+    {
+        auto result = try_setup(problem);
+        if(!result.has_value())
+        {
+            if(result.error() == osqp_setup_error::settings_allocation_failed)
+                throw std::runtime_error("OSQP settings allocation failed");
+            throw std::runtime_error("OSQP setup failed");
+        }
+    }
+#endif
 
     auto solve(const qp_update<double>& update) -> qp_result<double>
     {
@@ -116,14 +136,14 @@ private:
         m_ = static_cast<OSQPInt>(problem.A.rows());
     }
 
-    void configure_and_create_solver(const qp_problem<double>& problem)
+    [[nodiscard]] auto configure_and_create_solver(const qp_problem<double>& problem) -> ctrlpp::expected<void, osqp_setup_error>
     {
         auto p_csc = make_csc(p_upper_);
         auto a_csc = make_csc(a_);
 
         auto* settings = OSQPSettings_new();
         if(!settings)
-            throw std::runtime_error("OSQP settings allocation failed");
+            return ctrlpp::unexpected(osqp_setup_error::settings_allocation_failed);
 
         settings->eps_abs = eps_abs_;
         settings->eps_rel = eps_rel_;
@@ -139,8 +159,10 @@ private:
         if(exit_flag != 0)
         {
             solver_ = nullptr;
-            throw std::runtime_error("OSQP setup failed");
+            return ctrlpp::unexpected(osqp_setup_error::setup_failed);
         }
+
+        return {};
     }
 
     void cleanup()

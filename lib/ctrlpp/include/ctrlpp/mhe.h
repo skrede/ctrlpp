@@ -17,6 +17,7 @@
 ///     Int. J. Robust Nonlinear Control, 13(10), 2003.
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/config.h"
 
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/qp_solver.h"
@@ -157,19 +158,34 @@ private:
 
         merge_structure_and_update(problem, upd);
 
+#if CTRLPP_HAS_EXCEPTIONS
         try
         {
-            m_solver.setup(problem);
-            auto result = m_solver.solve(qp_update<Scalar>{upd.q, upd.l, upd.u, m_warm_z, m_warm_y});
-
-            if(result.status == solve_status::optimal || result.status == solve_status::solved_inaccurate)
-            {
-                extract_mhe_solution(result, z);
-                return;
-            }
+            attempt_mhe_solve(problem, upd, z);
         }
         catch(...)
         {
+            fallback_to_ekf();
+        }
+#else
+        attempt_mhe_solve(problem, upd, z);
+#endif
+    }
+
+    void attempt_mhe_solve(const qp_problem<Scalar>& problem, const qp_update<Scalar>& upd, const output_vector_t& z)
+    {
+        if(!detail::setup_qp_solver(m_solver, problem))
+        {
+            fallback_to_ekf();
+            return;
+        }
+
+        auto result = m_solver.solve(qp_update<Scalar>{upd.q, upd.l, upd.u, m_warm_z, m_warm_y});
+
+        if(result.status == solve_status::optimal || result.status == solve_status::solved_inaccurate)
+        {
+            extract_mhe_solution(result, z);
+            return;
         }
 
         fallback_to_ekf();

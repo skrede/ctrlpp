@@ -24,13 +24,20 @@ class nlopt_solver;
 ```cpp
 template <typename S>
 concept nlp_solver = requires { typename S::scalar_type; }
-    && requires(S solver,
-                const nlp_problem<typename S::scalar_type>& prob,
-                const nlp_update<typename S::scalar_type>& upd) {
-        { solver.setup(prob) } -> std::same_as<void>;
+    && requires(S solver, const nlp_update<typename S::scalar_type>& upd) {
         { solver.solve(upd) } -> std::same_as<nlp_result<typename S::scalar_type>>;
-    };
+    }
+    && (requires(S solver, const nlp_problem<typename S::scalar_type>& prob) {
+            { solver.setup(prob) } -> std::same_as<void>;
+        }
+        || requires(S solver, const nlp_problem<typename S::scalar_type>& prob) {
+            { solver.try_setup(prob).has_value() } -> std::convertible_to<bool>;
+        });
 ```
+
+A solver models the concept with either setup shape: the classic `void setup(problem)` or the fallible `try_setup(problem)` returning an `expected<void, E>`. `nlopt_solver` provides `try_setup` unconditionally and keeps `setup` as a throwing convenience wrapper when exceptions are enabled.
+
+> **Note:** NLopt's C++ API throws by upstream design (`solve` maps those exceptions to `solve_status` internally), so this opt-in backend requires exception support and is exempt from the library's embedded no-exceptions floor.
 
 ## Supporting Types
 
@@ -38,12 +45,27 @@ concept nlp_solver = requires { typename S::scalar_type; }
 
 ```cpp
 enum class nlopt_algorithm : std::uint8_t {
-    slsqp,   // Sequential Least Squares Programming (gradient-based, supports equality)
-    mma,     // Method of Moving Asymptotes (gradient-based, NO equality constraints)
-    cobyla,  // Constrained Optimization BY Linear Approximations (derivative-free)
-    isres    // Improved Stochastic Ranking Evolution Strategy (global, derivative-free)
+    slsqp,         // Sequential Least Squares Programming (gradient-based, supports equality)
+    mma,           // Method of Moving Asymptotes (gradient-based, NO equality constraints)
+    cobyla,        // Constrained Optimization BY Linear Approximations (derivative-free)
+    isres,         // Improved Stochastic Ranking Evolution Strategy (global, derivative-free)
+    auglag_mma,    // AUGLAG_EQ outer with LD_MMA inner (absorbs equality constraints)
+    auglag_ccsaq,  // AUGLAG_EQ outer with LD_CCSAQ inner (absorbs equality constraints)
+    ccsaq          // Conservative Convex Separable Approximation (NO equality constraints)
 };
 ```
+
+### nlopt_setup_error
+
+Defined in `<ctrlpp/mpc/nlp_types.h>`.
+
+```cpp
+enum class nlopt_setup_error : std::uint8_t {
+    incompatible_equality_constraints  // raw mma/ccsaq selected on a problem with equality constraints
+};
+```
+
+Raw MMA and raw CCSAQ cannot handle equality constraints; the `auglag_mma` and `auglag_ccsaq` variants absorb them into the outer augmented-Lagrangian penalty and accept the same problem.
 
 ### nlopt_settings
 
@@ -69,13 +91,22 @@ Constructs the solver with the given settings. Defaults to SLSQP with standard t
 
 ## Methods
 
+### try_setup
+
+```cpp
+[[nodiscard]] auto try_setup(const nlp_problem<Scalar>& problem)
+    -> ctrlpp::expected<void, nlopt_setup_error>;
+```
+
+Fallible setup: configures the NLopt optimizer from an NLP problem definition and partitions constraints into equality and inequality groups automatically. Returns an empty `expected` on success and `nlopt_setup_error::incompatible_equality_constraints` if raw MMA or raw CCSAQ is selected on a problem with equality constraints.
+
 ### setup
 
 ```cpp
-void setup(const nlp_problem<Scalar>& problem);
+void setup(const nlp_problem<Scalar>& problem);  // only when CTRLPP_HAS_EXCEPTIONS
 ```
 
-Configures the NLopt optimizer from an NLP problem definition. Partitions constraints into equality and inequality groups automatically. Throws `std::invalid_argument` if MMA is selected with equality constraints.
+Throwing convenience wrapper over `try_setup`, available only when exceptions are enabled. Throws `std::invalid_argument` if MMA or CCSAQ is selected with equality constraints.
 
 ### solve
 
@@ -83,7 +114,7 @@ Configures the NLopt optimizer from an NLP problem definition. Partitions constr
 auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>;
 ```
 
-Solves the NLP from the initial guess in `update.x0`. Returns the solution, objective value, solver status, iteration count, solve time, and maximum constraint violation.
+Solves the NLP from the initial guess in `update.x0`. Returns the solution, objective value, solver status, iteration count, solve time, and maximum constraint violation. The `solve_status` in the result is unchanged by the setup API split; the per-iteration solve result stays a plain value enum.
 
 ## Usage Example
 
