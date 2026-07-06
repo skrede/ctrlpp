@@ -18,7 +18,7 @@ struct arx_result
 };
 
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-struct n4sid_result
+struct moesp_result
 {
     discrete_state_space<Scalar, NX, NU, NY> system{};
     Eigen::VectorX<Scalar> singular_values{};

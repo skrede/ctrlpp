@@ -1,9 +1,9 @@
-#ifndef HPP_GUARD_CTRLPP_SYSID_N4SID_H
-#define HPP_GUARD_CTRLPP_SYSID_N4SID_H
+#ifndef HPP_GUARD_CTRLPP_SYSID_MOESP_H
+#define HPP_GUARD_CTRLPP_SYSID_MOESP_H
 
-/// @brief N4SID subspace system identification via BDCSVD.
+/// @brief PO-MOESP subspace system identification via BDCSVD.
 ///
-/// @cite vanoverschee1994 -- Van Overschee & De Moor, "N4SID: Subspace Algorithms for the Identification of Combined Deterministic-Stochastic Systems", 1994
+/// @cite verhaegen2007 -- Verhaegen & Verdult, "Filtering and System Identification: A Least Squares Approach", 2007, Sec. 9.6 (PO-MOESP)
 
 #include "ctrlpp/types.h"
 
@@ -40,7 +40,7 @@ Eigen::MatrixX<typename Derived::Scalar> block_hankel(const Eigen::MatrixBase<De
 }
 
 template <typename Scalar>
-struct n4sid_lq_result
+struct moesp_lq_result
 {
     Eigen::MatrixX<Scalar> O_i;
     Eigen::MatrixX<Scalar> Y_future;
@@ -49,9 +49,9 @@ struct n4sid_lq_result
     Eigen::Index j;
 };
 
-/// @cite vanoverschee1994 -- Assemble stacked Hankel matrix [U_f; U_p; Y_p; Y_f]
+/// @cite verhaegen2007 -- Assemble stacked Hankel matrix [U_f; U_p; Y_p; Y_f]
 template <typename Scalar, typename Derived1, typename Derived2>
-Eigen::MatrixX<Scalar> assemble_n4sid_hankel(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, Eigen::Index i, Eigen::Index j)
+Eigen::MatrixX<Scalar> assemble_moesp_hankel(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, Eigen::Index i, Eigen::Index j)
 {
     auto ny = Y.rows();
     auto nu = U.rows();
@@ -73,9 +73,9 @@ Eigen::MatrixX<Scalar> assemble_n4sid_hankel(const Eigen::MatrixBase<Derived1>& 
     return H;
 }
 
-/// @cite vanoverschee1994 -- Extract oblique projection L32 from LQ factorisation
+/// @cite verhaegen2007 -- Extract PO-MOESP projection L32 from LQ factorisation
 template <typename Scalar>
-Eigen::MatrixX<Scalar> extract_oblique_projection(const Eigen::MatrixX<Scalar>& H, Eigen::Index r1, Eigen::Index r2, Eigen::Index r3, Eigen::Index j)
+Eigen::MatrixX<Scalar> extract_moesp_projection(const Eigen::MatrixX<Scalar>& H, Eigen::Index r1, Eigen::Index r2, Eigen::Index r3, Eigen::Index j)
 {
     auto total_rows = r1 + r2 + r3;
     auto r_size = std::min(j, total_rows);
@@ -93,9 +93,9 @@ Eigen::MatrixX<Scalar> extract_oblique_projection(const Eigen::MatrixX<Scalar>& 
     return L.block(r1 + r2, c1, br3, c2);
 }
 
-/// @cite vanoverschee1994 -- Oblique projection via LQ decomposition
+/// @cite verhaegen2007 -- PO-MOESP projection via LQ decomposition
 template <typename Derived1, typename Derived2>
-n4sid_lq_result<typename Derived1::Scalar> n4sid_oblique_projection(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, Eigen::Index i)
+moesp_lq_result<typename Derived1::Scalar> moesp_projection(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, Eigen::Index i)
 {
     using Scalar = typename Derived1::Scalar;
 
@@ -108,8 +108,8 @@ n4sid_lq_result<typename Derived1::Scalar> n4sid_oblique_projection(const Eigen:
     auto r2 = (nu + ny) * i;
     auto r3 = ny * i;
 
-    auto H = assemble_n4sid_hankel<Scalar>(Y, U, i, j);
-    auto O_i = extract_oblique_projection<Scalar>(H, r1, r2, r3, j);
+    auto H = assemble_moesp_hankel<Scalar>(Y, U, i, j);
+    auto O_i = extract_moesp_projection<Scalar>(H, r1, r2, r3, j);
 
     auto Y_future = block_hankel(Y, i, i, j);
     auto U_future = block_hankel(U, i, i, j);
@@ -118,7 +118,7 @@ n4sid_lq_result<typename Derived1::Scalar> n4sid_oblique_projection(const Eigen:
 }
 
 /// Extract system matrix A from observability matrix via shift relation.
-/// @cite vanoverschee1994 -- Gamma_shifted = Gamma_trunc * A
+/// @cite verhaegen2007 -- Gamma_shifted = Gamma_trunc * A
 template <typename Scalar, std::size_t NX>
 Matrix<Scalar, NX, NX> extract_system_A(const Eigen::MatrixX<Scalar>& Gamma, Eigen::Index ny)
 {
@@ -181,7 +181,7 @@ std::pair<Matrix<Scalar, NX, 1>, Matrix<Scalar, 1, 1>> recover_BD(const Matrix<S
 
 /// Simulate identified model and compute fit metrics.
 template <typename Scalar, std::size_t NX, typename Derived1, typename Derived2>
-auto compute_n4sid_metrics(const Matrix<Scalar, NX, NX>& A,
+auto compute_moesp_metrics(const Matrix<Scalar, NX, NX>& A,
                            const Matrix<Scalar, NX, 1>& B,
                            const Matrix<Scalar, 1, NX>& C,
                            const Matrix<Scalar, 1, 1>& D,
@@ -209,7 +209,7 @@ auto compute_n4sid_metrics(const Matrix<Scalar, NX, NX>& A,
 }
 
 template <typename Derived1, typename Derived2>
-Eigen::VectorX<typename Derived1::Scalar> n4sid_singular_values(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
+Eigen::VectorX<typename Derived1::Scalar> moesp_singular_values(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
 {
     using Scalar = typename Derived1::Scalar;
 
@@ -222,7 +222,7 @@ Eigen::VectorX<typename Derived1::Scalar> n4sid_singular_values(const Eigen::Mat
     if(j <= 0)
         return Eigen::VectorX<Scalar>{};
 
-    auto [O_i, Y_f, U_f, bi, bj] = detail::n4sid_oblique_projection(Y, U, i);
+    auto [O_i, Y_f, U_f, bi, bj] = detail::moesp_projection(Y, U, i);
 
     Eigen::BDCSVD<Eigen::MatrixX<Scalar>> svd(O_i, Eigen::ComputeThinU | Eigen::ComputeThinV);
 
@@ -231,10 +231,10 @@ Eigen::VectorX<typename Derived1::Scalar> n4sid_singular_values(const Eigen::Mat
 
 template <std::size_t NX, typename Derived1, typename Derived2>
     requires ctrlpp_floating_scalar<typename Derived1::Scalar>
-n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
+moesp_result<typename Derived1::Scalar, NX, 1, 1> moesp(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
 {
     using Scalar = typename Derived1::Scalar;
-    static_assert(NX >= 1, "n4sid requires NX >= 1");
+    static_assert(NX >= 1, "moesp requires NX >= 1");
     static constexpr auto nx = static_cast<Eigen::Index>(NX);
 
     auto N = Y.cols();
@@ -244,7 +244,7 @@ n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<
     if(i == 0)
         i = std::min(static_cast<Eigen::Index>(N / 4), Eigen::Index{30});
 
-    auto [O_i, Y_future, U_future, bi, bj] = detail::n4sid_oblique_projection(Y, U, i);
+    auto [O_i, Y_future, U_future, bi, bj] = detail::moesp_projection(Y, U, i);
 
     Eigen::BDCSVD<Eigen::MatrixX<Scalar>> svd(O_i, Eigen::ComputeThinU | Eigen::ComputeThinV);
     auto sv = svd.singularValues();
@@ -295,7 +295,7 @@ n4sid_result<typename Derived1::Scalar, NX, 1, 1> n4sid(const Eigen::MatrixBase<
 
     discrete_state_space<Scalar, NX, 1, 1> sys{.A = A, .B = B, .C = C, .D = D};
 
-    auto metrics = detail::compute_n4sid_metrics<Scalar, NX>(A, B, C, D, Y, U);
+    auto metrics = detail::compute_moesp_metrics<Scalar, NX>(A, B, C, D, Y, U);
 
     return {.system = sys, .singular_values = sv, .metrics = metrics, .condition_number = cond};
 }

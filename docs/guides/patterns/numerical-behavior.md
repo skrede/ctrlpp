@@ -54,7 +54,7 @@ otherwise produce silent corruption through intermediate overflow:
   root, so the reduction stays symmetric positive semidefinite without requiring
   an eigendecomposition.
 
-- **N4SID degenerate data:** The subspace identification algorithm checks
+- **MOESP degenerate data:** The subspace identification algorithm checks
   finiteness of extracted system matrices. When data is rank-deficient,
   returns a result with `condition_number = infinity` and default-initialized
   system matrices so the caller can detect and handle the failure.

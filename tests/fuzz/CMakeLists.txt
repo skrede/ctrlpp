@@ -48,7 +48,7 @@ make_fuzz_target(fuzz_ekf)
 make_fuzz_target(fuzz_ukf)
 make_fuzz_target(fuzz_particle_filter)
 make_fuzz_target(fuzz_rls)
-make_fuzz_target(fuzz_n4sid)
+make_fuzz_target(fuzz_moesp)
 
 if (CTRLPP_BUILD_FUZZ_MSAN)
     make_fuzz_target_msan(fuzz_dare)

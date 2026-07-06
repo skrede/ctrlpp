@@ -68,7 +68,7 @@ Guides and API reference for the ctrlpp C++23 control library.
 - [rls](api/sysid/rls.md)<br/>Recursive least squares
 - [batch_arx](api/sysid/batch-arx.md)<br/>Batch ARX identification (QR)
 - [recursive_arx](api/sysid/recursive-arx.md)<br/>Recursive ARX identification
-- [n4sid](api/sysid/n4sid.md)<br/>Subspace identification (BDCSVD)
+- [moesp](api/sysid/moesp.md)<br/>Subspace identification (BDCSVD)
 - [fit_metrics](api/sysid/fit-metrics.md)<br/>Goodness-of-fit metrics (NRMSE, VAF)
 - [sysid_result](api/sysid/sysid-result.md)<br/>Identification result container
 
@@ -139,7 +139,7 @@ Standalone theory and mathematical background for the algorithms in ctrlpp.
 - [Attitude Estimation Theory](background/attitude-estimation.md)<br/>Quaternion kinematics, MEKF error-state, manifold UKF
 - [MPC Theory](background/mpc.md)<br/>QP/NLP optimization formulation, terminal cost and constraints, stability
 - [MHE Theory](background/mhe.md)<br/>Moving horizon cost function, arrival cost approximation, duality with MPC
-- [System Identification Theory](background/sysid.md)<br/>ARX regression model, RLS recursive update, N4SID Hankel matrix
+- [System Identification Theory](background/sysid.md)<br/>ARX regression model, RLS recursive update, MOESP Hankel matrix
 - [DSP Theory](background/dsp.md)<br/>Biquad transfer function, bilinear transform, FIR convolution, cascading
 - [Trajectory Generation Theory](background/trajectory-generation.md)<br/>Polynomial trajectories, velocity profiles, splines, online planners, synchronization
 - [LQR Theory](background/lqr.md)<br/>Linear quadratic regulator: DARE, cost function, optimal gain

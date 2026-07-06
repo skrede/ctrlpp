@@ -2,7 +2,7 @@
 
 Online and offline methods for identifying dynamic system models from
 input-output data. Online methods (RLS, recursive ARX) update estimates
-sample-by-sample; offline methods (batch ARX, N4SID) operate on collected
+sample-by-sample; offline methods (batch ARX, MOESP) operate on collected
 datasets.
 
 ## Types
@@ -15,7 +15,7 @@ datasets.
 ### Offline
 
 - [batch_arx](batch-arx.md)<br/> Batch ARX identification via QR factorization
-- [n4sid](n4sid.md)<br/> Subspace identification via BDCSVD
+- [moesp](moesp.md)<br/> Subspace identification via BDCSVD
 
 ### Utilities
 
@@ -33,7 +33,7 @@ to state-space for direct use with Kalman filters or MPC.
 Pick **batch ARX** for offline identification of ARX models from a collected
 dataset &mdash; uses QR factorization for numerical stability.
 
-Pick **N4SID** for offline subspace identification when you want a state-space
+Pick **MOESP** for offline subspace identification when you want a state-space
 model directly without specifying model orders.
 
 ## Theory

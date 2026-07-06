@@ -7,7 +7,7 @@ Result containers returned by the system identification algorithms. Each result 
 | Form | Header |
 |------|--------|
 | `arx_result<Scalar, NX, NU, NY>` | `#include <ctrlpp/sysid/sysid_result.h>` |
-| `n4sid_result<Scalar, NX, NU, NY>` | `#include <ctrlpp/sysid/sysid_result.h>` |
+| `moesp_result<Scalar, NX, NU, NY>` | `#include <ctrlpp/sysid/sysid_result.h>` |
 | (convenience) | `#include <ctrlpp/sysid.h>` |
 
 ## arx_result
@@ -27,11 +27,11 @@ Returned by `batch_arx`. Contains the identified system in observer canonical fo
 | `system` | `discrete_state_space<Scalar, NX, NU, NY>` | Identified state-space model |
 | `metrics` | `fit_metrics<Scalar>` | NRMSE and VAF |
 
-## n4sid_result
+## moesp_result
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-struct n4sid_result {
+struct moesp_result {
     discrete_state_space<Scalar, NX, NU, NY> system;
     Eigen::VectorX<Scalar> singular_values;
     fit_metrics<Scalar> metrics;
@@ -39,7 +39,7 @@ struct n4sid_result {
 };
 ```
 
-Returned by `n4sid`. Contains the identified system, the oblique projection singular values (for model order selection), fit metrics, and the condition number of the observability matrix truncation.
+Returned by `moesp`. Contains the identified system, the oblique projection singular values (for model order selection), fit metrics, and the condition number of the observability matrix truncation.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -52,7 +52,7 @@ Returned by `n4sid`. Contains the identified system, the oblique projection sing
 
 ```cpp
 #include <ctrlpp/sysid/batch_arx.h>
-#include <ctrlpp/sysid/n4sid.h>
+#include <ctrlpp/sysid/moesp.h>
 
 #include <Eigen/Dense>
 
@@ -81,9 +81,9 @@ int main()
     std::cout << "ARX: NRMSE=" << arx.metrics.nrmse
               << "  VAF=" << arx.metrics.vaf << "%\n";
 
-    // N4SID identification
-    auto ss = ctrlpp::n4sid<1>(Y, U);
-    std::cout << "N4SID: NRMSE=" << ss.metrics.nrmse
+    // MOESP identification
+    auto ss = ctrlpp::moesp<1>(Y, U);
+    std::cout << "MOESP: NRMSE=" << ss.metrics.nrmse
               << "  VAF=" << ss.metrics.vaf << "%"
               << "  cond=" << ss.condition_number << "\n";
 }
@@ -93,7 +93,7 @@ int main()
 
 - [fit-metrics](fit-metrics.md)<br/> goodness-of-fit metric computation
 - [batch-arx](batch-arx.md)<br/> batch ARX identification
-- [n4sid](n4sid.md)<br/> subspace identification
+- [moesp](moesp.md)<br/> subspace identification
 - [recursive-arx](recursive-arx.md)<br/> recursive ARX identification
 - [rls](rls.md)<br/> recursive least squares
 - [model/state-space](../model/state-space.md)<br/> state-space representation

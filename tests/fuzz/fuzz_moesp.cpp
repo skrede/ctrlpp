@@ -1,4 +1,4 @@
-#include "ctrlpp/sysid/n4sid.h"
+#include "ctrlpp/sysid/moesp.h"
 
 #include <Eigen/Dense>
 
@@ -34,8 +34,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         Y(0, i) = std::clamp(buf[i * 2 + 1], -1e3, 1e3);
     }
 
-    // Run N4SID with model order 2, block_rows = 3 (minimum for 10 samples)
-    auto result = ctrlpp::n4sid<2>(Y, U, 3);
+    // Run MOESP with model order 2, block_rows = 3 (minimum for 10 samples)
+    auto result = ctrlpp::moesp<2>(Y, U, 3);
 
     // Degenerate data produces condition_number = infinity -- accepted
     if(std::isinf(result.condition_number))

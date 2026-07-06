@@ -1,18 +1,18 @@
-# n4sid
+# moesp
 
-Subspace system identification using the N4SID algorithm. Identifies a discrete-time linear state-space model of a given order from input/output data via oblique projection and singular value decomposition. Returns the identified system in state-space form with fit metrics and condition number.
+Subspace system identification using the PO-MOESP algorithm. Identifies a discrete-time linear state-space model of a given order from input/output data by projecting the future outputs onto the past inputs and outputs (the instrumental variables) and the orthogonal complement of the future inputs, then recovering the extended observability matrix via a singular value decomposition. Returns the identified system in state-space form with fit metrics and condition number.
 
 ## Header and Alias
 
 | Form | Header |
 |------|--------|
-| `n4sid<NX>(Y, U, block_rows)` | `#include <ctrlpp/sysid/n4sid.h>` |
+| `moesp<NX>(Y, U, block_rows)` | `#include <ctrlpp/sysid/moesp.h>` |
 | (convenience) | `#include <ctrlpp/sysid.h>` |
 
 ```cpp
 template <std::size_t NX, typename Derived1, typename Derived2>
-n4sid_result<typename Derived1::Scalar, NX, 1, 1>
-n4sid(const Eigen::MatrixBase<Derived1>& Y,
+moesp_result<typename Derived1::Scalar, NX, 1, 1>
+moesp(const Eigen::MatrixBase<Derived1>& Y,
       const Eigen::MatrixBase<Derived2>& U,
       std::size_t block_rows = 0);
 ```
@@ -35,7 +35,7 @@ n4sid(const Eigen::MatrixBase<Derived1>& Y,
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-struct n4sid_result {
+struct moesp_result {
     discrete_state_space<Scalar, NX, NU, NY> system;
     Eigen::VectorX<Scalar> singular_values;
     fit_metrics<Scalar> metrics;
@@ -50,7 +50,7 @@ The `singular_values` field from the oblique projection SVD can be used to deter
 ```cpp
 template <typename Derived1, typename Derived2>
 Eigen::VectorX<typename Derived1::Scalar>
-n4sid_singular_values(const Eigen::MatrixBase<Derived1>& Y,
+moesp_singular_values(const Eigen::MatrixBase<Derived1>& Y,
                       const Eigen::MatrixBase<Derived2>& U,
                       std::size_t block_rows = 0);
 ```
@@ -60,7 +60,7 @@ Returns just the singular values without performing full identification. Useful 
 ## Usage Example
 
 ```cpp
-#include <ctrlpp/sysid/n4sid.h>
+#include <ctrlpp/sysid/moesp.h>
 #include <ctrlpp/model/analysis.h>
 
 #include <Eigen/Dense>
@@ -96,11 +96,11 @@ int main()
     }
 
     // Check singular values for order selection
-    auto sv = ctrlpp::n4sid_singular_values(Y, U);
+    auto sv = ctrlpp::moesp_singular_values(Y, U);
     std::cout << "Singular values: " << sv.transpose() << "\n\n";
 
     // Identify 2nd-order model
-    auto result = ctrlpp::n4sid<2>(Y, U);
+    auto result = ctrlpp::moesp<2>(Y, U);
 
     std::cout << "Identified system:\n"
               << "  A =\n" << result.system.A << "\n"

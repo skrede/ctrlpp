@@ -83,9 +83,9 @@ TEST_CASE("arx_result holds discrete_state_space and fit_metrics")
     REQUIRE_THAT(r.metrics.vaf, WithinAbs(95.0, 1e-12));
 }
 
-TEST_CASE("n4sid_result holds state_space, singular_values, metrics, condition_number")
+TEST_CASE("moesp_result holds state_space, singular_values, metrics, condition_number")
 {
-    ctrlpp::n4sid_result<double, 2, 1, 1> r{};
+    ctrlpp::moesp_result<double, 2, 1, 1> r{};
     r.system.A = ctrlpp::Matrix<double, 2, 2>::Identity();
     r.singular_values.resize(2);
     r.singular_values << 10.0, 1.0;

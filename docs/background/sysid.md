@@ -102,11 +102,11 @@ precision and can cause covariance blow-up. Bounding the covariance matrix $P$
 (e.g., resetting when its trace exceeds a threshold) prevents numerical
 instability [1, Sec. 11.3, p. 374].
 
-## Subspace Identification (N4SID)
+## Subspace Identification (MOESP)
 
 Subspace identification estimates a state-space model $(A, B, C, D)$ directly
 from input-output data without requiring explicit model order specification.
-The N4SID algorithm [3, pp. 75--93]:
+The PO-MOESP algorithm [3, Ch. 9]:
 
 ### Block Hankel Matrices
 
@@ -122,15 +122,15 @@ $$
 2. Estimate the column space of the extended observability matrix
    $\mathcal{O}_i = [C^\top, (CA)^\top, \ldots, (CA^{i-1})^\top]^\top$ via
    singular value decomposition (SVD). The model order $n$ is determined by
-   the gap in the singular value spectrum [3, Sec. 3, pp. 80--85].
+   the gap in the singular value spectrum [3, Sec. 9.6].
 
 ### State-Space Extraction
 
 3. Extract $(A, B, C, D)$ from the identified subspace using least-squares.
    The matrices are unique up to a similarity transformation
-   [3, Sec. 4, pp. 85--90].
+   [3, Sec. 9.6].
 
-N4SID handles multi-input multi-output (MIMO) systems naturally and
+MOESP handles multi-input multi-output (MIMO) systems naturally and
 automatically determines the model order from the data.
 
 ## ARX to State-Space Conversion
@@ -179,6 +179,5 @@ Hall, 1999.
 [2] A. K. Tangirala, "Principles of System Identification: Theory and
 Practice," 2nd ed., CRC Press, 2018.
 
-[3] P. Van Overschee and B. De Moor, "N4SID: Subspace Algorithms for the
-Identification of Combined Deterministic-Stochastic Systems," Automatica,
-vol. 30, no. 1, pp. 75--93, 1994.
+[3] M. Verhaegen and V. Verdult, "Filtering and System Identification: A
+Least Squares Approach," Cambridge University Press, 2007.

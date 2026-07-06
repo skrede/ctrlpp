@@ -1,4 +1,4 @@
-#include "ctrlpp/sysid/n4sid.h"
+#include "ctrlpp/sysid/moesp.h"
 #include "ctrlpp/sysid.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -63,11 +63,11 @@ auto generate_data(std::size_t N, double noise_std = 0.0) -> test_data
 
 } // namespace
 
-TEST_CASE("N4SID singular values show clear gap for 2nd-order system")
+TEST_CASE("MOESP singular values show clear gap for 2nd-order system")
 {
     auto [Y, U] = generate_data(1500);
 
-    auto sv = ctrlpp::n4sid_singular_values(Y, U);
+    auto sv = ctrlpp::moesp_singular_values(Y, U);
 
     REQUIRE(sv.size() >= 2);
     // First two should be significantly larger than the rest
@@ -80,40 +80,40 @@ TEST_CASE("N4SID singular values show clear gap for 2nd-order system")
     }
 }
 
-TEST_CASE("N4SID identifies 2nd-order system with good fit")
+TEST_CASE("MOESP identifies 2nd-order system with good fit")
 {
     auto [Y, U] = generate_data(1500);
 
-    auto result = ctrlpp::n4sid<2>(Y, U);
+    auto result = ctrlpp::moesp<2>(Y, U);
 
     // Simulate identified model on input data and check output match
     REQUIRE(result.metrics.nrmse < 0.1);
 }
 
-TEST_CASE("N4SID condition number is finite and positive")
+TEST_CASE("MOESP condition number is finite and positive")
 {
     auto [Y, U] = generate_data(1500);
 
-    auto result = ctrlpp::n4sid<2>(Y, U);
+    auto result = ctrlpp::moesp<2>(Y, U);
 
     REQUIRE(result.condition_number > 0.0);
     REQUIRE(std::isfinite(result.condition_number));
 }
 
-TEST_CASE("N4SID VAF > 90 for clean data")
+TEST_CASE("MOESP VAF > 90 for clean data")
 {
     auto [Y, U] = generate_data(1500);
 
-    auto result = ctrlpp::n4sid<2>(Y, U);
+    auto result = ctrlpp::moesp<2>(Y, U);
 
     REQUIRE(result.metrics.vaf > 90.0);
 }
 
-TEST_CASE("N4SID with measurement noise produces degraded but positive VAF")
+TEST_CASE("MOESP with measurement noise produces degraded but positive VAF")
 {
     auto [Y, U] = generate_data(1500, 0.05);
 
-    auto result = ctrlpp::n4sid<2>(Y, U);
+    auto result = ctrlpp::moesp<2>(Y, U);
 
     REQUIRE(result.metrics.vaf > 0.0);
     // Should still identify something reasonable with mild noise

@@ -163,7 +163,7 @@ int main()
 | Method       | Data        | Use case                              |
 | ------------ | ----------- | ------------------------------------- |
 | `batch_arx`  | Offline     | Known model order, full dataset       |
-| `n4sid`       | Offline     | Unknown order, subspace method        |
+| `moesp`       | Offline     | Unknown order, subspace method        |
 | `rls`         | Online      | Scalar output, time-varying params    |
 | `recursive_arx`| Online    | ARX structure, streaming data         |
 
@@ -173,7 +173,7 @@ LQR, MPC, or Kalman filter constructors.
 ## Next Steps
 
 - [Batch ARX API](../../api/sysid/batch-arx.md)<br/> offline identification
-- [N4SID API](../../api/sysid/n4sid.md)<br/> subspace identification
+- [MOESP API](../../api/sysid/moesp.md)<br/> subspace identification
 - [RLS API](../../api/sysid/rls.md)<br/> recursive least squares
 - [Fit Metrics API](../../api/sysid/fit-metrics.md)<br/> NRMSE, VAF
 - [State Space API](../../api/model/state-space.md)<br/> model representation

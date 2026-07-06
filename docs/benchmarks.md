@@ -76,7 +76,7 @@ hot-path call is measured.
 | `dare` | solve | 17.8 us | 56K | 191K |
 | `lqr_gain` | DARE + gain | 3.8 us | 266K | 36.5K |
 | `batch_arx` | `identify()` | 3.5 us | 283K | 41.2K |
-| `n4sid` | `identify()` | 578 us | 1.7K | 6.9M |
+| `moesp` | `identify()` | 578 us | 1.7K | 6.9M |
 
 System dimensions: NX=2 for estimators and sysid, NX=4/NU=2 for LQR/DARE,
 5-tap for FIR, 5-knot natural cubic spline.

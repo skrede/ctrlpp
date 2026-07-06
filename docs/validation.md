@@ -51,7 +51,7 @@ cd validation && ./validate.sh
 | `cubic_spline` (natural) | `csape()`, `ppder()` | 12 | 1.11e-15 | PASS |
 | `so3::exp` / `so3::log` | `rot2q()`, `q2rot()` | 16 | 1.11e-16 | PASS |
 | `batch_arx` | `arx()` | 14 | 9.77e-15 | PASS |
-| `n4sid` | `n4sid()` | 11 | 2.61e-13 | PASS |
+| `moesp` | `n4sid()` | 11 | 2.61e-13 | PASS |
 
 "Digits" is the minimum digits of agreement across all signals in a case:
 `-log10(max relative error)`.
@@ -99,7 +99,7 @@ cd validation && ./validate.sh
 | `vector_biquad` | 1 | Multi-channel wrapper over biquad |
 | **System Identification** | | |
 | `batch_arx` | 2 | Cross-validated against Octave `arx()` |
-| `n4sid` | 2 | Cross-validated against Octave `n4sid()` |
+| `moesp` | 2 | Cross-validated against Octave `n4sid()` |
 | `rls` | 1 | No RLS in any Octave package |
 | `recursive_arx` | 1 | No recursive ARX in any Octave package |
 | **Lie Groups** | | |

@@ -2,7 +2,7 @@
 
 #include "ctrlpp/sysid/rls.h"
 #include "ctrlpp/sysid/batch_arx.h"
-#include "ctrlpp/sysid/n4sid.h"
+#include "ctrlpp/sysid/moesp.h"
 #include "ctrlpp/sysid/recursive_arx.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -162,9 +162,9 @@ TEST_CASE("Batch ARX with rank-deficient regressors", "[arx][hardening][negative
     REQUIRE(std::isfinite(result.system.A(0, 0)));
 }
 
-// ── N4SID hardening ────────────────────────────────────────────────────────────
+// ── MOESP hardening ────────────────────────────────────────────────────────────
 
-TEST_CASE("N4SID with near-zero singular values", "[n4sid][hardening][negative]")
+TEST_CASE("MOESP with near-zero singular values", "[moesp][hardening][negative]")
 {
     // Purely random noise data -- no underlying system
     constexpr int N = 100;
@@ -180,16 +180,16 @@ TEST_CASE("N4SID with near-zero singular values", "[n4sid][hardening][negative]"
     }
 
     // Singular values should be near-zero, model won't be meaningful
-    auto sv = ctrlpp::n4sid_singular_values(Y, U);
+    auto sv = ctrlpp::moesp_singular_values(Y, U);
     REQUIRE(sv.size() > 0);
 
     // Still identify a model -- should not crash
-    auto result = ctrlpp::n4sid<2>(Y, U);
+    auto result = ctrlpp::moesp<2>(Y, U);
     bool const cond_valid = std::isfinite(result.condition_number) || std::isinf(result.condition_number);
     REQUIRE(cond_valid);
 }
 
-TEST_CASE("N4SID with wrong model order", "[n4sid][hardening][negative]")
+TEST_CASE("MOESP with wrong model order", "[moesp][hardening][negative]")
 {
     // True system is first order, identify with NX=4
     constexpr int N = 300;
@@ -207,13 +207,13 @@ TEST_CASE("N4SID with wrong model order", "[n4sid][hardening][negative]")
         x = 0.8 * x + 0.5 * U(t);
     }
 
-    auto result = ctrlpp::n4sid<4>(Y, U);
+    auto result = ctrlpp::moesp<4>(Y, U);
     REQUIRE(std::isfinite(result.system.A(0, 0)));
     // Over-specified model should still produce finite results
     REQUIRE(std::isfinite(result.metrics.nrmse));
 }
 
-TEST_CASE("N4SID identifies known state-space system", "[n4sid][hardening][convergence]")
+TEST_CASE("MOESP identifies known state-space system", "[moesp][hardening][convergence]")
 {
     // True system: x(t+1) = 0.9*x(t) + 0.5*u(t), y(t) = x(t)
     constexpr int N = 500;
@@ -231,7 +231,7 @@ TEST_CASE("N4SID identifies known state-space system", "[n4sid][hardening][conve
         x = 0.9 * x + 0.5 * U(t);
     }
 
-    auto result = ctrlpp::n4sid<1>(Y, U);
+    auto result = ctrlpp::moesp<1>(Y, U);
     // NRMSE close to 0 indicates good fit (norm_error / norm_centered)
     REQUIRE(result.metrics.nrmse < 0.15);
 }
