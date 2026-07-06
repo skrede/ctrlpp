@@ -38,12 +38,14 @@ this table was written.
   built by every leg of the cross-compile script, and passes as the
   `embedded_core_float` ctest.
 - **Bare-metal cross-compile (leg 3)**: the same script carries an
-  `arm-none-eabi-g++` Cortex-M7 leg (`-mcpu=cortex-m7 -fno-exceptions
-  -fno-rtti -DCTRLPP_NO_EXCEPTIONS`).  It becomes green once the toolchain's
-  C library headers (the `arm-none-eabi-newlib` package) are installed.  In
-  the environment used to author this matrix the script reports those headers
-  absent, so leg 3 did not run to completion here and is not cited as
-  evidence by any cell.
+  `arm-none-eabi-g++` Cortex-M7 leg (`-mcpu=cortex-m7 -mfpu=fpv5-d16
+  -mfloat-abi=hard -fno-exceptions -fno-rtti -DCTRLPP_NO_EXCEPTIONS`) that
+  compiles the `float` witness translation unit against the toolchain's own
+  hosted libstdc++ subset (no `-nostdinc++`, no `-ffreestanding`).  It passes,
+  proving the embedded header subset compiles bare-metal.  The leg requires
+  the toolchain's C library headers (the `arm-none-eabi-newlib` package); when
+  they are absent the script reports the missing package and exits without
+  running leg 3.
 - **Clock audit**: a sweep of `lib/ctrlpp/include/` for `<chrono>` and clock
   reads matches only the two optimization solver backends
   (`mpc/nlopt_solver.h`, `mpc/argmin_solver.h`), which carry the opt-in
