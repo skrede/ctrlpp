@@ -92,7 +92,12 @@ public:
         auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * cutoff_hz / sample_hz;
         auto const cos_w0 = std::cos(w0);
         auto const sin_w0 = std::sin(w0);
-        auto const alpha = sin_w0 / (Scalar{2} * std::numbers::sqrt2_v<Scalar>);
+        // Butterworth (maximally flat) response fixes the quality factor at
+        // Q = 1/sqrt(2), so the RBJ cookbook width alpha = sin(w0)/(2*Q)
+        // reduces to sin(w0)/sqrt(2). This matches make_butterworth<2> in this
+        // same file (q_k = 1/sqrt(2)) and yields -3.01 dB at the cutoff with no
+        // passband peaking.
+        auto const alpha = sin_w0 / std::numbers::sqrt2_v<Scalar>;
 
         auto const a0_inv = Scalar{1} / (Scalar{1} + alpha);
         return biquad{biquad_coeffs<Scalar>{
@@ -124,8 +129,15 @@ public:
         }};
     }
 
-    /// "Dirty" derivative: a band-limited differentiator s/(s/wc + 1)
-    /// discretised by the bilinear transform with frequency pre-warping.
+    /// "Dirty" derivative: a band-limited differentiator with analog prototype
+    /// H(s) = wc*s / (s + wc), discretised by the bilinear transform with
+    /// frequency pre-warping. The wc numerator factor makes this a true
+    /// differentiator (|H| -> 2*pi*f) up to the cutoff wc, above which it rolls
+    /// off; without it the section would be a unity-gain high-pass whose
+    /// passband gain is wrong by 1/wc. The bilinear map with k = 2*fs gives
+    /// numerator coefficients b0 = wc*k/(k+wc), b1 = -wc*k/(k+wc); only the
+    /// numerator carries the differentiator gain, so the denominator is
+    /// unchanged.
     ///
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform with pre-warping)
     static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> biquad
@@ -134,8 +146,8 @@ public:
         auto const k = Scalar{2} * sample_hz;
         auto const a0_inv = Scalar{1} / (k + wc);
         return biquad{biquad_coeffs<Scalar>{
-            .b0 = k * a0_inv,
-            .b1 = -k * a0_inv,
+            .b0 = wc * k * a0_inv,
+            .b1 = -wc * k * a0_inv,
             .b2 = Scalar{0},
             .a1 = (wc - k) * a0_inv,
             .a2 = Scalar{0},

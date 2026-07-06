@@ -51,7 +51,7 @@ Construct from explicit coefficients, or use one of the factory functions below.
 static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> biquad;
 ```
 
-Creates a second-order Butterworth low-pass filter at the given cutoff frequency.
+Creates a second-order Butterworth (maximally flat, quality factor `Q = 1/sqrt(2)`) low-pass filter at the given cutoff frequency. The response is monotone across the passband with no peaking and reaches -3.01 dB at the cutoff.
 
 ### notch
 
@@ -67,7 +67,7 @@ Creates a notch (band-reject) filter centered at `freq_hz` with quality factor `
 static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> biquad;
 ```
 
-Creates a filtered derivative (high-pass with roll-off) via bilinear transform.
+Creates a band-limited differentiator with analog prototype `H(s) = wc*s / (s + wc)`, discretized via the bilinear transform. It acts as a true differentiator (`|H(f)| -> 2*pi*f`) up to the bandwidth `wc = 2*pi*bandwidth_hz`, above which it rolls off.
 
 ## Methods
 

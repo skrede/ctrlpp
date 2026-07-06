@@ -14,19 +14,16 @@
 // at its cutoff: |H(fc)| = 1/sqrt(2), i.e. -3.0103 dB, and the magnitude is
 // monotonically non-increasing from DC up to the cutoff (no passband
 // peaking) -- Oppenheim &amp; Schafer, Ch. 7, and Bristow-Johnson, "Cookbook
-// Formulae for Audio EQ Biquad Filter Coefficients", 2005. The measured
-// response here shows a passband peak above 0 dB and a +3 dB (not -3 dB)
-// value at the nominal cutoff, so this section is held green with
-// `[!shouldfail]` until the underlying quality-factor selection is
-// corrected.
+// Formulae for Audio EQ Biquad Filter Coefficients", 2005. With the
+// Butterworth quality factor Q = 1/sqrt(2), `biquad::low_pass` meets both:
+// -3.01 dB at the cutoff and a monotone passband.
 //
 // A "dirty derivative" (a differentiator low-pass filtered above its own
 // bandwidth) behaves, at frequencies well below that bandwidth, like an
 // ideal differentiator: |H(f)| ~ 2*pi*f. This is the textbook low-frequency
 // limit of a first-order high-pass-shaped differentiator, not a property
-// derived from this codebase. The measured response here is off by roughly
-// two orders of magnitude from that target, so this section is also held
-// green with `[!shouldfail]` until corrected.
+// derived from this codebase. With the wc numerator factor in place,
+// `biquad::dirty_derivative` tracks that 2*pi*f limit.
 
 #include "ctrlpp/dsp/biquad.h"
 
@@ -62,7 +59,7 @@ auto magnitude_db(const biquad_coeffs<double>& c, double f, double fs) -> double
 
 } // namespace
 
-TEST_CASE("Butterworth low-pass biquad reaches -3.01 dB at cutoff with a monotone passband", "[dsp][anchor][!shouldfail]")
+TEST_CASE("Butterworth low-pass biquad reaches -3.01 dB at cutoff with a monotone passband", "[dsp][anchor]")
 {
     const double fc = 100.0;
     const double fs = 1000.0;
@@ -103,7 +100,7 @@ TEST_CASE("Butterworth low-pass biquad reaches -3.01 dB at cutoff with a monoton
     }
 }
 
-TEST_CASE("dirty_derivative magnitude tracks 2*pi*f well below its bandwidth", "[dsp][anchor][!shouldfail]")
+TEST_CASE("dirty_derivative magnitude tracks 2*pi*f well below its bandwidth", "[dsp][anchor]")
 {
     const double bandwidth_hz = 50.0;
     const double fs = 1000.0;
