@@ -17,6 +17,7 @@
 /// @cite lambrechts2005 -- Lambrechts, Boerlage & Steinbuch, "Trajectory Planning and Feedforward Design for Electromechanical Motion Systems", Control Engineering Practice 13(2), 2005 (jerk-limited online planning)
 
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/double_s_trajectory.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -56,8 +57,10 @@ class online_planner_3rd
     /// @brief Set new target position. Replans from current state.
     ///
     /// Computes time-optimal double-S profile from (q_, v_, a_) to (target, 0, 0)
-    /// respecting v_max, a_max, and j_max. Handles cases where current velocity
-    /// or acceleration require multi-phase deceleration before replanning.
+    /// respecting v_max, a_max, and j_max. A same-direction move carries the
+    /// current velocity through the profile; a velocity pointing away from the
+    /// target (or too large to stop in the available distance) is braked to rest
+    /// first, then replanned.
     ///
     /// @cite biagiotti2009 -- Sec. 4.6.1
     void update(Scalar target)
@@ -218,8 +221,10 @@ class online_planner_3rd
 
     /// @brief Plan a profile from (q0, v0, a=0) to (target_, 0, 0).
     ///
-    /// If v0 is non-zero, first bring velocity to zero with a trapezoidal
-    /// acceleration profile (jerk-limited), then plan rest-to-rest.
+    /// A same-direction move with room to stop carries v0 through the profile via
+    /// the general nonzero-initial-velocity double-S. If v0 points away from the
+    /// target or is too large to stop within the available distance, the planner
+    /// first brakes to rest (jerk-limited) and then plans rest-to-rest.
     void plan_from_zero_accel(Scalar q0, Scalar v0)
     {
         auto constexpr eps = static_cast<Scalar>(1e-12);
@@ -243,18 +248,55 @@ class online_planner_3rd
                                && (std::abs(stop_dist) > std::abs(h_signed) + eps);
 
         if (wrong_way || overshoot) {
-            // Brake to zero velocity, then plan rest-to-rest
+            // Velocity points away from the target or is too large to stop in the
+            // available distance: the only feasible (and time-optimal) option is to
+            // brake to rest first, then plan rest-to-rest from the stopping point.
             append_brake_phases(v0, stop_info);
             auto const q_after = q0 + stop_dist;
             plan_rest_to_rest(q_after);
         } else {
-            // Can incorporate initial velocity into the profile
-            // For simplicity and robustness: brake to zero, then rest-to-rest
-            // This is slightly suboptimal but always correct and respects all constraints.
-            append_brake_phases(v0, stop_info);
-            auto const q_after = q0 + stop_dist;
-            plan_rest_to_rest(q_after);
+            // Same-direction move with room to spare: carry the current velocity
+            // through the profile rather than braking to rest first. The general
+            // nonzero-initial-velocity double-S accelerates from v0 toward the
+            // cruise velocity and decelerates to rest at the target, so the move is
+            // time-optimal with no full-stop dip.
+            append_incorporate_velocity(q0, v0);
         }
+    }
+
+    /// @brief Append a nonzero-initial-velocity double-S from (q0, v0, 0) to
+    /// (target_, 0, 0).
+    ///
+    /// Reuses the general Sec. 3.4.1 double-S formulation so the current velocity
+    /// is carried through the profile. The resulting 7 constant-jerk phases share
+    /// the sign structure of the rest-to-rest profile; only the durations differ.
+    ///
+    /// @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.27), p.79-85
+    void append_incorporate_velocity(Scalar q0, Scalar v0)
+    {
+        double_s_trajectory<Scalar> const profile{{
+            .q0 = q0,
+            .q1 = target_,
+            .v_max = v_max_,
+            .a_max = a_max_,
+            .j_max = j_max_,
+            .v0 = v0,
+            .v1 = Scalar{0},
+        }};
+
+        auto const durations = profile.phase_durations();
+        auto const sigma = (target_ - q0 > Scalar{0}) ? Scalar{1} : Scalar{-1};
+        auto const j_pos = sigma * j_max_;
+        auto const j_neg = -sigma * j_max_;
+
+        // 7-phase double-S: accel(3) + cruise(1) + decel(3).
+        append_phase(durations[0], j_pos);      // jerk(+): build acceleration
+        append_phase(durations[1], Scalar{0});  // constant acceleration
+        append_phase(durations[2], j_neg);      // jerk(-): null acceleration at v_lim
+        append_phase(durations[3], Scalar{0});  // cruise at v_lim
+        append_phase(durations[4], j_neg);      // jerk(-): build deceleration
+        append_phase(durations[5], Scalar{0});  // constant deceleration
+        append_phase(durations[6], j_pos);      // jerk(+): null acceleration at rest
     }
 
     /// @brief Information about stopping from a given velocity.

@@ -42,7 +42,7 @@ Constructs a planner with kinematic limits. Initial state is at rest at q = 0 wi
 void update(Scalar target);
 ```
 
-Set a new target position and replan from the current state. Computes a time-optimal double-S profile from (q, v, a) to (target, 0, 0) respecting `v_max`, `a_max`, and `j_max`. Multi-phase deceleration is used when current velocity or acceleration require braking before replanning.
+Set a new target position and replan from the current state. Computes a time-optimal double-S profile from (q, v, a) to (target, 0, 0) respecting `v_max`, `a_max`, and `j_max`. A same-direction move carries the current velocity through the profile (no full-stop dip); a velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and then replanned.
 
 ### sample
 

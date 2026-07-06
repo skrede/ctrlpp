@@ -171,3 +171,59 @@ TEST_CASE("OnlinePlanner3rd: float type", "[traj][online_planner_3rd]")
     auto const pt = planner.sample(100.0f);
     REQUIRE_THAT(pt.position[0], WithinAbs(10.0, 1e-3));
 }
+
+// -- Test 11: Same-direction retarget carries velocity through (no full-stop dip)
+//
+// Retargeting farther in the same direction while cruising must NOT brake the
+// motion to a full stop and re-accelerate. A time-optimal planner keeps the
+// current velocity and simply extends the profile, so once the planner is
+// cruising the velocity never rises again after the retarget.
+TEST_CASE("OnlinePlanner3rd: same-direction retarget keeps velocity",
+          "[traj][online_planner_3rd]")
+{
+    double constexpr v_max = 5.0;
+    ctrlpp::online_planner_3rd<double> planner({.v_max = v_max, .a_max = 10.0, .j_max = 50.0});
+
+    // Command a far target and cruise up to v_max.
+    planner.update(100.0);
+
+    double constexpr dt = 0.01;
+    double constexpr t_retarget = 2.0;
+    double t = 0.0;
+    for (; t < t_retarget - 0.5 * dt; t += dt) {
+        planner.sample(t);
+    }
+
+    // Confirm the planner is cruising at v_max with (near) zero acceleration
+    // before the retarget, so the "no velocity rise afterward" check is clean.
+    auto const at_retarget = planner.sample(t_retarget);
+    REQUIRE_THAT(at_retarget.velocity[0], WithinAbs(v_max, 1e-6));
+    REQUIRE_THAT(at_retarget.acceleration[0], WithinAbs(0.0, 1e-6));
+
+    // Retarget farther in the same direction (non-overshoot, same sign).
+    planner.update(200.0);
+
+    // Immediately after the retarget the planner should keep cruising, not brake.
+    auto const shortly_after = planner.sample(t_retarget + 1.0);
+    REQUIRE(shortly_after.velocity[0] > 0.9 * v_max);
+
+    // Sweep to settling: after retarget-at-cruise the velocity is monotonically
+    // non-increasing (flat cruise, then a single deceleration to rest). The old
+    // brake-to-rest-then-replan strategy would dip to zero and rise again.
+    // The Lipschitz bound |dv| <= a_max*dt also guards against the end-of-profile
+    // snap masking a profile that fails to bring the velocity to zero at T.
+    double constexpr a_max = 10.0;
+    double prev_v = at_retarget.velocity[0];
+    double constexpr tol = 1e-6;
+    for (t = t_retarget + dt; t < 80.0; t += dt) {
+        auto const pt = planner.sample(t);
+        REQUIRE(pt.velocity[0] <= prev_v + tol);
+        REQUIRE(std::abs(pt.velocity[0]) <= v_max + tol);
+        REQUIRE(std::abs(pt.velocity[0] - prev_v) <= a_max * dt + 1e-3);
+        prev_v = pt.velocity[0];
+    }
+
+    auto const settled = planner.sample(200.0);
+    REQUIRE_THAT(settled.position[0], WithinAbs(200.0, 1e-6));
+    REQUIRE_THAT(settled.velocity[0], WithinAbs(0.0, 1e-6));
+}

@@ -171,3 +171,56 @@ TEST_CASE("OnlinePlanner2nd: float type", "[traj][online_planner_2nd]")
     auto const pt = planner.sample(100.0f);
     REQUIRE_THAT(pt.position[0], WithinAbs(10.0, 1e-3));
 }
+
+// -- Test 11: Same-direction retarget carries velocity through (no full-stop dip)
+//
+// Retargeting farther in the same direction while cruising must NOT brake the
+// motion to a full stop and re-accelerate. A time-optimal planner keeps the
+// current velocity and extends the profile, so once cruising the velocity never
+// rises again after the retarget.
+TEST_CASE("OnlinePlanner2nd: same-direction retarget keeps velocity",
+          "[traj][online_planner_2nd]")
+{
+    double constexpr v_max = 5.0;
+    double constexpr a_max = 10.0;
+    ctrlpp::online_planner_2nd<double> planner({.v_max = v_max, .a_max = a_max});
+
+    // Command a far target and cruise up to v_max.
+    planner.update(100.0);
+
+    double constexpr dt = 0.01;
+    double constexpr t_retarget = 2.0;
+    double t = 0.0;
+    for (; t < t_retarget - 0.5 * dt; t += dt) {
+        planner.sample(t);
+    }
+
+    // Confirm the planner is cruising at v_max with zero acceleration before the
+    // retarget, so the "no velocity rise afterward" check is clean.
+    auto const at_retarget = planner.sample(t_retarget);
+    REQUIRE_THAT(at_retarget.velocity[0], WithinAbs(v_max, 1e-6));
+    REQUIRE_THAT(at_retarget.acceleration[0], WithinAbs(0.0, 1e-6));
+
+    // Retarget farther in the same direction (non-overshoot, same sign).
+    planner.update(200.0);
+
+    // Immediately after the retarget the planner should keep cruising, not brake.
+    auto const shortly_after = planner.sample(t_retarget + 1.0);
+    REQUIRE(shortly_after.velocity[0] > 0.9 * v_max);
+
+    // After retarget-at-cruise the velocity is monotonically non-increasing (flat
+    // cruise, then a single deceleration to rest), with bounded acceleration.
+    double prev_v = at_retarget.velocity[0];
+    double constexpr tol = 1e-6;
+    for (t = t_retarget + dt; t < 80.0; t += dt) {
+        auto const pt = planner.sample(t);
+        REQUIRE(pt.velocity[0] <= prev_v + tol);
+        REQUIRE(std::abs(pt.velocity[0]) <= v_max + tol);
+        REQUIRE(std::abs(pt.velocity[0] - prev_v) <= a_max * dt + 1e-3);
+        prev_v = pt.velocity[0];
+    }
+
+    auto const settled = planner.sample(200.0);
+    REQUIRE_THAT(settled.position[0], WithinAbs(200.0, 1e-6));
+    REQUIRE_THAT(settled.velocity[0], WithinAbs(0.0, 1e-6));
+}
