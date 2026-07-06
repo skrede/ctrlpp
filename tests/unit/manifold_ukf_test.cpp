@@ -1,5 +1,6 @@
 #include "ctrlpp/estimation/manifold_ukf.h"
 #include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/lie/so3.h"
 
 #include <Eigen/Eigenvalues>
@@ -345,4 +346,50 @@ TEST_CASE("manifold_ukf innovation decreases as filter converges", "[manifold_uk
     double innov_norm = filter.innovation().norm();
     REQUIRE(innov_norm < 0.1);
     REQUIRE(std::isfinite(innov_norm));
+}
+
+TEST_CASE("manifold_ukf try_create rejects a zero initial quaternion", "[manifold_ukf]")
+{
+    // Before the fallible factory existed, the constructor normalized the zero
+    // quaternion directly and silently produced an all-NaN filter state.
+    manifold_ukf_config<double, 3> cfg;
+    cfg.q0 = Eigen::Quaternion<double>{0.0, 0.0, 0.0, 0.0};
+
+    auto filter = MukfType::try_create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    REQUIRE_FALSE(filter.has_value());
+    REQUIRE(filter.error() == filter_error::degenerate_quaternion);
+}
+
+TEST_CASE("manifold_ukf try_create matches the constructor on a valid unit quaternion", "[manifold_ukf]")
+{
+    manifold_ukf_config<double, 3> cfg;
+    cfg.q0 = so3::exp(Vector<double, 3>{0.174, 0.0, 0.0});
+    cfg.Q *= 1e-6;
+    cfg.R *= 0.01;
+
+    auto factory_built = MukfType::try_create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    REQUIRE(factory_built.has_value());
+
+    MukfType ctor_built(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+
+    Vector<double, 3> gravity{0.0, 0.0, 1.0};
+    factory_built->predict(Vector<double, 3>::Zero());
+    ctor_built.predict(Vector<double, 3>::Zero());
+    factory_built->update(gravity);
+    ctor_built.update(gravity);
+
+    REQUIRE((factory_built->state().array() == ctor_built.state().array()).all());
+    REQUIRE((factory_built->covariance().array() == ctor_built.covariance().array()).all());
+}
+
+TEST_CASE("manifold_ukf try_create accepts a non-unit nonzero quaternion", "[manifold_ukf]")
+{
+    // The guard rejects only degeneracy: any finite nonzero quaternion is
+    // normalized onto the unit sphere at construction.
+    manifold_ukf_config<double, 3> cfg;
+    cfg.q0 = Eigen::Quaternion<double>{2.0, 0.0, 0.0, 0.0};
+
+    auto filter = MukfType::try_create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    REQUIRE(filter.has_value());
+    REQUIRE((filter->attitude().coeffs().array() == cfg.q0.normalized().coeffs().array()).all());
 }

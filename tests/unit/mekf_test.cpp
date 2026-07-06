@@ -1,5 +1,6 @@
 #include "ctrlpp/estimation/mekf.h"
 #include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/lie/so3.h"
 
 #include <Eigen/Eigenvalues>
@@ -199,4 +200,51 @@ TEST_CASE("mekf with analytical Jacobian measurement model", "[mekf]")
     auto q = filter.attitude();
     double angle = 2.0 * std::acos(std::clamp(std::abs(q.w()), 0.0, 1.0));
     REQUIRE(angle < 0.05);
+}
+
+TEST_CASE("mekf try_create rejects a zero initial quaternion", "[mekf]")
+{
+    // Before the fallible factory existed, the constructor normalized the zero
+    // quaternion directly and silently produced an all-NaN filter state.
+    mekf_config<double, 3, 3> cfg;
+    cfg.q0 = Eigen::Quaternion<double>{0.0, 0.0, 0.0, 0.0};
+
+    auto filter = Mekf3::try_create(gravity_measurement{}, cfg);
+    REQUIRE_FALSE(filter.has_value());
+    REQUIRE(filter.error() == filter_error::degenerate_quaternion);
+}
+
+TEST_CASE("mekf try_create matches the constructor on a valid unit quaternion", "[mekf]")
+{
+    mekf_config<double, 3, 3> cfg;
+    cfg.q0 = so3::exp(Vector<double, 3>{0.174, 0.0, 0.0});
+    cfg.Q *= 1e-6;
+    cfg.R *= 0.01;
+    cfg.P0 *= 10.0;
+
+    auto factory_built = Mekf3::try_create(gravity_measurement{}, cfg);
+    REQUIRE(factory_built.has_value());
+
+    Mekf3 ctor_built(gravity_measurement{}, cfg);
+
+    Vector<double, 3> gravity_world{0.0, 0.0, 1.0};
+    factory_built->predict(Vector<double, 3>::Zero());
+    ctor_built.predict(Vector<double, 3>::Zero());
+    factory_built->update(gravity_world);
+    ctor_built.update(gravity_world);
+
+    REQUIRE((factory_built->state().array() == ctor_built.state().array()).all());
+    REQUIRE((factory_built->covariance().array() == ctor_built.covariance().array()).all());
+}
+
+TEST_CASE("mekf try_create accepts a non-unit nonzero quaternion", "[mekf]")
+{
+    // The guard rejects only degeneracy: any finite nonzero quaternion is
+    // normalized onto the unit sphere at construction.
+    mekf_config<double, 3, 3> cfg;
+    cfg.q0 = Eigen::Quaternion<double>{2.0, 0.0, 0.0, 0.0};
+
+    auto filter = Mekf3::try_create(gravity_measurement{}, cfg);
+    REQUIRE(filter.has_value());
+    REQUIRE((filter->attitude().coeffs().array() == cfg.q0.normalized().coeffs().array()).all());
 }

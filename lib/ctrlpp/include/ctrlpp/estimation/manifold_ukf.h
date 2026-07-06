@@ -6,6 +6,8 @@
 /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/lie/so3.h"
 
@@ -14,11 +16,13 @@
 #include "ctrlpp/detail/covariance_ops.h"
 
 #include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
 
 #include <Eigen/Geometry>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <utility>
 
@@ -130,20 +134,31 @@ public:
     using cov_matrix_t = Matrix<Scalar, 3, 3>;
     using meas_cov_t = Matrix<Scalar, NY, NY>;
 
+    /// @brief Fallible factory. Validates the initial quaternion before the
+    /// normalization that seeds the filter state.
+    ///
+    /// A zero or non-finite `config.q0` norm makes `q0.normalized()` produce
+    /// NaN, which would silently poison the whole filter state at construction;
+    /// such a config is rejected with `filter_error::degenerate_quaternion`.
+    /// Any finite nonzero quaternion is accepted and normalized.
+    [[nodiscard]] static auto try_create(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<manifold_ukf, filter_error>
+    {
+        const Scalar q0_norm = config.q0.norm();
+        if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
+            return ctrlpp::unexpected(filter_error::degenerate_quaternion);
+        return manifold_ukf{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config), std::move(strategy)};
+    }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience constructor. Delegates to `try_create` and
+    /// throws on a degenerate initial quaternion; compiled out when the library
+    /// is built without exception support, where `try_create` is the only
+    /// construction path.
     manifold_ukf(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{})
-        : m_tol{config.geodesic_mean_tol}
-        , m_R{std::move(config.R)}
-        , m_P{std::move(config.P0)}
-        , m_Q{std::move(config.Q)}
-        , m_strategy{std::move(strategy)}
-        , m_dynamics{std::move(dynamics)}
-        , m_measurement{std::move(measurement)}
-        , m_max_iter{config.geodesic_mean_max_iter}
-        , m_q{config.q0.normalized()}
-        , m_state_cache{so3::to_vec(m_q)}
-        , m_innovation{output_vector_t::Zero()}
+        : manifold_ukf{try_create(std::move(dynamics), std::move(measurement), std::move(config), std::move(strategy)).value()}
     {
     }
+#endif
 
     void predict(const input_vector_t& omega)
     {
@@ -182,6 +197,25 @@ public:
     manifold_ukf_health health() const { return m_health; }
 
 private:
+    struct validated_tag
+    {
+    };
+
+    manifold_ukf(validated_tag, Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy)
+        : m_tol{config.geodesic_mean_tol}
+        , m_R{std::move(config.R)}
+        , m_P{std::move(config.P0)}
+        , m_Q{std::move(config.Q)}
+        , m_strategy{std::move(strategy)}
+        , m_dynamics{std::move(dynamics)}
+        , m_measurement{std::move(measurement)}
+        , m_max_iter{config.geodesic_mean_max_iter}
+        , m_q{config.q0.normalized()}
+        , m_state_cache{so3::to_vec(m_q)}
+        , m_innovation{output_vector_t::Zero()}
+    {
+    }
+
     /// @brief Propagate sigma point quaternions through dynamics model.
     ///
     /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Sec. 3.2

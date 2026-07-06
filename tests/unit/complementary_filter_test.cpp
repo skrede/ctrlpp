@@ -1,5 +1,6 @@
 #include "ctrlpp/complementary_filter.h"
 #include "ctrlpp/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/so3.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -391,4 +392,48 @@ TEST_CASE("complementary filter high proportional gain converges faster", "[cf]"
 
     // Higher gain should converge faster (lower error after same number of steps)
     CHECK(err_high < err_low);
+}
+
+TEST_CASE("complementary filter try_create rejects a zero initial quaternion", "[cf]")
+{
+    // Before the fallible factory existed, the constructor stored the zero
+    // quaternion raw; the correction terms then used it as a rotation and the
+    // attitude estimate degenerated silently.
+    Eigen::Quaterniond q0{0.0, 0.0, 0.0, 0.0};
+    cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = q0};
+
+    auto cf = complementary_filter<double>::try_create(cfg);
+    REQUIRE_FALSE(cf.has_value());
+    CHECK(cf.error() == filter_error::degenerate_quaternion);
+}
+
+TEST_CASE("complementary filter try_create matches the constructor on a valid unit quaternion", "[cf]")
+{
+    Eigen::Quaterniond q0 = Eigen::Quaterniond(Eigen::AngleAxisd(0.5, Vector<double, 3>::UnitX()));
+    cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = q0};
+
+    auto factory_built = complementary_filter<double>::try_create(cfg);
+    REQUIRE(factory_built.has_value());
+
+    complementary_filter ctor_built{cfg};
+
+    Vector<double, 3> gyro{0.01, -0.02, 0.03};
+    Vector<double, 3> accel{0.0, 0.0, 9.81};
+    factory_built->update(gyro, accel, 0.01);
+    ctor_built.update(gyro, accel, 0.01);
+
+    CHECK((factory_built->state().array() == ctor_built.state().array()).all());
+}
+
+TEST_CASE("complementary filter try_create accepts and normalizes a non-unit quaternion", "[cf]")
+{
+    // The guard rejects only degeneracy: any finite nonzero quaternion is
+    // accepted and brought onto the unit sphere at construction, since the
+    // correction terms treat the stored quaternion as a unit rotation.
+    Eigen::Quaterniond q0{2.0, 0.0, 0.0, 0.0};
+    cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = q0};
+
+    auto cf = complementary_filter<double>::try_create(cfg);
+    REQUIRE(cf.has_value());
+    CHECK((cf->attitude().coeffs().array() == q0.normalized().coeffs().array()).all());
 }

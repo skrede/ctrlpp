@@ -44,11 +44,24 @@ Where NE = 3 + NB (3 rotation dimensions + NB bias dimensions).
 | `dt` | `Scalar` | `0.01` | Default time step for the single-argument `predict()` overload |
 | `numerical_eps` | `Scalar` | `sqrt(eps)` | Perturbation for numerical measurement Jacobians |
 
-## Constructor
+## Construction
+
+### try_create
+
+```cpp
+[[nodiscard]] static auto try_create(Measurement measurement, mekf_config<Scalar, NB, NY> config)
+    -> ctrlpp::expected<mekf, filter_error>;
+```
+
+Fallible factory and the primary construction API. Validates the initial quaternion before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. Any finite nonzero `q0` is accepted and normalized. As a static member of a class template, `try_create` requires explicit template arguments, e.g. `mekf<double, 3, 3, Measurement>::try_create(m, cfg)`.
+
+### Constructor (throwing convenience)
 
 ```cpp
 mekf(Measurement measurement, mekf_config<Scalar, NB, NY> config);
 ```
+
+Delegates to `try_create` and throws on a degenerate initial quaternion. Available only when the library is built with exception support; it is compiled out under `CTRLPP_NO_EXCEPTIONS`, where `try_create` is the only construction path.
 
 CTAD deduction guide available.
 

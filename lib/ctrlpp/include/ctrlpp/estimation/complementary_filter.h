@@ -9,16 +9,20 @@
 /// @cite mahony2008 -- Mahony et al., "Nonlinear Complementary Filters on the Special Orthogonal Group", 2008
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/lie/so3.h"
 
 #include "ctrlpp/util/concepts.h"
 
 #include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 
 #include <Eigen/Geometry>
 
 #include <cmath>
+#include <utility>
 
 namespace ctrlpp
 {
@@ -41,10 +45,34 @@ public:
     using input_vector_t = Vector<Scalar, 3>;
     using output_vector_t = Vector<Scalar, 3>;
 
-    explicit complementary_filter(cf_config<Scalar> config) : q_{config.q0}, bias_{Vector<Scalar, 3>::Zero()}, k_p_{config.k_p}, k_i_{config.k_i}, dt_{config.dt}, gyro_buf_{Vector<Scalar, 3>::Zero()}
+    /// @brief Fallible factory. Validates and normalizes the initial
+    /// quaternion before it seeds the filter state.
+    ///
+    /// A zero or non-finite `config.q0` norm cannot be normalized without
+    /// producing NaN, so such a config is rejected with
+    /// `filter_error::degenerate_quaternion`. Any finite nonzero quaternion is
+    /// accepted and normalized: the correction terms treat the stored
+    /// quaternion as a unit rotation via `toRotationMatrix()`, so a non-unit
+    /// q0 is brought onto the unit sphere at construction (previously it was
+    /// stored raw and a non-unit q0 skewed the first gravity and magnetic
+    /// references until the first gyro integration renormalized it).
+    [[nodiscard]] static auto try_create(cf_config<Scalar> config) -> ctrlpp::expected<complementary_filter, filter_error>
     {
-        update_state_cache();
+        const Scalar q0_norm = config.q0.norm();
+        if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
+            return ctrlpp::unexpected(filter_error::degenerate_quaternion);
+        return complementary_filter{validated_tag{}, std::move(config)};
     }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience constructor. Delegates to `try_create` and
+    /// throws on a degenerate initial quaternion; compiled out when the library
+    /// is built without exception support, where `try_create` is the only
+    /// construction path.
+    explicit complementary_filter(cf_config<Scalar> config) : complementary_filter{try_create(std::move(config)).value()}
+    {
+    }
+#endif
 
     // Natural IMU update (6-DOF): gyro + accelerometer.
     /// @cite mahony2008 -- Mahony et al., 2008, Sec. III (IMU complementary filter)
@@ -88,6 +116,15 @@ public:
     [[nodiscard]] auto bias() const -> const Vector<Scalar, 3>& { return bias_; }
 
 private:
+    struct validated_tag
+    {
+    };
+
+    complementary_filter(validated_tag, cf_config<Scalar> config) : q_{config.q0.normalized()}, bias_{Vector<Scalar, 3>::Zero()}, k_p_{config.k_p}, k_i_{config.k_i}, dt_{config.dt}, gyro_buf_{Vector<Scalar, 3>::Zero()}
+    {
+        update_state_cache();
+    }
+
     /// @cite mahony2008 -- Mahony et al., 2008, Eq. 12 (gravity error via cross product)
     auto compute_gravity_correction(const Vector<Scalar, 3>& acc_n) const -> Vector<Scalar, 3>
     {

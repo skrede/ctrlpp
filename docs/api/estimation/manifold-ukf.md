@@ -42,12 +42,27 @@ using cov_matrix_t    = Matrix<Scalar, 3, 3>;   // tangent-space covariance
 | `geodesic_mean_max_iter` | `std::size_t` | `30` | Maximum iterations for geodesic mean computation |
 | `geodesic_mean_tol` | `Scalar` | `1e-9` | Convergence tolerance for geodesic mean |
 
-## Constructor
+## Construction
+
+### try_create
+
+```cpp
+[[nodiscard]] static auto try_create(Dynamics dynamics, Measurement measurement,
+                                     manifold_ukf_config<Scalar, NY> config,
+                                     Strategy strategy = Strategy{})
+    -> ctrlpp::expected<manifold_ukf, filter_error>;
+```
+
+Fallible factory and the primary construction API. Validates the initial quaternion before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. Any finite nonzero `q0` is accepted and normalized. As a static member of a class template, `try_create` requires explicit template arguments, e.g. `manifold_ukf<double, 3, Dynamics, Measurement>::try_create(d, m, cfg)`.
+
+### Constructor (throwing convenience)
 
 ```cpp
 manifold_ukf(Dynamics dynamics, Measurement measurement,
              manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{});
 ```
+
+Delegates to `try_create` and throws on a degenerate initial quaternion. Available only when the library is built with exception support; it is compiled out under `CTRLPP_NO_EXCEPTIONS`, where `try_create` is the only construction path.
 
 CTAD deduction guide available: deduces to `so3_merwe_sigma_points` as default strategy.
 

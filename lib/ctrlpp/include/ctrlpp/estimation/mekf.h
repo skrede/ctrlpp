@@ -11,6 +11,8 @@
 /// @cite crassidis2003 -- Crassidis & Markley, "Unscented Filtering for Spacecraft Attitude Estimation", J. Guidance Control Dyn 26(4), 2003
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/lie/so3.h"
 
@@ -20,6 +22,7 @@
 #include "ctrlpp/detail/numerical_mekf_diff.h"
 
 #include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 
 #include <Eigen/Geometry>
 
@@ -76,20 +79,31 @@ public:
     using cov_matrix_t = Matrix<Scalar, NE, NE>;
     using meas_cov_t = Matrix<Scalar, NY, NY>;
 
-    mekf(Measurement measurement, mekf_config<Scalar, NB, NY> config)
-        : measurement_{std::move(measurement)}
-        , q_{config.q0.normalized()}
-        , b_{std::move(config.b0)}
-        , P_{std::move(config.P0)}
-        , Q_{std::move(config.Q)}
-        , R_{std::move(config.R)}
-        , eps_{config.numerical_eps}
-        , dt_{config.dt}
-        , innovation_{output_vector_t::Zero()}
-        , state_cache_{}
+    /// @brief Fallible factory. Validates the initial quaternion before the
+    /// normalization that seeds the filter state.
+    ///
+    /// A zero or non-finite `config.q0` norm makes `q0.normalized()` produce
+    /// NaN, which would silently poison the whole filter state at construction;
+    /// such a config is rejected with `filter_error::degenerate_quaternion`.
+    /// Any finite nonzero quaternion is accepted and normalized.
+    [[nodiscard]] static auto try_create(Measurement measurement, mekf_config<Scalar, NB, NY> config) -> ctrlpp::expected<mekf, filter_error>
     {
-        update_state_cache();
+        const Scalar q0_norm = config.q0.norm();
+        if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
+            return ctrlpp::unexpected(filter_error::degenerate_quaternion);
+        return mekf{validated_tag{}, std::move(measurement), std::move(config)};
     }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience constructor. Delegates to `try_create` and
+    /// throws on a degenerate initial quaternion; compiled out when the library
+    /// is built without exception support, where `try_create` is the only
+    /// construction path.
+    mekf(Measurement measurement, mekf_config<Scalar, NB, NY> config)
+        : mekf{try_create(std::move(measurement), std::move(config)).value()}
+    {
+    }
+#endif
 
     void predict(const input_vector_t& omega) { predict_impl(omega, dt_); }
 
@@ -116,6 +130,25 @@ public:
     [[nodiscard]] auto bias() const -> const Vector<Scalar, NB>& { return b_; }
 
 private:
+    struct validated_tag
+    {
+    };
+
+    mekf(validated_tag, Measurement measurement, mekf_config<Scalar, NB, NY> config)
+        : measurement_{std::move(measurement)}
+        , q_{config.q0.normalized()}
+        , b_{std::move(config.b0)}
+        , P_{std::move(config.P0)}
+        , Q_{std::move(config.Q)}
+        , R_{std::move(config.R)}
+        , eps_{config.numerical_eps}
+        , dt_{config.dt}
+        , innovation_{output_vector_t::Zero()}
+        , state_cache_{}
+    {
+        update_state_cache();
+    }
+
     /// @brief Propagate nominal quaternion and error-state covariance.
     ///
     /// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
