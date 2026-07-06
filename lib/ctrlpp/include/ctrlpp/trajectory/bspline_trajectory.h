@@ -23,6 +23,7 @@
 
 #include <Eigen/Dense>
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -124,22 +125,16 @@ class bspline_trajectory
 
         auto const pos = de_boor(tc, control_points_, knots_, p);
 
-        // Velocity: derivative control points of degree p-1
+        // Velocity: derivative control points of degree p-1, precomputed at
+        // construction since they depend only on the stored control points
         // Q_i = p * (P_{i+1} - P_i) / (U_{i+p+1} - U_{i+1})
         // @cite biagiotti2009 -- Sec. 4.5
-        auto vel = Scalar{0};
-        if constexpr (p >= 1) {
-            auto const [d_points, d_knots] = derivative_data(control_points_, knots_, p);
-            vel = de_boor(tc, d_points, d_knots, p - 1);
-        }
+        auto const vel = de_boor(tc, d1_points_, d1_knots_, p - 1);
 
-        // Acceleration: second derivative
+        // Acceleration: second derivative, also precomputed at construction
         auto acc = Scalar{0};
         if constexpr (p >= 2) {
-            auto const [d1_points, d1_knots] = derivative_data(control_points_, knots_, p);
-            auto const [d2_points, d2_knots] = derivative_data(d1_points, d1_knots, p - 1);
-            vel = de_boor(tc, d1_points, d1_knots, p - 1);
-            acc = de_boor(tc, d2_points, d2_knots, p - 2);
+            acc = de_boor(tc, d2_points_, d2_knots_, p - 2);
         }
 
         return {
@@ -202,10 +197,27 @@ class bspline_trajectory
         } else {
             knots_ = cfg.knot_vector;
         }
+
+        // Precompute the derivative control points and knot vectors once so
+        // evaluate() stays allocation free on the per-tick hot path. They
+        // depend only on control_points_ and knots_, which are fixed here.
+        auto d1 = derivative_data(control_points_, knots_, p);
+        d1_points_ = std::move(d1.first);
+        d1_knots_ = std::move(d1.second);
+
+        if constexpr (p >= 2) {
+            auto d2 = derivative_data(d1_points_, d1_knots_, p - 1);
+            d2_points_ = std::move(d2.first);
+            d2_knots_ = std::move(d2.second);
+        }
     }
 
     std::vector<Scalar> control_points_;
     std::vector<Scalar> knots_;
+    std::vector<Scalar> d1_points_;
+    std::vector<Scalar> d1_knots_;
+    std::vector<Scalar> d2_points_;
+    std::vector<Scalar> d2_knots_;
 
     /// @brief De Boor's algorithm for B-spline evaluation.
     ///
@@ -225,8 +237,10 @@ class bspline_trajectory
         // For the last knot, we use k = n (clamped endpoint)
         int k = find_span(t, U, n, degree);
 
-        // Initialize d[j] = P[j] for j in [k-degree, k]
-        std::vector<Scalar> d(static_cast<std::size_t>(degree + 1));
+        // Initialize d[j] = P[j] for j in [k-degree, k]. The buffer is sized
+        // by the class degree because every call uses degree <= Degree, so a
+        // fixed-size array avoids heap allocation on the evaluation hot path.
+        std::array<Scalar, static_cast<std::size_t>(Degree) + 1> d{};
         for (int j = 0; j <= degree; ++j) {
             d[static_cast<std::size_t>(j)] = points[static_cast<std::size_t>(k - degree + j)];
         }
