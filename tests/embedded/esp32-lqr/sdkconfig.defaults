@@ -1,0 +1,19 @@
+# ESP-IDF defaults for the ctrlpp on-device LQR check. Production firmware
+# should tune these against its own real-time, power, and memory budget.
+
+# Optimize for size -- ctrlpp's templated Eigen instantiations dominate flash,
+# and -Os reflects what an embedded user would typically pick.
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+# Disable C++ exceptions and RTTI to match a realistic embedded posture. With
+# -fno-exceptions the compiler leaves __cpp_exceptions undefined, so ctrlpp's
+# config.h sets CTRLPP_HAS_EXCEPTIONS=0 and every fallible factory routes its
+# success branch through has_value() plus operator*. The component CMake also
+# defines CTRLPP_NO_EXCEPTIONS explicitly as belt-and-suspenders.
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
+
+# The default 3.5 KB main-task stack is tight for the on-stack Eigen working set
+# of the Riccati solve plus newlib's stack-hungry %f formatting. 8 KB gives
+# comfortable headroom for the on-device numeric demo.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

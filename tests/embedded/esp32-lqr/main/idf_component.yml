@@ -1,0 +1,9 @@
+## Component dependencies for the ctrlpp ESP32 LQR embeddability check.
+##
+## Eigen is header-only and lives outside ESP-IDF's component graph. Point the
+## build at an Eigen checkout with the CTRLPP_EIGEN_DIR environment variable
+## before `idf.py build` (main/CMakeLists.txt adds it as a system include). The
+## ctrlpp host test build already fetches one under build-tests/_deps/eigen3-src.
+
+dependencies:
+  idf: ">=5.1"
