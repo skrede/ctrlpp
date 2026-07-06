@@ -122,6 +122,7 @@ Guides and API reference for the ctrlpp C++20 control library.
 ## Validation
 
 - [Validation Status](validation.md)<br/>Testing levels and cross-validation against GNU Octave
+- [Determinism and RT-Safety Matrix](rt-safety-matrix.md)<br/>Per-module RT-safety and determinism guarantees with test-backed evidence
 
 ## Benchmarks
 
