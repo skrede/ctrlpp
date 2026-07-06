@@ -125,7 +125,13 @@ void cyclic_thomas_solve(std::vector<Scalar> const& a,
                          Scalar beta)
 {
     auto const n = b.size();
-    assert(n >= 3);
+    // The Sherman-Morrison reduction is exact down to n = 2: the rank-1 corner
+    // update u*v^T adds alpha and beta onto the super- and sub-diagonal entries,
+    // which is precisely the dense periodic matrix when the corners and the
+    // off-diagonals coincide. n = 2 arises from a periodic cubic spline with 3
+    // waypoints, the smallest periodic configuration. n = 1 degenerates (the
+    // corner is the diagonal) and stays excluded.
+    assert(n >= 2);
 
     // gamma = -b[0] (arbitrary nonzero, choosing -b[0] per standard practice)
     auto const gamma = -b[0];

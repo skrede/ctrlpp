@@ -18,6 +18,9 @@
 /// @cite reinsch1967 -- Reinsch, "Smoothing by Spline Functions", Numerische Mathematik 10:177-183, 1967 (original smoothing-spline derivation)
 /// @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (cubic smoothing splines)
 
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
@@ -27,7 +30,6 @@
 
 #include <array>
 #include <vector>
-#include <cassert>
 #include <cstddef>
 #include <algorithm>
 
@@ -40,6 +42,10 @@ namespace ctrlpp
 /// mu near 0 biases toward smoothness (deviates from data).
 /// Natural-like endpoint conditions: d_0 = d_n = 0.
 ///
+/// Construction goes through `try_create`, which validates the waypoint
+/// configuration and the smoothing-parameter domain mu in (0, 1], reporting
+/// rejections through `ctrlpp::expected<smoothing_spline, spline_error>`.
+///
 /// @cite biagiotti2009 -- Sec. 4.4.5
 template <ctrlpp_floating_scalar Scalar>
 class smoothing_spline
@@ -49,54 +55,57 @@ class smoothing_spline
     {
         std::vector<Scalar> times;       ///< Knot times t_0 ... t_n (n+1 entries)
         std::vector<Scalar> positions;   ///< Waypoint positions q_0 ... q_n (n+1 entries)
-        Scalar mu{Scalar{0.5}};          ///< Tradeoff: 1.0 = interpolation, near 0 = max smoothness
+        Scalar mu{Scalar{0.5}};          ///< Tradeoff in (0, 1]: 1 = interpolation, near 0 = max smoothness
     };
 
-    /// @brief Construct smoothing spline from waypoints and mu parameter.
+    /// @brief Validate the configuration and construct a smoothing spline.
     ///
-    /// Solves the regularized system for second derivatives, computes smoothed
-    /// positions, then derives cubic polynomial coefficients per span.
+    /// Rejections, checked in order:
+    ///  * fewer than 2 waypoints             -> spline_error::too_few_points
+    ///  * times/positions length mismatch    -> spline_error::size_mismatch
+    ///  * knot times not strictly increasing -> spline_error::non_increasing_times
+    ///  * mu outside (0, 1] or NaN           -> spline_error::mu_out_of_range
+    ///
+    /// The mu domain follows from the regularization weight
+    /// lambda = 2*(1-mu)/(3*mu): mu = 1 is the exact interpolation limit
+    /// (lambda = 0) and lambda diverges as mu approaches 0, so mu <= 0 has no
+    /// defined weight.
     ///
     /// @cite biagiotti2009 -- Sec. 4.4.5
-    explicit smoothing_spline(config const& cfg)
-        : times_{cfg.times}
+    [[nodiscard]] static auto try_create(config const& cfg)
+        -> ctrlpp::expected<smoothing_spline, spline_error>
     {
-        auto const n_pts = times_.size();
-        assert(n_pts >= 2);
-        assert(cfg.positions.size() == n_pts);
-
-        auto const n = n_pts - 1; // number of spans
-
-        // Clamp mu to [epsilon, 1.0] to prevent degenerate lambda (Pitfall 2)
-        auto const eps = Scalar{1e-10};
-        auto const mu = std::clamp(cfg.mu, eps, Scalar{1});
-
-        // Regularization weight: lambda = 2*(1-mu)/(3*mu)
-        // @cite biagiotti2009 -- Sec. 4.4.5
-        auto const lambda = Scalar{2} * (Scalar{1} - mu) / (Scalar{3} * mu);
-
-        // Compute span durations h_i
-        std::vector<Scalar> h(n);
-        for (std::size_t i = 0; i < n; ++i) {
-            h[i] = times_[i + 1] - times_[i];
-            assert(h[i] > Scalar{0});
+        auto const n_pts = cfg.times.size();
+        if (n_pts < 2) {
+            return ctrlpp::unexpected(spline_error::too_few_points);
         }
-
-        // For n_pts == 2, no interior knots -- degenerate to linear segment
-        if (n_pts == 2) {
-            build_linear(cfg.positions, h);
-            return;
+        if (cfg.positions.size() != n_pts) {
+            return ctrlpp::unexpected(spline_error::size_mismatch);
         }
-
-        // Build and solve the system for interior second derivatives d_1..d_{n-1}
-        // Natural-like endpoints: d_0 = d_n = 0
-        // System: (R + lambda * Q^T * Q) * d = Q^T * q
-        // where R is (n-1)x(n-1) tridiagonal, Q is (n+1)x(n-1) second-difference
-        // @cite biagiotti2009 -- Sec. 4.4.5
-        auto const m = n - 1; // interior knot count
-
-        solve_and_build_coeffs(cfg.positions, h, lambda, n_pts, n, m);
+        for (std::size_t i = 0; i + 1 < n_pts; ++i) {
+            if (!(cfg.times[i + 1] - cfg.times[i] > Scalar{0})) {
+                return ctrlpp::unexpected(spline_error::non_increasing_times);
+            }
+        }
+        // Written as a negated conjunction so a NaN mu fails both comparisons
+        // and is rejected.
+        if (!(cfg.mu > Scalar{0} && cfg.mu <= Scalar{1})) {
+            return ctrlpp::unexpected(spline_error::mu_out_of_range);
+        }
+        return smoothing_spline{unchecked_t{}, cfg};
     }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience wrapper over `try_create`.
+    ///
+    /// Delegates to `try_create(cfg).value()`, so an invalid configuration throws
+    /// the value() exception of `ctrlpp::expected`. Compiled out when
+    /// CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free builds.
+    explicit smoothing_spline(config const& cfg)
+        : smoothing_spline{try_create(cfg).value()}
+    {
+    }
+#endif
 
     /// @brief Evaluate smoothing spline at time t, clamped to [t_0, t_n].
     ///
@@ -128,6 +137,50 @@ class smoothing_spline
     auto duration() const -> Scalar { return times_.back() - times_.front(); }
 
   private:
+    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    struct unchecked_t
+    {
+        explicit unchecked_t() = default;
+    };
+
+    /// @brief Construct from a configuration already validated by `try_create`.
+    ///
+    /// Solves the regularized system for second derivatives, computes smoothed
+    /// positions, then derives cubic polynomial coefficients per span.
+    ///
+    /// @cite biagiotti2009 -- Sec. 4.4.5
+    smoothing_spline(unchecked_t, config const& cfg)
+        : times_{cfg.times}
+    {
+        auto const n_pts = times_.size();
+        auto const n = n_pts - 1; // number of spans
+
+        // Regularization weight: lambda = 2*(1-mu)/(3*mu), mu validated in (0, 1]
+        // @cite biagiotti2009 -- Sec. 4.4.5
+        auto const lambda = Scalar{2} * (Scalar{1} - cfg.mu) / (Scalar{3} * cfg.mu);
+
+        // Compute span durations h_i
+        std::vector<Scalar> h(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            h[i] = times_[i + 1] - times_[i];
+        }
+
+        // For n_pts == 2, no interior knots -- degenerate to linear segment
+        if (n_pts == 2) {
+            build_linear(cfg.positions, h);
+            return;
+        }
+
+        // Build and solve the system for interior second derivatives d_1..d_{n-1}
+        // Natural-like endpoints: d_0 = d_n = 0
+        // System: (R + lambda * Q^T * Q) * d = Q^T * q
+        // where R is (n-1)x(n-1) tridiagonal, Q is (n+1)x(n-1) second-difference
+        // @cite biagiotti2009 -- Sec. 4.4.5
+        auto const m = n - 1; // interior knot count
+
+        solve_and_build_coeffs(cfg.positions, h, lambda, n_pts, n, m);
+    }
+
     /// @brief Build linear segment for 2-point case.
     void build_linear(std::vector<Scalar> const& pos,
                       std::vector<Scalar> const& h)

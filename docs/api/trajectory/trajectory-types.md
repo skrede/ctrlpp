@@ -1,10 +1,38 @@
 # trajectory_types
 
-Core output types for trajectory generation. `trajectory_point` holds ND-dimensional position, velocity, and acceleration vectors. `path_point` holds scalar normalized values for paths evaluated over [0,1].
+Core output and error types for trajectory generation. `trajectory_point` holds ND-dimensional position, velocity, and acceleration vectors. `path_point` holds scalar normalized values for paths evaluated over [0,1]. `spline_error` and `trajectory_error` enumerate the structured failure modes of the spline and trajectory factories; each forms the error channel of a `ctrlpp::expected<T, E>` contract.
 
 | Property | Value |
 |----------|-------|
 | **Header** | `ctrlpp/trajectory/trajectory_types.h` |
+
+## Enum: `spline_error`
+
+Structured failure modes for the spline factories: `cubic_spline`, `smoothing_spline`, `bspline_trajectory`, and `make_bspline_interpolation`. Returned through `ctrlpp::expected<T, spline_error>` from each `try_create`.
+
+| Enumerator | Meaning |
+|------------|---------|
+| `too_few_points` | Fewer waypoints than the factory minimum (2 for cubic and smoothing splines, `Degree + 1` for B-spline interpolation) |
+| `size_mismatch` | `times` and `positions` differ in length |
+| `non_increasing_times` | Knot times are not strictly increasing |
+| `periodic_endpoint_mismatch` | Periodic boundary conditions require the first and last positions to match within the endpoint rounding budget |
+| `periodic_too_few_points` | Periodic boundary conditions require at least 3 waypoints |
+| `too_few_control_points` | A B-spline of degree p requires at least p + 1 control points |
+| `bad_knot_count` | Knot vector size differs from `control_points.size() + Degree + 1` |
+| `non_monotonic_knots` | Knot vector is not non-decreasing |
+| `mu_out_of_range` | Smoothing parameter mu lies outside (0, 1] |
+
+## Enum: `trajectory_error`
+
+Structured failure modes for the point-to-point trajectory factories and the online trajectory planners.
+
+| Enumerator | Meaning |
+|------------|---------|
+| `non_positive_velocity_limit` | The velocity limit must be positive |
+| `non_positive_acceleration_limit` | The acceleration limit must be positive |
+| `non_positive_jerk_limit` | The jerk limit must be positive |
+| `non_positive_duration` | The requested duration must be positive |
+| `non_finite_input` | A boundary value or limit is NaN/Inf |
 
 ## Type: `trajectory_point<Scalar, ND>`
 

@@ -14,7 +14,6 @@
 
 #include <cmath>
 #include <limits>
-#include <stdexcept>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -113,7 +112,9 @@ TEST_CASE("B-spline with insufficient control points", "[bspline][hardening][neg
         .control_points = {0.0, 1.0, 2.0}, // Only 3
     };
 
-    REQUIRE_THROWS_AS(bspline3(cfg), std::invalid_argument);
+    auto const result = bspline3::try_create(cfg);
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::too_few_control_points);
 }
 
 TEST_CASE("B-spline with non-ascending knot vector", "[bspline][hardening][negative]")
@@ -124,7 +125,9 @@ TEST_CASE("B-spline with non-ascending knot vector", "[bspline][hardening][negat
         .knot_vector = {0.0, 0.0, 0.0, 0.0, 0.5, 0.3, 1.0, 1.0, 1.0}, // Non-ascending
     };
 
-    REQUIRE_THROWS(bspline3(cfg));
+    auto const result = bspline3::try_create(cfg);
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::non_monotonic_knots);
 }
 
 // ── Trapezoidal trajectory hardening ───────────────────────────────────────────

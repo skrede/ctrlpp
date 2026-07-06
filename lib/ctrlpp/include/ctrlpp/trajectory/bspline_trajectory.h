@@ -13,6 +13,9 @@
 /// @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (de Boor evaluation algorithm)
 /// @cite piegl1997 -- Piegl & Tiller, "The NURBS Book", 2nd ed., 1997, Ch. 2-3 (B-spline basis and knot averaging)
 
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
@@ -23,11 +26,9 @@
 #include <cmath>
 #include <limits>
 #include <vector>
-#include <cassert>
 #include <cstddef>
 #include <utility>
 #include <algorithm>
-#include <stdexcept>
 
 namespace ctrlpp
 {
@@ -54,63 +55,57 @@ class bspline_trajectory
         std::vector<Scalar> knot_vector{};  ///< If empty, auto-generate uniform clamped
     };
 
-    /// @brief Construct B-spline trajectory from control points and optional knot vector.
+    /// @brief Validate the configuration and construct a B-spline trajectory.
     ///
-    /// If knot_vector is empty, generates uniform clamped knot vector:
-    /// m = n + p + 1 total knots, first p+1 = 0, last p+1 = 1, interior uniform.
+    /// Rejections, checked in order:
+    ///  * fewer than Degree + 1 control points -> spline_error::too_few_control_points
+    ///  * knot vector size differs from
+    ///    control_points.size() + Degree + 1   -> spline_error::bad_knot_count
+    ///  * knot vector not non-decreasing       -> spline_error::non_monotonic_knots
     ///
-    /// @throws std::invalid_argument if knot vector size is wrong or knots are non-monotonic
+    /// An empty knot vector skips the knot checks; a uniform clamped knot vector
+    /// is generated instead, which is valid by construction.
+    ///
     /// @cite biagiotti2009 -- Sec. 4.5
-    explicit bspline_trajectory(config const& cfg)
-        : control_points_{cfg.control_points}
+    [[nodiscard]] static auto try_create(config const& cfg)
+        -> ctrlpp::expected<bspline_trajectory, spline_error>
     {
-        auto const n = static_cast<int>(control_points_.size()) - 1;
+        auto const n = static_cast<int>(cfg.control_points.size()) - 1;
         constexpr int p = Degree;
 
         if (n < p) {
-            throw std::invalid_argument(
-                "B-spline requires at least (Degree + 1) control points");
+            return ctrlpp::unexpected(spline_error::too_few_control_points);
         }
 
-        if (cfg.knot_vector.empty()) {
-            // Auto-generate uniform clamped knot vector
-            // m + 1 = n + p + 2 total knot values
-            // @cite biagiotti2009 -- Sec. 4.5
-            auto const m = n + p + 1;
-            knots_.resize(static_cast<std::size_t>(m + 1));
+        if (!cfg.knot_vector.empty()) {
+            // Knot vector size must be n + p + 2
+            auto const expected_size = static_cast<std::size_t>(n + p + 2);
+            if (cfg.knot_vector.size() != expected_size) {
+                return ctrlpp::unexpected(spline_error::bad_knot_count);
+            }
 
-            // First p+1 knots = 0
-            for (int i = 0; i <= p; ++i) {
-                knots_[static_cast<std::size_t>(i)] = Scalar{0};
+            // Knots must be non-decreasing
+            for (std::size_t i = 1; i < cfg.knot_vector.size(); ++i) {
+                if (cfg.knot_vector[i] < cfg.knot_vector[i - 1]) {
+                    return ctrlpp::unexpected(spline_error::non_monotonic_knots);
+                }
             }
-            // Last p+1 knots = 1
-            for (int i = m - p; i <= m; ++i) {
-                knots_[static_cast<std::size_t>(i)] = Scalar{1};
-            }
-            // Interior knots uniformly spaced
-            auto const num_interior = n - p;
-            for (int i = 1; i <= num_interior; ++i) {
-                knots_[static_cast<std::size_t>(p + i)] =
-                    static_cast<Scalar>(i) / static_cast<Scalar>(num_interior + 1);
-            }
-        } else {
-            knots_ = cfg.knot_vector;
         }
 
-        // Validate knot vector size: must be n + p + 2
-        auto const expected_size = static_cast<std::size_t>(n + p + 2);
-        if (knots_.size() != expected_size) {
-            throw std::invalid_argument(
-                "Knot vector size must be control_points.size() + Degree + 1");
-        }
-
-        // Validate non-decreasing
-        for (std::size_t i = 1; i < knots_.size(); ++i) {
-            if (knots_[i] < knots_[i - 1]) {
-                throw std::invalid_argument("Knot vector must be non-decreasing");
-            }
-        }
+        return bspline_trajectory{unchecked_t{}, cfg};
     }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience wrapper over `try_create`.
+    ///
+    /// Delegates to `try_create(cfg).value()`, so an invalid configuration throws
+    /// the value() exception of `ctrlpp::expected`. Compiled out when
+    /// CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free builds.
+    explicit bspline_trajectory(config const& cfg)
+        : bspline_trajectory{try_create(cfg).value()}
+    {
+    }
+#endif
 
     /// @brief Evaluate B-spline at parameter t, returning position, velocity, acceleration.
     ///
@@ -165,6 +160,50 @@ class bspline_trajectory
     }
 
   private:
+    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    struct unchecked_t
+    {
+        explicit unchecked_t() = default;
+    };
+
+    /// @brief Construct from a configuration already validated by `try_create`.
+    ///
+    /// If knot_vector is empty, generates a uniform clamped knot vector:
+    /// m = n + p + 1 total knots, first p+1 = 0, last p+1 = 1, interior uniform.
+    ///
+    /// @cite biagiotti2009 -- Sec. 4.5
+    bspline_trajectory(unchecked_t, config const& cfg)
+        : control_points_{cfg.control_points}
+    {
+        auto const n = static_cast<int>(control_points_.size()) - 1;
+        constexpr int p = Degree;
+
+        if (cfg.knot_vector.empty()) {
+            // Auto-generate uniform clamped knot vector
+            // m + 1 = n + p + 2 total knot values
+            // @cite biagiotti2009 -- Sec. 4.5
+            auto const m = n + p + 1;
+            knots_.resize(static_cast<std::size_t>(m + 1));
+
+            // First p+1 knots = 0
+            for (int i = 0; i <= p; ++i) {
+                knots_[static_cast<std::size_t>(i)] = Scalar{0};
+            }
+            // Last p+1 knots = 1
+            for (int i = m - p; i <= m; ++i) {
+                knots_[static_cast<std::size_t>(i)] = Scalar{1};
+            }
+            // Interior knots uniformly spaced
+            auto const num_interior = n - p;
+            for (int i = 1; i <= num_interior; ++i) {
+                knots_[static_cast<std::size_t>(p + i)] =
+                    static_cast<Scalar>(i) / static_cast<Scalar>(num_interior + 1);
+            }
+        } else {
+            knots_ = cfg.knot_vector;
+        }
+    }
+
     std::vector<Scalar> control_points_;
     std::vector<Scalar> knots_;
 
@@ -344,20 +383,30 @@ auto basis_function(
 /// interpolation matrix of basis function values N[i][j], and solves N * P = Q
 /// for the control points P.
 ///
+/// Rejections, checked in order:
+///  * times/positions length mismatch      -> spline_error::size_mismatch
+///  * fewer than Degree + 1 waypoints      -> spline_error::too_few_points
+/// Any downstream `bspline_trajectory::try_create` failure is propagated.
+///
 /// @tparam Scalar  Floating-point type
 /// @tparam Degree  B-spline degree (compile-time)
 /// @param times     n+1 parameter values (must be strictly increasing)
 /// @param positions n+1 waypoint positions
-/// @return bspline_trajectory that passes through all waypoints
+/// @return expected carrying a bspline_trajectory that passes through all waypoints
 ///
 /// @cite biagiotti2009 -- Sec. 4.5
 template <typename Scalar, int Degree>
-auto make_bspline_interpolation(
+[[nodiscard]] auto make_bspline_interpolation(
     std::vector<Scalar> const& times,
-    std::vector<Scalar> const& positions) -> bspline_trajectory<Scalar, Degree>
+    std::vector<Scalar> const& positions)
+    -> ctrlpp::expected<bspline_trajectory<Scalar, Degree>, spline_error>
 {
-    assert(times.size() == positions.size());
-    assert(times.size() >= static_cast<std::size_t>(Degree + 1));
+    if (times.size() != positions.size()) {
+        return ctrlpp::unexpected(spline_error::size_mismatch);
+    }
+    if (times.size() < static_cast<std::size_t>(Degree + 1)) {
+        return ctrlpp::unexpected(spline_error::too_few_points);
+    }
 
     auto const n = static_cast<int>(times.size()) - 1;
     constexpr int p = Degree;
@@ -412,7 +461,7 @@ auto make_bspline_interpolation(
         control_points[static_cast<std::size_t>(i)] = ctrl(i);
     }
 
-    return bspline_trajectory<Scalar, Degree>({
+    return bspline_trajectory<Scalar, Degree>::try_create({
         .control_points = std::move(control_points),
         .knot_vector = std::move(knots),
     });

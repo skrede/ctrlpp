@@ -262,6 +262,109 @@ TEST_CASE("Periodic BC: passes through all waypoints", "[traj][cubic_spline][per
     REQUIRE_THAT(spline.evaluate(3.0).position[0], WithinAbs(1.0, 1e-12));
 }
 
+// -- Validation ---------------------------------------------------------------
+//
+// Before the try_create conversion these invalid configurations were guarded
+// only by assert(), so release builds accepted them silently and computed on
+// garbage. Each case pins the specific rejection enumerator.
+
+TEST_CASE("try_create rejects fewer than 2 waypoints", "[traj][cubic_spline][validation]")
+{
+    auto const result = ctrlpp::cubic_spline<double>::try_create({
+        .times = {0.0},
+        .positions = {1.0},
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::too_few_points);
+}
+
+TEST_CASE("try_create rejects times/positions length mismatch", "[traj][cubic_spline][validation]")
+{
+    auto const result = ctrlpp::cubic_spline<double>::try_create({
+        .times = {0.0, 1.0, 2.0},
+        .positions = {0.0, 1.0},
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::size_mismatch);
+}
+
+TEST_CASE("try_create rejects non-increasing knot times", "[traj][cubic_spline][validation]")
+{
+    auto const result = ctrlpp::cubic_spline<double>::try_create({
+        .times = {0.0, 2.0, 1.0},
+        .positions = {0.0, 1.0, 0.5},
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::non_increasing_times);
+}
+
+TEST_CASE("try_create rejects periodic BC with 2 waypoints", "[traj][cubic_spline][validation][periodic]")
+{
+    // A periodic spline needs at least 3 waypoints: with only 2 the cyclic
+    // system for the interior velocities is empty and the closed curve is
+    // degenerate. The pre-conversion constructor accepted this input silently
+    // in release builds and indexed out of range inside the cyclic solver.
+    auto const result = ctrlpp::cubic_spline<double>::try_create({
+        .times = {0.0, 1.0},
+        .positions = {1.0, 1.0},
+        .bc = ctrlpp::boundary_condition::periodic,
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::periodic_too_few_points);
+}
+
+TEST_CASE("try_create accepts periodic BC with 3 waypoints", "[traj][cubic_spline][validation][periodic]")
+{
+    auto const result = ctrlpp::cubic_spline<double>::try_create({
+        .times = {0.0, 1.0, 2.0},
+        .positions = {1.0, 2.0, 1.0},
+        .bc = ctrlpp::boundary_condition::periodic,
+    });
+
+    REQUIRE(result.has_value());
+
+    auto const p0 = result->evaluate(0.0);
+    auto const pT = result->evaluate(2.0);
+
+    REQUIRE_THAT(p0.position[0], WithinAbs(1.0, 1e-12));
+    REQUIRE_THAT(pT.position[0], WithinAbs(1.0, 1e-12));
+    REQUIRE_THAT(p0.velocity[0], WithinAbs(pT.velocity[0], 1e-10));
+    REQUIRE_THAT(p0.acceleration[0], WithinAbs(pT.acceleration[0], 1e-10));
+}
+
+TEST_CASE("try_create rejects periodic BC with mismatched endpoints", "[traj][cubic_spline][validation][periodic]")
+{
+    auto const result = ctrlpp::cubic_spline<double>::try_create({
+        .times = {0.0, 1.0, 2.0, 3.0},
+        .positions = {1.0, 2.0, 0.5, 1.5},
+        .bc = ctrlpp::boundary_condition::periodic,
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::periodic_endpoint_mismatch);
+}
+
+TEST_CASE("try_create accepts a valid natural configuration", "[traj][cubic_spline][validation]")
+{
+    auto const result = ctrlpp::cubic_spline<double>::try_create({
+        .times = {0.0, 1.0, 2.0, 3.0, 4.0},
+        .positions = {0.0, 1.0, 0.0, 1.0, 0.0},
+        .bc = ctrlpp::boundary_condition::natural,
+    });
+
+    REQUIRE(result.has_value());
+
+    std::vector<double> const ts = {0.0, 1.0, 2.0, 3.0, 4.0};
+    std::vector<double> const qs = {0.0, 1.0, 0.0, 1.0, 0.0};
+    for (std::size_t i = 0; i < ts.size(); ++i) {
+        REQUIRE_THAT(result->evaluate(ts[i]).position[0], WithinAbs(qs[i], 1e-12));
+    }
+}
+
 // -- Clamping behavior --------------------------------------------------------
 
 TEST_CASE("All BCs: evaluate clamps outside [t0, tn]", "[traj][cubic_spline]")

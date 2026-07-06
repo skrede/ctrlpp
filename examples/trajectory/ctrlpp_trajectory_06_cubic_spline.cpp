@@ -16,7 +16,14 @@ int main()
         .bc = ctrlpp::boundary_condition::natural,
     };
 
-    ctrlpp::cubic_spline<double> spline(cfg);
+    // try_create validates the configuration and reports rejections through
+    // ctrlpp::expected<cubic_spline, spline_error> instead of throwing.
+    auto const spline = ctrlpp::cubic_spline<double>::try_create(cfg);
+    if (!spline.has_value())
+    {
+        std::cerr << "invalid cubic spline configuration\n";
+        return 1;
+    }
 
     constexpr double dt = 0.01;
 
@@ -24,7 +31,7 @@ int main()
 
     for (double t = cfg.times.front(); t <= cfg.times.back(); t += dt)
     {
-        auto const pt = spline.evaluate(t);
+        auto const pt = spline->evaluate(t);
         std::cout << std::fixed << std::setprecision(4) << t << "," << pt.position[0] << "," << pt.velocity[0] << "," << pt.acceleration[0] << "\n";
     }
 }

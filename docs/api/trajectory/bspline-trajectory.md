@@ -26,13 +26,30 @@ struct config {
 
 If `knot_vector` is left empty, a uniform clamped knot vector is generated automatically with `m + 1 = n + Degree + 2` total knots.
 
+## Factory
+
+```cpp
+[[nodiscard]] static auto try_create(config const& cfg)
+    -> ctrlpp::expected<bspline_trajectory, spline_error>;
+```
+
+Validates the configuration and constructs a B-spline trajectory from control points and an optional knot vector. Requires at least `Degree + 1` control points. An empty knot vector skips the knot checks; a uniform clamped knot vector is generated instead, which is valid by construction.
+
+Rejections, checked in order:
+
+| Condition | Error |
+|-----------|-------|
+| Fewer than `Degree + 1` control points | `spline_error::too_few_control_points` |
+| Knot vector size differs from `control_points.size() + Degree + 1` | `spline_error::bad_knot_count` |
+| Knot vector not non-decreasing | `spline_error::non_monotonic_knots` |
+
 ## Constructor
 
 ```cpp
-explicit bspline_trajectory(config const& cfg);
+explicit bspline_trajectory(config const& cfg);  // requires CTRLPP_HAS_EXCEPTIONS
 ```
 
-Constructs a B-spline trajectory from control points and an optional knot vector. Requires at least `Degree + 1` control points. Throws `std::invalid_argument` if the knot vector has wrong size or is non-monotonic.
+Throwing convenience wrapper over `try_create`: delegates to `try_create(cfg).value()`, so an invalid configuration throws the `value()` exception of `ctrlpp::expected`. Compiled out when `CTRLPP_HAS_EXCEPTIONS` is 0.
 
 ## Methods
 
@@ -58,12 +75,22 @@ Returns the active parameter range: U[n+1] - U[p].
 
 ```cpp
 template <typename Scalar, int Degree>
-auto make_bspline_interpolation(
+[[nodiscard]] auto make_bspline_interpolation(
     std::vector<Scalar> const& times,
-    std::vector<Scalar> const& positions) -> bspline_trajectory<Scalar, Degree>;
+    std::vector<Scalar> const& positions)
+    -> ctrlpp::expected<bspline_trajectory<Scalar, Degree>, spline_error>;
 ```
 
 Constructs a B-spline that passes through all waypoints at the given parameter values. Generates a clamped knot vector using de Boor's averaging method and solves the interpolation matrix N * P = Q for control points.
+
+Rejections, checked in order:
+
+| Condition | Error |
+|-----------|-------|
+| `times` and `positions` differ in length | `spline_error::size_mismatch` |
+| Fewer than `Degree + 1` waypoints | `spline_error::too_few_points` |
+
+Any downstream `bspline_trajectory::try_create` failure is propagated.
 
 ## Free Function
 
@@ -96,11 +123,14 @@ int main()
         {0.0, 1.0, 2.0, 3.0, 4.0},  // parameter values
         {0.0, 1.0, 0.5, 1.5, 2.0}   // positions
     );
+    if (!bspline.has_value()) {
+        return 1;
+    }
 
-    double T = bspline.duration();
+    double T = bspline->duration();
     constexpr double dt = 0.01;
     for (double t = 0.0; t <= T; t += dt) {
-        auto pt = bspline.evaluate(t);
+        auto pt = bspline->evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
     }
 }
@@ -110,4 +140,5 @@ int main()
 
 - [cubic-spline](cubic-spline.md)<br/> Simpler cubic interpolation for moderate waypoint counts
 - [smoothing-spline](smoothing-spline.md)<br/> Spline approximation with noise filtering
+- [trajectory-types](trajectory-types.md)<br/> `spline_error` enumerators returned by `try_create`
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)<br/> B-spline basis functions and de Boor's algorithm

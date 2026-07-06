@@ -12,6 +12,9 @@
 /// Automatic Machines and Robots", 2009, Sec. 4.4, eq. (4.10)-(4.11)
 /// @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (canonical reference for cubic-spline interpolation)
 
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
@@ -23,7 +26,6 @@
 #include <array>
 #include <limits>
 #include <vector>
-#include <cassert>
 #include <cstddef>
 #include <algorithm>
 
@@ -43,6 +45,13 @@ enum class boundary_condition
 /// Evaluates position, velocity, and acceleration at arbitrary time t using
 /// piecewise cubic polynomials with C2 continuity at interior knots.
 ///
+/// Construction goes through `try_create`, which validates the waypoint
+/// configuration and reports rejections through
+/// `ctrlpp::expected<cubic_spline, spline_error>`. Periodic boundary conditions
+/// require at least 3 waypoints: with only 2 the cyclic system for the interior
+/// velocities is empty and the closed curve degenerates, so that configuration
+/// is rejected rather than special-cased.
+///
 /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
 template <ctrlpp_floating_scalar Scalar>
 class cubic_spline
@@ -57,67 +66,61 @@ class cubic_spline
         Scalar vn{};                     ///< Endpoint velocity for clamped BC
     };
 
-    /// @brief Construct cubic spline from waypoints and boundary conditions.
+    /// @brief Validate the configuration and construct a cubic spline.
     ///
-    /// Sets up and solves the tridiagonal system for spline velocities,
-    /// then computes polynomial coefficients for each span.
+    /// Rejections, checked in order:
+    ///  * fewer than 2 waypoints                    -> spline_error::too_few_points
+    ///  * times/positions length mismatch           -> spline_error::size_mismatch
+    ///  * knot times not strictly increasing        -> spline_error::non_increasing_times
+    ///  * periodic BC with fewer than 3 waypoints   -> spline_error::periodic_too_few_points
+    ///  * periodic BC with q_0 != q_n beyond budget -> spline_error::periodic_endpoint_mismatch
     ///
     /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-    explicit cubic_spline(config const& cfg)
-        : times_{cfg.times}
+    [[nodiscard]] static auto try_create(config const& cfg)
+        -> ctrlpp::expected<cubic_spline, spline_error>
     {
-        auto const n_pts = times_.size();
-        assert(n_pts >= 2);
-        assert(cfg.positions.size() == n_pts);
-
-        auto const n = n_pts - 1; // number of spans
-
-        // Compute span durations h_i and slopes delta_i
-        std::vector<Scalar> h(n);
-        std::vector<Scalar> delta(n);
-        for (std::size_t i = 0; i < n; ++i) {
-            h[i] = times_[i + 1] - times_[i];
-            assert(h[i] > Scalar{0});
-            delta[i] = (cfg.positions[i + 1] - cfg.positions[i]) / h[i];
+        auto const n_pts = cfg.times.size();
+        if (n_pts < 2) {
+            return ctrlpp::unexpected(spline_error::too_few_points);
         }
-
-        // Solve for velocities at each waypoint
-        std::vector<Scalar> vel(n_pts);
-
-        if (cfg.bc == boundary_condition::natural) {
-            solve_natural(h, delta, cfg.positions, vel, n_pts, n);
-        } else if (cfg.bc == boundary_condition::clamped) {
-            solve_clamped(h, delta, cfg.positions, vel, n_pts, n, cfg.v0, cfg.vn);
-        } else {
+        if (cfg.positions.size() != n_pts) {
+            return ctrlpp::unexpected(spline_error::size_mismatch);
+        }
+        for (std::size_t i = 0; i + 1 < n_pts; ++i) {
+            if (!(cfg.times[i + 1] - cfg.times[i] > Scalar{0})) {
+                return ctrlpp::unexpected(spline_error::non_increasing_times);
+            }
+        }
+        if (cfg.bc == boundary_condition::periodic) {
+            if (n_pts < 3) {
+                return ctrlpp::unexpected(spline_error::periodic_too_few_points);
+            }
             // Periodic boundary conditions require matching end positions. Compare
             // relative to the endpoint magnitude (not a bare absolute tolerance) so
             // the check is correct across position scales and float precisions; the
             // margin is the rounding budget of the endpoint difference.
-            [[maybe_unused]] constexpr Scalar periodic_match_ulps = Scalar{4};
-            [[maybe_unused]] auto const periodic_scale =
+            constexpr Scalar periodic_match_ulps = Scalar{4};
+            auto const periodic_scale =
                 std::abs(cfg.positions.front()) + std::abs(cfg.positions.back());
-            assert(std::abs(cfg.positions.front() - cfg.positions.back())
-                   <= periodic_match_ulps * std::numeric_limits<Scalar>::epsilon() * periodic_scale);
-            solve_periodic(h, delta, cfg.positions, vel, n_pts, n);
+            if (std::abs(cfg.positions.front() - cfg.positions.back())
+                > periodic_match_ulps * std::numeric_limits<Scalar>::epsilon() * periodic_scale) {
+                return ctrlpp::unexpected(spline_error::periodic_endpoint_mismatch);
+            }
         }
-
-        // Compute polynomial coefficients for each span
-        // q(s) = a + b*s + c*s^2 + d*s^3  where s = t - t_i
-        // @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-        coeffs_.resize(n);
-        for (std::size_t i = 0; i < n; ++i) {
-            auto const qi = cfg.positions[i];
-            auto const qi1 = cfg.positions[i + 1];
-            auto const vi = vel[i];
-            auto const vi1 = vel[i + 1];
-            auto const hi = h[i];
-
-            coeffs_[i][0] = qi;                                                    // a
-            coeffs_[i][1] = vi;                                                    // b
-            coeffs_[i][2] = (Scalar{3} * (qi1 - qi) / hi - Scalar{2} * vi - vi1) / hi;  // c
-            coeffs_[i][3] = (Scalar{2} * (qi - qi1) / hi + vi + vi1) / (hi * hi);       // d
-        }
+        return cubic_spline{unchecked_t{}, cfg};
     }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience wrapper over `try_create`.
+    ///
+    /// Delegates to `try_create(cfg).value()`, so an invalid configuration throws
+    /// the value() exception of `ctrlpp::expected`. Compiled out when
+    /// CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free builds.
+    explicit cubic_spline(config const& cfg)
+        : cubic_spline{try_create(cfg).value()}
+    {
+    }
+#endif
 
     /// @brief Evaluate spline at time t, clamped to [t_0, t_n].
     ///
@@ -149,6 +152,61 @@ class cubic_spline
     auto duration() const -> Scalar { return times_.back() - times_.front(); }
 
   private:
+    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    struct unchecked_t
+    {
+        explicit unchecked_t() = default;
+    };
+
+    /// @brief Construct from a configuration already validated by `try_create`.
+    ///
+    /// Sets up and solves the tridiagonal system for spline velocities,
+    /// then computes polynomial coefficients for each span.
+    ///
+    /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
+    cubic_spline(unchecked_t, config const& cfg)
+        : times_{cfg.times}
+    {
+        auto const n_pts = times_.size();
+        auto const n = n_pts - 1; // number of spans
+
+        // Compute span durations h_i and slopes delta_i
+        std::vector<Scalar> h(n);
+        std::vector<Scalar> delta(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            h[i] = times_[i + 1] - times_[i];
+            delta[i] = (cfg.positions[i + 1] - cfg.positions[i]) / h[i];
+        }
+
+        // Solve for velocities at each waypoint
+        std::vector<Scalar> vel(n_pts);
+
+        if (cfg.bc == boundary_condition::natural) {
+            solve_natural(h, delta, cfg.positions, vel, n_pts, n);
+        } else if (cfg.bc == boundary_condition::clamped) {
+            solve_clamped(h, delta, cfg.positions, vel, n_pts, n, cfg.v0, cfg.vn);
+        } else {
+            solve_periodic(h, delta, cfg.positions, vel, n_pts, n);
+        }
+
+        // Compute polynomial coefficients for each span
+        // q(s) = a + b*s + c*s^2 + d*s^3  where s = t - t_i
+        // @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
+        coeffs_.resize(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            auto const qi = cfg.positions[i];
+            auto const qi1 = cfg.positions[i + 1];
+            auto const vi = vel[i];
+            auto const vi1 = vel[i + 1];
+            auto const hi = h[i];
+
+            coeffs_[i][0] = qi;                                                    // a
+            coeffs_[i][1] = vi;                                                    // b
+            coeffs_[i][2] = (Scalar{3} * (qi1 - qi) / hi - Scalar{2} * vi - vi1) / hi;  // c
+            coeffs_[i][3] = (Scalar{2} * (qi - qi1) / hi + vi + vi1) / (hi * hi);       // d
+        }
+    }
+
     /// @brief Find span index for time t using binary search.
     ///
     /// Clamps to valid span range [0, n_spans-1].

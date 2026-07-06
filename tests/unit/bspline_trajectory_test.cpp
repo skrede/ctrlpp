@@ -49,10 +49,11 @@ TEST_CASE("make_bspline_interpolation passes through waypoints", "[bspline]")
     std::vector<double> times = {0.0, 1.0, 2.0, 3.0, 4.0};
     std::vector<double> positions = {0.0, 2.0, 1.0, 3.0, 5.0};
 
-    auto bs = ctrlpp::make_bspline_interpolation<double, 3>(times, positions);
+    auto const bs = ctrlpp::make_bspline_interpolation<double, 3>(times, positions);
+    REQUIRE(bs.has_value());
 
     for (std::size_t i = 0; i < times.size(); ++i) {
-        auto const pt = bs.evaluate(times[i]);
+        auto const pt = bs->evaluate(times[i]);
         REQUIRE_THAT(pt.position(0), WithinAbs(positions[i], 1e-10));
     }
 }
@@ -94,14 +95,94 @@ TEST_CASE("Custom knot vector", "[bspline]")
     REQUIRE_THAT(pT.position(0), WithinAbs(ctrl.back(), 1e-12));
 }
 
-TEST_CASE("Invalid knot vector detected", "[bspline]")
+// -- Validation ---------------------------------------------------------------
+//
+// Before the try_create conversion the constructor threw std::invalid_argument
+// for these inputs and make_bspline_interpolation guarded them only by
+// assert(), so release builds accepted them silently. Each case pins the
+// specific rejection enumerator.
+
+TEST_CASE("try_create rejects too few control points", "[bspline][validation]")
+{
+    // Degree 3 needs at least 4 control points
+    auto const result = ctrlpp::bspline_trajectory<double, 3>::try_create({
+        .control_points = {0.0, 1.0, 2.0},
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::too_few_control_points);
+}
+
+TEST_CASE("try_create rejects wrong knot vector size", "[bspline][validation]")
 {
     // Wrong number of knots for degree 3 with 5 control points (need 9, provide 7)
-    std::vector<double> ctrl = {0.0, 1.0, 3.0, 2.0, 4.0};
-    std::vector<double> bad_knots = {0, 0, 0, 0.5, 1, 1, 1};
+    auto const result = ctrlpp::bspline_trajectory<double, 3>::try_create({
+        .control_points = {0.0, 1.0, 3.0, 2.0, 4.0},
+        .knot_vector = {0, 0, 0, 0.5, 1, 1, 1},
+    });
 
-    REQUIRE_THROWS(ctrlpp::bspline_trajectory<double, 3>(
-        {.control_points = ctrl, .knot_vector = bad_knots}));
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::bad_knot_count);
+}
+
+TEST_CASE("try_create rejects non-monotonic knot vector", "[bspline][validation]")
+{
+    // Correct knot count (9) but decreasing interior knots
+    auto const result = ctrlpp::bspline_trajectory<double, 3>::try_create({
+        .control_points = {0.0, 1.0, 3.0, 2.0, 4.0},
+        .knot_vector = {0, 0, 0, 0, 0.5, 0.3, 1, 1, 1},
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::non_monotonic_knots);
+}
+
+TEST_CASE("make_bspline_interpolation rejects length mismatch", "[bspline][validation]")
+{
+    std::vector<double> times = {0.0, 1.0, 2.0, 3.0, 4.0};
+    std::vector<double> positions = {0.0, 2.0, 1.0, 3.0};
+
+    auto const result = ctrlpp::make_bspline_interpolation<double, 3>(times, positions);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::size_mismatch);
+}
+
+TEST_CASE("make_bspline_interpolation rejects too few waypoints", "[bspline][validation]")
+{
+    // Degree 3 interpolation needs at least 4 waypoints
+    std::vector<double> times = {0.0, 1.0, 2.0};
+    std::vector<double> positions = {0.0, 2.0, 1.0};
+
+    auto const result = ctrlpp::make_bspline_interpolation<double, 3>(times, positions);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::too_few_points);
+}
+
+TEST_CASE("try_create matches constructor-built spline", "[bspline][validation]")
+{
+    std::vector<double> ctrl = {0.0, 1.0, 3.0, 2.0, 4.0};
+
+    auto const created = ctrlpp::bspline_trajectory<double, 3>::try_create({
+        .control_points = ctrl,
+    });
+    REQUIRE(created.has_value());
+
+    ctrlpp::bspline_trajectory<double, 3> constructed({.control_points = ctrl});
+
+    auto const T = constructed.duration();
+    REQUIRE_THAT(created->duration(), WithinAbs(T, 1e-15));
+
+    int const N = 25;
+    for (int i = 0; i <= N; ++i) {
+        auto const t = T * static_cast<double>(i) / N;
+        auto const a = created->evaluate(t);
+        auto const b = constructed.evaluate(t);
+        REQUIRE_THAT(a.position(0), WithinAbs(b.position(0), 1e-15));
+        REQUIRE_THAT(a.velocity(0), WithinAbs(b.velocity(0), 1e-15));
+        REQUIRE_THAT(a.acceleration(0), WithinAbs(b.acceleration(0), 1e-15));
+    }
 }
 
 TEST_CASE("Duration returns active parameter range", "[bspline]")

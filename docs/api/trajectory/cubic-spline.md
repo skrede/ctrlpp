@@ -24,7 +24,7 @@ enum class boundary_condition { natural, clamped, periodic };
 |-------|---------|
 | `natural` | Zero acceleration at endpoints (M_0 = M_n = 0) |
 | `clamped` | Endpoint velocities v_0 and v_n specified by user |
-| `periodic` | Cyclic: v_0 = v_n and a_0 = a_n (requires q_0 = q_n) |
+| `periodic` | Cyclic: v_0 = v_n and a_0 = a_n (requires q_0 = q_n and at least 3 waypoints) |
 
 ## Config
 
@@ -38,13 +38,32 @@ struct config {
 };
 ```
 
+## Factory
+
+```cpp
+[[nodiscard]] static auto try_create(config const& cfg)
+    -> ctrlpp::expected<cubic_spline, spline_error>;
+```
+
+Validates the configuration and constructs a cubic spline. Requires at least 2 waypoints and strictly increasing time values. Periodic boundary conditions additionally require at least 3 waypoints and matching first/last positions: with only 2 waypoints the cyclic system for the interior velocities is empty and the closed curve degenerates, so that configuration is rejected.
+
+Rejections, checked in order:
+
+| Condition | Error |
+|-----------|-------|
+| Fewer than 2 waypoints | `spline_error::too_few_points` |
+| `times` and `positions` differ in length | `spline_error::size_mismatch` |
+| Knot times not strictly increasing | `spline_error::non_increasing_times` |
+| Periodic BC with fewer than 3 waypoints | `spline_error::periodic_too_few_points` |
+| Periodic BC with q_0 != q_n beyond the rounding budget | `spline_error::periodic_endpoint_mismatch` |
+
 ## Constructor
 
 ```cpp
-explicit cubic_spline(config const& cfg);
+explicit cubic_spline(config const& cfg);  // requires CTRLPP_HAS_EXCEPTIONS
 ```
 
-Constructs a cubic spline from waypoints and boundary conditions. Requires at least 2 waypoints and strictly increasing time values.
+Throwing convenience wrapper over `try_create`: delegates to `try_create(cfg).value()`, so an invalid configuration throws the `value()` exception of `ctrlpp::expected`. Compiled out when `CTRLPP_HAS_EXCEPTIONS` is 0.
 
 ## Methods
 
@@ -79,16 +98,19 @@ Returns total spline duration: t_n - t_0.
 
 int main()
 {
-    ctrlpp::cubic_spline<double> spline({
+    auto spline = ctrlpp::cubic_spline<double>::try_create({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
         .positions = {0.0, 1.0, 0.5, 1.5, 2.0},
         .bc = ctrlpp::boundary_condition::natural,
     });
+    if (!spline.has_value()) {
+        return 1;
+    }
 
-    double T = spline.duration();
+    double T = spline->duration();
     constexpr double dt = 0.01;
     for (double t = 0.0; t <= T; t += dt) {
-        auto pt = spline.evaluate(t);
+        auto pt = spline->evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";
     }
 }
@@ -98,4 +120,5 @@ int main()
 
 - [smoothing-spline](smoothing-spline.md)<br/> Smoothing spline approximation with data/smoothness tradeoff
 - [bspline-trajectory](bspline-trajectory.md)<br/> B-spline trajectory with configurable degree
+- [trajectory-types](trajectory-types.md)<br/> `spline_error` enumerators returned by `try_create`
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)<br/> Mathematical background for spline interpolation

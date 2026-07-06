@@ -4,6 +4,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <limits>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -135,20 +136,98 @@ TEST_CASE("smoothing_spline satisfies trajectory_segment concept", "[smoothing_s
         ctrlpp::smoothing_spline<double>, double, 1>);
 }
 
-TEST_CASE("smoothing_spline mu clamped to valid range", "[smoothing_spline]")
-{
-    // mu=0 should be clamped to epsilon -- should not produce NaN
-    std::vector<double> times     = {0.0, 1.0, 2.0};
-    std::vector<double> positions = {0.0, 1.0, 0.0};
+// -- Validation ---------------------------------------------------------------
+//
+// Before the try_create conversion these invalid configurations were guarded
+// only by assert(), so release builds accepted them silently; mu = 0 in
+// particular was clamped to an arbitrary small constant instead of rejected.
+// Each case pins the specific rejection enumerator.
 
-    ctrlpp::smoothing_spline<double> spline({
-        .times = times,
-        .positions = positions,
-        .mu = 0.0, // should be clamped to epsilon
+TEST_CASE("smoothing_spline try_create rejects mu = 0", "[smoothing_spline][validation]")
+{
+    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+        .times = {0.0, 1.0, 2.0},
+        .positions = {0.0, 1.0, 0.0},
+        .mu = 0.0,
     });
 
-    auto const pt = spline.evaluate(0.5);
-    REQUIRE_FALSE(std::isnan(pt.position[0]));
-    REQUIRE_FALSE(std::isnan(pt.velocity[0]));
-    REQUIRE_FALSE(std::isnan(pt.acceleration[0]));
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::mu_out_of_range);
+}
+
+TEST_CASE("smoothing_spline try_create rejects mu > 1", "[smoothing_spline][validation]")
+{
+    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+        .times = {0.0, 1.0, 2.0},
+        .positions = {0.0, 1.0, 0.0},
+        .mu = 2.0,
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::mu_out_of_range);
+}
+
+TEST_CASE("smoothing_spline try_create rejects NaN mu", "[smoothing_spline][validation]")
+{
+    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+        .times = {0.0, 1.0, 2.0},
+        .positions = {0.0, 1.0, 0.0},
+        .mu = std::numeric_limits<double>::quiet_NaN(),
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::mu_out_of_range);
+}
+
+TEST_CASE("smoothing_spline try_create accepts mu = 1", "[smoothing_spline][validation]")
+{
+    std::vector<double> const times     = {0.0, 1.0, 2.0};
+    std::vector<double> const positions = {0.0, 1.0, 0.0};
+
+    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+        .times = times,
+        .positions = positions,
+        .mu = 1.0,
+    });
+
+    REQUIRE(result.has_value());
+    for (std::size_t i = 0; i < times.size(); ++i) {
+        REQUIRE_THAT(result->evaluate(times[i]).position[0], WithinAbs(positions[i], 1e-8));
+    }
+}
+
+TEST_CASE("smoothing_spline try_create rejects fewer than 2 waypoints", "[smoothing_spline][validation]")
+{
+    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+        .times = {0.0},
+        .positions = {1.0},
+        .mu = 0.5,
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::too_few_points);
+}
+
+TEST_CASE("smoothing_spline try_create rejects length mismatch", "[smoothing_spline][validation]")
+{
+    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+        .times = {0.0, 1.0, 2.0},
+        .positions = {0.0, 1.0},
+        .mu = 0.5,
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::size_mismatch);
+}
+
+TEST_CASE("smoothing_spline try_create rejects non-increasing times", "[smoothing_spline][validation]")
+{
+    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+        .times = {0.0, 1.0, 1.0},
+        .positions = {0.0, 1.0, 0.0},
+        .mu = 0.5,
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::non_increasing_times);
 }

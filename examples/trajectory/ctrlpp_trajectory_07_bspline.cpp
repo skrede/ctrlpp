@@ -14,16 +14,23 @@ int main()
         .control_points = {0.0, 2.0, 5.0, 4.0, 7.0, 10.0},
     };
 
-    ctrlpp::bspline_trajectory<double, 3> bspline(cfg);
+    // try_create validates the configuration and reports rejections through
+    // ctrlpp::expected<bspline_trajectory, spline_error> instead of throwing.
+    auto const bspline = ctrlpp::bspline_trajectory<double, 3>::try_create(cfg);
+    if (!bspline.has_value())
+    {
+        std::cerr << "invalid B-spline configuration\n";
+        return 1;
+    }
 
-    auto const total = bspline.duration();
+    auto const total = bspline->duration();
     constexpr double dt = 0.01;
 
     std::cout << "time,position,velocity\n";
 
     for (double t = 0.0; t <= total; t += dt)
     {
-        auto const pt = bspline.evaluate(t);
+        auto const pt = bspline->evaluate(t);
         std::cout << std::fixed << std::setprecision(4) << t << "," << pt.position[0] << "," << pt.velocity[0] << "\n";
     }
 }
