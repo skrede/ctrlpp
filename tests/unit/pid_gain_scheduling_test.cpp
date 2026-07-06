@@ -3,6 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <cmath>
+#include <limits>
+
 using Catch::Matchers::WithinAbs;
 
 namespace {
@@ -15,81 +18,128 @@ constexpr double tol = 1e-12;
 
 Vec1 vec1(double v) { Vec1 r; r << v; return r; }
 
+// Bound for comparing two outputs computed with a different operation order. Each of
+// the arithmetic operations composing the output is rounded once per controller, so
+// the accumulated forward error is bounded by twice the operation count times one
+// unit in the last place at the working scale.
+double output_continuity_tol(double scale)
+{
+    constexpr int arithmetic_ops = 8; // products/sums forming the PID output
+    return 2.0 * arithmetic_ops * std::numeric_limits<double>::epsilon() * std::abs(scale);
 }
 
-TEST_CASE("set_params rescales integral for bumpless gain change",
+}
+
+// The integral state is stored in output units (each increment is ki*e*dt and enters
+// the output directly), so its contribution to the output is already continuous across
+// a gain change. set_params must therefore leave the integral state untouched: this is
+// what makes gain scheduling bumpless. Rescaling the state by ki_old/ki_new would
+// instead step the integral contribution, injecting a bump.
+TEST_CASE("set_params with a Ki change is bumpless (integral state unchanged)",
     "[pid][siso][gain-scheduling]")
 {
+    const double kp = 1.0, ki_old = 2.0, ki_new = 4.0;
+    const double sp = 1.0, meas = 0.0;
+    const double e = sp - meas; // setpoint weight b defaults to 1
+
     SisoPid::config_type cfg{};
-    cfg.kp = vec1(1.0);
-    cfg.ki = vec1(2.0);
-    SisoPid pid(cfg);
+    cfg.kp = vec1(kp);
+    cfg.ki = vec1(ki_old);
 
-    // Accumulate some integral: 10 steps of e=1, Ki=2
-    // integral = sum(Ki*e*dt) = 2*1*0.01*10 = 0.2
-    for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), Ts);
+    // Two controllers driven identically hold bit-identical state; one then changes Ki.
+    SisoPid ref(cfg);
+    SisoPid sched(cfg);
+    for (int i = 0; i < 10; ++i) {
+        ref.compute(vec1(sp), vec1(meas), Ts);
+        sched.compute(vec1(sp), vec1(meas), Ts);
+    }
 
-    double integral_before = pid.integral()[0];
-    REQUIRE_THAT(integral_before, WithinAbs(0.2, tol));
+    const double integral_before = sched.integral()[0];
+    REQUIRE_THAT(integral_before, WithinAbs(ref.integral()[0], tol));
 
-    // Change Ki from 2.0 to 4.0
-    // integral should rescale: integral_new = integral_old * ki_old / ki_new = 0.2 * 2/4 = 0.1
-    // so that Ki * integral stays constant: 2*0.2 = 4*0.1 = 0.4
     SisoPid::config_type new_cfg = cfg;
-    new_cfg.ki = vec1(4.0);
-    pid.set_params(new_cfg);
+    new_cfg.ki = vec1(ki_new);
+    sched.set_params(new_cfg);
 
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.1, tol));
+    // Bumpless transfer: the stored integral (in output units) is not rescaled.
+    REQUIRE_THAT(sched.integral()[0], WithinAbs(integral_before, tol));
+
+    // On the next identical step the outputs differ only by the intended change in the
+    // integral increment on the current error, (ki_new - ki_old)*e*dt, with no jump in
+    // the accumulated integral contribution.
+    const double u_ref = ref.compute(vec1(sp), vec1(meas), Ts)[0];
+    const double u_sched = sched.compute(vec1(sp), vec1(meas), Ts)[0];
+    const double expected_diff = (ki_new - ki_old) * e * Ts;
+
+    REQUIRE_THAT(u_sched - u_ref, WithinAbs(expected_diff, output_continuity_tol(u_sched)));
 }
 
-TEST_CASE("set_params with Ki going to zero clears integral",
+TEST_CASE("set_params with Ki going to zero preserves the accumulated integral",
     "[pid][siso][gain-scheduling]")
 {
+    const double kp = 1.0, ki = 2.0;
+    const double sp = 1.0, meas = 0.0;
+
     SisoPid::config_type cfg{};
-    cfg.kp = vec1(1.0);
-    cfg.ki = vec1(2.0);
+    cfg.kp = vec1(kp);
+    cfg.ki = vec1(ki);
     SisoPid pid(cfg);
 
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), Ts);
+        pid.compute(vec1(sp), vec1(meas), Ts);
 
-    REQUIRE(pid.integral()[0] != 0.0);
+    const double integral_before = pid.integral()[0];
+    REQUIRE(integral_before != 0.0);
 
+    // Turning integral action off must not clear the accumulated integral: that would
+    // step the output. The integrator simply stops growing (increment is now zero)
+    // while its stored contribution persists.
     SisoPid::config_type new_cfg = cfg;
     new_cfg.ki = vec1(0.0);
     pid.set_params(new_cfg);
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
 
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
+    // A further step adds no increment and holds the integral, so the output is the
+    // proportional term plus the retained integral contribution.
+    const double u = pid.compute(vec1(sp), vec1(meas), Ts)[0];
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
+    REQUIRE_THAT(u, WithinAbs(kp * (sp - meas) + integral_before, output_continuity_tol(u)));
 }
 
-TEST_CASE("set_params Kp change produces no output discontinuity",
+TEST_CASE("set_params with a Kp change steps only the proportional term",
     "[pid][siso][gain-scheduling]")
 {
+    const double kp_old = 1.0, kp_new = 2.0, ki = 0.5;
+    const double sp = 1.0, meas = 0.5;
+    const double ep = sp - meas; // setpoint weight b defaults to 1
+
     SisoPid::config_type cfg{};
-    cfg.kp = vec1(1.0);
-    cfg.ki = vec1(0.5);
-    SisoPid pid(cfg);
+    cfg.kp = vec1(kp_old);
+    cfg.ki = vec1(ki);
 
-    // Run until steady output
-    Vec1 u_before{};
-    for (int i = 0; i < 20; ++i)
-        u_before = pid.compute(vec1(1.0), vec1(0.5), Ts);
+    SisoPid ref(cfg);
+    SisoPid sched(cfg);
+    for (int i = 0; i < 20; ++i) {
+        ref.compute(vec1(sp), vec1(meas), Ts);
+        sched.compute(vec1(sp), vec1(meas), Ts);
+    }
 
-    // Change Kp from 1 to 2
+    const double integral_before = sched.integral()[0];
+
     SisoPid::config_type new_cfg = cfg;
-    new_cfg.kp = vec1(2.0);
-    pid.set_params(new_cfg);
+    new_cfg.kp = vec1(kp_new);
+    sched.set_params(new_cfg);
 
-    auto u_after = pid.compute(vec1(1.0), vec1(0.5), Ts);
+    // Changing Kp leaves the integral state untouched (Ki unchanged), so the only
+    // difference on the next step is the deliberate proportional change on the current
+    // error, (kp_new - kp_old)*ep.
+    REQUIRE_THAT(sched.integral()[0], WithinAbs(integral_before, tol));
 
-    // P changed from 1*0.5=0.5 to 2*0.5=1.0 (+0.5 step)
-    // Ki unchanged so integral unchanged -- output jumps by Kp change on proportional
-    // This is expected: gain scheduling Kp changes the proportional instantly
-    // The key is integral rescaling for Ki changes
-    double expected_p = 2.0 * 0.5;
-    double integral = pid.integral()[0]; // integral accumulated + new increment
-    REQUIRE_THAT(u_after[0], WithinAbs(expected_p + integral, 0.01));
+    const double u_ref = ref.compute(vec1(sp), vec1(meas), Ts)[0];
+    const double u_sched = sched.compute(vec1(sp), vec1(meas), Ts)[0];
+    const double expected_diff = (kp_new - kp_old) * ep;
+
+    REQUIRE_THAT(u_sched - u_ref, WithinAbs(expected_diff, output_continuity_tol(u_sched)));
 }
 
 TEST_CASE("params() returns current config after set_params",
@@ -155,7 +205,7 @@ TEST_CASE("freeze_integral prevents integral growth",
     REQUIRE(pid.integral()[0] > integral_val);
 }
 
-TEST_CASE("set_params from Ki=0 to Ki!=0 preserves zero integral",
+TEST_CASE("set_params from Ki=0 to Ki!=0 leaves the zero integral in place",
     "[pid][siso][gain-scheduling][edge-case]")
 {
     SisoPid::config_type cfg{};
@@ -163,14 +213,13 @@ TEST_CASE("set_params from Ki=0 to Ki!=0 preserves zero integral",
     cfg.ki = vec1(0.0);
     SisoPid pid(cfg);
 
-    // Run some steps with Ki=0 -> integral stays 0
+    // Run some steps with Ki=0 -> integral never accumulates, stays 0
     for (int i = 0; i < 10; ++i)
         pid.compute(vec1(1.0), vec1(0.0), Ts);
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
 
-    // Switch to Ki=2.0: ki_old==0, so the else-if branch (m_ki==0 -> clear) is NOT taken
-    // because the NEW ki is non-zero. The condition ki_old[i]!=0 fails -> no rescale.
-    // Integral stays at 0.
+    // Enabling integral action does not touch the (zero) integral state; it simply
+    // starts accumulating from where it was.
     SisoPid::config_type new_cfg = cfg;
     new_cfg.ki = vec1(2.0);
     pid.set_params(new_cfg);
@@ -182,32 +231,47 @@ TEST_CASE("set_params from Ki=0 to Ki!=0 preserves zero integral",
     REQUIRE_THAT(pid.integral()[0], WithinAbs(2.0 * 1.0 * Ts, tol));
 }
 
-TEST_CASE("ISA form set_params rescales integral correctly",
+TEST_CASE("ISA form set_params with a Ti change is bumpless",
     "[pid][siso][gain-scheduling][isa]")
 {
     using IsaPid = ctrlpp::pid<double, 1, 1, 1, ctrlpp::isa_form>;
+    const double kp = 2.0, ti_old = 4.0, ti_new = 2.0;
+    const double sp = 1.0, meas = 0.0;
+    const double e = sp - meas;
+    // Internal integral gain in ISA form is Kp/Ti.
+    const double ki_int_old = kp / ti_old; // 0.5
+    const double ki_int_new = kp / ti_new; // 1.0
+
     IsaPid::config_type cfg{};
-    cfg.kp = vec1(2.0);
-    cfg.ki = vec1(4.0);  // Ti=4 -> internal Ki = Kp/Ti = 0.5
+    cfg.kp = vec1(kp);
+    cfg.ki = vec1(ti_old);
     cfg.kd = vec1(0.0);
-    IsaPid pid(cfg);
 
-    // Accumulate integral: 10 steps, e=1.0, internal Ki=0.5
-    // integral = 0.5 * 1.0 * 0.01 * 10 = 0.05
-    for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), Ts);
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.05, tol));
+    IsaPid ref(cfg);
+    IsaPid sched(cfg);
+    for (int i = 0; i < 10; ++i) {
+        ref.compute(vec1(sp), vec1(meas), Ts);
+        sched.compute(vec1(sp), vec1(meas), Ts);
+    }
 
-    // Change Ti from 4.0 to 2.0 -> new internal Ki = 2/2 = 1.0
-    // Bumpless rescale: integral_new = integral_old * ki_old/ki_new = 0.05 * 0.5/1.0 = 0.025
+    const double integral_before = sched.integral()[0];
+    REQUIRE_THAT(integral_before, WithinAbs(ref.integral()[0], tol));
+
     IsaPid::config_type new_cfg = cfg;
-    new_cfg.ki = vec1(2.0);
-    pid.set_params(new_cfg);
+    new_cfg.ki = vec1(ti_new);
+    sched.set_params(new_cfg);
 
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.025, tol));
+    // The stored integral (output units) is not rescaled when Ti changes.
+    REQUIRE_THAT(sched.integral()[0], WithinAbs(integral_before, tol));
+
+    const double u_ref = ref.compute(vec1(sp), vec1(meas), Ts)[0];
+    const double u_sched = sched.compute(vec1(sp), vec1(meas), Ts)[0];
+    const double expected_diff = (ki_int_new - ki_int_old) * e * Ts;
+
+    REQUIRE_THAT(u_sched - u_ref, WithinAbs(expected_diff, output_continuity_tol(u_sched)));
 }
 
-TEST_CASE("set_params with both Ki changing simultaneously (non-trivial rescale)",
+TEST_CASE("repeated set_params never rescales the integral state",
     "[pid][siso][gain-scheduling][edge-case]")
 {
     SisoPid::config_type cfg{};
@@ -218,17 +282,19 @@ TEST_CASE("set_params with both Ki changing simultaneously (non-trivial rescale)
     // Accumulate integral = Ki*e*dt*5 = 1.0*1.0*0.01*5 = 0.05
     for (int i = 0; i < 5; ++i)
         pid.compute(vec1(1.0), vec1(0.0), Ts);
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.05, tol));
+    const double integral_before = pid.integral()[0];
+    REQUIRE_THAT(integral_before, WithinAbs(0.05, tol));
 
-    // Double the Ki: integral should halve to keep Ki*integral constant
+    // Doubling Ki does not halve the stored integral: the state is in output units and
+    // is left untouched, so the integral contribution stays continuous.
     SisoPid::config_type new_cfg = cfg;
     new_cfg.ki = vec1(2.0);
     pid.set_params(new_cfg);
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.025, tol));
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
 
-    // Halve Ki back to 1.0: integral should double
+    // Halving Ki back likewise leaves the stored integral in place.
     SisoPid::config_type newer_cfg = cfg;
     newer_cfg.ki = vec1(1.0);
     pid.set_params(newer_cfg);
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.05, tol));
+    REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
 }

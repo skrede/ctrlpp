@@ -113,7 +113,7 @@ Overload for controller output tracking (bumpless transfer in cascade configurat
 void set_params(const config_type& new_cfg);
 ```
 
-Updates tuning parameters with bumpless transfer. Rescales the integral state to avoid output discontinuities when gains change.
+Updates tuning parameters with bumpless transfer. The integral state is stored in output units and enters the output directly, so its contribution is already continuous across a gain change; `set_params` leaves the integral state untouched, which is what makes gain scheduling bumpless. No rescaling is applied (rescaling would step the integral contribution instead of preserving it).
 
 ### error
 

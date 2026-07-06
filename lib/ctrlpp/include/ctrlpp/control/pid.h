@@ -62,10 +62,12 @@ public:
 
     void set_params(const config_type& new_cfg)
     {
-        vector_t ki_old = m_ki;
+        // The integral state is stored in output units (each increment is ki*e*dt and
+        // enters the output directly), so its contribution to the output is already
+        // continuous across a gain change. Leaving the state untouched gives true
+        // bumpless transfer; rescaling it would inject a bump instead of removing one.
         m_cfg = new_cfg;
         compute_internal_gains(new_cfg);
-        rescale_integral_bumpless(ki_old);
         if constexpr(detail::has_policy_v<anti_windup, Policies...>)
             initialize_back_calc_gains();
     }
@@ -156,23 +158,24 @@ private:
                     kb_[i] = aw_cfg.kb[static_cast<std::size_t>(i)];
                 else
                 {
+                    // The back-calculation gain multiplies the saturation error
+                    // (u_sat - u_raw, in output units) into the integrator whose rate
+                    // is in output-per-time, so kb must carry units of 1/time. The
+                    // Astrom tracking-time-constant default sets kb = 1/Tt with
+                    // Tt = sqrt(Ti*Td); in the internal parallel gains Ti = kp/ki and
+                    // Td = kd/kp, so 1/Tt = sqrt(ki/kd). With no derivative action the
+                    // tracking time collapses to Ti, giving the fallback kb = ki/kp.
                     if(m_kd[i] != Scalar{0})
-                        kb_[i] = std::sqrt(m_ki[i] * m_kd[i]);
+                        kb_[i] = std::sqrt(m_ki[i] / m_kd[i]);
+                    else if(m_kp[i] != Scalar{0})
+                        kb_[i] = m_ki[i] / m_kp[i];
                     else
-                        kb_[i] = m_ki[i];
+                        // Pure-I controller: no proportional or derivative reference for
+                        // a tracking time, so disable back-calculation (kb = 0) rather
+                        // than divide by zero.
+                        kb_[i] = Scalar{0};
                 }
             }
-        }
-    }
-
-    void rescale_integral_bumpless(const vector_t& ki_old)
-    {
-        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-        {
-            if(m_ki[i] != Scalar{0} && ki_old[i] != Scalar{0})
-                m_integral[i] = m_integral[i] * ki_old[i] / m_ki[i];
-            else if(m_ki[i] == Scalar{0})
-                m_integral[i] = Scalar{0};
         }
     }
 

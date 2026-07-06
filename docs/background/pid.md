@@ -115,8 +115,11 @@ $$
 u_I[k] = u_I[k-1] + K_i \, T_s \, e[k] + K_b \bigl(u_{\text{sat}}[k-1] - u[k-1]\bigr)
 $$
 
-A common choice is $K_b = 1/T_i$, which gives a tracking time constant equal
-to the integral time [2, Sec. 3.4, p. 89].
+The gain $K_b$ has units of inverse time. The default in this library is the
+tracking-time-constant form $K_b = 1/T_t$ with $T_t = \sqrt{T_i T_d}$, which in
+the internal parallel gains is $K_b = \sqrt{K_i/K_d}$. Without derivative action
+the tracking time collapses to the integral time, giving the fallback
+$K_b = K_i/K_p = 1/T_i$ [2, Sec. 3.4, p. 89].
 
 ### Clamping (Conditional Integration)
 

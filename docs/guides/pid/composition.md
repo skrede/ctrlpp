@@ -49,7 +49,8 @@ int main()
     cfg.output_min = Vec::Constant(-5.0);
     cfg.output_max = Vec::Constant(5.0);
 
-    // Anti-windup: back-calculation gain (typically 1/Ti)
+    // Anti-windup: back-calculation gain in 1/time (left at zero it auto-defaults to
+    // 1/sqrt(Ti*Td), or 1/Ti without derivative action)
     cfg.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb = {1.0};
 
     // Derivative filter: N sets the bandwidth (higher = less filtering)
