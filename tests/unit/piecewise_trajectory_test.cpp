@@ -26,8 +26,8 @@ auto val1(double v) -> Eigen::Matrix<double, 1, 1> { return Eigen::Matrix<double
 
 TEST_CASE("piecewise_trajectory with two cubic trajectories", "[traj][piecewise]")
 {
-    auto seg1 = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0);
-    auto seg2 = ctrlpp::make_cubic_trajectory(val1(5.0), val1(10.0), zero1(), zero1(), 1.0);
+    auto seg1 = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0).value();
+    auto seg2 = ctrlpp::make_cubic_trajectory(val1(5.0), val1(10.0), zero1(), zero1(), 1.0).value();
     auto pw = ctrlpp::piecewise_trajectory<double, 1, decltype(seg1), decltype(seg2)>{seg1, seg2};
 
     SECTION("duration is sum of segment durations")
@@ -72,8 +72,8 @@ TEST_CASE("piecewise_trajectory with two cubic trajectories", "[traj][piecewise]
 
 TEST_CASE("piecewise_trajectory with cubic + quintic (heterogeneous)", "[traj][piecewise]")
 {
-    auto cubic = ctrlpp::make_cubic_trajectory(val1(0.0), val1(10.0), zero1(), zero1(), 2.0);
-    auto quintic = ctrlpp::make_quintic_trajectory(val1(10.0), val1(20.0), zero1(), zero1(), zero1(), zero1(), 3.0);
+    auto cubic = ctrlpp::make_cubic_trajectory(val1(0.0), val1(10.0), zero1(), zero1(), 2.0).value();
+    auto quintic = ctrlpp::make_quintic_trajectory(val1(10.0), val1(20.0), zero1(), zero1(), zero1(), zero1(), 3.0).value();
 
     auto pw = ctrlpp::piecewise_trajectory<double, 1, decltype(cubic), decltype(quintic)>{cubic, quintic};
 
@@ -100,9 +100,9 @@ TEST_CASE("piecewise_trajectory with cubic + quintic (heterogeneous)", "[traj][p
 
 TEST_CASE("piecewise_trajectory with three segments: cubic + quintic + trajectory cycloidal", "[traj][piecewise]")
 {
-    auto cubic = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0);
-    auto quintic = ctrlpp::make_quintic_trajectory(val1(5.0), val1(15.0), zero1(), zero1(), zero1(), zero1(), 2.0);
-    auto cycloidal = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, val1(15.0), val1(20.0), 1.5);
+    auto cubic = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0).value();
+    auto quintic = ctrlpp::make_quintic_trajectory(val1(5.0), val1(15.0), zero1(), zero1(), zero1(), zero1(), 2.0).value();
+    auto cycloidal = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, val1(15.0), val1(20.0), 1.5).value();
 
     auto pw = ctrlpp::piecewise_trajectory<double, 1, decltype(cubic), decltype(quintic), decltype(cycloidal)>{
         cubic, quintic, cycloidal};
@@ -123,8 +123,8 @@ TEST_CASE("piecewise_trajectory with three segments: cubic + quintic + trajector
 
 TEST_CASE("piecewise_trajectory clamping", "[traj][piecewise]")
 {
-    auto seg1 = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0);
-    auto seg2 = ctrlpp::make_cubic_trajectory(val1(5.0), val1(10.0), zero1(), zero1(), 1.0);
+    auto seg1 = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0).value();
+    auto seg2 = ctrlpp::make_cubic_trajectory(val1(5.0), val1(10.0), zero1(), zero1(), 1.0).value();
     auto pw = ctrlpp::piecewise_trajectory<double, 1, decltype(seg1), decltype(seg2)>{seg1, seg2};
 
     SECTION("evaluate before 0 returns first segment start")
@@ -153,8 +153,8 @@ TEST_CASE("piecewise_trajectory satisfies trajectory_segment concept", "[traj][p
 
 TEST_CASE("piecewise_trajectory continuity at joints", "[traj][piecewise]")
 {
-    auto seg1 = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0);
-    auto seg2 = ctrlpp::make_cubic_trajectory(val1(5.0), val1(10.0), zero1(), zero1(), 1.0);
+    auto seg1 = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0).value();
+    auto seg2 = ctrlpp::make_cubic_trajectory(val1(5.0), val1(10.0), zero1(), zero1(), 1.0).value();
     auto pw = ctrlpp::piecewise_trajectory<double, 1, decltype(seg1), decltype(seg2)>{seg1, seg2};
 
     constexpr double eps = 1e-12;

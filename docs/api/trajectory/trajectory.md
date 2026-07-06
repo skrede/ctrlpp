@@ -36,14 +36,21 @@ where `h = q1 - q0`, `T = duration`, and `tau = clamp(t, 0, T) / T`.
 
 ```cpp
 template <typename Law, typename Scalar, int Rows>
-auto make_trajectory(
+[[nodiscard]] auto make_trajectory(
     Law law,
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,
-    Scalar duration) -> trajectory<Law, Scalar, ND>;
+    Scalar duration) -> ctrlpp::expected<trajectory<Law, Scalar, ND>, trajectory_error>;
 ```
 
 Computes displacement `h = q1 - q0` internally.
+
+The duration is a divisor (`evaluate` scales derivatives by `1/T`), so its exact domain is finite and strictly positive. Rejections, checked in order:
+
+| Condition | Error |
+|-----------|-------|
+| NaN/Inf duration or any non-finite position entry | `trajectory_error::non_finite_input` |
+| `duration <= 0` | `trajectory_error::non_positive_duration` |
 
 ## Usage Example
 
@@ -60,7 +67,10 @@ Computes displacement `h = q1 - q0` internally.
 int main()
 {
     Eigen::Matrix<double, 1, 1> q0{0.0}, q1{1.0};
-    auto traj = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, q0, q1, 2.0);
+    auto result = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, q0, q1, 2.0);
+    if (!result.has_value())
+        return 1;
+    auto const& traj = *result;
     for (double t = 0; t <= traj.duration(); t += 0.01) {
         auto pt = traj.evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";

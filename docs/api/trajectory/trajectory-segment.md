@@ -59,7 +59,7 @@ All trajectory types in `ctrlpp/trajectory/` satisfy this concept:
 int main()
 {
     using Vec1 = Eigen::Matrix<double, 1, 1>;
-    auto seg = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.0}, 2.0);
+    auto seg = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.0}, 2.0).value();
     for (double t = 0; t <= seg.duration(); t += 0.01) {
         auto pt = seg.evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "," << pt.acceleration(0) << "\n";

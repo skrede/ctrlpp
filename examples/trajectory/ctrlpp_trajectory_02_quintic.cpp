@@ -20,7 +20,15 @@ int main()
     Vec const a1 = Vec::Zero();
     constexpr double duration = 3.0;
 
-    auto const trajectory = ctrlpp::make_quintic_trajectory(q0, q1, v0, v1, a0, a1, duration);
+    // The factory validates its domain (finite inputs, duration > 0) and
+    // reports rejections through ctrlpp::expected; unwrap after checking.
+    auto const result = ctrlpp::make_quintic_trajectory(q0, q1, v0, v1, a0, a1, duration);
+    if (!result.has_value())
+    {
+        std::cerr << "invalid trajectory configuration\n";
+        return 1;
+    }
+    auto const& trajectory = *result;
 
     constexpr double dt = 0.01;
     std::cout << "time,position,velocity,acceleration\n";

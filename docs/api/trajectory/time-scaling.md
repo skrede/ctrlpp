@@ -77,7 +77,7 @@ int main()
     double T = ctrlpp::compute_min_duration(5.0, peaks, 2.0, 10.0, 100.0);
 
     Eigen::Matrix<double, 1, 1> q0{0.0}, q1{5.0};
-    auto traj = ctrlpp::make_trajectory(ctrlpp::quintic_path<double>, q0, q1, T);
+    auto traj = ctrlpp::make_trajectory(ctrlpp::quintic_path<double>, q0, q1, T).value();
     for (double t = 0; t <= traj.duration(); t += 0.01) {
         auto pt = traj.evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";

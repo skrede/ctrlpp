@@ -71,7 +71,7 @@ Physical values are obtained via kinematic scaling: `vel = h/T * dq`, `acc = h/T
 int main()
 {
     using Vec1 = Eigen::Matrix<double, 1, 1>;
-    auto traj = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.0}, 2.0);
+    auto traj = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.0}, 2.0).value();
     for (double t = 0; t <= 2.0; t += 0.01) {
         auto pt = traj.evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "\n";

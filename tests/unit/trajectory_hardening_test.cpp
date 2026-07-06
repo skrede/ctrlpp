@@ -200,25 +200,36 @@ TEST_CASE("Double-S with negative jerk limit", "[double_s][hardening][negative]"
 
 // ── Online planner 2nd hardening ───────────────────────────────────────────────
 
-TEST_CASE("Online planner 2nd with zero max velocity", "[online_planner_2nd][hardening][negative]")
+TEST_CASE("Online planner 2nd rejects out-of-domain velocity limit",
+          "[online_planner_2nd][hardening][negative]")
 {
-    ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 0.0, .a_max = 1.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    // v_max divides in the planner math (cruise duration h / v_v), so the
+    // domain is finite and strictly positive.
+    auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
+    auto constexpr inf = std::numeric_limits<double>::infinity();
 
-    planner.update(1.0);
-    auto pt = planner.sample(0.1);
-    REQUIRE(std::isfinite(pt.position(0)));
+    for (double const v_max : {0.0, -1.0, nan, inf}) {
+        auto const result =
+            ctrlpp::online_planner_2nd<double>::try_create({.v_max = v_max, .a_max = 1.0});
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_velocity_limit);
+    }
 }
 
-TEST_CASE("Online planner 2nd with zero max acceleration", "[online_planner_2nd][hardening][negative]")
+TEST_CASE("Online planner 2nd rejects out-of-domain acceleration limit",
+          "[online_planner_2nd][hardening][negative]")
 {
-    ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 0.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    // a_max divides in the planner math (stopping distance v^2 / (2 a_max),
+    // ramp durations v_v / a_max), so the domain is finite and strictly positive.
+    auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
+    auto constexpr inf = std::numeric_limits<double>::infinity();
 
-    planner.update(1.0);
-    auto pt = planner.sample(0.1);
-    // Zero max acceleration prevents motion; result may be NaN from 0/0 or finite 0
-    CHECK((std::isfinite(pt.position(0)) || std::isnan(pt.position(0))));
+    for (double const a_max : {0.0, -1.0, nan, inf}) {
+        auto const result =
+            ctrlpp::online_planner_2nd<double>::try_create({.v_max = 1.0, .a_max = a_max});
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_acceleration_limit);
+    }
 }
 
 TEST_CASE("Online planner 2nd with instant target flip", "[online_planner_2nd][hardening][negative]")
@@ -256,14 +267,52 @@ TEST_CASE("Online planner 2nd reaches target", "[online_planner_2nd][hardening][
 
 // ── Online planner 3rd hardening ───────────────────────────────────────────────
 
-TEST_CASE("Online planner 3rd with zero max jerk", "[online_planner_3rd][hardening][negative]")
+TEST_CASE("Online planner 3rd rejects out-of-domain velocity limit",
+          "[online_planner_3rd][hardening][negative]")
 {
-    ctrlpp::online_planner_3rd<double>::config cfg{.v_max = 1.0, .a_max = 1.0, .j_max = 0.0};
-    ctrlpp::online_planner_3rd<double> planner(cfg);
+    // v_max divides in the planner math (cruise duration h / v_max), so the
+    // domain is finite and strictly positive.
+    auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
+    auto constexpr inf = std::numeric_limits<double>::infinity();
 
-    planner.update(1.0);
-    auto pt = planner.sample(0.1);
-    REQUIRE(std::isfinite(pt.position(0)));
+    for (double const v_max : {0.0, -1.0, nan, inf}) {
+        auto const result = ctrlpp::online_planner_3rd<double>::try_create(
+            {.v_max = v_max, .a_max = 1.0, .j_max = 1.0});
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_velocity_limit);
+    }
+}
+
+TEST_CASE("Online planner 3rd rejects out-of-domain acceleration limit",
+          "[online_planner_3rd][hardening][negative]")
+{
+    // a_max divides in the planner math (constant-deceleration duration
+    // |v| / a_max), so the domain is finite and strictly positive.
+    auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
+    auto constexpr inf = std::numeric_limits<double>::infinity();
+
+    for (double const a_max : {0.0, -1.0, nan, inf}) {
+        auto const result = ctrlpp::online_planner_3rd<double>::try_create(
+            {.v_max = 1.0, .a_max = a_max, .j_max = 1.0});
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_acceleration_limit);
+    }
+}
+
+TEST_CASE("Online planner 3rd rejects out-of-domain jerk limit",
+          "[online_planner_3rd][hardening][negative]")
+{
+    // j_max divides in the planner math (jerk-phase durations a_max / j_max
+    // and |a| / j_max), so the domain is finite and strictly positive.
+    auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
+    auto constexpr inf = std::numeric_limits<double>::infinity();
+
+    for (double const j_max : {0.0, -1.0, nan, inf}) {
+        auto const result = ctrlpp::online_planner_3rd<double>::try_create(
+            {.v_max = 1.0, .a_max = 1.0, .j_max = j_max});
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_jerk_limit);
+    }
 }
 
 TEST_CASE("Online planner 3rd with instant target reversal", "[online_planner_3rd][hardening][negative]")

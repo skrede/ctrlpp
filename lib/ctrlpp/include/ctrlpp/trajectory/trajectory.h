@@ -12,10 +12,13 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 5.2.1, eq. (2.16)-(2.17), p.34
 
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/trajectory/cycloidal_path.h"
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
+#include <cmath>
 #include <cstddef>
 #include <utility>
 #include <algorithm>
@@ -60,18 +63,32 @@ private:
 ///
 /// Internally stores displacement h = q1 - q0.
 ///
+/// The duration is a divisor: evaluate() scales derivatives by 1/T, so the
+/// exact mathematical domain is finite and strictly positive. Rejections,
+/// checked in order:
+///  * NaN/Inf duration or any non-finite position entry -> trajectory_error::non_finite_input
+///  * duration <= 0                                     -> trajectory_error::non_positive_duration
+///
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 ///   Machines and Robots", 2009, Ch. 2-5 -- complete trajectory generation framework
 template <typename Law, typename Scalar, int Rows>
-auto make_trajectory(
+[[nodiscard]] auto make_trajectory(
     Law law,
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,
-    Scalar duration) -> trajectory<Law, Scalar, static_cast<std::size_t>(Rows)>
+    Scalar duration)
+    -> ctrlpp::expected<trajectory<Law, Scalar, static_cast<std::size_t>(Rows)>,
+                        trajectory_error>
 {
     constexpr auto ND = static_cast<std::size_t>(Rows);
+    if (!std::isfinite(duration) || !q0.allFinite() || !q1.allFinite()) {
+        return ctrlpp::unexpected(trajectory_error::non_finite_input);
+    }
+    if (duration <= Scalar{0}) {
+        return ctrlpp::unexpected(trajectory_error::non_positive_duration);
+    }
     Vector<Scalar, ND> const displacement = (q1 - q0).eval();
-    return {std::move(law), q0, displacement, duration};
+    return trajectory<Law, Scalar, ND>{std::move(law), q0, displacement, duration};
 }
 
 /// Verify trajectory satisfies trajectory_segment concept.

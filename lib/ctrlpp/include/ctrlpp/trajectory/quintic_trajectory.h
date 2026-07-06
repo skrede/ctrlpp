@@ -9,12 +9,15 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 2.1.5, eq. (2.5), p.27
 
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include "ctrlpp/trajectory/detail/polynomial_eval.h"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <algorithm>
 
@@ -46,19 +49,34 @@ struct quintic_trajectory
 
 /// @brief Create quintic trajectory from boundary conditions q, dq, ddq at both endpoints.
 ///
+/// The duration is a divisor: evaluate() scales derivatives by 1/T, so the
+/// exact mathematical domain is finite and strictly positive. Rejections,
+/// checked in order:
+///  * NaN/Inf duration or any non-finite boundary entry -> trajectory_error::non_finite_input
+///  * duration <= 0                                     -> trajectory_error::non_positive_duration
+///
 /// @cite biagiotti2009 -- Sec. 2.1.5, eq. (2.5), p.27: coefficient derivation from 6 BCs
 /// Coefficients derived from B&M eq. (2.5) in normalized time tau = t/T.
 template <typename Scalar, int Rows>
-auto make_quintic_trajectory(
+[[nodiscard]] auto make_quintic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,
     Eigen::Matrix<Scalar, Rows, 1> const& v0,
     Eigen::Matrix<Scalar, Rows, 1> const& v1,
     Eigen::Matrix<Scalar, Rows, 1> const& a0,
     Eigen::Matrix<Scalar, Rows, 1> const& a1,
-    Scalar duration) -> quintic_trajectory<Scalar, static_cast<std::size_t>(Rows)>
+    Scalar duration)
+    -> ctrlpp::expected<quintic_trajectory<Scalar, static_cast<std::size_t>(Rows)>,
+                        trajectory_error>
 {
     constexpr auto ND = static_cast<std::size_t>(Rows);
+    if (!std::isfinite(duration) || !q0.allFinite() || !q1.allFinite()
+        || !v0.allFinite() || !v1.allFinite() || !a0.allFinite() || !a1.allFinite()) {
+        return ctrlpp::unexpected(trajectory_error::non_finite_input);
+    }
+    if (duration <= Scalar{0}) {
+        return ctrlpp::unexpected(trajectory_error::non_positive_duration);
+    }
     auto const T = duration;
     auto const T2 = T * T;
     Vector<Scalar, ND> const h = (q1 - q0).eval();
@@ -78,7 +96,7 @@ auto make_quintic_trajectory(
     Vector<Scalar, ND> const c5 =
         ((Scalar{12} * h - Scalar{6} * (v1 + v0) * T + (a1 - a0) * T2) / Scalar{2}).eval();
 
-    return {.coeffs = {c0, c1, c2, c3, c4, c5}, .dur = duration};
+    return quintic_trajectory<Scalar, ND>{.coeffs = {c0, c1, c2, c3, c4, c5}, .dur = duration};
 }
 
 static_assert(trajectory_segment<quintic_trajectory<double, 1>, double, 1>);

@@ -32,7 +32,9 @@ auto traj = ctrlpp::make_quintic_trajectory(
     0.0, p0, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
     2.0, p1, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
 
-auto [pos, vel, acc] = traj.evaluate(1.0);
+// make_quintic_trajectory returns ctrlpp::expected; check before use
+// (see example 02 for the full error-handling pattern).
+auto [pos, vel, acc] = traj.value().evaluate(1.0);
 std::cout << "position at t=1: " << pos.transpose() << "\n";
 ```
 

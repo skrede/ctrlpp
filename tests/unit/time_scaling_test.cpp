@@ -75,7 +75,7 @@ TEST_CASE("Time scaling: trajectory respects limits", "[traj][time_scaling]")
     // Create trajectory with computed T
     Eigen::Matrix<double, 1, 1> const q0 = Eigen::Matrix<double, 1, 1>::Zero();
     Eigen::Matrix<double, 1, 1> const q1 = Eigen::Matrix<double, 1, 1>::Constant(h);
-    auto const traj = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, q0, q1, T);
+    auto const traj = ctrlpp::make_trajectory(ctrlpp::cycloidal_path<double>, q0, q1, T).value();
 
     double const eps = 1e-8;
     for (int i = 0; i <= 1000; ++i) {

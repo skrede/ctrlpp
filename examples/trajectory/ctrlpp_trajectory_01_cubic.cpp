@@ -16,7 +16,15 @@ int main()
     Eigen::Vector2d const v1{0.0, 0.0};
     constexpr double duration = 2.0;
 
-    auto const trajectory = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, duration);
+    // The factory validates its domain (finite inputs, duration > 0) and
+    // reports rejections through ctrlpp::expected; unwrap after checking.
+    auto const result = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, duration);
+    if (!result.has_value())
+    {
+        std::cerr << "invalid trajectory configuration\n";
+        return 1;
+    }
+    auto const& trajectory = *result;
 
     constexpr double dt = 0.01;
     std::cout << "time,q1_pos,q1_vel,q2_pos,q2_vel\n";

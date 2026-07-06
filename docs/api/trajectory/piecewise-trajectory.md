@@ -50,8 +50,8 @@ Segments are moved into internal storage. Breakpoints are computed from cumulati
 int main()
 {
     using Vec1 = Eigen::Matrix<double, 1, 1>;
-    auto seg1 = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.5}, 1.0);
-    auto seg2 = ctrlpp::make_cubic_trajectory(Vec1{1.0}, Vec1{3.0}, Vec1{0.5}, Vec1{0.0}, 1.5);
+    auto seg1 = ctrlpp::make_cubic_trajectory(Vec1{0.0}, Vec1{1.0}, Vec1{0.0}, Vec1{0.5}, 1.0).value();
+    auto seg2 = ctrlpp::make_cubic_trajectory(Vec1{1.0}, Vec1{3.0}, Vec1{0.5}, Vec1{0.0}, 1.5).value();
     ctrlpp::piecewise_trajectory<double, 1, decltype(seg1), decltype(seg2)> pw(seg1, seg2);
     for (double t = 0; t <= pw.duration(); t += 0.01) {
         auto pt = pw.evaluate(t);

@@ -10,6 +10,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <limits>
+
 using Catch::Matchers::WithinAbs;
 using ctrlpp::Vector;
 
@@ -28,7 +30,7 @@ TEST_CASE("cubic_trajectory rest-to-rest boundary conditions", "[traj][polynomia
     Vector<double, 1> v0 = Vector<double, 1>::Zero();
     Vector<double, 1> v1 = Vector<double, 1>::Zero();
 
-    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 2.0);
+    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 2.0).value();
 
     auto p0 = seg.evaluate(0.0);
     CHECK_THAT(p0.position[0], WithinAbs(0.0, 1e-12));
@@ -46,7 +48,7 @@ TEST_CASE("cubic_trajectory midpoint symmetry", "[traj][polynomial]")
     Vector<double, 1> v0 = Vector<double, 1>::Zero();
     Vector<double, 1> v1 = Vector<double, 1>::Zero();
 
-    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 2.0);
+    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 2.0).value();
     auto pm = seg.evaluate(1.0);
     CHECK_THAT(pm.position[0], WithinAbs(5.0, 1e-10));
 }
@@ -58,7 +60,7 @@ TEST_CASE("cubic_trajectory boundary clamping", "[traj][polynomial]")
     Vector<double, 1> v0 = Vector<double, 1>::Zero();
     Vector<double, 1> v1 = Vector<double, 1>::Zero();
 
-    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 2.0);
+    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 2.0).value();
 
     auto p_neg = seg.evaluate(-1.0);
     auto p0 = seg.evaluate(0.0);
@@ -76,7 +78,7 @@ TEST_CASE("cubic_trajectory non-zero velocity BCs", "[traj][polynomial]")
     Vector<double, 1> v0 = Vector<double, 1>::Constant(2.0);
     Vector<double, 1> v1 = Vector<double, 1>::Constant(-3.0);
 
-    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 4.0);
+    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 4.0).value();
 
     CHECK_THAT(seg.evaluate(0.0).velocity[0], WithinAbs(2.0, 1e-12));
     CHECK_THAT(seg.evaluate(4.0).velocity[0], WithinAbs(-3.0, 1e-12));
@@ -91,7 +93,7 @@ TEST_CASE("cubic_trajectory duration()", "[traj][polynomial]")
     Vector<double, 1> v0 = Vector<double, 1>::Zero();
     Vector<double, 1> v1 = Vector<double, 1>::Zero();
 
-    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 2.0);
+    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 2.0).value();
     CHECK(seg.duration() == 2.0);
 }
 
@@ -106,7 +108,7 @@ TEST_CASE("quintic_trajectory rest-to-rest boundary conditions", "[traj][polynom
     Vector<double, 1> a0 = Vector<double, 1>::Zero();
     Vector<double, 1> a1 = Vector<double, 1>::Zero();
 
-    auto seg = ctrlpp::make_quintic_trajectory(q0, q1, v0, v1, a0, a1, 2.0);
+    auto seg = ctrlpp::make_quintic_trajectory(q0, q1, v0, v1, a0, a1, 2.0).value();
 
     auto p0 = seg.evaluate(0.0);
     CHECK_THAT(p0.position[0], WithinAbs(0.0, 1e-12));
@@ -125,7 +127,7 @@ TEST_CASE("quintic_trajectory midpoint symmetry", "[traj][polynomial]")
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
     Vector<double, 1> zero = Vector<double, 1>::Zero();
 
-    auto seg = ctrlpp::make_quintic_trajectory(q0, q1, zero, zero, zero, zero, 2.0);
+    auto seg = ctrlpp::make_quintic_trajectory(q0, q1, zero, zero, zero, zero, 2.0).value();
     auto pm = seg.evaluate(1.0);
     CHECK_THAT(pm.position[0], WithinAbs(5.0, 1e-10));
 }
@@ -136,7 +138,7 @@ TEST_CASE("quintic_trajectory boundary clamping", "[traj][polynomial]")
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
     Vector<double, 1> zero = Vector<double, 1>::Zero();
 
-    auto seg = ctrlpp::make_quintic_trajectory(q0, q1, zero, zero, zero, zero, 2.0);
+    auto seg = ctrlpp::make_quintic_trajectory(q0, q1, zero, zero, zero, zero, 2.0).value();
 
     auto p_neg = seg.evaluate(-1.0);
     auto p0 = seg.evaluate(0.0);
@@ -156,7 +158,7 @@ TEST_CASE("quintic_trajectory non-zero BCs", "[traj][polynomial]")
     Vector<double, 1> a0 = Vector<double, 1>::Constant(0.5);
     Vector<double, 1> a1 = Vector<double, 1>::Constant(-0.5);
 
-    auto seg = ctrlpp::make_quintic_trajectory(q0, q1, v0, v1, a0, a1, 3.0);
+    auto seg = ctrlpp::make_quintic_trajectory(q0, q1, v0, v1, a0, a1, 3.0).value();
 
     CHECK_THAT(seg.evaluate(0.0).position[0], WithinAbs(0.0, 1e-12));
     CHECK_THAT(seg.evaluate(3.0).position[0], WithinAbs(10.0, 1e-12));
@@ -174,7 +176,7 @@ TEST_CASE("septic_trajectory rest-to-rest boundary conditions", "[traj][polynomi
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
     Vector<double, 1> zero = Vector<double, 1>::Zero();
 
-    auto seg = ctrlpp::make_septic_trajectory(q0, q1, zero, zero, zero, zero, zero, zero, 2.0);
+    auto seg = ctrlpp::make_septic_trajectory(q0, q1, zero, zero, zero, zero, zero, zero, 2.0).value();
 
     auto p0 = seg.evaluate(0.0);
     CHECK_THAT(p0.position[0], WithinAbs(0.0, 1e-12));
@@ -193,7 +195,7 @@ TEST_CASE("septic_trajectory midpoint symmetry", "[traj][polynomial]")
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
     Vector<double, 1> zero = Vector<double, 1>::Zero();
 
-    auto seg = ctrlpp::make_septic_trajectory(q0, q1, zero, zero, zero, zero, zero, zero, 2.0);
+    auto seg = ctrlpp::make_septic_trajectory(q0, q1, zero, zero, zero, zero, zero, zero, 2.0).value();
     auto pm = seg.evaluate(1.0);
     CHECK_THAT(pm.position[0], WithinAbs(5.0, 1e-10));
 }
@@ -204,7 +206,7 @@ TEST_CASE("septic_trajectory boundary clamping", "[traj][polynomial]")
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
     Vector<double, 1> zero = Vector<double, 1>::Zero();
 
-    auto seg = ctrlpp::make_septic_trajectory(q0, q1, zero, zero, zero, zero, zero, zero, 2.0);
+    auto seg = ctrlpp::make_septic_trajectory(q0, q1, zero, zero, zero, zero, zero, zero, 2.0).value();
 
     auto p_neg = seg.evaluate(-1.0);
     auto p0 = seg.evaluate(0.0);
@@ -223,7 +225,7 @@ TEST_CASE("septic_trajectory non-zero jerk BCs", "[traj][polynomial]")
     Vector<double, 1> j0 = Vector<double, 1>::Constant(1.0);
     Vector<double, 1> j1 = Vector<double, 1>::Constant(-1.0);
 
-    auto seg = ctrlpp::make_septic_trajectory(q0, q1, zero, zero, zero, zero, j0, j1, 2.0);
+    auto seg = ctrlpp::make_septic_trajectory(q0, q1, zero, zero, zero, zero, j0, j1, 2.0).value();
 
     CHECK_THAT(seg.evaluate(0.0).position[0], WithinAbs(0.0, 1e-12));
     CHECK_THAT(seg.evaluate(2.0).position[0], WithinAbs(10.0, 1e-12));
@@ -231,6 +233,130 @@ TEST_CASE("septic_trajectory non-zero jerk BCs", "[traj][polynomial]")
     CHECK_THAT(seg.evaluate(2.0).velocity[0], WithinAbs(0.0, 1e-12));
     CHECK_THAT(seg.evaluate(0.0).acceleration[0], WithinAbs(0.0, 1e-12));
     CHECK_THAT(seg.evaluate(2.0).acceleration[0], WithinAbs(0.0, 1e-12));
+}
+
+// ---- Rejection tests: duration and finiteness domain ----
+
+TEST_CASE("cubic_trajectory factory rejects invalid duration and waypoints",
+          "[traj][polynomial][negative]")
+{
+    Vector<double, 1> const q0 = Vector<double, 1>::Zero();
+    Vector<double, 1> const q1 = Vector<double, 1>::Constant(10.0);
+    Vector<double, 1> const zero = Vector<double, 1>::Zero();
+    auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
+
+    SECTION("duration = 0 -> non_positive_duration")
+    {
+        auto const result = ctrlpp::make_cubic_trajectory(q0, q1, zero, zero, 0.0);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_duration);
+    }
+
+    SECTION("duration = -1 -> non_positive_duration")
+    {
+        auto const result = ctrlpp::make_cubic_trajectory(q0, q1, zero, zero, -1.0);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_duration);
+    }
+
+    SECTION("duration = NaN -> non_finite_input")
+    {
+        auto const result = ctrlpp::make_cubic_trajectory(q0, q1, zero, zero, nan);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_finite_input);
+    }
+
+    SECTION("NaN waypoint entry -> non_finite_input")
+    {
+        Vector<double, 1> const q_nan = Vector<double, 1>::Constant(nan);
+        auto const result = ctrlpp::make_cubic_trajectory(q0, q_nan, zero, zero, 2.0);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_finite_input);
+    }
+}
+
+TEST_CASE("quintic_trajectory factory rejects invalid duration and waypoints",
+          "[traj][polynomial][negative]")
+{
+    Vector<double, 1> const q0 = Vector<double, 1>::Zero();
+    Vector<double, 1> const q1 = Vector<double, 1>::Constant(10.0);
+    Vector<double, 1> const zero = Vector<double, 1>::Zero();
+    auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
+
+    SECTION("duration = 0 -> non_positive_duration")
+    {
+        auto const result =
+            ctrlpp::make_quintic_trajectory(q0, q1, zero, zero, zero, zero, 0.0);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_duration);
+    }
+
+    SECTION("duration = -1 -> non_positive_duration")
+    {
+        auto const result =
+            ctrlpp::make_quintic_trajectory(q0, q1, zero, zero, zero, zero, -1.0);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_duration);
+    }
+
+    SECTION("duration = NaN -> non_finite_input")
+    {
+        auto const result =
+            ctrlpp::make_quintic_trajectory(q0, q1, zero, zero, zero, zero, nan);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_finite_input);
+    }
+
+    SECTION("NaN boundary acceleration entry -> non_finite_input")
+    {
+        Vector<double, 1> const a_nan = Vector<double, 1>::Constant(nan);
+        auto const result =
+            ctrlpp::make_quintic_trajectory(q0, q1, zero, zero, a_nan, zero, 2.0);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_finite_input);
+    }
+}
+
+TEST_CASE("septic_trajectory factory rejects invalid duration and waypoints",
+          "[traj][polynomial][negative]")
+{
+    Vector<double, 1> const q0 = Vector<double, 1>::Zero();
+    Vector<double, 1> const q1 = Vector<double, 1>::Constant(10.0);
+    Vector<double, 1> const zero = Vector<double, 1>::Zero();
+    auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
+
+    SECTION("duration = 0 -> non_positive_duration")
+    {
+        auto const result = ctrlpp::make_septic_trajectory(
+            q0, q1, zero, zero, zero, zero, zero, zero, 0.0);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_duration);
+    }
+
+    SECTION("duration = -1 -> non_positive_duration")
+    {
+        auto const result = ctrlpp::make_septic_trajectory(
+            q0, q1, zero, zero, zero, zero, zero, zero, -1.0);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_duration);
+    }
+
+    SECTION("duration = NaN -> non_finite_input")
+    {
+        auto const result = ctrlpp::make_septic_trajectory(
+            q0, q1, zero, zero, zero, zero, zero, zero, nan);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_finite_input);
+    }
+
+    SECTION("NaN boundary jerk entry -> non_finite_input")
+    {
+        Vector<double, 1> const j_nan = Vector<double, 1>::Constant(nan);
+        auto const result = ctrlpp::make_septic_trajectory(
+            q0, q1, zero, zero, zero, zero, j_nan, zero, 2.0);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::trajectory_error::non_finite_input);
+    }
 }
 
 // ---- ND=3 multi-dimensional test ----
@@ -246,7 +372,7 @@ TEST_CASE("cubic_trajectory ND=3 independent axes", "[traj][polynomial]")
     Vector<double, 3> v1;
     v1 << -1.0, 0.0, 1.0;
 
-    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 2.0);
+    auto seg = ctrlpp::make_cubic_trajectory(q0, q1, v0, v1, 2.0).value();
 
     auto p0 = seg.evaluate(0.0);
     CHECK_THAT(p0.position[0], WithinAbs(0.0, 1e-12));

@@ -32,7 +32,7 @@ Septic polynomial trajectory segment with arbitrary boundary conditions up to je
 
 ```cpp
 template <typename Scalar, int Rows>
-auto make_septic_trajectory(
+[[nodiscard]] auto make_septic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,   // start position
     Eigen::Matrix<Scalar, Rows, 1> const& q1,   // end position
     Eigen::Matrix<Scalar, Rows, 1> const& v0,   // start velocity
@@ -42,8 +42,15 @@ auto make_septic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& j0,   // start jerk
     Eigen::Matrix<Scalar, Rows, 1> const& j1,   // end jerk
     Scalar duration
-) -> septic_trajectory<Scalar, ND>;
+) -> ctrlpp::expected<septic_trajectory<Scalar, ND>, trajectory_error>;
 ```
+
+The duration is a divisor (`evaluate` scales derivatives by `1/T`), so its exact domain is finite and strictly positive. Rejections, checked in order:
+
+| Condition | Error |
+|-----------|-------|
+| NaN/Inf duration or any non-finite boundary entry | `trajectory_error::non_finite_input` |
+| `duration <= 0` | `trajectory_error::non_positive_duration` |
 
 ## Usage Example
 
@@ -61,12 +68,15 @@ int main()
     using Vec1 = Eigen::Matrix<double, 1, 1>;
     Vec1 zero{0.0};
     double T = 2.0;
-    auto traj = ctrlpp::make_septic_trajectory(
+    auto result = ctrlpp::make_septic_trajectory(
         Vec1{0.0}, Vec1{1.0},   // q0, q1
         zero, zero,              // v0, v1
         zero, zero,              // a0, a1
         zero, zero,              // j0, j1
         T);                      // duration
+    if (!result.has_value())
+        return 1;
+    auto const& traj = *result;
 
     constexpr double dt = 0.01;
     for (double t = 0.0; t <= T; t += dt) {

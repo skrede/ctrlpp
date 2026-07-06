@@ -56,7 +56,7 @@ int main()
 {
     Eigen::Vector2d q0{0.0, 0.0}, q1{5.0, 3.0};
     double T = 4.0;
-    auto traj = ctrlpp::make_trajectory(ctrlpp::septic_path<double>, q0, q1, T);
+    auto traj = ctrlpp::make_trajectory(ctrlpp::septic_path<double>, q0, q1, T).value();
 
     constexpr double dt = 0.01;
     for (double t = 0.0; t <= T; t += dt) {

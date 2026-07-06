@@ -16,6 +16,9 @@
 /// Automatic Machines and Robots", 2009, Sec. 4.6.1
 /// @cite lambrechts2005 -- Lambrechts, Boerlage & Steinbuch, "Trajectory Planning and Feedforward Design for Electromechanical Motion Systems", Control Engineering Practice 13(2), 2005 (jerk-limited online planning)
 
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/double_s_trajectory.h"
 
@@ -34,6 +37,10 @@ namespace ctrlpp
 /// Generates bounded-velocity, bounded-acceleration, bounded-jerk trajectories
 /// that can be replanned mid-motion when a new target arrives.
 ///
+/// Construction goes through `try_create`, which validates the kinematic
+/// limits and reports rejections through
+/// `ctrlpp::expected<online_planner_3rd, trajectory_error>`.
+///
 /// @cite biagiotti2009 -- Sec. 4.6.1
 template <ctrlpp_floating_scalar Scalar>
 class online_planner_3rd
@@ -46,13 +53,45 @@ class online_planner_3rd
         Scalar j_max;
     };
 
-    /// @brief Construct planner with kinematic limits. Initial state at rest at q=0.
+    /// @brief Validate the kinematic limits and construct a planner.
+    ///
+    /// All three limits are divisors in the planner math (cruise duration
+    /// h / v_max, jerk-phase durations a_max / j_max and |a| / j_max, and the
+    /// a_max-reached threshold a_max^2 / j_max), so the exact mathematical
+    /// domain of each is finite and strictly positive. Rejections, checked in
+    /// order:
+    ///  * NaN/Inf or non-positive v_max -> trajectory_error::non_positive_velocity_limit
+    ///  * NaN/Inf or non-positive a_max -> trajectory_error::non_positive_acceleration_limit
+    ///  * NaN/Inf or non-positive j_max -> trajectory_error::non_positive_jerk_limit
+    ///
+    /// @cite biagiotti2009 -- Sec. 4.6.1
+    [[nodiscard]] static auto try_create(config const& cfg)
+        -> ctrlpp::expected<online_planner_3rd, trajectory_error>
+    {
+        if (!std::isfinite(cfg.v_max) || cfg.v_max <= Scalar{0}) {
+            return ctrlpp::unexpected(trajectory_error::non_positive_velocity_limit);
+        }
+        if (!std::isfinite(cfg.a_max) || cfg.a_max <= Scalar{0}) {
+            return ctrlpp::unexpected(trajectory_error::non_positive_acceleration_limit);
+        }
+        if (!std::isfinite(cfg.j_max) || cfg.j_max <= Scalar{0}) {
+            return ctrlpp::unexpected(trajectory_error::non_positive_jerk_limit);
+        }
+        return online_planner_3rd{unchecked_t{}, cfg};
+    }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience wrapper over `try_create`.
+    ///
+    /// Delegates to `try_create(cfg).value()`, so an invalid configuration throws
+    /// the value() exception of `ctrlpp::expected`. Compiled out when
+    /// CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free builds.
+    /// Initial state at rest at q=0.
     explicit online_planner_3rd(config const& cfg)
-        : v_max_{cfg.v_max}
-        , a_max_{cfg.a_max}
-        , j_max_{cfg.j_max}
+        : online_planner_3rd{try_create(cfg).value()}
     {
     }
+#endif
 
     /// @brief Set new target position. Replans from current state.
     ///
@@ -132,6 +171,21 @@ class online_planner_3rd
     }
 
   private:
+    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    struct unchecked_t
+    {
+        explicit unchecked_t() = default;
+    };
+
+    /// @brief Construct from a configuration already validated by `try_create`.
+    /// Initial state at rest at q=0.
+    online_planner_3rd(unchecked_t, config const& cfg)
+        : v_max_{cfg.v_max}
+        , a_max_{cfg.a_max}
+        , j_max_{cfg.j_max}
+    {
+    }
+
     Scalar v_max_{};
     Scalar a_max_{};
     Scalar j_max_{};

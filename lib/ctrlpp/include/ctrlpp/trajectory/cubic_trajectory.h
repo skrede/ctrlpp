@@ -10,12 +10,15 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 2.1.4, eq. (2.2), p.24
 
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include "ctrlpp/trajectory/detail/polynomial_eval.h"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <algorithm>
 
@@ -47,17 +50,32 @@ struct cubic_trajectory
 
 /// @brief Create cubic trajectory from boundary conditions q(0)=q0, q(T)=q1, dq(0)=v0, dq(T)=v1.
 ///
+/// The duration is a divisor: evaluate() scales derivatives by 1/T, so the
+/// exact mathematical domain is finite and strictly positive. Rejections,
+/// checked in order:
+///  * NaN/Inf duration or any non-finite boundary entry -> trajectory_error::non_finite_input
+///  * duration <= 0                                     -> trajectory_error::non_positive_duration
+///
 /// @cite biagiotti2009 -- Sec. 2.1.4, eq. (2.2), p.24: coefficient derivation from BCs
 /// Coefficients derived from B&M eq. (2.2) in normalized time tau = t/T.
 template <typename Scalar, int Rows>
-auto make_cubic_trajectory(
+[[nodiscard]] auto make_cubic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,
     Eigen::Matrix<Scalar, Rows, 1> const& v0,
     Eigen::Matrix<Scalar, Rows, 1> const& v1,
-    Scalar duration) -> cubic_trajectory<Scalar, static_cast<std::size_t>(Rows)>
+    Scalar duration)
+    -> ctrlpp::expected<cubic_trajectory<Scalar, static_cast<std::size_t>(Rows)>,
+                        trajectory_error>
 {
     constexpr auto ND = static_cast<std::size_t>(Rows);
+    if (!std::isfinite(duration) || !q0.allFinite() || !q1.allFinite()
+        || !v0.allFinite() || !v1.allFinite()) {
+        return ctrlpp::unexpected(trajectory_error::non_finite_input);
+    }
+    if (duration <= Scalar{0}) {
+        return ctrlpp::unexpected(trajectory_error::non_positive_duration);
+    }
     auto const T = duration;
     Vector<Scalar, ND> const h = (q1 - q0).eval();
     Vector<Scalar, ND> const c0 = q0;
@@ -65,7 +83,7 @@ auto make_cubic_trajectory(
     // @cite biagiotti2009 -- Sec. 2.1.4, eq. (2.2), p.24: c2, c3 from BC linear system
     Vector<Scalar, ND> const c2 = (Scalar{3} * h - T * (Scalar{2} * v0 + v1)).eval();
     Vector<Scalar, ND> const c3 = (Scalar{-2} * h + T * (v0 + v1)).eval();
-    return {.coeffs = {c0, c1, c2, c3}, .dur = duration};
+    return cubic_trajectory<Scalar, ND>{.coeffs = {c0, c1, c2, c3}, .dur = duration};
 }
 
 static_assert(trajectory_segment<cubic_trajectory<double, 1>, double, 1>);

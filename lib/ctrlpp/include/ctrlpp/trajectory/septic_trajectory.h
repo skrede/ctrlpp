@@ -9,12 +9,15 @@
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 /// Machines and Robots", 2009, Sec. 2.1.6, eq. (2.6), p.29
 
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include "ctrlpp/trajectory/detail/polynomial_eval.h"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <algorithm>
 
@@ -46,10 +49,16 @@ struct septic_trajectory
 
 /// @brief Create septic trajectory from boundary conditions q, dq, ddq, d3q at both endpoints.
 ///
+/// The duration is a divisor: evaluate() scales derivatives by 1/T, so the
+/// exact mathematical domain is finite and strictly positive. Rejections,
+/// checked in order:
+///  * NaN/Inf duration or any non-finite boundary entry -> trajectory_error::non_finite_input
+///  * duration <= 0                                     -> trajectory_error::non_positive_duration
+///
 /// @cite biagiotti2009 -- Sec. 2.1.6, eq. (2.6), p.29: coefficient derivation from 8 BCs
 /// Coefficients derived from B&M eq. (2.6) in normalized time tau = t/T.
 template <typename Scalar, int Rows>
-auto make_septic_trajectory(
+[[nodiscard]] auto make_septic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,
     Eigen::Matrix<Scalar, Rows, 1> const& v0,
@@ -58,9 +67,19 @@ auto make_septic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& a1,
     Eigen::Matrix<Scalar, Rows, 1> const& j0,
     Eigen::Matrix<Scalar, Rows, 1> const& j1,
-    Scalar duration) -> septic_trajectory<Scalar, static_cast<std::size_t>(Rows)>
+    Scalar duration)
+    -> ctrlpp::expected<septic_trajectory<Scalar, static_cast<std::size_t>(Rows)>,
+                        trajectory_error>
 {
     constexpr auto ND = static_cast<std::size_t>(Rows);
+    if (!std::isfinite(duration) || !q0.allFinite() || !q1.allFinite()
+        || !v0.allFinite() || !v1.allFinite() || !a0.allFinite() || !a1.allFinite()
+        || !j0.allFinite() || !j1.allFinite()) {
+        return ctrlpp::unexpected(trajectory_error::non_finite_input);
+    }
+    if (duration <= Scalar{0}) {
+        return ctrlpp::unexpected(trajectory_error::non_positive_duration);
+    }
     auto const T = duration;
     auto const T2 = T * T;
     auto const T3 = T2 * T;
@@ -97,7 +116,8 @@ auto make_septic_trajectory(
          / Scalar{6})
             .eval();
 
-    return {.coeffs = {c0, c1, c2, c3, c4, c5, c6, c7}, .dur = duration};
+    return septic_trajectory<Scalar, ND>{.coeffs = {c0, c1, c2, c3, c4, c5, c6, c7},
+                                         .dur = duration};
 }
 
 static_assert(trajectory_segment<septic_trajectory<double, 1>, double, 1>);

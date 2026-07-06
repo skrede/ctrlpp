@@ -34,16 +34,23 @@ Evaluation uses Horner's method for numerical stability. Time is clamped to `[0,
 
 ```cpp
 template <typename Scalar, int Rows>
-auto make_cubic_trajectory(
+[[nodiscard]] auto make_cubic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,   // start position
     Eigen::Matrix<Scalar, Rows, 1> const& q1,   // end position
     Eigen::Matrix<Scalar, Rows, 1> const& v0,   // start velocity
     Eigen::Matrix<Scalar, Rows, 1> const& v1,   // end velocity
     Scalar duration
-) -> cubic_trajectory<Scalar, ND>;
+) -> ctrlpp::expected<cubic_trajectory<Scalar, ND>, trajectory_error>;
 ```
 
 Coefficients are computed in normalized time to prevent ill-conditioning.
+
+The duration is a divisor (`evaluate` scales derivatives by `1/T`), so its exact domain is finite and strictly positive. Rejections, checked in order:
+
+| Condition | Error |
+|-----------|-------|
+| NaN/Inf duration or any non-finite boundary entry | `trajectory_error::non_finite_input` |
+| `duration <= 0` | `trajectory_error::non_positive_duration` |
 
 ## Usage Example
 
@@ -59,10 +66,13 @@ Coefficients are computed in normalized time to prevent ill-conditioning.
 int main()
 {
     using Vec1 = Eigen::Matrix<double, 1, 1>;
-    auto traj = ctrlpp::make_cubic_trajectory(
+    auto result = ctrlpp::make_cubic_trajectory(
         Vec1{0.0}, Vec1{1.0},   // q0, q1
         Vec1{0.0}, Vec1{0.0},   // v0, v1 (rest-to-rest)
         2.0);                    // duration
+    if (!result.has_value())
+        return 1;
+    auto const& traj = *result;
     for (double t = 0; t <= traj.duration(); t += 0.01) {
         auto pt = traj.evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "," << pt.acceleration(0) << "\n";
