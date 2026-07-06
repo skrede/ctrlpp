@@ -55,6 +55,25 @@ struct bearing_measurement
     }
 };
 
+/// Wrapped bearing likelihood policy.
+///
+/// Bearing measurements live on a circle, so an innovation formed as a plain
+/// difference is wrong across the +/-pi cut: a prediction near +pi and a
+/// measurement near -pi are physically adjacent yet differ by nearly 2*pi. With
+/// the default Gaussian likelihood those particles are penalized as if they were
+/// maximally wrong, which collapses the filter whenever the target crosses the
+/// cut. This policy wraps the scalar innovation into (-pi, pi] with
+/// std::remainder before forming the Gaussian, keeping the posterior coherent.
+struct wrapped_bearing_likelihood
+{
+    auto operator()(const ctrlpp::Vector<double, 1>& z, const ctrlpp::Vector<double, 1>& z_pred, const ctrlpp::Matrix<double, 1, 1>& R_inv, double log_det_2piR) const -> double
+    {
+        double innov = std::remainder(z(0) - z_pred(0), 2.0 * std::numbers::pi);
+        double mahal = innov * R_inv(0, 0) * innov;
+        return -0.5 * mahal - 0.5 * log_det_2piR;
+    }
+};
+
 /// Simple deterministic pseudo-noise for reproducibility (linear congruential).
 struct lcg_noise
 {
@@ -96,7 +115,7 @@ int main()
 
     ctrlpp::pf_config<double, 4, 1, 1> config{.Q = Q, .R = R, .x0 = x0, .P0 = P0};
 
-    auto filter = ctrlpp::make_particle_filter<n_particles>(dyn, meas, config, std::mt19937_64{42});
+    auto filter = ctrlpp::make_particle_filter<n_particles>(dyn, meas, config, std::mt19937_64{42}, wrapped_bearing_likelihood{});
 
     // True initial state (offset from estimate to test convergence)
     ctrlpp::Vector<double, 4> x_true;
