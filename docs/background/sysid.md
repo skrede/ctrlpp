@@ -140,7 +140,7 @@ representation in observer canonical form
 [1, Ch. 4, pp. 95--100]:
 
 $$
-A = \begin{bmatrix} -a_1 & 1 & 0 & \cdots & 0 \\ -a_2 & 0 & 1 & \cdots & 0 \\ \vdots & & & \ddots & \vdots \\ -a_{n_a-1} & 0 & 0 & \cdots & 1 \\ -a_{n_a} & 0 & 0 & \cdots & 0 \end{bmatrix}, \quad
+A = \begin{bmatrix} a_1 & 1 & 0 & \cdots & 0 \\ a_2 & 0 & 1 & \cdots & 0 \\ \vdots & & & \ddots & \vdots \\ a_{n_a-1} & 0 & 0 & \cdots & 1 \\ a_{n_a} & 0 & 0 & \cdots & 0 \end{bmatrix}, \quad
 B = \begin{bmatrix} b_1 \\ b_2 \\ \vdots \\ b_{n_a} \end{bmatrix}, \quad
 C = \begin{bmatrix} 1 & 0 & \cdots & 0 \end{bmatrix}
 $$
@@ -155,10 +155,13 @@ Fit metrics quantify how well the identified model matches held-out data
 - **NRMSE** (Normalized Root Mean Square Error):
 
 $$
-\text{NRMSE} = 1 - \frac{\lVert y - \hat{y} \rVert}{\lVert y - \bar{y} \rVert}
+\text{NRMSE} = \frac{\lVert y - \hat{y} \rVert}{\lVert y - \bar{y} \rVert}
 $$
 
-  A value of 1.0 is a perfect fit; values above 0.8 are typically good.
+  The error norm divided by the centered-output norm, matching the shipped
+  `fit_metrics` computation. A value of 0 is a perfect fit; smaller values
+  indicate a better fit (a constant reference signal falls back to 0 for a
+  perfect prediction and infinity otherwise).
 
 - **VAF** (Variance Accounted For):
 

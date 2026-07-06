@@ -22,18 +22,24 @@ updated with new targets at any time:
 
 #include <iostream>
 
-ctrlpp::online_planner_2nd_config<double> cfg{};
-cfg.v_max = 5.0;
-cfg.a_max = 2.0;
+// try_create validates the kinematic limits (finite and strictly positive,
+// because they divide in the planner math) and reports rejections through
+// ctrlpp::expected; unwrap after checking.
+auto planner_result =
+    ctrlpp::online_planner_2nd<double>::try_create({.v_max = 5.0, .a_max = 2.0});
+if (!planner_result.has_value()) {
+    std::cerr << "invalid planner limits\n";
+    return 1;
+}
+auto& planner = *planner_result;
 
-ctrlpp::online_planner_2nd<double> planner(cfg);
-planner.set_target(10.0);
+planner.update(10.0);  // set a new target at any time; recomputes the profile
 
 double dt = 0.01;  // 100 Hz control loop
 for (int i = 0; i < 500; ++i) {
-    planner.update(dt);
-    auto [pos, vel, acc] = planner.sample();
-    std::cout << pos << "," << vel << "\n";
+    double t = i * dt;
+    auto point = planner.sample(t);  // evaluate the profile at time t
+    std::cout << point.position[0] << "," << point.velocity[0] << "\n";
 }
 ```
 

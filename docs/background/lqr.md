@@ -53,14 +53,14 @@ $(A, B)$ is stabilisable and $(A, Q^{1/2})$ is detectable
 
 ### Schur Method
 
-The DARE can be solved reliably using the generalized Schur (QZ) decomposition
-of the symplectic pencil [3, pp. 913--921]:
+The DARE can be solved reliably using the real Schur decomposition of the
+symplectic matrix [3, pp. 913--921]:
 
 $$
 \begin{bmatrix} A + B R^{-1} B^\top (A^\top)^{-1} Q & -B R^{-1} B^\top (A^\top)^{-1} \\ -(A^\top)^{-1} Q & (A^\top)^{-1} \end{bmatrix}
 $$
 
-The stable eigenspace of this pencil yields the solution $P$. This approach
+The stable invariant subspace of this matrix yields the solution $P$. This approach
 avoids the numerical issues of iterative methods and handles ill-conditioned
 problems robustly.
 
