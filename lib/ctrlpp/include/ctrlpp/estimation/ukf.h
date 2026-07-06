@@ -33,6 +33,18 @@ enum class gain_decomposition
     qr
 };
 
+/// @brief Filter-health status the caller can inspect after any step.
+///
+/// `ok` means every covariance factored so far was positive definite;
+/// `covariance_repaired` latches once a non-positive-definite covariance had
+/// to be repaired to the nearest symmetric positive definite matrix, signaling
+/// that the estimate has entered a numerically degraded regime.
+enum class ukf_health
+{
+    ok,
+    covariance_repaired
+};
+
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct ukf_config
 {
@@ -108,6 +120,7 @@ public:
     void predict(const input_vector_t& u)
     {
         auto sigma = m_strategy.generate(m_x, m_P);
+        note_health(sigma);
         auto propagated = propagate_sigma_points(sigma.points, u);
         auto x_pred = compute_predicted_mean(sigma.Wm, propagated);
         m_P = compute_predicted_covariance(sigma.Wc, propagated, x_pred);
@@ -117,6 +130,7 @@ public:
     void update(const output_vector_t& z)
     {
         auto sigma = m_strategy.generate(m_x, m_P);
+        note_health(sigma);
         auto z_sigma = compute_measurement_sigma_points(sigma.points);
         auto z_pred = compute_predicted_measurement(sigma.Wm, z_sigma);
         auto [S, Pxz] = compute_innovation_and_cross_covariance(sigma, z_sigma, z_pred);
@@ -132,7 +146,20 @@ public:
 
     const output_vector_t& innovation() const { return m_innovation; }
 
+    /// @brief Report whether the filter has had to repair a non-positive-definite
+    /// covariance to the nearest symmetric positive definite matrix.
+    ukf_health health() const { return m_health; }
+
 private:
+    /// @brief Latch a degraded health status when a sigma-point generation had
+    /// to repair a non-positive-definite covariance.
+    template <typename Sigma>
+    void note_health(const Sigma& sigma)
+    {
+        if(sigma.spd_repaired)
+            m_health = ukf_health::covariance_repaired;
+    }
+
     /// @brief Propagate sigma points through dynamics model.
     ///
     /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Sec. 3.1
@@ -225,19 +252,18 @@ private:
         return KT.transpose().eval();
     }
 
-    /// @brief Apply state correction and update covariance via stabilized subtraction.
+    /// @brief Apply the state correction and reduce the covariance.
     ///
-    /// Uses P = P - K*Pxz^T + K*R*K^T which is algebraically equivalent to
-    /// P = P - K*S*K^T (since S = Pzz + R and K = Pxz*S^{-1}) but numerically
-    /// more stable: the K*R*K^T term is always PSD, partially compensating for
-    /// any PSD loss from the subtraction with negative Merwe weights.
+    /// The posterior covariance is the minimum mean-square-error reduction
+    /// P = P - K*S*K^T, with the innovation covariance S = Pzz + R and gain
+    /// K = Pxz*S^{-1}. Since K*S*K^T = K*Pxz^T, this is exactly the amount of
+    /// uncertainty the measurement removes; no extra term is added.
     ///
     /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 26-27
     void apply_correction_and_update_covariance(const Eigen::Matrix<Scalar, nx, ny>& K, const meas_cov_matrix_t& S)
     {
         m_x = (m_x + K * m_innovation).eval();
-        m_P = detail::symmetrize(
-            (m_P - K * S * K.transpose() + K * m_R * K.transpose()).eval());
+        m_P = detail::symmetrize((m_P - K * S * K.transpose()).eval());
     }
 
     Dynamics m_dynamics;
@@ -249,6 +275,7 @@ private:
     gain_decomposition m_decomposition;
     Strategy m_strategy;
     output_vector_t m_innovation;
+    ukf_health m_health{ukf_health::ok};
 };
 
 // CTAD deduction guide

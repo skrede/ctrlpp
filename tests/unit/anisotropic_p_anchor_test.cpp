@@ -10,12 +10,13 @@
 // The first case constructs a strongly anisotropic, non-identity-pivot
 // covariance and checks that the unscented sigma point set's weighted
 // covariance reconstructs it exactly, as the sigma point construction
-// guarantees by definition. It currently fails because the sigma point
-// generator's matrix square root is read off an LDLT factorization while
-// discarding that factorization's row/column pivot permutation: the
-// factorization satisfies P(permuted) = L*D*L^T, not P = L*D*L^T, so the
-// naive L*sqrt(D) read-off only squares back to the original P when no
-// pivoting occurred, which anisotropic matrices routinely require.
+// guarantees by definition. The generator's matrix square root is now the
+// unpivoted Cholesky factor, which satisfies S*S^T = P exactly with no
+// permutation to track, so the reconstruction squares back to the original P
+// even for anisotropic matrices that would force a pivoted factorization to
+// permute. A companion case checks that the SO(3) manifold sigma points,
+// which delegate to the same square root, inherit the fix on the same
+// anisotropic tangent-space covariance.
 //
 // The second case checks the MEKF's one-step error-state covariance
 // transition against an independently computed analytic transform on the
@@ -26,13 +27,14 @@
 // exactly on isotropic P and only surfaces once the attitude covariance is
 // anisotropic.
 //
-// Both REQUIRE blocks below currently fail against pre-fix code;
-// [!shouldfail] reports each case as passing until its defect is
-// corrected, at which point the tag on that case must be removed.
+// The sigma-point cases now pass as active tests. The MEKF case's transpose
+// defect is not yet corrected, so it stays tagged with [!shouldfail] until
+// that transition matrix is fixed, at which point its tag is removed too.
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/estimation/mekf.h"
 #include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
+#include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
 
 #include <Eigen/Dense>
 
@@ -75,7 +77,7 @@ struct trivial_mekf_measurement
 
 } // namespace
 
-TEST_CASE("unscented sigma points reconstruct a non-identity-pivot covariance", "[estimation][anchor][!shouldfail]")
+TEST_CASE("unscented sigma points reconstruct a non-identity-pivot covariance", "[estimation][anchor]")
 {
     constexpr std::size_t SP_NX = 3;
 
@@ -108,6 +110,53 @@ TEST_CASE("unscented sigma points reconstruct a non-identity-pivot covariance", 
     for(std::size_t i = 0; i < SP_NX; ++i)
     {
         for(std::size_t j = 0; j < SP_NX; ++j)
+        {
+            CAPTURE(i, j);
+            REQUIRE_THAT(reconstructed(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)),
+                WithinAbs(P(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)), tol));
+        }
+    }
+}
+
+TEST_CASE("SO(3) manifold sigma points reconstruct a non-identity-pivot tangent covariance", "[estimation][anchor]")
+{
+    merwe_options<double> opts;
+    opts.alpha = 1.0;
+    opts.beta = 0.0;
+    opts.kappa = 3.0 - 3.0;
+
+    so3_merwe_sigma_points<double> strategy(opts);
+
+    // The same anisotropic structure, scaled so that every sigma-point offset
+    // stays well inside the SO(3) exponential's injectivity radius (norm below
+    // pi); at that scale the logarithm of each composed point recovers its
+    // tangent offset exactly, isolating the square-root reconstruction that the
+    // manifold generator inherits from the flat one.
+    const Matrix<double, 3, 3> P = (anisotropic_covariance_3x3() * 0.01).eval();
+    const Eigen::Quaternion<double> q_mean = Eigen::Quaternion<double>::Identity();
+
+    auto sigma = strategy.generate(q_mean, P);
+
+    // The manifold sigma points sit at q_mean composed with the exponential of
+    // the tangent-space offsets; with q_mean the identity the logarithm of each
+    // point recovers its tangent offset, so the weighted covariance of those
+    // logarithms reconstructs the tangent covariance P.
+    Matrix<double, 3, 3> reconstructed = Matrix<double, 3, 3>::Zero();
+    for(std::size_t i = 0; i < sigma.points.size(); ++i)
+    {
+        Vector<double, 3> tangent = so3::log(sigma.points[i]);
+        reconstructed += sigma.Wc[i] * tangent * tangent.transpose();
+    }
+
+    // The reconstruction sums a transcendental exp/log round trip over all
+    // 2*NX+1 sigma points, so the accumulated rounding scales with the number
+    // of points and the covariance magnitude.
+    const double eps = std::numeric_limits<double>::epsilon();
+    const double tol = static_cast<double>(so3_merwe_sigma_points<double>::num_points) * eps * (1.0 + P.norm());
+
+    for(std::size_t i = 0; i < 3; ++i)
+    {
+        for(std::size_t j = 0; j < 3; ++j)
         {
             CAPTURE(i, j);
             REQUIRE_THAT(reconstructed(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)),

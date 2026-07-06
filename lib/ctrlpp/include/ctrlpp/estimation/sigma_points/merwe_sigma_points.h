@@ -7,9 +7,9 @@
 
 #include "ctrlpp/types.h"
 
-#include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
+#include "ctrlpp/detail/covariance_ops.h"
 
-#include <Eigen/Cholesky>
+#include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
 
 #include <cmath>
 #include <cstddef>
@@ -48,19 +48,13 @@ public:
         Scalar lambda = m_alpha * m_alpha * (n + m_kappa) - n;
         Scalar gamma = std::sqrt(n + lambda);
 
-        // LDLT decomposition of P for matrix square root factor
-        Eigen::LDLT<Eigen::Matrix<Scalar, nx, nx>> ldlt(P);
-
-        Eigen::Matrix<Scalar, nx, nx> S;
-        if(ldlt.info() == Eigen::Success && ldlt.isPositive())
-        {
-            // S = L * sqrt(D) where P = L*D*L^T
-            Eigen::Matrix<Scalar, nx, nx> L = ldlt.matrixL();
-            Vector<Scalar, NX> sqrtD = ldlt.vectorD().cwiseMax(Scalar{0}).cwiseSqrt();
-            S = L * sqrtD.asDiagonal();
-        }
-        else
-            S = Eigen::Matrix<Scalar, nx, nx>::Identity(); // Fallback: identity scaling (defensive)
+        // Matrix square root factor S with S*S^T = P. The unpivoted Cholesky
+        // factor is used so the reconstruction squares back to P exactly; a
+        // non-positive-definite P is repaired to the nearest such matrix and
+        // the event is surfaced through the result.
+        auto sqrt_result = detail::covariance_sqrt<Scalar, nx>(P);
+        const Eigen::Matrix<Scalar, nx, nx> S = sqrt_result.factor;
+        result.spd_repaired = sqrt_result.repaired;
 
         // Center sigma point
         result.points[0] = x;

@@ -20,16 +20,16 @@
 // level uses the standard normal 97.5th percentile z=1.959964 (Abramowitz &
 // Stegun, "Handbook of Mathematical Functions", 1964, Table 26.1).
 //
-// KF and EKF are correct today: their sections are untagged and must pass.
-// UKF and MEKF are not: the UKF's posterior covariance update adds a
-// spurious K*R*K^T term on top of the algebraically complete P - K*S*K^T
-// reduction (inflating every posterior covariance with no counterpart in the
-// truth model), and the MEKF's error-state transition uses the incremental
-// rotation where its own multiplicative-correction convention requires the
-// incremental rotation's transpose (invisible on isotropic covariance,
-// exposed here once the attitude covariance is anisotropic). Both push the
-// reported covariance away from the actual error statistics, so their
-// sections are held green with [!shouldfail] until corrected.
+// KF, EKF, and UKF are correct today: their sections are untagged and must
+// pass. The UKF's posterior covariance update is now the algebraically
+// complete P - K*S*K^T reduction with no spurious K*R*K^T inflation, and its
+// sigma points are built from a square root that reconstructs the covariance
+// exactly, so its reported covariance is a statistically honest description of
+// its actual error. The MEKF is not yet corrected: its error-state transition
+// uses the incremental rotation where its own multiplicative-correction
+// convention requires the incremental rotation's transpose (invisible on
+// isotropic covariance, exposed here once the attitude covariance is
+// anisotropic), so its section is held green with [!shouldfail] until fixed.
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/estimation/ekf.h"
@@ -264,14 +264,12 @@ TEST_CASE("EKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
     REQUIRE(nis_avg <= nis_band.upper);
 }
 
-TEST_CASE("UKF NEES/NIS Monte-Carlo average lies within the chi-square consistency band", "[ukf][anchor][!shouldfail]")
+TEST_CASE("UKF NEES/NIS Monte-Carlo average lies within the chi-square consistency band", "[ukf][anchor]")
 {
-    // C1+C2: the spurious K*R*K^T term in the posterior covariance update
-    // (ukf.h apply_correction_and_update_covariance) inflates every posterior
-    // covariance beyond what the true error statistics warrant, biasing NEES
-    // below the truth-consistent value and NIS away from it; this fails
-    // against pre-fix code, so [!shouldfail] reports it passing until CRIT-01
-    // lands.
+    // With the posterior covariance update reduced to P - K*S*K^T and the
+    // sigma-point square root reconstructing the covariance exactly, the
+    // reported covariance tracks the true error statistics, so both the NEES
+    // and NIS averages fall inside the chi-square consistency band.
     merwe_options<double> strategy_opts;
     strategy_opts.alpha = 1.0;
     strategy_opts.beta = 0.0;

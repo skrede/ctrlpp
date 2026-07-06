@@ -16,6 +16,10 @@ struct sigma_result
     std::array<Vector<Scalar, NX>, NumPoints> points;
     std::array<Scalar, NumPoints> Wm;
     std::array<Scalar, NumPoints> Wc;
+
+    /// Set when the covariance was not positive definite and had to be repaired
+    /// to the nearest symmetric positive definite matrix before factoring.
+    bool spd_repaired{false};
 };
 
 template <typename S, typename Scalar, std::size_t NX>

@@ -7,18 +7,13 @@
 // then mathematically identical to the Kalman recursion. Reference: Wan &
 // van der Merwe, "The Unscented Kalman Filter", 2001.
 //
-// It currently fails for two reasons. First, the posterior covariance
-// update adds a spurious K*R*K^T term on top of the algebraically complete
-// P - K*S*K^T reduction, inflating every posterior covariance by a
-// positive semi-definite bias that has no counterpart in the Kalman
-// recursion. Second, the sigma point generator reconstructs its spread
-// matrix from an LDLT factorization while discarding the factorization's
-// pivot permutation, so once the covariance develops off-diagonal
-// structure the reconstructed spread no longer squares back to the true
-// covariance. Both effects compound across predict/update cycles and bias
-// the state mean as well, once the corrupted covariance feeds into later
-// Kalman gains. [!shouldfail] reports this case as passing until both
-// defects are corrected, at which point this tag must be removed.
+// Two defects used to break this equivalence and are both fixed. The
+// posterior covariance update is the algebraically complete P - K*S*K^T
+// reduction with no spurious K*R*K^T inflation term, and the sigma point
+// generator builds its spread matrix from the unpivoted Cholesky factor,
+// which squares back to the true covariance exactly even once the covariance
+// develops off-diagonal structure. With both corrected the UKF recursion
+// reproduces the Kalman state and covariance to rounding precision.
 
 #include "ctrlpp/estimation/ukf.h"
 #include "ctrlpp/estimation/kalman.h"
@@ -69,7 +64,7 @@ using UkfType = ukf<double, NX, NU, NY, linear_dynamics, position_measurement>;
 
 } // namespace
 
-TEST_CASE("UKF matches Kalman filter state and covariance on a linear system", "[ukf][kalman][anchor][!shouldfail]")
+TEST_CASE("UKF matches Kalman filter state and covariance on a linear system", "[ukf][kalman][anchor]")
 {
     // Scaled unscented transform parameters that make the transform exact
     // for a linear map (Wan & van der Merwe 2001, Sec. 3.1): kappa = 3-NX

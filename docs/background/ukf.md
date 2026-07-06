@@ -130,14 +130,17 @@ $$
 $$
 
 $$
-P_{k|k} = P_{k|k-1} - K_k \, P_{zz} \, K_k^\top + K_k \, R \, K_k^\top
+P_{k|k} = P_{k|k-1} - K_k \, S_k \, K_k^\top
 $$
 
-The additional $K_k R K_k^\top$ term is always positive semi-definite and
-compensates for potential PSD loss from negative covariance weights $W_i^{(c)}$
-(which occur with the scaled Merwe transform when $\alpha$ is small). This
-stabilized form is algebraically equivalent to the standard update when all
-weights are positive, but more robust in practice.
+where $S_k = P_{zz} + R$ is the innovation covariance. Because $K_k = P_{xz}
+S_k^{-1}$, the reduction $K_k S_k K_k^\top$ equals $K_k P_{xz}^\top$, the exact
+amount of uncertainty the measurement removes. This is the minimum
+mean-square-error posterior; no additional term is added. When robustness
+against negative covariance weights $W_i^{(c)}$ (which occur with the scaled
+Merwe transform for small $\alpha$) is required, the algebraically identical
+Joseph form $P - K P_{xz}^\top - P_{xz} K^\top + K S K^\top$ may be used for its
+better rounding behavior.
 
 ## Sigma-Point Strategies
 
