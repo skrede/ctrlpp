@@ -50,7 +50,7 @@ $$
 In discrete time with sampling period $T_s$, the first-order integration is:
 
 $$
-q_{k+1} = q_k \otimes \exp\!\left(\frac{T_s}{2} \omega_k\right)
+q_{k+1} = q_k \otimes \exp\!\left(T_s\, \omega_k\right)
 $$
 
 where $\otimes$ denotes the Hamilton quaternion product.
@@ -143,7 +143,7 @@ $$
 $$
 
 $$
-\hat{q}_{k|k} = \hat{q}_{k|k-1} \otimes \exp(\delta\theta_k / 2)
+\hat{q}_{k|k} = \hat{q}_{k|k-1} \otimes \exp(\delta\theta_k)
 $$
 
 Reset the error state to zero and update the covariance:

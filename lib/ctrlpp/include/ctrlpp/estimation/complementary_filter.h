@@ -108,9 +108,9 @@ private:
     /// @cite mahony2008 -- Mahony et al., 2008, Eq. 6 (quaternion integration with PI correction)
     void integrate_gyro(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& e, Scalar dt)
     {
-        bias_ += k_i_ * e * dt;
+        bias_ -= k_i_ * e * dt;
         Vector<Scalar, 3> omega_c = gyro - bias_ + k_p_ * e;
-        Vector<Scalar, 3> phi = (Scalar{0.5} * dt) * omega_c;
+        Vector<Scalar, 3> phi = dt * omega_c;
         q_ = (q_ * so3::exp(phi)).normalized();
         update_state_cache();
     }

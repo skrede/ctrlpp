@@ -8,6 +8,7 @@
 #include <Eigen/Geometry>
 
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 using namespace ctrlpp;
@@ -61,6 +62,46 @@ TEST_CASE("complementary filter IMU rejects constant gyro bias", "[cf]")
     CHECK_THAT(bias_est(1), WithinAbs(bias_true(1), 0.05));
 }
 
+TEST_CASE("complementary filter IMU bias estimate converges over a long horizon", "[cf]")
+{
+    // The corrected Mahony PI observer drives the gyro-bias estimate to the true
+    // constant bias. Linearizing the single-axis loop (tilt error theta, bias
+    // error b) gives theta_dot = -k_p theta - b, b_dot = k_i theta, i.e. the
+    // characteristic polynomial s^2 + k_p s + k_i whose slow mode has time
+    // constant tau = k_p / k_i. Integrating for T = 5 tau collapses the initial
+    // bias error b0 by exp(-T/tau); the tolerance is that analytic decay envelope
+    // with headroom for the fast-mode transient and the sin-vs-linear tilt term,
+    // rather than a loose fixed band. The 20 s test above cannot see this ~400 s
+    // time constant.
+    const double k_p = 2.0, k_i = 0.005, dt = 0.01;
+    cf_config<double> cfg{.k_p = k_p, .k_i = k_i, .dt = dt};
+    complementary_filter cf{cfg};
+
+    Vector<double, 3> bias_true;
+    bias_true << 0.01, 0.01, 0.0; // roll/pitch bias is observable from gravity; yaw is not
+    Vector<double, 3> accel;
+    accel << 0.0, 0.0, 9.81;
+
+    const double tau = k_p / k_i;      // slow-mode time constant of the PI loop
+    const double horizon = 5.0 * tau;  // >= 500 s (here 2000 s)
+    const int steps = static_cast<int>(horizon / dt);
+    for (int i = 0; i < steps; ++i)
+        cf.update(bias_true, accel, dt);
+
+    const double b0 = bias_true(0); // initial bias error: the estimate starts at zero
+    const double envelope = b0 * std::exp(-horizon / tau);
+    // The measured residual tracks this slow-mode envelope closely (the fast mode
+    // has fully decayed and the slow-mode participation is just under one), so a
+    // 2x band asserts convergence to the analytic decay rather than a loose fixed
+    // tolerance.
+    const double tol = 2.0 * envelope;
+    auto bias_est = cf.bias();
+    INFO("bias(0) residual = " << std::abs(bias_est(0) - bias_true(0)) << ", envelope = " << envelope);
+    INFO("bias(1) residual = " << std::abs(bias_est(1) - bias_true(1)) << ", envelope = " << envelope);
+    CHECK_THAT(bias_est(0), WithinAbs(bias_true(0), tol));
+    CHECK_THAT(bias_est(1), WithinAbs(bias_true(1), tol));
+}
+
 TEST_CASE("complementary filter IMU tracks rotation around z-axis", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
@@ -79,12 +120,18 @@ TEST_CASE("complementary filter IMU tracks rotation around z-axis", "[cf]")
         cf.update(gyro, accel, 0.01);
     }
 
-    // After 200 steps at 0.01s, yaw should be ~0.2 rad
+    // Rotation is about the gravity axis, so the estimated gravity direction in
+    // the body frame is invariant and the accel correction e vanishes exactly.
+    // The filter therefore integrates the gyro at full rate about a fixed axis,
+    // which composes exactly: yaw = omega_z * 200 * 0.01 = 0.2 rad, up to the
+    // rounding accumulated across the quaternion normalizations.
     auto q = cf.attitude();
     // Extract yaw from quaternion
     double yaw_est = 2.0 * std::atan2(q.z(), q.w());
     double yaw_expected = omega_z * 200.0 * 0.01;
-    CHECK_THAT(yaw_est, WithinAbs(yaw_expected, 0.15));
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    const double integ_tol = 200.0 * eps * 8.0; // O(steps) normalizations, few-ulp headroom
+    CHECK_THAT(yaw_est, WithinAbs(yaw_expected, integ_tol));
 }
 
 TEST_CASE("complementary filter MARG mode uses magnetometer for heading", "[cf]")
@@ -180,11 +227,17 @@ TEST_CASE("complementary filter k_p=0 ignores accel correction", "[cf]")
     for(int i = 0; i < 100; ++i)
         cf.update(gyro, accel, 0.01);
 
-    // Filter should purely integrate gyro: yaw ~ 0.1 * 100 * 0.01 = 0.1 rad
+    // With k_p=0 and k_i=0 the filter is a pure gyro integrator. A fixed-axis
+    // rotation composes exactly, so yaw = omega_z * steps * dt = 0.1 * 100 * 0.01
+    // = 0.1 rad, up to the rounding accumulated across the quaternion
+    // normalizations. The exponential map already carries the half-angle, so the
+    // integrated angle is the full rate * dt (no extra 0.5 factor).
     auto q = cf.attitude();
     double yaw = 2.0 * std::atan2(q.z(), q.w());
-    // Should be close to pure gyro integration since k_p=0 and k_i=0
-    CHECK_THAT(yaw, WithinAbs(0.1 * 100.0 * 0.01 * 0.5, 0.15));
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    const double yaw_expected = 0.1 * 100.0 * 0.01;
+    const double integ_tol = 100.0 * eps * 8.0; // O(steps) normalizations, few-ulp headroom
+    CHECK_THAT(yaw, WithinAbs(yaw_expected, integ_tol));
 }
 
 TEST_CASE("complementary filter k_i=0 has no bias estimation", "[cf]")
