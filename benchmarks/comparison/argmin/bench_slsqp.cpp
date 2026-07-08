@@ -170,6 +170,8 @@ void run_benchmark(const std::string& system_name,
     ctrlpp::argmin_settings<double> argmin_cfg{};
     argmin_cfg.warm_start = ws_mode;
     argmin_cfg.max_time = 2.0;
+    bool const include_nw_sqp_in_bench =
+        !((NX >= 8 && horizon >= 20) || (NX == 4 && horizon >= 30));
 
     auto run_argmin_variant = [&]<typename Solver>(std::type_identity<Solver>,
                                                     char const* bench_name,
@@ -203,7 +205,9 @@ void run_benchmark(const std::string& system_name,
     };
 
     run_argmin_variant(std::type_identity<ArgminSlsqp>{},        "argmin_slsqp",         "slsqp",         true);
-    run_argmin_variant(std::type_identity<ArgminNwSqp>{},        "argmin_nw_sqp",        "nw_sqp",        true);
+    // Large NW-SQP cells can require minutes of nanobench repetition even with
+    // max_time. Keep their single-shot quality rows without dominating this sweep.
+    run_argmin_variant(std::type_identity<ArgminNwSqp>{},        "argmin_nw_sqp",        "nw_sqp",        include_nw_sqp_in_bench);
     run_argmin_variant(std::type_identity<ArgminFilterSlsqp>{},  "argmin_filter_slsqp",  "filter_slsqp",  true);
     // filter_nw_sqp tends to hit max_time on these cells; nanobench batched
     // timing balloons to minutes per cell. Single-shot quality only.

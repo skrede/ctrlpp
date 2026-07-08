@@ -201,20 +201,13 @@ void run_benchmark(const std::string& system_name,
                               });
     }
 
-    // Argmin Augmented Lagrangian
+    // Argmin Augmented Lagrangian -- single-trace diagnostic only.
+    // The time-budgeted solve can be useful quality metadata, but nanobench
+    // repeats it enough times to dominate the whole suite.
     {
         ctrlpp::argmin_settings<double> auglag_cfg{};
         auglag_cfg.max_eval = 1000;
         auglag_cfg.max_time = 2.0;
-        ctrlpp::nmpc<double, NX, NU, ArgminAuglag, Dynamics> nmpc{dynamics, config, ArgminAuglag{auglag_cfg}};
-
-        bench.run("argmin_auglag",
-                  [&]
-                  {
-                      auto u = nmpc.solve(x0);
-                      ankerl::nanobench::doNotOptimizeAway(u);
-                  });
-
         ctrlpp::nmpc<double, NX, NU, ArgminAuglag, Dynamics> q{dynamics, config, ArgminAuglag{auglag_cfg}};
         q.solve(x0);
         auto diag = q.diagnostics();

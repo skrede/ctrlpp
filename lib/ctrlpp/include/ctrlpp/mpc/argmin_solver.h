@@ -8,12 +8,13 @@
 #include <argmin/result/status.h>
 
 #include <argmin/solver/options.h>
-#include <argmin/solver/basic_solver.h>
+#include <argmin/solver/step_budget_solver.h>
+#include <argmin/solver/time_budget_options.h>
+#include <argmin/solver/step_and_time_budget_solver.h>
 
 #include <chrono>
 #include <cstdint>
-#include <optional>
-#include <stdexcept>
+#include <variant>
 #include <type_traits>
 
 namespace ctrlpp
@@ -28,7 +29,12 @@ public:
     using bridge_type = std::conditional_t<Constrained,
         argmin_constrained_problem<Scalar>,
         argmin_problem<Scalar>>;
-    using solver_type = argmin::basic_solver<argmin_policy, Eigen::Dynamic, bridge_type>;
+    using step_solver_type =
+        argmin::step_budget_solver<argmin_policy, Eigen::Dynamic, bridge_type>;
+    using timed_solver_type =
+        argmin::step_and_time_budget_solver<argmin_policy, Eigen::Dynamic, bridge_type>;
+    using solver_storage_type =
+        std::variant<std::monostate, step_solver_type, timed_solver_type>;
     using settings_type = std::conditional_t<
         is_mma_family_v<Policy>,
         argmin_mma_settings<Scalar>,
@@ -41,7 +47,7 @@ public:
     void setup(const nlp_problem<Scalar>& problem)
     {
         problem_ = &problem;
-        solver_ = std::nullopt;
+        solver_.template emplace<std::monostate>();
 
         if constexpr(Constrained)
         {
@@ -57,47 +63,55 @@ public:
     auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
     {
         prepare_solver(update.x0);
-        auto result = solver_->solve();
-        return translate_result(result);
+        return with_solver([&](auto& solver)
+        {
+            auto result = solver.solve();
+            return translate_result(result);
+        });
     }
 
     auto step(const nlp_update<Scalar>& update, int max_steps) -> nlp_result<Scalar>
     {
         prepare_solver(update.x0);
-        auto result = solver_->step_n(static_cast<std::uint32_t>(max_steps));
-        return translate_result(result);
+        return with_solver([&](auto& solver)
+        {
+            auto result = solver.step_n(static_cast<std::uint32_t>(max_steps));
+            return translate_result(result);
+        });
     }
 
 private:
     void prepare_solver(const Eigen::VectorX<Scalar>& x0)
     {
-        if(!solver_)
+        if(std::holds_alternative<std::monostate>(solver_))
+        {
+            if(has_time_budget())
+                emplace_timed_solver(x0);
+            else
+                emplace_step_solver(x0);
+
+            return;
+        }
+
+        const auto ws = [&]() -> warm_start_mode
         {
             if constexpr(is_mma_family_v<Policy>)
-            {
-                solver_.emplace(argmin_policy{}, bridge_, x0,
-                                make_solver_options(),
-                                make_mma_policy_opts());
-            }
+                return settings_.base.warm_start;
             else
-            {
-                solver_.emplace(argmin_policy{}, bridge_, x0, make_solver_options());
-            }
-        }
-        else
+                return settings_.warm_start;
+        }();
+
+        std::visit([&](auto& solver)
         {
-            const auto ws = [&]() -> warm_start_mode
+            using solver_t = std::decay_t<decltype(solver)>;
+            if constexpr(!std::is_same_v<solver_t, std::monostate>)
             {
-                if constexpr(is_mma_family_v<Policy>)
-                    return settings_.base.warm_start;
+                if(ws == warm_start_mode::curvature)
+                    solver.reset(x0);
                 else
-                    return settings_.warm_start;
-            }();
-            if(ws == warm_start_mode::curvature)
-                solver_->reset(x0);
-            else
-                solver_->reset_clear(x0);
-        }
+                    solver.reset_clear(x0);
+            }
+        }, solver_);
     }
 
     auto make_solver_options() const -> argmin::solver_options<>
@@ -114,22 +128,78 @@ private:
 
         opts.max_iterations = static_cast<std::uint32_t>(s.max_eval);
 
-        if(s.max_time > Scalar{0})
-        {
-            opts.max_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::duration<double>(static_cast<double>(s.max_time)));
-        }
-
         if constexpr(Constrained)
         {
             if(s.constraint_tol > Scalar{0})
                 opts.constraint_tolerance = static_cast<double>(s.constraint_tol);
+            if(s.constraint_tol > Scalar{0})
+                opts.feasibility_tolerance = static_cast<double>(s.constraint_tol);
         }
 
         opts.set_objective_threshold(static_cast<double>(s.ftol_rel));
         opts.set_step_threshold(static_cast<double>(s.xtol_rel));
 
         return opts;
+    }
+
+    auto make_time_budget_options() const -> argmin::time_budget_options<>
+    {
+        argmin::time_budget_options<> opts;
+        opts.core = make_solver_options();
+
+        auto const& s = [&]() -> auto const&
+        {
+            if constexpr(is_mma_family_v<Policy>)
+                return settings_.base;
+            else
+                return settings_;
+        }();
+
+        opts.max_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::duration<double>(static_cast<double>(s.max_time)));
+
+        return opts;
+    }
+
+    auto has_time_budget() const -> bool
+    {
+        auto const& s = [&]() -> auto const&
+        {
+            if constexpr(is_mma_family_v<Policy>)
+                return settings_.base;
+            else
+                return settings_;
+        }();
+
+        return s.max_time > Scalar{0};
+    }
+
+    void emplace_step_solver(const Eigen::VectorX<Scalar>& x0)
+    {
+        if constexpr(is_mma_family_v<Policy>)
+        {
+            solver_.template emplace<step_solver_type>(
+                argmin_policy{}, bridge_, x0, make_solver_options(), make_mma_policy_opts());
+        }
+        else
+        {
+            solver_.template emplace<step_solver_type>(
+                argmin_policy{}, bridge_, x0, make_solver_options());
+        }
+    }
+
+    void emplace_timed_solver(const Eigen::VectorX<Scalar>& x0)
+    {
+        if constexpr(is_mma_family_v<Policy>)
+        {
+            solver_.template emplace<timed_solver_type>(
+                argmin_policy{}, bridge_, x0, make_time_budget_options(), make_mma_policy_opts());
+        }
+        else
+        {
+            solver_.template emplace<timed_solver_type>(
+                argmin_policy{}, bridge_, x0, make_time_budget_options());
+        }
     }
 
     auto make_mma_policy_opts() const -> typename argmin_policy::options_type
@@ -193,7 +263,9 @@ private:
         case argmin::solver_status::stalled:
         case argmin::solver_status::roundoff_limited:
         case argmin::solver_status::objective_stalled:
+        case argmin::solver_status::trust_region_step_rejected:
             return solve_status::solved_inaccurate;
+        case argmin::solver_status::invalid_problem:
         case argmin::solver_status::diverged:
         case argmin::solver_status::aborted:
         case argmin::solver_status::running:
@@ -202,22 +274,53 @@ private:
         return solve_status::error;
     }
 
-    auto translate_result(const argmin::solve_result<Scalar, Eigen::Dynamic>& r) const -> nlp_result<Scalar>
+    template <typename Result>
+    auto translate_result(const Result& r) const -> nlp_result<Scalar>
     {
         return nlp_result<Scalar>{
             .status = map_status(r.status),
             .x = r.x,
             .objective = r.objective_value,
-            .solve_time = static_cast<Scalar>(std::chrono::duration<double>(r.wall_time).count()),
+            .solve_time = result_wall_time(r),
             .iterations = static_cast<int>(r.iterations),
             .primal_residual = r.constraint_violation,
         };
     }
 
+    template <typename Result>
+    static auto result_wall_time(const Result& r) -> Scalar
+    {
+        if constexpr(requires { r.wall_time; })
+        {
+            return static_cast<Scalar>(std::chrono::duration<double>(r.wall_time).count());
+        }
+        else
+        {
+            return Scalar{0};
+        }
+    }
+
+    template <typename SolverFn>
+    auto with_solver(SolverFn&& fn) -> nlp_result<Scalar>
+    {
+        return std::visit([&](auto& solver) -> nlp_result<Scalar>
+        {
+            using solver_t = std::decay_t<decltype(solver)>;
+            if constexpr(std::is_same_v<solver_t, std::monostate>)
+            {
+                return nlp_result<Scalar>{.status = solve_status::error};
+            }
+            else
+            {
+                return fn(solver);
+            }
+        }, solver_);
+    }
+
     settings_type settings_;
     const nlp_problem<Scalar>* problem_{nullptr};
     bridge_type bridge_;
-    std::optional<solver_type> solver_;
+    solver_storage_type solver_;
 };
 
 }
