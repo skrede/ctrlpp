@@ -138,8 +138,12 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
 
     std::function<Scalar(std::span<const Scalar>)> cost = cost_fn;
 
-    // Gradient callback via finite differences
-    std::function<void(std::span<const Scalar>, std::span<Scalar>)> gradient = [cost](std::span<const Scalar> z, std::span<Scalar> grad) { finite_diff_gradient<Scalar>(cost, z, grad); };
+    // Gradient callback via finite differences. The perturbation scratch is
+    // owned by the callback and sized once here, so per-solve gradient
+    // evaluations do not allocate.
+    std::function<void(std::span<const Scalar>, std::span<Scalar>)> gradient =
+        [cost, scratch = std::vector<Scalar>(static_cast<std::size_t>(n_vars))](std::span<const Scalar> z, std::span<Scalar> grad) mutable
+        { finite_diff_gradient<Scalar>(cost, z, grad, std::span<Scalar>{scratch.data(), scratch.size()}); };
 
     // Constraint callback
     std::function<void(std::span<const Scalar>, std::span<Scalar>)> constraints = [=](std::span<const Scalar> z, std::span<Scalar> c)

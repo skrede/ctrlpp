@@ -151,7 +151,9 @@ auto build_nmhe_problem(const Dynamics& dynamics,
     };
 
     // Gradient: use finite differences (consistent with NMPC pattern)
-    std::function<void(std::span<const Scalar>, std::span<Scalar>)> gradient = [cost](std::span<const Scalar> z, std::span<Scalar> grad) { finite_diff_gradient<Scalar>(cost, z, grad); };
+    std::function<void(std::span<const Scalar>, std::span<Scalar>)> gradient =
+        [cost, scratch = std::vector<Scalar>(static_cast<std::size_t>(n_vars))](std::span<const Scalar> z, std::span<Scalar> grad) mutable
+        { finite_diff_gradient<Scalar>(cost, z, grad, std::span<Scalar>{scratch.data(), scratch.size()}); };
 
     // Constraints
     std::function<void(std::span<const Scalar>, std::span<Scalar>)> constraints = [=](std::span<const Scalar> z, std::span<Scalar> c)

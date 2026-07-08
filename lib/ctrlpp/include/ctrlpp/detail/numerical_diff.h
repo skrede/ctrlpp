@@ -34,30 +34,43 @@ namespace ctrlpp::detail
 // Span-based finite-difference utilities (NLopt compatibility)
 // ---------------------------------------------------------------------------
 
+// Non-allocating overload: the caller supplies a perturbation scratch buffer of
+// at least z.size() elements, reused across calls. Real-time callers (the NLP
+// gradient wiring in the MPC/MHE formulations) hold this buffer for the lifetime
+// of the problem so a per-evaluation heap allocation is not incurred.
 template <typename Scalar>
-void finite_diff_gradient(const std::function<Scalar(std::span<const Scalar>)>& f, std::span<const Scalar> z, std::span<Scalar> grad)
+void finite_diff_gradient(const std::function<Scalar(std::span<const Scalar>)>& f, std::span<const Scalar> z, std::span<Scalar> grad, std::span<Scalar> scratch)
 {
     const auto step_scale = std::cbrt(std::numeric_limits<Scalar>::epsilon());
     const auto n = z.size();
 
-    std::vector<Scalar> z_mut(z.begin(), z.end());
+    std::copy(z.begin(), z.end(), scratch.begin());
 
     for(std::size_t j = 0; j < n; ++j)
     {
         const Scalar h_raw = step_scale * std::max(Scalar{1}, std::abs(z[j]));
         const Scalar temp = z[j] + h_raw;
         const Scalar h = temp - z[j];
-        const Scalar orig = z_mut[j];
+        const Scalar orig = scratch[j];
 
-        z_mut[j] = orig + h;
-        const Scalar f_plus = f(std::span<const Scalar>{z_mut.data(), n});
+        scratch[j] = orig + h;
+        const Scalar f_plus = f(std::span<const Scalar>{scratch.data(), n});
 
-        z_mut[j] = orig - h;
-        const Scalar f_minus = f(std::span<const Scalar>{z_mut.data(), n});
+        scratch[j] = orig - h;
+        const Scalar f_minus = f(std::span<const Scalar>{scratch.data(), n});
 
         grad[j] = (f_plus - f_minus) / (Scalar{2} * h);
-        z_mut[j] = orig;
+        scratch[j] = orig;
     }
+}
+
+// Allocating convenience overload: provisions the perturbation scratch
+// internally. Prefer the four-argument overload on real-time paths.
+template <typename Scalar>
+void finite_diff_gradient(const std::function<Scalar(std::span<const Scalar>)>& f, std::span<const Scalar> z, std::span<Scalar> grad)
+{
+    std::vector<Scalar> scratch(z.size());
+    finite_diff_gradient<Scalar>(f, z, grad, std::span<Scalar>{scratch.data(), scratch.size()});
 }
 
 template <typename Scalar>

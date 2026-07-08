@@ -94,6 +94,8 @@ public:
 
         raw_buf_.resize(static_cast<std::size_t>(prob.n_constraints));
         fd_x_buf_.resize(prob.n_vars);
+        c_plus_.resize(n_eq + n_ineq_upper + n_ineq_lower);
+        c_minus_.resize(n_eq + n_ineq_upper + n_ineq_lower);
     }
 
     void constraints(const Eigen::VectorX<Scalar>& x, Eigen::VectorX<Scalar>& c_out) const
@@ -147,8 +149,6 @@ public:
         }
 
         const auto step_scale = std::cbrt(std::numeric_limits<Scalar>::epsilon());
-        Eigen::VectorX<Scalar> c_plus(m);
-        Eigen::VectorX<Scalar> c_minus(m);
 
         fd_x_buf_ = x;
 
@@ -160,12 +160,12 @@ public:
             const Scalar orig = fd_x_buf_[j];
 
             fd_x_buf_[j] = orig + h;
-            constraints(fd_x_buf_, c_plus);
+            constraints(fd_x_buf_, c_plus_);
 
             fd_x_buf_[j] = orig - h;
-            constraints(fd_x_buf_, c_minus);
+            constraints(fd_x_buf_, c_minus_);
 
-            J.col(j) = (c_plus - c_minus) / (Scalar{2} * h);
+            J.col(j) = (c_plus_ - c_minus_) / (Scalar{2} * h);
 
             fd_x_buf_[j] = orig;
         }
@@ -188,6 +188,8 @@ private:
 
     mutable std::vector<Scalar> raw_buf_;
     mutable Eigen::VectorX<Scalar> fd_x_buf_;
+    mutable Eigen::VectorX<Scalar> c_plus_;
+    mutable Eigen::VectorX<Scalar> c_minus_;
 };
 
 }
