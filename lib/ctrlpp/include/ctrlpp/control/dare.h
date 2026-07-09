@@ -57,9 +57,17 @@ auto build_dare_symplectic(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     if (!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite())
         return ctrlpp::unexpected(dare_error::non_finite_input);
 
+    // A^{-T} is needed for the symplectic build (Laub Eq. 7); when A is rank-deficient
+    // this branch fires. Judge singularity with the reciprocal-pivot test
+    // min_pivot > n * eps * max_pivot, where max_pivot supplies the ||A|| scale.
+    // The n * eps factor mirrors the backward-error convention already used for the
+    // Schur factor below (2n * eps * ||T||, dare.h below): matrix size times unit
+    // roundoff times factor norm. The only coefficient is the state dimension n times
+    // machine epsilon; there is no bare tolerance.
     auto qr_At = A.transpose().colPivHouseholderQr();
+    qr_At.setThreshold(Scalar{static_cast<int>(NX)} * std::numeric_limits<Scalar>::epsilon());
     if (!qr_At.isInvertible())
-        return ctrlpp::unexpected(dare_error::non_finite_input);
+        return ctrlpp::unexpected(dare_error::singular_a);
 
     const MatNxN AinvT = qr_At.solve(MatNxN::Identity()).eval();
     const MatNxN G = (B * R.colPivHouseholderQr().solve(
