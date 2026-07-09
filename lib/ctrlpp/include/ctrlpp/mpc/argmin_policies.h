@@ -2,6 +2,7 @@
 #define HPP_GUARD_CTRLPP_MPC_ARGMIN_POLICIES_H
 
 #include <argmin/solver/mma_policy.h>
+#include <argmin/solver/convergence.h>
 #include <argmin/solver/gcmma_policy.h>
 #include <argmin/solver/isres_policy.h>
 #include <argmin/solver/bobyqa_policy.h>
@@ -132,6 +133,49 @@ struct is_mma_family<argmin_auglag<Inner>>
 
 template <typename Policy>
 inline constexpr bool is_mma_family_v = is_mma_family<Policy>::value;
+
+// Distinguishes a RAW MMA-family policy (argmin_mma / argmin_gcmma) from an
+// augmented-Lagrangian wrap around one. Unlike is_mma_family (whose auglag
+// specialization inherits the inner policy's mma-family-ness), this trait is
+// deliberately FALSE for any argmin_auglag<Inner>: the auglag outer loop
+// absorbs equality constraints into its penalty, so a wrapped MMA solver
+// tolerates equalities whereas a raw one cannot. This mirrors the distinction
+// NLopt draws between raw `mma`/`ccsaq` and `auglag_mma`/`auglag_ccsaq`
+// (see nlopt_solver.h). Used by argmin_solver to reject raw MMA-family +
+// equality-constrained setups.
+template <typename Policy>
+struct is_raw_mma_family : std::false_type
+{};
+
+template <>
+struct is_raw_mma_family<argmin_mma> : std::true_type
+{};
+
+template <>
+struct is_raw_mma_family<argmin_gcmma> : std::true_type
+{};
+
+template <typename Inner>
+struct is_raw_mma_family<argmin_auglag<Inner>> : std::false_type
+{};
+
+template <typename Policy>
+inline constexpr bool is_raw_mma_family_v = is_raw_mma_family<Policy>::value;
+
+// Convergence policy used by every ctrlpp argmin_solver instantiation. It
+// carries the RELATIVE objective/step criteria (objective_tolerance_rel /
+// step_tolerance_rel) so the ctrlpp settings fields named ftol_rel / xtol_rel
+// can wire to argmin's `_rel` setters, which are requires-guarded on those
+// criteria being present in the convergence tuple. Gradient and stall criteria
+// are retained from argmin's default_convergence. This deliberately REPLACES
+// default_convergence's ABSOLUTE objective/step criteria with their relative
+// counterparts and is a deliberate convergence-behavior change: argmin-backed
+// solvers observe re-pinned iterate counts relative to default_convergence.
+using argmin_ctrlpp_convergence = argmin::convergence_policy<
+    argmin::gradient_tolerance_criterion,
+    argmin::objective_tolerance_rel_criterion,
+    argmin::step_tolerance_rel_criterion,
+    argmin::stall_tolerance_criterion>;
 
 }
 
