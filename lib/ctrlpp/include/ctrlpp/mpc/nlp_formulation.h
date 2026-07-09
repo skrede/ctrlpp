@@ -247,8 +247,12 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
     Eigen::VectorX<Scalar> x_lower = Eigen::VectorX<Scalar>::Constant(n_vars, -std::numeric_limits<Scalar>::infinity());
     Eigen::VectorX<Scalar> x_upper = Eigen::VectorX<Scalar>::Constant(n_vars, std::numeric_limits<Scalar>::infinity());
 
-    // State bounds (x0 is NOT pinned by variable bounds; equality constraint handles it)
-    for(int k = 0; k <= N; ++k)
+    // State bounds (x0 is NOT pinned by variable bounds; equality constraint handles it).
+    // The loop starts at k = 1: x0 is pinned solely by the initial-state equality
+    // (z[x_offset+i] - x0[i] = 0 above), so also bounding the x0 block here would be
+    // redundant and can render the NLP infeasible when x0 sits on or over a bound.
+    // Bounds therefore apply to stages 1..N only.
+    for(int k = 1; k <= N; ++k)
     {
         if(config.x_min)
         {
