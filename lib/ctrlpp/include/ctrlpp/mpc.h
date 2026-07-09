@@ -134,7 +134,7 @@ private:
             {
                 using T = std::decay_t<decltype(s)>;
                 if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
-                    return 2 * nx;
+                    return nx;
                 else
                     return static_cast<int>(s.H.rows());
             },

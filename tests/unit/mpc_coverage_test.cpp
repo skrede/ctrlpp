@@ -84,14 +84,15 @@ TEST_CASE("terminal_constraint_rows returns 0 for nullopt", "[mpc][coverage][qp]
     CHECK(ctrlpp::detail::terminal_constraint_rows<double, NX>(none) == 0);
 }
 
-TEST_CASE("terminal_constraint_rows returns 2*NX for ellipsoidal set", "[mpc][coverage][qp]")
+TEST_CASE("terminal_constraint_rows returns NX for ellipsoidal set", "[mpc][coverage][qp]")
 {
     ctrlpp::ellipsoidal_set<double, NX> eset{
         .P = Eigen::Matrix2d::Identity(),
         .alpha = 1.0,
     };
     std::optional<ctrlpp::terminal_set<double, NX>> tset{eset};
-    CHECK(ctrlpp::detail::terminal_constraint_rows<double, NX>(tset) == 2 * static_cast<int>(NX));
+    // Inscribed-box encoding emits one two-sided row per eigen-direction: NX rows, not 2*NX.
+    CHECK(ctrlpp::detail::terminal_constraint_rows<double, NX>(tset) == static_cast<int>(NX));
 }
 
 TEST_CASE("terminal_constraint_rows returns H.rows() for polytopic set", "[mpc][coverage][qp]")

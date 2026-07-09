@@ -42,7 +42,7 @@ inline int terminal_constraint_rows(const std::optional<terminal_set<Scalar, NX>
         {
             using T = std::decay_t<decltype(s)>;
             if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
-                return 2 * nx;
+                return nx;
             else
                 return static_cast<int>(s.H.rows());
         },
@@ -206,14 +206,14 @@ inline void add_ellipsoidal_triplets(std::vector<Eigen::Triplet<Scalar>>& trips,
     Eigen::SelfAdjointEigenSolver<Matrix<Scalar, NX, NX>> eig(s.P);
     auto V = eig.eigenvectors();
 
+    // Emit one two-sided row v_i^T x in [-bound, +bound] per eigen-direction. The paired
+    // -v_i^T x row of the old encoding was a redundant duplicate (the two-sided box on
+    // -v_i^T x is identical to the one on v_i^T x), so nx rows fully encode the box.
     for(int i = 0; i < nx; ++i)
         for(int j = 0; j < nx; ++j)
             if(V(j, i) != Scalar{0})
-            {
-                trips.emplace_back(row + 2 * i, x_N_offset + j, V(j, i));
-                trips.emplace_back(row + 2 * i + 1, x_N_offset + j, -V(j, i));
-            }
-    row += 2 * nx;
+                trips.emplace_back(row + i, x_N_offset + j, V(j, i));
+    row += nx;
 }
 
 template <typename Scalar, std::size_t NX>
@@ -347,13 +347,17 @@ inline void set_ellipsoidal_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Sca
     auto D = eig.eigenvalues();
     for(int i = 0; i < nx; ++i)
     {
-        Scalar bound = std::sqrt(s.alpha / D(i));
-        l(row + 2 * i) = -bound;
-        u(row + 2 * i) = bound;
-        l(row + 2 * i + 1) = -bound;
-        u(row + 2 * i + 1) = bound;
+        // Inscribed axis-aligned box of {x : x^T P x <= alpha}. In eigen-coordinates
+        // y = V^T x the ellipsoid is sum_i lambda_i y_i^2 <= alpha; the largest box with
+        // |y_i| <= sqrt(alpha / (NX * lambda_i)) satisfies sum_i lambda_i y_i^2 <=
+        // NX * (alpha / NX) = alpha, so every box vertex stays inside the ellipsoid. The
+        // previous sqrt(alpha / lambda_i) was the circumscribing box, which admitted
+        // terminal states outside the set. NX is the state dimension, not a tuned constant.
+        Scalar bound = std::sqrt(s.alpha / (Scalar{nx} * D(i)));
+        l(row + i) = -bound;
+        u(row + i) = bound;
     }
-    row += 2 * nx;
+    row += nx;
 }
 
 template <typename Scalar, std::size_t NX>
