@@ -131,9 +131,10 @@ private:
         if constexpr(Constrained)
         {
             if(s.constraint_tol > Scalar{0})
+            {
                 opts.constraint_tolerance = static_cast<double>(s.constraint_tol);
-            if(s.constraint_tol > Scalar{0})
                 opts.feasibility_tolerance = static_cast<double>(s.constraint_tol);
+            }
         }
 
         opts.set_objective_threshold(static_cast<double>(s.ftol_rel));
