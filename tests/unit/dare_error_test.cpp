@@ -48,7 +48,7 @@ TEST_CASE("DARE NaN in A returns dare_error::non_finite_input",
     CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
 }
 
-TEST_CASE("DARE singular A returns dare_error::non_finite_input",
+TEST_CASE("DARE singular A returns dare_error::singular_a",
           "[dare][error]")
 {
     Eigen::Matrix<double, 2, 2> A;
@@ -61,7 +61,7 @@ TEST_CASE("DARE singular A returns dare_error::non_finite_input",
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(!result.has_value());
-    CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
+    CHECK(result.error() == ctrlpp::dare_error::singular_a);
 }
 
 TEST_CASE("DARE A = 0, B = 0 yields a structured failure enum",
@@ -75,7 +75,8 @@ TEST_CASE("DARE A = 0, B = 0 yields a structured failure enum",
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(!result.has_value());
-    CHECK((result.error() == ctrlpp::dare_error::singular_u11
+    CHECK((result.error() == ctrlpp::dare_error::singular_a
+        || result.error() == ctrlpp::dare_error::singular_u11
         || result.error() == ctrlpp::dare_error::non_finite_input
         || result.error() == ctrlpp::dare_error::non_stabilisable));
 }

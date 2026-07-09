@@ -255,3 +255,28 @@ TEST_CASE("dare with cross-weight N zero reduces to standard dare")
     REQUIRE(result_standard.has_value());
     CHECK((result_with_n->P - result_standard->P).norm() < 1e-10);
 }
+
+TEST_CASE("dare singular A returns dare_error::singular_a")
+{
+    // A is exactly rank-deficient (zero second column), so the A^{-T} the symplectic
+    // build requires does not exist. The reciprocal-pivot guard must report singular_a,
+    // distinct from a NaN/Inf non_finite_input.
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 0.0, 0.0, 0.0;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 1.0, 1.0;
+    Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity();
+    Eigen::Matrix<double, 1, 1> R;
+    R(0, 0) = 1.0;
+
+    auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+    REQUIRE(!result.has_value());
+    REQUIRE(result.error() == ctrlpp::dare_error::singular_a);
+
+    // No false positive: a nearby well-conditioned (invertible) A still solves, so the
+    // n * eps threshold does not trip on a merely finite-condition-number matrix.
+    Eigen::Matrix<double, 2, 2> A_ok;
+    A_ok << 1.0, 1.0, 0.0, 1.0;
+    auto result_ok = ctrlpp::dare<double, 2, 1>(A_ok, B, Q, R);
+    REQUIRE(result_ok.has_value());
+}
