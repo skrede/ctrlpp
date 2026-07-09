@@ -17,6 +17,7 @@
 #include <argmin/solver/step_and_time_budget_solver.h>
 
 #include <chrono>
+#include <memory>
 #include <cstdint>
 #include <variant>
 #include <stdexcept>
@@ -64,7 +65,50 @@ public:
 
     explicit argmin_solver(settings_type settings = {})
         : settings_{settings}
+        , bridge_{std::make_unique<bridge_type>()}
     {}
+
+    // Move is correct-by-default: `bridge_` lives behind a `unique_ptr` (a stable
+    // heap address), so moving relocates only the owning pointer while the
+    // pointed-to bridge stays put. argmin's `solver_core` caches the problem BY
+    // REFERENCE (`const Problem* problem_ptr_`, solver_core.h:657) and its policy
+    // state likewise caches `&problem`; both back-pointers therefore remain valid
+    // across a defaulted move. A hand-written move ctor is deliberately avoided.
+    argmin_solver(argmin_solver&&) = default;
+    argmin_solver& operator=(argmin_solver&&) = default;
+
+    // Fork-copy: the ONE deliberately hand-written special member. argmin's
+    // `solver_core` is copy-deleted (solver_core.h:306-307), so a defaulted copy
+    // is ill-formed. This snapshots the settings and the external problem pointer,
+    // allocates a FRESH bridge rebound to the same problem, and leaves `solver_`
+    // as `std::monostate` so it is re-emplaced lazily on the next solve()/step()
+    // via prepare_solver's monostate branch. The result is a clean independent
+    // fork, matching the locked D-C copy semantics, with no argmin copy support.
+    argmin_solver(const argmin_solver& other)
+        : settings_{other.settings_}
+        , problem_{other.problem_}
+        , bridge_{std::make_unique<bridge_type>()}
+        , solver_{}
+    {
+        rebind_bridge();
+    }
+
+    argmin_solver& operator=(const argmin_solver& other)
+    {
+        if(this != &other)
+        {
+            auto fresh = std::make_unique<bridge_type>();
+            settings_ = other.settings_;
+            problem_ = other.problem_;
+            // Drop the stale solver (which caches the old bridge address) BEFORE
+            // swapping in the fresh bridge, so no argmin back-pointer ever
+            // observes a freed object.
+            solver_.template emplace<std::monostate>();
+            bridge_ = std::move(fresh);
+            rebind_bridge();
+        }
+        return *this;
+    }
 
     /// @brief Fallible setup: binds the problem into the bridge and rejects a
     /// raw MMA-family policy handed equality constraints. Returns an empty
@@ -79,9 +123,9 @@ public:
         solver_.template emplace<std::monostate>();
 
         if constexpr(Constrained)
-            bridge_.partition(problem);
+            bridge_->partition(problem);
         else
-            bridge_.bind(problem);
+            bridge_->bind(problem);
 
         if constexpr(is_raw_mma_family_v<Policy>)
         {
@@ -137,6 +181,20 @@ public:
     }
 
 private:
+    // Rebind the (fresh) bridge to the retained external problem. Shared by the
+    // fork-copy ctor and copy-assignment. A null problem_ (never set up) leaves
+    // the bridge unbound, exactly as a default-constructed solver would be.
+    void rebind_bridge()
+    {
+        if(problem_ == nullptr)
+            return;
+
+        if constexpr(Constrained)
+            bridge_->partition(*problem_);
+        else
+            bridge_->bind(*problem_);
+    }
+
     static auto problem_has_equality(const nlp_problem<Scalar>& problem) -> bool
     {
         for(int i = 0; i < problem.n_constraints; ++i)
@@ -252,12 +310,12 @@ private:
         if constexpr(is_mma_family_v<Policy>)
         {
             solver_.template emplace<step_solver_type>(
-                argmin_policy{}, bridge_, x0, make_solver_options(), make_mma_policy_opts());
+                argmin_policy{}, *bridge_, x0, make_solver_options(), make_mma_policy_opts());
         }
         else
         {
             solver_.template emplace<step_solver_type>(
-                argmin_policy{}, bridge_, x0, make_solver_options());
+                argmin_policy{}, *bridge_, x0, make_solver_options());
         }
     }
 
@@ -266,12 +324,12 @@ private:
         if constexpr(is_mma_family_v<Policy>)
         {
             solver_.template emplace<timed_solver_type>(
-                argmin_policy{}, bridge_, x0, make_time_budget_options(), make_mma_policy_opts());
+                argmin_policy{}, *bridge_, x0, make_time_budget_options(), make_mma_policy_opts());
         }
         else
         {
             solver_.template emplace<timed_solver_type>(
-                argmin_policy{}, bridge_, x0, make_time_budget_options());
+                argmin_policy{}, *bridge_, x0, make_time_budget_options());
         }
     }
 
@@ -392,7 +450,11 @@ private:
 
     settings_type settings_;
     const nlp_problem<Scalar>* problem_{nullptr};
-    bridge_type bridge_;
+    // Held behind a stable heap address so a defaulted move keeps argmin's
+    // by-reference problem back-pointer (solver_core.h:657) valid. Declared
+    // before `solver_` so that, at destruction, `solver_` (which caches this
+    // bridge) is torn down first.
+    std::unique_ptr<bridge_type> bridge_;
     solver_storage_type solver_;
 };
 
