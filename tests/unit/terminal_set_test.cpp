@@ -12,6 +12,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <limits>
 #include <cstddef>
 
 namespace
@@ -22,6 +23,16 @@ using Catch::Matchers::WithinAbs;
 constexpr std::size_t NX = 2;
 constexpr std::size_t NU = 1;
 constexpr double dt = 0.1;
+
+// Unbounded state box: the terminal ellipsoid is then constrained by the input faces alone.
+auto no_state_min() -> Eigen::Vector2d
+{
+    return Eigen::Vector2d::Constant(-std::numeric_limits<double>::infinity());
+}
+auto no_state_max() -> Eigen::Vector2d
+{
+    return Eigen::Vector2d::Constant(std::numeric_limits<double>::infinity());
+}
 
 auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX>
 {
@@ -49,7 +60,7 @@ TEST_CASE("terminal_ingredients on stable double integrator", "[terminal_set]")
     Eigen::Matrix<double, 1, 1> u_max;
     u_max << 1.0;
 
-    auto result = ctrlpp::terminal_ingredients<double, NX, NU>(sys.A, sys.B, Q, R, u_min, u_max);
+    auto result = ctrlpp::terminal_ingredients<double, NX, NU>(sys.A, sys.B, Q, R, u_min, u_max, no_state_min(), no_state_max());
 
     REQUIRE(result.has_value());
 
@@ -76,10 +87,11 @@ TEST_CASE("compute_ellipsoidal_set with known DARE solution", "[terminal_set]")
     Eigen::Matrix<double, 1, 1> u_max;
     u_max << 1.0;
 
-    auto eset = ctrlpp::compute_ellipsoidal_set<double, NX, NU>(P, K, u_min, u_max);
+    auto eset = ctrlpp::compute_ellipsoidal_set<double, NX, NU>(P, K, u_min, u_max, no_state_min(), no_state_max());
+    REQUIRE(eset.has_value());
 
     // Expected: alpha = min(1, 1) / (0.5^2 + 0.5^2) = 1 / 0.5 = 2.0
-    CHECK_THAT(eset.alpha, WithinAbs(2.0, 1e-10));
+    CHECK_THAT(eset->alpha, WithinAbs(2.0, 1e-10));
 }
 
 TEST_CASE("compute_polytopic_invariant_set on 2D system", "[terminal_set]")
@@ -126,7 +138,7 @@ TEST_CASE("MPC with terminal_ingredients integration", "[terminal_set][mpc]")
     Eigen::Matrix<double, 1, 1> u_max;
     u_max << 5.0;
 
-    auto ti = ctrlpp::terminal_ingredients<double, NX, NU>(sys.A, sys.B, Q, R, u_min, u_max);
+    auto ti = ctrlpp::terminal_ingredients<double, NX, NU>(sys.A, sys.B, Q, R, u_min, u_max, no_state_min(), no_state_max());
     REQUIRE(ti.has_value());
 
     ctrlpp::mpc_config<double, NX, NU> cfg{

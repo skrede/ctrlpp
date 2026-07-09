@@ -17,6 +17,31 @@
 namespace ctrlpp
 {
 
+/// @brief Structured failure modes for terminal-set construction.
+///
+///  * input_zero_not_interior : some input component has u_min(i) >= 0 or
+///                              u_max(i) <= 0, so u = 0 (the LQR input at the
+///                              origin) is not strictly interior to [u_min, u_max]
+///                              and the input-face alpha bound would be meaningless.
+///  * empty_terminal_set      : capping alpha against the input and state faces
+///                              yields a non-positive or non-finite alpha, i.e. no
+///                              consistent bounded ellipsoid exists (the set is empty).
+///  * dare_failed             : the terminal cost and gain could not be formed because
+///                              the discrete algebraic Riccati solve failed.
+///  * halfplanes_truncated    : the polytopic invariant-set halfplane count hit the
+///                              resource bound, so the returned representation is a
+///                              truncated (and therefore unsound) outer approximation.
+///  * not_converged           : backward reachability did not converge within the
+///                              iteration budget; the returned set is not invariant.
+enum class terminal_set_error
+{
+    input_zero_not_interior,
+    empty_terminal_set,
+    dare_failed,
+    halfplanes_truncated,
+    not_converged,
+};
+
 // Ellipsoidal set: {x : x'Px <= alpha}
 // P must be positive definite, alpha > 0.
 template <typename Scalar, std::size_t NX>

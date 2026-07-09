@@ -9,6 +9,7 @@
 /// @cite borrelli2017 -- Borrelli, Bemporad & Morari, "Predictive Control for Linear and Hybrid Systems", 2017, Ch. 10 (invariant-set computation, pre-image recursion)
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/control/dare.h"
 
@@ -27,17 +28,35 @@
 namespace ctrlpp
 {
 
-/// @cite mayne2000 -- Ellipsoidal invariant set from DARE solution and input constraints
+/// @cite mayne2000 -- Ellipsoidal invariant set from DARE solution, input, and state constraints
+///
+/// Caps alpha so the ellipsoid {x : x^T P x <= alpha} respects both the input limits (via the
+/// LQR law u = K x) and the state box [x_min, x_max]. Requires u = 0 to be strictly interior to
+/// [u_min, u_max] per component; returns terminal_set_error::input_zero_not_interior otherwise.
+/// If the capped alpha is non-positive or non-finite (no face constrained it), the terminal set
+/// is empty/unbounded and terminal_set_error::empty_terminal_set is returned -- alpha is never
+/// silently shrunk and a non-finite alpha is never propagated.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto compute_ellipsoidal_set(const Matrix<Scalar, NX, NX>& P, const Matrix<Scalar, NU, NX>& K, const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max) -> ellipsoidal_set<Scalar, NX>
+auto compute_ellipsoidal_set(const Matrix<Scalar, NX, NX>& P,
+                             const Matrix<Scalar, NU, NX>& K,
+                             const Vector<Scalar, NU>& u_min,
+                             const Vector<Scalar, NU>& u_max,
+                             const Vector<Scalar, NX>& x_min,
+                             const Vector<Scalar, NX>& x_max) -> ctrlpp::expected<ellipsoidal_set<Scalar, NX>, terminal_set_error>
 {
     constexpr int nu = static_cast<int>(NU);
+    constexpr int nx = static_cast<int>(NX);
 
     auto ldlt = P.ldlt();
     Scalar alpha = std::numeric_limits<Scalar>::infinity();
 
+    // Input-face cap: alpha <= min(u_max(i)^2, u_min(i)^2) / (k_i^T P^{-1} k_i). The bound is
+    // valid only when u = 0 lies strictly inside [u_min, u_max] for every component.
     for(int i = 0; i < nu; ++i)
     {
+        if(!(u_min(i) < Scalar{0} && Scalar{0} < u_max(i)))
+            return ctrlpp::unexpected(terminal_set_error::input_zero_not_interior);
+
         Vector<Scalar, NX> ki = K.row(i).transpose();
         auto Pinv_ki = ldlt.solve(ki).eval();
 
@@ -49,7 +68,28 @@ auto compute_ellipsoidal_set(const Matrix<Scalar, NX, NX>& P, const Matrix<Scala
         alpha = std::min(alpha, u_bound / denom);
     }
 
-    return {.P = P, .alpha = alpha};
+    // State-face cap: the ellipsoid support along axis e_j is sqrt(alpha * e_j^T P^{-1} e_j);
+    // keeping it inside [x_min(j), x_max(j)] requires alpha <= min(x_max(j)^2, x_min(j)^2) /
+    // (e_j^T P^{-1} e_j). Infinite (unconstrained) state bounds leave alpha unchanged.
+    for(int j = 0; j < nx; ++j)
+    {
+        Vector<Scalar, NX> ej = Vector<Scalar, NX>::Unit(j);
+        auto Pinv_ej = ldlt.solve(ej).eval();
+
+        Scalar denom = ej.dot(Pinv_ej);
+        if(denom <= Scalar{0})
+            continue;
+
+        Scalar x_bound = std::min(x_max(j) * x_max(j), x_min(j) * x_min(j));
+        alpha = std::min(alpha, x_bound / denom);
+    }
+
+    // alpha == 0 is the exact empty-set boundary; alpha == +inf means no face bounded the
+    // ellipsoid at all. Either way there is no consistent, bounded terminal set (D-D).
+    if(!std::isfinite(alpha) || alpha <= Scalar{0})
+        return ctrlpp::unexpected(terminal_set_error::empty_terminal_set);
+
+    return ellipsoidal_set<Scalar, NX>{.P = P, .alpha = alpha};
 }
 
 namespace detail
@@ -290,21 +330,27 @@ struct terminal_ingredients_result
 };
 
 /// @cite mayne2000 -- Terminal cost and constraint set from DARE + LQR
+///
+/// Returns terminal_set_error::dare_failed if the Riccati solve fails, or propagates the
+/// terminal_set_error from compute_ellipsoidal_set (input-sign / empty-set) on the error channel.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto terminal_ingredients(
-    const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R, const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max)
-    -> std::optional<terminal_ingredients_result<Scalar, NX, NU>>
+    const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R,
+    const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max, const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max)
+    -> ctrlpp::expected<terminal_ingredients_result<Scalar, NX, NU>, terminal_set_error>
 {
     auto P_result = dare<Scalar, NX, NU>(A, B, Q, R);
     if(!P_result)
-        return std::nullopt;
+        return ctrlpp::unexpected(terminal_set_error::dare_failed);
 
     auto P = P_result->P;
     Matrix<Scalar, NU, NU> RpBtPB = R + B.transpose() * P * B;
     Matrix<Scalar, NU, NX> K = -(RpBtPB.ldlt().solve(B.transpose() * P * A));
-    auto eset = compute_ellipsoidal_set<Scalar, NX, NU>(P, K, u_min, u_max);
+    auto eset = compute_ellipsoidal_set<Scalar, NX, NU>(P, K, u_min, u_max, x_min, x_max);
+    if(!eset)
+        return ctrlpp::unexpected(eset.error());
 
-    return terminal_ingredients_result<Scalar, NX, NU>{.Qf = P, .set = eset};
+    return terminal_ingredients_result<Scalar, NX, NU>{.Qf = P, .set = eset.value()};
 }
 
 }
