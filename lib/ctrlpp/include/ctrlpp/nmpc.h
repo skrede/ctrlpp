@@ -49,9 +49,52 @@ public:
         , m_solver{std::move(solver)}
     {
         m_state->x_ref.resize(static_cast<std::size_t>(m_N + 1), Vector<Scalar, NX>::Zero());
-        m_problem = detail::build_nmpc_problem<Scalar, NX, NU, NC, NTC>(m_dynamics, m_config, m_state);
-        m_setup_failed = !detail::setup_nlp_solver(m_solver, m_problem);
+        m_problem = std::make_unique<nlp_problem<Scalar>>(
+            detail::build_nmpc_problem<Scalar, NX, NU, NC, NTC>(m_dynamics, m_config, m_state));
+        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem);
         m_warm_z = Eigen::VectorX<Scalar>::Zero(m_num_vars);
+    }
+
+    // Move is correct-by-default: `m_problem` lives behind a `unique_ptr` (a
+    // stable heap address), so moving relocates only the owning pointer while the
+    // pointed-to problem stays put. The solver's bridge caches `&m_problem` by
+    // reference (argmin_problem.h:24-27), so that cached pointer stays valid
+    // across a defaulted move. `m_state` is already a heap-stable shared_ptr.
+    nmpc(nmpc&&) = default;
+    nmpc& operator=(nmpc&&) = default;
+    ~nmpc() = default;
+
+    // Copy is an independent fork (the solver's copy is copy-deleted-by-argmin
+    // and re-emplaced lazily, so aliasing would be unsafe anyway): deep-copy the
+    // formulation state, rebuild the problem bound to that fresh state, then
+    // re-setup the forked solver against the new problem. The two controllers
+    // share no mutable state and solve independently.
+    nmpc(const nmpc& other)
+        : m_dynamics{other.m_dynamics}
+        , m_config{other.m_config}
+        , m_N{other.m_N}
+        , m_has_path_slack{other.m_has_path_slack}
+        , m_has_term_slack{other.m_has_term_slack}
+        , m_num_path_slack{other.m_num_path_slack}
+        , m_num_term_slack{other.m_num_term_slack}
+        , m_num_vars{other.m_num_vars}
+        , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>(*other.m_state)}
+        , m_problem{std::make_unique<nlp_problem<Scalar>>(
+              detail::build_nmpc_problem<Scalar, NX, NU, NC, NTC>(m_dynamics, m_config, m_state))}
+        , m_solver{other.m_solver}
+        , m_warm_z{other.m_warm_z}
+        , m_last_solution{other.m_last_solution}
+        , m_last_diagnostics{other.m_last_diagnostics}
+        , m_u_prev{other.m_u_prev}
+    {
+        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem);
+    }
+
+    nmpc& operator=(const nmpc& other)
+    {
+        nmpc tmp{other};
+        *this = std::move(tmp);
+        return *this;
     }
 
     std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0)
@@ -96,7 +139,7 @@ public:
     }
 
     mpc_diagnostics<Scalar> diagnostics() const { return m_last_diagnostics; }
-    const nlp_problem<Scalar>& problem() const { return m_problem; }
+    const nlp_problem<Scalar>& problem() const { return *m_problem; }
     const Eigen::VectorX<Scalar>& last_solution() const { return m_last_solution; }
 
 private:
@@ -269,7 +312,9 @@ private:
     int m_num_vars;
 
     std::shared_ptr<nmpc_formulation_state<Scalar, NX, NU>> m_state;
-    nlp_problem<Scalar> m_problem;
+    // Held behind a stable heap address so a defaulted move does not relocate the
+    // object the solver's bridge points at by reference (argmin_problem.h:24-27).
+    std::unique_ptr<nlp_problem<Scalar>> m_problem;
     Solver m_solver{};
 
     Eigen::VectorX<Scalar> m_warm_z;
