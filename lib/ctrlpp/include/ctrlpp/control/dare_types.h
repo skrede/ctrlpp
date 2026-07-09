@@ -21,8 +21,10 @@ namespace ctrlpp
 ///
 ///  * non_stabilisable : fewer than n eigenvalues of the symplectic spectrum lie in
 ///                       the stable (|lambda| < 1) region.
-///  * non_finite_input : A, B, Q, R or the assembled symplectic Z contains NaN/Inf,
-///                       or A is singular at symplectic build time.
+///  * non_finite_input : A, B, Q, R or the assembled symplectic Z contains NaN/Inf.
+///  * singular_a       : the state matrix A is rank-deficient to a scale-relative
+///                       reciprocal-pivot tolerance, so the A^{-T} the symplectic
+///                       pencil build requires (Laub Eq. 7) does not exist.
 ///  * singular_u11     : the top-left n x n block of the reordered invariant-subspace
 ///                       basis U is singular; P cannot be extracted.
 ///  * non_psd_solution : extracted P is not positive semi-definite within an
@@ -32,6 +34,7 @@ enum class dare_error
 {
     non_stabilisable,
     non_finite_input,
+    singular_a,
     singular_u11,
     non_psd_solution,
     schur_failed,
