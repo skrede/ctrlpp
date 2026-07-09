@@ -165,6 +165,117 @@ TEST_CASE("nmpc argmin all policies compile", "[nmpc][argmin]")
     static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_auglag<ctrlpp::argmin_gcmma>>>);
 }
 
+TEST_CASE("argmin try_setup reports raw-MMA equality rejection as an expected error", "[nmpc][argmin]")
+{
+    // A minimal NLP with a single equality constraint x0 + x1 = 1. Raw MMA and
+    // raw GCMMA cannot represent equality constraints, so try_setup must return
+    // the incompatible_equality_constraints error as a value instead of a
+    // silently-wrong solve; the auglag-wrapped variant absorbs the equality
+    // constraint and must set up successfully on the same problem. Raw MMA is
+    // exercised with Constrained=false because the class-body static_assert
+    // bars the raw-MMA + constrained-bridge instantiation (the compile-time
+    // complement to this runtime reject); the reject still fires by scanning
+    // the problem's equalities directly, mirroring nlopt_solver.
+    ctrlpp::nlp_problem<double> problem{};
+    problem.n_vars = 2;
+    problem.n_constraints = 1;
+    problem.cost = [](std::span<const double> x) { return x[0] * x[0] + x[1] * x[1]; };
+    problem.gradient = [](std::span<const double> x, std::span<double> g)
+    {
+        g[0] = 2.0 * x[0];
+        g[1] = 2.0 * x[1];
+    };
+    problem.constraints = [](std::span<const double> x, std::span<double> c) { c[0] = x[0] + x[1]; };
+    problem.c_lower = Eigen::VectorXd::Constant(1, 1.0);
+    problem.c_upper = Eigen::VectorXd::Constant(1, 1.0);
+
+    SECTION("raw MMA rejects the equality constraint")
+    {
+        ctrlpp::argmin_solver<double, ctrlpp::argmin_mma, false> solver;
+        auto result = solver.try_setup(problem);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::argmin_setup_error::incompatible_equality_constraints);
+    }
+
+    SECTION("raw GCMMA rejects the equality constraint")
+    {
+        ctrlpp::argmin_solver<double, ctrlpp::argmin_gcmma, false> solver;
+        auto result = solver.try_setup(problem);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::argmin_setup_error::incompatible_equality_constraints);
+    }
+
+    SECTION("auglag-wrapped MMA absorbs the equality constraint")
+    {
+        ctrlpp::argmin_solver<double, ctrlpp::argmin_auglag<ctrlpp::argmin_mma>> solver;
+        auto result = solver.try_setup(problem);
+        REQUIRE(result.has_value());
+    }
+}
+
+TEST_CASE("argmin ftol_rel/xtol_rel drive the relative convergence criteria", "[nmpc][argmin]")
+{
+    // The settings fields named ftol_rel / xtol_rel must reach argmin's
+    // RELATIVE criteria (objective_tolerance_rel / step_tolerance_rel), not the
+    // absolute ones. Rosenbrock from (-2, 2) is a sharp lever: a loose relative
+    // step tolerance fires step_tolerance_rel_criterion (xtol_reached) within a
+    // couple of iterations far short of the optimum, while a tight one runs the
+    // full descent to (1, 1). A loose relative objective tolerance likewise
+    // terminates objective_tolerance_rel_criterion earlier than the tight run.
+    // If the fields were still wired to the absolute setters, neither loosening
+    // would change the iterate count (the absolute criteria would stay inert).
+    auto make_rosenbrock = []
+    {
+        ctrlpp::nlp_problem<double> prob;
+        prob.n_vars = 2;
+        prob.n_constraints = 0;
+        prob.cost = [](std::span<const double> x)
+        { return (1.0 - x[0]) * (1.0 - x[0]) + 100.0 * (x[1] - x[0] * x[0]) * (x[1] - x[0] * x[0]); };
+        prob.gradient = [](std::span<const double> x, std::span<double> g)
+        {
+            g[0] = -2.0 * (1.0 - x[0]) - 400.0 * x[0] * (x[1] - x[0] * x[0]);
+            g[1] = 200.0 * (x[1] - x[0] * x[0]);
+        };
+        prob.x_lower = Eigen::Vector2d::Constant(-10.0);
+        prob.x_upper = Eigen::Vector2d::Constant(10.0);
+        prob.c_lower = Eigen::VectorXd{};
+        prob.c_upper = Eigen::VectorXd{};
+        return prob;
+    };
+
+    auto solve_with = [&](double ftol_rel, double xtol_rel) -> ctrlpp::nlp_result<double>
+    {
+        auto prob = make_rosenbrock();
+        ctrlpp::argmin_settings<double> settings{};
+        settings.ftol_rel = ftol_rel;
+        settings.xtol_rel = xtol_rel;
+        settings.max_eval = 500;
+
+        ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false> solver{settings};
+        solver.setup(prob);
+
+        ctrlpp::nlp_update<double> update;
+        update.x0 = Eigen::Vector2d{-2.0, 2.0};
+        return solver.solve(update);
+    };
+
+    auto tight = solve_with(1e-12, 1e-12);
+    auto loose_xtol = solve_with(1e-12, 5e-1);
+    auto loose_ftol = solve_with(5e-1, 1e-12);
+
+    // The tight run must actually reach the Rosenbrock optimum at (1, 1).
+    REQUIRE(tight.status == ctrlpp::solve_status::optimal);
+    CHECK_THAT(tight.x(0), WithinAbs(1.0, 1e-3));
+    CHECK_THAT(tight.x(1), WithinAbs(1.0, 1e-3));
+
+    // A loose relative step tolerance stops early via step_tolerance_rel_criterion.
+    CHECK(loose_xtol.status == ctrlpp::solve_status::optimal);
+    CHECK(loose_xtol.iterations < tight.iterations);
+
+    // A loose relative objective tolerance stops earlier than the tight descent.
+    CHECK(loose_ftol.iterations < tight.iterations);
+}
+
 #ifdef CTRLPP_HAS_NLOPT
 TEST_CASE("nlopt auglag_eq + ld_mma smoke", "[nmpc][argmin][nlopt]")
 {
