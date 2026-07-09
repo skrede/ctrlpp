@@ -1,6 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_ARGMIN_SOLVER_H
 #define HPP_GUARD_CTRLPP_MPC_ARGMIN_SOLVER_H
 
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
+
+#include "ctrlpp/mpc/nlp_types.h"
 #include "ctrlpp/mpc/nlp_solver.h"
 #include "ctrlpp/mpc/argmin_problem.h"
 #include "ctrlpp/mpc/argmin_policies.h"
@@ -15,6 +19,7 @@
 #include <chrono>
 #include <cstdint>
 #include <variant>
+#include <stdexcept>
 #include <type_traits>
 
 namespace ctrlpp
@@ -23,6 +28,21 @@ namespace ctrlpp
 template <typename Scalar, typename Policy, bool Constrained = true>
 class argmin_solver
 {
+    // Compile-time guard for the structurally-always-invalid configuration: a
+    // raw MMA-family policy (argmin_mma / argmin_gcmma) driving the constrained
+    // bridge. NMPC always emits equality constraints (initial-state pin +
+    // continuity), so a constrained raw-MMA solver can never solve the problem
+    // it is handed. This is the compile-time complement to try_setup's runtime
+    // reject: the static_assert bars the always-wrong constrained NMPC
+    // instantiation, while try_setup rejects a general nlp_problem that happens
+    // to carry equalities. Wrap the policy as argmin_auglag<argmin_mma> (the
+    // outer augmented-Lagrangian loop absorbs the equalities) to fix it.
+    static_assert(!(is_raw_mma_family_v<Policy> && Constrained),
+        "Raw MMA-family policies (argmin_mma / argmin_gcmma) cannot handle "
+        "equality constraints and NMPC always emits them; use "
+        "argmin_auglag<argmin_mma> for constrained problems, or set "
+        "Constrained=false for unconstrained (bound-only) use.");
+
 public:
     using scalar_type = Scalar;
     using argmin_policy = typename Policy::algorithm;
@@ -30,9 +50,11 @@ public:
         argmin_constrained_problem<Scalar>,
         argmin_problem<Scalar>>;
     using step_solver_type =
-        argmin::step_budget_solver<argmin_policy, Eigen::Dynamic, bridge_type>;
+        argmin::step_budget_solver<argmin_policy, Eigen::Dynamic, bridge_type,
+            argmin_ctrlpp_convergence>;
     using timed_solver_type =
-        argmin::step_and_time_budget_solver<argmin_policy, Eigen::Dynamic, bridge_type>;
+        argmin::step_and_time_budget_solver<argmin_policy, Eigen::Dynamic, bridge_type,
+            argmin_ctrlpp_convergence>;
     using solver_storage_type =
         std::variant<std::monostate, step_solver_type, timed_solver_type>;
     using settings_type = std::conditional_t<
@@ -44,21 +66,55 @@ public:
         : settings_{settings}
     {}
 
-    void setup(const nlp_problem<Scalar>& problem)
+    /// @brief Fallible setup: binds the problem into the bridge and rejects a
+    /// raw MMA-family policy handed equality constraints. Returns an empty
+    /// expected on success and `argmin_setup_error::incompatible_equality_constraints`
+    /// when a raw MMA/GCMMA policy is given a problem that carries equalities.
+    /// Reported through the `ctrlpp::expected` channel so the reject works in
+    /// all build modes, including `-fno-exceptions`.
+    [[nodiscard]] auto try_setup(const nlp_problem<Scalar>& problem)
+        -> ctrlpp::expected<void, argmin_setup_error>
     {
         problem_ = &problem;
         solver_.template emplace<std::monostate>();
 
         if constexpr(Constrained)
-        {
             bridge_.partition(problem);
-
-        }
         else
-        {
             bridge_.bind(problem);
+
+        if constexpr(is_raw_mma_family_v<Policy>)
+        {
+            // Raw MMA/GCMMA cannot represent equality constraints (the
+            // auglag-wrapped variants absorb them and are exempt via
+            // is_raw_mma_family_v). Scan the raw problem for equalities the
+            // same way nlopt_solver does, rather than the constrained bridge's
+            // num_equality(): the class-body static_assert bars the constrained
+            // raw-MMA bridge, so the only compilable raw-MMA configuration is
+            // Constrained=false, whose bridge does not partition constraints.
+            // Rejecting an equality-carrying problem here prevents a
+            // silently-wrong solve that would ignore those equalities.
+            if(problem_has_equality(problem))
+                return ctrlpp::unexpected(argmin_setup_error::incompatible_equality_constraints);
         }
+
+        return {};
     }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience wrapper over `try_setup`. Throws
+    /// `std::invalid_argument` when a raw MMA-family policy is handed equality
+    /// constraints.
+    void setup(const nlp_problem<Scalar>& problem)
+    {
+        if(try_setup(problem).has_value())
+            return;
+
+        throw std::invalid_argument(
+            "raw MMA-family argmin policy cannot handle equality constraints; "
+            "wrap it as argmin_auglag<argmin_mma>");
+    }
+#endif
 
     auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
     {
@@ -81,6 +137,16 @@ public:
     }
 
 private:
+    static auto problem_has_equality(const nlp_problem<Scalar>& problem) -> bool
+    {
+        for(int i = 0; i < problem.n_constraints; ++i)
+        {
+            if(problem.c_lower[i] == problem.c_upper[i])
+                return true;
+        }
+        return false;
+    }
+
     void prepare_solver(const Eigen::VectorX<Scalar>& x0)
     {
         if(std::holds_alternative<std::monostate>(solver_))
@@ -114,9 +180,9 @@ private:
         }, solver_);
     }
 
-    auto make_solver_options() const -> argmin::solver_options<>
+    auto make_solver_options() const -> argmin::solver_options<argmin_ctrlpp_convergence>
     {
-        argmin::solver_options<> opts;
+        argmin::solver_options<argmin_ctrlpp_convergence> opts;
 
         auto const& s = [&]() -> auto const&
         {
@@ -137,15 +203,21 @@ private:
             }
         }
 
-        opts.set_objective_threshold(static_cast<double>(s.ftol_rel));
-        opts.set_step_threshold(static_cast<double>(s.xtol_rel));
+        // ftol_rel / xtol_rel are relative tolerances: wire them to argmin's
+        // RELATIVE criteria via the _rel setters. argmin_ctrlpp_convergence
+        // carries objective_tolerance_rel_criterion / step_tolerance_rel_criterion
+        // so these requires-guarded setters are well-formed. This is a
+        // deliberate convergence-behavior change from argmin's default absolute
+        // criteria (see argmin_ctrlpp_convergence in argmin_policies.h).
+        opts.set_objective_threshold_rel(static_cast<double>(s.ftol_rel));
+        opts.set_step_threshold_rel(static_cast<double>(s.xtol_rel));
 
         return opts;
     }
 
-    auto make_time_budget_options() const -> argmin::time_budget_options<>
+    auto make_time_budget_options() const -> argmin::time_budget_options<argmin_ctrlpp_convergence>
     {
-        argmin::time_budget_options<> opts;
+        argmin::time_budget_options<argmin_ctrlpp_convergence> opts;
         opts.core = make_solver_options();
 
         auto const& s = [&]() -> auto const&
