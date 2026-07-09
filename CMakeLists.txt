@@ -31,7 +31,7 @@ option(CTRLPP_BUILD_OSQP "Build OSQP solver backend for MPC" OFF)
 option(CTRLPP_BUILD_NLOPT "Build NLopt solver backend for NMPC" OFF)
 option(CTRLPP_BUILD_ARGMIN "Build with Argmin NLP solver backend" OFF)
 set(CTRLPP_ARGMIN_SOURCE_DIR "" CACHE PATH "Path to local Argmin source checkout")
-set(CTRLPP_ARGMIN_GIT_TAG "6219d0059fdbe3699cacd7f8e9fae4e8b720fd5a" CACHE STRING "Argmin git tag/branch/commit to fetch (default pinned to literal SHA for reproducibility; override with milestone/v0.3.0 to track branch tip)")
+set(CTRLPP_ARGMIN_GIT_TAG "a56ff0d5ab8bd763b6fc116b989a385bf410f76c" CACHE STRING "Argmin git tag/branch/commit to fetch (default pinned to literal SHA for reproducibility; this SHA carries the budget-driver API the adapter requires; override with milestone/v0.3.2 to track branch tip)")
 option(CTRLPP_CMAKE_FETCH_DEPS "Use CMake FetchContent to download and install dependencies" OFF)
 
 option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)
