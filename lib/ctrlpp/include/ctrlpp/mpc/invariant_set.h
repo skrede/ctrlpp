@@ -165,13 +165,19 @@ auto enumerate_polytope_vertices(const polytopic_set<Scalar, NU>& constraints, S
     return vertices;
 }
 
-/// Compute pre-image of a polytopic set under affine dynamics.
+/// Compute the ROBUST (for-all-u) pre-image of a polytopic set under affine dynamics.
+///
+/// The pre-image constraints are stacked over ALL input vertices, so the resulting set is the
+/// intersection { x : forall u in U, A x + B u in target } -- a point survives only if every
+/// admissible input keeps it in the target. This yields a robust control-invariant set, not the
+/// maximal one. The existential (exists-u) maximal-set variant is a separate operator and is not
+/// implemented here.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto compute_pre_image(const Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>& H_curr,
-                       const Eigen::VectorX<Scalar>& h_curr,
-                       const Matrix<Scalar, NX, NX>& A_sys,
-                       const Matrix<Scalar, NX, NU>& B_sys,
-                       const std::vector<Vector<Scalar, NU>>& u_vertices)
+auto compute_robust_pre_image(const Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>& H_curr,
+                              const Eigen::VectorX<Scalar>& h_curr,
+                              const Matrix<Scalar, NX, NX>& A_sys,
+                              const Matrix<Scalar, NX, NU>& B_sys,
+                              const std::vector<Vector<Scalar, NU>>& u_vertices)
     -> std::pair<Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>, Eigen::VectorX<Scalar>>
 {
     constexpr int nx = static_cast<int>(NX);
@@ -237,11 +243,25 @@ auto extract_rows(const Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(N
     return {H_out, h_out};
 }
 
+/// Result of redundant-halfplane filtering: the reduced H-representation plus a flag reporting
+/// whether the resource cap forced a truncation (so the reduced set is only an outer approximation).
+template <typename Scalar, std::size_t NX>
+struct filtered_halfplanes
+{
+    Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)> H;
+    Eigen::VectorX<Scalar> h;
+    bool truncated;
+};
+
 /// Remove redundant halfplanes from a polytopic H-representation.
+///
+/// The kept-halfplane count is bounded by a memory resource guard; if that bound is exceeded the
+/// representation is truncated and `truncated` is set so callers can reject the (now unsound) set
+/// instead of silently accepting a partial description.
 template <typename Scalar, std::size_t NX>
 auto filter_redundant_halfplanes(const Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>& H,
                                  const Eigen::VectorX<Scalar>& h,
-                                 Scalar convergence_tol) -> std::pair<Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>, Eigen::VectorX<Scalar>>
+                                 Scalar convergence_tol) -> filtered_halfplanes<Scalar, NX>
 {
     int n_rows = static_cast<int>(H.rows());
 
@@ -256,27 +276,33 @@ auto filter_redundant_halfplanes(const Eigen::Matrix<Scalar, Eigen::Dynamic, sta
             keep.push_back(i);
     }
 
+    // Bounded-memory resource guard on the halfplane count. Hitting it truncates the H-representation
+    // to an outer approximation, which is signaled via `truncated` rather than dropped silently.
     constexpr int max_halfplanes = 500;
-    if(static_cast<int>(keep.size()) > max_halfplanes)
+    bool truncated = static_cast<int>(keep.size()) > max_halfplanes;
+    if(truncated)
         keep.resize(static_cast<std::size_t>(max_halfplanes));
 
-    return extract_rows<Scalar, NX>(H, h, keep);
+    auto [H_out, h_out] = extract_rows<Scalar, NX>(H, h, keep);
+    return {.H = std::move(H_out), .h = std::move(h_out), .truncated = truncated};
 }
 
 }
 
-/// Perform one backward-reachability iteration: compute pre-image, merge, and filter.
-/// Returns true if the set has converged (no new halfplanes added).
+/// Perform one backward-reachability iteration: compute the robust pre-image, merge, and filter.
+/// Returns true if the set has converged (no new halfplanes added). Sets `truncated` if the filter
+/// hit its resource cap during this step, so the caller can reject the resulting outer approximation.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto backward_reachability_step(Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>& H_curr,
                                 Eigen::VectorX<Scalar>& h_curr,
                                 const Matrix<Scalar, NX, NX>& A_sys,
                                 const Matrix<Scalar, NX, NU>& B_sys,
                                 const std::vector<Vector<Scalar, NU>>& u_vertices,
-                                Scalar convergence_tol) -> bool
+                                Scalar convergence_tol,
+                                bool& truncated) -> bool
 {
     constexpr int nx = static_cast<int>(NX);
-    auto [H_pre, h_pre] = detail::compute_pre_image<Scalar, NX, NU>(H_curr, h_curr, A_sys, B_sys, u_vertices);
+    auto [H_pre, h_pre] = detail::compute_robust_pre_image<Scalar, NX, NU>(H_curr, h_curr, A_sys, B_sys, u_vertices);
 
     int old_rows = static_cast<int>(H_curr.rows());
     int pre_rows = static_cast<int>(H_pre.rows());
@@ -288,15 +314,24 @@ auto backward_reachability_step(Eigen::Matrix<Scalar, Eigen::Dynamic, static_cas
     H_next.bottomRows(pre_rows) = H_pre;
     h_next.tail(pre_rows) = h_pre;
 
-    auto [H_filtered, h_filtered] = detail::filter_redundant_halfplanes<Scalar, NX>(H_next, h_next, convergence_tol);
-    bool converged = (static_cast<int>(H_filtered.rows()) == old_rows);
+    auto filtered = detail::filter_redundant_halfplanes<Scalar, NX>(H_next, h_next, convergence_tol);
+    truncated = filtered.truncated;
+    bool converged = (static_cast<int>(filtered.H.rows()) == old_rows);
 
-    H_curr = std::move(H_filtered);
-    h_curr = std::move(h_filtered);
+    H_curr = std::move(filtered.H);
+    h_curr = std::move(filtered.h);
     return converged;
 }
 
-/// Compute polytopic maximal control-invariant set via backward reachability.
+/// Compute the polytopic ROBUST control-invariant set via backward reachability.
+///
+/// Each iteration intersects the robust (for-all-u) pre-image with the current set, so the
+/// fixed point is the robust control-invariant set (the states kept inside the state box under
+/// every admissible input), not the maximal control-invariant set. Returns
+/// terminal_set_error::halfplanes_truncated if the halfplane resource cap fires (the set is only
+/// an outer approximation), terminal_set_error::not_converged if the iteration budget is exhausted
+/// before a fixed point, and terminal_set_error::empty_terminal_set if the input polytope has no
+/// enumerable vertices. On success the returned set is a converged robust control-invariant set.
 /// @cite rawlings2017 -- Ch. 2 (invariant set computation)
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto compute_polytopic_invariant_set(const Matrix<Scalar, NX, NX>& A_sys,
@@ -304,22 +339,28 @@ auto compute_polytopic_invariant_set(const Matrix<Scalar, NX, NX>& A_sys,
                                      const polytopic_set<Scalar, NX>& state_constraints,
                                      const polytopic_set<Scalar, NU>& input_constraints,
                                      int max_iterations = 100,
-                                     Scalar convergence_tol = Scalar{1e-6}) -> std::optional<polytopic_set<Scalar, NX>>
+                                     Scalar convergence_tol = Scalar{1e-6}) -> ctrlpp::expected<polytopic_set<Scalar, NX>, terminal_set_error>
 {
     static_assert(NX <= 4, "Polytopic invariant set computation restricted to NX <= 4");
 
     auto u_vertices = detail::enumerate_polytope_vertices<Scalar, NU>(input_constraints, convergence_tol);
     if(u_vertices.empty())
-        return std::nullopt;
+        return ctrlpp::unexpected(terminal_set_error::empty_terminal_set);
 
     auto H_curr = state_constraints.H;
     auto h_curr = state_constraints.h;
 
     for(int iter = 0; iter < max_iterations; ++iter)
-        if(backward_reachability_step<Scalar, NX, NU>(H_curr, h_curr, A_sys, B_sys, u_vertices, convergence_tol))
+    {
+        bool truncated = false;
+        bool converged = backward_reachability_step<Scalar, NX, NU>(H_curr, h_curr, A_sys, B_sys, u_vertices, convergence_tol, truncated);
+        if(truncated)
+            return ctrlpp::unexpected(terminal_set_error::halfplanes_truncated);
+        if(converged)
             return polytopic_set<Scalar, NX>{.H = std::move(H_curr), .h = std::move(h_curr)};
+    }
 
-    return polytopic_set<Scalar, NX>{.H = std::move(H_curr), .h = std::move(h_curr)};
+    return ctrlpp::unexpected(terminal_set_error::not_converged);
 }
 
 template <typename Scalar, std::size_t NX, std::size_t NU>

@@ -94,9 +94,145 @@ TEST_CASE("compute_ellipsoidal_set with known DARE solution", "[terminal_set]")
     CHECK_THAT(eset->alpha, WithinAbs(2.0, 1e-10));
 }
 
-TEST_CASE("compute_polytopic_invariant_set on 2D system", "[terminal_set]")
+TEST_CASE("inscribed-box vertices lie inside the terminal ellipsoid", "[terminal_set]")
+{
+    // Non-axis-aligned P so the box axes are the eigenvectors of P, not the coordinate axes.
+    Eigen::Matrix2d P;
+    P << 2.0, 0.5, 0.5, 1.0;
+    const double alpha = 1.5;
+    ctrlpp::ellipsoidal_set<double, NX> s{.P = P, .alpha = alpha};
+
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> eig(P);
+    auto V = eig.eigenvectors();
+    auto D = eig.eigenvalues();
+
+    // Inscribed-box axis bounds in eigen-coordinates: |y_i| <= sqrt(alpha / (NX * lambda_i)).
+    Eigen::Vector2d bound;
+    for(int i = 0; i < 2; ++i)
+        bound(i) = std::sqrt(alpha / (static_cast<double>(NX) * D(i)));
+
+    // Every box vertex x = V y (each y_i at +/- bound_i) must satisfy x^T P x <= alpha.
+    for(int sx = -1; sx <= 1; sx += 2)
+        for(int sy = -1; sy <= 1; sy += 2)
+        {
+            Eigen::Vector2d y{sx * bound(0), sy * bound(1)};
+            Eigen::Vector2d x = V * y;
+            double quad = x.transpose() * P * x;
+            CHECK(quad <= alpha + 1e-10);
+        }
+    (void)s;
+}
+
+TEST_CASE("ellipsoidal terminal set encodes exactly NX rows", "[terminal_set]")
+{
+    ctrlpp::ellipsoidal_set<double, NX> s{.P = Eigen::Matrix2d::Identity(), .alpha = 1.0};
+    std::optional<ctrlpp::terminal_set<double, NX>> tset{s};
+    CHECK(ctrlpp::detail::terminal_constraint_rows<double, NX>(tset) == static_cast<int>(NX));
+}
+
+TEST_CASE("compute_ellipsoidal_set rejects a u-range that does not straddle zero", "[terminal_set]")
+{
+    Eigen::Matrix2d P = Eigen::Matrix2d::Identity();
+    Eigen::Matrix<double, 1, 2> K;
+    K << 0.5, 0.5;
+    Eigen::Matrix<double, 1, 1> u_min;
+    u_min << 0.5; // u = 0 is not interior to [0.5, 2.0]
+    Eigen::Matrix<double, 1, 1> u_max;
+    u_max << 2.0;
+
+    auto eset = ctrlpp::compute_ellipsoidal_set<double, NX, NU>(P, K, u_min, u_max, no_state_min(), no_state_max());
+    REQUIRE_FALSE(eset.has_value());
+    CHECK(eset.error() == ctrlpp::terminal_set_error::input_zero_not_interior);
+}
+
+TEST_CASE("state faces cap alpha below the input-face bound", "[terminal_set]")
+{
+    // Small gain and huge input limits give a large input-face alpha; the state box then binds.
+    Eigen::Matrix2d P = Eigen::Matrix2d::Identity();
+    Eigen::Matrix<double, 1, 2> K;
+    K << 0.1, 0.0;
+    Eigen::Matrix<double, 1, 1> u_min;
+    u_min << -10.0;
+    Eigen::Matrix<double, 1, 1> u_max;
+    u_max << 10.0;
+    Eigen::Vector2d x_min{-1.0, -1.0};
+    Eigen::Vector2d x_max{1.0, 1.0};
+
+    auto eset = ctrlpp::compute_ellipsoidal_set<double, NX, NU>(P, K, u_min, u_max, x_min, x_max);
+    REQUIRE(eset.has_value());
+
+    // Input face: min(100, 100) / 0.01 = 10000. State face (P = I): min(1, 1) / 1 = 1.
+    CHECK_THAT(eset->alpha, WithinAbs(1.0, 1e-10));
+}
+
+TEST_CASE("degenerate terminal set returns empty_terminal_set", "[terminal_set]")
+{
+    // Zero gain deactivates the input face; unbounded state box leaves alpha at +inf.
+    Eigen::Matrix2d P = Eigen::Matrix2d::Identity();
+    Eigen::Matrix<double, 1, 2> K;
+    K << 0.0, 0.0;
+    Eigen::Matrix<double, 1, 1> u_min;
+    u_min << -1.0;
+    Eigen::Matrix<double, 1, 1> u_max;
+    u_max << 1.0;
+
+    auto eset = ctrlpp::compute_ellipsoidal_set<double, NX, NU>(P, K, u_min, u_max, no_state_min(), no_state_max());
+    REQUIRE_FALSE(eset.has_value());
+    CHECK(eset.error() == ctrlpp::terminal_set_error::empty_terminal_set);
+}
+
+TEST_CASE("filter_redundant_halfplanes flags the resource-cap truncation", "[terminal_set]")
+{
+    // Build more distinct, non-redundant halfplane directions than the resource cap allows.
+    constexpr int n = 600;
+    const double two_pi = 2.0 * std::acos(-1.0);
+    Eigen::Matrix<double, Eigen::Dynamic, 2> H(n, 2);
+    Eigen::VectorXd h(n);
+    for(int i = 0; i < n; ++i)
+    {
+        double theta = two_pi * static_cast<double>(i) / static_cast<double>(n);
+        H(i, 0) = std::cos(theta);
+        H(i, 1) = std::sin(theta);
+        h(i) = 1.0;
+    }
+
+    auto filtered = ctrlpp::detail::filter_redundant_halfplanes<double, NX>(H, h, 1e-6);
+    CHECK(filtered.truncated);
+    CHECK(filtered.H.rows() <= 500);
+}
+
+TEST_CASE("compute_polytopic_invariant_set signals non-convergence", "[terminal_set]")
 {
     auto sys = make_double_integrator();
+
+    Eigen::Matrix<double, 4, 2> H_state;
+    H_state << 1.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, -1.0;
+    Eigen::Vector4d h_state;
+    h_state << 5.0, 5.0, 5.0, 5.0;
+    ctrlpp::polytopic_set<double, NX> state_constr{.H = H_state, .h = h_state};
+
+    Eigen::Matrix<double, 2, 1> H_input;
+    H_input << 1.0, -1.0;
+    Eigen::Vector2d h_input;
+    h_input << 1.0, 1.0;
+    ctrlpp::polytopic_set<double, NU> input_constr{.H = H_input, .h = h_input};
+
+    // One iteration cannot reach the fixed point: expect a signaled not_converged, not a silent set.
+    auto result = ctrlpp::compute_polytopic_invariant_set<double, NX, NU>(sys.A, sys.B, state_constr, input_constr, 1);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::terminal_set_error::not_converged);
+}
+
+TEST_CASE("compute_polytopic_invariant_set on 2D system", "[terminal_set]")
+{
+    // Strictly contractive dynamics with small input action: the state box below is already
+    // robustly control-invariant, so backward reachability converges to the box itself. (The
+    // marginally stable double integrator does NOT converge within the halfplane budget for this
+    // box; that non-convergence is exercised separately and was previously masked by a silent set.)
+    Eigen::Matrix2d A;
+    A << 0.5, 0.0, 0.0, 0.5;
+    Eigen::Vector2d B;
+    B << 0.1, 0.1;
 
     // Box state constraints: |x_i| <= 5
     Eigen::Matrix<double, 4, 2> H_state;
@@ -112,7 +248,7 @@ TEST_CASE("compute_polytopic_invariant_set on 2D system", "[terminal_set]")
     h_input << 1.0, 1.0;
     ctrlpp::polytopic_set<double, NU> input_constr{.H = H_input, .h = h_input};
 
-    auto result = ctrlpp::compute_polytopic_invariant_set<double, NX, NU>(sys.A, sys.B, state_constr, input_constr, 50);
+    auto result = ctrlpp::compute_polytopic_invariant_set<double, NX, NU>(A, B, state_constr, input_constr, 50);
 
     REQUIRE(result.has_value());
 
