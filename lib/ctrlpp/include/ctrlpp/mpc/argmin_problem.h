@@ -8,6 +8,7 @@
 #include <span>
 #include <cmath>
 #include <vector>
+#include <cassert>
 #include <cstddef>
 #include <algorithm>
 
@@ -38,6 +39,12 @@ public:
 
     void gradient(const Eigen::VectorX<Scalar>& x, Eigen::VectorX<Scalar>& g) const
     {
+        // Defensive size check: argmin owns the output buffer and must size it
+        // to the problem dimension before this write. A debug-only assert
+        // (compiled out under NDEBUG, no allocation, no throw) guards the hot
+        // path without disturbing the RT/no-exceptions posture.
+        assert(g.size() == static_cast<Eigen::Index>(dimension()));
+
         problem_->gradient(
             std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
             std::span<Scalar>{g.data(), static_cast<std::size_t>(g.size())});
@@ -100,6 +107,14 @@ public:
 
     void constraints(const Eigen::VectorX<Scalar>& x, Eigen::VectorX<Scalar>& c_out) const
     {
+        // Defensive size check: c_out is caller/argmin-provided and must hold
+        // exactly the partitioned constraint count (equalities + upper/lower
+        // inequalities) before any write below. A debug-only assert (compiled
+        // out under NDEBUG, no allocation, no throw) prevents an out-of-bounds
+        // write on the hot path without disturbing the RT/no-exceptions posture.
+        assert(c_out.size()
+            == static_cast<Eigen::Index>(n_eq + n_ineq_upper + n_ineq_lower));
+
         eval_raw(x);
 
         int idx = 0;
