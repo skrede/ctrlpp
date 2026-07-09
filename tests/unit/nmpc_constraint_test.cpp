@@ -7,7 +7,13 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <span>
+#include <cmath>
+#include <limits>
+#include <random>
+#include <vector>
 #include <cstddef>
+#include <algorithm>
 
 namespace
 {
@@ -257,4 +263,244 @@ TEST_CASE("infeasible constraints with soft mode does not crash", "[nmpc][constr
     // At some point during the loop, slack should have been nonzero
     CHECK(found_slack);
     CHECK(found_violation);
+}
+
+// ----- MAJ-06 (i): state bounds applied from k=1 -----
+
+TEST_CASE("nmpc state bounds skip the x0 block and apply from k=1", "[nmpc][constraint][bounds]")
+{
+    constexpr int N = 4;
+
+    ctrlpp::nmpc_config<double, NX, NU> config{.horizon = N};
+    config.x_min = ctrlpp::Vector<double, NX>(-1.5, -2.0);
+    config.x_max = ctrlpp::Vector<double, NX>(1.5, 2.0);
+
+    auto state = std::make_shared<ctrlpp::nmpc_formulation_state<double, NX, NU>>();
+    auto prob = ctrlpp::detail::build_nmpc_problem<double, NX, NU, 0, 0>(double_integrator, config, state);
+
+    constexpr int nx = static_cast<int>(NX);
+    const double inf = std::numeric_limits<double>::infinity();
+
+    // The x0 block is pinned only by the initial-state equality, so its variable
+    // bounds must remain the unconstrained sentinels (never double-bounded).
+    for(int i = 0; i < nx; ++i)
+    {
+        CHECK(prob.x_lower[i] == -inf);
+        CHECK(prob.x_upper[i] == inf);
+    }
+
+    // The x_k blocks for k = 1..N carry the configured state bounds.
+    for(int k = 1; k <= N; ++k)
+    {
+        for(int i = 0; i < nx; ++i)
+        {
+            CHECK(prob.x_lower[k * nx + i] == (*config.x_min)[i]);
+            CHECK(prob.x_upper[k * nx + i] == (*config.x_max)[i]);
+        }
+    }
+}
+
+// ----- MAJ-06 (iv): analytic cost gradient matches central difference -----
+
+TEST_CASE("nmpc analytic cost gradient matches central difference", "[nmpc][constraint][gradient]")
+{
+    constexpr int N = 4;
+
+    ctrlpp::nmpc_config<double, NX, NU, NC, NTC_1> config{.horizon = N};
+    config.Q = (Eigen::Matrix2d() << 3.0, 0.0, 0.0, 2.0).finished();
+    config.R = 0.5 * Eigen::Matrix<double, 1, 1>::Identity();
+    config.Qf = (Eigen::Matrix2d() << 4.0, 0.0, 0.0, 5.0).finished();
+    config.path_constraint = make_upper_bound_constraint(0.8);
+    config.terminal_constraint = make_terminal_constraint(0.3);
+    config.du_max = ctrlpp::Vector<double, NU>(0.5);
+    config.path_penalty = ctrlpp::Vector<double, NC>::Constant(5.0);
+    config.terminal_penalty = ctrlpp::Vector<double, NTC_1>::Constant(7.0);
+    // soft_constraints defaults to true, so path/terminal slack blocks exist.
+
+    auto state = std::make_shared<ctrlpp::nmpc_formulation_state<double, NX, NU>>();
+    state->x0 = ctrlpp::Vector<double, NX>(0.2, -0.1);
+    state->u_prev = ctrlpp::Vector<double, NU>(0.05);
+    for(int k = 0; k <= N; ++k)
+    {
+        state->x_ref.push_back(ctrlpp::Vector<double, NX>(0.1 * k, -0.05 * k));
+    }
+
+    auto prob = ctrlpp::detail::build_nmpc_problem<double, NX, NU, NC, NTC_1>(double_integrator, config, state);
+    const int n = prob.n_vars;
+
+    const double eps = std::numeric_limits<double>::epsilon();
+    // Central-difference total error is O(eps^(2/3)) (see detail/numerical_diff.h).
+    const double cd_err = std::pow(eps, 2.0 / 3.0);
+    // Magnitude scales: the largest cost weight and the z sampling range. The unit
+    // floor mirrors the max(1, |.|) convention used by the finite-difference step.
+    const double w_scale = std::max({3.0, 2.0, 4.0, 5.0, 0.5, 5.0, 7.0});
+    const double z_scale = 2.0;
+    const double tol = static_cast<double>(n) * cd_err * w_scale * std::max(1.0, z_scale);
+
+    std::mt19937 rng{20240709u};
+    std::uniform_real_distribution<double> dist(-z_scale, z_scale);
+    const double ss = std::cbrt(eps);
+
+    for(int trial = 0; trial < 8; ++trial)
+    {
+        std::vector<double> z(static_cast<std::size_t>(n));
+        for(auto& zi : z)
+        {
+            zi = dist(rng);
+        }
+
+        std::vector<double> ga(z.size());
+        prob.gradient(std::span<const double>{z.data(), z.size()}, std::span<double>{ga.data(), ga.size()});
+
+        // Central-difference reference of prob.cost.
+        std::vector<double> gfd(z.size());
+        std::vector<double> zp = z;
+        for(std::size_t j = 0; j < z.size(); ++j)
+        {
+            const double h_raw = ss * std::max(1.0, std::abs(z[j]));
+            const double t = z[j] + h_raw;
+            const double h = t - z[j];
+            const double o = zp[j];
+
+            zp[j] = o + h;
+            const double fp = prob.cost(std::span<const double>{zp.data(), zp.size()});
+            zp[j] = o - h;
+            const double fm = prob.cost(std::span<const double>{zp.data(), zp.size()});
+
+            gfd[j] = (fp - fm) / (2.0 * h);
+            zp[j] = o;
+        }
+
+        for(std::size_t j = 0; j < z.size(); ++j)
+        {
+            CHECK_THAT(ga[j], WithinAbs(gfd[j], tol));
+        }
+    }
+
+    // The slack-penalty gradient is exactly the configured L1 weights.
+    {
+        std::vector<double> z(static_cast<std::size_t>(n), 0.0);
+        std::vector<double> ga(z.size());
+        prob.gradient(std::span<const double>{z.data(), z.size()}, std::span<double>{ga.data(), ga.size()});
+
+        constexpr int nx = static_cast<int>(NX);
+        constexpr int nu = static_cast<int>(NU);
+        const int path_slack_offset = (N + 1) * nx + N * nu;
+        CHECK(ga[static_cast<std::size_t>(path_slack_offset)] == 5.0);
+        const int term_slack_offset = path_slack_offset + N * static_cast<int>(NC);
+        CHECK(ga[static_cast<std::size_t>(term_slack_offset)] == 7.0);
+    }
+}
+
+// ----- MAJ-06 (iv): constraint Jacobian structural rows + FD dynamics -----
+
+TEST_CASE("nmpc constraint_jacobian matches central difference with exact structural rows", "[nmpc][constraint][jacobian]")
+{
+    constexpr int N = 3;
+
+    ctrlpp::nmpc_config<double, NX, NU, NC, NTC_1> config{.horizon = N};
+    config.Q = 2.0 * Eigen::Matrix2d::Identity();
+    config.R = 0.5 * Eigen::Matrix<double, 1, 1>::Identity();
+    config.path_constraint = make_upper_bound_constraint(0.8);
+    config.terminal_constraint = make_terminal_constraint(0.3);
+    config.du_max = ctrlpp::Vector<double, NU>(0.5);
+    // soft_constraints defaults to true, so path/terminal slack columns exist.
+
+    auto state = std::make_shared<ctrlpp::nmpc_formulation_state<double, NX, NU>>();
+    state->x0 = ctrlpp::Vector<double, NX>(0.2, -0.1);
+    state->u_prev = ctrlpp::Vector<double, NU>(0.05);
+    for(int k = 0; k <= N; ++k)
+    {
+        state->x_ref.push_back(ctrlpp::Vector<double, NX>::Zero());
+    }
+
+    auto prob = ctrlpp::detail::build_nmpc_problem<double, NX, NU, NC, NTC_1>(double_integrator, config, state);
+    const int n = prob.n_vars;
+    const int m = prob.n_constraints;
+
+    // Constraint / variable offset map (mirrors build_nmpc_problem).
+    constexpr int nx = static_cast<int>(NX);
+    constexpr int nu = static_cast<int>(NU);
+    constexpr int nc = static_cast<int>(NC);
+    const int x_offset = 0;
+    const int u_offset = (N + 1) * nx;
+    const int path_slack_offset = u_offset + N * nu;
+    const int term_slack_offset = path_slack_offset + N * nc;
+    const int n_eq = (N + 1) * nx;
+    const int n_rate = N * nu * 2;
+    const int n_path_con = N * nc;
+    const int eq_start = 0;
+    const int rate_start = n_eq;
+    const int path_con_start = rate_start + n_rate;
+    const int term_con_start = path_con_start + n_path_con;
+
+    // Column-major access: entry (row i, col j) at index i + j * m.
+    const auto at = [m](const std::vector<double>& J, int i, int j) -> double { return J[static_cast<std::size_t>(i) + static_cast<std::size_t>(j) * static_cast<std::size_t>(m)]; };
+
+    const double eps = std::numeric_limits<double>::epsilon();
+    const double cd_err = std::pow(eps, 2.0 / 3.0);
+    // Jacobian entries are O(1) (identities, +/-1 rate/slack blocks, dt-scaled
+    // dynamics); the unit floor is the FD stencil's max(1, |.|) convention.
+    const double tol = static_cast<double>(n) * cd_err;
+
+    std::mt19937 rng{771u};
+    std::uniform_real_distribution<double> dist(-2.0, 2.0);
+    const double ss = std::cbrt(eps);
+
+    std::vector<double> jac(static_cast<std::size_t>(m) * static_cast<std::size_t>(n));
+
+    for(int trial = 0; trial < 6; ++trial)
+    {
+        std::vector<double> z(static_cast<std::size_t>(n));
+        for(auto& zi : z)
+        {
+            zi = dist(rng);
+        }
+
+        prob.constraint_jacobian(std::span<const double>{z.data(), z.size()}, std::span<double>{jac.data(), jac.size()});
+
+        // Central-difference reference of prob.constraints (column-major layout).
+        std::vector<double> ref(jac.size());
+        std::vector<double> zp = z;
+        std::vector<double> cp(static_cast<std::size_t>(m));
+        std::vector<double> cm(static_cast<std::size_t>(m));
+        for(int j = 0; j < n; ++j)
+        {
+            const auto jz = static_cast<std::size_t>(j);
+            const double h_raw = ss * std::max(1.0, std::abs(z[jz]));
+            const double t = z[jz] + h_raw;
+            const double h = t - z[jz];
+            const double o = zp[jz];
+
+            zp[jz] = o + h;
+            prob.constraints(std::span<const double>{zp.data(), zp.size()}, std::span<double>{cp.data(), cp.size()});
+            zp[jz] = o - h;
+            prob.constraints(std::span<const double>{zp.data(), zp.size()}, std::span<double>{cm.data(), cm.size()});
+
+            for(int i = 0; i < m; ++i)
+            {
+                ref[static_cast<std::size_t>(i) + jz * static_cast<std::size_t>(m)] = (cp[static_cast<std::size_t>(i)] - cm[static_cast<std::size_t>(i)]) / (2.0 * h);
+            }
+            zp[jz] = o;
+        }
+
+        for(std::size_t idx = 0; idx < jac.size(); ++idx)
+        {
+            CHECK_THAT(jac[idx], WithinAbs(ref[idx], tol));
+        }
+    }
+
+    // Structural entries are exact (bit-exact 0 / +/-1), carrying no FD noise.
+    // Initial-state identity rows.
+    CHECK(at(jac, eq_start + 0, x_offset + 0) == 1.0);
+    CHECK(at(jac, eq_start + 0, x_offset + 1) == 0.0);
+    CHECK(at(jac, eq_start + 1, x_offset + 1) == 1.0);
+    // Continuity identity block on x_{k+1} (k = 0).
+    CHECK(at(jac, eq_start + nx + 0, x_offset + nx + 0) == 1.0);
+    // Rate +/-1 blocks (k = 0, j = 0): +1 on the upper row, -1 on the lower row.
+    CHECK(at(jac, rate_start + 0, u_offset + 0) == 1.0);
+    CHECK(at(jac, rate_start + 1, u_offset + 0) == -1.0);
+    // Slack -1 columns.
+    CHECK(at(jac, path_con_start + 0, path_slack_offset + 0) == -1.0);
+    CHECK(at(jac, term_con_start + 0, term_slack_offset + 0) == -1.0);
 }
