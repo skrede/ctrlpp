@@ -269,7 +269,7 @@ TEST_CASE("infeasible constraints with soft mode does not crash", "[nmpc][constr
     CHECK(found_violation);
 }
 
-// ----- MAJ-06 (i): state bounds applied from k=1 -----
+// ----- state bounds applied from k=1 -----
 
 TEST_CASE("nmpc state bounds skip the x0 block and apply from k=1", "[nmpc][constraint][bounds]")
 {
@@ -304,7 +304,7 @@ TEST_CASE("nmpc state bounds skip the x0 block and apply from k=1", "[nmpc][cons
     }
 }
 
-// ----- MAJ-06 (iv): analytic cost gradient matches central difference -----
+// ----- analytic cost gradient matches central difference -----
 
 TEST_CASE("nmpc analytic cost gradient matches central difference", "[nmpc][constraint][gradient]")
 {
@@ -396,7 +396,7 @@ TEST_CASE("nmpc analytic cost gradient matches central difference", "[nmpc][cons
     }
 }
 
-// ----- MAJ-06 (iv): constraint Jacobian structural rows + FD dynamics -----
+// ----- constraint Jacobian structural rows + FD dynamics -----
 
 TEST_CASE("nmpc constraint_jacobian matches central difference with exact structural rows", "[nmpc][constraint][jacobian]")
 {

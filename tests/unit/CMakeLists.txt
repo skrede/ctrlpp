@@ -193,7 +193,7 @@ if (CTRLPP_BUILD_ARGMIN)
 
     # AddressSanitizer variant of the move/copy safety suite. Same source, built
     # with -fsanitize=address so the move-then-solve / copy-then-solve cases turn
-    # a dangling argmin back-pointer (MAJ-06 / D-C) into a hard ASAN failure.
+    # a dangling argmin back-pointer into a hard ASAN failure.
     add_executable(nmpc_argmin_asan_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_argmin_test.cpp")
     target_link_libraries(nmpc_argmin_asan_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
     if (CTRLPP_BUILD_NLOPT)

@@ -447,7 +447,7 @@ TEST_CASE("nmpc argmin trajectory tracking", "[nmpc][argmin]")
     CHECK(max_error < 2.0);
 }
 
-// --- MAJ-06 / D-C move & copy safety -----------------------------------------
+// --- move & copy safety ------------------------------------------------------
 //
 // argmin's solver_core caches the problem BY REFERENCE (const Problem*,
 // solver_core.h:657) and the ctrlpp bridge caches &m_problem, so a naive move of

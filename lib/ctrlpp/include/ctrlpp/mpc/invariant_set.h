@@ -85,7 +85,8 @@ auto compute_ellipsoidal_set(const Matrix<Scalar, NX, NX>& P,
     }
 
     // alpha == 0 is the exact empty-set boundary; alpha == +inf means no face bounded the
-    // ellipsoid at all. Either way there is no consistent, bounded terminal set (D-D).
+    // ellipsoid at all. Either way there is no consistent, bounded terminal set,
+    // so return an error rather than silently shrinking the set.
     if(!std::isfinite(alpha) || alpha <= Scalar{0})
         return ctrlpp::unexpected(terminal_set_error::empty_terminal_set);
 

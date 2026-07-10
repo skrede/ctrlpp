@@ -83,7 +83,7 @@ public:
     // allocates a FRESH bridge rebound to the same problem, and leaves `solver_`
     // as `std::monostate` so it is re-emplaced lazily on the next solve()/step()
     // via prepare_solver's monostate branch. The result is a clean independent
-    // fork, matching the locked D-C copy semantics, with no argmin copy support.
+    // fork, matching the intended clean-snapshot copy semantics, with no argmin copy support.
     argmin_solver(const argmin_solver& other)
         : settings_{other.settings_}
         , problem_{other.problem_}

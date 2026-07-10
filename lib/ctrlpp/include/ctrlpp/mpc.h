@@ -100,7 +100,7 @@ public:
     {
         int N = config_.horizon;
         // The tracking overload reads y_ref[0..N] (N+1 references). An undersized
-        // span would otherwise overrun; reject it via the error branch (MAJ-06 v).
+        // span would otherwise overrun; reject it via the error branch.
         if(y_ref.size() < static_cast<std::size_t>(N + 1))
             return unexpected<solver_error>{solver_error::invalid_problem};
         for(int k = 0; k < N; ++k)
