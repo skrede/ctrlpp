@@ -72,7 +72,7 @@ TEST_CASE("MPC minimal horizon N=1", "[mpc][hardening][negative]")
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);
     REQUIRE(u.has_value());
-    REQUIRE(std::isfinite((*u)(0)));
+    REQUIRE(std::isfinite(u->input(0)));
 }
 
 TEST_CASE("MPC with NaN in weight matrices", "[mpc][hardening][negative]")
@@ -129,7 +129,7 @@ TEST_CASE("MPC 1D regulation matches known optimal", "[mpc][hardening][precision
     REQUIRE(u.has_value());
 
     // For 1D integrator with Q=R=I, optimal u should be negative (drive to 0)
-    CHECK((*u)(0) < 0.0);
+    CHECK(u->input(0) < 0.0);
 }
 
 // ── MPC hardening: stability ───────────────────────────────────────────────────
@@ -151,7 +151,7 @@ TEST_CASE("MPC closed-loop stabilizes double integrator", "[mpc][hardening][stab
     for (int step = 0; step < 100; ++step) {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = sys.A * x + sys.B * u.value();
+        x = sys.A * x + sys.B * u.value().input;
         REQUIRE(std::isfinite(x(0)));
         REQUIRE(std::isfinite(x(1)));
     }
@@ -176,7 +176,7 @@ TEST_CASE("MPC with huge Q weights", "[mpc][hardening][robustness]")
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);
     REQUIRE(u.has_value());
-    REQUIRE(std::isfinite((*u)(0)));
+    REQUIRE(std::isfinite(u->input(0)));
 }
 
 TEST_CASE("MPC with near-zero R weights", "[mpc][hardening][robustness]")
@@ -194,5 +194,5 @@ TEST_CASE("MPC with near-zero R weights", "[mpc][hardening][robustness]")
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);
     REQUIRE(u.has_value());
-    REQUIRE(std::isfinite((*u)(0)));
+    REQUIRE(std::isfinite(u->input(0)));
 }

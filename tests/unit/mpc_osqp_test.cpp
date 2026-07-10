@@ -112,7 +112,7 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
         {
             auto u = controller.solve(x);
             REQUIRE(u.has_value());
-            x = sys.A * x + sys.B * u.value();
+            x = sys.A * x + sys.B * u.value().input;
 
             double norm = x.norm();
             if(step >= monotonic_after)
@@ -141,14 +141,14 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
         // First solve should produce non-zero control pushing toward reference
         auto u0 = controller.solve(x, x_ref);
         REQUIRE(u0.has_value());
-        CHECK(std::abs((*u0)(0)) > 1e-6);
+        CHECK(std::abs(u0->input(0)) > 1e-6);
 
         // Simulate closed-loop for 50 steps
         for(int step = 0; step < 50; ++step)
         {
             auto u = controller.solve(x, x_ref);
             REQUIRE(u.has_value());
-            x = sys.A * x + sys.B * u.value();
+            x = sys.A * x + sys.B * u.value().input;
         }
 
         CHECK((x - x_ref).norm() < 0.1);
@@ -172,9 +172,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
         {
             auto u = controller.solve(x);
             REQUIRE(u.has_value());
-            CHECK((*u)(0) >= -0.5 - 1e-4);
-            CHECK((*u)(0) <= 0.5 + 1e-4);
-            x = sys.A * x + sys.B * u.value();
+            CHECK(u->input(0) >= -0.5 - 1e-4);
+            CHECK(u->input(0) <= 0.5 + 1e-4);
+            x = sys.A * x + sys.B * u.value().input;
         }
     }
 
@@ -232,7 +232,7 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
         int iter1 = controller.diagnostics().iterations;
 
         // Simulate one step forward so state changes slightly
-        Eigen::Vector2d x1 = sys.A * x0 + sys.B * r1.value();
+        Eigen::Vector2d x1 = sys.A * x0 + sys.B * r1.value().input;
 
         // Second solve with nearby state (warm-started from first)
         auto r2 = controller.solve(x1);
@@ -276,7 +276,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
         auto result = controller.solve(x0);
         REQUIRE(result.has_value());
 
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         REQUIRE(states.size() == static_cast<std::size_t>(N + 1));
         REQUIRE(inputs.size() == static_cast<std::size_t>(N));
 
@@ -313,12 +315,12 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
         {
             auto u = controller.solve(x);
             REQUIRE(u.has_value());
-            double u_cur = (*u)(0);
+            double u_cur = u->input(0);
 
             CHECK(std::abs(u_cur - u_prev) <= 0.2 + 1e-2);
 
             u_prev = u_cur;
-            x = sys.A * x + sys.B * u.value();
+            x = sys.A * x + sys.B * u.value().input;
         }
     }
 
@@ -339,5 +341,36 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
 
         auto diag = controller.diagnostics();
         CHECK(diag.status == ctrlpp::solve_status::optimal);
+    }
+
+    SECTION("set_applied_input re-anchors the rate constraint")
+    {
+        ctrlpp::mpc_config<double, NX, NU> cfg{
+            .horizon = N,
+            .Q = Eigen::Matrix2d::Identity(),
+            .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+            .u_min = (Eigen::Matrix<double, 1, 1>() << -5.0).finished(),
+            .u_max = (Eigen::Matrix<double, 1, 1>() << 5.0).finished(),
+            .du_max = (Eigen::Matrix<double, 1, 1>() << 0.2).finished(),
+        };
+
+        OsqpMpc controller(sys, cfg);
+
+        Eigen::Vector2d x{5.0, 0.0};
+
+        // First solve anchors the rate window at the internal u_prev (zero).
+        auto u0 = controller.solve(x);
+        REQUIRE(u0.has_value());
+
+        // Record a commanded input the caller actually applied; the next solve
+        // must keep its input within du_max of that recorded value, not of the
+        // solver's own last iterate.
+        Eigen::Matrix<double, 1, 1> applied;
+        applied << -3.0;
+        controller.set_applied_input(applied);
+
+        auto u1 = controller.solve(x);
+        REQUIRE(u1.has_value());
+        CHECK(std::abs(u1->input(0) - applied(0)) <= 0.2 + 1e-2);
     }
 }

@@ -66,7 +66,7 @@ int main()
             return EXIT_FAILURE;
         }
 
-        Eigen::Matrix<double, 1, 1> u = *u_opt;
+        Eigen::Matrix<double, 1, 1> u = u_opt->input;
         double t = k * dt;
 
         std::cout << std::fixed << std::setprecision(4) << t << "," << x[0] << "," << x[1] << "," << trajectory[ref_start][0] << "," << u[0] << "\n";

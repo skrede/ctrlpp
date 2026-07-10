@@ -62,10 +62,12 @@ TEST_CASE("mpc input constraints satisfied", "[mpc][property]")
 
                  if(u.has_value())
                  {
-                     RC_ASSERT((*u)(0) >= u_lo - 1e-6);
-                     RC_ASSERT((*u)(0) <= u_hi + 1e-6);
+                     RC_ASSERT(u->input(0) >= u_lo - 1e-6);
+                     RC_ASSERT(u->input(0) <= u_hi + 1e-6);
 
-                     auto [states, inputs] = controller.trajectory();
+                     auto traj = controller.trajectory();
+                     RC_ASSERT(traj.has_value());
+                     auto& [states, inputs] = *traj;
                      for(const auto& ui : inputs)
                      {
                          RC_ASSERT(ui(0) >= u_lo - 1e-6);
@@ -107,7 +109,9 @@ TEST_CASE("mpc predicted states within bounds", "[mpc][property]")
 
                  if(u.has_value())
                  {
-                     auto [states, inputs] = controller.trajectory();
+                     auto traj = controller.trajectory();
+                     RC_ASSERT(traj.has_value());
+                     auto& [states, inputs] = *traj;
                      // Soft constraints: allow slack up to penalty tolerance
                      constexpr double slack_tol = 0.1;
                      for(const auto& s : states)
@@ -163,9 +167,9 @@ TEST_CASE("mpc cost is non-negative", "[mpc][property]")
              });
 }
 
-TEST_CASE("mpc robustness - infeasible returns nullopt", "[mpc][property]")
+TEST_CASE("mpc robustness - infeasible returns the error branch", "[mpc][property]")
 {
-    rc::prop("contradictory constraints return nullopt or slack solution, no crash",
+    rc::prop("contradictory constraints return the error branch or a slack solution, no crash",
              []
              {
                  auto dt = *bounded_double(0.01, 0.1);
@@ -188,9 +192,9 @@ TEST_CASE("mpc robustness - infeasible returns nullopt", "[mpc][property]")
                  OsqpMpc controller(sys, cfg);
                  Eigen::Vector2d x0{10.0, 10.0};
 
-                 // Must not crash -- either returns nullopt or a solution with slack
+                 // Must not crash -- either returns the error branch or a solution with slack
                  auto result = controller.solve(x0);
-                 // With hard constraints and infeasible config, expect nullopt
+                 // With hard constraints and infeasible config, expect the error branch
                  RC_ASSERT(!result.has_value());
              });
 }

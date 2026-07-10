@@ -295,7 +295,7 @@ TEST_CASE("MPC with terminal_ingredients integration", "[terminal_set][mpc]")
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = sys.A * x + sys.B * u.value();
+        x = sys.A * x + sys.B * u.value().input;
     }
 
     CHECK(x.norm() < 0.05);
@@ -332,7 +332,9 @@ TEST_CASE("MPC with polytopic terminal set", "[terminal_set][mpc]")
     REQUIRE(u.has_value());
 
     // Extract trajectory and check terminal state satisfies Hx <= h
-    auto [states, inputs] = controller.trajectory();
+    auto traj = controller.trajectory();
+    REQUIRE(traj.has_value());
+    auto& [states, inputs] = *traj;
     auto x_N = states.back();
     Eigen::VectorXd Hx = H_term * x_N;
     for(int i = 0; i < 4; ++i)

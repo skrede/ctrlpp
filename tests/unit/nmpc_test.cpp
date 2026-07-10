@@ -80,6 +80,23 @@ TEST_CASE("nmpc with mock solver", "[nmpc]")
         Eigen::Vector2d x0{1.0, 0.0};
         auto result = controller.solve(x0);
         REQUIRE(result.has_value());
+        CHECK(result->status == ctrlpp::solve_result_status::converged);
+    }
+
+    SECTION("solve with an empty reference span returns the error branch")
+    {
+        Eigen::Vector2d x0{1.0, 0.0};
+        auto result = controller.solve(x0, std::span<const Eigen::Vector2d>{});
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::solver_error::invalid_problem);
+    }
+
+    SECTION("trajectory is guarded before the first valid solve")
+    {
+        Nmpc fresh{double_integrator, config};
+        auto pre = fresh.trajectory();
+        REQUIRE_FALSE(pre.has_value());
+        CHECK(pre.error() == ctrlpp::solver_error::setup_incomplete);
     }
 
     SECTION("solve(x0, x_ref) returns a value")
@@ -103,7 +120,9 @@ TEST_CASE("nmpc with mock solver", "[nmpc]")
         Eigen::Vector2d x0{1.0, 0.0};
         auto u0 = controller.solve(x0);
         REQUIRE(u0.has_value());
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         REQUIRE(states.size() == static_cast<std::size_t>(N + 1));
         REQUIRE(inputs.size() == static_cast<std::size_t>(N));
     }
@@ -136,7 +155,9 @@ TEST_CASE("nmpc with mock solver", "[nmpc]")
         REQUIRE(result.has_value());
 
         // Verify trajectory dimensions match expected variable layout
-        auto [states, inputs] = ctrl.trajectory();
+        auto traj = ctrl.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         REQUIRE(states.size() == static_cast<std::size_t>(N + 1));
         REQUIRE(inputs.size() == static_cast<std::size_t>(N));
 
@@ -167,11 +188,45 @@ TEST_CASE("nmpc with mock solver", "[nmpc]")
         REQUIRE(result.has_value());
 
         // With mock returning zeros, all controls and states should be within bounds
-        auto [states, inputs] = constrained_ctrl.trajectory();
+        auto traj = constrained_ctrl.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         for(const auto& u : inputs)
         {
             CHECK(u(0) >= -1.0);
             CHECK(u(0) <= 1.0);
         }
     }
+}
+
+TEST_CASE("nmpc budget-limited solve reaches the caller tagged budget_exhausted", "[nmpc]")
+{
+    // A solver that exhausts its iteration budget still returns its best iterate;
+    // the widened accept-set surfaces it on the success branch.
+    struct budget_nlp_solver
+    {
+        using scalar_type = double;
+
+        mutable ctrlpp::nlp_problem<double> last_problem{};
+
+        void setup(const ctrlpp::nlp_problem<double>& p) { last_problem = p; }
+
+        auto solve(const ctrlpp::nlp_update<double>&) -> ctrlpp::nlp_result<double>
+        {
+            ctrlpp::nlp_result<double> r{};
+            r.status = ctrlpp::solve_status::max_iterations;
+            r.x = Eigen::VectorXd::Zero(last_problem.n_vars);
+            return r;
+        }
+    };
+
+    static_assert(ctrlpp::nlp_solver<budget_nlp_solver>);
+
+    auto config = make_config(5);
+    ctrlpp::nmpc<double, NX, NU, budget_nlp_solver, decltype(double_integrator)> controller{double_integrator, config};
+
+    Eigen::Vector2d x0{1.0, 0.0};
+    auto result = controller.solve(x0);
+    REQUIRE(result.has_value());
+    CHECK(result->status == ctrlpp::solve_result_status::budget_exhausted);
 }

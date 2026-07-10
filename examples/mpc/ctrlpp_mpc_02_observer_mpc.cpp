@@ -71,7 +71,7 @@ int main()
             std::cerr << "MPC solve failed at t=" << t << "\n";
             return EXIT_FAILURE;
         }
-        u = *u_opt;
+        u = u_opt->input;
 
         std::cout << std::fixed << std::setprecision(4) << t << "," << x_true[0] << "," << x_true[1] << "," << kf.state()[0] << "," << kf.state()[1] << "," << u[0] << "\n";
     }

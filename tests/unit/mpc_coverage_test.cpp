@@ -80,7 +80,7 @@ TEST_CASE("soft state constraints with per-state penalty vector", "[mpc][coverag
     {
         auto ui = controller.solve(x);
         REQUIRE(ui.has_value());
-        x = sys.A * x + sys.B * ui.value();
+        x = sys.A * x + sys.B * ui.value().input;
     }
 
     CHECK(std::abs(x(0)) < 1.5);
@@ -149,7 +149,7 @@ TEST_CASE("explicit Qf overrides DARE-computed terminal cost", "[mpc][coverage]"
     REQUIRE(u_dare.has_value());
 
     // Different terminal costs should produce different optimal controls
-    CHECK(std::abs((*u_explicit)(0) - (*u_dare)(0)) > 1e-6);
+    CHECK(std::abs(u_explicit->input(0) - u_dare->input(0)) > 1e-6);
 }
 
 // ---- mpc.h: asymmetric state bounds (x_min only, x_max only) ----
@@ -176,7 +176,9 @@ TEST_CASE("asymmetric state bounds: x_min only", "[mpc][coverage]")
     // the point is exercising the QP formulation path
     if(u.has_value())
     {
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         CHECK(states.size() == static_cast<std::size_t>(N + 1));
     }
 }
@@ -201,7 +203,9 @@ TEST_CASE("asymmetric state bounds: x_max only", "[mpc][coverage]")
     auto u = controller.solve(x0);
     if(u.has_value())
     {
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         for(const auto& s : states)
         {
             CHECK(s(0) <= 2.0 + 1e-3);
@@ -236,11 +240,11 @@ TEST_CASE("rate constraints with warm-started consecutive solves", "[mpc][covera
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
 
-        double du = std::abs((*u)(0) - u_prev);
+        double du = std::abs(u->input(0) - u_prev);
         CHECK(du <= 0.3 + 1e-2);
 
-        u_prev = (*u)(0);
-        x = sys.A * x + sys.B * u.value();
+        u_prev = u->input(0);
+        x = sys.A * x + sys.B * u.value().input;
     }
 
     CHECK(x.norm() < 2.0);
@@ -271,7 +275,7 @@ TEST_CASE("span reference trajectory tracking", "[mpc][coverage]")
 
     auto u = controller.solve(x, std::span<const Eigen::Vector2d>{refs});
     REQUIRE(u.has_value());
-    CHECK((*u)(0) > 0.0); // should push toward positive reference
+    CHECK(u->input(0) > 0.0); // should push toward positive reference
 }
 
 // ---- terminal_set.h: ellipsoidal set with various alpha values ----
@@ -345,7 +349,9 @@ TEST_CASE("polytopic terminal set with many faces", "[mpc][coverage][terminal_se
     REQUIRE(u.has_value());
 
     // Terminal state should satisfy Hx <= h
-    auto [states, inputs] = controller.trajectory();
+    auto traj = controller.trajectory();
+    REQUIRE(traj.has_value());
+    auto& [states, inputs] = *traj;
     auto x_N = states.back();
     Eigen::VectorXd Hx = H_term * x_N;
     for(int i = 0; i < 8; ++i)
@@ -375,7 +381,9 @@ TEST_CASE("hard state constraints prevent slack variables", "[mpc][coverage][qp]
     REQUIRE(u.has_value());
 
     // With hard constraints and state within bounds, all trajectory states must satisfy bounds
-    auto [states, inputs] = controller.trajectory();
+    auto traj = controller.trajectory();
+    REQUIRE(traj.has_value());
+    auto& [states, inputs] = *traj;
     for(const auto& s : states)
     {
         CHECK(s(0) >= -5.0 - 1e-3);
@@ -413,12 +421,12 @@ TEST_CASE("all constraint types active simultaneously", "[mpc][coverage]")
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
 
-        CHECK((*u)(0) >= -1.0 - 1e-3);
-        CHECK((*u)(0) <= 1.0 + 1e-3);
-        CHECK(std::abs((*u)(0) - u_prev) <= 0.5 + 1e-2);
+        CHECK(u->input(0) >= -1.0 - 1e-3);
+        CHECK(u->input(0) <= 1.0 + 1e-3);
+        CHECK(std::abs(u->input(0) - u_prev) <= 0.5 + 1e-2);
 
-        u_prev = (*u)(0);
-        x = sys.A * x + sys.B * u.value();
+        u_prev = u->input(0);
+        x = sys.A * x + sys.B * u.value().input;
     }
 
     CHECK(x.norm() < 2.0);
@@ -459,7 +467,7 @@ TEST_CASE("MPC with ellipsoidal terminal set", "[mpc][coverage][terminal_set]")
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = sys.A * x + sys.B * u.value();
+        x = sys.A * x + sys.B * u.value().input;
     }
 
     CHECK(x.norm() < 0.05);

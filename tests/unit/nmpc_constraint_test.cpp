@@ -84,7 +84,7 @@ TEST_CASE("nmpc with NC=0 NTC=0 produces same results as original", "[nmpc][cons
 
     REQUIRE(u_old.has_value());
     REQUIRE(u_new.has_value());
-    CHECK_THAT((*u_old)(0), WithinAbs((*u_new)(0), 1e-8));
+    CHECK_THAT(u_old->input(0), WithinAbs(u_new->input(0), 1e-8));
 }
 
 // ----- Soft path constraint -----
@@ -109,7 +109,7 @@ TEST_CASE("soft path constraint is approximately satisfied", "[nmpc][constraint]
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
     }
 
     // After enough steps with soft constraint, state should have moved below bound
@@ -143,9 +143,11 @@ TEST_CASE("hard path constraint enforced tightly", "[nmpc][constraint][hard]")
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
 
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         for(const auto& s : states)
         {
             CHECK(s(0) <= upper_bound + 1e-3);
@@ -180,10 +182,12 @@ TEST_CASE("terminal constraint drives final state", "[nmpc][constraint][terminal
         REQUIRE(u.has_value());
 
         // Check terminal state of predicted trajectory
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         CHECK(states.back()(0) <= target + 1e-2);
 
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
     }
 }
 
@@ -210,7 +214,7 @@ TEST_CASE("combined path and terminal constraints", "[nmpc][constraint][combined
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
     }
 
     // State should have converged within combined constraints
@@ -257,7 +261,7 @@ TEST_CASE("infeasible constraints with soft mode does not crash", "[nmpc][constr
             found_violation = true;
         }
 
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
     }
 
     // At some point during the loop, slack should have been nonzero

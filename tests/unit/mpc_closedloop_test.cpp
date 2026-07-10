@@ -57,8 +57,8 @@ TEST_CASE("linear mpc closed-loop convergence - double integrator", "[mpc][close
     {
         auto u = controller.solve(x, x_ref);
         REQUIRE(u.has_value());
-        REQUIRE(std::isfinite((*u)(0)));
-        x = sys.A * x + sys.B * u.value();
+        REQUIRE(std::isfinite(u->input(0)));
+        x = sys.A * x + sys.B * u.value().input;
         REQUIRE(std::isfinite(x(0)));
         REQUIRE(std::isfinite(x(1)));
     }
@@ -84,7 +84,7 @@ TEST_CASE("nonlinear mpc closed-loop convergence - double integrator", "[nmpc][c
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = double_integrator_dynamics(x, *u);
+        x = double_integrator_dynamics(x, u->input);
     }
 
     CHECK(x.norm() < 0.5);
@@ -113,7 +113,7 @@ TEST_CASE("linear mpc trajectory tracking with reference change", "[mpc][closedl
     {
         auto u = controller.solve(x, ref1);
         REQUIRE(u.has_value());
-        x = sys.A * x + sys.B * u.value();
+        x = sys.A * x + sys.B * u.value().input;
     }
 
     CHECK(x.norm() < 0.1);
@@ -123,7 +123,7 @@ TEST_CASE("linear mpc trajectory tracking with reference change", "[mpc][closedl
     {
         auto u = controller.solve(x, ref2);
         REQUIRE(u.has_value());
-        x = sys.A * x + sys.B * u.value();
+        x = sys.A * x + sys.B * u.value().input;
     }
 
     CHECK((x - ref2).norm() < 0.1);

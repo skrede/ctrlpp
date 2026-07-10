@@ -59,7 +59,7 @@ int main()
             return EXIT_FAILURE;
         }
 
-        Eigen::Matrix<double, 1, 1> u = *u_opt;
+        Eigen::Matrix<double, 1, 1> u = u_opt->input;
 
         // Potential sign matches the +(g/l) sin dynamics: E is minimal (-m g l)
         // at the stable hanging point theta = pi and maximal (+m g l) upright.

@@ -53,7 +53,7 @@ int main()
         }
 
         auto diag = controller.diagnostics();
-        Eigen::Matrix<double, 1, 1> u = *u_opt;
+        Eigen::Matrix<double, 1, 1> u = u_opt->input;
 
         std::cout << std::fixed << std::setprecision(4) << t << "," << x[0] << "," << x[1] << "," << u[0] << "," << diag.cost << "\n";
 

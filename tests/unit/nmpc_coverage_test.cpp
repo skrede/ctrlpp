@@ -110,8 +110,8 @@ TEST_CASE("nmpc_config with all optional bounds set", "[nmpc][coverage][config]"
     Eigen::Vector2d x{2.0, 0.0};
     auto u = controller.solve(x);
     REQUIRE(u.has_value());
-    CHECK((*u)(0) >= -2.0 - 1e-4);
-    CHECK((*u)(0) <= 2.0 + 1e-4);
+    CHECK(u->input(0) >= -2.0 - 1e-4);
+    CHECK(u->input(0) <= 2.0 + 1e-4);
 }
 
 // ---- nlp_formulation.h: custom stage and terminal cost functions ----
@@ -135,7 +135,7 @@ TEST_CASE("custom stage cost with asymmetric weighting", "[nmpc][coverage][nlp]"
     REQUIRE(u.has_value());
 
     // Should produce aggressive control to reduce position
-    CHECK((*u)(0) < -0.01);
+    CHECK(u->input(0) < -0.01);
 }
 
 TEST_CASE("custom terminal cost only (stage cost from Q/R)", "[nmpc][coverage][nlp]")
@@ -154,7 +154,7 @@ TEST_CASE("custom terminal cost only (stage cost from Q/R)", "[nmpc][coverage][n
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);
     REQUIRE(u.has_value());
-    CHECK(std::isfinite((*u)(0)));
+    CHECK(std::isfinite(u->input(0)));
 }
 
 // ---- nlp_formulation.h: rate constraints (du_max) in NLP ----
@@ -178,11 +178,11 @@ TEST_CASE("NLP rate constraints limit control change", "[nmpc][coverage][nlp]")
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
 
-        double du = std::abs((*u)(0) - u_prev);
+        double du = std::abs(u->input(0) - u_prev);
         CHECK(du <= 0.15 + 1e-3);
 
-        u_prev = (*u)(0);
-        x = double_integrator(x, *u);
+        u_prev = u->input(0);
+        x = double_integrator(x, u->input);
     }
 }
 
@@ -211,7 +211,7 @@ TEST_CASE("soft path constraint with custom penalty weight", "[nmpc][coverage][n
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
     }
 
     // High penalty should drive state toward constraint, verify it converges
@@ -238,7 +238,7 @@ TEST_CASE("warm-start shift reduces solve time on consecutive calls", "[nmpc][co
     auto diag1 = controller.diagnostics();
 
     // Step forward
-    x = double_integrator(x, *u1);
+    x = double_integrator(x, u1->input);
 
     // Warm solve
     auto u2 = controller.solve(x);
@@ -246,7 +246,7 @@ TEST_CASE("warm-start shift reduces solve time on consecutive calls", "[nmpc][co
     auto diag2 = controller.diagnostics();
 
     // Step forward
-    x = double_integrator(x, *u2);
+    x = double_integrator(x, u2->input);
 
     // Third warm solve
     auto u3 = controller.solve(x);
@@ -273,7 +273,9 @@ TEST_CASE("trajectory extraction returns dynamically consistent states", "[nmpc]
     auto u = controller.solve(x0);
     REQUIRE(u.has_value());
 
-    auto [states, inputs] = controller.trajectory();
+    auto traj = controller.trajectory();
+    REQUIRE(traj.has_value());
+    auto& [states, inputs] = *traj;
     REQUIRE(states.size() == 9);
     REQUIRE(inputs.size() == 8);
 
@@ -330,7 +332,7 @@ TEST_CASE("solve with shorter-than-horizon reference trajectory", "[nmpc][covera
     REQUIRE(u.has_value());
 
     // Control should push toward the reference
-    CHECK((*u)(0) > 0.0);
+    CHECK(u->input(0) > 0.0);
 }
 
 TEST_CASE("solve with exact-length reference trajectory", "[nmpc][coverage]")
@@ -349,7 +351,7 @@ TEST_CASE("solve with exact-length reference trajectory", "[nmpc][coverage]")
 
     auto u = controller.solve(x, std::span<const Eigen::Vector2d>{refs});
     REQUIRE(u.has_value());
-    CHECK((*u)(0) > 0.0);
+    CHECK(u->input(0) > 0.0);
 }
 
 // ---- nlp_formulation.h: Qf fallback to Q when not set ----
@@ -380,7 +382,7 @@ TEST_CASE("NLP formulation uses Q as terminal cost when Qf is not set", "[nmpc][
     REQUIRE(u2.has_value());
 
     // When Qf == Q, both should produce the same control
-    CHECK_THAT((*u1)(0), WithinAbs((*u2)(0), 1e-3));
+    CHECK_THAT(u1->input(0), WithinAbs(u2->input(0), 1e-3));
 }
 
 // ---- nlp_formulation.h: state bounds in NLP variable bounds ----
@@ -403,9 +405,11 @@ TEST_CASE("NLP state bounds are respected in trajectory", "[nmpc][coverage][nlp]
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
 
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         for(const auto& s : states)
         {
             CHECK(s(0) >= -1.5 - 1e-3);

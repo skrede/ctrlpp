@@ -67,7 +67,7 @@ TEST_CASE("nmpc nlopt regulation", "[nmpc][nlopt]")
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
     }
 
     REQUIRE(x.norm() < 0.1 * initial_norm);
@@ -88,7 +88,7 @@ TEST_CASE("nmpc nlopt setpoint tracking", "[nmpc][nlopt]")
     {
         auto u = controller.solve(x, x_ref);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
     }
 
     REQUIRE((x - x_ref).norm() < 0.5);
@@ -110,9 +110,9 @@ TEST_CASE("nmpc nlopt input box constraints", "[nmpc][nlopt]")
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        CHECK((*u)(0) >= -0.5 - 1e-6);
-        CHECK((*u)(0) <= 0.5 + 1e-6);
-        x = double_integrator(x, *u);
+        CHECK(u->input(0) >= -0.5 - 1e-6);
+        CHECK(u->input(0) <= 0.5 + 1e-6);
+        x = double_integrator(x, u->input);
     }
 }
 
@@ -132,9 +132,11 @@ TEST_CASE("nmpc nlopt state box constraints", "[nmpc][nlopt]")
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
 
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         for(const auto& s : states)
         {
             CHECK(s(0) >= -2.0 - 1e-4);
@@ -162,11 +164,11 @@ TEST_CASE("nmpc nlopt rate constraints", "[nmpc][nlopt]")
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
 
-        double du = std::abs((*u)(0) - u_prev);
+        double du = std::abs(u->input(0) - u_prev);
         CHECK(du <= 0.1 + 1e-4);
 
-        u_prev = (*u)(0);
-        x = double_integrator(x, *u);
+        u_prev = u->input(0);
+        x = double_integrator(x, u->input);
     }
 }
 
@@ -186,7 +188,7 @@ TEST_CASE("nmpc nlopt warm-start benefit", "[nmpc][nlopt]")
     auto diag1 = controller.diagnostics();
 
     // Step forward
-    x = double_integrator(x, *u1);
+    x = double_integrator(x, u1->input);
 
     // Second solve (warm start from shifted solution)
     auto u2 = controller.solve(x);
@@ -220,7 +222,7 @@ TEST_CASE("nmpc nlopt custom cost", "[nmpc][nlopt]")
     REQUIRE(u_custom.has_value());
 
     // Custom cost should produce different control due to different weighting
-    CHECK(std::abs((*u_default)(0) - (*u_custom)(0)) > 1e-3);
+    CHECK(std::abs(u_default->input(0) - u_custom->input(0)) > 1e-3);
 }
 
 TEST_CASE("nmpc nlopt trajectory tracking", "[nmpc][nlopt]")
@@ -249,7 +251,7 @@ TEST_CASE("nmpc nlopt trajectory tracking", "[nmpc][nlopt]")
 
         auto u = controller.solve(x, std::span<const Eigen::Vector2d>{refs});
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
 
         double error = (x - refs[1]).norm();
         max_error = std::max(max_error, error);
@@ -274,7 +276,7 @@ TEST_CASE("nmpc nlopt pendulum regulation", "[nmpc][nlopt]")
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = pendulum(x, *u);
+        x = pendulum(x, u->input);
     }
 
     REQUIRE(x.norm() < 0.2 * initial_norm);
@@ -301,10 +303,10 @@ TEST_CASE("nmpc nlopt constraint satisfaction closed-loop", "[nmpc][nlopt]")
         REQUIRE(u.has_value());
 
         // Input constraint check
-        CHECK((*u)(0) >= -1.0 - tol);
-        CHECK((*u)(0) <= 1.0 + tol);
+        CHECK(u->input(0) >= -1.0 - tol);
+        CHECK(u->input(0) <= 1.0 + tol);
 
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
 
         // State constraint check
         CHECK(x(0) >= -3.0 - tol);

@@ -106,8 +106,8 @@ auto run_closed_loop(
             all_success = false;
             break;
         }
-        total_cost += x0.squaredNorm() + u->squaredNorm() * 0.1;
-        x0 = dynamics(x0, *u);
+        total_cost += x0.squaredNorm() + u->input.squaredNorm() * 0.1;
+        x0 = dynamics(x0, u->input);
     }
 
     double final_norm = all_success ? x0.norm() : -1.0;

@@ -57,7 +57,7 @@ int main()
             return EXIT_FAILURE;
         }
 
-        Eigen::Vector2d u = *u_opt;
+        Eigen::Vector2d u = u_opt->input;
         double t = k * dt;
 
         std::cout << std::fixed << std::setprecision(4) << t << "," << x[0] << "," << x[1] << "," << x[2] << "," << u[0] << "," << u[1] << "\n";

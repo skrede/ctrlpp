@@ -84,7 +84,7 @@ TEST_CASE("nmpc argmin regulation", "[nmpc][argmin]")
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
     }
 
     REQUIRE(x.norm() < 0.1 * initial_norm);
@@ -105,7 +105,7 @@ TEST_CASE("nmpc argmin setpoint tracking", "[nmpc][argmin]")
     {
         auto u = controller.solve(x, x_ref);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
     }
 
     REQUIRE((x - x_ref).norm() < 0.5);
@@ -127,9 +127,9 @@ TEST_CASE("nmpc argmin input box constraints", "[nmpc][argmin]")
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        CHECK((*u)(0) >= -0.5 - 1e-6);
-        CHECK((*u)(0) <= 0.5 + 1e-6);
-        x = double_integrator(x, *u);
+        CHECK(u->input(0) >= -0.5 - 1e-6);
+        CHECK(u->input(0) <= 0.5 + 1e-6);
+        x = double_integrator(x, u->input);
     }
 }
 
@@ -147,7 +147,7 @@ TEST_CASE("nmpc argmin pendulum regulation", "[nmpc][argmin]")
     {
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
-        x = pendulum(x, *u);
+        x = pendulum(x, u->input);
     }
 
     REQUIRE(x.norm() < 0.3);
@@ -402,7 +402,7 @@ TEST_CASE("nmpc argmin warm-start benefit", "[nmpc][argmin]")
     auto diag1 = controller.diagnostics();
 
     // Step forward
-    x = double_integrator(x, *u1);
+    x = double_integrator(x, u1->input);
 
     // Second solve (warm start from shifted solution)
     auto u2 = controller.solve(x);
@@ -438,7 +438,7 @@ TEST_CASE("nmpc argmin trajectory tracking", "[nmpc][argmin]")
 
         auto u = controller.solve(x, std::span<const Eigen::Vector2d>{refs});
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
 
         double error = (x - refs[1]).norm();
         max_error = std::max(max_error, error);
@@ -472,7 +472,7 @@ TEST_CASE("nmpc argmin survives move-then-solve", "[nmpc][argmin][move-safety]")
     // before the relocation, in addition to the bridge->m_problem link (layer 2).
     auto u0 = source.solve(x);
     REQUIRE(u0.has_value());
-    x = double_integrator(x, *u0);
+    x = double_integrator(x, u0->input);
 
     // Relocate the controller. A defaulted move must keep both argmin
     // back-pointers valid because the bridge and the problem are heap-stable.
@@ -482,7 +482,7 @@ TEST_CASE("nmpc argmin survives move-then-solve", "[nmpc][argmin][move-safety]")
     {
         auto u = moved.solve(x);
         REQUIRE(u.has_value());
-        x = double_integrator(x, *u);
+        x = double_integrator(x, u->input);
     }
 
     REQUIRE(x.norm() < 0.1 * initial_norm);
@@ -516,8 +516,8 @@ TEST_CASE("nmpc argmin copy is an independent fork", "[nmpc][argmin][move-safety
         auto ub = fork.solve(xb);
         REQUIRE(ua.has_value());
         REQUIRE(ub.has_value());
-        xa = double_integrator(xa, *ua);
-        xb = double_integrator(xb, *ub);
+        xa = double_integrator(xa, ua->input);
+        xb = double_integrator(xb, ub->input);
     }
 
     CHECK(xa.norm() < 0.1 * na0);

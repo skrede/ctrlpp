@@ -109,7 +109,8 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         REQUIRE(result.has_value());
 
         // Mock returns zero solution, so u_0 should be zero
-        CHECK_THAT((*result)(0), WithinAbs(0.0, 1e-12));
+        CHECK_THAT(result->input(0), WithinAbs(0.0, 1e-12));
+        CHECK(result->status == ctrlpp::solve_result_status::converged);
     }
 
     SECTION("solve(x0, x_ref) produces non-zero q vector for reference tracking")
@@ -123,7 +124,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         REQUIRE(result.has_value());
     }
 
-    SECTION("solve returns nullopt when solver reports infeasible")
+    SECTION("solve returns the error branch when solver reports infeasible")
     {
         auto cfg = make_config(N);
         Mpc controller(sys, cfg);
@@ -168,6 +169,43 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         ctrlpp::mpc<double, NX, NU, infeasible_mock> infeasible_ctrl(sys, cfg);
         auto infeasible_result = infeasible_ctrl.solve(x0);
         CHECK_FALSE(infeasible_result.has_value());
+        CHECK(infeasible_result.error() == ctrlpp::solver_error::infeasible);
+
+        // The error branch must not populate a valid trajectory either.
+        CHECK_FALSE(infeasible_ctrl.trajectory().has_value());
+    }
+
+    SECTION("budget-limited solve reaches the caller tagged budget_exhausted")
+    {
+        auto cfg = make_config(N);
+        Eigen::Vector2d x0{1.0, 0.0};
+
+        // A solver that exhausts its iteration budget still returns its best
+        // iterate; the widened accept-set surfaces it on the success branch.
+        struct budget_mock
+        {
+            using scalar_type = double;
+
+            mutable ctrlpp::qp_problem<double> last_setup{};
+
+            void setup(const ctrlpp::qp_problem<double>& problem) { last_setup = problem; }
+
+            auto solve(const ctrlpp::qp_update<double>&) -> ctrlpp::qp_result<double>
+            {
+                ctrlpp::qp_result<double> result;
+                result.status = ctrlpp::solve_status::max_iterations;
+                result.x = Eigen::VectorXd::Zero(last_setup.P.cols());
+                result.y = Eigen::VectorXd::Zero(last_setup.A.rows());
+                return result;
+            }
+        };
+
+        static_assert(ctrlpp::qp_solver<budget_mock>);
+
+        ctrlpp::mpc<double, NX, NU, budget_mock> budget_ctrl(sys, cfg);
+        auto budget_result = budget_ctrl.solve(x0);
+        REQUIRE(budget_result.has_value());
+        CHECK(budget_result->status == ctrlpp::solve_result_status::budget_exhausted);
     }
 
     SECTION("trajectory extracts correct number of state and input vectors")
@@ -179,7 +217,9 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         auto result = controller.solve(x0);
         REQUIRE(result.has_value());
 
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         CHECK(states.size() == static_cast<std::size_t>(N + 1));
         CHECK(inputs.size() == static_cast<std::size_t>(N));
 
@@ -277,7 +317,9 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         // With soft constraints: slack variables added
         // Decision vars: (N+1)*NX + N*NU + N*NX = 6*2 + 5*1 + 5*2 = 27
         // Trajectory should still be same size
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         CHECK(states.size() == static_cast<std::size_t>(N + 1));
         CHECK(inputs.size() == static_cast<std::size_t>(N));
     }
@@ -298,7 +340,9 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         // With rate constraints, the QP has additional rows
         // Constraints: (N+1)*NX dynamics + N*NU input bounds + N*NU rate bounds
         //            = 12 + 5 + 5 = 22
-        auto [states, inputs] = controller.trajectory();
+        auto traj = controller.trajectory();
+        REQUIRE(traj.has_value());
+        auto& [states, inputs] = *traj;
         CHECK(states.size() == static_cast<std::size_t>(N + 1));
         CHECK(inputs.size() == static_cast<std::size_t>(N));
     }
@@ -422,4 +466,43 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
         auto tracking_result = controller.solve(x0, y_ref);
         REQUIRE(tracking_result.has_value());
     }
+}
+
+TEST_CASE("mpc span overload rejects an undersized reference span", "[mpc][span]")
+{
+    auto sys = make_double_integrator();
+    constexpr int N = 5;
+    auto cfg = make_config(N);
+    Mpc controller(sys, cfg);
+
+    Eigen::Vector2d x0{1.0, 0.0};
+
+    // The tracking overload reads y_ref[0..N], so it needs N+1 references. A
+    // shorter span must be rejected via the error branch rather than overrun.
+    std::vector<Eigen::Vector2d> short_refs(static_cast<std::size_t>(N), Eigen::Vector2d{1.0, 0.0});
+    std::span<const Eigen::Vector2d> short_span(short_refs);
+    auto undersized = controller.solve(x0, short_span);
+    REQUIRE_FALSE(undersized.has_value());
+    CHECK(undersized.error() == ctrlpp::solver_error::invalid_problem);
+
+    // Exactly N+1 references is accepted.
+    std::vector<Eigen::Vector2d> ok_refs(static_cast<std::size_t>(N + 1), Eigen::Vector2d{1.0, 0.0});
+    std::span<const Eigen::Vector2d> ok_span(ok_refs);
+    CHECK(controller.solve(x0, ok_span).has_value());
+}
+
+TEST_CASE("mpc trajectory is guarded before the first valid solve", "[mpc][trajectory]")
+{
+    auto sys = make_double_integrator();
+    auto cfg = make_config(5);
+    Mpc controller(sys, cfg);
+
+    // No solve has run yet, so there is no valid trajectory to report.
+    auto pre = controller.trajectory();
+    REQUIRE_FALSE(pre.has_value());
+    CHECK(pre.error() == ctrlpp::solver_error::setup_incomplete);
+
+    Eigen::Vector2d x0{1.0, 0.0};
+    REQUIRE(controller.solve(x0).has_value());
+    CHECK(controller.trajectory().has_value());
 }

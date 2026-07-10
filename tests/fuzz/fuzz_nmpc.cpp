@@ -87,7 +87,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
         if(result.has_value())
         {
-            const auto& u = result.value();
+            const auto& u = result.value().input;
             for(int i = 0; i < 1; ++i)
             {
                 if(!std::isfinite(u(i)))

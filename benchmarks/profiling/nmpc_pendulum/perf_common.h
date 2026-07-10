@@ -108,7 +108,7 @@ auto run_pendulum_closed_loop(const run_options&      opts,
         if(!u.has_value())
             break;
 
-        const double stage_cost = x.squaredNorm() + u->squaredNorm() * 0.1;
+        const double stage_cost = x.squaredNorm() + u->input.squaredNorm() * 0.1;
         total_cost += stage_cost;
 
         if(trace)
@@ -118,7 +118,7 @@ auto run_pendulum_closed_loop(const run_options&      opts,
                 .step       = k,
                 .theta      = x(0),
                 .omega      = x(1),
-                .u          = (*u)(0),
+                .u          = u->input(0),
                 .iterations = diag.iterations,
                 .solve_time = diag.solve_time,
                 .status     = static_cast<int>(diag.status),
@@ -126,7 +126,7 @@ auto run_pendulum_closed_loop(const run_options&      opts,
             });
         }
 
-        x = pendulum_fn(x, *u);
+        x = pendulum_fn(x, u->input);
         ++solved_k;
     }
 
