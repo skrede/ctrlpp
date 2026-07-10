@@ -53,46 +53,91 @@ mpc(const discrete_state_space<Scalar, NX, NU, NX>& system,
 
 Constructs the controller from a discrete-time state-space model and configuration. Builds the QP matrices, computes terminal cost (via DARE if `Qf` is not set), and initializes the solver.
 
+## Failure contract
+
+Both `mpc` and `nmpc` share one soft-constraint and failure contract. Every
+`solve` overload returns `ctrlpp::expected<solve_output<Scalar, NU>, solver_error>`:
+
+- On the **success branch** the result holds a `solve_output` whose `input` field
+  is the first control input to apply and whose `status` field is a soft
+  `solve_result_status`:
+  - `converged`: the solver met its convergence tolerances.
+  - `solved_inaccurate`: a usable iterate was returned but tolerances were only
+    partially met.
+  - `budget_exhausted`: the iteration or time budget ran out, but the best iterate
+    found is still returned so it can be commanded knowingly.
+- On the **error branch** the result holds a `solver_error` and no input:
+  - `infeasible`: the problem as posed has no feasible point.
+  - `invalid_problem`: the problem is unbounded, non-convex, the solver reported an
+    internal error, or a reference span was too short.
+  - `setup_incomplete`: the one-time solver setup failed, so no solve can run.
+
+The input is reached explicitly through `->input`; there is no implicit conversion
+to `Vector<Scalar, NU>`, so the soft status can never be silently dropped. On the
+error branch the controller does not update its internal previous-input record and
+applies no hidden fallback, so a failed solve never warms the rate constraint from
+a phantom input. Use `set_applied_input` to record the input the caller actually
+commanded.
+
 ## Methods
 
 ### solve (regulation)
 
 ```cpp
 [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0)
-    -> std::optional<Vector<Scalar, NU>>;
+    -> ctrlpp::expected<solve_output<Scalar, NU>, solver_error>;
 ```
 
-Solves the QP for regulating state to the origin. Returns the first optimal input or `std::nullopt` if the solver fails. If solver setup failed at construction (reported through the solver's `try_setup`), every `solve` overload returns `std::nullopt`.
+Solves the QP for regulating state to the origin. Returns the success branch with
+the first input and a soft status, or the error branch on failure. If solver setup
+failed at construction (reported through the solver's `try_setup`), every `solve`
+overload returns the error branch with `solver_error::setup_incomplete`.
 
 ### solve (constant reference)
 
 ```cpp
 [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0,
-                         const Vector<Scalar, NX>& x_ref)
-    -> std::optional<Vector<Scalar, NU>>;
+                         const Vector<Scalar, NY>& y_ref)
+    -> ctrlpp::expected<solve_output<Scalar, NU>, solver_error>;
 ```
 
-Solves the QP for tracking a constant reference across the entire horizon.
+Solves the QP for tracking a constant output reference across the entire horizon.
 
 ### solve (trajectory reference)
 
 ```cpp
 [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0,
-                         std::span<const Vector<Scalar, NX>> x_ref)
-    -> std::optional<Vector<Scalar, NU>>;
+                         std::span<const Vector<Scalar, NY>> y_ref)
+    -> ctrlpp::expected<solve_output<Scalar, NU>, solver_error>;
 ```
 
-Solves the QP for tracking a time-varying reference trajectory. The span must contain at least `horizon + 1` elements.
+Solves the QP for tracking a time-varying output reference trajectory. The span
+must contain at least `horizon + 1` elements; an undersized span is rejected via
+the error branch (`solver_error::invalid_problem`) rather than read out of bounds.
+
+### set_applied_input
+
+```cpp
+void set_applied_input(const Vector<Scalar, NU>& u);
+```
+
+Records the control input the caller actually commanded. The internal previous
+input (which anchors the rate constraint) is updated only on a successful solve;
+this accessor lets the caller keep that reference consistent when it commands a
+different input, for example after an error branch or external saturation.
 
 ### trajectory
 
 ```cpp
 [[nodiscard]] auto trajectory() const
-    -> std::pair<std::vector<Vector<Scalar, NX>>,
-                 std::vector<Vector<Scalar, NU>>>;
+    -> ctrlpp::expected<std::pair<std::vector<Vector<Scalar, NX>>,
+                                  std::vector<Vector<Scalar, NU>>>,
+                        solver_error>;
 ```
 
-Returns the full predicted state and input trajectories from the last solve.
+Returns the full predicted state and input trajectories from the last solve. It is
+guarded: before the first valid solve it returns the error branch
+(`solver_error::setup_incomplete`) rather than stale or default-initialized data.
 
 ### diagnostics
 
@@ -144,16 +189,17 @@ int main()
         auto u_opt = controller.solve(x);
         if(!u_opt)
         {
+            // u_opt.error() carries the solver_error describing the failure.
             std::cerr << "MPC solve failed at t=" << t << "\n";
             return EXIT_FAILURE;
         }
 
         auto diag = controller.diagnostics();
         std::cout << "t=" << t << "  x=[" << x.transpose()
-                  << "]  u=" << (*u_opt)[0]
+                  << "]  u=" << u_opt->input[0]
                   << "  cost=" << diag.cost << "\n";
 
-        x = ctrlpp::propagate(sys, x, *u_opt);
+        x = ctrlpp::propagate(sys, x, u_opt->input);
     }
 }
 ```

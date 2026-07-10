@@ -17,7 +17,7 @@ using Pid = ctrlpp::pid<double, 1,
                          ctrlpp::rate_limit>;
 ```
 
-The compiler resolves all policies at instantiation &mdash; no virtual dispatch,
+The compiler resolves all policies at instantiation, with no virtual dispatch and
 no runtime branching.
 
 **Details:** [PID Composition Guide](../pid/composition.md)
@@ -33,7 +33,10 @@ ctrlpp::nmpc<double, NX, NU, ctrlpp::nlopt_solver> nonlinear_mpc(dyn, cfg);
 ```
 
 Swap `osqp_solver` for your own type and MPC works identically. The concept
-check catches mismatches at compile time.
+check catches mismatches at compile time. Regardless of the backend, both `mpc`
+and `nmpc` expose one shared failure contract: `solve()` returns
+`ctrlpp::expected<solve_output<Scalar, NU>, solver_error>`, so a backend that
+fails surfaces the error on the same channel the caller already handles.
 
 **Details:** [Solver Injection Guide](../mpc/solver-injection.md)
 

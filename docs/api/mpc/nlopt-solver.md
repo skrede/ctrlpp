@@ -176,8 +176,8 @@ int main()
             break;
 
         std::cout << "k=" << k << "  x=[" << x.transpose()
-                  << "]  u=" << (*u_opt)[0] << "\n";
-        x = dynamics(x, *u_opt);
+                  << "]  u=" << u_opt->input[0] << "\n";
+        x = dynamics(x, u_opt->input);
     }
 }
 ```

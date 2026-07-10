@@ -96,7 +96,7 @@ int main()
             std::cerr << "Solve failed\n";
             return EXIT_FAILURE;
         }
-        x = ctrlpp::propagate(sys, x, *u_opt);
+        x = ctrlpp::propagate(sys, x, u_opt->input);
         std::cout << t << "," << x[0] << "," << x[1] << "\n";
     }
 }
@@ -118,7 +118,9 @@ ctrlpp::nmpc<double, NX, NU, ctrlpp::nlopt_solver> controller(dynamics, cfg);
 ```
 
 The rest of the API is identical: `controller.solve(x)` returns
-`std::optional<Vector>`.
+`ctrlpp::expected<solve_output<Scalar, NU>, solver_error>`, where the success
+branch carries `->input` plus a soft `status` and the error branch carries a
+`solver_error`.
 
 ## Writing a Custom Solver
 

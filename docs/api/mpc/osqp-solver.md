@@ -146,7 +146,7 @@ int main()
         if(!u_opt)
             break;
 
-        x = ctrlpp::propagate(sys, x, *u_opt);
+        x = ctrlpp::propagate(sys, x, u_opt->input);
         std::cout << "k=" << k << "  x=[" << x.transpose() << "]\n";
     }
 }

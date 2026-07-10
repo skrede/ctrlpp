@@ -61,21 +61,43 @@ nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config);
 
 Constructs the controller from a dynamics model and configuration. Builds the NLP formulation and initializes the solver.
 
+## Failure contract
+
+`nmpc` shares the exact soft-constraint and failure contract documented for
+[mpc](mpc.md). Every `solve` overload returns
+`ctrlpp::expected<solve_output<Scalar, NU>, solver_error>`:
+
+- The **success branch** holds a `solve_output` whose `input` field is the first
+  control input and whose `status` field is a soft `solve_result_status`
+  (`converged`, `solved_inaccurate`, or `budget_exhausted`). A budget-limited
+  solve still returns its best iterate tagged `budget_exhausted`.
+- The **error branch** holds a `solver_error` (`infeasible`, `invalid_problem`, or
+  `setup_incomplete`) and no input.
+
+The input is reached explicitly through `->input`; there is no implicit conversion
+to `Vector<Scalar, NU>`. On the error branch the internal previous-input record is
+not updated and no hidden fallback is applied. Use `set_applied_input` to record
+the input the caller actually commanded.
+
 ## Methods
 
 ### solve (regulation)
 
 ```cpp
-std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0);
+ctrlpp::expected<solve_output<Scalar, NU>, solver_error>
+solve(const Vector<Scalar, NX>& x0);
 ```
 
-Solves the NLP for regulating state to the origin. Returns the first optimal input or `std::nullopt` if the solver fails. If solver setup failed at construction (reported through the solver's `try_setup`), every `solve` overload returns `std::nullopt`.
+Solves the NLP for regulating state to the origin. Returns the success branch with
+the first input and a soft status, or the error branch on failure. If solver setup
+failed at construction (reported through the solver's `try_setup`), every `solve`
+overload returns the error branch with `solver_error::setup_incomplete`.
 
 ### solve (constant reference)
 
 ```cpp
-std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0,
-                                        const Vector<Scalar, NX>& x_ref);
+ctrlpp::expected<solve_output<Scalar, NU>, solver_error>
+solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NX>& x_ref);
 ```
 
 Solves the NLP for tracking a constant reference.
@@ -83,20 +105,35 @@ Solves the NLP for tracking a constant reference.
 ### solve (trajectory reference)
 
 ```cpp
-std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0,
-                                        std::span<const Vector<Scalar, NX>> x_ref);
+ctrlpp::expected<solve_output<Scalar, NU>, solver_error>
+solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NX>> x_ref);
 ```
 
-Solves the NLP for tracking a time-varying reference trajectory.
+Solves the NLP for tracking a time-varying reference trajectory. References shorter
+than the horizon are back-filled from the last supplied element; an empty span is
+rejected via the error branch (`solver_error::invalid_problem`).
+
+### set_applied_input
+
+```cpp
+void set_applied_input(const Vector<Scalar, NU>& u);
+```
+
+Records the control input the caller actually commanded. The internal previous
+input is updated only on a successful solve; this accessor keeps that reference
+consistent when the caller commands a different input.
 
 ### trajectory
 
 ```cpp
-std::pair<std::vector<Vector<Scalar, NX>>,
-          std::vector<Vector<Scalar, NU>>> trajectory() const;
+ctrlpp::expected<std::pair<std::vector<Vector<Scalar, NX>>,
+                           std::vector<Vector<Scalar, NU>>>,
+                 solver_error> trajectory() const;
 ```
 
-Returns the full predicted state and input trajectories from the last solve.
+Returns the full predicted state and input trajectories from the last solve. It is
+guarded: before the first valid solve it returns the error branch
+(`solver_error::setup_incomplete`) rather than stale data.
 
 ### diagnostics
 
@@ -162,6 +199,7 @@ int main()
         auto u_opt = controller.solve(x, x_ref);
         if(!u_opt)
         {
+            // u_opt.error() carries the solver_error describing the failure.
             std::cerr << "NMPC solve failed at step " << k << "\n";
             return EXIT_FAILURE;
         }
@@ -169,9 +207,9 @@ int main()
         std::cout << "k=" << k
                   << "  theta=" << x[0]
                   << "  omega=" << x[1]
-                  << "  u=" << (*u_opt)[0] << "\n";
+                  << "  u=" << u_opt->input[0] << "\n";
 
-        x = dynamics(x, *u_opt);
+        x = dynamics(x, u_opt->input);
     }
 }
 ```

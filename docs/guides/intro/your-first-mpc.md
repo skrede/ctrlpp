@@ -3,7 +3,7 @@
 > **Requires OSQP.** Enable with `-DCTRLPP_BUILD_OSQP=ON`.
 
 This tutorial builds a model predictive controller (MPC) for a double
-integrator &mdash; a system with position and velocity states driven by a force
+integrator, a system with position and velocity states driven by a force
 input. MPC plans an optimal trajectory over a finite horizon while respecting
 state and input constraints.
 
@@ -77,11 +77,16 @@ int main()
         auto u_opt = controller.solve(x);
         if (!u_opt)
         {
+            // solve() returns ctrlpp::expected<solve_output, solver_error>;
+            // u_opt.error() carries the solver_error on the failure branch.
             std::cerr << "MPC solve failed at t=" << t << "\n";
             return EXIT_FAILURE;
         }
 
-        Eigen::Matrix<double, 1, 1> u = *u_opt;
+        // Reach the applied input explicitly through ->input; u_opt->status
+        // carries the soft solve_result_status (converged / solved_inaccurate /
+        // budget_exhausted).
+        Eigen::Matrix<double, 1, 1> u = u_opt->input;
 
         std::cout << std::fixed << std::setprecision(4)
                   << t << "," << x[0] << "," << x[1] << ","
