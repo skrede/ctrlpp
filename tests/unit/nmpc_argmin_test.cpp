@@ -3,8 +3,14 @@
 #include "ctrlpp/mpc/nlopt_solver.h"
 #endif
 #include "ctrlpp/nmpc.h"
+#ifdef CTRLPP_HAS_OSQP
+#include "ctrlpp/mpc.h"
+#include "ctrlpp/mpc/osqp_solver.h"
+#endif
 
 #include <Eigen/Dense>
+
+#include <utility>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -440,3 +446,157 @@ TEST_CASE("nmpc argmin trajectory tracking", "[nmpc][argmin]")
 
     CHECK(max_error < 2.0);
 }
+
+// --- MAJ-06 / D-C move & copy safety -----------------------------------------
+//
+// argmin's solver_core caches the problem BY REFERENCE (const Problem*,
+// solver_core.h:657) and the ctrlpp bridge caches &m_problem, so a naive move of
+// an nmpc / argmin_solver would relocate the pointed-to bridge and problem while
+// the cached back-pointers kept the stale addresses. These cases relocate a
+// controller and then drive a full solve through those back-pointers; they are
+// compiled into an -fsanitize=address variant (nmpc_argmin_asan_test) so a
+// dangling read surfaces as a heap-use-after-free rather than a silent pass.
+
+TEST_CASE("nmpc argmin survives move-then-solve", "[nmpc][argmin][move-safety]")
+{
+    auto config = make_config(10);
+    config.Q = 10.0 * Eigen::Matrix2d::Identity();
+    config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
+
+    NmpcDI source{double_integrator, config};
+
+    Eigen::Vector2d x{1.0, 0.0};
+    const double initial_norm = x.norm();
+
+    // Solve once so the solver variant is emplaced and caches &bridge (layer 1)
+    // before the relocation, in addition to the bridge->m_problem link (layer 2).
+    auto u0 = source.solve(x);
+    REQUIRE(u0.has_value());
+    x = double_integrator(x, *u0);
+
+    // Relocate the controller. A defaulted move must keep both argmin
+    // back-pointers valid because the bridge and the problem are heap-stable.
+    NmpcDI moved{std::move(source)};
+
+    for(int step = 0; step < 50; ++step)
+    {
+        auto u = moved.solve(x);
+        REQUIRE(u.has_value());
+        x = double_integrator(x, *u);
+    }
+
+    REQUIRE(x.norm() < 0.1 * initial_norm);
+}
+
+TEST_CASE("nmpc argmin copy is an independent fork", "[nmpc][argmin][move-safety]")
+{
+    auto config = make_config(10);
+    config.Q = 10.0 * Eigen::Matrix2d::Identity();
+    config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
+
+    NmpcDI original{double_integrator, config};
+
+    // Warm the original so its formulation state / warm-start is non-trivial;
+    // the fork must snapshot, not alias, that state.
+    REQUIRE(original.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+
+    NmpcDI fork{original};
+
+    // Drive both controllers from DIFFERENT initial states in lockstep. If the
+    // fork aliased the source's shared state / problem / solver, the interleaved
+    // writes would corrupt one another; independence keeps both convergent.
+    Eigen::Vector2d xa{1.0, 0.0};
+    Eigen::Vector2d xb{-2.0, 1.0};
+    const double na0 = xa.norm();
+    const double nb0 = xb.norm();
+
+    for(int step = 0; step < 60; ++step)
+    {
+        auto ua = original.solve(xa);
+        auto ub = fork.solve(xb);
+        REQUIRE(ua.has_value());
+        REQUIRE(ub.has_value());
+        xa = double_integrator(xa, *ua);
+        xb = double_integrator(xb, *ub);
+    }
+
+    CHECK(xa.norm() < 0.1 * na0);
+    CHECK(xb.norm() < 0.1 * nb0);
+}
+
+TEST_CASE("argmin_solver survives move-then-solve", "[argmin][move-safety]")
+{
+    // The external problem outlives both solvers (stack-local for the whole
+    // case), so the only relocation under test is the solver's own bridge.
+    ctrlpp::nlp_problem<double> prob;
+    prob.n_vars = 2;
+    prob.n_constraints = 0;
+    prob.cost = [](std::span<const double> x)
+    { return (1.0 - x[0]) * (1.0 - x[0]) + 100.0 * (x[1] - x[0] * x[0]) * (x[1] - x[0] * x[0]); };
+    prob.gradient = [](std::span<const double> x, std::span<double> g)
+    {
+        g[0] = -2.0 * (1.0 - x[0]) - 400.0 * x[0] * (x[1] - x[0] * x[0]);
+        g[1] = 200.0 * (x[1] - x[0] * x[0]);
+    };
+    prob.x_lower = Eigen::Vector2d::Constant(-10.0);
+    prob.x_upper = Eigen::Vector2d::Constant(10.0);
+    prob.c_lower = Eigen::VectorXd{};
+    prob.c_upper = Eigen::VectorXd{};
+
+    ctrlpp::argmin_settings<double> settings{};
+    settings.max_eval = 500;
+
+    ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false> source{settings};
+    source.setup(prob);
+
+    ctrlpp::nlp_update<double> update;
+    update.x0 = Eigen::Vector2d{-1.2, 1.0};
+
+    // Solve once so solver_ is emplaced and caches &bridge_ (layer 1) before move.
+    auto first = source.solve(update);
+    CHECK(first.status != ctrlpp::solve_status::error);
+
+    ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false> moved{std::move(source)};
+    auto result = moved.solve(update);
+
+    REQUIRE(result.status == ctrlpp::solve_status::optimal);
+    CHECK_THAT(result.x(0), WithinAbs(1.0, 1e-3));
+    CHECK_THAT(result.x(1), WithinAbs(1.0, 1e-3));
+}
+
+#ifdef CTRLPP_HAS_OSQP
+TEST_CASE("mpc osqp survives move-then-solve", "[mpc][osqp][move-safety]")
+{
+    // Assumption A2: OSQP copies the problem data into its own workspace and
+    // caches no pointer into mpc's members (the qp_problem handed to setup is a
+    // local in build_initial_qp), so mpc is move-safe. This case pins that.
+    Eigen::Matrix2d A;
+    A << 1.0, dt, 0.0, 1.0;
+    Eigen::Vector2d B;
+    B << 0.5 * dt * dt, dt;
+    Eigen::Matrix2d C = Eigen::Matrix2d::Identity();
+    Eigen::Matrix<double, 2, 1> D = Eigen::Matrix<double, 2, 1>::Zero();
+    ctrlpp::discrete_state_space<double, NX, NU, NX> sys{A, B, C, D};
+
+    ctrlpp::mpc_config<double, NX, NU> cfg{
+        .horizon = 10,
+        .Q = Eigen::Matrix2d::Identity(),
+        .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+    };
+
+    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> source{sys, cfg};
+    REQUIRE(source.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+
+    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> moved{std::move(source)};
+
+    Eigen::Vector2d x{1.0, 0.0};
+    for(int step = 0; step < 50; ++step)
+    {
+        auto u = moved.solve(x);
+        REQUIRE(u.has_value());
+        x = sys.A * x + sys.B * u.value();
+    }
+
+    CHECK(x.norm() < 0.1);
+}
+#endif

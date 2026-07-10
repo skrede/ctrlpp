@@ -184,8 +184,28 @@ if (CTRLPP_BUILD_ARGMIN)
     if (CTRLPP_BUILD_NLOPT)
         target_link_libraries(nmpc_argmin_test PRIVATE ctrlpp::nlopt)
     endif ()
+    if (CTRLPP_BUILD_OSQP)
+        target_link_libraries(nmpc_argmin_test PRIVATE ctrlpp::osqp)
+        target_compile_definitions(nmpc_argmin_test PRIVATE CTRLPP_HAS_OSQP)
+    endif ()
     target_compile_options(nmpc_argmin_test PRIVATE ${CTRLPP_WARNING_FLAGS})
     add_test(NAME nmpc_argmin_test COMMAND nmpc_argmin_test)
+
+    # AddressSanitizer variant of the move/copy safety suite. Same source, built
+    # with -fsanitize=address so the move-then-solve / copy-then-solve cases turn
+    # a dangling argmin back-pointer (MAJ-06 / D-C) into a hard ASAN failure.
+    add_executable(nmpc_argmin_asan_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_argmin_test.cpp")
+    target_link_libraries(nmpc_argmin_asan_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
+    if (CTRLPP_BUILD_NLOPT)
+        target_link_libraries(nmpc_argmin_asan_test PRIVATE ctrlpp::nlopt)
+    endif ()
+    if (CTRLPP_BUILD_OSQP)
+        target_link_libraries(nmpc_argmin_asan_test PRIVATE ctrlpp::osqp)
+        target_compile_definitions(nmpc_argmin_asan_test PRIVATE CTRLPP_HAS_OSQP)
+    endif ()
+    target_compile_options(nmpc_argmin_asan_test PRIVATE ${CTRLPP_WARNING_FLAGS} -fsanitize=address -g)
+    target_link_options(nmpc_argmin_asan_test PRIVATE -fsanitize=address)
+    add_test(NAME nmpc_argmin_asan_test COMMAND nmpc_argmin_asan_test)
 
     add_executable(argmin_stepper_test "${CMAKE_CURRENT_LIST_DIR}/argmin_stepper_test.cpp")
     target_link_libraries(argmin_stepper_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
