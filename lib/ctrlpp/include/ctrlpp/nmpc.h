@@ -2,6 +2,7 @@
 #define HPP_GUARD_CTRLPP_NMPC_H
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/mpc/nlp_solver.h"
 #include "ctrlpp/mpc/nmpc_config.h"
@@ -86,6 +87,7 @@ public:
         , m_last_solution{other.m_last_solution}
         , m_last_diagnostics{other.m_last_diagnostics}
         , m_u_prev{other.m_u_prev}
+        , m_has_solution{other.m_has_solution}
     {
         m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem);
     }
@@ -97,33 +99,59 @@ public:
         return *this;
     }
 
-    std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0)
+    // Unified soft-constraint / failure contract, identical to mpc (see mpc.h).
+    //
+    // solve() returns ctrlpp::expected<solve_output<Scalar, NU>, solver_error>.
+    //   * SUCCESS branch: a usable control input reached through `->input`, plus a
+    //     soft solve_result_status (optimal->converged,
+    //     solved_inaccurate->solved_inaccurate,
+    //     max_iterations/time_limit->budget_exhausted). No implicit conversion to
+    //     Vector, so the status is never silently dropped.
+    //   * ERROR branch: a hard failure (infeasible/invalid_problem/setup_incomplete)
+    //     with NO input. On error the internal m_u_prev is NOT updated and no
+    //     hidden fallback input is applied. Use set_applied_input to record the
+    //     input the caller actually commanded.
+    expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scalar, NX>& x0)
     {
         for(auto& ref : m_state->x_ref)
             ref.setZero();
         return solve_impl(x0);
     }
 
-    std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NX>& x_ref)
+    expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NX>& x_ref)
     {
         for(auto& ref : m_state->x_ref)
             ref = x_ref;
         return solve_impl(x0);
     }
 
-    std::optional<Vector<Scalar, NU>> solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NX>> x_ref)
+    expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NX>> x_ref)
     {
+        // An empty reference span has no value to back-fill from; reject it via
+        // the error branch rather than solving against stale references.
+        if(x_ref.empty())
+            return unexpected<solver_error>{solver_error::invalid_problem};
         const auto len = std::min(x_ref.size(), m_state->x_ref.size());
         for(std::size_t k = 0; k < len; ++k)
             m_state->x_ref[k] = x_ref[k];
-        if(!x_ref.empty())
-            for(std::size_t k = len; k < m_state->x_ref.size(); ++k)
-                m_state->x_ref[k] = x_ref.back();
+        for(std::size_t k = len; k < m_state->x_ref.size(); ++k)
+            m_state->x_ref[k] = x_ref.back();
         return solve_impl(x0);
     }
 
-    std::pair<std::vector<Vector<Scalar, NX>>, std::vector<Vector<Scalar, NU>>> trajectory() const
+    /// @brief Record the control input the caller actually commanded.
+    ///
+    /// The internal m_u_prev is updated only on a successful solve; this accessor
+    /// lets the caller keep it consistent when it commands a different input.
+    void set_applied_input(const Vector<Scalar, NU>& u) { m_u_prev = u; }
+
+    // Guarded: returns the error branch before the first valid solve, so a caller
+    // can never read stale or default-initialized solution data.
+    expected<std::pair<std::vector<Vector<Scalar, NX>>, std::vector<Vector<Scalar, NU>>>, solver_error> trajectory() const
     {
+        if(!m_has_solution)
+            return unexpected<solver_error>{solver_error::setup_incomplete};
+
         std::vector<Vector<Scalar, NX>> states;
         std::vector<Vector<Scalar, NU>> inputs;
         states.reserve(static_cast<std::size_t>(m_N + 1));
@@ -135,7 +163,7 @@ public:
         for(int k = 0; k < m_N; ++k)
             inputs.push_back(m_last_solution.segment(u_offset + k * nu, nu));
 
-        return {std::move(states), std::move(inputs)};
+        return std::pair{std::move(states), std::move(inputs)};
     }
 
     mpc_diagnostics<Scalar> diagnostics() const { return m_last_diagnostics; }
@@ -143,10 +171,10 @@ public:
     const Eigen::VectorX<Scalar>& last_solution() const { return m_last_solution; }
 
 private:
-    std::optional<Vector<Scalar, NU>> solve_impl(const Vector<Scalar, NX>& x0)
+    expected<solve_output<Scalar, NU>, solver_error> solve_impl(const Vector<Scalar, NX>& x0)
     {
         if(m_setup_failed)
-            return std::nullopt;
+            return unexpected<solver_error>{solver_error::setup_incomplete};
 
         m_state->x0 = x0;
         m_state->u_prev = m_u_prev;
@@ -157,13 +185,34 @@ private:
         auto result = m_solver.solve(update);
         populate_diagnostics(result);
 
-        if(result.status != solve_status::optimal && result.status != solve_status::solved_inaccurate)
-            return std::nullopt;
+        // WIDENED accept-set: budget-limited iterates (max_iterations/time_limit)
+        // now reach the caller on the SUCCESS branch tagged budget_exhausted.
+        switch(result.status)
+        {
+        case solve_status::optimal:
+            return finish_solve(result.x, solve_result_status::converged);
+        case solve_status::solved_inaccurate:
+            return finish_solve(result.x, solve_result_status::solved_inaccurate);
+        case solve_status::max_iterations:
+        case solve_status::time_limit:
+            return finish_solve(result.x, solve_result_status::budget_exhausted);
+        case solve_status::infeasible:
+            return unexpected<solver_error>{solver_error::infeasible};
+        case solve_status::unbounded:
+        case solve_status::non_convex:
+        case solve_status::error:
+        default:
+            return unexpected<solver_error>{solver_error::invalid_problem};
+        }
+    }
 
-        m_last_solution = result.x;
-        populate_constraint_diagnostics(result.x);
-        shift_warm_start(result.x);
-        return extract_first_input(result.x);
+    solve_output<Scalar, NU> finish_solve(const Eigen::VectorX<Scalar>& z, solve_result_status status)
+    {
+        m_last_solution = z;
+        m_has_solution = true;
+        populate_constraint_diagnostics(z);
+        shift_warm_start(z);
+        return solve_output<Scalar, NU>{.input = extract_first_input(z), .status = status};
     }
 
     void populate_diagnostics(const nlp_result<Scalar>& result)
@@ -322,6 +371,7 @@ private:
     mpc_diagnostics<Scalar> m_last_diagnostics{};
     Vector<Scalar, NU> m_u_prev{Vector<Scalar, NU>::Zero()};
     bool m_setup_failed{false};
+    bool m_has_solution{false};
 };
 
 }

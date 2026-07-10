@@ -2,6 +2,7 @@
 #define HPP_GUARD_CTRLPP_MPC_H
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/control/dare.h"
 
@@ -60,13 +61,31 @@ public:
         allocate_update_vectors();
     }
 
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0) -> std::optional<Vector<Scalar, NU>>
+    // Unified soft-constraint / failure contract (shared by mpc and nmpc).
+    //
+    // solve() returns ctrlpp::expected<solve_output<Scalar, NU>, solver_error>.
+    //   * SUCCESS branch: a usable control input plus a soft solve_result_status.
+    //     - optimal            -> converged
+    //     - solved_inaccurate  -> solved_inaccurate
+    //     - max_iterations     -> budget_exhausted (best iterate still returned)
+    //     - time_limit         -> budget_exhausted (best iterate still returned)
+    //     The applied input is reached explicitly through `->input`; there is no
+    //     implicit conversion to Vector, so the soft status can never be dropped.
+    //   * ERROR branch: a hard failure with NO input.
+    //     - infeasible                     -> infeasible
+    //     - unbounded / non_convex / error -> invalid_problem
+    //     - one-time solver setup failed   -> setup_incomplete
+    //     On the error branch the controller does NOT update its internal u_prev
+    //     and applies no hidden fallback input, so a failed solve never warms the
+    //     rate constraints from a phantom input. Use set_applied_input to record
+    //     the input the caller actually commanded.
+    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         update_.q.setZero();
         return solve_impl(x0);
     }
 
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NY>& y_ref) -> std::optional<Vector<Scalar, NU>>
+    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NY>& y_ref) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         int N = config_.horizon;
         Vector<Scalar, NX> CtQ_yref = CtQ_ * y_ref;
@@ -77,9 +96,13 @@ public:
         return solve_impl(x0);
     }
 
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NY>> y_ref) -> std::optional<Vector<Scalar, NU>>
+    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NY>> y_ref) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         int N = config_.horizon;
+        // The tracking overload reads y_ref[0..N] (N+1 references). An undersized
+        // span would otherwise overrun; reject it via the error branch (MAJ-06 v).
+        if(y_ref.size() < static_cast<std::size_t>(N + 1))
+            return unexpected<solver_error>{solver_error::invalid_problem};
         for(int k = 0; k < N; ++k)
             update_.q.segment(k * nx, nx) = -(CtQ_ * y_ref[static_cast<std::size_t>(k)]);
         update_.q.segment(N * nx, nx) = -(Qf_linear_ * y_ref[static_cast<std::size_t>(N)]);
@@ -87,8 +110,21 @@ public:
         return solve_impl(x0);
     }
 
-    [[nodiscard]] auto trajectory() const -> std::pair<std::vector<Vector<Scalar, NX>>, std::vector<Vector<Scalar, NU>>>
+    /// @brief Record the control input the caller actually commanded.
+    ///
+    /// The internal u_prev (which anchors the rate constraint) is updated only on
+    /// a successful solve. When the caller overrides the commanded input (for
+    /// example after an error branch, or when saturating externally), this lets it
+    /// keep the rate-constraint reference consistent with what was truly applied.
+    void set_applied_input(const Vector<Scalar, NU>& u) { u_prev_ = u; }
+
+    // Guarded: returns the error branch before the first valid solve, so a caller
+    // can never read stale or default-initialized primal data.
+    [[nodiscard]] auto trajectory() const -> expected<std::pair<std::vector<Vector<Scalar, NX>>, std::vector<Vector<Scalar, NU>>>, solver_error>
     {
+        if(!has_solution_)
+            return unexpected<solver_error>{solver_error::setup_incomplete};
+
         int N = config_.horizon;
         std::vector<Vector<Scalar, NX>> states;
         std::vector<Vector<Scalar, NU>> inputs;
@@ -100,7 +136,7 @@ public:
         for(int k = 0; k < N; ++k)
             inputs.push_back(last_primal_.segment(n_x_total_ + k * nu, nu));
 
-        return {std::move(states), std::move(inputs)};
+        return std::pair{std::move(states), std::move(inputs)};
     }
 
     [[nodiscard]] auto diagnostics() const -> mpc_diagnostics<Scalar> { return last_diagnostics_; }
@@ -193,10 +229,10 @@ private:
         update_.u.setZero();
     }
 
-    [[nodiscard]] auto solve_impl(const Vector<Scalar, NX>& x0) -> std::optional<Vector<Scalar, NU>>
+    [[nodiscard]] auto solve_impl(const Vector<Scalar, NX>& x0) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         if(setup_failed_)
-            return std::nullopt;
+            return unexpected<solver_error>{solver_error::setup_incomplete};
 
         rebuild_bounds(x0);
         apply_rate_constraint_update();
@@ -206,10 +242,25 @@ private:
 
         populate_diagnostics(result);
 
-        if(result.status != solve_status::optimal && result.status != solve_status::solved_inaccurate)
-            return std::nullopt;
-
-        return extract_solution(result);
+        // WIDENED accept-set: budget-limited iterates (max_iterations/time_limit)
+        // now reach the caller on the SUCCESS branch tagged budget_exhausted.
+        switch(result.status)
+        {
+        case solve_status::optimal:
+            return extract_solution(result, solve_result_status::converged);
+        case solve_status::solved_inaccurate:
+            return extract_solution(result, solve_result_status::solved_inaccurate);
+        case solve_status::max_iterations:
+        case solve_status::time_limit:
+            return extract_solution(result, solve_result_status::budget_exhausted);
+        case solve_status::infeasible:
+            return unexpected<solver_error>{solver_error::infeasible};
+        case solve_status::unbounded:
+        case solve_status::non_convex:
+        case solve_status::error:
+        default:
+            return unexpected<solver_error>{solver_error::invalid_problem};
+        }
     }
 
     void rebuild_bounds(const Vector<Scalar, NX>& x0)
@@ -263,15 +314,18 @@ private:
                                                     .max_constraint_violation = Scalar{0}};
     }
 
-    auto extract_solution(qp_result<Scalar>& result) -> Vector<Scalar, NU>
+    auto extract_solution(qp_result<Scalar>& result, solve_result_status status) -> solve_output<Scalar, NU>
     {
         last_primal_ = std::move(result.x);
         last_dual_ = std::move(result.y);
         has_solution_ = true;
 
+        // The internal u_prev update lives on the SUCCESS branch only (this method
+        // is reached solely from a successful solve), so a failed solve never
+        // warms the rate constraint from a phantom input.
         Vector<Scalar, NU> u0 = last_primal_.segment(n_x_total_, nu);
         u_prev_ = u0;
-        return u0;
+        return solve_output<Scalar, NU>{.input = std::move(u0), .status = status};
     }
 
     Solver solver_{};
