@@ -67,8 +67,12 @@ echo
 # float coverage of the host no-exceptions leg we additionally compile a small
 # generated probe that instantiates the same core umbrella surface at double.
 
-double_probe="$(mktemp --suffix=.cpp)"
-trap 'rm -f "${double_probe}"' EXIT
+# mktemp -d is portable across GNU and BSD/macOS (unlike GNU-only --suffix),
+# and a probe.cpp inside it keeps the .cpp extension the compiler needs to
+# infer the C++ language front end.
+probe_dir="$(mktemp -d)"
+double_probe="${probe_dir}/probe.cpp"
+trap 'rm -rf "${probe_dir}"' EXIT
 cat > "${double_probe}" <<'PROBE'
 #include "ctrlpp/control.h"
 #include "ctrlpp/estimation.h"
@@ -174,7 +178,7 @@ if [ -n "${ARM_EXTRA_INCLUDE:-}" ]; then
 fi
 
 arm-none-eabi-g++ -std=c++20 -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard -fno-exceptions -fno-rtti -DCTRLPP_NO_EXCEPTIONS \
-    "${arm_extra_args[@]}" \
+    ${arm_extra_args[@]+"${arm_extra_args[@]}"} \
     -I "${ctrlpp_include}" -isystem "${eigen_include}" \
     -c "${witness_tu}" -o /dev/null
 echo "  float translation unit: OK"
