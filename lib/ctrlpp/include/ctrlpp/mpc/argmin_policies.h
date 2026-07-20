@@ -15,6 +15,8 @@
 #include <argmin/solver/filter_nw_sqp_policy.h>
 #include <argmin/solver/augmented_lagrangian_policy.h>
 
+#include <Eigen/Core>
+
 #include <cstdint>
 #include <type_traits>
 
@@ -48,6 +50,42 @@ struct argmin_nw_sqp
 {
     using algorithm = argmin::nw_sqp_policy<>;
 };
+
+// Compile-time-N form of argmin_nw_sqp for the allocation-free static path
+// (Route A / SEED-002): it resolves argmin::nw_sqp_policy<NV>, whose state_type
+// sizes its decision-vector buffers (x, g, bounds, the QP working set) with
+// fixed-size Eigen types when NV is a positive compile-time bound. The default
+// NV == Eigen::Dynamic yields nw_sqp_policy<> — byte-identical to argmin_nw_sqp.
+// The constraint bound M stays derived internally by argmin (dynamic here).
+template <int NV = Eigen::Dynamic>
+struct argmin_nw_sqp_static
+{
+    using algorithm = argmin::nw_sqp_policy<NV>;
+};
+
+// Rebind a ctrlpp policy binding's argmin algorithm to a compile-time decision
+// dimension N when the underlying argmin policy exposes a rebind<N> hook (the
+// SQP families do). Policies without the hook are returned unchanged — they have
+// no compile-time-N form and are only ever used on the dynamic path. argmin_solver
+// uses this to select argmin's compile-time-N step_budget_solver on the static
+// path while leaving the dynamic default (N == Eigen::Dynamic) byte-identical:
+// for nw_sqp, rebind<Eigen::Dynamic> is nw_sqp_policy<Eigen::Dynamic>, the same
+// type as the default-argument nw_sqp_policy<>.
+template <typename Algorithm, int N, typename = void>
+struct rebind_argmin_algorithm
+{
+    using type = Algorithm;
+};
+
+template <typename Algorithm, int N>
+struct rebind_argmin_algorithm<Algorithm, N,
+    std::void_t<typename Algorithm::template rebind<N>>>
+{
+    using type = typename Algorithm::template rebind<N>;
+};
+
+template <typename Algorithm, int N>
+using rebind_argmin_algorithm_t = typename rebind_argmin_algorithm<Algorithm, N>::type;
 
 struct argmin_filter_slsqp
 {

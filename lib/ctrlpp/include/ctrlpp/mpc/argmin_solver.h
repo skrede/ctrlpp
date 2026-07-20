@@ -26,7 +26,15 @@
 namespace ctrlpp
 {
 
-template <typename Scalar, typename Policy, bool Constrained = true>
+// argmin_solver<Scalar, Policy, Constrained, NV>: the trailing NV selects the
+// solve path. NV == Eigen::Dynamic (the DEFAULT) is the original runtime-erased
+// solver, byte-for-byte: it binds an nlp_problem<Scalar>, instantiates argmin's
+// dynamic step_budget_solver, and every existing caller compiles unchanged.
+// NV != Eigen::Dynamic is the allocation-free static path (Route A / SEED-002):
+// the policy algorithm is rebound to the compile-time dimension NV, argmin's
+// compile-time-N step_budget_solver is instantiated, the bridge uses fixed-size
+// decision-vector storage, and setup binds an nlp_problem_static<Scalar, NV>.
+template <typename Scalar, typename Policy, bool Constrained = true, int NV = Eigen::Dynamic>
 class argmin_solver
 {
     // Compile-time guard for the structurally-always-invalid configuration: a
@@ -46,15 +54,22 @@ class argmin_solver
 
 public:
     using scalar_type = Scalar;
-    using argmin_policy = typename Policy::algorithm;
+    // On the static path (NV != Eigen::Dynamic) the policy algorithm is rebound
+    // to the compile-time dimension so argmin's fixed-N NW-SQP state sizes its
+    // decision-vector buffers with fixed-size Eigen types. On the dynamic default
+    // the rebind resolves to the same type as Policy::algorithm (byte-identical).
+    using argmin_policy = rebind_argmin_algorithm_t<typename Policy::algorithm, NV>;
     using bridge_type = std::conditional_t<Constrained,
-        argmin_constrained_problem<Scalar>,
-        argmin_problem<Scalar>>;
+        argmin_constrained_problem<Scalar, NV>,
+        argmin_problem<Scalar, NV>>;
+    // The bound problem type follows NV: nlp_problem_static on the static path,
+    // the runtime-erased nlp_problem on the dynamic default.
+    using problem_type = typename bridge_type::problem_type;
     using step_solver_type =
-        argmin::step_budget_solver<argmin_policy, Eigen::Dynamic, bridge_type,
+        argmin::step_budget_solver<argmin_policy, NV, bridge_type,
             argmin_ctrlpp_convergence>;
     using timed_solver_type =
-        argmin::step_and_time_budget_solver<argmin_policy, Eigen::Dynamic, bridge_type,
+        argmin::step_and_time_budget_solver<argmin_policy, NV, bridge_type,
             argmin_ctrlpp_convergence>;
     using solver_storage_type =
         std::variant<std::monostate, step_solver_type, timed_solver_type>;
@@ -116,7 +131,7 @@ public:
     /// when a raw MMA/GCMMA policy is given a problem that carries equalities.
     /// Reported through the `ctrlpp::expected` channel so the reject works in
     /// all build modes, including `-fno-exceptions`.
-    [[nodiscard]] auto try_setup(const nlp_problem<Scalar>& problem)
+    [[nodiscard]] auto try_setup(const problem_type& problem)
         -> ctrlpp::expected<void, argmin_setup_error>
     {
         problem_ = &problem;
@@ -149,7 +164,7 @@ public:
     /// @brief Throwing convenience wrapper over `try_setup`. Throws
     /// `std::invalid_argument` when a raw MMA-family policy is handed equality
     /// constraints.
-    void setup(const nlp_problem<Scalar>& problem)
+    void setup(const problem_type& problem)
     {
         if(try_setup(problem).has_value())
             return;
@@ -195,7 +210,7 @@ private:
             bridge_->bind(*problem_);
     }
 
-    static auto problem_has_equality(const nlp_problem<Scalar>& problem) -> bool
+    static auto problem_has_equality(const problem_type& problem) -> bool
     {
         for(int i = 0; i < problem.n_constraints; ++i)
         {
@@ -449,7 +464,7 @@ private:
     }
 
     settings_type settings_;
-    const nlp_problem<Scalar>* problem_{nullptr};
+    const problem_type* problem_{nullptr};
     // Held behind a stable heap address so a defaulted move keeps argmin's
     // by-reference problem back-pointer (solver_core.h:657) valid. Declared
     // before `solver_` so that, at destruction, `solver_` (which caches this

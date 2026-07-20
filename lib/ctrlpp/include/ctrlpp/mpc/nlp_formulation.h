@@ -20,6 +20,7 @@
 #include <limits>
 #include <memory>
 #include <vector>
+#include <cassert>
 #include <cstddef>
 #include <algorithm>
 #include <functional>
@@ -514,6 +515,51 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
                                .x_upper = std::move(x_upper),
                                .c_lower = std::move(c_lower),
                                .c_upper = std::move(c_upper)};
+}
+
+/// @brief Compile-time-horizon factory for the allocation-free static NMPC path
+/// (Route A / SEED-002). The horizon NH is a template parameter, so the decision
+/// dimension NV = (NH+1)*NX + NH*NU is a compile-time constant threaded into an
+/// nlp_problem_static<Scalar, NV>.
+///
+/// This first additive cut supports the hard-constraint (no slack-variable)
+/// configuration, where n_vars == NV exactly. It reuses build_nmpc_problem for
+/// the callable/bound assembly (byte-identical NLP behaviour) and repackages the
+/// result into the fixed-decision-dimension contract. config.horizon must equal
+/// the compile-time NH, and a soft-constraint configuration that would introduce
+/// slack decision variables (making n_vars != NV) is rejected via the runtime
+/// guard below; the compile-time-slack tier is future work. The constraint count
+/// stays runtime (as on argmin's fixed-N floor), so slack-free path/terminal
+/// hard constraints are supported.
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NH, std::size_t NC = 0, std::size_t NTC = 0, typename Dynamics>
+auto build_nmpc_problem_static(const Dynamics& dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, std::shared_ptr<nmpc_formulation_state<Scalar, NX, NU>> state)
+    -> nlp_problem_static<Scalar, static_cast<int>((NH + 1) * NX + NH * NU)>
+{
+    static constexpr int NV = static_cast<int>((NH + 1) * NX + NH * NU);
+
+    auto dyn = build_nmpc_problem<Scalar, NX, NU, NC, NTC>(dynamics, config, state);
+
+    // The compile-time NV pins the decision dimension of the hard-constraint
+    // (slack-free) formulation. A soft-constraint configuration that allocates
+    // slack decision variables would grow n_vars past NV; reject it rather than
+    // silently truncate. (config.horizon == NH is the caller's contract.)
+    assert(dyn.n_vars == NV
+        && "nmpc_static requires config.horizon == NH and a slack-free "
+           "(hard-constraint) formulation so the decision dimension equals "
+           "the compile-time NV = (NH+1)*NX + NH*NU");
+
+    nlp_problem_static<Scalar, NV> prob;
+    prob.n_vars = dyn.n_vars;
+    prob.n_constraints = dyn.n_constraints;
+    prob.cost = std::move(dyn.cost);
+    prob.gradient = std::move(dyn.gradient);
+    prob.constraints = std::move(dyn.constraints);
+    prob.constraint_jacobian = std::move(dyn.constraint_jacobian);
+    prob.x_lower = dyn.x_lower;
+    prob.x_upper = dyn.x_upper;
+    prob.c_lower = std::move(dyn.c_lower);
+    prob.c_upper = std::move(dyn.c_upper);
+    return prob;
 }
 
 }

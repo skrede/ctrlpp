@@ -11,22 +11,57 @@
 #include <cassert>
 #include <cstddef>
 #include <algorithm>
+#include <type_traits>
 
 namespace ctrlpp
 {
 
-template <typename Scalar>
+// argmin_problem / argmin_constrained_problem bridge the ctrlpp NLP contract to
+// argmin's problem interface. They are parameterized on the compile-time
+// decision dimension NV:
+//
+//   * NV == Eigen::Dynamic (the DEFAULT) reproduces the original runtime-erased
+//     bridge byte-for-byte: it binds an nlp_problem<Scalar>, its decision-vector
+//     storage is Eigen::VectorX<Scalar>, and `allocation_free` is false. Every
+//     existing caller compiles unchanged.
+//   * NV != Eigen::Dynamic selects the allocation-free static path (Route A /
+//     SEED-002): it binds an nlp_problem_static<Scalar, NV>, sizes the
+//     decision-vector storage with fixed-size Eigen types (Eigen::Vector<Scalar,
+//     NV>), and exposes `allocation_free == true`. The constraint-axis buffers
+//     stay dynamic-but-preallocated (sized once at partition time), matching
+//     argmin's fixed-N NW-SQP floor where only the decision dimension is pinned.
+//
+// The MaxNH max-bounded tier (runtime horizon up to a compile-time cap) is out
+// of scope: it needs an upstream argmin problem_max_dimension hook that does not
+// exist at the pinned SHA. This bridge pins NV exactly or stays fully dynamic.
+template <typename Scalar, int NV = Eigen::Dynamic>
 class argmin_problem
 {
 public:
-    static constexpr int problem_dimension = Eigen::Dynamic;
+    static constexpr int problem_dimension = NV;
 
-    void bind(const nlp_problem<Scalar>& prob)
+    // Compile-time marker: the fixed-NV specialization backs its decision-vector
+    // storage with fixed-size Eigen types and does not allocate on the
+    // solve/step path, whereas the dynamic default does. Consumed by the
+    // static-path test's static_assert.
+    static constexpr bool allocation_free = (NV != Eigen::Dynamic);
+
+    // The bound problem type follows NV: the non-erased static contract on the
+    // fixed-NV path, the runtime-erased contract on the dynamic default.
+    using problem_type = std::conditional_t<NV == Eigen::Dynamic,
+        nlp_problem<Scalar>,
+        nlp_problem_static<Scalar, NV>>;
+
+    // Decision-vector storage type: fixed-size for NV != Eigen::Dynamic,
+    // identical to Eigen::VectorX<Scalar> when NV == Eigen::Dynamic.
+    using decision_vector = Eigen::Vector<Scalar, NV>;
+
+    void bind(const problem_type& prob)
     {
         problem_ = &prob;
     }
 
-    auto value(const Eigen::VectorX<Scalar>& x) const -> Scalar
+    auto value(const decision_vector& x) const -> Scalar
     {
         return problem_->cost(
             std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())});
@@ -37,7 +72,7 @@ public:
         return problem_->n_vars;
     }
 
-    void gradient(const Eigen::VectorX<Scalar>& x, Eigen::VectorX<Scalar>& g) const
+    void gradient(const decision_vector& x, decision_vector& g) const
     {
         // Defensive size check: argmin owns the output buffer and must size it
         // to the problem dimension before this write. A debug-only assert
@@ -50,29 +85,32 @@ public:
             std::span<Scalar>{g.data(), static_cast<std::size_t>(g.size())});
     }
 
-    auto lower_bounds() const -> Eigen::VectorX<Scalar>
+    auto lower_bounds() const -> decision_vector
     {
         return problem_->x_lower;
     }
 
-    auto upper_bounds() const -> Eigen::VectorX<Scalar>
+    auto upper_bounds() const -> decision_vector
     {
         return problem_->x_upper;
     }
 
 protected:
-    const nlp_problem<Scalar>* problem_{nullptr};
+    const problem_type* problem_{nullptr};
 };
 
-template <typename Scalar>
-class argmin_constrained_problem : public argmin_problem<Scalar>
+template <typename Scalar, int NV = Eigen::Dynamic>
+class argmin_constrained_problem : public argmin_problem<Scalar, NV>
 {
-    using base = argmin_problem<Scalar>;
+    using base = argmin_problem<Scalar, NV>;
 
 public:
     using base::problem_dimension;
+    using base::allocation_free;
+    using problem_type = typename base::problem_type;
+    using decision_vector = typename base::decision_vector;
 
-    void partition(const nlp_problem<Scalar>& prob)
+    void partition(const problem_type& prob)
     {
         base::bind(prob);
 
@@ -99,13 +137,19 @@ public:
         n_ineq_upper = static_cast<int>(ineq_upper_indices.size());
         n_ineq_lower = static_cast<int>(ineq_lower_indices.size());
 
+        // All per-call workspaces are sized ONCE here (at setup), so the
+        // solve/step path that follows performs no heap allocation. J_raw_ is
+        // the analytic-Jacobian reorder buffer hoisted out of constraint_jacobian
+        // (it was a per-call temporary; on the static path a per-call heap
+        // allocation would break the allocation-free contract).
         raw_buf_.resize(static_cast<std::size_t>(prob.n_constraints));
         fd_x_buf_.resize(prob.n_vars);
         c_plus_.resize(n_eq + n_ineq_upper + n_ineq_lower);
         c_minus_.resize(n_eq + n_ineq_upper + n_ineq_lower);
+        J_raw_.resize(prob.n_constraints, prob.n_vars);
     }
 
-    void constraints(const Eigen::VectorX<Scalar>& x, Eigen::VectorX<Scalar>& c_out) const
+    void constraints(const decision_vector& x, Eigen::VectorX<Scalar>& c_out) const
     {
         // Defensive size check: c_out is caller/argmin-provided and must hold
         // exactly the partitioned constraint count (equalities + upper/lower
@@ -139,7 +183,7 @@ public:
         return n_ineq_upper + n_ineq_lower;
     }
 
-    void constraint_jacobian(const Eigen::VectorX<Scalar>& x, Eigen::MatrixX<Scalar>& J) const
+    void constraint_jacobian(const decision_vector& x, Eigen::MatrixX<Scalar>& J) const
     {
         const int m = n_eq + n_ineq_upper + n_ineq_lower;
         const int n = base::problem_->n_vars;
@@ -147,18 +191,19 @@ public:
 
         if(base::problem_->constraint_jacobian)
         {
-            Eigen::MatrixX<Scalar> J_raw(base::problem_->n_constraints, n);
+            // J_raw_ is a pre-sized member (partition() sized it to
+            // n_constraints x n_vars), so this reorder path allocates nothing.
             base::problem_->constraint_jacobian(
                 std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
-                std::span<Scalar>{J_raw.data(), static_cast<std::size_t>(J_raw.size())});
+                std::span<Scalar>{J_raw_.data(), static_cast<std::size_t>(J_raw_.size())});
 
             int idx = 0;
             for(auto i : eq_indices)
-                J.row(idx++) = J_raw.row(i);
+                J.row(idx++) = J_raw_.row(i);
             for(auto i : ineq_upper_indices)
-                J.row(idx++) = J_raw.row(i);
+                J.row(idx++) = J_raw_.row(i);
             for(auto i : ineq_lower_indices)
-                J.row(idx++) = -J_raw.row(i);
+                J.row(idx++) = -J_raw_.row(i);
 
             return;
         }
@@ -194,7 +239,7 @@ public:
     std::vector<int> ineq_lower_indices;
 
 private:
-    void eval_raw(const Eigen::VectorX<Scalar>& x) const
+    void eval_raw(const decision_vector& x) const
     {
         base::problem_->constraints(
             std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
@@ -202,9 +247,10 @@ private:
     }
 
     mutable std::vector<Scalar> raw_buf_;
-    mutable Eigen::VectorX<Scalar> fd_x_buf_;
+    mutable decision_vector fd_x_buf_;
     mutable Eigen::VectorX<Scalar> c_plus_;
     mutable Eigen::VectorX<Scalar> c_minus_;
+    mutable Eigen::MatrixX<Scalar> J_raw_;
 };
 
 }

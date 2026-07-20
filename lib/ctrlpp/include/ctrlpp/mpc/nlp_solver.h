@@ -27,6 +27,37 @@ struct nlp_problem
     Eigen::VectorX<Scalar> c_upper;
 };
 
+/// @brief Compile-time-dimension NLP contract, parallel to the runtime-erased
+/// nlp_problem<Scalar>. It carries the decision dimension NV as a static
+/// template parameter so the argmin bridge and argmin's compile-time-N solver
+/// can size their decision-vector storage with fixed-size Eigen types (the
+/// allocation-free static path, Route A / SEED-002).
+///
+/// Only the DECISION dimension is compile-time here: the bound vectors
+/// x_lower / x_upper are fixed-size Eigen::Vector<Scalar, NV>, while the
+/// constraint count stays runtime (c_lower / c_upper remain dynamic and
+/// n_constraints is an int). argmin's fixed-N NW-SQP policy already keeps its
+/// constraint-axis buffers dynamic-but-preallocated, so pinning NV alone
+/// removes the decision-vector allocations that dominate the RT hot path. The
+/// cost/gradient/constraints/constraint_jacobian callables keep the same
+/// std::span shape as nlp_problem (a std::function call does not allocate).
+template <typename Scalar, int NV>
+struct nlp_problem_static
+{
+    static constexpr int problem_dimension = NV;
+
+    int n_vars;
+    int n_constraints;
+    std::function<Scalar(std::span<const Scalar>)> cost;
+    std::function<void(std::span<const Scalar>, std::span<Scalar>)> gradient;
+    std::function<void(std::span<const Scalar>, std::span<Scalar>)> constraints;
+    std::function<void(std::span<const Scalar>, std::span<Scalar>)> constraint_jacobian;
+    Eigen::Vector<Scalar, NV> x_lower;
+    Eigen::Vector<Scalar, NV> x_upper;
+    Eigen::VectorX<Scalar> c_lower;
+    Eigen::VectorX<Scalar> c_upper;
+};
+
 template <typename Scalar>
 struct nlp_update
 {

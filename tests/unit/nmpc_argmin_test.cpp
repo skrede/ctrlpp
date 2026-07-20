@@ -564,6 +564,83 @@ TEST_CASE("argmin_solver survives move-then-solve", "[argmin][move-safety]")
     CHECK_THAT(result.x(1), WithinAbs(1.0, 1e-3));
 }
 
+// --- Route A: compile-time-dimension static NLP path -------------------------
+//
+// The static path threads a compile-time decision dimension NV through
+// nlp_problem_static<double, NV> -> argmin_problem<double, NV> -> argmin's
+// compile-time-N step_budget_solver, with a fixed-size allocation-free bridge.
+// This case proves (a) the fixed-NV bridge is marked allocation_free at compile
+// time (and the dynamic default is not), and (b) the static optimum matches the
+// dynamic-path optimum on a representative double_integrator NMPC cell.
+
+TEST_CASE("argmin static path solves to the dynamic optimum", "[nmpc][argmin][static]")
+{
+    constexpr std::size_t NH = 5;
+    // Decision dimension for the slack-free double_integrator cell:
+    // NV = (NH+1)*NX + NH*NU = 6*2 + 5*1 = 17.
+    constexpr int NV = static_cast<int>((NH + 1) * NX + NH * NU);
+
+    using StaticSolver = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp, true, NV>;
+    using DynamicSolver = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp>;
+
+    // Compile-time allocation-free invariant: the fixed-NV bridge is marked
+    // allocation_free, the dynamic default is not. These hold at compile time,
+    // so the static path's decision-vector storage is fixed-size by type.
+    static_assert(StaticSolver::bridge_type::allocation_free,
+        "the fixed-NV argmin bridge must be marked allocation_free");
+    static_assert(!DynamicSolver::bridge_type::allocation_free,
+        "the dynamic-default argmin bridge must not be marked allocation_free");
+    static_assert(StaticSolver::bridge_type::problem_dimension == NV,
+        "the static bridge must carry the compile-time decision dimension NV");
+
+    auto config = make_config(static_cast<int>(NH));
+    config.Q = 10.0 * Eigen::Matrix2d::Identity();
+    config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
+
+    const Eigen::Vector2d x0{1.0, 0.0};
+
+    // Build and solve the DYNAMIC problem.
+    auto dyn_state = std::make_shared<ctrlpp::nmpc_formulation_state<double, NX, NU>>();
+    dyn_state->x_ref.assign(NH + 1, Eigen::Vector2d::Zero());
+    dyn_state->x0 = x0;
+    auto dyn_problem = ctrlpp::detail::build_nmpc_problem<double, NX, NU>(double_integrator, config, dyn_state);
+
+    DynamicSolver dyn_solver{};
+    REQUIRE(dyn_solver.try_setup(dyn_problem).has_value());
+    ctrlpp::nlp_update<double> dyn_update;
+    dyn_update.x0 = Eigen::VectorXd::Zero(dyn_problem.n_vars);
+    auto dyn_result = dyn_solver.solve(dyn_update);
+
+    // Build and solve the STATIC problem from an equivalent state.
+    auto stat_state = std::make_shared<ctrlpp::nmpc_formulation_state<double, NX, NU>>();
+    stat_state->x_ref.assign(NH + 1, Eigen::Vector2d::Zero());
+    stat_state->x0 = x0;
+    auto stat_problem = ctrlpp::detail::build_nmpc_problem_static<double, NX, NU, NH>(double_integrator, config, stat_state);
+
+    REQUIRE(stat_problem.n_vars == NV);
+    REQUIRE(stat_problem.problem_dimension == NV);
+
+    StaticSolver stat_solver{};
+    REQUIRE(stat_solver.try_setup(stat_problem).has_value());
+    ctrlpp::nlp_update<double> stat_update;
+    stat_update.x0 = Eigen::VectorXd::Zero(NV);
+    auto stat_result = stat_solver.solve(stat_update);
+
+    // Both paths must reach a usable iterate and agree on the optimum. The
+    // dynamic and compile-time-N QP substrates run structurally the same Newton
+    // SQP but with fixed- vs dynamic-size Eigen kernels, so their iterates agree
+    // to a tight numerical band rather than bit-for-bit; 1e-6 comfortably covers
+    // the observed last-ULP-magnitude spread while still catching any real
+    // divergence.
+    REQUIRE(dyn_result.status != ctrlpp::solve_status::error);
+    REQUIRE(stat_result.status != ctrlpp::solve_status::error);
+    REQUIRE(stat_result.x.size() == dyn_result.x.size());
+
+    CHECK_THAT(stat_result.objective, WithinAbs(dyn_result.objective, 1e-6));
+    for(Eigen::Index i = 0; i < stat_result.x.size(); ++i)
+        CHECK_THAT(stat_result.x[i], WithinAbs(dyn_result.x[i], 1e-6));
+}
+
 #ifdef CTRLPP_HAS_OSQP
 TEST_CASE("mpc osqp survives move-then-solve", "[mpc][osqp][move-safety]")
 {
