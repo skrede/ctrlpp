@@ -75,7 +75,8 @@ TEST_CASE("cubic_trajectory evaluate performs zero heap allocation",
     seg.evaluate(0.0);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = evaluate_sweep_allocations(seg, seg.duration(), 256));
+    allocations = evaluate_sweep_allocations(seg, seg.duration(), 256);
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
     REQUIRE(allocations == 0);
 }
 
@@ -91,7 +92,8 @@ TEST_CASE("quintic_trajectory evaluate performs zero heap allocation",
     seg.evaluate(0.0);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = evaluate_sweep_allocations(seg, seg.duration(), 256));
+    allocations = evaluate_sweep_allocations(seg, seg.duration(), 256);
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
     REQUIRE(allocations == 0);
 }
 
@@ -107,7 +109,8 @@ TEST_CASE("septic_trajectory evaluate performs zero heap allocation",
     seg.evaluate(0.0);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = evaluate_sweep_allocations(seg, seg.duration(), 256));
+    allocations = evaluate_sweep_allocations(seg, seg.duration(), 256);
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
     REQUIRE(allocations == 0);
 }
 
@@ -119,7 +122,8 @@ TEST_CASE("trapezoidal_trajectory evaluate performs zero heap allocation",
     seg.evaluate(0.0);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = evaluate_sweep_allocations(seg, seg.duration(), 256));
+    allocations = evaluate_sweep_allocations(seg, seg.duration(), 256);
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
     REQUIRE(allocations == 0);
 }
 
@@ -132,7 +136,8 @@ TEST_CASE("double_s_trajectory evaluate performs zero heap allocation",
     seg.evaluate(0.0);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = evaluate_sweep_allocations(seg, seg.duration(), 256));
+    allocations = evaluate_sweep_allocations(seg, seg.duration(), 256);
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
     REQUIRE(allocations == 0);
 }
 
@@ -144,7 +149,8 @@ TEST_CASE("modified_sin_trajectory evaluate performs zero heap allocation",
     seg.evaluate(0.0);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = evaluate_sweep_allocations(seg, seg.duration(), 256));
+    allocations = evaluate_sweep_allocations(seg, seg.duration(), 256);
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
     REQUIRE(allocations == 0);
 }
 
@@ -156,7 +162,8 @@ TEST_CASE("modified_trap_trajectory evaluate performs zero heap allocation",
     seg.evaluate(0.0);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = evaluate_sweep_allocations(seg, seg.duration(), 256));
+    allocations = evaluate_sweep_allocations(seg, seg.duration(), 256);
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
     REQUIRE(allocations == 0);
 }
 
@@ -173,7 +180,8 @@ TEST_CASE("cubic_spline evaluate performs zero heap allocation",
     spline.evaluate(0.0);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = evaluate_sweep_allocations(spline, 4.0, 256));
+    allocations = evaluate_sweep_allocations(spline, 4.0, 256);
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
     REQUIRE(allocations == 0);
 }
 
@@ -191,7 +199,8 @@ TEST_CASE("smoothing_spline evaluate performs zero heap allocation",
     spline.evaluate(0.0);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = evaluate_sweep_allocations(spline, 4.0, 256));
+    allocations = evaluate_sweep_allocations(spline, 4.0, 256);
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
     REQUIRE(allocations == 0);
 }
 
@@ -207,7 +216,8 @@ TEST_CASE("bspline_trajectory evaluate performs zero heap allocation",
     spline.evaluate(0.0);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = evaluate_sweep_allocations(spline, spline.duration(), 256));
+    allocations = evaluate_sweep_allocations(spline, spline.duration(), 256);
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
     REQUIRE(allocations == 0);
 }
 
@@ -222,13 +232,14 @@ TEST_CASE("online_planner_2nd update and sample perform zero heap allocation",
     planner.sample(0.5);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
         {
             planner.update((i % 2 == 0) ? 5.0 : -5.0);
             planner.sample(0.01 * static_cast<double>(i));
         }
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
 }
@@ -245,13 +256,14 @@ TEST_CASE("online_planner_3rd update and sample perform zero heap allocation",
     planner.sample(0.5);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
         {
             planner.update((i % 2 == 0) ? 5.0 : -5.0);
             planner.sample(0.01 * static_cast<double>(i));
         }
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
 }

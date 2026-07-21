@@ -49,10 +49,11 @@ TEST_CASE("biquad process performs zero heap allocation",
 
     std::size_t allocations = 0;
     double y = 0.0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
             y = bq.process(1.0);
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(std::isfinite(y));
@@ -70,10 +71,11 @@ TEST_CASE("cascaded_biquad process performs zero heap allocation",
 
     std::size_t allocations = 0;
     double y = 0.0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
             y = cascade.process(1.0);
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(std::isfinite(y));
@@ -95,10 +97,11 @@ TEST_CASE("vector_biquad process performs zero heap allocation",
 
     std::size_t allocations = 0;
     ctrlpp::Vector<double, N> y = ctrlpp::Vector<double, N>::Zero();
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
             y = vbq.process(x);
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(y.allFinite());
@@ -114,10 +117,11 @@ TEST_CASE("fir process performs zero heap allocation",
 
     std::size_t allocations = 0;
     double y = 0.0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
             y = filter.process(1.0);
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(std::isfinite(y));

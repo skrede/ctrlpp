@@ -88,9 +88,10 @@ void require_alloc_free_steady_state(Solve&& solve)
 
     std::size_t allocations = 0;
     bool solved = false;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         solved = solve().has_value();
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(solved);
@@ -104,25 +105,27 @@ TEST_CASE("harness detects heap allocation",
 {
     SECTION("global counter fires on operator new inside the armed window")
     {
-        std::size_t allocations = 0;
-        REQUIRE_NOTHROW(allocations = guarded_allocations([] {
+        std::size_t allocations = guarded_allocations([] {
             // Call the replaced allocation function directly: unlike a
             // new-expression, a plain function call cannot be elided.
             void* heap_block = ::operator new(sizeof(double));
             ::operator delete(heap_block);
-        }));
+        });
 
         REQUIRE(allocations > 0);
     }
 
-    SECTION("throwing eigen_assert fires on an Eigen allocation under -DNDEBUG")
+    SECTION("eigen_assert sentinel fires on an Eigen allocation under -DNDEBUG")
     {
         ctrlpp_test::scoped_no_malloc guard;
 
         // Constructing a dynamically sized vector goes through Eigen's
-        // aligned allocation check, which must throw while the window is
-        // armed even when the stock assert is compiled out.
-        REQUIRE_THROWS_AS(Eigen::VectorXd(1), std::runtime_error);
+        // aligned allocation check, which sets the pollable sentinel while the
+        // window is armed even when the stock assert is compiled out.
+        Eigen::VectorXd forced(1);
+        (void)forced;
+
+        REQUIRE(guard.eigen_violation());
     }
 }
 

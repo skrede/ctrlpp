@@ -31,6 +31,22 @@
             }
         },
         {
+            "name": "exceptions",
+            "displayName": "Exceptions carve-out (throwing-wrapper + OSQP/NLopt tests, Catch2 exceptions-on)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/exceptions",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_STANDARD": "23",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CTRLPP_BUILD_TESTS": "ON",
+                "CTRLPP_CMAKE_FETCH_DEPS": "ON",
+                "CTRLPP_TESTS_WITH_EXCEPTIONS": "ON",
+                "CTRLPP_BUILD_OSQP": "ON",
+                "CTRLPP_BUILD_NLOPT": "ON"
+            }
+        },
+        {
             "name": "coverage",
             "displayName": "Coverage (GCC + gcov)",
             "generator": "Ninja",
@@ -74,6 +90,10 @@
             "configurePreset": "dev-full"
         },
         {
+            "name": "exceptions",
+            "configurePreset": "exceptions"
+        },
+        {
             "name": "coverage",
             "configurePreset": "coverage"
         },
@@ -86,6 +106,13 @@
         {
             "name": "dev",
             "configurePreset": "dev",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "exceptions",
+            "configurePreset": "exceptions",
             "output": {
                 "outputOnFailure": true
             }

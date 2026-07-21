@@ -113,6 +113,34 @@ set(CTRLPP_CMAKE_FETCH_DEPS ON)
 `CTRLPP_ARGMIN_GIT_TAG` and `CTRLPP_ARGMIN_SOURCE_DIR` pin the Argmin backend to a specific
 git tag or a local source checkout, respectively.
 
+### Exception posture
+
+ctrlpp is **consumer-flag-agnostic**: it forces no `-fno-exceptions` / `-fno-rtti` on any
+installed or interface target, and `config.h` auto-detects `__cpp_exceptions` to adapt to
+whatever you compile with. `ctrlpp::expected` (via the `try_create` / status API) is the
+always-on primary interface; the throwing convenience wrappers exist only when exceptions
+are enabled.
+
+As a self-imposed compatibility guarantee, ctrlpp's **own** tests and benches dogfood the
+throw-free discipline. `CTRLPP_TESTS_WITH_EXCEPTIONS` selects the build tree:
+
+- **OFF (default, the `dev` preset)** — ctrlpp's test targets **and** Catch2 compile
+  `-fno-exceptions -fno-rtti` (Catch2 with `CATCH_CONFIG_DISABLE_EXCEPTIONS`). The
+  allocation-free no-malloc suite runs on this build, so zero-alloc and no-throw are proven
+  together. A blocking CI job gates it.
+- **ON (the `exceptions` preset, which also enables OSQP + NLopt)** — the exceptions
+  carve-out: tests that assert the throwing wrappers throw (they need `REQUIRE_THROWS*`,
+  unavailable under `CATCH_CONFIG_DISABLE_EXCEPTIONS`), the `[!shouldfail]` meta-test, and
+  every OSQP/NLopt-linked test and bench, with Catch2 exceptions-on.
+
+```sh
+cmake --preset dev         # default: ctrlpp's tests + Catch2 under -fno-exceptions
+cmake --preset exceptions  # carve-out: throwing-wrapper + OSQP/NLopt tests, exceptions-on
+```
+
+OSQP and NLopt throw internally and therefore require the exceptions build; the argmin static
+NMPC path is throw-free and runs in the default `-fno-exceptions` tree.
+
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)<br/> Install ctrlpp and run your first PID controller

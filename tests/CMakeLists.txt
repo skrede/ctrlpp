@@ -9,6 +9,32 @@ if (CTRLPP_BUILD_TESTS)
         FetchContent_MakeAvailable(Catch2)
     else ()
         find_package(Catch2 CONFIG REQUIRED)
+        # An imported Catch2 binary cannot be recompiled with
+        # CATCH_CONFIG_DISABLE_EXCEPTIONS, so the default no-exceptions tree cannot
+        # honor its posture on it: -fno-exceptions test TUs would link an
+        # exceptions-on Catch2 whose failure path throws and unwinds through
+        # -fno-exceptions frames, terminating without a report. Require building
+        # Catch2 from source instead.
+        if (NOT CTRLPP_TESTS_WITH_EXCEPTIONS)
+            message(FATAL_ERROR
+                "The default no-exceptions test tree (CTRLPP_TESTS_WITH_EXCEPTIONS=OFF) "
+                "needs Catch2 built from source with CATCH_CONFIG_DISABLE_EXCEPTIONS, but "
+                "Catch2 was resolved via find_package. Reconfigure with "
+                "-DCTRLPP_CMAKE_FETCH_DEPS=ON, or build the exceptions carve-out tree "
+                "with -DCTRLPP_TESTS_WITH_EXCEPTIONS=ON.")
+        endif ()
+    endif ()
+
+    # Match Catch2's exception posture to the tree so ctrlpp's own tests and their
+    # test framework share one setting. The default tree compiles the fetched
+    # Catch2 -fno-exceptions -fno-rtti with CATCH_CONFIG_DISABLE_EXCEPTIONS, so its
+    # failure path reports-and-aborts (REQUIRE_THROWS* / CHECK_THROWS* become
+    # unavailable); the exceptions carve-out tree leaves Catch2 exceptions-on. The
+    # PUBLIC definition reaches every test TU through Catch2WithMain.
+    if (CTRLPP_CMAKE_FETCH_DEPS AND NOT CTRLPP_TESTS_WITH_EXCEPTIONS AND NOT MSVC)
+        target_compile_definitions(Catch2 PUBLIC CATCH_CONFIG_DISABLE_EXCEPTIONS)
+        target_compile_options(Catch2 PRIVATE -fno-exceptions -fno-rtti)
+        target_compile_options(Catch2WithMain PRIVATE -fno-exceptions -fno-rtti)
     endif ()
     if (CTRLPP_BUILD_PROPERTY_TESTS)
         FetchContent_Declare(

@@ -19,13 +19,15 @@ this table was written.
 ## Evidence artifacts
 
 - **`*_nomalloc_test` targets** (`tests/unit/`): belt-and-suspenders
-  allocation guards.  Each test arms a throwing `eigen_assert` (so
-  `EIGEN_RUNTIME_NO_MALLOC` cannot be elided) plus a process-global
-  `operator new`/`operator delete` counter (so `aligned_malloc` cannot slip
-  past), warms the object up, then asserts zero allocations across a
-  steady-state loop.  All six targets are registered in
-  `tests/unit/CMakeLists.txt` and run serially.  Verified green:
-  `ctest --test-dir build-tests -R nomalloc` passes 6 of 6.
+  allocation guards.  Each test arms a throw-free `eigen_assert` that sets a
+  pollable sentinel (`ctrlpp_test::detail::eigen_alloc_violation`, so
+  `EIGEN_RUNTIME_NO_MALLOC` cannot be elided and the trap compiles under
+  `-fno-exceptions`) plus a process-global `operator new`/`operator delete`
+  counter (so `aligned_malloc` cannot slip past), warms the object up, then
+  asserts zero allocations and no sentinel violation across a steady-state
+  loop.  All six targets are registered in `tests/unit/CMakeLists.txt`, run
+  serially, and compile in the default `-fno-exceptions` tree.  Verified green:
+  `ctest --test-dir build/dev -R nomalloc` passes 6 of 6.
 - **`scripts/cross_compile_check.sh` leg 1**: host build of the core surface
   with `-fno-exceptions -fno-rtti -DCTRLPP_NO_EXCEPTIONS` at Scalar `double`
   and `float`.  This is the authoritative exceptions-off evidence; verified
@@ -121,3 +123,33 @@ functions and own no thread, scheduler, timer, run loop, or clock.  This
 matrix certifies **RT-safety** (the necessary condition).  **RT-scheduling**
 (periods, deadlines, priorities, and WCET budgeting) belongs to the caller:
 a bare-metal superloop, an RTOS task, or the host application's executor.
+
+## Exceptions posture: consumers flag-agnostic, own tests -fno-exceptions-enforced
+
+The library is **consumer-flag-agnostic**: no `-fno-exceptions` / `-fno-rtti`
+is forced onto any installed, interface, or exported target, and `config.h`'s
+`__cpp_exceptions` auto-detection adapts to whatever the consumer compiles with.
+`ctrlpp::expected` / status is the always-on primary API; the throwing
+convenience wrappers exist only under `CTRLPP_HAS_EXCEPTIONS`.
+
+As a self-imposed compatibility guarantee, ctrlpp's **own** tests and benches
+dogfood the throw-free discipline: the default build tree
+(`CTRLPP_TESTS_WITH_EXCEPTIONS=OFF`, the `dev` preset) compiles ctrlpp's test
+targets **and** Catch2 under `-fno-exceptions -fno-rtti`, with Catch2 built
+`CATCH_CONFIG_DISABLE_EXCEPTIONS`.  The blocking `no-exceptions` CI job builds
+that tree and runs the full ctest **including the allocation-free (no-malloc)
+suite**, so zero-alloc and no-throw are proven together on the same shipping
+build.
+
+Two caveats follow from the disabled-exceptions Catch2:
+
+- `REQUIRE_THROWS*` / `CHECK_THROWS*` are unavailable and a failing assertion
+  reports-and-aborts instead of throwing.  Tests that assert the throwing
+  convenience wrappers throw, the `[!shouldfail]` meta-test, and any test that
+  constructs through a throwing convenience wrapper therefore live in the
+  separate **exceptions carve-out tree** (`CTRLPP_TESTS_WITH_EXCEPTIONS=ON`, the
+  `exceptions` preset), never deleted, and are built+run by the `exceptions` CI
+  job.
+- The OSQP and NLopt solver backends throw internally, so every OSQP/NLopt-linked
+  test and comparison bench requires the exceptions build; argmin's static NMPC
+  path is throw-free and runs in the default `-fno-exceptions` tree.

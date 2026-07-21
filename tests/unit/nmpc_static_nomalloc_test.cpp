@@ -87,7 +87,8 @@ TEST_CASE("nmpc_static steady-state solve performs zero heap allocation",
     // window (framework macros may themselves allocate).
     std::size_t allocations = 0;
     bool all_ok = true;
-    REQUIRE_NOTHROW([&] {
+    bool eigen_ok = true;
+    {
         ctrlpp_test::scoped_no_malloc guard;
         for(int step = 0; step < 32; ++step)
         {
@@ -96,8 +97,10 @@ TEST_CASE("nmpc_static steady-state solve performs zero heap allocation",
             x = double_integrator(x, u->input);
         }
         allocations = guard.allocations();
-    }());
+        eigen_ok = !guard.eigen_violation();
+    }
 
+    REQUIRE(eigen_ok);
     REQUIRE(all_ok);
     REQUIRE(allocations == 0);
     REQUIRE(x.allFinite());

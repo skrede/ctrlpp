@@ -144,13 +144,14 @@ TEST_CASE("kalman_filter predict/update performs zero heap allocation",
     kf.update(z);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
         {
             kf.predict(u);
             kf.update(z);
         }
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(kf.state().allFinite());
@@ -174,13 +175,14 @@ TEST_CASE("ekf predict/update performs zero heap allocation",
     filter.update(z);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
         {
             filter.predict(u);
             filter.update(z);
         }
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(filter.state().allFinite());
@@ -204,13 +206,14 @@ TEST_CASE("ukf predict/update performs zero heap allocation",
     filter.update(z);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
         {
             filter.predict(u);
             filter.update(z);
         }
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(filter.state().allFinite());
@@ -235,13 +238,14 @@ TEST_CASE("mekf predict/update performs zero heap allocation",
     filter.update(z);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
         {
             filter.predict(omega);
             filter.update(z);
         }
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(filter.state().allFinite());
@@ -266,13 +270,14 @@ TEST_CASE("manifold_ukf predict/update performs zero heap allocation",
     filter.update(z);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
         {
             filter.predict(omega);
             filter.update(z);
         }
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(filter.state().allFinite());
@@ -293,10 +298,11 @@ TEST_CASE("complementary_filter update performs zero heap allocation",
     filter.update(gyro, accel, 0.01);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
             filter.update(gyro, accel, 0.01);
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(filter.state().allFinite());
@@ -340,13 +346,14 @@ TEST_CASE("particle_filter predict/update performs zero heap allocation and is s
     pf_repeat.update(z);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 64; ++i)
         {
             pf.predict(u);
             pf.update(z);
         }
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
 

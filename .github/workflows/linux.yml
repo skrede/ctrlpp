@@ -90,6 +90,53 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
+  # Blocking dogfood of the throw-free discipline: ctrlpp's own test targets AND
+  # Catch2 compile -fno-exceptions -fno-rtti (CTRLPP_TESTS_WITH_EXCEPTIONS=OFF, the
+  # dev preset, Catch2 built with CATCH_CONFIG_DISABLE_EXCEPTIONS). The full ctest
+  # -- including the allocation-free no-malloc suite -- runs on this same build, so
+  # zero-alloc and no-throw are proven together. No continue-on-error: this gate is
+  # blocking.
+  no-exceptions:
+    runs-on: ubuntu-24.04
+    name: no-exceptions (default tree, blocking)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure (default -fno-exceptions tree)
+        run: cmake --preset dev
+
+      - name: Build
+        run: cmake --build build/dev
+
+      - name: Test (runs the allocation-free no-malloc suite)
+        run: ctest --test-dir build/dev --output-on-failure
+
+  # Exceptions carve-out: the TUs that genuinely need exceptions (throwing-wrapper
+  # assertions via REQUIRE_THROWS*, the [!shouldfail] meta-test) plus every
+  # OSQP/NLopt-linked test, with Catch2 exceptions-on.
+  exceptions:
+    runs-on: ubuntu-24.04
+    name: exceptions carve-out (exceptions preset)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure (exceptions preset, OSQP + NLopt on)
+        run: cmake --preset exceptions
+
+      - name: Build
+        run: cmake --build build/exceptions
+
+      - name: Test
+        run: ctest --test-dir build/exceptions --output-on-failure
+
   install-test:
     runs-on: ubuntu-24.04
 
@@ -137,6 +184,7 @@ jobs:
             -DCTRLPP_BUILD_OSQP=ON \
             -DCTRLPP_BUILD_NLOPT=ON \
             -DCTRLPP_BUILD_ARGMIN=ON \
+            -DCTRLPP_TESTS_WITH_EXCEPTIONS=ON \
             -DCTRLPP_CMAKE_FETCH_DEPS=ON
 
       - name: Build

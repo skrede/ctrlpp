@@ -64,10 +64,11 @@ TEST_CASE("pid position-form compute performs zero heap allocation",
         controller.compute(sp, meas, dt);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
             controller.compute(sp, meas, dt);
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
 }
@@ -91,10 +92,11 @@ TEST_CASE("pid velocity-form compute performs zero heap allocation",
         controller.compute(sp, meas, dt);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
             controller.compute(sp, meas, dt);
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
 }
@@ -123,10 +125,11 @@ TEST_CASE("pid composed anti-windup and derivative-filter compute performs zero 
         controller.compute(sp, meas, dt);
 
     std::size_t allocations = 0;
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
             controller.compute(sp, meas, dt);
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
 }
@@ -161,10 +164,11 @@ TEST_CASE("lqr steady-state control law performs zero heap allocation",
 
     std::size_t allocations = 0;
     ctrlpp::lqr<double, NX, NU>::input_type u = ctrlpp::lqr<double, NX, NU>::input_type::Zero();
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
             u = controller.compute(x);
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(u.allFinite());
@@ -205,10 +209,11 @@ TEST_CASE("lqr_time_varying steady-state control law performs zero heap allocati
     std::size_t allocations = 0;
     ctrlpp::lqr_time_varying<double, NX, NU>::input_type u =
         ctrlpp::lqr_time_varying<double, NX, NU>::input_type::Zero();
-    REQUIRE_NOTHROW(allocations = guarded_allocations([&] {
+    allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
             u = controller.compute(x, static_cast<std::size_t>(i) % horizon);
-    }));
+    });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
     REQUIRE(u.allFinite());

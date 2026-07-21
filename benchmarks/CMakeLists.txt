@@ -10,6 +10,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # instead download and build the missing ones via FetchContent.
 option(CTRLPP_FETCH_BENCHMARK_DEPS "Fetch missing benchmark dependencies via FetchContent instead of only using installed ones" OFF)
 
+# This benchmarks project is standalone (the root CMakeLists never adds it), so
+# the root CTRLPP_TESTS_WITH_EXCEPTIONS is invisible here and the bench tree
+# carries its own switch mirroring the unit trees. The ctrlpp bench logic is
+# throw-free, but every internal bench TU embeds nanobench's implementation, and
+# nanobench has no disable-exceptions mode, so -fno-exceptions cannot currently be
+# honored on the benches (see benchmarks/internal/CMakeLists.txt). The switch is
+# kept for parity and for when a no-exceptions microbench path exists; the
+# comparison/profiling benches link throwing solvers and stay exceptions-on.
+option(CTRLPP_TESTS_WITH_EXCEPTIONS "Mirror of the unit trees' switch for the standalone bench project (see note: nanobench currently forces exceptions-on)" OFF)
+
 find_package(Eigen3 CONFIG REQUIRED)
 
 # ctrlpp is header-only; create a lightweight interface target
