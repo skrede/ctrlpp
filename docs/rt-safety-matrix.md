@@ -153,3 +153,23 @@ Two caveats follow from the disabled-exceptions Catch2:
 - The OSQP and NLopt solver backends throw internally, so every OSQP/NLopt-linked
   test and comparison bench requires the exceptions build; argmin's static NMPC
   path is throw-free and runs in the default `-fno-exceptions` tree.
+
+## The expected result type is owned, not std::expected
+
+`ctrlpp::expected` is a single, always-on C++20 implementation the library owns on
+every toolchain; it never aliases `std::expected`, even where the standard library
+ships it.  This keeps one controlled embedded floor: storage is a raw discriminated
+union rather than `std::variant` (no `<variant>`, no `bad_variant_access` /
+valueless-by-exception machinery), `operator*` and `error()` are unchecked, and the
+only throw site — `value()` on an error — is gated behind `__cpp_exceptions` with a
+`std::abort()` fallback, so the header compiles clean under `-fno-exceptions -fno-rtti`
+and is built and exercised by the default `dev` tree, not only the exceptions tree.
+
+It is a faithful-API result type, **not** bit-for-bit `std::expected`: the owned copy
+and move special members make it non-trivially-copyable even when `T` and `E` are both
+trivial, so triviality is not propagated to the ABI.  In practice `T` is usually a
+non-trivial Eigen type, so the cost rarely bites; the conditional-triviality path is
+deliberately deferred until a caller needs a trivially-relocatable expected.  Boundary
+interop with `std::expected` / `std::unexpected` is provided through explicit converting
+constructors and conversion operators, guarded by `__cpp_lib_expected`, so results still
+cross any `std` boundary without forcing the owned type onto that boundary.

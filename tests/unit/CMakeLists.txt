@@ -144,10 +144,11 @@ make_test(trajectory_envelope_anchor_test)
 make_test(float_tier_test)
 make_test_exceptions(float_instantiation_test)
 make_test(expected_test)
-# The fallback expected's throwing value() accessor is asserted with CHECK_THROWS,
+# The owned expected's throwing value() accessor is asserted with CHECK_THROWS,
 # which is unavailable under CATCH_CONFIG_DISABLE_EXCEPTIONS, so this TU lives in
-# the exceptions carve-out tree.
-make_test_exceptions(expected_fallback_test)
+# the exceptions carve-out tree; the throw-free surface and std interop run in the
+# default tree via expected_test.
+make_test_exceptions(expected_throws_test)
 
 # OSQP links a throwing solver, so these TUs belong to the exceptions carve-out
 # tree and cannot compile in the default -fno-exceptions tree.
