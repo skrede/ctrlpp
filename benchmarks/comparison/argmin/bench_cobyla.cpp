@@ -134,8 +134,8 @@ void run_benchmark(const std::string& system_name,
     argmin_cfg.max_eval = 1000;
     ArgminCobyla argmin_solver{argmin_cfg};
 
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config};
-    ctrlpp::nmpc<double, NX, NU, ArgminCobyla, Dynamics> nmpc_argmin{dynamics, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, ArgminCobyla, Dynamics> nmpc_argmin{dynamics, config};
 
     Eigen::Matrix<double, NX, 1> x0 = Eigen::Matrix<double, NX, 1>::Zero();
     x0(0) = 1.0;
@@ -163,8 +163,8 @@ void run_benchmark(const std::string& system_name,
               });
 
     // Quality: single solve each for metrics
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> q_nlopt{dynamics, config};
-    ctrlpp::nmpc<double, NX, NU, ArgminCobyla, Dynamics> q_argmin{dynamics, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> q_nlopt{dynamics, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, ArgminCobyla, Dynamics> q_argmin{dynamics, config};
 
     q_nlopt.solve(x0);
     auto nlopt_diag = q_nlopt.diagnostics();
@@ -232,8 +232,8 @@ void run_convergence(const std::string& system_name,
         argmin_cfg.max_eval = 1000;
         ArgminCobyla argmin_s{argmin_cfg};
 
-        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config};
-        ctrlpp::nmpc<double, NX, NU, ArgminCobyla, Dynamics> nmpc_argmin{dynamics, config};
+        ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config};
+        ctrlpp::nmpc_dynamic<double, NX, NU, ArgminCobyla, Dynamics> nmpc_argmin{dynamics, config};
 
         auto u_nlopt = nmpc_nlopt.solve(x0);
         if(u_nlopt.has_value())

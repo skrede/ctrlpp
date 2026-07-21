@@ -24,8 +24,17 @@
 namespace ctrlpp
 {
 
+/// @brief Runtime-horizon nonlinear MPC — the opt-in soft-RT / non-RT path.
+///
+/// The horizon is a runtime field (`nmpc_config::horizon`), so the decision
+/// dimension is only known at construction and the solve binds a runtime-erased
+/// `nlp_problem<Scalar>`, forcing the solver's allocating dynamic path. This is
+/// the flexible escape hatch, NOT the default: the public `nmpc` name resolves to
+/// the compile-time-horizon `nmpc_static` (allocation-free at argmin's fixed-N
+/// floor). Select `nmpc_dynamic` explicitly when the horizon must vary at runtime
+/// and soft-RT latency is acceptable. See the RT-safety matrix.
 template <typename Scalar, std::size_t NX, std::size_t NU, nlp_solver Solver, dynamics_model<Scalar, NX, NU> Dynamics, std::size_t NC = 0, std::size_t NTC = 0>
-class nmpc
+class nmpc_dynamic
 {
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int nu = static_cast<int>(NU);
@@ -33,11 +42,11 @@ class nmpc
     static constexpr int ntc = static_cast<int>(NTC);
 
 public:
-    nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
-        : nmpc{std::move(dynamics), config, Solver{}}
+    nmpc_dynamic(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
+        : nmpc_dynamic{std::move(dynamics), config, Solver{}}
     {}
 
-    nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
+    nmpc_dynamic(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
         : m_dynamics{std::move(dynamics)}
         , m_config{config}
         , m_N{config.horizon}
@@ -61,16 +70,16 @@ public:
     // pointed-to problem stays put. The solver's bridge caches `&m_problem` by
     // reference (argmin_problem.h:24-27), so that cached pointer stays valid
     // across a defaulted move. `m_state` is already a heap-stable shared_ptr.
-    nmpc(nmpc&&) = default;
-    nmpc& operator=(nmpc&&) = default;
-    ~nmpc() = default;
+    nmpc_dynamic(nmpc_dynamic&&) = default;
+    nmpc_dynamic& operator=(nmpc_dynamic&&) = default;
+    ~nmpc_dynamic() = default;
 
     // Copy is an independent fork (the solver's copy is copy-deleted-by-argmin
     // and re-emplaced lazily, so aliasing would be unsafe anyway): deep-copy the
     // formulation state, rebuild the problem bound to that fresh state, then
     // re-setup the forked solver against the new problem. The two controllers
     // share no mutable state and solve independently.
-    nmpc(const nmpc& other)
+    nmpc_dynamic(const nmpc_dynamic& other)
         : m_dynamics{other.m_dynamics}
         , m_config{other.m_config}
         , m_N{other.m_N}
@@ -92,9 +101,9 @@ public:
         m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem);
     }
 
-    nmpc& operator=(const nmpc& other)
+    nmpc_dynamic& operator=(const nmpc_dynamic& other)
     {
-        nmpc tmp{other};
+        nmpc_dynamic tmp{other};
         *this = std::move(tmp);
         return *this;
     }
@@ -376,7 +385,7 @@ private:
 
 /// @brief Compile-time-horizon nonlinear MPC (additive Route A / SEED-002).
 ///
-/// Parallel to the runtime-horizon `nmpc`, but the horizon NH is a template
+/// Parallel to the runtime-horizon `nmpc_dynamic`, but the horizon NH is a template
 /// parameter, so the decision dimension NV = (NH+1)*NX + NH*NU is a compile-time
 /// constant threaded through `build_nmpc_problem_static` into an
 /// `nlp_problem_static<Scalar, NV>` and a compile-time-N `argmin_solver`. On
@@ -390,9 +399,9 @@ private:
 /// Solver-generic by design: the caller supplies the static solver type already
 /// parameterized on the matching NV (e.g. `argmin_solver<Scalar, argmin_nw_sqp,
 /// true, NV>`), so this header pulls in no argmin dependency and the argmin-off
-/// build compiles unchanged. `nmpc_static` is ADDITIVE — the public `nmpc` name
-/// and the runtime-horizon class above are untouched; making the static path the
-/// default is scheduled as a separate later step.
+/// build compiles unchanged. The public `nmpc` name is an alias to `nmpc_static`
+/// (defined below the class), so the compile-time-horizon, allocation-free path is
+/// the DEFAULT; the runtime-horizon class is the opt-in `nmpc_dynamic`.
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NH, typename Solver, dynamics_model<Scalar, NX, NU> Dynamics, std::size_t NC = 0, std::size_t NTC = 0>
 class nmpc_static
 {
@@ -611,6 +620,16 @@ private:
     bool m_setup_failed{false};
     bool m_has_solution{false};
 };
+
+/// @brief Public default NMPC name: the compile-time-horizon, allocation-free
+/// `nmpc_static`. Pinning the horizon NH at compile time makes the steady-state
+/// solve allocation-free at argmin's fixed-N floor (see `nmpc_static`); use
+/// `nmpc_dynamic` when the horizon must vary at runtime (soft-RT). This re-points
+/// the public `nmpc` name from the former runtime-horizon class (now
+/// `nmpc_dynamic`) to the static default — a deliberate pre-1.0 public-API-shape
+/// change.
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NH, typename Solver, dynamics_model<Scalar, NX, NU> Dynamics, std::size_t NC = 0, std::size_t NTC = 0>
+using nmpc = nmpc_static<Scalar, NX, NU, NH, Solver, Dynamics, NC, NTC>;
 
 }
 

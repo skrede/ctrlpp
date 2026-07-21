@@ -39,7 +39,7 @@ int main()
                                             .u_min = Eigen::Matrix<double, 1, 1>::Constant(-2.0),
                                             .u_max = Eigen::Matrix<double, 1, 1>::Constant(2.0)};
 
-    ctrlpp::nmpc<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)> controller(dynamics, cfg);
+    ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)> controller(dynamics, cfg);
 
     // With theta_ddot = +(g/l) sin(theta), theta = 0 is the unstable upright
     // equilibrium and theta = pi is the stable hanging one. Start hanging and

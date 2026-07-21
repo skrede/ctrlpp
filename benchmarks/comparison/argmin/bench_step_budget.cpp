@@ -135,7 +135,7 @@ void run_step_budget(const std::string& system_name,
     for(int budget : budgets)
     {
         // Fresh controller to get a clean nlp_problem, then fresh solver
-        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> controller{dynamics, config};
+        ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSlsqp, Dynamics> controller{dynamics, config};
         const auto& problem = controller.problem();
 
         ArgminSlsqp solver{};
@@ -156,7 +156,7 @@ void run_step_budget(const std::string& system_name,
 
     // Full argmin solve
     {
-        ctrlpp::nmpc<double, NX, NU, ArgminSlsqp, Dynamics> controller{dynamics, config};
+        ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSlsqp, Dynamics> controller{dynamics, config};
         const auto& problem = controller.problem();
 
         ArgminSlsqp solver{};
@@ -177,7 +177,7 @@ void run_step_budget(const std::string& system_name,
 
     // NLopt full-solve baseline
     {
-        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> controller{dynamics, config};
+        ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> controller{dynamics, config};
         controller.solve(x0);
         auto diag = controller.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(controller);

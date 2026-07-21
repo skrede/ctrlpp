@@ -82,7 +82,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     try
     {
         double_integrator dynamics;
-        ctrlpp::nmpc<double, 2, 1, ctrlpp::nlopt_solver<double>, double_integrator> controller(dynamics, cfg);
+        ctrlpp::nmpc_dynamic<double, 2, 1, ctrlpp::nlopt_solver<double>, double_integrator> controller(dynamics, cfg);
         auto result = controller.solve(x0);
 
         if(result.has_value())

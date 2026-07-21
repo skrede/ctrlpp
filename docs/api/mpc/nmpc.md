@@ -6,16 +6,31 @@ Nonlinear Model Predictive Controller using NLP optimization with multiple shoot
 
 ## Header and Alias
 
+The public `nmpc` name is the **compile-time-horizon** static controller (the
+horizon `NH` is a template parameter), which is allocation-free at the solver's
+fixed-N floor and is the default. `nmpc_dynamic` is the **runtime-horizon**
+controller (horizon taken from `nmpc_config::horizon`) — the opt-in soft-RT path
+this NLopt example uses.
+
 | Form | Header |
 |------|--------|
-| `nmpc<Scalar, NX, NU, Solver, Dynamics, NC, NTC>` | `#include <ctrlpp/nmpc.h>` |
+| `nmpc<Scalar, NX, NU, NH, Solver, Dynamics, NC, NTC>` (default, compile-time horizon) | `#include <ctrlpp/nmpc.h>` |
+| `nmpc_dynamic<Scalar, NX, NU, Solver, Dynamics, NC, NTC>` (opt-in, runtime horizon) | `#include <ctrlpp/nmpc.h>` |
 
 ```cpp
+// Default: compile-time horizon NH — allocation-free at the solver's fixed-N floor.
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NH,
+          typename Solver,
+          dynamics_model<Scalar, NX, NU> Dynamics,
+          std::size_t NC = 0, std::size_t NTC = 0>
+using nmpc = nmpc_static<Scalar, NX, NU, NH, Solver, Dynamics, NC, NTC>;
+
+// Opt-in: runtime horizon from nmpc_config::horizon — soft-RT.
 template <typename Scalar, std::size_t NX, std::size_t NU,
           nlp_solver Solver,
           dynamics_model<Scalar, NX, NU> Dynamics,
           std::size_t NC = 0, std::size_t NTC = 0>
-class nmpc;
+class nmpc_dynamic;
 ```
 
 ## Template Parameters
@@ -188,7 +203,8 @@ int main()
         .u_min = Eigen::Matrix<double, 1, 1>::Constant(-5.0),
         .u_max = Eigen::Matrix<double, 1, 1>::Constant(5.0)};
 
-    ctrlpp::nmpc<double, NX, NU, ctrlpp::nlopt_solver<double>, pendulum_dynamics>
+    // Runtime horizon (cfg.horizon) with the NLopt solver -> the opt-in nmpc_dynamic.
+    ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, pendulum_dynamics>
         controller(dynamics, cfg);
 
     Eigen::Vector2d x(1.0, 0.0);  // Start at 1 radian

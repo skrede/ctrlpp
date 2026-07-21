@@ -39,7 +39,7 @@ int main()
                                             .u_min = Eigen::Matrix<double, 1, 1>::Constant(-5.0),
                                             .u_max = Eigen::Matrix<double, 1, 1>::Constant(5.0)};
 
-    ctrlpp::nmpc<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)> controller(dynamics, cfg);
+    ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)> controller(dynamics, cfg);
 
     Eigen::Vector2d x(std::numbers::pi - 0.3, 0.0);
     Eigen::Vector2d x_ref(std::numbers::pi, 0.0);

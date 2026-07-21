@@ -94,7 +94,7 @@ auto run_closed_loop(
     int sim_steps,
     Solver solver) -> std::pair<double, double>
 {
-    ctrlpp::nmpc<double, NX, NU, Solver, Dynamics> controller{dynamics, config, std::move(solver)};
+    ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics> controller{dynamics, config, std::move(solver)};
     double total_cost = 0.0;
     bool all_success = true;
 

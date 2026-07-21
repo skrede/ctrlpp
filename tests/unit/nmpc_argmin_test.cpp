@@ -53,8 +53,8 @@ auto make_config(int horizon = 10) -> ctrlpp::nmpc_config<double, NX, NU>
 }
 
 using ArgminSolver = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp>;
-using NmpcDI = ctrlpp::nmpc<double, NX, NU, ArgminSolver, decltype(double_integrator)>;
-using NmpcPend = ctrlpp::nmpc<double, NX, NU, ArgminSolver, decltype(pendulum)>;
+using NmpcDI = ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSolver, decltype(double_integrator)>;
+using NmpcPend = ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSolver, decltype(pendulum)>;
 
 }
 
@@ -291,7 +291,7 @@ TEST_CASE("nlopt auglag_eq + ld_mma smoke", "[nmpc][argmin][nlopt]")
     // exceptions are thrown, the solve returns a non-error status, and
     // the solution vector is dimensionally correct with finite entries.
     //
-    // We deliberately bypass the nmpc<>::solve optional-collapsing layer
+    // We deliberately bypass the nmpc_dynamic<>::solve optional-collapsing layer
     // here: AUGLAG_EQ shares the outer max_eval budget with the inner
     // LD_MMA local-solve (per NLopt semantics, evaluations are counted
     // jointly), so a tight budget routinely terminates with status
@@ -300,7 +300,7 @@ TEST_CASE("nlopt auglag_eq + ld_mma smoke", "[nmpc][argmin][nlopt]")
     // the composition runs end-to-end without throwing or erroring.
 
     using NloptSolver = ctrlpp::nlopt_solver<double>;
-    using NmpcDIN = ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator)>;
+    using NmpcDIN = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator)>;
 
     auto config = make_config(10);
     config.Q = 10.0 * Eigen::Matrix2d::Identity();

@@ -49,7 +49,7 @@ auto make_config(int horizon = 5) -> ctrlpp::nmpc_config<double, NX, NU>
     };
 }
 
-using Nmpc = ctrlpp::nmpc<double, NX, NU, mock_nlp_solver, decltype(double_integrator)>;
+using Nmpc = ctrlpp::nmpc_dynamic<double, NX, NU, mock_nlp_solver, decltype(double_integrator)>;
 
 } // namespace
 
@@ -145,7 +145,7 @@ TEST_CASE("nmpc with mock solver", "[nmpc]")
         // n_constraints = (N+1)*NX (equality only, no rate constraints)
         //               = 6*2 = 12
         mock_nlp_solver solver{};
-        ctrlpp::nmpc<double, NX, NU, mock_nlp_solver, decltype(double_integrator)> ctrl{double_integrator, config};
+        ctrlpp::nmpc_dynamic<double, NX, NU, mock_nlp_solver, decltype(double_integrator)> ctrl{double_integrator, config};
 
         // The solver is internal, so we check indirectly via solve
         // After construction, setup() has been called with the problem
@@ -223,7 +223,7 @@ TEST_CASE("nmpc budget-limited solve reaches the caller tagged budget_exhausted"
     static_assert(ctrlpp::nlp_solver<budget_nlp_solver>);
 
     auto config = make_config(5);
-    ctrlpp::nmpc<double, NX, NU, budget_nlp_solver, decltype(double_integrator)> controller{double_integrator, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, budget_nlp_solver, decltype(double_integrator)> controller{double_integrator, config};
 
     Eigen::Vector2d x0{1.0, 0.0};
     auto result = controller.solve(x0);

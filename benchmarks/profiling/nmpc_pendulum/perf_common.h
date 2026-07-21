@@ -90,7 +90,7 @@ auto run_pendulum_closed_loop(const run_options&      opts,
     using dynamics_fn = Eigen::Vector2d (*)(const Eigen::Vector2d&,
                                             const Eigen::Matrix<double, 1, 1>&);
     constexpr dynamics_fn pendulum_fn = ctrlpp::bench::problems::nmpc::pendulum_2;
-    ctrlpp::nmpc<double, 2, 1, Solver, dynamics_fn> controller{pendulum_fn, config};
+    ctrlpp::nmpc_dynamic<double, 2, 1, Solver, dynamics_fn> controller{pendulum_fn, config};
 
     Eigen::Vector2d x          = opts.x0;
     double          total_cost = 0.0;

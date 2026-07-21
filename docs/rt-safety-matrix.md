@@ -69,8 +69,8 @@ this table was written.
 | trajectory evaluation (polynomial paths, velocity profiles, `cubic_spline`, `smoothing_spline`, `bspline_trajectory`) | YES | YES (closed form; B-spline recursion bounded by compile-time degree) | YES | YES | YES | `trajectory_nomalloc_test` (evaluate cases for cubic/quintic/septic, trapezoidal, double-S, modified sin/trap, cubic_spline, smoothing_spline, bspline_trajectory); leg 1 + `embedded_core_float` |
 | online planners: `online_planner_2nd` / `online_planner_3rd` | YES | YES (closed-form segment logic) | YES | YES | YES | `trajectory_nomalloc_test` (update and sample cases for both planners); leg 1 + `embedded_core_float` |
 | `recursive_arx` / `rls` | YES | YES (rank-one update, no loop) | YES | not covered (the leg 1 witness does not include the sysid headers) | YES | `sysid_nomalloc_test` (rls and recursive_arx update cases) |
-| `mpc` / `nmpc` / `mhe` / `nmhe` (runtime-horizon, dynamic solver) | NO (soft real-time: the solve allocates and iterates) | YES when capped (`max_eval`, OSQP `max_iter`) | YES with `max_time = 0` (the default); the `max_time` budget is non-RT | not covered (opt-in OSQP/NLopt/argmin backends sit outside the embedded core witness) | solver-dependent | labeled soft real-time; caps and defaults in `mpc/nlopt_solver.h`, `mpc/argmin_policies.h`, `mpc/osqp_solver.h` |
-| `nmpc_static` (compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES — strict-zero: 0.00 allocs/step in steady state | YES when capped (`max_eval`) | YES with `max_time = 0` (the default); the `max_time` budget is non-RT | not covered by this witness (argmin's `-fno-exceptions` instantiation is clean upstream; the ctrlpp-side no-exceptions dogfood is a separate witness) | YES — the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test` (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; throwing `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`) |
+| `mpc` / `nmpc_dynamic` / `mhe` / `nmhe` (runtime-horizon, dynamic solver) | NO (soft real-time: the solve allocates and iterates) | YES when capped (`max_eval`, OSQP `max_iter`) | YES with `max_time = 0` (the default); the `max_time` budget is non-RT | not covered (opt-in OSQP/NLopt/argmin backends sit outside the embedded core witness) | solver-dependent | labeled soft real-time; caps and defaults in `mpc/nlopt_solver.h`, `mpc/argmin_policies.h`, `mpc/osqp_solver.h` |
+| `nmpc` (the DEFAULT; = `nmpc_static`, compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES — strict-zero: 0.00 allocs/step in steady state | YES when capped (`max_eval`) | YES with `max_time = 0` (the default); the `max_time` budget is non-RT | not covered by this witness (argmin's `-fno-exceptions` instantiation is clean upstream; the ctrlpp-side no-exceptions dogfood is a separate witness) | YES — the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test` (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; throwing `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`) |
 | static-memory linear MPC | planned | planned | planned | planned | planned | not implemented; the future hard real-time path (see below) |
 
 ## Wall-clock budgets are not RT-safe
@@ -88,22 +88,23 @@ caps bound the solve.
 
 ## MPC, NMPC, and MHE are soft real-time
 
-The horizon optimizers allocate and iterate inside the solve: the backends
-build their problem structures on the heap and run an iterative QP or NLP
-loop to convergence or to the iteration cap.  This is inherent to the
-formulation, not an implementation defect, so these modules are labeled
-**soft real-time**: latency is bounded in iterations when capped, but the
-per-call time and allocation behavior do not meet the hard real-time
-obligations the rest of the table certifies.  Callers on a deadline should
-budget for the capped worst case and treat the solution status
+The runtime-horizon optimizers allocate and iterate inside the solve: the
+backends build their problem structures on the heap and run an iterative QP or
+NLP loop to convergence or to the iteration cap.  This is inherent to the
+formulation, not an implementation defect, so `nmpc_dynamic` and the runtime-
+horizon `mpc` / `mhe` / `nmhe` are labeled **soft real-time**: latency is bounded
+in iterations when capped, but the per-call time and allocation behavior do not
+meet the hard real-time obligations the rest of the table certifies.  Callers on
+a deadline should budget for the capped worst case and treat the solution status
 (`solve_status::max_iterations`) as a first-class outcome.
 
-The one exception is `nmpc_static`: pinning the horizon at compile time fixes
-the decision dimension `NV`, and binding a compile-time constraint cap `MaxM`
-moves argmin's `nw_sqp` result-multiplier storage inline, so the steady-state
-solve allocates nothing (measured 0.00 allocs/step) once warmed up.  It remains
-iteration-bounded by `max_eval` and clock-free with `max_time = 0`, so on those
-axes it meets the hard real-time obligations the runtime-horizon path cannot.
+The **default** `nmpc` is the exception (it aliases the compile-time-horizon
+`nmpc_static`): pinning the horizon at compile time fixes the decision dimension
+`NV`, and binding a compile-time constraint cap `MaxM` moves argmin's `nw_sqp`
+result-multiplier storage inline, so the steady-state solve allocates nothing
+(measured 0.00 allocs/step) once warmed up.  It remains iteration-bounded by
+`max_eval` and clock-free with `max_time = 0`, so on those axes it meets the hard
+real-time obligations the runtime-horizon `nmpc_dynamic` path cannot.
 
 ## Static-memory linear MPC: the future hard real-time path
 

@@ -42,8 +42,8 @@ auto make_config(int horizon = 10) -> ctrlpp::nmpc_config<double, NX, NU>
 }
 
 using NloptSolver = ctrlpp::nlopt_solver<double>;
-using NmpcDI = ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator)>;
-using NmpcPend = ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(pendulum)>;
+using NmpcDI = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator)>;
+using NmpcPend = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(pendulum)>;
 
 } // namespace
 

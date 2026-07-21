@@ -68,7 +68,7 @@ TEST_CASE("nmpc with NC=0 NTC=0 produces same results as original", "[nmpc][cons
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator)> ctrl_old{double_integrator, config_old};
+    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator)> ctrl_old{double_integrator, config_old};
 
     ctrlpp::nmpc_config<double, NX, NU, 0, 0> config_new{
         .horizon = 10,
@@ -76,7 +76,7 @@ TEST_CASE("nmpc with NC=0 NTC=0 produces same results as original", "[nmpc][cons
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator), 0, 0> ctrl_new{double_integrator, config_new};
+    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), 0, 0> ctrl_new{double_integrator, config_new};
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u_old = ctrl_old.solve(x);
@@ -101,7 +101,7 @@ TEST_CASE("soft path constraint is approximately satisfied", "[nmpc][constraint]
     config.path_constraint = make_upper_bound_constraint(upper_bound);
     // soft_constraints defaults to true
 
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0> controller{double_integrator, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0> controller{double_integrator, config};
 
     Eigen::Vector2d x{1.5, 0.0}; // starts above bound
 
@@ -134,7 +134,7 @@ TEST_CASE("hard path constraint enforced tightly", "[nmpc][constraint][hard]")
     config.path_constraint = make_upper_bound_constraint(upper_bound);
     config.soft_constraints = false;
 
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0> controller{double_integrator, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0> controller{double_integrator, config};
 
     // Start within bounds
     Eigen::Vector2d x{0.5, 0.0};
@@ -172,7 +172,7 @@ TEST_CASE("terminal constraint drives final state", "[nmpc][constraint][terminal
     config.terminal_constraint = make_terminal_constraint(target);
     config.soft_constraints = false;
 
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator), 0, NTC_1> controller{double_integrator, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), 0, NTC_1> controller{double_integrator, config};
 
     Eigen::Vector2d x{1.0, 0.0};
 
@@ -206,7 +206,7 @@ TEST_CASE("combined path and terminal constraints", "[nmpc][constraint][combined
     config.path_constraint = make_upper_bound_constraint(upper_bound);
     config.terminal_constraint = make_terminal_constraint(target);
 
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator), NC, NTC_1> controller{double_integrator, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, NTC_1> controller{double_integrator, config};
 
     Eigen::Vector2d x{1.0, 0.0};
 
@@ -239,7 +239,7 @@ TEST_CASE("infeasible constraints with soft mode does not crash", "[nmpc][constr
     config.path_constraint = make_upper_bound_constraint(-10.0);
     // soft_constraints defaults to true
 
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0> controller{double_integrator, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0> controller{double_integrator, config};
 
     Eigen::Vector2d x{5.0, 0.0};
 

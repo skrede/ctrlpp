@@ -27,7 +27,7 @@ auto double_integrator = [](const Eigen::Vector2d& x, const Eigen::Matrix<double
 { return Eigen::Vector2d{x(0) + dt * x(1), x(1) + dt * u(0)}; };
 
 using NloptSolver = ctrlpp::nlopt_solver<double>;
-using NmpcDI = ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator)>;
+using NmpcDI = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator)>;
 
 }
 
@@ -204,7 +204,7 @@ TEST_CASE("soft path constraint with custom penalty weight", "[nmpc][coverage][n
 
     config.path_penalty = ctrlpp::Vector<double, NC>{1e6};
 
-    ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0> controller{double_integrator, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0> controller{double_integrator, config};
 
     Eigen::Vector2d x{2.0, 0.0};
     for(int step = 0; step < 30; ++step)
@@ -451,7 +451,7 @@ TEST_CASE("nmpc returns nullopt on solver failure via mock", "[nmpc][coverage]")
         .R = Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    ctrlpp::nmpc<double, NX, NU, failing_nlp_solver, decltype(double_integrator)> controller{double_integrator, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, failing_nlp_solver, decltype(double_integrator)> controller{double_integrator, config};
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);
@@ -491,7 +491,7 @@ TEST_CASE("nmpc accepts solved_inaccurate status", "[nmpc][coverage]")
         .R = Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    ctrlpp::nmpc<double, NX, NU, inaccurate_nlp_solver, decltype(double_integrator)> controller{double_integrator, config};
+    ctrlpp::nmpc_dynamic<double, NX, NU, inaccurate_nlp_solver, decltype(double_integrator)> controller{double_integrator, config};
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);

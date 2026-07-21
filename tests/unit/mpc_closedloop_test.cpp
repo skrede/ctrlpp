@@ -32,7 +32,7 @@ auto double_integrator_dynamics = [](const Eigen::Vector2d& x, const Eigen::Matr
 
 using OsqpMpc = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>;
 using NloptSolver = ctrlpp::nlopt_solver<double>;
-using NmpcDI = ctrlpp::nmpc<double, NX, NU, NloptSolver, decltype(double_integrator_dynamics)>;
+using NmpcDI = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator_dynamics)>;
 
 } // namespace
 

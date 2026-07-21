@@ -266,7 +266,7 @@ void run_suite_a(const std::string& system_name,
         nlopt_cfg.max_time       = bench_max_time_sec;
         nlopt_cfg.constraint_tol = bench_constraint_tol;
 
-        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc{
+        ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> nmpc{
             dynamics, config, NloptSolver{nlopt_cfg}};
         bench.run("nlopt_auglag_ccsaq",
                   [&]
@@ -275,7 +275,7 @@ void run_suite_a(const std::string& system_name,
                       ankerl::nanobench::doNotOptimizeAway(u);
                   });
 
-        ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> q{
+        ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> q{
             dynamics, config, NloptSolver{nlopt_cfg}};
         q.solve(x0);
         auto diag = q.diagnostics();
@@ -448,7 +448,7 @@ void run_convergence(const std::string& system_name,
 
         // Suite A NLopt only (argmin auglag<mma> unbuildable upstream).
         {
-            ctrlpp::nmpc<double, NX, NU, NloptSolver, Dynamics> nmpc{
+            ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> nmpc{
                 dynamics, config, NloptSolver{nlopt_auglag_cfg}};
             if(nmpc.solve(x0).has_value())
                 ++suite_a_nlopt_ok;
