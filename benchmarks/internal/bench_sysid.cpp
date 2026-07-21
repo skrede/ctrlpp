@@ -1,7 +1,7 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
-#include "ctrlpp/sysid/n4sid.h"
+#include "ctrlpp/sysid/moesp.h"
 #include "ctrlpp/sysid/batch_arx.h"
 
 #include <Eigen/Dense>
@@ -41,8 +41,8 @@ int main()
         ankerl::nanobench::doNotOptimizeAway(result);
     });
 
-    bench.run("n4sid::identify", [&] {
-        auto result = ctrlpp::n4sid<2>(Y, U);
+    bench.run("moesp::identify", [&] {
+        auto result = ctrlpp::moesp<2>(Y, U);
         ankerl::nanobench::doNotOptimizeAway(result);
     });
 

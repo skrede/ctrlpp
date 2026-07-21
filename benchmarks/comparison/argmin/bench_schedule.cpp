@@ -111,9 +111,11 @@ void run_fallback_slsqp_cobyla(const ctrlpp::nlp_problem<double>& problem,
              });
 
     group_type group{bridge, x0, opts, sched};
+    const auto t_start = std::chrono::steady_clock::now();
     auto result = group.solve();
+    const auto t_end = std::chrono::steady_clock::now();
 
-    double wall_ms = std::chrono::duration<double, std::milli>(result.wall_time).count();
+    double wall_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
     write_schedule_row(quality_csv, "fallback_slsqp_cobyla",
                        result.objective_value, result.gradient_norm,
                        result.constraint_violation,
@@ -195,9 +197,11 @@ void run_time_boxed(const ctrlpp::nlp_problem<double>& problem,
              });
 
     group_type group{bridge, x0, opts, sched};
+    const auto t_start = std::chrono::steady_clock::now();
     auto result = group.step_n(500, opts);
+    const auto t_end = std::chrono::steady_clock::now();
 
-    double wall_ms = std::chrono::duration<double, std::milli>(result.wall_time).count();
+    double wall_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
     write_schedule_row(quality_csv, label,
                        result.objective_value, result.gradient_norm,
                        result.constraint_violation,
