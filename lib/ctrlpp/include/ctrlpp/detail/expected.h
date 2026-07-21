@@ -10,7 +10,7 @@
 
 #include <version>
 
-#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
+#if !defined(CTRLPP_FORCE_EXPECTED_FALLBACK) && defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
 
     #include <expected>
 
