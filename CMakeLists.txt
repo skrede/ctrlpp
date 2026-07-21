@@ -31,7 +31,7 @@ option(CTRLPP_BUILD_OSQP "Build OSQP solver backend for MPC" OFF)
 option(CTRLPP_BUILD_NLOPT "Build NLopt solver backend for NMPC" OFF)
 option(CTRLPP_BUILD_ARGMIN "Build with Argmin NLP solver backend" OFF)
 set(CTRLPP_ARGMIN_SOURCE_DIR "" CACHE PATH "Path to local Argmin source checkout")
-set(CTRLPP_ARGMIN_GIT_TAG "864d558c10d43337399d24f7c27cdfa0e5275475" CACHE STRING "Argmin git tag/branch/commit to fetch (default pinned to literal SHA for reproducibility; this SHA carries the de-padded static-N QP substrate the compile-time-horizon static NMPC path requires -- bounded MaxN/MaxM inline QP storage plus the Newton-SQP de-padding, which together recover the ~1.9-2.3x avoidable regression from the prior padded QP factorizations; override with a branch name to track a tip)")
+set(CTRLPP_ARGMIN_GIT_TAG "fea57c2c5d9dab71bd3b092b1908caa4e8b3379c" CACHE STRING "Argmin git tag/branch/commit to fetch (default pinned to literal SHA for reproducibility; this SHA lands the SEED-044 public compile-time constraint-count channel: a problem's `static constexpr int constraint_count` upper bound threads to argmin's active_set_qp_solver<Scalar,N,M> so the per-call result-multiplier storage is inline, closing the last steady-state heap for the bounded-(NV,MaxM) static NMPC path -- on top of the de-padded static-N QP substrate. A named ref/tag replaces this floating SHA once argmin's milestone closes. override with a branch name to track a tip)")
 option(CTRLPP_CMAKE_FETCH_DEPS "Use CMake FetchContent to download and install dependencies" OFF)
 
 option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)

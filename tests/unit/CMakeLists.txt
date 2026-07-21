@@ -216,6 +216,15 @@ if (CTRLPP_BUILD_ARGMIN)
     target_link_libraries(nmhe_argmin_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
     target_compile_options(nmhe_argmin_test PRIVATE ${CTRLPP_WARNING_FLAGS})
     add_test(NAME nmhe_argmin_test COMMAND nmhe_argmin_test)
+
+    # EMB-02 proof for the static NMPC path: nmpc_static's steady-state solve is
+    # allocation-free at argmin's fixed-N floor. Consumes the process-global
+    # allocation counter from nomalloc_harness.h, so it must run serially.
+    add_executable(nmpc_static_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_static_nomalloc_test.cpp")
+    target_link_libraries(nmpc_static_nomalloc_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
+    target_compile_options(nmpc_static_nomalloc_test PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME nmpc_static_nomalloc_test COMMAND nmpc_static_nomalloc_test)
+    set_tests_properties(nmpc_static_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
 endif ()
 
 if (CTRLPP_BUILD_PROPERTY_TESTS)

@@ -374,6 +374,244 @@ private:
     bool m_has_solution{false};
 };
 
+/// @brief Compile-time-horizon nonlinear MPC (additive Route A / SEED-002).
+///
+/// Parallel to the runtime-horizon `nmpc`, but the horizon NH is a template
+/// parameter, so the decision dimension NV = (NH+1)*NX + NH*NU is a compile-time
+/// constant threaded through `build_nmpc_problem_static` into an
+/// `nlp_problem_static<Scalar, NV>` and a compile-time-N `argmin_solver`. On
+/// argmin's fixed-N NW-SQP floor the steady-state solve is allocation-free with
+/// stock Eigen; `nmpc_static_nomalloc_test` is the proof.
+///
+/// This is the slack-free (hard-constraint) cut: config.horizon must equal the
+/// compile-time NH and the formulation must not introduce slack decision
+/// variables, so n_vars == NV exactly (enforced by build_nmpc_problem_static).
+///
+/// Solver-generic by design: the caller supplies the static solver type already
+/// parameterized on the matching NV (e.g. `argmin_solver<Scalar, argmin_nw_sqp,
+/// true, NV>`), so this header pulls in no argmin dependency and the argmin-off
+/// build compiles unchanged. `nmpc_static` is ADDITIVE — the public `nmpc` name
+/// and the runtime-horizon class above are untouched; making the static path the
+/// default is scheduled as a separate later step.
+template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NH, typename Solver, dynamics_model<Scalar, NX, NU> Dynamics, std::size_t NC = 0, std::size_t NTC = 0>
+class nmpc_static
+{
+    static constexpr int nx = static_cast<int>(NX);
+    static constexpr int nu = static_cast<int>(NU);
+
+public:
+    static constexpr int horizon = static_cast<int>(NH);
+    static constexpr int problem_dimension = static_cast<int>((NH + 1) * NX + NH * NU);
+
+    using problem_type = nlp_problem_static<Scalar, problem_dimension>;
+
+    nmpc_static(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
+        : nmpc_static{std::move(dynamics), config, Solver{}}
+    {}
+
+    nmpc_static(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
+        : m_dynamics{std::move(dynamics)}
+        , m_config{config}
+        , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>()}
+        , m_solver{std::move(solver)}
+    {
+        m_state->x_ref.resize(static_cast<std::size_t>(horizon) + 1, Vector<Scalar, NX>::Zero());
+        m_problem = std::make_unique<problem_type>(
+            detail::build_nmpc_problem_static<Scalar, NX, NU, NH, NC, NTC>(m_dynamics, m_config, m_state));
+        m_setup_failed = !setup_solver();
+        // Pre-size the reused solve buffers ONCE (construction may allocate), so
+        // the steady-state assignments below hit the same-size fast path and the
+        // hot solve loop stays allocation-free.
+        m_warm_z = Eigen::VectorX<Scalar>::Zero(problem_dimension);
+        m_update.x0 = Eigen::VectorX<Scalar>::Zero(problem_dimension);
+        m_last_solution = Eigen::VectorX<Scalar>::Zero(problem_dimension);
+    }
+
+    // Move is correct-by-default for the same reason as runtime-horizon nmpc:
+    // `m_problem` lives behind a unique_ptr (stable heap address), so the solver
+    // bridge's by-reference back-pointer stays valid across a defaulted move.
+    nmpc_static(nmpc_static&&) = default;
+    nmpc_static& operator=(nmpc_static&&) = default;
+    ~nmpc_static() = default;
+
+    // Copy is an independent fork: deep-copy the formulation state, rebuild the
+    // problem bound to that fresh state, then re-setup the forked solver.
+    nmpc_static(const nmpc_static& other)
+        : m_dynamics{other.m_dynamics}
+        , m_config{other.m_config}
+        , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>(*other.m_state)}
+        , m_problem{std::make_unique<problem_type>(
+              detail::build_nmpc_problem_static<Scalar, NX, NU, NH, NC, NTC>(m_dynamics, m_config, m_state))}
+        , m_solver{other.m_solver}
+        , m_warm_z{other.m_warm_z}
+        , m_last_solution{other.m_last_solution}
+        , m_update{other.m_update}
+        , m_last_diagnostics{other.m_last_diagnostics}
+        , m_u_prev{other.m_u_prev}
+        , m_has_solution{other.m_has_solution}
+    {
+        m_setup_failed = !setup_solver();
+    }
+
+    nmpc_static& operator=(const nmpc_static& other)
+    {
+        nmpc_static tmp{other};
+        *this = std::move(tmp);
+        return *this;
+    }
+
+    expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scalar, NX>& x0)
+    {
+        for(auto& ref : m_state->x_ref)
+            ref.setZero();
+        return solve_impl(x0);
+    }
+
+    expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NX>& x_ref)
+    {
+        for(auto& ref : m_state->x_ref)
+            ref = x_ref;
+        return solve_impl(x0);
+    }
+
+    void set_applied_input(const Vector<Scalar, NU>& u) { m_u_prev = u; }
+
+    mpc_diagnostics<Scalar> diagnostics() const { return m_last_diagnostics; }
+    const problem_type& problem() const { return *m_problem; }
+    const Eigen::VectorX<Scalar>& last_solution() const { return m_last_solution; }
+
+private:
+    // Solver setup without the runtime-erased setup_nlp_solver helper (that helper
+    // is typed on nlp_problem<Scalar>; the static path binds nlp_problem_static).
+    // Kept solver-generic: fallible try_setup when available, classic setup
+    // otherwise.
+    [[nodiscard]] bool setup_solver()
+    {
+        if constexpr(requires { m_solver.try_setup(*m_problem); })
+            return m_solver.try_setup(*m_problem).has_value();
+        else
+        {
+            m_solver.setup(*m_problem);
+            return true;
+        }
+    }
+
+    expected<solve_output<Scalar, NU>, solver_error> solve_impl(const Vector<Scalar, NX>& x0)
+    {
+        if(m_setup_failed)
+            return unexpected<solver_error>{solver_error::setup_incomplete};
+
+        m_state->x0 = x0;
+        m_state->u_prev = m_u_prev;
+
+        // Same-size assignment into the pre-sized member: no reallocation once the
+        // constructor has sized x0 to the compile-time NV.
+        m_update.x0 = m_warm_z;
+
+        const nlp_result<Scalar> result = dispatch_solve();
+        populate_diagnostics(result);
+
+        switch(result.status)
+        {
+        case solve_status::optimal:
+            return finish_solve(solve_result_status::converged);
+        case solve_status::solved_inaccurate:
+            return finish_solve(solve_result_status::solved_inaccurate);
+        case solve_status::max_iterations:
+        case solve_status::time_limit:
+            return finish_solve(solve_result_status::budget_exhausted);
+        case solve_status::infeasible:
+            return unexpected<solver_error>{solver_error::infeasible};
+        case solve_status::unbounded:
+        case solve_status::non_convex:
+        case solve_status::error:
+        default:
+            return unexpected<solver_error>{solver_error::invalid_problem};
+        }
+    }
+
+    // Detection: the static (strict-zero) argmin bridge exposes a zero-alloc
+    // solve_into; the runtime-erased solvers expose only solve(). Prefer
+    // solve_into so the steady-state hot path allocates no dynamic decision
+    // vector (solve() must return nlp_result::x by value, which heap-allocates).
+    static constexpr bool solver_has_solve_into =
+        requires(Solver& s, const nlp_update<Scalar>& u, Eigen::VectorX<Scalar>& out) { s.solve_into(u, out); };
+
+    // Run the solver, always leaving the primal in the pre-sized m_last_solution
+    // and returning the diagnostics. The solve_into branch writes m_last_solution
+    // in place (no allocation); the solve() fallback copies its by-value primal.
+    nlp_result<Scalar> dispatch_solve()
+    {
+        if constexpr(solver_has_solve_into)
+            return m_solver.solve_into(m_update, m_last_solution);
+        else
+        {
+            auto result = m_solver.solve(m_update);
+            m_last_solution = result.x;
+            return result;
+        }
+    }
+
+    solve_output<Scalar, NU> finish_solve(solve_result_status status)
+    {
+        m_has_solution = true;
+        shift_warm_start(m_last_solution);
+        return solve_output<Scalar, NU>{.input = extract_first_input(m_last_solution), .status = status};
+    }
+
+    void populate_diagnostics(const nlp_result<Scalar>& result)
+    {
+        m_last_diagnostics = mpc_diagnostics<Scalar>{.status = result.status,
+                                                     .iterations = result.iterations,
+                                                     .solve_time = result.solve_time,
+                                                     .cost = result.objective,
+                                                     .primal_residual = result.primal_residual,
+                                                     .dual_residual = Scalar{0},
+                                                     .max_constraint_violation = result.primal_residual,
+                                                     .max_path_constraint_violation = Scalar{0},
+                                                     .max_terminal_constraint_violation = Scalar{0},
+                                                     .total_slack = Scalar{0}};
+    }
+
+    // Warm-start shift for the slack-free formulation: advance the state and input
+    // blocks by one node; the tail input is held. In-place segment writes on the
+    // pre-sized m_warm_z, so no allocation.
+    void shift_warm_start(const Eigen::VectorX<Scalar>& sol)
+    {
+        m_warm_z = sol;
+        for(int k = 0; k < horizon; ++k)
+            m_warm_z.segment(k * nx, nx) = sol.segment((k + 1) * nx, nx);
+        const int u_offset = (horizon + 1) * nx;
+        for(int k = 0; k < horizon - 1; ++k)
+            m_warm_z.segment(u_offset + k * nu, nu) = sol.segment(u_offset + (k + 1) * nu, nu);
+    }
+
+    auto extract_first_input(const Eigen::VectorX<Scalar>& sol) -> Vector<Scalar, NU>
+    {
+        const int u_offset = (horizon + 1) * nx;
+        Vector<Scalar, NU> u0 = sol.segment(u_offset, nu);
+        m_u_prev = u0;
+        return u0;
+    }
+
+    Dynamics m_dynamics;
+    nmpc_config<Scalar, NX, NU, NC, NTC> m_config;
+
+    std::shared_ptr<nmpc_formulation_state<Scalar, NX, NU>> m_state;
+    // Held behind a stable heap address so a defaulted move does not relocate the
+    // object the solver's bridge points at by reference.
+    std::unique_ptr<problem_type> m_problem;
+    Solver m_solver{};
+
+    Eigen::VectorX<Scalar> m_warm_z;
+    Eigen::VectorX<Scalar> m_last_solution;
+    nlp_update<Scalar> m_update{};
+    mpc_diagnostics<Scalar> m_last_diagnostics{};
+    Vector<Scalar, NU> m_u_prev{Vector<Scalar, NU>::Zero()};
+    bool m_setup_failed{false};
+    bool m_has_solution{false};
+};
+
 }
 
 #endif

@@ -26,15 +26,23 @@
 namespace ctrlpp
 {
 
-// argmin_solver<Scalar, Policy, Constrained, NV>: the trailing NV selects the
-// solve path. NV == Eigen::Dynamic (the DEFAULT) is the original runtime-erased
-// solver, byte-for-byte: it binds an nlp_problem<Scalar>, instantiates argmin's
-// dynamic step_budget_solver, and every existing caller compiles unchanged.
-// NV != Eigen::Dynamic is the allocation-free static path (Route A / SEED-002):
-// the policy algorithm is rebound to the compile-time dimension NV, argmin's
-// compile-time-N step_budget_solver is instantiated, the bridge uses fixed-size
-// decision-vector storage, and setup binds an nlp_problem_static<Scalar, NV>.
-template <typename Scalar, typename Policy, bool Constrained = true, int NV = Eigen::Dynamic>
+// argmin_solver<Scalar, Policy, Constrained, NV, MaxM>: the trailing NV and MaxM
+// select the solve path along two independent axes.
+//   * NV == Eigen::Dynamic (the DEFAULT) is the original runtime-erased solver,
+//     byte-for-byte: it binds an nlp_problem<Scalar>, instantiates argmin's
+//     dynamic step_budget_solver, and every existing caller compiles unchanged.
+//   * NV != Eigen::Dynamic pins the DECISION axis (Route A / SEED-002): the policy
+//     algorithm is rebound to the compile-time dimension NV, argmin's
+//     compile-time-N step_budget_solver is instantiated, the bridge uses
+//     fixed-size decision-vector storage, and setup binds an
+//     nlp_problem_static<Scalar, NV>.
+//   * MaxM != Eigen::Dynamic additionally pins the CONSTRAINT axis (argmin
+//     SEED-044): the bridge carries a compile-time constraint_count cap so
+//     argmin's per-call result-multiplier storage is inline. Binding BOTH NV and
+//     MaxM gives the strict-zero steady-state solve. MaxM is an upper bound
+//     (runtime_m <= MaxM), counting equality + general-inequality rows only (box
+//     bounds are free via argmin's +2N slack).
+template <typename Scalar, typename Policy, bool Constrained = true, int NV = Eigen::Dynamic, int MaxM = Eigen::Dynamic>
 class argmin_solver
 {
     // Compile-time guard for the structurally-always-invalid configuration: a
@@ -60,8 +68,8 @@ public:
     // the rebind resolves to the same type as Policy::algorithm (byte-identical).
     using argmin_policy = rebind_argmin_algorithm_t<typename Policy::algorithm, NV>;
     using bridge_type = std::conditional_t<Constrained,
-        argmin_constrained_problem<Scalar, NV>,
-        argmin_problem<Scalar, NV>>;
+        argmin_constrained_problem<Scalar, NV, MaxM>,
+        argmin_problem<Scalar, NV, MaxM>>;
     // The bound problem type follows NV: nlp_problem_static on the static path,
     // the runtime-erased nlp_problem on the dynamic default.
     using problem_type = typename bridge_type::problem_type;
@@ -182,6 +190,26 @@ public:
         {
             auto result = solver.solve();
             return translate_result(result);
+        });
+    }
+
+    // Zero-allocation solve for the static (strict-zero) path. Writes the primal
+    // solution IN PLACE into the caller's pre-sized `solution` buffer and returns
+    // the scalar diagnostics in an nlp_result whose `.x` is left EMPTY, so no
+    // dynamic decision vector is heap-allocated on the hot path -- unlike solve(),
+    // which must materialize nlp_result::x by value. `solution` must already be
+    // sized to the problem dimension; on the fixed-NV bridge that is the
+    // compile-time NV. The runtime-erased consumers keep using solve(); the static
+    // NMPC path prefers solve_into when the bridge exposes it.
+    auto solve_into(const nlp_update<Scalar>& update,
+                    Eigen::Ref<Eigen::VectorX<Scalar>> solution) -> nlp_result<Scalar>
+    {
+        prepare_solver(update.x0);
+        return with_solver([&](auto& solver)
+        {
+            auto result = solver.solve();
+            solution = result.x;
+            return translate_meta(result);
         });
     }
 
@@ -420,17 +448,28 @@ private:
         return solve_status::error;
     }
 
+    // Scalar-only translation: fills every diagnostic field but leaves `.x` empty
+    // (default-constructed, size 0), so it allocates nothing. solve_into returns
+    // this directly; translate_result layers the by-value `.x` copy on top.
     template <typename Result>
-    auto translate_result(const Result& r) const -> nlp_result<Scalar>
+    auto translate_meta(const Result& r) const -> nlp_result<Scalar>
     {
         return nlp_result<Scalar>{
             .status = map_status(r.status),
-            .x = r.x,
+            .x = {},
             .objective = r.objective_value,
             .solve_time = result_wall_time(r),
             .iterations = static_cast<int>(r.iterations),
             .primal_residual = r.constraint_violation,
         };
+    }
+
+    template <typename Result>
+    auto translate_result(const Result& r) const -> nlp_result<Scalar>
+    {
+        auto out = translate_meta(r);
+        out.x = r.x;
+        return out;
     }
 
     template <typename Result>
