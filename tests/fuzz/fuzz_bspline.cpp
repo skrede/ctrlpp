@@ -39,26 +39,23 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // Ensure knot vector has proper clamped structure for degree 3, 5 control points
     // Required: first 4 equal, last 4 equal, interior monotone
     // Just sort and let the constructor validate
-    try
-    {
-        ctrlpp::bspline_trajectory<double, 3> bspline({
-            .control_points = control_points,
-            .knot_vector = knots,
-        });
+    // Exercise the non-throwing factory: an invalid B-spline config (knot
+    // structure / control-point count) is expected for some fuzz inputs.
+    auto result = ctrlpp::bspline_trajectory<double, 3>::try_create({
+        .control_points = control_points,
+        .knot_vector = knots,
+    });
+    if(!result.has_value())
+        return 0;
 
-        auto pt = bspline.evaluate(eval_t);
+    auto pt = result->evaluate(eval_t);
 
-        if(!std::isfinite(pt.position(0)))
-            return 0;
-        if(!std::isfinite(pt.velocity(0)))
-            return 0;
-        if(!std::isfinite(pt.acceleration(0)))
-            return 0;
-    }
-    catch(const std::invalid_argument&)
-    {
-        // Invalid B-spline config is expected for some fuzz inputs
-    }
+    if(!std::isfinite(pt.position(0)))
+        return 0;
+    if(!std::isfinite(pt.velocity(0)))
+        return 0;
+    if(!std::isfinite(pt.acceleration(0)))
+        return 0;
 
     return 0;
 }
