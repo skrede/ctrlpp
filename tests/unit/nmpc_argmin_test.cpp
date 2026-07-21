@@ -615,7 +615,7 @@ TEST_CASE("mpc osqp survives move-then-solve", "[mpc][osqp][move-safety]")
     {
         auto u = moved.solve(x);
         REQUIRE(u.has_value());
-        x = sys.A * x + sys.B * u.value();
+        x = sys.A * x + sys.B * u.value().input;
     }
 
     CHECK(x.norm() < 0.1);
