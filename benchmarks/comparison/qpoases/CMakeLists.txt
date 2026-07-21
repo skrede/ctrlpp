@@ -3,6 +3,10 @@
 # qpOASES is the canonical online active-set QP solver for embedded MPC.
 # It is the de facto warm-started small-dense baseline.
 
+if(NOT CTRLPP_FETCH_BENCHMARK_DEPS)
+    message(FATAL_ERROR "The qpOASES comparison benchmark is fetched from upstream and must be opted into; re-run with -DCTRLPP_FETCH_BENCHMARK_DEPS=ON.")
+endif()
+
 include(FetchContent)
 
 FetchContent_Declare(qpoases

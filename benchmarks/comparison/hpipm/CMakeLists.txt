@@ -5,6 +5,10 @@
 # HPIPM and BLASFEO from upstream because the Arch hpipm-git / blasfeo-git
 # packages ship LTO-only static archives with no usable symbol table.
 
+if(NOT CTRLPP_FETCH_BENCHMARK_DEPS)
+    message(FATAL_ERROR "The HPIPM comparison benchmark has no usable system package (upstream ships LTO-only archives) and must be fetched; re-run with -DCTRLPP_FETCH_BENCHMARK_DEPS=ON.")
+endif()
+
 include(FetchContent)
 
 FetchContent_Declare(blasfeo

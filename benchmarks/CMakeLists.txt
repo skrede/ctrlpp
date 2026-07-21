@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Benchmark dependencies are resolved with find_package by default (assume the
+# dependency is installed on the system). Set CTRLPP_FETCH_BENCHMARK_DEPS=ON to
+# instead download and build the missing ones via FetchContent.
+option(CTRLPP_FETCH_BENCHMARK_DEPS "Fetch missing benchmark dependencies via FetchContent instead of only using installed ones" OFF)
+
 find_package(Eigen3 CONFIG REQUIRED)
 
 # ctrlpp is header-only; create a lightweight interface target
@@ -25,16 +30,20 @@ target_include_directories(ctrlpp_bench_problems INTERFACE
 target_link_libraries(ctrlpp_bench_problems INTERFACE ctrlpp::ctrlpp)
 
 # nanobench microbenchmark framework
-include(FetchContent)
-FetchContent_Declare(nanobench
-    GIT_REPOSITORY https://github.com/martinus/nanobench.git
-    GIT_TAG        v4.3.11
-    GIT_SHALLOW    TRUE)
-FetchContent_MakeAvailable(nanobench)
+if(CTRLPP_FETCH_BENCHMARK_DEPS)
+    include(FetchContent)
+    FetchContent_Declare(nanobench
+        GIT_REPOSITORY https://github.com/martinus/nanobench.git
+        GIT_TAG        v4.3.11
+        GIT_SHALLOW    TRUE)
+    FetchContent_MakeAvailable(nanobench)
+else()
+    find_package(nanobench CONFIG REQUIRED)
+endif()
 
 # Optional solver backends for MPC/MHE benchmarks
 find_package(osqp QUIET)
-find_package(nlopt QUIET)
+find_package(NLopt QUIET)
 
 if(osqp_FOUND)
     add_library(ctrlpp_benchmarks_osqp INTERFACE)
@@ -43,10 +52,10 @@ if(osqp_FOUND)
     target_compile_definitions(ctrlpp_benchmarks_osqp INTERFACE CTRLPP_HAS_OSQP=1)
 endif()
 
-if(nlopt_FOUND)
+if(NLopt_FOUND)
     add_library(ctrlpp_benchmarks_nlopt INTERFACE)
     add_library(ctrlpp::nlopt ALIAS ctrlpp_benchmarks_nlopt)
-    target_link_libraries(ctrlpp_benchmarks_nlopt INTERFACE ctrlpp::ctrlpp nlopt)
+    target_link_libraries(ctrlpp_benchmarks_nlopt INTERFACE ctrlpp::ctrlpp NLopt::nlopt)
     target_compile_definitions(ctrlpp_benchmarks_nlopt INTERFACE CTRLPP_HAS_NLOPT=1)
 endif()
 

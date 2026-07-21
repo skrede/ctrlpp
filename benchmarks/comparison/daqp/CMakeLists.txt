@@ -2,6 +2,10 @@
 #
 # DAQP is a dual active-set QP solver designed for embedded MPC inner subproblems.
 
+if(NOT CTRLPP_FETCH_BENCHMARK_DEPS)
+    message(FATAL_ERROR "The DAQP comparison benchmark is fetched from upstream and must be opted into; re-run with -DCTRLPP_FETCH_BENCHMARK_DEPS=ON.")
+endif()
+
 include(FetchContent)
 
 FetchContent_Declare(daqp

@@ -1,6 +1,9 @@
 find_package(mpc++ CONFIG QUIET)
 
 if (NOT mpc++_FOUND)
+    if (NOT CTRLPP_FETCH_BENCHMARK_DEPS)
+        message(FATAL_ERROR "libmpc++ not found via find_package; install it or re-run with -DCTRLPP_FETCH_BENCHMARK_DEPS=ON to fetch it.")
+    endif ()
     message(STATUS "libmpc++ not found via find_package, fetching via FetchContent")
     include(FetchContent)
 

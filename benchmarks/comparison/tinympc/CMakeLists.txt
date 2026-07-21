@@ -4,6 +4,10 @@
 # design point from interior-point/active-set; the bench shows the tradeoff
 # between embedded simplicity and convergence speed on a non-trivial problem.
 
+if(NOT CTRLPP_FETCH_BENCHMARK_DEPS)
+    message(FATAL_ERROR "The TinyMPC comparison benchmark is fetched from upstream and must be opted into; re-run with -DCTRLPP_FETCH_BENCHMARK_DEPS=ON.")
+endif()
+
 include(FetchContent)
 
 FetchContent_Declare(tinympc
