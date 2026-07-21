@@ -102,7 +102,7 @@ public:
         // The tracking overload reads y_ref[0..N] (N+1 references). An undersized
         // span would otherwise overrun; reject it via the error branch.
         if(y_ref.size() < static_cast<std::size_t>(N + 1))
-            return unexpected<solver_error>{solver_error::invalid_problem};
+            return unexpected(solver_error::invalid_problem);
         for(int k = 0; k < N; ++k)
             update_.q.segment(k * nx, nx) = -(CtQ_ * y_ref[static_cast<std::size_t>(k)]);
         update_.q.segment(N * nx, nx) = -(Qf_linear_ * y_ref[static_cast<std::size_t>(N)]);
@@ -123,7 +123,7 @@ public:
     [[nodiscard]] auto trajectory() const -> expected<std::pair<std::vector<Vector<Scalar, NX>>, std::vector<Vector<Scalar, NU>>>, solver_error>
     {
         if(!has_solution_)
-            return unexpected<solver_error>{solver_error::setup_incomplete};
+            return unexpected(solver_error::setup_incomplete);
 
         int N = config_.horizon;
         std::vector<Vector<Scalar, NX>> states;
@@ -232,7 +232,7 @@ private:
     [[nodiscard]] auto solve_impl(const Vector<Scalar, NX>& x0) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         if(setup_failed_)
-            return unexpected<solver_error>{solver_error::setup_incomplete};
+            return unexpected(solver_error::setup_incomplete);
 
         rebuild_bounds(x0);
         apply_rate_constraint_update();
@@ -254,12 +254,12 @@ private:
         case solve_status::time_limit:
             return extract_solution(result, solve_result_status::budget_exhausted);
         case solve_status::infeasible:
-            return unexpected<solver_error>{solver_error::infeasible};
+            return unexpected(solver_error::infeasible);
         case solve_status::unbounded:
         case solve_status::non_convex:
         case solve_status::error:
         default:
-            return unexpected<solver_error>{solver_error::invalid_problem};
+            return unexpected(solver_error::invalid_problem);
         }
     }
 

@@ -139,7 +139,7 @@ public:
         // An empty reference span has no value to back-fill from; reject it via
         // the error branch rather than solving against stale references.
         if(x_ref.empty())
-            return unexpected<solver_error>{solver_error::invalid_problem};
+            return unexpected(solver_error::invalid_problem);
         const auto len = std::min(x_ref.size(), m_state->x_ref.size());
         for(std::size_t k = 0; k < len; ++k)
             m_state->x_ref[k] = x_ref[k];
@@ -159,7 +159,7 @@ public:
     expected<std::pair<std::vector<Vector<Scalar, NX>>, std::vector<Vector<Scalar, NU>>>, solver_error> trajectory() const
     {
         if(!m_has_solution)
-            return unexpected<solver_error>{solver_error::setup_incomplete};
+            return unexpected(solver_error::setup_incomplete);
 
         std::vector<Vector<Scalar, NX>> states;
         std::vector<Vector<Scalar, NU>> inputs;
@@ -183,7 +183,7 @@ private:
     expected<solve_output<Scalar, NU>, solver_error> solve_impl(const Vector<Scalar, NX>& x0)
     {
         if(m_setup_failed)
-            return unexpected<solver_error>{solver_error::setup_incomplete};
+            return unexpected(solver_error::setup_incomplete);
 
         m_state->x0 = x0;
         m_state->u_prev = m_u_prev;
@@ -206,12 +206,12 @@ private:
         case solve_status::time_limit:
             return finish_solve(result.x, solve_result_status::budget_exhausted);
         case solve_status::infeasible:
-            return unexpected<solver_error>{solver_error::infeasible};
+            return unexpected(solver_error::infeasible);
         case solve_status::unbounded:
         case solve_status::non_convex:
         case solve_status::error:
         default:
-            return unexpected<solver_error>{solver_error::invalid_problem};
+            return unexpected(solver_error::invalid_problem);
         }
     }
 
@@ -508,7 +508,7 @@ private:
     expected<solve_output<Scalar, NU>, solver_error> solve_impl(const Vector<Scalar, NX>& x0)
     {
         if(m_setup_failed)
-            return unexpected<solver_error>{solver_error::setup_incomplete};
+            return unexpected(solver_error::setup_incomplete);
 
         m_state->x0 = x0;
         m_state->u_prev = m_u_prev;
@@ -530,12 +530,12 @@ private:
         case solve_status::time_limit:
             return finish_solve(solve_result_status::budget_exhausted);
         case solve_status::infeasible:
-            return unexpected<solver_error>{solver_error::infeasible};
+            return unexpected(solver_error::infeasible);
         case solve_status::unbounded:
         case solve_status::non_convex:
         case solve_status::error:
         default:
-            return unexpected<solver_error>{solver_error::invalid_problem};
+            return unexpected(solver_error::invalid_problem);
         }
     }
 

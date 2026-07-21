@@ -11,14 +11,23 @@
 
 #include "ctrlpp/detail/expected.h"
 
+#include <utility>
+#include <type_traits>
+
 namespace ctrlpp
 {
 
 template <typename T, typename E>
 using expected = detail::expected<T, E>;
 
+// A function rather than an alias template: alias-template CTAD (P1814) lets
+// GCC deduce E from `unexpected(err)`, but Clang does not implement it, so the
+// alias form fails to compile there. The function deduces E on every compiler.
 template <typename E>
-using unexpected = detail::unexpected<E>;
+[[nodiscard]] constexpr detail::unexpected<std::remove_cvref_t<E>> unexpected(E&& error)
+{
+    return detail::unexpected<std::remove_cvref_t<E>>(std::forward<E>(error));
+}
 
 using detail::unexpect_t;
 using detail::unexpect;
