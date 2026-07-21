@@ -35,19 +35,13 @@ endif()
 
 set(ARGMIN_BENCH_TARGETS
     bench_slsqp
-    bench_cobyla
-    bench_isres
     bench_nmpc
     bench_nmhe
     bench_step_budget
-    bench_lbfgsb
-    bench_bobyqa
     bench_profile
     bench_jacobian
     bench_schedule
     bench_sqp_variants
-    bench_mma
-    bench_gcmma
 )
 
 foreach(target IN LISTS ARGMIN_BENCH_TARGETS)

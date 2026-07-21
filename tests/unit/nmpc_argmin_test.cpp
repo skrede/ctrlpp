@@ -160,63 +160,7 @@ TEST_CASE("nmpc argmin all policies compile", "[nmpc][argmin]")
     static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_slsqp>>);
     static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_nw_sqp>>);
     static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_auglag<>>>);
-    static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_cobyla>>);
-    static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_isres>>);
     static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_lbfgsb, false>>);
-    static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_byrd_lbfgsb, false>>);
-    static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_bobyqa, false>>);
-    static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_mma, false>>);
-    static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_gcmma, false>>);
-    static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_auglag<ctrlpp::argmin_mma>>>);
-    static_assert(ctrlpp::nlp_solver<ctrlpp::argmin_solver<double, ctrlpp::argmin_auglag<ctrlpp::argmin_gcmma>>>);
-}
-
-TEST_CASE("argmin try_setup reports raw-MMA equality rejection as an expected error", "[nmpc][argmin]")
-{
-    // A minimal NLP with a single equality constraint x0 + x1 = 1. Raw MMA and
-    // raw GCMMA cannot represent equality constraints, so try_setup must return
-    // the incompatible_equality_constraints error as a value instead of a
-    // silently-wrong solve; the auglag-wrapped variant absorbs the equality
-    // constraint and must set up successfully on the same problem. Raw MMA is
-    // exercised with Constrained=false because the class-body static_assert
-    // bars the raw-MMA + constrained-bridge instantiation (the compile-time
-    // complement to this runtime reject); the reject still fires by scanning
-    // the problem's equalities directly, mirroring nlopt_solver.
-    ctrlpp::nlp_problem<double> problem{};
-    problem.n_vars = 2;
-    problem.n_constraints = 1;
-    problem.cost = [](std::span<const double> x) { return x[0] * x[0] + x[1] * x[1]; };
-    problem.gradient = [](std::span<const double> x, std::span<double> g)
-    {
-        g[0] = 2.0 * x[0];
-        g[1] = 2.0 * x[1];
-    };
-    problem.constraints = [](std::span<const double> x, std::span<double> c) { c[0] = x[0] + x[1]; };
-    problem.c_lower = Eigen::VectorXd::Constant(1, 1.0);
-    problem.c_upper = Eigen::VectorXd::Constant(1, 1.0);
-
-    SECTION("raw MMA rejects the equality constraint")
-    {
-        ctrlpp::argmin_solver<double, ctrlpp::argmin_mma, false> solver;
-        auto result = solver.try_setup(problem);
-        REQUIRE_FALSE(result.has_value());
-        CHECK(result.error() == ctrlpp::argmin_setup_error::incompatible_equality_constraints);
-    }
-
-    SECTION("raw GCMMA rejects the equality constraint")
-    {
-        ctrlpp::argmin_solver<double, ctrlpp::argmin_gcmma, false> solver;
-        auto result = solver.try_setup(problem);
-        REQUIRE_FALSE(result.has_value());
-        CHECK(result.error() == ctrlpp::argmin_setup_error::incompatible_equality_constraints);
-    }
-
-    SECTION("auglag-wrapped MMA absorbs the equality constraint")
-    {
-        ctrlpp::argmin_solver<double, ctrlpp::argmin_auglag<ctrlpp::argmin_mma>> solver;
-        auto result = solver.try_setup(problem);
-        REQUIRE(result.has_value());
-    }
 }
 
 TEST_CASE("argmin ftol_rel/xtol_rel drive the relative convergence criteria", "[nmpc][argmin]")

@@ -19,17 +19,11 @@ enum class nlopt_setup_error : std::uint8_t
     incompatible_equality_constraints
 };
 
-/// @brief Structured failure modes for `argmin_solver::try_setup`.
-///
-///  * incompatible_equality_constraints : the selected policy is a raw
-///    MMA-family algorithm (`argmin_mma` / `argmin_gcmma`) which cannot
-///    represent equality constraints. The auglag-wrapped variants
-///    (`argmin_auglag<argmin_mma>`, `argmin_auglag<argmin_gcmma>`) absorb
-///    equality constraints into the outer augmented-Lagrangian penalty and
-///    accept the same problem.
+/// @brief Structured failure modes for `argmin_solver::try_setup`. The argmin
+/// adapter has no setup failure mode, so this carries no enumerators; the
+/// fallible signature is retained for parity with the other solver backends.
 enum class argmin_setup_error : std::uint8_t
 {
-    incompatible_equality_constraints
 };
 
 }

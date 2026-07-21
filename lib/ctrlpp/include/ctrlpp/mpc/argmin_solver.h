@@ -45,21 +45,6 @@ namespace ctrlpp
 template <typename Scalar, typename Policy, bool Constrained = true, int NV = Eigen::Dynamic, int MaxM = Eigen::Dynamic>
 class argmin_solver
 {
-    // Compile-time guard for the structurally-always-invalid configuration: a
-    // raw MMA-family policy (argmin_mma / argmin_gcmma) driving the constrained
-    // bridge. NMPC always emits equality constraints (initial-state pin +
-    // continuity), so a constrained raw-MMA solver can never solve the problem
-    // it is handed. This is the compile-time complement to try_setup's runtime
-    // reject: the static_assert bars the always-wrong constrained NMPC
-    // instantiation, while try_setup rejects a general nlp_problem that happens
-    // to carry equalities. Wrap the policy as argmin_auglag<argmin_mma> (the
-    // outer augmented-Lagrangian loop absorbs the equalities) to fix it.
-    static_assert(!(is_raw_mma_family_v<Policy> && Constrained),
-        "Raw MMA-family policies (argmin_mma / argmin_gcmma) cannot handle "
-        "equality constraints and NMPC always emits them; use "
-        "argmin_auglag<argmin_mma> for constrained problems, or set "
-        "Constrained=false for unconstrained (bound-only) use.");
-
 public:
     using scalar_type = Scalar;
     // On the static path (NV != Eigen::Dynamic) the policy algorithm is rebound
@@ -81,10 +66,7 @@ public:
             argmin_ctrlpp_convergence>;
     using solver_storage_type =
         std::variant<std::monostate, step_solver_type, timed_solver_type>;
-    using settings_type = std::conditional_t<
-        is_mma_family_v<Policy>,
-        argmin_mma_settings<Scalar>,
-        argmin_settings<Scalar>>;
+    using settings_type = argmin_settings<Scalar>;
 
     explicit argmin_solver(settings_type settings = {})
         : settings_{settings}
@@ -133,12 +115,10 @@ public:
         return *this;
     }
 
-    /// @brief Fallible setup: binds the problem into the bridge and rejects a
-    /// raw MMA-family policy handed equality constraints. Returns an empty
-    /// expected on success and `argmin_setup_error::incompatible_equality_constraints`
-    /// when a raw MMA/GCMMA policy is given a problem that carries equalities.
-    /// Reported through the `ctrlpp::expected` channel so the reject works in
-    /// all build modes, including `-fno-exceptions`.
+    /// @brief Setup: binds the problem into the bridge. The argmin adapter has no
+    /// setup failure mode, so this always succeeds; the fallible signature (an
+    /// empty-error `ctrlpp::expected`) is retained for parity with the other
+    /// solver backends and works in all build modes, including `-fno-exceptions`.
     [[nodiscard]] auto try_setup(const problem_type& problem)
         -> ctrlpp::expected<void, argmin_setup_error>
     {
@@ -150,36 +130,15 @@ public:
         else
             bridge_->bind(problem);
 
-        if constexpr(is_raw_mma_family_v<Policy>)
-        {
-            // Raw MMA/GCMMA cannot represent equality constraints (the
-            // auglag-wrapped variants absorb them and are exempt via
-            // is_raw_mma_family_v). Scan the raw problem for equalities the
-            // same way nlopt_solver does, rather than the constrained bridge's
-            // num_equality(): the class-body static_assert bars the constrained
-            // raw-MMA bridge, so the only compilable raw-MMA configuration is
-            // Constrained=false, whose bridge does not partition constraints.
-            // Rejecting an equality-carrying problem here prevents a
-            // silently-wrong solve that would ignore those equalities.
-            if(problem_has_equality(problem))
-                return ctrlpp::unexpected(argmin_setup_error::incompatible_equality_constraints);
-        }
-
         return {};
     }
 
 #if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_setup`. Throws
-    /// `std::invalid_argument` when a raw MMA-family policy is handed equality
-    /// constraints.
+    /// @brief Convenience wrapper over `try_setup`. Setup cannot fail, so this
+    /// never throws; it exists for callers that use the non-fallible setup shape.
     void setup(const problem_type& problem)
     {
-        if(try_setup(problem).has_value())
-            return;
-
-        throw std::invalid_argument(
-            "raw MMA-family argmin policy cannot handle equality constraints; "
-            "wrap it as argmin_auglag<argmin_mma>");
+        static_cast<void>(try_setup(problem));
     }
 #endif
 
@@ -238,16 +197,6 @@ private:
             bridge_->bind(*problem_);
     }
 
-    static auto problem_has_equality(const problem_type& problem) -> bool
-    {
-        for(int i = 0; i < problem.n_constraints; ++i)
-        {
-            if(problem.c_lower[i] == problem.c_upper[i])
-                return true;
-        }
-        return false;
-    }
-
     void prepare_solver(const Eigen::VectorX<Scalar>& x0)
     {
         if(std::holds_alternative<std::monostate>(solver_))
@@ -260,13 +209,7 @@ private:
             return;
         }
 
-        const auto ws = [&]() -> warm_start_mode
-        {
-            if constexpr(is_mma_family_v<Policy>)
-                return settings_.base.warm_start;
-            else
-                return settings_.warm_start;
-        }();
+        const auto ws = settings_.warm_start;
 
         std::visit([&](auto& solver)
         {
@@ -285,13 +228,7 @@ private:
     {
         argmin::solver_options<argmin_ctrlpp_convergence> opts;
 
-        auto const& s = [&]() -> auto const&
-        {
-            if constexpr(is_mma_family_v<Policy>)
-                return settings_.base;
-            else
-                return settings_;
-        }();
+        auto const& s = settings_;
 
         opts.max_iterations = static_cast<std::uint32_t>(s.max_eval);
 
@@ -321,13 +258,7 @@ private:
         argmin::time_budget_options<argmin_ctrlpp_convergence> opts;
         opts.core = make_solver_options();
 
-        auto const& s = [&]() -> auto const&
-        {
-            if constexpr(is_mma_family_v<Policy>)
-                return settings_.base;
-            else
-                return settings_;
-        }();
+        auto const& s = settings_;
 
         opts.max_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::duration<double>(static_cast<double>(s.max_time)));
@@ -337,88 +268,21 @@ private:
 
     auto has_time_budget() const -> bool
     {
-        auto const& s = [&]() -> auto const&
-        {
-            if constexpr(is_mma_family_v<Policy>)
-                return settings_.base;
-            else
-                return settings_;
-        }();
-
-        return s.max_time > Scalar{0};
+        return settings_.max_time > Scalar{0};
     }
 
     void emplace_step_solver(const Eigen::VectorX<Scalar>& x0)
     {
-        if constexpr(is_mma_family_v<Policy>)
-        {
-            solver_.template emplace<step_solver_type>(
-                argmin_policy{}, *bridge_, x0, make_solver_options(), make_mma_policy_opts());
-        }
-        else
-        {
-            solver_.template emplace<step_solver_type>(
-                argmin_policy{}, *bridge_, x0, make_solver_options());
-        }
+        solver_.template emplace<step_solver_type>(
+            argmin_policy{}, *bridge_, x0, make_solver_options());
     }
 
     void emplace_timed_solver(const Eigen::VectorX<Scalar>& x0)
     {
-        if constexpr(is_mma_family_v<Policy>)
-        {
-            solver_.template emplace<timed_solver_type>(
-                argmin_policy{}, *bridge_, x0, make_time_budget_options(), make_mma_policy_opts());
-        }
-        else
-        {
-            solver_.template emplace<timed_solver_type>(
-                argmin_policy{}, *bridge_, x0, make_time_budget_options());
-        }
+        solver_.template emplace<timed_solver_type>(
+            argmin_policy{}, *bridge_, x0, make_time_budget_options());
     }
 
-    auto make_mma_policy_opts() const -> typename argmin_policy::options_type
-    {
-        typename argmin_policy::options_type po{};
-        if constexpr(std::is_same_v<Policy, argmin_mma>)
-        {
-            po.asymptote_init = static_cast<double>(settings_.asymptote_init);
-            po.asymptote_expand = static_cast<double>(settings_.asymptote_incr);
-            po.asymptote_contract = static_cast<double>(settings_.asymptote_decr);
-        }
-        else if constexpr(std::is_same_v<Policy, argmin_gcmma>)
-        {
-            po.asymptote_init = static_cast<double>(settings_.asymptote_init);
-            po.asymptote_expand = static_cast<double>(settings_.asymptote_incr);
-            po.asymptote_contract = static_cast<double>(settings_.asymptote_decr);
-            po.max_inner_iterations =
-                static_cast<std::uint16_t>(settings_.gcmma_inner_max);
-        }
-        else
-        {
-            // argmin_auglag<Inner> with is_mma_family_v<Inner>.
-            if constexpr(std::is_same_v<Policy, argmin_auglag<argmin_mma>>)
-            {
-                po.inner_opts.asymptote_init =
-                    static_cast<double>(settings_.asymptote_init);
-                po.inner_opts.asymptote_expand =
-                    static_cast<double>(settings_.asymptote_incr);
-                po.inner_opts.asymptote_contract =
-                    static_cast<double>(settings_.asymptote_decr);
-            }
-            else if constexpr(std::is_same_v<Policy, argmin_auglag<argmin_gcmma>>)
-            {
-                po.inner_opts.asymptote_init =
-                    static_cast<double>(settings_.asymptote_init);
-                po.inner_opts.asymptote_expand =
-                    static_cast<double>(settings_.asymptote_incr);
-                po.inner_opts.asymptote_contract =
-                    static_cast<double>(settings_.asymptote_decr);
-                po.inner_opts.max_inner_iterations =
-                    static_cast<std::uint16_t>(settings_.gcmma_inner_max);
-            }
-        }
-        return po;
-    }
 
     static constexpr auto map_status(argmin::solver_status s) -> solve_status
     {
