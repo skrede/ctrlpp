@@ -14,6 +14,13 @@ constexpr double kHostK0        = 9.467093672;
 constexpr double kHostK1        = 5.281739638;
 constexpr double kHostFinalNorm = 2.020686726e-05;
 
+// Per-leg diff tolerances. The ESP32 float figure is measured on-silicon; the
+// H753 double figure is pinned from a host-double baseline run of generate_golden
+// (order residual observed at 0, floored to 1e-9) -- deliberately far tighter than
+// the float figure, never reused from it.
+constexpr double kEsp32FloatTol  = 2e-3;
+constexpr double kH753DoubleTol  = 1e-9;
+
 }
 
 #endif

@@ -1,0 +1,3 @@
+add_executable(ctrlpp_generate_golden generate_golden.cpp)
+target_link_libraries(ctrlpp_generate_golden PRIVATE ctrlpp::ctrlpp)
+target_compile_options(ctrlpp_generate_golden PRIVATE ${CTRLPP_WARNING_FLAGS})
