@@ -202,7 +202,10 @@ TEST_CASE("soft path constraint with custom penalty weight", "[nmpc][coverage][n
         -> ctrlpp::Vector<double, NC>
     { return ctrlpp::Vector<double, NC>{x(0) - 0.5}; };
 
-    config.path_penalty = ctrlpp::Vector<double, NC>{1e6};
+    // A moderate weight keeps the exact-penalty NLP well-scaled: an extreme
+    // weight makes it too stiff for SLSQP to converge, leaving the closed-loop
+    // outcome at the mercy of solver-iterate rounding.
+    config.path_penalty = ctrlpp::Vector<double, NC>{100.0};
 
     ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0> controller{double_integrator, config};
 
@@ -214,8 +217,9 @@ TEST_CASE("soft path constraint with custom penalty weight", "[nmpc][coverage][n
         x = double_integrator(x, u->input);
     }
 
-    // High penalty should drive state toward constraint, verify it converges
-    CHECK(x(0) < 5.0);
+    // The penalty drives the state below the soft path constraint g(x)=x(0)-0.5;
+    // starting at x(0)=2.0, the closed loop settles well under the boundary.
+    CHECK(x(0) < 0.5);
 }
 
 // ---- nmpc.h: warm-start shifting over consecutive solves ----
