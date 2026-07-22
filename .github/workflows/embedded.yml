@@ -20,7 +20,17 @@ on:
 jobs:
   esp-idf:
     runs-on: ubuntu-24.04
-    name: esp-idf (esp32)
+    name: esp-idf (esp32, ${{ matrix.idf_version }})
+
+    # The manifest floor is 5.3 (UART moved into esp_driver_uart there) with no
+    # upper bound, so the gate brackets the claimed range: oldest supported,
+    # most widely deployed, newest stable. The board captures were taken on a
+    # 6.1-dev checkout, which is outside this range by construction -- a dev
+    # branch is not a pinnable gate.
+    strategy:
+      fail-fast: false
+      matrix:
+        idf_version: [v5.3, v5.5, v6.0]
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -34,7 +44,7 @@ jobs:
       - name: Build the ESP32 control-loop leg
         uses: espressif/esp-idf-ci-action@e6f5c74232b1ccd4c97ed641f1e48553853f1fd5 # v1.2.0
         with:
-          esp_idf_version: v5.1
+          esp_idf_version: ${{ matrix.idf_version }}
           target: esp32
           path: examples/embedded/esp32
           extra_docker_args: -e CTRLPP_EIGEN_DIR=/app/${{ github.repository }}/eigen-esp

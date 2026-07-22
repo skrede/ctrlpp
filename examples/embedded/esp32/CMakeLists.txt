@@ -5,10 +5,10 @@
 # designs an infinite-horizon LQR gain for a discrete double-integrator with
 # float scalars, streams the closed-loop trajectory as CSV over UART2 (the
 # telemetry adapter), and reports gain deviation against the host-double
-# reference plus per-step cycle/us timing.
+# reference.
 #
 # To run:
-#   1. Install ESP-IDF v5.1+ (https://docs.espressif.com/projects/esp-idf/).
+#   1. Install ESP-IDF v5.3+ (https://docs.espressif.com/projects/esp-idf/).
 #   2. `. $IDF_PATH/export.sh`   (e.g. `. /opt/esp-idf/export.sh`)
 #   3. `idf.py -C examples/embedded/esp32 set-target esp32 && idf.py -C examples/embedded/esp32 build`
 #   4. To validate on hardware: `idf.py -p <flash-port> flash monitor`.

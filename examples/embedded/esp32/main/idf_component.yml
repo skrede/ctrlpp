@@ -5,5 +5,7 @@
 ## before `idf.py build` (main/CMakeLists.txt adds it as a system include). The
 ## ctrlpp host test build already fetches one under build-tests/_deps/eigen3-src.
 
+## The floor is 5.3, not 5.1: UART moved out of the monolithic `driver`
+## component into `esp_driver_uart` in v5.3.
 dependencies:
-  idf: ">=5.1"
+  idf: ">=5.3"

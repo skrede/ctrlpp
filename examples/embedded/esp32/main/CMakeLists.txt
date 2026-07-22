@@ -3,7 +3,7 @@ set(CTRLPP_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../..")
 idf_component_register(
     SRCS "app_main.cpp"
     INCLUDE_DIRS "."
-    REQUIRES esp_driver_uart esp_timer
+    REQUIRES esp_driver_uart
 )
 
 # ctrlpp's public include tree plus the shared board-leg kernel. SYSTEM keeps the
@@ -13,9 +13,9 @@ target_include_directories(${COMPONENT_LIB} SYSTEM PRIVATE
     "${CTRLPP_ROOT}/lib/ctrlpp/include"
     "${CTRLPP_ROOT}/examples/embedded/shared")
 
-# Eigen lives outside ESP-IDF's default component graph; it is pulled through
-# the IDF Component Manager (see ./idf_component.yml). If a local Eigen checkout
-# is preferred, expose it via CTRLPP_EIGEN_DIR.
+# Eigen lives outside ESP-IDF's component graph and is not published as a
+# managed component; the build expects a local checkout exposed via
+# CTRLPP_EIGEN_DIR.
 if (DEFINED ENV{CTRLPP_EIGEN_DIR})
     target_include_directories(${COMPONENT_LIB} SYSTEM PRIVATE "$ENV{CTRLPP_EIGEN_DIR}")
 endif ()
