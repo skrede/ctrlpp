@@ -10,7 +10,7 @@
 # To run:
 #   1. Install ESP-IDF v5.1+ (https://docs.espressif.com/projects/esp-idf/).
 #   2. `. $IDF_PATH/export.sh`   (e.g. `. /opt/esp-idf/export.sh`)
-#   3. `cd tests/embedded/esp32-lqr && idf.py set-target esp32 && idf.py build`
+#   3. `idf.py -C examples/embedded/esp32 set-target esp32 && idf.py -C examples/embedded/esp32 build`
 #   4. To validate on hardware: `idf.py -p <flash-port> flash monitor`.
 #      The CSV trajectory is streamed on UART2 (ESP TX GPIO17 -> telemetry USB RX).
 #
@@ -27,4 +27,4 @@ set(CTRLPP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 list(APPEND CMAKE_INCLUDE_PATH "${CTRLPP_ROOT}/lib/ctrlpp/include")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(ctrlpp_esp32_lqr)
+project(ctrlpp_esp32)
