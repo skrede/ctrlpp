@@ -1,0 +1,74 @@
+name: Embedded
+
+on:
+  push:
+    branches: [master, develop, 'milestone/**']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.planning/**'
+  pull_request:
+    branches: [master, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.planning/**'
+  workflow_dispatch:
+
+# Build-only gate: it catches cross-compile regressions in the two board legs.
+# Run correctness is established on the physical boards, not here.
+jobs:
+  esp-idf:
+    runs-on: ubuntu-24.04
+    name: esp-idf (esp32)
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Eigen sits outside ESP-IDF's component graph; provide it as a local
+      # checkout and hand it to the containerized build via CTRLPP_EIGEN_DIR.
+      # The action mounts the workspace at /app/${{ github.repository }}.
+      - name: Fetch Eigen for the ESP build
+        run: git clone --depth 1 --branch 3.4.0 https://gitlab.com/libeigen/eigen.git "${{ github.workspace }}/eigen-esp"
+
+      - name: Build the ESP32 control-loop leg
+        uses: espressif/esp-idf-ci-action@e6f5c74232b1ccd4c97ed641f1e48553853f1fd5 # v1.2.0
+        with:
+          esp_idf_version: v5.1
+          target: esp32
+          path: examples/embedded/esp32
+          extra_docker_args: -e CTRLPP_EIGEN_DIR=/app/${{ github.repository }}/eigen-esp
+
+  arm-crosscompile:
+    # Pinned to ubuntu-24.04 (not ubuntu-latest): noble ships gcc-arm-none-eabi
+    # 13.2 with the C++ driver and a newlib libstdc++, which the older archive
+    # toolchains lacked. The C++20 guarantee holds only on this image.
+    runs-on: ubuntu-24.04
+    name: arm (cortex-m7-h753zi)
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install arm-none-eabi toolchain and Eigen
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib libeigen3-dev
+
+      # The full flashable image, not a representative translation unit: the link
+      # is what the board runs, so the link is what CI replays.
+      - name: Cross-compile the NUCLEO-H753ZI image
+        run: |
+          cmake -S examples/embedded/nucleo_h753zi -B build-arm \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/examples/embedded/nucleo_h753zi/cmake/toolchain-arm-none-eabi.cmake" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-arm
+
+      - name: Assert a fully resolved image and report its size
+        run: |
+          elf=build-arm/ctrlpp_nucleo_h753zi.elf
+          test -f "$elf"
+          undefined=$(arm-none-eabi-nm --undefined-only "$elf")
+          if [ -n "$undefined" ]; then
+            echo "unresolved symbols in $elf:" >&2
+            echo "$undefined" >&2
+            exit 1
+          fi
+          arm-none-eabi-size "$elf"
