@@ -192,3 +192,163 @@ jobs:
 
       - name: Test
         run: cd build && ctest --output-on-failure
+
+  # Sanitizers over the unit suite, following the house pattern (see argmin and
+  # cartan, whose asan-ubsan jobs this mirrors). ctrlpp needs two cells rather
+  # than one: the solver backends are a separate build tree, and the default
+  # tree does not compile them at all. That gap is not hypothetical -- an OSQP
+  # setup-failure leak survived in a path the existing suite already exercised,
+  # because no build had the instrumentation to see it.
+  #
+  # Unlike a local triage sweep, this deliberately omits -fsanitize-recover so a
+  # UBSan report aborts the test rather than being logged while ctest still
+  # reports a pass.
+  sanitize:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: asan-ubsan (core)
+            backends: false
+          - name: asan-ubsan (backends)
+            backends: true
+
+    runs-on: ubuntu-24.04
+    name: sanitize (${{ matrix.name }})
+
+    env:
+      CC: clang-18
+      CXX: clang++-18
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same reason as the backends job: the FETCH_DEPS path downloads Eigen
+      # headers directly and never registers a findable Eigen3 package, so the
+      # argmin subbuild needs a system Eigen config.
+      - name: Install system Eigen for the argmin subbuild
+        if: matrix.backends
+        run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
+
+      - name: Configure
+        run: |
+          set -euo pipefail
+          SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+          if [ "${{ matrix.backends }}" = "true" ]; then
+            EXTRA="-DCTRLPP_BUILD_OSQP=ON -DCTRLPP_BUILD_NLOPT=ON -DCTRLPP_BUILD_ARGMIN=ON -DCTRLPP_TESTS_WITH_EXCEPTIONS=ON -DCTRLPP_BUILD_PROPERTY_TESTS=ON"
+          else
+            EXTRA=""
+          fi
+          cmake . -B build -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="$SAN" \
+            -DCMAKE_CXX_FLAGS="$SAN" \
+            -DCMAKE_EXE_LINKER_FLAGS="$SAN" \
+            -DCTRLPP_BUILD_TESTS=ON \
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+            $EXTRA
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: "detect_leaks=1"
+          UBSAN_OPTIONS: "print_stacktrace=1"
+        run: cd build && ctest --output-on-failure
+
+  # MemorySanitizer requires the ENTIRE program -- including the C++ standard
+  # library -- to be instrumented. Stock libstdc++ is not, which produces false
+  # use-of-uninitialized reports deep inside std:: containers (e.g. in Catch2's
+  # registry during static init). We build libc++/libc++abi with
+  # -fsanitize=memory and link against them so the reports are real signal.
+  # This recipe, and the unwinder defect it works around, come from argmin's
+  # sanitize-msan job.
+  #
+  # The unwinder is deliberately NOT instrumented: an MSAN-built libunwind reads
+  # its own register context (getReg) in a way MSAN treats as uninitialized,
+  # which (a) false-positives on every ordinary C++ exception unwind and (b)
+  # infinitely recurses -- and SIGSEGVs -- when MSAN unwinds to print a real
+  # report, masking the finding. So libc++abi is pointed at the platform
+  # unwinder (LIBCXXABI_USE_LLVM_UNWINDER=OFF, uninstrumented libgcc_s) and
+  # fast_unwind_on_fatal keeps MSAN's own fatal traces off libunwind too.
+  #
+  # This runs the CORE tree only, deliberately. MSan reports uninitialized
+  # reads wherever they occur, including inside the vendored C sources of the
+  # solver backends (OSQP, NLopt), which ctrlpp cannot fix and which would make
+  # the gate red for reasons outside this repository. The core tree is ctrlpp's
+  # own headers plus Eigen and Catch2, all built from source and instrumented --
+  # and it is where the uninitialized-read class of defect actually lives:
+  # moesp returned indeterminate matrices on its failure paths, which ASan is
+  # structurally unable to observe.
+  sanitize-msan:
+    runs-on: ubuntu-24.04
+    name: sanitize (msan, instrumented libc++)
+
+    env:
+      LLVM_VER: "18.1.8"          # track the clang used below (clang-18)
+      CC: clang-18
+      CXX: clang++-18
+      LIBCXX_MSAN: ${{ github.workspace }}/libcxx-msan
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18 ninja-build cmake xz-utils
+
+      # The instrumented libc++ is expensive to build (~10 min) but fully
+      # deterministic for a fixed LLVM version + compiler, so cache it.
+      - name: Cache instrumented libc++
+        id: cache-libcxx
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LIBCXX_MSAN }}
+          key: libcxx-msan-llvm${{ env.LLVM_VER }}-clang18-ubuntu24-v1
+
+      - name: Build instrumented libc++
+        if: steps.cache-libcxx.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q "https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/llvm-project-${LLVM_VER}.src.tar.xz"
+          tar xf "llvm-project-${LLVM_VER}.src.tar.xz"
+          cmake -G Ninja \
+            -S "llvm-project-${LLVM_VER}.src/runtimes" \
+            -B build-libcxx-msan \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi" \
+            -DLLVM_USE_SANITIZER=MemoryWithOrigins \
+            -DLIBCXXABI_USE_LLVM_UNWINDER=OFF \
+            -DLIBCXX_INCLUDE_TESTS=OFF \
+            -DLIBCXX_INCLUDE_BENCHMARKS=OFF \
+            -DCMAKE_INSTALL_PREFIX="${LIBCXX_MSAN}"
+          ninja -C build-libcxx-msan cxx cxxabi
+          ninja -C build-libcxx-msan install-cxx install-cxxabi
+
+      - name: Configure
+        run: |
+          set -euo pipefail
+          MSAN="-fsanitize=memory -fsanitize-memory-track-origins=2 -fno-omit-frame-pointer -g"
+          # Point compile + link at OUR instrumented libc++, and set rpath so
+          # the test binary loads it at runtime (test discovery runs the
+          # binary -- that is the step that crashes with stock libstdc++).
+          CXX_FLAGS="$MSAN -stdlib=libc++ -nostdinc++ -isystem ${LIBCXX_MSAN}/include/c++/v1"
+          LINK_FLAGS="$MSAN -stdlib=libc++ -L${LIBCXX_MSAN}/lib -Wl,-rpath,${LIBCXX_MSAN}/lib -lc++abi"
+          cmake . -B build -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
+            -DCMAKE_EXE_LINKER_FLAGS="$LINK_FLAGS" \
+            -DCTRLPP_BUILD_TESTS=ON \
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        env:
+          # fast_unwind_on_fatal keeps MSAN's fatal-report unwinding on frame
+          # pointers (-fno-omit-frame-pointer is set) rather than libunwind.
+          MSAN_OPTIONS: "abort_on_error=1 fast_unwind_on_fatal=1"
+        run: cd build && ctest --output-on-failure
