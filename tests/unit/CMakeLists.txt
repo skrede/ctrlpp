@@ -102,20 +102,37 @@ make_test(lqr_hardening_test)
 make_test(dare_hardening_test)
 make_test(dare_error_test)
 make_test(care_error_test)
-make_test(dare_care_nomalloc_test)
-make_test(pid_nomalloc_test)
-make_test(dsp_nomalloc_test)
-make_test(sysid_nomalloc_test)
-make_test(estimation_nomalloc_test)
-make_test(trajectory_nomalloc_test)
-# Every *_nomalloc_test consumes the process-global allocation counter from
-# nomalloc_harness.h and must be registered RUN_SERIAL.
-set_tests_properties(dare_care_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-set_tests_properties(pid_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-set_tests_properties(dsp_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-set_tests_properties(sysid_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-set_tests_properties(estimation_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-set_tests_properties(trajectory_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+# MemorySanitizer ships its own strong operator new/delete in
+# libclang_rt.msan_cxx, which collides at link time with the replacements in
+# nomalloc_harness.h ("multiple definition of operator new"). AddressSanitizer
+# intercepts allocation instead of replacing these operators, so only MSan is
+# affected. These targets are skipped there rather than having the harness drop
+# its replacements under MSan: without them the counter would see nothing and
+# the allocation guarantee would silently pass instead of being tested.
+string(FIND "${CMAKE_CXX_FLAGS}" "-fsanitize=memory" CTRLPP_MSAN_FLAG_POS)
+if(CTRLPP_MSAN_FLAG_POS EQUAL -1)
+    set(CTRLPP_NOMALLOC_TESTS_SUPPORTED TRUE)
+else()
+    set(CTRLPP_NOMALLOC_TESTS_SUPPORTED FALSE)
+    message(STATUS "ctrlpp: MemorySanitizer detected, skipping *_nomalloc_test targets (operator new/delete replacement collides with libclang_rt.msan_cxx)")
+endif()
+
+if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
+    make_test(dare_care_nomalloc_test)
+    make_test(pid_nomalloc_test)
+    make_test(dsp_nomalloc_test)
+    make_test(sysid_nomalloc_test)
+    make_test(estimation_nomalloc_test)
+    make_test(trajectory_nomalloc_test)
+    # Every *_nomalloc_test consumes the process-global allocation counter from
+    # nomalloc_harness.h and must be registered RUN_SERIAL.
+    set_tests_properties(dare_care_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(pid_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(dsp_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(sysid_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(estimation_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(trajectory_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+endif()
 make_test(lqr_continuous_test)
 make_test(mrac_hardening_test)
 make_test_exceptions(l1_hardening_test)
@@ -259,12 +276,16 @@ if (CTRLPP_BUILD_ARGMIN)
 
     # EMB-02 proof for the static NMPC path: nmpc_static's steady-state solve is
     # allocation-free at argmin's fixed-N floor. Consumes the process-global
-    # allocation counter from nomalloc_harness.h, so it must run serially.
-    add_executable(nmpc_static_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_static_nomalloc_test.cpp")
-    target_link_libraries(nmpc_static_nomalloc_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
-    target_compile_options(nmpc_static_nomalloc_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
-    add_test(NAME nmpc_static_nomalloc_test COMMAND nmpc_static_nomalloc_test)
-    set_tests_properties(nmpc_static_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    # allocation counter from nomalloc_harness.h, so it must run serially, and
+    # is skipped under MemorySanitizer for the same link-collision reason as the
+    # other *_nomalloc_test targets above.
+    if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
+        add_executable(nmpc_static_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_static_nomalloc_test.cpp")
+        target_link_libraries(nmpc_static_nomalloc_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
+        target_compile_options(nmpc_static_nomalloc_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
+        add_test(NAME nmpc_static_nomalloc_test COMMAND nmpc_static_nomalloc_test)
+        set_tests_properties(nmpc_static_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    endif()
 endif ()
 
 if (CTRLPP_BUILD_PROPERTY_TESTS)
