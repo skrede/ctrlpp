@@ -189,6 +189,27 @@ TEST_CASE("MOESP with near-zero singular values", "[moesp][hardening][negative]"
     REQUIRE(cond_valid);
 }
 
+TEST_CASE("MOESP degenerate data returns a zeroed system", "[moesp][hardening][negative]")
+{
+    // The documented failure contract (docs/api/sysid/moesp.md) is that a
+    // failed identification reports condition_number = infinity and hands back
+    // zeroed system matrices. discrete_state_space is an aggregate of Eigen
+    // fixed-size matrices whose default constructor leaves coefficients
+    // uninitialized, so omitting members yields indeterminate values unless the
+    // zeroing is explicit -- this pins that it is.
+    constexpr int N = 64;
+    Eigen::RowVectorXd Y = Eigen::RowVectorXd::Zero(N);
+    Eigen::RowVectorXd U = Eigen::RowVectorXd::Zero(N);
+
+    auto result = ctrlpp::moesp<2>(Y, U);
+
+    REQUIRE(std::isinf(result.condition_number));
+    REQUIRE(result.system.A.isZero(0.0));
+    REQUIRE(result.system.B.isZero(0.0));
+    REQUIRE(result.system.C.isZero(0.0));
+    REQUIRE(result.system.D.isZero(0.0));
+}
+
 TEST_CASE("MOESP with wrong model order", "[moesp][hardening][negative]")
 {
     // True system is first order, identify with NX=4

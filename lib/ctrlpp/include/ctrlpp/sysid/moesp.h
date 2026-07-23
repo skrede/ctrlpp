@@ -206,6 +206,22 @@ auto compute_moesp_metrics(const Matrix<Scalar, NX, NX>& A,
     return compute_fit_metrics(y_actual, y_predicted);
 }
 
+/// @brief Builds the zeroed system returned on every identification-failure path.
+///
+/// `discrete_state_space` is an aggregate of Eigen fixed-size matrices, and
+/// Eigen's default constructor deliberately leaves coefficients uninitialized.
+/// Aggregate members that are omitted or value-initialized therefore hold
+/// indeterminate values rather than zeros, so the documented failure contract
+/// has to be established explicitly.
+template <typename Scalar, std::size_t NX>
+auto zeroed_siso_system() -> discrete_state_space<Scalar, NX, 1, 1>
+{
+    return {.A = Matrix<Scalar, NX, NX>::Zero(),
+            .B = Matrix<Scalar, NX, 1>::Zero(),
+            .C = Matrix<Scalar, 1, NX>::Zero(),
+            .D = Matrix<Scalar, 1, 1>::Zero()};
+}
+
 }
 
 template <typename Derived1, typename Derived2>
@@ -268,7 +284,7 @@ moesp_result<typename Derived1::Scalar, NX, 1, 1> moesp(const Eigen::MatrixBase<
 
     if(!C.allFinite() || !Gamma.allFinite())
     {
-        discrete_state_space<Scalar, NX, 1, 1> sys{};
+        auto sys = detail::zeroed_siso_system<Scalar, NX>();
         return {.system = sys, .singular_values = sv,
                 .metrics = fit_metrics<Scalar>{}, .condition_number = std::numeric_limits<Scalar>::infinity()};
     }
@@ -280,7 +296,7 @@ moesp_result<typename Derived1::Scalar, NX, 1, 1> moesp(const Eigen::MatrixBase<
     // with infinity condition number so the caller can detect failure
     if(!A.allFinite())
     {
-        discrete_state_space<Scalar, NX, 1, 1> sys{};
+        auto sys = detail::zeroed_siso_system<Scalar, NX>();
         return {.system = sys, .singular_values = sv,
                 .metrics = fit_metrics<Scalar>{}, .condition_number = std::numeric_limits<Scalar>::infinity()};
     }
@@ -288,9 +304,13 @@ moesp_result<typename Derived1::Scalar, NX, 1, 1> moesp(const Eigen::MatrixBase<
     // Recover B and D via least-squares
     auto [B, D] = detail::recover_BD<Scalar, NX>(A, C, Y, U);
 
+    // A and C were recovered here, but the failure contract is uniform: an
+    // identification that could not produce a usable system returns a fully
+    // zeroed one, so a caller that ignores condition_number cannot mistake a
+    // partial result for a model.
     if(!B.allFinite() || !D.allFinite())
     {
-        discrete_state_space<Scalar, NX, 1, 1> sys{.A = A, .C = C};
+        auto sys = detail::zeroed_siso_system<Scalar, NX>();
         return {.system = sys, .singular_values = sv,
                 .metrics = fit_metrics<Scalar>{}, .condition_number = std::numeric_limits<Scalar>::infinity()};
     }
