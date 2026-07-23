@@ -111,6 +111,29 @@ TEST_CASE("osqp_solver try_setup reports setup failure as an expected error", "[
     }
 }
 
+TEST_CASE("mpc accepts a preset-injected solver", "[mpc][osqp]")
+{
+    auto sys = make_double_integrator();
+    ctrlpp::mpc_config<double, NX, NU> cfg{
+        .horizon = 10,
+        .Q = Eigen::Matrix2d::Identity(),
+        .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+    };
+
+    // Third constructor argument injects a pre-configured solver; qp_preset::speed
+    // builds it with polishing off. The closed-loop regulation must still hold.
+    OsqpMpc controller(sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
+
+    Eigen::Vector2d x{1.0, 0.0};
+    for(int step = 0; step < 50; ++step)
+    {
+        auto u = controller.solve(x);
+        REQUIRE(u.has_value());
+        x = sys.A * x + sys.B * u.value().input;
+    }
+    CHECK(x.norm() < 0.1);
+}
+
 TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
 {
     auto sys = make_double_integrator();

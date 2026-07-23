@@ -89,6 +89,30 @@ TEST_CASE("argmin_qp_solver setup then resolve reaches the analytic optimum", "[
     CHECK_THAT(result.x(1), WithinAbs(0.0, 1e-4));
 }
 
+TEST_CASE("argmin_qp_solver preset constructors both solve the box QP", "[mpc][argmin][qp]")
+{
+    auto problem = make_box_qp();
+    ctrlpp::qp_update<double> update{
+        .q = problem.q,
+        .l = problem.l,
+        .u = problem.u,
+        .warm_x = {},
+        .warm_y = {}};
+
+    for(auto preset : {ctrlpp::qp_preset::accuracy, ctrlpp::qp_preset::speed})
+    {
+        ctrlpp::argmin_qp_solver solver{preset};
+        REQUIRE(solver.try_setup(problem).has_value());
+        auto result = solver.solve(update);
+        CHECK(result.status == ctrlpp::solve_status::optimal);
+        // Both presets reach the optimum; accuracy is tighter, so check speed
+        // only to the (looser) stopping tolerance.
+        REQUIRE(result.x.size() == 2);
+        CHECK_THAT(result.x(0), WithinAbs(0.0, 1e-2));
+        CHECK_THAT(result.x(1), WithinAbs(0.0, 1e-2));
+    }
+}
+
 TEST_CASE("argmin_qp_solver reports error before setup", "[mpc][argmin][qp]")
 {
     ctrlpp::argmin_qp_solver solver;

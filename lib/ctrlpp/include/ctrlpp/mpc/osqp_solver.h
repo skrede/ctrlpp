@@ -35,6 +35,14 @@ public:
     {
     }
 
+    /// @brief Preset constructor: `accuracy` polishes, `speed` does not. See
+    /// `qp_preset`. Backend-agnostic with `argmin_qp_solver`, so a call site can
+    /// pick the accuracy/speed tradeoff independently of the chosen backend.
+    explicit osqp_solver(qp_preset preset)
+        : osqp_solver(1e-3, 1e-3, 4000, false, true, preset == qp_preset::accuracy)
+    {
+    }
+
     ~osqp_solver() { cleanup(); }
 
     osqp_solver(const osqp_solver&) = delete;

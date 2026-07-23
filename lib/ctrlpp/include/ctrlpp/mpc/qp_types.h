@@ -22,6 +22,28 @@ enum class solve_status : std::uint8_t
     error
 };
 
+/// @brief Backend-agnostic QP tuning preset, selecting the accuracy/speed
+/// tradeoff for any solver modeling the `qp_solver` concept.
+///
+/// The presets differ in a single knob: solution polishing. Polishing runs an
+/// extra active-set refinement (re-solving a reduced KKT system) that drives the
+/// operator-splitting iterate from its ~tolerance-level answer to near machine
+/// precision, at a per-solve cost that can approach that of the ADMM loop itself.
+///
+///  * accuracy : polish on. The refined, high-precision iterate. Use when the
+///               QP solution feeds something tolerance-sensitive (e.g. an SQP
+///               inner solve) or when tight constraint feasibility is required.
+///  * speed    : polish off. The raw operator-splitting iterate, converged to the
+///               solver's stopping tolerance. For warm-resolve linear MPC the
+///               per-step polish refinement is unnecessary -- the unpolished
+///               iterate already meets the control tolerance -- so this is the
+///               better default there.
+enum class qp_preset : std::uint8_t
+{
+    accuracy,
+    speed
+};
+
 /// @brief Soft result status carried on the SUCCESS branch of a controller solve.
 ///
 /// A controller `solve()` that returns a value always produces a usable control

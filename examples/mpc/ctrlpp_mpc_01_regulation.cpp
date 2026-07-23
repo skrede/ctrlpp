@@ -36,7 +36,10 @@ int main()
         .x_max   = Eigen::Vector2d(std::numeric_limits<double>::infinity(), 2.0)
     };
 
-    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(sys, cfg);
+    // Inject a solver tuned for speed: on the warm-resolve MPC path the
+    // per-step polish refinement is unnecessary, so qp_preset::speed skips it.
+    // Omit the third argument (or pass qp_preset::accuracy) to keep polishing.
+    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
 
     Eigen::Vector2d x(5.0, 0.0);
     constexpr double duration = 10.0;

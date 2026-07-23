@@ -61,6 +61,22 @@ public:
         allocate_update_vectors();
     }
 
+    /// @brief Constructs with a caller-supplied, pre-configured solver.
+    ///
+    /// The default constructor builds the solver with its own defaults; this
+    /// overload lets a caller inject one tuned to a preset or explicit settings,
+    /// e.g. `mpc<...>(sys, cfg, osqp_solver{qp_preset::speed})` to skip per-step
+    /// polishing on the warm-resolve MPC path. The solver is moved in before the
+    /// initial QP is posed, so its settings govern setup.
+    mpc(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver) : solver_{std::move(solver)}, config_{config}, system_{system}, u_prev_{Vector<Scalar, NU>::Zero()}
+    {
+        precompute_output_weights();
+        compute_dimensions();
+        compute_terminal_cost();
+        build_initial_qp();
+        allocate_update_vectors();
+    }
+
     // Unified soft-constraint / failure contract (shared by mpc and nmpc).
     //
     // solve() returns ctrlpp::expected<solve_output<Scalar, NU>, solver_error>.

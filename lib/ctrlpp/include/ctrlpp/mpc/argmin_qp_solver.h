@@ -76,6 +76,15 @@ public:
         opts_.polish = polishing;
     }
 
+    /// @brief Preset constructor: `accuracy` polishes, `speed` does not. See
+    /// `qp_preset`. For warm-resolve MPC `speed` is the better choice -- the
+    /// unpolished iterate already meets the control tolerance at a fraction of
+    /// the per-solve cost.
+    explicit argmin_qp_solver(qp_preset preset)
+        : argmin_qp_solver(1e-3, 1e-3, 4000, false, true, preset == qp_preset::accuracy)
+    {
+    }
+
     /// @brief Fallible setup: poses and factorizes the problem once.
     [[nodiscard]] auto try_setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, argmin_qp_setup_error>
     {

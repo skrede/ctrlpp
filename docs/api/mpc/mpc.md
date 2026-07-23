@@ -49,9 +49,21 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 ```cpp
 mpc(const discrete_state_space<Scalar, NX, NU, NX>& system,
     const mpc_config<Scalar, NX, NU>& config);
+
+mpc(const discrete_state_space<Scalar, NX, NU, NX>& system,
+    const mpc_config<Scalar, NX, NU>& config,
+    Solver solver);
 ```
 
 Constructs the controller from a discrete-time state-space model and configuration. Builds the QP matrices, computes terminal cost (via DARE if `Qf` is not set), and initializes the solver.
+
+The two-argument form default-constructs the solver. The three-argument form injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset:
+
+```cpp
+// Skip per-step polishing on the warm-resolve path — see qp_preset.
+ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(
+    sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
+```
 
 ## Failure contract
 
