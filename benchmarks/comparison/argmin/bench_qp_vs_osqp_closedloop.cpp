@@ -183,7 +183,7 @@ auto summarize(std::vector<int> v) -> iter_stats
 int main()
 {
     std::ofstream csv("bench_qp_vs_osqp_closedloop.csv");
-    csv << R"("cell","solver","dec","con","iter_min","iter_med","iter_max","iter_mean","elapsed_us","instructions","max_sol_dev_vs_osqp")"
+    csv << R"("cell","solver","polish","dec","con","iter_min","iter_med","iter_max","iter_mean","elapsed_us","instructions","max_sol_dev_vs_osqp")"
         << "\n";
 
     ankerl::nanobench::Bench bench;
@@ -191,6 +191,11 @@ int main()
         .warmup(10)
         .minEpochIterations(static_cast<uint64_t>(kSteps))
         .performanceCounters(true);
+
+    auto us_of = [](const ankerl::nanobench::Result& r)
+    { return r.median(ankerl::nanobench::Result::Measure::elapsed) * 1e6; };
+    auto instr_of = [](const ankerl::nanobench::Result& r)
+    { return r.median(ankerl::nanobench::Result::Measure::instructions); };
 
     for(const auto& c : cells)
     {
@@ -201,94 +206,98 @@ int main()
         const std::string tag = "nx=" + std::to_string(c.nx) + " nu=" + std::to_string(c.nu)
                               + " N=" + std::to_string(c.horizon);
 
-        // ---- OSQP: setup once, then replay the trajectory recording iterations ----
-        ctrlpp::osqp_solver osqp(1e-3, 1e-3, 4000, false, true, true);
-        osqp.setup(data.problem);
-        ctrlpp::qp_update<double> up;
-        up.q = data.q;
-        up.l = data.l;
-        up.u = data.u;
-
-        std::vector<int> osqp_iters;
-        std::vector<Eigen::VectorXd> osqp_sol;
-        osqp_iters.reserve(kSteps);
-        osqp_sol.reserve(kSteps);
-        for(int s = 0; s < kSteps; ++s)
+        // argmin's 2026-07-23 intel: on a moving IC the polish step can dominate
+        // its per-step cost (a full symbolic-analysis + factorization of the
+        // reduced KKT every resolve). OSQP ships polish off by default; argmin
+        // on. We measure BOTH polish states so the ADMM kernel and the polish
+        // are separable, per argmin's request (argmin-ctrlpp_126-127 §2).
+        for(bool polish : {true, false})
         {
-            auto xi = x_init_at(s, nx);
-            up.l.head(nx) = xi;
-            up.u.head(nx) = xi;
-            auto r = osqp.solve(up);
-            osqp_iters.push_back(r.iterations);
-            osqp_sol.push_back(r.x);
+            const char* pol = polish ? "on" : "off";
+
+            // ---- OSQP: setup once (polish fixed at construction), replay ----
+            ctrlpp::osqp_solver osqp(1e-3, 1e-3, 4000, false, true, polish);
+            osqp.setup(data.problem);
+            ctrlpp::qp_update<double> up;
+            up.q = data.q;
+            up.l = data.l;
+            up.u = data.u;
+
+            std::vector<int> osqp_iters;
+            std::vector<Eigen::VectorXd> osqp_sol;
+            osqp_iters.reserve(kSteps);
+            osqp_sol.reserve(kSteps);
+            for(int s = 0; s < kSteps; ++s)
+            {
+                auto xi = x_init_at(s, nx);
+                up.l.head(nx) = xi;
+                up.u.head(nx) = xi;
+                auto r = osqp.solve(up);
+                osqp_iters.push_back(r.iterations);
+                osqp_sol.push_back(r.x);
+            }
+
+            // ---- argmin: pose once, replay (polish flag in opts) ----
+            argmin::sparse_qp_options opts;
+            opts.eps_abs = 1e-3;
+            opts.eps_rel = 1e-3;
+            opts.max_iterations = 4000;
+            opts.warm_start = true;
+            opts.polish = polish;
+            argmin::sparse_admm_qp_solver<double> aq;
+            argmin::qp_result<double> aout;
+            aq.solve_into(data.problem.P, data.q, data.problem.A, data.l, data.u, aout, opts);
+
+            Eigen::VectorXd al = data.l, au = data.u;
+            std::vector<int> argmin_iters;
+            argmin_iters.reserve(kSteps);
+            double max_sol_dev = 0.0;
+            for(int s = 0; s < kSteps; ++s)
+            {
+                auto xi = x_init_at(s, nx);
+                al.head(nx) = xi;
+                au.head(nx) = xi;
+                aq.resolve_into(data.q, al, au, aout, opts);
+                argmin_iters.push_back(aout.iterations);
+                max_sol_dev = std::max(max_sol_dev, (aout.x - osqp_sol[static_cast<std::size_t>(s)]).cwiseAbs().maxCoeff());
+            }
+
+            auto os = summarize(osqp_iters);
+            auto as = summarize(argmin_iters);
+
+            int step_o = 0;
+            bench.run("osqp  " + tag + " polish=" + pol,
+                      [&]
+                      {
+                          auto xi = x_init_at(step_o++ % kSteps, nx);
+                          up.l.head(nx) = xi;
+                          up.u.head(nx) = xi;
+                          auto r = osqp.solve(up);
+                          ankerl::nanobench::doNotOptimizeAway(r);
+                      });
+            const auto ro = bench.results().back();
+
+            int step_a = 0;
+            bench.run("argmin  " + tag + " polish=" + pol,
+                      [&]
+                      {
+                          auto xi = x_init_at(step_a++ % kSteps, nx);
+                          al.head(nx) = xi;
+                          au.head(nx) = xi;
+                          aq.resolve_into(data.q, al, au, aout, opts);
+                          ankerl::nanobench::doNotOptimizeAway(aout);
+                      });
+            const auto ra = bench.results().back();
+
+            auto row = [&](const char* solver, const iter_stats& st,
+                           const ankerl::nanobench::Result& r, double dev)
+            {
+                csv << '"' << tag << "\",\"" << solver << "\",\"" << pol << "\"," << n_dec << ',' << n_con << ','
+                    << st.lo << ',' << st.med << ',' << st.hi << ',' << st.mean << ','
+                    << us_of(r) << ',' << instr_of(r) << ',' << dev << "\n";
+            };
+            row("ctrlpp::osqp", os, ro, 0.0);
+            row("argmin::sparse_admm", as, ra, max_sol_dev);
         }
-
-        // ---- argmin: pose once, then replay the same trajectory ----
-        argmin::sparse_qp_options opts;
-        opts.eps_abs = 1e-3;
-        opts.eps_rel = 1e-3;
-        opts.max_iterations = 4000;
-        opts.warm_start = true;
-        opts.polish = true;
-        argmin::sparse_admm_qp_solver<double> aq;
-        argmin::qp_result<double> aout;
-        aq.solve_into(data.problem.P, data.q, data.problem.A, data.l, data.u, aout, opts);
-
-        Eigen::VectorXd al = data.l, au = data.u;
-        std::vector<int> argmin_iters;
-        argmin_iters.reserve(kSteps);
-        double max_sol_dev = 0.0; // sup-norm gap vs OSQP's solution, over all steps
-        for(int s = 0; s < kSteps; ++s)
-        {
-            auto xi = x_init_at(s, nx);
-            al.head(nx) = xi;
-            au.head(nx) = xi;
-            aq.resolve_into(data.q, al, au, aout, opts);
-            argmin_iters.push_back(aout.iterations);
-            max_sol_dev = std::max(max_sol_dev, (aout.x - osqp_sol[static_cast<std::size_t>(s)]).cwiseAbs().maxCoeff());
-        }
-
-        // ---- timed passes: nanobench cycles through the trajectory ----
-        auto os = summarize(osqp_iters);
-        auto as = summarize(argmin_iters);
-
-        int step_o = 0;
-        bench.run("ctrlpp::osqp_solver  " + tag,
-                  [&]
-                  {
-                      auto xi = x_init_at(step_o++ % kSteps, nx);
-                      up.l.head(nx) = xi;
-                      up.u.head(nx) = xi;
-                      auto r = osqp.solve(up);
-                      ankerl::nanobench::doNotOptimizeAway(r);
-                  });
-        const auto ro = bench.results().back(); // snapshot before the next run appends
-
-        int step_a = 0;
-        bench.run("argmin::sparse_admm  " + tag,
-                  [&]
-                  {
-                      auto xi = x_init_at(step_a++ % kSteps, nx);
-                      al.head(nx) = xi;
-                      au.head(nx) = xi;
-                      aq.resolve_into(data.q, al, au, aout, opts);
-                      ankerl::nanobench::doNotOptimizeAway(aout);
-                  });
-        const auto ra = bench.results().back();
-
-        auto us_of = [](const ankerl::nanobench::Result& r)
-        { return r.median(ankerl::nanobench::Result::Measure::elapsed) * 1e6; };
-        auto instr_of = [](const ankerl::nanobench::Result& r)
-        { return r.median(ankerl::nanobench::Result::Measure::instructions); };
-
-        auto row = [&](const char* solver, const iter_stats& st,
-                       const ankerl::nanobench::Result& r)
-        {
-            csv << '"' << tag << "\",\"" << solver << "\"," << n_dec << ',' << n_con << ','
-                << st.lo << ',' << st.med << ',' << st.hi << ',' << st.mean << ','
-                << us_of(r) << ',' << instr_of(r) << ',' << max_sol_dev << "\n";
-        };
-        row("ctrlpp::osqp", os, ro);
-        row("argmin::sparse_admm", as, ra);
     }
 }
