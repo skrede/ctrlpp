@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <utility>
 #include <type_traits>
 
@@ -73,6 +74,28 @@ TEST_CASE("osqp_solver try_setup reports setup failure as an expected error", "[
         auto result = solver.try_setup(problem);
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == ctrlpp::osqp_setup_error::setup_failed);
+    }
+
+    SECTION("a setup that fails after OSQP has allocated leaves the solver reusable")
+    {
+        // osqp_setup publishes its solver pointer before the allocations that
+        // can fail, and its error paths free nothing, so the caller owns the
+        // partially built solver. A NaN cost weight passes OSQP's up-front data
+        // validation and fails later, once that allocation has happened --
+        // unlike the rejected-settings case above, which fails before it.
+        // Releasing it is what keeps the solver usable for a second setup;
+        // under ASan/LSan, dropping the pointer instead shows up as a leak.
+        auto nan_problem = make_simple_qp();
+        nan_problem.P.coeffRef(0, 0) = std::numeric_limits<double>::quiet_NaN();
+        nan_problem.P.makeCompressed();
+
+        ctrlpp::osqp_solver solver;
+        REQUIRE_FALSE(solver.try_setup(nan_problem).has_value());
+
+        REQUIRE(solver.try_setup(make_simple_qp()).has_value());
+
+        ctrlpp::qp_update<double> update{.q = Eigen::Vector2d::Zero(), .l = Eigen::Vector2d::Constant(-1.0), .u = Eigen::Vector2d::Constant(1.0), .warm_x = {}, .warm_y = {}};
+        CHECK(solver.solve(update).status == ctrlpp::solve_status::optimal);
     }
 
     SECTION("solve_status stays a plain value on the solve path")

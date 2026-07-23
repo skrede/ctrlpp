@@ -158,7 +158,11 @@ private:
 
         if(exit_flag != 0)
         {
-            solver_ = nullptr;
+            // osqp_setup publishes the solver pointer before the allocations
+            // that can fail, and its error paths free nothing, so a failed
+            // setup hands back a partially built solver that is ours to
+            // release. Dropping the pointer instead would leak it.
+            cleanup();
             return ctrlpp::unexpected(osqp_setup_error::setup_failed);
         }
 
