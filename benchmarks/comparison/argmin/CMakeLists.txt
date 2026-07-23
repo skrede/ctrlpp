@@ -56,3 +56,20 @@ foreach(target IN LISTS ARGMIN_BENCH_TARGETS)
         )
     endif()
 endforeach()
+
+# QP-vs-OSQP comparison: argmin's sparse ADMM QP against ctrlpp's OSQP backend.
+# Unlike the SQP/NMPC benches above this needs OSQP, not NLopt, and it needs an
+# argmin checkout that actually ships the QP headers (argmin Phases 66/66.1 --
+# absent from ctrlpp's production pin). It is skipped when either is missing so a
+# stock benchmark configure is unaffected.
+if(TARGET ctrlpp::osqp AND EXISTS "${argmin_SOURCE_DIR}/lib/argmin/include/argmin/qp/sparse_admm_qp.h")
+    add_executable(bench_qp_vs_osqp bench_qp_vs_osqp.cpp)
+    target_link_libraries(bench_qp_vs_osqp PRIVATE
+        ctrlpp::ctrlpp
+        ctrlpp::osqp
+        nanobench
+        argmin::argmin
+    )
+else()
+    message(STATUS "ctrlpp bench: skipping bench_qp_vs_osqp (needs both OSQP and an argmin checkout shipping argmin/qp/sparse_admm_qp.h)")
+endif()
