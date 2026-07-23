@@ -274,6 +274,15 @@ if (CTRLPP_BUILD_ARGMIN)
     target_compile_options(nmhe_argmin_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
     add_test(NAME nmhe_argmin_test COMMAND nmhe_argmin_test)
 
+    # QP backend policy over argmin's sparse ADMM solver. Self-gates on the
+    # argmin QP header via __has_include, so it is a trivially-passing empty TU
+    # at the production pin (which predates argmin's QP headers) and exercises
+    # the concept + a functional solve against a checkout that ships them.
+    add_executable(argmin_qp_solver_test "${CMAKE_CURRENT_LIST_DIR}/argmin_qp_solver_test.cpp")
+    target_link_libraries(argmin_qp_solver_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
+    target_compile_options(argmin_qp_solver_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
+    add_test(NAME argmin_qp_solver_test COMMAND argmin_qp_solver_test)
+
     # EMB-02 proof for the static NMPC path: nmpc_static's steady-state solve is
     # allocation-free at argmin's fixed-N floor. Consumes the process-global
     # allocation counter from nomalloc_harness.h, so it must run serially, and
