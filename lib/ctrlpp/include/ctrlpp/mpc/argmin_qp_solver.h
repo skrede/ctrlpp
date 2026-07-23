@@ -63,6 +63,12 @@ public:
 
     explicit argmin_qp_solver(double eps_abs = 1e-3, double eps_rel = 1e-3, int max_iter = 4000, bool /*verbose*/ = false, bool warm_starting = true, bool polishing = true)
     {
+        // This binds only argmin's stable QP contract: tolerances, iteration
+        // budget, and warm-start. Per argmin coordination (argmin-ctrlpp_126-127,
+        // SEED-084) the operator-splitting knobs (rho / sigma / alpha /
+        // adaptive_rho) are the volatile surface argmin intends to demote to an
+        // opt-in sub-struct, so this policy deliberately never touches them --
+        // a future reshape of those knobs is a no-op here.
         opts_.eps_abs = eps_abs;
         opts_.eps_rel = eps_rel;
         opts_.max_iterations = static_cast<std::uint16_t>(max_iter);

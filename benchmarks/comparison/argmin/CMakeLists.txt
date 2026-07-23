@@ -63,13 +63,15 @@ endforeach()
 # absent from ctrlpp's production pin). It is skipped when either is missing so a
 # stock benchmark configure is unaffected.
 if(TARGET ctrlpp::osqp AND EXISTS "${argmin_SOURCE_DIR}/lib/argmin/include/argmin/qp/sparse_admm_qp.h")
-    add_executable(bench_qp_vs_osqp bench_qp_vs_osqp.cpp)
-    target_link_libraries(bench_qp_vs_osqp PRIVATE
-        ctrlpp::ctrlpp
-        ctrlpp::osqp
-        nanobench
-        argmin::argmin
-    )
+    foreach(qp_bench bench_qp_vs_osqp bench_qp_vs_osqp_closedloop)
+        add_executable(${qp_bench} ${qp_bench}.cpp)
+        target_link_libraries(${qp_bench} PRIVATE
+            ctrlpp::ctrlpp
+            ctrlpp::osqp
+            nanobench
+            argmin::argmin
+        )
+    endforeach()
 else()
-    message(STATUS "ctrlpp bench: skipping bench_qp_vs_osqp (needs both OSQP and an argmin checkout shipping argmin/qp/sparse_admm_qp.h)")
+    message(STATUS "ctrlpp bench: skipping bench_qp_vs_osqp[_closedloop] (needs both OSQP and an argmin checkout shipping argmin/qp/sparse_admm_qp.h)")
 endif()
