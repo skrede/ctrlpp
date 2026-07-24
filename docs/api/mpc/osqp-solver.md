@@ -175,6 +175,7 @@ int main()
 
 - [mpc](mpc.md)<br/> linear MPC using OSQP
 - [mhe](mhe.md)<br/> linear MHE using OSQP
+- [argmin-qp-solver](argmin-qp-solver.md)<br/> header-only argmin QP backend with the same concept surface
 - [nlopt-solver](nlopt-solver.md)<br/> NLopt NLP solver backend
 - [guides/mpc/solver-injection](../../guides/mpc/solver-injection.md)<br/> solver injection guide
 - [background/mpc](../../background/mpc.md)<br/> QP formulation and theory

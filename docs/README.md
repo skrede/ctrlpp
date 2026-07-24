@@ -55,6 +55,7 @@ Guides and API reference for the ctrlpp C++20 control library.
 - [mhe](api/mpc/mhe.md)<br/> Linear moving horizon estimation (OSQP)
 - [nmhe](api/mpc/nmhe.md)<br/> Nonlinear moving horizon estimation (NLopt)
 - [osqp_solver](api/mpc/osqp-solver.md)<br/> OSQP QP solver backend
+- [argmin_qp_solver](api/mpc/argmin-qp-solver.md)<br/> argmin sparse ADMM QP backend (header-only)
 - [nlopt_solver](api/mpc/nlopt-solver.md)<br/> NLopt NLP solver backend
 
 ### Signal Processing

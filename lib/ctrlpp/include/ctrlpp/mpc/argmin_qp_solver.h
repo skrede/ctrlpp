@@ -11,12 +11,19 @@
 /// 66/66.1, SEED-042), returning results on a typed error channel rather than
 /// through C-pointer ownership.
 ///
-/// The adapter is only defined when argmin's QP header is present. ctrlpp's
-/// production argmin pin predates that header, so at the pinned SHA this file is
-/// an empty translation unit and no `argmin_qp_solver` symbol exists; a local
-/// argmin checkout (or a bumped pin) that ships `argmin/qp/sparse_admm_qp.h`
-/// activates it. Promoting it to always-on is a pin-bump decision tracked in the
-/// roadmap, not a code change here.
+/// The adapter is `__has_include`-gated on `argmin/qp/sparse_admm_qp.h`. As of
+/// the production argmin pin (milestone/v0.3.5 tip `a40bb1f`, which ships that
+/// header) the gate is satisfied by default, so with `CTRLPP_BUILD_ARGMIN=ON`
+/// this policy is ACTIVE and `mpc<Scalar, NX, NU, argmin_qp_solver>` compiles
+/// out of the box. The gate is retained as a defensive fallback: overriding the
+/// pin back to an argmin SHA that predates `argmin/qp/` (or pointing
+/// `CTRLPP_ARGMIN_SOURCE_DIR` at such a checkout) degrades this file to an empty
+/// translation unit instead of a hard compile error.
+///
+/// Scope note: this is DEPENDENCY RELIEF plus a typed-error-channel upgrade, not
+/// a real-time upgrade. argmin's sparse QP variant is a host-tier solver that
+/// disclaims real-time safety in its own header (unbounded per-call heap); do not
+/// read this backend as RT-safe. See `docs/api/mpc/argmin-qp-solver.md`.
 ///
 /// @cite stellato2020 -- Stellato et al., "OSQP: An Operator Splitting Solver for Quadratic Programs", Math. Prog. Comp. 12(4), 2020
 

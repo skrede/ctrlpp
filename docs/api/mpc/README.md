@@ -1,9 +1,10 @@
 # MPC and MHE
 
 Model predictive control (MPC) and moving horizon estimation (MHE) types. Linear
-variants solve quadratic programs via OSQP; nonlinear variants solve nonlinear
-programs via NLopt. Solver backends are injected via C++20 concepts &mdash; you can
-swap in your own QP or NLP solver without changing controller code.
+variants solve quadratic programs via OSQP or the header-only argmin sparse ADMM
+backend; nonlinear variants solve nonlinear programs via NLopt. Solver backends are
+injected via C++20 concepts &mdash; you can swap in your own QP or NLP solver without
+changing controller code.
 
 ## Types
 
@@ -19,7 +20,8 @@ swap in your own QP or NLP solver without changing controller code.
 
 ### Solver Backends
 
-- [osqp_solver](osqp-solver.md)<br/> OSQP quadratic program solver wrapper
+- [osqp_solver](osqp-solver.md)<br/> OSQP quadratic program solver wrapper (vendored C library)
+- [argmin_qp_solver](argmin-qp-solver.md)<br/> argmin sparse ADMM QP backend (header-only, drop-in for `osqp_solver`)
 - [nlopt_solver](nlopt-solver.md)<br/> NLopt nonlinear program solver wrapper
 
 ## When to use
