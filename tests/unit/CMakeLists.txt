@@ -275,9 +275,9 @@ if (CTRLPP_BUILD_ARGMIN)
     add_test(NAME nmhe_argmin_test COMMAND nmhe_argmin_test)
 
     # QP backend policy over argmin's sparse ADMM solver. Self-gates on the
-    # argmin QP header via __has_include, so it is a trivially-passing empty TU
-    # at the production pin (which predates argmin's QP headers) and exercises
-    # the concept + a functional solve against a checkout that ships them.
+    # argmin QP header via __has_include: the default pin ships it, so the test
+    # exercises the concept + a functional solve; a pin override to a pre-QP SHA
+    # degrades it to a trivially-passing empty TU.
     add_executable(argmin_qp_solver_test "${CMAKE_CURRENT_LIST_DIR}/argmin_qp_solver_test.cpp")
     target_link_libraries(argmin_qp_solver_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
     target_compile_options(argmin_qp_solver_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})

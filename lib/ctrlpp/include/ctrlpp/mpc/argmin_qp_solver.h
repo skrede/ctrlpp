@@ -11,14 +11,14 @@
 /// 66/66.1, SEED-042), returning results on a typed error channel rather than
 /// through C-pointer ownership.
 ///
-/// The adapter is `__has_include`-gated on `argmin/qp/sparse_admm_qp.h`. As of
-/// the production argmin pin (milestone/v0.3.5 tip `a40bb1f`, which ships that
-/// header) the gate is satisfied by default, so with `CTRLPP_BUILD_ARGMIN=ON`
-/// this policy is ACTIVE and `mpc<Scalar, NX, NU, argmin_qp_solver>` compiles
-/// out of the box. The gate is retained as a defensive fallback: overriding the
-/// pin back to an argmin SHA that predates `argmin/qp/` (or pointing
-/// `CTRLPP_ARGMIN_SOURCE_DIR` at such a checkout) degrades this file to an empty
-/// translation unit instead of a hard compile error.
+/// The adapter is `__has_include`-gated on `argmin/qp/sparse_admm_qp.h`. The
+/// default argmin pin (the milestone/v0.3.5 tip) ships that header, so the gate
+/// is satisfied by default: with `CTRLPP_BUILD_ARGMIN=ON` this policy is ACTIVE
+/// and `mpc<Scalar, NX, NU, argmin_qp_solver>` compiles out of the box. The gate
+/// is retained as a defensive fallback: overriding the pin back to an argmin SHA
+/// that predates `argmin/qp/` (or pointing `CTRLPP_ARGMIN_SOURCE_DIR` at such a
+/// checkout) degrades this file to an empty translation unit instead of a hard
+/// compile error.
 ///
 /// Scope note: this is DEPENDENCY RELIEF plus a typed-error-channel upgrade, not
 /// a real-time upgrade. argmin's sparse QP variant is a host-tier solver that

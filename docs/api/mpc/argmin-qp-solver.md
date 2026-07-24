@@ -1,6 +1,6 @@
 # argmin_qp_solver
 
-> **Requires argmin.** Enable with `-DCTRLPP_BUILD_ARGMIN=ON` when configuring CMake. Active at the production argmin pin (milestone/v0.3.5), which ships `argmin/qp/`.
+> **Requires argmin.** Enable with `-DCTRLPP_BUILD_ARGMIN=ON` when configuring CMake. Active at the default argmin pin (the milestone/v0.3.5 tip), which ships `argmin/qp/`.
 
 argmin-native QP solver backend for linear MPC and MHE, and the header-only alternative to [`osqp_solver`](osqp-solver.md). Satisfies the `qp_solver` concept and can be injected as the `Solver` template parameter of `mpc` and `mhe`. Wraps `argmin::sparse_admm_qp_solver`, a header-only C++ implementation of the same OSQP-class operator-splitting algorithm, returning results on a typed error channel rather than through C-pointer ownership.
 
@@ -18,7 +18,7 @@ Both backends solve the canonical OSQP-form QP `min ½·xᵀPx + qᵀx s.t. l �
 class argmin_qp_solver;
 ```
 
-The class is defined only when `CTRLPP_BUILD_ARGMIN=ON` **and** argmin's QP header (`argmin/qp/sparse_admm_qp.h`) is present. When present, the macro `CTRLPP_HAS_ARGMIN_QP` is defined. The production pin ships the header, so no local checkout is required; overriding the pin back to a pre-`argmin/qp/` SHA degrades the translation unit to empty rather than failing to compile.
+The class is defined only when `CTRLPP_BUILD_ARGMIN=ON` **and** argmin's QP header (`argmin/qp/sparse_admm_qp.h`) is present. When present, the macro `CTRLPP_HAS_ARGMIN_QP` is defined. The default pin ships the header, so no local checkout is required; overriding the pin back to a pre-`argmin/qp/` SHA degrades the translation unit to empty rather than failing to compile.
 
 ## qp_solver Concept
 

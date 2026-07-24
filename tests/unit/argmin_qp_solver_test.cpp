@@ -1,7 +1,7 @@
 // Regression coverage for the argmin QP backend policy.
 //
 // argmin_qp_solver.h is __has_include-gated on argmin/qp/sparse_admm_qp.h. The
-// production argmin pin (milestone/v0.3.5 tip a40bb1f) ships that header, so with
+// default argmin pin (the milestone/v0.3.5 tip) ships that header, so with
 // CTRLPP_HAS_ARGMIN the policy is defined by default and the real checks below run:
 // concept conformance and a functional solve on a small bound-constrained QP with
 // a closed-form optimum. Only an override to a pre-argmin/qp/ pin leaves the policy
@@ -21,7 +21,7 @@ TEST_CASE("argmin_qp_solver policy gate", "[mpc][argmin][qp]")
 #if defined(CTRLPP_HAS_ARGMIN_QP)
     SUCCEED("argmin QP header present: policy active, functional cases below run");
 #else
-    SUCCEED("argmin QP header absent (production pin): policy compiled out");
+    SUCCEED("argmin QP header absent (pin override to a pre-QP SHA): policy compiled out");
 #endif
 }
 
