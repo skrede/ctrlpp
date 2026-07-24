@@ -64,7 +64,7 @@ endforeach()
 # when either OSQP or the QP header is missing so a stock benchmark configure is
 # unaffected.
 if(TARGET ctrlpp::osqp AND EXISTS "${argmin_SOURCE_DIR}/lib/argmin/include/argmin/qp/sparse_admm_qp.h")
-    foreach(qp_bench bench_qp_vs_osqp bench_qp_vs_osqp_closedloop bench_qp_vs_osqp_churning)
+    foreach(qp_bench bench_qp_vs_osqp bench_qp_vs_osqp_closedloop bench_qp_vs_osqp_churning bench_qp_periter)
         add_executable(${qp_bench} ${qp_bench}.cpp)
         target_link_libraries(${qp_bench} PRIVATE
             ctrlpp::ctrlpp
