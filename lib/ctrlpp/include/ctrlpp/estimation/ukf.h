@@ -107,7 +107,7 @@ public:
     /// The prefix distinguishes this overload from those constructors, which
     /// remain non-fallible. It requires the strategy to expose a `try_create`
     /// returning `ctrlpp::expected<Strategy, filter_error>`.
-    [[nodiscard]] static auto try_create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
+    static auto try_create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
         -> ctrlpp::expected<ukf, filter_error>
     {
         auto strategy = Strategy::try_create(std::move(strategy_options));

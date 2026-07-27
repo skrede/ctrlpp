@@ -94,7 +94,7 @@ public:
     /// when both boundary velocities are zero as well.
     ///
     /// @cite biagiotti2009 -- Sec. 3.4.1, p.79-85
-    [[nodiscard]] static auto create(config const& cfg)
+    static auto create(config const& cfg)
         -> ctrlpp::expected<double_s_trajectory, trajectory_error>
     {
         if (!std::isfinite(cfg.q0) || !std::isfinite(cfg.q1) || !std::isfinite(cfg.v0)
@@ -225,7 +225,7 @@ public:
     /// is the path the slowest axis of a synchronized set always takes.
     ///
     /// @cite biagiotti2009 -- Sec. 5.3, eq. (5.13)-(5.14) -- time scaling for synchronization
-    [[nodiscard]] auto rescale_to(Scalar T_new) -> ctrlpp::expected<void, trajectory_error>
+    auto rescale_to(Scalar T_new) -> ctrlpp::expected<void, trajectory_error>
     {
         auto const solved = solve_rescale(T_new);
         if (!solved.has_value()) {
@@ -243,7 +243,7 @@ public:
     /// every axis before it commits any of them. No closed-form reachability
     /// predicate exists for this family, so structural replay is the only way to
     /// make the check and the commit agree.
-    [[nodiscard]] auto can_rescale_to(Scalar T_new) const -> ctrlpp::expected<void, trajectory_error>
+    auto can_rescale_to(Scalar T_new) const -> ctrlpp::expected<void, trajectory_error>
     {
         auto const solved = solve_rescale(T_new);
         if (!solved.has_value()) {
@@ -376,7 +376,7 @@ private:
     /// underneath it.
     ///
     /// @cite biagiotti2009 -- Sec. 5.3, eq. (5.13)-(5.14) -- time scaling of a profile
-    [[nodiscard]] static auto rebuild_scaled(config const& cfg, Scalar lambda)
+    static auto rebuild_scaled(config const& cfg, Scalar lambda)
         -> ctrlpp::expected<double_s_trajectory, trajectory_error>
     {
         auto scaled = cfg;
@@ -401,7 +401,7 @@ private:
     /// and answers true, and inside that range the duration falls as the scale
     /// grows, so the answer is true on an interval reaching down from the crossing
     /// point and false above it. That is what makes bracket halving valid here.
-    [[nodiscard]] static auto reaches_duration(config const& cfg, Scalar lambda, Scalar T_new) -> bool
+    static auto reaches_duration(config const& cfg, Scalar lambda, Scalar T_new) -> bool
     {
         auto const rebuilt = rebuild_scaled(cfg, lambda);
         return !rebuilt.has_value() || rebuilt->T_ >= T_new;
@@ -433,7 +433,7 @@ private:
     /// exhaust the bracket at the identical step.
     ///
     /// @cite biagiotti2009 -- Sec. 5.3 -- time scaling for multi-axis synchronization
-    [[nodiscard]] auto solve_rescale(Scalar T_new) const
+    auto solve_rescale(Scalar T_new) const
         -> ctrlpp::expected<double_s_trajectory, trajectory_error>
     {
         // Exact equality first: a synchronized set passes the slowest axis a

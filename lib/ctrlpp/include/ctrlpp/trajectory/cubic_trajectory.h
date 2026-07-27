@@ -59,7 +59,7 @@ struct cubic_trajectory
 /// @cite biagiotti2009 -- Sec. 2.1.4, eq. (2.2), p.24: coefficient derivation from BCs
 /// Coefficients derived from B&M eq. (2.2) in normalized time tau = t/T.
 template <typename Scalar, int Rows>
-[[nodiscard]] auto make_cubic_trajectory(
+auto make_cubic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,
     Eigen::Matrix<Scalar, Rows, 1> const& v0,

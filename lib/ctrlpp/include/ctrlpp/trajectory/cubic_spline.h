@@ -75,7 +75,7 @@ class cubic_spline
     ///  * periodic BC with q_0 != q_n beyond budget -> spline_error::periodic_endpoint_mismatch
     ///
     /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-    [[nodiscard]] static auto create(config const& cfg)
+    static auto create(config const& cfg)
         -> ctrlpp::expected<cubic_spline, spline_error>
     {
         auto const n_pts = cfg.times.size();

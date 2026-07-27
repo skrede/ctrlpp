@@ -65,7 +65,7 @@ struct stub_nlp_solver
         n_vars = problem.n_vars;
     }
 
-    [[nodiscard]] auto primal_length() const -> int
+    auto primal_length() const -> int
     {
         switch(lengths)
         {

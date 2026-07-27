@@ -67,7 +67,7 @@ class bspline_trajectory
     /// is generated instead, which is valid by construction.
     ///
     /// @cite biagiotti2009 -- Sec. 4.5
-    [[nodiscard]] static auto create(config const& cfg)
+    static auto create(config const& cfg)
         -> ctrlpp::expected<bspline_trajectory, spline_error>
     {
         auto const n = static_cast<int>(cfg.control_points.size()) - 1;
@@ -397,7 +397,7 @@ auto basis_function(
 ///
 /// @cite biagiotti2009 -- Sec. 4.5
 template <typename Scalar, int Degree>
-[[nodiscard]] auto make_bspline_interpolation(
+auto make_bspline_interpolation(
     std::vector<Scalar> const& times,
     std::vector<Scalar> const& positions)
     -> ctrlpp::expected<bspline_trajectory<Scalar, Degree>, spline_error>

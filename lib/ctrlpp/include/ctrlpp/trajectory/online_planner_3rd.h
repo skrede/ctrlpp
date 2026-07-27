@@ -64,7 +64,7 @@ class online_planner_3rd
     ///  * NaN/Inf or non-positive j_max -> trajectory_error::non_positive_jerk_limit
     ///
     /// @cite biagiotti2009 -- Sec. 4.6.1
-    [[nodiscard]] static auto create(config const& cfg)
+    static auto create(config const& cfg)
         -> ctrlpp::expected<online_planner_3rd, trajectory_error>
     {
         if (!std::isfinite(cfg.v_max) || cfg.v_max <= Scalar{0}) {
@@ -327,7 +327,7 @@ class online_planner_3rd
     /// when it does not, so the caller is free to plan the move a different way.
     ///
     /// @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.27), p.79-85
-    [[nodiscard]] auto append_incorporate_velocity(Scalar q0, Scalar v0) -> bool
+    auto append_incorporate_velocity(Scalar q0, Scalar v0) -> bool
     {
         auto const created = double_s_trajectory<Scalar>::create({
             .q0 = q0,

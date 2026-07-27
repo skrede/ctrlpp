@@ -34,7 +34,7 @@ The following trajectory types satisfy `syncable_profile`:
 
 ```cpp
 template <syncable_profile... Profiles>
-[[nodiscard]] auto synchronize(Profiles&... profiles)
+auto synchronize(Profiles&... profiles)
     -> ctrlpp::expected<void, trajectory_error>;
 ```
 
@@ -44,7 +44,7 @@ Synchronize a heterogeneous set of axis profiles. Finds the maximum duration acr
 
 ```cpp
 template <syncable_profile Profile>
-[[nodiscard]] auto synchronize(std::span<Profile> profiles)
+auto synchronize(std::span<Profile> profiles)
     -> ctrlpp::expected<void, trajectory_error>;
 ```
 

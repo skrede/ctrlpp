@@ -126,7 +126,7 @@ private:
     }
 
     /// @brief Compute measurement Jacobian H at current state (analytical or numerical).
-    [[nodiscard]] auto compute_measurement_jacobian() const -> Matrix<Scalar, NY, NX>
+    auto compute_measurement_jacobian() const -> Matrix<Scalar, NY, NX>
     {
         if constexpr(differentiable_measurement<Measurement, Scalar, NX, NY>)
             return m_measurement.jacobian(m_x);
@@ -137,7 +137,7 @@ private:
     /// @brief Compute innovation covariance: S = H*P*H^T + R.
     ///
     /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.2
-    [[nodiscard]] auto compute_innovation_covariance(const Matrix<Scalar, NY, NX>& H) const -> meas_cov_matrix_t
+    auto compute_innovation_covariance(const Matrix<Scalar, NY, NX>& H) const -> meas_cov_matrix_t
     {
         return (H * m_P * H.transpose() + m_R).eval();
     }
@@ -145,7 +145,7 @@ private:
     /// @brief Compute Kalman gain: K = P*H^T*S^{-1} via column-pivoting QR solve.
     ///
     /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.2
-    [[nodiscard]] auto compute_kalman_gain(const Matrix<Scalar, NY, NX>& H, const meas_cov_matrix_t& S) const -> Eigen::Matrix<Scalar, nx, ny>
+    auto compute_kalman_gain(const Matrix<Scalar, NY, NX>& H, const meas_cov_matrix_t& S) const -> Eigen::Matrix<Scalar, nx, ny>
     {
         Eigen::Matrix<Scalar, ny, nx> KT_solved = S.transpose().colPivHouseholderQr().solve(H * m_P);
         return KT_solved.transpose().eval();

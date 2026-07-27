@@ -197,7 +197,7 @@ void operator delete[](void* pointer, std::size_t, std::align_val_t) noexcept
 namespace ctrlpp_test
 {
 
-[[nodiscard]] inline std::size_t alloc_count()
+inline std::size_t alloc_count()
 {
     return detail::allocation_count.load(std::memory_order_relaxed);
 }
@@ -205,7 +205,7 @@ namespace ctrlpp_test
 // True once a failed eigen_assert has fired since the last scoped_no_malloc
 // construction reset the sentinel. The Eigen-side trap is throw-free, so
 // consumers poll this instead of catching an exception.
-[[nodiscard]] inline bool eigen_violation()
+inline bool eigen_violation()
 {
     return detail::eigen_alloc_violation.load(std::memory_order_relaxed);
 }
@@ -232,12 +232,12 @@ public:
         Eigen::internal::set_is_malloc_allowed(true);
     }
 
-    [[nodiscard]] std::size_t allocations() const
+    std::size_t allocations() const
     {
         return alloc_count() - baseline_;
     }
 
-    [[nodiscard]] bool eigen_violation() const
+    bool eigen_violation() const
     {
         return ctrlpp_test::eigen_violation();
     }

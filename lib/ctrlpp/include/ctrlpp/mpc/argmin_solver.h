@@ -119,7 +119,7 @@ public:
     /// setup failure mode, so this always succeeds; the fallible signature (an
     /// empty-error `ctrlpp::expected`) is retained for parity with the other
     /// solver backends and works in all build modes, including `-fno-exceptions`.
-    [[nodiscard]] auto try_setup(const problem_type& problem)
+    auto try_setup(const problem_type& problem)
         -> ctrlpp::expected<void, argmin_setup_error>
     {
         problem_ = &problem;

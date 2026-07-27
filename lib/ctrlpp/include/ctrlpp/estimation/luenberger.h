@@ -44,7 +44,7 @@ public:
 
     void update(const output_vector_t& z) { m_x = (m_x + m_L * (z - m_sys.C * m_x)).eval(); }
 
-    [[nodiscard]] auto state() const -> const state_vector_t& { return m_x; }
+    auto state() const -> const state_vector_t& { return m_x; }
 
     void set_gain(const gain_matrix_t& L) { m_L = L; }
     void set_model(system_t sys) { m_sys = std::move(sys); }

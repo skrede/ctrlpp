@@ -57,7 +57,7 @@ struct mhe_qp_dims
 };
 
 template <std::size_t NX, std::size_t NY>
-[[nodiscard]] constexpr auto compute_mhe_dims(std::size_t N, bool has_box_bounds, bool has_soft_constraints, bool has_residual_bounds) -> mhe_qp_dims
+constexpr auto compute_mhe_dims(std::size_t N, bool has_box_bounds, bool has_soft_constraints, bool has_residual_bounds) -> mhe_qp_dims
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int ny = static_cast<int>(NY);
@@ -140,7 +140,7 @@ inline void build_mhe_hessian_cross_terms(std::vector<Eigen::Triplet<Scalar>>& t
 /// @cite rao2003 -- Rao et al., "Constrained State Estimation for Nonlinear Discrete-Time Systems", 2003
 /// @cite rawlings2017 -- Rawlings, Mayne & Diehl, MPC, 2nd ed., 2017, Ch. 4 (block-sparse MHE Hessian structure)
 template <typename Scalar, std::size_t NX, std::size_t NY>
-[[nodiscard]] auto build_mhe_hessian(const mhe_qp_dims& dims,
+auto build_mhe_hessian(const mhe_qp_dims& dims,
                                      int Ni,
                                      Scalar arrival_weight,
                                      const Matrix<Scalar, NX, NX>& P_arr_inv,
@@ -264,7 +264,7 @@ inline void add_mhe_residual_triplets(std::vector<Eigen::Triplet<Scalar>>& trips
 
 /// Build the MHE constraint matrix from dynamics, box, and residual blocks.
 template <typename Scalar, std::size_t NX, std::size_t NY>
-[[nodiscard]] auto build_mhe_constraint_matrix(const mhe_qp_dims& dims,
+auto build_mhe_constraint_matrix(const mhe_qp_dims& dims,
                                                int Ni,
                                                const Matrix<Scalar, NX, NX>& A,
                                                const Matrix<Scalar, NY, NX>& H,
@@ -291,7 +291,7 @@ template <typename Scalar, std::size_t NX, std::size_t NY>
 /// Build the constant parts of the MHE QP: Hessian P and constraint matrix A.
 /// @cite rao2003 -- Rao et al., "Constrained State Estimation for Nonlinear Discrete-Time Systems", 2003
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-[[nodiscard]] auto build_mhe_qp_structure(std::size_t N,
+auto build_mhe_qp_structure(std::size_t N,
                                           Scalar arrival_weight,
                                           const Matrix<Scalar, NX, NX>& P_arr_inv,
                                           const Matrix<Scalar, NX, NX>& Q_inv,
@@ -326,7 +326,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 /// Build the linear cost vector q for the MHE QP update.
 /// @cite rao2003 -- Linear cost from arrival cost, process noise cross-terms, and measurement terms
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-[[nodiscard]] auto build_mhe_linear_cost(const mhe_qp_dims& dims,
+auto build_mhe_linear_cost(const mhe_qp_dims& dims,
                                          int Ni,
                                          Scalar arrival_weight,
                                          const Matrix<Scalar, NX, NX>& P_arr_inv,
@@ -362,7 +362,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 
 /// Build the MHE QP update bounds (l, u) from window data.
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-[[nodiscard]] auto build_mhe_update_bounds(const mhe_qp_dims& dims,
+auto build_mhe_update_bounds(const mhe_qp_dims& dims,
                                            int Ni,
                                            const Matrix<Scalar, NX, NU>& B_lin,
                                            std::span<const Vector<Scalar, NU>> u_buf,
@@ -446,7 +446,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 /// @cite rao2003 -- Called each time the MHE window shifts and a new solve is needed
 /// @cite kuhl2011 -- Kuhl et al., "A Real-Time Algorithm for Moving Horizon State and Parameter Estimation", 2011 (real-time MHE reassembly with arrival-cost update)
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-[[nodiscard]] auto build_mhe_qp_update(std::size_t N,
+auto build_mhe_qp_update(std::size_t N,
                                        Scalar arrival_weight,
                                        const Matrix<Scalar, NX, NX>& P_arr_inv,
                                        const Matrix<Scalar, NX, NX>& Q_inv,

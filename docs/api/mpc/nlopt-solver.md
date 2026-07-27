@@ -94,7 +94,7 @@ Constructs the solver with the given settings. Defaults to SLSQP with standard t
 ### try_setup
 
 ```cpp
-[[nodiscard]] auto try_setup(const nlp_problem<Scalar>& problem)
+auto try_setup(const nlp_problem<Scalar>& problem)
     -> ctrlpp::expected<void, nlopt_setup_error>;
 ```
 

@@ -49,7 +49,7 @@ struct cf_config
 ### create
 
 ```cpp
-[[nodiscard]] static auto create(cf_config<Scalar> config)
+static auto create(cf_config<Scalar> config)
     -> ctrlpp::expected<complementary_filter, filter_error>;
 ```
 

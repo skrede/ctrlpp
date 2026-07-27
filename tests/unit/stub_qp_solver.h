@@ -88,7 +88,7 @@ struct stub_qp_solver
         n_con = static_cast<int>(problem.A.rows());
     }
 
-    [[nodiscard]] auto primal_length() const -> int
+    auto primal_length() const -> int
     {
         switch(lengths)
         {
@@ -103,7 +103,7 @@ struct stub_qp_solver
         }
     }
 
-    [[nodiscard]] auto dual_length() const -> int
+    auto dual_length() const -> int
     {
         switch(lengths)
         {

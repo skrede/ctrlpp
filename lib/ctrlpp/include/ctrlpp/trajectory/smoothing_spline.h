@@ -71,7 +71,7 @@ class smoothing_spline
     /// defined weight.
     ///
     /// @cite biagiotti2009 -- Sec. 4.4.5
-    [[nodiscard]] static auto create(config const& cfg)
+    static auto create(config const& cfg)
         -> ctrlpp::expected<smoothing_spline, spline_error>
     {
         auto const n_pts = cfg.times.size();

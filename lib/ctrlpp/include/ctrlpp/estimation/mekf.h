@@ -85,7 +85,7 @@ public:
     /// NaN, which would silently poison the whole filter state at construction;
     /// such a config is rejected with `filter_error::degenerate_quaternion`.
     /// Any finite nonzero quaternion is accepted and normalized.
-    [[nodiscard]] static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config) -> ctrlpp::expected<mekf, filter_error>
+    static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config) -> ctrlpp::expected<mekf, filter_error>
     {
         const Scalar q0_norm = config.q0.norm();
         if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
@@ -111,11 +111,11 @@ public:
         update_state_cache();
     }
 
-    [[nodiscard]] auto state() const -> const state_vector_t& { return state_cache_; }
-    [[nodiscard]] auto covariance() const -> const cov_matrix_t& { return P_; }
-    [[nodiscard]] auto innovation() const -> const output_vector_t& { return innovation_; }
-    [[nodiscard]] auto attitude() const -> Eigen::Quaternion<Scalar> { return q_; }
-    [[nodiscard]] auto bias() const -> const Vector<Scalar, NB>& { return b_; }
+    auto state() const -> const state_vector_t& { return state_cache_; }
+    auto covariance() const -> const cov_matrix_t& { return P_; }
+    auto innovation() const -> const output_vector_t& { return innovation_; }
+    auto attitude() const -> Eigen::Quaternion<Scalar> { return q_; }
+    auto bias() const -> const Vector<Scalar, NB>& { return b_; }
 
 private:
     struct validated_tag
@@ -165,7 +165,7 @@ private:
     /// @brief Compute measurement Jacobian H (analytical or numerical).
     ///
     /// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003, Eq. 34
-    [[nodiscard]] auto compute_measurement_jacobian() const -> Matrix<Scalar, NY, NE>
+    auto compute_measurement_jacobian() const -> Matrix<Scalar, NY, NE>
     {
         if constexpr(differentiable_mekf_measurement<Measurement, Scalar, NB, NY>)
             return measurement_.jacobian(q_, b_);
@@ -174,7 +174,7 @@ private:
     }
 
     /// @brief Compute innovation covariance: S = H*P*H^T + R.
-    [[nodiscard]] auto compute_innovation_covariance(const Matrix<Scalar, NY, NE>& H) const -> meas_cov_t
+    auto compute_innovation_covariance(const Matrix<Scalar, NY, NE>& H) const -> meas_cov_t
     {
         return (H * P_ * H.transpose() + R_).eval();
     }
@@ -182,7 +182,7 @@ private:
     /// @brief Compute Kalman gain via transpose-solve.
     ///
     /// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
-    [[nodiscard]] auto compute_kalman_gain(const Matrix<Scalar, NY, NE>& H, const meas_cov_t& S) const -> Eigen::Matrix<Scalar, ne, ny>
+    auto compute_kalman_gain(const Matrix<Scalar, NY, NE>& H, const meas_cov_t& S) const -> Eigen::Matrix<Scalar, ne, ny>
     {
         Eigen::Matrix<Scalar, ny, ne> KT = S.transpose().colPivHouseholderQr().solve(H * P_);
         return KT.transpose().eval();

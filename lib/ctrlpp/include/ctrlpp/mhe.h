@@ -206,7 +206,7 @@ private:
 
     /// @brief Dimensions of the QP this estimator poses, derived from the window
     /// length and whichever optional bound blocks the configuration carries.
-    [[nodiscard]] auto qp_dimensions() const -> detail::mhe_qp_dims
+    auto qp_dimensions() const -> detail::mhe_qp_dims
     {
         bool has_box = m_x_min.has_value() || m_x_max.has_value();
         return detail::compute_mhe_dims<NX, NY>(N, has_box, m_soft_constraints && has_box, m_residual_bound.has_value());
@@ -221,7 +221,7 @@ private:
     /// estimator derived for the problem it posed. A longer result is accepted:
     /// it is readable, and the condition checked here is exactly the one that
     /// makes the reads legal.
-    [[nodiscard]] auto result_covers_problem(const qp_result<Scalar>& result) const -> bool
+    auto result_covers_problem(const qp_result<Scalar>& result) const -> bool
     {
         auto dims = qp_dimensions();
         return result.x.size() >= static_cast<Eigen::Index>(dims.n_dec) && result.y.size() >= static_cast<Eigen::Index>(dims.n_con);

@@ -30,7 +30,7 @@ Both limits divide in the planner math (stopping distance `v^2 / (2 * a_max)`, p
 ## Construction
 
 ```cpp
-[[nodiscard]] static auto create(config const& cfg)
+static auto create(config const& cfg)
     -> ctrlpp::expected<online_planner_2nd, trajectory_error>;
 ```
 

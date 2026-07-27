@@ -59,7 +59,7 @@ Where NE = 3 + NB (3 rotation dimensions + NB bias dimensions).
 ### create
 
 ```cpp
-[[nodiscard]] static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config)
+static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config)
     -> ctrlpp::expected<mekf, filter_error>;
 ```
 

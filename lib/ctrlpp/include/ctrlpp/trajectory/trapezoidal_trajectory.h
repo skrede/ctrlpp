@@ -102,7 +102,7 @@ class trapezoidal_trajectory
     /// guarantee them.
     ///
     /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
-    [[nodiscard]] static auto create(config const& cfg)
+    static auto create(config const& cfg)
         -> ctrlpp::expected<trapezoidal_trajectory, trajectory_error>
     {
         if (!std::isfinite(cfg.q0) || !std::isfinite(cfg.q1) || !std::isfinite(cfg.v0)
@@ -231,7 +231,7 @@ class trapezoidal_trajectory
     /// is the path the slowest axis of a synchronized set always takes.
     ///
     /// @cite biagiotti2009 -- Sec. 5.3, eq. (5.13)-(5.14) -- time scaling for synchronization
-    [[nodiscard]] auto rescale_to(Scalar T_new) -> ctrlpp::expected<void, trajectory_error>
+    auto rescale_to(Scalar T_new) -> ctrlpp::expected<void, trajectory_error>
     {
         auto const solved = solve_rescale(T_new);
         if (!solved.has_value()) {
@@ -256,7 +256,7 @@ class trapezoidal_trajectory
     /// two cannot disagree: identical inputs traverse identical code with no
     /// intervening state. That is what lets a multi-axis synchronization check
     /// every axis before it commits any of them.
-    [[nodiscard]] auto can_rescale_to(Scalar T_new) const -> ctrlpp::expected<void, trajectory_error>
+    auto can_rescale_to(Scalar T_new) const -> ctrlpp::expected<void, trajectory_error>
     {
         auto const solved = solve_rescale(T_new);
         if (!solved.has_value()) {
@@ -291,7 +291,7 @@ class trapezoidal_trajectory
     /// leaves alone.
     ///
     /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
-    [[nodiscard]] static auto solve_acceleration(config const& cfg) -> Scalar
+    static auto solve_acceleration(config const& cfg) -> Scalar
     {
         auto const abs_h = std::abs(cfg.q1 - cfg.q0);
         auto const v_diff_sq = std::abs(cfg.v0 * cfg.v0 - cfg.v1 * cfg.v1) / Scalar{2};
@@ -405,7 +405,7 @@ class trapezoidal_trajectory
     /// is the larger of the two in magnitude, which happens whenever the axis
     /// starts or ends moving away from its target faster than it moves toward it.
     /// The |v0^2 - v1^2| spelling loses exactly that case.
-    [[nodiscard]] auto ramp_through_distance() const -> Scalar
+    auto ramp_through_distance() const -> Scalar
     {
         auto const v_lo = std::min(v0_, v1_);
         auto const v_hi = std::max(v0_, v1_);
@@ -457,7 +457,7 @@ class trapezoidal_trajectory
     ///
     /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a)-(3.13c), p.71 -- the
     ///   three-phase parametrization these expressions solve for the cruise velocity
-    [[nodiscard]] auto solve_rescale(Scalar T_new) const
+    auto solve_rescale(Scalar T_new) const
         -> ctrlpp::expected<rescaled_state, trajectory_error>
     {
         auto const current = rescaled_state{

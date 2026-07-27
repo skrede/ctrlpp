@@ -60,7 +60,7 @@ concept syncable_profile = requires(T& p, T const& cp, typename T::scalar_type d
 ///
 /// @cite biagiotti2009 -- Sec. 5.3, eq. (5.13)-(5.14) -- rescale_to concept for synchronization
 template <syncable_profile... Profiles>
-[[nodiscard]] auto synchronize(Profiles&... profiles) -> ctrlpp::expected<void, trajectory_error>
+auto synchronize(Profiles&... profiles) -> ctrlpp::expected<void, trajectory_error>
 {
     using Scalar = std::common_type_t<typename Profiles::scalar_type...>;
     auto const max_dur = std::max({static_cast<Scalar>(profiles.duration())...});
@@ -97,7 +97,7 @@ template <syncable_profile... Profiles>
 ///
 /// @cite biagiotti2009 -- Sec. 5.3, eq. (5.14) -- time scaling for synchronization
 template <syncable_profile Profile>
-[[nodiscard]] auto synchronize(std::span<Profile> profiles) -> ctrlpp::expected<void, trajectory_error>
+auto synchronize(std::span<Profile> profiles) -> ctrlpp::expected<void, trajectory_error>
 {
     if (profiles.empty()) {
         return {};

@@ -101,7 +101,7 @@ namespace detail
 /// classic `setup(problem)` report success unconditionally (their failures, if
 /// any, escape as exceptions).
 template <typename Solver, typename Scalar>
-[[nodiscard]] auto setup_nlp_solver(Solver& solver, const nlp_problem<Scalar>& problem) -> bool
+auto setup_nlp_solver(Solver& solver, const nlp_problem<Scalar>& problem) -> bool
 {
     if constexpr(requires { solver.try_setup(problem); })
     {

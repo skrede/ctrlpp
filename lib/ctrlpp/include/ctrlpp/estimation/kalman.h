@@ -136,7 +136,7 @@ private:
     }
 
     /// @brief Compute innovation covariance: S = C*P*C^T + R.
-    [[nodiscard]] auto compute_innovation_covariance() const -> meas_cov_matrix_t
+    auto compute_innovation_covariance() const -> meas_cov_matrix_t
     {
         return (m_sys.C * m_P * m_sys.C.transpose() + m_R).eval();
     }
@@ -144,7 +144,7 @@ private:
     /// @brief Compute Kalman gain: K = P*C^T*S^{-1} via column-pivoting QR solve.
     ///
     /// @cite kalman1960 -- Kalman, "A New Approach to Linear Filtering and Prediction Problems", 1960
-    [[nodiscard]] auto compute_kalman_gain(const meas_cov_matrix_t& S) const -> Eigen::Matrix<Scalar, nx, ny>
+    auto compute_kalman_gain(const meas_cov_matrix_t& S) const -> Eigen::Matrix<Scalar, nx, ny>
     {
         Eigen::Matrix<Scalar, ny, nx> CP = m_sys.C * m_P;
         Eigen::Matrix<Scalar, ny, nx> KT_solved = S.transpose().colPivHouseholderQr().solve(CP);

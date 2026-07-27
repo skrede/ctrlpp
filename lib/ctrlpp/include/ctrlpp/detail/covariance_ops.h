@@ -23,7 +23,7 @@ namespace ctrlpp::detail
 ///
 /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 5 (numerical covariance conditioning)
 template <typename Derived>
-[[nodiscard]] inline auto symmetrize(const Eigen::MatrixBase<Derived>& M)
+inline auto symmetrize(const Eigen::MatrixBase<Derived>& M)
 {
     using Scalar = typename Derived::Scalar;
     return (Scalar{0.5} * (M + M.transpose())).eval();
@@ -65,7 +65,7 @@ struct covariance_sqrt_result
 /// @cite higham1988 -- Higham, "Computing a nearest symmetric positive semidefinite matrix", 1988
 /// @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 8.1
 template <typename Scalar, int N>
-[[nodiscard]] inline covariance_sqrt_result<Scalar, N> covariance_sqrt(const Eigen::Matrix<Scalar, N, N>& P, Scalar floor_factor = Scalar{1})
+inline covariance_sqrt_result<Scalar, N> covariance_sqrt(const Eigen::Matrix<Scalar, N, N>& P, Scalar floor_factor = Scalar{1})
 {
     Eigen::LLT<Eigen::Matrix<Scalar, N, N>> llt(P);
     if(llt.info() == Eigen::Success)

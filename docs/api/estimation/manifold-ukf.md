@@ -47,7 +47,7 @@ using cov_matrix_t    = Matrix<Scalar, 3, 3>;   // tangent-space covariance
 ### create
 
 ```cpp
-[[nodiscard]] static auto create(Dynamics dynamics, Measurement measurement,
+static auto create(Dynamics dynamics, Measurement measurement,
                                      manifold_ukf_config<Scalar, NY> config,
                                      Strategy strategy = Strategy{})
     -> ctrlpp::expected<manifold_ukf, filter_error>;
@@ -122,7 +122,7 @@ Header: `#include <ctrlpp/estimation/sigma_points/so3_sigma_points.h>`
 It shares `merwe_options` with the tangent-space strategy it lifts, and forwards that strategy's parameter-domain check unchanged through its own fallible factory:
 
 ```cpp
-[[nodiscard]] static auto try_create(options_t opts = options_t{})
+static auto try_create(options_t opts = options_t{})
     -> ctrlpp::expected<so3_merwe_sigma_points, filter_error>;
 ```
 

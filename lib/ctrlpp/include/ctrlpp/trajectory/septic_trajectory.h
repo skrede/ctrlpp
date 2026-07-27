@@ -58,7 +58,7 @@ struct septic_trajectory
 /// @cite biagiotti2009 -- Sec. 2.1.6, eq. (2.6), p.29: coefficient derivation from 8 BCs
 /// Coefficients derived from B&M eq. (2.6) in normalized time tau = t/T.
 template <typename Scalar, int Rows>
-[[nodiscard]] auto make_septic_trajectory(
+auto make_septic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,
     Eigen::Matrix<Scalar, Rows, 1> const& v0,

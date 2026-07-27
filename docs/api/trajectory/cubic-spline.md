@@ -41,7 +41,7 @@ struct config {
 ## Factory
 
 ```cpp
-[[nodiscard]] static auto create(config const& cfg)
+static auto create(config const& cfg)
     -> ctrlpp::expected<cubic_spline, spline_error>;
 ```
 

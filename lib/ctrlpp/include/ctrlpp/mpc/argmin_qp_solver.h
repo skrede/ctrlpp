@@ -93,7 +93,7 @@ public:
     }
 
     /// @brief Fallible setup: poses and factorizes the problem once.
-    [[nodiscard]] auto try_setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, argmin_qp_setup_error>
+    auto try_setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, argmin_qp_setup_error>
     {
         if(auto err = solver_.solve_into(problem.P, problem.q, problem.A, problem.l, problem.u, last_, opts_))
             return ctrlpp::unexpected(argmin_qp_setup_error::pose_failed);
@@ -102,7 +102,7 @@ public:
     }
 
     /// @brief Vectors-only resolve reusing the frozen factorization.
-    [[nodiscard]] auto solve(const qp_update<double>& update) -> qp_result<double>
+    auto solve(const qp_update<double>& update) -> qp_result<double>
     {
         if(!posed_)
             return qp_result<double>{.status = solve_status::error};

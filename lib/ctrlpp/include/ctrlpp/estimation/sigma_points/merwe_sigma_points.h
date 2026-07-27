@@ -70,7 +70,7 @@ public:
     /// here.
     ///
     /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 15
-    [[nodiscard]] static auto try_create(options_t opts = options_t{}) -> ctrlpp::expected<merwe_sigma_points, filter_error>
+    static auto try_create(options_t opts = options_t{}) -> ctrlpp::expected<merwe_sigma_points, filter_error>
     {
         if(!std::isfinite(opts.alpha) || opts.alpha <= Scalar{0})
             return ctrlpp::unexpected(filter_error::non_positive_sigma_spread);

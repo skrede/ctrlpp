@@ -29,7 +29,7 @@ If `knot_vector` is left empty, a uniform clamped knot vector is generated autom
 ## Factory
 
 ```cpp
-[[nodiscard]] static auto create(config const& cfg)
+static auto create(config const& cfg)
     -> ctrlpp::expected<bspline_trajectory, spline_error>;
 ```
 
@@ -67,7 +67,7 @@ Returns the active parameter range: U[n+1] - U[p].
 
 ```cpp
 template <typename Scalar, int Degree>
-[[nodiscard]] auto make_bspline_interpolation(
+auto make_bspline_interpolation(
     std::vector<Scalar> const& times,
     std::vector<Scalar> const& positions)
     -> ctrlpp::expected<bspline_trajectory<Scalar, Degree>, spline_error>;

@@ -60,7 +60,7 @@ class online_planner_2nd
     ///  * NaN/Inf or non-positive a_max -> trajectory_error::non_positive_acceleration_limit
     ///
     /// @cite biagiotti2009 -- Sec. 4.6.2
-    [[nodiscard]] static auto create(config const& cfg)
+    static auto create(config const& cfg)
         -> ctrlpp::expected<online_planner_2nd, trajectory_error>
     {
         if (!std::isfinite(cfg.v_max) || cfg.v_max <= Scalar{0}) {

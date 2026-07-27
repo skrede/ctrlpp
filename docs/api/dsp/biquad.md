@@ -78,7 +78,7 @@ The checks run in the order listed, so a design with several defects reports the
 ### low_pass
 
 ```cpp
-[[nodiscard]] static auto low_pass(Scalar cutoff_hz, Scalar sample_hz)
+static auto low_pass(Scalar cutoff_hz, Scalar sample_hz)
     -> ctrlpp::expected<biquad, dsp_error>;
 ```
 
@@ -87,7 +87,7 @@ Creates a second-order Butterworth (maximally flat, quality factor `Q = 1/sqrt(2
 ### notch
 
 ```cpp
-[[nodiscard]] static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q)
+static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q)
     -> ctrlpp::expected<biquad, dsp_error>;
 ```
 
@@ -96,7 +96,7 @@ Creates a notch (band-reject) filter centered at `freq_hz` with quality factor `
 ### dirty_derivative
 
 ```cpp
-[[nodiscard]] static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz)
+static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz)
     -> ctrlpp::expected<biquad, dsp_error>;
 ```
 
@@ -124,7 +124,7 @@ Resets internal state to zero, or initializes the filter state such that a const
 ### coefficients
 
 ```cpp
-[[nodiscard]] auto coefficients() const -> biquad_coeffs<Scalar> const&;
+auto coefficients() const -> biquad_coeffs<Scalar> const&;
 ```
 
 Returns the current filter coefficients.
@@ -153,7 +153,7 @@ Chains N biquad sections in series. Each `process()` call passes the sample thro
 ```cpp
 template <std::size_t Order, typename Scalar>
     requires (Order % 2 == 0 && Order >= 2)
-[[nodiscard]] auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz)
+auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz)
     -> ctrlpp::expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>;
 ```
 
@@ -164,7 +164,7 @@ Designs an `Order`-th order Butterworth low-pass filter as a cascade of `Order/2
 ```cpp
 template <std::size_t Order, typename Scalar>
     requires (Order % 2 == 0 && Order >= 2)
-[[nodiscard]] auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
+auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
     -> ctrlpp::expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>;
 ```
 

@@ -50,7 +50,7 @@ ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> c
 ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config,
     Strategy strategy);
 
-[[nodiscard]] static auto try_create(Dynamics dynamics, Measurement measurement,
+static auto try_create(Dynamics dynamics, Measurement measurement,
                                      ukf_config<Scalar, NX, NU, NY> config,
                                      typename Strategy::options_t strategy_options)
     -> ctrlpp::expected<ukf, filter_error>;
@@ -146,7 +146,7 @@ Header: `#include <ctrlpp/estimation/sigma_points/merwe_sigma_points.h>`
 The strategy is constructed through a fallible factory, because two of its three parameters have an exact admissible domain:
 
 ```cpp
-[[nodiscard]] static auto try_create(options_t opts = options_t{})
+static auto try_create(options_t opts = options_t{})
     -> ctrlpp::expected<merwe_sigma_points, filter_error>;
 ```
 

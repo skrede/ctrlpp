@@ -111,7 +111,7 @@ public:
     /// definition. Returns an empty expected on success and an
     /// `nlopt_setup_error` when the selected algorithm rejects the constraint
     /// structure.
-    [[nodiscard]] auto try_setup(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
+    auto try_setup(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
     {
         problem_ = &problem;
         opt_ = nlopt::opt(to_nlopt_algorithm(settings_.algorithm), static_cast<unsigned>(problem.n_vars));
@@ -240,7 +240,7 @@ private:
             opt_.set_upper_bounds(to_stdvec(problem.x_upper));
     }
 
-    [[nodiscard]] auto partition_constraints(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
+    auto partition_constraints(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
     {
         if(problem.n_constraints == 0)
             return {};

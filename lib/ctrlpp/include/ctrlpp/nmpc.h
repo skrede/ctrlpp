@@ -51,7 +51,7 @@ public:
     ///  * horizon <= 0                   -> controller_construction_error::non_positive_horizon
     ///  * horizon above the representable
     ///    bound of the derived dimensions -> controller_construction_error::horizon_overflow
-    [[nodiscard]] static auto create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
+    static auto create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
         -> expected<nmpc_dynamic, controller_construction_error>
     {
         return create(std::move(dynamics), config, Solver{});
@@ -84,7 +84,7 @@ public:
     /// first solve would surface a configuration error at the first control
     /// step, the worst possible moment. Clamping the horizon to one would turn a
     /// caller mistake into a silently different controller.
-    [[nodiscard]] static auto create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
+    static auto create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
         -> expected<nmpc_dynamic, controller_construction_error>
     {
         if(config.horizon <= 0)
@@ -105,7 +105,7 @@ private:
     /// @brief Largest horizon whose derived decision and constraint dimensions
     /// are still representable in the horizon's own type. See `create` for
     /// the derivation; this forms no product of its own.
-    [[nodiscard]] static auto horizon_bound() -> int
+    static auto horizon_bound() -> int
     {
         constexpr int per_step = nx + 2 * nu + nc;
         constexpr int constant_dimensions = nx + ntc;
@@ -297,7 +297,7 @@ private:
     /// controller derived at construction from its horizon and its state, input,
     /// path-slack and terminal-slack contributions. Nothing is stored and no
     /// member is touched when it fails.
-    [[nodiscard]] auto finish_solve(const Eigen::VectorX<Scalar>& z, solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
+    auto finish_solve(const Eigen::VectorX<Scalar>& z, solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         if(z.size() < static_cast<Eigen::Index>(m_num_vars))
         {
@@ -608,7 +608,7 @@ private:
     // is typed on nlp_problem<Scalar>; the static path binds nlp_problem_static).
     // Kept solver-generic: fallible try_setup when available, classic setup
     // otherwise.
-    [[nodiscard]] bool setup_solver()
+    bool setup_solver()
     {
         if constexpr(requires { m_solver.try_setup(*m_problem); })
             return m_solver.try_setup(*m_problem).has_value();
@@ -686,7 +686,7 @@ private:
     /// buffer and is exactly the case that must not reach the slices below.
     /// Checking m_last_solution after the dispatch, rather than the result of
     /// either branch, is what makes the single check sufficient.
-    [[nodiscard]] auto finish_solve(solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
+    auto finish_solve(solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         if(m_last_solution.size() < static_cast<Eigen::Index>(problem_dimension))
         {

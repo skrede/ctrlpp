@@ -74,7 +74,7 @@ inline void add_soft_constraint_triplets(std::vector<Eigen::Triplet<Scalar>>& tr
 }
 
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
-[[nodiscard]] auto build_cost_matrix(int N,
+auto build_cost_matrix(int N,
                                      const Matrix<Scalar, NX, NX>& Q,
                                      const Matrix<Scalar, NU, NU>& R,
                                      const Matrix<Scalar, NX, NX>& Qf,
@@ -241,7 +241,7 @@ inline void add_terminal_set_triplets(std::vector<Eigen::Triplet<Scalar>>& trips
 }
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-[[nodiscard]] auto build_constraint_matrix(int N,
+auto build_constraint_matrix(int N,
                                            const Matrix<Scalar, NX, NX>& A_sys,
                                            const Matrix<Scalar, NX, NU>& B_sys,
                                            bool has_state_bounds,
@@ -383,7 +383,7 @@ inline void set_terminal_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar
 }
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-[[nodiscard]] auto build_bounds_vectors(int N,
+auto build_bounds_vectors(int N,
                                         const Vector<Scalar, NX>& x0,
                                         const std::optional<Vector<Scalar, NX>>& x_min,
                                         const std::optional<Vector<Scalar, NX>>& x_max,
@@ -422,13 +422,13 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
 // --- Cost vector building ---
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-[[nodiscard]] auto build_cost_vector(int /*N*/, int n_dec, const Matrix<Scalar, NX, NX>& /*Q*/, const Matrix<Scalar, NX, NX>& /*Qf*/) -> Eigen::VectorX<Scalar>
+auto build_cost_vector(int /*N*/, int n_dec, const Matrix<Scalar, NX, NX>& /*Q*/, const Matrix<Scalar, NX, NX>& /*Qf*/) -> Eigen::VectorX<Scalar>
 {
     return Eigen::VectorX<Scalar>::Zero(n_dec);
 }
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-[[nodiscard]] auto build_cost_vector(int N, int n_dec, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NX, NX>& Qf, const Vector<Scalar, NX>& x_ref) -> Eigen::VectorX<Scalar>
+auto build_cost_vector(int N, int n_dec, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NX, NX>& Qf, const Vector<Scalar, NX>& x_ref) -> Eigen::VectorX<Scalar>
 {
     constexpr int nx = static_cast<int>(NX);
     Eigen::VectorX<Scalar> q = Eigen::VectorX<Scalar>::Zero(n_dec);
@@ -440,7 +440,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
 }
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-[[nodiscard]] auto build_cost_vector(int N, int n_dec, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NX, NX>& Qf, std::span<const Vector<Scalar, NX>> x_ref) -> Eigen::VectorX<Scalar>
+auto build_cost_vector(int N, int n_dec, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NX, NX>& Qf, std::span<const Vector<Scalar, NX>> x_ref) -> Eigen::VectorX<Scalar>
 {
     constexpr int nx = static_cast<int>(NX);
     Eigen::VectorX<Scalar> q = Eigen::VectorX<Scalar>::Zero(n_dec);

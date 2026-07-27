@@ -140,7 +140,7 @@ public:
     /// NaN, which would silently poison the whole filter state at construction;
     /// such a config is rejected with `filter_error::degenerate_quaternion`.
     /// Any finite nonzero quaternion is accepted and normalized.
-    [[nodiscard]] static auto create(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<manifold_ukf, filter_error>
+    static auto create(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<manifold_ukf, filter_error>
     {
         const Scalar q0_norm = config.q0.norm();
         if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))

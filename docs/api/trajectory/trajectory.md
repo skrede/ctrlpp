@@ -36,7 +36,7 @@ where `h = q1 - q0`, `T = duration`, and `tau = clamp(t, 0, T) / T`.
 
 ```cpp
 template <typename Law, typename Scalar, int Rows>
-[[nodiscard]] auto make_trajectory(
+auto make_trajectory(
     Law law,
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,

@@ -55,7 +55,7 @@ public:
     /// q0 is brought onto the unit sphere at construction (previously it was
     /// stored raw and a non-unit q0 skewed the first gravity and magnetic
     /// references until the first gyro integration renormalized it).
-    [[nodiscard]] static auto create(cf_config<Scalar> config) -> ctrlpp::expected<complementary_filter, filter_error>
+    static auto create(cf_config<Scalar> config) -> ctrlpp::expected<complementary_filter, filter_error>
     {
         const Scalar q0_norm = config.q0.norm();
         if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
@@ -100,9 +100,9 @@ public:
     void predict(const input_vector_t& u) { gyro_buf_ = u; }
     void update(const output_vector_t& z) { update(gyro_buf_, z, dt_); }
 
-    [[nodiscard]] auto state() const -> const state_vector_t& { return state_cache_; }
-    [[nodiscard]] auto attitude() const -> Eigen::Quaternion<Scalar> { return q_; }
-    [[nodiscard]] auto bias() const -> const Vector<Scalar, 3>& { return bias_; }
+    auto state() const -> const state_vector_t& { return state_cache_; }
+    auto attitude() const -> Eigen::Quaternion<Scalar> { return q_; }
+    auto bias() const -> const Vector<Scalar, 3>& { return bias_; }
 
 private:
     struct validated_tag

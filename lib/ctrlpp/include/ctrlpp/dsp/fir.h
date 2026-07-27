@@ -43,7 +43,7 @@ public:
 
     void reset() { delay_.fill(Scalar{0}); }
 
-    [[nodiscard]] auto taps() const -> std::array<Scalar, N> const& { return taps_; }
+    auto taps() const -> std::array<Scalar, N> const& { return taps_; }
 
 private:
     std::array<Scalar, N> taps_{};

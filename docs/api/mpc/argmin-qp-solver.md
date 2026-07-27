@@ -86,7 +86,7 @@ enum class argmin_qp_setup_error : std::uint8_t {
 ### try_setup
 
 ```cpp
-[[nodiscard]] auto try_setup(const qp_problem<double>& problem)
+auto try_setup(const qp_problem<double>& problem)
     -> ctrlpp::expected<void, argmin_qp_setup_error>;
 ```
 

@@ -32,7 +32,7 @@ Quintic polynomial trajectory segment with arbitrary velocity and acceleration b
 
 ```cpp
 template <typename Scalar, int Rows>
-[[nodiscard]] auto make_quintic_trajectory(
+auto make_quintic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,   // start position
     Eigen::Matrix<Scalar, Rows, 1> const& q1,   // end position
     Eigen::Matrix<Scalar, Rows, 1> const& v0,   // start velocity

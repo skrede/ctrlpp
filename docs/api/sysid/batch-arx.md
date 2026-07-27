@@ -13,7 +13,7 @@ The routine validates its data records and returns `ctrlpp::expected<arx_result<
 
 ```cpp
 template <std::size_t NA, std::size_t NB, typename Derived1, typename Derived2>
-[[nodiscard]] auto
+auto
 batch_arx(const Eigen::MatrixBase<Derived1>& Y,
           const Eigen::MatrixBase<Derived2>& U)
     -> ctrlpp::expected<arx_result<typename Derived1::Scalar, std::max(NA, NB), 1, 1>,

@@ -58,7 +58,7 @@ struct quintic_trajectory
 /// @cite biagiotti2009 -- Sec. 2.1.5, eq. (2.5), p.27: coefficient derivation from 6 BCs
 /// Coefficients derived from B&M eq. (2.5) in normalized time tau = t/T.
 template <typename Scalar, int Rows>
-[[nodiscard]] auto make_quintic_trajectory(
+auto make_quintic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,
     Eigen::Matrix<Scalar, Rows, 1> const& v0,

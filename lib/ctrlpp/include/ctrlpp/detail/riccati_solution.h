@@ -59,7 +59,7 @@ enum class riccati_extract_error
 ///
 /// @returns ctrlpp::expected<void, riccati_extract_error>.
 template <typename Scalar, int N2>
-[[nodiscard]] auto extract_riccati_solution_into(
+auto extract_riccati_solution_into(
     Eigen::Matrix<Scalar, N2 / 2, N2 / 2>&    P_out,
     const Eigen::Matrix<Scalar, N2, N2>&      U)
     -> ctrlpp::expected<void, riccati_extract_error>
@@ -98,7 +98,7 @@ template <typename Scalar, int N2>
 
 /// @brief Value-returning wrapper around `extract_riccati_solution_into`.
 template <typename Scalar, int N2>
-[[nodiscard]] auto extract_riccati_solution(const Eigen::Matrix<Scalar, N2, N2>& U)
+auto extract_riccati_solution(const Eigen::Matrix<Scalar, N2, N2>& U)
     -> ctrlpp::expected<Eigen::Matrix<Scalar, N2 / 2, N2 / 2>, riccati_extract_error>
 {
     Eigen::Matrix<Scalar, N2 / 2, N2 / 2> P;

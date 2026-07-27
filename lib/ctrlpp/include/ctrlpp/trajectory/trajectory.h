@@ -72,7 +72,7 @@ private:
 /// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
 ///   Machines and Robots", 2009, Ch. 2-5 -- complete trajectory generation framework
 template <typename Law, typename Scalar, int Rows>
-[[nodiscard]] auto make_trajectory(
+auto make_trajectory(
     Law law,
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,

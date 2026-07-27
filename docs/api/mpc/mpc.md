@@ -122,7 +122,7 @@ commanded.
 ### solve (regulation)
 
 ```cpp
-[[nodiscard]] auto solve(const Vector<Scalar, NX>& x0)
+auto solve(const Vector<Scalar, NX>& x0)
     -> ctrlpp::expected<solve_output<Scalar, NU>, solver_error>;
 ```
 
@@ -134,7 +134,7 @@ overload returns the error branch with `solver_error::setup_incomplete`.
 ### solve (constant reference)
 
 ```cpp
-[[nodiscard]] auto solve(const Vector<Scalar, NX>& x0,
+auto solve(const Vector<Scalar, NX>& x0,
                          const Vector<Scalar, NY>& y_ref)
     -> ctrlpp::expected<solve_output<Scalar, NU>, solver_error>;
 ```
@@ -144,7 +144,7 @@ Solves the QP for tracking a constant output reference across the entire horizon
 ### solve (trajectory reference)
 
 ```cpp
-[[nodiscard]] auto solve(const Vector<Scalar, NX>& x0,
+auto solve(const Vector<Scalar, NX>& x0,
                          std::span<const Vector<Scalar, NY>> y_ref)
     -> ctrlpp::expected<solve_output<Scalar, NU>, solver_error>;
 ```
@@ -167,7 +167,7 @@ different input, for example after an error branch or external saturation.
 ### trajectory
 
 ```cpp
-[[nodiscard]] auto trajectory() const
+auto trajectory() const
     -> ctrlpp::expected<std::pair<std::vector<Vector<Scalar, NX>>,
                                   std::vector<Vector<Scalar, NU>>>,
                         solver_error>;
@@ -180,7 +180,7 @@ guarded: before the first valid solve it returns the error branch
 ### diagnostics
 
 ```cpp
-[[nodiscard]] auto diagnostics() const -> mpc_diagnostics<Scalar>;
+auto diagnostics() const -> mpc_diagnostics<Scalar>;
 ```
 
 Returns solver diagnostics from the last solve, including status, iteration count, solve time, cost, and residuals.

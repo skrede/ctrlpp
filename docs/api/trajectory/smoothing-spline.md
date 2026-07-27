@@ -39,7 +39,7 @@ The domain of `mu` is the half-open interval (0, 1]: mu = 1 is the exact interpo
 ## Factory
 
 ```cpp
-[[nodiscard]] static auto create(config const& cfg)
+static auto create(config const& cfg)
     -> ctrlpp::expected<smoothing_spline, spline_error>;
 ```
 

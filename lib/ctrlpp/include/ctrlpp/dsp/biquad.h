@@ -105,7 +105,7 @@ public:
         w_[1] = value * c_.b2 - y_ss * c_.a2;
     }
 
-    [[nodiscard]] auto coefficients() const -> biquad_coeffs<Scalar> const& { return c_; }
+    auto coefficients() const -> biquad_coeffs<Scalar> const& { return c_; }
 
     /// Second-order Butterworth low-pass biquad section via the RBJ cookbook
     /// formulas (analog-prototype design mapped through the bilinear transform).
@@ -116,7 +116,7 @@ public:
     ///
     /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (LPF section)
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform of analog prototypes)
-    [[nodiscard]] static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> expected<biquad, dsp_error>
+    static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> expected<biquad, dsp_error>
     {
         if(auto const err = detail::validate_biquad_design(cutoff_hz, sample_hz))
             return unexpected(*err);
@@ -150,7 +150,7 @@ public:
     ///
     /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (notch section)
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6
-    [[nodiscard]] static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> expected<biquad, dsp_error>
+    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> expected<biquad, dsp_error>
     {
         if(!std::isfinite(q))
             return unexpected(dsp_error::non_finite_input);
@@ -189,7 +189,7 @@ public:
     /// diverges) with the matching `dsp_error`.
     ///
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform with pre-warping)
-    [[nodiscard]] static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> expected<biquad, dsp_error>
+    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> expected<biquad, dsp_error>
     {
         if(auto const err = detail::validate_biquad_design(bandwidth_hz, sample_hz))
             return unexpected(*err);
@@ -259,7 +259,7 @@ public:
         }
     }
 
-    [[nodiscard]] auto section(std::size_t i) const -> biquad<Scalar> const& { return sections_[i]; }
+    auto section(std::size_t i) const -> biquad<Scalar> const& { return sections_[i]; }
 
     auto section(std::size_t i) -> biquad<Scalar>& { return sections_[i]; }
 
@@ -281,7 +281,7 @@ private:
 /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (per-section LPF coefficients)
 template <std::size_t Order, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-[[nodiscard]] auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz)
+auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz)
     -> expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>
 {
     if(auto const err = detail::validate_biquad_design(cutoff_hz, sample_hz))
@@ -418,7 +418,7 @@ auto sections_all_finite(std::array<biquad<Scalar>, N> const& sections) -> bool
 /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I IIR design)
 template <std::size_t Order, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-[[nodiscard]] auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
+auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
     -> expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>
 {
     if(!std::isfinite(ripple_db))

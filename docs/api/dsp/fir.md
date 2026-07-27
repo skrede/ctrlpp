@@ -54,7 +54,7 @@ Clears the delay line to zero.
 ### taps
 
 ```cpp
-[[nodiscard]] auto taps() const -> std::array<Scalar, N> const&;
+auto taps() const -> std::array<Scalar, N> const&;
 ```
 
 Returns the tap coefficient array.

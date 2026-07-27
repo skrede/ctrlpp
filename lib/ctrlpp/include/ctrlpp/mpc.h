@@ -61,7 +61,7 @@ public:
     ///  * horizon <= 0                   -> controller_construction_error::non_positive_horizon
     ///  * horizon above the representable
     ///    bound of the derived dimensions -> controller_construction_error::horizon_overflow
-    [[nodiscard]] static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config)
+    static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config)
         -> expected<mpc, controller_construction_error>
     {
         return create(system, config, Solver{});
@@ -95,7 +95,7 @@ public:
     /// first solve would surface a configuration error at the first control
     /// step, the worst possible moment. Clamping the horizon to one would turn a
     /// caller mistake into a silently different controller.
-    [[nodiscard]] static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver)
+    static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver)
         -> expected<mpc, controller_construction_error>
     {
         if(config.horizon <= 0)
@@ -125,13 +125,13 @@ public:
     //     and applies no hidden fallback input, so a failed solve never warms the
     //     rate constraints from a phantom input. Use set_applied_input to record
     //     the input the caller actually commanded.
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0) -> expected<solve_output<Scalar, NU>, solver_error>
+    auto solve(const Vector<Scalar, NX>& x0) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         update_.q.setZero();
         return solve_impl(x0);
     }
 
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NY>& y_ref) -> expected<solve_output<Scalar, NU>, solver_error>
+    auto solve(const Vector<Scalar, NX>& x0, const Vector<Scalar, NY>& y_ref) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         int N = config_.horizon;
         Vector<Scalar, NX> CtQ_yref = CtQ_ * y_ref;
@@ -142,7 +142,7 @@ public:
         return solve_impl(x0);
     }
 
-    [[nodiscard]] auto solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NY>> y_ref) -> expected<solve_output<Scalar, NU>, solver_error>
+    auto solve(const Vector<Scalar, NX>& x0, std::span<const Vector<Scalar, NY>> y_ref) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         int N = config_.horizon;
         // The tracking overload reads y_ref[0..N] (N+1 references). An undersized
@@ -166,7 +166,7 @@ public:
 
     // Guarded: returns the error branch before the first valid solve, so a caller
     // can never read stale or default-initialized primal data.
-    [[nodiscard]] auto trajectory() const -> expected<std::pair<std::vector<Vector<Scalar, NX>>, std::vector<Vector<Scalar, NU>>>, solver_error>
+    auto trajectory() const -> expected<std::pair<std::vector<Vector<Scalar, NX>>, std::vector<Vector<Scalar, NU>>>, solver_error>
     {
         if(!has_solution_)
             return unexpected(solver_error::setup_incomplete);
@@ -189,7 +189,7 @@ public:
         return std::pair{std::move(states), std::move(inputs)};
     }
 
-    [[nodiscard]] auto diagnostics() const -> mpc_diagnostics<Scalar> { return last_diagnostics_; }
+    auto diagnostics() const -> mpc_diagnostics<Scalar> { return last_diagnostics_; }
 
 private:
     /// @brief Tag selecting the non-validating constructor reserved for `create`.
@@ -211,7 +211,7 @@ private:
     /// @brief Largest horizon whose derived decision and constraint dimensions
     /// are still representable in the horizon's own type. See `create` for
     /// the derivation; this forms no product of its own.
-    [[nodiscard]] static auto horizon_bound(const mpc_config<Scalar, NX, NU, NY>& config) -> int
+    static auto horizon_bound(const mpc_config<Scalar, NX, NU, NY>& config) -> int
     {
         constexpr int per_step = 2 * nx + 2 * nu;
         const int constant_dimensions = nx + compute_terminal_constraint_rows(config);
@@ -305,7 +305,7 @@ private:
         update_.u.setZero();
     }
 
-    [[nodiscard]] auto solve_impl(const Vector<Scalar, NX>& x0) -> expected<solve_output<Scalar, NU>, solver_error>
+    auto solve_impl(const Vector<Scalar, NX>& x0) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         if(setup_failed_)
             return unexpected(solver_error::setup_incomplete);
@@ -406,7 +406,7 @@ private:
     /// A longer-than-required result is not rejected: it is readable, and how
     /// much storage a backend returns beyond the posed problem is its own affair.
     /// The condition checked here is exactly the one that makes the reads legal.
-    [[nodiscard]] auto extract_solution(qp_result<Scalar>& result, solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
+    auto extract_solution(qp_result<Scalar>& result, solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
     {
         if(result.x.size() < static_cast<Eigen::Index>(n_dec_) || result.y.size() < static_cast<Eigen::Index>(n_con_))
         {

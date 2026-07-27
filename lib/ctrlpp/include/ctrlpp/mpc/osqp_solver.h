@@ -85,7 +85,7 @@ public:
 
     /// @brief Fallible setup: initializes the OSQP workspace from the problem data.
     /// Returns an empty expected on success and an `osqp_setup_error` on failure.
-    [[nodiscard]] auto try_setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, osqp_setup_error>
+    auto try_setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, osqp_setup_error>
     {
         cleanup();
         prepare_sparse_matrices(problem);
@@ -144,7 +144,7 @@ private:
         m_ = static_cast<OSQPInt>(problem.A.rows());
     }
 
-    [[nodiscard]] auto configure_and_create_solver(const qp_problem<double>& problem) -> ctrlpp::expected<void, osqp_setup_error>
+    auto configure_and_create_solver(const qp_problem<double>& problem) -> ctrlpp::expected<void, osqp_setup_error>
     {
         auto p_csc = make_csc(p_upper_);
         auto a_csc = make_csc(a_);

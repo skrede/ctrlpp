@@ -93,7 +93,7 @@ enum class osqp_setup_error : std::uint8_t {
 ### try_setup
 
 ```cpp
-[[nodiscard]] auto try_setup(const qp_problem<double>& problem)
+auto try_setup(const qp_problem<double>& problem)
     -> ctrlpp::expected<void, osqp_setup_error>;
 ```
 

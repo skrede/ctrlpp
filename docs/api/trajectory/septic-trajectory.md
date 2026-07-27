@@ -32,7 +32,7 @@ Septic polynomial trajectory segment with arbitrary boundary conditions up to je
 
 ```cpp
 template <typename Scalar, int Rows>
-[[nodiscard]] auto make_septic_trajectory(
+auto make_septic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,   // start position
     Eigen::Matrix<Scalar, Rows, 1> const& q1,   // end position
     Eigen::Matrix<Scalar, Rows, 1> const& v0,   // start velocity

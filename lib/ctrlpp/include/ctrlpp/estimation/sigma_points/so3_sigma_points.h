@@ -57,7 +57,7 @@ public:
     /// @brief Fallible factory. Forwards the tangent-space strategy's parameter
     /// domain check unchanged, since the lifted points are generated from that
     /// strategy and inherit its weights.
-    [[nodiscard]] static auto try_create(options_t opts = options_t{}) -> ctrlpp::expected<so3_merwe_sigma_points, filter_error>
+    static auto try_create(options_t opts = options_t{}) -> ctrlpp::expected<so3_merwe_sigma_points, filter_error>
     {
         auto inner = merwe_sigma_points<Scalar, tangent_dim>::try_create(opts);
         if(!inner)

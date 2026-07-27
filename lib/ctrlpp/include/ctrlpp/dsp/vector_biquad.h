@@ -72,7 +72,7 @@ public:
         }
     }
 
-    [[nodiscard]] static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> expected<vector_biquad, dsp_error>
+    static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> expected<vector_biquad, dsp_error>
     {
         auto const proto = biquad<Scalar>::low_pass(cutoff_hz, sample_hz);
         if(!proto.has_value())
@@ -80,7 +80,7 @@ public:
         return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};
     }
 
-    [[nodiscard]] static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> expected<vector_biquad, dsp_error>
+    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> expected<vector_biquad, dsp_error>
     {
         auto const proto = biquad<Scalar>::notch(freq_hz, sample_hz, q);
         if(!proto.has_value())
@@ -88,7 +88,7 @@ public:
         return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};
     }
 
-    [[nodiscard]] static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz)
+    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz)
         -> expected<vector_biquad, dsp_error>
     {
         auto const proto = biquad<Scalar>::dirty_derivative(bandwidth_hz, sample_hz);
@@ -143,7 +143,7 @@ private:
 
 template <std::size_t Order, std::size_t N, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-[[nodiscard]] auto make_vector_butterworth(Scalar cutoff_hz, Scalar sample_hz)
+auto make_vector_butterworth(Scalar cutoff_hz, Scalar sample_hz)
     -> expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error>
 {
     auto const proto = make_butterworth<Order>(cutoff_hz, sample_hz);
@@ -155,7 +155,7 @@ template <std::size_t Order, std::size_t N, typename Scalar>
 
 template <std::size_t Order, std::size_t N, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-[[nodiscard]] auto make_vector_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
+auto make_vector_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
     -> expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error>
 {
     auto const proto = make_chebyshev1<Order>(cutoff_hz, sample_hz, ripple_db);

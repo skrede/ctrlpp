@@ -31,7 +31,7 @@ All three limits divide in the planner math (cruise duration `h / v_max`, jerk-p
 ## Construction
 
 ```cpp
-[[nodiscard]] static auto create(config const& cfg)
+static auto create(config const& cfg)
     -> ctrlpp::expected<online_planner_3rd, trajectory_error>;
 ```
 

@@ -167,7 +167,7 @@ public:
         return weighted_mean();
     }
 
-    [[nodiscard]] auto weighted_mean() const -> state_vector_t
+    auto weighted_mean() const -> state_vector_t
     {
         state_vector_t mean = state_vector_t::Zero();
         if(m_weight_mode == weight_representation::log)
@@ -184,7 +184,7 @@ public:
         return mean;
     }
 
-    [[nodiscard]] auto map_estimate() const -> state_vector_t
+    auto map_estimate() const -> state_vector_t
     {
         std::size_t best = 0;
         if(m_weight_mode == weight_representation::log)
@@ -206,7 +206,7 @@ public:
         return m_particles[best];
     }
 
-    [[nodiscard]] auto particles() const -> const std::array<state_vector_t, NP>& { return m_particles; }
+    auto particles() const -> const std::array<state_vector_t, NP>& { return m_particles; }
 
 private:
     Dynamics m_dynamics;
