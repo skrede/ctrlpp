@@ -36,8 +36,8 @@ auto& ctrl = *ctrl_result;
 A rejection is `return ctrlpp::unexpected(<enum>::<value>);`. Success for an
 operation that produces no value is `return {};`.
 
-`ctrlpp::expected` carries the standard discard-warning attribute at class level
-(see the two class declarations in `ctrlpp/detail/expected.h`), on both the
+`ctrlpp::expected` carries `[[nodiscard]]` at class level (see the two class
+declarations in `ctrlpp/detail/expected.h`), on both the
 primary template and the `void` partial specialization, so ignoring a failure is
 a compile-time diagnostic rather than a silent runtime no-op. ctrlpp's own build
 promotes that diagnostic to an error on its own targets, so a discarded fallible
@@ -116,14 +116,14 @@ enum class ukf_health
 ukf_health health() const { return m_health; }
 ```
 
-These queries carry **no** discard-warning attribute. Discarding one is
+These queries carry **no** `[[nodiscard]]`. Discarding one is
 harmless: it is a
 question the caller may ask whenever it wants, and never asking it is a legitimate
 choice.
 
 ## 4. Where the attribute goes, and where it does not
 
-The discard-warning attribute is written at class level on the result type and on
+`[[nodiscard]]` is written at class level on the result type and on
 the disposition aggregates, and nowhere else in the library. It is never written
 at a call site or on an individual function declaration.
 
