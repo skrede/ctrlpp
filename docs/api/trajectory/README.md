@@ -55,7 +55,7 @@ Real-time trajectory filters for dynamic target tracking in control loops.
 
 Multi-axis coordination and trajectory manipulation.
 
-- [synchronize](synchronize.md)<br/>Multi-axis synchronization (rescale to slowest axis)
+- [synchronize](synchronize.md)<br/>Multi-axis synchronization: every axis is checked at the slowest axis's duration before any axis is retimed
 
 ## See Also
 

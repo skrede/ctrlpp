@@ -41,7 +41,36 @@ Construction solves phase durations from the kinematic constraints. Negative dis
 | `is_triangular` | `bool is_triangular() const` | True if cruise phase duration is zero |
 | `peak_velocity` | `Scalar peak_velocity() const` | Signed peak velocity in original frame |
 | `phase_durations` | `std::array<Scalar, 3> phase_durations() const` | `{T_accel, T_cruise, T_decel}` |
-| `rescale_to` | `void rescale_to(Scalar T_new)` | Extend to longer duration for multi-axis sync |
+| `rescale_to` | `expected<void, trajectory_error> rescale_to(Scalar T_new)` | Rebuild at a longer duration for multi-axis sync |
+| `can_rescale_to` | `expected<void, trajectory_error> can_rescale_to(Scalar T_new) const` | Whether `rescale_to(T_new)` would succeed, without mutating |
+
+## Time Rescaling
+
+`rescale_to()` rebuilds the profile at a lower cruise velocity rather than patching the one it has. The commanded displacement, both boundary velocities, and the acceleration magnitude are held fixed and the cruise velocity that realizes the requested duration is solved in closed form, so the traversed displacement and the terminal velocity hold by construction. The stored duration stays the sum of the three realized phase durations and is never assigned the requested value; it lands within a few units in the last place of it.
+
+The solve covers all three shapes the three-phase parametrization admits, and picks between them by monotonicity: the total duration falls as the cruise velocity grows, so exactly one shape can contain the root.
+
+| Shape | Validity | Solve |
+|-------|----------|-------|
+| plateau | cruise velocity at or above both boundary velocities | quadratic, smaller root |
+| ramp-through | cruise velocity strictly between the two boundary velocities | linear in the reciprocal of the cruise velocity, single root |
+| valley | cruise velocity at or below both boundary velocities | quadratic, larger root |
+
+The valley shape is emitted, not rejected: with both boundary velocities above the cruise velocity a long duration needs, the profile decelerates away from the initial velocity, holds a low cruise velocity, and accelerates back up to the final one. A root is accepted only inside its own shape's validity interval, with all three phase durations nonnegative and the cruise velocity within the velocity limit; a root failing any of those is a rejection rather than a clamped value.
+
+Rejections, checked in order:
+
+| Condition | Error |
+|-----------|-------|
+| a duration below the current one | `trajectory_error::duration_shorter_than_current` |
+| NaN, infinite, or non-positive `T_new` | `trajectory_error::non_positive_duration` |
+| a duration the displacement, limits, and boundary velocities cannot realize together | `trajectory_error::unreachable_duration` |
+
+A request equal to the current duration succeeds and changes nothing, which is the path the slowest axis of a synchronized set always takes.
+
+Reachability is derived rather than assumed. The cruise duration is what runs out: the shape whose validity interval reaches down toward a vanishing cruise velocity fixes the supremum of the reachable durations, and whether that supremum is finite is the sign of that shape's own residual displacement term. With both boundary velocities positive, the durations grow without bound exactly when the displacement exceeds `(v0^2 + v1^2) / (2 a)`; below that the cruise duration reaches zero at a strictly positive cruise velocity and the reachable durations stop at `(v0 + v1 - 2 sqrt((v0^2 + v1^2) / 2 - a h)) / a`. A stationary profile therefore reaches its own duration and nothing longer, with no epsilon taking part in the decision.
+
+`can_rescale_to()` runs the identical solve and discards the result, so the two cannot disagree. That is what lets [`synchronize()`](synchronize.md) check every axis before it commits any of them.
 
 ## Triangular Degenerate Case
 

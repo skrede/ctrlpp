@@ -160,28 +160,53 @@ public:
     /// @brief Actual peak velocity achieved by the profile.
     auto peak_velocity() const -> Scalar { return v_lim_; }
 
-    /// @brief Rescale profile to a new (longer) duration for multi-axis synchronization.
+    /// @brief Rescale the profile to a longer duration for multi-axis synchronization.
     ///
-    /// Extends the cruise phase to fill the time gap while keeping acceleration
-    /// and deceleration phases unchanged. This preserves all constraint limits
-    /// (v_max, a_max, j_max) since the accel/decel phases are not modified.
+    /// The profile is rebuilt under scaled kinematic limits, never patched. The
+    /// velocity, acceleration, and jerk limits are multiplied by the first,
+    /// second, and third power of one scale factor and the profile is constructed
+    /// again from the same command; the two boundary velocities are left UNSCALED,
+    /// because they are what the caller commanded the axis to enter and leave with
+    /// and scaling them would land a synchronized axis at the wrong terminal
+    /// velocity. Displacement, terminal velocity, and continuity then hold by
+    /// construction rather than by repair. The stored duration stays whatever the
+    /// rebuilt profile realizes and is never assigned the requested value; it lands
+    /// within a few units in the last place of it.
     ///
-    /// @cite biagiotti2009 -- Sec. 5.3
-    void rescale_to(Scalar T_new)
+    /// Rejections, checked in order:
+    ///  * a duration below the current one -> trajectory_error::duration_shorter_than_current
+    ///  * NaN, infinite, or non-positive T_new -> trajectory_error::non_positive_duration
+    ///  * a duration no admissible scale realizes -> trajectory_error::unreachable_duration
+    ///
+    /// A request equal to the current duration succeeds and changes nothing, which
+    /// is the path the slowest axis of a synchronized set always takes.
+    ///
+    /// @cite biagiotti2009 -- Sec. 5.3, eq. (5.13)-(5.14) -- time scaling for synchronization
+    [[nodiscard]] auto rescale_to(Scalar T_new) -> ctrlpp::expected<void, trajectory_error>
     {
-        if (T_new <= T_) {
-            return; // Already at or faster than requested -- no-op
+        auto const solved = solve_rescale(T_new);
+        if (!solved.has_value()) {
+            return ctrlpp::unexpected(solved.error());
         }
+        *this = solved.value();
+        return {};
+    }
 
-        // Insert additional cruise time: keep T_a and T_d fixed, extend T_v
-        auto const T_non_cruise = T_a_ + T_d_;
-        T_v_ = T_new - T_non_cruise;
-
-        if (T_v_ < Scalar{0}) {
-            T_v_ = Scalar{0};
+    /// @brief Report whether rescale_to(T_new) would succeed, without mutating.
+    ///
+    /// Runs the identical solve rescale_to() runs and discards the result, so the
+    /// two cannot disagree: identical inputs traverse identical code with no
+    /// intervening state. That is what lets a multi-axis synchronization check
+    /// every axis before it commits any of them. No closed-form reachability
+    /// predicate exists for this family, so structural replay is the only way to
+    /// make the check and the commit agree.
+    [[nodiscard]] auto can_rescale_to(Scalar T_new) const -> ctrlpp::expected<void, trajectory_error>
+    {
+        auto const solved = solve_rescale(T_new);
+        if (!solved.has_value()) {
+            return ctrlpp::unexpected(solved.error());
         }
-
-        T_ = T_a_ + T_v_ + T_d_;
+        return {};
     }
 
     /// @brief Phase durations for the 7 segments.
@@ -216,6 +241,146 @@ private:
         return {.position = Vector<Scalar, 1>{q},
                 .velocity = Vector<Scalar, 1>{dq},
                 .acceleration = Vector<Scalar, 1>{ddq}};
+    }
+
+    /// @brief Rebuild the profile with every kinematic limit scaled, or report that
+    /// the rebuilt profile does not respect its own scaled limits.
+    ///
+    /// A time scaling that slows a profile by a factor divides its velocity by that
+    /// factor, its acceleration by its square, and its jerk by its cube, which is
+    /// why the three limits carry the first, second, and third power of the scale.
+    /// The boundary velocities are deliberately NOT scaled: they are the command,
+    /// not a limit.
+    ///
+    /// The rebuilt profile is admissible only when it is realizable, has a finite
+    /// positive duration, and peaks no higher than its own scaled velocity limit.
+    /// The last condition is what the scale's lower bound below expresses: at a
+    /// scale where the commanded boundary velocities themselves reach the scaled
+    /// velocity limit, no seven-segment shape can hold the peak underneath it.
+    ///
+    /// @cite biagiotti2009 -- Sec. 5.3, eq. (5.13)-(5.14) -- time scaling of a profile
+    [[nodiscard]] static auto rebuild_scaled(config const& cfg, Scalar lambda)
+        -> ctrlpp::expected<double_s_trajectory, trajectory_error>
+    {
+        auto scaled = cfg;
+        scaled.v_max = cfg.v_max * lambda;
+        scaled.a_max = cfg.a_max * lambda * lambda;
+        scaled.j_max = cfg.j_max * lambda * lambda * lambda;
+
+        auto rebuilt = try_create(scaled);
+        if (!rebuilt.has_value()) {
+            return ctrlpp::unexpected(trajectory_error::unreachable_duration);
+        }
+        auto const& profile = rebuilt.value();
+        if (!std::isfinite(profile.T_) || !(profile.T_ > Scalar{0})
+            || !(profile.v_lim_ <= scaled.v_max)) {
+            return ctrlpp::unexpected(trajectory_error::unreachable_duration);
+        }
+        return rebuilt;
+    }
+
+    /// @brief Whether the scale is at or below the one that realizes T_new.
+    ///
+    /// A scale that yields no admissible profile lies below the admissible range
+    /// and answers true, and inside that range the duration falls as the scale
+    /// grows, so the answer is true on an interval reaching down from the crossing
+    /// point and false above it. That is what makes bracket halving valid here.
+    [[nodiscard]] static auto reaches_duration(config const& cfg, Scalar lambda, Scalar T_new) -> bool
+    {
+        auto const rebuilt = rebuild_scaled(cfg, lambda);
+        return !rebuilt.has_value() || rebuilt.value().T_ >= T_new;
+    }
+
+    /// @brief Solve the rescaled profile, or report why the request is not realizable.
+    ///
+    /// This is the single routine behind both rescale_to() and can_rescale_to(),
+    /// so the check and the commit replay the identical deterministic computation.
+    ///
+    /// With both boundary velocities at rest the duration is exactly proportional
+    /// to the reciprocal of the scale, so the scale is the ratio of the current
+    /// duration to the requested one and one rebuild settles it. With a nonzero
+    /// boundary velocity that proportionality fails -- the duration is a cubic in
+    /// the reciprocal of the scale within a fixed segment shape, and it carries
+    /// real kinks where the shape flips -- so the scale is found by halving a
+    /// bracket instead. A derivative step is not used: a kink can throw it out of
+    /// the bracket, and bounding a safeguarded variant would need an iteration cap.
+    ///
+    /// The bracket runs from the scale at which the commanded boundary velocities
+    /// themselves reach the scaled velocity limit up to the profile's own scale.
+    /// Termination is bracket exhaustion, when the midpoint falls on an endpoint:
+    /// no tolerance, no trip count. The worst case is derived rather than chosen.
+    /// Halving an interval whose endpoints share a binary exponent reaches the
+    /// spacing of the representable values after one step more than the significand
+    /// width, which is 25 evaluations at single precision and 54 at double
+    /// precision; a bracket spanning several exponents costs one further step per
+    /// exponent spanned. Early exit is not a determinism problem: identical inputs
+    /// exhaust the bracket at the identical step.
+    ///
+    /// @cite biagiotti2009 -- Sec. 5.3 -- time scaling for multi-axis synchronization
+    [[nodiscard]] auto solve_rescale(Scalar T_new) const
+        -> ctrlpp::expected<double_s_trajectory, trajectory_error>
+    {
+        // Exact equality first: a synchronized set passes the slowest axis a
+        // bit-exact copy of its own duration, so that axis lands here rather than
+        // in the shortening rejection below. There is no float-equality fragility
+        // in that -- the value compared is the same object's own stored duration.
+        if (T_new == T_) {
+            return *this;
+        }
+        if (!std::isfinite(T_new) || T_new <= Scalar{0}) {
+            return ctrlpp::unexpected(trajectory_error::non_positive_duration);
+        }
+        if (T_new < T_) {
+            return ctrlpp::unexpected(trajectory_error::duration_shorter_than_current);
+        }
+        if (!realizable_ || !(T_ > Scalar{0})) {
+            // A stationary profile traverses nothing, so no scale gives it a
+            // positive duration.
+            return ctrlpp::unexpected(trajectory_error::unreachable_duration);
+        }
+
+        auto const cfg = config{.q0 = q0_,
+                                .q1 = q1_,
+                                .v_max = v_max_,
+                                .a_max = a_max_,
+                                .j_max = j_max_,
+                                .v0 = v0_,
+                                .v1 = v1_};
+
+        if (v0_ == Scalar{0} && v1_ == Scalar{0}) {
+            return rebuild_scaled(cfg, T_ / T_new);
+        }
+
+        auto const lambda_min = std::max(std::abs(v0_), std::abs(v1_)) / v_max_;
+        if (!(lambda_min < Scalar{1})) {
+            // A boundary velocity already reaches the velocity limit, so there is
+            // no room left to slow the profile down.
+            return ctrlpp::unexpected(trajectory_error::unreachable_duration);
+        }
+
+        auto lo = lambda_min;
+        auto hi = Scalar{1};
+        for (;;) {
+            auto const mid = lo + (hi - lo) / Scalar{2};
+            if (!(mid > lo) || !(mid < hi)) {
+                break;
+            }
+            if (reaches_duration(cfg, mid, T_new)) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+
+        // The bracket is exhausted, so lo and hi are neighbouring values with the
+        // crossing between them. Accepting lo requires it to be admissible and to
+        // reach the requested duration; when it is not, the crossing lies inside
+        // the range no admissible profile covers and the request is unreachable.
+        auto const solved = rebuild_scaled(cfg, lo);
+        if (!solved.has_value() || !(solved.value().T_ >= T_new)) {
+            return ctrlpp::unexpected(trajectory_error::unreachable_duration);
+        }
+        return solved;
     }
 
     /// @brief Compute phase durations for zero initial/final velocity case.

@@ -65,6 +65,14 @@ enum class spline_error
 ///                                      transition between the two boundary
 ///                                      velocities already sweeps, so no profile
 ///                                      of the requested shape realizes it.
+///  * duration_shorter_than_current   : time rescaling only slows a profile down.
+///                                      The profile already runs at the fastest
+///                                      shape its limits allow, so a duration
+///                                      below the current one is not realizable.
+///  * unreachable_duration            : the requested duration lies outside the
+///                                      set the commanded displacement, the
+///                                      kinematic limits, and the boundary
+///                                      velocities can realize together.
 enum class trajectory_error
 {
     non_positive_velocity_limit,
@@ -73,6 +81,8 @@ enum class trajectory_error
     non_positive_duration,
     non_finite_input,
     unreachable_boundary_velocity,
+    duration_shorter_than_current,
+    unreachable_duration,
 };
 
 /// @brief Point on an ND-dimensional trajectory with position, velocity, acceleration.

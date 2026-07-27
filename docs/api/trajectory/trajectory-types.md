@@ -34,6 +34,8 @@ Structured failure modes for the point-to-point trajectory factories and the onl
 | `non_positive_duration` | The requested duration must be positive |
 | `non_finite_input` | A boundary value or limit is NaN/Inf |
 | `unreachable_boundary_velocity` | The commanded displacement is shorter than the distance the fastest admissible transition between the two boundary velocities already sweeps, so no profile of the requested shape realizes it |
+| `duration_shorter_than_current` | Time rescaling only slows a profile down. The profile already runs at the fastest shape its limits allow, so a duration below the current one is not realizable |
+| `unreachable_duration` | The requested duration lies outside the set the commanded displacement, the kinematic limits, and the boundary velocities can realize together |
 
 ## Type: `trajectory_point<Scalar, ND>`
 

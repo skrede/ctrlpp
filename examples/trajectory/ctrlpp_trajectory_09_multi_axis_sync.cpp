@@ -17,7 +17,17 @@ int main()
     ctrlpp::trapezoidal_trajectory<double> ax_y({.q0 = 0.0, .q1 = 50.0, .v_max = 80.0, .a_max = 400.0});
     ctrlpp::trapezoidal_trajectory<double> ax_z({.q0 = 0.0, .q1 = 200.0, .v_max = 80.0, .a_max = 400.0});
 
-    ctrlpp::synchronize(ax_x, ax_y, ax_z);
+    // Synchronization is fallible: an axis whose displacement and boundary
+    // velocities cannot stretch to the slowest axis's duration is reported rather
+    // than quietly retimed to something else. Nothing is retimed unless every
+    // axis can be, so the set is never left half synchronized.
+    auto const synced = ctrlpp::synchronize(ax_x, ax_y, ax_z);
+    if (!synced)
+    {
+        std::cerr << "Synchronization rejected: the slowest axis duration is not "
+                     "reachable for every axis\n";
+        return 1;
+    }
 
     std::cerr << "Synchronized duration: " << ax_x.duration() << " s\n";
 

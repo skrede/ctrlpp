@@ -118,7 +118,7 @@ Guides and API reference for the ctrlpp C++20 control library.
 - [bspline_trajectory](api/trajectory/bspline-trajectory.md)<br/>B-spline trajectory with compile-time degree
 - [online_planner_2nd](api/trajectory/online-planner-2nd.md)<br/>2nd-order online trajectory planner
 - [online_planner_3rd](api/trajectory/online-planner-3rd.md)<br/>3rd-order online trajectory planner
-- [synchronize](api/trajectory/synchronize.md)<br/>Multi-axis trajectory synchronization
+- [synchronize](api/trajectory/synchronize.md)<br/>Multi-axis trajectory synchronization, all-or-nothing and allocation-free
 
 ## Validation
 

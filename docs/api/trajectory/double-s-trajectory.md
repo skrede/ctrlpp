@@ -85,7 +85,28 @@ The profile degenerates when kinematic limits cannot all be reached:
 | `is_degenerate` | `bool is_degenerate() const` | True if v_max or a_max not reached |
 | `peak_velocity` | `Scalar peak_velocity() const` | Actual peak velocity achieved |
 | `phase_durations` | `std::array<Scalar, 7> phase_durations() const` | Per-segment durations |
-| `rescale_to` | `void rescale_to(Scalar T_new)` | Extend cruise phase for multi-axis sync |
+| `rescale_to` | `expected<void, trajectory_error> rescale_to(Scalar T_new)` | Rebuild under scaled limits for multi-axis sync |
+| `can_rescale_to` | `expected<void, trajectory_error> can_rescale_to(Scalar T_new) const` | Whether `rescale_to(T_new)` would succeed, without mutating |
+
+## Time Rescaling
+
+`rescale_to()` rebuilds the profile under scaled kinematic limits rather than patching the one it has. A time scaling that slows a profile by a factor divides its velocity by that factor, its acceleration by its square, and its jerk by its cube, so the three limits are multiplied by the first, second, and third power of one scale factor and the profile is constructed again from the same command.
+
+The two boundary velocities are left **unscaled**. They are what the caller commanded the axis to enter and leave with, not limits, and scaling them would land a synchronized axis at the wrong terminal velocity. Displacement, terminal velocity, and continuity then hold by construction. The stored duration stays whatever the rebuilt profile realizes and is never assigned the requested value; it lands within a few units in the last place of it.
+
+With both boundary velocities at rest the duration is exactly proportional to the reciprocal of the scale, so the scale is the ratio of the current duration to the requested one and a single rebuild settles it. With a nonzero boundary velocity that proportionality fails, and the scale is found by halving a bracket that runs from the scale at which the commanded boundary velocities themselves reach the scaled velocity limit up to the profile's own scale. Termination is bracket exhaustion, when the midpoint falls on an endpoint: no tolerance and no iteration cap. The worst case is derived rather than chosen. Halving an interval whose endpoints share a binary exponent reaches the spacing of the representable values after one step more than the significand width, which is 25 evaluations at single precision and 54 at double precision; a bracket spanning several exponents costs one further step per exponent spanned. A derivative step is not used: the duration carries real kinks where the segment shape flips, so a Newton step can leave the bracket, and bounding a safeguarded variant would require an iteration cap.
+
+Rejections, checked in order:
+
+| Condition | Error |
+|-----------|-------|
+| a duration below the current one | `trajectory_error::duration_shorter_than_current` |
+| NaN, infinite, or non-positive `T_new` | `trajectory_error::non_positive_duration` |
+| a duration no admissible scale realizes | `trajectory_error::unreachable_duration` |
+
+A request equal to the current duration succeeds and changes nothing, which is the path the slowest axis of a synchronized set always takes. Because the boundary velocities stay fixed while the velocity limit falls, the reachable durations are bounded: the limit cannot drop below the speed the caller commanded the axis to enter or leave with.
+
+`can_rescale_to()` runs the identical solve and discards the result. No closed-form reachability predicate exists for this family, so replaying the same deterministic computation is what makes the check and the commit agree, and it is what lets [`synchronize()`](synchronize.md) check every axis before it commits any of them.
 
 ## Usage Example
 
