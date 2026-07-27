@@ -7,12 +7,14 @@
 // Coverage: evaluate() for cubic/quintic/septic polynomial segments, the
 // trapezoidal/double_s/modified_sin/modified_trap profiles, and the
 // cubic_spline/smoothing_spline/bspline splines, plus online_planner_2nd/3rd
-// update()+sample(). Construction (splines solve linear systems at build time
-// by design) happens outside the armed window; only the steady-state evaluate
-// or sample loop is guarded.
+// update()+sample(), the time rescaling of both velocity profiles, and both
+// multi-axis synchronization overloads. Construction (splines solve linear
+// systems at build time by design) happens outside the armed window; only the
+// steady-state evaluate, sample, retime or synchronize call is guarded.
 
 #include "nomalloc_harness.h"
 
+#include "ctrlpp/trajectory/synchronize.h"
 #include "ctrlpp/trajectory/cubic_spline.h"
 #include "ctrlpp/trajectory/smoothing_spline.h"
 #include "ctrlpp/trajectory/cubic_trajectory.h"
@@ -30,6 +32,8 @@
 
 #include <Eigen/Dense>
 
+#include <span>
+#include <array>
 #include <vector>
 #include <cstddef>
 #include <utility>
@@ -242,6 +246,124 @@ TEST_CASE("online_planner_2nd update and sample perform zero heap allocation",
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
+}
+
+namespace
+{
+
+// Axis configurations reused by the retiming and synchronization cases below.
+// The trapezoidal pair drives the closed-form retiming path, the double-S pair
+// drives the rest-to-rest closed form and the bracketed solve respectively.
+constexpr ctrlpp::trapezoidal_trajectory<double>::config trapezoidal_axis{
+    .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .v0 = 0.5, .v1 = 0.25};
+
+constexpr ctrlpp::double_s_trajectory<double>::config double_s_rest_to_rest{
+    .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0, .v0 = 0.0, .v1 = 0.0};
+
+constexpr ctrlpp::double_s_trajectory<double>::config double_s_boundary_velocities{
+    .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0, .v0 = 1.0, .v1 = 0.5};
+
+}
+
+TEST_CASE("trapezoidal_trajectory rescale_to performs zero heap allocation",
+          "[trajectory][trapezoidal][hardening][nomalloc]")
+{
+    // Warm-up on a throwaway copy, outside the armed window: the retiming
+    // mutates the profile, so the guarded call has to run on a fresh one.
+    ctrlpp::trapezoidal_trajectory<double> warmup(trapezoidal_axis);
+    REQUIRE(warmup.rescale_to(warmup.duration() * 2.0).has_value());
+
+    ctrlpp::trapezoidal_trajectory<double> seg(trapezoidal_axis);
+    const double target = seg.duration() * 2.0;
+
+    bool retimed = false;
+    std::size_t allocations = 0;
+    allocations = guarded_allocations([&] { retimed = seg.rescale_to(target).has_value(); });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(allocations == 0);
+    REQUIRE(retimed);
+}
+
+TEST_CASE("double_s_trajectory rescale_to performs zero heap allocation on both paths",
+          "[trajectory][double_s][hardening][nomalloc]")
+{
+    ctrlpp::double_s_trajectory<double> rest_warmup(double_s_rest_to_rest);
+    REQUIRE(rest_warmup.rescale_to(rest_warmup.duration() * 2.0).has_value());
+    ctrlpp::double_s_trajectory<double> solved_warmup(double_s_boundary_velocities);
+    REQUIRE(solved_warmup.rescale_to(solved_warmup.duration() * 1.2).has_value());
+
+    // Rest to rest: the scale follows in closed form from the two durations.
+    ctrlpp::double_s_trajectory<double> rest(double_s_rest_to_rest);
+    const double rest_target = rest.duration() * 2.0;
+
+    bool rest_retimed = false;
+    std::size_t rest_allocations = 0;
+    rest_allocations = guarded_allocations([&] { rest_retimed = rest.rescale_to(rest_target).has_value(); });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(rest_allocations == 0);
+    REQUIRE(rest_retimed);
+
+    // Nonzero boundary velocities: the scale is found by halving a bracket, and
+    // every candidate profile the search builds lives on the stack.
+    ctrlpp::double_s_trajectory<double> solved(double_s_boundary_velocities);
+    const double solved_target = solved.duration() * 1.2;
+
+    bool solved_retimed = false;
+    std::size_t solved_allocations = 0;
+    solved_allocations =
+        guarded_allocations([&] { solved_retimed = solved.rescale_to(solved_target).has_value(); });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(solved_allocations == 0);
+    REQUIRE(solved_retimed);
+}
+
+TEST_CASE("synchronize performs zero heap allocation, variadic overload",
+          "[trajectory][hardening][nomalloc]")
+{
+    ctrlpp::trapezoidal_trajectory<double> warm1(
+        {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
+    ctrlpp::trapezoidal_trajectory<double> warm2({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0});
+    ctrlpp::double_s_trajectory<double> warm3(double_s_rest_to_rest);
+    REQUIRE(ctrlpp::synchronize(warm1, warm2).has_value());
+    REQUIRE(ctrlpp::synchronize(warm3, warm3).has_value());
+
+    ctrlpp::trapezoidal_trajectory<double> ax1(
+        {.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0});
+    ctrlpp::trapezoidal_trajectory<double> ax2({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0});
+    ctrlpp::trapezoidal_trajectory<double> ax3({.q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 10.0});
+
+    bool synchronized = false;
+    std::size_t allocations = 0;
+    allocations =
+        guarded_allocations([&] { synchronized = ctrlpp::synchronize(ax1, ax2, ax3).has_value(); });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(allocations == 0);
+    REQUIRE(synchronized);
+}
+
+TEST_CASE("synchronize performs zero heap allocation over a fixed-size backing store",
+          "[trajectory][hardening][nomalloc]")
+{
+    // The contiguous-view overload exists for exactly this shape: a statically
+    // allocated run of axes, no owning container anywhere on the path.
+    using axis = ctrlpp::trapezoidal_trajectory<double>;
+
+    std::array<axis, 3> warmup{axis({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0}),
+                               axis({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0}),
+                               axis({.q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 10.0})};
+    REQUIRE(ctrlpp::synchronize(std::span<axis>{warmup}).has_value());
+
+    std::array<axis, 3> axes{axis({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0}),
+                             axis({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0}),
+                             axis({.q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 10.0})};
+
+    bool synchronized = false;
+    std::size_t allocations = 0;
+    allocations = guarded_allocations(
+        [&] { synchronized = ctrlpp::synchronize(std::span<axis>{axes}).has_value(); });
+    REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(allocations == 0);
+    REQUIRE(synchronized);
 }
 
 TEST_CASE("online_planner_3rd update and sample perform zero heap allocation",

@@ -1,9 +1,6 @@
 // This anchor dense-scans the trapezoidal and double-S velocity profiles
 // over randomized configurations that include nonzero initial and final
-// velocities -- the one part of each profile's public configuration surface
-// that the equivalent fuzz oracles do not yet exercise (those are
-// deliberately restricted to zero boundary velocity until this behavior is
-// corrected).
+// velocities.
 //
 // Two properties are checked purely from each profile's own reported
 // position/velocity trace, without reference to how that trace was
@@ -20,18 +17,15 @@
 //     acceleration limit; and for the jerk-limited profile, the reported
 //     acceleration cannot change faster than the configured jerk limit.
 //
-// The trapezoidal profile currently violates the continuity property once
-// boundary velocities are nonzero: the two phases straddling the transition
-// out of the cruise phase are stitched from inconsistent position
-// expressions, producing an interior jump even though the reported velocity
-// itself remains continuous through that same transition. The double-S
-// profile currently violates the finite-difference acceleration envelope at
-// its own boundaries: it silently computes its entire phase timing as if
-// both boundary velocities were zero, so the reported velocity leaps from
-// the configured nonzero boundary value to the zero-boundary profile's own
-// value within a single sample step. Both sections are held green with
-// `[!shouldfail]` until their respective profiles are corrected to handle
-// nonzero boundary velocities exactly.
+// Both sections assert those properties directly. Neither carries an
+// inverting tag, and neither is expected to fail.
+//
+// This file is a shape check on the trace, not a fidelity check on the
+// traversal: it says nothing about whether a profile sweeps the displacement
+// it was commanded. That contract lives in the neighbouring rescale anchor,
+// whose oracle is kink-aligned quadrature of the reported velocity, and it is
+// the one that can fail on a profile whose trace is perfectly smooth and
+// perfectly bounded while covering the wrong distance.
 
 #include "ctrlpp/trajectory/double_s_trajectory.h"
 #include "ctrlpp/trajectory/trapezoidal_trajectory.h"
