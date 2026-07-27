@@ -86,7 +86,9 @@ TEST_CASE("unscented sigma points reconstruct a non-identity-pivot covariance", 
     opts.beta = 0.0;
     opts.kappa = 3.0 - static_cast<double>(SP_NX);
 
-    merwe_sigma_points<double, SP_NX> strategy(opts);
+    auto strategy_result = merwe_sigma_points<double, SP_NX>::try_create(opts);
+    REQUIRE(strategy_result.has_value());
+    auto const& strategy = *strategy_result;
 
     const Matrix<double, SP_NX, SP_NX> P = anisotropic_covariance_3x3();
     const Vector<double, SP_NX> x0 = Vector<double, SP_NX>::Zero();
@@ -125,7 +127,9 @@ TEST_CASE("SO(3) manifold sigma points reconstruct a non-identity-pivot tangent 
     opts.beta = 0.0;
     opts.kappa = 3.0 - 3.0;
 
-    so3_merwe_sigma_points<double> strategy(opts);
+    auto strategy_result = so3_merwe_sigma_points<double>::try_create(opts);
+    REQUIRE(strategy_result.has_value());
+    auto const& strategy = *strategy_result;
 
     // The same anisotropic structure, scaled so that every sigma-point offset
     // stays well inside the SO(3) exponential's injectivity radius (norm below
@@ -174,7 +178,9 @@ TEST_CASE("MEKF error-state transition matches the analytic covariance transform
     cfg.Q.setZero();
     cfg.dt = 0.1;
 
-    mekf<double, NB, NY, trivial_mekf_measurement> filter(trivial_mekf_measurement{}, cfg);
+    auto filter_result = mekf<double, NB, NY, trivial_mekf_measurement>::create(trivial_mekf_measurement{}, cfg);
+    REQUIRE(filter_result.has_value());
+    auto& filter = *filter_result;
 
     Vector<double, 3> omega;
     omega << 0.3, -0.2, 0.5;

@@ -48,7 +48,9 @@ TEST_CASE("linear mpc closed-loop convergence - double integrator", "[mpc][close
         .u_max = (Eigen::Matrix<double, 1, 1>() << 10.0).finished(),
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{5.0, 0.0};
     Eigen::Vector2d x_ref{0.0, 0.0};
@@ -76,7 +78,9 @@ TEST_CASE("nonlinear mpc closed-loop convergence - double integrator", "[nmpc][c
         .u_max = (Eigen::Matrix<double, 1, 1>() << 10.0).finished(),
     };
 
-    NmpcDI controller{double_integrator_dynamics, cfg};
+    auto controller_result = NmpcDI::create(double_integrator_dynamics, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{5.0, 0.0};
 
@@ -102,7 +106,9 @@ TEST_CASE("linear mpc trajectory tracking with reference change", "[mpc][closedl
         .u_max = (Eigen::Matrix<double, 1, 1>() << 10.0).finished(),
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.0, 0.0};
     Eigen::Vector2d ref1{0.0, 0.0};

@@ -17,6 +17,7 @@
 #include <cmath>
 #include <limits>
 #include <vector>
+#include <utility>
 #include <algorithm>
 
 using Catch::Matchers::WithinAbs;
@@ -60,6 +61,16 @@ auto double_s_profile(ctrlpp::double_s_trajectory<double>::config const& cfg)
     auto created = ctrlpp::double_s_trajectory<double>::create(cfg);
     REQUIRE(created.has_value());
     return created.value();
+}
+
+/// The splines and the online planners are fallible-only as well, so the same
+/// build-and-assert shape covers them.
+template <typename Type>
+auto realizable(typename Type::config const& cfg) -> Type
+{
+    auto created = Type::create(cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
 }
 
 /// Chained rounding operations behind one Simpson panel: each of its two fresh
@@ -223,7 +234,7 @@ TEST_CASE("Cubic spline with exactly 2 points", "[cubic_spline][hardening][negat
         .positions = {0.0, 1.0},
     };
 
-    ctrlpp::cubic_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
     auto pt = spline.evaluate(0.5);
     REQUIRE(std::isfinite(pt.position(0)));
     REQUIRE(std::isfinite(pt.velocity(0)));
@@ -239,7 +250,7 @@ TEST_CASE("Cubic spline interpolation matches at knots", "[cubic_spline][hardeni
         .positions = positions,
     };
 
-    ctrlpp::cubic_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
     for (std::size_t i = 0; i < times.size(); ++i) {
         auto pt = spline.evaluate(times[i]);
@@ -254,7 +265,7 @@ TEST_CASE("Cubic spline with huge span", "[cubic_spline][hardening][negative]")
         .positions = {0.0, 1.0, 0.0},
     };
 
-    ctrlpp::cubic_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
     auto pt = spline.evaluate(0.5e15);
     REQUIRE(std::isfinite(pt.position(0)));
 }
@@ -272,7 +283,7 @@ TEST_CASE("Smoothing spline with mu=1 approaches interpolation", "[smoothing_spl
         .mu = 1.0,
     };
 
-    ctrlpp::smoothing_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::smoothing_spline<double>>(cfg);
 
     // At mu=1, should pass through all waypoints
     for (std::size_t i = 0; i < times.size(); ++i) {
@@ -293,7 +304,7 @@ TEST_CASE("Smoothing spline with very large lambda", "[smoothing_spline][hardeni
         .mu = 0.001,
     };
 
-    ctrlpp::smoothing_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::smoothing_spline<double>>(cfg);
     auto pt = spline.evaluate(1.5);
     REQUIRE(std::isfinite(pt.position(0)));
 }
@@ -308,7 +319,7 @@ TEST_CASE("B-spline with insufficient control points", "[bspline][hardening][neg
         .control_points = {0.0, 1.0, 2.0}, // Only 3
     };
 
-    auto const result = bspline3::try_create(cfg);
+    auto const result = bspline3::create(cfg);
     REQUIRE_FALSE(result.has_value());
     REQUIRE(result.error() == ctrlpp::spline_error::too_few_control_points);
 }
@@ -321,7 +332,7 @@ TEST_CASE("B-spline with non-ascending knot vector", "[bspline][hardening][negat
         .knot_vector = {0.0, 0.0, 0.0, 0.0, 0.5, 0.3, 1.0, 1.0, 1.0}, // Non-ascending
     };
 
-    auto const result = bspline3::try_create(cfg);
+    auto const result = bspline3::create(cfg);
     REQUIRE_FALSE(result.has_value());
     REQUIRE(result.error() == ctrlpp::spline_error::non_monotonic_knots);
 }
@@ -412,7 +423,7 @@ TEST_CASE("Online planner 2nd rejects out-of-domain velocity limit",
 
     for (double const v_max : {0.0, -1.0, nan, inf}) {
         auto const result =
-            ctrlpp::online_planner_2nd<double>::try_create({.v_max = v_max, .a_max = 1.0});
+            ctrlpp::online_planner_2nd<double>::create({.v_max = v_max, .a_max = 1.0});
         REQUIRE_FALSE(result.has_value());
         REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_velocity_limit);
     }
@@ -428,7 +439,7 @@ TEST_CASE("Online planner 2nd rejects out-of-domain acceleration limit",
 
     for (double const a_max : {0.0, -1.0, nan, inf}) {
         auto const result =
-            ctrlpp::online_planner_2nd<double>::try_create({.v_max = 1.0, .a_max = a_max});
+            ctrlpp::online_planner_2nd<double>::create({.v_max = 1.0, .a_max = a_max});
         REQUIRE_FALSE(result.has_value());
         REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_acceleration_limit);
     }
@@ -437,7 +448,7 @@ TEST_CASE("Online planner 2nd rejects out-of-domain acceleration limit",
 TEST_CASE("Online planner 2nd with instant target flip", "[online_planner_2nd][hardening][negative]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     planner.update(5.0);
     planner.sample(0.1);
@@ -453,7 +464,7 @@ TEST_CASE("Online planner 2nd with instant target flip", "[online_planner_2nd][h
 TEST_CASE("Online planner 2nd reaches target", "[online_planner_2nd][hardening][convergence]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 1.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     planner.update(3.0);
 
@@ -478,7 +489,7 @@ TEST_CASE("Online planner 3rd rejects out-of-domain velocity limit",
     auto constexpr inf = std::numeric_limits<double>::infinity();
 
     for (double const v_max : {0.0, -1.0, nan, inf}) {
-        auto const result = ctrlpp::online_planner_3rd<double>::try_create(
+        auto const result = ctrlpp::online_planner_3rd<double>::create(
             {.v_max = v_max, .a_max = 1.0, .j_max = 1.0});
         REQUIRE_FALSE(result.has_value());
         REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_velocity_limit);
@@ -494,7 +505,7 @@ TEST_CASE("Online planner 3rd rejects out-of-domain acceleration limit",
     auto constexpr inf = std::numeric_limits<double>::infinity();
 
     for (double const a_max : {0.0, -1.0, nan, inf}) {
-        auto const result = ctrlpp::online_planner_3rd<double>::try_create(
+        auto const result = ctrlpp::online_planner_3rd<double>::create(
             {.v_max = 1.0, .a_max = a_max, .j_max = 1.0});
         REQUIRE_FALSE(result.has_value());
         REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_acceleration_limit);
@@ -510,7 +521,7 @@ TEST_CASE("Online planner 3rd rejects out-of-domain jerk limit",
     auto constexpr inf = std::numeric_limits<double>::infinity();
 
     for (double const j_max : {0.0, -1.0, nan, inf}) {
-        auto const result = ctrlpp::online_planner_3rd<double>::try_create(
+        auto const result = ctrlpp::online_planner_3rd<double>::create(
             {.v_max = 1.0, .a_max = 1.0, .j_max = j_max});
         REQUIRE_FALSE(result.has_value());
         REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_jerk_limit);
@@ -520,7 +531,7 @@ TEST_CASE("Online planner 3rd rejects out-of-domain jerk limit",
 TEST_CASE("Online planner 3rd with instant target reversal", "[online_planner_3rd][hardening][negative]")
 {
     ctrlpp::online_planner_3rd<double>::config cfg{.v_max = 1.0, .a_max = 2.0, .j_max = 5.0};
-    ctrlpp::online_planner_3rd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_3rd<double>>(cfg);
 
     planner.update(5.0);
     planner.sample(0.1);
@@ -534,7 +545,7 @@ TEST_CASE("Online planner 3rd with instant target reversal", "[online_planner_3r
 TEST_CASE("Online planner 3rd reaches target", "[online_planner_3rd][hardening][convergence]")
 {
     ctrlpp::online_planner_3rd<double>::config cfg{.v_max = 2.0, .a_max = 1.0, .j_max = 5.0};
-    ctrlpp::online_planner_3rd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_3rd<double>>(cfg);
 
     planner.update(3.0);
 
@@ -558,7 +569,7 @@ TEST_CASE("Smoothing spline with 2 points degenerates to linear",
         .positions = {0.0, 5.0},
         .mu = 0.5,
     };
-    ctrlpp::smoothing_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::smoothing_spline<double>>(cfg);
 
     auto pt = spline.evaluate(0.5);
     REQUIRE_THAT(pt.position(0), WithinAbs(2.5, 0.01));
@@ -745,7 +756,7 @@ TEST_CASE("Online planner 2nd retargets while moving triggers braking",
           "[online_planner_2nd][hardening][coverage]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 4.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Start moving to 10
     planner.update(10.0);
@@ -764,7 +775,7 @@ TEST_CASE("Online planner 2nd with same position target is near-zero motion",
           "[online_planner_2nd][hardening][coverage]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Target at current position (0)
     planner.update(0.0);
@@ -794,7 +805,7 @@ TEST_CASE("Online planner 2nd overshoot recovery brakes and reverses",
 {
     // Start moving AWAY from target: positive velocity, negative target
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 4.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // First, build up positive velocity toward +10
     planner.update(10.0);
@@ -831,7 +842,7 @@ TEST_CASE("Online planner 2nd wrong-direction: positive velocity, target behind"
           "[online_planner_2nd][hardening][coverage]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 3.0, .a_max = 5.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Build up positive velocity by targeting +5
     planner.update(5.0);
@@ -863,7 +874,7 @@ TEST_CASE("Online planner 2nd near-zero displacement with velocity triggers brak
           "[online_planner_2nd][hardening][coverage]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Build up velocity
     planner.update(5.0);
@@ -890,7 +901,7 @@ TEST_CASE("Online planner 2nd evaluate_profile at and past T boundary",
           "[online_planner_2nd][hardening][coverage]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     planner.update(1.0);
 
@@ -913,7 +924,7 @@ TEST_CASE("Online planner 2nd braking phase evaluation covers all branches",
           "[online_planner_2nd][hardening][coverage]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 3.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Build velocity in negative direction
     planner.update(-8.0);
@@ -951,7 +962,7 @@ TEST_CASE("Online planner 2nd reset clears state",
           "[online_planner_2nd][hardening][coverage]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 3.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     planner.update(10.0);
     planner.sample(0.5);
@@ -980,7 +991,7 @@ TEST_CASE("Cubic spline periodic BC wraps velocity and acceleration",
         .bc = ctrlpp::boundary_condition::periodic,
     };
 
-    ctrlpp::cubic_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
     // Velocity at t=0 should match velocity at t=4 (periodic wrap)
     auto start = spline.evaluate(times.front());
@@ -1005,7 +1016,7 @@ TEST_CASE("Cubic spline clamped BC with exactly 2 waypoints",
         .vn = -1.0,
     };
 
-    ctrlpp::cubic_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
     // Endpoints should match
     auto start = spline.evaluate(0.0);
@@ -1029,7 +1040,7 @@ TEST_CASE("Cubic spline clamped BC with interior knots",
         .vn = 1.0,
     };
 
-    ctrlpp::cubic_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
     // Endpoint velocities must match clamped values
     auto start = spline.evaluate(0.0);
@@ -1055,7 +1066,7 @@ TEST_CASE("Cubic spline find_span at exact knot time returns correct span",
         .positions = positions,
     };
 
-    ctrlpp::cubic_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
     // Evaluate exactly at each knot -- should not crash and return matching position
     for (std::size_t i = 0; i < times.size(); ++i) {
@@ -1087,7 +1098,7 @@ TEST_CASE("Cubic spline periodic BC with 3 points (minimum for cyclic Thomas)",
         .bc = ctrlpp::boundary_condition::periodic,
     };
 
-    ctrlpp::cubic_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
     auto start = spline.evaluate(0.0);
     auto end = spline.evaluate(3.0);
@@ -1213,7 +1224,7 @@ TEST_CASE("Smoothing spline with 2 points and mu near zero is still linear",
         .mu = 0.01,
     };
 
-    ctrlpp::smoothing_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::smoothing_spline<double>>(cfg);
 
     // 2-point case always degenerates to linear regardless of mu
     auto mid = spline.evaluate(1.0);
@@ -1236,7 +1247,7 @@ TEST_CASE("Smoothing spline with mu at machine epsilon clamp",
         .mu = 1e-15,
     };
 
-    ctrlpp::smoothing_spline<double> spline(cfg);
+    auto spline = realizable<ctrlpp::smoothing_spline<double>>(cfg);
     auto pt = spline.evaluate(1.5);
     REQUIRE(std::isfinite(pt.position(0)));
     REQUIRE(std::isfinite(pt.velocity(0)));
@@ -1248,7 +1259,7 @@ TEST_CASE("Online planner 2nd rest-to-rest with near-zero displacement after bra
           "[online_planner_2nd][hardening][coverage]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Build velocity, then retarget to a position very close to where we will
     // stop after braking -- exercises rest-to-rest with near-zero abs_h
@@ -1280,7 +1291,7 @@ TEST_CASE("Online planner 2nd cruise phase with initial velocity",
 {
     // Large displacement so the planner enters cruise phase even with initial velocity
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 4.0};
-    ctrlpp::online_planner_2nd<double> planner(cfg);
+    auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Build some velocity first
     planner.update(100.0);

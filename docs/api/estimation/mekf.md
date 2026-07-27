@@ -56,24 +56,14 @@ Where NE = 3 + NB (3 rotation dimensions + NB bias dimensions).
 
 ## Construction
 
-### try_create
+### create
 
 ```cpp
-[[nodiscard]] static auto try_create(Measurement measurement, mekf_config<Scalar, NB, NY> config)
+[[nodiscard]] static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config)
     -> ctrlpp::expected<mekf, filter_error>;
 ```
 
-Fallible factory and the primary construction API. Validates the initial quaternion before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. Any finite nonzero `q0` is accepted and normalized. As a static member of a class template, `try_create` requires explicit template arguments, e.g. `mekf<double, 3, 3, Measurement>::try_create(m, cfg)`.
-
-### Constructor (throwing convenience)
-
-```cpp
-mekf(Measurement measurement, mekf_config<Scalar, NB, NY> config);
-```
-
-Delegates to `try_create` and throws on a degenerate initial quaternion. Available only when the library is built with exception support; it is compiled out under `CTRLPP_NO_EXCEPTIONS`, where `try_create` is the only construction path.
-
-CTAD deduction guide available.
+`create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. Any finite nonzero `q0` is accepted and normalized. As a static member of a class template, `create` requires explicit template arguments, e.g. `mekf<double, 3, 3, Measurement>::create(m, cfg)`.
 
 ## Methods
 

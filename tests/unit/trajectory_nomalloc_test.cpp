@@ -195,7 +195,7 @@ TEST_CASE("modified_trap_trajectory evaluate performs zero heap allocation",
 TEST_CASE("cubic_spline evaluate performs zero heap allocation",
           "[trajectory][cubic_spline][hardening][nomalloc]")
 {
-    auto created = ctrlpp::cubic_spline<double>::try_create({
+    auto created = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
         .positions = {0.0, 1.0, 0.5, 2.0, 1.5},
     });
@@ -213,7 +213,7 @@ TEST_CASE("cubic_spline evaluate performs zero heap allocation",
 TEST_CASE("smoothing_spline evaluate performs zero heap allocation",
           "[trajectory][smoothing_spline][hardening][nomalloc]")
 {
-    auto created = ctrlpp::smoothing_spline<double>::try_create({
+    auto created = ctrlpp::smoothing_spline<double>::create({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
         .positions = {0.0, 1.0, 0.5, 2.0, 1.5},
         .mu = 0.5,
@@ -232,7 +232,7 @@ TEST_CASE("smoothing_spline evaluate performs zero heap allocation",
 TEST_CASE("bspline_trajectory evaluate performs zero heap allocation",
           "[trajectory][bspline][hardening][nomalloc]")
 {
-    auto created = ctrlpp::bspline_trajectory<double, 3>::try_create({
+    auto created = ctrlpp::bspline_trajectory<double, 3>::create({
         .control_points = {0.0, 1.0, 3.0, 2.0, 4.0},
     });
     REQUIRE(created.has_value());
@@ -249,7 +249,7 @@ TEST_CASE("bspline_trajectory evaluate performs zero heap allocation",
 TEST_CASE("online_planner_2nd update and sample perform zero heap allocation",
           "[trajectory][online_planner_2nd][hardening][nomalloc]")
 {
-    auto created = ctrlpp::online_planner_2nd<double>::try_create({.v_max = 5.0, .a_max = 10.0});
+    auto created = ctrlpp::online_planner_2nd<double>::create({.v_max = 5.0, .a_max = 10.0});
     REQUIRE(created.has_value());
     auto& planner = *created;
 
@@ -391,7 +391,7 @@ TEST_CASE("online_planner_3rd update and sample perform zero heap allocation",
           "[trajectory][online_planner_3rd][hardening][nomalloc]")
 {
     auto created =
-        ctrlpp::online_planner_3rd<double>::try_create({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+        ctrlpp::online_planner_3rd<double>::create({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
     REQUIRE(created.has_value());
     auto& planner = *created;
 

@@ -5,13 +5,31 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
+
+namespace
+{
+
+// Construction is fallible, so every valid-input site goes through the factory
+// and asserts success here; a config that becomes unrealizable fails the test
+// instead of quietly skipping it. Rejection cases never use this helper.
+template <typename Scalar>
+auto make_planner(typename ctrlpp::online_planner_2nd<Scalar>::config const& cfg)
+    -> ctrlpp::online_planner_2nd<Scalar>
+{
+    auto created = ctrlpp::online_planner_2nd<Scalar>::create(cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
+}
 
 // -- Test 1: Step response settles to target -----------------------------------
 TEST_CASE("OnlinePlanner2nd: step response settles", "[traj][online_planner_2nd]")
 {
-    ctrlpp::online_planner_2nd<double> planner({.v_max = 5.0, .a_max = 10.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
     planner.update(10.0);
 
@@ -25,7 +43,7 @@ TEST_CASE("OnlinePlanner2nd: step response settles", "[traj][online_planner_2nd]
 // -- Test 2: Velocity never exceeds v_max --------------------------------------
 TEST_CASE("OnlinePlanner2nd: velocity constraint", "[traj][online_planner_2nd]")
 {
-    ctrlpp::online_planner_2nd<double> planner({.v_max = 5.0, .a_max = 10.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
     planner.update(10.0);
 
@@ -40,7 +58,7 @@ TEST_CASE("OnlinePlanner2nd: velocity constraint", "[traj][online_planner_2nd]")
 // -- Test 3: Acceleration never exceeds a_max ----------------------------------
 TEST_CASE("OnlinePlanner2nd: acceleration constraint", "[traj][online_planner_2nd]")
 {
-    ctrlpp::online_planner_2nd<double> planner({.v_max = 5.0, .a_max = 10.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
     planner.update(10.0);
 
@@ -55,7 +73,7 @@ TEST_CASE("OnlinePlanner2nd: acceleration constraint", "[traj][online_planner_2n
 // -- Test 4: Mid-motion target change ------------------------------------------
 TEST_CASE("OnlinePlanner2nd: mid-motion target change", "[traj][online_planner_2nd]")
 {
-    ctrlpp::online_planner_2nd<double> planner({.v_max = 5.0, .a_max = 10.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
     planner.update(10.0);
 
@@ -84,7 +102,7 @@ TEST_CASE("OnlinePlanner2nd: mid-motion target change", "[traj][online_planner_2
 // -- Test 5: Negative displacement ---------------------------------------------
 TEST_CASE("OnlinePlanner2nd: negative displacement", "[traj][online_planner_2nd]")
 {
-    ctrlpp::online_planner_2nd<double> planner({.v_max = 5.0, .a_max = 10.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
     planner.update(-5.0);
 
@@ -100,7 +118,7 @@ TEST_CASE("OnlinePlanner2nd: negative displacement", "[traj][online_planner_2nd]
 // -- Test 6: Zero displacement -- immediately settled --------------------------
 TEST_CASE("OnlinePlanner2nd: zero displacement", "[traj][online_planner_2nd]")
 {
-    ctrlpp::online_planner_2nd<double> planner({.v_max = 5.0, .a_max = 10.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
     planner.update(0.0);
 
@@ -113,7 +131,7 @@ TEST_CASE("OnlinePlanner2nd: zero displacement", "[traj][online_planner_2nd]")
 // -- Test 7: is_settled returns correct state ----------------------------------
 TEST_CASE("OnlinePlanner2nd: is_settled transitions", "[traj][online_planner_2nd]")
 {
-    ctrlpp::online_planner_2nd<double> planner({.v_max = 5.0, .a_max = 10.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
     // Initially at rest at origin -- settled
     REQUIRE(planner.is_settled());
@@ -132,7 +150,7 @@ TEST_CASE("OnlinePlanner2nd: is_settled transitions", "[traj][online_planner_2nd
 // -- Test 8: Reset functionality -----------------------------------------------
 TEST_CASE("OnlinePlanner2nd: reset", "[traj][online_planner_2nd]")
 {
-    ctrlpp::online_planner_2nd<double> planner({.v_max = 5.0, .a_max = 10.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
     planner.update(10.0);
     planner.sample(100.0);
@@ -147,7 +165,7 @@ TEST_CASE("OnlinePlanner2nd: reset", "[traj][online_planner_2nd]")
 // -- Test 9: Profile shape is trapezoidal-like ---------------------------------
 TEST_CASE("OnlinePlanner2nd: trapezoidal profile shape", "[traj][online_planner_2nd]")
 {
-    ctrlpp::online_planner_2nd<double> planner({.v_max = 5.0, .a_max = 10.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
     planner.update(10.0);
 
@@ -166,7 +184,7 @@ TEST_CASE("OnlinePlanner2nd: trapezoidal profile shape", "[traj][online_planner_
 // -- Test 10: Float type works -------------------------------------------------
 TEST_CASE("OnlinePlanner2nd: float type", "[traj][online_planner_2nd]")
 {
-    ctrlpp::online_planner_2nd<float> planner({.v_max = 5.0f, .a_max = 10.0f});
+    auto planner = make_planner<float>({.v_max = 5.0f, .a_max = 10.0f});
 
     planner.update(10.0f);
     auto const pt = planner.sample(100.0f);
@@ -184,7 +202,7 @@ TEST_CASE("OnlinePlanner2nd: same-direction retarget keeps velocity",
 {
     double constexpr v_max = 5.0;
     double constexpr a_max = 10.0;
-    ctrlpp::online_planner_2nd<double> planner({.v_max = v_max, .a_max = a_max});
+    auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max});
 
     // Command a far target and cruise up to v_max.
     planner.update(100.0);
@@ -226,12 +244,12 @@ TEST_CASE("OnlinePlanner2nd: same-direction retarget keeps velocity",
     REQUIRE_THAT(settled.velocity[0], WithinAbs(0.0, 1e-6));
 }
 
-// -- Test 12: try_create rejects out-of-domain limits ----------------------------
+// -- Test 12: create rejects out-of-domain limits ----------------------------
 //
 // Both limits divide in the planner math (stopping distance v^2/(2*a_max),
 // phase durations v_v/a_max), so the domain of each is finite and strictly
 // positive; everything else is rejected with the limit-specific enumerator.
-TEST_CASE("OnlinePlanner2nd: try_create rejects invalid limits",
+TEST_CASE("OnlinePlanner2nd: create rejects invalid limits",
           "[traj][online_planner_2nd][negative]")
 {
     using planner_t = ctrlpp::online_planner_2nd<double>;
@@ -241,7 +259,7 @@ TEST_CASE("OnlinePlanner2nd: try_create rejects invalid limits",
     SECTION("invalid v_max -> non_positive_velocity_limit")
     {
         for (double const v_max : {0.0, -1.0, nan, inf}) {
-            auto const result = planner_t::try_create({.v_max = v_max, .a_max = 10.0});
+            auto const result = planner_t::create({.v_max = v_max, .a_max = 10.0});
             REQUIRE_FALSE(result.has_value());
             REQUIRE(result.error()
                     == ctrlpp::trajectory_error::non_positive_velocity_limit);
@@ -251,46 +269,10 @@ TEST_CASE("OnlinePlanner2nd: try_create rejects invalid limits",
     SECTION("invalid a_max -> non_positive_acceleration_limit")
     {
         for (double const a_max : {0.0, -1.0, nan, inf}) {
-            auto const result = planner_t::try_create({.v_max = 5.0, .a_max = a_max});
+            auto const result = planner_t::create({.v_max = 5.0, .a_max = a_max});
             REQUIRE_FALSE(result.has_value());
             REQUIRE(result.error()
                     == ctrlpp::trajectory_error::non_positive_acceleration_limit);
         }
-    }
-}
-
-// -- Test 13: factory-built and ctor-built planners agree ------------------------
-TEST_CASE("OnlinePlanner2nd: try_create and constructor produce identical profiles",
-          "[traj][online_planner_2nd]")
-{
-    auto factory_built =
-        ctrlpp::online_planner_2nd<double>::try_create({.v_max = 5.0, .a_max = 10.0});
-    REQUIRE(factory_built.has_value());
-    ctrlpp::online_planner_2nd<double> ctor_built({.v_max = 5.0, .a_max = 10.0});
-
-    factory_built->update(10.0);
-    ctor_built.update(10.0);
-
-    double constexpr dt = 0.01;
-    double t = 0.0;
-    for (int i = 0; i < 100; ++i) {
-        t += dt;
-        auto const a = factory_built->sample(t);
-        auto const b = ctor_built.sample(t);
-        REQUIRE(a.position[0] == b.position[0]);
-        REQUIRE(a.velocity[0] == b.velocity[0]);
-        REQUIRE(a.acceleration[0] == b.acceleration[0]);
-    }
-
-    // Retarget mid-motion and keep comparing.
-    factory_built->update(-5.0);
-    ctor_built.update(-5.0);
-    for (int i = 0; i < 100; ++i) {
-        t += dt;
-        auto const a = factory_built->sample(t);
-        auto const b = ctor_built.sample(t);
-        REQUIRE(a.position[0] == b.position[0]);
-        REQUIRE(a.velocity[0] == b.velocity[0]);
-        REQUIRE(a.acceleration[0] == b.acceleration[0]);
     }
 }

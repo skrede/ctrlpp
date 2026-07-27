@@ -82,8 +82,12 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     try
     {
         double_integrator dynamics;
-        ctrlpp::nmpc_dynamic<double, 2, 1, ctrlpp::nlopt_solver<double>, double_integrator> controller(dynamics, cfg);
-        auto result = controller.solve(x0);
+        // A rejected horizon is a typed outcome, not a finding.
+        auto controller =
+            ctrlpp::nmpc_dynamic<double, 2, 1, ctrlpp::nlopt_solver<double>, double_integrator>::create(dynamics, cfg);
+        if(!controller.has_value())
+            return 0;
+        auto result = controller->solve(x0);
 
         if(result.has_value())
         {

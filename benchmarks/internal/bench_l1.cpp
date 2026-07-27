@@ -1,6 +1,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_construct.h"
+
 #include "ctrlpp/control/l1.h"
 
 #include <fstream>
@@ -24,7 +26,8 @@ int main()
 
     constexpr double cutoff_hz = 10.0;
     constexpr double sample_hz = 100.0;
-    ctrlpp::l1_controller<double, 1, 1> controller(cfg, cutoff_hz, sample_hz);
+    auto controller = ctrlpp::bench::built_or_exit(
+        ctrlpp::l1_controller<double, 1, 1>::create(cfg, cutoff_hz, sample_hz), "controller");
 
     ctrlpp::Vector<double, 1> x{0.5};
     ctrlpp::Vector<double, 1> r{1.0};

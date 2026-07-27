@@ -9,7 +9,6 @@
 /// @cite mahony2008 -- Mahony et al., "Nonlinear Complementary Filters on the Special Orthogonal Group", 2008
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/lie/so3.h"
@@ -56,23 +55,13 @@ public:
     /// q0 is brought onto the unit sphere at construction (previously it was
     /// stored raw and a non-unit q0 skewed the first gravity and magnetic
     /// references until the first gyro integration renormalized it).
-    [[nodiscard]] static auto try_create(cf_config<Scalar> config) -> ctrlpp::expected<complementary_filter, filter_error>
+    [[nodiscard]] static auto create(cf_config<Scalar> config) -> ctrlpp::expected<complementary_filter, filter_error>
     {
         const Scalar q0_norm = config.q0.norm();
         if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
             return ctrlpp::unexpected(filter_error::degenerate_quaternion);
         return complementary_filter{validated_tag{}, std::move(config)};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience constructor. Delegates to `try_create` and
-    /// throws on a degenerate initial quaternion; compiled out when the library
-    /// is built without exception support, where `try_create` is the only
-    /// construction path.
-    explicit complementary_filter(cf_config<Scalar> config) : complementary_filter{try_create(std::move(config)).value()}
-    {
-    }
-#endif
 
     // Natural IMU update (6-DOF): gyro + accelerometer.
     /// @cite mahony2008 -- Mahony et al., 2008, Sec. III (IMU complementary filter)
@@ -162,9 +151,6 @@ private:
     Vector<Scalar, 3> gyro_buf_;
     state_vector_t state_cache_;
 };
-
-template <ctrlpp_floating_scalar Scalar>
-complementary_filter(cf_config<Scalar>) -> complementary_filter<Scalar>;
 
 static_assert(ObserverPolicy<complementary_filter<double>>);
 

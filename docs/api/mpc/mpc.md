@@ -47,21 +47,21 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 ## Construction
 
 ```cpp
-static auto try_create(const discrete_state_space<Scalar, NX, NU, NX>& system,
+static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
                        const mpc_config<Scalar, NX, NU>& config)
     -> expected<mpc, controller_construction_error>;
 
-static auto try_create(const discrete_state_space<Scalar, NX, NU, NX>& system,
+static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
                        const mpc_config<Scalar, NX, NU>& config,
                        Solver solver)
     -> expected<mpc, controller_construction_error>;
 ```
 
-`try_create` is the construction path. It validates the configuration, then builds the QP matrices, computes the terminal cost (via DARE if `Qf` is not set), and initializes the solver. The two-argument form default-constructs the solver and chains into the three-argument form, which injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset:
+`create` is the only construction path. There is no non-fallible constructor, so a rejected configuration is a value the caller has to inspect and never a controller that quietly stands in for one. It validates the configuration, then builds the QP matrices, computes the terminal cost (via DARE if `Qf` is not set), and initializes the solver. The two-argument form default-constructs the solver and chains into the three-argument form, which injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset:
 
 ```cpp
 // Skip per-step polishing on the warm-resolve path -- see qp_preset.
-auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::try_create(
+auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(
     sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
 if (!created)
     return handle(created.error());
@@ -80,19 +80,6 @@ The prediction horizon is the only runtime quantity that scales the posed proble
 `horizon` stays a signed `int` deliberately: a mistaken negative value remains representable as negative and is therefore rejectable, whereas an unsigned field would turn the same mistake into an enormous allocation. The overflow bound is a representability condition on `int`, not a chosen ceiling. At the worst-case configuration the horizon `N` scales the decision vector as `N*(2*NX + NU) + NX` and the constraint rows as `N*(2*NX + 2*NU) + NX + n_terminal`, so both stay representable exactly when `horizon <= (INT_MAX - (NX + n_terminal)) / (2*NX + 2*NU)`.
 
 Two alternatives are deliberately not implemented. Validating at the first solve would surface a configuration error at the first control step, the worst possible moment. Clamping the horizon to one would turn a caller mistake into a silently different controller.
-
-### Throwing constructors
-
-```cpp
-mpc(const discrete_state_space<Scalar, NX, NU, NX>& system,
-    const mpc_config<Scalar, NX, NU>& config);
-
-mpc(const discrete_state_space<Scalar, NX, NU, NX>& system,
-    const mpc_config<Scalar, NX, NU>& config,
-    Solver solver);
-```
-
-Convenience wrappers over the matching `try_create` overload, available only when the compiler has exception support (`CTRLPP_HAS_EXCEPTIONS`). A rejected configuration throws the `bad_expected_access` of the active `ctrlpp::expected` target. On an exception-free build these are compiled out and `try_create` is the only construction path.
 
 ## Failure contract
 
@@ -231,7 +218,7 @@ int main()
         .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
         .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0)};
 
-    auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::try_create(sys, cfg);
+    auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
     if(!created)
     {
         // created.error() carries the controller_construction_error.

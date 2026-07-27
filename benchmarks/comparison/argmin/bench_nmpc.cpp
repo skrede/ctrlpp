@@ -1,3 +1,5 @@
+#include "bench_construct.h"
+
 #include "bench_metrics.h"
 
 #include "ctrlpp/nmpc.h"
@@ -94,7 +96,8 @@ auto run_closed_loop(
     int sim_steps,
     Solver solver) -> std::pair<double, double>
 {
-    ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics> controller{dynamics, config, std::move(solver)};
+    auto controller = ctrlpp::bench::built_or_exit(
+        ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics>::create(dynamics, config, std::move(solver)), "controller");
     double total_cost = 0.0;
     bool all_success = true;
 

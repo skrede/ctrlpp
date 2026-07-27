@@ -117,9 +117,10 @@ git tag or a local source checkout, respectively.
 
 ctrlpp is **consumer-flag-agnostic**: it forces no `-fno-exceptions` / `-fno-rtti` on any
 installed or interface target, and `config.h` auto-detects `__cpp_exceptions` to adapt to
-whatever you compile with. `ctrlpp::expected` (via the `try_create` / status API) is the
-always-on primary interface; the throwing convenience wrappers exist only when exceptions
-are enabled.
+whatever you compile with. Every type is built through a fallible factory returning
+`ctrlpp::expected`, and no construction path is gated on exceptions. The only wrappers still
+gated are the `setup(problem)` convenience overloads on the optional OSQP and NLopt backend
+adapters, whose fallible `try_setup` counterparts are unconditional.
 
 As a self-imposed compatibility guarantee, ctrlpp's **own** tests and benches dogfood the
 throw-free discipline. `CTRLPP_TESTS_WITH_EXCEPTIONS` selects the build tree:

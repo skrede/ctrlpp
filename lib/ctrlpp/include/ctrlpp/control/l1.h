@@ -7,7 +7,6 @@
 /// @cite hovakimyan2010 -- Hovakimyan & Cao, "L1 Adaptive Control Theory", 2010, Ch. 2
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
@@ -47,13 +46,13 @@ public:
     /// the predictor model. Returns `l1_error::invalid_filter_config` when the
     /// filter factory rejects the (cutoff_hz, sample_hz) design, or the
     /// predictor validation error of the filter-taking overload below.
-    [[nodiscard]] static auto try_create(const config_type& cfg, Scalar cutoff_hz, Scalar sample_hz)
+    [[nodiscard]] static auto create(const config_type& cfg, Scalar cutoff_hz, Scalar sample_hz)
         -> expected<l1_controller, l1_error>
     {
         auto filter = Filter::low_pass(cutoff_hz, sample_hz);
         if(!filter.has_value())
             return unexpected(l1_error::invalid_filter_config);
-        return try_create(cfg, *std::move(filter));
+        return create(cfg, *std::move(filter));
     }
 
     /// Validates the predictor model and constructs the controller. Returns
@@ -61,7 +60,7 @@ public:
     /// `l1_error::singular_dc_gain` when the DC gain (I - A_m)^{-1} B is
     /// singular or non-finite, and `l1_error::non_finite_gain` when the
     /// feedforward gain K_r is non-finite.
-    [[nodiscard]] static auto try_create(const config_type& cfg, Filter filter)
+    [[nodiscard]] static auto create(const config_type& cfg, Filter filter)
         -> expected<l1_controller, l1_error>
     {
         auto k_r = compute_k_r(cfg);
@@ -69,24 +68,6 @@ public:
             return unexpected(k_r.error());
         return l1_controller{cfg, std::move(filter), *std::move(k_r)};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// Throwing convenience wrapper around `try_create`; throws the
-    /// `bad_expected_access` of the active `ctrlpp::expected` target when the
-    /// filter design or the predictor model is rejected.
-    l1_controller(const config_type& cfg, Scalar cutoff_hz, Scalar sample_hz)
-        : l1_controller{try_create(cfg, cutoff_hz, sample_hz).value()}
-    {
-    }
-
-    /// Throwing convenience wrapper around `try_create`; throws the
-    /// `bad_expected_access` of the active `ctrlpp::expected` target when the
-    /// predictor model is rejected.
-    l1_controller(const config_type& cfg, Filter filter)
-        : l1_controller{try_create(cfg, std::move(filter)).value()}
-    {
-    }
-#endif
 
     auto evaluate(const state_type& x, const input_type& r) -> input_type
     {

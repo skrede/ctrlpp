@@ -122,7 +122,9 @@ TEST_CASE("mpc accepts a preset-injected solver", "[mpc][osqp]")
 
     // Third constructor argument injects a pre-configured solver; qp_preset::speed
     // builds it with polishing off. The closed-loop regulation must still hold.
-    OsqpMpc controller(sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
+    auto controller_result = OsqpMpc::create(sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     for(int step = 0; step < 50; ++step)
@@ -147,7 +149,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
             .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
         };
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
 
         Eigen::Vector2d x{1.0, 0.0};
         double prev_norm = x.norm();
@@ -179,7 +183,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
             .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
         };
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
 
         Eigen::Vector2d x{0.0, 0.0};
         Eigen::Vector2d x_ref{2.0, 0.0};
@@ -210,7 +216,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
             .u_max = (Eigen::Matrix<double, 1, 1>() << 0.5).finished(),
         };
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
 
         Eigen::Vector2d x{5.0, 0.0}; // large initial state to push solver hard
 
@@ -237,7 +245,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
 
         Eigen::Vector2d x0{10.0, 0.0}; // outside state bounds
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
         auto u = controller.solve(x0);
         REQUIRE(u.has_value());
     }
@@ -255,7 +265,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
 
         Eigen::Vector2d x0{10.0, 0.0}; // violates hard state bounds
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
         auto result = controller.solve(x0);
         CHECK_FALSE(result.has_value());
     }
@@ -268,7 +280,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
             .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
         };
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
 
         Eigen::Vector2d x0{1.0, 0.0};
 
@@ -296,7 +310,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
             .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
         };
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
 
         Eigen::Vector2d x0{1.0, 0.0};
         auto result = controller.solve(x0);
@@ -316,7 +332,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
             .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
         };
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
 
         Eigen::Vector2d x0{1.0, 0.0};
         auto result = controller.solve(x0);
@@ -352,7 +370,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
             .du_max = (Eigen::Matrix<double, 1, 1>() << 0.2).finished(),
         };
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
 
         Eigen::Vector2d x{5.0, 0.0};
         double u_prev = 0.0; // initial u_prev_ is zero in mpc
@@ -379,7 +399,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
             // Qf not specified -- DARE should compute it internally
         };
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
 
         Eigen::Vector2d x0{1.0, 0.0};
         auto result = controller.solve(x0);
@@ -400,7 +422,9 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
             .du_max = (Eigen::Matrix<double, 1, 1>() << 0.2).finished(),
         };
 
-        OsqpMpc controller(sys, cfg);
+        auto controller_result = OsqpMpc::create(sys, cfg);
+        REQUIRE(controller_result.has_value());
+        auto& controller = *controller_result;
 
         Eigen::Vector2d x{5.0, 0.0};
 

@@ -82,7 +82,9 @@ TEST_CASE("nmpc_config with explicit Qf terminal cost", "[nmpc][coverage][config
         .Qf = 5.0 * Eigen::Matrix2d::Identity(),
     };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);
@@ -105,7 +107,9 @@ TEST_CASE("nmpc_config with all optional bounds set", "[nmpc][coverage][config]"
         .du_max = Eigen::Matrix<double, 1, 1>{0.5},
     };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{2.0, 0.0};
     auto u = controller.solve(x);
@@ -128,7 +132,9 @@ TEST_CASE("custom stage cost with asymmetric weighting", "[nmpc][coverage][nlp]"
     config.stage_cost = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>& u) -> double
     { return 50.0 * x(0) * x(0) + 0.01 * u(0) * u(0); };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 1.0};
     auto u = controller.solve(x);
@@ -149,7 +155,9 @@ TEST_CASE("custom terminal cost only (stage cost from Q/R)", "[nmpc][coverage][n
     config.terminal_cost = [](const Eigen::Vector2d& x) -> double
     { return 200.0 * x.squaredNorm(); };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);
@@ -168,7 +176,9 @@ TEST_CASE("NLP rate constraints limit control change", "[nmpc][coverage][nlp]")
         .du_max = Eigen::Matrix<double, 1, 1>{0.15},
     };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{3.0, 0.0};
     double u_prev = 0.0;
@@ -207,7 +217,9 @@ TEST_CASE("soft path constraint with custom penalty weight", "[nmpc][coverage][n
     // outcome at the mercy of solver-iterate rounding.
     config.path_penalty = ctrlpp::Vector<double, NC>{100.0};
 
-    ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0> controller{double_integrator, config};
+    auto controller_result = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0>::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{2.0, 0.0};
     for(int step = 0; step < 30; ++step)
@@ -232,7 +244,9 @@ TEST_CASE("warm-start shift reduces solve time on consecutive calls", "[nmpc][co
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
 
@@ -271,7 +285,9 @@ TEST_CASE("trajectory extraction returns dynamically consistent states", "[nmpc]
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x0{1.5, -0.5};
     auto u = controller.solve(x0);
@@ -302,7 +318,9 @@ TEST_CASE("diagnostics report zero constraint violation when unconstrained", "[n
         .R = Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.5, 0.0};
     auto u = controller.solve(x);
@@ -324,7 +342,9 @@ TEST_CASE("solve with shorter-than-horizon reference trajectory", "[nmpc][covera
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.0, 0.0};
 
@@ -348,7 +368,9 @@ TEST_CASE("solve with exact-length reference trajectory", "[nmpc][coverage]")
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.0, 0.0};
     std::vector<Eigen::Vector2d> refs(static_cast<std::size_t>(N + 1), Eigen::Vector2d{1.0, 0.0});
@@ -375,8 +397,12 @@ TEST_CASE("NLP formulation uses Q as terminal cost when Qf is not set", "[nmpc][
         .Qf = 10.0 * Eigen::Matrix2d::Identity(), // same as Q
     };
 
-    NmpcDI ctrl_no_qf{double_integrator, config_no_qf};
-    NmpcDI ctrl_with_qf{double_integrator, config_with_qf};
+    auto ctrl_no_qf_result = NmpcDI::create(double_integrator, config_no_qf);
+    REQUIRE(ctrl_no_qf_result.has_value());
+    auto& ctrl_no_qf = *ctrl_no_qf_result;
+    auto ctrl_with_qf_result = NmpcDI::create(double_integrator, config_with_qf);
+    REQUIRE(ctrl_with_qf_result.has_value());
+    auto& ctrl_with_qf = *ctrl_with_qf_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u1 = ctrl_no_qf.solve(x);
@@ -401,7 +427,9 @@ TEST_CASE("NLP state bounds are respected in trajectory", "[nmpc][coverage][nlp]
         .x_max = Eigen::Vector2d{1.5, 1.5},
     };
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.5};
 
@@ -455,7 +483,9 @@ TEST_CASE("nmpc returns nullopt on solver failure via mock", "[nmpc][coverage]")
         .R = Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    ctrlpp::nmpc_dynamic<double, NX, NU, failing_nlp_solver, decltype(double_integrator)> controller{double_integrator, config};
+    auto controller_result = ctrlpp::nmpc_dynamic<double, NX, NU, failing_nlp_solver, decltype(double_integrator)>::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);
@@ -495,7 +525,9 @@ TEST_CASE("nmpc accepts solved_inaccurate status", "[nmpc][coverage]")
         .R = Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    ctrlpp::nmpc_dynamic<double, NX, NU, inaccurate_nlp_solver, decltype(double_integrator)> controller{double_integrator, config};
+    auto controller_result = ctrlpp::nmpc_dynamic<double, NX, NU, inaccurate_nlp_solver, decltype(double_integrator)>::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);

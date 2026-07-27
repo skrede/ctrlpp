@@ -12,7 +12,6 @@
 /// Automatic Machines and Robots", 2009, Sec. 4.4, eq. (4.10)-(4.11)
 /// @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (canonical reference for cubic-spline interpolation)
 
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/trajectory/trajectory_types.h"
@@ -45,7 +44,7 @@ enum class boundary_condition
 /// Evaluates position, velocity, and acceleration at arbitrary time t using
 /// piecewise cubic polynomials with C2 continuity at interior knots.
 ///
-/// Construction goes through `try_create`, which validates the waypoint
+/// Construction goes through `create`, which validates the waypoint
 /// configuration and reports rejections through
 /// `ctrlpp::expected<cubic_spline, spline_error>`. Periodic boundary conditions
 /// require at least 3 waypoints: with only 2 the cyclic system for the interior
@@ -76,7 +75,7 @@ class cubic_spline
     ///  * periodic BC with q_0 != q_n beyond budget -> spline_error::periodic_endpoint_mismatch
     ///
     /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-    [[nodiscard]] static auto try_create(config const& cfg)
+    [[nodiscard]] static auto create(config const& cfg)
         -> ctrlpp::expected<cubic_spline, spline_error>
     {
         auto const n_pts = cfg.times.size();
@@ -110,18 +109,6 @@ class cubic_spline
         return cubic_spline{unchecked_t{}, cfg};
     }
 
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_create`.
-    ///
-    /// Delegates to `try_create(cfg).value()`, so an invalid configuration throws
-    /// the value() exception of `ctrlpp::expected`. Compiled out when
-    /// CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free builds.
-    explicit cubic_spline(config const& cfg)
-        : cubic_spline{try_create(cfg).value()}
-    {
-    }
-#endif
-
     /// @brief Evaluate spline at time t, clamped to [t_0, t_n].
     ///
     /// Uses binary search to find the active span, then Horner evaluation
@@ -152,13 +139,13 @@ class cubic_spline
     auto duration() const -> Scalar { return times_.back() - times_.front(); }
 
   private:
-    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    /// @brief Tag selecting the non-validating constructor reserved for `create`.
     struct unchecked_t
     {
         explicit unchecked_t() = default;
     };
 
-    /// @brief Construct from a configuration already validated by `try_create`.
+    /// @brief Construct from a configuration already validated by `create`.
     ///
     /// Sets up and solves the tridiagonal system for spline velocities,
     /// then computes polynomial coefficients for each span.

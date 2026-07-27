@@ -39,7 +39,15 @@ int main()
     // Inject a solver tuned for speed: on the warm-resolve MPC path the
     // per-step polish refinement is unnecessary, so qp_preset::speed skips it.
     // Omit the third argument (or pass qp_preset::accuracy) to keep polishing.
-    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
+    // create validates the horizon and reports a rejection through
+    // ctrlpp::expected<mpc, controller_construction_error> instead of throwing.
+    auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
+    if(!controller_result.has_value())
+    {
+        std::cerr << "invalid MPC configuration\n";
+        return EXIT_FAILURE;
+    }
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x(5.0, 0.0);
     constexpr double duration = 10.0;

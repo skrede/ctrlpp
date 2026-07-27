@@ -388,7 +388,9 @@ TEST_CASE("MEKF attitude NEES Monte-Carlo average lies within the chi-square con
     double nees_sum = 0.0;
     for(std::size_t m = 0; m < M; ++m)
     {
-        mekf<double, NB, NY_MEKF, vector_observation_measurement> filt(meas, cfg);
+        auto filt_result = mekf<double, NB, NY_MEKF, vector_observation_measurement>::create(meas, cfg);
+        REQUIRE(filt_result.has_value());
+        auto& filt = *filt_result;
         // Sample the initial true attitude error from P0 so the NEES is
         // consistent from t=0 (Bar-Shalom, Li & Kirubarajan 2001, Sec. 5.4).
         // The single-vector measurement leaves one rotational DOF unobservable,

@@ -11,6 +11,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
 
@@ -30,13 +31,23 @@ auto quat_angle(const Eigen::Quaterniond& q1, const Eigen::Quaterniond& q2) -> d
     return 2.0 * std::acos(std::min(1.0, std::abs(q1.dot(q2))));
 }
 
+// create() is the only construction path and it is fallible, so every
+// valid-input site goes through it and asserts success here.
+auto build_mekf(const ctrlpp::mekf_config<double, 3, 3>& cfg)
+    -> ctrlpp::mekf<double, 3, 3, gravity_measurement>
+{
+    auto created = ctrlpp::mekf<double, 3, 3, gravity_measurement>::create(gravity_measurement{}, cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
 auto make_mekf()
 {
     ctrlpp::mekf_config<double, 3, 3> cfg;
     cfg.Q *= 1e-4;
     cfg.R *= 0.01;
     cfg.dt = 0.01;
-    return ctrlpp::mekf(gravity_measurement{}, cfg);
+    return build_mekf(cfg);
 }
 
 }
@@ -48,7 +59,7 @@ TEST_CASE("MEKF zero rotation noise covariance", "[mekf][hardening][negative]")
     cfg.R *= 0.01;
     cfg.dt = 0.01;
 
-    auto filter = ctrlpp::mekf(gravity_measurement{}, cfg);
+    auto filter = build_mekf(cfg);
 
     ctrlpp::Vector<double, 3> gyro = ctrlpp::Vector<double, 3>::Zero();
     filter.predict(gyro);
@@ -117,7 +128,7 @@ TEST_CASE("MEKF attitude converges to true orientation", "[mekf][hardening][conv
     cfg.dt = 0.01;
     cfg.q0 = q_init;
 
-    auto filter = ctrlpp::mekf(gravity_measurement{}, cfg);
+    auto filter = build_mekf(cfg);
 
     ctrlpp::Vector<double, 3> gyro = ctrlpp::Vector<double, 3>::Zero();
 
@@ -148,7 +159,7 @@ TEST_CASE("MEKF 180-degree rotation (near singularity)", "[mekf][hardening][robu
     cfg.dt = 0.01;
     cfg.q0 = q_init;
 
-    auto filter = ctrlpp::mekf(gravity_measurement{}, cfg);
+    auto filter = build_mekf(cfg);
 
     ctrlpp::Vector<double, 3> gyro = ctrlpp::Vector<double, 3>::Zero();
     bool all_finite = true;

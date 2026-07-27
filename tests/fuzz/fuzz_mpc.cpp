@@ -81,8 +81,11 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     try
     {
-        ctrlpp::mpc<double, 2, 1, ctrlpp::osqp_solver> controller(sys, cfg);
-        auto result = controller.solve(x0, x_ref);
+        // A rejected horizon is a typed outcome, not a finding.
+        auto controller = ctrlpp::mpc<double, 2, 1, ctrlpp::osqp_solver>::create(sys, cfg);
+        if(!controller.has_value())
+            return 0;
+        auto result = controller->solve(x0, x_ref);
 
         if(result.has_value())
         {

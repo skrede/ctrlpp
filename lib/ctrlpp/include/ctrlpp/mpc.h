@@ -2,7 +2,6 @@
 #define HPP_GUARD_CTRLPP_MPC_H
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/control/dare.h"
@@ -62,14 +61,14 @@ public:
     ///  * horizon <= 0                   -> controller_construction_error::non_positive_horizon
     ///  * horizon above the representable
     ///    bound of the derived dimensions -> controller_construction_error::horizon_overflow
-    [[nodiscard]] static auto try_create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config)
+    [[nodiscard]] static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config)
         -> expected<mpc, controller_construction_error>
     {
-        return try_create(system, config, Solver{});
+        return create(system, config, Solver{});
     }
 
     /// @brief Validating factory taking a caller-supplied, pre-configured
-    /// solver, e.g. `mpc<...>::try_create(sys, cfg, osqp_solver{qp_preset::speed})`
+    /// solver, e.g. `mpc<...>::create(sys, cfg, osqp_solver{qp_preset::speed})`
     /// to skip per-step polishing on the warm-resolve MPC path. The solver is
     /// moved in before the initial QP is posed, so its settings govern setup.
     ///
@@ -96,7 +95,7 @@ public:
     /// first solve would surface a configuration error at the first control
     /// step, the worst possible moment. Clamping the horizon to one would turn a
     /// caller mistake into a silently different controller.
-    [[nodiscard]] static auto try_create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver)
+    [[nodiscard]] static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver)
         -> expected<mpc, controller_construction_error>
     {
         if(config.horizon <= 0)
@@ -106,25 +105,6 @@ public:
 
         return mpc{unchecked_t{}, system, config, std::move(solver)};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_create`.
-    ///
-    /// Delegates to `try_create(system, config).value()`, so a rejected horizon
-    /// throws the `bad_expected_access` of the active `ctrlpp::expected` target.
-    /// Compiled out when CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on
-    /// exception-free builds.
-    mpc(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config)
-        : mpc{try_create(system, config).value()}
-    {
-    }
-
-    /// @brief Throwing convenience wrapper over the solver-taking `try_create`.
-    mpc(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver)
-        : mpc{try_create(system, config, std::move(solver)).value()}
-    {
-    }
-#endif
 
     // Unified soft-constraint / failure contract (shared by mpc and nmpc).
     //
@@ -212,13 +192,13 @@ public:
     [[nodiscard]] auto diagnostics() const -> mpc_diagnostics<Scalar> { return last_diagnostics_; }
 
 private:
-    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    /// @brief Tag selecting the non-validating constructor reserved for `create`.
     struct unchecked_t
     {
         explicit unchecked_t() = default;
     };
 
-    /// @brief Construct from a configuration already validated by `try_create`.
+    /// @brief Construct from a configuration already validated by `create`.
     mpc(unchecked_t, const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver) : solver_{std::move(solver)}, config_{config}, system_{system}, u_prev_{Vector<Scalar, NU>::Zero()}
     {
         precompute_output_weights();
@@ -229,7 +209,7 @@ private:
     }
 
     /// @brief Largest horizon whose derived decision and constraint dimensions
-    /// are still representable in the horizon's own type. See `try_create` for
+    /// are still representable in the horizon's own type. See `create` for
     /// the derivation; this forms no product of its own.
     [[nodiscard]] static auto horizon_bound(const mpc_config<Scalar, NX, NU, NY>& config) -> int
     {

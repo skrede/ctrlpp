@@ -6,8 +6,24 @@
 #include <cmath>
 #include <limits>
 #include <vector>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
+
+namespace
+{
+
+// Construction is fallible, so every valid-input site goes through the factory
+// and asserts success here; a config that becomes unrealizable fails the test
+// instead of quietly skipping it. Rejection cases never use this helper.
+auto make_spline(ctrlpp::smoothing_spline<double>::config const& cfg) -> ctrlpp::smoothing_spline<double>
+{
+    auto created = ctrlpp::smoothing_spline<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
+}
 
 TEST_CASE("smoothing_spline mu=1 interpolates exactly", "[smoothing_spline]")
 {
@@ -15,7 +31,7 @@ TEST_CASE("smoothing_spline mu=1 interpolates exactly", "[smoothing_spline]")
     std::vector<double> times     = {0.0, 1.0, 2.0, 3.0, 4.0};
     std::vector<double> positions = {0.0, 1.0, 0.5, 2.0, 1.5};
 
-    ctrlpp::smoothing_spline<double> spline({
+    auto spline = make_spline({
         .times = times,
         .positions = positions,
         .mu = 1.0,
@@ -39,7 +55,7 @@ TEST_CASE("smoothing_spline mu=0.5 approximates noisy data", "[smoothing_spline]
         0.598 - 0.2, 0.141 + 0.15, -0.351 - 0.1, -0.757 + 0.25, -0.978 - 0.05,
     };
 
-    ctrlpp::smoothing_spline<double> spline({
+    auto spline = make_spline({
         .times = times,
         .positions = positions,
         .mu = 0.5,
@@ -67,7 +83,7 @@ TEST_CASE("smoothing_spline mu=0.01 is very smooth", "[smoothing_spline]")
     std::vector<double> times     = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
     std::vector<double> positions = {0.0, 1.5, -0.5, 2.0, -1.0, 0.5};
 
-    ctrlpp::smoothing_spline<double> spline({
+    auto spline = make_spline({
         .times = times,
         .positions = positions,
         .mu = 0.01,
@@ -89,7 +105,7 @@ TEST_CASE("smoothing_spline smoothness ordering with mu", "[smoothing_spline]")
     std::vector<double> positions = {0.0, 2.0, -1.0, 3.0, 0.5};
 
     auto roughness = [&](double mu) {
-        ctrlpp::smoothing_spline<double> spline({
+        auto spline = make_spline({
             .times = times,
             .positions = positions,
             .mu = mu,
@@ -119,7 +135,7 @@ TEST_CASE("smoothing_spline duration", "[smoothing_spline]")
     std::vector<double> times     = {1.0, 2.5, 4.0, 6.0};
     std::vector<double> positions = {0.0, 1.0, 0.5, 2.0};
 
-    ctrlpp::smoothing_spline<double> spline({
+    auto spline = make_spline({
         .times = times,
         .positions = positions,
         .mu = 0.8,
@@ -138,14 +154,14 @@ TEST_CASE("smoothing_spline satisfies trajectory_segment concept", "[smoothing_s
 
 // -- Validation ---------------------------------------------------------------
 //
-// Before the try_create conversion these invalid configurations were guarded
+// Before the create conversion these invalid configurations were guarded
 // only by assert(), so release builds accepted them silently; mu = 0 in
 // particular was clamped to an arbitrary small constant instead of rejected.
 // Each case pins the specific rejection enumerator.
 
-TEST_CASE("smoothing_spline try_create rejects mu = 0", "[smoothing_spline][validation]")
+TEST_CASE("smoothing_spline create rejects mu = 0", "[smoothing_spline][validation]")
 {
-    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+    auto const result = ctrlpp::smoothing_spline<double>::create({
         .times = {0.0, 1.0, 2.0},
         .positions = {0.0, 1.0, 0.0},
         .mu = 0.0,
@@ -155,9 +171,9 @@ TEST_CASE("smoothing_spline try_create rejects mu = 0", "[smoothing_spline][vali
     REQUIRE(result.error() == ctrlpp::spline_error::mu_out_of_range);
 }
 
-TEST_CASE("smoothing_spline try_create rejects mu > 1", "[smoothing_spline][validation]")
+TEST_CASE("smoothing_spline create rejects mu > 1", "[smoothing_spline][validation]")
 {
-    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+    auto const result = ctrlpp::smoothing_spline<double>::create({
         .times = {0.0, 1.0, 2.0},
         .positions = {0.0, 1.0, 0.0},
         .mu = 2.0,
@@ -167,9 +183,9 @@ TEST_CASE("smoothing_spline try_create rejects mu > 1", "[smoothing_spline][vali
     REQUIRE(result.error() == ctrlpp::spline_error::mu_out_of_range);
 }
 
-TEST_CASE("smoothing_spline try_create rejects NaN mu", "[smoothing_spline][validation]")
+TEST_CASE("smoothing_spline create rejects NaN mu", "[smoothing_spline][validation]")
 {
-    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+    auto const result = ctrlpp::smoothing_spline<double>::create({
         .times = {0.0, 1.0, 2.0},
         .positions = {0.0, 1.0, 0.0},
         .mu = std::numeric_limits<double>::quiet_NaN(),
@@ -179,12 +195,12 @@ TEST_CASE("smoothing_spline try_create rejects NaN mu", "[smoothing_spline][vali
     REQUIRE(result.error() == ctrlpp::spline_error::mu_out_of_range);
 }
 
-TEST_CASE("smoothing_spline try_create accepts mu = 1", "[smoothing_spline][validation]")
+TEST_CASE("smoothing_spline create accepts mu = 1", "[smoothing_spline][validation]")
 {
     std::vector<double> const times     = {0.0, 1.0, 2.0};
     std::vector<double> const positions = {0.0, 1.0, 0.0};
 
-    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+    auto const result = ctrlpp::smoothing_spline<double>::create({
         .times = times,
         .positions = positions,
         .mu = 1.0,
@@ -196,9 +212,9 @@ TEST_CASE("smoothing_spline try_create accepts mu = 1", "[smoothing_spline][vali
     }
 }
 
-TEST_CASE("smoothing_spline try_create rejects fewer than 2 waypoints", "[smoothing_spline][validation]")
+TEST_CASE("smoothing_spline create rejects fewer than 2 waypoints", "[smoothing_spline][validation]")
 {
-    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+    auto const result = ctrlpp::smoothing_spline<double>::create({
         .times = {0.0},
         .positions = {1.0},
         .mu = 0.5,
@@ -208,9 +224,9 @@ TEST_CASE("smoothing_spline try_create rejects fewer than 2 waypoints", "[smooth
     REQUIRE(result.error() == ctrlpp::spline_error::too_few_points);
 }
 
-TEST_CASE("smoothing_spline try_create rejects length mismatch", "[smoothing_spline][validation]")
+TEST_CASE("smoothing_spline create rejects length mismatch", "[smoothing_spline][validation]")
 {
-    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+    auto const result = ctrlpp::smoothing_spline<double>::create({
         .times = {0.0, 1.0, 2.0},
         .positions = {0.0, 1.0},
         .mu = 0.5,
@@ -220,9 +236,9 @@ TEST_CASE("smoothing_spline try_create rejects length mismatch", "[smoothing_spl
     REQUIRE(result.error() == ctrlpp::spline_error::size_mismatch);
 }
 
-TEST_CASE("smoothing_spline try_create rejects non-increasing times", "[smoothing_spline][validation]")
+TEST_CASE("smoothing_spline create rejects non-increasing times", "[smoothing_spline][validation]")
 {
-    auto const result = ctrlpp::smoothing_spline<double>::try_create({
+    auto const result = ctrlpp::smoothing_spline<double>::create({
         .times = {0.0, 1.0, 1.0},
         .positions = {0.0, 1.0, 0.0},
         .mu = 0.5,

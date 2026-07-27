@@ -1,3 +1,5 @@
+#include "bench_construct.h"
+
 #include "bench_metrics.h"
 
 #include "ctrlpp/nmpc.h"
@@ -135,7 +137,8 @@ void run_step_budget(const std::string& system_name,
     for(int budget : budgets)
     {
         // Fresh controller to get a clean nlp_problem, then fresh solver
-        ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSlsqp, Dynamics> controller{dynamics, config};
+        auto controller = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSlsqp, Dynamics>::create(dynamics, config), "controller");
         const auto& problem = controller.problem();
 
         ArgminSlsqp solver{};
@@ -156,7 +159,8 @@ void run_step_budget(const std::string& system_name,
 
     // Full argmin solve
     {
-        ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSlsqp, Dynamics> controller{dynamics, config};
+        auto controller = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSlsqp, Dynamics>::create(dynamics, config), "controller");
         const auto& problem = controller.problem();
 
         ArgminSlsqp solver{};
@@ -177,7 +181,8 @@ void run_step_budget(const std::string& system_name,
 
     // NLopt full-solve baseline
     {
-        ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> controller{dynamics, config};
+        auto controller = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics>::create(dynamics, config), "controller");
         controller.solve(x0);
         auto diag = controller.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(controller);

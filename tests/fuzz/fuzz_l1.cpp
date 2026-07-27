@@ -48,7 +48,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // Exercise the non-throwing factory: a rejected filter/predictor design
     // (e.g. singular DC gain) is expected for some fuzz inputs, not a crash.
     auto ctrl_result =
-        ctrlpp::l1_controller<double, 1, 1>::try_create(cfg, bandwidth, sample_hz);
+        ctrlpp::l1_controller<double, 1, 1>::create(cfg, bandwidth, sample_hz);
     if(!ctrl_result.has_value())
         return 0;
     auto& ctrl = *ctrl_result;

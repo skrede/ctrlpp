@@ -93,20 +93,20 @@ Calling the formulation factory directly surfaces the reason instead:
 ### nmpc_dynamic (runtime horizon)
 
 ```cpp
-static auto try_create(Dynamics dynamics,
+static auto create(Dynamics dynamics,
                        const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
     -> expected<nmpc_dynamic, controller_construction_error>;
 
-static auto try_create(Dynamics dynamics,
+static auto create(Dynamics dynamics,
                        const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
                        Solver solver)
     -> expected<nmpc_dynamic, controller_construction_error>;
 ```
 
-`try_create` is the construction path for the runtime-horizon controller. The two-argument form default-constructs the solver and chains into the three-argument form; both move the dynamics and the solver in before the NLP is posed.
+`create` is the only construction path for the runtime-horizon controller. There is no non-fallible constructor, so a rejected configuration is a value the caller has to inspect and never a controller that quietly stands in for one. The two-argument form default-constructs the solver and chains into the three-argument form; both move the dynamics and the solver in before the NLP is posed.
 
 ```cpp
-auto created = ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics>::try_create(
+auto created = ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics>::create(
     dynamics, cfg);
 if (!created)
     return handle(created.error());
@@ -123,8 +123,6 @@ The prediction horizon is the only runtime quantity that scales the posed proble
 `horizon` stays a signed `int` deliberately: a mistaken negative value remains representable as negative and is therefore rejectable, whereas an unsigned field would turn the same mistake into an enormous allocation. The overflow bound is a representability condition on `int`, not a chosen ceiling. At the worst-case configuration the horizon `N` scales the decision vector as `N*(NX + NU + NC) + NX + NTC` and the constraint rows as `N*(NX + 2*NU + NC) + NX + NTC`, so both stay representable exactly when `horizon <= (INT_MAX - (NX + NTC)) / (NX + 2*NU + NC)`.
 
 Two alternatives are deliberately not implemented. Validating at the first solve would surface a configuration error at the first control step, the worst possible moment. Clamping the horizon to one would turn a caller mistake into a silently different controller.
-
-The matching throwing constructors remain available when the compiler has exception support (`CTRLPP_HAS_EXCEPTIONS`); they delegate to `try_create` and throw the `bad_expected_access` of the active `ctrlpp::expected` target on a rejected configuration. On an exception-free build they are compiled out and `try_create` is the only construction path.
 
 ## Failure contract
 
@@ -266,7 +264,7 @@ int main()
 
     // Runtime horizon (cfg.horizon) with the NLopt solver -> the opt-in nmpc_dynamic.
     auto created = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>,
-                                        pendulum_dynamics>::try_create(dynamics, cfg);
+                                        pendulum_dynamics>::create(dynamics, cfg);
     if(!created)
     {
         // created.error() carries the controller_construction_error.

@@ -130,7 +130,7 @@ void drive_past_warmup(Estimator& estimator)
 
 TEST_CASE("Linear MPC rejects a negative horizon at construction", "[mpc][horizon][hardening]")
 {
-    auto result = linear_controller::try_create(make_system(), linear_config(-1), ctrlpp_test::stub_qp_solver<double>{});
+    auto result = linear_controller::create(make_system(), linear_config(-1), ctrlpp_test::stub_qp_solver<double>{});
 
     REQUIRE(!result.has_value());
     REQUIRE(result.error() == ctrlpp::controller_construction_error::non_positive_horizon);
@@ -138,7 +138,7 @@ TEST_CASE("Linear MPC rejects a negative horizon at construction", "[mpc][horizo
 
 TEST_CASE("Linear MPC rejects a zero horizon at construction", "[mpc][horizon][hardening]")
 {
-    auto result = linear_controller::try_create(make_system(), linear_config(0), ctrlpp_test::stub_qp_solver<double>{});
+    auto result = linear_controller::create(make_system(), linear_config(0), ctrlpp_test::stub_qp_solver<double>{});
 
     REQUIRE(!result.has_value());
     REQUIRE(result.error() == ctrlpp::controller_construction_error::non_positive_horizon);
@@ -146,7 +146,7 @@ TEST_CASE("Linear MPC rejects a zero horizon at construction", "[mpc][horizon][h
 
 TEST_CASE("Linear MPC accepts a horizon of one and solves", "[mpc][horizon][hardening]")
 {
-    auto result = linear_controller::try_create(make_system(), linear_config(1), ctrlpp_test::stub_qp_solver<double>{});
+    auto result = linear_controller::create(make_system(), linear_config(1), ctrlpp_test::stub_qp_solver<double>{});
 
     REQUIRE(result.has_value());
 
@@ -167,18 +167,18 @@ TEST_CASE("Linear MPC rejects a horizon whose derived dimensions would overflow"
     // non-positive horizon. Constructing AT the bound is not attempted: it is a
     // valid horizon, so it would genuinely try to reserve a decision vector of
     // roughly two billion entries.
-    auto just_past = linear_controller::try_create(make_system(), linear_config(linear_horizon_bound + 1), ctrlpp_test::stub_qp_solver<double>{});
+    auto just_past = linear_controller::create(make_system(), linear_config(linear_horizon_bound + 1), ctrlpp_test::stub_qp_solver<double>{});
     REQUIRE(!just_past.has_value());
     REQUIRE(just_past.error() == ctrlpp::controller_construction_error::horizon_overflow);
 
-    auto largest = linear_controller::try_create(make_system(), linear_config(std::numeric_limits<int>::max()), ctrlpp_test::stub_qp_solver<double>{});
+    auto largest = linear_controller::create(make_system(), linear_config(std::numeric_limits<int>::max()), ctrlpp_test::stub_qp_solver<double>{});
     REQUIRE(!largest.has_value());
     REQUIRE(largest.error() == ctrlpp::controller_construction_error::horizon_overflow);
 }
 
 TEST_CASE("Nonlinear MPC rejects a negative horizon at construction", "[nmpc][horizon][hardening]")
 {
-    auto result = nonlinear_controller::try_create(double_integrator, nonlinear_config(-1), ctrlpp_test::stub_nlp_solver<double>{});
+    auto result = nonlinear_controller::create(double_integrator, nonlinear_config(-1), ctrlpp_test::stub_nlp_solver<double>{});
 
     REQUIRE(!result.has_value());
     REQUIRE(result.error() == ctrlpp::controller_construction_error::non_positive_horizon);
@@ -186,7 +186,7 @@ TEST_CASE("Nonlinear MPC rejects a negative horizon at construction", "[nmpc][ho
 
 TEST_CASE("Nonlinear MPC rejects a zero horizon at construction", "[nmpc][horizon][hardening]")
 {
-    auto result = nonlinear_controller::try_create(double_integrator, nonlinear_config(0), ctrlpp_test::stub_nlp_solver<double>{});
+    auto result = nonlinear_controller::create(double_integrator, nonlinear_config(0), ctrlpp_test::stub_nlp_solver<double>{});
 
     REQUIRE(!result.has_value());
     REQUIRE(result.error() == ctrlpp::controller_construction_error::non_positive_horizon);
@@ -194,7 +194,7 @@ TEST_CASE("Nonlinear MPC rejects a zero horizon at construction", "[nmpc][horizo
 
 TEST_CASE("Nonlinear MPC accepts a horizon of one and solves", "[nmpc][horizon][hardening]")
 {
-    auto result = nonlinear_controller::try_create(double_integrator, nonlinear_config(1), ctrlpp_test::stub_nlp_solver<double>{});
+    auto result = nonlinear_controller::create(double_integrator, nonlinear_config(1), ctrlpp_test::stub_nlp_solver<double>{});
 
     REQUIRE(result.has_value());
 
@@ -210,11 +210,11 @@ TEST_CASE("Nonlinear MPC accepts a horizon of one and solves", "[nmpc][horizon][
 
 TEST_CASE("Nonlinear MPC rejects a horizon whose derived dimensions would overflow", "[nmpc][horizon][hardening]")
 {
-    auto just_past = nonlinear_controller::try_create(double_integrator, nonlinear_config(nonlinear_horizon_bound + 1), ctrlpp_test::stub_nlp_solver<double>{});
+    auto just_past = nonlinear_controller::create(double_integrator, nonlinear_config(nonlinear_horizon_bound + 1), ctrlpp_test::stub_nlp_solver<double>{});
     REQUIRE(!just_past.has_value());
     REQUIRE(just_past.error() == ctrlpp::controller_construction_error::horizon_overflow);
 
-    auto largest = nonlinear_controller::try_create(double_integrator, nonlinear_config(std::numeric_limits<int>::max()), ctrlpp_test::stub_nlp_solver<double>{});
+    auto largest = nonlinear_controller::create(double_integrator, nonlinear_config(std::numeric_limits<int>::max()), ctrlpp_test::stub_nlp_solver<double>{});
     REQUIRE(!largest.has_value());
     REQUIRE(largest.error() == ctrlpp::controller_construction_error::horizon_overflow);
 }
@@ -276,7 +276,7 @@ TEST_CASE("Linear MPC rejects a backend primal too short for the decision vector
 {
     SECTION("a primal one entry short of the decision dimension")
     {
-        auto controller = linear_controller::try_create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{ctrlpp_test::report_lengths::short_primal});
+        auto controller = linear_controller::create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{ctrlpp_test::report_lengths::short_primal});
         REQUIRE(controller.has_value());
 
         auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
@@ -290,7 +290,7 @@ TEST_CASE("Linear MPC rejects a backend primal too short for the decision vector
         // exposed it: a controller with a valid multi-step horizon, handed a
         // primal far too short to hold the input block the extraction slices
         // out of it.
-        auto controller = linear_controller::try_create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{ctrlpp_test::report_lengths::empty});
+        auto controller = linear_controller::create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{ctrlpp_test::report_lengths::empty});
         REQUIRE(controller.has_value());
 
         auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
@@ -304,7 +304,7 @@ TEST_CASE("Linear MPC rejects a backend dual too short for the constraint rows",
     // The dual is not read by the extraction, it is stored and handed back to
     // the backend as the next warm start, so an undersized one is a deferred
     // overrun rather than an immediate one. It is rejected on the same branch.
-    auto controller = linear_controller::try_create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{ctrlpp_test::report_lengths::short_dual});
+    auto controller = linear_controller::create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{ctrlpp_test::report_lengths::short_dual});
     REQUIRE(controller.has_value());
 
     auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
@@ -314,7 +314,7 @@ TEST_CASE("Linear MPC rejects a backend dual too short for the constraint rows",
 
 TEST_CASE("Linear MPC accepts a conforming backend result unchanged", "[mpc][result-shape][hardening]")
 {
-    auto controller = linear_controller::try_create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{});
+    auto controller = linear_controller::create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{});
     REQUIRE(controller.has_value());
 
     auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
@@ -331,7 +331,7 @@ TEST_CASE("Runtime-horizon nonlinear MPC rejects a backend primal too short for 
 {
     SECTION("a primal one entry short of the problem dimension")
     {
-        auto controller = nonlinear_controller::try_create(double_integrator, nonlinear_config(shape_horizon), ctrlpp_test::stub_nlp_solver<double>{ctrlpp_test::report_lengths::short_primal});
+        auto controller = nonlinear_controller::create(double_integrator, nonlinear_config(shape_horizon), ctrlpp_test::stub_nlp_solver<double>{ctrlpp_test::report_lengths::short_primal});
         REQUIRE(controller.has_value());
 
         auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
@@ -341,7 +341,7 @@ TEST_CASE("Runtime-horizon nonlinear MPC rejects a backend primal too short for 
 
     SECTION("a primal that is empty despite the reported optimal status")
     {
-        auto controller = nonlinear_controller::try_create(double_integrator, nonlinear_config(shape_horizon), ctrlpp_test::stub_nlp_solver<double>{ctrlpp_test::report_lengths::empty});
+        auto controller = nonlinear_controller::create(double_integrator, nonlinear_config(shape_horizon), ctrlpp_test::stub_nlp_solver<double>{ctrlpp_test::report_lengths::empty});
         REQUIRE(controller.has_value());
 
         auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
@@ -352,7 +352,7 @@ TEST_CASE("Runtime-horizon nonlinear MPC rejects a backend primal too short for 
 
 TEST_CASE("Runtime-horizon nonlinear MPC accepts a conforming backend result unchanged", "[nmpc][result-shape][hardening]")
 {
-    auto controller = nonlinear_controller::try_create(double_integrator, nonlinear_config(shape_horizon), ctrlpp_test::stub_nlp_solver<double>{});
+    auto controller = nonlinear_controller::create(double_integrator, nonlinear_config(shape_horizon), ctrlpp_test::stub_nlp_solver<double>{});
     REQUIRE(controller.has_value());
 
     auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});

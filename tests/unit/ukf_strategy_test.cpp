@@ -56,8 +56,13 @@ TEST_CASE("ukf with julier strategy")
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
+    // The Julier strategy has no domain to validate, so it is built here and
+    // handed to the strategy-taking constructor. A strategy that does validate
+    // its options is built through ukf::try_create instead, which forwards the
+    // strategy's own rejection.
     ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement, julier_sigma_points<double, 2>> filter(
-        dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}, julier_options<double>{.kappa = 1.0});
+        dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0},
+        julier_sigma_points<double, 2>{julier_options<double>{.kappa = 1.0}});
 
     double true_pos = 0.0;
     double true_vel = 1.0;

@@ -58,7 +58,9 @@ TEST_CASE("nmpc nlopt regulation", "[nmpc][nlopt]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     double initial_norm = x.norm();
@@ -79,7 +81,9 @@ TEST_CASE("nmpc nlopt setpoint tracking", "[nmpc][nlopt]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.0, 0.0};
     Eigen::Vector2d x_ref{2.0, 0.0};
@@ -102,7 +106,9 @@ TEST_CASE("nmpc nlopt input box constraints", "[nmpc][nlopt]")
     config.u_min = Eigen::Matrix<double, 1, 1>{-0.5};
     config.u_max = Eigen::Matrix<double, 1, 1>{0.5};
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{5.0, 0.0};
 
@@ -124,7 +130,9 @@ TEST_CASE("nmpc nlopt state box constraints", "[nmpc][nlopt]")
     config.x_min = Eigen::Vector2d{-2.0, -2.0};
     config.x_max = Eigen::Vector2d{2.0, 2.0};
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.5, 0.0};
 
@@ -154,7 +162,9 @@ TEST_CASE("nmpc nlopt rate constraints", "[nmpc][nlopt]")
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
     config.du_max = Eigen::Matrix<double, 1, 1>{0.1};
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{2.0, 0.0};
     double u_prev = 0.0;
@@ -178,7 +188,9 @@ TEST_CASE("nmpc nlopt warm-start benefit", "[nmpc][nlopt]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
 
@@ -206,7 +218,9 @@ TEST_CASE("nmpc nlopt custom cost", "[nmpc][nlopt]")
     default_config.Q = Eigen::Matrix2d::Identity();
     default_config.R = Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI default_ctrl{double_integrator, default_config};
+    auto default_ctrl_result = NmpcDI::create(double_integrator, default_config);
+    REQUIRE(default_ctrl_result.has_value());
+    auto& default_ctrl = *default_ctrl_result;
 
     Eigen::Vector2d x0{1.0, 1.0};
     auto u_default = default_ctrl.solve(x0);
@@ -217,7 +231,9 @@ TEST_CASE("nmpc nlopt custom cost", "[nmpc][nlopt]")
     custom_config.stage_cost = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>& u) -> double { return 100.0 * x(0) * x(0) + 0.01 * u(0) * u(0); };
     custom_config.terminal_cost = [](const Eigen::Vector2d& x) -> double { return 100.0 * x(0) * x(0); };
 
-    NmpcDI custom_ctrl{double_integrator, custom_config};
+    auto custom_ctrl_result = NmpcDI::create(double_integrator, custom_config);
+    REQUIRE(custom_ctrl_result.has_value());
+    auto& custom_ctrl = *custom_ctrl_result;
     auto u_custom = custom_ctrl.solve(x0);
     REQUIRE(u_custom.has_value());
 
@@ -231,7 +247,9 @@ TEST_CASE("nmpc nlopt trajectory tracking", "[nmpc][nlopt]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.0, 0.0};
     double max_error = 0.0;
@@ -267,7 +285,9 @@ TEST_CASE("nmpc nlopt pendulum regulation", "[nmpc][nlopt]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.01 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcPend controller{pendulum, config};
+    auto controller_result = NmpcPend::create(pendulum, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.5, 0.0};
     double initial_norm = x.norm();
@@ -292,7 +312,9 @@ TEST_CASE("nmpc nlopt constraint satisfaction closed-loop", "[nmpc][nlopt]")
     config.x_min = Eigen::Vector2d{-3.0, -3.0};
     config.x_max = Eigen::Vector2d{3.0, 3.0};
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{2.5, 0.5};
     constexpr double tol = 1e-4;

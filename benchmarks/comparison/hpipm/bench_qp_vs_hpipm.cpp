@@ -8,6 +8,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_construct.h"
+
 #include "lmpc/double_integrator.h"
 
 #include "ctrlpp/mpc.h"
@@ -75,7 +77,8 @@ int main()
     auto cfg = problems::make_double_integrator_4_2_config(N);
     auto x0 = problems::double_integrator_4_2_x0_default();
 
-    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> ctrlpp_mpc(sys, cfg);
+    auto ctrlpp_mpc = ctrlpp::bench::built_or_exit(
+        ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg), "ctrlpp_mpc");
     [[maybe_unused]] auto warm = ctrlpp_mpc.solve(x0);
 
     // --- HPIPM dimensions -----------------------------------------------------

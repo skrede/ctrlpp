@@ -11,6 +11,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
 
@@ -38,6 +39,15 @@ struct gravity_meas
 
 using MukfType = ctrlpp::manifold_ukf<double, 3, simple_rotation_dynamics, gravity_meas>;
 
+// create() is the only construction path and it is fallible, so every
+// valid-input site goes through it and asserts success here.
+auto make_filter(const ctrlpp::manifold_ukf_config<double, 3>& cfg) -> MukfType
+{
+    auto created = MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
 auto quat_angle(const Eigen::Quaterniond& q1, const Eigen::Quaterniond& q2) -> double
 {
     return 2.0 * std::acos(std::min(1.0, std::abs(q1.dot(q2))));
@@ -56,7 +66,7 @@ TEST_CASE("Manifold UKF non-unit quaternion input normalizes",
     Eigen::Quaterniond q_init(2.0, 0.0, 0.0, 0.0);
     cfg.q0 = q_init;
 
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(cfg);
 
     ctrlpp::Vector<double, 3> omega = ctrlpp::Vector<double, 3>::Zero();
     filter.predict(omega);
@@ -75,7 +85,7 @@ TEST_CASE("Manifold UKF NaN rotation measurement",
     cfg.Q *= 1e-6;
     cfg.R *= 0.01;
 
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(cfg);
 
     ctrlpp::Vector<double, 3> omega = ctrlpp::Vector<double, 3>::Zero();
     filter.predict(omega);
@@ -95,7 +105,7 @@ TEST_CASE("Manifold UKF covariance stays PD over 1000 steps",
     cfg.Q *= 1e-6;
     cfg.R *= 0.01;
 
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(cfg);
 
     ctrlpp::Vector<double, 3> omega = ctrlpp::Vector<double, 3>::Zero();
     bool all_pd = true;
@@ -134,7 +144,7 @@ TEST_CASE("Manifold UKF attitude converges for slow rotation",
     cfg.R *= 0.01;
     cfg.q0 = q_init;
 
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(cfg);
 
     ctrlpp::Vector<double, 3> omega = ctrlpp::Vector<double, 3>::Zero();
 
@@ -164,7 +174,7 @@ TEST_CASE("Manifold UKF extreme rotation near gimbal lock",
     cfg.R *= 0.1;
     cfg.q0 = q_init;
 
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(cfg);
 
     ctrlpp::Vector<double, 3> omega = ctrlpp::Vector<double, 3>::Zero();
     bool all_finite = true;
@@ -199,7 +209,7 @@ TEST_CASE("Manifold UKF near pi rotation triggers hemisphere flip",
     cfg.Q *= 0.01;
     cfg.R *= 0.1;
 
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(cfg);
 
     Eigen::Vector3d omega(0.1, 0.0, 0.5);
 

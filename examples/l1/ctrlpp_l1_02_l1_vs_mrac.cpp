@@ -33,7 +33,15 @@ int main()
     l1_cfg.theta_min[0] = -10.0;
     l1_cfg.theta_max[0] = 10.0;
 
-    ctrlpp::l1_controller<double> l1_ctrl(l1_cfg, 5.0, 100.0);
+    // create validates the filter design and the predictor model, reporting a
+    // rejection through ctrlpp::expected<l1_controller, l1_error>.
+    auto l1_result = ctrlpp::l1_controller<double>::create(l1_cfg, 5.0, 100.0);
+    if(!l1_result.has_value())
+    {
+        std::cerr << "invalid L1 configuration\n";
+        return 1;
+    }
+    auto& l1_ctrl = *l1_result;
 
     // MRAC config: large adaptation gains (causes oscillation)
     ctrlpp::mrac_config<double, 1, 1> mrac_cfg{};

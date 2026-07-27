@@ -39,7 +39,17 @@ int main()
                                             .u_min = Eigen::Matrix<double, 1, 1>::Constant(-2.0),
                                             .u_max = Eigen::Matrix<double, 1, 1>::Constant(2.0)};
 
-    ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)> controller(dynamics, cfg);
+    // create validates the horizon and reports a rejection through
+    // ctrlpp::expected<nmpc_dynamic, controller_construction_error> instead of
+    // throwing.
+    auto controller_result =
+        ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)>::create(dynamics, cfg);
+    if(!controller_result.has_value())
+    {
+        std::cerr << "invalid NMPC configuration\n";
+        return EXIT_FAILURE;
+    }
+    auto& controller = *controller_result;
 
     // With theta_ddot = +(g/l) sin(theta), theta = 0 is the unstable upright
     // equilibrium and theta = pi is the stable hanging one. Start hanging and

@@ -46,24 +46,14 @@ struct cf_config
 
 ## Construction
 
-### try_create
+### create
 
 ```cpp
-[[nodiscard]] static auto try_create(cf_config<Scalar> config)
+[[nodiscard]] static auto create(cf_config<Scalar> config)
     -> ctrlpp::expected<complementary_filter, filter_error>;
 ```
 
-Fallible factory and the primary construction API. Validates the initial quaternion before it seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the filter state. Any finite nonzero `q0` is accepted and normalized onto the unit sphere at construction; the gravity and magnetic correction terms treat the stored quaternion as a unit rotation. As a static member of a class template, `try_create` requires explicit template arguments, e.g. `complementary_filter<double>::try_create(cfg)`.
-
-### Constructor (throwing convenience)
-
-```cpp
-explicit complementary_filter(cf_config<Scalar> config);
-```
-
-Delegates to `try_create` and throws on a degenerate initial quaternion. Available only when the library is built with exception support; it is compiled out under `CTRLPP_NO_EXCEPTIONS`, where `try_create` is the only construction path.
-
-CTAD deduction guide available.
+`create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion before it seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the filter state. Any finite nonzero `q0` is accepted and normalized onto the unit sphere at construction; the gravity and magnetic correction terms treat the stored quaternion as a unit rotation. As a static member of a class template, `create` requires explicit template arguments, e.g. `complementary_filter<double>::create(cfg)`.
 
 ## Methods
 

@@ -67,7 +67,9 @@ TEST_CASE("soft state constraints with per-state penalty vector", "[mpc][coverag
         .soft_state_penalty = penalty,
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     // Start outside state bounds; soft constraints should allow a feasible solution
     Eigen::Vector2d x0{3.0, 0.0};
@@ -138,8 +140,12 @@ TEST_CASE("explicit Qf overrides DARE-computed terminal cost", "[mpc][coverage]"
         .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
     };
 
-    OsqpMpc ctrl_explicit(sys, cfg_explicit);
-    OsqpMpc ctrl_dare(sys, cfg_dare);
+    auto ctrl_explicit_result = OsqpMpc::create(sys, cfg_explicit);
+    REQUIRE(ctrl_explicit_result.has_value());
+    auto& ctrl_explicit = *ctrl_explicit_result;
+    auto ctrl_dare_result = OsqpMpc::create(sys, cfg_dare);
+    REQUIRE(ctrl_dare_result.has_value());
+    auto& ctrl_dare = *ctrl_dare_result;
 
     Eigen::Vector2d x0{1.0, 0.0};
     auto u_explicit = ctrl_explicit.solve(x0);
@@ -168,7 +174,9 @@ TEST_CASE("asymmetric state bounds: x_min only", "[mpc][coverage]")
         .x_min = Eigen::Vector2d{-5.0, -5.0},
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x0{1.0, 0.0};
     auto u = controller.solve(x0);
@@ -197,7 +205,9 @@ TEST_CASE("asymmetric state bounds: x_max only", "[mpc][coverage]")
         .x_max = Eigen::Vector2d{2.0, 2.0},
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x0{1.0, 0.0};
     auto u = controller.solve(x0);
@@ -230,7 +240,9 @@ TEST_CASE("rate constraints with warm-started consecutive solves", "[mpc][covera
         .du_max = (Eigen::Matrix<double, 1, 1>() << 0.3).finished(),
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{3.0, 0.0};
     double u_prev = 0.0;
@@ -263,7 +275,9 @@ TEST_CASE("span reference trajectory tracking", "[mpc][coverage]")
         .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.0, 0.0};
 
@@ -342,7 +356,9 @@ TEST_CASE("polytopic terminal set with many faces", "[mpc][coverage][terminal_se
         .terminal_constraint_set = ctrlpp::terminal_set<double, NX>{pset},
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x0{0.3, 0.1};
     auto u = controller.solve(x0);
@@ -374,7 +390,9 @@ TEST_CASE("hard state constraints prevent slack variables", "[mpc][coverage][qp]
         .hard_state_constraints = true,
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x0{1.0, 0.0};
     auto u = controller.solve(x0);
@@ -411,7 +429,9 @@ TEST_CASE("all constraint types active simultaneously", "[mpc][coverage]")
         .du_max = (Eigen::Matrix<double, 1, 1>() << 0.5).finished(),
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{2.0, 0.5};
     double u_prev = 0.0;
@@ -460,7 +480,9 @@ TEST_CASE("MPC with ellipsoidal terminal set", "[mpc][coverage][terminal_set]")
         .terminal_constraint_set = ctrlpp::terminal_set<double, NX>{ti->set},
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.2, 0.05};
     for(int step = 0; step < 50; ++step)

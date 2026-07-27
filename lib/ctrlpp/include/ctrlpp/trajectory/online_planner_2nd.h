@@ -16,7 +16,6 @@
 /// Automatic Machines and Robots", 2009, Sec. 4.6.2
 /// @cite lambrechts2005 -- Lambrechts, Boerlage & Steinbuch, "Trajectory Planning and Feedforward Design for Electromechanical Motion Systems", Control Engineering Practice 13(2), 2005
 
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/trajectory/trajectory_types.h"
@@ -36,7 +35,7 @@ namespace ctrlpp
 /// Generates bounded-velocity, bounded-acceleration trajectories that can be
 /// replanned mid-motion when a new target arrives.
 ///
-/// Construction goes through `try_create`, which validates the kinematic
+/// Construction goes through `create`, which validates the kinematic
 /// limits and reports rejections through
 /// `ctrlpp::expected<online_planner_2nd, trajectory_error>`.
 ///
@@ -61,7 +60,7 @@ class online_planner_2nd
     ///  * NaN/Inf or non-positive a_max -> trajectory_error::non_positive_acceleration_limit
     ///
     /// @cite biagiotti2009 -- Sec. 4.6.2
-    [[nodiscard]] static auto try_create(config const& cfg)
+    [[nodiscard]] static auto create(config const& cfg)
         -> ctrlpp::expected<online_planner_2nd, trajectory_error>
     {
         if (!std::isfinite(cfg.v_max) || cfg.v_max <= Scalar{0}) {
@@ -72,19 +71,6 @@ class online_planner_2nd
         }
         return online_planner_2nd{unchecked_t{}, cfg};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_create`.
-    ///
-    /// Delegates to `try_create(cfg).value()`, so an invalid configuration throws
-    /// the value() exception of `ctrlpp::expected`. Compiled out when
-    /// CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free builds.
-    /// Initial state at rest at q=0.
-    explicit online_planner_2nd(config const& cfg)
-        : online_planner_2nd{try_create(cfg).value()}
-    {
-    }
-#endif
 
     /// @brief Set new target position. Replans from current state.
     ///
@@ -159,13 +145,13 @@ class online_planner_2nd
     }
 
   private:
-    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    /// @brief Tag selecting the non-validating constructor reserved for `create`.
     struct unchecked_t
     {
         explicit unchecked_t() = default;
     };
 
-    /// @brief Construct from a configuration already validated by `try_create`.
+    /// @brief Construct from a configuration already validated by `create`.
     /// Initial state at rest at q=0.
     online_planner_2nd(unchecked_t, config const& cfg)
         : v_max_{cfg.v_max}

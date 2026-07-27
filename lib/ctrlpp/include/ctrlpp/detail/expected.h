@@ -14,6 +14,11 @@
 /// std::expected semantics operator* and error() are unchecked (precondition on
 /// has_value()); only value() is checked.
 ///
+/// value() is a caller-facing accessor and nothing inside the library calls it:
+/// library code branches on has_value() and reaches the value through operator*
+/// or operator->, so no library path can reach the throw (or the abort that
+/// replaces it) that value() is contractually required to have.
+///
 /// A cross-state assignment reinitializes the union, so it carries the same
 /// constraints std::expected does -- both members assignable and constructible
 /// in the relevant flavor, and at least one of them nothrow-move-constructible.

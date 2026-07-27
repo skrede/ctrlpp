@@ -8,10 +8,20 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
 
 namespace {
+
+// create() is the only construction path and it is fallible, so every
+// valid-input site goes through it and asserts success here.
+auto make_filter(const ctrlpp::cf_config<double>& cfg) -> ctrlpp::complementary_filter<double>
+{
+    auto created = ctrlpp::complementary_filter<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
 
 auto quat_angle(const Eigen::Quaterniond& q1, const Eigen::Quaterniond& q2) -> double
 {
@@ -24,7 +34,7 @@ TEST_CASE("Complementary filter NaN gyro does not crash",
           "[complementary_filter][hardening][negative]")
 {
     ctrlpp::cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    ctrlpp::complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     ctrlpp::Vector<double, 3> gyro;
     gyro << std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0;
@@ -41,7 +51,7 @@ TEST_CASE("Complementary filter NaN accel with zero norm skips update",
           "[complementary_filter][hardening][negative]")
 {
     ctrlpp::cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    ctrlpp::complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     ctrlpp::Vector<double, 3> gyro = ctrlpp::Vector<double, 3>::Zero();
     ctrlpp::Vector<double, 3> accel = ctrlpp::Vector<double, 3>::Zero();
@@ -57,7 +67,7 @@ TEST_CASE("Complementary filter k_p=0 gives pure gyro integration",
           "[complementary_filter][hardening][precision]")
 {
     ctrlpp::cf_config<double> cfg{.k_p = 0.0, .k_i = 0.0, .dt = 0.01};
-    ctrlpp::complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     ctrlpp::Vector<double, 3> gyro = ctrlpp::Vector<double, 3>::Zero();
     ctrlpp::Vector<double, 3> accel;
@@ -78,7 +88,7 @@ TEST_CASE("Complementary filter converges to gravity-aligned",
     // Start from a tilted orientation
     auto q_init = Eigen::Quaterniond(Eigen::AngleAxisd(0.5, Eigen::Vector3d::UnitX()));
     ctrlpp::cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = q_init};
-    ctrlpp::complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     ctrlpp::Vector<double, 3> gyro = ctrlpp::Vector<double, 3>::Zero();
     ctrlpp::Vector<double, 3> accel;

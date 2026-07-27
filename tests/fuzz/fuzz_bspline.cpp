@@ -41,7 +41,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // Just sort and let the constructor validate
     // Exercise the non-throwing factory: an invalid B-spline config (knot
     // structure / control-point count) is expected for some fuzz inputs.
-    auto result = ctrlpp::bspline_trajectory<double, 3>::try_create({
+    auto result = ctrlpp::bspline_trajectory<double, 3>::create({
         .control_points = control_points,
         .knot_vector = knots,
     });

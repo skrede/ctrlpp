@@ -8,7 +8,7 @@ Core output and error types for trajectory generation. `trajectory_point` holds 
 
 ## Enum: `spline_error`
 
-Structured failure modes for the spline factories: `cubic_spline`, `smoothing_spline`, `bspline_trajectory`, and `make_bspline_interpolation`. Returned through `ctrlpp::expected<T, spline_error>` from each `try_create`.
+Structured failure modes for the spline factories: `cubic_spline`, `smoothing_spline`, `bspline_trajectory`, and `make_bspline_interpolation`. Returned through `ctrlpp::expected<T, spline_error>` from each `create`.
 
 | Enumerator | Meaning |
 |------------|---------|

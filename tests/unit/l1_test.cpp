@@ -23,6 +23,17 @@ auto vec1(double v) -> Vec1
 // Plant: x[k+1] = 0.8*x + 0.5*u, DC gain = 2.5
 // Predictor uses the same B as the plant for control effectiveness matching.
 // A_m = 0.9 defines the desired closed-loop bandwidth.
+// create() is the only construction path and it is fallible, so every
+// valid-input site goes through it and asserts success here. The rejection
+// cases below do not use this helper: they assert the specific enumerator.
+template <typename Controller, typename... Args>
+auto make_controller(Args&&... args) -> Controller
+{
+    auto created = Controller::create(std::forward<Args>(args)...);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
 auto make_siso_config() -> ctrlpp::l1_config<double, 1, 1>
 {
     ctrlpp::l1_config<double, 1, 1> cfg{};
@@ -41,7 +52,7 @@ auto make_siso_config() -> ctrlpp::l1_config<double, 1, 1>
 TEST_CASE("l1 SISO step tracking", "[l1]")
 {
     auto cfg = make_siso_config();
-    ctrlpp::l1_controller<double> ctrl(cfg, 15.0, 100.0);
+    auto ctrl = make_controller<ctrlpp::l1_controller<double>>(cfg, 15.0, 100.0);
 
     auto r = vec1(1.0);
     double x_plant = 0.0;
@@ -59,7 +70,7 @@ TEST_CASE("l1 SISO step tracking", "[l1]")
 TEST_CASE("l1 state predictor converges", "[l1]")
 {
     auto cfg = make_siso_config();
-    ctrlpp::l1_controller<double> ctrl(cfg, 15.0, 100.0);
+    auto ctrl = make_controller<ctrlpp::l1_controller<double>>(cfg, 15.0, 100.0);
 
     auto r = vec1(1.0);
     double x_plant = 0.0;
@@ -81,7 +92,7 @@ TEST_CASE("l1 projection bounds respected", "[l1]")
     cfg.theta_min << -2.0;
     cfg.theta_max << 2.0;
 
-    ctrlpp::l1_controller<double> ctrl(cfg, 5.0, 100.0);
+    auto ctrl = make_controller<ctrlpp::l1_controller<double>>(cfg, 5.0, 100.0);
 
     auto r = vec1(1.0);
     double x_plant = 0.0;
@@ -100,7 +111,7 @@ TEST_CASE("l1 projection bounds respected", "[l1]")
 TEST_CASE("l1 diagnostic accessors return expected types", "[l1]")
 {
     auto cfg = make_siso_config();
-    ctrlpp::l1_controller<double> ctrl(cfg, 5.0, 100.0);
+    auto ctrl = make_controller<ctrlpp::l1_controller<double>>(cfg, 5.0, 100.0);
 
     ctrl.evaluate(vec1(0.0), vec1(1.0));
 
@@ -113,7 +124,7 @@ TEST_CASE("l1 diagnostic accessors return expected types", "[l1]")
 TEST_CASE("l1 reset restores initial state", "[l1]")
 {
     auto cfg = make_siso_config();
-    ctrlpp::l1_controller<double> ctrl(cfg, 5.0, 100.0);
+    auto ctrl = make_controller<ctrlpp::l1_controller<double>>(cfg, 5.0, 100.0);
 
     double x_plant = 0.0;
     for(int k = 0; k < 50; ++k)
@@ -135,7 +146,8 @@ TEST_CASE("l1 direct constructor with vector_cascaded_biquad", "[l1]")
     auto cfg = make_siso_config();
     auto filter = ctrlpp::make_vector_butterworth<4, 1>(15.0, 100.0);
     REQUIRE(filter.has_value());
-    ctrlpp::l1_controller<double, 1, 1, ctrlpp::vector_cascaded_biquad<double, 1, 2>> ctrl(
+    auto ctrl = make_controller<
+        ctrlpp::l1_controller<double, 1, 1, ctrlpp::vector_cascaded_biquad<double, 1, 2>>>(
         cfg, *std::move(filter));
 
     auto r = vec1(1.0);
@@ -149,26 +161,6 @@ TEST_CASE("l1 direct constructor with vector_cascaded_biquad", "[l1]")
     }
 
     REQUIRE(std::abs(x_plant - 1.0) < 0.15);
-}
-
-TEST_CASE("l1 try_create with a valid config matches the constructor-built controller", "[l1]")
-{
-    auto cfg = make_siso_config();
-    auto created = ctrlpp::l1_controller<double>::try_create(cfg, 15.0, 100.0);
-    REQUIRE(created.has_value());
-
-    ctrlpp::l1_controller<double> ctor_built(cfg, 15.0, 100.0);
-
-    double x_created = 0.0;
-    double x_ctor = 0.0;
-    for(int k = 0; k < 100; ++k)
-    {
-        auto u_created = created->evaluate(vec1(x_created), vec1(1.0));
-        auto u_ctor = ctor_built.evaluate(vec1(x_ctor), vec1(1.0));
-        REQUIRE(u_created[0] == u_ctor[0]);
-        x_created = 0.8 * x_created + 0.5 * u_created[0];
-        x_ctor = 0.8 * x_ctor + 0.5 * u_ctor[0];
-    }
 }
 
 TEST_CASE("l1 MIMO 2x2 tracking", "[l1]")
@@ -185,7 +177,7 @@ TEST_CASE("l1 MIMO 2x2 tracking", "[l1]")
     cfg.theta_min = (Vec2() << -5.0, -5.0).finished();
     cfg.theta_max = (Vec2() << 5.0, 5.0).finished();
 
-    ctrlpp::l1_controller<double, 2, 2> ctrl(cfg, 15.0, 100.0);
+    auto ctrl = make_controller<ctrlpp::l1_controller<double, 2, 2>>(cfg, 15.0, 100.0);
 
     Mat2 A_plant = (Mat2() << 0.8, 0.0, 0.0, 0.75).finished();
     Mat2 B_plant = (Mat2() << 0.5, 0.0, 0.0, 0.4).finished();

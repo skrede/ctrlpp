@@ -5,9 +5,28 @@
 
 #include <cmath>
 #include <vector>
+#include <cstddef>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
+
+namespace
+{
+
+// Construction is fallible, so every valid-input site goes through the factory
+// and asserts success here; a config that becomes unrealizable fails the test
+// instead of quietly skipping it. Rejection cases never use this helper.
+template <std::size_t Degree>
+auto make_bspline(typename ctrlpp::bspline_trajectory<double, Degree>::config const& cfg)
+    -> ctrlpp::bspline_trajectory<double, Degree>
+{
+    auto created = ctrlpp::bspline_trajectory<double, Degree>::create(cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
+}
 
 TEST_CASE("Cubic B-spline endpoint interpolation", "[bspline]")
 {
@@ -15,7 +34,7 @@ TEST_CASE("Cubic B-spline endpoint interpolation", "[bspline]")
     // Clamped B-spline passes through first and last control points.
     std::vector<double> ctrl = {0.0, 1.0, 3.0, 2.0, 4.0};
 
-    ctrlpp::bspline_trajectory<double, 3> bs({.control_points = ctrl});
+    auto bs = make_bspline<3>({.control_points = ctrl});
 
     auto const p0 = bs.evaluate(0.0);
     auto const pT = bs.evaluate(bs.duration());
@@ -28,7 +47,7 @@ TEST_CASE("Cubic B-spline convex hull", "[bspline]")
 {
     std::vector<double> ctrl = {1.0, 2.0, 4.0, 3.0, 5.0};
 
-    ctrlpp::bspline_trajectory<double, 3> bs({.control_points = ctrl});
+    auto bs = make_bspline<3>({.control_points = ctrl});
 
     auto const min_cp = *std::min_element(ctrl.begin(), ctrl.end());
     auto const max_cp = *std::max_element(ctrl.begin(), ctrl.end());
@@ -63,7 +82,7 @@ TEST_CASE("Quintic B-spline evaluation", "[bspline]")
     // Degree 5 with 7 control points
     std::vector<double> ctrl = {0.0, 1.0, 2.5, 4.0, 3.0, 2.0, 5.0};
 
-    ctrlpp::bspline_trajectory<double, 5> bs({.control_points = ctrl});
+    auto bs = make_bspline<5>({.control_points = ctrl});
 
     auto const T = bs.duration();
     REQUIRE(T > 0.0);
@@ -86,7 +105,7 @@ TEST_CASE("Custom knot vector", "[bspline]")
     std::vector<double> ctrl = {0.0, 1.0, 3.0, 2.0, 4.0};
     std::vector<double> knots = {0, 0, 0, 0, 0.3, 1, 1, 1, 1};
 
-    ctrlpp::bspline_trajectory<double, 3> bs({.control_points = ctrl, .knot_vector = knots});
+    auto bs = make_bspline<3>({.control_points = ctrl, .knot_vector = knots});
 
     auto const p0 = bs.evaluate(0.0);
     auto const pT = bs.evaluate(bs.duration());
@@ -97,15 +116,15 @@ TEST_CASE("Custom knot vector", "[bspline]")
 
 // -- Validation ---------------------------------------------------------------
 //
-// Before the try_create conversion the constructor threw std::invalid_argument
+// Before the create conversion the constructor threw std::invalid_argument
 // for these inputs and make_bspline_interpolation guarded them only by
 // assert(), so release builds accepted them silently. Each case pins the
 // specific rejection enumerator.
 
-TEST_CASE("try_create rejects too few control points", "[bspline][validation]")
+TEST_CASE("create rejects too few control points", "[bspline][validation]")
 {
     // Degree 3 needs at least 4 control points
-    auto const result = ctrlpp::bspline_trajectory<double, 3>::try_create({
+    auto const result = ctrlpp::bspline_trajectory<double, 3>::create({
         .control_points = {0.0, 1.0, 2.0},
     });
 
@@ -113,10 +132,10 @@ TEST_CASE("try_create rejects too few control points", "[bspline][validation]")
     REQUIRE(result.error() == ctrlpp::spline_error::too_few_control_points);
 }
 
-TEST_CASE("try_create rejects wrong knot vector size", "[bspline][validation]")
+TEST_CASE("create rejects wrong knot vector size", "[bspline][validation]")
 {
     // Wrong number of knots for degree 3 with 5 control points (need 9, provide 7)
-    auto const result = ctrlpp::bspline_trajectory<double, 3>::try_create({
+    auto const result = ctrlpp::bspline_trajectory<double, 3>::create({
         .control_points = {0.0, 1.0, 3.0, 2.0, 4.0},
         .knot_vector = {0, 0, 0, 0.5, 1, 1, 1},
     });
@@ -125,10 +144,10 @@ TEST_CASE("try_create rejects wrong knot vector size", "[bspline][validation]")
     REQUIRE(result.error() == ctrlpp::spline_error::bad_knot_count);
 }
 
-TEST_CASE("try_create rejects non-monotonic knot vector", "[bspline][validation]")
+TEST_CASE("create rejects non-monotonic knot vector", "[bspline][validation]")
 {
     // Correct knot count (9) but decreasing interior knots
-    auto const result = ctrlpp::bspline_trajectory<double, 3>::try_create({
+    auto const result = ctrlpp::bspline_trajectory<double, 3>::create({
         .control_points = {0.0, 1.0, 3.0, 2.0, 4.0},
         .knot_vector = {0, 0, 0, 0, 0.5, 0.3, 1, 1, 1},
     });
@@ -160,37 +179,12 @@ TEST_CASE("make_bspline_interpolation rejects too few waypoints", "[bspline][val
     REQUIRE(result.error() == ctrlpp::spline_error::too_few_points);
 }
 
-TEST_CASE("try_create matches constructor-built spline", "[bspline][validation]")
-{
-    std::vector<double> ctrl = {0.0, 1.0, 3.0, 2.0, 4.0};
-
-    auto const created = ctrlpp::bspline_trajectory<double, 3>::try_create({
-        .control_points = ctrl,
-    });
-    REQUIRE(created.has_value());
-
-    ctrlpp::bspline_trajectory<double, 3> constructed({.control_points = ctrl});
-
-    auto const T = constructed.duration();
-    REQUIRE_THAT(created->duration(), WithinAbs(T, 1e-15));
-
-    int const N = 25;
-    for (int i = 0; i <= N; ++i) {
-        auto const t = T * static_cast<double>(i) / N;
-        auto const a = created->evaluate(t);
-        auto const b = constructed.evaluate(t);
-        REQUIRE_THAT(a.position(0), WithinAbs(b.position(0), 1e-15));
-        REQUIRE_THAT(a.velocity(0), WithinAbs(b.velocity(0), 1e-15));
-        REQUIRE_THAT(a.acceleration(0), WithinAbs(b.acceleration(0), 1e-15));
-    }
-}
-
 TEST_CASE("Duration returns active parameter range", "[bspline]")
 {
     // For uniform clamped knots on [0,1], duration should be 1.0
     std::vector<double> ctrl = {0.0, 1.0, 3.0, 2.0, 4.0};
 
-    ctrlpp::bspline_trajectory<double, 3> bs({.control_points = ctrl});
+    auto bs = make_bspline<3>({.control_points = ctrl});
 
     REQUIRE_THAT(bs.duration(), WithinAbs(1.0, 1e-12));
 }
@@ -208,7 +202,7 @@ TEST_CASE("Velocity and acceleration via derivative de Boor", "[bspline]")
     // and acceleration should be zero.
     std::vector<double> ctrl = {0.0, 1.0, 2.0, 3.0, 4.0};
 
-    ctrlpp::bspline_trajectory<double, 3> bs({.control_points = ctrl});
+    auto bs = make_bspline<3>({.control_points = ctrl});
 
     auto const T = bs.duration();
     int const N = 20;

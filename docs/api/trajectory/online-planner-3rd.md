@@ -31,23 +31,17 @@ All three limits divide in the planner math (cruise duration `h / v_max`, jerk-p
 ## Construction
 
 ```cpp
-[[nodiscard]] static auto try_create(config const& cfg)
+[[nodiscard]] static auto create(config const& cfg)
     -> ctrlpp::expected<online_planner_3rd, trajectory_error>;
 ```
 
-Validates the kinematic limits and constructs a planner with initial state at rest at q = 0 with zero acceleration. Rejections, checked in order:
+`create` is the only construction path. There is no non-fallible constructor: a rejected configuration is a value the caller has to inspect, never an object that quietly stands in for one. It validates the kinematic limits and constructs a planner with initial state at rest at q = 0 with zero acceleration. Rejections, checked in order:
 
 | Condition | Error |
 |-----------|-------|
 | NaN/Inf or non-positive `v_max` | `trajectory_error::non_positive_velocity_limit` |
 | NaN/Inf or non-positive `a_max` | `trajectory_error::non_positive_acceleration_limit` |
 | NaN/Inf or non-positive `j_max` | `trajectory_error::non_positive_jerk_limit` |
-
-```cpp
-explicit online_planner_3rd(config const& cfg);
-```
-
-Throwing convenience wrapper over `try_create`; delegates to `try_create(cfg).value()`. Only available when `CTRLPP_HAS_EXCEPTIONS` is 1; prefer `try_create` on exception-free builds.
 
 ## Methods
 
@@ -108,7 +102,7 @@ Degenerate cases (v_max or a_max not reached) automatically reduce the number of
 
 int main()
 {
-    auto result = ctrlpp::online_planner_3rd<double>::try_create({
+    auto result = ctrlpp::online_planner_3rd<double>::create({
         .v_max = 1.0,
         .a_max = 5.0,
         .j_max = 50.0,

@@ -13,7 +13,14 @@ int main()
     cfg.positions = {0.0, 1.5, 0.8, 2.0, 1.0};
     cfg.bc = ctrlpp::boundary_condition::natural;
 
-    ctrlpp::cubic_spline<double> spline(cfg);
+    // create validates the waypoint configuration and reports a rejection
+    // through ctrlpp::expected<cubic_spline, spline_error> instead of throwing.
+    auto const spline = ctrlpp::cubic_spline<double>::create(cfg);
+    if(!spline.has_value())
+    {
+        std::fprintf(stderr, "invalid cubic spline configuration\n");
+        return 1;
+    }
 
     constexpr double dt_eval = 0.05;
 
@@ -21,7 +28,7 @@ int main()
 
     for(double t = cfg.times.front(); t <= cfg.times.back() + dt_eval / 2; t += dt_eval)
     {
-        auto pt = spline.evaluate(t);
+        auto pt = spline->evaluate(t);
         std::printf("%.15e,%.15e,%.15e,%.15e\n", t, pt.position(0), pt.velocity(0), pt.acceleration(0));
     }
 }

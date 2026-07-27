@@ -287,7 +287,9 @@ TEST_CASE("MPC with terminal_ingredients integration", "[terminal_set][mpc]")
         .terminal_constraint_set = ctrlpp::terminal_set<double, NX>{ti->set},
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     // Closed-loop regulation: verify stability (small initial state for feasibility)
     Eigen::Vector2d x{0.1, 0.05};
@@ -323,7 +325,9 @@ TEST_CASE("MPC with polytopic terminal set", "[terminal_set][mpc]")
         .terminal_constraint_set = ctrlpp::terminal_set<double, NX>{pset},
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.5, 0.1};
     auto u = controller.solve(x);
@@ -353,7 +357,9 @@ TEST_CASE("MPC backward compatibility without terminal_constraint_set", "[termin
         .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x0{1.0, 0.0};
     auto result = controller.solve(x0);
@@ -388,8 +394,12 @@ TEST_CASE("Per-state soft penalty", "[terminal_set][mpc]")
         .x_max = (Eigen::Vector2d() << 2.0, 2.0).finished(),
     };
 
-    OsqpMpc ctrl_ps(sys, cfg_per_state);
-    OsqpMpc ctrl_uni(sys, cfg_uniform);
+    auto ctrl_ps_result = OsqpMpc::create(sys, cfg_per_state);
+    REQUIRE(ctrl_ps_result.has_value());
+    auto& ctrl_ps = *ctrl_ps_result;
+    auto ctrl_uni_result = OsqpMpc::create(sys, cfg_uniform);
+    REQUIRE(ctrl_uni_result.has_value());
+    auto& ctrl_uni = *ctrl_uni_result;
 
     // Start outside bounds to trigger slack usage
     Eigen::Vector2d x0{5.0, 0.0};

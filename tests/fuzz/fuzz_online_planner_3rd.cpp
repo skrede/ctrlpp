@@ -78,12 +78,12 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     const double time_resolution_floor
         = std::numeric_limits<double>::epsilon() * rounding_op_margin * static_cast<double>(num_samples);
 
-    // Construction goes through try_create: a limit outside the finite,
+    // Construction goes through create: a limit outside the finite,
     // strictly positive domain is rejected by design (each limit divides in
     // the planner math), and that rejection is the correct behavior for such
     // an input, not a crash. The clamps above keep the fuzzed limits inside
     // the domain, so the scan below runs for every input that reaches here.
-    auto planner_result = ctrlpp::online_planner_3rd<double>::try_create({
+    auto planner_result = ctrlpp::online_planner_3rd<double>::create({
         .v_max = v_max, .a_max = a_max, .j_max = j_max});
     if(!planner_result.has_value())
         return 0;

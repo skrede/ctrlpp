@@ -13,7 +13,7 @@
 namespace ctrlpp
 {
 
-/// @brief Structured failure modes for `l1_controller::try_create`.
+/// @brief Structured failure modes for `l1_controller::create`.
 ///
 ///  * singular_predictor    : (I - A_m) is singular; the predictor model has a
 ///                            unit eigenvalue, so the DC gain (I - A_m)^{-1} B

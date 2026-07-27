@@ -52,7 +52,11 @@ auto make_adapting_config() -> l1_config<double, 1, 1>
 
 auto run_sigma_hat(const l1_config<double, 1, 1>& cfg) -> double
 {
-    l1_controller<double> ctrl(cfg, 15.0, 100.0);
+    // create() is the only construction path and it is fallible; this config is
+    // valid, so a rejection here is a test failure rather than a skip.
+    auto created = l1_controller<double>::create(cfg, 15.0, 100.0);
+    REQUIRE(created.has_value());
+    auto& ctrl = *created;
     double x_plant = 0.0;
     for(int k = 0; k < 200; ++k)
     {

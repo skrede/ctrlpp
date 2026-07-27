@@ -5,7 +5,7 @@
 // bookkeeping. The harness header must stay the first include of this file.
 //
 // Coverage: kalman_filter, ekf, ukf, mekf, manifold_ukf, complementary_filter,
-// and particle_filter predict/update. Construction (including the try_create
+// and particle_filter predict/update. Construction (including the create
 // filters) happens outside the armed window; only the steady-state predict and
 // update loop is guarded. The particle_filter case additionally forces the
 // resampling path every step, seeds its RNG deterministically, and asserts that
@@ -227,7 +227,7 @@ TEST_CASE("mekf predict/update performs zero heap allocation",
     ctrlpp::mekf_config<double, 3, 3> cfg;
     cfg.Q *= 1e-6;
 
-    auto created = mekf_type::try_create(gravity_measurement{}, cfg);
+    auto created = mekf_type::create(gravity_measurement{}, cfg);
     REQUIRE(created.has_value());
     auto& filter = *created;
 
@@ -259,7 +259,7 @@ TEST_CASE("manifold_ukf predict/update performs zero heap allocation",
     ctrlpp::manifold_ukf_config<double, 3> cfg;
     cfg.Q *= 1e-6;
 
-    auto created = mukf_type::try_create(rotation_dynamics{}, attitude_measurement{}, cfg);
+    auto created = mukf_type::create(rotation_dynamics{}, attitude_measurement{}, cfg);
     REQUIRE(created.has_value());
     auto& filter = *created;
 
@@ -288,7 +288,7 @@ TEST_CASE("complementary_filter update performs zero heap allocation",
 {
     ctrlpp::cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
 
-    auto created = ctrlpp::complementary_filter<double>::try_create(cfg);
+    auto created = ctrlpp::complementary_filter<double>::create(cfg);
     REQUIRE(created.has_value());
     auto& filter = *created;
 

@@ -6,7 +6,6 @@
 /// @cite vandermerwe2004 -- Van der Merwe, "Sigma-Point Kalman Filters", PhD thesis, 2004
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/detail/covariance_ops.h"
@@ -79,16 +78,6 @@ public:
             return ctrlpp::unexpected(filter_error::non_positive_scaling_radicand);
         return merwe_sigma_points{unchecked_t{}, opts};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_create`.
-    ///
-    /// Delegates to `try_create(opts).value()`, so an out-of-domain parameter
-    /// set throws the value() exception of `ctrlpp::expected`. Compiled out
-    /// when CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free
-    /// builds, where it is the only construction path that takes options.
-    explicit merwe_sigma_points(options_t opts) : merwe_sigma_points{try_create(opts).value()} {}
-#endif
 
     /// @brief Generate scaled symmetric sigma point set with mean/covariance weights.
     ///

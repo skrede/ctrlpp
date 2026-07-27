@@ -10,6 +10,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <utility>
 
 using namespace ctrlpp;
 using Catch::Matchers::WithinAbs;
@@ -56,13 +57,24 @@ struct analytical_gravity_measurement
 using Mekf3 = mekf<double, 3, 3, gravity_measurement>;
 using MekfAnalytical = mekf<double, 3, 3, analytical_gravity_measurement>;
 
+// create() is the only construction path and it is fallible, so every
+// valid-input site goes through it and asserts success here. The rejection
+// cases below do not use this helper: they assert the specific enumerator.
+template <typename Filter, typename Measurement, typename Config>
+auto make_filter(Measurement measurement, const Config& cfg) -> Filter
+{
+    auto created = Filter::create(std::move(measurement), cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
 } // namespace
 
 TEST_CASE("mekf predict with zero angular velocity preserves attitude", "[mekf]")
 {
     mekf_config<double, 3, 3> cfg;
     cfg.Q *= 1e-6;
-    Mekf3 filter(gravity_measurement{}, cfg);
+    auto filter = make_filter<Mekf3>(gravity_measurement{}, cfg);
 
     for(int i = 0; i < 100; ++i)
         filter.predict(Vector<double, 3>::Zero());
@@ -77,7 +89,7 @@ TEST_CASE("mekf predict integrates constant angular velocity", "[mekf]")
     mekf_config<double, 3, 3> cfg;
     cfg.dt = 0.01;
     cfg.Q *= 1e-8;
-    Mekf3 filter(gravity_measurement{}, cfg);
+    auto filter = make_filter<Mekf3>(gravity_measurement{}, cfg);
 
     Vector<double, 3> omega;
     omega << 0.0, 0.0, 0.1;
@@ -99,7 +111,7 @@ TEST_CASE("mekf update corrects attitude toward measurement", "[mekf]")
     cfg.Q *= 1e-6;
     cfg.R *= 0.01;
     cfg.P0 *= 10.0;
-    Mekf3 filter(gravity_measurement{}, cfg);
+    auto filter = make_filter<Mekf3>(gravity_measurement{}, cfg);
 
     Vector<double, 3> gravity_world;
     gravity_world << 0.0, 0.0, 1.0;
@@ -120,7 +132,7 @@ TEST_CASE("mekf covariance stays symmetric and PSD", "[mekf]")
     mekf_config<double, 3, 3> cfg;
     cfg.Q *= 1e-4;
     cfg.R *= 0.1;
-    Mekf3 filter(gravity_measurement{}, cfg);
+    auto filter = make_filter<Mekf3>(gravity_measurement{}, cfg);
 
     Vector<double, 3> omega{0.01, -0.02, 0.03};
     Vector<double, 3> z{0.0, 0.0, 1.0};
@@ -142,7 +154,7 @@ TEST_CASE("mekf covariance stays symmetric and PSD", "[mekf]")
 TEST_CASE("mekf innovation is finite after update", "[mekf]")
 {
     mekf_config<double, 3, 3> cfg;
-    Mekf3 filter(gravity_measurement{}, cfg);
+    auto filter = make_filter<Mekf3>(gravity_measurement{}, cfg);
 
     filter.predict(Vector<double, 3>{0.01, 0.0, 0.0});
     filter.update(Vector<double, 3>{0.0, 0.0, 1.0});
@@ -158,7 +170,7 @@ TEST_CASE("mekf bias estimation converges", "[mekf]")
     cfg.Q.bottomRightCorner<3, 3>() *= 10.0; // More process noise on bias
     cfg.R *= 0.01;
     cfg.P0 *= 10.0;
-    Mekf3 filter(gravity_measurement{}, cfg);
+    auto filter = make_filter<Mekf3>(gravity_measurement{}, cfg);
 
     Vector<double, 3> true_bias{0.01, -0.02, 0.005};
     Vector<double, 3> gravity_world{0.0, 0.0, 1.0};
@@ -187,7 +199,7 @@ TEST_CASE("mekf with analytical Jacobian measurement model", "[mekf]")
     cfg.Q *= 1e-6;
     cfg.R *= 0.01;
     cfg.P0 *= 10.0;
-    MekfAnalytical filter(analytical_gravity_measurement{}, cfg);
+    auto filter = make_filter<MekfAnalytical>(analytical_gravity_measurement{}, cfg);
 
     Vector<double, 3> gravity_world{0.0, 0.0, 1.0};
 
@@ -202,49 +214,26 @@ TEST_CASE("mekf with analytical Jacobian measurement model", "[mekf]")
     REQUIRE(angle < 0.05);
 }
 
-TEST_CASE("mekf try_create rejects a zero initial quaternion", "[mekf]")
+TEST_CASE("mekf create rejects a zero initial quaternion", "[mekf]")
 {
     // Before the fallible factory existed, the constructor normalized the zero
     // quaternion directly and silently produced an all-NaN filter state.
     mekf_config<double, 3, 3> cfg;
     cfg.q0 = Eigen::Quaternion<double>{0.0, 0.0, 0.0, 0.0};
 
-    auto filter = Mekf3::try_create(gravity_measurement{}, cfg);
+    auto filter = Mekf3::create(gravity_measurement{}, cfg);
     REQUIRE_FALSE(filter.has_value());
     REQUIRE(filter.error() == filter_error::degenerate_quaternion);
 }
 
-TEST_CASE("mekf try_create matches the constructor on a valid unit quaternion", "[mekf]")
-{
-    mekf_config<double, 3, 3> cfg;
-    cfg.q0 = so3::exp(Vector<double, 3>{0.174, 0.0, 0.0});
-    cfg.Q *= 1e-6;
-    cfg.R *= 0.01;
-    cfg.P0 *= 10.0;
-
-    auto factory_built = Mekf3::try_create(gravity_measurement{}, cfg);
-    REQUIRE(factory_built.has_value());
-
-    Mekf3 ctor_built(gravity_measurement{}, cfg);
-
-    Vector<double, 3> gravity_world{0.0, 0.0, 1.0};
-    factory_built->predict(Vector<double, 3>::Zero());
-    ctor_built.predict(Vector<double, 3>::Zero());
-    factory_built->update(gravity_world);
-    ctor_built.update(gravity_world);
-
-    REQUIRE((factory_built->state().array() == ctor_built.state().array()).all());
-    REQUIRE((factory_built->covariance().array() == ctor_built.covariance().array()).all());
-}
-
-TEST_CASE("mekf try_create accepts a non-unit nonzero quaternion", "[mekf]")
+TEST_CASE("mekf create accepts a non-unit nonzero quaternion", "[mekf]")
 {
     // The guard rejects only degeneracy: any finite nonzero quaternion is
     // normalized onto the unit sphere at construction.
     mekf_config<double, 3, 3> cfg;
     cfg.q0 = Eigen::Quaternion<double>{2.0, 0.0, 0.0, 0.0};
 
-    auto filter = Mekf3::try_create(gravity_measurement{}, cfg);
+    auto filter = Mekf3::create(gravity_measurement{}, cfg);
     REQUIRE(filter.has_value());
     REQUIRE((filter->attitude().coeffs().array() == cfg.q0.normalized().coeffs().array()).all());
 }

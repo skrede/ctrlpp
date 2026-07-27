@@ -16,9 +16,9 @@ int main()
         .bc = ctrlpp::boundary_condition::natural,
     };
 
-    // try_create validates the configuration and reports rejections through
+    // create validates the configuration and reports rejections through
     // ctrlpp::expected<cubic_spline, spline_error> instead of throwing.
-    auto const spline = ctrlpp::cubic_spline<double>::try_create(cfg);
+    auto const spline = ctrlpp::cubic_spline<double>::create(cfg);
     if (!spline.has_value())
     {
         std::cerr << "invalid cubic spline configuration\n";

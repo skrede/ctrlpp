@@ -30,22 +30,16 @@ Both limits divide in the planner math (stopping distance `v^2 / (2 * a_max)`, p
 ## Construction
 
 ```cpp
-[[nodiscard]] static auto try_create(config const& cfg)
+[[nodiscard]] static auto create(config const& cfg)
     -> ctrlpp::expected<online_planner_2nd, trajectory_error>;
 ```
 
-Validates the kinematic limits and constructs a planner with initial state at rest at q = 0. Rejections, checked in order:
+`create` is the only construction path. There is no non-fallible constructor: a rejected configuration is a value the caller has to inspect, never an object that quietly stands in for one. It validates the kinematic limits and constructs a planner with initial state at rest at q = 0. Rejections, checked in order:
 
 | Condition | Error |
 |-----------|-------|
 | NaN/Inf or non-positive `v_max` | `trajectory_error::non_positive_velocity_limit` |
 | NaN/Inf or non-positive `a_max` | `trajectory_error::non_positive_acceleration_limit` |
-
-```cpp
-explicit online_planner_2nd(config const& cfg);
-```
-
-Throwing convenience wrapper over `try_create`; delegates to `try_create(cfg).value()`. Only available when `CTRLPP_HAS_EXCEPTIONS` is 1; prefer `try_create` on exception-free builds.
 
 ## Methods
 
@@ -102,7 +96,7 @@ For short displacements where `v_max` cannot be reached, the profile degenerates
 
 int main()
 {
-    auto result = ctrlpp::online_planner_2nd<double>::try_create({.v_max = 1.0, .a_max = 5.0});
+    auto result = ctrlpp::online_planner_2nd<double>::create({.v_max = 1.0, .a_max = 5.0});
     if (!result.has_value())
         return 1;
     auto& planner = *result;

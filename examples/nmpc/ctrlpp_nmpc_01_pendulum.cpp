@@ -39,7 +39,17 @@ int main()
                                             .u_min = Eigen::Matrix<double, 1, 1>::Constant(-5.0),
                                             .u_max = Eigen::Matrix<double, 1, 1>::Constant(5.0)};
 
-    ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)> controller(dynamics, cfg);
+    // create validates the horizon and reports a rejection through
+    // ctrlpp::expected<nmpc_dynamic, controller_construction_error> instead of
+    // throwing.
+    auto controller_result =
+        ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)>::create(dynamics, cfg);
+    if(!controller_result.has_value())
+    {
+        std::cerr << "invalid NMPC configuration\n";
+        return EXIT_FAILURE;
+    }
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x(std::numbers::pi - 0.3, 0.0);
     Eigen::Vector2d x_ref(std::numbers::pi, 0.0);

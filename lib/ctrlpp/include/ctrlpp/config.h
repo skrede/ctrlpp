@@ -5,8 +5,13 @@
 /// by design (zero includes) so embedded builds can consume it before anything else.
 ///
 /// CTRLPP_NO_EXCEPTIONS: define at build time to opt out of every throwing
-/// convenience wrapper in the library. The expected-based factories and solvers
-/// remain available unconditionally.
+/// convenience wrapper in the library. No construction path is affected: every
+/// type is built through a fallible factory returning ctrlpp::expected, and
+/// those are available in every build. What the macro still gates is the
+/// `setup(problem)` convenience wrapper on the optional OSQP and NLopt backend
+/// adapters, whose fallible `try_setup` counterparts are unconditional, and the
+/// throw that ctrlpp::expected::value() is contractually required to have, which
+/// becomes std::abort() instead.
 ///
 /// CTRLPP_HAS_EXCEPTIONS: expands to 1 exactly when the toolchain has exception
 /// support enabled and CTRLPP_NO_EXCEPTIONS is not defined; expands to 0

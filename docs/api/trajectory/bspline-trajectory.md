@@ -29,11 +29,11 @@ If `knot_vector` is left empty, a uniform clamped knot vector is generated autom
 ## Factory
 
 ```cpp
-[[nodiscard]] static auto try_create(config const& cfg)
+[[nodiscard]] static auto create(config const& cfg)
     -> ctrlpp::expected<bspline_trajectory, spline_error>;
 ```
 
-Validates the configuration and constructs a B-spline trajectory from control points and an optional knot vector. Requires at least `Degree + 1` control points. An empty knot vector skips the knot checks; a uniform clamped knot vector is generated instead, which is valid by construction.
+`create` is the only construction path. There is no non-fallible constructor: a rejected configuration is a value the caller has to inspect, never an object that quietly stands in for one. It validates the configuration and constructs a B-spline trajectory from control points and an optional knot vector. Requires at least `Degree + 1` control points. An empty knot vector skips the knot checks; a uniform clamped knot vector is generated instead, which is valid by construction.
 
 Rejections, checked in order:
 
@@ -42,14 +42,6 @@ Rejections, checked in order:
 | Fewer than `Degree + 1` control points | `spline_error::too_few_control_points` |
 | Knot vector size differs from `control_points.size() + Degree + 1` | `spline_error::bad_knot_count` |
 | Knot vector not non-decreasing | `spline_error::non_monotonic_knots` |
-
-## Constructor
-
-```cpp
-explicit bspline_trajectory(config const& cfg);  // requires CTRLPP_HAS_EXCEPTIONS
-```
-
-Throwing convenience wrapper over `try_create`: delegates to `try_create(cfg).value()`, so an invalid configuration throws the `value()` exception of `ctrlpp::expected`. Compiled out when `CTRLPP_HAS_EXCEPTIONS` is 0.
 
 ## Methods
 
@@ -90,7 +82,7 @@ Rejections, checked in order:
 | `times` and `positions` differ in length | `spline_error::size_mismatch` |
 | Fewer than `Degree + 1` waypoints | `spline_error::too_few_points` |
 
-Any downstream `bspline_trajectory::try_create` failure is propagated.
+Any downstream `bspline_trajectory::create` failure is propagated.
 
 ## Free Function
 
@@ -140,5 +132,5 @@ int main()
 
 - [cubic-spline](cubic-spline.md)<br/> Simpler cubic interpolation for moderate waypoint counts
 - [smoothing-spline](smoothing-spline.md)<br/> Spline approximation with noise filtering
-- [trajectory-types](trajectory-types.md)<br/> `spline_error` enumerators returned by `try_create`
+- [trajectory-types](trajectory-types.md)<br/> `spline_error` enumerators returned by `create`
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)<br/> B-spline basis functions and de Boor's algorithm

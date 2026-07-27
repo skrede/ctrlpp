@@ -131,8 +131,11 @@ a bare-metal superloop, an RTOS task, or the host application's executor.
 The library is **consumer-flag-agnostic**: no `-fno-exceptions` / `-fno-rtti`
 is forced onto any installed, interface, or exported target, and `config.h`'s
 `__cpp_exceptions` auto-detection adapts to whatever the consumer compiles with.
-`ctrlpp::expected` / status is the always-on primary API; the throwing
-convenience wrappers exist only under `CTRLPP_HAS_EXCEPTIONS`.
+Every type is built through a fallible factory returning
+`ctrlpp::expected`, so no construction path is gated on exceptions; the only
+wrappers still gated under `CTRLPP_HAS_EXCEPTIONS` are the `setup(problem)`
+convenience overloads on the optional OSQP and NLopt backend adapters, whose
+fallible `try_setup` counterparts are unconditional.
 
 As a self-imposed compatibility guarantee, ctrlpp's **own** tests and benches
 dogfood the throw-free discipline: the default build tree

@@ -40,7 +40,15 @@ int main()
         .u_min = Eigen::Matrix<double, 1, 1>::Constant(-2.0),
         .u_max = Eigen::Matrix<double, 1, 1>::Constant(2.0)};
 
-    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(sys, cfg);
+    // create validates the horizon and reports a rejection through
+    // ctrlpp::expected<mpc, controller_construction_error> instead of throwing.
+    auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
+    if(!controller_result.has_value())
+    {
+        std::cerr << "invalid MPC configuration\n";
+        return 1;
+    }
+    auto& controller = *controller_result;
 
     // Trapezoidal trajectory as reference generator (replaces manual ramp)
     auto const built = ctrlpp::trapezoidal_trajectory<double>::create(

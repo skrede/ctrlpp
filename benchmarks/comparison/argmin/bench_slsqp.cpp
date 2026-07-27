@@ -1,3 +1,5 @@
+#include "bench_construct.h"
+
 #include "bench_metrics.h"
 
 #include "ctrlpp/nmpc.h"
@@ -142,7 +144,8 @@ void run_benchmark(const std::string& system_name,
         ctrlpp::nlopt_settings<double> nlopt_cfg{};
         nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
 
-        ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> nmpc{dynamics, config, NloptSolver{nlopt_cfg}};
+        auto nmpc = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics>::create(dynamics, config, NloptSolver{nlopt_cfg}), "nmpc");
         bench.run("nlopt_slsqp",
                   [&]
                   {
@@ -150,7 +153,8 @@ void run_benchmark(const std::string& system_name,
                       ankerl::nanobench::doNotOptimizeAway(u);
                   });
 
-        ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> q{dynamics, config, NloptSolver{nlopt_cfg}};
+        auto q = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics>::create(dynamics, config, NloptSolver{nlopt_cfg}), "q");
         q.solve(x0);
         auto diag = q.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(q);
@@ -180,7 +184,8 @@ void run_benchmark(const std::string& system_name,
     {
         if (include_in_bench)
         {
-            ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics> nmpc{dynamics, config, Solver{argmin_cfg}};
+            auto nmpc = ctrlpp::bench::built_or_exit(
+                ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics>::create(dynamics, config, Solver{argmin_cfg}), "nmpc");
             bench.run(bench_name,
                       [&]
                       {
@@ -189,7 +194,8 @@ void run_benchmark(const std::string& system_name,
                       });
         }
 
-        ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics> q{dynamics, config, Solver{argmin_cfg}};
+        auto q = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics>::create(dynamics, config, Solver{argmin_cfg}), "q");
         q.solve(x0);
         auto diag = q.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(q);
@@ -247,11 +253,16 @@ void run_convergence(const std::string& system_name,
         ctrlpp::argmin_settings<double> argmin_cfg{};
         argmin_cfg.max_time = 2.0;
 
-        ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics> nmpc_nlopt{dynamics, config, NloptSolver{nlopt_cfg}};
-        ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSlsqp, Dynamics> nmpc_slsqp{dynamics, config, ArgminSlsqp{argmin_cfg}};
-        ctrlpp::nmpc_dynamic<double, NX, NU, ArgminNwSqp, Dynamics> nmpc_nw{dynamics, config, ArgminNwSqp{argmin_cfg}};
-        ctrlpp::nmpc_dynamic<double, NX, NU, ArgminFilterSlsqp, Dynamics> nmpc_fs{dynamics, config, ArgminFilterSlsqp{argmin_cfg}};
-        ctrlpp::nmpc_dynamic<double, NX, NU, ArgminFilterNwSqp, Dynamics> nmpc_fnw{dynamics, config, ArgminFilterNwSqp{argmin_cfg}};
+        auto nmpc_nlopt = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics>::create(dynamics, config, NloptSolver{nlopt_cfg}), "nmpc_nlopt");
+        auto nmpc_slsqp = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSlsqp, Dynamics>::create(dynamics, config, ArgminSlsqp{argmin_cfg}), "nmpc_slsqp");
+        auto nmpc_nw = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, ArgminNwSqp, Dynamics>::create(dynamics, config, ArgminNwSqp{argmin_cfg}), "nmpc_nw");
+        auto nmpc_fs = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, ArgminFilterSlsqp, Dynamics>::create(dynamics, config, ArgminFilterSlsqp{argmin_cfg}), "nmpc_fs");
+        auto nmpc_fnw = ctrlpp::bench::built_or_exit(
+            ctrlpp::nmpc_dynamic<double, NX, NU, ArgminFilterNwSqp, Dynamics>::create(dynamics, config, ArgminFilterNwSqp{argmin_cfg}), "nmpc_fnw");
 
         if(nmpc_nlopt.solve(x0).has_value()) ++nlopt_successes;
         if(nmpc_slsqp.solve(x0).has_value()) ++slsqp_successes;

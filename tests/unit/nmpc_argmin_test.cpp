@@ -75,7 +75,9 @@ TEST_CASE("nmpc argmin regulation", "[nmpc][argmin]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     double initial_norm = x.norm();
@@ -96,7 +98,9 @@ TEST_CASE("nmpc argmin setpoint tracking", "[nmpc][argmin]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.0, 0.0};
     Eigen::Vector2d x_ref{2.0, 0.0};
@@ -119,7 +123,9 @@ TEST_CASE("nmpc argmin input box constraints", "[nmpc][argmin]")
     config.u_min = Eigen::Matrix<double, 1, 1>{-0.5};
     config.u_max = Eigen::Matrix<double, 1, 1>{0.5};
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{5.0, 0.0};
 
@@ -139,7 +145,9 @@ TEST_CASE("nmpc argmin pendulum regulation", "[nmpc][argmin]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcPend controller{pendulum, config};
+    auto controller_result = NmpcPend::create(pendulum, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.3, 0.0};
 
@@ -250,7 +258,9 @@ TEST_CASE("nlopt auglag_eq + ld_mma smoke", "[nmpc][argmin][nlopt]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDIN controller{double_integrator, config};
+    auto controller_result = NmpcDIN::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
     const auto& problem = controller.problem();
 
     ctrlpp::nlopt_settings<double> nlopt_cfg{};
@@ -336,7 +346,9 @@ TEST_CASE("nmpc argmin warm-start benefit", "[nmpc][argmin]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
 
@@ -363,7 +375,9 @@ TEST_CASE("nmpc argmin trajectory tracking", "[nmpc][argmin]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI controller{double_integrator, config};
+    auto controller_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{0.0, 0.0};
     double max_error = 0.0;
@@ -407,7 +421,9 @@ TEST_CASE("nmpc argmin survives move-then-solve", "[nmpc][argmin][move-safety]")
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI source{double_integrator, config};
+    auto source_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(source_result.has_value());
+    auto& source = *source_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     const double initial_norm = x.norm();
@@ -438,7 +454,9 @@ TEST_CASE("nmpc argmin copy is an independent fork", "[nmpc][argmin][move-safety
     config.Q = 10.0 * Eigen::Matrix2d::Identity();
     config.R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity();
 
-    NmpcDI original{double_integrator, config};
+    auto original_result = NmpcDI::create(double_integrator, config);
+    REQUIRE(original_result.has_value());
+    auto& original = *original_result;
 
     // Warm the original so its formulation state / warm-start is non-trivial;
     // the fork must snapshot, not alias, that state.
@@ -607,7 +625,9 @@ TEST_CASE("mpc osqp survives move-then-solve", "[mpc][osqp][move-safety]")
         .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
     };
 
-    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> source{sys, cfg};
+    auto source_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
+    REQUIRE(source_result.has_value());
+    auto& source = *source_result;
     REQUIRE(source.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
 
     ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> moved{std::move(source)};

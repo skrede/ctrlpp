@@ -54,14 +54,11 @@ ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> c
                                      ukf_config<Scalar, NX, NU, NY> config,
                                      typename Strategy::options_t strategy_options)
     -> ctrlpp::expected<ukf, filter_error>;
-
-ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config,
-    typename Strategy::options_t strategy_options);
 ```
 
-The first two forms cannot fail: the default-strategy form uses the strategy's own in-domain defaults, and the pre-built-strategy form receives a strategy that was validated where it was constructed.
+The two constructors cannot fail: the default-strategy form uses the strategy's own in-domain defaults, and the pre-built-strategy form receives a strategy that was validated where it was constructed. A strategy with no domain to validate, such as `julier_sigma_points`, is built directly and handed to the second form.
 
-The options-aggregate form is the one that builds the strategy inside the filter, so it is the only path on which a sigma-point parameter set can be out of domain. `try_create` is that path's primary API: it forwards the strategy's rejection verbatim as a `filter_error` (from `<ctrlpp/estimation/estimation_types.h>`). The matching constructor is the exception-gated convenience wrapper: with `merwe_sigma_points` it throws in an exceptions-enabled build and does not compile on an exception-free build, where `try_create` is the construction path to use. As a static member of a class template, `try_create` requires explicit template arguments, so name the filter type first:
+The options-aggregate form builds the strategy inside the filter, so it is the only path on which a sigma-point parameter set can be out of domain, and it is fallible: it forwards the strategy's rejection verbatim as a `filter_error` (from `<ctrlpp/estimation/estimation_types.h>`). This is why the factory keeps the `try_` prefix: it contrasts with two real non-fallible constructors rather than restating its own return type. It requires the strategy to expose a `try_create`. As a static member of a class template it also requires explicit template arguments, so name the filter type first:
 
 ```cpp
 using filter_t = ctrlpp::ukf<double, NX, NU, NY, Dynamics, Measurement>;
@@ -162,7 +159,7 @@ The scaling term is `lambda = alpha^2 (n + kappa) - n`, so the weight denominato
 
 `beta` is not validated: it enters only the additive prior-kurtosis term of the first covariance weight and carries no domain restriction of this kind.
 
-Default construction (`merwe_sigma_points<Scalar, NX>{}`) cannot fail: the default `alpha` is finite and positive, and with the default zero `kappa` the sum `n + kappa` reduces to `NX`, which is required to be positive. The options constructor is the exception-gated wrapper over `try_create` and is available only in an exceptions-enabled build. `so3_merwe_sigma_points` forwards the same check unchanged, since it lifts this strategy's tangent-space points onto SO(3) and inherits its weights.
+Default construction (`merwe_sigma_points<Scalar, NX>{}`) cannot fail: the default `alpha` is finite and positive, and with the default zero `kappa` the sum `n + kappa` reduces to `NX`, which is required to be positive. `try_create` keeps its prefix here because that default constructor is a real alternative to it, not because the return type needs restating. `so3_merwe_sigma_points` forwards the same check unchanged, since it lifts this strategy's tangent-space points onto SO(3) and inherits its weights.
 
 Choosing good default values across dimension, scale, and scalar tier is a separate question from admissibility, and these checks do not address it.
 

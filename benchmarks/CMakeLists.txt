@@ -25,7 +25,10 @@ find_package(Eigen3 CONFIG REQUIRED)
 # ctrlpp is header-only; create a lightweight interface target
 add_library(ctrlpp_benchmarks_lib INTERFACE)
 add_library(ctrlpp::ctrlpp ALIAS ctrlpp_benchmarks_lib)
+# The benchmark root is on the path too, so every harness can reach the shared
+# bench_construct.h without a relative include.
 target_include_directories(ctrlpp_benchmarks_lib INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../lib/ctrlpp/include
 )
 target_link_libraries(ctrlpp_benchmarks_lib INTERFACE Eigen3::Eigen)

@@ -13,7 +13,6 @@
 /// @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (de Boor evaluation algorithm)
 /// @cite piegl1997 -- Piegl & Tiller, "The NURBS Book", 2nd ed., 1997, Ch. 2-3 (B-spline basis and knot averaging)
 
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/trajectory/trajectory_types.h"
@@ -68,7 +67,7 @@ class bspline_trajectory
     /// is generated instead, which is valid by construction.
     ///
     /// @cite biagiotti2009 -- Sec. 4.5
-    [[nodiscard]] static auto try_create(config const& cfg)
+    [[nodiscard]] static auto create(config const& cfg)
         -> ctrlpp::expected<bspline_trajectory, spline_error>
     {
         auto const n = static_cast<int>(cfg.control_points.size()) - 1;
@@ -95,18 +94,6 @@ class bspline_trajectory
 
         return bspline_trajectory{unchecked_t{}, cfg};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_create`.
-    ///
-    /// Delegates to `try_create(cfg).value()`, so an invalid configuration throws
-    /// the value() exception of `ctrlpp::expected`. Compiled out when
-    /// CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free builds.
-    explicit bspline_trajectory(config const& cfg)
-        : bspline_trajectory{try_create(cfg).value()}
-    {
-    }
-#endif
 
     /// @brief Evaluate B-spline at parameter t, returning position, velocity, acceleration.
     ///
@@ -155,13 +142,13 @@ class bspline_trajectory
     }
 
   private:
-    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    /// @brief Tag selecting the non-validating constructor reserved for `create`.
     struct unchecked_t
     {
         explicit unchecked_t() = default;
     };
 
-    /// @brief Construct from a configuration already validated by `try_create`.
+    /// @brief Construct from a configuration already validated by `create`.
     ///
     /// If knot_vector is empty, generates a uniform clamped knot vector:
     /// m = n + p + 1 total knots, first p+1 = 0, last p+1 = 1, interior uniform.
@@ -400,7 +387,7 @@ auto basis_function(
 /// Rejections, checked in order:
 ///  * times/positions length mismatch      -> spline_error::size_mismatch
 ///  * fewer than Degree + 1 waypoints      -> spline_error::too_few_points
-/// Any downstream `bspline_trajectory::try_create` failure is propagated.
+/// Any downstream `bspline_trajectory::create` failure is propagated.
 ///
 /// @tparam Scalar  Floating-point type
 /// @tparam Degree  B-spline degree (compile-time)
@@ -475,7 +462,7 @@ template <typename Scalar, int Degree>
         control_points[static_cast<std::size_t>(i)] = ctrl(i);
     }
 
-    return bspline_trajectory<Scalar, Degree>::try_create({
+    return bspline_trajectory<Scalar, Degree>::create({
         .control_points = std::move(control_points),
         .knot_vector = std::move(knots),
     });

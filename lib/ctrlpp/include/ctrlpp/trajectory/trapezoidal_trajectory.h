@@ -238,7 +238,7 @@ class trapezoidal_trajectory
             return ctrlpp::unexpected(solved.error());
         }
 
-        auto const& s = solved.value();
+        auto const& s = *solved;
         v_v_ = s.v_v;
         a_a_ = s.a_a;
         a_d_ = s.a_d;

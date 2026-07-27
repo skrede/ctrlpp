@@ -33,7 +33,15 @@ int main()
     cfg.theta_min[0] = -10.0;
     cfg.theta_max[0] = 10.0;
 
-    controller ctrl(cfg, 5.0, 100.0);
+    // create validates the filter design and the predictor model, reporting a
+    // rejection through ctrlpp::expected<l1_controller, l1_error>.
+    auto ctrl_result = controller::create(cfg, 5.0, 100.0);
+    if(!ctrl_result.has_value())
+    {
+        std::cerr << "invalid L1 configuration\n";
+        return 1;
+    }
+    auto& ctrl = *ctrl_result;
 
     constexpr double a_p = 0.8;
     constexpr double b_p = 0.5;

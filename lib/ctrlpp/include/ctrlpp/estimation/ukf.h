@@ -95,17 +95,18 @@ public:
     }
 
     /// @brief Fallible factory for construction from a sigma-point strategy's
-    /// options aggregate.
+    /// options aggregate, and the only way to build the strategy inside the
+    /// filter.
     ///
-    /// This is the path that builds the strategy inside the filter, so it is
-    /// where an out-of-domain parameter set would otherwise pass unreported:
-    /// the strategy's own rejection is forwarded verbatim rather than swallowed.
-    /// The overload taking an already-built strategy needs no such forwarding,
-    /// since the strategy was validated where it was constructed.
+    /// This is the path where an out-of-domain parameter set would otherwise
+    /// pass unreported, so the strategy's own rejection is forwarded verbatim
+    /// rather than swallowed. The two constructors need no such forwarding: one
+    /// takes the strategy's in-domain defaults and the other takes a strategy
+    /// already validated where it was built.
     ///
-    /// Requires the strategy to expose a `try_create` returning
-    /// `ctrlpp::expected<Strategy, filter_error>`; a strategy without one has
-    /// no failure to forward and is constructed directly instead.
+    /// The prefix distinguishes this overload from those constructors, which
+    /// remain non-fallible. It requires the strategy to expose a `try_create`
+    /// returning `ctrlpp::expected<Strategy, filter_error>`.
     [[nodiscard]] static auto try_create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
         -> ctrlpp::expected<ukf, filter_error>
     {
@@ -113,27 +114,6 @@ public:
         if(!strategy)
             return ctrlpp::unexpected(strategy.error());
         return ukf{std::move(dynamics), std::move(measurement), std::move(config), std::move(*strategy)};
-    }
-
-    /// @brief Construct from a sigma-point strategy's options aggregate.
-    ///
-    /// The strategy is built inside the filter, so this constructor can only
-    /// report an out-of-domain parameter set the way the strategy itself does.
-    /// With a strategy whose options constructor is the exception-gated wrapper
-    /// over its `try_create`, that means this overload throws in the exceptions
-    /// tree and does not compile on an exception-free build, where
-    /// `ukf::try_create` is the construction path to use.
-    ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
-        : m_dynamics{std::move(dynamics)}
-        , m_measurement{std::move(measurement)}
-        , m_x{std::move(config.x0)}
-        , m_P{std::move(config.P0)}
-        , m_Q{std::move(config.Q)}
-        , m_R{std::move(config.R)}
-        , m_decomposition{config.decomposition}
-        , m_strategy{std::move(strategy_options)}
-        , m_innovation{output_vector_t::Zero()}
-    {
     }
 
     ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, Strategy strategy)

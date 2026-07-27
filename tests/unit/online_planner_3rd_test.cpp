@@ -5,13 +5,31 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
+
+namespace
+{
+
+// Construction is fallible, so every valid-input site goes through the factory
+// and asserts success here; a config that becomes unrealizable fails the test
+// instead of quietly skipping it. Rejection cases never use this helper.
+template <typename Scalar>
+auto make_planner(typename ctrlpp::online_planner_3rd<Scalar>::config const& cfg)
+    -> ctrlpp::online_planner_3rd<Scalar>
+{
+    auto created = ctrlpp::online_planner_3rd<Scalar>::create(cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
+}
 
 // -- Test 1: Step response settles to target -----------------------------------
 TEST_CASE("OnlinePlanner3rd: step response settles", "[traj][online_planner_3rd]")
 {
-    ctrlpp::online_planner_3rd<double> planner({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
     planner.update(10.0);
 
@@ -25,7 +43,7 @@ TEST_CASE("OnlinePlanner3rd: step response settles", "[traj][online_planner_3rd]
 // -- Test 2: Velocity never exceeds v_max --------------------------------------
 TEST_CASE("OnlinePlanner3rd: velocity constraint", "[traj][online_planner_3rd]")
 {
-    ctrlpp::online_planner_3rd<double> planner({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
     planner.update(10.0);
 
@@ -40,7 +58,7 @@ TEST_CASE("OnlinePlanner3rd: velocity constraint", "[traj][online_planner_3rd]")
 // -- Test 3: Acceleration never exceeds a_max ----------------------------------
 TEST_CASE("OnlinePlanner3rd: acceleration constraint", "[traj][online_planner_3rd]")
 {
-    ctrlpp::online_planner_3rd<double> planner({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
     planner.update(10.0);
 
@@ -55,7 +73,7 @@ TEST_CASE("OnlinePlanner3rd: acceleration constraint", "[traj][online_planner_3r
 // -- Test 4: Jerk never exceeds j_max (numerical differentiation) ---------------
 TEST_CASE("OnlinePlanner3rd: jerk constraint", "[traj][online_planner_3rd]")
 {
-    ctrlpp::online_planner_3rd<double> planner({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
     planner.update(10.0);
 
@@ -74,7 +92,7 @@ TEST_CASE("OnlinePlanner3rd: jerk constraint", "[traj][online_planner_3rd]")
 // -- Test 5: Mid-motion target change ------------------------------------------
 TEST_CASE("OnlinePlanner3rd: mid-motion target change", "[traj][online_planner_3rd]")
 {
-    ctrlpp::online_planner_3rd<double> planner({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
     planner.update(10.0);
 
@@ -103,7 +121,7 @@ TEST_CASE("OnlinePlanner3rd: mid-motion target change", "[traj][online_planner_3
 // -- Test 6: Negative displacement ---------------------------------------------
 TEST_CASE("OnlinePlanner3rd: negative displacement", "[traj][online_planner_3rd]")
 {
-    ctrlpp::online_planner_3rd<double> planner({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
     planner.update(-5.0);
 
@@ -115,7 +133,7 @@ TEST_CASE("OnlinePlanner3rd: negative displacement", "[traj][online_planner_3rd]
 // -- Test 7: is_settled returns correct state ----------------------------------
 TEST_CASE("OnlinePlanner3rd: is_settled transitions", "[traj][online_planner_3rd]")
 {
-    ctrlpp::online_planner_3rd<double> planner({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
     REQUIRE(planner.is_settled());
 
@@ -130,7 +148,7 @@ TEST_CASE("OnlinePlanner3rd: is_settled transitions", "[traj][online_planner_3rd
 // -- Test 8: Reset functionality -----------------------------------------------
 TEST_CASE("OnlinePlanner3rd: reset", "[traj][online_planner_3rd]")
 {
-    ctrlpp::online_planner_3rd<double> planner({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
     planner.update(10.0);
     planner.sample(100.0);
@@ -145,7 +163,7 @@ TEST_CASE("OnlinePlanner3rd: reset", "[traj][online_planner_3rd]")
 // -- Test 9: Profile has smooth acceleration (double-S shape) ------------------
 TEST_CASE("OnlinePlanner3rd: smooth acceleration profile", "[traj][online_planner_3rd]")
 {
-    ctrlpp::online_planner_3rd<double> planner({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
     planner.update(10.0);
 
@@ -166,7 +184,7 @@ TEST_CASE("OnlinePlanner3rd: smooth acceleration profile", "[traj][online_planne
 // -- Test 10: Float type works -------------------------------------------------
 TEST_CASE("OnlinePlanner3rd: float type", "[traj][online_planner_3rd]")
 {
-    ctrlpp::online_planner_3rd<float> planner({.v_max = 5.0f, .a_max = 10.0f, .j_max = 50.0f});
+    auto planner = make_planner<float>({.v_max = 5.0f, .a_max = 10.0f, .j_max = 50.0f});
 
     planner.update(10.0f);
     auto const pt = planner.sample(100.0f);
@@ -183,7 +201,7 @@ TEST_CASE("OnlinePlanner3rd: same-direction retarget keeps velocity",
           "[traj][online_planner_3rd]")
 {
     double constexpr v_max = 5.0;
-    ctrlpp::online_planner_3rd<double> planner({.v_max = v_max, .a_max = 10.0, .j_max = 50.0});
+    auto planner = make_planner<double>({.v_max = v_max, .a_max = 10.0, .j_max = 50.0});
 
     // Command a far target and cruise up to v_max.
     planner.update(100.0);
@@ -229,13 +247,13 @@ TEST_CASE("OnlinePlanner3rd: same-direction retarget keeps velocity",
     REQUIRE_THAT(settled.velocity[0], WithinAbs(0.0, 1e-6));
 }
 
-// -- Test 12: try_create rejects out-of-domain limits ----------------------------
+// -- Test 12: create rejects out-of-domain limits ----------------------------
 //
 // All three limits divide in the planner math (cruise duration h/v_max,
 // jerk-phase durations a_max/j_max and |a|/j_max), so the domain of each is
 // finite and strictly positive; everything else is rejected with the
 // limit-specific enumerator.
-TEST_CASE("OnlinePlanner3rd: try_create rejects invalid limits",
+TEST_CASE("OnlinePlanner3rd: create rejects invalid limits",
           "[traj][online_planner_3rd][negative]")
 {
     using planner_t = ctrlpp::online_planner_3rd<double>;
@@ -246,7 +264,7 @@ TEST_CASE("OnlinePlanner3rd: try_create rejects invalid limits",
     {
         for (double const v_max : {0.0, -1.0, nan, inf}) {
             auto const result =
-                planner_t::try_create({.v_max = v_max, .a_max = 10.0, .j_max = 50.0});
+                planner_t::create({.v_max = v_max, .a_max = 10.0, .j_max = 50.0});
             REQUIRE_FALSE(result.has_value());
             REQUIRE(result.error()
                     == ctrlpp::trajectory_error::non_positive_velocity_limit);
@@ -257,7 +275,7 @@ TEST_CASE("OnlinePlanner3rd: try_create rejects invalid limits",
     {
         for (double const a_max : {0.0, -1.0, nan, inf}) {
             auto const result =
-                planner_t::try_create({.v_max = 5.0, .a_max = a_max, .j_max = 50.0});
+                planner_t::create({.v_max = 5.0, .a_max = a_max, .j_max = 50.0});
             REQUIRE_FALSE(result.has_value());
             REQUIRE(result.error()
                     == ctrlpp::trajectory_error::non_positive_acceleration_limit);
@@ -268,46 +286,9 @@ TEST_CASE("OnlinePlanner3rd: try_create rejects invalid limits",
     {
         for (double const j_max : {0.0, -1.0, nan, inf}) {
             auto const result =
-                planner_t::try_create({.v_max = 5.0, .a_max = 10.0, .j_max = j_max});
+                planner_t::create({.v_max = 5.0, .a_max = 10.0, .j_max = j_max});
             REQUIRE_FALSE(result.has_value());
             REQUIRE(result.error() == ctrlpp::trajectory_error::non_positive_jerk_limit);
         }
-    }
-}
-
-// -- Test 13: factory-built and ctor-built planners agree ------------------------
-TEST_CASE("OnlinePlanner3rd: try_create and constructor produce identical profiles",
-          "[traj][online_planner_3rd]")
-{
-    auto factory_built = ctrlpp::online_planner_3rd<double>::try_create(
-        {.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
-    REQUIRE(factory_built.has_value());
-    ctrlpp::online_planner_3rd<double> ctor_built(
-        {.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
-
-    factory_built->update(10.0);
-    ctor_built.update(10.0);
-
-    double constexpr dt = 0.01;
-    double t = 0.0;
-    for (int i = 0; i < 100; ++i) {
-        t += dt;
-        auto const a = factory_built->sample(t);
-        auto const b = ctor_built.sample(t);
-        REQUIRE(a.position[0] == b.position[0]);
-        REQUIRE(a.velocity[0] == b.velocity[0]);
-        REQUIRE(a.acceleration[0] == b.acceleration[0]);
-    }
-
-    // Retarget mid-motion and keep comparing.
-    factory_built->update(-5.0);
-    ctor_built.update(-5.0);
-    for (int i = 0; i < 100; ++i) {
-        t += dt;
-        auto const a = factory_built->sample(t);
-        auto const b = ctor_built.sample(t);
-        REQUIRE(a.position[0] == b.position[0]);
-        REQUIRE(a.velocity[0] == b.velocity[0]);
-        REQUIRE(a.acceleration[0] == b.acceleration[0]);
     }
 }

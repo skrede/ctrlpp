@@ -41,11 +41,11 @@ struct config {
 ## Factory
 
 ```cpp
-[[nodiscard]] static auto try_create(config const& cfg)
+[[nodiscard]] static auto create(config const& cfg)
     -> ctrlpp::expected<cubic_spline, spline_error>;
 ```
 
-Validates the configuration and constructs a cubic spline. Requires at least 2 waypoints and strictly increasing time values. Periodic boundary conditions additionally require at least 3 waypoints and matching first/last positions: with only 2 waypoints the cyclic system for the interior velocities is empty and the closed curve degenerates, so that configuration is rejected.
+`create` is the only construction path. There is no non-fallible constructor: a rejected configuration is a value the caller has to inspect, never an object that quietly stands in for one. It validates the configuration and constructs a cubic spline. Requires at least 2 waypoints and strictly increasing time values. Periodic boundary conditions additionally require at least 3 waypoints and matching first/last positions: with only 2 waypoints the cyclic system for the interior velocities is empty and the closed curve degenerates, so that configuration is rejected.
 
 Rejections, checked in order:
 
@@ -56,14 +56,6 @@ Rejections, checked in order:
 | Knot times not strictly increasing | `spline_error::non_increasing_times` |
 | Periodic BC with fewer than 3 waypoints | `spline_error::periodic_too_few_points` |
 | Periodic BC with q_0 != q_n beyond the rounding budget | `spline_error::periodic_endpoint_mismatch` |
-
-## Constructor
-
-```cpp
-explicit cubic_spline(config const& cfg);  // requires CTRLPP_HAS_EXCEPTIONS
-```
-
-Throwing convenience wrapper over `try_create`: delegates to `try_create(cfg).value()`, so an invalid configuration throws the `value()` exception of `ctrlpp::expected`. Compiled out when `CTRLPP_HAS_EXCEPTIONS` is 0.
 
 ## Methods
 
@@ -98,7 +90,7 @@ Returns total spline duration: t_n - t_0.
 
 int main()
 {
-    auto spline = ctrlpp::cubic_spline<double>::try_create({
+    auto spline = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
         .positions = {0.0, 1.0, 0.5, 1.5, 2.0},
         .bc = ctrlpp::boundary_condition::natural,
@@ -120,5 +112,5 @@ int main()
 
 - [smoothing-spline](smoothing-spline.md)<br/> Smoothing spline approximation with data/smoothness tradeoff
 - [bspline-trajectory](bspline-trajectory.md)<br/> B-spline trajectory with configurable degree
-- [trajectory-types](trajectory-types.md)<br/> `spline_error` enumerators returned by `try_create`
+- [trajectory-types](trajectory-types.md)<br/> `spline_error` enumerators returned by `create`
 - [Trajectory Generation Theory](../../background/trajectory-generation.md)<br/> Mathematical background for spline interpolation

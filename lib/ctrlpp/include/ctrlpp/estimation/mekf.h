@@ -11,7 +11,6 @@
 /// @cite crassidis2003 -- Crassidis & Markley, "Unscented Filtering for Spacecraft Attitude Estimation", J. Guidance Control Dyn 26(4), 2003
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/lie/so3.h"
@@ -86,24 +85,13 @@ public:
     /// NaN, which would silently poison the whole filter state at construction;
     /// such a config is rejected with `filter_error::degenerate_quaternion`.
     /// Any finite nonzero quaternion is accepted and normalized.
-    [[nodiscard]] static auto try_create(Measurement measurement, mekf_config<Scalar, NB, NY> config) -> ctrlpp::expected<mekf, filter_error>
+    [[nodiscard]] static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config) -> ctrlpp::expected<mekf, filter_error>
     {
         const Scalar q0_norm = config.q0.norm();
         if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
             return ctrlpp::unexpected(filter_error::degenerate_quaternion);
         return mekf{validated_tag{}, std::move(measurement), std::move(config)};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience constructor. Delegates to `try_create` and
-    /// throws on a degenerate initial quaternion; compiled out when the library
-    /// is built without exception support, where `try_create` is the only
-    /// construction path.
-    mekf(Measurement measurement, mekf_config<Scalar, NB, NY> config)
-        : mekf{try_create(std::move(measurement), std::move(config)).value()}
-    {
-    }
-#endif
 
     void predict(const input_vector_t& omega) { predict_impl(omega, dt_); }
 
@@ -250,10 +238,6 @@ private:
     output_vector_t innovation_;
     state_vector_t state_cache_;
 };
-
-// CTAD deduction guide
-template <typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NB, std::size_t NY>
-mekf(Measurement, mekf_config<Scalar, NB, NY>) -> mekf<Scalar, NB, NY, Measurement>;
 
 namespace detail
 {

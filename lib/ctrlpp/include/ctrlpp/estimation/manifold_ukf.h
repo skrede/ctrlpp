@@ -6,7 +6,6 @@
 /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/lie/so3.h"
@@ -141,24 +140,13 @@ public:
     /// NaN, which would silently poison the whole filter state at construction;
     /// such a config is rejected with `filter_error::degenerate_quaternion`.
     /// Any finite nonzero quaternion is accepted and normalized.
-    [[nodiscard]] static auto try_create(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<manifold_ukf, filter_error>
+    [[nodiscard]] static auto create(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<manifold_ukf, filter_error>
     {
         const Scalar q0_norm = config.q0.norm();
         if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
             return ctrlpp::unexpected(filter_error::degenerate_quaternion);
         return manifold_ukf{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config), std::move(strategy)};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience constructor. Delegates to `try_create` and
-    /// throws on a degenerate initial quaternion; compiled out when the library
-    /// is built without exception support, where `try_create` is the only
-    /// construction path.
-    manifold_ukf(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{})
-        : manifold_ukf{try_create(std::move(dynamics), std::move(measurement), std::move(config), std::move(strategy)).value()}
-    {
-    }
-#endif
 
     void predict(const input_vector_t& omega)
     {
@@ -351,9 +339,6 @@ private:
 
     void update_state_cache() { m_state_cache = so3::to_vec(m_q); }
 };
-
-template <typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NY>
-manifold_ukf(Dynamics, Measurement, manifold_ukf_config<Scalar, NY>) -> manifold_ukf<Scalar, NY, Dynamics, Measurement, so3_merwe_sigma_points<Scalar>>;
 
 namespace detail
 {

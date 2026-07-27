@@ -392,7 +392,7 @@ auto terminal_ingredients(
     if(!eset)
         return ctrlpp::unexpected(eset.error());
 
-    return terminal_ingredients_result<Scalar, NX, NU>{.Qf = P, .set = eset.value()};
+    return terminal_ingredients_result<Scalar, NX, NU>{.Qf = P, .set = *eset};
 }
 
 }

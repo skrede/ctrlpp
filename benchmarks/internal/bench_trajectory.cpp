@@ -1,6 +1,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_construct.h"
+
 #include "ctrlpp/trajectory/cubic_spline.h"
 #include "ctrlpp/trajectory/online_planner_3rd.h"
 
@@ -20,7 +22,8 @@ int main()
         .positions = {0.0, 0.5, 1.0, 0.8, 0.3, 0.0, -0.3, -0.8, -1.0, -0.5},
         .bc = ctrlpp::boundary_condition::natural,
     };
-    ctrlpp::cubic_spline<double> spline(spline_cfg);
+    auto spline = ctrlpp::bench::built_or_exit(
+        ctrlpp::cubic_spline<double>::create(spline_cfg), "spline");
     double t_eval = 0.45;
 
     // Online planner: jerk-limited
@@ -29,7 +32,8 @@ int main()
         .a_max = 5.0,
         .j_max = 10.0,
     };
-    ctrlpp::online_planner_3rd<double> planner(planner_cfg);
+    auto planner = ctrlpp::bench::built_or_exit(
+        ctrlpp::online_planner_3rd<double>::create(planner_cfg), "planner");
     planner.update(1.0);
     double t_sample = 0.01;
 

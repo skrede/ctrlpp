@@ -93,13 +93,13 @@ int fold_all()
 
     witness += ctrlpp::biquad<scalar>::low_pass(scalar{100}, scalar{1000}).has_value() ? 1 : 0;
 
-    witness += ctrlpp::complementary_filter<scalar>::try_create(
+    witness += ctrlpp::complementary_filter<scalar>::create(
                    ctrlpp::cf_config<scalar>{})
                    .has_value()
                ? 1
                : 0;
 
-    witness += ctrlpp::online_planner_3rd<scalar>::try_create(
+    witness += ctrlpp::online_planner_3rd<scalar>::create(
                    {.v_max = scalar{1}, .a_max = scalar{1}, .j_max = scalar{1}})
                    .has_value()
                ? 1

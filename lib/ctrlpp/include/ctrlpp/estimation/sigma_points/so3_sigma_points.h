@@ -7,7 +7,6 @@
 /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/lie/so3.h"
@@ -65,14 +64,6 @@ public:
             return ctrlpp::unexpected(inner.error());
         return so3_merwe_sigma_points{unchecked_t{}, std::move(*inner)};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_create`.
-    ///
-    /// Delegates to `try_create(opts).value()`. Compiled out when
-    /// CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free builds.
-    explicit so3_merwe_sigma_points(options_t opts) : so3_merwe_sigma_points{try_create(opts).value()} {}
-#endif
 
     manifold_sigma_result<Scalar, num_points> generate(const Eigen::Quaternion<Scalar>& q_mean, const Matrix<Scalar, 3, 3>& P) const
 

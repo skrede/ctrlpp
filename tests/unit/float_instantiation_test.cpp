@@ -140,7 +140,9 @@ TEST_CASE("MEKF instantiates and steps at Scalar=float", "[float][anchor]")
 
     mekf_config<float, NB, NY_MEKF> cfg;
     cfg.dt = 0.1f;
-    mekf<float, NB, NY_MEKF, vector_observation_f> filt(vector_observation_f{}, cfg);
+    auto filt_result = mekf<float, NB, NY_MEKF, vector_observation_f>::create(vector_observation_f{}, cfg);
+    REQUIRE(filt_result.has_value());
+    auto& filt = *filt_result;
 
     Vector<float, 3> omega{0.1f, 0.0f, 0.0f};
     filt.predict(omega, 0.1f);
@@ -153,7 +155,9 @@ TEST_CASE("MEKF instantiates and steps at Scalar=float", "[float][anchor]")
 TEST_CASE("complementary_filter instantiates and steps at Scalar=float", "[float][anchor]")
 {
     cf_config<float> cfg;
-    complementary_filter<float> filt(cfg);
+    auto filt_result = complementary_filter<float>::create(cfg);
+    REQUIRE(filt_result.has_value());
+    auto& filt = *filt_result;
 
     Vector<float, 3> gyro{0.1f, 0.0f, 0.0f};
     Vector<float, 3> accel{0.0f, 0.0f, 9.8f};

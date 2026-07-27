@@ -14,9 +14,9 @@ int main()
         .control_points = {0.0, 2.0, 5.0, 4.0, 7.0, 10.0},
     };
 
-    // try_create validates the configuration and reports rejections through
+    // create validates the configuration and reports rejections through
     // ctrlpp::expected<bspline_trajectory, spline_error> instead of throwing.
-    auto const bspline = ctrlpp::bspline_trajectory<double, 3>::try_create(cfg);
+    auto const bspline = ctrlpp::bspline_trajectory<double, 3>::create(cfg);
     if (!bspline.has_value())
     {
         std::cerr << "invalid B-spline configuration\n";

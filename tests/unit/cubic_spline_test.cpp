@@ -7,8 +7,24 @@
 #include <Eigen/Dense>
 #include <cmath>
 #include <vector>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
+
+namespace
+{
+
+// Construction is fallible, so every valid-input site goes through the factory
+// and asserts success here; a config that becomes unrealizable fails the test
+// instead of quietly skipping it. Rejection cases never use this helper.
+auto make_spline(ctrlpp::cubic_spline<double>::config const& cfg) -> ctrlpp::cubic_spline<double>
+{
+    auto created = ctrlpp::cubic_spline<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
+}
 
 // -- Tridiagonal solver tests -------------------------------------------------
 
@@ -134,7 +150,7 @@ TEST_CASE("cyclic_thomas_solve: 5x5 cyclic system", "[traj][tridiagonal]")
 
 TEST_CASE("Natural BC: passes through all waypoints", "[traj][cubic_spline][natural]")
 {
-    ctrlpp::cubic_spline<double> spline({
+    auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
         .positions = {0.0, 1.0, 0.0, 1.0, 0.0},
         .bc = ctrlpp::boundary_condition::natural,
@@ -151,7 +167,7 @@ TEST_CASE("Natural BC: passes through all waypoints", "[traj][cubic_spline][natu
 
 TEST_CASE("Natural BC: zero acceleration at endpoints", "[traj][cubic_spline][natural]")
 {
-    ctrlpp::cubic_spline<double> spline({
+    auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
         .positions = {0.0, 1.0, 0.0, 1.0, 0.0},
         .bc = ctrlpp::boundary_condition::natural,
@@ -166,7 +182,7 @@ TEST_CASE("Natural BC: zero acceleration at endpoints", "[traj][cubic_spline][na
 
 TEST_CASE("Natural BC: C2 continuity at interior knots", "[traj][cubic_spline][natural]")
 {
-    ctrlpp::cubic_spline<double> spline({
+    auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
         .positions = {0.0, 1.0, 0.0, 1.0, 0.0},
         .bc = ctrlpp::boundary_condition::natural,
@@ -188,7 +204,7 @@ TEST_CASE("Natural BC: C2 continuity at interior knots", "[traj][cubic_spline][n
 
 TEST_CASE("Natural BC: duration returns t_n - t_0", "[traj][cubic_spline][natural]")
 {
-    ctrlpp::cubic_spline<double> spline({
+    auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
         .positions = {0.0, 1.0, 0.0, 1.0, 0.0},
         .bc = ctrlpp::boundary_condition::natural,
@@ -201,7 +217,7 @@ TEST_CASE("Natural BC: duration returns t_n - t_0", "[traj][cubic_spline][natura
 
 TEST_CASE("Clamped BC: respects endpoint velocities", "[traj][cubic_spline][clamped]")
 {
-    ctrlpp::cubic_spline<double> spline({
+    auto spline = make_spline({
         .times = {0.0, 1.0, 2.0},
         .positions = {0.0, 1.0, 0.5},
         .bc = ctrlpp::boundary_condition::clamped,
@@ -218,7 +234,7 @@ TEST_CASE("Clamped BC: respects endpoint velocities", "[traj][cubic_spline][clam
 
 TEST_CASE("Clamped BC: passes through all waypoints", "[traj][cubic_spline][clamped]")
 {
-    ctrlpp::cubic_spline<double> spline({
+    auto spline = make_spline({
         .times = {0.0, 1.0, 2.0},
         .positions = {0.0, 1.0, 0.5},
         .bc = ctrlpp::boundary_condition::clamped,
@@ -235,7 +251,7 @@ TEST_CASE("Clamped BC: passes through all waypoints", "[traj][cubic_spline][clam
 
 TEST_CASE("Periodic BC: matching velocity and acceleration at endpoints", "[traj][cubic_spline][periodic]")
 {
-    ctrlpp::cubic_spline<double> spline({
+    auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0},
         .positions = {1.0, 2.0, 0.5, 1.0},
         .bc = ctrlpp::boundary_condition::periodic,
@@ -250,7 +266,7 @@ TEST_CASE("Periodic BC: matching velocity and acceleration at endpoints", "[traj
 
 TEST_CASE("Periodic BC: passes through all waypoints", "[traj][cubic_spline][periodic]")
 {
-    ctrlpp::cubic_spline<double> spline({
+    auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0},
         .positions = {1.0, 2.0, 0.5, 1.0},
         .bc = ctrlpp::boundary_condition::periodic,
@@ -264,13 +280,13 @@ TEST_CASE("Periodic BC: passes through all waypoints", "[traj][cubic_spline][per
 
 // -- Validation ---------------------------------------------------------------
 //
-// Before the try_create conversion these invalid configurations were guarded
+// Before the create conversion these invalid configurations were guarded
 // only by assert(), so release builds accepted them silently and computed on
 // garbage. Each case pins the specific rejection enumerator.
 
-TEST_CASE("try_create rejects fewer than 2 waypoints", "[traj][cubic_spline][validation]")
+TEST_CASE("create rejects fewer than 2 waypoints", "[traj][cubic_spline][validation]")
 {
-    auto const result = ctrlpp::cubic_spline<double>::try_create({
+    auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0},
         .positions = {1.0},
     });
@@ -279,9 +295,9 @@ TEST_CASE("try_create rejects fewer than 2 waypoints", "[traj][cubic_spline][val
     REQUIRE(result.error() == ctrlpp::spline_error::too_few_points);
 }
 
-TEST_CASE("try_create rejects times/positions length mismatch", "[traj][cubic_spline][validation]")
+TEST_CASE("create rejects times/positions length mismatch", "[traj][cubic_spline][validation]")
 {
-    auto const result = ctrlpp::cubic_spline<double>::try_create({
+    auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0, 2.0},
         .positions = {0.0, 1.0},
     });
@@ -290,9 +306,9 @@ TEST_CASE("try_create rejects times/positions length mismatch", "[traj][cubic_sp
     REQUIRE(result.error() == ctrlpp::spline_error::size_mismatch);
 }
 
-TEST_CASE("try_create rejects non-increasing knot times", "[traj][cubic_spline][validation]")
+TEST_CASE("create rejects non-increasing knot times", "[traj][cubic_spline][validation]")
 {
-    auto const result = ctrlpp::cubic_spline<double>::try_create({
+    auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 2.0, 1.0},
         .positions = {0.0, 1.0, 0.5},
     });
@@ -301,13 +317,13 @@ TEST_CASE("try_create rejects non-increasing knot times", "[traj][cubic_spline][
     REQUIRE(result.error() == ctrlpp::spline_error::non_increasing_times);
 }
 
-TEST_CASE("try_create rejects periodic BC with 2 waypoints", "[traj][cubic_spline][validation][periodic]")
+TEST_CASE("create rejects periodic BC with 2 waypoints", "[traj][cubic_spline][validation][periodic]")
 {
     // A periodic spline needs at least 3 waypoints: with only 2 the cyclic
     // system for the interior velocities is empty and the closed curve is
     // degenerate. The pre-conversion constructor accepted this input silently
     // in release builds and indexed out of range inside the cyclic solver.
-    auto const result = ctrlpp::cubic_spline<double>::try_create({
+    auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0},
         .positions = {1.0, 1.0},
         .bc = ctrlpp::boundary_condition::periodic,
@@ -317,9 +333,9 @@ TEST_CASE("try_create rejects periodic BC with 2 waypoints", "[traj][cubic_splin
     REQUIRE(result.error() == ctrlpp::spline_error::periodic_too_few_points);
 }
 
-TEST_CASE("try_create accepts periodic BC with 3 waypoints", "[traj][cubic_spline][validation][periodic]")
+TEST_CASE("create accepts periodic BC with 3 waypoints", "[traj][cubic_spline][validation][periodic]")
 {
-    auto const result = ctrlpp::cubic_spline<double>::try_create({
+    auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0, 2.0},
         .positions = {1.0, 2.0, 1.0},
         .bc = ctrlpp::boundary_condition::periodic,
@@ -336,9 +352,9 @@ TEST_CASE("try_create accepts periodic BC with 3 waypoints", "[traj][cubic_splin
     REQUIRE_THAT(p0.acceleration[0], WithinAbs(pT.acceleration[0], 1e-10));
 }
 
-TEST_CASE("try_create rejects periodic BC with mismatched endpoints", "[traj][cubic_spline][validation][periodic]")
+TEST_CASE("create rejects periodic BC with mismatched endpoints", "[traj][cubic_spline][validation][periodic]")
 {
-    auto const result = ctrlpp::cubic_spline<double>::try_create({
+    auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0, 2.0, 3.0},
         .positions = {1.0, 2.0, 0.5, 1.5},
         .bc = ctrlpp::boundary_condition::periodic,
@@ -348,9 +364,9 @@ TEST_CASE("try_create rejects periodic BC with mismatched endpoints", "[traj][cu
     REQUIRE(result.error() == ctrlpp::spline_error::periodic_endpoint_mismatch);
 }
 
-TEST_CASE("try_create accepts a valid natural configuration", "[traj][cubic_spline][validation]")
+TEST_CASE("create accepts a valid natural configuration", "[traj][cubic_spline][validation]")
 {
-    auto const result = ctrlpp::cubic_spline<double>::try_create({
+    auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
         .positions = {0.0, 1.0, 0.0, 1.0, 0.0},
         .bc = ctrlpp::boundary_condition::natural,
@@ -369,7 +385,7 @@ TEST_CASE("try_create accepts a valid natural configuration", "[traj][cubic_spli
 
 TEST_CASE("All BCs: evaluate clamps outside [t0, tn]", "[traj][cubic_spline]")
 {
-    ctrlpp::cubic_spline<double> spline({
+    auto spline = make_spline({
         .times = {0.0, 1.0, 2.0},
         .positions = {0.0, 1.0, 0.5},
         .bc = ctrlpp::boundary_condition::natural,

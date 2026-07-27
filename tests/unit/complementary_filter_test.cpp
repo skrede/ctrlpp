@@ -11,11 +11,22 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <utility>
 
 using namespace ctrlpp;
 using Catch::Matchers::WithinAbs;
 
 namespace {
+
+// create() is the only construction path and it is fallible, so every
+// valid-input site goes through it and asserts success here. The rejection
+// cases below do not use this helper: they assert the specific enumerator.
+auto make_filter(const cf_config<double>& cfg) -> complementary_filter<double>
+{
+    auto created = complementary_filter<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
 
 auto quat_angle(const Eigen::Quaterniond& q1, const Eigen::Quaterniond& q2) -> double
 {
@@ -30,7 +41,7 @@ static_assert(ObserverPolicy<complementary_filter<double>>);
 TEST_CASE("complementary filter IMU stationary converges to gravity-aligned", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     Vector<double, 3> gyro = Vector<double, 3>::Zero();
     Vector<double, 3> accel;
@@ -47,7 +58,7 @@ TEST_CASE("complementary filter IMU stationary converges to gravity-aligned", "[
 TEST_CASE("complementary filter IMU rejects constant gyro bias", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     Vector<double, 3> bias_true;
     bias_true << 0.01, 0.01, 0.0;
@@ -76,7 +87,7 @@ TEST_CASE("complementary filter IMU bias estimate converges over a long horizon"
     // time constant.
     const double k_p = 2.0, k_i = 0.005, dt = 0.01;
     cf_config<double> cfg{.k_p = k_p, .k_i = k_i, .dt = dt};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     Vector<double, 3> bias_true;
     bias_true << 0.01, 0.01, 0.0; // roll/pitch bias is observable from gravity; yaw is not
@@ -106,7 +117,7 @@ TEST_CASE("complementary filter IMU bias estimate converges over a long horizon"
 TEST_CASE("complementary filter IMU tracks rotation around z-axis", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     double omega_z = 0.1; // rad/s yaw rate
     Vector<double, 3> gyro;
@@ -140,9 +151,9 @@ TEST_CASE("complementary filter MARG mode uses magnetometer for heading", "[cf]"
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
 
     // IMU-only filter
-    complementary_filter cf_imu{cfg};
+    auto cf_imu = make_filter(cfg);
     // MARG filter
-    complementary_filter cf_marg{cfg};
+    auto cf_marg = make_filter(cfg);
 
     Vector<double, 3> gyro = Vector<double, 3>::Zero();
     Vector<double, 3> accel;
@@ -167,7 +178,7 @@ TEST_CASE("complementary filter ObserverPolicy predict/update interface", "[cf]"
     static_assert(ObserverPolicy<complementary_filter<double>>);
 
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     Vector<double, 3> gyro = Vector<double, 3>::Zero();
     Vector<double, 3> accel;
@@ -186,7 +197,7 @@ TEST_CASE("complementary filter reset via new construction", "[cf]")
     Eigen::Quaterniond q0;
     q0 = Eigen::AngleAxisd(0.3, Vector<double, 3>::UnitZ());
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = q0};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     double angle = quat_angle(cf.attitude(), q0);
     CHECK(angle < 1e-6);
@@ -195,7 +206,7 @@ TEST_CASE("complementary filter reset via new construction", "[cf]")
 TEST_CASE("complementary filter handles zero accelerometer gracefully", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     Vector<double, 3> gyro = Vector<double, 3>::Zero();
     Vector<double, 3> accel = Vector<double, 3>::Zero();
@@ -217,7 +228,7 @@ TEST_CASE("complementary filter handles zero accelerometer gracefully", "[cf]")
 TEST_CASE("complementary filter k_p=0 ignores accel correction", "[cf]")
 {
     cf_config<double> cfg{.k_p = 0.0, .k_i = 0.0, .dt = 0.01};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     // With no proportional or integral gain, only gyro drives the filter
     Vector<double, 3> gyro;
@@ -244,7 +255,7 @@ TEST_CASE("complementary filter k_p=0 ignores accel correction", "[cf]")
 TEST_CASE("complementary filter k_i=0 has no bias estimation", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.0, .dt = 0.01};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     Vector<double, 3> bias_true;
     bias_true << 0.01, 0.01, 0.0;
@@ -264,8 +275,8 @@ TEST_CASE("complementary filter k_i=0 has no bias estimation", "[cf]")
 TEST_CASE("complementary filter MARG with zero magnetometer falls back to IMU", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    complementary_filter cf_marg{cfg};
-    complementary_filter cf_imu{cfg};
+    auto cf_marg = make_filter(cfg);
+    auto cf_imu = make_filter(cfg);
 
     Vector<double, 3> gyro = Vector<double, 3>::Zero();
     Vector<double, 3> accel;
@@ -286,7 +297,7 @@ TEST_CASE("complementary filter MARG with zero magnetometer falls back to IMU", 
 TEST_CASE("complementary filter MARG with near-zero accel is skipped", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     auto q_before = cf.attitude();
 
@@ -306,7 +317,7 @@ TEST_CASE("complementary filter MARG with near-zero accel is skipped", "[cf]")
 TEST_CASE("complementary filter large dt produces finite results", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 1.0};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     Vector<double, 3> gyro;
     gyro << 0.5, -0.3, 0.1;
@@ -325,7 +336,7 @@ TEST_CASE("complementary filter large dt produces finite results", "[cf]")
 TEST_CASE("complementary filter multiple predict/update cycles via ObserverPolicy", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     Vector<double, 3> gyro = Vector<double, 3>::Zero();
     Vector<double, 3> accel;
@@ -346,7 +357,7 @@ TEST_CASE("complementary filter non-identity initial quaternion is preserved bef
 {
     Eigen::Quaterniond q0 = Eigen::Quaterniond(Eigen::AngleAxisd(1.0, Vector<double, 3>::UnitX()));
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = q0};
-    complementary_filter cf{cfg};
+    auto cf = make_filter(cfg);
 
     // State should reflect the initial quaternion
     auto s = cf.state();
@@ -362,20 +373,12 @@ TEST_CASE("complementary filter non-identity initial quaternion is preserved bef
 
 TEST_CASE("complementary filter high proportional gain converges faster", "[cf]")
 {
-    // High k_p filter
-    cf_config<double> cfg_high{.k_p = 20.0, .k_i = 0.0, .dt = 0.01};
-    complementary_filter cf_high{cfg_high};
-
-    // Low k_p filter
-    cf_config<double> cfg_low{.k_p = 0.5, .k_i = 0.0, .dt = 0.01};
-    complementary_filter cf_low{cfg_low};
-
     // Start both from a tilted initial orientation
     Eigen::Quaterniond q0 = Eigen::Quaterniond(Eigen::AngleAxisd(0.5, Vector<double, 3>::UnitX()));
     cf_config<double> cfg_high_tilted{.k_p = 20.0, .k_i = 0.0, .dt = 0.01, .q0 = q0};
     cf_config<double> cfg_low_tilted{.k_p = 0.5, .k_i = 0.0, .dt = 0.01, .q0 = q0};
-    complementary_filter cf_h{cfg_high_tilted};
-    complementary_filter cf_l{cfg_low_tilted};
+    auto cf_h = make_filter(cfg_high_tilted);
+    auto cf_l = make_filter(cfg_low_tilted);
 
     Vector<double, 3> gyro = Vector<double, 3>::Zero();
     Vector<double, 3> accel;
@@ -394,7 +397,7 @@ TEST_CASE("complementary filter high proportional gain converges faster", "[cf]"
     CHECK(err_high < err_low);
 }
 
-TEST_CASE("complementary filter try_create rejects a zero initial quaternion", "[cf]")
+TEST_CASE("complementary filter create rejects a zero initial quaternion", "[cf]")
 {
     // Before the fallible factory existed, the constructor stored the zero
     // quaternion raw; the correction terms then used it as a rotation and the
@@ -402,30 +405,12 @@ TEST_CASE("complementary filter try_create rejects a zero initial quaternion", "
     Eigen::Quaterniond q0{0.0, 0.0, 0.0, 0.0};
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = q0};
 
-    auto cf = complementary_filter<double>::try_create(cfg);
+    auto cf = complementary_filter<double>::create(cfg);
     REQUIRE_FALSE(cf.has_value());
     CHECK(cf.error() == filter_error::degenerate_quaternion);
 }
 
-TEST_CASE("complementary filter try_create matches the constructor on a valid unit quaternion", "[cf]")
-{
-    Eigen::Quaterniond q0 = Eigen::Quaterniond(Eigen::AngleAxisd(0.5, Vector<double, 3>::UnitX()));
-    cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = q0};
-
-    auto factory_built = complementary_filter<double>::try_create(cfg);
-    REQUIRE(factory_built.has_value());
-
-    complementary_filter ctor_built{cfg};
-
-    Vector<double, 3> gyro{0.01, -0.02, 0.03};
-    Vector<double, 3> accel{0.0, 0.0, 9.81};
-    factory_built->update(gyro, accel, 0.01);
-    ctor_built.update(gyro, accel, 0.01);
-
-    CHECK((factory_built->state().array() == ctor_built.state().array()).all());
-}
-
-TEST_CASE("complementary filter try_create accepts and normalizes a non-unit quaternion", "[cf]")
+TEST_CASE("complementary filter create accepts and normalizes a non-unit quaternion", "[cf]")
 {
     // The guard rejects only degeneracy: any finite nonzero quaternion is
     // accepted and brought onto the unit sphere at construction, since the
@@ -433,7 +418,7 @@ TEST_CASE("complementary filter try_create accepts and normalizes a non-unit qua
     Eigen::Quaterniond q0{2.0, 0.0, 0.0, 0.0};
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = q0};
 
-    auto cf = complementary_filter<double>::try_create(cfg);
+    auto cf = complementary_filter<double>::create(cfg);
     REQUIRE(cf.has_value());
     CHECK((cf->attitude().coeffs().array() == q0.normalized().coeffs().array()).all());
 }

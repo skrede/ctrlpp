@@ -18,7 +18,6 @@
 /// @cite reinsch1967 -- Reinsch, "Smoothing by Spline Functions", Numerische Mathematik 10:177-183, 1967 (original smoothing-spline derivation)
 /// @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (cubic smoothing splines)
 
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/trajectory/trajectory_types.h"
@@ -42,7 +41,7 @@ namespace ctrlpp
 /// mu near 0 biases toward smoothness (deviates from data).
 /// Natural-like endpoint conditions: d_0 = d_n = 0.
 ///
-/// Construction goes through `try_create`, which validates the waypoint
+/// Construction goes through `create`, which validates the waypoint
 /// configuration and the smoothing-parameter domain mu in (0, 1], reporting
 /// rejections through `ctrlpp::expected<smoothing_spline, spline_error>`.
 ///
@@ -72,7 +71,7 @@ class smoothing_spline
     /// defined weight.
     ///
     /// @cite biagiotti2009 -- Sec. 4.4.5
-    [[nodiscard]] static auto try_create(config const& cfg)
+    [[nodiscard]] static auto create(config const& cfg)
         -> ctrlpp::expected<smoothing_spline, spline_error>
     {
         auto const n_pts = cfg.times.size();
@@ -94,18 +93,6 @@ class smoothing_spline
         }
         return smoothing_spline{unchecked_t{}, cfg};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_create`.
-    ///
-    /// Delegates to `try_create(cfg).value()`, so an invalid configuration throws
-    /// the value() exception of `ctrlpp::expected`. Compiled out when
-    /// CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free builds.
-    explicit smoothing_spline(config const& cfg)
-        : smoothing_spline{try_create(cfg).value()}
-    {
-    }
-#endif
 
     /// @brief Evaluate smoothing spline at time t, clamped to [t_0, t_n].
     ///
@@ -137,13 +124,13 @@ class smoothing_spline
     auto duration() const -> Scalar { return times_.back() - times_.front(); }
 
   private:
-    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    /// @brief Tag selecting the non-validating constructor reserved for `create`.
     struct unchecked_t
     {
         explicit unchecked_t() = default;
     };
 
-    /// @brief Construct from a configuration already validated by `try_create`.
+    /// @brief Construct from a configuration already validated by `create`.
     ///
     /// Solves the regularized system for second derivatives, computes smoothed
     /// positions, then derives cubic polynomial coefficients per span.

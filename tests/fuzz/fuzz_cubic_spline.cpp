@@ -41,11 +41,15 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             x[i] = x[i - 1] + 1e-3;
     }
 
-    ctrlpp::cubic_spline<double> spline({.times = x, .positions = y});
+    // A rejected configuration is a typed outcome, not a finding: the oracle
+    // below only says what a successfully built spline must satisfy.
+    auto const built = ctrlpp::cubic_spline<double>::create({.times = x, .positions = y});
+    if(!built.has_value())
+            return 0;
 
     // Evaluate at midpoint
     double t_mid = (x.front() + x.back()) * 0.5;
-    auto pt = spline.evaluate(t_mid);
+    auto pt = built->evaluate(t_mid);
 
     if(!std::isfinite(pt.position(0)))
             return 0;

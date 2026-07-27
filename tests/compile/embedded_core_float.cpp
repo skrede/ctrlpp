@@ -1,5 +1,5 @@
 // Embedded-clean compile witness: instantiates the core ctrlpp surface with
-// Scalar=float and exercises one representative try_create per converted module
+// Scalar=float and exercises one representative create per converted module
 // family. Every fallible result is handled through has_value() plus operator*,
 // so the unit stays free of the exception machinery and compiles under
 // -fno-exceptions with CTRLPP_NO_EXCEPTIONS defined. It is registered in the
@@ -143,17 +143,17 @@ int main()
         std::mt19937_64{42U});
     witness += static_cast<int>(sizeof(pf) > 0);
 
-    // -- estimation: try_create factories (mekf, manifold_ukf, complementary) --
+    // -- estimation: create factories (mekf, manifold_ukf, complementary) --
 
     witness += fold(
-        ctrlpp::mekf<scalar, 3, 3, mekf_gravity_measurement>::try_create(
+        ctrlpp::mekf<scalar, 3, 3, mekf_gravity_measurement>::create(
             mekf_gravity_measurement{}, ctrlpp::mekf_config<scalar, 3, 3>{}));
 
     witness += fold(
-        ctrlpp::manifold_ukf<scalar, 3, attitude_dynamics, attitude_measurement>::try_create(
+        ctrlpp::manifold_ukf<scalar, 3, attitude_dynamics, attitude_measurement>::create(
             attitude_dynamics{}, attitude_measurement{}, ctrlpp::manifold_ukf_config<scalar, 3>{}));
 
-    witness += fold(ctrlpp::complementary_filter<scalar>::try_create(ctrlpp::cf_config<scalar>{}));
+    witness += fold(ctrlpp::complementary_filter<scalar>::create(ctrlpp::cf_config<scalar>{}));
 
     // -- dsp: biquad expected factory + fir plain ctor --
 
@@ -162,7 +162,7 @@ int main()
     const ctrlpp::fir<scalar, 3> filter({scalar{0.25}, scalar{0.5}, scalar{0.25}});
     witness += static_cast<int>(sizeof(filter) > 0);
 
-    // -- trajectory: cubic/trapezoidal/double_s expected factories, spline + planner try_create --
+    // -- trajectory: cubic/trapezoidal/double_s expected factories, spline + planner create --
 
     const ctrlpp::Vector<scalar, 1> q0 = ctrlpp::Vector<scalar, 1>::Zero();
     const ctrlpp::Vector<scalar, 1> q1 = ctrlpp::Vector<scalar, 1>::Constant(scalar{1});
@@ -175,10 +175,10 @@ int main()
     witness += fold(ctrlpp::double_s_trajectory<scalar>::create(
         {.q0 = scalar{0}, .q1 = scalar{1}, .v_max = scalar{1}, .a_max = scalar{1}, .j_max = scalar{1}}));
 
-    witness += fold(ctrlpp::cubic_spline<scalar>::try_create(
+    witness += fold(ctrlpp::cubic_spline<scalar>::create(
         {.times = {scalar{0}, scalar{1}, scalar{2}}, .positions = {scalar{0}, scalar{1}, scalar{0}}}));
 
-    witness += fold(ctrlpp::online_planner_3rd<scalar>::try_create(
+    witness += fold(ctrlpp::online_planner_3rd<scalar>::create(
         {.v_max = scalar{1}, .a_max = scalar{1}, .j_max = scalar{1}}));
 
     return witness > 0 ? 0 : 1;

@@ -2,7 +2,6 @@
 #define HPP_GUARD_CTRLPP_NMPC_H
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/mpc/nlp_solver.h"
@@ -52,10 +51,10 @@ public:
     ///  * horizon <= 0                   -> controller_construction_error::non_positive_horizon
     ///  * horizon above the representable
     ///    bound of the derived dimensions -> controller_construction_error::horizon_overflow
-    [[nodiscard]] static auto try_create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
+    [[nodiscard]] static auto create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
         -> expected<nmpc_dynamic, controller_construction_error>
     {
-        return try_create(std::move(dynamics), config, Solver{});
+        return create(std::move(dynamics), config, Solver{});
     }
 
     /// @brief Validating factory taking a caller-supplied, pre-configured
@@ -85,7 +84,7 @@ public:
     /// first solve would surface a configuration error at the first control
     /// step, the worst possible moment. Clamping the horizon to one would turn a
     /// caller mistake into a silently different controller.
-    [[nodiscard]] static auto try_create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
+    [[nodiscard]] static auto create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
         -> expected<nmpc_dynamic, controller_construction_error>
     {
         if(config.horizon <= 0)
@@ -96,32 +95,15 @@ public:
         return nmpc_dynamic{unchecked_t{}, std::move(dynamics), config, std::move(solver)};
     }
 
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_create`.
-    ///
-    /// Delegates to `try_create(dynamics, config).value()`, so a rejected
-    /// horizon throws the `bad_expected_access` of the active
-    /// `ctrlpp::expected` target. Compiled out when CTRLPP_HAS_EXCEPTIONS is 0;
-    /// prefer `try_create` on exception-free builds.
-    nmpc_dynamic(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
-        : nmpc_dynamic{try_create(std::move(dynamics), config).value()}
-    {}
-
-    /// @brief Throwing convenience wrapper over the solver-taking `try_create`.
-    nmpc_dynamic(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
-        : nmpc_dynamic{try_create(std::move(dynamics), config, std::move(solver)).value()}
-    {}
-#endif
-
 private:
-    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    /// @brief Tag selecting the non-validating constructor reserved for `create`.
     struct unchecked_t
     {
         explicit unchecked_t() = default;
     };
 
     /// @brief Largest horizon whose derived decision and constraint dimensions
-    /// are still representable in the horizon's own type. See `try_create` for
+    /// are still representable in the horizon's own type. See `create` for
     /// the derivation; this forms no product of its own.
     [[nodiscard]] static auto horizon_bound() -> int
     {
@@ -130,7 +112,7 @@ private:
         return (std::numeric_limits<int>::max() - constant_dimensions) / per_step;
     }
 
-    /// @brief Construct from a configuration already validated by `try_create`.
+    /// @brief Construct from a configuration already validated by `create`.
     nmpc_dynamic(unchecked_t, Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
         : m_dynamics{std::move(dynamics)}
         , m_config{config}

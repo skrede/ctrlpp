@@ -4,6 +4,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_construct.h"
+
 #include "ctrlpp/trajectory/online_planner_3rd.h"
 
 #include <ruckig/ruckig.hpp>
@@ -30,11 +32,13 @@ int main()
     constexpr double target = 1.0;
 
     // ---- ctrlpp setup ----
-    ctrlpp::online_planner_3rd<double> ctrlpp_planner({
-        .v_max = v_max,
-        .a_max = a_max,
-        .j_max = j_max,
-    });
+    auto ctrlpp_planner = ctrlpp::bench::built_or_exit(
+        ctrlpp::online_planner_3rd<double>::create({
+            .v_max = v_max,
+            .a_max = a_max,
+            .j_max = j_max,
+        }),
+        "ctrlpp_planner");
     ctrlpp_planner.update(target);
 
     double t_ctrlpp = 0.0;

@@ -231,7 +231,7 @@ public:
         if (!solved.has_value()) {
             return ctrlpp::unexpected(solved.error());
         }
-        *this = solved.value();
+        *this = *solved;
         return {};
     }
 
@@ -388,7 +388,7 @@ private:
         if (!rebuilt.has_value()) {
             return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
-        auto const& profile = rebuilt.value();
+        auto const& profile = *rebuilt;
         if (!(profile.T_ > Scalar{0}) || !(profile.v_lim_ <= scaled.v_max)) {
             return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
@@ -404,7 +404,7 @@ private:
     [[nodiscard]] static auto reaches_duration(config const& cfg, Scalar lambda, Scalar T_new) -> bool
     {
         auto const rebuilt = rebuild_scaled(cfg, lambda);
-        return !rebuilt.has_value() || rebuilt.value().T_ >= T_new;
+        return !rebuilt.has_value() || rebuilt->T_ >= T_new;
     }
 
     /// @brief Solve the rescaled profile, or report why the request is not realizable.
@@ -493,7 +493,7 @@ private:
         // reach the requested duration; when it is not, the crossing lies inside
         // the range no admissible profile covers and the request is unreachable.
         auto const solved = rebuild_scaled(cfg, lo);
-        if (!solved.has_value() || !(solved.value().T_ >= T_new)) {
+        if (!solved.has_value() || !(solved->T_ >= T_new)) {
             return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
         return solved;

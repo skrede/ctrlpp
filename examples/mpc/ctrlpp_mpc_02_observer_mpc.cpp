@@ -42,7 +42,15 @@ int main()
                                            .x_min = Eigen::Vector2d(-std::numeric_limits<double>::infinity(), -2.0),
                                            .x_max = Eigen::Vector2d(std::numeric_limits<double>::infinity(), 2.0)};
 
-    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(mpc_sys, cfg);
+    // create validates the horizon and reports a rejection through
+    // ctrlpp::expected<mpc, controller_construction_error> instead of throwing.
+    auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(mpc_sys, cfg);
+    if(!controller_result.has_value())
+    {
+        std::cerr << "invalid MPC configuration\n";
+        return EXIT_FAILURE;
+    }
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x_true(5.0, 0.0);
     Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();

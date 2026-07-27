@@ -10,11 +10,11 @@ int main()
 {
     // 2nd-order online planner tracking a sequence of target changes.
     // Simulates real-time joystick or sensor-driven commands.
-    // try_create validates the kinematic limits (finite and strictly positive,
+    // create validates the kinematic limits (finite and strictly positive,
     // because they divide in the planner math) and reports rejections through
     // ctrlpp::expected; unwrap after checking.
     auto planner_result =
-        ctrlpp::online_planner_2nd<double>::try_create({.v_max = 2.0, .a_max = 5.0});
+        ctrlpp::online_planner_2nd<double>::create({.v_max = 2.0, .a_max = 5.0});
     if (!planner_result.has_value())
     {
         std::cerr << "invalid planner limits\n";

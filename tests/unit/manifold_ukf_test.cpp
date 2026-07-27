@@ -10,6 +10,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <utility>
 
 using namespace ctrlpp;
 using Catch::Matchers::WithinAbs;
@@ -38,13 +39,23 @@ struct gravity_meas
 
 using MukfType = manifold_ukf<double, 3, simple_rotation_dynamics, gravity_meas>;
 
+// create() is the only construction path and it is fallible, so every
+// valid-input site goes through it and asserts success here. The rejection
+// cases below do not use this helper: they assert the specific enumerator.
+auto make_filter(simple_rotation_dynamics dyn, const manifold_ukf_config<double, 3>& cfg) -> MukfType
+{
+    auto created = MukfType::create(std::move(dyn), gravity_meas{}, cfg);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
 } // namespace
 
 TEST_CASE("manifold_ukf predict with zero angular velocity preserves attitude", "[manifold_ukf]")
 {
     manifold_ukf_config<double, 3> cfg;
     cfg.Q *= 1e-6;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     for(int i = 0; i < 100; ++i)
         filter.predict(Vector<double, 3>::Zero());
@@ -61,7 +72,7 @@ TEST_CASE("manifold_ukf update corrects attitude toward measurement", "[manifold
     cfg.Q *= 1e-6;
     cfg.R *= 0.01;
     cfg.P0 *= 10.0;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     Vector<double, 3> gravity_world{0.0, 0.0, 1.0};
 
@@ -81,7 +92,7 @@ TEST_CASE("manifold_ukf covariance stays symmetric and PSD", "[manifold_ukf]")
     manifold_ukf_config<double, 3> cfg;
     cfg.Q *= 1e-4;
     cfg.R *= 0.1;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     Vector<double, 3> omega{0.01, -0.02, 0.03};
     Vector<double, 3> z{0.0, 0.0, 1.0};
@@ -105,7 +116,7 @@ TEST_CASE("manifold_ukf geodesic mean converges", "[manifold_ukf]")
     manifold_ukf_config<double, 3> cfg;
     cfg.Q *= 1e-6;
     cfg.R *= 0.01;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     for(int i = 0; i < 30; ++i)
     {
@@ -121,7 +132,7 @@ TEST_CASE("manifold_ukf geodesic mean converges", "[manifold_ukf]")
 TEST_CASE("manifold_ukf innovation is finite", "[manifold_ukf]")
 {
     manifold_ukf_config<double, 3> cfg;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     filter.predict(Vector<double, 3>{0.01, 0.0, 0.0});
     filter.update(Vector<double, 3>{0.0, 0.0, 1.0});
@@ -144,7 +155,7 @@ TEST_CASE("manifold_ukf tracks constant rotation", "[manifold_ukf]")
     cfg.Q *= 1e-8;
     cfg.R *= 0.01;
     cfg.P0 *= 10.0;
-    MukfType filter(dyn, gravity_meas{}, cfg);
+    auto filter = make_filter(dyn, cfg);
 
     Vector<double, 3> omega{0.0, 0.0, 0.1};
     Vector<double, 3> gravity_world{0.0, 0.0, 1.0};
@@ -173,7 +184,7 @@ TEST_CASE("manifold_ukf predict-only grows covariance", "[manifold_ukf]")
 {
     manifold_ukf_config<double, 3> cfg;
     cfg.Q = Matrix<double, 3, 3>::Identity() * 0.01;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     auto P_before = filter.covariance();
     double trace_before = P_before.trace();
@@ -190,7 +201,7 @@ TEST_CASE("manifold_ukf predict-only covariance stays symmetric PSD", "[manifold
 {
     manifold_ukf_config<double, 3> cfg;
     cfg.Q = Matrix<double, 3, 3>::Identity() * 0.001;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     for(int i = 0; i < 100; ++i)
         filter.predict(Vector<double, 3>{0.1, -0.05, 0.02});
@@ -211,7 +222,7 @@ TEST_CASE("manifold_ukf large initial error converges with updates", "[manifold_
     cfg.Q *= 1e-6;
     cfg.R *= 0.01;
     cfg.P0 *= 100.0; // Very uncertain
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     Vector<double, 3> gravity_world{0.0, 0.0, 1.0};
 
@@ -233,7 +244,7 @@ TEST_CASE("manifold_ukf with very small process noise", "[manifold_ukf]")
     manifold_ukf_config<double, 3> cfg;
     cfg.Q = Matrix<double, 3, 3>::Identity() * 1e-12;
     cfg.R *= 0.1;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     // The filter should still work without numerical issues
     for(int i = 0; i < 50; ++i)
@@ -258,7 +269,7 @@ TEST_CASE("manifold_ukf with very large measurement noise trusts prediction", "[
     cfg.Q *= 1e-6;
     cfg.R = Matrix<double, 3, 3>::Identity() * 1e6; // Huge measurement noise
     cfg.P0 *= 0.001; // Very confident initial state
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     // Give a measurement that disagrees with identity orientation
     for(int i = 0; i < 20; ++i)
@@ -279,7 +290,7 @@ TEST_CASE("manifold_ukf geodesic mean with max_iter=1", "[manifold_ukf]")
     cfg.geodesic_mean_max_iter = 1;
     cfg.Q *= 1e-4;
     cfg.R *= 0.1;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     // Should still produce finite results even with single geodesic iteration
     for(int i = 0; i < 20; ++i)
@@ -299,7 +310,7 @@ TEST_CASE("manifold_ukf with loose geodesic tolerance", "[manifold_ukf]")
     manifold_ukf_config<double, 3> cfg;
     cfg.geodesic_mean_tol = 1.0; // Very loose -- should converge immediately
     cfg.Q *= 1e-4;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     for(int i = 0; i < 10; ++i)
         filter.predict(Vector<double, 3>{0.01, -0.01, 0.02});
@@ -311,7 +322,7 @@ TEST_CASE("manifold_ukf with loose geodesic tolerance", "[manifold_ukf]")
 TEST_CASE("manifold_ukf state cache matches attitude quaternion", "[manifold_ukf]")
 {
     manifold_ukf_config<double, 3> cfg;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     filter.predict(Vector<double, 3>{0.05, -0.03, 0.01});
     filter.update(Vector<double, 3>{0.0, 0.0, 1.0});
@@ -331,7 +342,7 @@ TEST_CASE("manifold_ukf innovation decreases as filter converges", "[manifold_uk
     manifold_ukf_config<double, 3> cfg;
     cfg.Q *= 1e-8;
     cfg.R *= 0.01;
-    MukfType filter(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     Vector<double, 3> gravity{0.0, 0.0, 1.0};
 
@@ -348,48 +359,26 @@ TEST_CASE("manifold_ukf innovation decreases as filter converges", "[manifold_uk
     REQUIRE(std::isfinite(innov_norm));
 }
 
-TEST_CASE("manifold_ukf try_create rejects a zero initial quaternion", "[manifold_ukf]")
+TEST_CASE("manifold_ukf create rejects a zero initial quaternion", "[manifold_ukf]")
 {
     // Before the fallible factory existed, the constructor normalized the zero
     // quaternion directly and silently produced an all-NaN filter state.
     manifold_ukf_config<double, 3> cfg;
     cfg.q0 = Eigen::Quaternion<double>{0.0, 0.0, 0.0, 0.0};
 
-    auto filter = MukfType::try_create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
     REQUIRE_FALSE(filter.has_value());
     REQUIRE(filter.error() == filter_error::degenerate_quaternion);
 }
 
-TEST_CASE("manifold_ukf try_create matches the constructor on a valid unit quaternion", "[manifold_ukf]")
-{
-    manifold_ukf_config<double, 3> cfg;
-    cfg.q0 = so3::exp(Vector<double, 3>{0.174, 0.0, 0.0});
-    cfg.Q *= 1e-6;
-    cfg.R *= 0.01;
-
-    auto factory_built = MukfType::try_create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
-    REQUIRE(factory_built.has_value());
-
-    MukfType ctor_built(simple_rotation_dynamics{}, gravity_meas{}, cfg);
-
-    Vector<double, 3> gravity{0.0, 0.0, 1.0};
-    factory_built->predict(Vector<double, 3>::Zero());
-    ctor_built.predict(Vector<double, 3>::Zero());
-    factory_built->update(gravity);
-    ctor_built.update(gravity);
-
-    REQUIRE((factory_built->state().array() == ctor_built.state().array()).all());
-    REQUIRE((factory_built->covariance().array() == ctor_built.covariance().array()).all());
-}
-
-TEST_CASE("manifold_ukf try_create accepts a non-unit nonzero quaternion", "[manifold_ukf]")
+TEST_CASE("manifold_ukf create accepts a non-unit nonzero quaternion", "[manifold_ukf]")
 {
     // The guard rejects only degeneracy: any finite nonzero quaternion is
     // normalized onto the unit sphere at construction.
     manifold_ukf_config<double, 3> cfg;
     cfg.q0 = Eigen::Quaternion<double>{2.0, 0.0, 0.0, 0.0};
 
-    auto filter = MukfType::try_create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    auto filter = MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
     REQUIRE(filter.has_value());
     REQUIRE((filter->attitude().coeffs().array() == cfg.q0.normalized().coeffs().array()).all());
 }

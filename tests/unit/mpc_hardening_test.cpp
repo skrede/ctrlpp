@@ -53,7 +53,9 @@ TEST_CASE("MPC infeasible constraints: lower > upper", "[mpc][hardening][negativ
     // OSQP rejects the infeasible bounds at setup. The failure is reported on the
     // fail-closed channel: construction latches the setup error and solve returns
     // no solution rather than throwing.
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
     REQUIRE_FALSE(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
 }
 
@@ -67,7 +69,9 @@ TEST_CASE("MPC minimal horizon N=1", "[mpc][hardening][negative]")
         .R = (Eigen::Matrix<double, 1, 1>() << 1.0).finished(),
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);
@@ -91,7 +95,9 @@ TEST_CASE("MPC with NaN in weight matrices", "[mpc][hardening][negative]")
     // A NaN weight produces a non-convex QP. OSQP rejects it at setup and the
     // failure is reported on the fail-closed channel: construction latches the
     // setup error and solve returns no solution rather than throwing.
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
     REQUIRE_FALSE(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
 }
 
@@ -120,7 +126,9 @@ TEST_CASE("MPC 1D regulation matches known optimal", "[mpc][hardening][precision
         .R = (Eigen::Matrix<double, 1, 1>() << 1.0).finished(),
     };
 
-    ctrlpp::mpc<double, NX1, NU1, ctrlpp::osqp_solver> controller(sys, cfg);
+    auto controller_result = ctrlpp::mpc<double, NX1, NU1, ctrlpp::osqp_solver>::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Matrix<double, 1, 1> x;
     x << 1.0;
@@ -144,7 +152,9 @@ TEST_CASE("MPC closed-loop stabilizes double integrator", "[mpc][hardening][stab
         .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.5};
 
@@ -171,7 +181,9 @@ TEST_CASE("MPC with huge Q weights", "[mpc][hardening][robustness]")
         .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);
@@ -189,7 +201,9 @@ TEST_CASE("MPC with near-zero R weights", "[mpc][hardening][robustness]")
         .R = (Eigen::Matrix<double, 1, 1>() << 1e-10).finished(),
     };
 
-    OsqpMpc controller(sys, cfg);
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
 
     Eigen::Vector2d x{1.0, 0.0};
     auto u = controller.solve(x);

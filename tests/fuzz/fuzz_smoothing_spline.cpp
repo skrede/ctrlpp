@@ -43,9 +43,13 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // Clamp mu to valid range -- avoid extreme regularization
     mu = std::clamp(mu, 1e-3, 1.0);
 
-    ctrlpp::smoothing_spline<double> spline({.times = x, .positions = y, .mu = mu});
+    // A rejected configuration is a typed outcome, not a finding: the oracle
+    // below only says what a successfully built spline must satisfy.
+    auto const built = ctrlpp::smoothing_spline<double>::create({.times = x, .positions = y, .mu = mu});
+    if(!built.has_value())
+            return 0;
 
-    auto pt = spline.evaluate(eval_t);
+    auto pt = built->evaluate(eval_t);
 
     if(!std::isfinite(pt.position(0)))
             return 0;

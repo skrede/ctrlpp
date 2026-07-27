@@ -78,7 +78,7 @@ using Mpc = ctrlpp::mpc<double, NX, NU, mock_qp_solver>;
 template <typename Controller, typename... Args>
 auto make_controller(Args&&... args) -> Controller
 {
-    auto created = Controller::try_create(std::forward<Args>(args)...);
+    auto created = Controller::create(std::forward<Args>(args)...);
     REQUIRE(created.has_value());
     return *std::move(created);
 }
