@@ -51,6 +51,8 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY>
 class nmhe
 {
+    static_assert(N > 0, "Window length N must be positive: it sizes the fixed estimation window arrays, which the update rotates and reads the trailing element of, neither of which is defined for an empty window");
+
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int ny = static_cast<int>(NY);
     static constexpr int nc = static_cast<int>(NC);

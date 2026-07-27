@@ -2,6 +2,7 @@
 #define HPP_GUARD_CTRLPP_NMPC_H
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/mpc/nlp_solver.h"
@@ -14,6 +15,7 @@
 
 #include <span>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 #include <cstddef>
@@ -42,11 +44,94 @@ class nmpc_dynamic
     static constexpr int ntc = static_cast<int>(NTC);
 
 public:
+    /// @brief Validating factory; the only construction path on an
+    /// exception-free build. Builds the solver with its own defaults and chains
+    /// into the solver-taking overload below.
+    ///
+    /// Rejections, checked in order:
+    ///  * horizon <= 0                   -> controller_construction_error::non_positive_horizon
+    ///  * horizon above the representable
+    ///    bound of the derived dimensions -> controller_construction_error::horizon_overflow
+    [[nodiscard]] static auto try_create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
+        -> expected<nmpc_dynamic, controller_construction_error>
+    {
+        return try_create(std::move(dynamics), config, Solver{});
+    }
+
+    /// @brief Validating factory taking a caller-supplied, pre-configured
+    /// solver. Both the dynamics and the solver are moved in before the NLP is
+    /// posed, so the caller's solver settings govern setup.
+    ///
+    /// The horizon is the only runtime quantity that scales the posed problem,
+    /// and it is validated here, before any dimension product is formed and
+    /// before any storage is reserved. Rejections, checked in order:
+    ///  * horizon <= 0             -> controller_construction_error::non_positive_horizon
+    ///  * horizon > horizon_bound   -> controller_construction_error::horizon_overflow
+    ///
+    /// The overflow bound is a representability condition on the horizon's own
+    /// type, not a chosen ceiling. At the worst-case configuration (path slack,
+    /// terminal slack and rate bounds all present) the horizon N scales two
+    /// dimensions:
+    ///   decision vector : (N+1)*nx + N*nu + N*nc + ntc
+    ///                                       = N*(nx + nu + nc) + nx + ntc
+    ///   constraint rows : (N+1)*nx + 2*N*nu + N*nc + ntc
+    ///                                       = N*(nx + 2*nu + nc) + nx + ntc
+    /// so the largest per-step contribution is nx + 2*nu + nc and the
+    /// horizon-independent part is nx + ntc. Both products therefore stay
+    /// representable exactly when
+    ///   horizon <= (max<int> - (nx + ntc)) / (nx + 2*nu + nc).
+    ///
+    /// Two alternatives are deliberately not implemented. Validating at the
+    /// first solve would surface a configuration error at the first control
+    /// step, the worst possible moment. Clamping the horizon to one would turn a
+    /// caller mistake into a silently different controller.
+    [[nodiscard]] static auto try_create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
+        -> expected<nmpc_dynamic, controller_construction_error>
+    {
+        if(config.horizon <= 0)
+            return unexpected(controller_construction_error::non_positive_horizon);
+        if(config.horizon > horizon_bound())
+            return unexpected(controller_construction_error::horizon_overflow);
+
+        return nmpc_dynamic{unchecked_t{}, std::move(dynamics), config, std::move(solver)};
+    }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience wrapper over `try_create`.
+    ///
+    /// Delegates to `try_create(dynamics, config).value()`, so a rejected
+    /// horizon throws the `bad_expected_access` of the active
+    /// `ctrlpp::expected` target. Compiled out when CTRLPP_HAS_EXCEPTIONS is 0;
+    /// prefer `try_create` on exception-free builds.
     nmpc_dynamic(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
-        : nmpc_dynamic{std::move(dynamics), config, Solver{}}
+        : nmpc_dynamic{try_create(std::move(dynamics), config).value()}
     {}
 
+    /// @brief Throwing convenience wrapper over the solver-taking `try_create`.
     nmpc_dynamic(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
+        : nmpc_dynamic{try_create(std::move(dynamics), config, std::move(solver)).value()}
+    {}
+#endif
+
+private:
+    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    struct unchecked_t
+    {
+        explicit unchecked_t() = default;
+    };
+
+    /// @brief Largest horizon whose derived decision and constraint dimensions
+    /// are still representable in the horizon's own type. See `try_create` for
+    /// the derivation; this forms no product of its own.
+    [[nodiscard]] static auto horizon_bound() -> int
+    {
+        constexpr int per_step = nx + 2 * nu + nc;
+        constexpr int constant_dimensions = nx + ntc;
+        return (std::numeric_limits<int>::max() - constant_dimensions) / per_step;
+    }
+
+    /// @brief Construct from a configuration already validated by `try_create`.
+    nmpc_dynamic(unchecked_t, Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
         : m_dynamics{std::move(dynamics)}
         , m_config{config}
         , m_N{config.horizon}
@@ -65,6 +150,7 @@ public:
         m_warm_z = Eigen::VectorX<Scalar>::Zero(m_num_vars);
     }
 
+public:
     // Move is correct-by-default: `m_problem` lives behind a `unique_ptr` (a
     // stable heap address), so moving relocates only the owning pointer while the
     // pointed-to problem stays put. The solver's bridge caches `&m_problem` by
@@ -405,6 +491,8 @@ private:
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NH, typename Solver, dynamics_model<Scalar, NX, NU> Dynamics, std::size_t NC = 0, std::size_t NTC = 0>
 class nmpc_static
 {
+    static_assert(NH > 0, "Horizon NH must be positive: a zero horizon leaves no input to apply and makes the horizon - 1 warm-start shift and the input offset into the primal read outside the decision vector");
+
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int nu = static_cast<int>(NU);
 
@@ -425,9 +513,7 @@ public:
         , m_solver{std::move(solver)}
     {
         m_state->x_ref.resize(static_cast<std::size_t>(horizon) + 1, Vector<Scalar, NX>::Zero());
-        m_problem = std::make_unique<problem_type>(
-            detail::build_nmpc_problem_static<Scalar, NX, NU, NH, NC, NTC>(m_dynamics, m_config, m_state));
-        m_setup_failed = !setup_solver();
+        build_problem_and_setup();
         // Pre-size the reused solve buffers ONCE (construction may allocate), so
         // the steady-state assignments below hit the same-size fast path and the
         // hot solve loop stays allocation-free.
@@ -449,8 +535,6 @@ public:
         : m_dynamics{other.m_dynamics}
         , m_config{other.m_config}
         , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>(*other.m_state)}
-        , m_problem{std::make_unique<problem_type>(
-              detail::build_nmpc_problem_static<Scalar, NX, NU, NH, NC, NTC>(m_dynamics, m_config, m_state))}
         , m_solver{other.m_solver}
         , m_warm_z{other.m_warm_z}
         , m_last_solution{other.m_last_solution}
@@ -459,7 +543,7 @@ public:
         , m_u_prev{other.m_u_prev}
         , m_has_solution{other.m_has_solution}
     {
-        m_setup_failed = !setup_solver();
+        build_problem_and_setup();
     }
 
     nmpc_static& operator=(const nmpc_static& other)
@@ -490,6 +574,31 @@ public:
     const Eigen::VectorX<Scalar>& last_solution() const { return m_last_solution; }
 
 private:
+    // Pose the compile-time-dimension problem and set the solver up against it.
+    //
+    // The formulation factory rejects a configuration whose runtime horizon
+    // disagrees with the compile-time NH, or that would introduce slack decision
+    // variables, and it does so before building any of the dependent problem
+    // data. That rejection is unconditional (a release build no longer steps
+    // over it), and it is reported to the caller through the controller's
+    // existing error channel: the setup flag, which turns every subsequent
+    // solve() into solver_error::setup_incomplete. On rejection the problem
+    // holder is still populated with an empty problem so problem() has something
+    // valid to reference.
+    void build_problem_and_setup()
+    {
+        auto problem = detail::build_nmpc_problem_static<Scalar, NX, NU, NH, NC, NTC>(m_dynamics, m_config, m_state);
+        if(!problem.has_value())
+        {
+            m_problem = std::make_unique<problem_type>();
+            m_setup_failed = true;
+            return;
+        }
+
+        m_problem = std::make_unique<problem_type>(*std::move(problem));
+        m_setup_failed = !setup_solver();
+    }
+
     // Solver setup without the runtime-erased setup_nlp_solver helper (that helper
     // is typed on nlp_problem<Scalar>; the static path binds nlp_problem_static).
     // Kept solver-generic: fallible try_setup when available, classic setup

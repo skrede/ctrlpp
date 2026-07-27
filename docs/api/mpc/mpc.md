@@ -44,7 +44,44 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 | `terminal_constraint_set` | `optional<terminal_set<Scalar, NX>>` | none | Ellipsoidal or polyhedral terminal set |
 | `hard_state_constraints` | `bool` | `false` | When true, state constraints are hard (not softened) |
 
-## Constructors
+## Construction
+
+```cpp
+static auto try_create(const discrete_state_space<Scalar, NX, NU, NX>& system,
+                       const mpc_config<Scalar, NX, NU>& config)
+    -> expected<mpc, controller_construction_error>;
+
+static auto try_create(const discrete_state_space<Scalar, NX, NU, NX>& system,
+                       const mpc_config<Scalar, NX, NU>& config,
+                       Solver solver)
+    -> expected<mpc, controller_construction_error>;
+```
+
+`try_create` is the construction path. It validates the configuration, then builds the QP matrices, computes the terminal cost (via DARE if `Qf` is not set), and initializes the solver. The two-argument form default-constructs the solver and chains into the three-argument form, which injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset:
+
+```cpp
+// Skip per-step polishing on the warm-resolve path -- see qp_preset.
+auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::try_create(
+    sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
+if (!created)
+    return handle(created.error());
+auto controller = *std::move(created);
+```
+
+### Rejections
+
+The prediction horizon is the only runtime quantity that scales the posed problem, so it is validated once here, before any dimension product is formed and before any storage is reserved. Rejections, checked in order:
+
+| Condition | `controller_construction_error` |
+|-----------|----------------------------------|
+| `config.horizon <= 0` | `non_positive_horizon` |
+| `config.horizon` above the representable bound of the derived dimensions | `horizon_overflow` |
+
+`horizon` stays a signed `int` deliberately: a mistaken negative value remains representable as negative and is therefore rejectable, whereas an unsigned field would turn the same mistake into an enormous allocation. The overflow bound is a representability condition on `int`, not a chosen ceiling. At the worst-case configuration the horizon `N` scales the decision vector as `N*(2*NX + NU) + NX` and the constraint rows as `N*(2*NX + 2*NU) + NX + n_terminal`, so both stay representable exactly when `horizon <= (INT_MAX - (NX + n_terminal)) / (2*NX + 2*NU)`.
+
+Two alternatives are deliberately not implemented. Validating at the first solve would surface a configuration error at the first control step, the worst possible moment. Clamping the horizon to one would turn a caller mistake into a silently different controller.
+
+### Throwing constructors
 
 ```cpp
 mpc(const discrete_state_space<Scalar, NX, NU, NX>& system,
@@ -55,15 +92,7 @@ mpc(const discrete_state_space<Scalar, NX, NU, NX>& system,
     Solver solver);
 ```
 
-Constructs the controller from a discrete-time state-space model and configuration. Builds the QP matrices, computes terminal cost (via DARE if `Qf` is not set), and initializes the solver.
-
-The two-argument form default-constructs the solver. The three-argument form injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset:
-
-```cpp
-// Skip per-step polishing on the warm-resolve path — see qp_preset.
-ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(
-    sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
-```
+Convenience wrappers over the matching `try_create` overload, available only when the compiler has exception support (`CTRLPP_HAS_EXCEPTIONS`). A rejected configuration throws the `bad_expected_access` of the active `ctrlpp::expected` target. On an exception-free build these are compiled out and `try_create` is the only construction path.
 
 ## Failure contract
 
@@ -192,7 +221,13 @@ int main()
         .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
         .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0)};
 
-    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(sys, cfg);
+    auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::try_create(sys, cfg);
+    if(!created)
+    {
+        // created.error() carries the controller_construction_error.
+        return 1;
+    }
+    auto controller = *std::move(created);
 
     Eigen::Vector2d x(5.0, 0.0);
 

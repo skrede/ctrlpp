@@ -64,6 +64,8 @@ nmhe(Dynamics dynamics, Measurement measurement,
 
 Constructs the estimator from dynamics and measurement models plus configuration. Builds the NLP formulation and initializes the internal EKF for arrival cost propagation.
 
+The window length `N` is a template parameter on both the class and `nmhe_config`, not a runtime field, so its domain is enforced at compile time: `N == 0` fails to compile on both. `N` sizes the fixed estimation window arrays, which the update rotates and reads the trailing element of, neither of which is defined for an empty window. There is therefore no fallible construction factory here: the horizon domain is closed before the program runs.
+
 ## Methods
 
 ### predict

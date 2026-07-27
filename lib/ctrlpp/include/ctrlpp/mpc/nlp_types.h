@@ -19,6 +19,27 @@ enum class nlopt_setup_error : std::uint8_t
     incompatible_equality_constraints
 };
 
+/// @brief Structured failure modes for the compile-time-horizon NLP
+/// formulation factory `build_nmpc_problem_static`.
+///
+/// The compile-time decision dimension NV = (NH+1)*NX + NH*NU pins the shape of
+/// the posed problem, so a configuration that would produce a different runtime
+/// dimension is rejected before any of the dependent problem data is built.
+///
+///  * horizon_mismatch    : `config.horizon` disagrees with the compile-time
+///                          horizon NH, so every derived offset into the
+///                          decision vector would be computed against the wrong
+///                          dimension.
+///  * slack_not_supported : a soft-constraint configuration would add slack
+///                          decision variables, growing the decision dimension
+///                          past NV. Only the hard-constraint (slack-free) cut
+///                          is supported on the compile-time-dimension path.
+enum class nlp_formulation_error : std::uint8_t
+{
+    horizon_mismatch,
+    slack_not_supported
+};
+
 /// @brief Structured failure modes for `argmin_solver::try_setup`. The argmin
 /// adapter has no setup failure mode, so this carries no enumerators; the
 /// fallible signature is retained for parity with the other solver backends.

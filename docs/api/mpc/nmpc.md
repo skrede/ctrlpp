@@ -68,13 +68,63 @@ Configuration struct `nmpc_config<Scalar, NX, NU, NC, NTC>` passed at constructi
 | `path_penalty` | `Vector<Scalar, NC>` | `1e4` each | Per-constraint L1 penalty for path constraints |
 | `terminal_penalty` | `Vector<Scalar, NTC>` | `1e4` each | Per-constraint L1 penalty for terminal constraints |
 
-## Constructors
+## Construction
+
+### nmpc (compile-time horizon)
 
 ```cpp
 nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config);
+
+nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
+     Solver solver);
 ```
 
-Constructs the controller from a dynamics model and configuration. Builds the NLP formulation and initializes the solver.
+Constructs the controller from a dynamics model and configuration. Builds the NLP formulation and initializes the solver. The horizon is the template parameter `NH`, so it carries a compile-time domain: `NH == 0` fails to compile, because a zero horizon leaves no input to apply and makes the warm-start shift and the input offset read outside the decision vector.
+
+`config.horizon` must equal `NH`, and the configuration must be slack-free (`soft_constraints` off, or no path/terminal constraint set), so the runtime decision dimension equals the compile-time `NV = (NH+1)*NX + NH*NU`. Both preconditions are checked unconditionally, in a release build as well as a debug build, before any of the dependent problem data is built. A violation is reported through the controller's existing error channel: setup is marked incomplete, so every subsequent `solve` returns `solver_error::setup_incomplete`.
+
+Calling the formulation factory directly surfaces the reason instead:
+
+| Condition | `nlp_formulation_error` |
+|-----------|--------------------------|
+| `config.horizon != NH` | `horizon_mismatch` |
+| a configuration that would add slack decision variables | `slack_not_supported` |
+
+### nmpc_dynamic (runtime horizon)
+
+```cpp
+static auto try_create(Dynamics dynamics,
+                       const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
+    -> expected<nmpc_dynamic, controller_construction_error>;
+
+static auto try_create(Dynamics dynamics,
+                       const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
+                       Solver solver)
+    -> expected<nmpc_dynamic, controller_construction_error>;
+```
+
+`try_create` is the construction path for the runtime-horizon controller. The two-argument form default-constructs the solver and chains into the three-argument form; both move the dynamics and the solver in before the NLP is posed.
+
+```cpp
+auto created = ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics>::try_create(
+    dynamics, cfg);
+if (!created)
+    return handle(created.error());
+auto controller = *std::move(created);
+```
+
+The prediction horizon is the only runtime quantity that scales the posed problem, so it is validated once here, before any dimension product is formed and before any storage is reserved. Rejections, checked in order:
+
+| Condition | `controller_construction_error` |
+|-----------|----------------------------------|
+| `config.horizon <= 0` | `non_positive_horizon` |
+| `config.horizon` above the representable bound of the derived dimensions | `horizon_overflow` |
+
+`horizon` stays a signed `int` deliberately: a mistaken negative value remains representable as negative and is therefore rejectable, whereas an unsigned field would turn the same mistake into an enormous allocation. The overflow bound is a representability condition on `int`, not a chosen ceiling. At the worst-case configuration the horizon `N` scales the decision vector as `N*(NX + NU + NC) + NX + NTC` and the constraint rows as `N*(NX + 2*NU + NC) + NX + NTC`, so both stay representable exactly when `horizon <= (INT_MAX - (NX + NTC)) / (NX + 2*NU + NC)`.
+
+Two alternatives are deliberately not implemented. Validating at the first solve would surface a configuration error at the first control step, the worst possible moment. Clamping the horizon to one would turn a caller mistake into a silently different controller.
+
+The matching throwing constructors remain available when the compiler has exception support (`CTRLPP_HAS_EXCEPTIONS`); they delegate to `try_create` and throw the `bad_expected_access` of the active `ctrlpp::expected` target on a rejected configuration. On an exception-free build they are compiled out and `try_create` is the only construction path.
 
 ## Failure contract
 
@@ -204,8 +254,14 @@ int main()
         .u_max = Eigen::Matrix<double, 1, 1>::Constant(5.0)};
 
     // Runtime horizon (cfg.horizon) with the NLopt solver -> the opt-in nmpc_dynamic.
-    ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, pendulum_dynamics>
-        controller(dynamics, cfg);
+    auto created = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>,
+                                        pendulum_dynamics>::try_create(dynamics, cfg);
+    if(!created)
+    {
+        // created.error() carries the controller_construction_error.
+        return 1;
+    }
+    auto controller = *std::move(created);
 
     Eigen::Vector2d x(1.0, 0.0);  // Start at 1 radian
     Eigen::Vector2d x_ref(0.0, 0.0);  // Drive toward the upright vertical (theta = 0)

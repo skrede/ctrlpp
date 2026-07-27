@@ -25,6 +25,8 @@ namespace ctrlpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t N>
 struct mhe_config
 {
+    static_assert(N > 0, "Window length N must be positive: it sizes the fixed estimation window arrays the estimator rotates and reads the trailing element of");
+
     Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
     Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};
@@ -44,6 +46,8 @@ struct mhe_config
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t N, std::size_t NC = 0>
 struct nmhe_config
 {
+    static_assert(N > 0, "Window length N must be positive: it sizes the fixed estimation window arrays the estimator rotates and reads the trailing element of");
+
     Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
     Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};

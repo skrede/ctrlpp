@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
+#include <utility>
 
 namespace
 {
@@ -51,6 +52,18 @@ auto make_config(int horizon = 5) -> ctrlpp::nmpc_config<double, NX, NU>
 
 using Nmpc = ctrlpp::nmpc_dynamic<double, NX, NU, mock_nlp_solver, decltype(double_integrator)>;
 
+/// Constructs through the validating factory and fails the case if the
+/// configuration is rejected. This is the only construction path available in
+/// the default (-fno-exceptions) tree, where the throwing convenience
+/// constructors are compiled out.
+template <typename Controller, typename... Args>
+auto make_controller(Args&&... args) -> Controller
+{
+    auto created = Controller::try_create(std::forward<Args>(args)...);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
 } // namespace
 
 TEST_CASE("dynamics_model concept accepts lambda with correct signature")
@@ -73,7 +86,7 @@ TEST_CASE("nmpc with mock solver", "[nmpc]")
 {
     constexpr int N = 5;
     auto config = make_config(N);
-    Nmpc controller{double_integrator, config};
+    auto controller = make_controller<Nmpc>(double_integrator, config);
 
     SECTION("solve(x0) returns a value")
     {
@@ -93,7 +106,7 @@ TEST_CASE("nmpc with mock solver", "[nmpc]")
 
     SECTION("trajectory is guarded before the first valid solve")
     {
-        Nmpc fresh{double_integrator, config};
+        auto fresh = make_controller<Nmpc>(double_integrator, config);
         auto pre = fresh.trajectory();
         REQUIRE_FALSE(pre.has_value());
         CHECK(pre.error() == ctrlpp::solver_error::setup_incomplete);
@@ -145,7 +158,7 @@ TEST_CASE("nmpc with mock solver", "[nmpc]")
         // n_constraints = (N+1)*NX (equality only, no rate constraints)
         //               = 6*2 = 12
         mock_nlp_solver solver{};
-        ctrlpp::nmpc_dynamic<double, NX, NU, mock_nlp_solver, decltype(double_integrator)> ctrl{double_integrator, config};
+        auto ctrl = make_controller<ctrlpp::nmpc_dynamic<double, NX, NU, mock_nlp_solver, decltype(double_integrator)>>(double_integrator, config);
 
         // The solver is internal, so we check indirectly via solve
         // After construction, setup() has been called with the problem
@@ -181,7 +194,7 @@ TEST_CASE("nmpc with mock solver", "[nmpc]")
         constrained_config.x_min = Eigen::Vector2d{-5.0, -5.0};
         constrained_config.x_max = Eigen::Vector2d{5.0, 5.0};
 
-        Nmpc constrained_ctrl{double_integrator, constrained_config};
+        auto constrained_ctrl = make_controller<Nmpc>(double_integrator, constrained_config);
 
         Eigen::Vector2d x0{1.0, 0.0};
         auto result = constrained_ctrl.solve(x0);
@@ -223,7 +236,7 @@ TEST_CASE("nmpc budget-limited solve reaches the caller tagged budget_exhausted"
     static_assert(ctrlpp::nlp_solver<budget_nlp_solver>);
 
     auto config = make_config(5);
-    ctrlpp::nmpc_dynamic<double, NX, NU, budget_nlp_solver, decltype(double_integrator)> controller{double_integrator, config};
+    auto controller = make_controller<ctrlpp::nmpc_dynamic<double, NX, NU, budget_nlp_solver, decltype(double_integrator)>>(double_integrator, config);
 
     Eigen::Vector2d x0{1.0, 0.0};
     auto result = controller.solve(x0);

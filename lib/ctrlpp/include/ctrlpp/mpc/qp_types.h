@@ -81,6 +81,31 @@ enum class solver_error : std::uint8_t
     setup_incomplete
 };
 
+/// @brief Structured failure modes for the controller construction factories.
+///
+/// A runtime prediction horizon is a caller-supplied signed value that scales
+/// every derived dimension of the posed problem, so it is validated once, at
+/// construction, before any dimension product is formed or any storage is
+/// reserved. The horizon is deliberately kept signed: a mistaken negative value
+/// stays representable as negative and is therefore rejectable, whereas an
+/// unsigned field would silently turn the same mistake into an enormous
+/// allocation.
+///
+///  * non_positive_horizon : the prediction horizon is zero or negative. A
+///                           horizon of zero poses no input to optimize over and
+///                           leaves the first-input extraction reading past the
+///                           end of the decision vector; a negative horizon
+///                           drives every derived dimension negative.
+///  * horizon_overflow     : the horizon is large enough that the derived
+///                           decision or constraint dimension would not be
+///                           representable in the horizon's own type, so the
+///                           products that size the problem would wrap.
+enum class controller_construction_error : std::uint8_t
+{
+    non_positive_horizon,
+    horizon_overflow
+};
+
 /// @brief Success payload of a controller `solve()`.
 ///
 /// Aggregates the applied control `input` with the soft `status` describing how

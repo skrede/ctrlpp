@@ -6,9 +6,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
-#include <cstddef>
 #include <span>
 #include <vector>
+#include <cstddef>
+#include <utility>
 
 namespace
 {
@@ -70,6 +71,18 @@ auto make_config(int horizon = 5) -> ctrlpp::mpc_config<double, NX, NU>
 
 using Mpc = ctrlpp::mpc<double, NX, NU, mock_qp_solver>;
 
+/// Constructs through the validating factory and fails the case if the
+/// configuration is rejected. This is the only construction path available in
+/// the default (-fno-exceptions) tree, where the throwing convenience
+/// constructors are compiled out.
+template <typename Controller, typename... Args>
+auto make_controller(Args&&... args) -> Controller
+{
+    auto created = Controller::try_create(std::forward<Args>(args)...);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
 } // namespace
 
 TEST_CASE("mock_qp_solver satisfies qp_solver concept")
@@ -85,7 +98,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
     SECTION("QP dimensions are correct for unconstrained problem")
     {
         auto cfg = make_config(N);
-        Mpc controller(sys, cfg);
+        auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{1.0, 0.0};
         auto result = controller.solve(x0);
@@ -102,7 +115,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
     SECTION("solve(x0) calls solver and returns u_0")
     {
         auto cfg = make_config(N);
-        Mpc controller(sys, cfg);
+        auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{1.0, 0.5};
         auto result = controller.solve(x0);
@@ -116,7 +129,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
     SECTION("solve(x0, x_ref) produces non-zero q vector for reference tracking")
     {
         auto cfg = make_config(N);
-        Mpc controller(sys, cfg);
+        auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{0.0, 0.0};
         Eigen::Vector2d x_ref{1.0, 0.0};
@@ -127,7 +140,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
     SECTION("solve returns the error branch when solver reports infeasible")
     {
         auto cfg = make_config(N);
-        Mpc controller(sys, cfg);
+        auto controller = make_controller<Mpc>(sys, cfg);
 
         // First solve to populate things normally
         Eigen::Vector2d x0{1.0, 0.0};
@@ -166,7 +179,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
         static_assert(ctrlpp::qp_solver<infeasible_mock>);
 
-        ctrlpp::mpc<double, NX, NU, infeasible_mock> infeasible_ctrl(sys, cfg);
+        auto infeasible_ctrl = make_controller<ctrlpp::mpc<double, NX, NU, infeasible_mock>>(sys, cfg);
         auto infeasible_result = infeasible_ctrl.solve(x0);
         CHECK_FALSE(infeasible_result.has_value());
         CHECK(infeasible_result.error() == ctrlpp::solver_error::infeasible);
@@ -202,7 +215,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
         static_assert(ctrlpp::qp_solver<budget_mock>);
 
-        ctrlpp::mpc<double, NX, NU, budget_mock> budget_ctrl(sys, cfg);
+        auto budget_ctrl = make_controller<ctrlpp::mpc<double, NX, NU, budget_mock>>(sys, cfg);
         auto budget_result = budget_ctrl.solve(x0);
         REQUIRE(budget_result.has_value());
         CHECK(budget_result->status == ctrlpp::solve_result_status::budget_exhausted);
@@ -211,7 +224,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
     SECTION("trajectory extracts correct number of state and input vectors")
     {
         auto cfg = make_config(N);
-        Mpc controller(sys, cfg);
+        auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{1.0, 0.0};
         auto result = controller.solve(x0);
@@ -233,7 +246,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
     SECTION("diagnostics returns values from last solve")
     {
         auto cfg = make_config(N);
-        Mpc controller(sys, cfg);
+        auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{1.0, 0.0};
         auto result = controller.solve(x0);
@@ -284,7 +297,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
         static_assert(ctrlpp::qp_solver<warmstart_mock>);
 
-        ctrlpp::mpc<double, NX, NU, warmstart_mock> controller(sys, cfg);
+        auto controller = make_controller<ctrlpp::mpc<double, NX, NU, warmstart_mock>>(sys, cfg);
         Eigen::Vector2d x0{1.0, 0.0};
 
         // First solve -- no warm-start data yet
@@ -308,7 +321,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         cfg.x_max = Eigen::Vector2d{10.0, 10.0};
         // hard_state_constraints defaults to false, so soft constraints apply
 
-        Mpc controller(sys, cfg);
+        auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{1.0, 0.0};
         auto result = controller.solve(x0);
@@ -331,7 +344,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         cfg.u_max = Eigen::Matrix<double, 1, 1>{5.0};
         cfg.du_max = Eigen::Matrix<double, 1, 1>{1.0};
 
-        Mpc controller(sys, cfg);
+        auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{1.0, 0.0};
         auto result = controller.solve(x0);
@@ -392,7 +405,7 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
         static_assert(decltype(cfg.Q)::RowsAtCompileTime == 2);
         static_assert(decltype(cfg.Q)::ColsAtCompileTime == 2);
 
-        ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2> controller(sys4, cfg);
+        auto controller = make_controller<ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2>>(sys4, cfg);
 
         Eigen::Vector4d x0 = Eigen::Vector4d::Zero();
         auto result = controller.solve(x0);
@@ -407,7 +420,7 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
             .R = Eigen::Matrix2d::Identity() * 0.1,
         };
 
-        ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2> controller(sys4, cfg);
+        auto controller = make_controller<ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2>>(sys4, cfg);
 
         Eigen::Vector4d x0 = Eigen::Vector4d::Zero();
         Eigen::Vector2d y_ref{1.0, 2.0}; // 2D output reference (position only)
@@ -424,7 +437,7 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
             .R = Eigen::Matrix2d::Identity() * 0.1,
         };
 
-        ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2> controller(sys4, cfg);
+        auto controller = make_controller<ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2>>(sys4, cfg);
 
         Eigen::Vector4d x0 = Eigen::Vector4d::Zero();
         std::vector<Eigen::Vector2d> y_refs(static_cast<std::size_t>(N + 1), Eigen::Vector2d{1.0, 2.0});
@@ -454,7 +467,7 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
         };
 
         // This should compile -- sysid return type feeds directly to MPC
-        ctrlpp::mpc<double, SYSID_NX, SYSID_NU, mock_qp_solver, SYSID_NY> controller(sysid_sys, cfg);
+        auto controller = make_controller<ctrlpp::mpc<double, SYSID_NX, SYSID_NU, mock_qp_solver, SYSID_NY>>(sysid_sys, cfg);
 
         Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
         auto result = controller.solve(x0);
@@ -473,7 +486,7 @@ TEST_CASE("mpc span overload rejects an undersized reference span", "[mpc][span]
     auto sys = make_double_integrator();
     constexpr int N = 5;
     auto cfg = make_config(N);
-    Mpc controller(sys, cfg);
+    auto controller = make_controller<Mpc>(sys, cfg);
 
     Eigen::Vector2d x0{1.0, 0.0};
 
@@ -495,7 +508,7 @@ TEST_CASE("mpc trajectory is guarded before the first valid solve", "[mpc][traje
 {
     auto sys = make_double_integrator();
     auto cfg = make_config(5);
-    Mpc controller(sys, cfg);
+    auto controller = make_controller<Mpc>(sys, cfg);
 
     // No solve has run yet, so there is no valid trajectory to report.
     auto pre = controller.trajectory();

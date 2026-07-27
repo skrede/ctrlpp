@@ -60,6 +60,8 @@ mhe(Dynamics dynamics, Measurement measurement,
 
 Constructs the estimator from dynamics and measurement models plus configuration. Initializes the internal EKF for arrival cost propagation and the measurement/input windows.
 
+The window length `N` is a template parameter on both the class and `mhe_config`, not a runtime field, so its domain is enforced at compile time: `N == 0` fails to compile on both. `N` sizes the fixed estimation window arrays, which the update rotates, reads the trailing element of, and indexes at their midpoint, none of which is defined for an empty window. There is therefore no fallible construction factory here: the horizon domain is closed before the program runs.
+
 ## Methods
 
 ### predict

@@ -2,6 +2,7 @@
 #define HPP_GUARD_CTRLPP_MPC_H
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/control/dare.h"
@@ -17,6 +18,7 @@
 #include <Eigen/Dense>
 
 #include <span>
+#include <limits>
 #include <vector>
 #include <cstddef>
 #include <utility>
@@ -52,30 +54,77 @@ class mpc
     static constexpr int ny = static_cast<int>(NY);
 
 public:
-    mpc(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config) : config_{config}, system_{system}, u_prev_{Vector<Scalar, NU>::Zero()}
+    /// @brief Validating factory; the only construction path on an
+    /// exception-free build. Builds the solver with its own defaults and chains
+    /// into the solver-taking overload below.
+    ///
+    /// Rejections, checked in order:
+    ///  * horizon <= 0                   -> controller_construction_error::non_positive_horizon
+    ///  * horizon above the representable
+    ///    bound of the derived dimensions -> controller_construction_error::horizon_overflow
+    [[nodiscard]] static auto try_create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config)
+        -> expected<mpc, controller_construction_error>
     {
-        precompute_output_weights();
-        compute_dimensions();
-        compute_terminal_cost();
-        build_initial_qp();
-        allocate_update_vectors();
+        return try_create(system, config, Solver{});
     }
 
-    /// @brief Constructs with a caller-supplied, pre-configured solver.
+    /// @brief Validating factory taking a caller-supplied, pre-configured
+    /// solver, e.g. `mpc<...>::try_create(sys, cfg, osqp_solver{qp_preset::speed})`
+    /// to skip per-step polishing on the warm-resolve MPC path. The solver is
+    /// moved in before the initial QP is posed, so its settings govern setup.
     ///
-    /// The default constructor builds the solver with its own defaults; this
-    /// overload lets a caller inject one tuned to a preset or explicit settings,
-    /// e.g. `mpc<...>(sys, cfg, osqp_solver{qp_preset::speed})` to skip per-step
-    /// polishing on the warm-resolve MPC path. The solver is moved in before the
-    /// initial QP is posed, so its settings govern setup.
-    mpc(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver) : solver_{std::move(solver)}, config_{config}, system_{system}, u_prev_{Vector<Scalar, NU>::Zero()}
+    /// The horizon is the only runtime quantity that scales the posed problem,
+    /// and it is validated here, before any dimension product is formed and
+    /// before any storage is reserved. Rejections, checked in order:
+    ///  * horizon <= 0                     -> controller_construction_error::non_positive_horizon
+    ///  * horizon > horizon_bound(config)   -> controller_construction_error::horizon_overflow
+    ///
+    /// The overflow bound is a representability condition on the horizon's own
+    /// type, not a chosen ceiling. At the worst-case configuration (soft state
+    /// bounds, input bounds and rate bounds all present) the horizon N scales
+    /// two dimensions:
+    ///   decision vector : (N+1)*nx + N*nu + N*nx  = N*(2*nx + nu) + nx
+    ///   constraint rows : (N+1)*nx + N*nx + 2*N*nu
+    ///                                             = N*(2*nx + 2*nu) + nx + n_terminal
+    /// so the largest per-step contribution is 2*nx + 2*nu and the
+    /// horizon-independent part is nx + n_terminal (the terminal rows come from
+    /// the caller's terminal set and do not scale with the horizon). Both
+    /// products therefore stay representable exactly when
+    ///   horizon <= (max<int> - (nx + n_terminal)) / (2*nx + 2*nu).
+    ///
+    /// Two alternatives are deliberately not implemented. Validating at the
+    /// first solve would surface a configuration error at the first control
+    /// step, the worst possible moment. Clamping the horizon to one would turn a
+    /// caller mistake into a silently different controller.
+    [[nodiscard]] static auto try_create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver)
+        -> expected<mpc, controller_construction_error>
     {
-        precompute_output_weights();
-        compute_dimensions();
-        compute_terminal_cost();
-        build_initial_qp();
-        allocate_update_vectors();
+        if(config.horizon <= 0)
+            return unexpected(controller_construction_error::non_positive_horizon);
+        if(config.horizon > horizon_bound(config))
+            return unexpected(controller_construction_error::horizon_overflow);
+
+        return mpc{unchecked_t{}, system, config, std::move(solver)};
     }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience wrapper over `try_create`.
+    ///
+    /// Delegates to `try_create(system, config).value()`, so a rejected horizon
+    /// throws the `bad_expected_access` of the active `ctrlpp::expected` target.
+    /// Compiled out when CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on
+    /// exception-free builds.
+    mpc(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config)
+        : mpc{try_create(system, config).value()}
+    {
+    }
+
+    /// @brief Throwing convenience wrapper over the solver-taking `try_create`.
+    mpc(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver)
+        : mpc{try_create(system, config, std::move(solver)).value()}
+    {
+    }
+#endif
 
     // Unified soft-constraint / failure contract (shared by mpc and nmpc).
     //
@@ -158,6 +207,32 @@ public:
     [[nodiscard]] auto diagnostics() const -> mpc_diagnostics<Scalar> { return last_diagnostics_; }
 
 private:
+    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    struct unchecked_t
+    {
+        explicit unchecked_t() = default;
+    };
+
+    /// @brief Construct from a configuration already validated by `try_create`.
+    mpc(unchecked_t, const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver) : solver_{std::move(solver)}, config_{config}, system_{system}, u_prev_{Vector<Scalar, NU>::Zero()}
+    {
+        precompute_output_weights();
+        compute_dimensions();
+        compute_terminal_cost();
+        build_initial_qp();
+        allocate_update_vectors();
+    }
+
+    /// @brief Largest horizon whose derived decision and constraint dimensions
+    /// are still representable in the horizon's own type. See `try_create` for
+    /// the derivation; this forms no product of its own.
+    [[nodiscard]] static auto horizon_bound(const mpc_config<Scalar, NX, NU, NY>& config) -> int
+    {
+        constexpr int per_step = 2 * nx + 2 * nu;
+        const int constant_dimensions = nx + compute_terminal_constraint_rows(config);
+        return (std::numeric_limits<int>::max() - constant_dimensions) / per_step;
+    }
+
     void compute_dimensions()
     {
         int N = config_.horizon;
@@ -171,14 +246,14 @@ private:
 
         bool has_input_bounds = config_.u_min.has_value() || config_.u_max.has_value();
         bool has_rate_bounds = config_.du_max.has_value();
-        int n_terminal = compute_terminal_constraint_rows();
+        int n_terminal = compute_terminal_constraint_rows(config_);
 
         n_con_ = (N + 1) * nx + (has_state_bounds ? N * nx : 0) + (has_input_bounds ? N * nu : 0) + (has_rate_bounds ? N * nu : 0) + n_terminal;
     }
 
-    int compute_terminal_constraint_rows() const
+    static auto compute_terminal_constraint_rows(const mpc_config<Scalar, NX, NU, NY>& config) -> int
     {
-        if(!config_.terminal_constraint_set.has_value())
+        if(!config.terminal_constraint_set.has_value())
             return 0;
 
         return std::visit(
@@ -190,7 +265,7 @@ private:
                 else
                     return static_cast<int>(s.H.rows());
             },
-            config_.terminal_constraint_set.value());
+            config.terminal_constraint_set.value());
     }
 
     void precompute_output_weights()

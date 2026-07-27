@@ -7,7 +7,9 @@
 /// @cite diehl2002 -- Diehl, Bock, Schloder et al., "Real-Time Optimization and Nonlinear Model Predictive Control of Processes Governed by DAEs", J. Process Control 12(4), 2002 (real-time iteration scheme)
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
+#include "ctrlpp/mpc/nlp_types.h"
 #include "ctrlpp/mpc/nlp_solver.h"
 #include "ctrlpp/mpc/nmpc_config.h"
 
@@ -20,7 +22,6 @@
 #include <limits>
 #include <memory>
 #include <vector>
-#include <cassert>
 #include <cstddef>
 #include <algorithm>
 #include <functional>
@@ -525,28 +526,34 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
 /// This first additive cut supports the hard-constraint (no slack-variable)
 /// configuration, where n_vars == NV exactly. It reuses build_nmpc_problem for
 /// the callable/bound assembly (byte-identical NLP behaviour) and repackages the
-/// result into the fixed-decision-dimension contract. config.horizon must equal
-/// the compile-time NH, and a soft-constraint configuration that would introduce
-/// slack decision variables (making n_vars != NV) is rejected via the runtime
-/// guard below; the compile-time-slack tier is future work. The constraint count
-/// stays runtime (as on argmin's fixed-N floor), so slack-free path/terminal
-/// hard constraints are supported.
+/// result into the fixed-decision-dimension contract. The constraint count stays
+/// runtime (as on argmin's fixed-N floor), so slack-free path/terminal hard
+/// constraints are supported.
+///
+/// Both preconditions are checked unconditionally, before any of the dependent
+/// problem data is built, and are reported through the error branch rather than
+/// through a debug-only assertion that a release build would step over:
+///  * config.horizon != NH        -> nlp_formulation_error::horizon_mismatch
+///  * a slack-introducing config  -> nlp_formulation_error::slack_not_supported
+/// The compile-time-slack tier is future work.
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NH, std::size_t NC = 0, std::size_t NTC = 0, typename Dynamics>
 auto build_nmpc_problem_static(const Dynamics& dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, std::shared_ptr<nmpc_formulation_state<Scalar, NX, NU>> state)
-    -> nlp_problem_static<Scalar, static_cast<int>((NH + 1) * NX + NH * NU)>
+    -> ctrlpp::expected<nlp_problem_static<Scalar, static_cast<int>((NH + 1) * NX + NH * NU)>, nlp_formulation_error>
 {
     static constexpr int NV = static_cast<int>((NH + 1) * NX + NH * NU);
 
-    auto dyn = build_nmpc_problem<Scalar, NX, NU, NC, NTC>(dynamics, config, state);
+    // Checked BEFORE build_nmpc_problem runs: the dependent data (bounds,
+    // offsets, and the captured callables) is all sized from config.horizon, so
+    // a mismatch must be rejected before any of it exists.
+    if(config.horizon != static_cast<int>(NH))
+        return ctrlpp::unexpected(nlp_formulation_error::horizon_mismatch);
 
-    // The compile-time NV pins the decision dimension of the hard-constraint
-    // (slack-free) formulation. A soft-constraint configuration that allocates
-    // slack decision variables would grow n_vars past NV; reject it rather than
-    // silently truncate. (config.horizon == NH is the caller's contract.)
-    assert(dyn.n_vars == NV
-        && "nmpc_static requires config.horizon == NH and a slack-free "
-           "(hard-constraint) formulation so the decision dimension equals "
-           "the compile-time NV = (NH+1)*NX + NH*NU");
+    const bool has_path_slack = config.soft_constraints && NC > 0 && config.path_constraint.has_value();
+    const bool has_term_slack = config.soft_constraints && NTC > 0 && config.terminal_constraint.has_value();
+    if(has_path_slack || has_term_slack)
+        return ctrlpp::unexpected(nlp_formulation_error::slack_not_supported);
+
+    auto dyn = build_nmpc_problem<Scalar, NX, NU, NC, NTC>(dynamics, config, state);
 
     nlp_problem_static<Scalar, NV> prob;
     prob.n_vars = dyn.n_vars;

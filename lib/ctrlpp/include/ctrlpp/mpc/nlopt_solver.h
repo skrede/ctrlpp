@@ -67,6 +67,46 @@ public:
 
     explicit nlopt_solver(nlopt_settings<Scalar> settings = {}) : settings_{settings} {}
 
+    // Every NLopt callback is registered with the ADDRESS of this solver
+    // (`set_min_objective(objective_callback, this)` and the three mconstraint
+    // registrations), so a bitwise copy or move would leave the new object's
+    // optimizer calling back into the old one. That is silent memory corruption
+    // once the source dies, not a diagnosable failure, and it is reachable
+    // through any controller that is moved after construction -- which every
+    // fallible factory does, since the constructed controller is returned by
+    // value. Both the copy and the move therefore re-run setup against the same
+    // problem, which rebuilds the optimizer and rebinds every callback to the
+    // new address. The problem is referenced, not owned; the caller keeps it at
+    // a stable address for the lifetime of the solver, so re-running setup
+    // against it is well defined.
+    nlopt_solver(const nlopt_solver& other) : settings_{other.settings_}, problem_{other.problem_} { rebind_callbacks(); }
+
+    nlopt_solver(nlopt_solver&& other) : settings_{other.settings_}, problem_{other.problem_} { rebind_callbacks(); }
+
+    auto operator=(const nlopt_solver& other) -> nlopt_solver&
+    {
+        if(this != &other)
+        {
+            settings_ = other.settings_;
+            problem_ = other.problem_;
+            rebind_callbacks();
+        }
+        return *this;
+    }
+
+    auto operator=(nlopt_solver&& other) -> nlopt_solver&
+    {
+        if(this != &other)
+        {
+            settings_ = other.settings_;
+            problem_ = other.problem_;
+            rebind_callbacks();
+        }
+        return *this;
+    }
+
+    ~nlopt_solver() = default;
+
     /// @brief Fallible setup: configures the NLopt optimizer from the problem
     /// definition. Returns an empty expected on success and an
     /// `nlopt_setup_error` when the selected algorithm rejects the constraint
@@ -229,6 +269,17 @@ private:
             return ctrlpp::unexpected(nlopt_setup_error::incompatible_equality_constraints);
 
         return {};
+    }
+
+    // Re-register every callback against this object's address. A solver that
+    // was never set up has nothing to rebind and stays inert until the caller
+    // sets it up. Setup cannot newly fail here: it already succeeded for this
+    // problem on the source object, and it is a pure function of the problem
+    // and the settings, both of which were carried over unchanged.
+    void rebind_callbacks()
+    {
+        if(problem_ != nullptr)
+            static_cast<void>(try_setup(*problem_));
     }
 
     void configure_constraint_callbacks()

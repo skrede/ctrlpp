@@ -559,7 +559,9 @@ TEST_CASE("argmin static path solves to the dynamic optimum", "[nmpc][argmin][st
     auto stat_state = std::make_shared<ctrlpp::nmpc_formulation_state<double, NX, NU>>();
     stat_state->x_ref.assign(NH + 1, Eigen::Vector2d::Zero());
     stat_state->x0 = x0;
-    auto stat_problem = ctrlpp::detail::build_nmpc_problem_static<double, NX, NU, NH>(double_integrator, config, stat_state);
+    auto stat_built = ctrlpp::detail::build_nmpc_problem_static<double, NX, NU, NH>(double_integrator, config, stat_state);
+    REQUIRE(stat_built.has_value());
+    const auto& stat_problem = *stat_built;
 
     REQUIRE(stat_problem.n_vars == NV);
     REQUIRE(stat_problem.problem_dimension == NV);
