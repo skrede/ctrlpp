@@ -14,6 +14,24 @@
 /// std::expected semantics operator* and error() are unchecked (precondition on
 /// has_value()); only value() is checked.
 ///
+/// Both class templates carry [[nodiscard]] at class level. Discarding a result
+/// silently converts a reported failure into a no-op: in a control loop that is
+/// a step which did nothing while the caller believes it succeeded, and the
+/// error enumerator naming the cause is destroyed unread. One annotation on the
+/// type covers every fallible return in the library, present and future, so the
+/// attribute belongs to the TYPE and is never written at a call site or on an
+/// individual declaration -- a per-site sweep drifts out of sync with the
+/// surfaces it is meant to guard, and this one cannot. The void partial
+/// specialization is annotated separately because a partial specialization does
+/// not inherit the primary template's attributes, and it is the return type of
+/// every fallible operation that produces no value.
+///
+/// The attribute is earned only where discarding the result is a real misuse
+/// that silently breaks correctness. It is deliberately absent from accessors,
+/// getters, size and empty queries, and state-health predicates, whose returns
+/// are harmless to drop; annotating those would impose ceremony on the caller
+/// for nothing.
+///
 /// value() is a caller-facing accessor and nothing inside the library calls it:
 /// library code branches on has_value() and reaches the value through operator*
 /// or operator->, so no library path can reach the throw (or the abort that
@@ -91,7 +109,7 @@ struct bad_expected_access : std::exception
 }
 
 template <typename T, typename E>
-class expected
+class [[nodiscard]] expected
 {
     bool m_has_value;
     union
@@ -388,7 +406,7 @@ private:
 };
 
 template <typename E>
-class expected<void, E>
+class [[nodiscard]] expected<void, E>
 {
     bool m_has_value;
     union

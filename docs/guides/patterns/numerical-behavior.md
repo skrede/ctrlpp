@@ -34,13 +34,21 @@ otherwise produce silent corruption through intermediate overflow:
 
 - **DARE symplectic overflow:** The discrete algebraic Riccati equation solver
   checks that the symplectic matrix is finite before Schur decomposition, and
-  that the extracted solution P is finite before eigenvalue validation. Returns
-  `std::nullopt` for degenerate inputs.
+  that the extracted solution P is finite before eigenvalue validation. It
+  returns `ctrlpp::expected<dare_result<Scalar, NX>, dare_error>`, so a
+  degenerate input comes back as a named rejection rather than a bare empty
+  result: `dare_error::non_finite_input` when A, B, Q, R or the assembled
+  symplectic Z contains NaN or Inf.
 
 - **L1 DC gain inversion:** The L1 adaptive controller validates that the
   predictor model's DC gain is invertible before computing the feedforward gain
-  `K_r`. Throws `std::invalid_argument` at construction if the predictor model
-  has a unit eigenvalue, near-zero DC gain, or produces a non-finite `K_r`.
+  `K_r`. Construction goes through the fallible factory
+  `l1_controller::create`, which returns
+  `ctrlpp::expected<l1_controller, l1_error>` and reports
+  `l1_error::singular_predictor` when (I - A_m) is singular,
+  `l1_error::singular_dc_gain` when the DC gain (I - A_m)^{-1} B is singular or
+  non-finite, and `l1_error::non_finite_gain` when `K_r` is non-finite. It does
+  not throw.
 
 - **Particle filter weight degeneracy:** When all particles have negligible
   likelihood (complete weight collapse), the log-weight normalizer resets to
@@ -72,3 +80,9 @@ otherwise produce silent corruption through intermediate overflow:
 | Constructor/config | Library rejects or falls back on degenerate configs |
 | Algorithm internals | Library uses numerically stable formulations |
 | Outputs | NaN/Inf propagates faithfully, never silently clamped |
+
+The outputs row is being narrowed for the per-step surfaces currently under
+conversion: where a surface gains a typed failure return, a degenerate step is
+reported through that return instead of being left to propagate as NaN. See
+[error-reporting.md](error-reporting.md) for the two reporting channels and for
+which surfaces have been converted so far.

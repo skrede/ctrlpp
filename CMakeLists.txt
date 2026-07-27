@@ -7,8 +7,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
+# Applied to ctrlpp's own targets only (tests, compile tests, examples); the
+# vendored test framework and the third-party backends are compiled with their
+# own options and never receive these.
+#
+# The discarded-result diagnostic is promoted to an ERROR rather than left a
+# warning: ctrlpp::expected is annotated at class level, so dropping it on the
+# floor turns a reported failure into a silent no-op, and in a control loop that
+# is a step which did nothing while the caller believes it succeeded. A warning
+# is scrollback; an error is a gate. Both trees were measured to emit zero such
+# diagnostics before the promotion, so nothing pre-existing is caught by it.
 set(CTRLPP_WARNING_FLAGS
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /utf-8 /EHsc>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /utf-8 /EHsc /we4834>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:
         -fPIC
         -Wall
@@ -24,6 +34,7 @@ set(CTRLPP_WARNING_FLAGS
         -Wdouble-promotion
         -Wimplicit-fallthrough
         -Wformat=2
+        -Werror=unused-result
     >
 )
 
