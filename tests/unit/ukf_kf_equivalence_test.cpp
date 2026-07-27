@@ -79,7 +79,9 @@ TEST_CASE("UKF matches Kalman filter state and covariance on a linear system", "
     ukf_cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
     ukf_cfg.P0 = Matrix<double, NX, NX>::Identity() * 10.0;
 
-    UkfType estimator(linear_dynamics{}, position_measurement{}, ukf_cfg, strategy_opts);
+    auto estimator_result = UkfType::try_create(linear_dynamics{}, position_measurement{}, ukf_cfg, strategy_opts);
+    REQUIRE(estimator_result.has_value());
+    auto& estimator = *estimator_result;
 
     discrete_state_space<double, NX, NU, NY> sys;
     sys.A << 1.0, dt, 0.0, 1.0;

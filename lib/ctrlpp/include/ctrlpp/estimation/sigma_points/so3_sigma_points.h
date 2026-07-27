@@ -7,9 +7,12 @@
 /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/lie/so3.h"
 
+#include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
 #include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
 
@@ -18,6 +21,7 @@
 #include <array>
 #include <cstddef>
 #include <concepts>
+#include <utility>
 
 namespace ctrlpp
 {
@@ -47,7 +51,28 @@ public:
     static constexpr std::size_t num_points = merwe_sigma_points<Scalar, tangent_dim>::num_points;
     using options_t = merwe_options<Scalar>;
 
-    explicit so3_merwe_sigma_points(options_t opts = options_t{}) : m_inner{opts} {}
+    /// @brief Construct from the default options, which the tangent-space
+    /// strategy accepts by construction.
+    so3_merwe_sigma_points() = default;
+
+    /// @brief Fallible factory. Forwards the tangent-space strategy's parameter
+    /// domain check unchanged, since the lifted points are generated from that
+    /// strategy and inherit its weights.
+    [[nodiscard]] static auto try_create(options_t opts = options_t{}) -> ctrlpp::expected<so3_merwe_sigma_points, filter_error>
+    {
+        auto inner = merwe_sigma_points<Scalar, tangent_dim>::try_create(opts);
+        if(!inner)
+            return ctrlpp::unexpected(inner.error());
+        return so3_merwe_sigma_points{unchecked_t{}, std::move(*inner)};
+    }
+
+#if CTRLPP_HAS_EXCEPTIONS
+    /// @brief Throwing convenience wrapper over `try_create`.
+    ///
+    /// Delegates to `try_create(opts).value()`. Compiled out when
+    /// CTRLPP_HAS_EXCEPTIONS is 0; prefer `try_create` on exception-free builds.
+    explicit so3_merwe_sigma_points(options_t opts) : so3_merwe_sigma_points{try_create(opts).value()} {}
+#endif
 
     manifold_sigma_result<Scalar, num_points> generate(const Eigen::Quaternion<Scalar>& q_mean, const Matrix<Scalar, 3, 3>& P) const
 
@@ -69,6 +94,15 @@ public:
     }
 
 private:
+    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
+    struct unchecked_t
+    {
+        explicit unchecked_t() = default;
+    };
+
+    /// @brief Construct from a tangent-space strategy already validated by `try_create`.
+    so3_merwe_sigma_points(unchecked_t, merwe_sigma_points<Scalar, tangent_dim> inner) : m_inner{std::move(inner)} {}
+
     merwe_sigma_points<Scalar, tangent_dim> m_inner;
 };
 

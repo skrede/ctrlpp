@@ -47,7 +47,7 @@ concept differentiable_mekf_measurement = mekf_measurement_model<M, Scalar, NB, 
 template <ctrlpp_floating_scalar Scalar, std::size_t NB, std::size_t NY>
 struct mekf_config
 {
-    static_assert(NB > 0, "Bias dimension NB must be positive");
+    static_assert(NB >= 3, "Bias dimension NB must be at least 3: the propagation subtracts the leading three bias elements from the gyro rate");
     static_assert(NY > 0, "Output dimension NY must be positive");
     static constexpr std::size_t NE = 3 + NB;
     Matrix<Scalar, NE, NE> Q{Matrix<Scalar, NE, NE>::Identity()};
@@ -63,7 +63,7 @@ template <ctrlpp_floating_scalar Scalar, std::size_t NB, std::size_t NY, typenam
     requires mekf_measurement_model<Measurement, Scalar, NB, NY>
 class mekf
 {
-    static_assert(NB > 0, "Bias dimension NB must be positive");
+    static_assert(NB >= 3, "Bias dimension NB must be at least 3: the propagation subtracts the leading three bias elements from the gyro rate");
     static_assert(NY > 0, "Output dimension NY must be positive");
 
     static constexpr std::size_t NE = 3 + NB;

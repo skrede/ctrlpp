@@ -130,6 +130,15 @@ Default manifold sigma point strategy. Generates 2*3+1 = 7 sigma points in the t
 
 Header: `#include <ctrlpp/estimation/sigma_points/so3_sigma_points.h>`
 
+It shares `merwe_options` with the tangent-space strategy it lifts, and forwards that strategy's parameter-domain check unchanged through its own fallible factory:
+
+```cpp
+[[nodiscard]] static auto try_create(options_t opts = options_t{})
+    -> ctrlpp::expected<so3_merwe_sigma_points, filter_error>;
+```
+
+See [ukf](ukf.md) for the two rejections and the reason each parameter has an exact domain. Default construction cannot fail, and the options constructor is the exception-gated wrapper over `try_create`.
+
 ## Usage Example
 
 ```cpp

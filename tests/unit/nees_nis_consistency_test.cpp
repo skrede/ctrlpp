@@ -295,7 +295,9 @@ TEST_CASE("UKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
     double nis_sum = 0.0;
     for(std::size_t m = 0; m < M; ++m)
     {
-        UkfType filt(linear_dynamics{}, position_measurement{}, cfg, strategy_opts);
+        auto filt_result = UkfType::try_create(linear_dynamics{}, position_measurement{}, cfg, strategy_opts);
+        REQUIRE(filt_result.has_value());
+        auto& filt = *filt_result;
         Vector<double, NX> x_true = Vector<double, NX>::Zero();
         Matrix<double, NX, NX> P_prior = cfg.P0;
 

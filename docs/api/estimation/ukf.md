@@ -42,16 +42,34 @@ using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 | `P0` | `Matrix<Scalar, NX, NX>` | Identity | Initial error covariance |
 | `decomposition` | `gain_decomposition` | `ldlt` | Kalman gain decomposition method (`ldlt` or `qr`) |
 
-## Constructors
+## Construction
 
 ```cpp
 ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config);
 
 ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config,
-    typename Strategy::options_t strategy_options);
+    Strategy strategy);
+
+[[nodiscard]] static auto try_create(Dynamics dynamics, Measurement measurement,
+                                     ukf_config<Scalar, NX, NU, NY> config,
+                                     typename Strategy::options_t strategy_options)
+    -> ctrlpp::expected<ukf, filter_error>;
 
 ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config,
-    Strategy strategy);
+    typename Strategy::options_t strategy_options);
+```
+
+The first two forms cannot fail: the default-strategy form uses the strategy's own in-domain defaults, and the pre-built-strategy form receives a strategy that was validated where it was constructed.
+
+The options-aggregate form is the one that builds the strategy inside the filter, so it is the only path on which a sigma-point parameter set can be out of domain. `try_create` is that path's primary API: it forwards the strategy's rejection verbatim as a `filter_error` (from `<ctrlpp/estimation/estimation_types.h>`). The matching constructor is the exception-gated convenience wrapper: with `merwe_sigma_points` it throws in an exceptions-enabled build and does not compile on an exception-free build, where `try_create` is the construction path to use. As a static member of a class template, `try_create` requires explicit template arguments, so name the filter type first:
+
+```cpp
+using filter_t = ctrlpp::ukf<double, NX, NU, NY, Dynamics, Measurement>;
+
+auto filter = filter_t::try_create(Dynamics{}, Measurement{}, cfg,
+                                   ctrlpp::merwe_options<double>{.alpha = 1e-3, .beta = 2.0, .kappa = 0.0});
+if(!filter)
+    return filter.error();
 ```
 
 CTAD deduction guide available: deduces to `merwe_sigma_points` as default strategy.
@@ -125,6 +143,28 @@ struct merwe_options
 ```
 
 Header: `#include <ctrlpp/estimation/sigma_points/merwe_sigma_points.h>`
+
+#### Parameter domain
+
+The strategy is constructed through a fallible factory, because two of its three parameters have an exact admissible domain:
+
+```cpp
+[[nodiscard]] static auto try_create(options_t opts = options_t{})
+    -> ctrlpp::expected<merwe_sigma_points, filter_error>;
+```
+
+The scaling term is `lambda = alpha^2 (n + kappa) - n`, so the weight denominator `n + lambda` and the squared sigma-point offset scale `gamma^2 = n + lambda` both collapse to `alpha^2 (n + kappa)`. The divisor and the radicand are the same expression, which fixes the domain exactly. There is no tolerance and no fitted constant.
+
+| Rejection | Enumerator | Why |
+|-----------|------------|-----|
+| `alpha` is NaN, infinite, zero, or negative | `filter_error::non_positive_sigma_spread` | It divides the weight denominator. A zero spread makes the weights infinite; a negative one makes them finite but wrong, since only `alpha^2` is used |
+| `kappa` is NaN or infinite, or `n + kappa <= 0` | `filter_error::non_positive_scaling_radicand` | The sum sits under the square root that scales the offsets and inside the same denominator, so a non-positive sum yields non-finite offsets or non-finite weights |
+
+`beta` is not validated: it enters only the additive prior-kurtosis term of the first covariance weight and carries no domain restriction of this kind.
+
+Default construction (`merwe_sigma_points<Scalar, NX>{}`) cannot fail: the default `alpha` is finite and positive, and with the default zero `kappa` the sum `n + kappa` reduces to `NX`, which is required to be positive. The options constructor is the exception-gated wrapper over `try_create` and is available only in an exceptions-enabled build. `so3_merwe_sigma_points` forwards the same check unchanged, since it lifts this strategy's tangent-space points onto SO(3) and inherits its weights.
+
+Choosing good default values across dimension, scale, and scalar tier is a separate question from admissibility, and these checks do not address it.
 
 ### julier_sigma_points
 

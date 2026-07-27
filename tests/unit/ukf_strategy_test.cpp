@@ -1,5 +1,6 @@
 #include "ctrlpp/estimation/ukf.h"
 #include "ctrlpp/estimation/ekf.h"
+#include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/sigma_points/julier_sigma_points.h"
 
@@ -176,4 +177,65 @@ TEST_CASE("ukf satisfies ObserverPolicy and CovarianceObserver")
     [[maybe_unused]] const auto& inn = filter.innovation();
 
     CHECK(std::isfinite(s(0)));
+}
+
+// ---------------------------------------------------------------------------
+// Sigma-point parameter domain, surfaced through the filter
+//
+// The overload that takes a strategy options aggregate builds the strategy
+// inside the filter, so it is the common call site: unless the strategy's
+// domain check is forwarded, an out-of-domain parameter set reaches the filter
+// unreported. Each rejection asserts its specific enumerator.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ukf construction from strategy options surfaces a rejected parameter set")
+{
+    using filter_t = ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>;
+
+    ukf_config<double, 2, 1, 1> cfg;
+
+    SECTION("non-positive spread")
+    {
+        auto result = filter_t::try_create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
+                                           merwe_options<double>{.alpha = 0.0, .beta = 2.0, .kappa = 0.0});
+
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == filter_error::non_positive_sigma_spread);
+    }
+
+    SECTION("negative spread")
+    {
+        auto result = filter_t::try_create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
+                                           merwe_options<double>{.alpha = -1.0, .beta = 2.0, .kappa = 0.0});
+
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == filter_error::non_positive_sigma_spread);
+    }
+
+    SECTION("zero dimension-plus-kappa sum")
+    {
+        auto result = filter_t::try_create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
+                                           merwe_options<double>{.alpha = 1e-3, .beta = 2.0, .kappa = -2.0});
+
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == filter_error::non_positive_scaling_radicand);
+    }
+
+    SECTION("conforming options construct a usable filter")
+    {
+        auto result = filter_t::try_create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
+                                           merwe_options<double>{.alpha = 1.0, .beta = 0.0, .kappa = 1.0});
+
+        REQUIRE(result.has_value());
+
+        Vector<double, 1> u = Vector<double, 1>::Zero();
+        result->predict(u);
+
+        Vector<double, 1> z;
+        z << 1.0;
+        result->update(z);
+
+        CHECK(std::isfinite(result->state()(0)));
+        CHECK(std::isfinite(result->covariance()(0, 0)));
+    }
 }

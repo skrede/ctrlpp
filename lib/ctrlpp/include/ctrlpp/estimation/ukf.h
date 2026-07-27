@@ -6,6 +6,8 @@
 /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -14,6 +16,7 @@
 
 #include "ctrlpp/detail/covariance_ops.h"
 
+#include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
 #include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
@@ -91,6 +94,35 @@ public:
     {
     }
 
+    /// @brief Fallible factory for construction from a sigma-point strategy's
+    /// options aggregate.
+    ///
+    /// This is the path that builds the strategy inside the filter, so it is
+    /// where an out-of-domain parameter set would otherwise pass unreported:
+    /// the strategy's own rejection is forwarded verbatim rather than swallowed.
+    /// The overload taking an already-built strategy needs no such forwarding,
+    /// since the strategy was validated where it was constructed.
+    ///
+    /// Requires the strategy to expose a `try_create` returning
+    /// `ctrlpp::expected<Strategy, filter_error>`; a strategy without one has
+    /// no failure to forward and is constructed directly instead.
+    [[nodiscard]] static auto try_create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
+        -> ctrlpp::expected<ukf, filter_error>
+    {
+        auto strategy = Strategy::try_create(std::move(strategy_options));
+        if(!strategy)
+            return ctrlpp::unexpected(strategy.error());
+        return ukf{std::move(dynamics), std::move(measurement), std::move(config), std::move(*strategy)};
+    }
+
+    /// @brief Construct from a sigma-point strategy's options aggregate.
+    ///
+    /// The strategy is built inside the filter, so this constructor can only
+    /// report an out-of-domain parameter set the way the strategy itself does.
+    /// With a strategy whose options constructor is the exception-gated wrapper
+    /// over its `try_create`, that means this overload throws in the exceptions
+    /// tree and does not compile on an exception-free build, where
+    /// `ukf::try_create` is the construction path to use.
     ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}

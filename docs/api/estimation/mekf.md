@@ -15,11 +15,21 @@ No convenience header exists for this type. Use the categorical path.
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
 | `Scalar` | arithmetic type | Numeric type (e.g. `double`, `float`) |
-| `NB` | `std::size_t` | Bias dimension (typically 3 for gyro bias) |
+| `NB` | `std::size_t`, `NB >= 3` | Bias dimension (3 for gyro bias alone) |
 | `NY` | `std::size_t` | Measurement dimension |
 | `Measurement` | satisfies `mekf_measurement_model<Scalar, NB, NY>` | Callable: `(Quaternion<Scalar>, Vector<NB>) -> Vector<NY>` |
 
 The error-state dimension is NE = 3 + NB (3 for rotation + NB for bias).
+
+### Bias dimension lower bound
+
+`NB >= 3` is a hard requirement, enforced by a `static_assert` on both `mekf_config` and `mekf`. The propagation corrects the measured angular rate with the **leading three elements** of the bias vector, a fixed-width slice:
+
+```cpp
+Vector<Scalar, 3> omega_corr = omega - b_.template head<3>();
+```
+
+Instantiating with `NB < 3` therefore reads past the end of an `NB`-element vector on every `predict()`. Both assertions carry the reason, so the diagnostic names the three-element gyro-bias slice rather than only the bound. A bias vector longer than three elements is accepted: elements beyond the leading three are carried in the state and the covariance but are not consumed by the rate correction.
 
 ## Type Aliases
 
