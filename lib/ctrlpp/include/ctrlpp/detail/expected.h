@@ -7,10 +7,18 @@
 /// std::expected even where the standard library ships it. Storage is a raw
 /// discriminated union rather than std::variant so the embedded floor stays
 /// tight: no <variant>, no bad_variant_access / valueless-by-exception
-/// machinery, and the only throw site (value() on an error) is gated behind
-/// __cpp_exceptions with a std::abort() fallback so the header compiles clean
-/// under -fno-exceptions. Per std::expected semantics operator* and error()
-/// are unchecked (precondition on has_value()); only value() is checked.
+/// machinery, and both throw sites are gated behind __cpp_exceptions so the
+/// header compiles clean under -fno-exceptions: value() on an error state falls
+/// back to std::abort(), and the rollback that restores a cross-state assignment
+/// compiles out together with the exception it exists to catch. Per
+/// std::expected semantics operator* and error() are unchecked (precondition on
+/// has_value()); only value() is checked.
+///
+/// A cross-state assignment reinitializes the union, so it carries the same
+/// constraints std::expected does -- both members assignable and constructible
+/// in the relevant flavor, and at least one of them nothrow-move-constructible.
+/// A specialization that cannot meet them has no assignment operator rather than
+/// an assignment operator that cannot roll back.
 ///
 /// Faithful-API, not bit-for-bit std::expected: the owned copy/move special
 /// members make this non-trivially-copyable even when T and E are trivial, so
@@ -168,6 +176,8 @@ public:
 #endif
 
     constexpr expected& operator=(const expected& other)
+        requires(std::is_copy_assignable_v<T> && std::is_copy_constructible_v<T> && std::is_copy_assignable_v<E> && std::is_copy_constructible_v<E> &&
+                 (std::is_nothrow_move_constructible_v<T> || std::is_nothrow_move_constructible_v<E>))
     {
         if (m_has_value && other.m_has_value)
             m_value = other.m_value;
@@ -181,6 +191,8 @@ public:
     }
 
     constexpr expected& operator=(expected&& other) noexcept(std::is_nothrow_move_constructible_v<T> && std::is_nothrow_move_assignable_v<T> && std::is_nothrow_move_constructible_v<E> && std::is_nothrow_move_assignable_v<E>)
+        requires(std::is_move_assignable_v<T> && std::is_move_constructible_v<T> && std::is_move_assignable_v<E> && std::is_move_constructible_v<E> &&
+                 (std::is_nothrow_move_constructible_v<T> || std::is_nothrow_move_constructible_v<E>))
     {
         if (m_has_value && other.m_has_value)
             m_value = std::move(other.m_value);
@@ -296,21 +308,74 @@ public:
     }
 
 private:
+    /// Ends the lifetime of *old_member and constructs *new_member from args in
+    /// the same union storage. Precondition: the union currently holds
+    /// *old_member, and m_has_value still says so.
+    ///
+    /// Three branches, so that a construction which throws never leaves the union
+    /// holding a member whose lifetime already ended:
+    ///  1. the new member cannot throw when built from args -- destroy, then
+    ///     construct;
+    ///  2. it can throw but moves without throwing -- build a temporary first, so
+    ///     a throw leaves the union untouched, then destroy and move in;
+    ///  3. neither -- stage the OLD member into a local, destroy it, construct the
+    ///     new one, and restore the local into its slot if that throws. The
+    ///     assignment operators' constraints guarantee that at least one of the
+    ///     two members moves without throwing, which is what makes the staging in
+    ///     this branch itself unable to fail.
+    ///
+    /// Every branch leaves m_has_value alone; the caller flips it only after this
+    /// returns, so an unwound assignment cannot leave the flag disagreeing with
+    /// the union's real occupant.
+    template <typename NewT, typename OldT, typename... Args>
+    static constexpr void reinit_member(NewT* new_member, OldT* old_member, Args&&... args)
+    {
+        if constexpr (std::is_nothrow_constructible_v<NewT, Args...>)
+        {
+            if constexpr (!std::is_trivially_destructible_v<OldT>)
+                std::destroy_at(old_member);
+            std::construct_at(new_member, std::forward<Args>(args)...);
+        }
+        else if constexpr (std::is_nothrow_move_constructible_v<NewT>)
+        {
+            NewT staged(std::forward<Args>(args)...);
+            if constexpr (!std::is_trivially_destructible_v<OldT>)
+                std::destroy_at(old_member);
+            std::construct_at(new_member, std::move(staged));
+        }
+        else
+        {
+            static_assert(std::is_nothrow_move_constructible_v<OldT>, "the assignment constraints guarantee the staged member moves back into the union without throwing");
+            OldT staged(std::move(*old_member));
+            if constexpr (!std::is_trivially_destructible_v<OldT>)
+                std::destroy_at(old_member);
+#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+            try
+            {
+                std::construct_at(new_member, std::forward<Args>(args)...);
+            }
+            catch(...)
+            {
+                std::construct_at(old_member, std::move(staged));
+                throw;
+            }
+#else
+            std::construct_at(new_member, std::forward<Args>(args)...);
+#endif
+        }
+    }
+
     template <typename Arg>
     constexpr void reinit_as_value(Arg&& arg)
     {
-        if constexpr (!std::is_trivially_destructible_v<E>)
-            std::destroy_at(std::addressof(m_error));
-        std::construct_at(std::addressof(m_value), std::forward<Arg>(arg));
+        reinit_member(std::addressof(m_value), std::addressof(m_error), std::forward<Arg>(arg));
         m_has_value = true;
     }
 
     template <typename Arg>
     constexpr void reinit_as_error(Arg&& arg)
     {
-        if constexpr (!std::is_trivially_destructible_v<T>)
-            std::destroy_at(std::addressof(m_value));
-        std::construct_at(std::addressof(m_error), std::forward<Arg>(arg));
+        reinit_member(std::addressof(m_error), std::addressof(m_value), std::forward<Arg>(arg));
         m_has_value = false;
     }
 };

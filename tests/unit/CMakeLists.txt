@@ -167,6 +167,11 @@ make_test(expected_test)
 # the exceptions carve-out tree; the throw-free surface and std interop run in the
 # default tree via expected_test.
 make_test_exceptions(expected_throws_test)
+# The cross-state assignment matrix arms fixture members to throw from their copy
+# and move constructors, so it needs exceptions; the carve-out tree is also the
+# one CI builds under the address and undefined-behavior sanitizers, which is what
+# makes a surviving double destruction a hard failure.
+make_test_exceptions(expected_transition_test)
 
 # OSQP links a throwing solver, so these TUs belong to the exceptions carve-out
 # tree and cannot compile in the default -fno-exceptions tree.
