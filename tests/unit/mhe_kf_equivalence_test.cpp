@@ -101,7 +101,7 @@ struct tight_qp_solver
 
     osqp_solver inner_{eps_qp, eps_qp, 40000, false, true, true};
 
-    void setup(const qp_problem<double>& problem) { inner_.setup(problem); }
+    auto setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, osqp_setup_error> { return inner_.setup(problem); }
     auto solve(const qp_update<double>& update) -> qp_result<double> { return inner_.solve(update); }
 };
 

@@ -153,14 +153,17 @@ mattered.
 
 Following the convention today: the fallible `create` factories and the discrete
 algebraic Riccati solver report failure through `ctrlpp::expected` (channel 1).
-The moving-horizon and nonlinear moving-horizon estimators report their EKF
-fallback through `diagnostics()` (channel 2). The unscented filter exposes
-`health()` as a state-health query.
+Every solver backend adapter reports setup failure through a fallible
+`setup(problem)` returning `ctrlpp::expected<void, E>`, and the dispatchers
+`setup_qp_solver` and `setup_nlp_solver` forward that typed error rather than
+flattening it, so the cause of a setup failure is readable at the seam. The
+moving-horizon and nonlinear moving-horizon estimators report their EKF fallback
+through `diagnostics()` (channel 2). The unscented filter exposes `health()` as a
+state-health query.
 
 Not yet converted: the per-step `update`, `compute`, and `evaluate` surfaces on
-the filters and controllers still return `void` and report nothing at all; the
-solver setup dispatchers `setup_qp_solver` and `setup_nlp_solver` still return
-`bool`; and `lqr_gain` and `lqi_gain` still return `std::optional`, which
-discards the reason for the empty result. Those surfaces are being moved onto
-channel 1. Until each one is, the NaN and Inf propagation contract described in
+the filters and controllers still return `void` and report nothing at all; and
+`lqr_gain` and `lqi_gain` still return `std::optional`, which discards the reason
+for the empty result. Those surfaces are being moved onto channel 1. Until each
+one is, the NaN and Inf propagation contract described in
 [numerical-behavior.md](numerical-behavior.md) is what governs them.

@@ -5,7 +5,6 @@
 ///
 /// @cite stellato2020 -- Stellato, Banjac, Goulart, Bemporad & Boyd, "OSQP: An Operator Splitting Solver for Quadratic Programs", Math. Prog. Comp. 12(4):637-672, 2020
 
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/mpc/qp_types.h"
@@ -15,7 +14,6 @@
 #include <osqp.h>
 
 #include <utility>
-#include <stdexcept>
 #include <type_traits>
 
 namespace ctrlpp
@@ -85,27 +83,14 @@ public:
 
     /// @brief Fallible setup: initializes the OSQP workspace from the problem data.
     /// Returns an empty expected on success and an `osqp_setup_error` on failure.
-    auto try_setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, osqp_setup_error>
+    /// This is the only setup shape, and it is available in every build mode,
+    /// including `-fno-exceptions`.
+    auto setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, osqp_setup_error>
     {
         cleanup();
         prepare_sparse_matrices(problem);
         return configure_and_create_solver(problem);
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_setup`. Throws
-    /// `std::runtime_error` on allocation or setup failure.
-    void setup(const qp_problem<double>& problem)
-    {
-        auto result = try_setup(problem);
-        if(!result.has_value())
-        {
-            if(result.error() == osqp_setup_error::settings_allocation_failed)
-                throw std::runtime_error("OSQP settings allocation failed");
-            throw std::runtime_error("OSQP setup failed");
-        }
-    }
-#endif
 
     auto solve(const qp_update<double>& update) -> qp_result<double>
     {

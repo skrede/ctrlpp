@@ -3,14 +3,12 @@
 
 /// @brief NLopt-backed NLP solver wrapper for nonlinear MPC and NMHE.
 ///
-/// Setup fallibility is reported through `try_setup` returning
-/// `ctrlpp::expected<void, nlopt_setup_error>`; the throwing `setup` remains as
-/// an exceptions-enabled convenience wrapper. Note that NLopt's C++ API throws
-/// by upstream design (`solve` maps those exceptions to `solve_status`
-/// internally), so this opt-in backend requires exception support and is exempt
-/// from the library's embedded no-exceptions floor.
+/// Setup fallibility is reported through `setup` returning
+/// `ctrlpp::expected<void, nlopt_setup_error>`. Note that NLopt's C++ API throws
+/// by upstream design (`solve` contains those exceptions and maps them to
+/// `solve_status` internally), so this opt-in backend requires exception support
+/// and is exempt from the library's embedded no-exceptions floor.
 
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/mpc/nlp_types.h"
@@ -110,8 +108,8 @@ public:
     /// @brief Fallible setup: configures the NLopt optimizer from the problem
     /// definition. Returns an empty expected on success and an
     /// `nlopt_setup_error` when the selected algorithm rejects the constraint
-    /// structure.
-    auto try_setup(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
+    /// structure. This is the only setup shape.
+    auto setup(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
     {
         problem_ = &problem;
         opt_ = nlopt::opt(to_nlopt_algorithm(settings_.algorithm), static_cast<unsigned>(problem.n_vars));
@@ -138,21 +136,6 @@ public:
 
         return {};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Throwing convenience wrapper over `try_setup`. Throws
-    /// `std::invalid_argument` when the selected algorithm rejects the
-    /// constraint structure.
-    void setup(const nlp_problem<Scalar>& problem)
-    {
-        if(try_setup(problem).has_value())
-            return;
-
-        if(settings_.algorithm == nlopt_algorithm::mma)
-            throw std::invalid_argument("MMA algorithm does not support equality constraints");
-        throw std::invalid_argument("CCSAQ algorithm does not support equality constraints");
-    }
-#endif
 
     auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
     {
@@ -279,7 +262,7 @@ private:
     void rebind_callbacks()
     {
         if(problem_ != nullptr)
-            static_cast<void>(try_setup(*problem_));
+            static_cast<void>(setup(*problem_));
     }
 
     void configure_constraint_callbacks()

@@ -14,6 +14,14 @@
 namespace
 {
 
+// The mocks below have no setup failure mode, so their setup-error type carries
+// no enumerators. The solver concepts accept one setup shape, a fallible one, so
+// a backend with nothing to fail at writes a trivially succeeding fallible setup
+// rather than an infallible one.
+enum class mock_setup_error
+{
+};
+
 using Catch::Matchers::WithinAbs;
 
 struct mock_qp_solver
@@ -25,7 +33,7 @@ struct mock_qp_solver
     mutable int solve_count{0};
     mutable ctrlpp::solve_status next_status{ctrlpp::solve_status::optimal};
 
-    void setup(const ctrlpp::qp_problem<double>& problem) { last_setup = problem; }
+    auto setup(const ctrlpp::qp_problem<double>& problem) -> ctrlpp::expected<void, mock_setup_error> { last_setup = problem; return {}; }
 
     auto solve(const ctrlpp::qp_update<double>& update) -> ctrlpp::qp_result<double>
     {
@@ -160,7 +168,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
             mutable ctrlpp::qp_problem<double> last_setup{};
 
-            void setup(const ctrlpp::qp_problem<double>& problem) { last_setup = problem; }
+            auto setup(const ctrlpp::qp_problem<double>& problem) -> ctrlpp::expected<void, mock_setup_error> { last_setup = problem; return {}; }
 
             auto solve(const ctrlpp::qp_update<double>&) -> ctrlpp::qp_result<double>
             {
@@ -201,7 +209,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
             mutable ctrlpp::qp_problem<double> last_setup{};
 
-            void setup(const ctrlpp::qp_problem<double>& problem) { last_setup = problem; }
+            auto setup(const ctrlpp::qp_problem<double>& problem) -> ctrlpp::expected<void, mock_setup_error> { last_setup = problem; return {}; }
 
             auto solve(const ctrlpp::qp_update<double>&) -> ctrlpp::qp_result<double>
             {
@@ -274,7 +282,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
             mutable bool had_warm_y{false};
             mutable int solve_count{0};
 
-            void setup(const ctrlpp::qp_problem<double>& problem) { last_setup = problem; }
+            auto setup(const ctrlpp::qp_problem<double>& problem) -> ctrlpp::expected<void, mock_setup_error> { last_setup = problem; return {}; }
 
             auto solve(const ctrlpp::qp_update<double>& update) -> ctrlpp::qp_result<double>
             {

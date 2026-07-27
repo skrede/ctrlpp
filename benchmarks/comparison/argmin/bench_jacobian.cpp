@@ -13,6 +13,8 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <memory>
@@ -203,7 +205,11 @@ void run_jacobian_benchmark(const std::string& system_name,
     {
         ctrlpp::argmin_settings<double> cfg{};
         ArgminSlsqp solver{cfg};
-        solver.setup(problem_fd);
+        if(!solver.setup(problem_fd).has_value())
+        {
+            std::fprintf(stderr, "ctrlpp::argmin_solver setup failed; a measurement taken against a solver that was never set up is meaningless\n");
+            std::exit(EXIT_FAILURE);
+        }
 
         bench.warmup(50).minEpochIterations(50).title(title)
             .run("fd_jacobian",
@@ -219,7 +225,11 @@ void run_jacobian_benchmark(const std::string& system_name,
     {
         ctrlpp::argmin_settings<double> cfg{};
         ArgminSlsqp solver{cfg};
-        solver.setup(problem_analytic);
+        if(!solver.setup(problem_analytic).has_value())
+        {
+            std::fprintf(stderr, "ctrlpp::argmin_solver setup failed; a measurement taken against a solver that was never set up is meaningless\n");
+            std::exit(EXIT_FAILURE);
+        }
 
         bench.run("analytic_jacobian",
                   [&]
@@ -234,13 +244,21 @@ void run_jacobian_benchmark(const std::string& system_name,
     {
         ctrlpp::argmin_settings<double> cfg{};
         ArgminSlsqp solver_fd{cfg};
-        solver_fd.setup(problem_fd);
+        if(!solver_fd.setup(problem_fd).has_value())
+        {
+            std::fprintf(stderr, "ctrlpp::argmin_solver setup failed; a measurement taken against a solver that was never set up is meaningless\n");
+            std::exit(EXIT_FAILURE);
+        }
         ctrlpp::nlp_update<double> upd{.x0 = Eigen::VectorXd::Zero(problem_fd.n_vars)};
         auto result_fd = solver_fd.solve(upd);
         auto qm_fd = compute_quality_metrics(problem_fd, result_fd);
 
         ArgminSlsqp solver_an{cfg};
-        solver_an.setup(problem_analytic);
+        if(!solver_an.setup(problem_analytic).has_value())
+        {
+            std::fprintf(stderr, "ctrlpp::argmin_solver setup failed; a measurement taken against a solver that was never set up is meaningless\n");
+            std::exit(EXIT_FAILURE);
+        }
         auto result_an = solver_an.solve(upd);
         auto qm_an = compute_quality_metrics(problem_analytic, result_an);
 

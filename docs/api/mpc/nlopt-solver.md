@@ -27,17 +27,14 @@ concept nlp_solver = requires { typename S::scalar_type; }
     && requires(S solver, const nlp_update<typename S::scalar_type>& upd) {
         { solver.solve(upd) } -> std::same_as<nlp_result<typename S::scalar_type>>;
     }
-    && (requires(S solver, const nlp_problem<typename S::scalar_type>& prob) {
-            { solver.setup(prob) } -> std::same_as<void>;
-        }
-        || requires(S solver, const nlp_problem<typename S::scalar_type>& prob) {
-            { solver.try_setup(prob).has_value() } -> std::convertible_to<bool>;
-        });
+    && requires(S solver, const nlp_problem<typename S::scalar_type>& prob) {
+        { solver.setup(prob).has_value() } -> std::convertible_to<bool>;
+    };
 ```
 
-A solver models the concept with either setup shape: the classic `void setup(problem)` or the fallible `try_setup(problem)` returning an `expected<void, E>`. `nlopt_solver` provides `try_setup` unconditionally and keeps `setup` as a throwing convenience wrapper when exceptions are enabled.
+There is one setup shape: `setup(problem)` returns a `ctrlpp::expected<void, E>` over the backend's own setup-error enum. A backend with no setup failure mode writes a trivially succeeding fallible setup rather than an infallible one, which is what `argmin_solver` does with its empty `argmin_setup_error`.
 
-> **Note:** NLopt's C++ API throws by upstream design (`solve` maps those exceptions to `solve_status` internally), so this opt-in backend requires exception support and is exempt from the library's embedded no-exceptions floor.
+> **Note:** NLopt's C++ API throws by upstream design. `solve` contains those exceptions and maps them to `solve_status` internally, so the containment lives in this adapter rather than in the controllers and estimators that consume it. The adapter itself still requires exception support and is exempt from the library's embedded no-exceptions floor.
 
 ## Supporting Types
 
@@ -91,22 +88,14 @@ Constructs the solver with the given settings. Defaults to SLSQP with standard t
 
 ## Methods
 
-### try_setup
-
-```cpp
-auto try_setup(const nlp_problem<Scalar>& problem)
-    -> ctrlpp::expected<void, nlopt_setup_error>;
-```
-
-Fallible setup: configures the NLopt optimizer from an NLP problem definition and partitions constraints into equality and inequality groups automatically. Returns an empty `expected` on success and `nlopt_setup_error::incompatible_equality_constraints` if raw MMA or raw CCSAQ is selected on a problem with equality constraints.
-
 ### setup
 
 ```cpp
-void setup(const nlp_problem<Scalar>& problem);  // only when CTRLPP_HAS_EXCEPTIONS
+auto setup(const nlp_problem<Scalar>& problem)
+    -> ctrlpp::expected<void, nlopt_setup_error>;
 ```
 
-Throwing convenience wrapper over `try_setup`, available only when exceptions are enabled. Throws `std::invalid_argument` if MMA or CCSAQ is selected with equality constraints.
+Fallible setup: configures the NLopt optimizer from an NLP problem definition and partitions constraints into equality and inequality groups automatically. Returns an empty `expected` on success and `nlopt_setup_error::incompatible_equality_constraints` if raw MMA or raw CCSAQ is selected on a problem with equality constraints. This is the only setup API.
 
 ### solve
 

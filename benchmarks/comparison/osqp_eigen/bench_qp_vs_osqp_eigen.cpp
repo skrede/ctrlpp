@@ -13,6 +13,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
+#include <cstdio>
 #include <fstream>
 
 namespace
@@ -74,7 +75,11 @@ int main()
         .u = u};
 
     ctrlpp::osqp_solver ctrlpp_solver(1e-3, 1e-3, 4000, false, true, true);
-    ctrlpp_solver.setup(problem);
+    if(!ctrlpp_solver.setup(problem).has_value())
+    {
+        std::fprintf(stderr, "ctrlpp::osqp_solver setup failed; a timing measured against a solver that was never set up is meaningless\n");
+        return 1;
+    }
 
     ctrlpp::qp_update<double> ctrlpp_update;
     ctrlpp_update.q = q;

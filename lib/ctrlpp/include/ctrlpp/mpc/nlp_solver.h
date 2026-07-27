@@ -76,42 +76,38 @@ struct nlp_result
 };
 
 /// @brief Concept defining the NLP solver interface used by nonlinear MPC and
-/// NMHE. A solver models the concept with either setup shape: a
-/// `void setup(problem)` (infallible or throwing) or a fallible
-/// `try_setup(problem)` whose result exposes `has_value()` (an
-/// `expected<void, E>`). The per-iteration `solve` always returns an
-/// `nlp_result` carrying a plain `solve_status` value.
+/// NMHE. A solver models the concept with one setup shape: a fallible
+/// `setup(problem)` whose result exposes `has_value()` (a
+/// `ctrlpp::expected<void, E>` over the backend's own setup-error enum). A
+/// backend with no setup failure mode writes a trivially succeeding fallible
+/// setup rather than an infallible one, so every backend reports a setup
+/// outcome through the same typed channel and none reports it out of band. The
+/// per-iteration `solve` always returns an `nlp_result` carrying a plain
+/// `solve_status` value.
 template <typename S>
 concept nlp_solver = requires { typename S::scalar_type; }
     && requires(S solver, const nlp_update<typename S::scalar_type>& upd) {
         { solver.solve(upd) } -> std::same_as<nlp_result<typename S::scalar_type>>;
     }
-    && (requires(S solver, const nlp_problem<typename S::scalar_type>& prob) {
-            { solver.setup(prob) } -> std::same_as<void>;
-        }
-        || requires(S solver, const nlp_problem<typename S::scalar_type>& prob) {
-            { solver.try_setup(prob).has_value() } -> std::convertible_to<bool>;
-        });
+    && requires(S solver, const nlp_problem<typename S::scalar_type>& prob) {
+        { solver.setup(prob).has_value() } -> std::convertible_to<bool>;
+    };
 
 namespace detail
 {
 
-/// @brief Dispatch NLP solver setup through `try_setup` when the solver
-/// provides it. Returns true when setup succeeded; solvers exposing only the
-/// classic `setup(problem)` report success unconditionally (their failures, if
-/// any, escape as exceptions).
-template <typename Solver, typename Scalar>
-auto setup_nlp_solver(Solver& solver, const nlp_problem<Scalar>& problem) -> bool
+/// @brief Dispatch NLP solver setup. The fallible `setup` is the single shape
+/// the concept accepts, so this forwards both the call and the backend's own
+/// typed error: the return type is whatever `Solver::setup` returns, a
+/// `ctrlpp::expected<void, E>` over that backend's setup-error enum. Nothing is
+/// flattened here, so a caller that wants the cause of a setup failure can read
+/// it at this seam. Generic over the problem type, so a solver bound to the
+/// compile-time-dimension `nlp_problem_static` uses the same helper as one
+/// bound to the runtime-erased `nlp_problem`.
+template <typename Solver, typename Problem>
+auto setup_nlp_solver(Solver& solver, const Problem& problem) -> decltype(solver.setup(problem))
 {
-    if constexpr(requires { solver.try_setup(problem); })
-    {
-        return solver.try_setup(problem).has_value();
-    }
-    else
-    {
-        solver.setup(problem);
-        return true;
-    }
+    return solver.setup(problem);
 }
 
 }

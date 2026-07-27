@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -255,7 +256,11 @@ int main()
 
             // ---- OSQP: setup once, replay the churning IC sequence ----
             ctrlpp::osqp_solver osqp(1e-3, 1e-3, 4000, false, true, polish);
-            osqp.setup(data.problem);
+            if(!osqp.setup(data.problem).has_value())
+            {
+                std::fprintf(stderr, "ctrlpp::osqp_solver setup failed; a timing measured against a solver that was never set up is meaningless\n");
+                return 1;
+            }
             ctrlpp::qp_update<double> up;
             up.q = data.q;
             up.l = data.l;

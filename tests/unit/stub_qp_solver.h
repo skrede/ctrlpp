@@ -48,6 +48,8 @@
 // Solver type) is the only way to reach them. The template argument is just the
 // default of the runtime field, so the two agree by construction.
 
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/mpc/qp_types.h"
 
 #include <Eigen/Core>
@@ -63,6 +65,15 @@ enum class report_lengths
     short_primal,
     short_dual,
     empty
+};
+
+// The stubs have no setup failure mode, so their setup-error type carries no
+// enumerators. The solver concepts accept one setup shape, a fallible one, so a
+// backend with nothing to fail at writes a trivially succeeding fallible setup
+// rather than an infallible one -- which is what the shipped argmin adapter and
+// its empty argmin_setup_error do. Shared with stub_nlp_solver.h.
+enum class stub_setup_error
+{
 };
 
 template <typename Scalar, report_lengths Reported = report_lengths::conforming>
@@ -82,10 +93,11 @@ struct stub_qp_solver
     {
     }
 
-    void setup(const ctrlpp::qp_problem<Scalar>& problem)
+    auto setup(const ctrlpp::qp_problem<Scalar>& problem) -> ctrlpp::expected<void, stub_setup_error>
     {
         n_dec = static_cast<int>(problem.P.cols());
         n_con = static_cast<int>(problem.A.rows());
+        return {};
     }
 
     auto primal_length() const -> int

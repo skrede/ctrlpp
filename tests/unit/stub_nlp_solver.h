@@ -54,15 +54,20 @@ struct stub_nlp_solver
     {
     }
 
-    void setup(const ctrlpp::nlp_problem<Scalar>& problem) { n_vars = problem.n_vars; }
+    auto setup(const ctrlpp::nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, stub_setup_error>
+    {
+        n_vars = problem.n_vars;
+        return {};
+    }
 
     // The compile-time-dimension contract is a distinct type, not a conversion
     // of the runtime-erased one, so the static controller path needs its own
     // overload here.
     template <int NV>
-    void setup(const ctrlpp::nlp_problem_static<Scalar, NV>& problem)
+    auto setup(const ctrlpp::nlp_problem_static<Scalar, NV>& problem) -> ctrlpp::expected<void, stub_setup_error>
     {
         n_vars = problem.n_vars;
+        return {};
     }
 
     auto primal_length() const -> int

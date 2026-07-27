@@ -12,6 +12,7 @@
 
 #include <Eigen/Dense>
 
+#include <cstdio>
 #include <fstream>
 #include <vector>
 
@@ -49,7 +50,11 @@ int main()
         .l = lb,
         .u = ub};
     ctrlpp::osqp_solver ctrlpp_solver(1e-3, 1e-3, 4000, false, true, true);
-    ctrlpp_solver.setup(ctrlpp_problem);
+    if(!ctrlpp_solver.setup(ctrlpp_problem).has_value())
+    {
+        std::fprintf(stderr, "ctrlpp::osqp_solver setup failed; a timing measured against a solver that was never set up is meaningless\n");
+        return 1;
+    }
     ctrlpp::qp_update<double> ctrlpp_update{.q = q, .l = lb, .u = ub};
     ctrlpp_solver.solve(ctrlpp_update);
 

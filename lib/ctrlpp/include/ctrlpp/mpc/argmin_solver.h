@@ -1,7 +1,6 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_ARGMIN_SOLVER_H
 #define HPP_GUARD_CTRLPP_MPC_ARGMIN_SOLVER_H
 
-#include "ctrlpp/config.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/mpc/nlp_types.h"
@@ -117,9 +116,11 @@ public:
 
     /// @brief Setup: binds the problem into the bridge. The argmin adapter has no
     /// setup failure mode, so this always succeeds; the fallible signature (an
-    /// empty-error `ctrlpp::expected`) is retained for parity with the other
-    /// solver backends and works in all build modes, including `-fno-exceptions`.
-    auto try_setup(const problem_type& problem)
+    /// empty-error `ctrlpp::expected`) is what the solver concept requires of
+    /// every backend, so a backend with nothing to fail at writes a trivially
+    /// succeeding fallible setup rather than an infallible one. It works in all
+    /// build modes, including `-fno-exceptions`.
+    auto setup(const problem_type& problem)
         -> ctrlpp::expected<void, argmin_setup_error>
     {
         problem_ = &problem;
@@ -132,15 +133,6 @@ public:
 
         return {};
     }
-
-#if CTRLPP_HAS_EXCEPTIONS
-    /// @brief Convenience wrapper over `try_setup`. Setup cannot fail, so this
-    /// never throws; it exists for callers that use the non-fallible setup shape.
-    void setup(const problem_type& problem)
-    {
-        static_cast<void>(try_setup(problem));
-    }
-#endif
 
     auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
     {

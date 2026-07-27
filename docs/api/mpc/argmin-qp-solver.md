@@ -22,7 +22,7 @@ The class is defined only when `CTRLPP_BUILD_ARGMIN=ON` **and** argmin's QP head
 
 ## qp_solver Concept
 
-`argmin_qp_solver` satisfies the `qp_solver` concept defined in `<ctrlpp/mpc/qp_solver.h>` via the fallible setup shape. Unlike `osqp_solver`, it provides `try_setup` only (no throwing `setup` convenience wrapper), so it models the concept in every build mode, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`. Any type satisfying the concept can replace it as the solver backend.
+`argmin_qp_solver` satisfies the `qp_solver` concept defined in `<ctrlpp/mpc/qp_solver.h>`. The concept accepts one setup shape, a fallible `setup(problem)` returning a `ctrlpp::expected<void, E>` over the backend's own setup-error enum, so this solver models the concept in every build mode, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`. Any type satisfying the concept can replace it as the solver backend.
 
 ## Constructors
 
@@ -83,14 +83,14 @@ enum class argmin_qp_setup_error : std::uint8_t {
 
 ## Methods
 
-### try_setup
+### setup
 
 ```cpp
-auto try_setup(const qp_problem<double>& problem)
+auto setup(const qp_problem<double>& problem)
     -> ctrlpp::expected<void, argmin_qp_setup_error>;
 ```
 
-Fallible setup: poses and factorizes the problem once from the cost matrices P, q and constraint matrices A, l, u. Returns an empty `expected` on success and an `argmin_qp_setup_error` on failure. Available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
+Fallible setup: poses and factorizes the problem once from the cost matrices P, q and constraint matrices A, l, u. Returns an empty `expected` on success and an `argmin_qp_setup_error` on failure. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
 
 ### solve
 
@@ -98,7 +98,7 @@ Fallible setup: poses and factorizes the problem once from the cost matrices P, 
 auto solve(const qp_update<double>& update) -> qp_result<double>;
 ```
 
-Vectors-only resolve reusing the frozen factorization: warm-starts from the retained iterate (or from `update.warm_x`/`update.warm_y` when supplied) and runs argmin's `resolve_into`. Returns a `qp_result` with the primal/dual solution, solver status, objective value, iteration count, and residuals. Calling `solve` before a successful `try_setup` returns `solve_status::error`. Note `qp_result::solve_time` is always `0`: argmin's solver takes no timing measurements.
+Vectors-only resolve reusing the frozen factorization: warm-starts from the retained iterate (or from `update.warm_x`/`update.warm_y` when supplied) and runs argmin's `resolve_into`. Returns a `qp_result` with the primal/dual solution, solver status, objective value, iteration count, and residuals. Calling `solve` before a successful `setup` returns `solve_status::error`. Note `qp_result::solve_time` is always `0`: argmin's solver takes no timing measurements.
 
 ## Type Aliases
 

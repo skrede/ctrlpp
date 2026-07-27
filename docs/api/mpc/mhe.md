@@ -78,7 +78,7 @@ Propagates the internal EKF one step and records the input in the sliding window
 void update(const output_vector_t& z);
 ```
 
-Incorporates a new measurement. During fill-up (fewer than N steps), delegates to the internal EKF. Once the window is full, solves the MHE QP to refine the state trajectory over the entire window. A solver setup failure (reported through the solver's `try_setup`) or a non-optimal solve falls back to the internal EKF; `diagnostics()` reports the fallback.
+Incorporates a new measurement. During fill-up (fewer than N steps), delegates to the internal EKF. Once the window is full, solves the MHE QP to refine the state trajectory over the entire window. A solver setup failure (reported through the solver's `setup`) or a non-optimal solve falls back to the internal EKF; `diagnostics()` reports the fallback.
 
 An ill-shaped solver result falls back the same way. A solver may report an accepted status and still return a primal shorter than the decision dimension, or a dual shorter than the constraint count, of the QP the estimator posed; the estimator compares both reported lengths against those dimensions before the extraction reads the result, and on a violation engages the EKF fallback instead of writing the window. `update` returns nothing, so this is reported the only way it can be: `diagnostics().used_ekf_fallback` is `true` and `diagnostics().status` is `solve_status::invalid_backend_result`, which names this condition specifically rather than collapsing it into the general `solve_status::error` a non-optimal solve reports.
 

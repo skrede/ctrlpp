@@ -45,7 +45,7 @@
 namespace ctrlpp
 {
 
-/// @brief Structured failure modes for `argmin_qp_solver::try_setup`.
+/// @brief Structured failure modes for `argmin_qp_solver::setup`.
 ///
 ///  * pose_failed : argmin rejected the problem at pose time (dimension
 ///                  mismatch, non-finite data, invalid bounds, or an
@@ -92,8 +92,9 @@ public:
     {
     }
 
-    /// @brief Fallible setup: poses and factorizes the problem once.
-    auto try_setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, argmin_qp_setup_error>
+    /// @brief Fallible setup: poses and factorizes the problem once. This is the
+    /// only setup shape, and it is available in every build mode.
+    auto setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, argmin_qp_setup_error>
     {
         if(auto err = solver_.solve_into(problem.P, problem.q, problem.A, problem.l, problem.u, last_, opts_))
             return ctrlpp::unexpected(argmin_qp_setup_error::pose_failed);

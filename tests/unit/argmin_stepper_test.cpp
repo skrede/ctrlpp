@@ -46,7 +46,7 @@ TEST_CASE("argmin step budget exhaustion", "[argmin][stepper]")
     auto prob = make_rosenbrock();
 
     ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false> solver;
-    solver.setup(prob);
+    REQUIRE(solver.setup(prob).has_value());
 
     ctrlpp::nlp_update<double> update;
     update.x0 = Eigen::Vector2d{-2.0, 2.0};
@@ -62,7 +62,7 @@ TEST_CASE("argmin step then solve converges", "[argmin][stepper]")
     auto prob = make_rosenbrock();
 
     ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false> solver;
-    solver.setup(prob);
+    REQUIRE(solver.setup(prob).has_value());
 
     ctrlpp::nlp_update<double> update;
     update.x0 = Eigen::Vector2d{-2.0, 2.0};

@@ -82,7 +82,7 @@ Propagates the internal EKF one step and records the input in the sliding window
 void update(const output_vector_t& z);
 ```
 
-Incorporates a new measurement. During fill-up, delegates to the internal EKF. Once the window is full, solves the NMHE NLP. A solver setup failure at construction (reported through the solver's `try_setup`) or a non-optimal solve falls back to the internal EKF; `diagnostics()` reports the fallback.
+Incorporates a new measurement. During fill-up, delegates to the internal EKF. Once the window is full, solves the NMHE NLP. A solver setup failure at construction (reported through the solver's `setup`) or a non-optimal solve falls back to the internal EKF; `diagnostics()` reports the fallback.
 
 An ill-shaped solver result falls back the same way. A solver may report an accepted status and still return a decision vector shorter than the NLP the estimator posed; the estimator compares the reported length against that dimension before the extraction reads the result, and on a violation engages the EKF fallback instead of writing the window. `update` returns nothing, so this is reported the only way it can be: `diagnostics().used_ekf_fallback` is `true` and `diagnostics().status` is `solve_status::invalid_backend_result`, which names this condition specifically rather than collapsing it into the general `solve_status::error` a non-optimal solve reports.
 

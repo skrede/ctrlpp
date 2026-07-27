@@ -33,6 +33,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
+#include <cstdio>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -162,7 +163,11 @@ int main()
             // ---- OSQP: eps ~ 0 so it never terminates early; cap at N; no polish; cold ----
             {
                 ctrlpp::osqp_solver osqp(1e-14, 1e-14, N, false, false, false);
-                osqp.setup(data.problem);
+                if(!osqp.setup(data.problem).has_value())
+                {
+                    std::fprintf(stderr, "ctrlpp::osqp_solver setup failed; a timing measured against a solver that was never set up is meaningless\n");
+                    return 1;
+                }
                 const int iters = osqp.solve(up).iterations;
                 bench.run("osqp " + tag + " N=" + std::to_string(N),
                           [&] { ankerl::nanobench::doNotOptimizeAway(osqp.solve(up)); });

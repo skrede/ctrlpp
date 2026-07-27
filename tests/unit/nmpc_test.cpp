@@ -10,6 +10,14 @@
 namespace
 {
 
+// The mocks below have no setup failure mode, so their setup-error type carries
+// no enumerators. The solver concepts accept one setup shape, a fallible one, so
+// a backend with nothing to fail at writes a trivially succeeding fallible setup
+// rather than an infallible one.
+enum class mock_setup_error
+{
+};
+
 constexpr std::size_t NX = 2;
 constexpr std::size_t NU = 1;
 constexpr double dt = 0.1;
@@ -24,7 +32,7 @@ struct mock_nlp_solver
     mutable ctrlpp::nlp_update<double> last_update{};
     mutable int solve_count{0};
 
-    void setup(const ctrlpp::nlp_problem<double>& p) { last_problem = p; }
+    auto setup(const ctrlpp::nlp_problem<double>& p) -> ctrlpp::expected<void, mock_setup_error> { last_problem = p; return {}; }
 
     auto solve(const ctrlpp::nlp_update<double>& u) -> ctrlpp::nlp_result<double>
     {
@@ -222,7 +230,7 @@ TEST_CASE("nmpc budget-limited solve reaches the caller tagged budget_exhausted"
 
         mutable ctrlpp::nlp_problem<double> last_problem{};
 
-        void setup(const ctrlpp::nlp_problem<double>& p) { last_problem = p; }
+        auto setup(const ctrlpp::nlp_problem<double>& p) -> ctrlpp::expected<void, mock_setup_error> { last_problem = p; return {}; }
 
         auto solve(const ctrlpp::nlp_update<double>&) -> ctrlpp::nlp_result<double>
         {

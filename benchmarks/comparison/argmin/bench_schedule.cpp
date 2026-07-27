@@ -16,6 +16,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -141,7 +143,11 @@ void run_baseline_slsqp(const ctrlpp::nlp_problem<double>& problem,
 {
     ctrlpp::argmin_settings<double> cfg{};
     ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp> solver{cfg};
-    solver.setup(problem);
+    if(!solver.setup(problem).has_value())
+    {
+        std::fprintf(stderr, "ctrlpp::argmin_solver setup failed; a measurement taken against a solver that was never set up is meaningless\n");
+        std::exit(EXIT_FAILURE);
+    }
 
     Eigen::VectorXd x0 = Eigen::VectorXd::Zero(problem.n_vars);
 

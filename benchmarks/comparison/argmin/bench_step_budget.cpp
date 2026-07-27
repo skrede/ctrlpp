@@ -11,6 +11,8 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 
@@ -142,7 +144,11 @@ void run_step_budget(const std::string& system_name,
         const auto& problem = controller.problem();
 
         ArgminSlsqp solver{};
-        solver.setup(problem);
+        if(!solver.setup(problem).has_value())
+        {
+            std::fprintf(stderr, "ctrlpp::argmin_solver setup failed; a measurement taken against a solver that was never set up is meaningless\n");
+            std::exit(EXIT_FAILURE);
+        }
 
         int n_vars = problem.n_vars;
         ctrlpp::nlp_update<double> update{};
@@ -164,7 +170,11 @@ void run_step_budget(const std::string& system_name,
         const auto& problem = controller.problem();
 
         ArgminSlsqp solver{};
-        solver.setup(problem);
+        if(!solver.setup(problem).has_value())
+        {
+            std::fprintf(stderr, "ctrlpp::argmin_solver setup failed; a measurement taken against a solver that was never set up is meaningless\n");
+            std::exit(EXIT_FAILURE);
+        }
 
         int n_vars = problem.n_vars;
         ctrlpp::nlp_update<double> update{};

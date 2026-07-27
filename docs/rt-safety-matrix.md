@@ -132,10 +132,11 @@ The library is **consumer-flag-agnostic**: no `-fno-exceptions` / `-fno-rtti`
 is forced onto any installed, interface, or exported target, and `config.h`'s
 `__cpp_exceptions` auto-detection adapts to whatever the consumer compiles with.
 Every type is built through a fallible factory returning
-`ctrlpp::expected`, so no construction path is gated on exceptions; the only
-wrappers still gated under `CTRLPP_HAS_EXCEPTIONS` are the `setup(problem)`
-convenience overloads on the optional OSQP and NLopt backend adapters, whose
-fallible `try_setup` counterparts are unconditional.
+`ctrlpp::expected`, so no construction path is gated on exceptions, and the
+optional OSQP, NLopt and argmin backend adapters expose a single fallible
+`setup(problem)` returning a `ctrlpp::expected<void, E>` that is likewise
+available in every build mode.  No convenience overload in the library is gated
+on exception support.
 
 As a self-imposed compatibility guarantee, ctrlpp's **own** tests and benches
 dogfood the throw-free discipline: the default build tree
@@ -149,12 +150,12 @@ build.
 Two caveats follow from the disabled-exceptions Catch2:
 
 - `REQUIRE_THROWS*` / `CHECK_THROWS*` are unavailable and a failing assertion
-  reports-and-aborts instead of throwing.  Tests that assert the throwing
-  convenience wrappers throw, the `[!shouldfail]` meta-test, and any test that
-  constructs through a throwing convenience wrapper therefore live in the
+  reports-and-aborts instead of throwing.  The `[!shouldfail]` meta-test and any
+  test that reaches a throwing third-party backend therefore live in the
   separate **exceptions carve-out tree** (`CTRLPP_TESTS_WITH_EXCEPTIONS=ON`, the
   `exceptions` preset), never deleted, and are built+run by the `exceptions` CI
-  job.
+  job.  The library itself no longer offers a throwing entry point to move into
+  that tree: construction and solver setup are fallible in every build mode.
 - The OSQP and NLopt solver backends throw internally, so every OSQP/NLopt-linked
   test and comparison bench requires the exceptions build; argmin's static NMPC
   path is throw-free and runs in the default `-fno-exceptions` tree.

@@ -145,7 +145,7 @@ struct solve_output
     solve_result_status status;
 };
 
-/// @brief Structured failure modes for `osqp_solver::try_setup`.
+/// @brief Structured failure modes for `osqp_solver::setup`.
 ///
 ///  * settings_allocation_failed : `OSQPSettings_new` returned null; the settings
 ///                                 block could not be allocated.

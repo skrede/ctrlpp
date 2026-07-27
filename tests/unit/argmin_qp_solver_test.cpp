@@ -72,7 +72,7 @@ TEST_CASE("argmin_qp_solver setup then resolve reaches the analytic optimum", "[
     auto problem = make_box_qp();
 
     ctrlpp::argmin_qp_solver solver;
-    REQUIRE(solver.try_setup(problem).has_value());
+    REQUIRE(solver.setup(problem).has_value());
 
     ctrlpp::qp_update<double> update{
         .q = problem.q,
@@ -102,7 +102,7 @@ TEST_CASE("argmin_qp_solver preset constructors both solve the box QP", "[mpc][a
     for(auto preset : {ctrlpp::qp_preset::accuracy, ctrlpp::qp_preset::speed})
     {
         ctrlpp::argmin_qp_solver solver{preset};
-        REQUIRE(solver.try_setup(problem).has_value());
+        REQUIRE(solver.setup(problem).has_value());
         auto result = solver.solve(update);
         CHECK(result.status == ctrlpp::solve_status::optimal);
         // Both presets reach the optimum; accuracy is tighter, so check speed
@@ -123,7 +123,7 @@ TEST_CASE("argmin_qp_solver reports error before setup", "[mpc][argmin][qp]")
         .warm_x = {},
         .warm_y = {}};
 
-    // No try_setup() has run, so there is no factorization to resolve against.
+    // No setup() has run, so there is no factorization to resolve against.
     CHECK(solver.solve(update).status == ctrlpp::solve_status::error);
 }
 

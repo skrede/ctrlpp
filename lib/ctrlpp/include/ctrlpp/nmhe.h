@@ -20,7 +20,7 @@
 ///     approximations," IEEE Trans. Automat. Control, 48(2), 2003.
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/nlp_solver.h"
@@ -143,7 +143,7 @@ private:
     void build_nlp_problem()
     {
         m_problem = detail::build_nmhe_problem<Scalar, NX, NU, NY, N, NC>(m_dynamics, m_measurement, m_config, m_state, m_Q_inv, m_R_inv);
-        m_setup_failed = !detail::setup_nlp_solver(m_solver, m_problem);
+        m_setup_failed = !detail::setup_nlp_solver(m_solver, m_problem).has_value();
     }
 
     void initialize_warm_start(const state_vector_t& x0)
@@ -163,18 +163,7 @@ private:
 
         update_arrival_cost();
 
-#if CTRLPP_HAS_EXCEPTIONS
-        try
-        {
-            attempt_nmhe_solve();
-        }
-        catch(...)
-        {
-            fallback_to_ekf();
-        }
-#else
         attempt_nmhe_solve();
-#endif
     }
 
     void attempt_nmhe_solve()
@@ -326,11 +315,19 @@ struct nmhe_sa_measurement
     Vector<double, 1> operator()(const Vector<double, 2>& x) const { return x.template head<1>(); }
 };
 
+// This solver exists only to instantiate the observer-policy static assertions
+// below. It has no setup failure mode, so its setup-error type carries no
+// enumerators: the solver concept accepts one setup shape, a fallible one, and a
+// backend with nothing to fail at writes a trivially succeeding fallible setup.
+enum class nmhe_sa_setup_error
+{
+};
+
 struct nmhe_sa_solver
 {
     using scalar_type = double;
 
-    void setup(const nlp_problem<double>&) {}
+    auto setup(const nlp_problem<double>&) -> ctrlpp::expected<void, nmhe_sa_setup_error> { return {}; }
 
     nlp_result<double> solve(const nlp_update<double>&) { return {}; }
 };

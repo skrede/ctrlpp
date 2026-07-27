@@ -24,15 +24,12 @@ concept qp_solver = requires { typename S::scalar_type; }
     && requires(S solver, const qp_update<typename S::scalar_type>& upd) {
         { solver.solve(upd) } -> std::same_as<qp_result<typename S::scalar_type>>;
     }
-    && (requires(S solver, const qp_problem<typename S::scalar_type>& prob) {
-            { solver.setup(prob) } -> std::same_as<void>;
-        }
-        || requires(S solver, const qp_problem<typename S::scalar_type>& prob) {
-            { solver.try_setup(prob).has_value() } -> std::convertible_to<bool>;
-        });
+    && requires(S solver, const qp_problem<typename S::scalar_type>& prob) {
+        { solver.setup(prob).has_value() } -> std::convertible_to<bool>;
+    };
 ```
 
-Any type satisfying this concept can replace `osqp_solver` as the solver backend. A solver models the concept with either setup shape: the classic `void setup(problem)` or the fallible `try_setup(problem)` returning an `expected<void, E>`. `osqp_solver` provides `try_setup` unconditionally and keeps `setup` as a throwing convenience wrapper when exceptions are enabled.
+Any type satisfying this concept can replace `osqp_solver` as the solver backend. There is one setup shape: `setup(problem)` returns a `ctrlpp::expected<void, E>` over the backend's own setup-error enum. A backend with no setup failure mode writes a trivially succeeding fallible setup rather than an infallible one, which is what `argmin_solver` does with its empty `argmin_setup_error`. `osqp_solver` provides `setup` in every build mode, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
 
 ## Constructors
 
@@ -90,22 +87,14 @@ enum class osqp_setup_error : std::uint8_t {
 
 ## Methods
 
-### try_setup
-
-```cpp
-auto try_setup(const qp_problem<double>& problem)
-    -> ctrlpp::expected<void, osqp_setup_error>;
-```
-
-Fallible setup: initializes the OSQP workspace from a QP problem (cost matrices P, q and constraint matrices A, l, u). Returns an empty `expected` on success and an `osqp_setup_error` on failure. This is the primary setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS` builds.
-
 ### setup
 
 ```cpp
-void setup(const qp_problem<double>& problem);  // only when CTRLPP_HAS_EXCEPTIONS
+auto setup(const qp_problem<double>& problem)
+    -> ctrlpp::expected<void, osqp_setup_error>;
 ```
 
-Throwing convenience wrapper over `try_setup`, available only when exceptions are enabled. Throws `std::runtime_error` on allocation or setup failure.
+Fallible setup: initializes the OSQP workspace from a QP problem (cost matrices P, q and constraint matrices A, l, u). Returns an empty `expected` on success and an `osqp_setup_error` on failure. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS` builds.
 
 ### solve
 

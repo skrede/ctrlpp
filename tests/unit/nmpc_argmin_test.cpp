@@ -210,7 +210,7 @@ TEST_CASE("argmin ftol_rel/xtol_rel drive the relative convergence criteria", "[
         settings.max_eval = 500;
 
         ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false> solver{settings};
-        solver.setup(prob);
+        REQUIRE(solver.setup(prob).has_value());
 
         ctrlpp::nlp_update<double> update;
         update.x0 = Eigen::Vector2d{-2.0, 2.0};
@@ -271,7 +271,7 @@ TEST_CASE("nlopt auglag_eq + ld_mma smoke", "[nmpc][argmin][nlopt]")
     nlopt_cfg.constraint_tol = 1e-6;
 
     NloptSolver solver{nlopt_cfg};
-    REQUIRE_NOTHROW(solver.setup(problem));
+    REQUIRE(solver.setup(problem).has_value());
 
     ctrlpp::nlp_update<double> update;
     update.x0 = Eigen::VectorXd::Zero(problem.n_vars);
@@ -286,10 +286,10 @@ TEST_CASE("nlopt auglag_eq + ld_mma smoke", "[nmpc][argmin][nlopt]")
         CHECK(std::isfinite(result.x[i]));
 }
 
-TEST_CASE("nlopt try_setup reports equality-constraint rejection as an expected error", "[nmpc][argmin][nlopt]")
+TEST_CASE("nlopt setup reports equality-constraint rejection as an expected error", "[nmpc][argmin][nlopt]")
 {
     // A minimal NLP with a single equality constraint x0 + x1 = 1. Raw MMA and
-    // raw CCSAQ cannot handle equality constraints, so try_setup must return
+    // raw CCSAQ cannot handle equality constraints, so setup must return
     // the incompatible_equality_constraints error as a value instead of
     // throwing; the auglag-wrapped variant absorbs the equality constraint and
     // must set up successfully on the same problem.
@@ -312,7 +312,7 @@ TEST_CASE("nlopt try_setup reports equality-constraint rejection as an expected 
         settings.algorithm = ctrlpp::nlopt_algorithm::mma;
 
         ctrlpp::nlopt_solver<double> solver{settings};
-        auto result = solver.try_setup(problem);
+        auto result = solver.setup(problem);
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == ctrlpp::nlopt_setup_error::incompatible_equality_constraints);
     }
@@ -323,7 +323,7 @@ TEST_CASE("nlopt try_setup reports equality-constraint rejection as an expected 
         settings.algorithm = ctrlpp::nlopt_algorithm::ccsaq;
 
         ctrlpp::nlopt_solver<double> solver{settings};
-        auto result = solver.try_setup(problem);
+        auto result = solver.setup(problem);
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == ctrlpp::nlopt_setup_error::incompatible_equality_constraints);
     }
@@ -334,7 +334,7 @@ TEST_CASE("nlopt try_setup reports equality-constraint rejection as an expected 
         settings.algorithm = ctrlpp::nlopt_algorithm::auglag_mma;
 
         ctrlpp::nlopt_solver<double> solver{settings};
-        auto result = solver.try_setup(problem);
+        auto result = solver.setup(problem);
         REQUIRE(result.has_value());
     }
 }
@@ -509,7 +509,7 @@ TEST_CASE("argmin_solver survives move-then-solve", "[argmin][move-safety]")
     settings.max_eval = 500;
 
     ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, false> source{settings};
-    source.setup(prob);
+    REQUIRE(source.setup(prob).has_value());
 
     ctrlpp::nlp_update<double> update;
     update.x0 = Eigen::Vector2d{-1.2, 1.0};
@@ -568,7 +568,7 @@ TEST_CASE("argmin static path solves to the dynamic optimum", "[nmpc][argmin][st
     auto dyn_problem = ctrlpp::detail::build_nmpc_problem<double, NX, NU>(double_integrator, config, dyn_state);
 
     DynamicSolver dyn_solver{};
-    REQUIRE(dyn_solver.try_setup(dyn_problem).has_value());
+    REQUIRE(dyn_solver.setup(dyn_problem).has_value());
     ctrlpp::nlp_update<double> dyn_update;
     dyn_update.x0 = Eigen::VectorXd::Zero(dyn_problem.n_vars);
     auto dyn_result = dyn_solver.solve(dyn_update);
@@ -585,7 +585,7 @@ TEST_CASE("argmin static path solves to the dynamic optimum", "[nmpc][argmin][st
     REQUIRE(stat_problem.problem_dimension == NV);
 
     StaticSolver stat_solver{};
-    REQUIRE(stat_solver.try_setup(stat_problem).has_value());
+    REQUIRE(stat_solver.setup(stat_problem).has_value());
     ctrlpp::nlp_update<double> stat_update;
     stat_update.x0 = Eigen::VectorXd::Zero(NV);
     auto stat_result = stat_solver.solve(stat_update);

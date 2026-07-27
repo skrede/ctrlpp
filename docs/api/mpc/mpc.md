@@ -128,7 +128,7 @@ auto solve(const Vector<Scalar, NX>& x0)
 
 Solves the QP for regulating state to the origin. Returns the success branch with
 the first input and a soft status, or the error branch on failure. If solver setup
-failed at construction (reported through the solver's `try_setup`), every `solve`
+failed at construction (reported through the solver's `setup`), every `solve`
 overload returns the error branch with `solver_error::setup_incomplete`.
 
 ### solve (constant reference)

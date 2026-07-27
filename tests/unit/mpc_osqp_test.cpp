@@ -52,17 +52,17 @@ auto make_simple_qp() -> ctrlpp::qp_problem<double>
 
 } // namespace
 
-TEST_CASE("osqp_solver try_setup reports setup failure as an expected error", "[mpc][osqp]")
+TEST_CASE("osqp_solver setup reports setup failure as an expected error", "[mpc][osqp]")
 {
-    static_assert(std::is_same_v<decltype(std::declval<ctrlpp::osqp_solver&>().try_setup(std::declval<const ctrlpp::qp_problem<double>&>())), ctrlpp::expected<void, ctrlpp::osqp_setup_error>>,
-                  "try_setup must return ctrlpp::expected<void, osqp_setup_error>");
+    static_assert(std::is_same_v<decltype(std::declval<ctrlpp::osqp_solver&>().setup(std::declval<const ctrlpp::qp_problem<double>&>())), ctrlpp::expected<void, ctrlpp::osqp_setup_error>>,
+                  "setup must return ctrlpp::expected<void, osqp_setup_error>");
 
     auto problem = make_simple_qp();
 
     SECTION("well-formed problem sets up successfully")
     {
         ctrlpp::osqp_solver solver;
-        auto result = solver.try_setup(problem);
+        auto result = solver.setup(problem);
         REQUIRE(result.has_value());
     }
 
@@ -71,7 +71,7 @@ TEST_CASE("osqp_solver try_setup reports setup failure as an expected error", "[
         // OSQP validates settings inside osqp_setup; a negative absolute
         // tolerance fails that validation deterministically.
         ctrlpp::osqp_solver solver{-1.0};
-        auto result = solver.try_setup(problem);
+        auto result = solver.setup(problem);
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == ctrlpp::osqp_setup_error::setup_failed);
     }
@@ -90,9 +90,9 @@ TEST_CASE("osqp_solver try_setup reports setup failure as an expected error", "[
         nan_problem.P.makeCompressed();
 
         ctrlpp::osqp_solver solver;
-        REQUIRE_FALSE(solver.try_setup(nan_problem).has_value());
+        REQUIRE_FALSE(solver.setup(nan_problem).has_value());
 
-        REQUIRE(solver.try_setup(make_simple_qp()).has_value());
+        REQUIRE(solver.setup(make_simple_qp()).has_value());
 
         ctrlpp::qp_update<double> update{.q = Eigen::Vector2d::Zero(), .l = Eigen::Vector2d::Constant(-1.0), .u = Eigen::Vector2d::Constant(1.0), .warm_x = {}, .warm_y = {}};
         CHECK(solver.solve(update).status == ctrlpp::solve_status::optimal);
@@ -103,7 +103,7 @@ TEST_CASE("osqp_solver try_setup reports setup failure as an expected error", "[
         static_assert(std::is_same_v<decltype(ctrlpp::qp_result<double>{}.status), ctrlpp::solve_status>, "qp_result::status must stay a plain solve_status value");
 
         ctrlpp::osqp_solver solver;
-        REQUIRE(solver.try_setup(problem).has_value());
+        REQUIRE(solver.setup(problem).has_value());
 
         ctrlpp::qp_update<double> update{.q = Eigen::Vector2d::Zero(), .l = Eigen::Vector2d::Constant(-1.0), .u = Eigen::Vector2d::Constant(1.0), .warm_x = {}, .warm_y = {}};
         auto result = solver.solve(update);

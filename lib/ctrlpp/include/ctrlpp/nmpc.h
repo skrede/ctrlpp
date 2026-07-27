@@ -128,7 +128,7 @@ private:
         m_state->x_ref.resize(static_cast<std::size_t>(m_N + 1), Vector<Scalar, NX>::Zero());
         m_problem = std::make_unique<nlp_problem<Scalar>>(
             detail::build_nmpc_problem<Scalar, NX, NU, NC, NTC>(m_dynamics, m_config, m_state));
-        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem);
+        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem).has_value();
         m_warm_z = Eigen::VectorX<Scalar>::Zero(m_num_vars);
     }
 
@@ -166,7 +166,7 @@ public:
         , m_u_prev{other.m_u_prev}
         , m_has_solution{other.m_has_solution}
     {
-        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem);
+        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem).has_value();
     }
 
     nmpc_dynamic& operator=(const nmpc_dynamic& other)
@@ -601,22 +601,7 @@ private:
         }
 
         m_problem = std::make_unique<problem_type>(*std::move(problem));
-        m_setup_failed = !setup_solver();
-    }
-
-    // Solver setup without the runtime-erased setup_nlp_solver helper (that helper
-    // is typed on nlp_problem<Scalar>; the static path binds nlp_problem_static).
-    // Kept solver-generic: fallible try_setup when available, classic setup
-    // otherwise.
-    bool setup_solver()
-    {
-        if constexpr(requires { m_solver.try_setup(*m_problem); })
-            return m_solver.try_setup(*m_problem).has_value();
-        else
-        {
-            m_solver.setup(*m_problem);
-            return true;
-        }
+        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem).has_value();
     }
 
     expected<solve_output<Scalar, NU>, solver_error> solve_impl(const Vector<Scalar, NX>& x0)

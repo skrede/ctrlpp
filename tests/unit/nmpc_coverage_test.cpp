@@ -17,6 +17,14 @@
 namespace
 {
 
+// The mocks below have no setup failure mode, so their setup-error type carries
+// no enumerators. The solver concepts accept one setup shape, a fallible one, so
+// a backend with nothing to fail at writes a trivially succeeding fallible setup
+// rather than an infallible one.
+enum class mock_setup_error
+{
+};
+
 using Catch::Matchers::WithinAbs;
 
 constexpr std::size_t NX = 2;
@@ -52,7 +60,7 @@ TEST_CASE("nlp_solver concept rejects type without scalar_type", "[nmpc][coverag
 {
     struct no_scalar
     {
-        void setup(const ctrlpp::nlp_problem<double>&) {}
+        auto setup(const ctrlpp::nlp_problem<double>&) -> ctrlpp::expected<void, mock_setup_error> { return {}; }
         auto solve(const ctrlpp::nlp_update<double>&) -> ctrlpp::nlp_result<double> { return {}; }
     };
     static_assert(!ctrlpp::nlp_solver<no_scalar>);
@@ -460,7 +468,7 @@ TEST_CASE("nmpc returns nullopt on solver failure via mock", "[nmpc][coverage]")
 
         mutable ctrlpp::nlp_problem<double> prob{};
 
-        void setup(const ctrlpp::nlp_problem<double>& p) { prob = p; }
+        auto setup(const ctrlpp::nlp_problem<double>& p) -> ctrlpp::expected<void, mock_setup_error> { prob = p; return {}; }
 
         auto solve(const ctrlpp::nlp_update<double>&) -> ctrlpp::nlp_result<double>
         {
@@ -502,7 +510,7 @@ TEST_CASE("nmpc accepts solved_inaccurate status", "[nmpc][coverage]")
 
         mutable ctrlpp::nlp_problem<double> prob{};
 
-        void setup(const ctrlpp::nlp_problem<double>& p) { prob = p; }
+        auto setup(const ctrlpp::nlp_problem<double>& p) -> ctrlpp::expected<void, mock_setup_error> { prob = p; return {}; }
 
         auto solve(const ctrlpp::nlp_update<double>&) -> ctrlpp::nlp_result<double>
         {

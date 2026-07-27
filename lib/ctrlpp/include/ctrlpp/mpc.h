@@ -292,7 +292,7 @@ private:
         auto q = detail::build_cost_vector<Scalar, NX, NU>(N, n_dec_, Q_state_, Qf_state_);
 
         qp_problem<Scalar> problem{.P = std::move(P), .q = std::move(q), .A = std::move(A), .l = std::move(l), .u = std::move(u)};
-        setup_failed_ = !detail::setup_qp_solver(solver_, problem);
+        setup_failed_ = !detail::setup_qp_solver(solver_, problem).has_value();
     }
 
     void allocate_update_vectors()

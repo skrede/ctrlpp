@@ -8,7 +8,7 @@
 namespace ctrlpp
 {
 
-/// @brief Structured failure modes for `nlopt_solver::try_setup`.
+/// @brief Structured failure modes for `nlopt_solver::setup`.
 ///
 ///  * incompatible_equality_constraints : the selected algorithm (raw MMA or raw
 ///    CCSAQ) cannot handle equality constraints. The auglag-wrapped variants
@@ -40,9 +40,9 @@ enum class nlp_formulation_error : std::uint8_t
     slack_not_supported
 };
 
-/// @brief Structured failure modes for `argmin_solver::try_setup`. The argmin
+/// @brief Structured failure modes for `argmin_solver::setup`. The argmin
 /// adapter has no setup failure mode, so this carries no enumerators; the
-/// fallible signature is retained for parity with the other solver backends.
+/// fallible signature is what the solver concept requires of every backend.
 enum class argmin_setup_error : std::uint8_t
 {
 };

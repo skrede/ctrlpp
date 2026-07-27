@@ -17,7 +17,7 @@
 ///     Int. J. Robust Nonlinear Control, 13(10), 2003.
 
 #include "ctrlpp/types.h"
-#include "ctrlpp/config.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/qp_solver.h"
@@ -160,23 +160,12 @@ private:
 
         merge_structure_and_update(problem, upd);
 
-#if CTRLPP_HAS_EXCEPTIONS
-        try
-        {
-            attempt_mhe_solve(problem, upd, z);
-        }
-        catch(...)
-        {
-            fallback_to_ekf();
-        }
-#else
         attempt_mhe_solve(problem, upd, z);
-#endif
     }
 
     void attempt_mhe_solve(const qp_problem<Scalar>& problem, const qp_update<Scalar>& upd, const output_vector_t& z)
     {
-        if(!detail::setup_qp_solver(m_solver, problem))
+        if(!detail::setup_qp_solver(m_solver, problem).has_value())
         {
             fallback_to_ekf();
             return;
@@ -402,11 +391,19 @@ struct mhe_sa_measurement
     Vector<double, 1> operator()(const Vector<double, 2>& x) const { return x.template head<1>(); }
 };
 
+// This solver exists only to instantiate the observer-policy static assertions
+// below. It has no setup failure mode, so its setup-error type carries no
+// enumerators: the solver concept accepts one setup shape, a fallible one, and a
+// backend with nothing to fail at writes a trivially succeeding fallible setup.
+enum class mhe_sa_setup_error
+{
+};
+
 struct mhe_sa_solver
 {
     using scalar_type = double;
 
-    void setup(const qp_problem<double>&) {}
+    auto setup(const qp_problem<double>&) -> ctrlpp::expected<void, mhe_sa_setup_error> { return {}; }
 
     auto solve(const qp_update<double>&) -> qp_result<double> { return {}; }
 };
