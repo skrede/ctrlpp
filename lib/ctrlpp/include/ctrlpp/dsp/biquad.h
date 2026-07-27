@@ -371,6 +371,26 @@ void normalize_chebyshev1_dc(std::array<biquad<Scalar>, N>& sections, Scalar eps
     }
 }
 
+/// True when every coefficient of every section of a designed cascade is
+/// finite. A design factory sweeps its emitted sections with this before
+/// reporting success, so a successful design never hands back a filter whose
+/// difference equation immediately contaminates its state with NaN or infinity.
+/// The predicate is exact; there is no threshold involved.
+template <typename Scalar, std::size_t N>
+auto sections_all_finite(std::array<biquad<Scalar>, N> const& sections) -> bool
+{
+    for(auto const& s : sections)
+    {
+        auto const& c = s.coefficients();
+        if(!std::isfinite(c.b0) || !std::isfinite(c.b1) || !std::isfinite(c.b2)
+           || !std::isfinite(c.a1) || !std::isfinite(c.a2))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 }
 
 /// Cascade of second-order Chebyshev Type I low-pass sections.
@@ -380,9 +400,20 @@ void normalize_chebyshev1_dc(std::array<biquad<Scalar>, N>& sections, Scalar eps
 /// the passband ripple, mapped through the bilinear transform with frequency
 /// pre-warping. The DC gain is normalised so the max passband gain is 0 dB.
 ///
-/// Rejects non-finite parameters (including a NaN or infinite ripple_db),
-/// sample_hz <= 0, and cutoff_hz outside the open interval (0, sample_hz / 2)
-/// (Nyquist criterion, oppenheim2010dsp Ch. 4) with the matching `dsp_error`.
+/// Rejections, checked in order:
+///  * NaN or infinite ripple_db -> dsp_error::non_finite_input
+///  * ripple_db <= 0            -> dsp_error::non_positive_ripple. The ripple
+///    factor is eps = sqrt(10^(ripple_db / 10) - 1); its radicand is
+///    non-positive for every ripple_db <= 0, and at exactly zero the following
+///    asinh(1 / eps) takes an infinite argument. That is the exact domain of
+///    the design, not a tolerance, so no constant enters the bound.
+///  * sample_hz <= 0            -> dsp_error::non_positive_sample_rate
+///  * cutoff_hz outside the open interval (0, sample_hz / 2)
+///    -> dsp_error::cutoff_exceeds_nyquist (Nyquist criterion,
+///    oppenheim2010dsp Ch. 4)
+///  * a non-finite emitted coefficient -> dsp_error::non_finite_input. The
+///    emitted sections are swept before the success return, so a successful
+///    design never carries a coefficient a filter cannot run.
 ///
 /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I IIR design)
 template <std::size_t Order, typename Scalar>
@@ -392,6 +423,8 @@ template <std::size_t Order, typename Scalar>
 {
     if(!std::isfinite(ripple_db))
         return unexpected(dsp_error::non_finite_input);
+    if(ripple_db <= Scalar{0})
+        return unexpected(dsp_error::non_positive_ripple);
     if(auto const err = detail::validate_biquad_design(cutoff_hz, sample_hz))
         return unexpected(*err);
 
@@ -408,6 +441,9 @@ template <std::size_t Order, typename Scalar>
         sections[k] = detail::chebyshev1_section<Scalar, Order>(k, sinh_v, cosh_v, wc, sample_hz);
 
     detail::normalize_chebyshev1_dc(sections, eps);
+
+    if(!detail::sections_all_finite(sections))
+        return unexpected(dsp_error::non_finite_input);
 
     return cascaded_biquad<Scalar, num_sections>{sections};
 }

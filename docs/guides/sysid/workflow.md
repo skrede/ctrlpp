@@ -26,7 +26,9 @@ y(t) = 0.7 * y(t-1) + 0.3 * u(t-1)
 ### Batch ARX
 
 Batch ARX solves a least-squares problem over the full dataset. It returns a
-`discrete_state_space` in observer canonical form plus fit metrics.
+`ctrlpp::expected` carrying a `discrete_state_space` in observer canonical form
+plus fit metrics, or a `sysid_error` naming the reason the data record was
+rejected. Check the value branch before using the model.
 
 ### Online RLS
 
@@ -77,11 +79,17 @@ int main()
     // --- Phase 2: Identify model ---
     auto result = ctrlpp::batch_arx<1, 1>(Y, U);
 
-    std::cerr << "NRMSE=" << result.metrics.nrmse
-              << " VAF=" << result.metrics.vaf << "%\n";
+    if (!result)
+    {
+        std::cerr << "ARX identification rejected the record\n";
+        return 1;
+    }
+
+    std::cerr << "NRMSE=" << result->metrics.nrmse
+              << " VAF=" << result->metrics.vaf << "%\n";
 
     // --- Phase 3: Use model for control ---
-    auto const& sys = result.system;
+    auto const& sys = result->system;
 
     // Design LQR for the identified system
     constexpr std::size_t NX = 1;

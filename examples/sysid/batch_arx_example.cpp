@@ -35,10 +35,34 @@ int main()
         u_prev = u;
     }
 
+    // Identification is fallible: it rejects a record it cannot form a
+    // regressor from, rather than returning a fit built on wrapped index
+    // arithmetic. Handle the error branch explicitly.
     auto result = ctrlpp::batch_arx<1, 1>(Y, U);
+    if(!result)
+    {
+        char const* reason = "unknown rejection";
+        switch(result.error())
+        {
+        case ctrlpp::sysid_error::record_length_mismatch:
+            reason = "the output and input records differ in length";
+            break;
+        case ctrlpp::sysid_error::record_not_single_row:
+            reason = "a record is not a single row";
+            break;
+        case ctrlpp::sysid_error::too_few_samples:
+            reason = "fewer samples than the model order requires";
+            break;
+        case ctrlpp::sysid_error::non_finite_sample:
+            reason = "a sample is NaN or infinite";
+            break;
+        }
+        std::cerr << "Batch ARX identification rejected the data: " << reason << '\n';
+        return 1;
+    }
 
     // Simulate the identified model to produce predicted output
-    auto const& sys = result.system;
+    auto const& sys = result->system;
     Eigen::Vector<double, 1> x = Eigen::Vector<double, 1>::Zero();
 
     std::cout << "# step,actual,predicted\n";
@@ -53,8 +77,8 @@ int main()
 
     // Print model info to stderr so it doesn't mix with CSV
     std::cerr << "Batch ARX: A=" << sys.A << " B=" << sys.B
-              << " NRMSE=" << result.metrics.nrmse
-              << " VAF=" << result.metrics.vaf << "%\n";
+              << " NRMSE=" << result->metrics.nrmse
+              << " VAF=" << result->metrics.vaf << "%\n";
 
     return 0;
 }

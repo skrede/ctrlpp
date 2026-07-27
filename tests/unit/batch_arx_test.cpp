@@ -35,15 +35,16 @@ TEST_CASE("Batch ARX identifies first-order SISO system")
     }
 
     auto result = ctrlpp::batch_arx<1, 1>(Y, U);
+    REQUIRE(result.has_value());
 
-    REQUIRE_THAT(result.system.A(0, 0), WithinAbs(0.8, 0.01));
-    REQUIRE_THAT(result.system.B(0, 0), WithinAbs(0.5, 0.01));
-    REQUIRE_THAT(result.system.C(0, 0), WithinAbs(1.0, 1e-15));
-    REQUIRE_THAT(result.system.D(0, 0), WithinAbs(0.0, 1e-15));
+    REQUIRE_THAT(result->system.A(0, 0), WithinAbs(0.8, 0.01));
+    REQUIRE_THAT(result->system.B(0, 0), WithinAbs(0.5, 0.01));
+    REQUIRE_THAT(result->system.C(0, 0), WithinAbs(1.0, 1e-15));
+    REQUIRE_THAT(result->system.D(0, 0), WithinAbs(0.0, 1e-15));
 
     // Fit metrics should be nearly perfect
-    REQUIRE(result.metrics.nrmse < 0.01);
-    REQUIRE(result.metrics.vaf > 99.0);
+    REQUIRE(result->metrics.nrmse < 0.01);
+    REQUIRE(result->metrics.vaf > 99.0);
 }
 
 TEST_CASE("Batch ARX identifies second-order system")
@@ -74,14 +75,15 @@ TEST_CASE("Batch ARX identifies second-order system")
     }
 
     auto result = ctrlpp::batch_arx<2, 2>(Y, U);
+    REQUIRE(result.has_value());
 
     // Observer canonical form: A = [a1 1; a2 0]
-    REQUIRE_THAT(result.system.A(0, 0), WithinAbs(1.2, 0.01));
-    REQUIRE_THAT(result.system.A(1, 0), WithinAbs(-0.5, 0.01));
+    REQUIRE_THAT(result->system.A(0, 0), WithinAbs(1.2, 0.01));
+    REQUIRE_THAT(result->system.A(1, 0), WithinAbs(-0.5, 0.01));
 
     // Fit metrics should be nearly perfect
-    REQUIRE(result.metrics.nrmse < 0.01);
-    REQUIRE(result.metrics.vaf > 99.0);
+    REQUIRE(result->metrics.nrmse < 0.01);
+    REQUIRE(result->metrics.vaf > 99.0);
 }
 
 TEST_CASE("Batch ARX state-space simulation reproduces original data")
@@ -106,7 +108,8 @@ TEST_CASE("Batch ARX state-space simulation reproduces original data")
     }
 
     auto result = ctrlpp::batch_arx<1, 1>(Y, U);
-    auto ss = result.system;
+    REQUIRE(result.has_value());
+    auto ss = result->system;
 
     // Simulate state-space model
     Eigen::Matrix<double, 1, 1> x = Eigen::Matrix<double, 1, 1>::Zero();
@@ -148,13 +151,14 @@ TEST_CASE("Batch ARX with noisy data produces reasonable fit")
     }
 
     auto result = ctrlpp::batch_arx<1, 1>(Y, U);
+    REQUIRE(result.has_value());
 
     // With noise, NRMSE should be non-zero but still reasonable
-    REQUIRE(result.metrics.nrmse > 0.0);
-    REQUIRE(result.metrics.nrmse < 0.5);
+    REQUIRE(result->metrics.nrmse > 0.0);
+    REQUIRE(result->metrics.nrmse < 0.5);
     // VAF should be reasonable but not perfect
-    REQUIRE(result.metrics.vaf > 50.0);
-    REQUIRE(result.metrics.vaf < 100.0);
+    REQUIRE(result->metrics.vaf > 50.0);
+    REQUIRE(result->metrics.vaf < 100.0);
 }
 
 TEST_CASE("Batch ARX with NB > NA realizes all b-coefficients (max(NA,NB) states)")
@@ -189,7 +193,8 @@ TEST_CASE("Batch ARX with NB > NA realizes all b-coefficients (max(NA,NB) states
     }
 
     auto result = ctrlpp::batch_arx<1, 2>(Y, U);
-    auto ss = result.system;
+    REQUIRE(result.has_value());
+    auto ss = result->system;
 
     // Realized state dimension is max(NA, NB) = 2, not NA = 1.
     REQUIRE(ss.A.rows() == 2);
@@ -222,5 +227,5 @@ TEST_CASE("Batch ARX with NB > NA realizes all b-coefficients (max(NA,NB) states
 
     // The identified b2 coefficient is nonzero and recovered accurately.
     REQUIRE_THAT(ss.B(1, 0), WithinAbs(b2, 1e-9));
-    REQUIRE(result.metrics.nrmse < 1e-9);
+    REQUIRE(result->metrics.nrmse < 1e-9);
 }

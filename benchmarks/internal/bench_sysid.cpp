@@ -38,6 +38,8 @@ int main()
 
     bench.run("batch_arx::identify", [&] {
         auto result = ctrlpp::batch_arx<2, 2>(Y, U);
+        bool const identified = result.has_value();
+        ankerl::nanobench::doNotOptimizeAway(identified);
         ankerl::nanobench::doNotOptimizeAway(result);
     });
 

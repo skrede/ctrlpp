@@ -114,17 +114,90 @@ TEST_CASE("RLS with ill-conditioned regressor", "[rls][hardening][robustness]")
 
 // ── ARX hardening ──────────────────────────────────────────────────────────────
 
-TEST_CASE("Batch ARX with insufficient data", "[arx][hardening][negative]")
+TEST_CASE("Batch ARX rejects a record shorter than the model order",
+          "[arx][hardening][negative]")
 {
-    // Only 2 data points for NA=2, NB=1 model -- need at least max(NA,NB)+1
-    Eigen::RowVectorXd Y(3);
-    Y << 1.0, 2.0, 3.0;
-    Eigen::RowVectorXd U(3);
-    U << 0.5, 1.0, 1.5;
+    // The routine builds one regressor row per sample beyond max(NA, NB), so a
+    // sample count at or below that order leaves no rows at all. Below it the
+    // row count is computed by an unsigned subtraction, and at it the fit is
+    // built from an empty regressor. Both are rejected before any index
+    // arithmetic runs.
+    SECTION("strictly fewer samples than the model order")
+    {
+        // 2 samples against max(NA, NB) = 3.
+        Eigen::RowVectorXd Y(2);
+        Y << 1.0, 2.0;
+        Eigen::RowVectorXd U(2);
+        U << 0.5, 1.0;
 
-    // Should complete without crashing; results may be poor
-    auto result = ctrlpp::batch_arx<2, 1>(Y, U);
-    REQUIRE(std::isfinite(result.system.A(0, 0)));
+        auto result = ctrlpp::batch_arx<2, 3>(Y, U);
+        REQUIRE(!result.has_value());
+        CHECK(result.error() == ctrlpp::sysid_error::too_few_samples);
+    }
+
+    SECTION("exactly as many samples as the model order")
+    {
+        // 3 samples against max(NA, NB) = 3: zero regressor rows.
+        Eigen::RowVectorXd Y(3);
+        Y << 1.0, 2.0, 3.0;
+        Eigen::RowVectorXd U(3);
+        U << 0.5, 1.0, 1.5;
+
+        auto result = ctrlpp::batch_arx<2, 3>(Y, U);
+        REQUIRE(!result.has_value());
+        CHECK(result.error() == ctrlpp::sysid_error::too_few_samples);
+    }
+}
+
+TEST_CASE("Batch ARX rejects records of differing length",
+          "[arx][hardening][negative]")
+{
+    Eigen::RowVectorXd Y(10);
+    Y.setLinSpaced(10, 0.0, 1.0);
+    Eigen::RowVectorXd U(8);
+    U.setLinSpaced(8, 0.0, 1.0);
+
+    auto result = ctrlpp::batch_arx<1, 1>(Y, U);
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == ctrlpp::sysid_error::record_length_mismatch);
+}
+
+TEST_CASE("Batch ARX rejects a record that is not a single row",
+          "[arx][hardening][negative]")
+{
+    // The routine reads only row zero of each record, so a two-row record would
+    // silently identify from half its data.
+    Eigen::MatrixXd Y = Eigen::MatrixXd::Zero(2, 10);
+    Eigen::MatrixXd U = Eigen::MatrixXd::Zero(2, 10);
+
+    auto result = ctrlpp::batch_arx<1, 1>(Y, U);
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == ctrlpp::sysid_error::record_not_single_row);
+}
+
+TEST_CASE("Batch ARX rejects a non-finite sample", "[arx][hardening][negative]")
+{
+    SECTION("a NaN in the output record")
+    {
+        Eigen::RowVectorXd Y = Eigen::RowVectorXd::Zero(20);
+        Eigen::RowVectorXd U = Eigen::RowVectorXd::Zero(20);
+        Y(7) = std::numeric_limits<double>::quiet_NaN();
+
+        auto result = ctrlpp::batch_arx<1, 1>(Y, U);
+        REQUIRE(!result.has_value());
+        CHECK(result.error() == ctrlpp::sysid_error::non_finite_sample);
+    }
+
+    SECTION("an infinity in the input record")
+    {
+        Eigen::RowVectorXd Y = Eigen::RowVectorXd::Zero(20);
+        Eigen::RowVectorXd U = Eigen::RowVectorXd::Zero(20);
+        U(3) = std::numeric_limits<double>::infinity();
+
+        auto result = ctrlpp::batch_arx<1, 1>(Y, U);
+        REQUIRE(!result.has_value());
+        CHECK(result.error() == ctrlpp::sysid_error::non_finite_sample);
+    }
 }
 
 TEST_CASE("Batch ARX identifies known AR/X coefficients", "[arx][hardening][convergence]")
@@ -146,8 +219,9 @@ TEST_CASE("Batch ARX identifies known AR/X coefficients", "[arx][hardening][conv
     }
 
     auto result = ctrlpp::batch_arx<1, 1>(Y, U);
+    REQUIRE(result.has_value());
     // NRMSE close to 0 indicates good fit (norm_error / norm_centered)
-    REQUIRE(result.metrics.nrmse < 0.1);
+    REQUIRE(result->metrics.nrmse < 0.1);
 }
 
 TEST_CASE("Batch ARX with rank-deficient regressors", "[arx][hardening][negative]")
@@ -158,8 +232,11 @@ TEST_CASE("Batch ARX with rank-deficient regressors", "[arx][hardening][negative
     Eigen::RowVectorXd U = Eigen::RowVectorXd::Constant(N, 1.0);
 
     auto result = ctrlpp::batch_arx<2, 1>(Y, U);
-    // Should not crash; system matrices should be finite
-    REQUIRE(std::isfinite(result.system.A(0, 0)));
+    REQUIRE(result.has_value());
+    // Rank deficiency is not a domain violation: the record is well formed, so
+    // the routine identifies and the least-squares solve resolves the deficient
+    // directions to finite values.
+    REQUIRE(std::isfinite(result->system.A(0, 0)));
 }
 
 // ── MOESP hardening ────────────────────────────────────────────────────────────

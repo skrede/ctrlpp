@@ -2,6 +2,8 @@
 
 Batch ARX model identification via QR decomposition. Given input/output data sequences, estimates an ARX(NA, NB) model and returns the identified discrete state-space system in observer canonical form along with fit metrics (NRMSE and VAF).
 
+The routine validates its data records and returns `ctrlpp::expected<arx_result<...>, sysid_error>`: the identified model on success, or the specific `sysid_error` enumerator describing the rejected record. See [Record Validation: sysid_error](#record-validation-sysid_error).
+
 ## Header and Alias
 
 | Form | Header |
@@ -11,9 +13,11 @@ Batch ARX model identification via QR decomposition. Given input/output data seq
 
 ```cpp
 template <std::size_t NA, std::size_t NB, typename Derived1, typename Derived2>
-arx_result<typename Derived1::Scalar, std::max(NA, NB), 1, 1>
+[[nodiscard]] auto
 batch_arx(const Eigen::MatrixBase<Derived1>& Y,
-          const Eigen::MatrixBase<Derived2>& U);
+          const Eigen::MatrixBase<Derived2>& U)
+    -> ctrlpp::expected<arx_result<typename Derived1::Scalar, std::max(NA, NB), 1, 1>,
+                        sysid_error>;
 ```
 
 ## Template Parameters
@@ -40,7 +44,33 @@ struct arx_result {
 };
 ```
 
+The `arx_result` above is carried on the value branch of `ctrlpp::expected<arx_result<...>, sysid_error>`; the error branch carries a `sysid_error`.
+
 The identified system is in observer canonical form with `NX = max(NA, NB)` states. The realization dimension is the larger of the auto-regressive and exogenous orders, so every b-coefficient is represented even when `NB > NA` (Ljung 1999, Ch. 4). The `metrics` field contains NRMSE and VAF computed by simulating the identified model against the original data.
+
+## Record Validation: sysid_error
+
+Header: `#include <ctrlpp/sysid/sysid_types.h>` (pulled in by `batch_arx.h`)
+
+```cpp
+enum class sysid_error {
+    record_length_mismatch,
+    record_not_single_row,
+    too_few_samples,
+    non_finite_sample,
+};
+```
+
+The checks run in the order listed, all of them before any index arithmetic, so a record with several defects reports the first matching enumerator:
+
+| Enumerator | Rejected record |
+|------------|-----------------|
+| `record_length_mismatch` | `Y.cols() != U.cols()`. Sample `k` of one record is paired with sample `k` of the other, so unequal lengths have no consistent pairing |
+| `record_not_single_row` | `Y.rows() != 1` or `U.rows() != 1`. The routine is single-input single-output and reads only row zero, so a multi-row record would be silently identified from a fraction of its data |
+| `too_few_samples` | `Y.cols() <= max(NA, NB)`. One regressor row is formed per sample beyond `max(NA, NB)`, so a strictly greater sample count is exactly the condition for a nonempty regressor matrix. At the order the matrix is empty; below it the row count would be the result of an unsigned subtraction that wraps |
+| `non_finite_sample` | A sample in either record is NaN or infinite. Samples enter the regressor and the least-squares solve directly, which propagates the value into every identified coefficient |
+
+Every bound is an exact precondition of the routine's index arithmetic or data layout, not a tolerance. None of them is a quality judgement about the fit: `batch_arx` does **not** require the regressor row count to reach the parameter count `NA + NB`, so a record that passes all four checks can still yield an under-determined or rank-deficient fit. Judge that from the returned `fit_metrics`.
 
 ## Usage Example
 
@@ -74,12 +104,18 @@ int main()
 
     // Identify ARX(1, 1) model
     auto result = ctrlpp::batch_arx<1, 1>(Y, U);
+    if(!result)
+    {
+        std::cerr << "identification rejected the record: "
+                  << static_cast<int>(result.error()) << "\n";
+        return 1;
+    }
 
     std::cout << "Identified system:\n"
-              << "  A = " << result.system.A << "\n"
-              << "  B = " << result.system.B << "\n"
-              << "  NRMSE = " << result.metrics.nrmse << "\n"
-              << "  VAF   = " << result.metrics.vaf << " %\n";
+              << "  A = " << result->system.A << "\n"
+              << "  B = " << result->system.B << "\n"
+              << "  NRMSE = " << result->metrics.nrmse << "\n"
+              << "  VAF   = " << result->metrics.vaf << " %\n";
 }
 ```
 

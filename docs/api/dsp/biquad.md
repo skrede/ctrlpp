@@ -54,6 +54,7 @@ enum class dsp_error {
     non_positive_sample_rate,
     cutoff_exceeds_nyquist,
     non_positive_q,
+    non_positive_ripple,
     non_finite_input,
 };
 ```
@@ -62,12 +63,15 @@ Every design factory returns `ctrlpp::expected<Filter, dsp_error>` and rejects i
 
 | Enumerator | Rejected input |
 |------------|----------------|
-| `non_finite_input` | Any design parameter (frequency, sample rate, quality factor, ripple) is NaN or infinite |
+| `non_finite_input` | Any design parameter (frequency, sample rate, quality factor, ripple) is NaN or infinite, or the design chain produced a non-finite coefficient |
 | `non_positive_sample_rate` | `sample_hz <= 0` |
 | `cutoff_exceeds_nyquist` | The design frequency lies outside the open interval `(0, sample_hz / 2)`. A discrete-time filter can only realize a response strictly below half the sample rate; at or above it the design frequency aliases (Nyquist criterion) |
 | `non_positive_q` | Notch quality factor `q <= 0` |
+| `non_positive_ripple` | Chebyshev Type I passband ripple `ripple_db <= 0`. The ripple factor is `eps = sqrt(10^(ripple_db / 10) - 1)`, whose radicand is non-positive for every `ripple_db <= 0`, and at exactly zero the following `asinh(1 / eps)` takes an infinite argument. An equiripple passband is defined by a strictly positive ripple, so this is an exact domain bound and carries no tolerance |
 
-The checks run in the order listed, so a design with several defects reports the first matching enumerator. The Nyquist bound is strict on both sides: `cutoff == sample_hz / 2` is rejected.
+The checks run in the order listed, so a design with several defects reports the first matching enumerator. The Nyquist bound is strict on both sides: `cutoff == sample_hz / 2` is rejected. The zero-ripple boundary is rejected too, along with negative zero: a Chebyshev Type I design with no ripple is not a degenerate Butterworth, it is outside the design's domain. Use `make_butterworth` for a maximally flat passband.
+
+`make_chebyshev1` additionally sweeps the coefficients it is about to emit and reports `non_finite_input` rather than returning them, so a successful design never hands back a filter whose difference equation immediately contaminates its state.
 
 ## Factory Functions
 
@@ -164,7 +168,7 @@ template <std::size_t Order, typename Scalar>
     -> ctrlpp::expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>;
 ```
 
-Designs an `Order`-th order Chebyshev Type I low-pass filter with the specified passband ripple. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)` and `ripple_db` must be finite.
+Designs an `Order`-th order Chebyshev Type I low-pass filter with the specified passband ripple. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)`, and `ripple_db` must be finite and strictly positive. A design that succeeds carries only finite coefficients.
 
 ## Usage Example
 

@@ -28,13 +28,25 @@ namespace ctrlpp
 ///  * non_positive_q           : notch quality factor q <= 0; the design
 ///                               bandwidth alpha = sin(w0) / (2 q) requires
 ///                               q > 0.
+///  * non_positive_ripple      : Chebyshev Type I passband ripple ripple_db <= 0.
+///                               The ripple factor is
+///                               eps = sqrt(10^(ripple_db / 10) - 1), whose
+///                               radicand is non-positive for every
+///                               ripple_db <= 0, and at exactly zero the
+///                               following asinh(1 / eps) takes an infinite
+///                               argument. An equiripple passband is defined by
+///                               a strictly positive ripple, so this is an exact
+///                               domain bound and carries no tolerance.
 ///  * non_finite_input         : a design parameter (frequency, sample rate,
-///                               quality factor, or ripple) is NaN or infinite.
+///                               quality factor, or ripple) is NaN or infinite,
+///                               or the design chain produced a non-finite
+///                               coefficient.
 enum class dsp_error
 {
     non_positive_sample_rate,
     cutoff_exceeds_nyquist,
     non_positive_q,
+    non_positive_ripple,
     non_finite_input,
 };
 

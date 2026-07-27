@@ -66,14 +66,18 @@ TEST_CASE("sysid property tests", "[sysid][property]")
 
             auto result = batch_arx<NA, NB>(Y, U);
 
+            // The generated record is single-row, length-matched, finite, and
+            // longer than max(NA, NB), so identification must succeed.
+            RC_ASSERT(result.has_value());
+
             // State-space system A should be NA x NA, B should be NA x 1
-            RC_ASSERT(result.system.A.rows() == static_cast<Eigen::Index>(NA));
-            RC_ASSERT(result.system.A.cols() == static_cast<Eigen::Index>(NA));
-            RC_ASSERT(result.system.B.rows() == static_cast<Eigen::Index>(NA));
-            RC_ASSERT(result.system.B.cols() == 1);
+            RC_ASSERT(result->system.A.rows() == static_cast<Eigen::Index>(NA));
+            RC_ASSERT(result->system.A.cols() == static_cast<Eigen::Index>(NA));
+            RC_ASSERT(result->system.B.rows() == static_cast<Eigen::Index>(NA));
+            RC_ASSERT(result->system.B.cols() == 1);
 
             // All system matrices should be finite
-            RC_ASSERT(std::isfinite(result.system.A.norm()));
-            RC_ASSERT(std::isfinite(result.system.B.norm())); });
+            RC_ASSERT(std::isfinite(result->system.A.norm()));
+            RC_ASSERT(std::isfinite(result->system.B.norm())); });
     }
 }

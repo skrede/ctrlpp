@@ -20,7 +20,7 @@ struct arx_result {
 };
 ```
 
-Returned by `batch_arx`. Contains the identified system in observer canonical form and fit metrics computed by simulating the model against the training data.
+Carried on the value branch of the `ctrlpp::expected<arx_result<...>, sysid_error>` returned by `batch_arx`. Contains the identified system in observer canonical form and fit metrics computed by simulating the model against the training data. See [batch-arx](batch-arx.md) for the rejection list on the error branch.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -78,8 +78,13 @@ int main()
 
     // ARX identification
     auto arx = ctrlpp::batch_arx<1, 1>(Y, U);
-    std::cout << "ARX: NRMSE=" << arx.metrics.nrmse
-              << "  VAF=" << arx.metrics.vaf << "%\n";
+    if(!arx)
+    {
+        std::cerr << "ARX identification rejected the record\n";
+        return 1;
+    }
+    std::cout << "ARX: NRMSE=" << arx->metrics.nrmse
+              << "  VAF=" << arx->metrics.vaf << "%\n";
 
     // MOESP identification
     auto ss = ctrlpp::moesp<1>(Y, U);

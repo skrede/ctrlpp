@@ -5,6 +5,7 @@
 #include "ctrlpp/sysid/moesp.h"
 #include "ctrlpp/sysid/batch_arx.h"
 #include "ctrlpp/sysid/fit_metrics.h"
+#include "ctrlpp/sysid/sysid_types.h"
 #include "ctrlpp/sysid/sysid_result.h"
 #include "ctrlpp/sysid/recursive_arx.h"
 

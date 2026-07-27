@@ -25,11 +25,18 @@ int main()
         y(k) = 0.8 * y(k - 1) - 0.2 * y(k - 2) + 0.5 * u(k - 1) + 0.3 * u(k - 2);
 
     auto result = ctrlpp::batch_arx<2, 2>(y, u);
+    if(!result)
+    {
+        // A rejected record is a case failure, not an empty comparison file.
+        std::fprintf(stderr, "batch_arx rejected the generated record (code %d)\n",
+                     static_cast<int>(result.error()));
+        return 1;
+    }
 
     // Extract ARX parameters from observer canonical form state-space
     // A matrix first column contains a-coefficients (negated in some conventions)
     // We extract the raw theta vector by reading A and B
-    auto& sys = result.system;
+    auto& sys = result->system;
 
     // For ARX(2,2): the observer canonical form has
     // A = [[a1, 1], [a2, 0]], B = [[b1], [b2]], C = [1, 0]
@@ -40,4 +47,6 @@ int main()
 
     std::printf("a1,a2,b1,b2\n");
     std::printf("%.15e,%.15e,%.15e,%.15e\n", a1, a2, b1, b2);
+
+    return 0;
 }
