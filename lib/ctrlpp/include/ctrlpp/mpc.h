@@ -214,43 +214,41 @@ private:
     static auto horizon_bound(const mpc_config<Scalar, NX, NU, NY>& config) -> int
     {
         constexpr int per_step = 2 * nx + 2 * nu;
-        const int constant_dimensions = nx + compute_terminal_constraint_rows(config);
+        const int constant_dimensions = nx + detail::terminal_constraint_rows<Scalar, NX>(config.terminal_constraint_set);
         return (std::numeric_limits<int>::max() - constant_dimensions) / per_step;
     }
 
+    /// @brief Derive the decision width, the constraint height, and the row the
+    /// rate block starts at from the configuration's own optionals.
+    ///
+    /// The same derivation sizes the constraint matrix and the bounds vectors, so
+    /// taking all of it from one helper is what keeps the artifacts handed to the
+    /// backend the same height as the problem this controller believes it posed.
     void compute_dimensions()
     {
         int N = config_.horizon;
         n_x_total_ = (N + 1) * nx;
         n_u_total_ = N * nu;
 
-        bool has_state_bounds = config_.x_min.has_value() || config_.x_max.has_value();
-        bool use_soft = has_state_bounds && !config_.hard_state_constraints;
-        int n_slack = use_soft ? N * nx : 0;
-        n_dec_ = n_x_total_ + n_u_total_ + n_slack;
+        n_dec_ = n_x_total_ + n_u_total_ + detail::slack_columns<NX>(N, uses_soft_state_constraints());
 
-        bool has_input_bounds = config_.u_min.has_value() || config_.u_max.has_value();
-        bool has_rate_bounds = config_.du_max.has_value();
-        int n_terminal = compute_terminal_constraint_rows(config_);
-
-        n_con_ = (N + 1) * nx + (has_state_bounds ? N * nx : 0) + (has_input_bounds ? N * nu : 0) + (has_rate_bounds ? N * nu : 0) + n_terminal;
+        auto const layout = constraint_layout();
+        n_con_ = layout.n_con;
+        rate_row_ = layout.rate_row;
     }
 
-    static auto compute_terminal_constraint_rows(const mpc_config<Scalar, NX, NU, NY>& config) -> int
+    /// @brief Whether the state bounds are softened with slack variables.
+    ///
+    /// Not derived from an optional: state bounds being present is a necessary
+    /// condition, but enforcing them hard instead is the caller's policy choice.
+    auto uses_soft_state_constraints() const -> bool
     {
-        if(!config.terminal_constraint_set.has_value())
-            return 0;
+        return (config_.x_min.has_value() || config_.x_max.has_value()) && !config_.hard_state_constraints;
+    }
 
-        return std::visit(
-            [](const auto& s) -> int
-            {
-                using T = std::decay_t<decltype(s)>;
-                if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
-                    return nx;
-                else
-                    return static_cast<int>(s.H.rows());
-            },
-            config.terminal_constraint_set.value());
+    auto constraint_layout() const -> detail::qp_constraint_layout
+    {
+        return detail::constraint_layout<Scalar, NX, NU>(config_.horizon, config_.x_min, config_.x_max, config_.u_min, config_.u_max, config_.du_max, config_.terminal_constraint_set);
     }
 
     void precompute_output_weights()
@@ -263,8 +261,8 @@ private:
     {
         if(config_.Qf.has_value())
         {
-            Qf_state_ = system_.C.transpose() * config_.Qf.value() * system_.C;
-            Qf_linear_ = system_.C.transpose() * config_.Qf.value();
+            Qf_state_ = system_.C.transpose() * (*config_.Qf) * system_.C;
+            Qf_linear_ = system_.C.transpose() * (*config_.Qf);
         }
         else
         {
@@ -280,14 +278,15 @@ private:
     void build_initial_qp()
     {
         int N = config_.horizon;
-        bool has_state_bounds = config_.x_min.has_value() || config_.x_max.has_value();
-        bool use_soft = has_state_bounds && !config_.hard_state_constraints;
+        bool use_soft = uses_soft_state_constraints();
 
+        // Both builders read the same optionals, so the matrix and the bounds
+        // vectors cannot come out of this function with different row counts.
         auto P = detail::build_cost_matrix<Scalar, NX, NU>(N, Q_state_, config_.R, Qf_state_, use_soft, config_.soft_penalty, config_.soft_state_penalty);
-        auto A = detail::build_constraint_matrix<Scalar, NX, NU>(N, system_.A, system_.B, has_state_bounds, use_soft, config_.u_min.has_value() || config_.u_max.has_value(), config_.du_max.has_value(), config_.terminal_constraint_set);
+        auto A = detail::build_constraint_matrix<Scalar, NX, NU>(N, system_.A, system_.B, config_.x_min, config_.x_max, use_soft, config_.u_min, config_.u_max, config_.du_max, config_.terminal_constraint_set);
 
         Vector<Scalar, NX> x0_dummy = Vector<Scalar, NX>::Zero();
-        auto [l, u] = detail::build_bounds_vectors<Scalar, NX, NU>(N, x0_dummy, config_.x_min, config_.x_max, config_.u_min, config_.u_max, config_.du_max, use_soft, config_.terminal_constraint_set);
+        auto [l, u] = detail::build_bounds_vectors<Scalar, NX, NU>(N, x0_dummy, config_.x_min, config_.x_max, config_.u_min, config_.u_max, config_.du_max, config_.terminal_constraint_set);
 
         auto q = detail::build_cost_vector<Scalar, NX, NU>(N, n_dec_, Q_state_, Qf_state_);
 
@@ -349,7 +348,6 @@ private:
                                                                    config_.u_min,
                                                                    config_.u_max,
                                                                    config_.du_max,
-                                                                   (config_.x_min.has_value() || config_.x_max.has_value()) && !config_.hard_state_constraints,
                                                                    config_.terminal_constraint_set);
         update_.l = std::move(l);
         update_.u = std::move(u);
@@ -360,14 +358,10 @@ private:
         if(!config_.du_max.has_value())
             return;
 
-        int N = config_.horizon;
-        int n_dyn = (N + 1) * nx;
-        bool has_state_bounds = config_.x_min.has_value() || config_.x_max.has_value();
-        bool has_input_bounds = config_.u_min.has_value() || config_.u_max.has_value();
-        int rate_row = n_dyn + (has_state_bounds ? N * nx : 0) + (has_input_bounds ? N * nu : 0);
-
-        update_.l.segment(rate_row, nu) = -config_.du_max.value() + u_prev_;
-        update_.u.segment(rate_row, nu) = config_.du_max.value() + u_prev_;
+        // The offset comes from the same derivation that sized the bounds vectors
+        // this function writes into, so it cannot address a different block.
+        update_.l.segment(rate_row_, nu) = -(*config_.du_max) + u_prev_;
+        update_.u.segment(rate_row_, nu) = *config_.du_max + u_prev_;
     }
 
     void apply_warm_start()
@@ -449,6 +443,7 @@ private:
     int n_con_{};
     int n_x_total_{};
     int n_u_total_{};
+    int rate_row_{};
 };
 
 }

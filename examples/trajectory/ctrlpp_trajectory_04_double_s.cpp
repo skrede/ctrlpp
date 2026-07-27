@@ -26,7 +26,7 @@ int main()
         std::cerr << "The commanded move has no double-S profile\n";
         return 1;
     }
-    auto const& trajectory = created.value();
+    auto const& trajectory = *created;
 
     constexpr double dt = 0.001;
     std::cout << "time,position,velocity,acceleration\n";

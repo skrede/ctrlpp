@@ -452,6 +452,93 @@ TEST_CASE("all constraint types active simultaneously", "[mpc][coverage]")
     CHECK(x.norm() < 2.0);
 }
 
+// ---- qp_formulation.h: state, input, rate and terminal blocks all present ----
+
+namespace
+{
+
+auto octagonal_terminal_set() -> ctrlpp::terminal_set<double, NX>
+{
+    Eigen::Matrix<double, 8, 2> H_term;
+    double const s = 1.0 / std::sqrt(2.0);
+    H_term << 1, 0, -1, 0, 0, 1, 0, -1, s, s, s, -s, -s, s, -s, -s;
+    Eigen::Matrix<double, 8, 1> h_term;
+    h_term.setConstant(2.0);
+    return ctrlpp::terminal_set<double, NX>{ctrlpp::polytopic_set<double, NX>{.H = H_term, .h = h_term}};
+}
+
+}
+
+TEST_CASE("constraint matrix and bounds vectors agree with every block present", "[mpc][coverage][qp]")
+{
+    auto sys = make_double_integrator();
+    constexpr int N = 12;
+
+    auto const tset = octagonal_terminal_set();
+    Eigen::Vector2d const x_min{-3.0, -3.0};
+    Eigen::Vector2d const x_max{3.0, 3.0};
+    auto const u_min = (Eigen::Matrix<double, 1, 1>() << -1.0).finished();
+    auto const u_max = (Eigen::Matrix<double, 1, 1>() << 1.0).finished();
+    auto const du_max = (Eigen::Matrix<double, 1, 1>() << 0.5).finished();
+
+    // Widest layout the formulation can pose: dynamics, softened state bounds,
+    // input bounds, input-rate bounds and a polytopic terminal set. A constraint
+    // matrix and a bounds pair of different heights describe two different
+    // problems, so the builders are compared against each other and against the
+    // block layout restated here, rather than through a solve that would hide a
+    // disagreement behind a backend rejection.
+    auto const A_con = ctrlpp::detail::build_constraint_matrix<double, NX, NU>(N, sys.A, sys.B, x_min, x_max, true, u_min, u_max, du_max, tset);
+    auto const [l, u] = ctrlpp::detail::build_bounds_vectors<double, NX, NU>(N, Eigen::Vector2d::Zero(), x_min, x_max, u_min, u_max, du_max, tset);
+
+    constexpr int nx = static_cast<int>(NX);
+    constexpr int nu = static_cast<int>(NU);
+    Eigen::Index const expected_rows = (N + 1) * nx + N * nx + N * nu + N * nu + 8;
+
+    CHECK(A_con.rows() == expected_rows);
+    CHECK(l.size() == expected_rows);
+    CHECK(u.size() == expected_rows);
+}
+
+TEST_CASE("MPC honors state, input, rate and terminal constraints together", "[mpc][coverage][terminal_set]")
+{
+    auto sys = make_double_integrator();
+    constexpr int N = 12;
+
+    ctrlpp::mpc_config<double, NX, NU> cfg{
+        .horizon = N,
+        .Q = Eigen::Matrix2d::Identity(),
+        .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+        .u_min = (Eigen::Matrix<double, 1, 1>() << -1.0).finished(),
+        .u_max = (Eigen::Matrix<double, 1, 1>() << 1.0).finished(),
+        .x_min = Eigen::Vector2d{-3.0, -3.0},
+        .x_max = Eigen::Vector2d{3.0, 3.0},
+        .du_max = (Eigen::Matrix<double, 1, 1>() << 0.5).finished(),
+        .terminal_constraint_set = octagonal_terminal_set(),
+    };
+
+    auto controller_result = OsqpMpc::create(sys, cfg);
+    REQUIRE(controller_result.has_value());
+    auto& controller = *controller_result;
+
+    Eigen::Vector2d x{0.8, 0.2};
+    double u_prev = 0.0;
+
+    for(int step = 0; step < 30; ++step)
+    {
+        auto u = controller.solve(x);
+        REQUIRE(u.has_value());
+
+        CHECK(u->input(0) >= -1.0 - 1e-3);
+        CHECK(u->input(0) <= 1.0 + 1e-3);
+        CHECK(std::abs(u->input(0) - u_prev) <= 0.5 + 1e-2);
+
+        u_prev = u->input(0);
+        x = sys.A * x + sys.B * u.value().input;
+    }
+
+    CHECK(x.norm() < 0.5);
+}
+
 // ---- mpc.h: ellipsoidal terminal set in QP ----
 
 TEST_CASE("MPC with ellipsoidal terminal set", "[mpc][coverage][terminal_set]")

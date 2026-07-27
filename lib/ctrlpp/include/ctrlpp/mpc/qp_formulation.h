@@ -46,7 +46,56 @@ inline int terminal_constraint_rows(const std::optional<terminal_set<Scalar, NX>
             else
                 return static_cast<int>(s.H.rows());
         },
-        terminal_constraint.value());
+        *terminal_constraint);
+}
+
+// --- QP dimensions ---
+
+/// @brief Where each constraint block starts, and how many rows the whole QP has.
+///
+/// The constraint matrix and the bounds vectors must be exactly as tall as each
+/// other, and the per-solve rate-bound refresh must write at the row the rate
+/// block actually starts at. All three quantities are decided here, from the
+/// optionals that decide whether a block exists at all, so there is no presence
+/// flag travelling beside an optional that could disagree with it.
+struct qp_constraint_layout
+{
+    int state_row;    ///< First state-bound row; equals the dynamics block height.
+    int input_row;    ///< First input-bound row.
+    int rate_row;     ///< First input-rate row.
+    int terminal_row; ///< First terminal-set row.
+    int n_con;        ///< Total constraint rows.
+};
+
+template <typename Scalar, std::size_t NX, std::size_t NU>
+inline auto constraint_layout(int N,
+                              const std::optional<Vector<Scalar, NX>>& x_min,
+                              const std::optional<Vector<Scalar, NX>>& x_max,
+                              const std::optional<Vector<Scalar, NU>>& u_min,
+                              const std::optional<Vector<Scalar, NU>>& u_max,
+                              const std::optional<Vector<Scalar, NU>>& du_max,
+                              const std::optional<terminal_set<Scalar, NX>>& terminal_constraint) -> qp_constraint_layout
+{
+    constexpr int nx = static_cast<int>(NX);
+    constexpr int nu = static_cast<int>(NU);
+
+    int const state_row = (N + 1) * nx;
+    int const input_row = state_row + ((x_min.has_value() || x_max.has_value()) ? N * nx : 0);
+    int const rate_row = input_row + ((u_min.has_value() || u_max.has_value()) ? N * nu : 0);
+    int const terminal_row = rate_row + (du_max.has_value() ? N * nu : 0);
+
+    return {state_row, input_row, rate_row, terminal_row, terminal_row + terminal_constraint_rows<Scalar, NX>(terminal_constraint)};
+}
+
+/// @brief Slack columns carried by the softened state-bound formulation.
+///
+/// The cost matrix and the constraint matrix must agree on the decision width or
+/// they describe two different problems, so the count is decided in one place.
+template <std::size_t NX>
+inline int slack_columns(int N, bool has_soft_constraints)
+{
+    constexpr int nx = static_cast<int>(NX);
+    return has_soft_constraints ? N * nx : 0;
 }
 
 // --- Cost matrix building ---
@@ -88,7 +137,7 @@ auto build_cost_matrix(int N,
 
     int n_x_total = (N + 1) * nx;
     int n_u_total = N * nu;
-    int n_slack = has_soft_constraints ? N * nx : 0;
+    int n_slack = slack_columns<NX>(N, has_soft_constraints);
     int n_dec = n_x_total + n_u_total + n_slack;
 
     std::vector<Eigen::Triplet<Scalar>> triplets;
@@ -244,36 +293,44 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
 auto build_constraint_matrix(int N,
                                            const Matrix<Scalar, NX, NX>& A_sys,
                                            const Matrix<Scalar, NX, NU>& B_sys,
-                                           bool has_state_bounds,
+                                           const std::optional<Vector<Scalar, NX>>& x_min,
+                                           const std::optional<Vector<Scalar, NX>>& x_max,
                                            bool has_soft_constraints,
-                                           bool has_input_bounds,
-                                           bool has_rate_bounds,
+                                           const std::optional<Vector<Scalar, NU>>& u_min,
+                                           const std::optional<Vector<Scalar, NU>>& u_max,
+                                           const std::optional<Vector<Scalar, NU>>& du_max,
                                            const std::optional<terminal_set<Scalar, NX>>& terminal_constraint = {}) -> Eigen::SparseMatrix<Scalar, Eigen::ColMajor>
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
 
+    // Which blocks exist is read straight off the optionals, so the matrix built
+    // below and the bounds vectors built from the same optionals are the same
+    // height by construction. `has_soft_constraints` stays a parameter because it
+    // is not derived from an optional: it is the caller's policy choice between
+    // softening the state bounds and enforcing them hard.
+    auto const layout = constraint_layout<Scalar, NX, NU>(N, x_min, x_max, u_min, u_max, du_max, terminal_constraint);
+
     int n_x_total = (N + 1) * nx;
     int n_u_total = N * nu;
-    int n_slack = has_soft_constraints ? N * nx : 0;
+    int n_slack = slack_columns<NX>(N, has_soft_constraints);
     int n_dec = n_x_total + n_u_total + n_slack;
-    int n_con = (N + 1) * nx + (has_state_bounds ? N * nx : 0) + (has_input_bounds ? N * nu : 0) + (has_rate_bounds ? N * nu : 0) + terminal_constraint_rows<Scalar, NX>(terminal_constraint);
 
     std::vector<Eigen::Triplet<Scalar>> triplets;
-    triplets.reserve(static_cast<std::size_t>((N + 1) * nx + N * nx * nx + N * nx * nu + (has_state_bounds ? N * nx : 0) + n_slack + (has_input_bounds ? N * nu : 0) + (has_rate_bounds ? 2 * N * nu : 0)));
+    triplets.reserve(static_cast<std::size_t>((N + 1) * nx + N * nx * nx + N * nx * nu + (layout.input_row - layout.state_row) + n_slack + (layout.rate_row - layout.input_row) + 2 * (layout.terminal_row - layout.rate_row)));
 
     int row = 0;
     add_dynamics_triplets<Scalar, NX, NU>(triplets, row, N, n_x_total, A_sys, B_sys);
-    if(has_state_bounds)
+    if(x_min.has_value() || x_max.has_value())
         add_state_bound_triplets<Scalar, NX, NU>(triplets, row, N, n_x_total, n_u_total, has_soft_constraints);
-    if(has_input_bounds)
+    if(u_min.has_value() || u_max.has_value())
         add_input_bound_triplets<Scalar, NX, NU>(triplets, row, N, n_x_total);
-    if(has_rate_bounds)
+    if(du_max.has_value())
         add_rate_bound_triplets<Scalar, NX, NU>(triplets, row, N, n_x_total);
     if(terminal_constraint.has_value())
-        add_terminal_set_triplets<Scalar, NX>(triplets, row, N * nx, terminal_constraint.value());
+        add_terminal_set_triplets<Scalar, NX>(triplets, row, N * nx, *terminal_constraint);
 
-    Eigen::SparseMatrix<Scalar, Eigen::ColMajor> A(n_con, n_dec);
+    Eigen::SparseMatrix<Scalar, Eigen::ColMajor> A(layout.n_con, n_dec);
     A.setFromTriplets(triplets.begin(), triplets.end());
     return A;
 }
@@ -301,8 +358,8 @@ inline void set_state_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& 
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr auto inf = std::numeric_limits<Scalar>::infinity();
-    Vector<Scalar, NX> lb = x_min.has_value() ? x_min.value() : Vector<Scalar, NX>::Constant(-inf);
-    Vector<Scalar, NX> ub = x_max.has_value() ? x_max.value() : Vector<Scalar, NX>::Constant(inf);
+    Vector<Scalar, NX> lb = x_min.has_value() ? *x_min : Vector<Scalar, NX>::Constant(-inf);
+    Vector<Scalar, NX> ub = x_max.has_value() ? *x_max : Vector<Scalar, NX>::Constant(inf);
     for(int k = 0; k < N; ++k)
     {
         l.segment(row, nx) = lb;
@@ -317,8 +374,8 @@ inline void set_input_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& 
 {
     constexpr int nu = static_cast<int>(NU);
     constexpr auto inf = std::numeric_limits<Scalar>::infinity();
-    Vector<Scalar, NU> lb = u_min.has_value() ? u_min.value() : Vector<Scalar, NU>::Constant(-inf);
-    Vector<Scalar, NU> ub = u_max.has_value() ? u_max.value() : Vector<Scalar, NU>::Constant(inf);
+    Vector<Scalar, NU> lb = u_min.has_value() ? *u_min : Vector<Scalar, NU>::Constant(-inf);
+    Vector<Scalar, NU> ub = u_max.has_value() ? *u_max : Vector<Scalar, NU>::Constant(inf);
     for(int k = 0; k < N; ++k)
     {
         l.segment(row, nu) = lb;
@@ -390,31 +447,23 @@ auto build_bounds_vectors(int N,
                                         const std::optional<Vector<Scalar, NU>>& u_min,
                                         const std::optional<Vector<Scalar, NU>>& u_max,
                                         const std::optional<Vector<Scalar, NU>>& du_max,
-                                        bool /*has_soft_constraints*/,
                                         const std::optional<terminal_set<Scalar, NX>>& terminal_constraint = {}) -> std::pair<Eigen::VectorX<Scalar>, Eigen::VectorX<Scalar>>
 {
-    constexpr int nx = static_cast<int>(NX);
-    constexpr int nu = static_cast<int>(NU);
+    auto const layout = constraint_layout<Scalar, NX, NU>(N, x_min, x_max, u_min, u_max, du_max, terminal_constraint);
 
-    bool has_state_bounds = x_min.has_value() || x_max.has_value();
-    bool has_input_bounds = u_min.has_value() || u_max.has_value();
-    bool has_rate_bounds = du_max.has_value();
-
-    int n_con = (N + 1) * nx + (has_state_bounds ? N * nx : 0) + (has_input_bounds ? N * nu : 0) + (has_rate_bounds ? N * nu : 0) + terminal_constraint_rows<Scalar, NX>(terminal_constraint);
-
-    Eigen::VectorX<Scalar> l(n_con);
-    Eigen::VectorX<Scalar> u(n_con);
+    Eigen::VectorX<Scalar> l(layout.n_con);
+    Eigen::VectorX<Scalar> u(layout.n_con);
 
     int row = 0;
     set_dynamics_bounds<Scalar, NX>(l, u, row, N, x0);
-    if(has_state_bounds)
+    if(x_min.has_value() || x_max.has_value())
         set_state_bounds<Scalar, NX>(l, u, row, N, x_min, x_max);
-    if(has_input_bounds)
+    if(u_min.has_value() || u_max.has_value())
         set_input_bounds<Scalar, NU>(l, u, row, N, u_min, u_max);
-    if(has_rate_bounds)
-        set_rate_bounds<Scalar, NU>(l, u, row, N, du_max.value());
+    if(du_max.has_value())
+        set_rate_bounds<Scalar, NU>(l, u, row, N, *du_max);
     if(terminal_constraint.has_value())
-        set_terminal_bounds<Scalar, NX>(l, u, row, terminal_constraint.value());
+        set_terminal_bounds<Scalar, NX>(l, u, row, *terminal_constraint);
 
     return {l, u};
 }

@@ -370,7 +370,6 @@ auto build_mhe_update_bounds(const mhe_qp_dims& dims,
                                            bool has_box_bounds,
                                            const std::optional<Vector<Scalar, NX>>& x_min,
                                            const std::optional<Vector<Scalar, NX>>& x_max,
-                                           bool has_residual_bounds,
                                            const std::optional<Vector<Scalar, NY>>& residual_bound) -> std::pair<Eigen::VectorX<Scalar>, Eigen::VectorX<Scalar>>
 {
     constexpr int nx = static_cast<int>(NX);
@@ -424,9 +423,9 @@ auto build_mhe_update_bounds(const mhe_qp_dims& dims,
         }
     }
 
-    if(has_residual_bounds && residual_bound.has_value())
+    if(residual_bound.has_value())
     {
-        const auto& thresh = residual_bound.value();
+        const auto& thresh = *residual_bound;
         for(int k = 0; k <= Ni; ++k)
         {
             const auto& zk = z_buf[static_cast<std::size_t>(k)];
@@ -462,17 +461,19 @@ auto build_mhe_qp_update(std::size_t N,
                                        Scalar soft_penalty,
                                        const std::optional<Vector<Scalar, NX>>& x_min,
                                        const std::optional<Vector<Scalar, NX>>& x_max,
-                                       bool has_residual_bounds,
                                        const std::optional<Vector<Scalar, NY>>& residual_bound,
                                        const Eigen::VectorX<Scalar>& warm_x,
                                        const Eigen::VectorX<Scalar>& warm_y) -> qp_update<Scalar>
 {
     int Ni = static_cast<int>(N);
     (void)soft_penalty;
-    auto dims = compute_mhe_dims<NX, NY>(N, has_box_bounds, has_soft_constraints, has_residual_bounds);
+    // The residual block's height and the rows written into it are decided by the
+    // same optional, so the update vectors cannot be sized for a block the bounds
+    // loop below declines to fill.
+    auto dims = compute_mhe_dims<NX, NY>(N, has_box_bounds, has_soft_constraints, residual_bound.has_value());
 
     auto q = build_mhe_linear_cost<Scalar, NX, NU, NY>(dims, Ni, arrival_weight, P_arr_inv, Q_inv, A_lin, B_lin, H_lin, R_inv, x_arrival, u_buf, z_buf);
-    auto [l, u] = build_mhe_update_bounds<Scalar, NX, NU, NY>(dims, Ni, B_lin, u_buf, z_buf, has_box_bounds, x_min, x_max, has_residual_bounds, residual_bound);
+    auto [l, u] = build_mhe_update_bounds<Scalar, NX, NU, NY>(dims, Ni, B_lin, u_buf, z_buf, has_box_bounds, x_min, x_max, residual_bound);
 
     return {std::move(q), std::move(l), std::move(u), warm_x, warm_y};
 }

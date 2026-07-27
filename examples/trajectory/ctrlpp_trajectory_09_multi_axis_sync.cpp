@@ -29,9 +29,9 @@ int main()
         return 1;
     }
 
-    auto ax_x = built_x.value();
-    auto ax_y = built_y.value();
-    auto ax_z = built_z.value();
+    auto ax_x = *built_x;
+    auto ax_y = *built_y;
+    auto ax_z = *built_z;
 
     // Synchronization is fallible: an axis whose displacement and boundary
     // velocities cannot stretch to the slowest axis's duration is reported rather

@@ -231,11 +231,10 @@ private:
     {
         cov_matrix_t P_arr_inv = m_prior_cov_window[0].inverse();
         bool has_box = m_x_min.has_value() || m_x_max.has_value();
-        bool has_residual = m_residual_bound.has_value();
         std::span<const input_vector_t> u_span{m_u_window.data(), N};
         std::span<const output_vector_t> z_span{m_z_window.data(), N + 1};
 
-        return detail::build_mhe_qp_update<Scalar, NX, NU, NY>(N, m_arrival_cost_weight, P_arr_inv, m_Q_inv, m_R_inv, A_lin, B_lin, H_lin, m_prior_state_window[0], u_span, z_span, has_box, m_soft_constraints && has_box, m_soft_penalty, m_x_min, m_x_max, has_residual, m_residual_bound, m_warm_z, m_warm_y);
+        return detail::build_mhe_qp_update<Scalar, NX, NU, NY>(N, m_arrival_cost_weight, P_arr_inv, m_Q_inv, m_R_inv, A_lin, B_lin, H_lin, m_prior_state_window[0], u_span, z_span, has_box, m_soft_constraints && has_box, m_soft_penalty, m_x_min, m_x_max, m_residual_bound, m_warm_z, m_warm_y);
     }
 
     void merge_structure_and_update(qp_problem<Scalar>& problem, qp_update<Scalar>& upd)

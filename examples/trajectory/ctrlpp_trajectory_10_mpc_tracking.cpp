@@ -58,7 +58,7 @@ int main()
         std::cerr << "The commanded reference move has no trapezoidal profile\n";
         return 1;
     }
-    auto const& traj = built.value();
+    auto const& traj = *built;
 
     // Pre-compute reference trajectory for MPC lookahead
     auto const total_refs = static_cast<std::size_t>(sim_steps + horizon + 1);
