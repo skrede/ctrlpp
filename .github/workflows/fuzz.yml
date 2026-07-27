@@ -48,6 +48,20 @@ jobs:
             name=$(basename "$fuzz")
             echo "--- $name ---"
             rm -f ./crash-* ./oom-*
+            # Deterministic gate: replay the curated seeds for the targets that
+            # have them. The pass is zero-run so the fuzzer cannot write newly
+            # discovered inputs back into the versioned corpus directory, and
+            # the exploratory run below is never handed that directory.
+            corpus="tests/fuzz/corpus/$name"
+            if [ -d "$corpus" ]; then
+              echo "replay: $(find "$corpus" -type f | wc -l) curated seed(s)"
+              if ! "$fuzz" -runs=0 "$corpus" > ./replay.log 2>&1; then
+                echo "FAIL: $name corpus replay"
+                tail -20 ./replay.log
+                failed=$((failed + 1))
+              fi
+              rm -f ./replay.log
+            fi
             timeout 10 "$fuzz" -max_total_time=5 -max_len=1024 2>&1 | tail -5
             if ls ./crash-* 1>/dev/null 2>&1; then
               echo "FAIL: $name"

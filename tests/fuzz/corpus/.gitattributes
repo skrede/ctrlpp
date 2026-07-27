@@ -1,0 +1,7 @@
+# Seed files are byte-exact fuzz inputs. Git classifies a file as text when its
+# first bytes contain no NUL, which for a packed run of IEEE-754 doubles depends
+# on the values that happen to be stored, so the classification is unstable
+# across seeds. A checkout that applies end-of-line normalization to a seed
+# rewrites carriage returns and line feeds inside a double and silently turns
+# that seed into a different problem. Mark them binary so no filter ever runs.
+*.bin binary
