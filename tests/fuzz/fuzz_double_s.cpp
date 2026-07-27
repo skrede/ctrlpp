@@ -115,7 +115,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // The range is open at both ends: a boundary velocity that reaches the
     // velocity limit exactly leaves no admissible profile between the two, which
     // is outside the domain these profiles are defined on rather than a defect
-    // in them. The neighbouring representable value is the largest speed still
+    // in them. The neighboring representable value is the largest speed still
     // inside that domain, so it is what the clamp uses.
     const double v_bound = std::nextafter(v_max, 0.0);
     const double v0 = std::clamp(buf[5], -v_bound, v_bound);
@@ -136,6 +136,18 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     ctrlpp::double_s_trajectory<double> traj = created.value();
 
     const double T = traj.duration();
+    // A NaN duration is never a domain limit. It is the construction having lost
+    // the value it was solving for on a command it reported success on, so it is
+    // a finding and must not be filtered away here. An INFINITE one is a
+    // different thing: the commanded displacement divided by the velocity limit
+    // overflowing the scalar type, a representation limit of the command rather
+    // than a defect in the profile. A NEGATIVE one is filtered on the same terms
+    // the trapezoidal target states: below the square root of the smallest
+    // normal value a boundary velocity squares to zero, and a peak built from
+    // those squares can fall below the boundary velocity it is analytically
+    // bounded by.
+    if(std::isnan(T))
+        abort();
     if(!std::isfinite(T) || T < 0.0)
         return 0;
 

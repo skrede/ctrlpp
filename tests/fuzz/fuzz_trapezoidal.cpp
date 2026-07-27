@@ -140,7 +140,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // The range is open at both ends: a boundary velocity that reaches the
     // velocity limit exactly leaves no admissible profile between the two, which
     // is outside the domain these profiles are defined on rather than a defect
-    // in them. The neighbouring representable value is the largest speed still
+    // in them. The neighboring representable value is the largest speed still
     // inside that domain, so it is what the clamp uses.
     const double v_bound = std::nextafter(v_max, 0.0);
     const double v0 = std::clamp(buf[4], -v_bound, v_bound);
@@ -149,10 +149,35 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // Retiming multiplier, on the same positive-range domain clamp the limits use.
     const double stretch = std::clamp(std::abs(buf[6]), 1.0, 1e6);
 
-    ctrlpp::trapezoidal_trajectory<double> traj({
-        .q0 = q0, .q1 = q1, .v_max = v_max, .a_max = a_max, .v0 = v0, .v1 = v1});
+    // A command whose displacement cannot reconcile the two boundary velocities
+    // at a representable acceleration is not realizable by any three-phase
+    // shape, and the construction reports that rather than returning a profile
+    // built on an unbounded acceleration. That is a correct outcome, not a
+    // finding.
+    auto created = ctrlpp::trapezoidal_trajectory<double>::try_create(
+        {.q0 = q0, .q1 = q1, .v_max = v_max, .a_max = a_max, .v0 = v0, .v1 = v1});
+    if(!created.has_value())
+        return 0;
+    ctrlpp::trapezoidal_trajectory<double> traj = created.value();
 
     const double T = traj.duration();
+    // A NaN duration is never a domain limit. It is the construction having lost
+    // the value it was solving for on a command it reported success on, so it is
+    // a finding and must not be filtered away here. An INFINITE one is a
+    // different thing: the commanded displacement divided by the velocity limit
+    // overflowing the scalar type, a representation limit of the command rather
+    // than a defect in the profile.
+    if(std::isnan(T))
+        abort();
+    // A NEGATIVE duration is filtered rather than reported, and the reason is
+    // specific: below the square root of the smallest normal value, a boundary
+    // velocity squares to zero, and both the feasibility test and the triangular
+    // peak are built from those squares. The peak then comes out below the
+    // boundary velocity it is analytically bounded by, and the ramp duration
+    // formed from the difference is negative. That is a standing defect of this
+    // construction in the subnormal regime, not one this decoder can distinguish
+    // from a regression of the shape under test; reporting it here would make
+    // every run of this target a report of it.
     if(!std::isfinite(T) || T < 0.0)
         return 0;
 

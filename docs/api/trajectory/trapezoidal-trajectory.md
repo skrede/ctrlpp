@@ -32,10 +32,28 @@ explicit trapezoidal_trajectory(config const& cfg);
 
 Construction solves phase durations from the kinematic constraints. Negative displacement is handled via sigma transformation. When `v_max` cannot be reached, the profile degenerates to a triangular shape with `v_peak = sqrt((2*a*h + v0^2 + v1^2) / 2)`.
 
+When the two boundary velocities are not feasible over the commanded displacement at the commanded acceleration, the acceleration is raised to the smallest value that makes them feasible together (B&M eq. (3.15)). That raise is a division by the commanded displacement, so it has no representable answer once the displacement is small enough, and none at all when it is zero.
+
+## Realizability
+
+Both ramps of a three-phase profile run toward one cruise velocity lying at or above each boundary velocity, so the profile sweeps at least the ground the transition between those two velocities already sweeps. A command below that is not realizable within this shape at any acceleration the scalar type can hold; the clearest instance is a zero commanded displacement with two boundary speeds that differ, which asks the axis to change speed while covering no ground. `try_create` reports exactly that case:
+
+```cpp
+auto profile = ctrlpp::trapezoidal_trajectory<double>::try_create(cfg);
+if (!profile) {
+    // profile.error() == ctrlpp::trajectory_error::unreachable_boundary_velocity
+}
+```
+
+The non-fallible constructor stays available for callers that have already established their command is realizable. Given one that is not, it yields a stationary zero-duration profile rather than one whose duration, phase durations, and evaluation are all NaN. Retiming that stand-in is `trajectory_error::unreachable_duration`, since it has no traversal to slow down.
+
+Two zero-displacement commands are realizable and are not rejected: equal boundary velocities, where there is no speed change to cover, and opposed boundary velocities of equal magnitude, where the ramp between them sweeps exactly zero ground.
+
 ## Member Functions
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
+| `try_create` | `static expected<trapezoidal_trajectory, trajectory_error> try_create(config const&)` | Construct, reporting an unrealizable command |
 | `evaluate` | `trajectory_point<Scalar, 1> evaluate(Scalar t) const` | Position, velocity, acceleration at time `t` |
 | `duration` | `Scalar duration() const` | Total duration `T = T_a + T_v + T_d` |
 | `is_triangular` | `bool is_triangular() const` | True if cruise phase duration is zero |

@@ -148,3 +148,86 @@ TEST_CASE("Trapezoidal: satisfies trajectory_segment concept", "[traj][trapezoid
     STATIC_REQUIRE(ctrlpp::trajectory_segment<ctrlpp::trapezoidal_trajectory<double>, double, 1>);
     STATIC_REQUIRE(ctrlpp::trajectory_segment<ctrlpp::trapezoidal_trajectory<float>, float, 1>);
 }
+
+// -- Test 11: Zero-displacement speed change is a typed rejection ------------
+TEST_CASE("Trapezoidal: zero displacement with unequal boundary speeds is rejected",
+          "[traj][trapezoidal]")
+{
+    // Both ramps of this family run toward one cruise velocity at or above each
+    // boundary velocity, so the profile sweeps at least what the transition
+    // between them already sweeps. eq. (3.15)'s remedy for a shorter command is
+    // to divide the required speed change by the commanded displacement, which
+    // at zero displacement asks for an unbounded acceleration; multiplied back
+    // by the vanishing phase durations it produced, that lands as NaN in the
+    // cruise duration rather than as a large finite profile.
+    ctrlpp::trapezoidal_trajectory<double>::config const cfg{
+        .q0 = 2.0, .q1 = 2.0, .v_max = 2.0, .a_max = 1.0, .v0 = 0.5, .v1 = 0.0,
+    };
+
+    auto const created = ctrlpp::trapezoidal_trajectory<double>::try_create(cfg);
+    REQUIRE_FALSE(created.has_value());
+    REQUIRE(created.error() == ctrlpp::trajectory_error::unreachable_boundary_velocity);
+
+    // The mirror command -- the same speed change, entered rather than left --
+    // is the same infeasibility and carries the same value.
+    auto const mirrored = ctrlpp::trapezoidal_trajectory<double>::try_create(
+        {.q0 = 2.0, .q1 = 2.0, .v_max = 2.0, .a_max = 1.0, .v0 = 0.0, .v1 = 0.5});
+    REQUIRE_FALSE(mirrored.has_value());
+    REQUIRE(mirrored.error() == ctrlpp::trajectory_error::unreachable_boundary_velocity);
+
+    // The plain constructor keeps working and reports a standstill, not a
+    // profile whose duration, phases, and evaluation are all NaN.
+    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    REQUIRE(std::isfinite(traj.duration()));
+    REQUIRE_THAT(traj.duration(), WithinAbs(0.0, 0.0));
+    for (auto const phase : traj.phase_durations()) {
+        REQUIRE(std::isfinite(phase));
+        REQUIRE(phase >= 0.0);
+    }
+    auto const p0 = traj.evaluate(0.0);
+    REQUIRE_THAT(p0.position[0], WithinAbs(2.0, 0.0));
+    REQUIRE_THAT(p0.velocity[0], WithinAbs(0.0, 0.0));
+    REQUIRE_THAT(p0.acceleration[0], WithinAbs(0.0, 0.0));
+
+    // Retiming a command the family cannot realize is a typed rejection too,
+    // never arithmetic performed on the stationary stand-in.
+    auto const rescaled = traj.rescale_to(1.0);
+    REQUIRE_FALSE(rescaled.has_value());
+    REQUIRE(rescaled.error() == ctrlpp::trajectory_error::unreachable_duration);
+    REQUIRE_THAT(traj.duration(), WithinAbs(0.0, 0.0));
+}
+
+// -- Test 12: The rejection is confined to the infeasible set ----------------
+TEST_CASE("Trapezoidal: zero displacement at equal boundary speeds is realizable",
+          "[traj][trapezoidal]")
+{
+    using traj_t = ctrlpp::trapezoidal_trajectory<double>;
+
+    // Equal boundary velocities: no speed change to cover, so the standstill is
+    // the profile rather than a stand-in for a rejected one.
+    auto const held = traj_t::try_create(
+        {.q0 = 2.0, .q1 = 2.0, .v_max = 2.0, .a_max = 1.0, .v0 = 0.5, .v1 = 0.5});
+    REQUIRE(held.has_value());
+    REQUIRE_THAT(held.value().duration(), WithinAbs(0.0, 0.0));
+
+    // Opposed boundary velocities of equal magnitude: the ramp between them
+    // sweeps exactly zero ground, so a zero command is realized by it exactly.
+    auto const reversed = traj_t::try_create(
+        {.q0 = 2.0, .q1 = 2.0, .v_max = 2.0, .a_max = 1.0, .v0 = 0.5, .v1 = -0.5});
+    REQUIRE(reversed.has_value());
+    REQUIRE_THAT(reversed.value().duration(), WithinRel(1.0, 1e-15));
+
+    // Rest to rest over zero displacement.
+    auto const at_rest = traj_t::try_create({.q0 = 2.0, .q1 = 2.0, .v_max = 2.0, .a_max = 1.0});
+    REQUIRE(at_rest.has_value());
+
+    // A displacement small enough to force eq. (3.15)'s raise, but not so small
+    // that the raised acceleration leaves the representable range: served, not
+    // rejected. The boundary between the two is where the quotient overflows,
+    // which is a property of the scalar type and is not a chosen threshold.
+    auto const raised = traj_t::try_create(
+        {.q0 = 0.0, .q1 = 1e-300, .v_max = 2.0, .a_max = 1.0, .v0 = 0.5, .v1 = 0.0});
+    REQUIRE(raised.has_value());
+    REQUIRE(raised.value().duration() > 0.0);
+    REQUIRE(std::isfinite(raised.value().duration()));
+}

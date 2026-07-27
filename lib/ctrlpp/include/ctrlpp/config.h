@@ -8,11 +8,16 @@
 /// convenience wrapper in the library. The expected-based factories and solvers
 /// remain available unconditionally.
 ///
-/// CTRLPP_HAS_EXCEPTIONS: expands to 1 exactly when the compiler has exception
-/// support enabled (__cpp_exceptions) and CTRLPP_NO_EXCEPTIONS is not defined;
-/// expands to 0 otherwise.
+/// CTRLPP_HAS_EXCEPTIONS: expands to 1 exactly when the toolchain has exception
+/// support enabled and CTRLPP_NO_EXCEPTIONS is not defined; expands to 0
+/// otherwise. Two toolchain spellings are accepted: the standard feature-test
+/// macro __cpp_exceptions, and _CPPUNWIND, which is what the Microsoft toolchain
+/// has always set from its /EH switch. Accepting both keeps a supported compiler
+/// from silently landing on the exception-free contract while its runtime still
+/// unwinds; neither macro is defined by a compiler whose exceptions are off, so
+/// the disjunction cannot turn them on anywhere.
 
-#if defined(__cpp_exceptions) && !defined(CTRLPP_NO_EXCEPTIONS)
+#if (defined(__cpp_exceptions) || defined(_CPPUNWIND)) && !defined(CTRLPP_NO_EXCEPTIONS)
     #define CTRLPP_HAS_EXCEPTIONS 1
 #else
     #define CTRLPP_HAS_EXCEPTIONS 0

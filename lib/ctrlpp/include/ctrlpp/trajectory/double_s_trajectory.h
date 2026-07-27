@@ -372,7 +372,7 @@ private:
             }
         }
 
-        // The bracket is exhausted, so lo and hi are neighbouring values with the
+        // The bracket is exhausted, so lo and hi are neighboring values with the
         // crossing between them. Accepting lo requires it to be admissible and to
         // reach the requested duration; when it is not, the crossing lies inside
         // the range no admissible profile covers and the request is unreachable.

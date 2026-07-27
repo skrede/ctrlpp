@@ -22,7 +22,7 @@
 //
 // This file is a shape check on the trace, not a fidelity check on the
 // traversal: it says nothing about whether a profile sweeps the displacement
-// it was commanded. That contract lives in the neighbouring rescale anchor,
+// it was commanded. That contract lives in the neighboring rescale anchor,
 // whose oracle is kink-aligned quadrature of the reported velocity, and it is
 // the one that can fail on a profile whose trace is perfectly smooth and
 // perfectly bounded while covering the wrong distance.

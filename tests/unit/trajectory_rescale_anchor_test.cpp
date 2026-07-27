@@ -497,7 +497,7 @@ auto trapezoidal_solve_conditioning(double v_cruise, double a, double h, double 
 /// @param duration_ops chained roundings behind the realized duration on the
 ///        path the profile actually took
 /// @param conditioning amplification the solve applies to those roundings; one
-///        for a solve whose result is not a cancelling difference
+///        for a solve whose result is not a canceling difference
 template <typename Trajectory>
 void check_time_scaling_contract(Trajectory const& profile, double h_signed, scaling_limits const& lim,
                                  double v0, double v1, double T_target, int duration_ops,
@@ -549,7 +549,7 @@ void check_time_scaling_contract(Trajectory const& profile, double h_signed, sca
     // conditioning. Never an exact-equality assertion: neither profile snaps its
     // stored duration to the request, and on the trapezoidal path the cruise
     // velocity is a genuinely ill-conditioned function of the request whenever
-    // the shape's residual displacement is a cancelling difference.
+    // the shape's residual displacement is a canceling difference.
     double const duration_tol = static_cast<double>(duration_ops) * eps * T_target * conditioning;
     CAPTURE(duration_tol, conditioning);
     REQUIRE(std::abs(T - T_target) <= duration_tol);

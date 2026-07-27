@@ -540,6 +540,8 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NH, std::
 auto build_nmpc_problem_static(const Dynamics& dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, std::shared_ptr<nmpc_formulation_state<Scalar, NX, NU>> state)
     -> ctrlpp::expected<nlp_problem_static<Scalar, static_cast<int>((NH + 1) * NX + NH * NU)>, nlp_formulation_error>
 {
+    static_assert(NH > 0, "Horizon NH must be positive: a zero horizon leaves no input block in the decision vector, so the (NH+1)*NX + NH*NU dimension collapses onto the initial state alone and every input offset the assembled problem writes lands outside it");
+
     static constexpr int NV = static_cast<int>((NH + 1) * NX + NH * NU);
 
     // Checked BEFORE build_nmpc_problem runs: the dependent data (bounds,

@@ -7,7 +7,7 @@
 /// std::expected even where the standard library ships it. Storage is a raw
 /// discriminated union rather than std::variant so the embedded floor stays
 /// tight: no <variant>, no bad_variant_access / valueless-by-exception
-/// machinery, and both throw sites are gated behind __cpp_exceptions so the
+/// machinery, and both throw sites are gated behind CTRLPP_HAS_EXCEPTIONS so the
 /// header compiles clean under -fno-exceptions: value() on an error state falls
 /// back to std::abort(), and the rollback that restores a cross-state assignment
 /// compiles out together with the exception it exists to catch. Per
@@ -34,6 +34,8 @@
 /// Monadic operations (and_then, or_else, transform) are intentionally
 /// omitted; no caller in the library uses them. Add them here if a future
 /// caller needs them.
+
+#include "ctrlpp/config.h"
 
 #include <memory>
 #include <cstdlib>
@@ -64,7 +66,7 @@ struct unexpect_t
 
 inline constexpr unexpect_t unexpect{};
 
-#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+#if CTRLPP_HAS_EXCEPTIONS
 struct bad_expected_access : std::exception
 {
     const char* what() const noexcept override
@@ -76,7 +78,7 @@ struct bad_expected_access : std::exception
 
 [[noreturn]] inline void on_bad_expected_access()
 {
-#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+#if CTRLPP_HAS_EXCEPTIONS
     throw bad_expected_access{};
 #else
     std::abort();
@@ -349,7 +351,7 @@ private:
             OldT staged(std::move(*old_member));
             if constexpr (!std::is_trivially_destructible_v<OldT>)
                 std::destroy_at(old_member);
-#if defined(__cpp_exceptions) || defined(_CPPUNWIND)
+#if CTRLPP_HAS_EXCEPTIONS
             try
             {
                 std::construct_at(new_member, std::forward<Args>(args)...);

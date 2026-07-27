@@ -52,6 +52,8 @@ class trapezoidal_trajectory
     explicit trapezoidal_trajectory(config const& cfg)
         : q0_{cfg.q0}
         , q1_{cfg.q1}
+        , v_max_{cfg.v_max}
+        , a_{cfg.a_max}
     {
         auto const h = cfg.q1 - cfg.q0;
         sigma_ = (h >= Scalar{0}) ? Scalar{1} : Scalar{-1};
@@ -69,6 +71,19 @@ class trapezoidal_trajectory
             // Infeasible: compute a_lim per eq. (3.15)
             // @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.15), p.72
             a = v_diff_sq / abs_h + std::numeric_limits<Scalar>::epsilon();
+            if (!std::isfinite(a)) {
+                // The raise is a division by the commanded displacement, so it
+                // leaves the representable range exactly when that displacement
+                // is too small to reconcile the two boundary velocities at any
+                // acceleration the scalar type can hold -- at a zero
+                // displacement, at any acceleration whatsoever. Every quantity
+                // downstream is formed from this value multiplied by a phase
+                // duration derived from it, so an unbounded one does not
+                // propagate as an unbounded duration: it propagates as NaN, in
+                // the cruise duration first and in the total from there.
+                set_unrealizable();
+                return;
+            }
         }
 
         auto v = cfg.v_max;
@@ -119,8 +134,38 @@ class trapezoidal_trajectory
         T_ = T_a_ + T_v_ + T_d_;
         v0_ = sv0;
         v1_ = sv1;
-        v_max_ = cfg.v_max;
         a_ = a;
+    }
+
+    /// @brief Construct a profile, reporting the commands this family cannot realize.
+    ///
+    /// Both ramps of a three-phase profile run toward one cruise velocity that
+    /// lies at or above each boundary velocity, so the ground the profile sweeps
+    /// is at least the ground the transition between those two velocities
+    /// already sweeps. A command below that is not feasible at the commanded
+    /// acceleration, and B&M's remedy is to raise the acceleration to the
+    /// smallest value which makes the two feasible together, eq. (3.15). At a
+    /// zero commanded displacement no acceleration is large enough, and just
+    /// above zero the value the remedy asks for is no longer representable.
+    /// Rejections:
+    ///  * a commanded displacement the two boundary velocities cannot be
+    ///    reconciled with at a representable acceleration ->
+    ///    trajectory_error::unreachable_boundary_velocity
+    ///
+    /// The plain constructor stays available for the callers that have already
+    /// established their command is realizable. On a command that is not, it
+    /// yields a stationary zero-duration profile rather than the NaN duration and
+    /// NaN evaluation the unbounded acceleration would otherwise propagate.
+    ///
+    /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
+    [[nodiscard]] static auto try_create(config const& cfg)
+        -> ctrlpp::expected<trapezoidal_trajectory, trajectory_error>
+    {
+        trapezoidal_trajectory profile{cfg};
+        if (!profile.realizable_) {
+            return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
+        }
+        return profile;
     }
 
     /// @brief Evaluate trajectory at time t, clamped to [0, T].
@@ -234,6 +279,29 @@ class trapezoidal_trajectory
     }
 
   private:
+    /// @brief Record a command this profile family cannot realize.
+    ///
+    /// The profile becomes stationary, so evaluate() holds one position for a
+    /// zero duration rather than reporting a traversal that never happens. The
+    /// two ramp rates and the two boundary velocities are cleared with it: they
+    /// are the shape of a traversal there is none of, and leaving them set would
+    /// have evaluate() report a moving axis at a standstill.
+    /// try_create() turns this state into trajectory_error.
+    void set_unrealizable()
+    {
+        realizable_ = false;
+        triangular_ = true;
+        v0_ = Scalar{0};
+        v1_ = Scalar{0};
+        v_v_ = Scalar{0};
+        a_a_ = Scalar{0};
+        a_d_ = Scalar{0};
+        T_a_ = Scalar{0};
+        T_v_ = Scalar{0};
+        T_d_ = Scalar{0};
+        T_ = Scalar{0};
+    }
+
     /// @brief Complete profile state produced by a rescaling solve.
     struct rescaled_state
     {
@@ -327,6 +395,12 @@ class trapezoidal_trajectory
         }
         if (T_new < T_) {
             return ctrlpp::unexpected(trajectory_error::duration_shorter_than_current);
+        }
+        if (!realizable_) {
+            // A command this family cannot realize has no traversal to slow
+            // down, and the stationary stand-in left in its place traverses
+            // nothing at any duration.
+            return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
 
         auto const h = std::abs(q1_ - q0_);
@@ -495,6 +569,7 @@ class trapezoidal_trajectory
     Scalar T_d_{};
     Scalar T_{};
     bool triangular_{};
+    bool realizable_{true};
 };
 
 static_assert(trajectory_segment<trapezoidal_trajectory<double>, double, 1>);
