@@ -42,6 +42,26 @@ namespace
 /// carries no truncation error and the count buys no accuracy.
 constexpr int panels_per_segment = 8;
 
+/// create() is the only construction path on the two velocity profiles and it is
+/// fallible, so every profile these cases use is built through one of these
+/// helpers, which assert the command was realizable. The negative cases below do
+/// not come through here: they assert the specific enumerator.
+auto trapezoidal_profile(ctrlpp::trapezoidal_trajectory<double>::config const& cfg)
+    -> ctrlpp::trapezoidal_trajectory<double>
+{
+    auto created = ctrlpp::trapezoidal_trajectory<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return created.value();
+}
+
+auto double_s_profile(ctrlpp::double_s_trajectory<double>::config const& cfg)
+    -> ctrlpp::double_s_trajectory<double>
+{
+    auto created = ctrlpp::double_s_trajectory<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return created.value();
+}
+
 /// Chained rounding operations behind one Simpson panel: each of its two fresh
 /// velocity samples chains up to five multiply-adds inside evaluate(), the panel
 /// itself three multiplies and three adds over its samples, and the running sums
@@ -314,7 +334,7 @@ TEST_CASE("Trapezoidal with zero distance", "[trapezoidal][hardening][negative]"
         .q0 = 5.0, .q1 = 5.0, .v_max = 1.0, .a_max = 1.0,
     };
 
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto const traj = trapezoidal_profile(cfg);
     REQUIRE_THAT(traj.duration(), WithinAbs(0.0, 1e-12));
     auto pt = traj.evaluate(0.0);
     REQUIRE_THAT(pt.position(0), WithinAbs(5.0, 1e-12));
@@ -322,14 +342,17 @@ TEST_CASE("Trapezoidal with zero distance", "[trapezoidal][hardening][negative]"
 
 TEST_CASE("Trapezoidal with negative max velocity", "[trapezoidal][hardening][negative]")
 {
-    // Negative v_max is unusual but should handle gracefully
+    // A negative velocity limit puts the cruise velocity below both boundary
+    // velocities, which makes the acceleration phase (v_v - v0) / a negative and
+    // sends evaluate() into an undefined clamp. It is out of the domain, so it is
+    // a typed rejection rather than a profile that happens to be finite.
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 1.0, .v_max = -1.0, .a_max = 1.0,
     };
 
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
-    // Should produce finite results (negative v_max may produce degenerate profile)
-    REQUIRE(std::isfinite(traj.duration()));
+    auto const created = ctrlpp::trapezoidal_trajectory<double>::create(cfg);
+    REQUIRE_FALSE(created.has_value());
+    REQUIRE(created.error() == ctrlpp::trajectory_error::non_positive_velocity_limit);
 }
 
 TEST_CASE("Trapezoidal triangle profile reaches correct peak velocity", "[trapezoidal][hardening][precision]")
@@ -339,7 +362,7 @@ TEST_CASE("Trapezoidal triangle profile reaches correct peak velocity", "[trapez
         .q0 = 0.0, .q1 = 0.5, .v_max = 10.0, .a_max = 2.0,
     };
 
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto const traj = trapezoidal_profile(cfg);
     REQUIRE(traj.is_triangular());
 
     // Peak velocity for triangle: sqrt(a * h) = sqrt(2 * 0.5) = 1.0
@@ -358,7 +381,7 @@ TEST_CASE("Double-S with zero distance", "[double_s][hardening][negative]")
         .q0 = 3.0, .q1 = 3.0, .v_max = 1.0, .a_max = 1.0, .j_max = 1.0,
     };
 
-    ctrlpp::double_s_trajectory<double> traj(cfg);
+    auto const traj = double_s_profile(cfg);
     REQUIRE_THAT(traj.duration(), WithinAbs(0.0, 1e-12));
     auto pt = traj.evaluate(0.0);
     REQUIRE_THAT(pt.position(0), WithinAbs(3.0, 1e-12));
@@ -366,12 +389,15 @@ TEST_CASE("Double-S with zero distance", "[double_s][hardening][negative]")
 
 TEST_CASE("Double-S with negative jerk limit", "[double_s][hardening][negative]")
 {
+    // The jerk limit divides every jerk-phase duration, so its domain is finite
+    // and strictly positive and a negative one is a typed rejection.
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 1.0, .v_max = 1.0, .a_max = 1.0, .j_max = -1.0,
     };
 
-    ctrlpp::double_s_trajectory<double> traj(cfg);
-    REQUIRE(std::isfinite(traj.duration()));
+    auto const created = ctrlpp::double_s_trajectory<double>::create(cfg);
+    REQUIRE_FALSE(created.has_value());
+    REQUIRE(created.error() == ctrlpp::trajectory_error::non_positive_jerk_limit);
 }
 
 // ── Online planner 2nd hardening ───────────────────────────────────────────────
@@ -545,7 +571,7 @@ TEST_CASE("Trapezoidal trajectory rescale_to extends motion",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 2.0,
     };
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto traj = trapezoidal_profile(cfg);
     auto const original_T = traj.duration();
 
     auto const rescaled = traj.rescale_to(original_T * 2.0);
@@ -570,7 +596,7 @@ TEST_CASE("Trapezoidal trajectory rescale_to shorter than current is rejected",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 2.0,
     };
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto traj = trapezoidal_profile(cfg);
     auto const original_T = traj.duration();
     auto const original_phases = traj.phase_durations();
 
@@ -593,7 +619,7 @@ TEST_CASE("Trapezoidal trajectory rescale_to emits the valley shape",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 1.0, .v_max = 2.0, .a_max = 1.0, .v0 = 0.9, .v1 = 0.9,
     };
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto traj = trapezoidal_profile(cfg);
 
     auto const rescaled = traj.rescale_to(10.0);
     REQUIRE(rescaled.has_value());
@@ -618,7 +644,7 @@ TEST_CASE("Double-S trajectory rescale_to rebuilds a rest-to-rest profile",
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0,
     };
-    ctrlpp::double_s_trajectory<double> traj(cfg);
+    auto traj = double_s_profile(cfg);
     auto const original_T = traj.duration();
 
     auto const rescaled = traj.rescale_to(original_T * 3.0);
@@ -639,7 +665,7 @@ TEST_CASE("Double-S trajectory rescale_to rebuilds with nonzero boundary velocit
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0,
         .v0 = 1.0, .v1 = 0.5,
     };
-    ctrlpp::double_s_trajectory<double> traj(cfg);
+    auto traj = double_s_profile(cfg);
     auto const original_T = traj.duration();
 
     auto const rescaled = traj.rescale_to(original_T * 1.5);
@@ -660,7 +686,7 @@ TEST_CASE("Double-S trajectory rescale_to rejects shortening and unreachable req
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0,
         .v0 = 1.0, .v1 = 0.5,
     };
-    ctrlpp::double_s_trajectory<double> traj(cfg);
+    auto traj = double_s_profile(cfg);
     auto const original_T = traj.duration();
     auto const original_phases = traj.phase_durations();
 
@@ -695,7 +721,7 @@ TEST_CASE("Trapezoidal trajectory rescale_to rejects a duration past the reachab
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 0.1, .v_max = 5.0, .a_max = 1.0, .v0 = 1.0, .v1 = 1.0,
     };
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto traj = trapezoidal_profile(cfg);
     auto const original_T = traj.duration();
 
     auto const h = std::abs(cfg.q1 - cfg.q0);
@@ -708,7 +734,7 @@ TEST_CASE("Trapezoidal trajectory rescale_to rejects a duration past the reachab
     REQUIRE(inside.has_value());
 
     // Beyond it the request is a typed rejection, not a clamped success.
-    ctrlpp::trapezoidal_trajectory<double> other(cfg);
+    auto other = trapezoidal_profile(cfg);
     auto const outside = other.rescale_to(T_max * 2.0);
     REQUIRE(!outside.has_value());
     REQUIRE(outside.error() == ctrlpp::trajectory_error::unreachable_duration);
@@ -753,7 +779,7 @@ TEST_CASE("Trapezoidal negative cruise duration clamped to zero",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 0.1, .v_max = 100.0, .a_max = 1.0,
     };
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto traj = trapezoidal_profile(cfg);
 
     // Should be triangular (no cruise phase)
     REQUIRE(traj.is_triangular());
@@ -1083,8 +1109,7 @@ TEST_CASE("Synchronize vector with single element is no-op",
           "[synchronize][hardening][coverage]")
 {
     std::vector<ctrlpp::trapezoidal_trajectory<double>> axes;
-    axes.emplace_back(ctrlpp::trapezoidal_trajectory<double>::config{
-        .q0 = 0.0, .q1 = 5.0, .v_max = 2.0, .a_max = 1.0});
+    axes.push_back(trapezoidal_profile({.q0 = 0.0, .q1 = 5.0, .v_max = 2.0, .a_max = 1.0}));
     auto const dur_before = axes[0].duration();
 
     REQUIRE(ctrlpp::synchronize(std::span{axes}).has_value());
@@ -1105,7 +1130,7 @@ TEST_CASE("Trapezoidal with non-zero initial/final velocity and small displaceme
         .v0 = 3.0, .v1 = 2.0,
     };
 
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto traj = trapezoidal_profile(cfg);
     REQUIRE(std::isfinite(traj.duration()));
     REQUIRE(traj.duration() > 0.0);
 
@@ -1120,7 +1145,7 @@ TEST_CASE("Trapezoidal rescale_to very long duration",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 5.0, .v_max = 2.0, .a_max = 1.0,
     };
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto traj = trapezoidal_profile(cfg);
 
     // Rescale to a very long duration (100x original)
     auto const original_T = traj.duration();
@@ -1146,7 +1171,7 @@ TEST_CASE("Trapezoidal rescale_to rejects a zero-distance trajectory",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 3.0, .q1 = 3.0, .v_max = 2.0, .a_max = 1.0,
     };
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto traj = trapezoidal_profile(cfg);
 
     // A stationary profile reaches its own duration and nothing longer: the
     // reachable maximum derived from the vanishing-cruise limit is zero at rest,
@@ -1168,7 +1193,7 @@ TEST_CASE("Trapezoidal negative direction with non-zero BCs",
         .v0 = -1.0, .v1 = -0.5,
     };
 
-    ctrlpp::trapezoidal_trajectory<double> traj(cfg);
+    auto traj = trapezoidal_profile(cfg);
     REQUIRE(std::isfinite(traj.duration()));
 
     auto start = traj.evaluate(0.0);

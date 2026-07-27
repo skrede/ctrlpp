@@ -181,13 +181,15 @@ void check_constructor_fidelity(sweep_config const& cfg)
 {
     constexpr double eps = static_cast<double>(std::numeric_limits<Scalar>::epsilon());
 
-    double_s_trajectory<Scalar> profile({.q0 = static_cast<Scalar>(cfg.q0),
-                                         .q1 = static_cast<Scalar>(cfg.q1),
-                                         .v_max = static_cast<Scalar>(cfg.v_max),
-                                         .a_max = static_cast<Scalar>(cfg.a_max),
-                                         .j_max = static_cast<Scalar>(cfg.j_max),
-                                         .v0 = static_cast<Scalar>(cfg.v0),
-                                         .v1 = static_cast<Scalar>(cfg.v1)});
+    auto const created = double_s_trajectory<Scalar>::create({.q0 = static_cast<Scalar>(cfg.q0),
+                                                              .q1 = static_cast<Scalar>(cfg.q1),
+                                                              .v_max = static_cast<Scalar>(cfg.v_max),
+                                                              .a_max = static_cast<Scalar>(cfg.a_max),
+                                                              .j_max = static_cast<Scalar>(cfg.j_max),
+                                                              .v0 = static_cast<Scalar>(cfg.v0),
+                                                              .v1 = static_cast<Scalar>(cfg.v1)});
+    REQUIRE(created.has_value());
+    auto const& profile = created.value();
 
     double const T = static_cast<double>(profile.duration());
     double const h_signed = static_cast<double>(static_cast<Scalar>(cfg.q1)) - static_cast<double>(static_cast<Scalar>(cfg.q0));
@@ -762,8 +764,11 @@ void sweep_trapezoidal_scaling(sweep_config const& cfg, shape_census& census)
             .a_max = static_cast<Scalar>(cfg.a_max),
             .v0 = static_cast<Scalar>(cfg.v0),
             .v1 = static_cast<Scalar>(cfg.v1)};
-        trapezoidal_trajectory<Scalar> profile(tcfg);
+        auto built = trapezoidal_trajectory<Scalar>::create(tcfg);
+        if(!built.has_value())
+            continue;
 
+        auto profile = built.value();
         double const T_current = static_cast<double>(profile.duration());
         if(!(T_current > 0.0))
             continue;
@@ -824,7 +829,7 @@ void sweep_double_s_scaling(sweep_config const& cfg)
             .v0 = static_cast<Scalar>(cfg.v0),
             .v1 = static_cast<Scalar>(cfg.v1)};
 
-        auto created = double_s_trajectory<Scalar>::try_create(dcfg);
+        auto created = double_s_trajectory<Scalar>::create(dcfg);
         if(!created.has_value())
             continue;
 
@@ -930,7 +935,7 @@ TEST_CASE("double-S construction rejects displacements below the transition it a
     {
         CAPTURE(cfg.q0, cfg.q1, cfg.v_max, cfg.a_max, cfg.j_max, cfg.v0, cfg.v1);
 
-        auto const result = double_s_trajectory<double>::try_create({.q0 = cfg.q0,
+        auto const result = double_s_trajectory<double>::create({.q0 = cfg.q0,
                                                                     .q1 = cfg.q1,
                                                                     .v_max = cfg.v_max,
                                                                     .a_max = cfg.a_max,
@@ -939,19 +944,6 @@ TEST_CASE("double-S construction rejects displacements below the transition it a
                                                                     .v1 = cfg.v1});
         REQUIRE(!result.has_value());
         REQUIRE(result.error() == trajectory_error::unreachable_boundary_velocity);
-
-        // The non-fallible constructor holds the start position for a zero
-        // duration instead of reporting a traversal it never performs.
-        double_s_trajectory<double> profile({.q0 = cfg.q0,
-                                             .q1 = cfg.q1,
-                                             .v_max = cfg.v_max,
-                                             .a_max = cfg.a_max,
-                                             .j_max = cfg.j_max,
-                                             .v0 = cfg.v0,
-                                             .v1 = cfg.v1});
-        CAPTURE(profile.duration());
-        REQUIRE(profile.duration() == 0.0);
-        REQUIRE(profile.is_degenerate());
     }
 }
 
@@ -965,7 +957,7 @@ TEST_CASE("double-S construction rejects a displacement shorter than the boundar
         .q0 = 0.0, .q1 = 0.1, .v_max = 5.0, .a_max = 20.0, .j_max = 100.0, .v0 = 3.0, .v1 = 0.5};
     CAPTURE(minimum_displacement(cfg.v0, cfg.v1, cfg.a_max, cfg.j_max));
 
-    auto const rejected = double_s_trajectory<double>::try_create({.q0 = cfg.q0,
+    auto const rejected = double_s_trajectory<double>::create({.q0 = cfg.q0,
                                                                    .q1 = cfg.q1,
                                                                    .v_max = cfg.v_max,
                                                                    .a_max = cfg.a_max,
@@ -978,7 +970,7 @@ TEST_CASE("double-S construction rejects a displacement shorter than the boundar
     // Widening the command past that floor is accepted and traverses it.
     sweep_config const widened{
         .q0 = 0.0, .q1 = 2.0, .v_max = 5.0, .a_max = 20.0, .j_max = 100.0, .v0 = 3.0, .v1 = 0.5};
-    auto const accepted = double_s_trajectory<double>::try_create({.q0 = widened.q0,
+    auto const accepted = double_s_trajectory<double>::create({.q0 = widened.q0,
                                                                    .q1 = widened.q1,
                                                                    .v_max = widened.v_max,
                                                                    .a_max = widened.a_max,
@@ -1070,12 +1062,14 @@ TEST_CASE("a retimed trapezoidal profile takes each of its three shapes", "[traj
         {expectation{5.0, cruise_shape::plateau}, expectation{10.0, cruise_shape::ramp_through},
          expectation{25.0, cruise_shape::valley}})
     {
-        trapezoidal_trajectory<double> profile({.q0 = cfg.q0,
-                                                .q1 = cfg.q1,
-                                                .v_max = cfg.v_max,
-                                                .a_max = cfg.a_max,
-                                                .v0 = cfg.v0,
-                                                .v1 = cfg.v1});
+        auto built = trapezoidal_trajectory<double>::create({.q0 = cfg.q0,
+                                                             .q1 = cfg.q1,
+                                                             .v_max = cfg.v_max,
+                                                             .a_max = cfg.a_max,
+                                                             .v0 = cfg.v0,
+                                                             .v1 = cfg.v1});
+        REQUIRE(built.has_value());
+        auto profile = built.value();
         CAPTURE(expected.target, profile.duration());
         REQUIRE(profile.rescale_to(expected.target).has_value());
 
@@ -1142,15 +1136,17 @@ TEST_CASE("a retimed profile that starts away from its target holds its contract
 
 TEST_CASE("retiming rejects a duration shorter than the profile already takes", "[trajectory][anchor]")
 {
-    trapezoidal_trajectory<double> trapezoidal(
+    auto trapezoidal_built = trapezoidal_trajectory<double>::create(
         {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .v0 = 0.5, .v1 = 0.25});
+    REQUIRE(trapezoidal_built.has_value());
+    auto trapezoidal = trapezoidal_built.value();
     auto const trapezoidal_before = trapezoidal.duration();
     auto const trapezoidal_result = trapezoidal.rescale_to(0.5 * trapezoidal_before);
     REQUIRE(!trapezoidal_result.has_value());
     REQUIRE(trapezoidal_result.error() == trajectory_error::duration_shorter_than_current);
     REQUIRE(trapezoidal.duration() == trapezoidal_before);
 
-    auto created = double_s_trajectory<double>::try_create(
+    auto created = double_s_trajectory<double>::create(
         {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0, .v0 = 0.5, .v1 = 0.25});
     REQUIRE(created.has_value());
     auto double_s = created.value();
@@ -1184,12 +1180,14 @@ TEST_CASE("trapezoidal retiming rejects a duration past its own reachable maximu
     CAPTURE(v_min, T_sup);
 
     auto make = [&] {
-        return trapezoidal_trajectory<double>({.q0 = cfg.q0,
-                                               .q1 = cfg.q1,
-                                               .v_max = cfg.v_max,
-                                               .a_max = cfg.a_max,
-                                               .v0 = cfg.v0,
-                                               .v1 = cfg.v1});
+        auto built = trapezoidal_trajectory<double>::create({.q0 = cfg.q0,
+                                                            .q1 = cfg.q1,
+                                                            .v_max = cfg.v_max,
+                                                            .a_max = cfg.a_max,
+                                                            .v0 = cfg.v0,
+                                                            .v1 = cfg.v1});
+        REQUIRE(built.has_value());
+        return built.value();
     };
 
     auto rejected = make();
@@ -1223,7 +1221,7 @@ TEST_CASE("double-S retiming rejects a duration past its velocity-scale lower bo
     CAPTURE(scale_floor);
     REQUIRE(scale_floor < 1.0);
 
-    auto created = double_s_trajectory<double>::try_create({.q0 = cfg.q0,
+    auto created = double_s_trajectory<double>::create({.q0 = cfg.q0,
                                                             .q1 = cfg.q1,
                                                             .v_max = cfg.v_max,
                                                             .a_max = cfg.a_max,
@@ -1244,19 +1242,61 @@ TEST_CASE("double-S retiming rejects a duration past its velocity-scale lower bo
 
 TEST_CASE("retiming rejects a profile with nothing to traverse", "[trajectory][anchor]")
 {
-    trapezoidal_trajectory<double> trapezoidal(
-        {.q0 = 2.0, .q1 = 2.0, .v_max = 5.0, .a_max = 10.0});
+    auto trapezoidal_built =
+        trapezoidal_trajectory<double>::create({.q0 = 2.0, .q1 = 2.0, .v_max = 5.0, .a_max = 10.0});
+    REQUIRE(trapezoidal_built.has_value());
+    auto trapezoidal = trapezoidal_built.value();
     REQUIRE(trapezoidal.duration() == 0.0);
     auto const trapezoidal_result = trapezoidal.rescale_to(1.0);
     REQUIRE(!trapezoidal_result.has_value());
     REQUIRE(trapezoidal_result.error() == trajectory_error::unreachable_duration);
     REQUIRE(trapezoidal.duration() == 0.0);
 
-    double_s_trajectory<double> double_s(
+    auto double_s_built = double_s_trajectory<double>::create(
         {.q0 = 2.0, .q1 = 2.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0});
+    REQUIRE(double_s_built.has_value());
+    auto double_s = double_s_built.value();
     REQUIRE(double_s.duration() == 0.0);
     auto const double_s_result = double_s.rescale_to(1.0);
     REQUIRE(!double_s_result.has_value());
     REQUIRE(double_s_result.error() == trajectory_error::unreachable_duration);
     REQUIRE(double_s.duration() == 0.0);
+}
+
+TEST_CASE("trapezoidal retiming rejects a valley root that lands on its own shape boundary",
+          "[trajectory][anchor]")
+{
+    // Both boundary velocities sit within a few units in the last place of the
+    // velocity limit while the acceleration is ten orders of magnitude smaller,
+    // so the valley quadratic's discriminant b^2 - 4c is a difference of two
+    // quantities that agree to the full width of the significand. It cancels to
+    // exactly zero and the closed form returns the smaller boundary velocity
+    // itself, a root with no significant digits in it.
+    //
+    // That root is not a solution. The valley shape is selected only when the
+    // request exceeds the duration the smaller boundary velocity already
+    // realizes, and the total duration is strictly decreasing in the cruise
+    // velocity, so the root answering such a request lies STRICTLY below that
+    // boundary. Accepting the boundary itself would hand back a profile that
+    // realizes the same duration for every request past it while reporting
+    // success, which is a silently wrong retiming. It is a typed rejection, and
+    // the profile is left bitwise untouched.
+    auto built = trapezoidal_trajectory<double>::create({.q0 = 0.0,
+                                                         .q1 = 0.0004425048828125,
+                                                         .v_max = 0.9999999999999996,
+                                                         .a_max = 1e-6,
+                                                         .v0 = 0.9999999999999994,
+                                                         .v1 = 0.9999999050046706});
+    REQUIRE(built.has_value());
+    auto profile = built.value();
+
+    auto const T_current = profile.duration();
+    auto const phases_before = profile.phase_durations();
+    CAPTURE(T_current);
+
+    auto const rejected = profile.rescale_to(T_current * 1.0000000002328306);
+    REQUIRE(!rejected.has_value());
+    REQUIRE(rejected.error() == trajectory_error::unreachable_duration);
+    REQUIRE(profile.duration() == T_current);
+    REQUIRE(profile.phase_durations() == phases_before);
 }

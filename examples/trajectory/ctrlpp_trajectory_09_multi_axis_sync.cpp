@@ -13,9 +13,25 @@ int main()
     // 3-axis robot move: X 0->100mm, Y 0->50mm, Z 0->200mm.
     // All axes share v_max=80mm/s, a_max=400mm/s^2.
     // Synchronize so all axes finish simultaneously.
-    ctrlpp::trapezoidal_trajectory<double> ax_x({.q0 = 0.0, .q1 = 100.0, .v_max = 80.0, .a_max = 400.0});
-    ctrlpp::trapezoidal_trajectory<double> ax_y({.q0 = 0.0, .q1 = 50.0, .v_max = 80.0, .a_max = 400.0});
-    ctrlpp::trapezoidal_trajectory<double> ax_z({.q0 = 0.0, .q1 = 200.0, .v_max = 80.0, .a_max = 400.0});
+    //
+    // Construction is fallible too: create() is the only way to build a profile,
+    // and a command with no profile is reported here rather than standing in as
+    // an axis that never moves.
+    auto const built_x = ctrlpp::trapezoidal_trajectory<double>::create(
+        {.q0 = 0.0, .q1 = 100.0, .v_max = 80.0, .a_max = 400.0});
+    auto const built_y = ctrlpp::trapezoidal_trajectory<double>::create(
+        {.q0 = 0.0, .q1 = 50.0, .v_max = 80.0, .a_max = 400.0});
+    auto const built_z = ctrlpp::trapezoidal_trajectory<double>::create(
+        {.q0 = 0.0, .q1 = 200.0, .v_max = 80.0, .a_max = 400.0});
+    if (!built_x || !built_y || !built_z)
+    {
+        std::cerr << "At least one commanded axis move has no trapezoidal profile\n";
+        return 1;
+    }
+
+    auto ax_x = built_x.value();
+    auto ax_y = built_y.value();
+    auto ax_z = built_z.value();
 
     // Synchronization is fallible: an axis whose displacement and boundary
     // velocities cannot stretch to the slowest axis's duration is reported rather

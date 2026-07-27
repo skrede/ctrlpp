@@ -52,6 +52,27 @@ std::size_t guarded_allocations(Fn&& fn)
     return guard.allocations();
 }
 
+// create() is the only construction path on the two velocity profiles. It hands
+// back a ctrlpp::expected holding the profile by value, so it allocates nothing
+// either, but construction still happens outside the armed window here for the
+// same reason every other construction in this file does: only the steady-state
+// call is under test.
+auto trapezoidal_axis_profile(ctrlpp::trapezoidal_trajectory<double>::config const& cfg)
+    -> ctrlpp::trapezoidal_trajectory<double>
+{
+    auto created = ctrlpp::trapezoidal_trajectory<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return created.value();
+}
+
+auto double_s_axis_profile(ctrlpp::double_s_trajectory<double>::config const& cfg)
+    -> ctrlpp::double_s_trajectory<double>
+{
+    auto created = ctrlpp::double_s_trajectory<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return created.value();
+}
+
 // Dense-sample a segment's evaluate() across [0, duration] inside the armed
 // window and return the observed allocation count.
 template <typename Segment>
@@ -121,7 +142,7 @@ TEST_CASE("septic_trajectory evaluate performs zero heap allocation",
 TEST_CASE("trapezoidal_trajectory evaluate performs zero heap allocation",
           "[trajectory][trapezoidal][hardening][nomalloc]")
 {
-    ctrlpp::trapezoidal_trajectory<double> seg({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
+    auto const seg = trapezoidal_axis_profile({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
 
     seg.evaluate(0.0);
 
@@ -134,8 +155,8 @@ TEST_CASE("trapezoidal_trajectory evaluate performs zero heap allocation",
 TEST_CASE("double_s_trajectory evaluate performs zero heap allocation",
           "[trajectory][double_s][hardening][nomalloc]")
 {
-    ctrlpp::double_s_trajectory<double> seg(
-        {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0});
+    auto const seg =
+        double_s_axis_profile({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0});
 
     seg.evaluate(0.0);
 
@@ -270,10 +291,10 @@ TEST_CASE("trapezoidal_trajectory rescale_to performs zero heap allocation",
 {
     // Warm-up on a throwaway copy, outside the armed window: the retiming
     // mutates the profile, so the guarded call has to run on a fresh one.
-    ctrlpp::trapezoidal_trajectory<double> warmup(trapezoidal_axis);
+    auto warmup = trapezoidal_axis_profile(trapezoidal_axis);
     REQUIRE(warmup.rescale_to(warmup.duration() * 2.0).has_value());
 
-    ctrlpp::trapezoidal_trajectory<double> seg(trapezoidal_axis);
+    auto seg = trapezoidal_axis_profile(trapezoidal_axis);
     const double target = seg.duration() * 2.0;
 
     bool retimed = false;
@@ -287,13 +308,13 @@ TEST_CASE("trapezoidal_trajectory rescale_to performs zero heap allocation",
 TEST_CASE("double_s_trajectory rescale_to performs zero heap allocation on both paths",
           "[trajectory][double_s][hardening][nomalloc]")
 {
-    ctrlpp::double_s_trajectory<double> rest_warmup(double_s_rest_to_rest);
+    auto rest_warmup = double_s_axis_profile(double_s_rest_to_rest);
     REQUIRE(rest_warmup.rescale_to(rest_warmup.duration() * 2.0).has_value());
-    ctrlpp::double_s_trajectory<double> solved_warmup(double_s_boundary_velocities);
+    auto solved_warmup = double_s_axis_profile(double_s_boundary_velocities);
     REQUIRE(solved_warmup.rescale_to(solved_warmup.duration() * 1.2).has_value());
 
     // Rest to rest: the scale follows in closed form from the two durations.
-    ctrlpp::double_s_trajectory<double> rest(double_s_rest_to_rest);
+    auto rest = double_s_axis_profile(double_s_rest_to_rest);
     const double rest_target = rest.duration() * 2.0;
 
     bool rest_retimed = false;
@@ -305,7 +326,7 @@ TEST_CASE("double_s_trajectory rescale_to performs zero heap allocation on both 
 
     // Nonzero boundary velocities: the scale is found by halving a bracket, and
     // every candidate profile the search builds lives on the stack.
-    ctrlpp::double_s_trajectory<double> solved(double_s_boundary_velocities);
+    auto solved = double_s_axis_profile(double_s_boundary_velocities);
     const double solved_target = solved.duration() * 1.2;
 
     bool solved_retimed = false;
@@ -320,17 +341,15 @@ TEST_CASE("double_s_trajectory rescale_to performs zero heap allocation on both 
 TEST_CASE("synchronize performs zero heap allocation, variadic overload",
           "[trajectory][hardening][nomalloc]")
 {
-    ctrlpp::trapezoidal_trajectory<double> warm1(
-        {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
-    ctrlpp::trapezoidal_trajectory<double> warm2({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0});
-    ctrlpp::double_s_trajectory<double> warm3(double_s_rest_to_rest);
+    auto warm1 = trapezoidal_axis_profile({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
+    auto warm2 = trapezoidal_axis_profile({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0});
+    auto warm3 = double_s_axis_profile(double_s_rest_to_rest);
     REQUIRE(ctrlpp::synchronize(warm1, warm2).has_value());
     REQUIRE(ctrlpp::synchronize(warm3, warm3).has_value());
 
-    ctrlpp::trapezoidal_trajectory<double> ax1(
-        {.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0});
-    ctrlpp::trapezoidal_trajectory<double> ax2({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0});
-    ctrlpp::trapezoidal_trajectory<double> ax3({.q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 10.0});
+    auto ax1 = trapezoidal_axis_profile({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0});
+    auto ax2 = trapezoidal_axis_profile({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0});
+    auto ax3 = trapezoidal_axis_profile({.q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 10.0});
 
     bool synchronized = false;
     std::size_t allocations = 0;
@@ -348,14 +367,16 @@ TEST_CASE("synchronize performs zero heap allocation over a fixed-size backing s
     // allocated run of axes, no owning container anywhere on the path.
     using axis = ctrlpp::trapezoidal_trajectory<double>;
 
-    std::array<axis, 3> warmup{axis({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0}),
-                               axis({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0}),
-                               axis({.q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 10.0})};
+    std::array<axis, 3> warmup{
+        trapezoidal_axis_profile({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0}),
+        trapezoidal_axis_profile({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0}),
+        trapezoidal_axis_profile({.q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 10.0})};
     REQUIRE(ctrlpp::synchronize(std::span<axis>{warmup}).has_value());
 
-    std::array<axis, 3> axes{axis({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0}),
-                             axis({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0}),
-                             axis({.q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 10.0})};
+    std::array<axis, 3> axes{
+        trapezoidal_axis_profile({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0}),
+        trapezoidal_axis_profile({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0}),
+        trapezoidal_axis_profile({.q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 10.0})};
 
     bool synchronized = false;
     std::size_t allocations = 0;

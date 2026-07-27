@@ -162,20 +162,18 @@ int main()
     const ctrlpp::fir<scalar, 3> filter({scalar{0.25}, scalar{0.5}, scalar{0.25}});
     witness += static_cast<int>(sizeof(filter) > 0);
 
-    // -- trajectory: cubic expected factory, trapezoidal/double_s plain, spline + planner try_create --
+    // -- trajectory: cubic/trapezoidal/double_s expected factories, spline + planner try_create --
 
     const ctrlpp::Vector<scalar, 1> q0 = ctrlpp::Vector<scalar, 1>::Zero();
     const ctrlpp::Vector<scalar, 1> q1 = ctrlpp::Vector<scalar, 1>::Constant(scalar{1});
     const ctrlpp::Vector<scalar, 1> v_zero = ctrlpp::Vector<scalar, 1>::Zero();
     witness += fold(ctrlpp::make_cubic_trajectory<scalar, 1>(q0, q1, v_zero, v_zero, scalar{1}));
 
-    const ctrlpp::trapezoidal_trajectory<scalar> trapezoid(
-        {.q0 = scalar{0}, .q1 = scalar{1}, .v_max = scalar{1}, .a_max = scalar{1}});
-    witness += static_cast<int>(sizeof(trapezoid) > 0);
+    witness += fold(ctrlpp::trapezoidal_trajectory<scalar>::create(
+        {.q0 = scalar{0}, .q1 = scalar{1}, .v_max = scalar{1}, .a_max = scalar{1}}));
 
-    const ctrlpp::double_s_trajectory<scalar> double_s(
-        {.q0 = scalar{0}, .q1 = scalar{1}, .v_max = scalar{1}, .a_max = scalar{1}, .j_max = scalar{1}});
-    witness += static_cast<int>(sizeof(double_s) > 0);
+    witness += fold(ctrlpp::double_s_trajectory<scalar>::create(
+        {.q0 = scalar{0}, .q1 = scalar{1}, .v_max = scalar{1}, .a_max = scalar{1}, .j_max = scalar{1}}));
 
     witness += fold(ctrlpp::cubic_spline<scalar>::try_create(
         {.times = {scalar{0}, scalar{1}, scalar{2}}, .positions = {scalar{0}, scalar{1}, scalar{0}}}));

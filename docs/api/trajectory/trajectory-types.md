@@ -33,6 +33,8 @@ Structured failure modes for the point-to-point trajectory factories and the onl
 | `non_positive_jerk_limit` | The jerk limit must be positive |
 | `non_positive_duration` | The requested duration must be positive |
 | `non_finite_input` | A boundary value or limit is NaN/Inf |
+| `boundary_velocity_exceeds_limit` | A commanded boundary velocity is larger in magnitude than the velocity limit it is commanded under. The limit is a precondition of the point-to-point profiles, not a value they raise to fit: raising it would violate a bound the caller asked for, and honoring it would require a ramp that runs backwards in time |
+| `unrepresentable_duration` | A duration of the constructed profile is not representable in the scalar type, either because it left the finite range or because the total underflowed to zero on a command with a nonzero displacement, which would report an instantaneous traversal |
 | `unreachable_boundary_velocity` | The commanded displacement is shorter than the distance the fastest admissible transition between the two boundary velocities already sweeps, so no profile of the requested shape realizes it |
 | `duration_shorter_than_current` | Time rescaling only slows a profile down. The profile already runs at the fastest shape its limits allow, so a duration below the current one is not realizable |
 | `unreachable_duration` | The requested duration lies outside the set the commanded displacement, the kinematic limits, and the boundary velocities can realize together |

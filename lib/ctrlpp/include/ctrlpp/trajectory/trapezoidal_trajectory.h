@@ -29,8 +29,17 @@ namespace ctrlpp
 
 /// @brief Trapezoidal (LSPB) velocity profile with introspection.
 ///
-/// Construction solves phase durations from v_max, a_max constraints.
-/// Degenerate triangular case handled silently.
+/// Construction goes through `create`, which returns
+/// `ctrlpp::expected<trapezoidal_trajectory, trajectory_error>` and is the only
+/// way to obtain one. There is no non-validating public constructor: a profile
+/// object either satisfies its contract -- a finite, nonnegative duration in
+/// every phase and a peak within the commanded velocity limit -- or it was
+/// never built. Every rejection therefore reaches the caller as a value it has
+/// to inspect, and `evaluate` can rely on the invariants that keep its own
+/// arithmetic defined.
+///
+/// The degenerate triangular case is not a rejection: it is one of the shapes
+/// this family covers, and it is reported by `is_triangular()`.
 ///
 /// @cite biagiotti2009 -- Sec. 3.2, eq. (3.9)-(3.16), p.65-73
 template <ctrlpp_floating_scalar Scalar>
@@ -46,124 +55,95 @@ class trapezoidal_trajectory
         Scalar v0{}, v1{};
     };
 
-    /// @brief Construct trapezoidal profile from kinematic limits.
+    /// @brief Construct a profile, or report why the command has none.
     ///
-    /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a)-(3.13c), p.71
-    explicit trapezoidal_trajectory(config const& cfg)
-        : q0_{cfg.q0}
-        , q1_{cfg.q1}
-        , v_max_{cfg.v_max}
-        , a_{cfg.a_max}
-    {
-        auto const h = cfg.q1 - cfg.q0;
-        sigma_ = (h >= Scalar{0}) ? Scalar{1} : Scalar{-1};
-        auto const abs_h = std::abs(h);
-
-        // Transform velocities into the positive-displacement frame
-        auto const sv0 = sigma_ * cfg.v0;
-        auto const sv1 = sigma_ * cfg.v1;
-        auto a = cfg.a_max;
-
-        // Feasibility check for non-null BCs -- B&M eq. (3.14)
-        // @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14), p.72
-        auto const v_diff_sq = std::abs(sv0 * sv0 - sv1 * sv1) / Scalar{2};
-        if (a * abs_h < v_diff_sq) {
-            // Infeasible: compute a_lim per eq. (3.15)
-            // @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.15), p.72
-            a = v_diff_sq / abs_h + std::numeric_limits<Scalar>::epsilon();
-            if (!std::isfinite(a)) {
-                // The raise is a division by the commanded displacement, so it
-                // leaves the representable range exactly when that displacement
-                // is too small to reconcile the two boundary velocities at any
-                // acceleration the scalar type can hold -- at a zero
-                // displacement, at any acceleration whatsoever. Every quantity
-                // downstream is formed from this value multiplied by a phase
-                // duration derived from it, so an unbounded one does not
-                // propagate as an unbounded duration: it propagates as NaN, in
-                // the cruise duration first and in the total from there.
-                set_unrealizable();
-                return;
-            }
-        }
-
-        auto v = cfg.v_max;
-
-        // Compute cruise velocity and phase durations
-        // @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a)-(3.13c), p.71
-        // T_a = (v_v - v0) / a, T_d = (v_v - v1) / a; the cruise duration is the
-        // residual displacement (after the accel and decel distances) divided by
-        // the cruise velocity, which is exact for nonzero boundary velocities.
-
-        // Check triangular degenerate case
-        // When v_max cannot be reached: v_v = sqrt((2*a*h + v0^2 + v1^2) / 2)
-        auto const v_tri_sq = (Scalar{2} * a * abs_h + sv0 * sv0 + sv1 * sv1) / Scalar{2};
-        auto const v_tri = std::sqrt(v_tri_sq);
-
-        if (v_tri < v) {
-            // Triangular: cruise velocity limited by displacement
-            v_v_ = v_tri;
-            triangular_ = true;
-        } else {
-            v_v_ = v;
-            triangular_ = false;
-        }
-
-        // Acceleration and deceleration rates (symmetric a for now)
-        a_a_ = a;
-        a_d_ = a;
-
-        // Phase durations
-        T_a_ = (v_v_ - sv0) / a_a_;
-        T_d_ = (v_v_ - sv1) / a_d_;
-
-        if (triangular_) {
-            T_v_ = Scalar{0};
-        } else {
-            // Cruise duration from the residual displacement: the accel and decel
-            // phases cover d_a = v0*T_a + a_a*T_a^2/2 and d_d = v1*T_d + a_d*T_d^2/2,
-            // so the cruise phase covers (abs_h - d_a - d_d) at v_v. This keeps the
-            // position continuous at the cruise-to-decel boundary for nonzero v0/v1.
-            auto const d_a = sv0 * T_a_ + Scalar{0.5} * a_a_ * T_a_ * T_a_;
-            auto const d_d = sv1 * T_d_ + Scalar{0.5} * a_d_ * T_d_ * T_d_;
-            T_v_ = (abs_h - d_a - d_d) / v_v_;
-            if (T_v_ < Scalar{0}) {
-                T_v_ = Scalar{0};
-            }
-        }
-
-        T_ = T_a_ + T_v_ + T_d_;
-        v0_ = sv0;
-        v1_ = sv1;
-        a_ = a;
-    }
-
-    /// @brief Construct a profile, reporting the commands this family cannot realize.
-    ///
-    /// Both ramps of a three-phase profile run toward one cruise velocity that
-    /// lies at or above each boundary velocity, so the ground the profile sweeps
-    /// is at least the ground the transition between those two velocities
-    /// already sweeps. A command below that is not feasible at the commanded
-    /// acceleration, and B&M's remedy is to raise the acceleration to the
-    /// smallest value which makes the two feasible together, eq. (3.15). At a
-    /// zero commanded displacement no acceleration is large enough, and just
-    /// above zero the value the remedy asks for is no longer representable.
-    /// Rejections:
+    /// The only construction path. Rejections, checked in order:
+    ///  * a NaN or infinite position or boundary velocity ->
+    ///    trajectory_error::non_finite_input
+    ///  * a NaN, infinite, or non-positive velocity limit ->
+    ///    trajectory_error::non_positive_velocity_limit
+    ///  * a NaN, infinite, or non-positive acceleration limit ->
+    ///    trajectory_error::non_positive_acceleration_limit
+    ///  * a boundary velocity above the velocity limit in magnitude ->
+    ///    trajectory_error::boundary_velocity_exceeds_limit
     ///  * a commanded displacement the two boundary velocities cannot be
     ///    reconciled with at a representable acceleration ->
     ///    trajectory_error::unreachable_boundary_velocity
+    ///  * a negative phase duration or total duration ->
+    ///    trajectory_error::unreachable_boundary_velocity
+    ///  * a duration outside the representable range, or a total duration that
+    ///    underflowed to zero on a nonzero commanded displacement ->
+    ///    trajectory_error::unrepresentable_duration
     ///
-    /// The plain constructor stays available for the callers that have already
-    /// established their command is realizable. On a command that is not, it
-    /// yields a stationary zero-duration profile rather than the NaN duration and
-    /// NaN evaluation the unbounded acceleration would otherwise propagate.
+    /// The velocity limit is a PRECONDITION on the boundary velocities, not a
+    /// bound the construction raises to accommodate them. Raising it would
+    /// return a profile that violates a limit the caller stated, which is the
+    /// same silent-success defect a rejection exists to prevent, and honoring
+    /// the limit while accepting the command would need a ramp that runs
+    /// backwards in time: the acceleration phase spans (v_v - v0) / a, and a
+    /// cruise velocity held under the limit while v0 sits above it makes that
+    /// span negative.
+    ///
+    /// The last two checks are one guard against two spellings of the same
+    /// failure. Both ramps of a three-phase profile run toward one cruise
+    /// velocity lying at or above each boundary velocity, so the profile sweeps
+    /// at least the ground the transition between those two velocities already
+    /// sweeps. B&M's remedy for a shorter command is to raise the acceleration
+    /// to the smallest value that makes the two feasible together, eq. (3.15);
+    /// at a zero commanded displacement no acceleration is large enough, and
+    /// just above zero the value the remedy asks for is no longer
+    /// representable. Below the square root of the smallest normal value the
+    /// remedy cannot even see the case: a boundary velocity squares to zero
+    /// there, so eq. (3.14)'s feasibility test reads as satisfied, the
+    /// triangular peak underflows below the boundary velocity it is
+    /// analytically bounded by, and the ramp duration formed from the
+    /// difference comes out negative. The realized durations are therefore
+    /// checked directly rather than inferred from the test that was supposed to
+    /// guarantee them.
     ///
     /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
-    [[nodiscard]] static auto try_create(config const& cfg)
+    [[nodiscard]] static auto create(config const& cfg)
         -> ctrlpp::expected<trapezoidal_trajectory, trajectory_error>
     {
-        trapezoidal_trajectory profile{cfg};
-        if (!profile.realizable_) {
+        if (!std::isfinite(cfg.q0) || !std::isfinite(cfg.q1) || !std::isfinite(cfg.v0)
+            || !std::isfinite(cfg.v1)) {
+            return ctrlpp::unexpected(trajectory_error::non_finite_input);
+        }
+        if (!std::isfinite(cfg.v_max) || cfg.v_max <= Scalar{0}) {
+            return ctrlpp::unexpected(trajectory_error::non_positive_velocity_limit);
+        }
+        if (!std::isfinite(cfg.a_max) || cfg.a_max <= Scalar{0}) {
+            return ctrlpp::unexpected(trajectory_error::non_positive_acceleration_limit);
+        }
+        if (std::abs(cfg.v0) > cfg.v_max || std::abs(cfg.v1) > cfg.v_max) {
+            return ctrlpp::unexpected(trajectory_error::boundary_velocity_exceeds_limit);
+        }
+        if (!std::isfinite(solve_acceleration(cfg))) {
             return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
+        }
+
+        trapezoidal_trajectory profile{unchecked_t{}, cfg};
+
+        for (auto const phase : profile.phase_durations()) {
+            if (phase < Scalar{0}) {
+                return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
+            }
+            if (!std::isfinite(phase)) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
+        }
+        if (profile.T_ < Scalar{0}) {
+            return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
+        }
+        if (!std::isfinite(profile.T_)) {
+            return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+        }
+        // A nonzero commanded displacement is not traversed in zero time at any
+        // finite velocity, so a total duration that underflowed to zero under
+        // one describes no motion the command asked for. The predicate is the
+        // physical statement itself and carries no threshold.
+        if (cfg.q1 != cfg.q0 && !(profile.T_ > Scalar{0})) {
+            return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
         }
         return profile;
     }
@@ -172,6 +152,13 @@ class trapezoidal_trajectory
     ///
     /// Three-phase branching: acceleration, cruise, deceleration.
     /// Deceleration uses backward time (T - t) for numerical precision.
+    ///
+    /// The clamp below is well defined because no object of this type exists
+    /// with a negative duration: `create` is the only construction path and it
+    /// rejects one. `std::clamp` with a lower bound above its upper bound is
+    /// undefined behavior, not a clamp that returns something unhelpful, so
+    /// that construction-time guarantee is what keeps this line safe rather
+    /// than a test performed here on every evaluation.
     ///
     /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a)-(3.13c), p.71
     auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>
@@ -279,27 +266,120 @@ class trapezoidal_trajectory
     }
 
   private:
-    /// @brief Record a command this profile family cannot realize.
-    ///
-    /// The profile becomes stationary, so evaluate() holds one position for a
-    /// zero duration rather than reporting a traversal that never happens. The
-    /// two ramp rates and the two boundary velocities are cleared with it: they
-    /// are the shape of a traversal there is none of, and leaving them set would
-    /// have evaluate() report a moving axis at a standstill.
-    /// try_create() turns this state into trajectory_error.
-    void set_unrealizable()
+    /// @brief Tag selecting the non-validating constructor reserved for `create`.
+    struct unchecked_t
     {
-        realizable_ = false;
-        triangular_ = true;
-        v0_ = Scalar{0};
-        v1_ = Scalar{0};
-        v_v_ = Scalar{0};
-        a_a_ = Scalar{0};
-        a_d_ = Scalar{0};
-        T_a_ = Scalar{0};
-        T_v_ = Scalar{0};
-        T_d_ = Scalar{0};
-        T_ = Scalar{0};
+        explicit unchecked_t() = default;
+    };
+
+    /// @brief Acceleration magnitude the command is realized at.
+    ///
+    /// The commanded value, except where the two boundary velocities are not
+    /// feasible over the commanded displacement at it: B&M eq. (3.14) is the
+    /// test and eq. (3.15) is the remedy, which raises the acceleration to the
+    /// smallest value that makes the two ramps cover the displacement exactly.
+    /// The added unit in the last place keeps the raised value on the feasible
+    /// side of the test it was derived from after rounding. The remedy divides
+    /// by the commanded displacement, so it leaves the representable range
+    /// exactly when that displacement is too small to reconcile the two
+    /// boundary velocities at any acceleration the scalar type can hold, and at
+    /// a zero displacement at any acceleration whatsoever. `create` tests that
+    /// before it builds anything.
+    ///
+    /// The sign frame does not enter: the test and the remedy are both built
+    /// from the squares of the boundary velocities, which the sigma transform
+    /// leaves alone.
+    ///
+    /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
+    [[nodiscard]] static auto solve_acceleration(config const& cfg) -> Scalar
+    {
+        auto const abs_h = std::abs(cfg.q1 - cfg.q0);
+        auto const v_diff_sq = std::abs(cfg.v0 * cfg.v0 - cfg.v1 * cfg.v1) / Scalar{2};
+        if (cfg.a_max * abs_h >= v_diff_sq) {
+            return cfg.a_max;
+        }
+        return v_diff_sq / abs_h + std::numeric_limits<Scalar>::epsilon();
+    }
+
+    /// @brief Solve the profile from a configuration `create` has checked.
+    ///
+    /// Non-validating by construction: it computes the three phase durations and
+    /// nothing else, and it is private so the only way to reach it is through
+    /// `create`, which decides both before and after whether what came out is a
+    /// profile.
+    ///
+    /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a)-(3.13c), p.71
+    explicit trapezoidal_trajectory(unchecked_t, config const& cfg)
+        : q0_{cfg.q0}
+        , q1_{cfg.q1}
+        , v_max_{cfg.v_max}
+        , a_{solve_acceleration(cfg)}
+    {
+        auto const h = cfg.q1 - cfg.q0;
+        sigma_ = (h >= Scalar{0}) ? Scalar{1} : Scalar{-1};
+        auto const abs_h = std::abs(h);
+
+        // Transform velocities into the positive-displacement frame
+        auto const sv0 = sigma_ * cfg.v0;
+        auto const sv1 = sigma_ * cfg.v1;
+        auto const a = a_;
+        auto const v = cfg.v_max;
+
+        // Compute cruise velocity and phase durations
+        // @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a)-(3.13c), p.71
+        // T_a = (v_v - v0) / a, T_d = (v_v - v1) / a; the cruise duration is the
+        // residual displacement (after the accel and decel distances) divided by
+        // the cruise velocity, which is exact for nonzero boundary velocities.
+
+        // Check triangular degenerate case
+        // When v_max cannot be reached: v_v = sqrt((2*a*h + v0^2 + v1^2) / 2)
+        auto const v_tri_sq = (Scalar{2} * a * abs_h + sv0 * sv0 + sv1 * sv1) / Scalar{2};
+        auto const v_tri = std::sqrt(v_tri_sq);
+
+        if (v_tri < v) {
+            // Triangular: cruise velocity limited by displacement
+            v_v_ = v_tri;
+            triangular_ = true;
+        } else {
+            v_v_ = v;
+            triangular_ = false;
+        }
+
+        // Acceleration and deceleration rates (symmetric a for now)
+        a_a_ = a;
+        a_d_ = a;
+
+        // Phase durations
+        T_a_ = (v_v_ - sv0) / a_a_;
+        T_d_ = (v_v_ - sv1) / a_d_;
+
+        if (triangular_) {
+            T_v_ = Scalar{0};
+        } else {
+            // Cruise duration from the residual displacement: the accel and decel
+            // phases cover d_a = v0*T_a + a_a*T_a^2/2 and d_d = v1*T_d + a_d*T_d^2/2,
+            // so the cruise phase covers (abs_h - d_a - d_d) at v_v. This keeps the
+            // position continuous at the cruise-to-decel boundary for nonzero v0/v1.
+            //
+            // The residual is nonnegative wherever this branch runs, and the
+            // guard below is a rounding guard rather than a stand-in for a
+            // rejected command: the branch is entered only when the triangular
+            // peak reaches the velocity limit, which is a h >= v^2 - (v0^2 +
+            // v1^2) / 2, and the two ramp distances substituted from the phase
+            // durations sum to exactly (v^2 - (v0^2 + v1^2) / 2) / a. The
+            // residual is that inequality's slack, zero at the shape boundary
+            // and positive inside.
+            auto const d_a = sv0 * T_a_ + Scalar{0.5} * a_a_ * T_a_ * T_a_;
+            auto const d_d = sv1 * T_d_ + Scalar{0.5} * a_d_ * T_d_ * T_d_;
+            T_v_ = (abs_h - d_a - d_d) / v_v_;
+            if (T_v_ < Scalar{0}) {
+                T_v_ = Scalar{0};
+            }
+        }
+
+        T_ = T_a_ + T_v_ + T_d_;
+        v0_ = sv0;
+        v1_ = sv1;
     }
 
     /// @brief Complete profile state produced by a rescaling solve.
@@ -395,12 +475,6 @@ class trapezoidal_trajectory
         }
         if (T_new < T_) {
             return ctrlpp::unexpected(trajectory_error::duration_shorter_than_current);
-        }
-        if (!realizable_) {
-            // A command this family cannot realize has no traversal to slow
-            // down, and the stationary stand-in left in its place traverses
-            // nothing at any duration.
-            return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
 
         auto const h = std::abs(q1_ - q0_);
@@ -523,9 +597,23 @@ class trapezoidal_trajectory
         // every phase duration nonnegative and the cruise velocity within the
         // velocity limit. A root failing any of these is a rejection, never a
         // clamped value.
+        //
+        // The valley interval is OPEN at its upper end, and the strictness is
+        // load-bearing rather than cosmetic. That shape is selected only when the
+        // request exceeds the duration the smaller boundary velocity itself
+        // realizes, and the total duration is strictly decreasing in the cruise
+        // velocity, so the root that answers such a request lies strictly below
+        // that boundary. A root landing exactly on it did not solve the equation:
+        // it is what the closed form returns when its discriminant, a difference
+        // of two nearly equal quantities, cancels to zero and leaves the root with
+        // no significant digits at all. The profile built from it would realize
+        // the boundary's own duration for every request past it, which is a
+        // silently wrong retiming rather than a rejected one. The test costs no
+        // constant, because the strictness comes from the branch condition that
+        // selected the shape.
         auto const in_shape = (selected == shape::plateau)        ? (v >= v_hi)
                               : (selected == shape::ramp_through) ? (v >= v_lo && v <= v_hi)
-                                                                  : (v <= v_lo);
+                                                                  : (v < v_lo);
         if (!std::isfinite(v) || !(v > Scalar{0}) || v > v_max_ || !in_shape) {
             return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
@@ -569,7 +657,6 @@ class trapezoidal_trajectory
     Scalar T_d_{};
     Scalar T_{};
     bool triangular_{};
-    bool realizable_{true};
 };
 
 static_assert(trajectory_segment<trapezoidal_trajectory<double>, double, 1>);

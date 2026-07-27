@@ -30,6 +30,16 @@ namespace ctrlpp
 {
 
 /// @brief Double-S (7-segment) velocity profile bounding v, a, and j.
+///
+/// Construction goes through `create`, which returns
+/// `ctrlpp::expected<double_s_trajectory, trajectory_error>` and is the only way
+/// to obtain one. There is no non-validating public constructor: a profile
+/// object either satisfies its contract -- a finite, nonnegative duration in
+/// every segment and a command its seven segments actually traverse -- or it was
+/// never built. Every rejection therefore reaches the caller as a value it has
+/// to inspect, and `evaluate` can rely on the invariants that keep its own
+/// arithmetic defined.
+///
 /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.17)-(3.33), Fig. 3.18, p.79-96
 template <ctrlpp_floating_scalar Scalar>
 class double_s_trajectory
@@ -44,84 +54,117 @@ public:
         Scalar v0{}, v1{}; ///< initial/final velocities (default 0)
     };
 
-    explicit double_s_trajectory(config const& cfg)
-        : q0_{cfg.q0}
-        , q1_{cfg.q1}
-        , v0_{cfg.v0}
-        , v1_{cfg.v1}
-        , v_max_{cfg.v_max}
-        , a_max_{cfg.a_max}
-        , j_max_{cfg.j_max}
-    {
-        auto const h_signed = cfg.q1 - cfg.q0;
-
-        // Zero displacement: stationary profile
-        if (std::abs(h_signed) < Scalar{1e-15}) {
-            sigma_ = Scalar{1};
-            v_lim_ = Scalar{0};
-            a_lim_a_ = Scalar{0};
-            a_lim_d_ = Scalar{0};
-            T_j1_ = Scalar{0};
-            T_a_ = Scalar{0};
-            T_v_ = Scalar{0};
-            T_d_ = Scalar{0};
-            T_j2_ = Scalar{0};
-            T_ = Scalar{0};
-            degenerate_ = true;
-            return;
-        }
-
-        // Sigma transformation for negative displacement
-        // @cite biagiotti2009 -- Sec. 3.4.2, eq. (3.31)-(3.33), p.87
-        sigma_ = (h_signed > Scalar{0}) ? Scalar{1} : Scalar{-1};
-        auto const h = sigma_ * h_signed; // always positive
-        auto const v_max = cfg.v_max;
-        auto const a_max = cfg.a_max;
-
-        // Boundary velocities in the positive-displacement frame: a move in the
-        // -q direction with v0 < 0 maps to +v0 here, so the same profile math
-        // serves both directions and evaluate() folds the sign back with sigma_.
-        pv0_ = sigma_ * cfg.v0;
-        pv1_ = sigma_ * cfg.v1;
-
-        if (cfg.v0 == Scalar{0} && cfg.v1 == Scalar{0}) {
-            // Zero boundary velocities: the symmetric special case.
-            // @cite biagiotti2009 -- Sec. 3.4.3, p.88-91
-            compute_zero_bc(h, v_max, a_max, cfg.j_max);
-        } else {
-            // General nonzero boundary velocities.
-            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.27), p.79-85
-            compute_general_bc(h, v_max, a_max, cfg.j_max);
-        }
-    }
-
-    /// @brief Construct a profile, reporting the commands this family cannot realize.
+    /// @brief Construct a profile, or report why the command has none.
+    ///
+    /// The only construction path. Rejections, checked in order:
+    ///  * a NaN or infinite position or boundary velocity ->
+    ///    trajectory_error::non_finite_input
+    ///  * a NaN, infinite, or non-positive velocity limit ->
+    ///    trajectory_error::non_positive_velocity_limit
+    ///  * a NaN, infinite, or non-positive acceleration limit ->
+    ///    trajectory_error::non_positive_acceleration_limit
+    ///  * a NaN, infinite, or non-positive jerk limit ->
+    ///    trajectory_error::non_positive_jerk_limit
+    ///  * a boundary velocity above the velocity limit in magnitude ->
+    ///    trajectory_error::boundary_velocity_exceeds_limit
+    ///  * a commanded displacement below the distance the fastest admissible
+    ///    transition between the two boundary velocities already sweeps, of
+    ///    which a zero displacement under a nonzero boundary velocity is the
+    ///    extreme case -> trajectory_error::unreachable_boundary_velocity
+    ///  * a negative segment duration or total duration ->
+    ///    trajectory_error::unreachable_boundary_velocity
+    ///  * a duration outside the representable range, or a total duration that
+    ///    underflowed to zero on a nonzero commanded displacement ->
+    ///    trajectory_error::unrepresentable_duration
+    ///
+    /// The velocity limit is a PRECONDITION on the boundary velocities, not a
+    /// bound the construction raises to accommodate them. Raising it would
+    /// return a profile that violates a limit the caller stated, which is the
+    /// same silent-success defect a rejection exists to prevent.
     ///
     /// A seven-segment profile cannot sweep less ground than the fastest
     /// admissible transition from the larger of the two positive-frame boundary
     /// velocities to the smaller one: covering less would require overshooting
     /// the target and coming back, which is a different velocity profile shape.
-    /// Rejections:
-    ///  * commanded displacement below that minimum ->
-    ///    trajectory_error::unreachable_boundary_velocity
-    ///
-    /// The plain constructor stays available for the callers that have already
-    /// established their command is realizable. On a command that is not, it
-    /// yields a stationary zero-duration profile rather than a finite profile
-    /// that does not traverse its own displacement.
+    /// That minimum is the swept distance of the cruise-free profile whose peak
+    /// rises by nothing above the larger boundary velocity, so it is computed
+    /// from the same ramp expressions the profile is built out of rather than
+    /// from a separate approximation of them. A zero commanded displacement is
+    /// realizable by exactly one member of the family, the standstill, and only
+    /// when both boundary velocities are zero as well.
     ///
     /// @cite biagiotti2009 -- Sec. 3.4.1, p.79-85
-    [[nodiscard]] static auto try_create(config const& cfg)
+    [[nodiscard]] static auto create(config const& cfg)
         -> ctrlpp::expected<double_s_trajectory, trajectory_error>
     {
-        double_s_trajectory profile{cfg};
-        if (!profile.realizable_) {
-            return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
+        if (!std::isfinite(cfg.q0) || !std::isfinite(cfg.q1) || !std::isfinite(cfg.v0)
+            || !std::isfinite(cfg.v1)) {
+            return ctrlpp::unexpected(trajectory_error::non_finite_input);
+        }
+        if (!std::isfinite(cfg.v_max) || cfg.v_max <= Scalar{0}) {
+            return ctrlpp::unexpected(trajectory_error::non_positive_velocity_limit);
+        }
+        if (!std::isfinite(cfg.a_max) || cfg.a_max <= Scalar{0}) {
+            return ctrlpp::unexpected(trajectory_error::non_positive_acceleration_limit);
+        }
+        if (!std::isfinite(cfg.j_max) || cfg.j_max <= Scalar{0}) {
+            return ctrlpp::unexpected(trajectory_error::non_positive_jerk_limit);
+        }
+        if (std::abs(cfg.v0) > cfg.v_max || std::abs(cfg.v1) > cfg.v_max) {
+            return ctrlpp::unexpected(trajectory_error::boundary_velocity_exceeds_limit);
+        }
+
+        auto const h_signed = cfg.q1 - cfg.q0;
+        if (h_signed == Scalar{0}) {
+            if (cfg.v0 != Scalar{0} || cfg.v1 != Scalar{0}) {
+                return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
+            }
+        } else {
+            auto const sigma = (h_signed > Scalar{0}) ? Scalar{1} : Scalar{-1};
+            auto const pv0 = sigma * cfg.v0;
+            auto const pv1 = sigma * cfg.v1;
+            auto const h_min = no_cruise_displacement(
+                Scalar{0}, std::max(pv0, pv1), std::min(pv0, pv1), cfg.a_max, cfg.j_max);
+            if (sigma * h_signed < h_min) {
+                return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
+            }
+        }
+
+        double_s_trajectory profile{unchecked_t{}, cfg};
+
+        // The solved durations are checked as the solver stored them, not as
+        // phase_durations() reports them: that accessor subtracts the two jerk
+        // sub-segments out of each ramp and floors the remainder at zero to
+        // absorb the rounding of a difference that is algebraically exact, and a
+        // ramp duration that came out negative would disappear into that floor.
+        for (auto const stored : std::array<Scalar, 6>{profile.T_j1_, profile.T_a_, profile.T_v_,
+                                                       profile.T_d_, profile.T_j2_, profile.T_}) {
+            if (stored < Scalar{0}) {
+                return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
+            }
+            if (!std::isfinite(stored)) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
+        }
+        // A nonzero commanded displacement is not traversed in zero time at any
+        // finite velocity, so a total duration that underflowed to zero under
+        // one describes no motion the command asked for. The predicate is the
+        // physical statement itself and carries no threshold.
+        if (h_signed != Scalar{0} && !(profile.T_ > Scalar{0})) {
+            return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
         }
         return profile;
     }
 
     /// @brief Evaluate trajectory at time t.
+    ///
+    /// The clamp below is well defined because no object of this type exists
+    /// with a negative duration: `create` is the only construction path and it
+    /// rejects one. `std::clamp` with a lower bound above its upper bound is
+    /// undefined behavior, not a clamp that returns something unhelpful, so that
+    /// construction-time guarantee is what keeps this line safe rather than a
+    /// test performed here on every evaluation.
+    ///
     /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30g), p.85-86
     auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>
     {
@@ -213,6 +256,15 @@ public:
     ///
     /// Returns {T_j1, T_a - 2*T_j1, T_j1, T_v, T_j2, T_d - 2*T_j2, T_j2}
     /// representing jerk(+), const-accel, jerk(-), cruise, jerk(-), const-decel, jerk(+).
+    ///
+    /// The floor on the two constant-acceleration remainders is a rounding
+    /// guard, not a stand-in for a rejected command. A ramp is triangular in
+    /// acceleration exactly when its remainder is algebraically zero, and it
+    /// carries a constant-acceleration segment exactly when the remainder is
+    /// algebraically positive; the floor only absorbs the rounding of that
+    /// difference at the boundary between the two. A ramp duration that came out
+    /// negative is a different matter, and `create` rejects the command rather
+    /// than letting this accessor hide it.
     auto phase_durations() const -> std::array<Scalar, 7>
     {
         auto const const_accel = std::max(T_a_ - Scalar{2} * T_j1_, Scalar{0});
@@ -234,7 +286,69 @@ private:
     Scalar T_j1_{}, T_a_{}, T_v_{}, T_d_{}, T_j2_{};
     Scalar T_{};
     bool degenerate_{false};
-    bool realizable_{true};
+
+    /// @brief Tag selecting the non-validating constructor reserved for `create`.
+    struct unchecked_t
+    {
+        explicit unchecked_t() = default;
+    };
+
+    /// @brief Solve the profile from a configuration `create` has checked.
+    ///
+    /// Non-validating by construction: it follows the B&M flowchart and stores
+    /// what comes out, and it is private so the only way to reach it is through
+    /// `create`, which decides both before and after whether what came out is a
+    /// profile.
+    ///
+    /// The zero-displacement branch is keyed on exact equality rather than on a
+    /// neighborhood of zero. A displacement small enough to underflow the rest
+    /// of the algebra is a rejection `create` makes, not a command this
+    /// constructor rounds down to a standstill; the two are different answers
+    /// and only one of them is true.
+    ///
+    /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.17)-(3.33), Fig. 3.18, p.79-96
+    explicit double_s_trajectory(unchecked_t, config const& cfg)
+        : q0_{cfg.q0}
+        , q1_{cfg.q1}
+        , v0_{cfg.v0}
+        , v1_{cfg.v1}
+        , v_max_{cfg.v_max}
+        , a_max_{cfg.a_max}
+        , j_max_{cfg.j_max}
+    {
+        auto const h_signed = cfg.q1 - cfg.q0;
+
+        // Zero displacement: the standstill, which `create` admits only when
+        // both boundary velocities are zero as well.
+        if (h_signed == Scalar{0}) {
+            sigma_ = Scalar{1};
+            degenerate_ = true;
+            return;
+        }
+
+        // Sigma transformation for negative displacement
+        // @cite biagiotti2009 -- Sec. 3.4.2, eq. (3.31)-(3.33), p.87
+        sigma_ = (h_signed > Scalar{0}) ? Scalar{1} : Scalar{-1};
+        auto const h = sigma_ * h_signed; // always positive
+        auto const v_max = cfg.v_max;
+        auto const a_max = cfg.a_max;
+
+        // Boundary velocities in the positive-displacement frame: a move in the
+        // -q direction with v0 < 0 maps to +v0 here, so the same profile math
+        // serves both directions and evaluate() folds the sign back with sigma_.
+        pv0_ = sigma_ * cfg.v0;
+        pv1_ = sigma_ * cfg.v1;
+
+        if (cfg.v0 == Scalar{0} && cfg.v1 == Scalar{0}) {
+            // Zero boundary velocities: the symmetric special case.
+            // @cite biagiotti2009 -- Sec. 3.4.3, p.88-91
+            compute_zero_bc(h, v_max, a_max, cfg.j_max);
+        } else {
+            // General nonzero boundary velocities.
+            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.27), p.79-85
+            compute_general_bc(h, v_max, a_max, cfg.j_max);
+        }
+    }
 
     auto make_point(Scalar q, Scalar dq, Scalar ddq) const -> trajectory_point<Scalar, 1>
     {
@@ -252,11 +366,14 @@ private:
     /// The boundary velocities are deliberately NOT scaled: they are the command,
     /// not a limit.
     ///
-    /// The rebuilt profile is admissible only when it is realizable, has a finite
-    /// positive duration, and peaks no higher than its own scaled velocity limit.
-    /// The last condition is what the scale's lower bound below expresses: at a
-    /// scale where the commanded boundary velocities themselves reach the scaled
-    /// velocity limit, no seven-segment shape can hold the peak underneath it.
+    /// The rebuild goes back through `create`, so the scaled command is held to
+    /// the same contract the original was and a scale that produces no profile
+    /// is reported rather than applied. The rebuilt profile is admissible only
+    /// when it also has a positive duration and peaks no higher than its own
+    /// scaled velocity limit. The latter is what the scale's lower bound below
+    /// expresses: at a scale where the commanded boundary velocities themselves
+    /// reach the scaled velocity limit, no seven-segment shape can hold the peak
+    /// underneath it.
     ///
     /// @cite biagiotti2009 -- Sec. 5.3, eq. (5.13)-(5.14) -- time scaling of a profile
     [[nodiscard]] static auto rebuild_scaled(config const& cfg, Scalar lambda)
@@ -267,13 +384,12 @@ private:
         scaled.a_max = cfg.a_max * lambda * lambda;
         scaled.j_max = cfg.j_max * lambda * lambda * lambda;
 
-        auto rebuilt = try_create(scaled);
+        auto rebuilt = create(scaled);
         if (!rebuilt.has_value()) {
             return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
         auto const& profile = rebuilt.value();
-        if (!std::isfinite(profile.T_) || !(profile.T_ > Scalar{0})
-            || !(profile.v_lim_ <= scaled.v_max)) {
+        if (!(profile.T_ > Scalar{0}) || !(profile.v_lim_ <= scaled.v_max)) {
             return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
         return rebuilt;
@@ -333,9 +449,9 @@ private:
         if (T_new < T_) {
             return ctrlpp::unexpected(trajectory_error::duration_shorter_than_current);
         }
-        if (!realizable_ || !(T_ > Scalar{0})) {
-            // A stationary profile traverses nothing, so no scale gives it a
-            // positive duration.
+        if (!(T_ > Scalar{0})) {
+            // A standstill traverses nothing, so no scale gives it a positive
+            // duration.
             return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
 
@@ -517,10 +633,9 @@ private:
         // velocity vanishes -- the profile is then the fastest admissible
         // transition from the larger boundary velocity to the smaller one. A
         // command below that distance is not realizable by any profile of this
-        // shape and is reported as such rather than clamped into a profile that
-        // does not traverse its own command. When the larger boundary velocity is
-        // itself negative that vanishing-ramp distance is not positive, so a
-        // positive command always clears it and nothing is ever rejected there.
+        // shape; `create` decides that before this constructor runs, so the
+        // solve below can assume its bracket contains the root instead of
+        // producing a profile that does not traverse its own command.
         //
         // The unknown carried through this step is the peak's RISE above the
         // larger boundary velocity, never the peak itself. The rise is what every
@@ -528,11 +643,6 @@ private:
         // smaller than the boundary velocity it sits on, so storing the peak and
         // subtracting the boundary velocity back out of it would throw away most
         // of the rise's significant digits before the ramps ever see it.
-        auto const h_min = no_cruise_displacement(Scalar{0}, pv_hi, pv_lo, a_max, j_max);
-        if (h < h_min) {
-            set_unrealizable();
-            return;
-        }
 
         // Step 5: both ramps reach a_max once the rise is at least a_max^2 / j_max,
         // and there the swept distance is a quadratic in the rise x:
@@ -683,26 +793,6 @@ private:
         }
 
         return (std::abs(swept_lo - h) <= std::abs(swept_hi - h)) ? lo : hi;
-    }
-
-    /// @brief Record a command this profile family cannot realize.
-    ///
-    /// The profile becomes stationary, so evaluate() holds the start position for
-    /// a zero duration rather than reporting a traversal that never happens.
-    /// try_create() turns this state into trajectory_error.
-    void set_unrealizable()
-    {
-        realizable_ = false;
-        degenerate_ = true;
-        v_lim_ = Scalar{0};
-        a_lim_a_ = Scalar{0};
-        a_lim_d_ = Scalar{0};
-        T_j1_ = Scalar{0};
-        T_a_ = Scalar{0};
-        T_v_ = Scalar{0};
-        T_d_ = Scalar{0};
-        T_j2_ = Scalar{0};
-        T_ = Scalar{0};
     }
 
     /// @brief Solve doubly degenerate case using bisection on gamma.

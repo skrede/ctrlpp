@@ -43,7 +43,14 @@ int main()
     ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(sys, cfg);
 
     // Trapezoidal trajectory as reference generator (replaces manual ramp)
-    ctrlpp::trapezoidal_trajectory<double> traj({.q0 = 0.0, .q1 = 5.0, .v_max = 2.0, .a_max = 4.0});
+    auto const built = ctrlpp::trapezoidal_trajectory<double>::create(
+        {.q0 = 0.0, .q1 = 5.0, .v_max = 2.0, .a_max = 4.0});
+    if (!built)
+    {
+        std::cerr << "The commanded reference move has no trapezoidal profile\n";
+        return 1;
+    }
+    auto const& traj = built.value();
 
     // Pre-compute reference trajectory for MPC lookahead
     auto const total_refs = static_cast<std::size_t>(sim_steps + horizon + 1);

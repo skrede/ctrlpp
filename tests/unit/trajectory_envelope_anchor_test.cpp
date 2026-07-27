@@ -149,9 +149,14 @@ TEST_CASE("trapezoidal profile continuity and velocity/acceleration envelope hol
     for(const auto& cfg : make_random_configs())
     {
         CAPTURE(cfg.q0, cfg.q1, cfg.v_max, cfg.a_max, cfg.v0, cfg.v1);
-        trapezoidal_trajectory<double> trajectory({
+        // Every configuration in the sweep is inside the domain -- the boundary
+        // velocities are a fraction of the velocity limit and the displacement
+        // is well clear of the transition distance -- so a rejection here is a
+        // finding, not a case to skip.
+        const auto created = trapezoidal_trajectory<double>::create({
             .q0 = cfg.q0, .q1 = cfg.q1, .v_max = cfg.v_max, .a_max = cfg.a_max, .v0 = cfg.v0, .v1 = cfg.v1});
-        check_continuity_and_envelope(trajectory, cfg.v_max, cfg.a_max, std::nullopt);
+        REQUIRE(created.has_value());
+        check_continuity_and_envelope(created.value(), cfg.v_max, cfg.a_max, std::nullopt);
     }
 }
 
@@ -161,8 +166,9 @@ TEST_CASE("double-S profile continuity and velocity/acceleration/jerk envelope h
     for(const auto& cfg : make_random_configs())
     {
         CAPTURE(cfg.q0, cfg.q1, cfg.v_max, cfg.a_max, cfg.j_max, cfg.v0, cfg.v1);
-        double_s_trajectory<double> trajectory({
+        const auto created = double_s_trajectory<double>::create({
             .q0 = cfg.q0, .q1 = cfg.q1, .v_max = cfg.v_max, .a_max = cfg.a_max, .j_max = cfg.j_max, .v0 = cfg.v0, .v1 = cfg.v1});
-        check_continuity_and_envelope(trajectory, cfg.v_max, cfg.a_max, cfg.j_max);
+        REQUIRE(created.has_value());
+        check_continuity_and_envelope(created.value(), cfg.v_max, cfg.a_max, cfg.j_max);
     }
 }

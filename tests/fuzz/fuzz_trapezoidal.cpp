@@ -153,33 +153,39 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // at a representable acceleration is not realizable by any three-phase
     // shape, and the construction reports that rather than returning a profile
     // built on an unbounded acceleration. That is a correct outcome, not a
-    // finding.
-    auto created = ctrlpp::trapezoidal_trajectory<double>::try_create(
+    // finding. create() is the only construction path, so there is no way for
+    // this target to hold an unvalidated profile.
+    auto created = ctrlpp::trapezoidal_trajectory<double>::create(
         {.q0 = q0, .q1 = q1, .v_max = v_max, .a_max = a_max, .v0 = v0, .v1 = v1});
     if(!created.has_value())
         return 0;
     ctrlpp::trapezoidal_trajectory<double> traj = created.value();
 
+    // Every duration of a constructed profile is finite and nonnegative. This is
+    // the construction's stated contract, so any violation is a finding and none
+    // of them may be filtered away here.
+    //
+    // A NaN duration is the construction having lost the value it was solving
+    // for on a command it reported success on. An INFINITE one is a command
+    // whose profile does not fit the scalar type, which the construction is
+    // required to reject rather than return. A NEGATIVE one is undefined
+    // behavior waiting downstream: evaluate() clamps into [0, T], and
+    // std::clamp with a lower bound above its upper bound is undefined, not a
+    // clamp that returns something unhelpful. Below the square root of the
+    // smallest normal value a boundary velocity squares to zero, so both the
+    // feasibility test and the triangular peak underflow and the peak lands
+    // below the boundary velocity it is analytically bounded by; the
+    // construction checks the realized durations rather than trusting the test
+    // that was supposed to guarantee them, and this is where that check is held
+    // to account.
     const double T = traj.duration();
-    // A NaN duration is never a domain limit. It is the construction having lost
-    // the value it was solving for on a command it reported success on, so it is
-    // a finding and must not be filtered away here. An INFINITE one is a
-    // different thing: the commanded displacement divided by the velocity limit
-    // overflowing the scalar type, a representation limit of the command rather
-    // than a defect in the profile.
-    if(std::isnan(T))
-        abort();
-    // A NEGATIVE duration is filtered rather than reported, and the reason is
-    // specific: below the square root of the smallest normal value, a boundary
-    // velocity squares to zero, and both the feasibility test and the triangular
-    // peak are built from those squares. The peak then comes out below the
-    // boundary velocity it is analytically bounded by, and the ramp duration
-    // formed from the difference is negative. That is a standing defect of this
-    // construction in the subnormal regime, not one this decoder can distinguish
-    // from a regression of the shape under test; reporting it here would make
-    // every run of this target a report of it.
     if(!std::isfinite(T) || T < 0.0)
-        return 0;
+        abort();
+    for(const auto& segment : traj.phase_durations())
+    {
+        if(!std::isfinite(segment) || segment < 0.0)
+            abort();
+    }
 
     // Effective acceleration magnitude. When the commanded displacement is too
     // short for the two boundary velocities at the commanded acceleration, the

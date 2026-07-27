@@ -308,13 +308,25 @@ class online_planner_3rd
             append_brake_phases(v0, stop_info);
             auto const q_after = q0 + stop_dist;
             plan_rest_to_rest(q_after);
-        } else {
+        } else if (!append_incorporate_velocity(q0, v0)) {
             // Same-direction move with room to spare: carry the current velocity
             // through the profile rather than braking to rest first. The general
             // nonzero-initial-velocity double-S accelerates from v0 toward the
             // cruise velocity and decelerates to rest at the target, so the move is
             // time-optimal with no full-stop dip.
-            append_incorporate_velocity(q0, v0);
+            //
+            // That shape has a domain of its own, and the tests above are a
+            // planner-side approximation of it rather than a statement of it: the
+            // current speed may sit above the velocity limit after a limit change,
+            // and the remaining distance may fall below what the transition from
+            // the current velocity to rest already sweeps. Where the shape does
+            // not exist the planner brakes to rest and replans from the stopping
+            // point, which is the same always-admissible fallback the two tests
+            // above select and reaches the same target under the same limits. It
+            // costs time, not correctness, and nothing is emitted from a profile
+            // that was not built.
+            append_brake_phases(v0, stop_info);
+            plan_rest_to_rest(q0 + stop_dist);
         }
     }
 
@@ -325,10 +337,13 @@ class online_planner_3rd
     /// is carried through the profile. The resulting 7 constant-jerk phases share
     /// the sign structure of the rest-to-rest profile; only the durations differ.
     ///
+    /// Returns whether the shape exists for this command. Nothing is appended
+    /// when it does not, so the caller is free to plan the move a different way.
+    ///
     /// @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.27), p.79-85
-    void append_incorporate_velocity(Scalar q0, Scalar v0)
+    [[nodiscard]] auto append_incorporate_velocity(Scalar q0, Scalar v0) -> bool
     {
-        double_s_trajectory<Scalar> const profile{{
+        auto const created = double_s_trajectory<Scalar>::create({
             .q0 = q0,
             .q1 = target_,
             .v_max = v_max_,
@@ -336,7 +351,11 @@ class online_planner_3rd
             .j_max = j_max_,
             .v0 = v0,
             .v1 = Scalar{0},
-        }};
+        });
+        if (!created.has_value()) {
+            return false;
+        }
+        auto const& profile = created.value();
 
         auto const durations = profile.phase_durations();
         auto const sigma = (target_ - q0 > Scalar{0}) ? Scalar{1} : Scalar{-1};
@@ -351,6 +370,7 @@ class online_planner_3rd
         append_phase(durations[4], j_neg);      // jerk(-): build deceleration
         append_phase(durations[5], Scalar{0});  // constant deceleration
         append_phase(durations[6], j_pos);      // jerk(+): null acceleration at rest
+        return true;
     }
 
     /// @brief Information about stopping from a given velocity.

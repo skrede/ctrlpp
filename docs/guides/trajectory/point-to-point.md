@@ -51,14 +51,21 @@ acceleration) rather than polynomial boundary conditions:
 
 #include <iostream>
 
-ctrlpp::trapezoidal_config<double> cfg{};
+ctrlpp::trapezoidal_trajectory<double>::config cfg{};
 cfg.q0    = 0.0;
 cfg.q1    = 10.0;
 cfg.v_max = 5.0;
 cfg.a_max = 2.0;
 
-auto traj = ctrlpp::trapezoidal_trajectory(cfg);
-auto [pos, vel, acc] = traj.evaluate(1.5);
+// create() is the only construction path. It returns the profile or the reason
+// the command has none, so an unrealizable command can never be mistaken for a
+// profile that quietly does nothing.
+auto const created = ctrlpp::trapezoidal_trajectory<double>::create(cfg);
+if (!created) {
+    std::cerr << "The commanded move has no trapezoidal profile\n";
+    return 1;
+}
+auto [pos, vel, acc] = created.value().evaluate(1.5);
 std::cout << "position at t=1.5: " << pos << "\n";
 ```
 

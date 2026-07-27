@@ -60,6 +60,21 @@ enum class spline_error
 ///  * non_positive_jerk_limit         : the jerk limit must be positive.
 ///  * non_positive_duration           : the requested duration must be positive.
 ///  * non_finite_input                : a boundary value or limit is NaN/Inf.
+///  * boundary_velocity_exceeds_limit : a commanded boundary velocity is larger
+///                                      in magnitude than the velocity limit it
+///                                      is commanded under. The limit is a
+///                                      precondition of the point-to-point
+///                                      profiles, not a value they raise to fit:
+///                                      raising it would violate a bound the
+///                                      caller asked for, and honoring it would
+///                                      require a ramp that runs backwards in
+///                                      time.
+///  * unrepresentable_duration        : a duration of the constructed profile is
+///                                      not representable in the scalar type --
+///                                      either it left the finite range, or the
+///                                      total underflowed to zero on a command
+///                                      with a nonzero displacement, which
+///                                      would report an instantaneous traversal.
 ///  * unreachable_boundary_velocity   : the commanded displacement is smaller
 ///                                      than the distance the fastest admissible
 ///                                      transition between the two boundary
@@ -80,6 +95,8 @@ enum class trajectory_error
     non_positive_jerk_limit,
     non_positive_duration,
     non_finite_input,
+    boundary_velocity_exceeds_limit,
+    unrepresentable_duration,
     unreachable_boundary_velocity,
     duration_shorter_than_current,
     unreachable_duration,

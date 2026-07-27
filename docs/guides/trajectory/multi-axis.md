@@ -25,13 +25,23 @@ share the same duration:
 #include <iostream>
 
 // Three axes with different distances
-ctrlpp::trapezoidal_config<double> cfg_x{.q0=0, .q1=10, .v_max=5, .a_max=2};
-ctrlpp::trapezoidal_config<double> cfg_y{.q0=0, .q1=3,  .v_max=5, .a_max=2};
-ctrlpp::trapezoidal_config<double> cfg_z{.q0=0, .q1=1,  .v_max=5, .a_max=2};
+using axis = ctrlpp::trapezoidal_trajectory<double>;
+axis::config cfg_x{.q0=0, .q1=10, .v_max=5, .a_max=2};
+axis::config cfg_y{.q0=0, .q1=3,  .v_max=5, .a_max=2};
+axis::config cfg_z{.q0=0, .q1=1,  .v_max=5, .a_max=2};
 
-auto ax_x = ctrlpp::trapezoidal_trajectory(cfg_x);
-auto ax_y = ctrlpp::trapezoidal_trajectory(cfg_y);
-auto ax_z = ctrlpp::trapezoidal_trajectory(cfg_z);
+// create() is the only construction path and it is fallible: a command with no
+// profile is reported rather than standing in as an axis that never moves.
+auto const built_x = axis::create(cfg_x);
+auto const built_y = axis::create(cfg_y);
+auto const built_z = axis::create(cfg_z);
+if (!built_x || !built_y || !built_z) {
+    std::cerr << "At least one commanded axis move has no trapezoidal profile\n";
+    return 1;
+}
+auto ax_x = built_x.value();
+auto ax_y = built_y.value();
+auto ax_z = built_z.value();
 
 // Synchronize: all axes now finish at the same time. The call is fallible --
 // an axis that cannot reach the slowest duration is reported, and nothing is

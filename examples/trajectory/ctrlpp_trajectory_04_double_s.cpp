@@ -10,13 +10,23 @@ int main()
 {
     // Jerk-limited joint move: 0 -> 2.0 rad
     // v_max = 1.0 rad/s, a_max = 5.0 rad/s^2, j_max = 50.0 rad/s^3
-    ctrlpp::double_s_trajectory<double> trajectory({
+    //
+    // create() is the only way to build a profile, and it hands back the reason
+    // when the command has none. A profile object therefore always satisfies its
+    // own contract, so evaluate() below never has to be second-guessed.
+    auto const created = ctrlpp::double_s_trajectory<double>::create({
         .q0 = 0.0,
         .q1 = 2.0,
         .v_max = 1.0,
         .a_max = 5.0,
         .j_max = 50.0,
     });
+    if (!created)
+    {
+        std::cerr << "The commanded move has no double-S profile\n";
+        return 1;
+    }
+    auto const& trajectory = created.value();
 
     constexpr double dt = 0.001;
     std::cout << "time,position,velocity,acceleration\n";

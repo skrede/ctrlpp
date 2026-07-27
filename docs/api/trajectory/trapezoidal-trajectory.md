@@ -24,36 +24,56 @@ struct config {
 };
 ```
 
-## Constructor
+## Construction
 
 ```cpp
-explicit trapezoidal_trajectory(config const& cfg);
+static expected<trapezoidal_trajectory, trajectory_error> create(config const& cfg);
 ```
 
-Construction solves phase durations from the kinematic constraints. Negative displacement is handled via sigma transformation. When `v_max` cannot be reached, the profile degenerates to a triangular shape with `v_peak = sqrt((2*a*h + v0^2 + v1^2) / 2)`.
-
-When the two boundary velocities are not feasible over the commanded displacement at the commanded acceleration, the acceleration is raised to the smallest value that makes them feasible together (B&M eq. (3.15)). That raise is a division by the commanded displacement, so it has no representable answer once the displacement is small enough, and none at all when it is zero.
-
-## Realizability
-
-Both ramps of a three-phase profile run toward one cruise velocity lying at or above each boundary velocity, so the profile sweeps at least the ground the transition between those two velocities already sweeps. A command below that is not realizable within this shape at any acceleration the scalar type can hold; the clearest instance is a zero commanded displacement with two boundary speeds that differ, which asks the axis to change speed while covering no ground. `try_create` reports exactly that case:
+`create` is the **only** construction path. There is no public non-fallible constructor: a profile object either satisfies its contract or it was never built, so an unrealizable command is a value the caller has to inspect rather than a profile that quietly stands in for one.
 
 ```cpp
-auto profile = ctrlpp::trapezoidal_trajectory<double>::try_create(cfg);
+auto profile = ctrlpp::trapezoidal_trajectory<double>::create(cfg);
 if (!profile) {
-    // profile.error() == ctrlpp::trajectory_error::unreachable_boundary_velocity
+    // profile.error() names which part of the contract the command failed
 }
 ```
 
-The non-fallible constructor stays available for callers that have already established their command is realizable. Given one that is not, it yields a stationary zero-duration profile rather than one whose duration, phase durations, and evaluation are all NaN. Retiming that stand-in is `trajectory_error::unreachable_duration`, since it has no traversal to slow down.
+Construction solves phase durations from the kinematic constraints. Negative displacement is handled via sigma transformation. When `v_max` cannot be reached, the profile degenerates to a triangular shape with `v_peak = sqrt((2*a*h + v0^2 + v1^2) / 2)`; that is one of the shapes this family covers and is reported by `is_triangular()`, not a rejection.
+
+When the two boundary velocities are not feasible over the commanded displacement at the commanded acceleration, the acceleration is raised to the smallest value that makes them feasible together (B&M eq. (3.15)). That raise is a division by the commanded displacement, so it has no representable answer once the displacement is small enough, and none at all when it is zero.
+
+## Rejections
+
+Checked in order:
+
+| Condition | Error |
+|-----------|-------|
+| NaN or infinite `q0`, `q1`, `v0`, or `v1` | `trajectory_error::non_finite_input` |
+| NaN, infinite, or non-positive `v_max` | `trajectory_error::non_positive_velocity_limit` |
+| NaN, infinite, or non-positive `a_max` | `trajectory_error::non_positive_acceleration_limit` |
+| `abs(v0) > v_max` or `abs(v1) > v_max` | `trajectory_error::boundary_velocity_exceeds_limit` |
+| a displacement the two boundary velocities cannot be reconciled with at a representable acceleration | `trajectory_error::unreachable_boundary_velocity` |
+| a negative phase duration or total duration | `trajectory_error::unreachable_boundary_velocity` |
+| a duration outside the representable range, or a total that underflowed to zero on a nonzero displacement | `trajectory_error::unrepresentable_duration` |
+
+### The velocity limit is a precondition
+
+`abs(v0) <= v_max` and `abs(v1) <= v_max` are preconditions of the type, not invariants construction restores. Raising the limit to fit a boundary velocity would return a profile that violates a bound the caller stated, which is the same silent-success defect a rejection exists to prevent; honoring the limit while accepting the command would need a ramp that runs backwards in time, since the acceleration phase spans `(v_v - v0) / a` and a cruise velocity held under the limit with `v0` above it makes that span negative. Reaching the limit exactly is inside the domain: the ramp attached to that boundary velocity simply vanishes.
+
+### Realizability
+
+Both ramps of a three-phase profile run toward one cruise velocity lying at or above each boundary velocity, so the profile sweeps at least the ground the transition between those two velocities already sweeps. A command below that is not realizable within this shape at any acceleration the scalar type can hold; the clearest instance is a zero commanded displacement with two boundary speeds that differ, which asks the axis to change speed while covering no ground.
 
 Two zero-displacement commands are realizable and are not rejected: equal boundary velocities, where there is no speed change to cover, and opposed boundary velocities of equal magnitude, where the ramp between them sweeps exactly zero ground.
+
+The realized phase durations are checked directly rather than inferred from the feasibility test that is supposed to guarantee them. Below the square root of the smallest normal value a boundary velocity squares into the subnormal range, and below the square root of the smallest subnormal it squares to exactly zero; both the feasibility test and the triangular peak are built from those squares, so the test can read as satisfied on a command that does not satisfy it and the peak can land below the boundary velocity it is analytically bounded by. The ramp duration formed from that difference is negative, and `evaluate` clamps into `[0, T]`, where a lower bound above the upper one is undefined behavior rather than an odd clamp. Checking the durations themselves closes that route without introducing a constant of its own.
 
 ## Member Functions
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `try_create` | `static expected<trapezoidal_trajectory, trajectory_error> try_create(config const&)` | Construct, reporting an unrealizable command |
+| `create` | `static expected<trapezoidal_trajectory, trajectory_error> create(config const&)` | The only construction path; reports an unrealizable command |
 | `evaluate` | `trajectory_point<Scalar, 1> evaluate(Scalar t) const` | Position, velocity, acceleration at time `t` |
 | `duration` | `Scalar duration() const` | Total duration `T = T_a + T_v + T_d` |
 | `is_triangular` | `bool is_triangular() const` | True if cruise phase duration is zero |
@@ -75,6 +95,8 @@ The solve covers all three shapes the three-phase parametrization admits, and pi
 | valley | cruise velocity at or below both boundary velocities | quadratic, larger root |
 
 The valley shape is emitted, not rejected: with both boundary velocities above the cruise velocity a long duration needs, the profile decelerates away from the initial velocity, holds a low cruise velocity, and accelerates back up to the final one. A root is accepted only inside its own shape's validity interval, with all three phase durations nonnegative and the cruise velocity within the velocity limit; a root failing any of those is a rejection rather than a clamped value.
+
+The valley interval is **open** at its upper end. That shape is selected only when the request exceeds the duration the smaller boundary velocity already realizes, and the duration is strictly decreasing in the cruise velocity, so the root answering such a request lies strictly below that boundary. A root landing exactly on it did not solve the equation: it is what the closed form returns when its discriminant, a difference of two nearly equal quantities, cancels to zero and leaves the root with no significant digits. Accepting it would realize the boundary's own duration for every request past it while reporting success.
 
 Rejections, checked in order:
 
@@ -105,10 +127,15 @@ When the displacement is too small for the profile to reach `v_max`, the cruise 
 
 int main()
 {
-    ctrlpp::trapezoidal_trajectory<double> traj({
+    auto const created = ctrlpp::trapezoidal_trajectory<double>::create({
         .q0 = 0.0, .q1 = 10.0,
         .v_max = 5.0, .a_max = 2.0
     });
+    if (!created) {
+        std::cerr << "The commanded move has no trapezoidal profile\n";
+        return 1;
+    }
+    auto const& traj = created.value();
     for (double t = 0; t <= traj.duration(); t += 0.01) {
         auto pt = traj.evaluate(t);
         std::cout << t << "," << pt.position(0) << "," << pt.velocity(0) << "," << pt.acceleration(0) << "\n";

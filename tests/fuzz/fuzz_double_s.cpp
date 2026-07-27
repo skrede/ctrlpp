@@ -129,27 +129,31 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // seven-segment shape, and the construction reports that rather than
     // returning a profile which does not traverse its own command. That is a
     // correct outcome, not a finding.
-    auto created = ctrlpp::double_s_trajectory<double>::try_create(
+    auto created = ctrlpp::double_s_trajectory<double>::create(
         {.q0 = q0, .q1 = q1, .v_max = v_max, .a_max = a_max, .j_max = j_max, .v0 = v0, .v1 = v1});
     if(!created.has_value())
         return 0;
     ctrlpp::double_s_trajectory<double> traj = created.value();
 
+    // Every duration of a constructed profile is finite and nonnegative. This is
+    // the construction's stated contract, so any violation is a finding and none
+    // of them may be filtered away here.
+    //
+    // A NaN duration is the construction having lost the value it was solving
+    // for on a command it reported success on. An INFINITE one is a command
+    // whose profile does not fit the scalar type, which the construction is
+    // required to reject rather than return. A NEGATIVE one is undefined
+    // behavior waiting downstream: evaluate() clamps into [0, T], and
+    // std::clamp with a lower bound above its upper bound is undefined, not a
+    // clamp that returns something unhelpful.
     const double T = traj.duration();
-    // A NaN duration is never a domain limit. It is the construction having lost
-    // the value it was solving for on a command it reported success on, so it is
-    // a finding and must not be filtered away here. An INFINITE one is a
-    // different thing: the commanded displacement divided by the velocity limit
-    // overflowing the scalar type, a representation limit of the command rather
-    // than a defect in the profile. A NEGATIVE one is filtered on the same terms
-    // the trapezoidal target states: below the square root of the smallest
-    // normal value a boundary velocity squares to zero, and a peak built from
-    // those squares can fall below the boundary velocity it is analytically
-    // bounded by.
-    if(std::isnan(T))
-        abort();
     if(!std::isfinite(T) || T < 0.0)
-        return 0;
+        abort();
+    for(const auto& segment : traj.phase_durations())
+    {
+        if(!std::isfinite(segment) || segment < 0.0)
+            abort();
+    }
 
     // Dense scan of the time domain: enough samples to exercise every segment
     // (jerk/accel/cruise/jerk/decel) multiple times regardless of duration.

@@ -144,21 +144,39 @@ auto identical(axis_snapshot const& lhs, axis_snapshot const& rhs) -> bool
     return true;
 }
 
+// create() is the only construction path on either profile type and it is
+// fallible, so every axis a test uses is built through one of these helpers,
+// which assert the command was realizable rather than letting a rejection pass
+// as an axis that never moves.
+auto trapezoidal_axis(ctrlpp::trapezoidal_trajectory<double>::config const& cfg)
+    -> ctrlpp::trapezoidal_trajectory<double>
+{
+    auto created = ctrlpp::trapezoidal_trajectory<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return created.value();
+}
+
+auto double_s_axis(ctrlpp::double_s_trajectory<double>::config const& cfg)
+    -> ctrlpp::double_s_trajectory<double>
+{
+    auto created = ctrlpp::double_s_trajectory<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return created.value();
+}
+
 // An axis whose commanded displacement sits below the distance its two boundary
 // velocities already sweep between them. The reachable durations of such a
 // profile are bounded above, so it refuses any target beyond that supremum. Its
 // own duration is about 0.47 s and its supremum about 0.54 s.
 auto bounded_axis() -> ctrlpp::trapezoidal_trajectory<double>
 {
-    return ctrlpp::trapezoidal_trajectory<double>(
-        {.q0 = 0.0, .q1 = 1.0, .v_max = 3.0, .a_max = 1.0, .v0 = 2.0, .v1 = 2.0});
+    return trapezoidal_axis({.q0 = 0.0, .q1 = 1.0, .v_max = 3.0, .a_max = 1.0, .v0 = 2.0, .v1 = 2.0});
 }
 
 // A slower axis with room to spare, so it sets the synchronization target.
 auto slow_axis() -> ctrlpp::trapezoidal_trajectory<double>
 {
-    return ctrlpp::trapezoidal_trajectory<double>(
-        {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
+    return trapezoidal_axis({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
 }
 
 }
@@ -168,9 +186,12 @@ auto slow_axis() -> ctrlpp::trapezoidal_trajectory<double>
 // --------------------------------------------------------------------------
 TEST_CASE("synchronize: 3 trapezoidal axes equal duration", "[traj][sync]")
 {
-    ctrlpp::trapezoidal_trajectory<double> ax1({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
-    ctrlpp::trapezoidal_trajectory<double> ax2({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0});
-    ctrlpp::trapezoidal_trajectory<double> ax3({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0});
+    auto ax1 = trapezoidal_axis(
+        {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
+    auto ax2 = trapezoidal_axis(
+        {.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0});
+    auto ax3 = trapezoidal_axis(
+        {.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0});
 
     auto const max_dur = std::max({ax1.duration(), ax2.duration(), ax3.duration()});
 
@@ -186,9 +207,9 @@ TEST_CASE("synchronize: 3 trapezoidal axes equal duration", "[traj][sync]")
 // --------------------------------------------------------------------------
 TEST_CASE("synchronize: 2 double-S axes equal duration", "[traj][sync]")
 {
-    ctrlpp::double_s_trajectory<double> ax1(
+    auto ax1 = double_s_axis(
         {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0});
-    ctrlpp::double_s_trajectory<double> ax2(
+    auto ax2 = double_s_axis(
         {.q0 = 0.0, .q1 = 3.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0});
 
     auto const max_dur = std::max(ax1.duration(), ax2.duration());
@@ -204,8 +225,9 @@ TEST_CASE("synchronize: 2 double-S axes equal duration", "[traj][sync]")
 // --------------------------------------------------------------------------
 TEST_CASE("synchronize: heterogeneous trapezoidal + double-S", "[traj][sync]")
 {
-    ctrlpp::trapezoidal_trajectory<double> trap({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0});
-    ctrlpp::double_s_trajectory<double> ds(
+    auto trap = trapezoidal_axis(
+        {.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0});
+    auto ds = double_s_axis(
         {.q0 = 0.0, .q1 = 3.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0});
 
     auto const max_dur = std::max(trap.duration(), ds.duration());
@@ -221,8 +243,10 @@ TEST_CASE("synchronize: heterogeneous trapezoidal + double-S", "[traj][sync]")
 // --------------------------------------------------------------------------
 TEST_CASE("synchronize: post-sync traversal preserved", "[traj][sync]")
 {
-    ctrlpp::trapezoidal_trajectory<double> ax1({.q0 = 1.0, .q1 = 11.0, .v_max = 5.0, .a_max = 10.0});
-    ctrlpp::trapezoidal_trajectory<double> ax2({.q0 = 2.0, .q1 = 22.0, .v_max = 5.0, .a_max = 10.0});
+    auto ax1 = trapezoidal_axis(
+        {.q0 = 1.0, .q1 = 11.0, .v_max = 5.0, .a_max = 10.0});
+    auto ax2 = trapezoidal_axis(
+        {.q0 = 2.0, .q1 = 22.0, .v_max = 5.0, .a_max = 10.0});
 
     REQUIRE(ctrlpp::synchronize(ax1, ax2).has_value());
 
@@ -257,8 +281,10 @@ TEST_CASE("synchronize: post-sync traversal preserved", "[traj][sync]")
 TEST_CASE("synchronize: post-sync velocity within v_max", "[traj][sync]")
 {
     double constexpr v_max = 5.0;
-    ctrlpp::trapezoidal_trajectory<double> ax1({.q0 = 0.0, .q1 = 10.0, .v_max = v_max, .a_max = 10.0});
-    ctrlpp::trapezoidal_trajectory<double> ax2({.q0 = 0.0, .q1 = 20.0, .v_max = v_max, .a_max = 10.0});
+    auto ax1 = trapezoidal_axis(
+        {.q0 = 0.0, .q1 = 10.0, .v_max = v_max, .a_max = 10.0});
+    auto ax2 = trapezoidal_axis(
+        {.q0 = 0.0, .q1 = 20.0, .v_max = v_max, .a_max = 10.0});
 
     REQUIRE(ctrlpp::synchronize(ax1, ax2).has_value());
 
@@ -276,8 +302,10 @@ TEST_CASE("synchronize: post-sync velocity within v_max", "[traj][sync]")
 TEST_CASE("synchronize: post-sync acceleration within a_max", "[traj][sync]")
 {
     double constexpr a_max = 10.0;
-    ctrlpp::trapezoidal_trajectory<double> ax1({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = a_max});
-    ctrlpp::trapezoidal_trajectory<double> ax2({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = a_max});
+    auto ax1 = trapezoidal_axis(
+        {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = a_max});
+    auto ax2 = trapezoidal_axis(
+        {.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = a_max});
 
     REQUIRE(ctrlpp::synchronize(ax1, ax2).has_value());
 
@@ -294,7 +322,8 @@ TEST_CASE("synchronize: post-sync acceleration within a_max", "[traj][sync]")
 // --------------------------------------------------------------------------
 TEST_CASE("synchronize: single axis no-op", "[traj][sync]")
 {
-    ctrlpp::trapezoidal_trajectory<double> ax({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
+    auto ax = trapezoidal_axis(
+        {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
     auto const dur_before = ax.duration();
 
     REQUIRE(ctrlpp::synchronize(ax).has_value());
@@ -308,12 +337,9 @@ TEST_CASE("synchronize: single axis no-op", "[traj][sync]")
 TEST_CASE("synchronize: vector overload", "[traj][sync]")
 {
     std::vector<ctrlpp::trapezoidal_trajectory<double>> axes;
-    axes.emplace_back(ctrlpp::trapezoidal_trajectory<double>::config{
-        .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
-    axes.emplace_back(ctrlpp::trapezoidal_trajectory<double>::config{
-        .q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0});
-    axes.emplace_back(ctrlpp::trapezoidal_trajectory<double>::config{
-        .q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0});
+    axes.push_back(trapezoidal_axis({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0}));
+    axes.push_back(trapezoidal_axis({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0}));
+    axes.push_back(trapezoidal_axis({.q0 = 0.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0}));
 
     double max_dur = 0.0;
     for (auto const& ax : axes) {
@@ -382,7 +408,7 @@ TEST_CASE("synchronize: rejection mutates no axis, contiguous-view overload", "[
 TEST_CASE("synchronize: the slowest axis is a success no-op", "[traj][sync]")
 {
     auto slowest = slow_axis();
-    ctrlpp::trapezoidal_trajectory<double> faster(
+    auto faster = trapezoidal_axis(
         {.q0 = 0.0, .q1 = 2.0, .v_max = 5.0, .a_max = 10.0});
     REQUIRE(slowest.duration() > faster.duration());
 

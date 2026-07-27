@@ -81,10 +81,21 @@ Each profile is rebuilt at the longer duration rather than patched, so the comma
 
 int main()
 {
-    // Three-axis motion: each axis has different displacement
-    ctrlpp::trapezoidal_trajectory<double> x_axis({.q0 = 0, .q1 = 10, .v_max = 2, .a_max = 5});
-    ctrlpp::trapezoidal_trajectory<double> y_axis({.q0 = 0, .q1 = 3,  .v_max = 2, .a_max = 5});
-    ctrlpp::trapezoidal_trajectory<double> z_axis({.q0 = 0, .q1 = 7,  .v_max = 2, .a_max = 5});
+    // Three-axis motion: each axis has different displacement. Construction is
+    // fallible too, and create() is the only path to a profile, so a command
+    // with none is reported here rather than standing in as an axis that never
+    // moves.
+    using axis = ctrlpp::trapezoidal_trajectory<double>;
+    auto const built_x = axis::create({.q0 = 0, .q1 = 10, .v_max = 2, .a_max = 5});
+    auto const built_y = axis::create({.q0 = 0, .q1 = 3,  .v_max = 2, .a_max = 5});
+    auto const built_z = axis::create({.q0 = 0, .q1 = 7,  .v_max = 2, .a_max = 5});
+    if (!built_x || !built_y || !built_z) {
+        std::cerr << "At least one commanded axis move has no trapezoidal profile\n";
+        return 1;
+    }
+    auto x_axis = built_x.value();
+    auto y_axis = built_y.value();
+    auto z_axis = built_z.value();
 
     // Before: each axis has different duration
     // After: all axes finish at the same time
