@@ -33,6 +33,7 @@ Structured failure modes for the point-to-point trajectory factories and the onl
 | `non_positive_jerk_limit` | The jerk limit must be positive |
 | `non_positive_duration` | The requested duration must be positive |
 | `non_finite_input` | A boundary value or limit is NaN/Inf |
+| `unreachable_boundary_velocity` | The commanded displacement is shorter than the distance the fastest admissible transition between the two boundary velocities already sweeps, so no profile of the requested shape realizes it |
 
 ## Type: `trajectory_point<Scalar, ND>`
 

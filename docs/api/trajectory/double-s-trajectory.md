@@ -32,7 +32,22 @@ explicit double_s_trajectory(config const& cfg);
 
 Construction follows the B&M flowchart (Fig 3.18) to solve all phase durations. Handles negative displacement via sigma transformation. Zero displacement produces a stationary profile.
 
-Nonzero initial and final velocities `v0`, `v1` are supported through the general B&M Sec 3.4.1 formulation: the acceleration phase ramps from `v0` and the deceleration phase ramps to `v1`, so `evaluate(0)` reports `v0` and `evaluate(duration())` reports `v1`, both with zero acceleration. When `v0 = v1 = 0` the solver reduces exactly to the symmetric Sec 3.4.3 special case. In the no-cruise sub-case where `a_max` cannot be reached on a side, the acceleration bound is backed off geometrically and re-solved (B&M's recommended handling), so all three limits stay respected.
+Nonzero initial and final velocities `v0`, `v1` are supported through the general B&M Sec 3.4.1 formulation: the acceleration phase ramps from `v0` and the deceleration phase ramps to `v1`, so `evaluate(0)` reports `v0` and `evaluate(duration())` reports `v1`, both with zero acceleration. When `v0 = v1 = 0` the solver reduces exactly to the symmetric Sec 3.4.3 special case.
+
+In the no-cruise sub-case the peak velocity is solved directly against the commanded displacement, and each ramp takes whichever of its two closed forms applies -- constant-acceleration segment present, or triangular in acceleration when the velocity change is too small to build up to `a_max`. All three limits stay respected in both shapes. Where the two ramps carry different square roots of the peak the solve falls back to a bracketed search that terminates by exhaustion of the floating-point bracket, not on an iteration count.
+
+## Realizability
+
+A seven-segment profile cannot sweep less ground than the fastest admissible transition from the larger of the two boundary velocities to the smaller one, so a command shorter than that distance is not realizable within this shape -- reaching it would require overshooting the target and returning. `try_create` reports exactly that case:
+
+```cpp
+auto profile = ctrlpp::double_s_trajectory<double>::try_create(cfg);
+if (!profile) {
+    // profile.error() == ctrlpp::trajectory_error::unreachable_boundary_velocity
+}
+```
+
+The non-fallible constructor stays available for callers that have already established their command is realizable. Given one that is not, it yields a stationary zero-duration profile rather than a finite profile that does not traverse its own displacement.
 
 ## 7-Segment Structure
 
@@ -64,6 +79,7 @@ The profile degenerates when kinematic limits cannot all be reached:
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
+| `try_create` | `static expected<double_s_trajectory, trajectory_error> try_create(config const&)` | Construct, reporting an unrealizable command |
 | `evaluate` | `trajectory_point<Scalar, 1> evaluate(Scalar t) const` | Position, velocity, acceleration at time `t` |
 | `duration` | `Scalar duration() const` | Total duration |
 | `is_degenerate` | `bool is_degenerate() const` | True if v_max or a_max not reached |

@@ -14,6 +14,8 @@
 ///
 /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.17)-(3.33), Fig. 3.18, p.79-96
 
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
@@ -47,6 +49,8 @@ public:
         , q1_{cfg.q1}
         , v0_{cfg.v0}
         , v1_{cfg.v1}
+        , v_max_{cfg.v_max}
+        , a_max_{cfg.a_max}
         , j_max_{cfg.j_max}
     {
         auto const h_signed = cfg.q1 - cfg.q0;
@@ -89,6 +93,32 @@ public:
             // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.27), p.79-85
             compute_general_bc(h, v_max, a_max, cfg.j_max);
         }
+    }
+
+    /// @brief Construct a profile, reporting the commands this family cannot realize.
+    ///
+    /// A seven-segment profile cannot sweep less ground than the fastest
+    /// admissible transition from the larger of the two positive-frame boundary
+    /// velocities to the smaller one: covering less would require overshooting
+    /// the target and coming back, which is a different velocity profile shape.
+    /// Rejections:
+    ///  * commanded displacement below that minimum ->
+    ///    trajectory_error::unreachable_boundary_velocity
+    ///
+    /// The plain constructor stays available for the callers that have already
+    /// established their command is realizable. On a command that is not, it
+    /// yields a stationary zero-duration profile rather than a finite profile
+    /// that does not traverse its own displacement.
+    ///
+    /// @cite biagiotti2009 -- Sec. 3.4.1, p.79-85
+    [[nodiscard]] static auto try_create(config const& cfg)
+        -> ctrlpp::expected<double_s_trajectory, trajectory_error>
+    {
+        double_s_trajectory profile{cfg};
+        if (!profile.realizable_) {
+            return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
+        }
+        return profile;
     }
 
     /// @brief Evaluate trajectory at time t.
@@ -173,10 +203,13 @@ private:
     Scalar v_lim_{};
     Scalar a_lim_a_{};
     Scalar a_lim_d_{};
+    Scalar v_max_{};
+    Scalar a_max_{};
     Scalar j_max_{};
     Scalar T_j1_{}, T_a_{}, T_v_{}, T_d_{}, T_j2_{};
     Scalar T_{};
     bool degenerate_{false};
+    bool realizable_{true};
 
     auto make_point(Scalar q, Scalar dq, Scalar ddq) const -> trajectory_point<Scalar, 1>
     {
@@ -278,111 +311,233 @@ private:
     /// case when pv0_ = pv1_ = 0.
     ///
     /// @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.27), Fig. 3.18, p.79-85
-    void compute_general_bc(Scalar h, Scalar v_max, Scalar a_max_in, Scalar j_max)
+    void compute_general_bc(Scalar h, Scalar v_max, Scalar a_max, Scalar j_max)
     {
-        // B&M a_max back-off step: when the no-cruise sub-case cannot actually
-        // reach a_max on a side, B&M recommends lowering the acceleration bound
-        // and re-solving until a consistent profile is found (Sec. 3.4.1, p.83-84).
-        // The factor is a gentle geometric back-off; the loop is bounded so a
-        // pathological input cannot spin forever.
-        constexpr Scalar a_max_backoff_factor = Scalar{0.99};
-        constexpr int max_backoff_iterations = 1024;
+        auto const pv_hi = std::max(pv0_, pv1_);
+        auto const pv_lo = std::min(pv0_, pv1_);
 
-        auto a_max = a_max_in;
-
-        for (int iter = 0; iter < max_backoff_iterations; ++iter) {
-            // Step 1: acceleration phase pv0_ -> v_lim, assuming v_lim = v_max.
-            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19), p.80
-            Scalar T_j1{}, T_a{}, a_lim_a{};
-            if ((v_max - pv0_) * j_max < a_max * a_max) {
-                // a_max is not reached in the acceleration phase
-                T_j1 = std::sqrt((v_max - pv0_) / j_max);
-                T_a = Scalar{2} * T_j1;
-                a_lim_a = j_max * T_j1;
-            } else {
-                T_j1 = a_max / j_max;
-                T_a = (v_max - pv0_) / a_max + T_j1;
-                a_lim_a = a_max;
-            }
-
-            // Step 2: deceleration phase v_lim -> pv1_, assuming v_lim = v_max.
-            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.20), p.80
-            Scalar T_j2{}, T_d{}, a_lim_d{};
-            if ((v_max - pv1_) * j_max < a_max * a_max) {
-                // a_max is not reached in the deceleration phase
-                T_j2 = std::sqrt((v_max - pv1_) / j_max);
-                T_d = Scalar{2} * T_j2;
-                a_lim_d = j_max * T_j2;
-            } else {
-                T_j2 = a_max / j_max;
-                T_d = (v_max - pv1_) / a_max + T_j2;
-                a_lim_d = a_max;
-            }
-
-            // Step 3: cruise duration.
-            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.21), p.81
-            auto const T_v = h / v_max
-                           - (T_a / Scalar{2}) * (Scalar{1} + pv0_ / v_max)
-                           - (T_d / Scalar{2}) * (Scalar{1} + pv1_ / v_max);
+        // Steps 1-3: try the shape that reaches the velocity limit. A cruise
+        // segment at v_max only exists when the limit is at least as large as
+        // both boundary velocities; when it is not, the peak must lie above both
+        // of them and only the cruise-free construction below can express that.
+        // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.21), p.80-81
+        if (v_max > pv_hi) {
+            auto const accel = make_velocity_ramp(v_max - pv0_, a_max, j_max);
+            auto const decel = make_velocity_ramp(v_max - pv1_, a_max, j_max);
+            auto const swept = (pv0_ + v_max) * accel.T / Scalar{2}
+                             + (v_max + pv1_) * decel.T / Scalar{2};
+            auto const T_v = (h - swept) / v_max;
 
             if (T_v > Scalar{0}) {
-                // Step 4: v_max is reached; a cruise phase exists.
-                T_j1_ = T_j1;
-                T_a_ = T_a;
-                a_lim_a_ = a_lim_a;
-                T_j2_ = T_j2;
-                T_d_ = T_d;
-                a_lim_d_ = a_lim_d;
+                T_j1_ = accel.T_j;
+                T_a_ = accel.T;
+                a_lim_a_ = accel.a_lim;
+                T_j2_ = decel.T_j;
+                T_d_ = decel.T;
+                a_lim_d_ = decel.a_lim;
                 T_v_ = T_v;
                 v_lim_ = v_max;
-                degenerate_ = (a_lim_a < a_max) || (a_lim_d < a_max);
+                degenerate_ = (accel.a_lim < a_max) || (decel.a_lim < a_max);
                 T_ = T_a_ + T_v_ + T_d_;
                 return;
             }
-
-            // Step 5: v_max is not reached; no cruise. Assume a_max is reached on
-            // both sides, so T_j1 = T_j2 = a_max / j_max.
-            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.25)-(3.27), p.83-84
-            T_j1 = a_max / j_max;
-            T_j2 = a_max / j_max;
-            auto const T_ja = a_max / j_max;
-            auto const delta = (a_max * a_max * a_max * a_max) / (j_max * j_max)
-                             + Scalar{2} * (pv0_ * pv0_ + pv1_ * pv1_)
-                             + a_max * (Scalar{4} * h - Scalar{2} * T_ja * (pv0_ + pv1_));
-            auto const sqrt_delta = std::sqrt(delta);
-            T_a = ((a_max * a_max / j_max) - Scalar{2} * pv0_ + sqrt_delta) / (Scalar{2} * a_max);
-            T_d = ((a_max * a_max / j_max) - Scalar{2} * pv1_ + sqrt_delta) / (Scalar{2} * a_max);
-
-            // A boundary velocity already above the profile peak makes its ramp
-            // duration negative; drop that ramp and let the other side carry it.
-            if (T_a < Scalar{0}) {
-                T_a = Scalar{0};
-            }
-            if (T_d < Scalar{0}) {
-                T_d = Scalar{0};
-            }
-
-            // Store this no-cruise solution so the last (backed-off) one persists
-            // even if the iteration bound is reached.
-            T_j1_ = T_j1;
-            T_j2_ = T_j2;
-            T_a_ = T_a;
-            T_d_ = T_d;
-            a_lim_a_ = a_max;
-            a_lim_d_ = a_max;
-            v_lim_ = pv0_ + (T_a - T_j1) * a_max;
-            T_v_ = Scalar{0};
-            degenerate_ = true;
-            T_ = T_a_ + T_v_ + T_d_;
-
-            // If a_max is actually reached on both sides the solution is consistent.
-            if (T_a >= Scalar{2} * T_j1 && T_d >= Scalar{2} * T_j2) {
-                return;
-            }
-
-            // Otherwise a_max cannot be reached on a side: back it off and retry.
-            a_max *= a_max_backoff_factor;
         }
+
+        // Step 4: v_max is not reached, so there is no cruise segment and the
+        // peak velocity is the only remaining unknown. Both ramps run toward the
+        // peak, so it cannot lie below either boundary velocity.
+        //
+        // Where the peak is nonnegative the swept distance grows with it, so its
+        // smallest value is reached when the ramp attached to the larger boundary
+        // velocity vanishes -- the profile is then the fastest admissible
+        // transition from the larger boundary velocity to the smaller one. A
+        // command below that distance is not realizable by any profile of this
+        // shape and is reported as such rather than clamped into a profile that
+        // does not traverse its own command. When the larger boundary velocity is
+        // itself negative that vanishing-ramp distance is not positive, so a
+        // positive command always clears it and nothing is ever rejected there.
+        //
+        // The unknown carried through this step is the peak's RISE above the
+        // larger boundary velocity, never the peak itself. The rise is what every
+        // ramp duration depends on, and it is routinely orders of magnitude
+        // smaller than the boundary velocity it sits on, so storing the peak and
+        // subtracting the boundary velocity back out of it would throw away most
+        // of the rise's significant digits before the ramps ever see it.
+        auto const h_min = no_cruise_displacement(Scalar{0}, pv_hi, pv_lo, a_max, j_max);
+        if (h < h_min) {
+            set_unrealizable();
+            return;
+        }
+
+        // Step 5: both ramps reach a_max once the rise is at least a_max^2 / j_max,
+        // and there the swept distance is a quadratic in the rise x:
+        //   x^2 + (2 pv_hi + a_max^2 / j_max) x
+        //       + (pv_hi^2 - pv_lo^2) / 2
+        //       + (a_max^2 / j_max) (3 pv_hi + pv_lo) / 2 - a_max h = 0
+        // whose larger root is the admissible one. Derived in place by
+        // substituting the trapezoidal ramp durations of make_velocity_ramp into
+        // the swept distance and rewriting the result about pv_hi; it is the
+        // cruise-free case of the general nonzero-boundary construction, and its
+        // discriminant reduces to the same expression that case is usually stated
+        // with. The root is taken in the form that avoids subtracting two nearly
+        // equal terms.
+        // @cite biagiotti2009 -- Sec. 3.4.1, p.83-84
+        auto const a_sq_over_j = a_max * a_max / j_max;
+
+        Scalar rise{};
+        if (h >= no_cruise_displacement(a_sq_over_j, pv_hi, pv_lo, a_max, j_max)) {
+            auto const linear = Scalar{2} * pv_hi + a_sq_over_j;
+            auto const constant = (pv_hi - pv_lo) * (pv_hi + pv_lo) / Scalar{2}
+                                + a_sq_over_j * (Scalar{3} * pv_hi + pv_lo) / Scalar{2}
+                                - a_max * h;
+            auto const root = std::sqrt(linear * linear - Scalar{4} * constant);
+            rise = (linear >= Scalar{0}) ? (Scalar{-2} * constant / (linear + root))
+                                         : ((root - linear) / Scalar{2});
+        } else {
+            rise = solve_no_cruise_rise(h, pv_hi, pv_lo, a_max, j_max);
+        }
+
+        auto const v_peak = pv_hi + rise;
+        auto const near_ramp = make_velocity_ramp(rise, a_max, j_max);
+        auto const far_ramp = make_velocity_ramp(rise + (pv_hi - pv_lo), a_max, j_max);
+        auto const& accel = (pv0_ >= pv1_) ? near_ramp : far_ramp;
+        auto const& decel = (pv0_ >= pv1_) ? far_ramp : near_ramp;
+
+        T_j1_ = accel.T_j;
+        T_a_ = accel.T;
+        a_lim_a_ = accel.a_lim;
+        T_j2_ = decel.T_j;
+        T_d_ = decel.T;
+        a_lim_d_ = decel.a_lim;
+        T_v_ = Scalar{0};
+        v_lim_ = v_peak;
+        degenerate_ = true;
+        T_ = T_a_ + T_v_ + T_d_;
+    }
+
+    /// @brief Shape of a jerk-limited ramp between two velocities whose endpoint
+    /// accelerations are both zero.
+    struct velocity_ramp
+    {
+        Scalar T{};     ///< total ramp duration
+        Scalar T_j{};   ///< duration of each constant-jerk sub-segment
+        Scalar a_lim{}; ///< acceleration magnitude actually reached
+    };
+
+    /// @brief Fastest admissible ramp spanning a velocity change.
+    ///
+    /// The ramp is jerk, constant acceleration, jerk. When the velocity change is
+    /// too small to build the acceleration up to a_max the constant-acceleration
+    /// sub-segment vanishes, the ramp is triangular in acceleration, and it peaks
+    /// at j_max * T_j instead. Both branches are exact closed forms; there is no
+    /// sub-case left over for which the acceleration bound has to be lowered and
+    /// the solve retried.
+    ///
+    /// @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.20), p.80
+    static auto make_velocity_ramp(Scalar dv, Scalar a_max, Scalar j_max) -> velocity_ramp
+    {
+        auto const d = std::abs(dv);
+        if (d * j_max < a_max * a_max) {
+            auto const T_j = std::sqrt(d / j_max);
+            return {Scalar{2} * T_j, T_j, j_max * T_j};
+        }
+        auto const T_j = a_max / j_max;
+        return {d / a_max + T_j, T_j, a_max};
+    }
+
+    /// @brief Distance swept by the two ramps of a cruise-free profile whose peak
+    /// velocity rises by `rise` above the larger boundary velocity.
+    ///
+    /// Each ramp's acceleration is point-symmetric about the ramp's own midpoint,
+    /// so the velocity it sweeps has mean exactly the average of its two
+    /// endpoints and the swept distance is that mean times the ramp duration.
+    /// Derived in place from that symmetry, which is the same argument
+    /// compute_q_at_Ta() rests on. Both mean velocities are formed from the rise
+    /// rather than from the peak so that a rise far below the boundary velocities
+    /// keeps every digit it has.
+    static auto no_cruise_displacement(Scalar rise, Scalar pv_hi, Scalar pv_lo, Scalar a_max, Scalar j_max) -> Scalar
+    {
+        auto const far_rise = rise + (pv_hi - pv_lo);
+        auto const near_ramp = make_velocity_ramp(rise, a_max, j_max);
+        auto const far_ramp = make_velocity_ramp(far_rise, a_max, j_max);
+        return (Scalar{2} * pv_hi + rise) * near_ramp.T / Scalar{2}
+             + (Scalar{2} * pv_lo + far_rise) * far_ramp.T / Scalar{2};
+    }
+
+    /// @brief Rise of the cruise-free profile that sweeps exactly h.
+    ///
+    /// Reached only below the region where both ramps attain a_max, which the
+    /// closed form above covers. There the ramp attached to the larger boundary
+    /// velocity is triangular in acceleration, so the two ramps carry different
+    /// square roots of the rise, the swept distance is not a polynomial in it,
+    /// and no elementary closed form for it exists.
+    ///
+    /// The bracket spans the rises for which that ramp exists without reaching
+    /// a_max, and the swept distance grows across it. Termination is algebraic,
+    /// not a trip count: each step either halves the rise bracket until its
+    /// midpoint falls on an endpoint, or fails to shrink the swept-distance
+    /// bracket, which cannot recur once that bracket has reached the resolution
+    /// of the scalar type.
+    static auto solve_no_cruise_rise(Scalar h, Scalar pv_hi, Scalar pv_lo, Scalar a_max, Scalar j_max) -> Scalar
+    {
+        auto const swept_at = [&](Scalar rise) {
+            return no_cruise_displacement(rise, pv_hi, pv_lo, a_max, j_max);
+        };
+
+        // The bracket starts where the peak velocity reaches zero, not where the
+        // near ramp vanishes. Differentiating the swept distance shows it grows
+        // with the rise for every nonnegative peak, in both ramp shapes, while
+        // below a zero peak the profile moves backwards and the distance can fall
+        // as the rise grows. Starting at a zero peak therefore makes the bracket
+        // monotone, and it costs no root: a peak below zero leaves both ramp mean
+        // velocities negative, so it sweeps no positive distance at all.
+        auto lo = std::max(Scalar{0}, -pv_hi);
+        auto hi = a_max * a_max / j_max;
+        auto swept_lo = swept_at(lo);
+        auto swept_hi = swept_at(hi);
+        auto width = swept_hi - swept_lo;
+
+        for (;;) {
+            auto const mid = lo + (hi - lo) / Scalar{2};
+            if (!(mid > lo) || !(mid < hi)) {
+                break;
+            }
+            auto const swept_mid = swept_at(mid);
+            if (swept_mid < h) {
+                lo = mid;
+                swept_lo = swept_mid;
+            } else {
+                hi = mid;
+                swept_hi = swept_mid;
+            }
+            auto const next_width = swept_hi - swept_lo;
+            if (!(next_width < width)) {
+                break;
+            }
+            width = next_width;
+        }
+
+        return (std::abs(swept_lo - h) <= std::abs(swept_hi - h)) ? lo : hi;
+    }
+
+    /// @brief Record a command this profile family cannot realize.
+    ///
+    /// The profile becomes stationary, so evaluate() holds the start position for
+    /// a zero duration rather than reporting a traversal that never happens.
+    /// try_create() turns this state into trajectory_error.
+    void set_unrealizable()
+    {
+        realizable_ = false;
+        degenerate_ = true;
+        v_lim_ = Scalar{0};
+        a_lim_a_ = Scalar{0};
+        a_lim_d_ = Scalar{0};
+        T_j1_ = Scalar{0};
+        T_a_ = Scalar{0};
+        T_v_ = Scalar{0};
+        T_d_ = Scalar{0};
+        T_j2_ = Scalar{0};
+        T_ = Scalar{0};
     }
 
     /// @brief Solve doubly degenerate case using bisection on gamma.

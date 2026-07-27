@@ -60,6 +60,11 @@ enum class spline_error
 ///  * non_positive_jerk_limit         : the jerk limit must be positive.
 ///  * non_positive_duration           : the requested duration must be positive.
 ///  * non_finite_input                : a boundary value or limit is NaN/Inf.
+///  * unreachable_boundary_velocity   : the commanded displacement is smaller
+///                                      than the distance the fastest admissible
+///                                      transition between the two boundary
+///                                      velocities already sweeps, so no profile
+///                                      of the requested shape realizes it.
 enum class trajectory_error
 {
     non_positive_velocity_limit,
@@ -67,6 +72,7 @@ enum class trajectory_error
     non_positive_jerk_limit,
     non_positive_duration,
     non_finite_input,
+    unreachable_boundary_velocity,
 };
 
 /// @brief Point on an ND-dimensional trajectory with position, velocity, acceleration.
