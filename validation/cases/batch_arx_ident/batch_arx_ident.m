@@ -31,6 +31,15 @@ dat = iddata(y, u, 1);
 % sys_id is a TF model; extract numerator/denominator
 [num_id, den_id] = tfdata(sys_id, 'v');
 
+% Some control package versions return cell arrays even for the 'v' (vector) form.
+% Unwrap the single-input single-output entry when that happens.
+if (iscell(num_id))
+    num_id = num_id{1};
+endif
+if (iscell(den_id))
+    den_id = den_id{1};
+endif
+
 % ARX model: A(q) y = B(q) u
 % den = [1, -a1, -a2, ...], num = [0, b1, b2, ...]
 a1 = -den_id(2);

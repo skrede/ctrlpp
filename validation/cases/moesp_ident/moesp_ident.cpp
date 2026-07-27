@@ -1,7 +1,12 @@
-// n4sid_ident.cpp -- N4SID identification matching n4sid_ident.m
-// Usage: ./n4sid_ident > n4sid_ident_cpp.csv
+// moesp_ident.cpp -- MOESP subspace identification matching moesp_ident.m
+// Usage: ./moesp_ident > moesp_ident_cpp.csv
+//
+// This is a cross-algorithm comparison: the reference script identifies the same
+// data record with Octave's n4sid(), which is a different subspace identification
+// algorithm. Agreement therefore demonstrates that two independent subspace methods
+// recover the same input-output behavior; it is not a MOESP-specific reference.
 
-#include "ctrlpp/sysid/n4sid.h"
+#include "ctrlpp/sysid/moesp.h"
 
 #include <Eigen/Dense>
 
@@ -29,7 +34,7 @@ int main()
         x = A_true * x + B_true * u(k);
     }
 
-    auto result = ctrlpp::n4sid<2>(y, u);
+    auto result = ctrlpp::moesp<2>(y, u);
 
     auto& sys = result.system;
 

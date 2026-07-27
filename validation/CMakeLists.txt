@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
 project(ctrlpp_validation)
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -45,4 +45,4 @@ add_subdirectory(cases/so3_exp_log)
 
 # System identification module
 add_subdirectory(cases/batch_arx_ident)
-add_subdirectory(cases/n4sid_ident)
+add_subdirectory(cases/moesp_ident)

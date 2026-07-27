@@ -1,6 +1,11 @@
-% n4sid_ident.m -- N4SID subspace identification via Octave Control Toolbox.
+% moesp_ident.m -- Subspace identification reference via Octave Control Toolbox.
 %
-% Usage: octave --no-gui n4sid_ident.m > n4sid_ident_octave.csv
+% Usage: octave --no-gui moesp_ident.m > moesp_ident_octave.csv
+%
+% The reference algorithm here is Octave's n4sid(), which is a different subspace
+% identification algorithm than the routine under test. The comparison is therefore
+% cross-algorithm: it checks that both methods recover the same input-output
+% behavior from the same record, not that either reproduces the other's internals.
 
 pkg load control;
 

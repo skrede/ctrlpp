@@ -7,8 +7,12 @@
 #
 # Each case produces an analysis/ subdirectory with CSVs, plots, and a report.
 #
+# Environment:
+#   CTRLPP_VALIDATE_JOBS       build parallelism (default: 2)
+#   CTRLPP_VALIDATE_GENERATOR  CMake generator (default: Unix Makefiles)
+#
 # Prerequisites:
-#   - octave-cli with control package
+#   - octave-cli with the control, signal, splines, and quaternion packages
 #   - C++ cases built via CMake (this script builds them)
 
 set -euo pipefail
@@ -17,10 +21,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="${1:-${SCRIPT_DIR}/build}"
 shift 2>/dev/null || true
 
+JOBS="${CTRLPP_VALIDATE_JOBS:-2}"
+GENERATOR="${CTRLPP_VALIDATE_GENERATOR:-Unix Makefiles}"
+
 # Build C++ cases
 echo "=== Building C++ validation cases ==="
-cmake -S "$SCRIPT_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3
-cmake --build "$BUILD_DIR" -j"$(nproc)" 2>&1 | tail -5
+cmake -S "$SCRIPT_DIR" -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3
+cmake --build "$BUILD_DIR" -j"$JOBS" 2>&1 | tail -5
 echo ""
 
 # Collect cases
