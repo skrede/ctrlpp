@@ -184,6 +184,20 @@ private:
 
         if(result.status == solve_status::optimal || result.status == solve_status::solved_inaccurate)
         {
+            // A status is not a shape: the accept-set above is decided purely
+            // from what the backend reports, so an accepted result may still be
+            // too short for the window writes that follow. The decision vector is
+            // sliced per window node at offsets derived from the window length,
+            // so one comparison against the posed problem's decision dimension
+            // covers the extraction and the warm-start shift alike. A longer
+            // result is accepted: it is readable, and this is exactly the
+            // condition that makes the reads legal.
+            if(result.x.size() < static_cast<Eigen::Index>(m_problem.n_vars))
+            {
+                fallback_to_ekf(solve_status::invalid_backend_result);
+                return;
+            }
+
             extract_nmhe_solution(result);
             return;
         }
@@ -234,13 +248,20 @@ private:
         }
     }
 
-    void fallback_to_ekf()
+    /// @brief Abandon the window solve and report the embedded filter's estimate
+    /// instead. This is the estimator's whole failure channel: `update` returns
+    /// nothing, so a caller learns what happened from `used_ekf_fallback` plus
+    /// the reported status, and `reason` is what names the condition there.
+    void fallback_to_ekf(solve_status reason = solve_status::error)
     {
         m_x_window[N] = m_ekf.state();
         m_innovation = m_ekf.innovation();
-        m_diagnostics = mhe_diagnostics<Scalar>{.status = solve_status::error, .used_ekf_fallback = true};
+        m_diagnostics = mhe_diagnostics<Scalar>{.status = reason, .used_ekf_fallback = true};
     }
 
+    // The slices below need no length check of their own: this runs only from
+    // the extraction, which the solve attempt reaches only after confirming the
+    // result covers the posed problem.
     void shift_warm_start(const Eigen::VectorX<Scalar>& sol)
     {
         for(int k = 0; k < Ni; ++k)

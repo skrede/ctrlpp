@@ -140,6 +140,7 @@ public:
     //     - infeasible                     -> infeasible
     //     - unbounded / non_convex / error -> invalid_problem
     //     - one-time solver setup failed   -> setup_incomplete
+    //     - result too short for the problem -> invalid_backend_result
     //     On the error branch the controller does NOT update its internal u_prev
     //     and applies no hidden fallback input, so a failed solve never warms the
     //     rate constraints from a phantom input. Use set_applied_input to record
@@ -190,6 +191,10 @@ public:
         if(!has_solution_)
             return unexpected(solver_error::setup_incomplete);
 
+        // The slices below need no length check of their own: has_solution_ is
+        // set only by extract_solution, which stores the primal only after
+        // checking that it covers the decision dimension these offsets are
+        // derived from. A stored primal is therefore long enough by construction.
         int N = config_.horizon;
         std::vector<Vector<Scalar, NX>> states;
         std::vector<Vector<Scalar, NU>> inputs;
@@ -405,8 +410,33 @@ private:
                                                     .max_constraint_violation = Scalar{0}};
     }
 
-    auto extract_solution(qp_result<Scalar>& result, solve_result_status status) -> solve_output<Scalar, NU>
+    /// @brief Consume an accepted backend result: validate its reported shape,
+    /// then extract the applied input.
+    ///
+    /// A status is not a shape. The accept-set above is decided purely from what
+    /// the backend reports, and a backend that reports an accepted status can
+    /// still return a primal shorter than the decision dimension or a dual
+    /// shorter than the constraint count. The slice taken below sits at an offset
+    /// derived from the horizon, so a short primal makes it read past the end of
+    /// the backend's own storage, and a short dual is handed straight back as the
+    /// next warm start. Both reported lengths are therefore compared against the
+    /// dimensions computed at construction BEFORE either vector is moved from or
+    /// indexed, and a violation leaves every member untouched.
+    ///
+    /// A longer-than-required result is not rejected: it is readable, and how
+    /// much storage a backend returns beyond the posed problem is its own affair.
+    /// The condition checked here is exactly the one that makes the reads legal.
+    [[nodiscard]] auto extract_solution(qp_result<Scalar>& result, solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
     {
+        if(result.x.size() < static_cast<Eigen::Index>(n_dec_) || result.y.size() < static_cast<Eigen::Index>(n_con_))
+        {
+            // Correct the diagnostics the backend's own status just populated, so
+            // a reader there is not told the solve was optimal when its answer
+            // was discarded.
+            last_diagnostics_.status = solve_status::invalid_backend_result;
+            return unexpected(solver_error::invalid_backend_result);
+        }
+
         last_primal_ = std::move(result.x);
         last_dual_ = std::move(result.y);
         has_solution_ = true;

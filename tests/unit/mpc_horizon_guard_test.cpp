@@ -1,14 +1,26 @@
-// Construction-time horizon domain for the two runtime-horizon controllers.
+// Two guards on the same data path: the horizon that sizes the posed problem,
+// and the shape of the result the backend hands back.
 //
-// The prediction horizon is the one runtime quantity that scales every derived
-// dimension of the posed problem, and it is caller-supplied. These cases pin the
-// boundary of its accepted domain from both sides and assert the specific typed
-// error on each rejection, never merely that construction "did not crash".
+// Construction-time horizon domain. The prediction horizon is the one runtime
+// quantity that scales every derived dimension of the posed problem, and it is
+// caller-supplied. These cases pin the boundary of its accepted domain from both
+// sides and assert the specific typed error on each rejection, never merely that
+// construction "did not crash".
+//
+// Result-shape domain. A valid horizon is not enough: the solve extracts fixed
+// width slices out of whatever vector the backend returns, at offsets derived
+// from the horizon, and today it does so on the strength of the reported status
+// alone. A backend that reports an optimal status and returns a primal shorter
+// than the decision dimension therefore reads past the end of that vector. The
+// cases below drive exactly that, one per extraction site, and assert the
+// specific observable each consumer reports.
 //
 // The stub solvers keep this translation unit backend-free, so it builds and
 // runs in the default (-fno-exceptions) tree where the real backends are absent.
 
+#include "ctrlpp/mhe.h"
 #include "ctrlpp/mpc.h"
+#include "ctrlpp/nmhe.h"
 #include "ctrlpp/nmpc.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/mpc/nlp_formulation.h"
@@ -68,6 +80,51 @@ auto nonlinear_config(int horizon) -> ctrlpp::nmpc_config<double, NX, NU>
 // from the per-step dimension contribution; neither is a chosen ceiling.
 constexpr int linear_horizon_bound = (std::numeric_limits<int>::max() - static_cast<int>(NX)) / (2 * static_cast<int>(NX) + 2 * static_cast<int>(NU));
 constexpr int nonlinear_horizon_bound = (std::numeric_limits<int>::max() - static_cast<int>(NX)) / (static_cast<int>(NX) + 2 * static_cast<int>(NU));
+
+// The horizon the result-shape cases pose the problem at. It is a perfectly
+// valid horizon: these cases are about the backend's answer, not the problem.
+constexpr int shape_horizon = 5;
+
+// Compile-time-horizon controller under a short-returning backend. The static
+// path leaves its primal in a pre-sized buffer when the solver offers a
+// write-into entry point and copies a by-value primal of unknown length when it
+// does not; the stub offers only the latter, which is the copying shape.
+template <ctrlpp_test::report_lengths Reported>
+using compile_time_controller = ctrlpp::nmpc_static<double, NX, NU, 5, ctrlpp_test::stub_nlp_solver<double, Reported>, decltype(double_integrator)>;
+
+// Estimator fixtures. Both estimators default-construct their solver member, so
+// the reported result length is chosen as a template argument on the stub type.
+constexpr std::size_t NY = 1;
+constexpr std::size_t window = 3;
+
+struct window_dynamics
+{
+    auto operator()(const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>& u) const -> Eigen::Vector2d { return Eigen::Vector2d{x(0) + dt * x(1), x(1) + dt * u(0)}; }
+};
+
+struct window_measurement
+{
+    auto operator()(const Eigen::Vector2d& x) const -> Eigen::Matrix<double, 1, 1> { return x.head<1>(); }
+};
+
+template <ctrlpp_test::report_lengths Reported>
+using linear_estimator = ctrlpp::mhe<double, NX, NU, NY, window, ctrlpp_test::stub_qp_solver<double, Reported>, window_dynamics, window_measurement>;
+
+template <ctrlpp_test::report_lengths Reported>
+using nonlinear_estimator = ctrlpp::nmhe<double, NX, NU, NY, window, ctrlpp_test::stub_nlp_solver<double, Reported>, window_dynamics, window_measurement>;
+
+// Fill the window and then take one more step, so the estimator leaves its
+// warm-up branch (which reports the embedded filter's estimate directly) and
+// actually runs a solve whose result is extracted.
+template <typename Estimator>
+void drive_past_warmup(Estimator& estimator)
+{
+    for(std::size_t k = 0; k <= window; ++k)
+    {
+        estimator.predict(Eigen::Matrix<double, 1, 1>::Zero());
+        estimator.update(Eigen::Matrix<double, 1, 1>::Zero());
+    }
+}
 
 }
 
@@ -208,4 +265,211 @@ TEST_CASE("Compile-time-horizon controller reports setup_incomplete on a disagre
     auto solved = controller.solve(Eigen::Vector2d{1.0, 0.0});
     REQUIRE(!solved.has_value());
     REQUIRE(solved.error() == ctrlpp::solver_error::setup_incomplete);
+}
+
+// ---------------------------------------------------------------------------
+// Result shape. The horizon is valid throughout this group; what varies is the
+// length of the vector the backend returns while reporting an optimal status.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Linear MPC rejects a backend primal too short for the decision vector", "[mpc][result-shape][hardening]")
+{
+    SECTION("a primal one entry short of the decision dimension")
+    {
+        auto controller = linear_controller::try_create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{ctrlpp_test::report_lengths::short_primal});
+        REQUIRE(controller.has_value());
+
+        auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
+        REQUIRE(!solved.has_value());
+        REQUIRE(solved.error() == ctrlpp::solver_error::invalid_backend_result);
+    }
+
+    SECTION("a primal that is empty despite the reported optimal status")
+    {
+        // The degenerate end of the same defect, and the shape that first
+        // exposed it: a controller with a valid multi-step horizon, handed a
+        // primal far too short to hold the input block the extraction slices
+        // out of it.
+        auto controller = linear_controller::try_create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{ctrlpp_test::report_lengths::empty});
+        REQUIRE(controller.has_value());
+
+        auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
+        REQUIRE(!solved.has_value());
+        REQUIRE(solved.error() == ctrlpp::solver_error::invalid_backend_result);
+    }
+}
+
+TEST_CASE("Linear MPC rejects a backend dual too short for the constraint rows", "[mpc][result-shape][hardening]")
+{
+    // The dual is not read by the extraction, it is stored and handed back to
+    // the backend as the next warm start, so an undersized one is a deferred
+    // overrun rather than an immediate one. It is rejected on the same branch.
+    auto controller = linear_controller::try_create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{ctrlpp_test::report_lengths::short_dual});
+    REQUIRE(controller.has_value());
+
+    auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
+    REQUIRE(!solved.has_value());
+    REQUIRE(solved.error() == ctrlpp::solver_error::invalid_backend_result);
+}
+
+TEST_CASE("Linear MPC accepts a conforming backend result unchanged", "[mpc][result-shape][hardening]")
+{
+    auto controller = linear_controller::try_create(make_system(), linear_config(shape_horizon), ctrlpp_test::stub_qp_solver<double>{});
+    REQUIRE(controller.has_value());
+
+    auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
+    REQUIRE(solved.has_value());
+    REQUIRE(solved->status == ctrlpp::solve_result_status::converged);
+
+    auto traj = controller->trajectory();
+    REQUIRE(traj.has_value());
+    REQUIRE(traj->first.size() == static_cast<std::size_t>(shape_horizon) + 1);
+    REQUIRE(traj->second.size() == static_cast<std::size_t>(shape_horizon));
+}
+
+TEST_CASE("Runtime-horizon nonlinear MPC rejects a backend primal too short for the problem", "[nmpc][result-shape][hardening]")
+{
+    SECTION("a primal one entry short of the problem dimension")
+    {
+        auto controller = nonlinear_controller::try_create(double_integrator, nonlinear_config(shape_horizon), ctrlpp_test::stub_nlp_solver<double>{ctrlpp_test::report_lengths::short_primal});
+        REQUIRE(controller.has_value());
+
+        auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
+        REQUIRE(!solved.has_value());
+        REQUIRE(solved.error() == ctrlpp::solver_error::invalid_backend_result);
+    }
+
+    SECTION("a primal that is empty despite the reported optimal status")
+    {
+        auto controller = nonlinear_controller::try_create(double_integrator, nonlinear_config(shape_horizon), ctrlpp_test::stub_nlp_solver<double>{ctrlpp_test::report_lengths::empty});
+        REQUIRE(controller.has_value());
+
+        auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
+        REQUIRE(!solved.has_value());
+        REQUIRE(solved.error() == ctrlpp::solver_error::invalid_backend_result);
+    }
+}
+
+TEST_CASE("Runtime-horizon nonlinear MPC accepts a conforming backend result unchanged", "[nmpc][result-shape][hardening]")
+{
+    auto controller = nonlinear_controller::try_create(double_integrator, nonlinear_config(shape_horizon), ctrlpp_test::stub_nlp_solver<double>{});
+    REQUIRE(controller.has_value());
+
+    auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
+    REQUIRE(solved.has_value());
+    REQUIRE(solved->status == ctrlpp::solve_result_status::converged);
+
+    auto traj = controller->trajectory();
+    REQUIRE(traj.has_value());
+    REQUIRE(traj->first.size() == static_cast<std::size_t>(shape_horizon) + 1);
+    REQUIRE(traj->second.size() == static_cast<std::size_t>(shape_horizon));
+}
+
+TEST_CASE("Compile-time-horizon nonlinear MPC rejects a backend primal too short for the problem", "[nmpc][result-shape][hardening]")
+{
+    SECTION("a primal one entry short of the compile-time dimension")
+    {
+        compile_time_controller<ctrlpp_test::report_lengths::short_primal> controller{double_integrator, nonlinear_config(shape_horizon)};
+
+        auto solved = controller.solve(Eigen::Vector2d{1.0, 0.0});
+        REQUIRE(!solved.has_value());
+        REQUIRE(solved.error() == ctrlpp::solver_error::invalid_backend_result);
+    }
+
+    SECTION("a primal that is empty despite the reported optimal status")
+    {
+        compile_time_controller<ctrlpp_test::report_lengths::empty> controller{double_integrator, nonlinear_config(shape_horizon)};
+
+        auto solved = controller.solve(Eigen::Vector2d{1.0, 0.0});
+        REQUIRE(!solved.has_value());
+        REQUIRE(solved.error() == ctrlpp::solver_error::invalid_backend_result);
+    }
+}
+
+TEST_CASE("Compile-time-horizon nonlinear MPC accepts a conforming backend result unchanged", "[nmpc][result-shape][hardening]")
+{
+    compile_time_controller<ctrlpp_test::report_lengths::conforming> controller{double_integrator, nonlinear_config(shape_horizon)};
+
+    auto solved = controller.solve(Eigen::Vector2d{1.0, 0.0});
+    REQUIRE(solved.has_value());
+    REQUIRE(solved->status == ctrlpp::solve_result_status::converged);
+    REQUIRE(controller.last_solution().size() == decltype(controller)::problem_dimension);
+}
+
+TEST_CASE("Linear moving-horizon estimator falls back when the backend primal is too short", "[mhe][result-shape][hardening]")
+{
+    // The estimator's update returns nothing, so its failure channel is the
+    // embedded-filter fallback plus the reported diagnostic status. Both are
+    // asserted here; neither case asserts merely that the update returned.
+    SECTION("a primal one entry short of the decision dimension")
+    {
+        linear_estimator<ctrlpp_test::report_lengths::short_primal> estimator{window_dynamics{}, window_measurement{}, ctrlpp::mhe_config<double, NX, NU, NY, window>{}};
+        drive_past_warmup(estimator);
+
+        REQUIRE(estimator.diagnostics().used_ekf_fallback);
+        REQUIRE(estimator.diagnostics().status == ctrlpp::solve_status::invalid_backend_result);
+    }
+
+    SECTION("a primal that is empty despite the reported optimal status")
+    {
+        linear_estimator<ctrlpp_test::report_lengths::empty> estimator{window_dynamics{}, window_measurement{}, ctrlpp::mhe_config<double, NX, NU, NY, window>{}};
+        drive_past_warmup(estimator);
+
+        REQUIRE(estimator.diagnostics().used_ekf_fallback);
+        REQUIRE(estimator.diagnostics().status == ctrlpp::solve_status::invalid_backend_result);
+    }
+}
+
+TEST_CASE("Linear moving-horizon estimator falls back when the backend dual is too short", "[mhe][result-shape][hardening]")
+{
+    // State bounds are what give this problem constraint rows at all; without
+    // them the constraint count is zero and no dual can be short of it.
+    ctrlpp::mhe_config<double, NX, NU, NY, window> config;
+    config.x_min = Eigen::Vector2d{-10.0, -10.0};
+    config.x_max = Eigen::Vector2d{10.0, 10.0};
+
+    linear_estimator<ctrlpp_test::report_lengths::short_dual> estimator{window_dynamics{}, window_measurement{}, config};
+    drive_past_warmup(estimator);
+
+    REQUIRE(estimator.diagnostics().used_ekf_fallback);
+    REQUIRE(estimator.diagnostics().status == ctrlpp::solve_status::invalid_backend_result);
+}
+
+TEST_CASE("Linear moving-horizon estimator accepts a conforming backend result unchanged", "[mhe][result-shape][hardening]")
+{
+    linear_estimator<ctrlpp_test::report_lengths::conforming> estimator{window_dynamics{}, window_measurement{}, ctrlpp::mhe_config<double, NX, NU, NY, window>{}};
+    drive_past_warmup(estimator);
+
+    REQUIRE(!estimator.diagnostics().used_ekf_fallback);
+    REQUIRE(estimator.diagnostics().status == ctrlpp::solve_status::optimal);
+}
+
+TEST_CASE("Nonlinear moving-horizon estimator falls back when the backend primal is too short", "[nmhe][result-shape][hardening]")
+{
+    SECTION("a primal one entry short of the decision dimension")
+    {
+        nonlinear_estimator<ctrlpp_test::report_lengths::short_primal> estimator{window_dynamics{}, window_measurement{}, ctrlpp::nmhe_config<double, NX, NU, NY, window>{}};
+        drive_past_warmup(estimator);
+
+        REQUIRE(estimator.diagnostics().used_ekf_fallback);
+        REQUIRE(estimator.diagnostics().status == ctrlpp::solve_status::invalid_backend_result);
+    }
+
+    SECTION("a primal that is empty despite the reported optimal status")
+    {
+        nonlinear_estimator<ctrlpp_test::report_lengths::empty> estimator{window_dynamics{}, window_measurement{}, ctrlpp::nmhe_config<double, NX, NU, NY, window>{}};
+        drive_past_warmup(estimator);
+
+        REQUIRE(estimator.diagnostics().used_ekf_fallback);
+        REQUIRE(estimator.diagnostics().status == ctrlpp::solve_status::invalid_backend_result);
+    }
+}
+
+TEST_CASE("Nonlinear moving-horizon estimator accepts a conforming backend result unchanged", "[nmhe][result-shape][hardening]")
+{
+    nonlinear_estimator<ctrlpp_test::report_lengths::conforming> estimator{window_dynamics{}, window_measurement{}, ctrlpp::nmhe_config<double, NX, NU, NY, window>{}};
+    drive_past_warmup(estimator);
+
+    REQUIRE(!estimator.diagnostics().used_ekf_fallback);
+    REQUIRE(estimator.diagnostics().status == ctrlpp::solve_status::optimal);
 }

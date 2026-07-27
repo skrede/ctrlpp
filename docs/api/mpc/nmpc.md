@@ -136,8 +136,19 @@ The matching throwing constructors remain available when the compiler has except
   control input and whose `status` field is a soft `solve_result_status`
   (`converged`, `solved_inaccurate`, or `budget_exhausted`). A budget-limited
   solve still returns its best iterate tagged `budget_exhausted`.
-- The **error branch** holds a `solver_error` (`infeasible`, `invalid_problem`, or
-  `setup_incomplete`) and no input.
+- The **error branch** holds a `solver_error` (`infeasible`, `invalid_problem`,
+  `setup_incomplete`, or `invalid_backend_result`) and no input.
+
+`invalid_backend_result` covers the case where the solver reports a status the
+controller accepts and then returns a decision vector shorter than the problem
+dimension. Both nonlinear controllers check the reported length before consuming
+the result, so the warm-start shift and the first-input slice, whose offsets are
+derived from the horizon, cannot read past the end of the solver's own storage.
+The runtime-horizon controller compares against the dimension it derived at
+construction from its horizon and its state, input, path-slack and terminal-slack
+contributions; the compile-time-horizon controller compares against `NV`, and does
+so after the dispatch, so the check covers both the write-into and the copying
+solver shapes. A longer-than-required result is accepted.
 
 The input is reached explicitly through `->input`; there is no implicit conversion
 to `Vector<Scalar, NU>`. On the error branch the internal previous-input record is

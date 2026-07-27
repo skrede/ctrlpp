@@ -10,6 +10,19 @@
 namespace ctrlpp
 {
 
+/// @brief Outcome of a single solve, as reported to the caller.
+///
+/// Every value except the last is a backend's own termination status, mapped
+/// into this shared vocabulary by the backend bridge.
+///
+///  * invalid_backend_result : the backend reported a termination status of its
+///                             own but returned a result whose dimensions do not
+///                             match the posed problem. No backend ever reports
+///                             this; it is set by the consumer that detected the
+///                             mismatch, so a reader of the diagnostics is not
+///                             told the solve went well when its answer was
+///                             discarded. It is the diagnostics-channel twin of
+///                             solver_error::invalid_backend_result.
 enum class solve_status : std::uint8_t
 {
     optimal,
@@ -19,7 +32,8 @@ enum class solve_status : std::uint8_t
     max_iterations,
     time_limit,
     non_convex,
-    error
+    error,
+    invalid_backend_result
 };
 
 /// @brief Backend-agnostic QP tuning preset, selecting the accuracy/speed
@@ -69,16 +83,28 @@ enum class solve_result_status : std::uint8_t
 /// caller cannot extract an input without first confronting the error, which is
 /// exactly the property the `ctrlpp::expected` return channel provides.
 ///
-///  * infeasible        : the problem as posed has no feasible point.
-///  * invalid_problem   : the problem is unbounded, non-convex, or the solver
-///                        reported an internal error; the data is not solvable.
-///  * setup_incomplete  : the controller's one-time solver setup failed, so no
-///                        solve can run at all.
+///  * infeasible             : the problem as posed has no feasible point.
+///  * invalid_problem        : the problem is unbounded, non-convex, or the
+///                             solver reported an internal error; the data is
+///                             not solvable.
+///  * setup_incomplete       : the controller's one-time solver setup failed, so
+///                             no solve can run at all.
+///  * invalid_backend_result : the solver reported a status the controller
+///                             accepts and then returned a primal or dual whose
+///                             length does not cover the dimensions of the posed
+///                             problem, so the fixed-width slices the extraction
+///                             takes out of it would read past its end. This is
+///                             deliberately NOT folded into invalid_problem:
+///                             there the caller must fix the problem it posed,
+///                             here the problem is well formed and the backend's
+///                             answer is not, so the two demand different
+///                             remedies and must stay distinguishable.
 enum class solver_error : std::uint8_t
 {
     infeasible,
     invalid_problem,
-    setup_incomplete
+    setup_incomplete,
+    invalid_backend_result
 };
 
 /// @brief Structured failure modes for the controller construction factories.

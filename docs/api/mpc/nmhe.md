@@ -84,6 +84,8 @@ void update(const output_vector_t& z);
 
 Incorporates a new measurement. During fill-up, delegates to the internal EKF. Once the window is full, solves the NMHE NLP. A solver setup failure at construction (reported through the solver's `try_setup`) or a non-optimal solve falls back to the internal EKF; `diagnostics()` reports the fallback.
 
+An ill-shaped solver result falls back the same way. A solver may report an accepted status and still return a decision vector shorter than the NLP the estimator posed; the estimator compares the reported length against that dimension before the extraction reads the result, and on a violation engages the EKF fallback instead of writing the window. `update` returns nothing, so this is reported the only way it can be: `diagnostics().used_ekf_fallback` is `true` and `diagnostics().status` is `solve_status::invalid_backend_result`, which names this condition specifically rather than collapsing it into the general `solve_status::error` a non-optimal solve reports.
+
 ### state
 
 ```cpp
@@ -114,7 +116,7 @@ Returns the smoothed state trajectory over the estimation window (N+1 elements).
 const mhe_diagnostics<Scalar>& diagnostics() const;
 ```
 
-Returns solver diagnostics including constraint violation metrics and EKF fallback status.
+Returns solver diagnostics including constraint violation metrics and EKF fallback status. Together with `used_ekf_fallback`, the `status` field is this estimator's whole failure channel, since `update` has no return value: `solve_status::error` for a setup failure or a non-optimal solve, and `solve_status::invalid_backend_result` for a solver result whose dimensions did not cover the posed problem.
 
 ### is_initialized
 

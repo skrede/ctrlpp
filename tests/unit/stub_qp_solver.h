@@ -17,23 +17,36 @@
 //   3. solve() reports solve_status::optimal and returns a zero primal of
 //      `primal_length()` entries and a zero dual of `dual_length()` entries.
 //
-// The reported result lengths are a documented knob, defaulting to conforming:
+// The reported result lengths are a documented knob, defaulting to conforming.
+// The primal and the dual are settable independently:
 //   * report_lengths::conforming  - primal is exactly the decision dimension of
 //                                   the problem passed to setup(), dual is
 //                                   exactly its constraint-row count. This is
 //                                   the default and models a well-behaved
 //                                   backend.
 //   * report_lengths::short_primal - primal is one entry shorter than the
-//                                   decision dimension; dual conforms.
+//                                   decision dimension; dual conforms. This is
+//                                   the boundary case: the smallest primal
+//                                   deficit that still overruns the extraction.
 //   * report_lengths::short_dual  - dual is one entry shorter than the
 //                                   constraint-row count; primal conforms.
 //   * report_lengths::empty       - both are empty, the degenerate case of a
 //                                   backend that reported success and returned
 //                                   nothing.
-// The short and empty variants exist so result-shape validation can be tested
-// against a backend that satisfies the concept, reports optimality, and still
-// returns storage the extraction cannot legally read. Lengths are clamped at
-// zero, so the short variants degrade to empty on a zero-sized problem.
+// Every variant still reports solve_status::optimal. That combination is the
+// whole point: the reported status is what a consumer trusts today, so a stub
+// that both claims success and returns storage the extraction cannot legally
+// read is what result-shape validation has to be tested against. Lengths are
+// clamped at zero, so the short variants degrade to empty on a zero-sized
+// problem.
+//
+// The knob is settable two ways, because not every consumer has an injection
+// seam. Controllers take a caller-supplied solver, so a runtime-constructed
+// stub reaches them. The two moving-horizon estimators default-construct their
+// solver member instead, so naming the variant as a template argument
+// (`stub_qp_solver<double, report_lengths::short_primal>` as the estimator's
+// Solver type) is the only way to reach them. The template argument is just the
+// default of the runtime field, so the two agree by construction.
 
 #include "ctrlpp/mpc/qp_types.h"
 
@@ -52,12 +65,12 @@ enum class report_lengths
     empty
 };
 
-template <typename Scalar>
+template <typename Scalar, report_lengths Reported = report_lengths::conforming>
 struct stub_qp_solver
 {
     using scalar_type = Scalar;
 
-    report_lengths lengths{report_lengths::conforming};
+    report_lengths lengths{Reported};
     int n_dec{0};
     int n_con{0};
     int solve_count{0};

@@ -112,6 +112,16 @@ Both `mpc` and `nmpc` share one soft-constraint and failure contract. Every
   - `invalid_problem`: the problem is unbounded, non-convex, the solver reported an
     internal error, or a reference span was too short.
   - `setup_incomplete`: the one-time solver setup failed, so no solve can run.
+  - `invalid_backend_result`: the solver reported a status the controller accepts
+    and then returned a primal shorter than the decision dimension, or a dual
+    shorter than the constraint count, of the problem posed at construction. The
+    controller checks both reported lengths before it consumes either vector, so
+    the fixed-width slices it takes out of the primal cannot read past the end of
+    the solver's own storage, and an undersized dual is never handed back as the
+    next warm start. This is deliberately distinct from `invalid_problem`: there
+    the problem must be fixed, here the problem is well formed and the backend's
+    answer is not. A longer-than-required result is accepted; only the condition
+    that makes the reads legal is enforced.
 
 The input is reached explicitly through `->input`; there is no implicit conversion
 to `Vector<Scalar, NU>`, so the soft status can never be silently dropped. On the

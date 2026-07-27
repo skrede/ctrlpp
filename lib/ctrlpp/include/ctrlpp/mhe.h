@@ -186,11 +186,45 @@ private:
 
         if(result.status == solve_status::optimal || result.status == solve_status::solved_inaccurate)
         {
+            // A status is not a shape: the accept-set above is decided purely
+            // from what the backend reports, so an accepted result may still be
+            // too short for the window writes that follow. Checked here, before
+            // the extraction, and reported through the same channel a setup
+            // failure uses.
+            if(!result_covers_problem(result))
+            {
+                fallback_to_ekf(solve_status::invalid_backend_result);
+                return;
+            }
+
             extract_mhe_solution(result, z);
             return;
         }
 
         fallback_to_ekf();
+    }
+
+    /// @brief Dimensions of the QP this estimator poses, derived from the window
+    /// length and whichever optional bound blocks the configuration carries.
+    [[nodiscard]] auto qp_dimensions() const -> detail::mhe_qp_dims
+    {
+        bool has_box = m_x_min.has_value() || m_x_max.has_value();
+        return detail::compute_mhe_dims<NX, NY>(N, has_box, m_soft_constraints && has_box, m_residual_bound.has_value());
+    }
+
+    /// @brief Whether a backend result is long enough for everything the
+    /// extraction reads out of it.
+    ///
+    /// The primal is sliced per window node at offsets derived from the window
+    /// length, and the dual is stored and handed straight back to the backend as
+    /// the next warm start, so both are compared against the dimensions this
+    /// estimator derived for the problem it posed. A longer result is accepted:
+    /// it is readable, and the condition checked here is exactly the one that
+    /// makes the reads legal.
+    [[nodiscard]] auto result_covers_problem(const qp_result<Scalar>& result) const -> bool
+    {
+        auto dims = qp_dimensions();
+        return result.x.size() >= static_cast<Eigen::Index>(dims.n_dec) && result.y.size() >= static_cast<Eigen::Index>(dims.n_con);
     }
 
     auto build_qp_structure(const Matrix<Scalar, NX, NX>& A_lin, const Matrix<Scalar, NY, NX>& H_lin) -> qp_problem<Scalar>
@@ -258,13 +292,20 @@ private:
         }
     }
 
-    void fallback_to_ekf()
+    /// @brief Abandon the window solve and report the embedded filter's estimate
+    /// instead. This is the estimator's whole failure channel: `update` returns
+    /// nothing, so a caller learns what happened from `used_ekf_fallback` plus
+    /// the reported status, and `reason` is what names the condition there.
+    void fallback_to_ekf(solve_status reason = solve_status::error)
     {
         m_x_window[N] = m_ekf.state();
         m_innovation = m_ekf.innovation();
-        m_diagnostics = mhe_diagnostics<Scalar>{.status = solve_status::error, .used_ekf_fallback = true};
+        m_diagnostics = mhe_diagnostics<Scalar>{.status = reason, .used_ekf_fallback = true};
     }
 
+    // The slices below need no length check of their own: this runs only from
+    // the extraction, which the solve attempt reaches only after confirming the
+    // result covers the posed problem.
     void shift_warm_start(const Eigen::VectorX<Scalar>& sol_x, const Eigen::VectorX<Scalar>& sol_y)
     {
         for(int k = 0; k < Ni; ++k)

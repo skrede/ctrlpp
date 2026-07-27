@@ -202,10 +202,10 @@ public:
     //     solved_inaccurate->solved_inaccurate,
     //     max_iterations/time_limit->budget_exhausted). No implicit conversion to
     //     Vector, so the status is never silently dropped.
-    //   * ERROR branch: a hard failure (infeasible/invalid_problem/setup_incomplete)
-    //     with NO input. On error the internal m_u_prev is NOT updated and no
-    //     hidden fallback input is applied. Use set_applied_input to record the
-    //     input the caller actually commanded.
+    //   * ERROR branch: a hard failure (infeasible/invalid_problem/setup_incomplete/
+    //     invalid_backend_result) with NO input. On error the internal m_u_prev is
+    //     NOT updated and no hidden fallback input is applied. Use
+    //     set_applied_input to record the input the caller actually commanded.
     expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scalar, NX>& x0)
     {
         for(auto& ref : m_state->x_ref)
@@ -247,6 +247,9 @@ public:
         if(!m_has_solution)
             return unexpected(solver_error::setup_incomplete);
 
+        // The slices below need no length check of their own: m_has_solution is
+        // set only by finish_solve, which stores the primal only after checking
+        // that it covers the problem dimension these offsets are derived from.
         std::vector<Vector<Scalar, NX>> states;
         std::vector<Vector<Scalar, NU>> inputs;
         states.reserve(static_cast<std::size_t>(m_N + 1));
@@ -301,8 +304,28 @@ private:
         }
     }
 
-    solve_output<Scalar, NU> finish_solve(const Eigen::VectorX<Scalar>& z, solve_result_status status)
+    /// @brief Consume an accepted backend result: validate its reported shape,
+    /// then store it, diagnose it, shift the warm start and extract the input.
+    ///
+    /// The accept-set above is decided purely from the status the backend
+    /// reports, and a status is not a shape. Every read below -- the constraint
+    /// diagnostics' raw pointer maps, the warm-start shift, and the first-input
+    /// slice -- sits at an offset derived from the horizon, so all of them are
+    /// covered by this one comparison against the problem dimension the
+    /// controller derived at construction from its horizon and its state, input,
+    /// path-slack and terminal-slack contributions. Nothing is stored and no
+    /// member is touched when it fails.
+    [[nodiscard]] auto finish_solve(const Eigen::VectorX<Scalar>& z, solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
     {
+        if(z.size() < static_cast<Eigen::Index>(m_num_vars))
+        {
+            // Correct the diagnostics the backend's own status just populated, so
+            // a reader there is not told the solve was optimal when its answer
+            // was discarded.
+            m_last_diagnostics.status = solve_status::invalid_backend_result;
+            return unexpected(solver_error::invalid_backend_result);
+        }
+
         m_last_solution = z;
         m_has_solution = true;
         populate_constraint_diagnostics(z);
@@ -670,8 +693,28 @@ private:
         }
     }
 
-    solve_output<Scalar, NU> finish_solve(solve_result_status status)
+    /// @brief Consume an accepted backend result: validate the shape of the
+    /// primal the dispatch left behind, then shift the warm start and extract the
+    /// input.
+    ///
+    /// One comparison covers both dispatch shapes. The write-into branch fills a
+    /// buffer this class pre-sized to the compile-time dimension, so there the
+    /// check is near-always trivially true; the fallback branch assigns a
+    /// by-value primal of whatever length the backend chose, which resizes the
+    /// buffer and is exactly the case that must not reach the slices below.
+    /// Checking m_last_solution after the dispatch, rather than the result of
+    /// either branch, is what makes the single check sufficient.
+    [[nodiscard]] auto finish_solve(solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
     {
+        if(m_last_solution.size() < static_cast<Eigen::Index>(problem_dimension))
+        {
+            // Correct the diagnostics the backend's own status just populated, so
+            // a reader there is not told the solve was optimal when its answer
+            // was discarded.
+            m_last_diagnostics.status = solve_status::invalid_backend_result;
+            return unexpected(solver_error::invalid_backend_result);
+        }
+
         m_has_solution = true;
         shift_warm_start(m_last_solution);
         return solve_output<Scalar, NU>{.input = extract_first_input(m_last_solution), .status = status};

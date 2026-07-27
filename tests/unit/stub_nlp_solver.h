@@ -19,7 +19,13 @@
 // The reported result length reuses ctrlpp_test::report_lengths from
 // stub_qp_solver.h and defaults to conforming. `short_dual` has no distinct
 // meaning here (an NLP result carries no dual block), so it behaves as
-// conforming.
+// conforming. Every variant still reports solve_status::optimal, so a consumer
+// that trusts the reported status alone is handed a decision vector it cannot
+// legally read.
+//
+// As on the QP stub, the knob is settable as a template argument as well as a
+// runtime field, because the nonlinear moving-horizon estimator
+// default-constructs its solver member and offers no injection seam.
 
 #include "ctrlpp/mpc/nlp_solver.h"
 
@@ -32,12 +38,12 @@
 namespace ctrlpp_test
 {
 
-template <typename Scalar>
+template <typename Scalar, report_lengths Reported = report_lengths::conforming>
 struct stub_nlp_solver
 {
     using scalar_type = Scalar;
 
-    report_lengths lengths{report_lengths::conforming};
+    report_lengths lengths{Reported};
     int n_vars{0};
     int solve_count{0};
 
