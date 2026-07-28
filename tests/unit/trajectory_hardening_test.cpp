@@ -10,7 +10,6 @@
 #include "ctrlpp/trajectory/trapezoidal_trajectory.h"
 
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <span>
 #include <array>
@@ -20,9 +19,7 @@
 #include <utility>
 #include <algorithm>
 
-using Catch::Matchers::WithinAbs;
-
-// ── Oracle for time-rescaled velocity profiles ────────────────────────────────
+// ── What this file's oracles decide ───────────────────────────────────────────
 //
 // A rescaled profile is judged by integrating the velocity it reports against the
 // displacement it was commanded, never by sampling its position near an endpoint.
@@ -34,6 +31,44 @@ using Catch::Matchers::WithinAbs;
 // whole duration is rejected: its panels straddle the phase kinks, where the
 // integrand's slope jumps, and the truncation error manufactured there is orders
 // of magnitude above the rounding floor these budgets describe.
+//
+// The out-of-domain cases assert a typed rejection naming the enumerator the
+// domain reasoning predicts, and the six planner limit cases sweep the whole
+// out-of-domain set -- zero, negative, NaN and infinite -- rather than one
+// representative of it. Where a rejection must also leave the object alone, the
+// case says so: no value, the specific enumerator, the duration unchanged, the
+// phase durations unchanged.
+//
+// The cases that exist to reach a particular branch assert what that branch
+// produces, not that a number came back. Three kinds of statement carry them,
+// and which one applies is a fact about the evaluation path rather than a choice:
+//
+//  * Exact equality where the evaluation ASSIGNS or STORES the quantity. Past the
+//    end of a planned profile the planners return the stored target with zero
+//    velocity and zero acceleration; at a knot a spline's Horner form reduces to
+//    its stored constant term; in cruise the acceleration is assigned zero and
+//    the velocity the limit itself; a zero-displacement profile has duration zero
+//    and starts where it was told. No epsilon takes part in any of those.
+//  * A counted rounding budget where the evaluation COMPUTES the quantity, with
+//    the operation chain enumerated in prose beside the constant and the scale
+//    named. Never a round number, and never a magnitude fitted to what the code
+//    happens to return today.
+//  * The kinematic envelope inside every sampling loop -- velocity within the
+//    velocity limit, acceleration within the acceleration limit, and for the
+//    third-order planner the reported acceleration slewing no faster than the
+//    jerk limit. That envelope is what a limit-respecting planner guarantees, and
+//    a loop that samples hundreds of points and checks only that they are numbers
+//    passes a planner that exceeds its acceleration limit throughout.
+//
+// Two quantities are deliberately NOT pinned, and the reason is the domain rather
+// than convenience. A smoothing spline's departure from the straight line it tends
+// to as its smoothing weight grows is first order in the tradeoff parameter with a
+// coefficient that depends on the data through the second-difference operator's
+// pseudo-inverse; the cases bound that departure against the interpolating
+// spline's own departure scaled by the parameter, which is the first-order law
+// itself and needs no coefficient. A rescaled profile's realized duration is the
+// sum of its realized phase durations and is never assigned the request, so exact
+// equality is not its contract either.
 namespace
 {
 
@@ -223,12 +258,219 @@ void require_realized_duration(Profile const& profile, double T_new)
     REQUIRE(std::abs(T - T_new) <= tol);
 }
 
+/// Chained rounding operations behind one velocity an online planner reports.
+/// Every branch forms it the same way: a product of an acceleration and a time
+/// added to a carried velocity, or a product of a deceleration and a time
+/// remaining. The time itself is a difference of two sample times and, on the
+/// backward-time branches, a difference of two durations; each phase duration the
+/// branch selection compares against is a difference and a division. A product, a
+/// sum, two differences and two divisions is six, and the two sums that formed the
+/// total duration the selection ran against bring it to eight. Each is worth up to
+/// one unit in the last place at the scale of the velocity limit.
+constexpr int planner_velocity_rounding_ops = 8;
+
+/// Chained rounding operations behind one acceleration the third-order planner
+/// reports. Unlike the second-order planner, which assigns the limit itself, this
+/// one integrates the acceleration across the constant-jerk phases it has already
+/// traversed: each full phase contributes a product and a sum, and the profile
+/// carries at most eleven of them, with a further product and sum for the partial
+/// phase the sample lands in. Each is worth up to one unit in the last place at
+/// the scale of the acceleration limit.
+constexpr int planner_acceleration_rounding_ops = 2 * 11 + 2;
+
+/// Chained rounding operations behind one interior-knot value of the smoothing
+/// spline's own defining relation: three smoothed positions and three second
+/// derivatives, each read back through a Horner evaluation of four operations, and
+/// the six-term relation itself, which chains two differences and two divisions on
+/// one side and three products, two sums and three divisions on the other. Six
+/// evaluations of four is twenty-four, and the relation's fourteen bring it to
+/// thirty-eight. Each is worth up to one unit in the last place at the scale of
+/// the largest term the relation forms.
+constexpr int moment_relation_rounding_ops = 6 * 4 + 14;
+
+/// Chained rounding operations behind one endpoint acceleration of a cyclic cubic
+/// spline solve over `spans` spans. The Sherman-Morrison reduction runs two Thomas
+/// solves over the system: each forward-sweep row chains a division, a product and
+/// a difference for the diagonal and the same three for the right-hand side, and
+/// each back-substitution row a product, a difference and a division -- nine per
+/// row across the two solves and the reduction's own recombination adds eight. The
+/// endpoint acceleration is then formed from those velocities in six operations
+/// for the quadratic coefficient and six for the cubic, and four more in the
+/// Horner evaluation; the two endpoints being compared each carry that sixteen.
+/// Each is worth up to one unit in the last place at the scale of the largest
+/// acceleration the spline reports.
+constexpr auto cyclic_spline_acceleration_ops(std::size_t spans) -> int
+{
+    return 9 * static_cast<int>(spans) + 8 + 2 * 16;
+}
+
+/// Chained rounding operations behind one spline value evaluated away from the
+/// knot that stores it: three multiply-adds in the Horner form, and the quadratic
+/// and cubic coefficients it runs on, which chain six operations each. Each is
+/// worth up to one unit in the last place at the scale of the waypoint positions.
+constexpr int spline_horner_rounding_ops = 3 * 2 + 6 + 6;
+
+/// The kinematic envelope a limit-respecting planner guarantees at every sample.
+///
+/// The acceleration is asserted with NO slack. The second-order planner's
+/// evaluation assigns it the limit, its negation, or zero, so a magnitude above
+/// the limit is not a rounding event but a different number. The velocity is
+/// accumulated across a phase and carries that accumulation's rounding.
+void require_envelope_2nd(ctrlpp::trajectory_point<double, 1> const& pt,
+                          double v_max,
+                          double a_max)
+{
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    double const v_tol = static_cast<double>(planner_velocity_rounding_ops) * eps * v_max;
+    CAPTURE(pt.velocity(0), pt.acceleration(0), v_max, a_max, v_tol);
+    REQUIRE(std::abs(pt.velocity(0)) <= v_max + v_tol);
+    REQUIRE(std::abs(pt.acceleration(0)) <= a_max);
+}
+
+/// The same envelope for the third-order planner, whose acceleration is
+/// integrated across constant-jerk phases rather than assigned, so it carries a
+/// counted budget where the second-order planner's carries none.
+void require_envelope_3rd(ctrlpp::trajectory_point<double, 1> const& pt,
+                          double v_max,
+                          double a_max)
+{
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    double const v_tol = static_cast<double>(planner_velocity_rounding_ops) * eps * v_max;
+    double const a_tol = static_cast<double>(planner_acceleration_rounding_ops) * eps * a_max;
+    CAPTURE(pt.velocity(0), pt.acceleration(0), v_max, a_max, v_tol, a_tol);
+    REQUIRE(std::abs(pt.velocity(0)) <= v_max + v_tol);
+    REQUIRE(std::abs(pt.acceleration(0)) <= a_max + a_tol);
+}
+
+/// Assert that the reported acceleration slewed no faster than the jerk limit
+/// allows over the step between two samples.
+///
+/// Within one constant-jerk phase the change is exactly the jerk times the step.
+/// A step that crosses a phase boundary splits into two constant-jerk pieces whose
+/// durations sum to the step, so the change is a convex combination of two jerks
+/// and cannot exceed the limit either. This holds only inside one plan: an update
+/// replaces the profile and the acceleration may step discontinuously across it.
+void require_jerk_step(double a_now, double a_prev, double dt, double j_max, double a_max)
+{
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    double const a_tol = 2.0 * static_cast<double>(planner_acceleration_rounding_ops) * eps * a_max;
+    CAPTURE(a_now, a_prev, dt, j_max, a_tol);
+    REQUIRE(std::abs(a_now - a_prev) <= j_max * dt + a_tol);
+}
+
+/// Assert the relation that defines the spline the smoothing solve builds.
+///
+/// The solve produces smoothed positions and interior second derivatives that
+/// satisfy the classical cubic-spline moment relation between them, with the
+/// endpoint second derivatives held at zero. The spline stores the smoothed
+/// position of span i as that span's constant term and its second derivative as
+/// twice the quadratic one, so both sides of the relation are readable from
+/// `evaluate` at the knots and no part of the solve is repeated here. A
+/// coefficient built from the wrong smoothed positions, or second derivatives that
+/// do not belong to them, breaks this relation while still returning numbers.
+void require_moment_relation(ctrlpp::smoothing_spline<double> const& spline,
+                             std::vector<double> const& times)
+{
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    // The natural-like endpoint conditions are assigned, not solved: the second
+    // derivative outside the interior is zero, and the first span's quadratic
+    // coefficient is half of it.
+    REQUIRE(spline.evaluate(times.front()).acceleration(0) == 0.0);
+
+    for (std::size_t j = 0; j + 2 < times.size(); ++j) {
+        double const h0 = times[j + 1] - times[j];
+        double const h1 = times[j + 2] - times[j + 1];
+
+        auto const p0 = spline.evaluate(times[j]);
+        auto const p1 = spline.evaluate(times[j + 1]);
+        auto const p2 = spline.evaluate(times[j + 2]);
+
+        double const second_difference =
+            (p0.position(0) - p1.position(0)) / h0 + (p2.position(0) - p1.position(0)) / h1;
+        double const weighted_moments = h0 * p0.acceleration(0) / 6.0
+                                        + (h0 + h1) * p1.acceleration(0) / 3.0
+                                        + h1 * p2.acceleration(0) / 6.0;
+
+        // Both sides of the relation cancel heavily -- the left is a difference of
+        // two nearly equal slopes -- so the rounding is measured at the scale of
+        // the operands that entered, not at the scale of what came out. A smoothed
+        // position rounds at its own magnitude and is then divided by a span; a
+        // second derivative rounds at its own magnitude and is multiplied by one.
+        double const position_scale =
+            std::max({std::abs(p0.position(0)), std::abs(p1.position(0)),
+                      std::abs(p2.position(0))});
+        double const moment_scale =
+            std::max({std::abs(p0.acceleration(0)), std::abs(p1.acceleration(0)),
+                      std::abs(p2.acceleration(0))});
+        double const scale =
+            position_scale / std::min(h0, h1) + moment_scale * (h0 + h1);
+        double const tol = static_cast<double>(moment_relation_rounding_ops) * eps * scale;
+        CAPTURE(j, second_difference, weighted_moments, scale, tol);
+        REQUIRE(std::abs(second_difference - weighted_moments) <= tol);
+    }
+}
+
+/// The largest acceleration magnitude the spline reports at its knots.
+///
+/// The acceleration is affine inside every span, so its extreme over the spline is
+/// attained at a knot and this is the whole range rather than a sample of it. It
+/// is the scale the endpoint-condition residuals are measured against: those
+/// residuals are the rounding of the expressions that produced these values.
+auto knot_acceleration_scale(ctrlpp::cubic_spline<double> const& spline,
+                             std::vector<double> const& times) -> double
+{
+    double scale = 0.0;
+    for (auto const time : times) {
+        scale = std::max(scale, std::abs(spline.evaluate(time).acceleration(0)));
+    }
+    return scale;
+}
+
+/// The straight line that minimizes the squared deviation from the waypoints,
+/// evaluated at `at`. It is the limit a smoothing spline tends to as its
+/// smoothing weight grows without bound: the smoothed positions become the
+/// projection of the waypoints onto the null space of the second-difference
+/// operator, which is exactly the affine functions of time.
+auto least_squares_line_at(std::vector<double> const& times,
+                           std::vector<double> const& positions,
+                           double at) -> double
+{
+    double const n = static_cast<double>(times.size());
+    double t_mean = 0.0;
+    double q_mean = 0.0;
+    for (std::size_t i = 0; i < times.size(); ++i) {
+        t_mean += times[i];
+        q_mean += positions[i];
+    }
+    t_mean /= n;
+    q_mean /= n;
+
+    double s_tt = 0.0;
+    double s_tq = 0.0;
+    for (std::size_t i = 0; i < times.size(); ++i) {
+        s_tt += (times[i] - t_mean) * (times[i] - t_mean);
+        s_tq += (times[i] - t_mean) * (positions[i] - q_mean);
+    }
+    double const slope = s_tq / s_tt;
+    return q_mean + slope * (at - t_mean);
+}
+
 }
 
 // ── Cubic spline hardening ─────────────────────────────────────────────────────
 
-TEST_CASE("Cubic spline with exactly 2 points", "[cubic_spline][hardening][negative]")
+TEST_CASE("Cubic spline with exactly 2 points is the straight line through them",
+          "[cubic_spline][hardening][coverage]")
 {
+    // Two waypoints leave the natural solve a two-by-two system whose two rows are
+    // the same equation, so both endpoint velocities come out equal to the slope
+    // and the quadratic and cubic coefficients vanish. The spline is the straight
+    // line, and its midpoint value and slope are the line's, not an approximation
+    // of them.
     ctrlpp::cubic_spline<double>::config cfg{
         .times = {0.0, 1.0},
         .positions = {0.0, 1.0},
@@ -236,8 +478,13 @@ TEST_CASE("Cubic spline with exactly 2 points", "[cubic_spline][hardening][negat
 
     auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
     auto pt = spline.evaluate(0.5);
-    REQUIRE(std::isfinite(pt.position(0)));
-    REQUIRE(std::isfinite(pt.velocity(0)));
+    REQUIRE(pt.position(0) == 0.5);
+    REQUIRE(pt.velocity(0) == 1.0);
+    REQUIRE(pt.acceleration(0) == 0.0);
+
+    // The duration is the difference of the outer knots, formed by one subtraction
+    // of two exactly representable operands.
+    REQUIRE(spline.duration() == 1.0);
 }
 
 TEST_CASE("Cubic spline interpolation matches at knots", "[cubic_spline][hardening][precision]")
@@ -252,14 +499,47 @@ TEST_CASE("Cubic spline interpolation matches at knots", "[cubic_spline][hardeni
 
     auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
-    for (std::size_t i = 0; i < times.size(); ++i) {
+    // Interpolation at a knot is not approximate. The span containing the knot
+    // starts there, so the local time is exactly zero and the Horner form reduces
+    // to the span's stored constant term, which is the waypoint. Nothing rounds.
+    // The last knot is the exception and it is asserted separately below: the span
+    // search clamps it into the final span, where the local time is that span's
+    // whole width and the full Horner chain runs.
+    for (std::size_t i = 0; i + 1 < times.size(); ++i) {
         auto pt = spline.evaluate(times[i]);
-        REQUIRE_THAT(pt.position(0), WithinAbs(positions[i], 1e-10));
+        CAPTURE(i);
+        REQUIRE(pt.position(0) == positions[i]);
     }
+
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    double const scale = *std::max_element(positions.begin(), positions.end());
+    double const tol = static_cast<double>(spline_horner_rounding_ops) * eps * scale;
+    auto const last = spline.evaluate(times.back());
+    CAPTURE(last.position(0), positions.back(), tol);
+    REQUIRE(std::abs(last.position(0) - positions.back()) <= tol);
 }
 
-TEST_CASE("Cubic spline with huge span", "[cubic_spline][hardening][negative]")
+TEST_CASE("Cubic spline value does not degrade with the knot span",
+          "[cubic_spline][hardening][coverage]")
 {
+    // The knots span fifteen decades. A spline that has lost every significant
+    // digit of its coefficients still returns a finite number, so finiteness sees
+    // nothing here; the conditioning claim is that the VALUE holds, and it is made
+    // by asserting the analytic value with a budget that does NOT grow with the
+    // span. A budget proportional to the span would be a third of the value being
+    // asserted at the span this case uses, which is no assertion at all.
+    //
+    // Natural boundary conditions on {0, H, 2H} through {0, 1, 0} put the endpoint
+    // second derivatives at zero and, by the antisymmetry of the data about the
+    // middle knot, the middle velocity at zero and the outer ones at plus and
+    // minus 3 / (2H). The Hermite form on the first span at its midpoint is then
+    //   q(H/2) = h01(1/2) * 1 + h10(1/2) * H * (3 / (2H)) = 1/2 + 1/8 * 3/2 = 11/16
+    // with no dependence on H whatever. The span cancels out of the answer, and
+    // this case asserts that it cancels out of the arithmetic too.
+    constexpr double analytic_midpoint = 11.0 / 16.0;
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    double const tol = static_cast<double>(spline_horner_rounding_ops) * eps;
+
     ctrlpp::cubic_spline<double>::config cfg{
         .times = {0.0, 1e15, 2e15},
         .positions = {0.0, 1.0, 0.0},
@@ -267,12 +547,29 @@ TEST_CASE("Cubic spline with huge span", "[cubic_spline][hardening][negative]")
 
     auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
     auto pt = spline.evaluate(0.5e15);
-    REQUIRE(std::isfinite(pt.position(0)));
+    CAPTURE(pt.position(0), analytic_midpoint, tol);
+    REQUIRE(std::abs(pt.position(0) - analytic_midpoint) <= tol);
+
+    // The same statement swept across the spans the coefficients are formed over.
+    // The half-width squared divides the cubic coefficient, so the representable
+    // range of that square is the domain this holds on; the sweep stops three
+    // decades inside it on either side, which is where the case's own span sits.
+    for (double const span : {1e-100, 1e-15, 1.0, 1e6, 1e15, 1e100}) {
+        ctrlpp::cubic_spline<double>::config swept{
+            .times = {0.0, span, 2.0 * span},
+            .positions = {0.0, 1.0, 0.0},
+        };
+        auto wide = realizable<ctrlpp::cubic_spline<double>>(swept);
+        auto const mid = wide.evaluate(0.5 * span);
+        CAPTURE(span, mid.position(0));
+        REQUIRE(std::abs(mid.position(0) - analytic_midpoint) <= tol);
+    }
 }
 
 // ── Smoothing spline hardening ─────────────────────────────────────────────────
 
-TEST_CASE("Smoothing spline with mu=1 approaches interpolation", "[smoothing_spline][hardening][negative]")
+TEST_CASE("Smoothing spline at mu=1 IS the interpolating spline",
+          "[smoothing_spline][hardening][coverage]")
 {
     std::vector<double> times{0.0, 1.0, 2.0, 3.0};
     std::vector<double> positions{0.0, 1.0, 0.5, 2.0};
@@ -285,28 +582,72 @@ TEST_CASE("Smoothing spline with mu=1 approaches interpolation", "[smoothing_spl
 
     auto spline = realizable<ctrlpp::smoothing_spline<double>>(cfg);
 
-    // At mu=1, should pass through all waypoints
-    for (std::size_t i = 0; i < times.size(); ++i) {
+    // At mu = 1 the regularization weight 2 (1 - mu) / (3 mu) is zero, so the
+    // smoothed positions are the waypoints themselves and the spline interpolates
+    // them. It does not approach them: the span containing a knot stores that
+    // waypoint as its constant term, and the local time at the knot is zero, so
+    // the value is the waypoint bit for bit. The last knot is clamped into the
+    // final span and runs the full Horner chain, so it carries the counted budget.
+    for (std::size_t i = 0; i + 1 < times.size(); ++i) {
         auto pt = spline.evaluate(times[i]);
-        REQUIRE_THAT(pt.position(0), WithinAbs(positions[i], 0.01));
+        CAPTURE(i);
+        REQUIRE(pt.position(0) == positions[i]);
     }
+
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    double const scale = *std::max_element(positions.begin(), positions.end());
+    double const tol = static_cast<double>(spline_horner_rounding_ops) * eps * scale;
+    auto const last = spline.evaluate(times.back());
+    CAPTURE(last.position(0), positions.back(), tol);
+    REQUIRE(std::abs(last.position(0) - positions.back()) <= tol);
+
+    require_moment_relation(spline, times);
 }
 
-TEST_CASE("Smoothing spline with very large lambda", "[smoothing_spline][hardening][negative]")
+TEST_CASE("Smoothing spline at a large weight tends to the least-squares line",
+          "[smoothing_spline][hardening][coverage]")
 {
     std::vector<double> times{0.0, 1.0, 2.0, 3.0};
     std::vector<double> positions{0.0, 1.0, 0.5, 2.0};
 
-    // mu near zero -> lambda very large -> maximum smoothness (near straight line)
+    // A small mu makes the regularization weight large, which drives the interior
+    // second derivatives toward zero and the smoothed positions toward the
+    // projection of the waypoints onto the affine functions of time -- the
+    // least-squares straight line. The case name has always said so and nothing
+    // asserted it.
+    constexpr double mu = 0.001;
     ctrlpp::smoothing_spline<double>::config cfg{
         .times = times,
         .positions = positions,
-        .mu = 0.001,
+        .mu = mu,
     };
 
     auto spline = realizable<ctrlpp::smoothing_spline<double>>(cfg);
-    auto pt = spline.evaluate(1.5);
-    REQUIRE(std::isfinite(pt.position(0)));
+    require_moment_relation(spline, times);
+
+    // The departure from that line is first order in mu, because the solve differs
+    // from the limit by the regularization term divided by the weight and the
+    // weight's reciprocal 3 mu / (2 (1 - mu)) is first order in mu. The
+    // coefficient of that first order depends on the data through the
+    // second-difference operator's pseudo-inverse and is not computed here.
+    // Scaling the interpolating spline's own departure by mu bounds it without
+    // that coefficient: at mu the smoothing spline must sit at least a thousandth
+    // as far from the line as the mu = 1 spline does. A weight that did not grow
+    // as mu shrank -- the tradeoff map inverted, or the weight applied to the wrong
+    // term -- leaves the spline near the interpolating value and fails this.
+    auto interpolating = realizable<ctrlpp::smoothing_spline<double>>(
+        ctrlpp::smoothing_spline<double>::config{
+            .times = times, .positions = positions, .mu = 1.0});
+
+    double const probe = 1.5;
+    double const line = least_squares_line_at(times, positions, probe);
+    double const interpolating_departure =
+        std::abs(interpolating.evaluate(probe).position(0) - line);
+    double const departure = std::abs(spline.evaluate(probe).position(0) - line);
+
+    CAPTURE(line, departure, interpolating_departure, mu);
+    REQUIRE(interpolating_departure > 0.0);
+    REQUIRE(departure < mu * interpolating_departure);
 }
 
 // ── B-spline hardening ─────────────────────────────────────────────────────────
@@ -339,16 +680,22 @@ TEST_CASE("B-spline with non-ascending knot vector", "[bspline][hardening][negat
 
 // ── Trapezoidal trajectory hardening ───────────────────────────────────────────
 
-TEST_CASE("Trapezoidal with zero distance", "[trapezoidal][hardening][negative]")
+TEST_CASE("Trapezoidal with zero distance", "[trapezoidal][hardening][coverage]")
 {
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 5.0, .q1 = 5.0, .v_max = 1.0, .a_max = 1.0,
     };
 
-    auto const traj = trapezoidal_profile(cfg);
-    REQUIRE_THAT(traj.duration(), WithinAbs(0.0, 1e-12));
-    auto pt = traj.evaluate(0.0);
-    REQUIRE_THAT(pt.position(0), WithinAbs(5.0, 1e-12));
+    // A rest-to-rest profile over no displacement has every phase duration zero
+    // and therefore a total duration of zero, and its only sample is the start
+    // position it was given. Both are assigned rather than computed. No epsilon
+    // takes part in either, which is the form this file uses for the same
+    // quantity where a rescale is rejected on a stationary profile.
+    auto const profile = trapezoidal_profile(cfg);
+    REQUIRE(profile.duration() == 0.0);
+    auto pt = profile.evaluate(0.0);
+    REQUIRE(pt.position(0) == 5.0);
+    REQUIRE(pt.velocity(0) == 0.0);
 }
 
 TEST_CASE("Trapezoidal with negative max velocity", "[trapezoidal][hardening][negative]")
@@ -373,29 +720,41 @@ TEST_CASE("Trapezoidal triangle profile reaches correct peak velocity", "[trapez
         .q0 = 0.0, .q1 = 0.5, .v_max = 10.0, .a_max = 2.0,
     };
 
-    auto const traj = trapezoidal_profile(cfg);
-    REQUIRE(traj.is_triangular());
+    auto const profile = trapezoidal_profile(cfg);
+    REQUIRE(profile.is_triangular());
 
-    // Peak velocity for triangle: sqrt(a * h) = sqrt(2 * 0.5) = 1.0
-    REQUIRE_THAT(traj.peak_velocity(), WithinAbs(1.0, 0.01));
+    // A rest-to-rest triangle's two ramps meet at sqrt(a h). The profile forms it
+    // by the same square root of the same product, on operands the type
+    // represents exactly, so the reported peak is that value bit for bit rather
+    // than a percent either side of it.
+    REQUIRE(profile.peak_velocity() == std::sqrt(cfg.a_max * (cfg.q1 - cfg.q0)));
 
-    // Final position should be q1
-    auto pt = traj.evaluate(traj.duration());
-    REQUIRE_THAT(pt.position(0), WithinAbs(0.5, 1e-6));
+    // The traversal is asserted by quadrature. A position sample at the end
+    // reproduces the commanded displacement by construction -- the deceleration
+    // branch is written backwards from it -- so it cannot fail for a profile whose
+    // velocity integrates to something else, and a tighter tolerance on it is a
+    // tighter non-oracle.
+    require_swept_displacement(profile, cfg.q1 - cfg.q0, cfg.a_max);
+    require_terminal_velocity(profile, cfg.v1, cfg.a_max);
+    require_nonnegative_phases(profile);
 }
 
 // ── Double-S trajectory hardening ──────────────────────────────────────────────
 
-TEST_CASE("Double-S with zero distance", "[double_s][hardening][negative]")
+TEST_CASE("Double-S with zero distance", "[double_s][hardening][coverage]")
 {
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 3.0, .q1 = 3.0, .v_max = 1.0, .a_max = 1.0, .j_max = 1.0,
     };
 
-    auto const traj = double_s_profile(cfg);
-    REQUIRE_THAT(traj.duration(), WithinAbs(0.0, 1e-12));
-    auto pt = traj.evaluate(0.0);
-    REQUIRE_THAT(pt.position(0), WithinAbs(3.0, 1e-12));
+    // As for the trapezoidal profile over no displacement: every phase duration is
+    // zero, the total is their sum, and the only sample is the assigned start
+    // position. Exact on both counts.
+    auto const profile = double_s_profile(cfg);
+    REQUIRE(profile.duration() == 0.0);
+    auto pt = profile.evaluate(0.0);
+    REQUIRE(pt.position(0) == 3.0);
+    REQUIRE(pt.velocity(0) == 0.0);
 }
 
 TEST_CASE("Double-S with negative jerk limit", "[double_s][hardening][negative]")
@@ -445,8 +804,9 @@ TEST_CASE("Online planner 2nd rejects out-of-domain acceleration limit",
     }
 }
 
-TEST_CASE("Online planner 2nd with instant target flip", "[online_planner_2nd][hardening][negative]")
+TEST_CASE("Online planner 2nd with instant target flip", "[online_planner_2nd][hardening][coverage]")
 {
+    constexpr double target = -5.0;
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
@@ -454,28 +814,62 @@ TEST_CASE("Online planner 2nd with instant target flip", "[online_planner_2nd][h
     planner.sample(0.1);
     planner.sample(0.2);
 
-    // Flip target mid-motion
-    planner.update(-5.0);
-    auto pt = planner.sample(0.3);
-    REQUIRE(std::isfinite(pt.position(0)));
-    REQUIRE(std::isfinite(pt.velocity(0)));
+    // Flip target mid-motion. The velocity carried into the flip points away from
+    // the new target, so the commanded shape does not exist and the planner
+    // substitutes a brake-then-replan. It reports which, so the branch this case
+    // reaches is asserted rather than assumed.
+    planner.update(target);
+    REQUIRE(planner.diagnostics().disposition
+            == ctrlpp::online_planner_disposition::braked_and_replanned);
+    REQUIRE(planner.diagnostics().substitution_reason
+            == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+    REQUIRE(planner.diagnostics().commanded_target == target);
+    REQUIRE(planner.diagnostics().brake_duration > 0.0);
+
+    // The substitution costs time, not correctness: the recovery respects both
+    // limits at every sample and ends at the commanded target. That is the whole
+    // contract of a limit-respecting replan, and a single finite sample sees none
+    // of it.
+    double t = 0.2;
+    for (int i = 0; i < 2000; ++i) {
+        t += 0.01;
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
+    }
+
+    auto const settled = planner.sample(t + 0.01);
+    REQUIRE(planner.is_settled());
+    REQUIRE(settled.position(0) == target);
+    REQUIRE(settled.velocity(0) == 0.0);
+    REQUIRE(settled.acceleration(0) == 0.0);
 }
 
 TEST_CASE("Online planner 2nd reaches target", "[online_planner_2nd][hardening][convergence]")
 {
+    constexpr double target = 3.0;
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 1.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
-    planner.update(3.0);
+    planner.update(target);
+    REQUIRE(planner.diagnostics().disposition
+            == ctrlpp::online_planner_disposition::commanded_profile);
 
     double t = 0.0;
     for (int i = 0; i < 1000; ++i) {
         t += 0.01;
-        planner.sample(t);
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
     }
 
+    // Past the end of the profile the evaluation returns the stored target with
+    // zero velocity: it does not evaluate a polynomial there. Exact equality is
+    // what says so, and it is what would catch an evaluation that did.
     auto pt = planner.sample(t + 0.01);
-    REQUIRE_THAT(pt.position(0), WithinAbs(3.0, 1e-6));
+    REQUIRE(planner.is_settled());
+    REQUIRE(pt.position(0) == target);
+    REQUIRE(pt.velocity(0) == 0.0);
 }
 
 // ── Online planner 3rd hardening ───────────────────────────────────────────────
@@ -528,35 +922,75 @@ TEST_CASE("Online planner 3rd rejects out-of-domain jerk limit",
     }
 }
 
-TEST_CASE("Online planner 3rd with instant target reversal", "[online_planner_3rd][hardening][negative]")
+TEST_CASE("Online planner 3rd with instant target reversal",
+          "[online_planner_3rd][hardening][coverage]")
 {
+    constexpr double target = -5.0;
+    constexpr double step = 0.01;
     ctrlpp::online_planner_3rd<double>::config cfg{.v_max = 1.0, .a_max = 2.0, .j_max = 5.0};
     auto planner = realizable<ctrlpp::online_planner_3rd<double>>(cfg);
 
     planner.update(5.0);
     planner.sample(0.1);
 
-    // Reverse direction
-    planner.update(-5.0);
-    auto pt = planner.sample(0.2);
-    REQUIRE(std::isfinite(pt.position(0)));
+    // Reversing the commanded direction puts the carried velocity outside the
+    // domain of the shape that would carry it through, so the planner brakes to
+    // rest and replans from the stopping point. It reports that it did.
+    planner.update(target);
+    REQUIRE(planner.diagnostics().disposition
+            == ctrlpp::online_planner_disposition::braked_and_replanned);
+    REQUIRE(planner.diagnostics().substitution_reason
+            == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+    REQUIRE(planner.diagnostics().brake_duration > 0.0);
+
+    // The third-order planner bounds a jerk as well, so the envelope has a third
+    // member: the reported acceleration may not slew faster than the jerk limit
+    // over a sampling step. All three are checked at every sample of one plan.
+    double t = 0.1;
+    double previous_acceleration = planner.sample(t).acceleration(0);
+    for (int i = 0; i < 2000; ++i) {
+        t += step;
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_3rd(pt, cfg.v_max, cfg.a_max);
+        require_jerk_step(pt.acceleration(0), previous_acceleration, step, cfg.j_max, cfg.a_max);
+        previous_acceleration = pt.acceleration(0);
+    }
+
+    auto const settled = planner.sample(t + step);
+    REQUIRE(planner.is_settled());
+    REQUIRE(settled.position(0) == target);
+    REQUIRE(settled.velocity(0) == 0.0);
+    REQUIRE(settled.acceleration(0) == 0.0);
 }
 
 TEST_CASE("Online planner 3rd reaches target", "[online_planner_3rd][hardening][convergence]")
 {
+    constexpr double target = 3.0;
+    constexpr double step = 0.01;
     ctrlpp::online_planner_3rd<double>::config cfg{.v_max = 2.0, .a_max = 1.0, .j_max = 5.0};
     auto planner = realizable<ctrlpp::online_planner_3rd<double>>(cfg);
 
-    planner.update(3.0);
+    planner.update(target);
+    REQUIRE(planner.diagnostics().disposition
+            == ctrlpp::online_planner_disposition::commanded_profile);
 
     double t = 0.0;
+    double previous_acceleration = 0.0;
     for (int i = 0; i < 2000; ++i) {
-        t += 0.01;
-        planner.sample(t);
+        t += step;
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_3rd(pt, cfg.v_max, cfg.a_max);
+        require_jerk_step(pt.acceleration(0), previous_acceleration, step, cfg.j_max, cfg.a_max);
+        previous_acceleration = pt.acceleration(0);
     }
 
-    auto pt = planner.sample(t + 0.01);
-    REQUIRE_THAT(pt.position(0), WithinAbs(3.0, 1e-4));
+    auto pt = planner.sample(t + step);
+    REQUIRE(planner.is_settled());
+    REQUIRE(pt.position(0) == target);
+    REQUIRE(pt.velocity(0) == 0.0);
+    REQUIRE(pt.acceleration(0) == 0.0);
 }
 
 // ── Coverage gap-filling tests ────────────────────────────────────────────────
@@ -569,11 +1003,18 @@ TEST_CASE("Smoothing spline with 2 points degenerates to linear",
         .positions = {0.0, 5.0},
         .mu = 0.5,
     };
+    // Two waypoints leave no interior knot for the smoothing solve to act on, so
+    // the construction takes the linear path: the span's constant term is the
+    // first position, its linear term the slope, and its quadratic and cubic terms
+    // are assigned zero. The tradeoff parameter never enters. The midpoint value,
+    // the slope and the vanishing curvature are therefore exact, not approximate.
     auto spline = realizable<ctrlpp::smoothing_spline<double>>(cfg);
 
     auto pt = spline.evaluate(0.5);
-    REQUIRE_THAT(pt.position(0), WithinAbs(2.5, 0.01));
-    REQUIRE_THAT(spline.duration(), WithinAbs(1.0, 1e-12));
+    REQUIRE(pt.position(0) == 2.5);
+    REQUIRE(pt.velocity(0) == 5.0);
+    REQUIRE(pt.acceleration(0) == 0.0);
+    REQUIRE(spline.duration() == 1.0);
 }
 
 TEST_CASE("Trapezoidal trajectory rescale_to extends motion",
@@ -582,23 +1023,23 @@ TEST_CASE("Trapezoidal trajectory rescale_to extends motion",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 2.0,
     };
-    auto traj = trapezoidal_profile(cfg);
-    auto const original_T = traj.duration();
+    auto profile = trapezoidal_profile(cfg);
+    auto const original_T = profile.duration();
 
-    auto const rescaled = traj.rescale_to(original_T * 2.0);
+    auto const rescaled = profile.rescale_to(original_T * 2.0);
     REQUIRE(rescaled.has_value());
-    REQUIRE(traj.duration() > original_T);
-    require_realized_duration(traj, original_T * 2.0);
+    REQUIRE(profile.duration() > original_T);
+    require_realized_duration(profile, original_T * 2.0);
 
     // The traversed displacement is asserted by integrating the reported velocity
     // over the profile's own phase segments. A position sample at or near the end
     // is NOT a valid check: the final segment is written as an offset backwards
     // from the commanded displacement, so it returns the target position even on a
     // profile whose velocity integrates to something else entirely.
-    require_swept_displacement(traj, cfg.q1 - cfg.q0, cfg.a_max);
-    require_terminal_velocity(traj, cfg.v1, cfg.a_max);
-    require_nonnegative_phases(traj);
-    REQUIRE(std::abs(traj.peak_velocity()) <= cfg.v_max);
+    require_swept_displacement(profile, cfg.q1 - cfg.q0, cfg.a_max);
+    require_terminal_velocity(profile, cfg.v1, cfg.a_max);
+    require_nonnegative_phases(profile);
+    REQUIRE(std::abs(profile.peak_velocity()) <= cfg.v_max);
 }
 
 TEST_CASE("Trapezoidal trajectory rescale_to shorter than current is rejected",
@@ -607,17 +1048,17 @@ TEST_CASE("Trapezoidal trajectory rescale_to shorter than current is rejected",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 2.0,
     };
-    auto traj = trapezoidal_profile(cfg);
-    auto const original_T = traj.duration();
-    auto const original_phases = traj.phase_durations();
+    auto profile = trapezoidal_profile(cfg);
+    auto const original_T = profile.duration();
+    auto const original_phases = profile.phase_durations();
 
-    auto const rescaled = traj.rescale_to(original_T * 0.5);
+    auto const rescaled = profile.rescale_to(original_T * 0.5);
     REQUIRE(!rescaled.has_value());
     REQUIRE(rescaled.error() == ctrlpp::trajectory_error::duration_shorter_than_current);
 
     // Nothing may have moved: a rejected request leaves the profile untouched.
-    REQUIRE(traj.duration() == original_T);
-    REQUIRE(traj.phase_durations() == original_phases);
+    REQUIRE(profile.duration() == original_T);
+    REQUIRE(profile.phase_durations() == original_phases);
 }
 
 TEST_CASE("Trapezoidal trajectory rescale_to emits the valley shape",
@@ -630,20 +1071,20 @@ TEST_CASE("Trapezoidal trajectory rescale_to emits the valley shape",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 1.0, .v_max = 2.0, .a_max = 1.0, .v0 = 0.9, .v1 = 0.9,
     };
-    auto traj = trapezoidal_profile(cfg);
+    auto profile = trapezoidal_profile(cfg);
 
-    auto const rescaled = traj.rescale_to(10.0);
+    auto const rescaled = profile.rescale_to(10.0);
     REQUIRE(rescaled.has_value());
 
-    auto const phases = traj.phase_durations();
+    auto const phases = profile.phase_durations();
     REQUIRE(phases[0] > 0.0);
     REQUIRE(phases[1] > 0.0);
     REQUIRE(phases[2] > 0.0);
-    REQUIRE(std::abs(traj.peak_velocity()) < cfg.v0);
+    REQUIRE(std::abs(profile.peak_velocity()) < cfg.v0);
 
-    require_realized_duration(traj, 10.0);
-    require_swept_displacement(traj, cfg.q1 - cfg.q0, cfg.a_max);
-    require_terminal_velocity(traj, cfg.v1, cfg.a_max);
+    require_realized_duration(profile, 10.0);
+    require_swept_displacement(profile, cfg.q1 - cfg.q0, cfg.a_max);
+    require_terminal_velocity(profile, cfg.v1, cfg.a_max);
 }
 
 TEST_CASE("Double-S trajectory rescale_to rebuilds a rest-to-rest profile",
@@ -655,18 +1096,18 @@ TEST_CASE("Double-S trajectory rescale_to rebuilds a rest-to-rest profile",
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0,
     };
-    auto traj = double_s_profile(cfg);
-    auto const original_T = traj.duration();
+    auto profile = double_s_profile(cfg);
+    auto const original_T = profile.duration();
 
-    auto const rescaled = traj.rescale_to(original_T * 3.0);
+    auto const rescaled = profile.rescale_to(original_T * 3.0);
     REQUIRE(rescaled.has_value());
-    require_realized_duration(traj, original_T * 3.0);
-    require_swept_displacement(traj, cfg.q1 - cfg.q0, cfg.a_max);
-    require_terminal_velocity(traj, cfg.v1, cfg.a_max);
-    require_nonnegative_phases(traj);
+    require_realized_duration(profile, original_T * 3.0);
+    require_swept_displacement(profile, cfg.q1 - cfg.q0, cfg.a_max);
+    require_terminal_velocity(profile, cfg.v1, cfg.a_max);
+    require_nonnegative_phases(profile);
 
     // The rebuilt profile respects the scaled limits it was built under.
-    REQUIRE(std::abs(traj.peak_velocity()) <= cfg.v_max);
+    REQUIRE(std::abs(profile.peak_velocity()) <= cfg.v_max);
 }
 
 TEST_CASE("Double-S trajectory rescale_to rebuilds with nonzero boundary velocities",
@@ -676,18 +1117,18 @@ TEST_CASE("Double-S trajectory rescale_to rebuilds with nonzero boundary velocit
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0,
         .v0 = 1.0, .v1 = 0.5,
     };
-    auto traj = double_s_profile(cfg);
-    auto const original_T = traj.duration();
+    auto profile = double_s_profile(cfg);
+    auto const original_T = profile.duration();
 
-    auto const rescaled = traj.rescale_to(original_T * 1.5);
+    auto const rescaled = profile.rescale_to(original_T * 1.5);
     REQUIRE(rescaled.has_value());
-    require_realized_duration(traj, original_T * 1.5);
-    require_swept_displacement(traj, cfg.q1 - cfg.q0, cfg.a_max);
-    require_nonnegative_phases(traj);
+    require_realized_duration(profile, original_T * 1.5);
+    require_swept_displacement(profile, cfg.q1 - cfg.q0, cfg.a_max);
+    require_nonnegative_phases(profile);
 
     // The boundary velocities are the command and are left unscaled, so the
     // profile still arrives at the one it was given.
-    require_terminal_velocity(traj, cfg.v1, cfg.a_max);
+    require_terminal_velocity(profile, cfg.v1, cfg.a_max);
 }
 
 TEST_CASE("Double-S trajectory rescale_to rejects shortening and unreachable requests",
@@ -697,28 +1138,28 @@ TEST_CASE("Double-S trajectory rescale_to rejects shortening and unreachable req
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0,
         .v0 = 1.0, .v1 = 0.5,
     };
-    auto traj = double_s_profile(cfg);
-    auto const original_T = traj.duration();
-    auto const original_phases = traj.phase_durations();
+    auto profile = double_s_profile(cfg);
+    auto const original_T = profile.duration();
+    auto const original_phases = profile.phase_durations();
 
-    auto const shorter = traj.rescale_to(original_T * 0.5);
+    auto const shorter = profile.rescale_to(original_T * 0.5);
     REQUIRE(!shorter.has_value());
     REQUIRE(shorter.error() == ctrlpp::trajectory_error::duration_shorter_than_current);
-    REQUIRE(traj.duration() == original_T);
-    REQUIRE(traj.phase_durations() == original_phases);
+    REQUIRE(profile.duration() == original_T);
+    REQUIRE(profile.phase_durations() == original_phases);
 
     // Slowing the profile down means lowering the velocity limit, and the limit
     // cannot fall below the boundary velocities the caller commanded. That pins a
     // finite reachable maximum well short of ten times the current duration.
-    auto const unreachable = traj.rescale_to(original_T * 10.0);
+    auto const unreachable = profile.rescale_to(original_T * 10.0);
     REQUIRE(!unreachable.has_value());
     REQUIRE(unreachable.error() == ctrlpp::trajectory_error::unreachable_duration);
-    REQUIRE(traj.duration() == original_T);
-    REQUIRE(traj.phase_durations() == original_phases);
+    REQUIRE(profile.duration() == original_T);
+    REQUIRE(profile.phase_durations() == original_phases);
 
     // Its own duration is a success no-op on both profiles.
-    REQUIRE(traj.rescale_to(original_T).has_value());
-    REQUIRE(traj.duration() == original_T);
+    REQUIRE(profile.rescale_to(original_T).has_value());
+    REQUIRE(profile.duration() == original_T);
 }
 
 TEST_CASE("Trapezoidal trajectory rescale_to rejects a duration past the reachable maximum",
@@ -732,8 +1173,8 @@ TEST_CASE("Trapezoidal trajectory rescale_to rejects a duration past the reachab
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 0.1, .v_max = 5.0, .a_max = 1.0, .v0 = 1.0, .v1 = 1.0,
     };
-    auto traj = trapezoidal_profile(cfg);
-    auto const original_T = traj.duration();
+    auto profile = trapezoidal_profile(cfg);
+    auto const original_T = profile.duration();
 
     auto const h = std::abs(cfg.q1 - cfg.q0);
     auto const v_min = std::sqrt((cfg.v0 * cfg.v0 + cfg.v1 * cfg.v1) / 2.0 - cfg.a_max * h);
@@ -741,7 +1182,7 @@ TEST_CASE("Trapezoidal trajectory rescale_to rejects a duration past the reachab
     REQUIRE(T_max > original_T);
 
     // Inside the reachable set the request is served.
-    auto const inside = traj.rescale_to(0.5 * (original_T + T_max));
+    auto const inside = profile.rescale_to(0.5 * (original_T + T_max));
     REQUIRE(inside.has_value());
 
     // Beyond it the request is a typed rejection, not a clamped success.
@@ -755,6 +1196,8 @@ TEST_CASE("Trapezoidal trajectory rescale_to rejects a duration past the reachab
 TEST_CASE("Online planner 2nd retargets while moving triggers braking",
           "[online_planner_2nd][hardening][coverage]")
 {
+    constexpr double target = -5.0;
+    constexpr double step = 0.05;
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 4.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
@@ -762,40 +1205,87 @@ TEST_CASE("Online planner 2nd retargets while moving triggers braking",
     planner.update(10.0);
     // Sample partway through to build up velocity
     for (int i = 0; i < 20; ++i) {
-        planner.sample(0.05 * static_cast<double>(i + 1));
+        planner.sample(step * static_cast<double>(i + 1));
     }
-    // Retarget to opposite direction -- triggers braking
-    planner.update(-5.0);
-    auto pt = planner.sample(0.05 * 21);
-    REQUIRE(std::isfinite(pt.position(0)));
-    REQUIRE(std::isfinite(pt.velocity(0)));
+    auto const carried = planner.sample(step * 20.0);
+    REQUIRE(carried.velocity(0) > 0.0);
+
+    // Retarget behind the direction of travel. The braking the case name claims is
+    // a branch of the planner and the planner names it: nothing about the motion
+    // alone distinguishes a brake-then-replan from a commanded profile that
+    // happens to decelerate first.
+    planner.update(target);
+    auto const& report = planner.diagnostics();
+    REQUIRE(report.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
+    REQUIRE(report.substitution_reason
+            == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+    REQUIRE(report.initial_velocity == carried.velocity(0));
+
+    // The brake runs at the acceleration limit from the carried velocity to rest,
+    // so its duration is that velocity over that limit and the ground it covers is
+    // the mean of the two velocities times it. Both are the closed forms the
+    // branch is built from, evaluated on the same operands in the same order.
+    REQUIRE(report.brake_duration == std::abs(carried.velocity(0)) / cfg.a_max);
+    REQUIRE(report.replan_start_position
+            == carried.position(0) + carried.velocity(0) * report.brake_duration / 2.0);
+
+    double t = step * 20.0;
+    for (int i = 0; i < 200; ++i) {
+        t += step;
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
+    }
+
+    auto const settled = planner.sample(t + step);
+    REQUIRE(planner.is_settled());
+    REQUIRE(settled.position(0) == target);
+    REQUIRE(settled.velocity(0) == 0.0);
 }
 
-TEST_CASE("Online planner 2nd with same position target is near-zero motion",
+TEST_CASE("Online planner 2nd with same position target is a no-op",
           "[online_planner_2nd][hardening][coverage]")
 {
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
-    // Target at current position (0)
+    // A target at the current position with no velocity to shed is a zero-duration
+    // profile, and every sample of it returns the stored target with zero velocity
+    // and zero acceleration. Nothing is computed, so nothing rounds.
     planner.update(0.0);
+    REQUIRE(planner.diagnostics().disposition == ctrlpp::online_planner_disposition::settled);
+    REQUIRE(planner.diagnostics().planned_duration == 0.0);
+
     auto pt = planner.sample(0.01);
-    REQUIRE_THAT(pt.position(0), WithinAbs(0.0, 1e-10));
+    REQUIRE(pt.position(0) == 0.0);
+    REQUIRE(pt.velocity(0) == 0.0);
+    REQUIRE(pt.acceleration(0) == 0.0);
 }
 
 TEST_CASE("Trapezoidal negative cruise duration clamped to zero",
           "[trapezoidal][hardening][coverage]")
 {
-    // Very short distance relative to max velocity -> T_v < 0 path
+    // The velocity limit is far above what the displacement can reach, so the
+    // cruise duration the three-phase solve produces is negative and is clamped to
+    // zero. The shape predicate is the observable that says the clamp fired: a
+    // profile with a cruise phase does not report itself triangular.
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 0.1, .v_max = 100.0, .a_max = 1.0,
     };
-    auto traj = trapezoidal_profile(cfg);
+    auto profile = trapezoidal_profile(cfg);
 
-    // Should be triangular (no cruise phase)
-    REQUIRE(traj.is_triangular());
-    auto pt = traj.evaluate(traj.duration());
-    REQUIRE_THAT(pt.position(0), WithinAbs(0.1, 0.01));
+    REQUIRE(profile.is_triangular());
+    REQUIRE(profile.phase_durations()[1] == 0.0);
+
+    // With the cruise phase gone the two ramps meet at sqrt(a h), exactly as they
+    // do for a triangle the limits never constrained.
+    REQUIRE(profile.peak_velocity() == std::sqrt(cfg.a_max * (cfg.q1 - cfg.q0)));
+
+    // The traversal is asserted by quadrature rather than by the endpoint sample
+    // the deceleration branch reproduces by construction.
+    require_swept_displacement(profile, cfg.q1 - cfg.q0, cfg.a_max);
+    require_terminal_velocity(profile, cfg.v1, cfg.a_max);
+    require_nonnegative_phases(profile);
 }
 
 // ── Online planner 2nd: overshoot and braking coverage ────────────────────────
@@ -804,6 +1294,8 @@ TEST_CASE("Online planner 2nd overshoot recovery brakes and reverses",
           "[online_planner_2nd][hardening][coverage]")
 {
     // Start moving AWAY from target: positive velocity, negative target
+    constexpr double target = -3.0;
+    constexpr double step = 0.01;
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 4.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
@@ -811,36 +1303,49 @@ TEST_CASE("Online planner 2nd overshoot recovery brakes and reverses",
     planner.update(10.0);
     double t = 0.0;
     for (int i = 0; i < 30; ++i) {
-        t += 0.01;
+        t += step;
         planner.sample(t);
     }
+    auto const carried = planner.sample(t);
+    REQUIRE(carried.velocity(0) > 0.0);
 
-    // Now retarget behind us -- current velocity is positive, target is negative
-    // This triggers wrong_direction detection and braking
-    planner.update(-3.0);
+    // Now retarget behind us: the carried velocity points away from the target, so
+    // the commanded shape does not exist and the planner brakes first.
+    planner.update(target);
+    REQUIRE(planner.diagnostics().disposition
+            == ctrlpp::online_planner_disposition::braked_and_replanned);
+    REQUIRE(planner.diagnostics().substitution_reason
+            == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+    REQUIRE(planner.diagnostics().brake_duration
+            == std::abs(carried.velocity(0)) / cfg.a_max);
 
-    // Sample through the braking phase
+    // The recovery is where the kinematic envelope is the contract: a braking
+    // reversal that exceeded either limit would be a motion the machine cannot
+    // execute, and every sample of it is a number.
     for (int i = 0; i < 200; ++i) {
-        t += 0.01;
-        auto pt = planner.sample(t);
-        REQUIRE(std::isfinite(pt.position(0)));
-        REQUIRE(std::isfinite(pt.velocity(0)));
-        REQUIRE(std::isfinite(pt.acceleration(0)));
+        t += step;
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
     }
 
     // Eventually should reach the target
     for (int i = 0; i < 800; ++i) {
-        t += 0.01;
-        planner.sample(t);
+        t += step;
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
     }
-    auto final_pt = planner.sample(t + 0.01);
-    REQUIRE_THAT(final_pt.position(0), WithinAbs(-3.0, 1e-4));
+    auto final_pt = planner.sample(t + step);
     REQUIRE(planner.is_settled());
+    REQUIRE(final_pt.position(0) == target);
+    REQUIRE(final_pt.velocity(0) == 0.0);
 }
 
 TEST_CASE("Online planner 2nd wrong-direction: positive velocity, target behind",
           "[online_planner_2nd][hardening][coverage]")
 {
+    constexpr double step = 0.01;
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 3.0, .a_max = 5.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
@@ -848,31 +1353,42 @@ TEST_CASE("Online planner 2nd wrong-direction: positive velocity, target behind"
     planner.update(5.0);
     double t = 0.0;
     for (int i = 0; i < 20; ++i) {
-        t += 0.01;
+        t += step;
         planner.sample(t);
     }
 
-    // Verify we have positive velocity
+    // The precondition this case needs is that the velocity points forward, which
+    // is what makes the retarget below a reversal. That is the statement; a
+    // threshold fitted to the velocity the planner happens to have built is not.
     auto mid = planner.sample(t);
-    REQUIRE(mid.velocity(0) > 0.1);
+    REQUIRE(mid.velocity(0) > 0.0);
 
-    // Now target is behind current position (same sign but smaller)
-    // This will trigger overshoot detection since stopping distance > displacement
-    planner.update(mid.position(0) - 0.001);
+    // Now target is behind current position (same sign but smaller). The stopping
+    // distance exceeds the remaining displacement, so overshoot is detected.
+    double const target = mid.position(0) - 0.001;
+    planner.update(target);
+    REQUIRE(planner.diagnostics().disposition
+            == ctrlpp::online_planner_disposition::braked_and_replanned);
+    REQUIRE(planner.diagnostics().substitution_reason
+            == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
 
     // Sample through -- must brake, stop, and reverse slightly
     for (int i = 0; i < 500; ++i) {
-        t += 0.01;
-        auto pt = planner.sample(t);
-        REQUIRE(std::isfinite(pt.position(0)));
+        t += step;
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
     }
-    auto settled = planner.sample(t + 0.01);
-    REQUIRE_THAT(settled.velocity(0), WithinAbs(0.0, 1e-6));
+    auto settled = planner.sample(t + step);
+    REQUIRE(planner.is_settled());
+    REQUIRE(settled.velocity(0) == 0.0);
+    REQUIRE(settled.position(0) == target);
 }
 
 TEST_CASE("Online planner 2nd near-zero displacement with velocity triggers braking",
           "[online_planner_2nd][hardening][coverage]")
 {
+    constexpr double step = 0.01;
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
@@ -880,30 +1396,45 @@ TEST_CASE("Online planner 2nd near-zero displacement with velocity triggers brak
     planner.update(5.0);
     double t = 0.0;
     for (int i = 0; i < 50; ++i) {
-        t += 0.01;
+        t += step;
         planner.sample(t);
     }
 
     auto current = planner.sample(t);
-    // Retarget to exactly the current position -- displacement is near zero but
-    // velocity is nonzero, so the wrong_direction/overshoot check fires
+    REQUIRE(current.velocity(0) > 0.0);
+
+    // Retarget to exactly the current position: the displacement vanishes while
+    // the velocity does not, which is the third of the three conditions that
+    // select the brake-then-replan branch.
     planner.update(current.position(0));
+    REQUIRE(planner.diagnostics().disposition
+            == ctrlpp::online_planner_disposition::braked_and_replanned);
+    REQUIRE(planner.diagnostics().substitution_reason
+            == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+    REQUIRE(planner.diagnostics().brake_duration
+            == std::abs(current.velocity(0)) / cfg.a_max);
 
     for (int i = 0; i < 500; ++i) {
-        t += 0.01;
-        auto pt = planner.sample(t);
-        REQUIRE(std::isfinite(pt.position(0)));
+        t += step;
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
     }
     REQUIRE(planner.is_settled());
+
+    auto const settled = planner.sample(t + step);
+    REQUIRE(settled.position(0) == current.position(0));
+    REQUIRE(settled.velocity(0) == 0.0);
 }
 
 TEST_CASE("Online planner 2nd evaluate_profile at and past T boundary",
           "[online_planner_2nd][hardening][coverage]")
 {
+    constexpr double target = 1.0;
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
-    planner.update(1.0);
+    planner.update(target);
 
     // Sample well past when we should have arrived
     double t = 0.0;
@@ -912,17 +1443,22 @@ TEST_CASE("Online planner 2nd evaluate_profile at and past T boundary",
         planner.sample(t);
     }
 
-    // At this point the planner is settled. Further samples past T should
-    // return target position with zero velocity and acceleration.
+    // Past the end of the profile the evaluation returns the stored target and
+    // zeros; it does not run a polynomial out beyond the interval it was fitted
+    // on. All three quantities are assigned, so all three are exact -- and an
+    // evaluation that ran the polynomial instead would drift and be caught here
+    // where a tolerance of a hundred millionth would not notice.
     auto pt = planner.sample(t + 100.0);
-    REQUIRE_THAT(pt.position(0), WithinAbs(1.0, 1e-8));
-    REQUIRE_THAT(pt.velocity(0), WithinAbs(0.0, 1e-8));
-    REQUIRE_THAT(pt.acceleration(0), WithinAbs(0.0, 1e-8));
+    REQUIRE(pt.position(0) == target);
+    REQUIRE(pt.velocity(0) == 0.0);
+    REQUIRE(pt.acceleration(0) == 0.0);
 }
 
-TEST_CASE("Online planner 2nd braking phase evaluation covers all branches",
+TEST_CASE("Online planner 2nd braking phase is entered and evaluated as a brake",
           "[online_planner_2nd][hardening][coverage]")
 {
+    constexpr double target = 5.0;
+    constexpr double fine_step = 0.005;
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 3.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
@@ -935,27 +1471,54 @@ TEST_CASE("Online planner 2nd braking phase evaluation covers all branches",
     }
 
     auto state = planner.sample(t);
-    REQUIRE(state.velocity(0) < -0.1);
+    REQUIRE(state.velocity(0) < 0.0);
 
-    // Now target in positive direction -- triggers wrong_direction braking
-    planner.update(5.0);
+    // Now target in the positive direction. Which branch this takes is not a
+    // property of the motion -- both branches reach the target under both limits
+    // -- so the planner reports it, and that report is what turns a claim about
+    // branch coverage into something that can fail.
+    planner.update(target);
+    auto const& report = planner.diagnostics();
+    REQUIRE(report.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
+    REQUIRE(report.substitution_reason
+            == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+    REQUIRE(report.initial_velocity == state.velocity(0));
+    REQUIRE(report.brake_duration == std::abs(state.velocity(0)) / cfg.a_max);
+    REQUIRE(report.replan_start_position
+            == state.position(0) + state.velocity(0) * report.brake_duration / 2.0);
 
-    // Sample finely through the braking phase to cover dt < T_brake_ branch
+    // Sample inside the braking window, which the fine step stays well within. The
+    // brake is a constant deceleration opposing the carried velocity, so its
+    // signature is exact: the acceleration is the limit itself, signed against the
+    // velocity, and the velocity is the carried one walked back along it. Neither
+    // of the other two branches produces that.
+    double const brake_start = t;
+    REQUIRE(10.0 * fine_step < report.brake_duration);
     for (int i = 0; i < 10; ++i) {
-        t += 0.005;
-        auto pt = planner.sample(t);
-        REQUIRE(std::isfinite(pt.position(0)));
-        REQUIRE(std::isfinite(pt.velocity(0)));
-        REQUIRE(std::isfinite(pt.acceleration(0)));
+        t += fine_step;
+        auto const pt = planner.sample(t);
+        double const elapsed = t - brake_start;
+        double const expected_velocity = state.velocity(0) + cfg.a_max * elapsed;
+        constexpr double eps = std::numeric_limits<double>::epsilon();
+        double const tol =
+            static_cast<double>(planner_velocity_rounding_ops) * eps * cfg.v_max;
+        CAPTURE(i, t, elapsed, pt.velocity(0), expected_velocity, tol);
+        REQUIRE(pt.acceleration(0) == cfg.a_max);
+        REQUIRE(std::abs(pt.velocity(0) - expected_velocity) <= tol);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
     }
 
-    // Continue through rest-to-rest phase after braking
+    // Continue through the replanned rest-to-rest move that follows the brake.
     for (int i = 0; i < 1000; ++i) {
         t += 0.01;
-        planner.sample(t);
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
     }
     auto final_pt = planner.sample(t + 0.01);
-    REQUIRE_THAT(final_pt.position(0), WithinAbs(5.0, 1e-4));
+    REQUIRE(planner.is_settled());
+    REQUIRE(final_pt.position(0) == target);
+    REQUIRE(final_pt.velocity(0) == 0.0);
 }
 
 TEST_CASE("Online planner 2nd reset clears state",
@@ -967,13 +1530,18 @@ TEST_CASE("Online planner 2nd reset clears state",
     planner.update(10.0);
     planner.sample(0.5);
 
-    // Reset to a new position
+    // Reset stores the position and zeros everything else, so the sample that
+    // follows returns what was stored rather than anything computed from it.
     planner.reset(7.0);
     REQUIRE(planner.is_settled());
+    REQUIRE(planner.diagnostics().disposition == ctrlpp::online_planner_disposition::settled);
+    REQUIRE(planner.diagnostics().commanded_target == 7.0);
+    REQUIRE(planner.diagnostics().planned_duration == 0.0);
 
     auto pt = planner.sample(0.0);
-    REQUIRE_THAT(pt.position(0), WithinAbs(7.0, 1e-12));
-    REQUIRE_THAT(pt.velocity(0), WithinAbs(0.0, 1e-12));
+    REQUIRE(pt.position(0) == 7.0);
+    REQUIRE(pt.velocity(0) == 0.0);
+    REQUIRE(pt.acceleration(0) == 0.0);
 }
 
 // ── Cubic spline: periodic and clamped boundary conditions ────────────────────
@@ -993,16 +1561,33 @@ TEST_CASE("Cubic spline periodic BC wraps velocity and acceleration",
 
     auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
-    // Velocity at t=0 should match velocity at t=4 (periodic wrap)
+    // Matching endpoint derivatives are not an outcome of the solve, they are the
+    // constraint the cyclic system imposes: the last velocity is assigned the
+    // first, and the closing row of the system equates the accelerations. What is
+    // left over is the rounding of the expressions that carried those velocities
+    // into the two end spans' coefficients, so one counted budget covers all three
+    // quantities rather than three unexplained magnitudes.
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    auto const spans = times.size() - 1;
+    double const acceleration_scale = knot_acceleration_scale(spline, times);
+    double const position_scale = *std::max_element(positions.begin(), positions.end());
+    double const derivative_tol = static_cast<double>(cyclic_spline_acceleration_ops(spans))
+                                  * eps * acceleration_scale;
+
     auto start = spline.evaluate(times.front());
     auto end = spline.evaluate(times.back());
-    REQUIRE_THAT(start.velocity(0), WithinAbs(end.velocity(0), 1e-8));
+    CAPTURE(acceleration_scale, derivative_tol);
+    REQUIRE(std::abs(start.velocity(0) - end.velocity(0)) <= derivative_tol);
+    REQUIRE(std::abs(start.acceleration(0) - end.acceleration(0)) <= derivative_tol);
 
-    // Acceleration at t=0 should match acceleration at t=4
-    REQUIRE_THAT(start.acceleration(0), WithinAbs(end.acceleration(0), 1e-8));
-
-    // Position at endpoints must match
-    REQUIRE_THAT(start.position(0), WithinAbs(end.position(0), 1e-10));
+    // The first knot's value is the span's stored constant term, so the start
+    // position is the waypoint exactly; the last is clamped into the final span
+    // and runs the Horner chain, so it carries the smaller budget for that chain.
+    REQUIRE(start.position(0) == positions.front());
+    double const horner_tol =
+        static_cast<double>(spline_horner_rounding_ops) * eps * position_scale;
+    CAPTURE(end.position(0), horner_tol);
+    REQUIRE(std::abs(end.position(0) - positions.back()) <= horner_tol);
 }
 
 TEST_CASE("Cubic spline clamped BC with exactly 2 waypoints",
@@ -1018,15 +1603,22 @@ TEST_CASE("Cubic spline clamped BC with exactly 2 waypoints",
 
     auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
-    // Endpoints should match
+    // With two waypoints the clamped solve has no interior unknowns at all: both
+    // endpoint velocities are the supplied ones, assigned rather than solved, and
+    // the first span's constant term is the first waypoint. Three of the four
+    // quantities below are therefore exact. Only the last knot's position runs the
+    // Horner chain, because the span search clamps it into the single span.
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    double const tol = static_cast<double>(spline_horner_rounding_ops) * eps
+                       * std::max(std::abs(cfg.positions.back()), std::abs(cfg.vn));
+
     auto start = spline.evaluate(0.0);
     auto end = spline.evaluate(1.0);
-    REQUIRE_THAT(start.position(0), WithinAbs(0.0, 1e-10));
-    REQUIRE_THAT(end.position(0), WithinAbs(1.0, 1e-10));
-
-    // Velocities at endpoints should match the clamped values
-    REQUIRE_THAT(start.velocity(0), WithinAbs(2.0, 1e-8));
-    REQUIRE_THAT(end.velocity(0), WithinAbs(-1.0, 1e-8));
+    REQUIRE(start.position(0) == 0.0);
+    REQUIRE(start.velocity(0) == cfg.v0);
+    CAPTURE(end.position(0), end.velocity(0), tol);
+    REQUIRE(std::abs(end.position(0) - 1.0) <= tol);
+    REQUIRE(std::abs(end.velocity(0) - cfg.vn) <= tol);
 }
 
 TEST_CASE("Cubic spline clamped BC with interior knots",
@@ -1042,17 +1634,30 @@ TEST_CASE("Cubic spline clamped BC with interior knots",
 
     auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
-    // Endpoint velocities must match clamped values
+    // The endpoint velocities are imposed, not solved: the clamped path assigns
+    // them before reducing the interior system, so the first one survives into the
+    // first span's linear coefficient untouched. The last one reaches the sample
+    // through the final span's Horner chain, which is what its budget covers, and
+    // the same budget covers the last knot's position for the same reason.
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    double const scale = std::max(*std::max_element(cfg.positions.begin(), cfg.positions.end()),
+                                  std::abs(cfg.vn));
+    double const tol = static_cast<double>(spline_horner_rounding_ops) * eps * scale;
+
     auto start = spline.evaluate(0.0);
     auto end = spline.evaluate(3.0);
-    REQUIRE_THAT(start.velocity(0), WithinAbs(0.5, 1e-8));
-    REQUIRE_THAT(end.velocity(0), WithinAbs(1.0, 1e-8));
+    REQUIRE(start.velocity(0) == cfg.v0);
+    CAPTURE(end.velocity(0), tol);
+    REQUIRE(std::abs(end.velocity(0) - cfg.vn) <= tol);
 
-    // Knot interpolation
-    for (std::size_t i = 0; i < cfg.times.size(); ++i) {
+    // Knot interpolation, exact at every knot the span search does not clamp.
+    for (std::size_t i = 0; i + 1 < cfg.times.size(); ++i) {
         auto pt = spline.evaluate(cfg.times[i]);
-        REQUIRE_THAT(pt.position(0), WithinAbs(cfg.positions[i], 1e-10));
+        CAPTURE(i);
+        REQUIRE(pt.position(0) == cfg.positions[i]);
     }
+    CAPTURE(end.position(0));
+    REQUIRE(std::abs(end.position(0) - cfg.positions.back()) <= tol);
 }
 
 TEST_CASE("Cubic spline find_span at exact knot time returns correct span",
@@ -1068,27 +1673,46 @@ TEST_CASE("Cubic spline find_span at exact knot time returns correct span",
 
     auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
-    // Evaluate exactly at each knot -- should not crash and return matching position
-    for (std::size_t i = 0; i < times.size(); ++i) {
+    // The span search has no accessor, so the span it chose is asserted through
+    // what that choice produces. At an interior knot the correct span is the one
+    // that STARTS there: its local time is zero and the Horner form collapses to
+    // its stored constant term, so the value is the waypoint bit for bit. The
+    // preceding span reaches the same waypoint only through its full cubic chain,
+    // which reproduces it to within rounding and not generally to the bit. Exact
+    // equality is therefore the sharpest statement available about which span ran,
+    // and it is why the exact form is used here rather than a tolerance that both
+    // spans would satisfy.
+    for (std::size_t i = 0; i + 1 < times.size(); ++i) {
         auto pt = spline.evaluate(times[i]);
-        REQUIRE_THAT(pt.position(0), WithinAbs(positions[i], 1e-10));
+        CAPTURE(i);
+        REQUIRE(pt.position(0) == positions[i]);
     }
 
-    // Evaluate at the last knot time (edge case for find_span clamp)
+    // The last knot has no span starting at it, so the search clamps it into the
+    // final span. Past the last knot the time clamp does the rest, and a sample
+    // there must be the SAME evaluation -- identical bits, not merely a nearby
+    // value, because it is the identical span at the identical local time.
     auto pt = spline.evaluate(times.back());
-    REQUIRE_THAT(pt.position(0), WithinAbs(positions.back(), 1e-10));
-
-    // Evaluate past the last knot (should be clamped)
     auto past = spline.evaluate(times.back() + 1.0);
-    REQUIRE_THAT(past.position(0), WithinAbs(positions.back(), 1e-10));
+    REQUIRE(past.position(0) == pt.position(0));
+    REQUIRE(past.velocity(0) == pt.velocity(0));
+    REQUIRE(past.acceleration(0) == pt.acceleration(0));
+
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    double const scale = *std::max_element(positions.begin(), positions.end());
+    double const tol = static_cast<double>(spline_horner_rounding_ops) * eps * scale;
+    CAPTURE(pt.position(0), positions.back(), tol);
+    REQUIRE(std::abs(pt.position(0) - positions.back()) <= tol);
 }
 
-TEST_CASE("Cubic spline periodic BC with 3 points (minimum for cyclic Thomas)",
+TEST_CASE("Cubic spline periodic BC on the smallest cyclic system this case builds",
           "[cubic_spline][hardening][coverage]")
 {
-    // Minimum periodic: 3 points, 2 spans, cyclic system size = 2
-    // But cyclic_thomas_solve requires n >= 3. With n_pts=3, n=2 spans,
-    // the periodic solver uses n=2 unknowns. Let us use 4 points instead.
+    // Four waypoints, three spans, and a cyclic system of three unknowns. The
+    // Sherman-Morrison reduction the periodic solve uses is exact down to two, so
+    // this is not the smallest system it admits; it is the smallest one this file
+    // exercises, and the case name used to claim three waypoints while the
+    // configuration below has always had four.
     std::vector<double> times{0.0, 1.0, 2.0, 3.0};
     std::vector<double> positions{0.0, 1.0, -1.0, 0.0};
 
@@ -1100,10 +1724,20 @@ TEST_CASE("Cubic spline periodic BC with 3 points (minimum for cyclic Thomas)",
 
     auto spline = realizable<ctrlpp::cubic_spline<double>>(cfg);
 
+    // As above: the wrap is imposed by the cyclic system, so the residual is the
+    // rounding of the coefficients that carried it, at the scale of the largest
+    // acceleration the spline reports. One budget, both quantities.
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    auto const spans = times.size() - 1;
+    double const acceleration_scale = knot_acceleration_scale(spline, times);
+    double const tol = static_cast<double>(cyclic_spline_acceleration_ops(spans))
+                       * eps * acceleration_scale;
+
     auto start = spline.evaluate(0.0);
     auto end = spline.evaluate(3.0);
-    REQUIRE_THAT(start.velocity(0), WithinAbs(end.velocity(0), 1e-8));
-    REQUIRE_THAT(start.acceleration(0), WithinAbs(end.acceleration(0), 1e-8));
+    CAPTURE(acceleration_scale, tol, start.velocity(0), end.velocity(0));
+    REQUIRE(std::abs(start.velocity(0) - end.velocity(0)) <= tol);
+    REQUIRE(std::abs(start.acceleration(0) - end.acceleration(0)) <= tol);
 }
 
 // ── Synchronize: empty vector and additional edge cases ───────────────────────
@@ -1143,8 +1777,8 @@ TEST_CASE("Trapezoidal reports the acceleration it raised the command to",
         .v0 = 3.0, .v1 = 2.0,
     };
 
-    auto const traj = trapezoidal_profile(cfg);
-    auto const& disp = traj.disposition();
+    auto const profile = trapezoidal_profile(cfg);
+    auto const& disp = profile.disposition();
 
     REQUIRE(disp.commanded_acceleration == cfg.a_max);
     REQUIRE(disp.realized_acceleration > disp.commanded_acceleration);
@@ -1166,9 +1800,9 @@ TEST_CASE("Trapezoidal reports the acceleration it raised the command to",
     // which is the whole reason the raise is a disposition and not a failure.
     // The commanded limit is not the scale these contracts are measured at --
     // it is not the limit the ramps run at.
-    require_nonnegative_phases(traj);
-    require_swept_displacement(traj, cfg.q1 - cfg.q0, disp.realized_acceleration);
-    require_terminal_velocity(traj, cfg.v1, disp.realized_acceleration);
+    require_nonnegative_phases(profile);
+    require_swept_displacement(profile, cfg.q1 - cfg.q0, disp.realized_acceleration);
+    require_terminal_velocity(profile, cfg.v1, disp.realized_acceleration);
 }
 
 TEST_CASE("Trapezoidal reports an unraised acceleration as equal to the commanded one",
@@ -1183,15 +1817,15 @@ TEST_CASE("Trapezoidal reports an unraised acceleration as equal to the commande
         .v0 = 3.0, .v1 = 2.0,
     };
 
-    auto const traj = trapezoidal_profile(cfg);
-    auto const& disp = traj.disposition();
+    auto const profile = trapezoidal_profile(cfg);
+    auto const& disp = profile.disposition();
 
     REQUIRE(disp.commanded_acceleration == cfg.a_max);
     REQUIRE(disp.realized_acceleration == cfg.a_max);
 
-    require_nonnegative_phases(traj);
-    require_swept_displacement(traj, cfg.q1 - cfg.q0, disp.realized_acceleration);
-    require_terminal_velocity(traj, cfg.v1, disp.realized_acceleration);
+    require_nonnegative_phases(profile);
+    require_swept_displacement(profile, cfg.q1 - cfg.q0, disp.realized_acceleration);
+    require_terminal_velocity(profile, cfg.v1, disp.realized_acceleration);
 }
 
 TEST_CASE("Trapezoidal rescale_to very long duration",
@@ -1200,24 +1834,27 @@ TEST_CASE("Trapezoidal rescale_to very long duration",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 5.0, .v_max = 2.0, .a_max = 1.0,
     };
-    auto traj = trapezoidal_profile(cfg);
+    auto profile = trapezoidal_profile(cfg);
 
     // Rescale to a very long duration (100x original)
-    auto const original_T = traj.duration();
-    auto const rescaled = traj.rescale_to(original_T * 100.0);
+    auto const original_T = profile.duration();
+    auto const rescaled = profile.rescale_to(original_T * 100.0);
     REQUIRE(rescaled.has_value());
 
-    REQUIRE(traj.duration() > original_T * 10.0);
-    require_realized_duration(traj, original_T * 100.0);
+    REQUIRE(profile.duration() > original_T * 10.0);
+    require_realized_duration(profile, original_T * 100.0);
 
     // The start position is not a by-construction value, so it is still worth
     // asserting; the traversal is asserted by quadrature rather than by the end
-    // position, which the final segment reproduces by construction.
-    auto start = traj.evaluate(0.0);
-    REQUIRE_THAT(start.position(0), WithinAbs(0.0, 1e-10));
-    require_swept_displacement(traj, cfg.q1 - cfg.q0, cfg.a_max);
-    require_terminal_velocity(traj, cfg.v1, cfg.a_max);
-    require_nonnegative_phases(traj);
+    // position, which the final segment reproduces by construction. At time zero
+    // the acceleration branch adds nothing to the commanded start, so the sample
+    // is that start exactly.
+    auto start = profile.evaluate(0.0);
+    REQUIRE(start.position(0) == cfg.q0);
+    REQUIRE(start.velocity(0) == cfg.v0);
+    require_swept_displacement(profile, cfg.q1 - cfg.q0, cfg.a_max);
+    require_terminal_velocity(profile, cfg.v1, cfg.a_max);
+    require_nonnegative_phases(profile);
 }
 
 TEST_CASE("Trapezoidal rescale_to rejects a zero-distance trajectory",
@@ -1226,17 +1863,17 @@ TEST_CASE("Trapezoidal rescale_to rejects a zero-distance trajectory",
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 3.0, .q1 = 3.0, .v_max = 2.0, .a_max = 1.0,
     };
-    auto traj = trapezoidal_profile(cfg);
+    auto profile = trapezoidal_profile(cfg);
 
     // A stationary profile reaches its own duration and nothing longer: the
     // reachable maximum derived from the vanishing-cruise limit is zero at rest,
     // so every longer request is a typed rejection. No epsilon takes part in that.
-    REQUIRE(traj.duration() == 0.0);
+    REQUIRE(profile.duration() == 0.0);
 
-    auto const rescaled = traj.rescale_to(1.0);
+    auto const rescaled = profile.rescale_to(1.0);
     REQUIRE(!rescaled.has_value());
     REQUIRE(rescaled.error() == ctrlpp::trajectory_error::unreachable_duration);
-    REQUIRE(traj.duration() == 0.0);
+    REQUIRE(profile.duration() == 0.0);
 }
 
 TEST_CASE("Trapezoidal negative direction with non-zero BCs",
@@ -1248,13 +1885,24 @@ TEST_CASE("Trapezoidal negative direction with non-zero BCs",
         .v0 = -1.0, .v1 = -0.5,
     };
 
-    auto traj = trapezoidal_profile(cfg);
-    REQUIRE(std::isfinite(traj.duration()));
+    auto profile = trapezoidal_profile(cfg);
 
-    auto start = traj.evaluate(0.0);
-    auto end = traj.evaluate(traj.duration());
-    REQUIRE_THAT(start.position(0), WithinAbs(10.0, 1e-10));
-    REQUIRE_THAT(end.position(0), WithinAbs(2.0, 0.01));
+    // Nothing was raised here, so the contracts are measured at the commanded
+    // limit; the disposition says which.
+    REQUIRE(profile.disposition().realized_acceleration == cfg.a_max);
+    require_nonnegative_phases(profile);
+
+    // A negative traversal with nonzero boundary velocities is what the swept
+    // displacement and terminal velocity contracts were written for: the signed
+    // displacement goes in as it stands and the commanded final velocity with it.
+    // The end sample they replace returns the commanded value by construction and
+    // was carrying half a percent of slack to say nothing.
+    require_swept_displacement(profile, cfg.q1 - cfg.q0, cfg.a_max);
+    require_terminal_velocity(profile, cfg.v1, cfg.a_max);
+
+    auto start = profile.evaluate(0.0);
+    REQUIRE(start.position(0) == cfg.q0);
+    REQUIRE(start.velocity(0) == cfg.v0);
 }
 
 // ── Smoothing spline: 2-point linear degeneration ─────────────────────────────
@@ -1270,31 +1918,56 @@ TEST_CASE("Smoothing spline with 2 points and mu near zero is still linear",
 
     auto spline = realizable<ctrlpp::smoothing_spline<double>>(cfg);
 
-    // 2-point case always degenerates to linear regardless of mu
+    // With two waypoints the construction never reaches the smoothing solve: it
+    // takes the linear path, where the tradeoff parameter plays no part and the
+    // quadratic and cubic coefficients are assigned zero. All three quantities are
+    // exact, and the same three the case's tolerances were describing to a percent.
     auto mid = spline.evaluate(1.0);
-    REQUIRE_THAT(mid.position(0), WithinAbs(3.0, 0.01));
-
-    // Velocity should be constant (slope = 2.0)
-    REQUIRE_THAT(mid.velocity(0), WithinAbs(2.0, 0.01));
-
-    // Acceleration should be zero for linear
-    REQUIRE_THAT(mid.acceleration(0), WithinAbs(0.0, 1e-10));
+    REQUIRE(mid.position(0) == 3.0);
+    REQUIRE(mid.velocity(0) == 2.0);
+    REQUIRE(mid.acceleration(0) == 0.0);
 }
 
-TEST_CASE("Smoothing spline with mu at machine epsilon clamp",
+TEST_CASE("Smoothing spline at the bottom of the tradeoff domain saturates on the line",
           "[smoothing_spline][hardening][coverage]")
 {
-    // mu very close to 0 triggers the clamp to eps
+    // There is no clamp here to exercise. The construction rejects a tradeoff
+    // parameter outside (0, 1] and passes everything inside it straight into the
+    // weight 2 (1 - mu) / (3 mu); nothing rounds the parameter up to anything.
+    // What a parameter this small does is saturate: the weight is large enough
+    // that the interior second derivatives have been driven to the bottom of the
+    // significand and the smoothed positions ARE the least-squares line, so the
+    // spline evaluates to that line rather than merely near it.
+    std::vector<double> times{0.0, 1.0, 2.0, 3.0};
+    std::vector<double> positions{0.0, 1.0, 0.5, 2.0};
+
     ctrlpp::smoothing_spline<double>::config cfg{
-        .times = {0.0, 1.0, 2.0, 3.0},
-        .positions = {0.0, 1.0, 0.5, 2.0},
+        .times = times,
+        .positions = positions,
         .mu = 1e-15,
     };
 
     auto spline = realizable<ctrlpp::smoothing_spline<double>>(cfg);
-    auto pt = spline.evaluate(1.5);
-    REQUIRE(std::isfinite(pt.position(0)));
-    REQUIRE(std::isfinite(pt.velocity(0)));
+    require_moment_relation(spline, times);
+
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    double const probe = 1.5;
+    double const line = least_squares_line_at(times, positions, probe);
+    double const scale = *std::max_element(positions.begin(), positions.end());
+    double const tol = static_cast<double>(spline_horner_rounding_ops) * eps * scale;
+
+    auto pt = spline.evaluate(probe);
+    CAPTURE(pt.position(0), line, tol);
+    REQUIRE(std::abs(pt.position(0) - line) <= tol);
+
+    // Saturated means further descent changes nothing: a parameter an order
+    // smaller lands on the same line to the same budget. That is the statement a
+    // clamp would have made, made against the behavior that is actually there.
+    auto deeper = realizable<ctrlpp::smoothing_spline<double>>(
+        ctrlpp::smoothing_spline<double>::config{
+            .times = times, .positions = positions, .mu = 1e-16});
+    CAPTURE(deeper.evaluate(probe).position(0));
+    REQUIRE(std::abs(deeper.evaluate(probe).position(0) - line) <= tol);
 }
 
 // ── Online planner 2nd: rest-to-rest subroutine ───────────────────────────────
@@ -1302,6 +1975,7 @@ TEST_CASE("Smoothing spline with mu at machine epsilon clamp",
 TEST_CASE("Online planner 2nd rest-to-rest with near-zero displacement after brake",
           "[online_planner_2nd][hardening][coverage]")
 {
+    constexpr double step = 0.01;
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
@@ -1310,7 +1984,7 @@ TEST_CASE("Online planner 2nd rest-to-rest with near-zero displacement after bra
     planner.update(5.0);
     double t = 0.0;
     for (int i = 0; i < 20; ++i) {
-        t += 0.01;
+        t += step;
         planner.sample(t);
     }
 
@@ -1319,49 +1993,78 @@ TEST_CASE("Online planner 2nd rest-to-rest with near-zero displacement after bra
     double stop_pos = state.position(0)
                       + state.velocity(0) * std::abs(state.velocity(0))
                             / (2.0 * cfg.a_max);
-    // Target exactly at the stop position
+    // Target exactly at the stop position. The remaining displacement is the
+    // rounding of that estimate against the planner's own stopping distance, which
+    // is what puts the rest-to-rest solve on its degenerate branch. The planner
+    // can still carry the velocity through, so which branch it selects is its
+    // report to make rather than this case's to assume; what the case pins is
+    // that the motion respects both limits and ends where it was sent.
     planner.update(stop_pos);
+    REQUIRE(planner.diagnostics().commanded_target == stop_pos);
+    REQUIRE(planner.diagnostics().initial_velocity == state.velocity(0));
 
     for (int i = 0; i < 500; ++i) {
-        t += 0.01;
-        auto pt = planner.sample(t);
-        REQUIRE(std::isfinite(pt.position(0)));
+        t += step;
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
     }
     REQUIRE(planner.is_settled());
+
+    auto const settled = planner.sample(t + step);
+    REQUIRE(settled.position(0) == stop_pos);
+    REQUIRE(settled.velocity(0) == 0.0);
 }
 
 TEST_CASE("Online planner 2nd cruise phase with initial velocity",
           "[online_planner_2nd][hardening][coverage]")
 {
     // Large displacement so the planner enters cruise phase even with initial velocity
+    constexpr double target = 100.0;
+    constexpr double step = 0.01;
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 4.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Build some velocity first
-    planner.update(100.0);
+    planner.update(target);
     double t = 0.0;
     for (int i = 0; i < 10; ++i) {
-        t += 0.01;
+        t += step;
         planner.sample(t);
     }
 
-    // Retarget with large displacement -- will use compute_with_initial_velocity
-    // and should enter cruise phase (v_tri >= v_max)
-    planner.update(100.0);
+    // Retarget with the same large displacement, now carrying a velocity: the
+    // commanded shape exists, so the planner carries it through rather than
+    // braking, and the profile has room for a cruise phase.
+    planner.update(target);
+    REQUIRE(planner.diagnostics().disposition
+            == ctrlpp::online_planner_disposition::commanded_profile);
+    double const planned_duration = planner.diagnostics().planned_duration;
+    REQUIRE(planned_duration > 0.0);
 
-    bool saw_cruise = false;
-    for (int i = 0; i < 5000; ++i) {
-        t += 0.01;
-        auto pt = planner.sample(t);
-        REQUIRE(std::isfinite(pt.position(0)));
-        // Cruise phase: velocity near v_max, acceleration near zero
-        if (std::abs(pt.acceleration(0)) < 0.01
-            && std::abs(std::abs(pt.velocity(0)) - cfg.v_max) < 0.1) {
-            saw_cruise = true;
+    // In cruise the evaluation assigns the acceleration zero and the velocity the
+    // cruise velocity, which on this profile IS the velocity limit, signed. Both
+    // are assignments, so the detection is exact. A band fitted around them can be
+    // set by a sample that is merely near cruise and missed on one that is exactly
+    // in it, which is the opposite of what a coverage flag is for.
+    int cruise_samples = 0;
+    int const steps = static_cast<int>(planned_duration / step) + 200;
+    for (int i = 0; i < steps; ++i) {
+        t += step;
+        auto const pt = planner.sample(t);
+        CAPTURE(i, t);
+        require_envelope_2nd(pt, cfg.v_max, cfg.a_max);
+        if (pt.acceleration(0) == 0.0 && std::abs(pt.velocity(0)) == cfg.v_max) {
+            ++cruise_samples;
         }
     }
-    REQUIRE(saw_cruise);
+    REQUIRE(cruise_samples > 0);
 
-    auto final_pt = planner.sample(t + 0.01);
-    REQUIRE_THAT(final_pt.position(0), WithinAbs(100.0, 1.0));
+    // The loop now runs past the end of the profile, which the old one did not:
+    // its last sample sat mid-deceleration and a tolerance of one percent of the
+    // target was what let that pass for a settled value.
+    auto final_pt = planner.sample(t + step);
+    REQUIRE(planner.is_settled());
+    REQUIRE(final_pt.position(0) == target);
+    REQUIRE(final_pt.velocity(0) == 0.0);
 }
