@@ -417,6 +417,123 @@ TEST_CASE("UKF tracks a decaying coupled system exactly as the linear filter doe
     }
 }
 
+TEST_CASE("UKF prediction through a quadratic matches the Gaussian closed form",
+          "[ukf][hardening][precision]")
+{
+    // The only genuinely nonlinear oracle in this file, and it needs no second
+    // implementation to check against. A Gaussian pushed through a quadratic has
+    // a closed form: for y = a x^2 + b x + c with x ~ N(mu, sigma^2),
+    //     E[y]   = a (mu^2 + sigma^2) + b mu + c
+    //     Var[y] = 2 a^2 sigma^4 + (2 a mu + b)^2 sigma^2.
+    //
+    // The scaled transform reproduces BOTH exactly, and the second one only
+    // under a condition on the weights that is worth stating because it is what
+    // makes this an oracle rather than a tolerance contest. Writing the symmetric
+    // set as mu and mu +/- gamma sigma with gamma^2 = n + lambda, the covariance
+    // weights recombine to
+    //     Var_UT = (2 a mu + b)^2 sigma^2 + a^2 sigma^4 (lambda + 1 - alpha^2 + beta),
+    // so the transform is exact precisely when alpha^2 kappa + beta = 2. The
+    // default options satisfy it -- beta of two is the Gaussian-optimal choice
+    // and kappa is zero -- and the case asserts that rather than assuming it, so
+    // a change to the defaults surfaces here instead of silently turning this
+    // into an approximation.
+    //
+    // SCOPE IS THE PREDICTION STEP ONLY. The posterior after a measurement
+    // update is not Gaussian for nonlinear dynamics and has no closed form; there
+    // is deliberately no update call in this case.
+    constexpr double a = 0.3;
+    constexpr double b = -0.7;
+    constexpr double c = 1.1;
+
+    struct quadratic_dynamics
+    {
+        auto operator()(const ctrlpp::Vector<double, 1>& x,
+                        const ctrlpp::Vector<double, 1>& /*u*/) const -> ctrlpp::Vector<double, 1>
+        {
+            ctrlpp::Vector<double, 1> xn;
+            xn(0) = a * x(0) * x(0) + b * x(0) + c;
+            return xn;
+        }
+    };
+
+    struct scalar_measurement
+    {
+        auto operator()(const ctrlpp::Vector<double, 1>& x) const -> ctrlpp::Vector<double, 1>
+        {
+            return x;
+        }
+    };
+
+    constexpr ctrlpp::merwe_options<double> options{};
+    constexpr double n = 1.0;
+    // The exactness condition, asserted rather than assumed.
+    REQUIRE(options.alpha * options.alpha * options.kappa + options.beta == 2.0);
+
+    const double amplitude = unscented_amplification(options, n);
+
+    // Rounded operations at the sigma-point weights' own magnitude, for a
+    // one-state problem with three sigma points. The predicted mean recombines
+    // three weighted terms: three products and two sums. The predicted covariance
+    // recombines three weighted squared deviations: three differences, three
+    // squares, three products and two sums.
+    constexpr int predict_mean_ops = 5;
+    constexpr int predict_covariance_ops = 11;
+
+    for(const double mu : {0.0, 1.0, -2.5})
+    {
+        for(const double variance : {0.01, 1.0, 4.0})
+        {
+            CAPTURE(mu, variance);
+
+            ctrlpp::ukf_config<double, 1, 1, 1> cfg{};
+            ctrlpp::Matrix<double, 1, 1> Q;
+            Q << 0.05;
+            cfg.Q = Q;
+            cfg.R = ctrlpp::Matrix<double, 1, 1>::Identity();
+            cfg.x0 = ctrlpp::Vector<double, 1>::Constant(mu);
+            cfg.P0 = ctrlpp::Matrix<double, 1, 1>::Constant(variance);
+
+            auto filter = ctrlpp::test::constructed(
+                ctrlpp::ukf<double, 1, 1, 1, quadratic_dynamics, scalar_measurement>::create(
+                    quadratic_dynamics{}, scalar_measurement{}, cfg));
+
+            filter.predict(ctrlpp::Vector<double, 1>::Zero());
+
+            const double slope = 2.0 * a * mu + b;
+            const double expected_mean = a * (mu * mu + variance) + b * mu + c;
+            // The filter adds the process noise to the transformed covariance, so
+            // the closed form carries it too.
+            const double expected_variance =
+                2.0 * a * a * variance * variance + slope * slope * variance + Q(0, 0);
+
+            // The scales are the largest quantities the recombinations actually
+            // sum, amplified by the cancellation the weights impose: the
+            // propagated centre for the mean, and the squares of the terms the
+            // deviations are built from for the covariance.
+            const double centre = a * mu * mu + b * mu + c;
+            const double mean_scale = amplitude * std::max(std::abs(centre), 1.0);
+            const double variance_scale =
+                amplitude
+                * std::max({centre * centre, a * a * variance * variance,
+                            slope * slope * variance, Q(0, 0)});
+
+            CAPTURE(filter.state()(0), expected_mean);
+            REQUIRE_THAT(filter.state()(0),
+                         WithinAbs(expected_mean, predict_mean_ops * ukf_eps * mean_scale));
+
+            CAPTURE(filter.covariance()(0, 0), expected_variance);
+            REQUIRE_THAT(filter.covariance()(0, 0),
+                         WithinAbs(expected_variance,
+                                   predict_covariance_ops * ukf_eps * variance_scale));
+
+            // A prior variance the transform could not have reproduced would show
+            // as a negative reported variance long before it showed as a wrong
+            // one, so pin the sign too.
+            REQUIRE(filter.covariance()(0, 0) > 0.0);
+        }
+    }
+}
+
 TEST_CASE("UKF near-singular P0", "[ukf][hardening][robustness]")
 {
     ctrlpp::ukf_config<double, 2, 1, 1> cfg{};

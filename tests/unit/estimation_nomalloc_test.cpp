@@ -7,8 +7,10 @@
 // and particle_filter predict/update. Construction (including the create
 // filters) happens outside the armed window; only the steady-state predict and
 // update loop is guarded. The particle_filter case additionally forces the
-// resampling path every step, seeds its RNG deterministically, and asserts that
-// two identically seeded filters fed identical measurements stay bitwise equal.
+// resampling path every step, seeds its RNG deterministically, reads the
+// posterior covariance inside the armed window, and asserts that two identically
+// seeded filters fed identical measurements stay bitwise equal in both the
+// estimate and the reported uncertainty.
 
 #include "nomalloc_harness.h"
 #include "hardening_helpers.h"
@@ -365,6 +367,13 @@ TEST_CASE("particle_filter predict/update performs zero heap allocation and is s
         {
             pf.predict(u);
             pf.update(z);
+            // The posterior-covariance accessor is inside the armed window
+            // because it is a steady-state read a control loop makes every step,
+            // and it walks the whole particle array forming an outer product per
+            // particle -- the shape most likely to reach for the heap if it were
+            // written with a dynamically sized temporary.
+            const Matrix<double, 2, 2> P = pf.covariance();
+            (void)P;
         }
     });
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
@@ -383,4 +392,13 @@ TEST_CASE("particle_filter predict/update performs zero heap allocation and is s
     const Vector<double, 2> b = pf_repeat.state();
     REQUIRE(a(0) == b(0));
     REQUIRE(a(1) == b(1));
+
+    // The reported uncertainty is as reproducible as the estimate, and is
+    // exactly symmetric because the accessor symmetrizes.
+    const Matrix<double, 2, 2> Pa = pf.covariance();
+    const Matrix<double, 2, 2> Pb = pf_repeat.covariance();
+    REQUIRE(Pa(0, 0) == Pb(0, 0));
+    REQUIRE(Pa(0, 1) == Pb(0, 1));
+    REQUIRE(Pa(1, 1) == Pb(1, 1));
+    REQUIRE(Pa(0, 1) == Pa(1, 0));
 }

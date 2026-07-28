@@ -61,11 +61,13 @@ Refines `ObserverPolicy` with covariance and innovation access. Satisfied by `ka
 | `luenberger_observer` | no | `estimation/luenberger.h` |
 | `ekf` | yes | `estimation/ekf.h` |
 | `ukf` | yes | `estimation/ukf.h` |
-| `particle_filter` | no | `estimation/particle_filter.h` |
+| `particle_filter` | no (see below) | `estimation/particle_filter.h` |
 | `mekf` | yes | `estimation/mekf.h` |
 | `manifold_ukf` | yes | `estimation/manifold_ukf.h` |
 | `complementary_filter` | no | `estimation/complementary_filter.h` |
 | `null_observer` | no | `estimation/observer_policy.h` |
+
+`particle_filter` does expose a `covariance()` accessor returning the weighted posterior covariance of its particle set, but it carries no innovation, so it does not satisfy the refinement. The concept requires both.
 
 ## null_observer
 

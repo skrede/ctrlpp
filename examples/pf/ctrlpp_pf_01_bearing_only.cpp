@@ -162,10 +162,15 @@ int main()
         std::cout << static_cast<double>(k) * dt << ',' << x_true(0) << ',' << est(0) << ',' << x_true(1) << ',' << est(1) << ',' << x_true(2) << ',' << est(2) << ',' << x_true(3) << ',' << est(3) << '\n';
     }
 
-    // Final position error
+    // Final position error, reported beside the uncertainty the filter itself
+    // claims. An error is only interpretable against that: the same number is a
+    // healthy result for a filter reporting a metre of spread and a failure for
+    // one reporting a centimetre.
     auto est_final = filter.state();
     double err_pos = std::sqrt((x_true(0) - est_final(0)) * (x_true(0) - est_final(0)) + (x_true(1) - est_final(1)) * (x_true(1) - est_final(1)));
+    auto P_final = filter.covariance();
     std::cerr << "Final position error: " << err_pos << " m\n";
+    std::cerr << "Reported position standard deviation: " << std::sqrt(P_final(0, 0)) << ", " << std::sqrt(P_final(1, 1)) << " m\n";
 
     return 0;
 }

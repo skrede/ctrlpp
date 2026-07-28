@@ -105,6 +105,20 @@ auto weighted_mean() const -> state_vector_t;
 
 Returns the weighted mean of all particles.
 
+### covariance
+
+```cpp
+auto covariance() const -> Matrix<Scalar, NX, NX>;
+```
+
+Returns the weighted second central moment of the particle set about its weighted mean: the posterior covariance the cloud and its weights represent. This is the uncertainty half of the estimate, and it is not recoverable from `particles()` alone, because the unweighted dispersion of the array ignores the weights and therefore describes the prior spread whenever the last `update` did not trigger a resampling.
+
+Three properties of the definition:
+
+- The centre is always the weighted mean, including when `extraction` is `map`. A second moment about any other point is larger than the covariance and is not one; dispersion about the MAP estimate can be formed from `particles()` and `map_estimate()`.
+- There is no Bessel correction. The weights sum to one, so this is the weighted second moment, matching the convention the unscented filter's sigma-point covariance uses.
+- Uniform weights need no special case. The expression reduces exactly to the plain second moment of the particles about their plain mean, which is the correct answer after the weight-degeneracy recovery described under `update`: the measurement carried no information, so the reported uncertainty is the dispersion the filter was already carrying.
+
 ### map_estimate
 
 ```cpp

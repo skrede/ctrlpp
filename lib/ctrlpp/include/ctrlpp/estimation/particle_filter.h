@@ -12,6 +12,8 @@
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/model/measurement_model.h"
 
+#include "ctrlpp/detail/covariance_ops.h"
+
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/resampling/resampling_strategy.h"
 #include "ctrlpp/estimation/resampling/systematic_resampling.h"
@@ -182,6 +184,58 @@ public:
                 mean += m_linear_weights[i] * m_particles[i];
         }
         return mean;
+    }
+
+    /// @brief Weighted second central moment of the particle set: the posterior
+    /// covariance the cloud and its weights represent.
+    ///
+    /// This is the uncertainty half of the estimate, and without it a caller has
+    /// no way to learn how much to trust `state()`. The particle array alone
+    /// does not answer the question: its unweighted dispersion ignores the
+    /// weights entirely and therefore describes the PRIOR spread whenever the
+    /// last update did not trigger a resampling.
+    ///
+    /// Three properties of the definition, each chosen rather than defaulted:
+    ///
+    ///  * The centre is the WEIGHTED MEAN, always, including when the extraction
+    ///    method is the maximum a posteriori particle. A second moment about any
+    ///    other point is larger than the covariance and is not one; a caller who
+    ///    wants the dispersion about the MAP estimate can form it from
+    ///    `particles()` and `map_estimate()`.
+    ///  * There is no Bessel correction. The weights sum to one, so this is the
+    ///    weighted second moment, matching the convention the unscented filter's
+    ///    own sigma-point covariance uses.
+    ///  * Uniform weights need no special case and get none. The expression then
+    ///    reduces exactly to the plain second moment of the particles about their
+    ///    plain mean, which is the honest answer after the weight-degeneracy
+    ///    guard fires: the measurement carried no information, so the reported
+    ///    uncertainty is the dispersion the filter was already carrying.
+    ///
+    /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Sec. III-A
+    auto covariance() const -> Matrix<Scalar, NX, NX>
+    {
+        const state_vector_t mean = weighted_mean();
+        Matrix<Scalar, NX, NX> P = Matrix<Scalar, NX, NX>::Zero();
+
+        if(m_weight_mode == weight_representation::log)
+        {
+            auto lin = log_to_linear();
+            for(std::size_t i = 0; i < NP; ++i)
+            {
+                auto diff = (m_particles[i] - mean).eval();
+                P += lin[i] * diff * diff.transpose();
+            }
+        }
+        else
+        {
+            for(std::size_t i = 0; i < NP; ++i)
+            {
+                auto diff = (m_particles[i] - mean).eval();
+                P += m_linear_weights[i] * diff * diff.transpose();
+            }
+        }
+
+        return detail::symmetrize(P);
     }
 
     auto map_estimate() const -> state_vector_t

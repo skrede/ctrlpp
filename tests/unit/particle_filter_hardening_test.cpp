@@ -14,24 +14,27 @@
 //  * Where the answer is STATISTICAL, it is asserted against the exact posterior
 //    the model admits. Every tracking case here is linear and Gaussian, so the
 //    exact posterior is a ctrlpp::kalman_filter's, and the deviation from it is
-//    the Monte-Carlo standard error of a weighted mean over the particle count:
-//    the cloud's own sample standard deviation over the square root of that
-//    count. The multiplier is three standard errors, stated once and used
-//    unchanged in every such case rather than tuned per case. The generator seed
-//    is fixed in every case, so these assertions are deterministic and the
-//    multiplier is not guarding against flakiness -- it states the statistical
-//    scale of the estimator itself.
+//    the Monte-Carlo sampling error of the estimator in question -- for the mean,
+//    the cloud's own standard deviation over the square root of the particle
+//    count; for the variance, the relative sampling error of a second moment
+//    over that many samples. The multiplier is three sampling errors, stated once
+//    and used unchanged in every such case rather than tuned per case. The
+//    generator seed is fixed in every case, so these assertions are
+//    deterministic and the multiplier is not guarding against flakiness -- it
+//    states the statistical scale of the estimator itself.
 //
-// What they deliberately do not decide. The posterior COVARIANCE is not
-// asserted anywhere, and that is a gap rather than a choice: the public surface
-// exposes the particles and the weighted mean but neither the weights nor a
-// posterior covariance, and the unweighted cloud variance is not a proxy for
-// either -- it is measured here at nearly three times the exact posterior
-// variance and about twice the prior. Nothing here asserts that resampling
-// fired on any particular step either, for the same reason: the event is not
-// observable from outside. What IS asserted in its place is the consequence
-// that must hold if the measurements conditioned the cloud at all -- the spread
-// stays below what an unconditioned cloud's would necessarily have grown to.
+// Both halves of the posterior are asserted, because both are now reachable:
+// `covariance()` reports the WEIGHTED second moment, which is the posterior's
+// uncertainty. The unweighted dispersion of `particles()` is not a substitute
+// and is not used as one -- it is measured here at 2.8 times the exact posterior
+// variance and 1.9 times the exact prior, because it does not see the weights at
+// all.
+//
+// What they deliberately do not decide. Nothing here asserts that resampling
+// fired on any particular step: the event is not observable from outside. What
+// IS asserted in its place is the consequence that must hold if the measurements
+// conditioned the cloud at all -- the spread stays below what an unconditioned
+// cloud's would necessarily have grown to.
 
 #include "hardening_helpers.h"
 
@@ -51,12 +54,25 @@ using Catch::Matchers::WithinAbs;
 
 namespace {
 
-// Standard errors of slack allowed between a particle-filter estimate and the
-// exact posterior mean. Three is the conventional bound on a Monte-Carlo mean
+// Sampling errors of slack allowed between a particle-filter estimate and the
+// exact posterior. Three is the conventional bound on a Monte-Carlo estimate
 // and is used unchanged in every statistical case in this file; the observed
 // margins differ by an order of magnitude between cases, so a per-case value
 // would be a fit rather than a statement.
 constexpr double pf_standard_errors = 3.0;
+
+/// @brief Relative sampling error of a second moment estimated from `count`
+/// samples of a Gaussian: sqrt(2 / (count - 1)).
+///
+/// Deliberately optimistic, and the bound holds anyway. Resampling duplicates
+/// particles, so the effective sample size is below the particle count and the
+/// true sampling error is larger than this. Using the independent-sample formula
+/// therefore makes the variance assertions HARDER to satisfy, not easier, which
+/// is the direction an honest simplification has to err in.
+auto second_moment_relative_sampling_error(double count) -> double
+{
+    return std::sqrt(2.0 / (count - 1.0));
+}
 
 /// @brief Sample mean and standard deviation of the particle cloud in one
 /// coordinate, and the Monte-Carlo standard error of a mean over that cloud.
@@ -223,17 +239,39 @@ TEST_CASE("PF non-finite measurement recovers to the uniform particle mean",
     CHECK(std::isfinite(pf.state()[1]));
     CHECK(std::abs(pf.state()(0) - ref_mean(0)) <= tol);
     CHECK(std::abs(pf.state()(1) - ref_mean(1)) <= tol);
+
+    // The reported uncertainty follows the same identity, and asserting it here
+    // is what makes the accessor's stated design decision checkable rather than
+    // merely documented: uniform weights are handled by no special case at all,
+    // so the weighted second moment reduces EXACTLY to the plain second moment
+    // of the particles about their plain mean, with the 1/NP normalization the
+    // weights carry. That is the honest answer after this guard fires -- the
+    // measurement carried no information, so the reported uncertainty is the
+    // dispersion the filter was already carrying.
+    ctrlpp::Matrix<double, 2, 2> ref_moment = ctrlpp::Matrix<double, 2, 2>::Zero();
+    for(const auto& p : pf.particles())
+    {
+        auto d = (p - ref_mean).eval();
+        ref_moment += d * d.transpose();
+    }
+    ref_moment /= particle_count;
+
+    const double moment_tol = ref_moment.cwiseAbs().maxCoeff() * particle_count
+                              * std::numeric_limits<double>::epsilon();
+    CHECK((pf.covariance() - ref_moment).cwiseAbs().maxCoeff() <= moment_tol);
+    CHECK(pf.covariance()(0, 1) == pf.covariance()(1, 0));
 }
 
-TEST_CASE("PF posterior mean tracks the exact Gaussian posterior",
+TEST_CASE("PF posterior mean and variance track the exact Gaussian posterior",
           "[particle_filter][hardening][precision]")
 {
     // The model is linear and the noises are Gaussian, so the exact posterior is
     // the Kalman filter's and the particle estimate is a Monte-Carlo
-    // approximation OF IT. That is the reference. The bound this replaces was a
-    // distance of 1.0 from the TRUTH, which is three measurement standard
-    // deviations at this noise level and held for a filter that had lost the
-    // target entirely.
+    // approximation OF IT -- in BOTH moments. That is the reference. The bound
+    // this replaces was a distance of 1.0 from the TRUTH, which is three
+    // measurement standard deviations at this noise level and held for a filter
+    // that had lost the target entirely; and the variance the case was named for
+    // was never asserted at all.
     ctrlpp::Matrix<double, 2, 2> Q = ctrlpp::Matrix<double, 2, 2>::Identity() * 0.01;
     ctrlpp::Matrix<double, 1, 1> R;
     R << 0.1;
@@ -275,6 +313,21 @@ TEST_CASE("PF posterior mean tracks the exact Gaussian posterior",
     CAPTURE(pf.state()[0], exact.state()[0], stats.standard_error);
     REQUIRE(std::abs(pf.state()[0] - exact.state()[0])
             <= pf_standard_errors * stats.standard_error);
+
+    // The variance the case is named for, against the same exact posterior. This
+    // reads the WEIGHTED second moment; the unweighted dispersion of the cloud
+    // is 2.8 times the exact posterior variance here and would fail by a wide
+    // margin, which is precisely why it is not a substitute for it.
+    const double exact_variance = exact.covariance()(0, 0);
+    const double variance_slack =
+        pf_standard_errors
+        * second_moment_relative_sampling_error(static_cast<double>(NP)) * exact_variance;
+    CAPTURE(pf.covariance()(0, 0), exact_variance, variance_slack);
+    REQUIRE(std::abs(pf.covariance()(0, 0) - exact_variance) <= variance_slack);
+
+    // Symmetry of the reported covariance is an equality, not a tolerance: the
+    // accessor symmetrizes, exactly as the other filters' covariance paths do.
+    REQUIRE(pf.covariance()(0, 1) == pf.covariance()(1, 0));
 }
 
 TEST_CASE("PF converges to the exact posterior for a linear Gaussian system",
