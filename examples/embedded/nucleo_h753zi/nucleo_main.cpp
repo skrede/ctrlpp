@@ -29,7 +29,7 @@ int main()
     auto demo = ctrlpp::control_loop_demo<double>::make();
     if(!demo.has_value())
     {
-        std::printf("[ctrlpp] lqr_gain FAILED on device -- Riccati did not converge\n");
+        std::printf("[ctrlpp] lqr_gain REFUSED the plant on device -- %s\n", ctrlpp::describe(demo.error()));
         for(;;) { }
     }
 

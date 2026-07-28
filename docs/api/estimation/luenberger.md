@@ -136,6 +136,11 @@ int main()
         std::complex<Scalar>{0.3, -0.1}
     };
     auto L_opt = ctrlpp::place_observer<Scalar, NX, NY>(sys.A, sys.C, poles);
+    if (!L_opt.has_value()) {
+        // L_opt.error() is the place_error naming the refusal.
+        std::cerr << "observer pole placement refused the design\n";
+        return 1;
+    }
 
     Eigen::Vector2d x0_est = Eigen::Vector2d::Zero();
     ctrlpp::luenberger_observer<Scalar, NX, NU, NY> obs(sys, *L_opt, x0_est);

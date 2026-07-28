@@ -100,9 +100,11 @@ int main()
 
     auto K_opt = ctrlpp::lqr_gain<double, NX, NU_ctrl>(sys.A, sys.B, Q_lqr, R_lqr);
 
-    if (!K_opt)
+    if (!K_opt.has_value())
     {
-        std::cerr << "LQR design failed\n";
+        // K_opt.error() is the dare_error naming which condition refused the
+        // identified plant.
+        std::cerr << "the Riccati solve refused the identified plant\n";
         return 1;
     }
 

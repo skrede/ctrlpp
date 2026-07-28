@@ -9,6 +9,8 @@
 
 #include "ctrlpp/control/lqr.h"
 
+#include "bench_construct.h"
+
 #include <drake/systems/controllers/linear_quadratic_regulator.h>
 
 #include <Eigen/Dense>
@@ -51,8 +53,10 @@ void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, c
     constexpr double dt = 0.05;
     auto [A, B, Q, R] = build_chain_of_integrators<NX, NU>(dt);
 
-    auto warmup_ctrlpp = ctrlpp::lqr_gain<double, NX, NU>(A, B, Q, R);
-    (void)warmup_ctrlpp;
+    // The warmup also asserts the solve succeeds: a benchmark that times a
+    // refused solve reports a number for a problem the library declined.
+    (void)ctrlpp::bench::built_or_exit(ctrlpp::lqr_gain<double, NX, NU>(A, B, Q, R),
+                                       "lqr_gain warmup on the chain of integrators");
 
     auto warmup_drake = drake::systems::controllers::LinearQuadraticRegulator(A, B, Q, R);
     (void)warmup_drake;

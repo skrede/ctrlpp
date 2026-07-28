@@ -11,6 +11,7 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <iostream>
 
 int main()
 {
@@ -34,7 +35,13 @@ int main()
         std::complex<Scalar>{0.3, 0.0},
         std::complex<Scalar>{0.2, 0.0}
     };
-    auto L = ctrlpp::place_observer<Scalar, NX, NY>(sys_d.A, sys_d.C, desired_obs).value();
+    auto L_result = ctrlpp::place_observer<Scalar, NX, NY>(sys_d.A, sys_d.C, desired_obs);
+    if(!L_result.has_value())
+    {
+        std::cerr << "observer pole placement declined the validation plant\n";
+        return 1;
+    }
+    auto L = *L_result;
 
     Eigen::Matrix<Scalar, 2, 1> x0_est = Eigen::Matrix<Scalar, 2, 1>::Zero();
     ctrlpp::luenberger_observer<Scalar, NX, NU, NY> obs(sys_d, L, x0_est);
@@ -57,6 +64,10 @@ int main()
         x_true = ctrlpp::propagate(sys_d, x_true, u);
 
         Eigen::Matrix<Scalar, 1, 1> z_new = sys_d.C * x_true;
-        obs.update(z_new);
+        if(!obs.update(z_new).has_value())
+        {
+            std::cerr << "the observer refused a sample\n";
+            return 1;
+        }
     }
 }

@@ -73,7 +73,7 @@ TEST_CASE("lqr_gain with cross-weight N")
         CHECK(std::abs(solver.eigenvalues()(i)) < 1.0);
 }
 
-TEST_CASE("lqr_gain non-stabilizable returns nullopt")
+TEST_CASE("lqr_gain refuses an unstabilizable pair")
 {
     // A has unstable mode at eigenvalue 2, B cannot reach it
     Eigen::Matrix<double, 2, 2> A, Q;
@@ -86,7 +86,18 @@ TEST_CASE("lqr_gain non-stabilizable returns nullopt")
     R(0, 0) = 1.0;
 
     auto result = ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R);
-    CHECK_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    // The pair is provably unstabilizable: mode 0 sits at eigenvalue 2 with no
+    // input coupling. The enumerator is NOT non_stabilisable, and the reason is
+    // structural rather than a tolerance. That enumerator fires when fewer than
+    // n eigenvalues of the symplectic spectrum lie inside the unit disk, and an
+    // uncontrollable mode at |lambda| > 1 contributes BOTH lambda and its
+    // reciprocal to that spectrum -- here {2, 0.5, 4.2656, 0.2344}, of which two
+    // are inside for n = 2, so the count test is satisfied. What fails instead
+    // is the extraction: the invariant subspace those two span does not project
+    // onto the state space, leaving the top-left block singular. The refusal is
+    // correct; only its name reports a symptom rather than the cause.
+    CHECK(result.error() == ctrlpp::dare_error::singular_u11);
 }
 
 TEST_CASE("lqr_finite converges to infinite-horizon gain")
@@ -257,7 +268,7 @@ TEST_CASE("lqr class compute returns -K*x")
     CHECK((lqr.gain() - K).norm() < 1e-12);
 }
 
-TEST_CASE("lqr_gain with N returns nullopt when DARE fails")
+TEST_CASE("lqr_gain with a cross weight refuses an unstabilizable pair")
 {
     // Non-stabilizable system with cross-weight N
     Eigen::Matrix<double, 2, 2> A, Q;
@@ -271,10 +282,15 @@ TEST_CASE("lqr_gain with N returns nullopt when DARE fails")
     N << 0.1, 0.2;
 
     auto result = ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R, N);
-    CHECK_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    // Same unstabilizable pair as the cross-weight-free case, and the count test
+    // is satisfied there for the same reason. The cross weight shifts which
+    // downstream check catches it: the extracted matrix comes out indefinite
+    // rather than the block coming out singular.
+    CHECK(result.error() == ctrlpp::dare_error::non_psd_solution);
 }
 
-TEST_CASE("lqr_gain with singular A returns nullopt")
+TEST_CASE("lqr_gain refuses a singular state matrix")
 {
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B;
@@ -286,7 +302,10 @@ TEST_CASE("lqr_gain with singular A returns nullopt")
     R(0, 0) = 1.0;
 
     auto result = ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R);
-    CHECK_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    // The symplectic pencil build needs A^{-T}, which a rank-deficient A does
+    // not have; the enumerator names exactly that.
+    CHECK(result.error() == ctrlpp::dare_error::singular_a);
 }
 
 TEST_CASE("lqr_time_varying indexes correctly")

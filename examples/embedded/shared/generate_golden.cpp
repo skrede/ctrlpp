@@ -14,7 +14,7 @@ int main()
     const auto demo_opt = control_loop_demo<double>::make();
     if(!demo_opt.has_value())
     {
-        std::fprintf(stderr, "lqr_gain failed on host -- Riccati did not converge\n");
+        std::fprintf(stderr, "lqr_gain refused the plant on host -- %s\n", describe(demo_opt.error()));
         return EXIT_FAILURE;
     }
 

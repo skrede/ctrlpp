@@ -38,6 +38,11 @@ int main()
     R_lqr << 1.0;
 
     auto K_opt = ctrlpp::lqr_gain<Scalar, NX, NU>(sys_d.A, sys_d.B, Q_lqr, R_lqr);
+    if(!K_opt.has_value())
+    {
+        std::cerr << "LQR gain synthesis failed\n";
+        return 1;
+    }
     ctrlpp::lqr<Scalar, NX, NU> controller(*K_opt);
 
     Eigen::Matrix<Scalar, 2, 2> I2 = Eigen::Matrix<Scalar, 2, 2>::Identity();

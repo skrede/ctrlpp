@@ -10,6 +10,7 @@
 #include <array>
 #include <complex>
 #include <cstdio>
+#include <iostream>
 
 int main()
 {
@@ -31,7 +32,13 @@ int main()
         std::complex<Scalar>{0.5, -0.1}
     };
 
-    auto K = ctrlpp::place<Scalar, NX, NU>(sys_d.A, sys_d.B, desired).value();
+    auto K_result = ctrlpp::place<Scalar, NX, NU>(sys_d.A, sys_d.B, desired);
+    if(!K_result.has_value())
+    {
+        std::cerr << "pole placement declined the validation plant\n";
+        return 1;
+    }
+    auto K = *K_result;
 
     Eigen::Matrix<Scalar, 2, 2> Acl = sys_d.A - sys_d.B * K;
     Eigen::EigenSolver<Eigen::Matrix<Scalar, 2, 2>> es(Acl);

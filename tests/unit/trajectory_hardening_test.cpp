@@ -1132,22 +1132,66 @@ TEST_CASE("Synchronize vector with single element is no-op",
 
 // ── Trapezoidal: non-zero BCs and rescale edge cases ──────────────────────────
 
-TEST_CASE("Trapezoidal with non-zero initial/final velocity and small displacement",
+TEST_CASE("Trapezoidal reports the acceleration it raised the command to",
           "[trapezoidal][hardening][coverage]")
 {
-    // v0 and v1 are high relative to displacement, triggering infeasibility rescaling
+    // v0 and v1 are high relative to the displacement, so the two boundary
+    // velocities cannot be reconciled over it at the commanded limit and the
+    // construction raises the limit rather than refusing the command.
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 0.1, .v_max = 5.0, .a_max = 1.0,
         .v0 = 3.0, .v1 = 2.0,
     };
 
-    auto traj = trapezoidal_profile(cfg);
-    REQUIRE(std::isfinite(traj.duration()));
-    REQUIRE(traj.duration() > 0.0);
+    auto const traj = trapezoidal_profile(cfg);
+    auto const& disp = traj.disposition();
 
-    // Endpoint should still be reached
-    auto pt = traj.evaluate(traj.duration());
-    REQUIRE_THAT(pt.position(0), WithinAbs(0.1, 0.05));
+    REQUIRE(disp.commanded_acceleration == cfg.a_max);
+    REQUIRE(disp.realized_acceleration > disp.commanded_acceleration);
+
+    // The remedy's own closed form (B&M eq. (3.15)): the smallest acceleration
+    // at which the two ramps cover the commanded displacement exactly is the
+    // half-difference of the squared boundary velocities divided by that
+    // displacement, plus the unit in the last place that keeps the raised value
+    // on the feasible side of the test it was derived from. Evaluated here in
+    // the same operation order the library uses, on the same operands, so exact
+    // equality is the contract rather than a tolerance.
+    double const abs_h = std::abs(cfg.q1 - cfg.q0);
+    double const v_diff_sq = std::abs(cfg.v0 * cfg.v0 - cfg.v1 * cfg.v1) / 2.0;
+    double const expected_a = v_diff_sq / abs_h + std::numeric_limits<double>::epsilon();
+    CAPTURE(disp.realized_acceleration, expected_a);
+    REQUIRE(disp.realized_acceleration == expected_a);
+
+    // The profile is correct and limit-respecting under the REALIZED limit,
+    // which is the whole reason the raise is a disposition and not a failure.
+    // The commanded limit is not the scale these contracts are measured at --
+    // it is not the limit the ramps run at.
+    require_nonnegative_phases(traj);
+    require_swept_displacement(traj, cfg.q1 - cfg.q0, disp.realized_acceleration);
+    require_terminal_velocity(traj, cfg.v1, disp.realized_acceleration);
+}
+
+TEST_CASE("Trapezoidal reports an unraised acceleration as equal to the commanded one",
+          "[trapezoidal][hardening][coverage]")
+{
+    // The same shape with room to spare: the displacement is large enough that
+    // the boundary velocities are feasible at the commanded limit, so nothing is
+    // raised. Without this case the assertion above cannot tell a disposition
+    // that is always set from one that is set correctly.
+    ctrlpp::trapezoidal_trajectory<double>::config cfg{
+        .q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 1.0,
+        .v0 = 3.0, .v1 = 2.0,
+    };
+
+    auto const traj = trapezoidal_profile(cfg);
+    auto const& disp = traj.disposition();
+
+    REQUIRE(disp.commanded_acceleration == cfg.a_max);
+    REQUIRE(disp.realized_acceleration == cfg.a_max);
+
+    require_nonnegative_phases(traj);
+    require_swept_displacement(traj, cfg.q1 - cfg.q0, disp.realized_acceleration);
+    require_terminal_velocity(traj, cfg.v1, disp.realized_acceleration);
 }
 
 TEST_CASE("Trapezoidal rescale_to very long duration",

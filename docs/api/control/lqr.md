@@ -31,28 +31,30 @@ using input_type = Eigen::Matrix<Scalar, int(NU), 1>;
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>>
-lqr_gain(const Matrix<Scalar, NX, NX>& A,
-         const Matrix<Scalar, NX, NU>& B,
-         const Matrix<Scalar, NX, NX>& Q,
-         const Matrix<Scalar, NU, NU>& R);
+auto lqr_gain(const Matrix<Scalar, NX, NX>& A,
+              const Matrix<Scalar, NX, NU>& B,
+              const Matrix<Scalar, NX, NX>& Q,
+              const Matrix<Scalar, NU, NU>& R)
+    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error>;
 ```
 
-Computes the infinite-horizon LQR gain K = (R + B'PB)^{-1} B'PA where P is the stabilizing solution of the DARE. Returns `std::nullopt` if the system is not stabilizable.
+Computes the infinite-horizon LQR gain K = (R + B'PB)^{-1} B'PA where P is the stabilizing solution of the DARE.
+
+**Rejections carry the Riccati solver's own `dare_error` verbatim.** The gain is a function of that solve and has no failure mode of its own, so it forwards the enumerator rather than restating the cause under a second name -- an unstabilisable pair, a singular state matrix and a non-converged factorization send the caller to fix three different things, and an empty result would have told them none of it. See [dare](dare.md) for the enumerators.
 
 ### lqr_gain (with cross-weight)
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>>
-lqr_gain(const Matrix<Scalar, NX, NX>& A,
-         const Matrix<Scalar, NX, NU>& B,
-         const Matrix<Scalar, NX, NX>& Q,
-         const Matrix<Scalar, NU, NU>& R,
-         const Matrix<Scalar, NX, NU>& N);
+auto lqr_gain(const Matrix<Scalar, NX, NX>& A,
+              const Matrix<Scalar, NX, NU>& B,
+              const Matrix<Scalar, NX, NX>& Q,
+              const Matrix<Scalar, NU, NU>& R,
+              const Matrix<Scalar, NX, NU>& N)
+    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error>;
 ```
 
-Infinite-horizon LQR gain with state-input cross-weight N: K = (R + B'PB)^{-1} (B'PA + N').
+Infinite-horizon LQR gain with state-input cross-weight N: K = (R + B'PB)^{-1} (B'PA + N'). Forwards `dare_error` for the same reason.
 
 ### lqr_finite
 
@@ -88,15 +90,15 @@ Time-varying LQR via backward Riccati recursion with per-step system and cost ma
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-std::optional<lqi_result<Scalar, NX, NU, NY>>
-lqi_gain(const Matrix<Scalar, NX, NX>& A,
-         const Matrix<Scalar, NX, NU>& B,
-         const Matrix<Scalar, NY, NX>& C,
-         const Matrix<Scalar, NX + NY, NX + NY>& Q_aug,
-         const Matrix<Scalar, NU, NU>& R);
+auto lqi_gain(const Matrix<Scalar, NX, NX>& A,
+              const Matrix<Scalar, NX, NU>& B,
+              const Matrix<Scalar, NY, NX>& C,
+              const Matrix<Scalar, NX + NY, NX + NY>& Q_aug,
+              const Matrix<Scalar, NU, NU>& R)
+    -> ctrlpp::expected<lqi_result<Scalar, NX, NU, NY>, dare_error>;
 ```
 
-LQR with integral action. Augments the state with integral of tracking error and returns `lqi_result` containing partitioned gains Kx (NU x NX) and Ki (NU x NY).
+LQR with integral action. Augments the state with integral of tracking error and returns `lqi_result` containing partitioned gains Kx (NU x NX) and Ki (NU x NY), or the augmented Riccati solve's `dare_error` verbatim.
 
 ### lqr_cost
 
@@ -222,8 +224,10 @@ int main()
     R << 1.0;
 
     auto K_opt = ctrlpp::lqr_gain<Scalar, NX, NU>(sys_d.A, sys_d.B, Q, R);
-    if (!K_opt) {
-        std::cerr << "DARE failed\n";
+    if (!K_opt.has_value()) {
+        // K_opt.error() is the dare_error naming which condition refused the
+        // plant, not merely that something did.
+        std::cerr << "the Riccati solve refused the plant\n";
         return 1;
     }
 

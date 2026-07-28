@@ -7,6 +7,7 @@
 #include "ctrlpp/control/lqr.h"
 
 #include <cstdio>
+#include <iostream>
 
 int main()
 {
@@ -33,7 +34,13 @@ int main()
     Eigen::Matrix<Scalar, 1, 1> R;
     R << 0.1;
 
-    auto lqi_res = ctrlpp::lqi_gain<Scalar, NX, NU, NY>(sys_d.A, sys_d.B, sys_d.C, Q_aug, R).value();
+    auto lqi_result = ctrlpp::lqi_gain<Scalar, NX, NU, NY>(sys_d.A, sys_d.B, sys_d.C, Q_aug, R);
+    if(!lqi_result.has_value())
+    {
+        std::cerr << "LQI gain synthesis declined the validation plant\n";
+        return 1;
+    }
+    auto lqi_res = *lqi_result;
 
     Eigen::Matrix<Scalar, 2, 1> x = Eigen::Matrix<Scalar, 2, 1>::Zero();
     Scalar xi = 0.0;

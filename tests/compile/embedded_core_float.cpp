@@ -120,8 +120,7 @@ int main()
     ctrlpp::Matrix<scalar, 1, 1> r;
     r << scalar{1};
 
-    const auto k = ctrlpp::lqr_gain<scalar, 2, 1>(a, b, q, r);
-    witness += k.has_value() ? 1 : 0;
+    witness += fold(ctrlpp::lqr_gain<scalar, 2, 1>(a, b, q, r));
 
     witness += fold(ctrlpp::dare<scalar, 2, 1>(a, b, q, r));
     witness += fold(ctrlpp::care<scalar, 2, 1>(a, b, q, r));

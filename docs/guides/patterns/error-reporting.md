@@ -255,8 +255,63 @@ domain condition (finite and strictly positive, since the central-difference
 stencil divides by it) is not yet checked at construction; the configuration
 validation of `mekf`, `manifold_ukf` and `complementary_filter`, whose factories
 exist but validate only their initial quaternion and not their `Q`, `R` or `P0`;
-`particle_filter::update` and the online planners' `update`; and `lqr_gain` and
-`lqi_gain`, which still return `std::optional` and so discard the reason for the
-empty result. Those surfaces are being moved onto
-channel 1. Until each one is, the NaN and Inf propagation contract described in
-[numerical-behavior.md](numerical-behavior.md) is what governs them.
+`particle_filter::update` and the online planners' `update`. Those surfaces are
+being moved onto channel 1. Until each one is, the NaN and Inf propagation
+contract described in [numerical-behavior.md](numerical-behavior.md) is what
+governs them.
+
+### No failure is signalled by an empty optional any more
+
+`std::optional` no longer carries a failure anywhere in `lib/`. Eight surfaces
+moved onto channel 1:
+
+| Surface | Enumeration | What the empty result used to discard |
+| --- | --- | --- |
+| `lqr_gain` (both discrete overloads) | `dare_error`, **forwarded** | which of six conditions refused the pair |
+| `lqr_gain_continuous` | `care_error`, forwarded | the same, plus its own non-finite rejection |
+| `detail::partition_lqi_gain`, `lqi_gain` | `dare_error`, forwarded | the augmented solve's cause |
+| `place`, `place_observer` | `place_error`, **new** | a structural refusal versus a numerical one |
+| `so3::normalize` | `so3_error`, new | that the postcondition was not met at all |
+| `dsp::detail::validate_biquad_design` | `dsp_error` | nothing -- see below |
+
+The three LQR forms and both LQI forms **forward** an enumeration that already
+existed one call below rather than inventing a name for it. The cause was
+computed and typed by the Riccati solver and then thrown away at the seam; the
+repair is to stop throwing it away, not to describe it a second time where the
+two descriptions can drift apart.
+
+`place` had **no** enumeration, so one was derived from its actual refusal
+sites, one enumerator per distinct cause. The dividing line that mattered there
+is structural versus numerical: `multi_input_not_supported` and
+`multi_output_not_supported` cannot be lifted by changing any number, while
+`poles_not_conjugate_symmetric` and `uncontrollable_pair` are conditions on the
+data. Sharing an enumerator across that line would send a caller to change the
+one thing that cannot help.
+
+`validate_biquad_design` is the exception that proves the rule and is recorded
+as such: it returned `std::optional<dsp_error>`, an **inverted** channel where
+an empty result meant success and an engaged one carried the error. It lost no
+information. It was converted so the library has one channel shape rather than
+two, and that is the whole of its justification -- it is not a defect fix.
+
+Every call site branches. None substitutes a default value for a refused
+result, because relocating a dishonesty is not removing it.
+
+### An honest postcondition is a channel-1 question too
+
+`so3::normalize` documented a unit-norm postcondition and did not deliver it for
+three families of input, with no channel to say so. It is now fallible, with
+`so3_error::non_finite_input` and `so3_error::zero_quaternion` naming the two
+inputs that genuinely have no unit representative; every other finite quaternion
+is normalized, including ones whose squared norm is not representable. See
+[so3](../../api/lie/so3.md).
+
+### A raised limit is channel 2, not channel 1
+
+`trapezoidal_trajectory` raises the commanded acceleration when the boundary
+velocities cannot be reconciled over the commanded displacement at it. The
+operation **succeeded** and the profile is correct under the raised limit, so it
+is reported through `disposition()` -- carrying the commanded and the realized
+acceleration, not a flag -- and no enumerator was added to `trajectory_error`
+for it. See
+[trapezoidal_trajectory](../../api/trajectory/trapezoidal-trajectory.md).

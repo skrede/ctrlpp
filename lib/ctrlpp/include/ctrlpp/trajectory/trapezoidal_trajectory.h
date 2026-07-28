@@ -27,6 +27,30 @@
 namespace ctrlpp
 {
 
+/// @brief Disposition of a constructed trapezoidal profile: the acceleration
+/// limit the caller commanded, against the one the profile realizes.
+///
+/// This is a report on a SUCCESSFUL construction, not a failure. Where the two
+/// boundary velocities cannot be reconciled over the commanded displacement at
+/// the commanded limit, the construction raises the limit to the smallest value
+/// that makes them feasible together (B&M eq. (3.15)) and builds a profile that
+/// is correct and limit-respecting under the RAISED value. A caller whose
+/// acceleration limit is physical rather than advisory reads these two fields
+/// and decides what to do; a caller for whom it was advisory ignores them.
+///
+/// The two accelerations are carried rather than a flag, because a supervisory
+/// layer that learns only that something was substituted cannot decide
+/// anything with it. `realized_acceleration` equals `commanded_acceleration`
+/// exactly when nothing was raised.
+///
+/// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
+template <typename Scalar>
+struct [[nodiscard]] trapezoidal_disposition
+{
+    Scalar commanded_acceleration{};  ///< the acceleration limit passed to `create`
+    Scalar realized_acceleration{};   ///< the magnitude every ramp of the profile actually uses
+};
+
 /// @brief Trapezoidal (LSPB) velocity profile with introspection.
 ///
 /// Construction goes through `create`, which returns
@@ -83,6 +107,19 @@ class trapezoidal_trajectory
     /// backwards in time: the acceleration phase spans (v_v - v0) / a, and a
     /// cruise velocity held under the limit while v0 sits above it makes that
     /// span negative.
+    ///
+    /// One outcome deliberately does NOT appear in that list. Where the two
+    /// boundary velocities cannot be reconciled over the commanded displacement
+    /// at the commanded acceleration limit, the construction raises the limit to
+    /// the smallest value that makes them feasible together (eq. (3.15)) and
+    /// succeeds. That is a SUCCESS whose realized limit differs from the
+    /// commanded one, not a failure: the profile that comes back is correct and
+    /// respects the raised limit in every phase, and it is the profile the
+    /// command asks for at the only acceleration that can deliver it. It is
+    /// reported on the disposition channel -- `disposition()` carries the
+    /// commanded and the realized acceleration -- so a caller whose limit is
+    /// physical rather than advisory can compare them and decide, and no caller
+    /// is made to handle a non-failure through the failure path.
     ///
     /// The last two checks are one guard against two spellings of the same
     /// failure. Both ramps of a three-phase profile run toward one cruise
@@ -211,6 +248,14 @@ class trapezoidal_trajectory
     /// @brief Phase durations {T_accel, T_cruise, T_decel}.
     auto phase_durations() const -> std::array<Scalar, 3> { return {T_a_, T_v_, T_d_}; }
 
+    /// @brief The commanded acceleration limit against the one this profile
+    /// realizes.
+    ///
+    /// Fixed when the profile was built and never recomputed: the raise is
+    /// decided once, by `solve_acceleration`, and rescaling holds the
+    /// acceleration magnitude fixed by construction.
+    auto disposition() const -> trapezoidal_disposition<Scalar> const& { return disposition_; }
+
     /// @brief Rescale the profile to a longer duration for multi-axis synchronization.
     ///
     /// The profile is rebuilt at a lower cruise velocity, never patched. The
@@ -321,6 +366,7 @@ class trapezoidal_trajectory
         , q1_{cfg.q1}
         , v_max_{cfg.v_max}
         , a_{solve_acceleration(cfg)}
+        , disposition_{cfg.a_max, a_}
     {
         auto const h = cfg.q1 - cfg.q0;
         sigma_ = (h >= Scalar{0}) ? Scalar{1} : Scalar{-1};
@@ -964,6 +1010,7 @@ class trapezoidal_trajectory
     Scalar T_d_{};
     Scalar T_{};
     bool triangular_{};
+    trapezoidal_disposition<Scalar> disposition_{};
 };
 
 static_assert(trajectory_segment<trapezoidal_trajectory<double>, double, 1>);

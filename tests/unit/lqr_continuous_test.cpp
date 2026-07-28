@@ -51,7 +51,7 @@ TEST_CASE("lqr_gain_continuous matches analytic gain on scalar system",
     CHECK_THAT((*K)(0, 0), Catch::Matchers::WithinAbs(1.0, 1e-10));
 }
 
-TEST_CASE("lqr_gain_continuous returns nullopt on non-LHP-stabilisable system",
+TEST_CASE("lqr_gain_continuous refuses a non-LHP-stabilisable system",
           "[lqr][continuous][negative]")
 {
     // A has an unstable mode at +2 uncoupled from B.
@@ -64,7 +64,14 @@ TEST_CASE("lqr_gain_continuous returns nullopt on non-LHP-stabilisable system",
     R(0, 0) = 1.0;
 
     auto K = ctrlpp::lqr_gain_continuous<double, 2, 1>(A, B, Q, R);
-    CHECK(!K.has_value());
+    REQUIRE_FALSE(K.has_value());
+    // The enumerator is NOT non_lhp_stabilisable, for the structural reason its
+    // discrete counterpart has: an uncontrollable mode at +2 puts BOTH +2 and
+    // -2 in the Hamiltonian spectrum, so n eigenvalues do lie in the open left
+    // half-plane and the count test is satisfied. The subspace they span does
+    // not project onto the state space, so the extraction is what refuses. The
+    // refusal is correct; its name reports the symptom rather than the cause.
+    CHECK(K.error() == ctrlpp::care_error::singular_u11);
 }
 
 TEST_CASE("lqr_gain_continuous hot path performs zero heap allocation (NX=4, NU=2)",

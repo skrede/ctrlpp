@@ -3,6 +3,8 @@
 
 #include "ctrlpp/control/lqr.h"
 
+#include "bench_construct.h"
+
 #include <fstream>
 
 static constexpr char const* csv_tpl =
@@ -21,8 +23,8 @@ int main()
     Eigen::Matrix<double, 1, 1> R = Eigen::Matrix<double, 1, 1>::Identity();
 
     // Precompute gain for lqr::compute benchmark
-    auto K_opt = ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R);
-    ctrlpp::lqr<double, 2, 1> controller(*K_opt);
+    ctrlpp::lqr<double, 2, 1> controller(ctrlpp::bench::built_or_exit(
+        ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R), "lqr_gain on the double integrator"));
     Eigen::Vector2d x{1.0, 0.5};
 
     ankerl::nanobench::Bench bench;

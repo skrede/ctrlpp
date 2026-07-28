@@ -56,10 +56,59 @@ Quaternion conjugate (inverse for unit quaternions).
 
 ```cpp
 template <typename Scalar>
-Eigen::Quaternion<Scalar> normalize(const Eigen::Quaternion<Scalar>& q);
+auto normalize(const Eigen::Quaternion<Scalar>& q)
+    -> ctrlpp::expected<Eigen::Quaternion<Scalar>, so3_error>;
 ```
 
-Normalizes a quaternion to unit norm.
+Scales a quaternion onto the unit sphere, or reports why it has no unit
+representative. The returned quaternion has a norm of one for every input the
+function accepts.
+
+Exactly two inputs are rejected, and they tell the caller to fix different
+things:
+
+| Enumerator | Condition | What it means |
+| --- | --- | --- |
+| `so3_error::non_finite_input` | a coefficient is NaN or infinite | arithmetic went wrong upstream; no scaling of this value lands on the unit sphere |
+| `so3_error::zero_quaternion` | every coefficient is exactly zero | the value carries no direction and was never a rotation |
+
+Every other finite quaternion is normalized, **including one whose squared norm
+is not representable**. The coefficients are divided by their largest magnitude
+before the norm is formed, so the norm is taken of a vector whose largest
+coefficient is exactly one and whose squared norm lies in `[1, 4]`.
+
+That is not a detail. Forming the norm directly loses two families of finite
+input silently, which is why this function does not delegate to Eigen's
+`normalized()`. That member tests `squaredNorm() > 0` and returns a **copy of
+its input** when the test fails (Eigen 3.4.0,
+`Eigen/src/Core/Dot.h:122-134`), so a quaternion whose squared norm underflows
+comes back unchanged with a norm of zero; where the squared norm overflows
+instead, the test passes, the division is by infinity, and the result is the
+zero quaternion. Both inputs are finite and have a well-defined direction, so
+both would leave a unit-norm postcondition unmet with nothing said about it.
+
+```cpp
+auto qn = ctrlpp::so3::normalize(q);
+if(!qn.has_value())
+{
+    // qn.error() is so3_error::non_finite_input or so3_error::zero_quaternion
+    return;
+}
+auto R = qn->toRotationMatrix();
+```
+
+### so3_error
+
+```cpp
+enum class so3_error
+{
+    non_finite_input,
+    zero_quaternion,
+};
+```
+
+Declared in namespace `ctrlpp` (not `ctrlpp::so3`), matching the other
+per-module error enumerations.
 
 ### skew
 

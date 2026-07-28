@@ -98,10 +98,12 @@ TEST_CASE("so3 property tests", "[so3][property]")
                  {
             auto q = *gen_unit_quaternion();
             auto qn = so3::normalize(q);
-            auto qnn = so3::normalize(qn);
+            RC_ASSERT(qn.has_value());
+            auto qnn = so3::normalize(*qn);
+            RC_ASSERT(qnn.has_value());
 
-            RC_ASSERT(std::abs(qn.w() - qnn.w()) < 1e-15);
-            RC_ASSERT((qn.vec() - qnn.vec()).norm() < 1e-15); });
+            RC_ASSERT(std::abs(qn->w() - qnn->w()) < 1e-15);
+            RC_ASSERT((qn->vec() - qnn->vec()).norm() < 1e-15); });
     }
 
     SECTION("so3 left Jacobian is consistent with finite-difference approximation")

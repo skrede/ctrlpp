@@ -7,6 +7,7 @@
 #include <rapidcheck/catch.h>
 
 #include <cmath>
+#include <string>
 #include <complex>
 #include <cstddef>
 
@@ -150,9 +151,16 @@ TEST_CASE("lqr closed-loop eigenvalues inside unit circle", "[lqr][property]")
                  auto R = *gen_pd_matrix_1x1();
 
                  auto K_opt = ctrlpp::lqr_gain<double, NX, NU>(sys.A, sys.B, Q, R);
-                 if(!K_opt)
+                 if(!K_opt.has_value())
                  {
-                     RC_SUCCEED("lqr_gain returned nullopt");
+                     // The generator can still hand out a pair the Riccati path
+                     // declines, so the property is vacuous on that draw. The
+                     // enumerator is carried into the message rather than
+                     // dropped, so a run that skips every draw says which
+                     // condition is doing it instead of reporting a pass.
+                     RC_SUCCEED(("lqr_gain declined the draw, dare_error #"
+                                 + std::to_string(static_cast<int>(K_opt.error())))
+                                    .c_str());
                  }
 
                  auto& K = *K_opt;

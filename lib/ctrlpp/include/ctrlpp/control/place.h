@@ -6,8 +6,11 @@
 /// @cite kautsky1985 -- Kautsky, Nichols & Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
+
+#include "ctrlpp/control/place_types.h"
 
 #include <Eigen/Dense>
 
@@ -16,7 +19,6 @@
 #include <limits>
 #include <complex>
 #include <cstddef>
-#include <optional>
 
 namespace ctrlpp
 {
@@ -130,7 +132,13 @@ std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>
 
 /// Pole placement using Ackermann's formula for single-input systems (NU == 1).
 /// Computes K such that eigenvalues of (A - B*K) equal the desired poles.
-/// Returns std::nullopt if the system is uncontrollable or NU &gt; 1.
+///
+/// Refusals, checked in order:
+///  * an input dimension above one -> place_error::multi_input_not_supported
+///  * a pole set not closed under conjugation ->
+///    place_error::poles_not_conjugate_symmetric
+///  * a rank-deficient controllability matrix ->
+///    place_error::uncontrollable_pair
 ///
 /// The single-input formula K = e_n^T * C_ctrl^{-1} * alpha(A) follows from
 /// transforming (A, B) into controller canonical form, assigning the desired
@@ -139,7 +147,8 @@ std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>
 /// @cite kautsky1985 -- Kautsky, Nichols &amp; Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
 /// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (Ackermann's formula)
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
-std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const std::array<std::complex<Scalar>, NX>& desired_poles, Scalar conj_tol_scale = Scalar{2} * Scalar{NX})
+auto place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const std::array<std::complex<Scalar>, NX>& desired_poles, Scalar conj_tol_scale = Scalar{2} * Scalar{NX})
+    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, place_error>
 {
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
@@ -149,13 +158,13 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix
     if constexpr(NU != 1)
     {
         // Multi-input placement not yet supported
-        return std::nullopt;
+        return ctrlpp::unexpected(place_error::multi_input_not_supported);
     }
     else
     {
         // Validate conjugate pairs
         if(!detail::validate_conjugate_pairs(desired_poles, conj_tol_scale))
-            return std::nullopt;
+            return ctrlpp::unexpected(place_error::poles_not_conjugate_symmetric);
 
         // Build controllability matrix: C_ctrl = [B, AB, A^2 B, ..., A^{n-1} B]
         Eigen::Matrix<Scalar, n, n> C_ctrl;
@@ -170,7 +179,7 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix
         // Check controllability
         auto qr = C_ctrl.colPivHouseholderQr();
         if(qr.rank() < n)
-            return std::nullopt;
+            return ctrlpp::unexpected(place_error::uncontrollable_pair);
 
         // Compute characteristic polynomial coefficients
         auto alpha = detail::char_poly_coeffs(desired_poles);
@@ -196,15 +205,21 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> place(const Eigen::Matrix
 /// Convenience: compute observer gain L via duality.
 /// L = place(A^T, C^T, desired_poles)^T.
 ///
+/// Refusals: an output dimension above one is
+/// place_error::multi_output_not_supported, a structural refusal the caller
+/// cannot lift by changing the data; everything else is the dual placement's
+/// own refusal forwarded, so place_error::uncontrollable_pair on the transposed
+/// pair reports that (A, C) is unobservable.
+///
 /// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (observer/regulator duality)
 template <typename Scalar, std::size_t NX, std::size_t NY>
-std::optional<Eigen::Matrix<Scalar, int(NX), int(NY)>>
-place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NY), int(NX)>& C, const std::array<std::complex<Scalar>, NX>& desired_poles, Scalar conj_tol_scale = Scalar{2} * Scalar{NX})
+auto place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NY), int(NX)>& C, const std::array<std::complex<Scalar>, NX>& desired_poles, Scalar conj_tol_scale = Scalar{2} * Scalar{NX})
+    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NX), int(NY)>, place_error>
 {
     if constexpr(NY != 1)
     {
         // Multi-output observer placement not yet supported (duality requires single-output)
-        return std::nullopt;
+        return ctrlpp::unexpected(place_error::multi_output_not_supported);
     }
     else
     {
@@ -213,9 +228,9 @@ place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Ma
 
         auto K_opt = place<Scalar, NX, NY>(At, Ct, desired_poles, conj_tol_scale);
         if(!K_opt)
-            return std::nullopt;
+            return ctrlpp::unexpected(K_opt.error());
 
-        return K_opt->transpose().eval();
+        return Eigen::Matrix<Scalar, int(NX), int(NY)>{K_opt->transpose().eval()};
     }
 }
 

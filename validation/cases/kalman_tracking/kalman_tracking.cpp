@@ -46,7 +46,13 @@ int main()
     Q_lqr << 10.0, 0.0, 0.0, 1.0;
     Eigen::Matrix<Scalar, 1, 1> R_lqr;
     R_lqr << 1.0;
-    ctrlpp::lqr<Scalar, NX, NU> controller(*ctrlpp::lqr_gain<Scalar, NX, NU>(sys_d.A, sys_d.B, Q_lqr, R_lqr));
+    auto K_result = ctrlpp::lqr_gain<Scalar, NX, NU>(sys_d.A, sys_d.B, Q_lqr, R_lqr);
+    if(!K_result.has_value())
+    {
+        std::cerr << "LQR gain synthesis declined the validation plant\n";
+        return 1;
+    }
+    ctrlpp::lqr<Scalar, NX, NU> controller(*K_result);
 
     Eigen::Matrix<Scalar, 2, 1> x_true;
     x_true << 1.0, 0.0;
@@ -66,6 +72,10 @@ int main()
         kf.predict(u);
         x_true = ctrlpp::propagate(sys_d, x_true, u);
         Eigen::Matrix<Scalar, 1, 1> z_new = sys_d.C * x_true;
-        kf.update(z_new);
+        if(!kf.update(z_new).has_value())
+        {
+            std::cerr << "the filter refused a sample\n";
+            return 1;
+        }
     }
 }

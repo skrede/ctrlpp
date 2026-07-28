@@ -34,7 +34,12 @@ int main()
         auto sp = Vec::Constant(e);
         auto meas = Vec::Constant(0.0);
         auto u = ctrl.compute(sp, meas, dt);
+        if(!u.has_value())
+        {
+            std::fprintf(stderr, "the controller refused a cycle at t = %.15e\n", t);
+            return 1;
+        }
 
-        std::printf("%.15e,%.15e,%.15e\n", t, e, u[0]);
+        std::printf("%.15e,%.15e,%.15e\n", t, e, (*u)[0]);
     }
 }

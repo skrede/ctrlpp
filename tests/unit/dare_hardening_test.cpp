@@ -36,7 +36,7 @@ TEST_CASE("DARE NaN in B returns nullopt", "[dare][hardening][negative]")
     CHECK(!result.has_value());
 }
 
-TEST_CASE("DARE zero R (singular) returns nullopt", "[dare][hardening][negative]")
+TEST_CASE("DARE refuses a singular R", "[dare][hardening][negative]")
 {
     Eigen::Matrix<double, 2, 2> A;
     A << 1.0, 1.0, 0.0, 1.0;
@@ -46,18 +46,22 @@ TEST_CASE("DARE zero R (singular) returns nullopt", "[dare][hardening][negative]
     Eigen::Matrix<double, 1, 1> R;
     R << 0.0;
 
-    auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
-    // Singular R -- may not produce a valid solution
-    if(result.has_value())
-    {
-        bool all_finite = true;
-        for(int i = 0; i < 2; ++i)
-            for(int j = 0; j < 2; ++j)
-                if(!std::isfinite(result->P(i, j)))
-                    all_finite = false;
-        // If it returns something, it should be finite or we accept nullopt
-        CHECK(all_finite);
-    }
+    auto const result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+    REQUIRE_FALSE(result.has_value());
+
+    // The enumerator is non_finite_input even though every argument is finite,
+    // and that is what the enumerator's own definition says: it covers "A, B, Q,
+    // R OR the assembled symplectic Z contains NaN/Inf". The symplectic build
+    // needs R^{-1} to form G = B R^{-1} B', and a singular R makes that whole
+    // block infinite -- Eigen's rank-revealing QR solve of the 1x1 zero returns
+    // infinity rather than declining -- so Z fails its finiteness test.
+    //
+    // The refusal is right. Note what it does NOT say: the module has
+    // singular_a for the analogous condition on the state matrix, and no
+    // counterpart naming a singular weighting matrix, so the caller is told to
+    // look for a non-finite input when the actual obstacle is a weighting they
+    // set to zero on purpose.
+    CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
 }
 
 TEST_CASE("DARE known 2x2 solution is positive definite", "[dare][hardening][precision]")
@@ -118,8 +122,15 @@ TEST_CASE("DARE solution is positive definite for stable system", "[dare][harden
         CHECK(eigsolver.eigenvalues()(i) > -1e-10);
 }
 
-TEST_CASE("DARE ill-conditioned Q with cond 1e10", "[dare][hardening][robustness]")
+TEST_CASE("DARE solves an ill-conditioned but well-posed problem",
+          "[dare][hardening][robustness]")
 {
+    // A = [[1,1],[0,1]] is controllable from B = [0.5; 1] (rank[B, AB] = 2), and
+    // Q = diag(1, 1e-10) is positive definite -- barely -- which makes the pair
+    // detectable. A unique stabilizing positive-definite solution therefore
+    // exists, so a refusal here would be a well-posed problem reported
+    // unsolvable, and finiteness alone would be far weaker than the property
+    // the solution is supposed to have.
     Eigen::Matrix<double, 2, 2> A;
     A << 1.0, 1.0, 0.0, 1.0;
     Eigen::Matrix<double, 2, 1> B;
@@ -128,13 +139,25 @@ TEST_CASE("DARE ill-conditioned Q with cond 1e10", "[dare][hardening][robustness
     Eigen::Matrix<double, 1, 1> R;
     R << 1.0;
 
-    auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
-    if(result.has_value())
-    {
-        for(int i = 0; i < 2; ++i)
-            for(int j = 0; j < 2; ++j)
-                CHECK(std::isfinite(result->P(i, j)));
-    }
+    auto const result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+    REQUIRE(result.has_value());
+
+    auto const& P = result->P;
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    auto const res = ctrlpp::test::riccati_residual<double, 2, 1>(A, B, Q, R, P);
+    CAPTURE(res.norm, res.scale);
+    REQUIRE(res.norm <= ctrlpp::test::riccati_residual_ops<2, 1> * eps * res.scale);
+
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> pes(P);
+    for(int i = 0; i < 2; ++i)
+        CHECK(pes.eigenvalues()(i) > 0.0);
+
+    auto const K = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, R, P);
+    Eigen::Matrix<double, 2, 2> Acl = (A - B * K).eval();
+    Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> ces(Acl, false);
+    for(int i = 0; i < 2; ++i)
+        REQUIRE(std::abs(ces.eigenvalues()(i)) < 1.0);
 }
 
 TEST_CASE("DARE NaN in Q returns nullopt", "[dare][hardening][negative]")

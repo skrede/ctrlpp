@@ -18,7 +18,6 @@
 #include <limits>
 #include <cstddef>
 #include <numbers>
-#include <optional>
 
 namespace ctrlpp
 {
@@ -55,18 +54,18 @@ auto biquad_singular_tol(Scalar scale, Scalar coeff = Scalar{6}) -> Scalar
 /// open interval (0, sample_hz / 2) because a discrete-time filter can only
 /// realize a response strictly below half the sample rate; at or above it the
 /// design frequency aliases (Nyquist criterion, oppenheim2010dsp Ch. 4).
-/// Returns the matching `dsp_error` for a rejected pair, or an empty optional
-/// for a valid one.
+/// Reports the matching `dsp_error` for a rejected pair through the library's
+/// result type, and an engaged void result for a valid one.
 template <typename Scalar>
-auto validate_biquad_design(Scalar freq_hz, Scalar sample_hz) -> std::optional<dsp_error>
+auto validate_biquad_design(Scalar freq_hz, Scalar sample_hz) -> ctrlpp::expected<void, dsp_error>
 {
     if(!std::isfinite(freq_hz) || !std::isfinite(sample_hz))
-        return dsp_error::non_finite_input;
+        return ctrlpp::unexpected(dsp_error::non_finite_input);
     if(sample_hz <= Scalar{0})
-        return dsp_error::non_positive_sample_rate;
+        return ctrlpp::unexpected(dsp_error::non_positive_sample_rate);
     if(freq_hz <= Scalar{0} || freq_hz >= sample_hz / Scalar{2})
-        return dsp_error::cutoff_exceeds_nyquist;
-    return std::nullopt;
+        return ctrlpp::unexpected(dsp_error::cutoff_exceeds_nyquist);
+    return {};
 }
 
 }
@@ -118,8 +117,8 @@ public:
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform of analog prototypes)
     static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> expected<biquad, dsp_error>
     {
-        if(auto const err = detail::validate_biquad_design(cutoff_hz, sample_hz))
-            return unexpected(*err);
+        if(auto const validated = detail::validate_biquad_design(cutoff_hz, sample_hz); !validated.has_value())
+            return unexpected(validated.error());
 
         auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * cutoff_hz / sample_hz;
         auto const cos_w0 = std::cos(w0);
@@ -154,8 +153,8 @@ public:
     {
         if(!std::isfinite(q))
             return unexpected(dsp_error::non_finite_input);
-        if(auto const err = detail::validate_biquad_design(freq_hz, sample_hz))
-            return unexpected(*err);
+        if(auto const validated = detail::validate_biquad_design(freq_hz, sample_hz); !validated.has_value())
+            return unexpected(validated.error());
         if(q <= Scalar{0})
             return unexpected(dsp_error::non_positive_q);
 
@@ -191,8 +190,8 @@ public:
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform with pre-warping)
     static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> expected<biquad, dsp_error>
     {
-        if(auto const err = detail::validate_biquad_design(bandwidth_hz, sample_hz))
-            return unexpected(*err);
+        if(auto const validated = detail::validate_biquad_design(bandwidth_hz, sample_hz); !validated.has_value())
+            return unexpected(validated.error());
 
         auto const wc = Scalar{2} * sample_hz * std::tan(std::numbers::pi_v<Scalar> * bandwidth_hz / sample_hz);
         auto const k = Scalar{2} * sample_hz;
@@ -284,8 +283,8 @@ template <std::size_t Order, typename Scalar>
 auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz)
     -> expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>
 {
-    if(auto const err = detail::validate_biquad_design(cutoff_hz, sample_hz))
-        return unexpected(*err);
+    if(auto const validated = detail::validate_biquad_design(cutoff_hz, sample_hz); !validated.has_value())
+        return unexpected(validated.error());
 
     constexpr auto num_sections = Order / 2;
     auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * cutoff_hz / sample_hz;
@@ -425,8 +424,8 @@ auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
         return unexpected(dsp_error::non_finite_input);
     if(ripple_db <= Scalar{0})
         return unexpected(dsp_error::non_positive_ripple);
-    if(auto const err = detail::validate_biquad_design(cutoff_hz, sample_hz))
-        return unexpected(*err);
+    if(auto const validated = detail::validate_biquad_design(cutoff_hz, sample_hz); !validated.has_value())
+        return unexpected(validated.error());
 
     constexpr auto num_sections = Order / 2;
 

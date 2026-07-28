@@ -124,7 +124,7 @@ TEST_CASE("place_observer produces gain for convergent observer")
     CHECK_THAT(est(1), Catch::Matchers::WithinAbs(x_true(1), 0.5));
 }
 
-TEST_CASE("place on uncontrollable system returns nullopt")
+TEST_CASE("place refuses an uncontrollable pair")
 {
     Eigen::Matrix<double, 2, 2> A;
     A << 1.0, 0.0, 0.0, 2.0;
@@ -135,7 +135,8 @@ TEST_CASE("place on uncontrollable system returns nullopt")
     std::array<std::complex<double>, 2> desired = {std::complex<double>{-1.0, 0.0}, std::complex<double>{-2.0, 0.0}};
 
     auto result = ctrlpp::place<double, 2, 1>(A, B, desired);
-    CHECK_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::uncontrollable_pair);
 }
 
 TEST_CASE("luenberger MIMO observer with manual gain")
@@ -234,7 +235,7 @@ TEST_CASE("place with real poles")
     CHECK_THAT(computed_real[1], Catch::Matchers::WithinAbs(-5.0, 1e-8));
 }
 
-TEST_CASE("place with unpaired complex pole returns nullopt")
+TEST_CASE("place refuses a pole set that is not conjugate symmetric")
 {
     // Only one complex pole without its conjugate -> invalid
     Eigen::Matrix<double, 2, 2> A;
@@ -246,10 +247,11 @@ TEST_CASE("place with unpaired complex pole returns nullopt")
     std::array<std::complex<double>, 2> desired = {std::complex<double>{-1.0, 1.0}, std::complex<double>{-2.0, 1.0}};
 
     auto result = ctrlpp::place<double, 2, 1>(A, B, desired);
-    CHECK_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::poles_not_conjugate_symmetric);
 }
 
-TEST_CASE("place with single unpaired imaginary pole returns nullopt")
+TEST_CASE("place refuses a single unpaired imaginary pole")
 {
     // One real, one complex without conjugate
     Eigen::Matrix<double, 2, 2> A;
@@ -260,7 +262,8 @@ TEST_CASE("place with single unpaired imaginary pole returns nullopt")
     std::array<std::complex<double>, 2> desired = {std::complex<double>{-1.0, 0.0}, std::complex<double>{-2.0, 3.0}};
 
     auto result = ctrlpp::place<double, 2, 1>(A, B, desired);
-    CHECK_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::poles_not_conjugate_symmetric);
 }
 
 TEST_CASE("place with repeated real poles")
@@ -287,7 +290,7 @@ TEST_CASE("place with repeated real poles")
     CHECK_THAT(computed_real[1], Catch::Matchers::WithinAbs(-3.0, 1e-6));
 }
 
-TEST_CASE("place partially uncontrollable system returns nullopt")
+TEST_CASE("place refuses a partially uncontrollable pair")
 {
     // B only controls one state -> controllability matrix is rank-deficient
     Eigen::Matrix<double, 2, 2> A;
@@ -298,7 +301,8 @@ TEST_CASE("place partially uncontrollable system returns nullopt")
     std::array<std::complex<double>, 2> desired = {std::complex<double>{-1.0, 0.0}, std::complex<double>{-2.0, 0.0}};
 
     auto result = ctrlpp::place<double, 2, 1>(A, B, desired);
-    CHECK_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::uncontrollable_pair);
 }
 
 TEST_CASE("place 3-state system with complex conjugate pair")
@@ -338,7 +342,7 @@ TEST_CASE("place 3-state system with complex conjugate pair")
     }
 }
 
-TEST_CASE("place_observer on uncontrollable dual returns nullopt")
+TEST_CASE("place_observer refuses an unobservable pair")
 {
     // System where A^T, C^T is uncontrollable -> place_observer returns nullopt
     Eigen::Matrix<double, 2, 2> A;
@@ -349,10 +353,14 @@ TEST_CASE("place_observer on uncontrollable dual returns nullopt")
     std::array<std::complex<double>, 2> desired = {std::complex<double>{0.3, 0.0}, std::complex<double>{0.2, 0.0}};
 
     auto result = ctrlpp::place_observer<double, 2, 1>(A, C, desired);
-    CHECK_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    // Forwarded from the dual placement: an uncontrollable (A^T, C^T) IS an
+    // unobservable (A, C), which is the same fact read through the duality the
+    // routine is built on.
+    CHECK(result.error() == ctrlpp::place_error::uncontrollable_pair);
 }
 
-TEST_CASE("place_observer with unpaired complex poles returns nullopt")
+TEST_CASE("place_observer refuses unpaired complex poles")
 {
     Eigen::Matrix<double, 2, 2> A;
     A << 1.0, 0.1, 0.0, 1.0;
@@ -363,7 +371,8 @@ TEST_CASE("place_observer with unpaired complex poles returns nullopt")
     std::array<std::complex<double>, 2> desired = {std::complex<double>{0.3, 0.5}, std::complex<double>{0.2, 0.1}};
 
     auto result = ctrlpp::place_observer<double, 2, 1>(A, C, desired);
-    CHECK_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::poles_not_conjugate_symmetric);
 }
 
 TEST_CASE("place with poles at origin")
@@ -386,4 +395,27 @@ TEST_CASE("place with poles at origin")
 
     for(int i = 0; i < 2; ++i)
         CHECK(std::abs(evals(i)) < 1e-6);
+}
+
+TEST_CASE("place and place_observer refuse an unsupported channel count structurally")
+{
+    // A structural refusal, not a numerical one: the single-channel Ackermann
+    // formula does not cover these shapes at all, so no choice of data or poles
+    // makes them succeed. Its own enumerator says so, because telling a caller
+    // to change the poles here would send them after something that cannot help.
+    std::array<std::complex<double>, 2> desired = {std::complex<double>{-1.0, 0.0},
+                                                   std::complex<double>{-2.0, 0.0}};
+
+    Eigen::Matrix<double, 2, 2> A;
+    A << 0.0, 1.0, -2.0, -3.0;
+
+    Eigen::Matrix<double, 2, 2> B_multi = Eigen::Matrix<double, 2, 2>::Identity();
+    auto const K = ctrlpp::place<double, 2, 2>(A, B_multi, desired);
+    REQUIRE_FALSE(K.has_value());
+    CHECK(K.error() == ctrlpp::place_error::multi_input_not_supported);
+
+    Eigen::Matrix<double, 2, 2> C_multi = Eigen::Matrix<double, 2, 2>::Identity();
+    auto const L = ctrlpp::place_observer<double, 2, 2>(A, C_multi, desired);
+    REQUIRE_FALSE(L.has_value());
+    CHECK(L.error() == ctrlpp::place_error::multi_output_not_supported);
 }

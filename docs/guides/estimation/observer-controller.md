@@ -74,6 +74,10 @@ int main()
     R_lqr << 1.0;
 
     auto K_opt = ctrlpp::lqr_gain<Scalar, NX, NU>(sys_d.A, sys_d.B, Q_lqr, R_lqr);
+    if (!K_opt.has_value()) {
+        std::cerr << "the Riccati solve refused the plant\n";
+        return 1;
+    }
     ctrlpp::lqr<Scalar, NX, NU> controller(*K_opt);
 
     // Kalman filter

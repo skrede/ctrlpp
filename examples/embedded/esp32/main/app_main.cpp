@@ -56,7 +56,7 @@ void control_task(void*)
     auto demo = ctrlpp::control_loop_demo<float>::make();
     if(!demo.has_value())
     {
-        ESP_LOGE(TAG, "lqr_gain FAILED on device -- Riccati did not converge");
+        ESP_LOGE(TAG, "lqr_gain REFUSED the plant on device -- %s", ctrlpp::describe(demo.error()));
         return;
     }
 

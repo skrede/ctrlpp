@@ -5,6 +5,7 @@
 #include "ctrlpp/control/lqr.h"
 
 #include <cstdio>
+#include <iostream>
 
 int main()
 {
@@ -22,8 +23,15 @@ int main()
     Eigen::Matrix<Scalar, NU, NU> R;
     R << 1.0;
 
-    auto P = ctrlpp::care<Scalar, NX, NU>(A, B, Q, R).value().P;
-    auto K = ctrlpp::lqr_gain_continuous<Scalar, NX, NU>(A, B, Q, R).value();
+    auto P_result = ctrlpp::care<Scalar, NX, NU>(A, B, Q, R);
+    auto K_result = ctrlpp::lqr_gain_continuous<Scalar, NX, NU>(A, B, Q, R);
+    if(!P_result.has_value() || !K_result.has_value())
+    {
+        std::cerr << "the continuous Riccati solve declined the validation problem\n";
+        return 1;
+    }
+    auto P = P_result->P;
+    auto K = *K_result;
 
     std::printf("P_00,P_01,P_10,P_11,K_00,K_01\n");
     std::printf("%.15e,%.15e,%.15e,%.15e,%.15e,%.15e\n",

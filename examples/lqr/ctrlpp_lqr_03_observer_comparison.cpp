@@ -51,6 +51,11 @@ int main()
     R_lqr << 1.0;
 
     auto K_opt = ctrlpp::lqr_gain<Scalar, NX, NU>(sys_d.A, sys_d.B, Q_lqr, R_lqr);
+    if(!K_opt.has_value())
+    {
+        std::cerr << "LQR gain synthesis failed\n";
+        return 1;
+    }
     ctrlpp::lqr<Scalar, NX, NU> controller(*K_opt);
 
     Eigen::Matrix<Scalar, 4, 4> Q_proc = Eigen::Matrix<Scalar, 4, 4>::Identity() * 0.01;
@@ -69,6 +74,11 @@ int main()
     Eigen::Matrix<Scalar, 4, 4> Q_obs = Eigen::Matrix<Scalar, 4, 4>::Identity() * 100.0;
     Eigen::Matrix<Scalar, 2, 2> R_obs = Eigen::Matrix<Scalar, 2, 2>::Identity();
     auto L_dual = ctrlpp::lqr_gain<Scalar, NX, NY>(sys_d.A.transpose(), sys_d.C.transpose(), Q_obs, R_obs);
+    if(!L_dual.has_value())
+    {
+        std::cerr << "dual observer gain synthesis failed\n";
+        return 1;
+    }
     Eigen::Matrix<Scalar, 4, 2> L = L_dual->transpose();
 
     ctrlpp::luenberger_observer<Scalar, NX, NU, NY> luen(sys_d, L, x0_est);

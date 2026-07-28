@@ -6,6 +6,7 @@
 /// @cite anderson1990 -- Anderson & Moore, "Optimal Control: Linear Quadratic Methods", 1990
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -18,7 +19,6 @@
 #include <vector>
 #include <cstddef>
 #include <utility>
-#include <optional>
 
 namespace ctrlpp
 {
@@ -34,15 +34,21 @@ struct lqi_result
     Eigen::Matrix<Scalar, int(NU), int(NY)> Ki;
 };
 
-// Infinite-horizon LQR gain via DARE.
-// Returns K = (R + B^T P B)^{-1} B^T P A where P solves the DARE.
+/// Infinite-horizon LQR gain via DARE.
+///
+/// Returns K = (R + B^T P B)^{-1} B^T P A where P solves the DARE, or the
+/// Riccati solver's own `dare_error` verbatim. The gain is a function of that
+/// solve and has no failure mode of its own, so it forwards the enumerator
+/// rather than restating the cause under a second name: an unstabilisable pair,
+/// a singular state matrix and a non-converged factorization send the caller to
+/// fix three different things.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>>
-lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q, const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
+auto lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q, const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
+    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error>
 {
     auto P_result = dare<Scalar, NX, NU>(A, B, Q, R);
     if(!P_result)
-        return std::nullopt;
+        return ctrlpp::unexpected(P_result.error());
 
     const auto& P = P_result->P;
     auto BtP = (B.transpose() * P).eval();
@@ -51,18 +57,21 @@ lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<S
     return K;
 }
 
-// Infinite-horizon LQR gain with cross-weight N.
-// K = (R + B^T P B)^{-1} (B^T P A + N^T)
+/// Infinite-horizon LQR gain with cross-weight N.
+///
+/// K = (R + B^T P B)^{-1} (B^T P A + N^T). Forwards the Riccati solver's
+/// `dare_error` for the same reason the cross-weight-free overload does.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
-                                                                const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
-                                                                const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
-                                                                const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
-                                                                const Eigen::Matrix<Scalar, int(NX), int(NU)>& N)
+auto lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
+              const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+              const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
+              const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
+              const Eigen::Matrix<Scalar, int(NX), int(NU)>& N)
+    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error>
 {
     auto P_result = dare<Scalar, NX, NU>(A, B, Q, R, N);
     if(!P_result)
-        return std::nullopt;
+        return ctrlpp::unexpected(P_result.error());
 
     const auto& P = P_result->P;
     auto BtP = (B.transpose() * P).eval();
@@ -72,20 +81,27 @@ std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_gain(const Eigen::Mat
     return K;
 }
 
-// Continuous-time infinite-horizon LQR gain via CARE.
-// K = R^{-1} B^T P where P solves A^T P + P A - P B R^{-1} B^T P + Q = 0.
-//
-// Computes R^{-1} once via ldlt (R is SPD for valid LQR problems), builds the
-// Hamiltonian using that pre-computed R^{-1}, and reuses it for the K formula --
-// one matrix factorisation of R instead of two.
+/// Continuous-time infinite-horizon LQR gain via CARE.
+///
+/// K = R^{-1} B^T P where P solves A^T P + P A - P B R^{-1} B^T P + Q = 0.
+///
+/// Computes R^{-1} once via ldlt (R is SPD for valid LQR problems), builds the
+/// Hamiltonian using that pre-computed R^{-1}, and reuses it for the K formula --
+/// one matrix factorisation of R instead of two.
+///
+/// Reports through `care_error`. Its two own rejections -- a non-finite
+/// argument, and a Hamiltonian that came out non-finite from finite arguments
+/// because R^{-1} did not -- are both `care_error::non_finite_input`, which is
+/// the enumerator the continuous solver already defines for exactly that
+/// condition; everything else is the solver's own enumerator forwarded.
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
           detail::care_solve_method Method = detail::sign_function_care_method>
-std::optional<Eigen::Matrix<Scalar, int(NU), int(NX)>>
-lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
-                    const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
-                    const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
-                    const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
-                    Method                                         /*method_tag*/ = {})
+auto lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
+                         const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+                         const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
+                         const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
+                         Method                                         /*method_tag*/ = {})
+    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, care_error>
 {
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
@@ -97,7 +113,7 @@ lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     using Mat2N   = Eigen::Matrix<Scalar, n2, n2>;
 
     if(!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite())
-        return std::nullopt;
+        return ctrlpp::unexpected(care_error::non_finite_input);
 
     const MatU R_inv = R.ldlt().solve(MatU::Identity());
 
@@ -107,14 +123,18 @@ lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     H.template block<nx, nx>(nx, 0) = -Q;
     H.template block<nx, nx>(nx, nx) = -A.transpose();
 
+    // Finite A, B, Q and R can still assemble a non-finite Hamiltonian, because
+    // R^{-1} is formed here rather than supplied: a singular R makes the whole
+    // top-right block infinite. That is the same condition the enumerator names,
+    // read one step later.
     if(!H.allFinite())
-        return std::nullopt;
+        return ctrlpp::unexpected(care_error::non_finite_input);
 
     auto result = detail::care_solve_from_hamiltonian<Scalar, NX, Method>(H);
     if(!result)
-        return std::nullopt;
+        return ctrlpp::unexpected(result.error());
 
-    return (R_inv * B.transpose() * result->P).eval();
+    return Eigen::Matrix<Scalar, int(NU), int(NX)>{(R_inv * B.transpose() * result->P).eval()};
 }
 
 // Finite-horizon LQR via backward Riccati recursion.
@@ -211,7 +231,7 @@ template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 auto partition_lqi_gain(const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>& A_aug,
                         const Eigen::Matrix<Scalar, int(NX + NY), int(NU)>& B_aug,
                         const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>& Q_aug,
-                        const Eigen::Matrix<Scalar, int(NU), int(NU)>& R) -> std::optional<lqi_result<Scalar, NX, NU, NY>>
+                        const Eigen::Matrix<Scalar, int(NU), int(NU)>& R) -> ctrlpp::expected<lqi_result<Scalar, NX, NU, NY>, dare_error>
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int ny = static_cast<int>(NY);
@@ -219,7 +239,7 @@ auto partition_lqi_gain(const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>&
 
     auto K_aug_opt = lqr_gain<Scalar, NX + NY, NU>(A_aug, B_aug, Q_aug, R);
     if(!K_aug_opt)
-        return std::nullopt;
+        return ctrlpp::unexpected(K_aug_opt.error());
 
     auto& K_aug = *K_aug_opt;
     lqi_result<Scalar, NX, NU, NY> result;
@@ -230,16 +250,20 @@ auto partition_lqi_gain(const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>&
 
 }
 
-// LQI gain: augments state with integral of tracking error.
-// Augmented system: A_aug = [[A, 0], [-C, I]], B_aug = [[B], [0]]
-// Returns lqi_result with partitioned Kx (NU x NX) and Ki (NU x NY).
+/// LQI gain: augments state with integral of tracking error.
+///
+/// Augmented system: A_aug = [[A, 0], [-C, I]], B_aug = [[B], [0]].
+/// Returns lqi_result with partitioned Kx (NU x NX) and Ki (NU x NY), or the
+/// augmented Riccati solve's `dare_error` verbatim.
+///
 /// @cite anderson1990 -- Anderson & Moore, "Optimal Control: Linear Quadratic Methods", 1990, Ch. 9 (integral action)
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-std::optional<lqi_result<Scalar, NX, NU, NY>> lqi_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
-                                                       const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
-                                                       const Eigen::Matrix<Scalar, int(NY), int(NX)>& C,
-                                                       const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>& Q_aug,
-                                                       const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
+auto lqi_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
+              const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+              const Eigen::Matrix<Scalar, int(NY), int(NX)>& C,
+              const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>& Q_aug,
+              const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
+    -> ctrlpp::expected<lqi_result<Scalar, NX, NU, NY>, dare_error>
 {
     auto [A_aug, B_aug] = detail::build_lqi_augmented_system<Scalar, NX, NU, NY>(A, B, C);
     return detail::partition_lqi_gain<Scalar, NX, NU, NY>(A_aug, B_aug, Q_aug, R);

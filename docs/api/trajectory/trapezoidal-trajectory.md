@@ -43,6 +43,34 @@ Construction solves phase durations from the kinematic constraints. Negative dis
 
 When the two boundary velocities are not feasible over the commanded displacement at the commanded acceleration, the acceleration is raised to the smallest value that makes them feasible together (B&M eq. (3.15)). That raise is a division by the commanded displacement, so it has no representable answer once the displacement is small enough, and none at all when it is zero.
 
+## The acceleration raise is a disposition, not a rejection
+
+A raised acceleration is a **success whose realized limit differs from the commanded one**, and it is reported through `disposition()` rather than through the failure channel.
+
+```cpp
+template <typename Scalar>
+struct trapezoidal_disposition
+{
+    Scalar commanded_acceleration{};  // the a_max passed to create
+    Scalar realized_acceleration{};   // the magnitude every ramp actually uses
+};
+```
+
+```cpp
+auto const& d = traj.disposition();
+if(d.realized_acceleration > d.commanded_acceleration)
+{
+    // the profile is valid and respects d.realized_acceleration in every
+    // phase; it does NOT respect the limit that was commanded
+}
+```
+
+The profile that comes back is correct and limit-respecting **under the realized limit**, and it is the profile the command asks for at the only acceleration that can deliver it. So it is not a failure, and it does not become one: forcing a caller to handle a non-failure through the failure path teaches the caller that the failure path is usually noise.
+
+It is not a flag either. A supervisory layer that learns only that something was substituted cannot decide anything with it; the commanded and realized values are what let a caller whose acceleration limit is physical rather than advisory compare the two and act. `realized_acceleration == commanded_acceleration` exactly when nothing was raised.
+
+The disposition is fixed when the profile is built and is never recomputed: the raise is decided once, and `rescale_to` holds the acceleration magnitude fixed by construction. No enumerator was added to `trajectory_error` for it.
+
 ## Rejections
 
 Checked in order:
@@ -79,6 +107,7 @@ The realized phase durations are checked directly rather than inferred from the 
 | `is_triangular` | `bool is_triangular() const` | True if cruise phase duration is zero |
 | `peak_velocity` | `Scalar peak_velocity() const` | Signed peak velocity in original frame |
 | `phase_durations` | `std::array<Scalar, 3> phase_durations() const` | `{T_accel, T_cruise, T_decel}` |
+| `disposition` | `trapezoidal_disposition<Scalar> const& disposition() const` | The commanded acceleration limit against the one this profile realizes |
 | `rescale_to` | `expected<void, trajectory_error> rescale_to(Scalar T_new)` | Rebuild at a longer duration for multi-axis sync |
 | `can_rescale_to` | `expected<void, trajectory_error> can_rescale_to(Scalar T_new) const` | Whether `rescale_to(T_new)` would succeed, without mutating |
 

@@ -4,13 +4,29 @@
 #include "golden_reference.h"
 
 #include "ctrlpp/control.h"
+#include "ctrlpp/expected.h"
 
 #include <Eigen/Dense>
 
-#include <optional>
-
 namespace ctrlpp
 {
+
+// Name the cause a refused gain design reported. The design forwards the
+// Riccati solver's own enumerator rather than flattening it, so a board leg can
+// print which of six conditions refused the plant instead of guessing at one.
+inline const char* describe(dare_error e)
+{
+    switch(e)
+    {
+    case dare_error::non_stabilisable: return "pair is not stabilisable";
+    case dare_error::non_finite_input: return "non-finite input or symplectic";
+    case dare_error::singular_a:       return "state matrix is singular";
+    case dare_error::singular_u11:     return "invariant-subspace block is singular";
+    case dare_error::non_psd_solution: return "solution is not positive semi-definite";
+    case dare_error::schur_failed:     return "Schur factorisation did not converge";
+    }
+    return "unknown";
+}
 
 // Passive Scalar-parameterized control-loop kernel shared verbatim by every board
 // leg: it owns the plant build and the on-device gain design, but no clock, no IO
@@ -23,7 +39,7 @@ struct control_loop_demo
     Eigen::Matrix<Scalar, 1, 2> K;
     Eigen::Vector<Scalar, 2>    x;
 
-    static std::optional<control_loop_demo> make()
+    static ctrlpp::expected<control_loop_demo, dare_error> make()
     {
         const Scalar dt = static_cast<Scalar>(kDt);
 
@@ -38,7 +54,7 @@ struct control_loop_demo
 
         const auto gain = ctrlpp::lqr_gain<Scalar, 2, 1>(A, B, Q, R);
         if(!gain.has_value())
-            return std::nullopt;
+            return ctrlpp::unexpected(gain.error());
 
         control_loop_demo demo;
         demo.A = A;

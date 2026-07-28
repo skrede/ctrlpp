@@ -15,6 +15,8 @@
 #include "ctrlpp/control/care.h"
 #include "ctrlpp/control/lqr.h"
 
+#include "bench_construct.h"
+
 #include <cassert>  // must precede ct_optcon includes; DynamicRiccatiEquation.hpp uses assert() without <cassert>
 #include <ct/core/types/StateVector.h>
 #include <ct/core/types/ControlVector.h>
@@ -63,8 +65,10 @@ void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, c
 {
     auto [A, B, Q, R] = build_damped_chain<NX, NU>();
 
-    auto warmup_ctrlpp = ctrlpp::lqr_gain_continuous<double, NX, NU>(A, B, Q, R);
-    (void)warmup_ctrlpp;
+    // The warmup also asserts the solve succeeds: a benchmark that times a
+    // refused solve reports a number for a problem the library declined.
+    (void)ctrlpp::bench::built_or_exit(ctrlpp::lqr_gain_continuous<double, NX, NU>(A, B, Q, R),
+                                       "lqr_gain_continuous warmup on the damped chain");
 
     ct::optcon::LQR<NX, NU> ct_lqr;
     typename ct::optcon::LQR<NX, NU>::state_matrix_t A_ct = A;

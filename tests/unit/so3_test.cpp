@@ -93,8 +93,9 @@ TEST_CASE("so3 normalize produces unit quaternion", "[so3]")
     q.x() = 1.0;
     q.y() = 0.0;
     q.z() = 0.0;
-    auto qn = so3::normalize(q);
-    CHECK_THAT(qn.norm(), WithinAbs(1.0, 1e-15));
+    auto const qn = so3::normalize(q);
+    REQUIRE(qn.has_value());
+    CHECK_THAT(qn->norm(), WithinAbs(1.0, 1e-15));
 }
 
 TEST_CASE("so3 skew antisymmetry", "[so3]")

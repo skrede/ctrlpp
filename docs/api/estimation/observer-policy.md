@@ -143,6 +143,8 @@ int main()
         sys.A, sys.B,
         Eigen::Matrix2d::Identity() * 10.0,
         Eigen::Matrix<Scalar, 1, 1>::Identity());
+    if (!K_opt.has_value())
+        return;
 
     ctrlpp::lqr<Scalar, NX, NU> ctrl(*K_opt);
 

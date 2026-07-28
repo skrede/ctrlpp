@@ -14,12 +14,36 @@
 /// @cite barfoot2017 -- Barfoot, "State Estimation for Robotics", 2017, Ch. 7 (rotations, hemisphere canonicalisation of the log map)
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
 #include <Eigen/Geometry>
 
 #include <cmath>
+
+namespace ctrlpp
+{
+
+/// @brief Structured failure modes for the SO(3) primitives that can refuse.
+///
+///  * non_finite_input : a quaternion coefficient is NaN or infinite, so no
+///                       scaling of it lands on the unit sphere.
+///  * zero_quaternion  : every coefficient is exactly zero. The quaternion
+///                       carries no direction at all, and unlike a merely small
+///                       one it cannot be brought onto the unit sphere by any
+///                       factor.
+///
+/// The two are kept apart because they send the caller to fix different things:
+/// the first is arithmetic that went wrong upstream, the second is a value that
+/// was never a rotation.
+enum class so3_error
+{
+    non_finite_input,
+    zero_quaternion,
+};
+
+}
 
 namespace ctrlpp::so3
 {
@@ -91,11 +115,43 @@ Eigen::Quaternion<Scalar> conjugate(const Eigen::Quaternion<Scalar>& q)
     return q.conjugate();
 }
 
-// Normalize quaternion to unit norm.
+/// Scale a quaternion onto the unit sphere, or report why it has no unit
+/// representative.
+///
+/// The postcondition is a norm of one, and it holds for every input the
+/// function accepts. Exactly two inputs have no unit representative and are
+/// rejected rather than handed back: a NaN or infinite coefficient
+/// (so3_error::non_finite_input), and the zero quaternion, which carries no
+/// direction (so3_error::zero_quaternion).
+///
+/// Every other finite quaternion IS normalized, including ones whose squared
+/// norm is not representable. The coefficients are divided by their largest
+/// magnitude first, so the norm is taken of a vector whose largest coefficient
+/// is exactly one and whose squared norm therefore lies in [1, 4] -- neither
+/// end of the exponent range can be reached from there.
+///
+/// Forming the norm directly instead loses two families of finite input
+/// silently, which is why this function does not delegate to the linear-algebra
+/// library's normalizing member. That member tests squaredNorm() > 0 and
+/// returns a COPY of its input when the test fails (Eigen 3.4.0,
+/// Eigen/src/Core/Dot.h:122-134, MatrixBase<Derived>::normalized()), so a
+/// quaternion whose squared norm underflows comes back unchanged with a norm of
+/// zero; and where the squared norm overflows the test passes, the division is
+/// by infinity, and the result is the zero quaternion. Both inputs are finite
+/// and have a well-defined direction, and both would leave a documented
+/// unit-norm postcondition unmet with nothing said about it.
 template <typename Scalar>
-Eigen::Quaternion<Scalar> normalize(const Eigen::Quaternion<Scalar>& q)
+auto normalize(const Eigen::Quaternion<Scalar>& q) -> ctrlpp::expected<Eigen::Quaternion<Scalar>, so3_error>
 {
-    return q.normalized();
+    if(!q.coeffs().allFinite())
+        return ctrlpp::unexpected(so3_error::non_finite_input);
+
+    Scalar const scale = q.coeffs().cwiseAbs().maxCoeff();
+    if(!(scale > Scalar{0}))
+        return ctrlpp::unexpected(so3_error::zero_quaternion);
+
+    auto const scaled = (q.coeffs() / scale).eval();
+    return Eigen::Quaternion<Scalar>{(scaled / scaled.norm()).eval()};
 }
 
 /// Skew-symmetric matrix from a 3-vector: [v]_x such that [v]_x * u = v x u.

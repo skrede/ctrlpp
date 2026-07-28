@@ -35,7 +35,8 @@ TEST_CASE("place() accepts a numerically-conjugate float pole pair the way it do
     // At double that gap is ~1e-16 (well under the hardcoded 1e-12, so
     // validate_conjugate_pairs accepts the pair); at float it is ~5e-7
     // (comfortably above 1e-12), so the identical construction is spuriously
-    // rejected as "not a conjugate pair" and place() returns nullopt.
+    // rejected as "not a conjugate pair" and place() refuses the design with
+    // place_error::poles_not_conjugate_symmetric.
     auto poles_for = []<typename Scalar>(Scalar theta, Scalar wn) -> std::array<std::complex<Scalar>, 2>
     {
         Scalar sigma = -wn * std::cos(theta);
