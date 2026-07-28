@@ -141,17 +141,19 @@ TEST_CASE("kalman_filter predict/update performs zero heap allocation",
     const Vector<double, 1> z = (Vector<double, 1>() << 0.1).finished();
 
     kf.predict(u);
-    kf.update(z);
+    REQUIRE(kf.update(z).has_value());
 
+    bool all_stepped = true;
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
         {
             kf.predict(u);
-            kf.update(z);
+            all_stepped = all_stepped && kf.update(z).has_value();
         }
     });
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(all_stepped);
 
     REQUIRE(allocations == 0);
     REQUIRE(kf.state().allFinite());
@@ -172,17 +174,19 @@ TEST_CASE("ekf predict/update performs zero heap allocation",
     const Vector<double, 1> z = (Vector<double, 1>() << 0.1).finished();
 
     filter.predict(u);
-    filter.update(z);
+    REQUIRE(filter.update(z).has_value());
 
+    bool all_stepped = true;
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
         {
             filter.predict(u);
-            filter.update(z);
+            all_stepped = all_stepped && filter.update(z).has_value();
         }
     });
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(all_stepped);
 
     REQUIRE(allocations == 0);
     REQUIRE(filter.state().allFinite());
@@ -203,17 +207,19 @@ TEST_CASE("ukf predict/update performs zero heap allocation",
     const Vector<double, 1> z = (Vector<double, 1>() << 0.1).finished();
 
     filter.predict(u);
-    filter.update(z);
+    REQUIRE(filter.update(z).has_value());
 
+    bool all_stepped = true;
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
         {
             filter.predict(u);
-            filter.update(z);
+            all_stepped = all_stepped && filter.update(z).has_value();
         }
     });
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(all_stepped);
 
     REQUIRE(allocations == 0);
     REQUIRE(filter.state().allFinite());
@@ -235,17 +241,19 @@ TEST_CASE("mekf predict/update performs zero heap allocation",
     const Vector<double, 3> z = (Vector<double, 3>() << 0.0, 0.0, 1.0).finished();
 
     filter.predict(omega);
-    filter.update(z);
+    REQUIRE(filter.update(z).has_value());
 
+    bool all_stepped = true;
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
         {
             filter.predict(omega);
-            filter.update(z);
+            all_stepped = all_stepped && filter.update(z).has_value();
         }
     });
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(all_stepped);
 
     REQUIRE(allocations == 0);
     REQUIRE(filter.state().allFinite());
@@ -267,17 +275,19 @@ TEST_CASE("manifold_ukf predict/update performs zero heap allocation",
     const Vector<double, 3> z = (Vector<double, 3>() << 0.0, 0.0, 1.0).finished();
 
     filter.predict(omega);
-    filter.update(z);
+    REQUIRE(filter.update(z).has_value());
 
+    bool all_stepped = true;
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
         {
             filter.predict(omega);
-            filter.update(z);
+            all_stepped = all_stepped && filter.update(z).has_value();
         }
     });
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(all_stepped);
 
     REQUIRE(allocations == 0);
     REQUIRE(filter.state().allFinite());
@@ -295,14 +305,16 @@ TEST_CASE("complementary_filter update performs zero heap allocation",
     const Vector<double, 3> gyro = (Vector<double, 3>() << 0.01, -0.02, 0.03).finished();
     const Vector<double, 3> accel = (Vector<double, 3>() << 0.0, 0.0, 9.81).finished();
 
-    filter.update(gyro, accel, 0.01);
+    REQUIRE(filter.update(gyro, accel, 0.01).has_value());
 
+    bool all_stepped = true;
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 128; ++i)
-            filter.update(gyro, accel, 0.01);
+            all_stepped = all_stepped && filter.update(gyro, accel, 0.01).has_value();
     });
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(all_stepped);
 
     REQUIRE(allocations == 0);
     REQUIRE(filter.state().allFinite());

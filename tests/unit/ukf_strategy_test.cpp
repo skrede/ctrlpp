@@ -77,7 +77,7 @@ TEST_CASE("ukf with julier strategy")
 
         Vector<double, 1> z;
         z << true_pos + 0.1 * std::sin(static_cast<double>(i));
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     auto est = filter.state();
@@ -111,7 +111,7 @@ TEST_CASE("ukf with qr gain decomposition")
 
         Vector<double, 1> z;
         z << true_pos + 0.1 * std::sin(static_cast<double>(i));
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     auto est = filter.state();
@@ -151,8 +151,8 @@ TEST_CASE("ukf shares dynamics_model with ekf")
 
     Vector<double, 1> z;
     z << 1.0;
-    ekf_filter.update(z);
-    ukf_filter.update(z);
+    REQUIRE(ekf_filter.update(z).has_value());
+    REQUIRE(ukf_filter.update(z).has_value());
 
     CHECK(std::isfinite(ekf_filter.state()(0)));
     CHECK(std::isfinite(ukf_filter.state()(0)));
@@ -175,7 +175,7 @@ TEST_CASE("ukf satisfies ObserverPolicy and CovarianceObserver")
 
     Vector<double, 1> z;
     z << 1.0;
-    filter.update(z);
+    REQUIRE(filter.update(z).has_value());
 
     [[maybe_unused]] const auto& s = filter.state();
     [[maybe_unused]] const auto& P = filter.covariance();
@@ -238,7 +238,7 @@ TEST_CASE("ukf construction from strategy options surfaces a rejected parameter 
 
         Vector<double, 1> z;
         z << 1.0;
-        result->update(z);
+        REQUIRE(result->update(z).has_value());
 
         CHECK(std::isfinite(result->state()(0)));
         CHECK(std::isfinite(result->covariance()(0, 0)));

@@ -49,19 +49,54 @@ auto make_ukf()
 
 }
 
-TEST_CASE("UKF NaN measurement does not crash", "[ukf][hardening][negative]")
+TEST_CASE("UKF NaN measurement is rejected without touching the estimate",
+          "[ukf][hardening][negative]")
 {
     auto filter = make_ukf();
+    // Stepped only with the valid measurement, never with the poisoned one, so
+    // it says what the filter would have carried had the bad sample never
+    // arrived.
+    auto reference = make_ukf();
 
     Eigen::Matrix<double, 1, 1> u;
     u << 0.0;
     filter.predict(u);
+    reference.predict(u);
 
-    Eigen::Matrix<double, 1, 1> z;
-    z << std::numeric_limits<double>::quiet_NaN();
-    filter.update(z);
+    // Snapshot immediately before the poisoned step.
+    const Eigen::Vector2d x_before = filter.state();
+    const Eigen::Matrix<double, 2, 2> P_before = filter.covariance();
 
-    CHECK((std::isnan(filter.state()[0]) || std::isfinite(filter.state()[0])));
+    Eigen::Matrix<double, 1, 1> z_bad;
+    z_bad << std::numeric_limits<double>::quiet_NaN();
+
+    const auto rejected = filter.update(z_bad);
+
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == ctrlpp::ukf_update_error::non_finite_measurement);
+
+    // Exact comparison, not a tolerance: a rejected step performs no arithmetic
+    // on the carried estimate at all, so bitwise equality is the contract and a
+    // tolerance would admit a step that partially ran.
+    CHECK(filter.state() == x_before);
+    // The covariance was already measurement-independent before the guard
+    // existed -- the posterior reduction P - K*S*K^T is built from the
+    // predict-stage sigma points and the gain, never from z -- so this half of
+    // the invariant is structural. The state half is what the guard adds.
+    CHECK(filter.covariance() == P_before);
+    // A rejection describes the sample, not the filter: nothing was mutated, so
+    // the filter is not degraded and must not report that it is.
+    CHECK(filter.health() == ctrlpp::ukf_health::ok);
+
+    // The poison did not latch: the next valid step produces exactly what it
+    // would have produced had the poisoned step never been attempted.
+    Eigen::Matrix<double, 1, 1> z_good;
+    z_good << 1.0;
+    REQUIRE(filter.update(z_good).has_value());
+    REQUIRE(reference.update(z_good).has_value());
+
+    CHECK(filter.state() == reference.state());
+    CHECK(filter.covariance() == reference.covariance());
 }
 
 TEST_CASE("UKF for linear system matches Kalman output", "[ukf][hardening][precision]")
@@ -80,7 +115,7 @@ TEST_CASE("UKF for linear system matches Kalman output", "[ukf][hardening][preci
         filter.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << true_pos;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     REQUIRE(std::abs(filter.state()[0] - true_pos) < 1.0);
@@ -99,7 +134,7 @@ TEST_CASE("UKF covariance stays PD over 1000 steps", "[ukf][hardening][stability
         filter.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << 5.0 + 0.01 * k;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
 
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(filter.covariance());
         for(int i = 0; i < 2; ++i)
@@ -154,7 +189,7 @@ TEST_CASE("UKF tracks nonlinear system (quadratic dynamics)", "[ukf][hardening][
         filter.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << x_true(0);
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     REQUIRE(std::abs(filter.state()[0] - x_true(0)) < 0.5);
@@ -179,7 +214,7 @@ TEST_CASE("UKF near-singular P0", "[ukf][hardening][robustness]")
         filter.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << 1.0;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
 
         if(!std::isfinite(filter.state()[0]) || !std::isfinite(filter.state()[1]))
         {

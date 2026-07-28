@@ -69,8 +69,14 @@ int main()
         // Simulate position-only measurement
         Eigen::Matrix<double, 1, 1> z = obs_sys.C * x_true;
 
-        // Update observer with measurement
-        kf.update(z);
+        // Update observer with measurement. The step reports whether it ran,
+        // so a non-finite sample cannot silently poison the estimate the MPC
+        // then solves against.
+        if(const auto stepped = kf.update(z); !stepped)
+        {
+            std::cerr << "Kalman filter rejected the measurement at t=" << t << "\n";
+            return EXIT_FAILURE;
+        }
 
         // MPC solves using estimated state from Kalman filter
         auto u_opt = controller.solve(kf.state());

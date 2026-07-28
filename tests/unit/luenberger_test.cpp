@@ -46,7 +46,7 @@ TEST_CASE("luenberger observer convergence with known gain")
 
         // Observer predict-update
         obs.predict(u);
-        obs.update(z);
+        REQUIRE(obs.update(z).has_value());
     }
 
     auto est = obs.state();
@@ -116,7 +116,7 @@ TEST_CASE("place_observer produces gain for convergent observer")
         x_true = sys.A * x_true + sys.B * u;
 
         obs.predict(u);
-        obs.update(z);
+        REQUIRE(obs.update(z).has_value());
     }
 
     auto est = obs.state();
@@ -163,7 +163,7 @@ TEST_CASE("luenberger MIMO observer with manual gain")
 
         Eigen::Vector2d z;
         z << 1.0, 0.5;
-        obs.update(z);
+        REQUIRE(obs.update(z).has_value());
     }
 
     auto est = obs.state();

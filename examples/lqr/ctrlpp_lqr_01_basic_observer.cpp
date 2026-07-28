@@ -63,7 +63,11 @@ int main()
 
         // Fuse a measurement sampled from the freshly propagated true state.
         Eigen::Matrix<Scalar, 1, 1> z = sys_d.C * x_true;
-        kf.update(z);
+        if(const auto stepped = kf.update(z); !stepped)
+        {
+            std::cerr << "Kalman filter rejected the measurement at t=" << t << "\n";
+            return 1;
+        }
 
         // Compute the control from the freshly updated estimate.
         auto x_est = kf.state();

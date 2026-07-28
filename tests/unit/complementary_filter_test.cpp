@@ -48,7 +48,7 @@ TEST_CASE("complementary filter IMU stationary converges to gravity-aligned", "[
     accel << 0.0, 0.0, 9.81;
 
     for (int i = 0; i < 500; ++i) {
-        cf.update(gyro, accel, 0.01);
+        REQUIRE(cf.update(gyro, accel, 0.01).has_value());
     }
 
     double angle_error = quat_angle(cf.attitude(), Eigen::Quaterniond::Identity());
@@ -66,7 +66,7 @@ TEST_CASE("complementary filter IMU rejects constant gyro bias", "[cf]")
     accel << 0.0, 0.0, 9.81;
 
     for (int i = 0; i < 2000; ++i) {
-        cf.update(bias_true, accel, 0.01);
+        REQUIRE(cf.update(bias_true, accel, 0.01).has_value());
     }
 
     auto bias_est = cf.bias();
@@ -98,7 +98,7 @@ TEST_CASE("complementary filter IMU bias estimate converges over a long horizon"
     const double horizon = 5.0 * tau;  // >= 500 s (here 2000 s)
     const int steps = static_cast<int>(horizon / dt);
     for (int i = 0; i < steps; ++i)
-        cf.update(bias_true, accel, dt);
+        REQUIRE(cf.update(bias_true, accel, dt).has_value());
 
     const double b0 = bias_true(0); // initial bias error: the estimate starts at zero
     const double envelope = b0 * std::exp(-horizon / tau);
@@ -129,7 +129,7 @@ TEST_CASE("complementary filter IMU tracks rotation around z-axis", "[cf]")
         // Rotate accel vector to remain consistent with attitude
         Vector<double, 3> accel;
         accel << -9.81 * std::sin(yaw) * 0.0, 0.0, 9.81; // gravity still mostly +z
-        cf.update(gyro, accel, 0.01);
+        REQUIRE(cf.update(gyro, accel, 0.01).has_value());
     }
 
     // Rotation is about the gravity axis, so the estimated gravity direction in
@@ -162,8 +162,8 @@ TEST_CASE("complementary filter MARG mode uses magnetometer for heading", "[cf]"
     mag << 0.2, 0.0, 0.4; // pointing roughly north+down
 
     for (int i = 0; i < 500; ++i) {
-        cf_imu.update(gyro, accel, 0.01);
-        cf_marg.update(gyro, accel, mag, 0.01);
+        REQUIRE(cf_imu.update(gyro, accel, 0.01).has_value());
+        REQUIRE(cf_marg.update(gyro, accel, mag, 0.01).has_value());
     }
 
     // Both should converge to gravity-aligned attitude
@@ -185,7 +185,7 @@ TEST_CASE("complementary filter ObserverPolicy predict/update interface", "[cf]"
     accel << 0.0, 0.0, 9.81;
 
     cf.predict(gyro);
-    cf.update(accel);
+    REQUIRE(cf.update(accel).has_value());
 
     auto s = cf.state();
     CHECK(s.size() == 7); // 4 quaternion + 3 bias
@@ -212,7 +212,7 @@ TEST_CASE("complementary filter handles zero accelerometer gracefully", "[cf]")
     Vector<double, 3> accel = Vector<double, 3>::Zero();
 
     // Should not crash or produce NaN -- filter skips update when accel norm < 1e-10
-    cf.update(gyro, accel, 0.01);
+    REQUIRE(cf.update(gyro, accel, 0.01).has_value());
 
     auto q = cf.attitude();
     CHECK(std::isfinite(q.w()));
@@ -237,7 +237,7 @@ TEST_CASE("complementary filter k_p=0 ignores accel correction", "[cf]")
     accel << 0.0, 0.0, 9.81;
 
     for(int i = 0; i < 100; ++i)
-        cf.update(gyro, accel, 0.01);
+        REQUIRE(cf.update(gyro, accel, 0.01).has_value());
 
     // With k_p=0 and k_i=0 the filter is a pure gyro integrator. A fixed-axis
     // rotation composes exactly, so yaw = omega_z * steps * dt = 0.1 * 100 * 0.01
@@ -263,7 +263,7 @@ TEST_CASE("complementary filter k_i=0 has no bias estimation", "[cf]")
     accel << 0.0, 0.0, 9.81;
 
     for(int i = 0; i < 2000; ++i)
-        cf.update(bias_true, accel, 0.01);
+        REQUIRE(cf.update(bias_true, accel, 0.01).has_value());
 
     // With k_i=0, bias should remain at zero
     auto bias_est = cf.bias();
@@ -285,8 +285,8 @@ TEST_CASE("complementary filter MARG with zero magnetometer falls back to IMU", 
 
     for(int i = 0; i < 100; ++i)
     {
-        cf_marg.update(gyro, accel, mag_zero, 0.01);
-        cf_imu.update(gyro, accel, 0.01);
+        REQUIRE(cf_marg.update(gyro, accel, mag_zero, 0.01).has_value());
+        REQUIRE(cf_imu.update(gyro, accel, 0.01).has_value());
     }
 
     // MARG with zero mag should produce same result as IMU-only
@@ -308,7 +308,7 @@ TEST_CASE("complementary filter MARG with near-zero accel is skipped", "[cf]")
     mag << 0.2, 0.0, 0.4;
 
     // Both IMU and MARG updates should be no-ops with near-zero accel
-    cf.update(gyro, accel_tiny, mag, 0.01);
+    REQUIRE(cf.update(gyro, accel_tiny, mag, 0.01).has_value());
 
     double angle_change = quat_angle(cf.attitude(), q_before);
     CHECK(angle_change < 1e-10);
@@ -324,7 +324,7 @@ TEST_CASE("complementary filter large dt produces finite results", "[cf]")
     Vector<double, 3> accel;
     accel << 0.0, 0.0, 9.81;
 
-    cf.update(gyro, accel, 1.0);
+    REQUIRE(cf.update(gyro, accel, 1.0).has_value());
 
     auto q = cf.attitude();
     CHECK(std::isfinite(q.w()));
@@ -345,7 +345,7 @@ TEST_CASE("complementary filter multiple predict/update cycles via ObserverPolic
     for(int i = 0; i < 200; ++i)
     {
         cf.predict(gyro);
-        cf.update(accel);
+        REQUIRE(cf.update(accel).has_value());
     }
 
     double angle = quat_angle(cf.attitude(), Eigen::Quaterniond::Identity());
@@ -386,8 +386,8 @@ TEST_CASE("complementary filter high proportional gain converges faster", "[cf]"
 
     for(int i = 0; i < 50; ++i)
     {
-        cf_h.update(gyro, accel, 0.01);
-        cf_l.update(gyro, accel, 0.01);
+        REQUIRE(cf_h.update(gyro, accel, 0.01).has_value());
+        REQUIRE(cf_l.update(gyro, accel, 0.01).has_value());
     }
 
     double err_high = quat_angle(cf_h.attitude(), Eigen::Quaterniond::Identity());

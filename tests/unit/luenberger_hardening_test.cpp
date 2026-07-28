@@ -23,25 +23,56 @@ auto make_system()
 
 }
 
-TEST_CASE("Luenberger NaN measurement does not crash",
+TEST_CASE("Luenberger NaN measurement is rejected without touching the state",
           "[luenberger][hardening][negative]")
 {
     auto sys = make_system();
     Eigen::Matrix<double, 2, 1> L;
+    // Both gain entries are nonzero, so a measurement that reached the fused
+    // correction x + L*(z - C*x) would poison BOTH state components. The
+    // observer carries no covariance, so the preserved-invariant argument has a
+    // state half only.
     L << 0.5, 0.3;
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
 
     ctrlpp::luenberger_observer<double, 2, 1, 1> obs(sys, L, x0);
+    // Stepped only with the valid measurement, never with the poisoned one, so
+    // it says what the observer would have carried had the bad sample never
+    // arrived.
+    ctrlpp::luenberger_observer<double, 2, 1, 1> reference(sys, L, x0);
 
     Eigen::Matrix<double, 1, 1> u;
     u << 0.0;
     obs.predict(u);
+    reference.predict(u);
 
-    Eigen::Matrix<double, 1, 1> z;
-    z << std::numeric_limits<double>::quiet_NaN();
-    obs.update(z);
+    // Snapshot immediately before the poisoned step.
+    const Eigen::Vector2d x_before = obs.state();
 
-    CHECK((std::isnan(obs.state()[0]) || std::isfinite(obs.state()[0])));
+    Eigen::Matrix<double, 1, 1> z_bad;
+    z_bad << std::numeric_limits<double>::quiet_NaN();
+
+    const auto rejected = obs.update(z_bad);
+
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == ctrlpp::luenberger_update_error::non_finite_measurement);
+
+    // Exact comparison, not a tolerance: a rejected step performs no arithmetic
+    // on the carried state at all, so bitwise equality is the contract and a
+    // tolerance would admit a step that partially ran.
+    CHECK(obs.state() == x_before);
+    // A rejection describes the sample, not the observer: nothing was mutated,
+    // so the observer is not degraded and must not report that it is.
+    CHECK(obs.health() == ctrlpp::luenberger_health::ok);
+
+    // The poison did not latch: the next valid step produces exactly what it
+    // would have produced had the poisoned step never been attempted.
+    Eigen::Matrix<double, 1, 1> z_good;
+    z_good << 1.0;
+    REQUIRE(obs.update(z_good).has_value());
+    REQUIRE(reference.update(z_good).has_value());
+
+    CHECK(obs.state() == reference.state());
 }
 
 TEST_CASE("Luenberger zero observer gains (open-loop)",
@@ -63,7 +94,7 @@ TEST_CASE("Luenberger zero observer gains (open-loop)",
         obs.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << 5.0;
-        obs.update(z);
+        REQUIRE(obs.update(z).has_value());
     }
 
     // State should be finite (decaying from initial)
@@ -96,7 +127,7 @@ TEST_CASE("Luenberger observer error decays for stable poles",
         obs.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << sys.C(0, 0) * x_true[0] + sys.C(0, 1) * x_true[1];
-        obs.update(z);
+        REQUIRE(obs.update(z).has_value());
 
         x_true = (sys.A * x_true + sys.B * u).eval();
     }
@@ -128,7 +159,7 @@ TEST_CASE("Luenberger observer converges to true state within 200 steps",
         double meas = sys.C(0, 0) * x_true[0] + sys.C(0, 1) * x_true[1];
         Eigen::Matrix<double, 1, 1> z;
         z << meas;
-        obs.update(z);
+        REQUIRE(obs.update(z).has_value());
 
         x_true = (sys.A * x_true + sys.B * u).eval();
     }

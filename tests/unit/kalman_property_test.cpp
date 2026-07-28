@@ -120,7 +120,7 @@ TEST_CASE("kalman covariance remains psd throughout filtering", "[kalman][proper
                      x_true = (sys.A * x_true + sys.B * u).eval();
 
                      Vec1 z = sys.C * x_true;
-                     kf.update(z);
+                     RC_ASSERT(kf.update(z).has_value());
 
                      auto& P = kf.covariance();
                      Eigen::SelfAdjointEigenSolver<Mat2> eig(P);
@@ -156,7 +156,7 @@ TEST_CASE("kalman covariance is symmetric", "[kalman][property]")
                      x_true = (sys.A * x_true + sys.B * u).eval();
 
                      Vec1 z = sys.C * x_true;
-                     kf.update(z);
+                     RC_ASSERT(kf.update(z).has_value());
 
                      auto& P = kf.covariance();
                      RC_ASSERT((P - P.transpose()).norm() < 1e-12);
@@ -194,7 +194,7 @@ TEST_CASE("kalman innovation bounded for stable system", "[kalman][property]")
                      x_true = (sys.A * x_true + sys.B * u).eval();
 
                      Vec1 z = sys.C * x_true;
-                     kf.update(z);
+                     RC_ASSERT(kf.update(z).has_value());
 
                      double innov_norm = kf.innovation().norm();
                      if(step < total_steps / 2)
@@ -237,7 +237,7 @@ TEST_CASE("kalman robustness - extreme noise parameters", "[kalman][property]")
                      x_true = (sys.A * x_true + sys.B * u).eval();
 
                      Vec1 z = sys.C * x_true;
-                     kf.update(z);
+                     RC_ASSERT(kf.update(z).has_value());
 
                      auto& state = kf.state();
                      auto& P = kf.covariance();

@@ -115,7 +115,14 @@ void run_loop(Observer& obs, auto& ctrl, auto& sys, int steps)
         x_true = sys.A * x_true + sys.B * u;
 
         obs.predict(u);
-        obs.update(z);
+        // The concept does not constrain update's return type, so a generic
+        // observer loop that wants the diagnosis constrains it itself; the
+        // library's own observers all return ctrlpp::expected<void, E>.
+        if(!obs.update(z))
+        {
+            std::cerr << "observer rejected the measurement at step " << k << "\n";
+            return;
+        }
 
         std::cout << k << "," << x_true(0) << "," << x_est(0) << "\n";
     }

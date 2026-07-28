@@ -73,12 +73,12 @@ TEST_CASE("Manifold UKF non-unit quaternion input normalizes",
 
     ctrlpp::Vector<double, 3> z;
     z << 0.0, 0.0, 1.0;
-    filter.update(z);
+    REQUIRE(filter.update(z).has_value());
 
     CHECK(std::isfinite(filter.state()[0]));
 }
 
-TEST_CASE("Manifold UKF NaN rotation measurement",
+TEST_CASE("Manifold UKF NaN rotation measurement is rejected without touching the estimate",
           "[manifold_ukf][hardening][negative]")
 {
     ctrlpp::manifold_ukf_config<double, 3> cfg;
@@ -86,16 +86,53 @@ TEST_CASE("Manifold UKF NaN rotation measurement",
     cfg.R *= 0.01;
 
     auto filter = make_filter(cfg);
+    // Stepped only with the valid measurement, never with the poisoned one, so
+    // it says what the filter would have carried had the bad sample never
+    // arrived.
+    auto reference = make_filter(cfg);
 
     ctrlpp::Vector<double, 3> omega = ctrlpp::Vector<double, 3>::Zero();
     filter.predict(omega);
+    reference.predict(omega);
 
-    ctrlpp::Vector<double, 3> z;
-    z << std::numeric_limits<double>::quiet_NaN(), 0.0, 1.0;
-    filter.update(z);
+    // Snapshot immediately before the poisoned step.
+    const ctrlpp::Vector<double, 4> state_before = filter.state();
+    const ctrlpp::Matrix<double, 3, 3> P_before = filter.covariance();
 
-    // NaN propagation or finite -- no crash
-    CHECK((std::isnan(filter.state()[0]) || std::isfinite(filter.state()[0])));
+    ctrlpp::Vector<double, 3> z_bad;
+    z_bad << std::numeric_limits<double>::quiet_NaN(), 0.0, 1.0;
+
+    const auto rejected = filter.update(z_bad);
+
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == ctrlpp::manifold_ukf_update_error::non_finite_measurement);
+
+    // Exact comparison, not a tolerance: a rejected step performs no arithmetic
+    // on the carried estimate at all, so bitwise equality is the contract and a
+    // tolerance would admit a step that partially ran.
+    CHECK(filter.state() == state_before);
+    // The covariance was already measurement-independent before the guard
+    // existed -- the tangent reduction P - K*S*K^T and its reset Jacobian are
+    // built from the sigma points, the gain and the correction, never from z --
+    // so this half of the invariant is structural. The state half is what the
+    // guard adds.
+    CHECK(filter.covariance() == P_before);
+    // On a manifold the attitude quaternion's unit norm is an extra invariant,
+    // and the rejection preserves it exactly rather than approximately.
+    CHECK(filter.attitude().norm() == 1.0);
+    // A rejection describes the sample, not the filter: nothing was mutated, so
+    // the filter is not degraded and must not report that it is.
+    CHECK(filter.health() == ctrlpp::manifold_ukf_health::ok);
+
+    // The poison did not latch: the next valid step produces exactly what it
+    // would have produced had the poisoned step never been attempted.
+    ctrlpp::Vector<double, 3> z_good;
+    z_good << 0.0, 0.0, 1.0;
+    REQUIRE(filter.update(z_good).has_value());
+    REQUIRE(reference.update(z_good).has_value());
+
+    CHECK(filter.state() == reference.state());
+    CHECK(filter.covariance() == reference.covariance());
 }
 
 TEST_CASE("Manifold UKF covariance stays PD over 1000 steps",
@@ -115,7 +152,7 @@ TEST_CASE("Manifold UKF covariance stays PD over 1000 steps",
         filter.predict(omega);
         ctrlpp::Vector<double, 3> z;
         z << 0.0, 0.0, 1.0;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
 
         Eigen::SelfAdjointEigenSolver<ctrlpp::Matrix<double, 3, 3>> eigsolver(filter.covariance());
         for(int i = 0; i < 3; ++i)
@@ -154,7 +191,7 @@ TEST_CASE("Manifold UKF attitude converges for slow rotation",
         // Gravity measurement for identity attitude
         ctrlpp::Vector<double, 3> z;
         z << 0.0, 0.0, 1.0;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     auto q_est = filter.attitude();
@@ -184,7 +221,7 @@ TEST_CASE("Manifold UKF extreme rotation near gimbal lock",
         filter.predict(omega);
         ctrlpp::Vector<double, 3> z;
         z << 0.0, 0.0, 1.0;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
 
         if(!std::isfinite(filter.state()[0]))
         {
@@ -217,7 +254,7 @@ TEST_CASE("Manifold UKF near pi rotation triggers hemisphere flip",
     {
         filter.predict(omega);
         Eigen::Vector3d z = q_near_pi.toRotationMatrix().transpose().col(2);
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     // Filter should remain finite through hemisphere-spanning sigma points

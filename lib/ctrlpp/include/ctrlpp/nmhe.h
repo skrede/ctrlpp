@@ -95,12 +95,30 @@ public:
         // Capture the predicted (prior) estimate at the current time, before the
         // measurement correction, so the oldest entry holds the window-head prior
         // formed only from data strictly before the window (no double-count).
+        const state_vector_t prior_state = m_ekf.state();
+        const cov_matrix_t prior_cov = m_ekf.covariance();
+
+        // The embedded filter rejects a measurement it cannot use, and that
+        // rejection governs the whole step: the windows are the estimator's
+        // memory, so admitting a sample the filter refused would leave the
+        // horizon holding data no estimate was ever formed from. The step is
+        // therefore a no-op -- no window shifts, no counter increments -- and the
+        // caller learns of it through the diagnostics aggregate. The reported
+        // status is an error with the fallback flag CLEARED: no estimate was
+        // produced by any path, so claiming the fallback ran would be a false
+        // report. The aggregate cannot yet distinguish a refused measurement
+        // from a solver failure; narrowing it is separately owned work.
+        if(const auto stepped = m_ekf.update(z); !stepped)
+        {
+            m_diagnostics = mhe_diagnostics<Scalar>{.status = solve_status::error, .used_ekf_fallback = false};
+            return;
+        }
+
         std::rotate(m_prior_state_window.begin(), m_prior_state_window.begin() + 1, m_prior_state_window.end());
         std::rotate(m_prior_cov_window.begin(), m_prior_cov_window.begin() + 1, m_prior_cov_window.end());
-        m_prior_state_window.back() = m_ekf.state();
-        m_prior_cov_window.back() = m_ekf.covariance();
+        m_prior_state_window.back() = prior_state;
+        m_prior_cov_window.back() = prior_cov;
 
-        m_ekf.update(z);
         std::rotate(m_z_window.begin(), m_z_window.begin() + 1, m_z_window.end());
         m_z_window.back() = z;
         m_state->z_window = m_z_window;

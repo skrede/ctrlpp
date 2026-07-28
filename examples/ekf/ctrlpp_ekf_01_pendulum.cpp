@@ -135,8 +135,14 @@ int main()
         ctrlpp::Vector<double, 1> z;
         z << meas_theta;
 
-        // EKF update
-        filter.update(z);
+        // EKF update. A sensor that emits a non-finite sample is refused
+        // rather than allowed to destroy the estimate, so the step reports
+        // whether it ran.
+        if(const auto stepped = filter.update(z); !stepped)
+        {
+            std::cerr << "EKF rejected the measurement at step " << k << "\n";
+            return 1;
+        }
 
         auto est = filter.state();
         auto P = filter.covariance();

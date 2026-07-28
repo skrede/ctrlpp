@@ -6,6 +6,7 @@
 /// @cite kalman1960 -- Kalman, "A New Approach to Linear Filtering and Prediction Problems", 1960
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -22,6 +23,54 @@
 
 namespace ctrlpp
 {
+
+/// @brief Structured failure modes of a `kalman_filter` measurement update.
+///
+/// Each enumerator is an exact domain condition, not a tuning preference: a
+/// non-finite operand makes every downstream product non-finite, so the step
+/// cannot produce an estimate at all.
+///
+///  * non_finite_state       : the carried state estimate is already non-finite
+///                             when the step begins. The fault is upstream of
+///                             the measurement, so it is reported ahead of it --
+///                             a caller told "your measurement is bad" would
+///                             replace a working sensor while the real fault
+///                             sits in the prediction that poisoned the state.
+///  * non_finite_covariance  : the carried covariance is already non-finite when
+///                             the step begins. A distinguishable cause from a
+///                             non-finite state because the covariance recursion
+///                             is driven by the model and by Q and R, never by
+///                             the measurement, so the caller fixes a different
+///                             input.
+///  * non_finite_measurement : the supplied measurement vector has a non-finite
+///                             component. The gain carries it into the state,
+///                             which is the filter's carried memory, so a single
+///                             such sample destroys the estimate permanently.
+enum class kalman_update_error
+{
+    non_finite_state,
+    non_finite_covariance,
+    non_finite_measurement,
+};
+
+/// @brief Persistent state-health status of a `kalman_filter`.
+///
+/// A per-call result cannot answer whether the carried estimate is still
+/// degraded from a step several samples ago, because that question outlives the
+/// call. The status latches: it never returns to a lower rung on its own.
+///
+///  * ok                  : every step so far began from a finite estimate.
+///  * non_finite_estimate : a step found the carried state or the carried
+///                          covariance already non-finite. `predict` does not
+///                          reject its input, so this is how a poisoned control
+///                          vector or a non-finite model becomes visible. A
+///                          rejected measurement does NOT set it: the rejection
+///                          mutates nothing, so it leaves the filter healthy.
+enum class kalman_health
+{
+    ok,
+    non_finite_estimate,
+};
 
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct kalman_config
@@ -68,9 +117,23 @@ public:
         propagate_covariance();
     }
 
-    /// @brief Update state and covariance with measurement.
-    void update(const output_vector_t& z)
+    /// @brief Update state and covariance with a measurement.
+    ///
+    /// The step is rejected before any member is assigned when the carried
+    /// estimate or the measurement is non-finite, so a rejected step leaves the
+    /// state, the covariance, the innovation and the NIS bitwise unchanged and
+    /// the caller may retry with the next sample.
+    ///
+    /// `predict` is deliberately not fallible: its input is a control vector the
+    /// caller already commanded and owns, and rejecting it would leave the
+    /// filter with no propagation for a step the plant did take. A prediction
+    /// that poisons the state is instead reported by `health()`, which the next
+    /// update latches.
+    auto update(const output_vector_t& z) -> ctrlpp::expected<void, kalman_update_error>
     {
+        if(const auto step = check_step(z); !step)
+            return ctrlpp::unexpected(latch_health(step.error()));
+
         compute_innovation(z);
         auto S = compute_innovation_covariance();
         auto K = compute_kalman_gain(S);
@@ -78,6 +141,7 @@ public:
         apply_state_correction(K);
         update_covariance(K);
         compute_nis(S);
+        return {};
     }
 
     const state_vector_t& state() const { return m_x; }
@@ -89,6 +153,10 @@ public:
     /// @brief Normalized Innovation Squared: innovation^T S^{-1} innovation
     /// (chi-square distributed with dof = NY under a consistent filter).
     Scalar nis() const { return m_nis_value; }
+
+    /// @brief Report whether the carried estimate is still degraded from an
+    /// earlier step. Latches; a rejected measurement does not set it.
+    kalman_health health() const { return m_health; }
 
     bool is_steady_state(Scalar tol = Scalar{1e-10}) const
     {
@@ -113,6 +181,33 @@ public:
     }
 
 private:
+    /// @brief Classify a step's operands without touching a single member.
+    ///
+    /// The order is the severity order documented on `kalman_update_error`: the
+    /// carried estimate first, the supplied measurement last. The cost is one
+    /// finiteness scan of each operand -- NX + NX*NX + NY reads, no branches on
+    /// data and no allocation, all dimensions being compile-time constants.
+    auto check_step(const output_vector_t& z) const -> ctrlpp::expected<void, kalman_update_error>
+    {
+        if(!m_x.allFinite())
+            return ctrlpp::unexpected(kalman_update_error::non_finite_state);
+        if(!m_P.allFinite())
+            return ctrlpp::unexpected(kalman_update_error::non_finite_covariance);
+        if(!z.allFinite())
+            return ctrlpp::unexpected(kalman_update_error::non_finite_measurement);
+        return {};
+    }
+
+    /// @brief Latch the persistent status for the faults that describe the
+    /// carried estimate, and pass the fault through so the caller still receives
+    /// the specific cause on the failure channel.
+    auto latch_health(kalman_update_error fault) -> kalman_update_error
+    {
+        if(fault != kalman_update_error::non_finite_measurement)
+            m_health = kalman_health::non_finite_estimate;
+        return fault;
+    }
+
     /// @brief Propagate state: x = A*x + B*u.
     ///
     /// @cite kalman1960 -- Kalman, "A New Approach to Linear Filtering and Prediction Problems", 1960
@@ -182,6 +277,7 @@ private:
     state_vector_t m_x;
     meas_cov_matrix_t m_R;
     output_vector_t m_innovation;
+    kalman_health m_health{kalman_health::ok};
 };
 
 static_assert(ObserverPolicy<kalman_filter<double, 2, 1, 1>>);

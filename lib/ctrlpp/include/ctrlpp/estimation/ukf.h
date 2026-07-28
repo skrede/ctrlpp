@@ -36,16 +36,63 @@ enum class gain_decomposition
     qr
 };
 
-/// @brief Filter-health status the caller can inspect after any step.
+/// @brief Structured failure modes of a `ukf` measurement update.
 ///
-/// `ok` means every covariance factored so far was positive definite;
-/// `covariance_repaired` latches once a non-positive-definite covariance had
-/// to be repaired to the nearest symmetric positive definite matrix, signaling
-/// that the estimate has entered a numerically degraded regime.
+/// Each enumerator is an exact domain condition, not a tuning preference: a
+/// non-finite operand makes every downstream product non-finite, so the step
+/// cannot produce an estimate at all.
+///
+///  * non_finite_state       : the carried state estimate is already non-finite
+///                             when the step begins. It is reported ahead of the
+///                             measurement because the fault is upstream of it,
+///                             and because the sigma points are generated AROUND
+///                             the carried state, so a poisoned state makes
+///                             every sigma point non-finite before the
+///                             measurement is ever used.
+///  * non_finite_covariance  : the carried covariance is already non-finite when
+///                             the step begins. A distinguishable cause from a
+///                             non-finite state because the covariance is what
+///                             the sigma-point spread factors, and it is driven
+///                             by the model and by Q and R, never by the
+///                             measurement.
+///  * non_finite_measurement : the supplied measurement vector has a non-finite
+///                             component. The gain carries it into the state,
+///                             which is the filter's carried memory, so a single
+///                             such sample destroys the estimate permanently.
+enum class ukf_update_error
+{
+    non_finite_state,
+    non_finite_covariance,
+    non_finite_measurement,
+};
+
+/// @brief Persistent state-health status of a `ukf`.
+///
+/// A per-call result cannot answer whether the carried estimate is still
+/// degraded from a step several samples ago, because that question outlives the
+/// call. The enumerators are ordered by severity and the status latches: it
+/// never returns to a lower rung on its own.
+///
+///  * ok                  : every covariance factored so far was positive
+///                          definite and every step began from a finite
+///                          estimate.
+///  * covariance_repaired : a non-positive-definite covariance had to be
+///                          repaired to the nearest symmetric positive definite
+///                          matrix, so the estimate has entered a numerically
+///                          degraded but still usable regime.
+///  * non_finite_estimate : a step found the carried state or the carried
+///                          covariance already non-finite, which is not
+///                          recoverable by any further step. `predict` does not
+///                          reject its input, so this is how a poisoned control
+///                          vector or a dynamics model that returned a
+///                          non-finite state becomes visible. A rejected
+///                          measurement does NOT set it: the rejection mutates
+///                          nothing, so it leaves the filter healthy.
 enum class ukf_health
 {
     ok,
-    covariance_repaired
+    covariance_repaired,
+    non_finite_estimate
 };
 
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
@@ -139,8 +186,23 @@ public:
         m_x = x_pred;
     }
 
-    void update(const output_vector_t& z)
+    /// @brief Update state and covariance with a measurement.
+    ///
+    /// The step is rejected before any member is assigned when the carried
+    /// estimate or the measurement is non-finite, so a rejected step leaves the
+    /// state, the covariance, the innovation and the NIS bitwise unchanged and
+    /// the caller may retry with the next sample.
+    ///
+    /// `predict` is deliberately not fallible: its input is a control vector the
+    /// caller already commanded and owns, and rejecting it would leave the
+    /// filter with no propagation for a step the plant did take. A prediction
+    /// that poisons the state is instead reported by `health()`, which the next
+    /// update latches.
+    auto update(const output_vector_t& z) -> ctrlpp::expected<void, ukf_update_error>
     {
+        if(const auto step = check_step(z); !step)
+            return ctrlpp::unexpected(latch_health(step.error()));
+
         auto sigma = m_strategy.generate(m_x, m_P);
         note_health(sigma);
         auto z_sigma = compute_measurement_sigma_points(sigma.points);
@@ -151,6 +213,7 @@ public:
         m_innovation = (z - z_pred).eval();
         m_nis = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
         apply_correction_and_update_covariance(K, S);
+        return {};
     }
 
     const state_vector_t& state() const { return m_x; }
@@ -163,17 +226,52 @@ public:
     /// (chi-square distributed with dof = NY under a consistent filter).
     Scalar nis() const { return m_nis; }
 
-    /// @brief Report whether the filter has had to repair a non-positive-definite
-    /// covariance to the nearest symmetric positive definite matrix.
+    /// @brief Report whether the carried estimate is still degraded from an
+    /// earlier step: a repaired covariance, or an estimate that was already
+    /// non-finite. Latches; a rejected measurement does not set it.
     ukf_health health() const { return m_health; }
 
 private:
+    /// @brief Classify a step's operands without touching a single member.
+    ///
+    /// The order is the severity order documented on `ukf_update_error`: the
+    /// carried estimate first, the supplied measurement last. The cost is one
+    /// finiteness scan of each operand -- NX + NX*NX + NY reads, no branches on
+    /// data and no allocation, all dimensions being compile-time constants.
+    auto check_step(const output_vector_t& z) const -> ctrlpp::expected<void, ukf_update_error>
+    {
+        if(!m_x.allFinite())
+            return ctrlpp::unexpected(ukf_update_error::non_finite_state);
+        if(!m_P.allFinite())
+            return ctrlpp::unexpected(ukf_update_error::non_finite_covariance);
+        if(!z.allFinite())
+            return ctrlpp::unexpected(ukf_update_error::non_finite_measurement);
+        return {};
+    }
+
+    /// @brief Latch the persistent status for the faults that describe the
+    /// carried estimate, and pass the fault through so the caller still receives
+    /// the specific cause on the failure channel.
+    ///
+    /// `non_finite_estimate` is the top rung and is never downgraded to
+    /// `covariance_repaired` by a later step: a repaired covariance is a
+    /// degraded but usable estimate, a non-finite one is not an estimate at all.
+    auto latch_health(ukf_update_error fault) -> ukf_update_error
+    {
+        if(fault != ukf_update_error::non_finite_measurement)
+            m_health = ukf_health::non_finite_estimate;
+        return fault;
+    }
+
     /// @brief Latch a degraded health status when a sigma-point generation had
     /// to repair a non-positive-definite covariance.
+    ///
+    /// Never lowers an already-latched `non_finite_estimate`, which is the more
+    /// severe rung.
     template <typename Sigma>
     void note_health(const Sigma& sigma)
     {
-        if(sigma.spd_repaired)
+        if(sigma.spd_repaired && m_health == ukf_health::ok)
             m_health = ukf_health::covariance_repaired;
     }
 

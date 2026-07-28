@@ -119,7 +119,7 @@ TEST_CASE("mekf update corrects attitude toward measurement", "[mekf]")
     for(int i = 0; i < 50; ++i)
     {
         filter.predict(Vector<double, 3>::Zero());
-        filter.update(gravity_world);
+        REQUIRE(filter.update(gravity_world).has_value());
     }
 
     auto q = filter.attitude();
@@ -140,7 +140,7 @@ TEST_CASE("mekf covariance stays symmetric and PSD", "[mekf]")
     for(int i = 0; i < 100; ++i)
     {
         filter.predict(omega);
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     auto P = filter.covariance();
@@ -157,7 +157,7 @@ TEST_CASE("mekf innovation is finite after update", "[mekf]")
     auto filter = make_filter<Mekf3>(gravity_measurement{}, cfg);
 
     filter.predict(Vector<double, 3>{0.01, 0.0, 0.0});
-    filter.update(Vector<double, 3>{0.0, 0.0, 1.0});
+    REQUIRE(filter.update(Vector<double, 3>{0.0, 0.0, 1.0}).has_value());
 
     REQUIRE(std::isfinite(filter.innovation().norm()));
 }
@@ -179,7 +179,7 @@ TEST_CASE("mekf bias estimation converges", "[mekf]")
     {
         // Gyro reads zero angular velocity + bias
         filter.predict(true_bias);
-        filter.update(gravity_world);
+        REQUIRE(filter.update(gravity_world).has_value());
     }
 
     auto est_bias = filter.bias();
@@ -206,7 +206,7 @@ TEST_CASE("mekf with analytical Jacobian measurement model", "[mekf]")
     for(int i = 0; i < 50; ++i)
     {
         filter.predict(Vector<double, 3>::Zero());
-        filter.update(gravity_world);
+        REQUIRE(filter.update(gravity_world).has_value());
     }
 
     auto q = filter.attitude();

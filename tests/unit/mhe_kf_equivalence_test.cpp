@@ -147,7 +147,7 @@ TEST_CASE("unconstrained linear MHE matches Kalman filter at the window end", "[
         estimator.predict(u);
         estimator.update(z);
         reference.predict(u);
-        reference.update(z);
+        REQUIRE(reference.update(z).has_value());
     }
 
     // These are two different numerical methods: the estimator solves a

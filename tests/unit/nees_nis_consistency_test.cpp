@@ -177,6 +177,7 @@ TEST_CASE("KF NEES/NIS Monte-Carlo average lies within the chi-square consistenc
 
     double nees_sum = 0.0;
     double nis_sum = 0.0;
+    bool all_stepped = true;
     for(std::size_t m = 0; m < M; ++m)
     {
         kalman_filter<double, NX, NU, NY> filt(sys, cfg);
@@ -191,7 +192,7 @@ TEST_CASE("KF NEES/NIS Monte-Carlo average lies within the chi-square consistenc
 
             Vector<double, NY> v = sample_gaussian<NY>(cfg.R, gen);
             Vector<double, NY> z = (sys.C * x_true + v).eval();
-            filt.update(z);
+            all_stepped = all_stepped && filt.update(z).has_value();
         }
 
         Vector<double, NX> e = (x_true - filt.state()).eval();
@@ -199,6 +200,8 @@ TEST_CASE("KF NEES/NIS Monte-Carlo average lies within the chi-square consistenc
         nees_sum += (e.transpose() * Pinv_e)(0, 0);
         nis_sum += filt.nis(); // filter's Normalized Innovation Squared: innovation' * S^-1 * innovation
     }
+
+    REQUIRE(all_stepped);
 
     double nees_avg = nees_sum / static_cast<double>(M);
     double nis_avg = nis_sum / static_cast<double>(M);
@@ -228,6 +231,7 @@ TEST_CASE("EKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
 
     double nees_sum = 0.0;
     double nis_sum = 0.0;
+    bool all_stepped = true;
     for(std::size_t m = 0; m < M; ++m)
     {
         EkfType filt(dyn, meas, cfg);
@@ -242,7 +246,7 @@ TEST_CASE("EKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
 
             Vector<double, NY> v = sample_gaussian<NY>(cfg.R, gen);
             Vector<double, NY> z = (meas(x_true) + v).eval();
-            filt.update(z);
+            all_stepped = all_stepped && filt.update(z).has_value();
         }
 
         Vector<double, NX> e = (x_true - filt.state()).eval();
@@ -250,6 +254,8 @@ TEST_CASE("EKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
         nees_sum += (e.transpose() * Pinv_e)(0, 0);
         nis_sum += filt.nis();
     }
+
+    REQUIRE(all_stepped);
 
     double nees_avg = nees_sum / static_cast<double>(M);
     double nis_avg = nis_sum / static_cast<double>(M);
@@ -293,6 +299,7 @@ TEST_CASE("UKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
 
     double nees_sum = 0.0;
     double nis_sum = 0.0;
+    bool all_stepped = true;
     for(std::size_t m = 0; m < M; ++m)
     {
         auto filt_result = UkfType::try_create(linear_dynamics{}, position_measurement{}, cfg, strategy_opts);
@@ -311,7 +318,7 @@ TEST_CASE("UKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
 
             Vector<double, NY> v = sample_gaussian<NY>(cfg.R, gen);
             Vector<double, NY> z = (C * x_true + v).eval();
-            filt.update(z);
+            all_stepped = all_stepped && filt.update(z).has_value();
         }
 
         Vector<double, NX> e = (x_true - filt.state()).eval();
@@ -328,6 +335,8 @@ TEST_CASE("UKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
         Vector<double, NY> Sinv_innovation = S.ldlt().solve(innovation);
         nis_sum += (innovation.transpose() * Sinv_innovation)(0, 0);
     }
+
+    REQUIRE(all_stepped);
 
     double nees_avg = nees_sum / static_cast<double>(M);
     double nis_avg = nis_sum / static_cast<double>(M);
@@ -386,6 +395,7 @@ TEST_CASE("MEKF attitude NEES Monte-Carlo average lies within the chi-square con
     vector_observation_measurement meas{r_w};
 
     double nees_sum = 0.0;
+    bool all_stepped = true;
     for(std::size_t m = 0; m < M; ++m)
     {
         auto filt_result = mekf<double, NB, NY_MEKF, vector_observation_measurement>::create(meas, cfg);
@@ -410,7 +420,7 @@ TEST_CASE("MEKF attitude NEES Monte-Carlo average lies within the chi-square con
 
             Vector<double, NY_MEKF> v = sample_gaussian<NY_MEKF>(cfg.R, gen);
             Vector<double, NY_MEKF> z = (q_true.conjugate() * r_w + v).eval();
-            filt.update(z);
+            all_stepped = all_stepped && filt.update(z).has_value();
         }
 
         Eigen::Quaternion<double> q_hat = filt.attitude();
@@ -419,6 +429,8 @@ TEST_CASE("MEKF attitude NEES Monte-Carlo average lies within the chi-square con
         Vector<double, 3> Pinv_e = P_att.ldlt().solve(e_att);
         nees_sum += (e_att.transpose() * Pinv_e)(0, 0);
     }
+
+    REQUIRE(all_stepped);
 
     double nees_avg = nees_sum / static_cast<double>(M);
     auto nees_band = average_chi_square_band(3, M);

@@ -79,10 +79,21 @@ Propagates the nominal quaternion by integrating bias-corrected angular velocity
 ### update
 
 ```cpp
-void update(const output_vector_t& z);
+auto update(const output_vector_t& z)
+    -> ctrlpp::expected<void, mekf_update_error>;
 ```
 
-Computes the measurement Jacobian H (analytically if `differentiable_mekf_measurement` is satisfied, numerically otherwise), applies the Kalman gain to obtain a 6D error-state correction, and composes the rotation correction multiplicatively onto the nominal quaternion. The mandatory frame-change Jacobian G = I - 0.5 * skew(delta_att) is applied to the covariance after the Joseph-form update.
+The step is rejected **before any member is assigned**, so a rejected step leaves the attitude, the bias, the covariance and the innovation bitwise unchanged, preserves the attitude quaternion's unit norm exactly, and the caller may retry with the next sample. Each cause is an exact domain condition, not a tuning preference.
+
+| Condition | Error | Why it is a separate cause |
+|---|---|---|
+| the carried attitude quaternion or bias is already non-finite | `mekf_update_error::non_finite_state` | The measurement and its Jacobian are evaluated **at** the nominal state, so a poisoned nominal state makes both meaningless before the measurement is used |
+| the carried error-state covariance is already non-finite | `mekf_update_error::non_finite_covariance` | The covariance recursion is driven by the propagation Jacobian and by `Q` and `R`, never by the measurement |
+| the supplied measurement has a non-finite component | `mekf_update_error::non_finite_measurement` | The gain carries it into the multiplicative correction, so one such sample makes the attitude quaternion non-finite and no later normalization recovers it |
+
+`predict` is deliberately not fallible. Its input is a command the caller already owns and the plant already took, so refusing it would leave the filter with no propagation for a step that happened. A prediction that poisons the carried estimate is reported by [`health`](#health) instead, which the next `update` latches.
+
+On a step that runs: computes the measurement Jacobian H (analytically if `differentiable_mekf_measurement` is satisfied, numerically otherwise), applies the Kalman gain to obtain a 6D error-state correction, and composes the rotation correction multiplicatively onto the nominal quaternion. The mandatory frame-change Jacobian G = I - 0.5 * skew(delta_att) is applied to the covariance after the Joseph-form update.
 
 ### state
 
@@ -119,6 +130,14 @@ auto bias() const -> const Vector<Scalar, NB>&;
 ```
 
 Returns the current gyroscope bias estimate.
+
+### health
+
+```cpp
+auto health() const -> mekf_health;
+```
+
+Returns the persistent state-health status, one of `mekf_health::ok` or `mekf_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The status starts at `ok` and latches to `non_finite_estimate` the first time a step finds the carried nominal state or covariance already non-finite, which is how a poisoned gyro rate or a non-finite timestep reaching `predict` becomes visible. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.
 
 ## Usage Example
 
@@ -178,7 +197,11 @@ int main()
         for (int i = 0; i < 3; ++i) g_body(i) += accel_noise(rng);
 
         filter.predict(gyro);
-        filter.update(g_body);
+        if(!filter.update(g_body))
+        {
+            std::cerr << "MEKF rejected the measurement\n";
+            return 1;
+        }
 
         auto q_est = filter.attitude();
         Eigen::Vector3d err = ctrlpp::so3::log(q_true.conjugate() * q_est);

@@ -48,7 +48,11 @@ controller:
 
 ```cpp
 kf.predict(u);
-kf.update(z);
+if(!kf.update(z))
+{
+    std::cerr << "Kalman filter rejected the measurement\n";
+    return EXIT_FAILURE;
+}
 auto u_next = controller.compute(kf.state());
 ```
 

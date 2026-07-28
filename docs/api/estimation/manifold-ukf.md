@@ -68,10 +68,21 @@ Generates manifold sigma points around the current quaternion, propagates each t
 ### update
 
 ```cpp
-void update(const output_vector_t& z);
+auto update(const output_vector_t& z)
+    -> ctrlpp::expected<void, manifold_ukf_update_error>;
 ```
 
-Generates manifold sigma points, transforms through measurement model, computes innovation covariance S and manifold cross-covariance Pxz (using log-map deviations), then applies the Kalman gain correction via the exponential map. After the correction, the tangent-space covariance is transported into the corrected frame with the reset Jacobian G = I - 0.5 * skew(delta_phi), mirroring the MEKF reset, so the reported covariance stays anchored to the updated attitude rather than the pre-correction frame.
+The step is rejected **before any member is assigned**, so a rejected step leaves the attitude, the covariance and the innovation bitwise unchanged, preserves the attitude quaternion's unit norm exactly, and the caller may retry with the next sample. Each cause is an exact domain condition, not a tuning preference.
+
+| Condition | Error | Why it is a separate cause |
+|---|---|---|
+| the carried attitude quaternion is already non-finite | `manifold_ukf_update_error::non_finite_state` | The sigma points are generated **around** that quaternion, so every one of them is non-finite before the measurement is used at all |
+| the carried tangent-space covariance is already non-finite | `manifold_ukf_update_error::non_finite_covariance` | The covariance recursion is driven by the geodesic mean and by `Q` and `R`, never by the measurement |
+| the supplied measurement has a non-finite component | `manifold_ukf_update_error::non_finite_measurement` | The gain carries it into the tangent correction, so one such sample makes the attitude quaternion non-finite and no later normalization recovers it |
+
+`predict` is deliberately not fallible. Its input is a command the caller already owns and the plant already took, so refusing it would leave the filter with no propagation for a step that happened. A prediction that poisons the carried estimate is reported by [`health`](#health) instead, which the next `update` latches.
+
+On a step that runs: generates manifold sigma points, transforms through measurement model, computes innovation covariance S and manifold cross-covariance Pxz (using log-map deviations), then applies the Kalman gain correction via the exponential map. After the correction, the tangent-space covariance is transported into the corrected frame with the reset Jacobian G = I - 0.5 * skew(delta_phi), mirroring the MEKF reset, so the reported covariance stays anchored to the updated attitude rather than the pre-correction frame.
 
 ### state
 
@@ -109,7 +120,7 @@ Returns the quaternion estimate directly.
 manifold_ukf_health health() const;
 ```
 
-Returns the filter-health status, one of `manifold_ukf_health::ok` or `manifold_ukf_health::mean_not_converged`. The status starts at `ok` and latches to `mean_not_converged` the first time a geodesic (Karcher) mean iteration exhausts its iteration budget without meeting `geodesic_mean_tol`. A latched status signals that the predicted attitude may be a non-converged iterate rather than the true geodesic mean.
+Returns the persistent state-health status, one of `manifold_ukf_health::ok`, `manifold_ukf_health::mean_not_converged` or `manifold_ukf_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The enumerators are ordered by severity and the status latches, never returning to a lower rung on its own. It moves to `mean_not_converged` the first time a geodesic (Karcher) mean iteration exhausts its iteration budget without meeting `geodesic_mean_tol`, signaling that the predicted attitude may be a non-converged iterate rather than the true geodesic mean; it moves to `non_finite_estimate` the first time a step finds the carried attitude or covariance already non-finite, which is not recoverable by any further step and is how a poisoned `predict` becomes visible. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.
 
 ## Supporting Types
 
@@ -182,7 +193,11 @@ int main()
         for (int i = 0; i < 3; ++i) g_body(i) += noise(rng);
 
         filter.predict(omega);
-        filter.update(g_body);
+        if(!filter.update(g_body))
+        {
+            std::cerr << "manifold UKF rejected the measurement\n";
+            return 1;
+        }
 
         auto q_est = filter.attitude();
         Eigen::Vector3d err = ctrlpp::so3::log(q_true.conjugate() * q_est);

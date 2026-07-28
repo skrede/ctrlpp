@@ -62,10 +62,21 @@ Propagates state through the dynamics model and linearizes to propagate covarian
 ### update
 
 ```cpp
-void update(const output_vector_t& z);
+auto update(const output_vector_t& z)
+    -> ctrlpp::expected<void, ekf_update_error>;
 ```
 
 Incorporates a measurement. Computes the measurement Jacobian H (analytically if `differentiable_measurement` is satisfied, numerically otherwise), then performs the standard Kalman gain computation with Joseph-form covariance update.
+
+The step is rejected **before any member is assigned**, so a rejected step leaves the state, the covariance, the innovation and the NIS bitwise unchanged and the caller may retry with the next sample. Each cause is an exact domain condition, not a tuning preference.
+
+| Condition | Error | Why it is a separate cause |
+|---|---|---|
+| the carried state estimate is already non-finite | `ekf_update_error::non_finite_state` | The measurement Jacobian is evaluated **at** the carried state, so a poisoned state makes the linearization meaningless before the measurement is used at all |
+| the carried covariance is already non-finite | `ekf_update_error::non_finite_covariance` | The covariance recursion is driven by the linearized dynamics and by `Q` and `R`, never by the measurement |
+| the supplied measurement has a non-finite component | `ekf_update_error::non_finite_measurement` | The gain carries it into the state, which is the filter's carried memory, so one such sample destroys the estimate permanently |
+
+`predict` is deliberately not fallible. Its input is a command the caller already owns and the plant already took, so refusing it would leave the filter with no propagation for a step that happened. A prediction that poisons the carried estimate is reported by [`health`](#health) instead, which the next `update` latches.
 
 ### state
 
@@ -92,6 +103,14 @@ Scalar nis() const;
 ```
 
 Normalized Innovation Squared from the last update (innovation^T S^-1 innovation), chi-square distributed with dof = NY under a consistent filter.
+
+### health
+
+```cpp
+ekf_health health() const;
+```
+
+Returns the persistent state-health status, one of `ekf_health::ok` or `ekf_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The status starts at `ok` and latches to `non_finite_estimate` the first time a step finds the carried state or covariance already non-finite, which is how a poisoned `predict` or a dynamics model that returned a non-finite state becomes visible. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.
 
 ## Jacobian Dispatch
 
@@ -165,7 +184,11 @@ int main()
         z(0) = x_true(0) + noise(rng);
 
         filter.predict(u);
-        filter.update(z);
+        if(!filter.update(z))
+        {
+            std::cerr << "EKF rejected the measurement at step " << k << "\n";
+            return 1;
+        }
 
         auto est = filter.state();
         std::cout << k * dt << "," << x_true(0) << "," << est(0) << "\n";

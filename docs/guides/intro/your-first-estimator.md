@@ -90,8 +90,13 @@ int main()
         Eigen::Matrix<double, 1, 1> z;
         z << z_val;
 
-        // Update
-        kf.update(z);
+        // Update. The step returns whether it ran: a non-finite measurement is
+        // refused rather than allowed to destroy the estimate permanently.
+        if(!kf.update(z))
+        {
+            std::cerr << "Kalman filter rejected the measurement at step " << k << "\n";
+            return 1;
+        }
 
         auto est = kf.state();
 
@@ -113,7 +118,16 @@ Every step in the loop follows the same two-phase pattern:
 
 2. **Update**<br/>`kf.update(z)` incorporates the new measurement. The Kalman
    gain balances the predicted estimate against the measurement based on their
-   relative uncertainties. The covariance shrinks.
+   relative uncertainties. The covariance shrinks.<br/>
+   Unlike `predict`, `update` is fallible: it returns
+   `ctrlpp::expected<void, kalman_update_error>`. A non-finite measurement is
+   refused **before anything is written**, so a bad sample leaves the estimate
+   and the covariance exactly as they were and the next good sample works
+   normally. Without that, a single NaN would poison the filter's carried memory
+   permanently and every later step would return NaN from perfectly good data.
+   `predict` stays non-fallible because its input is a command you already issued
+   and the plant already executed; if one poisons the state, `kf.health()` says
+   so from the next `update` onward.
 
 This cycle repeats at every time step. The filter converges quickly &mdash; within
 a few steps the estimated velocity (which is not directly measured) tracks the

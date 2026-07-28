@@ -18,6 +18,42 @@ harder.
 setpoints, configuration parameters) before passing them to ctrlpp. The library
 trusts that inputs are mathematically reasonable.
 
+### Where that contract has been narrowed
+
+The paragraph above no longer describes the whole library, and the exceptions
+are named individually rather than as a category. A surface that carries a
+carried state, rather than merely producing an output, cannot honor
+faithful propagation and remain usable: one poisoned sample destroys the memory
+permanently, and every later step then produces NaN from valid data. Those
+surfaces **reject** instead.
+
+**Reject a non-finite operand before mutating anything** (a rejected step leaves
+the carried estimate bitwise unchanged and reports the specific cause on the
+failure channel):
+
+| Surface | Return |
+|---|---|
+| `kalman_filter::update` | `expected<void, kalman_update_error>` |
+| `ekf::update` | `expected<void, ekf_update_error>` |
+| `ukf::update` | `expected<void, ukf_update_error>` |
+| `mekf::update` | `expected<void, mekf_update_error>` |
+| `manifold_ukf::update` | `expected<void, manifold_ukf_update_error>` |
+| `luenberger_observer::update` | `expected<void, luenberger_update_error>` |
+| `complementary_filter::update`, all three overloads | `expected<void, cf_update_error>` |
+
+**Still propagate faithfully,** with no rejection channel:
+
+- **`predict` on every one of those seven types.** Its input is a command the
+  caller already owns and the plant already took, so refusing it would leave the
+  filter with no propagation for a step that happened. A prediction that poisons
+  the carried estimate is not silent: the next `update` rejects, names the cause,
+  and latches the type's `health()` query to `non_finite_estimate`.
+- Every other surface in the library, including `pid::compute`, the adaptive
+  controllers' `evaluate`, `particle_filter::update`, and the online planners.
+  These are being moved onto the failure channel too, but they have not been
+  moved yet, and until they are the propagation contract above is what governs
+  them.
+
 ## What the library does guard against
 
 ctrlpp hardens its internals against degenerate-but-valid inputs that would
@@ -79,9 +115,10 @@ otherwise produce silent corruption through intermediate overflow:
 | Inputs (your code) | Validate at system boundaries |
 | Constructor/config | Library rejects or falls back on degenerate configs |
 | Algorithm internals | Library uses numerically stable formulations |
-| Outputs | NaN/Inf propagates faithfully, never silently clamped |
+| Outputs | NaN/Inf propagates faithfully, never silently clamped, except on the surfaces named above |
+| Carried estimator state | The seven `update` surfaces named above reject a non-finite operand before mutating anything |
 
-The outputs row is being narrowed for the per-step surfaces currently under
+The outputs row is still being narrowed for the per-step surfaces under
 conversion: where a surface gains a typed failure return, a degenerate step is
 reported through that return instead of being left to propagate as NaN. See
 [error-reporting.md](error-reporting.md) for the two reporting channels and for

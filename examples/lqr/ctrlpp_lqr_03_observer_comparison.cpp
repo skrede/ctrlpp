@@ -90,7 +90,15 @@ int main()
         kf.predict(u);
         luen.predict(u);
         x_true = ctrlpp::propagate(sys_d, x_true, u);
-        kf.update(z);
-        luen.update(z);
+        if(const auto kf_stepped = kf.update(z); !kf_stepped)
+        {
+            std::cerr << "Kalman filter rejected the measurement at t=" << t << "\n";
+            return 1;
+        }
+        if(const auto luen_stepped = luen.update(z); !luen_stepped)
+        {
+            std::cerr << "Luenberger observer rejected the measurement at t=" << t << "\n";
+            return 1;
+        }
     }
 }

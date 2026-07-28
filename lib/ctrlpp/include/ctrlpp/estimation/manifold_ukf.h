@@ -38,16 +38,62 @@ concept manifold_ukf_dynamics_model = requires(const D& d, const Eigen::Quaterni
     { d(q, u) } -> std::convertible_to<Eigen::Quaternion<Scalar>>;
 };
 
-/// @brief Filter-health status the caller can inspect after any step.
+/// @brief Structured failure modes of a `manifold_ukf` measurement update.
 ///
-/// `ok` means every geodesic (Karcher) mean converged within the configured
-/// tolerance; `mean_not_converged` latches once a geodesic-mean iteration
-/// exhausted its budget without meeting the tolerance, signaling that the
-/// predicted attitude may be a non-converged iterate rather than the true mean.
+/// Each enumerator is an exact domain condition, not a tuning preference: a
+/// non-finite operand makes every downstream product non-finite, so the step
+/// cannot produce an estimate at all.
+///
+///  * non_finite_state       : the carried attitude quaternion is already
+///                             non-finite when the step begins. It is reported
+///                             ahead of the measurement because the fault is
+///                             upstream of it, and because the sigma points are
+///                             generated AROUND that quaternion, so every one of
+///                             them is non-finite before the measurement is used.
+///  * non_finite_covariance  : the carried tangent-space covariance is already
+///                             non-finite when the step begins. A distinguishable
+///                             cause from a non-finite attitude because the
+///                             covariance recursion is driven by the geodesic
+///                             mean and by Q and R, never by the measurement.
+///  * non_finite_measurement : the supplied measurement vector has a non-finite
+///                             component. The gain carries it into the tangent
+///                             correction, so a single such sample makes the
+///                             attitude quaternion non-finite and no later
+///                             normalization recovers it.
+enum class manifold_ukf_update_error
+{
+    non_finite_state,
+    non_finite_covariance,
+    non_finite_measurement,
+};
+
+/// @brief Persistent state-health status of a `manifold_ukf`.
+///
+/// A per-call result cannot answer whether the carried estimate is still
+/// degraded from a step several samples ago, because that question outlives the
+/// call. The enumerators are ordered by severity and the status latches: it
+/// never returns to a lower rung on its own.
+///
+///  * ok                  : every geodesic (Karcher) mean converged within the
+///                          configured tolerance and every step began from a
+///                          finite estimate.
+///  * mean_not_converged  : a geodesic-mean iteration exhausted its budget
+///                          without meeting the tolerance, so the predicted
+///                          attitude may be a non-converged iterate rather than
+///                          the true mean.
+///  * non_finite_estimate : a step found the carried attitude or the carried
+///                          covariance already non-finite, which is not
+///                          recoverable by any further step. `predict` does not
+///                          reject its input, so this is how a poisoned angular
+///                          rate or a dynamics model that returned a non-finite
+///                          quaternion becomes visible. A rejected measurement
+///                          does NOT set it: the rejection mutates nothing, so
+///                          it leaves the filter healthy.
 enum class manifold_ukf_health
 {
     ok,
-    mean_not_converged
+    mean_not_converged,
+    non_finite_estimate
 };
 
 template <ctrlpp_floating_scalar Scalar, std::size_t NY>
@@ -153,7 +199,10 @@ public:
         auto sigma = m_strategy.generate(m_q, m_P);
         auto q_prop = propagate_manifold_sigma_points(sigma.points, omega);
         auto mean_result = compute_manifold_predicted_mean(q_prop, sigma.Wm);
-        if(!mean_result.converged)
+        // Never lowers an already-latched non_finite_estimate, which is the more
+        // severe rung: a non-converged mean is a usable iterate, a non-finite
+        // attitude is not an attitude at all.
+        if(!mean_result.converged && m_health == manifold_ukf_health::ok)
             m_health = manifold_ukf_health::mean_not_converged;
         auto q_new = mean_result.mean;
         m_P = compute_manifold_predicted_covariance(q_prop, q_new, sigma.Wc);
@@ -161,8 +210,24 @@ public:
         update_state_cache();
     }
 
-    void update(const output_vector_t& z)
+    /// @brief Update the attitude and the tangent-space covariance with a
+    /// measurement.
+    ///
+    /// The step is rejected before any member is assigned when the carried
+    /// estimate or the measurement is non-finite, so a rejected step leaves the
+    /// attitude, the covariance and the innovation bitwise unchanged and the
+    /// caller may retry with the next sample.
+    ///
+    /// `predict` is deliberately not fallible: its input is an angular rate the
+    /// caller already owns, and rejecting it would leave the filter with no
+    /// propagation for a rotation the body did perform. A prediction that
+    /// poisons the attitude is instead reported by `health()`, which the next
+    /// update latches.
+    auto update(const output_vector_t& z) -> ctrlpp::expected<void, manifold_ukf_update_error>
     {
+        if(const auto step = check_step(z); !step)
+            return ctrlpp::unexpected(latch_health(step.error()));
+
         auto sigma = m_strategy.generate(m_q, m_P);
         auto z_sigma = compute_measurement_sigma_points(sigma.points);
         auto z_pred = compute_predicted_measurement(sigma.Wm, z_sigma);
@@ -172,6 +237,7 @@ public:
         m_innovation = (z - z_pred).eval();
         apply_manifold_correction(K, S);
         update_state_cache();
+        return {};
     }
 
     const state_vector_t& state() const { return m_state_cache; }
@@ -182,12 +248,46 @@ public:
 
     const Eigen::Quaternion<Scalar>& attitude() const { return m_q; }
 
+    /// @brief Report whether the carried estimate is still degraded from an
+    /// earlier step: a non-converged geodesic mean, or an estimate that was
+    /// already non-finite. Latches; a rejected measurement does not set it.
     manifold_ukf_health health() const { return m_health; }
 
 private:
     struct validated_tag
     {
     };
+
+    /// @brief Classify a step's operands without touching a single member.
+    ///
+    /// The order is the severity order documented on
+    /// `manifold_ukf_update_error`: the carried estimate first, the supplied
+    /// measurement last. The cost is one finiteness scan of each operand --
+    /// 4 + 9 + NY reads, no branches on data and no allocation, all dimensions
+    /// being compile-time constants.
+    auto check_step(const output_vector_t& z) const -> ctrlpp::expected<void, manifold_ukf_update_error>
+    {
+        if(!m_q.coeffs().allFinite())
+            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_state);
+        if(!m_P.allFinite())
+            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_covariance);
+        if(!z.allFinite())
+            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_measurement);
+        return {};
+    }
+
+    /// @brief Latch the persistent status for the faults that describe the
+    /// carried estimate, and pass the fault through so the caller still receives
+    /// the specific cause on the failure channel.
+    ///
+    /// `non_finite_estimate` is the top rung and is never downgraded to
+    /// `mean_not_converged` by a later step.
+    auto latch_health(manifold_ukf_update_error fault) -> manifold_ukf_update_error
+    {
+        if(fault != manifold_ukf_update_error::non_finite_measurement)
+            m_health = manifold_ukf_health::non_finite_estimate;
+        return fault;
+    }
 
     manifold_ukf(validated_tag, Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy)
         : m_tol{config.geodesic_mean_tol}

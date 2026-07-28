@@ -158,12 +158,32 @@ Every solver backend adapter reports setup failure through a fallible
 `setup_qp_solver` and `setup_nlp_solver` forward that typed error rather than
 flattening it, so the cause of a setup failure is readable at the seam. The
 moving-horizon and nonlinear moving-horizon estimators report their EKF fallback
-through `diagnostics()` (channel 2). The unscented filter exposes `health()` as a
-state-health query.
+through `diagnostics()` (channel 2).
 
-Not yet converted: the per-step `update`, `compute`, and `evaluate` surfaces on
-the filters and controllers still return `void` and report nothing at all; and
-`lqr_gain` and `lqi_gain` still return `std::optional`, which discards the reason
-for the empty result. Those surfaces are being moved onto channel 1. Until each
-one is, the NaN and Inf propagation contract described in
-[numerical-behavior.md](numerical-behavior.md) is what governs them.
+The per-step measurement `update` on all seven estimator types is on channel 1:
+`kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf`, `luenberger_observer`,
+and all three `complementary_filter` overloads return
+`ctrlpp::expected<void, E>` with a per-module error enumeration
+(`kalman_update_error`, `ekf_update_error`, and so on -- one per module, not one
+shared enum). Each rejects a non-finite operand **before mutating anything**, so
+a rejected step leaves the carried estimate bitwise unchanged. Each also carries
+the channel-3 state-health query: `health()`, returning a per-module latching
+enumeration, so a caller can ask whether the estimate it is carrying is still
+degraded from an earlier step. Two of those queries predate this convention
+(`ukf_health`, `manifold_ukf_health`) and were extended rather than replaced.
+None of the seven carries a discard annotation on `health()`.
+
+The complementary filter's zero-norm acceleration and magnetic skips stay on the
+success path and are **not** rejections. They are channel-2 shaped -- the step
+ran and produced a valid attitude, it simply had no correction to apply -- and
+they are candidates for an explicit disposition report rather than for channel 1.
+
+Not yet converted: `predict` on those seven types, and the per-step `compute` and
+`evaluate` surfaces on the controllers (`pid::compute`, `mrac::evaluate`,
+`l1::evaluate`), which return a control vector and become
+`ctrlpp::expected<vector_t, E>`; `particle_filter::update` and the online
+planners' `update`; and `lqr_gain` and `lqi_gain`, which still return
+`std::optional` and so discard the reason for the empty result. Those surfaces
+are being moved onto channel 1. Until each one is, the NaN and Inf propagation
+contract described in [numerical-behavior.md](numerical-behavior.md) is what
+governs them.

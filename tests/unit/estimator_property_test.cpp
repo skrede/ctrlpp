@@ -88,7 +88,7 @@ TEST_CASE("estimator property tests", "[estimator][property]")
                 auto u_val = *bounded_double(-5.0, 5.0);
                 auto z_val = *bounded_double(-10.0, 10.0);
                 filter.predict((Vector<double, NU>() << u_val).finished());
-                filter.update((Vector<double, NY>() << z_val).finished());
+                RC_ASSERT(filter.update((Vector<double, NY>() << z_val).finished()).has_value());
             }
 
             auto P = filter.covariance();
@@ -115,7 +115,7 @@ TEST_CASE("estimator property tests", "[estimator][property]")
                 auto u_val = *bounded_double(-5.0, 5.0);
                 auto z_val = *bounded_double(-10.0, 10.0);
                 filter.predict((Vector<double, NU>() << u_val).finished());
-                filter.update((Vector<double, NY>() << z_val).finished());
+                RC_ASSERT(filter.update((Vector<double, NY>() << z_val).finished()).has_value());
             }
 
             auto P = filter.covariance();
@@ -141,7 +141,7 @@ TEST_CASE("estimator property tests", "[estimator][property]")
             for(int i = 0; i < 50; ++i)
             {
                 filter.predict(Vector<double, NU>::Zero());
-                filter.update((Vector<double, NY>() << true_pos).finished());
+                RC_ASSERT(filter.update((Vector<double, NY>() << true_pos).finished()).has_value());
             }
 
             double final_err = std::abs(filter.state()(0) - true_pos);

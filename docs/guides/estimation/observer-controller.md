@@ -111,8 +111,13 @@ int main()
         // Propagate true state
         x_true = ctrlpp::propagate(sys_d, x_true, u);
 
-        // Update observer with measurement
-        kf.update(z);
+        // Update observer with measurement. The step reports whether it ran, so
+        // a non-finite sample cannot silently poison the estimate.
+        if(!kf.update(z))
+        {
+            std::cerr << "Kalman filter rejected the measurement\n";
+            return;
+        }
     }
 }
 ```
@@ -127,7 +132,11 @@ to `controller.solve()`:
 kf.predict(u);
 x_true = ctrlpp::propagate(mpc_sys, x_true, u);
 Eigen::Matrix<double, 1, 1> z = obs_sys.C * x_true;
-kf.update(z);
+if(!kf.update(z))
+{
+    std::cerr << "Kalman filter rejected the measurement\n";
+    return EXIT_FAILURE;
+}
 
 auto u_opt = controller.solve(kf.state());
 ```

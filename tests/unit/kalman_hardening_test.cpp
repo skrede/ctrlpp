@@ -44,14 +44,15 @@ TEST_CASE("Kalman singular R (zero measurement noise)", "[kalman][hardening][neg
 
     Eigen::Matrix<double, 1, 1> z;
     z << 5.0;
-    kf.update(z);
+    REQUIRE(kf.update(z).has_value());
 
     // State should be finite
     CHECK(std::isfinite(kf.state()[0]));
     CHECK(std::isfinite(kf.state()[1]));
 }
 
-TEST_CASE("Kalman NaN measurement", "[kalman][hardening][negative]")
+TEST_CASE("Kalman NaN measurement is rejected without touching the estimate",
+          "[kalman][hardening][negative]")
 {
     auto sys = make_const_velocity_system();
     Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity() * 0.01;
@@ -61,16 +62,49 @@ TEST_CASE("Kalman NaN measurement", "[kalman][hardening][negative]")
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
     ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    // Stepped only with the valid measurement, never with the poisoned one, so
+    // it says what the filter would have carried had the bad sample never
+    // arrived.
+    ctrlpp::kalman_filter<double, 2, 1, 1> reference(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
 
     Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
     kf.predict(u);
+    reference.predict(u);
 
-    Eigen::Matrix<double, 1, 1> z;
-    z << std::numeric_limits<double>::quiet_NaN();
-    kf.update(z);
+    // Snapshot immediately before the poisoned step.
+    const Eigen::Vector2d x_before = kf.state();
+    const Eigen::Matrix<double, 2, 2> P_before = kf.covariance();
 
-    // NaN propagation is acceptable -- just verify no crash
-    CHECK((std::isnan(kf.state()[0]) || std::isfinite(kf.state()[0])));
+    Eigen::Matrix<double, 1, 1> z_bad;
+    z_bad << std::numeric_limits<double>::quiet_NaN();
+
+    const auto rejected = kf.update(z_bad);
+
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == ctrlpp::kalman_update_error::non_finite_measurement);
+
+    // Exact comparison, not a tolerance: a rejected step performs no arithmetic
+    // on the carried estimate at all, so bitwise equality is the contract and a
+    // tolerance would admit a step that partially ran.
+    CHECK(kf.state() == x_before);
+    // The covariance was already measurement-independent before the guard
+    // existed -- update_covariance(K) takes only the gain, never z -- so this
+    // half of the invariant is structural. The state half is what the guard
+    // adds.
+    CHECK(kf.covariance() == P_before);
+    // A rejection describes the sample, not the filter: nothing was mutated, so
+    // the filter is not degraded and must not report that it is.
+    CHECK(kf.health() == ctrlpp::kalman_health::ok);
+
+    // The poison did not latch: the next valid step produces exactly what it
+    // would have produced had the poisoned step never been attempted.
+    Eigen::Matrix<double, 1, 1> z_good;
+    z_good << 5.0;
+    REQUIRE(kf.update(z_good).has_value());
+    REQUIRE(reference.update(z_good).has_value());
+
+    CHECK(kf.state() == reference.state());
+    CHECK(kf.covariance() == reference.covariance());
 }
 
 TEST_CASE("Kalman zero Q", "[kalman][hardening][negative]")
@@ -90,7 +124,7 @@ TEST_CASE("Kalman zero Q", "[kalman][hardening][negative]")
         kf.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << 5.0;
-        kf.update(z);
+        REQUIRE(kf.update(z).has_value());
     }
 
     CHECK(std::isfinite(kf.state()[0]));
@@ -131,7 +165,7 @@ TEST_CASE("Kalman scalar analytical gain comparison", "[kalman][hardening][preci
 
     Eigen::Matrix<double, 1, 1> z;
     z << 5.0;
-    kf.update(z);
+    REQUIRE(kf.update(z).has_value());
 
     // After update: x = 0 + K*(5 - 0) = K*5
     REQUIRE_THAT(kf.state()[0], WithinAbs(expected_K * 5.0, 1e-12));
@@ -157,7 +191,7 @@ TEST_CASE("Kalman covariance stays positive definite over 1000 steps",
         kf.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << 5.0 + 0.01 * k;
-        kf.update(z);
+        REQUIRE(kf.update(z).has_value());
 
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(kf.covariance());
         for(int i = 0; i < 2; ++i)
@@ -197,7 +231,7 @@ TEST_CASE("Kalman state converges to truth within 200 steps", "[kalman][hardenin
         kf.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << true_pos;
-        kf.update(z);
+        REQUIRE(kf.update(z).has_value());
     }
 
     REQUIRE(std::abs(kf.state()[0] - true_pos) < 0.5);
@@ -222,7 +256,7 @@ TEST_CASE("Kalman ill-conditioned system matrix cond 1e10", "[kalman][hardening]
         kf.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << 1.0;
-        kf.update(z);
+        REQUIRE(kf.update(z).has_value());
 
         if(!std::isfinite(kf.state()[0]) || !std::isfinite(kf.state()[1]))
         {

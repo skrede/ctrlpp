@@ -94,7 +94,7 @@ TEST_CASE("KF instantiates and steps at Scalar=float", "[float][anchor]")
     kalman_filter<float, NX, NU, NY> filt(sys, cfg);
 
     filt.predict(Vector<float, NU>::Zero());
-    filt.update(Vector<float, NY>::Constant(0.5f));
+    REQUIRE(filt.update(Vector<float, NY>::Constant(0.5f)).has_value());
 
     REQUIRE(filt.state().allFinite());
     REQUIRE(filt.covariance().allFinite());
@@ -106,7 +106,7 @@ TEST_CASE("EKF instantiates and steps at Scalar=float", "[float][anchor]")
     ekf<float, NX, NU, NY, linear_dynamics_f, position_measurement_f> filt(linear_dynamics_f{}, position_measurement_f{}, cfg);
 
     filt.predict(Vector<float, NU>::Zero());
-    filt.update(Vector<float, NY>::Constant(0.5f));
+    REQUIRE(filt.update(Vector<float, NY>::Constant(0.5f)).has_value());
 
     REQUIRE(filt.state().allFinite());
     REQUIRE(filt.covariance().allFinite());
@@ -118,7 +118,7 @@ TEST_CASE("UKF instantiates and steps at Scalar=float", "[float][anchor]")
     ukf<float, NX, NU, NY, linear_dynamics_f, position_measurement_f> filt(linear_dynamics_f{}, position_measurement_f{}, cfg);
 
     filt.predict(Vector<float, NU>::Zero());
-    filt.update(Vector<float, NY>::Constant(0.5f));
+    REQUIRE(filt.update(Vector<float, NY>::Constant(0.5f)).has_value());
 
     REQUIRE(filt.state().allFinite());
     REQUIRE(filt.covariance().allFinite());
@@ -146,7 +146,7 @@ TEST_CASE("MEKF instantiates and steps at Scalar=float", "[float][anchor]")
 
     Vector<float, 3> omega{0.1f, 0.0f, 0.0f};
     filt.predict(omega, 0.1f);
-    filt.update(Vector<float, NY_MEKF>{0.0f, 0.0f, 1.0f});
+    REQUIRE(filt.update(Vector<float, NY_MEKF>{0.0f, 0.0f, 1.0f}).has_value());
 
     REQUIRE(filt.state().allFinite());
     REQUIRE(filt.covariance().allFinite());
@@ -161,7 +161,7 @@ TEST_CASE("complementary_filter instantiates and steps at Scalar=float", "[float
 
     Vector<float, 3> gyro{0.1f, 0.0f, 0.0f};
     Vector<float, 3> accel{0.0f, 0.0f, 9.8f};
-    filt.update(gyro, accel, 0.01f);
+    REQUIRE(filt.update(gyro, accel, 0.01f).has_value());
 
     REQUIRE(filt.state().allFinite());
 }

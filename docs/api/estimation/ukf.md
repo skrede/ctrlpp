@@ -84,10 +84,21 @@ Generates sigma points from current (x, P), propagates them through dynamics, an
 ### update
 
 ```cpp
-void update(const output_vector_t& z);
+auto update(const output_vector_t& z)
+    -> ctrlpp::expected<void, ukf_update_error>;
 ```
 
-Generates sigma points, transforms through measurement model, computes innovation covariance S and cross-covariance Pxz, then applies the Kalman gain correction. The covariance update uses the algebraically complete minimum mean-square-error reduction `P = P - K*S*K^T`, with `S = Pzz + R` and `K = Pxz*S^{-1}`. Since `K*S*K^T = K*Pxz^T`, this term is exactly the uncertainty the measurement removes, and no extra `K*R*K^T` term is added. The sigma points feeding this update are built from a permutation-correct covariance square root, so the reduction stays symmetric positive semidefinite.
+The step is rejected **before any member is assigned**, so a rejected step leaves the state, the covariance, the innovation and the NIS bitwise unchanged and the caller may retry with the next sample. Each cause is an exact domain condition, not a tuning preference.
+
+| Condition | Error | Why it is a separate cause |
+|---|---|---|
+| the carried state estimate is already non-finite | `ukf_update_error::non_finite_state` | The sigma points are generated **around** the carried state, so every one of them is non-finite before the measurement is used at all |
+| the carried covariance is already non-finite | `ukf_update_error::non_finite_covariance` | The covariance is what the sigma-point spread factors, and it is driven by the model and by `Q` and `R`, never by the measurement |
+| the supplied measurement has a non-finite component | `ukf_update_error::non_finite_measurement` | The gain carries it into the state, which is the filter's carried memory, so one such sample destroys the estimate permanently |
+
+`predict` is deliberately not fallible. Its input is a command the caller already owns and the plant already took, so refusing it would leave the filter with no propagation for a step that happened. A prediction that poisons the carried estimate is reported by [`health`](#health) instead, which the next `update` latches.
+
+On a step that runs: generates sigma points, transforms through measurement model, computes innovation covariance S and cross-covariance Pxz, then applies the Kalman gain correction. The covariance update uses the algebraically complete minimum mean-square-error reduction `P = P - K*S*K^T`, with `S = Pzz + R` and `K = Pxz*S^{-1}`. Since `K*S*K^T = K*Pxz^T`, this term is exactly the uncertainty the measurement removes, and no extra `K*R*K^T` term is added. The sigma points feeding this update are built from a permutation-correct covariance square root, so the reduction stays symmetric positive semidefinite.
 
 ### state
 
@@ -121,7 +132,7 @@ Returns the Normalized Innovation Squared from the last update, `innovation^T S^
 ukf_health health() const;
 ```
 
-Returns the filter-health status, one of `ukf_health::ok` or `ukf_health::covariance_repaired`. The status starts at `ok` and latches to `covariance_repaired` the first time a non-positive-definite covariance had to be repaired to the nearest symmetric positive definite matrix during sigma-point generation, signaling that the estimate has entered a numerically degraded regime.
+Returns the persistent state-health status, one of `ukf_health::ok`, `ukf_health::covariance_repaired` or `ukf_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The enumerators are ordered by severity and the status latches, never returning to a lower rung on its own. It moves to `covariance_repaired` the first time a non-positive-definite covariance had to be repaired to the nearest symmetric positive definite matrix during sigma-point generation, signaling a numerically degraded but still usable estimate; it moves to `non_finite_estimate` the first time a step finds the carried state or covariance already non-finite, which is not recoverable by any further step and is how a poisoned `predict` becomes visible. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.
 
 ## Supporting Types
 
@@ -233,7 +244,11 @@ int main()
         z(0) = x_true(0) + noise(rng);
 
         filter.predict(u);
-        filter.update(z);
+        if(!filter.update(z))
+        {
+            std::cerr << "UKF rejected the measurement\n";
+            return 1;
+        }
 
         auto est = filter.state();
         std::cout << k * dt << "," << x_true(0) << "," << est(0) << "\n";

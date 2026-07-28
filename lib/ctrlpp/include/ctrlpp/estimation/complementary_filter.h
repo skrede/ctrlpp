@@ -26,6 +26,57 @@
 namespace ctrlpp
 {
 
+/// @brief Structured failure modes of a `complementary_filter` update.
+///
+/// Each enumerator is an exact domain condition, not a tuning preference: a
+/// non-finite operand makes every downstream product non-finite, so the step
+/// cannot produce an attitude at all. The filter carries no covariance, so the
+/// carried estimate is the attitude quaternion together with the gyro bias.
+///
+///  * non_finite_state       : the carried attitude quaternion or the carried
+///                             gyro bias is already non-finite when the step
+///                             begins. It is reported ahead of the sensor
+///                             vectors because the fault is upstream of them,
+///                             and because both correction terms are computed
+///                             from the carried attitude's rotation matrix.
+///  * non_finite_measurement : one of the supplied sensor vectors -- rate,
+///                             acceleration, or magnetic field where present --
+///                             has a non-finite component. Every one of them
+///                             reaches the quaternion integration, whose output
+///                             is the filter's carried memory, so a single such
+///                             sample destroys the attitude permanently.
+///  * non_finite_timestep    : the supplied integration step is not finite. A
+///                             distinguishable cause from a non-finite sensor
+///                             reading because it names a broken clock rather
+///                             than a broken sensor, and the caller fixes a
+///                             different input. It poisons the integration just
+///                             as surely: the tangent vector is the step times
+///                             the corrected rate.
+enum class cf_update_error
+{
+    non_finite_state,
+    non_finite_measurement,
+    non_finite_timestep,
+};
+
+/// @brief Persistent state-health status of a `complementary_filter`.
+///
+/// A per-call result cannot answer whether the carried attitude is still
+/// degraded from a step several samples ago, because that question outlives the
+/// call. The status latches.
+///
+///  * ok                  : every step so far began from a finite attitude and
+///                          bias.
+///  * non_finite_estimate : a step found the carried attitude or bias already
+///                          non-finite. A rejected update does NOT set it: the
+///                          rejection mutates nothing, so it leaves the filter
+///                          healthy.
+enum class cf_health
+{
+    ok,
+    non_finite_estimate,
+};
+
 template <ctrlpp_floating_scalar Scalar>
 struct cf_config
 {
@@ -64,24 +115,51 @@ public:
     }
 
     // Natural IMU update (6-DOF): gyro + accelerometer.
+    ///
+    /// The step is rejected before any member is assigned when the carried
+    /// attitude, either sensor vector, or the integration step is non-finite, so
+    /// a rejected step leaves the attitude and the bias bitwise unchanged and
+    /// the caller may retry with the next sample.
+    ///
+    /// The zero-norm acceleration skip below is NOT a rejection. The step
+    /// succeeded: a zero-norm acceleration carries no gravity direction, so
+    /// there is no correction to apply and the filter deliberately leaves the
+    /// attitude where it was. Reporting that through the failure channel would
+    /// tell the caller their step failed when it did exactly what the algorithm
+    /// prescribes, and a caller who learns the failure channel carries
+    /// non-failures will eventually ignore a real one.
+    ///
     /// @cite mahony2008 -- Mahony et al., 2008, Sec. III (IMU complementary filter)
-    void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt)
+    auto update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt) -> ctrlpp::expected<void, cf_update_error>
     {
+        if(const auto step = check_step(gyro, accel, dt); !step)
+            return ctrlpp::unexpected(latch_health(step.error()));
+
         Scalar norm = accel.norm();
         if(norm < Scalar{1e-10})
-            return;
+            return {};
 
         auto e = compute_gravity_correction(accel / norm);
         integrate_gyro(gyro, e, dt);
+        return {};
     }
 
     // Natural MARG update (9-DOF): gyro + accelerometer + magnetometer.
+    ///
+    /// Rejects on the same terms as the IMU overload, with the magnetic vector
+    /// added to the sensor operands. The zero-norm magnetic skip, like the
+    /// zero-norm acceleration skip, is a success in which one correction was not
+    /// applied, not a failure.
+    ///
     /// @cite mahony2008 -- Mahony et al., 2008, Sec. IV (MARG complementary filter)
-    void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, const Vector<Scalar, 3>& mag, Scalar dt)
+    auto update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, const Vector<Scalar, 3>& mag, Scalar dt) -> ctrlpp::expected<void, cf_update_error>
     {
+        if(const auto step = check_step(gyro, accel, dt, &mag); !step)
+            return ctrlpp::unexpected(latch_health(step.error()));
+
         Scalar norm = accel.norm();
         if(norm < Scalar{1e-10})
-            return;
+            return {};
 
         auto e_acc = compute_gravity_correction(accel / norm);
 
@@ -89,25 +167,63 @@ public:
         if(mag_norm < Scalar{1e-10})
         {
             integrate_gyro(gyro, e_acc, dt);
-            return;
+            return {};
         }
 
         auto e_mag = compute_magnetic_correction(mag / mag_norm);
         integrate_gyro(gyro, e_acc + e_mag, dt);
+        return {};
     }
 
     // ObserverPolicy wrappers (use config dt)
     void predict(const input_vector_t& u) { gyro_buf_ = u; }
-    void update(const output_vector_t& z) { update(gyro_buf_, z, dt_); }
+
+    /// @brief Observer-concept form: correct with the buffered rate from the
+    /// last `predict` and the configured step. Forwards the IMU overload's
+    /// result rather than swallowing it, so the caller sees the same cause.
+    auto update(const output_vector_t& z) -> ctrlpp::expected<void, cf_update_error> { return update(gyro_buf_, z, dt_); }
 
     auto state() const -> const state_vector_t& { return state_cache_; }
     auto attitude() const -> Eigen::Quaternion<Scalar> { return q_; }
     auto bias() const -> const Vector<Scalar, 3>& { return bias_; }
 
+    /// @brief Report whether the carried attitude is still degraded from an
+    /// earlier step. Latches; a rejected update does not set it.
+    auto health() const -> cf_health { return health_; }
+
 private:
     struct validated_tag
     {
     };
+
+    /// @brief Classify a step's operands without touching a single member.
+    ///
+    /// The order is the severity order documented on `cf_update_error`: the
+    /// carried attitude and bias first, then the sensor vectors, then the
+    /// integration step. The magnetic vector is checked only when the caller
+    /// supplied one, which the trailing parameter's pointer encodes. The cost is
+    /// one finiteness scan of each operand -- at most 7 + 9 + 1 reads, no
+    /// branches on data and no allocation.
+    auto check_step(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt, const Vector<Scalar, 3>* mag = nullptr) const -> ctrlpp::expected<void, cf_update_error>
+    {
+        if(!q_.coeffs().allFinite() || !bias_.allFinite())
+            return ctrlpp::unexpected(cf_update_error::non_finite_state);
+        if(!gyro.allFinite() || !accel.allFinite() || (mag != nullptr && !mag->allFinite()))
+            return ctrlpp::unexpected(cf_update_error::non_finite_measurement);
+        if(!std::isfinite(dt))
+            return ctrlpp::unexpected(cf_update_error::non_finite_timestep);
+        return {};
+    }
+
+    /// @brief Latch the persistent status for the fault that describes the
+    /// carried attitude, and pass the fault through so the caller still receives
+    /// the specific cause on the failure channel.
+    auto latch_health(cf_update_error fault) -> cf_update_error
+    {
+        if(fault == cf_update_error::non_finite_state)
+            health_ = cf_health::non_finite_estimate;
+        return fault;
+    }
 
     complementary_filter(validated_tag, cf_config<Scalar> config) : q_{config.q0.normalized()}, bias_{Vector<Scalar, 3>::Zero()}, k_p_{config.k_p}, k_i_{config.k_i}, dt_{config.dt}, gyro_buf_{Vector<Scalar, 3>::Zero()}
     {
@@ -150,6 +266,7 @@ private:
     Scalar dt_;
     Vector<Scalar, 3> gyro_buf_;
     state_vector_t state_cache_;
+    cf_health health_{cf_health::ok};
 };
 
 static_assert(ObserverPolicy<complementary_filter<double>>);

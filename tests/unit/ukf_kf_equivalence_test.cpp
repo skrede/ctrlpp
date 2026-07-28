@@ -110,9 +110,9 @@ TEST_CASE("UKF matches Kalman filter state and covariance on a linear system", "
         z << x_true(0) + noise(gen);
 
         estimator.predict(u);
-        estimator.update(z);
+        REQUIRE(estimator.update(z).has_value());
         reference.predict(u);
-        reference.update(z);
+        REQUIRE(reference.update(z).has_value());
     }
 
     // Backward error for the dense linear solves both filters perform per

@@ -43,6 +43,55 @@ concept differentiable_mekf_measurement = mekf_measurement_model<M, Scalar, NB, 
     { m.jacobian(q, b) } -> std::convertible_to<Matrix<Scalar, NY, 3 + NB>>;
 };
 
+/// @brief Structured failure modes of a `mekf` measurement update.
+///
+/// Each enumerator is an exact domain condition, not a tuning preference: a
+/// non-finite operand makes every downstream product non-finite, so the step
+/// cannot produce an estimate at all.
+///
+///  * non_finite_state       : the carried nominal state -- the attitude
+///                             quaternion or the bias -- is already non-finite
+///                             when the step begins. It is reported ahead of the
+///                             measurement because the fault is upstream of it,
+///                             and because the measurement and its Jacobian are
+///                             evaluated AT that nominal state.
+///  * non_finite_covariance  : the carried error-state covariance is already
+///                             non-finite when the step begins. A distinguishable
+///                             cause from a non-finite nominal state because the
+///                             covariance recursion is driven by the propagation
+///                             Jacobian and by Q and R, never by the measurement.
+///  * non_finite_measurement : the supplied measurement vector has a non-finite
+///                             component. The gain carries it into the
+///                             multiplicative correction, so a single such
+///                             sample makes the attitude quaternion non-finite
+///                             and no later normalization recovers it.
+enum class mekf_update_error
+{
+    non_finite_state,
+    non_finite_covariance,
+    non_finite_measurement,
+};
+
+/// @brief Persistent state-health status of a `mekf`.
+///
+/// A per-call result cannot answer whether the carried estimate is still
+/// degraded from a step several samples ago, because that question outlives the
+/// call. The status latches: it never returns to a lower rung on its own.
+///
+///  * ok                  : every step so far began from a finite estimate.
+///  * non_finite_estimate : a step found the carried nominal state or the
+///                          carried covariance already non-finite. `predict`
+///                          does not reject its input, so this is how a poisoned
+///                          gyro rate or a non-finite timestep becomes visible.
+///                          A rejected measurement does NOT set it: the
+///                          rejection mutates nothing, so it leaves the filter
+///                          healthy.
+enum class mekf_health
+{
+    ok,
+    non_finite_estimate,
+};
+
 template <ctrlpp_floating_scalar Scalar, std::size_t NB, std::size_t NY>
 struct mekf_config
 {
@@ -97,8 +146,24 @@ public:
 
     void predict(const input_vector_t& omega, Scalar dt) { predict_impl(omega, dt); }
 
-    void update(const output_vector_t& z)
+    /// @brief Update the nominal state and the error-state covariance with a
+    /// measurement.
+    ///
+    /// The step is rejected before any member is assigned when the carried
+    /// estimate or the measurement is non-finite, so a rejected step leaves the
+    /// attitude, the bias, the covariance and the innovation bitwise unchanged
+    /// and the caller may retry with the next sample.
+    ///
+    /// `predict` is deliberately not fallible: its input is a gyro rate the
+    /// caller already owns, and rejecting it would leave the filter with no
+    /// propagation for a rotation the body did perform. A prediction that
+    /// poisons the nominal state is instead reported by `health()`, which the
+    /// next update latches.
+    auto update(const output_vector_t& z) -> ctrlpp::expected<void, mekf_update_error>
     {
+        if(const auto step = check_step(z); !step)
+            return ctrlpp::unexpected(latch_health(step.error()));
+
         auto z_pred = measurement_(q_, b_);
         innovation_ = (z - z_pred).eval();
 
@@ -109,6 +174,7 @@ public:
         auto delta_xi = apply_multiplicative_correction(K);
         update_covariance(K, H, delta_xi);
         update_state_cache();
+        return {};
     }
 
     auto state() const -> const state_vector_t& { return state_cache_; }
@@ -117,10 +183,41 @@ public:
     auto attitude() const -> Eigen::Quaternion<Scalar> { return q_; }
     auto bias() const -> const Vector<Scalar, NB>& { return b_; }
 
+    /// @brief Report whether the carried estimate is still degraded from an
+    /// earlier step. Latches; a rejected measurement does not set it.
+    auto health() const -> mekf_health { return health_; }
+
 private:
     struct validated_tag
     {
     };
+
+    /// @brief Classify a step's operands without touching a single member.
+    ///
+    /// The order is the severity order documented on `mekf_update_error`: the
+    /// carried estimate first, the supplied measurement last. The cost is one
+    /// finiteness scan of each operand -- 4 + NB + NE*NE + NY reads, no branches
+    /// on data and no allocation, all dimensions being compile-time constants.
+    auto check_step(const output_vector_t& z) const -> ctrlpp::expected<void, mekf_update_error>
+    {
+        if(!q_.coeffs().allFinite() || !b_.allFinite())
+            return ctrlpp::unexpected(mekf_update_error::non_finite_state);
+        if(!P_.allFinite())
+            return ctrlpp::unexpected(mekf_update_error::non_finite_covariance);
+        if(!z.allFinite())
+            return ctrlpp::unexpected(mekf_update_error::non_finite_measurement);
+        return {};
+    }
+
+    /// @brief Latch the persistent status for the faults that describe the
+    /// carried estimate, and pass the fault through so the caller still receives
+    /// the specific cause on the failure channel.
+    auto latch_health(mekf_update_error fault) -> mekf_update_error
+    {
+        if(fault != mekf_update_error::non_finite_measurement)
+            health_ = mekf_health::non_finite_estimate;
+        return fault;
+    }
 
     mekf(validated_tag, Measurement measurement, mekf_config<Scalar, NB, NY> config)
         : measurement_{std::move(measurement)}
@@ -237,6 +334,7 @@ private:
     Scalar dt_;
     output_vector_t innovation_;
     state_vector_t state_cache_;
+    mekf_health health_{mekf_health::ok};
 };
 
 namespace detail

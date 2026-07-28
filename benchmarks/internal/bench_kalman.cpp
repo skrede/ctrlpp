@@ -5,6 +5,7 @@
 #include "ctrlpp/model/state_space.h"
 
 #include <fstream>
+#include <iostream>
 
 static constexpr char const* csv_tpl =
     R"TEMPLATE("title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
@@ -47,8 +48,19 @@ int main()
         ankerl::nanobench::doNotOptimizeAway(kf.state());
     });
 
+    // A rejected step performs a fraction of the work, so a run that
+    // included one would report a meaningless figure. Establish outside the
+    // measured region that the step runs, then feed the result to the
+    // optimizer barrier inside it so it is neither discarded nor branched on
+    // while the clock is running.
+    if(const auto stepped = kf.update(z); !stepped)
+    {
+        std::cerr << "bench_kalman: kalman_filter::update rejected the measurement; the reported figures would be meaningless\n";
+        return 1;
+    }
+
     bench.run("kf::update", [&] {
-        kf.update(z);
+        ankerl::nanobench::doNotOptimizeAway(kf.update(z).has_value());
         ankerl::nanobench::doNotOptimizeAway(kf.state());
     });
 

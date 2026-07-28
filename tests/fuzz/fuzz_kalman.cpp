@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
@@ -79,7 +80,22 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     for(int step = 0; step < 10; ++step)
     {
         kf.predict(u);
-        kf.update(z);
+
+        // The harness refuses a non-finite raw input above, so z is finite by
+        // construction. A rejection can therefore only name the carried
+        // estimate; a measurement rejection would mean the guard reported the
+        // wrong cause, which is a defect rather than a fuzz finding. A rejected
+        // step must also have left the estimate bitwise untouched.
+        const Eigen::Matrix<double, 2, 1> x_before = kf.state();
+        const Eigen::Matrix<double, 2, 2> P_before = kf.covariance();
+        if(const auto stepped = kf.update(z); !stepped)
+        {
+            if(stepped.error() == ctrlpp::kalman_update_error::non_finite_measurement)
+                abort();
+            if(kf.state() != x_before || kf.covariance() != P_before)
+                abort();
+            return 0;
+        }
 
         const auto& x_est = kf.state();
         const auto& P_est = kf.covariance();

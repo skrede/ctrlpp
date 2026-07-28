@@ -66,24 +66,61 @@ TEST_CASE("MEKF zero rotation noise covariance", "[mekf][hardening][negative]")
 
     ctrlpp::Vector<double, 3> z;
     z << 0.0, 0.0, 1.0;
-    filter.update(z);
+    REQUIRE(filter.update(z).has_value());
 
     CHECK(std::isfinite(filter.state()[0]));
 }
 
-TEST_CASE("MEKF NaN quaternion measurement", "[mekf][hardening][negative]")
+TEST_CASE("MEKF NaN quaternion measurement is rejected without touching the estimate",
+          "[mekf][hardening][negative]")
 {
     auto filter = make_mekf();
+    // Stepped only with the valid measurement, never with the poisoned one, so
+    // it says what the filter would have carried had the bad sample never
+    // arrived.
+    auto reference = make_mekf();
 
     ctrlpp::Vector<double, 3> gyro = ctrlpp::Vector<double, 3>::Zero();
     filter.predict(gyro);
+    reference.predict(gyro);
 
-    ctrlpp::Vector<double, 3> z;
-    z << std::numeric_limits<double>::quiet_NaN(), 0.0, 1.0;
-    filter.update(z);
+    // Snapshot immediately before the poisoned step.
+    const ctrlpp::Vector<double, 7> state_before = filter.state();
+    const ctrlpp::Matrix<double, 6, 6> P_before = filter.covariance();
 
-    // NaN propagation or finite -- no crash
-    CHECK((std::isnan(filter.state()[0]) || std::isfinite(filter.state()[0])));
+    ctrlpp::Vector<double, 3> z_bad;
+    z_bad << std::numeric_limits<double>::quiet_NaN(), 0.0, 1.0;
+
+    const auto rejected = filter.update(z_bad);
+
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == ctrlpp::mekf_update_error::non_finite_measurement);
+
+    // Exact comparison, not a tolerance: a rejected step performs no arithmetic
+    // on the carried estimate at all, so bitwise equality is the contract and a
+    // tolerance would admit a step that partially ran.
+    CHECK(filter.state() == state_before);
+    // The covariance was already measurement-independent before the guard
+    // existed -- update_covariance(K, H, delta_xi) takes the gain, the
+    // measurement Jacobian and the correction, never z -- so this half of the
+    // invariant is structural. The state half is what the guard adds.
+    CHECK(filter.covariance() == P_before);
+    // On a manifold the attitude quaternion's unit norm is an extra invariant,
+    // and the rejection preserves it exactly rather than approximately.
+    CHECK(filter.attitude().norm() == 1.0);
+    // A rejection describes the sample, not the filter: nothing was mutated, so
+    // the filter is not degraded and must not report that it is.
+    CHECK(filter.health() == ctrlpp::mekf_health::ok);
+
+    // The poison did not latch: the next valid step produces exactly what it
+    // would have produced had the poisoned step never been attempted.
+    ctrlpp::Vector<double, 3> z_good;
+    z_good << 0.0, 0.0, 1.0;
+    REQUIRE(filter.update(z_good).has_value());
+    REQUIRE(reference.update(z_good).has_value());
+
+    CHECK(filter.state() == reference.state());
+    CHECK(filter.covariance() == reference.covariance());
 }
 
 TEST_CASE("MEKF covariance stays PD over 1000 steps", "[mekf][hardening][stability]")
@@ -98,7 +135,7 @@ TEST_CASE("MEKF covariance stays PD over 1000 steps", "[mekf][hardening][stabili
         filter.predict(gyro);
         ctrlpp::Vector<double, 3> z;
         z << 0.0, 0.0, 1.0;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
 
         Eigen::SelfAdjointEigenSolver<ctrlpp::Matrix<double, 6, 6>> eigsolver(filter.covariance());
         for(int i = 0; i < 6; ++i)
@@ -139,7 +176,7 @@ TEST_CASE("MEKF attitude converges to true orientation", "[mekf][hardening][conv
         // Gravity in body frame for true attitude (identity = [0,0,1])
         ctrlpp::Vector<double, 3> z;
         z << 0.0, 0.0, 1.0;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     auto q_est = filter.attitude();
@@ -169,7 +206,7 @@ TEST_CASE("MEKF 180-degree rotation (near singularity)", "[mekf][hardening][robu
         filter.predict(gyro);
         ctrlpp::Vector<double, 3> z;
         z << 0.0, 0.0, 1.0;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
 
         if(!std::isfinite(filter.state()[0]))
         {

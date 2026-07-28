@@ -52,7 +52,7 @@ TEST_CASE("kalman filter convergence on constant velocity model")
         // Noisy measurement of position (no actual random noise, just a small fixed offset)
         Eigen::Matrix<double, 1, 1> z;
         z << true_pos + 0.1 * std::sin(static_cast<double>(i));
-        kf.update(z);
+        REQUIRE(kf.update(z).has_value());
     }
 
     auto est = kf.state();
@@ -80,7 +80,7 @@ TEST_CASE("kalman filter covariance remains symmetric and PSD")
 
         Eigen::Matrix<double, 1, 1> z;
         z << static_cast<double>(i) * 0.1;
-        kf.update(z);
+        REQUIRE(kf.update(z).has_value());
 
         auto P = kf.covariance();
         // Symmetric
@@ -110,7 +110,7 @@ TEST_CASE("kalman filter NIS is finite and positive after update")
 
     Eigen::Matrix<double, 1, 1> z;
     z << 1.0;
-    kf.update(z);
+    REQUIRE(kf.update(z).has_value());
 
     CHECK(kf.nis() >= 0.0);
     CHECK(std::isfinite(kf.nis()));
@@ -138,7 +138,7 @@ TEST_CASE("kalman filter steady state detection")
 
         Eigen::Matrix<double, 1, 1> z;
         z << static_cast<double>(i) * 0.1;
-        kf.update(z);
+        REQUIRE(kf.update(z).has_value());
     }
 
     // Check the relative change is small
@@ -168,7 +168,7 @@ TEST_CASE("kalman filter reset covariance")
         kf.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << 1.0;
-        kf.update(z);
+        REQUIRE(kf.update(z).has_value());
     }
 
     // Covariance should have changed from P0
@@ -204,7 +204,7 @@ TEST_CASE("kalman filter MIMO predict-update cycle")
 
         Eigen::Vector2d z;
         z << 1.0, 0.5;
-        kf.update(z);
+        REQUIRE(kf.update(z).has_value());
     }
 
     // Just verify it ran without error and state is finite
@@ -243,7 +243,7 @@ TEST_CASE("kalman filter set_model updates system")
     // Re-test with nonzero state via update
     Eigen::Matrix<double, 1, 1> z;
     z << 1.0;
-    kf.update(z);
+    REQUIRE(kf.update(z).has_value());
 
     CHECK(std::isfinite(kf.state()(0)));
 }

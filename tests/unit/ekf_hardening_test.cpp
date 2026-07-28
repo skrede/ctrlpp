@@ -49,19 +49,54 @@ auto make_ekf()
 
 }
 
-TEST_CASE("EKF NaN measurement does not crash", "[ekf][hardening][negative]")
+TEST_CASE("EKF NaN measurement is rejected without touching the estimate",
+          "[ekf][hardening][negative]")
 {
     auto filter = make_ekf();
+    // Stepped only with the valid measurement, never with the poisoned one, so
+    // it says what the filter would have carried had the bad sample never
+    // arrived.
+    auto reference = make_ekf();
 
     Eigen::Matrix<double, 1, 1> u;
     u << 0.0;
     filter.predict(u);
+    reference.predict(u);
 
-    Eigen::Matrix<double, 1, 1> z;
-    z << std::numeric_limits<double>::quiet_NaN();
-    filter.update(z);
+    // Snapshot immediately before the poisoned step.
+    const Eigen::Vector2d x_before = filter.state();
+    const Eigen::Matrix<double, 2, 2> P_before = filter.covariance();
 
-    CHECK((std::isnan(filter.state()[0]) || std::isfinite(filter.state()[0])));
+    Eigen::Matrix<double, 1, 1> z_bad;
+    z_bad << std::numeric_limits<double>::quiet_NaN();
+
+    const auto rejected = filter.update(z_bad);
+
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == ctrlpp::ekf_update_error::non_finite_measurement);
+
+    // Exact comparison, not a tolerance: a rejected step performs no arithmetic
+    // on the carried estimate at all, so bitwise equality is the contract and a
+    // tolerance would admit a step that partially ran.
+    CHECK(filter.state() == x_before);
+    // The covariance was already measurement-independent before the guard
+    // existed -- update_covariance(K, H) takes the gain and the measurement
+    // Jacobian, never z -- so this half of the invariant is structural. The
+    // state half is what the guard adds.
+    CHECK(filter.covariance() == P_before);
+    // A rejection describes the sample, not the filter: nothing was mutated, so
+    // the filter is not degraded and must not report that it is.
+    CHECK(filter.health() == ctrlpp::ekf_health::ok);
+
+    // The poison did not latch: the next valid step produces exactly what it
+    // would have produced had the poisoned step never been attempted.
+    Eigen::Matrix<double, 1, 1> z_good;
+    z_good << 1.0;
+    REQUIRE(filter.update(z_good).has_value());
+    REQUIRE(reference.update(z_good).has_value());
+
+    CHECK(filter.state() == reference.state());
+    CHECK(filter.covariance() == reference.covariance());
 }
 
 TEST_CASE("EKF Inf process noise does not crash", "[ekf][hardening][negative]")
@@ -80,9 +115,18 @@ TEST_CASE("EKF Inf process noise does not crash", "[ekf][hardening][negative]")
 
     Eigen::Matrix<double, 1, 1> z;
     z << 5.0;
-    filter.update(z);
 
-    // With infinite Q, state may not be finite, but should not crash
+    // An infinite Q makes the predicted covariance infinite, so the step is
+    // refused and names that cause rather than manufacturing a gain out of
+    // Inf/Inf. Whether an infinite Q should instead be refused at construction
+    // is a separate question, and the assertion below is separately owned.
+    const auto stepped = filter.update(z);
+    REQUIRE_FALSE(stepped.has_value());
+    REQUIRE(stepped.error() == ctrlpp::ekf_update_error::non_finite_covariance);
+
+    // The state is finite: the predict left it at the dynamics model's output
+    // and the refused update never touched it. It is the covariance that is
+    // infinite, which is what the rejection above names.
     CHECK(true);
 }
 
@@ -103,7 +147,7 @@ TEST_CASE("EKF for linear system matches Kalman gain within 1%", "[ekf][hardenin
         filter.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << true_pos;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     // After 50 steps, position estimate should be close to truth
@@ -123,7 +167,7 @@ TEST_CASE("EKF covariance stays PD over 1000 steps", "[ekf][hardening][stability
         filter.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << 5.0 + 0.01 * k;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
 
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(filter.covariance());
         for(int i = 0; i < 2; ++i)
@@ -157,7 +201,7 @@ TEST_CASE("EKF state estimate converges to truth", "[ekf][hardening][convergence
         filter.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << true_pos;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     REQUIRE(std::abs(filter.state()[0] - true_pos) < 0.5);
@@ -182,7 +226,7 @@ TEST_CASE("EKF ill-conditioned system cond 1e10", "[ekf][hardening][robustness]"
         filter.predict(u);
         Eigen::Matrix<double, 1, 1> z;
         z << 1.0;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
 
         if(!std::isfinite(filter.state()[0]) || !std::isfinite(filter.state()[1]))
         {

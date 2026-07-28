@@ -59,10 +59,21 @@ Propagates state and covariance one step forward: x = Ax + Bu, P = APA' + Q.
 ### update
 
 ```cpp
-void update(const output_vector_t& z);
+auto update(const output_vector_t& z)
+    -> ctrlpp::expected<void, kalman_update_error>;
 ```
 
 Incorporates a measurement via the Kalman gain. Uses Joseph-form covariance update: P = (I-KC)P(I-KC)' + KRK'. Computes and stores the innovation and NIS.
+
+The step is rejected **before any member is assigned**, so a rejected step leaves the state, the covariance, the innovation and the NIS bitwise unchanged and the caller may retry with the next sample. Each cause is an exact domain condition, not a tuning preference: a non-finite operand makes every downstream product non-finite, so no estimate can be formed at all.
+
+| Condition | Error | Why it is a separate cause |
+|---|---|---|
+| the carried state estimate is already non-finite | `kalman_update_error::non_finite_state` | The fault is upstream of the measurement, so it is reported ahead of it: a caller told the measurement is bad would replace a working sensor while the real fault sits in the prediction that poisoned the state |
+| the carried covariance is already non-finite | `kalman_update_error::non_finite_covariance` | The covariance recursion is driven by the model and by `Q` and `R`, never by the measurement, so the caller fixes a different input |
+| the supplied measurement has a non-finite component | `kalman_update_error::non_finite_measurement` | The gain carries it into the state, which is the filter's carried memory, so one such sample destroys the estimate permanently |
+
+`predict` is deliberately not fallible. Its input is a command the caller already owns and the plant already took, so refusing it would leave the filter with no propagation for a step that happened. A prediction that poisons the carried estimate is reported by [`health`](#health) instead, which the next `update` latches.
 
 ### state
 
@@ -95,6 +106,14 @@ Scalar nis() const;
 ```
 
 Returns the Normalized Innovation Squared from the last update (innovation^T S^-1 innovation), chi-square distributed with dof = NY under a consistent filter.
+
+### health
+
+```cpp
+kalman_health health() const;
+```
+
+Returns the persistent state-health status, one of `kalman_health::ok` or `kalman_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The status starts at `ok` and latches to `non_finite_estimate` the first time a step finds the carried state or covariance already non-finite, which is how a poisoned `predict` becomes visible. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.
 
 ### is_steady_state
 
@@ -176,7 +195,11 @@ int main()
         z << x_true(0) + noise(rng);
 
         kf.predict(u);
-        kf.update(z);
+        if(!kf.update(z))
+        {
+            std::cerr << "Kalman filter rejected the measurement at step " << k << "\n";
+            return 1;
+        }
 
         auto est = kf.state();
         std::cout << k * dt << "," << x_true(0) << "," << est(0) << "\n";

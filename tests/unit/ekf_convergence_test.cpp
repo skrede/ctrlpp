@@ -128,7 +128,7 @@ TEST_CASE("ekf with analytical Jacobians converges on linear system")
 
         Vector<double, 1> z;
         z << true_pos + 0.1 * std::sin(static_cast<double>(i));
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     auto est = filter.state();
@@ -175,7 +175,7 @@ TEST_CASE("ekf with numerical Jacobians converges on linear system")
 
         Vector<double, 1> z;
         z << true_pos + 0.1 * std::sin(static_cast<double>(i));
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     auto est = filter.state();
@@ -251,7 +251,7 @@ TEST_CASE("ekf nonlinear pendulum tracking")
 
         Vector<double, 1> z;
         z << x_true(0) + 0.05 * std::sin(static_cast<double>(i) * 0.7);
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     auto est = filter.state();
@@ -286,7 +286,7 @@ TEST_CASE("ekf with shared dynamics_model lambda compiles and runs")
 
     Vector<double, 1> z;
     z << 1.0;
-    filter.update(z);
+    REQUIRE(filter.update(z).has_value());
 
     CHECK(std::isfinite(filter.state()(0)));
 }

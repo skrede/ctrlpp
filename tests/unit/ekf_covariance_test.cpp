@@ -105,7 +105,7 @@ TEST_CASE("ekf covariance stays symmetric and PSD over 100+ cycles")
 
         Vector<double, 1> z;
         z << static_cast<double>(i) * 0.1;
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
 
         auto P = filter.covariance();
         CHECK((P - P.transpose()).norm() < 1e-10);
@@ -133,7 +133,7 @@ TEST_CASE("ekf NIS is finite and positive")
 
     Vector<double, 1> z;
     z << 1.0;
-    filter.update(z);
+    REQUIRE(filter.update(z).has_value());
 
     CHECK(filter.nis() >= 0.0);
     CHECK(std::isfinite(filter.nis()));

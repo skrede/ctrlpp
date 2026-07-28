@@ -49,10 +49,20 @@ Propagates the state estimate: x = Ax + Bu.
 ### update
 
 ```cpp
-void update(const output_vector_t& z);
+auto update(const output_vector_t& z)
+    -> ctrlpp::expected<void, luenberger_update_error>;
 ```
 
 Corrects the state estimate with measurement: x = x + L(z - Cx).
+
+The step is rejected **before the state is assigned**, so a rejected step leaves the state bitwise unchanged and the caller may retry with the next sample. The observer carries no covariance, so there are two causes rather than the three the covariance filters have, and each is an exact domain condition rather than a tuning preference.
+
+| Condition | Error | Why it is a separate cause |
+|---|---|---|
+| the carried state estimate is already non-finite | `luenberger_update_error::non_finite_state` | The fault is upstream of the measurement, so it is reported ahead of it: a caller told the measurement is bad would replace a working sensor while the real fault sits in the prediction that poisoned the state |
+| the supplied measurement has a non-finite component | `luenberger_update_error::non_finite_measurement` | The correction is the single fused expression x + L(z - Cx), so every state component whose gain row is nonzero becomes non-finite and the observer carries that state forward with no path back |
+
+`predict` is deliberately not fallible. Its input is a command the caller already owns and the plant already took, so refusing it would leave the filter with no propagation for a step that happened. A prediction that poisons the carried estimate is reported by [`health`](#health) instead, which the next `update` latches.
 
 ### state
 
@@ -61,6 +71,14 @@ auto state() const -> const state_vector_t&;
 ```
 
 Returns the current state estimate.
+
+### health
+
+```cpp
+auto health() const -> luenberger_health;
+```
+
+Returns the persistent state-health status, one of `luenberger_health::ok` or `luenberger_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The status starts at `ok` and latches to `non_finite_estimate` the first time a step finds the carried state already non-finite, which is how a poisoned `predict` becomes visible; [`reset`](#reset) clears it, because it replaces the very state the status describes. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the observer healthy. The query carries no discard warning; asking it is optional.
 
 ### set_gain
 
@@ -84,7 +102,7 @@ Replaces the state-space model.
 void reset(const state_vector_t& x0);
 ```
 
-Resets the state estimate to a new initial value.
+Resets the state estimate to a new initial value. This is the one operation that clears a latched [`health`](#health) status, because it replaces the state that status describes.
 
 ## Usage Example
 
@@ -133,7 +151,11 @@ int main()
         x_true = sys.A * x_true + sys.B * u;
 
         obs.predict(u);
-        obs.update(z);
+        if(!obs.update(z))
+        {
+            std::cerr << "observer rejected the measurement at step " << k << "\n";
+            return 1;
+        }
 
         auto est = obs.state();
         std::cout << k * 0.1 << "," << x_true(0) << "," << est(0) << "\n";

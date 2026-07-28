@@ -60,7 +60,8 @@ static auto create(cf_config<Scalar> config)
 ### update (IMU: 6&ndash;DOF)
 
 ```cpp
-void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt);
+auto update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt)
+    -> ctrlpp::expected<void, cf_update_error>;
 ```
 
 Natural IMU update fusing gyroscope angular velocity with accelerometer gravity reference. Computes the rotation error between the expected and measured gravity direction in body frame via cross product, applies PI correction to the gyroscope, and integrates the corrected angular velocity via the SO(3) exponential map.
@@ -68,20 +69,36 @@ Natural IMU update fusing gyroscope angular velocity with accelerometer gravity 
 ### update (MARG: 9&ndash;DOF)
 
 ```cpp
-void update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel,
-            const Vector<Scalar, 3>& mag, Scalar dt);
+auto update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel,
+            const Vector<Scalar, 3>& mag, Scalar dt)
+    -> ctrlpp::expected<void, cf_update_error>;
 ```
 
 MARG update adding magnetometer heading correction to the IMU update. The magnetic field reference direction is computed in the world frame, and the magnetometer error is combined with the accelerometer error for full 3D orientation correction. Falls back to IMU-only update if the magnetometer reading is degenerate.
+
+### Rejection, and what is deliberately not a rejection
+
+Both overloads reject **before any member is assigned**, so a rejected step leaves the attitude and the bias bitwise unchanged and the caller may retry with the next sample. The filter carries no covariance, so the carried estimate is the attitude quaternion together with the gyro bias. Each cause is an exact domain condition, not a tuning preference.
+
+| Condition | Error | Why it is a separate cause |
+|---|---|---|
+| the carried attitude quaternion or bias is already non-finite | `cf_update_error::non_finite_state` | Both correction terms are computed from the carried attitude's rotation matrix, so the fault is upstream of the sensors and is reported ahead of them |
+| a supplied sensor vector (rate, acceleration, or magnetic field where present) has a non-finite component | `cf_update_error::non_finite_measurement` | Every one of them reaches the quaternion integration, whose output is the filter's carried memory, so one such sample destroys the attitude permanently |
+| the supplied integration step is non-finite | `cf_update_error::non_finite_timestep` | It names a broken clock rather than a broken sensor, so the caller fixes a different input. It poisons the integration just as surely: the tangent vector is the step times the corrected rate |
+
+The **zero-norm acceleration skip is not a rejection.** A zero-norm acceleration carries no gravity direction, so there is no correction to apply and the filter deliberately leaves the attitude where it was. The step succeeded and returns a value: it did exactly what the algorithm prescribes. The same holds for the zero-norm magnetic skip in the MARG overload, which still applies the gravity correction. Reporting either through the failure channel would tell the caller their step failed when it did not, and a caller who learns that channel carries non-failures will eventually ignore a real one.
 
 ### ObserverPolicy Interface
 
 ```cpp
 void predict(const input_vector_t& u);   // stores gyro for next update
-void update(const output_vector_t& z);   // calls update(gyro_buf, z, dt)
+auto update(const output_vector_t& z)    // calls update(gyro_buf, z, dt)
+    -> ctrlpp::expected<void, cf_update_error>;
 ```
 
-These wrappers satisfy the `ObserverPolicy` concept for composition with controllers.
+These wrappers satisfy the `ObserverPolicy` concept for composition with controllers. The single-measurement form **forwards** the IMU overload's result rather than swallowing it, so the caller sees the same cause it would have seen through the three-argument form.
+
+`predict` is deliberately not fallible: it only buffers the rate the caller supplied, and a non-finite rate is caught by the very next `update` with `cf_update_error::non_finite_measurement`.
 
 ### state
 
@@ -106,6 +123,14 @@ auto bias() const -> const Vector<Scalar, 3>&;
 ```
 
 Returns the estimated gyroscope bias.
+
+### health
+
+```cpp
+auto health() const -> cf_health;
+```
+
+Returns the persistent state-health status, one of `cf_health::ok` or `cf_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried attitude is still degraded from a step several samples ago. The status starts at `ok` and latches to `non_finite_estimate` the first time a step finds the carried attitude or bias already non-finite. A **rejected update does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.
 
 ## Usage Example
 
@@ -154,7 +179,11 @@ int main()
         Eigen::Vector3d accel = q_true.toRotationMatrix().transpose() * Eigen::Vector3d{0, 0, 9.81};
         for (int i = 0; i < 3; ++i) accel(i) += accel_noise(rng);
 
-        filter.update(gyro, accel, dt);
+        if(!filter.update(gyro, accel, dt))
+        {
+            std::cerr << "complementary filter rejected the sample\n";
+            return 1;
+        }
 
         auto q_est = filter.attitude();
         Eigen::Vector3d err = ctrlpp::so3::log(q_true.conjugate() * q_est);

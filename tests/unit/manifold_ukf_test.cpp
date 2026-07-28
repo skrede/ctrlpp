@@ -79,7 +79,7 @@ TEST_CASE("manifold_ukf update corrects attitude toward measurement", "[manifold
     for(int i = 0; i < 50; ++i)
     {
         filter.predict(Vector<double, 3>::Zero());
-        filter.update(gravity_world);
+        REQUIRE(filter.update(gravity_world).has_value());
     }
 
     auto q = filter.attitude();
@@ -100,7 +100,7 @@ TEST_CASE("manifold_ukf covariance stays symmetric and PSD", "[manifold_ukf]")
     for(int i = 0; i < 100; ++i)
     {
         filter.predict(omega);
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     auto P = filter.covariance();
@@ -121,7 +121,7 @@ TEST_CASE("manifold_ukf geodesic mean converges", "[manifold_ukf]")
     for(int i = 0; i < 30; ++i)
     {
         filter.predict(Vector<double, 3>{0.01, 0.0, 0.0});
-        filter.update(Vector<double, 3>{0.0, 0.0, 1.0});
+        REQUIRE(filter.update(Vector<double, 3>{0.0, 0.0, 1.0}).has_value());
     }
 
     auto q = filter.attitude();
@@ -135,7 +135,7 @@ TEST_CASE("manifold_ukf innovation is finite", "[manifold_ukf]")
     auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     filter.predict(Vector<double, 3>{0.01, 0.0, 0.0});
-    filter.update(Vector<double, 3>{0.0, 0.0, 1.0});
+    REQUIRE(filter.update(Vector<double, 3>{0.0, 0.0, 1.0}).has_value());
 
     REQUIRE(std::isfinite(filter.innovation().norm()));
 }
@@ -168,7 +168,7 @@ TEST_CASE("manifold_ukf tracks constant rotation", "[manifold_ukf]")
         Vector<double, 3> phi_true = (omega * dyn.dt * static_cast<double>(i + 1)).eval();
         Eigen::Quaternion<double> q_true = so3::exp(phi_true);
         Vector<double, 3> z = q_true.toRotationMatrix().transpose().col(2);
-        filter.update(z);
+        REQUIRE(filter.update(z).has_value());
     }
 
     auto q_est = filter.attitude();
@@ -229,7 +229,7 @@ TEST_CASE("manifold_ukf large initial error converges with updates", "[manifold_
     for(int i = 0; i < 200; ++i)
     {
         filter.predict(Vector<double, 3>::Zero());
-        filter.update(gravity_world);
+        REQUIRE(filter.update(gravity_world).has_value());
     }
 
     auto q = filter.attitude();
@@ -250,7 +250,7 @@ TEST_CASE("manifold_ukf with very small process noise", "[manifold_ukf]")
     for(int i = 0; i < 50; ++i)
     {
         filter.predict(Vector<double, 3>::Zero());
-        filter.update(Vector<double, 3>{0.0, 0.0, 1.0});
+        REQUIRE(filter.update(Vector<double, 3>{0.0, 0.0, 1.0}).has_value());
     }
 
     auto q = filter.attitude();
@@ -275,7 +275,9 @@ TEST_CASE("manifold_ukf with very large measurement noise trusts prediction", "[
     for(int i = 0; i < 20; ++i)
     {
         filter.predict(Vector<double, 3>::Zero());
-        filter.update(Vector<double, 3>{0.5, 0.5, 0.5}); // Wrong direction
+        // Wrong direction, but a perfectly finite measurement, so the step
+        // succeeds and the filter is expected to disagree with it.
+        REQUIRE(filter.update(Vector<double, 3>{0.5, 0.5, 0.5}).has_value());
     }
 
     // Filter should mostly ignore measurement due to high R
@@ -296,7 +298,7 @@ TEST_CASE("manifold_ukf geodesic mean with max_iter=1", "[manifold_ukf]")
     for(int i = 0; i < 20; ++i)
     {
         filter.predict(Vector<double, 3>{0.01, 0.0, 0.0});
-        filter.update(Vector<double, 3>{0.0, 0.0, 1.0});
+        REQUIRE(filter.update(Vector<double, 3>{0.0, 0.0, 1.0}).has_value());
     }
 
     auto q = filter.attitude();
@@ -325,7 +327,7 @@ TEST_CASE("manifold_ukf state cache matches attitude quaternion", "[manifold_ukf
     auto filter = make_filter(simple_rotation_dynamics{}, cfg);
 
     filter.predict(Vector<double, 3>{0.05, -0.03, 0.01});
-    filter.update(Vector<double, 3>{0.0, 0.0, 1.0});
+    REQUIRE(filter.update(Vector<double, 3>{0.0, 0.0, 1.0}).has_value());
 
     auto q = filter.attitude();
     auto s = filter.state();
@@ -350,7 +352,7 @@ TEST_CASE("manifold_ukf innovation decreases as filter converges", "[manifold_uk
     for(int i = 0; i < 50; ++i)
     {
         filter.predict(Vector<double, 3>::Zero());
-        filter.update(gravity);
+        REQUIRE(filter.update(gravity).has_value());
     }
 
     // After convergence, innovation should be small
