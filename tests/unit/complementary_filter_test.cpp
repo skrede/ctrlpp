@@ -203,22 +203,28 @@ TEST_CASE("complementary filter reset via new construction", "[cf]")
     CHECK(angle < 1e-6);
 }
 
-TEST_CASE("complementary filter handles zero accelerometer gracefully", "[cf]")
+TEST_CASE("complementary filter integrates the rate when the accelerometer has no direction", "[cf]")
 {
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
     auto cf = make_filter(cfg);
 
-    Vector<double, 3> gyro = Vector<double, 3>::Zero();
+    Vector<double, 3> gyro;
+    gyro << 0.4, -0.2, 0.1;
     Vector<double, 3> accel = Vector<double, 3>::Zero();
 
-    // Should not crash or produce NaN -- filter skips update when accel norm < 1e-10
+    // An exactly zero accelerometer carries no gravity direction, so there is
+    // no correction to apply -- but the body still rotated, and the step must
+    // integrate the rate it was given. The result is exactly the dead-reckoned
+    // attitude, because with a zero correction the bias increment is an exact
+    // product of zero and the corrected rate is the measured one.
+    const Eigen::Quaterniond expected =
+        (cf.attitude() * so3::exp<double>((gyro * 0.01).eval())).normalized();
+    const Vector<double, 3> bias_before = cf.bias();
+
     REQUIRE(cf.update(gyro, accel, 0.01).has_value());
 
-    auto q = cf.attitude();
-    CHECK(std::isfinite(q.w()));
-    CHECK(std::isfinite(q.x()));
-    CHECK(std::isfinite(q.y()));
-    CHECK(std::isfinite(q.z()));
+    CHECK(cf.attitude().coeffs() == expected.coeffs());
+    CHECK(cf.bias() == bias_before);
 }
 
 // ---------------------------------------------------------------------------
@@ -294,24 +300,66 @@ TEST_CASE("complementary filter MARG with zero magnetometer falls back to IMU", 
     CHECK(angle_diff < 1e-10);
 }
 
-TEST_CASE("complementary filter MARG with near-zero accel is skipped", "[cf]")
+TEST_CASE("complementary filter MARG uses a small accelerometer reading like any other", "[cf]")
 {
+    // A reading of 1e-15 is small only in whatever unit the caller chose. The
+    // correction terms use the reading's DIRECTION, which is scale-free, so a
+    // small reading and a large one pointing the same way must produce the same
+    // step. This is asserted directly: the same direction at two magnitudes
+    // fifteen orders apart gives the same attitude.
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    auto cf = make_filter(cfg);
-
-    auto q_before = cf.attitude();
+    auto tiny = make_filter(cfg);
+    auto ordinary = make_filter(cfg);
 
     Vector<double, 3> gyro = Vector<double, 3>::Zero();
     Vector<double, 3> accel_tiny;
     accel_tiny << 1e-15, 0.0, 0.0;
+    Vector<double, 3> accel_ordinary;
+    accel_ordinary << 9.81, 0.0, 0.0;
     Vector<double, 3> mag;
     mag << 0.2, 0.0, 0.4;
 
-    // Both IMU and MARG updates should be no-ops with near-zero accel
-    REQUIRE(cf.update(gyro, accel_tiny, mag, 0.01).has_value());
+    const auto q_before = tiny.attitude();
 
-    double angle_change = quat_angle(cf.attitude(), q_before);
-    CHECK(angle_change < 1e-10);
+    REQUIRE(tiny.update(gyro, accel_tiny, mag, 0.01).has_value());
+    REQUIRE(ordinary.update(gyro, accel_ordinary, mag, 0.01).has_value());
+
+    CHECK(tiny.attitude().coeffs() == ordinary.attitude().coeffs());
+    CHECK(tiny.bias() == ordinary.bias());
+    // And it is not a no-op: the correction really was applied, which the
+    // previous absolute floor of 1e-10 discarded.
+    CHECK(quat_angle(tiny.attitude(), q_before) > 0.0);
+}
+
+TEST_CASE("complementary filter MARG applies the magnetic correction when the accelerometer has none", "[cf]")
+{
+    // The two corrections are independent terms of Mahony's law, so a
+    // directionless accelerometer removes its own term and leaves the other.
+    // Previously it removed both AND the rate integration.
+    cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
+    auto marg = make_filter(cfg);
+    auto reference = make_filter(cfg);
+
+    Vector<double, 3> gyro;
+    gyro << 0.1, 0.2, -0.3;
+    Vector<double, 3> accel_none = Vector<double, 3>::Zero();
+    // A magnetic vector out of the reference plane, so its correction is
+    // genuinely nonzero: a field already lying in the plane the reference is
+    // built from produces an exactly zero cross product at the identity
+    // attitude, and the case would then pass for a filter that dropped the
+    // magnetic term as well.
+    Vector<double, 3> mag;
+    mag << 0.2, 0.3, 0.4;
+
+    REQUIRE(marg.update(gyro, accel_none, mag, 0.01).has_value());
+
+    // A dead-reckoned step alone does not explain it: the magnetic correction
+    // moved the attitude away from where the rate alone would have put it.
+    const Eigen::Quaterniond dead_reckoned =
+        (reference.attitude() * so3::exp<double>((gyro * 0.01).eval())).normalized();
+    CHECK(quat_angle(marg.attitude(), dead_reckoned) > 0.0);
+    // And the integral term moved, which it cannot do on a zero correction.
+    CHECK(marg.bias() != Vector<double, 3>::Zero());
 }
 
 TEST_CASE("complementary filter large dt produces finite results", "[cf]")

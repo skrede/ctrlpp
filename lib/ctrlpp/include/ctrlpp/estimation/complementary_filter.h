@@ -121,11 +121,15 @@ public:
     /// a rejected step leaves the attitude and the bias bitwise unchanged and
     /// the caller may retry with the next sample.
     ///
-    /// The zero-norm acceleration skip below is NOT a rejection. The step
-    /// succeeded: a zero-norm acceleration carries no gravity direction, so
-    /// there is no correction to apply and the filter deliberately leaves the
-    /// attitude where it was. Reporting that through the failure channel would
-    /// tell the caller their step failed when it did exactly what the algorithm
+    /// A directionless acceleration is NOT a rejection and NOT a skipped step.
+    /// The step succeeded: a zero acceleration vector carries no gravity
+    /// direction, so there is no correction to apply, and the rate is
+    /// integrated with a zero correction exactly as the algorithm prescribes.
+    /// The body rotated whether or not the accelerometer could say which way is
+    /// down, so discarding the integration would drop a rotation that happened
+    /// and report the step a success. Reporting the missing correction through
+    /// the failure channel would be the opposite error: it would tell the
+    /// caller their step failed when it did exactly what the algorithm
     /// prescribes, and a caller who learns the failure channel carries
     /// non-failures will eventually ignore a real one.
     ///
@@ -135,21 +139,23 @@ public:
         if(const auto step = check_step(gyro, accel, dt); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
-        Scalar norm = accel.norm();
-        if(norm < Scalar{1e-10})
-            return {};
+        Vector<Scalar, 3> direction;
+        Vector<Scalar, 3> correction = Vector<Scalar, 3>::Zero();
+        if(unit_direction(accel, direction))
+            correction = compute_gravity_correction(direction);
 
-        auto e = compute_gravity_correction(accel / norm);
-        integrate_gyro(gyro, e, dt);
+        integrate_gyro(gyro, correction, dt);
         return {};
     }
 
     // Natural MARG update (9-DOF): gyro + accelerometer + magnetometer.
     ///
     /// Rejects on the same terms as the IMU overload, with the magnetic vector
-    /// added to the sensor operands. The zero-norm magnetic skip, like the
-    /// zero-norm acceleration skip, is a success in which one correction was not
-    /// applied, not a failure.
+    /// added to the sensor operands. The two corrections are independent sums in
+    /// Mahony's law, so each is applied when its own vector has a direction and
+    /// omitted when it does not, and the rate is integrated either way. That is
+    /// the same shape as the six-axis overload with one correction instead of
+    /// two.
     ///
     /// @cite mahony2008 -- Mahony et al., 2008, Sec. IV (MARG complementary filter)
     auto update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, const Vector<Scalar, 3>& mag, Scalar dt) -> ctrlpp::expected<void, cf_update_error>
@@ -157,21 +163,14 @@ public:
         if(const auto step = check_step(gyro, accel, dt, &mag); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
-        Scalar norm = accel.norm();
-        if(norm < Scalar{1e-10})
-            return {};
+        Vector<Scalar, 3> direction;
+        Vector<Scalar, 3> correction = Vector<Scalar, 3>::Zero();
+        if(unit_direction(accel, direction))
+            correction += compute_gravity_correction(direction);
+        if(unit_direction(mag, direction))
+            correction += compute_magnetic_correction(direction);
 
-        auto e_acc = compute_gravity_correction(accel / norm);
-
-        Scalar mag_norm = mag.norm();
-        if(mag_norm < Scalar{1e-10})
-        {
-            integrate_gyro(gyro, e_acc, dt);
-            return {};
-        }
-
-        auto e_mag = compute_magnetic_correction(mag / mag_norm);
-        integrate_gyro(gyro, e_acc + e_mag, dt);
+        integrate_gyro(gyro, correction, dt);
         return {};
     }
 
@@ -213,6 +212,42 @@ private:
         if(!std::isfinite(dt))
             return ctrlpp::unexpected(cf_update_error::non_finite_timestep);
         return {};
+    }
+
+    /// @brief Write the unit direction of a sensor reading and report whether it
+    /// has one.
+    ///
+    /// The coefficients are divided by their largest magnitude before the norm
+    /// is formed, so the norm is taken of a vector whose largest coefficient is
+    /// exactly one and whose squared norm therefore lies in [1, 3]. Neither end
+    /// of the exponent range is reachable from there, so every finite nonzero
+    /// reading has a direction -- including one whose squared norm would
+    /// underflow to zero, or overflow to infinity, if the norm were formed
+    /// directly from the reading. The only reading with no direction is the
+    /// exactly zero vector, which carries none at all rather than a small one.
+    ///
+    /// There is deliberately NO magnitude threshold here. A sensor reading is
+    /// expressed in the caller's units, so an absolute floor gives the same
+    /// physical acceleration different treatment depending on whether it is
+    /// reported in g or in millimetres per second squared -- and both
+    /// correction terms use only the DIRECTION, which is scale-free. The
+    /// previous floor of 1e-10 discarded a reading of 1e-15 g, which is an
+    /// ordinary reading in units chosen that way.
+    ///
+    /// The returned bool is a predicate on the argument, not a failure channel:
+    /// the only reason a vector has no direction is that every coefficient is
+    /// zero, so there is no cause to carry and nothing is lost by a bool.
+    ///
+    /// This mirrors `so3::normalize`, which repairs the identical defect on the
+    /// attitude quaternion and for the identical reason.
+    static auto unit_direction(const Vector<Scalar, 3>& v, Vector<Scalar, 3>& direction) -> bool
+    {
+        const Scalar scale = v.cwiseAbs().maxCoeff();
+        if(!(scale > Scalar{0}))
+            return false;
+        const Vector<Scalar, 3> scaled = (v / scale).eval();
+        direction = (scaled / scaled.norm()).eval();
+        return true;
     }
 
     /// @brief Latch the persistent status for the fault that describes the

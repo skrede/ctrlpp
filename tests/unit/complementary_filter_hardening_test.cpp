@@ -6,10 +6,17 @@
 //  * A rejected step leaves both BITWISE unchanged, names the specific cause,
 //    and does not degrade the health status, and a later valid step produces
 //    exactly what an instance that never saw the bad sample produces.
-//  * A step whose accelerometer carries no gravity direction skips the
-//    correction. With a zero rate there is then no arithmetic left to perform,
-//    so the attitude and the bias are BITWISE what they were. That is an exact
-//    statement and a tolerance would admit a step that partially ran.
+//  * A step whose accelerometer carries no gravity direction drops that
+//    correction and integrates the rate anyway. With a zero rate there is then
+//    no arithmetic left to perform, so the attitude and the bias are BITWISE
+//    what they were; with a rate, the attitude is BITWISE the dead-reckoned
+//    one, formed independently here. The second half is what a zero-rate
+//    fixture cannot see, and it is the half that says the rotation the body
+//    performed was not discarded.
+//  * A reading fifteen orders below unity is an ordinary reading in units
+//    chosen that way, and only its DIRECTION enters the correction, so the same
+//    direction at two magnitudes fifteen orders apart produces the same step
+//    bitwise. There is no magnitude threshold to assert against.
 //  * With both correction gains and the rate at zero, every increment is an
 //    exact product of zero and the quaternion composition is with the exact
 //    identity, so after a hundred steps the attitude is BITWISE the identity.
@@ -38,6 +45,7 @@
 
 #include "hardening_helpers.h"
 #include "ctrlpp/estimation/complementary_filter.h"
+#include "ctrlpp/lie/so3.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -136,34 +144,83 @@ TEST_CASE("Complementary filter non-finite timestep is rejected and names the cl
     CHECK(cf.attitude().coeffs() == q_before.coeffs());
 }
 
-TEST_CASE("Complementary filter zero-norm accel skips the correction and still succeeds",
+TEST_CASE("Complementary filter zero-norm accel drops the correction and integrates anyway",
           "[complementary_filter][hardening][negative]")
 {
     ctrlpp::cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01};
-    auto cf = make_filter(cfg);
 
-    ctrlpp::Vector<double, 3> gyro = ctrlpp::Vector<double, 3>::Zero();
-    ctrlpp::Vector<double, 3> accel = ctrlpp::Vector<double, 3>::Zero();
-
-    // A zero-norm acceleration carries no gravity direction, so there is no
+    // A zero acceleration vector carries no gravity direction, so there is no
     // correction to apply. That is a SUCCESS in which the commanded correction
     // was not performed, not a failure: the step did exactly what the algorithm
     // prescribes. Reporting it on the failure channel would teach the caller
     // that channel carries non-failures.
-    const Eigen::Quaterniond q_before = cf.attitude();
-    const ctrlpp::Vector<double, 3> bias_before = cf.bias();
+    ctrlpp::Vector<double, 3> accel = ctrlpp::Vector<double, 3>::Zero();
 
-    REQUIRE(cf.update(gyro, accel, 0.01).has_value());
+    SECTION("with a zero rate there is nothing left to compute")
+    {
+        auto cf = make_filter(cfg);
+        const ctrlpp::Vector<double, 3> gyro = ctrlpp::Vector<double, 3>::Zero();
+        const Eigen::Quaterniond q_before = cf.attitude();
+        const ctrlpp::Vector<double, 3> bias_before = cf.bias();
 
-    // With no correction AND a zero rate there is nothing left for the step to
-    // compute, so the carried estimate is BITWISE what it was. Exact, because
-    // the skip performs no arithmetic on it -- the same argument the rejection
-    // cases above make, on a path that succeeds.
-    CHECK(cf.attitude().coeffs() == q_before.coeffs());
-    CHECK(cf.bias() == bias_before);
-    // Skipping a correction is not damage: the estimate is exactly as good as
-    // it was before the sample arrived, so the status must still say so.
-    CHECK(cf.health() == ctrlpp::cf_health::ok);
+        REQUIRE(cf.update(gyro, accel, 0.01).has_value());
+
+        // Every term is an exact product of zero, so the carried estimate is
+        // BITWISE what it was -- the same argument the rejection cases above
+        // make, on a path that succeeds.
+        CHECK(cf.attitude().coeffs() == q_before.coeffs());
+        CHECK(cf.bias() == bias_before);
+        // Dropping a correction is not damage: the estimate is exactly as good
+        // as it was before the sample arrived, so the status must say so.
+        CHECK(cf.health() == ctrlpp::cf_health::ok);
+    }
+
+    SECTION("with a rate, the rotation the body performed is still integrated")
+    {
+        auto cf = make_filter(cfg);
+        ctrlpp::Vector<double, 3> gyro;
+        gyro << 0.4, -0.2, 0.1;
+
+        // This is the half a zero-rate fixture cannot see, and it is the whole
+        // point of the case: the accelerometer failing to supply a direction
+        // says nothing about whether the body turned. With a zero correction the
+        // bias increment is an exact product of zero and the corrected rate is
+        // the measured one, so the result is EXACTLY the dead-reckoned attitude
+        // -- one quaternion composition with the exponential of the scaled rate,
+        // formed here independently.
+        const Eigen::Quaterniond dead_reckoned =
+            (cf.attitude() * ctrlpp::so3::exp<double>((gyro * 0.01).eval())).normalized();
+        const ctrlpp::Vector<double, 3> bias_before = cf.bias();
+
+        REQUIRE(cf.update(gyro, accel, 0.01).has_value());
+
+        CHECK(cf.attitude().coeffs() == dead_reckoned.coeffs());
+        CHECK(cf.bias() == bias_before);
+        CHECK(cf.attitude().coeffs() != Eigen::Quaterniond::Identity().coeffs());
+        CHECK(cf.health() == ctrlpp::cf_health::ok);
+    }
+
+    SECTION("a reading is small only in the caller's units, so it has a direction")
+    {
+        // Fifteen orders below unity is an ordinary reading in units chosen
+        // that way, and only the direction enters the correction. The same
+        // direction at two magnitudes fifteen orders apart must produce the
+        // same step, bitwise.
+        auto tiny = make_filter(cfg);
+        auto ordinary = make_filter(cfg);
+        const ctrlpp::Vector<double, 3> gyro = ctrlpp::Vector<double, 3>::Zero();
+
+        ctrlpp::Vector<double, 3> accel_tiny;
+        accel_tiny << 0.0, 0.0, 1e-15;
+        ctrlpp::Vector<double, 3> accel_ordinary;
+        accel_ordinary << 0.0, 0.0, 9.81;
+
+        REQUIRE(tiny.update(gyro, accel_tiny, 0.01).has_value());
+        REQUIRE(ordinary.update(gyro, accel_ordinary, 0.01).has_value());
+
+        CHECK(tiny.attitude().coeffs() == ordinary.attitude().coeffs());
+        CHECK(tiny.bias() == ordinary.bias());
+    }
 }
 
 TEST_CASE("Complementary filter k_p=0 gives pure gyro integration",

@@ -126,7 +126,11 @@ auto run_nmhe_benchmark(
 
         // Feed to estimator
         estimator.predict(u);
-        estimator.update(y_noisy);
+        // A refused measurement produces no estimate, so the error accumulated
+        // below would be one for a step that never happened. Skipped rather
+        // than substituted: the sample count follows.
+        if(!estimator.update(y_noisy))
+            continue;
 
         // Compute error after warmup
         if(k >= warmup_steps)

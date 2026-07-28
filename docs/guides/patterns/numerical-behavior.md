@@ -39,6 +39,8 @@ failure channel):
 | `mekf::update` | `expected<void, mekf_update_error>` |
 | `manifold_ukf::update` | `expected<void, manifold_ukf_update_error>` |
 | `luenberger_observer::update` | `expected<void, luenberger_update_error>` |
+| `mhe::update` | `expected<void, ekf_update_error>` (forwarded from the embedded filter) |
+| `nmhe::update` | `expected<void, ekf_update_error>` (forwarded from the embedded filter) |
 | `complementary_filter::update`, all three overloads | `expected<void, cf_update_error>` |
 | `pid::compute`, both overloads | `expected<vector_t, pid_step_error>` |
 | `mrac_controller::evaluate` | `expected<input_type, mrac_step_error>` |

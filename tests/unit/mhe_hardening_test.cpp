@@ -1,19 +1,21 @@
 // What the oracles in this file decide.
 //
-// The estimator's update returns nothing, so everything it has to say about a
-// step is said through the diagnostics aggregate -- and no case in this file
-// read it before. Every case now does, and the aggregate is asserted as a
-// contract rather than sampled:
+// The estimator reports on TWO channels and this file asserts both. A refusal
+// -- "I could not do what you asked" -- is the return value of `update`. A
+// disposition on a step that succeeded -- which of the two estimators produced
+// the estimate, and how the solve went -- is the diagnostics aggregate. No case
+// in this file read either before:
 //
-//  * A poisoned measurement is REFUSED by the embedded filter, so the estimator
-//    performs no window shift at all. The reported status is an error, the
-//    fallback flag is CLEARED because no estimate was produced by any path, and
-//    the carried estimate and covariance are BITWISE what they were before the
-//    poisoned sample arrived. That last part is what makes reading the
-//    diagnostics necessary rather than optional: `state()` still returns a
-//    perfectly plausible number, and nothing but the aggregate distinguishes it
-//    from a fresh one. A later valid sample is accepted normally, so the refusal
-//    does not latch.
+//  * A poisoned measurement is REFUSED by the embedded filter, and the estimator
+//    forwards that verdict verbatim on the failure channel, naming the operand.
+//    It performs no window shift at all, so the carried estimate and covariance
+//    are BITWISE what they were before the poisoned sample arrived. That is what
+//    makes the failure channel necessary rather than optional: `state()` still
+//    returns a perfectly plausible number and nothing about its value
+//    distinguishes it from a fresh one. The diagnostics aggregate is asserted
+//    UNCHANGED across the refusal, because it describes the last step that
+//    succeeded -- the same step `state()` describes. A later valid sample is
+//    accepted normally, so the refusal does not latch.
 //  * During the fill-up the estimator delegates to its embedded filter, and it
 //    says so: the fallback flag is true for exactly the first N updates and
 //    false from the one that first fills the window. That is the documented
@@ -139,7 +141,7 @@ TEST_CASE("MHE with NaN in measurement noise", "[mhe][hardening][negative]")
         estimator.predict(u);
         ctrlpp::Vector<double, NY> z;
         z << 0.1 * static_cast<double>(i);
-        estimator.update(z);
+        REQUIRE(estimator.update(z).has_value());
 
         REQUIRE(estimator.diagnostics().status == ctrlpp::solve_status::optimal);
         REQUIRE(estimator.diagnostics().used_ekf_fallback == (i < N));
@@ -147,6 +149,9 @@ TEST_CASE("MHE with NaN in measurement noise", "[mhe][hardening][negative]")
     REQUIRE(estimator.is_initialized());
 
     const ctrlpp::Vector<double, NX> estimate_before = estimator.state();
+    const ctrlpp::solve_status status_before = estimator.diagnostics().status;
+    const bool fallback_before = estimator.diagnostics().used_ekf_fallback;
+    const double cost_before = estimator.diagnostics().cost;
 
     // Inject NaN measurement. The covariance is snapshotted AFTER the
     // propagation, because the reported covariance is the embedded filter's and
@@ -155,30 +160,47 @@ TEST_CASE("MHE with NaN in measurement noise", "[mhe][hardening][negative]")
     const ctrlpp::Matrix<double, NX, NX> covariance_before = estimator.covariance();
     ctrlpp::Vector<double, NY> z_nan;
     z_nan << std::numeric_limits<double>::quiet_NaN();
-    estimator.update(z_nan);
+
+    const auto refused = estimator.update(z_nan);
+
+    // The failure channel, which is what a refusal belongs on: the caller is
+    // told that the step did not happen and told which operand caused it,
+    // forwarded verbatim from the embedded filter rather than renamed.
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error() == ctrlpp::ekf_update_error::non_finite_measurement);
 
     // The whole step was refused: the windows are the estimator's memory, and
     // admitting a sample the embedded filter declined would leave the horizon
     // holding data no estimate was ever formed from. So the estimate and the
     // covariance are BITWISE what they were, and the caller is looking at a
     // STALE number that no assertion on its value could distinguish from a
-    // fresh one.
+    // fresh one. That is exactly why the refusal has to be returned.
     CHECK(estimator.state() == estimate_before);
     CHECK(estimator.covariance() == covariance_before);
 
-    // Which is why this is the assertion that matters. The status is an error
-    // and the fallback flag is CLEARED: no estimate was produced by any path,
-    // so reporting a fallback would be a false statement about which estimator
-    // ran. The pair is what separates a refused measurement from a solver
-    // failure, which reports the same status with the flag SET.
-    CHECK(estimator.diagnostics().status == ctrlpp::solve_status::error);
-    CHECK_FALSE(estimator.diagnostics().used_ekf_fallback);
+    // And the disposition channel says nothing about it, which is the point of
+    // having two channels: it still describes the last step that SUCCEEDED, the
+    // same step `state()` describes. A refusal is not a disposition on a
+    // result, because there is no result.
+    CHECK(estimator.diagnostics().status == status_before);
+    CHECK(estimator.diagnostics().used_ekf_fallback == fallback_before);
+    CHECK(estimator.diagnostics().cost == cost_before);
+
+    // The two channels side by side, which is the whole point of having two.
+    // A step in which the EMBEDDED FILTER produced the estimate -- the fill-up
+    // steps asserted above -- RETURNS SUCCESS and says so through the fallback
+    // flag. A step in which NOTHING produced an estimate returns a failure. A
+    // caller can act on the difference; before the conversion both arrived as
+    // the same status enumerator on the same aggregate, separated only by an
+    // undocumented conjunction with a flag that meant two different things.
+    CHECK(fallback_before == false);
+    CHECK_FALSE(refused.has_value());
 
     // The refusal does not latch: the next valid sample is solved normally.
     estimator.predict(u);
     ctrlpp::Vector<double, NY> z_good;
     z_good << 0.7;
-    estimator.update(z_good);
+    REQUIRE(estimator.update(z_good).has_value());
 
     CHECK(estimator.diagnostics().status == ctrlpp::solve_status::optimal);
     CHECK_FALSE(estimator.diagnostics().used_ekf_fallback);
@@ -201,7 +223,7 @@ TEST_CASE("MHE with inconsistent measurements", "[mhe][hardening][negative]")
             estimator.predict(u);
             ctrlpp::Vector<double, NY> z;
             z << sign * ((i % 2 == 0) ? 100.0 : -100.0);
-            estimator.update(z);
+            REQUIRE(estimator.update(z).has_value());
         }
         return estimator;
     };
@@ -287,7 +309,7 @@ TEST_CASE("MHE linear system matches Kalman-like estimate", "[mhe][hardening][pr
         z << x_true(0) + noise(gen);
 
         estimator.predict(u);
-        estimator.update(z);
+        REQUIRE(estimator.update(z).has_value());
         reference.predict(u);
         REQUIRE(reference.update(z).has_value());
 
@@ -333,7 +355,7 @@ TEST_CASE("MHE state estimate converges to truth", "[mhe][hardening][convergence
         z << x_true(0) + noise(gen);
 
         estimator.predict(u);
-        estimator.update(z);
+        REQUIRE(estimator.update(z).has_value());
 
         // The warm-up contract, asserted for the whole run rather than sampled:
         // the embedded filter supplies the estimate for exactly the first N
@@ -380,7 +402,7 @@ TEST_CASE("MHE with ill-conditioned process noise", "[mhe][hardening][robustness
         estimator.predict(u);
         ctrlpp::Vector<double, NY> z;
         z << static_cast<double>(i) * measurement_step;
-        estimator.update(z);
+        REQUIRE(estimator.update(z).has_value());
     }
 
     const double last_measurement = static_cast<double>(2 * N - 1) * measurement_step;

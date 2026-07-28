@@ -88,6 +88,16 @@ When the estimator falls back to an EKF step, it produced a valid estimate. It
 did not fail. `used_ekf_fallback` plus `status` is how the caller learns which of
 the two it got.
 
+A refused measurement is **not** on this channel, and putting it here was the
+mistake worth naming. Nothing was produced for the aggregate to describe, and the
+one accessor a caller would reach for -- `state()` -- goes on returning the
+estimate the last accepted measurement produced. So `mhe::update` and
+`nmhe::update` return `expected<void, ekf_update_error>`, forwarding the embedded
+filter's verdict, and the aggregate goes on describing the last step that
+succeeded. The two accessors then always describe the same step, and
+`used_ekf_fallback == false` means one thing -- the window solve produced this
+estimate -- rather than doubling as "nothing produced anything".
+
 ## 3. State health
 
 A persistent question about the object, of the form "is the state I am carrying

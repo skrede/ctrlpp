@@ -64,7 +64,10 @@ TEST_CASE("nmhe argmin falls back to ekf during warmup", "[nmhe][argmin]")
     for(std::size_t i = 0; i < N - 1; ++i)
     {
         estimator.predict(u);
-        estimator.update(z);
+        // The estimator forwards its embedded filter's verdict, so a step
+        // that was not applied fails here instead of leaving the assertions
+        // below to read an estimate the window never saw.
+        REQUIRE(estimator.update(z).has_value());
         REQUIRE(estimator.diagnostics().used_ekf_fallback);
     }
 }
@@ -89,7 +92,10 @@ TEST_CASE("nmhe argmin tracks nonlinear system after warmup", "[nmhe][argmin]")
         z << x_true(0);
 
         estimator.predict(u);
-        estimator.update(z);
+        // The estimator forwards its embedded filter's verdict, so a step
+        // that was not applied fails here instead of leaving the assertions
+        // below to read an estimate the window never saw.
+        REQUIRE(estimator.update(z).has_value());
     }
 
     auto est = estimator.state();
@@ -112,7 +118,10 @@ TEST_CASE("nmhe argmin covariance is finite", "[nmhe][argmin]")
     for(int i = 0; i < static_cast<int>(N) + 3; ++i)
     {
         estimator.predict(u);
-        estimator.update(z);
+        // The estimator forwards its embedded filter's verdict, so a step
+        // that was not applied fails here instead of leaving the assertions
+        // below to read an estimate the window never saw.
+        REQUIRE(estimator.update(z).has_value());
     }
 
     auto P = estimator.covariance();
@@ -143,7 +152,10 @@ TEST_CASE("nmhe argmin handles soft constraints", "[nmhe][argmin]")
     for(int i = 0; i < static_cast<int>(N) + 3; ++i)
     {
         estimator.predict(u);
-        estimator.update(z);
+        // The estimator forwards its embedded filter's verdict, so a step
+        // that was not applied fails here instead of leaving the assertions
+        // below to read an estimate the window never saw.
+        REQUIRE(estimator.update(z).has_value());
     }
 
     REQUIRE(std::isfinite(estimator.state().norm()));

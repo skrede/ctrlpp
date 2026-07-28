@@ -81,7 +81,10 @@ TEST_CASE("mhe falls back to ekf during warmup", "[mhe][osqp]")
     for(std::size_t i = 0; i < N - 1; ++i)
     {
         estimator.predict(u);
-        estimator.update(z);
+        // The estimator forwards its embedded filter's verdict, so a step
+        // that was not applied fails here instead of leaving the assertions
+        // below to read an estimate the window never saw.
+        REQUIRE(estimator.update(z).has_value());
         REQUIRE(estimator.diagnostics().used_ekf_fallback);
     }
 }
@@ -107,7 +110,10 @@ TEST_CASE("mhe tracks constant velocity after warmup", "[mhe][osqp]")
         z << x_true(0);
 
         estimator.predict(u);
-        estimator.update(z);
+        // The estimator forwards its embedded filter's verdict, so a step
+        // that was not applied fails here instead of leaving the assertions
+        // below to read an estimate the window never saw.
+        REQUIRE(estimator.update(z).has_value());
     }
 
     auto est = estimator.state();
@@ -130,7 +136,10 @@ TEST_CASE("mhe covariance is finite and PSD", "[mhe][osqp]")
     for(int i = 0; i < static_cast<int>(N) + 5; ++i)
     {
         estimator.predict(u);
-        estimator.update(z);
+        // The estimator forwards its embedded filter's verdict, so a step
+        // that was not applied fails here instead of leaving the assertions
+        // below to read an estimate the window never saw.
+        REQUIRE(estimator.update(z).has_value());
     }
 
     auto P = estimator.covariance();
@@ -155,7 +164,10 @@ TEST_CASE("mhe arrival state is accessible", "[mhe][osqp]")
     for(int i = 0; i < static_cast<int>(N) + 2; ++i)
     {
         estimator.predict(u);
-        estimator.update(z);
+        // The estimator forwards its embedded filter's verdict, so a step
+        // that was not applied fails here instead of leaving the assertions
+        // below to read an estimate the window never saw.
+        REQUIRE(estimator.update(z).has_value());
     }
 
     auto arrival = estimator.arrival_state();
@@ -192,7 +204,10 @@ TEST_CASE("mhe soft box constraint does not drag the estimate to the box floor",
     for(int i = 0; i < static_cast<int>(N) + 10; ++i)
     {
         estimator.predict(u);
-        estimator.update(z);
+        // The estimator forwards its embedded filter's verdict, so a step
+        // that was not applied fails here instead of leaving the assertions
+        // below to read an estimate the window never saw.
+        REQUIRE(estimator.update(z).has_value());
     }
 
     auto est = estimator.state();
@@ -218,7 +233,10 @@ TEST_CASE("mhe trajectory returns window states", "[mhe][osqp]")
     for(int i = 0; i < static_cast<int>(N) + 2; ++i)
     {
         estimator.predict(u);
-        estimator.update(z);
+        // The estimator forwards its embedded filter's verdict, so a step
+        // that was not applied fails here instead of leaving the assertions
+        // below to read an estimate the window never saw.
+        REQUIRE(estimator.update(z).has_value());
     }
 
     auto traj = estimator.trajectory();

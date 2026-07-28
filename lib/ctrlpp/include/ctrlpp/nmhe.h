@@ -117,7 +117,42 @@ public:
         ++m_step_count;
     }
 
-    void update(const output_vector_t& z)
+    /// @brief Incorporate a measurement, or report why it could not be.
+    ///
+    /// The embedded filter classifies the measurement against the carried
+    /// estimate, and this type FORWARDS that verdict verbatim rather than naming
+    /// the same three conditions a second time. The estimator has no rejection of
+    /// its own -- every operand it could refuse is one the filter already
+    /// refuses -- and a second enumeration would be free to drift from the one
+    /// that actually decides.
+    ///
+    /// A refusal governs the whole step. The windows are the estimator's memory,
+    /// so admitting a sample the filter refused would leave the horizon holding
+    /// data no estimate was ever formed from. The step is therefore a no-op: no
+    /// window shifts and no counter increments. What makes the failure channel
+    /// necessary rather than optional is that `state()` still returns the
+    /// estimate the last ACCEPTED measurement produced -- a perfectly plausible
+    /// number that a caller cannot tell from a fresh one by looking at it.
+    ///
+    /// KNOWN LIMITATION, stated here because the return value is what lets a
+    /// caller act on it. The window formulation assumes N+1 measurements at a
+    /// uniform step, and a refused sample leaves a gap it cannot express: the
+    /// transition bridging the gap is driven by two applied inputs where the
+    /// problem has room for one. For the following N steps the window solve
+    /// therefore fits a trajectory the model does not generate, and it reports
+    /// an ordinary successful solve while doing so. Measured on a noiseless
+    /// second-order fixture with a strongly time-varying input, one refused
+    /// sample moves the estimate from 2.3e-6 to 0.99 for five steps before it
+    /// scrolls out of the horizon. Expressing the gap needs a per-sample
+    /// measurement mask or a composed bridging input, which is a change to the
+    /// formulation rather than to this reporting channel.
+    ///
+    /// `diagnostics()` stays what it is: a report on a step that SUCCEEDED --
+    /// which of the two estimators produced the estimate, and how the solve
+    /// went. It is not the failure channel and no longer has to serve as one, so
+    /// after a refusal it still describes the last accepted measurement, exactly
+    /// as `state()` does. The two accessors always describe the same step.
+    auto update(const output_vector_t& z) -> ctrlpp::expected<void, ekf_update_error>
     {
         // Capture the predicted (prior) estimate at the current time, before the
         // measurement correction, so the oldest entry holds the window-head prior
@@ -125,21 +160,8 @@ public:
         const state_vector_t prior_state = m_ekf.state();
         const cov_matrix_t prior_cov = m_ekf.covariance();
 
-        // The embedded filter rejects a measurement it cannot use, and that
-        // rejection governs the whole step: the windows are the estimator's
-        // memory, so admitting a sample the filter refused would leave the
-        // horizon holding data no estimate was ever formed from. The step is
-        // therefore a no-op -- no window shifts, no counter increments -- and the
-        // caller learns of it through the diagnostics aggregate. The reported
-        // status is an error with the fallback flag CLEARED: no estimate was
-        // produced by any path, so claiming the fallback ran would be a false
-        // report. The aggregate cannot yet distinguish a refused measurement
-        // from a solver failure; narrowing it is separately owned work.
         if(const auto stepped = m_ekf.update(z); !stepped)
-        {
-            m_diagnostics = mhe_diagnostics<Scalar>{.status = solve_status::error, .used_ekf_fallback = false};
-            return;
-        }
+            return ctrlpp::unexpected(stepped.error());
 
         std::rotate(m_prior_state_window.begin(), m_prior_state_window.begin() + 1, m_prior_state_window.end());
         std::rotate(m_prior_cov_window.begin(), m_prior_cov_window.begin() + 1, m_prior_cov_window.end());
@@ -158,10 +180,11 @@ public:
             m_x_window[N] = m_ekf.state();
             m_innovation = m_ekf.innovation();
             m_diagnostics = mhe_diagnostics<Scalar>{.status = solve_status::optimal, .used_ekf_fallback = true};
-            return;
+            return {};
         }
 
         solve_nmhe();
+        return {};
     }
 
     const state_vector_t& state() const { return m_x_window[N]; }

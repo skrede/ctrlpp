@@ -123,7 +123,7 @@ void drive_past_warmup(Estimator& estimator)
     for(std::size_t k = 0; k <= window; ++k)
     {
         estimator.predict(Eigen::Matrix<double, 1, 1>::Zero());
-        estimator.update(Eigen::Matrix<double, 1, 1>::Zero());
+        REQUIRE(estimator.update(Eigen::Matrix<double, 1, 1>::Zero()).has_value());
     }
 }
 

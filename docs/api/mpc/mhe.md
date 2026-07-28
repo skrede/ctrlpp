@@ -75,12 +75,17 @@ Propagates the internal EKF one step and records the input in the sliding window
 ### update
 
 ```cpp
-void update(const output_vector_t& z);
+auto update(const output_vector_t& z)
+    -> ctrlpp::expected<void, ekf_update_error>;
 ```
 
-Incorporates a new measurement. During fill-up (fewer than N steps), delegates to the internal EKF. Once the window is full, solves the MHE QP to refine the state trajectory over the entire window. A solver setup failure (reported through the solver's `setup`) or a non-optimal solve falls back to the internal EKF; `diagnostics()` reports the fallback.
+Incorporates a new measurement, or reports why it could not. During fill-up (fewer than N steps), delegates to the internal EKF. Once the window is full, solves the estimation problem to refine the state trajectory over the entire window. A solver setup failure (reported through the solver's `setup`) or a non-optimal solve falls back to the internal EKF; `diagnostics()` reports the fallback.
 
-An ill-shaped solver result falls back the same way. A solver may report an accepted status and still return a primal shorter than the decision dimension, or a dual shorter than the constraint count, of the QP the estimator posed; the estimator compares both reported lengths against those dimensions before the extraction reads the result, and on a violation engages the EKF fallback instead of writing the window. `update` returns nothing, so this is reported the only way it can be: `diagnostics().used_ekf_fallback` is `true` and `diagnostics().status` is `solve_status::invalid_backend_result`, which names this condition specifically rather than collapsing it into the general `solve_status::error` a non-optimal solve reports.
+**Two channels, and which one carries what.** A measurement the embedded filter cannot use is a FAILURE: the step did not happen, and `update` returns the filter's own `ekf_update_error` verbatim rather than restating the same three conditions under a second name that could drift from the one that decides. Everything else is a DISPOSITION on a step that succeeded -- which of the two estimators produced the estimate, and how the solve went -- and that is what `diagnostics()` carries.
+
+A refusal is a complete no-op: no window shifts, no counter increments, and the input the last `predict` supplied is not committed to the horizon either. `state()` therefore still returns the estimate the last ACCEPTED measurement produced, which is a perfectly plausible number that nothing about its value distinguishes from a fresh one -- and that is precisely why the refusal is returned instead of being encoded in a status flag. `diagnostics()` likewise still describes that last accepted step, so the two accessors always describe the same step.
+
+An ill-shaped solver result falls back the same way. A solver may report an accepted status and still return a primal shorter than the decision dimension, or a dual shorter than the constraint count, of the QP the estimator posed; the estimator compares both reported lengths against those dimensions before the extraction reads the result, and on a violation engages the EKF fallback instead of writing the window. The estimate is still produced -- by the fallback rather than by the window solve -- so this is a disposition and not a failure: `diagnostics().used_ekf_fallback` is `true` and `diagnostics().status` is `solve_status::invalid_backend_result`, which names this condition specifically rather than collapsing it into the general `solve_status::error` a non-optimal solve reports.
 
 ### state
 
@@ -120,7 +125,7 @@ Returns the smoothed state trajectory over the full estimation window (N+1 eleme
 const mhe_diagnostics<Scalar>& diagnostics() const;
 ```
 
-Returns solver diagnostics including status, cost, residuals, slack usage, and whether the EKF fallback was used. Together with `used_ekf_fallback`, the `status` field is this estimator's whole failure channel, since `update` has no return value: `solve_status::error` for a setup failure or a non-optimal solve, and `solve_status::invalid_backend_result` for a solver result whose dimensions did not cover the posed problem.
+Returns solver diagnostics including status, cost, residuals, slack usage, and whether the EKF fallback was used. This is the DISPOSITION channel and it describes a step that succeeded: `solve_status::error` with `used_ekf_fallback` set for a setup failure or a non-optimal solve, and `solve_status::invalid_backend_result` for a solver result whose dimensions did not cover the posed problem. A refused measurement never appears here, because no estimate was produced for the aggregate to describe -- it is returned by `update` instead, and the aggregate goes on describing the last accepted step.
 
 ### is_initialized
 
@@ -190,7 +195,8 @@ int main()
 
         Eigen::Matrix<double, 1, 1> z;
         z << x_true[0] + noise(rng);
-        estimator.update(z);
+        if(!estimator.update(z))
+            continue; // the measurement was refused; the estimate is the last accepted one
 
         auto x_hat = estimator.state();
         std::cout << "k=" << k
