@@ -76,7 +76,11 @@ int main()
 
         auto sp = Vec::Constant(setpoint);
         auto meas = Vec::Constant(y + disturbance);
-        auto u = ctrl.compute(sp, meas, dt);
+        // A refused cycle produced no command; the caller decides what the
+        // actuator does. This sample stops.
+        auto step = ctrl.compute(sp, meas, dt);
+        if (!step.has_value()) return 1;
+        const auto& u = *step;
 
         y = a * y + (1.0 - a) * u[0];
 

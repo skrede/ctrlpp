@@ -89,22 +89,101 @@ TEST_CASE("L1 create rejects a filter design at the Nyquist frequency with inval
     CHECK(result.error() == ctrlpp::l1_error::invalid_filter_config);
 }
 
-TEST_CASE("L1 NaN state produces no crash", "[l1][hardening][negative]")
+TEST_CASE("L1 NaN state is rejected without touching the adaptation",
+          "[l1][hardening][negative]")
 {
     auto cfg = make_siso_config();
     auto ctrl = make_siso_controller(cfg, 15.0, 100.0);
+    // Adapt once first, so the uncertainty estimate and the predictor state
+    // hold something other than their initial values.
+    REQUIRE(ctrl.evaluate(vec1(0.5), vec1(1.0)).has_value());
 
-    auto u = ctrl.evaluate(ctrlpp::test::nan_vector<double, 1>(), vec1(1.0));
-    CHECK((std::isnan(u[0]) || std::isfinite(u[0])));
+    const auto sigma_before = ctrl.sigma_hat();
+    const auto x_hat_before = ctrl.x_hat();
+    const auto x_tilde_before = ctrl.tracking_error();
+
+    auto rejected = ctrl.evaluate(ctrlpp::test::nan_vector<double, 1>(), vec1(1.0));
+
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error() == ctrlpp::l1_step_error::non_finite_state);
+    // Exact, never a tolerance: a rejected cycle performs no arithmetic on the
+    // carried state. Every piece is asserted, not a representative one.
+    CHECK(sigma_before == ctrl.sigma_hat());
+    CHECK(x_hat_before == ctrl.x_hat());
+    CHECK(x_tilde_before == ctrl.tracking_error());
+    CHECK(ctrl.health() == ctrlpp::l1_health::ok);
+
+    // The guard is what makes the projection question moot on this path. Left
+    // unguarded, the NaN would reach the adaptation, and the projection would
+    // NOT sanitize it: Eigen's cwiseMax/cwiseMin return their left operand when
+    // the comparison is false, and every comparison against a NaN is false. An
+    // infinity is a different story -- against the finite bounds configured
+    // here it would be replaced by one of them, producing a finite in-range
+    // command from a meaningless estimate, which is what health() reports.
+    ctrlpp::l1_controller<double> reference = make_siso_controller(cfg, 15.0, 100.0);
+    REQUIRE(reference.evaluate(vec1(0.5), vec1(1.0)).has_value());
+
+    auto after = ctrlpp::test::commanded(ctrl.evaluate(vec1(0.25), vec1(1.0)));
+    auto expected = ctrlpp::test::commanded(reference.evaluate(vec1(0.25), vec1(1.0)));
+    CHECK(after == expected);
+    CHECK(ctrl.sigma_hat() == reference.sigma_hat());
+    CHECK(ctrl.x_hat() == reference.x_hat());
 }
 
-TEST_CASE("L1 NaN reference produces no crash", "[l1][hardening][negative]")
+TEST_CASE("L1 NaN reference is rejected without touching the adaptation",
+          "[l1][hardening][negative]")
 {
     auto cfg = make_siso_config();
     auto ctrl = make_siso_controller(cfg, 15.0, 100.0);
+    REQUIRE(ctrl.evaluate(vec1(0.5), vec1(1.0)).has_value());
 
-    auto u = ctrl.evaluate(vec1(0.0), ctrlpp::test::nan_vector<double, 1>());
-    CHECK((std::isnan(u[0]) || std::isfinite(u[0])));
+    const auto sigma_before = ctrl.sigma_hat();
+    const auto x_hat_before = ctrl.x_hat();
+    const auto x_tilde_before = ctrl.tracking_error();
+
+    auto rejected = ctrl.evaluate(vec1(0.0), ctrlpp::test::nan_vector<double, 1>());
+
+    REQUIRE_FALSE(rejected.has_value());
+    // A bad reference names the command generator, a bad state names the sensor
+    // or estimator. Different subsystems, so different enumerators.
+    CHECK(rejected.error() == ctrlpp::l1_step_error::non_finite_reference);
+    CHECK(sigma_before == ctrl.sigma_hat());
+    CHECK(x_hat_before == ctrl.x_hat());
+    CHECK(x_tilde_before == ctrl.tracking_error());
+    CHECK(ctrl.health() == ctrlpp::l1_health::ok);
+
+    ctrlpp::l1_controller<double> reference = make_siso_controller(cfg, 15.0, 100.0);
+    REQUIRE(reference.evaluate(vec1(0.5), vec1(1.0)).has_value());
+
+    auto after = ctrlpp::test::commanded(ctrl.evaluate(vec1(0.25), vec1(1.0)));
+    auto expected = ctrlpp::test::commanded(reference.evaluate(vec1(0.25), vec1(1.0)));
+    CHECK(after == expected);
+    CHECK(ctrl.sigma_hat() == reference.sigma_hat());
+    CHECK(ctrl.x_hat() == reference.x_hat());
+}
+
+TEST_CASE("L1 projection substituting a bound for an overflowed adaptation is reported",
+          "[l1][hardening][negative]")
+{
+    // Entirely finite arguments. A large adaptation gain against a large
+    // prediction error overflows the raw update to an infinity, and the
+    // projection then pins it to the configured bound. The command that comes
+    // out is finite and inside the output range, so nothing downstream can tell
+    // it apart from a command built on a meaningful estimate. The health query
+    // is the only thing that can.
+    auto cfg = make_siso_config();
+    cfg.gamma << std::numeric_limits<double>::max();
+    auto ctrl = make_siso_controller(cfg, 15.0, 100.0);
+
+    // x_tilde = x_hat - x = +max, and the update subtracts gamma*B'*x_tilde, so
+    // the raw estimate overflows to -infinity and the projection pins it to the
+    // LOWER bound.
+    auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(-std::numeric_limits<double>::max()), vec1(1.0)));
+
+    CHECK(std::isfinite(u[0]));
+    CHECK(std::isfinite(ctrl.sigma_hat()[0]));
+    CHECK(ctrl.sigma_hat()[0] == cfg.theta_min[0]);
+    CHECK(ctrl.health() == ctrlpp::l1_health::projection_clamped_non_finite);
 }
 
 TEST_CASE("L1 zero filter bandwidth produces finite output", "[l1][hardening][negative]")
@@ -113,7 +192,7 @@ TEST_CASE("L1 zero filter bandwidth produces finite output", "[l1][hardening][ne
     // Very low bandwidth filter -- should still produce finite output
     auto ctrl = make_siso_controller(cfg, 0.1, 100.0);
 
-    auto u = ctrl.evaluate(vec1(0.0), vec1(1.0));
+    auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(0.0), vec1(1.0)));
     CHECK(std::isfinite(u[0]));
 }
 
@@ -128,7 +207,7 @@ TEST_CASE("L1 known sigma_hat after one step", "[l1][hardening][precision]")
     // x_tilde = x_hat - x = 0 - 0 = 0
     // sigma_hat -= gamma * B^T * x_tilde = 0
     // sigma_hat clamped to [-10, 10] => 0
-    auto u = ctrl.evaluate(vec1(0.0), vec1(1.0));
+    auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(0.0), vec1(1.0)));
     REQUIRE_THAT(ctrl.sigma_hat()[0], WithinAbs(0.0, 1e-15));
     CHECK(std::isfinite(u[0]));
 }
@@ -143,7 +222,7 @@ TEST_CASE("L1 tracks step reference with bounded transient", "[l1][hardening][co
 
     for(int k = 0; k < 1000; ++k)
     {
-        auto u = ctrl.evaluate(vec1(x_plant), vec1(1.0));
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(x_plant), vec1(1.0)));
         x_plant = 0.8 * x_plant + 0.5 * u[0];
 
         if(x_plant > 1.0)
@@ -169,7 +248,7 @@ TEST_CASE("L1 high gamma low bandwidth bounded output", "[l1][hardening][robustn
 
     for(int k = 0; k < 500; ++k)
     {
-        auto u = ctrl.evaluate(vec1(x_plant), vec1(1.0));
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(x_plant), vec1(1.0)));
         x_plant = 0.8 * x_plant + 0.5 * u[0];
 
         if(!std::isfinite(u[0]) || !std::isfinite(x_plant))
@@ -194,7 +273,7 @@ TEST_CASE("L1 projection clamps sigma_hat within bounds", "[l1][hardening][robus
 
     for(int k = 0; k < 200; ++k)
     {
-        auto u = ctrl.evaluate(vec1(x_plant), vec1(1.0));
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(x_plant), vec1(1.0)));
         x_plant = 0.8 * x_plant + 0.5 * u[0];
     }
 

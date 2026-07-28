@@ -51,13 +51,29 @@ int main()
             auto meas = Vec::Constant(position);
             auto tracking = Vec::Constant(velocity);
             auto u_outer = outer.compute(sp, meas, dt_outer, tracking);
-            vel_sp = u_outer[0];
+            if(!u_outer.has_value())
+            {
+                std::cerr << "outer loop refused the cycle at t=" << t << "\n";
+                return 1;
+            }
+            vel_sp = (*u_outer)[0];
         }
 
         auto sp_inner = Vec::Constant(vel_sp);
         auto meas_inner = Vec::Constant(velocity);
+        // A refused cycle produced no command. This example stops, because a
+        // refusal here would mean the example itself is wrong. A real caller
+        // must instead decide what the actuator does: hold the last command,
+        // drive a configured safe value, or fail over. In a cascade the outer
+        // loop's refusal also leaves the inner loop without a fresh setpoint,
+        // so the decision has to cover both.
         auto torque_vec = inner.compute(sp_inner, meas_inner, dt_inner);
-        double torque = torque_vec[0];
+        if(!torque_vec.has_value())
+        {
+            std::cerr << "inner loop refused the cycle at t=" << t << "\n";
+            return 1;
+        }
+        double torque = (*torque_vec)[0];
 
         velocity += (torque - b * velocity) * dt_inner / J;
         position += velocity * dt_inner;

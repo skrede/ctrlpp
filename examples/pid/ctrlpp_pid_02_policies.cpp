@@ -35,7 +35,17 @@ int main()
 
         auto sp = Vec::Constant(setpoint);
         auto meas = Vec::Constant(y + disturbance);
-        auto u = ctrl.compute(sp, meas, dt);
+        // A refused cycle produced no command. This example stops, because a
+        // refusal here would mean the example itself is wrong. A real caller
+        // must instead decide what the actuator does: hold the last command,
+        // drive a configured safe value, or fail over.
+        auto step = ctrl.compute(sp, meas, dt);
+        if(!step.has_value())
+        {
+            std::cerr << "pid refused the cycle at t=" << t << "\n";
+            return 1;
+        }
+        const auto& u = *step;
         y = a * y + (1.0 - a) * u[0];
 
         std::cout << std::fixed << std::setprecision(4) << t << "," << setpoint << "," << y << "," << u[0] << "\n";

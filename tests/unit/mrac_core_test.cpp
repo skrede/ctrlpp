@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/control/mrac.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -59,7 +60,7 @@ TEST_CASE("MRAC tracks step reference within 5% of reference model", "[mrac]")
 
     for(int k = 0; k < 500; ++k)
     {
-        auto u = ctrl.evaluate(vec1(x), vec1(1.0));
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(x), vec1(1.0)));
         x = 0.8 * x + 0.5 * u[0];
     }
 
@@ -76,7 +77,7 @@ TEST_CASE("MRAC evaluate returns vector control signal", "[mrac]")
 
     ctrlpp::mrac_controller<double> ctrl(cfg);
 
-    auto u = ctrl.evaluate(vec1(0.0), vec1(1.0));
+    auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(0.0), vec1(1.0)));
     REQUIRE(std::isfinite(u[0]));
 }
 
@@ -92,7 +93,7 @@ TEST_CASE("MRAC adaptation modifies theta_x and theta_r", "[mrac]")
     double x = 0.0;
     for(int k = 0; k < 10; ++k)
     {
-        auto u = ctrl.evaluate(vec1(x), vec1(1.0));
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(x), vec1(1.0)));
         x = 0.8 * x + 0.5 * u[0];
     }
 
@@ -112,7 +113,7 @@ TEST_CASE("MRAC reset restores initial state", "[mrac]")
     double x = 0.0;
     for(int k = 0; k < 50; ++k)
     {
-        auto u = ctrl.evaluate(vec1(x), vec1(1.0));
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(x), vec1(1.0)));
         x = 0.8 * x + 0.5 * u[0];
     }
 
@@ -135,11 +136,11 @@ TEST_CASE("MRAC reference model state advances each step", "[mrac]")
 
     ctrlpp::mrac_controller<double> ctrl(cfg);
 
-    ctrl.evaluate(vec1(0.0), vec1(1.0));
+    REQUIRE(ctrl.evaluate(vec1(0.0), vec1(1.0)).has_value());
     auto xm1 = ctrl.x_model()[0];
     REQUIRE_THAT(xm1, WithinAbs(0.1, 1e-12));
 
-    ctrl.evaluate(vec1(0.0), vec1(1.0));
+    REQUIRE(ctrl.evaluate(vec1(0.0), vec1(1.0)).has_value());
     auto xm2 = ctrl.x_model()[0];
     REQUIRE_THAT(xm2, WithinAbs(0.9 * 0.1 + 0.1, 1e-12));
     REQUIRE(xm2 > xm1);

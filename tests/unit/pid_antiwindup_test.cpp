@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -42,7 +43,7 @@ TEST_CASE("Without anti_windup: integral winds up unboundedly", "[pid][siso][win
 
     // Constant error of 1.0 for many steps
     for (int i = 0; i < 1000; ++i)
-        pid.compute(vec1(10.0), vec1(0.0), Ts);
+        REQUIRE(pid.compute(vec1(10.0), vec1(0.0), Ts).has_value());
 
     // Integral should be large (no anti-windup to stop it)
     // I = Ki * e * Ts * 1000 = 1 * 10 * 0.01 * 1000 ~ 100
@@ -64,7 +65,7 @@ TEST_CASE("back_calc anti-windup limits integral growth during saturation",
 
     // Run many steps with large error to cause saturation
     for (int i = 0; i < 1000; ++i)
-        pid.compute(vec1(10.0), vec1(0.0), Ts);
+        REQUIRE(pid.compute(vec1(10.0), vec1(0.0), Ts).has_value());
 
     // Integral should be bounded (back-calc feedback limits growth)
     // Without anti-windup it would be 100.0
@@ -101,7 +102,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
         // distinct from the dimensionally-wrong sqrt(ki*kd) = sqrt(16) = 4.
         AwPid pid(cfg);
 
-        auto u = pid.compute(vec1(sp), vec1(meas), Ts);
+        auto u = ctrlpp::test::commanded(pid.compute(vec1(sp), vec1(meas), Ts));
 
         const double increment = ki * e * Ts;
         const double u_raw = kp * e + increment; // first step: no derivative, no ff
@@ -124,7 +125,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
         cfg.output_max = vec1(out_max);
         AwPid pid(cfg);
 
-        auto u = pid.compute(vec1(sp), vec1(meas), Ts);
+        auto u = ctrlpp::test::commanded(pid.compute(vec1(sp), vec1(meas), Ts));
 
         const double increment = ki * e * Ts;
         const double u_raw = kp * e + increment;
@@ -144,7 +145,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
         cfg.output_max = vec1(out_max);
         AwPid pid(cfg);
 
-        auto u = pid.compute(vec1(sp), vec1(meas), Ts);
+        auto u = ctrlpp::test::commanded(pid.compute(vec1(sp), vec1(meas), Ts));
 
         // No proportional or derivative reference for a tracking time, so kb defaults
         // to 0: the output still saturates, but the integrator receives no
@@ -174,7 +175,7 @@ TEST_CASE("back_calc anti-windup limits windup during a rate-limited ramp",
     // the difference against the unconstrained command (not the already rate-limited
     // value), it sees the rate-limit constraint and holds the integrator.
     for (int i = 0; i < 1000; ++i)
-        pid.compute(vec1(10.0), vec1(0.0), Ts);
+        REQUIRE(pid.compute(vec1(10.0), vec1(0.0), Ts).has_value());
 
     // Feeding back only the rate-limited value would make the saturation error zero, so
     // the integral would wind up to ki*e*dt*steps = 100. The rate-aware feedback keeps it
@@ -198,7 +199,7 @@ TEST_CASE("clamping anti-windup freezes integral during saturation",
     double integral_at_saturation = 0.0;
     bool found_saturation = false;
     for (int i = 0; i < 100; ++i) {
-        pid.compute(vec1(10.0), vec1(0.0), Ts);
+        REQUIRE(pid.compute(vec1(10.0), vec1(0.0), Ts).has_value());
         if (pid.saturated() && !found_saturation) {
             found_saturation = true;
             integral_at_saturation = pid.integral()[0];
@@ -209,7 +210,7 @@ TEST_CASE("clamping anti-windup freezes integral during saturation",
     // After many more steps during saturation, integral should be frozen
     // (error > 0 and integral > 0 during saturation -> undo increment)
     for (int i = 0; i < 100; ++i)
-        pid.compute(vec1(10.0), vec1(0.0), Ts);
+        REQUIRE(pid.compute(vec1(10.0), vec1(0.0), Ts).has_value());
 
     // Integral should have stayed near the saturation point
     REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_at_saturation, tol));
@@ -229,12 +230,12 @@ TEST_CASE("conditional_integration freezes integral when error exceeds threshold
 
     // Error = 5 > threshold 2 -> integral should not accumulate
     for (int i = 0; i < 100; ++i)
-        pid.compute(vec1(5.0), vec1(0.0), Ts);
+        REQUIRE(pid.compute(vec1(5.0), vec1(0.0), Ts).has_value());
 
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
 
     // Error = 1 < threshold 2 -> integral should accumulate
     pid.reset();
-    pid.compute(vec1(1.0), vec1(0.0), Ts);
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
     REQUIRE_THAT(pid.integral()[0], WithinAbs(1.0 * 1.0 * Ts, tol));
 }

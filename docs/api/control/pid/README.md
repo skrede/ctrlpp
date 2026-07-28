@@ -93,19 +93,47 @@ Constructs the controller from a config struct. Computes internal gains and init
 ### compute
 
 ```cpp
-auto compute(const vector_t& sp, const vector_t& meas, Scalar dt) -> vector_t;
+auto compute(const vector_t& sp, const vector_t& meas, Scalar dt)
+    -> expected<vector_t, pid_step_error>;
 ```
 
-Computes the control output given a setpoint, measurement, and time step. Returns the clamped output vector. If `dt <= 0`, returns the previous output unchanged.
+Computes the control output given a setpoint, measurement, and time step. On success the result carries the clamped output vector.
+
+The cycle is classified before any member is written, so a rejected cycle leaves every piece of carried state -- the integrator, both error histories, the input filter states, the accumulated output -- bitwise unchanged, and the caller may retry on the next sample.
+
+**A refused cycle produced no command.** That is a different situation from an estimator declining a measurement, where the estimate simply stands: an actuator will be driven by something regardless of what `compute` returns, and the caller must choose what. The three defensible responses are to hold the command the last successful cycle returned, to command a configured safe value, or to fail over to a redundant channel. The controller does not choose, because the right answer is a property of the plant: holding is correct for a slow thermal loop and dangerous for an unstable attitude loop.
+
+A non-positive step used to be answered with the previous output on the success path, which the caller could not distinguish from a freshly computed command -- so a stopped clock read as a steady loop. It is now `invalid_timestep`.
+
+| Enumerator | Cause | Where the caller repairs it |
+|---|---|---|
+| `non_finite_state` | Some piece of carried state is already non-finite when the cycle begins. | `reset`, or `set_integral` for the integrator alone. Reported first because it is upstream of every argument. |
+| `invalid_timestep` | The step is not a positive finite duration. A `NaN` step cannot be caught by `dt <= 0` alone, because every comparison against a `NaN` is false. | The caller's clock. |
+| `non_finite_setpoint` | The commanded setpoint has a non-finite component. | The trajectory, outer loop, or operator input that generates the reference. |
+| `non_finite_measurement` | The process variable has a non-finite component. | The sensor or estimator. Separate from the setpoint even though the error is their difference, because the two arrive from different subsystems. |
+| `non_finite_tracking_signal` | The tracking signal handed to the four-argument overload is non-finite. | The signal being tracked. |
 
 ### compute (with tracking signal)
 
 ```cpp
-vector_t compute(const vector_t& sp, const vector_t& meas, Scalar dt,
-                 const vector_t& tracking_signal);
+auto compute(const vector_t& sp, const vector_t& meas, Scalar dt,
+             const vector_t& tracking_signal)
+    -> expected<vector_t, pid_step_error>;
 ```
 
 Overload for controller output tracking (bumpless transfer in cascade configurations). The tracking signal adjusts the integral term so the controller output tracks an external signal.
+
+The tracking signal is checked *before* the cycle is delegated, because it is written straight into the integrator once the cycle succeeds: admitting a non-finite one would destroy the integrator after the cycle had already committed its other state. A rejection from the delegated cycle is forwarded unchanged with its own specific cause, and the tracking assignment does not run.
+
+### health
+
+```cpp
+auto health() const -> pid_health;
+```
+
+Reports whether the controller is still carrying non-finite state from an earlier cycle -- a question a per-cycle result cannot answer, because it outlives the call. Latches until `reset`.
+
+A **rejected cycle does not set it**: a rejection mutates nothing, so it leaves the controller exactly as healthy as it was. The routes in are the non-fallible ones. `set_params`, `set_integral`, `freeze_integral` and `reset` are not converted, so a non-finite gain or a seeded non-finite integrator still enters through them; and a finite-but-extreme configuration can drive the command non-finite on a cycle that legitimately succeeded, which `update_state` then stores. The next cycle rejects with `non_finite_state` and latches `non_finite_carried_state`.
 
 ### set_params
 
@@ -232,7 +260,11 @@ int main()
         double t = k * dt;
         auto sp = Vec::Constant(1.0);
         auto meas = Vec::Constant(y);
-        auto u = ctrl.compute(sp, meas, dt);
+        // A refused cycle produced no command; the caller decides what the
+        // actuator does. This sample stops.
+        auto step = ctrl.compute(sp, meas, dt);
+        if (!step.has_value()) return 1;
+        const auto& u = *step;
         y = 0.95 * y + 0.05 * u[0];
         std::cout << t << "," << y << "," << u[0] << "\n";
     }

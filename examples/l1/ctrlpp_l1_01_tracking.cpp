@@ -60,7 +60,19 @@ int main()
         ctrlpp::Vector<double, 1> x;
         x[0] = x_plant;
 
-        auto u = ctrl.evaluate(x, r);
+        // A refused cycle produced no command AND left the adaptive parameters
+        // untouched, which is the point of the guard: admitting one non-finite
+        // sample would destroy them permanently, because nothing re-derives
+        // them. This example stops; a real caller must decide what the actuator
+        // does -- hold the last command, drive a configured safe value, or fail
+        // over.
+        auto step = ctrl.evaluate(x, r);
+        if(!step.has_value())
+        {
+            std::cerr << "l1 refused the cycle at step " << k << "\n";
+            return 1;
+        }
+        const auto& u = *step;
 
         std::cout << std::fixed << std::setprecision(6)
                   << k << ","

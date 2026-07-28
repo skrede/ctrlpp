@@ -1,7 +1,10 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+
+#include <limits>
 
 using Catch::Matchers::WithinAbs;
 
@@ -23,7 +26,7 @@ TEST_CASE("P-only controller", "[pid][siso]")
     cfg.kp = vec1(2.5);
     SisoPid pid(cfg);
 
-    auto u = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u[0], WithinAbs(2.5, tol));
 }
 
@@ -37,14 +40,14 @@ TEST_CASE("Full PID matches hand computation", "[pid][siso]")
 
     // Step 1: sp=1, meas=0, e=1
     // P = 2*1 = 2, I = 0.5*1*0.01 = 0.005, D = 0 (first step)
-    auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(2.005, tol));
 
     // Step 2: sp=1, meas=0.1, e=0.9
     // P = 2*0.9 = 1.8
     // I = 0.005 + 0.5*0.9*0.01 = 0.0095
     // D = -0.1*(0.1-0.0)/0.01 = -1.0 (derivative on measurement)
-    auto u2 = pid.compute(vec1(1.0), vec1(0.1), Ts);
+    auto u2 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.1), Ts));
     REQUIRE_THAT(u2[0], WithinAbs(1.8 + 0.0095 - 1.0, tol));
 }
 
@@ -66,12 +69,12 @@ TEST_CASE("ISA form converts to parallel form", "[pid][siso][isa]")
     par_cfg.kd = vec1(0.1);
     SisoPid par_pid(par_cfg);
 
-    auto u_isa = isa_pid.compute(vec1(1.0), vec1(0.0), Ts);
-    auto u_par = par_pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u_isa = ctrlpp::test::commanded(isa_pid.compute(vec1(1.0), vec1(0.0), Ts));
+    auto u_par = ctrlpp::test::commanded(par_pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u_isa[0], WithinAbs(u_par[0], tol));
 
-    auto u_isa2 = isa_pid.compute(vec1(1.0), vec1(0.1), Ts);
-    auto u_par2 = par_pid.compute(vec1(1.0), vec1(0.1), Ts);
+    auto u_isa2 = ctrlpp::test::commanded(isa_pid.compute(vec1(1.0), vec1(0.1), Ts));
+    auto u_par2 = ctrlpp::test::commanded(par_pid.compute(vec1(1.0), vec1(0.1), Ts));
     REQUIRE_THAT(u_isa2[0], WithinAbs(u_par2[0], tol));
 }
 
@@ -82,8 +85,8 @@ TEST_CASE("reset() zeros state", "[pid][siso]")
     cfg.ki = vec1(1.0);
     SisoPid pid(cfg);
 
-    pid.compute(vec1(1.0), vec1(0.0), Ts);
-    pid.compute(vec1(1.0), vec1(0.0), Ts);
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
     REQUIRE(pid.integral()[0] != 0.0);
 
     pid.reset();
@@ -91,7 +94,7 @@ TEST_CASE("reset() zeros state", "[pid][siso]")
     REQUIRE_THAT(pid.error()[0], WithinAbs(0.0, tol));
 
     // After reset, first step derivative should be zero again
-    auto u = pid.compute(vec1(1.0), vec1(0.5), Ts);
+    auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.5), Ts));
     // P = 2*0.5 = 1.0, I = 1*0.5*0.01 = 0.005, D = 0 (first step after reset)
     REQUIRE_THAT(u[0], WithinAbs(1.005, tol));
 }
@@ -104,26 +107,37 @@ TEST_CASE("First step derivative is zero", "[pid][siso]")
     SisoPid pid(cfg);
 
     // Even with large measurement, derivative should be zero on first step
-    auto u = pid.compute(vec1(0.0), vec1(100.0), Ts);
+    auto u = ctrlpp::test::commanded(pid.compute(vec1(0.0), vec1(100.0), Ts));
     REQUIRE_THAT(u[0], WithinAbs(0.0, tol));
 }
 
-TEST_CASE("Zero dt returns previous output", "[pid][siso]")
+TEST_CASE("Zero and negative dt are rejected rather than answered with the held output",
+    "[pid][siso]")
 {
     SisoPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     SisoPid pid(cfg);
 
-    auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(2.0, tol));
 
-    // Zero dt should return previous output
-    auto u2 = pid.compute(vec1(5.0), vec1(0.0), 0.0);
-    REQUIRE_THAT(u2[0], WithinAbs(2.0, tol));
+    // A stopped clock used to be answered with the stored output on the success
+    // path, which a caller could not distinguish from a command the controller
+    // had actually computed. It now names the fault instead, and the caller
+    // decides what the actuator does with a cycle that produced nothing.
+    auto stopped = pid.compute(vec1(5.0), vec1(0.0), 0.0);
+    REQUIRE_FALSE(stopped.has_value());
+    CHECK(stopped.error() == ctrlpp::pid_step_error::invalid_timestep);
 
-    // Negative dt should also return previous output
-    auto u3 = pid.compute(vec1(5.0), vec1(0.0), -0.01);
-    REQUIRE_THAT(u3[0], WithinAbs(2.0, tol));
+    auto backwards = pid.compute(vec1(5.0), vec1(0.0), -0.01);
+    REQUIRE_FALSE(backwards.has_value());
+    CHECK(backwards.error() == ctrlpp::pid_step_error::invalid_timestep);
+
+    // Neither rejected cycle touched the carried state, so the controller still
+    // answers the next valid cycle exactly as it would have.
+    auto u2 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
+    CHECK(u2 == u1);
+    CHECK(pid.health() == ctrlpp::pid_health::ok);
 }
 
 TEST_CASE("error() returns last error", "[pid][siso]")
@@ -132,7 +146,7 @@ TEST_CASE("error() returns last error", "[pid][siso]")
     cfg.kp = vec1(1.0);
     SisoPid pid(cfg);
 
-    pid.compute(vec1(3.0), vec1(1.0), Ts);
+    REQUIRE(pid.compute(vec1(3.0), vec1(1.0), Ts).has_value());
     REQUIRE_THAT(pid.error()[0], WithinAbs(2.0, tol));
 }
 
@@ -148,12 +162,12 @@ TEST_CASE("ISA form with Ti=0 sets Ki to zero (no integral action)",
 
     // With Ki=0, integral should stay at zero after multiple steps
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), Ts);
+        REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
 
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
 }
 
-TEST_CASE("Tracking signal with zero dt returns previous output without modifying integral",
+TEST_CASE("Tracking signal with zero dt is rejected without modifying the integral",
     "[pid][siso][tracking][edge-case]")
 {
     SisoPid::config_type cfg{};
@@ -162,16 +176,30 @@ TEST_CASE("Tracking signal with zero dt returns previous output without modifyin
     SisoPid pid(cfg);
 
     // Run one normal step
-    pid.compute(vec1(1.0), vec1(0.0), Ts);
-    double integral_before = pid.integral()[0];
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
+    const auto integral_before = pid.integral();
 
-    // Tracking with dt=0: should return previous output and NOT modify integral
-    [[maybe_unused]] auto u = pid.compute(vec1(1.0), vec1(0.0), 0.0, vec1(10.0));
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
+    // The tracking overload delegates, so the delegated cycle's rejection is
+    // forwarded with its own cause and the back-assignment into the integrator
+    // never runs. Exact comparison: nothing was written, so nothing rounded.
+    auto stopped = pid.compute(vec1(1.0), vec1(0.0), 0.0, vec1(10.0));
+    REQUIRE_FALSE(stopped.has_value());
+    CHECK(stopped.error() == ctrlpp::pid_step_error::invalid_timestep);
+    CHECK(pid.integral() == integral_before);
 
-    // Tracking with negative dt: same behavior
-    [[maybe_unused]] auto u2 = pid.compute(vec1(1.0), vec1(0.0), -0.01, vec1(10.0));
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
+    auto backwards = pid.compute(vec1(1.0), vec1(0.0), -0.01, vec1(10.0));
+    REQUIRE_FALSE(backwards.has_value());
+    CHECK(backwards.error() == ctrlpp::pid_step_error::invalid_timestep);
+    CHECK(pid.integral() == integral_before);
+
+    // A non-finite tracking signal is caught before the cycle is delegated, so
+    // it cannot destroy the integrator after the rest of the cycle committed.
+    auto poisoned = pid.compute(vec1(1.0), vec1(0.0), Ts,
+        vec1(std::numeric_limits<double>::quiet_NaN()));
+    REQUIRE_FALSE(poisoned.has_value());
+    CHECK(poisoned.error() == ctrlpp::pid_step_error::non_finite_tracking_signal);
+    CHECK(pid.integral() == integral_before);
+    CHECK(pid.error() == vec1(1.0));
 }
 
 TEST_CASE("Tracking signal with negative error adjusts integral correctly",
@@ -183,7 +211,7 @@ TEST_CASE("Tracking signal with negative error adjusts integral correctly",
     SisoPid pid(cfg);
 
     // sp=0, meas=1 -> negative error
-    [[maybe_unused]] auto u = pid.compute(vec1(0.0), vec1(1.0), Ts, vec1(2.0));
+    REQUIRE(pid.compute(vec1(0.0), vec1(1.0), Ts, vec1(2.0)).has_value());
 
     // p = kp * (b*sp - meas) = 1*(0 - 1) = -1
     // non_integral = u - integral

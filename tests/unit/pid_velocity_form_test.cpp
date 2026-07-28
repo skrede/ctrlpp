@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -25,17 +26,17 @@ TEST_CASE("velocity_form P-only: delta_u = Kp*(e(k)-e(k-1))", "[pid][siso][veloc
 
     // Step 1: e=1.0, prev_e=0.0
     // delta_u = Kp*(1-0) + 0 + 0 = 2.0
-    auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(2.0, tol));
 
     // Step 2: e=1.0, prev_e=1.0
     // delta_u = Kp*(1-1) = 0.0
-    auto u2 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u2 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u2[0], WithinAbs(0.0, tol));
 
     // Step 3: e=0.5, prev_e=1.0
     // delta_u = Kp*(0.5-1.0) = -1.0
-    auto u3 = pid.compute(vec1(1.0), vec1(0.5), Ts);
+    auto u3 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.5), Ts));
     REQUIRE_THAT(u3[0], WithinAbs(-1.0, tol));
 }
 
@@ -49,17 +50,17 @@ TEST_CASE("velocity_form PI: includes Ki*e*dt incremental term", "[pid][siso][ve
 
     // Step 1: e=1.0, prev_e=0
     // dP = 1*(1-0) = 1.0, dI = 0.5*1*0.01 = 0.005
-    auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
 
     // Step 2: e=1.0, prev_e=1.0
     // dP = 1*(1-1) = 0, dI = 0.5*1*0.01 = 0.005
-    auto u2 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u2 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u2[0], WithinAbs(0.005, tol));
 
     // Step 3: e=0.5
     // dP = 1*(0.5-1) = -0.5, dI = 0.5*0.5*0.01 = 0.0025
-    auto u3 = pid.compute(vec1(1.0), vec1(0.5), Ts);
+    auto u3 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.5), Ts));
     REQUIRE_THAT(u3[0], WithinAbs(-0.5 + 0.0025, tol));
 }
 
@@ -77,21 +78,21 @@ TEST_CASE("velocity_form PID: full formula with second-order D difference",
     // dP = 2*(1-0) = 2, dI = 0.5*1*0.01 = 0.005
     // dD = 0.1*(1 - 2*0 + 0)/0.01 = 0.1*100 = 10
     double du1 = 2.0 + 0.005 + 10.0;
-    auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(du1, tol));
 
     // Step 2: e(2)=0.8, e(1)=1.0, e(0)=0
     // dP = 2*(0.8-1.0) = -0.4, dI = 0.5*0.8*0.01 = 0.004
     // dD = 0.1*(0.8 - 2*1.0 + 0)/0.01 = 0.1*(-1.2/0.01) = 0.1*(-120) = -12
     double du2 = -0.4 + 0.004 + (-12.0);
-    auto u2 = pid.compute(vec1(1.0), vec1(0.2), Ts);
+    auto u2 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.2), Ts));
     REQUIRE_THAT(u2[0], WithinAbs(du2, tol));
 
     // Step 3: e(3)=0.8, e(2)=0.8, e(1)=1.0
     // dP = 2*(0.8-0.8) = 0, dI = 0.5*0.8*0.01 = 0.004
     // dD = 0.1*(0.8 - 2*0.8 + 1.0)/0.01 = 0.1*(0.2/0.01) = 0.1*20 = 2
     double du3 = 0.0 + 0.004 + 2.0;
-    auto u3 = pid.compute(vec1(1.0), vec1(0.2), Ts);
+    auto u3 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.2), Ts));
     REQUIRE_THAT(u3[0], WithinAbs(du3, tol));
 }
 
@@ -107,16 +108,16 @@ TEST_CASE("velocity_form steady-state: delta_u converges to Ki*e*dt",
 
     // First few steps build up history, then with constant error:
     // dP = 0 (error unchanged), dD = 0 (e(k)-2e(k-1)+e(k-2)=0), dI = Ki*e*dt
-    pid.compute(vec1(1.0), vec1(0.0), Ts);  // step 1
-    pid.compute(vec1(1.0), vec1(0.0), Ts);  // step 2
-    pid.compute(vec1(1.0), vec1(0.0), Ts);  // step 3
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());  // step 1
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());  // step 2
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());  // step 3
 
     // From step 3 onward, e is constant at 1.0
     // delta_u should be Ki*e*dt = 2*1*0.01 = 0.02
-    auto u4 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u4 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u4[0], WithinAbs(0.02, tol));
 
-    auto u5 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u5 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u5[0], WithinAbs(0.02, tol));
 }
 
@@ -131,7 +132,7 @@ TEST_CASE("velocity_form + anti_windup compiles and runs (anti-windup is no-op)"
     VPid pid(cfg);
 
     // Should produce same result as without anti_windup
-    auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     // dP = 1*(1-0) = 1, dI = 0.5*1*0.01 = 0.005
     REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
 }
@@ -145,13 +146,13 @@ TEST_CASE("velocity_form reset clears history", "[pid][siso][velocity-form][rese
     VPid pid(cfg);
 
     // Build up history
-    pid.compute(vec1(1.0), vec1(0.0), Ts);
-    pid.compute(vec1(1.0), vec1(0.0), Ts);
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
 
     pid.reset();
 
     // After reset: behaves as first step (prev_error=0, prev_prev_error=0)
-    auto u = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     // dP = 2*(1-0) = 2, dI = 0.5*1*0.01 = 0.005, dD = 0 (Kd=0)
     REQUIRE_THAT(u[0], WithinAbs(2.005, tol));
 }
@@ -171,17 +172,17 @@ TEST_CASE("velocity_form injects the change in feed-forward so a constant feed-f
 
     // Step 1: dP = 1*(1-0) = 1.0. The feed-forward level rises from 0 to sp*0.5 = 0.5,
     // so its increment is 0.5. delta_u = 1.0 + 0.5 = 1.5.
-    auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(1.5, tol));
 
     // Step 2 onward: dP = 0 and the feed-forward level is unchanged (constant sp), so
     // the feed-forward increment is 0 and it contributes nothing to delta_u. Injecting
     // the absolute feed-forward instead would emit 0.5 every step and the actuator would
     // drift without bound.
-    auto u2 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u2 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u2[0], WithinAbs(0.0, tol));
 
-    auto u3 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u3 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u3[0], WithinAbs(0.0, tol));
 }
 
@@ -196,7 +197,7 @@ TEST_CASE("velocity_form tracking signal is a no-op (integral not modified)",
 
     // Run a step with tracking; velocity form should ignore tracking signal
     // (the if constexpr branch for !velocity_form is not entered)
-    auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts, vec1(99.0));
+    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts, vec1(99.0)));
     // dP = 1*(1-0) = 1, dI = 0.5*1*0.01 = 0.005
     REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
 
@@ -220,12 +221,12 @@ TEST_CASE("velocity_form clamps the accumulated output so it can rise and fall u
 
     // Step 1: e=1, dP=10 -> target accumulated 0+10=10, clamped to output_max=1,
     // so the emitted increment is 1.0.
-    double d1 = pid.compute(vec1(1.0), vec1(0.0), Ts)[0];
+    double d1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts))[0];
     accumulated += d1;
     REQUIRE_THAT(accumulated, WithinAbs(1.0, tol));
 
     // Step 2: e=1, prev_e=1, dP=0 -> accumulated stays at output_max, increment 0.
-    double d2 = pid.compute(vec1(1.0), vec1(0.0), Ts)[0];
+    double d2 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts))[0];
     accumulated += d2;
     REQUIRE_THAT(accumulated, WithinAbs(1.0, tol));
 
@@ -233,13 +234,13 @@ TEST_CASE("velocity_form clamps the accumulated output so it can rise and fall u
     // output_min=0. The emitted increment is NEGATIVE (-1.0): the output falls back to
     // its lower limit. The old increment clamp (delta_u >= output_min = 0) forbade this,
     // pinning the output at output_max.
-    double d3 = pid.compute(vec1(0.0), vec1(1.0), Ts)[0];
+    double d3 = ctrlpp::test::commanded(pid.compute(vec1(0.0), vec1(1.0), Ts))[0];
     accumulated += d3;
     REQUIRE(d3 < 0.0);
     REQUIRE_THAT(accumulated, WithinAbs(0.0, tol));
 }
 
-TEST_CASE("velocity_form zero dt returns previous output",
+TEST_CASE("velocity_form zero dt is rejected rather than answered with the held output",
     "[pid][siso][velocity-form][edge-case]")
 {
     using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
@@ -247,10 +248,16 @@ TEST_CASE("velocity_form zero dt returns previous output",
     cfg.kp = vec1(2.0);
     VPid pid(cfg);
 
-    auto u1 = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(2.0, tol));
 
-    // Zero dt returns previous output
-    auto u2 = pid.compute(vec1(5.0), vec1(0.0), 0.0);
-    REQUIRE_THAT(u2[0], WithinAbs(2.0, tol));
+    // A stopped clock names the fault instead of handing back the stored
+    // output, which the caller could not tell apart from a computed one. The
+    // accumulated output and both error histories are left untouched.
+    const auto error_before = pid.error();
+    auto stopped = pid.compute(vec1(5.0), vec1(0.0), 0.0);
+    REQUIRE_FALSE(stopped.has_value());
+    CHECK(stopped.error() == ctrlpp::pid_step_error::invalid_timestep);
+    CHECK(pid.error() == error_before);
+    CHECK(pid.health() == ctrlpp::pid_health::ok);
 }

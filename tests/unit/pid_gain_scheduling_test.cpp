@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -50,8 +51,8 @@ TEST_CASE("set_params with a Ki change is bumpless (integral state unchanged)",
     SisoPid ref(cfg);
     SisoPid sched(cfg);
     for (int i = 0; i < 10; ++i) {
-        ref.compute(vec1(sp), vec1(meas), Ts);
-        sched.compute(vec1(sp), vec1(meas), Ts);
+        REQUIRE(ref.compute(vec1(sp), vec1(meas), Ts).has_value());
+        REQUIRE(sched.compute(vec1(sp), vec1(meas), Ts).has_value());
     }
 
     const double integral_before = sched.integral()[0];
@@ -67,8 +68,8 @@ TEST_CASE("set_params with a Ki change is bumpless (integral state unchanged)",
     // On the next identical step the outputs differ only by the intended change in the
     // integral increment on the current error, (ki_new - ki_old)*e*dt, with no jump in
     // the accumulated integral contribution.
-    const double u_ref = ref.compute(vec1(sp), vec1(meas), Ts)[0];
-    const double u_sched = sched.compute(vec1(sp), vec1(meas), Ts)[0];
+    const double u_ref = ctrlpp::test::commanded(ref.compute(vec1(sp), vec1(meas), Ts))[0];
+    const double u_sched = ctrlpp::test::commanded(sched.compute(vec1(sp), vec1(meas), Ts))[0];
     const double expected_diff = (ki_new - ki_old) * e * Ts;
 
     REQUIRE_THAT(u_sched - u_ref, WithinAbs(expected_diff, output_continuity_tol(u_sched)));
@@ -86,7 +87,7 @@ TEST_CASE("set_params with Ki going to zero preserves the accumulated integral",
     SisoPid pid(cfg);
 
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(sp), vec1(meas), Ts);
+        REQUIRE(pid.compute(vec1(sp), vec1(meas), Ts).has_value());
 
     const double integral_before = pid.integral()[0];
     REQUIRE(integral_before != 0.0);
@@ -101,7 +102,7 @@ TEST_CASE("set_params with Ki going to zero preserves the accumulated integral",
 
     // A further step adds no increment and holds the integral, so the output is the
     // proportional term plus the retained integral contribution.
-    const double u = pid.compute(vec1(sp), vec1(meas), Ts)[0];
+    const double u = ctrlpp::test::commanded(pid.compute(vec1(sp), vec1(meas), Ts))[0];
     REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
     REQUIRE_THAT(u, WithinAbs(kp * (sp - meas) + integral_before, output_continuity_tol(u)));
 }
@@ -120,8 +121,8 @@ TEST_CASE("set_params with a Kp change steps only the proportional term",
     SisoPid ref(cfg);
     SisoPid sched(cfg);
     for (int i = 0; i < 20; ++i) {
-        ref.compute(vec1(sp), vec1(meas), Ts);
-        sched.compute(vec1(sp), vec1(meas), Ts);
+        REQUIRE(ref.compute(vec1(sp), vec1(meas), Ts).has_value());
+        REQUIRE(sched.compute(vec1(sp), vec1(meas), Ts).has_value());
     }
 
     const double integral_before = sched.integral()[0];
@@ -135,8 +136,8 @@ TEST_CASE("set_params with a Kp change steps only the proportional term",
     // error, (kp_new - kp_old)*ep.
     REQUIRE_THAT(sched.integral()[0], WithinAbs(integral_before, tol));
 
-    const double u_ref = ref.compute(vec1(sp), vec1(meas), Ts)[0];
-    const double u_sched = sched.compute(vec1(sp), vec1(meas), Ts)[0];
+    const double u_ref = ctrlpp::test::commanded(ref.compute(vec1(sp), vec1(meas), Ts))[0];
+    const double u_sched = ctrlpp::test::commanded(sched.compute(vec1(sp), vec1(meas), Ts))[0];
     const double expected_diff = (kp_new - kp_old) * ep;
 
     REQUIRE_THAT(u_sched - u_ref, WithinAbs(expected_diff, output_continuity_tol(u_sched)));
@@ -171,7 +172,7 @@ TEST_CASE("set_integral sets integral to known value",
     REQUIRE_THAT(pid.integral()[0], WithinAbs(5.0, tol));
 
     // Next output should include this integral
-    auto u = pid.compute(vec1(1.0), vec1(0.0), Ts);
+    auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     // P=1*1=1, I=5.0 + ki*e*dt = 5.01, D=0
     REQUIRE_THAT(u[0], WithinAbs(6.01, tol));
 }
@@ -185,7 +186,7 @@ TEST_CASE("freeze_integral prevents integral growth",
     SisoPid pid(cfg);
 
     // Accumulate some integral
-    pid.compute(vec1(1.0), vec1(0.0), Ts);
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
     double integral_val = pid.integral()[0];
 
     // Freeze
@@ -193,7 +194,7 @@ TEST_CASE("freeze_integral prevents integral growth",
 
     // Run 10 more steps -- integral should not change
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), Ts);
+        REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
 
     REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_val, tol));
 
@@ -201,7 +202,7 @@ TEST_CASE("freeze_integral prevents integral growth",
     pid.freeze_integral(false);
 
     // Integral should resume
-    pid.compute(vec1(1.0), vec1(0.0), Ts);
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
     REQUIRE(pid.integral()[0] > integral_val);
 }
 
@@ -215,7 +216,7 @@ TEST_CASE("set_params from Ki=0 to Ki!=0 leaves the zero integral in place",
 
     // Run some steps with Ki=0 -> integral never accumulates, stays 0
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), Ts);
+        REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
 
     // Enabling integral action does not touch the (zero) integral state; it simply
@@ -227,7 +228,7 @@ TEST_CASE("set_params from Ki=0 to Ki!=0 leaves the zero integral in place",
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
 
     // Now integral should accumulate with new Ki
-    pid.compute(vec1(1.0), vec1(0.0), Ts);
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
     REQUIRE_THAT(pid.integral()[0], WithinAbs(2.0 * 1.0 * Ts, tol));
 }
 
@@ -250,8 +251,8 @@ TEST_CASE("ISA form set_params with a Ti change is bumpless",
     IsaPid ref(cfg);
     IsaPid sched(cfg);
     for (int i = 0; i < 10; ++i) {
-        ref.compute(vec1(sp), vec1(meas), Ts);
-        sched.compute(vec1(sp), vec1(meas), Ts);
+        REQUIRE(ref.compute(vec1(sp), vec1(meas), Ts).has_value());
+        REQUIRE(sched.compute(vec1(sp), vec1(meas), Ts).has_value());
     }
 
     const double integral_before = sched.integral()[0];
@@ -264,8 +265,8 @@ TEST_CASE("ISA form set_params with a Ti change is bumpless",
     // The stored integral (output units) is not rescaled when Ti changes.
     REQUIRE_THAT(sched.integral()[0], WithinAbs(integral_before, tol));
 
-    const double u_ref = ref.compute(vec1(sp), vec1(meas), Ts)[0];
-    const double u_sched = sched.compute(vec1(sp), vec1(meas), Ts)[0];
+    const double u_ref = ctrlpp::test::commanded(ref.compute(vec1(sp), vec1(meas), Ts))[0];
+    const double u_sched = ctrlpp::test::commanded(sched.compute(vec1(sp), vec1(meas), Ts))[0];
     const double expected_diff = (ki_int_new - ki_int_old) * e * Ts;
 
     REQUIRE_THAT(u_sched - u_ref, WithinAbs(expected_diff, output_continuity_tol(u_sched)));
@@ -281,7 +282,7 @@ TEST_CASE("repeated set_params never rescales the integral state",
 
     // Accumulate integral = Ki*e*dt*5 = 1.0*1.0*0.01*5 = 0.05
     for (int i = 0; i < 5; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), Ts);
+        REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
     const double integral_before = pid.integral()[0];
     REQUIRE_THAT(integral_before, WithinAbs(0.05, tol));
 

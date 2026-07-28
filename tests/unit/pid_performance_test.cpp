@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -27,7 +28,7 @@ TEST_CASE("IAE accumulates integral of |error| * dt",
     // Constant error=1.0, 10 steps of dt=0.1
     // IAE = sum(|1.0| * 0.1) = 1.0
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), 0.1);
+        REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());
 
     REQUIRE_THAT(pid.metric<ctrlpp::IAE>()[0], WithinAbs(1.0, 1e-10));
 }
@@ -44,7 +45,7 @@ TEST_CASE("ISE accumulates integral of error^2 * dt",
     // Constant error=2.0, 10 steps of dt=0.1
     // ISE = sum(4.0 * 0.1) = 4.0
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(2.0), vec1(0.0), 0.1);
+        REQUIRE(pid.compute(vec1(2.0), vec1(0.0), 0.1).has_value());
 
     REQUIRE_THAT(pid.metric<ctrlpp::ISE>()[0], WithinAbs(4.0, 1e-10));
 }
@@ -64,7 +65,7 @@ TEST_CASE("ITAE accumulates integral of t * |error| * dt",
     // t_k = 0.1, 0.2, ..., 1.0 (accumulated AFTER dt update)
     // ITAE = 0.1*(0.1 + 0.2 + ... + 1.0) = 0.1 * 5.5 = 0.55
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), 0.1);
+        REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());
 
     REQUIRE_THAT(pid.metric<ctrlpp::ITAE>()[0], WithinAbs(0.55, 1e-10));
 }
@@ -79,7 +80,7 @@ TEST_CASE("Multiple metrics accumulate simultaneously",
     PaPid pid(cfg);
 
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(2.0), vec1(0.0), 0.1);
+        REQUIRE(pid.compute(vec1(2.0), vec1(0.0), 0.1).has_value());
 
     // IAE = sum(|2.0| * 0.1) = 2.0
     REQUIRE_THAT(pid.metric<ctrlpp::IAE>()[0], WithinAbs(2.0, 1e-10));
@@ -100,7 +101,7 @@ TEST_CASE("oscillation_detect counts zero-crossings and detects oscillation",
     // 9 zero-crossings over 1.0 second -> rate = 9/1.0 = 9 > threshold 5
     for (int i = 0; i < 10; ++i) {
         double sp = (i % 2 == 0) ? 1.0 : -1.0;
-        pid.compute(vec1(sp), vec1(0.0), 0.1);
+        REQUIRE(pid.compute(vec1(sp), vec1(0.0), 0.1).has_value());
     }
 
     REQUIRE(pid.metric<ctrlpp::oscillation_detect>()[0] >= 9.0 - tol);
@@ -123,7 +124,7 @@ TEST_CASE("oscillation verdict follows the configurable crossing_rate_threshold"
         PaPid pid(cfg);
         for (int i = 0; i < 10; ++i) {
             double sp = (i % 2 == 0) ? 1.0 : -1.0;
-            pid.compute(vec1(sp), vec1(0.0), 0.1);
+            REQUIRE(pid.compute(vec1(sp), vec1(0.0), 0.1).has_value());
         }
         return pid.oscillating();
     };
@@ -142,7 +143,7 @@ TEST_CASE("oscillation_detect: constant error sign -> not oscillating",
     PaPid pid(cfg);
 
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), 0.1);
+        REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());
 
     REQUIRE_THAT(pid.metric<ctrlpp::oscillation_detect>()[0], WithinAbs(0.0, tol));
     REQUIRE(pid.oscillating() == false);
@@ -159,7 +160,7 @@ TEST_CASE("oscillation_detect + IAE both accumulate",
 
     for (int i = 0; i < 10; ++i) {
         double sp = (i % 2 == 0) ? 1.0 : -1.0;
-        pid.compute(vec1(sp), vec1(0.0), 0.1);
+        REQUIRE(pid.compute(vec1(sp), vec1(0.0), 0.1).has_value());
     }
 
     REQUIRE(pid.metric<ctrlpp::oscillation_detect>()[0] >= 9.0 - tol);
@@ -178,7 +179,7 @@ TEST_CASE("reset_metrics clears all metric accumulators",
 
     for (int i = 0; i < 10; ++i) {
         double sp = (i % 2 == 0) ? 1.0 : -1.0;
-        pid.compute(vec1(sp), vec1(0.0), 0.1);
+        REQUIRE(pid.compute(vec1(sp), vec1(0.0), 0.1).has_value());
     }
 
     REQUIRE(pid.metric<ctrlpp::IAE>()[0] > 0.0);
@@ -202,7 +203,7 @@ TEST_CASE("IAE accumulates absolute value for negative errors",
 
     // Negative error: sp=0, meas=1 -> e=-1
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(0.0), vec1(1.0), 0.1);
+        REQUIRE(pid.compute(vec1(0.0), vec1(1.0), 0.1).has_value());
 
     // IAE = sum(|-1| * 0.1) = 1.0 (same as positive error)
     REQUIRE_THAT(pid.metric<ctrlpp::IAE>()[0], WithinAbs(1.0, 1e-10));
@@ -222,7 +223,7 @@ TEST_CASE("ITAE weights later errors more heavily than earlier errors",
     // t_k = 0.1, 0.2, ..., 1.0
     // ITAE = 2 * 0.1 * (0.1+0.2+...+1.0) = 2 * 0.1 * 5.5 = 1.1
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec1(0.0), vec1(2.0), 0.1);
+        REQUIRE(pid.compute(vec1(0.0), vec1(2.0), 0.1).has_value());
 
     REQUIRE_THAT(pid.metric<ctrlpp::ITAE>()[0], WithinAbs(1.1, 1e-10));
 }
@@ -239,11 +240,11 @@ TEST_CASE("oscillation_detect skips zero-error steps (no false crossing)",
     // Sequence: +1, 0, -1, 0, +1
     // Zero errors should be ignored for crossing detection
     // Only +1 -> -1 and -1 -> +1 count (via non-zero signs)
-    pid.compute(vec1(1.0), vec1(0.0), 0.1);   // e=+1, sign=+1
-    pid.compute(vec1(0.0), vec1(0.0), 0.1);   // e=0, sign_e=0 -> prev_sign stays +1
-    pid.compute(vec1(0.0), vec1(1.0), 0.1);   // e=-1, prev_sign=+1, crossing!
-    pid.compute(vec1(0.0), vec1(0.0), 0.1);   // e=0, sign_e=0 -> prev_sign stays -1
-    pid.compute(vec1(1.0), vec1(0.0), 0.1);   // e=+1, prev_sign=-1, crossing!
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());   // e=+1, sign=+1
+    REQUIRE(pid.compute(vec1(0.0), vec1(0.0), 0.1).has_value());   // e=0, sign_e=0 -> prev_sign stays +1
+    REQUIRE(pid.compute(vec1(0.0), vec1(1.0), 0.1).has_value());   // e=-1, prev_sign=+1, crossing!
+    REQUIRE(pid.compute(vec1(0.0), vec1(0.0), 0.1).has_value());   // e=0, sign_e=0 -> prev_sign stays -1
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());   // e=+1, prev_sign=-1, crossing!
 
     REQUIRE_THAT(pid.metric<ctrlpp::oscillation_detect>()[0], WithinAbs(2.0, tol));
 }
@@ -271,9 +272,9 @@ TEST_CASE("All four metrics accumulate simultaneously",
     PaPid pid(cfg);
 
     // Alternating error: 1, -1, 1 at dt=0.1
-    pid.compute(vec1(1.0), vec1(0.0), 0.1);  // e=1, t=0.1
-    pid.compute(vec1(0.0), vec1(1.0), 0.1);  // e=-1, t=0.2
-    pid.compute(vec1(1.0), vec1(0.0), 0.1);  // e=1, t=0.3
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());  // e=1, t=0.1
+    REQUIRE(pid.compute(vec1(0.0), vec1(1.0), 0.1).has_value());  // e=-1, t=0.2
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());  // e=1, t=0.3
 
     // IAE = |1|*0.1 + |-1|*0.1 + |1|*0.1 = 0.3
     REQUIRE_THAT(pid.metric<ctrlpp::IAE>()[0], WithinAbs(0.3, 1e-10));
@@ -295,7 +296,7 @@ TEST_CASE("reset() clears performance metrics when perf_assessment is enabled",
     PaPid pid(cfg);
 
     for (int i = 0; i < 5; ++i)
-        pid.compute(vec1(1.0), vec1(0.0), 0.1);
+        REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());
 
     REQUIRE(pid.metric<ctrlpp::IAE>()[0] > 0.0);
     REQUIRE(pid.metric<ctrlpp::ISE>()[0] > 0.0);

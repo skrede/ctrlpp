@@ -6,6 +6,7 @@
 // maximally-flat (Butterworth) low-pass inherited from `biquad::low_pass`:
 // -3.01 dB at the cutoff, not the +3 dB peaking of a Q = sqrt(2) section.
 
+#include "hardening_helpers.h"
 #include "ctrlpp/control/l1.h"
 #include "ctrlpp/dsp/biquad.h"
 #include "ctrlpp/dsp/vector_biquad.h"
@@ -60,7 +61,7 @@ auto run_sigma_hat(const l1_config<double, 1, 1>& cfg) -> double
     double x_plant = 0.0;
     for(int k = 0; k < 200; ++k)
     {
-        auto u = ctrl.evaluate(vec1(x_plant), vec1(1.0));
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(x_plant), vec1(1.0)));
         x_plant = 0.8 * x_plant + 0.5 * u[0];
     }
     return ctrl.sigma_hat()[0];

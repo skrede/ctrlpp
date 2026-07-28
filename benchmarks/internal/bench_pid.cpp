@@ -3,6 +3,7 @@
 
 #include "ctrlpp/control/pid.h"
 
+#include <iostream>
 #include <fstream>
 
 static constexpr char const* csv_tpl =
@@ -27,14 +28,24 @@ int main()
     auto meas = Vec::Constant(0.5);
     constexpr double dt = 0.01;
 
+    // A rejected cycle performs a fraction of the work, so a run that included
+    // one would report a meaningless figure. Establish outside the measured
+    // region that the cycle runs, then feed the result to the optimizer barrier
+    // inside it so it is neither discarded nor branched on while the clock is
+    // running.
+    if(const auto stepped = ctrl.compute(sp, meas, dt); !stepped)
+    {
+        std::cerr << "bench_pid: pid::compute rejected the cycle; the reported figures would be meaningless\n";
+        return 1;
+    }
+
     ankerl::nanobench::Bench bench;
     bench.title("PID")
         .warmup(100)
         .minEpochIterations(10000)
         .performanceCounters(true)
         .run("pid::compute", [&] {
-            auto u = ctrl.compute(sp, meas, dt);
-            ankerl::nanobench::doNotOptimizeAway(u);
+            ankerl::nanobench::doNotOptimizeAway(ctrl.compute(sp, meas, dt).has_value());
         });
 
     std::ofstream csv("bench_pid.csv");

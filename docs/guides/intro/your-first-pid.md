@@ -54,7 +54,11 @@ int main()
     {
         auto sp = Vec::Constant(setpoint);
         auto meas = Vec::Constant(y);
-        auto u = ctrl.compute(sp, meas, dt);
+        // A refused cycle produced no command; the caller decides what the
+        // actuator does. This sample stops.
+        auto step = ctrl.compute(sp, meas, dt);
+        if (!step.has_value()) return 1;
+        const auto& u = *step;
 
         // Plant dynamics
         y = a * y + (1.0 - a) * u[0];
@@ -73,8 +77,13 @@ int main()
 2. **Configuration**<br/>`kp`, `ki`, `kd` are `Eigen::Vector` types (here
    1-dimensional). Output limits prevent actuator saturation.
 
-3. **Control loop**<br/>`ctrl.compute(setpoint, measurement, dt)` returns the
-   control signal. The plant model advances one step, and the loop repeats.
+3. **Control loop**<br/>`ctrl.compute(setpoint, measurement, dt)` returns a
+   result carrying the control signal, because a cycle can fail: a non-finite
+   setpoint or measurement, or a step that is not a positive finite duration, is
+   rejected before any carried state is touched. A refusal means there is no
+   command for this cycle, so the caller decides what the actuator does -- hold
+   the last successful command, drive a configured safe value, or fail over. On
+   success the plant model advances one step and the loop repeats.
 
 4. **CSV output**<br/>Pipe to gnuplot or load in a spreadsheet to visualise the
    step response.

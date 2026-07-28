@@ -56,7 +56,9 @@ TEST_CASE("pid bibo stability property", "[pid][property]")
                  {
                      auto sp = *bounded_double(-100.0, 100.0);
                      auto pv = *bounded_double(-100.0, 100.0);
-                     auto u = pid.compute(vec1(sp), vec1(pv), dt);
+                     auto step = pid.compute(vec1(sp), vec1(pv), dt);
+                     RC_ASSERT(step.has_value());
+                     const auto& u = *step;
                      RC_ASSERT(u[0] >= out_min - eps);
                      RC_ASSERT(u[0] <= out_max + eps);
                  }
@@ -81,15 +83,17 @@ TEST_CASE("pid proportional-only constant error", "[pid][property]")
                  constexpr double tol = 1e-9;
 
                  // First step: error = target - 0 = target, output = kp * target
-                 auto u = pid.compute(vec1(target), vec1(0.0), dt);
-                 RC_ASSERT(std::abs(u[0] - kp * target) < tol);
+                 auto step = pid.compute(vec1(target), vec1(0.0), dt);
+                 RC_ASSERT(step.has_value());
+                 RC_ASSERT(std::abs((*step)[0] - kp * target) < tol);
 
                  // Subsequent steps with same input: P contribution unchanged,
                  // ki=kd=0 so no integral or derivative
                  for(int i = 0; i < 10; ++i)
                  {
-                     u = pid.compute(vec1(target), vec1(0.0), dt);
-                     RC_ASSERT(std::abs(u[0] - kp * target) < tol);
+                     step = pid.compute(vec1(target), vec1(0.0), dt);
+                     RC_ASSERT(step.has_value());
+                     RC_ASSERT(std::abs((*step)[0] - kp * target) < tol);
                  }
              });
 }
@@ -118,8 +122,12 @@ TEST_CASE("pid robustness - extreme inputs do not crash", "[pid][property]")
                  {
                      auto sp_i = *bounded_double(-1e6, 1e6);
                      auto pv_i = *bounded_double(-1e6, 1e6);
-                     auto u = pid.compute(vec1(sp_i), vec1(pv_i), dt);
-                     RC_ASSERT(std::isfinite(u[0]));
+                     // Every generated step is positive and finite and every
+                     // generated signal is bounded, so the cycle must run; a
+                     // rejection here would be a defect, not a tolerated outcome.
+                     auto step = pid.compute(vec1(sp_i), vec1(pv_i), dt);
+                     RC_ASSERT(step.has_value());
+                     RC_ASSERT(std::isfinite((*step)[0]));
                  }
              });
 }

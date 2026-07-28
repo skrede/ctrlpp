@@ -61,13 +61,18 @@ TEST_CASE("pid position-form compute performs zero heap allocation",
     constexpr double dt = 0.01;
 
     for(int i = 0; i < 8; ++i)
-        controller.compute(sp, meas, dt);
+        REQUIRE(controller.compute(sp, meas, dt).has_value());
 
+    // A Catch2 assertion inside the armed window would itself allocate and so
+    // destroy the measurement. The cycle results are accumulated instead and
+    // asserted once outside it; the property asserted is the same.
+    bool all_commanded = true;
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
-            controller.compute(sp, meas, dt);
+            all_commanded = all_commanded && controller.compute(sp, meas, dt).has_value();
     });
+    REQUIRE(all_commanded);
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
@@ -89,13 +94,18 @@ TEST_CASE("pid velocity-form compute performs zero heap allocation",
     constexpr double dt = 0.01;
 
     for(int i = 0; i < 8; ++i)
-        controller.compute(sp, meas, dt);
+        REQUIRE(controller.compute(sp, meas, dt).has_value());
 
+    // A Catch2 assertion inside the armed window would itself allocate and so
+    // destroy the measurement. The cycle results are accumulated instead and
+    // asserted once outside it; the property asserted is the same.
+    bool all_commanded = true;
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
-            controller.compute(sp, meas, dt);
+            all_commanded = all_commanded && controller.compute(sp, meas, dt).has_value();
     });
+    REQUIRE(all_commanded);
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
@@ -122,13 +132,18 @@ TEST_CASE("pid composed anti-windup and derivative-filter compute performs zero 
     constexpr double dt = 0.01;
 
     for(int i = 0; i < 8; ++i)
-        controller.compute(sp, meas, dt);
+        REQUIRE(controller.compute(sp, meas, dt).has_value());
 
+    // A Catch2 assertion inside the armed window would itself allocate and so
+    // destroy the measurement. The cycle results are accumulated instead and
+    // asserted once outside it; the property asserted is the same.
+    bool all_commanded = true;
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
-            controller.compute(sp, meas, dt);
+            all_commanded = all_commanded && controller.compute(sp, meas, dt).has_value();
     });
+    REQUIRE(all_commanded);
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);

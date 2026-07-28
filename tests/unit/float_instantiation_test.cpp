@@ -8,6 +8,7 @@
 // which are exercised separately in the held-green float runtime tier. No
 // tag: this must pass now.
 
+#include "hardening_helpers.h"
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/control/lqr.h"
 #include "ctrlpp/control/pid.h"
@@ -62,7 +63,7 @@ TEST_CASE("PID instantiates and steps at Scalar=float", "[float][anchor]")
     cfg.kd = Vector<float, 1>::Constant(0.01f);
 
     pid<float, 1> controller(cfg);
-    auto u = controller.compute(Vector<float, 1>::Constant(1.0f), Vector<float, 1>::Zero(), 0.1f);
+    auto u = ctrlpp::test::commanded(controller.compute(Vector<float, 1>::Constant(1.0f), Vector<float, 1>::Zero(), 0.1f));
 
     REQUIRE(std::isfinite(u(0)));
 }

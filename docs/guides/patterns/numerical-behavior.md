@@ -40,6 +40,26 @@ failure channel):
 | `manifold_ukf::update` | `expected<void, manifold_ukf_update_error>` |
 | `luenberger_observer::update` | `expected<void, luenberger_update_error>` |
 | `complementary_filter::update`, all three overloads | `expected<void, cf_update_error>` |
+| `pid::compute`, both overloads | `expected<vector_t, pid_step_error>` |
+| `mrac_controller::evaluate` | `expected<input_type, mrac_step_error>` |
+| `l1_controller::evaluate` | `expected<input_type, l1_step_error>` |
+
+The last three carry a payload where the estimator updates carry none, because a
+controller step produces the command it was asked for. A refusal there means the
+caller has **no control output for this cycle**, which is a materially different
+situation from an estimator declining a measurement and leaving its estimate
+standing: an actuator will be driven by something regardless. The caller decides
+what -- hold the last successful command, drive a configured safe value, or fail
+over -- and the controller does not choose, because the right answer is a
+property of the plant.
+
+Two of those surfaces reject more than a non-finite operand. `pid::compute` also
+rejects a step that is not a positive finite duration; it used to answer a
+non-positive step with the stored output on the *success* path, which the caller
+could not tell apart from a freshly computed command, so a stopped clock read as
+a steady loop. And `pid::compute`'s four-argument overload rejects a non-finite
+tracking signal before delegating, because that signal is back-assigned into the
+integrator once the cycle succeeds.
 
 **Still propagate faithfully,** with no rejection channel:
 
@@ -48,11 +68,24 @@ failure channel):
   filter with no propagation for a step that happened. A prediction that poisons
   the carried estimate is not silent: the next `update` rejects, names the cause,
   and latches the type's `health()` query to `non_finite_estimate`.
-- Every other surface in the library, including `pid::compute`, the adaptive
-  controllers' `evaluate`, `particle_filter::update`, and the online planners.
-  These are being moved onto the failure channel too, but they have not been
-  moved yet, and until they are the propagation contract above is what governs
-  them.
+- **The configuration and reset paths of all ten converted types.** `pid`'s
+  `set_params`, `set_integral` and `freeze_integral`, the adaptive controllers'
+  construction and `reset` -- none is fallible, so a non-finite gain, initial
+  parameter matrix or reference model still enters through them. The first cycle
+  that follows rejects and latches the type's `health()` query, which is what
+  that query exists for.
+- **`l1_controller`'s projection, in one specific case.** The elementwise clamp
+  propagates a `NaN` unchanged, but it *replaces* an infinity with the configured
+  bound whenever that bound is finite -- so a finite, in-range command can come
+  out of an estimate that carries no information, and nothing downstream can
+  detect it. That substitution is reported through `health()` as
+  `projection_clamped_non_finite` rather than through the failure channel,
+  because the cycle did produce the command the algorithm prescribes. See the
+  L1 API page for the mechanism.
+- Every other surface in the library, including `particle_filter::update` and the
+  online planners. These are being moved onto the failure channel too, but they
+  have not been moved yet, and until they are the propagation contract above is
+  what governs them.
 
 ## What the library does guard against
 
@@ -117,6 +150,7 @@ otherwise produce silent corruption through intermediate overflow:
 | Algorithm internals | Library uses numerically stable formulations |
 | Outputs | NaN/Inf propagates faithfully, never silently clamped, except on the surfaces named above |
 | Carried estimator state | The seven `update` surfaces named above reject a non-finite operand before mutating anything |
+| Carried controller state | `pid::compute` (both overloads), `mrac_controller::evaluate` and `l1_controller::evaluate` reject before mutating anything, and return the command on the success channel |
 
 The outputs row is still being narrowed for the per-step surfaces under
 conversion: where a surface gains a typed failure return, a degenerate step is

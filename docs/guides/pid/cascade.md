@@ -75,14 +75,19 @@ int main()
             auto meas = Vec::Constant(position);
             auto tracking = Vec::Constant(velocity);
             auto u_outer = outer.compute(sp, meas, dt_outer, tracking);
-            vel_sp = u_outer[0];
+            if (!u_outer.has_value()) return 1;
+            vel_sp = (*u_outer)[0];
         }
 
         // Inner loop executes every step
         auto sp_inner = Vec::Constant(vel_sp);
         auto meas_inner = Vec::Constant(velocity);
+        // A refused cycle produced no command; the caller decides what the
+        // actuator does. In a cascade the outer loop's refusal also leaves
+        // the inner loop without a fresh setpoint, so the decision covers both.
         auto torque_vec = inner.compute(sp_inner, meas_inner, dt_inner);
-        double torque = torque_vec[0];
+        if (!torque_vec.has_value()) return 1;
+        double torque = (*torque_vec)[0];
 
         // Plant dynamics: torque -> acceleration -> velocity -> position
         velocity += (torque - b * velocity) * dt_inner / J;
@@ -104,7 +109,11 @@ int main()
 
 - **Tracking signal**<br/>`outer.compute(sp, meas, dt, tracking)` accepts an
   optional fourth argument: the actual inner-loop measurement. This enables
-  bumpless transfer when the inner loop saturates.
+  bumpless transfer when the inner loop saturates. The tracking signal is checked
+  before the cycle runs, because it is back-assigned into the integrator once the
+  cycle succeeds; a non-finite one is rejected as
+  `pid_step_error::non_finite_tracking_signal` and the integrator is left
+  untouched.
 
 - **Gain separation**<br/>the outer loop has larger proportional gain to
   command aggressive velocity changes; the inner loop has smaller gains

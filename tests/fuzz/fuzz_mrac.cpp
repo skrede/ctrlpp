@@ -58,10 +58,16 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     for(int step = 0; step < 20; ++step)
     {
         x(0) = plant_x;
-        auto u = mrac.evaluate(x, r);
+        auto step_result = mrac.evaluate(x, r);
 
-        // NaN propagation from extreme adaptive gain is expected behavior.
-        // The harness only checks that the library does not segfault.
+        // A refusal is a DEFINED outcome, not a crash to be tolerated: the
+        // controller declined the cycle and left the adaptive parameters
+        // untouched, so the run stops here with nothing further to exercise.
+        if(!step_result.has_value())
+            return 0;
+        const auto& u = *step_result;
+        // A finite-but-extreme adaptive gain can still drive the command
+        // non-finite, and the guard only catches that on the NEXT cycle.
         if(!std::isfinite(u(0)))
             return 0;
 

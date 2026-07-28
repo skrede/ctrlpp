@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/control/l1.h"
 #include "ctrlpp/types.h"
 
@@ -60,7 +61,7 @@ TEST_CASE("l1 SISO step tracking", "[l1]")
     for(int k = 0; k < 1000; ++k)
     {
         auto x = vec1(x_plant);
-        auto u = ctrl.evaluate(x, r);
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(x, r));
         x_plant = 0.8 * x_plant + 0.5 * u[0];
     }
 
@@ -78,7 +79,7 @@ TEST_CASE("l1 state predictor converges", "[l1]")
     for(int k = 0; k < 500; ++k)
     {
         auto x = vec1(x_plant);
-        auto u = ctrl.evaluate(x, r);
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(x, r));
         x_plant = 0.8 * x_plant + 0.5 * u[0];
     }
 
@@ -100,7 +101,7 @@ TEST_CASE("l1 projection bounds respected", "[l1]")
     for(int k = 0; k < 100; ++k)
     {
         auto x = vec1(x_plant);
-        auto u = ctrl.evaluate(x, r);
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(x, r));
         x_plant = 0.8 * x_plant + 0.5 * u[0];
 
         REQUIRE(ctrl.sigma_hat()[0] >= -2.0);
@@ -113,7 +114,7 @@ TEST_CASE("l1 diagnostic accessors return expected types", "[l1]")
     auto cfg = make_siso_config();
     auto ctrl = make_controller<ctrlpp::l1_controller<double>>(cfg, 5.0, 100.0);
 
-    ctrl.evaluate(vec1(0.0), vec1(1.0));
+    REQUIRE(ctrl.evaluate(vec1(0.0), vec1(1.0)).has_value());
 
     REQUIRE(ctrl.x_hat().size() == 1);
     REQUIRE(ctrl.sigma_hat().size() == 1);
@@ -129,7 +130,7 @@ TEST_CASE("l1 reset restores initial state", "[l1]")
     double x_plant = 0.0;
     for(int k = 0; k < 50; ++k)
     {
-        auto u = ctrl.evaluate(vec1(x_plant), vec1(1.0));
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(vec1(x_plant), vec1(1.0)));
         x_plant = 0.8 * x_plant + 0.5 * u[0];
     }
 
@@ -156,7 +157,7 @@ TEST_CASE("l1 direct constructor with vector_cascaded_biquad", "[l1]")
     for(int k = 0; k < 1000; ++k)
     {
         auto x = vec1(x_plant);
-        auto u = ctrl.evaluate(x, r);
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(x, r));
         x_plant = 0.8 * x_plant + 0.5 * u[0];
     }
 
@@ -186,7 +187,7 @@ TEST_CASE("l1 MIMO 2x2 tracking", "[l1]")
 
     for(int k = 0; k < 1000; ++k)
     {
-        auto u = ctrl.evaluate(x_plant, r);
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(x_plant, r));
         x_plant = A_plant * x_plant + B_plant * u;
     }
 

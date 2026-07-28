@@ -51,7 +51,11 @@ int main()
         double noise = 0.05 * std::sin(100.0 * t);
         auto sp = Vec::Constant(1.0);
         auto meas = Vec::Constant(y + noise);
-        auto u = ctrl.compute(sp, meas, dt);
+        // A refused cycle produced no command; the caller decides what the
+        // actuator does. This sample stops.
+        auto step = ctrl.compute(sp, meas, dt);
+        if (!step.has_value()) return 1;
+        const auto& u = *step;
         y = 0.9 * y + 0.1 * u[0];
         std::cout << t << "," << y << "," << u[0] << "\n";
     }

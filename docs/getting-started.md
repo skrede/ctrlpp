@@ -66,7 +66,11 @@ int main()
 
     for (int i = 0; i < 1000; ++i)
     {
-        auto u = ctrl.compute(Vec::Constant(1.0), Vec::Constant(y), dt);
+        // A refused cycle produced no command; the caller decides what the
+        // actuator does. This sample stops.
+        auto step = ctrl.compute(Vec::Constant(1.0), Vec::Constant(y), dt);
+        if (!step.has_value()) return 1;
+        const auto& u = *step;
         y = 0.9 * y + 0.1 * u(0);
 
         if (i % 50 == 0)

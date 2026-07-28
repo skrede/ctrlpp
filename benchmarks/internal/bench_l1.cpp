@@ -5,6 +5,7 @@
 
 #include "ctrlpp/control/l1.h"
 
+#include <iostream>
 #include <fstream>
 
 static constexpr char const* csv_tpl =
@@ -32,14 +33,24 @@ int main()
     ctrlpp::Vector<double, 1> x{0.5};
     ctrlpp::Vector<double, 1> r{1.0};
 
+    // A rejected cycle performs a fraction of the work, so a run that included
+    // one would report a meaningless figure. Establish outside the measured
+    // region that the cycle runs, then feed the result to the optimizer barrier
+    // inside it so it is neither discarded nor branched on while the clock is
+    // running.
+    if(const auto stepped = controller.evaluate(x, r); !stepped)
+    {
+        std::cerr << "bench_l1: l1_controller::evaluate rejected the cycle; the reported figures would be meaningless\n";
+        return 1;
+    }
+
     ankerl::nanobench::Bench bench;
     bench.title("L1")
         .warmup(100)
         .minEpochIterations(10000)
         .performanceCounters(true)
         .run("l1::evaluate", [&] {
-            auto u = controller.evaluate(x, r);
-            ankerl::nanobench::doNotOptimizeAway(u);
+            ankerl::nanobench::doNotOptimizeAway(controller.evaluate(x, r).has_value());
         });
 
     std::ofstream csv("bench_l1.csv");

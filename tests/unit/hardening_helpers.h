@@ -4,11 +4,29 @@
 #include "ctrlpp/types.h"
 #include "ctrlpp/model/state_space.h"
 
+#include <catch2/catch_test_macros.hpp>
+
 #include <cmath>
 #include <limits>
+#include <type_traits>
 
 namespace ctrlpp::test
 {
+
+/// @brief Assert that a fallible controller cycle produced a command, and hand
+/// the command back.
+///
+/// This is the presence assertion, not an unchecked unwrap: a rejected cycle
+/// fails the enclosing test case at the point of the call instead of reading
+/// through an empty result. Tests that mean to OBSERVE a rejection assert on
+/// the result directly and never come through here, so the helper cannot hide
+/// one.
+template <typename Result>
+auto commanded(const Result& result) -> std::remove_cvref_t<decltype(*result)>
+{
+    REQUIRE(result.has_value());
+    return *result;
+}
 
 template <typename Scalar, std::size_t N>
 auto nan_vector() -> Vector<Scalar, N>

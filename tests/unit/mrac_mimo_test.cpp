@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/control/mrac.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -64,7 +65,7 @@ TEST_CASE("MIMO MRAC tracks 2D step reference", "[mrac][mimo]")
 
     for(int k = 0; k < 500; ++k)
     {
-        auto u = ctrl.evaluate(x, r);
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(x, r));
         x = A_p * x + B_p * u;
     }
 
@@ -81,7 +82,7 @@ TEST_CASE("MIMO MRAC evaluate returns 2D control vector", "[mrac][mimo]")
     Vec2 r;
     r << 1.0, 0.5;
 
-    auto u = ctrl.evaluate(x, r);
+    auto u = ctrlpp::test::commanded(ctrl.evaluate(x, r));
 
     REQUIRE(std::isfinite(u[0]));
     REQUIRE(std::isfinite(u[1]));
@@ -111,7 +112,7 @@ TEST_CASE("MIMO dead-zone prevents adaptation below threshold", "[mrac][mimo]")
 
     for(int k = 0; k < 10; ++k)
     {
-        auto u = ctrl.evaluate(x, r);
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(x, r));
         x = A_p * x + B_p * u;
     }
 
@@ -143,7 +144,7 @@ TEST_CASE("MIMO sigma-modification bounds parameters", "[mrac][mimo]")
 
     for(int k = 0; k < 10000; ++k)
     {
-        auto u = ctrl.evaluate(x, r);
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(x, r));
         x = A_p * x + B_p * u;
     }
 
@@ -177,7 +178,7 @@ TEST_CASE("MIMO e-modification bounds parameters", "[mrac][mimo]")
 
     for(int k = 0; k < 10000; ++k)
     {
-        auto u = ctrl.evaluate(x, r);
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(x, r));
         x = A_p * x + B_p * u;
     }
 
@@ -205,7 +206,7 @@ TEST_CASE("MIMO MRAC reset restores initial state", "[mrac][mimo]")
 
     for(int k = 0; k < 50; ++k)
     {
-        auto u = ctrl.evaluate(x, r);
+        auto u = ctrlpp::test::commanded(ctrl.evaluate(x, r));
         x = A_p * x + B_p * u;
     }
 

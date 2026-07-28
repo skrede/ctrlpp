@@ -178,12 +178,38 @@ success path and are **not** rejections. They are channel-2 shaped -- the step
 ran and produced a valid attitude, it simply had no correction to apply -- and
 they are candidates for an explicit disposition report rather than for channel 1.
 
-Not yet converted: `predict` on those seven types, and the per-step `compute` and
-`evaluate` surfaces on the controllers (`pid::compute`, `mrac::evaluate`,
-`l1::evaluate`), which return a control vector and become
-`ctrlpp::expected<vector_t, E>`; `particle_filter::update` and the online
-planners' `update`; and `lqr_gain` and `lqi_gain`, which still return
-`std::optional` and so discard the reason for the empty result. Those surfaces
-are being moved onto channel 1. Until each one is, the NaN and Inf propagation
-contract described in [numerical-behavior.md](numerical-behavior.md) is what
-governs them.
+The per-step `compute` and `evaluate` surfaces on the three stateful controllers
+are on channel 1 as well: `pid::compute` (both overloads),
+`mrac_controller::evaluate` and `l1_controller::evaluate` return
+`ctrlpp::expected<vector_t, E>` -- the result **carries the control vector**,
+because a controller step produces the command it was asked for and channel 1 is
+the result type over whatever the operation produces. Each carries a per-module
+enumeration (`pid_step_error`, `mrac_step_error`, `l1_step_error`), rejects
+before mutating anything, and carries an unannotated channel-3 `health()` query
+(`pid_health`, `mrac_health`, `l1_health`).
+
+A refusal on these three is not the same event as a refusal on an estimator
+update. A refused estimator step leaves the estimate standing; a refused
+controller cycle means the caller has **no control output for this cycle**, and
+an actuator is going to be driven by something regardless. The caller chooses
+what -- hold the last successful command, drive a configured safe value, or fail
+over -- and the API deliberately does not choose, because the right answer is a
+property of the plant. This is also why none of the three was reduced to
+`expected<void, E>` with the command written through a reference parameter: that
+would satisfy the shape of the convention while deleting the operation's output.
+
+`l1_controller` additionally reports on channel 3 a success-path fact that no
+per-cycle result could carry: its clamping projection substitutes a configured
+bound for an infinite adaptation estimate, producing a finite in-range command
+from a meaningless estimate. `health()` latches
+`projection_clamped_non_finite` when that happens.
+
+Not yet converted: `predict` on those seven estimator types; the configuration
+and reset paths of the three controllers (`pid::set_params`, `pid::set_integral`,
+the adaptive controllers' construction and `reset`), through which a non-finite
+value still enters silently and is caught only by the next cycle's rejection and
+the `health()` latch; `particle_filter::update` and the online planners'
+`update`; and `lqr_gain` and `lqi_gain`, which still return `std::optional` and
+so discard the reason for the empty result. Those surfaces are being moved onto
+channel 1. Until each one is, the NaN and Inf propagation contract described in
+[numerical-behavior.md](numerical-behavior.md) is what governs them.

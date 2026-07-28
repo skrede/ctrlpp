@@ -121,10 +121,36 @@ Constructs the controller from a configuration struct. Stores the reference mode
 ### evaluate
 
 ```cpp
-auto evaluate(const state_type& x, const input_type& r) -> input_type;
+auto evaluate(const state_type& x, const input_type& r)
+    -> expected<input_type, mrac_step_error>;
 ```
 
-Computes the control output `u = theta_x * x + theta_r * r` and updates the adapted parameter matrices using the Lyapunov-based adaptation law. Call once per time step. The reference model is propagated internally.
+Computes the control output `u = theta_x * x + theta_r * r` and updates the adapted parameter matrices using the Lyapunov-based adaptation law. Call once per time step. The reference model is propagated internally. On success the result carries the control vector.
+
+The cycle is classified before any member is written, so a rejected cycle leaves the reference-model state, the tracking error and both parameter matrices bitwise unchanged, and a following valid cycle produces exactly what it would have produced had the rejected one never been attempted.
+
+**This guard matters more here than on an estimator's update.** An estimator that admits one bad sample is re-driven towards the truth by the samples that follow. The parameter matrices are not: the adaptation only ever subtracts an increment into them and nothing re-derives them from data, so a single admitted non-finite sample makes them non-finite forever. Reconstruction or `reset` is the only way back.
+
+**A refused cycle produced no command.** The actuator will be driven by something regardless, and the caller must choose what: hold the command the last successful cycle returned, drive a configured safe value, or fail over. The controller does not choose, because the right answer is a property of the plant.
+
+The enumerators follow the adaptation's own data flow, so the cause named is always the most upstream one.
+
+| Enumerator | Cause | Where the caller repairs it |
+|---|---|---|
+| `non_finite_reference_state` | The internal reference-model state is already non-finite. It is the root cause whenever it holds: the tracking error is the plant state minus this, so it poisons both parameter matrices on the following cycle. | The reference model or its initial condition. |
+| `non_finite_parameters` | An adaptive parameter matrix is already non-finite. Permanent until `reset`, because nothing re-derives it. | The adaptation gains or the initial parameters. |
+| `non_finite_state` | The supplied plant state has a non-finite component. | The sensor or estimator. |
+| `non_finite_reference` | The supplied reference command has a non-finite component. | The command generator -- a different subsystem from the one that measures the plant. |
+
+### health
+
+```cpp
+auto health() const -> mrac_health;
+```
+
+Reports whether the controller is still carrying non-finite state from an earlier cycle. Latches until `reset` restores the configured initial parameters.
+
+A **rejected cycle does not set it**: a rejection mutates nothing. The routes in are the non-fallible ones -- a non-finite reference model, initial parameter matrix or initial reference state supplied at construction -- and finite-but-extreme gains whose product overflows.
 
 ### theta_x
 
@@ -207,7 +233,11 @@ int main()
     for (int k = 0; k < 500; ++k) {
         ctrlpp::Vector<double, 1> x;
         x[0] = x_plant;
-        auto u = ctrl.evaluate(x, r);
+        // A refused cycle produced no command AND left the adaptive
+        // parameters untouched; the caller decides what the actuator does.
+        auto step = ctrl.evaluate(x, r);
+        if (!step.has_value()) return 1;
+        const auto& u = *step;
 
         std::cout << std::fixed << std::setprecision(6)
                   << k << "," << 1.0 << "," << x_plant << ","
@@ -270,7 +300,11 @@ int main()
     r << 1.0, 0.5;
 
     for (int k = 0; k < 500; ++k) {
-        auto u = ctrl.evaluate(x_plant, r);
+        // A refused cycle produced no command AND left the adaptive
+        // parameters untouched; the caller decides what the actuator does.
+        auto step = ctrl.evaluate(x_plant, r);
+        if (!step.has_value()) return 1;
+        const auto& u = *step;
 
         std::cout << std::fixed << std::setprecision(6)
                   << k << ","

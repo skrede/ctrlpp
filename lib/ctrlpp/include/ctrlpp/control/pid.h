@@ -6,6 +6,7 @@
 /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/control/pid_config.h"
 #include "ctrlpp/control/pid_policies.h"
@@ -16,6 +17,82 @@
 
 namespace ctrlpp
 {
+
+/// @brief Structured failure modes of a single `pid::compute` cycle.
+///
+/// Every enumerator is an exact domain condition, not a tuning preference. The
+/// order below is the order the guard tests them, and it is a severity order:
+/// the controller's own carried state first, then the caller's clock, then the
+/// two signals. The rule is that the most upstream cause is named, because a
+/// caller told "your measurement is bad" would replace a working sensor while
+/// the real fault sits in the integrator that a previous cycle poisoned.
+///
+///  * non_finite_state       : some piece of carried state -- the integrator,
+///                             the error history, an input filter state, the
+///                             accumulated output -- is already non-finite when
+///                             the cycle begins. Nothing this cycle can produce
+///                             is meaningful, whatever the arguments are. Only
+///                             `reset` (or `set_integral` for the integrator
+///                             alone) recovers.
+///  * invalid_timestep       : the step is not a positive finite duration. A
+///                             non-positive step is a clock that did not advance
+///                             or ran backwards; a non-finite one is a clock
+///                             that produced garbage. Both are the caller's
+///                             timing, not the caller's signals, and both are
+///                             fatal to the cycle: the step divides the
+///                             derivative and multiplies the integral, so it
+///                             poisons the command even from a perfect setpoint
+///                             and measurement.
+///  * non_finite_setpoint    : the commanded setpoint has a non-finite
+///                             component. The repair is in whatever generates
+///                             the reference -- a trajectory, an outer loop, an
+///                             operator input.
+///  * non_finite_measurement : the process variable has a non-finite component.
+///                             The repair is in the sensor or the estimator
+///                             feeding it. This is a genuinely different fault
+///                             from a bad setpoint even though the error is
+///                             their difference: the two arrive from different
+///                             subsystems and are fixed in different places.
+///  * non_finite_tracking_signal : the external tracking signal handed to the
+///                             four-argument overload has a non-finite
+///                             component. It is checked before the cycle runs
+///                             because it is back-assigned into the integrator,
+///                             so admitting it would destroy the integrator
+///                             after an otherwise valid cycle had already
+///                             committed.
+enum class pid_step_error
+{
+    non_finite_state,
+    invalid_timestep,
+    non_finite_setpoint,
+    non_finite_measurement,
+    non_finite_tracking_signal,
+};
+
+/// @brief Persistent state-health status of a `pid`.
+///
+/// A per-cycle result cannot answer whether the controller is still carrying
+/// damage from a cycle several samples ago, because that question outlives the
+/// call. The status latches until `reset` replaces the state it describes.
+///
+///  * ok                      : every cycle so far began from finite carried
+///                              state.
+///  * non_finite_carried_state : a cycle found the carried state already
+///                              non-finite. The usual route in is a finite but
+///                              extreme configuration -- an infinite gain
+///                              multiplies a finite error into an infinite
+///                              command, which `update_state` then stores --
+///                              or a non-finite value seeded through
+///                              `set_integral` or `set_params`, neither of
+///                              which is fallible. A rejected cycle does NOT
+///                              set this: a rejection mutates nothing, so it
+///                              leaves the controller exactly as healthy as it
+///                              was.
+enum class pid_health
+{
+    ok,
+    non_finite_carried_state,
+};
 
 template <typename Scalar, std::size_t NY, typename... Policies>
 class pid
@@ -32,10 +109,41 @@ public:
         initialize_perf_config();
     }
 
-    auto compute(const vector_t& sp, const vector_t& meas, Scalar dt) -> vector_t
+    /// @brief Produce the control command for one cycle.
+    ///
+    /// The cycle is classified before any member is written, so a rejected
+    /// cycle leaves every piece of carried state -- the integrator, both error
+    /// histories, the input filter states, the accumulated output -- bitwise
+    /// unchanged, and the caller may retry on the next sample.
+    ///
+    /// **What a refusal means for the caller.** A rejected cycle produced NO
+    /// command. That is a materially different situation from an estimator
+    /// declining to fold in a measurement, where the estimate simply stands: an
+    /// actuator is going to be driven by something regardless of what this
+    /// function returns. The caller must choose that something, and this
+    /// controller deliberately does not choose for it, because the right choice
+    /// is a property of the plant and not of the controller: holding the last
+    /// command is correct for a slow thermal loop and dangerous for an unstable
+    /// attitude loop, where zero or a fail-over path is correct instead. The
+    /// three defensible responses are to hold the command the last successful
+    /// cycle returned, to command a configured safe value, or to fail over to a
+    /// redundant channel.
+    ///
+    /// What the controller will no longer do is hand back the previous command
+    /// dressed as a fresh one. On a non-positive step it used to return the
+    /// stored output on the success path, which a caller could not distinguish
+    /// from a command the controller had actually computed -- so a stopped
+    /// clock read as a steady loop.
+    ///
+    /// `set_params`, `set_integral`, `freeze_integral` and `reset` are NOT
+    /// fallible and are not converted here. A non-finite gain or a non-finite
+    /// seeded integrator therefore still enters through them; the first cycle
+    /// that follows rejects with `non_finite_state` and latches `health()`,
+    /// which is what that query exists for.
+    auto compute(const vector_t& sp, const vector_t& meas, Scalar dt) -> expected<vector_t, pid_step_error>
     {
-        if(dt <= Scalar{0})
-            return m_prev_output;
+        if(const auto step = check_step(sp, meas, dt); !step)
+            return unexpected(latch_health(step.error()));
 
         auto filtered_sp = apply_setpoint_filter(sp, dt);
         auto filtered_meas = apply_pv_filter(meas, dt);
@@ -48,14 +156,29 @@ public:
             return compute_position_form(e, sp, filtered_sp, filtered_meas, dt);
     }
 
-    auto compute(const vector_t& sp, const vector_t& meas, Scalar dt, const vector_t& tracking_signal) -> vector_t
+    /// @brief Produce the control command for one cycle and back-assign the
+    /// integrator so the output tracks an external signal (bumpless transfer).
+    ///
+    /// The tracking signal is checked BEFORE the cycle is delegated, because it
+    /// is written straight into the integrator once the cycle succeeds:
+    /// admitting a non-finite one would destroy the integrator after the cycle
+    /// had already committed its other state, which is exactly the
+    /// partially-applied step the reject-before-mutate rule exists to forbid.
+    ///
+    /// A rejection from the delegated cycle is forwarded unchanged, carrying
+    /// its own specific cause, and the tracking assignment is not performed --
+    /// so a rejected cycle leaves the integrator bitwise unchanged here too.
+    auto compute(const vector_t& sp, const vector_t& meas, Scalar dt, const vector_t& tracking_signal) -> expected<vector_t, pid_step_error>
     {
+        if(!tracking_signal.allFinite())
+            return unexpected(pid_step_error::non_finite_tracking_signal);
+
         auto u = compute(sp, meas, dt);
-        if(dt <= Scalar{0})
+        if(!u)
             return u;
         if constexpr(!detail::contains_v<velocity_form, Policies...>)
         {
-            auto non_integral = (u - m_integral).eval();
+            auto non_integral = (*u - m_integral).eval();
             m_integral = (tracking_signal - non_integral).eval();
         }
         return u;
@@ -79,6 +202,11 @@ public:
     const config_type& params() const { return m_cfg; }
     bool saturated() const { return m_saturated; }
 
+    /// @brief Report whether the controller is still carrying non-finite state
+    /// from an earlier cycle. Latches until `reset`; a rejected cycle does not
+    /// set it.
+    auto health() const -> pid_health { return m_health; }
+
     void reset()
     {
         m_integral = vector_t::Zero();
@@ -98,6 +226,9 @@ public:
         m_first_step = true;
         m_integral_frozen = false;
         m_saturated = false;
+        // Every member the latched status describes has just been replaced, so
+        // the status no longer describes anything and clearing it is honest.
+        m_health = pid_health::ok;
         if constexpr(detail::has_policy_v<perf_assessment, Policies...>)
         {
             m_perf.reset();
@@ -128,6 +259,87 @@ public:
     }
 
 private:
+    /// @brief Classify a cycle's operands without touching a single member.
+    ///
+    /// The order is the severity order documented on `pid_step_error`: the
+    /// carried state first, then the step, then the two signals. The cost is
+    /// one finiteness scan of each live operand -- a fixed number of NY-element
+    /// reads plus one scalar test, no data-dependent branching and no
+    /// allocation, NY being a compile-time template parameter.
+    auto check_step(const vector_t& sp, const vector_t& meas, Scalar dt) const -> expected<void, pid_step_error>
+    {
+        if(!carried_state_finite())
+            return unexpected(pid_step_error::non_finite_state);
+        // isfinite rejects both a NaN step and an infinite one; the second test
+        // then rejects zero and negative. A NaN cannot be caught by dt <= 0
+        // alone, because every comparison against a NaN is false -- which is
+        // precisely how a NaN step used to walk past the old guard.
+        if(!std::isfinite(dt) || dt <= Scalar{0})
+            return unexpected(pid_step_error::invalid_timestep);
+        if(!sp.allFinite())
+            return unexpected(pid_step_error::non_finite_setpoint);
+        if(!meas.allFinite())
+            return unexpected(pid_step_error::non_finite_measurement);
+        return {};
+    }
+
+    /// @brief Test every member that can reach this cycle's command.
+    ///
+    /// Each group is gated on the policy that makes the member live, so a value
+    /// seeded into a member the composed controller never reads cannot cause a
+    /// rejection the output would not have suffered from.
+    auto carried_state_finite() const -> bool
+    {
+        if(!m_prev_error.allFinite() || !m_prev_meas.allFinite() || !m_prev_sp.allFinite())
+            return false;
+        if constexpr(detail::contains_v<velocity_form, Policies...>)
+        {
+            if(!m_accumulated_output.allFinite() || !m_prev_prev_error.allFinite())
+                return false;
+        }
+        else
+        {
+            if(!m_integral.allFinite())
+                return false;
+        }
+        if constexpr(detail::contains_v<rate_limit, Policies...>)
+        {
+            if(!m_prev_output.allFinite())
+                return false;
+        }
+        if constexpr(detail::has_policy_v<feed_forward, Policies...>)
+        {
+            if(!m_prev_ff.allFinite())
+                return false;
+        }
+        if constexpr(detail::contains_v<setpoint_filter, Policies...>)
+        {
+            if(!m_filtered_sp.allFinite())
+                return false;
+        }
+        if constexpr(detail::contains_v<pv_filter, Policies...>)
+        {
+            if(!m_filtered_meas.allFinite())
+                return false;
+        }
+        if constexpr(detail::contains_v<deriv_filter, Policies...>)
+        {
+            if(!m_prev_deriv_filtered.allFinite())
+                return false;
+        }
+        return true;
+    }
+
+    /// @brief Latch the persistent status for the one fault that describes the
+    /// controller rather than the cycle's arguments, and pass the fault through
+    /// so the caller still receives the specific cause on the failure channel.
+    auto latch_health(pid_step_error fault) -> pid_step_error
+    {
+        if(fault == pid_step_error::non_finite_state)
+            m_health = pid_health::non_finite_carried_state;
+        return fault;
+    }
+
     void compute_internal_gains(const config_type& cfg)
     {
         if constexpr(detail::contains_v<isa_form, Policies...>)
@@ -487,6 +699,7 @@ private:
     bool m_first_step{true};
     bool m_integral_frozen{false};
     bool m_saturated{false};
+    pid_health m_health{pid_health::ok};
 };
 
 }

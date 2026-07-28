@@ -50,7 +50,11 @@ int main()
     for (double t = 0.0; t < 5.0; t += dt) {
         auto sp = Vec::Constant(1.0);
         auto meas = Vec::Constant(y);
-        auto delta_u = ctrl.compute(sp, meas, dt);
+        // A refused cycle produced no command; the caller decides what the
+        // actuator does. This sample stops.
+        auto step = ctrl.compute(sp, meas, dt);
+        if (!step.has_value()) return 1;
+        const auto& delta_u = *step;
         u_accum += delta_u[0];  // actuator integration
         y = 0.9 * y + 0.1 * u_accum;
         std::cout << t << "," << y << "," << delta_u[0] << "," << u_accum << "\n";

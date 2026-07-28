@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -42,7 +43,7 @@ TEST_CASE("MIMO NY=2 independent channels", "[pid][mimo]")
     Vec2 sp = vec2(1.0, 2.0);
     Vec2 meas = vec2(0.0, 0.0);
 
-    auto u = pid.compute(sp, meas, 0.01);
+    auto u = ctrlpp::test::commanded(pid.compute(sp, meas, 0.01));
     // Channel 0: P=1*1=1.0, I=0.1*1*0.01=0.001
     // Channel 1: P=3*2=6.0, I=0.2*2*0.01=0.004
     REQUIRE_THAT(u[0], WithinAbs(1.001, tol));
@@ -69,7 +70,7 @@ TEST_CASE("clamping anti-windup decouples MIMO channels", "[pid][mimo][anti-wind
     // Both channels see a constant positive error; channel 0 saturates every step,
     // channel 1 never does.
     for(int i = 0; i < n_steps; ++i)
-        pid.compute(vec2(1.0, 1.0), vec2(0.0, 0.0), Ts);
+        REQUIRE(pid.compute(vec2(1.0, 1.0), vec2(0.0, 0.0), Ts).has_value());
 
     // Channel 1 is never constrained, so its integrator accumulates the full ki*e*dt
     // every step. The old scalar saturation flag would have frozen it whenever channel 0
@@ -89,11 +90,11 @@ TEST_CASE("Variable dt per step", "[pid][siso]")
     SisoPid pid(cfg);
 
     // Step 1: dt=0.01, e=1, I=1*1*0.01=0.01
-    [[maybe_unused]] auto u1 = pid.compute(vec1(1.0), vec1(0.0), 0.01);
+    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.01).has_value());
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.01, tol));
 
     // Step 2: dt=0.05, e=1, I=0.01+1*1*0.05=0.06
-    auto u2 = pid.compute(vec1(1.0), vec1(0.0), 0.05);
+    auto u2 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), 0.05));
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.06, tol));
     REQUIRE_THAT(u2[0], WithinAbs(1.06, tol));
 }
@@ -111,7 +112,7 @@ TEST_CASE("MIMO performance metrics computed per channel",
 
     // Channel 0: error=1.0, Channel 1: error=3.0
     for (int i = 0; i < 10; ++i)
-        pid.compute(vec2(1.0, 3.0), vec2(0.0, 0.0), 0.1);
+        REQUIRE(pid.compute(vec2(1.0, 3.0), vec2(0.0, 0.0), 0.1).has_value());
 
     // IAE ch0 = 10*|1|*0.1 = 1.0, IAE ch1 = 10*|3|*0.1 = 3.0
     REQUIRE_THAT(pid.metric<ctrlpp::IAE>()[0], WithinAbs(1.0, 1e-10));

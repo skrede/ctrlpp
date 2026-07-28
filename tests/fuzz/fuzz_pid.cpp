@@ -63,9 +63,15 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     for(int step = 0; step < 20; ++step)
     {
-        auto u = pid.compute(sp, meas, dt);
-        // NaN from integral overflow with extreme gains is expected behavior.
-        // The harness only checks that the library does not segfault.
+        auto step_result = pid.compute(sp, meas, dt);
+        // A refusal is a DEFINED outcome, not a crash to be tolerated: the
+        // controller declined the cycle and mutated nothing, so the run stops
+        // here with nothing further to exercise.
+        if(!step_result.has_value())
+            return 0;
+        const auto& u = *step_result;
+        // A finite-but-extreme configuration can still drive the command
+        // non-finite, and the guard only catches that on the NEXT cycle.
         if(!std::isfinite(u(0)))
             return 0;
     }

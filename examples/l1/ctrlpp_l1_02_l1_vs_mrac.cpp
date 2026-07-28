@@ -73,8 +73,21 @@ int main()
         ctrlpp::Vector<double, 1> x_mrac_vec;
         x_mrac_vec[0] = x_mrac;
 
-        auto u_l1 = l1_ctrl.evaluate(x_l1_vec, r);
-        auto u_mrac = mrac_ctrl.evaluate(x_mrac_vec, r);
+        // A refused cycle produced no command AND left the adaptive parameters
+        // untouched, which is the point of the guard: admitting one non-finite
+        // sample would destroy them permanently, because nothing re-derives
+        // them. This example stops; a real caller must decide what the actuator
+        // does -- hold the last command, drive a configured safe value, or fail
+        // over.
+        auto l1_step = l1_ctrl.evaluate(x_l1_vec, r);
+        auto mrac_step = mrac_ctrl.evaluate(x_mrac_vec, r);
+        if(!l1_step.has_value() || !mrac_step.has_value())
+        {
+            std::cerr << "a controller refused the cycle at step " << k << "\n";
+            return 1;
+        }
+        const auto& u_l1 = *l1_step;
+        const auto& u_mrac = *mrac_step;
 
         std::cout << std::fixed << std::setprecision(6)
                   << k << ","

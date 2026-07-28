@@ -78,7 +78,11 @@ int main()
     for (double t = 0.0; t < 10.0; t += dt) {
         auto sp = Vec::Constant(5.0);   // large setpoint to trigger saturation
         auto meas = Vec::Constant(y);
-        auto u = ctrl.compute(sp, meas, dt);
+        // A refused cycle produced no command; the caller decides what the
+        // actuator does. This sample stops.
+        auto step = ctrl.compute(sp, meas, dt);
+        if (!step.has_value()) return 1;
+        const auto& u = *step;
         y = 0.95 * y + 0.05 * u[0];
         std::cout << t << "," << y << "," << u[0] << "\n";
     }

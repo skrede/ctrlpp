@@ -66,7 +66,11 @@ int main()
         double r = (t >= 1.0) ? 1.0 : 0.0;
         auto sp = Vec::Constant(r);
         auto meas = Vec::Constant(y);
-        auto u = ctrl.compute(sp, meas, dt);
+        // A refused cycle produced no command; the caller decides what the
+        // actuator does. This sample stops.
+        auto step = ctrl.compute(sp, meas, dt);
+        if (!step.has_value()) return 1;
+        const auto& u = *step;
         y = 0.9 * y + 0.1 * u[0];
         std::cout << t << "," << r << "," << y << "," << u[0] << "\n";
     }
