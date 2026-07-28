@@ -37,6 +37,8 @@
 #include "ctrlpp/trajectory/double_s_trajectory.h"
 #include "ctrlpp/trajectory/trapezoidal_trajectory.h"
 
+#include "../support/trapezoidal_solve_conditioning.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
@@ -411,12 +413,9 @@ constexpr double duration_multiples[] = {1.05, 3.0, 40.0};
 constexpr int continuity_samples = 64;
 
 /// Chained rounding operations behind the trapezoidal cruise velocity and the
-/// duration recomputed from it. Twelve form the root -- two for the linear
-/// coefficient, three for the constant, three for the discriminant, one for its
-/// square root, and three for the cancellation-free root selection -- and
-/// fifteen form the duration -- two for each ramp duration, three for each ramp
-/// distance, three for the cruise duration, and two for the three-term sum.
-constexpr int duration_ops_trapezoidal = 27;
+/// duration recomputed from it, counted and enumerated in the shared
+/// conditioning model.
+constexpr int duration_ops_trapezoidal = ctrlpp::test::trapezoidal_duration_rounding_ops;
 
 /// Chained rounding operations behind the double-S duration on the rest-to-rest
 /// path, where the scale is a single quotient of the two durations: one for that
@@ -438,54 +437,6 @@ struct scaling_limits
     double a_max{};
     double j_max{}; ///< zero for a profile that does not bound jerk
 };
-
-/// Conditioning of the trapezoidal cruise-velocity solve.
-///
-/// The realized duration is recomputed from the cruise velocity the solve
-/// returns, and the duration's sensitivity to that velocity is what turns the
-/// solve's roundings into a duration error. Within a shape,
-/// T(v) = (+-)(v - v0 - v1)/a + D/v with D the shape's residual displacement, so
-/// |dT/dv| * |dv| is bounded by the relative error of v times
-/// (v/a + |D|/v), and the second term is the duration itself less its ramp part.
-/// The relative error of v is NOT a handful of epsilons: each shape's root
-/// carries a difference of two nearly equal quantities, and the ratio of the
-/// operands entering that difference to the difference itself is the
-/// amplification.
-///
-///  * plateau and valley: the constant term is a h +- (v0^2 + v1^2)/2 and the
-///    discriminant is b^2 - 4c; both can cancel, and the larger amplification of
-///    the two governs.
-///  * ramp-through: the residual is h minus the distance the two ramps already
-///    sweep, taken against the scale of the operands that formed it.
-///
-/// Returning the amplification rather than folding a fixed factor in keeps the
-/// bound tight where the problem is well conditioned, which is where a defect
-/// would actually have to hide.
-auto trapezoidal_solve_conditioning(double v_cruise, double a, double h, double v0, double v1,
-                                    double T_target) -> double
-{
-    double const v_lo = std::min(v0, v1);
-    double const v_hi = std::max(v0, v1);
-    double const v_sum_sq = v0 * v0 + v1 * v1;
-
-    auto const ratio = [](double operands, double residual) -> double {
-        double const scale = std::abs(residual);
-        return (scale > 0.0) ? std::abs(operands) / scale : 1.0;
-    };
-
-    if(v_cruise > v_lo && v_cruise < v_hi)
-    {
-        double const ramp_distance = (v_hi - v_lo) * (v_hi + v_lo) / (2.0 * a);
-        return std::max(1.0, ratio(std::max(h, v_sum_sq / (2.0 * a)), h - ramp_distance));
-    }
-
-    bool const plateau = (v_cruise >= v_hi);
-    double const b = plateau ? ((v0 + v1) + a * T_target) : (a * T_target - (v0 + v1));
-    double const c = plateau ? (a * h + v_sum_sq / 2.0) : (v_sum_sq / 2.0 - a * h);
-    double const coefficient = ratio(a * h + v_sum_sq / 2.0, c);
-    double const discriminant = ratio(b * b + 4.0 * std::abs(c), b * b - 4.0 * c);
-    return std::max({1.0, coefficient, discriminant});
-}
 
 /// Assert the whole time-scaling contract on a profile that has just accepted a
 /// requested duration.
@@ -552,6 +503,13 @@ void check_time_scaling_contract(Trajectory const& profile, double h_signed, sca
     // stored duration to the request, and on the trapezoidal path the cruise
     // velocity is a genuinely ill-conditioned function of the request whenever
     // the shape's residual displacement is a canceling difference.
+    //
+    // An amplification with no finite value fails the case rather than widening
+    // the budget to admit everything. Every quantity the model divides by is one
+    // the solve floored before it accepted the request, so an unbounded answer
+    // on a profile that was retimed says the library reported success where it
+    // had no digits to report it with.
+    REQUIRE(std::isfinite(conditioning));
     double const duration_tol = static_cast<double>(duration_ops) * eps * T_target * conditioning;
     CAPTURE(duration_tol, conditioning);
     REQUIRE(std::abs(T - T_target) <= duration_tol);
@@ -676,15 +634,53 @@ struct shape_census
     int plateau{};
     int ramp_through{};
     int valley{};
+    /// The valley carries whichever of the cruise-velocity decrement and the
+    /// cruise velocity is the smaller, and the two forms are disjoint. A sweep
+    /// that reaches only one of them leaves the other unanchored while appearing
+    /// to cover the branch, so they are counted apart.
+    int valley_decrement{};
+    int valley_cruise_velocity{};
 };
 
+/// Where the reported cruise velocity landed relative to the two boundary
+/// velocities, decided by the test the library uses to ACCEPT a solved velocity:
+/// the ramp-through interval is closed at both ends there, so a velocity sitting
+/// exactly on the smaller boundary is a ramp-through solve and not a valley one.
 auto classify_cruise_shape(double v_cruise, double v0, double v1) -> cruise_shape
 {
     if(v_cruise >= std::max(v0, v1))
         return cruise_shape::plateau;
-    if(v_cruise > std::min(v0, v1))
+    if(v_cruise >= std::min(v0, v1))
         return cruise_shape::ramp_through;
     return cruise_shape::valley;
+}
+
+/// Count one accepted retiming into the census, separating the valley's two
+/// forms through the shared model's classifier so the census and the
+/// conditioning cannot disagree about which expression ran.
+template <typename Scalar>
+void record_shape(shape_census& census, Scalar v_cruise, Scalar a, Scalar h, Scalar v0, Scalar v1,
+                  Scalar T_target)
+{
+    using ctrlpp::test::trapezoidal_solve_form;
+    switch(ctrlpp::test::trapezoidal_solve_form_taken(v_cruise, a, h, v0, v1, T_target))
+    {
+    case trapezoidal_solve_form::plateau_rise:
+    case trapezoidal_solve_form::plateau_cruise_velocity:
+        ++census.plateau;
+        break;
+    case trapezoidal_solve_form::ramp_through:
+        ++census.ramp_through;
+        break;
+    case trapezoidal_solve_form::valley_decrement:
+        ++census.valley;
+        ++census.valley_decrement;
+        break;
+    case trapezoidal_solve_form::valley_cruise_velocity:
+        ++census.valley;
+        ++census.valley_cruise_velocity;
+        break;
+    }
 }
 
 /// Configurations for the time-scaling families.
@@ -788,21 +784,19 @@ void sweep_trapezoidal_scaling(sweep_config const& cfg, shape_census& census)
 
         double const h_signed =
             static_cast<double>(tcfg.q1) - static_cast<double>(tcfg.q0);
-        double const sigma = (h_signed >= 0.0) ? 1.0 : -1.0;
-        double const v_cruise = sigma * static_cast<double>(profile.peak_velocity());
-        double const pv0 = sigma * static_cast<double>(tcfg.v0);
-        double const pv1 = sigma * static_cast<double>(tcfg.v1);
+        Scalar const sigma = (h_signed >= 0.0) ? Scalar{1} : Scalar{-1};
+        Scalar const v_cruise = sigma * profile.peak_velocity();
+        Scalar const pv0 = sigma * tcfg.v0;
+        Scalar const pv1 = sigma * tcfg.v1;
+        Scalar const abs_h = std::abs(tcfg.q1 - tcfg.q0);
+        Scalar const a_eff =
+            ctrlpp::test::trapezoidal_effective_acceleration(abs_h, pv0, pv1, tcfg.a_max);
 
-        switch(classify_cruise_shape(v_cruise, pv0, pv1))
-        {
-        case cruise_shape::plateau: ++census.plateau; break;
-        case cruise_shape::ramp_through: ++census.ramp_through; break;
-        case cruise_shape::valley: ++census.valley; break;
-        }
+        record_shape(census, v_cruise, a_eff, abs_h, pv0, pv1, target);
 
-        double const conditioning = trapezoidal_solve_conditioning(
-            v_cruise, cfg.a_max, std::abs(h_signed), pv0, pv1, static_cast<double>(target));
-        CAPTURE(v_cruise, conditioning);
+        auto const conditioning = ctrlpp::test::trapezoidal_solve_conditioning(
+            v_cruise, a_eff, abs_h, pv0, pv1, target);
+        CAPTURE(static_cast<double>(v_cruise), conditioning);
 
         check_time_scaling_contract(profile, h_signed,
                                     {.v_max = cfg.v_max, .a_max = cfg.a_max, .j_max = 0.0},
@@ -859,6 +853,277 @@ void sweep_double_s_scaling(sweep_config const& cfg)
             static_cast<double>(target), duration_ops, 1.0);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Branch-targeted retiming families
+//
+// The families above draw whole configurations and let the requested duration
+// decide which shape answers it, which reaches all three shapes but concentrates
+// on none of them. The two solved branches each carry a reparametrization whose
+// whole point is the regime where the shape's own residual displacement closes,
+// and that regime is a thin sliver of the space those families sample. These
+// families aim at it directly: the configuration is built FROM a residual drawn
+// across decades, and the request is the duration at a cruise velocity drawn
+// inside the branch under test.
+// ---------------------------------------------------------------------------
+
+enum class branch_family
+{
+    valley_near_boundary,
+    valley_full_range,
+    plateau_near_boundary,
+    plateau_full_range,
+};
+
+/// One drawn retiming problem: a configuration and the duration requested of it.
+struct branch_case
+{
+    double a_max{};
+    double h{};
+    double v_max{};
+    double v0{};
+    double v1{};
+    double T_target{};
+};
+
+/// Cases per branch family. The count is not what proves the branch was reached
+/// -- the census assertions below do that -- but it has to be large enough that
+/// the residual decades each family spans are sampled rather than spot-checked,
+/// and large enough for the valley family to land in both of the valley's two
+/// forms. Sixteen residual decades and two forms over four hundred draws leaves
+/// tens of cases per decade.
+constexpr int cases_per_branch_family = 400;
+
+/// Decades the cruise velocity is driven below the smaller boundary velocity
+/// when the valley reaches a vanishing cruise velocity at all. The recorded
+/// outliers of this family sit twenty-five to thirty-one orders below it, so the
+/// span is chosen to cover them rather than to stop short of them.
+constexpr double vanishing_cruise_decades = 32.0;
+
+/// Draw the branch family. Every quantity is built forward from the residual so
+/// the shape is decided by construction rather than by rejection sampling: the
+/// commanded displacement is the distance the two ramps sweep on their own plus
+/// that residual, and the velocity limit is the triangular cruise velocity, so
+/// the profile starts at its own shortest duration and every longer request
+/// falls somewhere below it.
+auto make_branch_cases(branch_family family) -> std::array<branch_case, cases_per_branch_family>
+{
+    std::mt19937 gen(sweep_seed + 200u + static_cast<std::uint32_t>(family));
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+
+    bool const valley = (family == branch_family::valley_near_boundary
+                         || family == branch_family::valley_full_range);
+    bool const near_boundary = (family == branch_family::valley_near_boundary
+                                || family == branch_family::plateau_near_boundary);
+
+    std::array<branch_case, cases_per_branch_family> cases{};
+    for(auto& drawn : cases)
+    {
+        // Two boundary velocities a few parts per million apart, over four
+        // decades of speed and eight of acceleration. Which of the two is the
+        // start and which the end decides which side the solved branch lies on.
+        double const v_far = std::pow(10.0, unit(gen) * 4.0 - 2.0);
+        double const v_near = v_far * (1.0 - unit(gen) * 2.0e-6);
+        double const v0 = valley ? v_far : v_near;
+        double const v1 = valley ? v_near : v_far;
+        double const a_max = std::pow(10.0, unit(gen) * 8.0 - 8.0);
+
+        double const v_lo = std::min(v0, v1);
+        double const v_hi = std::max(v0, v1);
+        double const v_ref = valley ? v_lo : v_hi;
+        double const v_sum_sq = v0 * v0 + v1 * v1;
+
+        // The residual, in the units its own shape measures it in. The
+        // near-boundary regime holds it down where the reparametrization was
+        // first derived; the full-range regime spans everything, which is where
+        // the decrement-only form was found to be worse than what it replaced.
+        double const decades = near_boundary ? (unit(gen) * 8.0 - 10.0) : (unit(gen) * 14.0 - 10.0);
+        double const residual = std::pow(10.0, decades) * v_ref * v_ref / a_max;
+        double const h = (v_hi - v_lo) * (v_hi + v_lo) / (2.0 * a_max) + residual;
+        double const v_tri = std::sqrt(a_max * h + v_sum_sq / 2.0);
+
+        // A cruise velocity inside the branch, and the duration it realizes. The
+        // valley reaches down either to the vanishing-cruise velocity, where the
+        // cruise phase runs out, or -- when its residual displacement is
+        // nonnegative -- all the way to zero, and those are different sampling
+        // problems: the first is a fraction of a finite interval, the second is
+        // a span of decades.
+        double v_branch = 0.0;
+        if(!valley)
+        {
+            v_branch = v_hi + (v_tri - v_hi) * unit(gen);
+        }
+        else
+        {
+            double const v_min_sq = v_sum_sq / 2.0 - a_max * h;
+            if(v_min_sq > 0.0)
+            {
+                double const v_min = std::sqrt(v_min_sq);
+                v_branch = v_min + (v_lo - v_min) * unit(gen);
+            }
+            else
+            {
+                v_branch = v_lo * std::pow(10.0, -unit(gen) * vanishing_cruise_decades);
+            }
+        }
+
+        auto const at_branch =
+            ctrlpp::test::trapezoidal_duration_and_scale_at(v_branch, v0, v1, a_max, h);
+        drawn = {a_max, h, v_tri, v0, v1, at_branch.T};
+    }
+    return cases;
+}
+
+/// What a branch family observed: the shapes it reached, and the worst realized
+/// duration error it saw in each of the two regimes the valley splits into.
+struct branch_tally
+{
+    shape_census census{};
+    int bounded_cruise{};
+    int vanishing_cruise{};
+    double worst_bounded_ulp{};
+    double worst_vanishing_ulp{};
+};
+
+/// Realized duration against the request, in units in the last place of the
+/// request.
+///
+/// The reference is an extended-precision sum of the profile's OWN reported
+/// phase durations, which is independent of the solve: a profile that solved the
+/// wrong cruise velocity reports phases that add up to the duration that
+/// velocity really takes, and this sees that. The reported duration is compared
+/// as well, so a profile whose stored duration and whose phases disagree fails
+/// on whichever is worse.
+template <typename Trajectory>
+auto realized_duration_ulp(Trajectory const& profile, double T_target) -> double
+{
+    using Scalar = typename Trajectory::scalar_type;
+    auto const segments = profile.phase_durations();
+    long double summed = 0.0L;
+    for(auto const& segment : segments)
+        summed += static_cast<long double>(segment);
+
+    auto const target = static_cast<Scalar>(T_target);
+    auto const step = static_cast<long double>(
+        std::nextafter(target, std::numeric_limits<Scalar>::max()) - target);
+    if(!(step > 0.0L))
+        return 0.0;
+
+    long double const wanted = static_cast<long double>(target);
+    double const from_phases = static_cast<double>(std::abs(summed - wanted) / step);
+    double const from_reported = static_cast<double>(
+        std::abs(static_cast<long double>(profile.duration()) - wanted) / step);
+    return std::max(from_phases, from_reported);
+}
+
+/// Request the drawn duration and hold every accepted result to the full
+/// contract, then record what shape answered and how far the realized duration
+/// landed from the request.
+template <typename Scalar>
+void sweep_branch_scaling(branch_case const& drawn, branch_tally& tally)
+{
+    typename trapezoidal_trajectory<Scalar>::config const tcfg{
+        .q0 = Scalar{0},
+        .q1 = static_cast<Scalar>(drawn.h),
+        .v_max = static_cast<Scalar>(drawn.v_max),
+        .a_max = static_cast<Scalar>(drawn.a_max),
+        .v0 = static_cast<Scalar>(drawn.v0),
+        .v1 = static_cast<Scalar>(drawn.v1)};
+
+    auto built = trapezoidal_trajectory<Scalar>::create(tcfg);
+    if(!built.has_value())
+        return;
+    auto profile = built.value();
+
+    auto const target = static_cast<Scalar>(drawn.T_target);
+    if(!std::isfinite(target) || !(target > profile.duration()))
+        return;
+    CAPTURE(drawn.a_max, drawn.h, drawn.v0, drawn.v1, drawn.T_target,
+            static_cast<double>(profile.duration()));
+
+    auto const rescaled = profile.rescale_to(target);
+    if(!rescaled.has_value())
+    {
+        // The request is longer than the current duration, finite and positive,
+        // so the contract admits exactly two rejections: no shape reaches it, or
+        // it cannot be told apart from a duration the profile already realizes.
+        REQUIRE((rescaled.error() == trajectory_error::unreachable_duration
+                 || rescaled.error() == trajectory_error::unrepresentable_duration));
+        return;
+    }
+
+    // The acceleration the profile was actually built at. These families sit
+    // deliberately close to the boundary-velocity feasibility floor, and the
+    // difference of the two squared boundary velocities that decides it is
+    // formed unfactored, so it cancels: in single precision the test can flip on
+    // a configuration whose exact arithmetic clears it, and the construction
+    // then raises the acceleration by a factor of several. Every bound below is
+    // written against the raised value, because that is the envelope the profile
+    // respects.
+    Scalar const a_eff = ctrlpp::test::trapezoidal_effective_acceleration(
+        static_cast<Scalar>(drawn.h), tcfg.v0, tcfg.v1, tcfg.a_max);
+    Scalar const v_cruise = profile.peak_velocity();
+    record_shape(tally.census, v_cruise, a_eff, static_cast<Scalar>(drawn.h), tcfg.v0, tcfg.v1,
+                 target);
+
+    auto const conditioning = ctrlpp::test::trapezoidal_solve_conditioning(
+        v_cruise, a_eff, static_cast<Scalar>(drawn.h), tcfg.v0, tcfg.v1, target);
+    CAPTURE(static_cast<double>(v_cruise), conditioning);
+
+    check_time_scaling_contract(
+        profile, drawn.h,
+        {.v_max = drawn.v_max, .a_max = static_cast<double>(a_eff), .j_max = 0.0}, drawn.v0,
+        drawn.v1, static_cast<double>(target), duration_ops_trapezoidal, conditioning);
+
+    // Two regimes, separated by a sign and no constant. When the valley's
+    // residual displacement is negative the cruise phase runs out at a positive
+    // velocity and the branch stops there; when it is nonnegative the branch
+    // reaches all the way down to a vanishing cruise velocity, and there the
+    // cruise phase is a residual displacement divided by an almost-zero number.
+    // That division amplifies the residual's own rounding without bound, for
+    // ANY parametrization of this profile family, so the two regimes carry
+    // different ceilings. The cases are not excluded and the shared bound is not
+    // widened to cover them; they are counted apart and stated.
+    Scalar const residual_displacement =
+        static_cast<Scalar>(drawn.h)
+        - (tcfg.v0 * tcfg.v0 + tcfg.v1 * tcfg.v1) / (Scalar{2} * a_eff);
+    bool const vanishing =
+        (v_cruise < std::min(tcfg.v0, tcfg.v1)) && (residual_displacement >= Scalar{0});
+
+    double const realized = realized_duration_ulp(profile, static_cast<double>(target));
+    CAPTURE(realized, vanishing);
+    if(vanishing)
+    {
+        ++tally.vanishing_cruise;
+        tally.worst_vanishing_ulp = std::max(tally.worst_vanishing_ulp, realized);
+    }
+    else
+    {
+        ++tally.bounded_cruise;
+        tally.worst_bounded_ulp = std::max(tally.worst_bounded_ulp, realized);
+    }
+}
+
+/// Worst realized-duration error, in units in the last place of the request,
+/// observed over 400,000 draws of each generator above at `sweep_seed`, taken
+/// over both scalar types. The families below draw a PREFIX of those same
+/// streams, so each figure is an upper bound on what this anchor can see rather
+/// than a threshold fitted to it: a prefix cannot exceed the maximum of the
+/// stream it starts.
+///
+/// They are measurements, not tuned tolerances. A solve that lost its
+/// shape-boundary parametrization realizes durations seven orders of magnitude
+/// further from the request than these, which is what makes them worth asserting
+/// beside the per-case bound the conditioning model already imposes.
+constexpr double valley_near_boundary_ulp_ceiling = 4.0;
+constexpr double valley_full_range_ulp_ceiling = 7.1875;
+constexpr double plateau_near_boundary_ulp_ceiling = 4.0;
+constexpr double plateau_full_range_ulp_ceiling = 64.125;
+
+/// The same measurement over the vanishing-cruise regime, where the amplification
+/// belongs to the profile family rather than to the solve. The plateau has no
+/// such regime, so this figure is the valley's alone.
+constexpr double vanishing_cruise_ulp_ceiling = 3.1551e4;
 
 }
 
@@ -1025,6 +1290,101 @@ TEST_CASE("trapezoidal profiles hold their traversal contract when retimed", "[t
     REQUIRE(census.valley > 0);
 }
 
+TEST_CASE("a retimed trapezoidal profile holds its duration on the valley branch",
+          "[trajectory][anchor]")
+{
+    CAPTURE(sweep_seed);
+
+    branch_tally near{};
+    for(auto const& drawn : make_branch_cases(branch_family::valley_near_boundary))
+    {
+        sweep_branch_scaling<double>(drawn, near);
+        sweep_branch_scaling<float>(drawn, near);
+    }
+
+    branch_tally full{};
+    for(auto const& drawn : make_branch_cases(branch_family::valley_full_range))
+    {
+        sweep_branch_scaling<double>(drawn, full);
+        sweep_branch_scaling<float>(drawn, full);
+    }
+
+    // The census is what makes this an anchor rather than a formality. Without
+    // it a family that reached no valley solve at all would pass every
+    // assertion above it, and a family that reached only one of the valley's two
+    // forms would leave the other unexercised while appearing to cover the
+    // branch -- the same vacuous pass one level down.
+    CAPTURE(near.census.valley, near.census.valley_decrement, near.census.valley_cruise_velocity);
+    REQUIRE(near.census.valley > 0);
+    REQUIRE(near.census.valley_decrement > 0);
+
+    CAPTURE(full.census.valley, full.census.valley_decrement, full.census.valley_cruise_velocity);
+    REQUIRE(full.census.valley > 0);
+    REQUIRE(full.census.valley_decrement > 0);
+    REQUIRE(full.census.valley_cruise_velocity > 0);
+
+    CAPTURE(near.bounded_cruise, near.worst_bounded_ulp);
+    REQUIRE(near.bounded_cruise > 0);
+    REQUIRE(near.worst_bounded_ulp <= valley_near_boundary_ulp_ceiling);
+
+    CAPTURE(full.bounded_cruise, full.worst_bounded_ulp);
+    REQUIRE(full.bounded_cruise > 0);
+    REQUIRE(full.worst_bounded_ulp <= valley_full_range_ulp_ceiling);
+
+    // The vanishing-cruise regime is reached and carries its own stated ceiling.
+    // No case is dropped and the ceiling above is not raised to swallow it.
+    CAPTURE(full.vanishing_cruise, full.worst_vanishing_ulp);
+    REQUIRE(full.vanishing_cruise > 0);
+    REQUIRE(full.worst_vanishing_ulp <= vanishing_cruise_ulp_ceiling);
+}
+
+TEST_CASE("a retimed trapezoidal profile holds its duration on the plateau branch",
+          "[trajectory][anchor]")
+{
+    CAPTURE(sweep_seed);
+
+    branch_tally near{};
+    for(auto const& drawn : make_branch_cases(branch_family::plateau_near_boundary))
+    {
+        sweep_branch_scaling<double>(drawn, near);
+        sweep_branch_scaling<float>(drawn, near);
+    }
+
+    branch_tally full{};
+    for(auto const& drawn : make_branch_cases(branch_family::plateau_full_range))
+    {
+        sweep_branch_scaling<double>(drawn, full);
+        sweep_branch_scaling<float>(drawn, full);
+    }
+
+    // The plateau carried the same defect as the valley and was reparametrized
+    // in the same change, so it is anchored the same way rather than as the
+    // valley's milder relative. No solve on this branch may land in the valley.
+    CAPTURE(near.census.plateau, near.census.ramp_through, near.census.valley);
+    REQUIRE(near.census.plateau > 0);
+    REQUIRE(near.census.valley == 0);
+
+    CAPTURE(full.census.plateau, full.census.ramp_through, full.census.valley);
+    REQUIRE(full.census.plateau > 0);
+    REQUIRE(full.census.valley == 0);
+
+    CAPTURE(near.bounded_cruise, near.worst_bounded_ulp);
+    REQUIRE(near.bounded_cruise > 0);
+    REQUIRE(near.worst_bounded_ulp <= plateau_near_boundary_ulp_ceiling);
+
+    CAPTURE(full.bounded_cruise, full.worst_bounded_ulp);
+    REQUIRE(full.bounded_cruise > 0);
+    REQUIRE(full.worst_bounded_ulp <= plateau_full_range_ulp_ceiling);
+
+    // The plateau never reaches a vanishing cruise velocity: its residual
+    // displacement is the commanded distance plus the two squared boundary
+    // velocities over twice the acceleration, a sum of nonnegative terms, so the
+    // regime that carries the valley's outliers does not exist on this branch.
+    CAPTURE(near.vanishing_cruise, full.vanishing_cruise);
+    REQUIRE(near.vanishing_cruise == 0);
+    REQUIRE(full.vanishing_cruise == 0);
+}
+
 TEST_CASE("double-S profiles hold their traversal contract when retimed", "[trajectory][anchor]")
 {
     CAPTURE(sweep_seed);
@@ -1100,7 +1460,7 @@ TEST_CASE("a retimed trapezoidal profile takes each of its three shapes", "[traj
             REQUIRE(a_end < 0.0);
         }
 
-        double const conditioning = trapezoidal_solve_conditioning(
+        auto const conditioning = ctrlpp::test::trapezoidal_solve_conditioning(
             v_cruise, cfg.a_max, cfg.q1 - cfg.q0, cfg.v0, cfg.v1, expected.target);
         check_time_scaling_contract(profile, cfg.q1 - cfg.q0,
                                     {.v_max = cfg.v_max, .a_max = cfg.a_max, .j_max = 0.0}, cfg.v0,
@@ -1201,8 +1561,8 @@ TEST_CASE("trapezoidal retiming rejects a duration past its own reachable maximu
     auto accepted = make();
     double const inside = 0.5 * (accepted.duration() + T_sup);
     REQUIRE(accepted.rescale_to(inside).has_value());
-    double const conditioning = trapezoidal_solve_conditioning(accepted.peak_velocity(), cfg.a_max, h,
-                                                               cfg.v0, cfg.v1, inside);
+    auto const conditioning = ctrlpp::test::trapezoidal_solve_conditioning(
+        accepted.peak_velocity(), cfg.a_max, h, cfg.v0, cfg.v1, inside);
     check_time_scaling_contract(accepted, h, {.v_max = cfg.v_max, .a_max = cfg.a_max, .j_max = 0.0},
                                 cfg.v0, cfg.v1, inside, duration_ops_trapezoidal, conditioning);
 }
@@ -1261,6 +1621,236 @@ TEST_CASE("retiming rejects a profile with nothing to traverse", "[trajectory][a
     REQUIRE(!double_s_result.has_value());
     REQUIRE(double_s_result.error() == trajectory_error::unreachable_duration);
     REQUIRE(double_s.duration() == 0.0);
+}
+
+TEST_CASE("trapezoidal retiming rejects a recorded valley request outside its reachable window",
+          "[trajectory][anchor]")
+{
+    // The recorded counterexample behind the reparametrization. Both boundary
+    // velocities sit within a few units in the last place of the velocity limit
+    // while the commanded acceleration is six orders of magnitude smaller, so the
+    // valley's whole duration window is a fraction of a unit in the last place of
+    // the duration the smaller boundary velocity already realizes -- and the
+    // requested increment is several times wider than that window.
+    //
+    // The retired parametrization ACCEPTED this request and rebuilt the profile
+    // around a cruise velocity its discriminant had no digits left to locate,
+    // realizing a duration seven hundred and seventy thousand units in the last
+    // place SHORT of what it reported success on. Solving for the decrement below
+    // the shape boundary puts the window and the request in the same units, and
+    // the request is then plainly outside it: no shape of this family reaches the
+    // duration asked for, which is what the reachability enumerator reports.
+    auto built = trapezoidal_trajectory<double>::create({.q0 = 0.0,
+                                                         .q1 = 0.000244140625,
+                                                         .v_max = 0.9999999999999996,
+                                                         .a_max = 1e-6,
+                                                         .v0 = 0.9999999999999994,
+                                                         .v1 = 0.9999999999999942});
+    REQUIRE(built.has_value());
+    auto profile = built.value();
+
+    auto const T_current = profile.duration();
+    auto const phases_before = profile.phase_durations();
+    CAPTURE(T_current);
+
+    auto const rejected = profile.rescale_to(T_current * 1.0000000002328306);
+    REQUIRE(!rejected.has_value());
+    REQUIRE(rejected.error() == trajectory_error::unreachable_duration);
+    REQUIRE(profile.duration() == T_current);
+    REQUIRE(profile.phase_durations() == phases_before);
+}
+
+TEST_CASE("trapezoidal retiming realizes a recorded equal-boundary valley request",
+          "[trajectory][anchor]")
+{
+    // The recorded counterexample's neighbour, with the two boundary velocities
+    // exactly equal. This one IS reachable, and the retired parametrization
+    // accepted it too -- while realizing a duration three and a third million
+    // units in the last place LONG. The two recorded cases together are why an
+    // acceptance verdict alone was never evidence: the retired form got the
+    // verdict wrong in one direction here and in the other direction on its
+    // neighbour, and reported success both times.
+    auto built = trapezoidal_trajectory<double>::create({.q0 = 0.0,
+                                                         .q1 = 0.00390625,
+                                                         .v_max = 0.9999999999999821,
+                                                         .a_max = 1e-6,
+                                                         .v0 = 0.999999999999982,
+                                                         .v1 = 0.999999999999982});
+    REQUIRE(built.has_value());
+    auto profile = built.value();
+
+    double const T_current = profile.duration();
+    double const target = T_current * 1.0000000009095641;
+    CAPTURE(T_current, target);
+
+    REQUIRE(profile.rescale_to(target).has_value());
+
+    // The solve is on the valley branch, below both boundary velocities.
+    double const v_cruise = profile.peak_velocity();
+    CAPTURE(v_cruise);
+    REQUIRE(v_cruise < std::min(0.999999999999982, 0.999999999999982));
+
+    // Against the profile's own reported phase durations, summed in extended
+    // precision -- a reference the solve did not produce.
+    double const realized = realized_duration_ulp(profile, target);
+    CAPTURE(realized);
+    REQUIRE(realized <= static_cast<double>(rounding_ops_per_sample));
+
+    auto const conditioning = ctrlpp::test::trapezoidal_solve_conditioning(
+        v_cruise, 1e-6, 0.00390625, 0.999999999999982, 0.999999999999982, target);
+    check_time_scaling_contract(profile, 0.00390625,
+                                {.v_max = 0.9999999999999821, .a_max = 1e-6, .j_max = 0.0},
+                                0.999999999999982, 0.999999999999982, target,
+                                duration_ops_trapezoidal, conditioning);
+}
+
+TEST_CASE("trapezoidal retiming rejects a request below its own boundary-duration resolution",
+          "[trajectory][anchor]")
+{
+    // Both solved branches measure the request against the duration one of the
+    // boundary velocities already realizes, and that boundary duration is itself
+    // accurate only to a counted handful of units in the last place. A request
+    // whose distance from it is smaller than that error is indistinguishable from
+    // the boundary duration itself, and the shape it would select is located by
+    // noise rather than by the request.
+    //
+    // This is a different fact from "no shape reaches that duration", and it gets
+    // a different enumerator: it tells the caller to change the request, where the
+    // reachability one tells them to change the limits. The configuration below is
+    // otherwise well conditioned -- its ramp-through residual is nine against a
+    // resolution floor of about 1e-14 -- so the residual is not what is being
+    // tested here.
+    sweep_config const cfg{
+        .q0 = 0.0, .q1 = 10.0, .v_max = 3.0, .a_max = 1.0, .j_max = 0.0, .v0 = 1.5, .v1 = 0.5};
+
+    auto const at_hi =
+        ctrlpp::test::trapezoidal_duration_and_scale_at(cfg.v0, cfg.v0, cfg.v1, cfg.a_max, cfg.q1);
+    auto const at_lo =
+        ctrlpp::test::trapezoidal_duration_and_scale_at(cfg.v1, cfg.v0, cfg.v1, cfg.a_max, cfg.q1);
+    CAPTURE(at_hi.T, at_hi.scale, at_lo.T, at_lo.scale);
+
+    auto make = [&] {
+        auto built = trapezoidal_trajectory<double>::create({.q0 = cfg.q0,
+                                                             .q1 = cfg.q1,
+                                                             .v_max = cfg.v_max,
+                                                             .a_max = cfg.a_max,
+                                                             .v0 = cfg.v0,
+                                                             .v1 = cfg.v1});
+        REQUIRE(built.has_value());
+        return built.value();
+    };
+
+    // One unit in the last place below the duration the larger boundary velocity
+    // realizes: a plateau request whose decrement is fifteen times inside the
+    // floor derived for it.
+    auto plateau = make();
+    auto const plateau_before = plateau.phase_durations();
+    double const plateau_current = plateau.duration();
+    double const plateau_target = std::nextafter(at_hi.T, 0.0);
+    CAPTURE(plateau_current, plateau_target);
+    REQUIRE(plateau_target > plateau_current);
+    auto const plateau_rejected = plateau.rescale_to(plateau_target);
+    REQUIRE(!plateau_rejected.has_value());
+    REQUIRE(plateau_rejected.error() == trajectory_error::unrepresentable_duration);
+    REQUIRE(plateau.duration() == plateau_current);
+    REQUIRE(plateau.phase_durations() == plateau_before);
+
+    // The mirror on the other branch: one unit in the last place above the
+    // duration the smaller boundary velocity realizes.
+    auto valley = make();
+    auto const valley_before = valley.phase_durations();
+    double const valley_current = valley.duration();
+    double const valley_target = std::nextafter(at_lo.T, std::numeric_limits<double>::max());
+    CAPTURE(valley_current, valley_target);
+    REQUIRE(valley_target > valley_current);
+    auto const valley_rejected = valley.rescale_to(valley_target);
+    REQUIRE(!valley_rejected.has_value());
+    REQUIRE(valley_rejected.error() == trajectory_error::unrepresentable_duration);
+    REQUIRE(valley.duration() == valley_current);
+    REQUIRE(valley.phase_durations() == valley_before);
+
+    // The two enumerators are distinct, and the same profile answers the
+    // reachability one when the request really is out of range: no shape of this
+    // family reaches a duration below what the fastest admissible cruise velocity
+    // takes, and shortening is refused by its own enumerator.
+    auto shortened = make();
+    auto const too_short = shortened.rescale_to(std::nextafter(valley_current, 0.0));
+    REQUIRE(!too_short.has_value());
+    REQUIRE(too_short.error() == trajectory_error::duration_shorter_than_current);
+    REQUIRE(shortened.duration() == valley_current);
+}
+
+TEST_CASE("trapezoidal retiming rejects a plateau request whose linear coefficient is noise",
+          "[trajectory][anchor]")
+{
+    // A long move whose larger boundary velocity is sixteen orders of magnitude
+    // below the velocity limit. The plateau's linear coefficient is the ramp
+    // residual over that velocity less the duration decrement, and both terms
+    // are of order the displacement divided by that vanishing velocity -- about
+    // 1e171 here. The coefficient itself is 1e155, sixteen decimal digits below
+    // its own operands, which is to say it has none left.
+    //
+    // Solving on it returns a cruise velocity chosen by whatever survived the
+    // subtraction. The retiming was ACCEPTED before this was gated, realizing a
+    // duration four percent away from the request while reporting success -- on
+    // a request the caller had every reason to think was ordinary. The residual
+    // and the decrement are both far above their own floors here, so neither of
+    // the other two conditions sees this.
+    auto built = trapezoidal_trajectory<double>::create({.q0 = 3.0837958318852386e+155,
+                                                         .q1 = -9.05844559988822e+48,
+                                                         .v_max = 1e6,
+                                                         .a_max = 1e-6,
+                                                         .v0 = 1.801075744014136e-226,
+                                                         .v1 = -3.9880952515379e-16});
+    REQUIRE(built.has_value());
+    auto profile = built.value();
+
+    auto const T_current = profile.duration();
+    auto const phases_before = profile.phase_durations();
+    CAPTURE(T_current);
+
+    auto const rejected = profile.rescale_to(T_current * 1e6);
+    REQUIRE(!rejected.has_value());
+    REQUIRE(rejected.error() == trajectory_error::unrepresentable_duration);
+    REQUIRE(profile.duration() == T_current);
+    REQUIRE(profile.phase_durations() == phases_before);
+}
+
+TEST_CASE("trapezoidal retiming rejects a request whose discriminant leaves the finite range",
+          "[trajectory][anchor]")
+{
+    // The linear coefficient here is resolved -- there is no cancellation in it
+    // at all -- but the move is long and its cruise velocity small, so the
+    // coefficient itself is about 1e177 and its SQUARE leaves the finite range.
+    //
+    // An infinite discriminant is not caught by the sign test that follows it,
+    // because infinity is not negative. It drives the root selection's
+    // denominator to infinity and the rise to zero, and the cruise velocity that
+    // comes back is the shape boundary exactly: inside its own validity
+    // interval, with every phase duration nonnegative, realizing the boundary's
+    // own duration for a request that asked for something else. The retiming was
+    // ACCEPTED before this was gated, and realized a duration a third away from
+    // the request.
+    auto built = trapezoidal_trajectory<double>::create({.q0 = 0.0,
+                                                         .q1 = -9.4284909681078211e+177,
+                                                         .v_max = 1.310118066266054e-05,
+                                                         .a_max = 0.47194087539809926,
+                                                         .v0 = -1.8240871249826259e-06,
+                                                         .v1 = 1.4758999358870557e-06});
+    REQUIRE(built.has_value());
+    auto profile = built.value();
+
+    auto const T_current = profile.duration();
+    auto const phases_before = profile.phase_durations();
+    CAPTURE(T_current);
+
+    // A request far enough past the current duration to put the plateau's
+    // squared linear coefficient outside the representable range.
+    auto const rejected = profile.rescale_to(3.8964426578912833e+183);
+    REQUIRE(!rejected.has_value());
+    REQUIRE(rejected.error() == trajectory_error::unrepresentable_duration);
+    REQUIRE(profile.duration() == T_current);
+    REQUIRE(profile.phase_durations() == phases_before);
 }
 
 TEST_CASE("trapezoidal retiming rejects a valley request whose governing residual is noise",

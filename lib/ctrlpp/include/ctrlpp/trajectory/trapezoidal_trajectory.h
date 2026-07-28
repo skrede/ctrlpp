@@ -224,8 +224,15 @@ class trapezoidal_trajectory
     /// Rejections, checked in order:
     ///  * a duration below the current one -> trajectory_error::duration_shorter_than_current
     ///  * NaN, infinite, or non-positive T_new -> trajectory_error::non_positive_duration
+    ///  * a request the expressions that would locate its cruise velocity cannot
+    ///    resolve or represent -> trajectory_error::unrepresentable_duration
     ///  * a duration the displacement, limits, and boundary velocities cannot
     ///    realize together -> trajectory_error::unreachable_duration
+    ///
+    /// The last two are kept apart on purpose. The first says a shape may well
+    /// exist and the arithmetic cannot locate it, so the caller should change the
+    /// request; the second says no admissible shape exists, so the caller should
+    /// change the limits or the command.
     ///
     /// A request equal to the current duration succeeds and changes nothing, which
     /// is the path the slowest axis of a synchronized set always takes.
@@ -698,12 +705,62 @@ class trapezoidal_trajectory
             if (!(dT > boundary_floor)) {
                 return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
             }
-            auto const B = a * (ramp_residual / v_hi - dT);
+            // The linear coefficient is a DIFFERENCE where the valley's mirror
+            // is a sum, and it needs a floor of its own. Both quantities it
+            // subtracts grow without bound as the larger boundary velocity
+            // vanishes against the commanded displacement -- the residual
+            // divided by that velocity, and a decrement measured from a boundary
+            // duration which is itself that same quotient plus the two ramps.
+            // Deep in the plateau the two agree to the full width of the
+            // significand, and the coefficient that locates the root is left
+            // with nothing. Solving on it returns a cruise velocity chosen by
+            // noise, and the profile built from it realizes a duration the
+            // caller never asked for while the call reports success.
+            //
+            // Six operations form the residual and a seventh divides it by the
+            // boundary velocity; fifteen form the boundary duration and a
+            // sixteenth subtracts the request from it. Six plus one plus fifteen
+            // plus one is twenty-three, each worth one unit in the last place at
+            // the larger of the two operands' own scales -- the residual's scale
+            // carried through the same division, and the boundary duration's.
+            //
+            // The magnitude is tested, not the value, so that a coefficient
+            // which is decisively negative still reaches the sign gate below and
+            // is reported as no-such-shape. Only a coefficient that cannot be
+            // told apart from zero is reported as below the arithmetic
+            // resolution, which is the same distinction the two floors above
+            // draw.
+            constexpr int coefficient_rounding_ops = 23;
+            auto const coefficient_scale = std::max(residual_scale / v_hi, at_hi.scale);
+            auto const coefficient_floor = Scalar{coefficient_rounding_ops}
+                                           * std::numeric_limits<Scalar>::epsilon()
+                                           * coefficient_scale;
+            auto const rise_coefficient = ramp_residual / v_hi - dT;
+            if (!(std::abs(rise_coefficient) > coefficient_floor)) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
+            auto const B = a * rise_coefficient;
             auto const C = a * v_hi * dT;
             if (!(B > Scalar{0})) {
                 return ctrlpp::unexpected(trajectory_error::unreachable_duration);
             }
             auto const disc = B * B - Scalar{4} * C;
+            // A discriminant that left the representable range says nothing
+            // about reachability. The squared linear coefficient overflows
+            // whenever that coefficient exceeds the square root of the type's
+            // largest value, which a long move at a small cruise velocity
+            // reaches long before anything about the request is unreasonable,
+            // and an infinite discriminant then drives the root selection's
+            // denominator to infinity and its root to zero -- a cruise velocity
+            // sitting exactly on the shape boundary, inside its own validity
+            // interval, with every phase duration nonnegative. The profile built
+            // from it realizes the boundary's duration for a request that asked
+            // for something else, and the call reports success. It is the same
+            // fact the two resolution floors report: the expressions that would
+            // locate the root cannot represent what they need to.
+            if (!std::isfinite(disc)) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
             if (!(disc >= Scalar{0})) {
                 return ctrlpp::unexpected(trajectory_error::unreachable_duration);
             }
@@ -717,6 +774,22 @@ class trapezoidal_trajectory
             auto const b = (v0_ + v1_) + a * T_new;
             auto const c = a * h + v_sum_sq / Scalar{2};
             auto const disc = b * b - Scalar{4} * c;
+            // A discriminant that left the representable range says nothing
+            // about reachability. The squared linear coefficient overflows
+            // whenever that coefficient exceeds the square root of the type's
+            // largest value, which a long move at a small cruise velocity
+            // reaches long before anything about the request is unreasonable,
+            // and an infinite discriminant then drives the root selection's
+            // denominator to infinity and its root to zero -- a cruise velocity
+            // sitting exactly on the shape boundary, inside its own validity
+            // interval, with every phase duration nonnegative. The profile built
+            // from it realizes the boundary's duration for a request that asked
+            // for something else, and the call reports success. It is the same
+            // fact the two resolution floors report: the expressions that would
+            // locate the root cannot represent what they need to.
+            if (!std::isfinite(disc)) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
             if (!(disc >= Scalar{0})) {
                 return ctrlpp::unexpected(trajectory_error::unreachable_duration);
             }
@@ -755,6 +828,22 @@ class trapezoidal_trajectory
                 return ctrlpp::unexpected(trajectory_error::unreachable_duration);
             }
             auto const disc = B * B - Scalar{4} * C;
+            // A discriminant that left the representable range says nothing
+            // about reachability. The squared linear coefficient overflows
+            // whenever that coefficient exceeds the square root of the type's
+            // largest value, which a long move at a small cruise velocity
+            // reaches long before anything about the request is unreasonable,
+            // and an infinite discriminant then drives the root selection's
+            // denominator to infinity and its root to zero -- a cruise velocity
+            // sitting exactly on the shape boundary, inside its own validity
+            // interval, with every phase duration nonnegative. The profile built
+            // from it realizes the boundary's duration for a request that asked
+            // for something else, and the call reports success. It is the same
+            // fact the two resolution floors report: the expressions that would
+            // locate the root cannot represent what they need to.
+            if (!std::isfinite(disc)) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
             if (!(disc >= Scalar{0})) {
                 return ctrlpp::unexpected(trajectory_error::unreachable_duration);
             }
@@ -786,6 +875,22 @@ class trapezoidal_trajectory
                 auto const b = a * T_new - (v0_ + v1_);
                 auto const c = v_sum_sq / Scalar{2} - a * h;
                 auto const disc_v = b * b - Scalar{4} * c;
+                // A discriminant that left the representable range says nothing
+                // about reachability. The squared linear coefficient overflows
+                // whenever that coefficient exceeds the square root of the type's
+                // largest value, which a long move at a small cruise velocity
+                // reaches long before anything about the request is unreasonable,
+                // and an infinite discriminant then drives the root selection's
+                // denominator to infinity and its root to zero -- a cruise velocity
+                // sitting exactly on the shape boundary, inside its own validity
+                // interval, with every phase duration nonnegative. The profile built
+                // from it realizes the boundary's duration for a request that asked
+                // for something else, and the call reports success. It is the same
+                // fact the two resolution floors report: the expressions that would
+                // locate the root cannot represent what they need to.
+                if (!std::isfinite(disc_v)) {
+                    return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+                }
                 if (!(disc_v >= Scalar{0})) {
                     return ctrlpp::unexpected(trajectory_error::unreachable_duration);
                 }

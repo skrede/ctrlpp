@@ -69,23 +69,29 @@ enum class spline_error
 ///                                      caller asked for, and honoring it would
 ///                                      require a ramp that runs backwards in
 ///                                      time.
-///  * unrepresentable_duration        : a duration is not representable in the
-///                                      scalar type. Three cases, all of them
-///                                      facts about the arithmetic rather than
-///                                      about the kinematics: a duration of the
+///  * unrepresentable_duration        : the arithmetic cannot represent or
+///                                      resolve what the answer needs. Four
+///                                      cases, all of them facts about the
+///                                      arithmetic rather than about the
+///                                      kinematics: a duration of the
 ///                                      constructed profile left the finite
 ///                                      range; the total underflowed to zero on
 ///                                      a command with a nonzero displacement,
 ///                                      which would report an instantaneous
-///                                      traversal; or a requested retiming
-///                                      differs from a duration the profile
-///                                      already realizes by less than the
+///                                      traversal; a requested retiming differs
+///                                      from a duration the profile already
+///                                      realizes, or from a coefficient built
+///                                      out of that difference, by less than the
 ///                                      rounding of the expression that would
-///                                      solve for it, so the request cannot be
-///                                      told apart from that duration. The third
-///                                      case says a profile may well exist and
-///                                      the arithmetic cannot locate it, which
-///                                      is why it is reported separately from
+///                                      solve for it, so it cannot be told apart
+///                                      from that duration; or the discriminant
+///                                      of the shape's own quadratic left the
+///                                      finite range, which would drive its root
+///                                      to zero and return the shape boundary
+///                                      itself. Every case past the first two
+///                                      says a profile may well exist and the
+///                                      arithmetic cannot locate it, which is
+///                                      why they are reported separately from
 ///                                      unreachable_duration: the caller should
 ///                                      change the request, not the limits.
 ///  * unreachable_boundary_velocity   : the commanded displacement is smaller

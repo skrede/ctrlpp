@@ -1,5 +1,7 @@
 #include "ctrlpp/trajectory/trapezoidal_trajectory.h"
 
+#include "../support/trapezoidal_solve_conditioning.h"
+
 #include <cmath>
 #include <limits>
 #include <cstddef>
@@ -72,33 +74,6 @@ swept integrate_velocity(const ctrlpp::trapezoidal_trajectory<double>& traj)
     out.back_time_exposure = last_length + widest_panel;
     out.usable = std::isfinite(out.integral) && std::isfinite(out.abs_area) && out.panels > 0;
     return out;
-}
-
-// Amplification the cruise-velocity solve applies to its own roundings. Each of
-// the three shapes reaches its root through a difference of two nearly equal
-// quantities, and the ratio of the operands entering that difference to the
-// difference itself is what the realized duration inherits.
-double solve_conditioning(double v_cruise, double a, double h, double v0, double v1, double T_new)
-{
-    const double v_lo = std::min(v0, v1);
-    const double v_hi = std::max(v0, v1);
-    const double v_sum_sq = v0 * v0 + v1 * v1;
-
-    const auto ratio = [](double operands, double residual) {
-        const double scale = std::abs(residual);
-        return (scale > 0.0) ? std::abs(operands) / scale : 0.0;
-    };
-
-    if(v_cruise > v_lo && v_cruise < v_hi)
-    {
-        const double ramp_distance = (v_hi - v_lo) * (v_hi + v_lo) / (2.0 * a);
-        return std::max(1.0, ratio(std::max(h, v_sum_sq / (2.0 * a)), h - ramp_distance));
-    }
-
-    const bool plateau = (v_cruise >= v_hi);
-    const double b = plateau ? ((v0 + v1) + a * T_new) : (a * T_new - (v0 + v1));
-    const double c = plateau ? (a * h + v_sum_sq / 2.0) : (v_sum_sq / 2.0 - a * h);
-    return std::max({1.0, ratio(a * h + v_sum_sq / 2.0, c), ratio(b * b + 4.0 * std::abs(c), b * b - 4.0 * c)});
 }
 
 }
@@ -193,10 +168,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // ramps exactly cover the displacement, so the envelope the trace has to
     // respect is that raised value, not the decoded one.
     const double abs_h = std::abs(q1 - q0);
-    const double ramp_only = std::abs(v0 * v0 - v1 * v1) / 2.0;
-    const double a_eff = (abs_h > 0.0 && a_max * abs_h < ramp_only)
-        ? (ramp_only / abs_h + std::numeric_limits<double>::epsilon())
-        : a_max;
+    const double a_eff = ctrlpp::test::trapezoidal_effective_acceleration(abs_h, v0, v1, a_max);
     if(!std::isfinite(a_eff))
         return 0;
 
@@ -457,20 +429,34 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             abort();
     }
 
-    // Realized duration. Thirty-two chained roundings stand behind it: twelve
-    // form the cruise velocity (the linear coefficient, the constant, the
-    // discriminant, its square root, and the cancellation-free root selection),
-    // fifteen form the duration recomputed from it, and the remaining five cover
-    // the domain clamps above and the multiplication that formed the request.
-    // The solve's own conditioning multiplies all of them, because each shape
-    // reaches its root through a difference of two nearly equal quantities.
-    constexpr double duration_rounding_ops = 32.0;
+    // Realized duration. Fifty chained roundings stand behind it, counted and
+    // enumerated in the shared conditioning model, plus the five this target
+    // adds on its own: the domain clamps above and the multiplication that
+    // formed the request. The solve's amplification multiplies all of them.
+    constexpr double request_rounding_ops = 5.0;
+    constexpr double duration_rounding_ops =
+        static_cast<double>(ctrlpp::test::trapezoidal_duration_rounding_ops) + request_rounding_ops;
     const double sigma = (h_signed >= 0.0) ? 1.0 : -1.0;
-    const double conditioning = solve_conditioning(sigma * retimed.peak_velocity(), a_eff, abs_h,
-                                                   sigma * v0, sigma * v1, T_new);
-    const double duration_tol
-        = std::numeric_limits<double>::epsilon() * duration_rounding_ops * T_new * conditioning;
-    if(std::isfinite(duration_tol) && std::abs(T_scaled - T_new) > duration_tol)
+    const auto conditioning = ctrlpp::test::trapezoidal_solve_conditioning(
+        sigma * retimed.peak_velocity(), a_eff, abs_h, sigma * v0, sigma * v1, T_new);
+
+    // An amplification with no finite value is a FINDING, never a skipped check.
+    // Every quantity the model divides by is one the solve floored before it
+    // accepted the request, so an unbounded answer on a profile that was retimed
+    // means the library reported success on a request whose answer it could not
+    // resolve. Guarding the comparison on the tolerance being finite would turn
+    // exactly that case into a silent pass.
+    if(!std::isfinite(conditioning))
+        abort();
+
+    // Compared as a relative error rather than an absolute one. The two are the
+    // same statement, but the absolute form multiplies the amplification by the
+    // requested duration, and at the extremes of the decoded domain that product
+    // overflows to infinity and admits everything -- the same silent pass by a
+    // different route.
+    const double duration_rel_tol
+        = std::numeric_limits<double>::epsilon() * duration_rounding_ops * conditioning;
+    if(std::abs(T_scaled - T_new) / T_new > duration_rel_tol)
         abort();
 
     return 0;
