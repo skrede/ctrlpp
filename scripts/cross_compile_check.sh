@@ -15,8 +15,10 @@
 #   Leg 3  arm-none-eabi Cortex-M7 cross-compile with exceptions and RTTI off,
 #          proving the header subset is clean against a bare-metal toolchain.
 #          The toolchain's own hosted libstdc++ subset is the target, so the
-#          standard-library search path and hosting mode are left at their
-#          defaults (see the D-13 recipe).
+#          standard-library search path and the hosting mode are left at their
+#          defaults and are deliberately not overridden: pointing either
+#          elsewhere would compile against a different standard library than
+#          the one a consumer of this toolchain actually links.
 #
 # This is a plain, repeatable local script. It authors no CI configuration and
 # no CMake toolchain file.

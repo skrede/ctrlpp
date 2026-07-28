@@ -1,0 +1,11 @@
+# Deliberately non-conforming fixture. No file under this directory is ever
+# compiled or analyzed, so this configuration governs nothing.
+#
+# It exists so the rule asserting that the attribute-inserting check stays
+# disabled can be shown to fail: the check is enabled below, uncommented, which
+# is the exact shape that would mechanically reintroduce the site-level
+# attributes the scope fence forbids.
+---
+Checks: '-*,
+modernize-use-nodiscard,
+'

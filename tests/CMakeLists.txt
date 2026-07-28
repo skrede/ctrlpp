@@ -56,6 +56,50 @@ if (CTRLPP_BUILD_TESTS)
             set_target_properties(rapidcheck_catch PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_rc_catch_inc}")
         endif ()
     endif ()
+    # The source purity gate and the self-test that proves it can fail. Both are
+    # registered here at the top level rather than under integration/, which is
+    # added only when dependencies are resolved by package discovery instead of
+    # fetched, and would therefore be skipped in the configuration this project
+    # builds by default.
+    #
+    # Neither carries a target dependency, unlike every other registration in
+    # this tree: the gate reads source and consumes no build product. The
+    # working directory is set because the script resolves its scan roots
+    # relative to the repository root.
+    #
+    # Registration lives under the build-tests guard, so the gate is absent from
+    # a library-only consumer build. That matches the intent -- it runs on every
+    # test run, locally and in every workflow -- and is stated rather than
+    # engineered around.
+    # The interpreter is named explicitly rather than relying on the shebang,
+    # because CTest launches the command directly and Windows cannot execute a
+    # shell script that way. Where no interpreter exists the two tests are
+    # skipped with a visible status line instead of registered and then failing
+    # for a reason that has nothing to do with source purity. The gate checks
+    # source text, which is platform-independent, so one platform running it
+    # ratchets the property for all of them.
+    find_program(CTRLPP_PURITY_SHELL bash)
+    if (CTRLPP_PURITY_SHELL)
+        add_test(
+            NAME source_purity
+            COMMAND ${CTRLPP_PURITY_SHELL}
+                    ${CMAKE_SOURCE_DIR}/scripts/source_purity_check.sh
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        )
+        add_test(
+            NAME source_purity_self_test
+            COMMAND ${CTRLPP_PURITY_SHELL}
+                    ${CMAKE_SOURCE_DIR}/scripts/source_purity_check.sh --self-test
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        )
+        set_tests_properties(source_purity source_purity_self_test PROPERTIES
+            LABELS "purity"
+        )
+    else ()
+        message(STATUS
+            "No bash found: the source purity gate and its self-test are not registered.")
+    endif ()
+
     add_subdirectory(unit)
     add_subdirectory(compile)
     if (NOT CTRLPP_CMAKE_FETCH_DEPS)
