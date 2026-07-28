@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/estimation/ukf.h"
 #include "ctrlpp/estimation/ekf.h"
 #include "ctrlpp/estimation/estimation_types.h"
@@ -57,12 +58,13 @@ TEST_CASE("ukf with julier strategy")
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
     // The Julier strategy has no domain to validate, so it is built here and
-    // handed to the strategy-taking constructor. A strategy that does validate
-    // its options is built through ukf::try_create instead, which forwards the
-    // strategy's own rejection.
-    ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement, julier_sigma_points<double, 2>> filter(
-        dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0},
-        julier_sigma_points<double, 2>{julier_options<double>{.kappa = 1.0}});
+    // handed to the strategy-taking factory. A strategy that does validate its
+    // options is built through the options-taking overload instead, which
+    // forwards the strategy's own rejection.
+    auto filter = ctrlpp::test::constructed(
+        ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement, julier_sigma_points<double, 2>>::create(
+            dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0},
+            julier_sigma_points<double, 2>{julier_options<double>{.kappa = 1.0}}));
 
     double true_pos = 0.0;
     double true_vel = 1.0;
@@ -96,7 +98,7 @@ TEST_CASE("ukf with qr gain decomposition")
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ukf filter(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0, .decomposition = gain_decomposition::qr});
+    auto filter = ctrlpp::test::constructed(ukf<double, 2, 1, 1, decltype(dyn), decltype(meas)>::create(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0, .decomposition = gain_decomposition::qr}));
 
     double true_pos = 0.0;
     double true_vel = 1.0;
@@ -140,10 +142,10 @@ TEST_CASE("ukf shares dynamics_model with ekf")
     static_assert(dynamics_model<decltype(shared_dynamics), double, 2, 1>);
 
     // Same dynamics works with EKF
-    ekf ekf_filter(shared_dynamics, shared_meas, ekf_config<double, 2, 1, 1>{});
+    auto ekf_filter = ctrlpp::test::constructed(ekf<double, 2, 1, 1, decltype(shared_dynamics), decltype(shared_meas)>::create(shared_dynamics, shared_meas, ekf_config<double, 2, 1, 1>{}));
 
     // Same dynamics works with UKF
-    ukf ukf_filter(shared_dynamics, shared_meas, ukf_config<double, 2, 1, 1>{});
+    auto ukf_filter = ctrlpp::test::constructed(ukf<double, 2, 1, 1, decltype(shared_dynamics), decltype(shared_meas)>::create(shared_dynamics, shared_meas, ukf_config<double, 2, 1, 1>{}));
 
     Vector<double, 1> u = Vector<double, 1>::Zero();
     ekf_filter.predict(u);
@@ -168,7 +170,7 @@ TEST_CASE("ukf satisfies ObserverPolicy and CovarianceObserver")
     ukf_linear_dynamics dyn;
     ukf_position_measurement meas;
 
-    ukf filter(dyn, meas, ukf_config<double, 2, 1, 1>{});
+    auto filter = ctrlpp::test::constructed(ukf<double, 2, 1, 1, decltype(dyn), decltype(meas)>::create(dyn, meas, ukf_config<double, 2, 1, 1>{}));
 
     Vector<double, 1> u = Vector<double, 1>::Zero();
     filter.predict(u);
@@ -201,7 +203,7 @@ TEST_CASE("ukf construction from strategy options surfaces a rejected parameter 
 
     SECTION("non-positive spread")
     {
-        auto result = filter_t::try_create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
+        auto result = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
                                            merwe_options<double>{.alpha = 0.0, .beta = 2.0, .kappa = 0.0});
 
         REQUIRE_FALSE(result.has_value());
@@ -210,7 +212,7 @@ TEST_CASE("ukf construction from strategy options surfaces a rejected parameter 
 
     SECTION("negative spread")
     {
-        auto result = filter_t::try_create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
+        auto result = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
                                            merwe_options<double>{.alpha = -1.0, .beta = 2.0, .kappa = 0.0});
 
         REQUIRE_FALSE(result.has_value());
@@ -219,7 +221,7 @@ TEST_CASE("ukf construction from strategy options surfaces a rejected parameter 
 
     SECTION("zero dimension-plus-kappa sum")
     {
-        auto result = filter_t::try_create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
+        auto result = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
                                            merwe_options<double>{.alpha = 1e-3, .beta = 2.0, .kappa = -2.0});
 
         REQUIRE_FALSE(result.has_value());
@@ -228,7 +230,7 @@ TEST_CASE("ukf construction from strategy options surfaces a rejected parameter 
 
     SECTION("conforming options construct a usable filter")
     {
-        auto result = filter_t::try_create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
+        auto result = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
                                            merwe_options<double>{.alpha = 1.0, .beta = 0.0, .kappa = 1.0});
 
         REQUIRE(result.has_value());

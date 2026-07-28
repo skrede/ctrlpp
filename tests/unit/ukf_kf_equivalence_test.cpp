@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 // This anchor asserts that a UKF and a Kalman filter driven by the same
 // input/measurement sequence on an identical linear plant produce the same
 // state and covariance estimates. With alpha=1, beta=0, kappa=3-NX the
@@ -79,7 +80,7 @@ TEST_CASE("UKF matches Kalman filter state and covariance on a linear system", "
     ukf_cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
     ukf_cfg.P0 = Matrix<double, NX, NX>::Identity() * 10.0;
 
-    auto estimator_result = UkfType::try_create(linear_dynamics{}, position_measurement{}, ukf_cfg, strategy_opts);
+    auto estimator_result = UkfType::create(linear_dynamics{}, position_measurement{}, ukf_cfg, strategy_opts);
     REQUIRE(estimator_result.has_value());
     auto& estimator = *estimator_result;
 
@@ -94,7 +95,7 @@ TEST_CASE("UKF matches Kalman filter state and covariance on a linear system", "
     kf_cfg.R = ukf_cfg.R;
     kf_cfg.P0 = ukf_cfg.P0;
 
-    kalman_filter<double, NX, NU, NY> reference(sys, kf_cfg);
+    auto reference = ctrlpp::test::constructed(kalman_filter<double, NX, NU, NY>::create(sys, kf_cfg));
 
     Vector<double, NX> x_true;
     x_true << 0.0, 1.0;

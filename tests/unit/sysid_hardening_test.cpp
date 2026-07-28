@@ -22,7 +22,11 @@ TEST_CASE("RLS with singular covariance P0", "[rls][hardening][negative]")
 {
     ctrlpp::rls_config<double, 2> cfg;
     cfg.P0 = ctrlpp::Matrix<double, 2, 2>::Zero();
-    ctrlpp::rls<double, 2> estimator(cfg);
+    // Singular and entirely well-posed: every entry is finite, so the
+    // configuration validation accepts it. Finiteness is the domain condition
+    // and definiteness is not; rejecting a singular P0 would refuse a starting
+    // point that says only "I am certain of these parameters".
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, 2>::create(cfg));
 
     Eigen::Vector2d phi;
     phi << 1.0, 0.5;
@@ -33,26 +37,121 @@ TEST_CASE("RLS with singular covariance P0", "[rls][hardening][negative]")
     REQUIRE(std::isfinite(theta(1)));
 }
 
-TEST_CASE("RLS with zero forgetting factor", "[rls][hardening][negative]")
+TEST_CASE("RLS rejects an out-of-domain forgetting factor", "[rls][hardening][negative]")
 {
-    ctrlpp::rls_config<double, 2> cfg;
+    SECTION("zero")
+    {
+        ctrlpp::rls_config<double, 2> cfg;
+        cfg.lambda = 0.0;
+
+        // The forgetting factor is the divisor of the covariance update
+        // P <- (P - k phi^T P) / lambda, so a zero factor divides by zero on the
+        // very first sample: every entry of P becomes non-finite, the gain
+        // formed from it is non-finite, and every parameter estimate afterwards
+        // is meaningless -- while the boolean update return still reports
+        // success. Rejecting here is what stops that.
+        const auto rejected = ctrlpp::rls<double, 2>::create(cfg);
+
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::rls_error::non_positive_forgetting_factor);
+    }
+
+    SECTION("negative")
+    {
+        ctrlpp::rls_config<double, 2> cfg;
+        cfg.lambda = -0.5;
+
+        // The same division, with the sign flipped: it negates a positive
+        // semidefinite covariance, so every later gain points against the error
+        // rather than along it. Finite arithmetic, no diagnostic, wrong answers.
+        const auto rejected = ctrlpp::rls<double, 2>::create(cfg);
+
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::rls_error::non_positive_forgetting_factor);
+    }
+
+    SECTION("above unity")
+    {
+        ctrlpp::rls_config<double, 2> cfg;
+        cfg.lambda = 1.5;
+
+        // A separate enumerator because it is a separate kind of fault: the
+        // arithmetic here is well defined and the consequence is silent rather
+        // than explosive. Dividing by a factor above one deflates the covariance
+        // faster than the measurement update alone, so the gain collapses toward
+        // zero and the estimator stops adapting. Exponential forgetting is
+        // defined on (0, 1], which is what this rejection enforces.
+        const auto rejected = ctrlpp::rls<double, 2>::create(cfg);
+
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::rls_error::forgetting_factor_above_unity);
+    }
+
+    SECTION("unity is accepted -- it is ordinary recursive least squares")
+    {
+        ctrlpp::rls_config<double, 2> cfg;
+        cfg.lambda = 1.0;
+
+        CHECK(ctrlpp::rls<double, 2>::create(cfg).has_value());
+    }
+}
+
+TEST_CASE("RLS rejects a non-finite initial covariance and a degenerate bound", "[rls][hardening][negative]")
+{
+    SECTION("non-finite initial covariance")
+    {
+        ctrlpp::rls_config<double, 2> cfg;
+        cfg.P0 = ctrlpp::test::nan_matrix<double, 2, 2>();
+
+        const auto rejected = ctrlpp::rls<double, 2>::create(cfg);
+
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::rls_error::non_finite_initial_covariance);
+    }
+
+    SECTION("zero covariance bound")
+    {
+        ctrlpp::rls_config<double, 2> cfg;
+        cfg.cov_upper_bound = 0.0;
+
+        // The clamp rescales P by bound*NP/trace once the trace exceeds the
+        // bound, so a zero bound drives the covariance to exactly zero on the
+        // first sample and the parameters never move again.
+        const auto rejected = ctrlpp::rls<double, 2>::create(cfg);
+
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::rls_error::non_positive_covariance_bound);
+    }
+
+    SECTION("non-finite covariance bound")
+    {
+        ctrlpp::rls_config<double, 2> cfg;
+        cfg.cov_upper_bound = std::numeric_limits<double>::infinity();
+
+        // An infinite bound disables the clamp the field exists to impose: the
+        // trace can never exceed it, so the covariance is unbounded in a type
+        // whose stated contract is that it is bounded.
+        const auto rejected = ctrlpp::rls<double, 2>::create(cfg);
+
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::rls_error::non_positive_covariance_bound);
+    }
+}
+
+TEST_CASE("recursive_arx forwards the estimator's configuration rejection", "[rls][hardening][negative]")
+{
+    ctrlpp::rls_config<double, 3> cfg;
     cfg.lambda = 0.0;
-    ctrlpp::rls<double, 2> estimator(cfg);
 
-    Eigen::Vector2d phi;
-    phi << 1.0, 0.5;
+    const auto rejected = ctrlpp::recursive_arx<double, 2, 1>::create(cfg);
 
-    // Zero lambda causes division by lambda in covariance update
-    // Should not crash; result may be NaN/Inf but must not segfault
-    estimator.update(1.0, phi);
-    auto theta = estimator.parameters();
-    // No crash is the success criterion
-    (void)theta;
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error() == ctrlpp::rls_error::non_positive_forgetting_factor);
 }
 
 TEST_CASE("RLS with NaN regressor", "[rls][hardening][negative]")
 {
-    ctrlpp::rls<double, 2> estimator;
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, 2>::create());
 
     auto phi = ctrlpp::test::nan_vector<double, 2>();
     estimator.update(1.0, phi);
@@ -67,7 +166,7 @@ TEST_CASE("RLS with NaN regressor", "[rls][hardening][negative]")
 TEST_CASE("RLS identifies known first-order system", "[rls][hardening][convergence]")
 {
     constexpr std::size_t NP = 2;
-    ctrlpp::rls<double, NP> estimator;
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, NP>::create());
 
     std::mt19937 gen(42);
     std::normal_distribution<double> noise(0.0, 0.001);
@@ -90,7 +189,7 @@ TEST_CASE("RLS identifies known first-order system", "[rls][hardening][convergen
 
 TEST_CASE("RLS with ill-conditioned regressor", "[rls][hardening][robustness]")
 {
-    ctrlpp::rls<double, 2> estimator;
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, 2>::create());
 
     Eigen::Vector2d true_theta;
     true_theta << 1.0, 2.0;
@@ -338,7 +437,7 @@ TEST_CASE("Recursive ARX order 2 to_state_space superdiagonal",
           "[recursive_arx][hardening][coverage]")
 {
     // NA=2 exercises the superdiagonal initialization loop in to_state_space()
-    ctrlpp::recursive_arx<double, 2, 1> arx;
+    auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, 2, 1>::create());
 
     std::mt19937 gen(42);
     std::uniform_real_distribution<double> input(-1.0, 1.0);

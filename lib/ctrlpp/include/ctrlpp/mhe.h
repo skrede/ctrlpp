@@ -67,10 +67,35 @@ public:
     using output_vector_t = Vector<Scalar, NY>;
     using cov_matrix_t = Matrix<Scalar, NX, NX>;
 
-    mhe(Dynamics dynamics, Measurement measurement, const mhe_config<Scalar, NX, NU, NY, N>& config)
+    /// @brief Fallible factory, and the only way to originate an estimator.
+    ///
+    /// This type embeds an extended filter and hands it the same noise and
+    /// initial-condition fields its own configuration carries, so it forwards
+    /// that filter's rejection verbatim rather than restating the conditions
+    /// here. The forwarding is not plumbing: this type also inverts Q and R to
+    /// form the arrival-cost and stage weights, so a non-finite entry poisons
+    /// the estimation problem as well as the filter.
+    static auto create(Dynamics dynamics, Measurement measurement, const mhe_config<Scalar, NX, NU, NY, N>& config) -> ctrlpp::expected<mhe, filter_error>
+    {
+        auto filter = ekf<Scalar, NX, NU, NY, Dynamics, Measurement>::create(
+            dynamics, measurement, ekf_config<Scalar, NX, NU, NY>{.Q = config.Q, .R = config.R, .x0 = config.x0, .P0 = config.P0, .numerical_eps = config.numerical_eps});
+        if(!filter)
+            return ctrlpp::unexpected(filter.error());
+        return mhe{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(*filter), config};
+    }
+
+private:
+    /// @brief Tag selecting the non-validating constructor reserved for
+    /// `create`, which is what makes the factory the only public path and the
+    /// validation impossible to bypass.
+    struct validated_tag
+    {
+    };
+
+    mhe(validated_tag, Dynamics dynamics, Measurement measurement, ekf<Scalar, NX, NU, NY, Dynamics, Measurement> filter, const mhe_config<Scalar, NX, NU, NY, N>& config)
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
-        , m_ekf{m_dynamics, m_measurement, ekf_config<Scalar, NX, NU, NY>{.Q = config.Q, .R = config.R, .x0 = config.x0, .P0 = config.P0, .numerical_eps = config.numerical_eps}}
+        , m_ekf{std::move(filter)}
         , m_arrival_cost_weight{config.arrival_cost_weight}
         , m_Q_inv{config.Q.inverse()}
         , m_R_inv{config.R.inverse()}
@@ -90,6 +115,7 @@ public:
         initialize_warm_start(config.x0);
     }
 
+public:
     void predict(const input_vector_t& u)
     {
         m_ekf.predict(u);

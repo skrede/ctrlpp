@@ -51,7 +51,13 @@ int main()
     Eigen::Matrix<Scalar, 2, 1> x0_est;
     x0_est << 5.0, -2.0;
 
-    ctrlpp::kalman_filter<Scalar, NX, NU, NY> kf(sys_d, {.Q = Q_proc, .R = R_meas, .x0 = x0_est, .P0 = P0});
+    auto kf_result = ctrlpp::kalman_filter<Scalar, NX, NU, NY>::create(sys_d, {.Q = Q_proc, .R = R_meas, .x0 = x0_est, .P0 = P0});
+    if(!kf_result.has_value())
+    {
+        std::cerr << "invalid Kalman filter configuration\n";
+        return 1;
+    }
+    auto& kf = *kf_result;
 
     Eigen::Matrix<Scalar, 2, 1> x_true = Eigen::Matrix<Scalar, 2, 1>::Zero();
 

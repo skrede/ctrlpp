@@ -85,7 +85,14 @@ int main()
     ctrlpp::Vector<double, 2> x0 = ctrlpp::Vector<double, 2>::Zero();
     ctrlpp::Matrix<double, 2, 2> P0 = ctrlpp::Matrix<double, 2, 2>::Identity() * 1.0;
 
-    ctrlpp::ukf filter(dyn, meas, ctrlpp::ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto filter_result = ctrlpp::ukf<double, 2, 1, 1, pendulum_dynamics, angle_measurement>::create(
+        dyn, meas, ctrlpp::ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    if(!filter_result.has_value())
+    {
+        std::cerr << "invalid UKF configuration\n";
+        return 1;
+    }
+    auto& filter = *filter_result;
 
     // True initial state: pendulum at 45 degrees, at rest
     ctrlpp::Vector<double, 2> x_true;

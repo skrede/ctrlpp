@@ -65,10 +65,36 @@ public:
     using output_vector_t = Vector<Scalar, NY>;
     using cov_matrix_t = Matrix<Scalar, NX, NX>;
 
-    nmhe(Dynamics dynamics, Measurement measurement, const nmhe_config<Scalar, NX, NU, NY, N, NC>& config)
+    /// @brief Fallible factory, and the only way to originate an estimator.
+    ///
+    /// This type embeds an extended filter and hands it the same noise and
+    /// initial-condition fields its own configuration carries, so it forwards
+    /// that filter's rejection verbatim rather than restating the conditions
+    /// here. The forwarding is not plumbing: this type also inverts Q and R to
+    /// form the arrival-cost and stage weights that the nonlinear program is
+    /// posed against, so a non-finite entry poisons the program as well as the
+    /// filter.
+    static auto create(Dynamics dynamics, Measurement measurement, const nmhe_config<Scalar, NX, NU, NY, N, NC>& config) -> ctrlpp::expected<nmhe, filter_error>
+    {
+        auto filter = ekf<Scalar, NX, NU, NY, Dynamics, Measurement>::create(
+            dynamics, measurement, ekf_config<Scalar, NX, NU, NY>{.Q = config.Q, .R = config.R, .x0 = config.x0, .P0 = config.P0, .numerical_eps = config.numerical_eps});
+        if(!filter)
+            return ctrlpp::unexpected(filter.error());
+        return nmhe{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(*filter), config};
+    }
+
+private:
+    /// @brief Tag selecting the non-validating constructor reserved for
+    /// `create`, which is what makes the factory the only public path and the
+    /// validation impossible to bypass.
+    struct validated_tag
+    {
+    };
+
+    nmhe(validated_tag, Dynamics dynamics, Measurement measurement, ekf<Scalar, NX, NU, NY, Dynamics, Measurement> filter, const nmhe_config<Scalar, NX, NU, NY, N, NC>& config)
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
-        , m_ekf{m_dynamics, m_measurement, ekf_config<Scalar, NX, NU, NY>{.Q = config.Q, .R = config.R, .x0 = config.x0, .P0 = config.P0, .numerical_eps = config.numerical_eps}}
+        , m_ekf{std::move(filter)}
         , m_arrival_cost_weight{config.arrival_cost_weight}
         , m_Q_inv{config.Q.inverse()}
         , m_R_inv{config.R.inverse()}
@@ -81,6 +107,7 @@ public:
         initialize_warm_start(config.x0);
     }
 
+public:
     void predict(const input_vector_t& u)
     {
         m_ekf.predict(u);
@@ -160,13 +187,14 @@ private:
 
     void build_nlp_problem()
     {
-        m_problem = detail::build_nmhe_problem<Scalar, NX, NU, NY, N, NC>(m_dynamics, m_measurement, m_config, m_state, m_Q_inv, m_R_inv);
-        m_setup_failed = !detail::setup_nlp_solver(m_solver, m_problem).has_value();
+        m_problem = std::make_unique<nlp_problem<Scalar>>(
+            detail::build_nmhe_problem<Scalar, NX, NU, NY, N, NC>(m_dynamics, m_measurement, m_config, m_state, m_Q_inv, m_R_inv));
+        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem).has_value();
     }
 
     void initialize_warm_start(const state_vector_t& x0)
     {
-        m_warm_z = Eigen::VectorX<Scalar>::Zero(m_problem.n_vars);
+        m_warm_z = Eigen::VectorX<Scalar>::Zero(m_problem->n_vars);
         for(int k = 0; k <= Ni; ++k)
             m_warm_z.segment(k * nx, nx) = x0;
     }
@@ -199,7 +227,7 @@ private:
             // covers the extraction and the warm-start shift alike. A longer
             // result is accepted: it is readable, and this is exactly the
             // condition that makes the reads legal.
-            if(result.x.size() < static_cast<Eigen::Index>(m_problem.n_vars))
+            if(result.x.size() < static_cast<Eigen::Index>(m_problem->n_vars))
             {
                 fallback_to_ekf(solve_status::invalid_backend_result);
                 return;
@@ -303,7 +331,14 @@ private:
     nmhe_config<Scalar, NX, NU, NY, N, NC> m_config;
 
     std::shared_ptr<nmhe_formulation_state<Scalar, NX, NU, NY, N>> m_state;
-    nlp_problem<Scalar> m_problem;
+    // Held behind a stable heap address so the defaulted move does not relocate
+    // the object the solver's bridge caches by pointer: `nlopt_solver::setup`
+    // stores `&problem` and its own copy/move rebind to that same address. The
+    // estimator is now produced by a factory and therefore IS moved on the way
+    // out of it, which the in-place constructor it replaced never was. Matches
+    // the nonlinear predictive controller, which holds its problem the same way
+    // for the same reason.
+    std::unique_ptr<nlp_problem<Scalar>> m_problem;
     Solver m_solver{};
 
     std::array<state_vector_t, N + 1> m_x_window;

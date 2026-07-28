@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 
@@ -31,7 +32,15 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     P0(0, 0) = p0;
     P0(1, 1) = p1;
 
-    ctrlpp::rls<double, 2> estimator({.lambda = lambda, .P0 = P0});
+    // The harness clamps the forgetting factor into [0.9, 1.0] and every
+    // covariance entry into a finite positive range above, so the configuration
+    // validation cannot reject here. A rejection would mean the validation
+    // refused an in-domain configuration, which is a defect rather than a fuzz
+    // finding.
+    auto created = ctrlpp::rls<double, 2>::create({.lambda = lambda, .P0 = P0});
+    if(!created)
+        abort();
+    auto& estimator = *created;
 
     Eigen::Matrix<double, 2, 1> phi;
     phi << phi0, phi1;

@@ -56,8 +56,15 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     };
 
     ctrlpp::ukf_config<double, 2, 1, 2> cfg{.Q = Q, .R = R, .x0 = x0};
-    ctrlpp::ukf<double, 2, 1, 2, decltype(dynamics), decltype(measurement)> filter(
+    // The harness refuses a non-finite raw input above and clamps every
+    // configuration field, so the configuration validation cannot reject here. A
+    // rejection would mean the validation refused a finite configuration, which
+    // is a defect rather than a fuzz finding.
+    auto created = ctrlpp::ukf<double, 2, 1, 2, decltype(dynamics), decltype(measurement)>::create(
         dynamics, measurement, cfg);
+    if(!created)
+        abort();
+    auto& filter = *created;
 
     Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
 

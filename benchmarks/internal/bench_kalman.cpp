@@ -1,6 +1,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_construct.h"
+
 #include "ctrlpp/kalman.h"
 #include "ctrlpp/model/state_space.h"
 
@@ -31,7 +33,7 @@ int main()
     cfg.Q = Eigen::Matrix4d::Identity() * 0.01;
     cfg.R = Eigen::Matrix2d::Identity() * 0.1;
 
-    ctrlpp::kalman_filter kf(sys, cfg);
+    auto kf = ctrlpp::bench::built_or_exit(ctrlpp::kalman_filter<double, 4, 1, 2>::create(sys, cfg), "kalman_filter");
 
     Eigen::Matrix<double, 1, 1> u;
     u << 0.5;

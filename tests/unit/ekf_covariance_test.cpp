@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/estimation/ekf.h"
 #include "ctrlpp/estimation/observer_policy.h"
 
@@ -96,7 +97,7 @@ TEST_CASE("ekf covariance stays symmetric and PSD over 100+ cycles")
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ekf filter(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto filter = ctrlpp::test::constructed(ekf<double, 2, 1, 1, decltype(dyn), decltype(meas)>::create(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     for(int i = 0; i < 150; ++i)
     {
@@ -126,7 +127,7 @@ TEST_CASE("ekf NIS is finite and positive")
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ekf filter(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto filter = ctrlpp::test::constructed(ekf<double, 2, 1, 1, decltype(dyn), decltype(meas)>::create(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     Vector<double, 1> u = Vector<double, 1>::Zero();
     filter.predict(u);

@@ -109,7 +109,11 @@ TEST_CASE("kalman covariance remains psd throughout filtering", "[kalman][proper
                  Vec2 x0 = Vec2::Zero();
                  Mat2 P0 = Mat2::Identity();
 
-                 ctrlpp::kalman_filter<double, NX, NU, NY> kf(dss, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+                 auto kf_result = ctrlpp::kalman_filter<double, NX, NU, NY>::create(dss, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+
+                 RC_ASSERT(kf_result.has_value());
+
+                 auto& kf = *kf_result;
 
                  Vec2 x_true = Vec2::Zero();
                  Vec1u u = Vec1u::Zero();
@@ -145,7 +149,11 @@ TEST_CASE("kalman covariance is symmetric", "[kalman][property]")
                  Vec2 x0 = Vec2::Zero();
                  Mat2 P0 = Mat2::Identity();
 
-                 ctrlpp::kalman_filter<double, NX, NU, NY> kf(dss, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+                 auto kf_result = ctrlpp::kalman_filter<double, NX, NU, NY>::create(dss, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+
+                 RC_ASSERT(kf_result.has_value());
+
+                 auto& kf = *kf_result;
 
                  Vec2 x_true = Vec2::Zero();
                  Vec1u u = Vec1u::Zero();
@@ -177,7 +185,11 @@ TEST_CASE("kalman innovation bounded for stable system", "[kalman][property]")
                  Vec2 x0 = Vec2::Zero();
                  Mat2 P0 = 10.0 * Mat2::Identity();
 
-                 ctrlpp::kalman_filter<double, NX, NU, NY> kf(dss, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+                 auto kf_result = ctrlpp::kalman_filter<double, NX, NU, NY>::create(dss, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+
+                 RC_ASSERT(kf_result.has_value());
+
+                 auto& kf = *kf_result;
 
                  // Offset initial true state to create observable innovation
                  Vec2 x_true;
@@ -226,7 +238,11 @@ TEST_CASE("kalman robustness - extreme noise parameters", "[kalman][property]")
                  Vec2 x0 = Vec2::Zero();
                  Mat2 P0 = Mat2::Identity();
 
-                 ctrlpp::kalman_filter<double, NX, NU, NY> kf(dss, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+                 auto kf_result = ctrlpp::kalman_filter<double, NX, NU, NY>::create(dss, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+
+                 RC_ASSERT(kf_result.has_value());
+
+                 auto& kf = *kf_result;
 
                  Vec2 x_true = Vec2::Zero();
                  Vec1u u = Vec1u::Zero();

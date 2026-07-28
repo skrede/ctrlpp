@@ -92,7 +92,7 @@ TEST_CASE("KF instantiates and steps at Scalar=float", "[float][anchor]")
     sys.D = Matrix<float, NY, NU>::Zero();
 
     kalman_config<float, NX, NU, NY> cfg;
-    kalman_filter<float, NX, NU, NY> filt(sys, cfg);
+    auto filt = ctrlpp::test::constructed(kalman_filter<float, NX, NU, NY>::create(sys, cfg));
 
     filt.predict(Vector<float, NU>::Zero());
     REQUIRE(filt.update(Vector<float, NY>::Constant(0.5f)).has_value());
@@ -104,7 +104,7 @@ TEST_CASE("KF instantiates and steps at Scalar=float", "[float][anchor]")
 TEST_CASE("EKF instantiates and steps at Scalar=float", "[float][anchor]")
 {
     ekf_config<float, NX, NU, NY> cfg;
-    ekf<float, NX, NU, NY, linear_dynamics_f, position_measurement_f> filt(linear_dynamics_f{}, position_measurement_f{}, cfg);
+    auto filt = ctrlpp::test::constructed(ekf<float, NX, NU, NY, linear_dynamics_f, position_measurement_f>::create(linear_dynamics_f{}, position_measurement_f{}, cfg));
 
     filt.predict(Vector<float, NU>::Zero());
     REQUIRE(filt.update(Vector<float, NY>::Constant(0.5f)).has_value());
@@ -116,7 +116,7 @@ TEST_CASE("EKF instantiates and steps at Scalar=float", "[float][anchor]")
 TEST_CASE("UKF instantiates and steps at Scalar=float", "[float][anchor]")
 {
     ukf_config<float, NX, NU, NY> cfg;
-    ukf<float, NX, NU, NY, linear_dynamics_f, position_measurement_f> filt(linear_dynamics_f{}, position_measurement_f{}, cfg);
+    auto filt = ctrlpp::test::constructed(ukf<float, NX, NU, NY, linear_dynamics_f, position_measurement_f>::create(linear_dynamics_f{}, position_measurement_f{}, cfg));
 
     filt.predict(Vector<float, NU>::Zero());
     REQUIRE(filt.update(Vector<float, NY>::Constant(0.5f)).has_value());

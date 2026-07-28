@@ -1,4 +1,5 @@
 #include "bench_metrics.h"
+#include "bench_construct.h"
 
 #include "ctrlpp/nmhe.h"
 #include "ctrlpp/mpc/nlopt_solver.h"
@@ -91,8 +92,9 @@ auto run_nmhe_benchmark(
     const ctrlpp::nmhe_config<double, NX, NU, NY, N>& config,
     int estimation_steps) -> std::pair<double, double>
 {
-    ctrlpp::nmhe<double, NX, NU, NY, N, Solver, Dynamics, Measurement> estimator{
-        dynamics, measurement, config};
+    auto estimator = ctrlpp::bench::built_or_exit(
+        ctrlpp::nmhe<double, NX, NU, NY, N, Solver, Dynamics, Measurement>::create(dynamics, measurement, config),
+        "nmhe");
 
     constexpr int nx = static_cast<int>(NX);
     constexpr int ny = static_cast<int>(NY);

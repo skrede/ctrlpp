@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 // This anchor asserts that an unconstrained linear MHE, driven by the same
 // input/measurement sequence as an in-process Kalman filter on an identical
 // linear plant, converges to the same state estimate once its window has
@@ -116,7 +117,7 @@ TEST_CASE("unconstrained linear MHE matches Kalman filter at the window end", "[
     mhe_cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
     mhe_cfg.P0 = Matrix<double, NX, NX>::Identity() * 10.0;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, mhe_cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, mhe_cfg));
 
     discrete_state_space<double, NX, NU, NY> sys;
     sys.A << 1.0, dt, 0.0, 1.0;
@@ -129,7 +130,7 @@ TEST_CASE("unconstrained linear MHE matches Kalman filter at the window end", "[
     kf_cfg.R = mhe_cfg.R;
     kf_cfg.P0 = mhe_cfg.P0;
 
-    kalman_filter<double, NX, NU, NY> reference(sys, kf_cfg);
+    auto reference = ctrlpp::test::constructed(kalman_filter<double, NX, NU, NY>::create(sys, kf_cfg));
 
     Vector<double, NX> x_true;
     x_true << 0.0, 1.0;

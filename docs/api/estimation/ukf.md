@@ -45,31 +45,68 @@ using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 ## Construction
 
 ```cpp
-ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config);
+static auto create(Dynamics dynamics, Measurement measurement,
+                   ukf_config<Scalar, NX, NU, NY> config,
+                   Strategy strategy = Strategy{})
+    -> ctrlpp::expected<ukf, filter_error>;
 
-ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config,
-    Strategy strategy);
-
-static auto try_create(Dynamics dynamics, Measurement measurement,
-                                     ukf_config<Scalar, NX, NU, NY> config,
-                                     typename Strategy::options_t strategy_options)
+static auto create(Dynamics dynamics, Measurement measurement,
+                   ukf_config<Scalar, NX, NU, NY> config,
+                   typename Strategy::options_t strategy_options)
     -> ctrlpp::expected<ukf, filter_error>;
 ```
 
-The two constructors cannot fail: the default-strategy form uses the strategy's own in-domain defaults, and the pre-built-strategy form receives a strategy that was validated where it was constructed. A strategy with no domain to validate, such as `julier_sigma_points`, is built directly and handed to the second form.
+`create` is the only construction path; there is no public constructor. A
+factory that sat beside one would validate nothing, since any caller could
+bypass it. The two plain constructors this replaces were the reason the factory
+formerly carried a `try_` prefix -- the prefix marks a fallible factory that
+contrasts with a genuinely non-fallible constructor. With those constructors
+gone the prefix contrasts with nothing, so the member is named `create` like
+every other sole factory in the library. The sigma-point strategies keep
+`try_create`, because their own plain constructors do survive.
 
-The options-aggregate form builds the strategy inside the filter, so it is the only path on which a sigma-point parameter set can be out of domain, and it is fallible: it forwards the strategy's rejection verbatim as a `filter_error` (from `<ctrlpp/estimation/estimation_types.h>`). This is why the factory keeps the `try_` prefix: it contrasts with two real non-fallible constructors rather than restating its own return type. It requires the strategy to expose a `try_create`. As a static member of a class template it also requires explicit template arguments, so name the filter type first:
+The first overload takes a strategy already built, so the strategy was validated
+where it was built; omit it and the strategy's own in-domain defaults are used.
+A strategy with no domain to validate, such as `julier_sigma_points`, is built
+directly and handed to this overload.
+
+The second overload builds the strategy inside the filter, so it is the only
+path on which a sigma-point parameter set can be out of domain. It forwards the
+strategy's rejection verbatim, **before** validating the configuration: a
+strategy that cannot be built leaves nothing for the configuration to be a
+configuration of. It requires the strategy to expose a `try_create`.
+
+Rejections, checked in the order the config aggregate declares its fields (the
+fields are independent, so the order is declaration order rather than a claim
+about causality):
+
+| Enumerator | Condition | What it prevents |
+|------------|-----------|------------------|
+| `filter_error::non_finite_process_noise` | `Q` has a non-finite entry | `Q` is added to the propagated covariance, so an infinite entry gives `P = Inf`, a gain formed from `Inf/Inf` and therefore `NaN`, and a non-finite estimate at the first step |
+| `filter_error::non_finite_measurement_noise` | `R` has a non-finite entry | `R` is added to the innovation covariance the gain solve is posed against, so that solve is meaningless for every measurement |
+| `filter_error::non_finite_initial_state` | `x0` has a non-finite component | `x0` seeds the carried estimate, which is the filter's memory, so every later estimate is formed from it |
+| `filter_error::non_finite_initial_covariance` | `P0` has a non-finite entry | `P0` seeds the covariance recursion, which has no mechanism that returns a non-finite covariance to a finite one |
+
+Finiteness is the domain condition and the whole of it. An ill-conditioned but
+finite configuration -- entries many orders of magnitude apart, or a singular
+`P0` -- is a legitimately posed problem and is **accepted**. Symmetry and
+positive definiteness are not tested either: the filter does not promise them of
+the configuration it is handed, and rejecting them would turn a
+numerical-behavior question into a domain violation.
+
+As a static member of a class template it requires explicit template arguments,
+so name the filter type first:
 
 ```cpp
 using filter_t = ctrlpp::ukf<double, NX, NU, NY, Dynamics, Measurement>;
 
-auto filter = filter_t::try_create(Dynamics{}, Measurement{}, cfg,
-                                   ctrlpp::merwe_options<double>{.alpha = 1e-3, .beta = 2.0, .kappa = 0.0});
+auto filter = filter_t::create(Dynamics{}, Measurement{}, cfg,
+                               ctrlpp::merwe_options<double>{.alpha = 1e-3, .beta = 2.0, .kappa = 0.0});
 if(!filter)
     return filter.error();
 ```
 
-CTAD deduction guide available: deduces to `merwe_sigma_points` as default strategy.
+`merwe_sigma_points` is the default strategy template argument.
 
 ## Methods
 

@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/nmhe.h"
 #include "ctrlpp/mpc/argmin_solver.h"
 
@@ -54,7 +55,7 @@ TEST_CASE("nmhe argmin falls back to ekf during warmup", "[nmhe][argmin]")
     cfg.Q = Matrix<double, NX, NX>::Identity() * 0.01;
     cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
 
-    NmheType estimator(pendulum_dynamics{}, angle_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(NmheType::create(pendulum_dynamics{}, angle_measurement{}, cfg));
 
     Vector<double, NU> u = Vector<double, NU>::Zero();
     Vector<double, NY> z;
@@ -75,7 +76,7 @@ TEST_CASE("nmhe argmin tracks nonlinear system after warmup", "[nmhe][argmin]")
     cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
     cfg.P0 = Matrix<double, NX, NX>::Identity() * 10.0;
 
-    NmheType estimator(pendulum_dynamics{}, angle_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(NmheType::create(pendulum_dynamics{}, angle_measurement{}, cfg));
 
     pendulum_dynamics dyn;
     Vector<double, NX> x_true{0.3, 0.0};
@@ -102,7 +103,7 @@ TEST_CASE("nmhe argmin covariance is finite", "[nmhe][argmin]")
     cfg.Q = Matrix<double, NX, NX>::Identity() * 0.01;
     cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
 
-    NmheType estimator(pendulum_dynamics{}, angle_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(NmheType::create(pendulum_dynamics{}, angle_measurement{}, cfg));
 
     Vector<double, NU> u = Vector<double, NU>::Zero();
     Vector<double, NY> z;
@@ -133,7 +134,7 @@ TEST_CASE("nmhe argmin handles soft constraints", "[nmhe][argmin]")
     cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
     cfg.soft_constraints = true;
 
-    NmheType estimator(pendulum_dynamics{}, angle_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(NmheType::create(pendulum_dynamics{}, angle_measurement{}, cfg));
 
     Vector<double, NU> u = Vector<double, NU>::Zero();
     Vector<double, NY> z;

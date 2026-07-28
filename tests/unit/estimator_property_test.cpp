@@ -81,7 +81,11 @@ TEST_CASE("estimator property tests", "[estimator][property]")
             cfg.R = Matrix<double, NY, NY>::Identity() * r_val;
             cfg.P0 = Matrix<double, NX, NX>::Identity();
 
-            EkfType filter(linear_dynamics{}, position_measurement{}, cfg);
+            auto filter_result = EkfType::create(linear_dynamics{}, position_measurement{}, cfg);
+
+            RC_ASSERT(filter_result.has_value());
+
+            auto& filter = *filter_result;
 
             for(int i = 0; i < 30; ++i)
             {
@@ -108,7 +112,11 @@ TEST_CASE("estimator property tests", "[estimator][property]")
             cfg.R = Matrix<double, NY, NY>::Identity() * r_val;
             cfg.P0 = Matrix<double, NX, NX>::Identity();
 
-            EkfType filter(linear_dynamics{}, position_measurement{}, cfg);
+            auto filter_result = EkfType::create(linear_dynamics{}, position_measurement{}, cfg);
+
+            RC_ASSERT(filter_result.has_value());
+
+            auto& filter = *filter_result;
 
             for(int i = 0; i < 30; ++i)
             {
@@ -134,7 +142,11 @@ TEST_CASE("estimator property tests", "[estimator][property]")
             cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
             cfg.P0 = Matrix<double, NX, NX>::Identity() * 10.0;
 
-            EkfType filter(linear_dynamics{}, position_measurement{}, cfg);
+            auto filter_result = EkfType::create(linear_dynamics{}, position_measurement{}, cfg);
+
+            RC_ASSERT(filter_result.has_value());
+
+            auto& filter = *filter_result;
 
             double initial_err = std::abs(filter.state()(0) - true_pos);
 

@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/estimation/ukf.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -84,7 +85,7 @@ TEST_CASE("ukf tracks linear system")
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ukf filter(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto filter = ctrlpp::test::constructed(ukf<double, 2, 1, 1, decltype(dyn), decltype(meas)>::create(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     double true_pos = 0.0;
     double true_vel = 1.0;
@@ -129,7 +130,7 @@ TEST_CASE("ukf tracks nonlinear system")
     x0 << 0.1, 0.0;
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 1.0;
 
-    ukf filter(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto filter = ctrlpp::test::constructed(ukf<double, 2, 1, 1, decltype(dyn), decltype(meas)>::create(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     Vector<double, 2> x_true;
     x_true << std::numbers::pi / 4.0, 0.0;
@@ -166,7 +167,7 @@ TEST_CASE("ukf covariance remains PSD")
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ukf filter(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto filter = ctrlpp::test::constructed(ukf<double, 2, 1, 1, decltype(dyn), decltype(meas)>::create(dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     for(int i = 0; i < 150; ++i)
     {

@@ -1,4 +1,3 @@
-// Verify the steady-state estimator hot paths do zero heap allocation on
 // fixed-size templated inputs, using the belt-and-suspenders harness from
 // nomalloc_harness.h: a throwing eigen_assert that survives -DNDEBUG plus a
 // global allocation counter that catches heap traffic outside Eigen's own
@@ -12,6 +11,7 @@
 // two identically seeded filters fed identical measurements stay bitwise equal.
 
 #include "nomalloc_harness.h"
+#include "hardening_helpers.h"
 
 #include "ctrlpp/model/state_space.h"
 
@@ -134,8 +134,8 @@ TEST_CASE("kalman_filter predict/update performs zero heap allocation",
     Matrix<double, 1, 1> R;
     R << 1.0;
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(
-        sys, {.Q = Q, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity() * 10.0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(
+        sys, {.Q = Q, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity() * 10.0}));
 
     const Vector<double, 1> u = Vector<double, 1>::Zero();
     const Vector<double, 1> z = (Vector<double, 1>() << 0.1).finished();
@@ -166,9 +166,10 @@ TEST_CASE("ekf predict/update performs zero heap allocation",
     Matrix<double, 1, 1> R;
     R << 1.0;
 
-    ctrlpp::ekf filter(linear_dynamics{}, position_measurement{},
-                       ctrlpp::ekf_config<double, 2, 1, 1>{
-                           .Q = Q, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity() * 10.0});
+    auto filter = ctrlpp::test::constructed(ctrlpp::ekf<double, 2, 1, 1, linear_dynamics, position_measurement>::create(
+        linear_dynamics{}, position_measurement{},
+        ctrlpp::ekf_config<double, 2, 1, 1>{
+            .Q = Q, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity() * 10.0}));
 
     const Vector<double, 1> u = Vector<double, 1>::Zero();
     const Vector<double, 1> z = (Vector<double, 1>() << 0.1).finished();
@@ -199,9 +200,10 @@ TEST_CASE("ukf predict/update performs zero heap allocation",
     Matrix<double, 1, 1> R;
     R << 1.0;
 
-    ctrlpp::ukf filter(linear_dynamics{}, position_measurement{},
-                       ctrlpp::ukf_config<double, 2, 1, 1>{
-                           .Q = Q, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity() * 10.0});
+    auto filter = ctrlpp::test::constructed(ctrlpp::ukf<double, 2, 1, 1, linear_dynamics, position_measurement>::create(
+        linear_dynamics{}, position_measurement{},
+        ctrlpp::ukf_config<double, 2, 1, 1>{
+            .Q = Q, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity() * 10.0}));
 
     const Vector<double, 1> u = Vector<double, 1>::Zero();
     const Vector<double, 1> z = (Vector<double, 1>() << 0.1).finished();

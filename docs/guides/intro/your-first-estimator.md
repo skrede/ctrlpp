@@ -61,8 +61,17 @@ int main()
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix2d P0 = Eigen::Matrix2d::Identity() * 10.0;
 
-    ctrlpp::kalman_filter<double, NX, NU, NY> kf(
+    // Construction is fallible: the factory rejects a configuration whose
+    // Q, R, x0 or P0 carries a non-finite entry, naming which one, rather than
+    // accepting it and producing a non-finite estimate at the first step.
+    auto kf_result = ctrlpp::kalman_filter<double, NX, NU, NY>::create(
         sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    if (!kf_result)
+    {
+        std::cerr << "invalid Kalman filter configuration\n";
+        return 1;
+    }
+    auto& kf = *kf_result;
 
     // True state: position=0, velocity=1 (constant velocity)
     Eigen::Vector2d x_true;

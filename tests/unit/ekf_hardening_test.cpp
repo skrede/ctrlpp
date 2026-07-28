@@ -36,6 +36,16 @@ struct linear_measurement
     }
 };
 
+using ekf_t = ctrlpp::ekf<double, 2, 1, 1, linear_dynamics, linear_measurement>;
+
+// create() is the only construction path and it is fallible, so every
+// valid-input site goes through it and asserts success here. Cases that mean to
+// observe a rejected configuration assert on the result directly instead.
+auto build_ekf(const ctrlpp::ekf_config<double, 2, 1, 1>& cfg) -> ekf_t
+{
+    return ctrlpp::test::constructed(ekf_t::create(linear_dynamics{}, linear_measurement{}, cfg));
+}
+
 auto make_ekf()
 {
     ctrlpp::ekf_config<double, 2, 1, 1> cfg{};
@@ -44,7 +54,7 @@ auto make_ekf()
     cfg.x0 = Eigen::Vector2d::Zero();
     cfg.P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
 
-    return ctrlpp::ekf(linear_dynamics{}, linear_measurement{}, cfg);
+    return build_ekf(cfg);
 }
 
 }
@@ -99,7 +109,7 @@ TEST_CASE("EKF NaN measurement is rejected without touching the estimate",
     CHECK(filter.covariance() == reference.covariance());
 }
 
-TEST_CASE("EKF Inf process noise does not crash", "[ekf][hardening][negative]")
+TEST_CASE("EKF infinite process noise is rejected at construction", "[ekf][hardening][negative]")
 {
     ctrlpp::ekf_config<double, 2, 1, 1> cfg{};
     cfg.Q = Eigen::Matrix<double, 2, 2>::Identity() * std::numeric_limits<double>::infinity();
@@ -107,27 +117,50 @@ TEST_CASE("EKF Inf process noise does not crash", "[ekf][hardening][negative]")
     cfg.x0 = Eigen::Vector2d::Zero();
     cfg.P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
-    auto filter = ctrlpp::ekf(linear_dynamics{}, linear_measurement{}, cfg);
+    // Had the configuration been accepted, the fault would have surfaced as far
+    // as possible from where it was made. Q is added to the propagated
+    // covariance, so the first predict gives P = F P F' + Inf = Inf; the gain
+    // solve is then posed against S = H P H' + R = Inf and yields Inf/Inf, which
+    // is NaN in every entry; the corrected state x + K y is NaN with it, and the
+    // Joseph-form covariance follows. The caller would see a non-finite estimate
+    // from a filter it configured and would have no way to tell which field was
+    // wrong. Rejecting here names the field instead.
+    const auto rejected = ekf_t::create(linear_dynamics{}, linear_measurement{}, cfg);
 
-    Eigen::Matrix<double, 1, 1> u;
-    u << 0.0;
-    filter.predict(u);
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == ctrlpp::filter_error::non_finite_process_noise);
+}
 
-    Eigen::Matrix<double, 1, 1> z;
-    z << 5.0;
+TEST_CASE("EKF rejects each non-finite configuration field by name", "[ekf][hardening][negative]")
+{
+    const auto inf2 = ctrlpp::test::inf_matrix<double, 2, 2>();
 
-    // An infinite Q makes the predicted covariance infinite, so the step is
-    // refused and names that cause rather than manufacturing a gain out of
-    // Inf/Inf. Whether an infinite Q should instead be refused at construction
-    // is a separate question, and the assertion below is separately owned.
-    const auto stepped = filter.update(z);
-    REQUIRE_FALSE(stepped.has_value());
-    REQUIRE(stepped.error() == ctrlpp::ekf_update_error::non_finite_covariance);
+    SECTION("measurement noise")
+    {
+        ctrlpp::ekf_config<double, 2, 1, 1> cfg{};
+        cfg.R = ctrlpp::test::nan_matrix<double, 1, 1>();
+        const auto rejected = ekf_t::create(linear_dynamics{}, linear_measurement{}, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_measurement_noise);
+    }
 
-    // The state is finite: the predict left it at the dynamics model's output
-    // and the refused update never touched it. It is the covariance that is
-    // infinite, which is what the rejection above names.
-    CHECK(true);
+    SECTION("initial state")
+    {
+        ctrlpp::ekf_config<double, 2, 1, 1> cfg{};
+        cfg.x0 = ctrlpp::test::nan_vector<double, 2>();
+        const auto rejected = ekf_t::create(linear_dynamics{}, linear_measurement{}, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_initial_state);
+    }
+
+    SECTION("initial covariance")
+    {
+        ctrlpp::ekf_config<double, 2, 1, 1> cfg{};
+        cfg.P0 = inf2;
+        const auto rejected = ekf_t::create(linear_dynamics{}, linear_measurement{}, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_initial_covariance);
+    }
 }
 
 TEST_CASE("EKF for linear system matches Kalman gain within 1%", "[ekf][hardening][precision]")
@@ -215,7 +248,11 @@ TEST_CASE("EKF ill-conditioned system cond 1e10", "[ekf][hardening][robustness]"
     cfg.x0 = Eigen::Vector2d::Zero();
     cfg.P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
-    auto filter = ctrlpp::ekf(linear_dynamics{}, linear_measurement{}, cfg);
+    // Deliberately ill-conditioned and entirely well-posed: every entry is
+    // finite, so the configuration validation accepts it. Conditioning is a
+    // numerical-behavior question and finiteness is the domain condition; a
+    // validation that rejected this would refuse a problem the filter solves.
+    auto filter = build_ekf(cfg);
 
     Eigen::Matrix<double, 1, 1> u;
     u << 0.0;

@@ -146,7 +146,10 @@ int main()
 
     ctrlpp::lqr<Scalar, NX, NU> ctrl(*K_opt);
 
-    ctrlpp::kalman_filter<Scalar, NX, NU, NY> kf(sys, {});
+    auto kf_result = ctrlpp::kalman_filter<Scalar, NX, NU, NY>::create(sys, {});
+    if (!kf_result)
+        return;
+    auto& kf = *kf_result;
 
     run_loop(kf, ctrl, sys, 100);
 }

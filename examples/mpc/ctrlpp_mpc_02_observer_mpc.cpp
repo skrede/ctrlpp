@@ -30,7 +30,14 @@ int main()
     ctrlpp::discrete_state_space<double, NX, NU, NX> mpc_sys{.A = Ad, .B = Bd, .C = Eigen::Matrix2d::Identity(), .D = Eigen::Matrix<double, 2, 1>::Zero()};
 
     // Kalman filter setup
-    ctrlpp::kalman_filter<double, NX, NU, NY_OBS> kf(obs_sys, {.Q = Eigen::Matrix2d::Identity() * 0.01, .R = Eigen::Matrix<double, 1, 1>::Constant(0.1), .x0 = Eigen::Vector2d::Zero(), .P0 = Eigen::Matrix2d::Identity()});
+    auto kf_result = ctrlpp::kalman_filter<double, NX, NU, NY_OBS>::create(
+        obs_sys, {.Q = Eigen::Matrix2d::Identity() * 0.01, .R = Eigen::Matrix<double, 1, 1>::Constant(0.1), .x0 = Eigen::Vector2d::Zero(), .P0 = Eigen::Matrix2d::Identity()});
+    if(!kf_result.has_value())
+    {
+        std::cerr << "invalid Kalman filter configuration\n";
+        return 1;
+    }
+    auto& kf = *kf_result;
 
     // MPC setup
     ctrlpp::mpc_config<double, NX, NU> cfg{.horizon = 20,

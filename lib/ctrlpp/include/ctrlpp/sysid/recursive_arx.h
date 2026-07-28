@@ -6,6 +6,7 @@
 /// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999, Ch. 11
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/sysid/rls.h"
 
@@ -17,6 +18,7 @@
 
 #include <array>
 #include <cstddef>
+#include <utility>
 #include <algorithm>
 
 namespace ctrlpp
@@ -30,7 +32,20 @@ class recursive_arx
 public:
     static constexpr std::size_t NP = NA * NY + NB * NU;
 
-    explicit recursive_arx(rls_config<Scalar, NP> config = {}) : m_rls{config} {}
+    /// @brief Fallible factory, and the only way to originate an estimator.
+    ///
+    /// This type owns a recursive least-squares estimator and configures it from
+    /// the same aggregate, so it has no configuration condition of its own to
+    /// state: it forwards that estimator's rejection verbatim rather than
+    /// restating the conditions here, where a second copy could drift out of
+    /// step with the arithmetic it describes. See `rls_error`.
+    static auto create(rls_config<Scalar, NP> config = {}) -> ctrlpp::expected<recursive_arx, rls_error>
+    {
+        auto estimator = rls<Scalar, NP>::create(std::move(config));
+        if(!estimator)
+            return ctrlpp::unexpected(estimator.error());
+        return recursive_arx{validated_tag{}, std::move(*estimator)};
+    }
 
     void update(Scalar y, Scalar u)
     {
@@ -98,6 +113,15 @@ public:
     }
 
 private:
+    /// @brief Tag selecting the non-validating constructor reserved for
+    /// `create`, which is what makes the factory the only public path and the
+    /// validation impossible to bypass.
+    struct validated_tag
+    {
+    };
+
+    recursive_arx(validated_tag, rls<Scalar, NP> estimator) : m_rls{std::move(estimator)} {}
+
     rls<Scalar, NP> m_rls;
     std::array<Scalar, NA> m_y_hist{};
     std::array<Scalar, NB> m_u_hist{};

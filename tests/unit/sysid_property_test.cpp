@@ -27,7 +27,9 @@ TEST_CASE("sysid property tests", "[sysid][property]")
         rc::prop("rls model order consistency", [](void)
                  {
             constexpr std::size_t NP = 4;
-            rls<double, NP> identifier;
+            auto identifier_result = rls<double, NP>::create();
+            RC_ASSERT(identifier_result.has_value());
+            auto& identifier = *identifier_result;
 
             // Feed random data points
             for(int i = 0; i < 50; ++i)

@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/sysid/rls.h"
 #include "ctrlpp/sysid.h"
 
@@ -15,7 +16,7 @@ TEST_CASE("RLS converges to true parameters on known linear system")
 {
     // y = 2*x1 + 3*x2 + noise
     constexpr std::size_t NP = 2;
-    ctrlpp::rls<double, NP> estimator;
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, NP>::create());
 
     std::mt19937 gen(42);
     std::normal_distribution<double> noise(0.0, 0.01);
@@ -42,7 +43,7 @@ TEST_CASE("RLS with forgetting tracks time-varying parameters")
     constexpr std::size_t NP = 2;
     ctrlpp::rls_config<double, NP> cfg;
     cfg.lambda = 0.95;
-    ctrlpp::rls<double, NP> estimator(cfg);
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, NP>::create(cfg));
 
     std::mt19937 gen(123);
     std::normal_distribution<double> noise(0.0, 0.01);
@@ -82,7 +83,7 @@ TEST_CASE("RLS covariance stays bounded under low excitation")
     constexpr double bound = 1e4;
     ctrlpp::rls_config<double, NP> cfg;
     cfg.cov_upper_bound = bound;
-    ctrlpp::rls<double, NP> estimator(cfg);
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, NP>::create(cfg));
 
     // Feed constant phi (zero excitation)
     Eigen::Vector2d phi;
@@ -100,7 +101,7 @@ TEST_CASE("RLS covariance stays bounded under low excitation")
 TEST_CASE("RLS covariance is symmetric after every update")
 {
     constexpr std::size_t NP = 3;
-    ctrlpp::rls<double, NP> estimator;
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, NP>::create());
 
     std::mt19937 gen(77);
     std::uniform_real_distribution<double> dist(-1.0, 1.0);
@@ -121,7 +122,7 @@ TEST_CASE("RLS covariance is symmetric after every update")
 TEST_CASE("RLS default construction produces reasonable initial state")
 {
     constexpr std::size_t NP = 2;
-    ctrlpp::rls<double, NP> estimator;
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, NP>::create());
 
     // Parameters should be zero-initialized
     REQUIRE_THAT(estimator.parameters()(0), WithinAbs(0.0, 1e-15));
@@ -137,7 +138,7 @@ TEST_CASE("RLS with forgetting factor 1.0 converges monotonically on stationary 
     constexpr std::size_t NP = 2;
     ctrlpp::rls_config<double, NP> cfg;
     cfg.lambda = 1.0;
-    ctrlpp::rls<double, NP> estimator(cfg);
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, NP>::create(cfg));
 
     std::mt19937 gen(99);
     std::normal_distribution<double> noise(0.0, 0.01);

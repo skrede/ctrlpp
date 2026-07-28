@@ -126,24 +126,26 @@ int main()
     witness += fold(ctrlpp::dare<scalar, 2, 1>(a, b, q, r));
     witness += fold(ctrlpp::care<scalar, 2, 1>(a, b, q, r));
 
-    // -- estimation: plain-ctor filters (kalman, ekf, ukf, particle) --
-
-    ctrlpp::discrete_state_space<scalar, 2, 1, 1> system{};
-    ctrlpp::kalman_filter<scalar, 2, 1, 1> kf(system, ctrlpp::kalman_config<scalar, 2, 1, 1>{});
-    witness += static_cast<int>(sizeof(kf) > 0);
-
-    ctrlpp::ekf efilter(linear_dynamics{}, linear_measurement{}, ctrlpp::ekf_config<scalar, 2, 1, 1>{});
-    witness += static_cast<int>(sizeof(efilter) > 0);
-
-    ctrlpp::ukf ufilter(linear_dynamics{}, linear_measurement{}, ctrlpp::ukf_config<scalar, 2, 1, 1>{});
-    witness += static_cast<int>(sizeof(ufilter) > 0);
+    // -- estimation: plain-ctor filters (particle) --
 
     auto pf = ctrlpp::make_particle_filter<8>(
         linear_dynamics{}, linear_measurement{}, ctrlpp::pf_config<scalar, 2, 1, 1>{},
         std::mt19937_64{42U});
     witness += static_cast<int>(sizeof(pf) > 0);
 
-    // -- estimation: create factories (mekf, manifold_ukf, complementary) --
+    // -- estimation: create factories (kalman, ekf, ukf, mekf, manifold_ukf, complementary) --
+
+    ctrlpp::discrete_state_space<scalar, 2, 1, 1> system{};
+    witness += fold(
+        ctrlpp::kalman_filter<scalar, 2, 1, 1>::create(system, ctrlpp::kalman_config<scalar, 2, 1, 1>{}));
+
+    witness += fold(
+        ctrlpp::ekf<scalar, 2, 1, 1, linear_dynamics, linear_measurement>::create(
+            linear_dynamics{}, linear_measurement{}, ctrlpp::ekf_config<scalar, 2, 1, 1>{}));
+
+    witness += fold(
+        ctrlpp::ukf<scalar, 2, 1, 1, linear_dynamics, linear_measurement>::create(
+            linear_dynamics{}, linear_measurement{}, ctrlpp::ukf_config<scalar, 2, 1, 1>{}));
 
     witness += fold(
         ctrlpp::mekf<scalar, 3, 3, mekf_gravity_measurement>::create(

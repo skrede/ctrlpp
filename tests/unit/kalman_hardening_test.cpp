@@ -27,6 +27,52 @@ auto make_const_velocity_system()
 
 }
 
+TEST_CASE("Kalman rejects each non-finite configuration field by name", "[kalman][hardening][negative]")
+{
+    auto sys = make_const_velocity_system();
+
+    // The failure this prevents: an infinite Q makes the first predict give
+    // P = A P A' + Inf = Inf, the gain solve is posed against S = C P C' + R =
+    // Inf and yields Inf/Inf = NaN, and the corrected state follows. The caller
+    // would see a non-finite estimate from a filter it configured, with nothing
+    // naming the field that was wrong.
+    SECTION("process noise")
+    {
+        ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+        cfg.Q = ctrlpp::test::inf_matrix<double, 2, 2>();
+        const auto rejected = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_process_noise);
+    }
+
+    SECTION("measurement noise")
+    {
+        ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+        cfg.R = ctrlpp::test::nan_matrix<double, 1, 1>();
+        const auto rejected = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_measurement_noise);
+    }
+
+    SECTION("initial state")
+    {
+        ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+        cfg.x0 = ctrlpp::test::nan_vector<double, 2>();
+        const auto rejected = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_initial_state);
+    }
+
+    SECTION("initial covariance")
+    {
+        ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+        cfg.P0 = ctrlpp::test::inf_matrix<double, 2, 2>();
+        const auto rejected = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_initial_covariance);
+    }
+}
+
 TEST_CASE("Kalman singular R (zero measurement noise)", "[kalman][hardening][negative]")
 {
     auto sys = make_const_velocity_system();
@@ -36,7 +82,7 @@ TEST_CASE("Kalman singular R (zero measurement noise)", "[kalman][hardening][neg
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     // Should not crash -- singular R is a degenerate case
     Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
@@ -61,11 +107,11 @@ TEST_CASE("Kalman NaN measurement is rejected without touching the estimate",
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
     // Stepped only with the valid measurement, never with the poisoned one, so
     // it says what the filter would have carried had the bad sample never
     // arrived.
-    ctrlpp::kalman_filter<double, 2, 1, 1> reference(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto reference = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
     kf.predict(u);
@@ -116,7 +162,7 @@ TEST_CASE("Kalman zero Q", "[kalman][hardening][negative]")
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
     for(int k = 0; k < 100; ++k)
@@ -151,7 +197,7 @@ TEST_CASE("Kalman scalar analytical gain comparison", "[kalman][hardening][preci
     Eigen::Matrix<double, 1, 1> x0;
     x0 << 0.0;
 
-    ctrlpp::kalman_filter<double, 1, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 1, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     // Predict step: P_pred = A*P*A^T + Q = P + Q
     // After first predict: P_pred = p0 + q = 10.1
@@ -181,7 +227,7 @@ TEST_CASE("Kalman covariance stays positive definite over 1000 steps",
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
     bool all_pd = true;
@@ -218,7 +264,7 @@ TEST_CASE("Kalman state converges to truth within 200 steps", "[kalman][hardenin
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     double true_pos = 0.0;
     double true_vel = 1.0;
@@ -246,7 +292,7 @@ TEST_CASE("Kalman ill-conditioned system matrix cond 1e10", "[kalman][hardening]
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
     bool all_finite = true;
@@ -287,7 +333,7 @@ TEST_CASE("Kalman is_steady_state with near-zero covariance",
     cfg.Q = Eigen::Matrix2d::Identity() * 1e-300;
     cfg.R = Eigen::Matrix<double, 1, 1>::Identity();
 
-    KF kf(sys, cfg);
+    auto kf = ctrlpp::test::constructed(KF::create(sys, cfg));
 
     // With zero P, should immediately report steady state
     CHECK(kf.is_steady_state());

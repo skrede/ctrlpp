@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <type_traits>
 
 namespace ctrlpp::test
@@ -26,6 +27,22 @@ auto commanded(const Result& result) -> std::remove_cvref_t<decltype(*result)>
 {
     REQUIRE(result.has_value());
     return *result;
+}
+
+/// @brief Assert that a fallible construction produced an object, and hand the
+/// object back.
+///
+/// The same presence assertion as `commanded`, applied to the construction
+/// channel: a rejected configuration fails the enclosing test case where it was
+/// configured, rather than being unwrapped through an empty result or papered
+/// over with a substituted object. Cases that mean to OBSERVE a rejection assert
+/// on the result directly and never come through here, so the helper cannot hide
+/// one.
+template <typename Result>
+auto constructed(Result&& result) -> std::remove_cvref_t<decltype(*result)>
+{
+    REQUIRE(result.has_value());
+    return *std::forward<Result>(result);
 }
 
 template <typename Scalar, std::size_t N>

@@ -9,6 +9,7 @@
 // update loop is guarded.
 
 #include "nomalloc_harness.h"
+#include "hardening_helpers.h"
 
 #include "ctrlpp/sysid/rls.h"
 #include "ctrlpp/sysid/recursive_arx.h"
@@ -39,7 +40,7 @@ TEST_CASE("rls update performs zero heap allocation",
           "[sysid][rls][hardening][nomalloc]")
 {
     constexpr std::size_t np = 3;
-    ctrlpp::rls<double, np> estimator;
+    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, np>::create());
 
     ctrlpp::Vector<double, np> phi;
     phi << 0.3, -0.7, 0.5;
@@ -68,7 +69,7 @@ TEST_CASE("recursive_arx update performs zero heap allocation",
 {
     constexpr std::size_t na = 2;
     constexpr std::size_t nb = 2;
-    ctrlpp::recursive_arx<double, na, nb> arx;
+    auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, na, nb>::create());
 
     arx.update(0.0, 0.0);
 

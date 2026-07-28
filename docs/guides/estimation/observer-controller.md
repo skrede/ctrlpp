@@ -82,8 +82,14 @@ int main()
     Eigen::Matrix<Scalar, 4, 1> x0_est = Eigen::Matrix<Scalar, 4, 1>::Zero();
     Eigen::Matrix<Scalar, 4, 4> P0 = Eigen::Matrix<Scalar, 4, 4>::Identity();
 
-    ctrlpp::kalman_filter<Scalar, NX, NU, NY> kf(
+    auto kf_result = ctrlpp::kalman_filter<Scalar, NX, NU, NY>::create(
         sys_d, {.Q = Q_proc, .R = R_meas, .x0 = x0_est, .P0 = P0});
+    if (!kf_result)
+    {
+        std::cerr << "invalid Kalman filter configuration\n";
+        return 1;
+    }
+    auto& kf = *kf_result;
 
     // True initial state (unknown to the observer)
     Eigen::Matrix<Scalar, 4, 1> x_true;

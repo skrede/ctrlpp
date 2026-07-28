@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/mhe.h"
 #include "ctrlpp/mpc/osqp_solver.h"
 
@@ -70,7 +71,7 @@ TEST_CASE("mhe falls back to ekf during warmup", "[mhe][osqp]")
     cfg.Q = Matrix<double, NX, NX>::Identity() * 0.01;
     cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     Vector<double, NU> u = Vector<double, NU>::Zero();
     Vector<double, NY> z;
@@ -92,7 +93,7 @@ TEST_CASE("mhe tracks constant velocity after warmup", "[mhe][osqp]")
     cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
     cfg.P0 = Matrix<double, NX, NX>::Identity() * 10.0;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     // Simulate a system with constant velocity
     Vector<double, NX> x_true;
@@ -120,7 +121,7 @@ TEST_CASE("mhe covariance is finite and PSD", "[mhe][osqp]")
     cfg.Q = Matrix<double, NX, NX>::Identity() * 0.01;
     cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     Vector<double, NU> u = Vector<double, NU>::Zero();
     Vector<double, NY> z;
@@ -145,7 +146,7 @@ TEST_CASE("mhe arrival state is accessible", "[mhe][osqp]")
     cfg.Q = Matrix<double, NX, NX>::Identity() * 0.01;
     cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     Vector<double, NU> u = Vector<double, NU>::Zero();
     Vector<double, NY> z;
@@ -178,7 +179,7 @@ TEST_CASE("mhe soft box constraint does not drag the estimate to the box floor",
     cfg.x_max = Vector<double, NX>(5.0, 5.0);
     cfg.soft_constraints = true;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     // Constant position measurement well inside the box: the softened bounds are
     // inactive, so a correct two-sided non-negative slack leaves the estimate on
@@ -208,7 +209,7 @@ TEST_CASE("mhe trajectory returns window states", "[mhe][osqp]")
     cfg.Q = Matrix<double, NX, NX>::Identity() * 0.01;
     cfg.R = Matrix<double, NY, NY>::Identity() * 0.1;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     Vector<double, NU> u = Vector<double, NU>::Zero();
     Vector<double, NY> z;

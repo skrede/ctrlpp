@@ -75,7 +75,14 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     ctrlpp::discrete_state_space<double, 2, 1, 1> sys{Ad, Bd, C, D};
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    // The harness clamps every configuration field to a finite range above, so
+    // the configuration validation cannot reject here. A rejection would mean
+    // the validation refused a finite configuration, which is a defect rather
+    // than a fuzz finding.
+    auto created = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    if(!created)
+        abort();
+    auto& kf = *created;
 
     for(int step = 0; step < 10; ++step)
     {

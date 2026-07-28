@@ -44,9 +44,67 @@ auto make_ukf()
     cfg.R = Eigen::Matrix<double, 1, 1>::Identity();
     cfg.x0 = Eigen::Vector2d::Zero();
     cfg.P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
-    return ctrlpp::ukf(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg);
+    return ctrlpp::test::constructed(ctrlpp::ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg));
 }
 
+}
+
+TEST_CASE("UKF rejects each non-finite configuration field by name", "[ukf][hardening][negative]")
+{
+    using filter_t = ctrlpp::ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>;
+
+    // The failure this prevents: an infinite Q is added to the sigma-point
+    // covariance every predict, so the spread the next generation factors is
+    // infinite, the gain solve is posed against an infinite innovation
+    // covariance, and the estimate is non-finite at the first step.
+    SECTION("process noise")
+    {
+        ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
+        cfg.Q = ctrlpp::test::inf_matrix<double, 2, 2>();
+        const auto rejected = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_process_noise);
+    }
+
+    SECTION("measurement noise")
+    {
+        ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
+        cfg.R = ctrlpp::test::nan_matrix<double, 1, 1>();
+        const auto rejected = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_measurement_noise);
+    }
+
+    SECTION("initial state")
+    {
+        ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
+        cfg.x0 = ctrlpp::test::nan_vector<double, 2>();
+        const auto rejected = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_initial_state);
+    }
+
+    SECTION("initial covariance")
+    {
+        ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
+        cfg.P0 = ctrlpp::test::inf_matrix<double, 2, 2>();
+        const auto rejected = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_initial_covariance);
+    }
+
+    // The options-taking overload reports the strategy's own rejection FIRST: a
+    // strategy that cannot be built leaves nothing for the configuration to be a
+    // configuration of. Both faults are present here and the strategy wins.
+    SECTION("a rejected strategy is reported ahead of a rejected configuration")
+    {
+        ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
+        cfg.Q = ctrlpp::test::inf_matrix<double, 2, 2>();
+        const auto rejected = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg,
+                                               ctrlpp::merwe_options<double>{.alpha = 0.0, .beta = 2.0, .kappa = 0.0});
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_positive_sigma_spread);
+    }
 }
 
 TEST_CASE("UKF NaN measurement is rejected without touching the estimate",
@@ -172,7 +230,7 @@ TEST_CASE("UKF tracks nonlinear system (quadratic dynamics)", "[ukf][hardening][
     cfg.x0 = Eigen::Vector2d::Zero();
     cfg.P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
 
-    auto filter = ctrlpp::ukf(quadratic_dynamics{}, ukf_position_measurement{}, cfg);
+    auto filter = ctrlpp::test::constructed(ctrlpp::ukf<double, 2, 1, 1, quadratic_dynamics, ukf_position_measurement>::create(quadratic_dynamics{}, ukf_position_measurement{}, cfg));
 
     Eigen::Matrix<double, 1, 1> u;
     u << 0.0;
@@ -203,7 +261,12 @@ TEST_CASE("UKF near-singular P0", "[ukf][hardening][robustness]")
     cfg.x0 = Eigen::Vector2d::Zero();
     cfg.P0 = ctrlpp::test::ill_conditioned_2x2<double>(1e10);
 
-    auto filter = ctrlpp::ukf(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg);
+    // Deliberately near-singular and entirely well-posed: every entry is finite,
+    // so the configuration validation accepts it, and whether the Cholesky-based
+    // sigma-point generation survives it is the question the case exists to ask.
+    // A validation that rejected a small-but-positive covariance entry would
+    // delete that question.
+    auto filter = ctrlpp::test::constructed(ctrlpp::ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg));
 
     Eigen::Matrix<double, 1, 1> u;
     u << 0.0;

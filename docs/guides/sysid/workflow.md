@@ -141,7 +141,13 @@ int main()
 
     ctrlpp::rls_config<double, NP> cfg;
     cfg.lambda = lambda;
-    ctrlpp::rls<double, NP> estimator(cfg);
+    auto estimator_result = ctrlpp::rls<double, NP>::create(cfg);
+    if (!estimator_result)
+    {
+        std::cerr << "invalid RLS configuration\n";
+        return 1;
+    }
+    auto& estimator = *estimator_result;
 
     Eigen::Vector2d true_params;
     true_params << 2.0, 0.5;

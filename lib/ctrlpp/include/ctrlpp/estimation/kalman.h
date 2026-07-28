@@ -15,6 +15,7 @@
 #include "ctrlpp/detail/covariance_ops.h"
 
 #include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 
 #include <cmath>
 #include <limits>
@@ -104,9 +105,26 @@ public:
     using meas_cov_matrix_t = Eigen::Matrix<Scalar, ny, ny>;
     using system_t = discrete_state_space<Scalar, NX, NU, NY>;
 
-    kalman_filter(system_t sys, kalman_config<Scalar, NX, NU, NY> config)
-        : m_sys{std::move(sys)}, m_Q{std::move(config.Q)}, m_P{std::move(config.P0)}, m_P_post_prev{m_P}, m_x{std::move(config.x0)}, m_R{std::move(config.R)}, m_innovation{output_vector_t::Zero()}
+    /// @brief Fallible factory, and the only way to originate a filter.
+    ///
+    /// Rejects a configuration whose process noise, measurement noise, initial
+    /// state or initial covariance carries a non-finite entry, naming which of
+    /// the four it is. Such a configuration is a mistake the caller made before
+    /// the filter ever ran: an infinite Q makes the predicted covariance
+    /// infinite, the gain a ratio of infinities and the estimate non-finite at
+    /// the first step, which surfaces the fault as far as possible from where it
+    /// was introduced.
+    ///
+    /// Finiteness is the domain condition and the whole of it. A covariance that
+    /// is merely ill-conditioned -- entries many orders of magnitude apart, or a
+    /// singular P0 -- is a legitimately posed problem and is accepted. Rejecting
+    /// it would convert a numerical-behavior question into a domain violation
+    /// and refuse configurations that work.
+    static auto create(system_t sys, kalman_config<Scalar, NX, NU, NY> config) -> ctrlpp::expected<kalman_filter, filter_error>
     {
+        if(const auto valid = detail::validate_filter_configuration(config.Q, config.R, config.x0, config.P0); !valid)
+            return ctrlpp::unexpected(valid.error());
+        return kalman_filter{validated_tag{}, std::move(sys), std::move(config)};
     }
 
     /// @brief Predict state and covariance one step forward.
@@ -181,6 +199,18 @@ public:
     }
 
 private:
+    /// @brief Tag selecting the non-validating constructor reserved for
+    /// `create`, which is what makes the factory the only public path and the
+    /// validation impossible to bypass.
+    struct validated_tag
+    {
+    };
+
+    kalman_filter(validated_tag, system_t sys, kalman_config<Scalar, NX, NU, NY> config)
+        : m_sys{std::move(sys)}, m_Q{std::move(config.Q)}, m_P{std::move(config.P0)}, m_P_post_prev{m_P}, m_x{std::move(config.x0)}, m_R{std::move(config.R)}, m_innovation{output_vector_t::Zero()}
+    {
+    }
+
     /// @brief Classify a step's operands without touching a single member.
     ///
     /// The order is the severity order documented on `kalman_update_error`: the

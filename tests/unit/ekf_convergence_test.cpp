@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/estimation/ekf.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -113,7 +114,7 @@ TEST_CASE("ekf with analytical Jacobians converges on linear system")
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ekf filter(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto filter = ctrlpp::test::constructed(ekf<double, 2, 1, 1, decltype(dyn), decltype(meas)>::create(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     double true_pos = 0.0;
     double true_vel = 1.0;
@@ -160,7 +161,7 @@ TEST_CASE("ekf with numerical Jacobians converges on linear system")
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ekf filter(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto filter = ctrlpp::test::constructed(ekf<double, 2, 1, 1, decltype(dyn), decltype(meas)>::create(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     double true_pos = 0.0;
     double true_vel = 1.0;
@@ -233,7 +234,7 @@ TEST_CASE("ekf nonlinear pendulum tracking")
     x0 << 0.1, 0.0;
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 1.0;
 
-    ekf filter(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto filter = ctrlpp::test::constructed(ekf<double, 2, 1, 1, decltype(dyn), decltype(meas)>::create(dyn, meas, ekf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     Vector<double, 2> x_true;
     x_true << std::numbers::pi / 4.0, 0.0;
@@ -279,7 +280,7 @@ TEST_CASE("ekf with shared dynamics_model lambda compiles and runs")
 
     static_assert(dynamics_model<decltype(shared_dynamics), double, 2, 1>);
 
-    ekf filter(shared_dynamics, meas, ekf_config<double, 2, 1, 1>{});
+    auto filter = ctrlpp::test::constructed(ekf<double, 2, 1, 1, decltype(shared_dynamics), decltype(meas)>::create(shared_dynamics, meas, ekf_config<double, 2, 1, 1>{}));
 
     Vector<double, 1> u = Vector<double, 1>::Zero();
     filter.predict(u);

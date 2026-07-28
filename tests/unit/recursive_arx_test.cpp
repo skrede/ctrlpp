@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/sysid/recursive_arx.h"
 #include "ctrlpp/sysid.h"
 
@@ -17,7 +18,7 @@ TEST_CASE("Recursive ARX identifies first-order system")
     // True system: y(t) = 0.8*y(t-1) + 0.5*u(t-1)
     constexpr std::size_t NA = 1;
     constexpr std::size_t NB = 1;
-    ctrlpp::recursive_arx<double, NA, NB> arx;
+    auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, NA, NB>::create());
 
     std::mt19937 gen(42);
     std::uniform_real_distribution<double> u_dist(-1.0, 1.0);
@@ -42,7 +43,7 @@ TEST_CASE("Recursive ARX to_state_space returns companion form")
 {
     constexpr std::size_t NA = 1;
     constexpr std::size_t NB = 1;
-    ctrlpp::recursive_arx<double, NA, NB> arx;
+    auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, NA, NB>::create());
 
     std::mt19937 gen(42);
     std::uniform_real_distribution<double> u_dist(-1.0, 1.0);
@@ -70,7 +71,7 @@ TEST_CASE("Recursive ARX state-space simulation matches original response")
 {
     constexpr std::size_t NA = 1;
     constexpr std::size_t NB = 1;
-    ctrlpp::recursive_arx<double, NA, NB> arx;
+    auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, NA, NB>::create());
 
     std::mt19937 gen(42);
     std::uniform_real_distribution<double> u_dist(-1.0, 1.0);
@@ -115,7 +116,7 @@ TEST_CASE("Recursive ARX delegates parameters and covariance")
 {
     constexpr std::size_t NA = 1;
     constexpr std::size_t NB = 1;
-    ctrlpp::recursive_arx<double, NA, NB> arx;
+    auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, NA, NB>::create());
 
     // Initial parameters should be zero
     auto theta = arx.parameters();
@@ -134,7 +135,7 @@ TEST_CASE("Recursive ARX second-order system identification")
     // (Stable: poles of z^2 - 1.2z + 0.5 are inside unit circle)
     constexpr std::size_t NA = 2;
     constexpr std::size_t NB = 2;
-    ctrlpp::recursive_arx<double, NA, NB> arx;
+    auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, NA, NB>::create());
 
     std::mt19937 gen(99);
     std::uniform_real_distribution<double> u_dist(-1.0, 1.0);
@@ -166,7 +167,7 @@ TEST_CASE("Recursive ARX initial updates before buffer is full do not crash")
 {
     constexpr std::size_t NA = 3;
     constexpr std::size_t NB = 2;
-    ctrlpp::recursive_arx<double, NA, NB> arx;
+    auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, NA, NB>::create());
 
     // Just a few updates -- should not crash
     arx.update(1.0, 0.5);
@@ -188,7 +189,7 @@ TEST_CASE("Recursive ARX with NB > NA realizes all b-coefficients (max(NA,NB) st
 
     constexpr std::size_t NA = 1;
     constexpr std::size_t NB = 2;
-    ctrlpp::recursive_arx<double, NA, NB> arx;
+    auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, NA, NB>::create());
 
     std::mt19937 gen(7);
     std::uniform_real_distribution<double> u_dist(-1.0, 1.0);

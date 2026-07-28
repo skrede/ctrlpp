@@ -1,6 +1,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_construct.h"
+
 #include "ctrlpp/ekf.h"
 
 #include <cmath>
@@ -50,7 +52,8 @@ int main()
     cfg.R = Eigen::Matrix2d::Identity() * 0.1;
     cfg.x0 << 0.0, 1.0, 0.0, 1.0;
 
-    ctrlpp::ekf filter(dynamics{}, measurement{}, cfg);
+    auto filter = ctrlpp::bench::built_or_exit(
+        ctrlpp::ekf<double, 4, 1, 2, dynamics, measurement>::create(dynamics{}, measurement{}, cfg), "ekf");
 
     ctrlpp::Vector<double, 1> u = ctrlpp::Vector<double, 1>::Zero();
     ctrlpp::Vector<double, 2> z{1.0, 0.5};

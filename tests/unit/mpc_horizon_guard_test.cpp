@@ -25,6 +25,7 @@
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/mpc/nlp_formulation.h"
 
+#include "hardening_helpers.h"
 #include "stub_qp_solver.h"
 #include "stub_nlp_solver.h"
 
@@ -403,7 +404,7 @@ TEST_CASE("Linear moving-horizon estimator falls back when the backend primal is
     // asserted here; neither case asserts merely that the update returned.
     SECTION("a primal one entry short of the decision dimension")
     {
-        linear_estimator<ctrlpp_test::report_lengths::short_primal> estimator{window_dynamics{}, window_measurement{}, ctrlpp::mhe_config<double, NX, NU, NY, window>{}};
+        auto estimator = ctrlpp::test::constructed(linear_estimator<ctrlpp_test::report_lengths::short_primal>::create(window_dynamics{}, window_measurement{}, ctrlpp::mhe_config<double, NX, NU, NY, window>{}));
         drive_past_warmup(estimator);
 
         REQUIRE(estimator.diagnostics().used_ekf_fallback);
@@ -412,7 +413,7 @@ TEST_CASE("Linear moving-horizon estimator falls back when the backend primal is
 
     SECTION("a primal that is empty despite the reported optimal status")
     {
-        linear_estimator<ctrlpp_test::report_lengths::empty> estimator{window_dynamics{}, window_measurement{}, ctrlpp::mhe_config<double, NX, NU, NY, window>{}};
+        auto estimator = ctrlpp::test::constructed(linear_estimator<ctrlpp_test::report_lengths::empty>::create(window_dynamics{}, window_measurement{}, ctrlpp::mhe_config<double, NX, NU, NY, window>{}));
         drive_past_warmup(estimator);
 
         REQUIRE(estimator.diagnostics().used_ekf_fallback);
@@ -428,7 +429,7 @@ TEST_CASE("Linear moving-horizon estimator falls back when the backend dual is t
     config.x_min = Eigen::Vector2d{-10.0, -10.0};
     config.x_max = Eigen::Vector2d{10.0, 10.0};
 
-    linear_estimator<ctrlpp_test::report_lengths::short_dual> estimator{window_dynamics{}, window_measurement{}, config};
+    auto estimator = ctrlpp::test::constructed(linear_estimator<ctrlpp_test::report_lengths::short_dual>::create(window_dynamics{}, window_measurement{}, config));
     drive_past_warmup(estimator);
 
     REQUIRE(estimator.diagnostics().used_ekf_fallback);
@@ -437,7 +438,7 @@ TEST_CASE("Linear moving-horizon estimator falls back when the backend dual is t
 
 TEST_CASE("Linear moving-horizon estimator accepts a conforming backend result unchanged", "[mhe][result-shape][hardening]")
 {
-    linear_estimator<ctrlpp_test::report_lengths::conforming> estimator{window_dynamics{}, window_measurement{}, ctrlpp::mhe_config<double, NX, NU, NY, window>{}};
+    auto estimator = ctrlpp::test::constructed(linear_estimator<ctrlpp_test::report_lengths::conforming>::create(window_dynamics{}, window_measurement{}, ctrlpp::mhe_config<double, NX, NU, NY, window>{}));
     drive_past_warmup(estimator);
 
     REQUIRE(!estimator.diagnostics().used_ekf_fallback);
@@ -448,7 +449,7 @@ TEST_CASE("Nonlinear moving-horizon estimator falls back when the backend primal
 {
     SECTION("a primal one entry short of the decision dimension")
     {
-        nonlinear_estimator<ctrlpp_test::report_lengths::short_primal> estimator{window_dynamics{}, window_measurement{}, ctrlpp::nmhe_config<double, NX, NU, NY, window>{}};
+        auto estimator = ctrlpp::test::constructed(nonlinear_estimator<ctrlpp_test::report_lengths::short_primal>::create(window_dynamics{}, window_measurement{}, ctrlpp::nmhe_config<double, NX, NU, NY, window>{}));
         drive_past_warmup(estimator);
 
         REQUIRE(estimator.diagnostics().used_ekf_fallback);
@@ -457,7 +458,7 @@ TEST_CASE("Nonlinear moving-horizon estimator falls back when the backend primal
 
     SECTION("a primal that is empty despite the reported optimal status")
     {
-        nonlinear_estimator<ctrlpp_test::report_lengths::empty> estimator{window_dynamics{}, window_measurement{}, ctrlpp::nmhe_config<double, NX, NU, NY, window>{}};
+        auto estimator = ctrlpp::test::constructed(nonlinear_estimator<ctrlpp_test::report_lengths::empty>::create(window_dynamics{}, window_measurement{}, ctrlpp::nmhe_config<double, NX, NU, NY, window>{}));
         drive_past_warmup(estimator);
 
         REQUIRE(estimator.diagnostics().used_ekf_fallback);
@@ -467,7 +468,7 @@ TEST_CASE("Nonlinear moving-horizon estimator falls back when the backend primal
 
 TEST_CASE("Nonlinear moving-horizon estimator accepts a conforming backend result unchanged", "[nmhe][result-shape][hardening]")
 {
-    nonlinear_estimator<ctrlpp_test::report_lengths::conforming> estimator{window_dynamics{}, window_measurement{}, ctrlpp::nmhe_config<double, NX, NU, NY, window>{}};
+    auto estimator = ctrlpp::test::constructed(nonlinear_estimator<ctrlpp_test::report_lengths::conforming>::create(window_dynamics{}, window_measurement{}, ctrlpp::nmhe_config<double, NX, NU, NY, window>{}));
     drive_past_warmup(estimator);
 
     REQUIRE(!estimator.diagnostics().used_ekf_fallback);

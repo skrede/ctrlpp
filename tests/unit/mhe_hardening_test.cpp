@@ -74,7 +74,7 @@ TEST_CASE("MHE with NaN in measurement noise", "[mhe][hardening][negative]")
     cfg.Q = ctrlpp::Matrix<double, NX, NX>::Identity() * 0.01;
     cfg.R = ctrlpp::Matrix<double, NY, NY>::Identity() * 0.1;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     ctrlpp::Vector<double, NU> u = ctrlpp::Vector<double, NU>::Zero();
 
@@ -103,7 +103,7 @@ TEST_CASE("MHE with inconsistent measurements", "[mhe][hardening][negative]")
     cfg.Q = ctrlpp::Matrix<double, NX, NX>::Identity() * 0.01;
     cfg.R = ctrlpp::Matrix<double, NY, NY>::Identity() * 0.1;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     ctrlpp::Vector<double, NU> u = ctrlpp::Vector<double, NU>::Zero();
 
@@ -129,7 +129,7 @@ TEST_CASE("MHE linear system matches Kalman-like estimate", "[mhe][hardening][pr
     cfg.R = ctrlpp::Matrix<double, NY, NY>::Identity() * 0.1;
     cfg.P0 = ctrlpp::Matrix<double, NX, NX>::Identity() * 10.0;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     // True state: position 0, velocity 1 (constant velocity)
     ctrlpp::Vector<double, NX> x_true;
@@ -163,7 +163,7 @@ TEST_CASE("MHE state estimate converges to truth", "[mhe][hardening][convergence
     cfg.P0 = ctrlpp::Matrix<double, NX, NX>::Identity() * 100.0;
     cfg.x0 = ctrlpp::Vector<double, NX>::Zero(); // start far from truth
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     ctrlpp::Vector<double, NX> x_true;
     x_true << 5.0, 0.5;
@@ -204,7 +204,7 @@ TEST_CASE("MHE with ill-conditioned process noise", "[mhe][hardening][robustness
     cfg.Q = Q_ill;
     cfg.R = ctrlpp::Matrix<double, NY, NY>::Identity() * 0.1;
 
-    MheType estimator(linear_dynamics{}, position_measurement{}, cfg);
+    auto estimator = ctrlpp::test::constructed(MheType::create(linear_dynamics{}, position_measurement{}, cfg));
 
     ctrlpp::Vector<double, NU> u = ctrlpp::Vector<double, NU>::Zero();
 

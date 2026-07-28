@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 // These anchors run seeded Monte-Carlo ensembles of KF/EKF/UKF/MEKF against a
 // ground-truth trajectory whose process and measurement noise are sampled
 // from exactly the covariances (Q, R) each filter is configured with, then
@@ -180,7 +181,7 @@ TEST_CASE("KF NEES/NIS Monte-Carlo average lies within the chi-square consistenc
     bool all_stepped = true;
     for(std::size_t m = 0; m < M; ++m)
     {
-        kalman_filter<double, NX, NU, NY> filt(sys, cfg);
+        auto filt = ctrlpp::test::constructed(kalman_filter<double, NX, NU, NY>::create(sys, cfg));
         Vector<double, NX> x_true = Vector<double, NX>::Zero();
 
         for(std::size_t t = 0; t < T; ++t)
@@ -234,7 +235,7 @@ TEST_CASE("EKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
     bool all_stepped = true;
     for(std::size_t m = 0; m < M; ++m)
     {
-        EkfType filt(dyn, meas, cfg);
+        auto filt = ctrlpp::test::constructed(EkfType::create(dyn, meas, cfg));
         Vector<double, NX> x_true = Vector<double, NX>::Zero();
 
         for(std::size_t t = 0; t < T; ++t)
@@ -302,7 +303,7 @@ TEST_CASE("UKF NEES/NIS Monte-Carlo average lies within the chi-square consisten
     bool all_stepped = true;
     for(std::size_t m = 0; m < M; ++m)
     {
-        auto filt_result = UkfType::try_create(linear_dynamics{}, position_measurement{}, cfg, strategy_opts);
+        auto filt_result = UkfType::create(linear_dynamics{}, position_measurement{}, cfg, strategy_opts);
         REQUIRE(filt_result.has_value());
         auto& filt = *filt_result;
         Vector<double, NX> x_true = Vector<double, NX>::Zero();

@@ -19,6 +19,7 @@
 #include "ctrlpp/detail/numerical_diff.h"
 
 #include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 
 #include <cmath>
 #include <limits>
@@ -110,16 +111,32 @@ public:
     using cov_matrix_t = Matrix<Scalar, NX, NX>;
     using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 
-    ekf(Dynamics dynamics, Measurement measurement, ekf_config<Scalar, NX, NU, NY> config)
-        : m_eps{config.numerical_eps}
-        , m_dynamics{std::move(dynamics)}
-        , m_P{std::move(config.P0)}
-        , m_Q{std::move(config.Q)}
-        , m_x{std::move(config.x0)}
-        , m_R{std::move(config.R)}
-        , m_measurement{std::move(measurement)}
-        , m_innovation{output_vector_t::Zero()}
+    /// @brief Fallible factory, and the only way to originate a filter.
+    ///
+    /// Rejects a configuration whose process noise, measurement noise, initial
+    /// state or initial covariance carries a non-finite entry, naming which of
+    /// the four it is. Such a configuration is a mistake the caller made before
+    /// the filter ever ran: an infinite Q makes the predicted covariance
+    /// infinite, the gain a ratio of infinities and the estimate non-finite at
+    /// the first step, which surfaces the fault as far as possible from where it
+    /// was introduced.
+    ///
+    /// Finiteness is the domain condition and the whole of it. A covariance that
+    /// is merely ill-conditioned -- entries many orders of magnitude apart, or a
+    /// singular P0 -- is a legitimately posed problem and is accepted. Rejecting
+    /// it would convert a numerical-behavior question into a domain violation
+    /// and refuse configurations that work.
+    ///
+    /// `numerical_eps` is NOT validated here. It is the finite-difference step
+    /// used only when the model is not analytically differentiable, and it
+    /// carries its own domain condition (finite and strictly positive, since the
+    /// central-difference stencil divides by it); converting that condition is
+    /// separately owned work.
+    static auto create(Dynamics dynamics, Measurement measurement, ekf_config<Scalar, NX, NU, NY> config) -> ctrlpp::expected<ekf, filter_error>
     {
+        if(const auto valid = detail::validate_filter_configuration(config.Q, config.R, config.x0, config.P0); !valid)
+            return ctrlpp::unexpected(valid.error());
+        return ekf{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config)};
     }
 
     void predict(const input_vector_t& u)
@@ -175,6 +192,25 @@ public:
     ekf_health health() const { return m_health; }
 
 private:
+    /// @brief Tag selecting the non-validating constructor reserved for
+    /// `create`, which is what makes the factory the only public path and the
+    /// validation impossible to bypass.
+    struct validated_tag
+    {
+    };
+
+    ekf(validated_tag, Dynamics dynamics, Measurement measurement, ekf_config<Scalar, NX, NU, NY> config)
+        : m_eps{config.numerical_eps}
+        , m_dynamics{std::move(dynamics)}
+        , m_P{std::move(config.P0)}
+        , m_Q{std::move(config.Q)}
+        , m_x{std::move(config.x0)}
+        , m_R{std::move(config.R)}
+        , m_measurement{std::move(measurement)}
+        , m_innovation{output_vector_t::Zero()}
+    {
+    }
+
     /// @brief Classify a step's operands without touching a single member.
     ///
     /// The order is the severity order documented on `ekf_update_error`: the
@@ -274,10 +310,6 @@ private:
     output_vector_t m_innovation;
     ekf_health m_health{ekf_health::ok};
 };
-
-// CTAD deduction guide
-template <typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-ekf(Dynamics, Measurement, ekf_config<Scalar, NX, NU, NY>) -> ekf<Scalar, NX, NU, NY, Dynamics, Measurement>;
 
 namespace detail
 {

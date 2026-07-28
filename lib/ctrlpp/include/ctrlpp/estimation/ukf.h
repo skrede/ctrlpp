@@ -128,52 +128,52 @@ public:
     using cov_matrix_t = Matrix<Scalar, NX, NX>;
     using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 
-    ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config)
-        : m_dynamics{std::move(dynamics)}
-        , m_measurement{std::move(measurement)}
-        , m_x{std::move(config.x0)}
-        , m_P{std::move(config.P0)}
-        , m_Q{std::move(config.Q)}
-        , m_R{std::move(config.R)}
-        , m_decomposition{config.decomposition}
-        , m_strategy{}
-        , m_innovation{output_vector_t::Zero()}
+    /// @brief Fallible factory, and the only way to originate a filter.
+    ///
+    /// Rejects a configuration whose process noise, measurement noise, initial
+    /// state or initial covariance carries a non-finite entry, naming which of
+    /// the four it is. Such a configuration is a mistake the caller made before
+    /// the filter ever ran: an infinite Q makes the predicted covariance
+    /// infinite, the gain a ratio of infinities and the estimate non-finite at
+    /// the first step, which surfaces the fault as far as possible from where it
+    /// was introduced.
+    ///
+    /// Finiteness is the domain condition and the whole of it. A covariance that
+    /// is merely ill-conditioned -- entries many orders of magnitude apart, or a
+    /// near-singular P0 whose Cholesky factorization is the interesting question
+    /// -- is a legitimately posed problem and is accepted. Rejecting it would
+    /// convert a numerical-behavior question into a domain violation and refuse
+    /// configurations that work.
+    ///
+    /// The strategy is taken already built, so it was validated where it was
+    /// built; the overload below takes its options instead and forwards the
+    /// strategy's own rejection.
+    static auto create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<ukf, filter_error>
     {
+        if(const auto valid = detail::validate_filter_configuration(config.Q, config.R, config.x0, config.P0); !valid)
+            return ctrlpp::unexpected(valid.error());
+        return ukf{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config), std::move(strategy)};
     }
 
-    /// @brief Fallible factory for construction from a sigma-point strategy's
-    /// options aggregate, and the only way to build the strategy inside the
+    /// @brief Fallible factory taking the sigma-point strategy's options rather
+    /// than a built strategy, and the only way to build the strategy inside the
     /// filter.
     ///
     /// This is the path where an out-of-domain parameter set would otherwise
     /// pass unreported, so the strategy's own rejection is forwarded verbatim
-    /// rather than swallowed. The two constructors need no such forwarding: one
-    /// takes the strategy's in-domain defaults and the other takes a strategy
-    /// already validated where it was built.
-    ///
-    /// The prefix distinguishes this overload from those constructors, which
-    /// remain non-fallible. It requires the strategy to expose a `try_create`
-    /// returning `ctrlpp::expected<Strategy, filter_error>`.
-    static auto try_create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
+    /// rather than swallowed, and it is reported before the configuration's own
+    /// fields: a strategy that cannot be built leaves nothing for the
+    /// configuration to be a configuration of. It requires the strategy to
+    /// expose a `try_create` returning `ctrlpp::expected<Strategy,
+    /// filter_error>`, which is the name a strategy keeps because its own plain
+    /// constructor is genuinely non-fallible.
+    static auto create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
         -> ctrlpp::expected<ukf, filter_error>
     {
         auto strategy = Strategy::try_create(std::move(strategy_options));
         if(!strategy)
             return ctrlpp::unexpected(strategy.error());
-        return ukf{std::move(dynamics), std::move(measurement), std::move(config), std::move(*strategy)};
-    }
-
-    ukf(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, Strategy strategy)
-        : m_dynamics{std::move(dynamics)}
-        , m_measurement{std::move(measurement)}
-        , m_x{std::move(config.x0)}
-        , m_P{std::move(config.P0)}
-        , m_Q{std::move(config.Q)}
-        , m_R{std::move(config.R)}
-        , m_decomposition{config.decomposition}
-        , m_strategy{std::move(strategy)}
-        , m_innovation{output_vector_t::Zero()}
-    {
+        return create(std::move(dynamics), std::move(measurement), std::move(config), std::move(*strategy));
     }
 
     void predict(const input_vector_t& u)
@@ -232,6 +232,26 @@ public:
     ukf_health health() const { return m_health; }
 
 private:
+    /// @brief Tag selecting the non-validating constructor reserved for
+    /// `create`, which is what makes the factory the only public path and the
+    /// validation impossible to bypass.
+    struct validated_tag
+    {
+    };
+
+    ukf(validated_tag, Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, Strategy strategy)
+        : m_dynamics{std::move(dynamics)}
+        , m_measurement{std::move(measurement)}
+        , m_x{std::move(config.x0)}
+        , m_P{std::move(config.P0)}
+        , m_Q{std::move(config.Q)}
+        , m_R{std::move(config.R)}
+        , m_decomposition{config.decomposition}
+        , m_strategy{std::move(strategy)}
+        , m_innovation{output_vector_t::Zero()}
+    {
+    }
+
     /// @brief Classify a step's operands without touching a single member.
     ///
     /// The order is the severity order documented on `ukf_update_error`: the

@@ -25,13 +25,28 @@ class recursive_arx;
 | `NU` | `>= 1` | Number of inputs (default 1) |
 | `NY` | `>= 1` | Number of outputs (default 1) |
 
-## Constructors
+## Construction
 
 ```cpp
-explicit recursive_arx(rls_config<Scalar, NP> config = {});
+static auto create(rls_config<Scalar, NP> config = {})
+    -> ctrlpp::expected<recursive_arx, rls_error>;
 ```
 
-Where `NP = NA * NY + NB * NU`. Constructs the identifier with optional RLS configuration (forgetting factor, initial covariance, covariance bound).
+Where `NP = NA * NY + NB * NU`. `create` is the only construction path; there is
+no public constructor. It builds the identifier from an optional RLS
+configuration (forgetting factor, initial covariance, covariance bound).
+
+This type owns a `rls` instance and configures it from the same aggregate, so it
+has no configuration condition of its own: it **forwards** that estimator's
+rejection verbatim rather than restating the conditions, where a second copy
+could drift out of step with the arithmetic it describes. See
+[`rls`](rls.md#construction) for the enumerators and their derivations.
+
+```cpp
+auto identifier = ctrlpp::recursive_arx<double, NA, NB>::create(cfg);
+if(!identifier)
+    return identifier.error();
+```
 
 ## Methods
 

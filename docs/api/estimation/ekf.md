@@ -41,13 +41,48 @@ using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 | `P0` | `Matrix<Scalar, NX, NX>` | Identity | Initial error covariance |
 | `numerical_eps` | `Scalar` | `sqrt(eps)` | Perturbation step for numerical Jacobians (only used when analytical Jacobians are not provided) |
 
-## Constructor
+## Construction
 
 ```cpp
-ekf(Dynamics dynamics, Measurement measurement, ekf_config<Scalar, NX, NU, NY> config);
+static auto create(Dynamics dynamics, Measurement measurement,
+                   ekf_config<Scalar, NX, NU, NY> config)
+    -> ctrlpp::expected<ekf, filter_error>;
 ```
 
-CTAD deduction guide available: template parameters are deduced from the config type.
+`create` is the only construction path; there is no public constructor. A
+factory that sat beside one would validate nothing, since any caller could
+bypass it. The CTAD deduction guide was removed with the constructor it named,
+so the template arguments are written out:
+
+```cpp
+auto filter = ctrlpp::ekf<double, NX, NU, NY, Dynamics, Measurement>::create(
+    Dynamics{}, Measurement{}, cfg);
+if(!filter)
+    return filter.error();
+```
+
+Rejections, checked in the order the config aggregate declares its fields (the
+fields are independent, so the order is declaration order rather than a claim
+about causality):
+
+| Enumerator | Condition | What it prevents |
+|------------|-----------|------------------|
+| `filter_error::non_finite_process_noise` | `Q` has a non-finite entry | `Q` is added to the propagated covariance, so an infinite entry gives `P = Inf`, a gain formed from `Inf/Inf` and therefore `NaN`, and a non-finite estimate at the first step |
+| `filter_error::non_finite_measurement_noise` | `R` has a non-finite entry | `R` is added to the innovation covariance the gain solve is posed against, so that solve is meaningless for every measurement |
+| `filter_error::non_finite_initial_state` | `x0` has a non-finite component | `x0` seeds the carried estimate, which is the filter's memory, so every later estimate is formed from it |
+| `filter_error::non_finite_initial_covariance` | `P0` has a non-finite entry | `P0` seeds the covariance recursion, which has no mechanism that returns a non-finite covariance to a finite one |
+
+Finiteness is the domain condition and the whole of it. An ill-conditioned but
+finite configuration -- entries many orders of magnitude apart, or a singular
+`P0` -- is a legitimately posed problem and is **accepted**. Symmetry and
+positive definiteness are not tested either: the filter does not promise them of
+the configuration it is handed, and rejecting them would turn a
+numerical-behavior question into a domain violation.
+
+`numerical_eps` is **not** validated. It is the finite-difference step used only
+when the dynamics or measurement model is not analytically differentiable, and
+its own domain condition (finite and strictly positive, since the
+central-difference stencil divides by it) is separately owned work.
 
 ## Methods
 

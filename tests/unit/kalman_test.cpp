@@ -1,3 +1,4 @@
+#include "hardening_helpers.h"
 #include "ctrlpp/estimation/kalman.h"
 
 #include "ctrlpp/estimation/observer_policy.h"
@@ -34,7 +35,7 @@ TEST_CASE("kalman filter convergence on constant velocity model")
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     // True state: position=5, velocity=1 (constant)
     double true_pos = 0.0;
@@ -70,7 +71,7 @@ TEST_CASE("kalman filter covariance remains symmetric and PSD")
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     for(int i = 0; i < 50; ++i)
     {
@@ -102,7 +103,7 @@ TEST_CASE("kalman filter NIS is finite and positive after update")
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     Eigen::Matrix<double, 1, 1> u;
     u << 0.0;
@@ -126,7 +127,7 @@ TEST_CASE("kalman filter steady state detection")
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     // Should not be steady state initially (P0 is large)
     // Run many iterations to converge
@@ -158,7 +159,7 @@ TEST_CASE("kalman filter reset covariance")
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     // Run a few iterations
     for(int i = 0; i < 10; ++i)
@@ -193,7 +194,7 @@ TEST_CASE("kalman filter MIMO predict-update cycle")
     Eigen::Vector3d x0 = Eigen::Vector3d::Zero();
     Eigen::Matrix<double, 3, 3> P0 = Eigen::Matrix<double, 3, 3>::Identity();
 
-    ctrlpp::kalman_filter<double, 3, 2, 2> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 3, 2, 2>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     // Run 10 predict-update cycles
     for(int i = 0; i < 10; ++i)
@@ -223,7 +224,7 @@ TEST_CASE("kalman filter set_model updates system")
     Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
-    ctrlpp::kalman_filter<double, 2, 1, 1> kf(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
+    auto kf = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0}));
 
     // Change model
     auto sys2 = sys;

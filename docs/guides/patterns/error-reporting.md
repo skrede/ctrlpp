@@ -204,12 +204,59 @@ bound for an infinite adaptation estimate, producing a finite in-range command
 from a meaningless estimate. `health()` latches
 `projection_clamped_non_finite` when that happens.
 
+### Configuration validated at construction
+
+`kalman_filter`, `ekf`, `ukf` and `rls` now validate their configuration on
+channel 1 at construction, so a mistake made before the object ever ran is
+reported where it was made rather than as a non-finite estimate at the first
+step. Two of the four had **no factory at all** and gained one; a third had a
+`try_create`; only `rls` had an infallible construction to convert.
+
+Each of the four exposes `create` as its **only** construction path -- the plain
+constructors are private, reachable solely through a `validated_tag` the factory
+holds. A validating factory beside a public constructor validates nothing,
+because any caller can take the other door. That also settled the naming: the
+`try_` prefix marks a fallible factory that contrasts with a genuinely
+non-fallible constructor, so with `ukf`'s constructors gone the prefix
+contrasted with nothing and the member became `create`. The sigma-point
+strategies keep `try_create`, because their own plain constructors do survive.
+
+The three filters share `filter_error`, which gained
+`non_finite_process_noise`, `non_finite_measurement_noise`,
+`non_finite_initial_state` and `non_finite_initial_covariance` -- one shared
+enumeration rather than three identical copies, because the three configuration
+aggregates declare the same four fields and feed them into the same recursion.
+`rls` carries its own `rls_error`, whose conditions are read off the covariance
+update rather than asserted as a range.
+
+**Finiteness is the domain condition and the whole of it.** An ill-conditioned
+but finite configuration -- a covariance with entries many orders of magnitude
+apart, a singular `P0` -- is accepted. Rejecting it would convert a
+numerical-behavior question into a domain violation and refuse problems the
+library solves. `rls_error` keeps one enumerator that is explicitly *not* a
+domain condition, `forgetting_factor_above_unity`, and says so: the arithmetic
+there is well defined and the consequence is an estimator that silently stops
+adapting, so it is enforced as the type's stated `(0, 1]` contract, not as
+arithmetic.
+
+The two moving-horizon estimators embed an extended filter and hand it the same
+noise fields, so `mhe` and `nmhe` became fallible too and forward that filter's
+rejection verbatim. That is not plumbing: both also invert `Q` and `R` to form
+the arrival-cost and stage weights, so a non-finite entry poisons the posed
+problem as well as the filter.
+
 Not yet converted: `predict` on those seven estimator types; the configuration
 and reset paths of the three controllers (`pid::set_params`, `pid::set_integral`,
 the adaptive controllers' construction and `reset`), through which a non-finite
 value still enters silently and is caught only by the next cycle's rejection and
-the `health()` latch; `particle_filter::update` and the online planners'
-`update`; and `lqr_gain` and `lqi_gain`, which still return `std::optional` and
-so discard the reason for the empty result. Those surfaces are being moved onto
+the `health()` latch; `rls::update`, which still returns a bare `bool` and so
+cannot say why a sample was skipped; `ekf_config::numerical_eps`, whose own
+domain condition (finite and strictly positive, since the central-difference
+stencil divides by it) is not yet checked at construction; the configuration
+validation of `mekf`, `manifold_ukf` and `complementary_filter`, whose factories
+exist but validate only their initial quaternion and not their `Q`, `R` or `P0`;
+`particle_filter::update` and the online planners' `update`; and `lqr_gain` and
+`lqi_gain`, which still return `std::optional` and so discard the reason for the
+empty result. Those surfaces are being moved onto
 channel 1. Until each one is, the NaN and Inf propagation contract described in
 [numerical-behavior.md](numerical-behavior.md) is what governs them.
