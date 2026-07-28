@@ -625,6 +625,81 @@ TEST_CASE("Cubic spline declines a span whose coefficients leave the type",
     }
 }
 
+TEST_CASE("Splines carry a constant-velocity segment at every span they accept",
+          "[cubic_spline][smoothing_spline][hardening][coverage]")
+{
+    // A constant-velocity segment is the most ordinary trajectory there is, and
+    // the only unusual thing here is the span. It is also the BEST conditioned
+    // input either construction sees: every second derivative is zero, so both
+    // curvature coefficients are zero and the spline is the straight line through
+    // the waypoints.
+    //
+    // It is a regression case rather than a coverage case, and this is what it
+    // guards. Both numerators are differences of slopes, so on collinear data
+    // they are mathematically zero and arrive as the ROUNDING RESIDUAL of that
+    // cancellation, not as an exact zero. A representability rule that asks
+    // whether the numerator was a normal number then reads that residual as a
+    // real quantity, divides it by a large span, finds the result subnormal, and
+    // refuses -- refusing the flat spline while accepting a curved one at the same
+    // span, which is backwards. What decides it correctly is how far the term
+    // REACHES against the resolution of the position it contributes to: a
+    // residual reaches a fiftieth of that resolution and a genuine coefficient
+    // reaches about 1e14 times it.
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    SECTION("interpolating spline")
+    {
+        for (double const span : {1e-150, 1e-100, 1e-50, 1.0, 1e50, 1e100, 1e150, 1e300}) {
+            // Waypoints on a line of slope 1/span, so the midpoint of the first
+            // span is exactly one half.
+            auto const built = ctrlpp::cubic_spline<double>::create({
+                .times = {0.0, span, 2.0 * span},
+                .positions = {0.0, 1.0, 2.0},
+            });
+            CAPTURE(span);
+            REQUIRE(built.has_value());
+
+            double const tol = static_cast<double>(spline_horner_rounding_ops) * eps * 2.0;
+            auto const mid = built->evaluate(0.5 * span);
+            CAPTURE(mid.position(0), tol);
+            REQUIRE(std::abs(mid.position(0) - 0.5) <= tol);
+
+            // The curvature of a straight line is zero at every scale, and the
+            // evaluation says so to the resolution the positions are known at.
+            CAPTURE(mid.acceleration(0));
+            REQUIRE(std::abs(mid.acceleration(0)) * span * span <= tol);
+        }
+    }
+
+    SECTION("smoothing spline")
+    {
+        // The smoothing spline accepts a narrower band of spans than the
+        // interpolating one, and both ends of it are its own. Its system matrix
+        // carries a smoothness term that grows with the spacing and a
+        // regularization term that grows as the spacing shrinks, and the solve
+        // squares every entry, so each end is reached when its own term can no
+        // longer be squared. For the tradeoff parameter used here that band runs
+        // from about 3e-77 to about 1e154 -- measured, and matching where the
+        // construction stops working: a span of 1e-77 returned NaN on this
+        // straight line before the domain was narrowed. Inside the band the line
+        // is carried exactly as above.
+        for (double const span : {1e-70, 1e-50, 1.0, 1e50, 1e100, 1e150}) {
+            auto const built = ctrlpp::smoothing_spline<double>::create({
+                .times = {0.0, span, 2.0 * span, 3.0 * span},
+                .positions = {0.0, 1.0, 2.0, 3.0},
+                .mu = 0.5,
+            });
+            CAPTURE(span);
+            REQUIRE(built.has_value());
+
+            double const tol = static_cast<double>(spline_horner_rounding_ops) * eps * 3.0;
+            auto const mid = built->evaluate(1.5 * span);
+            CAPTURE(mid.position(0), tol);
+            REQUIRE(std::abs(mid.position(0) - 1.5) <= tol);
+        }
+    }
+}
+
 // ── Smoothing spline hardening ─────────────────────────────────────────────────
 
 TEST_CASE("Smoothing spline at mu=1 IS the interpolating spline",

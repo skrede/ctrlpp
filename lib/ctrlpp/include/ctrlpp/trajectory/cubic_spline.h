@@ -199,6 +199,13 @@ class cubic_spline
         // Compute polynomial coefficients for each span
         // q(s) = a + b*s + c*s^2 + d*s^3  where s = t - t_i
         // @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
+        // The scale an evaluated position is known at, and therefore the scale a
+        // term has to reach to be able to move one.
+        Scalar position_scale{0};
+        for (auto const position : cfg.positions) {
+            position_scale = std::max(position_scale, std::abs(position));
+        }
+
         coeffs_.resize(n);
         for (std::size_t i = 0; i < n; ++i) {
             auto const qi = cfg.positions[i];
@@ -215,44 +222,68 @@ class cubic_spline
             coeffs_[i][2] = quadratic_numerator / hi;              // c
             coeffs_[i][3] = cubic_numerator / (hi * hi);           // d
 
-            note_representable(coeffs_[i], quadratic_numerator, cubic_numerator);
+            note_representable(coeffs_[i], quadratic_numerator, cubic_numerator, hi,
+                               position_scale);
         }
     }
 
-    /// @brief Record whether one span's coefficients survived being formed.
+    /// Chained rounding operations behind one evaluated position: three
+    /// multiply-adds in the Horner form, and the quadratic and cubic coefficients
+    /// it runs on, which chain six operations each. Each is worth up to one unit
+    /// in the last place at the scale of the waypoint positions, so together they
+    /// are the resolution at which an evaluated position is known at all.
+    static constexpr int position_rounding_ops = 3 * 2 + 6 + 6;
+
+    /// @brief Whether one coefficient carries the significance its term needs.
     ///
-    /// Two ways out of the representable range, and the second is the one a
-    /// finiteness test alone misses. A quotient that overflows announces itself as
-    /// an infinity. A quotient that falls through the bottom of the exponent range
-    /// does not: it comes back subnormal, carrying fewer than the type's
-    /// significand and in the limit none of it, so the power it multiplies is
-    /// known to a few bits or has left the polynomial altogether. The evaluation
-    /// then returns a plausible finite number that is not the spline the waypoints
-    /// describe -- a cubic answering as a quadratic.
+    /// A quotient that overflows announces itself as an infinity. A quotient that
+    /// falls through the bottom of the exponent range does not: it comes back
+    /// subnormal, carrying fewer than the type's significand and in the limit none
+    /// of it, so the power it multiplies is known to a few bits or has left the
+    /// polynomial altogether -- a cubic answering as a quadratic, finite and
+    /// plausible and not the spline the waypoints describe.
     ///
-    /// The test is therefore against the numerator rather than against a
-    /// magnitude: bits were lost in the division exactly when a numerator that
-    /// carried the full significand produced a quotient that does not. A numerator
-    /// that was already subnormal, or zero, lost nothing here -- a zero quadratic
-    /// numerator is a span of no curvature and its zero coefficient is the right
-    /// answer -- so the rule does not fire on it, and a flat span at any scale is
-    /// still accepted. Nothing in this is a chosen threshold; the classification
-    /// is the type's own.
-    static auto significance_survived(Scalar numerator, Scalar quotient) -> bool
+    /// Whether that matters is not a property of the coefficient alone, and this
+    /// is the part a test on the numerator's own magnitude gets wrong. Both
+    /// numerators here are DIFFERENCES OF SLOPES, so on collinear waypoints they
+    /// are mathematically zero and arrive as the rounding residual of that
+    /// cancellation rather than as an exact zero. That residual is an ordinary
+    /// normal number, and dividing it by the square of a large span sends it
+    /// subnormal -- which is not a loss, because there was nothing there to lose.
+    /// Asking it to stay normal refuses the best-conditioned input there is: a
+    /// constant-velocity segment, whose curvature genuinely is zero.
+    ///
+    /// The question is therefore how far the term REACHES across its own span,
+    /// against the resolution at which the position it contributes to is known.
+    /// Both coefficients divide the numerator by a power of the span and are then
+    /// multiplied by one power more, so each term's reach is the numerator times
+    /// the span. Below the resolution of the answer the term cannot move it and
+    /// its precision is irrelevant; above it, the coefficient has to carry a full
+    /// significand. Measured across fifteen decades of span, the two situations
+    /// separate by sixteen orders of magnitude -- a cancellation residual reaches
+    /// about a fiftieth of the resolution, a genuine coefficient about 1e14 times
+    /// it -- so this is a wide gap, not a boundary anything sits near.
+    static auto term_survived(Scalar numerator, Scalar quotient, Scalar span, Scalar scale)
+        -> bool
     {
-        return !std::isnormal(numerator) || std::isnormal(quotient);
+        auto const reach = std::abs(numerator * span);
+        auto const resolution = static_cast<Scalar>(position_rounding_ops)
+                                * std::numeric_limits<Scalar>::epsilon() * scale;
+        return (reach <= resolution) || std::isnormal(quotient);
     }
 
     void note_representable(std::array<Scalar, 4> const& c,
                             Scalar quadratic_numerator,
-                            Scalar cubic_numerator)
+                            Scalar cubic_numerator,
+                            Scalar span,
+                            Scalar scale)
     {
         bool const finite = std::isfinite(c[0]) && std::isfinite(c[1]) && std::isfinite(c[2])
                             && std::isfinite(c[3]);
 
         coefficients_representable_ = coefficients_representable_ && finite
-                                      && significance_survived(quadratic_numerator, c[2])
-                                      && significance_survived(cubic_numerator, c[3]);
+                                      && term_survived(quadratic_numerator, c[2], span, scale)
+                                      && term_survived(cubic_numerator, c[3], span, scale);
     }
 
     /// @brief Find span index for time t using binary search.

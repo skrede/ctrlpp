@@ -92,8 +92,14 @@ class smoothing_spline
     /// derived from the type rather than chosen, and it covers the smallest system
     /// conservatively because it is the larger ones that set it.
     ///
-    /// Q^T * Q is a Gram matrix, so no entry of it exceeds its largest diagonal
-    /// entry, and that diagonal follows from the knot spacing alone.
+    /// Both terms of that sum can reach the bound on their own and both are
+    /// therefore counted. The regularization term does it through a small mu, and
+    /// the smoothness term R does it through a large knot spacing alone -- at a
+    /// spacing of 1e200 its diagonal is 6.7e199, whose square is not
+    /// representable, and the solve returns NaN for every coefficient on data as
+    /// ordinary as a straight line. Q^T * Q is a Gram matrix and R is diagonally
+    /// dominant, so neither exceeds its own largest diagonal entry, and both
+    /// diagonals follow from the knot spacing and mu alone.
     ///
     /// @cite biagiotti2009 -- Sec. 4.4.5
     static auto create(config const& cfg)
@@ -163,6 +169,13 @@ class smoothing_spline
         explicit unchecked_t() = default;
     };
 
+    /// Chained rounding operations behind one evaluated position: three
+    /// multiply-adds in the Horner form, and the quadratic and cubic coefficients
+    /// it runs on, which chain six operations each. Each is worth up to one unit
+    /// in the last place at the scale of the waypoint positions, so together they
+    /// are the resolution at which an evaluated position is known at all.
+    static constexpr int position_rounding_ops = 3 * 2 + 6 + 6;
+
     /// @brief Whether the regularized system's entries can be squared in Scalar.
     ///
     /// Two waypoints leave no interior knot, so no system is built and there is
@@ -187,13 +200,17 @@ class smoothing_spline
 
         Scalar largest_diagonal{0};
         for (std::size_t j = 0; j + 2 < n_pts; ++j) {
-            auto const inv_first = Scalar{1} / (cfg.times[j + 1] - cfg.times[j]);
-            auto const inv_second = Scalar{1} / (cfg.times[j + 2] - cfg.times[j + 1]);
+            auto const first = cfg.times[j + 1] - cfg.times[j];
+            auto const second = cfg.times[j + 2] - cfg.times[j + 1];
+            auto const inv_first = Scalar{1} / first;
+            auto const inv_second = Scalar{1} / second;
             auto const middle = inv_first + inv_second;
-            auto const diagonal = inv_first * inv_first + middle * middle + inv_second * inv_second;
-            largest_diagonal = std::max(largest_diagonal, diagonal);
+
+            auto const gram = inv_first * inv_first + middle * middle + inv_second * inv_second;
+            auto const smoothness = (first + second) / Scalar{3};
+            largest_diagonal = std::max(largest_diagonal, smoothness + lambda * gram);
         }
-        return lambda * largest_diagonal <= bound;
+        return largest_diagonal <= bound;
     }
 
     /// @brief Construct from a configuration already validated by `create`.
@@ -331,6 +348,13 @@ class smoothing_spline
         // second derivatives, using the standard cubic spline formula:
         //   q(t) = a + b*s + c*s^2 + d_coeff*s^3  where s = t - t_i
         // @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
+        // The scale an evaluated position is known at, and therefore the scale a
+        // term has to reach to be able to move one.
+        Scalar position_scale{0};
+        for (auto const position : pos) {
+            position_scale = std::max(position_scale, std::abs(position));
+        }
+
         coeffs_.resize(n);
         for (std::size_t i = 0; i < n; ++i) {
             auto const si = s[i];
@@ -355,15 +379,30 @@ class smoothing_spline
             // announces itself, and one that fell through the bottom of the
             // exponent range does not -- it comes back subnormal, carrying fewer
             // than the type's significand, and the cubic term is then known to a
-            // few bits or has left the polynomial. Bits were lost exactly when a
-            // numerator that carried the full significand produced a quotient that
-            // does not; a numerator that was already subnormal or zero lost
-            // nothing, and a span of constant curvature keeps its zero
-            // coefficient.
+            // few bits or has left the polynomial.
+            //
+            // And, as there, whether that matters depends on how far the term
+            // reaches rather than on the numerator's own magnitude. This numerator
+            // is a DIFFERENCE OF SECOND DERIVATIVES, so on data of constant
+            // curvature it is mathematically zero and arrives as the residual the
+            // solve leaves behind rather than as an exact zero; dividing that
+            // residual by a large span sends it subnormal, which costs nothing
+            // because there was nothing in it. Here the coefficient divides the
+            // numerator by the span once and the term multiplies by three powers,
+            // so the reach is the numerator times the square of the span, over
+            // six. Below the resolution of the position it contributes to, the
+            // term cannot move the answer and its precision is irrelevant.
+            // Ordered so the span is never squared on its own: at the largest
+            // span the bound above admits, that square is not representable, and
+            // an infinite intermediate would turn an exactly-zero numerator into
+            // a NaN and refuse a spline of constant curvature.
+            auto const reach = (std::abs(cubic_numerator) * hi / Scalar{6}) * hi;
+            auto const resolution = static_cast<Scalar>(position_rounding_ops)
+                                    * std::numeric_limits<Scalar>::epsilon() * position_scale;
+
             bool const finite = std::isfinite(coeffs_[i][0]) && std::isfinite(coeffs_[i][1])
                                 && std::isfinite(coeffs_[i][2]) && std::isfinite(coeffs_[i][3]);
-            bool const cubic_survived =
-                !std::isnormal(cubic_numerator) || std::isnormal(coeffs_[i][3]);
+            bool const cubic_survived = (reach <= resolution) || std::isnormal(coeffs_[i][3]);
             coefficients_representable_ = coefficients_representable_ && finite && cubic_survived;
         }
     }
