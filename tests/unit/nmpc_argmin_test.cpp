@@ -526,7 +526,7 @@ TEST_CASE("argmin_solver survives move-then-solve", "[argmin][move-safety]")
     CHECK_THAT(result.x(1), WithinAbs(1.0, 1e-3));
 }
 
-// --- Route A: compile-time-dimension static NLP path -------------------------
+// --- Compile-time-dimension static NLP path ----------------------------------
 //
 // The static path threads a compile-time decision dimension NV through
 // nlp_problem_static<double, NV> -> argmin_problem<double, NV> -> argmin's

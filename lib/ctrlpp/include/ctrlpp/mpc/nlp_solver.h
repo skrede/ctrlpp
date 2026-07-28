@@ -31,7 +31,7 @@ struct nlp_problem
 /// nlp_problem<Scalar>. It carries the decision dimension NV as a static
 /// template parameter so the argmin bridge and argmin's compile-time-N solver
 /// can size their decision-vector storage with fixed-size Eigen types (the
-/// allocation-free static path, Route A / SEED-002).
+/// allocation-free static path).
 ///
 /// Only the DECISION dimension is compile-time here: the bound vectors
 /// x_lower / x_upper are fixed-size Eigen::Vector<Scalar, NV>, while the

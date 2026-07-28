@@ -303,7 +303,7 @@ int main()
     std::ofstream quality_csv("bench_slsqp_quality.csv");
     write_quality_csv_header(quality_csv);
 
-    // Warm-start sweep (BENCH-04): double_integrator_4 and pendulum_2
+    // Warm-start sweep: double_integrator_4 and pendulum_2
     for(auto ws : {ctrlpp::warm_start_mode::cold,
                    ctrlpp::warm_start_mode::primal_only,
                    ctrlpp::warm_start_mode::curvature})
@@ -312,7 +312,7 @@ int main()
         run_benchmark<2, 1>("pendulum", pendulum_2, 10, bench, quality_csv, ws);
     }
 
-    // Size sweep (BENCH-05): horizons 10, 20, 30 with cold start
+    // Size sweep: horizons 10, 20, 30 with cold start
     for(int h : {10, 20, 30})
     {
         run_benchmark<2, 1>("double_integrator", double_integrator_2, h, bench, quality_csv,
@@ -323,7 +323,7 @@ int main()
                             ctrlpp::warm_start_mode::cold);
     }
 
-    // Convergence reliability (BENCH-09)
+    // Convergence reliability
     run_convergence<4, 2>("double_integrator", double_integrator_4, 10, quality_csv);
     run_convergence<2, 1>("pendulum", pendulum_2, 10, quality_csv);
 

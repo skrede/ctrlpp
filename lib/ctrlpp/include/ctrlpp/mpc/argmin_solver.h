@@ -30,13 +30,13 @@ namespace ctrlpp
 //   * NV == Eigen::Dynamic (the DEFAULT) is the original runtime-erased solver,
 //     byte-for-byte: it binds an nlp_problem<Scalar>, instantiates argmin's
 //     dynamic step_budget_solver, and every existing caller compiles unchanged.
-//   * NV != Eigen::Dynamic pins the DECISION axis (Route A / SEED-002): the policy
+//   * NV != Eigen::Dynamic pins the DECISION axis: the policy
 //     algorithm is rebound to the compile-time dimension NV, argmin's
 //     compile-time-N step_budget_solver is instantiated, the bridge uses
 //     fixed-size decision-vector storage, and setup binds an
 //     nlp_problem_static<Scalar, NV>.
-//   * MaxM != Eigen::Dynamic additionally pins the CONSTRAINT axis (argmin
-//     SEED-044): the bridge carries a compile-time constraint_count cap so
+//   * MaxM != Eigen::Dynamic additionally pins the CONSTRAINT axis: the
+//     bridge carries a compile-time constraint_count cap so
 //     argmin's per-call result-multiplier storage is inline. Binding BOTH NV and
 //     MaxM gives the strict-zero steady-state solve. MaxM is an upper bound
 //     (runtime_m <= MaxM), counting equality + general-inequality rows only (box

@@ -474,7 +474,8 @@ private:
     bool m_has_solution{false};
 };
 
-/// @brief Compile-time-horizon nonlinear MPC (additive Route A / SEED-002).
+/// @brief Compile-time-horizon nonlinear MPC (additive: the runtime-horizon
+///        form stays available and unchanged).
 ///
 /// Parallel to the runtime-horizon `nmpc_dynamic`, but the horizon NH is a template
 /// parameter, so the decision dimension NV = (NH+1)*NX + NH*NU is a compile-time

@@ -290,11 +290,11 @@ if (CTRLPP_BUILD_ARGMIN)
     target_compile_options(argmin_qp_solver_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
     add_test(NAME argmin_qp_solver_test COMMAND argmin_qp_solver_test)
 
-    # EMB-02 proof for the static NMPC path: nmpc_static's steady-state solve is
-    # allocation-free at argmin's fixed-N floor. Consumes the process-global
-    # allocation counter from nomalloc_harness.h, so it must run serially, and
-    # is skipped under MemorySanitizer for the same link-collision reason as the
-    # other *_nomalloc_test targets above.
+    # Proof that the static NMPC path allocates nothing in steady state:
+    # nmpc_static's solve is allocation-free at argmin's fixed-N floor. Consumes
+    # the process-global allocation counter from nomalloc_harness.h, so it must
+    # run serially, and is skipped under MemorySanitizer for the same
+    # link-collision reason as the other *_nomalloc_test targets above.
     if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
         add_executable(nmpc_static_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_static_nomalloc_test.cpp")
         target_link_libraries(nmpc_static_nomalloc_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)

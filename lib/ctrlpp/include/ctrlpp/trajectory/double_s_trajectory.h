@@ -796,7 +796,7 @@ private:
     }
 
     /// @brief Solve doubly degenerate case using bisection on gamma.
-    /// @cite biagiotti2009 -- Sec. 3.4.3, p.90-91 (Pitfall 2 from RESEARCH.md)
+    /// @cite biagiotti2009 -- Sec. 3.4.3, p.90-91
     void solve_doubly_degenerate(Scalar h, Scalar /*a_max*/, Scalar j_max)
     {
         // When neither v_max nor a_max is reached, the profile is purely jerk-limited.

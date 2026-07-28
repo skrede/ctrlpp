@@ -26,6 +26,7 @@ and the likely response would be to weaken the gate.
 | `lib/fixture_exception_gate.h` | 5, the exception-mode macro outside its two files |
 | `CMakeLists.txt` | 6, the discard-warning promotion absent |
 | `.clang-tidy` | 7, the attribute-inserting analysis check enabled |
+| `lib/fixture_planning_identifier.h` | 8, a planning-artifact key cited in a comment |
 
 Run the self-test with:
 
@@ -40,3 +41,16 @@ before scanning would also exit nonzero, and only the count distinguishes the
 two. It is also what catches the removal of a comment filter, because the
 fixtures for rules 1, 2, 3 and 4b each carry the banned pattern once in a
 comment as well as once in code.
+
+Rules 5 and 8 have no comment filter and their fixtures carry the banned pattern
+once in total. That is deliberate in both cases: a mention of the exception-mode
+macro anywhere in the library is itself the signal rule 5 looks for, and every
+occurrence rule 8 was written against lived inside a comment, so filtering
+comments would leave it with nothing to find.
+
+One thing rule 8 excludes is not covered by a fixture and should not be. Two
+designations match its shape without being planning keys -- an external
+floating-point standard and a board form factor -- and both are present in the
+real tree, so a passing real run is what proves the exclusion still works. A
+fixture asserting that a rule does NOT fire would pass just as well if the rule
+had stopped working entirely.

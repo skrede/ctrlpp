@@ -24,10 +24,10 @@
 /// parameter on `care_solve_from_hamiltonian`, `care`, and `lqr_gain_continuous`
 /// so overload resolution rejects foreign types.
 ///
-/// The default assignment was picked by a governor-locked bakeoff archived at
-/// `.planning/benchmarks/2026-04-18_23-55_phase41-bakeoff/verdict.md`. The
-/// sign-function path reached 31.8 to 35.8 percent fewer median instructions
-/// than `ct::optcon::CARE` at every target NX in the 8 to 30 sweep; both
+/// The default assignment was picked by a governor-locked instruction-count
+/// bakeoff. The sign-function path reached 31.8 to 35.8 percent fewer median
+/// instructions than `ct::optcon::CARE` at every target NX in the 8 to 30
+/// sweep; both
 /// Schur variants failed the primary gate by 39 to 41 percent.
 ///
 /// @cite laub1979      : Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
@@ -49,8 +49,8 @@ struct sign_function_care_method
 /// @brief Schur + Bai-Demmel reorder CARE solve path.
 ///
 /// @note Retained for reproducibility; superseded by `sign_function_care_method`
-///       per bakeoff archive `.planning/benchmarks/2026-04-18_23-55_phase41-bakeoff/verdict.md`.
-///       The Schur path fails the bakeoff primary gate by ~40 percent at NX=8 to 30.
+///       after the bakeoff. The Schur path fails its primary gate by ~40
+///       percent at NX=8 to 30.
 struct schur_care_method
 {
 };
@@ -58,9 +58,9 @@ struct schur_care_method
 /// @brief DGEBAL-prebalanced Schur CARE solve path.
 ///
 /// @note Retained for reproducibility; superseded by `sign_function_care_method`
-///       per bakeoff archive `.planning/benchmarks/2026-04-18_23-55_phase41-bakeoff/verdict.md`.
-///       DGEBAL balance is a near no-op on well-conditioned Hamiltonians (the diagonal D
-///       scaling stays near ones, see phase-41 subspace-residual archive), and the path
+///       after the bakeoff. DGEBAL balance is a near no-op on
+///       well-conditioned Hamiltonians (the diagonal D
+///       scaling stays near ones, measured alongside the subspace residual), and the path
 ///       tracks `schur_care_method` within 1 percent across the bakeoff sweep.
 struct balanced_schur_care_method
 {

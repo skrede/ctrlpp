@@ -4,10 +4,10 @@
 /// @brief DGEBAL-style diagonal balancing and balanced-Schur CARE solve.
 ///
 /// @note Retained for reproducibility; superseded by `sign_function_care_method`
-///       per bakeoff archive `.planning/benchmarks/2026-04-18_23-55_phase41-bakeoff/verdict.md`.
-///       The balanced-Schur path tracks the plain Schur path to within 1 percent
-///       across the bakeoff sweep because DGEBAL balance is a near no-op on
-///       well-conditioned Hamiltonians emitted by `build_care_hamiltonian`
+///       after the instruction-count bakeoff. The balanced-Schur path tracks
+///       the plain Schur path to within 1 percent across the bakeoff sweep
+///       because DGEBAL balance is a near no-op on well-conditioned
+///       Hamiltonians emitted by `build_care_hamiltonian`
 ///       (diagonal D stays near ones).
 ///
 /// `balance_hamiltonian` iteratively equilibrates row and column infinity

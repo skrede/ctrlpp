@@ -19,7 +19,7 @@ namespace ctrlpp
 namespace detail
 {
 
-// Optional compile-time constraint-count channel (argmin SEED-044). argmin
+// Optional compile-time constraint-count channel. argmin
 // detects a problem's `static constexpr int constraint_count` by PRESENCE
 // (has_constraint_count<P>, argmin/formulation/concepts.h). Presence opts into a
 // compile-time M for the QP result-multiplier storage; absence reproduces the
@@ -52,7 +52,7 @@ struct argmin_constraint_bound<Eigen::Dynamic>
 //     Eigen types (Eigen::Vector<Scalar, NV>), binds an nlp_problem_static<Scalar,
 //     NV>, and exposes `allocation_free == true`. This pins the DECISION axis.
 //
-// The constraint axis is bound separately via MaxM (argmin SEED-044):
+// The constraint axis is bound separately via MaxM:
 //
 //   * MaxM == Eigen::Dynamic (the DEFAULT) carries NO `constraint_count` member,
 //     so argmin's has_constraint_count<P> is false and the constraint-axis result

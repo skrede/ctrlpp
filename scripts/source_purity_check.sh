@@ -58,6 +58,16 @@
 #           attributes on trivial returns stays disabled. Enabling it would
 #           reintroduce, mechanically, exactly what rule 4b forbids.
 #
+#   Rule 8  No planning-artifact identifier appears in shipped source,
+#           documentation, examples, benchmarks or tests. Decision-record keys,
+#           seed keys, requirement and task keys, planning-document filenames
+#           and paths into the planning directory are all forbidden by the
+#           project's own rules: a reader of this repository must not need
+#           access to a planning system to understand a comment, and the
+#           artifact a key points at is not shipped with the code. Scans every
+#           file under the roots, not only the C++ ones, because one such key
+#           was found in a build file.
+#
 # Usage:
 #   scripts/source_purity_check.sh [scan-root]
 #   scripts/source_purity_check.sh --self-test
@@ -110,16 +120,31 @@
 #      and a call whose result is bound on the line above is suppressed by a
 #      continuation test rather than parsed.
 #
-#   7. The roots are lib/, tests/, examples/, benchmarks/ and validation/. The
-#      documentation tree is NOT a root, and that choice is recorded rather than
+#   7. The roots are lib/, tests/, examples/, benchmarks/ and validation/, plus
+#      docs/ for rule 8 ONLY. The documentation tree is deliberately not a root
+#      for the attribute rules, and that choice is recorded rather than
 #      inherited: under the current attribute policy a documentation page that
 #      shows the class-level attribute on a quoted signature is showing correct
 #      documentation, so scanning the documentation tree for the attribute would
-#      be actively wrong. Rules 1 to 3 do not reach the documentation tree
-#      either; a documentation page that unwraps teaches the idiom rule 1 bans,
-#      and closing that is a separate, wider pass with this script's own path
-#      excluded by NAME rather than by extension -- extension is precisely the
-#      exclusion that lets documentation pages through.
+#      be actively wrong. Rule 8 is the opposite case -- the project's rule names
+#      documentation explicitly -- so it scans there. Rules 1 to 3 do not reach
+#      the documentation tree; a documentation page that unwraps teaches the
+#      idiom rule 1 bans, and closing that is a separate, wider pass with this
+#      script's own path excluded by NAME rather than by extension -- extension
+#      is precisely the exclusion that lets documentation pages through.
+#
+#   8. Rule 8 matches identifier FORMS, never the English words around them.
+#      That is a measurement, not a preference: a pattern keyed on the word
+#      "phase" reported 41 hits of which 20 were motion-profile phases, a stage
+#      of a reference linear-algebra routine, and tutorial headings. It carries
+#      two consequences. A tagged key needs TWO digits to match, because one
+#      digit is indistinguishable from template-dimension arithmetic such as
+#      NX-1; single-digit keys are matched only for the specific families known
+#      to use them. And two designations that match the shape are excluded by
+#      NAME, listed beside the rule: they are an external floating-point
+#      standard and a board form factor, neither of which is a planning key.
+#      That exclusion is exercised by the real tree rather than by a fixture,
+#      since both designations are present in it today.
 #
 # This is a plain, repeatable local script. It authors no continuous-integration
 # configuration and no CMake toolchain file.
@@ -260,6 +285,28 @@ fi
 # rule whose exemption list grows as correct code is written is not a ratchet.
 
 fallible_call_names="create|setup|place_observer|place|lqr_gain_continuous|lqr_gain|partition_lqi_gain|lqi_gain|validate_biquad_design|can_rescale_to|rescale_to|dare|care"
+
+# --- Rule 8's identifier forms ------------------------------------------------
+#
+# Keys produced by a planning system, matched by SHAPE. In order: decision
+# records, audit findings, success criteria, seed documents, threat entries,
+# the general requirement-or-task key (an uppercase tag, a dash, and at least
+# TWO digits), planning-document filenames, and any path into the planning
+# directory.
+#
+# The two-digit floor on the general form is what keeps template-dimension
+# arithmetic out: NX-1, NU-1 and NB-1 all have the shape but one digit. The
+# families that legitimately use a single digit are spelled out individually
+# instead.
+planning_identifier_pattern='(^|[^A-Za-z0-9_-])(D-[0-9]+|DL-[0-9]+|SC-?[0-9]+|SEED-[0-9]+|T-[0-9]+-[0-9]+-[0-9]+|[A-Z][A-Z0-9]{1,9}-[0-9]{2,}|(RESEARCH|PLAN|SUMMARY|CONTEXT|ROADMAP|PATTERNS)\.md|\.planning/)'
+
+# Designations that match the general shape and are not planning keys, excluded
+# by name rather than by widening or narrowing the pattern:
+#   IEEE-754    the binary floating-point standard
+#   NUCLEO-144  the board form factor of the embedded example's target
+# Both are present in the tree today, so a real run is what proves this
+# exclusion still works; no fixture is needed for it and none would be honest.
+planning_identifier_exclusions='(IEEE|NUCLEO)-[0-9]'
 
 # --- Shared helpers -----------------------------------------------------------
 
@@ -488,6 +535,23 @@ rule_7_analysis_check_disabled()
     return 0
 }
 
+rule_8_planning_identifiers()
+{
+    select_scan_dirs lib tests examples benchmarks validation docs
+    [ ${#scan_dirs[@]} -eq 0 ] && return 0
+    # Every file, not only the C++ ones: one such key was found in a build file,
+    # which an extension filter would have missed. Binary files are skipped,
+    # because a key inside one carries nothing to a reader.
+    #
+    # There is no comment filter here, deliberately. Every occurrence this rule
+    # was written against was inside a comment; a comment is the place these
+    # keys live, not an exemption from them.
+    grep -rInE "${planning_identifier_pattern}" "${scan_dirs[@]}" 2>/dev/null \
+        | grep -vE "${planning_identifier_exclusions}" \
+        || true
+    return 0
+}
+
 # --- Driver -------------------------------------------------------------------
 
 rule_ids=()
@@ -536,6 +600,7 @@ run_rule "4c" "no bare-statement call to a fallible function"            rule_4c
 run_rule "5"  "exception-mode macro confined to two files (lib)"         rule_5_exception_macro
 run_rule "6"  "discard warning promoted to an error in the build"        rule_6_promotion_flag
 run_rule "7"  "attribute-inserting analysis check stays disabled"        rule_7_analysis_check_disabled
+run_rule "8"  "no planning-artifact identifier in shipped material"     rule_8_planning_identifiers
 
 if [ "${self_test}" -eq 1 ]; then
     # The exact-count assertion is what makes this a self-test rather than a

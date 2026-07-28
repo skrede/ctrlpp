@@ -30,7 +30,7 @@
 namespace ctrlpp::detail
 {
 
-// --- Swap conditioning policy tags (per D-08) ---
+// --- Swap conditioning policy tags ---
 //
 // Selects the test used to reject an ill-conditioned Bai-Demmel swap.
 //  * pivot_ratio_conditioning: |R(last,last)| / |R(0,0)| from the rank-revealing
@@ -55,7 +55,7 @@ concept conditioning_policy =
     std::same_as<T, pivot_ratio_conditioning>
  || std::same_as<T, hager_higham_conditioning>;
 
-// --- Precision-templated constexpr multipliers (per D-12: no bare literals) ---
+// --- Precision-templated constexpr multipliers (no bare literals) ---
 //
 // detail_constants wraps LAPACK-derived multipliers behind named constexpr
 // functions so that the bodies of the reorder helpers contain no numeric
@@ -74,7 +74,7 @@ constexpr auto rejection_multiplier() noexcept -> Scalar { return Scalar{10}; }
 
 }
 
-// --- Driver result POD (per D-11) ---
+// --- Driver result POD ---
 //
 //  * placed               : number of predicate-matching eigenvalues moved to the top.
 //  * complete             : false if any swap was rejected by the conditioning test.
@@ -131,8 +131,7 @@ auto reorder_real_schur(Eigen::Matrix<Scalar, N, N>& T,
 
     // Probe whether the block starting at position `pos` is 1x1 or 2x2 based
     // on the subdiagonal entry T(pos+1, pos). Uses an epsilon-scaled
-    // threshold derived from both the global and the local block magnitude
-    // (D-12; RESEARCH.md Pitfall 3).
+    // threshold derived from both the global and the local block magnitude.
     auto block_size_at = [&](int pos) -> int
     {
         if (pos + 1 >= N)
@@ -144,7 +143,7 @@ auto reorder_real_schur(Eigen::Matrix<Scalar, N, N>& T,
     };
 
     // Read eigenvalues from a block using trace and determinant, NOT from
-    // the raw diagonal entries (RESEARCH.md Pitfall 1: a 2x2 block's
+    // the raw diagonal entries (a 2x2 block's
     // eigenvalues are (tr +/- sqrt(tr^2/4 - det)), not T(i, i) directly).
     auto block_eigenvalues = [&](int pos, int n_block)
         -> std::pair<std::complex<Scalar>, std::complex<Scalar>>
@@ -227,12 +226,12 @@ auto reorder_real_schur(Eigen::Matrix<Scalar, N, N>& T,
             {
                 r.complete = false;
                 r.subspace_separation = std::min(r.subspace_separation, pivot_ratio);
-                break;  // Abort this bubble; partial reorder per D-11.
+                break;  // Abort this bubble; the result reports a partial reorder.
             }
 
             r.subspace_separation = std::min(r.subspace_separation, pivot_ratio);
 
-            // Standardise any 2x2 block touched by the swap (D-06).
+            // Standardize any 2x2 block touched by the swap.
             if (scan_nb == 2)
                 standardize_2x2_block<Scalar, N>(T, U, left_pos);
             if (left_nb == 2)
@@ -266,7 +265,7 @@ auto reorder_real_schur(Eigen::Matrix<Scalar, N, N>& T,
     return r;
 }
 
-// --- DLANV2 Murnaghan 2x2 block standardisation (per D-06) ---
+// --- DLANV2 Murnaghan 2x2 block standardization ---
 //
 // Restores the canonical form of a 2x2 diagonal block at T(p:p+2, p:p+2):
 //   * real eigenvalue pair  -> block becomes upper triangular (C = 0).
@@ -448,7 +447,7 @@ auto swap_real_schur_1x1(Eigen::Matrix<Scalar, N, N>& T,
     return true;
 }
 
-// --- Generalised Bai-Demmel swap via 4x4 Kronecker Sylvester (per D-05) ---
+// --- Generalized Bai-Demmel swap via 4x4 Kronecker Sylvester ---
 //
 // Handles 1x1/2x2, 2x2/1x1, and 2x2/2x2 in a unified code path. Builds the
 // Kronecker operator K = I_{n2} kron A11 - A22^T kron I_{n1} on a fixed 4x4
@@ -631,8 +630,8 @@ auto swap_real_schur_2x2_general(Eigen::Matrix<Scalar, N, N>& T,
 
 // --- Swap dispatcher: runtime branch on (n1, n2). ---
 //
-// The Cond tag is accepted for future policy dispatch (D-08). In this phase
-// only pivot_ratio_conditioning is reachable; hager_higham_conditioning is
+// The Cond tag is accepted for future policy dispatch. Only
+// pivot_ratio_conditioning is reachable today; hager_higham_conditioning is
 // blocked by the static_assert inside reorder_real_schur.
 
 template <typename Scalar, int N, typename Cond>

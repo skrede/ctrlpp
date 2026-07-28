@@ -5,10 +5,9 @@
 // optimal and each resolve converges in near-minimal iterations. THIS bench
 // instead drives the initial-condition rows of the QP through a moving
 // trajectory, so every resolve is a genuinely different problem warm-started
-// from the previous solution -- the real per-step MPC workload. argmin
-// (coordination ctrlpp-argmin_125-126 / argmin-ctrlpp_126-127) named the
-// per-step iteration DISTRIBUTION, not just totals, as the single most useful
-// signal for its pending per-iteration profiling phase, so this captures
+// from the previous solution -- the real per-step MPC workload. argmin named
+// the per-step iteration DISTRIBUTION, not just totals, as the single most
+// useful signal for its pending per-iteration profiling work, so this captures
 // per-resolve iteration counts for both solvers in addition to timing.
 //
 // Both solvers are handed the identical x_init sequence (identical QPs every
@@ -211,7 +210,7 @@ int main()
         // its per-step cost (a full symbolic-analysis + factorization of the
         // reduced KKT every resolve). OSQP ships polish off by default; argmin
         // on. We measure BOTH polish states so the ADMM kernel and the polish
-        // are separable, per argmin's request (argmin-ctrlpp_126-127 §2).
+        // are separable, as argmin asked.
         for(bool polish : {true, false})
         {
             const char* pol = polish ? "on" : "off";

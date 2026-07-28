@@ -7,9 +7,8 @@
 /// `qp_solver` concept, so `mpc<Scalar, NX, NU, argmin_qp_solver>` compiles and
 /// runs without the vendored OSQP C library. Both solve the canonical OSQP-form
 /// QP `min ½·xᵀPx + qᵀx  s.t.  l ≤ Ax ≤ u`; argmin ships a header-only C++
-/// implementation of the same operator-splitting algorithm (argmin Phases
-/// 66/66.1, SEED-042), returning results on a typed error channel rather than
-/// through C-pointer ownership.
+/// implementation of the same operator-splitting algorithm, returning results
+/// on a typed error channel rather than through C-pointer ownership.
 ///
 /// The adapter is `__has_include`-gated on `argmin/qp/sparse_admm_qp.h`. The
 /// default argmin pin (the milestone/v0.3.5 tip) ships that header, so the gate
@@ -71,11 +70,10 @@ public:
     explicit argmin_qp_solver(double eps_abs = 1e-3, double eps_rel = 1e-3, int max_iter = 4000, bool /*verbose*/ = false, bool warm_starting = true, bool polishing = true)
     {
         // This binds only argmin's stable QP contract: tolerances, iteration
-        // budget, and warm-start. Per argmin coordination (argmin-ctrlpp_126-127,
-        // SEED-084) the operator-splitting knobs (rho / sigma / alpha /
-        // adaptive_rho) are the volatile surface argmin intends to demote to an
-        // opt-in sub-struct, so this policy deliberately never touches them --
-        // a future reshape of those knobs is a no-op here.
+        // budget, and warm-start. The operator-splitting knobs (rho / sigma /
+        // alpha / adaptive_rho) are the volatile surface argmin intends to
+        // demote to an opt-in sub-struct, so this policy deliberately never
+        // touches them -- a future reshape of those knobs is a no-op here.
         opts_.eps_abs = eps_abs;
         opts_.eps_rel = eps_rel;
         opts_.max_iterations = static_cast<std::uint16_t>(max_iter);

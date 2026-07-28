@@ -45,8 +45,8 @@ struct argmin_nw_sqp
     using algorithm = argmin::nw_sqp_policy<>;
 };
 
-// Compile-time-N form of argmin_nw_sqp for the allocation-free static path
-// (Route A / SEED-002): it resolves argmin::nw_sqp_policy<NV>, whose state_type
+// Compile-time-N form of argmin_nw_sqp for the allocation-free static path: it
+// resolves argmin::nw_sqp_policy<NV>, whose state_type
 // sizes its decision-vector buffers (x, g, bounds, the QP working set) with
 // fixed-size Eigen types when NV is a positive compile-time bound. The default
 // NV == Eigen::Dynamic yields nw_sqp_policy<> — byte-identical to argmin_nw_sqp.

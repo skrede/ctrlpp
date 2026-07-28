@@ -518,8 +518,8 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
                                .c_upper = std::move(c_upper)};
 }
 
-/// @brief Compile-time-horizon factory for the allocation-free static NMPC path
-/// (Route A / SEED-002). The horizon NH is a template parameter, so the decision
+/// @brief Compile-time-horizon factory for the allocation-free static NMPC
+/// path. The horizon NH is a template parameter, so the decision
 /// dimension NV = (NH+1)*NX + NH*NU is a compile-time constant threaded into an
 /// nlp_problem_static<Scalar, NV>.
 ///

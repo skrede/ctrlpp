@@ -4,7 +4,7 @@
 // global operator-new counter that catches heap traffic outside Eigen's own
 // bookkeeping. The harness header must stay the FIRST include of this file.
 //
-// This is the EMB-02 proof for the static NMPC path (Route A / SEED-002): with
+// This proves the static NMPC path allocates nothing in steady state: with
 // the decision dimension NV pinned at compile time, the argmin bridge sizes its
 // decision-vector storage with fixed-size Eigen types and argmin's fixed-N
 // NW-SQP substrate solves without heap growth, so after a warm-up solve the
@@ -36,7 +36,7 @@ constexpr double dt = 0.1;
 // cell; the caller pins the static solver on the same compile-time dimension.
 constexpr int NV = static_cast<int>((NH + 1) * NX + NH * NU);
 
-// MaxM caps the CONSTRAINT axis (argmin SEED-044): this cell carries only the
+// MaxM caps the CONSTRAINT axis: this cell carries only the
 // dynamics-continuity + initial-state equalities, M_eq = NX*(NH+1) = 2*6 = 12,
 // and no general inequalities (box bounds, if any, are free via argmin's +2N
 // slack). Binding MaxM = M_eq makes argmin's per-call result-multiplier storage
