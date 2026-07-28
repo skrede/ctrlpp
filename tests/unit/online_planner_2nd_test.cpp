@@ -276,3 +276,183 @@ TEST_CASE("OnlinePlanner2nd: create rejects invalid limits",
         }
     }
 }
+
+// -- Test 13: the brake-then-replan substitution is REPORTED --------------------
+//
+// This planner already stored the outcome of its own decision in members; what
+// it never did was let the caller read it. The motion is limit-respecting either
+// way, so the assertions below are on the report and the motion is checked
+// second.
+TEST_CASE("OnlinePlanner2nd: brake-then-replan substitution is reported",
+          "[traj][online_planner_2nd][diagnostics]")
+{
+    double constexpr v_max = 5.0;
+    double constexpr a_max = 10.0;
+
+    auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max});
+
+    SECTION("a target behind the motion reports a reversal")
+    {
+        planner.update(100.0);
+
+        double t = 0.0;
+        for (int i = 0; i < 200; ++i) {
+            t = 0.01 * static_cast<double>(i);
+            planner.sample(t);
+        }
+        auto const cruising = planner.sample(t);
+        REQUIRE_THAT(cruising.velocity[0], WithinAbs(v_max, 1e-9));
+
+        double const q0 = cruising.position[0];
+        double const target = q0 - 10.0;
+        CAPTURE(q0, cruising.velocity[0], target);
+
+        planner.update(target);
+
+        auto const& diag = planner.diagnostics();
+        REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
+        REQUIRE(diag.substitution_reason
+                == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+        REQUIRE(diag.brake_duration > 0.0);
+        REQUIRE(diag.commanded_target == target);
+        REQUIRE(diag.initial_velocity == cruising.velocity[0]);
+
+        // Commanded against planned: the replan starts at the stopping point,
+        // which lies on the far side of the commanded start from the target.
+        REQUIRE(diag.replan_start_position > q0);
+        REQUIRE(diag.planned_duration > diag.brake_duration);
+
+        // Braking from v0 at a_max sweeps v0^2 / (2 * a_max) before rest.
+        double const stop_dist = cruising.velocity[0] * cruising.velocity[0] / (2.0 * a_max);
+        REQUIRE_THAT(diag.replan_start_position, WithinAbs(q0 + stop_dist, 1e-9));
+
+        double constexpr tol = 1e-6;
+        double const t_end = t + diag.planned_duration;
+        for (double s = t; s < t_end; s += 0.001) {
+            auto const pt = planner.sample(s);
+            REQUIRE(std::abs(pt.velocity[0]) <= v_max + tol);
+        }
+
+        auto const settled = planner.sample(t_end + 1.0);
+        REQUIRE_THAT(settled.position[0], WithinAbs(target, 1e-6));
+        REQUIRE_THAT(settled.velocity[0], WithinAbs(0.0, 1e-6));
+    }
+
+    SECTION("a target inside the stopping distance reports an overshoot")
+    {
+        planner.update(100.0);
+
+        double t = 0.0;
+        for (int i = 0; i < 200; ++i) {
+            t = 0.01 * static_cast<double>(i);
+            planner.sample(t);
+        }
+        auto const cruising = planner.sample(t);
+
+        double const q0 = cruising.position[0];
+        double const v0 = cruising.velocity[0];
+        // Half the stopping distance: the planner cannot come to rest at the
+        // target without passing it, so it brakes and comes back.
+        double const stop_dist = v0 * v0 / (2.0 * a_max);
+        double const target = q0 + stop_dist / 2.0;
+        CAPTURE(q0, v0, stop_dist, target);
+
+        planner.update(target);
+
+        auto const& diag = planner.diagnostics();
+        REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
+        REQUIRE(diag.substitution_reason
+                == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+        REQUIRE(diag.brake_duration > 0.0);
+        REQUIRE(diag.replan_start_position > target);
+    }
+}
+
+// -- Test 14: an unsubstituted plan reports itself as such ---------------------
+TEST_CASE("OnlinePlanner2nd: an ordinary move reports the commanded profile",
+          "[traj][online_planner_2nd][diagnostics]")
+{
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
+    planner.reset(0.0);
+
+    planner.update(10.0);
+
+    auto const& diag = planner.diagnostics();
+    REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::commanded_profile);
+    REQUIRE(diag.substitution_reason == ctrlpp::online_planner_substitution_reason::none);
+    REQUIRE(diag.brake_duration == 0.0);
+    REQUIRE(diag.replan_start_position == 0.0);
+    REQUIRE(diag.commanded_target == 10.0);
+    REQUIRE(diag.planned_duration > 0.0);
+}
+
+// -- Test 15: a move commanded from inside the settle tolerance reports settled -
+TEST_CASE("OnlinePlanner2nd: a settled command reports a zero-duration plan",
+          "[traj][online_planner_2nd][diagnostics]")
+{
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
+    planner.reset(3.0);
+
+    planner.update(3.0);
+
+    auto const& diag = planner.diagnostics();
+    REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::settled);
+    REQUIRE(diag.substitution_reason == ctrlpp::online_planner_substitution_reason::none);
+    REQUIRE(diag.planned_duration == 0.0);
+    REQUIRE(diag.brake_duration == 0.0);
+    REQUIRE(diag.replan_start_position == 3.0);
+}
+
+// -- Test 16: the carry-velocity reason is unreachable from this planner -------
+//
+// The two planners share one diagnostics type, and one of its substitution
+// reasons belongs to a shape only the jerk-bounded planner builds. That is
+// recorded here rather than papered over with a second type: sweep the same
+// command families that drive the third-order planner through all three of its
+// branches, and the reason never appears.
+TEST_CASE("OnlinePlanner2nd: never reports the carry-velocity reason",
+          "[traj][online_planner_2nd][diagnostics]")
+{
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
+
+    for (int i = 0; i < 200; ++i) {
+        double const t = 0.05 * static_cast<double>(i);
+        // Alternate far, near, behind, and already-reached targets so every
+        // branch of compute_profile is commanded at some point in the sweep.
+        double const q = planner.sample(t).position[0];
+        switch (i % 4) {
+        case 0: planner.update(q + 50.0); break;
+        case 1: planner.update(q + 0.05); break;
+        case 2: planner.update(q - 20.0); break;
+        default: planner.update(q); break;
+        }
+        REQUIRE(planner.diagnostics().substitution_reason
+                != ctrlpp::online_planner_substitution_reason::carry_velocity_shape_unavailable);
+    }
+}
+
+// -- Test 17: reset clears a substitution report -------------------------------
+TEST_CASE("OnlinePlanner2nd: reset clears the substitution report",
+          "[traj][online_planner_2nd][diagnostics]")
+{
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
+
+    planner.update(100.0);
+    double t = 0.0;
+    for (int i = 0; i < 200; ++i) {
+        t = 0.01 * static_cast<double>(i);
+        planner.sample(t);
+    }
+    auto const cruising = planner.sample(t);
+    planner.update(cruising.position[0] - 10.0);
+    REQUIRE(planner.diagnostics().disposition
+            == ctrlpp::online_planner_disposition::braked_and_replanned);
+
+    planner.reset(0.0);
+
+    auto const& diag = planner.diagnostics();
+    REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::settled);
+    REQUIRE(diag.substitution_reason == ctrlpp::online_planner_substitution_reason::none);
+    REQUIRE(diag.brake_duration == 0.0);
+    REQUIRE(diag.planned_duration == 0.0);
+}

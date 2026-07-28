@@ -49,7 +49,17 @@ static auto create(config const& cfg)
 void update(Scalar target);
 ```
 
-Set a new target position and replan from the current state. Computes a time-optimal trapezoidal profile from (q, v) to (target, 0) respecting `v_max` and `a_max`. Handles overshoot recovery when current velocity requires braking before replanning.
+Set a new target position and replan from the current state. Computes a time-optimal trapezoidal profile from (q, v) to (target, 0) respecting `v_max` and `a_max`. A velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and the move is replanned from the stopping point.
+
+The commanded shape is therefore not always the one realized. `update` returns nothing, so which profile was built is read back from [`diagnostics()`](#diagnostics). The motion respects every limit either way; what changes is the time it takes.
+
+### diagnostics
+
+```cpp
+auto diagnostics() const -> online_planner_diagnostics<Scalar> const&;
+```
+
+Report what the last `update` (or `reset`) planned, against what it was commanded. This describes the plan, not the state reached since; `is_settled()` answers that.
 
 ### sample
 
@@ -83,7 +93,51 @@ The planner produces trapezoidal velocity profiles with three phases:
 2. **Cruise**<br/>hold at `v_max` (may be zero duration for short moves)
 3. **Deceleration**<br/>ramp velocity to zero at rate `a_max`
 
-For short displacements where `v_max` cannot be reached, the profile degenerates to a triangular velocity shape. Mid-motion target changes trigger replanning from the current state, with automatic brake-and-replan for overshoot scenarios.
+For short displacements where `v_max` cannot be reached, the profile degenerates to a triangular velocity shape. Mid-motion target changes trigger replanning from the current state, with automatic brake-and-replan for reversal and overshoot scenarios.
+
+## Substitution Reporting
+
+The brake-and-replan is a substitution: the caller commanded a move from the current velocity, and the planner realized a different, longer profile that respects the same limits and reaches the same target. The motion alone does not distinguish the two. The disposition does.
+
+```cpp
+enum class online_planner_disposition
+{
+    commanded_profile,     // the commanded shape was planned as asked
+    braked_and_replanned,  // braked to rest, then replanned from the stopping point
+    settled,               // already within the settle tolerance; a zero-duration profile
+};
+
+enum class online_planner_substitution_reason
+{
+    none,
+    reversal_or_overshoot,             // the commanded motion reverses, or would overshoot
+    carry_velocity_shape_unavailable,  // reported only by the 3rd-order planner
+};
+
+template <typename Scalar>
+struct [[nodiscard]] online_planner_diagnostics
+{
+    online_planner_disposition          disposition;
+    online_planner_substitution_reason  substitution_reason;
+    Scalar commanded_target;
+    Scalar initial_velocity;
+    Scalar planned_duration;
+    Scalar brake_duration;
+    Scalar replan_start_position;
+};
+```
+
+| Field | Meaning |
+|-------|---------|
+| `disposition` | Which profile was built |
+| `substitution_reason` | Which condition selected the substitution; `none` when nothing was substituted |
+| `commanded_target` | Target position the update was given |
+| `initial_velocity` | Velocity the planner was carrying when it planned |
+| `planned_duration` | Total duration the plan realizes |
+| `brake_duration` | Duration spent braking before the replan; zero when nothing was substituted |
+| `replan_start_position` | Position the replan starts from; the commanded start position when nothing was substituted |
+
+The type is shared with [online-planner-3rd](online-planner-3rd.md). This planner bounds no jerk, so it has no carry-velocity shape whose domain a commanded state can fall outside of: it reports `none` or `reversal_or_overshoot` and nothing else.
 
 ## Usage Example
 

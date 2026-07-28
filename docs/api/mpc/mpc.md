@@ -33,7 +33,7 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 | `horizon` | `int` | `1` | Prediction horizon length N |
 | `Q` | `Matrix<Scalar, NX, NX>` | Identity | State cost weight |
 | `R` | `Matrix<Scalar, NU, NU>` | Identity | Input cost weight |
-| `Qf` | `optional<Matrix<Scalar, NX, NX>>` | DARE solution | Terminal cost weight. Computed from DARE when not provided. |
+| `Qf` | `optional<Matrix<Scalar, NX, NX>>` | DARE solution | Terminal cost weight. Computed from DARE when not provided; if that solve fails the state weight stands in and [`diagnostics()`](#diagnostics) reports it. |
 | `u_min` | `optional<Vector<Scalar, NU>>` | none | Element-wise lower input bound |
 | `u_max` | `optional<Vector<Scalar, NU>>` | none | Element-wise upper input bound |
 | `x_min` | `optional<Vector<Scalar, NX>>` | none | Element-wise lower state bound |
@@ -184,6 +184,26 @@ auto diagnostics() const -> mpc_diagnostics<Scalar>;
 ```
 
 Returns solver diagnostics from the last solve, including status, iteration count, solve time, cost, and residuals.
+
+It also carries one disposition that is not about a solve at all:
+
+| Field | Meaning |
+|-------|---------|
+| `used_state_weight_terminal_cost` | No terminal weight was configured, and the Riccati solve that would have supplied one produced no solution, so `Q` (mapped to state space) stands in for the terminal cost |
+
+When `Qf` is not set, the infinite-horizon Riccati solution is what the terminal cost is meant to be. That solve can fail, for instance on a rank-deficient `A`. The controller then substitutes the state weight, which is a usable cost but a different problem from the configured one: every solve after it optimizes that different problem, and a stability argument resting on the terminal cost no longer holds. Nothing about a solve's success distinguishes the two, so the substitution is reported here instead.
+
+The flag is latched when the terminal cost is computed, which happens at construction rather than per solve. It is therefore readable before the first solve, and reads the same on every solve afterwards.
+
+```cpp
+auto controller = *ctrlpp::mpc<double, NX, NU>::create(system, config);
+
+if (controller.diagnostics().used_state_weight_terminal_cost)
+{
+    // Not the terminal cost the configuration implies. Either supply Qf
+    // explicitly, or accept that the horizon is doing all the work.
+}
+```
 
 ## Usage Example
 

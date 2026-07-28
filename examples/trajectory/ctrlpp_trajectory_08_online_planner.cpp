@@ -29,7 +29,13 @@ int main()
     double current_target = 5.0;
     planner.update(current_target);
 
-    std::cout << "time,position,velocity,target\n";
+    // A retarget mid-motion does not always produce the commanded profile: a
+    // reversal or an overshoot is braked to rest and replanned from the stopping
+    // point instead. update() returns nothing, so the column below reads the
+    // disposition back from diagnostics() and reports which profile the planner
+    // actually built. The motion respects the same limits either way; what
+    // changes is how long the move takes.
+    std::cout << "time,position,velocity,target,substituted\n";
 
     for (double t = 0.0; t <= total_time; t += dt)
     {
@@ -47,6 +53,8 @@ int main()
 
         auto const pt = planner.sample(t);
 
-        std::cout << std::fixed << std::setprecision(4) << t << "," << pt.position[0] << "," << pt.velocity[0] << "," << current_target << "\n";
+        bool const substituted = planner.diagnostics().disposition == ctrlpp::online_planner_disposition::braked_and_replanned;
+
+        std::cout << std::fixed << std::setprecision(4) << t << "," << pt.position[0] << "," << pt.velocity[0] << "," << current_target << "," << (substituted ? 1 : 0) << "\n";
     }
 }

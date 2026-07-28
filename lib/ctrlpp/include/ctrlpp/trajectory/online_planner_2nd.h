@@ -19,6 +19,7 @@
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/trajectory/trajectory_types.h"
+#include "ctrlpp/trajectory/online_planner_diagnostics.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -75,8 +76,16 @@ class online_planner_2nd
     /// @brief Set new target position. Replans from current state.
     ///
     /// Computes time-optimal trapezoidal profile from (q_, v_) to (target, 0)
-    /// respecting v_max and a_max. Handles the case where current velocity
-    /// requires overshoot recovery.
+    /// respecting v_max and a_max. A velocity pointing away from the target, or
+    /// too large to stop in the available distance, is braked to rest first and
+    /// the move is replanned from the stopping point.
+    ///
+    /// The commanded shape is therefore not always the one realized, and this
+    /// returns nothing: which profile was built is read back from
+    /// `diagnostics()`, where `disposition` names the branch taken and
+    /// `substitution_reason` names the condition that selected it. The motion
+    /// respects every limit either way; what changes is the time it takes, which
+    /// `planned_duration` and `brake_duration` are there to account for.
     ///
     /// @cite biagiotti2009 -- Sec. 4.6.2
     void update(Scalar target)
@@ -127,6 +136,14 @@ class online_planner_2nd
     /// @brief True when at target with zero velocity.
     auto is_settled() const -> bool { return settled_; }
 
+    /// @brief What the last update planned, against what it was commanded.
+    ///
+    /// Describes the profile built by the last `update` or `reset`, not the
+    /// state reached since: `is_settled()` answers that. This planner bounds no
+    /// jerk, so it never reports
+    /// `online_planner_substitution_reason::carry_velocity_shape_unavailable`.
+    auto diagnostics() const -> online_planner_diagnostics<Scalar> const& { return diagnostics_; }
+
     /// @brief Reset state to position q0 with zero velocity.
     void reset(Scalar q0)
     {
@@ -142,6 +159,15 @@ class online_planner_2nd
         T_d_ = Scalar{0};
         T_ = Scalar{0};
         settled_ = true;
+        diagnostics_ = online_planner_diagnostics<Scalar>{
+            .disposition = online_planner_disposition::settled,
+            .substitution_reason = online_planner_substitution_reason::none,
+            .commanded_target = q0,
+            .initial_velocity = Scalar{0},
+            .planned_duration = Scalar{0},
+            .brake_duration = Scalar{0},
+            .replan_start_position = q0,
+        };
     }
 
   private:
@@ -173,6 +199,11 @@ class online_planner_2nd
     Scalar v_ref_{};
     Scalar target_{};
     Scalar t_ref_{};
+
+    // Disposition of the profile built at the last update. Assigned as a whole
+    // aggregate on every branch that completes a plan, which is what keeps a
+    // field from one branch surviving into the report of another.
+    online_planner_diagnostics<Scalar> diagnostics_{};
 
     // Profile parameters
     Scalar sigma_{1};
@@ -217,6 +248,15 @@ class online_planner_2nd
 
         if (std::abs(h_signed) < eps && std::abs(v_ref_) < eps) {
             set_settled_profile();
+            diagnostics_ = online_planner_diagnostics<Scalar>{
+                .disposition = online_planner_disposition::settled,
+                .substitution_reason = online_planner_substitution_reason::none,
+                .commanded_target = target_,
+                .initial_velocity = v_ref_,
+                .planned_duration = Scalar{0},
+                .brake_duration = Scalar{0},
+                .replan_start_position = q_ref_,
+            };
             return;
         }
 
@@ -237,10 +277,28 @@ class online_planner_2nd
             q_after_brake_ = q_ref_ + v0 * T_brake_ / Scalar{2};
             v_after_brake_ = Scalar{0};
             compute_rest_to_rest(q_after_brake_, target_);
+            diagnostics_ = online_planner_diagnostics<Scalar>{
+                .disposition = online_planner_disposition::braked_and_replanned,
+                .substitution_reason = online_planner_substitution_reason::reversal_or_overshoot,
+                .commanded_target = target_,
+                .initial_velocity = v_ref_,
+                .planned_duration = T_,
+                .brake_duration = T_brake_,
+                .replan_start_position = q_after_brake_,
+            };
         } else {
             needs_brake_ = false;
             T_brake_ = Scalar{0};
             compute_with_initial_velocity(q_ref_, v0, target_);
+            diagnostics_ = online_planner_diagnostics<Scalar>{
+                .disposition = online_planner_disposition::commanded_profile,
+                .substitution_reason = online_planner_substitution_reason::none,
+                .commanded_target = target_,
+                .initial_velocity = v_ref_,
+                .planned_duration = T_,
+                .brake_duration = Scalar{0},
+                .replan_start_position = q_ref_,
+            };
         }
     }
 

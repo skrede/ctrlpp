@@ -48,35 +48,54 @@ for a runnable version.
 
 ## Target Changes Mid-Motion
 
-Online planners handle target changes safely using a brake-to-zero-then-replan
-strategy. When a new target is set while the planner is still moving:
+A new target set while the planner is still moving does not always produce the
+profile it was asked for, and `update()` returns nothing to say so. There are
+two outcomes:
 
-1. The planner decelerates to zero velocity (respecting kinematic limits).
-2. Once stopped, it plans a new profile toward the updated target.
+1. **The commanded profile.** The current velocity is carried straight through
+   into the new move, with no full-stop dip. This is what a same-direction
+   retarget with room to stop gets.
+2. **A brake-then-replan.** The planner decelerates to zero (respecting the
+   kinematic limits), then plans a new profile from the stopping point. This is
+   what a reversal, an overshoot, or (on the 3rd-order planner) a state outside
+   the carry-velocity shape's domain gets.
 
-This approach is robust and predictable &mdash; the system never attempts to
-reverse direction at speed. For applications that need smoother transitions,
-the 3rd-order planner additionally limits jerk during the deceleration phase.
+Both respect every limit and both reach the target. What differs is the time
+taken, and nothing about the sampled motion says which one you got. Read the
+disposition:
 
 ```cpp
 // Change target while moving; the planner handles it safely
-planner.set_target(10.0);
+planner.update(10.0);
 // ... some time later, before reaching 10.0 ...
-planner.set_target(-5.0);  // brakes to zero, then heads to -5.0
+planner.update(-5.0);  // a reversal at speed: brakes to zero, then heads to -5.0
+
+auto const& diagnostics = planner.diagnostics();
+if (diagnostics.disposition
+    == ctrlpp::online_planner_disposition::braked_and_replanned)
+{
+    // Not the commanded profile. diagnostics.substitution_reason names the
+    // condition, diagnostics.brake_duration is the time the braking costs, and
+    // diagnostics.replan_start_position is where the new move begins.
+}
 ```
+
+A supervisory layer synchronizing several axes needs this: an axis on a
+brake-then-replan is on a longer profile than the one commanded, and a
+supervisor that assumes otherwise desynchronizes with nothing anywhere
+reporting an error.
 
 ## Integration with Controllers
 
 Online planner output feeds directly into PID or MPC controllers as the
-reference signal. Each cycle, sample the planner state and use it as the
-setpoint:
+reference signal. Each cycle, sample the planner at the loop's current time and
+use the result as the setpoint:
 
 ```cpp
-planner.update(dt);
-auto [ref_pos, ref_vel, ref_acc] = planner.sample();
+auto const point = planner.sample(t);
 
-// Use ref_pos as PID setpoint, or ref_pos + ref_vel + ref_acc as
-// feedforward terms in an MPC cost function.
+// Use point.position[0] as the PID setpoint, or position, velocity and
+// acceleration together as feedforward terms in an MPC cost function.
 ```
 
 See [example 10](../../../examples/trajectory/ctrlpp_trajectory_10_mpc_tracking.cpp)

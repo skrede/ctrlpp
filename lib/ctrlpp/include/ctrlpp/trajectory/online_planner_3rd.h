@@ -20,6 +20,7 @@
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/double_s_trajectory.h"
+#include "ctrlpp/trajectory/online_planner_diagnostics.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -85,7 +86,15 @@ class online_planner_3rd
     /// respecting v_max, a_max, and j_max. A same-direction move carries the
     /// current velocity through the profile; a velocity pointing away from the
     /// target (or too large to stop in the available distance) is braked to rest
-    /// first, then replanned.
+    /// first, then replanned. The carry-velocity shape has a domain of its own,
+    /// and a commanded state outside it is braked to rest and replanned as well.
+    ///
+    /// The commanded shape is therefore not always the one realized, and this
+    /// returns nothing: which profile was built is read back from
+    /// `diagnostics()`, where `disposition` names the branch taken and
+    /// `substitution_reason` names the condition that selected it. The motion
+    /// respects every limit either way; what changes is the time it takes, which
+    /// `planned_duration` and `brake_duration` are there to account for.
     ///
     /// @cite biagiotti2009 -- Sec. 4.6.1
     void update(Scalar target)
@@ -139,6 +148,12 @@ class online_planner_3rd
     /// @brief True when at target with zero velocity and zero acceleration.
     auto is_settled() const -> bool { return settled_; }
 
+    /// @brief What the last update planned, against what it was commanded.
+    ///
+    /// Describes the profile built by the last `update` or `reset`, not the
+    /// state reached since: `is_settled()` answers that.
+    auto diagnostics() const -> online_planner_diagnostics<Scalar> const& { return diagnostics_; }
+
     /// @brief Reset state to position q0 with zero velocity and zero acceleration.
     void reset(Scalar q0)
     {
@@ -154,6 +169,15 @@ class online_planner_3rd
         n_phases_ = 0;
         T_ = Scalar{0};
         settled_ = true;
+        diagnostics_ = online_planner_diagnostics<Scalar>{
+            .disposition = online_planner_disposition::settled,
+            .substitution_reason = online_planner_substitution_reason::none,
+            .commanded_target = q0,
+            .initial_velocity = Scalar{0},
+            .planned_duration = Scalar{0},
+            .brake_duration = Scalar{0},
+            .replan_start_position = q0,
+        };
     }
 
   private:
@@ -190,6 +214,11 @@ class online_planner_3rd
     Scalar target_{};
     Scalar t_ref_{};
 
+    // Disposition of the profile built at the last update. Assigned as a whole
+    // aggregate on every branch that completes a plan, which is what keeps a
+    // field from one branch surviving into the report of another.
+    online_planner_diagnostics<Scalar> diagnostics_{};
+
     // Profile as a sequence of constant-jerk phases.
     // Each phase has duration T_ph_[i] and jerk j_ph_[i].
     // Maximum 11 phases: up to 4 for bringing accel to zero + 7 for double-S.
@@ -220,6 +249,15 @@ class online_planner_3rd
             && std::abs(a_ref_) < eps) {
             T_ = Scalar{0};
             settled_ = true;
+            diagnostics_ = online_planner_diagnostics<Scalar>{
+                .disposition = online_planner_disposition::settled,
+                .substitution_reason = online_planner_substitution_reason::none,
+                .commanded_target = target_,
+                .initial_velocity = v_ref_,
+                .planned_duration = Scalar{0},
+                .brake_duration = Scalar{0},
+                .replan_start_position = q_ref_,
+            };
             return;
         }
 
@@ -250,14 +288,47 @@ class online_planner_3rd
         }
 
         // Now state is (q_start, v_start, 0). Plan double-S from here.
-        plan_from_zero_accel(q_start, v_start);
+        auto const outcome = plan_from_zero_accel(q_start, v_start);
 
         // Compute total duration
         T_ = Scalar{0};
         for (int i = 0; i < n_phases_; ++i) {
             T_ += T_ph_[i];
         }
+
+        if (outcome.reason == online_planner_substitution_reason::none) {
+            diagnostics_ = online_planner_diagnostics<Scalar>{
+                .disposition = online_planner_disposition::commanded_profile,
+                .substitution_reason = online_planner_substitution_reason::none,
+                .commanded_target = target_,
+                .initial_velocity = v_ref_,
+                .planned_duration = T_,
+                .brake_duration = Scalar{0},
+                .replan_start_position = q_ref_,
+            };
+        } else {
+            diagnostics_ = online_planner_diagnostics<Scalar>{
+                .disposition = online_planner_disposition::braked_and_replanned,
+                .substitution_reason = outcome.reason,
+                .commanded_target = target_,
+                .initial_velocity = v_ref_,
+                .planned_duration = T_,
+                .brake_duration = outcome.brake_duration,
+                .replan_start_position = outcome.replan_start_position,
+            };
+        }
     }
+
+    /// @brief What `plan_from_zero_accel` did with the commanded shape.
+    ///
+    /// A reason of `none` leaves the two quantities unset: nothing was braked,
+    /// and the plan starts where the command did.
+    struct substitution_outcome
+    {
+        online_planner_substitution_reason reason{online_planner_substitution_reason::none};
+        Scalar brake_duration{};
+        Scalar replan_start_position{};
+    };
 
     /// @brief Plan a profile from (q0, v0, a=0) to (target_, 0, 0).
     ///
@@ -265,7 +336,10 @@ class online_planner_3rd
     /// the general nonzero-initial-velocity double-S. If v0 points away from the
     /// target or is too large to stop within the available distance, the planner
     /// first brakes to rest (jerk-limited) and then plans rest-to-rest.
-    void plan_from_zero_accel(Scalar q0, Scalar v0)
+    ///
+    /// Reports which of the two it did, because the caller cannot tell them apart
+    /// from the motion alone: both respect every limit and both reach the target.
+    auto plan_from_zero_accel(Scalar q0, Scalar v0) -> substitution_outcome
     {
         auto constexpr eps = static_cast<Scalar>(1e-12);
         auto const h_signed = target_ - q0;
@@ -273,7 +347,7 @@ class online_planner_3rd
         // If velocity is zero (or nearly), plan rest-to-rest directly
         if (std::abs(v0) < eps) {
             plan_rest_to_rest(q0);
-            return;
+            return {};
         }
 
         // Compute stopping distance: distance to bring v0 to 0 using a_max, j_max
@@ -294,26 +368,44 @@ class online_planner_3rd
             append_brake_phases(v0, stop_info);
             auto const q_after = q0 + stop_dist;
             plan_rest_to_rest(q_after);
-        } else if (!append_incorporate_velocity(q0, v0)) {
+            return {
+                .reason = online_planner_substitution_reason::reversal_or_overshoot,
+                .brake_duration = stop_info.T_a,
+                .replan_start_position = q_after,
+            };
+        }
+
+        if (append_incorporate_velocity(q0, v0)) {
             // Same-direction move with room to spare: carry the current velocity
             // through the profile rather than braking to rest first. The general
             // nonzero-initial-velocity double-S accelerates from v0 toward the
             // cruise velocity and decelerates to rest at the target, so the move is
             // time-optimal with no full-stop dip.
-            //
-            // That shape has a domain of its own, and the tests above are a
-            // planner-side approximation of it rather than a statement of it: the
-            // current speed may sit above the velocity limit after a limit change,
-            // and the remaining distance may fall below what the transition from
-            // the current velocity to rest already sweeps. Where the shape does
-            // not exist the planner brakes to rest and replans from the stopping
-            // point, which is the same always-admissible fallback the two tests
-            // above select and reaches the same target under the same limits. It
-            // costs time, not correctness, and nothing is emitted from a profile
-            // that was not built.
-            append_brake_phases(v0, stop_info);
-            plan_rest_to_rest(q0 + stop_dist);
+            return {};
         }
+
+        // That shape has a domain of its own, and the tests above are a
+        // planner-side approximation of it rather than a statement of it: the
+        // current speed may sit above the velocity limit after a limit change,
+        // and the remaining distance may fall below what the transition from
+        // the current velocity to rest already sweeps. Where the shape does
+        // not exist the planner brakes to rest and replans from the stopping
+        // point, which is the same always-admissible fallback the two tests
+        // above select and reaches the same target under the same limits. It
+        // costs time, not correctness, and nothing is emitted from a profile
+        // that was not built.
+        //
+        // The gap between the approximation and the domain is what the reported
+        // reason names: this is the one substitution the two tests above do not
+        // predict, so it is the one a caller has no way to anticipate.
+        append_brake_phases(v0, stop_info);
+        auto const q_after = q0 + stop_dist;
+        plan_rest_to_rest(q_after);
+        return {
+            .reason = online_planner_substitution_reason::carry_velocity_shape_unavailable,
+            .brake_duration = stop_info.T_a,
+            .replan_start_position = q_after,
+        };
     }
 
     /// @brief Append a nonzero-initial-velocity double-S from (q0, v0, 0) to

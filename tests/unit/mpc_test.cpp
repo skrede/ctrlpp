@@ -527,3 +527,70 @@ TEST_CASE("mpc trajectory is guarded before the first valid solve", "[mpc][traje
     REQUIRE(controller.solve(x0).has_value());
     CHECK(controller.trajectory().has_value());
 }
+
+// The terminal cost is the one place the controller answers a different
+// question than the one it was configured with. With no terminal weight given,
+// the infinite-horizon Riccati solution IS the terminal cost; when that solve
+// has no solution the state weight stands in for it, and every solve afterwards
+// optimizes a different problem. The substituted cost is usable, so nothing
+// about a solve's success distinguishes the two. The disposition does.
+TEST_CASE("mpc reports a substituted terminal cost", "[mpc][diagnostics]")
+{
+    constexpr int N = 5;
+
+    SECTION("a failed Riccati solve reports the state weight standing in")
+    {
+        // A nilpotent A is exactly rank-deficient, and the symplectic pencil the
+        // Riccati solve is built on needs A invertible. There is no solution to
+        // fall back from, so the state weight stands in for the terminal cost.
+        Eigen::Matrix2d A;
+        A << 0.0, 1.0, 0.0, 0.0;
+        Eigen::Vector2d B;
+        B << 0.0, 1.0;
+        Eigen::Matrix2d C = Eigen::Matrix2d::Identity();
+        Eigen::Matrix<double, 2, 1> D = Eigen::Matrix<double, 2, 1>::Zero();
+        ctrlpp::discrete_state_space<double, NX, NU, NX> singular_sys{A, B, C, D};
+
+        auto cfg = make_config(N);
+        REQUIRE_FALSE(cfg.Qf.has_value());
+
+        auto controller = make_controller<Mpc>(singular_sys, cfg);
+
+        // Readable before any solve: the substitution happened at construction.
+        REQUIRE(controller.diagnostics().used_state_weight_terminal_cost);
+
+        // And carried on the aggregate every solve emits, so a caller reading
+        // only the solve-path diagnostics still sees it.
+        Eigen::Vector2d x0{1.0, 0.0};
+        REQUIRE(controller.solve(x0).has_value());
+        REQUIRE(controller.diagnostics().used_state_weight_terminal_cost);
+    }
+
+    SECTION("a successful Riccati solve reports no substitution")
+    {
+        auto sys = make_double_integrator();
+        auto cfg = make_config(N);
+        REQUIRE_FALSE(cfg.Qf.has_value());
+
+        auto controller = make_controller<Mpc>(sys, cfg);
+        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+
+        Eigen::Vector2d x0{1.0, 0.0};
+        REQUIRE(controller.solve(x0).has_value());
+        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+    }
+
+    SECTION("a configured terminal weight is never a substitution")
+    {
+        auto sys = make_double_integrator();
+        auto cfg = make_config(N);
+        cfg.Qf = Eigen::Matrix2d::Identity() * 10.0;
+
+        auto controller = make_controller<Mpc>(sys, cfg);
+        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+
+        Eigen::Vector2d x0{1.0, 0.0};
+        REQUIRE(controller.solve(x0).has_value());
+        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+    }
+}

@@ -51,7 +51,17 @@ static auto create(config const& cfg)
 void update(Scalar target);
 ```
 
-Set a new target position and replan from the current state. Computes a time-optimal double-S profile from (q, v, a) to (target, 0, 0) respecting `v_max`, `a_max`, and `j_max`. A same-direction move carries the current velocity through the profile (no full-stop dip); a velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and then replanned.
+Set a new target position and replan from the current state. Computes a time-optimal double-S profile from (q, v, a) to (target, 0, 0) respecting `v_max`, `a_max`, and `j_max`. A same-direction move carries the current velocity through the profile (no full-stop dip); a velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and then replanned. The carry-velocity shape has a domain of its own, and a commanded state outside it is braked to rest and replanned as well.
+
+The commanded shape is therefore not always the one realized. `update` returns nothing, so which profile was built is read back from [`diagnostics()`](#diagnostics). The motion respects every limit either way; what changes is the time it takes.
+
+### diagnostics
+
+```cpp
+auto diagnostics() const -> online_planner_diagnostics<Scalar> const&;
+```
+
+Report what the last `update` (or `reset`) planned, against what it was commanded. This describes the plan, not the state reached since; `is_settled()` answers that.
 
 ### sample
 
@@ -89,7 +99,64 @@ The planner produces double-S velocity profiles composed of constant-jerk phases
 6. **Constant deceleration**<br/>hold at -a_max (may be zero duration)
 7. **Deceleration ramp-down**<br/>apply +j_max to bring acceleration and velocity to zero
 
-Degenerate cases (v_max or a_max not reached) automatically reduce the number of phases. Mid-motion replanning uses a brake-to-zero-then-replan strategy for robustness.
+Degenerate cases (v_max or a_max not reached) automatically reduce the number of phases.
+
+## Substitution Reporting
+
+A mid-motion replan keeps the current velocity where the carry-velocity shape exists, and brakes to rest and replans from the stopping point where it does not. Both outcomes respect every limit and both reach the target, so the motion alone does not tell them apart. The disposition does.
+
+```cpp
+enum class online_planner_disposition
+{
+    commanded_profile,     // the commanded shape was planned as asked
+    braked_and_replanned,  // braked to rest, then replanned from the stopping point
+    settled,               // already within the settle tolerance; a zero-duration profile
+};
+
+enum class online_planner_substitution_reason
+{
+    none,
+    reversal_or_overshoot,             // the commanded motion reverses, or would overshoot
+    carry_velocity_shape_unavailable,  // the carry-velocity shape does not exist for this state
+};
+
+template <typename Scalar>
+struct [[nodiscard]] online_planner_diagnostics
+{
+    online_planner_disposition          disposition;
+    online_planner_substitution_reason  substitution_reason;
+    Scalar commanded_target;
+    Scalar initial_velocity;
+    Scalar planned_duration;
+    Scalar brake_duration;
+    Scalar replan_start_position;
+};
+```
+
+| Field | Meaning |
+|-------|---------|
+| `disposition` | Which profile was built |
+| `substitution_reason` | Which condition selected the substitution; `none` when nothing was substituted |
+| `commanded_target` | Target position the update was given |
+| `initial_velocity` | Velocity the planner was carrying when it planned |
+| `planned_duration` | Total duration the plan realizes |
+| `brake_duration` | Duration spent braking before the replan; zero when nothing was substituted |
+| `replan_start_position` | Position the replan starts from; the commanded start position when nothing was substituted |
+
+The quantitative fields are what let a supervisory layer choose between axes, or log why a move took longer than it commanded. A boolean could not.
+
+```cpp
+planner.update(target);
+
+if (planner.diagnostics().disposition
+    == ctrlpp::online_planner_disposition::braked_and_replanned)
+{
+    // The axis is on a longer profile than the one commanded. Its extra time is
+    // brake_duration, and it restarts from replan_start_position.
+}
+```
+
+The type is shared with [online-planner-2nd](online-planner-2nd.md), which bounds no jerk and therefore never reports `carry_velocity_shape_unavailable`.
 
 ## Usage Example
 

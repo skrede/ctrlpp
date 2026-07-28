@@ -50,6 +50,7 @@ Real-time trajectory filters for dynamic target tracking in control loops.
 
 - [online-planner-2nd](online-planner-2nd.md)<br/>2nd-order planner (velocity + acceleration limits)
 - [online-planner-3rd](online-planner-3rd.md)<br/>3rd-order planner (velocity + acceleration + jerk limits)
+- `online_planner_diagnostics`<br/>Shared disposition report for both planners: which profile the last `update` built, against the one it was commanded. Documented on the [3rd-order page](online-planner-3rd.md#substitution-reporting) and the [2nd-order page](online-planner-2nd.md#substitution-reporting); header `ctrlpp/trajectory/online_planner_diagnostics.h`
 
 ## Operations
 

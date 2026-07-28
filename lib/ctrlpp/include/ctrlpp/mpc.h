@@ -257,6 +257,17 @@ private:
         CtQ_ = system_.C.transpose() * config_.Q;
     }
 
+    /// @brief Establish the terminal cost, and record when it is not the one the
+    /// configuration implies.
+    ///
+    /// With no terminal weight configured, the infinite-horizon Riccati solution
+    /// is what the terminal cost is meant to be. That solve can fail, and the
+    /// state weight then stands in for it: a usable cost, but a different problem
+    /// from the one the caller posed, and one no stability argument built on the
+    /// terminal cost survives. The substitution is latched here and carried on
+    /// every diagnostics aggregate the solve path emits, because this runs at
+    /// construction and reconfiguration rather than per solve, and a caller that
+    /// only ever reads the diagnostics would otherwise never learn of it.
     void compute_terminal_cost()
     {
         if(config_.Qf.has_value())
@@ -267,12 +278,18 @@ private:
         else
         {
             auto dare_result = dare<Scalar, NX, NU>(system_.A, system_.B, Q_state_, config_.R);
+            terminal_cost_substituted_ = !dare_result.has_value();
             Qf_state_ = dare_result ? dare_result->P : Q_state_;
             // Map state-space Qf back to output space for the linear tracking term:
             // linear term = -Qf_state * C_pinv * y_ref, where C_pinv = C' * (C*C')^{-1}
             Matrix<Scalar, NY, NY> CCt = system_.C * system_.C.transpose();
             Qf_linear_ = Qf_state_ * system_.C.transpose() * CCt.colPivHouseholderQr().solve(Matrix<Scalar, NY, NY>::Identity());
         }
+
+        // Readable before the first solve: the substitution happened here, not
+        // in a solve, and a caller checking its controller after construction
+        // should not have to run one to find out.
+        last_diagnostics_ = mpc_diagnostics<Scalar>{.used_state_weight_terminal_cost = terminal_cost_substituted_};
     }
 
     void build_initial_qp()
@@ -381,7 +398,8 @@ private:
                                                     .cost = result.objective,
                                                     .primal_residual = result.primal_residual,
                                                     .dual_residual = result.dual_residual,
-                                                    .max_constraint_violation = Scalar{0}};
+                                                    .max_constraint_violation = Scalar{0},
+                                                    .used_state_weight_terminal_cost = terminal_cost_substituted_};
     }
 
     /// @brief Consume an accepted backend result: validate its reported shape,
@@ -438,6 +456,7 @@ private:
     Vector<Scalar, NU> u_prev_;
     bool has_solution_{false};
     bool setup_failed_{false};
+    bool terminal_cost_substituted_{false};
 
     int n_dec_{};
     int n_con_{};
