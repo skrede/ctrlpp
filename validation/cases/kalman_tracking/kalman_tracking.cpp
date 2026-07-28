@@ -63,7 +63,6 @@ int main()
     {
         auto x_est = kf.state();
         auto u = controller.compute(x_est);
-        Eigen::Matrix<Scalar, 1, 1> z = sys_d.C * x_true;
 
         auto P = kf.covariance();
         std::printf("%.15e,%.15e,%.15e,%.15e,%.15e,%.15e,%.15e\n",

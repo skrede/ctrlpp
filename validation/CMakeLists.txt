@@ -15,6 +15,30 @@ target_include_directories(ctrlpp_validation_lib INTERFACE
 )
 target_link_libraries(ctrlpp_validation_lib INTERFACE Eigen3::Eigen)
 
+# This project is a separate CMake project that no standing build tree
+# configures, and until now it compiled with no warning flags at all. That gap
+# was not theoretical: it hid one translation unit that did not compile under
+# the flags the rest of the tree uses, and two cases that discarded a typed
+# fallible result inside their simulation loops -- a step that did nothing while
+# the case believed it succeeded, in the exact harness whose whole purpose is to
+# produce numbers a reference implementation is compared against.
+#
+# -Werror=unused-result is the one promoted to an error rather than left as a
+# warning, matching the root project: these executables have no test framework
+# and no assertions, so a discarded failure here produces a plausible-looking
+# CSV rather than a diagnostic anyone reads.
+#
+# Attached to the interface target so every case inherits it, rather than
+# repeated in nineteen leaf files where one could quietly drift.
+target_compile_options(ctrlpp_validation_lib INTERFACE
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /we4834>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:
+        -Wall
+        -Wextra
+        -Werror=unused-result
+    >
+)
+
 # Control module
 add_subdirectory(cases/dare_solution)
 add_subdirectory(cases/care_solution)

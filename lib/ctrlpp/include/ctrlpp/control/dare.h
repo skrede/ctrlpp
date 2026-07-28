@@ -70,7 +70,23 @@ auto build_dare_symplectic(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
         return ctrlpp::unexpected(dare_error::singular_a);
 
     const MatNxN AinvT = qr_At.solve(MatNxN::Identity()).eval();
-    const MatNxN G = (B * R.colPivHouseholderQr().solve(
+
+    // R^{-1} is needed for G = B R^{-1} B^T in the same build, so R is judged by the
+    // same reciprocal-pivot test as A, with the input dimension supplying the size
+    // factor. Testing it explicitly rather than letting the arithmetic decide matters
+    // in BOTH directions, and neither outcome is honest without it: a zero R makes the
+    // QR solve return infinities, so Z fails its finiteness test and the caller is told
+    // their input was non-finite when every entry they passed was finite; and a
+    // rank-deficient but nonzero R makes the same solve return a least-squares answer
+    // over the leading rank columns, which is finite, so the solver would run to
+    // completion and report success on a G that is not B R^{-1} B^T -- a solution to a
+    // problem the caller did not pose.
+    auto qr_R = R.colPivHouseholderQr();
+    qr_R.setThreshold(Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon());
+    if (!qr_R.isInvertible())
+        return ctrlpp::unexpected(dare_error::singular_r);
+
+    const MatNxN G = (B * qr_R.solve(
                              Eigen::Matrix<Scalar, int(NU), int(NX)>(B.transpose()))).eval();
 
     Mat2Nx2N Z;
@@ -186,9 +202,16 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           Cond                                           tag = {})
     -> ctrlpp::expected<dare_result<Scalar, NX>, dare_error>
 {
-    auto Rinv_Nt = R.colPivHouseholderQr()
-                       .solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(N.transpose()))
-                       .eval();
+    // The reduction to standard form inverts R before the symplectic build ever sees
+    // it, so the same test is applied to the factorization this overload already forms
+    // rather than deferring to the build's. Without it a singular R would reach the
+    // inner solve as a non-finite Q' and A' and be reported as a non-finite input.
+    auto qr_R = R.colPivHouseholderQr();
+    qr_R.setThreshold(Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon());
+    if (!qr_R.isInvertible())
+        return ctrlpp::unexpected(dare_error::singular_r);
+
+    auto Rinv_Nt = qr_R.solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(N.transpose())).eval();
 
     Eigen::Matrix<Scalar, int(NX), int(NX)> Qp = (Q - N * Rinv_Nt).eval();
     Eigen::Matrix<Scalar, int(NX), int(NX)> Ap = (A - B * Rinv_Nt).eval();

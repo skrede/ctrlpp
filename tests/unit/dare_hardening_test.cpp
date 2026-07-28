@@ -1,5 +1,6 @@
 #include "hardening_helpers.h"
 #include "ctrlpp/control/dare.h"
+#include "ctrlpp/control/lqr.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -49,19 +50,83 @@ TEST_CASE("DARE refuses a singular R", "[dare][hardening][negative]")
     auto const result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE_FALSE(result.has_value());
 
-    // The enumerator is non_finite_input even though every argument is finite,
-    // and that is what the enumerator's own definition says: it covers "A, B, Q,
-    // R OR the assembled symplectic Z contains NaN/Inf". The symplectic build
-    // needs R^{-1} to form G = B R^{-1} B', and a singular R makes that whole
-    // block infinite -- Eigen's rank-revealing QR solve of the 1x1 zero returns
-    // infinity rather than declining -- so Z fails its finiteness test.
-    //
-    // The refusal is right. Note what it does NOT say: the module has
-    // singular_a for the analogous condition on the state matrix, and no
-    // counterpart naming a singular weighting matrix, so the caller is told to
-    // look for a non-finite input when the actual obstacle is a weighting they
-    // set to zero on purpose.
-    CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
+    // The symplectic build needs R^{-1} to form G = B R^{-1} B', exactly as it
+    // needs A^{-T}, so a rank-deficient R gets the enumerator that names it
+    // rather than one describing a symptom. Before that enumerator existed the
+    // caller was told their input was non-finite, which is a false statement
+    // about data they chose deliberately.
+    CHECK(result.error() == ctrlpp::dare_error::singular_r);
+
+    // The gain forwards it unchanged.
+    auto const gain = ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R);
+    REQUIRE_FALSE(gain.has_value());
+    CHECK(gain.error() == ctrlpp::dare_error::singular_r);
+
+    // The cross-weight overload inverts R before the symplectic build ever sees
+    // it, so it carries its own copy of the test.
+    Eigen::Matrix<double, 2, 1> N;
+    N << 0.1, 0.2;
+    auto const crossed = ctrlpp::dare<double, 2, 1>(A, B, Q, R, N);
+    REQUIRE_FALSE(crossed.has_value());
+    CHECK(crossed.error() == ctrlpp::dare_error::singular_r);
+}
+
+TEST_CASE("DARE refuses a rank-deficient R instead of solving a different problem",
+          "[dare][hardening][negative]")
+{
+    // The dangerous half of the same defect, and the reason the test is a rank
+    // test rather than a finiteness check. A rank-deficient but NONZERO R does
+    // not make the QR solve produce infinities: it produces a least-squares
+    // answer over the leading rank columns, which is finite. Without an explicit
+    // rank test the build would form a G that is not B R^{-1} B', the solve
+    // would run to completion, and the caller would be handed a confident
+    // solution to a problem they did not pose.
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 1.0, 0.0, 1.0;
+    Eigen::Matrix<double, 2, 2> B;
+    B << 0.5, 0.0, 1.0, 1.0;
+    auto Q = Eigen::Matrix<double, 2, 2>::Identity();
+    auto R = Eigen::Matrix<double, 2, 2>::Zero().eval();
+    R(0, 0) = 1.0;  // rank 1 of 2, and every entry finite
+
+    REQUIRE(R.allFinite());
+
+    auto const result = ctrlpp::dare<double, 2, 2>(A, B, Q, R);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::dare_error::singular_r);
+}
+
+TEST_CASE("DARE accepts an R that is ill-conditioned but not singular",
+          "[dare][hardening][robustness]")
+{
+    // The boundary the rank test must not overshoot. A weighting spanning ten
+    // decades is a numerical-conditioning question, not a domain violation, and
+    // refusing it would turn one into the other.
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 1.0, 0.0, 1.0;
+    Eigen::Matrix<double, 2, 2> B;
+    B << 0.5, 0.0, 1.0, 1.0;
+    auto Q = Eigen::Matrix<double, 2, 2>::Identity();
+    auto R = ctrlpp::test::ill_conditioned_2x2<double>(1e10);
+
+    auto const result = ctrlpp::dare<double, 2, 2>(A, B, Q, R);
+    REQUIRE(result.has_value());
+
+    // Positive definiteness is asserted; the Riccati residual deliberately is
+    // NOT, and the reason is recorded rather than the assertion quietly
+    // omitted. Measured here: the residual is 1.34e-7 against a term scale of
+    // 8.13, i.e. 1.6e-8 relative. That is seven orders above the
+    // counted-operation budget the well-conditioned cases use, and it is not a
+    // solver defect -- a forward error of about cond(R) * eps = 1e10 * 2.2e-16
+    // = 2.2e-6 is what this conditioning buys, and the observed value sits two
+    // decades INSIDE it. A counted-operation budget models rounding only and is
+    // simply the wrong oracle in this regime; the right one is scaled by a
+    // conditioning estimate, which has not been derived. Asserting the
+    // counted-op budget here would fail on a correct solve, and widening it
+    // until it passed would be fitting a constant to an observation.
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> pes(result->P);
+    for(int i = 0; i < 2; ++i)
+        CHECK(pes.eigenvalues()(i) > 0.0);
 }
 
 TEST_CASE("DARE known 2x2 solution is positive definite", "[dare][hardening][precision]")

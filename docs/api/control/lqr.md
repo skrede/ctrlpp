@@ -56,6 +56,33 @@ auto lqr_gain(const Matrix<Scalar, NX, NX>& A,
 
 Infinite-horizon LQR gain with state-input cross-weight N: K = (R + B'PB)^{-1} (B'PA + N'). Forwards `dare_error` for the same reason.
 
+### lqr_gain_continuous
+
+```cpp
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
+          detail::care_solve_method Method = detail::sign_function_care_method>
+auto lqr_gain_continuous(const Matrix<Scalar, NX, NX>& A,
+                         const Matrix<Scalar, NX, NU>& B,
+                         const Matrix<Scalar, NX, NX>& Q,
+                         const Matrix<Scalar, NU, NU>& R,
+                         Method method_tag = {})
+    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, care_error>;
+```
+
+Continuous-time gain `K = R^{-1} B' P` where P solves `A'P + PA - PBR^{-1}B'P + Q = 0`. Reports through `care_error`, forwarding the continuous solver's enumerator.
+
+It makes three rejections of its own before calling anything:
+
+| Condition | Enumerator |
+| --- | --- |
+| a NaN or infinite `A`, `B`, `Q` or `R` | `care_error::non_finite_input` |
+| a rank-deficient `R` | `care_error::singular_r` |
+| a Hamiltonian that overflowed while being assembled | `care_error::non_finite_input` |
+
+The middle one is worth stating explicitly, because this surface forms `R^{-1}` itself through an `LDLT` factorization rather than going through the Hamiltonian build, and **that factorization fails quietly**: its solve zeroes the rank-deficient directions instead of producing infinities. Before the rank test, a zero `R` therefore produced a finite `R^{-1}` of zeros, an entirely finite Hamiltonian describing a plant with no control authority, and a sign-function iteration that stagnated on it -- reported as `sign_function_stagnated`, which sends the caller to look at convergence rather than at the weighting they passed.
+
+See [dare](dare.md) for what `care_error::singular_u11` covers; the continuous enumerator has the identical shape as its discrete counterpart.
+
 ### lqr_finite
 
 ```cpp

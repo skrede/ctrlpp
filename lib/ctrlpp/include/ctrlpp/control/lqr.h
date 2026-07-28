@@ -16,6 +16,7 @@
 #include <Eigen/Dense>
 
 #include <span>
+#include <limits>
 #include <vector>
 #include <cstddef>
 #include <utility>
@@ -89,11 +90,11 @@ auto lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
 /// Hamiltonian using that pre-computed R^{-1}, and reuses it for the K formula --
 /// one matrix factorisation of R instead of two.
 ///
-/// Reports through `care_error`. Its two own rejections -- a non-finite
-/// argument, and a Hamiltonian that came out non-finite from finite arguments
-/// because R^{-1} did not -- are both `care_error::non_finite_input`, which is
-/// the enumerator the continuous solver already defines for exactly that
-/// condition; everything else is the solver's own enumerator forwarded.
+/// Reports through `care_error`. It makes three rejections of its own before
+/// calling anything: a non-finite argument and a Hamiltonian that overflowed
+/// while being assembled are both `care_error::non_finite_input`, and a
+/// rank-deficient R is `care_error::singular_r`. Everything else is the
+/// solver's own enumerator forwarded.
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
           detail::care_solve_method Method = detail::sign_function_care_method>
 auto lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
@@ -115,7 +116,31 @@ auto lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     if(!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite())
         return ctrlpp::unexpected(care_error::non_finite_input);
 
-    const MatU R_inv = R.ldlt().solve(MatU::Identity());
+    // This function forms R^{-1} itself rather than going through the Hamiltonian
+    // build, so it needs its own singularity test -- and it needs one MORE than the
+    // build does, because the factorization it uses fails quietly. Eigen's LDLT solve
+    // zeroes the rank-deficient directions instead of producing infinities, so a
+    // singular R yields a FINITE R^{-1} of zeros, an entirely finite Hamiltonian
+    // describing a plant with no control authority at all, and the sign-function
+    // iteration then stagnates on it. Nothing anywhere on that path is non-finite, so
+    // no downstream check can catch it: measured, a zero R reported
+    // sign_function_stagnated, which sends the caller to look at convergence when the
+    // obstacle is the weighting they passed.
+    //
+    // The condition is read off the factorization already being formed. LDLT's pivots
+    // are its diagonal, so the matrix is rank-deficient exactly when the smallest pivot
+    // magnitude falls under the largest one scaled by the input dimension times unit
+    // roundoff -- the same reciprocal-pivot convention, and the same size factor, the
+    // two Riccati builds apply to their own inverted operands. Sign is deliberately not
+    // tested: an indefinite but nonsingular R is a different condition from a singular
+    // one and is left to whatever the solve path already does with it.
+    const auto R_ldlt = R.ldlt();
+    const auto R_pivots = R_ldlt.vectorD().cwiseAbs().eval();
+    if(!(R_pivots.minCoeff()
+         > Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon() * R_pivots.maxCoeff()))
+        return ctrlpp::unexpected(care_error::singular_r);
+
+    const MatU R_inv = R_ldlt.solve(MatU::Identity());
 
     Mat2N H;
     H.template block<nx, nx>(0, 0) = A;
@@ -123,10 +148,11 @@ auto lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     H.template block<nx, nx>(nx, 0) = -Q;
     H.template block<nx, nx>(nx, nx) = -A.transpose();
 
-    // Finite A, B, Q and R can still assemble a non-finite Hamiltonian, because
-    // R^{-1} is formed here rather than supplied: a singular R makes the whole
-    // top-right block infinite. That is the same condition the enumerator names,
-    // read one step later.
+    // Still reachable after the rank test above, and for a different reason than
+    // that test covers: an R that passes it but sits close to the threshold gives a
+    // large R^{-1}, and B R^{-1} B^T can overflow for a large enough B. That is an
+    // assembled quantity leaving the representable range, which is what the
+    // enumerator names -- not a statement about the arguments the caller passed.
     if(!H.allFinite())
         return ctrlpp::unexpected(care_error::non_finite_input);
 

@@ -65,7 +65,20 @@ auto build_care_hamiltonian(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     if (!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite())
         return ctrlpp::unexpected(care_error::non_finite_input);
 
-    const MatNxN S = (B * R.colPivHouseholderQr().solve(
+    // R^{-1} is needed for B R^{-1} B^T, so R is judged by a reciprocal-pivot test with
+    // the input dimension supplying the size factor -- the same convention the discrete
+    // solver uses on both of its inverted operands. Verified to have the identical
+    // defect rather than assumed: before this test, a zero R made the QR solve return
+    // infinities and the caller was told their finite input was non-finite, while a
+    // rank-deficient but nonzero R made the same solve return a least-squares answer
+    // over the leading rank columns and the solver reported SUCCESS on a Hamiltonian
+    // that is not the one the problem defines.
+    auto qr_R = R.colPivHouseholderQr();
+    qr_R.setThreshold(Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon());
+    if (!qr_R.isInvertible())
+        return ctrlpp::unexpected(care_error::singular_r);
+
+    const MatNxN S = (B * qr_R.solve(
                              Eigen::Matrix<Scalar, int(NU), int(NX)>(B.transpose()))).eval();
 
     Mat2Nx2N H;
@@ -202,9 +215,14 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           Cond                                           cond_tag   = {})
     -> ctrlpp::expected<care_result<Scalar, NX>, care_error>
 {
-    auto Rinv_Nt = R.colPivHouseholderQr()
-                       .solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(N.transpose()))
-                       .eval();
+    // The reduction to standard form inverts R before the Hamiltonian build ever sees
+    // it, so the same test is applied to the factorization this overload already forms.
+    auto qr_R = R.colPivHouseholderQr();
+    qr_R.setThreshold(Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon());
+    if (!qr_R.isInvertible())
+        return ctrlpp::unexpected(care_error::singular_r);
+
+    auto Rinv_Nt = qr_R.solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(N.transpose())).eval();
 
     Eigen::Matrix<Scalar, int(NX), int(NX)> Qp = (Q - N * Rinv_Nt).eval();
     Eigen::Matrix<Scalar, int(NX), int(NX)> Ap = (A - B * Rinv_Nt).eval();

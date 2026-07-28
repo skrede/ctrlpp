@@ -40,13 +40,32 @@ Refusals:
 | `dare_error::non_stabilisable` | fewer than n eigenvalues of the symplectic spectrum lie inside the unit region |
 | `dare_error::non_finite_input` | A, B, Q, R **or the assembled symplectic Z** contains NaN/Inf |
 | `dare_error::singular_a` | A is rank-deficient to a scale-relative reciprocal-pivot tolerance, so the `A^{-T}` the pencil build needs does not exist |
-| `dare_error::singular_u11` | the top-left block of the reordered invariant-subspace basis is singular; P cannot be extracted |
+| `dare_error::singular_r` | R is rank-deficient to the same tolerance, so the `R^{-1}` the same pencil build needs for `G = B R^{-1} B'` does not exist |
+| `dare_error::singular_u11` | the top-left block of the reordered invariant-subspace basis is singular; P cannot be extracted. **Covers two different situations -- see below** |
 | `dare_error::non_psd_solution` | the extracted P is not positive semi-definite within an epsilon-scaled tolerance |
 | `dare_error::schur_failed` | the real Schur factorization did not converge |
 
-Two of these are worth reading together, because the count test cannot see every unstabilizable pair. An uncontrollable mode at `|lambda| > 1` contributes **both** `lambda` and its reciprocal to the symplectic spectrum, so n eigenvalues do lie inside the unit disk and `non_stabilisable` does not fire; the subspace they span fails to project instead, and the refusal arrives as `singular_u11`. An uncontrollable mode at `|lambda| = 1` contributes two eigenvalues **on** the circle, neither inside, so that case does reach `non_stabilisable`. Both are refusals -- no gain is returned for an unstabilizable pair either way -- but only the second names the structural cause.
+### What `singular_u11` covers, and what `non_stabilisable` misses
 
-A singular `R` is `non_finite_input` rather than an enumerator of its own: the pencil build forms `R^{-1}` and the assembled Z goes infinite, which is the condition that enumerator's own definition covers.
+These two are worth reading together, because the placement count cannot see every pair that has no stabilizing solution.
+
+An uncontrollable mode at `|lambda| > 1` contributes **both** `lambda` and its reciprocal to the symplectic spectrum, so n eigenvalues do lie inside the unit disk and `non_stabilisable` does not fire; the invariant subspace fails to project instead, and the refusal arrives as `singular_u11`. An uncontrollable mode at `|lambda| = 1` contributes two eigenvalues **on** the circle, neither inside, so that case does reach `non_stabilisable`. Both are refusals -- **no gain is ever returned for a pair with no stabilizing solution** -- but only the second names the structural cause.
+
+The implication that makes `singular_u11` informative is standard and exact: a stabilizable and detectable pair has a nonsingular `U11` (Laub 1979 Sec. III), so **in exact arithmetic** a singular `U11` implies the pair is not both stabilizable and detectable.
+
+**That qualifier is load-bearing, which is why the enumerator is not named after the structural cause.** The test performed is a numerical rank test with a threshold relative to the largest pivot, so a genuinely well-posed pair whose invariant subspace is severely ill-conditioned reaches the same branch. Measured on the one-parameter family `A = diag(2, 1/2)`, `B = [delta; 1]`, `Q = I`, `R = 1`, which is controllable and detectable for **every** `delta != 0`:
+
+| `delta` | `rank[B AB]` | result |
+| --- | --- | --- |
+| `1e-1` … `1e-7` | 2 | value, `\|\|P\|\|` rising from `8.9e2` to `8.1e14` |
+| `1e-8` … `1e-14` | 2 | **`singular_u11`** -- a well-posed pair refused |
+| `1e-16`, `0` | 1 | `singular_u11` -- genuinely uncontrollable |
+
+The transition sits where `\|\|P\|\|` approaches `1/eps` and the smallest pivot of the computed `U11` falls under the rank test's threshold. Naming this enumerator after the structural cause would state something false about every row in the middle band.
+
+So `singular_u11` covers a pair with no stabilizing solution **and** a numerical failure to separate the invariant subspace, and **it does not distinguish them**. Telling them apart needs a stabilizability test the solver does not perform.
+
+`care_error::singular_u11` has the identical shape for the identical reason, with the unit disk replaced by the open left half-plane and the reciprocal by the reflection `-lambda`.
 
 ### dare (with cross-weight)
 

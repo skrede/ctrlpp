@@ -19,10 +19,20 @@ namespace ctrlpp
 /// @brief Structured failure modes for `care`.
 ///
 ///  * non_lhp_stabilisable     : fewer than n eigenvalues of the Hamiltonian spectrum
-///                               lie in the open left half-plane.
+///                               lie in the open left half-plane. See the note below on
+///                               what this test can and cannot see.
 ///  * non_finite_input         : A, B, Q, R or the assembled Hamiltonian H contains NaN/Inf.
+///  * singular_r               : the input weighting R is rank-deficient to a
+///                               scale-relative reciprocal-pivot tolerance, so the
+///                               R^{-1} the Hamiltonian build requires for
+///                               B R^{-1} B^T does not exist. A caller who set a
+///                               weighting to zero deliberately should not be told
+///                               their input was non-finite, nor handed a solution to
+///                               a different problem.
 ///  * singular_u11             : the top-left n x n block of the reordered invariant-subspace
-///                               basis U is singular; P cannot be extracted.
+///                               basis U is singular; P cannot be extracted. See the
+///                               note below: this covers two different situations and
+///                               does not distinguish them.
 ///  * non_psd_solution         : extracted P is not positive semi-definite within an
 ///                               epsilon-scaled tolerance.
 ///  * schur_failed             : `Eigen::RealSchur` did not converge on the Hamiltonian
@@ -33,10 +43,37 @@ namespace ctrlpp
 ///                               ratio exceeded 1/2 after the warm-up window (divergence),
 ///                               or the iteration budget was exhausted without meeting the
 ///                               epsilon-scaled convergence tolerance. Sign-function path only.
+///
+/// ## What `singular_u11` covers, and what `non_lhp_stabilisable` misses
+///
+/// The continuous solver has the identical shape as its discrete counterpart, for the
+/// identical reason. `non_lhp_stabilisable` fires when fewer than n eigenvalues of the
+/// Hamiltonian spectrum lie in the open left half-plane. An uncontrollable mode at
+/// Re(lambda) > 0 contributes BOTH lambda and its reflection -lambda, and the
+/// reflection IS in the left half-plane, so the count is satisfied and this enumerator
+/// never fires for that pair. What fails instead is the extraction, and the refusal
+/// arrives as `singular_u11`. Measured: A = diag(2, -1/2), B = [0; 1], Q = I, R = 1 is
+/// uncontrollable in its unstable mode and refuses with `singular_u11`.
+///
+/// The pair is still refused, so this is a naming limit rather than a correctness one.
+/// The implication that makes `singular_u11` informative is exact: a stabilisable and
+/// detectable pair has a nonsingular U11 (Laub 1979 Sec. III), so **in exact
+/// arithmetic** a singular U11 implies the pair is not both stabilisable and
+/// detectable.
+///
+/// **That qualifier is load-bearing, and the enumerator is therefore NOT renamed.**
+/// The test is a numerical rank test with a threshold relative to the largest pivot,
+/// so a genuinely well-posed pair whose invariant subspace is severely ill-conditioned
+/// reaches the same branch. `singular_u11` covers both situations and **does not
+/// distinguish them**; telling them apart needs a stabilisability test the solver does
+/// not perform.
+///
+/// @cite laub1979 -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979, Sec. III
 enum class care_error
 {
     non_lhp_stabilisable,
     non_finite_input,
+    singular_r,
     singular_u11,
     non_psd_solution,
     schur_failed,

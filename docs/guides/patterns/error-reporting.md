@@ -297,6 +297,34 @@ two, and that is the whole of its justification -- it is not a defect fix.
 Every call site branches. None substitutes a default value for a refused
 result, because relocating a dishonesty is not removing it.
 
+### Two enumerators added, for causes that were being reported as something else
+
+Both Riccati enumerations gained `singular_r`. Their pencil and Hamiltonian
+builds invert the input weighting exactly as they invert the state matrix, and
+`singular_a` already existed for the latter; the missing counterpart meant a
+caller who set a weighting to zero deliberately was told their input was
+non-finite. Worse, a weighting that is **rank-deficient but nonzero** never went
+non-finite at all -- the rank-revealing solve returns a least-squares answer over
+the leading rank columns -- so both solvers ran to completion and reported
+success on a problem the caller had not posed. The condition is read off the
+factorization each build already forms, so no second factorization was added.
+
+`singular_u11` in both enumerations was **documented rather than renamed**, which
+is a distinction worth keeping straight. It covers two situations at once: a pair
+with no stabilizing solution that the eigenvalue-count test cannot see, and a
+numerical failure to separate the invariant subspace on a genuinely well-posed
+pair. Both were measured on one sweep. Renaming it after the structural cause
+would over-claim on every well-posed row; leaving it undocumented would leave a
+caller reading a numerical symptom as the whole story. Stating what it covers,
+and that it does not distinguish the two, is the honest option and costs nothing
+at runtime.
+
+That is not the same as writing a comment in place of a fix. Where a cause is
+already computed and typed one call below, forwarding it is free and a comment
+explaining the loss would be the defect wearing a fix's clothes. Here **no
+mechanism computes the cause at all**, and adding one is a stabilizability test
+with its own threshold to derive.
+
 ### An honest postcondition is a channel-1 question too
 
 `so3::normalize` documented a unit-norm postcondition and did not deliver it for
