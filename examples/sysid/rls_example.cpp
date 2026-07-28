@@ -42,7 +42,15 @@ int main()
         phi << input(gen), input(gen);
         double y = true_params.dot(phi) + noise(gen);
 
-        estimator.update(y, phi);
+        // The update is fallible and its result is branched on, never discarded:
+        // a refused cycle leaves the estimate exactly where it was, so a caller
+        // that ignored the refusal would keep plotting a model that had silently
+        // stopped moving.
+        if(const auto applied = estimator.update(y, phi); !applied)
+        {
+            std::cerr << "RLS refused sample " << t << '\n';
+            return 1;
+        }
 
         auto theta = estimator.parameters();
         auto P = estimator.covariance();

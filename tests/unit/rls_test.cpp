@@ -30,7 +30,7 @@ TEST_CASE("RLS converges to true parameters on known linear system")
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = true_theta.dot(phi) + noise(gen);
-        estimator.update(y, phi);
+        REQUIRE(estimator.update(y, phi).has_value());
     }
 
     auto theta_hat = estimator.parameters();
@@ -60,7 +60,7 @@ TEST_CASE("RLS with forgetting tracks time-varying parameters")
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = theta1.dot(phi) + noise(gen);
-        estimator.update(y, phi);
+        REQUIRE(estimator.update(y, phi).has_value());
     }
 
     // Phase 2: true params change to [-1, 5]
@@ -69,7 +69,7 @@ TEST_CASE("RLS with forgetting tracks time-varying parameters")
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = theta2.dot(phi) + noise(gen);
-        estimator.update(y, phi);
+        REQUIRE(estimator.update(y, phi).has_value());
     }
 
     auto theta_hat = estimator.parameters();
@@ -91,7 +91,7 @@ TEST_CASE("RLS covariance stays bounded under low excitation")
 
     for(int i = 0; i < 1000; ++i)
     {
-        estimator.update(1.0, phi);
+        REQUIRE(estimator.update(1.0, phi).has_value());
     }
 
     double trace = estimator.covariance().trace();
@@ -111,7 +111,7 @@ TEST_CASE("RLS covariance is symmetric after every update")
         Eigen::Vector3d phi;
         phi << dist(gen), dist(gen), dist(gen);
         double y = dist(gen);
-        estimator.update(y, phi);
+        REQUIRE(estimator.update(y, phi).has_value());
 
         auto P = estimator.covariance();
         double asym = (P - P.transpose()).norm();
@@ -155,7 +155,7 @@ TEST_CASE("RLS with forgetting factor 1.0 converges monotonically on stationary 
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = true_theta.dot(phi) + noise(gen);
-        estimator.update(y, phi);
+        REQUIRE(estimator.update(y, phi).has_value());
 
         double error = (estimator.parameters() - true_theta).norm();
         // Allow small noise-induced violations, but track them

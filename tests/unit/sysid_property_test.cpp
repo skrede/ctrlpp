@@ -38,7 +38,7 @@ TEST_CASE("sysid property tests", "[sysid][property]")
                 Vector<double, NP> phi;
                 for(std::size_t j = 0; j < NP; ++j)
                     phi(static_cast<Eigen::Index>(j)) = *bounded_double(-5.0, 5.0);
-                identifier.update(y_val, phi);
+                REQUIRE(identifier.update(y_val, phi).has_value());
             }
 
             // Check that parameters vector has correct dimension

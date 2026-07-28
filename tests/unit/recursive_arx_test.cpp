@@ -29,7 +29,7 @@ TEST_CASE("Recursive ARX identifies first-order system")
     {
         double u = u_dist(gen);
         double y_new = 0.8 * y + 0.5 * u_prev;
-        arx.update(y_new, u);
+        REQUIRE(arx.update(y_new, u).has_value());
         y = y_new;
         u_prev = u;
     }
@@ -54,7 +54,7 @@ TEST_CASE("Recursive ARX to_state_space returns companion form")
     {
         double u = u_dist(gen);
         double y_new = 0.8 * y + 0.5 * u_prev;
-        arx.update(y_new, u);
+        REQUIRE(arx.update(y_new, u).has_value());
         y = y_new;
         u_prev = u;
     }
@@ -86,7 +86,7 @@ TEST_CASE("Recursive ARX state-space simulation matches original response")
     {
         u_data[t] = u_dist(gen);
         double y_new = 0.8 * y + 0.5 * u_prev;
-        arx.update(y_new, u_data[t]);
+        REQUIRE(arx.update(y_new, u_data[t]).has_value());
         y_data[t] = y_new;
         y = y_new;
         u_prev = u_data[t];
@@ -149,7 +149,7 @@ TEST_CASE("Recursive ARX second-order system identification")
     {
         double u = u_dist(gen);
         double y_new = 1.2 * y_prev1 - 0.5 * y_prev2 + 0.3 * u_prev1 + 0.1 * u_prev2;
-        arx.update(y_new, u);
+        REQUIRE(arx.update(y_new, u).has_value());
         y_prev2 = y_prev1;
         y_prev1 = y_new;
         u_prev2 = u_prev1;
@@ -170,8 +170,8 @@ TEST_CASE("Recursive ARX initial updates before buffer is full do not crash")
     auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, NA, NB>::create());
 
     // Just a few updates -- should not crash
-    arx.update(1.0, 0.5);
-    arx.update(0.8, 0.3);
+    REQUIRE(arx.update(1.0, 0.5).has_value());
+    REQUIRE(arx.update(0.8, 0.3).has_value());
 
     // Should have valid (though not converged) parameters
     auto theta = arx.parameters();
@@ -201,7 +201,7 @@ TEST_CASE("Recursive ARX with NB > NA realizes all b-coefficients (max(NA,NB) st
     {
         double u = u_dist(gen);
         double y_new = a1 * y_prev1 + b1 * u_prev1 + b2 * u_prev2;
-        arx.update(y_new, u);
+        REQUIRE(arx.update(y_new, u).has_value());
         y_prev1 = y_new;
         u_prev2 = u_prev1;
         u_prev1 = u;

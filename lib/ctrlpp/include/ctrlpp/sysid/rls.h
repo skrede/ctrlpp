@@ -13,8 +13,10 @@
 #include <Eigen/Dense>
 
 #include <cmath>
+#include <limits>
 #include <cstddef>
 #include <utility>
+#include <algorithm>
 
 namespace ctrlpp
 {
@@ -78,6 +80,71 @@ enum class rls_error
     non_positive_covariance_bound,
 };
 
+/// @brief Structured refusal modes of a single `rls::update` cycle.
+///
+/// The order below is the order the guard tests them, and it is a severity
+/// order: the estimator's own carried state first, then the caller's two
+/// operands, then what the arithmetic formed from them. The rule is that the
+/// most upstream cause is named, because a caller told "your regressor carries
+/// no information" would redesign an excitation signal while the real fault is a
+/// covariance that stopped being a covariance three samples ago.
+///
+///  * non_finite_state            : the carried covariance or parameter vector is
+///                                  already non-finite when the cycle begins.
+///                                  Nothing this cycle can produce is
+///                                  meaningful, and the recursion has no
+///                                  mechanism that returns a non-finite
+///                                  covariance to a finite one, so only
+///                                  reconstruction recovers.
+///  * non_finite_observation      : the supplied output sample is not finite. It
+///                                  enters the prediction error and from there
+///                                  the parameter step directly, so admitting
+///                                  one destroys the parameters permanently
+///                                  while every downstream query still reports
+///                                  numbers. The repair is upstream, in whatever
+///                                  measures the output.
+///  * non_finite_regressor        : the supplied regressor has a non-finite
+///                                  component. It reaches the parameters through
+///                                  the gain and the covariance through the rank
+///                                  one update, so it destroys both. A different
+///                                  subsystem from the one that measures the
+///                                  output, hence a different enumerator.
+///  * non_finite_denominator      : every operand was finite and the
+///                                  covariance-weighted regressor still left the
+///                                  scalar's range. That is a magnitude fault in
+///                                  the carried covariance or the regressor
+///                                  scale, not a domain violation of either, and
+///                                  it is worth its own name because the repair
+///                                  is a rescaling rather than a replacement.
+///  * indefinite_covariance       : the denominator is negative by more than the
+///                                  resolution below. It is lambda + phi' P phi
+///                                  with lambda strictly positive, so a negative
+///                                  value means P is no longer positive
+///                                  semidefinite and the gain formed from it
+///                                  would point AGAINST the prediction error --
+///                                  the same failure the negative forgetting
+///                                  factor is rejected for, arrived at through
+///                                  the recursion instead of through the
+///                                  configuration.
+///  * denominator_below_resolution: the denominator carries no significant
+///                                  digits at the scale of the operands that
+///                                  formed it. Two situations reach this and it
+///                                  does NOT distinguish them, deliberately,
+///                                  because the arithmetic cannot: a regressor
+///                                  the covariance genuinely cannot resolve, and
+///                                  a cancellation in phi' P phi that leaves a
+///                                  residue made entirely of rounding. A gain
+///                                  divided by either is noise.
+enum class rls_update_error
+{
+    non_finite_state,
+    non_finite_observation,
+    non_finite_regressor,
+    non_finite_denominator,
+    indefinite_covariance,
+    denominator_below_resolution,
+};
+
 template <typename Scalar, std::size_t NP>
 struct rls_config
 {
@@ -114,20 +181,61 @@ public:
         return rls{validated_tag{}, std::move(config)};
     }
 
-    /// @brief Incorporate one observation.
+    /// @brief Rounded operations behind the update's denominator.
     ///
-    /// Returns whether the update was applied. That boolean is a narrower report
-    /// than the failure channel this type's construction now uses -- it cannot
-    /// say why a sample was skipped -- and converting it is separately owned
-    /// work; the contract is unchanged here.
-    bool update(Scalar y, const Vector<Scalar, NP>& phi)
+    /// Enumerated rather than chosen. The denominator is
+    /// lambda + phi' (P phi), and two contractions over the parameter dimension
+    /// stand behind it: forming P phi costs NP multiplies and NP - 1 additions
+    /// per component, and contracting phi against it costs the same again, that
+    /// is 2 * (2 * NP - 1); the final sum with the forgetting factor is one more.
+    /// Every operation is counted whether or not it rounds, so the count bounds
+    /// the accumulated error from above rather than describing it tightly, which
+    /// is what a resolution floor requires.
+    static constexpr int denominator_rounding_ops = 2 * (2 * static_cast<int>(NP) - 1) + 1;
+
+    /// @brief Incorporate one observation, or report why the cycle was refused.
+    ///
+    /// The cycle is classified before any member is written, so a refused cycle
+    /// leaves the parameters and the covariance bitwise unchanged and the caller
+    /// may retry on the next sample. That matters more here than the boolean it
+    /// replaces suggested: the parameters and the covariance are the estimator's
+    /// entire memory, nothing re-derives them, so one admitted non-finite sample
+    /// makes them non-finite forever while `parameters()` keeps returning a
+    /// vector the caller has no way to distrust.
+    ///
+    /// **The denominator's floor is derived, not chosen.** It is the counted
+    /// rounding of the two contractions that formed it, at the scale of the
+    /// largest operand that entered -- the forgetting factor, or the
+    /// Cauchy-Schwarz bound on the quadratic form. An absolute floor is wrong in
+    /// both directions and both are reachable: on a problem posed far below unit
+    /// scale it refuses a perfectly well conditioned update, and on one posed far
+    /// above it accepts a denominator whose significant digits have all cancelled
+    /// away and divides a gain by rounding noise.
+    auto update(Scalar y, const Vector<Scalar, NP>& phi) -> ctrlpp::expected<void, rls_update_error>
     {
-        Scalar e = y - phi.dot(m_theta);
+        if(!m_P.allFinite() || !m_theta.allFinite())
+            return ctrlpp::unexpected(rls_update_error::non_finite_state);
+        if(!std::isfinite(y))
+            return ctrlpp::unexpected(rls_update_error::non_finite_observation);
+        if(!phi.allFinite())
+            return ctrlpp::unexpected(rls_update_error::non_finite_regressor);
 
         Vector<Scalar, NP> P_phi = m_P * phi;
         Scalar denom = m_lambda + phi.dot(P_phi);
-        if(!std::isfinite(denom) || std::abs(denom) < Scalar{1e-14})
-            return false;
+
+        if(!std::isfinite(denom))
+            return ctrlpp::unexpected(rls_update_error::non_finite_denominator);
+
+        Scalar const denom_scale = std::max(m_lambda, phi.norm() * P_phi.norm());
+        Scalar const denom_floor = static_cast<Scalar>(denominator_rounding_ops)
+                                   * std::numeric_limits<Scalar>::epsilon() * denom_scale;
+
+        if(std::abs(denom) <= denom_floor)
+            return ctrlpp::unexpected(rls_update_error::denominator_below_resolution);
+        if(denom < Scalar{0})
+            return ctrlpp::unexpected(rls_update_error::indefinite_covariance);
+
+        Scalar e = y - phi.dot(m_theta);
         Vector<Scalar, NP> k = P_phi / denom;
 
         m_theta += k * e;
@@ -141,7 +249,7 @@ public:
         {
             m_P *= trace_bound / trace;
         }
-        return true;
+        return {};
     }
 
     const Vector<Scalar, NP>& parameters() const { return m_theta; }

@@ -166,7 +166,11 @@ int main()
         phi << input(gen), input(gen);
         double y_meas = true_params.dot(phi) + noise(gen);
 
-        estimator.update(y_meas, phi);
+        if(const auto applied = estimator.update(y_meas, phi); !applied)
+        {
+            std::cerr << "RLS refused sample " << t << "\n";
+            return 1;
+        }
 
         auto theta = estimator.parameters();
         std::cout << t << "," << theta(0) << "," << theta(1) << "\n";

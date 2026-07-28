@@ -60,10 +60,23 @@ if(!estimator)
 ### update
 
 ```cpp
-bool update(Scalar y, const Vector<Scalar, NP>& phi);
+ctrlpp::expected<void, rls_update_error> update(Scalar y, const Vector<Scalar, NP>& phi);
 ```
 
-Incorporates a new observation. Given measurement `y` and regressor vector `phi`, updates the parameter estimate and covariance using the standard RLS gain computation with forgetting factor. Returns `true` if the update was applied, or `false` if it was skipped because the denominator `phi^T * P * phi` overflowed or was near-zero. When `false` is returned, parameters and covariance are unchanged.
+Incorporates a new observation. Given measurement `y` and regressor vector `phi`, updates the parameter estimate and covariance using the standard RLS gain computation with forgetting factor.
+
+The cycle is classified before any member is written, so a refused cycle leaves the parameters and the covariance **bitwise unchanged** and the caller may retry on the next sample. That matters here more than a boolean suggested: those two members are the estimator's entire memory, nothing re-derives them, so one admitted non-finite sample makes them non-finite forever while `parameters()` keeps returning a vector the caller has no way to distrust.
+
+| Enumerator | Condition | Why it has its own name |
+|---|---|---|
+| `rls_update_error::non_finite_state` | the carried covariance or parameter vector is already non-finite | Nothing this cycle can produce is meaningful, and the recursion has no mechanism that returns a non-finite covariance to a finite one, so only reconstruction recovers. |
+| `rls_update_error::non_finite_observation` | `y` is not finite | It enters the prediction error and from there the parameter step directly. The repair is upstream, in whatever measures the output. |
+| `rls_update_error::non_finite_regressor` | `phi` has a non-finite component | It reaches the parameters through the gain and the covariance through the rank-one update. A different subsystem from the one that measures the output, hence a different enumerator. |
+| `rls_update_error::non_finite_denominator` | every operand was finite and `lambda + phi^T P phi` still left the scalar's range | A magnitude fault rather than a domain violation of either operand; the repair is a rescaling, not a replacement. |
+| `rls_update_error::indefinite_covariance` | the denominator is negative by more than its own resolution | `lambda + phi^T P phi` with `lambda > 0` cannot be negative for a positive semidefinite `P`, so this says `P` stopped being a covariance. A gain formed from it points **against** the prediction error. |
+| `rls_update_error::denominator_below_resolution` | the denominator carries no significant digits at the scale of the operands that formed it | Two situations reach it and it deliberately does **not** distinguish them, because the arithmetic cannot: a regressor the covariance genuinely cannot resolve, and a cancellation in `phi^T P phi` leaving a residue made entirely of rounding. |
+
+The resolution floor is **derived, not chosen**: it is the counted rounding of the two contractions that formed the denominator -- `2 * (2 * NP - 1) + 1` operations -- times the scalar's machine epsilon, times the largest operand that entered, which is the forgetting factor or the Cauchy-Schwarz bound on the quadratic form. An absolute floor is wrong in both directions and both are reachable: on a problem posed far below unit scale it refuses a perfectly well conditioned update, and on one posed far above it accepts a denominator whose significant digits have all cancelled away.
 
 ### parameters
 
@@ -120,7 +133,11 @@ int main()
         double y = a_true * y_prev + b_true * u_prev + noise(rng);
 
         Eigen::Vector2d phi(y_prev, u_prev);
-        estimator.update(y, phi);
+        if(const auto applied = estimator.update(y, phi); !applied)
+        {
+            std::cerr << "RLS refused sample " << k << "\n";
+            return 1;
+        }
 
         if(k % 50 == 49)
         {

@@ -47,7 +47,15 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     for(int step = 0; step < 10; ++step)
     {
-        estimator.update(y, phi);
+        // A refusal is a legitimate outcome on decoded input -- the harness
+        // clamps the configuration but not the regressor, so a covariance the
+        // regressor cannot resolve is reachable. What must hold is the
+        // reject-before-mutate contract: a refused cycle leaves the parameters
+        // bitwise as they were, so the finiteness check below still applies and
+        // the loop simply stops feeding a sample the estimator declined.
+        auto const applied = estimator.update(y, phi);
+        if(!applied)
+            return 0;
 
         auto const& theta = estimator.parameters();
         for(int i = 0; i < 2; ++i)

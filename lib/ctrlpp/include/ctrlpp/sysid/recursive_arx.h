@@ -47,7 +47,23 @@ public:
         return recursive_arx{validated_tag{}, std::move(*estimator)};
     }
 
-    void update(Scalar y, Scalar u)
+    /// @brief Incorporate one input-output sample, or report why the cycle was
+    /// refused.
+    ///
+    /// The refusal is the estimator's own, forwarded verbatim rather than
+    /// restated under a second name that could drift out of step with the
+    /// arithmetic it describes. See `rls_update_error`.
+    ///
+    /// This wrapper previously called the estimator and discarded its answer, so
+    /// a refused sample was swallowed here and no caller could learn that the
+    /// model had stopped moving.
+    ///
+    /// A refused cycle also leaves the regressor history, the write index and the
+    /// sample count untouched. That is not tidiness: the history IS the next
+    /// cycle's regressor, so recording a sample the estimator refused as
+    /// non-finite would poison every regressor built afterwards -- the poison
+    /// would latch in the wrapper after the estimator had correctly declined it.
+    auto update(Scalar y, Scalar u) -> ctrlpp::expected<void, rls_update_error>
     {
         Vector<Scalar, NP> phi = Vector<Scalar, NP>::Zero();
 
@@ -63,12 +79,14 @@ public:
             phi(static_cast<int>(NA + i)) = m_u_hist[idx];
         }
 
-        m_rls.update(y, phi);
+        if(const auto applied = m_rls.update(y, phi); !applied)
+            return ctrlpp::unexpected(applied.error());
 
         m_y_hist[m_write_idx % NA] = y;
         m_u_hist[m_write_idx % NB] = u;
         ++m_write_idx;
         ++m_sample_count;
+        return {};
     }
 
     const Vector<Scalar, NP>& parameters() const { return m_rls.parameters(); }

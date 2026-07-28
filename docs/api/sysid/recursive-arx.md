@@ -53,10 +53,12 @@ if(!identifier)
 ### update
 
 ```cpp
-void update(Scalar y, Scalar u);
+ctrlpp::expected<void, rls_update_error> update(Scalar y, Scalar u);
 ```
 
 Processes a new input/output pair. Builds the regressor vector from the internal history buffers and updates the RLS parameter estimate.
+
+The estimator's refusal is **forwarded verbatim** rather than restated under a second name that could drift out of step with the arithmetic it describes; see [`rls_update_error`](rls.md#update). A refused cycle also leaves the regressor history, the write index and the sample count untouched -- recording a sample the estimator refused as non-finite would poison every regressor built afterwards, so the poison would latch here after the estimator had correctly declined it.
 
 ### parameters
 
@@ -112,7 +114,11 @@ int main()
         double u = input_dist(rng);
         double y = 0.7 * y_prev - 0.2 * y_prev2 + 0.5 * u + noise(rng);
 
-        identifier.update(y, u);
+        if(const auto applied = identifier.update(y, u); !applied)
+        {
+            std::cerr << "recursive ARX refused sample " << k << "\n";
+            return 1;
+        }
 
         if(k % 100 == 99)
         {

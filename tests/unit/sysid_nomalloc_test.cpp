@@ -46,7 +46,7 @@ TEST_CASE("rls update performs zero heap allocation",
     phi << 0.3, -0.7, 0.5;
     const double y = 1.23;
 
-    estimator.update(y, phi);
+    REQUIRE(estimator.update(y, phi).has_value());
 
     std::size_t allocations = 0;
     bool ok = true;
@@ -54,7 +54,7 @@ TEST_CASE("rls update performs zero heap allocation",
         for(int i = 0; i < 256; ++i)
         {
             phi(0) = 0.3 + 0.001 * static_cast<double>(i);
-            ok = estimator.update(y, phi) && ok;
+            ok = estimator.update(y, phi).has_value() && ok;
         }
     });
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
@@ -71,9 +71,10 @@ TEST_CASE("recursive_arx update performs zero heap allocation",
     constexpr std::size_t nb = 2;
     auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, na, nb>::create());
 
-    arx.update(0.0, 0.0);
+    REQUIRE(arx.update(0.0, 0.0).has_value());
 
     std::size_t allocations = 0;
+    bool ok = true;
     allocations = guarded_allocations([&] {
         double y = 0.0;
         double u_prev = 0.0;
@@ -81,7 +82,7 @@ TEST_CASE("recursive_arx update performs zero heap allocation",
         {
             const double u = (i % 2 == 0) ? 1.0 : -1.0;
             const double y_new = 0.8 * y + 0.5 * u_prev;
-            arx.update(y_new, u);
+            ok = arx.update(y_new, u).has_value() && ok;
             y = y_new;
             u_prev = u;
         }
@@ -89,5 +90,6 @@ TEST_CASE("recursive_arx update performs zero heap allocation",
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);
+    REQUIRE(ok);
     REQUIRE(arx.parameters().allFinite());
 }

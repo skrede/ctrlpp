@@ -112,7 +112,7 @@ TEST_CASE("RLS with singular covariance P0", "[rls][hardening][negative]")
 
     Eigen::Vector2d phi;
     phi << 1.0, 0.5;
-    estimator.update(1.0, phi);
+    REQUIRE(estimator.update(1.0, phi).has_value());
 
     // A zero-confidence prior makes the gain P phi / (lambda + phi' P phi) an
     // exact zero vector, so the update is a no-op and the parameters stay bitwise
@@ -126,7 +126,7 @@ TEST_CASE("RLS with singular covariance P0", "[rls][hardening][negative]")
 
     // And it stays a no-op: a zero covariance has nothing to shrink, so no later
     // sample re-opens the estimator.
-    estimator.update(2.0, phi);
+    REQUIRE(estimator.update(2.0, phi).has_value());
     REQUIRE(estimator.parameters()(0) == 0.0);
     REQUIRE(estimator.parameters()(1) == 0.0);
 }
@@ -243,18 +243,155 @@ TEST_CASE("recursive_arx forwards the estimator's configuration rejection", "[rl
     CHECK(rejected.error() == ctrlpp::rls_error::non_positive_forgetting_factor);
 }
 
-TEST_CASE("RLS with NaN regressor", "[rls][hardening][negative]")
+TEST_CASE("RLS refuses a non-finite operand without touching its memory",
+          "[rls][hardening][negative]")
 {
-    auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, 2>::create());
+    SECTION("a non-finite regressor")
+    {
+        auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, 2>::create());
+        const auto P_before = estimator.covariance();
 
-    auto phi = ctrlpp::test::nan_vector<double, 2>();
-    estimator.update(1.0, phi);
+        auto phi = ctrlpp::test::nan_vector<double, 2>();
+        const auto rejected = estimator.update(1.0, phi);
 
-    auto theta = estimator.parameters();
-    // NaN regressor causes degenerate denominator -- update is skipped,
-    // parameters remain at their initial value (zero)
-    CHECK(theta(0) == 0.0);
-    CHECK(theta(1) == 0.0);
+        // The refusal now names its cause. It used to be inferred from a
+        // degenerate denominator and reported as a bare false the wrapper could
+        // discard: the regressor reaches the parameters through the gain and the
+        // covariance through the rank one update, so it destroys both, and that
+        // is a different subsystem's fault from a bad output sample.
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::rls_update_error::non_finite_regressor);
+
+        // Bitwise, because a refused cycle performs no arithmetic on either.
+        CHECK(estimator.parameters()(0) == 0.0);
+        CHECK(estimator.parameters()(1) == 0.0);
+        CHECK(estimator.covariance() == P_before);
+    }
+
+    SECTION("a non-finite observation")
+    {
+        auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, 2>::create());
+        const auto P_before = estimator.covariance();
+
+        Eigen::Vector2d phi;
+        phi << 1.0, 0.5;
+        const auto rejected =
+            estimator.update(std::numeric_limits<double>::quiet_NaN(), phi);
+
+        // This one was ACCEPTED before the conversion, and silently: the output
+        // sample enters only the prediction error, so the denominator stayed
+        // finite, the guard passed, and the parameters became non-finite while
+        // the update reported success. Nothing downstream could tell.
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::rls_update_error::non_finite_observation);
+        CHECK(estimator.parameters()(0) == 0.0);
+        CHECK(estimator.parameters()(1) == 0.0);
+        CHECK(estimator.covariance() == P_before);
+    }
+}
+
+TEST_CASE("RLS refuses a denominator with no significant digits left in it",
+          "[rls][hardening][negative]")
+{
+    // The floor the refusal uses is derived from the operands that formed the
+    // denominator, and both directions of an absolute floor's failure are
+    // reachable through the public surface.
+
+    SECTION("a well-posed update far below unit scale is ACCEPTED")
+    {
+        // The forgetting factor and the covariance are both tiny, so the
+        // denominator is about 1e-15 -- below the absolute floor this replaces,
+        // which would have refused it. Nothing is ill conditioned: the gain is
+        // the covariance-weighted regressor over a denominator of the same
+        // magnitude, so it is of order one.
+        ctrlpp::rls_config<double, 2> cfg;
+        cfg.lambda = 1e-15;
+        cfg.P0 = ctrlpp::Matrix<double, 2, 2>::Identity() * 1e-12;
+        auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, 2>::create(cfg));
+
+        Eigen::Vector2d phi;
+        phi << 1e-3, 0.0;
+
+        const auto applied = estimator.update(1.0, phi);
+        REQUIRE(applied.has_value());
+        REQUIRE(estimator.parameters().allFinite());
+        // The update did something: a refused cycle would have left the
+        // parameters bitwise at zero.
+        REQUIRE(estimator.parameters()(0) != 0.0);
+    }
+
+    SECTION("a cancelled denominator far above unit scale is REFUSED")
+    {
+        // Definiteness of the initial covariance is deliberately not a
+        // construction condition -- a caller may pose any finite starting point --
+        // so an indefinite one is reachable, and with it a quadratic form that
+        // cancels. Here phi' P phi is two terms of magnitude 1e20 differing in
+        // the last few digits, so the residue is about 1e4 and carries no
+        // significant digits at all. An absolute floor sees 1e4, calls it healthy
+        // and divides a gain by rounding noise; the derived floor is 2.2e5 at
+        // this operand scale and refuses.
+        ctrlpp::rls_config<double, 2> cfg;
+        cfg.P0 = ctrlpp::Matrix<double, 2, 2>::Zero();
+        cfg.P0(0, 0) = 1e20;
+        cfg.P0(1, 1) = -1e20;
+        auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, 2>::create(cfg));
+
+        Eigen::Vector2d phi;
+        phi << 1.0, 0.9999999999999999;
+
+        const auto rejected = estimator.update(1.0, phi);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::rls_update_error::denominator_below_resolution);
+        CHECK(estimator.parameters()(0) == 0.0);
+        CHECK(estimator.parameters()(1) == 0.0);
+    }
+
+    SECTION("a covariance that has stopped being one is REFUSED by name")
+    {
+        // The same indefinite starting point with a regressor that does not
+        // cancel: the quadratic form is a large NEGATIVE number, so the
+        // denominator is negative by far more than its own resolution. That is
+        // not a resolution question, it is the covariance having lost positive
+        // semidefiniteness, and a gain formed from it would point against the
+        // prediction error -- so it gets its own enumerator.
+        ctrlpp::rls_config<double, 2> cfg;
+        cfg.P0 = ctrlpp::Matrix<double, 2, 2>::Zero();
+        cfg.P0(0, 0) = 1.0;
+        cfg.P0(1, 1) = -1e6;
+        auto estimator = ctrlpp::test::constructed(ctrlpp::rls<double, 2>::create(cfg));
+
+        Eigen::Vector2d phi;
+        phi << 0.0, 1.0;
+
+        const auto rejected = estimator.update(1.0, phi);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::rls_update_error::indefinite_covariance);
+    }
+}
+
+TEST_CASE("recursive_arx forwards a refused sample instead of swallowing it",
+          "[recursive_arx][hardening][negative]")
+{
+    auto arx = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, 2, 1>::create());
+
+    REQUIRE(arx.update(1.0, 0.5).has_value());
+    const auto theta_before = arx.parameters();
+
+    // The wrapper used to call the estimator and discard its answer, so a
+    // refused sample was swallowed here and no caller could learn the model had
+    // stopped moving. It now forwards the estimator's own enumerator rather than
+    // restating it under a second name.
+    const auto rejected = arx.update(std::numeric_limits<double>::quiet_NaN(), 0.5);
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error() == ctrlpp::rls_update_error::non_finite_observation);
+    CHECK(arx.parameters() == theta_before);
+
+    // And the refused sample did not enter the regressor history either. That is
+    // the half a forwarded error alone would not give: recording it would have
+    // poisoned every regressor built afterwards, so the poison would latch in the
+    // wrapper after the estimator had correctly declined it.
+    REQUIRE(arx.update(0.8, 0.3).has_value());
+    CHECK(arx.parameters().allFinite());
 }
 
 TEST_CASE("RLS identifies known first-order system", "[rls][hardening][convergence]")
@@ -276,7 +413,7 @@ TEST_CASE("RLS identifies known first-order system", "[rls][hardening][convergen
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = true_theta.dot(phi) + noise(gen);
-        estimator.update(y, phi);
+        REQUIRE(estimator.update(y, phi).has_value());
         second_moment += phi * phi.transpose();
     }
 
@@ -318,7 +455,7 @@ TEST_CASE("RLS with ill-conditioned regressor", "[rls][hardening][robustness]")
         Eigen::Vector2d phi;
         phi << x, x * coupling;
         double y = true_theta.dot(phi) + noise(gen);
-        estimator.update(y, phi);
+        REQUIRE(estimator.update(y, phi).has_value());
         second_moment += x * x;
     }
 
@@ -790,7 +927,7 @@ TEST_CASE("Recursive ARX order 2 to_state_space superdiagonal",
     for (int t = 0; t < 500; ++t) {
         double u = input(gen);
         double y_new = 0.6 * y + 0.2 * y_prev + 0.3 * u_prev;
-        arx.update(y_new, u);
+        REQUIRE(arx.update(y_new, u).has_value());
         y_prev = y;
         y = y_new;
         u_prev = u;
