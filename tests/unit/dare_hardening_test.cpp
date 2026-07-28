@@ -1,18 +1,40 @@
+// What the oracles in this file decide.
+//
+// The solver returns a matrix that is supposed to SOLVE an equation, so that is
+// what is asserted:
+//
+//  * Every accepted solution is held to the Riccati residual against a
+//    counted-operation budget scaled by the largest of the four terms that
+//    cancel to produce it. Positive definiteness alone does not identify the
+//    solution -- a positive definite matrix that solves nothing passes it -- so
+//    definiteness is asserted alongside the residual, never instead of it.
+//  * Positive definiteness is asserted with the exact contract boundary. The
+//    floor is a floor at zero, not below it: slack in the direction that admits
+//    a negative eigenvalue admits the very matrix the case is named against.
+//  * Symmetry is asserted EXACTLY. The solver symmetrizes the raw quotient
+//    before returning it, so a bitwise symmetric matrix is the contract and a
+//    tolerance would admit one that is not.
+//  * Every refusal names its enumerator. "No value" alone does not say the
+//    solver diagnosed the caller's actual fault.
+//
+// What they deliberately do not decide. One case here accepts an ill-conditioned
+// weighting and does NOT assert the residual; the reason is recorded at that
+// case rather than the assertion quietly omitted, and it is that a
+// counted-operation budget models rounding only and is the wrong oracle once
+// the conditioning dominates.
+
 #include "hardening_helpers.h"
 #include "ctrlpp/control/dare.h"
 #include "ctrlpp/control/lqr.h"
 
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <Eigen/Eigenvalues>
 
 #include <cmath>
 #include <limits>
 
-using Catch::Matchers::WithinAbs;
-
-TEST_CASE("DARE NaN in A returns nullopt or NaN", "[dare][hardening][negative]")
+TEST_CASE("DARE refuses a non-finite state matrix", "[dare][hardening][negative]")
 {
     auto A = ctrlpp::test::nan_matrix<double, 2, 2>();
     Eigen::Matrix<double, 2, 1> B;
@@ -22,10 +44,15 @@ TEST_CASE("DARE NaN in A returns nullopt or NaN", "[dare][hardening][negative]")
     R << 1.0;
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
-    CHECK(!result.has_value());
+    // The old name promised "nullopt or NaN" while the assertion below demanded
+    // the first alternative unconditionally, so the name described a weaker
+    // contract than the test enforced. The enumerator is asserted too: a refusal
+    // that does not say WHY sends the caller looking in the wrong place.
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
 }
 
-TEST_CASE("DARE NaN in B returns nullopt", "[dare][hardening][negative]")
+TEST_CASE("DARE refuses a non-finite input matrix", "[dare][hardening][negative]")
 {
     auto A = Eigen::Matrix<double, 2, 2>::Identity();
     auto B = ctrlpp::test::nan_matrix<double, 2, 1>();
@@ -34,7 +61,8 @@ TEST_CASE("DARE NaN in B returns nullopt", "[dare][hardening][negative]")
     R << 1.0;
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
-    CHECK(!result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
 }
 
 TEST_CASE("DARE refuses a singular R", "[dare][hardening][negative]")
@@ -142,15 +170,26 @@ TEST_CASE("DARE known 2x2 solution is positive definite", "[dare][hardening][pre
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    auto& P = result->P;
+    auto const& P = result->P;
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    // The case proved P was positive definite and never that P solves anything,
+    // so any positive definite matrix of the right size passed it. The residual
+    // is the property that identifies the solution.
+    auto const res = ctrlpp::test::riccati_residual<double, 2, 1>(A, B, Q, R, P);
+    CAPTURE(res.norm, res.scale);
+    REQUIRE(res.norm <= ctrlpp::test::riccati_residual_ops<2, 1> * eps * res.scale);
 
     // Verify positive definite
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(P);
     for(int i = 0; i < 2; ++i)
         CHECK(eigsolver.eigenvalues()(i) > 0.0);
 
-    // Verify symmetric
-    REQUIRE_THAT((P - P.transpose()).norm(), WithinAbs(0.0, 1e-14));
+    // Symmetry is exact, not a tolerance: the solver symmetrizes the raw
+    // quotient U21 * U11^-1 before returning it, so the two triangles hold the
+    // same bits. An unexplained 1e-14 admitted an asymmetry the construction
+    // cannot produce and would have hidden a dropped symmetrization.
+    REQUIRE((P - P.transpose()).norm() == 0.0);
 }
 
 TEST_CASE("DARE scalar analytical solution", "[dare][hardening][precision]")
@@ -164,9 +203,24 @@ TEST_CASE("DARE scalar analytical solution", "[dare][hardening][precision]")
     auto result = ctrlpp::dare<double, 1, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    // Analytical: P = golden ratio = (1+sqrt(5))/2
-    double golden = (1.0 + std::sqrt(5.0)) / 2.0;
-    REQUIRE_THAT(result->P(0, 0), WithinAbs(golden, 1e-10));
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    // Analytical: P = golden ratio = (1+sqrt(5))/2. The budget is carried from
+    // the residual to the solution through the residual's own derivative: for
+    // this data r(P) = 1 - P^2 / (1 + P), so r'(P) = -(P^2 + 2P) / (1 + P)^2,
+    // which is 0.854 at the golden ratio. A residual inside the counted chain
+    // therefore puts the solution inside that chain divided by 0.854. Two
+    // further roundings enter on the test side, the square root and the sum.
+    double const golden = (1.0 + std::sqrt(5.0)) / 2.0;
+    double const residual_slope = (golden * golden + 2.0 * golden)
+                                  / ((1.0 + golden) * (1.0 + golden));
+    constexpr int analytic_ops = 2;
+    double const budget =
+        ctrlpp::test::riccati_residual_ops<1, 1> * eps * golden / residual_slope
+        + analytic_ops * eps * golden;
+
+    CAPTURE(result->P(0, 0), golden, budget);
+    REQUIRE(std::abs(result->P(0, 0) - golden) <= budget);
 }
 
 TEST_CASE("DARE solution is positive definite for stable system", "[dare][hardening][stability]")
@@ -182,9 +236,27 @@ TEST_CASE("DARE solution is positive definite for stable system", "[dare][harden
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(result->P);
+    auto const& P = result->P;
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    auto const res = ctrlpp::test::riccati_residual<double, 2, 1>(A, B, Q, R, P);
+    CAPTURE(res.norm, res.scale);
+    REQUIRE(res.norm <= ctrlpp::test::riccati_residual_ops<2, 1> * eps * res.scale);
+
+    // The floor is at zero, where the contract is. The previous form admitted an
+    // eigenvalue down to -1e-10 -- half a million units in the last place of
+    // slack pointing INTO the indefinite half-space -- so a solution that was
+    // not positive definite passed a case named for positive definiteness. Both
+    // eigenvalues here are of order one, nowhere near the boundary, so nothing
+    // is being tightened onto a knife edge.
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> eigsolver(P);
     for(int i = 0; i < 2; ++i)
-        CHECK(eigsolver.eigenvalues()(i) > -1e-10);
+    {
+        CAPTURE(i, eigsolver.eigenvalues()(i));
+        CHECK(eigsolver.eigenvalues()(i) > 0.0);
+    }
+
+    REQUIRE((P - P.transpose()).norm() == 0.0);
 }
 
 TEST_CASE("DARE solves an ill-conditioned but well-posed problem",
@@ -225,7 +297,7 @@ TEST_CASE("DARE solves an ill-conditioned but well-posed problem",
         REQUIRE(std::abs(ces.eigenvalues()(i)) < 1.0);
 }
 
-TEST_CASE("DARE NaN in Q returns nullopt", "[dare][hardening][negative]")
+TEST_CASE("DARE refuses a non-finite state weighting", "[dare][hardening][negative]")
 {
     Eigen::Matrix<double, 2, 2> A;
     A << 1.0, 1.0, 0.0, 1.0;
@@ -236,5 +308,6 @@ TEST_CASE("DARE NaN in Q returns nullopt", "[dare][hardening][negative]")
     R << 1.0;
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
-    CHECK(!result.has_value());
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
 }
