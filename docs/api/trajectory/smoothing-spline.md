@@ -53,6 +53,9 @@ Rejections, checked in order:
 | `times` and `positions` differ in length | `spline_error::size_mismatch` |
 | Knot times not strictly increasing | `spline_error::non_increasing_times` |
 | `mu` outside (0, 1] or NaN | `spline_error::mu_out_of_range` |
+| Regularized system, or resulting coefficients, outside the representable range of `Scalar` | `spline_error::unrepresentable_spline` |
+
+A `mu` inside its domain can still ask for a weight the arithmetic cannot carry, and it fails two different ways. The system matrix `R + lambda * Q^T * Q` is solved by a decomposition that forms sums of squares of its entries, so an entry whose square overflows turns the pivots into infinities and every coefficient into a NaN. On the smallest system -- three waypoints, a single interior knot -- the same weight instead overflows that one entry, the solve divides by the infinity, the interior second derivatives come back as exact zeros, and the smoothed positions collapse onto the raw waypoints: a finite, plausible straight-line-through-the-data answer that is not the least-squares limit the weight asked for, and that nothing downstream can distinguish from a correct one. The entries are therefore bounded before the solve, by the square root of the largest representable value, which is the condition that the squaring survives. `Q^T * Q` is a Gram matrix, so no entry exceeds its largest diagonal entry, and that diagonal follows from the knot spacing alone.
 
 ## Methods
 

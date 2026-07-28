@@ -39,6 +39,27 @@ namespace ctrlpp
 ///                                 control_points.size() + Degree + 1.
 ///  * non_monotonic_knots        : the knot vector is not non-decreasing.
 ///  * mu_out_of_range            : smoothing parameter mu lies outside (0, 1].
+///  * unrepresentable_spline     : the configuration is well posed, and the
+///                                 arithmetic that would realize it is not
+///                                 representable in Scalar. It is reported apart
+///                                 from every rejection above because it is a
+///                                 statement about the type rather than about
+///                                 the caller's data: nothing is wrong with the
+///                                 waypoints, and a wider Scalar accepts the same
+///                                 configuration unchanged. Two constructions
+///                                 raise it, for the same reason and with the same
+///                                 remedy -- carry the command at a scale the type
+///                                 spans:
+///                                   - a cubic or smoothing spline whose
+///                                     polynomial coefficients leave the
+///                                     representable range, either by overflowing
+///                                     or by flushing a nonzero numerator to zero,
+///                                     which drops a term from the polynomial
+///                                     rather than rounding it;
+///                                   - a smoothing spline whose regularized normal
+///                                     equations cannot be squared without
+///                                     overflow, which the decomposition that
+///                                     solves them does to every entry.
 enum class spline_error
 {
     too_few_points,
@@ -50,6 +71,7 @@ enum class spline_error
     bad_knot_count,
     non_monotonic_knots,
     mu_out_of_range,
+    unrepresentable_spline,
 };
 
 /// @brief Structured failure modes for the point-to-point trajectory factories

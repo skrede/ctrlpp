@@ -56,6 +56,9 @@ Rejections, checked in order:
 | Knot times not strictly increasing | `spline_error::non_increasing_times` |
 | Periodic BC with fewer than 3 waypoints | `spline_error::periodic_too_few_points` |
 | Periodic BC with q_0 != q_n beyond the rounding budget | `spline_error::periodic_endpoint_mismatch` |
+| Polynomial coefficients outside the representable range of `Scalar` | `spline_error::unrepresentable_spline` |
+
+The last check is made on the coefficients after they are formed, rather than predicted from the knot spacing, because the spacing does not determine it. The cubic coefficient is a difference of slopes divided by the square of the span, so its magnitude runs with the waypoint separation divided by the **cube** of the span, and the numerator carries a waypoint scale that cancels away entirely on collinear data. A span whose square is perfectly representable can still drive that quotient out of range in either direction: at a span of 1e150 the square is 1e300 and comfortably finite, while the coefficient has already flushed through the bottom of the exponent range and the spline evaluates as a quadratic. Overflow is reported the same way, and a coefficient that has gone subnormal is reported too -- it carries fewer than the type's significand, so the term it multiplies is known to a few bits rather than rounded.
 
 ## Methods
 

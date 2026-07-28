@@ -27,7 +27,9 @@
 
 #include <Eigen/Dense>
 
+#include <cmath>
 #include <array>
+#include <limits>
 #include <vector>
 #include <cstddef>
 #include <algorithm>
@@ -64,11 +66,34 @@ class smoothing_spline
     ///  * times/positions length mismatch    -> spline_error::size_mismatch
     ///  * knot times not strictly increasing -> spline_error::non_increasing_times
     ///  * mu outside (0, 1] or NaN           -> spline_error::mu_out_of_range
+    ///  * a regularized system, or resulting
+    ///    coefficients, outside the
+    ///    representable range of Scalar      -> spline_error::unrepresentable_spline
     ///
     /// The mu domain follows from the regularization weight
     /// lambda = 2*(1-mu)/(3*mu): mu = 1 is the exact interpolation limit
     /// (lambda = 0) and lambda diverges as mu approaches 0, so mu <= 0 has no
     /// defined weight.
+    ///
+    /// A mu inside that domain can still ask for a weight the arithmetic cannot
+    /// carry, and the two ways it fails are different enough that one test does
+    /// not see both. The system matrix is R + lambda * Q^T * Q, dominated by the
+    /// second term, and it is solved by a decomposition that forms sums of squares
+    /// of its entries; an entry whose square overflows turns the decomposition's
+    /// pivots into infinities and every coefficient into a NaN. On the smallest
+    /// system the same weight instead overflows the single entry itself, the
+    /// solve divides by that infinity, the interior second derivatives come back
+    /// as exact zeros, and the smoothed positions collapse onto the raw
+    /// waypoints -- a straight-line-through-the-data answer, finite and plausible
+    /// and not the least-squares limit the weight asked for, with nothing to
+    /// distinguish it from a correct one after the fact. The entries are therefore
+    /// bounded BEFORE the solve, by the square root of the largest representable
+    /// value, which is the condition that the squaring survives; the bound is
+    /// derived from the type rather than chosen, and it covers the smallest system
+    /// conservatively because it is the larger ones that set it.
+    ///
+    /// Q^T * Q is a Gram matrix, so no entry of it exceeds its largest diagonal
+    /// entry, and that diagonal follows from the knot spacing alone.
     ///
     /// @cite biagiotti2009 -- Sec. 4.4.5
     static auto create(config const& cfg)
@@ -91,7 +116,15 @@ class smoothing_spline
         if (!(cfg.mu > Scalar{0} && cfg.mu <= Scalar{1})) {
             return ctrlpp::unexpected(spline_error::mu_out_of_range);
         }
-        return smoothing_spline{unchecked_t{}, cfg};
+        if (!regularized_system_representable(cfg)) {
+            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
+        }
+
+        smoothing_spline spline{unchecked_t{}, cfg};
+        if (!spline.coefficients_representable_) {
+            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
+        }
+        return spline;
     }
 
     /// @brief Evaluate smoothing spline at time t, clamped to [t_0, t_n].
@@ -129,6 +162,39 @@ class smoothing_spline
     {
         explicit unchecked_t() = default;
     };
+
+    /// @brief Whether the regularized system's entries can be squared in Scalar.
+    ///
+    /// Two waypoints leave no interior knot, so no system is built and there is
+    /// nothing to bound. Otherwise the largest entry of R + lambda * Q^T * Q is
+    /// bounded by the largest diagonal entry of lambda * Q^T * Q, and the
+    /// diagonal of the Gram matrix at interior knot j is
+    ///
+    ///     1/h_j^2 + (1/h_j + 1/h_{j+1})^2 + 1/h_{j+1}^2
+    ///
+    /// read straight off the three nonzero entries of Q's j-th column. An
+    /// infinite product answers the question the same way a finite one over the
+    /// bound does, so no separate test for the weight itself is needed.
+    static auto regularized_system_representable(config const& cfg) -> bool
+    {
+        auto const n_pts = cfg.times.size();
+        if (n_pts < 3) {
+            return true;
+        }
+
+        auto const lambda = Scalar{2} * (Scalar{1} - cfg.mu) / (Scalar{3} * cfg.mu);
+        auto const bound = std::sqrt(std::numeric_limits<Scalar>::max());
+
+        Scalar largest_diagonal{0};
+        for (std::size_t j = 0; j + 2 < n_pts; ++j) {
+            auto const inv_first = Scalar{1} / (cfg.times[j + 1] - cfg.times[j]);
+            auto const inv_second = Scalar{1} / (cfg.times[j + 2] - cfg.times[j + 1]);
+            auto const middle = inv_first + inv_second;
+            auto const diagonal = inv_first * inv_first + middle * middle + inv_second * inv_second;
+            largest_diagonal = std::max(largest_diagonal, diagonal);
+        }
+        return lambda * largest_diagonal <= bound;
+    }
 
     /// @brief Construct from a configuration already validated by `create`.
     ///
@@ -178,6 +244,10 @@ class smoothing_spline
         coeffs_[0][1] = slope;
         coeffs_[0][2] = Scalar{0};
         coeffs_[0][3] = Scalar{0};
+
+        // The curvature terms are assigned rather than divided, so only the slope
+        // can leave the type here.
+        coefficients_representable_ = std::isfinite(pos[0]) && std::isfinite(slope);
     }
 
     /// @brief Solve regularized system and compute cubic coefficients.
@@ -274,10 +344,27 @@ class smoothing_spline
             // b = (s_{i+1} - s_i)/h_i - h_i*(2*d_i + d_{i+1})/6
             // c = d_i / 2
             // d_coeff = (d_{i+1} - d_i) / (6 * h_i)
+            auto const cubic_numerator = di1 - di;
+
             coeffs_[i][0] = si;
             coeffs_[i][1] = (si1 - si) / hi - hi * (Scalar{2} * di + di1) / Scalar{6};
             coeffs_[i][2] = di / Scalar{2};
-            coeffs_[i][3] = (di1 - di) / (Scalar{6} * hi);
+            coeffs_[i][3] = cubic_numerator / (Scalar{6} * hi);
+
+            // As for the interpolating spline: an overflowing coefficient
+            // announces itself, and one that fell through the bottom of the
+            // exponent range does not -- it comes back subnormal, carrying fewer
+            // than the type's significand, and the cubic term is then known to a
+            // few bits or has left the polynomial. Bits were lost exactly when a
+            // numerator that carried the full significand produced a quotient that
+            // does not; a numerator that was already subnormal or zero lost
+            // nothing, and a span of constant curvature keeps its zero
+            // coefficient.
+            bool const finite = std::isfinite(coeffs_[i][0]) && std::isfinite(coeffs_[i][1])
+                                && std::isfinite(coeffs_[i][2]) && std::isfinite(coeffs_[i][3]);
+            bool const cubic_survived =
+                !std::isnormal(cubic_numerator) || std::isnormal(coeffs_[i][3]);
+            coefficients_representable_ = coefficients_representable_ && finite && cubic_survived;
         }
     }
 
@@ -298,6 +385,10 @@ class smoothing_spline
 
     std::vector<Scalar> times_;
     std::vector<std::array<Scalar, 4>> coeffs_; ///< {a, b, c, d} per span
+
+    /// Whether every coefficient the construction formed stayed inside the type.
+    /// Read once, by `create`, which is the only caller that can still refuse.
+    bool coefficients_representable_{true};
 };
 
 static_assert(trajectory_segment<smoothing_spline<double>, double, 1>);

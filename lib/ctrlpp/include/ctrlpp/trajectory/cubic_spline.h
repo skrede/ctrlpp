@@ -73,6 +73,21 @@ class cubic_spline
     ///  * knot times not strictly increasing        -> spline_error::non_increasing_times
     ///  * periodic BC with fewer than 3 waypoints   -> spline_error::periodic_too_few_points
     ///  * periodic BC with q_0 != q_n beyond budget -> spline_error::periodic_endpoint_mismatch
+    ///  * coefficients outside the representable
+    ///    range of Scalar                           -> spline_error::unrepresentable_spline
+    ///
+    /// The last check is made on the coefficients themselves, after they are
+    /// formed, rather than predicted from the knot spacing. It cannot be
+    /// predicted from the spacing: the cubic coefficient is a difference of
+    /// slopes divided by the square of the span, so its magnitude runs with the
+    /// waypoint separation divided by the CUBE of the span, and the numerator
+    /// carries a waypoint scale that cancels away entirely on collinear data. A
+    /// span whose square is perfectly representable can still drive that quotient
+    /// out of range in either direction, so the square of the span is not the
+    /// bound and testing it would pass configurations that go on to evaluate to
+    /// infinity. The realized coefficients are therefore checked directly rather
+    /// than inferred from a test on the inputs, which is what the trapezoidal
+    /// profile does with its realized phase durations for the same reason.
     ///
     /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
     static auto create(config const& cfg)
@@ -106,7 +121,12 @@ class cubic_spline
                 return ctrlpp::unexpected(spline_error::periodic_endpoint_mismatch);
             }
         }
-        return cubic_spline{unchecked_t{}, cfg};
+
+        cubic_spline spline{unchecked_t{}, cfg};
+        if (!spline.coefficients_representable_) {
+            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
+        }
+        return spline;
     }
 
     /// @brief Evaluate spline at time t, clamped to [t_0, t_n].
@@ -187,11 +207,52 @@ class cubic_spline
             auto const vi1 = vel[i + 1];
             auto const hi = h[i];
 
-            coeffs_[i][0] = qi;                                                    // a
-            coeffs_[i][1] = vi;                                                    // b
-            coeffs_[i][2] = (Scalar{3} * (qi1 - qi) / hi - Scalar{2} * vi - vi1) / hi;  // c
-            coeffs_[i][3] = (Scalar{2} * (qi - qi1) / hi + vi + vi1) / (hi * hi);       // d
+            auto const quadratic_numerator = Scalar{3} * (qi1 - qi) / hi - Scalar{2} * vi - vi1;
+            auto const cubic_numerator = Scalar{2} * (qi - qi1) / hi + vi + vi1;
+
+            coeffs_[i][0] = qi;                                    // a
+            coeffs_[i][1] = vi;                                    // b
+            coeffs_[i][2] = quadratic_numerator / hi;              // c
+            coeffs_[i][3] = cubic_numerator / (hi * hi);           // d
+
+            note_representable(coeffs_[i], quadratic_numerator, cubic_numerator);
         }
+    }
+
+    /// @brief Record whether one span's coefficients survived being formed.
+    ///
+    /// Two ways out of the representable range, and the second is the one a
+    /// finiteness test alone misses. A quotient that overflows announces itself as
+    /// an infinity. A quotient that falls through the bottom of the exponent range
+    /// does not: it comes back subnormal, carrying fewer than the type's
+    /// significand and in the limit none of it, so the power it multiplies is
+    /// known to a few bits or has left the polynomial altogether. The evaluation
+    /// then returns a plausible finite number that is not the spline the waypoints
+    /// describe -- a cubic answering as a quadratic.
+    ///
+    /// The test is therefore against the numerator rather than against a
+    /// magnitude: bits were lost in the division exactly when a numerator that
+    /// carried the full significand produced a quotient that does not. A numerator
+    /// that was already subnormal, or zero, lost nothing here -- a zero quadratic
+    /// numerator is a span of no curvature and its zero coefficient is the right
+    /// answer -- so the rule does not fire on it, and a flat span at any scale is
+    /// still accepted. Nothing in this is a chosen threshold; the classification
+    /// is the type's own.
+    static auto significance_survived(Scalar numerator, Scalar quotient) -> bool
+    {
+        return !std::isnormal(numerator) || std::isnormal(quotient);
+    }
+
+    void note_representable(std::array<Scalar, 4> const& c,
+                            Scalar quadratic_numerator,
+                            Scalar cubic_numerator)
+    {
+        bool const finite = std::isfinite(c[0]) && std::isfinite(c[1]) && std::isfinite(c[2])
+                            && std::isfinite(c[3]);
+
+        coefficients_representable_ = coefficients_representable_ && finite
+                                      && significance_survived(quadratic_numerator, c[2])
+                                      && significance_survived(cubic_numerator, c[3]);
     }
 
     /// @brief Find span index for time t using binary search.
@@ -360,6 +421,10 @@ class cubic_spline
 
     std::vector<Scalar> times_;
     std::vector<std::array<Scalar, 4>> coeffs_; ///< {a, b, c, d} per span
+
+    /// Whether every coefficient the construction formed stayed inside the type.
+    /// Read once, by `create`, which is the only caller that can still refuse.
+    bool coefficients_representable_{true};
 };
 
 static_assert(trajectory_segment<cubic_spline<double>, double, 1>);

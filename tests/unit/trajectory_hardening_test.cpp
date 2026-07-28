@@ -566,6 +566,65 @@ TEST_CASE("Cubic spline value does not degrade with the knot span",
     }
 }
 
+TEST_CASE("Cubic spline declines a span whose coefficients leave the type",
+          "[cubic_spline][hardening][negative]")
+{
+    // The construction is well posed at every span in this case: the knots are
+    // strictly increasing, the waypoints are finite, and the spline exists as a
+    // mathematical object. What runs out is the type. For the antisymmetric data
+    // below the first span's cubic coefficient is exactly -1 / (2 H^3), so the
+    // span at which it stops being representable follows from the type's own
+    // limits and is not a number chosen here:
+    //
+    //   * below the cube root of one half the largest finite value, the
+    //     coefficient overflows and every evaluation returns an infinity;
+    //   * above the cube root of one half the smallest normal value, it goes
+    //     subnormal -- the cubic term keeps a handful of bits and then none, and
+    //     the spline answers as a quadratic with a plausible finite number that
+    //     is not the curve the waypoints describe.
+    //
+    // Note which quantity that is. The SQUARE of the span is representable on
+    // both sides of both boundaries -- at a span of 1e150 its square is 1e300,
+    // comfortably finite -- so a domain test on the square of the spacing would
+    // admit exactly the configurations that go on to evaluate wrongly. The
+    // coefficient is the quantity that leaves the type, and it is what the
+    // construction checks.
+    constexpr double largest = std::numeric_limits<double>::max();
+    constexpr double smallest_normal = std::numeric_limits<double>::min();
+    double const overflow_span = std::cbrt(0.5 / largest);
+    double const subnormal_span = std::cbrt(0.5 / smallest_normal);
+
+    auto build = [](double span) {
+        return ctrlpp::cubic_spline<double>::create({
+            .times = {0.0, span, 2.0 * span},
+            .positions = {0.0, 1.0, 0.0},
+        });
+    };
+
+    for (double const span : {overflow_span / 10.0, subnormal_span * 10.0}) {
+        auto const declined = build(span);
+        CAPTURE(span);
+        REQUIRE_FALSE(declined.has_value());
+        REQUIRE(declined.error() == ctrlpp::spline_error::unrepresentable_spline);
+    }
+
+    // A decade inside either boundary the same construction is served, and it is
+    // served correctly: the midpoint value is the span-independent 11/16 derived
+    // in the conditioning case above. The rejection is narrow, not a retreat from
+    // the wide range of spans the arithmetic does carry.
+    constexpr double analytic_midpoint = 11.0 / 16.0;
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+    double const tol = static_cast<double>(spline_horner_rounding_ops) * eps;
+    for (double const span : {overflow_span * 10.0, subnormal_span / 10.0}) {
+        auto const served = build(span);
+        CAPTURE(span);
+        REQUIRE(served.has_value());
+        auto const mid = served->evaluate(0.5 * span);
+        CAPTURE(mid.position(0));
+        REQUIRE(std::abs(mid.position(0) - analytic_midpoint) <= tol);
+    }
+}
+
 // ── Smoothing spline hardening ─────────────────────────────────────────────────
 
 TEST_CASE("Smoothing spline at mu=1 IS the interpolating spline",
@@ -648,6 +707,63 @@ TEST_CASE("Smoothing spline at a large weight tends to the least-squares line",
     CAPTURE(line, departure, interpolating_departure, mu);
     REQUIRE(interpolating_departure > 0.0);
     REQUIRE(departure < mu * interpolating_departure);
+}
+
+TEST_CASE("Smoothing spline declines a weight its normal equations cannot carry",
+          "[smoothing_spline][hardening][negative]")
+{
+    // The tradeoff parameter is inside its documented domain here, so the
+    // rejection is not about the domain: it is about what the regularized system
+    // R + lambda Q'Q can hold. The solve forms sums of squares of that system's
+    // entries, so the entries must be square-representable, which puts the bound
+    // at the square root of the largest finite value. For unit knot spacing the
+    // largest entry of the Gram matrix is 1 + 4 + 1, and the weight is
+    // 2 (1 - mu) / (3 mu), so the parameter at which the product reaches the bound
+    // is four over that square root. Every quantity in that sentence comes from
+    // the type or from the spacing.
+    constexpr double largest = std::numeric_limits<double>::max();
+    double const parameter_bound = 4.0 / std::sqrt(largest);
+
+    // Two waypoint counts, because the two fail differently and only one of them
+    // fails loudly. Four waypoints give a two-by-two system, whose decomposition
+    // turns an unsquarable entry into infinite pivots and NaN coefficients. Three
+    // waypoints give a one-by-one system, which has nothing to eliminate: it
+    // divides by the overflowed entry instead, returns exact zeros for the
+    // interior second derivatives, and collapses the smoothed positions onto the
+    // raw waypoints. That second one is the dangerous case -- a finite, plausible
+    // straight-line-through-the-data answer that is not the least-squares limit
+    // the weight asked for, and that nothing downstream can tell from a correct
+    // one. Both are declined, and by the same enumerator, because they are the
+    // same statement about the type.
+    for (std::size_t const waypoints : {std::size_t{3}, std::size_t{4}}) {
+        std::vector<double> times;
+        std::vector<double> positions;
+        for (std::size_t i = 0; i < waypoints; ++i) {
+            times.push_back(static_cast<double>(i));
+            positions.push_back((i % 2 == 0) ? 0.0 : 1.0);
+        }
+        positions.back() = 2.0;
+
+        auto const declined = ctrlpp::smoothing_spline<double>::create({
+            .times = times, .positions = positions, .mu = parameter_bound * 1e-4});
+        CAPTURE(waypoints, parameter_bound);
+        REQUIRE_FALSE(declined.has_value());
+        REQUIRE(declined.error() == ctrlpp::spline_error::unrepresentable_spline);
+
+        // Four decades inside the bound the same system is served, and the answer
+        // it gives is the one the weight asks for: the least-squares line.
+        auto const served = ctrlpp::smoothing_spline<double>::create({
+            .times = times, .positions = positions, .mu = parameter_bound * 1e4});
+        REQUIRE(served.has_value());
+
+        constexpr double eps = std::numeric_limits<double>::epsilon();
+        double const probe = times[waypoints / 2];
+        double const line = least_squares_line_at(times, positions, probe);
+        double const scale = *std::max_element(positions.begin(), positions.end());
+        double const tol = static_cast<double>(spline_horner_rounding_ops) * eps * scale;
+        CAPTURE(served->evaluate(probe).position(0), line, tol);
+        REQUIRE(std::abs(served->evaluate(probe).position(0) - line) <= tol);
+    }
 }
 
 // ── B-spline hardening ─────────────────────────────────────────────────────────
