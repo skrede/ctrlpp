@@ -84,31 +84,58 @@ The realized phase durations are checked directly rather than inferred from the 
 
 ## Time Rescaling
 
-`rescale_to()` rebuilds the profile at a lower cruise velocity rather than patching the one it has. The commanded displacement, both boundary velocities, and the acceleration magnitude are held fixed and the cruise velocity that realizes the requested duration is solved in closed form, so the traversed displacement and the terminal velocity hold by construction. The stored duration stays the sum of the three realized phase durations and is never assigned the requested value; it lands within a few units in the last place of it.
+`rescale_to()` rebuilds the profile at a lower cruise velocity rather than patching the one it has. The commanded displacement, both boundary velocities, and the acceleration magnitude are held fixed and the cruise velocity that realizes the requested duration is solved in closed form, so the traversed displacement and the terminal velocity hold by construction.
+
+**The duration the profile reports is the duration it realizes.** The stored duration stays the sum of the three realized phase durations and is never assigned the requested value after the solve. When the request cannot be met the call reports a typed failure; it does not accept the request and quietly realize something else.
 
 The solve covers all three shapes the three-phase parametrization admits, and picks between them by monotonicity: the total duration falls as the cruise velocity grows, so exactly one shape can contain the root.
 
 | Shape | Validity | Solve |
 |-------|----------|-------|
-| plateau | cruise velocity at or above both boundary velocities | quadratic, smaller root |
+| plateau | cruise velocity at or above both boundary velocities | quadratic in the cruise velocity's **rise above** the larger boundary velocity |
 | ramp-through | cruise velocity strictly between the two boundary velocities | linear in the reciprocal of the cruise velocity, single root |
-| valley | cruise velocity at or below both boundary velocities | quadratic, larger root |
+| valley | cruise velocity at or below both boundary velocities | quadratic in the cruise velocity's **decrement below** the smaller boundary velocity |
 
 The valley shape is emitted, not rejected: with both boundary velocities above the cruise velocity a long duration needs, the profile decelerates away from the initial velocity, holds a low cruise velocity, and accelerates back up to the final one. A root is accepted only inside its own shape's validity interval, with all three phase durations nonnegative and the cruise velocity within the velocity limit; a root failing any of those is a rejection rather than a clamped value.
 
-The valley interval is **open** at its upper end. That shape is selected only when the request exceeds the duration the smaller boundary velocity already realizes, and the duration is strictly decreasing in the cruise velocity, so the root answering such a request lies strictly below that boundary. A root landing exactly on it did not solve the equation: it is what the closed form returns when its discriminant, a difference of two nearly equal quantities, cancels to zero and leaves the root with no significant digits. Accepting it would realize the boundary's own duration for every request past it while reporting success.
+### How accurate the realized duration is
 
-Rejections, checked in order:
+The guarantee is two-tier.
+
+**Exact** on the branches whose closed form inverts cleanly. A request equal to the current duration succeeds and changes nothing, which is the path the slowest axis of a synchronized set always takes, and the ramp-through shape is linear in the reciprocal of the cruise velocity with a single root and no selection.
+
+**A derived bound, in units in the last place at the input scale**, on the two solved branches. Both are solved for the distance from their own shape boundary rather than for the cruise velocity itself, because that distance is routinely orders of magnitude smaller than the velocity it sits on. Carrying the velocity instead would discard most of the distance's significant digits before the phase durations ever saw them, and it would make the solve's conditioning proportional to the square of the boundary velocity rather than to the answer.
+
+Measured through this API over 400,000 randomly drawn retimings per branch, spanning four decades of boundary velocity and eight of acceleration:
+
+| Branch | Requests near the shape boundary | Requests across the shape's whole range |
+|--------|----------------------------------|-----------------------------------------|
+| plateau | 4 units in the last place, worst case | 27 units in the last place, worst case |
+| valley | 4 units in the last place, worst case | see the caveat below |
+
+One caveat is stated rather than hidden. As the cruise velocity approaches zero, which happens when the displacement exceeds `(v0^2 + v1^2) / (2 a)` and arbitrarily long durations become reachable, the cruise phase's duration is a residual displacement divided by that vanishing velocity. That division amplifies the residual's own rounding without bound, and it does so for any parametrization of this profile family rather than for this solve in particular. In the sweep above, six of 390,595 accepted valley retimings had a cruise velocity 25 or more orders of magnitude below the boundary velocities, and those reached 5.4e5 units in the last place. Requests that do not drive the cruise velocity to nothing are not affected.
+
+### Rejections
+
+Checked in order:
 
 | Condition | Error |
 |-----------|-------|
 | a duration below the current one | `trajectory_error::duration_shorter_than_current` |
 | NaN, infinite, or non-positive `T_new` | `trajectory_error::non_positive_duration` |
+| a request below the arithmetic resolution of the expression that would answer it | `trajectory_error::unrepresentable_duration` |
 | a duration the displacement, limits, and boundary velocities cannot realize together | `trajectory_error::unreachable_duration` |
 
-A request equal to the current duration succeeds and changes nothing, which is the path the slowest axis of a synchronized set always takes.
+The last two are kept apart on purpose, because they tell the caller to change different things. `unreachable_duration` means no admissible shape exists for the request: change the limits or the command. `unrepresentable_duration` means a shape may well exist and the arithmetic cannot locate it: change the request.
 
-Reachability is derived rather than assumed. The cruise duration is what runs out: the shape whose validity interval reaches down toward a vanishing cruise velocity fixes the supremum of the reachable durations, and whether that supremum is finite is the sign of that shape's own residual displacement term. With both boundary velocities positive, the durations grow without bound exactly when the displacement exceeds `(v0^2 + v1^2) / (2 a)`; below that the cruise duration reaches zero at a strictly positive cruise velocity and the reachable durations stop at `(v0 + v1 - 2 sqrt((v0^2 + v1^2) / 2 - a h)) / a`. A stationary profile therefore reaches its own duration and nothing longer, with no epsilon taking part in the decision.
+Two forward conditions on the inputs decide the second, and both are stated against the inputs rather than by comparing a realized duration back against the request. No tolerance anywhere in the library compares the two.
+
+- **The ramp residual must be resolved.** The residual is the commanded displacement less the distance the two ramps sweep between the boundary velocities. It collapses whenever the constructor had to raise the acceleration to make the boundary velocities feasible, because that raised value is defined by making those two equal. Both solved branches are governed by it: the plateau's whole admissible velocity range and the valley's whole admissible duration window are functions of it alone. Its floor is six chained rounding operations, at the scale of the largest operand that entered.
+- **The increment or decrement against the boundary duration must be resolved.** That boundary duration is itself accurate only to some units in the last place, and the difference measured against it inherits that error. Its floor is fifteen chained rounding operations, at the scale of the largest operand that entered the boundary duration rather than at the scale of the duration alone.
+
+Neither coefficient is fitted. Each is a count of the arithmetic operations chained to produce the quantity, multiplied by the scalar type's epsilon.
+
+Reachability is derived rather than assumed, and no epsilon takes part in the decision. The cruise duration is what runs out: the shape whose validity interval reaches down toward a vanishing cruise velocity fixes the supremum of the reachable durations, and whether that supremum is finite is the sign of that shape's own residual displacement term. With both boundary velocities positive, the durations grow without bound exactly when the displacement exceeds `(v0^2 + v1^2) / (2 a)`. Below that the supremum is finite, and rather than precompute it from a square root of a difference of two nearly equal quantities, the solve decides it where it is exact: a non-positive linear coefficient means the shape's quadratic has no positive root, so no cruise velocity on the far side of the boundary answers the request, and a negative discriminant means the request lies past the shape's reachable extreme. A stationary profile therefore reaches its own duration and nothing longer.
 
 `can_rescale_to()` runs the identical solve and discards the result, so the two cannot disagree. That is what lets [`synchronize()`](synchronize.md) check every axis before it commits any of them.
 

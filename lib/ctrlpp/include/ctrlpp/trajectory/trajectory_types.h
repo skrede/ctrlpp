@@ -69,12 +69,25 @@ enum class spline_error
 ///                                      caller asked for, and honoring it would
 ///                                      require a ramp that runs backwards in
 ///                                      time.
-///  * unrepresentable_duration        : a duration of the constructed profile is
-///                                      not representable in the scalar type --
-///                                      either it left the finite range, or the
-///                                      total underflowed to zero on a command
-///                                      with a nonzero displacement, which
-///                                      would report an instantaneous traversal.
+///  * unrepresentable_duration        : a duration is not representable in the
+///                                      scalar type. Three cases, all of them
+///                                      facts about the arithmetic rather than
+///                                      about the kinematics: a duration of the
+///                                      constructed profile left the finite
+///                                      range; the total underflowed to zero on
+///                                      a command with a nonzero displacement,
+///                                      which would report an instantaneous
+///                                      traversal; or a requested retiming
+///                                      differs from a duration the profile
+///                                      already realizes by less than the
+///                                      rounding of the expression that would
+///                                      solve for it, so the request cannot be
+///                                      told apart from that duration. The third
+///                                      case says a profile may well exist and
+///                                      the arithmetic cannot locate it, which
+///                                      is why it is reported separately from
+///                                      unreachable_duration: the caller should
+///                                      change the request, not the limits.
 ///  * unreachable_boundary_velocity   : the commanded displacement is smaller
 ///                                      than the distance the fastest admissible
 ///                                      transition between the two boundary

@@ -1263,24 +1263,32 @@ TEST_CASE("retiming rejects a profile with nothing to traverse", "[trajectory][a
     REQUIRE(double_s.duration() == 0.0);
 }
 
-TEST_CASE("trapezoidal retiming rejects a valley root that lands on its own shape boundary",
+TEST_CASE("trapezoidal retiming rejects a valley request whose governing residual is noise",
           "[trajectory][anchor]")
 {
     // Both boundary velocities sit within a few units in the last place of the
-    // velocity limit while the acceleration is ten orders of magnitude smaller,
-    // so the valley quadratic's discriminant b^2 - 4c is a difference of two
-    // quantities that agree to the full width of the significand. It cancels to
-    // exactly zero and the closed form returns the smaller boundary velocity
-    // itself, a root with no significant digits in it.
+    // velocity limit while the commanded acceleration is ten orders of magnitude
+    // smaller, so the two ramps alone cannot reconcile them across this
+    // displacement and the constructor raises the acceleration until they do --
+    // from 1e-6 to about 2.15e-4. That raised value is DEFINED by making the ramp
+    // distance equal the commanded displacement, so the residual between them
+    // collapses: it measures 7.34e-14 against its own resolution floor of
+    // 6.21e-12, which is to say it is zero to the precision available and its
+    // sign carries no information.
     //
-    // That root is not a solution. The valley shape is selected only when the
-    // request exceeds the duration the smaller boundary velocity already
-    // realizes, and the total duration is strictly decreasing in the cruise
-    // velocity, so the root answering such a request lies STRICTLY below that
-    // boundary. Accepting the boundary itself would hand back a profile that
-    // realizes the same duration for every request past it while reporting
-    // success, which is a silently wrong retiming. It is a typed rejection, and
-    // the profile is left bitwise untouched.
+    // That residual is what governs the valley. The valley's constant term
+    // satisfies c - v_lo^2 = -a r exactly, so the width of the whole valley
+    // window is a function of r alone. With r below its floor the library cannot
+    // determine whether this request is reachable -- not because the request is
+    // out of range, but because the quantity that would decide it has no
+    // significant digits. Reporting it as unreachable would assert a fact the
+    // arithmetic never established.
+    //
+    // So the rejection is unrepresentable_duration, and the distinction is the
+    // point: it tells the caller the request is below the resolution of the
+    // expression that would answer it, and that the request rather than the
+    // limits is the thing to change. It is a typed rejection, and the profile is
+    // left bitwise untouched.
     auto built = trapezoidal_trajectory<double>::create({.q0 = 0.0,
                                                          .q1 = 0.0004425048828125,
                                                          .v_max = 0.9999999999999996,
@@ -1296,7 +1304,7 @@ TEST_CASE("trapezoidal retiming rejects a valley root that lands on its own shap
 
     auto const rejected = profile.rescale_to(T_current * 1.0000000002328306);
     REQUIRE(!rejected.has_value());
-    REQUIRE(rejected.error() == trajectory_error::unreachable_duration);
+    REQUIRE(rejected.error() == trajectory_error::unrepresentable_duration);
     REQUIRE(profile.duration() == T_current);
     REQUIRE(profile.phase_durations() == phases_before);
 }

@@ -412,6 +412,43 @@ class trapezoidal_trajectory
         return (v_hi - v_lo) * (v_hi + v_lo) / (Scalar{2} * a_);
     }
 
+    /// @brief A total duration paired with the scale its own rounding is measured
+    /// against.
+    struct duration_with_scale
+    {
+        Scalar T{};
+        Scalar scale{};
+    };
+
+    /// @brief Total duration at a cruise velocity, with the largest operand that
+    /// entered it, expressed in the units of the duration.
+    ///
+    /// The scale is NOT the duration alone. The cruise term's numerator is the
+    /// commanded displacement less the two swept ramp distances, and that
+    /// difference cancels to nothing whenever the ramps sweep almost all of the
+    /// displacement -- the same configuration that makes the ramp-through
+    /// residual below vanish. A resolution floor written against the duration
+    /// alone would be blind to exactly that case, so the largest operand of the
+    /// cancelling difference is carried out alongside the result and divided by
+    /// the cruise velocity to put it in units of time.
+    auto duration_and_scale_at(Scalar v) const -> duration_with_scale
+    {
+        auto const h = std::abs(q1_ - q0_);
+        auto const T_a = std::abs(v - v0_) / a_;
+        auto const T_d = std::abs(v - v1_) / a_;
+        auto const d_a = (v0_ + v) * T_a / Scalar{2};
+        auto const d_d = (v1_ + v) * T_d / Scalar{2};
+        auto const T = T_a + (h - d_a - d_d) / v + T_d;
+        auto const cruise_scale = std::max({h, std::abs(d_a), std::abs(d_d)}) / std::abs(v);
+        return {T, std::max({T_a, T_d, cruise_scale, std::abs(T)})};
+    }
+
+    /// @brief Total duration at a cruise velocity.
+    ///
+    /// Forwards to the sibling above rather than restating the expression, so the
+    /// duration and the scale its floor is written against cannot drift apart.
+    auto duration_at(Scalar v) const -> Scalar { return duration_and_scale_at(v).T; }
+
     /// @brief Solve the rescaled profile, or report why the request is not realizable.
     ///
     /// Everything below works in the positive-displacement frame the constructor
@@ -515,7 +552,16 @@ class trapezoidal_trajectory
         // The duration diverges as that velocity vanishes exactly when that shape's
         // residual displacement is positive; otherwise the cruise duration reaches
         // zero first and pins a finite supremum.
-        bool unbounded{};
+        //
+        // Only the two shapes whose boundary velocities straddle zero are decided
+        // here. When both are positive the valley is the shape that reaches the
+        // vanishing-cruise limit, and its supremum is decided by the sign of its
+        // own linear coefficient at the point of solving, below. That test is
+        // exact where a precomputed supremum is not: the velocity at the limit is
+        // sqrt((v0^2 + v1^2) / 2 - a h), a square root of a difference of two
+        // nearly equal quantities, and it therefore carries no significant digits
+        // in the very configuration the valley solve has to get right.
+        bool unbounded{true};
         Scalar T_sup{};
         if (v_hi <= Scalar{0}) {
             // Both boundary velocities point away from the target, so the plateau
@@ -528,25 +574,18 @@ class trapezoidal_trajectory
             // velocity, where the distance its two ramps sweep is all there is.
             unbounded = ramp_resolved;
             T_sup = std::abs(v1_ - v0_) / a;
-        } else {
-            // The valley shape reaches the vanishing-cruise limit at
-            // v_min = sqrt((v0^2 + v1^2) / 2 - a h), where T = (v0 + v1 - 2 v_min) / a.
-            auto const residual = h - v_sum_sq / (Scalar{2} * a);
-            unbounded = (residual > Scalar{0});
-            auto const v_min = std::sqrt(std::max(Scalar{0}, -a * residual));
-            T_sup = (v0_ + v1_ - Scalar{2} * v_min) / a;
         }
         if (!unbounded && T_new > T_sup) {
             return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
 
-        auto const duration_at = [&](Scalar v) -> Scalar {
-            auto const T_a = std::abs(v - v0_) / a;
-            auto const T_d = std::abs(v - v1_) / a;
-            auto const d_a = (v0_ + v) * T_a / Scalar{2};
-            auto const d_d = (v1_ + v) * T_d / Scalar{2};
-            return T_a + (h - d_a - d_d) / v + T_d;
-        };
+        // The two shape boundaries, each with the scale its own rounding is
+        // measured against. A boundary at or below zero is not an admissible
+        // cruise velocity and its duration is never formed.
+        auto const at_hi
+            = (v_hi > Scalar{0}) ? duration_and_scale_at(v_hi) : duration_with_scale{};
+        auto const at_lo
+            = (v_lo > Scalar{0}) ? duration_and_scale_at(v_lo) : duration_with_scale{};
 
         // Shape selection by monotonicity: T decreases as the cruise velocity
         // grows, so the shape whose duration interval brackets T_new is the one
@@ -558,14 +597,123 @@ class trapezoidal_trajectory
             ramp_through,
             valley
         };
-        auto const selected = (v_hi <= Scalar{0} || T_new <= duration_at(v_hi))
-                                  ? shape::plateau
-                              : (v_lo <= Scalar{0} || T_new <= duration_at(v_lo))
-                                  ? shape::ramp_through
-                                  : shape::valley;
+        auto const selected = (v_hi <= Scalar{0} || T_new <= at_hi.T)   ? shape::plateau
+                              : (v_lo <= Scalar{0} || T_new <= at_lo.T) ? shape::ramp_through
+                                                                        : shape::valley;
 
+        // Both solved shapes measure the request against the duration one of the
+        // boundary velocities already realizes, and that boundary duration is
+        // itself accurate only to a handful of units in the last place. An
+        // increment or decrement smaller than that error is indistinguishable
+        // from zero, and the shape it selects would be located by noise.
+        //
+        // duration_and_scale_at chains fifteen arithmetic operations to produce
+        // the boundary duration: a subtraction and a division for each of the two
+        // ramp durations (four), an addition, a multiplication and a division for
+        // each of the two swept ramp distances (six more, ten), two subtractions
+        // and a division for the cruise term (three more, thirteen), and two
+        // additions for the final sum (fifteen). Every operation is counted
+        // whether or not it rounds -- the divisions by two are exact in a binary
+        // radix -- so the count bounds the accumulated error from above rather
+        // than describing it tightly, which is what a floor requires. Each is
+        // worth one unit in the last place at the scale the sibling reports,
+        // which is the largest operand that entered rather than the duration
+        // alone.
+        constexpr int boundary_duration_rounding_ops = 15;
+
+        // Both solved shapes carry the DISTANCE FROM THEIR OWN BOUNDARY as the
+        // unknown, never the cruise velocity itself. That distance is what the
+        // ramp durations and the cruise term depend on, and it is routinely orders
+        // of magnitude smaller than the boundary velocity it sits on, so forming
+        // the cruise velocity first and subtracting the boundary velocity back out
+        // of it would discard most of the distance's significant digits before the
+        // phase durations ever see it. It is the parametrization the double-S
+        // profile's general boundary-condition solve already uses for the peak's
+        // rise above the larger boundary velocity, for the identical reason.
+        //
+        // It is also what makes these solves well conditioned rather than merely
+        // better spelled, and the reason is one identity. Writing r for the
+        // ramp-through residual computed above, the constant terms of the two
+        // cruise-velocity forms satisfy, exactly,
+        //
+        //     [a h + (v0^2 + v1^2) / 2] - v_hi^2 =  a r        (plateau)
+        //     [(v0^2 + v1^2) / 2 - a h] - v_lo^2 = -a r        (valley)
+        //
+        // so each form's discriminant at its own shape boundary is (a r / v)^2
+        // while the two terms it subtracts are each about four times v^2. The
+        // residual therefore governs both shapes exactly as it governs the
+        // ramp-through shape between them, and the floor already derived for it
+        // applies to all three unchanged. Neither shape is a milder case than the
+        // other: as the residual closes, the plateau's whole velocity range
+        // sqrt(v_hi^2 + a r) - v_hi and the valley's whole duration window close
+        // with it, so the loss covers the entire branch rather than a
+        // neighbourhood of one endpoint.
+        //
+        // Each rearrangement is derived in place by substituting the shifted
+        // cruise velocity into the corresponding duration named in this
+        // function's contract above and clearing the division by that velocity;
+        // only the underlying three-phase parametrization is taken from the
+        // reference cited there.
+        //
+        // The gates are the same on both, and none of them introduces a constant.
+        // A non-positive linear coefficient means the quadratic's two roots are
+        // both non-positive, so the shape admits no cruise velocity on the far
+        // side of its boundary and no shape answers this request; a negative
+        // discriminant means the request lies past the shape's reachable extreme.
+        // Both say no admissible shape was found, which is what
+        // unreachable_duration reports. The two resolution floors say something
+        // different -- a shape may well exist, but the request is below the
+        // arithmetic resolution of the expressions that would locate it, so the
+        // caller should change the request rather than the limits.
+        //
+        // The floors are tested FIRST, and the order is load-bearing rather than
+        // stylistic. The linear coefficient is built from the residual, so when
+        // the residual is below its own floor the coefficient's SIGN is noise
+        // too. Letting a noise-signed quantity answer a structural question would
+        // report "no such shape exists" on the strength of a bit that carries no
+        // information, which is a confident answer the arithmetic did not earn.
+        // Below the floor the honest report is that the request cannot be told
+        // apart from one the profile already realizes. Neither shape can reach
+        // here with a decisively NEGATIVE residual, because a negative residual
+        // puts the triangular velocity below the larger boundary velocity and the
+        // reachability gate above has already rejected it -- so a residual that
+        // fails its floor here is always noise, never a resolved negative.
         Scalar v{};
-        if (selected == shape::plateau) {
+        if (selected == shape::plateau && v_hi > Scalar{0}) {
+            // The unknown is the cruise velocity's RISE above the larger boundary
+            // velocity, solved against the duration DECREMENT the caller asked
+            // for: the total duration falls as the cruise velocity grows, and the
+            // plateau lies above its boundary. Substituting v = v_hi + e gives
+            //     e^2 - B e + C = 0,  B = a (r / v_hi - dT),  C = a v_hi dT
+            // whose smaller positive root is the admissible one, taken in the form
+            // that adds rather than subtracts. Both coefficients are built
+            // directly from the residual and the decrement, so their rounding is
+            // proportional to the answer rather than to v_hi^2.
+            auto const dT = at_hi.T - T_new;
+            if (!ramp_resolved) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
+            auto const boundary_floor = Scalar{boundary_duration_rounding_ops}
+                                        * std::numeric_limits<Scalar>::epsilon() * at_hi.scale;
+            if (!(dT > boundary_floor)) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
+            auto const B = a * (ramp_residual / v_hi - dT);
+            auto const C = a * v_hi * dT;
+            if (!(B > Scalar{0})) {
+                return ctrlpp::unexpected(trajectory_error::unreachable_duration);
+            }
+            auto const disc = B * B - Scalar{4} * C;
+            if (!(disc >= Scalar{0})) {
+                return ctrlpp::unexpected(trajectory_error::unreachable_duration);
+            }
+            v = v_hi + Scalar{2} * C / (B + std::sqrt(disc));
+        } else if (selected == shape::plateau) {
+            // The larger boundary velocity is not positive, so it is not an
+            // admissible cruise velocity and the shape has no boundary to sit
+            // near: every admissible cruise velocity is separated from it by at
+            // least its own magnitude, the rise is never small, and the two terms
+            // of the discriminant do not approach each other. Solved directly.
             auto const b = (v0_ + v1_) + a * T_new;
             auto const c = a * h + v_sum_sq / Scalar{2};
             auto const disc = b * b - Scalar{4} * c;
@@ -582,15 +730,69 @@ class trapezoidal_trajectory
             }
             v = ramp_residual / denom;
         } else {
-            auto const b = a * T_new - (v0_ + v1_);
-            auto const c = v_sum_sq / Scalar{2} - a * h;
-            auto const disc = b * b - Scalar{4} * c;
+            // The mirror of the plateau solve, about the other boundary: the
+            // unknown is the cruise velocity's DECREMENT below the smaller
+            // boundary velocity, solved against the duration INCREMENT, because
+            // the valley lies below its boundary where the plateau lies above its
+            // own. Substituting v = v_lo - d gives
+            //     d^2 - B d + C = 0,  B = a (dT + r / v_lo),  C = a v_lo dT
+            // whose smaller positive root is the admissible one -- the decrement
+            // nearest the boundary, which is the larger cruise velocity the
+            // cruise-velocity form selected. The cruise velocity is formed once,
+            // at the end.
+            auto const dT = T_new - at_lo.T;
+            if (!ramp_resolved) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
+            auto const boundary_floor = Scalar{boundary_duration_rounding_ops}
+                                        * std::numeric_limits<Scalar>::epsilon() * at_lo.scale;
+            if (!(dT > boundary_floor)) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
+            auto const B = a * (dT + ramp_residual / v_lo);
+            auto const C = a * v_lo * dT;
+            if (!(B > Scalar{0})) {
+                return ctrlpp::unexpected(trajectory_error::unreachable_duration);
+            }
+            auto const disc = B * B - Scalar{4} * C;
             if (!(disc >= Scalar{0})) {
                 return ctrlpp::unexpected(trajectory_error::unreachable_duration);
             }
-            auto const root = std::sqrt(disc);
-            // Larger root, in the form that avoids subtracting two nearly equal terms.
-            v = (b > Scalar{0}) ? (Scalar{-2} * c / (b + root)) : ((root - b) / Scalar{2});
+            auto const d = Scalar{2} * C / (B + std::sqrt(disc));
+
+            // Carry whichever of the two quantities is the smaller. Forming the
+            // larger of them from the boundary velocity and the smaller costs at
+            // most one bit; forming the smaller from the boundary velocity and the
+            // larger is a cancellation, and it is the same cancellation this whole
+            // rearrangement exists to avoid, merely moved to the last step.
+            //
+            // The two regimes are disjoint and each form is exact in the other's
+            // blind spot. The decrement is the smaller one near the shape
+            // boundary, which is where the cruise-velocity form's discriminant
+            // collapses. The cruise velocity is the smaller one deep in the
+            // valley, far below the boundary -- and there the cruise-velocity
+            // form's constant term is negative, so its discriminant is a SUM of
+            // two nonnegative terms and carries no cancellation at all. Measured
+            // over the valley's full range rather than only the boundary
+            // neighbourhood, the decrement alone is worse than the cruise-velocity
+            // form in the deep valley by many orders of magnitude, so neither form
+            // dominates and the choice between them is not cosmetic.
+            //
+            // The comparison introduces no constant: it asks only which of the
+            // decrement and the cruise velocity it leaves behind is larger.
+            if (d + d <= v_lo) {
+                v = v_lo - d;
+            } else {
+                auto const b = a * T_new - (v0_ + v1_);
+                auto const c = v_sum_sq / Scalar{2} - a * h;
+                auto const disc_v = b * b - Scalar{4} * c;
+                if (!(disc_v >= Scalar{0})) {
+                    return ctrlpp::unexpected(trajectory_error::unreachable_duration);
+                }
+                auto const root = std::sqrt(disc_v);
+                // Larger root, in the form that avoids subtracting two nearly equal terms.
+                v = (b > Scalar{0}) ? (Scalar{-2} * c / (b + root)) : ((root - b) / Scalar{2});
+            }
         }
 
         // A root is accepted only inside its own shape's validity interval, with
