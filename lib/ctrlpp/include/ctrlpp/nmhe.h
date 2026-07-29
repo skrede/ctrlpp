@@ -83,21 +83,31 @@ public:
             return ctrlpp::unexpected(
                 moving_horizon_construction_error{filter.error()});
 
-        auto q_inv = detail::finite_full_piv_inverse(config.Q);
+        auto q_inv = detail::finite_full_piv_inverse(
+            config.Q,
+            moving_horizon_configuration_error::
+                non_invertible_process_noise);
         if(!q_inv)
-            return ctrlpp::unexpected(moving_horizon_construction_error{
-                moving_horizon_configuration_error::non_invertible_process_noise});
-        auto r_inv = detail::finite_full_piv_inverse(config.R);
-        if(!r_inv)
-            return ctrlpp::unexpected(moving_horizon_construction_error{
-                moving_horizon_configuration_error::non_invertible_measurement_noise});
-        auto p0_inv = detail::finite_full_piv_inverse(config.P0);
-        if(!p0_inv)
-            return ctrlpp::unexpected(moving_horizon_construction_error{
-                moving_horizon_configuration_error::non_invertible_initial_covariance});
-        if(auto invalid = detail::validate_moving_horizon_options(config))
             return ctrlpp::unexpected(
-                moving_horizon_construction_error{*invalid});
+                moving_horizon_construction_error{q_inv.error()});
+        auto r_inv = detail::finite_full_piv_inverse(
+            config.R,
+            moving_horizon_configuration_error::
+                non_invertible_measurement_noise);
+        if(!r_inv)
+            return ctrlpp::unexpected(
+                moving_horizon_construction_error{r_inv.error()});
+        auto p0_inv = detail::finite_full_piv_inverse(
+            config.P0,
+            moving_horizon_configuration_error::
+                non_invertible_initial_covariance);
+        if(!p0_inv)
+            return ctrlpp::unexpected(
+                moving_horizon_construction_error{p0_inv.error()});
+        auto options = detail::validate_moving_horizon_options(config);
+        if(!options)
+            return ctrlpp::unexpected(
+                moving_horizon_construction_error{options.error()});
 
         if constexpr(NC > 0)
         {
@@ -326,7 +336,10 @@ private:
     auto update_arrival_cost() -> bool
     {
         auto inverse =
-            detail::finite_full_piv_inverse(m_prior_cov_window[0]);
+            detail::finite_full_piv_inverse(
+                m_prior_cov_window[0],
+                moving_horizon_configuration_error::
+                    non_invertible_initial_covariance);
         if(!inverse)
             return false;
         m_state->arrival_state = m_prior_state_window[0];

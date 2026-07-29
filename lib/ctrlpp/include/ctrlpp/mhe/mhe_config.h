@@ -2,6 +2,7 @@
 #define HPP_GUARD_CTRLPP_MHE_MHE_CONFIG_H
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/estimation/estimation_types.h"
 
@@ -9,8 +10,8 @@
 
 #include <cmath>
 #include <limits>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <variant>
 #include <optional>
 #include <functional>
@@ -45,44 +46,52 @@ namespace detail
 {
 
 template <typename MatrixType>
-auto finite_full_piv_inverse(const MatrixType& matrix)
-    -> std::optional<MatrixType>
+auto finite_full_piv_inverse(
+    const MatrixType& matrix,
+    moving_horizon_configuration_error error)
+    -> ctrlpp::expected<MatrixType, moving_horizon_configuration_error>
 {
     auto factor = matrix.fullPivLu();
     if(!factor.isInvertible())
-        return std::nullopt;
+        return ctrlpp::unexpected(error);
 
     MatrixType inverse = factor.solve(MatrixType::Identity());
     if(!inverse.allFinite())
-        return std::nullopt;
+        return ctrlpp::unexpected(error);
     return inverse;
 }
 
 template <typename Config>
 auto validate_moving_horizon_options(const Config& config)
-    -> std::optional<moving_horizon_configuration_error>
+    -> ctrlpp::expected<void, moving_horizon_configuration_error>
 {
     using scalar_type = typename Config::scalar_type;
 
     if(!std::isfinite(config.arrival_cost_weight)
         || !(config.arrival_cost_weight > scalar_type{0}))
-        return moving_horizon_configuration_error::non_positive_arrival_cost_weight;
+        return ctrlpp::unexpected(
+            moving_horizon_configuration_error::
+                non_positive_arrival_cost_weight);
     if((config.x_min && !config.x_min->allFinite())
         || (config.x_max && !config.x_max->allFinite())
         || (config.x_min && config.x_max
             && !((*config.x_min).array() <= (*config.x_max).array()).all()))
-        return moving_horizon_configuration_error::invalid_state_bounds;
+        return ctrlpp::unexpected(
+            moving_horizon_configuration_error::invalid_state_bounds);
     if(config.residual_bound
         && (!config.residual_bound->allFinite()
             || !(config.residual_bound->array() >= 0).all()))
-        return moving_horizon_configuration_error::invalid_residual_bound;
+        return ctrlpp::unexpected(
+            moving_horizon_configuration_error::invalid_residual_bound);
     if(!std::isfinite(config.soft_penalty)
         || !(config.soft_penalty > scalar_type{0}))
-        return moving_horizon_configuration_error::non_positive_soft_penalty;
+        return ctrlpp::unexpected(
+            moving_horizon_configuration_error::non_positive_soft_penalty);
     if(!std::isfinite(config.numerical_eps)
         || !(config.numerical_eps > scalar_type{0}))
-        return moving_horizon_configuration_error::non_positive_numerical_eps;
-    return std::nullopt;
+        return ctrlpp::unexpected(
+            moving_horizon_configuration_error::non_positive_numerical_eps);
+    return {};
 }
 
 }

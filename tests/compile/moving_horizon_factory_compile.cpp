@@ -3,9 +3,28 @@
 
 #include <cstddef>
 #include <utility>
+#include <type_traits>
 
 namespace
 {
+
+using moving_horizon_error = ctrlpp::moving_horizon_configuration_error;
+using matrix_type = ctrlpp::Matrix<double, 2, 2>;
+using config_type = ctrlpp::mhe_config<double, 2, 1, 1, 4>;
+
+using inverse_result = decltype(ctrlpp::detail::finite_full_piv_inverse(
+    std::declval<const matrix_type&>(),
+    moving_horizon_error::non_invertible_process_noise));
+using validation_result =
+    decltype(ctrlpp::detail::validate_moving_horizon_options(
+        std::declval<const config_type&>()));
+
+static_assert(std::is_same_v<
+              inverse_result,
+              ctrlpp::expected<matrix_type, moving_horizon_error>>);
+static_assert(std::is_same_v<
+              validation_result,
+              ctrlpp::expected<void, moving_horizon_error>>);
 
 enum class setup_error
 {
