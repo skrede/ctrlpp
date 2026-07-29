@@ -114,6 +114,26 @@ using linear_estimator = ctrlpp::mhe<double, NX, NU, NY, window, ctrlpp_test::st
 template <ctrlpp_test::report_lengths Reported>
 using nonlinear_estimator = ctrlpp::nmhe<double, NX, NU, NY, window, ctrlpp_test::stub_nlp_solver<double, Reported>, window_dynamics, window_measurement>;
 
+template <ctrlpp_test::report_values Values, ctrlpp::solve_status Status>
+using nonfinite_linear_estimator =
+    ctrlpp::mhe<double, NX, NU, NY, window,
+                ctrlpp_test::stub_qp_solver<double,
+                                            ctrlpp_test::report_lengths::conforming,
+                                            Values,
+                                            Status>,
+                window_dynamics,
+                window_measurement>;
+
+template <ctrlpp_test::report_values Values, ctrlpp::solve_status Status>
+using nonfinite_nonlinear_estimator =
+    ctrlpp::nmhe<double, NX, NU, NY, window,
+                 ctrlpp_test::stub_nlp_solver<double,
+                                              ctrlpp_test::report_lengths::conforming,
+                                              Values,
+                                              Status>,
+                 window_dynamics,
+                 window_measurement>;
+
 // Fill the window and then take one more step, so the estimator leaves its
 // warm-up branch (which reports the embedded filter's estimate directly) and
 // actually runs a solve whose result is extracted.
@@ -125,6 +145,36 @@ void drive_past_warmup(Estimator& estimator)
         estimator.predict(Eigen::Matrix<double, 1, 1>::Zero());
         REQUIRE(estimator.update(Eigen::Matrix<double, 1, 1>::Zero()).has_value());
     }
+}
+
+template <ctrlpp_test::report_values Values, ctrlpp::solve_status Status>
+void require_linear_estimator_rejects_nonfinite_result()
+{
+    auto estimator = ctrlpp::test::constructed(
+        nonfinite_linear_estimator<Values, Status>::create(
+            window_dynamics{},
+            window_measurement{},
+            ctrlpp::mhe_config<double, NX, NU, NY, window>{}));
+    drive_past_warmup(estimator);
+    REQUIRE(estimator.diagnostics().used_ekf_fallback);
+    REQUIRE(estimator.diagnostics().status
+            == ctrlpp::solve_status::invalid_backend_result);
+    REQUIRE(estimator.state().allFinite());
+}
+
+template <ctrlpp_test::report_values Values, ctrlpp::solve_status Status>
+void require_nonlinear_estimator_rejects_nonfinite_result()
+{
+    auto estimator = ctrlpp::test::constructed(
+        nonfinite_nonlinear_estimator<Values, Status>::create(
+            window_dynamics{},
+            window_measurement{},
+            ctrlpp::nmhe_config<double, NX, NU, NY, window>{}));
+    drive_past_warmup(estimator);
+    REQUIRE(estimator.diagnostics().used_ekf_fallback);
+    REQUIRE(estimator.diagnostics().status
+            == ctrlpp::solve_status::invalid_backend_result);
+    REQUIRE(estimator.state().allFinite());
 }
 
 }
@@ -328,6 +378,37 @@ TEST_CASE("Linear MPC accepts a conforming backend result unchanged", "[mpc][res
     REQUIRE(traj->second.size() == static_cast<std::size_t>(shape_horizon));
 }
 
+TEST_CASE("Linear MPC rejects non-finite results under every accepted status",
+          "[mpc][result-finiteness][hardening]")
+{
+    for(auto const status : {ctrlpp::solve_status::optimal,
+                             ctrlpp::solve_status::solved_inaccurate,
+                             ctrlpp::solve_status::max_iterations,
+                             ctrlpp::solve_status::time_limit})
+    {
+        for(auto const values : {ctrlpp_test::report_values::nan,
+                                 ctrlpp_test::report_values::positive_infinity,
+                                 ctrlpp_test::report_values::negative_infinity})
+        {
+            auto solver = ctrlpp_test::stub_qp_solver<double>{
+                ctrlpp_test::report_lengths::conforming, values, status};
+            auto controller =
+                linear_controller::create(make_system(),
+                                          linear_config(shape_horizon),
+                                          std::move(solver));
+            REQUIRE(controller.has_value());
+
+            auto solved = controller->solve(Eigen::Vector2d{1.0, 0.0});
+            REQUIRE_FALSE(solved.has_value());
+            REQUIRE(solved.error()
+                    == ctrlpp::solver_error::invalid_backend_result);
+            REQUIRE(controller->diagnostics().status
+                    == ctrlpp::solve_status::invalid_backend_result);
+            REQUIRE_FALSE(controller->trajectory().has_value());
+        }
+    }
+}
+
 TEST_CASE("Runtime-horizon nonlinear MPC rejects a backend primal too short for the problem", "[nmpc][result-shape][hardening]")
 {
     SECTION("a primal one entry short of the problem dimension")
@@ -445,6 +526,29 @@ TEST_CASE("Linear moving-horizon estimator accepts a conforming backend result u
     REQUIRE(estimator.diagnostics().status == ctrlpp::solve_status::optimal);
 }
 
+TEST_CASE("Linear moving-horizon estimator rejects non-finite accepted results",
+          "[mhe][result-finiteness][hardening]")
+{
+    require_linear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::nan,
+        ctrlpp::solve_status::optimal>();
+    require_linear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::positive_infinity,
+        ctrlpp::solve_status::optimal>();
+    require_linear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::negative_infinity,
+        ctrlpp::solve_status::optimal>();
+    require_linear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::nan,
+        ctrlpp::solve_status::solved_inaccurate>();
+    require_linear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::positive_infinity,
+        ctrlpp::solve_status::solved_inaccurate>();
+    require_linear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::negative_infinity,
+        ctrlpp::solve_status::solved_inaccurate>();
+}
+
 TEST_CASE("Nonlinear moving-horizon estimator falls back when the backend primal is too short", "[nmhe][result-shape][hardening]")
 {
     SECTION("a primal one entry short of the decision dimension")
@@ -473,4 +577,27 @@ TEST_CASE("Nonlinear moving-horizon estimator accepts a conforming backend resul
 
     REQUIRE(!estimator.diagnostics().used_ekf_fallback);
     REQUIRE(estimator.diagnostics().status == ctrlpp::solve_status::optimal);
+}
+
+TEST_CASE("Nonlinear moving-horizon estimator rejects non-finite accepted results",
+          "[nmhe][result-finiteness][hardening]")
+{
+    require_nonlinear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::nan,
+        ctrlpp::solve_status::optimal>();
+    require_nonlinear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::positive_infinity,
+        ctrlpp::solve_status::optimal>();
+    require_nonlinear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::negative_infinity,
+        ctrlpp::solve_status::optimal>();
+    require_nonlinear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::nan,
+        ctrlpp::solve_status::solved_inaccurate>();
+    require_nonlinear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::positive_infinity,
+        ctrlpp::solve_status::solved_inaccurate>();
+    require_nonlinear_estimator_rejects_nonfinite_result<
+        ctrlpp_test::report_values::negative_infinity,
+        ctrlpp::solve_status::solved_inaccurate>();
 }

@@ -17,7 +17,8 @@
 //   3. solve() reports solve_status::optimal and returns a zero primal of
 //      `primal_length()` entries and a zero dual of `dual_length()` entries.
 //
-// The reported result lengths are a documented knob, defaulting to conforming.
+// The reported result lengths and values are documented knobs, defaulting to a
+// conforming finite result.
 // The primal and the dual are settable independently:
 //   * report_lengths::conforming  - primal is exactly the decision dimension of
 //                                   the problem passed to setup(), dual is
@@ -54,6 +55,7 @@
 
 #include <Eigen/Core>
 
+#include <limits>
 #include <algorithm>
 
 namespace ctrlpp_test
@@ -67,6 +69,14 @@ enum class report_lengths
     empty
 };
 
+enum class report_values
+{
+    finite,
+    nan,
+    positive_infinity,
+    negative_infinity
+};
+
 // The stubs have no setup failure mode, so their setup-error type carries no
 // enumerators. The solver concepts accept one setup shape, a fallible one, so a
 // backend with nothing to fail at writes a trivially succeeding fallible setup
@@ -76,12 +86,17 @@ enum class stub_setup_error
 {
 };
 
-template <typename Scalar, report_lengths Reported = report_lengths::conforming>
+template <typename Scalar,
+          report_lengths Reported = report_lengths::conforming,
+          report_values Values = report_values::finite,
+          ctrlpp::solve_status Status = ctrlpp::solve_status::optimal>
 struct stub_qp_solver
 {
     using scalar_type = Scalar;
 
     report_lengths lengths{Reported};
+    report_values values{Values};
+    ctrlpp::solve_status status{Status};
     int n_dec{0};
     int n_con{0};
     int solve_count{0};
@@ -90,6 +105,15 @@ struct stub_qp_solver
 
     explicit stub_qp_solver(report_lengths reported)
         : lengths{reported}
+    {
+    }
+
+    stub_qp_solver(report_lengths reported_lengths,
+                   report_values reported_values,
+                   ctrlpp::solve_status reported_status)
+        : lengths{reported_lengths}
+        , values{reported_values}
+        , status{reported_status}
     {
     }
 
@@ -134,7 +158,7 @@ struct stub_qp_solver
     {
         ++solve_count;
         ctrlpp::qp_result<Scalar> result;
-        result.status = ctrlpp::solve_status::optimal;
+        result.status = status;
         result.x = Eigen::VectorX<Scalar>::Zero(primal_length());
         result.y = Eigen::VectorX<Scalar>::Zero(dual_length());
         result.objective = Scalar{0};
@@ -142,6 +166,30 @@ struct stub_qp_solver
         result.iterations = 1;
         result.primal_residual = Scalar{0};
         result.dual_residual = Scalar{0};
+        if(values != report_values::finite)
+        {
+            Scalar bad{};
+            switch(values)
+            {
+            case report_values::nan:
+                bad = std::numeric_limits<Scalar>::quiet_NaN();
+                break;
+            case report_values::positive_infinity:
+                bad = std::numeric_limits<Scalar>::infinity();
+                break;
+            case report_values::negative_infinity:
+                bad = -std::numeric_limits<Scalar>::infinity();
+                break;
+            case report_values::finite:
+                break;
+            }
+            result.x.setConstant(bad);
+            result.y.setConstant(bad);
+            result.objective = bad;
+            result.solve_time = bad;
+            result.primal_residual = bad;
+            result.dual_residual = bad;
+        }
         return result;
     }
 };

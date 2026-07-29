@@ -16,12 +16,11 @@
 //   3. solve() reports solve_status::optimal and returns a zero decision vector
 //      of `primal_length()` entries.
 //
-// The reported result length reuses ctrlpp_test::report_lengths from
-// stub_qp_solver.h and defaults to conforming. `short_dual` has no distinct
-// meaning here (an NLP result carries no dual block), so it behaves as
-// conforming. Every variant still reports solve_status::optimal, so a consumer
-// that trusts the reported status alone is handed a decision vector it cannot
-// legally read.
+// The reported result length and value controls reuse their definitions from
+// stub_qp_solver.h. `short_dual` has no distinct meaning here (an NLP result
+// carries no dual block), so it behaves as conforming. The status is independently
+// configurable, so consumers can be tested against malformed results under
+// every status they accept.
 //
 // As on the QP stub, the knob is settable as a template argument as well as a
 // runtime field, because the nonlinear moving-horizon estimator
@@ -38,12 +37,17 @@
 namespace ctrlpp_test
 {
 
-template <typename Scalar, report_lengths Reported = report_lengths::conforming>
+template <typename Scalar,
+          report_lengths Reported = report_lengths::conforming,
+          report_values Values = report_values::finite,
+          ctrlpp::solve_status Status = ctrlpp::solve_status::optimal>
 struct stub_nlp_solver
 {
     using scalar_type = Scalar;
 
     report_lengths lengths{Reported};
+    report_values values{Values};
+    ctrlpp::solve_status status{Status};
     int n_vars{0};
     int solve_count{0};
 
@@ -51,6 +55,15 @@ struct stub_nlp_solver
 
     explicit stub_nlp_solver(report_lengths reported)
         : lengths{reported}
+    {
+    }
+
+    stub_nlp_solver(report_lengths reported_lengths,
+                    report_values reported_values,
+                    ctrlpp::solve_status reported_status)
+        : lengths{reported_lengths}
+        , values{reported_values}
+        , status{reported_status}
     {
     }
 
@@ -89,12 +102,34 @@ struct stub_nlp_solver
     {
         ++solve_count;
         ctrlpp::nlp_result<Scalar> result{};
-        result.status = ctrlpp::solve_status::optimal;
+        result.status = status;
         result.x = Eigen::VectorX<Scalar>::Zero(primal_length());
         result.objective = Scalar{0};
         result.solve_time = Scalar{0};
         result.iterations = 1;
         result.primal_residual = Scalar{0};
+        if(values != report_values::finite)
+        {
+            Scalar bad{};
+            switch(values)
+            {
+            case report_values::nan:
+                bad = std::numeric_limits<Scalar>::quiet_NaN();
+                break;
+            case report_values::positive_infinity:
+                bad = std::numeric_limits<Scalar>::infinity();
+                break;
+            case report_values::negative_infinity:
+                bad = -std::numeric_limits<Scalar>::infinity();
+                break;
+            case report_values::finite:
+                break;
+            }
+            result.x.setConstant(bad);
+            result.objective = bad;
+            result.solve_time = bad;
+            result.primal_residual = bad;
+        }
         return result;
     }
 };

@@ -19,9 +19,10 @@ namespace ctrlpp
 ///                             own but returned a result whose dimensions do not
 ///                             match the posed problem. No backend ever reports
 ///                             this; it is set by the consumer that detected the
-///                             mismatch, so a reader of the diagnostics is not
-///                             told the solve went well when its answer was
-///                             discarded. It is the diagnostics-channel twin of
+///                             mismatch or carries a non-finite consumed value,
+///                             so a reader of the diagnostics is not told the
+///                             solve went well when its answer was discarded. It
+///                             is the diagnostics-channel twin of
 ///                             solver_error::invalid_backend_result.
 enum class solve_status : std::uint8_t
 {
@@ -92,8 +93,10 @@ enum class solve_result_status : std::uint8_t
 ///  * invalid_backend_result : the solver reported a status the controller
 ///                             accepts and then returned a primal or dual whose
 ///                             length does not cover the dimensions of the posed
-///                             problem, so the fixed-width slices the extraction
-///                             takes out of it would read past its end. This is
+///                             problem, or whose consumed values are non-finite.
+///                             A short result makes fixed-width extraction read
+///                             past its end; a non-finite result would poison the
+///                             command, diagnostics, and warm start. This is
 ///                             deliberately NOT folded into invalid_problem:
 ///                             there the caller must fix the problem it posed,
 ///                             here the problem is well formed and the backend's

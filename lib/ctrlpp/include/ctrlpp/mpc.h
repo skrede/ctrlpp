@@ -17,6 +17,7 @@
 #include <Eigen/Dense>
 
 #include <span>
+#include <cmath>
 #include <limits>
 #include <vector>
 #include <cstddef>
@@ -402,8 +403,8 @@ private:
                                                     .used_state_weight_terminal_cost = terminal_cost_substituted_};
     }
 
-    /// @brief Consume an accepted backend result: validate its reported shape,
-    /// then extract the applied input.
+    /// @brief Consume an accepted backend result: validate its shape and
+    /// numerical postconditions, then extract the applied input.
     ///
     /// A status is not a shape. The accept-set above is decided purely from what
     /// the backend reports, and a backend that reports an accepted status can
@@ -413,14 +414,25 @@ private:
     /// the backend's own storage, and a short dual is handed straight back as the
     /// next warm start. Both reported lengths are therefore compared against the
     /// dimensions computed at construction BEFORE either vector is moved from or
-    /// indexed, and a violation leaves every member untouched.
+    /// indexed. The consumed prefixes and diagnostics must also be finite and
+    /// the iteration count nonnegative. A violation leaves command and warm-start
+    /// state untouched.
     ///
     /// A longer-than-required result is not rejected: it is readable, and how
     /// much storage a backend returns beyond the posed problem is its own affair.
     /// The condition checked here is exactly the one that makes the reads legal.
     auto extract_solution(qp_result<Scalar>& result, solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
     {
-        if(result.x.size() < static_cast<Eigen::Index>(n_dec_) || result.y.size() < static_cast<Eigen::Index>(n_con_))
+        auto const primal_size = static_cast<Eigen::Index>(n_dec_);
+        auto const dual_size = static_cast<Eigen::Index>(n_con_);
+        if(result.x.size() < primal_size || result.y.size() < dual_size
+            || !result.x.head(primal_size).allFinite()
+            || !result.y.head(dual_size).allFinite()
+            || !std::isfinite(result.objective)
+            || !std::isfinite(result.solve_time)
+            || !std::isfinite(result.primal_residual)
+            || !std::isfinite(result.dual_residual)
+            || result.iterations < 0)
         {
             // Correct the diagnostics the backend's own status just populated, so
             // a reader there is not told the solve was optimal when its answer

@@ -39,6 +39,7 @@
 
 #include <span>
 #include <array>
+#include <cmath>
 #include <memory>
 #include <cstddef>
 #include <utility>
@@ -242,15 +243,18 @@ private:
 
         if(result.status == solve_status::optimal || result.status == solve_status::solved_inaccurate)
         {
-            // A status is not a shape: the accept-set above is decided purely
-            // from what the backend reports, so an accepted result may still be
-            // too short for the window writes that follow. The decision vector is
-            // sliced per window node at offsets derived from the window length,
-            // so one comparison against the posed problem's decision dimension
-            // covers the extraction and the warm-start shift alike. A longer
-            // result is accepted: it is readable, and this is exactly the
-            // condition that makes the reads legal.
-            if(result.x.size() < static_cast<Eigen::Index>(m_problem->n_vars))
+            // A status is not a numerical postcondition. The consumed prefix
+            // must cover the posed decision vector and be finite, as must the
+            // diagnostics exposed to callers. These checks precede every state
+            // and warm-start write.
+            auto const primal_size =
+                static_cast<Eigen::Index>(m_problem->n_vars);
+            if(result.x.size() < primal_size
+                || !result.x.head(primal_size).allFinite()
+                || !std::isfinite(result.objective)
+                || !std::isfinite(result.solve_time)
+                || !std::isfinite(result.primal_residual)
+                || result.iterations < 0)
             {
                 fallback_to_ekf(solve_status::invalid_backend_result);
                 return;

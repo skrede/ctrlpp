@@ -268,8 +268,8 @@ private:
         return detail::compute_mhe_dims<NX, NY>(N, has_box, m_soft_constraints && has_box, m_residual_bound.has_value());
     }
 
-    /// @brief Whether a backend result is long enough for everything the
-    /// extraction reads out of it.
+    /// @brief Whether a backend result is complete and finite for everything
+    /// the extraction and diagnostics consume.
     ///
     /// The primal is sliced per window node at offsets derived from the window
     /// length, and the dual is stored and handed straight back to the backend as
@@ -280,7 +280,17 @@ private:
     auto result_covers_problem(const qp_result<Scalar>& result) const -> bool
     {
         auto dims = qp_dimensions();
-        return result.x.size() >= static_cast<Eigen::Index>(dims.n_dec) && result.y.size() >= static_cast<Eigen::Index>(dims.n_con);
+        auto const primal_size = static_cast<Eigen::Index>(dims.n_dec);
+        auto const dual_size = static_cast<Eigen::Index>(dims.n_con);
+        return result.x.size() >= primal_size
+            && result.y.size() >= dual_size
+            && result.x.head(primal_size).allFinite()
+            && result.y.head(dual_size).allFinite()
+            && std::isfinite(result.objective)
+            && std::isfinite(result.solve_time)
+            && std::isfinite(result.primal_residual)
+            && std::isfinite(result.dual_residual)
+            && result.iterations >= 0;
     }
 
     auto build_qp_structure(const Matrix<Scalar, NX, NX>& A_lin, const Matrix<Scalar, NY, NX>& H_lin) -> qp_problem<Scalar>
