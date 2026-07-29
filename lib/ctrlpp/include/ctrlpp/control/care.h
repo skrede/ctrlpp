@@ -215,6 +215,10 @@ auto care(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           Cond                                           cond_tag   = {})
     -> ctrlpp::expected<care_result<Scalar, NX>, care_error>
 {
+    if (!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite()
+        || !N.allFinite())
+        return ctrlpp::unexpected(care_error::non_finite_input);
+
     // The reduction to standard form inverts R before the Hamiltonian build ever sees
     // it, so the same test is applied to the factorization this overload already forms.
     auto qr_R = R.colPivHouseholderQr();

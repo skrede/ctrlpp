@@ -63,6 +63,47 @@ TEST_CASE("CARE Inf in B returns care_error::non_finite_input",
     CHECK(result.error() == ctrlpp::care_error::non_finite_input);
 }
 
+TEST_CASE("CARE cross-weight overload classifies every non-finite operand",
+          "[care][error]")
+{
+    Eigen::Matrix<double, 2, 2> A;
+    A << 0.0, 1.0, -0.5, -0.3;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 0.0, 1.0;
+    Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity();
+    Eigen::Matrix<double, 1, 1> R;
+    R << 1.0;
+    Eigen::Matrix<double, 2, 1> N;
+    N << 0.1, 0.2;
+
+    auto require_non_finite = [](auto const& a, auto const& b, auto const& q,
+                                 auto const& r, auto const& n) {
+        auto const result = ctrlpp::care<double, 2, 1>(a, b, q, r, n);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::care_error::non_finite_input);
+    };
+
+    auto bad_A = A;
+    bad_A(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    require_non_finite(bad_A, B, Q, R, N);
+
+    auto bad_B = B;
+    bad_B(0, 0) = std::numeric_limits<double>::infinity();
+    require_non_finite(A, bad_B, Q, R, N);
+
+    auto bad_Q = Q;
+    bad_Q(0, 0) = -std::numeric_limits<double>::infinity();
+    require_non_finite(A, B, bad_Q, R, N);
+
+    auto bad_R = R;
+    bad_R(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    require_non_finite(A, B, Q, bad_R, N);
+
+    auto bad_N = N;
+    bad_N(0, 0) = std::numeric_limits<double>::infinity();
+    require_non_finite(A, B, Q, R, bad_N);
+}
+
 TEST_CASE("CARE A = 0, B = 0 yields a structured failure enum",
           "[care][error]")
 {

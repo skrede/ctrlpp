@@ -202,6 +202,10 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           Cond                                           tag = {})
     -> ctrlpp::expected<dare_result<Scalar, NX>, dare_error>
 {
+    if (!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite()
+        || !N.allFinite())
+        return ctrlpp::unexpected(dare_error::non_finite_input);
+
     // The reduction to standard form inverts R before the symplectic build ever sees
     // it, so the same test is applied to the factorization this overload already forms
     // rather than deferring to the build's. Without it a singular R would reach the
