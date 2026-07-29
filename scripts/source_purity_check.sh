@@ -40,19 +40,22 @@
 #   Rule 4c No bare-statement call to a manifest-listed fallible function.
 #           Scans lib/ and examples/. THIS RULE IS A RATCHET, NOT THE
 #           ENFORCEMENT. The enforcement is the compiler: the discard warning is
-#           promoted to an error on ctrlpp's own targets (rule 6), so a
-#           discarded fallible return does not build. Rule 4c reaches only what
-#           the compiler does not see -- a call site in a target that neither
-#           build tree compiles.
+#           promoted to an error on ctrlpp's own targets, so a discarded
+#           fallible return does not build. The configuration-time compile
+#           canary in tests/CMakeLists.txt proves this with the active compiler.
+#           Rule 4c reaches only what the compiler does not see -- a call site
+#           in a target that neither build tree compiles.
 #
 #   Rule 5  The exception-mode macro appears in no file under lib/ but two: the
 #           fallible-result backport header, and the configuration header that
 #           defines the macro.
 #
-#   Rule 6  The flag that promotes the discard warning to an error is present in
-#           the top-level build file, in both compiler branches. Rule 4c names
-#           the compiler as the real enforcement; this is what keeps that
-#           statement checkable rather than asserted.
+#   Rule 6  The flags that promote the discard warning to an error remain
+#           declared in the top-level build file for both compiler families.
+#           This is a cheap cross-platform diagnostic, not proof of compiler
+#           enforcement. The positive-and-negative compile canary configured
+#           from tests/CMakeLists.txt supplies that proof for the active
+#           compiler.
 #
 #   Rule 7  The static-analysis check that re-adds site-level discard-warning
 #           attributes on trivial returns stays disabled. Enabling it would
@@ -106,11 +109,12 @@
 #      deliberately absent from the manifest, which records what shipped rather
 #      than what a reader might expect, and annotating them is a user decision.
 #
-#   5. Rule 4c is a ratchet behind the compiler, not the enforcement. What makes
-#      a discarded fallible return fail to build is the flag rule 6 asserts,
-#      which promotes the discard warning to an error on ctrlpp's own targets.
-#      Rule 4c reaches only a call site in a target that neither build tree
-#      compiles. A reader must not take the grep for the compiler's work.
+#   5. Rule 4c is a ratchet behind the compiler, not the enforcement. The
+#      configuration-time compile canary proves that a valid translation unit
+#      succeeds without promotion and fails when the active compiler's
+#      discarded-result warning is promoted. Rule 6 only confirms that both
+#      compiler-family spellings remain declared; a reader must not take that
+#      text search for the compiler's work.
 #
 #   6. Rule 4c is also name-based, so it can only carry names that are fallible
 #      on EVERY declaration in the library. Names shared with an infallible
@@ -598,7 +602,7 @@ run_rule "4a" "class-level discard attribute present (lib)"              rule_4a
 run_rule "4b" "no site-level discard attribute outside the manifest"     rule_4b_no_site_attribute
 run_rule "4c" "no bare-statement call to a fallible function"            rule_4c_discarded_fallible
 run_rule "5"  "exception-mode macro confined to two files (lib)"         rule_5_exception_macro
-run_rule "6"  "discard warning promoted to an error in the build"        rule_6_promotion_flag
+run_rule "6"  "discard-error flags declared for both compiler families"  rule_6_promotion_flag
 run_rule "7"  "attribute-inserting analysis check stays disabled"        rule_7_analysis_check_disabled
 run_rule "8"  "no planning-artifact identifier in shipped material"     rule_8_planning_identifiers
 

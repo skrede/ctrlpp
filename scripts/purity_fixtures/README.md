@@ -24,7 +24,7 @@ and the likely response would be to weaken the gate.
 | `lib/fixture_site_annotation.h` | 4b, a site-level attribute on a trivial getter |
 | `lib/fixture_discarded_fallible.h` | 4c, a bare-statement call to a fallible function |
 | `lib/fixture_exception_gate.h` | 5, the exception-mode macro outside its two files |
-| `CMakeLists.txt` | 6, the discard-warning promotion absent |
+| `CMakeLists.txt` | 6, one compiler family's discard-error flag absent |
 | `.clang-tidy` | 7, the attribute-inserting analysis check enabled |
 | `lib/fixture_planning_identifier.h` | 8, a planning-artifact key cited in a comment |
 

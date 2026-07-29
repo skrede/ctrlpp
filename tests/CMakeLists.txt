@@ -1,4 +1,48 @@
 if (CTRLPP_BUILD_TESTS)
+    # Prove with the active compiler that discarding ctrlpp::expected is an
+    # error. A text search for the option cannot establish that the compiler
+    # recognizes it or that the class-level attribute still emits the
+    # diagnostic the option promotes.
+    if (MSVC)
+        set(CTRLPP_DISCARD_WARNING_ERROR_FLAG "/we4834")
+    else ()
+        set(CTRLPP_DISCARD_WARNING_ERROR_FLAG "-Werror=unused-result")
+    endif ()
+    try_compile(
+        CTRLPP_DISCARDED_EXPECTED_BASELINE_COMPILED
+        SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/discarded_expected_canary.cpp
+        CMAKE_FLAGS
+            "-DCMAKE_CXX_STANDARD=20"
+            "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+            "-DCMAKE_CXX_EXTENSIONS=OFF"
+            "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include"
+        OUTPUT_VARIABLE CTRLPP_DISCARDED_EXPECTED_BASELINE_OUTPUT
+    )
+    if (NOT CTRLPP_DISCARDED_EXPECTED_BASELINE_COMPILED)
+        message(FATAL_ERROR
+            "The discarded-expected compile canary is not a valid positive "
+            "control without warning promotion.\n"
+            "${CTRLPP_DISCARDED_EXPECTED_BASELINE_OUTPUT}")
+    endif ()
+    try_compile(
+        CTRLPP_DISCARDED_EXPECTED_COMPILED
+        SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/discarded_expected_canary.cpp
+        CMAKE_FLAGS
+            "-DCMAKE_CXX_STANDARD=20"
+            "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+            "-DCMAKE_CXX_EXTENSIONS=OFF"
+            "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include"
+        COMPILE_DEFINITIONS ${CTRLPP_DISCARD_WARNING_ERROR_FLAG}
+        OUTPUT_VARIABLE CTRLPP_DISCARDED_EXPECTED_OUTPUT
+    )
+    if (CTRLPP_DISCARDED_EXPECTED_COMPILED)
+        message(FATAL_ERROR
+            "Discarding ctrlpp::expected compiled successfully with "
+            "${CTRLPP_DISCARD_WARNING_ERROR_FLAG}; the discarded-result "
+            "diagnostic is not enforced.\n"
+            "${CTRLPP_DISCARDED_EXPECTED_OUTPUT}")
+    endif ()
+
     if (CTRLPP_CMAKE_FETCH_DEPS)
         FetchContent_Declare(
             Catch2
