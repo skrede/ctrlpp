@@ -133,12 +133,13 @@ a bare-metal superloop, an RTOS task, or the host application's executor.
 The library is **consumer-flag-agnostic**: no `-fno-exceptions` / `-fno-rtti`
 is forced onto any installed, interface, or exported target, and `config.h`'s
 `__cpp_exceptions` auto-detection adapts to whatever the consumer compiles with.
-Every type is built through a fallible factory returning
-`ctrlpp::expected`, so no construction path is gated on exceptions, and the
-optional OSQP, NLopt and argmin backend adapters expose a single fallible
-`setup(problem)` returning a `ctrlpp::expected<void, E>` that is likewise
-available in every build mode.  No convenience overload in the library is gated
-on exception support.
+The controller and estimator construction paths converted for runtime
+validation use fallible factories returning `ctrlpp::expected`; those factories
+are available in every build mode.  The optional OSQP, NLopt and argmin backend
+adapters likewise expose a single fallible `setup(problem)` returning
+`ctrlpp::expected<void, E>`.  These claims are scoped to the converted
+construction and setup APIs, not to every public type or accessor in the
+library.
 
 As a self-imposed compatibility guarantee, ctrlpp's **own** tests and benches
 dogfood the throw-free discipline: the default build tree
@@ -146,8 +147,8 @@ dogfood the throw-free discipline: the default build tree
 targets **and** Catch2 under `-fno-exceptions -fno-rtti`, with Catch2 built
 `CATCH_CONFIG_DISABLE_EXCEPTIONS`.  The blocking `no-exceptions` CI job builds
 that tree and runs the full ctest **including the allocation-free (no-malloc)
-suite**, so zero-alloc and no-throw are proven together on the same shipping
-build.
+suite**, so the allocation guards and the compiler-enforced prohibition on
+throw expressions are exercised together in the same shipping configuration.
 
 Two caveats follow from the disabled-exceptions Catch2:
 
@@ -156,8 +157,9 @@ Two caveats follow from the disabled-exceptions Catch2:
   test that reaches a throwing third-party backend therefore live in the
   separate **exceptions carve-out tree** (`CTRLPP_TESTS_WITH_EXCEPTIONS=ON`, the
   `exceptions` preset), never deleted, and are built+run by the `exceptions` CI
-  job.  The library itself no longer offers a throwing entry point to move into
-  that tree: construction and solver setup are fallible in every build mode.
+  job.  Converted construction and solver setup stay fallible in both trees,
+  but `ctrlpp::expected::value()` remains a checked convenience whose bad-access
+  path throws in this exceptions carve-out.
 - The OSQP and NLopt solver backends throw internally, so every OSQP/NLopt-linked
   test and comparison bench requires the exceptions build; argmin's static NMPC
   path is throw-free and runs in the default `-fno-exceptions` tree.
@@ -172,6 +174,10 @@ valueless-by-exception machinery), `operator*` and `error()` are unchecked, and 
 only throw site — `value()` on an error — is gated behind `__cpp_exceptions` with a
 `std::abort()` fallback, so the header compiles clean under `-fno-exceptions -fno-rtti`
 and is built and exercised by the default `dev` tree, not only the exceptions tree.
+This does not make `value()` exception-free: erroneous access throws when
+exceptions are enabled and aborts when they are disabled.  Callers must branch on
+the `expected` before using `operator*` or `operator->`; code that needs a checked
+accessor must keep `value()` out of a real-time failure path.
 
 It is a faithful-API result type, **not** bit-for-bit `std::expected`: the owned copy
 and move special members make it non-trivially-copyable even when `T` and `E` are both
