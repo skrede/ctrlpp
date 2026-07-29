@@ -269,6 +269,37 @@ TEST_CASE("L1 projection substituting a bound for an overflowed adaptation is re
     CHECK(ctrl.health() == ctrlpp::l1_health::projection_clamped_non_finite);
 }
 
+TEST_CASE("L1 unbounded projection rejects overflow without committing it",
+          "[l1][hardening][negative]")
+{
+    auto cfg = make_siso_config();
+    cfg.gamma << std::numeric_limits<double>::max();
+    cfg.theta_min << -std::numeric_limits<double>::infinity();
+    cfg.theta_max << std::numeric_limits<double>::infinity();
+    auto ctrl = make_siso_controller(cfg, 15.0, 100.0);
+
+    auto const x_hat_before = ctrl.x_hat();
+    auto const sigma_before = ctrl.sigma_hat();
+    auto const error_before = ctrl.tracking_error();
+
+    auto const rejected =
+        ctrl.evaluate(vec1(-std::numeric_limits<double>::max()), vec1(1.0));
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error() == ctrlpp::l1_step_error::non_finite_result);
+    CHECK(ctrl.x_hat() == x_hat_before);
+    CHECK(ctrl.sigma_hat() == sigma_before);
+    CHECK(ctrl.tracking_error() == error_before);
+    CHECK(ctrl.health() == ctrlpp::l1_health::ok);
+
+    auto reference = make_siso_controller(cfg, 15.0, 100.0);
+    auto const recovered =
+        ctrlpp::test::commanded(ctrl.evaluate(vec1(0.0), vec1(1.0)));
+    auto const expected =
+        ctrlpp::test::commanded(reference.evaluate(vec1(0.0), vec1(1.0)));
+    CHECK(recovered == expected);
+    CHECK(ctrl.sigma_hat() == reference.sigma_hat());
+}
+
 TEST_CASE("L1 first cycle from rest is the feedforward gain through the filter's leading coefficient",
           "[l1][hardening][precision]")
 {

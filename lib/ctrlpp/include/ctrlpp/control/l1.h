@@ -41,11 +41,10 @@ namespace ctrlpp
 ///                                 is upstream of the adaptation, so it is
 ///                                 named ahead of it.
 ///  * non_finite_adaptation      : the carried uncertainty estimate is already
-///                                 non-finite. Reaching this state means a NaN
-///                                 survived the projection (see `evaluate` for
-///                                 why an infinity would not have), so it is
-///                                 specifically a NaN diagnosis and points at
-///                                 the adaptation gain or the initial estimate.
+///                                 non-finite. A completed `evaluate` never
+///                                 commits such an estimate, so this diagnosis
+///                                 points at invalid initialization or external
+///                                 corruption.
 ///  * non_finite_state           : the supplied plant state has a non-finite
 ///                                 component. It enters the prediction error
 ///                                 and hence the adaptation. The repair is
@@ -56,12 +55,17 @@ namespace ctrlpp
 ///                                 in whatever generates the command, a
 ///                                 different subsystem from the one that
 ///                                 measures the plant.
+///  * non_finite_result          : finite inputs produced a predictor,
+///                                 adaptation, raw command, or filtered command
+///                                 outside the representable range. No candidate
+///                                 state is committed.
 enum class l1_step_error
 {
     non_finite_predictor_state,
     non_finite_adaptation,
     non_finite_state,
     non_finite_reference,
+    non_finite_result,
 };
 
 /// @brief Persistent state-health status of an `l1_controller`.
@@ -172,34 +176,34 @@ public:
     /// is false. Two consequences follow, and they differ:
     ///
     ///  * A NaN estimate is returned unchanged by both halves, so the
-    ///    projection does NOT sanitize it. It is carried into the next cycle,
-    ///    which rejects with `non_finite_adaptation`.
+    ///    projection does NOT sanitize it. The candidate is rejected before
+    ///    any controller state is committed.
     ///  * An infinite estimate IS replaced -- by `theta_max` or `theta_min`,
     ///    but only when that bound is itself finite. The default configuration
     ///    leaves the bounds at -/+ infinity, and against an infinite bound the
     ///    comparison is false again and the infinity survives.
     ///
-    /// The second case is the dangerous one, and it is reachable with entirely
-    /// finite arguments: a large adaptation gain against a large prediction
-    /// error overflows to an infinity, the projection pins it to a legitimate
-    /// bound, and the controller then emits a finite, in-range command computed
-    /// from an estimate that carries no information. Nothing downstream can
-    /// detect that. So the raw update is tested for finiteness BEFORE the clamp
-    /// and `health()` latches `projection_clamped_non_finite` when it fails,
-    /// which is the only way the caller can learn it. The cycle still succeeds,
-    /// because it did produce the command the algorithm prescribes; the status
-    /// is what says that command should not be trusted.
+    /// With finite configured bounds, a raw infinity can therefore become a
+    /// finite command. The cycle succeeds but `health()` latches
+    /// `projection_clamped_non_finite`, which tells the caller not to trust the
+    /// substituted estimate. With the default unbounded projection, the
+    /// infinity survives the clamp and the whole candidate is rejected
+    /// atomically as `non_finite_result`.
     auto evaluate(const state_type& x, const input_type& r) -> expected<input_type, l1_step_error>
     {
         if(const auto step = check_step(x, r); !step)
             return unexpected(latch_health(step.error()));
 
         // 1. State predictor: x_hat = A_m * x_hat + B * (u_prev + sigma_hat)
-        m_x_hat = propagate(m_cfg.predictor_model, m_x_hat,
-                            (m_u_prev + m_sigma_hat).eval());
+        auto next_x_hat = propagate(m_cfg.predictor_model, m_x_hat,
+                                    (m_u_prev + m_sigma_hat).eval());
+        if(!next_x_hat.allFinite())
+            return unexpected(l1_step_error::non_finite_result);
 
         // 2. Prediction error (Hovakimyan convention)
-        m_x_tilde = m_x_hat - x;
+        auto next_x_tilde = (next_x_hat - x).eval();
+        if(!next_x_tilde.allFinite())
+            return unexpected(l1_step_error::non_finite_result);
 
         // 3. Adaptation with projection (elementwise clamp). The raw update is
         // formed first so its finiteness can be observed: the projection is
@@ -207,19 +211,32 @@ public:
         // substitution is invisible in every value downstream of it.
         input_type sigma_raw = m_sigma_hat;
         sigma_raw.noalias() -= m_cfg.gamma
-            * (m_cfg.predictor_model.B.transpose() * m_x_tilde);
-        if(!sigma_raw.allFinite())
-            note_health(l1_health::projection_clamped_non_finite);
-        m_sigma_hat = sigma_raw.cwiseMax(m_cfg.theta_min).cwiseMin(m_cfg.theta_max);
+            * (m_cfg.predictor_model.B.transpose() * next_x_tilde);
+        auto next_sigma_hat =
+            sigma_raw.cwiseMax(m_cfg.theta_min).cwiseMin(m_cfg.theta_max).eval();
+        if(!next_sigma_hat.allFinite())
+            return unexpected(l1_step_error::non_finite_result);
+        bool const projection_substituted_non_finite = !sigma_raw.allFinite();
 
         // 4. Raw control: reference feedforward minus uncertainty estimate
-        auto u_raw = (m_k_r * r - m_sigma_hat).eval();
+        auto u_raw = (m_k_r * r - next_sigma_hat).eval();
+        if(!u_raw.allFinite())
+            return unexpected(l1_step_error::non_finite_result);
 
         // 5. Low-pass filter (L1 robustification mechanism)
-        auto u_filtered = m_filter.process(u_raw);
+        Filter next_filter = m_filter;
+        auto u_filtered = next_filter.process(u_raw);
+        if(!u_filtered.allFinite())
+            return unexpected(l1_step_error::non_finite_result);
 
-        // 6. Store for next predictor step
+        // 6. Commit the complete finite candidate.
+        m_x_hat = next_x_hat;
+        m_x_tilde = next_x_tilde;
+        m_sigma_hat = next_sigma_hat;
+        m_filter = std::move(next_filter);
         m_u_prev = u_filtered;
+        if(projection_substituted_non_finite)
+            note_health(l1_health::projection_clamped_non_finite);
 
         return u_filtered;
     }
