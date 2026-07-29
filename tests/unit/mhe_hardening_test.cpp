@@ -8,14 +8,10 @@
 //
 //  * A poisoned measurement is REFUSED by the embedded filter, and the estimator
 //    forwards that verdict verbatim on the failure channel, naming the operand.
-//    It performs no window shift at all, so the carried estimate and covariance
-//    are BITWISE what they were before the poisoned sample arrived. That is what
-//    makes the failure channel necessary rather than optional: `state()` still
-//    returns a perfectly plausible number and nothing about its value
-//    distinguishes it from a fresh one. The diagnostics aggregate is asserted
-//    UNCHANGED across the refusal, because it describes the last step that
-//    succeeded -- the same step `state()` describes. A later valid sample is
-//    accepted normally, so the refusal does not latch.
+//    It invalidates the fixed-step window but keeps the prediction for the
+//    input the plant already received. The diagnostics aggregate is unchanged
+//    across the refusal because it describes the last successful update. The
+//    estimator then uses the embedded filter until a coherent horizon refills.
 //  * During the fill-up the estimator delegates to its embedded filter, and it
 //    says so: the fallback flag is true for exactly the first N updates and
 //    false from the one that first fills the window. That is the documented
@@ -148,7 +144,6 @@ TEST_CASE("MHE with NaN in measurement noise", "[mhe][hardening][negative]")
     }
     REQUIRE(estimator.is_initialized());
 
-    const ctrlpp::Vector<double, NX> estimate_before = estimator.state();
     const ctrlpp::solve_status status_before = estimator.diagnostics().status;
     const bool fallback_before = estimator.diagnostics().used_ekf_fallback;
     const double cost_before = estimator.diagnostics().cost;
@@ -169,14 +164,11 @@ TEST_CASE("MHE with NaN in measurement noise", "[mhe][hardening][negative]")
     REQUIRE_FALSE(refused.has_value());
     CHECK(refused.error() == ctrlpp::ekf_update_error::non_finite_measurement);
 
-    // The whole step was refused: the windows are the estimator's memory, and
-    // admitting a sample the embedded filter declined would leave the horizon
-    // holding data no estimate was ever formed from. So the estimate and the
-    // covariance are BITWISE what they were, and the caller is looking at a
-    // STALE number that no assertion on its value could distinguish from a
-    // fresh one. That is exactly why the refusal has to be returned.
-    CHECK(estimator.state() == estimate_before);
+    // The input was already applied and its prediction remains current, but the
+    // fixed-step window cannot express the missing measurement and is reset.
+    CHECK(estimator.state().allFinite());
     CHECK(estimator.covariance() == covariance_before);
+    CHECK_FALSE(estimator.is_initialized());
 
     // And the disposition channel says nothing about it, which is the point of
     // having two channels: it still describes the last step that SUCCEEDED, the
@@ -196,15 +188,16 @@ TEST_CASE("MHE with NaN in measurement noise", "[mhe][hardening][negative]")
     CHECK(fallback_before == false);
     CHECK_FALSE(refused.has_value());
 
-    // The refusal does not latch: the next valid sample is solved normally.
+    // The refusal does not latch, but the invalidated window must refill before
+    // another optimization is allowed.
     estimator.predict(u);
     ctrlpp::Vector<double, NY> z_good;
     z_good << 0.7;
     REQUIRE(estimator.update(z_good).has_value());
 
     CHECK(estimator.diagnostics().status == ctrlpp::solve_status::optimal);
-    CHECK_FALSE(estimator.diagnostics().used_ekf_fallback);
-    CHECK(estimator.state() != estimate_before);
+    CHECK(estimator.diagnostics().used_ekf_fallback);
+    CHECK_FALSE(estimator.is_initialized());
 }
 
 TEST_CASE("MHE with inconsistent measurements", "[mhe][hardening][negative]")

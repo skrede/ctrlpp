@@ -161,32 +161,18 @@ public:
     /// refuses -- and a second enumeration would be free to drift from the one
     /// that actually decides.
     ///
-    /// A refusal governs the whole step. The windows are the estimator's memory,
-    /// so admitting a sample the filter refused would leave the horizon holding
-    /// data no estimate was ever formed from. The step is therefore a no-op: no
-    /// window shifts and no counter increments. What makes the failure channel
-    /// necessary rather than optional is that `state()` still returns the
-    /// estimate the last ACCEPTED measurement produced -- a perfectly plausible
-    /// number that a caller cannot tell from a fresh one by looking at it.
-    ///
-    /// KNOWN LIMITATION, stated here because the return value is what lets a
-    /// caller act on it. The window formulation assumes N+1 measurements at a
-    /// uniform step, and a refused sample leaves a gap it cannot express: the
-    /// transition bridging the gap is driven by two applied inputs where the
-    /// problem has room for one. For the following N steps the window solve
-    /// therefore fits a trajectory the model does not generate, and it reports
-    /// an ordinary successful solve while doing so. Measured on a noiseless
-    /// second-order fixture with a strongly time-varying input, one refused
-    /// sample moves the estimate from 2.3e-6 to 0.99 for five steps before it
-    /// scrolls out of the horizon. Expressing the gap needs a per-sample
-    /// measurement mask or a composed bridging input, which is a change to the
-    /// formulation rather than to this reporting channel.
+    /// A refusal cannot undo the prediction: its input was already applied to
+    /// the plant, so the embedded filter keeps that finite prior. The fixed-step
+    /// window cannot represent the missing measurement, however, and must not
+    /// retain the input beside an older measurement history. The estimator
+    /// therefore invalidates the complete window and uses the embedded filter
+    /// until N new accepted measurements refill a coherent horizon.
     ///
     /// `diagnostics()` stays what it is: a report on a step that SUCCEEDED --
     /// which of the two estimators produced the estimate, and how the solve
-    /// went. It is not the failure channel and no longer has to serve as one, so
-    /// after a refusal it still describes the last accepted measurement, exactly
-    /// as `state()` does. The two accessors always describe the same step.
+    /// went. After a refusal it still describes the last accepted measurement,
+    /// while `state()` exposes the current predicted prior. The return value is
+    /// what distinguishes that uncorrected prior from an accepted estimate.
     auto update(const output_vector_t& z) -> ctrlpp::expected<void, ekf_update_error>
     {
         // Capture the predicted (prior) estimate at the current time, before the
@@ -198,7 +184,10 @@ public:
         const cov_matrix_t prior_cov = m_ekf.covariance();
 
         if(const auto stepped = m_ekf.update(z); !stepped)
+        {
+            invalidate_window_after_refusal();
             return ctrlpp::unexpected(stepped.error());
+        }
 
         std::rotate(m_prior_state_window.begin(), m_prior_state_window.begin() + 1, m_prior_state_window.end());
         std::rotate(m_prior_cov_window.begin(), m_prior_cov_window.begin() + 1, m_prior_cov_window.end());
@@ -233,6 +222,20 @@ public:
     const mhe_diagnostics<Scalar>& diagnostics() const { return m_diagnostics; }
 
 private:
+    void invalidate_window_after_refusal()
+    {
+        auto const state = m_ekf.state();
+        auto const covariance = m_ekf.covariance();
+        m_x_window.fill(state);
+        m_u_window.fill(input_vector_t::Zero());
+        m_z_window.fill(output_vector_t::Zero());
+        m_prior_state_window.fill(state);
+        m_prior_cov_window.fill(covariance);
+        m_step_count = 0;
+        m_update_count = 0;
+        initialize_warm_start(state);
+    }
+
     void initialize_warm_start(const state_vector_t& x0)
     {
         bool has_box = m_x_min.has_value() || m_x_max.has_value();

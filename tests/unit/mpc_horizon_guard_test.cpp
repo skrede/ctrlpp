@@ -22,7 +22,11 @@
 #include "ctrlpp/mpc.h"
 #include "ctrlpp/nmhe.h"
 #include "ctrlpp/nmpc.h"
+
+#include "ctrlpp/estimation/ekf.h"
+
 #include "ctrlpp/model/state_space.h"
+
 #include "ctrlpp/mpc/nlp_formulation.h"
 
 #include "hardening_helpers.h"
@@ -35,8 +39,8 @@
 
 #include <limits>
 #include <memory>
-#include <variant>
 #include <cstddef>
+#include <variant>
 
 namespace
 {
@@ -185,6 +189,67 @@ void require_nonlinear_estimator_rejects_nonfinite_result()
     REQUIRE(estimator.state().allFinite());
 }
 
+template <typename Estimator>
+void require_refused_measurement_refills_window(Estimator& estimator)
+{
+    auto reference = ctrlpp::test::constructed(
+        ctrlpp::ekf<double, NX, NU, NY,
+                    window_dynamics,
+                    window_measurement>::create(
+            window_dynamics{},
+            window_measurement{},
+            ctrlpp::ekf_config<double, NX, NU, NY>{}));
+
+    Eigen::Vector2d true_state = Eigen::Vector2d::Zero();
+    auto advance = [&](std::size_t step) {
+        Eigen::Matrix<double, 1, 1> input;
+        auto const magnitude =
+            static_cast<double>((step + 1) * (step + 1));
+        input << ((step % 2 == 0) ? magnitude : -magnitude);
+        true_state = window_dynamics{}(true_state, input);
+        Eigen::Matrix<double, 1, 1> measurement;
+        measurement << true_state(0);
+
+        estimator.predict(input);
+        reference.predict(input);
+        REQUIRE(estimator.update(measurement).has_value());
+        REQUIRE(reference.update(measurement).has_value());
+    };
+
+    for(std::size_t step = 0; step <= window; ++step)
+        advance(step);
+    REQUIRE(estimator.is_initialized());
+
+    Eigen::Matrix<double, 1, 1> refused_input;
+    refused_input << 100.0;
+    true_state = window_dynamics{}(true_state, refused_input);
+    estimator.predict(refused_input);
+    reference.predict(refused_input);
+
+    auto bad_measurement =
+        Eigen::Matrix<double, 1, 1>::Constant(
+            std::numeric_limits<double>::quiet_NaN());
+    REQUIRE_FALSE(estimator.update(bad_measurement).has_value());
+    REQUIRE_FALSE(reference.update(bad_measurement).has_value());
+    REQUIRE_FALSE(estimator.is_initialized());
+    REQUIRE(estimator.state() == reference.state());
+    REQUIRE(estimator.covariance() == reference.covariance());
+
+    for(std::size_t step = 0; step < window; ++step)
+    {
+        advance(window + 2 + step);
+        REQUIRE(estimator.diagnostics().used_ekf_fallback);
+        REQUIRE_FALSE(estimator.is_initialized());
+        REQUIRE(estimator.state() == reference.state());
+        REQUIRE(estimator.covariance() == reference.covariance());
+    }
+
+    advance(2 * window + 2);
+    REQUIRE(estimator.is_initialized());
+    REQUIRE_FALSE(estimator.diagnostics().used_ekf_fallback);
+    REQUIRE(estimator.state().allFinite());
+}
+
 template <typename Result>
 void require_moving_horizon_configuration_error(
     const Result& result,
@@ -197,6 +262,30 @@ void require_moving_horizon_configuration_error(
     REQUIRE(*error == expected);
 }
 
+}
+
+TEST_CASE("Refused moving-horizon measurements invalidate and refill the window",
+          "[mhe][nmhe][window][hardening]")
+{
+    SECTION("linear estimator")
+    {
+        auto estimator = ctrlpp::test::constructed(
+            linear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+                window_dynamics{},
+                window_measurement{},
+                ctrlpp::mhe_config<double, NX, NU, NY, window>{}));
+        require_refused_measurement_refills_window(estimator);
+    }
+
+    SECTION("nonlinear estimator")
+    {
+        auto estimator = ctrlpp::test::constructed(
+            nonlinear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+                window_dynamics{},
+                window_measurement{},
+                ctrlpp::nmhe_config<double, NX, NU, NY, window>{}));
+        require_refused_measurement_refills_window(estimator);
+    }
 }
 
 TEST_CASE("Moving-horizon factories reject singular formulation weights",

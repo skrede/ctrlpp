@@ -87,7 +87,7 @@ Incorporates a new measurement, or reports why it could not. During fill-up (few
 
 **Two channels, and which one carries what.** A measurement the embedded filter cannot use is a FAILURE: the step did not happen, and `update` returns the filter's own `ekf_update_error` verbatim rather than restating the same three conditions under a second name that could drift from the one that decides. Everything else is a DISPOSITION on a step that succeeded -- which of the two estimators produced the estimate, and how the solve went -- and that is what `diagnostics()` carries.
 
-A refusal is a complete no-op: no window shifts, no counter increments, and the input the last `predict` supplied is not committed to the horizon either. `state()` therefore still returns the estimate the last ACCEPTED measurement produced, which is a perfectly plausible number that nothing about its value distinguishes from a fresh one -- and that is precisely why the refusal is returned instead of being encoded in a status flag. `diagnostics()` likewise still describes that last accepted step, so the two accessors always describe the same step.
+A refusal cannot undo the preceding prediction: that input was applied to the plant, so `state()` exposes the embedded filter's predicted prior. The missing measurement does invalidate the fixed-step horizon. The estimator clears its input, measurement, prior, and warm-start windows, sets `is_initialized()` to false, and uses the embedded EKF for the next N accepted measurements. Optimization resumes only after a coherent horizon has been refilled. `diagnostics()` continues to describe the last successful update until the next accepted measurement; the failed `update` return is what identifies the current state as an uncorrected prior.
 
 An ill-shaped solver result falls back the same way. A solver may report an accepted status and still return a decision vector shorter than the NLP the estimator posed; the estimator compares the reported length against that dimension before the extraction reads the result, and on a violation engages the EKF fallback instead of writing the window. The estimate is still produced -- by the fallback rather than by the window solve -- so this is a disposition and not a failure: `diagnostics().used_ekf_fallback` is `true` and `diagnostics().status` is `solve_status::invalid_backend_result`, which names this condition specifically rather than collapsing it into the general `solve_status::error` a non-optimal solve reports.
 
@@ -199,7 +199,7 @@ int main()
         Eigen::Matrix<double, 1, 1> z;
         z << x_true[0] + noise(rng);
         if(!estimator.update(z))
-            continue; // the measurement was refused; the estimate is the last accepted one
+            continue; // predicted prior retained; horizon refill begins
 
         x_true = dynamics(x_true, u);
 
