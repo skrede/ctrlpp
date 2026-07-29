@@ -80,16 +80,20 @@ class online_planner_2nd
     /// too large to stop in the available distance, is braked to rest first and
     /// the move is replanned from the stopping point.
     ///
-    /// The commanded shape is therefore not always the one realized, and this
-    /// returns nothing: which profile was built is read back from
-    /// `diagnostics()`, where `disposition` names the branch taken and
+    /// A non-finite target is rejected before any member changes. For a finite
+    /// target, the commanded shape is not always the one realized: which
+    /// profile was built is read back from `diagnostics()`, where `disposition`
+    /// names the branch taken and
     /// `substitution_reason` names the condition that selected it. The motion
     /// respects every limit either way; what changes is the time it takes, which
     /// `planned_duration` and `brake_duration` are there to account for.
     ///
     /// @cite biagiotti2009 -- Sec. 4.6.2
-    void update(Scalar target)
+    auto update(Scalar target) -> ctrlpp::expected<void, trajectory_error>
     {
+        if(!std::isfinite(target))
+            return ctrlpp::unexpected(trajectory_error::non_finite_input);
+
         target_ = target;
         t_ref_ = t_last_;
 
@@ -98,6 +102,7 @@ class online_planner_2nd
         v_ref_ = v_;
 
         compute_profile();
+        return {};
     }
 
     /// @brief Evaluate trajectory at time t.
@@ -246,7 +251,7 @@ class online_planner_2nd
         auto const h_signed = target_ - q_ref_;
         auto constexpr eps = static_cast<Scalar>(1e-12);
 
-        if (std::abs(h_signed) < eps && std::abs(v_ref_) < eps) {
+        if (h_signed == Scalar{0} && std::abs(v_ref_) < eps) {
             set_settled_profile();
             diagnostics_ = online_planner_diagnostics<Scalar>{
                 .disposition = online_planner_disposition::settled,
@@ -309,7 +314,7 @@ class online_planner_2nd
         sigma_ = (h >= Scalar{0}) ? Scalar{1} : Scalar{-1};
         auto const abs_h = std::abs(h);
 
-        if (abs_h < std::numeric_limits<Scalar>::epsilon()) {
+        if (abs_h == Scalar{0}) {
             v_v_ = Scalar{0};
             a_a_ = Scalar{0};
             a_d_ = Scalar{0};

@@ -34,7 +34,8 @@ int main()
     };
     auto planner = ctrlpp::bench::built_or_exit(
         ctrlpp::online_planner_3rd<double>::create(planner_cfg), "planner");
-    planner.update(1.0);
+    if(!planner.update(1.0).has_value())
+        return 1;
     double t_sample = 0.01;
 
     ankerl::nanobench::Bench bench;

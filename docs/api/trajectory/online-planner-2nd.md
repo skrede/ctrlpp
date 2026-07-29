@@ -46,12 +46,16 @@ static auto create(config const& cfg)
 ### update
 
 ```cpp
-void update(Scalar target);
+auto update(Scalar target) -> ctrlpp::expected<void, trajectory_error>;
 ```
 
 Set a new target position and replan from the current state. Computes a time-optimal trapezoidal profile from (q, v) to (target, 0) respecting `v_max` and `a_max`. A velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and the move is replanned from the stopping point.
 
-The commanded shape is therefore not always the one realized. `update` returns nothing, so which profile was built is read back from [`diagnostics()`](#diagnostics). The motion respects every limit either way; what changes is the time it takes.
+The command is rejected with `trajectory_error::non_finite_input` before any
+planner state changes when the target is NaN or infinite. For an accepted
+target, which profile was built is read back from
+[`diagnostics()`](#diagnostics). The motion respects every limit either way;
+what changes is the time it takes.
 
 ### diagnostics
 
@@ -154,7 +158,8 @@ int main()
     if (!result.has_value())
         return 1;
     auto& planner = *result;
-    planner.update(10.0);  // move to position 10
+    if (!planner.update(10.0).has_value())
+        return 1;
 
     constexpr double dt = 0.001;
     for (double t = 0.0; !planner.is_settled(); t += dt) {

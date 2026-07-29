@@ -27,14 +27,17 @@ int main()
 
     // Target change schedule
     double current_target = 5.0;
-    planner.update(current_target);
+    if (!planner.update(current_target).has_value())
+    {
+        std::cerr << "invalid target\n";
+        return 1;
+    }
 
     // A retarget mid-motion does not always produce the commanded profile: a
     // reversal or an overshoot is braked to rest and replanned from the stopping
-    // point instead. update() returns nothing, so the column below reads the
-    // disposition back from diagnostics() and reports which profile the planner
-    // actually built. The motion respects the same limits either way; what
-    // changes is how long the move takes.
+    // point instead. A finite accepted target still reports the resulting
+    // disposition through diagnostics(). The motion respects the same limits
+    // either way; what changes is how long the move takes.
     std::cout << "time,position,velocity,target,substituted\n";
 
     for (double t = 0.0; t <= total_time; t += dt)
@@ -43,12 +46,14 @@ int main()
         if (t >= 6.0 && current_target != 8.0)
         {
             current_target = 8.0;
-            planner.update(current_target);
+            if (!planner.update(current_target).has_value())
+                return 1;
         }
         else if (t >= 3.0 && t < 6.0 && current_target != 2.0)
         {
             current_target = 2.0;
-            planner.update(current_target);
+            if (!planner.update(current_target).has_value())
+                return 1;
         }
 
         auto const pt = planner.sample(t);

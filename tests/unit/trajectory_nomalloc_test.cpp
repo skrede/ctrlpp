@@ -253,14 +253,14 @@ TEST_CASE("online_planner_2nd update and sample perform zero heap allocation",
     REQUIRE(created.has_value());
     auto& planner = *created;
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
     planner.sample(0.5);
 
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
         {
-            planner.update((i % 2 == 0) ? 5.0 : -5.0);
+            REQUIRE(planner.update((i % 2 == 0) ? 5.0 : -5.0).has_value());
             planner.sample(0.01 * static_cast<double>(i));
         }
     });
@@ -395,14 +395,14 @@ TEST_CASE("online_planner_3rd update and sample perform zero heap allocation",
     REQUIRE(created.has_value());
     auto& planner = *created;
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
     planner.sample(0.5);
 
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
         {
-            planner.update((i % 2 == 0) ? 5.0 : -5.0);
+            REQUIRE(planner.update((i % 2 == 0) ? 5.0 : -5.0).has_value());
             planner.sample(0.01 * static_cast<double>(i));
         }
     });

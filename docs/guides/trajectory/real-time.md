@@ -33,7 +33,9 @@ if (!planner_result.has_value()) {
 }
 auto& planner = *planner_result;
 
-planner.update(10.0);  // set a new target at any time; recomputes the profile
+if (!planner.update(10.0).has_value()) {
+    return 1;
+}
 
 double dt = 0.01;  // 100 Hz control loop
 for (int i = 0; i < 500; ++i) {
@@ -49,8 +51,8 @@ for a runnable version.
 ## Target Changes Mid-Motion
 
 A new target set while the planner is still moving does not always produce the
-profile it was asked for, and `update()` returns nothing to say so. There are
-two outcomes:
+profile it was asked for. A non-finite target is refused through `update()`'s
+result before state changes; a finite accepted target has two outcomes:
 
 1. **The commanded profile.** The current velocity is carried straight through
    into the new move, with no full-stop dip. This is what a same-direction
@@ -66,9 +68,13 @@ disposition:
 
 ```cpp
 // Change target while moving; the planner handles it safely
-planner.update(10.0);
+if (!planner.update(10.0).has_value()) {
+    return 1;
+}
 // ... some time later, before reaching 10.0 ...
-planner.update(-5.0);  // a reversal at speed: brakes to zero, then heads to -5.0
+if (!planner.update(-5.0).has_value()) {
+    return 1;
+}
 
 auto const& diagnostics = planner.diagnostics();
 if (diagnostics.disposition

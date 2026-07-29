@@ -31,7 +31,7 @@ TEST_CASE("OnlinePlanner2nd: step response settles", "[traj][online_planner_2nd]
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
 
     // Sample far enough in the future that the planner should have settled
     auto const pt = planner.sample(100.0);
@@ -40,12 +40,55 @@ TEST_CASE("OnlinePlanner2nd: step response settles", "[traj][online_planner_2nd]
     REQUIRE(planner.is_settled());
 }
 
+TEST_CASE("OnlinePlanner2nd: non-finite targets are rejected without mutation",
+          "[traj][online_planner_2nd][negative]")
+{
+    auto planner = make_planner<double>({.v_max = 1.0, .a_max = 1.0});
+
+    auto const rejected =
+        planner.update(std::numeric_limits<double>::quiet_NaN());
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error() == ctrlpp::trajectory_error::non_finite_input);
+
+    auto const unchanged = planner.sample(0.0);
+    CHECK(unchanged.position(0) == 0.0);
+    CHECK(unchanged.velocity(0) == 0.0);
+    CHECK(unchanged.acceleration(0) == 0.0);
+    CHECK(planner.is_settled());
+
+    REQUIRE(planner.update(1.0).has_value());
+    CHECK(planner.sample(10.0).position(0) == 1.0);
+}
+
+TEST_CASE("OnlinePlanner2nd: nonzero sub-picometer moves remain bounded",
+          "[traj][online_planner_2nd][precision]")
+{
+    auto planner = make_planner<double>({.v_max = 1.0, .a_max = 1.0});
+    constexpr double target = 5e-13;
+
+    REQUIRE(planner.update(target).has_value());
+    auto const duration = planner.diagnostics().planned_duration;
+    REQUIRE(duration > 0.0);
+
+    auto const start = planner.sample(0.0);
+    CHECK(start.position(0) == 0.0);
+    auto const middle = planner.sample(duration / 2.0);
+    CHECK(middle.position(0) > 0.0);
+    CHECK(middle.position(0) < target);
+    CHECK(std::abs(middle.velocity(0)) <= 1.0);
+    CHECK(std::abs(middle.acceleration(0)) <= 1.0);
+
+    auto const end = planner.sample(duration);
+    CHECK(end.position(0) == target);
+    CHECK(end.velocity(0) == 0.0);
+}
+
 // -- Test 2: Velocity never exceeds v_max --------------------------------------
 TEST_CASE("OnlinePlanner2nd: velocity constraint", "[traj][online_planner_2nd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
 
     double constexpr tol = 1e-6;
     for (int i = 0; i <= 1000; ++i) {
@@ -60,7 +103,7 @@ TEST_CASE("OnlinePlanner2nd: acceleration constraint", "[traj][online_planner_2n
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
 
     double constexpr tol = 1e-6;
     for (int i = 0; i <= 1000; ++i) {
@@ -75,14 +118,14 @@ TEST_CASE("OnlinePlanner2nd: mid-motion target change", "[traj][online_planner_2
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
 
     // Sample partway to build up state
     auto const mid = planner.sample(0.5);
     REQUIRE(mid.position[0] > 0.0);
 
     // Change target mid-motion
-    planner.update(5.0);
+    REQUIRE(planner.update(5.0).has_value());
 
     // Eventually settles to new target
     auto const pt = planner.sample(100.0);
@@ -104,7 +147,7 @@ TEST_CASE("OnlinePlanner2nd: negative displacement", "[traj][online_planner_2nd]
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
-    planner.update(-5.0);
+    REQUIRE(planner.update(-5.0).has_value());
 
     auto const pt = planner.sample(100.0);
     REQUIRE_THAT(pt.position[0], WithinAbs(-5.0, 1e-6));
@@ -120,7 +163,7 @@ TEST_CASE("OnlinePlanner2nd: zero displacement", "[traj][online_planner_2nd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
-    planner.update(0.0);
+    REQUIRE(planner.update(0.0).has_value());
 
     REQUIRE(planner.is_settled());
     auto const pt = planner.sample(0.0);
@@ -136,7 +179,7 @@ TEST_CASE("OnlinePlanner2nd: is_settled transitions", "[traj][online_planner_2nd
     // Initially at rest at origin -- settled
     REQUIRE(planner.is_settled());
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
 
     // After update with different target -- not settled (sampling before arrival)
     planner.sample(0.1);
@@ -152,7 +195,7 @@ TEST_CASE("OnlinePlanner2nd: reset", "[traj][online_planner_2nd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
     planner.sample(100.0);
 
     planner.reset(3.0);
@@ -167,7 +210,7 @@ TEST_CASE("OnlinePlanner2nd: trapezoidal profile shape", "[traj][online_planner_
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
 
     // During acceleration phase: velocity increases, acceleration is positive
     auto const early = planner.sample(0.1);
@@ -186,7 +229,7 @@ TEST_CASE("OnlinePlanner2nd: float type", "[traj][online_planner_2nd]")
 {
     auto planner = make_planner<float>({.v_max = 5.0f, .a_max = 10.0f});
 
-    planner.update(10.0f);
+    REQUIRE(planner.update(10.0f).has_value());
     auto const pt = planner.sample(100.0f);
     REQUIRE_THAT(pt.position[0], WithinAbs(10.0, 1e-3));
 }
@@ -205,7 +248,7 @@ TEST_CASE("OnlinePlanner2nd: same-direction retarget keeps velocity",
     auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max});
 
     // Command a far target and cruise up to v_max.
-    planner.update(100.0);
+    REQUIRE(planner.update(100.0).has_value());
 
     double constexpr dt = 0.01;
     double constexpr t_retarget = 2.0;
@@ -221,7 +264,7 @@ TEST_CASE("OnlinePlanner2nd: same-direction retarget keeps velocity",
     REQUIRE_THAT(at_retarget.acceleration[0], WithinAbs(0.0, 1e-6));
 
     // Retarget farther in the same direction (non-overshoot, same sign).
-    planner.update(200.0);
+    REQUIRE(planner.update(200.0).has_value());
 
     // Immediately after the retarget the planner should keep cruising, not brake.
     auto const shortly_after = planner.sample(t_retarget + 1.0);
@@ -293,7 +336,7 @@ TEST_CASE("OnlinePlanner2nd: brake-then-replan substitution is reported",
 
     SECTION("a target behind the motion reports a reversal")
     {
-        planner.update(100.0);
+        REQUIRE(planner.update(100.0).has_value());
 
         double t = 0.0;
         for (int i = 0; i < 200; ++i) {
@@ -307,7 +350,7 @@ TEST_CASE("OnlinePlanner2nd: brake-then-replan substitution is reported",
         double const target = q0 - 10.0;
         CAPTURE(q0, cruising.velocity[0], target);
 
-        planner.update(target);
+        REQUIRE(planner.update(target).has_value());
 
         auto const& diag = planner.diagnostics();
         REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
@@ -340,7 +383,7 @@ TEST_CASE("OnlinePlanner2nd: brake-then-replan substitution is reported",
 
     SECTION("a target inside the stopping distance reports an overshoot")
     {
-        planner.update(100.0);
+        REQUIRE(planner.update(100.0).has_value());
 
         double t = 0.0;
         for (int i = 0; i < 200; ++i) {
@@ -357,7 +400,7 @@ TEST_CASE("OnlinePlanner2nd: brake-then-replan substitution is reported",
         double const target = q0 + stop_dist / 2.0;
         CAPTURE(q0, v0, stop_dist, target);
 
-        planner.update(target);
+        REQUIRE(planner.update(target).has_value());
 
         auto const& diag = planner.diagnostics();
         REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
@@ -375,7 +418,7 @@ TEST_CASE("OnlinePlanner2nd: an ordinary move reports the commanded profile",
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
     planner.reset(0.0);
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
 
     auto const& diag = planner.diagnostics();
     REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::commanded_profile);
@@ -393,7 +436,7 @@ TEST_CASE("OnlinePlanner2nd: a settled command reports a zero-duration plan",
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
     planner.reset(3.0);
 
-    planner.update(3.0);
+    REQUIRE(planner.update(3.0).has_value());
 
     auto const& diag = planner.diagnostics();
     REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::settled);
@@ -421,10 +464,10 @@ TEST_CASE("OnlinePlanner2nd: never reports the carry-velocity reason",
         // branch of compute_profile is commanded at some point in the sweep.
         double const q = planner.sample(t).position[0];
         switch (i % 4) {
-        case 0: planner.update(q + 50.0); break;
-        case 1: planner.update(q + 0.05); break;
-        case 2: planner.update(q - 20.0); break;
-        default: planner.update(q); break;
+        case 0: REQUIRE(planner.update(q + 50.0).has_value()); break;
+        case 1: REQUIRE(planner.update(q + 0.05).has_value()); break;
+        case 2: REQUIRE(planner.update(q - 20.0).has_value()); break;
+        default: REQUIRE(planner.update(q).has_value()); break;
         }
         REQUIRE(planner.diagnostics().substitution_reason
                 != ctrlpp::online_planner_substitution_reason::carry_velocity_shape_unavailable);
@@ -437,14 +480,14 @@ TEST_CASE("OnlinePlanner2nd: reset clears the substitution report",
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
 
-    planner.update(100.0);
+    REQUIRE(planner.update(100.0).has_value());
     double t = 0.0;
     for (int i = 0; i < 200; ++i) {
         t = 0.01 * static_cast<double>(i);
         planner.sample(t);
     }
     auto const cruising = planner.sample(t);
-    planner.update(cruising.position[0] - 10.0);
+    REQUIRE(planner.update(cruising.position[0] - 10.0).has_value());
     REQUIRE(planner.diagnostics().disposition
             == ctrlpp::online_planner_disposition::braked_and_replanned);
 

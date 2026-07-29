@@ -89,16 +89,20 @@ class online_planner_3rd
     /// first, then replanned. The carry-velocity shape has a domain of its own,
     /// and a commanded state outside it is braked to rest and replanned as well.
     ///
-    /// The commanded shape is therefore not always the one realized, and this
-    /// returns nothing: which profile was built is read back from
-    /// `diagnostics()`, where `disposition` names the branch taken and
+    /// A non-finite target is rejected before any member changes. For a finite
+    /// target, the commanded shape is not always the one realized: which
+    /// profile was built is read back from `diagnostics()`, where `disposition`
+    /// names the branch taken and
     /// `substitution_reason` names the condition that selected it. The motion
     /// respects every limit either way; what changes is the time it takes, which
     /// `planned_duration` and `brake_duration` are there to account for.
     ///
     /// @cite biagiotti2009 -- Sec. 4.6.1
-    void update(Scalar target)
+    auto update(Scalar target) -> ctrlpp::expected<void, trajectory_error>
     {
+        if(!std::isfinite(target))
+            return ctrlpp::unexpected(trajectory_error::non_finite_input);
+
         target_ = target;
         t_ref_ = t_last_;
 
@@ -108,6 +112,7 @@ class online_planner_3rd
         a_ref_ = a_;
 
         compute_profile();
+        return {};
     }
 
     /// @brief Evaluate trajectory at time t.
@@ -244,7 +249,7 @@ class online_planner_3rd
         n_phases_ = 0;
 
         // Check if already settled
-        if (std::abs(target_ - q_ref_) < eps
+        if (target_ == q_ref_
             && std::abs(v_ref_) < eps
             && std::abs(a_ref_) < eps) {
             T_ = Scalar{0};
@@ -544,7 +549,7 @@ class online_planner_3rd
             ++n_phases_;
 
             // Phase 2: constant deceleration (jerk = 0)
-            if (T_const > Scalar(1e-15)) {
+            if (T_const > Scalar{0}) {
                 T_ph_[n_phases_] = T_const;
                 j_ph_[n_phases_] = Scalar{0};
                 ++n_phases_;
@@ -569,8 +574,7 @@ class online_planner_3rd
     /// @brief Append a single constant-jerk phase if its duration is non-negligible.
     void append_phase(Scalar duration, Scalar jerk)
     {
-        auto constexpr eps = static_cast<Scalar>(1e-12);
-        if (duration > eps) {
+        if (duration > Scalar{0}) {
             T_ph_[n_phases_] = duration;
             j_ph_[n_phases_] = jerk;
             ++n_phases_;
@@ -585,10 +589,9 @@ class online_planner_3rd
     /// @cite biagiotti2009 -- Sec. 3.4.3
     void plan_rest_to_rest(Scalar q0)
     {
-        auto constexpr eps = static_cast<Scalar>(1e-12);
         auto const h_signed = target_ - q0;
 
-        if (std::abs(h_signed) < eps) {
+        if (h_signed == Scalar{0}) {
             return;
         }
 

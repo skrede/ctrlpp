@@ -99,7 +99,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // profile, so it is left out of this scan; a later phase broadens the
     // fuzzer domain to that case.
     planner.reset(pos);
-    planner.update(target);
+    if(!planner.update(target).has_value())
+        return 0;
 
     double prev_q = 0.0;
     double prev_v = 0.0;

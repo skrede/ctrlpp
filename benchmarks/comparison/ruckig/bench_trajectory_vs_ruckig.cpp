@@ -39,7 +39,8 @@ int main()
             .j_max = j_max,
         }),
         "ctrlpp_planner");
-    ctrlpp_planner.update(target);
+    if(!ctrlpp_planner.update(target).has_value())
+        return 1;
 
     double t_ctrlpp = 0.0;
     // Warm up

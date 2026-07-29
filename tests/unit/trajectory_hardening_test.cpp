@@ -1001,7 +1001,7 @@ TEST_CASE("Online planner 2nd with instant target flip", "[online_planner_2nd][h
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
-    planner.update(5.0);
+    REQUIRE(planner.update(5.0).has_value());
     planner.sample(0.1);
     planner.sample(0.2);
 
@@ -1009,7 +1009,7 @@ TEST_CASE("Online planner 2nd with instant target flip", "[online_planner_2nd][h
     // the new target, so the commanded shape does not exist and the planner
     // substitutes a brake-then-replan. It reports which, so the branch this case
     // reaches is asserted rather than assumed.
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
     REQUIRE(planner.diagnostics().disposition
             == ctrlpp::online_planner_disposition::braked_and_replanned);
     REQUIRE(planner.diagnostics().substitution_reason
@@ -1042,7 +1042,7 @@ TEST_CASE("Online planner 2nd reaches target", "[online_planner_2nd][hardening][
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 1.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
     REQUIRE(planner.diagnostics().disposition
             == ctrlpp::online_planner_disposition::commanded_profile);
 
@@ -1121,13 +1121,13 @@ TEST_CASE("Online planner 3rd with instant target reversal",
     ctrlpp::online_planner_3rd<double>::config cfg{.v_max = 1.0, .a_max = 2.0, .j_max = 5.0};
     auto planner = realizable<ctrlpp::online_planner_3rd<double>>(cfg);
 
-    planner.update(5.0);
+    REQUIRE(planner.update(5.0).has_value());
     planner.sample(0.1);
 
     // Reversing the commanded direction puts the carried velocity outside the
     // domain of the shape that would carry it through, so the planner brakes to
     // rest and replans from the stopping point. It reports that it did.
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
     REQUIRE(planner.diagnostics().disposition
             == ctrlpp::online_planner_disposition::braked_and_replanned);
     REQUIRE(planner.diagnostics().substitution_reason
@@ -1162,7 +1162,7 @@ TEST_CASE("Online planner 3rd reaches target", "[online_planner_3rd][hardening][
     ctrlpp::online_planner_3rd<double>::config cfg{.v_max = 2.0, .a_max = 1.0, .j_max = 5.0};
     auto planner = realizable<ctrlpp::online_planner_3rd<double>>(cfg);
 
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
     REQUIRE(planner.diagnostics().disposition
             == ctrlpp::online_planner_disposition::commanded_profile);
 
@@ -1486,7 +1486,7 @@ TEST_CASE("Online planner 2nd retargets while moving triggers braking",
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Start moving to 10
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
     // Sample partway through to build up velocity
     for (int i = 0; i < 20; ++i) {
         planner.sample(step * static_cast<double>(i + 1));
@@ -1498,7 +1498,7 @@ TEST_CASE("Online planner 2nd retargets while moving triggers braking",
     // a branch of the planner and the planner names it: nothing about the motion
     // alone distinguishes a brake-then-replan from a commanded profile that
     // happens to decelerate first.
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
     auto const& report = planner.diagnostics();
     REQUIRE(report.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
     REQUIRE(report.substitution_reason
@@ -1536,7 +1536,7 @@ TEST_CASE("Online planner 2nd with same position target is a no-op",
     // A target at the current position with no velocity to shed is a zero-duration
     // profile, and every sample of it returns the stored target with zero velocity
     // and zero acceleration. Nothing is computed, so nothing rounds.
-    planner.update(0.0);
+    REQUIRE(planner.update(0.0).has_value());
     REQUIRE(planner.diagnostics().disposition == ctrlpp::online_planner_disposition::settled);
     REQUIRE(planner.diagnostics().planned_duration == 0.0);
 
@@ -1584,7 +1584,7 @@ TEST_CASE("Online planner 2nd overshoot recovery brakes and reverses",
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // First, build up positive velocity toward +10
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
     double t = 0.0;
     for (int i = 0; i < 30; ++i) {
         t += step;
@@ -1595,7 +1595,7 @@ TEST_CASE("Online planner 2nd overshoot recovery brakes and reverses",
 
     // Now retarget behind us: the carried velocity points away from the target, so
     // the commanded shape does not exist and the planner brakes first.
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
     REQUIRE(planner.diagnostics().disposition
             == ctrlpp::online_planner_disposition::braked_and_replanned);
     REQUIRE(planner.diagnostics().substitution_reason
@@ -1634,7 +1634,7 @@ TEST_CASE("Online planner 2nd wrong-direction: positive velocity, target behind"
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Build up positive velocity by targeting +5
-    planner.update(5.0);
+    REQUIRE(planner.update(5.0).has_value());
     double t = 0.0;
     for (int i = 0; i < 20; ++i) {
         t += step;
@@ -1650,7 +1650,7 @@ TEST_CASE("Online planner 2nd wrong-direction: positive velocity, target behind"
     // Now target is behind current position (same sign but smaller). The stopping
     // distance exceeds the remaining displacement, so overshoot is detected.
     double const target = mid.position(0) - 0.001;
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
     REQUIRE(planner.diagnostics().disposition
             == ctrlpp::online_planner_disposition::braked_and_replanned);
     REQUIRE(planner.diagnostics().substitution_reason
@@ -1677,7 +1677,7 @@ TEST_CASE("Online planner 2nd near-zero displacement with velocity triggers brak
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Build up velocity
-    planner.update(5.0);
+    REQUIRE(planner.update(5.0).has_value());
     double t = 0.0;
     for (int i = 0; i < 50; ++i) {
         t += step;
@@ -1690,7 +1690,7 @@ TEST_CASE("Online planner 2nd near-zero displacement with velocity triggers brak
     // Retarget to exactly the current position: the displacement vanishes while
     // the velocity does not, which is the third of the three conditions that
     // select the brake-then-replan branch.
-    planner.update(current.position(0));
+    REQUIRE(planner.update(current.position(0)).has_value());
     REQUIRE(planner.diagnostics().disposition
             == ctrlpp::online_planner_disposition::braked_and_replanned);
     REQUIRE(planner.diagnostics().substitution_reason
@@ -1718,7 +1718,7 @@ TEST_CASE("Online planner 2nd evaluate_profile at and past T boundary",
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 1.0, .a_max = 2.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
 
     // Sample well past when we should have arrived
     double t = 0.0;
@@ -1747,7 +1747,7 @@ TEST_CASE("Online planner 2nd braking phase is entered and evaluated as a brake"
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Build velocity in negative direction
-    planner.update(-8.0);
+    REQUIRE(planner.update(-8.0).has_value());
     double t = 0.0;
     for (int i = 0; i < 40; ++i) {
         t += 0.01;
@@ -1761,7 +1761,7 @@ TEST_CASE("Online planner 2nd braking phase is entered and evaluated as a brake"
     // property of the motion -- both branches reach the target under both limits
     // -- so the planner reports it, and that report is what turns a claim about
     // branch coverage into something that can fail.
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
     auto const& report = planner.diagnostics();
     REQUIRE(report.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
     REQUIRE(report.substitution_reason
@@ -1811,7 +1811,7 @@ TEST_CASE("Online planner 2nd reset clears state",
     ctrlpp::online_planner_2nd<double>::config cfg{.v_max = 2.0, .a_max = 3.0};
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
-    planner.update(10.0);
+    REQUIRE(planner.update(10.0).has_value());
     planner.sample(0.5);
 
     // Reset stores the position and zeros everything else, so the sample that
@@ -2309,7 +2309,7 @@ TEST_CASE("Online planner 2nd rest-to-rest with near-zero displacement after bra
 
     // Build velocity, then retarget to a position very close to where we will
     // stop after braking -- exercises rest-to-rest with near-zero abs_h
-    planner.update(5.0);
+    REQUIRE(planner.update(5.0).has_value());
     double t = 0.0;
     for (int i = 0; i < 20; ++i) {
         t += step;
@@ -2327,7 +2327,7 @@ TEST_CASE("Online planner 2nd rest-to-rest with near-zero displacement after bra
     // can still carry the velocity through, so which branch it selects is its
     // report to make rather than this case's to assume; what the case pins is
     // that the motion respects both limits and ends where it was sent.
-    planner.update(stop_pos);
+    REQUIRE(planner.update(stop_pos).has_value());
     REQUIRE(planner.diagnostics().commanded_target == stop_pos);
     REQUIRE(planner.diagnostics().initial_velocity == state.velocity(0));
 
@@ -2354,7 +2354,7 @@ TEST_CASE("Online planner 2nd cruise phase with initial velocity",
     auto planner = realizable<ctrlpp::online_planner_2nd<double>>(cfg);
 
     // Build some velocity first
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
     double t = 0.0;
     for (int i = 0; i < 10; ++i) {
         t += step;
@@ -2364,7 +2364,7 @@ TEST_CASE("Online planner 2nd cruise phase with initial velocity",
     // Retarget with the same large displacement, now carrying a velocity: the
     // commanded shape exists, so the planner carries it through rather than
     // braking, and the profile has room for a cruise phase.
-    planner.update(target);
+    REQUIRE(planner.update(target).has_value());
     REQUIRE(planner.diagnostics().disposition
             == ctrlpp::online_planner_disposition::commanded_profile);
     double const planned_duration = planner.diagnostics().planned_duration;

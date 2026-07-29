@@ -48,12 +48,16 @@ static auto create(config const& cfg)
 ### update
 
 ```cpp
-void update(Scalar target);
+auto update(Scalar target) -> ctrlpp::expected<void, trajectory_error>;
 ```
 
 Set a new target position and replan from the current state. Computes a time-optimal double-S profile from (q, v, a) to (target, 0, 0) respecting `v_max`, `a_max`, and `j_max`. A same-direction move carries the current velocity through the profile (no full-stop dip); a velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and then replanned. The carry-velocity shape has a domain of its own, and a commanded state outside it is braked to rest and replanned as well.
 
-The commanded shape is therefore not always the one realized. `update` returns nothing, so which profile was built is read back from [`diagnostics()`](#diagnostics). The motion respects every limit either way; what changes is the time it takes.
+The command is rejected with `trajectory_error::non_finite_input` before any
+planner state changes when the target is NaN or infinite. For an accepted
+target, which profile was built is read back from
+[`diagnostics()`](#diagnostics). The motion respects every limit either way;
+what changes is the time it takes.
 
 ### diagnostics
 
@@ -146,7 +150,9 @@ struct [[nodiscard]] online_planner_diagnostics
 The quantitative fields are what let a supervisory layer choose between axes, or log why a move took longer than it commanded. A boolean could not.
 
 ```cpp
-planner.update(target);
+if (!planner.update(target).has_value()) {
+    // Reject the non-finite command without changing the active profile.
+}
 
 if (planner.diagnostics().disposition
     == ctrlpp::online_planner_disposition::braked_and_replanned)
@@ -177,7 +183,8 @@ int main()
     if (!result.has_value())
         return 1;
     auto& planner = *result;
-    planner.update(10.0);  // move to position 10
+    if (!planner.update(10.0).has_value())
+        return 1;
 
     constexpr double dt = 0.001;
     for (double t = 0.0; !planner.is_settled(); t += dt) {
