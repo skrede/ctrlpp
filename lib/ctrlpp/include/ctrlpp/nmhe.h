@@ -68,20 +68,59 @@ public:
 
     /// @brief Fallible factory, and the only way to originate an estimator.
     ///
-    /// This type embeds an extended filter and hands it the same noise and
-    /// initial-condition fields its own configuration carries, so it forwards
-    /// that filter's rejection verbatim rather than restating the conditions
-    /// here. The forwarding is not plumbing: this type also inverts Q and R to
-    /// form the arrival-cost and stage weights that the nonlinear program is
-    /// posed against, so a non-finite entry poisons the program as well as the
-    /// filter.
-    static auto create(Dynamics dynamics, Measurement measurement, const nmhe_config<Scalar, NX, NU, NY, N, NC>& config) -> ctrlpp::expected<nmhe, filter_error>
+    /// The error is a variant: embedded-filter configuration failures retain
+    /// their `filter_error` type, while formulation-specific failures use
+    /// `moving_horizon_configuration_error`. The latter rejects singular Q, R,
+    /// or P0 before solving for inverse weights, and validates every constraint,
+    /// penalty, path operand, and finite-difference step consumed by the NLP.
+    static auto create(Dynamics dynamics, Measurement measurement,
+                       const nmhe_config<Scalar, NX, NU, NY, N, NC>& config)
+        -> ctrlpp::expected<nmhe, moving_horizon_construction_error>
     {
         auto filter = ekf<Scalar, NX, NU, NY, Dynamics, Measurement>::create(
             dynamics, measurement, ekf_config<Scalar, NX, NU, NY>{.Q = config.Q, .R = config.R, .x0 = config.x0, .P0 = config.P0, .numerical_eps = config.numerical_eps});
         if(!filter)
-            return ctrlpp::unexpected(filter.error());
-        return nmhe{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(*filter), config};
+            return ctrlpp::unexpected(
+                moving_horizon_construction_error{filter.error()});
+
+        auto q_inv = detail::finite_full_piv_inverse(config.Q);
+        if(!q_inv)
+            return ctrlpp::unexpected(moving_horizon_construction_error{
+                moving_horizon_configuration_error::non_invertible_process_noise});
+        auto r_inv = detail::finite_full_piv_inverse(config.R);
+        if(!r_inv)
+            return ctrlpp::unexpected(moving_horizon_construction_error{
+                moving_horizon_configuration_error::non_invertible_measurement_noise});
+        auto p0_inv = detail::finite_full_piv_inverse(config.P0);
+        if(!p0_inv)
+            return ctrlpp::unexpected(moving_horizon_construction_error{
+                moving_horizon_configuration_error::non_invertible_initial_covariance});
+        if(auto invalid = detail::validate_moving_horizon_options(config))
+            return ctrlpp::unexpected(
+                moving_horizon_construction_error{*invalid});
+
+        if constexpr(NC > 0)
+        {
+            if(config.path_constraint)
+            {
+                if(!config.path_penalty.allFinite()
+                    || !(config.path_penalty.array() > Scalar{0}).all())
+                    return ctrlpp::unexpected(moving_horizon_construction_error{
+                        moving_horizon_configuration_error::invalid_path_penalty});
+                if(!(*config.path_constraint)(config.x0).allFinite())
+                    return ctrlpp::unexpected(moving_horizon_construction_error{
+                        moving_horizon_configuration_error::non_finite_path_constraint});
+            }
+        }
+
+        return nmhe{validated_tag{},
+                    std::move(dynamics),
+                    std::move(measurement),
+                    std::move(*filter),
+                    config,
+                    std::move(*q_inv),
+                    std::move(*r_inv),
+                    std::move(*p0_inv)};
     }
 
 private:
@@ -92,18 +131,23 @@ private:
     {
     };
 
-    nmhe(validated_tag, Dynamics dynamics, Measurement measurement, ekf<Scalar, NX, NU, NY, Dynamics, Measurement> filter, const nmhe_config<Scalar, NX, NU, NY, N, NC>& config)
+    nmhe(validated_tag, Dynamics dynamics, Measurement measurement,
+         ekf<Scalar, NX, NU, NY, Dynamics, Measurement> filter,
+         const nmhe_config<Scalar, NX, NU, NY, N, NC>& config,
+         cov_matrix_t q_inv,
+         Matrix<Scalar, NY, NY> r_inv,
+         cov_matrix_t p0_inv)
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_ekf{std::move(filter)}
         , m_arrival_cost_weight{config.arrival_cost_weight}
-        , m_Q_inv{config.Q.inverse()}
-        , m_R_inv{config.R.inverse()}
+        , m_Q_inv{std::move(q_inv)}
+        , m_R_inv{std::move(r_inv)}
         , m_config{config}
         , m_state{std::make_shared<nmhe_formulation_state<Scalar, NX, NU, NY, N>>()}
         , m_innovation{output_vector_t::Zero()}
     {
-        initialize_buffers(config);
+        initialize_buffers(config, std::move(p0_inv));
         build_nlp_problem();
         initialize_warm_start(config.x0);
     }
@@ -198,7 +242,9 @@ public:
     const mhe_diagnostics<Scalar>& diagnostics() const { return m_diagnostics; }
 
 private:
-    void initialize_buffers(const nmhe_config<Scalar, NX, NU, NY, N, NC>& config)
+    void initialize_buffers(
+        const nmhe_config<Scalar, NX, NU, NY, N, NC>& config,
+        cov_matrix_t p0_inv)
     {
         m_x_window.fill(config.x0);
         m_u_window.fill(input_vector_t::Zero());
@@ -206,7 +252,7 @@ private:
         m_prior_state_window.fill(config.x0);
         m_prior_cov_window.fill(config.P0);
         m_state->arrival_state = config.x0;
-        m_state->arrival_P_inv = config.P0.inverse();
+        m_state->arrival_P_inv = std::move(p0_inv);
     }
 
     void build_nlp_problem()
@@ -231,7 +277,11 @@ private:
             return;
         }
 
-        update_arrival_cost();
+        if(!update_arrival_cost())
+        {
+            fallback_to_ekf();
+            return;
+        }
 
         attempt_nmhe_solve();
     }
@@ -267,10 +317,15 @@ private:
         fallback_to_ekf();
     }
 
-    void update_arrival_cost()
+    auto update_arrival_cost() -> bool
     {
+        auto inverse =
+            detail::finite_full_piv_inverse(m_prior_cov_window[0]);
+        if(!inverse)
+            return false;
         m_state->arrival_state = m_prior_state_window[0];
-        m_state->arrival_P_inv = m_prior_cov_window[0].ldlt().solve(cov_matrix_t::Identity());
+        m_state->arrival_P_inv = std::move(*inverse);
+        return true;
     }
 
     void extract_nmhe_solution(const nlp_result<Scalar>& result)

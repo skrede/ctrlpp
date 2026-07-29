@@ -3,16 +3,89 @@
 
 #include "ctrlpp/types.h"
 
+#include "ctrlpp/estimation/estimation_types.h"
+
 #include "ctrlpp/mpc/nmpc_config.h"
 
 #include <cmath>
 #include <limits>
+#include <cstdint>
 #include <cstddef>
+#include <variant>
 #include <optional>
 #include <functional>
 
 namespace ctrlpp
 {
+
+/// Configuration failures specific to the moving-horizon formulation.
+///
+/// Embedded-filter configuration failures remain available as the
+/// `filter_error` alternative of `moving_horizon_construction_error`. These
+/// enumerators cover the stricter domain introduced by inverse weights,
+/// constraints, penalties, and numerical differentiation.
+enum class moving_horizon_configuration_error : std::uint8_t
+{
+    non_invertible_process_noise,
+    non_invertible_measurement_noise,
+    non_invertible_initial_covariance,
+    non_positive_arrival_cost_weight,
+    invalid_state_bounds,
+    invalid_residual_bound,
+    non_positive_soft_penalty,
+    non_positive_numerical_eps,
+    invalid_path_penalty,
+    non_finite_path_constraint,
+};
+
+using moving_horizon_construction_error =
+    std::variant<filter_error, moving_horizon_configuration_error>;
+
+namespace detail
+{
+
+template <typename MatrixType>
+auto finite_full_piv_inverse(const MatrixType& matrix)
+    -> std::optional<MatrixType>
+{
+    auto factor = matrix.fullPivLu();
+    if(!factor.isInvertible())
+        return std::nullopt;
+
+    MatrixType inverse = factor.solve(MatrixType::Identity());
+    if(!inverse.allFinite())
+        return std::nullopt;
+    return inverse;
+}
+
+template <typename Config>
+auto validate_moving_horizon_options(const Config& config)
+    -> std::optional<moving_horizon_configuration_error>
+{
+    using scalar_type = typename Config::scalar_type;
+
+    if(!std::isfinite(config.arrival_cost_weight)
+        || !(config.arrival_cost_weight > scalar_type{0}))
+        return moving_horizon_configuration_error::non_positive_arrival_cost_weight;
+    if((config.x_min && !config.x_min->allFinite())
+        || (config.x_max && !config.x_max->allFinite())
+        || (config.x_min && config.x_max
+            && !((*config.x_min).array() <= (*config.x_max).array()).all()))
+        return moving_horizon_configuration_error::invalid_state_bounds;
+    if(config.residual_bound
+        && (!config.residual_bound->allFinite()
+            || !(config.residual_bound->array() >= 0).all()))
+        return moving_horizon_configuration_error::invalid_residual_bound;
+    if(!std::isfinite(config.soft_penalty)
+        || !(config.soft_penalty > scalar_type{0}))
+        return moving_horizon_configuration_error::non_positive_soft_penalty;
+    if(!std::isfinite(config.numerical_eps)
+        || !(config.numerical_eps > scalar_type{0}))
+        return moving_horizon_configuration_error::non_positive_numerical_eps;
+    return std::nullopt;
+}
+
+}
 
 /// Configuration for linear MHE (QP-based).
 ///
@@ -25,6 +98,8 @@ namespace ctrlpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t N>
 struct mhe_config
 {
+    using scalar_type = Scalar;
+
     static_assert(N > 0, "Window length N must be positive: it sizes the fixed estimation window arrays the estimator rotates and reads the trailing element of");
 
     Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
@@ -46,6 +121,8 @@ struct mhe_config
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t N, std::size_t NC = 0>
 struct nmhe_config
 {
+    using scalar_type = Scalar;
+
     static_assert(N > 0, "Window length N must be positive: it sizes the fixed estimation window arrays the estimator rotates and reads the trailing element of");
 
     Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};

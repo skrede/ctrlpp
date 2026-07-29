@@ -69,19 +69,43 @@ public:
 
     /// @brief Fallible factory, and the only way to originate an estimator.
     ///
-    /// This type embeds an extended filter and hands it the same noise and
-    /// initial-condition fields its own configuration carries, so it forwards
-    /// that filter's rejection verbatim rather than restating the conditions
-    /// here. The forwarding is not plumbing: this type also inverts Q and R to
-    /// form the arrival-cost and stage weights, so a non-finite entry poisons
-    /// the estimation problem as well as the filter.
-    static auto create(Dynamics dynamics, Measurement measurement, const mhe_config<Scalar, NX, NU, NY, N>& config) -> ctrlpp::expected<mhe, filter_error>
+    /// The error is a variant: embedded-filter configuration failures retain
+    /// their `filter_error` type, while formulation-specific failures use
+    /// `moving_horizon_configuration_error`. The latter rejects singular Q, R,
+    /// or P0 before solving for inverse weights, and validates every constraint,
+    /// penalty, and finite-difference operand consumed by the QP.
+    static auto create(Dynamics dynamics, Measurement measurement,
+                       const mhe_config<Scalar, NX, NU, NY, N>& config)
+        -> ctrlpp::expected<mhe, moving_horizon_construction_error>
     {
         auto filter = ekf<Scalar, NX, NU, NY, Dynamics, Measurement>::create(
             dynamics, measurement, ekf_config<Scalar, NX, NU, NY>{.Q = config.Q, .R = config.R, .x0 = config.x0, .P0 = config.P0, .numerical_eps = config.numerical_eps});
         if(!filter)
-            return ctrlpp::unexpected(filter.error());
-        return mhe{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(*filter), config};
+            return ctrlpp::unexpected(
+                moving_horizon_construction_error{filter.error()});
+
+        auto q_inv = detail::finite_full_piv_inverse(config.Q);
+        if(!q_inv)
+            return ctrlpp::unexpected(moving_horizon_construction_error{
+                moving_horizon_configuration_error::non_invertible_process_noise});
+        auto r_inv = detail::finite_full_piv_inverse(config.R);
+        if(!r_inv)
+            return ctrlpp::unexpected(moving_horizon_construction_error{
+                moving_horizon_configuration_error::non_invertible_measurement_noise});
+        if(!detail::finite_full_piv_inverse(config.P0))
+            return ctrlpp::unexpected(moving_horizon_construction_error{
+                moving_horizon_configuration_error::non_invertible_initial_covariance});
+        if(auto invalid = detail::validate_moving_horizon_options(config))
+            return ctrlpp::unexpected(
+                moving_horizon_construction_error{*invalid});
+
+        return mhe{validated_tag{},
+                   std::move(dynamics),
+                   std::move(measurement),
+                   std::move(*filter),
+                   config,
+                   std::move(*q_inv),
+                   std::move(*r_inv)};
     }
 
 private:
@@ -92,13 +116,17 @@ private:
     {
     };
 
-    mhe(validated_tag, Dynamics dynamics, Measurement measurement, ekf<Scalar, NX, NU, NY, Dynamics, Measurement> filter, const mhe_config<Scalar, NX, NU, NY, N>& config)
+    mhe(validated_tag, Dynamics dynamics, Measurement measurement,
+        ekf<Scalar, NX, NU, NY, Dynamics, Measurement> filter,
+        const mhe_config<Scalar, NX, NU, NY, N>& config,
+        cov_matrix_t q_inv,
+        Matrix<Scalar, NY, NY> r_inv)
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_ekf{std::move(filter)}
         , m_arrival_cost_weight{config.arrival_cost_weight}
-        , m_Q_inv{config.Q.inverse()}
-        , m_R_inv{config.R.inverse()}
+        , m_Q_inv{std::move(q_inv)}
+        , m_R_inv{std::move(r_inv)}
         , m_eps{config.numerical_eps}
         , m_x_min{config.x_min}
         , m_x_max{config.x_max}
@@ -220,10 +248,19 @@ private:
 
     void solve_mhe(const output_vector_t& z)
     {
+        auto arrival_inverse =
+            detail::finite_full_piv_inverse(m_prior_cov_window[0]);
+        if(!arrival_inverse)
+        {
+            fallback_to_ekf();
+            return;
+        }
+
         auto [A_lin, B_lin] = linearize_dynamics();
         auto H_lin = linearize_measurement();
-        auto problem = build_qp_structure(A_lin, H_lin);
-        auto upd = build_qp_update(A_lin, B_lin, H_lin);
+        auto problem = build_qp_structure(A_lin, H_lin, *arrival_inverse);
+        auto upd =
+            build_qp_update(A_lin, B_lin, H_lin, *arrival_inverse);
 
         merge_structure_and_update(problem, upd);
 
@@ -293,25 +330,30 @@ private:
             && result.iterations >= 0;
     }
 
-    auto build_qp_structure(const Matrix<Scalar, NX, NX>& A_lin, const Matrix<Scalar, NY, NX>& H_lin) -> qp_problem<Scalar>
+    auto build_qp_structure(const Matrix<Scalar, NX, NX>& A_lin,
+                            const Matrix<Scalar, NY, NX>& H_lin,
+                            const cov_matrix_t& arrival_inverse)
+        -> qp_problem<Scalar>
     {
-        cov_matrix_t P_arr_inv = m_prior_cov_window[0].inverse();
         bool has_box = m_x_min.has_value() || m_x_max.has_value();
         bool has_residual = m_residual_bound.has_value();
         std::array<Matrix<Scalar, NX, NX>, 1> A_arr{A_lin};
         std::array<Matrix<Scalar, NY, NX>, 1> H_arr{H_lin};
 
-        return detail::build_mhe_qp_structure<Scalar, NX, NU, NY>(N, m_arrival_cost_weight, P_arr_inv, m_Q_inv, m_R_inv, A_arr, H_arr, has_box, m_soft_constraints && has_box, m_soft_penalty, has_residual);
+        return detail::build_mhe_qp_structure<Scalar, NX, NU, NY>(N, m_arrival_cost_weight, arrival_inverse, m_Q_inv, m_R_inv, A_arr, H_arr, has_box, m_soft_constraints && has_box, m_soft_penalty, has_residual);
     }
 
-    auto build_qp_update(const Matrix<Scalar, NX, NX>& A_lin, const Matrix<Scalar, NX, NU>& B_lin, const Matrix<Scalar, NY, NX>& H_lin) -> qp_update<Scalar>
+    auto build_qp_update(const Matrix<Scalar, NX, NX>& A_lin,
+                         const Matrix<Scalar, NX, NU>& B_lin,
+                         const Matrix<Scalar, NY, NX>& H_lin,
+                         const cov_matrix_t& arrival_inverse)
+        -> qp_update<Scalar>
     {
-        cov_matrix_t P_arr_inv = m_prior_cov_window[0].inverse();
         bool has_box = m_x_min.has_value() || m_x_max.has_value();
         std::span<const input_vector_t> u_span{m_u_window.data(), N};
         std::span<const output_vector_t> z_span{m_z_window.data(), N + 1};
 
-        return detail::build_mhe_qp_update<Scalar, NX, NU, NY>(N, m_arrival_cost_weight, P_arr_inv, m_Q_inv, m_R_inv, A_lin, B_lin, H_lin, m_prior_state_window[0], u_span, z_span, has_box, m_soft_constraints && has_box, m_soft_penalty, m_x_min, m_x_max, m_residual_bound, m_warm_z, m_warm_y);
+        return detail::build_mhe_qp_update<Scalar, NX, NU, NY>(N, m_arrival_cost_weight, arrival_inverse, m_Q_inv, m_R_inv, A_lin, B_lin, H_lin, m_prior_state_window[0], u_span, z_span, has_box, m_soft_constraints && has_box, m_soft_penalty, m_x_min, m_x_max, m_residual_bound, m_warm_z, m_warm_y);
     }
 
     void merge_structure_and_update(qp_problem<Scalar>& problem, qp_update<Scalar>& upd)

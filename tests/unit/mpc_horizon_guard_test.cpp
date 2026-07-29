@@ -35,6 +35,7 @@
 
 #include <limits>
 #include <memory>
+#include <variant>
 #include <cstddef>
 
 namespace
@@ -114,6 +115,13 @@ using linear_estimator = ctrlpp::mhe<double, NX, NU, NY, window, ctrlpp_test::st
 template <ctrlpp_test::report_lengths Reported>
 using nonlinear_estimator = ctrlpp::nmhe<double, NX, NU, NY, window, ctrlpp_test::stub_nlp_solver<double, Reported>, window_dynamics, window_measurement>;
 
+using constrained_nonlinear_estimator =
+    ctrlpp::nmhe<double, NX, NU, NY, window,
+                 ctrlpp_test::stub_nlp_solver<double>,
+                 window_dynamics,
+                 window_measurement,
+                 1>;
+
 template <ctrlpp_test::report_values Values, ctrlpp::solve_status Status>
 using nonfinite_linear_estimator =
     ctrlpp::mhe<double, NX, NU, NY, window,
@@ -177,6 +185,184 @@ void require_nonlinear_estimator_rejects_nonfinite_result()
     REQUIRE(estimator.state().allFinite());
 }
 
+template <typename Result>
+void require_moving_horizon_configuration_error(
+    const Result& result,
+    ctrlpp::moving_horizon_configuration_error expected)
+{
+    REQUIRE_FALSE(result.has_value());
+    auto const* error =
+        std::get_if<ctrlpp::moving_horizon_configuration_error>(&result.error());
+    REQUIRE(error != nullptr);
+    REQUIRE(*error == expected);
+}
+
+}
+
+TEST_CASE("Moving-horizon factories reject singular formulation weights",
+          "[mhe][nmhe][configuration][hardening]")
+{
+    auto require_both = [](auto configure,
+                           ctrlpp::moving_horizon_configuration_error error) {
+        ctrlpp::mhe_config<double, NX, NU, NY, window> linear;
+        configure(linear);
+        require_moving_horizon_configuration_error(
+            linear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+                window_dynamics{}, window_measurement{}, linear),
+            error);
+
+        ctrlpp::nmhe_config<double, NX, NU, NY, window> nonlinear;
+        configure(nonlinear);
+        require_moving_horizon_configuration_error(
+            nonlinear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+                window_dynamics{}, window_measurement{}, nonlinear),
+            error);
+    };
+
+    require_both(
+        [](auto& config) { config.Q.setZero(); },
+        ctrlpp::moving_horizon_configuration_error::
+            non_invertible_process_noise);
+    require_both(
+        [](auto& config) { config.R.setZero(); },
+        ctrlpp::moving_horizon_configuration_error::
+            non_invertible_measurement_noise);
+    require_both(
+        [](auto& config) { config.P0.setZero(); },
+        ctrlpp::moving_horizon_configuration_error::
+            non_invertible_initial_covariance);
+}
+
+TEST_CASE("Moving-horizon factories preserve embedded-filter configuration errors",
+          "[mhe][nmhe][configuration][hardening]")
+{
+    auto require_filter_error = [](const auto& result) {
+        REQUIRE_FALSE(result.has_value());
+        auto const* error = std::get_if<ctrlpp::filter_error>(&result.error());
+        REQUIRE(error != nullptr);
+        REQUIRE(*error == ctrlpp::filter_error::non_finite_process_noise);
+    };
+
+    ctrlpp::mhe_config<double, NX, NU, NY, window> linear;
+    linear.Q(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    require_filter_error(
+        linear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+            window_dynamics{}, window_measurement{}, linear));
+
+    ctrlpp::nmhe_config<double, NX, NU, NY, window> nonlinear;
+    nonlinear.Q(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    require_filter_error(
+        nonlinear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+            window_dynamics{}, window_measurement{}, nonlinear));
+}
+
+TEST_CASE("Moving-horizon factories validate every common formulation option",
+          "[mhe][nmhe][configuration][hardening]")
+{
+    auto require_both = [](auto configure,
+                           ctrlpp::moving_horizon_configuration_error error) {
+        ctrlpp::mhe_config<double, NX, NU, NY, window> linear;
+        configure(linear);
+        require_moving_horizon_configuration_error(
+            linear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+                window_dynamics{}, window_measurement{}, linear),
+            error);
+
+        ctrlpp::nmhe_config<double, NX, NU, NY, window> nonlinear;
+        configure(nonlinear);
+        require_moving_horizon_configuration_error(
+            nonlinear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+                window_dynamics{}, window_measurement{}, nonlinear),
+            error);
+    };
+
+    auto const infinity = std::numeric_limits<double>::infinity();
+    auto const nan = std::numeric_limits<double>::quiet_NaN();
+
+    require_both(
+        [](auto& config) { config.arrival_cost_weight = 0.0; },
+        ctrlpp::moving_horizon_configuration_error::
+            non_positive_arrival_cost_weight);
+    require_both(
+        [infinity](auto& config) {
+            config.arrival_cost_weight = infinity;
+        },
+        ctrlpp::moving_horizon_configuration_error::
+            non_positive_arrival_cost_weight);
+    require_both(
+        [infinity](auto& config) {
+            config.x_min = config.x0;
+            config.x_min->setConstant(infinity);
+        },
+        ctrlpp::moving_horizon_configuration_error::invalid_state_bounds);
+    require_both(
+        [](auto& config) {
+            config.x_min = config.x0;
+            config.x_max = config.x0;
+            (*config.x_min)(0) = 1.0;
+            (*config.x_max)(0) = -1.0;
+        },
+        ctrlpp::moving_horizon_configuration_error::invalid_state_bounds);
+    require_both(
+        [](auto& config) {
+            config.residual_bound = config.R.col(0);
+            config.residual_bound->setConstant(-1.0);
+        },
+        ctrlpp::moving_horizon_configuration_error::invalid_residual_bound);
+    require_both(
+        [infinity](auto& config) {
+            config.residual_bound = config.R.col(0);
+            config.residual_bound->setConstant(infinity);
+        },
+        ctrlpp::moving_horizon_configuration_error::invalid_residual_bound);
+    require_both(
+        [](auto& config) { config.soft_penalty = 0.0; },
+        ctrlpp::moving_horizon_configuration_error::
+            non_positive_soft_penalty);
+    require_both(
+        [infinity](auto& config) { config.soft_penalty = infinity; },
+        ctrlpp::moving_horizon_configuration_error::
+            non_positive_soft_penalty);
+    require_both(
+        [](auto& config) { config.numerical_eps = 0.0; },
+        ctrlpp::moving_horizon_configuration_error::
+            non_positive_numerical_eps);
+    require_both(
+        [nan](auto& config) { config.numerical_eps = nan; },
+        ctrlpp::moving_horizon_configuration_error::
+            non_positive_numerical_eps);
+}
+
+TEST_CASE("Nonlinear moving-horizon factory validates path-constraint operands",
+          "[nmhe][configuration][hardening]")
+{
+    ctrlpp::nmhe_config<double, NX, NU, NY, window, 1> config;
+    config.path_constraint = [](const Eigen::Vector2d&) {
+        return Eigen::Matrix<double, 1, 1>::Zero();
+    };
+
+    config.path_penalty << 0.0;
+    require_moving_horizon_configuration_error(
+        constrained_nonlinear_estimator::create(
+            window_dynamics{}, window_measurement{}, config),
+        ctrlpp::moving_horizon_configuration_error::invalid_path_penalty);
+
+    config.path_penalty << std::numeric_limits<double>::infinity();
+    require_moving_horizon_configuration_error(
+        constrained_nonlinear_estimator::create(
+            window_dynamics{}, window_measurement{}, config),
+        ctrlpp::moving_horizon_configuration_error::invalid_path_penalty);
+
+    config.path_penalty << 1.0;
+    config.path_constraint = [](const Eigen::Vector2d&) {
+        return Eigen::Matrix<double, 1, 1>::Constant(
+            std::numeric_limits<double>::quiet_NaN());
+    };
+    require_moving_horizon_configuration_error(
+        constrained_nonlinear_estimator::create(
+            window_dynamics{}, window_measurement{}, config),
+        ctrlpp::moving_horizon_configuration_error::
+            non_finite_path_constraint);
 }
 
 TEST_CASE("Linear MPC rejects a negative horizon at construction", "[mpc][horizon][hardening]")
