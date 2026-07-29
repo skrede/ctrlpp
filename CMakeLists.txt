@@ -49,15 +49,16 @@ option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)
 option(CTRLPP_BUILD_FUZZ_TESTS "Build fuzz test targets" OFF)
 option(CTRLPP_BUILD_PROPERTY_TESTS "Build property-based test targets (requires RapidCheck)" OFF)
 
-# Selects which build tree ctrlpp's OWN tests and benches compile as. This is a
+# Selects which posture ctrlpp's own root test targets compile in. This is
 # self-imposed dogfood of the throw-free discipline, not a consumer mandate: the
 # library/interface/install targets never carry -fno-exceptions. OFF (default)
-# builds ctrlpp's test + bench targets AND Catch2 under -fno-exceptions -fno-rtti
-# with CATCH_CONFIG_DISABLE_EXCEPTIONS. ON builds the exceptions carve-out --
-# tests asserting the throwing convenience wrappers throw (they need
-# REQUIRE_THROWS*, unavailable under disabled-exceptions Catch2) plus every
-# OSQP/NLopt-linked test and bench -- with Catch2 exceptions-on.
-option(CTRLPP_TESTS_WITH_EXCEPTIONS "Build ctrlpp's own tests/benches in the exceptions carve-out tree instead of the default -fno-exceptions tree" OFF)
+# builds ctrlpp's tests and Catch2 under -fno-exceptions -fno-rtti with
+# CATCH_CONFIG_DISABLE_EXCEPTIONS. ON builds the exceptions carve-out: tests
+# asserting that throwing convenience wrappers throw (they need REQUIRE_THROWS*,
+# unavailable under disabled-exceptions Catch2) plus every OSQP/NLopt-linked test
+# with Catch2 exceptions on. Benchmarks are a separate project whose embedded
+# nanobench implementation currently requires exceptions.
+option(CTRLPP_TESTS_WITH_EXCEPTIONS "Build ctrlpp's root tests in the exceptions carve-out instead of the default -fno-exceptions tree" OFF)
 
 option(CTRLPP_BUILD_EXAMPLES "Build examples" OFF)
 
