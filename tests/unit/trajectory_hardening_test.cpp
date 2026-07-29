@@ -1272,6 +1272,60 @@ TEST_CASE("Trapezoidal trajectory rescale_to extends motion",
     REQUIRE(std::abs(profile.peak_velocity()) <= cfg.v_max);
 }
 
+TEST_CASE("Trapezoidal trajectory preserves representable large-velocity motion",
+          "[trapezoidal][hardening][coverage]")
+{
+    SECTION("equal boundary velocities produce a constant-velocity segment")
+    {
+        ctrlpp::trapezoidal_trajectory<double>::config cfg{
+            .q0 = 0.0,
+            .q1 = 1e200,
+            .v_max = 2e200,
+            .a_max = 1.0,
+            .v0 = 1e200,
+            .v1 = 1e200,
+        };
+
+        auto const built = ctrlpp::trapezoidal_trajectory<double>::create(cfg);
+        REQUIRE(built.has_value());
+        CHECK(built->duration() == 1.0);
+        CHECK(built->peak_velocity() == cfg.v0);
+        CHECK(built->phase_durations()[0] == 0.0);
+        CHECK(built->phase_durations()[1] == 1.0);
+        CHECK(built->phase_durations()[2] == 0.0);
+        require_swept_displacement(*built, cfg.q1 - cfg.q0, cfg.a_max);
+    }
+
+    SECTION("nearby boundary velocities do not overflow the feasibility test")
+    {
+        for(int ulps = 1; ulps <= 8; ++ulps)
+        {
+            double terminal_velocity = 1e150;
+            for(int step = 0; step < ulps; ++step)
+            {
+                terminal_velocity =
+                    std::nextafter(terminal_velocity,
+                                   std::numeric_limits<double>::infinity());
+            }
+
+            ctrlpp::trapezoidal_trajectory<double>::config cfg{
+                .q0 = 0.0,
+                .q1 = 1e150,
+                .v_max = 2e150,
+                .a_max = 1e150,
+                .v0 = 1e150,
+                .v1 = terminal_velocity,
+            };
+            auto const built =
+                ctrlpp::trapezoidal_trajectory<double>::create(cfg);
+            CAPTURE(ulps, terminal_velocity);
+            REQUIRE(built.has_value());
+            REQUIRE(std::isfinite(built->duration()));
+            REQUIRE(std::isfinite(built->peak_velocity()));
+        }
+    }
+}
+
 TEST_CASE("Trapezoidal trajectory rescale_to shorter than current is rejected",
           "[trapezoidal][hardening][negative]")
 {

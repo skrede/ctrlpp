@@ -346,11 +346,33 @@ class trapezoidal_trajectory
     static auto solve_acceleration(config const& cfg) -> Scalar
     {
         auto const abs_h = std::abs(cfg.q1 - cfg.q0);
-        auto const v_diff_sq = std::abs(cfg.v0 * cfg.v0 - cfg.v1 * cfg.v1) / Scalar{2};
+        auto const v_diff_sq = half_abs_difference_of_squares(cfg.v0, cfg.v1);
         if (cfg.a_max * abs_h >= v_diff_sq) {
             return cfg.a_max;
         }
         return v_diff_sq / abs_h + std::numeric_limits<Scalar>::epsilon();
+    }
+
+    static auto half_abs_difference_of_squares(Scalar lhs, Scalar rhs) -> Scalar
+    {
+        if (std::abs(lhs) == std::abs(rhs)) {
+            return Scalar{0};
+        }
+
+        Scalar const difference = std::abs(lhs - rhs);
+        Scalar const sum = std::abs(lhs + rhs);
+        if (!std::isfinite(difference) || !std::isfinite(sum)) {
+            return std::numeric_limits<Scalar>::infinity();
+        }
+
+        int difference_exponent{};
+        int sum_exponent{};
+        Scalar const difference_fraction =
+            std::frexp(difference, &difference_exponent);
+        Scalar const sum_fraction = std::frexp(sum, &sum_exponent);
+        return std::ldexp(
+            Scalar{0.5} * difference_fraction * sum_fraction,
+            difference_exponent + sum_exponent);
     }
 
     /// @brief Solve the profile from a configuration `create` has checked.
@@ -386,10 +408,17 @@ class trapezoidal_trajectory
 
         // Check triangular degenerate case
         // When v_max cannot be reached: v_v = sqrt((2*a*h + v0^2 + v1^2) / 2)
-        auto const v_tri_sq = (Scalar{2} * a * abs_h + sv0 * sv0 + sv1 * sv1) / Scalar{2};
-        auto const v_tri = std::sqrt(v_tri_sq);
+        auto const acceleration_velocity =
+            std::sqrt(a) * std::sqrt(abs_h);
+        auto const inverse_sqrt_two = Scalar{1} / std::sqrt(Scalar{2});
+        auto const v_tri = std::hypot(acceleration_velocity,
+                                      std::abs(sv0) * inverse_sqrt_two,
+                                      std::abs(sv1) * inverse_sqrt_two);
 
-        if (v_tri < v) {
+        if (sv0 == sv1 && sv0 > Scalar{0} && v_tri == sv0) {
+            v_v_ = sv0;
+            triangular_ = false;
+        } else if (v_tri < v) {
             // Triangular: cruise velocity limited by displacement
             v_v_ = v_tri;
             triangular_ = true;
