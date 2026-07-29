@@ -17,12 +17,24 @@
 #include <Eigen/Dense>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <utility>
 #include <algorithm>
 
 namespace ctrlpp
 {
+
+enum class recursive_arx_update_error
+{
+    non_finite_input,
+    non_finite_state,
+    non_finite_observation,
+    non_finite_regressor,
+    non_finite_denominator,
+    indefinite_covariance,
+    denominator_below_resolution,
+};
 
 template <ctrlpp_floating_scalar Scalar, std::size_t NA, std::size_t NB, std::size_t NU = 1, std::size_t NY = 1>
 class recursive_arx
@@ -50,10 +62,6 @@ public:
     /// @brief Incorporate one input-output sample, or report why the cycle was
     /// refused.
     ///
-    /// The refusal is the estimator's own, forwarded verbatim rather than
-    /// restated under a second name that could drift out of step with the
-    /// arithmetic it describes. See `rls_update_error`.
-    ///
     /// This wrapper previously called the estimator and discarded its answer, so
     /// a refused sample was swallowed here and no caller could learn that the
     /// model had stopped moving.
@@ -63,8 +71,11 @@ public:
     /// cycle's regressor, so recording a sample the estimator refused as
     /// non-finite would poison every regressor built afterwards -- the poison
     /// would latch in the wrapper after the estimator had correctly declined it.
-    auto update(Scalar y, Scalar u) -> ctrlpp::expected<void, rls_update_error>
+    auto update(Scalar y, Scalar u) -> ctrlpp::expected<void, recursive_arx_update_error>
     {
+        if(!std::isfinite(u))
+            return ctrlpp::unexpected(recursive_arx_update_error::non_finite_input);
+
         Vector<Scalar, NP> phi = Vector<Scalar, NP>::Zero();
 
         // Build regressor: [y(t-1), ..., y(t-NA), u(t-1), ..., u(t-NB)]
@@ -80,7 +91,7 @@ public:
         }
 
         if(const auto applied = m_rls.update(y, phi); !applied)
-            return ctrlpp::unexpected(applied.error());
+            return ctrlpp::unexpected(forward_error(applied.error()));
 
         m_y_hist[m_write_idx % NA] = y;
         m_u_hist[m_write_idx % NB] = u;
@@ -131,6 +142,26 @@ public:
     }
 
 private:
+    static constexpr auto forward_error(rls_update_error error) -> recursive_arx_update_error
+    {
+        switch(error)
+        {
+            case rls_update_error::non_finite_state:
+                return recursive_arx_update_error::non_finite_state;
+            case rls_update_error::non_finite_observation:
+                return recursive_arx_update_error::non_finite_observation;
+            case rls_update_error::non_finite_regressor:
+                return recursive_arx_update_error::non_finite_regressor;
+            case rls_update_error::non_finite_denominator:
+                return recursive_arx_update_error::non_finite_denominator;
+            case rls_update_error::indefinite_covariance:
+                return recursive_arx_update_error::indefinite_covariance;
+            case rls_update_error::denominator_below_resolution:
+                return recursive_arx_update_error::denominator_below_resolution;
+        }
+        return recursive_arx_update_error::non_finite_state;
+    }
+
     /// @brief Tag selecting the non-validating constructor reserved for
     /// `create`, which is what makes the factory the only public path and the
     /// validation impossible to bypass.

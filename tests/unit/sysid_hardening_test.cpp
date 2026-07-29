@@ -383,7 +383,7 @@ TEST_CASE("recursive_arx forwards a refused sample instead of swallowing it",
     // restating it under a second name.
     const auto rejected = arx.update(std::numeric_limits<double>::quiet_NaN(), 0.5);
     REQUIRE_FALSE(rejected.has_value());
-    CHECK(rejected.error() == ctrlpp::rls_update_error::non_finite_observation);
+    CHECK(rejected.error() == ctrlpp::recursive_arx_update_error::non_finite_observation);
     CHECK(arx.parameters() == theta_before);
 
     // And the refused sample did not enter the regressor history either. That is
@@ -392,6 +392,28 @@ TEST_CASE("recursive_arx forwards a refused sample instead of swallowing it",
     // wrapper after the estimator had correctly declined it.
     REQUIRE(arx.update(0.8, 0.3).has_value());
     CHECK(arx.parameters().allFinite());
+}
+
+TEST_CASE("recursive_arx refuses a non-finite input without poisoning its history",
+          "[recursive_arx][hardening][negative]")
+{
+    auto tested = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, 2, 1>::create());
+    auto reference = ctrlpp::test::constructed(ctrlpp::recursive_arx<double, 2, 1>::create());
+
+    REQUIRE(tested.update(1.0, 0.5).has_value());
+    REQUIRE(reference.update(1.0, 0.5).has_value());
+
+    const auto rejected =
+        tested.update(0.8, std::numeric_limits<double>::quiet_NaN());
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error() == ctrlpp::recursive_arx_update_error::non_finite_input);
+    CHECK(tested.parameters() == reference.parameters());
+    CHECK(tested.covariance() == reference.covariance());
+
+    REQUIRE(tested.update(0.7, 0.3).has_value());
+    REQUIRE(reference.update(0.7, 0.3).has_value());
+    CHECK(tested.parameters() == reference.parameters());
+    CHECK(tested.covariance() == reference.covariance());
 }
 
 TEST_CASE("RLS identifies known first-order system", "[rls][hardening][convergence]")
