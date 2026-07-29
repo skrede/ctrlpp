@@ -70,6 +70,8 @@ class cubic_spline
     /// Rejections, checked in order:
     ///  * fewer than 2 waypoints                    -> spline_error::too_few_points
     ///  * times/positions length mismatch           -> spline_error::size_mismatch
+    ///  * a non-finite knot, waypoint, or endpoint
+    ///    velocity                                  -> spline_error::non_finite_input
     ///  * knot times not strictly increasing        -> spline_error::non_increasing_times
     ///  * periodic BC with fewer than 3 waypoints   -> spline_error::periodic_too_few_points
     ///  * periodic BC with q_0 != q_n beyond budget -> spline_error::periodic_endpoint_mismatch
@@ -100,8 +102,19 @@ class cubic_spline
         if (cfg.positions.size() != n_pts) {
             return ctrlpp::unexpected(spline_error::size_mismatch);
         }
+        if (!std::all_of(cfg.times.begin(), cfg.times.end(),
+                         [](Scalar value) { return std::isfinite(value); })
+            || !std::all_of(cfg.positions.begin(), cfg.positions.end(),
+                            [](Scalar value) { return std::isfinite(value); })
+            || !std::isfinite(cfg.v0) || !std::isfinite(cfg.vn)) {
+            return ctrlpp::unexpected(spline_error::non_finite_input);
+        }
         for (std::size_t i = 0; i + 1 < n_pts; ++i) {
-            if (!(cfg.times[i + 1] - cfg.times[i] > Scalar{0})) {
+            auto const span = cfg.times[i + 1] - cfg.times[i];
+            if (!std::isfinite(span)) {
+                return ctrlpp::unexpected(spline_error::unrepresentable_spline);
+            }
+            if (!(span > Scalar{0})) {
                 return ctrlpp::unexpected(spline_error::non_increasing_times);
             }
         }
@@ -114,10 +127,14 @@ class cubic_spline
             // the check is correct across position scales and float precisions; the
             // margin is the rounding budget of the endpoint difference.
             constexpr Scalar periodic_match_ulps = Scalar{4};
-            auto const periodic_scale =
-                std::abs(cfg.positions.front()) + std::abs(cfg.positions.back());
-            if (std::abs(cfg.positions.front() - cfg.positions.back())
-                > periodic_match_ulps * std::numeric_limits<Scalar>::epsilon() * periodic_scale) {
+            auto const periodic_scale = std::max(
+                {Scalar{1}, std::abs(cfg.positions.front()), std::abs(cfg.positions.back())});
+            auto const endpoint_difference =
+                std::abs(cfg.positions.front() - cfg.positions.back());
+            if (!std::isfinite(endpoint_difference)
+                || endpoint_difference
+                       > periodic_match_ulps * std::numeric_limits<Scalar>::epsilon()
+                             * periodic_scale) {
                 return ctrlpp::unexpected(spline_error::periodic_endpoint_mismatch);
             }
         }

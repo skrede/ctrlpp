@@ -1820,6 +1820,50 @@ TEST_CASE("Cubic spline periodic BC wraps velocity and acceleration",
     REQUIRE(std::abs(end.position(0) - positions.back()) <= horner_tol);
 }
 
+TEST_CASE("Cubic spline periodic endpoint comparison is overflow safe",
+          "[cubic_spline][hardening][negative]")
+{
+    SECTION("a large finite mismatch is rejected")
+    {
+        auto const rejected = ctrlpp::cubic_spline<double>::create({
+            .times = {0.0, 1.0, 2.0},
+            .positions = {1e308, 9.5e307, 9e307},
+            .bc = ctrlpp::boundary_condition::periodic,
+        });
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::spline_error::periodic_endpoint_mismatch);
+    }
+
+    SECTION("non-finite endpoints are rejected before comparison")
+    {
+        auto const rejected = ctrlpp::cubic_spline<double>::create({
+            .times = {0.0, 1.0, 2.0},
+            .positions = {std::numeric_limits<double>::infinity(), 0.0,
+                          std::numeric_limits<double>::infinity()},
+            .bc = ctrlpp::boundary_condition::periodic,
+        });
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::spline_error::non_finite_input);
+    }
+
+    SECTION("large matching endpoints remain closed")
+    {
+        auto const built = ctrlpp::cubic_spline<double>::create({
+            .times = {0.0, 1.0, 2.0},
+            .positions = {1e150, 0.0, 1e150},
+            .bc = ctrlpp::boundary_condition::periodic,
+        });
+        REQUIRE(built.has_value());
+        auto const start = built->evaluate(0.0);
+        auto const end = built->evaluate(2.0);
+        double const tolerance =
+            static_cast<double>(spline_horner_rounding_ops)
+            * std::numeric_limits<double>::epsilon() * 1e150;
+        CHECK(start.position(0) == 1e150);
+        CHECK(std::abs(end.position(0) - 1e150) <= tolerance);
+    }
+}
+
 TEST_CASE("Cubic spline clamped BC with exactly 2 waypoints",
           "[cubic_spline][hardening][coverage]")
 {
