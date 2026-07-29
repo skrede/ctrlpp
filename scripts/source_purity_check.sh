@@ -185,13 +185,31 @@ for arg in "$@"; do
 done
 
 fixture_root="${repo_root}/scripts/purity_fixtures"
+self_test_root=""
 
 if [ "${self_test}" -eq 1 ]; then
     if [ -n "${scan_root_arg}" ]; then
         echo "ERROR: --self-test scans its own fixture directory and takes no root." >&2
         exit 2
     fi
-    scan_root="${fixture_root}"
+
+    self_test_root="$(mktemp -d "${TMPDIR:-/tmp}/ctrlpp-purity-self-test.XXXXXX")"
+    cleanup_self_test()
+    {
+        rm -rf -- "${self_test_root}"
+    }
+    trap cleanup_self_test EXIT
+
+    cp -R "${fixture_root}/." "${self_test_root}/"
+
+    decision_record_key="D""-07"
+    versioned_branch_key="mile""stone/v7.8.9"
+    printf '// Deliberate self-test sample: %s\n' "${decision_record_key}" \
+        > "${self_test_root}/lib/generated_decision_record_identifier.h"
+    printf '// Deliberate self-test sample: %s\n' "${versioned_branch_key}" \
+        > "${self_test_root}/lib/generated_versioned_branch_identifier.h"
+
+    scan_root="${self_test_root}"
 else
     scan_root="${scan_root_arg:-${PURITY_SCAN_ROOT:-${repo_root}}}"
 fi
