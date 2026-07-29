@@ -35,7 +35,7 @@ class mhe;
 
 ## mhe_config
 
-Configuration struct `mhe_config<Scalar, NX, NU, NY, N>` passed at construction.
+Configuration struct `mhe_config<Scalar, NX, NU, NY, N>` passed to `create`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -51,16 +51,21 @@ Configuration struct `mhe_config<Scalar, NX, NU, NY, N>` passed at construction.
 | `soft_penalty` | `Scalar` | `1e4` | L1 penalty for soft state constraints |
 | `numerical_eps` | `Scalar` | `sqrt(eps)` | Perturbation for numerical Jacobians |
 
-## Constructors
+## Creation
 
 ```cpp
-mhe(Dynamics dynamics, Measurement measurement,
-    const mhe_config<Scalar, NX, NU, NY, N>& config);
+static auto create(
+    Dynamics dynamics,
+    Measurement measurement,
+    const mhe_config<Scalar, NX, NU, NY, N>& config)
+    -> ctrlpp::expected<mhe, moving_horizon_construction_error>;
 ```
 
-Constructs the estimator from dynamics and measurement models plus configuration. Initializes the internal EKF for arrival cost propagation and the measurement/input windows.
+Validates the embedded EKF and the moving-horizon formulation before constructing the estimator. On success, initializes the internal EKF for arrival-cost propagation and the measurement/input windows.
 
-The window length `N` is a template parameter on both the class and `mhe_config`, not a runtime field, so its domain is enforced at compile time: `N == 0` fails to compile on both. `N` sizes the fixed estimation window arrays, which the update rotates, reads the trailing element of, and indexes at their midpoint, none of which is defined for an empty window. There is therefore no fallible construction factory here: the horizon domain is closed before the program runs.
+`moving_horizon_construction_error` is a variant. Its `filter_error` alternative reports invalid `Q`, `R`, `P0`, `x0`, or numerical-differentiation configuration for the embedded EKF. Its `moving_horizon_configuration_error` alternative reports non-invertible covariance weights, nonpositive arrival or soft-constraint weights, invalid state or residual bounds, and an invalid numerical-differentiation step.
+
+The window length `N` is a template parameter on both the class and `mhe_config`, not a runtime field, so `N == 0` still fails at compile time. Runtime-valued configuration is checked by `create`; callers must branch on its `expected` before moving out the estimator.
 
 ## Methods
 
@@ -85,7 +90,7 @@ Incorporates a new measurement, or reports why it could not. During fill-up (few
 
 A refusal cannot undo the preceding prediction: that input was applied to the plant, so `state()` exposes the embedded filter's predicted prior. The missing measurement does invalidate the fixed-step horizon. The estimator clears its input, measurement, prior, and warm-start windows, sets `is_initialized()` to false, and uses the embedded EKF for the next N accepted measurements. Optimization resumes only after a coherent horizon has been refilled. `diagnostics()` continues to describe the last successful update until the next accepted measurement; the failed `update` return is what identifies the current state as an uncorrected prior.
 
-An ill-shaped solver result falls back the same way. A solver may report an accepted status and still return a primal shorter than the decision dimension, or a dual shorter than the constraint count, of the QP the estimator posed; the estimator compares both reported lengths against those dimensions before the extraction reads the result, and on a violation engages the EKF fallback instead of writing the window. The estimate is still produced -- by the fallback rather than by the window solve -- so this is a disposition and not a failure: `diagnostics().used_ekf_fallback` is `true` and `diagnostics().status` is `solve_status::invalid_backend_result`, which names this condition specifically rather than collapsing it into the general `solve_status::error` a non-optimal solve reports.
+An invalid solver result falls back the same way. A solver may report an accepted status and still return a primal shorter than the decision dimension, a dual shorter than the constraint count, a non-finite consumed value or diagnostic, or a negative iteration count. The estimator validates all of these before reading or storing the result, and engages the EKF fallback instead of writing the window when validation fails. The estimate is still produced -- by the fallback rather than by the window solve -- so this is a disposition and not a failure: `diagnostics().used_ekf_fallback` is `true` and `diagnostics().status` is `solve_status::invalid_backend_result`, which names this condition specifically rather than collapsing it into the general `solve_status::error` a non-optimal solve reports.
 
 ### state
 
@@ -125,7 +130,7 @@ Returns the smoothed state trajectory over the full estimation window (N+1 eleme
 const mhe_diagnostics<Scalar>& diagnostics() const;
 ```
 
-Returns solver diagnostics including status, cost, residuals, slack usage, and whether the EKF fallback was used. This is the DISPOSITION channel and it describes a step that succeeded: `solve_status::error` with `used_ekf_fallback` set for a setup failure or a non-optimal solve, and `solve_status::invalid_backend_result` for a solver result whose dimensions did not cover the posed problem. A refused measurement never appears here, because no estimate was produced for the aggregate to describe -- it is returned by `update` instead, and the aggregate goes on describing the last accepted step.
+Returns solver diagnostics including status, cost, residuals, slack usage, and whether the EKF fallback was used. This is the DISPOSITION channel and it describes a step that succeeded: `solve_status::error` with `used_ekf_fallback` set for a setup failure or a non-optimal solve, and `solve_status::invalid_backend_result` for an incomplete or non-finite accepted solver result. A refused measurement never appears here, because no estimate was produced for the aggregate to describe -- it is returned by `update` instead, and the aggregate goes on describing the last accepted step.
 
 ### is_initialized
 
@@ -146,6 +151,7 @@ Returns `true` once the estimation window is full (at least N measurement steps 
 
 #include <iostream>
 #include <random>
+#include <utility>
 
 struct constant_dynamics
 {
@@ -177,11 +183,19 @@ int main()
         .x0 = Eigen::Vector2d::Zero(),
         .P0 = Eigen::Matrix2d::Identity() * 10.0};
 
-    ctrlpp::mhe<double, NX, NU, NY, N,
-                ctrlpp::osqp_solver,
-                constant_dynamics,
-                position_measurement>
-        estimator(constant_dynamics{}, position_measurement{}, cfg);
+    using estimator_type =
+        ctrlpp::mhe<double, NX, NU, NY, N,
+                    ctrlpp::osqp_solver,
+                    constant_dynamics,
+                    position_measurement>;
+    auto estimator_result = estimator_type::create(
+        constant_dynamics{}, position_measurement{}, cfg);
+    if(!estimator_result)
+    {
+        std::cerr << "invalid MHE configuration\n";
+        return 1;
+    }
+    auto estimator = std::move(*estimator_result);
 
     std::mt19937 rng(42);
     std::normal_distribution<double> noise(0.0, 1.0);

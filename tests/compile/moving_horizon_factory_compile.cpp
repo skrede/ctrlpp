@@ -1,0 +1,100 @@
+#include "ctrlpp/mhe.h"
+#include "ctrlpp/nmhe.h"
+
+#include <cstddef>
+#include <utility>
+
+namespace
+{
+
+enum class setup_error
+{
+    failed,
+};
+
+struct qp_solver_stub
+{
+    using scalar_type = double;
+
+    auto setup(const ctrlpp::qp_problem<double>&)
+        -> ctrlpp::expected<void, setup_error>
+    {
+        return {};
+    }
+
+    auto solve(const ctrlpp::qp_update<double>&)
+        -> ctrlpp::qp_result<double>
+    {
+        return {};
+    }
+};
+
+struct nlp_solver_stub
+{
+    using scalar_type = double;
+
+    auto setup(const ctrlpp::nlp_problem<double>&)
+        -> ctrlpp::expected<void, setup_error>
+    {
+        return {};
+    }
+
+    auto solve(const ctrlpp::nlp_update<double>&)
+        -> ctrlpp::nlp_result<double>
+    {
+        return {};
+    }
+};
+
+struct constant_dynamics
+{
+    auto operator()(const ctrlpp::Vector<double, 2>& x,
+                    const ctrlpp::Vector<double, 1>&) const
+        -> ctrlpp::Vector<double, 2>
+    {
+        return x;
+    }
+};
+
+struct position_measurement
+{
+    auto operator()(const ctrlpp::Vector<double, 2>& x) const
+        -> ctrlpp::Vector<double, 1>
+    {
+        return ctrlpp::Vector<double, 1>{x[0]};
+    }
+};
+
+}
+
+int main()
+{
+    constexpr std::size_t nx = 2;
+    constexpr std::size_t nu = 1;
+    constexpr std::size_t ny = 1;
+    constexpr std::size_t horizon = 4;
+
+    using mhe_type =
+        ctrlpp::mhe<double, nx, nu, ny, horizon, qp_solver_stub,
+                    constant_dynamics, position_measurement>;
+    auto mhe_result = mhe_type::create(
+        constant_dynamics{}, position_measurement{},
+        ctrlpp::mhe_config<double, nx, nu, ny, horizon>{});
+    if(!mhe_result)
+        return 1;
+    auto linear_estimator = std::move(*mhe_result);
+
+    using nmhe_type =
+        ctrlpp::nmhe<double, nx, nu, ny, horizon, nlp_solver_stub,
+                     constant_dynamics, position_measurement>;
+    auto nmhe_result = nmhe_type::create(
+        constant_dynamics{}, position_measurement{},
+        ctrlpp::nmhe_config<double, nx, nu, ny, horizon>{});
+    if(!nmhe_result)
+        return 1;
+    auto nonlinear_estimator = std::move(*nmhe_result);
+
+    linear_estimator.predict(ctrlpp::Vector<double, nu>::Zero());
+    nonlinear_estimator.predict(ctrlpp::Vector<double, nu>::Zero());
+    return 0;
+}
