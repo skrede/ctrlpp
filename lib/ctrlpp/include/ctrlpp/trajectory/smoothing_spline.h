@@ -64,6 +64,7 @@ class smoothing_spline
     /// Rejections, checked in order:
     ///  * fewer than 2 waypoints             -> spline_error::too_few_points
     ///  * times/positions length mismatch    -> spline_error::size_mismatch
+    ///  * a non-finite knot or waypoint      -> spline_error::non_finite_input
     ///  * knot times not strictly increasing -> spline_error::non_increasing_times
     ///  * mu outside (0, 1] or NaN           -> spline_error::mu_out_of_range
     ///  * a regularized system, or resulting
@@ -112,8 +113,18 @@ class smoothing_spline
         if (cfg.positions.size() != n_pts) {
             return ctrlpp::unexpected(spline_error::size_mismatch);
         }
+        if (!std::all_of(cfg.times.begin(), cfg.times.end(),
+                         [](Scalar value) { return std::isfinite(value); })
+            || !std::all_of(cfg.positions.begin(), cfg.positions.end(),
+                            [](Scalar value) { return std::isfinite(value); })) {
+            return ctrlpp::unexpected(spline_error::non_finite_input);
+        }
         for (std::size_t i = 0; i + 1 < n_pts; ++i) {
-            if (!(cfg.times[i + 1] - cfg.times[i] > Scalar{0})) {
+            auto const span = cfg.times[i + 1] - cfg.times[i];
+            if (!std::isfinite(span)) {
+                return ctrlpp::unexpected(spline_error::unrepresentable_spline);
+            }
+            if (!(span > Scalar{0})) {
                 return ctrlpp::unexpected(spline_error::non_increasing_times);
             }
         }
@@ -128,6 +139,16 @@ class smoothing_spline
 
         smoothing_spline spline{unchecked_t{}, cfg};
         if (!spline.coefficients_representable_) {
+            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
+        }
+        if (!std::isfinite(spline.duration())) {
+            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
+        }
+        auto const start = spline.evaluate(cfg.times.front());
+        auto const end = spline.evaluate(cfg.times.back());
+        if (!start.position.allFinite() || !start.velocity.allFinite()
+            || !start.acceleration.allFinite() || !end.position.allFinite()
+            || !end.velocity.allFinite() || !end.acceleration.allFinite()) {
             return ctrlpp::unexpected(spline_error::unrepresentable_spline);
         }
         return spline;

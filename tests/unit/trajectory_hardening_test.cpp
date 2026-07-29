@@ -1208,6 +1208,45 @@ TEST_CASE("Smoothing spline with 2 points degenerates to linear",
     REQUIRE(spline.duration() == 1.0);
 }
 
+TEST_CASE("Smoothing spline rejects non-finite two-point geometry",
+          "[smoothing_spline][hardening][negative]")
+{
+    auto const max = std::numeric_limits<double>::max();
+
+    SECTION("finite endpoints with an overflowing span")
+    {
+        auto const rejected = ctrlpp::smoothing_spline<double>::create({
+            .times = {-max, max},
+            .positions = {0.0, 1.0},
+            .mu = 0.5,
+        });
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::spline_error::unrepresentable_spline);
+    }
+
+    SECTION("an infinite endpoint")
+    {
+        auto const rejected = ctrlpp::smoothing_spline<double>::create({
+            .times = {0.0, std::numeric_limits<double>::infinity()},
+            .positions = {0.0, 1.0},
+            .mu = 0.5,
+        });
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::spline_error::non_finite_input);
+    }
+
+    SECTION("a non-finite waypoint")
+    {
+        auto const rejected = ctrlpp::smoothing_spline<double>::create({
+            .times = {0.0, 1.0},
+            .positions = {0.0, std::numeric_limits<double>::quiet_NaN()},
+            .mu = 0.5,
+        });
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::spline_error::non_finite_input);
+    }
+}
+
 TEST_CASE("Trapezoidal trajectory rescale_to extends motion",
           "[trapezoidal][hardening][coverage]")
 {

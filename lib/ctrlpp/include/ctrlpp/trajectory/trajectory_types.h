@@ -64,6 +64,7 @@ enum class spline_error
 {
     too_few_points,
     size_mismatch,
+    non_finite_input,
     non_increasing_times,
     periodic_endpoint_mismatch,
     periodic_too_few_points,
