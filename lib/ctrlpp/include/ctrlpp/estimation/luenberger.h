@@ -44,6 +44,7 @@ enum class luenberger_update_error
 {
     non_finite_state,
     non_finite_measurement,
+    non_finite_result,
 };
 
 /// @brief Persistent state-health status of a `luenberger_observer`.
@@ -104,7 +105,11 @@ public:
         if(const auto step = check_step(z); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
-        m_x = (m_x + m_L * (z - m_sys.C * m_x)).eval();
+        auto next_x = (m_x + m_L * (z - m_sys.C * m_x)).eval();
+        if(!next_x.allFinite())
+            return ctrlpp::unexpected(
+                luenberger_update_error::non_finite_result);
+        m_x = std::move(next_x);
         return {};
     }
 

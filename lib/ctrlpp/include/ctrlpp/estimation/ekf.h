@@ -56,6 +56,7 @@ enum class ekf_update_error
     non_finite_state,
     non_finite_covariance,
     non_finite_measurement,
+    non_finite_result,
 };
 
 /// @brief Persistent state-health status of an `ekf`.
@@ -163,6 +164,10 @@ public:
         if(const auto step = check_step(z); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
+        auto const previous_x = m_x;
+        auto const previous_P = m_P;
+        auto const previous_innovation = m_innovation;
+        auto const previous_nis = m_nis;
         auto z_pred = m_measurement(m_x);
         m_innovation = (z - z_pred).eval();
 
@@ -174,6 +179,15 @@ public:
         update_covariance(K, H);
 
         m_nis = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
+        if(!m_x.allFinite() || !m_P.allFinite()
+            || !m_innovation.allFinite() || !std::isfinite(m_nis))
+        {
+            m_x = previous_x;
+            m_P = previous_P;
+            m_innovation = previous_innovation;
+            m_nis = previous_nis;
+            return ctrlpp::unexpected(ekf_update_error::non_finite_result);
+        }
         return {};
     }
 

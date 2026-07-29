@@ -64,6 +64,7 @@ enum class ukf_update_error
     non_finite_state,
     non_finite_covariance,
     non_finite_measurement,
+    non_finite_result,
 };
 
 /// @brief Persistent state-health status of a `ukf`.
@@ -203,6 +204,11 @@ public:
         if(const auto step = check_step(z); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
+        auto const previous_x = m_x;
+        auto const previous_P = m_P;
+        auto const previous_innovation = m_innovation;
+        auto const previous_nis = m_nis;
+        auto const previous_health = m_health;
         auto sigma = m_strategy.generate(m_x, m_P);
         note_health(sigma);
         auto z_sigma = compute_measurement_sigma_points(sigma.points);
@@ -213,6 +219,16 @@ public:
         m_innovation = (z - z_pred).eval();
         m_nis = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
         apply_correction_and_update_covariance(K, S);
+        if(!m_x.allFinite() || !m_P.allFinite()
+            || !m_innovation.allFinite() || !std::isfinite(m_nis))
+        {
+            m_x = previous_x;
+            m_P = previous_P;
+            m_innovation = previous_innovation;
+            m_nis = previous_nis;
+            m_health = previous_health;
+            return ctrlpp::unexpected(ukf_update_error::non_finite_result);
+        }
         return {};
     }
 

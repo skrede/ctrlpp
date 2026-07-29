@@ -85,6 +85,16 @@ struct gravity_meas
     }
 };
 
+struct extreme_measurement
+{
+    auto operator()(const Eigen::Quaternion<double>&) const
+        -> ctrlpp::Vector<double, 3>
+    {
+        return ctrlpp::Vector<double, 3>::Constant(
+            -std::numeric_limits<double>::max());
+    }
+};
+
 using MukfType = ctrlpp::manifold_ukf<double, 3, simple_rotation_dynamics, gravity_meas>;
 
 // create() is the only construction path and it is fallible, so every
@@ -184,6 +194,35 @@ TEST_CASE("Manifold UKF non-unit quaternion input normalizes",
     }
 
     CHECK(std::abs(raw.attitude().norm() - 1.0) <= unit_norm_budget);
+}
+
+TEST_CASE("Manifold UKF rejects correction overflow without committing it",
+          "[manifold_ukf][hardening][negative]")
+{
+    ctrlpp::manifold_ukf_config<double, 3> config;
+    using filter_type =
+        ctrlpp::manifold_ukf<double, 3,
+                            simple_rotation_dynamics,
+                            extreme_measurement>;
+    auto filter = ctrlpp::test::constructed(filter_type::create(
+        simple_rotation_dynamics{}, extreme_measurement{}, config));
+    auto const state_before = filter.state();
+    auto const covariance_before = filter.covariance();
+    auto const innovation_before = filter.innovation();
+    auto const attitude_before = filter.attitude();
+    auto const health_before = filter.health();
+
+    auto measurement = ctrlpp::Vector<double, 3>::Constant(
+        std::numeric_limits<double>::max());
+    auto result = filter.update(measurement);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error()
+          == ctrlpp::manifold_ukf_update_error::non_finite_result);
+    CHECK(filter.state() == state_before);
+    CHECK(filter.covariance() == covariance_before);
+    CHECK(filter.innovation() == innovation_before);
+    CHECK(filter.attitude().coeffs() == attitude_before.coeffs());
+    CHECK(filter.health() == health_before);
 }
 
 TEST_CASE("Manifold UKF NaN rotation measurement is rejected without touching the estimate",

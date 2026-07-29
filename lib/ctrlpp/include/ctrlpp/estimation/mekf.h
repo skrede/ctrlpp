@@ -70,6 +70,7 @@ enum class mekf_update_error
     non_finite_state,
     non_finite_covariance,
     non_finite_measurement,
+    non_finite_result,
 };
 
 /// @brief Persistent state-health status of a `mekf`.
@@ -164,6 +165,11 @@ public:
         if(const auto step = check_step(z); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
+        auto const previous_q = q_;
+        auto const previous_b = b_;
+        auto const previous_P = P_;
+        auto const previous_innovation = innovation_;
+        auto const previous_state = state_cache_;
         auto z_pred = measurement_(q_, b_);
         innovation_ = (z - z_pred).eval();
 
@@ -174,6 +180,16 @@ public:
         auto delta_xi = apply_multiplicative_correction(K);
         update_covariance(K, H, delta_xi);
         update_state_cache();
+        if(!q_.coeffs().allFinite() || !b_.allFinite() || !P_.allFinite()
+            || !innovation_.allFinite() || !state_cache_.allFinite())
+        {
+            q_ = previous_q;
+            b_ = previous_b;
+            P_ = previous_P;
+            innovation_ = previous_innovation;
+            state_cache_ = previous_state;
+            return ctrlpp::unexpected(mekf_update_error::non_finite_result);
+        }
         return {};
     }
 

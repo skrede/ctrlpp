@@ -191,6 +191,35 @@ TEST_CASE("UKF rejects each non-finite configuration field by name", "[ukf][hard
     }
 }
 
+TEST_CASE("UKF rejects correction overflow without committing it",
+          "[ukf][hardening][negative]")
+{
+    ctrlpp::ukf_config<double, 2, 1, 1> config;
+    config.x0 << -std::numeric_limits<double>::max(), 0.0;
+    using filter_type =
+        ctrlpp::ukf<double, 2, 1, 1,
+                    ukf_linear_dynamics,
+                    ukf_position_measurement>;
+    auto filter = ctrlpp::test::constructed(filter_type::create(
+        ukf_linear_dynamics{}, ukf_position_measurement{}, config));
+    auto const state_before = filter.state();
+    auto const covariance_before = filter.covariance();
+    auto const innovation_before = filter.innovation();
+    auto const nis_before = filter.nis();
+    auto const health_before = filter.health();
+
+    ctrlpp::Vector<double, 1> measurement;
+    measurement << std::numeric_limits<double>::max();
+    auto result = filter.update(measurement);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::ukf_update_error::non_finite_result);
+    CHECK(filter.state() == state_before);
+    CHECK(filter.covariance() == covariance_before);
+    CHECK(filter.innovation() == innovation_before);
+    CHECK(filter.nis() == nis_before);
+    CHECK(filter.health() == health_before);
+}
+
 TEST_CASE("UKF NaN measurement is rejected without touching the estimate",
           "[ukf][hardening][negative]")
 {

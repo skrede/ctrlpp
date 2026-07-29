@@ -9,6 +9,7 @@
 
 #include "ctrlpp/control/pid_policies.h"
 
+#include <cmath>
 #include <cstddef>
 
 namespace ctrlpp
@@ -96,6 +97,16 @@ public:
     // The owning controller wires this from perf_assessment::config so the exposed
     // default is the single source of truth.
     void set_oscillation_threshold(Scalar threshold) { m_osc_threshold = threshold; }
+
+    auto all_finite() const -> bool
+    {
+        return m_iae.allFinite()
+            && m_ise.allFinite()
+            && m_itae.allFinite()
+            && m_zero_crossings.allFinite()
+            && m_prev_error_sign.allFinite()
+            && std::isfinite(m_accumulated_time);
+    }
 
 private:
     /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE)

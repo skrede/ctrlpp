@@ -66,6 +66,17 @@ struct gravity_measurement
     }
 };
 
+struct extreme_measurement
+{
+    auto operator()(const Eigen::Quaternion<double>&,
+                    const ctrlpp::Vector<double, 3>&) const
+        -> ctrlpp::Vector<double, 3>
+    {
+        return ctrlpp::Vector<double, 3>::Constant(
+            -std::numeric_limits<double>::max());
+    }
+};
+
 // The tilt angle, read off the quaternion's vector part rather than through an
 // arc cosine of a dot product. The arc cosine saturates to exactly zero once
 // the vector part falls below about 1e-8, and the convergence case tracks a
@@ -199,6 +210,32 @@ TEST_CASE("MEKF NaN quaternion measurement is rejected without touching the esti
 
     CHECK(filter.state() == reference.state());
     CHECK(filter.covariance() == reference.covariance());
+}
+
+TEST_CASE("MEKF rejects correction overflow without committing it",
+          "[mekf][hardening][negative]")
+{
+    ctrlpp::mekf_config<double, 3, 3> config;
+    using filter_type = ctrlpp::mekf<double, 3, 3, extreme_measurement>;
+    auto filter = ctrlpp::test::constructed(
+        filter_type::create(extreme_measurement{}, config));
+    auto const state_before = filter.state();
+    auto const covariance_before = filter.covariance();
+    auto const innovation_before = filter.innovation();
+    auto const attitude_before = filter.attitude();
+    auto const bias_before = filter.bias();
+
+    auto measurement = ctrlpp::Vector<double, 3>::Constant(
+        std::numeric_limits<double>::max());
+    auto result = filter.update(measurement);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::mekf_update_error::non_finite_result);
+    CHECK(filter.state() == state_before);
+    CHECK(filter.covariance() == covariance_before);
+    CHECK(filter.innovation() == innovation_before);
+    CHECK(filter.attitude().coeffs() == attitude_before.coeffs());
+    CHECK(filter.bias() == bias_before);
+    CHECK(filter.health() == ctrlpp::mekf_health::ok);
 }
 
 TEST_CASE("MEKF covariance stays symmetric positive definite over 1000 steps",

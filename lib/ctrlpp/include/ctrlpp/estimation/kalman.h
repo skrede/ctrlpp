@@ -52,6 +52,7 @@ enum class kalman_update_error
     non_finite_state,
     non_finite_covariance,
     non_finite_measurement,
+    non_finite_result,
 };
 
 /// @brief Persistent state-health status of a `kalman_filter`.
@@ -152,6 +153,10 @@ public:
         if(const auto step = check_step(z); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
+        auto const previous_x = m_x;
+        auto const previous_P = m_P;
+        auto const previous_innovation = m_innovation;
+        auto const previous_nis = m_nis_value;
         compute_innovation(z);
         auto S = compute_innovation_covariance();
         auto K = compute_kalman_gain(S);
@@ -159,6 +164,15 @@ public:
         apply_state_correction(K);
         update_covariance(K);
         compute_nis(S);
+        if(!m_x.allFinite() || !m_P.allFinite()
+            || !m_innovation.allFinite() || !std::isfinite(m_nis_value))
+        {
+            m_x = previous_x;
+            m_P = previous_P;
+            m_innovation = previous_innovation;
+            m_nis_value = previous_nis;
+            return ctrlpp::unexpected(kalman_update_error::non_finite_result);
+        }
         return {};
     }
 

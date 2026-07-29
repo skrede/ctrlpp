@@ -394,6 +394,30 @@ TEST_CASE("RLS refuses a denominator with no significant digits left in it",
     }
 }
 
+TEST_CASE("RLS rejects a non-finite update candidate without committing it",
+          "[rls][hardening][negative]")
+{
+    ctrlpp::rls_config<double, 1> config;
+    config.P0 << 1.0;
+    config.lambda = 1.0;
+    auto estimator =
+        ctrlpp::test::constructed(ctrlpp::rls<double, 1>::create(config));
+    ctrlpp::Vector<double, 1> regressor;
+    regressor << 1.0;
+
+    REQUIRE(estimator.update(
+        std::numeric_limits<double>::max(), regressor).has_value());
+    auto const parameters_before = estimator.parameters();
+    auto const covariance_before = estimator.covariance();
+
+    auto result = estimator.update(
+        -std::numeric_limits<double>::max(), regressor);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::rls_update_error::non_finite_result);
+    CHECK(estimator.parameters() == parameters_before);
+    CHECK(estimator.covariance() == covariance_before);
+}
+
 TEST_CASE("recursive_arx forwards a refused sample instead of swallowing it",
           "[recursive_arx][hardening][negative]")
 {

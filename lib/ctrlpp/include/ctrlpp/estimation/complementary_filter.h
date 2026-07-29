@@ -57,6 +57,7 @@ enum class cf_update_error
     non_finite_state,
     non_finite_measurement,
     non_finite_timestep,
+    non_finite_result,
 };
 
 /// @brief Persistent state-health status of a `complementary_filter`.
@@ -139,12 +140,23 @@ public:
         if(const auto step = check_step(gyro, accel, dt); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
+        auto const previous_q = q_;
+        auto const previous_bias = bias_;
+        auto const previous_state = state_cache_;
         Vector<Scalar, 3> direction;
         Vector<Scalar, 3> correction = Vector<Scalar, 3>::Zero();
         if(unit_direction(accel, direction))
             correction = compute_gravity_correction(direction);
 
         integrate_gyro(gyro, correction, dt);
+        if(!q_.coeffs().allFinite() || !bias_.allFinite()
+            || !state_cache_.allFinite())
+        {
+            q_ = previous_q;
+            bias_ = previous_bias;
+            state_cache_ = previous_state;
+            return ctrlpp::unexpected(cf_update_error::non_finite_result);
+        }
         return {};
     }
 
@@ -163,6 +175,9 @@ public:
         if(const auto step = check_step(gyro, accel, dt, &mag); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
+        auto const previous_q = q_;
+        auto const previous_bias = bias_;
+        auto const previous_state = state_cache_;
         Vector<Scalar, 3> direction;
         Vector<Scalar, 3> correction = Vector<Scalar, 3>::Zero();
         if(unit_direction(accel, direction))
@@ -171,6 +186,14 @@ public:
             correction += compute_magnetic_correction(direction);
 
         integrate_gyro(gyro, correction, dt);
+        if(!q_.coeffs().allFinite() || !bias_.allFinite()
+            || !state_cache_.allFinite())
+        {
+            q_ = previous_q;
+            bias_ = previous_bias;
+            state_cache_ = previous_state;
+            return ctrlpp::unexpected(cf_update_error::non_finite_result);
+        }
         return {};
     }
 

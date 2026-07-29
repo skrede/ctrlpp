@@ -77,6 +77,7 @@ enum class mrac_step_error
     non_finite_parameters,
     non_finite_state,
     non_finite_reference,
+    non_finite_result,
 };
 
 /// @brief Persistent state-health status of an `mrac_controller`.
@@ -159,43 +160,62 @@ public:
         if(const auto step = check_step(x, r); !step)
             return unexpected(latch_health(step.error()));
 
-        m_x_model = propagate(m_cfg.reference_model, m_x_model, r);
-
-        m_tracking_error = x - m_x_model;
-
-        input_type u = m_theta_x * x + m_theta_r * r;
-
-        auto e_proj = (m_cfg.reference_model.B.transpose() * m_tracking_error).eval();
+        auto next_x_model =
+            propagate(m_cfg.reference_model, m_x_model, r);
+        auto next_tracking_error = (x - next_x_model).eval();
+        auto u = (m_theta_x * x + m_theta_r * r).eval();
+        auto e_proj =
+            (m_cfg.reference_model.B.transpose() * next_tracking_error).eval();
+        auto next_theta_x = m_theta_x;
+        auto next_theta_r = m_theta_r;
 
         if constexpr(std::is_same_v<Robustification, no_robustification>)
         {
-            m_theta_x.noalias() -= m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x;
-            m_theta_r.noalias() -= m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r;
+            next_theta_x.noalias() -=
+                m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x;
+            next_theta_r.noalias() -=
+                m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r;
         }
         else if constexpr(std::is_same_v<Robustification, dead_zone>)
         {
-            if(compute_error_norm(m_tracking_error) > m_cfg.robustification.threshold)
+            if(compute_error_norm(next_tracking_error)
+                > m_cfg.robustification.threshold)
             {
-                m_theta_x.noalias() -= m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x;
-                m_theta_r.noalias() -= m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r;
+                next_theta_x.noalias() -=
+                    m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x;
+                next_theta_r.noalias() -=
+                    m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r;
             }
         }
         else if constexpr(std::is_same_v<Robustification, sigma_modification>)
         {
-            m_theta_x.noalias() -= m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x
-                                   + m_cfg.robustification.sigma * m_theta_x;
-            m_theta_r.noalias() -= m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r
-                                   + m_cfg.robustification.sigma * m_theta_r;
+            next_theta_x.noalias() -=
+                m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x
+                + m_cfg.robustification.sigma * m_theta_x;
+            next_theta_r.noalias() -=
+                m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r
+                + m_cfg.robustification.sigma * m_theta_r;
         }
         else if constexpr(std::is_same_v<Robustification, e_modification>)
         {
-            auto e_norm = compute_error_norm(m_tracking_error);
-            m_theta_x.noalias() -= m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x
-                                   + m_cfg.robustification.delta * e_norm * m_theta_x;
-            m_theta_r.noalias() -= m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r
-                                   + m_cfg.robustification.delta * e_norm * m_theta_r;
+            auto e_norm = compute_error_norm(next_tracking_error);
+            next_theta_x.noalias() -=
+                m_cfg.sign_b * e_proj * x.transpose() * m_cfg.gamma_x
+                + m_cfg.robustification.delta * e_norm * m_theta_x;
+            next_theta_r.noalias() -=
+                m_cfg.sign_b * e_proj * r.transpose() * m_cfg.gamma_r
+                + m_cfg.robustification.delta * e_norm * m_theta_r;
         }
 
+        if(!next_x_model.allFinite() || !next_tracking_error.allFinite()
+            || !u.allFinite() || !e_proj.allFinite()
+            || !next_theta_x.allFinite() || !next_theta_r.allFinite())
+            return unexpected(mrac_step_error::non_finite_result);
+
+        m_x_model = std::move(next_x_model);
+        m_tracking_error = std::move(next_tracking_error);
+        m_theta_x = std::move(next_theta_x);
+        m_theta_r = std::move(next_theta_r);
         return u;
     }
 

@@ -174,6 +174,31 @@ TEST_CASE("Kalman rejects each non-finite configuration field by name", "[kalman
     }
 }
 
+TEST_CASE("Kalman rejects correction overflow without committing it",
+          "[kalman][hardening][negative]")
+{
+    auto sys = make_const_velocity_system();
+    ctrlpp::kalman_config<double, 2, 1, 1> config;
+    config.x0 << -std::numeric_limits<double>::max(), 0.0;
+    auto filter = ctrlpp::test::constructed(
+        ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, config));
+    auto const state_before = filter.state();
+    auto const covariance_before = filter.covariance();
+    auto const innovation_before = filter.innovation();
+    auto const nis_before = filter.nis();
+
+    Eigen::Matrix<double, 1, 1> measurement;
+    measurement << std::numeric_limits<double>::max();
+    auto result = filter.update(measurement);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::kalman_update_error::non_finite_result);
+    CHECK(filter.state() == state_before);
+    CHECK(filter.covariance() == covariance_before);
+    CHECK(filter.innovation() == innovation_before);
+    CHECK(filter.nis() == nis_before);
+    CHECK(filter.health() == ctrlpp::kalman_health::ok);
+}
+
 TEST_CASE("Kalman zero measurement noise gives the deadbeat gain",
           "[kalman][hardening][negative]")
 {

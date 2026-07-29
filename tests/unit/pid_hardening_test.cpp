@@ -161,6 +161,28 @@ TEST_CASE("PID NaN setpoint is rejected without touching the carried state",
     CHECK(pid.error() == reference.error());
 }
 
+TEST_CASE("PID rejects integral overflow without committing it",
+          "[pid][hardening][negative]")
+{
+    SisoPid::config_type cfg{};
+    cfg.ki = vec1(std::numeric_limits<double>::max());
+    SisoPid controller{cfg};
+    auto const integral_before = controller.integral();
+    auto const error_before = controller.error();
+
+    auto result = controller.compute(vec1(2.0), vec1(0.0), 1.0);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::pid_step_error::non_finite_result);
+    CHECK(controller.integral() == integral_before);
+    CHECK(controller.error() == error_before);
+    CHECK(controller.health() == ctrlpp::pid_health::ok);
+
+    auto recovered = controller.compute(vec1(0.0), vec1(0.0), 1.0);
+    REQUIRE(recovered.has_value());
+    CHECK(recovered->allFinite());
+    CHECK(controller.integral().allFinite());
+}
+
 TEST_CASE("PID NaN measurement is rejected without touching the carried state",
           "[pid][hardening][negative]")
 {

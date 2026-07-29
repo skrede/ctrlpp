@@ -34,6 +34,7 @@ enum class recursive_arx_update_error
     non_finite_denominator,
     indefinite_covariance,
     denominator_below_resolution,
+    non_finite_result,
 };
 
 template <ctrlpp_floating_scalar Scalar, std::size_t NA, std::size_t NB, std::size_t NU = 1, std::size_t NY = 1>
@@ -158,6 +159,8 @@ private:
                 return recursive_arx_update_error::indefinite_covariance;
             case rls_update_error::denominator_below_resolution:
                 return recursive_arx_update_error::denominator_below_resolution;
+            case rls_update_error::non_finite_result:
+                return recursive_arx_update_error::non_finite_result;
         }
         return recursive_arx_update_error::non_finite_state;
     }

@@ -144,6 +144,28 @@ TEST_CASE("Complementary filter non-finite timestep is rejected and names the cl
     CHECK(cf.attitude().coeffs() == q_before.coeffs());
 }
 
+TEST_CASE("Complementary filter rejects correction overflow atomically",
+          "[complementary_filter][hardening][negative]")
+{
+    ctrlpp::cf_config<double> cfg{
+        .k_p = 0.0,
+        .k_i = std::numeric_limits<double>::max(),
+        .dt = 2.0};
+    auto filter = make_filter(cfg);
+    auto const attitude_before = filter.attitude();
+    auto const bias_before = filter.bias();
+
+    ctrlpp::Vector<double, 3> acceleration;
+    acceleration << 1.0, 0.0, 0.0;
+    auto result = filter.update(
+        ctrlpp::Vector<double, 3>::Zero(), acceleration, 2.0);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::cf_update_error::non_finite_result);
+    CHECK(filter.attitude().coeffs() == attitude_before.coeffs());
+    CHECK(filter.bias() == bias_before);
+    CHECK(filter.health() == ctrlpp::cf_health::ok);
+}
+
 TEST_CASE("Complementary filter zero-norm accel drops the correction and integrates anyway",
           "[complementary_filter][hardening][negative]")
 {

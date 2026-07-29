@@ -171,6 +171,24 @@ TEST_CASE("MRAC NaN state is rejected without touching the adaptive parameters",
     CHECK(ctrl.x_model() == reference.x_model());
 }
 
+TEST_CASE("MRAC rejects adaptation overflow without committing it",
+          "[mrac][hardening][negative]")
+{
+    auto cfg = make_siso_config(std::numeric_limits<double>::max());
+    ctrlpp::mrac_controller<double> controller(cfg);
+    auto const theta_x_before = controller.theta_x();
+    auto const theta_r_before = controller.theta_r();
+    auto const model_before = controller.x_model();
+
+    auto result = controller.evaluate(vec1(4.0), vec1(1.0));
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::mrac_step_error::non_finite_result);
+    CHECK(controller.theta_x() == theta_x_before);
+    CHECK(controller.theta_r() == theta_r_before);
+    CHECK(controller.x_model() == model_before);
+    CHECK(controller.health() == ctrlpp::mrac_health::ok);
+}
+
 TEST_CASE("MRAC NaN reference is rejected without touching the adaptive parameters",
           "[mrac][hardening][negative]")
 {

@@ -138,6 +138,26 @@ TEST_CASE("Luenberger NaN measurement is rejected without touching the state",
     CHECK(obs.state() == reference.state());
 }
 
+TEST_CASE("Luenberger rejects correction overflow without committing it",
+          "[luenberger][hardening][negative]")
+{
+    auto sys = make_system();
+    Eigen::Matrix<double, 2, 1> gain;
+    gain << std::numeric_limits<double>::max(), 0.0;
+    ctrlpp::luenberger_observer<double, 2, 1, 1> observer{
+        sys, gain, Eigen::Vector2d::Zero()};
+    auto const state_before = observer.state();
+
+    Eigen::Matrix<double, 1, 1> measurement;
+    measurement << 2.0;
+    auto result = observer.update(measurement);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error()
+          == ctrlpp::luenberger_update_error::non_finite_result);
+    CHECK(observer.state() == state_before);
+    CHECK(observer.health() == ctrlpp::luenberger_health::ok);
+}
+
 TEST_CASE("Luenberger zero observer gains (open-loop)",
           "[luenberger][hardening][negative]")
 {

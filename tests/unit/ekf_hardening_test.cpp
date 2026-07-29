@@ -284,6 +284,32 @@ TEST_CASE("EKF rejects each non-finite configuration field by name", "[ekf][hard
     }
 }
 
+TEST_CASE("EKF rejects correction overflow without committing it",
+          "[ekf][hardening][negative]")
+{
+    ctrlpp::ekf_config<double, 2, 1, 1> config;
+    config.x0 << -std::numeric_limits<double>::max(), 0.0;
+    using filter_type =
+        ctrlpp::ekf<double, 2, 1, 1, linear_dynamics, linear_measurement>;
+    auto filter = ctrlpp::test::constructed(filter_type::create(
+        linear_dynamics{}, linear_measurement{}, config));
+    auto const state_before = filter.state();
+    auto const covariance_before = filter.covariance();
+    auto const innovation_before = filter.innovation();
+    auto const nis_before = filter.nis();
+
+    ctrlpp::Vector<double, 1> measurement;
+    measurement << std::numeric_limits<double>::max();
+    auto result = filter.update(measurement);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::ekf_update_error::non_finite_result);
+    CHECK(filter.state() == state_before);
+    CHECK(filter.covariance() == covariance_before);
+    CHECK(filter.innovation() == innovation_before);
+    CHECK(filter.nis() == nis_before);
+    CHECK(filter.health() == ctrlpp::ekf_health::ok);
+}
+
 TEST_CASE("EKF for a linear system IS the Kalman filter", "[ekf][hardening][precision]")
 {
     // The name this case used to carry promised agreement with the Kalman filter

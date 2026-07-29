@@ -67,6 +67,7 @@ enum class pid_step_error
     non_finite_setpoint,
     non_finite_measurement,
     non_finite_tracking_signal,
+    non_finite_result,
 };
 
 /// @brief Persistent state-health status of a `pid`.
@@ -145,15 +146,28 @@ public:
         if(const auto step = check_step(sp, meas, dt); !step)
             return unexpected(latch_health(step.error()));
 
+        auto const previous = capture_cycle_state();
         auto filtered_sp = apply_setpoint_filter(sp, dt);
         auto filtered_meas = apply_pv_filter(meas, dt);
         auto e = (filtered_sp - filtered_meas).eval();
         m_perf.accumulate(e, dt);
 
-        if constexpr(detail::contains_v<velocity_form, Policies...>)
-            return compute_velocity_form(e, sp, filtered_sp, filtered_meas, dt);
-        else
-            return compute_position_form(e, sp, filtered_sp, filtered_meas, dt);
+        auto result = [&] {
+            if constexpr(detail::contains_v<velocity_form, Policies...>)
+                return compute_velocity_form(
+                    e, sp, filtered_sp, filtered_meas, dt);
+            else
+                return compute_position_form(
+                    e, sp, filtered_sp, filtered_meas, dt);
+        }();
+
+        if(!result.allFinite() || !carried_state_finite()
+            || !m_perf.all_finite())
+        {
+            restore_cycle_state(previous);
+            return unexpected(pid_step_error::non_finite_result);
+        }
+        return result;
     }
 
     /// @brief Produce the control command for one cycle and back-assign the
@@ -173,13 +187,20 @@ public:
         if(!tracking_signal.allFinite())
             return unexpected(pid_step_error::non_finite_tracking_signal);
 
+        auto const previous = capture_cycle_state();
         auto u = compute(sp, meas, dt);
         if(!u)
             return u;
         if constexpr(!detail::contains_v<velocity_form, Policies...>)
         {
             auto non_integral = (*u - m_integral).eval();
-            m_integral = (tracking_signal - non_integral).eval();
+            auto next_integral = (tracking_signal - non_integral).eval();
+            if(!next_integral.allFinite())
+            {
+                restore_cycle_state(previous);
+                return unexpected(pid_step_error::non_finite_result);
+            }
+            m_integral = std::move(next_integral);
         }
         return u;
     }
@@ -259,6 +280,61 @@ public:
     }
 
 private:
+    struct cycle_state
+    {
+        vector_t integral;
+        vector_t prev_error;
+        vector_t prev_prev_error;
+        vector_t prev_meas;
+        vector_t prev_sp;
+        vector_t prev_output;
+        vector_t accumulated_output;
+        vector_t prev_ff;
+        vector_t filtered_sp;
+        vector_t filtered_meas;
+        vector_t prev_deriv_filtered;
+        pid_performance_tracker<Scalar, NY, Policies...> performance;
+        bool first_step;
+        bool saturated;
+    };
+
+    auto capture_cycle_state() const -> cycle_state
+    {
+        return cycle_state{
+            .integral = m_integral,
+            .prev_error = m_prev_error,
+            .prev_prev_error = m_prev_prev_error,
+            .prev_meas = m_prev_meas,
+            .prev_sp = m_prev_sp,
+            .prev_output = m_prev_output,
+            .accumulated_output = m_accumulated_output,
+            .prev_ff = m_prev_ff,
+            .filtered_sp = m_filtered_sp,
+            .filtered_meas = m_filtered_meas,
+            .prev_deriv_filtered = m_prev_deriv_filtered,
+            .performance = m_perf,
+            .first_step = m_first_step,
+            .saturated = m_saturated};
+    }
+
+    void restore_cycle_state(const cycle_state& previous)
+    {
+        m_integral = previous.integral;
+        m_prev_error = previous.prev_error;
+        m_prev_prev_error = previous.prev_prev_error;
+        m_prev_meas = previous.prev_meas;
+        m_prev_sp = previous.prev_sp;
+        m_prev_output = previous.prev_output;
+        m_accumulated_output = previous.accumulated_output;
+        m_prev_ff = previous.prev_ff;
+        m_filtered_sp = previous.filtered_sp;
+        m_filtered_meas = previous.filtered_meas;
+        m_prev_deriv_filtered = previous.prev_deriv_filtered;
+        m_perf = previous.performance;
+        m_first_step = previous.first_step;
+        m_saturated = previous.saturated;
+    }
+
     /// @brief Classify a cycle's operands without touching a single member.
     ///
     /// The order is the severity order documented on `pid_step_error`: the

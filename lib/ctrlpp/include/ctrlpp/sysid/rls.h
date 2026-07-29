@@ -143,6 +143,7 @@ enum class rls_update_error
     non_finite_denominator,
     indefinite_covariance,
     denominator_below_resolution,
+    non_finite_result,
 };
 
 template <typename Scalar, std::size_t NP>
@@ -241,17 +242,23 @@ public:
         Scalar e = y - phi.dot(m_theta);
         Vector<Scalar, NP> k = P_phi / denom;
 
-        m_theta += k * e;
+        auto next_theta = (m_theta + k * e).eval();
+        auto next_P =
+            ((m_P - k * P_phi.transpose()).eval() / m_lambda).eval();
+        next_P = ((next_P + next_P.transpose()) * Scalar{0.5}).eval();
 
-        m_P = (m_P - k * P_phi.transpose()).eval() / m_lambda;
-        m_P = (m_P + m_P.transpose()) * Scalar{0.5};
-
-        Scalar trace = m_P.trace();
+        Scalar trace = next_P.trace();
         Scalar trace_bound = m_cov_upper_bound * static_cast<Scalar>(NP);
         if(trace > trace_bound)
-        {
-            m_P *= trace_bound / trace;
-        }
+            next_P *= trace_bound / trace;
+
+        if(!std::isfinite(e) || !k.allFinite() || !next_theta.allFinite()
+            || !next_P.allFinite() || !std::isfinite(trace)
+            || !std::isfinite(trace_bound))
+            return ctrlpp::unexpected(rls_update_error::non_finite_result);
+
+        m_theta = std::move(next_theta);
+        m_P = std::move(next_P);
         return {};
     }
 

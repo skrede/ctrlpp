@@ -65,6 +65,7 @@ enum class manifold_ukf_update_error
     non_finite_state,
     non_finite_covariance,
     non_finite_measurement,
+    non_finite_result,
 };
 
 /// @brief Persistent state-health status of a `manifold_ukf`.
@@ -228,6 +229,10 @@ public:
         if(const auto step = check_step(z); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
+        auto const previous_q = m_q;
+        auto const previous_P = m_P;
+        auto const previous_innovation = m_innovation;
+        auto const previous_state = m_state_cache;
         auto sigma = m_strategy.generate(m_q, m_P);
         auto z_sigma = compute_measurement_sigma_points(sigma.points);
         auto z_pred = compute_predicted_measurement(sigma.Wm, z_sigma);
@@ -237,6 +242,16 @@ public:
         m_innovation = (z - z_pred).eval();
         apply_manifold_correction(K, S);
         update_state_cache();
+        if(!m_q.coeffs().allFinite() || !m_P.allFinite()
+            || !m_innovation.allFinite() || !m_state_cache.allFinite())
+        {
+            m_q = previous_q;
+            m_P = previous_P;
+            m_innovation = previous_innovation;
+            m_state_cache = previous_state;
+            return ctrlpp::unexpected(
+                manifold_ukf_update_error::non_finite_result);
+        }
         return {};
     }
 
