@@ -275,3 +275,56 @@ TEST_CASE("SO3 exp/log round trip across the small-angle branch threshold",
         REQUIRE((recovered - phi).norm() <= budget * phi.norm());
     }
 }
+
+TEST_CASE("SO3 exponential remains a finite unit rotation at extreme finite scales",
+          "[so3][hardening][robustness]")
+{
+    SECTION("double")
+    {
+        auto const max = std::numeric_limits<double>::max();
+        for(int exponent = 0; exponent <= 1000; exponent += 100)
+        {
+            double const scale = std::ldexp(0.25, exponent);
+            ctrlpp::Vector<double, 3> phi;
+            phi << scale, -scale, scale;
+
+            auto const q = ctrlpp::so3::exp(phi);
+            CAPTURE(exponent, scale);
+            REQUIRE(q.coeffs().allFinite());
+            REQUIRE_THAT(q.norm(),
+                         WithinAbs(1.0, so3_exp_norm_ops * so3_eps));
+        }
+
+        ctrlpp::Vector<double, 3> phi;
+        phi << max / 2.0, -max / 2.0, max / 2.0;
+        auto const q = ctrlpp::so3::exp(phi);
+        REQUIRE(q.coeffs().allFinite());
+        REQUIRE_THAT(q.norm(),
+                     WithinAbs(1.0, so3_exp_norm_ops * so3_eps));
+    }
+
+    SECTION("float")
+    {
+        constexpr float eps = std::numeric_limits<float>::epsilon();
+        auto const max = std::numeric_limits<float>::max();
+        for(int exponent = 0; exponent <= 120; exponent += 12)
+        {
+            float const scale = std::ldexp(0.25F, exponent);
+            ctrlpp::Vector<float, 3> phi;
+            phi << scale, -scale, scale;
+
+            auto const q = ctrlpp::so3::exp(phi);
+            CAPTURE(exponent, scale);
+            REQUIRE(q.coeffs().allFinite());
+            REQUIRE(std::abs(q.norm() - 1.0F)
+                    <= static_cast<float>(so3_exp_norm_ops) * eps);
+        }
+
+        ctrlpp::Vector<float, 3> phi;
+        phi << max / 2.0F, -max / 2.0F, max / 2.0F;
+        auto const q = ctrlpp::so3::exp(phi);
+        REQUIRE(q.coeffs().allFinite());
+        REQUIRE(std::abs(q.norm() - 1.0F)
+                <= static_cast<float>(so3_exp_norm_ops) * eps);
+    }
+}

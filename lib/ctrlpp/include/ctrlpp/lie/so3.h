@@ -21,6 +21,7 @@
 #include <Eigen/Geometry>
 
 #include <cmath>
+#include <numbers>
 
 namespace ctrlpp
 {
@@ -54,19 +55,34 @@ namespace ctrlpp::so3
 template <ctrlpp_floating_scalar Scalar>
 Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3>& phi)
 {
-    Scalar theta = phi.norm();
-    Scalar half_theta = theta / Scalar{2};
+    Scalar const scale = phi.cwiseAbs().maxCoeff();
+    if(scale == Scalar{0})
+        return Eigen::Quaternion<Scalar>::Identity();
 
-    Scalar sinc_half;
-    if(theta < Scalar{1e-7})
-        sinc_half = Scalar{0.5} - theta * theta / Scalar{48};
-    else
-        sinc_half = std::sin(half_theta) / theta;
+    Vector<Scalar, 3> const scaled = phi / scale;
+    Scalar const scaled_norm = scaled.norm();
+    Scalar const theta = scale * scaled_norm;
 
     Eigen::Quaternion<Scalar> q;
-    q.w() = std::cos(half_theta);
-    q.vec() = sinc_half * phi;
-    return q;
+    if(theta < static_cast<Scalar>(1e-7L))
+    {
+        Scalar const half_theta = theta / Scalar{2};
+        Scalar const sinc_half = Scalar{0.5} - theta * theta / Scalar{48};
+        q.w() = std::cos(half_theta);
+        q.vec() = sinc_half * phi;
+    }
+    else
+    {
+        Scalar const period = Scalar{4} * std::numbers::pi_v<Scalar>;
+        Scalar const scale_period = period / scaled_norm;
+        Scalar const reduced_theta =
+            std::fmod(std::fmod(scale, scale_period) * scaled_norm, period);
+        Scalar const half_theta = reduced_theta / Scalar{2};
+        q.w() = std::cos(half_theta);
+        q.vec() = (std::sin(half_theta) / scaled_norm) * scaled;
+    }
+
+    return Eigen::Quaternion<Scalar>{q.coeffs() / q.norm()};
 }
 
 /// Logarithmic map: unit quaternion -> rotation vector.
