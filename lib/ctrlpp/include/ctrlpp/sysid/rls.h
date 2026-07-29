@@ -226,11 +226,14 @@ public:
         if(!std::isfinite(denom))
             return ctrlpp::unexpected(rls_update_error::non_finite_denominator);
 
-        Scalar const denom_scale = std::max(m_lambda, phi.norm() * P_phi.norm());
-        Scalar const denom_floor = static_cast<Scalar>(denominator_rounding_ops)
-                                   * std::numeric_limits<Scalar>::epsilon() * denom_scale;
+        Scalar const relative_floor = static_cast<Scalar>(denominator_rounding_ops)
+                                      * std::numeric_limits<Scalar>::epsilon();
+        Scalar const abs_denom = std::abs(denom);
+        Scalar const phi_norm = phi.stableNorm();
+        Scalar const P_phi_norm = P_phi.stableNorm();
 
-        if(std::abs(denom) <= denom_floor)
+        if(at_or_below_product(abs_denom, relative_floor, m_lambda, Scalar{1})
+           || at_or_below_product(abs_denom, relative_floor, phi_norm, P_phi_norm))
             return ctrlpp::unexpected(rls_update_error::denominator_below_resolution);
         if(denom < Scalar{0})
             return ctrlpp::unexpected(rls_update_error::indefinite_covariance);
@@ -257,6 +260,31 @@ public:
     const Matrix<Scalar, NP, NP>& covariance() const { return m_P; }
 
 private:
+    static auto at_or_below_product(Scalar value, Scalar factor, Scalar lhs, Scalar rhs) -> bool
+    {
+        if(lhs == Scalar{0} || rhs == Scalar{0})
+            return value == Scalar{0};
+
+        int value_exponent{};
+        int factor_exponent{};
+        int lhs_exponent{};
+        int rhs_exponent{};
+        int product_exponent{};
+
+        Scalar const value_fraction = std::frexp(value, &value_exponent);
+        Scalar const factor_fraction = std::frexp(factor, &factor_exponent);
+        Scalar const lhs_fraction = std::frexp(lhs, &lhs_exponent);
+        Scalar const rhs_fraction = std::frexp(rhs, &rhs_exponent);
+        Scalar const product_fraction =
+            std::frexp(factor_fraction * lhs_fraction * rhs_fraction, &product_exponent);
+
+        int const threshold_exponent =
+            factor_exponent + lhs_exponent + rhs_exponent + product_exponent;
+        if(value_exponent != threshold_exponent)
+            return value_exponent < threshold_exponent;
+        return value_fraction <= product_fraction;
+    }
+
     /// @brief Tag selecting the non-validating constructor reserved for
     /// `create`, which is what makes the factory the only public path and the
     /// validation impossible to bypass.

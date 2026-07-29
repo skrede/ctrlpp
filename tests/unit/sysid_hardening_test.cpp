@@ -320,6 +320,31 @@ TEST_CASE("RLS refuses a denominator with no significant digits left in it",
         REQUIRE(estimator.parameters()(0) != 0.0);
     }
 
+    SECTION("reciprocal covariance and regressor scales remain representable")
+    {
+        for(int exponent = 40; exponent <= 200; exponent += 20)
+        {
+            const double regressor_scale = std::pow(10.0, exponent);
+            const double covariance_scale = std::pow(10.0, -exponent);
+
+            ctrlpp::rls_config<double, 2> cfg;
+            cfg.lambda = 1.0;
+            cfg.P0 =
+                ctrlpp::Matrix<double, 2, 2>::Identity() * covariance_scale;
+            auto estimator =
+                ctrlpp::test::constructed(ctrlpp::rls<double, 2>::create(cfg));
+
+            Eigen::Vector2d phi;
+            phi << regressor_scale, regressor_scale;
+
+            const auto applied = estimator.update(1.0, phi);
+            CAPTURE(exponent);
+            REQUIRE(applied.has_value());
+            REQUIRE(estimator.parameters().allFinite());
+            REQUIRE(estimator.covariance().allFinite());
+        }
+    }
+
     SECTION("a cancelled denominator far above unit scale is REFUSED")
     {
         // Definiteness of the initial covariance is deliberately not a
