@@ -27,6 +27,7 @@ and the likely response would be to weaken the gate.
 | `CMakeLists.txt` | 6, one compiler family's discard-error flag absent |
 | `.clang-tidy` | 7, the attribute-inserting analysis check enabled |
 | `lib/fixture_planning_identifier.h` | 8, a planning-artifact key cited in a comment |
+| `lib/fixture_milestone_identifier.h` | 8, a versioned development-branch identifier cited in a comment |
 
 Run the self-test with:
 
@@ -34,13 +35,14 @@ Run the self-test with:
 bash scripts/source_purity_check.sh --self-test
 ```
 
-It asserts a nonzero detection count and, more importantly, that each rule
-reports **exactly one** violation. The exact count is what makes this a real
-self-test rather than a check that something went wrong: a script that crashed
-before scanning would also exit nonzero, and only the count distinguishes the
-two. It is also what catches the removal of a comment filter, because the
-fixtures for rules 1, 2, 3 and 4b each carry the banned pattern once in a
-comment as well as once in code.
+It asserts a nonzero detection count and, more importantly, the exact expected
+count for each rule. Every rule expects one violation except the
+planning-identifier rule, which expects its two distinct fixture families. The
+exact counts make this a real self-test rather than a check that something went
+wrong: a script that crashed before scanning would also exit nonzero, and only
+the counts distinguish the two. They also catch the removal of a comment
+filter, because the fixtures for rules 1, 2, 3 and 4b each carry the banned
+pattern once in a comment as well as once in code.
 
 Rules 5 and 8 have no comment filter and their fixtures carry the banned pattern
 once in total. That is deliberate in both cases: a mention of the exception-mode

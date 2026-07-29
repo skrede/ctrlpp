@@ -302,7 +302,7 @@ fallible_call_names="create|setup|place_observer|place|lqr_gain_continuous|lqr_g
 # arithmetic out: NX-1, NU-1 and NB-1 all have the shape but one digit. The
 # families that legitimately use a single digit are spelled out individually
 # instead.
-planning_identifier_pattern='(^|[^A-Za-z0-9_-])(D-[0-9]+|DL-[0-9]+|SC-?[0-9]+|SEED-[0-9]+|T-[0-9]+-[0-9]+-[0-9]+|[A-Z][A-Z0-9]{1,9}-[0-9]{2,}|(RESEARCH|PLAN|SUMMARY|CONTEXT|ROADMAP|PATTERNS)\.md|\.planning/)'
+planning_identifier_pattern='(^|[^A-Za-z0-9_-])(D-[0-9]+|DL-[0-9]+|SC-?[0-9]+|SEED-[0-9]+|T-[0-9]+-[0-9]+-[0-9]+|[A-Z][A-Z0-9]{1,9}-[0-9]{2,}|milestone/[A-Za-z0-9][A-Za-z0-9._-]*|(RESEARCH|PLAN|SUMMARY|CONTEXT|ROADMAP|PATTERNS)\.md|\.planning/)'
 
 # Designations that match the general shape and are not planning keys, excluded
 # by name rather than by widening or narrowing the pattern:
@@ -560,6 +560,7 @@ rule_8_planning_identifiers()
 
 rule_ids=()
 rule_counts=()
+rule_expected_counts=()
 total_violations=0
 
 run_rule()
@@ -575,12 +576,18 @@ run_rule()
         printf '%s\n' "${out}" | sed 's/^/  /'
     fi
 
+    local expected_count=1
+    if [ "${id}" = "8" ]; then
+        expected_count=2
+    fi
+
     rule_ids+=("${id}")
     rule_counts+=("${count}")
+    rule_expected_counts+=("${expected_count}")
     total_violations=$((total_violations + count))
 
     if [ "${self_test}" -eq 1 ]; then
-        echo "Rule ${id}: ${count} violation(s) detected"
+        echo "Rule ${id}: ${count} violation(s) detected; expected ${expected_count}"
     elif [ "${count}" -eq 0 ]; then
         echo "Rule ${id} PASS"
     else
@@ -611,10 +618,12 @@ if [ "${self_test}" -eq 1 ]; then
     # check that something went wrong: a script that crashed before scanning
     # would also exit nonzero, and only the count distinguishes the two.
     self_test_failed=0
+    expected_total=0
     i=0
     while [ "${i}" -lt "${#rule_ids[@]}" ]; do
-        if [ "${rule_counts[${i}]}" -ne 1 ]; then
-            echo "SELF-TEST FAIL: rule ${rule_ids[${i}]} reported ${rule_counts[${i}]} violation(s), expected exactly 1." >&2
+        expected_total=$((expected_total + rule_expected_counts[i]))
+        if [ "${rule_counts[${i}]}" -ne "${rule_expected_counts[${i}]}" ]; then
+            echo "SELF-TEST FAIL: rule ${rule_ids[${i}]} reported ${rule_counts[${i}]} violation(s), expected ${rule_expected_counts[${i}]}." >&2
             if [ "${rule_counts[${i}]}" -eq 0 ]; then
                 echo "  Its fixture produced nothing: either the fixture file is gone or the rule stopped detecting." >&2
             else
@@ -628,7 +637,7 @@ if [ "${self_test}" -eq 1 ]; then
     if [ "${self_test_failed}" -ne 0 ]; then
         exit 1
     fi
-    echo "Self-test PASS: ${total_violations} violation(s) detected, exactly one per rule across ${#rule_ids[@]} rules."
+    echo "Self-test PASS: ${total_violations} violation(s) detected, matching all ${#rule_ids[@]} rule expectations."
     exit 0
 fi
 

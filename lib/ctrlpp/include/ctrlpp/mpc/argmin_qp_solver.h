@@ -11,7 +11,7 @@
 /// on a typed error channel rather than through C-pointer ownership.
 ///
 /// The adapter is `__has_include`-gated on `argmin/qp/sparse_admm_qp.h`. The
-/// default argmin pin (the milestone/v0.3.5 tip) ships that header, so the gate
+/// default pinned argmin revision ships that header, so the gate
 /// is satisfied by default: with `CTRLPP_BUILD_ARGMIN=ON` this policy is ACTIVE
 /// and `mpc<Scalar, NX, NU, argmin_qp_solver>` compiles out of the box. The gate
 /// is retained as a defensive fallback: overriding the pin back to an argmin SHA
