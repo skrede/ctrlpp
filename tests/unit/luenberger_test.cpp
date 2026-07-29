@@ -9,9 +9,10 @@
 
 #include <Eigen/Eigenvalues>
 
-#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <complex>
+#include <algorithm>
 
 
 TEST_CASE("luenberger observer convergence with known gain")
@@ -373,6 +374,77 @@ TEST_CASE("place_observer refuses unpaired complex poles")
     auto result = ctrlpp::place_observer<double, 2, 1>(A, C, desired);
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == ctrlpp::place_error::poles_not_conjugate_symmetric);
+}
+
+TEST_CASE("place classifies each non-finite operand before numerical tests")
+{
+    Eigen::Matrix<double, 2, 2> A;
+    A << 0.0, 1.0, -2.0, -3.0;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 0.0, 1.0;
+    std::array<std::complex<double>, 2> poles{
+        std::complex<double>{-1.0, 1.0},
+        std::complex<double>{-1.0, -1.0},
+    };
+
+    auto bad_A = A;
+    bad_A(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    auto result = ctrlpp::place<double, 2, 1>(bad_A, B, poles);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::non_finite_input);
+
+    auto bad_B = B;
+    bad_B(0, 0) = std::numeric_limits<double>::infinity();
+    result = ctrlpp::place<double, 2, 1>(A, bad_B, poles);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::non_finite_input);
+
+    auto bad_poles = poles;
+    bad_poles[0].real(std::numeric_limits<double>::quiet_NaN());
+    result = ctrlpp::place<double, 2, 1>(A, B, bad_poles);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::non_finite_input);
+
+    bad_poles = poles;
+    bad_poles[0].imag(std::numeric_limits<double>::infinity());
+    result = ctrlpp::place<double, 2, 1>(A, B, bad_poles);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::non_finite_input);
+
+    result = ctrlpp::place<double, 2, 1>(
+        A, B, poles, std::numeric_limits<double>::quiet_NaN());
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::non_finite_input);
+}
+
+TEST_CASE("place_observer forwards non-finite system and pole diagnoses")
+{
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 0.1, 0.0, 1.0;
+    Eigen::Matrix<double, 1, 2> C;
+    C << 1.0, 0.0;
+    std::array<std::complex<double>, 2> poles{
+        std::complex<double>{0.3, 0.0},
+        std::complex<double>{0.2, 0.0},
+    };
+
+    auto bad_A = A;
+    bad_A(0, 0) = -std::numeric_limits<double>::infinity();
+    auto result = ctrlpp::place_observer<double, 2, 1>(bad_A, C, poles);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::non_finite_input);
+
+    auto bad_C = C;
+    bad_C(0, 1) = std::numeric_limits<double>::quiet_NaN();
+    result = ctrlpp::place_observer<double, 2, 1>(A, bad_C, poles);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::non_finite_input);
+
+    auto bad_poles = poles;
+    bad_poles[1].imag(std::numeric_limits<double>::infinity());
+    result = ctrlpp::place_observer<double, 2, 1>(A, C, bad_poles);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::place_error::non_finite_input);
 }
 
 TEST_CASE("place with poles at origin")

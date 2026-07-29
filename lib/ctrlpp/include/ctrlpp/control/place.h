@@ -19,6 +19,7 @@
 #include <limits>
 #include <complex>
 #include <cstddef>
+#include <algorithm>
 
 namespace ctrlpp
 {
@@ -135,6 +136,8 @@ std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>
 ///
 /// Refusals, checked in order:
 ///  * an input dimension above one -> place_error::multi_input_not_supported
+///  * a non-finite matrix entry, pole component, or tolerance ->
+///    place_error::non_finite_input
 ///  * a pole set not closed under conjugation ->
 ///    place_error::poles_not_conjugate_symmetric
 ///  * a rank-deficient controllability matrix ->
@@ -162,6 +165,12 @@ auto place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix
     }
     else
     {
+        if(!A.allFinite() || !B.allFinite() || !std::isfinite(conj_tol_scale)
+           || !std::all_of(desired_poles.begin(), desired_poles.end(), [](const auto& pole) {
+                  return std::isfinite(pole.real()) && std::isfinite(pole.imag());
+              }))
+            return ctrlpp::unexpected(place_error::non_finite_input);
+
         // Validate conjugate pairs
         if(!detail::validate_conjugate_pairs(desired_poles, conj_tol_scale))
             return ctrlpp::unexpected(place_error::poles_not_conjugate_symmetric);

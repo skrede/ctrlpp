@@ -31,6 +31,8 @@ namespace ctrlpp
 ///  * multi_output_not_supported    : `place_observer` was instantiated with an
 ///                                    output dimension above one. The dual of
 ///                                    the above, through the same formula.
+///  * non_finite_input              : a system entry, pole component, or
+///                                    conjugacy tolerance is NaN or infinite.
 ///  * poles_not_conjugate_symmetric : the requested pole set is not closed
 ///                                    under conjugation, so no real-coefficient
 ///                                    characteristic polynomial has it as its
@@ -48,6 +50,7 @@ enum class place_error
 {
     multi_input_not_supported,
     multi_output_not_supported,
+    non_finite_input,
     poles_not_conjugate_symmetric,
     uncontrollable_pair,
 };
