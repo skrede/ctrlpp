@@ -408,12 +408,18 @@ class trapezoidal_trajectory
 
         // Check triangular degenerate case
         // When v_max cannot be reached: v_v = sqrt((2*a*h + v0^2 + v1^2) / 2)
-        auto const acceleration_velocity =
-            std::sqrt(a) * std::sqrt(abs_h);
-        auto const inverse_sqrt_two = Scalar{1} / std::sqrt(Scalar{2});
-        auto const v_tri = std::hypot(acceleration_velocity,
-                                      std::abs(sv0) * inverse_sqrt_two,
-                                      std::abs(sv1) * inverse_sqrt_two);
+        // Preserve the nominal expression's rounding whenever its intermediate
+        // is representable. Only its overflow case needs the scaled hypot form.
+        auto const direct_v_tri_sq =
+            (Scalar{2} * a * abs_h + sv0 * sv0 + sv1 * sv1) / Scalar{2};
+        auto const v_tri = std::isfinite(direct_v_tri_sq)
+                               ? std::sqrt(direct_v_tri_sq)
+                               : std::hypot(
+                                     std::sqrt(a) * std::sqrt(abs_h),
+                                     std::abs(sv0)
+                                         / std::sqrt(Scalar{2}),
+                                     std::abs(sv1)
+                                         / std::sqrt(Scalar{2}));
 
         if (sv0 == sv1 && sv0 > Scalar{0} && v_tri == sv0) {
             v_v_ = sv0;
