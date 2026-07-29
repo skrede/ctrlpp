@@ -43,9 +43,9 @@
 
 #include <array>
 #include <cmath>
-#include <cstdint>
 #include <limits>
 #include <random>
+#include <cstdint>
 #include <algorithm>
 
 using namespace ctrlpp;
@@ -134,6 +134,87 @@ auto sample_velocity(Trajectory const& profile, double t) -> double
 {
     using Scalar = typename Trajectory::scalar_type;
     return static_cast<double>(profile.evaluate(static_cast<Scalar>(t)).velocity(0));
+}
+
+/// Assert the public commanded-versus-realized acceleration report independently
+/// of the representation used by the construction.
+///
+/// The feasibility floor is evaluated in long double from the factorized
+/// difference of squares. It neither repeats the cancellation-prone
+/// `v0 * v0 - v1 * v1` spelling nor copies the production exponent-scaling
+/// algorithm. The disposition is then tied back to behavior by sampling inside
+/// every nonempty ramp and requiring its acceleration magnitude to equal the
+/// reported realized value.
+template <typename Trajectory>
+auto check_trapezoidal_acceleration_contract(
+    Trajectory const& profile, typename Trajectory::scalar_type h_signed,
+    typename Trajectory::scalar_type v0, typename Trajectory::scalar_type v1,
+    typename Trajectory::scalar_type commanded_acceleration)
+    -> typename Trajectory::scalar_type
+{
+    using Scalar = typename Trajectory::scalar_type;
+
+    auto const& disposition = profile.disposition();
+    CAPTURE(static_cast<double>(disposition.commanded_acceleration),
+            static_cast<double>(disposition.realized_acceleration),
+            static_cast<double>(commanded_acceleration));
+    REQUIRE(disposition.commanded_acceleration == commanded_acceleration);
+    REQUIRE(std::isfinite(disposition.realized_acceleration));
+    REQUIRE(disposition.realized_acceleration >= commanded_acceleration);
+
+    long double const h = std::abs(static_cast<long double>(h_signed));
+    REQUIRE(h > 0.0L);
+    long double const v0_wide = static_cast<long double>(v0);
+    long double const v1_wide = static_cast<long double>(v1);
+    long double const ramp_distance =
+        0.5L * std::abs((v0_wide - v1_wide) * (v0_wide + v1_wide));
+    long double const commanded_coverage =
+        static_cast<long double>(commanded_acceleration) * h;
+    long double const minimum_acceleration = ramp_distance / h;
+    long double const realized =
+        static_cast<long double>(disposition.realized_acceleration);
+
+    if(commanded_coverage < ramp_distance)
+    {
+        // A raised report must say so and remain at the analytically minimal
+        // acceleration within scalar rounding. The absolute epsilon term admits
+        // the construction's one-unit feasibility guard without admitting an
+        // arbitrary inflated replacement.
+        REQUIRE(disposition.realized_acceleration > commanded_acceleration);
+        long double const eps =
+            static_cast<long double>(std::numeric_limits<Scalar>::epsilon());
+        long double const scale =
+            std::max(std::abs(minimum_acceleration), std::abs(realized));
+        long double const report_tolerance = eps + 4.0L * eps * scale;
+        CAPTURE(minimum_acceleration, realized, report_tolerance);
+        REQUIRE(std::abs(realized - minimum_acceleration) <= report_tolerance);
+    }
+    else
+    {
+        REQUIRE(disposition.realized_acceleration == commanded_acceleration);
+    }
+
+    auto const segments = profile.phase_durations();
+    bool observed_ramp = false;
+    if(segments[0] > Scalar{0})
+    {
+        Scalar const t = segments[0] / Scalar{2};
+        Scalar const observed = std::abs(profile.evaluate(t).acceleration(0));
+        CAPTURE(static_cast<double>(t), static_cast<double>(observed));
+        REQUIRE(observed == disposition.realized_acceleration);
+        observed_ramp = true;
+    }
+    if(segments[2] > Scalar{0})
+    {
+        Scalar const t = profile.duration() - segments[2] / Scalar{2};
+        Scalar const observed = std::abs(profile.evaluate(t).acceleration(0));
+        CAPTURE(static_cast<double>(t), static_cast<double>(observed));
+        REQUIRE(observed == disposition.realized_acceleration);
+        observed_ramp = true;
+    }
+    REQUIRE(observed_ramp);
+
+    return disposition.realized_acceleration;
 }
 
 /// Kink-aligned composite Simpson integration of the reported velocity over the
@@ -789,8 +870,8 @@ void sweep_trapezoidal_scaling(sweep_config const& cfg, shape_census& census)
         Scalar const pv0 = sigma * tcfg.v0;
         Scalar const pv1 = sigma * tcfg.v1;
         Scalar const abs_h = std::abs(tcfg.q1 - tcfg.q0);
-        Scalar const a_eff =
-            ctrlpp::test::trapezoidal_effective_acceleration(abs_h, pv0, pv1, tcfg.a_max);
+        Scalar const a_eff = check_trapezoidal_acceleration_contract(
+            profile, tcfg.q1 - tcfg.q0, tcfg.v0, tcfg.v1, tcfg.a_max);
 
         record_shape(census, v_cruise, a_eff, abs_h, pv0, pv1, target);
 
@@ -1052,16 +1133,13 @@ void sweep_branch_scaling(branch_case const& drawn, branch_tally& tally)
         return;
     }
 
-    // The acceleration the profile was actually built at. These families sit
-    // deliberately close to the boundary-velocity feasibility floor, and the
-    // difference of the two squared boundary velocities that decides it is
-    // formed unfactored, so it cancels: in single precision the test can flip on
-    // a configuration whose exact arithmetic clears it, and the construction
-    // then raises the acceleration by a factor of several. Every bound below is
-    // written against the raised value, because that is the envelope the profile
-    // respects.
-    Scalar const a_eff = ctrlpp::test::trapezoidal_effective_acceleration(
-        static_cast<Scalar>(drawn.h), tcfg.v0, tcfg.v1, tcfg.a_max);
+    // These families deliberately sit close to the boundary-velocity
+    // feasibility floor. The kinematic envelope therefore comes from the
+    // profile's realized-acceleration report, while the helper independently
+    // verifies that report against the command, the analytic feasibility floor,
+    // and the acceleration observed inside both ramps.
+    Scalar const a_eff = check_trapezoidal_acceleration_contract(
+        profile, tcfg.q1 - tcfg.q0, tcfg.v0, tcfg.v1, tcfg.a_max);
     Scalar const v_cruise = profile.peak_velocity();
     record_shape(tally.census, v_cruise, a_eff, static_cast<Scalar>(drawn.h), tcfg.v0, tcfg.v1,
                  target);
@@ -1460,10 +1538,12 @@ TEST_CASE("a retimed trapezoidal profile takes each of its three shapes", "[traj
             REQUIRE(a_end < 0.0);
         }
 
+        double const a_eff = check_trapezoidal_acceleration_contract(
+            profile, cfg.q1 - cfg.q0, cfg.v0, cfg.v1, cfg.a_max);
         auto const conditioning = ctrlpp::test::trapezoidal_solve_conditioning(
-            v_cruise, cfg.a_max, cfg.q1 - cfg.q0, cfg.v0, cfg.v1, expected.target);
+            v_cruise, a_eff, cfg.q1 - cfg.q0, cfg.v0, cfg.v1, expected.target);
         check_time_scaling_contract(profile, cfg.q1 - cfg.q0,
-                                    {.v_max = cfg.v_max, .a_max = cfg.a_max, .j_max = 0.0}, cfg.v0,
+                                    {.v_max = cfg.v_max, .a_max = a_eff, .j_max = 0.0}, cfg.v0,
                                     cfg.v1, expected.target, duration_ops_trapezoidal, conditioning);
     }
 }
@@ -1561,9 +1641,11 @@ TEST_CASE("trapezoidal retiming rejects a duration past its own reachable maximu
     auto accepted = make();
     double const inside = 0.5 * (accepted.duration() + T_sup);
     REQUIRE(accepted.rescale_to(inside).has_value());
+    double const a_eff = check_trapezoidal_acceleration_contract(
+        accepted, h, cfg.v0, cfg.v1, cfg.a_max);
     auto const conditioning = ctrlpp::test::trapezoidal_solve_conditioning(
-        accepted.peak_velocity(), cfg.a_max, h, cfg.v0, cfg.v1, inside);
-    check_time_scaling_contract(accepted, h, {.v_max = cfg.v_max, .a_max = cfg.a_max, .j_max = 0.0},
+        accepted.peak_velocity(), a_eff, h, cfg.v0, cfg.v1, inside);
+    check_time_scaling_contract(accepted, h, {.v_max = cfg.v_max, .a_max = a_eff, .j_max = 0.0},
                                 cfg.v0, cfg.v1, inside, duration_ops_trapezoidal, conditioning);
 }
 
@@ -1696,10 +1778,12 @@ TEST_CASE("trapezoidal retiming realizes a recorded equal-boundary valley reques
     CAPTURE(realized);
     REQUIRE(realized <= static_cast<double>(rounding_ops_per_sample));
 
+    double const a_eff = check_trapezoidal_acceleration_contract(
+        profile, 0.00390625, 0.999999999999982, 0.999999999999982, 1e-6);
     auto const conditioning = ctrlpp::test::trapezoidal_solve_conditioning(
-        v_cruise, 1e-6, 0.00390625, 0.999999999999982, 0.999999999999982, target);
+        v_cruise, a_eff, 0.00390625, 0.999999999999982, 0.999999999999982, target);
     check_time_scaling_contract(profile, 0.00390625,
-                                {.v_max = 0.9999999999999821, .a_max = 1e-6, .j_max = 0.0},
+                                {.v_max = 0.9999999999999821, .a_max = a_eff, .j_max = 0.0},
                                 0.999999999999982, 0.999999999999982, target,
                                 duration_ops_trapezoidal, conditioning);
 }

@@ -103,22 +103,6 @@ auto trapezoidal_duration_and_scale_at(Scalar v, Scalar v0, Scalar v1, Scalar a,
     return {T, std::max({T_a, T_d, cruise_scale, std::abs(T)})};
 }
 
-/// @brief The acceleration magnitude the command is realized at.
-///
-/// The commanded value, except where the two boundary velocities cannot be
-/// reconciled over the commanded displacement at it, in which case the
-/// construction raises it to the smallest value that makes the two ramps cover
-/// the displacement exactly. Every quantity below is written against the raised
-/// value, because that is the one the profile was built on.
-template <typename Scalar>
-auto trapezoidal_effective_acceleration(Scalar h, Scalar v0, Scalar v1, Scalar a_max) -> Scalar
-{
-    Scalar const ramp_only = std::abs(v0 * v0 - v1 * v1) / Scalar{2};
-    if(h > Scalar{0} && a_max * h < ramp_only)
-        return ramp_only / h + std::numeric_limits<Scalar>::epsilon();
-    return a_max;
-}
-
 /// @brief Relative-error amplification of a difference: the scale of the
 /// operands that entered it over the magnitude of what came out.
 ///

@@ -164,13 +164,16 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     // Effective acceleration magnitude. When the commanded displacement is too
     // short for the two boundary velocities at the commanded acceleration, the
-    // construction raises that acceleration to the value which makes the two
-    // ramps exactly cover the displacement, so the envelope the trace has to
-    // respect is that raised value, not the decoded one.
+    // construction reports the raised magnitude on its disposition channel.
+    // The trace must respect the acceleration it actually realizes, while a
+    // corrupt or understated report remains a finding.
     const double abs_h = std::abs(q1 - q0);
-    const double a_eff = ctrlpp::test::trapezoidal_effective_acceleration(abs_h, v0, v1, a_max);
-    if(!std::isfinite(a_eff))
-        return 0;
+    const auto& disposition = traj.disposition();
+    if(disposition.commanded_acceleration != a_max
+       || !std::isfinite(disposition.realized_acceleration)
+       || disposition.realized_acceleration < disposition.commanded_acceleration)
+        abort();
+    const double a_eff = disposition.realized_acceleration;
 
     // Dense scan of the time domain: enough samples to exercise every phase
     // (accel/cruise/decel) multiple times regardless of the fuzzed duration.

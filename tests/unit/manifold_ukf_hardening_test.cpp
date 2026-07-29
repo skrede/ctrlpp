@@ -33,6 +33,10 @@
 //    predicted diagonal is computed here from the strategy's own spread and the
 //    configured covariance, and it is the short distance squared over the
 //    tangent dimension, not the long one.
+//  * The posterior covariance is checked independently on an affine
+//    tangent-state measurement at the identity. Diagonal prior, measurement,
+//    and noise matrices reduce the Kalman covariance equation to three scalar
+//    closed forms, so the oracle does not repeat the filter's matrix update.
 //
 // What they deliberately do not decide. No convergence RATE is asserted: the
 // rate is the filter's own Riccati-like recursion and stating it independently
@@ -58,6 +62,7 @@
 #include <Eigen/Eigenvalues>
 #include <Eigen/Geometry>
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <numbers>
@@ -92,6 +97,18 @@ struct extreme_measurement
     {
         return ctrlpp::Vector<double, 3>::Constant(
             -std::numeric_limits<double>::max());
+    }
+};
+
+struct diagonal_tangent_measurement
+{
+    auto operator()(const Eigen::Quaternion<double>& q) const
+        -> ctrlpp::Vector<double, 3>
+    {
+        const auto tangent = ctrlpp::so3::log(q);
+        ctrlpp::Vector<double, 3> measured;
+        measured << tangent(0), 2.0 * tangent(1), -0.5 * tangent(2);
+        return measured;
     }
 };
 
@@ -312,6 +329,98 @@ TEST_CASE("Manifold UKF covariance stays symmetric positive definite over 1000 s
     // Every geodesic mean converged within its budget, which is what makes the
     // predicted attitudes above means rather than last iterates.
     CHECK(filter.health() == ctrlpp::manifold_ukf_health::ok);
+}
+
+TEST_CASE("Manifold UKF posterior covariance matches an affine tangent-state closed form",
+          "[manifold_ukf][hardening][covariance]")
+{
+    using filter_type =
+        ctrlpp::manifold_ukf<double, 3, simple_rotation_dynamics,
+                            diagonal_tangent_measurement>;
+
+    constexpr std::array<double, 3> prior_variances{0.04, 0.09, 0.16};
+    constexpr std::array<double, 3> measurement_gains{1.0, 2.0, -0.5};
+    constexpr std::array<double, 3> measurement_variances{0.01, 0.04, 0.25};
+
+    ctrlpp::manifold_ukf_config<double, 3> cfg;
+    cfg.P0 = ctrlpp::Matrix<double, 3, 3>::Zero();
+    cfg.R = ctrlpp::Matrix<double, 3, 3>::Zero();
+    for(int i = 0; i < 3; ++i)
+    {
+        cfg.P0(i, i) = prior_variances[static_cast<std::size_t>(i)];
+        cfg.R(i, i) = measurement_variances[static_cast<std::size_t>(i)];
+    }
+
+    // alpha = 1 and kappa = 0 make lambda zero. The center sigma point then
+    // contributes no covariance, and each opposite pair carries one sixth of
+    // the tangent spread. That makes an affine tangent measurement reproduce
+    // P, H P H^T, and P H^T without the million-fold cancellation of the
+    // default spread.
+    const ctrlpp::merwe_options<double> wide{
+        .alpha = 1.0, .beta = 0.0, .kappa = 0.0};
+    auto strategy = ctrlpp::so3_merwe_sigma_points<double>::try_create(wide);
+    REQUIRE(strategy.has_value());
+
+    auto filter = ctrlpp::test::constructed(filter_type::create(
+        simple_rotation_dynamics{}, diagonal_tangent_measurement{}, cfg,
+        *strategy));
+
+    const auto zero_measurement = ctrlpp::Vector<double, 3>::Zero();
+    REQUIRE(filter.update(zero_measurement).has_value());
+
+    // Opposite affine measurements cancel exactly on this fixture, so the
+    // correction and reset Jacobian are the identity. This premise is asserted:
+    // if it moves, the scalar posterior below is no longer the applicable
+    // closed form and must not be allowed to pass accidentally.
+    REQUIRE(filter.innovation() == zero_measurement);
+    REQUIRE(filter.attitude().coeffs()
+            == Eigen::Quaterniond::Identity().coeffs());
+
+    // A conservative forward-error budget counted from the six non-central
+    // sigma points: each exp/log tangent round trip and diagonal measurement
+    // uses at most 27 rounded operations (162); their weighted measurement and
+    // cross-covariance accumulations use at most 42 more; and the diagonal
+    // innovation solve, covariance reduction, scalar oracle, and comparison use
+    // at most 52. Every contribution is bounded at the largest covariance
+    // operand's scale, for 256 operations in total.
+    constexpr int posterior_covariance_rounding_ops = 256;
+    const double eps = std::numeric_limits<double>::epsilon();
+
+    for(int i = 0; i < 3; ++i)
+    {
+        const auto index = static_cast<std::size_t>(i);
+        const double prior = prior_variances[index];
+        const double gain = measurement_gains[index];
+        const double noise = measurement_variances[index];
+
+        // Scalar Kalman posterior for z_i = gain * x_i:
+        //
+        //   p+ = p - p^2 gain^2 / (gain^2 p + r)
+        //      = p r / (gain^2 p + r).
+        //
+        // This contains neither the filter's K*S*K' expression nor a matrix
+        // factorization, so a multiplicative error in that reduction cannot
+        // reproduce the oracle.
+        const double expected = prior * noise
+                                / (gain * gain * prior + noise);
+        const double scale = std::max({prior, noise, expected});
+        const double tolerance =
+            static_cast<double>(posterior_covariance_rounding_ops) * eps
+            * scale;
+
+        CAPTURE(i, prior, gain, noise, expected,
+                filter.covariance()(i, i), tolerance);
+        CHECK(std::abs(filter.covariance()(i, i) - expected) <= tolerance);
+    }
+
+    const double off_diagonal_scale = prior_variances.back();
+    const double off_diagonal_tolerance =
+        static_cast<double>(posterior_covariance_rounding_ops) * eps
+        * off_diagonal_scale;
+    CHECK(std::abs(filter.covariance()(0, 1)) <= off_diagonal_tolerance);
+    CHECK(std::abs(filter.covariance()(0, 2)) <= off_diagonal_tolerance);
+    CHECK(std::abs(filter.covariance()(1, 2)) <= off_diagonal_tolerance);
+    CHECK(filter.covariance() == filter.covariance().transpose());
 }
 
 TEST_CASE("Manifold UKF attitude converges for slow rotation",
