@@ -7,6 +7,7 @@
 /// @cite vanoverscheedemoor1996 -- Van Overschee & De Moor, "Subspace Identification for Linear Systems", 1996 (VAF in subspace ID literature)
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include <Eigen/Dense>
 
@@ -25,6 +26,14 @@ struct fit_metrics
 {
     Scalar nrmse{};
     Scalar vaf{};
+};
+
+enum class fit_metrics_error
+{
+    empty_record,
+    size_mismatch,
+    non_finite_record,
+    not_column_vector,
 };
 
 /// @brief Resolution floor below which a norm formed from an n-sample record
@@ -49,6 +58,8 @@ template <typename Derived>
 auto norm_resolution_floor(const Eigen::MatrixBase<Derived>& y) -> typename Derived::Scalar
 {
     using Scalar = typename Derived::Scalar;
+    if(y.size() == 0)
+        return Scalar{0};
     auto const n = static_cast<Scalar>(y.size());
     Scalar const largest = y.cwiseAbs().maxCoeff();
     return std::sqrt(n) * (n + Scalar{1}) * std::numeric_limits<Scalar>::epsilon() * largest;
@@ -65,8 +76,13 @@ auto norm_resolution_floor(const Eigen::MatrixBase<Derived>& y) -> typename Deri
 ///
 /// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 2nd ed., 1999, Ch. 16 (Model validation)
 /// @cite vanoverscheedemoor1996 -- Van Overschee & De Moor, "Subspace Identification for Linear Systems", 1996 (VAF definition)
+namespace detail
+{
+
 template <typename DerivedA, typename DerivedB>
-fit_metrics<typename DerivedA::Scalar> compute_fit_metrics(const Eigen::MatrixBase<DerivedA>& y_actual, const Eigen::MatrixBase<DerivedB>& y_predicted)
+auto compute_fit_metrics_unchecked(const Eigen::MatrixBase<DerivedA>& y_actual,
+                                   const Eigen::MatrixBase<DerivedB>& y_predicted)
+    -> fit_metrics<typename DerivedA::Scalar>
 {
     using Scalar = typename DerivedA::Scalar;
 
@@ -121,6 +137,25 @@ fit_metrics<typename DerivedA::Scalar> compute_fit_metrics(const Eigen::MatrixBa
         vaf = (Scalar{1} - var_error / var_y) * Scalar{100};
 
     return {.nrmse = nrmse, .vaf = vaf};
+}
+
+}
+
+template <typename DerivedA, typename DerivedB>
+auto compute_fit_metrics(const Eigen::MatrixBase<DerivedA>& y_actual,
+                         const Eigen::MatrixBase<DerivedB>& y_predicted)
+    -> ctrlpp::expected<fit_metrics<typename DerivedA::Scalar>, fit_metrics_error>
+{
+    if(y_actual.size() == 0 || y_predicted.size() == 0)
+        return ctrlpp::unexpected(fit_metrics_error::empty_record);
+    if(y_actual.rows() != y_predicted.rows()
+       || y_actual.cols() != y_predicted.cols())
+        return ctrlpp::unexpected(fit_metrics_error::size_mismatch);
+    if(y_actual.cols() != 1 || y_predicted.cols() != 1)
+        return ctrlpp::unexpected(fit_metrics_error::not_column_vector);
+    if(!y_actual.allFinite() || !y_predicted.allFinite())
+        return ctrlpp::unexpected(fit_metrics_error::non_finite_record);
+    return detail::compute_fit_metrics_unchecked(y_actual, y_predicted);
 }
 
 }

@@ -203,7 +203,7 @@ auto compute_moesp_metrics(const Matrix<Scalar, NX, NX>& A,
         y_actual(t) = Y(0, t);
     }
 
-    return compute_fit_metrics(y_actual, y_predicted);
+    return compute_fit_metrics_unchecked(y_actual, y_predicted);
 }
 
 /// @brief Builds the zeroed system returned on every identification-failure path.

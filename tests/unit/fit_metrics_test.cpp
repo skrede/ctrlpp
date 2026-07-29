@@ -7,14 +7,26 @@
 
 #include <Eigen/Dense>
 
+#include <limits>
+
 using Catch::Matchers::WithinAbs;
+
+template <typename DerivedA, typename DerivedB>
+auto checked_metrics(const Eigen::MatrixBase<DerivedA>& actual,
+                     const Eigen::MatrixBase<DerivedB>& predicted)
+    -> ctrlpp::fit_metrics<typename DerivedA::Scalar>
+{
+    auto const result = ctrlpp::compute_fit_metrics(actual, predicted);
+    REQUIRE(result.has_value());
+    return *result;
+}
 
 TEST_CASE("NRMSE of perfect prediction is 0")
 {
     Eigen::VectorXd y(5);
     y << 1.0, 2.0, 3.0, 4.0, 5.0;
 
-    auto m = ctrlpp::compute_fit_metrics(y, y);
+    auto m = checked_metrics(y, y);
     REQUIRE_THAT(m.nrmse, WithinAbs(0.0, 1e-12));
 }
 
@@ -26,7 +38,7 @@ TEST_CASE("NRMSE of mean predictor is 1")
     double mean = y.mean();
     Eigen::VectorXd y_hat = Eigen::VectorXd::Constant(5, mean);
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     REQUIRE_THAT(m.nrmse, WithinAbs(1.0, 1e-12));
 }
 
@@ -35,7 +47,7 @@ TEST_CASE("VAF of perfect prediction is 100")
     Eigen::VectorXd y(5);
     y << 1.0, 2.0, 3.0, 4.0, 5.0;
 
-    auto m = ctrlpp::compute_fit_metrics(y, y);
+    auto m = checked_metrics(y, y);
     REQUIRE_THAT(m.vaf, WithinAbs(100.0, 1e-12));
 }
 
@@ -46,7 +58,7 @@ TEST_CASE("VAF of zero predictor on non-constant data is less than 100")
 
     Eigen::VectorXd y_hat = Eigen::VectorXd::Zero(5);
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     REQUIRE(m.vaf < 100.0);
 }
 
@@ -58,7 +70,7 @@ TEST_CASE("fit_metrics works with static-sized Eigen vectors")
     Eigen::Vector<double, 4> y_hat;
     y_hat << 1.0, 3.0, 5.0, 7.0;
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     REQUIRE_THAT(m.nrmse, WithinAbs(0.0, 1e-12));
     REQUIRE_THAT(m.vaf, WithinAbs(100.0, 1e-12));
 }
@@ -68,7 +80,7 @@ TEST_CASE("fit_metrics edge case: constant y with perfect prediction")
     Eigen::VectorXd y = Eigen::VectorXd::Constant(5, 3.0);
     Eigen::VectorXd y_hat = Eigen::VectorXd::Constant(5, 3.0);
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     REQUIRE_THAT(m.nrmse, WithinAbs(0.0, 1e-12));
     REQUIRE_THAT(m.vaf, WithinAbs(100.0, 1e-12));
 }
@@ -101,7 +113,7 @@ TEST_CASE("NRMSE is infinity for constant y with imperfect prediction")
     Eigen::VectorXd y = Eigen::VectorXd::Constant(5, 3.0);
     Eigen::VectorXd y_hat = Eigen::VectorXd::Constant(5, 4.0);
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     // norm_centered ~ 0 (constant y), norm_error > 0 -> NRMSE = infinity
     REQUIRE(std::isinf(m.nrmse));
     REQUIRE(m.nrmse > 0.0);
@@ -112,7 +124,7 @@ TEST_CASE("VAF is 100 for constant y with constant imperfect prediction")
     Eigen::VectorXd y = Eigen::VectorXd::Constant(5, 3.0);
     Eigen::VectorXd y_hat = Eigen::VectorXd::Constant(5, 4.0);
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     // var_y=0, error is also constant so var_error=0
     // Both variances near-zero -> VAF = 100 (zero-variance-both path)
     REQUIRE_THAT(m.vaf, WithinAbs(100.0, 1e-12));
@@ -124,7 +136,7 @@ TEST_CASE("VAF is -infinity for constant y with varying prediction")
     Eigen::VectorXd y_hat(5);
     y_hat << 1.0, 2.0, 3.0, 4.0, 5.0;  // varying prediction -> var_error > 0
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     // var_y = 0, var_error > 0 -> VAF = -infinity
     REQUIRE(std::isinf(m.vaf));
     REQUIRE(m.vaf < 0.0);
@@ -137,7 +149,7 @@ TEST_CASE("Single sample: VAF defaults to 100 with perfect prediction")
     Eigen::VectorXd y_hat(1);
     y_hat << 5.0;
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     // n=1, so var_error=0 and var_y=0 (both skip the n>1 branch)
     // -> constant-y-with-perfect-prediction path: VAF=100, NRMSE=0
     REQUIRE_THAT(m.nrmse, WithinAbs(0.0, 1e-12));
@@ -151,7 +163,7 @@ TEST_CASE("Single sample: imperfect prediction gives NRMSE=inf and VAF=-inf")
     Eigen::VectorXd y_hat(1);
     y_hat << 3.0;
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     // n=1: var_y=0 (no variance computed), var_error=0
     // norm_centered = 0 (single point, centered = y - mean = 0)
     // norm_error > 0 -> NRMSE = infinity
@@ -160,6 +172,47 @@ TEST_CASE("Single sample: imperfect prediction gives NRMSE=inf and VAF=-inf")
     // -> VAF = 100 (both variances zero path)
     // This is the edge case: with n=1 we can't compute variance
     REQUIRE_THAT(m.vaf, WithinAbs(100.0, 1e-12));
+}
+
+TEST_CASE("fit metrics validates records before Eigen reductions")
+{
+    SECTION("empty records")
+    {
+        Eigen::VectorXd actual;
+        Eigen::VectorXd predicted;
+        auto const result = ctrlpp::compute_fit_metrics(actual, predicted);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::fit_metrics_error::empty_record);
+    }
+
+    SECTION("mismatched records")
+    {
+        Eigen::Vector2d actual{1.0, 2.0};
+        Eigen::VectorXd predicted(1);
+        predicted << 1.0;
+        auto const result = ctrlpp::compute_fit_metrics(actual, predicted);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::fit_metrics_error::size_mismatch);
+    }
+
+    SECTION("non-finite records")
+    {
+        Eigen::Vector2d actual{1.0, std::numeric_limits<double>::infinity()};
+        Eigen::Vector2d predicted{1.0, 2.0};
+        auto const result = ctrlpp::compute_fit_metrics(actual, predicted);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::fit_metrics_error::non_finite_record);
+    }
+
+    SECTION("one and two finite samples")
+    {
+        Eigen::VectorXd one(1);
+        one << 1.0;
+        REQUIRE(ctrlpp::compute_fit_metrics(one, one).has_value());
+
+        Eigen::Vector2d two{1.0, 2.0};
+        REQUIRE(ctrlpp::compute_fit_metrics(two, two).has_value());
+    }
 }
 
 TEST_CASE("NRMSE greater than 1 when prediction is worse than mean")
@@ -171,7 +224,7 @@ TEST_CASE("NRMSE greater than 1 when prediction is worse than mean")
     Eigen::VectorXd y_hat(5);
     y_hat << 10.0, 10.0, 10.0, 10.0, 10.0;
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     REQUIRE(m.nrmse > 1.0);
 }
 
@@ -184,7 +237,7 @@ TEST_CASE("VAF is negative when prediction error has more variance than data")
     Eigen::VectorXd y_hat(5);
     y_hat << 5.0, 4.0, 3.0, 2.0, 1.0;
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     // error = y - y_hat = [-4, -2, 0, 2, 4], var_error > var_y -> VAF < 0
     REQUIRE(m.vaf < 0.0);
 }
@@ -197,7 +250,7 @@ TEST_CASE("fit_metrics with float scalar type")
     Eigen::VectorXf y_hat(4);
     y_hat << 1.0f, 2.0f, 3.0f, 4.0f;
 
-    auto m = ctrlpp::compute_fit_metrics(y, y_hat);
+    auto m = checked_metrics(y, y_hat);
     REQUIRE_THAT(static_cast<double>(m.nrmse), WithinAbs(0.0, 1e-5));
     REQUIRE_THAT(static_cast<double>(m.vaf), WithinAbs(100.0, 1e-3));
 }

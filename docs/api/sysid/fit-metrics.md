@@ -23,12 +23,14 @@ struct fit_metrics {
 
 ```cpp
 template <typename DerivedA, typename DerivedB>
-fit_metrics<typename DerivedA::Scalar>
+ctrlpp::expected<fit_metrics<typename DerivedA::Scalar>, fit_metrics_error>
 compute_fit_metrics(const Eigen::MatrixBase<DerivedA>& y_actual,
                     const Eigen::MatrixBase<DerivedB>& y_predicted);
 ```
 
 Computes both metrics from two Eigen column vectors of the same length.
+Empty, mismatched, non-column, and non-finite records are rejected before any
+reduction is evaluated.
 
 **NRMSE:** `||y_actual - y_predicted|| / ||y_actual - mean(y_actual)||`. A value of 0 indicates a perfect fit; values above 1 indicate the model is worse than predicting the mean.
 
@@ -54,9 +56,12 @@ int main()
     y_predicted << 1.1, 1.9, 3.2, 3.8, 5.1;
 
     auto metrics = ctrlpp::compute_fit_metrics(y_actual, y_predicted);
+    if (!metrics) {
+        return 1;
+    }
 
-    std::cout << "NRMSE = " << metrics.nrmse << "\n"
-              << "VAF   = " << metrics.vaf << " %\n";
+    std::cout << "NRMSE = " << metrics->nrmse << "\n"
+              << "VAF   = " << metrics->vaf << " %\n";
 }
 ```
 

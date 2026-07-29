@@ -134,7 +134,7 @@ auto batch_arx(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Der
     for(std::size_t t = 0; t < N; ++t)
         y_actual(static_cast<Eigen::Index>(t)) = Y(0, static_cast<Eigen::Index>(t));
 
-    auto metrics = compute_fit_metrics(y_actual, y_predicted);
+    auto metrics = detail::compute_fit_metrics_unchecked(y_actual, y_predicted);
 
     return arx_result<Scalar, NX, 1, 1>{.system = sys, .metrics = metrics};
 }
