@@ -131,13 +131,14 @@ otherwise produce silent corruption through intermediate overflow:
   pivots during forward elimination and returns zero rather than producing
   Inf from division.
 
-- **DARE symplectic overflow:** The discrete algebraic Riccati equation solver
-  checks that the symplectic matrix is finite before Schur decomposition, and
-  that the extracted solution P is finite before eigenvalue validation. It
-  returns `ctrlpp::expected<dare_result<Scalar, NX>, dare_error>`, so a
-  degenerate input comes back as a named rejection rather than a bare empty
-  result: `dare_error::non_finite_input` when A, B, Q, R or the assembled
-  symplectic Z contains NaN or Inf.
+- **DARE arithmetic range:** The discrete algebraic Riccati equation solver
+  equilibrates the weights before forming the symplectic matrix, then verifies
+  the residual and closed-loop spectrum before reporting success. It returns
+  `ctrlpp::expected<dare_result<Scalar, NX>, dare_error>`, so a refusal is
+  named rather than represented by a bare empty result:
+  `dare_error::non_finite_input` when A, B, Q or R contains NaN or Inf, and
+  `dare_error::arithmetic_limit` when finite inputs cannot produce a verified
+  stabilizing result at the scalar type's precision.
 
 - **L1 DC gain inversion:** The L1 adaptive controller validates that the
   predictor model's DC gain is invertible before computing the feedforward gain

@@ -11,8 +11,7 @@
 #include <cstddef>
 #include <utility>
 
-namespace
-{
+namespace {
 
 // The mocks below have no setup failure mode, so their setup-error type carries
 // no enumerators. The solver concepts accept one setup shape, a fallible one, so
@@ -33,21 +32,25 @@ struct mock_qp_solver
     mutable int solve_count{0};
     mutable ctrlpp::solve_status next_status{ctrlpp::solve_status::optimal};
 
-    auto setup(const ctrlpp::qp_problem<double>& problem) -> ctrlpp::expected<void, mock_setup_error> { last_setup = problem; return {}; }
+    auto setup(const ctrlpp::qp_problem<double> &problem) -> ctrlpp::expected<void, mock_setup_error>
+    {
+        last_setup = problem;
+        return {};
+    }
 
-    auto solve(const ctrlpp::qp_update<double>& update) -> ctrlpp::qp_result<double>
+    auto solve(const ctrlpp::qp_update<double> &update) -> ctrlpp::qp_result<double>
     {
         last_update = update;
         ++solve_count;
         ctrlpp::qp_result<double> result;
-        result.status = next_status;
-        result.x = Eigen::VectorXd::Zero(last_setup.P.cols());
-        result.y = Eigen::VectorXd::Zero(last_setup.A.rows());
-        result.objective = 0.0;
-        result.solve_time = 0.001;
-        result.iterations = 5;
+        result.status          = next_status;
+        result.x               = Eigen::VectorXd::Zero(last_setup.P.cols());
+        result.y               = Eigen::VectorXd::Zero(last_setup.A.rows());
+        result.objective       = 0.0;
+        result.solve_time      = 0.001;
+        result.iterations      = 5;
         result.primal_residual = 1e-6;
-        result.dual_residual = 1e-6;
+        result.dual_residual   = 1e-6;
         return result;
     }
 };
@@ -55,7 +58,7 @@ struct mock_qp_solver
 // Double integrator: NX=2, NU=1
 constexpr std::size_t NX = 2;
 constexpr std::size_t NU = 1;
-constexpr double dt = 0.1;
+constexpr double dt      = 0.1;
 
 auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX>
 {
@@ -63,7 +66,7 @@ auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX
     A << 1.0, dt, 0.0, 1.0;
     Eigen::Vector2d B;
     B << 0.5 * dt * dt, dt;
-    Eigen::Matrix2d C = Eigen::Matrix2d::Identity();
+    Eigen::Matrix2d C             = Eigen::Matrix2d::Identity();
     Eigen::Matrix<double, 2, 1> D = Eigen::Matrix<double, 2, 1>::Zero();
     return {A, B, C, D};
 }
@@ -71,9 +74,9 @@ auto make_double_integrator() -> ctrlpp::discrete_state_space<double, NX, NU, NX
 auto make_config(int horizon = 5) -> ctrlpp::mpc_config<double, NX, NU>
 {
     return {
-        .horizon = horizon,
-        .Q = Eigen::Matrix2d::Identity(),
-        .R = Eigen::Matrix<double, 1, 1>::Identity(),
+            .horizon = horizon,
+            .Q       = Eigen::Matrix2d::Identity(),
+            .R       = Eigen::Matrix<double, 1, 1>::Identity(),
     };
 }
 
@@ -83,8 +86,8 @@ using Mpc = ctrlpp::mpc<double, NX, NU, mock_qp_solver>;
 /// configuration is rejected. This is the only construction path available in
 /// the default (-fno-exceptions) tree, where the throwing convenience
 /// constructors are compiled out.
-template <typename Controller, typename... Args>
-auto make_controller(Args&&... args) -> Controller
+template<typename Controller, typename... Args>
+auto make_controller(Args &&...args) -> Controller
 {
     auto created = Controller::create(std::forward<Args>(args)...);
     REQUIRE(created.has_value());
@@ -100,12 +103,12 @@ TEST_CASE("mock_qp_solver satisfies qp_solver concept")
 
 TEST_CASE("mpc with mock solver", "[mpc]")
 {
-    auto sys = make_double_integrator();
+    auto sys        = make_double_integrator();
     constexpr int N = 5;
 
     SECTION("QP dimensions are correct for unconstrained problem")
     {
-        auto cfg = make_config(N);
+        auto cfg        = make_config(N);
         auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{1.0, 0.0};
@@ -122,7 +125,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
     SECTION("solve(x0) calls solver and returns u_0")
     {
-        auto cfg = make_config(N);
+        auto cfg        = make_config(N);
         auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{1.0, 0.5};
@@ -136,7 +139,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
     SECTION("solve(x0, x_ref) produces non-zero q vector for reference tracking")
     {
-        auto cfg = make_config(N);
+        auto cfg        = make_config(N);
         auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{0.0, 0.0};
@@ -147,7 +150,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
     SECTION("solve returns the error branch when solver reports infeasible")
     {
-        auto cfg = make_config(N);
+        auto cfg        = make_config(N);
         auto controller = make_controller<Mpc>(sys, cfg);
 
         // First solve to populate things normally
@@ -168,26 +171,30 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
             mutable ctrlpp::qp_problem<double> last_setup{};
 
-            auto setup(const ctrlpp::qp_problem<double>& problem) -> ctrlpp::expected<void, mock_setup_error> { last_setup = problem; return {}; }
+            auto setup(const ctrlpp::qp_problem<double> &problem) -> ctrlpp::expected<void, mock_setup_error>
+            {
+                last_setup = problem;
+                return {};
+            }
 
-            auto solve(const ctrlpp::qp_update<double>&) -> ctrlpp::qp_result<double>
+            auto solve(const ctrlpp::qp_update<double> &) -> ctrlpp::qp_result<double>
             {
                 ctrlpp::qp_result<double> result;
-                result.status = ctrlpp::solve_status::infeasible;
-                result.x = Eigen::VectorXd::Zero(last_setup.P.cols());
-                result.y = Eigen::VectorXd::Zero(last_setup.A.rows());
-                result.objective = 0.0;
-                result.solve_time = 0.0;
-                result.iterations = 0;
+                result.status          = ctrlpp::solve_status::infeasible;
+                result.x               = Eigen::VectorXd::Zero(last_setup.P.cols());
+                result.y               = Eigen::VectorXd::Zero(last_setup.A.rows());
+                result.objective       = 0.0;
+                result.solve_time      = 0.0;
+                result.iterations      = 0;
                 result.primal_residual = 0.0;
-                result.dual_residual = 0.0;
+                result.dual_residual   = 0.0;
                 return result;
             }
         };
 
         static_assert(ctrlpp::qp_solver<infeasible_mock>);
 
-        auto infeasible_ctrl = make_controller<ctrlpp::mpc<double, NX, NU, infeasible_mock>>(sys, cfg);
+        auto infeasible_ctrl   = make_controller<ctrlpp::mpc<double, NX, NU, infeasible_mock>>(sys, cfg);
         auto infeasible_result = infeasible_ctrl.solve(x0);
         CHECK_FALSE(infeasible_result.has_value());
         CHECK(infeasible_result.error() == ctrlpp::solver_error::infeasible);
@@ -209,21 +216,25 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
             mutable ctrlpp::qp_problem<double> last_setup{};
 
-            auto setup(const ctrlpp::qp_problem<double>& problem) -> ctrlpp::expected<void, mock_setup_error> { last_setup = problem; return {}; }
+            auto setup(const ctrlpp::qp_problem<double> &problem) -> ctrlpp::expected<void, mock_setup_error>
+            {
+                last_setup = problem;
+                return {};
+            }
 
-            auto solve(const ctrlpp::qp_update<double>&) -> ctrlpp::qp_result<double>
+            auto solve(const ctrlpp::qp_update<double> &) -> ctrlpp::qp_result<double>
             {
                 ctrlpp::qp_result<double> result;
                 result.status = ctrlpp::solve_status::max_iterations;
-                result.x = Eigen::VectorXd::Zero(last_setup.P.cols());
-                result.y = Eigen::VectorXd::Zero(last_setup.A.rows());
+                result.x      = Eigen::VectorXd::Zero(last_setup.P.cols());
+                result.y      = Eigen::VectorXd::Zero(last_setup.A.rows());
                 return result;
             }
         };
 
         static_assert(ctrlpp::qp_solver<budget_mock>);
 
-        auto budget_ctrl = make_controller<ctrlpp::mpc<double, NX, NU, budget_mock>>(sys, cfg);
+        auto budget_ctrl   = make_controller<ctrlpp::mpc<double, NX, NU, budget_mock>>(sys, cfg);
         auto budget_result = budget_ctrl.solve(x0);
         REQUIRE(budget_result.has_value());
         CHECK(budget_result->status == ctrlpp::solve_result_status::budget_exhausted);
@@ -231,7 +242,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
     SECTION("trajectory extracts correct number of state and input vectors")
     {
-        auto cfg = make_config(N);
+        auto cfg        = make_config(N);
         auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{1.0, 0.0};
@@ -240,20 +251,20 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
         auto traj = controller.trajectory();
         REQUIRE(traj.has_value());
-        auto& [states, inputs] = *traj;
+        auto &[states, inputs] = *traj;
         CHECK(states.size() == static_cast<std::size_t>(N + 1));
         CHECK(inputs.size() == static_cast<std::size_t>(N));
 
         // Each state vector has NX elements, each input has NU elements
-        for(const auto& s : states)
+        for(const auto &s : states)
             CHECK(s.size() == static_cast<Eigen::Index>(NX));
-        for(const auto& u : inputs)
+        for(const auto &u : inputs)
             CHECK(u.size() == static_cast<Eigen::Index>(NU));
     }
 
     SECTION("diagnostics returns values from last solve")
     {
-        auto cfg = make_config(N);
+        auto cfg        = make_config(N);
         auto controller = make_controller<Mpc>(sys, cfg);
 
         Eigen::Vector2d x0{1.0, 0.0};
@@ -282,23 +293,27 @@ TEST_CASE("mpc with mock solver", "[mpc]")
             mutable bool had_warm_y{false};
             mutable int solve_count{0};
 
-            auto setup(const ctrlpp::qp_problem<double>& problem) -> ctrlpp::expected<void, mock_setup_error> { last_setup = problem; return {}; }
+            auto setup(const ctrlpp::qp_problem<double> &problem) -> ctrlpp::expected<void, mock_setup_error>
+            {
+                last_setup = problem;
+                return {};
+            }
 
-            auto solve(const ctrlpp::qp_update<double>& update) -> ctrlpp::qp_result<double>
+            auto solve(const ctrlpp::qp_update<double> &update) -> ctrlpp::qp_result<double>
             {
                 ++solve_count;
                 had_warm_x = update.warm_x.size() > 0;
                 had_warm_y = update.warm_y.size() > 0;
 
                 ctrlpp::qp_result<double> result;
-                result.status = ctrlpp::solve_status::optimal;
-                result.x = Eigen::VectorXd::Ones(last_setup.P.cols());
-                result.y = Eigen::VectorXd::Ones(last_setup.A.rows());
-                result.objective = 1.0;
-                result.solve_time = 0.002;
-                result.iterations = 3;
+                result.status          = ctrlpp::solve_status::optimal;
+                result.x               = Eigen::VectorXd::Ones(last_setup.P.cols());
+                result.y               = Eigen::VectorXd::Ones(last_setup.A.rows());
+                result.objective       = 1.0;
+                result.solve_time      = 0.002;
+                result.iterations      = 3;
                 result.primal_residual = 1e-7;
-                result.dual_residual = 1e-7;
+                result.dual_residual   = 1e-7;
                 return result;
             }
         };
@@ -324,7 +339,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
 
     SECTION("soft state constraints produce larger QP with slack variables")
     {
-        auto cfg = make_config(N);
+        auto cfg  = make_config(N);
         cfg.x_min = Eigen::Vector2d{-10.0, -10.0};
         cfg.x_max = Eigen::Vector2d{10.0, 10.0};
         // hard_state_constraints defaults to false, so soft constraints apply
@@ -340,16 +355,16 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         // Trajectory should still be same size
         auto traj = controller.trajectory();
         REQUIRE(traj.has_value());
-        auto& [states, inputs] = *traj;
+        auto &[states, inputs] = *traj;
         CHECK(states.size() == static_cast<std::size_t>(N + 1));
         CHECK(inputs.size() == static_cast<std::size_t>(N));
     }
 
     SECTION("du_max produces additional rate constraint rows")
     {
-        auto cfg = make_config(N);
-        cfg.u_min = Eigen::Matrix<double, 1, 1>{-5.0};
-        cfg.u_max = Eigen::Matrix<double, 1, 1>{5.0};
+        auto cfg   = make_config(N);
+        cfg.u_min  = Eigen::Matrix<double, 1, 1>{-5.0};
+        cfg.u_max  = Eigen::Matrix<double, 1, 1>{5.0};
         cfg.du_max = Eigen::Matrix<double, 1, 1>{1.0};
 
         auto controller = make_controller<Mpc>(sys, cfg);
@@ -363,7 +378,7 @@ TEST_CASE("mpc with mock solver", "[mpc]")
         //            = 12 + 5 + 5 = 22
         auto traj = controller.trajectory();
         REQUIRE(traj.has_value());
-        auto& [states, inputs] = *traj;
+        auto &[states, inputs] = *traj;
         CHECK(states.size() == static_cast<std::size_t>(N + 1));
         CHECK(inputs.size() == static_cast<std::size_t>(N));
     }
@@ -378,24 +393,17 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
     constexpr std::size_t NX4 = 4;
     constexpr std::size_t NU2 = 2;
     constexpr std::size_t NY2 = 2;
-    constexpr double dt4 = 0.1;
+    constexpr double dt4      = 0.1;
 
     // C = [I_2 0_2] selects positions only
     Eigen::Matrix<double, 4, 4> A4;
-    A4 << 1.0, 0.0, dt4, 0.0,
-          0.0, 1.0, 0.0, dt4,
-          0.0, 0.0, 1.0, 0.0,
-          0.0, 0.0, 0.0, 1.0;
+    A4 << 1.0, 0.0, dt4, 0.0, 0.0, 1.0, 0.0, dt4, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0;
 
     Eigen::Matrix<double, 4, 2> B4;
-    B4 << 0.5 * dt4 * dt4, 0.0,
-          0.0, 0.5 * dt4 * dt4,
-          dt4, 0.0,
-          0.0, dt4;
+    B4 << 0.5 * dt4 * dt4, 0.0, 0.0, 0.5 * dt4 * dt4, dt4, 0.0, 0.0, dt4;
 
     Eigen::Matrix<double, 2, 4> C4;
-    C4 << 1.0, 0.0, 0.0, 0.0,
-          0.0, 1.0, 0.0, 0.0;
+    C4 << 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0;
 
     Eigen::Matrix<double, 2, 2> D4 = Eigen::Matrix<double, 2, 2>::Zero();
 
@@ -404,9 +412,9 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
     SECTION("NY<NX mpc_config template compiles and Q is NY x NY")
     {
         ctrlpp::mpc_config<double, NX4, NU2, NY2> cfg{
-            .horizon = 5,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = Eigen::Matrix2d::Identity() * 0.1,
+                .horizon = 5,
+                .Q       = Eigen::Matrix2d::Identity(),
+                .R       = Eigen::Matrix2d::Identity() * 0.1,
         };
 
         // Q should be 2x2 (NY x NY), not 4x4
@@ -416,16 +424,16 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
         auto controller = make_controller<ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2>>(sys4, cfg);
 
         Eigen::Vector4d x0 = Eigen::Vector4d::Zero();
-        auto result = controller.solve(x0);
+        auto result        = controller.solve(x0);
         REQUIRE(result.has_value());
     }
 
     SECTION("NY<NX single reference tracking passes NY-dimensional y_ref")
     {
         ctrlpp::mpc_config<double, NX4, NU2, NY2> cfg{
-            .horizon = 5,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = Eigen::Matrix2d::Identity() * 0.1,
+                .horizon = 5,
+                .Q       = Eigen::Matrix2d::Identity(),
+                .R       = Eigen::Matrix2d::Identity() * 0.1,
         };
 
         auto controller = make_controller<ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2>>(sys4, cfg);
@@ -440,9 +448,9 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
     {
         constexpr int N = 5;
         ctrlpp::mpc_config<double, NX4, NU2, NY2> cfg{
-            .horizon = N,
-            .Q = Eigen::Matrix2d::Identity(),
-            .R = Eigen::Matrix2d::Identity() * 0.1,
+                .horizon = N,
+                .Q       = Eigen::Matrix2d::Identity(),
+                .R       = Eigen::Matrix2d::Identity() * 0.1,
         };
 
         auto controller = make_controller<ctrlpp::mpc<double, NX4, NU2, mock_qp_solver, NY2>>(sys4, cfg);
@@ -463,22 +471,19 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
         constexpr std::size_t SYSID_NY = 1;
 
         ctrlpp::discrete_state_space<double, SYSID_NX, SYSID_NU, SYSID_NY> sysid_sys{
-            .A = Eigen::Matrix2d::Identity(),
-            .B = Eigen::Vector2d::Ones(),
-            .C = (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(),
-            .D = Eigen::Matrix<double, 1, 1>::Zero()};
+                .A = Eigen::Matrix2d::Identity(), .B = Eigen::Vector2d::Ones(), .C = (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(), .D = Eigen::Matrix<double, 1, 1>::Zero()};
 
         ctrlpp::mpc_config<double, SYSID_NX, SYSID_NU, SYSID_NY> cfg{
-            .horizon = 5,
-            .Q = Eigen::Matrix<double, 1, 1>::Identity(),
-            .R = Eigen::Matrix<double, 1, 1>::Identity() * 0.1,
+                .horizon = 5,
+                .Q       = Eigen::Matrix<double, 1, 1>::Identity(),
+                .R       = Eigen::Matrix<double, 1, 1>::Identity() * 0.1,
         };
 
         // This should compile -- sysid return type feeds directly to MPC
         auto controller = make_controller<ctrlpp::mpc<double, SYSID_NX, SYSID_NU, mock_qp_solver, SYSID_NY>>(sysid_sys, cfg);
 
         Eigen::Vector2d x0 = Eigen::Vector2d::Zero();
-        auto result = controller.solve(x0);
+        auto result        = controller.solve(x0);
         REQUIRE(result.has_value());
 
         // Track a 1D output reference
@@ -491,9 +496,9 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
 
 TEST_CASE("mpc span overload rejects an undersized reference span", "[mpc][span]")
 {
-    auto sys = make_double_integrator();
+    auto sys        = make_double_integrator();
     constexpr int N = 5;
-    auto cfg = make_config(N);
+    auto cfg        = make_config(N);
     auto controller = make_controller<Mpc>(sys, cfg);
 
     Eigen::Vector2d x0{1.0, 0.0};
@@ -514,8 +519,8 @@ TEST_CASE("mpc span overload rejects an undersized reference span", "[mpc][span]
 
 TEST_CASE("mpc trajectory is guarded before the first valid solve", "[mpc][trajectory]")
 {
-    auto sys = make_double_integrator();
-    auto cfg = make_config(5);
+    auto sys        = make_double_integrator();
+    auto cfg        = make_config(5);
     auto controller = make_controller<Mpc>(sys, cfg);
 
     // No solve has run yet, so there is no valid trajectory to report.
@@ -547,7 +552,7 @@ TEST_CASE("mpc reports a substituted terminal cost", "[mpc][diagnostics]")
         A << 0.0, 1.0, 0.0, 0.0;
         Eigen::Vector2d B;
         B << 0.0, 1.0;
-        Eigen::Matrix2d C = Eigen::Matrix2d::Identity();
+        Eigen::Matrix2d C             = Eigen::Matrix2d::Identity();
         Eigen::Matrix<double, 2, 1> D = Eigen::Matrix<double, 2, 1>::Zero();
         ctrlpp::discrete_state_space<double, NX, NU, NX> singular_sys{A, B, C, D};
 
@@ -580,11 +585,43 @@ TEST_CASE("mpc reports a substituted terminal cost", "[mpc][diagnostics]")
         REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
     }
 
+    SECTION("an unverified Riccati terminal cost reports substitution")
+    {
+        auto sys    = make_double_integrator();
+        auto cfg    = make_config(N);
+        cfg.Q       = 1e10 * Eigen::Matrix2d::Identity();
+        cfg.R(0, 0) = 0.1;
+        REQUIRE_FALSE(cfg.Qf.has_value());
+
+        auto controller = make_controller<Mpc>(sys, cfg);
+        REQUIRE(controller.diagnostics().used_state_weight_terminal_cost);
+
+        Eigen::Vector2d x0{1.0, 0.0};
+        REQUIRE(controller.solve(x0).has_value());
+        REQUIRE(controller.diagnostics().used_state_weight_terminal_cost);
+    }
+
+    SECTION("an equilibrated Riccati terminal cost reports no substitution")
+    {
+        auto sys    = make_double_integrator();
+        auto cfg    = make_config(N);
+        cfg.Q       = 1e8 * Eigen::Matrix2d::Identity();
+        cfg.R(0, 0) = 0.1;
+        REQUIRE_FALSE(cfg.Qf.has_value());
+
+        auto controller = make_controller<Mpc>(sys, cfg);
+        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+
+        Eigen::Vector2d x0{1.0, 0.0};
+        REQUIRE(controller.solve(x0).has_value());
+        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+    }
+
     SECTION("a configured terminal weight is never a substitution")
     {
         auto sys = make_double_integrator();
         auto cfg = make_config(N);
-        cfg.Qf = Eigen::Matrix2d::Identity() * 10.0;
+        cfg.Qf   = Eigen::Matrix2d::Identity() * 10.0;
 
         auto controller = make_controller<Mpc>(sys, cfg);
         REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);

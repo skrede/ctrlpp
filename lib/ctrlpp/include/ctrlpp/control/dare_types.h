@@ -14,15 +14,14 @@
 
 #include <cstddef>
 
-namespace ctrlpp
-{
+namespace ctrlpp {
 
 /// @brief Structured failure modes for `dare`.
 ///
 ///  * non_stabilisable : fewer than n eigenvalues of the symplectic spectrum lie in
 ///                       the stable (|lambda| < 1) region. See the note below on what
 ///                       this test can and cannot see.
-///  * non_finite_input : A, B, Q, R or the assembled symplectic Z contains NaN/Inf.
+///  * non_finite_input : A, B, Q or R contains NaN/Inf.
 ///  * singular_a       : the state matrix A is rank-deficient to a scale-relative
 ///                       reciprocal-pivot tolerance, so the A^{-T} the symplectic
 ///                       pencil build requires (Laub Eq. 7) does not exist.
@@ -40,6 +39,9 @@ namespace ctrlpp
 ///  * non_psd_solution : extracted P is not positive semi-definite within an
 ///                       epsilon-scaled tolerance.
 ///  * schur_failed     : `Eigen::RealSchur` did not converge on the symplectic matrix.
+///  * arithmetic_limit : a finite, structurally admissible problem could not produce
+///                       a solution whose Riccati residual and stabilizing closed-loop
+///                       spectrum are defensible at the scalar type's precision.
 ///
 /// ## What `singular_u11` covers, and what `non_stabilisable` misses
 ///
@@ -88,6 +90,7 @@ enum class dare_error
     singular_u11,
     non_psd_solution,
     schur_failed,
+    arithmetic_limit,
 };
 
 /// @brief Solution payload of `dare`. Carries the Riccati solution P plus diagnostic
@@ -103,14 +106,14 @@ enum class dare_error
 ///                          analogue). A partial reorder with a computable P is
 ///                          diagnostic, not an error; consult `subspace_separation`
 ///                          to decide whether P is trustworthy for the use case.
-template <ctrlpp_floating_scalar Scalar, std::size_t NX>
+template<ctrlpp_floating_scalar Scalar, std::size_t NX>
 struct dare_result
 {
     static_assert(NX > 0, "State dimension NX must be positive");
 
     Eigen::Matrix<Scalar, int(NX), int(NX)> P;
-    Scalar                                  subspace_separation;
-    bool                                    reorder_complete;
+    Scalar subspace_separation;
+    bool reorder_complete;
 };
 
 }

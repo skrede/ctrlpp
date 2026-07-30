@@ -8,22 +8,31 @@
 
 #include <Eigen/Dense>
 
-namespace ctrlpp
-{
+namespace ctrlpp {
 
 // Name the cause a refused gain design reported. The design forwards the
 // Riccati solver's own enumerator rather than flattening it, so a board leg can
 // print which of six conditions refused the plant instead of guessing at one.
-inline const char* describe(dare_error e)
+inline const char *describe(dare_error e)
 {
     switch(e)
     {
-    case dare_error::non_stabilisable: return "pair is not stabilisable";
-    case dare_error::non_finite_input: return "non-finite input or symplectic";
-    case dare_error::singular_a:       return "state matrix is singular";
-    case dare_error::singular_u11:     return "invariant-subspace block is singular";
-    case dare_error::non_psd_solution: return "solution is not positive semi-definite";
-    case dare_error::schur_failed:     return "Schur factorisation did not converge";
+        case dare_error::non_stabilisable:
+            return "pair is not stabilisable";
+        case dare_error::non_finite_input:
+            return "non-finite input";
+        case dare_error::singular_a:
+            return "state matrix is singular";
+        case dare_error::singular_r:
+            return "input weighting is singular";
+        case dare_error::singular_u11:
+            return "invariant-subspace block is singular";
+        case dare_error::non_psd_solution:
+            return "solution is not positive semi-definite";
+        case dare_error::schur_failed:
+            return "Schur factorisation did not converge";
+        case dare_error::arithmetic_limit:
+            return "solution is not reliable at this precision";
     }
     return "unknown";
 }
@@ -31,13 +40,13 @@ inline const char* describe(dare_error e)
 // Passive Scalar-parameterized control-loop kernel shared verbatim by every board
 // leg: it owns the plant build and the on-device gain design, but no clock, no IO
 // and no heap on step() -- the wrappers own the loop, cadence and telemetry.
-template <class Scalar>
+template<class Scalar>
 struct control_loop_demo
 {
     Eigen::Matrix<Scalar, 2, 2> A;
     Eigen::Matrix<Scalar, 2, 1> B;
     Eigen::Matrix<Scalar, 1, 2> K;
-    Eigen::Vector<Scalar, 2>    x;
+    Eigen::Vector<Scalar, 2> x;
 
     static ctrlpp::expected<control_loop_demo, dare_error> make()
     {
@@ -67,7 +76,7 @@ struct control_loop_demo
     Scalar step()
     {
         const Scalar u = -(K * x)(0);
-        x = A * x + B * u;
+        x              = A * x + B * u;
         return u;
     }
 };

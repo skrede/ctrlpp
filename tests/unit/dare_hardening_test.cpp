@@ -65,8 +65,7 @@ TEST_CASE("DARE refuses a non-finite input matrix", "[dare][hardening][negative]
     CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
 }
 
-TEST_CASE("DARE cross-weight overload classifies every non-finite operand",
-          "[dare][hardening][negative]")
+TEST_CASE("DARE cross-weight overload classifies every non-finite operand", "[dare][hardening][negative]")
 {
     Eigen::Matrix<double, 2, 2> A;
     A << 1.0, 1.0, 0.0, 1.0;
@@ -78,30 +77,30 @@ TEST_CASE("DARE cross-weight overload classifies every non-finite operand",
     Eigen::Matrix<double, 2, 1> N;
     N << 0.1, 0.2;
 
-    auto require_non_finite = [](auto const& a, auto const& b, auto const& q,
-                                 auto const& r, auto const& n) {
+    auto require_non_finite = [](auto const &a, auto const &b, auto const &q, auto const &r, auto const &n)
+    {
         auto const result = ctrlpp::dare<double, 2, 1>(a, b, q, r, n);
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
     };
 
-    auto bad_A = A;
+    auto bad_A  = A;
     bad_A(0, 0) = std::numeric_limits<double>::quiet_NaN();
     require_non_finite(bad_A, B, Q, R, N);
 
-    auto bad_B = B;
+    auto bad_B  = B;
     bad_B(0, 0) = std::numeric_limits<double>::infinity();
     require_non_finite(A, bad_B, Q, R, N);
 
-    auto bad_Q = Q;
+    auto bad_Q  = Q;
     bad_Q(0, 0) = -std::numeric_limits<double>::infinity();
     require_non_finite(A, B, bad_Q, R, N);
 
-    auto bad_R = R;
+    auto bad_R  = R;
     bad_R(0, 0) = std::numeric_limits<double>::quiet_NaN();
     require_non_finite(A, B, Q, bad_R, N);
 
-    auto bad_N = N;
+    auto bad_N  = N;
     bad_N(0, 0) = std::numeric_limits<double>::infinity();
     require_non_finite(A, B, Q, R, bad_N);
 }
@@ -140,8 +139,7 @@ TEST_CASE("DARE refuses a singular R", "[dare][hardening][negative]")
     CHECK(crossed.error() == ctrlpp::dare_error::singular_r);
 }
 
-TEST_CASE("DARE refuses a rank-deficient R instead of solving a different problem",
-          "[dare][hardening][negative]")
+TEST_CASE("DARE refuses a rank-deficient R instead of solving a different problem", "[dare][hardening][negative]")
 {
     // The dangerous half of the same defect, and the reason the test is a rank
     // test rather than a finiteness check. A rank-deficient but NONZERO R does
@@ -154,9 +152,9 @@ TEST_CASE("DARE refuses a rank-deficient R instead of solving a different proble
     A << 1.0, 1.0, 0.0, 1.0;
     Eigen::Matrix<double, 2, 2> B;
     B << 0.5, 0.0, 1.0, 1.0;
-    auto Q = Eigen::Matrix<double, 2, 2>::Identity();
-    auto R = Eigen::Matrix<double, 2, 2>::Zero().eval();
-    R(0, 0) = 1.0;  // rank 1 of 2, and every entry finite
+    auto Q  = Eigen::Matrix<double, 2, 2>::Identity();
+    auto R  = Eigen::Matrix<double, 2, 2>::Zero().eval();
+    R(0, 0) = 1.0; // rank 1 of 2, and every entry finite
 
     REQUIRE(R.allFinite());
 
@@ -165,8 +163,7 @@ TEST_CASE("DARE refuses a rank-deficient R instead of solving a different proble
     CHECK(result.error() == ctrlpp::dare_error::singular_r);
 }
 
-TEST_CASE("DARE accepts an R that is ill-conditioned but not singular",
-          "[dare][hardening][robustness]")
+TEST_CASE("DARE accepts an R that is ill-conditioned but not singular", "[dare][hardening][robustness]")
 {
     // The boundary the rank test must not overshoot. A weighting spanning ten
     // decades is a numerical-conditioning question, not a domain violation, and
@@ -211,7 +208,7 @@ TEST_CASE("DARE known 2x2 solution is positive definite", "[dare][hardening][pre
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    auto const& P = result->P;
+    auto const &P        = result->P;
     constexpr double eps = std::numeric_limits<double>::epsilon();
 
     // The case proved P was positive definite and never that P solves anything,
@@ -252,13 +249,10 @@ TEST_CASE("DARE scalar analytical solution", "[dare][hardening][precision]")
     // which is 0.854 at the golden ratio. A residual inside the counted chain
     // therefore puts the solution inside that chain divided by 0.854. Two
     // further roundings enter on the test side, the square root and the sum.
-    double const golden = (1.0 + std::sqrt(5.0)) / 2.0;
-    double const residual_slope = (golden * golden + 2.0 * golden)
-                                  / ((1.0 + golden) * (1.0 + golden));
-    constexpr int analytic_ops = 2;
-    double const budget =
-        ctrlpp::test::riccati_residual_ops<1, 1> * eps * golden / residual_slope
-        + analytic_ops * eps * golden;
+    double const golden         = (1.0 + std::sqrt(5.0)) / 2.0;
+    double const residual_slope = (golden * golden + 2.0 * golden) / ((1.0 + golden) * (1.0 + golden));
+    constexpr int analytic_ops  = 2;
+    double const budget         = ctrlpp::test::riccati_residual_ops<1, 1> * eps * golden / residual_slope + analytic_ops * eps * golden;
 
     CAPTURE(result->P(0, 0), golden, budget);
     REQUIRE(std::abs(result->P(0, 0) - golden) <= budget);
@@ -277,7 +271,7 @@ TEST_CASE("DARE solution is positive definite for stable system", "[dare][harden
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    auto const& P = result->P;
+    auto const &P        = result->P;
     constexpr double eps = std::numeric_limits<double>::epsilon();
 
     auto const res = ctrlpp::test::riccati_residual<double, 2, 1>(A, B, Q, R, P);
@@ -300,8 +294,7 @@ TEST_CASE("DARE solution is positive definite for stable system", "[dare][harden
     REQUIRE((P - P.transpose()).norm() == 0.0);
 }
 
-TEST_CASE("DARE solves an ill-conditioned but well-posed problem",
-          "[dare][hardening][robustness]")
+TEST_CASE("DARE solves an ill-conditioned but well-posed problem", "[dare][hardening][robustness]")
 {
     // A = [[1,1],[0,1]] is controllable from B = [0.5; 1] (rank[B, AB] = 2), and
     // Q = diag(1, 1e-10) is positive definite -- barely -- which makes the pair
@@ -320,7 +313,7 @@ TEST_CASE("DARE solves an ill-conditioned but well-posed problem",
     auto const result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(result.has_value());
 
-    auto const& P = result->P;
+    auto const &P        = result->P;
     constexpr double eps = std::numeric_limits<double>::epsilon();
 
     auto const res = ctrlpp::test::riccati_residual<double, 2, 1>(A, B, Q, R, P);
@@ -331,7 +324,7 @@ TEST_CASE("DARE solves an ill-conditioned but well-posed problem",
     for(int i = 0; i < 2; ++i)
         CHECK(pes.eigenvalues()(i) > 0.0);
 
-    auto const K = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, R, P);
+    auto const K                    = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, R, P);
     Eigen::Matrix<double, 2, 2> Acl = (A - B * K).eval();
     Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> ces(Acl, false);
     for(int i = 0; i < 2; ++i)
@@ -351,4 +344,114 @@ TEST_CASE("DARE refuses a non-finite state weighting", "[dare][hardening][negati
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
+}
+
+TEST_CASE("DARE gain is invariant under common weight scaling", "[dare][hardening][precision]")
+{
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 0.1, 0.0, 1.0;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 0.005, 0.1;
+
+    constexpr double eps              = std::numeric_limits<double>::epsilon();
+    const double gain_relative_margin = std::sqrt(ctrlpp::test::riccati_residual_ops<2, 1> * eps);
+    std::size_t accepted{};
+    std::size_t arithmetic_declines{};
+    std::size_t band_samples{};
+
+    auto compare_common_scale = [&](const Eigen::Matrix<double, 2, 2> &Q, const Eigen::Matrix<double, 1, 1> &R, double common_scale)
+    {
+        const auto direct = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+        const auto scaled = ctrlpp::dare<double, 2, 1>(A, B, (Q / common_scale).eval(), (R / common_scale).eval());
+
+        if(!direct || !scaled)
+        {
+            REQUIRE_FALSE(direct.has_value());
+            REQUIRE_FALSE(scaled.has_value());
+            CHECK(direct.error() == scaled.error());
+            if(direct.error() == ctrlpp::dare_error::arithmetic_limit)
+                ++arithmetic_declines;
+            return;
+        }
+
+        ++accepted;
+        const auto direct_gain  = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, R, direct->P);
+        const auto scaled_gain  = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, (R / common_scale).eval(), scaled->P);
+        const double gain_scale = std::max(direct_gain.norm(), scaled_gain.norm());
+        CAPTURE(common_scale, direct_gain, scaled_gain, gain_scale);
+        CHECK((direct_gain - scaled_gain).norm() <= gain_relative_margin * gain_scale);
+    };
+
+    for(const double exponent : {-300.0, -200.0, -100.0, -18.0, -12.0, -6.0, 0.0, 2.0, 4.0, 6.0, 8.0, 8.2, 8.4, 8.6, 9.0, 10.0, 12.0, 18.0, 50.0, 100.0, 200.0, 300.0})
+    {
+        const double state_scale      = std::pow(10.0, exponent);
+        Eigen::Matrix<double, 2, 2> Q = state_scale * Eigen::Matrix<double, 2, 2>::Identity();
+        Eigen::Matrix<double, 1, 1> R;
+        R << 0.1;
+        compare_common_scale(Q, R, state_scale);
+        if(exponent >= 4.0)
+            ++band_samples;
+    }
+
+    for(const double exponent : {-300.0, -200.0, -100.0, -18.0, -12.0, -6.0, 0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 50.0, 100.0, 200.0, 300.0})
+    {
+        const double input_scale      = 0.1 * std::pow(10.0, exponent);
+        Eigen::Matrix<double, 2, 2> Q = Eigen::Matrix<double, 2, 2>::Identity();
+        Eigen::Matrix<double, 1, 1> R;
+        R << input_scale;
+        compare_common_scale(Q, R, input_scale);
+        if(exponent >= 6.0)
+            ++band_samples;
+    }
+
+    CHECK(band_samples > 0);
+    CHECK(accepted > 0);
+    CHECK(arithmetic_declines > 0);
+}
+
+TEST_CASE("DARE repairs or declines the measured state-heavy cases", "[dare][hardening][precision]")
+{
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 0.1, 0.0, 1.0;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 0.005, 0.1;
+    Eigen::Matrix<double, 1, 1> R;
+    R << 0.1;
+
+    const auto solved    = ctrlpp::dare<double, 2, 1>(A, B, (1e8 * Eigen::Matrix<double, 2, 2>::Identity()).eval(), R);
+    const auto reference = ctrlpp::dare<double, 2, 1>(A, B, Eigen::Matrix<double, 2, 2>::Identity(), (R / 1e8).eval());
+    REQUIRE(solved.has_value());
+    REQUIRE(reference.has_value());
+
+    const auto solved_gain            = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, R, solved->P);
+    const auto reference_gain         = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, (R / 1e8).eval(), reference->P);
+    constexpr double eps              = std::numeric_limits<double>::epsilon();
+    const double gain_relative_margin = std::sqrt(ctrlpp::test::riccati_residual_ops<2, 1> * eps);
+    CHECK((solved_gain - reference_gain).norm() <= gain_relative_margin * reference_gain.norm());
+
+    const auto beyond_precision = ctrlpp::dare<double, 2, 1>(A, B, (1e10 * Eigen::Matrix<double, 2, 2>::Identity()).eval(), R);
+    REQUIRE_FALSE(beyond_precision.has_value());
+    CHECK(beyond_precision.error() == ctrlpp::dare_error::arithmetic_limit);
+}
+
+TEST_CASE("DARE preserves comfortable common-scaled problems", "[dare][hardening][precision]")
+{
+    Eigen::Matrix<double, 2, 2> A;
+    A << 0.8, 0.1, 0.0, 0.7;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 0.2, 0.4;
+
+    std::size_t accepted{};
+    for(int exponent = -12; exponent <= 7; ++exponent)
+    {
+        const double scale = std::pow(10.0, static_cast<double>(exponent));
+        const auto Q       = (scale * Eigen::Matrix<double, 2, 2>::Identity()).eval();
+        Eigen::Matrix<double, 1, 1> R;
+        R << scale;
+        const auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+        CAPTURE(exponent, scale);
+        REQUIRE(result.has_value());
+        ++accepted;
+    }
+    CHECK(accepted == 20);
 }

@@ -31,19 +31,37 @@ auto dare(const Matrix<Scalar, NX, NX>& A,
     -> ctrlpp::expected<dare_result<Scalar, NX>, dare_error>;
 ```
 
-Solves the standard DARE. Forms the 2n x 2n symplectic matrix, computes its real Schur decomposition, reorders eigenvalues inside the unit disk to the top-left block, and extracts P = U21 * U11^{-1}. On success `result->P` is the stabilizing solution; `result->subspace_separation` and `result->reorder_complete` are conditioning diagnostics.
+Solves the standard DARE. Before forming the 2n x 2n symplectic matrix, it
+applies a common positive divisor to Q and R. This does not change the optimal
+gain: the equilibrated solution is multiplied by the divisor before it is
+returned. The divisor is the largest-magnitude entry across both weights, so
+one weight entry is near unity and independently common-scaled poses reduce to
+the same canonical problem.
+
+The solver computes a real Schur decomposition, reorders eigenvalues inside the
+unit disk to the top-left block, and extracts P = U21 * U11^{-1}. Before
+reporting success, it verifies the Riccati residual against a dimension- and
+precision-derived forward-error margin and verifies that the resulting
+closed-loop spectrum is inside the unit disk by more than its backward-error
+margin. The checks run on both the equilibrated problem and the returned
+solution in the caller's original scale.
+
+On success `result->P` is the stabilizing solution;
+`result->subspace_separation` and `result->reorder_complete` are conditioning
+diagnostics.
 
 Refusals:
 
 | Enumerator | Condition |
 | --- | --- |
 | `dare_error::non_stabilisable` | fewer than n eigenvalues of the symplectic spectrum lie inside the unit region |
-| `dare_error::non_finite_input` | A, B, Q, R **or the assembled symplectic Z** contains NaN/Inf |
+| `dare_error::non_finite_input` | A, B, Q or R contains NaN/Inf |
 | `dare_error::singular_a` | A is rank-deficient to a scale-relative reciprocal-pivot tolerance, so the `A^{-T}` the pencil build needs does not exist |
 | `dare_error::singular_r` | R is rank-deficient to the same tolerance, so the `R^{-1}` the same pencil build needs for `G = B R^{-1} B'` does not exist |
 | `dare_error::singular_u11` | the top-left block of the reordered invariant-subspace basis is singular; P cannot be extracted. **Covers two different situations -- see below** |
 | `dare_error::non_psd_solution` | the extracted P is not positive semi-definite within an epsilon-scaled tolerance |
 | `dare_error::schur_failed` | the real Schur factorization did not converge |
+| `dare_error::arithmetic_limit` | finite inputs could not produce a residual-verified stabilizing solution at the scalar type's precision, including overflow while equilibrating or unscaling |
 
 ### What `singular_u11` covers, and what `non_stabilisable` misses
 
@@ -107,7 +125,7 @@ int main()
 
     auto P_opt = ctrlpp::dare<double, NX, NU>(A, B, Q, R);
     if (!P_opt.has_value()) {
-        // P_opt.error() names which of the six conditions refused the problem.
+        // P_opt.error() names why the problem was refused.
         std::cerr << "the Riccati solve refused the problem\n";
         return 1;
     }

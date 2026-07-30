@@ -1,7 +1,6 @@
 #include "hardening_helpers.h"
 #include "ctrlpp/control/dare.h"
 
-
 #include <catch2/catch_test_macros.hpp>
 
 #include <Eigen/Dense>
@@ -9,9 +8,7 @@
 #include <cmath>
 #include <limits>
 
-
-TEST_CASE("DARE non-stabilisable system fails with non_stabilisable or singular_u11",
-          "[dare][error]")
+TEST_CASE("DARE non-stabilisable system fails with non_stabilisable or singular_u11", "[dare][error]")
 {
     // A has an unstable mode at eigenvalue 2 that B cannot reach.
     // The symplectic spectrum still contains n=2 stable eigenvalues (0.5 and its
@@ -29,12 +26,10 @@ TEST_CASE("DARE non-stabilisable system fails with non_stabilisable or singular_
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(!result.has_value());
-    CHECK((result.error() == ctrlpp::dare_error::non_stabilisable
-        || result.error() == ctrlpp::dare_error::singular_u11));
+    CHECK((result.error() == ctrlpp::dare_error::non_stabilisable || result.error() == ctrlpp::dare_error::singular_u11));
 }
 
-TEST_CASE("DARE NaN in A returns dare_error::non_finite_input",
-          "[dare][error]")
+TEST_CASE("DARE NaN in A returns dare_error::non_finite_input", "[dare][error]")
 {
     auto A = ctrlpp::test::nan_matrix<double, 2, 2>();
     Eigen::Matrix<double, 2, 1> B;
@@ -48,8 +43,7 @@ TEST_CASE("DARE NaN in A returns dare_error::non_finite_input",
     CHECK(result.error() == ctrlpp::dare_error::non_finite_input);
 }
 
-TEST_CASE("DARE singular A returns dare_error::singular_a",
-          "[dare][error]")
+TEST_CASE("DARE singular A returns dare_error::singular_a", "[dare][error]")
 {
     Eigen::Matrix<double, 2, 2> A;
     A << 1.0, 0.0, 0.0, 0.0;
@@ -64,8 +58,7 @@ TEST_CASE("DARE singular A returns dare_error::singular_a",
     CHECK(result.error() == ctrlpp::dare_error::singular_a);
 }
 
-TEST_CASE("DARE A = 0, B = 0 yields a structured failure enum",
-          "[dare][error]")
+TEST_CASE("DARE A = 0, B = 0 yields a structured failure enum", "[dare][error]")
 {
     Eigen::Matrix<double, 2, 2> A = Eigen::Matrix<double, 2, 2>::Zero();
     Eigen::Matrix<double, 2, 1> B = Eigen::Matrix<double, 2, 1>::Zero();
@@ -75,14 +68,11 @@ TEST_CASE("DARE A = 0, B = 0 yields a structured failure enum",
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(!result.has_value());
-    CHECK((result.error() == ctrlpp::dare_error::singular_a
-        || result.error() == ctrlpp::dare_error::singular_u11
-        || result.error() == ctrlpp::dare_error::non_finite_input
-        || result.error() == ctrlpp::dare_error::non_stabilisable));
+    CHECK((result.error() == ctrlpp::dare_error::singular_a || result.error() == ctrlpp::dare_error::singular_u11 || result.error() == ctrlpp::dare_error::non_finite_input ||
+           result.error() == ctrlpp::dare_error::non_stabilisable));
 }
 
-TEST_CASE("DARE negative-definite Q produces a structured failure enum",
-          "[dare][error]")
+TEST_CASE("DARE negative-definite Q produces a structured failure enum", "[dare][error]")
 {
     Eigen::Matrix<double, 2, 2> A;
     A << 1.0, 1.0, 0.0, 1.0;
@@ -93,20 +83,23 @@ TEST_CASE("DARE negative-definite Q produces a structured failure enum",
     R(0, 0) = 1.0;
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
-    if (!result.has_value())
+    if(!result.has_value())
     {
-        CHECK((result.error() == ctrlpp::dare_error::non_psd_solution
-            || result.error() == ctrlpp::dare_error::non_stabilisable
-            || result.error() == ctrlpp::dare_error::non_finite_input
-            || result.error() == ctrlpp::dare_error::singular_u11
-            || result.error() == ctrlpp::dare_error::schur_failed));
+        CHECK((result.error() == ctrlpp::dare_error::non_psd_solution || result.error() == ctrlpp::dare_error::non_stabilisable ||
+               result.error() == ctrlpp::dare_error::non_finite_input || result.error() == ctrlpp::dare_error::singular_u11 || result.error() == ctrlpp::dare_error::schur_failed));
     }
 }
 
-TEST_CASE("DARE schur_failed enumerator is reachable at compile time",
-          "[dare][error][design-lever]")
+TEST_CASE("DARE schur_failed enumerator is reachable at compile time", "[dare][error][design-lever]")
 {
     constexpr ctrlpp::dare_error e = ctrlpp::dare_error::schur_failed;
     (void)e;
     CHECK(static_cast<int>(ctrlpp::dare_error::schur_failed) >= 0);
+}
+
+TEST_CASE("DARE arithmetic_limit enumerator is reachable at compile time", "[dare][error][design-lever]")
+{
+    constexpr ctrlpp::dare_error e = ctrlpp::dare_error::arithmetic_limit;
+    (void)e;
+    CHECK(static_cast<int>(ctrlpp::dare_error::arithmetic_limit) >= 0);
 }
