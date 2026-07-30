@@ -19,17 +19,22 @@
 /// ctrlpp::detail::extract_riccati_solution_into primitive, matching the
 /// convention of the Schur-based path.
 ///
-/// The Newton stopping test scales the square root of
-/// std::numeric_limits<Scalar>::epsilon() by a dimensionless factor from the
-/// size 2n: the iteration converges quadratically, so a relative change of
-/// sqrt(epsilon) leaves the current iterate accurate to epsilon, and a
-/// linear-in-epsilon gate would be unreachable on an ill-conditioned
-/// Hamiltonian before its rounding floor. The rank threshold handed to Eigen
-/// is the relative, dimensionless multiplier 2n times epsilon that its rank()
-/// compares against the largest pivot. No bare numeric literal other than
-/// structural constants (the 1/2 from Eq. 5.16, the 2 from 2n = size(H),
-/// iteration cap 40 from Higham Table 5.2's worst-observed count with
-/// determinantal scaling) appears in the hot path.
+/// A small change between iterations is only a candidate for convergence: an
+/// ill-conditioned iterate can stop changing relative to its norm before it is
+/// a matrix sign. At a candidate, the stable-subspace projector
+/// (I - H_k) / 2 is first checked for idempotence with a counted rounding
+/// bound. If nonnormal rounding prevents that sufficient check from resolving,
+/// the extracted solution must instead satisfy a counted Riccati residual
+/// bound and place the closed-loop spectrum strictly in the open left
+/// half-plane. These are properties of the fixed point and answer rather than
+/// inferences from the iteration history. The stopping criterion is derived in
+/// place; Higham supplies the scaled Newton iteration, not these acceptance
+/// bounds. The rank threshold handed to Eigen is the relative, dimensionless
+/// multiplier 2n times epsilon that its rank() compares against the largest
+/// pivot. No bare numeric literal other than structural constants (the 1/2
+/// from Eq. 5.16, the 2 from 2n = size(H), iteration cap 40 from Higham Table
+/// 5.2's worst-observed count with determinantal scaling) appears in the hot
+/// path.
 ///
 /// @cite roberts1980 : Roberts, "Linear model reduction and solution of the algebraic Riccati equation by use of the sign function", 1980
 /// @cite byers1987   : Byers, "Solving the algebraic Riccati equation with the matrix sign function", 1987
@@ -43,13 +48,95 @@
 
 #include <Eigen/QR>
 #include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
 
 #include <cmath>
 #include <limits>
 #include <cstddef>
+#include <algorithm>
 
 namespace ctrlpp::detail
 {
+
+template <typename Scalar, std::size_t NX>
+auto care_solution_satisfies_postconditions(
+    const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& H,
+    const Eigen::Matrix<Scalar, int(NX), int(NX)>& P) -> bool
+{
+    constexpr int n = int(NX);
+    using MatN = Eigen::Matrix<Scalar, n, n>;
+
+    const Scalar eps = std::numeric_limits<Scalar>::epsilon();
+    const MatN A = H.template block<n, n>(0, 0);
+    const MatN S = -H.template block<n, n>(0, n);
+    const MatN Q = -H.template block<n, n>(n, 0);
+    const MatN At_P = (A.transpose() * P).eval();
+    const MatN P_A = (P * A).eval();
+    const MatN P_S_P = (P * S * P).eval();
+    const MatN residual = (At_P + P_A - P_S_P + Q).eval();
+
+    // The extracted P carries the arithmetic of its solve as well as the
+    // residual evaluation. A conservative count uses 2n^3 operations for the
+    // n-by-n Householder QR, 3n^3 for applying Q and solving n triangular
+    // right-hand sides, and 3n^2 for symmetrization. Four n-by-n products then
+    // use n^2 * (2n - 1) operations each, and three n-by-n sums combine the
+    // residual terms. Every operation is counted whether or not it rounds.
+    // The Frobenius scale is the largest term entering the final sum, not the
+    // cancellation residual.
+    constexpr int extraction_qr_rounding_ops =
+        2 * n * n * n;
+    constexpr int extraction_solve_rounding_ops =
+        3 * n * n * n;
+    constexpr int symmetrize_rounding_ops = 3 * n * n;
+    constexpr int matrix_product_entry_rounding_ops = 2 * n - 1;
+    constexpr int residual_matrix_products = 4;
+    constexpr int residual_product_rounding_ops =
+        residual_matrix_products * n * n
+        * matrix_product_entry_rounding_ops;
+    constexpr int residual_sums = 3;
+    constexpr int residual_sum_rounding_ops =
+        residual_sums * n * n;
+    constexpr int residual_rounding_ops =
+        extraction_qr_rounding_ops
+        + extraction_solve_rounding_ops
+        + symmetrize_rounding_ops
+        + residual_product_rounding_ops
+        + residual_sum_rounding_ops;
+    const Scalar residual_scale = std::max(
+        {At_P.norm(), P_A.norm(), P_S_P.norm(), Q.norm()});
+    const Scalar residual_floor =
+        Scalar{residual_rounding_ops} * eps * residual_scale;
+    const bool residual_is_resolved =
+        residual.norm() <= residual_floor;
+    if (!residual_is_resolved)
+        return false;
+
+    const MatN closed_loop = (A - S * P).eval();
+    Eigen::RealSchur<MatN> closed_loop_schur(closed_loop);
+    if (closed_loop_schur.info() != Eigen::Success)
+        return false;
+
+    const MatN closed_loop_T = closed_loop_schur.matrixT();
+    if (!closed_loop_T.allFinite())
+        return false;
+
+    // A backward-stable real Schur factor has an n-operation eigenvalue
+    // uncertainty at the factor's largest-entry scale. Requiring every
+    // diagonal real part below its negative bound certifies that the
+    // closed-loop spectrum lies strictly in the open left half-plane.
+    constexpr int closed_loop_eigenvalue_rounding_ops = n;
+    const Scalar closed_loop_scale =
+        closed_loop_T.cwiseAbs().maxCoeff();
+    const Scalar closed_loop_margin =
+        Scalar{closed_loop_eigenvalue_rounding_ops} * eps
+        * closed_loop_scale;
+    for (int index = 0; index < n; ++index)
+    {
+        if (!(closed_loop_T(index, index) < -closed_loop_margin))
+            return false;
+    }
+    return true;
+}
 
 template <typename Scalar, std::size_t NX>
 auto care_solve_via_sign_function(
@@ -65,19 +152,17 @@ auto care_solve_via_sign_function(
 
     Mat2N H = H_in;
     Mat2N H_prev;
+    Mat2N P_LHP;
+    bool projector_is_idempotent = false;
 
     const Scalar eps       = std::numeric_limits<Scalar>::epsilon();
     constexpr int max_iters = 40;
-    // The Newton sign iteration converges quadratically near the fixed point,
-    // so successive changes satisfy delta_{k+1} ~ delta_k^2: once the relative
-    // change reaches sqrt(epsilon), the current iterate already carries the
-    // full epsilon-level accuracy of sign(H). The stopping test therefore
-    // compares the relative change against sqrt(epsilon) times a dimensionless
-    // factor from the matrix size 2n, which stays reachable on ill-conditioned
-    // Hamiltonians where a linear-in-epsilon gate would sit below the rounding
-    // floor (Higham 2008 Sec. 5.5, scaled-Newton stopping test).
-    const Scalar conv_dim  = Scalar{2} * Scalar{n2};
-    const Scalar conv_tol  = std::sqrt(eps) * conv_dim;
+    // The change test is a gate for the fixed-point check, not an acceptance
+    // decision. It avoids paying for an extra matrix product on iterations
+    // that are still moving substantially.
+    const Scalar change_candidate_dimension = Scalar{2} * Scalar{n2};
+    const Scalar change_candidate_tolerance =
+        std::sqrt(eps) * change_candidate_dimension;
     Scalar last_delta_norm = std::numeric_limits<Scalar>::infinity();
 
     for (int k = 0; k < max_iters; ++k)
@@ -101,14 +186,38 @@ auto care_solve_via_sign_function(
 
         const Scalar delta_norm = (H - H_prev).norm();
         const Scalar scale_H    = H.norm();
-        if (delta_norm <= conv_tol * scale_H)
-            break;
+        const Scalar change_candidate_floor =
+            change_candidate_tolerance * scale_H;
+        const bool change_is_small = delta_norm <= change_candidate_floor;
+        if (change_is_small)
+        {
+            P_LHP = ((Scalar{1} / Scalar{2})
+                     * (Mat2N::Identity() - H)).eval();
+            const Mat2N projector_squared = (P_LHP * P_LHP).eval();
+            const Scalar projector_defect =
+                (projector_squared - P_LHP).norm();
 
-        // Genuine non-monotone growth: the relative change is increasing while
-        // still above the sqrt(epsilon) convergence plateau, which indicates
-        // divergence rather than settling. The break above already accepts an
-        // iterate that has reached the quadratic-convergence plateau, so this
-        // guard cannot fire on a converged solve merely sitting at the floor.
+            // Each entry of P^2 uses n2 products and n2 - 1 additions;
+            // subtracting P adds one more rounding. That is 2 * n2 rounded
+            // operations. The Frobenius operand norm below already aggregates
+            // the entries, so the operation count is not multiplied by the
+            // number of entries a second time. The operand scale is the larger
+            // norm of the two matrices entering the final subtraction, not the
+            // cancellation residual produced by it.
+            constexpr int projector_idempotence_rounding_ops = 2 * n2;
+            const Scalar projector_idempotence_scale =
+                std::max(projector_squared.norm(), P_LHP.norm());
+            const Scalar projector_idempotence_floor =
+                Scalar{projector_idempotence_rounding_ops} * eps
+                * projector_idempotence_scale;
+            projector_is_idempotent =
+                projector_defect <= projector_idempotence_floor;
+            break;
+        }
+
+        // A change that grows after the warm-up window is non-contraction. A
+        // small change cannot bypass the fixed-point check above, so this guard
+        // remains separate from the resolved-sign decision.
         if (k > 3 && delta_norm > (Scalar{1} / Scalar{2}) * last_delta_norm)
             return ctrlpp::unexpected(care_error::sign_function_stagnated);
         last_delta_norm = delta_norm;
@@ -116,8 +225,6 @@ auto care_solve_via_sign_function(
         if (k + 1 == max_iters)
             return ctrlpp::unexpected(care_error::sign_function_stagnated);
     }
-
-    const Mat2N P_LHP = ((Scalar{1} / Scalar{2}) * (Mat2N::Identity() - H)).eval();
 
     Eigen::ColPivHouseholderQR<Mat2N> qr(P_LHP);
     // Eigen's ColPivHouseholderQR::rank() compares each pivot against
@@ -148,6 +255,12 @@ auto care_solve_via_sign_function(
         }
         return ctrlpp::unexpected(care_error::non_finite_input);
     }
+
+    if (!projector_is_idempotent
+        && !care_solution_satisfies_postconditions<Scalar, NX>(
+            H_in, out.P))
+        return ctrlpp::unexpected(
+            care_error::sign_function_stagnated);
 
     // The sign-function path has no swap phase and hence no rank-revealing QR pivot ratio
     // to report; writing quiet_NaN signals "unavailable for this method" per the

@@ -103,6 +103,7 @@ make_test(lqr_hardening_test)
 make_test(dare_hardening_test)
 make_test(dare_error_test)
 make_test(care_error_test)
+make_test(care_convergence_anchor_test)
 # MemorySanitizer ships its own strong operator new/delete in
 # libclang_rt.msan_cxx, which collides at link time with the replacements in
 # nomalloc_harness.h ("multiple definition of operator new"). AddressSanitizer

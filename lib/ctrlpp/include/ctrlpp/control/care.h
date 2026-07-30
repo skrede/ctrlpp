@@ -1,14 +1,16 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_CARE_H
 #define HPP_GUARD_CTRLPP_CONTROL_CARE_H
 
-/// @brief Continuous-time Algebraic Riccati Equation solver via real-Schur Bai-Demmel reorder.
+/// @brief Continuous-time algebraic Riccati equation solver.
 ///
 /// Solves A^T P + P A - P B R^{-1} B^T P + Q = 0 for the stabilising P.
 ///
 /// Builds the 2n x 2n Hamiltonian H = [[A, -B R^{-1} B^T], [-Q, -A^T]] (Laub 1979),
-/// computes its real Schur decomposition H = U T U^T, reorders T with a predicate
-/// `Re(lambda) < -eps * scale` (open left half-plane) via the Bai-Demmel 1993 swap
-/// kernel, and extracts P = U21 * U11^-1 from the resulting invariant subspace basis.
+/// then dispatches to the selected method. The default applies a scaled Newton
+/// iteration to sign(H), verifies the stable-subspace projector or the extracted
+/// solution's postconditions, and extracts P = U21 * U11^-1. The two alternative
+/// tags use real-Schur decomposition and Bai-Demmel reordering, with optional
+/// Hamiltonian balancing.
 ///
 /// The continuous-time LQR gain is K = R^{-1} B^T P.
 ///
@@ -97,8 +99,8 @@ auto build_care_hamiltonian(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
 ///
 /// Shared between `ctrlpp::care` and `ctrlpp::lqr_gain_continuous` so the latter can
 /// build H with a pre-computed R^{-1} and avoid recomputing it. The `Method` tag
-/// selects between the baseline real-Schur + Bai-Demmel reorder path (default),
-/// the matrix sign-function Newton iteration, and the balanced-Schur variant.
+/// selects between the default matrix sign-function Newton iteration, the
+/// real-Schur + Bai-Demmel reorder path, and the balanced-Schur variant.
 template <typename Scalar, std::size_t NX,
           care_solve_method   Method = sign_function_care_method,
           conditioning_policy Cond   = pivot_ratio_conditioning>
@@ -178,8 +180,9 @@ auto care_solve_from_hamiltonian(
 ///
 /// Returns `ctrlpp::expected<care_result<Scalar, NX>, care_error>`. On success,
 /// `result->P` is the stabilising solution; `result->subspace_separation` is the
-/// min pivot ratio across accepted swaps; `result->reorder_complete` is true iff
-/// every swap was accepted.
+/// minimum pivot ratio across accepted swaps for Schur methods and is not
+/// available for the default sign-function method; `result->reorder_complete`
+/// is true if every swap was accepted or the selected method has no swap phase.
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
           detail::care_solve_method    Method = detail::sign_function_care_method,
           detail::conditioning_policy  Cond   = detail::pivot_ratio_conditioning>

@@ -25,10 +25,13 @@
 /// so overload resolution rejects foreign types.
 ///
 /// The default assignment was picked by a governor-locked instruction-count
-/// bakeoff. The sign-function path reached 31.8 to 35.8 percent fewer median
-/// instructions than `ct::optcon::CARE` at every target NX in the 8 to 30
-/// sweep; both
-/// Schur variants failed the primary gate by 39 to 41 percent.
+/// bakeoff. At the benchmarked revision, the sign-function path reached 31.8
+/// to 35.8 percent fewer median instructions than `ct::optcon::CARE` at every
+/// target NX in the 8 to 30 sweep; both Schur variants failed the primary gate
+/// by 39 to 41 percent. The current path additionally verifies its final
+/// projector and, when that sufficient check is unresolved, the extracted
+/// solution. The archived percentages therefore document the method-selection
+/// decision rather than claim a current instruction count.
 ///
 /// @cite laub1979      : Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
 /// @cite roberts1980   : Roberts, "Linear model reduction and solution of the algebraic Riccati equation by use of the sign function", 1980

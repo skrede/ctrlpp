@@ -41,8 +41,11 @@ namespace ctrlpp
 ///                               contract: either the determinantal scaling factor went
 ///                               non-finite (singular Hamiltonian), the per-step contraction
 ///                               ratio exceeded 1/2 after the warm-up window (divergence),
-///                               or the iteration budget was exhausted without meeting the
-///                               epsilon-scaled convergence tolerance. Sign-function path only.
+///                               a small-change candidate produced neither an idempotent
+///                               stable-subspace projector nor an extracted solution satisfying
+///                               the counted Riccati-residual and closed-loop-stability
+///                               postconditions, or the iteration budget was exhausted.
+///                               Sign-function path only.
 ///
 /// ## What `singular_u11` covers, and what `non_lhp_stabilisable` misses
 ///
@@ -92,9 +95,11 @@ enum class care_error
 ///                          sign-function path), no pivot-ratio metric is defined and this
 ///                          field is written as `std::numeric_limits&lt;Scalar&gt;::quiet_NaN()`
 ///                          to signal "unavailable"; callers should branch on `std::isnan`
-///                          rather than comparing against a magnitude. Contrast with the
-///                          Schur path's partial-reorder marker where the smallest accepted
-///                          pivot is finite and positive.
+///                          rather than comparing against a magnitude. The sign path's
+///                          projector check determines whether extraction may proceed; it is
+///                          not a swap-conditioning metric and is deliberately not written
+///                          into this field. Contrast with the Schur path's partial-reorder
+///                          marker where the smallest accepted pivot is finite and positive.
 ///  * reorder_complete    : true if every swap was accepted by the conditioning test or if
 ///                          the method has no swap phase; false if one or more swaps were
 ///                          declined during Schur reordering.
