@@ -1,6 +1,6 @@
 # Model Utilities
 
-Types and concepts for representing, converting, analysing, and propagating
+Types and concepts for representing, converting, analyzing, and propagating
 dynamic system models. These are the building blocks that controllers,
 estimators, and identification algorithms operate on.
 
@@ -13,7 +13,7 @@ estimators, and identification algorithms operate on.
 
 ### Operations
 
-- [discretise](discretise.md)<br/> Continuous-to-discrete conversion (ZOH via Van Loan matrix exponential)
+- [discretize](discretize.md)<br/> Continuous-to-discrete conversion (ZOH via Van Loan matrix exponential)
 - [conversion](conversion.md)<br/> Transfer function to state-space and back
 - [analysis](analysis.md)<br/> Stability, controllability, and observability checks
 - [propagate](propagate.md)<br/> State propagation and output computation utilities
@@ -34,7 +34,7 @@ model must look like.
 
 Use **state_space** and **transfer_function** for linear system representations.
 Convert between them with **conversion**, discretize continuous models with
-**discretise**, and check properties with **analysis**.
+**discretize**, and check properties with **analysis**.
 
 Use **propagate** when you need explicit state propagation outside of a filter
 or controller (e.g., in simulation).

@@ -210,7 +210,7 @@ public:
     /// Cauchy-Schwarz bound on the quadratic form. An absolute floor is wrong in
     /// both directions and both are reachable: on a problem posed far below unit
     /// scale it refuses a perfectly well conditioned update, and on one posed far
-    /// above it accepts a denominator whose significant digits have all cancelled
+    /// above it accepts a denominator whose significant digits have all canceled
     /// away and divides a gain by rounding noise.
     auto update(Scalar y, const Vector<Scalar, NP>& phi) -> ctrlpp::expected<void, rls_update_error>
     {

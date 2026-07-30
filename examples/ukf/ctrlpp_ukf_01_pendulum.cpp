@@ -30,7 +30,7 @@ constexpr double process_noise_amp = 0.001;
 constexpr double meas_noise_amp = 0.05;
 
 /// Pendulum dynamics satisfying dynamics_model (but NOT differentiable_dynamics).
-/// Forward-Euler discretisation: x_{k+1} = f(x_k, u_k).
+/// Forward-Euler discretization: x_{k+1} = f(x_k, u_k).
 /// No Jacobians -- UKF propagates sigma points through the nonlinear model directly.
 struct pendulum_dynamics
 {

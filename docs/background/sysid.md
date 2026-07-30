@@ -9,7 +9,7 @@ state estimation (Kalman filter, MHE)
 System identification is essential when first-principles models are
 unavailable, too complex, or insufficiently accurate. It provides a
 data-driven alternative that can capture the actual behavior of physical
-systems including unmodelled dynamics and nonlinearities.
+systems including unmodeled dynamics and nonlinearities.
 
 ## The Identification Problem
 

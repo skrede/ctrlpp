@@ -5,7 +5,7 @@
 // if the pendulum did not reach and hold upright.
 
 #include "ctrlpp/control/lqr.h"
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/state_space.h"
 
 #include <cmath>
@@ -16,7 +16,7 @@
 #include <algorithm>
 
 // Classical two-mode pendulum swing-up: an energy-shaping law pumps the
-// pendulum toward the upright energy level, then an LQR stabiliser catches and
+// pendulum toward the upright energy level, then an LQR stabilizer catches and
 // holds it near the top.
 //
 // Energy-shaping law after:
@@ -53,7 +53,7 @@ int main()
     // error to zero. Positive by construction of the Astrom-Furuta law.
     constexpr Scalar k_e = 1.0;
 
-    // Catch region around the upright: hand off to the LQR stabiliser once the
+    // Catch region around the upright: hand off to the LQR stabilizer once the
     // pendulum is both close to upright and slow enough to be captured.
     constexpr Scalar theta_catch = 0.35;  // rad, about 20 degrees from upright
     constexpr Scalar omega_catch = 3.0;   // rad/s
@@ -77,8 +77,8 @@ int main()
     // Wrap an angle into (-pi, pi] so that "near upright" is measured against 0.
     auto wrap = [](Scalar angle) -> Scalar { return std::remainder(angle, 2.0 * std::numbers::pi_v<Scalar>); };
 
-    // LQR stabiliser built from the discrete-time linearisation about upright.
-    // Linearising theta_ddot about theta = 0 gives sin(theta) ~ theta, hence
+    // LQR stabilizer built from the discrete-time linearization about upright.
+    // Linearizing theta_ddot about theta = 0 gives sin(theta) ~ theta, hence
     // A_c = [[0, 1], [g/l, -b]] and B_c = [[0], [1/(m l^2)]].
     ctrlpp::continuous_state_space<Scalar, NX, NU, NY> sys_c{};
     sys_c.A << 0.0, 1.0, g / l, -b;
@@ -86,7 +86,7 @@ int main()
     sys_c.C.setIdentity();
     sys_c.D.setZero();
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, dt);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, dt);
 
     Eigen::Matrix<Scalar, NX, NX> Q_lqr = Eigen::Matrix<Scalar, NX, NX>::Zero();
     Q_lqr(0, 0) = 50.0;
@@ -100,7 +100,7 @@ int main()
         std::cerr << "LQR gain synthesis failed\n";
         return EXIT_FAILURE;
     }
-    ctrlpp::lqr<Scalar, NX, NU> stabiliser(*K_opt);
+    ctrlpp::lqr<Scalar, NX, NU> stabilizer(*K_opt);
 
     // Start hanging at the stable equilibrium and swing up.
     Eigen::Matrix<Scalar, NX, 1> x(std::numbers::pi_v<Scalar>, 0.0);
@@ -113,14 +113,14 @@ int main()
         const Scalar theta_dot = x(1);
 
         Scalar torque = 0.0;
-        int mode = 0;  // 0 = energy pump, 1 = LQR stabiliser
+        int mode = 0;  // 0 = energy pump, 1 = LQR stabilizer
 
         if(std::abs(theta_wrapped) < theta_catch && std::abs(theta_dot) < omega_catch)
         {
-            // Near upright: stabilise with LQR on the wrapped state.
+            // Near upright: stabilize with LQR on the wrapped state.
             mode = 1;
             Eigen::Matrix<Scalar, NX, 1> x_lin(theta_wrapped, theta_dot);
-            torque = stabiliser.compute(x_lin)(0);
+            torque = stabilizer.compute(x_lin)(0);
         }
         else
         {

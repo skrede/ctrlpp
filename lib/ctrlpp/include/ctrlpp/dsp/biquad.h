@@ -173,7 +173,7 @@ public:
     }
 
     /// "Dirty" derivative: a band-limited differentiator with analog prototype
-    /// H(s) = wc*s / (s + wc), discretised by the bilinear transform with
+    /// H(s) = wc*s / (s + wc), discretized by the bilinear transform with
     /// frequency pre-warping. The wc numerator factor makes this a true
     /// differentiator (|H| -> 2*pi*f) up to the cutoff wc, above which it rolls
     /// off; without it the section would be a unity-gain high-pass whose
@@ -344,7 +344,7 @@ auto chebyshev1_section(std::size_t k, Scalar sinh_v, Scalar cosh_v, Scalar wc, 
 
 /// @brief Normalize cascade DC gain so max passband gain = 0 dB.
 ///
-/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I passband normalisation)
+/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I passband normalization)
 /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005
 template <typename Scalar, std::size_t N>
 void normalize_chebyshev1_dc(std::array<biquad<Scalar>, N>& sections, Scalar eps)
@@ -395,9 +395,9 @@ auto sections_all_finite(std::array<biquad<Scalar>, N> const& sections) -> bool
 /// Cascade of second-order Chebyshev Type I low-pass sections.
 ///
 /// Builds an even-order Chebyshev Type I filter as a product of biquad
-/// sections from the analog-prototype poles on an ellipse parameterised by
+/// sections from the analog-prototype poles on an ellipse parameterized by
 /// the passband ripple, mapped through the bilinear transform with frequency
-/// pre-warping. The DC gain is normalised so the max passband gain is 0 dB.
+/// pre-warping. The DC gain is normalized so the max passband gain is 0 dB.
 ///
 /// Rejections, checked in order:
 ///  * NaN or infinite ripple_db -> dsp_error::non_finite_input

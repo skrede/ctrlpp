@@ -88,7 +88,7 @@ TEST_CASE("lqr_gain refuses an unstabilizable pair")
     auto result = ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R);
     REQUIRE_FALSE(result.has_value());
     // The pair is provably unstabilizable: mode 0 sits at eigenvalue 2 with no
-    // input coupling. The enumerator is NOT non_stabilisable, and the reason is
+    // input coupling. The enumerator is NOT non_stabilizable, and the reason is
     // structural rather than a tolerance. That enumerator fires when fewer than
     // n eigenvalues of the symplectic spectrum lie inside the unit disk, and an
     // uncontrollable mode at |lambda| > 1 contributes BOTH lambda and its

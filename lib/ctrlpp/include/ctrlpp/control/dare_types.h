@@ -18,7 +18,7 @@ namespace ctrlpp {
 
 /// @brief Structured failure modes for `dare`.
 ///
-///  * non_stabilisable : fewer than n eigenvalues of the symplectic spectrum lie in
+///  * non_stabilizable : fewer than n eigenvalues of the symplectic spectrum lie in
 ///                       the stable (|lambda| < 1) region. See the note below on what
 ///                       this test can and cannot see.
 ///  * non_finite_input : A, B, Q or R contains NaN/Inf.
@@ -43,12 +43,12 @@ namespace ctrlpp {
 ///                       a solution whose Riccati residual and stabilizing closed-loop
 ///                       spectrum are defensible at the scalar type's precision.
 ///
-/// ## What `singular_u11` covers, and what `non_stabilisable` misses
+/// ## What `singular_u11` covers, and what `non_stabilizable` misses
 ///
 /// These two are worth reading together, because the placement count cannot see
-/// every pair that has no stabilising solution.
+/// every pair that has no stabilizing solution.
 ///
-/// `non_stabilisable` fires when fewer than n eigenvalues of the symplectic spectrum
+/// `non_stabilizable` fires when fewer than n eigenvalues of the symplectic spectrum
 /// lie inside the unit disk. An uncontrollable mode at |lambda| = 1 contributes two
 /// eigenvalues ON the circle, neither inside, so the count falls short and the
 /// enumerator fires. But an uncontrollable mode at |lambda| > 1 contributes BOTH
@@ -58,10 +58,10 @@ namespace ctrlpp {
 /// refusal arrives as `singular_u11`.
 ///
 /// The pair is still refused -- no gain is ever returned for a pair with no
-/// stabilising solution -- so this is a naming limit, not a correctness one. The
+/// stabilizing solution -- so this is a naming limit, not a correctness one. The
 /// implication that makes `singular_u11` informative is standard and exact: a
-/// stabilisable and detectable pair has a nonsingular U11 (Laub 1979 Sec. III), so
-/// **in exact arithmetic** a singular U11 implies the pair is not both stabilisable
+/// stabilizable and detectable pair has a nonsingular U11 (Laub 1979 Sec. III), so
+/// **in exact arithmetic** a singular U11 implies the pair is not both stabilizable
 /// and detectable.
 ///
 /// **That qualifier is load-bearing, and the enumerator is therefore NOT renamed.**
@@ -75,15 +75,15 @@ namespace ctrlpp {
 /// this enumerator after the structural cause would state something false about every
 /// one of those rows.
 ///
-/// So: `singular_u11` covers a pair with no stabilising solution AND a numerical
+/// So: `singular_u11` covers a pair with no stabilizing solution AND a numerical
 /// failure to separate the invariant subspace, and **it does not distinguish them**.
-/// A caller that must tell them apart needs a stabilisability test the solver does not
+/// A caller that must tell them apart needs a stabilizability test the solver does not
 /// perform.
 ///
 /// @cite laub1979 -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979, Sec. III
 enum class dare_error
 {
-    non_stabilisable,
+    non_stabilizable,
     non_finite_input,
     singular_a,
     singular_r,
@@ -96,7 +96,7 @@ enum class dare_error
 /// @brief Solution payload of `dare`. Carries the Riccati solution P plus diagnostic
 /// scalars mirroring LAPACK DTRSEN's `SEP` and `INFO=1` semantics.
 ///
-///  * P                   : n x n symmetric positive-semidefinite stabilising solution.
+///  * P                   : n x n symmetric positive-semidefinite stabilizing solution.
 ///  * subspace_separation : minimum rank-revealing QR pivot ratio across all accepted
 ///                          block swaps during Schur reordering (LAPACK SEP analogue).
 ///                          A value close to 1 indicates a well-conditioned invariant

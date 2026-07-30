@@ -11,7 +11,7 @@
 #include <limits>
 
 
-TEST_CASE("CARE non-LHP-stabilisable system fails with non_lhp_stabilisable or singular_u11",
+TEST_CASE("CARE non-LHP-stabilizable system fails with non_lhp_stabilizable or singular_u11",
           "[care][error]")
 {
     // A has an unstable continuous mode at eigenvalue +2 uncoupled from B.
@@ -29,7 +29,7 @@ TEST_CASE("CARE non-LHP-stabilisable system fails with non_lhp_stabilisable or s
 
     auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
     REQUIRE(!result.has_value());
-    CHECK((result.error() == ctrlpp::care_error::non_lhp_stabilisable
+    CHECK((result.error() == ctrlpp::care_error::non_lhp_stabilizable
         || result.error() == ctrlpp::care_error::singular_u11));
 }
 
@@ -117,7 +117,7 @@ TEST_CASE("CARE A = 0, B = 0 yields a structured failure enum",
     REQUIRE(!result.has_value());
     CHECK((result.error() == ctrlpp::care_error::singular_u11
         || result.error() == ctrlpp::care_error::non_finite_input
-        || result.error() == ctrlpp::care_error::non_lhp_stabilisable
+        || result.error() == ctrlpp::care_error::non_lhp_stabilizable
         || result.error() == ctrlpp::care_error::schur_failed
         || result.error() == ctrlpp::care_error::sign_function_stagnated));
 }
@@ -137,7 +137,7 @@ TEST_CASE("CARE negative-definite Q produces a structured failure enum",
     if (!result.has_value())
     {
         CHECK((result.error() == ctrlpp::care_error::non_psd_solution
-            || result.error() == ctrlpp::care_error::non_lhp_stabilisable
+            || result.error() == ctrlpp::care_error::non_lhp_stabilizable
             || result.error() == ctrlpp::care_error::non_finite_input
             || result.error() == ctrlpp::care_error::singular_u11
             || result.error() == ctrlpp::care_error::schur_failed

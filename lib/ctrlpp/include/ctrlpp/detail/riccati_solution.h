@@ -5,7 +5,7 @@
 ///
 /// Given a reordered orthogonal real basis U of size 2n x 2n (the output of
 /// ctrlpp::detail::reorder_real_schur), this header provides the single
-/// routine required to recover the stabilising Riccati solution P.
+/// routine required to recover the stabilizing Riccati solution P.
 /// P is computed as U21 * U11^-1 directly on real arithmetic, symmetrised
 /// via ctrlpp::detail::symmetrize, and checked for finiteness and positive
 /// semi-definiteness. The positive semi-definiteness floor is derived from
@@ -43,7 +43,7 @@ enum class riccati_extract_error
     non_psd,
 };
 
-/// @brief Extract the stabilising Riccati solution into a caller-supplied matrix.
+/// @brief Extract the stabilizing Riccati solution into a caller-supplied matrix.
 ///
 /// Given an orthogonal real U of size 2n x 2n with the stable invariant
 /// subspace in its leading n columns (output of reorder_real_schur), compute

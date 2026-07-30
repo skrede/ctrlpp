@@ -1,7 +1,7 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_lqr_02_setpoint_tracking' using 1:2 with lines title 'true x0', '' using 1:6 with lines title 'reference', '' using 1:7 with lines title 'control'"
 // Redirect: ./ctrlpp_lqr_02_setpoint_tracking > output.csv
 
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/estimation/kalman.h"
 #include "ctrlpp/control/lqr.h"
 #include "ctrlpp/model/propagate.h"
@@ -29,7 +29,7 @@ int main()
     sys_c.C << 1.0, 0.0;
     sys_c.D << 0.0;
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, dt);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, dt);
 
     Eigen::Matrix<Scalar, 2, 2> Q_lqr = Eigen::Matrix<Scalar, 2, 2>::Zero();
     Q_lqr(0, 0) = 10.0;

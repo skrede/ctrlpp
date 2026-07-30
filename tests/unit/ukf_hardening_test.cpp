@@ -61,7 +61,7 @@ constexpr int ukf_eig_ops = 4;
 /// from the strategy's own parameters rather than measured after the fact.
 ///
 /// The scaling term is lambda = alpha^2 (n + kappa) - n and the weight
-/// denominator is n + lambda = alpha^2 (n + kappa), so the centre weight is
+/// denominator is n + lambda = alpha^2 (n + kappa), so the center weight is
 /// lambda / (n + lambda) and the outer ones are half its reciprocal denominator.
 /// The recombination is a sum of terms of that magnitude whose total is of unit
 /// magnitude, so the largest weight IS the factor by which a relative rounding
@@ -537,13 +537,13 @@ TEST_CASE("UKF prediction through a quadratic matches the Gaussian closed form",
 
             // The scales are the largest quantities the recombinations actually
             // sum, amplified by the cancellation the weights impose: the
-            // propagated centre for the mean, and the squares of the terms the
+            // propagated center for the mean, and the squares of the terms the
             // deviations are built from for the covariance.
-            const double centre = a * mu * mu + b * mu + c;
-            const double mean_scale = amplitude * std::max(std::abs(centre), 1.0);
+            const double center = a * mu * mu + b * mu + c;
+            const double mean_scale = amplitude * std::max(std::abs(center), 1.0);
             const double variance_scale =
                 amplitude
-                * std::max({centre * centre, a * a * variance * variance,
+                * std::max({center * center, a * a * variance * variance,
                             slope * slope * variance, Q(0, 0)});
 
             CAPTURE(filter.state()(0), expected_mean);

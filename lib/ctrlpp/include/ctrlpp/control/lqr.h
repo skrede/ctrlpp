@@ -40,7 +40,7 @@ struct lqi_result
 /// Returns K = (R + B^T P B)^{-1} B^T P A where P solves the DARE, or the
 /// Riccati solver's own `dare_error` verbatim. The gain is a function of that
 /// solve and has no failure mode of its own, so it forwards the enumerator
-/// rather than restating the cause under a second name: an unstabilisable pair,
+/// rather than restating the cause under a second name: an unstabilizable pair,
 /// a singular state matrix and a non-converged factorization send the caller to
 /// fix three different things.
 template <typename Scalar, std::size_t NX, std::size_t NU>

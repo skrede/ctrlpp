@@ -525,7 +525,7 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
 ///
 /// This first additive cut supports the hard-constraint (no slack-variable)
 /// configuration, where n_vars == NV exactly. It reuses build_nmpc_problem for
-/// the callable/bound assembly (byte-identical NLP behaviour) and repackages the
+/// the callable/bound assembly (byte-identical NLP behavior) and repackages the
 /// result into the fixed-decision-dimension contract. The constraint count stays
 /// runtime (as on argmin's fixed-N floor), so slack-free path/terminal hard
 /// constraints are supported.

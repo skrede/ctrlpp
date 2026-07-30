@@ -345,7 +345,7 @@ TEST_CASE("RLS refuses a denominator with no significant digits left in it",
         }
     }
 
-    SECTION("a cancelled denominator far above unit scale is REFUSED")
+    SECTION("a canceled denominator far above unit scale is REFUSED")
     {
         // Definiteness of the initial covariance is deliberately not a
         // construction condition -- a caller may pose any finite starting point --

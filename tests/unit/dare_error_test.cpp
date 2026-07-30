@@ -8,14 +8,14 @@
 #include <cmath>
 #include <limits>
 
-TEST_CASE("DARE non-stabilisable system fails with non_stabilisable or singular_u11", "[dare][error]")
+TEST_CASE("DARE non-stabilizable system fails with non_stabilizable or singular_u11", "[dare][error]")
 {
     // A has an unstable mode at eigenvalue 2 that B cannot reach.
     // The symplectic spectrum still contains n=2 stable eigenvalues (0.5 and its
     // reciprocal pair), so the reorder succeeds in principle; the invariant-subspace
     // basis of such an input class is degenerate and the failure surfaces via
     // singular_u11 at extraction time. Either enumerator is a structurally correct
-    // failure for a non-stabilisable input.
+    // failure for a non-stabilizable input.
     Eigen::Matrix<double, 2, 2> A;
     A << 2.0, 0.0, 0.0, 0.5;
     Eigen::Matrix<double, 2, 1> B;
@@ -26,7 +26,7 @@ TEST_CASE("DARE non-stabilisable system fails with non_stabilisable or singular_
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(!result.has_value());
-    CHECK((result.error() == ctrlpp::dare_error::non_stabilisable || result.error() == ctrlpp::dare_error::singular_u11));
+    CHECK((result.error() == ctrlpp::dare_error::non_stabilizable || result.error() == ctrlpp::dare_error::singular_u11));
 }
 
 TEST_CASE("DARE NaN in A returns dare_error::non_finite_input", "[dare][error]")
@@ -69,7 +69,7 @@ TEST_CASE("DARE A = 0, B = 0 yields a structured failure enum", "[dare][error]")
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     REQUIRE(!result.has_value());
     CHECK((result.error() == ctrlpp::dare_error::singular_a || result.error() == ctrlpp::dare_error::singular_u11 || result.error() == ctrlpp::dare_error::non_finite_input ||
-           result.error() == ctrlpp::dare_error::non_stabilisable));
+           result.error() == ctrlpp::dare_error::non_stabilizable));
 }
 
 TEST_CASE("DARE negative-definite Q produces a structured failure enum", "[dare][error]")
@@ -85,7 +85,7 @@ TEST_CASE("DARE negative-definite Q produces a structured failure enum", "[dare]
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
     if(!result.has_value())
     {
-        CHECK((result.error() == ctrlpp::dare_error::non_psd_solution || result.error() == ctrlpp::dare_error::non_stabilisable ||
+        CHECK((result.error() == ctrlpp::dare_error::non_psd_solution || result.error() == ctrlpp::dare_error::non_stabilizable ||
                result.error() == ctrlpp::dare_error::non_finite_input || result.error() == ctrlpp::dare_error::singular_u11 || result.error() == ctrlpp::dare_error::schur_failed));
     }
 }

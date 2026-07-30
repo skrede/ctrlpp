@@ -597,7 +597,7 @@ private:
         return m_kp.cwiseProduct(ep).eval();
     }
 
-    /// @cite astrom2006 -- Ch. 3.3 (integral action, discretisation methods)
+    /// @cite astrom2006 -- Ch. 3.3 (integral action, discretization methods)
     auto compute_integral_term(const vector_t& e, Scalar dt) -> std::pair<vector_t, vector_t>
     {
         vector_t integral_increment = vector_t::Zero();

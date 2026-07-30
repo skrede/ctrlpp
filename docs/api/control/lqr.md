@@ -40,7 +40,7 @@ auto lqr_gain(const Matrix<Scalar, NX, NX>& A,
 
 Computes the infinite-horizon LQR gain K = (R + B'PB)^{-1} B'PA where P is the stabilizing solution of the DARE.
 
-**Rejections carry the Riccati solver's own `dare_error` verbatim.** The gain is a function of that solve and has no failure mode of its own, so it forwards the enumerator rather than restating the cause under a second name -- an unstabilisable pair, a singular state matrix and a non-converged factorization send the caller to fix three different things, and an empty result would have told them none of it. See [dare](dare.md) for the enumerators.
+**Rejections carry the Riccati solver's own `dare_error` verbatim.** The gain is a function of that solve and has no failure mode of its own, so it forwards the enumerator rather than restating the cause under a second name -- an unstabilizable pair, a singular state matrix and a non-converged factorization send the caller to fix three different things, and an empty result would have told them none of it. See [dare](dare.md) for the enumerators.
 
 ### lqr_gain (with cross-weight)
 
@@ -222,7 +222,7 @@ struct lqi_result
 // Usage: ./program | gnuplot -p -e "set datafile separator ','; plot '-' using 1:2 with lines title 'position', '' using 1:3 with lines title 'control'"
 
 #include <ctrlpp/control/lqr.h>
-#include <ctrlpp/model/discretise.h>
+#include <ctrlpp/model/discretize.h>
 #include <ctrlpp/model/state_space.h>
 
 #include <Eigen/Dense>
@@ -242,7 +242,7 @@ int main()
     sys_c.C << 1.0, 0.0;
     sys_c.D << 0.0;
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, 0.05);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, 0.05);
 
     Eigen::Matrix2d Q = Eigen::Matrix2d::Zero();
     Q(0, 0) = 10.0;

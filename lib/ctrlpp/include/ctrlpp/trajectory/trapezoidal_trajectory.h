@@ -735,7 +735,7 @@ class trapezoidal_trajectory
         // other: as the residual closes, the plateau's whole velocity range
         // sqrt(v_hi^2 + a r) - v_hi and the valley's whole duration window close
         // with it, so the loss covers the entire branch rather than a
-        // neighbourhood of one endpoint.
+        // neighborhood of one endpoint.
         //
         // Each rearrangement is derived in place by substituting the shifted
         // cruise velocity into the corresponding duration named in this
@@ -944,7 +944,7 @@ class trapezoidal_trajectory
             // form's constant term is negative, so its discriminant is a SUM of
             // two nonnegative terms and carries no cancellation at all. Measured
             // over the valley's full range rather than only the boundary
-            // neighbourhood, the decrement alone is worse than the cruise-velocity
+            // neighborhood, the decrement alone is worse than the cruise-velocity
             // form in the deep valley by many orders of magnitude, so neither form
             // dominates and the choice between them is not cosmetic.
             //

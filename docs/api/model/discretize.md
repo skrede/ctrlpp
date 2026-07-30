@@ -1,4 +1,4 @@
-# discretise
+# discretize
 
 Continuous-to-discrete state-space conversion. Converts a `continuous_state_space` to a `discrete_state_space` using zero-order hold (ZOH), Tustin (bilinear, with optional frequency prewarping), forward Euler, or backward Euler.
 
@@ -6,8 +6,8 @@ Continuous-to-discrete state-space conversion. Converts a `continuous_state_spac
 
 | Form | Header |
 |------|--------|
-| `discretise(sys, dt)` | `#include <ctrlpp/model/discretise.h>` |
-| (convenience) | `#include <ctrlpp/discretise.h>` |
+| `discretize(sys, dt)` | `#include <ctrlpp/model/discretize.h>` |
+| (convenience) | `#include <ctrlpp/discretize.h>` |
 
 ## Tag Types
 
@@ -27,67 +27,67 @@ struct backward_euler {}; // Backward Euler
 
 ## Functions
 
-### discretise (ZOH, default)
+### discretize (ZOH, default)
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY>
-discretise(const continuous_state_space<Scalar, NX, NU, NY>& sys,
+discretize(const continuous_state_space<Scalar, NX, NU, NY>& sys,
            Scalar dt, zoh = {});
 ```
 
 Discretizes using ZOH via the augmented matrix exponential. Forms the block matrix `[[A*dt, B*dt], [0, 0]]`, computes its matrix exponential, and extracts `Ad` and `Bd`. Output matrices `C` and `D` are passed through unchanged.
 
-### discretise (explicit tag)
+### discretize (explicit tag)
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY>
-discretise(zoh, const continuous_state_space<Scalar, NX, NU, NY>& sys,
+discretize(zoh, const continuous_state_space<Scalar, NX, NU, NY>& sys,
            Scalar dt);
 ```
 
 Same as above with the tag as the first argument.
 
-### discretise (Tustin / bilinear transform)
+### discretize (Tustin / bilinear transform)
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY>
-discretise(tustin, const continuous_state_space<Scalar, NX, NU, NY>& sys,
+discretize(tustin, const continuous_state_space<Scalar, NX, NU, NY>& sys,
            Scalar dt);
 ```
 
 Discretizes using the bilinear (Tustin) transform: `Ad = (I - A*dt/2)^-1 (I + A*dt/2)`, `Bd = (I - A*dt/2)^-1 B*dt`, `Cd = C (I - A*dt/2)^-1`. Includes the biproper feed-through correction `Dd = D + C*Bd/2`, which accounts for the direct coupling the bilinear map introduces between input and output even when the continuous system is strictly proper (`D = 0`).
 
-### discretise (Tustin with frequency prewarping)
+### discretize (Tustin with frequency prewarping)
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY>
-discretise(tustin_prewarp<Scalar> warp,
+discretize(tustin_prewarp<Scalar> warp,
            const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt);
 ```
 
 Rescales the sample period to `dt_warp = (2/w_c) * tan(w_c*dt/2)` before applying the bilinear map, so the discrete and continuous frequency responses agree exactly at the critical frequency `w_c` (rad/s). Everywhere else the pole mapping trades some accuracy for that exactness at `w_c`.
 
-### discretise (forward Euler)
+### discretize (forward Euler)
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY>
-discretise(forward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys,
+discretize(forward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys,
            Scalar dt);
 ```
 
 Discretizes using the forward Euler approximation: `Ad = I + A*dt`, `Bd = B*dt`, `Cd = C`, `Dd = D`. First-order accurate; does not require a matrix inversion, but is only conditionally stable for a stable continuous system (the sample period must be small enough relative to the fastest pole).
 
-### discretise (backward Euler)
+### discretize (backward Euler)
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 discrete_state_space<Scalar, NX, NU, NY>
-discretise(backward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys,
+discretize(backward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys,
            Scalar dt);
 ```
 
@@ -96,8 +96,8 @@ Discretizes using the backward Euler approximation: `Ad = (I - A*dt)^-1`, `Bd = 
 ## Usage Example
 
 ```cpp
-// gnuplot: plot "< ./discretise_demo" using 1:2 with lines title "step response"
-#include <ctrlpp/model/discretise.h>
+// gnuplot: plot "< ./discretize_demo" using 1:2 with lines title "step response"
+#include <ctrlpp/model/discretize.h>
 #include <ctrlpp/model/state_space.h>
 #include <ctrlpp/model/analysis.h>
 #include <ctrlpp/model/propagate.h>
@@ -118,9 +118,9 @@ int main()
 
     std::cout << "Continuous stable: " << ctrlpp::is_stable(sys) << "\n";
 
-    // Discretise with ZOH at 100 Hz
+    // Discretize with ZOH at 100 Hz
     constexpr double dt = 0.01;
-    auto dsys = ctrlpp::discretise(sys, dt);
+    auto dsys = ctrlpp::discretize(sys, dt);
 
     std::cout << "Discrete A =\n" << dsys.A << "\n"
               << "Discrete B = " << dsys.B.transpose() << "\n"

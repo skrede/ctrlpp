@@ -48,7 +48,7 @@ $$
 
 This is a matrix fixed-point equation that can be solved iteratively or via
 eigendecomposition methods. The solution exists and is unique when the system
-$(A, B)$ is stabilisable and $(A, Q^{1/2})$ is detectable
+$(A, B)$ is stabilizable and $(A, Q^{1/2})$ is detectable
 [2, Sec. 3.3, pp. 51--55].
 
 ### Schur Method

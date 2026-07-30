@@ -2,7 +2,7 @@
 //
 // lqr_gain_continuous(A, B, Q, R) computes K = R^{-1} B^T P where P solves the
 // continuous-time Riccati equation A^T P + P A - P B R^{-1} B^T P + Q = 0. The
-// closed-loop dynamics are A - B K, and for a stabilisable pair (A, B) all closed-
+// closed-loop dynamics are A - B K, and for a stabilizable pair (A, B) all closed-
 // loop eigenvalues must lie in the open left half-plane.
 
 #define EIGEN_RUNTIME_NO_MALLOC
@@ -16,7 +16,7 @@
 #include <Eigen/Eigenvalues>
 
 
-TEST_CASE("lqr_gain_continuous stabilises the continuous double integrator",
+TEST_CASE("lqr_gain_continuous stabilizes the continuous double integrator",
           "[lqr][continuous]")
 {
     Eigen::Matrix<double, 2, 2> A;
@@ -51,7 +51,7 @@ TEST_CASE("lqr_gain_continuous matches analytic gain on scalar system",
     CHECK_THAT((*K)(0, 0), Catch::Matchers::WithinAbs(1.0, 1e-10));
 }
 
-TEST_CASE("lqr_gain_continuous refuses a non-LHP-stabilisable system",
+TEST_CASE("lqr_gain_continuous refuses a non-LHP-stabilizable system",
           "[lqr][continuous][negative]")
 {
     // A has an unstable mode at +2 uncoupled from B.
@@ -65,7 +65,7 @@ TEST_CASE("lqr_gain_continuous refuses a non-LHP-stabilisable system",
 
     auto K = ctrlpp::lqr_gain_continuous<double, 2, 1>(A, B, Q, R);
     REQUIRE_FALSE(K.has_value());
-    // The enumerator is NOT non_lhp_stabilisable, for the structural reason its
+    // The enumerator is NOT non_lhp_stabilizable, for the structural reason its
     // discrete counterpart has: an uncontrollable mode at +2 puts BOTH +2 and
     // -2 in the Hamiltonian spectrum, so n eigenvalues do lie in the open left
     // half-plane and the count test is satisfied. The subspace they span does

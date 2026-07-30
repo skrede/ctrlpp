@@ -57,7 +57,7 @@ inline int terminal_constraint_rows(const std::optional<terminal_set<Scalar, NX>
 /// other, and the per-solve rate-bound refresh must write at the row the rate
 /// block actually starts at. All three quantities are decided here, from the
 /// optionals that decide whether a block exists at all, so there is no presence
-/// flag travelling beside an optional that could disagree with it.
+/// flag traveling beside an optional that could disagree with it.
 struct qp_constraint_layout
 {
     int state_row;    ///< First state-bound row; equals the dynamics block height.

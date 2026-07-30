@@ -17,8 +17,8 @@ inline const char *describe(dare_error e)
 {
     switch(e)
     {
-        case dare_error::non_stabilisable:
-            return "pair is not stabilisable";
+        case dare_error::non_stabilizable:
+            return "pair is not stabilizable";
         case dare_error::non_finite_input:
             return "non-finite input";
         case dare_error::singular_a:

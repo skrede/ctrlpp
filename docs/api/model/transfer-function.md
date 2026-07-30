@@ -72,4 +72,4 @@ int main()
 
 - [state-space](state-space.md)<br/> state-space representation
 - [conversion](conversion.md)<br/> TF to SS and SS to TF conversion
-- [discretise](discretise.md)<br/> continuous-to-discrete conversion
+- [discretize](discretize.md)<br/> continuous-to-discrete conversion

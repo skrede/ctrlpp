@@ -5,7 +5,7 @@
 ///
 /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3-4
 
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 
 #include <array>
 #include <cstddef>

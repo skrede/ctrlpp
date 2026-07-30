@@ -197,7 +197,7 @@ public:
     ///
     /// Three properties of the definition, each chosen rather than defaulted:
     ///
-    ///  * The centre is the WEIGHTED MEAN, always, including when the extraction
+    ///  * The center is the WEIGHTED MEAN, always, including when the extraction
     ///    method is the maximum a posteriori particle. A second moment about any
     ///    other point is larger than the covariance and is not one; a caller who
     ///    wants the dispersion about the MAP estimate can form it from

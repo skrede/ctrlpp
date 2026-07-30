@@ -1,5 +1,5 @@
-#ifndef HPP_GUARD_CTRLPP_MODEL_DISCRETISE_H
-#define HPP_GUARD_CTRLPP_MODEL_DISCRETISE_H
+#ifndef HPP_GUARD_CTRLPP_MODEL_DISCRETIZE_H
+#define HPP_GUARD_CTRLPP_MODEL_DISCRETIZE_H
 
 /// @brief Continuous-to-discrete state-space conversion (ZOH, Tustin, Euler).
 ///
@@ -27,7 +27,7 @@ struct tustin
 {
 };
 
-/// @brief Tustin (bilinear) discretisation with frequency prewarping.
+/// @brief Tustin (bilinear) discretization with frequency prewarping.
 ///
 /// Rescales the sample period so the bilinear map is exact at the chosen critical
 /// frequency `w_c` (rad/s), trading pole-mapping accuracy elsewhere for exactness there.
@@ -45,7 +45,7 @@ struct backward_euler
 {
 };
 
-/// @brief Zero-order-hold discretisation via Van Loan's augmented matrix exponential method.
+/// @brief Zero-order-hold discretization via Van Loan's augmented matrix exponential method.
 ///
 /// Forms the augmented matrix M = [[A*dt, B*dt], [0, 0]], computes exp(M), and extracts
 /// Ad and Bd from the upper blocks. Cd = C, Dd = D.
@@ -54,7 +54,7 @@ struct backward_euler
 ///   IEEE Trans. Autom. Control 23(3):395-404, 1978
 /// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.2
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-discrete_state_space<Scalar, NX, NU, NY> discretise(zoh, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
+discrete_state_space<Scalar, NX, NU, NY> discretize(zoh, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
@@ -69,24 +69,24 @@ discrete_state_space<Scalar, NX, NU, NY> discretise(zoh, const continuous_state_
     // Compute matrix exponential
     Eigen::Matrix<Scalar, aug, aug> expM = M.exp();
 
-    // Extract discretised matrices
+    // Extract discretized matrices
     Matrix<Scalar, NX, NX> Ad = expM.template block<nx, nx>(0, 0);
     Matrix<Scalar, NX, NU> Bd = expM.template block<nx, nu>(0, nx);
 
     return {Ad, Bd, sys.C, sys.D};
 }
 
-// Convenience wrapper matching the generic discretise<Method>(...) signature.
+// Convenience wrapper matching the generic discretize<Method>(...) signature.
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-discrete_state_space<Scalar, NX, NU, NY> discretise(const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt, zoh = {})
+discrete_state_space<Scalar, NX, NU, NY> discretize(const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt, zoh = {})
 {
-    return discretise(zoh{}, sys, dt);
+    return discretize(zoh{}, sys, dt);
 }
 
 namespace detail
 {
 
-/// @brief Shared bilinear (Tustin) transform, parameterised on the (possibly prewarped) sample period.
+/// @brief Shared bilinear (Tustin) transform, parameterized on the (possibly prewarped) sample period.
 ///
 /// Ad = (I - A*dt/2)^-1 (I + A*dt/2), Bd = (I - A*dt/2)^-1 B*dt, Cd = C (I - A*dt/2)^-1,
 /// and the biproper feed-through correction Dd = D + C*Bd/2, which accounts for the
@@ -108,36 +108,36 @@ discrete_state_space<Scalar, NX, NU, NY> tustin_bilinear(const continuous_state_
 
 }
 
-/// @brief Tustin (bilinear transform) discretisation.
+/// @brief Tustin (bilinear transform) discretization.
 ///
 /// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.5
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-discrete_state_space<Scalar, NX, NU, NY> discretise(tustin, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
+discrete_state_space<Scalar, NX, NU, NY> discretize(tustin, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {
     return detail::tustin_bilinear(sys, dt);
 }
 
-/// @brief Frequency-prewarped Tustin discretisation.
+/// @brief Frequency-prewarped Tustin discretization.
 ///
 /// Replaces dt by dt_warp = (2/w_c) * tan(w_c*dt/2) before applying the bilinear map, so the
 /// discrete and continuous frequency responses agree exactly at the critical frequency w_c.
 ///
 /// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.5
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-discrete_state_space<Scalar, NX, NU, NY> discretise(tustin_prewarp<Scalar> warp, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
+discrete_state_space<Scalar, NX, NU, NY> discretize(tustin_prewarp<Scalar> warp, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {
     const Scalar dt_warp = (Scalar{2} / warp.w_c) * std::tan(warp.w_c * dt / Scalar{2});
     return detail::tustin_bilinear(sys, dt_warp);
 }
 
-/// @brief Forward Euler discretisation.
+/// @brief Forward Euler discretization.
 ///
 /// Ad = I + A*dt, Bd = B*dt, Cd = C, Dd = D. First-order accurate; the discrete pole
 /// z = 1 + s*dt is the first-order Taylor expansion of z = e^(s*dt) about s*dt = 0.
 ///
 /// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.5
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-discrete_state_space<Scalar, NX, NU, NY> discretise(forward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
+discrete_state_space<Scalar, NX, NU, NY> discretize(forward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {
     const Matrix<Scalar, NX, NX> identity = Matrix<Scalar, NX, NX>::Identity();
 
@@ -147,7 +147,7 @@ discrete_state_space<Scalar, NX, NU, NY> discretise(forward_euler, const continu
     return {Ad, Bd, sys.C, sys.D};
 }
 
-/// @brief Backward Euler discretisation.
+/// @brief Backward Euler discretization.
 ///
 /// Ad = (I - A*dt)^-1, Bd = (I - A*dt)^-1 B*dt, Cd = C (I - A*dt)^-1,
 /// Dd = D + C (I - A*dt)^-1 B*dt. First-order accurate and unconditionally stable
@@ -155,7 +155,7 @@ discrete_state_space<Scalar, NX, NU, NY> discretise(forward_euler, const continu
 ///
 /// @cite astrom1997 -- Astrom & Wittenmark, "Computer-Controlled Systems", 3rd ed., 1997, Sec. 3.5
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-discrete_state_space<Scalar, NX, NU, NY> discretise(backward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
+discrete_state_space<Scalar, NX, NU, NY> discretize(backward_euler, const continuous_state_space<Scalar, NX, NU, NY>& sys, Scalar dt)
 {
     const Matrix<Scalar, NX, NX> identity = Matrix<Scalar, NX, NX>::Identity();
     const Matrix<Scalar, NX, NX> backward_resolvent_inverse = (identity - sys.A * dt).inverse();

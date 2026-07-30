@@ -115,7 +115,7 @@ Returns the weighted second central moment of the particle set about its weighte
 
 Three properties of the definition:
 
-- The centre is always the weighted mean, including when `extraction` is `map`. A second moment about any other point is larger than the covariance and is not one; dispersion about the MAP estimate can be formed from `particles()` and `map_estimate()`.
+- The center is always the weighted mean, including when `extraction` is `map`. A second moment about any other point is larger than the covariance and is not one; dispersion about the MAP estimate can be formed from `particles()` and `map_estimate()`.
 - There is no Bessel correction. The weights sum to one, so this is the weighted second moment, matching the convention the unscented filter's sigma-point covariance uses.
 - Uniform weights need no special case. The expression reduces exactly to the plain second moment of the particles about their plain mean, which is the correct answer after the weight-degeneracy recovery described under `update`: the measurement carried no information, so the reported uncertainty is the dispersion the filter was already carrying.
 

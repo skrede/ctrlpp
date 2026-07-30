@@ -1,7 +1,7 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_lqr_03_observer_comparison' using 1:2 with lines title 'true x0', '' using 1:6 with lines title 'kalman x0', '' using 1:10 with lines title 'luenberger x0'"
 // Redirect: ./ctrlpp_lqr_03_observer_comparison > output.csv
 
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/estimation/kalman.h"
 #include "ctrlpp/estimation/luenberger.h"
 #include "ctrlpp/control/lqr.h"
@@ -40,7 +40,7 @@ int main()
         0.0, 0.0, 1.0, 0.0;
     sys_c.D.setZero();
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, dt);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, dt);
 
     Eigen::Matrix<Scalar, 4, 4> Q_lqr = Eigen::Matrix<Scalar, 4, 4>::Zero();
     Q_lqr(0, 0) = 10.0;

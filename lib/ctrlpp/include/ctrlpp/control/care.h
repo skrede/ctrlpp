@@ -3,7 +3,7 @@
 
 /// @brief Continuous-time algebraic Riccati equation solver.
 ///
-/// Solves A^T P + P A - P B R^{-1} B^T P + Q = 0 for the stabilising P.
+/// Solves A^T P + P A - P B R^{-1} B^T P + Q = 0 for the stabilizing P.
 ///
 /// Builds the 2n x 2n Hamiltonian H = [[A, -B R^{-1} B^T], [-Q, -A^T]] (Laub 1979),
 /// then dispatches to the selected method. The default applies a scaled Newton
@@ -140,7 +140,7 @@ auto care_solve_from_hamiltonian(
 
         auto rr = reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
         if (rr.placed < n)
-            return ctrlpp::unexpected(care_error::non_lhp_stabilisable);
+            return ctrlpp::unexpected(care_error::non_lhp_stabilizable);
         if (!T.allFinite() || !U.allFinite())
             return ctrlpp::unexpected(care_error::non_finite_input);
 
@@ -179,7 +179,7 @@ auto care_solve_from_hamiltonian(
 /// @brief Continuous-time Algebraic Riccati Equation solver.
 ///
 /// Returns `ctrlpp::expected<care_result<Scalar, NX>, care_error>`. On success,
-/// `result->P` is the stabilising solution; `result->subspace_separation` is the
+/// `result->P` is the stabilizing solution; `result->subspace_separation` is the
 /// minimum pivot ratio across accepted swaps for Schur methods and is not
 /// available for the default sign-function method; `result->reorder_complete`
 /// is true if every swap was accepted or the selected method has no swap phase.

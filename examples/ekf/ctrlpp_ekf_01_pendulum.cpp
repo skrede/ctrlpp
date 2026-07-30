@@ -30,7 +30,7 @@ constexpr double process_noise_amp = 0.001;
 constexpr double meas_noise_amp = 0.05;
 
 /// Pendulum dynamics satisfying differentiable_dynamics (and dynamics_model).
-/// Forward-Euler discretisation: x_{k+1} = f(x_k, u_k).
+/// Forward-Euler discretization: x_{k+1} = f(x_k, u_k).
 struct pendulum_dynamics
 {
     auto operator()(const ctrlpp::Vector<double, 2>& x, const ctrlpp::Vector<double, 1>& u) const -> ctrlpp::Vector<double, 2>

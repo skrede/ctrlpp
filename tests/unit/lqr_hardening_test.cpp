@@ -218,14 +218,14 @@ TEST_CASE("LQR refuses an unstabilizable pair with the enumerator that names it"
     // Asserted at the solver, where the verdict originates ...
     auto const solved = ctrlpp::dare<double, 2, 1>(sys.A, sys.B, Q, R);
     REQUIRE_FALSE(solved.has_value());
-    REQUIRE(solved.error() == ctrlpp::dare_error::non_stabilisable);
+    REQUIRE(solved.error() == ctrlpp::dare_error::non_stabilizable);
 
     // ... and at the gain, which forwards it rather than flattening it. Without
     // this second assertion the forwarding is untested at the surface callers
     // actually use.
     auto const result = ctrlpp::lqr_gain<double, 2, 1>(sys.A, sys.B, Q, R);
     REQUIRE_FALSE(result.has_value());
-    REQUIRE(result.error() == ctrlpp::dare_error::non_stabilisable);
+    REQUIRE(result.error() == ctrlpp::dare_error::non_stabilizable);
 }
 
 TEST_CASE("LQR scalar integrator analytical gain", "[lqr][hardening][precision]")

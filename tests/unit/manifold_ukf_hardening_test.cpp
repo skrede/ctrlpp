@@ -613,7 +613,7 @@ TEST_CASE("Manifold UKF measures sigma points past the half turn along the short
     }
 
     // With no commanded rate the propagation is the identity, so the predicted
-    // covariance is the sigma set's own spread about its centre plus the
+    // covariance is the sigma set's own spread about its center plus the
     // process noise, and every factor of it is fixed by the configuration:
     //
     //   offset radius   = sqrt(n + lambda) * sqrt(P0)   = sqrt(3 * 3.5)
@@ -623,8 +623,8 @@ TEST_CASE("Manifold UKF measures sigma points past the half turn along the short
     //
     // so each diagonal entry is the square of the short distance over three,
     // plus the process variance. The two offsets of a given axis contribute
-    // only to that axis's diagonal, the centre point contributes a zero tangent
-    // vector, and lambda is exactly zero at this spread so the centre weight
+    // only to that axis's diagonal, the center point contributes a zero tangent
+    // vector, and lambda is exactly zero at this spread so the center weight
     // drops out of the mean.
     const double offset_radius = std::sqrt(tangent_dimension * initial_variance);
     REQUIRE(offset_radius > std::numbers::pi);
@@ -640,16 +640,16 @@ TEST_CASE("Manifold UKF measures sigma points past the half turn along the short
     const double budget = predicted_covariance_ops * std::numeric_limits<double>::epsilon() * predicted_variance;
 
     {
-        auto centred = *MukfType::create(simple_rotation_dynamics{}, gravity_meas{},
+        auto centered = *MukfType::create(simple_rotation_dynamics{}, gravity_meas{},
                                          configured(q_near_pi), strategy);
-        const Eigen::Quaterniond before = centred.attitude();
-        centred.predict(ctrlpp::Vector<double, 3>::Zero());
+        const Eigen::Quaterniond before = centered.attitude();
+        centered.predict(ctrlpp::Vector<double, 3>::Zero());
 
         // The mean is unmoved: each antipodal pair cancels whichever
         // representative is chosen, so this half is true with or without the
         // hemisphere handling and is asserted as a precondition, not as the
         // property under test.
-        CHECK(centred.attitude().coeffs() == before.coeffs());
+        CHECK(centered.attitude().coeffs() == before.coeffs());
 
         // This is the property under test. Measured with both hemisphere
         // mechanisms removed -- the explicit antipodal test in the covariance
@@ -658,7 +658,7 @@ TEST_CASE("Manifold UKF measures sigma points past the half turn along the short
         // and this assertion fails. Removing either one alone changes nothing,
         // because the other still selects the short representative.
         for(int i = 0; i < 3; ++i)
-            CHECK(std::abs(centred.covariance()(i, i) - predicted_variance) <= budget);
+            CHECK(std::abs(centered.covariance()(i, i) - predicted_variance) <= budget);
     }
 
     // A quaternion and its negation are the same rotation, so the two filters

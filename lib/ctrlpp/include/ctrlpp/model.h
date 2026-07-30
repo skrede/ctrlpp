@@ -5,7 +5,7 @@
 #include "ctrlpp/model/transfer_function.h"
 #include "ctrlpp/model/conversion.h"
 #include "ctrlpp/model/analysis.h"
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/propagate.h"
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/model/measurement_model.h"

@@ -3,7 +3,7 @@
 
 /// @brief Discrete Algebraic Riccati Equation solver via real-Schur Bai-Demmel reorder.
 ///
-/// Solves A^T P A - P - A^T P B (R + B^T P B)^{-1} B^T P A + Q = 0 for the stabilising P.
+/// Solves A^T P A - P - A^T P B (R + B^T P B)^{-1} B^T P A + Q = 0 for the stabilizing P.
 ///
 /// Builds the 2n x 2n symplectic matrix Z (Laub 1979 Eq. 7), computes its real Schur
 /// decomposition Z = U T U^T, reorders T with a predicate `|lambda| < 1 - eps * scale`
@@ -230,7 +230,7 @@ auto dare_solve_from_symplectic(const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int
 
     auto rr = reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
     if(rr.placed < n)
-        return ctrlpp::unexpected(dare_error::non_stabilisable);
+        return ctrlpp::unexpected(dare_error::non_stabilizable);
     if(!T.allFinite() || !U.allFinite())
         return ctrlpp::unexpected(dare_error::non_finite_input);
 
@@ -260,7 +260,7 @@ auto dare_solve_from_symplectic(const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int
 /// @brief Discrete Algebraic Riccati Equation solver.
 ///
 /// Returns `ctrlpp::expected<dare_result<Scalar, NX>, dare_error>`. On success,
-/// `result->P` is the stabilising solution; `result->subspace_separation` is the
+/// `result->P` is the stabilizing solution; `result->subspace_separation` is the
 /// min pivot ratio across accepted swaps (LAPACK SEP analogue); `result->reorder_complete`
 /// is true iff every swap was accepted by the conditioning test.
 template<ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>

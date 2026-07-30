@@ -81,7 +81,7 @@ Guides and API reference for the ctrlpp C++20 control library.
 
 - [state_space](api/model/state-space.md)<br/>Linear state-space model
 - [transfer_function](api/model/transfer-function.md)<br/>Transfer function representation
-- [discretise](api/model/discretise.md)<br/>Continuous-to-discrete conversion
+- [discretize](api/model/discretize.md)<br/>Continuous-to-discrete conversion
 - [conversion](api/model/conversion.md)<br/>Transfer function / state-space conversion
 - [analysis](api/model/analysis.md)<br/>Stability and controllability analysis
 - [propagate](api/model/propagate.md)<br/>State propagation utilities

@@ -1745,13 +1745,13 @@ TEST_CASE("trapezoidal retiming rejects a recorded valley request outside its re
 TEST_CASE("trapezoidal retiming realizes a recorded equal-boundary valley request",
           "[trajectory][anchor]")
 {
-    // The recorded counterexample's neighbour, with the two boundary velocities
+    // The recorded counterexample's neighbor, with the two boundary velocities
     // exactly equal. This one IS reachable, and the retired parametrization
     // accepted it too -- while realizing a duration three and a third million
     // units in the last place LONG. The two recorded cases together are why an
     // acceptance verdict alone was never evidence: the retired form got the
     // verdict wrong in one direction here and in the other direction on its
-    // neighbour, and reported success both times.
+    // neighbor, and reported success both times.
     auto built = trapezoidal_trajectory<double>::create({.q0 = 0.0,
                                                          .q1 = 0.00390625,
                                                          .v_max = 0.9999999999999821,

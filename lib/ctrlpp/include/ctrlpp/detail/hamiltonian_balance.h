@@ -172,7 +172,7 @@ auto care_solve_via_balanced_schur(
 
     auto rr = reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
     if (rr.placed < n)
-        return ctrlpp::unexpected(care_error::non_lhp_stabilisable);
+        return ctrlpp::unexpected(care_error::non_lhp_stabilizable);
     if (!T.allFinite() || !U.allFinite())
         return ctrlpp::unexpected(care_error::non_finite_input);
 

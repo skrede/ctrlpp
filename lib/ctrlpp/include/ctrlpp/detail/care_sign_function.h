@@ -3,7 +3,7 @@
 
 /// @brief Continuous-time Riccati solve via the matrix sign function.
 ///
-/// Solves A^T P + P A - P B R^{-1} B^T P + Q = 0 for the stabilising P by
+/// Solves A^T P + P A - P B R^{-1} B^T P + Q = 0 for the stabilizing P by
 /// iterating the Roberts 1980 Newton form
 ///     H_{k+1} = 0.5 * (mu_k * H_k + mu_k^{-1} * H_k^{-1})
 /// on the Hamiltonian H until it converges to sign(H). The determinantal
@@ -235,7 +235,7 @@ auto care_solve_via_sign_function(
     // exactly the ill-conditioned stable subspaces this path must resolve.
     qr.setThreshold(Scalar{n2} * eps);
     if (qr.rank() < n)
-        return ctrlpp::unexpected(care_error::non_lhp_stabilisable);
+        return ctrlpp::unexpected(care_error::non_lhp_stabilizable);
 
     const Mat2N Q_full = qr.householderQ();
     const Mat2N U      = Q_full;

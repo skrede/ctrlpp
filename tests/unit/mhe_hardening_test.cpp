@@ -401,7 +401,7 @@ TEST_CASE("MHE with ill-conditioned process noise", "[mhe][hardening][robustness
     const double last_measurement = static_cast<double>(2 * N - 1) * measurement_step;
 
     // The disposition, which is the case's real subject and which nothing read
-    // before. A process weight ten decades below its neighbour makes the window
+    // before. A process weight ten decades below its neighbor makes the window
     // problem badly conditioned, and the backend says so: it reports an
     // inaccurate solve rather than an optimal one, and it does NOT fall back.
     // That is the honest report for this data and it is what a caller would act

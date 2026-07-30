@@ -252,7 +252,7 @@ private:
     /// There is deliberately NO magnitude threshold here. A sensor reading is
     /// expressed in the caller's units, so an absolute floor gives the same
     /// physical acceleration different treatment depending on whether it is
-    /// reported in g or in millimetres per second squared -- and both
+    /// reported in g or in millimeters per second squared -- and both
     /// correction terms use only the DIRECTION, which is scale-free. The
     /// previous floor of 1e-10 discarded a reading of 1e-15 g, which is an
     /// ordinary reading in units chosen that way.

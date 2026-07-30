@@ -65,7 +65,7 @@ abs error" is the absolute error of that worst signal.
 | `lqi` | `dlqr()` augmented | 2.8 | 6.39e-12 | PASS |
 | `pid` (linear PI) | `lsim()` | 10.8 | 1.05e-14 | PASS |
 | `place` | `place()` | 13.9 | 1.14e-15 | PASS |
-| `discretise` (ZOH) | `c2d()` | 15.6 | 1.39e-17 | PASS |
+| `discretize` (ZOH) | `c2d()` | 15.6 | 1.39e-17 | PASS |
 | `analysis` (poles) | `pole()`, `ctrb()`, `obsv()` | 15.4 | 2.08e-17 | PASS |
 | `tf2ss` / `ss2tf` | `tf2ss()`, `ss2tf()` | not run | not run | NOT RUN, needs `signal` |
 | `kalman_filter` | time-varying KF | 10.4 | 2.08e-14 | PASS |
@@ -129,7 +129,7 @@ suite automatically are separate pieces of work.
 | `manifold_ukf` | 1 | SO(3) manifold; no Octave equivalent. Monte Carlo NEES validated |
 | `complementary_filter` | 1 | Mahony filter; no Octave equivalent |
 | **Model** | | |
-| `discretise` (ZOH) | 2 | Cross-validated against Octave `c2d()` |
+| `discretize` (ZOH) | 2 | Cross-validated against Octave `c2d()` |
 | `state_space` | 2 | Implicitly validated via all state-space cross-validation cases |
 | `transfer_function` | 2 | Cross-validated via `tf2ss` / `ss2tf` round-trip; same case, same `signal` package requirement |
 | `analysis` (poles, stability, controllability, observability) | 2 | Cross-validated against Octave `pole()`, `ctrb()`, `obsv()` |

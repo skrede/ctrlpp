@@ -119,7 +119,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
 
-    // The library correctly declining on an ill-posed input (non-stabilisable,
+    // The library correctly declining on an ill-posed input (non-stabilizable,
     // singular, non-finite intermediate, etc.) is not a property violation.
     if(!result.has_value())
         return 0;
@@ -144,7 +144,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // input norms -- this matters because AtP and cross frequently sit at a
     // much larger common magnitude than their difference (the residual itself),
     // i.e. this is a catastrophic-cancellation regime, and a tolerance based on
-    // the cancelled result's own size would be far too tight. ctrlpp::care's own
+    // the canceled result's own size would be far too tight. ctrlpp::care's own
     // construction additionally forms the off-diagonal Hamiltonian block
     // B R^-1 B^T (see care.h, Laub 1979) before the sign-function/Schur solve,
     // so that block's scale B^2/R is folded into the same term-magnitude sum.

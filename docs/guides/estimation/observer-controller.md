@@ -27,7 +27,7 @@ controller.
 ```cpp
 // Usage: ./observer_controller | gnuplot -p -e "set datafile separator ','; plot '-' skip 1 using 1:2 with lines title 'true pos', '' using 1:3 with lines title 'est pos'"
 #include <ctrlpp/estimation/kalman.h>
-#include <ctrlpp/model/discretise.h>
+#include <ctrlpp/model/discretize.h>
 #include <ctrlpp/control/lqr.h>
 #include <ctrlpp/model/propagate.h>
 #include <ctrlpp/model/state_space.h>
@@ -62,7 +62,7 @@ int main()
                0.0, 0.0, 1.0, 0.0;
     sys_c.D.setZero();
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, dt);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, dt);
 
     // LQR gain
     Eigen::Matrix<Scalar, 4, 4> Q_lqr = Eigen::Matrix<Scalar, 4, 4>::Zero();

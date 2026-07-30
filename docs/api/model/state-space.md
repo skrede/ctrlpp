@@ -63,7 +63,7 @@ using siso_discrete_state_space = discrete_state_space<S, NX, 1, 1>;
 // gnuplot: plot "< ./state_space_demo" using 1:3 with lines title "output"
 #include <ctrlpp/model/state_space.h>
 #include <ctrlpp/model/analysis.h>
-#include <ctrlpp/model/discretise.h>
+#include <ctrlpp/model/discretize.h>
 #include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
@@ -84,8 +84,8 @@ int main()
               << "  B = " << sys.B.transpose() << "\n"
               << "  Stable: " << ctrlpp::is_stable(sys) << "\n\n";
 
-    // Discretise with ZOH at 100 Hz
-    auto dsys = ctrlpp::discretise(sys, 0.01);
+    // Discretize with ZOH at 100 Hz
+    auto dsys = ctrlpp::discretize(sys, 0.01);
 
     // Simulate 10 steps with unit input
     Eigen::Vector2d x = Eigen::Vector2d::Zero();
@@ -105,7 +105,7 @@ int main()
 ## See Also
 
 - [transfer-function](transfer-function.md)<br/> transfer function representation
-- [discretise](discretise.md)<br/> continuous-to-discrete conversion
+- [discretize](discretize.md)<br/> continuous-to-discrete conversion
 - [conversion](conversion.md)<br/> TF to SS and SS to TF
 - [analysis](analysis.md)<br/> stability, controllability, observability
 - [propagate](propagate.md)<br/> state propagation utilities

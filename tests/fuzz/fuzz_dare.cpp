@@ -131,7 +131,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
 
-    // The library correctly declining on an ill-posed input (non-stabilisable,
+    // The library correctly declining on an ill-posed input (non-stabilizable,
     // singular, non-finite intermediate, etc.) is not a property violation.
     if(!result.has_value())
         return 0;
@@ -156,7 +156,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // input norms -- this matters because AtPA and cross frequently sit at a
     // much larger common magnitude than their difference (the residual itself),
     // i.e. this is a catastrophic-cancellation regime, and a tolerance based on
-    // the cancelled result's own size would be far too tight. ctrlpp::dare's own
+    // the canceled result's own size would be far too tight. ctrlpp::dare's own
     // construction additionally forms G = B R^-1 B^T and AinvT = A^-T (see
     // dare.h, Laub 1979 Eq. 7) before the Schur decomposition of the symplectic
     // Z, so G's scale B^2/R is folded into the same term-magnitude sum. The

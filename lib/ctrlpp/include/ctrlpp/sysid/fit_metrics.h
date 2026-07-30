@@ -18,7 +18,7 @@
 namespace ctrlpp
 {
 
-/// @brief Aggregate of model fit metrics: normalised RMSE and variance accounted for.
+/// @brief Aggregate of model fit metrics: normalized RMSE and variance accounted for.
 ///
 /// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 2nd ed., 1999, Ch. 16
 template <typename Scalar>

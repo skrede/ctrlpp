@@ -144,7 +144,7 @@ void cyclic_thomas_solve(std::vector<Scalar> const& a,
     // Build auxiliary vector u: u[0] = gamma, u[1..n-2] = 0, u[n-1] = beta
     // With v = [1, 0, ..., 0, alpha/gamma], u*v^T restores the corner elements:
     //   (0,0): gamma*1 = gamma, (0,n-1): gamma*(alpha/gamma) = alpha
-    //   (n-1,0): beta*1 = beta, (n-1,n-1): beta*(alpha/gamma) -- cancelled by b_mod
+    //   (n-1,0): beta*1 = beta, (n-1,n-1): beta*(alpha/gamma) -- canceled by b_mod
     std::vector<Scalar> u(n, Scalar{0});
     u[0] = gamma;
     u[n - 1] = beta;
