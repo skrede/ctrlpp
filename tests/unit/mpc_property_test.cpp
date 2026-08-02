@@ -56,7 +56,10 @@ TEST_CASE("mpc input constraints satisfied", "[mpc][property]")
                      .u_max = (Eigen::Matrix<double, 1, 1>() << u_hi).finished(),
                  };
 
-                 OsqpMpc controller(sys, cfg);
+                 auto controller_result = OsqpMpc::create(sys, cfg);
+                 RC_ASSERT(controller_result.has_value());
+                 auto& controller = *controller_result;
+
                  Eigen::Vector2d x0{x0_0, x0_1};
                  auto u = controller.solve(x0);
 
@@ -103,7 +106,10 @@ TEST_CASE("mpc predicted states within bounds", "[mpc][property]")
                      .x_max = x_hi,
                  };
 
-                 OsqpMpc controller(sys, cfg);
+                 auto controller_result = OsqpMpc::create(sys, cfg);
+                 RC_ASSERT(controller_result.has_value());
+                 auto& controller = *controller_result;
+
                  Eigen::Vector2d x0{x0_0, x0_1};
                  auto u = controller.solve(x0);
 
@@ -155,7 +161,10 @@ TEST_CASE("mpc cost is non-negative", "[mpc][property]")
                      .R = R,
                  };
 
-                 OsqpMpc controller(sys, cfg);
+                 auto controller_result = OsqpMpc::create(sys, cfg);
+                 RC_ASSERT(controller_result.has_value());
+                 auto& controller = *controller_result;
+
                  Eigen::Vector2d x0{x0_0, x0_1};
                  auto u = controller.solve(x0);
 
@@ -189,7 +198,10 @@ TEST_CASE("mpc robustness - infeasible returns the error branch", "[mpc][propert
                      .hard_state_constraints = true,
                  };
 
-                 OsqpMpc controller(sys, cfg);
+                 auto controller_result = OsqpMpc::create(sys, cfg);
+                 RC_ASSERT(controller_result.has_value());
+                 auto& controller = *controller_result;
+
                  Eigen::Vector2d x0{10.0, 10.0};
 
                  // Must not crash -- either returns the error branch or a solution with slack
