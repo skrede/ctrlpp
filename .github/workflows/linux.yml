@@ -137,6 +137,37 @@ jobs:
       - name: Test
         run: ctest --test-dir build/exceptions --output-on-failure
 
+  # The above-floor leg. Library code spells its fallible returns
+  # `ctrlpp::expected` and nothing else; what changes with the standard is what
+  # that name resolves to, on `expected.h`'s `__cpp_lib_expected` switch. This
+  # job exists so the resolution the floor does not select keeps compiling and
+  # passing, since a call site that satisfies one resolution can still fail
+  # against the other -- the conversion operators the vocabulary type carries
+  # only exist on one side of that switch.
+  #
+  # Until the presets were pinned back to the floor this coverage was
+  # accidental and inverted: dev and exceptions were both set to C++23, so the
+  # two jobs named as the primary gates were the only ones building above the
+  # floor, and neither was testing the standard the library promises.
+  cxx23:
+    runs-on: ubuntu-24.04
+    name: cxx23 (above-floor ctrlpp::expected resolution)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure (default tree at C++23)
+        run: cmake --preset dev-cxx23
+
+      - name: Build
+        run: cmake --build build/dev-cxx23
+
+      - name: Test
+        run: ctest --test-dir build/dev-cxx23 --output-on-failure
+
   install-test:
     runs-on: ubuntu-24.04
 

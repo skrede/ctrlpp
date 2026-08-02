@@ -8,7 +8,7 @@
             "binaryDir": "${sourceDir}/build/dev",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_CXX_STANDARD": "23",
+                "CMAKE_CXX_STANDARD": "20",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CTRLPP_BUILD_TESTS": "ON",
                 "CTRLPP_CMAKE_FETCH_DEPS": "ON"
@@ -21,7 +21,7 @@
             "binaryDir": "${sourceDir}/build/dev-full",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_CXX_STANDARD": "23",
+                "CMAKE_CXX_STANDARD": "20",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CTRLPP_BUILD_TESTS": "ON",
                 "CTRLPP_BUILD_EXAMPLES": "ON",
@@ -37,7 +37,7 @@
             "binaryDir": "${sourceDir}/build/exceptions",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_CXX_STANDARD": "23",
+                "CMAKE_CXX_STANDARD": "20",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CTRLPP_BUILD_TESTS": "ON",
                 "CTRLPP_CMAKE_FETCH_DEPS": "ON",
@@ -47,13 +47,31 @@
             }
         },
         {
+            "name": "dev-cxx23",
+            "displayName": "Development above the C++20 floor (checks the other ctrlpp::expected resolution)",
+            "inherits": "dev",
+            "binaryDir": "${sourceDir}/build/dev-cxx23",
+            "cacheVariables": {
+                "CMAKE_CXX_STANDARD": "23"
+            }
+        },
+        {
+            "name": "exceptions-cxx23",
+            "displayName": "Exceptions carve-out above the C++20 floor (checks the other ctrlpp::expected resolution)",
+            "inherits": "exceptions",
+            "binaryDir": "${sourceDir}/build/exceptions-cxx23",
+            "cacheVariables": {
+                "CMAKE_CXX_STANDARD": "23"
+            }
+        },
+        {
             "name": "coverage",
             "displayName": "Coverage (GCC + gcov)",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/coverage",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_CXX_STANDARD": "23",
+                "CMAKE_CXX_STANDARD": "20",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CMAKE_CXX_FLAGS": "--coverage -fprofile-arcs -ftest-coverage",
                 "CTRLPP_BUILD_TESTS": "ON",
@@ -68,7 +86,7 @@
             "binaryDir": "${sourceDir}/build/coverage-full",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "CMAKE_CXX_STANDARD": "23",
+                "CMAKE_CXX_STANDARD": "20",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CMAKE_CXX_FLAGS": "--coverage -fprofile-arcs -ftest-coverage",
                 "CTRLPP_BUILD_TESTS": "ON",
@@ -94,6 +112,14 @@
             "configurePreset": "exceptions"
         },
         {
+            "name": "dev-cxx23",
+            "configurePreset": "dev-cxx23"
+        },
+        {
+            "name": "exceptions-cxx23",
+            "configurePreset": "exceptions-cxx23"
+        },
+        {
             "name": "coverage",
             "configurePreset": "coverage"
         },
@@ -113,6 +139,20 @@
         {
             "name": "exceptions",
             "configurePreset": "exceptions",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "dev-cxx23",
+            "configurePreset": "dev-cxx23",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "exceptions-cxx23",
+            "configurePreset": "exceptions-cxx23",
             "output": {
                 "outputOnFailure": true
             }
