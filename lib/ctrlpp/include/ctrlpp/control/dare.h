@@ -158,6 +158,20 @@ auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, cons
     if(!compute_dare_gain<Scalar, NX, NU>(A, B, R, P, gain))
         return false;
 
+    // Positive semi-definiteness is re-established on the P that is actually
+    // being verified. The extraction primitive checks it on the solve's own P,
+    // but common-weight equilibration solves a scaled problem and rescales the
+    // result afterwards, so the returned P is not the matrix that check saw.
+    // Scaling by a positive factor preserves definiteness mathematically and
+    // perturbs the pivots only by rounding, which is exactly why the floor has
+    // to carry the factorization's backward error rather than assume none.
+    if(!P.allFinite())
+        return false;
+    Eigen::LDLT<MatNxN> psd_ldlt(P);
+    if(psd_ldlt.info() != Eigen::Success
+       || psd_ldlt.vectorD().minCoeff() < detail::psd_pivot_floor<Scalar, n>(P))
+        return false;
+
     const MatNxN AtPA     = (A.transpose() * P * A).eval();
     const MatNxN AtPBK    = (A.transpose() * P * B * gain).eval();
     const MatNxN residual = (AtPA - P - AtPBK + Q).eval();

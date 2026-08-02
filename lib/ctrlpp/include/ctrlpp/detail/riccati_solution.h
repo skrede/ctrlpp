@@ -31,6 +31,32 @@
 namespace ctrlpp::detail
 {
 
+/// @brief Negative-pivot floor below which an LDLT pivot of a symmetric N x N
+/// matrix carries no sign information.
+///
+/// The bound is `floor_factor * N * eps * max|P_ij|`. LDLT of a symmetric
+/// matrix is backward stable with a perturbation of order `N * eps * ||P||`
+/// (Golub & Van Loan, Sec. 4.1), so a pivot inside that band is
+/// indistinguishable from zero and must not be read as evidence of an
+/// indefinite matrix. `floor_factor` is the leading order-one prefactor the
+/// bound leaves unspecified, exposed for the same reason `covariance_sqrt`
+/// exposes it, and this is the same `floor_factor * N * eps * max|P_ij|` form
+/// that primitive already uses.
+///
+/// The `N` factor is load-bearing rather than cosmetic. Without it the floor
+/// reads `1 * eps * max|P_ij|`, which demands a factorization carrying exactly
+/// zero rounding error; a measured DARE solution missed that floor by 1.4% of a
+/// single ulp while being positive semi-definite to within one ulp.
+///
+/// @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 4.1
+template <typename Scalar, int N>
+auto psd_pivot_floor(const Eigen::Matrix<Scalar, N, N>& P,
+                     Scalar floor_factor = Scalar{1}) -> Scalar
+{
+    return -floor_factor * static_cast<Scalar>(N)
+           * std::numeric_limits<Scalar>::epsilon() * P.cwiseAbs().maxCoeff();
+}
+
 /// @brief Error variants produced by extract_riccati_solution.
 ///
 /// Shared between DARE and CARE. The public dare_error / care_error enums
@@ -88,9 +114,8 @@ auto extract_riccati_solution_into(
     // Detects non-PSD at ~1/10 the instruction cost of a full eigendecomposition
     // while preserving the same eps-scaled rejection threshold.
     Eigen::LDLT<MatNxN> ldlt(P_out);
-    const Scalar psd_floor =
-        -std::numeric_limits<Scalar>::epsilon() * P_out.cwiseAbs().maxCoeff();
-    if (ldlt.info() != Eigen::Success || ldlt.vectorD().minCoeff() < psd_floor)
+    if (ldlt.info() != Eigen::Success
+        || ldlt.vectorD().minCoeff() < psd_pivot_floor<Scalar, n>(P_out))
         return ctrlpp::unexpected(riccati_extract_error::non_psd);
 
     return {};

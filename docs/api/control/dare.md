@@ -59,9 +59,19 @@ Refusals:
 | `dare_error::singular_a` | A is rank-deficient to a scale-relative reciprocal-pivot tolerance, so the `A^{-T}` the pencil build needs does not exist |
 | `dare_error::singular_r` | R is rank-deficient to the same tolerance, so the `R^{-1}` the same pencil build needs for `G = B R^{-1} B'` does not exist |
 | `dare_error::singular_u11` | the top-left block of the reordered invariant-subspace basis is singular; P cannot be extracted. **Covers two different situations -- see below** |
-| `dare_error::non_psd_solution` | the extracted P is not positive semi-definite within an epsilon-scaled tolerance |
+| `dare_error::non_psd_solution` | the extracted P is not positive semi-definite. The test is an LDLT pivot-sign test against `N * eps * max\|P_ij\|`, the order of the factorization's own backward error, below which a pivot carries no sign information |
 | `dare_error::schur_failed` | the real Schur factorization did not converge |
-| `dare_error::arithmetic_limit` | finite inputs could not produce a residual-verified stabilizing solution at the scalar type's precision, including overflow while equilibrating or unscaling |
+| `dare_error::arithmetic_limit` | finite inputs could not produce a residual-verified stabilizing solution at the scalar type's precision, including overflow while equilibrating or unscaling, and including a returned P that fails the positive-semi-definiteness test at its returned scale after unscaling |
+
+Positive semi-definiteness is tested twice, and deliberately so. The extraction
+primitive tests the P the solve produced; when common-weight equilibration is
+active that P is the *scaled* one, and the value handed back to the caller is
+`P * weight_scale`, which the first test never saw. The postcondition therefore
+re-tests at the returned scale. Scaling by a positive factor preserves
+definiteness mathematically, so this second test only ever fires on the rounding
+the rescale itself introduces -- which is why it reports `arithmetic_limit`
+rather than `non_psd_solution`, and why the floor has to carry the
+factorization's backward error rather than assume there is none.
 
 ### What `singular_u11` covers, and what `non_stabilizable` misses
 

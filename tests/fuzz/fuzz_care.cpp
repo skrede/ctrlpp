@@ -165,11 +165,12 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     if(resid.norm() > tol)
         abort();
 
-    // P must be positive semi-definite: LDLT pivot-sign check with the same
-    // eps-scaled floor ctrlpp::detail::extract_riccati_solution_into uses.
+    // P must be positive semi-definite: LDLT pivot-sign check against the same
+    // floor the library's own extraction uses, called rather than re-spelled so
+    // the two cannot drift apart again (see the fuzz_dare twin).
     Eigen::LDLT<Eigen::Matrix<double, 2, 2>> ldlt(P);
-    const double psd_floor = -std::numeric_limits<double>::epsilon() * P.cwiseAbs().maxCoeff();
-    if(ldlt.info() != Eigen::Success || ldlt.vectorD().minCoeff() < psd_floor)
+    if(ldlt.info() != Eigen::Success
+       || ldlt.vectorD().minCoeff() < ctrlpp::detail::psd_pivot_floor<double, 2>(P))
         abort();
 
     return 0;

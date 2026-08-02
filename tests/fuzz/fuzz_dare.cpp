@@ -177,11 +177,16 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     if(resid.norm() > tol)
         abort();
 
-    // P must be positive semi-definite: LDLT pivot-sign check with the same
-    // eps-scaled floor ctrlpp::detail::extract_riccati_solution_into uses.
+    // P must be positive semi-definite: LDLT pivot-sign check against the same
+    // floor the library's own extraction and postcondition use. The bound is
+    // called rather than re-spelled here -- the two hand-copies of it that this
+    // line and its fuzz_care twin used to carry stayed at `1 * eps * max|P_ij|`
+    // when the library moved to the backward-error-carrying `N * eps *
+    // max|P_ij|`, which made this oracle abort on a P that is positive
+    // semi-definite to within one ulp.
     Eigen::LDLT<Eigen::Matrix<double, 2, 2>> ldlt(P);
-    const double psd_floor = -std::numeric_limits<double>::epsilon() * P.cwiseAbs().maxCoeff();
-    if(ldlt.info() != Eigen::Success || ldlt.vectorD().minCoeff() < psd_floor)
+    if(ldlt.info() != Eigen::Success
+       || ldlt.vectorD().minCoeff() < ctrlpp::detail::psd_pivot_floor<double, 2>(P))
         abort();
 
     return 0;
