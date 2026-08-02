@@ -29,9 +29,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang llvm
 
+      # RelWithDebInfo is load-bearing, not housekeeping. This is the only
+      # workflow that left CMAKE_BUILD_TYPE unset, and the project defines no
+      # default, so the fuzz targets were built with no optimization flags at
+      # all. That cost the gate twice over: an unoptimized target explores
+      # roughly an order of magnitude fewer inputs per second, and -O0 changes
+      # the floating-point intermediates, which puts an entire class of
+      # marginal-tolerance defects out of reach by construction. Both Riccati
+      # targets abort within thirty seconds at -O2 on the reference host and
+      # complete tens of thousands of clean runs at -O0 in this job.
       - name: Configure
         run: >
           cmake -B build
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_C_COMPILER=clang
           -DCMAKE_CXX_COMPILER=clang++
           -DCTRLPP_BUILD_FUZZ_TESTS=ON
