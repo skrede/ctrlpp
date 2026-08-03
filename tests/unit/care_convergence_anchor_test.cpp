@@ -1,6 +1,7 @@
 #include "ctrlpp/control/care.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
@@ -8,6 +9,7 @@
 #include <cmath>
 #include <limits>
 #include <random>
+#include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
@@ -116,9 +118,226 @@ auto is_enumerated_care_error(ctrlpp::care_error error) -> bool
     case ctrlpp::care_error::non_psd_solution:
     case ctrlpp::care_error::schur_failed:
     case ctrlpp::care_error::sign_function_stagnated:
+    case ctrlpp::care_error::unverified_solution:
         return true;
     }
     return false;
+}
+
+auto rotation(double angle) -> matrix2<double>
+{
+    const double cosine = std::cos(angle);
+    const double sine = std::sin(angle);
+    matrix2<double> result;
+    result << cosine, -sine, sine, cosine;
+    return result;
+}
+
+// One member of a swept population, built once and handed to every method tag.
+//
+// The draws are built ahead of the solving rather than interleaved with it so
+// that the three public method tags are compared on literally the same
+// matrices. Interleaving would make each tag's family a function of the order
+// the generator was consumed in, and a difference between two tags would then
+// be unattributable to either.
+struct sweep_draw
+{
+    matrix2<double> A;
+    matrix2<double> B;
+    matrix2<double> Q;
+    matrix2<double> R;
+    // The same pose at unit weight scale. K = R^-1 B^T P does not move under a
+    // common rescale of Q and R, so this pose's gain is an exact oracle for the
+    // draw -- and it is an oracle the solver's own acceptance rule has no part
+    // in, which is what makes it usable as evidence about that rule.
+    matrix2<double> unit_Q;
+    matrix2<double> unit_R;
+    bool            has_gain_oracle;
+    bool            weights_reduced;
+};
+
+struct sweep_families
+{
+    std::vector<sweep_draw> near_axis;
+    std::vector<sweep_draw> comfortable;
+    std::vector<sweep_draw> structurally_simple;
+};
+
+auto build_sweep_families() -> sweep_families
+{
+    std::mt19937_64 generator(sweep_seed);
+    std::uniform_real_distribution<double> mantissa(1.0, 10.0);
+    std::uniform_real_distribution<double> alpha_distribution(0.2, 0.95);
+    std::uniform_real_distribution<double> angle_distribution(
+        -std::numbers::pi, std::numbers::pi);
+
+    sweep_families families;
+
+    for(int decade = 1; decade <= decade_count; ++decade)
+    {
+        const double decade_scale = std::pow(10.0, -decade);
+        for(int index = 0; index < cases_per_decade; ++index)
+        {
+            const double delta = decade_scale * mantissa(generator);
+            const double alpha = alpha_distribution(generator);
+            const double beta = std::sqrt(1.0 - alpha * alpha);
+            const double angle = angle_distribution(generator);
+            const matrix2<double> transform = rotation(angle);
+
+            matrix2<double> diagonal_a;
+            diagonal_a << alpha * delta, 0.0, 0.0, -0.8;
+            matrix2<double> diagonal_b;
+            diagonal_b << beta * delta, 0.0, 0.0, 0.6;
+
+            sweep_draw draw;
+            draw.A = (transform * diagonal_a * transform.transpose()).eval();
+            draw.B = (transform * diagonal_b).eval();
+            draw.Q = matrix2<double>::Identity();
+            draw.R = matrix2<double>::Identity();
+            draw.unit_Q = draw.Q;
+            draw.unit_R = draw.R;
+            // The near-axis family carries no common weight rescale, so it has
+            // no scale-invariant reference pose distinct from itself.
+            draw.has_gain_oracle = false;
+            draw.weights_reduced = false;
+            families.near_axis.push_back(draw);
+        }
+
+        for(int direction : {-1, 1})
+        {
+            for(int index = 0;
+                index < cases_per_scale_direction;
+                ++index)
+            {
+                const double exponent =
+                    static_cast<double>(direction * decade);
+                const double scale =
+                    std::pow(10.0, exponent) * mantissa(generator);
+                const matrix2<double> transform =
+                    rotation(angle_distribution(generator));
+
+                matrix2<double> base_a;
+                base_a << -1.1, 0.3, -0.2, -1.4;
+                matrix2<double> base_b;
+                base_b << 0.8, 0.1, -0.15, 0.65;
+                matrix2<double> base_q;
+                base_q << 1.0, 0.2, 0.2, 1.7;
+                matrix2<double> base_r;
+                base_r << 1.3, 0.1, 0.1, 0.9;
+
+                sweep_draw comfortable;
+                comfortable.A =
+                    (transform * base_a * transform.transpose()).eval();
+                comfortable.B =
+                    (transform * base_b * transform.transpose()).eval();
+                comfortable.Q =
+                    (scale * transform * base_q * transform.transpose()).eval();
+                comfortable.R =
+                    (scale * transform * base_r * transform.transpose()).eval();
+                comfortable.unit_Q =
+                    (transform * base_q * transform.transpose()).eval();
+                comfortable.unit_R =
+                    (transform * base_r * transform.transpose()).eval();
+                comfortable.has_gain_oracle = true;
+                comfortable.weights_reduced = scale < 1.0;
+                families.comfortable.push_back(comfortable);
+
+                sweep_draw simple;
+                simple.A = -matrix2<double>::Identity();
+                simple.B = matrix2<double>::Identity();
+                simple.Q = scale * matrix2<double>::Identity();
+                simple.R = scale * matrix2<double>::Identity();
+                simple.unit_Q = matrix2<double>::Identity();
+                simple.unit_R = matrix2<double>::Identity();
+                simple.has_gain_oracle = true;
+                simple.weights_reduced = scale < 1.0;
+                families.structurally_simple.push_back(simple);
+            }
+        }
+    }
+
+    return families;
+}
+
+// What one method tag did to one population. Every field is a count, so no
+// loop can pass vacuously: a census whose `drawn` is zero fails the same
+// assertions a census full of wrong answers would.
+struct population_census
+{
+    std::size_t drawn = 0;
+    std::size_t accepted = 0;
+    std::size_t accepted_unstable = 0;
+    std::size_t accepted_with_wrong_gain = 0;
+    std::size_t declined_unenumerated = 0;
+    std::size_t accepted_separation_unavailable = 0;
+    std::size_t accepted_reorder_incomplete = 0;
+    std::size_t reduced_drawn = 0;
+    std::size_t reduced_accepted = 0;
+    std::size_t increased_drawn = 0;
+    std::size_t increased_accepted = 0;
+};
+
+template <typename Method>
+auto solve_population(const std::vector<sweep_draw>& draws, Method method_tag)
+    -> population_census
+{
+    population_census census;
+    for(std::size_t index = 0; index < draws.size(); ++index)
+    {
+        const sweep_draw& draw = draws[index];
+        ++census.drawn;
+        if(draw.has_gain_oracle)
+        {
+            if(draw.weights_reduced)
+                ++census.reduced_drawn;
+            else
+                ++census.increased_drawn;
+        }
+
+        const auto result = ctrlpp::care<double, 2, 2>(
+            draw.A, draw.B, draw.Q, draw.R, method_tag);
+        CAPTURE(index);
+        if(!result.has_value())
+        {
+            // Whatever a tag refuses, it refuses through the typed channel.
+            if(!is_enumerated_care_error(result.error()))
+                ++census.declined_unenumerated;
+            CHECK(is_enumerated_care_error(result.error()));
+            continue;
+        }
+
+        ++census.accepted;
+        if(draw.has_gain_oracle)
+        {
+            if(draw.weights_reduced)
+                ++census.reduced_accepted;
+            else
+                ++census.increased_accepted;
+        }
+        if(std::isnan(result->subspace_separation))
+            ++census.accepted_separation_unavailable;
+        if(!result->reorder_complete)
+            ++census.accepted_reorder_incomplete;
+
+        const bool stable =
+            closed_loop_is_stable(draw.A, draw.B, draw.R, result->P);
+        census.accepted_unstable += !stable;
+        CHECK(stable);
+
+        if(!draw.has_gain_oracle)
+            continue;
+
+        const auto reference = ctrlpp::care<double, 2, 2>(
+            draw.A, draw.B, draw.unit_Q, draw.unit_R, method_tag);
+        REQUIRE(reference.has_value());
+        const double gain_error = relative_gain_error(
+            feedback_gain(draw.R, draw.B, result->P),
+            feedback_gain(draw.unit_R, draw.B, reference->P));
+        CAPTURE(gain_error);
+        census.accepted_with_wrong_gain += gain_error > wrong_gain_error;
+        CHECK(gain_error <= wrong_gain_error);
+    }
+    return census;
 }
 
 // Magnitude at which the continuous path's stable-subspace factorization stops
@@ -204,15 +423,6 @@ auto scalar_family_accuracy_bound(Scalar exact) -> Scalar
            * std::numeric_limits<Scalar>::epsilon() * exact;
 }
 
-auto rotation(double angle) -> matrix2<double>
-{
-    const double cosine = std::cos(angle);
-    const double sine = std::sin(angle);
-    matrix2<double> result;
-    result << cosine, -sine, sine, cosine;
-    return result;
-}
-
 }
 
 TEST_CASE("CARE sign iteration declines an unresolved regenerated input",
@@ -251,15 +461,7 @@ TEST_CASE("CARE sign iteration declines an unresolved regenerated input",
 TEST_CASE("CARE sign iteration accepts only stable near-axis solutions",
           "[care][convergence][sweep]")
 {
-    std::mt19937_64 generator(sweep_seed);
-    std::uniform_real_distribution<double> mantissa(1.0, 10.0);
-    std::uniform_real_distribution<double> alpha_distribution(0.2, 0.95);
-    std::uniform_real_distribution<double> angle_distribution(
-        -std::numbers::pi, std::numbers::pi);
-
-    std::size_t near_axis_drawn = 0;
-    std::size_t near_axis_accepted = 0;
-    std::size_t near_axis_accepted_unstable = 0;
+    const sweep_families families = build_sweep_families();
 
     // Acceptance is asserted per draw, against the draw's own weight scale,
     // rather than per decade against a count. A per-decade count is a property
@@ -267,191 +469,29 @@ TEST_CASE("CARE sign iteration accepts only stable near-axis solutions",
     // and MSVC give `std::uniform_real_distribution` different sequences from
     // the same seed, so an equality on the count fails on two of the three
     // while the solver behaves identically.
-    std::size_t reduced_drawn = 0;
-    std::size_t reduced_accepted = 0;
-    std::size_t increased_drawn = 0;
-    std::size_t increased_accepted = 0;
-    std::size_t accepted_with_wrong_gain = 0;
-
-    for(int decade = 1; decade <= decade_count; ++decade)
-    {
-        const double decade_scale = std::pow(10.0, -decade);
-        for(int index = 0; index < cases_per_decade; ++index)
-        {
-            const double delta = decade_scale * mantissa(generator);
-            const double alpha = alpha_distribution(generator);
-            const double beta = std::sqrt(1.0 - alpha * alpha);
-            const double angle = angle_distribution(generator);
-            const matrix2<double> transform = rotation(angle);
-
-            matrix2<double> diagonal_a;
-            diagonal_a << alpha * delta, 0.0, 0.0, -0.8;
-            matrix2<double> diagonal_b;
-            diagonal_b << beta * delta, 0.0, 0.0, 0.6;
-            const matrix2<double> A =
-                (transform * diagonal_a * transform.transpose()).eval();
-            const matrix2<double> B =
-                (transform * diagonal_b).eval();
-            const matrix2<double> Q = matrix2<double>::Identity();
-            const matrix2<double> R = matrix2<double>::Identity();
-
-            const auto result = ctrlpp::care<double, 2, 2>(A, B, Q, R);
-            ++near_axis_drawn;
-            if(result.has_value())
-            {
-                ++near_axis_accepted;
-                near_axis_accepted_unstable +=
-                    !closed_loop_is_stable(A, B, R, result->P);
-                CAPTURE(decade, index, delta, alpha, angle);
-                CHECK(std::isnan(result->subspace_separation));
-                CHECK(result->reorder_complete);
-            }
-        }
-
-        for(int direction : {-1, 1})
-        {
-            for(int index = 0;
-                index < cases_per_scale_direction;
-                ++index)
-            {
-                const double exponent =
-                    static_cast<double>(direction * decade);
-                const double scale =
-                    std::pow(10.0, exponent) * mantissa(generator);
-                const matrix2<double> transform =
-                    rotation(angle_distribution(generator));
-
-                matrix2<double> base_a;
-                base_a << -1.1, 0.3, -0.2, -1.4;
-                matrix2<double> base_b;
-                base_b << 0.8, 0.1, -0.15, 0.65;
-                matrix2<double> base_q;
-                base_q << 1.0, 0.2, 0.2, 1.7;
-                matrix2<double> base_r;
-                base_r << 1.3, 0.1, 0.1, 0.9;
-                const matrix2<double> comfortable_a =
-                    (transform * base_a * transform.transpose()).eval();
-                const matrix2<double> comfortable_b =
-                    (transform * base_b * transform.transpose()).eval();
-                const matrix2<double> comfortable_q =
-                    (scale * transform * base_q * transform.transpose()).eval();
-                const matrix2<double> comfortable_r =
-                    (scale * transform * base_r * transform.transpose()).eval();
-                // The unit-scale pose of the same family. Its gain is the exact
-                // oracle for this draw, because K = R^-1 B^T P does not move
-                // under a common rescale of Q and R.
-                const matrix2<double> comfortable_unit_q =
-                    (transform * base_q * transform.transpose()).eval();
-                const matrix2<double> comfortable_unit_r =
-                    (transform * base_r * transform.transpose()).eval();
-                const bool weights_reduced = scale < 1.0;
-                if(weights_reduced)
-                    reduced_drawn += 2;
-                else
-                    increased_drawn += 2;
-
-                const auto comfortable = ctrlpp::care<double, 2, 2>(
-                    comfortable_a,
-                    comfortable_b,
-                    comfortable_q,
-                    comfortable_r);
-                const auto comfortable_unit = ctrlpp::care<double, 2, 2>(
-                    comfortable_a,
-                    comfortable_b,
-                    comfortable_unit_q,
-                    comfortable_unit_r);
-                CAPTURE(decade, direction, index, scale, weights_reduced);
-                if(comfortable.has_value())
-                {
-                    if(weights_reduced)
-                        ++reduced_accepted;
-                    else
-                        ++increased_accepted;
-                    CHECK(closed_loop_is_stable(
-                        comfortable_a,
-                        comfortable_b,
-                        comfortable_r,
-                        comfortable->P));
-                    REQUIRE(comfortable_unit.has_value());
-                    const double gain_error = relative_gain_error(
-                        feedback_gain(comfortable_r,
-                                      comfortable_b,
-                                      comfortable->P),
-                        feedback_gain(comfortable_unit_r,
-                                      comfortable_b,
-                                      comfortable_unit->P));
-                    CAPTURE(gain_error);
-                    accepted_with_wrong_gain +=
-                        gain_error > wrong_gain_error;
-                    CHECK(gain_error <= wrong_gain_error);
-                }
-                else
-                {
-                    // Outside the carried half a decline is permitted, but it
-                    // must still reach the caller as an enumerated cause.
-                    CHECK(is_enumerated_care_error(comfortable.error()));
-                }
-
-                const matrix2<double> degenerate_a =
-                    -matrix2<double>::Identity();
-                const matrix2<double> degenerate_b =
-                    matrix2<double>::Identity();
-                const matrix2<double> degenerate_q =
-                    scale * matrix2<double>::Identity();
-                const matrix2<double> degenerate_r =
-                    scale * matrix2<double>::Identity();
-                const matrix2<double> degenerate_unit =
-                    matrix2<double>::Identity();
-                const auto degenerate = ctrlpp::care<double, 2, 2>(
-                    degenerate_a,
-                    degenerate_b,
-                    degenerate_q,
-                    degenerate_r);
-                const auto degenerate_reference = ctrlpp::care<double, 2, 2>(
-                    degenerate_a,
-                    degenerate_b,
-                    degenerate_unit,
-                    degenerate_unit);
-                if(degenerate.has_value())
-                {
-                    if(weights_reduced)
-                        ++reduced_accepted;
-                    else
-                        ++increased_accepted;
-                    CHECK(closed_loop_is_stable(
-                        degenerate_a,
-                        degenerate_b,
-                        degenerate_r,
-                        degenerate->P));
-                    REQUIRE(degenerate_reference.has_value());
-                    const double gain_error = relative_gain_error(
-                        feedback_gain(degenerate_r,
-                                      degenerate_b,
-                                      degenerate->P),
-                        feedback_gain(degenerate_unit,
-                                      degenerate_b,
-                                      degenerate_reference->P));
-                    CAPTURE(gain_error);
-                    accepted_with_wrong_gain +=
-                        gain_error > wrong_gain_error;
-                    CHECK(gain_error <= wrong_gain_error);
-                }
-                else
-                {
-                    CHECK(is_enumerated_care_error(degenerate.error()));
-                }
-            }
-        }
-    }
+    const ctrlpp::detail::sign_function_care_method sign_tag;
+    const population_census near_axis =
+        solve_population(families.near_axis, sign_tag);
+    const population_census comfortable =
+        solve_population(families.comfortable, sign_tag);
+    const population_census simple =
+        solve_population(families.structurally_simple, sign_tag);
 
     CAPTURE(sweep_seed,
-            near_axis_drawn,
-            near_axis_accepted,
-            near_axis_accepted_unstable);
-    CHECK(near_axis_drawn
+            near_axis.drawn,
+            near_axis.accepted,
+            near_axis.accepted_unstable);
+    CHECK(near_axis.drawn
           == static_cast<std::size_t>(decade_count * cases_per_decade));
-    CHECK(near_axis_accepted > 0);
-    CHECK(near_axis_accepted_unstable == 0);
+    CHECK(near_axis.accepted > 0);
+    CHECK(near_axis.accepted_unstable == 0);
+
+    // The sign path has no swap phase, so every answer it returns reports its
+    // pivot-ratio diagnostic as unavailable and its reorder as complete.
+    CHECK(near_axis.accepted_separation_unavailable == near_axis.accepted);
+    CHECK(near_axis.accepted_reorder_incomplete == 0);
+    CHECK(comfortable.accepted_separation_unavailable == comfortable.accepted);
+    CHECK(simple.accepted_separation_unavailable == simple.accepted);
 
     // The over-rejection guard, on the half of the sweep where a guarantee can
     // be derived rather than fitted: a common rescale that does not increase the
@@ -464,6 +504,17 @@ TEST_CASE("CARE sign iteration accepts only stable near-axis solutions",
     // solver owes a caller: nothing it accepts is wrong. That check runs per
     // draw in both directions, against the draw's own unit-scale pose, and the
     // count below is its aggregate.
+    const std::size_t reduced_drawn =
+        comfortable.reduced_drawn + simple.reduced_drawn;
+    const std::size_t reduced_accepted =
+        comfortable.reduced_accepted + simple.reduced_accepted;
+    const std::size_t increased_drawn =
+        comfortable.increased_drawn + simple.increased_drawn;
+    const std::size_t increased_accepted =
+        comfortable.increased_accepted + simple.increased_accepted;
+    const std::size_t accepted_with_wrong_gain =
+        comfortable.accepted_with_wrong_gain + simple.accepted_with_wrong_gain;
+
     CAPTURE(sweep_seed,
             wrong_gain_error,
             reduced_drawn,
@@ -476,6 +527,70 @@ TEST_CASE("CARE sign iteration accepts only stable near-axis solutions",
     CHECK(increased_accepted > 0);
     CHECK(reduced_accepted == reduced_drawn);
     CHECK(accepted_with_wrong_gain == 0);
+    CHECK(comfortable.declined_unenumerated == 0);
+    CHECK(simple.declined_unenumerated == 0);
+}
+
+// The promise the public result contract makes is not qualified by method tag,
+// so the evidence for it must not be either. The same three populations are
+// swept under all three selectable tags, and every tag is held to the same two
+// properties: nothing it accepts destabilizes the closed loop, and nothing it
+// accepts disagrees with the scale-invariant gain oracle.
+//
+// The two Schur tags are the reason this case exists. Replayed against the
+// revision before this one, they returned 150 and 156 accepted-unstable answers
+// on the near-axis family, out of 814 and 839 accepted, while every member of
+// that family is controllable and detectable.
+TEMPLATE_TEST_CASE("CARE keeps the same promise under every method tag",
+                   "[care][convergence][method]",
+                   ctrlpp::detail::sign_function_care_method,
+                   ctrlpp::detail::schur_care_method,
+                   ctrlpp::detail::balanced_schur_care_method)
+{
+    const sweep_families families = build_sweep_families();
+    const TestType method_tag;
+
+    const population_census near_axis =
+        solve_population(families.near_axis, method_tag);
+    const population_census comfortable =
+        solve_population(families.comfortable, method_tag);
+    const population_census simple =
+        solve_population(families.structurally_simple, method_tag);
+
+    // The censuses are asserted nonempty first, so a tag whose loop never ran
+    // cannot report zero wrong answers.
+    CAPTURE(sweep_seed,
+            near_axis.drawn,
+            near_axis.accepted,
+            near_axis.accepted_unstable,
+            comfortable.drawn,
+            comfortable.accepted,
+            comfortable.accepted_unstable,
+            comfortable.accepted_with_wrong_gain,
+            simple.drawn,
+            simple.accepted,
+            simple.accepted_unstable,
+            simple.accepted_with_wrong_gain);
+
+    const std::size_t population_size =
+        static_cast<std::size_t>(decade_count * cases_per_decade);
+    CHECK(near_axis.drawn == population_size);
+    CHECK(comfortable.drawn == population_size);
+    CHECK(simple.drawn == population_size);
+    CHECK(near_axis.accepted > 0);
+    CHECK(comfortable.accepted > 0);
+    CHECK(simple.accepted > 0);
+
+    CHECK(near_axis.accepted_unstable == 0);
+    CHECK(comfortable.accepted_unstable == 0);
+    CHECK(simple.accepted_unstable == 0);
+
+    CHECK(comfortable.accepted_with_wrong_gain == 0);
+    CHECK(simple.accepted_with_wrong_gain == 0);
+
+    CHECK(near_axis.declined_unenumerated == 0);
+    CHECK(comfortable.declined_unenumerated == 0);
+    CHECK(simple.declined_unenumerated == 0);
 }
 
 TEST_CASE("CARE carries the scalar family below the subspace-collapse edge",

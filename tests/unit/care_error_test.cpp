@@ -6,9 +6,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
 
 #include <cmath>
 #include <limits>
+#include <cstddef>
 
 
 TEST_CASE("CARE non-LHP-stabilizable system fails with non_lhp_stabilizable or singular_u11",
@@ -204,6 +206,127 @@ TEST_CASE("CARE refuses a singular R rather than naming a symptom of it",
         auto const result = ctrlpp::care<double, 2, 2>(A, B2, Q, R2);
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == ctrlpp::care_error::singular_r);
+    }
+}
+
+TEST_CASE("CARE reports an unverifiable extracted result with a method-neutral cause",
+          "[care][error]")
+{
+    // Both Schur variants used to return whatever their extraction produced.
+    // They now hold it to the same postconditions the default path does, and a
+    // failure of those postconditions is reported as `unverified_solution` --
+    // never as `sign_function_stagnated`, whose four documented cases are all
+    // statements about a Newton iteration that these paths do not run.
+    SECTION("the real-Schur tag on a common weight rescale it cannot certify")
+    {
+        Eigen::Matrix<double, 2, 2> A;
+        A << -1.1, 0.3, -0.2, -1.4;
+        Eigen::Matrix<double, 2, 2> B;
+        B << 0.8, 0.1, -0.15, 0.65;
+        Eigen::Matrix<double, 2, 2> base_Q;
+        base_Q << 1.0, 0.2, 0.2, 1.7;
+        Eigen::Matrix<double, 2, 2> base_R;
+        base_R << 1.3, 0.1, 0.1, 0.9;
+
+        // A common rescale of Q and R leaves the gain and the closed-loop
+        // spectrum where they were, so every pose in this band has the same
+        // answer up to the scale. What the rescale does move is the
+        // conditioning of the invariant subspace this method extracts from,
+        // and past two decades its extracted matrix no longer satisfies the
+        // equation to the counted bound.
+        for(int exponent = 2; exponent <= 8; ++exponent)
+        {
+            const double scale = std::pow(10.0, static_cast<double>(exponent));
+            const Eigen::Matrix<double, 2, 2> Q = (scale * base_Q).eval();
+            const Eigen::Matrix<double, 2, 2> R = (scale * base_R).eval();
+
+            CAPTURE(exponent);
+            auto const schur = ctrlpp::care<double, 2, 2>(
+                A, B, Q, R, ctrlpp::detail::schur_care_method{});
+            REQUIRE_FALSE(schur.has_value());
+            CHECK(schur.error() == ctrlpp::care_error::unverified_solution);
+            CHECK(schur.error() != ctrlpp::care_error::sign_function_stagnated);
+        }
+
+        // The refusal is a statement about that method's extraction and not
+        // about the problem: at the bottom of the band the default tag answers
+        // the same pose, and its answer is stabilizing.
+        const Eigen::Matrix<double, 2, 2> Q = (100.0 * base_Q).eval();
+        const Eigen::Matrix<double, 2, 2> R = (100.0 * base_R).eval();
+        auto const sign = ctrlpp::care<double, 2, 2>(A, B, Q, R);
+        REQUIRE(sign.has_value());
+        const Eigen::Matrix<double, 2, 2> closed_loop =
+            (A - B * R.inverse() * B.transpose() * sign->P).eval();
+        Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> spectrum(closed_loop,
+                                                                 false);
+        CHECK(spectrum.eigenvalues()(0).real() < 0.0);
+        CHECK(spectrum.eigenvalues()(1).real() < 0.0);
+    }
+
+    SECTION("the balanced-Schur tag over a well-posed near-axis band")
+    {
+        // A band rather than a pinned pose, deliberately. Which side of the
+        // postcondition an individual near-axis draw lands on is decided in the
+        // last bits and moves with instruction selection: a pose pinned here
+        // was observed to decline at -O0 and -O2 and to be accepted at
+        // -O3 -march=native. What does not move is the density -- 86 to 93 of
+        // these 112 poses decline, none is accepted, and none reports the
+        // sign-function cause -- so the band is asserted and the pose is not.
+        //
+        // Every member is one unstable mode approaching the imaginary axis with
+        // its input direction shrinking alongside it, rotated into general
+        // position. The pair is controllable and Q = I makes it detectable, so
+        // a decline is the method declining to certify its own answer rather
+        // than the problem lacking one.
+        std::size_t accepted = 0;
+        std::size_t unverified = 0;
+        std::size_t stagnated = 0;
+        std::size_t total = 0;
+
+        for(int angle_index = 1; angle_index <= 8; ++angle_index)
+        {
+            const double angle = static_cast<double>(angle_index) / 8.0;
+            const double cosine = std::cos(angle);
+            const double sine = std::sin(angle);
+            Eigen::Matrix<double, 2, 2> transform;
+            transform << cosine, -sine, sine, cosine;
+
+            for(int exponent = 2; exponent <= 15; ++exponent)
+            {
+                const double delta =
+                    std::pow(10.0, -static_cast<double>(exponent));
+                Eigen::Matrix<double, 2, 2> diagonal_a;
+                diagonal_a << 0.5 * delta, 0.0, 0.0, -0.8;
+                Eigen::Matrix<double, 2, 2> diagonal_b;
+                diagonal_b << std::sqrt(0.75) * delta, 0.0, 0.0, 0.6;
+                const Eigen::Matrix<double, 2, 2> A =
+                    (transform * diagonal_a * transform.transpose()).eval();
+                const Eigen::Matrix<double, 2, 2> B =
+                    (transform * diagonal_b).eval();
+                auto const I = Eigen::Matrix<double, 2, 2>::Identity();
+
+                auto const balanced = ctrlpp::care<double, 2, 2>(
+                    A, B, I, I,
+                    ctrlpp::detail::balanced_schur_care_method{});
+                ++total;
+                if(balanced.has_value())
+                    ++accepted;
+                else if(balanced.error()
+                        == ctrlpp::care_error::unverified_solution)
+                    ++unverified;
+                else if(balanced.error()
+                        == ctrlpp::care_error::sign_function_stagnated)
+                    ++stagnated;
+            }
+        }
+
+        CAPTURE(total, accepted, unverified, stagnated);
+        CHECK(total > 0);
+        CHECK(accepted == 0);
+        CHECK(unverified > 0);
+        // The load-bearing one: this path runs no Newton iteration, so the
+        // enumerator that names one must never come out of it.
+        CHECK(stagnated == 0);
     }
 }
 

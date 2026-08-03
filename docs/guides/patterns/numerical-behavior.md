@@ -186,8 +186,16 @@ otherwise produce silent corruption through intermediate overflow:
   significand, and it is refused rather than returned.
 
 - **CARE arithmetic range, at both ends:** The continuous algebraic Riccati
-  solver's default path verifies the solution it extracted -- residual bound and
-  closed-loop spectrum -- before reporting success, on every solve. Every
+  solver verifies the solution it extracted -- residual bound and
+  closed-loop spectrum -- before reporting success, on every solve. **That is
+  true of every selectable method, not only of the default one**, and it is one
+  rule reached from three paths rather than three rules that resemble each
+  other. It used to be true of the default alone: on a controllable and
+  detectable near-axis family the two Schur tags returned an unstable closed
+  loop in 150 of 814 and 156 of 839 successes, while the published result
+  contract promised a stabilizing matrix without qualifying by method. A Schur
+  method that cannot certify what it extracted now declines with
+  `care_error::unverified_solution`. Every
   magnitude entering that verification, and entering the iteration's own
   convergence test, is computed in a form that neither overflows nor underflows
   on finite operands: a magnitude is formed by dividing out the operand's
@@ -198,7 +206,8 @@ otherwise produce silent corruption through intermediate overflow:
   comparison on both sides is not evidence, and a residual scale of zero would
   turn the acceptance test into `0 <= 0`.
 
-  The bottom of the range is where this solver actually failed. Its
+  The bottom of the range is where the default path actually failed, and the
+  rest of this entry is about that path specifically. Its
   stable-subspace factorization compares a squared quantity against an absolute
   floor -- the scalar type's smallest normal value -- and the quantity in
   question is the square of the solution's own coupling. A solution smaller than
@@ -212,10 +221,21 @@ otherwise produce silent corruption through intermediate overflow:
 
   A solution below the representable band is therefore **declined**, and so is
   one the arithmetic can form but not verify. Note the practical cost: the
-  continuous solver performs no weight equilibration, so a common rescale of `Q`
+  default path performs no weight equilibration, so a common rescale of `Q`
   and `R` far above the dynamics' own scale is declined rather than carried. A
   rescale that does not increase the weights is carried at every magnitude
   swept.
+
+  **That cost is method-specific, and one tag does not pay it.** Swept over
+  eighteen decades of a common rescale in both directions, on a comfortably
+  damped family and a structurally simple one, `balanced_schur_care_method`
+  answers all 1,152 draws of each population and every answer agrees with the
+  scale-invariant gain oracle; the default answers 632 and 641. The difference
+  is the DGEBAL-style diagonal balance that variant applies before factorizing,
+  which is exactly the equilibration the default lacks. A caller whose weights
+  sit far from their dynamics' own scale, and who would rather pay for an answer
+  than receive a decline, should select it -- see
+  [lqr](../../api/control/lqr.md) for what that choice costs in arithmetic.
 
 - **L1 DC gain inversion:** The L1 adaptive controller validates that the
   predictor model's DC gain is invertible before computing the feedforward gain

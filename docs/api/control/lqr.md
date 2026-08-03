@@ -81,14 +81,17 @@ It makes three rejections of its own before calling anything:
 
 The middle one is worth stating explicitly, because this surface forms `R^{-1}` itself through an `LDLT` factorization rather than going through the Hamiltonian build, and **that factorization fails quietly**: its solve zeroes the rank-deficient directions instead of producing infinities. Before the rank test, a zero `R` therefore produced a finite `R^{-1}` of zeros, an entirely finite Hamiltonian describing a plant with no control authority, and a sign-function iteration that stagnated on it -- reported as `sign_function_stagnated`, which sends the caller to look at convergence rather than at the weighting they passed.
 
-Past those three, the default sign-function path makes one further refusal, and it applies to every solve rather than to malformed input:
+Past those three, every method makes one further refusal, and it applies to every solve rather than to malformed input:
 
-| Condition | Enumerator |
-| --- | --- |
-| the extracted solution does not satisfy the counted Riccati residual bound, or does not place the closed-loop spectrum strictly in the open left half-plane | `care_error::sign_function_stagnated` |
-| an acceptance magnitude cannot be resolved at the scalar type's range | `care_error::sign_function_stagnated` |
+| Condition | Enumerator | Methods |
+| --- | --- | --- |
+| the extracted solution does not satisfy the counted Riccati residual bound, or does not place the closed-loop spectrum strictly in the open left half-plane | `care_error::sign_function_stagnated` | the default sign-function tag |
+| an acceptance magnitude cannot be resolved at the scalar type's range | `care_error::sign_function_stagnated` | the default sign-function tag |
+| the same two conditions, on a matrix extracted by a Schur method | `care_error::unverified_solution` | `schur_care_method`, `balanced_schur_care_method` |
 
-**That verification runs on every accepted solve.** It is not a fallback behind a cheaper check: the solver reports success only for a matrix it has substituted back into the equation. The consequence a caller sees is that a pose the solver cannot answer accurately is declined rather than answered, and the population that changes most is large common weight scales -- see [numerical behavior](../../guides/patterns/numerical-behavior.md) for which poses those are and why the boundary is where it is.
+**That verification runs on every accepted solve, under every method tag.** It is not a fallback behind a cheaper check, and it is not a property of the default path: the solver reports success only for a matrix it has substituted back into the equation the caller posed. The consequence a caller sees is that a pose the solver cannot answer accurately is declined rather than answered, and the population that changes most is large common weight scales -- see [numerical behavior](../../guides/patterns/numerical-behavior.md) for which poses those are and why the boundary is where it is.
+
+The two enumerators are separate because they say different things, and neither is a synonym for the other. `sign_function_stagnated` names a Newton iteration behavior: its documented cases are a non-finite scaling factor, a non-contracting step, an unresolvable magnitude, and a budget exhausted. A Schur method runs no Newton iteration, so reporting a failed Schur verification through it would send the caller to look at convergence when nothing converged or failed to. `unverified_solution` says only what happened: a candidate was extracted and could not be certified. A caller who meets it on one tag should try another -- the balanced variant in particular answers common weight rescales that the other two decline.
 
 See [dare](dare.md) for what `care_error::singular_u11` covers; the continuous enumerator has the identical shape as its discrete counterpart.
 

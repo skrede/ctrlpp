@@ -55,6 +55,45 @@
 /// and the alternative to paying it was a path that could report success for a
 /// solution it never examined.
 ///
+/// ## What the two Schur variants now carry, and what it did to the gap
+///
+/// Both Schur variants used to return their extracted matrix without examining
+/// it. They now run the same verification, so each gains the full 20n^3 -- five
+/// n-by-n products at 2n^3 and one non-accumulating real Schur factorization of
+/// the closed loop at 10n^3 -- with nothing removed in exchange, because
+/// neither had a check to replace.
+///
+/// Against each variant's own cubic work, counted in the same measure: the real
+/// Schur factorization of the 2n-by-2n Hamiltonian WITH its orthogonal factor
+/// accumulated is 25m^3 at m = 2n, or 200n^3, and the extraction's
+/// rank-revealing factorization and triangular solves are 2m^3 + 3m^3 = 40n^3.
+/// That is 240n^3 before the reorder is counted at all, so the addition is at
+/// most 20n^3 / 240n^3 = 8.3 percent. The DGEBAL balance the second variant
+/// runs first is quadratic per sweep and does not enter a cubic count.
+///
+/// The gap to the default therefore widened, and by how much is arithmetic
+/// rather than a measurement: the default now costs 1.027 times its unverified
+/// self and each Schur variant 1.083 times its own, so the ratio between them
+/// grows by 1.083 / 1.027 = 1.055. The variants were already behind by the
+/// archived 39 to 41 percent; they are now behind by about five and a half
+/// percent more of that disadvantage. **No timing run was performed and no
+/// machine-exclusivity window was requested for this** -- every number above is
+/// counted, and the archived percentages remain archived rather than restated
+/// as current.
+///
+/// ## Where a Schur variant is the better choice, measured
+///
+/// The instruction count is not the whole selection argument, and the balanced
+/// variant is where that shows. Swept over eighteen decades of a common rescale
+/// of Q and R, on a comfortably damped family and on a structurally simple one,
+/// the balanced variant answers every one of the 1,152 draws in each population
+/// and every answer agrees with the scale-invariant gain oracle. The default
+/// answers 632 and 641 of them and declines the rest, because it performs no
+/// weight equilibration and its extraction loses the answer once the invariant
+/// subspace tilts far enough. A caller whose weights sit far from their
+/// dynamics' own scale should expect the default to decline and the balanced
+/// variant to answer; the cost of that answer is the instruction count above.
+///
 /// @cite laub1979      : Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
 /// @cite roberts1980   : Roberts, "Linear model reduction and solution of the algebraic Riccati equation by use of the sign function", 1980
 /// @cite byers1987     : Byers, "Solving the algebraic Riccati equation with the matrix sign function", 1987
@@ -75,7 +114,9 @@ struct sign_function_care_method
 ///
 /// @note Retained for reproducibility; superseded by `sign_function_care_method`
 ///       after the bakeoff. The Schur path fails its primary gate by ~40
-///       percent at NX=8 to 30.
+///       percent at NX=8 to 30. Like every other tag it verifies the matrix it
+///       extracted before returning it, and reports `unverified_solution` when
+///       that matrix does not satisfy the equation.
 struct schur_care_method
 {
 };
@@ -87,6 +128,11 @@ struct schur_care_method
 ///       well-conditioned Hamiltonians (the diagonal D
 ///       scaling stays near ones, measured alongside the subspace residual), and the path
 ///       tracks `schur_care_method` within 1 percent across the bakeoff sweep.
+///       On instruction count only, that is: on a common weight rescale far from
+///       the dynamics' scale it is the only tag that answers the whole swept
+///       range, as recorded above. It verifies its extracted matrix against the
+///       CALLER's Hamiltonian rather than the balanced one, and reports
+///       `unverified_solution` when that matrix does not satisfy the equation.
 struct balanced_schur_care_method
 {
 };

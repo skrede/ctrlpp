@@ -88,13 +88,23 @@ auto lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
 ///
 /// Computes R^{-1} once via ldlt (R is SPD for valid LQR problems), builds the
 /// Hamiltonian using that pre-computed R^{-1}, and reuses it for the K formula --
-/// one matrix factorisation of R instead of two.
+/// one matrix factorization of R instead of two.
 ///
 /// Reports through `care_error`. It makes three rejections of its own before
 /// calling anything: a non-finite argument and a Hamiltonian that overflowed
 /// while being assembled are both `care_error::non_finite_input`, and a
 /// rank-deficient R is `care_error::singular_r`. Everything else is the
 /// solver's own enumerator forwarded.
+///
+/// Two of those forwarded enumerators report the same thing about a different
+/// method, and a caller who switches over them needs both. The default
+/// sign-function tag reports a solution it could not verify as
+/// `care_error::sign_function_stagnated`, alongside the three ways its Newton
+/// iteration itself can fail. Either Schur tag reports the same verification
+/// failure as `care_error::unverified_solution`, because no Newton iteration
+/// ran on those paths and describing one as stagnating would be false. Both
+/// mean the gain below was not computed, for a reason that is about accuracy
+/// rather than about the arguments.
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
           detail::care_solve_method Method = detail::sign_function_care_method>
 auto lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,

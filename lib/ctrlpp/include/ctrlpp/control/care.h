@@ -31,6 +31,7 @@
 #include "ctrlpp/detail/schur_reorder.h"
 #include "ctrlpp/detail/riccati_solution.h"
 #include "ctrlpp/detail/care_sign_function.h"
+#include "ctrlpp/detail/care_postconditions.h"
 #include "ctrlpp/detail/hamiltonian_balance.h"
 
 #include <Eigen/Dense>
@@ -159,6 +160,16 @@ auto care_solve_from_hamiltonian(
             }
             return ctrlpp::unexpected(care_error::non_finite_input);
         }
+
+        // The reorder placed n eigenvalues it judged to be in the left half-plane
+        // and the extraction produced a matrix from them, but neither step ever
+        // substituted that matrix back into the equation. The verification below
+        // does, against H -- the Hamiltonian the caller's problem defines, the
+        // same object the sign-function branch verifies against, and not the
+        // reordered factor T or the basis U, which describe an invariant subspace
+        // rather than the equation the answer must satisfy.
+        if (!care_solution_satisfies_postconditions<Scalar, NX>(H, out.P))
+            return ctrlpp::unexpected(care_error::unverified_solution);
 
         out.subspace_separation = rr.subspace_separation;
         out.reorder_complete    = rr.complete;

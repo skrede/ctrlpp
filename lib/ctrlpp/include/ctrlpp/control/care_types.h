@@ -51,7 +51,27 @@ namespace ctrlpp
 ///                               covers every unverified answer rather than only those a
 ///                               projector check had left unresolved. The iteration
 ///                               budget being exhausted also reports here.
-///                               Sign-function path only.
+///                               **Sign-function path only, and deliberately so**: every
+///                               one of its four cases is a statement about a Newton
+///                               iteration, so a Schur extraction that failed the same
+///                               postconditions reports `unverified_solution` instead
+///                               rather than being described as an iteration that
+///                               stagnated.
+///  * unverified_solution      : the method extracted a candidate solution, and that
+///                               matrix failed the postconditions every continuous method
+///                               is held to -- the counted Riccati residual bound, the
+///                               requirement that the closed-loop spectrum lie strictly in
+///                               the open left half-plane, or the resolvability of an
+///                               acceptance magnitude at the scalar type's range.
+///                               Produced by `schur_care_method` and
+///                               `balanced_schur_care_method`. It says nothing about which
+///                               algorithm ran and is NOT the sign-function stagnation
+///                               cause: it reports that an answer was produced and could
+///                               not be verified, not that an iteration failed to
+///                               converge. A caller who meets it has selected a method
+///                               whose extraction did not resolve this problem accurately
+///                               enough to certify; the default sign-function tag and the
+///                               balanced variant are the alternatives to try.
 ///
 /// ## What `singular_u11` covers, and what `non_lhp_stabilizable` misses
 ///
@@ -87,9 +107,25 @@ enum class care_error
     non_psd_solution,
     schur_failed,
     sign_function_stagnated,
+    unverified_solution,
 };
 
 /// @brief Solution payload of `care`.
+///
+/// ## The promise `P` carries, and which methods keep it
+///
+/// `P` is the stabilizing solution, and that statement is **not qualified by the
+/// method tag**. Every selectable method verifies the matrix it extracted, against
+/// the caller's own Hamiltonian, before reporting success: the same counted Riccati
+/// residual bound and the same strict open-left-half-plane requirement on the closed
+/// loop, from one definition in `ctrlpp/detail/care_postconditions.h`. A method that
+/// cannot verify what it extracted declines instead of returning it.
+///
+/// This was previously true of the default sign-function tag alone. The two Schur
+/// tags returned their extracted matrix unverified, and on a controllable and
+/// detectable near-axis family they returned an unstable closed loop in 150 of 814
+/// and 156 of 839 successes. A caller who selected a method tag was therefore
+/// selecting a different contract without being told so; they no longer are.
 ///
 ///  * P                   : n x n symmetric positive-semidefinite stabilizing solution.
 ///  * subspace_separation : diagnostic of invariant-subspace conditioning. For Schur-based

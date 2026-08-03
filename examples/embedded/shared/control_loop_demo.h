@@ -30,7 +30,7 @@ inline const char *describe(dare_error e)
         case dare_error::non_psd_solution:
             return "solution is not positive semi-definite";
         case dare_error::schur_failed:
-            return "Schur factorisation did not converge";
+            return "Schur factorization did not converge";
         case dare_error::arithmetic_limit:
             return "solution is not reliable at this precision";
     }

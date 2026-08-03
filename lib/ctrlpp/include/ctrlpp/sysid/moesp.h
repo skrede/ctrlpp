@@ -73,7 +73,7 @@ Eigen::MatrixX<Scalar> assemble_moesp_hankel(const Eigen::MatrixBase<Derived1>& 
     return H;
 }
 
-/// @cite verhaegen2007 -- Extract PO-MOESP projection L32 from LQ factorisation
+/// @cite verhaegen2007 -- Extract PO-MOESP projection L32 from LQ factorization
 template <typename Scalar>
 Eigen::MatrixX<Scalar> extract_moesp_projection(const Eigen::MatrixX<Scalar>& H, Eigen::Index r1, Eigen::Index r2, Eigen::Index r3, Eigen::Index j)
 {

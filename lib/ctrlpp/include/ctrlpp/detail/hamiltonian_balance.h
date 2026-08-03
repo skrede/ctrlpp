@@ -45,6 +45,7 @@
 
 #include "ctrlpp/detail/schur_reorder.h"
 #include "ctrlpp/detail/riccati_solution.h"
+#include "ctrlpp/detail/care_postconditions.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
@@ -193,6 +194,20 @@ auto care_solve_via_balanced_schur(
         }
         return ctrlpp::unexpected(care_error::non_finite_input);
     }
+
+    // Verified against H_in, the Hamiltonian the CALLER's problem defines, and
+    // never against the balanced H this function has been working on.
+    //
+    // The two are similar but they are not the same equation. Balancing applies
+    // H' = D^{-1} H D, whose left-half-plane invariant subspace is D^{-1} V; the
+    // back-scale above undoes that, so `out.P` is a solution to the caller's
+    // Riccati equation and not to the balanced one. Substituting it into the
+    // balanced Hamiltonian would form a residual for an equation nobody asked
+    // about, and D is chosen precisely to equilibrate row and column norms, so
+    // that residual would also be compared against a different scale than the
+    // caller's. The local H is dead at this point; H_in is the object under test.
+    if (!care_solution_satisfies_postconditions<Scalar, NX>(H_in, out.P))
+        return ctrlpp::unexpected(care_error::unverified_solution);
 
     out.subspace_separation = rr.subspace_separation;
     out.reorder_complete    = rr.complete;
