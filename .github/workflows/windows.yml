@@ -1,14 +1,25 @@
 name: Windows
 
+# Each change is gated ONCE on its way to master rather than twice. The merge
+# path is milestone -> develop -> master, and the two triggers below cover it end
+# to end with no overlap: a milestone branch is gated on push, entering develop
+# is gated by develop's own push, and entering master is gated by the pull
+# request into it.
+#
+# There is deliberately no push trigger for master and no pull-request trigger
+# for develop, because each would re-run what the other trigger had just run. A
+# pull request is checked out as the MERGE COMMIT and not the branch head, so a
+# pull request into master already tests exactly the tree master will have, and
+# the push that follows the merge would measure that same tree a second time.
 on:
   push:
-    branches: [ master,develop,'milestone/**' ]
+    branches: [ develop,'milestone/**' ]
     paths-ignore:
       - "**.md"
       - "docs/**"
       - ".planning/**"
   pull_request:
-    branches: [ master,develop ]
+    branches: [ master ]
     paths-ignore:
       - "**.md"
       - "docs/**"

@@ -1,14 +1,25 @@
 name: Fuzz testing
 
+# Each change is gated ONCE on its way to master rather than twice. The merge
+# path is milestone -> develop -> master, and the two triggers below cover it end
+# to end with no overlap: a milestone branch is gated on push, entering develop
+# is gated by develop's own push, and entering master is gated by the pull
+# request into it.
+#
+# There is deliberately no push trigger for master and no pull-request trigger
+# for develop, because each would re-run what the other trigger had just run. A
+# pull request is checked out as the MERGE COMMIT and not the branch head, so a
+# pull request into master already tests exactly the tree master will have, and
+# the push that follows the merge would measure that same tree a second time.
 on:
   push:
-    branches: [ master,develop,fuzz,'milestone/**' ]
+    branches: [ develop,fuzz,'milestone/**' ]
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - '.planning/**'
   pull_request:
-    branches: [ master,develop ]
+    branches: [ master ]
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -20,6 +31,17 @@ jobs:
     env:
       CC: clang
       CXX: clang++
+      # Exploration budget, set by what the run is guarding rather than held
+      # fixed. The two integration points -- a pull request into master, and the
+      # push that lands work on develop -- are the last cheap places to find a
+      # defect, and they get fewer but LONGER passes. These targets are search
+      # problems: coverage-guided exploration compounds WITHIN a pass, because
+      # the corpus it has built feeds the next mutation, and a fresh pass throws
+      # that corpus away. Two passes of 120s therefore reach deeper than four of
+      # 30s at the same cost. Work in progress on a milestone branch keeps the
+      # shorter, wider setting, which returns faster and still removes the
+      # single-seed dependence.
+      FUZZ_DEEP: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/develop' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -86,15 +108,38 @@ jobs:
             fi
             # Exploration budget. At the previous 5s a target that aborts within
             # ~20s passed most runs, so a green job meant "the lottery came up
-            # empty" rather than "no input was found". Two fixed seeds plus one
-            # seedless pass at 30s each also removes the single-random-seed
-            # dependence: a defect reachable from one seed is no longer a coin
-            # flip. Worst case is 90s per target; the loop breaks on the first
-            # abort, so a red target costs less, not more.
+            # empty" rather than "no input was found".
+            #
+            # Every setting keeps at least one FIXED seed and one SEEDLESS pass,
+            # and the split is deliberate. A fixed seed makes a red reproducible:
+            # rerunning the job runs the same search and finds the same input. A
+            # seedless pass draws a new seed every run, so the gate keeps
+            # covering ground across runs instead of re-walking one path forever.
+            # Neither alone is enough -- fixed seeds only make the same search
+            # cheaper to repeat, and a seedless-only gate turns every defect into
+            # a coin flip.
+            #
+            # `none` is the seedless pass; libFuzzer draws its own seed when the
+            # flag is absent, which is why it cannot simply be spelled as an
+            # empty element of this list.
+            if [ "$FUZZ_DEEP" = "true" ]; then
+              explore_seconds=120
+              explore_seeds="1 none"
+            else
+              explore_seconds=30
+              explore_seeds="1 2 none"
+            fi
             crashed=0
-            for seed_arg in "-seed=1" "-seed=2" ""; do
+            for seed in $explore_seeds; do
+              seed_arg=""
+              [ "$seed" = "none" ] || seed_arg="-seed=$seed"
+              # The wall guard is twice the target's own budget plus a margin, so
+              # a target that ignores -max_total_time is still bounded while a
+              # slow-starting one is not killed mid-pass.
               # shellcheck disable=SC2086
-              timeout 60 "$fuzz" -max_total_time=30 -max_len=1024 $seed_arg > ./explore.log 2>&1 || true
+              timeout $((explore_seconds * 2 + 5)) "$fuzz" \
+                -max_total_time="$explore_seconds" -max_len=1024 $seed_arg \
+                > ./explore.log 2>&1 || true
               tail -3 ./explore.log
               # Each glob is tested on its own: `ls ./crash-* ./oom-*` exits
               # non-zero whenever EITHER pattern is unmatched, so the combined
