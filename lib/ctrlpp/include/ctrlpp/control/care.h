@@ -7,10 +7,10 @@
 ///
 /// Builds the 2n x 2n Hamiltonian H = [[A, -B R^{-1} B^T], [-Q, -A^T]] (Laub 1979),
 /// then dispatches to the selected method. The default applies a scaled Newton
-/// iteration to sign(H), verifies the stable-subspace projector or the extracted
-/// solution's postconditions, and extracts P = U21 * U11^-1. The two alternative
-/// tags use real-Schur decomposition and Bai-Demmel reordering, with optional
-/// Hamiltonian balancing.
+/// iteration to sign(H), extracts P = U21 * U11^-1 from the stable-subspace
+/// projector, and verifies THAT MATRIX against the equation it is supposed to
+/// solve before reporting success. The two alternative tags use real-Schur
+/// decomposition and Bai-Demmel reordering, with optional Hamiltonian balancing.
 ///
 /// The continuous-time LQR gain is K = R^{-1} B^T P.
 ///

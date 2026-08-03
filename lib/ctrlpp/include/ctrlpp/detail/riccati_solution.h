@@ -27,6 +27,7 @@
 
 #include <cmath>
 #include <limits>
+#include <initializer_list>
 
 namespace ctrlpp::detail
 {
@@ -55,6 +56,160 @@ auto psd_pivot_floor(const Eigen::Matrix<Scalar, N, N>& P,
 {
     return -floor_factor * static_cast<Scalar>(N)
            * std::numeric_limits<Scalar>::epsilon() * P.cwiseAbs().maxCoeff();
+}
+
+/// @brief A Frobenius magnitude together with whether the arithmetic resolved it.
+///
+/// `value` carries meaning only when `resolved` is true. Unresolved is
+/// contagious through every combinator below, and no comparison built on these
+/// can succeed with an unresolved side, so a magnitude the arithmetic could not
+/// form declines rather than certifying.
+///
+/// ## Why a plain Frobenius magnitude is not enough, at BOTH ends
+///
+/// The two Riccati solvers fail at opposite ends of the arithmetic range, so a
+/// magnitude that is safe at only one end leaves half the fault class standing.
+///
+///  * At the top, a matrix whose entries are finite but whose sum of squares
+///    exceeds the largest finite value gives an infinite magnitude. Both sides
+///    of an acceptance comparison then become infinite, `inf <= inf` holds, and
+///    the comparison certifies whatever it was handed. The discrete solver's
+///    original-scale verification meets this first and refuses answers that are
+///    perfectly representable.
+///  * At the bottom, a matrix whose entries are small but nonzero and whose sum
+///    of squares falls below the smallest normal value gives exactly zero. A
+///    residual scale of zero turns a `residual <= floor * scale` test into
+///    `0 <= 0`, which passes unconditionally, and a residual that underflows to
+///    zero is read as an exact solve. The continuous solver meets this end.
+///
+/// ## Which primitive this wraps, and why that one
+///
+/// Screened on four operands before any cost was considered: every entry
+/// `1e200`; every entry `1e-200`; one entry `1e-200` with the rest zero; and
+/// one entry equal to the smallest positive subnormal. The plain member fails
+/// all four. `Eigen::blueNorm()` survives the top and FAILS the bottom,
+/// returning exactly zero for the smallest-subnormal operand, so only a screen
+/// at both ends rejects it. `Eigen::stableNorm()` and the largest-entry rescale
+/// `max|M| * ||M / max|M|||` both survive all four.
+///
+/// The rescale is taken. It is the cheaper survivor at the sizes both Riccati
+/// paths carry -- 2.2, 4.5 and 3.6 times the plain member at N = 2, 4 and 8,
+/// against 8.6, 9.8 and 3.9 for `stableNorm()` -- and it is the only survivor
+/// that applies to a matrix at all: the Eigen norms are vector primitives and
+/// trip an internal block assertion on a fixed-size matrix operand, which would
+/// force every call site to reinterpret its operand as a contiguous vector and
+/// would be unavailable on an unevaluated expression. Both survivors allocate
+/// nothing at every size measured; the rescale is chosen on cost and reach, not
+/// on allocation.
+///
+/// The rescale is exact in the sense that matters: dividing by the largest
+/// entry cannot overflow or underflow, every rescaled entry lands in [-1, 1],
+/// and the sum of squares of at most N * N such entries cannot leave either end
+/// of the range. The final multiplication by the largest entry is the only step
+/// that can leave the top, and when it does the magnitude genuinely is not
+/// representable and the result is unresolved rather than infinite.
+template <typename Scalar>
+struct resolved_magnitude
+{
+    Scalar value;
+    bool   resolved;
+};
+
+/// @brief Frobenius magnitude of a matrix, safe at both ends of the range.
+template <typename Derived>
+auto resolve_magnitude(const Eigen::MatrixBase<Derived>& operand)
+    -> resolved_magnitude<typename Derived::Scalar>
+{
+    using Scalar = typename Derived::Scalar;
+    const auto& evaluated = operand.eval();
+
+    if (!evaluated.allFinite())
+        return {Scalar{0}, false};
+
+    const Scalar largest_entry = evaluated.cwiseAbs().maxCoeff();
+    if (!(largest_entry > Scalar{0}))
+        return {Scalar{0}, true};
+
+    const Scalar magnitude =
+        largest_entry * (evaluated / largest_entry).norm();
+    if (!std::isfinite(magnitude))
+        return {Scalar{0}, false};
+    return {magnitude, true};
+}
+
+/// @brief Largest-entry magnitude of a matrix.
+///
+/// This form squares nothing, so it is already safe at both ends and needs only
+/// the finiteness guard. It is kept distinct from the Frobenius form rather than
+/// folded into it because a bound derived from the largest entry is a different
+/// bound, and substituting one for the other would silently move a threshold.
+template <typename Derived>
+auto resolve_largest_entry(const Eigen::MatrixBase<Derived>& operand)
+    -> resolved_magnitude<typename Derived::Scalar>
+{
+    using Scalar = typename Derived::Scalar;
+    const auto& evaluated = operand.eval();
+
+    if (!evaluated.allFinite())
+        return {Scalar{0}, false};
+    return {evaluated.cwiseAbs().maxCoeff(), true};
+}
+
+/// @brief Largest of several magnitudes; unresolved if any operand is.
+template <typename Scalar>
+auto largest_magnitude(
+    std::initializer_list<resolved_magnitude<Scalar>> operands)
+    -> resolved_magnitude<Scalar>
+{
+    resolved_magnitude<Scalar> largest{Scalar{0}, true};
+    for (const resolved_magnitude<Scalar>& operand : operands)
+    {
+        if (!operand.resolved)
+            return {Scalar{0}, false};
+        if (operand.value > largest.value)
+            largest.value = operand.value;
+    }
+    return largest;
+}
+
+/// @brief A magnitude scaled by a finite factor; unresolved if the product is
+/// not finite, so a bound that has itself left the range cannot admit anything.
+template <typename Scalar>
+auto scaled_magnitude(const resolved_magnitude<Scalar>& operand,
+                      Scalar                            factor)
+    -> resolved_magnitude<Scalar>
+{
+    if (!operand.resolved || !std::isfinite(factor))
+        return {Scalar{0}, false};
+
+    const Scalar scaled = operand.value * factor;
+    if (!std::isfinite(scaled))
+        return {Scalar{0}, false};
+    return {scaled, true};
+}
+
+/// @brief Counted rounding bound `rounding_ops * eps * scale` on a resolved
+/// scale, in the counted-operation form both Riccati acceptance chains use.
+template <typename Scalar>
+auto counted_rounding_bound(const resolved_magnitude<Scalar>& scale,
+                            int                               rounding_ops)
+    -> resolved_magnitude<Scalar>
+{
+    return scaled_magnitude(scale,
+                            static_cast<Scalar>(rounding_ops)
+                                * std::numeric_limits<Scalar>::epsilon());
+}
+
+/// @brief `value <= bound`, false whenever either side is unresolved.
+///
+/// Two infinities do not compare equal-or-less through this helper, which is the
+/// whole point: an unresolved operand is an absence of evidence and must not
+/// read as evidence of smallness.
+template <typename Scalar>
+auto magnitude_within(const resolved_magnitude<Scalar>& value,
+                      const resolved_magnitude<Scalar>& bound) -> bool
+{
+    return value.resolved && bound.resolved && value.value <= bound.value;
 }
 
 /// @brief Error variants produced by extract_riccati_solution.

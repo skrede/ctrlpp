@@ -37,14 +37,20 @@ namespace ctrlpp
 ///                               epsilon-scaled tolerance.
 ///  * schur_failed             : `Eigen::RealSchur` did not converge on the Hamiltonian
 ///                               (Schur-based methods only).
-///  * sign_function_stagnated  : the matrix sign-function Newton iteration failed to
-///                               contract: either the determinantal scaling factor went
-///                               non-finite (singular Hamiltonian), the per-step contraction
-///                               ratio exceeded 1/2 after the warm-up window (divergence),
-///                               a small-change candidate produced neither an idempotent
-///                               stable-subspace projector nor an extracted solution satisfying
-///                               the counted Riccati-residual and closed-loop-stability
-///                               postconditions, or the iteration budget was exhausted.
+///  * sign_function_stagnated  : the matrix sign-function Newton iteration did not
+///                               produce a solution the solver could verify. Exactly
+///                               four cases reach it: the determinantal scaling factor
+///                               went non-finite (singular Hamiltonian); the per-step
+///                               contraction ratio exceeded 1/2 after the warm-up window
+///                               (divergence); an acceptance magnitude could not be
+///                               resolved at the scalar type's range, so the comparison
+///                               that would have used it carries no evidence; or the
+///                               extracted solution failed the counted Riccati-residual
+///                               or closed-loop-spectrum postconditions. Those
+///                               postconditions run on every solve, so the last case now
+///                               covers every unverified answer rather than only those a
+///                               projector check had left unresolved. The iteration
+///                               budget being exhausted also reports here.
 ///                               Sign-function path only.
 ///
 /// ## What `singular_u11` covers, and what `non_lhp_stabilizable` misses
@@ -96,10 +102,11 @@ enum class care_error
 ///                          field is written as `std::numeric_limits&lt;Scalar&gt;::quiet_NaN()`
 ///                          to signal "unavailable"; callers should branch on `std::isnan`
 ///                          rather than comparing against a magnitude. The sign path's
-///                          projector check determines whether extraction may proceed; it is
-///                          not a swap-conditioning metric and is deliberately not written
-///                          into this field. Contrast with the Schur path's partial-reorder
-///                          marker where the smallest accepted pivot is finite and positive.
+///                          acceptance decision is a verification of the returned solution
+///                          rather than a conditioning measurement, so it yields no value
+///                          for this field either. Contrast with the Schur path's
+///                          partial-reorder marker where the smallest accepted pivot is
+///                          finite and positive.
 ///  * reorder_complete    : true if every swap was accepted by the conditioning test or if
 ///                          the method has no swap phase; false if one or more swaps were
 ///                          declined during Schur reordering.

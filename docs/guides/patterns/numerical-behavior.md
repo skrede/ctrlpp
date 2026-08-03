@@ -140,6 +140,38 @@ otherwise produce silent corruption through intermediate overflow:
   `dare_error::arithmetic_limit` when finite inputs cannot produce a verified
   stabilizing result at the scalar type's precision.
 
+- **CARE arithmetic range, at both ends:** The continuous algebraic Riccati
+  solver's default path verifies the solution it extracted -- residual bound and
+  closed-loop spectrum -- before reporting success, on every solve. Every
+  magnitude entering that verification, and entering the iteration's own
+  convergence test, is computed in a form that neither overflows nor underflows
+  on finite operands: a magnitude is formed by dividing out the operand's
+  largest entry first, so a matrix of finite entries whose sum of squares would
+  leave the top of the range still yields a finite magnitude, and one whose sum
+  of squares would leave the bottom still yields a nonzero one. **A magnitude
+  that cannot be resolved declines rather than certifies** -- an infinite
+  comparison on both sides is not evidence, and a residual scale of zero would
+  turn the acceptance test into `0 <= 0`.
+
+  The bottom of the range is where this solver actually failed. Its
+  stable-subspace factorization compares a squared quantity against an absolute
+  floor -- the scalar type's smallest normal value -- and the quantity in
+  question is the square of the solution's own coupling. A solution smaller than
+  the square root of the smallest normal value therefore had the information
+  discarded, and the solver returned success carrying `P = 0`. It now rescales
+  that factorization by an exact power of two derived from the operand, which
+  the factorization is equivariant under, and the band is answered rather than
+  lost. Where the rescale does not reach -- the Newton step forms its own
+  inverse, whose entries are reciprocal squared magnitudes and reach zero
+  independently -- the answer is refused, not returned.
+
+  A solution below the representable band is therefore **declined**, and so is
+  one the arithmetic can form but not verify. Note the practical cost: the
+  continuous solver performs no weight equilibration, so a common rescale of `Q`
+  and `R` far above the dynamics' own scale is declined rather than carried. A
+  rescale that does not increase the weights is carried at every magnitude
+  swept.
+
 - **L1 DC gain inversion:** The L1 adaptive controller validates that the
   predictor model's DC gain is invertible before computing the feedforward gain
   `K_r`. Construction goes through the fallible factory

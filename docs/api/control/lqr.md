@@ -81,6 +81,15 @@ It makes three rejections of its own before calling anything:
 
 The middle one is worth stating explicitly, because this surface forms `R^{-1}` itself through an `LDLT` factorization rather than going through the Hamiltonian build, and **that factorization fails quietly**: its solve zeroes the rank-deficient directions instead of producing infinities. Before the rank test, a zero `R` therefore produced a finite `R^{-1}` of zeros, an entirely finite Hamiltonian describing a plant with no control authority, and a sign-function iteration that stagnated on it -- reported as `sign_function_stagnated`, which sends the caller to look at convergence rather than at the weighting they passed.
 
+Past those three, the default sign-function path makes one further refusal, and it applies to every solve rather than to malformed input:
+
+| Condition | Enumerator |
+| --- | --- |
+| the extracted solution does not satisfy the counted Riccati residual bound, or does not place the closed-loop spectrum strictly in the open left half-plane | `care_error::sign_function_stagnated` |
+| an acceptance magnitude cannot be resolved at the scalar type's range | `care_error::sign_function_stagnated` |
+
+**That verification runs on every accepted solve.** It is not a fallback behind a cheaper check: the solver reports success only for a matrix it has substituted back into the equation. The consequence a caller sees is that a pose the solver cannot answer accurately is declined rather than answered, and the population that changes most is large common weight scales -- see [numerical behavior](../../guides/patterns/numerical-behavior.md) for which poses those are and why the boundary is where it is.
+
 See [dare](dare.md) for what `care_error::singular_u11` covers; the continuous enumerator has the identical shape as its discrete counterpart.
 
 ### lqr_finite
