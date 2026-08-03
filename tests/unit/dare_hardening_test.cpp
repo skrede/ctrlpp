@@ -26,6 +26,7 @@
 #include "hardening_helpers.h"
 #include "ctrlpp/control/dare.h"
 #include "ctrlpp/control/lqr.h"
+#include "ctrlpp/detail/riccati_solution.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -33,6 +34,7 @@
 
 #include <cmath>
 #include <limits>
+#include <cstddef>
 
 TEST_CASE("DARE refuses a non-finite state matrix", "[dare][hardening][negative]")
 {
@@ -454,4 +456,295 @@ TEST_CASE("DARE preserves comfortable common-scaled problems", "[dare][hardening
         ++accepted;
     }
     CHECK(accepted == 20);
+}
+
+namespace
+{
+
+// The scalar pose the common-scale claim is argued on: A = 0.5, B = 1, both
+// weightings at a common positive scale. The exact solution is linear in that
+// scale, so the unit-scale solve is an exact oracle for every other scale, and
+// the gain it implies is the same at every scale -- which is the identity
+// equilibration exists to honor. The scalar instantiation is the one the
+// analytical case in this file already carries, so this adds none.
+struct scalar_pose
+{
+    Eigen::Matrix<double, 1, 1> A;
+    Eigen::Matrix<double, 1, 1> B;
+};
+
+auto common_scale_pose() -> scalar_pose
+{
+    scalar_pose pose;
+    pose.A(0, 0) = 0.5;
+    pose.B(0, 0) = 1.0;
+    return pose;
+}
+
+auto weight_at(double scale) -> Eigen::Matrix<double, 1, 1>
+{
+    Eigen::Matrix<double, 1, 1> weight;
+    weight(0, 0) = scale;
+    return weight;
+}
+
+/// The gain the scalar pose implies, formed from the ratio of the returned
+/// matrix to the common scale rather than at the caller's own scale. The gain is
+/// homogeneous of degree zero, and the sum R + B'PB it is ordinarily read from
+/// leaves the top of the range while the answer is still perfectly
+/// representable, so forming that ratio first is what makes the oracle usable
+/// across the whole range instead of only the middle of it.
+auto scale_free_gain(const scalar_pose &pose, double P, double common_scale) -> double
+{
+    const double p = P / common_scale;
+    return (pose.B(0, 0) * p * pose.A(0, 0)) / (1.0 + pose.B(0, 0) * p * pose.B(0, 0));
+}
+
+auto is_enumerated_dare_error(ctrlpp::dare_error error) -> bool
+{
+    switch(error)
+    {
+        case ctrlpp::dare_error::non_stabilizable:
+        case ctrlpp::dare_error::non_finite_input:
+        case ctrlpp::dare_error::singular_a:
+        case ctrlpp::dare_error::singular_r:
+        case ctrlpp::dare_error::singular_u11:
+        case ctrlpp::dare_error::non_psd_solution:
+        case ctrlpp::dare_error::schur_failed:
+        case ctrlpp::dare_error::arithmetic_limit:
+            return true;
+    }
+    return false;
+}
+
+struct sweep_tally
+{
+    std::size_t points{};
+    std::size_t accepted{};
+    std::size_t declined{};
+    std::size_t compared{};
+    std::size_t twin_declined{};
+    std::size_t accepted_beyond_prior_reach{};
+    std::size_t declined_beyond_ceiling{};
+};
+
+}
+
+TEST_CASE("DARE carries a representable common-scaled pose", "[dare][hardening][precision]")
+{
+    // The pose that contradicted equilibration's own claim. Its unit-scale answer
+    // is an ordinary normal double, and so is the answer at the common scale
+    // below; the solve refused it because a squared quantity left the top of the
+    // range while the evidence was being formed, not because the answer was
+    // unrepresentable.
+    const auto pose        = common_scale_pose();
+    const auto unit_weight = weight_at(1.0);
+
+    const auto unit = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, unit_weight, unit_weight);
+    REQUIRE(unit.has_value());
+    const auto unit_gain = ctrlpp::test::riccati_gain<double, 1, 1>(pose.A, pose.B, unit_weight, unit->P);
+
+    constexpr double eps         = std::numeric_limits<double>::epsilon();
+    const double relative_margin = std::sqrt(ctrlpp::test::riccati_residual_ops<1, 1> * eps);
+
+    const double common_scale = 1e155;
+    const auto weight         = weight_at(common_scale);
+    const auto scaled         = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, weight, weight);
+    REQUIRE(scaled.has_value());
+
+    // The answer is the unit-scale answer moved by the common factor.
+    const double expected = unit->P(0, 0) * common_scale;
+    CAPTURE(scaled->P(0, 0), expected);
+    CHECK(std::abs(scaled->P(0, 0) - expected) <= relative_margin * expected);
+
+    // The scale-invariant oracle. A residual is a necessary companion to this and
+    // never a substitute: the gain is what two posings of the same problem have
+    // in common as a mathematical identity.
+    const auto scaled_gain = ctrlpp::test::riccati_gain<double, 1, 1>(pose.A, pose.B, weight, scaled->P);
+    CAPTURE(unit_gain, scaled_gain);
+    CHECK((unit_gain - scaled_gain).norm() <= relative_margin * unit_gain.norm());
+
+    // Positive semi-definiteness holds at the scale actually returned, against
+    // the shared pivot floor rather than a copy of it.
+    Eigen::LDLT<Eigen::Matrix<double, 1, 1>> returned_psd(scaled->P);
+    REQUIRE(returned_psd.info() == Eigen::Success);
+    CHECK(returned_psd.vectorD().minCoeff() >= ctrlpp::detail::psd_pivot_floor<double, 1>(scaled->P));
+}
+
+TEST_CASE("DARE accepts inside the representable ceiling and declines outside it", "[dare][hardening][precision]")
+{
+    // Where the accepted range stops is a derived property, not a constant. The
+    // returned matrix is the unit-scale answer times the common scale, so the
+    // largest common scale whose answer is representable is the largest finite
+    // value divided by the unit-scale answer's largest entry. Nothing here pins
+    // the transition as an equality: acceptance is asserted inside the derived
+    // ceiling and an enumerated decline outside it.
+    const auto pose        = common_scale_pose();
+    const auto unit_weight = weight_at(1.0);
+
+    const auto unit = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, unit_weight, unit_weight);
+    REQUIRE(unit.has_value());
+
+    const double ceiling = std::numeric_limits<double>::max() / unit->P.cwiseAbs().maxCoeff();
+    CAPTURE(ceiling);
+
+    for(const double inside : {1e155, 1e308})
+    {
+        CAPTURE(inside);
+        REQUIRE(inside < ceiling);
+        const auto weight = weight_at(inside);
+        const auto result = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, weight, weight);
+        REQUIRE(result.has_value());
+    }
+
+    for(const double outside : {std::nextafter(ceiling, std::numeric_limits<double>::infinity()), std::numeric_limits<double>::max()})
+    {
+        CAPTURE(outside);
+        REQUIRE(outside > ceiling);
+        const auto weight = weight_at(outside);
+        const auto result = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, weight, weight);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::dare_error::arithmetic_limit);
+    }
+}
+
+TEST_CASE("DARE holds the common-scale identity across the representable range", "[dare][hardening][precision]")
+{
+    // The existing common-scale case stops an order of magnitude short of where
+    // the defect lived, which is exactly why a green suite did not see it. This
+    // one steps the common scale over every decade the type supports, in both
+    // directions, at three fixed ratios, and holds every accepted point to the
+    // gain the same pose implies at unit scale.
+    //
+    // The oracle is the gain of the pose the solver ACTUALLY RECEIVED, not of the
+    // pose that was intended. Near the bottom of the range a weight formed as
+    // `ratio * scale` can underflow, so the stored pair no longer realizes the
+    // intended ratio; comparing it against the intended ratio's twin would report
+    // a defect on a correct answer to the question actually asked. Dividing the
+    // stored pair by its own input weighting is the same common rescale the
+    // identity is about, so the twin is the right reference at every point,
+    // faithful pose or not.
+    const auto pose              = common_scale_pose();
+    constexpr double eps         = std::numeric_limits<double>::epsilon();
+    const double relative_margin = std::sqrt(ctrlpp::test::riccati_residual_ops<1, 1> * eps);
+
+    // The magnitude the previous verification stopped at on the equal-weight
+    // pose, bisected to a relative width below 1e-13. Every accepted point above
+    // it at that ratio is inside the region that implementation refused, which is
+    // what makes the census non-vacuous. The census counts only that ratio,
+    // because that is the ratio the number was measured at.
+    const double prior_reach = 1.183617e154;
+
+    sweep_tally tally;
+
+    for(const double ratio : {1.0, 100.0, 0.01})
+    {
+        for(const bool ascending : {true, false})
+        {
+            for(int step = -323; step <= 308; ++step)
+            {
+                const int exponent        = ascending ? step : -step + (-323 + 308);
+                const double common_scale = std::pow(10.0, static_cast<double>(exponent));
+                CAPTURE(ratio, ascending, exponent, common_scale);
+
+                const auto Q = weight_at(ratio * common_scale);
+                const auto R = weight_at(common_scale);
+                REQUIRE(R(0, 0) > 0.0);
+
+                const auto result = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, Q, R);
+                ++tally.points;
+                if(!result)
+                {
+                    ++tally.declined;
+                    CHECK(is_enumerated_dare_error(result.error()));
+                    continue;
+                }
+
+                ++tally.accepted;
+                if(ratio == 1.0 && common_scale > prior_reach)
+                    ++tally.accepted_beyond_prior_reach;
+
+                // The same pose divided by its own input weighting: one division
+                // per entry, so the twin differs from an exact common rescale by
+                // at most a single rounding, which the margin below absorbs.
+                const auto twin = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, weight_at(Q(0, 0) / R(0, 0)), weight_at(1.0));
+                if(!twin)
+                {
+                    ++tally.twin_declined;
+                    continue;
+                }
+
+                ++tally.compared;
+                const double reference_gain = scale_free_gain(pose, twin->P(0, 0), 1.0);
+                const double implied_gain   = scale_free_gain(pose, result->P(0, 0), common_scale);
+                CAPTURE(reference_gain, implied_gain, result->P(0, 0));
+                CHECK(std::abs(implied_gain - reference_gain) <= relative_margin * std::abs(reference_gain));
+            }
+        }
+    }
+
+    // Every decade the type supports, at three ratios, in both directions.
+    CHECK(tally.points == 3 * 632 * 2);
+    CHECK(tally.accepted + tally.declined == tally.points);
+    // Neither half of the census may pass vacuously: the sweep must have entered
+    // the region the previous implementation refused, and it must have compared
+    // real points rather than skipping them all.
+    CHECK(tally.accepted_beyond_prior_reach > 0);
+    CHECK(tally.compared > 0);
+    CHECK(tally.twin_declined == 0);
+
+    // The other half of the census: above the derived ceiling the answer is not
+    // representable and the decline is enumerated. Nothing here pins where the
+    // transition sits; it is a property of the type's range.
+    const auto unit = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, weight_at(1.0), weight_at(1.0));
+    REQUIRE(unit.has_value());
+    const double ceiling = std::numeric_limits<double>::max() / unit->P.cwiseAbs().maxCoeff();
+    for(const double outside : {std::nextafter(ceiling, std::numeric_limits<double>::infinity()), std::numeric_limits<double>::max()})
+    {
+        CAPTURE(outside);
+        const auto weight = weight_at(outside);
+        const auto result = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, weight, weight);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::dare_error::arithmetic_limit);
+        ++tally.declined_beyond_ceiling;
+    }
+    CHECK(tally.declined_beyond_ceiling > 0);
+}
+
+TEST_CASE("DARE original-scale residual guard still asserts where a squared magnitude would not", "[dare][hardening][precision]")
+{
+    // The guard integrity half of the change, and it is independent of reach. At
+    // a common scale of 1e-200 every term of the residual expression has a sum of
+    // squares below the smallest normal value, so a plain Frobenius magnitude
+    // gives a residual of zero against a scale of zero and the acceptance test
+    // becomes `0 <= 0` -- an unconditionally passing guard over roughly a hundred
+    // and twenty decades. Resolving both magnitudes through the largest-entry
+    // rescale keeps them meaningful, which is checked here by handing the
+    // verification a matrix that does NOT solve the equation and requiring it to
+    // say so at exactly that scale.
+    const auto pose           = common_scale_pose();
+    const double common_scale = 1e-200;
+    const auto weight         = weight_at(common_scale);
+
+    const auto solved = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, weight, weight);
+    REQUIRE(solved.has_value());
+
+    // The correct answer verifies at its own scale.
+    CHECK(ctrlpp::detail::verify_dare_solution<double, 1, 1>(pose.A, pose.B, weight, weight, solved->P) == ctrlpp::detail::dare_verification::verified);
+
+    // A positive semi-definite matrix of the same magnitude that solves nothing
+    // is refuted. Under the plain magnitude both sides of the comparison were
+    // exactly zero and this matrix passed.
+    auto wrong = solved->P;
+    wrong(0, 0) *= 2.0;
+    CHECK(ctrlpp::detail::verify_dare_solution<double, 1, 1>(pose.A, pose.B, weight, weight, wrong) == ctrlpp::detail::dare_verification::refuted);
+
+    // And the degenerate reading is gone at the source: the residual scale this
+    // pose produces is nonzero, where a plain sum of squares gives exactly zero.
+    const auto plain_scale    = solved->P.norm();
+    const auto resolved_scale = ctrlpp::detail::resolve_magnitude(solved->P);
+    CAPTURE(plain_scale, resolved_scale.value);
+    CHECK(plain_scale == 0.0);
+    REQUIRE(resolved_scale.resolved);
+    CHECK(resolved_scale.value > 0.0);
 }

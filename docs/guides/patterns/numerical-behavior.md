@@ -131,14 +131,46 @@ otherwise produce silent corruption through intermediate overflow:
   pivots during forward elimination and returns zero rather than producing
   Inf from division.
 
-- **DARE arithmetic range:** The discrete algebraic Riccati equation solver
-  equilibrates the weights before forming the symplectic matrix, then verifies
-  the residual and closed-loop spectrum before reporting success. It returns
+- **DARE arithmetic range, and what a common rescale carries:** The discrete
+  algebraic Riccati equation solver equilibrates the weights before forming the
+  symplectic matrix, then verifies the residual and closed-loop spectrum before
+  reporting success. It returns
   `ctrlpp::expected<dare_result<Scalar, NX>, dare_error>`, so a refusal is
   named rather than represented by a bare empty result:
   `dare_error::non_finite_input` when A, B, Q or R contains NaN or Inf, and
   `dare_error::arithmetic_limit` when finite inputs cannot produce a verified
   stabilizing result at the scalar type's precision.
+
+  Equilibration's claim is that multiplying both weights by a common positive
+  factor poses the same arithmetic problem, and the verification has to honor
+  that claim rather than re-introduce the range limit the equilibration removed.
+  So the verification runs on the equilibrated problem and the claim about the
+  caller's own scale is **carried** across the rescale: the equation is
+  homogeneous of degree one in `(P, Q, R)` together and the gain is homogeneous
+  of degree zero, so the residual bound, the stabilizing spectrum and the
+  definiteness all transport unchanged in relative terms. Only what homogeneity
+  cannot supply is checked directly -- that the rescaled solution is finite, and
+  that it is still positive semi-definite at the scale actually returned.
+
+  The check is still repeated at the caller's scale wherever its operands
+  resolve, with every magnitude formed by dividing out the operand's largest
+  entry first, so it neither overflows nor underflows on finite operands. It
+  cannot widen what is accepted; where it resolves and disagrees, **it
+  declines**, and where it cannot be formed the carried claim stands alone.
+  Retaining it is not about reach: at a common weight scale below roughly the
+  square root of the smallest normal value, a plain sum of squares gives a
+  residual of zero against a scale of zero, and the acceptance test degenerates
+  to `0 <= 0` -- an unconditionally passing guard over roughly a hundred and
+  twenty decades, which the resolved magnitude repairs.
+
+  What is carried and what is refused: every common-scaled pose whose answer the
+  type can represent is carried. The ceiling is a derived property --
+  `max_finite / max|P_equilibrated|`, the point at which the returned solution
+  itself stops being representable -- and not a constant. At the bottom the
+  binding quantity is the rescale's own precision: once the product is
+  subnormal the answer loses significand, the gain it implies departs from the
+  equilibrated gain, and the solver refuses once that departure exceeds the
+  counted-operation margin.
 
 - **CARE arithmetic range, at both ends:** The continuous algebraic Riccati
   solver's default path verifies the solution it extracted -- residual bound and

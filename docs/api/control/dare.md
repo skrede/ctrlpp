@@ -43,8 +43,61 @@ unit disk to the top-left block, and extracts P = U21 * U11^{-1}. Before
 reporting success, it verifies the Riccati residual against a dimension- and
 precision-derived forward-error margin and verifies that the resulting
 closed-loop spectrum is inside the unit disk by more than its backward-error
-margin. The checks run on both the equilibrated problem and the returned
-solution in the caller's original scale.
+margin.
+
+### Where the claim about your own scale is made
+
+Those checks run on the **equilibrated** problem, and the claim about the
+problem you posed is then *carried* across the rescale rather than re-formed at
+your scale. The equation is homogeneous of degree one in `(P, Q, R)` taken
+together, so multiplying all three by a positive factor multiplies the residual
+by exactly that factor; the gain `(R + B'PB)^{-1} B'PA` is homogeneous of degree
+zero, so the closed loop is unchanged; and a positive factor cannot move an
+eigenvalue across zero. What homogeneity does not supply is checked directly:
+the rescaled solution must be finite, and it is re-tested for positive
+semi-definiteness at the scale actually returned.
+
+Re-forming the evidence at your scale instead of carrying it is what limited the
+accepted range before. The residual scale is the largest of `A'PA`, `P`, `A'PBK`
+and `Q`, each a sum of squares, so on a pose whose *answer* is an ordinary normal
+number the *evidence* could still leave the top of the range -- and a comparison
+between two infinities was refusing problems the solver could solve.
+
+The direct check at your scale is still performed **wherever its operands
+resolve**, and every magnitude it forms is computed by dividing out the
+operand's largest entry first, so it neither overflows nor underflows on finite
+operands. It cannot widen what is accepted, but it can refuse: where the carried
+claim and the direct check disagree, **the direct check declines**. Where the
+direct check cannot be formed at all it has produced no evidence, and the
+carried claim stands alone.
+
+### The accepted range's ceiling
+
+The ceiling is a derived property of the scalar type's range, not a constant.
+The returned matrix is the equilibrated solution times the common divisor, so
+the largest divisor whose answer is representable is
+
+```
+max_finite / max|P_equilibrated|
+```
+
+The quantity that limits the range is therefore the returned solution's own
+largest entry. On the equal-weight scalar pose `A = 0.5`, `B = 1`, `Q = R = c`
+that derivation puts the ceiling at `c = 1.586972e+308`, which is where a
+bisected sweep measures the last carried magnitude. Above it the answer is not
+representable and the refusal is `arithmetic_limit`.
+
+The direct check's own reach stops slightly earlier -- 0.2748 decades earlier on
+that pose -- because the gain it recomputes needs the sum `R + B'PB` formed at
+your scale, and that sum leaves the range before the answer does. That is
+exactly the band the carried claim covers.
+
+At the bottom the binding quantity is different again, and it is the rescale
+itself: multiplying the equilibrated solution by the divisor keeps full relative
+precision only while the product is normal, and once it is subnormal the answer
+loses significand and the gain it implies departs from the equilibrated gain.
+The solver refuses when that departure exceeds the counted-operation margin,
+which on the same pose is measured at a common scale near `1e-316`.
 
 On success `result->P` is the stabilizing solution;
 `result->subspace_separation` and `result->reorder_complete` are conditioning
@@ -61,17 +114,25 @@ Refusals:
 | `dare_error::singular_u11` | the top-left block of the reordered invariant-subspace basis is singular; P cannot be extracted. **Covers two different situations -- see below** |
 | `dare_error::non_psd_solution` | the extracted P is not positive semi-definite. The test is an LDLT pivot-sign test against `N * eps * max\|P_ij\|`, the order of the factorization's own backward error, below which a pivot carries no sign information |
 | `dare_error::schur_failed` | the real Schur factorization did not converge |
-| `dare_error::arithmetic_limit` | finite inputs could not produce a residual-verified stabilizing solution at the scalar type's precision, including overflow while equilibrating or unscaling, and including a returned P that fails the positive-semi-definiteness test at its returned scale after unscaling |
+| `dare_error::arithmetic_limit` | finite inputs could not produce a verified stabilizing solution at the scalar type's precision. Specifically: the equilibrated problem's own residual, closed-loop spectrum or gain solve did not verify; a magnitude the equilibrated verification needs could not be formed; the weights overflowed while being equilibrated; the solution overflowed while being rescaled; the rescaled solution failed the positive-semi-definiteness test at its returned scale; the direct check at the caller's scale resolved and refuted the carried claim; or the equilibrated and returned gains, both formed, disagreed by more than the counted-operation margin |
 
-Positive semi-definiteness is tested twice, and deliberately so. The extraction
-primitive tests the P the solve produced; when common-weight equilibration is
-active that P is the *scaled* one, and the value handed back to the caller is
-`P * weight_scale`, which the first test never saw. The postcondition therefore
-re-tests at the returned scale. Scaling by a positive factor preserves
-definiteness mathematically, so this second test only ever fires on the rounding
-the rescale itself introduces -- which is why it reports `arithmetic_limit`
-rather than `non_psd_solution`, and why the floor has to carry the
-factorization's backward error rather than assume there is none.
+The one cause that is **no longer** on that list is a magnitude the check at the
+caller's scale could not form. That used to be a refusal; it is now an absence of
+evidence, and the carried claim is what decides.
+
+Positive semi-definiteness is tested on both matrices that exist, and
+deliberately so. The extraction primitive tests the P the solve produced; when
+common-weight equilibration is active that P is the *equilibrated* one, and the
+value handed back to the caller is `P * weight_scale`, which the first test never
+saw. The rescale is therefore re-tested at the returned scale. Scaling by a
+positive factor preserves definiteness mathematically, so this second test only
+ever fires on the rounding the rescale itself introduces -- which is why it
+reports `arithmetic_limit` rather than `non_psd_solution`, and why the floor has
+to carry the factorization's backward error rather than assume there is none.
+
+An indefinite state weighting is not a supported input. `Q = -I` on an otherwise
+well-posed pair leaves fewer than n eigenvalues of the symplectic spectrum inside
+the unit disk, so it is refused as `non_stabilizable`.
 
 ### What `singular_u11` covers, and what `non_stabilizable` misses
 

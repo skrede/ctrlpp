@@ -41,7 +41,23 @@ namespace ctrlpp {
 ///  * schur_failed     : `Eigen::RealSchur` did not converge on the symplectic matrix.
 ///  * arithmetic_limit : a finite, structurally admissible problem could not produce
 ///                       a solution whose Riccati residual and stabilizing closed-loop
-///                       spectrum are defensible at the scalar type's precision.
+///                       spectrum are defensible at the scalar type's precision. The
+///                       causes are: the equilibrated problem's own residual, spectrum
+///                       or gain solve did not verify; a magnitude that verification
+///                       needs could not be formed; the weights overflowed while being
+///                       equilibrated; the solution overflowed while being rescaled to
+///                       the caller's scale; the rescaled solution failed the
+///                       positive-semi-definiteness test at that scale; the check
+///                       repeated at the caller's scale resolved and contradicted the
+///                       claim carried across the rescale; or the equilibrated and
+///                       returned gains, both formed, disagreed by more than the
+///                       counted-operation margin.
+///
+///                       A magnitude the check at the CALLER'S scale could not form is
+///                       no longer among them. That is an absence of evidence rather
+///                       than evidence against, and it used to refuse answers that were
+///                       ordinary normal numbers: the residual's own scale is a sum of
+///                       squares and leaves the top of the range before the answer does.
 ///
 /// ## What `singular_u11` covers, and what `non_stabilizable` misses
 ///

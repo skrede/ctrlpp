@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
 
 #include <cmath>
 #include <limits>
@@ -72,8 +73,20 @@ TEST_CASE("DARE A = 0, B = 0 yields a structured failure enum", "[dare][error]")
            result.error() == ctrlpp::dare_error::non_stabilizable));
 }
 
-TEST_CASE("DARE negative-definite Q produces a structured failure enum", "[dare][error]")
+TEST_CASE("DARE refuses a negative-definite state weighting", "[dare][error]")
 {
+    // The contract, decided rather than left open: a negative-definite state
+    // weighting is NOT a supported input and the solve must refuse it. The
+    // standard theory the solver implements requires a positive semi-definite Q
+    // for a stabilizing positive semi-definite P to exist, and with Q = -I fewer
+    // than n eigenvalues of the symplectic spectrum land inside the unit disk, so
+    // the placement count is what catches it.
+    //
+    // The previous form of this case put every assertion inside its refusal
+    // branch, so a solver that RETURNED a value for this input executed no
+    // assertion at all and the case passed -- removing coverage from exactly the
+    // wrong-success path. Both assertions below run on whichever branch the call
+    // takes: a returned value fails the first outright.
     Eigen::Matrix<double, 2, 2> A;
     A << 1.0, 1.0, 0.0, 1.0;
     Eigen::Matrix<double, 2, 1> B;
@@ -83,11 +96,21 @@ TEST_CASE("DARE negative-definite Q produces a structured failure enum", "[dare]
     R(0, 0) = 1.0;
 
     auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
-    if(!result.has_value())
-    {
-        CHECK((result.error() == ctrlpp::dare_error::non_psd_solution || result.error() == ctrlpp::dare_error::non_stabilizable ||
-               result.error() == ctrlpp::dare_error::non_finite_input || result.error() == ctrlpp::dare_error::singular_u11 || result.error() == ctrlpp::dare_error::schur_failed));
-    }
+    REQUIRE_FALSE(result.has_value());
+
+    // The enumerator is pinned to the one the built library actually produces,
+    // not to a menu of five. A refusal that could be any of five causes does not
+    // tell the caller which of their assumptions failed, and a menu cannot notice
+    // when the cause changes.
+    CHECK(result.error() == ctrlpp::dare_error::non_stabilizable);
+
+    // And the refusal is about the sign, not about the fixture: the identical
+    // pose with a positive-definite state weighting is solved. Without this the
+    // case above would still pass on a solver that refused everything.
+    auto positive = ctrlpp::dare<double, 2, 1>(A, B, Eigen::Matrix<double, 2, 2>(Eigen::Matrix<double, 2, 2>::Identity()), R);
+    REQUIRE(positive.has_value());
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> pes(positive->P);
+    CHECK(pes.eigenvalues()(0) > 0.0);
 }
 
 TEST_CASE("DARE schur_failed enumerator is reachable at compile time", "[dare][error][design-lever]")

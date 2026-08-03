@@ -130,33 +130,73 @@ auto build_dare_symplectic(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, con
 template<std::size_t NX, std::size_t NU>
 constexpr int dare_residual_ops = 6 * (2 * static_cast<int>(NX) - 1) + 2 * (2 * static_cast<int>(NU) - 1) + 1 + 2 * static_cast<int>(NU) + 3;
 
+/// @brief What an acceptance check decided about one posing of the problem.
+///
+/// The third value is the one that matters and it is not a failure. A check that
+/// could not form the quantity it needed has produced no evidence, and an
+/// absence of evidence is neither a certificate nor a refutation. Collapsing it
+/// into either is how a comparison between two infinities ends up certifying,
+/// and how a comparison that could never be formed ends up refusing an answer
+/// the solver can represent perfectly well.
+enum class dare_verification
+{
+    verified,
+    refuted,
+    unresolved,
+};
+
 template<typename Scalar, std::size_t NX, std::size_t NU>
 auto compute_dare_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NU), int(NU)> &R,
-                       const Eigen::Matrix<Scalar, int(NX), int(NX)> &P, Eigen::Matrix<Scalar, int(NU), int(NX)> &gain) -> bool
+                       const Eigen::Matrix<Scalar, int(NX), int(NX)> &P, Eigen::Matrix<Scalar, int(NU), int(NX)> &gain) -> dare_verification
 {
-    const auto BtP          = (B.transpose() * P).eval();
+    const auto BtP = (B.transpose() * P).eval();
+    // The input weighting plus the input-projected solution is formed at the
+    // scale of the P handed in. On a pose whose answer is representable that
+    // sum can still leave the top of the range, and when it does the gain is
+    // simply not available at this scale -- which says nothing about whether
+    // the answer solves the equation.
     const auto gain_operand = (R + BtP * B).eval();
-    auto gain_qr            = gain_operand.colPivHouseholderQr();
+    if(!BtP.allFinite() || !gain_operand.allFinite())
+        return dare_verification::unresolved;
+
+    auto gain_qr = gain_operand.colPivHouseholderQr();
     gain_qr.setThreshold(Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon());
     if(!gain_qr.isInvertible())
-        return false;
+        return dare_verification::refuted;
 
     gain = gain_qr.solve(BtP * A).eval();
-    return gain.allFinite();
+    return gain.allFinite() ? dare_verification::verified : dare_verification::unresolved;
 }
 
 /// @brief Verify that P solves the posed DARE and produces a stabilizing gain.
+///
+/// Every magnitude entering an acceptance comparison here is resolved through
+/// the shared both-ends-safe helper rather than formed as a plain sum of
+/// squares. Two separate failures follow from the plain form. At the top a
+/// matrix of finite entries whose sum of squares leaves the range gives an
+/// infinite scale and an infinite residual, and `inf <= inf` certifies whatever
+/// it was handed -- or, where the comparison is written to fail closed as it is
+/// here, refuses an answer that is an ordinary normal number. At the bottom the
+/// residual underflows to zero against a scale that has also underflowed to
+/// zero, and the test degenerates to `0 <= 0` and asserts nothing; on this
+/// solver that happens from around the square root of the smallest normal value
+/// downward, roughly a hundred and twenty decades before the answer itself stops
+/// being representable.
 template<typename Scalar, std::size_t NX, std::size_t NU>
 auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q,
                           const Eigen::Matrix<Scalar, int(NU), int(NU)> &R, const Eigen::Matrix<Scalar, int(NX), int(NX)> &P,
-                          Eigen::Matrix<Scalar, int(NU), int(NX)> *verified_gain = nullptr) -> bool
+                          Eigen::Matrix<Scalar, int(NU), int(NX)> *verified_gain = nullptr) -> dare_verification
 {
     constexpr int n = static_cast<int>(NX);
     using MatNxN    = Eigen::Matrix<Scalar, n, n>;
 
+    if(!P.allFinite())
+        return dare_verification::unresolved;
+
     Eigen::Matrix<Scalar, int(NU), int(NX)> gain;
-    if(!compute_dare_gain<Scalar, NX, NU>(A, B, R, P, gain))
-        return false;
+    const dare_verification gain_state = compute_dare_gain<Scalar, NX, NU>(A, B, R, P, gain);
+    if(gain_state != dare_verification::verified)
+        return gain_state;
 
     // Positive semi-definiteness is re-established on the P that is actually
     // being verified. The extraction primitive checks it on the solve's own P,
@@ -165,23 +205,31 @@ auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, cons
     // Scaling by a positive factor preserves definiteness mathematically and
     // perturbs the pivots only by rounding, which is exactly why the floor has
     // to carry the factorization's backward error rather than assume none.
-    if(!P.allFinite())
-        return false;
     Eigen::LDLT<MatNxN> psd_ldlt(P);
     if(psd_ldlt.info() != Eigen::Success
        || psd_ldlt.vectorD().minCoeff() < detail::psd_pivot_floor<Scalar, n>(P))
-        return false;
+        return dare_verification::refuted;
 
     const MatNxN AtPA     = (A.transpose() * P * A).eval();
     const MatNxN AtPBK    = (A.transpose() * P * B * gain).eval();
     const MatNxN residual = (AtPA - P - AtPBK + Q).eval();
-    if(!residual.allFinite())
-        return false;
+    if(!AtPA.allFinite() || !AtPBK.allFinite() || !residual.allFinite())
+        return dare_verification::unresolved;
 
-    const Scalar residual_scale     = std::max({AtPA.norm(), P.norm(), AtPBK.norm(), Q.norm()});
-    const Scalar residual_magnitude = residual.norm();
-    if(!std::isfinite(residual_scale) || !std::isfinite(residual_magnitude))
-        return false;
+    const resolved_magnitude<Scalar> residual_scale = largest_magnitude<Scalar>({resolve_magnitude(AtPA), resolve_magnitude(P), resolve_magnitude(AtPBK), resolve_magnitude(Q)});
+    const resolved_magnitude<Scalar> residual_magnitude = resolve_magnitude(residual);
+    if(!residual_scale.resolved || !residual_magnitude.resolved)
+        return dare_verification::unresolved;
+
+    // A scale of exactly zero survives as a meaningful test, and only because
+    // the magnitudes above are resolved through the largest-entry rescale: that
+    // form cannot carry a nonzero matrix to zero, so a zero scale means all four
+    // terms are exactly zero, the residual they sum to is exactly zero, and
+    // `0 <= 0` is an exact statement about an exact solve. The plain sum of
+    // squares this replaced could not tell that apart from a scale that had
+    // merely underflowed, and read the second as the first from around the
+    // square root of the smallest normal value downward -- roughly a hundred and
+    // twenty decades before the answer itself stops being representable.
     const Scalar eps = std::numeric_limits<Scalar>::epsilon();
     // A Schur-extracted invariant subspace is a forward solution, not a direct
     // evaluation of the residual expression. Requiring its forward residual to
@@ -189,16 +237,16 @@ auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, cons
     // conditioned problems. The square root of the enumerated rounding budget
     // is the precision boundary: it retains at least half the scalar type's
     // significand while still declining the measured wrong-success population.
-    const Scalar residual_margin = std::sqrt(Scalar{dare_residual_ops<NX, NU>} * eps) * residual_scale;
-    if(!(residual_magnitude <= residual_margin))
-        return false;
+    const resolved_magnitude<Scalar> residual_margin = scaled_magnitude(residual_scale, std::sqrt(Scalar{dare_residual_ops<NX, NU>} * eps));
+    if(!magnitude_within(residual_magnitude, residual_margin))
+        return dare_verification::refuted;
 
     const MatNxN closed_loop = (A - B * gain).eval();
     if(!closed_loop.allFinite())
-        return false;
+        return dare_verification::unresolved;
     Eigen::EigenSolver<MatNxN> eigensolver(closed_loop, false);
     if(eigensolver.info() != Eigen::Success || !eigensolver.eigenvalues().allFinite())
-        return false;
+        return dare_verification::unresolved;
 
     const Scalar closed_loop_scale = std::max(Scalar{1}, closed_loop.cwiseAbs().maxCoeff());
     // Each closed-loop eigenvalue carries the standard n * eps * ||A-BK||
@@ -208,11 +256,11 @@ auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, cons
     for(int index = 0; index < n; ++index)
     {
         if(!(std::abs(eigensolver.eigenvalues()(index)) < Scalar{1} - unit_margin))
-            return false;
+            return dare_verification::refuted;
     }
     if(verified_gain != nullptr)
         *verified_gain = gain;
-    return true;
+    return dare_verification::verified;
 }
 
 /// @brief Solve DARE from a pre-built symplectic Z: real-Schur, Bai-Demmel reorder inside
@@ -324,21 +372,75 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<
     }
 
     Eigen::Matrix<Scalar, int(NU), int(NX)> scaled_gain;
-    if(!Q_scaled.allFinite() || !R_scaled.allFinite() || !detail::verify_dare_solution<Scalar, NX, NU>(A, B, Q_scaled, R_scaled, result->P, &scaled_gain))
+    if(!Q_scaled.allFinite() || !R_scaled.allFinite()
+       || detail::verify_dare_solution<Scalar, NX, NU>(A, B, Q_scaled, R_scaled, result->P, &scaled_gain) != detail::dare_verification::verified)
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
 
     if(weight_scale == Scalar{1})
         return result;
 
+    // The claim about the caller's own scale is CARRIED from the claim just
+    // established, rather than re-formed at a scale where the evidence itself
+    // leaves the range while the answer does not.
+    //
+    // The equation is homogeneous of degree one in (P, Q, R) taken together.
+    // Replacing P by sP, Q by sQ and R by sR multiplies
+    // A'PA - P - A'PB (R + B'PB)^-1 B'PA + Q by exactly s: the inverted factor
+    // is homogeneous of degree one and the term containing it is homogeneous of
+    // degree two, so the quotient carries a single factor like every other term.
+    // The gain (R + B'PB)^-1 B'PA is therefore homogeneous of degree ZERO, the
+    // closed loop A - BK is unchanged, and a positive factor cannot move an
+    // eigenvalue across zero. Residual bound, stabilizing spectrum and
+    // definiteness all transport across the rescale unchanged in relative terms.
+    //
+    // What does not transport for free is the rounding of the two steps that
+    // move between the scales: one division per weight entry on the way in, and
+    // one multiplication per solution entry on the way out. Two roundings along
+    // the longest chain from a caller weight entry to the corresponding returned
+    // entry, so the carried bound is the equilibrated margin widened by two units
+    // of epsilon relative to the returned matrix's own magnitude. The margin it
+    // widens is sqrt(counted_ops * eps), so the widening is smaller than the
+    // margin by a factor of sqrt(counted_ops / eps) / 2 -- above 1e8 for binary64
+    // at the smallest count this file carries -- and is absorbed rather than
+    // tracked as a separate term.
+    //
+    // Three things homogeneity cannot supply, so all three are checked. First,
+    // the rescale can leave the top of the range, and an answer that is not
+    // representable is not an answer.
     result->P *= weight_scale;
-    Eigen::Matrix<Scalar, int(NU), int(NX)> returned_gain;
-    if(!result->P.allFinite() || !detail::verify_dare_solution<Scalar, NX, NU>(A, B, Q, R, result->P, &returned_gain))
+    if(!result->P.allFinite())
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
 
-    const Scalar gain_scale  = std::max(scaled_gain.norm(), returned_gain.norm());
-    const Scalar gain_margin = std::sqrt(Scalar{detail::dare_residual_ops<NX, NU>} * std::numeric_limits<Scalar>::epsilon()) * gain_scale;
-    if(!((scaled_gain - returned_gain).norm() <= gain_margin))
+    // Second, definiteness is re-established at the scale actually returned:
+    // scaling by a positive factor preserves it mathematically but perturbs the
+    // pivots by rounding, which is why the floor has to carry the
+    // factorization's backward error rather than assume there is none.
+    Eigen::LDLT<Eigen::Matrix<Scalar, int(NX), int(NX)>> returned_psd(result->P);
+    if(returned_psd.info() != Eigen::Success
+       || returned_psd.vectorD().minCoeff() < detail::psd_pivot_floor<Scalar, int(NX)>(result->P))
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
+
+    // Third, the direct check is kept wherever its operands resolve. It cannot
+    // widen what is accepted -- the carried claim already reaches every answer
+    // the type can represent -- but it can refuse one, and ON A DISAGREEMENT THE
+    // DIRECT CHECK DECLINES: a resolved contradiction is evidence against the
+    // carried claim's premise, not a tie to break. Where the direct check cannot
+    // be formed it has produced no evidence and the carried claim stands alone,
+    // which is the only regime in which the two differ without a decline.
+    Eigen::Matrix<Scalar, int(NU), int(NX)> returned_gain;
+    const detail::dare_verification direct = detail::verify_dare_solution<Scalar, NX, NU>(A, B, Q, R, result->P, &returned_gain);
+    if(direct == detail::dare_verification::refuted)
+        return ctrlpp::unexpected(dare_error::arithmetic_limit);
+
+    if(direct == detail::dare_verification::verified)
+    {
+        // Both scales produced a gain, and the gain is what two posings of the
+        // same problem share as an identity, so they are held to each other.
+        const detail::resolved_magnitude<Scalar> gain_scale = detail::largest_magnitude<Scalar>({detail::resolve_magnitude(scaled_gain), detail::resolve_magnitude(returned_gain)});
+        const detail::resolved_magnitude<Scalar> gain_margin = detail::scaled_magnitude(gain_scale, std::sqrt(Scalar{detail::dare_residual_ops<NX, NU>} * std::numeric_limits<Scalar>::epsilon()));
+        if(!detail::magnitude_within(detail::resolve_magnitude((scaled_gain - returned_gain).eval()), gain_margin))
+            return ctrlpp::unexpected(dare_error::arithmetic_limit);
+    }
 
     return result;
 }
