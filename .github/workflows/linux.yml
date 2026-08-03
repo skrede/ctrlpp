@@ -109,8 +109,21 @@ jobs:
       - name: Configure (default -fno-exceptions tree)
         run: cmake --preset dev
 
+      # Bounded parallelism, measured rather than chosen. Ninja defaults to
+      # nproc+2, which is six slots on these runners; the Makefile-generator
+      # jobs get no -j at all and build serially, which is why only the preset
+      # jobs ever died. Peak resident set was recorded for every translation
+      # unit in this tree: the median is 0.2 GiB, but ten exceed 3 GiB and the
+      # heaviest reaches 5.5 GiB, and the scheduler converges every slot onto
+      # exactly those because the cheap units drain out from under it. Rebuilding
+      # that window inside a cgroup capped at the runner's memory reproduced the
+      # failure -- kernel OOM kill, surfacing as ninja's "interrupted by user"
+      # and a signal exit with no diagnostic, which is the signature that was
+      # showing up here. Six, four and three slots all died; two survived, with
+      # a worst case of 10.5 GiB against the cap. Two slots also cannot be slower
+      # than the serial jobs that already pass.
       - name: Build
-        run: cmake --build build/dev
+        run: cmake --build build/dev -j 2
 
       - name: Test (runs the allocation-free no-malloc suite)
         run: ctest --test-dir build/dev --output-on-failure
@@ -131,8 +144,11 @@ jobs:
       - name: Configure (exceptions preset, OSQP + NLopt on)
         run: cmake --preset exceptions
 
+      # Same measured bound as the no-exceptions job. This tree is heavier
+      # still: fifty translation units above 1 GiB against thirty-four, and
+      # twelve above 3 GiB against ten.
       - name: Build
-        run: cmake --build build/exceptions
+        run: cmake --build build/exceptions -j 2
 
       - name: Test
         run: ctest --test-dir build/exceptions --output-on-failure
@@ -162,8 +178,10 @@ jobs:
       - name: Configure (default tree at C++23)
         run: cmake --preset dev-cxx23
 
+      # Same measured bound: this preset builds the same tree as the
+      # no-exceptions job, one standard above the floor.
       - name: Build
-        run: cmake --build build/dev-cxx23
+        run: cmake --build build/dev-cxx23 -j 2
 
       - name: Test
         run: ctest --test-dir build/dev-cxx23 --output-on-failure
