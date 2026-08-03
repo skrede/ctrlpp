@@ -1,0 +1,21 @@
+# Fuzz targets whose ORACLE is known unsound, with the repair each one owes.
+#
+# One target per line: the target binary's name, whitespace, then the reason.
+# Blank lines and lines opening with '#' are ignored.
+#
+# This list exists once and is read by both consumers -- the fuzz workflow and
+# scripts/fuzz_smoke.sh. It was two copies before, and only one of them had it
+# at all, so the local script could never pass while the workflow was green and
+# the check it was written to make available before a push was not available.
+#
+# A listed target is still EXPLORED and its outcome is still REPORTED. An abort
+# does not fail the run and neither does it disappear. A listed target that
+# stops aborting is reported as a stale waiver, so the list cannot rot into a
+# silent permanent one -- but that report is deliberately not a failure. These
+# defects are reached by search, and one has been reached from a single seed at
+# four times the workflow's per-seed budget and from none of them at that
+# budget, so a quiet run is evidence about the budget before it is evidence
+# about the defect. Re-triage at a larger budget before deleting a line here.
+
+fuzz_care  conditioning-aware oracle bound owed
+fuzz_dare  library and oracle residual bounds disagree by ~400x

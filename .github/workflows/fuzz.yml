@@ -52,20 +52,15 @@ jobs:
 
       - name: Run fuzz targets (smoke test)
         run: |
-          # Targets whose oracle is known unsound, with the seed that owns the
-          # repair. Exploration is still RUN for these and its outcome is still
-          # reported -- an abort does not fail the job, and neither does it
-          # disappear. A known-red target that stops aborting is reported as a
-          # stale waiver so the list cannot rot into a silent permanent one.
-          # That report is deliberately NOT a failure: "the defect you were
-          # tracking no longer reproduces in this budget" is not a regression,
-          # and making it red would turn budget variance into a spurious red.
+          # Targets whose oracle is known unsound, read from the list the local
+          # smoke script reads. The rationale lives there, next to the entries,
+          # rather than in two places that can disagree about which targets are
+          # waived and why.
           known_red_target() {
-            case "$1" in
-              fuzz_care) echo "SEED-022 (conditioning-aware oracle bound owed)" ;;
-              fuzz_dare) echo "SEED-023 (library and oracle residual bounds disagree by ~400x)" ;;
-              *) echo "" ;;
-            esac
+            awk -v target="$1" '
+              /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+              $1 == target { $1 = ""; sub(/^[[:space:]]+/, ""); print; exit }
+            ' tests/fuzz/known_red.txt
           }
 
           failed=0
@@ -121,8 +116,12 @@ jobs:
                 failed=$((failed + 1))
               fi
             elif [ -n "$waiver" ]; then
-              echo "STALE WAIVER: $name is listed known-red for $waiver but did not abort"
-              echo "  in this budget. Re-triage and remove it from known_red_target."
+              echo "STALE WAIVER: $name is listed known-red ($waiver) but did not abort"
+              echo "  in this budget. Re-triage at a LARGER budget before removing it from"
+              echo "  known_red_target: one of these defects has been reached from a single"
+              echo "  seed at four times this budget and from none of them at this one, so a"
+              echo "  quiet job is evidence about the budget before it is evidence about the"
+              echo "  defect."
               stale_waiver=$((stale_waiver + 1))
             fi
             echo ""

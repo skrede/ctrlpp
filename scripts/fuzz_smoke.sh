@@ -18,6 +18,13 @@
 #            smoke test that the target still runs, not a campaign, and it is
 #            never handed the curated directory.
 #
+# Targets listed in tests/fuzz/known_red.txt carry an unsound oracle and a named
+# repair. They are explored and reported like any other, but an abort is a KNOWN
+# RED rather than a failure, and a listed target that does NOT abort is reported
+# as a stale waiver -- also not a failure. That list is the same one the fuzz
+# workflow reads, so this script is a mirror of the job's verdict and not merely
+# of its loop; without it every local run was red on a target the job waives.
+#
 # Findings are written under the build tree rather than the working tree, so a
 # crash artifact never appears in a git status.
 #
@@ -52,6 +59,7 @@ fi
 build_abs="$(cd "${build_dir}" && pwd)"
 fuzz_bin_dir="${build_abs}/tests/fuzz"
 corpus_root="${repo_root}/tests/fuzz/corpus"
+known_red_file="${repo_root}/tests/fuzz/known_red.txt"
 artifact_dir="${build_abs}/fuzz-artifacts"
 log_file="${build_abs}/fuzz-smoke.log"
 
@@ -89,6 +97,18 @@ artifacts_found()
     [ -n "$(ls -A "$1" 2>/dev/null)" ]
 }
 
+# The reason a target is waived, empty for a target that is not. Read from the
+# same list the fuzz workflow reads, so the local run and the job cannot
+# disagree about which targets are waived.
+known_red_target()
+{
+    [ -f "${known_red_file}" ] || return 0
+    awk -v target="$1" '
+      /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+      $1 == target { $1 = ""; sub(/^[[:space:]]+/, ""); print; exit }
+    ' "${known_red_file}"
+}
+
 echo "Build directory:  ${build_abs}"
 echo "Corpus root:      ${corpus_root}"
 echo "Artifacts:        ${artifact_dir}"
@@ -96,6 +116,7 @@ echo
 
 targets=0
 failed=0
+stale=0
 
 for fuzz in "${fuzz_bin_dir}"/fuzz_*
 do
@@ -127,13 +148,25 @@ do
     # Seedless by design: the curated directory is deliberately not passed here.
     explore_artifacts="${artifact_dir}/${name}-explore"
     mkdir -p "${explore_artifacts}"
+    waiver="$(known_red_target "${name}")"
     if run_fuzzer $((max_total_time * 2 + 5)) "${fuzz}" \
         "-max_total_time=${max_total_time}" "-max_len=${max_len}" \
         "-artifact_prefix=${explore_artifacts}/" > "${log_file}" 2>&1 \
         && ! artifacts_found "${explore_artifacts}"
     then
-        echo "  explore: PASS (${max_total_time}s, seedless)"
+        if [ -n "${waiver}" ]; then
+            echo "  explore: STALE WAIVER (${max_total_time}s, seedless)"
+            echo "    listed known-red (${waiver}) but did not abort in this budget."
+            echo "    Re-triage at a larger budget before removing it from"
+            echo "    tests/fuzz/known_red.txt; this is not a failure."
+            stale=$((stale + 1))
+        else
+            echo "  explore: PASS (${max_total_time}s, seedless)"
+        fi
         rmdir "${explore_artifacts}" 2>/dev/null || true
+    elif [ -n "${waiver}" ]; then
+        echo "  explore: KNOWN RED (${max_total_time}s, seedless) -- ${waiver}"
+        rm -rf "${explore_artifacts}"
     else
         echo "  explore: FAIL (${max_total_time}s, seedless)"
         tail -20 "${log_file}"
@@ -149,10 +182,14 @@ if [ "${targets}" -eq 0 ]; then
     exit 1
 fi
 
+if [ "${stale}" -gt 0 ]; then
+    echo "${stale} known-red waiver(s) did not reproduce; re-triage them."
+fi
+
 if [ "${failed}" -gt 0 ]; then
     echo "${failed} phase(s) failed across ${targets} target(s). Artifacts under ${artifact_dir}."
     exit 1
 fi
 
 rm -rf "${artifact_dir}"
-echo "All phases PASS across ${targets} target(s)."
+echo "All phases PASS across ${targets} target(s), waived targets aside."

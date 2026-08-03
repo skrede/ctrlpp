@@ -326,9 +326,17 @@ planning_identifier_pattern='(^|[^A-Za-z0-9_-])(D-[0-9]+|DL-[0-9]+|SC-?[0-9]+|SE
 # by name rather than by widening or narrowing the pattern:
 #   IEEE-754    the binary floating-point standard
 #   NUCLEO-144  the board form factor of the embedded example's target
-# Both are present in the tree today, so a real run is what proves this
-# exclusion still works; no fixture is needed for it and none would be honest.
-planning_identifier_exclusions='(IEEE|NUCLEO)-[0-9]'
+#   SC2086      a shellcheck directive code, which has the success-criteria
+#               shape and none of the meaning
+#   .planning/  as a YAML list entry under a workflow's paths-ignore, which is
+#               the one legitimate mention of that directory in shipped
+#               material: it tells the runner to skip planning-only pushes
+#               rather than pointing a reader at an artifact they cannot read.
+#               Anchored to the list-entry form, so a .planning/ path anywhere
+#               else in a workflow is still a violation.
+# All four are present in the tree today, so a real run is what proves these
+# exclusions still work; no fixture is needed for them and none would be honest.
+planning_identifier_exclusions="(IEEE|NUCLEO)-[0-9]|shellcheck[[:space:]]+disable=SC[0-9]|:[0-9]+:[[:space:]]*-[[:space:]]*['\"]?\\.planning/"
 
 # --- Shared helpers -----------------------------------------------------------
 
@@ -559,7 +567,12 @@ rule_7_analysis_check_disabled()
 
 rule_8_planning_identifiers()
 {
-    select_scan_dirs lib tests examples benchmarks validation docs
+    # .github is scanned for the same reason the roots below are, and it was
+    # added because two seed keys were living in the fuzz workflow's waiver list
+    # while this rule passed. Continuous-integration configuration is material a
+    # reader of this repository reads, and a waiver that names a key rather than
+    # the defect it waives tells that reader nothing they can act on.
+    select_scan_dirs lib tests examples benchmarks validation docs .github
     [ ${#scan_dirs[@]} -eq 0 ] && return 0
     # Every file, not only the C++ ones: one such key was found in a build file,
     # which an extension filter would have missed. Binary files are skipped,
