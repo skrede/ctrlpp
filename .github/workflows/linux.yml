@@ -106,24 +106,37 @@ jobs:
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
+      # Line-table-only debug info, overridden here rather than in the preset so
+      # that a developer's own Debug build keeps the full variable and type
+      # information. What CI needs from debug info is a backtrace with file and
+      # line, which -g1 retains; what it does not need is the variable and type
+      # description, which is what costs. Measured over this whole tree, that
+      # one flag drops the heaviest translation unit from 5.5 to 3.9 GiB, leaves
+      # nothing above 4 GiB at all, and cuts total build CPU from 22 to 17
+      # minutes. -gsplit-dwarf was measured too and saves 2%; the other debug
+      # knobs save nothing.
       - name: Configure (default -fno-exceptions tree)
-        run: cmake --preset dev
+        run: cmake --preset dev -DCMAKE_CXX_FLAGS_DEBUG=-g1
 
       # Bounded parallelism, measured rather than chosen. Ninja defaults to
       # nproc+2, which is six slots on these runners; the Makefile-generator
       # jobs get no -j at all and build serially, which is why only the preset
       # jobs ever died. Peak resident set was recorded for every translation
-      # unit in this tree: the median is 0.2 GiB, but ten exceed 3 GiB and the
-      # heaviest reaches 5.5 GiB, and the scheduler converges every slot onto
-      # exactly those because the cheap units drain out from under it. Rebuilding
-      # that window inside a cgroup capped at the runner's memory reproduced the
-      # failure -- kernel OOM kill, surfacing as ninja's "interrupted by user"
-      # and a signal exit with no diagnostic, which is the signature that was
-      # showing up here. Six, four and three slots all died; two survived, with
-      # a worst case of 10.5 GiB against the cap. Two slots also cannot be slower
-      # than the serial jobs that already pass.
+      # unit here: the median is 0.2 GiB, but a handful reach several, and the
+      # scheduler converges every slot onto exactly those because the cheap
+      # units drain out from under it. Rebuilding that window inside a cgroup
+      # capped at the runner's memory reproduced the failure -- kernel OOM kill,
+      # surfacing as ninja's "interrupted by user" and a signal exit with no
+      # diagnostic, which is the signature that was showing up here.
+      #
+      # At full -g, six, four and three slots all died and only two survived.
+      # With the -g1 above, four, three and two all survive. Three is taken
+      # rather than four because at three the worst case is 11.2 GiB summed over
+      # the heaviest units, which is under the cap on its own -- so it holds
+      # whatever order the scheduler picks, where four survives only because
+      # those units do not all peak together.
       - name: Build
-        run: cmake --build build/dev -j 2
+        run: cmake --build build/dev -j 3
 
       - name: Test (runs the allocation-free no-malloc suite)
         run: ctest --test-dir build/dev --output-on-failure
@@ -142,13 +155,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
       - name: Configure (exceptions preset, OSQP + NLopt on)
-        run: cmake --preset exceptions
+        run: cmake --preset exceptions -DCMAKE_CXX_FLAGS_DEBUG=-g1
 
       # Same measured bound as the no-exceptions job. This tree is heavier
-      # still: fifty translation units above 1 GiB against thirty-four, and
-      # twelve above 3 GiB against ten.
+      # still: at full -g it carries fifty translation units above 1 GiB against
+      # thirty-four, and twelve above 3 GiB against ten.
       - name: Build
-        run: cmake --build build/exceptions -j 2
+        run: cmake --build build/exceptions -j 3
 
       - name: Test
         run: ctest --test-dir build/exceptions --output-on-failure
@@ -176,12 +189,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
       - name: Configure (default tree at C++23)
-        run: cmake --preset dev-cxx23
+        run: cmake --preset dev-cxx23 -DCMAKE_CXX_FLAGS_DEBUG=-g1
 
       # Same measured bound: this preset builds the same tree as the
       # no-exceptions job, one standard above the floor.
       - name: Build
-        run: cmake --build build/dev-cxx23 -j 2
+        run: cmake --build build/dev-cxx23 -j 3
 
       - name: Test
         run: ctest --test-dir build/dev-cxx23 --output-on-failure
