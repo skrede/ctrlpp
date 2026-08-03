@@ -266,6 +266,87 @@ jobs:
       - name: Test
         run: cd build && ctest --output-on-failure
 
+  # Coverage over the tests the default tree cannot build, which is most of the
+  # ones that reach the solver-backed headers.
+  #
+  # The `build` matrix above measures the default no-exceptions tree with no
+  # backends, and that tree is a SUBSET of the suite rather than the whole of it:
+  # the exceptions carve-out holds 21 unit tests on its own, and the OSQP, NLopt,
+  # argmin and property blocks are gated behind build options that matrix does
+  # not set. Those tests were never deleted and they still run -- the `backends`
+  # job above and the backends sanitizer cell below both run them -- but nothing
+  # was MEASURING them, so every line they alone reach was reported as uncovered.
+  # The effect is concentrated rather than spread: it is why the mpc and mhe
+  # directories read far below the rest, and one of the excluded targets is
+  # named mpc_coverage_test.
+  #
+  # This job exists rather than the flags being added to the matrix above so the
+  # cheap default-tree signal stays cheap and keeps its own meaning: that matrix
+  # answers "what does the shipped no-exceptions configuration cover", which is
+  # worth knowing on its own. Codecov merges the reports uploaded for a commit,
+  # which is already how the two cells of that matrix combine, so the union is
+  # what lands.
+  coverage-backends:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gcovr
+        run: pip install gcovr
+
+      # The argmin backend's own CMake does find_package(Eigen3); ctrlpp's
+      # FETCH_DEPS path downloads Eigen headers directly and never registers a
+      # findable Eigen3 package, so the subbuild needs a system Eigen config.
+      - name: Install system Eigen for the argmin subbuild
+        run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
+
+      # The compiler is pinned rather than left to the image default, because
+      # gcov reads notes written by the compiler that produced them and the
+      # generate step below calls gcov-14 by name. An image default of gcc-13
+      # would emit notes gcov-14 cannot read, and the report would come back
+      # empty rather than wrong -- which merges into Codecov as no change at all
+      # and would leave this job looking green while measuring nothing.
+      - name: Configure
+        env:
+          CC: gcc-14
+          CXX: g++-14
+        run: |
+          cmake . -B build -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="--coverage" \
+            -DCMAKE_C_FLAGS="--coverage" \
+            -DCTRLPP_BUILD_TESTS=ON \
+            -DCTRLPP_BUILD_EXAMPLES=OFF \
+            -DCTRLPP_BUILD_OSQP=ON \
+            -DCTRLPP_BUILD_NLOPT=ON \
+            -DCTRLPP_BUILD_ARGMIN=ON \
+            -DCTRLPP_TESTS_WITH_EXCEPTIONS=ON \
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: cd build && ctest --output-on-failure
+
+      # The same filter the matrix above uses, so the two reports describe the
+      # same line set and merge rather than talk past each other.
+      - name: Generate coverage
+        run: |
+          gcovr build \
+            --root . \
+            --gcov-executable gcov-14 \
+            --filter 'lib/ctrlpp/' \
+            --gcov-ignore-errors=source_not_found \
+            --xml coverage.xml
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
   # Sanitizers over the unit suite, following the house pattern (see argmin and
   # cartan, whose asan-ubsan jobs this mirrors). ctrlpp needs two cells rather
   # than one: the solver backends are a separate build tree, and the default
