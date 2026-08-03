@@ -394,7 +394,12 @@ TEST_CASE("MPC command is invariant under a common scaling of both weights",
     auto sys = make_double_integrator();
     const Eigen::Vector2d x{1.0, 0.0};
 
-    constexpr double near_deadbeat_ratio = 1e-10;
+    // The deepest ratio on this plant at which binary64 still delivers a Riccati
+    // terminal cost that keeps half its significand, so the invariance below is
+    // asserted against a terminal cost that is actually available. One decade
+    // deeper the solve declines, and that edge is pinned at the end of the case
+    // rather than left to be discovered by a failing invariance.
+    constexpr double near_deadbeat_ratio = 1e-9;
 
     auto command_at = [&](double scale) {
         ctrlpp::mpc_config<double, NX, NU> cfg{
@@ -428,26 +433,44 @@ TEST_CASE("MPC command is invariant under a common scaling of both weights",
     CHECK(at_unit_scale < 0.0);
     CHECK(std::abs(at_unit_scale) > std::abs(x(0)));
 
-    // Where the invariance stops holding, recorded and deliberately NOT
-    // asserted. At a state weight of 1e6 the command has moved by half a
-    // percent, and at 1e10 it has moved to -7.137 against the -9.524 the same
-    // ratio commands at unit scale. The cause is upstream of this file: the
-    // Riccati solve that supplies the terminal cost returns, at that scale, a
-    // solution whose residual is seven tenths of the weight's own norm while
-    // reporting success. Pinning either number here would pin a wrong answer.
+    // The edge, asserted rather than described. One decade deeper the Riccati
+    // solve declines and the predictive controller substitutes the state weight
+    // and reports that it did. That is a repair and not a shortfall: at that
+    // ratio the solve used to return an answer whose relative forward error is
+    // 6.28e-08 against an independent extended-precision solution of the
+    // identical pose -- four times past the point where half of binary64's
+    // significand survives -- while its residual sat comfortably inside the
+    // envelope the postcondition then compared against. A finite-horizon
+    // program carrying the state weight as its terminal cost is not
+    // horizon-invariant, so a caller who sees this diagnostic set has been told
+    // exactly which property it no longer has.
+    auto past_the_edge = ctrlpp::test::constructed(OsqpMpc::create(
+        sys, ctrlpp::mpc_config<double, NX, NU>{
+                 .horizon = 10,
+                 .Q = Eigen::Matrix2d::Identity(),
+                 .R = input_weight(1e-10)}));
+    CHECK(past_the_edge.diagnostics().used_state_weight_terminal_cost);
 }
 
 TEST_CASE("MPC horizon invariance survives a near-deadbeat weight ratio",
           "[mpc][hardening][robustness]")
 {
-    // An input weight ten decades under the state weight makes the quadratic
+    // An input weight nine decades under the state weight makes the quadratic
     // program badly conditioned, which is what the case exists to probe. The
     // Bellman invariance must still hold, and how far it degrades is exactly
     // the conditioning statement finiteness could not make.
+    //
+    // Nine and not ten. The invariance is a statement about a finite-horizon
+    // program carrying the INFINITE-horizon cost-to-go at its end, so it is
+    // claimable only where that cost-to-go is available; one decade deeper the
+    // Riccati solve declines, because the answer it would return there has lost
+    // more than half of binary64's significand, and the substituted state weight
+    // is not horizon-invariant. Nine decades is the deepest ratio on this plant
+    // where the property under test exists to be tested.
     auto sys = make_double_integrator();
     const Eigen::Vector2d x{1.0, 0.0};
 
-    constexpr double near_zero_input_weight = 1e-10;
+    constexpr double near_zero_input_weight = 1e-9;
 
     auto configured = [&](int horizon) {
         return ctrlpp::mpc_config<double, NX, NU>{

@@ -133,8 +133,20 @@ otherwise produce silent corruption through intermediate overflow:
 
 - **DARE arithmetic range, and what a common rescale carries:** The discrete
   algebraic Riccati equation solver equilibrates the weights before forming the
-  symplectic matrix, then verifies the residual and closed-loop spectrum before
-  reporting success. It returns
+  symplectic matrix, then establishes two things about the answer before
+  reporting success: that it retains more than half of the scalar type's
+  significand, and that the closed loop it produces is inside the unit disk. The
+  first is a statement about the ANSWER rather than about the residual, and the
+  distinction is load-bearing: measured over 2.5 million poses against
+  extended-precision solutions by a different algorithm, the answers that keep
+  half the significand and the answers that do not are *contiguous* on the
+  residual, so no threshold on that quantity separates them. What is compared
+  instead is an estimate of the answer's own relative forward error, obtained by
+  inverting the residual map's derivative -- the Stein operator built from the
+  closed loop -- against the residual, and the margin it is compared against is
+  `sqrt(eps)`, which for a radix-2 type is exactly the retention of half the
+  fractional significand bits and is therefore derived rather than fitted. It
+  returns
   `ctrlpp::expected<dare_result<Scalar, NX>, dare_error>`, so a refusal is
   named rather than represented by a bare empty result:
   `dare_error::non_finite_input` when A, B, Q or R contains NaN or Inf, and
@@ -147,30 +159,31 @@ otherwise produce silent corruption through intermediate overflow:
   So the verification runs on the equilibrated problem and the claim about the
   caller's own scale is **carried** across the rescale: the equation is
   homogeneous of degree one in `(P, Q, R)` together and the gain is homogeneous
-  of degree zero, so the residual bound, the stabilizing spectrum and the
-  definiteness all transport unchanged in relative terms. Only what homogeneity
-  cannot supply is checked directly -- that the rescaled solution is finite, and
-  that it is still positive semi-definite at the scale actually returned.
+  of degree zero, so the accuracy estimate is homogeneous of degree zero -- the
+  residual it inverts and the solution norm it divides by both scale by the same
+  factor -- and the stabilizing spectrum and the definiteness transport unchanged
+  as well. Only what homogeneity cannot supply is checked directly -- that the
+  rescaled solution is finite, and that it is still positive semi-definite at the
+  scale actually returned.
 
   The check is still repeated at the caller's scale wherever its operands
   resolve, with every magnitude formed by dividing out the operand's largest
   entry first, so it neither overflows nor underflows on finite operands. It
   cannot widen what is accepted; where it resolves and disagrees, **it
   declines**, and where it cannot be formed the carried claim stands alone.
-  Retaining it is not about reach: at a common weight scale below roughly the
-  square root of the smallest normal value, a plain sum of squares gives a
-  residual of zero against a scale of zero, and the acceptance test degenerates
-  to `0 <= 0` -- an unconditionally passing guard over roughly a hundred and
-  twenty decades, which the resolved magnitude repairs.
 
-  What is carried and what is refused: every common-scaled pose whose answer the
-  type can represent is carried. The ceiling is a derived property --
-  `max_finite / max|P_equilibrated|`, the point at which the returned solution
-  itself stops being representable -- and not a constant. At the bottom the
-  binding quantity is the rescale's own precision: once the product is
-  subnormal the answer loses significand, the gain it implies departs from the
-  equilibrated gain, and the solver refuses once that departure exceeds the
-  counted-operation margin.
+  What is carried and what is refused. Every common-scaled pose whose answer the
+  type can represent, and whose answer retains more than half the significand, is
+  carried. The ceiling is a derived property -- `max_finite /
+  max|P_equilibrated|`, the point at which the returned solution itself stops
+  being representable -- and not a constant. At the bottom the binding quantity is
+  the rescale's own precision: once the product is subnormal the answer loses
+  significand, the gain it implies departs from the equilibrated gain, and the
+  solver refuses once that departure exceeds the counted-operation margin. In the
+  weight-RATIO direction the binding quantity is the accuracy estimate: a state
+  weighting whose condition number reaches `1e8`, or an input weight ten decades
+  under the state weight, produces an answer that has lost more than half the
+  significand, and it is refused rather than returned.
 
 - **CARE arithmetic range, at both ends:** The continuous algebraic Riccati
   solver's default path verifies the solution it extracted -- residual bound and

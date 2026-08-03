@@ -122,14 +122,6 @@ auto build_dare_symplectic(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, con
     return Z;
 }
 
-// Six state-dimension contractions enter A'PA, B'PA and A'PBK; two
-// input-dimension contractions enter B'PB and the final gain product.
-// One sum forms R + B'PB, the rank-revealing gain solve contributes two
-// input-dimension operations, and three sums assemble the four residual
-// terms. Each length-d contraction has d multiplies and d-1 additions.
-template<std::size_t NX, std::size_t NU>
-constexpr int dare_residual_ops = 6 * (2 * static_cast<int>(NX) - 1) + 2 * (2 * static_cast<int>(NU) - 1) + 1 + 2 * static_cast<int>(NU) + 3;
-
 /// @brief What an acceptance check decided about one posing of the problem.
 ///
 /// The third value is the one that matters and it is not a failure. A check that
@@ -170,18 +162,28 @@ auto compute_dare_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const E
 
 /// @brief Verify that P solves the posed DARE and produces a stabilizing gain.
 ///
-/// Every magnitude entering an acceptance comparison here is resolved through
-/// the shared both-ends-safe helper rather than formed as a plain sum of
-/// squares. Two separate failures follow from the plain form. At the top a
-/// matrix of finite entries whose sum of squares leaves the range gives an
-/// infinite scale and an infinite residual, and `inf <= inf` certifies whatever
-/// it was handed -- or, where the comparison is written to fail closed as it is
-/// here, refuses an answer that is an ordinary normal number. At the bottom the
-/// residual underflows to zero against a scale that has also underflowed to
-/// zero, and the test degenerates to `0 <= 0` and asserts nothing; on this
-/// solver that happens from around the square root of the smallest normal value
-/// downward, roughly a hundred and twenty decades before the answer itself stops
-/// being representable.
+/// Three claims are established here, in this order: the gain the solution
+/// implies exists and is finite; the solution is positive semi-definite at the
+/// scale it is being verified at; the solution retains more than half the
+/// scalar type's significand; and the closed loop it produces is inside the unit
+/// disk by more than its own backward error.
+///
+/// The accuracy claim is the one that carries a margin, and that margin is a
+/// property of the answer rather than of the residual -- see the derivation at
+/// `riccati_forward_error_verdict`, which is where the rule is defined and from
+/// where the unit anchors and the randomized oracle take it as well.
+///
+/// Every magnitude that does enter a comparison is resolved through the shared
+/// both-ends-safe helpers rather than formed as a plain sum of squares. Two
+/// separate failures follow from the plain form. At the top a matrix of finite
+/// entries whose sum of squares leaves the range gives an infinite magnitude, and
+/// `inf <= inf` certifies whatever it was handed -- or, where the comparison is
+/// written to fail closed as it is here, refuses an answer that is an ordinary
+/// normal number. At the bottom a magnitude underflows to zero against a scale
+/// that has also underflowed to zero, and the test degenerates to `0 <= 0` and
+/// asserts nothing. The accuracy estimate meets both ends by dividing the answer
+/// and its residual through by the answer's own largest entry before anything is
+/// squared, so its denominator cannot leave the range on a finite solution.
 template<typename Scalar, std::size_t NX, std::size_t NU>
 auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q,
                           const Eigen::Matrix<Scalar, int(NU), int(NU)> &R, const Eigen::Matrix<Scalar, int(NX), int(NX)> &P,
@@ -216,34 +218,39 @@ auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, cons
     if(!AtPA.allFinite() || !AtPBK.allFinite() || !residual.allFinite())
         return dare_verification::unresolved;
 
-    const resolved_magnitude<Scalar> residual_scale = largest_magnitude<Scalar>({resolve_magnitude(AtPA), resolve_magnitude(P), resolve_magnitude(AtPBK), resolve_magnitude(Q)});
-    const resolved_magnitude<Scalar> residual_magnitude = resolve_magnitude(residual);
-    if(!residual_scale.resolved || !residual_magnitude.resolved)
-        return dare_verification::unresolved;
-
-    // A scale of exactly zero survives as a meaningful test, and only because
-    // the magnitudes above are resolved through the largest-entry rescale: that
-    // form cannot carry a nonzero matrix to zero, so a zero scale means all four
-    // terms are exactly zero, the residual they sum to is exactly zero, and
-    // `0 <= 0` is an exact statement about an exact solve. The plain sum of
-    // squares this replaced could not tell that apart from a scale that had
-    // merely underflowed, and read the second as the first from around the
-    // square root of the smallest normal value downward -- roughly a hundred and
-    // twenty decades before the answer itself stops being representable.
-    const Scalar eps = std::numeric_limits<Scalar>::epsilon();
-    // A Schur-extracted invariant subspace is a forward solution, not a direct
-    // evaluation of the residual expression. Requiring its forward residual to
-    // sit at the expression's pure rounding floor over-refuses correctly solved
-    // conditioned problems. The square root of the enumerated rounding budget
-    // is the precision boundary: it retains at least half the scalar type's
-    // significand while still declining the measured wrong-success population.
-    const resolved_magnitude<Scalar> residual_margin = scaled_magnitude(residual_scale, std::sqrt(Scalar{dare_residual_ops<NX, NU>} * eps));
-    if(!magnitude_within(residual_magnitude, residual_margin))
-        return dare_verification::refuted;
-
     const MatNxN closed_loop = (A - B * gain).eval();
     if(!closed_loop.allFinite())
         return dare_verification::unresolved;
+
+    // THE ACCEPTANCE QUANTITY IS THE ANSWER'S FORWARD ERROR, NOT THE RESIDUAL.
+    //
+    // A bound on the residual cannot decide this. Measured over 2.5 million
+    // poses, the answers that keep more than half the significand and the
+    // answers that do not are CONTIGUOUS on the residual, with the worst kept
+    // and the best lost adjacent and the distribution unimodal across ten
+    // decades; the residual margin this replaced refused none of the answers
+    // that had lost half their significand, on any threshold, because there is
+    // no dichotomy on that quantity for a threshold to find.
+    //
+    // The residual is still what the estimate is built from -- it is the only
+    // evidence available at run time -- but it enters through the inverse of the
+    // residual map's own derivative, which turns it into an estimate of the
+    // error in the returned matrix. The margin it is then compared against is
+    // the half-significand criterion `sqrt(eps)`, which is a property of the
+    // scalar type's radix rather than a constant fitted to a population.
+    //
+    // The rule lives in exactly one place; this is a call to it, and so are the
+    // unit anchors and the randomized oracle.
+    switch(riccati_forward_error_verdict<Scalar, n>(closed_loop, residual, P))
+    {
+        case riccati_accuracy::within:
+            break;
+        case riccati_accuracy::exceeded:
+            return dare_verification::refuted;
+        case riccati_accuracy::unresolved:
+            return dare_verification::unresolved;
+    }
+
     Eigen::EigenSolver<MatNxN> eigensolver(closed_loop, false);
     if(eigensolver.info() != Eigen::Success || !eigensolver.eigenvalues().allFinite())
         return dare_verification::unresolved;
@@ -252,7 +259,7 @@ auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, cons
     // Each closed-loop eigenvalue carries the standard n * eps * ||A-BK||
     // backward-error margin. A pole inside the disk by less than this amount
     // cannot support the solver's stabilizing claim at the represented scale.
-    const Scalar unit_margin = Scalar{static_cast<int>(NX)} * eps * closed_loop_scale;
+    const Scalar unit_margin = Scalar{static_cast<int>(NX)} * std::numeric_limits<Scalar>::epsilon() * closed_loop_scale;
     for(int index = 0; index < n; ++index)
     {
         if(!(std::abs(eigensolver.eigenvalues()(index)) < Scalar{1} - unit_margin))

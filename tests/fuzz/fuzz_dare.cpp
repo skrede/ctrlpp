@@ -142,39 +142,36 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     if(!P.allFinite())
         abort();
 
-    // Live residual oracle: A'PA - P - A'PB (R + B'PB)^-1 B'PA + Q ~ 0.
+    // Live accuracy oracle: the answer must retain more than half of binary64's
+    // significand, estimated from the residual through the inverse of the
+    // residual map's own derivative.
+    //
+    // The residual is formed here by an INDEPENDENT route -- an explicit inverse
+    // of R + B'PB rather than the rank-revealing solve the library uses -- and
+    // the closed loop is rebuilt from it, so the two sides are not the same
+    // arithmetic even though they are now the same rule.
     Eigen::Matrix<double, 2, 2> AtPA = A.transpose() * P * A;
     Eigen::Matrix<double, 1, 1> S = R + B.transpose() * P * B;
-    Eigen::Matrix<double, 2, 2> cross = A.transpose() * P * B * S.inverse() * B.transpose() * P * A;
+    Eigen::Matrix<double, 1, 2> K = S.inverse() * B.transpose() * P * A;
+    Eigen::Matrix<double, 2, 2> cross = A.transpose() * P * B * K;
     Eigen::Matrix<double, 2, 2> resid = AtPA - P - cross + Q;
+    Eigen::Matrix<double, 2, 2> closed_loop = A - B * K;
 
-    // Backward-error tolerance: the residual is a sum of four n x n terms, each
-    // formed from a chain of matrix products; the standard floating-point
-    // matrix-multiplication backward-error bound accumulates rounding error
-    // proportional to n per term, so the sum of the terms' own norms (the
-    // "term_scale" below) is the honest base scale rather than just the raw
-    // input norms -- this matters because AtPA and cross frequently sit at a
-    // much larger common magnitude than their difference (the residual itself),
-    // i.e. this is a catastrophic-cancellation regime, and a tolerance based on
-    // the canceled result's own size would be far too tight. ctrlpp::dare's own
-    // construction additionally forms G = B R^-1 B^T and AinvT = A^-T (see
-    // dare.h, Laub 1979 Eq. 7) before the Schur decomposition of the symplectic
-    // Z, so G's scale B^2/R is folded into the same term-magnitude sum. The
-    // overall multiplicative margin below was calibrated empirically: run
-    // against an extended fuzzing session (hundreds of thousands of random
-    // controllable, well-scaled inputs) with no false-positive abort on the
-    // library's correct default DARE path, following the same "eps-and-norm-
-    // normalized residual vs. a generous integer-multiple threshold" style LAPACK's
-    // own eigenvalue/Schur test suite (e.g. dget*, ddrvst) uses to absorb the
-    // constant factors backward-error theory leaves unspecified.
-    constexpr double lapack_style_margin = 20000.0;
-    const double control_weight_scale = B.squaredNorm() / R(0, 0);
-    const double term_scale = AtPA.norm() + P.norm() + cross.norm() + Q.norm() + control_weight_scale;
-    const double n = static_cast<double>(P.rows());
-    const double tol = lapack_style_margin
-        * std::numeric_limits<double>::epsilon() * n * n * n * std::max(1.0, term_scale);
-
-    if(resid.norm() > tol)
+    // The bound is CALLED rather than re-spelled. The empirically calibrated
+    // multiple this line used to carry was a second, differently fitted model of
+    // a quantity the library also modeled, and the two disagreed by roughly three
+    // orders of magnitude: the library accepted solutions this oracle aborted on,
+    // over a band nine hundred times wide. There is now one rule and therefore no
+    // band. It is also the right rule: measured against an extended-precision
+    // reference of a different algorithm, a threshold on the residual could not
+    // separate right answers from wrong ones at all, because the two classes are
+    // contiguous on that quantity.
+    //
+    // An UNRESOLVED verdict is deliberately not an abort. It means the estimate
+    // could not be formed on this pose, which is an absence of evidence rather
+    // than evidence of a defect.
+    if(ctrlpp::detail::riccati_forward_error_verdict<double, 2>(closed_loop, resid, P)
+       == ctrlpp::detail::riccati_accuracy::exceeded)
         abort();
 
     // P must be positive semi-definite: LDLT pivot-sign check against the same

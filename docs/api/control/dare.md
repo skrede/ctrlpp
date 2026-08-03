@@ -40,10 +40,71 @@ the same canonical problem.
 
 The solver computes a real Schur decomposition, reorders eigenvalues inside the
 unit disk to the top-left block, and extracts P = U21 * U11^{-1}. Before
-reporting success, it verifies the Riccati residual against a dimension- and
-precision-derived forward-error margin and verifies that the resulting
-closed-loop spectrum is inside the unit disk by more than its backward-error
+reporting success it establishes two things about the answer: that it retains
+more than half of the scalar type's significand, and that the closed-loop
+spectrum it produces is inside the unit disk by more than its own backward-error
 margin.
+
+### What a success claims, and how it is decided
+
+**A success claims accuracy of the ANSWER, not smallness of the residual.**
+The quantity compared against a margin is an estimate of `P`'s own relative
+forward error, and the margin is `sqrt(eps)`.
+
+The estimate comes from the residual map's derivative rather than from the
+residual itself. Writing `A_cl = A - BK` for the closed loop and
+`Omega(X) = X - A_cl' X A_cl` for the Stein operator built from it, the residual
+of a computed solution satisfies `R(P_hat) = -Omega(P_hat - P) + O(||P_hat -
+P||^2)` to first order, so inverting `Omega` against the residual estimates the
+error in the returned matrix directly:
+
+```
+estimated relative forward error  =  ||Omega^-1(R(P_hat))||_F / ||P||_F
+```
+
+That is solved on the symmetric subspace, whose dimension is `NX(NX+1)/2`, from
+quantities the solve already holds. It allocates nothing. Its cost is
+`NX(NX+1)/2` rank-two updates to assemble the operator plus a rank-revealing
+solve of about `NX^6 / 12` operations, which against a seven-iteration Schur
+solve is 0.4% at `NX = 2`, 3.6% at `NX = 4` and 28.6% at `NX = 8`.
+
+**`sqrt(eps)` is derived and not calibrated.** For a radix-2 type with
+`eps = 2^-p`, `sqrt(eps) = 2^(-p/2)` is exactly the retention of `p/2` of the `p`
+fractional significand bits, so "more than half the significand of the returned
+answer is correct" *is* "relative forward error at most `sqrt(eps)`", in the
+type's own radix. It carries to `float` and to any other radix-2 type without
+being re-measured.
+
+**Why the residual is not the quantity compared.** Measured over 2.5 million
+poses against extended-precision solutions computed by a different algorithm, the
+answers that keep more than half the significand and the answers that do not are
+*contiguous* on the residual: the worst kept and the best lost are adjacent, and
+the distribution is unimodal across ten decades with no gap anywhere in it. No
+threshold on that quantity separates them. The margin this replaced -- a
+counted-operation envelope on the residual -- refused none of the answers in that
+population that had lost more than half their significand.
+
+**The accepted set moved, and it moved inward.** Poses whose answer loses more
+than half the significand are now refused with `arithmetic_limit` where they
+previously returned a value. On the two recorded weight-ratio populations this
+removes 531 of 13,114 accepted rows, and every one of the 531 is confirmed by an
+extended-precision reference to have lost more than half the significand; no row
+that the reference calls correct stopped being accepted, and no row that was
+refused became accepted. A caller who was relying on a returned `P` at a weight
+ratio around ten decades, or on a state weighting whose condition number is
+`1e8` or worse, will now see `arithmetic_limit` instead of an answer that was
+wrong in its eighth digit.
+
+**What the estimate is not.** It is a first-order estimate, not a bound. Its
+left tail under-predicts where cancellation in the residual happens to be
+favorable, so a small population of answers that have genuinely lost more than
+half the significand is still returned rather than refused. Closing that gap
+would need a second solve in higher precision, which is not a postcondition.
+This is a known and accepted exposure, not an omission.
+
+`@cite laub1979`, and Higham, *Accuracy and Stability of Numerical Algorithms*,
+2nd ed., Ch. 19, for the orthogonal-transformation error analysis the backward
+error rests on.
 
 ### Where the claim about your own scale is made
 
@@ -53,14 +114,18 @@ your scale. The equation is homogeneous of degree one in `(P, Q, R)` taken
 together, so multiplying all three by a positive factor multiplies the residual
 by exactly that factor; the gain `(R + B'PB)^{-1} B'PA` is homogeneous of degree
 zero, so the closed loop is unchanged; and a positive factor cannot move an
-eigenvalue across zero. What homogeneity does not supply is checked directly:
-the rescaled solution must be finite, and it is re-tested for positive
-semi-definiteness at the scale actually returned.
+eigenvalue across zero. The accuracy estimate is therefore homogeneous of degree
+**zero**: the residual it inverts scales by the factor, the operator it inverts
+does not, and the `||P||_F` it divides by scales by the factor as well, so the
+estimated relative forward error is the same number at both scales. What
+homogeneity does not supply is checked directly: the rescaled solution must be
+finite, and it is re-tested for positive semi-definiteness at the scale actually
+returned.
 
 Re-forming the evidence at your scale instead of carrying it is what limited the
-accepted range before. The residual scale is the largest of `A'PA`, `P`, `A'PBK`
-and `Q`, each a sum of squares, so on a pose whose *answer* is an ordinary normal
-number the *evidence* could still leave the top of the range -- and a comparison
+accepted range before. Every magnitude the verification forms is now computed by
+dividing out the operand's largest entry first, so on a pose whose *answer* is an
+ordinary normal number the *evidence* no longer leaves the range -- a comparison
 between two infinities was refusing problems the solver could solve.
 
 The direct check at your scale is still performed **wherever its operands
@@ -114,7 +179,7 @@ Refusals:
 | `dare_error::singular_u11` | the top-left block of the reordered invariant-subspace basis is singular; P cannot be extracted. **Covers two different situations -- see below** |
 | `dare_error::non_psd_solution` | the extracted P is not positive semi-definite. The test is an LDLT pivot-sign test against `N * eps * max\|P_ij\|`, the order of the factorization's own backward error, below which a pivot carries no sign information |
 | `dare_error::schur_failed` | the real Schur factorization did not converge |
-| `dare_error::arithmetic_limit` | finite inputs could not produce a verified stabilizing solution at the scalar type's precision. Specifically: the equilibrated problem's own residual, closed-loop spectrum or gain solve did not verify; a magnitude the equilibrated verification needs could not be formed; the weights overflowed while being equilibrated; the solution overflowed while being rescaled; the rescaled solution failed the positive-semi-definiteness test at its returned scale; the direct check at the caller's scale resolved and refuted the carried claim; or the equilibrated and returned gains, both formed, disagreed by more than the counted-operation margin |
+| `dare_error::arithmetic_limit` | finite inputs could not produce a verified stabilizing solution at the scalar type's precision. Specifically: the equilibrated answer's estimated relative forward error exceeded `sqrt(eps)`, so it retains less than half the significand; its closed-loop spectrum or gain solve did not verify; a magnitude the equilibrated verification needs could not be formed; the weights overflowed while being equilibrated; the solution overflowed while being rescaled; the rescaled solution failed the positive-semi-definiteness test at its returned scale; the direct check at the caller's scale resolved and refuted the carried claim; or the equilibrated and returned gains, both formed, disagreed by more than the counted-operation margin |
 
 The one cause that is **no longer** on that list is a magnitude the check at the
 caller's scale could not form. That used to be a refusal; it is now an absence of

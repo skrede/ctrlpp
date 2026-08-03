@@ -2,7 +2,10 @@
 #define HPP_GUARD_TESTS_UNIT_HARDENING_HELPERS_H
 
 #include "ctrlpp/types.h"
+
 #include "ctrlpp/model/state_space.h"
+
+#include "ctrlpp/detail/riccati_solution.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -149,24 +152,37 @@ auto riccati_residual(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, 
     return {residual.norm(), scale};
 }
 
-/// @brief Rounded operations along the longest chain producing one entry of the
-/// Riccati residual, for an NX-state, NU-input problem.
+/// @brief The rounded-operation count along the longest chain producing one
+/// entry of the Riccati residual.
 ///
-/// Enumerated rather than chosen. Each contraction over the state dimension
-/// costs NX multiplies and NX-1 additions, that is 2*NX-1, and six of them
-/// occur along the chain: A'P, (A'P)A, B'P, (B'P)A, A'PB, and the contraction
-/// of A'PB against the gain. Each contraction over the input dimension costs
-/// 2*NU-1, and two occur: (B'P)B, and the gain's own inner dimension. The
-/// weighting sum R + B'PB is one addition. The linear solve for the gain is a
-/// rank-revealing QR of an NU x NU matrix followed by a back substitution,
-/// whose backward error is bounded by 2*NU operations at the scale of the
-/// matrix it factorizes. Assembling the four terms is three additions.
-///
-/// Every operation is counted whether or not it actually rounds, so the count
-/// bounds the accumulated error from above rather than describing it tightly --
-/// which is what a budget requires.
+/// A QUOTE, not a copy. The enumeration lives with the library's own bound in
+/// `ctrlpp/detail/riccati_solution.h`; this name exists only so the test call
+/// sites read in test vocabulary. The hand-copy that used to sit here was a
+/// second definition of a bound the library also defines, which is exactly the
+/// drift path the shared positive-semi-definiteness floor was consolidated to
+/// close.
 template <std::size_t NX, std::size_t NU>
-constexpr int riccati_residual_ops = 6 * (2 * int(NX) - 1) + 2 * (2 * int(NU) - 1) + 1 + 2 * int(NU) + 3;
+constexpr int riccati_residual_ops = ctrlpp::detail::dare_residual_ops<NX, NU>;
+
+/// @brief Whether a solved Riccati pose retains more than half the scalar
+/// type's significand, decided by the library's own rule.
+///
+/// Also a quote. The estimator, the margin and the comparison are all defined
+/// once, at `ctrlpp::detail::riccati_forward_error_verdict`; an anchor that
+/// re-spelled any of the three would be asserting against its own copy of the
+/// contract rather than against the contract.
+template <typename Scalar, std::size_t NX, std::size_t NU>
+auto riccati_accuracy_of(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B,
+                         const Matrix<Scalar, NU, NU>& R, const Matrix<Scalar, NX, NX>& Q,
+                         const Matrix<Scalar, NX, NX>& P) -> ctrlpp::detail::riccati_accuracy
+{
+    auto const K = riccati_gain<Scalar, NX, NU>(A, B, R, P);
+    auto const closed_loop = (A - B * K).eval();
+    auto const AtPA = (A.transpose() * P * A).eval();
+    auto const AtPBK = (A.transpose() * P * B * K).eval();
+    auto const residual = (AtPA - P - AtPBK + Q).eval();
+    return ctrlpp::detail::riccati_forward_error_verdict<Scalar, int(NX)>(closed_loop, residual, P);
+}
 
 template <typename Scalar, std::size_t N>
 auto zero_vector() -> Vector<Scalar, N>

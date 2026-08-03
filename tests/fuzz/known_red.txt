@@ -18,4 +18,3 @@
 # about the defect. Re-triage at a larger budget before deleting a line here.
 
 fuzz_care  conditioning-aware oracle bound owed
-fuzz_dare  library and oracle residual bounds disagree by ~400x

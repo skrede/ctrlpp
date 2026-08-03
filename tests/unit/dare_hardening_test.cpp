@@ -3,11 +3,19 @@
 // The solver returns a matrix that is supposed to SOLVE an equation, so that is
 // what is asserted:
 //
-//  * Every accepted solution is held to the Riccati residual against a
+//  * The ACCEPTANCE contract is a statement about the ANSWER: an accepted
+//    solution retains more than half of the scalar type's significand. It is
+//    asserted through the library's own shared rule and never re-spelled, so an
+//    anchor cannot pass against its own copy of the contract while the contract
+//    itself has moved.
+//  * Well-conditioned anchors are ALSO held to the Riccati residual against a
 //    counted-operation budget scaled by the largest of the four terms that
-//    cancel to produce it. Positive definiteness alone does not identify the
-//    solution -- a positive definite matrix that solves nothing passes it -- so
-//    definiteness is asserted alongside the residual, never instead of it.
+//    cancel to produce it. That is a tighter, rounding-floor statement that
+//    those particular poses satisfy; it is not the acceptance contract, and it
+//    is not asserted on poses whose conditioning dominates their rounding.
+//    Positive definiteness alone does not identify the solution -- a positive
+//    definite matrix that solves nothing passes it -- so definiteness is
+//    asserted alongside, never instead.
 //  * Positive definiteness is asserted with the exact contract boundary. The
 //    floor is a floor at zero, not below it: slack in the direction that admits
 //    a negative eigenvalue admits the very matrix the case is named against.
@@ -17,11 +25,13 @@
 //  * Every refusal names its enumerator. "No value" alone does not say the
 //    solver diagnosed the caller's actual fault.
 //
-// What they deliberately do not decide. One case here accepts an ill-conditioned
-// weighting and does NOT assert the residual; the reason is recorded at that
-// case rather than the assertion quietly omitted, and it is that a
-// counted-operation budget models rounding only and is the wrong oracle once
-// the conditioning dominates.
+// What they deliberately do not decide. No case here asserts a residual bound as
+// if it were an accuracy bound. On the population this solver is measured
+// against, the answers that keep half the significand and the answers that do
+// not are contiguous on the residual, so a threshold on that quantity separates
+// nothing; the case that reaches an ill-conditioned weighting asserts the
+// accuracy rule and the refusal boundary instead, with the measured forward
+// errors recorded at the case.
 
 #include "hardening_helpers.h"
 #include "ctrlpp/control/dare.h"
@@ -165,36 +175,71 @@ TEST_CASE("DARE refuses a rank-deficient R instead of solving a different proble
     CHECK(result.error() == ctrlpp::dare_error::singular_r);
 }
 
-TEST_CASE("DARE accepts an R that is ill-conditioned but not singular", "[dare][hardening][robustness]")
+TEST_CASE("DARE separates an ill-conditioned R from a rank-deficient one", "[dare][hardening][robustness]")
 {
-    // The boundary the rank test must not overshoot. A weighting spanning ten
+    // The boundary the rank test must not overshoot. A weighting spanning many
     // decades is a numerical-conditioning question, not a domain violation, and
-    // refusing it would turn one into the other.
+    // reporting it as a rank deficiency would turn one into the other. That is
+    // what this case guards, and it is asserted on EVERY conditioning below --
+    // no outcome here is ever `singular_r`.
+    //
+    // What the outcome is instead is a precision question with a measured
+    // answer. The accepted set on this family ends where binary64 stops being
+    // able to deliver half a significand, and both sides of that edge are
+    // asserted rather than one. Relative forward errors against an independent
+    // extended-precision solution of the identical pose, computed by
+    // Newton-Kleinman rather than by a Schur decomposition:
+    //
+    //     cond(R)   forward error     half-significand line is 1.4901e-08
+    //     1e2       1.1778e-14
+    //     1e6       1.1855e-10
+    //     1e7       4.5861e-10        last conditioning that keeps half
+    //     1e8       1.5757e-08        first that does not
+    //     1e9       6.4807e-08
+    //     1e10      4.5108e-08
+    //
+    // The solver used to return the last three. They are not correct answers
+    // that were lost: every one of them has lost more than half of binary64's
+    // significand, by an independent reference, and the estimate the solver now
+    // forms agrees with that reference to five significant figures on all six
+    // rows. Above 1e10 the pose was already refused before this edge existed.
     Eigen::Matrix<double, 2, 2> A;
     A << 1.0, 1.0, 0.0, 1.0;
     Eigen::Matrix<double, 2, 2> B;
     B << 0.5, 0.0, 1.0, 1.0;
     auto Q = Eigen::Matrix<double, 2, 2>::Identity();
-    auto R = ctrlpp::test::ill_conditioned_2x2<double>(1e10);
 
-    auto const result = ctrlpp::dare<double, 2, 2>(A, B, Q, R);
-    REQUIRE(result.has_value());
+    int accepted = 0;
+    int declined = 0;
+    for(const double conditioning : {1e2, 1e4, 1e6, 1e7, 1e8, 1e9, 1e10, 1e12})
+    {
+        CAPTURE(conditioning);
+        auto R            = ctrlpp::test::ill_conditioned_2x2<double>(conditioning);
+        auto const result = ctrlpp::dare<double, 2, 2>(A, B, Q, R);
 
-    // Positive definiteness is asserted; the Riccati residual deliberately is
-    // NOT, and the reason is recorded rather than the assertion quietly
-    // omitted. Measured here: the residual is 1.34e-7 against a term scale of
-    // 8.13, i.e. 1.6e-8 relative. That is seven orders above the
-    // counted-operation budget the well-conditioned cases use, and it is not a
-    // solver defect -- a forward error of about cond(R) * eps = 1e10 * 2.2e-16
-    // = 2.2e-6 is what this conditioning buys, and the observed value sits two
-    // decades INSIDE it. A counted-operation budget models rounding only and is
-    // simply the wrong oracle in this regime; the right one is scaled by a
-    // conditioning estimate, which has not been derived. Asserting the
-    // counted-op budget here would fail on a correct solve, and widening it
-    // until it passed would be fitting a constant to an observation.
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> pes(result->P);
-    for(int i = 0; i < 2; ++i)
-        CHECK(pes.eigenvalues()(i) > 0.0);
+        if(result.has_value())
+        {
+            ++accepted;
+            CHECK(conditioning <= 1e7);
+            // An accepted answer keeps more than half the significand, by the
+            // one shared rule, and is positive definite.
+            CHECK(ctrlpp::test::riccati_accuracy_of<double, 2, 2>(A, B, R, Q, result->P)
+                  == ctrlpp::detail::riccati_accuracy::within);
+            Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> pes(result->P);
+            for(int i = 0; i < 2; ++i)
+                CHECK(pes.eigenvalues()(i) > 0.0);
+        }
+        else
+        {
+            ++declined;
+            CHECK(conditioning >= 1e8);
+            // The point of the case: never a rank deficiency.
+            CHECK(result.error() != ctrlpp::dare_error::singular_r);
+            CHECK(result.error() == ctrlpp::dare_error::arithmetic_limit);
+        }
+    }
+    CHECK(accepted > 0);
+    CHECK(declined > 0);
 }
 
 TEST_CASE("DARE known 2x2 solution is positive definite", "[dare][hardening][precision]")
@@ -747,4 +792,91 @@ TEST_CASE("DARE original-scale residual guard still asserts where a squared magn
     CHECK(plain_scale == 0.0);
     REQUIRE(resolved_scale.resolved);
     CHECK(resolved_scale.value > 0.0);
+}
+
+TEST_CASE("DARE keeps the two poses its randomized oracle used to abort on", "[dare][hardening][precision]")
+{
+    // Both of these were reached by the discrete randomized target and both made
+    // it abort, at 1.078 and 1.124 times the tolerance that oracle then carried.
+    // Both answers are RIGHT: against an independent extended-precision solution
+    // of the identical pose, computed by Newton-Kleinman rather than by a Schur
+    // decomposition, they agree to more than nine decimal digits -- comfortably
+    // more than half of binary64's significand. The oracle was aborting on
+    // correct answers, and its verdict at 1.078x was inside the reproducibility
+    // noise of the quantity it compared: the identical source built with fused
+    // multiply-add contraction returns a MORE accurate answer on both poses and
+    // does not abort at all.
+    //
+    // They are kept here as correct-answer regressions, with their exact entries,
+    // so the band between two disagreeing bounds cannot silently reopen. Note
+    // what is asserted: not a residual, which cannot tell a right answer from a
+    // wrong one on this population, but the retained accuracy of the answer.
+    auto keeps_more_than_half_the_significand =
+        [](const Eigen::Matrix<double, 2, 2>& A, const Eigen::Matrix<double, 2, 1>& B,
+           const Eigen::Matrix<double, 2, 2>& Q, const Eigen::Matrix<double, 1, 1>& R)
+    {
+        const auto solved = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+        REQUIRE(solved.has_value());
+
+        // The one rule, quoted. Both poses keep more than half the significand,
+        // so both are accepted, and the shared verdict says so directly rather
+        // than by inference from the solver having returned a value.
+        CHECK(ctrlpp::test::riccati_accuracy_of<double, 2, 1>(A, B, R, Q, solved->P)
+              == ctrlpp::detail::riccati_accuracy::within);
+
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> pes(solved->P);
+        for(int i = 0; i < 2; ++i)
+            CHECK(pes.eigenvalues()(i) > 0.0);
+    };
+
+    Eigen::Matrix<double, 2, 2> first_A;
+    first_A << -0.4509803921568627, -0.12401960784313724, 2.0, -2.0;
+    Eigen::Matrix<double, 2, 1> first_B;
+    first_B << -2.0, -2.0;
+    Eigen::Matrix<double, 2, 2> first_Q;
+    first_Q << 8.0, 4.0, 4.0, 4.0;
+    Eigen::Matrix<double, 1, 1> first_R;
+    first_R << 0.004;
+    keeps_more_than_half_the_significand(first_A, first_B, first_Q, first_R);
+
+    Eigen::Matrix<double, 2, 2> second_A;
+    second_A << 0.0, 0.42742921411995211, 2.0, -2.0;
+    Eigen::Matrix<double, 2, 1> second_B;
+    second_B << -2.0, -1.999999231413548;
+    Eigen::Matrix<double, 2, 2> second_Q;
+    second_Q << 0.030762027265631202, -2.3674744784873969e-06, -2.3674744784873969e-06, 8.0;
+    Eigen::Matrix<double, 1, 1> second_R;
+    second_R << 0.004;
+    keeps_more_than_half_the_significand(second_A, second_B, second_Q, second_R);
+}
+
+TEST_CASE("DARE refuses an answer that has lost more than half the significand", "[dare][hardening][precision]")
+{
+    // This pose is outside every filter the randomized target applies, and it is
+    // the failure the residual margin could not see. The solver's own answer here
+    // is wrong in the twentieth bit: against an independent extended-precision
+    // solution by a different algorithm its relative forward error is 5.7e-07,
+    // which is thirty-eight times past the half-significand line, while the
+    // residual that answer produces sits comfortably INSIDE the counted-operation
+    // envelope the postcondition used to compare against. A residual bound
+    // therefore certified it, and no threshold on the residual could have done
+    // otherwise: on this population the answers that keep half the significand
+    // and the answers that lose it are contiguous on that quantity.
+    //
+    // The verdict is stable under instruction selection, which is why this pose
+    // and not a marginal one is the regression: it stays past the line under six
+    // optimization settings across two compilers, including the fused-multiply-add
+    // build that flips other candidates.
+    Eigen::Matrix<double, 2, 2> A;
+    A << -1.3314095436239524, -1.3025433868459988, -2.0, -2.0;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 2.0, -2.0;
+    Eigen::Matrix<double, 2, 2> Q;
+    Q << 0.12179221216883218, -0.48675460347327504, -0.48675460347327504, 4.2098620441168375;
+    Eigen::Matrix<double, 1, 1> R;
+    R << 0.05248182488128475;
+
+    const auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::dare_error::arithmetic_limit);
 }
