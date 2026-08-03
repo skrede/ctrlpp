@@ -118,9 +118,21 @@ inline auto trapezoidal_amplification(double operands, double result) -> double
 /// @brief Absolute error of the square root of a quadratic's discriminant, in
 /// units of the scalar type's epsilon.
 ///
+/// The two coefficients arrive as ABSOLUTE error budgets -- the scale of the
+/// operands that entered each -- rather than as the relative amplifications this
+/// took before. The distinction is not presentational. Every term below needs
+/// the absolute budget, so a relative form has to be multiplied back by the very
+/// magnitude it was divided by, and that product is zero times infinity exactly
+/// where a coefficient cancels completely. A total cancellation is the case this
+/// model exists to describe, not one it may answer NaN on.
+///
+/// The magnitudes are taken as magnitudes for the same reason. An error bound
+/// built from a signed coefficient is reduced by that coefficient's sign, and
+/// the linear one is negative over half the domain of the root selection below.
+///
 /// The discriminant is `b^2 - 4c`, so its own absolute error is
-/// `2 b^2 A_b + 4 |c| A_c` with the two amplifications given. Two bounds on the
-/// root's error follow from it and both hold, so the smaller governs:
+/// `2 |b| E_b + 4 E_c` with the two budgets given. Two bounds on the root's
+/// error follow from it and both hold, so the smaller governs:
 ///
 ///  * the LINEARIZED one, half the discriminant's error over the root. It is the
 ///    right answer while that error is small against the discriminant.
@@ -139,25 +151,31 @@ inline auto trapezoidal_amplification(double operands, double result) -> double
 ///
 /// Both are formed by dividing before multiplying, and the merged one by
 /// splitting the square root across the two terms it sums -- the square root of
-/// a sum is at most the sum of the square roots. The discriminant's error itself
-/// is never formed, because it is the product of a squared coefficient with an
-/// amplification and it leaves the representable range on inputs the solve
-/// handles without difficulty.
+/// a sum is at most the sum of the square roots, and its linear term is split
+/// once more across its own two factors. The discriminant's error is never
+/// FORMED, only ever divided into: it is the product of a coefficient with a
+/// budget carried at that coefficient's own scale, and it leaves the
+/// representable range on requests the solve resolves without difficulty. A
+/// long move at a small boundary velocity reaches it while every quantity the
+/// model is built from is still ordinary.
+///
+/// A linearized term is left NaN rather than guarded where the root it divides
+/// by is zero and the budget it divides is too. `fmin` returns the other operand
+/// when one is NaN, so the merged bound governs there -- which is precisely the
+/// case the merged bound exists for, and a guard would only spell it a second
+/// time.
 template <typename Scalar>
-auto trapezoidal_discriminant_root_error(double linear_amplification, Scalar linear,
-                                         double constant_amplification, Scalar constant,
+auto trapezoidal_discriminant_root_error(double linear_error, Scalar linear, double constant_error,
                                          Scalar discriminant) -> double
 {
     constexpr double eps = static_cast<double>(std::numeric_limits<Scalar>::epsilon());
     double const b = std::abs(static_cast<double>(linear));
-    double const c = std::abs(static_cast<double>(constant));
     double const root = std::sqrt(std::max(static_cast<double>(discriminant), 0.0));
 
     double const linearized =
-        0.5
-        * (2.0 * linear_amplification * (b / root) * b + 4.0 * constant_amplification * (c / root));
-    double const merged = std::sqrt(2.0 * linear_amplification / eps) * b
-                          + std::sqrt(4.0 * constant_amplification * c / eps);
+        0.5 * (2.0 * (b / root) * linear_error + 4.0 * (constant_error / root));
+    double const merged = std::sqrt(2.0 * linear_error / eps) * std::sqrt(b)
+                          + std::sqrt(4.0 * (constant_error / eps));
     return std::fmin(linearized, merged);
 }
 
@@ -307,9 +325,12 @@ auto trapezoidal_duration_sensitivity(trapezoidal_solve_form form, Scalar v_crui
 ///    for the root rather than the velocity.
 ///  * ramp-through: the residual again, and the duration less the fixed duration
 ///    of the two ramps.
-///  * both cruise-velocity forms: the constant term, which is the residual
-///    displacement carried at the scale of the squared boundary velocities, and
-///    the discriminant.
+///  * both cruise-velocity forms: the discriminant, and -- only where the linear
+///    coefficient is positive and the root selection therefore divides by it --
+///    the constant term, which is the residual displacement carried at the scale
+///    of the squared boundary velocities. Where that coefficient is not positive
+///    the library adds two magnitudes instead of dividing, and the constant term
+///    contributes through the discriminant alone.
 template <typename Scalar>
 auto trapezoidal_velocity_amplification(trapezoidal_solve_form form, Scalar v_cruise, Scalar a,
                                         Scalar h, Scalar v0, Scalar v1, Scalar T_target) -> double
@@ -329,8 +350,8 @@ auto trapezoidal_velocity_amplification(trapezoidal_solve_form form, Scalar v_cr
     // floor is conservatively written against.
     Scalar const ramp_distance = (v_hi - v_lo) * (v_hi + v_lo) / (Scalar{2} * a);
     Scalar const ramp_residual = h - ramp_distance;
-    double const residual_amplification =
-        trapezoidal_amplification(std::max(h, ramp_distance), ramp_residual);
+    double const residual_error = std::max(std::abs(static_cast<double>(h)),
+                                           std::abs(static_cast<double>(ramp_distance)));
 
     switch(form)
     {
@@ -341,33 +362,47 @@ auto trapezoidal_velocity_amplification(trapezoidal_solve_form form, Scalar v_cr
         Scalar const v_ref = valley ? v_lo : v_hi;
         auto const trace = trapezoidal_trace_shifted_solve(valley, a, h, v0, v1, T_target);
 
-        double const increment_amplification =
-            trapezoidal_amplification(trace.scale, trace.dT);
-        double const coefficient_amplification = trapezoidal_amplification(
+        // The residual reaches the linear coefficient divided by the boundary
+        // velocity, so its budget is carried through that same division. A
+        // boundary velocity of exactly zero leaves it unbounded, which is the
+        // honest answer and is unreachable on an accepted retiming: the cruise
+        // velocity a shifted solve returns is that boundary offset by the root,
+        // and a retiming whose cruise velocity is not strictly positive is
+        // rejected before it is returned.
+        double const increment_error = std::abs(static_cast<double>(trace.scale));
+        double const boundary = std::abs(static_cast<double>(v_ref));
+        double const coefficient_error =
             static_cast<double>(a)
-                * (residual_amplification * std::abs(static_cast<double>(ramp_residual / v_ref))
-                   + increment_amplification * std::abs(static_cast<double>(trace.dT))),
-            trace.B);
+            * (trapezoidal_amplification(residual_error, v_ref) + increment_error);
+        double const constant_error = static_cast<double>(a) * boundary * increment_error;
         // The root selection ADDS the square root to the linear coefficient
         // rather than subtracting it, so its denominator carries the two
         // absolute errors side by side and neither is amplified by the other's
         // smallness.
         double const coefficient = std::abs(static_cast<double>(trace.B));
         double const denominator_error =
-            coefficient * coefficient_amplification
-            + trapezoidal_discriminant_root_error(coefficient_amplification, trace.B,
-                                                  increment_amplification, trace.C, trace.disc);
+            coefficient_error
+            + trapezoidal_discriminant_root_error(coefficient_error, trace.B, constant_error,
+                                                  trace.disc);
         double const denominator =
             coefficient + std::sqrt(std::max(static_cast<double>(trace.disc), 0.0));
-        double const root_amplification =
-            increment_amplification + trapezoidal_amplification(denominator_error, denominator);
-        return root_amplification * std::abs(static_cast<double>(trace.root)) / v;
+        // The root's ABSOLUTE error, formed without ever passing through its
+        // relative one. The constant term's budget reaches it doubled over the
+        // same denominator the root itself carries, because the root IS the
+        // doubled constant term over that denominator; the denominator's budget
+        // reaches it scaled by the root. Dividing by the cruise velocity at the
+        // end turns it back into the relative amplification this function
+        // reports, and that division is the only one taken.
+        double const root_error = (2.0 * constant_error
+                                   + std::abs(static_cast<double>(trace.root)) * denominator_error)
+                                  / denominator;
+        return root_error / v;
     }
     case trapezoidal_solve_form::ramp_through:
     {
         Scalar const ramp_span = std::abs(v1 - v0) / a;
         Scalar const denominator = T_target - ramp_span;
-        return residual_amplification
+        return trapezoidal_amplification(residual_error, ramp_residual)
                + trapezoidal_amplification(std::max(T_target, ramp_span), denominator);
     }
     default:
@@ -375,21 +410,33 @@ auto trapezoidal_velocity_amplification(trapezoidal_solve_form form, Scalar v_cr
         bool const plateau = (form == trapezoidal_solve_form::plateau_cruise_velocity);
         Scalar const b = plateau ? ((v0 + v1) + a * T_target) : (a * T_target - (v0 + v1));
         Scalar const c = plateau ? (a * h + v_sum_sq / Scalar{2}) : (v_sum_sq / Scalar{2} - a * h);
-        double const linear_amplification =
-            trapezoidal_amplification(std::max(a * T_target, std::abs(v0 + v1)), b);
-        double const constant_amplification =
-            trapezoidal_amplification(std::max(a * h, v_sum_sq / Scalar{2}), c);
+        double const linear_error =
+            std::max(std::abs(static_cast<double>(a * T_target)),
+                     std::abs(static_cast<double>(v0 + v1)));
+        double const constant_error = std::max(std::abs(static_cast<double>(a * h)),
+                                               std::abs(static_cast<double>(v_sum_sq / Scalar{2})));
         // Both spellings of the root selection add magnitudes rather than
         // subtracting them, so the same side-by-side treatment applies.
         Scalar const disc = b * b - Scalar{4} * c;
         double const linear = std::abs(static_cast<double>(b));
         double const denominator_error =
-            linear * linear_amplification
-            + trapezoidal_discriminant_root_error(linear_amplification, b, constant_amplification, c,
-                                                  disc);
+            linear_error
+            + trapezoidal_discriminant_root_error(linear_error, b, constant_error, disc);
         double const denominator = linear + std::sqrt(std::max(static_cast<double>(disc), 0.0));
-        return constant_amplification
-               + trapezoidal_amplification(denominator_error, denominator);
+        double const selection = trapezoidal_amplification(denominator_error, denominator);
+        // The library spells this root selection two ways and branches on the
+        // SIGN of the linear coefficient, so the model has to branch with it. A
+        // positive coefficient takes the rationalized spelling, which divides the
+        // doubled constant term by the sum and inherits that term's relative
+        // error. A non-positive one takes the direct spelling, which adds the
+        // root to the coefficient's magnitude and halves the sum: two magnitudes
+        // added, no division by the constant term, and none of its relative error
+        // inherited. Charging that error to both spellings called the solve
+        // unbounded wherever the constant term cancels exactly -- a displacement
+        // the two ramps sweep precisely, which the shifted parametrization is
+        // built to handle -- on retimings the library resolves to the last bit.
+        return (b > Scalar{0}) ? trapezoidal_amplification(constant_error, c) + selection
+                               : selection;
     }
     }
 }

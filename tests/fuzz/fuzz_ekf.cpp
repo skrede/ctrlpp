@@ -6,6 +6,31 @@
 #include <cstdlib>
 #include <cstring>
 
+namespace
+{
+
+// Bitwise identity of two matrices, which is what "left untouched" means and
+// what `operator!=` cannot express. That operator is an elementwise IEEE
+// comparison folded with `any()`, and IEEE says a NaN equals nothing, itself
+// included -- so it reports a difference between a matrix and a byte-for-byte
+// copy of itself the moment either carries one. A carried estimate that is
+// already non-finite is precisely the state this check exists to inspect,
+// because it is the only one that reaches the rejection path below at all.
+template <typename Derived>
+bool bitwise_equal(const Eigen::MatrixBase<Derived>& lhs, const Eigen::MatrixBase<Derived>& rhs)
+{
+    for(Eigen::Index i = 0; i < lhs.size(); ++i)
+    {
+        const auto a = lhs.derived().data()[i];
+        const auto b = rhs.derived().data()[i];
+        if(std::memcmp(&a, &b, sizeof(a)) != 0)
+            return false;
+    }
+    return true;
+}
+
+}
+
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
 {
     // 10 doubles: x0(2), measurement(2), Q_diag(2), R_diag(2), A entries(2) = 80 bytes
@@ -80,14 +105,17 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         // construction. A rejection can therefore only name the carried
         // estimate; a measurement rejection would mean the guard reported the
         // wrong cause, which is a defect rather than a fuzz finding. A rejected
-        // step must also have left the estimate bitwise untouched.
+        // step must also have left the estimate bitwise untouched, and the check
+        // is a bitwise one: `predict` is infallible by contract and may poison
+        // the covariance, so the state a rejection carries is routinely one an
+        // IEEE comparison cannot even compare with itself.
         const Eigen::Matrix<double, 2, 1> x_before = filter.state();
         const Eigen::Matrix<double, 2, 2> P_before = filter.covariance();
         if(const auto stepped = filter.update(z); !stepped)
         {
             if(stepped.error() == ctrlpp::ekf_update_error::non_finite_measurement)
                 abort();
-            if(filter.state() != x_before || filter.covariance() != P_before)
+            if(!bitwise_equal(filter.state(), x_before) || !bitwise_equal(filter.covariance(), P_before))
                 abort();
             return 0;
         }
