@@ -17,8 +17,30 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 # is a step which did nothing while the caller believes it succeeded. A warning
 # is scrollback; an error is a gate. Both trees were measured to emit zero such
 # diagnostics before the promotion, so nothing pre-existing is caught by it.
+#
+# /bigobj raises the object file's section-count ceiling from 65,279 to 2^32. Two
+# Riccati test translation units crossed the lower ceiling on MSVC and stopped
+# compiling at all. The switch sits on this shared block rather than on those two
+# targets because the rest of the set is close behind, and that closeness was
+# measured rather than assumed: compiling the same sources with g++ and
+# per-function/per-data sections, and counting the COMDAT groups against the same
+# 65,279, the two that failed emit 59,881 and 57,586, the heaviest one that still
+# compiled emits 47,398, and three more sit between 41,799 and 47,398. A single
+# added state dimension is worth roughly 7,700 groups, so the next unit to cross
+# is one instantiation away and a per-target switch would have to be re-argued
+# every time it happened. The g++ group count is a stand-in for the format's own
+# count, not that count.
+#
+# What /bigobj does NOT fix is the compiler's peak resident set. Those same two
+# units cost 4.55 GiB and 4.37 GiB to compile with no debug info, and this switch
+# moves neither figure: it widens a field in the object file and does nothing
+# else. The instantiation cost that made them heavy is untouched. Splitting the
+# heavier one along its method tag was measured as an alternative and does not
+# clear the ceiling either, because the piece that has to keep the shared cases
+# still emits 55,125 groups -- an 8% reduction -- while the three pieces together
+# cost 38% more compile time than the single unit does.
 set(CTRLPP_WARNING_FLAGS
-    $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /utf-8 /EHsc /we4834>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /utf-8 /EHsc /we4834 /bigobj>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:
         -fPIC
         -Wall
