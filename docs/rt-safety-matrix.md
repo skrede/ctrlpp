@@ -9,7 +9,7 @@ this table was written.
 
 | Column | Meaning |
 |--------|---------|
-| allocation-free? | The steady-state hot path (compute/predict/update/evaluate/sample) performs zero heap allocation. Construction and setup may allocate. |
+| allocation-free? | The steady-state hot path (compute/predict/update/evaluate/sample) performs zero heap allocation. Construction and setup may allocate. **THIS COLUMN IS A HEAP STATEMENT AND SAYS NOTHING ABOUT THE STACK.** For a row whose hot path holds a handful of fixed-size matrices that is the whole resource story. For a row that runs a fixed-size decomposition whose dimension the CALLER chooses, it is not: those frames grow with that dimension, and on a small task stack the stack is what breaks first. Every such row has a stack section below the table -- see "Stack cost of the Riccati solve" and "Stack cost of the estimator rows" -- and a `YES` here must not be read as a resource claim on its own. |
 | bounded-iterations? | No unbounded loops; any internal iteration carries a fixed cap. |
 | wall-clock-free? | The compute path never reads a clock. |
 | exceptions-off-clean? | Compiles under `-fno-exceptions -fno-rtti -DCTRLPP_NO_EXCEPTIONS`. |
@@ -182,6 +182,52 @@ designed, and it is the number to plan against.
 Witness: `examples/embedded/esp32/main/app_main.cpp`, whose control loop still
 designs its gain, runs its 201 steps, streams them over UART2 and reports
 `golden diff PASS` in the same boot that carries the probe.
+
+## Stack cost of the estimator rows
+
+The `allocation-free?` column is a heap statement for every row in this document,
+not only the Riccati one. Six further rows run a fixed-size decomposition whose
+dimension the CALLER chooses, so the same question the Riccati row was forced to
+answer applies to them: `kalman_filter` and `ekf` factorize the `NY x NY`
+innovation covariance, `ukf` and `manifold_ukf` do that and additionally hold a
+`2 * NX + 1` sigma-point set live across the propagation, `mekf` does the same at
+the error-state dimension, and static `nmpc` is bounded by its caller-controlled
+decision and constraint dimensions.
+
+**These were MEASURED rather than argued out of a measurement**, because an
+argument about a row's size is exactly what left the Riccati row's cell wrong.
+Deepest single frame per module, `-fstack-usage`, at the dimensions the unit
+tests instantiate:
+
+| row | deepest frame | function | instantiated at |
+|---|---:|---|---|
+| `kalman_filter` | 448 | `make` | `<double, 2, 1, 1>` |
+| `ekf` | 320 | `update` | `<double, 2, 1, 1>` |
+| `mekf` | 1,520 | `update_covariance` | `<double, 3, 3>` |
+| `manifold_ukf` | 1,744 | `update` | attitude configuration |
+
+**What this establishes and what it does not.** It establishes that at these
+dimensions the estimator frames are an order of magnitude below the Riccati
+acceptance check's, whose own frame reaches 15,056 bytes at `NX = 8`. The
+estimators' dominant object is the `NY x NY` (or `NB x NB`) innovation
+covariance, so their frames grow QUADRATICALLY in the caller's dimension, where
+the Riccati path's forward-error estimate grows as the FOURTH power of `NX` --
+its operator is `M x M` with `M = NX(NX+1)/2`. That difference in growth, not the
+absolute figures, is why these rows do not carry the Riccati row's supported-
+maximum table.
+
+It does NOT establish a whole-chain runtime watermark, and it does NOT sweep the
+caller's dimension. Both are owed before any row here could carry a supported
+maximum the way the Riccati row does. **A caller at a large `NY` should measure
+rather than extrapolate from this table**, and `nmpc` carries no figure at all
+here: its decision and constraint dimensions are bounded by the caller and no
+frame was taken for it.
+
+**Provenance.** `g++ (GNU) 16.1.1 20260728`, `-std=c++20 -O2 -DNDEBUG
+-fno-exceptions -fno-rtti`, no `-march`, x86-64 Linux, `double`. HOST
+measurements. A target's own frames differ with its ABI, register file and
+calling convention -- as the ESP32 capture above shows, where the `float` peaks
+run at roughly half the host `double` figures.
 
 ## Wall-clock budgets are not RT-safe
 

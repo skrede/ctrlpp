@@ -251,6 +251,18 @@ otherwise produce silent corruption through intermediate overflow:
   longer needs to select a tag to get an answer -- see
   [lqr](../../api/control/lqr.md) for what the tags cost in arithmetic.
 
+  **The acceptance check's cost is now TIMED, and the counted figure it replaces
+  was not a cost.** The operation count put the continuous check at "at most
+  8.3 percent" of the solve; timed with the check as the independent variable it
+  exceeds that at every `NX` from 4 to 24, reaching 14.9 percent, and it runs from
+  0.87x to 2.00x the counted figure depending on the tag and the size. Counts and
+  timings are both published in `detail/care_methods.h`, each labeled, because a
+  count is an honest statement about arithmetic and a poor predictor of wall time
+  at sizes where the whole working set is cache-resident. Budget from the timed
+  column. The selection between tags is unaffected: the default pays the larger
+  RELATIVE overhead precisely because it has the cheaper solve to pay it out of,
+  and it wins on absolute time at every swept size.
+
   Those counts are **pinned by an assertion**, not merely recorded here, so a
   future tightening of the acceptance rule that costs those answers breaks a
   test rather than leaving this recommendation wrong.
