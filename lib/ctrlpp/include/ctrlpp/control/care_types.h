@@ -97,6 +97,36 @@ namespace ctrlpp
 /// distinguish them**; telling them apart needs a stabilizability test the solver does
 /// not perform.
 ///
+/// ## What the enumerator promises, and what it does not
+///
+/// **Branch on `has_value()`. The enumerator is a diagnostic for a human reader, not a
+/// control signal.**
+///
+/// Whether an input is refused is a property of the input. WHICH refusal it carries is
+/// not, once the input sits below the precision's resolution boundary -- the point at
+/// which the quantity that decides the problem falls under the square root of the scalar
+/// type's epsilon relative to the operands that carry it. Below that boundary the refusal
+/// is reproducible and the enumerator is decided by instruction selection.
+///
+/// Measured, on one bit-identical continuous input whose imaginary-axis mode is visible
+/// through Q at 4.2e-25 relative -- a stabilizing solution that exists and is not
+/// determined in binary64:
+///
+///  * `sign_function_stagnated` under g++ at every optimization level, with or without
+///    contraction.
+///  * `non_psd_solution` under clang on x86-64 at -O1 and above with FMA contraction
+///    enabled.
+///  * `non_lhp_stabilizable` under Apple clang on arm64.
+///
+/// A thirty-point three-ulp neighborhood of that input produces all three enumerators and
+/// zero acceptances. Sweeping the visibility across thirty-one decades puts the
+/// accept/refuse transition at 1e-8 against sqrt(epsilon) = 1.5e-8, and every decade below
+/// 1e-11 refuses in all thirty neighbors while the enumerator continues to move.
+///
+/// Two enumerators do stay meaningful at any distance from the boundary, because they
+/// report a property of the operands rather than of an iteration: `non_finite_input` and
+/// `singular_r`. A well-formed finite input with a nonsingular R never carries either.
+///
 /// @cite laub1979 -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979, Sec. III
 enum class care_error
 {

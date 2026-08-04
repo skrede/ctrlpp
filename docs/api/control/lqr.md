@@ -101,6 +101,24 @@ The two enumerators are separate because they say different things, and neither 
 
 See [dare](dare.md) for what `care_error::singular_u11` covers; the continuous enumerator has the identical shape as its discrete counterpart.
 
+#### How far the enumerator can be relied on
+
+**Branch on `has_value()`. Treat the enumerator as a diagnostic for a human reader rather than as a control signal.**
+
+The tables above say which condition produces which enumerator, and they hold wherever the condition itself is decidable in the scalar type. They stop holding below the precision's resolution boundary -- the point at which the quantity deciding the problem falls under `sqrt(epsilon)` relative to the operands carrying it. Below it the solve is refused reproducibly, and *which* refusal it carries is decided by instruction selection rather than by the input.
+
+Measured on one bit-identical input whose imaginary-axis mode is visible through `Q` at `4.2e-25` relative, a stabilizing solution that exists and is not determined in binary64:
+
+| Toolchain | Enumerator |
+| --- | --- |
+| g++, every optimization level, contraction on or off | `sign_function_stagnated` |
+| clang on x86-64, `-O1` and above, FMA contraction enabled | `non_psd_solution` |
+| Apple clang on arm64 | `non_lhp_stabilizable` |
+
+A thirty-point three-ulp neighborhood of that input produces all three enumerators and zero acceptances. Sweeping the visibility across thirty-one decades puts the accept/refuse transition at `1e-8`, against `sqrt(epsilon) = 1.5e-8`, and every decade below `1e-11` refuses in all thirty neighbors while the enumerator keeps moving.
+
+Two enumerators stay meaningful at any distance from the boundary, because they report a property of the operands rather than of an iteration: `non_finite_input` and `singular_r`. A finite, well-formed input with a nonsingular `R` never carries either.
+
 #### Tuning the default tag
 
 `sign_function_care_method` carries one defaulted member. Omitting the tag, or passing a default-constructed one, gives today's behavior exactly.

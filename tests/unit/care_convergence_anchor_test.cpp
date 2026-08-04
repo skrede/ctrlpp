@@ -560,6 +560,78 @@ auto scalar_family_accuracy_bound(Scalar exact) -> Scalar
            * std::numeric_limits<Scalar>::epsilon() * exact;
 }
 
+// Real part of the eigenvalue of `A` nearest the imaginary axis. A continuous
+// Riccati problem has a stabilizing solution only if every mode ON that axis is
+// visible through the weighting, so locating the nearest mode is the first half
+// of deciding whether an input is well posed.
+auto nearest_axis_mode_abscissa(const matrix2<double>& A) -> double
+{
+    Eigen::EigenSolver<matrix2<double>> eigensystem(A, false);
+    double nearest = std::numeric_limits<double>::infinity();
+    for(int index = 0; index < 2; ++index)
+    {
+        const double abscissa =
+            std::abs(eigensystem.eigenvalues()(index).real());
+        if(abscissa < nearest)
+            nearest = abscissa;
+    }
+    return nearest;
+}
+
+// The second half: how visible that mode is through the weighting, as a
+// dimensionless number the solver had no part in producing.
+//
+// The quantity is the Rayleigh quotient v* Q v of the nearest-axis mode over the
+// weighting's own magnitude. Eigen returns unit-norm eigenvectors, so the
+// numerator carries no normalization of its own, and dividing by ||Q|| makes the
+// result independent of how the caller scaled the weighting.
+//
+// **It is computed from the FACTOR, and passing the assembled Q would return
+// zero.** For the input below the quotient is twenty-four decades under the
+// entries of Q, so evaluating v' (L' L) v as a product against the assembled
+// matrix cancels it away completely and reports exactly 0.0 -- which would then
+// pass a "below the boundary" test for the wrong reason and fail a "positive"
+// one that is true. Grouping it as ||L v||^2 does the subtraction in L v, where
+// the result is around 1e-13 and perfectly representable, and only then squares.
+// Q real symmetric gives v* Q v = ||L Re(v)||^2 + ||L Im(v)||^2, so no complex
+// matrix product is needed either.
+//
+// Its meaning is a resolution threshold, not a well-posedness one. A mode on the
+// axis whose visibility is positive but far below the arithmetic's ability to
+// distinguish it from zero leaves a solution that EXISTS and is not determined:
+// the solver must decline, and no accepted answer at that visibility could be
+// checked against anything.
+auto nearest_axis_mode_visibility(const matrix2<double>& A,
+                                  const matrix2<double>& weight_factor)
+    -> double
+{
+    Eigen::EigenSolver<matrix2<double>> eigensystem(A, true);
+    double nearest = std::numeric_limits<double>::infinity();
+    int nearest_index = 0;
+    for(int index = 0; index < 2; ++index)
+    {
+        const double abscissa =
+            std::abs(eigensystem.eigenvalues()(index).real());
+        if(abscissa < nearest)
+        {
+            nearest = abscissa;
+            nearest_index = index;
+        }
+    }
+
+    const auto mode = eigensystem.eigenvectors().col(nearest_index);
+    const Eigen::Vector2d real_part = mode.real();
+    const Eigen::Vector2d imag_part = mode.imag();
+    const double quotient = (weight_factor * real_part).squaredNorm()
+                          + (weight_factor * imag_part).squaredNorm();
+
+    // The denominator carries no cancellation -- it is a norm of nonnegative
+    // contributions -- so it is taken from the assembled weighting directly.
+    const double weight_magnitude =
+        (weight_factor.transpose() * weight_factor).norm();
+    return quotient / weight_magnitude;
+}
+
 }
 
 TEST_CASE("CARE sign iteration declines an unresolved regenerated input",
@@ -584,8 +656,72 @@ TEST_CASE("CARE sign iteration declines an unresolved regenerated input",
 
     const auto result = ctrlpp::care<double, 2, 1>(A, B, Q, R);
 
+    // WHY the refusal is required, stated without reference to the solver.
+    //
+    // A carries a mode exactly on the imaginary axis, and (A, B) is
+    // controllable, so a stabilizing solution exists provided that mode is
+    // visible through Q -- and it is, but at a relative visibility of 4.2e-25,
+    // sixteen and a half decades below the point where binary64 can resolve it
+    // and nine below epsilon itself. The solution
+    // therefore exists and is not determined, which is a refusal.
+    //
+    // The boundary is sqrt(epsilon) rather than epsilon because the mode enters
+    // the Hamiltonian through Q and leaves it through a squared quantity: a
+    // visibility of v is distinguishable from zero in the iterate only while
+    // v^2 stays above the roundoff of the sums that formed it. Sweeping the
+    // visibility across thirty-one decades puts the accept/refuse transition at
+    // 1e-8, against sqrt(epsilon) = 1.5e-8.
+    const double axis_abscissa = nearest_axis_mode_abscissa(A);
+    const double visibility = nearest_axis_mode_visibility(A, raw_weight);
+
+    // The comparisons below are on the values themselves. The CAPTURE is on the
+    // base-ten exponent because Catch2 stringifies a double in FIXED notation,
+    // which renders every quantity in this test as "0.0" and would tell a reader
+    // diagnosing a future failure the one thing that is not true of it.
+    const double visibility_decades = std::log10(visibility);
+    const double boundary_decades =
+        std::log10(std::sqrt(std::numeric_limits<double>::epsilon()));
+    CAPTURE(axis_abscissa, visibility_decades, boundary_decades);
+
+    // That a mode sits exactly on the axis is a property of the literals, and it
+    // is asserted against them rather than against an eigensolver: A is lower
+    // triangular, so its spectrum IS its diagonal, and the leading diagonal
+    // entry is exactly zero. No arithmetic and no threshold participate.
+    CHECK(A(0, 1) == 0.0);
+    CHECK(A(0, 0) == 0.0);
+
+    // The COMPUTED abscissa is a different quantity and is not exactly zero on
+    // every toolchain -- clang with FMA contraction returns 2.8e-18 where g++
+    // returns exactly 0. A backward-stable eigensolver returns the exact
+    // eigenvalues of A + E with ||E|| on the order of the operand count times
+    // epsilon times ||A||, and this file counts a 2-by-2 at n = 2 the same way
+    // the solver counts its own operations. Observed worst case is 28x inside
+    // the bound; asserting equality with zero here asserted a toolchain.
+    constexpr int spectral_rounding_ops = 2;
+    CHECK(axis_abscissa <= double{spectral_rounding_ops}
+                               * std::numeric_limits<double>::epsilon()
+                               * A.norm());
+
+    CHECK(visibility > 0.0);
+    CHECK(visibility
+          < std::sqrt(std::numeric_limits<double>::epsilon()));
+
     REQUIRE_FALSE(result.has_value());
-    CHECK(result.error() == ctrlpp::care_error::sign_function_stagnated);
+
+    // WHICH refusal is not asserted, because it is not a property of the input.
+    // Below the resolution boundary the enumerator is decided by instruction
+    // selection: this input alone yields sign_function_stagnated under g++,
+    // non_psd_solution under clang with contraction enabled, and
+    // non_lhp_stabilizable under Apple clang on arm64, and a thirty-point
+    // three-ulp neighborhood of it produces all three. Pinning one of them
+    // asserted a toolchain.
+    //
+    // What the input DOES determine is the two diagnoses it can never carry: R
+    // is nonsingular and every entry of every operand is finite. Either of those
+    // would be the solver misreading a well-formed input as a domain violation.
+    CHECK(result.error() != ctrlpp::care_error::singular_r);
+    CHECK(result.error() != ctrlpp::care_error::non_finite_input);
+    CHECK(is_enumerated_care_error(result.error()));
 
     const auto reference = ctrlpp::care<long double, 2, 1>(
         A.cast<long double>(),
