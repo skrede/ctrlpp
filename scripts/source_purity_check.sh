@@ -363,6 +363,28 @@ select_scan_dirs()
     return 0
 }
 
+# BUILD TREES ARE NOT SCANNED, and the reason is what this gate is for.
+#
+# Every root the rules select is a directory of TRACKED material. A build tree
+# sitting inside one of them is generated output, and when a dependency is
+# fetched rather than found installed -- which is what the benchmark project's
+# own CTRLPP_FETCH_BENCHMARK_DEPS option does, and the only way to build the
+# benches on a machine without the dependency installed -- that output contains
+# a third-party library's sources and its rendered documentation. Reading it can
+# only produce findings about someone else's code. This gate exists to catch a
+# false claim in material this repository ships; a report about a vendored
+# library's analytics tag or its own nodiscard macro is the false red the gate is
+# supposed to prevent, not one it should manufacture.
+#
+# The patterns mirror the .gitignore entries that create these directories, so
+# what the gate declines to read is exactly what the repository declines to
+# track. Verified: no tracked path under any scanned root matches them.
+#
+# Applied to EVERY recursive search rather than to the two rules that scan
+# `benchmarks` today, so that a rule which later adds a root carrying a build
+# tree inherits the exclusion instead of rediscovering this failure.
+scan_exclusions=(--exclude-dir='build*' --exclude-dir='cmake-build-*')
+
 # Counts the lines of a file whose whitespace-trimmed text equals a given
 # string. An exact match, so a mention of the same text inside a comment does
 # not satisfy the assertion.
@@ -399,7 +421,7 @@ rule_1_unwrap()
     select_scan_dirs lib examples
     [ ${#scan_dirs[@]} -eq 0 ] && return 0
     grep -rn --include='*.h' --include='*.hpp' --include='*.cpp' -E '\.value\(\)' \
-        "${scan_dirs[@]}" 2>/dev/null \
+        "${scan_exclusions[@]}" "${scan_dirs[@]}" 2>/dev/null \
         | comment_filter \
         | grep -v '/detail/expected\.h:' \
         || true
@@ -412,7 +434,7 @@ rule_2_throw()
     [ ${#scan_dirs[@]} -eq 0 ] && return 0
     grep -rn --include='*.h' --include='*.hpp' --include='*.cpp' \
         -E '(^|[^[:alnum:]_])throw([[:space:]]|;|$)' \
-        "${scan_dirs[@]}" 2>/dev/null \
+        "${scan_exclusions[@]}" "${scan_dirs[@]}" 2>/dev/null \
         | comment_filter \
         | grep -v '/detail/expected\.h:' \
         || true
@@ -425,7 +447,7 @@ rule_3_rtti()
     [ ${#scan_dirs[@]} -eq 0 ] && return 0
     grep -rn --include='*.h' --include='*.hpp' --include='*.cpp' \
         -E '(^|[^[:alnum:]_])(dynamic_cast|typeid)[[:space:]]*[<(]' \
-        "${scan_dirs[@]}" 2>/dev/null \
+        "${scan_exclusions[@]}" "${scan_dirs[@]}" 2>/dev/null \
         | comment_filter \
         || true
     return 0
@@ -457,7 +479,7 @@ rule_4b_no_site_attribute()
     select_scan_dirs lib tests examples benchmarks validation
     [ ${#scan_dirs[@]} -eq 0 ] && return 0
     hits="$(grep -rn --include='*.h' --include='*.hpp' --include='*.cpp' \
-        -F '[[nodiscard]]' "${scan_dirs[@]}" 2>/dev/null | comment_filter || true)"
+        -F '[[nodiscard]]' "${scan_exclusions[@]}" "${scan_dirs[@]}" 2>/dev/null | comment_filter || true)"
     while IFS= read -r hit; do
         [ -n "${hit}" ] || continue
         file="${hit%%:*}"
@@ -581,7 +603,8 @@ rule_8_planning_identifiers()
     # There is no comment filter here, deliberately. Every occurrence this rule
     # was written against was inside a comment; a comment is the place these
     # keys live, not an exemption from them.
-    grep -rInE "${planning_identifier_pattern}" "${scan_dirs[@]}" 2>/dev/null \
+    grep -rInE "${planning_identifier_pattern}" \
+        "${scan_exclusions[@]}" "${scan_dirs[@]}" 2>/dev/null \
         | grep -vE "${planning_identifier_exclusions}" \
         || true
     return 0
