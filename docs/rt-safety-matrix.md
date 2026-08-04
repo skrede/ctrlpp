@@ -154,8 +154,12 @@ fixed overhead that does not scale with the scalar. The host table is therefore
 usable as written for `double` and halves for `float`; it is not refuted and it
 is not to be replaced by these figures.
 
-**Supported maximum on this board: `NX = 4`, leaving 2,256 bytes of an 8,192-byte
-task stack.** Established twice and by different means. A pass giving every
+**Supported maximum ON THE STACK for this board: `NX = 4`, leaving 2,256 bytes of
+an 8,192-byte task stack.** That is the stack answer only -- the accuracy gate
+refuses `NX = 3` and everything above `NX = 4` at `float`, and clears `NX = 4`
+itself by just 3.4 percent, so the usable maximum is lower than this line alone
+implies. See the accuracy paragraph below. Established twice and by different
+means. A pass giving every
 dimension 49,152 bytes recorded `NX = 5` needing 8,336 bytes, which is 144 more
 than the task stack has; a second pass at the control task's own 8,192 bytes then
 walked the same dimensions and the board reported
@@ -169,15 +173,35 @@ fired, and it is the more precise of the two because the canary check only runs
 at a context switch. Enabling the watchpoint costs up to 60 bytes of every task's
 usable stack, so these figures and any taken without it are not interchangeable.
 
-**THE STACK IS NOT THE BINDING LIMIT FOR `float` ON THIS BOARD. THE ACCEPTANCE
-CHECK IS.** Only `NX = 2` and `NX = 4` were accepted. Every other probed
-dimension returned `arithmetic_limit` -- "solution is not reliable at this
-precision" -- including `NX = 6`, whose 11,500 bytes would fit a 16 KiB task
-comfortably. At `float` the half-significand margin is `sqrt(eps) = 3.45e-4`, and
-on this corpus the estimated forward error exceeds it from `NX = 5` up and at
-`NX = 3`. A caller sizing a 16 KiB task for a six-state `float` plant would find
-the stack sufficient and the answer refused. That is the gate working as
-designed, and it is the number to plan against.
+**THE STACK IS NOT THE BINDING LIMIT FOR `float`. THE ACCEPTANCE CHECK IS, AND
+IT IS NOT A BOARD PROPERTY.** Only `NX = 2` and `NX = 4` were accepted; every
+other probed dimension was refused, including `NX = 6`, whose 11,500 bytes would
+fit a 16 KiB task comfortably. A caller sizing a 16 KiB task for a six-state
+`float` plant would find the stack sufficient and the answer refused.
+
+This reproduces exactly on the host -- same dimensions accepted, same refused,
+with `double` answering every one of them -- so it is a property of the SCALAR
+TYPE and the library, not of Xtensa. It is pinned by
+`tests/unit/dare_float_precision_test.cpp`, which asserts the bands rather than
+this paragraph.
+
+**The refusing site is the forward-error gate specifically**, not the
+definiteness floor and not the gain: measured on the solver's own answer, the
+definiteness pivots and the gain are healthy at every dimension, and the
+estimated relative forward error as a fraction of the `float` half-significand
+margin `sqrt(eps) = 3.4527e-04` is
+
+| `NX` | 2 | 3 | 4 | 5 | 6 | 8 |
+|---|---:|---:|---:|---:|---:|---:|
+| estimate / margin | 0.169 | 5.172 | **0.966** | 4.625 | 2.590 | 4.105 |
+
+**`NX = 4` CLEARS THE MARGIN BY 3.4 PERCENT, SO IT IS NOT A SUPPORTED MAXIMUM A
+CALLER SHOULD BUILD ON.** The board and the host agree on it, but that is two
+samples of a quantity sitting three percent from a cliff, and three percent is
+inside what a different optimization level, Eigen version or fused multiply-add
+moves. Read the supported maximum as **`NX = 2` with headroom, `NX = 4`
+marginally and toolchain-dependently, and nothing above that**. The test pins the
+two bands and deliberately does NOT assert which side `NX = 4` lands on.
 
 Witness: `examples/embedded/esp32/main/app_main.cpp`, whose control loop still
 designs its gain, runs its 201 steps, streams them over UART2 and reports
