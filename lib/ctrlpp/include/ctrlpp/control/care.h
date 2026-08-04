@@ -107,7 +107,7 @@ template <typename Scalar, std::size_t NX,
           conditioning_policy Cond   = pivot_ratio_conditioning>
 auto care_solve_from_hamiltonian(
     const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& H,
-    Method /*method_tag*/ = {},
+    Method method_tag     = {},
     Cond   /*cond_tag*/   = {})
     -> ctrlpp::expected<care_result<Scalar, NX>, care_error>
 {
@@ -126,14 +126,13 @@ auto care_solve_from_hamiltonian(
         if (!T.allFinite() || !U.allFinite())
             return ctrlpp::unexpected(care_error::non_finite_input);
 
-        const Scalar scale = T.cwiseAbs().maxCoeff();
-        const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
-        // Eigenvalues of a backward-stable real Schur factor carry a
-        // perturbation on the order of the matrix size times unit roundoff
-        // times the factor norm, so the open-left-half-plane predicate margin
-        // is that backward error: 2n times epsilon times the largest magnitude
-        // of T.
-        const Scalar lhp_margin = Scalar{n2} * eps * scale;
+        // One predicate, one margin. The derivation lives beside the
+        // quasi-triangular primitives so that this path and the balanced path
+        // cannot drift apart: the eigenvalues of a backward-stable real Schur
+        // factor carry a perturbation on the order of the factored matrix's
+        // dimension times unit roundoff times the factor's largest entry.
+        const Scalar lhp_margin =
+            schur_eigenvalue_margin<Scalar, n2>(T);
         auto predicate = [lhp_margin](std::complex<Scalar> lam) -> bool
         {
             return lam.real() < -lhp_margin;
@@ -177,7 +176,8 @@ auto care_solve_from_hamiltonian(
     }
     else if constexpr (std::is_same_v<Method, sign_function_care_method>)
     {
-        return detail::care_solve_via_sign_function<Scalar, NX>(H);
+        return detail::care_solve_via_sign_function<Scalar, NX>(
+            H, method_tag.warmup_iterations);
     }
     else  // balanced_schur_care_method
     {

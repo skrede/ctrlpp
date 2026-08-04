@@ -240,7 +240,7 @@ otherwise produce silent corruption through intermediate overflow:
   eighteen decades of a common rescale in both directions, on a comfortably
   damped family and a structurally simple one, `balanced_schur_care_method`
   answers all 1,152 draws of each population and every answer agrees with the
-  scale-invariant gain oracle; the default answers 632 and 641. The difference
+  scale-invariant gain oracle; the default answers 652 and 655. The difference
   is the DGEBAL-style diagonal balance that variant applies before factorizing,
   which is exactly the equilibration the default lacks. A caller whose weights
   sit far from their dynamics' own scale, and who would rather pay for an answer

@@ -200,9 +200,17 @@ auto care_solve_via_balanced_schur(
     if (!T.allFinite() || !U.allFinite())
         return ctrlpp::unexpected(care_error::non_finite_input);
 
-    const Scalar scale      = T.cwiseAbs().maxCoeff();
-    const Scalar eps        = std::numeric_limits<Scalar>::epsilon();
-    const Scalar lhp_margin = eps * std::max(Scalar{1}, scale);
+    // The same one margin the plain-Schur path uses, from the same derivation.
+    // This site used to carry its own: unit roundoff times max(1, scale), which
+    // dropped the dimension factor and added a floor of one that no comment
+    // derived. The floor's only candidate justification was a balance driving
+    // the factor's magnitude toward zero, and that is refuted by measurement --
+    // over 3,456 draws spanning eighteen decades of weight scale in each
+    // direction, the balanced factor's largest entry stayed inside
+    // [0.99999999999999845, 1.8260572569697802]. A balance is a normalizing
+    // preconditioner, so its output magnitude is O(1) by construction and a
+    // floor at one is inert where it is not simply absent.
+    const Scalar lhp_margin = schur_eigenvalue_margin<Scalar, n2>(T);
     auto predicate = [lhp_margin](std::complex<Scalar> lam) -> bool
     {
         return lam.real() < -lhp_margin;

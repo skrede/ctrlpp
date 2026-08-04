@@ -95,6 +95,27 @@ The two enumerators are separate because they say different things, and neither 
 
 See [dare](dare.md) for what `care_error::singular_u11` covers; the continuous enumerator has the identical shape as its discrete counterpart.
 
+#### Tuning the default tag
+
+`sign_function_care_method` carries one defaulted member. Omitting the tag, or passing a default-constructed one, gives today's behavior exactly.
+
+```cpp
+struct sign_function_care_method
+{
+    int warmup_iterations = 3;
+};
+
+// Give a badly scaled Hamiltonian more room before the guard arms.
+auto K = ctrlpp::lqr_gain_continuous<double, 2, 2>(
+    A, B, Q, R, ctrlpp::detail::sign_function_care_method{.warmup_iterations = 8});
+```
+
+`warmup_iterations` is the number of Newton steps taken before the non-contraction guard arms. After the window, a step whose change grows rather than shrinks ends the solve with `care_error::sign_function_stagnated`; inside it, growth is allowed, because the determinantal scaling makes large corrections in the early steps. Raising it trades a later decline for a chance at an answer; lowering it declines sooner.
+
+It is a knob rather than a constant because the number of such early steps is a property of the input's conditioning and is not derivable from the scalar type or the dimension. The default's provenance is stated rather than implied: swept over 3,456 draws spanning eighteen decades of weight scale in each direction, every value from 0 to the iteration cap of 40 produced identical outcomes, so `3` is retained because it moves nothing on that evidence.
+
+**The knob cannot break the result contract.** The guard bounds wasted work; it does not decide acceptance. Whatever the iteration produces is still verified against the caller's own Hamiltonian before it is reported, under every value.
+
 ### lqr_finite
 
 ```cpp

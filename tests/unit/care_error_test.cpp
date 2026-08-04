@@ -479,6 +479,58 @@ TEST_CASE("CARE reports an unverifiable extracted result with a method-neutral c
     }
 }
 
+TEST_CASE("the sign path's warm-up window is a knob whose default changes nothing",
+          "[care][error][design-lever]")
+{
+    // The window before the non-contraction guard arms is not derivable from
+    // the scalar type or the dimension, so it is a defaulted member of the
+    // method tag rather than a literal in the loop. Two things are pinned here.
+    //
+    // First, omitting it keeps today's behavior: a default-constructed tag and
+    // an explicitly-default-valued tag must agree bit for bit with the
+    // no-tag call.
+    //
+    // Second, the guard is a bound on wasted work and not a correctness test,
+    // so every value must produce an answer that is either refused or
+    // stabilizing. A window that let an unverified answer through would be a
+    // knob that can break the result contract, and no knob may do that.
+    Eigen::Matrix<double, 2, 2> A;
+    A << -1.1, 0.3, -0.2, -1.4;
+    Eigen::Matrix<double, 2, 2> B;
+    B << 0.8, 0.1, -0.15, 0.65;
+    Eigen::Matrix<double, 2, 2> Q;
+    Q << 1.0, 0.2, 0.2, 1.7;
+    Eigen::Matrix<double, 2, 2> R;
+    R << 1.3, 0.1, 0.1, 0.9;
+
+    auto const implicit = ctrlpp::care<double, 2, 2>(A, B, Q, R);
+    auto const defaulted = ctrlpp::care<double, 2, 2>(
+        A, B, Q, R, ctrlpp::detail::sign_function_care_method{});
+    REQUIRE(implicit.has_value());
+    REQUIRE(defaulted.has_value());
+    CHECK(implicit->P == defaulted->P);
+
+    for(int window : {0, 1, 3, 8, 40})
+    {
+        CAPTURE(window);
+        ctrlpp::detail::sign_function_care_method tag;
+        tag.warmup_iterations = window;
+        auto const result = ctrlpp::care<double, 2, 2>(A, B, Q, R, tag);
+        if(!result.has_value())
+        {
+            CHECK(result.error()
+                  == ctrlpp::care_error::sign_function_stagnated);
+            continue;
+        }
+        const Eigen::Matrix<double, 2, 2> closed_loop =
+            (A - B * R.inverse() * B.transpose() * result->P).eval();
+        Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> spectrum(closed_loop,
+                                                                 false);
+        CHECK(spectrum.eigenvalues()(0).real() < 0.0);
+        CHECK(spectrum.eigenvalues()(1).real() < 0.0);
+    }
+}
+
 TEST_CASE("lqr_gain_continuous refuses a singular R its own factorization hid",
           "[lqr][continuous][error]")
 {

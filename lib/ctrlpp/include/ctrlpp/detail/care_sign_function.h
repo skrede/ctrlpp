@@ -57,6 +57,16 @@
 /// Eq. 5.16, the 2 from 2n = size(H), iteration cap 40 from Higham Table 5.2's
 /// worst-observed count with determinantal scaling) appears in the hot path.
 ///
+/// That claim was false and is now true. Two literals used to falsify it: a
+/// contraction ratio of one half in the convergence guard, and a leading factor
+/// of two in the stopping tolerance whose companion quantity `n2` already IS
+/// 2n. The first is gone -- the guard tests non-growth, which needs no
+/// coefficient -- and the second is replaced by the counted form
+/// sqrt(n2^2 * eps), whose operation count is the entrywise count of the
+/// 2n-by-2n difference the change is measured on. The one remaining
+/// underivable quantity, the window before that guard arms, is a documented
+/// defaulted member of `sign_function_care_method` rather than a literal here.
+///
 /// @cite roberts1980 : Roberts, "Linear model reduction and solution of the algebraic Riccati equation by use of the sign function", 1980
 /// @cite byers1987   : Byers, "Solving the algebraic Riccati equation with the matrix sign function", 1987
 /// @cite higham2008  : Higham, "Functions of Matrices: Theory and Computation", 2008, Ch. 5 Eq. 5.16 / 5.34 / 5.35 / 5.41, Theorem 5.1(e)
@@ -80,7 +90,8 @@ namespace ctrlpp::detail
 
 template <typename Scalar, std::size_t NX>
 auto care_solve_via_sign_function(
-    const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& H_in)
+    const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& H_in,
+    int warmup_iterations)
     -> ctrlpp::expected<care_result<Scalar, NX>, care_error>
 {
     constexpr int n  = int(NX);
@@ -100,9 +111,22 @@ auto care_solve_via_sign_function(
     // the answer. Leaving the loop leads to the extraction and to the
     // verification of what was extracted, and it is that verification, not this
     // test, that permits a success.
-    const Scalar change_candidate_dimension = Scalar{2} * Scalar{n2};
+    //
+    // Its tolerance is counted rather than chosen, in the same form the
+    // acceptance bounds use. The iteration is quadratically convergent, so the
+    // error remaining after a step whose relative change is d is on the order of
+    // d^2. Stopping is worth doing once that remaining error reaches the
+    // rounding floor of the quantity being compared, and the quantity is the
+    // Frobenius magnitude of a 2n-by-2n difference, which accumulates one
+    // rounded contribution per entry: n2 * n2 of them. Setting d^2 equal to that
+    // counted floor gives d = sqrt(n2^2 * eps) = n2 * sqrt(eps).
+    //
+    // The leading factor of two this expression used to carry had no stated
+    // origin, and `n2` already IS 2n, so it was a second undocumented doubling
+    // rather than the structural 2 of 2n = size(H).
+    constexpr int change_candidate_rounding_ops = n2 * n2;
     const Scalar change_candidate_tolerance =
-        std::sqrt(eps) * change_candidate_dimension;
+        std::sqrt(static_cast<Scalar>(change_candidate_rounding_ops) * eps);
     resolved_magnitude<Scalar> last_change{Scalar{0}, false};
 
     for (int k = 0; k < max_iters; ++k)
@@ -145,16 +169,26 @@ auto care_solve_via_sign_function(
             break;
         }
 
-        // A change that grows after the warm-up window is non-contraction, and
-        // an iteration that is not contracting will not reach a sign matrix.
-        // This is a statement about the ITERATION, which is why it is separate
-        // from the verification of the answer: it declines early rather than
-        // spending the remaining budget to decline later.
-        if (k > 3
-            && !magnitude_within(
-                change,
-                scaled_magnitude(last_change,
-                                 Scalar{1} / Scalar{2})))
+        // A change that does not shrink is non-contraction, and an iteration
+        // that is not contracting will not reach a sign matrix. This is a
+        // statement about the ITERATION, which is why it is separate from the
+        // verification of the answer: it declines early rather than spending
+        // the remaining budget to decline later.
+        //
+        // The test is the one the sentence above describes and nothing
+        // stronger. It used to refuse any step that did not at least HALVE,
+        // which refuses a step shrinking by forty percent -- a contraction --
+        // and the ratio of one half carried no derivation. Non-growth needs no
+        // coefficient, so the constant is gone rather than exposed.
+        //
+        // The window before the guard arms remains a defaulted parameter on the
+        // method tag: the determinantal scaling makes large corrections in the
+        // first steps and the change can legitimately grow across them, but the
+        // number of such steps is a property of the input rather than something
+        // this file can count, so it is named and documented instead of written
+        // as a literal.
+        if (k > warmup_iterations
+            && !magnitude_within(change, last_change))
             return ctrlpp::unexpected(care_error::sign_function_stagnated);
         last_change = change;
 

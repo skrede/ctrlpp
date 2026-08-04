@@ -115,6 +115,29 @@ auto quasi_triangular_block_spectrum(const Eigen::Matrix<Scalar, N, N>& T,
             false};
 }
 
+/// @brief Backward-error margin on an eigenvalue's real part read from a real
+/// Schur factor: the factored matrix's dimension times unit roundoff times the
+/// factor's largest entry.
+///
+/// A backward-stable factorization returns the exact factor of a nearby matrix,
+/// and an eigenvalue of an N-by-N factor carries a perturbation on the order of
+/// N times unit roundoff times the factor's magnitude. An open-half-plane
+/// predicate that does not subtract this cannot distinguish an eigenvalue on the
+/// axis from one the arithmetic placed there.
+///
+/// Every left-half-plane predicate in the continuous solver uses this one
+/// derivation: the plain-Schur and balanced-Schur reordering predicates on the
+/// 2n-by-2n Hamiltonian factor, and the acceptance rule on the n-by-n
+/// closed-loop factor. The acceptance rule reaches it through the
+/// resolved-magnitude form, which additionally declines when the factor's
+/// magnitude cannot be resolved, but the counted expression is the same.
+template <typename Scalar, int N>
+auto schur_eigenvalue_margin(const Eigen::Matrix<Scalar, N, N>& T) -> Scalar
+{
+    return Scalar{N} * std::numeric_limits<Scalar>::epsilon()
+           * T.cwiseAbs().maxCoeff();
+}
+
 /// @brief True when every eigenvalue of the factor has real part below
 /// `-margin`.
 ///
