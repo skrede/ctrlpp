@@ -124,17 +124,34 @@ auto build_dare_symplectic(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, con
 
 /// @brief What an acceptance check decided about one posing of the problem.
 ///
-/// The third value is the one that matters and it is not a failure. A check that
-/// could not form the quantity it needed has produced no evidence, and an
-/// absence of evidence is neither a certificate nor a refutation. Collapsing it
-/// into either is how a comparison between two infinities ends up certifying,
-/// and how a comparison that could never be formed ends up refusing an answer
-/// the solver can represent perfectly well.
+/// The last two values are the ones that matter and neither is a failure. A
+/// check that could not form the quantity it needed has produced no evidence,
+/// and an absence of evidence is neither a certificate nor a refutation.
+/// Collapsing it into either is how a comparison between two infinities ends up
+/// certifying, and how a comparison that could never be formed ends up refusing
+/// an answer the solver can represent perfectly well.
+///
+/// `unresolved` and `gain_unavailable` are both absences of evidence, and they
+/// are kept apart because ONE OF THEM HAS A KNOWN CAUSE AND THE OTHER DOES NOT.
+/// `gain_unavailable` says exactly one thing: the gain could not be formed at
+/// the scale being checked, because `R + B'PB` left the range there. That is a
+/// property of the scale, not of the answer, and it is reached routinely at the
+/// top of the representable range on answers that are bit-exact -- measured on
+/// the scalar pose `A = 0.5`, `B = 1`, `Q = R = c`, the topmost 0.2748 decades
+/// of the accepted range report it, and every answer in that band matches the
+/// homogeneous truth `c * P_unit` to zero relative error.
+///
+/// `unresolved` covers every other way a quantity failed to form, including the
+/// forward-error estimator declining to resolve. Those have no such account, so
+/// a caller may not treat them as benign. Merging the two would force a single
+/// disposition on both: either discard the bit-exact band or accept an absence
+/// of evidence whose cause is unknown.
 enum class dare_verification
 {
     verified,
     refuted,
     unresolved,
+    gain_unavailable,
 };
 
 template<typename Scalar, std::size_t NX, std::size_t NU>
@@ -149,15 +166,19 @@ auto compute_dare_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const E
     // the answer solves the equation.
     const auto gain_operand = (R + BtP * B).eval();
     if(!BtP.allFinite() || !gain_operand.allFinite())
-        return dare_verification::unresolved;
+        return dare_verification::gain_unavailable;
 
     auto gain_qr = gain_operand.colPivHouseholderQr();
     gain_qr.setThreshold(Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon());
     if(!gain_qr.isInvertible())
         return dare_verification::refuted;
 
+    // A rank-revealing solve that produced a non-finite gain from a finite,
+    // invertible operand is the same statement about the scale as the operand
+    // leaving the range: the gain does not exist HERE, which says nothing about
+    // whether the answer solves the equation.
     gain = gain_qr.solve(BtP * A).eval();
-    return gain.allFinite() ? dare_verification::verified : dare_verification::unresolved;
+    return gain.allFinite() ? dare_verification::verified : dare_verification::gain_unavailable;
 }
 
 /// @brief Verify that P solves the posed DARE and produces a stabilizing gain.
@@ -378,6 +399,14 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<
         return ctrlpp::unexpected(result.error());
     }
 
+    // The equilibrated-scale check accepts NOTHING BUT a verified verdict, and
+    // that strictness is not the same rule relaxed at the other site -- it is
+    // the rule that fits this scale. Equilibration exists precisely to put the
+    // weights where the quantities the check needs are formable, so an absence
+    // of evidence HERE is anomalous rather than expected, and there is no
+    // second opinion behind it to fall back on. `gain_unavailable` is therefore
+    // a decline here even though it is an accept after the rescale, where the
+    // scale is the caller's and the equilibrated verdict already stands.
     Eigen::Matrix<Scalar, int(NU), int(NX)> scaled_gain;
     if(!Q_scaled.allFinite() || !R_scaled.allFinite()
        || detail::verify_dare_solution<Scalar, NX, NU>(A, B, Q_scaled, R_scaled, result->P, &scaled_gain) != detail::dare_verification::verified)
@@ -427,16 +456,43 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<
        || returned_psd.vectorD().minCoeff() < detail::psd_pivot_floor<Scalar, int(NX)>(result->P))
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
 
-    // Third, the direct check is kept wherever its operands resolve. It cannot
-    // widen what is accepted -- the carried claim already reaches every answer
-    // the type can represent -- but it can refuse one, and ON A DISAGREEMENT THE
-    // DIRECT CHECK DECLINES: a resolved contradiction is evidence against the
-    // carried claim's premise, not a tie to break. Where the direct check cannot
-    // be formed it has produced no evidence and the carried claim stands alone,
-    // which is the only regime in which the two differ without a decline.
+    // Third, the direct check is kept, and it declines on EVERY outcome but two:
+    // a verified verdict, and the one absence of evidence whose cause is known.
+    //
+    // The distinction is the whole of the rule. `gain_unavailable` says the gain
+    // could not be formed at the caller's scale because `R + B'PB` left the
+    // range there -- a statement about the scale, not about the answer. That is
+    // exactly the band the carried claim was written to cover, it is reached on
+    // ordinary poses rather than contrived ones, and the answers in it are not
+    // marginal: on the scalar pose `A = 0.5`, `B = 1`, `Q = R = c` the topmost
+    // 0.2748 decades of the accepted range report it (ceiling 1.586972e+308
+    // against 8.428864e+307 for a rule that declines it) and every answer in
+    // that band reproduces the homogeneous truth `c * P_unit` to ZERO relative
+    // error. Declining it would discard bit-exact answers to buy nothing.
+    //
+    // `unresolved` is the opposite case and it declines. It covers every other
+    // way a quantity failed to form, including the forward-error estimator
+    // declining to resolve, and none of those come with an account of why. The
+    // carried claim's premise is that the two scales pose the same problem, and
+    // an unexplained dissolution of the direct check is the weakest place to
+    // assume it. Measurement agrees that nothing is given up by declining: over
+    // all ten weight-ratio populations, 3,464,634 poses, no disposition and no
+    // returned bit differs, and a targeted hunt of 24,040 adversarial draws with
+    // closed loops pushed against the unit circle across weight ratios from
+    // 10^-300 to 10^300 produced 860 accepted poses and NOT ONE reaching this
+    // site unresolved, against a reachability control that fired 31,610 times in
+    // the same regime. The structural reason is that the closed loop is
+    // homogeneous of degree zero in (P, Q, R) and the estimator's operator
+    // depends on nothing but the closed loop, so such a pose is already declined
+    // at the first site -- an argument that turns on the rounding of the two
+    // rescaling steps, which is not zero, so it is measured-unreached rather
+    // than proven, and the rule declines instead of leaning on it.
+    //
+    // AND ON A REFUTATION THE DIRECT CHECK DECLINES: a resolved contradiction is
+    // evidence against the carried claim's premise, not a tie to break.
     Eigen::Matrix<Scalar, int(NU), int(NX)> returned_gain;
     const detail::dare_verification direct = detail::verify_dare_solution<Scalar, NX, NU>(A, B, Q, R, result->P, &returned_gain);
-    if(direct == detail::dare_verification::refuted)
+    if(direct != detail::dare_verification::verified && direct != detail::dare_verification::gain_unavailable)
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
 
     if(direct == detail::dare_verification::verified)

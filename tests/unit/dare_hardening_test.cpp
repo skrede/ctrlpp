@@ -756,6 +756,53 @@ TEST_CASE("DARE holds the common-scale identity across the representable range",
     CHECK(tally.declined_beyond_ceiling > 0);
 }
 
+TEST_CASE("DARE keeps the band whose only failing check is the gain's own scale", "[dare][hardening][precision]")
+{
+    // Near the top of the range the check at the CALLER's scale dissolves before
+    // the answer does: the gain it recomputes needs `R + B'PB` formed there, and
+    // that sum leaves the range while the solution is still an ordinary normal
+    // number. That is `gain_unavailable` -- an absence of evidence with a known
+    // cause -- and it is the one absence the solver accepts, because the
+    // equilibrated verdict already covers the band and the answers in it are not
+    // approximate. A rule that declined every unresolved verdict alike would
+    // discard this band, and the census above would not notice: it only pins
+    // that points ABOVE the derived ceiling decline.
+    //
+    // Nothing here is hardcoded. The ceiling is derived from the type's range,
+    // the band's lower edge is found by walking down until the direct check
+    // starts resolving again, and the correctness bar is exact equality against
+    // the homogeneous truth rather than a tolerance.
+    const auto pose = common_scale_pose();
+    const auto unit = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, weight_at(1.0), weight_at(1.0));
+    REQUIRE(unit.has_value());
+
+    const double p_unit  = unit->P(0, 0);
+    const double ceiling = std::numeric_limits<double>::max() / p_unit;
+
+    int in_band = 0;
+    for(double scale = ceiling; scale > 1.0; scale /= 2.0)
+    {
+        const auto weight = weight_at(scale);
+        const auto result = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, weight, weight);
+        REQUIRE(result.has_value());
+
+        // Stop at the lower edge: below it the direct check resolves again and
+        // the pose is no longer evidence about this rule.
+        if(ctrlpp::detail::verify_dare_solution<double, 1, 1>(pose.A, pose.B, weight, weight, result->P) != ctrlpp::detail::dare_verification::gain_unavailable)
+            break;
+
+        ++in_band;
+        // Homogeneity of degree one: the answer is exactly `scale * p_unit`, and
+        // the rescale is a single multiplication, so the returned matrix carries
+        // the unit answer's every bit. Checked by division to stay in range.
+        CAPTURE(scale, result->P(0, 0), p_unit);
+        CHECK(result->P(0, 0) / scale == p_unit);
+    }
+
+    // The band exists and the walk entered it, so neither half passes vacuously.
+    CHECK(in_band > 0);
+}
+
 TEST_CASE("DARE original-scale residual guard still asserts where a squared magnitude would not", "[dare][hardening][precision]")
 {
     // The guard integrity half of the change, and it is independent of reach. At

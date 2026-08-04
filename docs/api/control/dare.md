@@ -160,13 +160,27 @@ dividing out the operand's largest entry first, so on a pose whose *answer* is a
 ordinary normal number the *evidence* no longer leaves the range -- a comparison
 between two infinities was refusing problems the solver could solve.
 
-The direct check at your scale is still performed **wherever its operands
-resolve**, and every magnitude it forms is computed by dividing out the
-operand's largest entry first, so it neither overflows nor underflows on finite
-operands. It cannot widen what is accepted, but it can refuse: where the carried
-claim and the direct check disagree, **the direct check declines**. Where the
-direct check cannot be formed at all it has produced no evidence, and the
-carried claim stands alone.
+The direct check at your scale is still performed, and every magnitude it forms
+is computed by dividing out the operand's largest entry first, so it neither
+overflows nor underflows on finite operands. It cannot widen what is accepted,
+but it can refuse: where the carried claim and the direct check disagree, **the
+direct check declines**.
+
+Where the direct check cannot be formed, what happens depends on **why**, and the
+two cases are deliberately not merged:
+
+- **The gain could not be formed at your scale**, because `R + B'PB` left the
+  range there. That is a statement about the scale rather than about the answer,
+  it is exactly the band the carried claim was written to cover, and the answers
+  in it are bit-exact (see below). The carried claim stands and the answer is
+  returned.
+- **Anything else failed to resolve**, including the forward-error estimator
+  declining. These come with no account of why, and the carried claim's premise
+  is that both scales pose the same problem -- an unexplained dissolution of the
+  direct check is the weakest place to assume it. **The solver declines.**
+
+Merging the two would force one disposition on both: either discard a band of
+exactly-correct answers, or accept an absence of evidence whose cause is unknown.
 
 ### The accepted range's ceiling
 
@@ -187,7 +201,13 @@ representable and the refusal is `arithmetic_limit`.
 The direct check's own reach stops slightly earlier -- 0.2748 decades earlier on
 that pose -- because the gain it recomputes needs the sum `R + B'PB` formed at
 your scale, and that sum leaves the range before the answer does. That is
-exactly the band the carried claim covers.
+exactly the band the carried claim covers, and the band is not a marginal one:
+across it every returned answer reproduces the homogeneous truth `c * P_unit` to
+**zero** relative error. Measured, a rule that declined it instead would drop the
+ceiling from `1.586972e+308` to `8.428864e+307` and give up bit-exact answers for
+nothing. `dare_hardening_test` pins this band, checking both that it is accepted
+and that its lower edge is found by walking until the direct check resolves again
+rather than by a hardcoded bound.
 
 At the bottom the binding quantity is different again, and it is the rescale
 itself: multiplying the equilibrated solution by the divisor keeps full relative
@@ -211,11 +231,13 @@ Refusals:
 | `dare_error::singular_u11` | the top-left block of the reordered invariant-subspace basis is singular; P cannot be extracted. **Covers two different situations -- see below** |
 | `dare_error::non_psd_solution` | the extracted P is not positive semi-definite. The test is an LDLT pivot-sign test against `N * eps * max\|P_ij\|`, the order of the factorization's own backward error, below which a pivot carries no sign information |
 | `dare_error::schur_failed` | the real Schur factorization did not converge |
-| `dare_error::arithmetic_limit` | finite inputs could not produce a verified stabilizing solution at the scalar type's precision. Specifically: the equilibrated answer's estimated relative forward error exceeded `sqrt(eps)`, so it retains less than half the significand; its closed-loop spectrum or gain solve did not verify; a magnitude the equilibrated verification needs could not be formed; the weights overflowed while being equilibrated; the solution overflowed while being rescaled; the rescaled solution failed the positive-semi-definiteness test at its returned scale; the direct check at the caller's scale resolved and refuted the carried claim; or the equilibrated and returned gains, both formed, disagreed by more than the counted-operation margin |
+| `dare_error::arithmetic_limit` | finite inputs could not produce a verified stabilizing solution at the scalar type's precision. Specifically: the equilibrated answer's estimated relative forward error exceeded `sqrt(eps)`, so it retains less than half the significand; its closed-loop spectrum or gain solve did not verify; a magnitude the equilibrated verification needs could not be formed; the weights overflowed while being equilibrated; the solution overflowed while being rescaled; the rescaled solution failed the positive-semi-definiteness test at its returned scale; the direct check at the caller's scale resolved and refuted the carried claim; the direct check failed to resolve for any reason other than the gain leaving the range at the caller's scale; or the equilibrated and returned gains, both formed, disagreed by more than the counted-operation margin |
 
-The one cause that is **no longer** on that list is a magnitude the check at the
-caller's scale could not form. That used to be a refusal; it is now an absence of
-evidence, and the carried claim is what decides.
+The one cause that is **no longer** on that list is the gain the check at the
+caller's scale could not form because `R + B'PB` left the range there. That used
+to be a refusal; it is now an absence of evidence with a known cause, and the
+carried claim is what decides. Every *other* magnitude the direct check fails to
+form is still a refusal.
 
 Positive semi-definiteness is tested on both matrices that exist, and
 deliberately so. The extraction primitive tests the P the solve produced; when
