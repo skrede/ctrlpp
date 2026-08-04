@@ -6,11 +6,19 @@
 // Primary metric: median instructions (nanobench performanceCounters).
 // Secondary: wall-clock. Winner selection is mechanical; see tools/bakeoff_winner.py.
 //
+// The sweep also carries ONE acceptance-check row per size. Every method tag
+// reaches the same postcondition, against the same Hamiltonian, so its cost is
+// a single measurement -- but each tag's solve is a different denominator, so
+// the one row lands in three overhead statements. The published continuous
+// count is stated against the solve alone, so the timed denominator is the tag's
+// row minus the acceptance row rather than the tag's row itself.
+//
 // Warning: ct_optcon has catkin (ROS) heritage. Install via AUR: yay -S control-toolbox
 
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "ctrlpp/detail/care_postconditions.h"
 #include "ctrlpp/control/care.h"
 
 #include <cassert>  // must precede ct_optcon includes; DynamicRiccatiEquation.hpp uses assert() without <cassert>
@@ -20,6 +28,7 @@
 #include <Eigen/Dense>
 
 #include <cstdio>
+#include <chrono>
 #include <fstream>
 #include <cstddef>
 #include <iostream>
@@ -107,6 +116,34 @@ void run_size_sweep(ankerl::nanobench::Bench& bench)
         auto P_ct = ct_care.computeSteadyStateRiccatiMatrix(Q_ct, R_ct, A_ct, B_ct);
         ankerl::nanobench::doNotOptimizeAway(P_ct);
     });
+
+    // The acceptance check, timed on the operands the solver hands it: the
+    // Hamiltonian the caller's problem defines and the matrix the extraction
+    // produced. Q = I and R = 0.1 I put the weight scale at exactly one, so the
+    // equilibrated Hamiltonian and the caller's are the same object here and
+    // this row measures what every tag actually pays.
+    auto H = ctrlpp::detail::build_care_hamiltonian<double, NX, NU>(A, B, Q, R);
+    if (!H || !w_schur)
+    {
+        std::cerr << "SKIP acceptance row NX=" << NX << ": operands unavailable\n";
+        return;
+    }
+    const Eigen::Matrix<double, 2 * int(NX), 2 * int(NX)> H_accept = *H;
+    const Eigen::Matrix<double, int(NX), int(NX)>         P_accept = w_schur->P;
+    if (!ctrlpp::detail::care_solution_satisfies_postconditions<double, NX>(H_accept, P_accept))
+    {
+        // A check that declines exits early and would time a fraction of the
+        // work the accepted path does. Refusing to report it is the point.
+        std::cerr << "SKIP acceptance row NX=" << NX << ": postcondition declined\n";
+        return;
+    }
+
+    std::snprintf(buf, sizeof(buf), "ctrlpp::care[accept] NX=%zu", NX);
+    bench.run(buf, [&]
+    {
+        auto ok = ctrlpp::detail::care_solution_satisfies_postconditions<double, NX>(H_accept, P_accept);
+        ankerl::nanobench::doNotOptimizeAway(ok);
+    });
 }
 
 void check_perf_event_paranoid()
@@ -126,10 +163,17 @@ int main()
 {
     check_perf_event_paranoid();
 
+    // 51 epochs give an odd-sized sample, so the reported median is an observed
+    // measurement rather than an interpolation, and the CSV's error column is
+    // the median absolute percent error across those same 51. Iterations per
+    // epoch are set by a 1 ms floor rather than a fixed count, so a row at
+    // NX = 30 does not cost three orders of magnitude more wall time than a row
+    // at NX = 2 to reach the same timer resolution.
     ankerl::nanobench::Bench bench;
     bench.title("CARE methods bakeoff (size sweep)")
         .warmup(50)
-        .minEpochIterations(100)
+        .epochs(51)
+        .minEpochTime(std::chrono::milliseconds(1))
         .performanceCounters(true)
         .relative(true);
 

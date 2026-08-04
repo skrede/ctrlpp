@@ -354,7 +354,7 @@ enum class riccati_accuracy
 /// hazard at both ends of the arithmetic range -- the same rescale the magnitude
 /// helpers above use, for the same reason.
 ///
-/// ## Arithmetic, counted rather than timed
+/// ## Arithmetic, counted AND timed -- the two do not agree
 ///
 /// `Omega` is assembled column by column on the symmetric subspace, whose
 /// dimension is `M = N(N+1)/2`. Each basis image is one rank-two outer-product
@@ -363,10 +363,54 @@ enum class riccati_accuracy
 /// an off-diagonal column carries a SECOND outer product, so the shorter
 /// `M * N^2` reading of the same loop undercounts it by a factor of two. The
 /// rank-revealing solve is `(2/3) M^3`, and the coordinate round-trip and
-/// back-substitution are `O(M^2)`. Against a seven-iteration Schur solve's
-/// `149.33 N^3`, the whole estimate is 3.6% of the solve at `N = 2`, 10.7% at
-/// `N = 4`, 24.5% at `N = 6` and 47.7% at `N = 8`. Nothing on this path
-/// allocates.
+/// back-substitution are `O(M^2)`. Nothing on this path allocates.
+///
+/// COUNTED, against a seven-iteration scaled-Newton solve's `149.33 N^3`: the
+/// whole estimate is 3.6% of the solve at `N = 2`, 10.7% at `N = 4`, 24.5% at
+/// `N = 6` and 47.7% at `N = 8`. COUNTED against a Schur-plus-extraction solve's
+/// `240 N^3` instead, the same estimate is 1.8%, 6.0%, 14.4% and 28.6%. Both are
+/// the same numerator over a different denominator, and the second is the cost
+/// model that fits the path this estimate actually runs on.
+///
+/// TIMED, with the estimate as the independent variable -- the whole entry point
+/// against the entry point's own acceptance call, so the denominator is the
+/// solve carrying no acceptance arithmetic, the same denominator both counts
+/// use:
+///
+/// | `N` | estimate alone | whole acceptance check | counted at `149.33 N^3` | counted at `240 N^3` |
+/// |----|----|----|----|----|
+/// | 2  | 16.3%  | 24.8%  | 3.6%  | 1.8%  |
+/// | 4  | 22.9%  | 43.1%  | 10.7% | 6.0%  |
+/// | 6  | 19.6%  | 31.3%  | 24.5% | 14.4% |
+/// | 8  | 35.3%  | 47.7%  | 47.7% | 28.6% |
+/// | 12 | 68.5%  | 79.9%  | --    | --    |
+/// | 15 | 132.3% | 142.8% | --    | --    |
+///
+/// THE COUNT IS WRONG IN BOTH DIRECTIONS, so it is not a constant factor that
+/// could be divided out. It understates the estimate by 4.5x at `N = 2` and
+/// 2.1x at `N = 4`, and overstates it by 1.3x at `N = 6` and 1.4x at `N = 8`.
+/// A count assumes every operation costs the same; at these sizes the whole
+/// working set is cache-resident and what separates the two paths is which of
+/// them keeps a pipeline full, which is why the disagreement changes sign.
+///
+/// AT `N = 15` THE ACCEPTANCE CHECK COSTS MORE THAN THE SOLVE IT CHECKS, by
+/// 1.43x. A caller budgeting a control loop from the counted figures alone would
+/// under-provision by more than a factor of two there. `N = 15` is also the
+/// ceiling: `Omega` is a fixed-size `M x M` object, so Eigen's 128 KiB
+/// stack-allocation limit admits `M <= 128`, and `N = 16` gives `M = 136` and
+/// fails to compile at all.
+///
+/// Measured 2026-08-04 on an AMD Ryzen 7 5800X3D, all cores on the performance
+/// governor and the machine otherwise idle under an explicit exclusivity grant,
+/// g++ 16.1.1 at `-O3 -DNDEBUG`, C++23, no `-march` or `-mtune` (generic x86-64
+/// baseline). Each figure is the median over 11 whole-binary repetitions of a
+/// per-repetition median over 51 nanobench epochs; the median absolute percent
+/// error within a repetition was 0.23% across all 693 timed rows and never
+/// exceeded 1.04%. The corpus is a forward-Euler discrete damped chain with
+/// `Q = I` and `R = 0.1 I`, whose weight scale is exactly one, so the entry
+/// point runs the acceptance check ONCE. A pose that needs equilibration runs it
+/// twice, at the equilibrated scale and again at the caller's, and those rows do
+/// not describe it.
 ///
 /// A Bartels-Stewart Stein solve against a real Schur factor of `A_cl` needs
 /// only `O(N^2)` storage and, counted the same way term by term, about

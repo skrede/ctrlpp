@@ -76,10 +76,56 @@
 /// self and each Schur variant 1.083 times its own, so the ratio between them
 /// grows by 1.083 / 1.027 = 1.055. The variants were already behind by the
 /// archived 39 to 41 percent; they are now behind by about five and a half
-/// percent more of that disadvantage. **No timing run was performed and no
-/// machine-exclusivity window was requested for this** -- every number above is
-/// counted, and the archived percentages remain archived rather than restated
+/// percent more of that disadvantage. **Every number in this section is
+/// COUNTED**, and the archived percentages remain archived rather than restated
 /// as current.
+///
+/// ## The same acceptance check, TIMED
+///
+/// The counted `20n^3 / 240n^3 = 8.3 percent` above is stated as an upper bound.
+/// IT IS NOT ONE IN WALL TIME. Timing the postcondition as the independent
+/// variable -- each tag's whole solve against the tag's own acceptance call, so
+/// the denominator is the solve carrying no acceptance arithmetic, which is the
+/// denominator the count uses too -- the Schur variants exceed 8.3 percent at
+/// every `NX` from 4 to 24 and fall below it only at 2 and at 30:
+///
+/// | `NX` | schur | balanced | sign |
+/// |----|----|----|----|
+/// | 2  | 7.3%  | 7.9%  | 9.8%  |
+/// | 4  | 14.9% | 15.3% | 20.6% |
+/// | 6  | 14.1% | 14.9% | 26.8% |
+/// | 8  | 12.8% | 12.6% | 25.7% |
+/// | 12 | 11.1% | 11.0% | 22.0% |
+/// | 16 | 10.0% | 9.9%  | 20.7% |
+/// | 20 | 9.4%  | 9.3%  | 20.4% |
+/// | 24 | 8.4%  | 8.4%  | 18.7% |
+/// | 30 | 7.4%  | 7.3%  | 15.6% |
+///
+/// The counted whole-check figure is 8.3 percent for the two Schur variants and
+/// `20n^3 / 149.33n^3 = 13.4 percent` for the default. Timed against counted,
+/// the medians over the sweep are 1.20x for `schur`, 1.19x for
+/// `balanced_schur_care_method` and 1.54x for `sign_function_care_method`, and
+/// the disagreement is not a constant: it runs from 0.87x to 1.79x for the Schur
+/// variants and 0.73x to 2.00x for the default. THE COUNT IS NOT A COST. It is
+/// an honest operation count and it stays, but a caller budgeting a loop should
+/// budget from the timed column.
+///
+/// The timing does not disturb the method selection. It is the DEFAULT that pays
+/// the larger relative acceptance overhead, because it has the cheaper solve to
+/// pay it out of, and it still wins on absolute cost at every size in the sweep:
+/// the Schur variants cost 1.22x to 2.04x its wall time across the nine sizes,
+/// and the two of them track each other to within 1 percent from NX = 8 up.
+///
+/// Measured 2026-08-04 on an AMD Ryzen 7 5800X3D, all cores on the performance
+/// governor and the machine otherwise idle under an explicit exclusivity grant,
+/// g++ 16.1.1 at `-O3 -DNDEBUG`, C++23, no `-march` or `-mtune` (generic x86-64
+/// baseline). Each figure is the median over 11 whole-binary repetitions of a
+/// per-repetition median over 51 nanobench epochs; the median absolute percent
+/// error within a repetition was 0.23% across all 693 timed rows and never
+/// exceeded 1.04%. The corpus is the damped chain the bakeoff already sweeps,
+/// with `Q = I` and `R = 0.1 I`, whose weight scale is exactly one, so the
+/// equilibrated Hamiltonian and the caller's are the same object and the row
+/// measures what every tag actually pays.
 ///
 /// ## Where a Schur variant is the better choice, measured
 ///
@@ -191,9 +237,14 @@ struct sign_function_care_method
 ///
 /// @note Retained for reproducibility; superseded by `sign_function_care_method`
 ///       after the bakeoff. The Schur path fails its primary gate by ~40
-///       percent at NX=8 to 30. Like every other tag it verifies the matrix it
-///       extracted before returning it, and reports `unverified_solution` when
-///       that matrix does not satisfy the equation.
+///       percent at NX=8 to 30 -- an ARCHIVED MEDIAN INSTRUCTION COUNT from the
+///       bakeoff revision, not a wall-clock figure and not current. Timed on the
+///       corpus and machine recorded above, it is behind the default by more
+///       than that: 1.81x its wall time at NX=8 and 2.04x at NX=24, the worst of
+///       the nine swept sizes, easing to 1.96x at NX=30. Like every
+///       other tag it verifies the matrix it extracted before returning it, and
+///       reports `unverified_solution` when that matrix does not satisfy the
+///       equation.
 struct schur_care_method
 {
 };
