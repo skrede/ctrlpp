@@ -1,0 +1,27 @@
+# Partition table for the ctrlpp on-device check.
+#
+# WHY THIS EXISTS: the default single-factory table gives the application 1 MiB,
+# and the stack probe does not fit in it. Each state dimension the probe sweeps
+# instantiates the WHOLE discrete Riccati path for that dimension -- Schur
+# factorization, reordering, extraction, verification and the forward-error
+# estimator -- and none of it is shared between dimensions, because they are
+# distinct types. Six dimensions cost roughly 940 KiB of flash on top of the
+# control loop's own 432 KiB, which overflows a 1 MiB application partition by
+# about 330 KiB.
+#
+# The module carries 4 MiB, so the space is there; the default table simply was
+# not asked for it. 3 MiB for the application leaves the data partitions
+# untouched at their conventional offsets and still leaves most of a mebibyte
+# spare.
+#
+# THIS IS A MEASUREMENT HARNESS, NOT A RECOMMENDATION. Firmware that instantiates
+# the solver at one state dimension -- which is the ordinary case, since a plant
+# has one order -- pays for one, and the control loop above it fits the default
+# table comfortably. The flash cost per instantiated dimension is the number an
+# integrator needs, and it is published in the real-time matrix rather than
+# implied by this file.
+#
+# Name,     Type, SubType, Offset,  Size,     Flags
+nvs,        data, nvs,     0x9000,  0x6000,
+phy_init,   data, phy,     0xf000,  0x1000,
+factory,    app,  factory, 0x10000, 0x300000,

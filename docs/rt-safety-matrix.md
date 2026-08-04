@@ -67,7 +67,7 @@ this table was written.
 | `particle_filter` | YES (guard covers resample, roughening and the covariance read) | YES (fixed particle count) | YES | YES | YES (injected seeded RNG) | `estimation_nomalloc_test` (particle_filter case forces resampling every update and reads `covariance()` inside the armed window; twin filters seeded `std::mt19937_64{42}` must agree bitwise over 64 steps in both the estimate and the reported uncertainty) |
 | `complementary_filter` | YES | YES (closed form) | YES | YES | YES | `estimation_nomalloc_test` (complementary_filter case); leg 1 + `embedded_core_float` |
 | dsp: `biquad` / `cascaded_biquad` / `vector_biquad` / `fir` | YES | YES (fixed sections and taps) | YES | YES | YES | `dsp_nomalloc_test` (one case per filter); leg 1 + `embedded_core_float` |
-| Riccati steady-state solve: `dare` / `care` | YES **on the heap, and the heap is not the binding cost here** (see the stack note below this table, which a hard-real-time caller must read before sizing a task stack: at `NX = 8` the whole chain reaches 42,760 bytes) | YES (Eigen Schur iteration bound; sign-function Newton capped at `max_iters = 40` in `detail/care_sign_function.h`, followed by a fixed-size rescale-and-factorize extraction. On every accepted solve, on **every** continuous method tag and on the discrete solver, fixed-size checks of the returned solution run before it is reported: the discrete path solves a fixed-size Stein system of dimension `NX(NX+1)/2` on the symmetric subspace to estimate the answer's own forward error, and every continuous path evaluates the counted Riccati residual and one non-accumulating real Schur factorization of the closed-loop spectrum, from the single definition in `detail/care_postconditions.h`. All three continuous tags reach that definition -- the sign-function path, the real-Schur path and the balanced-Schur path, the last verifying against the caller's Hamiltonian rather than the balanced one -- so no tag carries a bound the others do not. The balanced tag additionally runs a DGEBAL-style balance ahead of all of this. It allocates nothing, and it terminates because every accepted rescale strictly reduces that row's norm sum by the factor 19/20 using power-of-two scalings clamped to the scalar type's range. Its sweep count is data-dependent, and it is now **bounded at compile time** the way `max_iters` bounds the Newton loop: the cap is `2 * NX * (max_exponent - min_exponent)`, derived from the scalar type and the dimension rather than tuned, and reaching it stops the sweep and returns the partially balanced matrix. Stopping early is safe because balancing is a similarity preconditioner and every applied step updates `H` and `D` together, so `H_returned == D^-1 * H_original * D` holds exactly at any cut point -- a capped run is less well balanced, never wrong. The cap is a guarantee rather than a budget: over 550,000 draws with entries spread across `2^-280` to `2^+280`, the worst sweep counts observed were 2 / 12 / 43 / 45 at NX = 1 / 2 / 4 / 8 against ceilings of 4,090 / 8,180 / 16,360 / 32,720, so the worst measured run sits about three orders of magnitude below its ceiling. Budget from the measurement and treat the cap as the backstop) | YES | YES | YES | `dare_care_nomalloc_test` (NX = 2, 4, 8 across the Schur, sign-function, and balanced-Schur variants); `care_convergence_anchor_test` (fixed-seed near-axis and simple-input scale sweeps under all three method tags, plus magnitude-band anchors); `riccati_magnitude_test` (both ends of the arithmetic range); leg 1 witness calls `dare` and `care`. The allocation cell's heap claim is proved by `dare_care_nomalloc_test`; its stack claim is proved by the `-fstack-usage` frames and runtime watermarks in the stack note below, which are host measurements and not on-silicon evidence |
+| Riccati steady-state solve: `dare` / `care` | YES **on the heap, and the heap is not the binding cost here** (see the stack note below this table, which a hard-real-time caller must read before sizing a task stack: at `NX = 8` the whole chain reaches 42,760 bytes) | YES (Eigen Schur iteration bound; sign-function Newton capped at `max_iters = 40` in `detail/care_sign_function.h`, followed by a fixed-size rescale-and-factorize extraction. On every accepted solve, on **every** continuous method tag and on the discrete solver, fixed-size checks of the returned solution run before it is reported: the discrete path solves a fixed-size Stein system of dimension `NX(NX+1)/2` on the symmetric subspace to estimate the answer's own forward error, and every continuous path evaluates the counted Riccati residual and one non-accumulating real Schur factorization of the closed-loop spectrum, from the single definition in `detail/care_postconditions.h`. All three continuous tags reach that definition -- the sign-function path, the real-Schur path and the balanced-Schur path, the last verifying against the caller's Hamiltonian rather than the balanced one -- so no tag carries a bound the others do not. The balanced tag additionally runs a DGEBAL-style balance ahead of all of this. It allocates nothing, and it terminates because every accepted rescale strictly reduces that row's norm sum by the factor 19/20 using power-of-two scalings clamped to the scalar type's range. Its sweep count is data-dependent, and it is now **bounded at compile time** the way `max_iters` bounds the Newton loop: the cap is `2 * NX * (max_exponent - min_exponent)`, derived from the scalar type and the dimension rather than tuned, and reaching it stops the sweep and returns the partially balanced matrix. Stopping early is safe because balancing is a similarity preconditioner and every applied step updates `H` and `D` together, so `H_returned == D^-1 * H_original * D` holds exactly at any cut point -- a capped run is less well balanced, never wrong. The cap is a guarantee rather than a budget: over 550,000 draws with entries spread across `2^-280` to `2^+280`, the worst sweep counts observed were 2 / 12 / 43 / 45 at NX = 1 / 2 / 4 / 8 against ceilings of 4,090 / 8,180 / 16,360 / 32,720, so the worst measured run sits about three orders of magnitude below its ceiling. Budget from the measurement and treat the cap as the backstop) | YES | YES | YES | `dare_care_nomalloc_test` (NX = 2, 4, 8 across the Schur, sign-function, and balanced-Schur variants); `care_convergence_anchor_test` (fixed-seed near-axis and simple-input scale sweeps under all three method tags, plus magnitude-band anchors); `riccati_magnitude_test` (both ends of the arithmetic range); leg 1 witness calls `dare` and `care`. The allocation cell's heap claim is proved by `dare_care_nomalloc_test`; its stack claim is proved by the `-fstack-usage` frames and runtime watermarks in the stack note below, which are host `double` measurements, now corroborated on silicon by the ESP32 stack probe in `examples/embedded/esp32/main/app_main.cpp` -- the on-target `float` peaks track the host `double` prediction to within the scalar width, and that probe also establishes that at `float` the ACCEPTANCE CHECK, not the stack, is what bounds the usable state dimension |
 | velocity profile construction: `trapezoidal_trajectory::create` / `double_s_trajectory::create` | YES (the profile is returned by value inside a `ctrlpp::expected`; nothing on the path owns storage) | YES (closed form on the trapezoidal path and on every double-S path but one; the cruise-free double-S rise is a bracket halved to exhaustion, bounded by one more than the significand width, so 25 evaluations for `float` and 54 for `double`) | YES | YES | YES (no random source; identical inputs exhaust the bracket at the identical step) | `trajectory_nomalloc_test` (construction is outside the armed window, as for every other type there); leg 1 + `embedded_core_float`, which instantiate both `create` factories |
 | trajectory evaluation (polynomial paths, velocity profiles, `cubic_spline`, `smoothing_spline`, `bspline_trajectory`) | YES | YES (closed form; B-spline recursion bounded by compile-time degree) | YES | YES | YES | `trajectory_nomalloc_test` (evaluate cases for cubic/quintic/septic, trapezoidal, double-S, modified sin/trap, cubic_spline, smoothing_spline, bspline_trajectory); leg 1 + `embedded_core_float` |
 | online planners: `online_planner_2nd` / `online_planner_3rd` | YES | YES (closed-form segment logic) | YES | YES | YES | `trajectory_nomalloc_test` (update and sample cases for both planners); leg 1 + `embedded_core_float` |
@@ -121,12 +121,67 @@ of the check: `dare` needs 17,112 bytes at six states and 28,168 at eight with
 no acceptance check whatsoever. Turning the check off does not buy a small-stack
 target a larger problem. It changes the answer in exactly one band, at 32 KiB.
 
-**Provenance.** These are HOST measurements, not on-silicon evidence:
-`g++ (GNU) 16.1.1 20260728`, `-std=c++20 -O2`, no `-march` (driver default
-`-mtune=generic -march=x86-64`), x86-64 Linux, runtime watermarks taken on a
-pthread with a 64 MiB stack against a zero-byte harness floor. A target's own
-frames will differ with its ABI, register file and calling convention. On-target
-capture is a separate piece of work and this note does not stand in for it.
+**Provenance.** These are HOST measurements: `g++ (GNU) 16.1.1 20260728`,
+`-std=c++20 -O2`, no `-march` (driver default `-mtune=generic -march=x86-64`),
+x86-64 Linux, `double`, runtime watermarks taken on a pthread with a 64 MiB
+stack against a zero-byte harness floor. A target's own frames differ with its
+ABI, register file and calling convention.
+
+### On silicon, and what it does to the table above
+
+The host figures above were a PREDICTION. They have now been tested on a board,
+and they hold once the one variable that separates the two measurements is
+accounted for: **the host table is `double` and the board runs `float`.**
+
+Measured on an ESP32-WROOM (Xtensa LX6, 240 MHz, single-precision FPU), ESP-IDF
+v6.0.2, `xtensa-esp32-elf-g++` 15.2.0 at `-Os` with exceptions and RTTI off,
+Eigen 3.4.0, one FreeRTOS task per dimension so each figure is that dimension's
+own peak rather than a running minimum over a sweep:
+
+| `NX` | on-silicon peak, `float` | host peak, `double` | host / board | accepted? |
+|---:|---:|---:|---:|:--|
+| 2 | 3,100 | 5,352 | 1.73x | solved |
+| 3 | 4,160 | -- | -- | refused |
+| 4 | 5,932 | 11,688 | 1.97x | solved |
+| 5 | 8,336 | -- | -- | refused |
+| 6 | 11,500 | 23,144 | 2.01x | refused |
+| 8 | 20,560 | 42,760 | 2.08x | refused |
+
+**The ratio converges on exactly the scalar width.** It is 1.73x at `NX = 2` and
+climbs to 2.08x at `NX = 8`, which is what a halved scalar predicts for a chain
+whose cost is dominated by `NX`-dimensioned arrays and diluted at small `NX` by
+fixed overhead that does not scale with the scalar. The host table is therefore
+usable as written for `double` and halves for `float`; it is not refuted and it
+is not to be replaced by these figures.
+
+**Supported maximum on this board: `NX = 4`, leaving 2,256 bytes of an 8,192-byte
+task stack.** Established twice and by different means. A pass giving every
+dimension 49,152 bytes recorded `NX = 5` needing 8,336 bytes, which is 144 more
+than the task stack has; a second pass at the control task's own 8,192 bytes then
+walked the same dimensions and the board reported
+
+    Debug exception reason: Stack canary watchpoint triggered (probe_nx5)
+
+so the overflow is OBSERVED AND NAMED at the instruction that caused it, not
+inferred from a reset. Both stack-overflow detection modes are enabled in
+`examples/embedded/esp32/sdkconfig.defaults`; the end-of-stack watchpoint is what
+fired, and it is the more precise of the two because the canary check only runs
+at a context switch. Enabling the watchpoint costs up to 60 bytes of every task's
+usable stack, so these figures and any taken without it are not interchangeable.
+
+**THE STACK IS NOT THE BINDING LIMIT FOR `float` ON THIS BOARD. THE ACCEPTANCE
+CHECK IS.** Only `NX = 2` and `NX = 4` were accepted. Every other probed
+dimension returned `arithmetic_limit` -- "solution is not reliable at this
+precision" -- including `NX = 6`, whose 11,500 bytes would fit a 16 KiB task
+comfortably. At `float` the half-significand margin is `sqrt(eps) = 3.45e-4`, and
+on this corpus the estimated forward error exceeds it from `NX = 5` up and at
+`NX = 3`. A caller sizing a 16 KiB task for a six-state `float` plant would find
+the stack sufficient and the answer refused. That is the gate working as
+designed, and it is the number to plan against.
+
+Witness: `examples/embedded/esp32/main/app_main.cpp`, whose control loop still
+designs its gain, runs its 201 steps, streams them over UART2 and reports
+`golden diff PASS` in the same boot that carries the probe.
 
 ## Wall-clock budgets are not RT-safe
 

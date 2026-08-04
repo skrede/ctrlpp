@@ -17,3 +17,33 @@ CONFIG_COMPILER_CXX_RTTI=n
 # of the Riccati solve plus newlib's stack-hungry %f formatting. 8 KB gives
 # comfortable headroom for the on-device numeric demo.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Stack overflow must be OBSERVED AND NAMED, not inferred from a reset. The
+# stack probe deliberately walks the state dimension until the frames stop
+# fitting, and a dimension that does not fit has to say so.
+#
+# Both mechanisms are enabled because each one alone has a hole the other
+# covers. The canary check is thorough but only runs on a context switch, and a
+# single Riccati solve can overrun and corrupt whatever lies past the stack long
+# before the scheduler next looks. The end-of-stack watchpoint fires on the write
+# itself, immediately, but only catches an overrun that lands within the last 32
+# bytes rather than one that overshoots past them. The framework's own guidance
+# is to combine them, and this project has a reason to.
+#
+# COST, STATED BECAUSE IT MOVES THE NUMBERS THIS PROJECT PUBLISHES: the
+# watchpoint region must be aligned to its own 32-byte size, so up to 60 bytes of
+# each task's stack become unusable. Every high-water figure captured with this
+# option on is therefore against a slightly smaller usable stack than one
+# captured without it, which is why the control loop's own high-water is
+# re-measured under this configuration rather than compared across it.
+CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY=y
+CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK=y
+
+# The module carries 4 MB and the project was asking for 2. The stack probe
+# instantiates the discrete solver at six state dimensions and none of the code
+# is shared between them, so the application outgrows the default 1 MB factory
+# partition; see partitions.csv for the accounting and for why this is a
+# property of the harness rather than a requirement on ordinary firmware.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
