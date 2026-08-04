@@ -774,14 +774,15 @@ TEMPLATE_TEST_CASE("CARE keeps the same promise under every method tag",
     // says the tightening cost the balanced tag answers it used to give; it is
     // not a flaky test, and the two documents must move with it.
     //
-    // Guarded on the tag: the other two tags decline part of both populations
-    // by design, because they perform no weight equilibration.
-    if constexpr(std::is_same_v<TestType,
-                                ctrlpp::detail::balanced_schur_care_method>)
-    {
-        CHECK(comfortable.accepted == comfortable.drawn);
-        CHECK(simple.accepted == simple.drawn);
-    }
+    // THE GUARD IS GONE, because the reason for it is gone. It used to hold for
+    // the balanced tag alone, whose diagonal similarity of the Hamiltonian was
+    // the only equilibration the library had; the other two declined roughly
+    // half of both populations. The solver now equilibrates the weightings
+    // itself before the Hamiltonian is built -- which is the same similarity by
+    // a different route -- so every tag answers every draw of both common-scale
+    // populations, and the assertion is made of all three.
+    CHECK(comfortable.accepted == comfortable.drawn);
+    CHECK(simple.accepted == simple.drawn);
 }
 
 TEST_CASE("CARE carries the scalar family below the subspace-collapse edge",

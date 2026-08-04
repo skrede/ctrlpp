@@ -83,24 +83,43 @@
 ///
 /// ## Where a Schur variant is the better choice, measured
 ///
-/// The instruction count is not the whole selection argument, and the balanced
-/// variant is where that shows. Swept over eighteen decades of a common rescale
-/// of Q and R, on a comfortably damped family and on a structurally simple one,
-/// the balanced variant answers every one of the 1,152 draws in each population.
-/// The default answers 652 and 655 of them and declines the rest, because it
-/// performs no weight equilibration and its extraction loses the answer once the
-/// invariant subspace tilts far enough. A caller whose weights sit far from
-/// their dynamics' own scale should expect the default to decline and the
-/// balanced variant to answer; the cost of that answer is the instruction count
-/// above.
+/// The instruction count is not the whole selection argument, and it used to be
+/// decisive: swept over eighteen decades of a common rescale of Q and R, on a
+/// comfortably damped family and on a structurally simple one, the balanced
+/// variant answered every one of the 1,152 draws in each population while the
+/// default answered 652 and 655 and declined the rest. **That difference no
+/// longer exists.** `ctrlpp::care` now equilibrates both weightings before the
+/// Hamiltonian is built, which is the same similarity the balance performs by a
+/// different route, so ALL THREE TAGS ANSWER ALL 1,152 DRAWS OF EACH POPULATION.
+///
+/// ## What each tag equilibrates, stated by the object it rescales
+///
+/// The three are no longer distinguished by whether they equilibrate at all,
+/// which is what the previous version of this paragraph said and what is now
+/// wrong. They are distinguished by WHAT they rescale:
+///
+///  * `ctrlpp::care` itself, for every tag: the WEIGHTINGS, by one common
+///    divisor -- their largest entry -- with the solution multiplied back
+///    afterwards. That divisor is a block-diagonal similarity of the
+///    Hamiltonian, so it cannot move the spectrum; see `care_weight_scale` for
+///    the derivation.
+///  * `balanced_schur_care_method` additionally: the HAMILTONIAN, by a
+///    DGEBAL-style diagonal similarity over all 2n indices. That is strictly
+///    more general than the two-block scaling above and reaches asymmetries a
+///    weight divisor cannot, at the cost of an unbounded-in-data sweep whose
+///    real-time properties are in the real-time matrix rather than here.
+///  * the other two tags rescale nothing further.
+///
+/// A caller whose weights sit far from their dynamics' own scale no longer needs
+/// to select a tag to get an answer. The selection argument is now the
+/// instruction count above and, for the balanced variant, the sweep it runs.
 ///
 /// Unlike the archived percentages above, THESE ACCEPTANCE COUNTS ARE PINNED
 /// rather than recorded. `CARE keeps the same promise under every method tag`
-/// asserts the balanced variant's two counts as exact equalities against the
-/// drawn counts, guarded on the tag, so a tightening of the acceptance rule that
-/// costs those answers breaks a test rather than leaving this paragraph wrong.
-/// It is deliberately the over-rejection guard with the least margin in the
-/// suite.
+/// asserts both counts as exact equalities against the drawn counts, for every
+/// tag, so a tightening of the acceptance rule that costs those answers breaks a
+/// test rather than leaving this paragraph wrong. It is deliberately the
+/// over-rejection guard with the least margin in the suite.
 ///
 /// Two independent criteria agree that the answers are right, and they are
 /// counted separately because they establish different things. The
@@ -110,8 +129,8 @@
 /// additionally admits a closed form -- for A = -I, B = I, Q = R = sI the gain
 /// is exactly (sqrt(2) - 1) I at every s -- which owes the solver nothing. Zero
 /// disagreements under either criterion, for all three tags; the worst relative
-/// error against the closed form is 6.700789e-16 for either Schur tag and
-/// 6.834804e-14 for the default.
+/// error against the closed form is 4.020473e-16, now the same for every tag
+/// because every tag solves the same equilibrated problem.
 ///
 /// ## Reconciling the full-acceptance claim with the near-axis decline
 ///

@@ -73,6 +73,10 @@ auto lqr_gain_continuous(const Matrix<Scalar, NX, NX>& A,
 
 Continuous-time gain `K = R^{-1} B' P` where P solves `A'P + PA - PBR^{-1}B'P + Q = 0`. Reports through `care_error`, forwarding the continuous solver's enumerator.
 
+**Both weightings are equilibrated first**, by the same common divisor `ctrlpp::care` applies -- their largest entry. This surface does not go through `ctrlpp::care`; it forms `R^{-1}` and the Hamiltonian itself so it can reuse one factorization for the gain, which makes it a second continuous entry point. Without the same equilibration the two would answer different populations on the same arguments, and a caller cannot be expected to know which of them rescales.
+
+Nothing is unscaled afterwards, and that is not an omission: the gain is homogeneous of degree **zero** in the common weight scale, since dividing `R` by `s` multiplies `R^{-1}` by `s` while dividing the solution by `s`. The gain formed from the equilibrated quantities is the caller's gain exactly. Only a solution would need multiplying back, and this surface does not return one. See the [numerical-behavior guide](../../guides/patterns/numerical-behavior.md) for what the equilibration buys: swept over eighteen decades of a common rescale in both directions, it takes the answered population of both common-scale families from 652 and 655 of 1,152 to all 1,152, with no pose that was answered correctly before now declined.
+
 It makes three rejections of its own before calling anything:
 
 | Condition | Enumerator |

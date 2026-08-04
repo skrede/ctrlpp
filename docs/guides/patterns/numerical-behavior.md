@@ -230,24 +230,29 @@ otherwise produce silent corruption through intermediate overflow:
   independently -- the answer is refused, not returned.
 
   A solution below the representable band is therefore **declined**, and so is
-  one the arithmetic can form but not verify. Note the practical cost: the
-  default path performs no weight equilibration, so a common rescale of `Q`
-  and `R` far above the dynamics' own scale is declined rather than carried. A
-  rescale that does not increase the weights is carried at every magnitude
-  swept.
+  one the arithmetic can form but not verify.
 
-  **That cost is method-specific, and one tag does not pay it.** Swept over
-  eighteen decades of a common rescale in both directions, on a comfortably
-  damped family and a structurally simple one, `balanced_schur_care_method`
-  answers all 1,152 draws of each population; the default answers 652 and 655.
-  The difference is the DGEBAL-style diagonal balance that variant applies
-  before factorizing, which is exactly the equilibration the default lacks. A
-  caller whose weights sit far from their dynamics' own scale, and who would
-  rather pay for an answer than receive a decline, should select it -- see
-  [lqr](../../api/control/lqr.md) for what that choice costs in arithmetic.
+  **`ctrlpp::care` equilibrates both weightings before it builds the
+  Hamiltonian**, for every method tag. It divides `Q` and `R` by their largest
+  entry, solves at that scale, and multiplies the solution back. The equation is
+  homogeneous of degree one in `(P, Q, R)` taken together, so the rescale changes
+  nothing about the answer, and the gain `K = R^-1 B' P` does not move at all.
+  What it changes is which poses have an answer: the rescale is a block-diagonal
+  similarity of the Hamiltonian -- with `D = diag(I, sI)`, `D^-1 H D` is exactly
+  the Hamiltonian of the divided pose -- so it cannot move the spectrum, and the
+  divisor is chosen to land both off-diagonal blocks at unit order at once.
 
-  Those two counts are **pinned by an assertion**, not merely recorded here, so
-  a future tightening of the acceptance rule that costs those answers breaks a
+  Swept over eighteen decades of a common rescale in both directions, on a
+  comfortably damped family and a structurally simple one: **all three tags now
+  answer all 1,152 draws of each population.** Before the equilibration the
+  default answered 652 and 655 and only `balanced_schur_care_method` answered
+  every draw, because its DGEBAL-style balance was the only equilibration the
+  library had. A caller whose weights sit far from their dynamics' own scale no
+  longer needs to select a tag to get an answer -- see
+  [lqr](../../api/control/lqr.md) for what the tags cost in arithmetic.
+
+  Those counts are **pinned by an assertion**, not merely recorded here, so a
+  future tightening of the acceptance rule that costs those answers breaks a
   test rather than leaving this recommendation wrong.
 
   Two criteria agree that the answers are right, and they are worth
@@ -260,7 +265,8 @@ otherwise produce silent corruption through intermediate overflow:
   form**: for `A = -I`, `B = I`, `Q = R = sI` the equation collapses to
   `p^2 + 2sp - s^2 = 0`, giving `P = s(sqrt(2) - 1) I` and a gain of
   `(sqrt(2) - 1) I` at every `s`. That criterion owes the solver nothing. Zero
-  disagreements under either, for all three tags.
+  disagreements under either, for all three tags, with a worst relative error
+  against the closed form of `4.02e-16`.
 
   **This does not mean the balanced variant answers everything.** It answers the
   poses a bad weight scale would otherwise lose. On the near-axis band -- where a

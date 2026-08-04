@@ -318,7 +318,7 @@ TEST_CASE("CARE reports an unverifiable extracted result with a method-neutral c
     // failure of those postconditions is reported as `unverified_solution` --
     // never as `sign_function_stagnated`, whose four documented cases are all
     // statements about a Newton iteration that these paths do not run.
-    SECTION("the real-Schur tag on a common weight rescale it cannot certify")
+    SECTION("the real-Schur tag on a weight ratio it cannot certify")
     {
         Eigen::Matrix<double, 2, 2> A;
         A << -1.1, 0.3, -0.2, -1.4;
@@ -329,18 +329,54 @@ TEST_CASE("CARE reports an unverifiable extracted result with a method-neutral c
         Eigen::Matrix<double, 2, 2> base_R;
         base_R << 1.3, 0.1, 0.1, 0.9;
 
-        // A common rescale of Q and R leaves the gain and the closed-loop
-        // spectrum where they were, so every pose in this band has the same
-        // answer up to the scale. What the rescale does move is the
-        // conditioning of the invariant subspace this method extracts from,
-        // and past three decades its extracted matrix no longer satisfies the
-        // equation to the counted bound.
+        // THE BAND MOVED, AND THAT IS THE POINT OF A CHANGE ELSEWHERE.
         //
-        // The band starts at three decades rather than two because the counted
-        // bound was corrected: the extraction count is now taken at the 2n
-        // basis every path's factorization actually produces rather than at n,
-        // and the decade this method used to refuse it now answers. That answer
-        // is checked below rather than assumed.
+        // This section used to drive a COMMON rescale of both weightings, where
+        // this method's extraction lost the answer past three decades. The
+        // solver now equilibrates: it divides both weightings by their largest
+        // entry, solves at that scale and multiplies the solution back, which is
+        // a block-diagonal similarity of the Hamiltonian and therefore cannot
+        // move the spectrum. A common rescale no longer reaches this method's
+        // extraction at all, so there is nothing left to refuse there -- see the
+        // assertion below, which now requires the whole old band to be ANSWERED.
+        //
+        // The property this section exists for is the enumerator, not the band:
+        // a postcondition failure on either Schur variant must report
+        // `unverified_solution` and never `sign_function_stagnated`, whose four
+        // documented cases are all statements about a Newton iteration these
+        // paths do not run. That property needs a pose the method still refuses,
+        // and a RATIO supplies one: the equilibration divides by the larger of
+        // the two weightings, so a lopsided pair is only half equilibrated and
+        // the invariant subspace still tilts. Measured, this method returns
+        // `unverified_solution` from six decades of ratio through fifteen, and
+        // `non_lhp_stabilizable` beyond that -- a different statement about a
+        // different obstacle, which is why the band stops where it does.
+        for(int exponent = 6; exponent <= 15; exponent += 3)
+        {
+            const double ratio = std::pow(10.0, static_cast<double>(exponent));
+            const Eigen::Matrix<double, 2, 2> Q = (ratio * base_Q).eval();
+
+            CAPTURE(exponent);
+            auto const schur = ctrlpp::care<double, 2, 2>(
+                A, B, Q, base_R, ctrlpp::detail::schur_care_method{});
+            REQUIRE_FALSE(schur.has_value());
+            CHECK(schur.error() == ctrlpp::care_error::unverified_solution);
+            CHECK(schur.error() != ctrlpp::care_error::sign_function_stagnated);
+        }
+
+        // The old band, now answered, and answered correctly. Asserted rather
+        // than assumed: an equilibration that widened the answered population by
+        // returning wrong answers would be worse than the refusal it replaced.
+        // The gain is invariant under a common rescale, so the unit-scale pose
+        // decides it.
+        auto const unit = ctrlpp::care<double, 2, 2>(
+            A, B, base_Q, base_R, ctrlpp::detail::schur_care_method{});
+        REQUIRE(unit.has_value());
+        const Eigen::Matrix<double, 2, 2> unit_gain =
+            (base_R.inverse() * B.transpose() * unit->P).eval();
+        const double half_significand =
+            std::sqrt(std::numeric_limits<double>::epsilon());
+
         for(int exponent = 3; exponent <= 8; ++exponent)
         {
             const double scale = std::pow(10.0, static_cast<double>(exponent));
@@ -350,9 +386,11 @@ TEST_CASE("CARE reports an unverifiable extracted result with a method-neutral c
             CAPTURE(exponent);
             auto const schur = ctrlpp::care<double, 2, 2>(
                 A, B, Q, R, ctrlpp::detail::schur_care_method{});
-            REQUIRE_FALSE(schur.has_value());
-            CHECK(schur.error() == ctrlpp::care_error::unverified_solution);
-            CHECK(schur.error() != ctrlpp::care_error::sign_function_stagnated);
+            REQUIRE(schur.has_value());
+            const Eigen::Matrix<double, 2, 2> gain =
+                (R.inverse() * B.transpose() * schur->P).eval();
+            CHECK((gain - unit_gain).norm()
+                  <= half_significand * unit_gain.norm());
         }
 
         // The refusal is a statement about that method's extraction and not

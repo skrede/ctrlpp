@@ -133,6 +133,35 @@ auto lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     if(!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite())
         return ctrlpp::unexpected(care_error::non_finite_input);
 
+    // THE SAME EQUILIBRATION `ctrlpp::care` APPLIES, APPLIED HERE TOO.
+    //
+    // This function does not go through `ctrlpp::care`; it forms R^{-1} and the
+    // Hamiltonian itself so it can reuse the one factorization for the gain. That
+    // makes it a second continuous entry point, and without this block the two
+    // would answer different populations: `care` would return a solution on a
+    // pose where this function declined, on the same arguments. A caller cannot
+    // be expected to know which of the two equilibrates.
+    //
+    // Nothing is unscaled afterwards, and that is not an omission. The gain is
+    // homogeneous of degree ZERO in the common weight scale -- dividing R by s
+    // multiplies R^{-1} by s while dividing the solution by s -- so the gain
+    // formed from the equilibrated quantities IS the caller's gain, exactly. Only
+    // the solution would need multiplying back, and this function does not return
+    // one.
+    const Scalar weight_scale = detail::care_weight_scale<Scalar, NX, NU>(Q, R);
+    if(!(weight_scale > Scalar{0}) || !std::isfinite(weight_scale))
+        return ctrlpp::unexpected(care_error::non_finite_input);
+
+    auto Q_scaled = Q;
+    auto R_scaled = R;
+    if(weight_scale != Scalar{1})
+    {
+        Q_scaled /= weight_scale;
+        R_scaled /= weight_scale;
+        if(!Q_scaled.allFinite() || !R_scaled.allFinite())
+            return ctrlpp::unexpected(care_error::non_finite_input);
+    }
+
     // This function forms R^{-1} itself rather than going through the Hamiltonian
     // build, so it needs its own singularity test -- and it needs one MORE than the
     // build does, because the factorization it uses fails quietly. Eigen's LDLT solve
@@ -151,7 +180,7 @@ auto lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     // two Riccati builds apply to their own inverted operands. Sign is deliberately not
     // tested: an indefinite but nonsingular R is a different condition from a singular
     // one and is left to whatever the solve path already does with it.
-    const auto R_ldlt = R.ldlt();
+    const auto R_ldlt = R_scaled.ldlt();
     const auto R_pivots = R_ldlt.vectorD().cwiseAbs().eval();
     if(!(R_pivots.minCoeff()
          > Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon() * R_pivots.maxCoeff()))
@@ -162,7 +191,7 @@ auto lqr_gain_continuous(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     Mat2N H;
     H.template block<nx, nx>(0, 0) = A;
     H.template block<nx, nx>(0, nx) = -B * R_inv * B.transpose();
-    H.template block<nx, nx>(nx, 0) = -Q;
+    H.template block<nx, nx>(nx, 0) = -Q_scaled;
     H.template block<nx, nx>(nx, nx) = -A.transpose();
 
     // Still reachable after the rank test above, and for a different reason than
