@@ -195,13 +195,48 @@ margin `sqrt(eps) = 3.4527e-04` is
 |---|---:|---:|---:|---:|---:|---:|
 | estimate / margin | 0.169 | 5.172 | **0.966** | 4.625 | 2.590 | 4.105 |
 
-**`NX = 4` CLEARS THE MARGIN BY 3.4 PERCENT, SO IT IS NOT A SUPPORTED MAXIMUM A
-CALLER SHOULD BUILD ON.** The board and the host agree on it, but that is two
-samples of a quantity sitting three percent from a cliff, and three percent is
-inside what a different optimization level, Eigen version or fused multiply-add
-moves. Read the supported maximum as **`NX = 2` with headroom, `NX = 4`
-marginally and toolchain-dependently, and nothing above that**. The test pins the
-two bands and deliberately does NOT assert which side `NX = 4` lands on.
+**THERE IS NO SUPPORTED MAXIMUM STATE DIMENSION HERE, BECAUSE THE STATE DIMENSION
+IS NOT WHAT DECIDES IT.** Widening the sweep to vary the input count
+independently shows the pattern is not about `NX` at all. Measured true relative
+error of the `float` answer against a `double` reference, with
+`group = NX / NU`, the number of states each input must reach through:
+
+| pose | `group` | true error | / margin | verdict |
+|---|---:|---:|---:|---|
+| `NX=2, NU=1` | 2 | 5.8e-05 | 0.169 | accepted |
+| `NX=8, NU=4` | 2 | 2.5e-04 | 0.725 | accepted |
+| `NX=4, NU=2` | 2 | 3.3e-04 | 0.966 | accepted |
+| `NX=12, NU=6` | 2 | 3.9e-04 | 1.122 | refused |
+| `NX=6, NU=3` | 2 | 4.4e-04 | 1.274 | refused |
+| `NX=6, NU=2` | 3 | 8.9e-04 | 2.590 | refused |
+| `NX=8, NU=2` | 4 | 1.4e-03 | 4.105 | refused |
+| `NX=5, NU=1` | 5 | 1.6e-03 | 4.625 | refused |
+
+**`NX = 8` with four inputs is ACCEPTED while `NX = 6` with three is refused.**
+Two things drive the error and neither is the state dimension on its own. It
+rises from `NX = 2` to `NX = 4` and then PLATEAUS near `3e-04` whether `NX` is 4,
+8 or 12 -- accumulated rounding through the Schur-and-extraction chain, which
+saturates. On top of that, chain length per input costs real accuracy: `group = 2`
+sits near `3e-04`, `group = 3` near `9e-04`, `group = 4` to `5` near `1.5e-03`,
+because at `dt = 0.01` the far end of a long chain is weakly controlled.
+
+**The margin is `sqrt(eps) = 3.4527e-04`, and the `group = 2` family sits at 0.7x
+to 1.3x of it.** The error and the criterion coincide, which is why the accept
+and refuse outcomes look erratic across that family: those poses straddle the
+line and which side they land on is rounding noise. `sqrt(eps)` is the
+half-significand criterion -- float has 24 bits and the gate asks that 12 survive
+-- and this family genuinely spends about half of float's significand from
+`NX = 4` up.
+
+**THE GATE IS NOT OVER-REJECTING.** The estimated error matches the true error
+against a `double` reference to three significant figures at every pose above,
+`est / true = 1.0` throughout. The refused answers really do carry more than
+half-significand error; refusing them is the gate working, not misfiring.
+
+What a caller should take from this is a MEASUREMENT INSTRUCTION rather than a
+dimension: at `float`, on a plant whose inputs must act through chains of more
+than two states, expect the solver to refuse, and expect poses near `group = 2`
+to sit on the margin either way. `double` answers every pose in the table.
 
 Witness: `examples/embedded/esp32/main/app_main.cpp`, whose control loop still
 designs its gain, runs its 201 steps, streams them over UART2 and reports

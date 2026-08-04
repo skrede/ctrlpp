@@ -1,43 +1,39 @@
 /// Which state dimensions the discrete solver can actually answer in `float`.
 ///
-/// WHY THIS EXISTS. An on-target capture found that at `float` the damped-chain
-/// family is refused from five states up and at three, while `double` answers
-/// every one of them. That is a property of the LIBRARY and of the scalar type,
-/// not of the board: it reproduces exactly on the host, and it was published in
-/// the real-time matrix as current behavior with nothing pinning it. A published
-/// behavior claim that no test asserts is the defect this round spent a finding
-/// on; this file is that finding applied to its own output.
+/// WHY THIS EXISTS. An on-target capture found that at `float` this damped-chain
+/// family is refused at several dimensions while `double` answers every one of
+/// them. That is a property of the LIBRARY and of the scalar type, not of the
+/// board: it reproduces exactly on the host. It was published in the real-time
+/// matrix as current behavior with nothing pinning it, which is the defect this
+/// round spent a finding on -- so this file is that finding applied to its own
+/// output.
 ///
-/// WHAT IS PINNED AND WHAT DELIBERATELY IS NOT. The acceptance quantity is the
-/// estimated relative forward error against the half-significand margin
-/// `sqrt(eps)`, which for `float` is 3.4527e-04. Measured as a fraction of that
-/// margin on this family:
+/// THE ACCEPTANCE QUANTITY is the estimated relative forward error against the
+/// half-significand margin `sqrt(eps)`, which for `float` is 3.4527e-04. The
+/// gate asks that half of float's 24-bit significand survive the solve.
 ///
-///     NX = 2  ->  0.169     accepted, comfortably
-///     NX = 3  ->  5.172     refused
-///     NX = 4  ->  0.966     accepted BY 3.4 PERCENT
-///     NX = 5  ->  4.625     refused
-///     NX = 6  ->  2.590     refused
-///     NX = 8  ->  4.105     refused
+/// THE STATE DIMENSION IS NOT WHAT DECIDES THIS. Varying the input count
+/// independently shows `NX = 8` with four inputs ACCEPTED (0.725 of the margin)
+/// while `NX = 6` with three is refused (1.274). What drives the error is
+/// `group = NX / NU`, the number of states each input must reach through:
+/// `group = 2` lands near `3e-04`, `group = 3` near `9e-04`, `group = 4` to `5`
+/// near `1.5e-03`. The margin is `3.4527e-04`, so the whole `group = 2` family
+/// straddles it and the accept-or-refuse outcome there is rounding noise.
 ///
-/// **`NX = 4` IS A NEAR-MARGIN POSE AND ITS ACCEPTANCE IS NOT ASSERTED.** Three
-/// and a half percent is inside the range that instruction selection moves: a
-/// different optimization level, a different Eigen version or a fused multiply-add
-/// where there was none can put it on either side. Asserting it would produce a
-/// test that fails for reasons having nothing to do with a defect, which is
-/// exactly the trap this suite has recorded before. What is asserted is the band:
-/// the dimensions that clear the margin by a factor of five and the ones that
-/// exceed it by a factor of two and a half.
+/// The estimator is not the problem: measured against a `double` reference the
+/// estimate matches the true relative error to three significant figures at
+/// every pose, so the gate refuses answers that really are that wrong.
 ///
-/// The consequence for a caller is in the real-time matrix. It is NOT "float
-/// supports four states"; it is "float supports two states with headroom, four
-/// states marginally, and nothing above that."
+/// This file therefore asserts only the `group >= 3` band, where the error
+/// exceeds the margin by a factor of two and a half or more and the verdict is
+/// not in doubt. See the real-time matrix for the full sweep.
 
 #include "ctrlpp/control/dare.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
+#include <algorithm>
 
 namespace
 {
@@ -110,13 +106,13 @@ auto forward_error_over_margin() -> Scalar
 
 }
 
-TEST_CASE("float refuses the damped chain above four states, and double does not")
+TEST_CASE("float refuses the damped chain by chain-length-per-input, and double does not")
 {
-    // THE REFUSED BAND. Each of these exceeds the margin by a factor of at least
-    // two, so which side of it they land on does not move with instruction
-    // selection. The bound is deliberately 2.0 rather than the measured 2.590,
-    // so that a change which halves the estimate still fails this case instead of
-    // silently sliding under a fitted threshold.
+    // THE REFUSED BAND: every pose here has `group >= 3`. Each exceeds the margin
+    // by a factor of at least two and a half, so which side of it they land on
+    // does not move with instruction selection. The bound is deliberately 2.0
+    // rather than the measured 2.590, so a change that halves the estimate still
+    // fails this case instead of sliding under a fitted threshold.
     CHECK(forward_error_over_margin<float, 3, 1>() > 2.0F);
     CHECK(forward_error_over_margin<float, 5, 1>() > 2.0F);
     CHECK(forward_error_over_margin<float, 6, 2>() > 2.0F);
@@ -130,20 +126,40 @@ TEST_CASE("float refuses the damped chain above four states, and double does not
                                           damped_chain<float, 6, 2>{}.Q, damped_chain<float, 6, 2>{}.R)
                     .has_value());
 
-    // THE ACCEPTED BAND, and only where the margin is not marginal. `NX = 2`
-    // clears it by a factor of five.
+    // THE COMFORTABLE END. `NX = 2` clears the margin by a factor of nearly six
+    // and is the only pose in the sweep that does; every other `group = 2` pose
+    // straddles it.
     CHECK(forward_error_over_margin<float, 2, 1>() < 0.5F);
     {
         const damped_chain<float, 2, 1> pose;
         CHECK(ctrlpp::dare<float, 2, 1>(pose.A, pose.B, pose.Q, pose.R).has_value());
     }
 
-    // `NX = 4` IS NOT ASSERTED EITHER WAY. It measured 0.966 of the margin, and
+    // `NX = 4` IS NOT ASSERTED EITHER WAY, and neither is any other `group = 2`
+    // pose. It measured 0.966 of the margin, and
     // three and a half percent is inside what a different instruction selection
     // moves. Recording the bound that IS safe rather than the outcome that is
     // not: whatever side it lands on, it is far below the refused band, so the
     // ordering of the two bands is what this pins.
     CHECK(forward_error_over_margin<float, 4, 2>() < 2.0F);
+
+    // THE MECHANISM, pinned as an ORDERING rather than as any single verdict.
+    //
+    // What separates the bands is `group = NX / NU`, the number of states each
+    // input must reach through -- NOT the state dimension. `NX = 8` with four
+    // inputs is a `group = 2` pose and sits BELOW `NX = 6` with two inputs, which
+    // is `group = 3`, even though it is the larger problem. Asserting the
+    // ordering pins that mechanism while asserting nothing about which side of
+    // the margin the `group = 2` family lands on, because it straddles it.
+    const float g2_worst = std::max({forward_error_over_margin<float, 2, 1>(),
+                                     forward_error_over_margin<float, 4, 2>(),
+                                     forward_error_over_margin<float, 8, 4>(),
+                                     forward_error_over_margin<float, 12, 6>()});
+    const float g3plus_best = std::min({forward_error_over_margin<float, 3, 1>(),
+                                        forward_error_over_margin<float, 6, 2>(),
+                                        forward_error_over_margin<float, 8, 2>(),
+                                        forward_error_over_margin<float, 5, 1>()});
+    CHECK(g2_worst < g3plus_best);
 
     // DOUBLE ANSWERS EVERY ONE OF THEM. The refusals above are a property of the
     // scalar type, not of the family or of the solver's construction.
