@@ -1,7 +1,7 @@
 // dare_solution.cpp -- DARE solution matching dare_solution.m
 // Usage: ./dare_solution > dare_solution_cpp.csv
 
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/control/dare.h"
 #include "ctrlpp/control/lqr.h"
@@ -22,7 +22,7 @@ int main()
     sys_c.C = Eigen::Matrix<Scalar, 2, 2>::Identity();
     sys_c.D = Eigen::Matrix<Scalar, 2, 1>::Zero();
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, 0.05);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, 0.05);
 
     Eigen::Matrix<Scalar, 2, 2> Q;
     Q << 10.0, 0.0, 0.0, 1.0;

@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 #
-# Local embedded-clean cross-compile check for the core ctrlpp surface.
+# Local out-of-tree build gate for ctrlpp.
 #
-# Runs three legs, each of which must exit 0:
+# Most of it is the embedded-clean cross-compile check for the core surface,
+# which is what the name records. The general property it enforces is wider and
+# is worth stating, because a violation of it is what added the last leg: THIS
+# SCRIPT COMPILES THE SOURCE THAT THE ROOT BUILD DOES NOT REACH. A directory
+# with its own project declaration is invisible to every standing tree and to
+# every ctest entry, so a rename in a library header can delete a symbol nine
+# translation units call and no gate anywhere reports it. That happened.
+#
+# Runs four legs, each of which must exit 0:
 #   Leg 1  Host build with exceptions and RTTI off (-fno-exceptions -fno-rtti
 #          -DCTRLPP_NO_EXCEPTIONS). Authoritative test that no throw or stray
 #          .value() leaks onto the embedded path; compiled for Scalar double
@@ -19,6 +27,32 @@
 #          defaults and are deliberately not overridden: pointing either
 #          elsewhere would compile against a different standard library than
 #          the one a consumer of this toolchain actually links.
+#   Leg 4  The standalone validation project, configured and built in its own
+#          tree. It declares its own project, aliases its own ctrlpp::ctrlpp
+#          onto an interface target, and is never added as a subdirectory from
+#          the root, so no standing tree compiles it. It is configured HERE
+#          exactly as a developer configures it -- standalone -- so its own
+#          stricter warning posture applies unchanged, including the
+#          discarded-result diagnostic it promotes to an error because its
+#          executables have no assertions and a dropped failure produces a
+#          plausible-looking output file rather than a diagnostic.
+#
+# Two project roots are deliberately NOT reached by this script, and are named
+# here so the next rename's author has a list rather than a surprise:
+#
+#   benchmarks/                        -- standalone, and it targets a later
+#                                         language standard than the library's
+#                                         C++20 floor, so compiling it here
+#                                         would read as a claim the floor covers
+#                                         it. It also carries its own mirror of
+#                                         the exceptions switch.
+#   examples/embedded/esp32/           -- separate toolchains and separate build
+#   examples/embedded/nucleo_h753zi/      systems, neither resolvable from a
+#                                         host checkout without an SDK this
+#                                         script must not assume.
+#
+# tests/integration/consumer/ also declares its own project, but the root test
+# tree drives it, so it is reached already.
 #
 # This is a plain, repeatable local script. It authors no CI configuration and
 # no CMake toolchain file.
@@ -187,4 +221,45 @@ echo "  float translation unit: OK"
 echo "Leg 3 PASS"
 echo
 
-echo "All legs PASS (Leg 1 host no-exceptions, Leg 2 host C++20 fallback, Leg 3 arm-none-eabi Cortex-M7)."
+# --- Leg 4: the standalone validation project ---------------------------------
+
+echo "=== Leg 4: standalone validation project (own tree, own warning posture) ==="
+
+if ! command -v cmake >/dev/null 2>&1; then
+    echo "ERROR: cmake not found on PATH." >&2
+    echo "  Leg 4 configures the validation project as its own tree." >&2
+    exit 1
+fi
+
+# Configured standalone, which is the whole point: adding it as a subdirectory
+# of the root would collide on ctrlpp::ctrlpp and would substitute the root's
+# flag set for the project's stricter one. Its own CMakeLists is the authority
+# on how it compiles, here as for a developer.
+validation_build="$(mktemp -d)"
+trap 'rm -rf "${validation_build}" "${probe_dir}"' EXIT
+
+# Parallelism is bounded rather than left to every core: the validation cases
+# instantiate the continuous and discrete Riccati solvers, whose compilation is
+# memory-bound rather than CPU-bound.
+validation_jobs="${CTRLPP_VALIDATION_JOBS:-4}"
+
+if ! cmake -S validation -B "${validation_build}" -G "Unix Makefiles" > "${validation_build}/configure.log" 2>&1; then
+    echo "ERROR: could not configure the validation project." >&2
+    sed 's/^/    /' "${validation_build}/configure.log" >&2
+    echo "  The project resolves Eigen with find_package(Eigen3 CONFIG REQUIRED);" >&2
+    echo "  install an Eigen >= 3.4 providing a CMake package configuration." >&2
+    exit 1
+fi
+
+if ! cmake --build "${validation_build}" -j "${validation_jobs}" > "${validation_build}/build.log" 2>&1; then
+    echo "ERROR: the validation project failed to build." >&2
+    grep -E "error:|Error " "${validation_build}/build.log" | sed 's/^/    /' >&2 || true
+    exit 1
+fi
+
+validation_cases="$(find "${validation_build}/cases" -maxdepth 2 -type f -perm -u+x | wc -l)"
+echo "  configured and built standalone: ${validation_cases} case executable(s)"
+echo "Leg 4 PASS"
+echo
+
+echo "All legs PASS (Leg 1 host no-exceptions, Leg 2 host C++20 fallback, Leg 3 arm-none-eabi Cortex-M7, Leg 4 standalone validation project)."

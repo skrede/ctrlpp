@@ -1,7 +1,7 @@
 // lqi_tracking.cpp -- LQI tracking matching lqi_tracking.m
 // Usage: ./lqi_tracking > lqi_tracking_cpp.csv
 
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/propagate.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/control/lqr.h"
@@ -25,7 +25,7 @@ int main()
     constexpr Scalar dt = 0.05;
     constexpr Scalar duration = 15.0;
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, dt);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, dt);
 
     Eigen::Matrix<Scalar, 3, 3> Q_aug;
     Q_aug << 10.0, 0.0, 0.0,

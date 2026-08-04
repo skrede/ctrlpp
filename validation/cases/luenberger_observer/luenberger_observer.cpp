@@ -2,7 +2,7 @@
 // Usage: ./luenberger_observer > luenberger_observer_cpp.csv
 
 #include "ctrlpp/estimation/luenberger.h"
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/propagate.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/control/place.h"
@@ -29,7 +29,7 @@ int main()
     constexpr Scalar dt = 0.05;
     constexpr Scalar duration = 5.0;
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, dt);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, dt);
 
     std::array<std::complex<Scalar>, 2> desired_obs = {
         std::complex<Scalar>{0.3, 0.0},

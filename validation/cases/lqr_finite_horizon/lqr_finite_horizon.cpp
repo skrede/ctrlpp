@@ -1,7 +1,7 @@
 // lqr_finite_horizon.cpp -- Finite-horizon LQR matching lqr_finite_horizon.m
 // Usage: ./lqr_finite_horizon > lqr_finite_horizon_cpp.csv
 
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/propagate.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/control/lqr.h"
@@ -23,7 +23,7 @@ int main()
 
     constexpr Scalar dt = 0.05;
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, dt);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, dt);
 
     Eigen::Matrix<Scalar, 2, 2> Q;
     Q << 10.0, 0.0, 0.0, 1.0;

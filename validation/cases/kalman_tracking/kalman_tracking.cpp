@@ -2,7 +2,7 @@
 // Usage: ./kalman_tracking > kalman_tracking_cpp.csv
 
 #include "ctrlpp/estimation/kalman.h"
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/propagate.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/control/lqr.h"
@@ -26,7 +26,7 @@ int main()
     constexpr Scalar dt = 0.05;
     constexpr Scalar duration = 10.0;
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, dt);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, dt);
 
     Eigen::Matrix<Scalar, 2, 2> Q_proc = Eigen::Matrix<Scalar, 2, 2>::Identity() * 0.01;
     Eigen::Matrix<Scalar, 1, 1> R_meas;

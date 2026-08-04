@@ -1,7 +1,7 @@
 // lqr_step_response.cpp -- LQR closed-loop step response matching lqr_step_response.m
 // Usage: ./lqr_step_response > lqr_step_response_cpp.csv
 
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/propagate.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/control/lqr.h"
@@ -25,7 +25,7 @@ int main()
     constexpr Scalar dt = 0.05;
     constexpr Scalar duration = 10.0;
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, dt);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, dt);
 
     Eigen::Matrix<Scalar, 2, 2> Q;
     Q << 10.0, 0.0, 0.0, 1.0;

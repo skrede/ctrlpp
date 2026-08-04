@@ -2,7 +2,7 @@
 // Usage: ./analysis_poles > analysis_poles_cpp.csv
 
 #include "ctrlpp/model/analysis.h"
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/state_space.h"
 
 #include <algorithm>
@@ -21,7 +21,7 @@ int main()
     sys_c.C << 1.0, 0.0;
     sys_c.D << 0.0;
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, 0.05);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, 0.05);
 
     auto pc = ctrlpp::poles(sys_c);
     auto pd = ctrlpp::poles(sys_d);

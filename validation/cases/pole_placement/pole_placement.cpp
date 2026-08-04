@@ -1,7 +1,7 @@
 // pole_placement.cpp -- Pole placement matching pole_placement.m
 // Usage: ./pole_placement > pole_placement_cpp.csv
 
-#include "ctrlpp/model/discretise.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/control/place.h"
 
@@ -25,7 +25,7 @@ int main()
     sys_c.C = Eigen::Matrix<Scalar, 2, 2>::Identity();
     sys_c.D = Eigen::Matrix<Scalar, 2, 1>::Zero();
 
-    auto sys_d = ctrlpp::discretise(ctrlpp::zoh{}, sys_c, 0.05);
+    auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, 0.05);
 
     std::array<std::complex<Scalar>, 2> desired = {
         std::complex<Scalar>{0.5, 0.1},
