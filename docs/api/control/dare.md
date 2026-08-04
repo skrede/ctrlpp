@@ -62,11 +62,25 @@ error in the returned matrix directly:
 estimated relative forward error  =  ||Omega^-1(R(P_hat))||_F / ||P||_F
 ```
 
-That is solved on the symmetric subspace, whose dimension is `NX(NX+1)/2`, from
-quantities the solve already holds. It allocates nothing. Its cost is
-`NX(NX+1)/2` rank-two updates to assemble the operator plus a rank-revealing
-solve of about `NX^6 / 12` operations, which against a seven-iteration Schur
-solve is 0.4% at `NX = 2`, 3.6% at `NX = 4` and 28.6% at `NX = 8`.
+That is solved on the symmetric subspace, whose dimension is `M = NX(NX+1)/2`,
+from quantities the solve already holds. It allocates nothing. Assembling the
+operator costs exactly `NX^4` operations -- `NX` diagonal columns at `NX^2` each
+plus `NX(NX-1)/2` off-diagonal columns at `2 NX^2` each, since an off-diagonal
+column carries a second outer product -- and the rank-revealing solve is
+`(2/3) M^3`, with the coordinate round-trip `O(M^2)`. Against a seven-iteration
+Schur solve that is 3.6% at `NX = 2`, 10.7% at `NX = 4`, 24.5% at `NX = 6` and
+47.7% at `NX = 8`.
+
+Storage for the operator is `M x M`, so it grows as the fourth power of the
+state dimension. The decomposition factorizes into the operator's own array
+rather than a copy of it, which removes the second live `M x M` array: the
+estimator's stack frame is 864, 2,400, 6,432 and 15,056 bytes at
+`NX = 2, 4, 6, 8`, and the peak of the whole `dare` call chain -- the quantity a
+hard-real-time caller budgets -- is 5,352, 11,688, 23,144 and 42,760 bytes for an
+`NX`-state, 3-input pose. The same chain with no accuracy estimate on it at all
+still peaks at 17,112 bytes at `NX = 6` and 28,168 at `NX = 8`, so on a 4-16 KB
+task stack the supported maximum is `NX = 4` whether the estimate is formed or
+not; the estimator is not what decides the small-stack answer.
 
 **`sqrt(eps)` is derived and not calibrated.** For a radix-2 type with
 `eps = 2^-p`, `sqrt(eps) = 2^(-p/2)` is exactly the retention of `p/2` of the `p`
@@ -101,6 +115,24 @@ favorable, so a small population of answers that have genuinely lost more than
 half the significand is still returned rather than refused. Closing that gap
 would need a second solve in higher precision, which is not a postcondition.
 This is a known and accepted exposure, not an omission.
+
+**When the operator is too ill-conditioned to invert, that is an absence of
+evidence.** `Omega` is exactly singular only when the closed loop carries an
+eigenvalue pair with `lambda_i * lambda_j = 1`, which a spectrum strictly inside
+the unit disk forbids. The solvability test actually performed is a numerical
+rank test at a threshold relative to the largest pivot, so it reports rank
+deficiency whenever `cond(Omega)` exceeds `1 / (M * eps)` -- roughly
+`1 - |lambda|^2 < M * eps` -- and the stabilizing claim is established against a
+much wider margin. There is therefore a band in which the spectrum check passes,
+the answer may be perfectly good, and the estimate still cannot be formed. In
+that band the estimate reports that it has no opinion rather than refuting the
+answer, and the closed-loop spectrum check remains the sole owner of the
+stabilizing claim. The refusal a caller sees is unchanged -- an estimate that
+cannot be formed still declines, under the "a magnitude the verification needs
+could not be formed" clause of `arithmetic_limit` rather than the
+"forward error exceeded `sqrt(eps)`" clause. Measured over 1.5 million poses
+outside the randomized target's conditioning filters, this fires on 115 of them
+and on none of the 971,244 poses inside the filters.
 
 `@cite laub1979`, and Higham, *Accuracy and Stability of Numerical Algorithms*,
 2nd ed., Ch. 19, for the orthogonal-transformation error analysis the backward

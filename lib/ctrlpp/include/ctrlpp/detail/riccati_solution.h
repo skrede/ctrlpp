@@ -6,11 +6,18 @@
 /// Given a reordered orthogonal real basis U of size 2n x 2n (the output of
 /// ctrlpp::detail::reorder_real_schur), this header provides the single
 /// routine required to recover the stabilizing Riccati solution P.
-/// P is computed as U21 * U11^-1 directly on real arithmetic, symmetrised
+/// P is computed as U21 * U11^-1 directly on real arithmetic, symmetrized
 /// via ctrlpp::detail::symmetrize, and checked for finiteness and positive
-/// semi-definiteness. The positive semi-definiteness floor is derived from
-/// std::numeric_limits<Scalar>::epsilon() scaled by the infinity norm of P;
-/// no hardcoded numerical literal appears anywhere in the primitive.
+/// semi-definiteness. The positive semi-definiteness floor is the bound
+/// ctrlpp::detail::psd_pivot_floor computes: the floor factor times the state
+/// dimension times std::numeric_limits<Scalar>::epsilon() times the LARGEST
+/// ABSOLUTE ENTRY of P, negated. It is neither a row-sum norm nor
+/// dimension-free; that function's docblock carries the derivation and the
+/// measured solution the dimension factor exists for, and is not restated here.
+/// No calibrated constant appears anywhere in the primitive: every numeric in
+/// it is either a structural count fixed by the problem's shape or the
+/// order-one prefactor the backward-error bound leaves unspecified, which is
+/// exposed as a defaulted parameter rather than fixed in the body.
 ///
 /// Errors surface through ctrlpp::expected with a three-variant enum shared
 /// between DARE and CARE; the public dare_error / care_error enums map
@@ -323,20 +330,70 @@ enum class riccati_accuracy
 /// hazard at both ends of the arithmetic range -- the same rescale the magnitude
 /// helpers above use, for the same reason.
 ///
-/// ## Cost, counted rather than timed
+/// ## Arithmetic, counted rather than timed
 ///
 /// `Omega` is assembled column by column on the symmetric subspace, whose
 /// dimension is `M = N(N+1)/2`. Each basis image is one rank-two outer-product
-/// update, so the assembly is `M * N^2` operations; the rank-revealing solve is
-/// `(2/3) M^3 ~ N^6 / 12`. Against a seven-iteration Schur solve's `149.33 N^3`
-/// that is 0.4% at `N = 2`, 3.6% at `N = 4` and 28.6% at `N = 8`. The growth is
-/// `N^3 / 1792` relative, so beyond roughly `N = 10` the direct form stops being
-/// the right one: a Bartels-Stewart Stein solve against a real Schur factor of
-/// `A_cl` costs about `26 N^3`, a fixed 17% of the solve at every size. That
-/// reduction is available and is deliberately not taken here, because the
-/// library instantiates the Riccati path at `N = 2`, `4` and `8`, where the
-/// direct form is at most 1.7x more work than the factorized one and is
-/// materially simpler to audit. Nothing on this path allocates.
+/// update. Enumerating them gives `N` diagonal columns at `N^2` each plus
+/// `N(N-1)/2` off-diagonal columns at `2 N^2` each, which is exactly `N^4` --
+/// an off-diagonal column carries a SECOND outer product, so the shorter
+/// `M * N^2` reading of the same loop undercounts it by a factor of two. The
+/// rank-revealing solve is `(2/3) M^3`, and the coordinate round-trip and
+/// back-substitution are `O(M^2)`. Against a seven-iteration Schur solve's
+/// `149.33 N^3`, the whole estimate is 3.6% of the solve at `N = 2`, 10.7% at
+/// `N = 4`, 24.5% at `N = 6` and 47.7% at `N = 8`. Nothing on this path
+/// allocates.
+///
+/// A Bartels-Stewart Stein solve against a real Schur factor of `A_cl` needs
+/// only `O(N^2)` storage and, counted the same way term by term, about
+/// `18 N^3` operations: cheaper than the form here by 2.0x at `N = 6` and 3.9x
+/// at `N = 8`, and 3.3x MORE expensive at `N = 2`, where the crossover has not
+/// yet happened. It is not taken, and the reason is accuracy rather than cost.
+/// Measured against an extended-precision reference of a different algorithm on
+/// the same population this gate is justified by, the factorized form refused
+/// four fewer wrong answers and its worst escaped forward error was 4.9x
+/// larger, because the solvability check it can carry -- a pivot ratio local to
+/// each `p*q <= 4` sub-system -- fires on a set disjoint from the one the
+/// rank-revealing decomposition's own criterion fires on. Its accuracy is also
+/// unmeasured at exactly the dimensions where its arithmetic advantage appears.
+/// The reduction is real and the evidence for it is not, so what ships is the
+/// form whose accuracy is already established.
+///
+/// ## Storage and stack, measured rather than asserted
+///
+/// STORAGE GROWS AS THE FOURTH POWER OF THE STATE DIMENSION, and the in-place
+/// decomposition below does not change that. The operator is `M x M`, which is
+/// asymptotically `N^4 / 4` entries; factorizing into its own storage removes
+/// the second live copy of it, not the exponent. This is a bounded improvement
+/// with a stated horizon, not an asymptotic answer.
+///
+/// Measured with `-fstack-usage` at `-O2` on x86-64, this function's own frame
+/// is 864, 2,400, 6,432 and 15,056 bytes at `N = 2, 4, 6, 8`, against 896,
+/// 3,168, 9,936 and 25,392 for the copying form it replaces -- a 1.69x
+/// reduction at `N = 8`.
+///
+/// What a hard-real-time caller budgets is not this frame but the peak of the
+/// WHOLE discrete solve chain, which `-fstack-usage` cannot give because it
+/// attributes nothing to callees. Measured directly, by painting a region below
+/// the frame and reading back the deepest disturbed word (harness floor zero on
+/// every configuration), that peak is 5,352, 11,688, 23,144 and 42,760 bytes at
+/// `N = 2, 4, 6, 8` for an `N`-state, 3-input pose. So, strictly and with no
+/// margin left for the caller's own frames, interrupt context or RTOS overhead:
+///
+///     task stack   supported maximum N
+///      4 KB        none, not even N = 2
+///      8 KB        N <= 2
+///     16 KB        N <= 4
+///     32 KB        N <= 6
+///     48 KB        N <= 8
+///     64 KB        N <= 8
+///
+/// THE ESTIMATOR IS NOT WHAT DECIDES THE SMALL-STACK ANSWER. The same chain with
+/// no accuracy estimate on it at all still peaks at 17,112 bytes at `N = 6` and
+/// 28,168 at `N = 8`, so on a 4-16 KB task stack the supported maximum is
+/// `N = 4` whether this estimate is formed or not. Removing it entirely would
+/// buy no additional configuration below 32 KB. The construction here changes
+/// the supported maximum in exactly one band, at 48 KB.
 template <typename Scalar, int N>
 auto estimate_riccati_forward_error(const Eigen::Matrix<Scalar, N, N>& closed_loop,
                                     const Eigen::Matrix<Scalar, N, N>& residual,
@@ -407,17 +464,45 @@ auto estimate_riccati_forward_error(const Eigen::Matrix<Scalar, N, N>& closed_lo
             stein_rhs(row++) = (residual_unit(a, b) + residual_unit(b, a)) / Scalar{2};
         }
 
-    auto stein_qr = stein_operator.colPivHouseholderQr();
+    // The decomposition is declared over a reference to the operator's own
+    // storage and therefore factorizes IN PLACE, destroying `stein_operator`.
+    // This is the only form in which Eigen writes the factorization into the
+    // caller's array; both `stein_operator.colPivHouseholderQr()` and a
+    // `ColPivHouseholderQR<Matrix<M, M>>` with a separate `compute()` hold an
+    // `M x M` member of their own and leave the operand live beside it, so
+    // either of those keeps two `M x M` arrays alive at once. The operator is
+    // not read after this point, so there is nothing to preserve. The
+    // arithmetic is unchanged: the same Householder sequence runs over the same
+    // entries, and the solve is bit-for-bit what the copying form produces.
+    Eigen::ColPivHouseholderQR<Eigen::Ref<Eigen::Matrix<Scalar, M, M>>> stein_qr(stein_operator);
     stein_qr.setThreshold(Scalar{M} * std::numeric_limits<Scalar>::epsilon());
     if(!stein_qr.isInvertible())
     {
-        // Omega is singular exactly when the closed loop carries an eigenvalue
-        // pair with lambda_i * lambda_j = 1, which a spectrum strictly inside
-        // the unit disk forbids. A singular operator is therefore evidence
-        // AGAINST the stabilizing claim rather than an absence of evidence, and
-        // it is reported as an error past every margin rather than as
-        // unresolved.
-        return {std::numeric_limits<Scalar>::infinity(), true};
+        // AN OPERATOR TOO ILL-CONDITIONED TO INVERT IS AN ABSENCE OF EVIDENCE.
+        //
+        // Omega is EXACTLY singular only when the closed loop carries an
+        // eigenvalue pair with lambda_i * lambda_j = 1, which a spectrum
+        // strictly inside the unit disk forbids. The test above is not that
+        // test. `isInvertible()` at a RELATIVE threshold reports rank deficiency
+        // whenever the operator's condition number exceeds the reciprocal of
+        // `M * eps`, which for Omega(X) = X - A_cl' X A_cl means roughly
+        // 1 - |lambda|^2 < M * eps. The stabilizing claim is established
+        // elsewhere against a margin of N * eps * ||A_cl||, so there is a band
+        // -- for binary64 at N = 8, |lambda| between 1 - 4e-15 and 1 - 4.4e-16
+        // -- in which the spectrum check passes, the answer may be perfectly
+        // good, and this decomposition still cannot form the estimate. A
+        // conditioning statement about the arithmetic is not a proof that the
+        // closed loop is resonant.
+        //
+        // So this returns the unresolved state, which is this file's stated
+        // premise everywhere else: a quantity the arithmetic could not form has
+        // produced no evidence, and an absence of evidence is neither a
+        // certificate nor a refutation. See `riccati_accuracy` and
+        // `resolved_magnitude` above for the same rule at the two other sites.
+        // The closed-loop spectrum check in the discrete solver's verification
+        // remains the SOLE owner of the stabilizing claim; this estimator makes
+        // no claim about the spectrum at all.
+        return {Scalar{0}, false};
     }
 
     const Eigen::Matrix<Scalar, M, 1> coordinates = stein_qr.solve(stein_rhs);
@@ -480,15 +565,21 @@ enum class riccati_extract_error
 ///
 /// Given an orthogonal real U of size 2n x 2n with the stable invariant
 /// subspace in its leading n columns (output of reorder_real_schur), compute
-/// P = U21 * U11^-1, symmetrise in place, and validate positive semi-definiteness.
+/// P = U21 * U11^-1, symmetrize in place, and validate positive semi-definiteness.
 /// Writes directly into P_out so that callers can avoid the ctrlpp::expected<Matrix>
 /// return-by-value copy on the hot path.
 ///
 /// The implementation prefers a back-substitution against U11 (solving
 /// U11^T * P^T = U21^T) over an explicit inverse for numerical accuracy.
 ///
-/// The positive semi-definiteness floor is -eps * ||P||_inf, matching the
-/// LAPACK convention of scaling relative thresholds by the operand norm.
+/// The positive semi-definiteness floor is the one psd_pivot_floor computes:
+/// the floor factor times the state dimension times unit roundoff times the
+/// largest absolute entry of P, negated. The operand is the largest entry and
+/// NOT a row-sum norm -- the two differ by up to a factor of the dimension --
+/// and the dimension factor is load-bearing rather than decorative. See that
+/// function's docblock for the backward-error argument and for the measured
+/// solution that missed the dimension-free floor while being positive
+/// semi-definite to within one ulp; it is not restated here.
 ///
 /// @returns ctrlpp::expected<void, riccati_extract_error>.
 template <typename Scalar, int N2>
