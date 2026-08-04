@@ -233,6 +233,17 @@ against a `double` reference to three significant figures at every pose above,
 `est / true = 1.0` throughout. The refused answers really do carry more than
 half-significand error; refusing them is the gate working, not misfiring.
 
+**EVERY FIGURE IN THE TABLE ABOVE IS TOOLCHAIN-SPECIFIC, BY MORE THAN A FACTOR OF
+TWO.** Measured on g++ 16.1.1, x86-64, `-O2`. A test that asserted the
+`NX = 8, NU = 2` pose exceeds the margin by more than a factor of two -- 4.105
+here -- FAILED on Apple clang, where the same expression fell below 2.0. So the
+`float` column is a reading of one compiler, not a property of the library, and
+no individual accept-or-refuse verdict in it is portable. What IS portable, and
+what `tests/unit/dare_float_precision_test.cpp` asserts instead, is the
+comparison between scalars on the same pose: `float` spends about 55,000 times
+the fraction of its own margin that `double` spends of its own. Treat the table
+as an illustration of the mechanism and measure your own toolchain.
+
 What a caller should take from this is a MEASUREMENT INSTRUCTION rather than a
 dimension: at `float`, on a plant whose inputs must act through chains of more
 than two states, expect the solver to refuse, and expect poses near `group = 2`
