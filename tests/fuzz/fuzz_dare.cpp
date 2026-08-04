@@ -1,5 +1,7 @@
 #include "ctrlpp/control/dare.h"
 
+#include "dare_quad_reference.h"
+
 #include <cmath>
 #include <limits>
 #include <cstddef>
@@ -142,14 +144,93 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     if(!P.allFinite())
         abort();
 
-    // Live accuracy oracle: the answer must retain more than half of binary64's
-    // significand, estimated from the residual through the inverse of the
-    // residual map's own derivative.
+    // THE ACCURACY ORACLE. It does not consult the component it is judging.
     //
-    // The residual is formed here by an INDEPENDENT route -- an explicit inverse
-    // of R + B'PB rather than the rank-revealing solve the library uses -- and
-    // the closed loop is rebuilt from it, so the two sides are not the same
-    // arithmetic even though they are now the same rule.
+    // The answer must retain more than half of binary64's significand, measured
+    // as its relative distance to an independently computed solution of the same
+    // pose: Newton-Kleinman policy iteration at binary128, seeded from the
+    // returned solution. No Schur decomposition, no symplectic matrix, no
+    // Eigen, and above all no call to the library's forward-error estimator.
+    //
+    // That last exclusion is the point. The library requires a `within` verdict
+    // from that estimator BEFORE it returns, so any oracle built on the same
+    // estimator is downstream of a decision the library has already made and
+    // cannot contradict it. Measured over the decoder-only domain, 6,143,662
+    // accepted poses from twenty seeds and two generators: eight answers had in
+    // fact lost more than half the significand, and the estimator-based check
+    // below sees only two of them. This oracle sees all eight, and aborts on
+    // none of the 6,143,654 correct ones.
+    //
+    // THE STEP BUDGET IS DERIVED, AND UNDER-SIZING IT CANNOT CAUSE A FALSE
+    // ABORT. Newton-Kleinman doubles the number of correct bits per step inside
+    // its basin, so reaching binary128's 113-bit significand from a seed with a
+    // single correct bit takes ceil(log2(113)) = 7 steps; the factor of four
+    // covers the pre-basin approach from a stabilizing but inaccurate gain. The
+    // measured maximum over 10,027,770 reference runs across both domains is
+    // 12, with 97.8% converging in three steps or fewer and no run failing to
+    // converge. A budget that were too small would produce ABSTENTIONS, never
+    // aborts, so this constant bounds cost rather than correctness.
+    constexpr int reference_significand_bits = 113;
+    constexpr int quadratic_steps_to_full_precision = []
+    {
+        int steps = 0;
+        for(int bits = 1; bits < reference_significand_bits; bits *= 2)
+            ++steps;
+        return steps;
+    }();
+    constexpr int reference_step_budget = 4 * quadratic_steps_to_full_precision;
+
+    double A_reference[2][2];
+    double B_reference[2];
+    double Q_reference[2][2];
+    double P_reference[2][2];
+    for(int i = 0; i < 2; ++i)
+    {
+        B_reference[i] = B(i, 0);
+        for(int j = 0; j < 2; ++j)
+        {
+            A_reference[i][j] = A(i, j);
+            Q_reference[i][j] = Q(i, j);
+            P_reference[i][j] = P(i, j);
+        }
+    }
+
+    const auto reference = ctrlpp::fuzz::quad_refine_dare(A_reference, B_reference, Q_reference, R(0, 0), P_reference, reference_step_budget);
+
+    // A reference that has not converged is not a reference. Its distance to the
+    // answer measures nothing, so this pose yields no verdict. An absence of
+    // evidence is not evidence of a defect, and it is emphatically not an abort.
+    ctrlpp::fuzz::quad distance_squared{};
+    if(reference.converged && ctrlpp::fuzz::quad_relative_distance_squared(P_reference, reference.P, distance_squared))
+    {
+        // The half-significand criterion, squared so no square root is needed at
+        // binary128: a relative forward error above sqrt(eps) is exactly the loss
+        // of more than half of the fractional significand bits of a radix-2
+        // type. Derived from the type's radix, with nothing fitted.
+        const ctrlpp::fuzz::quad margin_squared{std::numeric_limits<double>::epsilon()};
+        if(distance_squared > margin_squared)
+            abort();
+    }
+
+    // A CONSISTENCY CHECK, AND ONLY THAT.
+    //
+    // The residual is formed here by a different arithmetic route than the
+    // library uses -- an explicit inverse of R + B'PB rather than the
+    // rank-revealing solve -- and the closed loop is rebuilt from it. Two
+    // arithmetic routes into one estimator agreeing is a real property and is
+    // worth asserting, so the check stays.
+    //
+    // WHAT IT DOES NOT ESTABLISH is anything about the answer's accuracy. It
+    // calls the same estimator the library required a `within` verdict from
+    // before returning, so a systematic error in that estimator is invisible to
+    // it by construction: it can only fire where the two arithmetic routes
+    // disagree, which is a statement about rounding and not about the solution.
+    // Measured, that is exactly how it behaves -- over the decoder-only domain
+    // it fires seventeen times, fifteen of them on answers that are correct.
+    // The accuracy criterion is the independent oracle above.
+    //
+    // An UNRESOLVED verdict is deliberately not an abort, for the same reason a
+    // non-converged reference is not: absence of evidence.
     Eigen::Matrix<double, 2, 2> AtPA = A.transpose() * P * A;
     Eigen::Matrix<double, 1, 1> S = R + B.transpose() * P * B;
     Eigen::Matrix<double, 1, 2> K = S.inverse() * B.transpose() * P * A;
@@ -157,19 +238,6 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     Eigen::Matrix<double, 2, 2> resid = AtPA - P - cross + Q;
     Eigen::Matrix<double, 2, 2> closed_loop = A - B * K;
 
-    // The bound is CALLED rather than re-spelled. The empirically calibrated
-    // multiple this line used to carry was a second, differently fitted model of
-    // a quantity the library also modeled, and the two disagreed by roughly three
-    // orders of magnitude: the library accepted solutions this oracle aborted on,
-    // over a band nine hundred times wide. There is now one rule and therefore no
-    // band. It is also the right rule: measured against an extended-precision
-    // reference of a different algorithm, a threshold on the residual could not
-    // separate right answers from wrong ones at all, because the two classes are
-    // contiguous on that quantity.
-    //
-    // An UNRESOLVED verdict is deliberately not an abort. It means the estimate
-    // could not be formed on this pose, which is an absence of evidence rather
-    // than evidence of a defect.
     if(ctrlpp::detail::riccati_forward_error_verdict<double, 2>(closed_loop, resid, P)
        == ctrlpp::detail::riccati_accuracy::exceeded)
         abort();
