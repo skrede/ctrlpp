@@ -147,7 +147,7 @@ otherwise produce silent corruption through intermediate overflow:
   `sqrt(eps)`, which for a radix-2 type is exactly the retention of half the
   fractional significand bits and is therefore derived rather than fitted. It
   returns
-  `ctrlpp::expected<dare_result<Scalar, NX>, dare_error>`, so a refusal is
+  `ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>`, so a refusal is
   named rather than represented by a bare empty result:
   `dare_error::non_finite_input` when A, B, Q or R contains NaN or Inf, and
   `dare_error::arithmetic_limit` when finite inputs cannot produce a verified

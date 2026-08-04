@@ -28,7 +28,7 @@ auto dare(const Matrix<Scalar, NX, NX>& A,
           const Matrix<Scalar, NX, NU>& B,
           const Matrix<Scalar, NX, NX>& Q,
           const Matrix<Scalar, NU, NU>& R)
-    -> ctrlpp::expected<dare_result<Scalar, NX>, dare_error>;
+    -> ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>;
 ```
 
 Solves the standard DARE. Before forming the 2n x 2n symplectic matrix, it
@@ -37,6 +37,15 @@ gain: the equilibrated solution is multiplied by the divisor before it is
 returned. The divisor is the largest-magnitude entry across both weights, so
 one weight entry is near unity and independently common-scaled poses reduce to
 the same canonical problem.
+
+The divisor is chosen **before** anything is factorized, and the symplectic
+operands are then factorized once, from the equilibrated weighting. That order
+matters for more than cost. The input Gramian `G = B R^{-1} B'` is the quantity
+equilibration exists to keep representable: on a weighting whose entries are
+subnormal, `R^{-1}` overflows and `G` is infinite at the caller's scale while
+being an ordinary number at the equilibrated one. Forming it at the caller's
+scale first and correcting afterwards cannot recover those poses, because the
+correction would be applied to an infinity.
 
 The solver computes a real Schur decomposition, reorders eigenvalues inside the
 unit disk to the top-left block, and extracts P = U21 * U11^{-1}. Before
@@ -216,9 +225,25 @@ loses significand and the gain it implies departs from the equilibrated gain.
 The solver refuses when that departure exceeds the counted-operation margin,
 which on the same pose is measured at a common scale near `1e-316`.
 
-On success `result->P` is the stabilizing solution;
-`result->subspace_separation` and `result->reorder_complete` are conditioning
-diagnostics.
+On success `result->P` is the stabilizing solution and `result->K` is the
+feedback gain `(R + B'PB)^{-1} B'PA` that the solve itself formed while verifying
+that solution; `result->subspace_separation` and `result->reorder_complete` are
+conditioning diagnostics.
+
+`result->K` is the gain the acceptance decision was made on, and it is not
+equivalent to re-forming the gain from `result->P`. The solve forms it at the
+equilibrated scale and applies the same dimension-times-unit-roundoff rank test
+to `R + B'PB` that the pencil build applies to `R`, then checks the result is
+finite; a caller who re-forms it from `P` alone reproduces neither. The gain is
+homogeneous of degree zero in `(P, Q, R)`, so the equilibrated gain **is** the
+caller's gain -- but the caller-scale sum `R + B'PB` leaves the top of the range
+on poses whose answer is an ordinary normal number, and a rank-revealing solve
+handed such a sum returns a **zero** gain rather than refusing. Measured over the
+scalar weight-ratio sweep, 3,546 faithfully realized accepted poses spanning
+every decade the type supports at three weight ratios: re-forming the gain from
+`P` reaches a relative error of `1.000` on two of them -- a returned gain of
+zero, which is no feedback at all -- while `result->K` stays within
+`1.547e-16`, below one unit of roundoff, on every one.
 
 Refusals:
 
@@ -227,11 +252,18 @@ Refusals:
 | `dare_error::non_stabilizable` | fewer than n eigenvalues of the symplectic spectrum lie inside the unit region |
 | `dare_error::non_finite_input` | A, B, Q or R contains NaN/Inf |
 | `dare_error::singular_a` | A is rank-deficient to a scale-relative reciprocal-pivot tolerance, so the `A^{-T}` the pencil build needs does not exist |
-| `dare_error::singular_r` | R is rank-deficient to the same tolerance, so the `R^{-1}` the same pencil build needs for `G = B R^{-1} B'` does not exist |
+| `dare_error::singular_r` | R is rank-deficient to the same tolerance, so the `R^{-1}` the same pencil build needs for `G = B R^{-1} B'` does not exist. The test is applied to the **equilibrated** weighting, the operand the solve actually inverts, so it also covers a weighting that is nonzero on its own but vanishes against the state weighting -- `Q = 1e300 I` with `R = 1e-300` divides to a weighting that underflows to zero, and relative to the posed problem the input weighting is zero |
 | `dare_error::singular_u11` | the top-left block of the reordered invariant-subspace basis is singular; P cannot be extracted. **Covers two different situations -- see below** |
 | `dare_error::non_psd_solution` | the extracted P is not positive semi-definite. The test is an LDLT pivot-sign test against `N * eps * max\|P_ij\|`, the order of the factorization's own backward error, below which a pivot carries no sign information |
 | `dare_error::schur_failed` | the real Schur factorization did not converge |
 | `dare_error::arithmetic_limit` | finite inputs could not produce a verified stabilizing solution at the scalar type's precision. Specifically: the equilibrated answer's estimated relative forward error exceeded `sqrt(eps)`, so it retains less than half the significand; its closed-loop spectrum or gain solve did not verify; a magnitude the equilibrated verification needs could not be formed; the weights overflowed while being equilibrated; the solution overflowed while being rescaled; the rescaled solution failed the positive-semi-definiteness test at its returned scale; the direct check at the caller's scale resolved and refuted the carried claim; the direct check failed to resolve for any reason other than the gain leaving the range at the caller's scale; or the equilibrated and returned gains, both formed, disagreed by more than the counted-operation margin |
+
+A second cause is no longer on that list either: a weighting that vanishes under
+equilibration. That is now `singular_r`, which names the weight ratio the caller
+chose rather than sending them to look at precision. Measured across sixteen
+extreme ratio poses spanning `Q` from `1e150` to `1e308` against `R` from
+`1e-150` to `1e-320`, fifteen moved from `arithmetic_limit` to `singular_r`; no
+pose moved between accepted and declined.
 
 The one cause that is **no longer** on that list is the gain the check at the
 caller's scale could not form because `R + B'PB` left the range there. That used
@@ -284,7 +316,7 @@ auto dare(const Matrix<Scalar, NX, NX>& A,
           const Matrix<Scalar, NX, NX>& Q,
           const Matrix<Scalar, NU, NU>& R,
           const Matrix<Scalar, NX, NU>& N)
-    -> ctrlpp::expected<dare_result<Scalar, NX>, dare_error>;
+    -> ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>;
 ```
 
 DARE with state-input cross-weight N. Transforms to standard form via Q' = Q - NR^{-1}N', A' = A - BR^{-1}N' and delegates to the standard solver.

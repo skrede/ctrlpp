@@ -18,7 +18,7 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
           const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
           const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
           Cond                                           /*tag*/ = {})
-    -> ctrlpp::expected<dare_result<Scalar, NX>, dare_error>;
+    -> ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>;
 ```
 
 The caller branches on the result and reaches the value through `operator*`:

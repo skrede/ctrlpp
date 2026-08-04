@@ -223,7 +223,7 @@ TEST_CASE("DARE separates an ill-conditioned R from a rank-deficient one", "[dar
             CHECK(conditioning <= 1e7);
             // An accepted answer keeps more than half the significand, by the
             // one shared rule, and is positive definite.
-            CHECK(ctrlpp::test::riccati_accuracy_of<double, 2, 2>(A, B, R, Q, result->P)
+            CHECK(ctrlpp::test::riccati_accuracy_of<double, 2, 2>(A, B, Q, R, result->P)
                   == ctrlpp::detail::riccati_accuracy::within);
             Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> pes(result->P);
             for(int i = 0; i < 2; ++i)
@@ -240,6 +240,146 @@ TEST_CASE("DARE separates an ill-conditioned R from a rank-deficient one", "[dar
     }
     CHECK(accepted > 0);
     CHECK(declined > 0);
+}
+
+TEST_CASE("DARE names the weight ratio that dissolves the input weighting", "[dare][hardening][precision]")
+{
+    // The solve factorizes the symplectic operands ONCE, from the equilibrated
+    // weighting, because that is the operand the symplectic build consumes. A
+    // consequence reaches the caller: the rank verdict on the input weighting is
+    // made at the equilibrated scale, so a weighting that is nonzero on its own
+    // but vanishes against the state weighting is reported as what it is.
+    //
+    // These poses used to report `arithmetic_limit`, which sends a caller to look
+    // at precision when the obstacle is the weight ratio they chose. Both halves
+    // are asserted: the ratio that dissolves the weighting names it, and a ratio
+    // wide enough to be uncomfortable but not wide enough to dissolve it is still
+    // solved -- without the second the case would pass on an implementation that
+    // called every wide ratio singular.
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 0.1, 0.0, 1.0;
+    Eigen::Matrix<double, 2, 1> B;
+    B << 0.005, 0.1;
+
+    auto weighting = [](double q_scale, double r_scale)
+    {
+        Eigen::Matrix<double, 2, 2> Q = q_scale * Eigen::Matrix<double, 2, 2>::Identity();
+        Eigen::Matrix<double, 1, 1> R;
+        R << r_scale;
+        return std::pair{Q, R};
+    };
+
+    std::size_t dissolved{};
+    for(const double q_scale : {1e150, 1e250, 1e300, 1e308})
+    {
+        for(const double r_scale : {1e-250, 1e-300, 1e-320})
+        {
+            CAPTURE(q_scale, r_scale);
+            // The ratio exceeds the type's range, so the equilibrated weighting
+            // underflows to zero whatever the pose.
+            REQUIRE(r_scale / q_scale == 0.0);
+            const auto [Q, R] = weighting(q_scale, r_scale);
+            const auto result = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+            REQUIRE_FALSE(result.has_value());
+            CHECK(result.error() == ctrlpp::dare_error::singular_r);
+            ++dissolved;
+        }
+    }
+    CHECK(dissolved == 12);
+
+    // A ratio of eight decades: wide, and solved. Nothing here is refused for
+    // being merely lopsided, and the pose family's own accepted ceiling sits at
+    // this ratio -- measured, and unchanged by the reordering above.
+    const auto [Q_wide, R_wide] = weighting(1e4, 1e-4);
+    const auto wide             = ctrlpp::dare<double, 2, 1>(A, B, Q_wide, R_wide);
+    REQUIRE(wide.has_value());
+    CHECK(wide->K.allFinite());
+}
+
+TEST_CASE("DARE returns the gain it verified rather than one re-formed from P", "[dare][hardening][precision]")
+{
+    // WHAT THIS PINS IS THE DIFFERENCE BETWEEN THE TWO, ON THE POSE WHERE IT IS
+    // TOTAL RATHER THAN IN THE LAST BITS.
+    //
+    // The gain is homogeneous of degree zero in (P, Q, R), so the equilibrated
+    // gain the solve verified IS the caller's gain. Re-forming it from the
+    // returned P at the caller's own scale is a different computation with a
+    // different failure mode: at the top of the range `R + B'PB` leaves the range
+    // while P itself is an ordinary normal number, and a rank-revealing solve
+    // handed that sum returns a ZERO gain. Zero gain is not a refusal and not a
+    // small error -- it is no feedback at all, returned as if it were the control
+    // law.
+    //
+    // The scalar pose makes the arithmetic checkable by hand: for A = 0.5, B = 1
+    // and equal weights the scale-free gain is 0.2655644370746374, and the
+    // returned P at common scale c is c times the unit-scale P.
+    Eigen::Matrix<double, 1, 1> A;
+    A << 0.5;
+    Eigen::Matrix<double, 1, 1> B;
+    B << 1.0;
+    Eigen::Matrix<double, 1, 1> weight;
+    weight << 1e308;
+
+    const auto solved = ctrlpp::dare<double, 1, 1>(A, B, weight, weight);
+    REQUIRE(solved.has_value());
+
+    // The re-forming a caller would write, and what it produces here.
+    const auto BtP     = (B.transpose() * solved->P).eval();
+    const auto sum     = (weight + BtP * B).eval();
+    const auto reformed = sum.colPivHouseholderQr().solve(BtP * A).eval();
+    CHECK(sum(0, 0) == std::numeric_limits<double>::infinity());
+    CHECK(reformed(0, 0) == 0.0);
+
+    // The solve's own gain on the same pose, against the analytical value.
+    const double analytic = 0.2655644370746374;
+    CHECK(solved->K.allFinite());
+    CHECK(std::abs(solved->K(0, 0) - analytic) <= 4.0 * std::numeric_limits<double>::epsilon() * analytic);
+
+    // And the public gain helper hands back the solve's, not the re-forming.
+    const auto helper = ctrlpp::lqr_gain<double, 1, 1>(A, B, weight, weight);
+    REQUIRE(helper.has_value());
+    CHECK((*helper)(0, 0) == solved->K(0, 0));
+}
+
+TEST_CASE("DARE accuracy helper is not blind to exchanged weightings", "[dare][hardening][precision]")
+{
+    // WHAT IS PINNED HERE IS AN ARGUMENT ORDER, BY BEHAVIOR RATHER THAN BY
+    // CONVENTION.
+    //
+    // The accuracy helper used to take its two weightings input-first while its
+    // own file's residual helper, the library's verification routine and the
+    // public solver all take them state-first. At a square instantiation -- which
+    // is the instantiation that exists, two states and two inputs -- the two
+    // weighting types are the same type, so exchanging them at a call site
+    // compiles, runs, and reports the accuracy of a DIFFERENT problem than the
+    // one the case posed. Reordering the declaration alone would be a rename: it
+    // makes the hazard less likely to be written, not detectable once written.
+    //
+    // So the order is asserted. The helper is handed a pose the solver accepted,
+    // and it must say the answer keeps more than half the significand; handed the
+    // same pose with the two weightings exchanged, it must NOT, because the
+    // solution to one problem is not a solution to the other. Both directions are
+    // required: without the first the case could pass on a helper that never
+    // returns `within`, and without the second it could pass on a helper that
+    // ignores its weightings entirely.
+    Eigen::Matrix<double, 2, 2> A;
+    A << 1.0, 0.1, 0.0, 1.0;
+    Eigen::Matrix<double, 2, 2> B;
+    B << 0.005, 0.0, 0.1, 1.0;
+
+    // Separated by four decades so the exchange is not a perturbation of the
+    // posed problem but a different one, and so the case does not turn on where
+    // a margin happens to fall.
+    const auto Q = (1e4 * Eigen::Matrix<double, 2, 2>::Identity()).eval();
+    const auto R = Eigen::Matrix<double, 2, 2>::Identity().eval();
+
+    const auto solved = ctrlpp::dare<double, 2, 2>(A, B, Q, R);
+    REQUIRE(solved.has_value());
+
+    CHECK(ctrlpp::test::riccati_accuracy_of<double, 2, 2>(A, B, Q, R, solved->P)
+          == ctrlpp::detail::riccati_accuracy::within);
+    CHECK(ctrlpp::test::riccati_accuracy_of<double, 2, 2>(A, B, R, Q, solved->P)
+          != ctrlpp::detail::riccati_accuracy::within);
 }
 
 TEST_CASE("DARE known 2x2 solution is positive definite", "[dare][hardening][precision]")
@@ -400,8 +540,7 @@ TEST_CASE("DARE gain is invariant under common weight scaling", "[dare][hardenin
     Eigen::Matrix<double, 2, 1> B;
     B << 0.005, 0.1;
 
-    constexpr double eps              = std::numeric_limits<double>::epsilon();
-    const double gain_relative_margin = std::sqrt(ctrlpp::test::riccati_residual_ops<2, 1> * eps);
+    const double gain_relative_margin = ctrlpp::test::riccati_gain_agreement_margin<double, 2, 1>();
     std::size_t accepted{};
     std::size_t arithmetic_declines{};
     std::size_t band_samples{};
@@ -472,8 +611,7 @@ TEST_CASE("DARE repairs or declines the measured state-heavy cases", "[dare][har
 
     const auto solved_gain            = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, R, solved->P);
     const auto reference_gain         = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, (R / 1e8).eval(), reference->P);
-    constexpr double eps              = std::numeric_limits<double>::epsilon();
-    const double gain_relative_margin = std::sqrt(ctrlpp::test::riccati_residual_ops<2, 1> * eps);
+    const double gain_relative_margin = ctrlpp::test::riccati_gain_agreement_margin<double, 2, 1>();
     CHECK((solved_gain - reference_gain).norm() <= gain_relative_margin * reference_gain.norm());
 
     const auto beyond_precision = ctrlpp::dare<double, 2, 1>(A, B, (1e10 * Eigen::Matrix<double, 2, 2>::Identity()).eval(), R);
@@ -589,8 +727,7 @@ TEST_CASE("DARE carries a representable common-scaled pose", "[dare][hardening][
     REQUIRE(unit.has_value());
     const auto unit_gain = ctrlpp::test::riccati_gain<double, 1, 1>(pose.A, pose.B, unit_weight, unit->P);
 
-    constexpr double eps         = std::numeric_limits<double>::epsilon();
-    const double relative_margin = std::sqrt(ctrlpp::test::riccati_residual_ops<1, 1> * eps);
+    const double relative_margin = ctrlpp::test::riccati_gain_agreement_margin<double, 1, 1>();
 
     const double common_scale = 1e155;
     const auto weight         = weight_at(common_scale);
@@ -670,8 +807,7 @@ TEST_CASE("DARE holds the common-scale identity across the representable range",
     // identity is about, so the twin is the right reference at every point,
     // faithful pose or not.
     const auto pose              = common_scale_pose();
-    constexpr double eps         = std::numeric_limits<double>::epsilon();
-    const double relative_margin = std::sqrt(ctrlpp::test::riccati_residual_ops<1, 1> * eps);
+    const double relative_margin = ctrlpp::test::riccati_gain_agreement_margin<double, 1, 1>();
 
     // The magnitude the previous verification stopped at on the equal-weight
     // pose, bisected to a relative width below 1e-13. Every accepted point above
@@ -868,7 +1004,7 @@ TEST_CASE("DARE keeps the two poses its randomized oracle used to abort on", "[d
         // The one rule, quoted. Both poses keep more than half the significand,
         // so both are accepted, and the shared verdict says so directly rather
         // than by inference from the solver having returned a value.
-        CHECK(ctrlpp::test::riccati_accuracy_of<double, 2, 1>(A, B, R, Q, solved->P)
+        CHECK(ctrlpp::test::riccati_accuracy_of<double, 2, 1>(A, B, Q, R, solved->P)
               == ctrlpp::detail::riccati_accuracy::within);
 
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, 2, 2>> pes(solved->P);

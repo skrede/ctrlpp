@@ -40,6 +40,8 @@ auto lqr_gain(const Matrix<Scalar, NX, NX>& A,
 
 Computes the infinite-horizon LQR gain K = (R + B'PB)^{-1} B'PA where P is the stabilizing solution of the DARE.
 
+**The gain returned is the solver's own -- `dare_result::K` -- not a recomputation from P.** The Riccati solve forms this gain inside the verification that accepts P: it applies the same dimension-times-unit-roundoff rank test to `R + B'PB` that the pencil build applies to `R`, checks the result is finite, and forms it at the equilibrated scale. Re-forming it here would have neither guarantee. Without a rank threshold a rank-deficient `R + B'PB` yields a least-squares solution over the leading rank columns, returned as if it were the gain; and at the top of the range the caller-scale sum overflows on poses whose equilibrated answer is an ordinary normal number, where the rank-revealing solve returns a **zero** gain -- no feedback at all -- rather than refusing. Neither failure is visible to a caller who receives it. See [dare](dare.md) for the measured comparison.
+
 **Rejections carry the Riccati solver's own `dare_error` verbatim.** The gain is a function of that solve and has no failure mode of its own, so it forwards the enumerator rather than restating the cause under a second name -- an unstabilizable pair, a singular state matrix and a non-converged factorization send the caller to fix three different things, and an empty result would have told them none of it. See [dare](dare.md) for the enumerators.
 
 ### lqr_gain (with cross-weight)
@@ -54,7 +56,7 @@ auto lqr_gain(const Matrix<Scalar, NX, NX>& A,
     -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error>;
 ```
 
-Infinite-horizon LQR gain with state-input cross-weight N: K = (R + B'PB)^{-1} (B'PA + N'). Forwards `dare_error` for the same reason.
+Infinite-horizon LQR gain with state-input cross-weight N: K = (R + B'PB)^{-1} (B'PA + N'). Forwards `dare_error` for the same reason, and returns the solver's own gain for the same reason. The cross-weight Riccati solve reduces the problem to standard form and then corrects the reduced problem's gain K' back to the posed problem's by `K = K' + R^{-1}N'`, using the `R^{-1}N'` it already formed for the reduction -- so the caller's gain costs one addition here and no second factorization.
 
 ### lqr_gain_continuous
 

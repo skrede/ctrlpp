@@ -43,6 +43,19 @@ struct lqi_result
 /// rather than restating the cause under a second name: an unstabilizable pair,
 /// a singular state matrix and a non-converged factorization send the caller to
 /// fix three different things.
+///
+/// The gain is the solve's own -- `result->K`, formed inside the verification
+/// that accepted P and returned unchanged. It is NOT re-formed here, and that is
+/// a correctness property rather than a saving. Re-forming it means a second
+/// rank-revealing QR of `R + B'PB` at the caller's scale, and that solve has two
+/// failure modes the solver's own does not: with no rank threshold set, a
+/// rank-deficient inner matrix yields a least-squares solution over the leading
+/// rank columns, returned as if it were the gain; and at the top of the range the
+/// caller-scale sum overflows on poses whose equilibrated gain is perfectly
+/// ordinary, which would refuse an answer the solver had already certified. The
+/// solve's gain has neither: its inner matrix passed the same
+/// dimension-times-unit-roundoff test the pencil build applies to R, and it was
+/// checked finite.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q, const Eigen::Matrix<Scalar, int(NU), int(NU)>& R)
     -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error>
@@ -51,17 +64,16 @@ auto lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Mat
     if(!P_result)
         return ctrlpp::unexpected(P_result.error());
 
-    const auto& P = P_result->P;
-    auto BtP = (B.transpose() * P).eval();
-    auto S = (R + BtP * B).eval();
-    auto K = S.colPivHouseholderQr().solve(BtP * A).eval();
-    return K;
+    return P_result->K;
 }
 
 /// Infinite-horizon LQR gain with cross-weight N.
 ///
 /// K = (R + B^T P B)^{-1} (B^T P A + N^T). Forwards the Riccati solver's
-/// `dare_error` for the same reason the cross-weight-free overload does.
+/// `dare_error` for the same reason the cross-weight-free overload does, and
+/// returns the solve's own gain for the same reason: the cross-weight solve
+/// already corrects the reduced problem's gain back to the posed problem, using
+/// the R^{-1} N^T it formed for the reduction.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
               const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
@@ -74,12 +86,7 @@ auto lqr_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     if(!P_result)
         return ctrlpp::unexpected(P_result.error());
 
-    const auto& P = P_result->P;
-    auto BtP = (B.transpose() * P).eval();
-    auto S = (R + BtP * B).eval();
-    Eigen::Matrix<Scalar, int(NU), int(NX)> rhs = (BtP * A + N.transpose()).eval();
-    auto K = S.colPivHouseholderQr().solve(rhs).eval();
-    return K;
+    return P_result->K;
 }
 
 /// Continuous-time infinite-horizon LQR gain via CARE.

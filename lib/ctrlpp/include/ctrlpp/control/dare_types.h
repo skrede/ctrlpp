@@ -4,9 +4,9 @@
 /// @brief Public types for the discrete algebraic Riccati equation solver.
 ///
 /// `dare_error` enumerates the structured failure modes a DARE solve can produce;
-/// `dare_result` carries the solution P plus diagnostic scalars (subspace separation,
-/// reorder completeness). Together they form the `ctrlpp::expected<dare_result, dare_error>`
-/// contract of `ctrlpp::dare`.
+/// `dare_result` carries the solution P, the feedback gain the solve verified, and
+/// diagnostic scalars (subspace separation, reorder completeness). Together they form
+/// the `ctrlpp::expected<dare_result, dare_error>` contract of `ctrlpp::dare`.
 
 #include "ctrlpp/util/concepts.h"
 
@@ -32,6 +32,17 @@ namespace ctrlpp {
 ///                       inverted operand, and it exists because a caller who set a
 ///                       weighting to zero deliberately should not be told their
 ///                       input was non-finite.
+///
+///                       The test is applied to the EQUILIBRATED weighting, which is
+///                       the operand the solve actually inverts, so it covers one
+///                       case beyond a literally rank-deficient R: a weighting that
+///                       is nonzero on its own but vanishes relative to the state
+///                       weighting. Q = 1e300 I with R = 1e-300 divides to a
+///                       weighting that underflows to zero, and relative to the
+///                       problem being posed the input weighting IS zero. That pose
+///                       used to report arithmetic_limit, which sent the caller to
+///                       look at precision when the obstacle is the weight ratio
+///                       they chose.
 ///  * singular_u11     : the top-left n x n block of the reordered invariant-subspace
 ///                       basis U is singular; P cannot be extracted. See the note
 ///                       below: this covers two different situations and does not
@@ -122,12 +133,31 @@ enum class dare_error
 ///                          analogue). A partial reorder with a computable P is
 ///                          diagnostic, not an error; consult `subspace_separation`
 ///                          to decide whether P is trustworthy for the use case.
-template<ctrlpp_floating_scalar Scalar, std::size_t NX>
+///  * K                   : the feedback gain (R + B'PB)^{-1} B'PA that the solve
+///                          itself formed while verifying P, carried out rather
+///                          than discarded. It is the gain the acceptance decision
+///                          was made on: its inner matrix passed the same
+///                          dimension-times-unit-roundoff rank test the pencil build
+///                          applies to R, it is finite, and the closed loop A - BK
+///                          it produces is the one whose spectrum was placed inside
+///                          the unit disk. The cross-weight overload returns the
+///                          gain of the problem the CALLER posed, K + R^{-1}N', not
+///                          the gain of the reduced standard-form problem.
+///
+///                          Recomputing it from P is not equivalent. The gain is
+///                          homogeneous of degree zero in (P, Q, R), so the solve
+///                          forms it at the equilibrated scale, where R + B'PB is
+///                          representable on poses whose caller-scale sum is not.
+///                          A caller who re-forms it from P alone reproduces
+///                          neither that scale nor the rank test.
+template<ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
 struct dare_result
 {
     static_assert(NX > 0, "State dimension NX must be positive");
+    static_assert(NU > 0, "Input dimension NU must be positive");
 
     Eigen::Matrix<Scalar, int(NX), int(NX)> P;
+    Eigen::Matrix<Scalar, int(NU), int(NX)> K;
     Scalar subspace_separation;
     bool reorder_complete;
 };

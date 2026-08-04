@@ -164,6 +164,20 @@ auto riccati_residual(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, 
 template <std::size_t NX, std::size_t NU>
 constexpr int riccati_residual_ops = ctrlpp::detail::dare_residual_ops<NX, NU>;
 
+/// @brief The relative margin two posings of the same problem's gain are held to.
+///
+/// Also a quote, and for a sharper reason than the count above. This margin is
+/// the bound the SOLVER applies when it holds its equilibrated gain and its
+/// caller-scale gain to each other, so an anchor that re-spelled it would be
+/// asserting the solver's old bound rather than the solver's bound: the day the
+/// count or the exponent changes, a hand-copy keeps passing while the library
+/// has moved.
+template <typename Scalar, std::size_t NX, std::size_t NU>
+auto riccati_gain_agreement_margin() -> Scalar
+{
+    return ctrlpp::detail::dare_gain_agreement_margin<Scalar, NX, NU>();
+}
+
 /// @brief Whether a solved Riccati pose retains more than half the scalar
 /// type's significand, decided by the library's own rule.
 ///
@@ -171,9 +185,17 @@ constexpr int riccati_residual_ops = ctrlpp::detail::dare_residual_ops<NX, NU>;
 /// once, at `ctrlpp::detail::riccati_forward_error_verdict`; an anchor that
 /// re-spelled any of the three would be asserting against its own copy of the
 /// contract rather than against the contract.
+///
+/// The weightings are taken state-first, matching `riccati_residual` above,
+/// `ctrlpp::detail::verify_dare_solution` and the public solver. They used to be
+/// taken input-first here and nowhere else, which is a latent wrong answer rather
+/// than a style difference: at a square instantiation the two weighting types
+/// coincide, so exchanging them at a call site compiles and silently poses a
+/// different problem. `DARE accuracy helper is not blind to exchanged weightings`
+/// pins the order by behavior.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto riccati_accuracy_of(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B,
-                         const Matrix<Scalar, NU, NU>& R, const Matrix<Scalar, NX, NX>& Q,
+                         const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R,
                          const Matrix<Scalar, NX, NX>& P) -> ctrlpp::detail::riccati_accuracy
 {
     auto const K = riccati_gain<Scalar, NX, NU>(A, B, R, P);

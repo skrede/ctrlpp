@@ -242,6 +242,30 @@ auto magnitude_within(const resolved_magnitude<Scalar>& value,
 template <std::size_t NX, std::size_t NU>
 constexpr int dare_residual_ops = 6 * (2 * static_cast<int>(NX) - 1) + 2 * (2 * static_cast<int>(NU) - 1) + 1 + 2 * static_cast<int>(NU) + 3;
 
+/// @brief The relative margin two posings of the same discrete Riccati problem's
+/// gain are held to.
+///
+/// Not a new bound -- the counted rounding budget above, put on the scale the
+/// comparison is made at. Two posings that differ only by a positive common
+/// weight scale share one gain exactly, because the gain is homogeneous of degree
+/// zero in (P, Q, R); what separates the two computed gains is the rounding of
+/// the chain that produced each. `dare_residual_ops * eps` bounds that chain's
+/// accumulated relative error, and the square root is taken because the two
+/// spellings are compared against each other rather than against the truth, so
+/// the quantity being bounded is a difference of two independently rounded
+/// results rather than one result's distance from an exact value.
+///
+/// This is the single definition. It exists so that the solver's agreement check
+/// and the anchors that pin it read the same expression rather than five copies
+/// of it: a hand-copy is a second definition, and a second definition of a bound
+/// is the drift path the shared positive-semi-definiteness floor was consolidated
+/// to close.
+template <typename Scalar, std::size_t NX, std::size_t NU>
+auto dare_gain_agreement_margin() -> Scalar
+{
+    return std::sqrt(Scalar{dare_residual_ops<NX, NU>} * std::numeric_limits<Scalar>::epsilon());
+}
+
 /// @brief The relative accuracy below which more than half of the scalar type's
 /// significand is retained.
 ///
