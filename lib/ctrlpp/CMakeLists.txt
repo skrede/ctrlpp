@@ -47,6 +47,29 @@ target_link_libraries(ctrlpp
     Eigen3::Eigen
 )
 
+# /bigobj travels with the target rather than staying on ctrlpp's own test and
+# example targets, because the cost it covers is incurred by whoever INSTANTIATES
+# the templates, and that is the consumer. A header-only library that ships a
+# ceiling its own tests need but its users do not get hands them a link failure
+# whose cause is in a build file they cannot see.
+#
+# The margin is not generous. Counting COMDAT groups with g++ and
+# per-function/per-data sections as a stand-in for the object format's own count,
+# one intercept plus one continuous tuple plus one scalar type is roughly 22,500
+# against the 65,279 ceiling -- 0.345 of it, and that is the LIGHTEST of the
+# thirteen units measured. Three continuous instantiations in a single
+# translation unit already sit where care_error_test sits, and more than one
+# scalar type in that unit is past the ceiling outright. A consumer reaches this
+# with ordinary use, not with abuse.
+#
+# It is MSVC-only because the ceiling is: the ELF and Mach-O section counts this
+# would correspond to are not reachable at these instantiation counts, so there
+# is nothing to widen elsewhere and no flag is imposed on those toolchains.
+target_compile_options(ctrlpp
+    INTERFACE
+    $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
+)
+
 # --- OSQP solver backend (optional) ---
 if (CTRLPP_BUILD_OSQP)
     FetchContent_Declare(
