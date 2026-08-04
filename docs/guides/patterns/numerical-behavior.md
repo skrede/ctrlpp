@@ -195,7 +195,17 @@ otherwise produce silent corruption through intermediate overflow:
   loop in 150 of 814 and 156 of 839 successes, while the published result
   contract promised a stabilizing matrix without qualifying by method. A Schur
   method that cannot certify what it extracted now declines with
-  `care_error::unverified_solution`. Every
+  `care_error::unverified_solution`. Both legs of that verification are counted
+  rather than tuned, and the residual leg is counted at the basis the extraction
+  actually reads: every continuous path takes its subspace basis from a
+  `2n`-by-`2n` factorization, the two Schur tags from the Hamiltonian and the
+  default tag from the sign-function projector, so the bound counts a
+  `2n`-by-`2n` Householder factorization and its solve. Counting it at `n` would
+  under-count every path by roughly a factor of eight and refuse answers that are
+  correct. The closed-loop leg walks the factor block by block and decides each
+  2 by 2 block by its discriminant, because a block holding two real eigenvalues
+  has a half-trace that is neither of them and testing the half-trace can certify
+  a mode in the open right half-plane. Every
   magnitude entering that verification, and entering the iteration's own
   convergence test, is computed in a form that neither overflows nor underflows
   on finite operands: a magnitude is formed by dividing out the operand's

@@ -407,17 +407,17 @@ auto scalar_family_exact_solution(Scalar magnitude) -> Scalar
 }
 
 // The extracted solution passes through the rank-revealing QR of the 2n-by-2n
-// projector and a triangular solve against U11, counted at 2(2n)^3 and 3(2n)^3
-// rounded operations in the same style the solver uses for its own residual
-// bound; the reference root above costs three more. Every operation is counted
-// whether or not it rounds.
+// projector and a triangular solve against U11. That count is the solver's own
+// `care_extraction_rounding_ops`, quoted here rather than respelled: this bound
+// and the solver's residual floor must be counted at the same basis size, and
+// two independent spellings of one count is how they came to differ by a factor
+// of eight. The reference root above costs three more operations. Every
+// operation is counted whether or not it rounds.
 template <typename Scalar>
 auto scalar_family_accuracy_bound(Scalar exact) -> Scalar
 {
-    constexpr int basis_size = 2;
     constexpr int extraction_rounding_ops =
-        2 * basis_size * basis_size * basis_size
-        + 3 * basis_size * basis_size * basis_size;
+        ctrlpp::detail::care_extraction_rounding_ops<1>;
     constexpr int reference_rounding_ops = 3;
     return Scalar{extraction_rounding_ops + reference_rounding_ops}
            * std::numeric_limits<Scalar>::epsilon() * exact;

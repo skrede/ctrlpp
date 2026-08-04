@@ -16,6 +16,8 @@
 /// @cite bai_demmel_1993 -- Bai & Demmel, "On swapping diagonal blocks in real Schur form", 1993
 /// @cite laub1979       -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
 
+#include "ctrlpp/detail/quasi_triangular.h"
+
 #include <Eigen/QR>
 #include <Eigen/Dense>
 
@@ -119,65 +121,31 @@ auto reorder_real_schur(Eigen::Matrix<Scalar, N, N>& T,
                       "hager_higham_conditioning not yet implemented -- use pivot_ratio_conditioning");
     }
 
-    using std::abs;
-    using std::sqrt;
-
     reorder_result<Scalar> r{};
     r.complete = true;
     r.subspace_separation = Scalar{1};
 
-    const Scalar eps = std::numeric_limits<Scalar>::epsilon();
     const Scalar scale_T = T.cwiseAbs().maxCoeff();
 
-    // Probe whether the block starting at position `pos` is 1x1 or 2x2 based
-    // on the subdiagonal entry T(pos+1, pos). Uses an epsilon-scaled
-    // threshold derived from both the global and the local block magnitude.
+    // Block structure and block eigenvalues come from the shared
+    // quasi-triangular primitives rather than from a copy specialized to this
+    // caller: the significance test on the subdiagonal entry and the
+    // trace-and-determinant eigenvalue form are the same two questions the
+    // continuous acceptance rule asks of its own factor, and two copies of a
+    // predicate are two contracts.
     auto block_size_at = [&](int pos) -> int
     {
-        if (pos + 1 >= N)
-            return 1;
-        const Scalar sub = T(pos + 1, pos);
-        const Scalar local_scale =
-            std::max(abs(T(pos, pos)), abs(T(pos + 1, pos + 1)));
-        return (abs(sub) > eps * std::max(scale_T, local_scale)) ? 2 : 1;
-    };
-
-    // Read eigenvalues from a block using trace and determinant, NOT from
-    // the raw diagonal entries (a 2x2 block's
-    // eigenvalues are (tr +/- sqrt(tr^2/4 - det)), not T(i, i) directly).
-    auto block_eigenvalues = [&](int pos, int n_block)
-        -> std::pair<std::complex<Scalar>, std::complex<Scalar>>
-    {
-        if (n_block == 1)
-        {
-            const std::complex<Scalar> lam(T(pos, pos), Scalar{0});
-            return {lam, lam};
-        }
-        const Scalar a = T(pos,     pos);
-        const Scalar b = T(pos,     pos + 1);
-        const Scalar c = T(pos + 1, pos);
-        const Scalar d = T(pos + 1, pos + 1);
-        const Scalar tr  = a + d;
-        const Scalar det = a * d - b * c;
-        const Scalar discr = tr * tr / Scalar{4} - det;
-        if (discr >= Scalar{0})
-        {
-            const Scalar s = sqrt(discr);
-            return {std::complex<Scalar>(tr / Scalar{2} + s, Scalar{0}),
-                    std::complex<Scalar>(tr / Scalar{2} - s, Scalar{0})};
-        }
-        const Scalar im = sqrt(-discr);
-        return {std::complex<Scalar>(tr / Scalar{2},  im),
-                std::complex<Scalar>(tr / Scalar{2}, -im)};
+        return quasi_triangular_block_size<Scalar, N>(T, pos, scale_T);
     };
 
     auto block_matches = [&](int pos, int n_block) -> bool
     {
-        const auto [lam0, lam1] = block_eigenvalues(pos, n_block);
-        // For a 2x2 complex-conjugate pair, |lambda| and sign(Re lambda) are
-        // identical for both eigenvalues; querying lam0 is sufficient.
-        (void)lam1;
-        return predicate(lam0);
+        // `first` is the root with the larger real part on a real pair and the
+        // shared real part on a conjugate pair, so one query answers both. For
+        // a conjugate pair |lambda| and sign(Re lambda) are identical across
+        // the two roots in any case.
+        return predicate(
+            quasi_triangular_block_spectrum<Scalar, N>(T, pos, n_block).first);
     };
 
     int placed_pos = 0;
@@ -206,16 +174,10 @@ auto reorder_real_schur(Eigen::Matrix<Scalar, N, N>& T,
         int cur = scan;
         while (cur > placed_pos)
         {
-            // Determine the block immediately to the left of `cur`.
-            int left_nb = 1;
-            if (cur >= 2)
-            {
-                const Scalar sub       = T(cur - 1, cur - 2);
-                const Scalar local_scl =
-                    std::max(abs(T(cur - 2, cur - 2)), abs(T(cur - 1, cur - 1)));
-                if (abs(sub) > eps * std::max(scale_T, local_scl))
-                    left_nb = 2;
-            }
+            // Determine the block immediately to the left of `cur`. A 2x2 block
+            // ending at cur - 1 starts at cur - 2, so this is the same
+            // significance question asked one block earlier.
+            const int left_nb = (cur >= 2) ? block_size_at(cur - 2) : 1;
             const int left_pos = cur - left_nb;
 
             Scalar pivot_ratio = Scalar{1};

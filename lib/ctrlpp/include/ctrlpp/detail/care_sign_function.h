@@ -221,6 +221,11 @@ auto care_solve_via_sign_function(
         }
     }
 
+    // This is the factorization whose orthogonal factor becomes the basis the
+    // extraction reads, and it is 2n by 2n. The shared acceptance rule counts
+    // it at that size through care_extraction_basis_dimension rather than at
+    // the n by n block the extraction writes into, so the residual bound this
+    // path is held to covers the arithmetic this path actually performed.
     Eigen::ColPivHouseholderQR<Mat2N> qr((projector_rescale * P_LHP).eval());
     // Eigen's ColPivHouseholderQR::rank() compares each pivot against
     // threshold() times the largest pivot, so setThreshold takes a relative,
