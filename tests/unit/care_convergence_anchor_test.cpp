@@ -619,7 +619,16 @@ auto nearest_axis_mode_visibility(const matrix2<double>& A,
         }
     }
 
-    const auto mode = eigensystem.eigenvectors().col(nearest_index);
+    // `eigenvectors()` returns the matrix BY VALUE, so the eigenvectors must be
+    // named before a column of them is taken. Writing
+    // `eigensystem.eigenvectors().col(index)` deduces a block expression that
+    // holds a reference into the returned temporary, which dies at the end of
+    // that statement: every read below it is then undefined. It does not fail
+    // loudly. It produced 4.2e-25 at -O0 and -O2, infinity at -O3 -DNDEBUG on
+    // the same compiler, 8.5e-3 under gcc-13 and 0.25 under MSVC.
+    const Eigen::EigenSolver<matrix2<double>>::EigenvectorsType modes =
+        eigensystem.eigenvectors();
+    const auto mode = modes.col(nearest_index);
     const Eigen::Vector2d real_part = mode.real();
     const Eigen::Vector2d imag_part = mode.imag();
     const double quotient = (weight_factor * real_part).squaredNorm()
