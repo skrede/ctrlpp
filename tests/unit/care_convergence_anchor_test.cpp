@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
+#include <type_traits>
 
 namespace
 {
@@ -42,15 +43,28 @@ auto closed_loop_is_stable(const matrix2<Scalar>& A,
     return true;
 }
 
-// Correctness criterion for an accepted answer, independent of the solver's own
-// residual bound.
+// The margin BOTH gain comparisons in this file are held to.
 //
-// The continuous gain K = R^-1 B^T P is invariant under a common positive
-// rescale of Q and R, so the same pose at unit weight scale is an exact oracle
-// for every rescaled draw of the same family. A relative gain error above the
-// square root of epsilon is a wrong answer; this is the same criterion the
-// discrete solver is judged by, and it is a property of the answer rather than
-// of the draw sequence.
+// A relative gain error above the square root of epsilon is a wrong answer:
+// for a radix-2 type that is exactly the loss of more than half the fractional
+// significand bits, so it is derived from the type's radix rather than fitted,
+// and it is the same criterion the discrete solver is judged by. It is a
+// property of the answer rather than of the draw sequence.
+//
+// One margin, two comparisons, and they establish different things:
+//
+//  * against the same pose at unit weight scale -- a SCALE-INVARIANCE
+//    CONSISTENCY CHECK. The continuous gain K = R^-1 B^T P does not move under
+//    a common positive rescale of Q and R, so the two must agree. But the
+//    reference is the same solver under the same method tag admitted by the
+//    same acceptance rule, so an error common to both scales cannot be seen
+//    this way, and a weight-scale defect IS that error.
+//  * against the closed-form gain of the structurally simple family -- an
+//    INDEPENDENT CRITERION, which owes the solver nothing.
+//
+// The two are compared against the same margin deliberately, so a difference
+// between the columns is attributable to the reference rather than to the
+// threshold.
 const double wrong_gain_error =
     std::sqrt(std::numeric_limits<double>::epsilon());
 
@@ -98,13 +112,58 @@ auto feedback_gain(const matrix2<double>& R,
     return (R.inverse() * B.transpose() * P).eval();
 }
 
+// The relative distance between two gains, or NOTHING.
+//
+// The bare-scalar version of this helper divided by the reference magnitude
+// unless that magnitude was zero, in which case it returned an UNNORMALIZED
+// distance -- while every caller compared the return against a relative
+// half-significand margin. A zero reference silently converted a relative test
+// into an absolute one at whatever scale the draw happened to sit at, which is
+// the degenerate comparison the resolved-magnitude primitive exists to
+// eliminate.
+//
+// It now returns that primitive. A zero or non-finite reference yields the
+// unresolved state, and `magnitude_within` refuses to read an unresolved
+// operand as evidence of smallness, so the caller counts the pose as
+// uncompared rather than as compared-and-passed.
 auto relative_gain_error(const matrix2<double>& gain,
-                         const matrix2<double>& reference) -> double
+                         const matrix2<double>& reference)
+    -> ctrlpp::detail::resolved_magnitude<double>
 {
-    const double reference_scale = reference.norm();
-    if(!(reference_scale > 0.0))
-        return (gain - reference).norm();
-    return (gain - reference).norm() / reference_scale;
+    const auto reference_scale = ctrlpp::detail::resolve_magnitude(reference);
+    const auto difference = ctrlpp::detail::resolve_magnitude(
+        (gain - reference).eval());
+    if(!reference_scale.resolved || !difference.resolved
+       || !(reference_scale.value > 0.0))
+        return {0.0, false};
+    return {difference.value / reference_scale.value, true};
+}
+
+// The gain the structurally simple family has EXACTLY, computed from the
+// equation rather than from the solver.
+//
+// That family is A = -I, B = I, Q = sI, R = sI for a positive common weight
+// multiple s. Substituting into A'P + PA - P B R^-1 B' P + Q = 0:
+//
+//     -P - P - P (1/s) P + sI = 0
+//
+// Every term is a multiple of the identity, so P = p I and the matrix equation
+// collapses to one scalar quadratic:
+//
+//     p^2 + 2 s p - s^2 = 0   with p > 0
+//
+// whose positive root is p = s (sqrt(2) - 1). The gain follows:
+//
+//     K = R^-1 B' P = (1/s) * s (sqrt(2) - 1) I = (sqrt(2) - 1) I
+//
+// THE MULTIPLE CANCELS. The gain of this family is the same matrix at every
+// weight scale, and it is a number this file can write down. Nothing in the
+// derivation calls the solver, uses its acceptance rule, or reads its
+// extraction code, which is exactly what the scale-invariance check below
+// cannot say for itself.
+auto structurally_simple_exact_gain() -> matrix2<double>
+{
+    return ((std::numbers::sqrt2 - 1.0) * matrix2<double>::Identity()).eval();
 }
 
 auto is_enumerated_care_error(ctrlpp::care_error error) -> bool
@@ -147,13 +206,29 @@ struct sweep_draw
     matrix2<double> Q;
     matrix2<double> R;
     // The same pose at unit weight scale. K = R^-1 B^T P does not move under a
-    // common rescale of Q and R, so this pose's gain is an exact oracle for the
-    // draw -- and it is an oracle the solver's own acceptance rule has no part
-    // in, which is what makes it usable as evidence about that rule.
+    // common rescale of Q and R, so comparing the draw's gain against this
+    // pose's gain is a SCALE-INVARIANCE CONSISTENCY CHECK.
+    //
+    // It is not an oracle for the acceptance rule, and it used to say it was.
+    // The reference is produced by the same function, under the same method
+    // tag, through the same extraction code, and is admitted by the same
+    // acceptance rule as the answer it is being compared against. An error
+    // COMMON TO BOTH SCALES is therefore invisible to it by construction -- and
+    // a weight-scale defect is exactly that error class. What it does establish
+    // is real and worth asserting: that the gain the solver reports does not
+    // move when the weights are rescaled, which it is entitled to.
+    //
+    // The criterion that owes the solver nothing is the closed-form gain, and
+    // it exists only for the structurally simple family. Its column is counted
+    // separately below for that reason, rather than merged into this one.
     matrix2<double> unit_Q;
     matrix2<double> unit_R;
     bool            has_gain_oracle;
     bool            weights_reduced;
+    // Whether this draw's gain is known in closed form, independently of the
+    // solver. Only the structurally simple family is, and its value is
+    // `structurally_simple_exact_gain()` at every weight scale.
+    bool            has_closed_form_gain;
 };
 
 struct sweep_families
@@ -200,6 +275,7 @@ auto build_sweep_families() -> sweep_families
             // no scale-invariant reference pose distinct from itself.
             draw.has_gain_oracle = false;
             draw.weights_reduced = false;
+            draw.has_closed_form_gain = false;
             families.near_axis.push_back(draw);
         }
 
@@ -240,6 +316,7 @@ auto build_sweep_families() -> sweep_families
                     (transform * base_r * transform.transpose()).eval();
                 comfortable.has_gain_oracle = true;
                 comfortable.weights_reduced = scale < 1.0;
+                comfortable.has_closed_form_gain = false;
                 families.comfortable.push_back(comfortable);
 
                 sweep_draw simple;
@@ -251,6 +328,7 @@ auto build_sweep_families() -> sweep_families
                 simple.unit_R = matrix2<double>::Identity();
                 simple.has_gain_oracle = true;
                 simple.weights_reduced = scale < 1.0;
+                simple.has_closed_form_gain = true;
                 families.structurally_simple.push_back(simple);
             }
         }
@@ -268,6 +346,19 @@ struct population_census
     std::size_t accepted = 0;
     std::size_t accepted_unstable = 0;
     std::size_t accepted_with_wrong_gain = 0;
+    // Disagreements against the CLOSED-FORM gain, which the solver had no part
+    // in producing. Kept separate from the column above so the independent
+    // criterion's verdict and the consistency check's verdict are visible side
+    // by side rather than merged into one number that means neither.
+    std::size_t closed_form_accepted = 0;
+    std::size_t closed_form_compared = 0;
+    std::size_t closed_form_wrong_gain = 0;
+    double closed_form_worst_error = 0.0;
+    // Comparisons that could not be made at all, because a reference magnitude
+    // was zero or left the range. Counted rather than absorbed: a population
+    // that quietly stopped being compared would otherwise report zero wrong
+    // answers for the same reason an empty one would.
+    std::size_t gain_comparison_unresolved = 0;
     std::size_t declined_unenumerated = 0;
     std::size_t accepted_separation_unavailable = 0;
     std::size_t accepted_reorder_incomplete = 0;
@@ -324,18 +415,64 @@ auto solve_population(const std::vector<sweep_draw>& draws, Method method_tag)
         census.accepted_unstable += !stable;
         CHECK(stable);
 
+        const matrix2<double> solved_gain =
+            feedback_gain(draw.R, draw.B, result->P);
+
+        // THE INDEPENDENT COLUMN, FIRST, because it is the one that can
+        // contradict the solver. It is computed from the closed form derived
+        // above and calls nothing in the library.
+        //
+        // Its margin is the SAME half-significand criterion the consistency
+        // check uses, deliberately. The two columns exist to be read against
+        // each other, and a column whose threshold is a counted-operation bound
+        // would be answering a strictly tighter question -- whether the answer
+        // is as good as the operation count entitles it to be -- so a
+        // difference between the columns would not be attributable to the
+        // reference. The worst error actually observed is recorded instead of
+        // being bounded, so the tighter question has a measured answer without
+        // a fitted constant being asserted.
+        if(draw.has_closed_form_gain)
+        {
+            ++census.closed_form_accepted;
+            const auto closed_form_error =
+                relative_gain_error(solved_gain,
+                                    structurally_simple_exact_gain());
+            if(!closed_form_error.resolved)
+            {
+                ++census.gain_comparison_unresolved;
+            }
+            else
+            {
+                ++census.closed_form_compared;
+                if(closed_form_error.value > census.closed_form_worst_error)
+                    census.closed_form_worst_error = closed_form_error.value;
+                CAPTURE(closed_form_error.value);
+                census.closed_form_wrong_gain +=
+                    closed_form_error.value > wrong_gain_error;
+                CHECK(closed_form_error.value <= wrong_gain_error);
+            }
+        }
+
         if(!draw.has_gain_oracle)
             continue;
 
         const auto reference = ctrlpp::care<double, 2, 2>(
             draw.A, draw.B, draw.unit_Q, draw.unit_R, method_tag);
         REQUIRE(reference.has_value());
-        const double gain_error = relative_gain_error(
-            feedback_gain(draw.R, draw.B, result->P),
+        const auto gain_error = relative_gain_error(
+            solved_gain,
             feedback_gain(draw.unit_R, draw.B, reference->P));
-        CAPTURE(gain_error);
-        census.accepted_with_wrong_gain += gain_error > wrong_gain_error;
-        CHECK(gain_error <= wrong_gain_error);
+        if(!gain_error.resolved)
+        {
+            // No comparison was made. Counted rather than skipped silently,
+            // because an uncompared pose reports zero wrong answers for the
+            // same reason an unsolved one does.
+            ++census.gain_comparison_unresolved;
+            continue;
+        }
+        CAPTURE(gain_error.value);
+        census.accepted_with_wrong_gain += gain_error.value > wrong_gain_error;
+        CHECK(gain_error.value <= wrong_gain_error);
     }
     return census;
 }
@@ -527,6 +664,11 @@ TEST_CASE("CARE sign iteration accepts only stable near-axis solutions",
     CHECK(increased_accepted > 0);
     CHECK(reduced_accepted == reduced_drawn);
     CHECK(accepted_with_wrong_gain == 0);
+    CHECK(simple.closed_form_wrong_gain == 0);
+    CHECK(simple.closed_form_compared == simple.closed_form_accepted);
+    CHECK(simple.closed_form_accepted > 0);
+    CHECK(comfortable.gain_comparison_unresolved == 0);
+    CHECK(simple.gain_comparison_unresolved == 0);
     CHECK(comfortable.declined_unenumerated == 0);
     CHECK(simple.declined_unenumerated == 0);
 }
@@ -570,7 +712,14 @@ TEMPLATE_TEST_CASE("CARE keeps the same promise under every method tag",
             simple.drawn,
             simple.accepted,
             simple.accepted_unstable,
-            simple.accepted_with_wrong_gain);
+            simple.accepted_with_wrong_gain,
+            simple.closed_form_accepted,
+            simple.closed_form_compared,
+            simple.closed_form_wrong_gain,
+            simple.closed_form_worst_error,
+            near_axis.gain_comparison_unresolved,
+            comfortable.gain_comparison_unresolved,
+            simple.gain_comparison_unresolved);
 
     const std::size_t population_size =
         static_cast<std::size_t>(decade_count * cases_per_decade);
@@ -588,9 +737,51 @@ TEMPLATE_TEST_CASE("CARE keeps the same promise under every method tag",
     CHECK(comfortable.accepted_with_wrong_gain == 0);
     CHECK(simple.accepted_with_wrong_gain == 0);
 
+    // The independent column, asserted separately from the consistency column
+    // above. Non-vacuity first: a census that compared nothing would otherwise
+    // report zero disagreements for the same reason an empty one would.
+    CHECK(simple.closed_form_accepted > 0);
+    CHECK(simple.closed_form_compared == simple.closed_form_accepted);
+    CHECK(simple.closed_form_wrong_gain == 0);
+    CHECK(near_axis.closed_form_accepted == 0);
+    CHECK(comfortable.closed_form_accepted == 0);
+
+    // Every comparison that was owed was made. This is what keeps the two
+    // zero-disagreement assertions above from being satisfiable by a
+    // population that quietly stopped being compared.
+    CHECK(near_axis.gain_comparison_unresolved == 0);
+    CHECK(comfortable.gain_comparison_unresolved == 0);
+    CHECK(simple.gain_comparison_unresolved == 0);
+
     CHECK(near_axis.declined_unenumerated == 0);
     CHECK(comfortable.declined_unenumerated == 0);
     CHECK(simple.declined_unenumerated == 0);
+
+    // THE FULL-ACCEPTANCE CLAIM, PINNED.
+    //
+    // Two documents state in the present tense that the balanced tag answers
+    // every draw of both common-scale populations, and one of them recommends
+    // selecting that tag on exactly that basis. Nothing pinned it: the sweep
+    // asserted only that acceptance exceeds zero, and the number had been
+    // measured before an unconditional postcondition was added to that path.
+    // It is re-measured and it holds, so it is asserted rather than written
+    // down.
+    //
+    // THIS IS DELIBERATELY THE OVER-REJECTION GUARD WITH THE LEAST MARGIN IN
+    // THE SUITE. It admits no declines at all on these two families, so it is
+    // the first assertion a future tightening of the acceptance rule will
+    // break. That is what it is for. A failure here is the guard firing and
+    // says the tightening cost the balanced tag answers it used to give; it is
+    // not a flaky test, and the two documents must move with it.
+    //
+    // Guarded on the tag: the other two tags decline part of both populations
+    // by design, because they perform no weight equilibration.
+    if constexpr(std::is_same_v<TestType,
+                                ctrlpp::detail::balanced_schur_care_method>)
+    {
+        CHECK(comfortable.accepted == comfortable.drawn);
+        CHECK(simple.accepted == simple.drawn);
+    }
 }
 
 TEST_CASE("CARE carries the scalar family below the subspace-collapse edge",
@@ -627,20 +818,22 @@ TEST_CASE("CARE never returns a zero solution inside the finite-magnitude "
 
     CAPTURE(std::log10(magnitude), std::log10(exact));
     CHECK(magnitude < hamiltonian_magnitude_ceiling<double>());
-    if(result.has_value())
-    {
-        CHECK(result->P(0, 0) != 0.0);
-        CHECK(std::abs(result->P(0, 0) - exact)
-              <= scalar_family_accuracy_bound(exact));
-    }
-    else
-    {
-        CHECK(is_enumerated_care_error(result.error()));
-    }
-    // The equivariant rescale reaches this magnitude, so the band is answered
-    // here rather than refused. This is the lower side of the recovered
-    // region's boundary; the upper side is asserted in the case below.
+
+    // THIS CASE MEANS THE BAND MUST BE ANSWERED, and now says only that.
+    //
+    // It used to permit either outcome and then require an answer two lines
+    // later, so the permissive branch could never be reached: a decline failed
+    // at the requirement before the branch's assertion could mean anything.
+    // Dead code in a test is worse than dead code elsewhere, because a reader
+    // takes it as a statement about what the case tolerates. The equivariant
+    // rescale reaches this magnitude, so an answer is owed here rather than a
+    // refusal. This is the lower side of the recovered region's boundary; the
+    // upper side is asserted in the case below, where BOTH outcomes are
+    // genuinely admissible and the branch there is therefore kept.
     REQUIRE(result.has_value());
+    CHECK(result->P(0, 0) != 0.0);
+    CHECK(std::abs(result->P(0, 0) - exact)
+          <= scalar_family_accuracy_bound(exact));
 }
 
 TEST_CASE("CARE never returns a zero solution where the Hamiltonian's own "

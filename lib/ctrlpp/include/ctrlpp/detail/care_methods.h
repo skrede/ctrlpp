@@ -86,13 +86,46 @@
 /// The instruction count is not the whole selection argument, and the balanced
 /// variant is where that shows. Swept over eighteen decades of a common rescale
 /// of Q and R, on a comfortably damped family and on a structurally simple one,
-/// the balanced variant answers every one of the 1,152 draws in each population
-/// and every answer agrees with the scale-invariant gain oracle. The default
-/// answers 632 and 641 of them and declines the rest, because it performs no
-/// weight equilibration and its extraction loses the answer once the invariant
-/// subspace tilts far enough. A caller whose weights sit far from their
-/// dynamics' own scale should expect the default to decline and the balanced
-/// variant to answer; the cost of that answer is the instruction count above.
+/// the balanced variant answers every one of the 1,152 draws in each population.
+/// The default answers 652 and 655 of them and declines the rest, because it
+/// performs no weight equilibration and its extraction loses the answer once the
+/// invariant subspace tilts far enough. A caller whose weights sit far from
+/// their dynamics' own scale should expect the default to decline and the
+/// balanced variant to answer; the cost of that answer is the instruction count
+/// above.
+///
+/// Unlike the archived percentages above, THESE ACCEPTANCE COUNTS ARE PINNED
+/// rather than recorded. `CARE keeps the same promise under every method tag`
+/// asserts the balanced variant's two counts as exact equalities against the
+/// drawn counts, guarded on the tag, so a tightening of the acceptance rule that
+/// costs those answers breaks a test rather than leaving this paragraph wrong.
+/// It is deliberately the over-rejection guard with the least margin in the
+/// suite.
+///
+/// Two independent criteria agree that the answers are right, and they are
+/// counted separately because they establish different things. The
+/// scale-invariance check compares each draw's gain against the same pose at
+/// unit weight scale; it is produced by the same solver under the same tag, so
+/// it cannot see an error common to both scales. The structurally simple family
+/// additionally admits a closed form -- for A = -I, B = I, Q = R = sI the gain
+/// is exactly (sqrt(2) - 1) I at every s -- which owes the solver nothing. Zero
+/// disagreements under either criterion, for all three tags; the worst relative
+/// error against the closed form is 6.700789e-16 for either Schur tag and
+/// 6.834804e-14 for the default.
+///
+/// ## Reconciling the full-acceptance claim with the near-axis decline
+///
+/// The paragraph above says the balanced variant answers every draw of the two
+/// COMMON-SCALE families. `care_error_test` says the same variant declines every
+/// one of 112 poses of the NEAR-AXIS band. Both are true and they are about
+/// different families. The common-scale families are well conditioned and are
+/// swept by rescaling their weights, which is exactly what a diagonal balance
+/// repairs. The near-axis band drives a plant eigenvalue toward the imaginary
+/// axis, where the stable and unstable invariant subspaces stop being separated;
+/// no balance repairs that, because the obstacle is the pose rather than its
+/// scaling. A caller should read the balanced variant as answering the poses a
+/// bad weight scale would otherwise lose, not as answering poses that are
+/// ill-posed on their own terms.
 ///
 /// @cite laub1979      : Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
 /// @cite roberts1980   : Roberts, "Linear model reduction and solution of the algebraic Riccati equation by use of the sign function", 1980

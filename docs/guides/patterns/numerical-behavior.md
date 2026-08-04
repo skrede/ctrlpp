@@ -239,13 +239,35 @@ otherwise produce silent corruption through intermediate overflow:
   **That cost is method-specific, and one tag does not pay it.** Swept over
   eighteen decades of a common rescale in both directions, on a comfortably
   damped family and a structurally simple one, `balanced_schur_care_method`
-  answers all 1,152 draws of each population and every answer agrees with the
-  scale-invariant gain oracle; the default answers 652 and 655. The difference
-  is the DGEBAL-style diagonal balance that variant applies before factorizing,
-  which is exactly the equilibration the default lacks. A caller whose weights
-  sit far from their dynamics' own scale, and who would rather pay for an answer
-  than receive a decline, should select it -- see
+  answers all 1,152 draws of each population; the default answers 652 and 655.
+  The difference is the DGEBAL-style diagonal balance that variant applies
+  before factorizing, which is exactly the equilibration the default lacks. A
+  caller whose weights sit far from their dynamics' own scale, and who would
+  rather pay for an answer than receive a decline, should select it -- see
   [lqr](../../api/control/lqr.md) for what that choice costs in arithmetic.
+
+  Those two counts are **pinned by an assertion**, not merely recorded here, so
+  a future tightening of the acceptance rule that costs those answers breaks a
+  test rather than leaving this recommendation wrong.
+
+  Two criteria agree that the answers are right, and they are worth
+  distinguishing. Each draw's gain is compared against the same pose at unit
+  weight scale, which is a **scale-invariance consistency check**: the gain
+  `K = R^-1 B' P` does not move under a common rescale, so the two must agree --
+  but the reference comes from the same solver under the same tag, so it cannot
+  detect an error common to both scales, and a weight-scale defect is exactly
+  that error. The structurally simple family additionally admits a **closed
+  form**: for `A = -I`, `B = I`, `Q = R = sI` the equation collapses to
+  `p^2 + 2sp - s^2 = 0`, giving `P = s(sqrt(2) - 1) I` and a gain of
+  `(sqrt(2) - 1) I` at every `s`. That criterion owes the solver nothing. Zero
+  disagreements under either, for all three tags.
+
+  **This does not mean the balanced variant answers everything.** It answers the
+  poses a bad weight scale would otherwise lose. On the near-axis band -- where a
+  plant eigenvalue is driven toward the imaginary axis and the stable and
+  unstable invariant subspaces stop being separated -- the same variant declines
+  every one of 112 poses, and no balance repairs that, because the obstacle is
+  the pose rather than its scaling.
 
 - **L1 DC gain inversion:** The L1 adaptive controller validates that the
   predictor model's DC gain is invertible before computing the feedforward gain
