@@ -96,16 +96,70 @@ namespace ctrlpp {
 /// largest pivot, so a genuinely well-posed pair whose invariant subspace is severely
 /// ill-conditioned reaches the same branch. Measured on the one-parameter family
 /// A = diag(2, 1/2), B = [delta; 1], Q = I, R = 1, which is controllable and
-/// detectable for every delta != 0: the solve succeeds down to delta = 1e-7 with
-/// ||P|| ~ 8e14, and returns `singular_u11` from delta = 1e-8 downward, where the
-/// smallest pivot of the computed U11 falls under the rank test's threshold. Naming
-/// this enumerator after the structural cause would state something false about every
-/// one of those rows.
+/// detectable for every delta != 0: the solve succeeds down to delta ~ 3e-4 with
+/// ||P|| ~ 9e7, refuses with `arithmetic_limit` from there down to delta ~ 5e-8, and
+/// returns `singular_u11` below that, where the smallest pivot of the computed U11
+/// falls under the rank test's threshold. Naming this enumerator after the structural
+/// cause would state something false about every one of those rows.
 ///
 /// So: `singular_u11` covers a pair with no stabilizing solution AND a numerical
 /// failure to separate the invariant subspace, and **it does not distinguish them**.
 /// A caller that must tell them apart needs a stabilizability test the solver does not
 /// perform.
+///
+/// ## How far the enumerator can be relied on
+///
+/// **Branch on whether a value is present. Treat the enumerator as a diagnostic for a
+/// human reader rather than as a control signal.**
+///
+/// The descriptions above say which condition produces which enumerator, and they hold
+/// wherever that condition is itself decidable in the scalar type. They stop holding
+/// below the precision's resolution boundary -- the point at which the quantity
+/// deciding the problem falls under the square root of epsilon relative to the operands
+/// carrying it. Below the boundary the solve is refused, and WHICH refusal it carries
+/// is decided by instruction selection and by the linear-algebra implementation rather
+/// than by the input.
+///
+/// Both boundaries of the family above are square roots for the same reason, which is
+/// where the derivation comes from rather than a fitted number: the unstable mode's
+/// controllability enters the problem linearly through B and leaves it as a square
+/// through P, so ||P|| grows as K / delta^2 (measured K = 8.87) and the pivot ratio the
+/// rank test compares falls as C * delta^2 (measured C = 0.170). The accepted range
+/// therefore ends where the forward error ||P|| * eps reaches sqrt(eps), at
+/// delta = sqrt(K * sqrt(eps)) = 3.6e-4, and the rank verdict begins where C * delta^2
+/// reaches n * eps, at delta = sqrt(n * eps / C) = 5.1e-8. Measured 3.3e-4 to 3.7e-4
+/// and 4.7e-8 to 5.7e-8.
+///
+/// Those ranges are not measurement noise; they are the width of the band inside which
+/// the answer is decided by the arithmetic. Each configuration locates its own crossing
+/// to one unit in the last place, and the configurations disagree by 0.057 decades (14%
+/// of the value) at the accept boundary and 0.084 decades (21%) at the rank boundary,
+/// over four compilers, four optimization levels, fused multiply-add off and on, and
+/// two patch releases of Eigen. Outside that band every configuration agrees.
+///
+/// One bit-identical input inside it -- the pair A = diag(2, 1/2), B = [0; 1], Q = I,
+/// R = 1 with the cross weight N = [0.1; 0.2], which has no stabilizing solution
+/// because its unstable mode is exactly uncontrollable -- returns three different
+/// enumerators over those configurations:
+///
+///  * `singular_u11`     : 33 of 64
+///  * `non_psd_solution` : 22 of 64
+///  * `arithmetic_limit` :  9 of 64
+///
+/// and the majority verdict flips with Eigen's patch release alone. **Every one of those configurations is x86-64, and a green column here is not
+/// evidence of stability on arm64**: the continuous solver's twin of this measurement
+/// produced an enumerator on arm64 that no x86-64 compiler produced. Fused
+/// multiply-add, which is the axis that moves the discrete answer here, is on by
+/// default on that architecture.
+///
+/// Three enumerators report a property of the operands rather than of an iteration, and
+/// stay meaningful at any distance from the boundary: `non_finite_input`, `singular_a`
+/// and `singular_r`. The first is an exact predicate on the entries. The other two are
+/// rank tests with thresholds relative to the operand's own largest pivot, so they are
+/// decided by the input wherever that operand is not itself near rank deficiency -- and
+/// on an exactly rank-deficient operand the threshold is exactly zero, which makes the
+/// verdict exact rather than merely stable. A finite, well-formed input with a
+/// nonsingular A and a nonsingular R never carries any of the three.
 ///
 /// @cite laub1979 -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979, Sec. III
 enum class dare_error

@@ -297,15 +297,46 @@ The implication that makes `singular_u11` informative is standard and exact: a s
 
 | `delta` | `rank[B AB]` | result |
 | --- | --- | --- |
-| `1e-1` … `1e-7` | 2 | value, `\|\|P\|\|` rising from `8.9e2` to `8.1e14` |
-| `1e-8` … `1e-14` | 2 | **`singular_u11`** -- a well-posed pair refused |
+| `1e-1` … `1e-3` | 2 | value, `\|\|P\|\|` rising from `8.9e2` to `8.9e6` |
+| `1e-4` … `1e-7` | 2 | **`arithmetic_limit`** -- a well-posed pair refused for accuracy |
+| `1e-8` … `1e-14` | 2 | **`singular_u11`** -- the same pair refused for rank |
 | `1e-16`, `0` | 1 | `singular_u11` -- genuinely uncontrollable |
 
-The transition sits where `\|\|P\|\|` approaches `1/eps` and the smallest pivot of the computed `U11` falls under the rank test's threshold. Naming this enumerator after the structural cause would state something false about every row in the middle band.
+There are two transitions and they are three and a half decades apart. `\|\|P\|\|` grows as `K / delta^2` with a measured `K = 8.87`, so the estimated relative forward error `\|\|P\|\| * eps` reaches `sqrt(eps)` -- half the significand, the one rule the accuracy gate applies -- at `delta = sqrt(K * sqrt(eps)) = 3.6e-4`, and the pair is declined for accuracy from there down. The smallest pivot of the computed `U11` falls as `C * delta^2` with a measured `C = 0.170`, so it reaches the rank test's `n * eps` threshold at `delta = sqrt(n * eps / C) = 5.1e-8`, and the refusal changes name there. Naming this enumerator after the structural cause would state something false about every row in the middle two bands.
 
 So `singular_u11` covers a pair with no stabilizing solution **and** a numerical failure to separate the invariant subspace, and **it does not distinguish them**. Telling them apart needs a stabilizability test the solver does not perform.
 
 `care_error::singular_u11` has the identical shape for the identical reason, with the unit disk replaced by the open left half-plane and the reciprocal by the reflection `-lambda`.
+
+#### How far the enumerator can be relied on
+
+**Branch on `has_value()`. Treat the enumerator as a diagnostic for a human reader rather than as a control signal.**
+
+The tables above say which condition produces which enumerator, and they hold wherever the condition itself is decidable in the scalar type. They stop holding below the precision's resolution boundary -- the point at which the quantity deciding the problem falls under `sqrt(epsilon)` relative to the operands carrying it, which for the family above is where the two transitions in the previous section sit. Below the boundary the solve is refused, and *which* refusal it carries is decided by instruction selection and by the linear-algebra implementation rather than by the input.
+
+Both transitions were located to one unit in the last place per configuration, and the configurations disagree. Over four compilers (g++ 16.1.1, clang 22.1.8, 21.1.8 and 18.1.8), four optimization levels, fused multiply-add off and on, and two patch releases of Eigen:
+
+| Boundary | Located between | Band width |
+| --- | --- | --- |
+| accepted to `arithmetic_limit` | `3.279e-04` and `3.738e-04` | 0.057 decades, 14% of the value |
+| `arithmetic_limit` to `singular_u11` | `4.740e-08` and `5.741e-08` | 0.084 decades, 21% of the value |
+
+Outside that band every configuration agrees, including at both ends of the family. Inside it, the answer belongs to the build. Measured on one bit-identical input inside the band -- the pair `A = diag(2, 1/2)`, `B = [0; 1]`, `Q = I`, `R = 1` with the cross weight `N = [0.1; 0.2]`, whose unstable mode is exactly uncontrollable so that no stabilizing solution exists:
+
+| Configuration | with Eigen 3.4.0 | with Eigen 3.4.1 |
+| --- | --- | --- |
+| every compiler and level, no fused multiply-add (16 of 32) | `non_psd_solution` | `singular_u11` |
+| every compiler at `-O0`, fused multiply-add enabled (4) | `non_psd_solution` | `singular_u11` |
+| g++ at `-O1`, fused multiply-add enabled (1) | `non_psd_solution` | `singular_u11` |
+| g++ at `-O2`, fused multiply-add enabled (1) | `singular_u11` | `non_psd_solution` |
+| g++ at `-O3`, fused multiply-add enabled (1) | `singular_u11` | `singular_u11` |
+| clang at `-O1` and above, fused multiply-add enabled (9) | `singular_u11` | `arithmetic_limit` |
+
+Three enumerators over sixty-four configurations on one input -- `singular_u11` on 33, `non_psd_solution` on 22, `arithmetic_limit` on 9 -- and the majority verdict flips with a patch release of a dependency.
+
+**Every configuration in that table is x86-64, and a green column is not evidence of stability on arm64.** The continuous solver's twin of this measurement produced a third enumerator on arm64 that neither x86-64 compiler produced. The axis that moves the discrete answer is fused multiply-add contraction, which is enabled by default on that architecture, so the contracting rows are the closest available proxy -- a prediction, not a measurement, and not a substitute for running it.
+
+Three enumerators report a property of the operands rather than of an iteration and stay meaningful at any distance from the boundary: `non_finite_input`, `singular_a` and `singular_r`. The first is an exact predicate on the entries; the other two are rank tests relative to the operand's own largest pivot, so they are decided by the input wherever that operand is not itself near rank deficiency, and on an exactly rank-deficient operand the threshold is exactly zero and the verdict is exact. A finite, well-formed input with a nonsingular `A` and a nonsingular `R` never carries any of the three.
 
 ### dare (with cross-weight)
 

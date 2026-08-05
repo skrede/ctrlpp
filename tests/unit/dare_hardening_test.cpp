@@ -555,6 +555,19 @@ TEST_CASE("DARE gain is invariant under common weight scaling", "[dare][hardenin
             REQUIRE_FALSE(direct.has_value());
             REQUIRE_FALSE(scaled.has_value());
             CHECK(direct.error() == scaled.error());
+            // This equality is a PREDICATE, not a check: it classifies a
+            // decline rather than asserting one, so it decides which branch
+            // runs. It is kept as an equality deliberately, and it is not
+            // widened, because the census it feeds is asserted only to be
+            // non-empty. Which individual points reach the accuracy enumerator
+            // does move with the arithmetic -- six of the forty-two swept
+            // points on some configurations and seven on others, measured
+            // across four compilers, four optimization levels, fused
+            // multiply-add off and on, and two releases of the linear-algebra
+            // library -- but the count is at least six in every one of those
+            // sixty-four, so the assertion below it holds on all of them. The
+            // two posings agreeing on the enumerator, checked above, holds in
+            // all sixty-four as well.
             if(direct.error() == ctrlpp::dare_error::arithmetic_limit)
                 ++arithmetic_declines;
             return;

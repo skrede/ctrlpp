@@ -11,6 +11,31 @@
 #include <cmath>
 #include <vector>
 
+namespace
+{
+
+// True when the value is one of the eight enumerators the header declares.
+// Without it, a case that only asserts which enumerators a refusal is NOT
+// would also pass on a value that is none of them.
+auto is_enumerated_dare_error(ctrlpp::dare_error error) -> bool
+{
+    switch(error)
+    {
+    case ctrlpp::dare_error::non_stabilizable:
+    case ctrlpp::dare_error::non_finite_input:
+    case ctrlpp::dare_error::singular_a:
+    case ctrlpp::dare_error::singular_r:
+    case ctrlpp::dare_error::singular_u11:
+    case ctrlpp::dare_error::non_psd_solution:
+    case ctrlpp::dare_error::schur_failed:
+    case ctrlpp::dare_error::arithmetic_limit:
+        return true;
+    }
+    return false;
+}
+
+}
+
 TEST_CASE("lqr_gain scalar integrator")
 {
     // A=1, B=1, Q=1, R=1
@@ -97,6 +122,15 @@ TEST_CASE("lqr_gain refuses an unstabilizable pair")
     // is the extraction: the invariant subspace those two span does not project
     // onto the state space, leaving the top-left block singular. The refusal is
     // correct; only its name reports a symptom rather than the cause.
+    //
+    // A single enumerator is asserted because the pivot the rank test compares
+    // is an EXACT zero for this input rather than a small number near a
+    // threshold, so no rounding enters the verdict. Confirmed rather than
+    // assumed: sixty-four configurations -- four compilers, four optimization
+    // levels, fused multiply-add off and on, two releases of the
+    // linear-algebra library -- all return it, and arm64 is not among them. The
+    // cross-weighted twin of this pair further down this file is where the
+    // deciding quantity stops being exact, and it asserts invariants instead.
     CHECK(result.error() == ctrlpp::dare_error::singular_u11);
 }
 
@@ -270,24 +304,68 @@ TEST_CASE("lqr class compute returns -K*x")
 
 TEST_CASE("lqr_gain with a cross weight refuses an unstabilizable pair")
 {
-    // Non-stabilizable system with cross-weight N
+    // Pinned in hexadecimal: the measurement quoted below is about one
+    // bit-identical set of operands, and only the cross weight is not a dyadic
+    // rational.
     Eigen::Matrix<double, 2, 2> A, Q;
     Eigen::Matrix<double, 2, 1> B, N;
     Eigen::Matrix<double, 1, 1> R;
 
-    A << 2.0, 0.0, 0.0, 0.5;
-    B << 0.0, 1.0;
+    A << 0x1p+1, 0x0p+0, // diag(2, 1/2)
+        0x0p+0, 0x1p-1;
+    B << 0x0p+0, 0x1p+0;
     Q = Eigen::Matrix<double, 2, 2>::Identity();
-    R(0, 0) = 1.0;
-    N << 0.1, 0.2;
+    R(0, 0) = 0x1p+0;
+    N << 0x1.999999999999ap-4, 0x1.999999999999ap-3; // 0.1, 0.2
 
     auto result = ctrlpp::lqr_gain<double, 2, 1>(A, B, Q, R, N);
+
+    // WHY the refusal is required, stated without reference to the solver.
+    //
+    // The mode at eigenvalue 2 has an input coupling of exactly zero, so it is
+    // uncontrollable and outside the unit circle. A cross weight cannot repair
+    // that: it reweights the cost, not the reachable set, so no stabilizing
+    // solution exists at any N and the pair must be refused.
+    //
+    // WHICH refusal it carries is NOT asserted, because it is not a property of
+    // the input. The cross weight is absorbed by forming a reduced problem
+    // whose operands are A - B R^-1 N' and Q - N R^-1 N', both of them
+    // differences of terms of comparable magnitude. That subtraction moves the
+    // extracted matrix by a few units in the last place, and a few units in the
+    // last place are enough to decide whether the top-left block's smallest
+    // pivot lands above or below the rank threshold, whether the extracted
+    // matrix tests as indefinite, and whether the accuracy gate resolves. The
+    // deciding quantity is therefore a rounding difference, where the same pair
+    // WITHOUT a cross weight has an exact structural zero and does pin one
+    // enumerator.
+    //
+    // Measured on this bit-identical input over sixty-four configurations --
+    // four compilers, four optimization levels, fused multiply-add off and on,
+    // against two releases of the linear-algebra library:
+    //
+    //     singular_u11      33 of 64
+    //     non_psd_solution  22 of 64
+    //     arithmetic_limit   9 of 64
+    //
+    // Both axes move it. Enabling fused multiply-add changes the answer at one
+    // optimization level and not the next, and the MAJORITY verdict flips with
+    // the linear-algebra library's patch release alone: the enumerator this
+    // case used to pin is returned by twenty-one of thirty-two configurations
+    // against one release and by exactly one of thirty-two against the next.
+    // Pinning it asserted a toolchain. arm64 is not among the sixty-four, and
+    // the continuous solver's twin measurement produced an enumerator there
+    // that no covered configuration produced.
+    //
+    // What the input DOES determine is the three diagnoses it can never carry:
+    // the state matrix is diagonal with a condition number of 4, the input
+    // weighting is 1, and every entry of every operand is finite. Any of those
+    // three would be the solver misreading a well-formed input as a domain
+    // violation.
     REQUIRE_FALSE(result.has_value());
-    // Same unstabilizable pair as the cross-weight-free case, and the count test
-    // is satisfied there for the same reason. The cross weight shifts which
-    // downstream check catches it: the extracted matrix comes out indefinite
-    // rather than the block coming out singular.
-    CHECK(result.error() == ctrlpp::dare_error::non_psd_solution);
+    CHECK(result.error() != ctrlpp::dare_error::singular_a);
+    CHECK(result.error() != ctrlpp::dare_error::singular_r);
+    CHECK(result.error() != ctrlpp::dare_error::non_finite_input);
+    CHECK(is_enumerated_dare_error(result.error()));
 }
 
 TEST_CASE("lqr_gain refuses a singular state matrix")
