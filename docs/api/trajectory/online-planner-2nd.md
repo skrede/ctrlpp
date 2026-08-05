@@ -22,10 +22,47 @@ Unlike pre-computed trajectory segments, online planners are stateful filters wi
 struct config {
     Scalar v_max;   // Maximum velocity magnitude
     Scalar a_max;   // Maximum acceleration magnitude
+
+    // Settle policy. Omitting these reproduces the behavior the planner had
+    // before they existed, for every choice of limits.
+    Scalar position_settle_tol = 1e-9;  // position error counted as arrived
+    Scalar velocity_settle_tol = 1e-9;  // speed counted as stopped
 };
 ```
 
 Both limits divide in the planner math (stopping distance `v^2 / (2 * a_max)`, phase durations `v_v / a_max` and `h / v_v`), so the domain of each is finite and strictly positive.
+
+### Tuning the settle policy
+
+The two tolerances decide when [`is_settled`](#is_settled) starts reporting true. Each is compared against exactly one sampled quantity: `position_settle_tol` against the distance still to run, `velocity_settle_tol` against the speed. They are two fields rather than one because they are compared against two quantities in two different units, and a single number compared against both a length and a speed is making two unrelated claims at once.
+
+```cpp
+// An axis that counts as arrived within a tenth of a millimeter, whose encoder
+// resolves nothing finer than a millimeter per second.
+auto result = ctrlpp::online_planner_2nd<double>::create({
+    .v_max = 1.0,
+    .a_max = 5.0,
+    .position_settle_tol = 1e-4,
+    .velocity_settle_tol = 1e-3,
+});
+```
+
+There is no acceleration tolerance here. This planner bounds no jerk and carries no acceleration state to settle, so a third field would be surface with nothing behind it. The [3rd-order planner](online-planner-3rd.md), which does carry one, has three.
+
+They are knobs rather than derived constants because no derivation exists for them. The distance at which an axis counts as arrived is a property of the machine, not of the arithmetic. The default's provenance is stated rather than implied: `1e-9` is the value the planner compared both residuals against before the fields existed, and it sits roughly seven decades above `double` rounding on the quantities it tests. A number that far above the resolution of its own operands is an application statement, not a rounding guard, so it belongs to the caller. Omitting the fields reproduces that earlier behavior exactly, for every choice of limits.
+
+**The defaults are chosen for `double`. A `float` user should set the fields.** On `float`, `1e-9` sits about two decades below the type's own resolution near unity, so the default is a condition a sampled value near unity effectively never satisfies unless it is exactly zero. The defaults are deliberately not type-dependent: a type-dependent default would stop omission reproducing the earlier behavior.
+
+**The knob cannot break the result contract.** No setting of it changes what the planner computes. The profile, its phase durations and every value [`sample`](#sample) returns are identical under any value; only the moment `is_settled` flips is moved.
+
+#### The window this leaves open
+
+Two different distance questions live in the planner, and they have different answers on purpose.
+
+1. **"Is the motion done?"** is asked by `sample`, at the policy distance above. It is the caller's to choose.
+2. **"Is this command a numerical no-op?"** is asked when a new target arrives. It is not policy and is not tunable. Its position side is an exact comparison, so a target differing from the current position at all is planned in full however wide the settle policy is; its velocity side is answered against a small fixed distance whose derivation belongs with that test rather than with this policy, and is documented there.
+
+The window between the two is the range in which the planner reports the axis arrived while remaining willing to plan a move to a nearer target. Widening the settle policy widens that window. It never narrows what the planner will plan.
 
 ## Construction
 

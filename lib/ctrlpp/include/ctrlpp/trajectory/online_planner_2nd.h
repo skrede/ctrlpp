@@ -45,10 +45,40 @@ template <ctrlpp_floating_scalar Scalar>
 class online_planner_2nd
 {
   public:
+    /// @brief Kinematic limits, and the distances at which a sampled state
+    /// counts as arrived.
+    ///
+    /// The two settle tolerances are policy, not rounding guards, and they are
+    /// separate fields because they are compared against two quantities in two
+    /// different units: a length and a speed. Their defaults sit roughly seven
+    /// decades above `double` rounding on the quantities they test, so they
+    /// state when the application considers the axis arrived rather than when
+    /// the arithmetic can still tell two numbers apart. No derivation is offered
+    /// for them because none exists: the distance at which a machine is "there"
+    /// is a property of the machine.
+    ///
+    /// The defaults are the values the planner used before the fields existed,
+    /// so omitting them reproduces that behavior exactly for every choice of
+    /// limits. They are chosen for `double`; a `float` instantiation should set
+    /// them, because the defaults sit below `float`'s own resolution near unity.
+    ///
+    /// There is no acceleration tolerance. This planner bounds no jerk and
+    /// carries no acceleration state to settle, so a third field would be
+    /// surface with nothing behind it.
+    ///
+    /// No setting of them changes what the planner computes. They decide only
+    /// when `is_settled()` reports true; the profile, its phase durations and
+    /// every value `sample()` returns are identical under any value.
     struct config
     {
         Scalar v_max;
         Scalar a_max;
+
+        /// @brief Position error below which the axis counts as arrived.
+        Scalar position_settle_tol = static_cast<Scalar>(1e-9);
+
+        /// @brief Speed below which the axis counts as stopped.
+        Scalar velocity_settle_tol = static_cast<Scalar>(1e-9);
     };
 
     /// @brief Validate the kinematic limits and construct a planner.
@@ -126,10 +156,11 @@ class online_planner_2nd
         v_ = v;
         t_last_ = t;
 
-        // Check settled state
-        auto constexpr settle_tol = static_cast<Scalar>(1e-9);
-        settled_ = (std::abs(q - target_) < settle_tol)
-                   && (std::abs(v) < settle_tol);
+        // Check settled state. Each dimension is tested against its own
+        // configured distance, because the two quantities carry two different
+        // units.
+        settled_ = (std::abs(q - target_) < position_settle_tol_)
+                   && (std::abs(v) < velocity_settle_tol_);
 
         return {
             .position = Vector<Scalar, 1>{q},
@@ -187,11 +218,18 @@ class online_planner_2nd
     online_planner_2nd(unchecked_t, config const& cfg)
         : v_max_{cfg.v_max}
         , a_max_{cfg.a_max}
+        , position_settle_tol_{cfg.position_settle_tol}
+        , velocity_settle_tol_{cfg.velocity_settle_tol}
     {
     }
 
     Scalar v_max_{};
     Scalar a_max_{};
+
+    // Settle policy, read only by sample(). Never a divisor and never a loop
+    // bound, so no value of either of them can make the planner run unboundedly.
+    Scalar position_settle_tol_{};
+    Scalar velocity_settle_tol_{};
 
     // Internal state (mutable for const sample)
     mutable Scalar q_{};

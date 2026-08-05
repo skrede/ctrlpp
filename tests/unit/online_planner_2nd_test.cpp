@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -498,4 +499,247 @@ TEST_CASE("OnlinePlanner2nd: reset clears the substitution report",
     REQUIRE(diag.substitution_reason == ctrlpp::online_planner_substitution_reason::none);
     REQUIRE(diag.brake_duration == 0.0);
     REQUIRE(diag.planned_duration == 0.0);
+}
+
+namespace
+{
+
+struct planner_limits
+{
+    double v_max;
+    double a_max;
+};
+
+// Seven pairs spanning just over seven decades of velocity limit. The two limits
+// climb together so every pair plans the same trapezoidal shape on the same time
+// scale (v_max / a_max is constant along the ladder), which keeps the sweep a
+// sweep of SCALE rather than a sweep of branches. Powers of two, so nothing in
+// the input is rounded on the way in.
+constexpr std::array<planner_limits, 7> bit_identity_limits{{
+    {0x1p-10, 0x1p-9},
+    {0x1p-6, 0x1p-5},
+    {0x1p-2, 0x1p-1},
+    {0x1p+2, 0x1p+3},
+    {0x1p+6, 0x1p+7},
+    {0x1p+10, 0x1p+11},
+    {0x1p+14, 0x1p+15},
+}};
+
+}
+
+// -- Test 18: omitting the settle tolerances reproduces the previous behavior ---
+//
+// The two tolerance fields carry, as defaults, the value the planner compared
+// both residuals against when the distance was a literal inside sample(). The
+// claim is that OMITTING them is bit-identical to naming them, for every choice
+// of limits. That is why the limits are swept over seven decades instead of one
+// pair being tested, and why the comparison is exact equality: a tolerance here
+// would be testing a different and weaker statement.
+//
+// The 1e-9 written out below is deliberately a literal, and the only settle
+// literal in this file. It is the pre-knob value; if a future change moves the
+// defaults, the omitting planner and the naming planner part company on the
+// settle ladder and this case fails, which is what it is for.
+TEST_CASE("OnlinePlanner2nd: omitting the settle tolerances is bit-identical to naming them",
+          "[traj][online_planner_2nd][settle_tolerance]")
+{
+    constexpr int drive_steps = 64;
+    constexpr int retarget_steps = 64;
+    constexpr int ladder_points = 21;
+    constexpr int points_per_pair = drive_steps + retarget_steps + ladder_points;
+
+    int compared = 0;
+
+    for (auto const& lim : bit_identity_limits) {
+        auto omitted = make_planner<double>({.v_max = lim.v_max, .a_max = lim.a_max});
+        auto named = make_planner<double>({
+            .v_max = lim.v_max,
+            .a_max = lim.a_max,
+            .position_settle_tol = 1e-9,
+            .velocity_settle_tol = 1e-9,
+        });
+
+        // Eight cruise-lengths of travel: long enough that the profile reaches
+        // its cruise phase at every point on the ladder.
+        double const target = 8.0 * lim.v_max;
+
+        REQUIRE(omitted.update(target).has_value());
+        REQUIRE(named.update(target).has_value());
+
+        for (int i = 0; i < drive_steps; ++i) {
+            double const t = 12.0 * static_cast<double>(i) / drive_steps;
+            auto const from_omitted = omitted.sample(t);
+            auto const from_named = named.sample(t);
+            CAPTURE(lim.v_max, i, t);
+            REQUIRE(from_omitted.position(0) == from_named.position(0));
+            REQUIRE(from_omitted.velocity(0) == from_named.velocity(0));
+            REQUIRE(from_omitted.acceleration(0) == from_named.acceleration(0));
+            REQUIRE(omitted.is_settled() == named.is_settled());
+            ++compared;
+        }
+
+        // Retarget across the origin from wherever the drive left the planners:
+        // a brake-and-replan exercises the braking branch a rest-to-rest move
+        // does not reach.
+        REQUIRE(omitted.update(-target).has_value());
+        REQUIRE(named.update(-target).has_value());
+
+        for (int i = 0; i < retarget_steps; ++i) {
+            double const t = 12.0 + 24.0 * static_cast<double>(i) / retarget_steps;
+            auto const from_omitted = omitted.sample(t);
+            auto const from_named = named.sample(t);
+            CAPTURE(lim.v_max, i, t);
+            REQUIRE(from_omitted.position(0) == from_named.position(0));
+            REQUIRE(from_omitted.velocity(0) == from_named.velocity(0));
+            REQUIRE(from_omitted.acceleration(0) == from_named.acceleration(0));
+            REQUIRE(omitted.is_settled() == named.is_settled());
+            ++compared;
+        }
+
+        // The settle ladder. reset() followed by a single update to a small
+        // offset puts the planner one sample away from a state whose position
+        // residual is EXACTLY that offset and whose velocity is exactly zero,
+        // because sampling at the reference time integrates no phase at all. The
+        // offsets bracket the default by three decades either side, so a default
+        // that moved separates the two planners here whatever the limits are.
+        for (int i = 0; i < ladder_points; ++i) {
+            double const offset = std::ldexp(1.0, -40 + i);
+            omitted.reset(0.0);
+            named.reset(0.0);
+            REQUIRE(omitted.update(offset).has_value());
+            REQUIRE(named.update(offset).has_value());
+
+            auto const from_omitted = omitted.sample(0.0);
+            auto const from_named = named.sample(0.0);
+            CAPTURE(lim.v_max, i, offset);
+            REQUIRE(from_omitted.position(0) == 0.0);
+            REQUIRE(from_omitted.velocity(0) == 0.0);
+            REQUIRE(from_omitted.position(0) == from_named.position(0));
+            REQUIRE(from_omitted.velocity(0) == from_named.velocity(0));
+            REQUIRE(from_omitted.acceleration(0) == from_named.acceleration(0));
+            REQUIRE(omitted.is_settled() == named.is_settled());
+            ++compared;
+        }
+    }
+
+    // The exact number of compared states, not a bound no loop can fail.
+    REQUIRE(compared
+            == points_per_pair * static_cast<int>(bit_identity_limits.size()));
+}
+
+// -- Test 19: each settle tolerance governs its own dimension and no other -----
+//
+// Sampling a fixed time-to-go before the end of a move leaves both residuals
+// nonzero and three decades apart: the position error falls as tau^2 and the
+// speed as tau. That is the state a single shared tolerance cannot describe,
+// which is why the fields are separate.
+//
+// The bracketing values are read off the sampled state rather than written as
+// literals, so the case moves with the knob instead of duplicating it. There is
+// no acceleration field to bracket: this planner carries no acceleration state
+// to settle.
+TEST_CASE("OnlinePlanner2nd: each settle tolerance governs its own dimension",
+          "[traj][online_planner_2nd][settle_tolerance]")
+{
+    constexpr double v_max = 0x1p+0;
+    constexpr double a_max = 0x1p+1;
+    constexpr double target = 0x1p+3;
+    constexpr double tau = 0x1p-9;  // time-to-go at the probe, inside the decel ramp
+
+    double t_probe = 0.0;
+    double residual_q = 0.0;
+    double residual_v = 0.0;
+
+    {
+        auto probe = make_planner<double>({.v_max = v_max, .a_max = a_max});
+        REQUIRE(probe.update(target).has_value());
+        t_probe = probe.diagnostics().planned_duration - tau;
+        REQUIRE(t_probe > 0.0);
+
+        auto const pt = probe.sample(t_probe);
+        residual_q = std::abs(pt.position(0) - target);
+        residual_v = std::abs(pt.velocity(0));
+
+        // Both residuals are outside the default, so the default-configured
+        // planner is not settled here and each bracket below is a real move.
+        CHECK_FALSE(probe.is_settled());
+    }
+
+    // CAPTURE base-ten exponents rather than the values: Catch2 stringifies a
+    // double in fixed notation, which renders a 1e-6 position residual as "0.0"
+    // and would tell a reader diagnosing a failure the one thing that is untrue
+    // of it.
+    double const residual_q_decades = std::log10(residual_q);
+    double const residual_v_decades = std::log10(residual_v);
+    CAPTURE(residual_q_decades, residual_v_decades);
+
+    REQUIRE(residual_q > 0.0);
+    REQUIRE(residual_v > 0.0);
+
+    // Two quantities, two units, two magnitudes.
+    REQUIRE(residual_q < residual_v);
+
+    auto settled_under = [&](double pos_tol, double vel_tol) {
+        auto planner = make_planner<double>({
+            .v_max = v_max,
+            .a_max = a_max,
+            .position_settle_tol = pos_tol,
+            .velocity_settle_tol = vel_tol,
+        });
+        REQUIRE(planner.update(target).has_value());
+        auto const pt = planner.sample(t_probe);
+
+        // The knob does not move the motion: the sampled state is the one the
+        // default-configured probe produced, bit for bit.
+        REQUIRE(std::abs(pt.position(0) - target) == residual_q);
+        REQUIRE(std::abs(pt.velocity(0)) == residual_v);
+        return planner.is_settled();
+    };
+
+    double const above_q = 2.0 * residual_q;
+    double const above_v = 2.0 * residual_v;
+    double const below_q = 0.5 * residual_q;
+    double const below_v = 0.5 * residual_v;
+
+    // Raising both past their residuals settles a state the default does not:
+    // the position transition moved to a larger position error, and the velocity
+    // transition moved with its own quantity.
+    CHECK(settled_under(above_q, above_v));
+
+    // One field below its residual withholds the verdict on its own, with the
+    // other raised. Each dimension is therefore decided by its own field and the
+    // other cannot rescue it.
+    CHECK_FALSE(settled_under(below_q, above_v));
+    CHECK_FALSE(settled_under(above_q, below_v));
+}
+
+// -- Test 20: the settle policy does not reach the profile computation ---------
+//
+// The planner asks two different questions about distance. sample() asks "is the
+// motion done", which is the policy the fields above carry. The profile
+// computation asks "is this command a numerical no-op", and compares the target
+// against the current position by EXACT equality. A policy tolerance must not be
+// able to answer the second, or it would decide what the planner is allowed to
+// compute.
+TEST_CASE("OnlinePlanner2nd: a wide settle tolerance still plans a far smaller move",
+          "[traj][online_planner_2nd][settle_tolerance]")
+{
+    auto planner = make_planner<double>({
+        .v_max = 0x1p+0,
+        .a_max = 0x1p+1,
+        .position_settle_tol = 0x1p+0,
+        .velocity_settle_tol = 0x1p+0,
+    });
+
+    // Twelve decades below the tolerance the planner was given.
+    constexpr double tiny_target = 0x1p-40;
+
+    REQUIRE(planner.update(tiny_target).has_value());
+
+    auto const& diag = planner.diagnostics();
+    CHECK(diag.disposition == ctrlpp::online_planner_disposition::commanded_profile);
+    CHECK(diag.planned_duration > 0.0);
+
+    // The move is realized in full rather than swallowed by the tolerance.
+    CHECK(planner.sample(diag.planned_duration).position(0) == tiny_target);
 }

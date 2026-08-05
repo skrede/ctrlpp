@@ -48,6 +48,36 @@ for (int i = 0; i < 500; ++i) {
 See [example 08](../../../examples/trajectory/ctrlpp_trajectory_08_online_planner.cpp)
 for a runnable version.
 
+## Deciding When the Axis Has Arrived
+
+`is_settled()` reports whether the last sampled state counts as arrived, and how
+close "arrived" is is the caller's choice rather than the planner's. Each
+dimension has its own field, because they are compared against quantities in
+different units: a distance still to run, a speed, and (on the 3rd-order
+planner) an acceleration.
+
+```cpp
+// An axis that counts as arrived within a tenth of a millimeter, whose encoder
+// resolves nothing finer than a millimeter per second.
+auto planner_result = ctrlpp::online_planner_2nd<double>::create({
+    .v_max = 5.0,
+    .a_max = 2.0,
+    .position_settle_tol = 1e-4,
+    .velocity_settle_tol = 1e-3,
+});
+```
+
+Omitting the fields, as the quick start above does, gives the defaults. Those
+are chosen for `double` and sit roughly seven decades above its rounding on the
+quantities they test, so they state a policy about the machine rather than a
+limit of the arithmetic. A `float` instantiation should set them: on that type
+the defaults sit below the type's own resolution near unity. No setting of them
+changes what the planner computes; they move only the moment `is_settled()`
+flips. The per-field detail is on the
+[2nd-order](../../api/trajectory/online-planner-2nd.md#tuning-the-settle-policy)
+and [3rd-order](../../api/trajectory/online-planner-3rd.md#tuning-the-settle-policy)
+API pages.
+
 ## Target Changes Mid-Motion
 
 A new target set while the planner is still moving does not always produce the
