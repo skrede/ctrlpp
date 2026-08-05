@@ -60,9 +60,32 @@ They are knobs rather than derived constants because no derivation exists for th
 Two different distance questions live in the planner, and they have different answers on purpose.
 
 1. **"Is the motion done?"** is asked by `sample`, at the policy distance above. It is the caller's to choose.
-2. **"Is this command a numerical no-op?"** is asked when a new target arrives. It is not policy and is not tunable. Its position side is an exact comparison, so a target differing from the current position at all is planned in full however wide the settle policy is; its velocity side is answered against a small fixed distance whose derivation belongs with that test rather than with this policy, and is documented there.
+2. **"Is this command a numerical no-op?"** is asked when a new target arrives. It is not policy and is not tunable. Its position side is an exact comparison against zero, so a target differing from the current position at all is planned in full however wide the settle policy is; its velocity side is answered against the resolution of the limit that bounds it, derived below.
+
+Take the axis `v_max = 1`, `a_max = 5` and `double` arithmetic, where `eps = 2.22e-16`.
+
+| Question | Compared against | Value on that axis | Where it comes from |
+|---|---|---|---|
+| Is the motion done? | `velocity_settle_tol` | `1e-9` | Policy. The default is the value the planner used before the field existed. No derivation, because none exists: the speed at which a machine counts as stopped is a property of the machine. |
+| Is this command a numerical no-op? | `1 * eps * v_max` | `2.22e-16` | Derived. One operation forms the compared quantity, the comparison itself, because the planner does no arithmetic on the caller's snapshot before testing it; the scale is the velocity limit, which is the only speed the planner is given and the bound on every speed the profile carries. |
+
+**The gap is about 6.7 decades, and it is deliberate.** A policy tolerance must not decide what the planner is allowed to compute. The settle policy states when the application considers the axis arrived, which is a statement about the machine; the no-op floor states when the arithmetic can no longer tell one command from another, which is a statement about the type and the limits. Collapsing them would let a caller who widens the arrival distance silently stop the planner from computing moves it can represent perfectly well.
 
 The window between the two is the range in which the planner reports the axis arrived while remaining willing to plan a move to a nearer target. Widening the settle policy widens that window. It never narrows what the planner will plan.
+
+#### Constants the planner derives rather than fixes
+
+Nothing in this group is tunable, and none of it is an absolute number. Each is a counted number of rounding operations at the scale of the quantity the comparison is about, with the count enumerated in the header beside the code it guards.
+
+| Decision | Bound | Scale, and why it is that scale |
+|---|---|---|
+| Is the commanded speed zero? | `1 * eps * v_max` | The velocity limit. The count is one because this planner performs no arithmetic on the speed before testing it: it bounds no jerk, so it has no acceleration-nulling phase to run first. |
+| Is the commanded displacement zero? | `4 * eps * v_max^2 / (2 a_max)` | The planner's own stopping distance from full speed. It is intrinsic to the limits and needs no knowledge of the sample period, which the planner is never told. One operation forms the displacement and three form the scale. |
+| Would the move overshoot? | `stop_dist > \|h\| * (1 + 4 * eps)` | Neither. Both sides are lengths the planner has already computed, so the comparison is relative and needs no external scale at all. Three operations form the stopping distance and one the remaining distance. |
+
+**These counts are not the jerk-limited planner's counts, and copying them across would be wrong.** That planner's chains are longer -- thirty-three roundings along its stopping distance where this one has three -- so its bounds are wider by the same factor. A count that is not counted against the code it guards is an unexplained constant wearing a different name.
+
+The overshoot verdict here is scale-invariant for the same reason as the jerk-limited planner's: the same relative shortfall is reported as an overshoot on an axis whose stopping distance is metres and on one whose stopping distance is picometres.
 
 ## Construction
 

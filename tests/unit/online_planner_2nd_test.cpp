@@ -743,3 +743,140 @@ TEST_CASE("OnlinePlanner2nd: a wide settle tolerance still plans a far smaller m
     // The move is realized in full rather than swallowed by the tolerance.
     CHECK(planner.sample(diag.planned_duration).position(0) == tiny_target);
 }
+
+// -- Test 21: the numerical-no-op velocity floor is derived, and it scales ------
+//
+// A separate question from the settle policy above, with a separate owner. The
+// policy says when the application considers the axis arrived; this says when
+// the arithmetic can no longer tell the commanded state from the one already in
+// force. This planner carries no acceleration state, so its short-circuit is
+// decided by two clauses alone: an EXACT comparison of the commanded
+// displacement against zero, and the speed against one unit in the last place at
+// the scale of the velocity limit. The floor moves with the limit rather than
+// sitting at an absolute speed borrowed from an axis nobody named.
+//
+// The count is one because this planner performs no arithmetic on the snapshot
+// before the test. That is why it is not the jerk-limited planner's seven: the
+// chains differ, and copying that number across would be an unexplained constant
+// wearing a different name.
+TEST_CASE("OnlinePlanner2nd: the numerical-no-op velocity floor scales with the limit",
+          "[traj][online_planner_2nd][no_op_floor]")
+{
+    // Three limit sets spanning nearly three decades, ratios held so the sweep is
+    // a sweep of scale and not of branch structure.
+    constexpr std::array<std::array<double, 2>, 3> limit_sets{{
+        {5.0, 10.0},
+        {0.25, 0.5},
+        {40.0, 200.0},
+    }};
+
+    constexpr int command_velocity_rounding_ops = 1;
+
+    int straddles = 0;
+    for (auto const& limits : limit_sets) {
+        double const v_max = limits[0];
+        double const a_max = limits[1];
+        double const velocity_floor = static_cast<double>(command_velocity_rounding_ops)
+                                      * std::numeric_limits<double>::epsilon() * v_max;
+
+        for (double const half_or_double : {0.5, 2.0}) {
+            auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max});
+            planner.reset(0.0);
+            REQUIRE(planner.update(100.0 * v_max).has_value());
+
+            // A time s into the opening acceleration ramp leaves a speed a*s and
+            // a position a*s^2/2, so s places the speed at half the floor and at
+            // twice it.
+            double const s = half_or_double * velocity_floor / a_max;
+            auto const probe = planner.sample(s);
+
+            // Commanding the position just sampled makes the displacement clause
+            // an exact zero, so the speed clause is what decides.
+            REQUIRE(planner.update(probe.position[0]).has_value());
+
+            CAPTURE(v_max, a_max, half_or_double, std::log10(std::abs(probe.velocity[0])),
+                    std::log10(velocity_floor), std::log10(std::abs(probe.position[0])));
+
+            if (half_or_double < 1.0) {
+                REQUIRE(std::abs(probe.velocity[0]) < velocity_floor);
+                REQUIRE(planner.diagnostics().disposition
+                        == ctrlpp::online_planner_disposition::settled);
+                REQUIRE(planner.diagnostics().planned_duration == 0.0);
+                REQUIRE(planner.is_settled());
+            } else {
+                REQUIRE(std::abs(probe.velocity[0]) > velocity_floor);
+                REQUIRE(planner.diagnostics().disposition
+                        != ctrlpp::online_planner_disposition::settled);
+                REQUIRE_FALSE(planner.is_settled());
+            }
+        }
+        ++straddles;
+    }
+
+    // An exact count, not a bound the loop cannot fail.
+    REQUIRE(straddles == 3);
+}
+
+// -- Test 22: the overshoot verdict is relative, so it is scale-invariant -------
+//
+// The overshoot test compares two lengths the planner has already computed --
+// the stopping distance and the remaining distance -- with a slack that is a
+// counted multiple of epsilon rather than a distance. Its verdict is therefore a
+// property of the RATIO of the two lengths and nothing else, and the same
+// relative shortfall must be called an overshoot on an axis whose stopping
+// distance is metres and on one whose stopping distance is picometres.
+//
+// The lower rungs of the ladder are where an absolute slack could not follow: at
+// the smallest limit set the shortfall the axis is asked to resolve is five
+// decades below the absolute slack this comparison used to carry, so that
+// comparison would have reported no overshoot there.
+TEST_CASE("OnlinePlanner2nd: the overshoot verdict is relative and scale-invariant",
+          "[traj][online_planner_2nd][overshoot]")
+{
+    constexpr std::array<std::array<double, 2>, 4> limit_sets{{
+        {5.0, 10.0},
+        {1e-2, 5.0},
+        {1e-4, 5.0},
+        {1e-5, 5.0},
+    }};
+
+    // A relative shortfall many decades above the counted slack, so what is being
+    // tested is the relativity and not the width.
+    constexpr double relative_shortfall = 1e-6;
+
+    int rungs = 0;
+    for (auto const& limits : limit_sets) {
+        double const v_max = limits[0];
+        double const a_max = limits[1];
+
+        auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max});
+        planner.reset(0.0);
+        REQUIRE(planner.update(1000.0 * v_max).has_value());
+
+        double const dt = 4.0 * v_max / a_max / 100.0;
+        double t = 0.0;
+        for (int i = 0; i < 400; ++i) {
+            t = dt * static_cast<double>(i);
+            planner.sample(t);
+        }
+        auto const cruising = planner.sample(t);
+        double const q0 = cruising.position[0];
+        double const v0 = cruising.velocity[0];
+
+        // The planner's own stopping-distance expression, spelled the same way.
+        double const stop_dist = v0 * v0 / (2.0 * a_max);
+        REQUIRE(stop_dist > 0.0);
+
+        REQUIRE(planner.update(q0 + stop_dist * (1.0 - relative_shortfall)).has_value());
+        auto const& diag = planner.diagnostics();
+
+        CAPTURE(v_max, std::log10(v0), std::log10(stop_dist),
+                std::log10(stop_dist * relative_shortfall));
+
+        REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
+        REQUIRE(diag.substitution_reason
+                == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+        ++rungs;
+    }
+    REQUIRE(rungs == 4);
+}

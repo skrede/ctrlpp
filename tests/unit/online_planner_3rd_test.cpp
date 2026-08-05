@@ -424,28 +424,40 @@ TEST_CASE("OnlinePlanner3rd: carry-velocity shape substitution is reported",
     // rather than searched for:
     //
     //  * the planner calls it an overshoot when the stopping distance exceeds
-    //    the remaining distance by more than its own comparison slack, so a
-    //    target short of the stopping point by LESS than one slack passes that
-    //    test;
+    //    the remaining distance by more than its own comparison slack, and that
+    //    slack is RELATIVE: the remaining distance is scaled by one plus a
+    //    counted number of roundings, so a target short of the stopping point
+    //    by less than the stopping distance times that slack passes the test;
     //  * the carry-velocity double-S exists only when the remaining distance is
     //    at least what the transition from the current velocity to rest already
     //    sweeps, which is the stopping distance outright, so a target short of
     //    the stopping point by ANY amount has no such shape.
     //
     // Between the two lies a band of commanded targets one slack wide that the
-    // planner accepts and the shape cannot serve. Command its midpoint: half a
-    // slack is some five hundred times the rounding of a distance this size, so
-    // the band is entered by construction rather than by luck.
+    // planner accepts and the shape cannot serve. Command its midpoint.
     //
     // This test is coupled to the planner's comparison slack by construction:
     // the slack is what opens the band, and a redesign of that constant changes
     // where the band is. That coupling is the point, not an accident of the
-    // test.
-    double constexpr planner_comparison_slack = 1e-12;
-    double const shortfall = planner_comparison_slack / 2.0;
+    // test. The count below is the planner's own: thirty-three roundings along
+    // the stopping-distance chain that reaches the acceleration limit, plus
+    // thirteen along the chain that forms the remaining distance.
+    int constexpr planner_overshoot_rounding_ops = 33 + 13;
+    double const band = stop_dist * static_cast<double>(planner_overshoot_rounding_ops)
+                        * std::numeric_limits<double>::epsilon();
+    double const shortfall = band / 2.0;
     double const target = cruising.q + stop_dist - shortfall;
 
-    CAPTURE(cruising.q, cruising.v, stop_dist, shortfall, target);
+    // The band is now a few tens of units in the last place of the stopping
+    // distance rather than an absolute picometre, so whether the command landed
+    // inside it is no longer self-evident from the arithmetic above: forming the
+    // target rounds twice at the scale of the stopping POINT, which is larger
+    // than the stopping distance. Assert the premise rather than assume it, so a
+    // miss reports itself as a miss instead of as a surprising branch.
+    double const realized_shortfall = stop_dist - (target - cruising.q);
+    CAPTURE(cruising.q, cruising.v, stop_dist, band, shortfall, realized_shortfall, target);
+    REQUIRE(realized_shortfall > 0.0);
+    REQUIRE(realized_shortfall < band);
 
     REQUIRE(planner.update(target).has_value());
 
@@ -866,4 +878,339 @@ TEST_CASE("OnlinePlanner3rd: a wide settle tolerance still plans a far smaller m
 
     // The move is realized in full rather than swallowed by the tolerance.
     CHECK(planner.sample(diag.planned_duration).position(0) == tiny_target);
+}
+
+// -- Test 21: the numerical-no-op floors are derived, and they scale ------------
+//
+// A separate question from the settle policy above, with a separate owner. The
+// policy says when the application considers the axis arrived; this says when
+// the arithmetic can no longer tell the commanded state from the one already in
+// force. The floors are one unit in the last place at the scale of the limit
+// that bounds each quantity, so they move with the limits rather than sitting at
+// an absolute distance borrowed from an axis nobody named.
+//
+// The acceleration clause is the one that decides here, and that is structural
+// rather than incidental: every state this planner reaches on the way to rest
+// leaves the acceleration above its own floor before the velocity reaches
+// velocity's. Sampling a jerk ramp a time s from rest gives an acceleration
+// j*s and a speed j*s^2/2, so the two margins stand in the ratio s*a_max/(2
+// v_max), which is below one for every s short of the whole acceleration
+// stretch. The velocity clause is therefore exercised in the other direction,
+// below, where a state carries a real speed and exactly zero acceleration.
+TEST_CASE("OnlinePlanner3rd: the numerical-no-op floors scale with the limits",
+          "[traj][online_planner_3rd][no_op_floor]")
+{
+    // Three limit sets spanning five decades of acceleration limit, with the
+    // ratios held so the sweep is a sweep of scale and not of branch structure.
+    constexpr std::array<std::array<double, 3>, 3> limit_sets{{
+        {5.0, 10.0, 50.0},
+        {0.25, 0.5, 4.0},
+        {40.0, 200.0, 2000.0},
+    }};
+
+    int straddles = 0;
+    for (auto const& limits : limit_sets) {
+        double const v_max = limits[0];
+        double const a_max = limits[1];
+        double const j_max = limits[2];
+
+        // One operation forms the compared quantity -- the comparison itself --
+        // at the scale of the limit that bounds it.
+        constexpr int command_acceleration_rounding_ops = 1;
+        double const acceleration_floor = static_cast<double>(command_acceleration_rounding_ops)
+                                          * std::numeric_limits<double>::epsilon() * a_max;
+
+        for (double const half_or_double : {0.5, 2.0}) {
+            auto planner = make_planner<double>(
+                {.v_max = v_max, .a_max = a_max, .j_max = j_max});
+            planner.reset(0.0);
+            REQUIRE(planner.update(100.0 * v_max).has_value());
+
+            // A time s into the opening jerk ramp leaves an acceleration j*s and
+            // a speed j*s^2/2, so s is chosen to place the acceleration at half
+            // the floor and at twice it.
+            double const s = half_or_double * acceleration_floor / j_max;
+            auto const probe = planner.sample(s);
+
+            // Commanding the position just sampled makes the position clause an
+            // exact equality, so the two magnitude clauses are what decide.
+            REQUIRE(planner.update(probe.position[0]).has_value());
+
+            CAPTURE(v_max, a_max, j_max, half_or_double,
+                    std::log10(std::abs(probe.acceleration[0])),
+                    std::log10(acceleration_floor), std::log10(std::abs(probe.velocity[0])));
+
+            // The speed left behind is quadratic in s where the acceleration is
+            // linear, so it sits decades below its own floor either way: the
+            // acceleration clause is what flips.
+            REQUIRE(std::abs(probe.velocity[0])
+                    < std::numeric_limits<double>::epsilon() * v_max);
+
+            if (half_or_double < 1.0) {
+                REQUIRE(std::abs(probe.acceleration[0]) < acceleration_floor);
+                REQUIRE(planner.diagnostics().disposition
+                        == ctrlpp::online_planner_disposition::settled);
+                REQUIRE(planner.diagnostics().planned_duration == 0.0);
+            } else {
+                REQUIRE(std::abs(probe.acceleration[0]) > acceleration_floor);
+                REQUIRE(planner.diagnostics().disposition
+                        != ctrlpp::online_planner_disposition::settled);
+            }
+        }
+        ++straddles;
+    }
+
+    // An exact count, not a bound the loop cannot fail.
+    REQUIRE(straddles == 3);
+
+    // The velocity clause, from the other side. At cruise the acceleration is
+    // EXACTLY zero -- the two jerk ramps that built the cruise added and removed
+    // the same value -- so the acceleration clause cannot be what keeps the
+    // short-circuit shut, and the speed is what the planner is left deciding on.
+    int cruises = 0;
+    for (auto const& limits : limit_sets) {
+        auto planner = make_planner<double>(
+            {.v_max = limits[0], .a_max = limits[1], .j_max = limits[2]});
+        planner.reset(0.0);
+        auto const cruising = cruise_up(planner, 1000.0 * limits[0], 0.01, 400);
+        CAPTURE(limits[0], cruising.q, cruising.v);
+
+        REQUIRE(planner.sample(cruising.t).acceleration[0] == 0.0);
+        REQUIRE(std::abs(cruising.v)
+                > std::numeric_limits<double>::epsilon() * limits[0]);
+
+        REQUIRE(planner.update(cruising.q).has_value());
+        REQUIRE(planner.diagnostics().disposition
+                != ctrlpp::online_planner_disposition::settled);
+        ++cruises;
+    }
+    REQUIRE(cruises == 3);
+}
+
+// -- Test 22: the acceleration-nulling phase is emitted when it moves the axis --
+//
+// The phase that brings a starting acceleration to zero used to be gated on the
+// acceleration exceeding an absolute number, which is a comparison with no scale
+// to be against. It is now gated on whether the phase changes anything: over its
+// own duration |a_start| / j_max it changes the velocity by a_start^2 / (2 j_max)
+// and moves the axis by at most v_max * |a_start| / j_max, and it is emitted
+// unless both are below the resolution of the quantity they are measured
+// against. The length side binds first, being linear where the velocity side is
+// quadratic, so the boundary sits where
+//
+//     v_max * a_start / j_max == 5 * eps * v_max^2 / (2 a_max)
+//
+// -- five being two operations for the contribution and three for the scale.
+// Below it the axis is left where it was; above it the phase is emitted and the
+// acceleration is nulled, which is directly observable by sampling at the
+// phase's own duration.
+TEST_CASE("OnlinePlanner3rd: the acceleration-nulling phase is emitted when it moves the axis",
+          "[traj][online_planner_3rd][no_op_floor]")
+{
+    constexpr std::array<std::array<double, 3>, 3> limit_sets{{
+        {5.0, 10.0, 50.0},
+        {0.25, 0.5, 4.0},
+        {40.0, 200.0, 2000.0},
+    }};
+
+    constexpr int nulling_length_rounding_ops = 2;
+    constexpr int nulling_scale_rounding_ops = 3;
+    constexpr int nulling_displacement_rounding_ops = nulling_length_rounding_ops
+                                                      + nulling_scale_rounding_ops;
+
+    int straddles = 0;
+    for (auto const& limits : limit_sets) {
+        double const v_max = limits[0];
+        double const a_max = limits[1];
+        double const j_max = limits[2];
+
+        // The starting acceleration at which the phase's displacement bound
+        // equals the resolution of the stopping distance from full speed.
+        double const a_boundary = static_cast<double>(nulling_displacement_rounding_ops)
+                                  * std::numeric_limits<double>::epsilon() * v_max * j_max
+                                  / (2.0 * a_max);
+
+        for (double const below_or_above : {0.5, 4.0}) {
+            auto planner = make_planner<double>(
+                {.v_max = v_max, .a_max = a_max, .j_max = j_max});
+            planner.reset(0.0);
+            REQUIRE(planner.update(100.0 * v_max).has_value());
+
+            double const s = below_or_above * a_boundary / j_max;
+            auto const probe = planner.sample(s);
+            double const a_start = probe.acceleration[0];
+            REQUIRE(a_start > 0.0);
+
+            // Replan to a far target from that state, then sample at exactly the
+            // duration the nulling phase would occupy.
+            REQUIRE(planner.update(100.0 * v_max).has_value());
+            double const nulling_duration = a_start / j_max;
+            auto const after = planner.sample(s + nulling_duration);
+
+            CAPTURE(v_max, a_max, j_max, below_or_above, std::log10(a_start),
+                    std::log10(a_boundary), std::log10(std::abs(after.acceleration[0]) + 1e-300));
+
+            if (below_or_above < 1.0) {
+                REQUIRE(a_start < a_boundary);
+                // No phase was emitted, so the acceleration is still climbing the
+                // profile's own opening ramp rather than having been nulled.
+                REQUIRE(std::abs(after.acceleration[0]) >= a_start);
+            } else {
+                REQUIRE(a_start > a_boundary);
+                // The phase was emitted and did its job: the acceleration is zero
+                // at its end, to the resolution of the acceleration limit.
+                REQUIRE(std::abs(after.acceleration[0])
+                        < std::numeric_limits<double>::epsilon() * a_max);
+            }
+        }
+        ++straddles;
+    }
+    REQUIRE(straddles == 3);
+}
+
+// -- Test 23: the zero-displacement floor scales with the planner's own limits --
+//
+// The headline consequence of scaling the floor rather than fixing it. The SAME
+// absolute displacement is a real move on one axis and nothing at all on
+// another, because the two axes resolve different lengths. The scale is the
+// planner's own stopping distance from full speed, v_max^2 / (2 a_max), which is
+// intrinsic to the limits it was given and needs no knowledge of the sample
+// period -- which the planner is never told, and which is why an absolute
+// constant was never the right answer here.
+TEST_CASE("OnlinePlanner3rd: the zero-displacement floor scales with the limits",
+          "[traj][online_planner_3rd][no_op_floor]")
+{
+    // One displacement, commanded on both axes.
+    constexpr double displacement = 1e-15;
+
+    constexpr int length_rounding_ops = 12 + 1 + 3;
+
+    // The coarse axis resolves 1.25 m of stopping distance; the fine one
+    // resolves 5 mm. The commanded displacement straddles their two floors.
+    constexpr std::array<std::array<double, 3>, 2> limit_sets{{
+        {5.0, 10.0, 50.0},
+        {1.0, 100.0, 1000.0},
+    }};
+
+    int coarse_axes = 0;
+    int fine_axes = 0;
+    for (auto const& limits : limit_sets) {
+        double const v_max = limits[0];
+        double const a_max = limits[1];
+        double const j_max = limits[2];
+
+        double const length_scale = v_max * v_max / (2.0 * a_max);
+        double const length_floor = static_cast<double>(length_rounding_ops)
+                                    * std::numeric_limits<double>::epsilon() * length_scale;
+
+        auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max, .j_max = j_max});
+        planner.reset(0.0);
+        REQUIRE(planner.update(100.0 * v_max).has_value());
+
+        // A state carrying a speed comfortably above the planner's own speed
+        // floor and a position still at the origin, so the commanded
+        // displacement is not swallowed by the rounding of the position itself.
+        // A time s into the opening jerk ramp leaves a speed j*s^2/2.
+        constexpr int speed_rounding_ops = 7;
+        double const speed_wanted = 20.0 * static_cast<double>(speed_rounding_ops)
+                                    * std::numeric_limits<double>::epsilon() * v_max;
+        double const s = std::sqrt(2.0 * speed_wanted / j_max);
+        auto const probe = planner.sample(s);
+
+        REQUIRE(planner.update(probe.position[0] + displacement).has_value());
+        auto const& diag = planner.diagnostics();
+
+        CAPTURE(v_max, a_max, std::log10(length_scale), std::log10(length_floor),
+                std::log10(displacement), std::log10(std::abs(probe.position[0])),
+                std::log10(std::abs(probe.velocity[0])));
+
+        if (displacement < length_floor) {
+            // Below the floor the commanded displacement is zero to the precision
+            // available, so the planner treats the command as a direction it
+            // cannot resolve and brakes to rest instead of carrying the velocity.
+            REQUIRE(diag.disposition
+                    == ctrlpp::online_planner_disposition::braked_and_replanned);
+            REQUIRE(diag.substitution_reason
+                    == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+            ++coarse_axes;
+        } else {
+            // Above it the same displacement is a move, and is planned as one.
+            REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::commanded_profile);
+            REQUIRE(diag.substitution_reason
+                    == ctrlpp::online_planner_substitution_reason::none);
+            ++fine_axes;
+        }
+    }
+
+    // One of each, asserted exactly. A displacement that fell on the same side of
+    // both floors would leave the scaling untested and this is what says so.
+    REQUIRE(coarse_axes == 1);
+    REQUIRE(fine_axes == 1);
+}
+
+// -- Test 24: the overshoot verdict is relative, so it is scale-invariant -------
+//
+// The overshoot test compares two lengths the planner has already computed, with
+// a slack that is a counted multiple of epsilon rather than a distance. Its
+// verdict is therefore a property of the RATIO of the two lengths and nothing
+// else, and the same relative shortfall must be called an overshoot on an axis
+// whose stopping distance is metres and on one whose stopping distance is
+// picometres.
+//
+// The lower rungs of the ladder are where an absolute slack could not follow: at
+// the smallest limit set the shortfall the axis is asked to resolve is some
+// three decades below the absolute slack this comparison used to carry, so that
+// comparison would have reported no overshoot there.
+TEST_CASE("OnlinePlanner3rd: the overshoot verdict is relative and scale-invariant",
+          "[traj][online_planner_3rd][overshoot]")
+{
+    constexpr std::array<std::array<double, 3>, 4> limit_sets{{
+        {5.0, 10.0, 50.0},
+        {1e-2, 5.0, 50.0},
+        {1e-4, 5.0, 50.0},
+        {1e-5, 5.0, 50.0},
+    }};
+
+    // A relative shortfall many decades above the counted slack, so what is being
+    // tested is the relativity and not the width.
+    constexpr double relative_shortfall = 1e-6;
+
+    int rungs = 0;
+    for (auto const& limits : limit_sets) {
+        double const v_max = limits[0];
+        double const a_max = limits[1];
+        double const j_max = limits[2];
+
+        auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max, .j_max = j_max});
+        planner.reset(0.0);
+
+        // The sampling step spans four times the whole acceleration stretch
+        // a_max / j_max + v_max / a_max over the drive, so the axis is genuinely
+        // CRUISING at every rung rather than still climbing the opening ramp.
+        // That matters: a state still on the ramp carries an acceleration, which
+        // sends the command through the acceleration-nulling phase first and
+        // moves the start of the plan, and the verdict would then be about that
+        // phase rather than about the overshoot comparison this case exists to
+        // exercise.
+        double const step = 4.0 * (a_max / j_max + v_max / a_max) / 100.0;
+        auto const cruising = cruise_up(planner, 1000.0 * v_max, step, 400);
+        REQUIRE_THAT(cruising.v, WithinAbs(v_max, v_max * 1e-9));
+        REQUIRE(planner.sample(cruising.t).acceleration[0] == 0.0);
+
+        double const stop_dist = jerk_limited_stop_distance(cruising.v, a_max, j_max);
+        REQUIRE(stop_dist > 0.0);
+
+        double const target = cruising.q + stop_dist * (1.0 - relative_shortfall);
+        REQUIRE(planner.update(target).has_value());
+        auto const& diag = planner.diagnostics();
+
+        CAPTURE(v_max, std::log10(cruising.v), std::log10(stop_dist),
+                std::log10(stop_dist * relative_shortfall));
+
+        REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
+        REQUIRE(diag.substitution_reason
+                == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+        ++rungs;
+    }
+    REQUIRE(rungs == 4);
 }

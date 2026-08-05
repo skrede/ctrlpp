@@ -287,9 +287,40 @@ class online_planner_2nd
     void compute_profile()
     {
         auto const h_signed = target_ - q_ref_;
-        auto constexpr eps = static_cast<Scalar>(1e-12);
 
-        if (h_signed == Scalar{0} && std::abs(v_ref_) < eps) {
+        // Is the commanded state a numerical no-op -- a command the arithmetic
+        // cannot tell apart from the one already in force?
+        //
+        // This is NOT the settle policy the caller configures. That policy
+        // answers "is the motion done", which is a statement about the machine
+        // and has no derivation. This answers "is there anything left to
+        // compute", which is a statement about the arithmetic and has one. The
+        // two are deliberately separate, and the window between them is wide:
+        // on a unit-scale axis the policy default sits some seven decades above
+        // the floor below. Letting a policy tolerance decide what the planner
+        // is allowed to compute would collapse them into one question, and they
+        // are not one question.
+        //
+        // The displacement clause stays an exact comparison against zero. A
+        // commanded target one unit in the last place away from the reference
+        // position is a different target, and no rounding argument says
+        // otherwise: both are inputs, and neither is the result of a chain this
+        // planner ran.
+        //
+        // The velocity clause compares a caller-supplied snapshot against the
+        // resolution of the limit that bounds it. This function performs no
+        // arithmetic on it before the test, so the honest local count is one
+        // operation, the comparison itself. Whatever error the caller's own
+        // sampling carried into the snapshot is the caller's, and is out of
+        // scope here -- the same scoping the trapezoidal retiming floor applies
+        // to its own. Below the floor the commanded velocity is zero to the
+        // precision the velocity limit leaves available.
+        constexpr int command_velocity_rounding_ops = 1;
+        auto const command_velocity_resolution = Scalar{command_velocity_rounding_ops}
+                                                 * std::numeric_limits<Scalar>::epsilon()
+                                                 * v_max_;
+
+        if (h_signed == Scalar{0} && std::abs(v_ref_) < command_velocity_resolution) {
             set_settled_profile();
             diagnostics_ = online_planner_diagnostics<Scalar>{
                 .disposition = online_planner_disposition::settled,
@@ -307,12 +338,65 @@ class online_planner_2nd
         auto const v0 = v_ref_;
         auto const stop_dist = v0 * v0 / (Scalar{2} * a_max_);
 
+        // The three decisions below ask three different questions about
+        // quantities in two different units, and one number cannot be the right
+        // answer to all of them. Each gets the scale of the quantity it tests
+        // and a count of the operations that formed it.
+
+        // Speed floor. The scale is the velocity limit: it is the only velocity
+        // the planner is given, and every velocity the profile carries is
+        // bounded by it. The count is one because this planner performs no
+        // arithmetic on the speed before the test -- it bounds no jerk, so it
+        // has no acceleration-nulling phase, and the speed the direction and
+        // overshoot tests see is the one the caller sampled. That is why this
+        // count is one where the jerk-limited planner's is seven: the chains
+        // differ, and importing that planner's number would be an unexplained
+        // constant wearing a different name. It coincides in value with the
+        // no-op resolution above because both chains are empty, which is an
+        // agreement of two derivations and not a shared constant.
+        constexpr int speed_rounding_ops = 1;
+        auto const speed_floor = Scalar{speed_rounding_ops}
+                                 * std::numeric_limits<Scalar>::epsilon() * v_max_;
+
+        // Length floor. The scale is the planner's own stopping distance from
+        // full speed, v_max^2 / (2 a_max). That is the right length because it
+        // is intrinsic to the two limits the planner was given and requires no
+        // knowledge of the sample period, which the planner is never told. It
+        // is also the largest operand that enters the comparison rather than
+        // the cancelled result of it: the commanded displacement is a
+        // difference of two positions and inherits their scale, not its own.
+        // One operation forms the displacement, the subtraction above, and
+        // three form the scale: the squared velocity limit, the doubled
+        // acceleration limit and the division.
+        constexpr int displacement_rounding_ops = 1;
+        constexpr int length_scale_rounding_ops = 3;
+        constexpr int length_rounding_ops = displacement_rounding_ops
+                                            + length_scale_rounding_ops;
+        auto const length_scale = v_max_ * v_max_ / (Scalar{2} * a_max_);
+        auto const length_floor = Scalar{length_rounding_ops}
+                                  * std::numeric_limits<Scalar>::epsilon() * length_scale;
+
+        // Overshoot, compared RELATIVELY. Both sides are lengths this planner
+        // has already computed, so the comparison needs no external scale at
+        // all and its slack is the rounding the two chains carry rather than a
+        // distance taken from somewhere else. Three operations form the
+        // stopping distance -- the squared speed, the doubled acceleration
+        // limit and the division -- and one forms the remaining distance. The
+        // chains here are short where the jerk-limited planner's are long,
+        // which is the whole reason its count is not this one.
+        constexpr int stopping_distance_chain_rounding_ops = 3;
+        constexpr int overshoot_rounding_ops = stopping_distance_chain_rounding_ops
+                                               + displacement_rounding_ops;
+        auto const overshoot_slack = Scalar{overshoot_rounding_ops}
+                                     * std::numeric_limits<Scalar>::epsilon();
+
         bool const wrong_direction = (h_signed > Scalar{0} && v0 < Scalar{0})
                                      || (h_signed < Scalar{0} && v0 > Scalar{0})
-                                     || (std::abs(h_signed) < eps && std::abs(v0) > eps);
+                                     || (std::abs(h_signed) < length_floor
+                                         && std::abs(v0) > speed_floor);
         bool const overshoot = !wrong_direction
-                               && (stop_dist > std::abs(h_signed) + eps)
-                               && std::abs(v0) > eps;
+                               && (stop_dist > std::abs(h_signed) * (Scalar{1} + overshoot_slack))
+                               && std::abs(v0) > speed_floor;
 
         if (wrong_direction || overshoot) {
             needs_brake_ = true;

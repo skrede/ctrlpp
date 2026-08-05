@@ -284,13 +284,50 @@ class online_planner_3rd
     /// @cite biagiotti2009 -- Sec. 4.6.1, eq. (4.49)
     void compute_profile()
     {
-        auto constexpr eps = static_cast<Scalar>(1e-12);
         n_phases_ = 0;
+
+        // Is the commanded state a numerical no-op -- a command the arithmetic
+        // cannot tell apart from the one already in force?
+        //
+        // This is NOT the settle policy the caller configures. That policy
+        // answers "is the motion done", which is a statement about the machine
+        // and has no derivation. This answers "is there anything left to
+        // compute", which is a statement about the arithmetic and has one. The
+        // two are deliberately separate, and the window between them is wide:
+        // on a unit-scale axis the policy default sits some seven decades above
+        // the floors below. Letting a policy tolerance decide what the planner
+        // is allowed to compute would collapse them into one question, and they
+        // are not one question.
+        //
+        // The position clause stays an exact comparison. A commanded target one
+        // unit in the last place away from the reference position is a
+        // different target, and no rounding argument says otherwise: both are
+        // inputs, and neither is the result of a chain this planner ran.
+        //
+        // The velocity and acceleration clauses compare a caller-supplied
+        // snapshot against the resolution of the limit that bounds it. This
+        // function performs no arithmetic on either before the test, so the
+        // honest local count is one operation each, the comparison itself.
+        // Whatever error the caller's own sampling carried into the snapshot is
+        // the caller's, and is out of scope here -- the same scoping the
+        // trapezoidal retiming floor applies to its own.
+        //
+        // Below these floors the commanded velocity and acceleration are zero
+        // to the precision the limits leave available, so there is nothing for
+        // a profile to remove.
+        constexpr int command_velocity_rounding_ops = 1;
+        constexpr int command_acceleration_rounding_ops = 1;
+        auto const command_velocity_resolution = Scalar{command_velocity_rounding_ops}
+                                                 * std::numeric_limits<Scalar>::epsilon()
+                                                 * v_max_;
+        auto const command_acceleration_resolution = Scalar{command_acceleration_rounding_ops}
+                                                     * std::numeric_limits<Scalar>::epsilon()
+                                                     * a_max_;
 
         // Check if already settled
         if (target_ == q_ref_
-            && std::abs(v_ref_) < eps
-            && std::abs(a_ref_) < eps) {
+            && std::abs(v_ref_) < command_velocity_resolution
+            && std::abs(a_ref_) < command_acceleration_resolution) {
             T_ = Scalar{0};
             settled_ = true;
             diagnostics_ = online_planner_diagnostics<Scalar>{
@@ -311,9 +348,61 @@ class online_planner_3rd
         Scalar v_start = v_ref_;
         Scalar a_start = a_ref_;
 
-        // Phase 0: Bring acceleration to zero if non-zero
-        if (std::abs(a_start) > eps) {
-            auto const T_az = std::abs(a_start) / j_max_;
+        // Phase 0: bring the acceleration to zero, when doing so changes
+        // anything.
+        //
+        // The question is not whether the starting acceleration is nonzero --
+        // that comparison has no scale to be against, and a floor placed
+        // directly on the acceleration is an absolute length borrowed from an
+        // axis nobody named. The question is whether the phase that nulls it
+        // moves the axis by anything the arithmetic can still see. The phase
+        // lasts |a_start| / j_max, and over that time it
+        //   * changes the velocity by exactly a_start^2 / (2 j_max), and
+        //   * moves the axis by at most v_max * |a_start| / j_max, which is the
+        //     leading term v_start * T_az with the speed replaced by the only
+        //     bound the planner has for it.
+        // Both follow from the limits alone, which is what makes them the
+        // better question.
+        //
+        // Velocity side: three operations form the contribution -- the square,
+        // the doubled jerk limit and the division -- compared against the
+        // resolution of the velocity limit. Length side: two operations form
+        // the bound -- the product and the division -- compared against the
+        // resolution of the stopping distance from full speed, which three more
+        // form: the squared velocity limit, the doubled acceleration limit and
+        // the division. That distance is the right length scale here for the
+        // same reason it is below: it is intrinsic to the two limits the
+        // planner was given and needs no knowledge of the sample period, which
+        // the planner is never told.
+        //
+        // The phase is emitted unless BOTH contributions are unresolvable.
+        // Skipping it when only the velocity contribution vanishes would leave
+        // the axis a resolvable distance from where the plan assumes it is: the
+        // length contribution is linear in the starting acceleration where the
+        // velocity contribution is quadratic, so on any ordinary axis the
+        // length side binds first, by several decades. Below both, the phase
+        // moves nothing that survives being written down.
+        constexpr int nulling_velocity_rounding_ops = 3;
+        constexpr int nulling_length_rounding_ops = 2;
+        constexpr int nulling_scale_rounding_ops = 3;
+        constexpr int nulling_displacement_rounding_ops = nulling_length_rounding_ops
+                                                          + nulling_scale_rounding_ops;
+
+        auto const abs_a_start = std::abs(a_start);
+        auto const nulling_velocity_change = abs_a_start * abs_a_start / (Scalar{2} * j_max_);
+        auto const nulling_displacement_bound = v_max_ * abs_a_start / j_max_;
+        auto const nulling_length_scale = v_max_ * v_max_ / (Scalar{2} * a_max_);
+
+        bool const nulling_moves_the_velocity =
+            nulling_velocity_change > Scalar{nulling_velocity_rounding_ops}
+                                          * std::numeric_limits<Scalar>::epsilon() * v_max_;
+        bool const nulling_moves_the_axis =
+            nulling_displacement_bound > Scalar{nulling_displacement_rounding_ops}
+                                             * std::numeric_limits<Scalar>::epsilon()
+                                             * nulling_length_scale;
+
+        if (nulling_moves_the_velocity || nulling_moves_the_axis) {
+            auto const T_az = abs_a_start / j_max_;
             auto const j_az = (a_start > Scalar{0}) ? -j_max_ : j_max_;
 
             // State after this phase:
@@ -385,11 +474,61 @@ class online_planner_3rd
     /// from the motion alone: both respect every limit and both reach the target.
     auto plan_from_zero_accel(Scalar q0, Scalar v0) -> substitution_outcome
     {
-        auto constexpr eps = static_cast<Scalar>(1e-12);
         auto const h_signed = target_ - q0;
 
+        // The four decisions below ask four different questions about
+        // quantities in two different units, and one number cannot be the right
+        // answer to all of them. Each gets the scale of the quantity it tests
+        // and a count of the operations that formed it.
+
+        // Speed floor. The scale is the velocity limit: it is the only velocity
+        // the planner is given, and every velocity the profile carries is
+        // bounded by it. The count is the roundings this planner performed on
+        // the speed being tested, taken over the branches that reach here and
+        // maximized. On the branch that plans straight from the caller's
+        // snapshot it performed none, and the snapshot's own error is the
+        // caller's, out of scope exactly as the trapezoidal retiming floor
+        // scopes its own. On the branch that nulled a starting acceleration
+        // first, seven operations formed the speed: the phase duration's
+        // division, the product of the starting acceleration with it, the three
+        // products of the jerk term, and the two sums. The scaling by one half
+        // inside that term is exact in a binary radix and is counted anyway,
+        // which makes the total an upper bound rather than an estimate. Below
+        // the floor the commanded state is at rest to the precision available.
+        constexpr int speed_rounding_ops = 7;
+        auto const speed_floor = Scalar{speed_rounding_ops}
+                                 * std::numeric_limits<Scalar>::epsilon() * v_max_;
+
+        // Length floor. The scale is the planner's own stopping distance from
+        // full speed, v_max^2 / (2 a_max). That is the right length because it
+        // is intrinsic to the two limits the planner was given and requires no
+        // knowledge of the sample period, which the planner is never told. It
+        // is also the largest operand that enters the comparison rather than
+        // the cancelled result of it: the commanded displacement is a
+        // difference of two positions and inherits their scale, not its own.
+        //
+        // The count breaks out as twelve for the position the
+        // acceleration-nulling phase leaves behind -- the phase duration's
+        // division, the two operations of the speed term, the four of the
+        // squared term and the five of the cubed term -- plus one for the
+        // subtraction that forms the commanded displacement from it, plus three
+        // for the scale itself: the squared velocity limit, the doubled
+        // acceleration limit and the division. On the branch that nulled no
+        // acceleration the first term is zero, so the total is again an upper
+        // bound. Below the floor the commanded displacement is zero to the
+        // precision the limits leave available.
+        constexpr int nulling_position_rounding_ops = 12;
+        constexpr int displacement_rounding_ops = 1;
+        constexpr int length_scale_rounding_ops = 3;
+        constexpr int length_rounding_ops = nulling_position_rounding_ops
+                                            + displacement_rounding_ops
+                                            + length_scale_rounding_ops;
+        auto const length_scale = v_max_ * v_max_ / (Scalar{2} * a_max_);
+        auto const length_floor = Scalar{length_rounding_ops}
+                                  * std::numeric_limits<Scalar>::epsilon() * length_scale;
+
         // If velocity is zero (or nearly), plan rest-to-rest directly
-        if (std::abs(v0) < eps) {
+        if (std::abs(v0) < speed_floor) {
             plan_rest_to_rest(q0);
             return {};
         }
@@ -398,12 +537,42 @@ class online_planner_3rd
         auto const stop_info = compute_stop(v0);
         auto const stop_dist = stop_info.dist;
 
-        // Check if velocity points wrong way or overshoots
-        bool const wrong_way = (h_signed > eps && v0 < -eps)
-                               || (h_signed < -eps && v0 > eps)
-                               || (std::abs(h_signed) < eps);
+        // Direction. A length is compared against the length floor and a speed
+        // against the speed floor, and the two never meet inside one
+        // expression: a boolean that holds a distance and a speed to the same
+        // number is a statement about neither.
+        bool const wrong_way = (h_signed > length_floor && v0 < -speed_floor)
+                               || (h_signed < -length_floor && v0 > speed_floor)
+                               || (std::abs(h_signed) < length_floor);
+
+        // Overshoot, compared RELATIVELY. Both sides are lengths this planner
+        // has already computed, so the comparison needs no external scale at
+        // all and its slack is the rounding the two chains carry rather than a
+        // distance taken from somewhere else.
+        //
+        // The count is the sum along the two chains. The stopping distance's
+        // deeper chain is the one that reaches the acceleration limit: the
+        // jerk-phase duration is one, the constant-phase duration two, and the
+        // three-phase distance twenty-nine -- four for the speed after the
+        // first ramp, six for its distance, two for the speed after the
+        // constant stretch, six for its distance and eleven for the final ramp
+        // -- plus the sign multiplication, which is exact and is counted anyway:
+        // thirty-three. The shorter chain, where the acceleration limit is not
+        // reached, is four: a division, a square root and two products. The
+        // deeper branch is the maximum and is the one written down. The
+        // remaining distance carries the twelve of the nulled-acceleration
+        // position plus one for the subtraction, and one alone on the branch
+        // that nulled nothing.
+        constexpr int stopping_distance_chain_rounding_ops = 33;
+        constexpr int remaining_distance_chain_rounding_ops = nulling_position_rounding_ops
+                                                              + displacement_rounding_ops;
+        constexpr int overshoot_rounding_ops = stopping_distance_chain_rounding_ops
+                                               + remaining_distance_chain_rounding_ops;
+        auto const overshoot_slack = Scalar{overshoot_rounding_ops}
+                                     * std::numeric_limits<Scalar>::epsilon();
         bool const overshoot = !wrong_way
-                               && (std::abs(stop_dist) > std::abs(h_signed) + eps);
+                               && (std::abs(stop_dist)
+                                   > std::abs(h_signed) * (Scalar{1} + overshoot_slack));
 
         if (wrong_way || overshoot) {
             // Velocity points away from the target or is too large to stop in the

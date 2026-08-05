@@ -62,9 +62,33 @@ They are knobs rather than derived constants because no derivation exists for th
 Two different distance questions live in the planner, and they have different answers on purpose.
 
 1. **"Is the motion done?"** is asked by `sample`, at the policy distance above. It is the caller's to choose.
-2. **"Is this command a numerical no-op?"** is asked when a new target arrives. It is not policy and is not tunable. Its position side is an exact comparison, so a target differing from the current position at all is planned in full however wide the settle policy is; its velocity and acceleration sides are answered against a small fixed distance whose derivation belongs with that test rather than with this policy, and is documented there.
+2. **"Is this command a numerical no-op?"** is asked when a new target arrives. It is not policy and is not tunable. Its position side is an exact comparison, so a target differing from the current position at all is planned in full however wide the settle policy is; its velocity and acceleration sides are answered against the resolution of the limit that bounds each, derived below.
+
+Take the axis `v_max = 1`, `a_max = 5`, `j_max = 50` and `double` arithmetic, where `eps = 2.22e-16`.
+
+| Question | Compared against | Value on that axis | Where it comes from |
+|---|---|---|---|
+| Is the motion done? | `velocity_settle_tol` | `1e-9` | Policy. The default is the value the planner used before the field existed. No derivation, because none exists: the speed at which a machine counts as stopped is a property of the machine. |
+| Is this command a numerical no-op? | `1 * eps * v_max` | `2.22e-16` | Derived. One operation forms the compared quantity, the comparison itself, because the planner does no arithmetic on the caller's snapshot before testing it; the scale is the velocity limit, which is the only speed the planner is given and the bound on every speed the profile carries. |
+
+**The gap is about 6.7 decades, and it is deliberate.** A policy tolerance must not decide what the planner is allowed to compute. The settle policy states when the application considers the axis arrived, which is a statement about the machine; the no-op floor states when the arithmetic can no longer tell one command from another, which is a statement about the type and the limits. Collapsing them would let a caller who widens the arrival distance silently stop the planner from computing moves it can represent perfectly well.
+
+The acceleration side reads the same way: the policy is `acceleration_settle_tol`, and the no-op floor is `1 * eps * a_max`, which is `1.11e-15` on that axis.
 
 The window between the two is the range in which the planner reports the axis arrived while remaining willing to plan a move to a nearer target. Widening the settle policy widens that window. It never narrows what the planner will plan.
+
+#### Constants the planner derives rather than fixes
+
+Nothing in this group is tunable, and none of it is an absolute number. Each is a counted number of rounding operations at the scale of the quantity the comparison is about, with the count enumerated in the header beside the code it guards.
+
+| Decision | Bound | Scale, and why it is that scale |
+|---|---|---|
+| Is the commanded speed zero? | `7 * eps * v_max` | The velocity limit. Seven operations form the speed on the branch that first nulls a starting acceleration; on the branch that does not, the speed is the caller's snapshot and its error is the caller's. |
+| Is the commanded displacement zero? | `16 * eps * v_max^2 / (2 a_max)` | The planner's own stopping distance from full speed, which is `0.1` m on the axis above. It is intrinsic to the limits and needs no knowledge of the sample period, which the planner is never told. The count is twelve for the position the acceleration-nulling phase leaves behind, one for the subtraction that forms the displacement, and three for the scale itself. |
+| Would the move overshoot? | `\|stop_dist\| > \|h\| * (1 + 46 * eps)` | Neither. Both sides are lengths the planner has already computed, so the comparison is relative and needs no external scale at all. The count is thirty-three along the stopping-distance chain that reaches the acceleration limit and thirteen along the chain that forms the remaining distance. |
+| Is the acceleration-nulling phase worth emitting? | Its velocity change `a^2 / (2 j_max)` against `3 * eps * v_max`, AND its displacement bound `v_max * a / j_max` against `5 * eps * v_max^2 / (2 a_max)` | Both limits. The phase is emitted unless both are unresolvable, because a phase that moves the axis a resolvable distance is not a no-op even if the speed it changes is unresolvable. |
+
+Two consequences worth knowing about. First, **the same absolute displacement is treated differently on axes with different limits**, which is the point of scaling the floor: an axis whose stopping distance is 1.25 m treats a commanded femtometre as zero, and one whose stopping distance is 5 mm plans it as a move. Second, **the overshoot verdict is scale-invariant**: the same relative shortfall is reported as an overshoot on an axis whose stopping distance is metres and on one whose stopping distance is picometres.
 
 ## Construction
 

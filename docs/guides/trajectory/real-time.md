@@ -78,6 +78,18 @@ flips. The per-field detail is on the
 and [3rd-order](../../api/trajectory/online-planner-3rd.md#tuning-the-settle-policy)
 API pages.
 
+A separate and much tighter question decides whether a new command is worth
+computing at all, and it is not tunable. Those floors are derived from the type's
+rounding and the axis's own limits rather than fixed at an absolute distance, so
+they move with the limits: the same commanded femtometre is a real move on a
+finely limited axis and nothing at all on a coarse one. The gap between the
+arrival policy above and those floors is about seven decades on a unit-scale
+axis, and it is deliberate -- a policy tolerance must not decide what the planner
+is allowed to compute. Both are tabulated with their derivations on the
+[2nd-order](../../api/trajectory/online-planner-2nd.md#the-window-this-leaves-open)
+and [3rd-order](../../api/trajectory/online-planner-3rd.md#the-window-this-leaves-open)
+API pages.
+
 ## Target Changes Mid-Motion
 
 A new target set while the planner is still moving does not always produce the
