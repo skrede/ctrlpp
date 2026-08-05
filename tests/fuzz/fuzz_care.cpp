@@ -1,7 +1,14 @@
 #include "ctrlpp/control/care.h"
 
+#include "care_quad_reference.h"
+
+#include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
+
 #include <cmath>
+#include <cstdio>
 #include <limits>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -54,17 +61,112 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     Q_raw << clamp_entry(buf[6]), clamp_entry(buf[7]),
              clamp_entry(buf[8]), clamp_entry(buf[9]);
 
-    // Reject a rank-deficient Q_raw: CARE's stabilizing solution is only
-    // uniquely well-posed under detectability of (A, sqrt(Q)), and a full-rank
-    // (invertible) Q_raw makes Q = Q_raw^T Q_raw strictly positive definite,
-    // which trivially satisfies detectability for any A (an invertible output
-    // map observes the full state directly). A rank-deficient Q_raw can make Q
-    // singular in a direction that happens to align with an unstable mode of
-    // A, giving a large-but-finite P whose absolute residual error grows with
-    // its own magnitude; same rejection idiom as the controllability check
-    // above.
-    if(!Q_raw.colPivHouseholderQr().isInvertible())
+    // ENTITLEMENT: the weight factor must make every unstable and marginal mode
+    // of A visible. The stabilizing solution is uniquely well posed only under
+    // detectability of the pair (A, weight factor), so detectability is what the
+    // target must establish before it is entitled to demand an answer at all --
+    // and once it is established, the binary128 policy iteration below converges
+    // to the SAME stabilizing solution the library claims to have found, which
+    // is what earns the forward-error framing of the verdict.
+    //
+    // The test is a rank test on the stacked pencil [A - lambda*I ; Q_raw] at
+    // every eigenvalue lambda of A with non-negative real part. The stack has
+    // full column rank at every such lambda exactly when no mode on or right of
+    // the imaginary axis is unobservable through the weight.
+    //
+    // This REPLACES an invertibility test on the factor. Invertibility is
+    // sufficient for detectability and far from necessary -- an invertible
+    // output map observes the whole state -- so requiring it rejected every
+    // rank-deficient weight, which is the ordinary regulator case where the
+    // weight is an output map's Gram factor. That case was not explored at all
+    // before this filter; it is now, deliberately.
+    //
+    // THE OPERAND IS THE RAW FACTOR AND NEVER THE ASSEMBLED WEIGHT. The raw
+    // factor is a valid square-root factor of the assembled weight, so all the
+    // information this test needs already lives in it, and testing the factor
+    // means never forming the product and never paying the halving of available
+    // digits that squaring costs. The same fact was met from the other side in
+    // this tree: a quadratic form of an eigenvector evaluated against an
+    // ASSEMBLED weight cancelled away completely and returned exactly 0.0, while
+    // the identical quantity regrouped as a squared norm against the FACTOR did
+    // the subtraction where it is representable and returned 1e-13.
+    //
+    // The eigenvalues are taken as complex and the stack is factorized in
+    // complex arithmetic. Of a conjugate pair only the conjugate with
+    // non-negative real part is tested: the other is its mirror and has the same
+    // rank. Stacking a real system twice the size instead was considered and
+    // rejected -- it doubles both dimensions and both operation counts below and
+    // buys nothing.
+    //
+    // THE THRESHOLD IS THE SUM OF TWO COUNTED TERMS AND CARRIES NO FREE
+    // COEFFICIENT.
+    //
+    //   (1) The factorization's own backward error. A column-pivoted Householder
+    //       QR decides numerical rank at min(rows, cols) * eps relative to its
+    //       largest pivot; that is the default the installed linear-algebra
+    //       library applies, and its own source attributes the formula to Higham
+    //       and notes it is the same one its LDLT already carries. The largest
+    //       pivot of a column-pivoted factorization IS the largest column norm
+    //       of the operand, so this term is a threshold relative to the stack's
+    //       own norm, available without a second pass over it. Here
+    //       min(rows, cols) is the column count, i.e. the state dimension.
+    //   (2) The eigenvalue's own backward error. The shift is COMPUTED, not
+    //       exact. A backward-stable eigensolver returns the exact eigenvalues
+    //       of a nearby matrix whose perturbation is on the order of the operand
+    //       count times epsilon times the norm (Golub & Van Loan, Matrix
+    //       Computations, 4th ed., Sec. 7.5), and that perturbation enters the
+    //       stack through the shifted block, whose multiplier is the identity
+    //       and so has unit operator norm. This is the same counted form the
+    //       continuous convergence anchor uses for its spectral margin, counted
+    //       at the state dimension the same way.
+    constexpr int state_dimension = 2;
+    constexpr int stack_rank_ops = state_dimension;
+    constexpr int eigenvalue_rounding_ops = state_dimension;
+
+    Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> a_eigensystem(A, false);
+    if(a_eigensystem.info() != Eigen::Success)
         return 0;
+
+    // `eigenvalues()` returns the vector BY VALUE, so the spectrum is named
+    // before an entry of it is read. Reading through the unnamed call deduces an
+    // expression holding a reference into a temporary that dies at the end of
+    // its own statement; that failure is silent, optimization-dependent, and has
+    // already turned continuous-integration legs of this tree red.
+    const Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>>::EigenvalueType a_spectrum =
+        a_eigensystem.eigenvalues();
+    const double a_norm = A.norm();
+
+    for(int index = 0; index < state_dimension; ++index)
+    {
+        const std::complex<double> mode = a_spectrum(index);
+        if(mode.real() < 0.0)
+            continue;
+
+        Eigen::Matrix<std::complex<double>, 4, 2> pencil;
+        pencil.topRows(2)    = A.cast<std::complex<double>>();
+        pencil.bottomRows(2) = Q_raw.cast<std::complex<double>>();
+        for(int diagonal = 0; diagonal < state_dimension; ++diagonal)
+            pencil(diagonal, diagonal) -= mode;
+
+        const Eigen::ColPivHouseholderQR<Eigen::Matrix<std::complex<double>, 4, 2>> pencil_qr(pencil);
+        const double rank_threshold =
+            double{stack_rank_ops} * std::numeric_limits<double>::epsilon() * pencil_qr.maxPivot()
+            + double{eigenvalue_rounding_ops} * std::numeric_limits<double>::epsilon() * a_norm;
+
+        // The rank is counted here rather than read off the factorization's own
+        // rank(), which can only apply a threshold RELATIVE to its largest pivot
+        // and therefore cannot carry the second term at all.
+        const Eigen::Matrix<std::complex<double>, 4, 2>& pencil_factor = pencil_qr.matrixQR();
+        int pencil_rank = 0;
+        for(int diagonal = 0; diagonal < state_dimension; ++diagonal)
+        {
+            if(std::abs(pencil_factor(diagonal, diagonal)) > rank_threshold)
+                ++pencil_rank;
+        }
+
+        if(pencil_rank != state_dimension)
+            return 0;
+    }
 
     // Make Q positive semi-definite: Q = Q_raw^T * Q_raw
     Eigen::Matrix<double, 2, 2> Q = Q_raw.transpose() * Q_raw;
@@ -130,40 +232,116 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     if(!P.allFinite())
         abort();
 
-    // Live residual oracle: A'P + PA - PB R^-1 B'P + Q ~ 0.
+    // THE ACCURACY ORACLE. It does not consult the component it is judging.
+    //
+    // The answer must retain more than half of binary64's significand, measured
+    // as its relative distance to an independently computed solution of the same
+    // pose: Newton-Kleinman policy iteration at binary128, solving a continuous
+    // Lyapunov equation per step and seeded from the returned solution. No
+    // Hamiltonian matrix, no Schur decomposition, no Eigen, and above all no
+    // call to the library's own acceptance machinery.
+    //
+    // That last exclusion is the point. The library requires a verdict from that
+    // machinery BEFORE it returns, so any oracle built on it is downstream of a
+    // decision the library has already made and cannot contradict it.
+    //
+    // The reference is seeded with the RETURNED SOLUTION, so the iteration
+    // starts from the gain that solution implies and converges to the nearby
+    // exact solution of the same pose. That is what makes the distance below a
+    // forward error rather than a residual. It is also why the detectability
+    // filter above had to land first: without it there is no guarantee the
+    // iteration converges to the same stabilizing solution the library claims to
+    // have found, and this framing would be unearned.
+    //
+    // THE STEP BUDGET IS DERIVED, AND UNDER-SIZING IT CANNOT CAUSE A FALSE
+    // ABORT. Newton-Kleinman doubles the number of correct bits per step inside
+    // its basin, so reaching binary128's 113-bit significand from a seed with a
+    // single correct bit takes ceil(log2(113)) = 7 steps; the factor of four
+    // covers the pre-basin approach from a stabilizing but inaccurate gain. A
+    // budget that were too small would produce ABSTENTIONS, never aborts, so
+    // this constant bounds cost rather than correctness. The observed maximum on
+    // the continuous side is not stated here: it is a property of the population
+    // a campaign draws, and no campaign has drawn one on this domain yet.
+    constexpr int reference_significand_bits = 113;
+    constexpr int quadratic_steps_to_full_precision = []
+    {
+        int steps = 0;
+        for(int bits = 1; bits < reference_significand_bits; bits *= 2)
+            ++steps;
+        return steps;
+    }();
+    constexpr int reference_step_budget = 4 * quadratic_steps_to_full_precision;
+
+    double A_reference[2][2];
+    double B_reference[2];
+    double Q_reference[2][2];
+    double P_reference[2][2];
+    for(int i = 0; i < 2; ++i)
+    {
+        B_reference[i] = B(i, 0);
+        for(int j = 0; j < 2; ++j)
+        {
+            A_reference[i][j] = A(i, j);
+            Q_reference[i][j] = Q(i, j);
+            P_reference[i][j] = P(i, j);
+        }
+    }
+
+    const auto reference = ctrlpp::fuzz::quad_refine_care(A_reference, B_reference, Q_reference, R(0, 0), P_reference, reference_step_budget);
+
+    // A reference that has not converged is not a reference. Its distance to the
+    // answer measures nothing, so this pose yields no verdict. An absence of
+    // evidence is not evidence of a defect, and it is emphatically not an abort.
+    // The same disposition covers a distance that does not resolve because the
+    // reference's own magnitude is zero: there is no scale to be relative to.
+    ctrlpp::fuzz::quad distance_squared{};
+    if(reference.converged && ctrlpp::fuzz::quad_relative_distance_squared(P_reference, reference.P, distance_squared))
+    {
+        // The half-significand criterion, derived from the radix in one
+        // movement. Retaining more than half of a radix-two type's fractional
+        // significand bits means a relative forward error below two to the minus
+        // half that width; for binary64 that is 2^-26, which is exactly the
+        // square root of the type's own epsilon, 2^-52. Squaring both sides
+        // removes the square root -- one at binary128 would be a library call
+        // and so a new dependency -- and leaves the comparison below. Nothing
+        // here is fitted, and NO CONDITIONING FACTOR APPEARS ANYWHERE, which is
+        // why the question of what to do when an honest conditioning factor runs
+        // to infinity does not have to be answered at all.
+        const ctrlpp::fuzz::quad margin_squared{std::numeric_limits<double>::epsilon()};
+        if(distance_squared > margin_squared)
+            abort();
+    }
+
+    // THE RESIDUAL IS REPORTED AND NEVER COMPARED, AND THAT IS DELIBERATE.
+    //
+    // It is computed by a different arithmetic route than the library uses -- an
+    // explicit inverse of R rather than the solve the library performs -- but on
+    // the continuous side that buys nothing an oracle may act on. The discrete
+    // twin can bound its own residual because it has two arithmetic routes into
+    // ONE estimator and their agreement is a real property. Here there is only
+    // one estimator of continuous accuracy, and it is precisely the one this
+    // oracle must not consult. Any bound placed on this residual would therefore
+    // be a second tolerance whose sole justification is that it is loose, which
+    // is the exact defect this target carried and the reason its oracle was
+    // rewritten. THE VALUE ESTABLISHES NOTHING ABOUT ACCURACY. The accuracy
+    // criterion is the independent forward error above; this quantity exists so
+    // a campaign can report its distribution beside that verdict.
     Eigen::Matrix<double, 2, 2> AtP = A.transpose() * P;
     Eigen::Matrix<double, 1, 1> Rinv = R.inverse();
     Eigen::Matrix<double, 2, 2> cross = P * B * Rinv * B.transpose() * P;
     Eigen::Matrix<double, 2, 2> resid = AtP + AtP.transpose() - cross + Q;
 
-    // Backward-error tolerance: the residual is a sum of four n x n terms, each
-    // formed from a chain of matrix products; the standard floating-point
-    // matrix-multiplication backward-error bound accumulates rounding error
-    // proportional to n per term, so the sum of the terms' own norms (the
-    // "term_scale" below) is the honest base scale rather than just the raw
-    // input norms -- this matters because AtP and cross frequently sit at a
-    // much larger common magnitude than their difference (the residual itself),
-    // i.e. this is a catastrophic-cancellation regime, and a tolerance based on
-    // the canceled result's own size would be far too tight. ctrlpp::care's own
-    // construction additionally forms the off-diagonal Hamiltonian block
-    // B R^-1 B^T (see care.h, Laub 1979) before the sign-function/Schur solve,
-    // so that block's scale B^2/R is folded into the same term-magnitude sum.
-    // The overall multiplicative margin below was calibrated empirically: run
-    // against an extended fuzzing session (hundreds of thousands of random
-    // controllable, well-scaled inputs) with no false-positive abort on the
-    // library's correct default CARE path, following the same "eps-and-norm-
-    // normalized residual vs. a generous integer-multiple threshold" style LAPACK's
-    // own eigenvalue/Schur test suite (e.g. dget*, ddrvst) uses to absorb the
-    // constant factors backward-error theory leaves unspecified.
-    constexpr double lapack_style_margin = 20000.0;
-    const double control_weight_scale = B.squaredNorm() / R(0, 0);
-    const double term_scale = 2.0 * AtP.norm() + P.norm() + cross.norm() + Q.norm() + control_weight_scale;
-    const double n = static_cast<double>(P.rows());
-    const double tol = lapack_style_margin
-        * std::numeric_limits<double>::epsilon() * n * n * n * std::max(1.0, term_scale);
-
-    if(resid.norm() > tol)
-        abort();
+    // Reporting is off unless a campaign asks for it. This target processes
+    // millions of inputs, so an unconditional line per input would be a cost
+    // rather than a report; the lookup is done once. The reference's step count
+    // rides along, because separating a budget-limited abstention from genuine
+    // ill-conditioning needs the count and not just the verdict.
+    static const bool report_residual = std::getenv("CTRLPP_FUZZ_REPORT_CARE_RESIDUAL") != nullptr;
+    if(report_residual)
+    {
+        std::fprintf(stderr, "care residual %.17g reference_steps %d reference_converged %d\n",
+                     resid.norm(), reference.steps, reference.converged ? 1 : 0);
+    }
 
     // P must be positive semi-definite: LDLT pivot-sign check against the same
     // floor the library's own extraction uses, called rather than re-spelled so
@@ -172,6 +350,62 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     if(ldlt.info() != Eigen::Success
        || ldlt.vectorD().minCoeff() < ctrlpp::detail::psd_pivot_floor<double, 2>(P))
         abort();
+
+    // THE CLOSED-LOOP STABILITY CHECK, ONE-SIDED AND WITH A STATED RESOLUTION.
+    //
+    // A stabilizing solution must place every closed-loop eigenvalue strictly in
+    // the open left half-plane. This is the one accuracy-independent property
+    // that still means something on the draws where the reference yields no
+    // verdict, which is why it is kept as its own check rather than folded into
+    // the forward error above.
+    //
+    // The margin is counted, not chosen: a backward-stable eigensolver returns
+    // the exact eigenvalues of a nearby matrix whose perturbation is on the
+    // order of the operand count times epsilon times that matrix's norm (Golub &
+    // Van Loan, Matrix Computations, 4th ed., Sec. 7.5), and this file counts a
+    // two-by-two the same way the solver counts its own operations. A zero
+    // margin was rejected: a computed abscissa is not exactly zero on every
+    // toolchain, and asserting against zero asserts a toolchain rather than a
+    // property.
+    //
+    // THE CHECK IS STRICTLY ONE-SIDED. It aborts only on a RESOLVED refutation,
+    // a real part above the POSITIVE margin. Inside the band between the
+    // negative and the positive margin it yields NO VERDICT. The near-defective
+    // filter above tests the OPEN-LOOP state matrix, not this closed loop, so on
+    // a near-defective closed loop the eigenvalue condition number amplifies the
+    // backward error and the counted bound understates the uncertainty; a
+    // two-sided assertion there would abort on a resolution this check does not
+    // have. A margin exists to give the check a stated resolution, and reading
+    // it honestly means declining inside it.
+    //
+    // The library's own quasi-triangular spectral predicate is deliberately not
+    // called here, for the same reason its acceptance machinery is not: the
+    // solver already required a verdict from it before returning.
+    constexpr int spectral_rounding_ops = state_dimension;
+
+    // Every operand is named before a member or a column of it is read. The
+    // unnamed form deduces a block holding a reference into a returned temporary
+    // that dies at the end of the statement, which is silent,
+    // optimization-dependent and has already turned five continuous-integration
+    // legs of this tree red.
+    const Eigen::Matrix<double, 1, 2> gain = R.inverse() * B.transpose() * P;
+    const Eigen::Matrix<double, 2, 2> closed_loop = A - B * gain;
+
+    Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>> closed_loop_eigensystem(closed_loop, false);
+    if(closed_loop_eigensystem.info() == Eigen::Success)
+    {
+        const Eigen::EigenSolver<Eigen::Matrix<double, 2, 2>>::EigenvalueType closed_loop_spectrum =
+            closed_loop_eigensystem.eigenvalues();
+        const double stability_margin = double{spectral_rounding_ops}
+                                        * std::numeric_limits<double>::epsilon()
+                                        * closed_loop.norm();
+
+        for(int index = 0; index < state_dimension; ++index)
+        {
+            if(closed_loop_spectrum(index).real() > stability_margin)
+                abort();
+        }
+    }
 
     return 0;
 }
