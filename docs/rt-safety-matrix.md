@@ -514,8 +514,8 @@ do, and no interior point was measured here.
 
 On the equal-dimension line the whole-chain peak grows by a factor of 3.7 to 4.8
 per doubling at the top rung -- an exponent of 1.87 to 2.26 -- so the quadratic
-growth these rows were previously ARGUED to have is now measured to hold for the
-whole chain and not only for the dominant object. `manifold_ukf`, whose only
+growth is measured to hold for the whole chain and not only for the dominant
+object. `manifold_ukf`, whose only
 axis is the measurement dimension, grows at 1.46. The exponent is not constant
 down the ladder: every row is markedly sub-quadratic between the first two rungs,
 where a fixed overhead that does not scale with the dimension still dominates.
