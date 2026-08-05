@@ -67,7 +67,7 @@ this table was written.
 | `particle_filter` | YES (guard covers resample, roughening and the covariance read) | YES (fixed particle count) | YES | YES | YES (injected seeded RNG) | `estimation_nomalloc_test` (particle_filter case forces resampling every update and reads `covariance()` inside the armed window; twin filters seeded `std::mt19937_64{42}` must agree bitwise over 64 steps in both the estimate and the reported uncertainty) |
 | `complementary_filter` | YES | YES (closed form) | YES | YES | YES | `estimation_nomalloc_test` (complementary_filter case); leg 1 + `embedded_core_float` |
 | dsp: `biquad` / `cascaded_biquad` / `vector_biquad` / `fir` | YES | YES (fixed sections and taps) | YES | YES | YES | `dsp_nomalloc_test` (one case per filter); leg 1 + `embedded_core_float` |
-| Riccati steady-state solve: `dare` / `care` | YES **on the heap, and the heap is not the binding cost here** (see the stack note below this table, which a hard-real-time caller must read before sizing a task stack: at `NX = 8` the whole chain reaches 42,760 bytes) | YES (Eigen Schur iteration bound; sign-function Newton capped at `max_iters = 40` in `detail/care_sign_function.h`, followed by a fixed-size rescale-and-factorize extraction. On every accepted solve, on **every** continuous method tag and on the discrete solver, fixed-size checks of the returned solution run before it is reported: the discrete path solves a fixed-size Stein system of dimension `NX(NX+1)/2` on the symmetric subspace to estimate the answer's own forward error, and every continuous path evaluates the counted Riccati residual and one non-accumulating real Schur factorization of the closed-loop spectrum, from the single definition in `detail/care_postconditions.h`. All three continuous tags reach that definition -- the sign-function path, the real-Schur path and the balanced-Schur path, the last verifying against the caller's Hamiltonian rather than the balanced one -- so no tag carries a bound the others do not. The balanced tag additionally runs a DGEBAL-style balance ahead of all of this. It allocates nothing, and it terminates because every accepted rescale strictly reduces that row's norm sum by the factor 19/20 using power-of-two scalings clamped to the scalar type's range. Its sweep count is data-dependent, and it is now **bounded at compile time** the way `max_iters` bounds the Newton loop: the cap is `2 * NX * (max_exponent - min_exponent)`, derived from the scalar type and the dimension rather than tuned, and reaching it stops the sweep and returns the partially balanced matrix. Stopping early is safe because balancing is a similarity preconditioner and every applied step updates `H` and `D` together, so `H_returned == D^-1 * H_original * D` holds exactly at any cut point -- a capped run is less well balanced, never wrong. The cap is a guarantee rather than a budget: over 550,000 draws with entries spread across `2^-280` to `2^+280`, the worst sweep counts observed were 2 / 12 / 43 / 45 at NX = 1 / 2 / 4 / 8 against ceilings of 4,090 / 8,180 / 16,360 / 32,720, so the worst measured run sits about three orders of magnitude below its ceiling. Budget from the measurement and treat the cap as the backstop) | YES | YES | YES | `dare_care_nomalloc_test` (NX = 2, 4, 8 across the Schur, sign-function, and balanced-Schur variants); `care_convergence_anchor_test` (fixed-seed near-axis and simple-input scale sweeps under all three method tags, plus magnitude-band anchors); `riccati_magnitude_test` (both ends of the arithmetic range); leg 1 witness calls `dare` and `care`. The allocation cell's heap claim is proved by `dare_care_nomalloc_test`; its stack claim is proved by the `-fstack-usage` frames and runtime watermarks in the stack note below, which are host `double` measurements, now corroborated on silicon by the ESP32 stack probe in `examples/embedded/esp32/main/app_main.cpp` -- the on-target `float` peaks track the host `double` prediction to within the scalar width, and that probe also establishes that at `float` the ACCEPTANCE CHECK, not the stack, is what bounds the usable state dimension |
+| Riccati steady-state solve: `dare` / `care` | YES **on the heap, and the heap is not the binding cost here** (see the stack note below this table, which a hard-real-time caller must read before sizing a task stack: at `NX = 8` the whole chain reaches 41,304 bytes) | YES (Eigen Schur iteration bound; sign-function Newton capped at `max_iters = 40` in `detail/care_sign_function.h`, followed by a fixed-size rescale-and-factorize extraction. On every accepted solve, on **every** continuous method tag and on the discrete solver, fixed-size checks of the returned solution run before it is reported: the discrete path solves a fixed-size Stein system of dimension `NX(NX+1)/2` on the symmetric subspace to estimate the answer's own forward error, and every continuous path evaluates the counted Riccati residual and one non-accumulating real Schur factorization of the closed-loop spectrum, from the single definition in `detail/care_postconditions.h`. All three continuous tags reach that definition -- the sign-function path, the real-Schur path and the balanced-Schur path, the last verifying against the caller's Hamiltonian rather than the balanced one -- so no tag carries a bound the others do not. The balanced tag additionally runs a DGEBAL-style balance ahead of all of this. It allocates nothing, and it terminates because every accepted rescale strictly reduces that row's norm sum by the factor 19/20 using power-of-two scalings clamped to the scalar type's range. Its sweep count is data-dependent, and it is now **bounded at compile time** the way `max_iters` bounds the Newton loop: the cap is `2 * NX * (max_exponent - min_exponent)`, derived from the scalar type and the dimension rather than tuned, and reaching it stops the sweep and returns the partially balanced matrix. Stopping early is safe because balancing is a similarity preconditioner and every applied step updates `H` and `D` together, so `H_returned == D^-1 * H_original * D` holds exactly at any cut point -- a capped run is less well balanced, never wrong. The cap is a guarantee rather than a budget: over 550,000 draws with entries spread across `2^-280` to `2^+280`, the worst sweep counts observed were 2 / 12 / 43 / 45 at NX = 1 / 2 / 4 / 8 against ceilings of 4,090 / 8,180 / 16,360 / 32,720, so the worst measured run sits about three orders of magnitude below its ceiling. Budget from the measurement and treat the cap as the backstop) | YES | YES | YES | `dare_care_nomalloc_test` (NX = 2, 4, 8 across the Schur, sign-function, and balanced-Schur variants); `care_convergence_anchor_test` (fixed-seed near-axis and simple-input scale sweeps under all three method tags, plus magnitude-band anchors); `riccati_magnitude_test` (both ends of the arithmetic range); leg 1 witness calls `dare` and `care`. The allocation cell's heap claim is proved by `dare_care_nomalloc_test`; its stack claim is proved by the `-fstack-usage` frames and runtime watermarks in the stack note below, which are host `double` measurements, now corroborated on silicon by the ESP32 stack probe in `examples/embedded/esp32/main/app_main.cpp` -- the on-target `float` peaks track the host `double` prediction to within the scalar width, and that probe also establishes that at `float` the ACCEPTANCE CHECK, not the stack, is what bounds the usable state dimension |
 | velocity profile construction: `trapezoidal_trajectory::create` / `double_s_trajectory::create` | YES (the profile is returned by value inside a `ctrlpp::expected`; nothing on the path owns storage) | YES (closed form on the trapezoidal path and on every double-S path but one; the cruise-free double-S rise is a bracket halved to exhaustion, bounded by one more than the significand width, so 25 evaluations for `float` and 54 for `double`) | YES | YES | YES (no random source; identical inputs exhaust the bracket at the identical step) | `trajectory_nomalloc_test` (construction is outside the armed window, as for every other type there); leg 1 + `embedded_core_float`, which instantiate both `create` factories |
 | trajectory evaluation (polynomial paths, velocity profiles, `cubic_spline`, `smoothing_spline`, `bspline_trajectory`) | YES | YES (closed form; B-spline recursion bounded by compile-time degree) | YES | YES | YES | `trajectory_nomalloc_test` (evaluate cases for cubic/quintic/septic, trapezoidal, double-S, modified sin/trap, cubic_spline, smoothing_spline, bspline_trajectory); leg 1 + `embedded_core_float` |
 | online planners: `online_planner_2nd` / `online_planner_3rd` | YES | YES (closed-form segment logic) | YES | YES | YES | `trajectory_nomalloc_test` (update and sample cases for both planners); leg 1 + `embedded_core_float` |
@@ -85,47 +85,86 @@ The `allocation-free?` column is a **heap** statement. For most rows in this
 table that is the whole resource story, because their hot paths hold a handful
 of fixed-size matrices. It is not the whole story for the Riccati solve: it
 runs a fixed-size decomposition whose dimension is the caller's `NX`, its frames
-grow as `NX^3`, and on the four-to-sixteen-kibibyte task stacks this milestone's
-own targets run, **the stack is what will break a caller, not the heap.**
+grow fast in that dimension, and on the four-to-sixteen-kibibyte task stacks this
+milestone's own targets run, **the stack is what will break a caller, not the
+heap.** How fast is measured below rather than asserted: the acceptance check's
+dominant object is the `M x M` forward-error operator with `M = NX(NX+1)/2`, so
+its ASYMPTOTIC growth is the fourth power of `NX`, but over the measured range
+the frame grows 17.4-fold for a four-fold increase in `NX`, which sits between
+the square and the fourth power because the operator has not yet swamped the
+part of the frame that does not scale with it.
 
-Two numbers per state dimension. The first is the acceptance check's own frame,
-as the compiler's `-fstack-usage` report gives it. The second is the deepest
-disturbed word measured at runtime over the whole `dare` chain, which is the
-number a task stack must actually cover. Both are given for the shipped header,
-alongside the same chain with no acceptance check on it at all, so the cost of
-the check is separable from the cost of the solve.
+Four numbers per state dimension, at input dimension 1, all four taken by
+`tools/stack_watermark.sh` in one run. The first is the acceptance check's own
+frame as the compiler's `-fstack-usage` report gives it, and the second is the
+deepest frame anywhere in the chain with the function that owns it, which is not
+the same function at every dimension. The third is the deepest disturbed word
+measured at runtime over the whole `dare` chain, which is the number a task
+stack must actually cover. The fourth is the same measurement on the solve
+ALONE -- the symplectic operand factorization, the symplectic build, and the
+real-Schur reorder and Riccati extraction, with the acceptance check and the gain
+formation taken off the end -- so the cost of the check is separable from the
+cost of the solve.
 
-| `NX` | acceptance-check frame | whole-chain peak, shipped | whole-chain peak, no check at all |
-|---:|---:|---:|---:|
-| 2 | 864 | 5,352 | 5,352 |
-| 4 | 2,400 | 11,688 | 9,416 |
-| 6 | 6,432 | 23,144 | 17,112 |
-| 8 | 15,056 | **42,760** | 28,168 |
+| `NX`, input dimension held at 1 | acceptance-check frame | deepest frame | function owning it | whole-chain peak, shipped | whole-chain peak, solve alone |
+|---:|---:|---:|---|---:|---:|
+| 2 | 864 | 2,304 | `swap_real_schur_2x2_general` | 4,552 | 3,368 |
+| 4 | 2,400 | 2,400 | `estimate_riccati_forward_error` | 11,176 | 8,176 |
+| 6 | 6,432 | 6,432 | `estimate_riccati_forward_error` | 21,912 | 13,560 |
+| 8 | 15,056 | 15,056 | `estimate_riccati_forward_error` | **41,304** | 25,416 |
+
+**At two states the acceptance check is NOT the deepest frame in the chain**, and
+a reader who took the first column for the chain's maximum would be low by a
+factor of 2.7 there. The two coincide from four states up.
 
 Supported maximum state dimension, from the whole-chain peak, strict: no margin
 for the caller's own frames and none for RTOS overhead.
 
-| task stack | supported `NX`, shipped | supported `NX`, no check at all |
+| task stack | supported `NX`, shipped, input dimension held at 1 | supported `NX`, solve alone, input dimension held at 1 |
 |---|---|---|
-| 4 KiB | **none** | **none** |
-| 8 KiB | `NX <= 2` | `NX <= 2` |
-| 16 KiB | `NX <= 4` | `NX <= 4` |
+| 4 KiB | **none** | `NX <= 2` |
+| 8 KiB | `NX <= 2` | `NX <= 4` |
+| 16 KiB | `NX <= 4` | `NX <= 6` |
 | 32 KiB | `NX <= 6` | `NX <= 8` |
 | 48 KiB | `NX <= 8` | `NX <= 8` |
 | 64 KiB | `NX <= 8` | `NX <= 8` |
 
-**Read the first three rows before the last three.** Across the whole
-four-to-sixteen-kibibyte band the supported maximum is the same under every
-construction including none at all, so it is a property of the solve rather than
-of the check: `dare` needs 17,112 bytes at six states and 28,168 at eight with
-no acceptance check whatsoever. Turning the check off does not buy a small-stack
-target a larger problem. It changes the answer in exactly one band, at 32 KiB.
+**The acceptance check costs exactly one rung of this ladder on every task stack
+from 4 KiB through 32 KiB, and nothing at all above that.** It is not a rounding
+effect at the small end: at 4 KiB the shipped chain does not fit at any state
+dimension while the solve alone fits two states, and the shipped chain reaches
+41,304 bytes at eight states against the solve's own 25,416. A caller who cannot
+afford that rung is choosing between a smaller plant and an unverified answer,
+and this table is what that choice costs. Above 32 KiB the check is free in
+these terms, because both constructions run out of ladder at eight states rather
+than out of stack.
 
 **Provenance.** These are HOST measurements: `g++ (GNU) 16.1.1 20260728`,
-`-std=c++20 -O2`, no `-march` (driver default `-mtune=generic -march=x86-64`),
-x86-64 Linux, `double`, runtime watermarks taken on a pthread with a 64 MiB
-stack against a zero-byte harness floor. A target's own frames differ with its
-ABI, register file and calling convention.
+`-std=c++20 -O2 -fno-exceptions -fno-rtti -pthread`, no `-march` (driver default
+`-mtune=generic -march=x86-64`), x86-64 Linux, `double`, Eigen 3.4.1, corpus the
+discrete damped chain at **input dimension 1**, runtime watermarks taken on a
+pthread with a 64 MiB stack against a zero-byte harness floor and a 1,024-byte
+harness gap. A target's own frames differ with its ABI, register file and
+calling convention.
+
+**The input dimension and the linear-algebra release are part of that provenance
+and not details of it, and both were varied rather than assumed fixed.** Same
+instrument, same flags, same corpus:
+
+| what was varied | `NX = 2` | `NX = 4` | `NX = 6` | `NX = 8` |
+|---|---:|---:|---:|---:|
+| whole-chain peak, three inputs instead of one | +80 | +256 | +448 | +80 |
+| whole-chain peak, Eigen 3.4.0 instead of 3.4.1 | -16 | -96 | -176 | -176 |
+| acceptance-check frame, Eigen 3.4.0 instead of 3.4.1 | **-48** | -16 | 0 | 0 |
+
+The whole-chain shifts are 0.2% to 2.3%, small enough not to move any entry in
+either ladder above and large enough that a figure quoted without its input
+dimension cannot be reproduced. The frame shift is 5.6% at two states, and it
+matters more than its size suggests: **the 864 above is an Eigen 3.4.1 figure and
+the corresponding 3.4.0 figure is 816**, so a reader who measures against the
+release the test tree fetches will not reproduce the first cell of the first
+column. Re-run `tools/stack_watermark.sh` under your own pairing rather than
+reading across.
 
 ### On silicon, and what it does to the table above
 
@@ -140,19 +179,23 @@ own peak rather than a running minimum over a sweep:
 
 | `NX` | on-silicon peak, `float` | host peak, `double` | host / board | accepted? |
 |---:|---:|---:|---:|:--|
-| 2 | 3,100 | 5,352 | 1.73x | solved |
+| 2 | 3,100 | 4,552 | 1.47x | solved |
 | 3 | 4,160 | -- | -- | refused |
-| 4 | 5,932 | 11,688 | 1.97x | solved |
+| 4 | 5,932 | 11,176 | 1.88x | solved |
 | 5 | 8,336 | -- | -- | refused |
-| 6 | 11,500 | 23,144 | 2.01x | refused |
-| 8 | 20,560 | 42,760 | 2.08x | refused |
+| 6 | 11,500 | 21,912 | 1.91x | refused |
+| 8 | 20,560 | 41,304 | 2.01x | refused |
 
-**The ratio converges on exactly the scalar width.** It is 1.73x at `NX = 2` and
-climbs to 2.08x at `NX = 8`, which is what a halved scalar predicts for a chain
+**The ratio converges on exactly the scalar width.** It is 1.47x at `NX = 2` and
+climbs to 2.01x at `NX = 8`, which is what a halved scalar predicts for a chain
 whose cost is dominated by `NX`-dimensioned arrays and diluted at small `NX` by
 fixed overhead that does not scale with the scalar. The host table is therefore
 usable as written for `double` and halves for `float`; it is not refuted and it
-is not to be replaced by these figures.
+is not to be replaced by these figures. **The two columns do not share an input
+dimension**: the host column is a single-input pose throughout, while the board
+probe drives one input at `NX = 2, 3, 5` and two at `NX = 4, 6, 8`. The ratio is
+therefore a statement about the scalar across that pair of pose families and not
+a conversion factor to apply cell by cell.
 
 **Supported maximum ON THE STACK for this board: `NX = 4`, leaving 2,256 bytes of
 an 8,192-byte task stack.** That is the stack answer only -- the accuracy gate
@@ -260,44 +303,281 @@ not only the Riccati one. Six further rows run a fixed-size decomposition whose
 dimension the CALLER chooses, so the same question the Riccati row was forced to
 answer applies to them: `kalman_filter` and `ekf` factorize the `NY x NY`
 innovation covariance, `ukf` and `manifold_ukf` do that and additionally hold a
-`2 * NX + 1` sigma-point set live across the propagation, `mekf` does the same at
-the error-state dimension, and static `nmpc` is bounded by its caller-controlled
+sigma-point set live across the propagation, `mekf` does the same at the
+error-state dimension, and static `nmpc` is bounded by its caller-controlled
 decision and constraint dimensions.
 
-**These were MEASURED rather than argued out of a measurement**, because an
-argument about a row's size is exactly what left the Riccati row's cell wrong.
-Deepest single frame per module, `-fstack-usage`, at the dimensions the unit
-tests instantiate:
+**Two dimensions, not one, and they do not have the same names on every row.**
+`kalman_filter`, `ekf` and `ukf` take a state dimension and a measurement
+dimension. `mekf` takes a BIAS dimension `NB` and a measurement dimension, and
+its error state is the DERIVED `NE = 3 + NB`, so the grid runs over what a caller
+picks and reports what that induces. `manifold_ukf` takes a measurement dimension
+and nothing else: its state is a rotation, so its state dimension is three by
+construction and is not a caller's to choose. Four rows below therefore carry a
+two-dimensional measurement and the fifth carries a one-dimensional one, and the
+fifth says so rather than presenting five readings of one configuration as a
+trend.
 
-| row | deepest frame | function | instantiated at |
-|---|---:|---|---|
-| `kalman_filter` | 448 | `make` | `<double, 2, 1, 1>` |
-| `ekf` | 320 | `update` | `<double, 2, 1, 1>` |
-| `mekf` | 1,520 | `update_covariance` | `<double, 3, 3>` |
-| `manifold_ukf` | 1,744 | `update` | attitude configuration |
+### What each column is, and what the ladder can and cannot resolve
 
-**What this establishes and what it does not.** It establishes that at these
-dimensions the estimator frames are an order of magnitude below the Riccati
-acceptance check's, whose own frame reaches 15,056 bytes at `NX = 8`. The
-estimators' dominant object is the `NY x NY` (or `NB x NB`) innovation
-covariance, so their frames grow QUADRATICALLY in the caller's dimension, where
-the Riccati path's forward-error estimate grows as the FOURTH power of `NX` --
-its operator is `M x M` with `M = NX(NX+1)/2`. That difference in growth, not the
-absolute figures, is why these rows do not carry the Riccati row's supported-
-maximum table.
+Every row below carries a pair of tables. The first is the measurement:
 
-It does NOT establish a whole-chain runtime watermark, and it does NOT sweep the
-caller's dimension. Both are owed before any row here could carry a supported
-maximum the way the Riccati row does. **A caller at a large `NY` should measure
-rather than extrapolate from this table**, and `nmpc` carries no figure at all
-here: its decision and constraint dimensions are bounded by the caller and no
-frame was taken for it.
+- **deepest single frame** -- the largest frame the compiler's `-fstack-usage`
+  report attributes to any one function in the chain, with the function named.
+  This is a LOWER BOUND on what a task stack must hold, because the report
+  attributes nothing to callees.
+- **whole-chain peak** -- the deepest disturbed word measured at runtime over
+  `predict` followed by `update`, painted as one block. This is the number a task
+  stack must actually cover. The construction and one warm-up step happen outside
+  the painted window, matching the definition the `allocation-free?` column uses.
+- The peak is given on three lines through the grid: both dimensions equal, the
+  measurement dimension swept with the other held, and the other swept with the
+  measurement dimension held. **Every column heading names what it holds.**
 
-**Provenance.** `g++ (GNU) 16.1.1 20260728`, `-std=c++20 -O2 -DNDEBUG
--fno-exceptions -fno-rtti`, no `-march`, x86-64 Linux, `double`. HOST
-measurements. A target's own frames differ with its ABI, register file and
-calling convention -- as the ESP32 capture above shows, where the `float` peaks
-run at roughly half the host `double` figures.
+The second table is the supported maximum by task stack. The dimension ladder is
+GEOMETRIC, so an entry names the largest MEASURED rung that fits and says nothing
+whatever about the dimensions between rungs. It is not a claim that the next
+integer up does not fit.
+
+The harness floor read zero on every one of the sixty-eight measurements behind
+the tables below, printed beside each figure by the instrument, so every peak is
+attributable to the call rather than to the harness. Each figure reproduced
+byte-identically across two independent runs of the whole grid.
+
+### `kalman_filter`
+
+The frame column belongs to the equal-dimension build.
+
+| dimension | deepest single frame | function owning it | peak, `NX` = `NY`, nothing held | peak, `NY` swept, `NX` held at 4 | peak, `NX` swept, `NY` held at 4 |
+|---:|---:|---|---:|---:|---:|
+| 2 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 2,056 | 2,376 | 2,424 |
+| 4 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 3,416 | 3,416 | 3,416 |
+| 8 | 6,624 | `kalman_filter::update_covariance` | 11,928 | 6,264 | 6,792 |
+| 16 | 25,088 | `kalman_filter::update_covariance` | 33,128 | 13,144 | 20,184 |
+| 32 | 98,848 | `kalman_filter::update_covariance` | **158,712** | 41,688 | 71,224 |
+
+Strict: no margin for the caller's own frames and none for RTOS overhead.
+
+| task stack | largest fitting rung, `NX` = `NY`, nothing held | largest fitting `NY`, `NX` held at 4 | largest fitting `NX`, `NY` held at 4 |
+|---|---|---|---|
+| 4 KiB | 4 | 4 | 4 |
+| 8 KiB | 4 | 8 | 8 |
+| 16 KiB | 8 | 16 | 8 |
+| 32 KiB | 8 | 16 | 16 |
+| 48 KiB | 16 | 32 | 16 |
+| 64 KiB | 16 | 32 | 16 |
+
+### `ekf`
+
+The frame column belongs to the equal-dimension build.
+
+| dimension | deepest single frame | function owning it | peak, `NX` = `NY`, nothing held | peak, `NY` swept, `NX` held at 4 | peak, `NX` swept, `NY` held at 4 |
+|---:|---:|---|---:|---:|---:|
+| 2 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 1,832 | 2,664 | 2,408 |
+| 4 | 1,568 | `ekf::update` | 3,368 | 3,368 | 3,368 |
+| 8 | 10,704 | `ekf::update` | 15,688 | 7,000 | 9,048 |
+| 16 | 49,968 | `ekf::update` | 62,952 | 23,240 | 26,440 |
+| 32 | 201,392 | `ekf::update` | **245,752** | 64,088 | 85,672 |
+
+Strict: no margin for the caller's own frames and none for RTOS overhead.
+
+| task stack | largest fitting rung, `NX` = `NY`, nothing held | largest fitting `NY`, `NX` held at 4 | largest fitting `NX`, `NY` held at 4 |
+|---|---|---|---|
+| 4 KiB | 4 | 4 | 4 |
+| 8 KiB | 4 | 8 | 4 |
+| 16 KiB | 8 | 8 | 8 |
+| 32 KiB | 8 | 16 | 16 |
+| 48 KiB | 8 | 16 | 16 |
+| 64 KiB | 16 | 32 | 16 |
+
+### `ukf`
+
+The frame column belongs to the equal-dimension build. The sigma-point set is
+`2 * NX + 1` points held live across the propagation, so this row pays for the
+state dimension twice: once in the covariance it factors and once in the set.
+
+| dimension | deepest single frame | function owning it | peak, `NX` = `NY`, nothing held | peak, `NY` swept, `NX` held at 4 | peak, `NX` swept, `NY` held at 4 |
+|---:|---:|---|---:|---:|---:|
+| 2 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 2,344 | 2,952 | 3,112 |
+| 4 | 2,704 | `ukf::update` | 4,088 | 4,088 | 4,088 |
+| 8 | 8,704 | `ukf::update` | 12,272 | 7,544 | 8,640 |
+| 16 | 35,376 | `ukf::update` | 46,976 | 20,344 | 26,832 |
+| 32 | 135,568 | `ukf::update` | **212,488** | 60,008 | 128,648 |
+
+Strict: no margin for the caller's own frames and none for RTOS overhead.
+
+| task stack | largest fitting rung, `NX` = `NY`, nothing held | largest fitting `NY`, `NX` held at 4 | largest fitting `NX`, `NY` held at 4 |
+|---|---|---|---|
+| 4 KiB | 4 | 4 | 4 |
+| 8 KiB | 4 | 8 | 4 |
+| 16 KiB | 8 | 8 | 8 |
+| 32 KiB | 8 | 16 | 16 |
+| 48 KiB | 16 | 16 | 16 |
+| 64 KiB | 16 | 32 | 16 |
+
+The 4 KiB entry in the first column clears by **8 bytes** at four states and four
+outputs: 4,088 against 4,096. Read it as "does not fit" unless the whole rest of
+the task is the empty frame this measurement was taken in -- and see the
+linear-algebra release paragraph below, which turns that eight bytes into a
+measured sign flip rather than a caution.
+
+### `manifold_ukf`
+
+**This row carries ONE caller-controlled dimension.** Its state is a rotation, so
+the covariance it propagates is 3 x 3 whatever the caller does, and there is no
+second axis to sweep or hold. Every figure below is taken with the rotation state
+at its structural three and the measurement dimension swept.
+
+| `NY` | deepest single frame | function owning it | whole-chain peak, rotation state held at 3 |
+|---:|---:|---|---:|
+| 2 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 3,008 |
+| 4 | 2,048 | `manifold_ukf::update` | 3,776 |
+| 8 | 3,312 | `manifold_ukf::update` | 5,648 |
+| 16 | 12,288 | `manifold_ukf::update` | 17,936 |
+| 32 | 31,040 | `manifold_ukf::update` | **49,472** |
+
+Strict: no margin for the caller's own frames and none for RTOS overhead.
+
+| task stack | largest fitting `NY`, rotation state held at 3 |
+|---|---|
+| 4 KiB | 4 |
+| 8 KiB | 8 |
+| 16 KiB | 8 |
+| 32 KiB | 16 |
+| 48 KiB | 16 |
+| 64 KiB | 32 |
+
+### `mekf`
+
+**The caller picks the BIAS dimension `NB`; the error state `NE = 3 + NB` is
+derived from it** and is what the covariance recursion is sized by. The tables
+grid over `NB` and report `NE` beside it, because a grid over `NE` would describe
+configurations no caller can reach. `NB < 3` does not instantiate at all -- the
+propagation subtracts the leading three bias elements from the gyro rate -- so
+the ladder's first rung exists on the measurement axis and not on the bias axis.
+The frame column belongs to the equal-dimension build.
+
+| `NB` | `NE` | deepest single frame | function owning it | peak, `NB` = `NY`, nothing held | peak, `NY` swept, `NB` held at 4 | peak, `NB` swept, `NY` held at 4 |
+|---:|---:|---:|---|---:|---:|---:|
+| 2 | 5 | -- | does not instantiate | does not instantiate | 4,840 | does not instantiate |
+| 4 | 7 | 4,064 | `mekf::update` | 6,776 | 6,776 | 6,776 |
+| 8 | 11 | 21,392 | `mekf::update` | 29,272 | 12,760 | 20,376 |
+| 16 | 19 | 68,816 | `mekf::update` | 84,904 | 25,112 | 57,592 |
+| 32 | 35 | 262,784 | `mekf::update` | **310,840** | 74,200 | 152,648 |
+
+Strict: no margin for the caller's own frames and none for RTOS overhead.
+
+| task stack | largest fitting rung, `NB` = `NY`, nothing held | largest fitting `NY`, `NB` held at 4 | largest fitting `NB`, `NY` held at 4 |
+|---|---|---|---|
+| 4 KiB | no measured rung | no measured rung | no measured rung |
+| 8 KiB | 4 | 4 | 4 |
+| 16 KiB | 4 | 8 | 4 |
+| 32 KiB | 8 | 16 | 8 |
+| 48 KiB | 8 | 16 | 8 |
+| 64 KiB | 8 | 16 | 16 |
+
+"No measured rung" is not "nothing fits": `NB = 3` is a legal configuration and
+was not measured, and the smallest measured configuration on the measurement axis
+needs 4,840 bytes against 4 KiB's 4,096.
+
+### The two dimensions INTERACT, and that is measured rather than assumed
+
+The grid exists to answer whether growth in one dimension depends on the value
+held in the other. It does, on all four two-dimensional rows, and the evidence is
+in the tables above rather than in a further sweep.
+
+Take the null hypothesis that the cost is additively separable -- that a state
+dimension and a measurement dimension each contribute a term and nothing depends
+on the pair. Under it, the equal-dimension peak at rung `d` is predictable from
+the two held-dimension lines as `W(d, 4) + W(4, d) - W(4, 4)`. Measured against
+prediction, at the top rung:
+
+| row | predicted at rung 32 | measured at rung 32 | measured / predicted |
+|---|---:|---:|---:|
+| `kalman_filter` | 109,496 | 158,712 | 1.45x |
+| `ekf` | 146,392 | 245,752 | 1.68x |
+| `ukf` | 184,568 | 212,488 | 1.15x |
+| `mekf` | 220,072 | 310,840 | 1.41x |
+
+**Every row exceeds its separable prediction, and the excess grows with the
+dimension**: `ekf` runs 1.08x above prediction at rung 2 and 1.68x above it at
+rung 32. So a caller cannot size one dimension from a table taken at another
+value of the second, which is exactly why every heading above names what it
+holds.
+
+What this does NOT establish is the SHAPE of that interaction away from the three
+lines measured. Each axis was swept at one held value, so the tables locate the
+interaction and do not describe it. Describing it is what an interior fill would
+do, and no interior point was measured here.
+
+### Growth, stated from the measurement
+
+On the equal-dimension line the whole-chain peak grows by a factor of 3.7 to 4.8
+per doubling at the top rung -- an exponent of 1.87 to 2.26 -- so the quadratic
+growth these rows were previously ARGUED to have is now measured to hold for the
+whole chain and not only for the dominant object. `manifold_ukf`, whose only
+axis is the measurement dimension, grows at 1.46. The exponent is not constant
+down the ladder: every row is markedly sub-quadratic between the first two rungs,
+where a fixed overhead that does not scale with the dimension still dominates.
+
+Against the Riccati row measured under the same instrument, at eight states and
+eight outputs the four two-dimensional rows sit at 11,928 to 29,272 bytes where
+the discrete Riccati solve at eight states sits at 41,304. The gap closes with
+dimension and reverses: at thirty-two those four are past 150,000 bytes and the
+Riccati row was not measured there.
+
+### Provenance
+
+`g++ (GNU) 16.1.1 20260728`, `-std=c++20 -O2 -fno-exceptions -fno-rtti -pthread`,
+no `-march` (driver default `-mtune=generic -march=x86-64`), x86-64 Linux,
+`double`, Eigen 3.4.1. HOST measurements. Runtime watermarks taken on a pthread
+with a 64 MiB stack against a **zero-byte harness floor** and a 1,024-byte
+harness gap; the painted region is 4 MiB.
+
+**Corpus.** The three vector-state rows are driven over the same forward-Euler
+damped chain the discrete Riccati row is measured on -- `-0.5` on the diagonal,
+`1.0` on the superdiagonal, step `0.01` -- with output `i` reading state
+`i mod NX`, process noise `0.01 I`, measurement noise `I` and initial covariance
+`10 I`, at **input dimension 1**. The two attitude rows propagate a constant body
+rate on SO(3) and measure the gravity direction repeated to the output dimension,
+with process noise scaled by `1e-6`. The two families are not comparable at equal
+state dimension, because they are not measurements of one plant.
+
+Reproduce with `tools/stack_watermark.sh --rows estimators --diagonal --frames`
+and `--held-dimension`. A target's own frames differ with its ABI, register file
+and calling convention -- as the ESP32 capture above shows, where the `float`
+peaks run at roughly half the host `double` figures.
+
+**THE LINEAR-ALGEBRA RELEASE IS AN AXIS HERE, AND IT FLIPS A PUBLISHED CELL.**
+The tables above are Eigen 3.4.1, which is the system release; the project's test
+tree fetches 3.4.0. Re-running the whole equal-dimension line against 3.4.0 moves
+**15 of the 24 measured points**, by -144 to +768 bytes -- at most 3.4% of the
+figure, on `manifold_ukf`, whose shift is the largest and grows monotonically
+with the measurement dimension. That is small, and it is not harmless: `ukf` at
+four states and four outputs needs 4,088 bytes against 3.4.1 and **4,104 against
+3.4.0**, so its 4 KiB entry above reads 4 under one patch release of a
+header-only dependency and 2 under the next. A frame size is an output of
+inlining a header-only template library, and a patch release of that library is
+therefore part of the provenance of every figure here. **The held-dimension
+sweeps were NOT re-measured against 3.4.0**; only the equal-dimension line was,
+so nothing is claimed about the other two columns under that release.
+
+### What is still outstanding here
+
+- **The interior of the grid is not measured.** Each axis was swept at one held
+  value. The interaction is established; its shape is not.
+- **`nmpc` carries no stack figure at all.** Its decision dimension `NV` and
+  constraint bound `MaxM` are derived from the horizon, the state dimension and
+  the input dimension rather than chosen directly, and its build needs an
+  optional backend, so it is measured separately and is not in this section.
+- **The largest dimension that COMPILES is not published for any row here.** The
+  ladder stops at thirty-two because that is where it stops, not because
+  thirty-three fails. A caller must be able to tell "does not fit your stack"
+  from "does not exist as an instantiation", and only the first of those is
+  answered above.
+- **`arm64` and MSVC are absent**, and every figure is `double` at `-O2`. A frame
+  size is an optimizer output, so these figures belong to that optimization level
+  alone.
 
 ## Wall-clock budgets are not RT-safe
 

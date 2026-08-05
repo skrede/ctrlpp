@@ -57,6 +57,21 @@
 /// scale at exactly one, so equilibration is inactive and the entry point runs
 /// its acceptance check once.
 ///
+/// **The estimator rows are measured over the same plant**, so a filter figure
+/// and a Riccati figure at the same state dimension are figures about one
+/// system rather than two. The dynamics are that forward-Euler chain; the
+/// measurement map takes output `i` from state `i mod NX`, which is a defined
+/// map at every pair of dimensions including the ones where there are more
+/// outputs than states; the attitude rows instead propagate a constant body
+/// rate on SO(3) and measure the gravity direction, repeated to whatever output
+/// dimension is asked for, because their state is a rotation and not a vector.
+///
+/// **The input dimension is part of the provenance of every row here.** It is a
+/// separate compile-time selector rather than a constant, it is printed on
+/// every output line, and it moves the discrete Riccati watermark by more than
+/// a thousand bytes at two states. A stack figure quoted without it is not
+/// reproducible.
+///
 /// Building: standalone, no test framework and no build system. Eigen enters as
 /// a system include, the way the library's own build treats it, so the only
 /// diagnostics a build reports are this file's own.
@@ -77,7 +92,18 @@
 
 #include "ctrlpp/control/dare.h"
 
+#include "ctrlpp/estimation/ekf.h"
+#include "ctrlpp/estimation/ukf.h"
+#include "ctrlpp/estimation/mekf.h"
+#include "ctrlpp/estimation/kalman.h"
+#include "ctrlpp/estimation/manifold_ukf.h"
+
+#include "ctrlpp/lie/so3.h"
+
+#include "ctrlpp/model/state_space.h"
+
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #include <atomic>
 #include <cstdio>
@@ -87,21 +113,42 @@
 #include <pthread.h>
 
 /// The row under measurement. One selector per hot path the matrix publishes.
-#define WATERMARK_ROW_RICCATI_DISCRETE 1
+///
+/// The unchecked discrete Riccati row is the same chain with the acceptance
+/// check taken off it, composed from the parts the entry point composes so that
+/// the two differ in the check and in nothing else. It exists because the cost
+/// of the check is only separable from the cost of the solve if both are
+/// measured by one instrument in one run.
+#define WATERMARK_ROW_RICCATI_DISCRETE           1
+#define WATERMARK_ROW_RICCATI_DISCRETE_UNCHECKED 2
+#define WATERMARK_ROW_KALMAN                     3
+#define WATERMARK_ROW_EKF                        4
+#define WATERMARK_ROW_UKF                        5
+#define WATERMARK_ROW_MANIFOLD_UKF               6
+#define WATERMARK_ROW_MEKF                       7
 
 #ifndef WATERMARK_ROW
 #define WATERMARK_ROW WATERMARK_ROW_RICCATI_DISCRETE
 #endif
 
+/// The state dimension the caller chooses. It is `NX` for the Riccati rows and
+/// for the three vector-state filters, and the BIAS dimension `NB` for the
+/// multiplicative error-state filter, whose error state is `3 + NB`. The
+/// manifold filter has no such selector at all: its state is a rotation, so its
+/// state dimension is three by construction and is not the caller's to choose.
 #ifndef WATERMARK_STATE_DIMENSION
 #define WATERMARK_STATE_DIMENSION 2
+#endif
+
+#ifndef WATERMARK_MEASUREMENT_DIMENSION
+#define WATERMARK_MEASUREMENT_DIMENSION 1
 #endif
 
 #ifndef WATERMARK_INPUT_DIMENSION
 #define WATERMARK_INPUT_DIMENSION 1
 #endif
 
-#if WATERMARK_ROW != WATERMARK_ROW_RICCATI_DISCRETE
+#if WATERMARK_ROW < WATERMARK_ROW_RICCATI_DISCRETE || WATERMARK_ROW > WATERMARK_ROW_MEKF
 #error "WATERMARK_ROW names no row this instrument implements"
 #endif
 
@@ -119,11 +166,29 @@ constexpr std::size_t painted_bytes = std::size_t{4} * 1024 * 1024;
 
 /// The top of the painted window is held this far below the origin so that the
 /// painting and walking routines' own frames are never painted over. Anything
-/// shallower than the gap is therefore invisible to the measurement, which is
-/// harmless because the reported figure is the DEEPEST disturbed word, and it
-/// is what makes the harness floor read zero. A floor that does not read zero
-/// says the gap is too small for this build's harness frames.
-constexpr std::size_t harness_gap_bytes = 1024;
+/// shallower than the gap is therefore invisible to the measurement, and it is
+/// what makes the harness floor read zero. A floor that does not read zero says
+/// the gap is too small for this build's harness frames.
+///
+/// **The gap is a RESOLUTION FLOOR, and it binds on the cheap rows rather than
+/// on the expensive ones.** A chain whose whole frame cost is shallower than
+/// the gap disturbs nothing the walk can see and reports zero, which is the
+/// same value the harness floor reports. The Riccati figures sit three
+/// thousand bytes and more below the gap so it never bound there; the estimator
+/// chains at their smallest dimensions do not, so the gap is exposed as a
+/// compile-time selector and swept rather than assumed.
+///
+/// Shrinking it cannot move a figure that was already resolved: the walk runs
+/// upward from the bottom of the window and returns the DEEPEST disturbed word,
+/// so extending the window's top can only add shallower words the return value
+/// ignores. That invariance is a claim about the instrument, so the driver
+/// checks it by re-running the Riccati rows at both gaps rather than asserting
+/// it here.
+#ifndef WATERMARK_HARNESS_GAP_BYTES
+#define WATERMARK_HARNESS_GAP_BYTES 1024
+#endif
+
+constexpr std::size_t harness_gap_bytes = WATERMARK_HARNESS_GAP_BYTES;
 
 /// The pattern's fixed half. Exclusive-ored with each word's own address, so no
 /// single value written by the chain can pass as undisturbed at more than one
@@ -195,6 +260,64 @@ template<typename Invocable>
     return deepest_disturbed(origin);
 }
 
+/// The step of the plant every vector-state row is measured over, shared so that
+/// a filter figure and a Riccati figure at the same state dimension are figures
+/// about ONE system. Forward-Euler step of the continuous damped chain,
+/// identical to the corpus the internal Riccati benchmark sweeps. Every
+/// eigenvalue sits at `1 - 0.5 dt`, inside the unit disk, so the discrete
+/// Riccati equation is well posed at every size and the whole chain including
+/// the acceptance check executes.
+template<std::size_t NX>
+auto chain_state_matrix() -> Eigen::Matrix<double, int(NX), int(NX)>
+{
+    constexpr int    n  = int(NX);
+    constexpr double dt = 0.01;
+
+    Eigen::Matrix<double, n, n> A = Eigen::Matrix<double, n, n>::Identity();
+    for(std::size_t i = 0; i < NX; ++i)
+        A(int(i), int(i)) += dt * -0.5;
+    for(std::size_t i = 0; i + 1 < NX; ++i)
+        A(int(i), int(i + 1)) = dt * 1.0;
+    return A;
+}
+
+/// One input per group of states, acting on the last state of its group. The
+/// group size is clamped at one so the map stays defined when there are more
+/// inputs than states; at the input dimensions this instrument is driven at,
+/// which are never above the state dimension, the clamp is inactive and the
+/// matrix is the one the Riccati benchmark builds.
+template<std::size_t NX, std::size_t NU>
+auto chain_input_matrix() -> Eigen::Matrix<double, int(NX), int(NU)>
+{
+    constexpr int    n  = int(NX);
+    constexpr int    nu = int(NU);
+    constexpr double dt = 0.01;
+
+    Eigen::Matrix<double, n, nu> B = Eigen::Matrix<double, n, nu>::Zero();
+    const std::size_t           group = NU <= NX ? NX / NU : std::size_t{1};
+    for(std::size_t j = 0; j < NU; ++j)
+    {
+        const std::size_t reach    = (j + 1) * group;
+        const std::size_t last_row = (reach < NX ? reach : NX) - 1;
+        B(int(last_row), int(j)) = dt;
+    }
+    return B;
+}
+
+/// Output `i` reads state `i mod NX`. The modulus is what makes the map defined
+/// at every pair of dimensions, including the held-dimension sweeps where the
+/// output dimension runs past the state dimension; there it duplicates rows,
+/// which leaves the innovation covariance nonsingular because the measurement
+/// noise is the identity.
+template<std::size_t NX, std::size_t NY>
+auto chain_output_matrix() -> Eigen::Matrix<double, int(NY), int(NX)>
+{
+    Eigen::Matrix<double, int(NY), int(NX)> H = Eigen::Matrix<double, int(NY), int(NX)>::Zero();
+    for(std::size_t i = 0; i < NY; ++i)
+        H(int(i), int(i % NX)) = 1.0;
+    return H;
+}
+
 template<std::size_t NX, std::size_t NU>
 struct discrete_damped_chain
 {
@@ -204,36 +327,16 @@ struct discrete_damped_chain
     Eigen::Matrix<double, int(NU), int(NU)> R;
 };
 
-/// Forward-Euler step of the continuous damped chain, identical to the corpus
-/// the internal Riccati benchmark sweeps. Every eigenvalue of `A` sits at
-/// `1 - 0.5 dt`, inside the unit disk, so the discrete equation is well posed at
-/// every size and the whole chain including the acceptance check executes.
 template<std::size_t NX, std::size_t NU>
 auto build_discrete_damped_chain() -> discrete_damped_chain<NX, NU>
 {
-    constexpr int    n  = int(NX);
-    constexpr int    nu = int(NU);
-    constexpr double dt = 0.01;
+    constexpr int nu = int(NU);
 
     discrete_damped_chain<NX, NU> corpus{};
-
-    corpus.A = Eigen::Matrix<double, n, n>::Identity();
-    for(std::size_t i = 0; i < NX; ++i)
-        corpus.A(int(i), int(i)) += dt * -0.5;
-    for(std::size_t i = 0; i + 1 < NX; ++i)
-        corpus.A(int(i), int(i + 1)) = dt * 1.0;
-
-    corpus.B                = Eigen::Matrix<double, n, nu>::Zero();
-    const std::size_t group = NX / NU;
-    for(std::size_t j = 0; j < NU; ++j)
-    {
-        const std::size_t last_row = ((j + 1) * group < NX ? (j + 1) * group : NX) - 1;
-        corpus.B(int(last_row), int(j)) = dt;
-    }
-
-    corpus.Q = Eigen::Matrix<double, n, n>::Identity();
+    corpus.A = chain_state_matrix<NX>();
+    corpus.B = chain_input_matrix<NX, NU>();
+    corpus.Q = Eigen::Matrix<double, int(NX), int(NX)>::Identity();
     corpus.R = 0.1 * Eigen::Matrix<double, nu, nu>::Identity();
-
     return corpus;
 }
 
@@ -241,7 +344,7 @@ auto build_discrete_damped_chain() -> discrete_damped_chain<NX, NU>
 /// caller at this dimension calls it. Kept out of line so its frame lies below
 /// the origin where the paint can see it.
 template<std::size_t NX, std::size_t NU>
-[[gnu::noinline]] void run_discrete_riccati(const discrete_damped_chain<NX, NU> &corpus) noexcept
+[[gnu::noinline]] void run_discrete_riccati(discrete_damped_chain<NX, NU> &corpus) noexcept
 {
     auto solved = ctrlpp::dare<double, NX, NU>(corpus.A, corpus.B, corpus.Q, corpus.R);
 
@@ -254,6 +357,405 @@ template<std::size_t NX, std::size_t NU>
     chain_sink.store(bits, std::memory_order_relaxed);
 }
 
+/// The same solve with the acceptance check taken off it, composed from the
+/// parts the entry point composes and stopping where the entry point begins
+/// verifying. The two rows therefore differ in the check and in nothing else,
+/// which is the only way the cost of the check is separable from the cost of the
+/// solve.
+///
+/// This composition mirrors the entry point rather than calling it, so it is the
+/// one place in this file that can drift from the library without failing to
+/// compile. The corpus puts the weight scale at exactly one, so the entry
+/// point's equilibration branch is inactive and there is nothing on that branch
+/// to mirror.
+template<std::size_t NX, std::size_t NU>
+[[gnu::noinline]] void run_discrete_riccati_unchecked(discrete_damped_chain<NX, NU> &corpus) noexcept
+{
+    std::uint64_t bits = 1;
+
+    auto operands = ctrlpp::detail::factor_dare_symplectic_operands<double, NX, NU>(corpus.A, corpus.B, corpus.R);
+    if(operands)
+    {
+        auto symplectic = ctrlpp::detail::build_dare_symplectic<double, NX>(corpus.A, corpus.Q, *operands);
+        if(symplectic)
+        {
+            auto solved = ctrlpp::detail::dare_solve_from_symplectic<double, NX, NU>(*symplectic);
+            if(solved)
+            {
+                const double reduction = solved->P.sum();
+                std::memcpy(&bits, &reduction, sizeof(bits));
+            }
+        }
+    }
+    chain_sink.store(bits, std::memory_order_relaxed);
+}
+
+/// The dynamics the two Jacobian-based filters linearize and the sigma-point
+/// filter propagates. Linear, so the linearization is exact and no filter is
+/// measured on a chain a modeling error made longer or shorter than another's.
+template<std::size_t NX, std::size_t NU>
+struct chain_dynamics
+{
+    Eigen::Matrix<double, int(NX), int(NX)> F;
+    Eigen::Matrix<double, int(NX), int(NU)> G;
+
+    auto operator()(const ctrlpp::Vector<double, NX> &x, const ctrlpp::Vector<double, NU> &u) const
+        -> ctrlpp::Vector<double, NX>
+    {
+        return ctrlpp::Vector<double, NX>{F * x + G * u};
+    }
+
+    auto jacobian_x(const ctrlpp::Vector<double, NX> &, const ctrlpp::Vector<double, NU> &) const
+        -> Eigen::Matrix<double, int(NX), int(NX)>
+    {
+        return F;
+    }
+
+    auto jacobian_u(const ctrlpp::Vector<double, NX> &, const ctrlpp::Vector<double, NU> &) const
+        -> Eigen::Matrix<double, int(NX), int(NU)>
+    {
+        return G;
+    }
+};
+
+template<std::size_t NX, std::size_t NY>
+struct chain_measurement
+{
+    Eigen::Matrix<double, int(NY), int(NX)> H;
+
+    auto operator()(const ctrlpp::Vector<double, NX> &x) const -> ctrlpp::Vector<double, NY>
+    {
+        return ctrlpp::Vector<double, NY>{H * x};
+    }
+
+    auto jacobian(const ctrlpp::Vector<double, NX> &) const -> Eigen::Matrix<double, int(NY), int(NX)>
+    {
+        return H;
+    }
+};
+
+/// A constant body rate integrated on SO(3). The attitude rows have no vector
+/// state to give the damped chain to, so their plant is this instead, and the
+/// two families of figures are not comparable at equal state dimension for that
+/// reason.
+struct body_rate_dynamics
+{
+    double dt = 0.01;
+
+    auto operator()(const Eigen::Quaternion<double> &q, const ctrlpp::Vector<double, 3> &omega) const
+        -> Eigen::Quaternion<double>
+    {
+        const ctrlpp::Vector<double, 3> increment = (omega * dt).eval();
+        return (q * ctrlpp::so3::exp(increment)).normalized();
+    }
+};
+
+/// The gravity direction in body axes, repeated to whatever output dimension is
+/// asked for. Repetition rather than truncation, so the map is defined for an
+/// output dimension above three as well as below it.
+template<std::size_t NY>
+auto gravity_direction(const Eigen::Quaternion<double> &q) -> ctrlpp::Vector<double, NY>
+{
+    const Eigen::Matrix<double, 3, 3> rotation = q.toRotationMatrix();
+    const ctrlpp::Vector<double, 3>   down     = rotation.transpose().col(2);
+
+    ctrlpp::Vector<double, NY> z;
+    for(std::size_t i = 0; i < NY; ++i)
+        z(int(i)) = down(int(i % 3));
+    return z;
+}
+
+template<std::size_t NY>
+struct attitude_measurement
+{
+    auto operator()(const Eigen::Quaternion<double> &q) const -> ctrlpp::Vector<double, NY>
+    {
+        return gravity_direction<NY>(q);
+    }
+};
+
+template<std::size_t NB, std::size_t NY>
+struct attitude_bias_measurement
+{
+    auto operator()(const Eigen::Quaternion<double> &q, const ctrlpp::Vector<double, NB> &) const
+        -> ctrlpp::Vector<double, NY>
+    {
+        return gravity_direction<NY>(q);
+    }
+};
+
+/// A filter row's carried objects. The filter is held as the factory returned
+/// it, so a configuration the factory refuses is reported as an unsolved row
+/// rather than measured as if it had run.
+template<typename Filter, typename Error, std::size_t NI, std::size_t NY>
+struct filter_chain
+{
+    ctrlpp::expected<Filter, Error> filter;
+    ctrlpp::Vector<double, NI>      input;
+    ctrlpp::Vector<double, NY>      measurement_sample;
+};
+
+/// The painted window covers the prediction and the update as ONE block rather
+/// than each separately with a maximum taken afterwards. That is what the
+/// allocation guards already do, and the deeper of the two is what a task stack
+/// has to hold in either case.
+template<typename Chain>
+[[gnu::noinline]] void run_filter(Chain &chain) noexcept
+{
+    std::uint64_t bits = 1;
+    if(chain.filter)
+    {
+        auto &filter = *chain.filter;
+        filter.predict(chain.input);
+        const auto stepped = filter.update(chain.measurement_sample);
+        if(stepped)
+        {
+            const auto   state     = filter.state();
+            const double reduction = state.sum();
+            std::memcpy(&bits, &reduction, sizeof(bits));
+        }
+    }
+    chain_sink.store(bits, std::memory_order_relaxed);
+}
+
+template<std::size_t NX, std::size_t NU, std::size_t NY>
+auto build_kalman_chain()
+    -> filter_chain<ctrlpp::kalman_filter<double, NX, NU, NY>, ctrlpp::filter_error, NU, NY>
+{
+    ctrlpp::discrete_state_space<double, NX, NU, NY> system;
+    system.A = chain_state_matrix<NX>();
+    system.B = chain_input_matrix<NX, NU>();
+    system.C = chain_output_matrix<NX, NY>();
+    system.D = Eigen::Matrix<double, int(NY), int(NU)>::Zero();
+
+    const ctrlpp::kalman_config<double, NX, NU, NY> config{
+        .Q  = ctrlpp::Matrix<double, NX, NX>::Identity() * 0.01,
+        .R  = ctrlpp::Matrix<double, NY, NY>::Identity(),
+        .x0 = ctrlpp::Vector<double, NX>::Zero(),
+        .P0 = ctrlpp::Matrix<double, NX, NX>::Identity() * 10.0};
+
+    return {ctrlpp::kalman_filter<double, NX, NU, NY>::create(system, config),
+            ctrlpp::Vector<double, NU>::Zero(),
+            ctrlpp::Vector<double, NY>::Constant(0.1)};
+}
+
+template<std::size_t NX, std::size_t NU, std::size_t NY>
+auto build_ekf_chain()
+    -> filter_chain<ctrlpp::ekf<double, NX, NU, NY, chain_dynamics<NX, NU>, chain_measurement<NX, NY>>,
+                    ctrlpp::filter_error, NU, NY>
+{
+    const chain_dynamics<NX, NU>    dynamics{chain_state_matrix<NX>(), chain_input_matrix<NX, NU>()};
+    const chain_measurement<NX, NY> measurement_map{chain_output_matrix<NX, NY>()};
+
+    const ctrlpp::ekf_config<double, NX, NU, NY> config{
+        .Q  = ctrlpp::Matrix<double, NX, NX>::Identity() * 0.01,
+        .R  = ctrlpp::Matrix<double, NY, NY>::Identity(),
+        .x0 = ctrlpp::Vector<double, NX>::Zero(),
+        .P0 = ctrlpp::Matrix<double, NX, NX>::Identity() * 10.0};
+
+    return {ctrlpp::ekf<double, NX, NU, NY, chain_dynamics<NX, NU>, chain_measurement<NX, NY>>::create(
+                dynamics, measurement_map, config),
+            ctrlpp::Vector<double, NU>::Zero(),
+            ctrlpp::Vector<double, NY>::Constant(0.1)};
+}
+
+template<std::size_t NX, std::size_t NU, std::size_t NY>
+auto build_ukf_chain()
+    -> filter_chain<ctrlpp::ukf<double, NX, NU, NY, chain_dynamics<NX, NU>, chain_measurement<NX, NY>>,
+                    ctrlpp::filter_error, NU, NY>
+{
+    const chain_dynamics<NX, NU>    dynamics{chain_state_matrix<NX>(), chain_input_matrix<NX, NU>()};
+    const chain_measurement<NX, NY> measurement_map{chain_output_matrix<NX, NY>()};
+
+    const ctrlpp::ukf_config<double, NX, NU, NY> config{
+        .Q  = ctrlpp::Matrix<double, NX, NX>::Identity() * 0.01,
+        .R  = ctrlpp::Matrix<double, NY, NY>::Identity(),
+        .x0 = ctrlpp::Vector<double, NX>::Zero(),
+        .P0 = ctrlpp::Matrix<double, NX, NX>::Identity() * 10.0};
+
+    return {ctrlpp::ukf<double, NX, NU, NY, chain_dynamics<NX, NU>, chain_measurement<NX, NY>>::create(
+                dynamics, measurement_map, config),
+            ctrlpp::Vector<double, NU>::Zero(),
+            ctrlpp::Vector<double, NY>::Constant(0.1)};
+}
+
+template<std::size_t NY>
+auto build_manifold_ukf_chain()
+    -> filter_chain<ctrlpp::manifold_ukf<double, NY, body_rate_dynamics, attitude_measurement<NY>>,
+                    ctrlpp::filter_error, 3, NY>
+{
+    ctrlpp::manifold_ukf_config<double, NY> config;
+    config.Q *= 1e-6;
+
+    ctrlpp::Vector<double, 3> rate;
+    rate << 0.01, -0.02, 0.03;
+
+    return {ctrlpp::manifold_ukf<double, NY, body_rate_dynamics, attitude_measurement<NY>>::create(
+                body_rate_dynamics{}, attitude_measurement<NY>{}, config),
+            rate,
+            gravity_direction<NY>(Eigen::Quaternion<double>::Identity())};
+}
+
+template<std::size_t NB, std::size_t NY>
+auto build_mekf_chain()
+    -> filter_chain<ctrlpp::mekf<double, NB, NY, attitude_bias_measurement<NB, NY>>,
+                    ctrlpp::filter_error, 3, NY>
+{
+    ctrlpp::mekf_config<double, NB, NY> config;
+    config.Q *= 1e-6;
+
+    ctrlpp::Vector<double, 3> rate;
+    rate << 0.01, -0.02, 0.03;
+
+    return {ctrlpp::mekf<double, NB, NY, attitude_bias_measurement<NB, NY>>::create(
+                attitude_bias_measurement<NB, NY>{}, config),
+            rate,
+            gravity_direction<NY>(Eigen::Quaternion<double>::Identity())};
+}
+
+constexpr std::size_t selected_state_dimension       = WATERMARK_STATE_DIMENSION;
+constexpr std::size_t selected_measurement_dimension = WATERMARK_MEASUREMENT_DIMENSION;
+constexpr std::size_t selected_input_dimension       = WATERMARK_INPUT_DIMENSION;
+
+/// Each row names itself, states the dimensions it was ACTUALLY instantiated at
+/// -- which for the attitude rows is not always the dimension asked for, since
+/// their state is a rotation -- and supplies a builder and a runner. Everything
+/// below the selection is common, so no row carries a measurement procedure of
+/// its own.
+#if WATERMARK_ROW == WATERMARK_ROW_RICCATI_DISCRETE
+
+constexpr const char *row_name                        = "riccati-discrete";
+constexpr std::size_t instantiated_state_dimension    = selected_state_dimension;
+constexpr std::size_t instantiated_input_dimension    = selected_input_dimension;
+constexpr std::size_t instantiated_output_dimension   = 0;
+
+auto build_measured_chain()
+{
+    return build_discrete_damped_chain<selected_state_dimension, selected_input_dimension>();
+}
+
+template<typename Chain>
+void run_measured_chain(Chain &chain) noexcept
+{
+    run_discrete_riccati<selected_state_dimension, selected_input_dimension>(chain);
+}
+
+#elif WATERMARK_ROW == WATERMARK_ROW_RICCATI_DISCRETE_UNCHECKED
+
+constexpr const char *row_name                        = "riccati-discrete-unchecked";
+constexpr std::size_t instantiated_state_dimension    = selected_state_dimension;
+constexpr std::size_t instantiated_input_dimension    = selected_input_dimension;
+constexpr std::size_t instantiated_output_dimension   = 0;
+
+auto build_measured_chain()
+{
+    return build_discrete_damped_chain<selected_state_dimension, selected_input_dimension>();
+}
+
+template<typename Chain>
+void run_measured_chain(Chain &chain) noexcept
+{
+    run_discrete_riccati_unchecked<selected_state_dimension, selected_input_dimension>(chain);
+}
+
+#elif WATERMARK_ROW == WATERMARK_ROW_KALMAN
+
+constexpr const char *row_name                        = "kalman-filter";
+constexpr std::size_t instantiated_state_dimension    = selected_state_dimension;
+constexpr std::size_t instantiated_input_dimension    = selected_input_dimension;
+constexpr std::size_t instantiated_output_dimension   = selected_measurement_dimension;
+
+auto build_measured_chain()
+{
+    return build_kalman_chain<selected_state_dimension, selected_input_dimension, selected_measurement_dimension>();
+}
+
+template<typename Chain>
+void run_measured_chain(Chain &chain) noexcept
+{
+    run_filter(chain);
+}
+
+#elif WATERMARK_ROW == WATERMARK_ROW_EKF
+
+constexpr const char *row_name                        = "ekf";
+constexpr std::size_t instantiated_state_dimension    = selected_state_dimension;
+constexpr std::size_t instantiated_input_dimension    = selected_input_dimension;
+constexpr std::size_t instantiated_output_dimension   = selected_measurement_dimension;
+
+auto build_measured_chain()
+{
+    return build_ekf_chain<selected_state_dimension, selected_input_dimension, selected_measurement_dimension>();
+}
+
+template<typename Chain>
+void run_measured_chain(Chain &chain) noexcept
+{
+    run_filter(chain);
+}
+
+#elif WATERMARK_ROW == WATERMARK_ROW_UKF
+
+constexpr const char *row_name                        = "ukf";
+constexpr std::size_t instantiated_state_dimension    = selected_state_dimension;
+constexpr std::size_t instantiated_input_dimension    = selected_input_dimension;
+constexpr std::size_t instantiated_output_dimension   = selected_measurement_dimension;
+
+auto build_measured_chain()
+{
+    return build_ukf_chain<selected_state_dimension, selected_input_dimension, selected_measurement_dimension>();
+}
+
+template<typename Chain>
+void run_measured_chain(Chain &chain) noexcept
+{
+    run_filter(chain);
+}
+
+#elif WATERMARK_ROW == WATERMARK_ROW_MANIFOLD_UKF
+
+/// The state dimension selector is IGNORED here and the row reports three,
+/// because the manifold filter's state is a rotation. Reporting the requested
+/// value would publish a dimension the caller cannot choose.
+constexpr const char *row_name                        = "manifold-ukf";
+constexpr std::size_t instantiated_state_dimension    = 3;
+constexpr std::size_t instantiated_input_dimension    = 3;
+constexpr std::size_t instantiated_output_dimension   = selected_measurement_dimension;
+
+auto build_measured_chain()
+{
+    return build_manifold_ukf_chain<selected_measurement_dimension>();
+}
+
+template<typename Chain>
+void run_measured_chain(Chain &chain) noexcept
+{
+    run_filter(chain);
+}
+
+#else
+
+/// The selector carries the BIAS dimension, and the error state the covariance
+/// recursion runs at is three larger. Both are reported: the first is what the
+/// caller picks and the second is what the frames are sized by.
+constexpr const char *row_name                        = "mekf";
+constexpr std::size_t instantiated_state_dimension    = selected_state_dimension;
+constexpr std::size_t instantiated_input_dimension    = 3;
+constexpr std::size_t instantiated_output_dimension   = selected_measurement_dimension;
+
+auto build_measured_chain()
+{
+    return build_mekf_chain<selected_state_dimension, selected_measurement_dimension>();
+}
+
+template<typename Chain>
+void run_measured_chain(Chain &chain) noexcept
+{
+    run_filter(chain);
+}
+
+#endif
+
 struct measurement
 {
     std::size_t watermark_bytes;
@@ -263,15 +765,12 @@ struct measurement
 
 auto watermark_thread(void *argument) noexcept -> void *
 {
-    constexpr std::size_t nx = WATERMARK_STATE_DIMENSION;
-    constexpr std::size_t nu = WATERMARK_INPUT_DIMENSION;
-
     auto *const result = static_cast<measurement *>(argument);
 
     // Construction and warm-up sit outside every painted window: construction is
     // offline and only the hot path is being measured.
-    const auto corpus = build_discrete_damped_chain<nx, nu>();
-    const auto call   = [&corpus]() noexcept { run_discrete_riccati<nx, nu>(corpus); };
+    auto       chain = build_measured_chain();
+    const auto call  = [&chain]() noexcept { run_measured_chain(chain); };
     call();
 
     result->solved      = chain_sink.load(std::memory_order_relaxed) != 1;
@@ -311,9 +810,13 @@ auto main() -> int
     static_cast<void>(pthread_join(thread, nullptr));
     static_cast<void>(pthread_attr_destroy(&attributes));
 
-    std::printf("row=riccati-discrete nx=%d nu=%d scalar=double solved=%s watermark_bytes=%zu floor_bytes=%zu\n",
-                int{WATERMARK_STATE_DIMENSION},
-                int{WATERMARK_INPUT_DIMENSION},
+    std::printf("row=%s nx=%zu ny=%zu nu=%zu gap_bytes=%zu scalar=double solved=%s "
+                "watermark_bytes=%zu floor_bytes=%zu\n",
+                row_name,
+                instantiated_state_dimension,
+                instantiated_output_dimension,
+                instantiated_input_dimension,
+                harness_gap_bytes,
                 result.solved ? "yes" : "no",
                 result.watermark_bytes,
                 result.floor_bytes);

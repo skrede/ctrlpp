@@ -442,11 +442,15 @@ enum class riccati_accuracy
 ///
 /// What a hard-real-time caller budgets is not this frame but the peak of the
 /// WHOLE discrete solve chain, which `-fstack-usage` cannot give because it
-/// attributes nothing to callees. Measured directly, by painting a region below
-/// the frame and reading back the deepest disturbed word (harness floor zero on
-/// every configuration), that peak is 5,352, 11,688, 23,144 and 42,760 bytes at
-/// `N = 2, 4, 6, 8` for an `N`-state, 3-input pose. So, strictly and with no
-/// margin left for the caller's own frames, interrupt context or RTOS overhead:
+/// attributes nothing to callees. Measured directly by `tools/stack_watermark.sh`,
+/// which paints a region below the frame and reads back the deepest disturbed
+/// word (harness floor zero on every configuration), that peak is 4,552, 11,176,
+/// 21,912 and 41,304 bytes at `N = 2, 4, 6, 8` for an `N`-state, SINGLE-INPUT
+/// pose under g++ 16.1.1 at `-O2` against Eigen 3.4.1. The input dimension and
+/// the linear-algebra release are part of that figure and not a detail of it:
+/// re-run the instrument at your own rather than reading across. So, strictly
+/// and with no margin left for the caller's own frames, interrupt context or
+/// RTOS overhead:
 ///
 ///     task stack   supported maximum N
 ///      4 KB        none, not even N = 2
@@ -456,12 +460,15 @@ enum class riccati_accuracy
 ///     48 KB        N <= 8
 ///     64 KB        N <= 8
 ///
-/// THE ESTIMATOR IS NOT WHAT DECIDES THE SMALL-STACK ANSWER. The same chain with
-/// no accuracy estimate on it at all still peaks at 17,112 bytes at `N = 6` and
-/// 28,168 at `N = 8`, so on a 4-16 KB task stack the supported maximum is
-/// `N = 4` whether this estimate is formed or not. Removing it entirely would
-/// buy no additional configuration below 32 KB. The construction here changes
-/// the supported maximum in exactly one band, at 48 KB.
+/// THE ESTIMATOR COSTS ONE RUNG OF THAT LADDER AT EVERY SIZE FROM 4 KB THROUGH
+/// 32 KB. The same chain with the acceptance check and the gain formation taken
+/// off it peaks at 3,368, 8,176, 13,560 and 25,416 bytes at the same four
+/// dimensions, so the solve alone supports `N = 2` on a 4 KB stack where the
+/// shipped chain supports nothing, and `N = 8` on 32 KB where the shipped chain
+/// supports `N = 6`. Above 32 KB the check is free in these terms, both
+/// constructions running out of measured ladder at `N = 8` rather than out of
+/// stack. A caller who cannot afford the rung is choosing between a smaller
+/// plant and an unverified answer.
 template <typename Scalar, int N>
 auto estimate_riccati_forward_error(const Eigen::Matrix<Scalar, N, N>& closed_loop,
                                     const Eigen::Matrix<Scalar, N, N>& residual,

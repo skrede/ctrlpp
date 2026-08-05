@@ -85,11 +85,15 @@ state dimension. The decomposition factorizes into the operator's own array
 rather than a copy of it, which removes the second live `M x M` array: the
 estimator's stack frame is 864, 2,400, 6,432 and 15,056 bytes at
 `NX = 2, 4, 6, 8`, and the peak of the whole `dare` call chain -- the quantity a
-hard-real-time caller budgets -- is 5,352, 11,688, 23,144 and 42,760 bytes for an
-`NX`-state, 3-input pose. The same chain with no accuracy estimate on it at all
-still peaks at 17,112 bytes at `NX = 6` and 28,168 at `NX = 8`, so on a 4-16 KB
-task stack the supported maximum is `NX = 4` whether the estimate is formed or
-not; the estimator is not what decides the small-stack answer.
+hard-real-time caller budgets -- is 4,552, 11,176, 21,912 and 41,304 bytes for an
+`NX`-state, SINGLE-INPUT pose under g++ 16.1.1 at `-O2` against Eigen 3.4.1. The
+input dimension and the linear-algebra release are part of that figure; re-run
+`tools/stack_watermark.sh` at your own rather than reading across. The same chain
+with the acceptance check and the gain formation taken off it peaks at 3,368,
+8,176, 13,560 and 25,416 bytes at the same four dimensions, so the estimator
+costs exactly one rung of the supported-maximum ladder on every task stack from
+4 KB through 32 KB and nothing above that. `docs/rt-safety-matrix.md` carries
+both ladders.
 
 **`sqrt(eps)` is derived and not calibrated.** For a radix-2 type with
 `eps = 2^-p`, `sqrt(eps) = 2^(-p/2)` is exactly the retention of `p/2` of the `p`
