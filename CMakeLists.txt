@@ -57,6 +57,8 @@ set(CTRLPP_WARNING_FLAGS
         -Wimplicit-fallthrough
         -Wformat=2
         -Werror=unused-result
+        # gcc reports a discarded value of an attributed class TYPE under the promotion above, while clang reports it under the promotion below and reserves the one above for a discarded attributed FUNCTION result, so neither promotion alone enforces the gate on every supported compiler.
+        -Werror=unused-value
     >
 )
 

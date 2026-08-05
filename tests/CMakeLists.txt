@@ -1,12 +1,19 @@
 if (CTRLPP_BUILD_TESTS)
     # Prove with the active compiler that discarding ctrlpp::expected is an
-    # error. A text search for the option cannot establish that the compiler
-    # recognizes it or that the class-level attribute still emits the
-    # diagnostic the option promotes.
+    # error. A text search for the options cannot establish that the compiler
+    # recognizes them or that the class-level attribute still emits the
+    # diagnostic they promote.
+    #
+    # The non-MSVC branch carries both promotions because the compilers disagree
+    # about which group a discarded value of an attributed class type belongs
+    # to: clang files it under the second group and a discarded attributed
+    # function result under the first, while gcc files both under the first.
+    # Either promotion alone therefore leaves the gate off on some supported
+    # compiler, so the pair is the gate and neither element is decorative.
     if (MSVC)
         set(CTRLPP_DISCARD_WARNING_ERROR_FLAG "/we4834")
     else ()
-        set(CTRLPP_DISCARD_WARNING_ERROR_FLAG "-Werror=unused-result")
+        set(CTRLPP_DISCARD_WARNING_ERROR_FLAG "-Werror=unused-result" "-Werror=unused-value")
     endif ()
     try_compile(
         CTRLPP_DISCARDED_EXPECTED_BASELINE_COMPILED
@@ -37,9 +44,9 @@ if (CTRLPP_BUILD_TESTS)
     )
     if (CTRLPP_DISCARDED_EXPECTED_COMPILED)
         message(FATAL_ERROR
-            "Discarding ctrlpp::expected compiled successfully with "
-            "${CTRLPP_DISCARD_WARNING_ERROR_FLAG}; the discarded-result "
-            "diagnostic is not enforced.\n"
+            "Discarding ctrlpp::expected compiled successfully under the "
+            "discard promotions ${CTRLPP_DISCARD_WARNING_ERROR_FLAG}; the "
+            "discarded-result diagnostic is not enforced.\n"
             "${CTRLPP_DISCARDED_EXPECTED_OUTPUT}")
     endif ()
 
