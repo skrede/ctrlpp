@@ -106,6 +106,10 @@ make_test(dare_error_test)
 make_test(dare_float_precision_test)
 make_test(care_error_test)
 make_test(care_convergence_anchor_test)
+make_test(care_quad_reference_test)
+# The binary128 reference lives beside the fuzz targets that consume it, and is
+# included as "fuzz/care_quad_reference.h"; this is what resolves that quote.
+target_include_directories(care_quad_reference_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")
 # MemorySanitizer ships its own strong operator new/delete in
 # libclang_rt.msan_cxx, which collides at link time with the replacements in
 # nomalloc_harness.h ("multiple definition of operator new"). AddressSanitizer

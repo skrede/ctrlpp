@@ -61,6 +61,19 @@ inline auto quad_abs(quad x) -> quad
     return x < quad{0} ? -x : x;
 }
 
+/// @brief binary128's unit roundoff, 2^-112.
+///
+/// Built by halving, so the header needs neither a quad literal suffix nor a
+/// quad-precision math header -- either would make this reference depend on a
+/// library it exists to be independent of.
+inline auto quad_unit_roundoff() -> quad
+{
+    quad e = quad{1};
+    for(int i = 0; i < 112; ++i)
+        e /= quad{2};
+    return e;
+}
+
 /// @brief Solve a 4x4 system by Gaussian elimination with partial pivoting.
 ///
 /// Returns false when a pivot is exactly zero, which is the only singularity
@@ -136,15 +149,7 @@ inline auto quad_refine_dare(const double A[2][2], const double B[2], const doub
     // constant: the second convergence clause is what actually stops the
     // iteration on well-conditioned poses, and this one only bounds how far it
     // is allowed to keep trying.
-    // binary128 unit roundoff, 2^-112, built by halving so the header needs
-    // neither a quad literal suffix nor <quadmath.h>.
-    const quad quad_epsilon = []() -> quad
-    {
-        quad e = quad{1};
-        for(int i = 0; i < 112; ++i)
-            e /= quad{2};
-        return e;
-    }();
+    const quad quad_epsilon     = detail::quad_unit_roundoff();
     const quad step_tolerance   = quad{1024} * quad_epsilon;
     const quad step_tolerance_2 = step_tolerance * step_tolerance;
 
