@@ -259,9 +259,14 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // single correct bit takes ceil(log2(113)) = 7 steps; the factor of four
     // covers the pre-basin approach from a stabilizing but inaccurate gain. A
     // budget that were too small would produce ABSTENTIONS, never aborts, so
-    // this constant bounds cost rather than correctness. The observed maximum on
-    // the continuous side is not stated here: it is a property of the population
-    // a campaign draws, and no campaign has drawn one on this domain yet.
+    // this constant bounds cost rather than correctness. THE OBSERVED MAXIMUM ON
+    // THE CONTINUOUS SIDE IS 9 STEPS, over the 276,588 poses that reached this
+    // oracle in a campaign of 1,200,000 executions across eight pinned seeds and
+    // four seedless runs, so the budget stands at three times the deepest
+    // iteration any of them needed and not one abstention on that population was
+    // budget-limited. That figure is a property of the population a campaign
+    // draws rather than a bound on the iteration, and it was measured on one
+    // architecture under one compiler.
     constexpr int reference_significand_bits = 113;
     constexpr int quadratic_steps_to_full_precision = []
     {

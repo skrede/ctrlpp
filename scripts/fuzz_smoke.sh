@@ -28,6 +28,14 @@
 # Findings are written under the build tree rather than the working tree, so a
 # crash artifact never appears in a git status.
 #
+# This script is NOT the evidence a posture claim rests on, and it is not meant
+# to be. Its exploratory phase is a single short seedless run per target, which
+# establishes that the target still runs. scripts/fuzz_seed_sweep.sh is the
+# campaign driver: it sweeps a written-down set of explicit seeds AND several
+# seedless runs per target, each bounded by a fixed execution count so the cost
+# is deterministic rather than a reading of station load. Use this one before a
+# push, and that one before claiming a posture.
+#
 # Usage:
 #   scripts/fuzz_smoke.sh [build-dir]
 #   FUZZ_BUILD_DIR=build-fuzz scripts/fuzz_smoke.sh
