@@ -68,13 +68,15 @@ if (CTRLPP_BUILD_NLOPT)
     target_link_libraries(ctrlpp_nlopt
         INTERFACE
         ctrlpp::ctrlpp
-        nlopt
+        NLopt::nlopt
     )
 
     target_compile_definitions(ctrlpp_nlopt
         INTERFACE
         CTRLPP_HAS_NLOPT=1
     )
+
+    set_target_properties(ctrlpp_nlopt PROPERTIES EXPORT_NAME nlopt)
 endif ()
 
 # --- Argmin solver backend (optional) ---
@@ -92,6 +94,8 @@ if (CTRLPP_BUILD_ARGMIN)
         INTERFACE
         CTRLPP_HAS_ARGMIN=1
     )
+
+    set_target_properties(ctrlpp_argmin PROPERTIES EXPORT_NAME argmin)
 endif ()
 
 # Raised here rather than left to CMake. A fetched dependency that installs nothing is a real,
@@ -135,14 +139,17 @@ if (CTRLPP_INSTALL)
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ctrlpp
     )
 
-    # The gate flags below are ordinary variables and not PARENT_SCOPE writes, because
+    # The gate flags raised here are ordinary variables and not PARENT_SCOPE writes, because
     # configure_package_config_file substitutes them in this same directory scope.
-    if (CTRLPP_BUILD_OSQP)
-        install(TARGETS ctrlpp_osqp
-            EXPORT ctrlppTargets
-        )
-        set(CTRLPP_OSQP_INSTALLED TRUE)
-    endif ()
+    foreach (_ctrlpp_backend IN ITEMS OSQP NLOPT ARGMIN)
+        if (CTRLPP_BUILD_${_ctrlpp_backend})
+            string(TOLOWER ${_ctrlpp_backend} _ctrlpp_backend_target)
+            install(TARGETS ctrlpp_${_ctrlpp_backend_target}
+                EXPORT ctrlppTargets
+            )
+            set(CTRLPP_${_ctrlpp_backend}_INSTALLED TRUE)
+        endif ()
+    endforeach ()
 
     # --- CMake package config ---
     set(ctrlpp_INSTALL_CMAKEDIR ${CMAKE_INSTALL_LIBDIR}/cmake/ctrlpp)
