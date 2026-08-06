@@ -86,6 +86,20 @@ option(CTRLPP_TESTS_WITH_EXCEPTIONS "Build ctrlpp's root tests in the exceptions
 
 option(CTRLPP_BUILD_EXAMPLES "Build examples" OFF)
 
+# Deliberately not following the default-OFF convention the CTRLPP_BUILD_* options above
+# share: those decide what this build contains, and this decides where it ends up. Standalone
+# builds are asked to be installed often enough that OFF would be a trap; a parent that adds
+# ctrlpp as a subproject gets OFF, so a consumer's prefix carries only what the consumer
+# asked for. A parent overrides the default by setting the variable before the
+# add_subdirectory that adds ctrlpp; setting it afterwards is too late.
+option(CTRLPP_INSTALL "Install ctrlpp into the install prefix" ${PROJECT_IS_TOP_LEVEL})
+
+# Config-package gate flags. lib/ctrlpp/ raises each to TRUE when the backend joins the
+# export set, and the config file template reads them at substitution time.
+set(CTRLPP_OSQP_INSTALLED FALSE)
+set(CTRLPP_NLOPT_INSTALLED FALSE)
+set(CTRLPP_ARGMIN_INSTALLED FALSE)
+
 include(FetchContent)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)

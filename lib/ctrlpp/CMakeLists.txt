@@ -1,36 +1,3 @@
-if (CTRLPP_CMAKE_FETCH_DEPS)
-    FetchContent_Declare(
-        Eigen3
-        GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-        GIT_TAG 3.4.0
-        GIT_SHALLOW TRUE
-        EXCLUDE_FROM_ALL
-        SOURCE_SUBDIR this-directory-does-not-exist
-    )
-    FetchContent_MakeAvailable(Eigen3)
-    add_library(eigen_headers INTERFACE)
-    add_library(Eigen3::Eigen ALIAS eigen_headers)
-    target_include_directories(eigen_headers SYSTEM INTERFACE
-        "${eigen3_SOURCE_DIR}"
-    )
-else ()
-    find_package(Eigen3 CONFIG REQUIRED)
-    if (Eigen3_VERSION VERSION_LESS "3.4")
-        message(FATAL_ERROR "ctrlpp requires Eigen >= 3.4, found ${Eigen3_VERSION}")
-    endif ()
-
-    get_target_property(_eigen_aliased Eigen3::Eigen ALIASED_TARGET)
-    if (_eigen_aliased)
-        set(_eigen_target ${_eigen_aliased})
-    else ()
-        set(_eigen_target Eigen3::Eigen)
-    endif ()
-    get_target_property(_eigen_inc ${_eigen_target} INTERFACE_INCLUDE_DIRECTORIES)
-    set_target_properties(${_eigen_target} PROPERTIES
-        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_eigen_inc}"
-    )
-endif ()
-
 set(INCLUDE_DIRECTORY include)
 
 add_library(ctrlpp INTERFACE)
@@ -72,51 +39,29 @@ target_compile_options(ctrlpp
 
 # --- OSQP solver backend (optional) ---
 if (CTRLPP_BUILD_OSQP)
-    FetchContent_Declare(
-        osqp
-        GIT_REPOSITORY https://github.com/osqp/osqp.git
-        GIT_TAG v1.0.0
-        EXCLUDE_FROM_ALL
-    )
-    set(OSQP_BUILD_DEMO OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(osqp)
-
     add_library(ctrlpp_osqp INTERFACE)
     add_library(ctrlpp::osqp ALIAS ctrlpp_osqp)
 
     target_link_libraries(ctrlpp_osqp
         INTERFACE
         ctrlpp::ctrlpp
-        osqpstatic
+        osqp::osqpstatic
     )
 
     target_compile_definitions(ctrlpp_osqp
         INTERFACE
         CTRLPP_HAS_OSQP=1
     )
+
+    # The export namespace is prefixed to the target's export name, which defaults to the
+    # real target name, so without this a consumer's link against ctrlpp::osqp finds nothing
+    # and the component reads as absent even though it was built and installed. ALIAS targets
+    # are not exported and cannot stand in.
+    set_target_properties(ctrlpp_osqp PROPERTIES EXPORT_NAME osqp)
 endif ()
 
 # --- NLopt solver backend (optional) ---
 if (CTRLPP_BUILD_NLOPT)
-    FetchContent_Declare(
-        nlopt
-        GIT_REPOSITORY https://github.com/stevengj/nlopt.git
-        GIT_TAG v2.10.1
-        EXCLUDE_FROM_ALL
-    )
-    set(NLOPT_PYTHON OFF CACHE BOOL "" FORCE)
-    set(NLOPT_OCTAVE OFF CACHE BOOL "" FORCE)
-    set(NLOPT_GUILE OFF CACHE BOOL "" FORCE)
-    set(NLOPT_TESTS OFF CACHE BOOL "" FORCE)
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(nlopt)
-
-    # Suppress warnings from NLopt headers (third-party code)
-    get_target_property(_nlopt_inc nlopt INTERFACE_INCLUDE_DIRECTORIES)
-    if (_nlopt_inc)
-        set_target_properties(nlopt PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_nlopt_inc}")
-    endif ()
-
     add_library(ctrlpp_nlopt INTERFACE)
     add_library(ctrlpp::nlopt ALIAS ctrlpp_nlopt)
 
@@ -134,25 +79,6 @@ endif ()
 
 # --- Argmin solver backend (optional) ---
 if (CTRLPP_BUILD_ARGMIN)
-    if (CTRLPP_ARGMIN_SOURCE_DIR)
-        FetchContent_Declare(
-            argmin
-            SOURCE_DIR "${CTRLPP_ARGMIN_SOURCE_DIR}"
-            EXCLUDE_FROM_ALL
-        )
-    else ()
-        FetchContent_Declare(
-            argmin
-            GIT_REPOSITORY https://github.com/skrede/argmin.git
-            GIT_TAG ${CTRLPP_ARGMIN_GIT_TAG}
-            EXCLUDE_FROM_ALL
-        )
-    endif ()
-    set(ARGMIN_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(ARGMIN_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(ARGMIN_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(argmin)
-
     add_library(ctrlpp_argmin INTERFACE)
     add_library(ctrlpp::argmin ALIAS ctrlpp_argmin)
 
@@ -168,7 +94,39 @@ if (CTRLPP_BUILD_ARGMIN)
     )
 endif ()
 
-if (NOT CTRLPP_CMAKE_FETCH_DEPS)
+# Raised here rather than left to CMake. A fetched dependency that installs nothing is a real,
+# non-imported target belonging to no export set, so the export around it is illegal; CMake
+# detects that only at generate time and its message names the sub-build target instead of the
+# option a user can change.
+if (CTRLPP_INSTALL)
+    set(_ctrlpp_declining "")
+    get_property(_ctrlpp_facts GLOBAL PROPERTY CTRLPP_DEPENDENCY_INSTALL_FACTS)
+    foreach (_ctrlpp_fact IN LISTS _ctrlpp_facts)
+        string(REPLACE "|" ";" _ctrlpp_field "${_ctrlpp_fact}")
+        list(GET _ctrlpp_field 0 _ctrlpp_name)
+        list(GET _ctrlpp_field 1 _ctrlpp_option)
+        list(GET _ctrlpp_field 2 _ctrlpp_fetched)
+        list(GET _ctrlpp_field 3 _ctrlpp_installs)
+        if (_ctrlpp_fetched AND NOT _ctrlpp_installs)
+            if (_ctrlpp_option)
+                list(APPEND _ctrlpp_declining "${_ctrlpp_name} (turn ${_ctrlpp_option} on)")
+            else ()
+                list(APPEND _ctrlpp_declining "${_ctrlpp_name}")
+            endif ()
+        endif ()
+    endforeach ()
+
+    if (_ctrlpp_declining)
+        string(REPLACE ";" ", " _ctrlpp_declining "${_ctrlpp_declining}")
+        message(FATAL_ERROR
+            "ctrlpp cannot be installed. These dependencies were fetched into this build and "
+            "install nothing, so they belong to no export set and ctrlpp's own export cannot "
+            "reference them: ${_ctrlpp_declining}. Either supply a discoverable version of each "
+            "one and configure with CTRLPP_CMAKE_FETCH_DEPS=OFF, or configure with "
+            "CTRLPP_INSTALL=OFF if this build was never meant to ship."
+        )
+    endif ()
+
     install(TARGETS ctrlpp
         EXPORT ctrlppTargets
     )
@@ -176,6 +134,15 @@ if (NOT CTRLPP_CMAKE_FETCH_DEPS)
     install(DIRECTORY ${INCLUDE_DIRECTORY}/ctrlpp/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ctrlpp
     )
+
+    # The gate flags below are ordinary variables and not PARENT_SCOPE writes, because
+    # configure_package_config_file substitutes them in this same directory scope.
+    if (CTRLPP_BUILD_OSQP)
+        install(TARGETS ctrlpp_osqp
+            EXPORT ctrlppTargets
+        )
+        set(CTRLPP_OSQP_INSTALLED TRUE)
+    endif ()
 
     # --- CMake package config ---
     set(ctrlpp_INSTALL_CMAKEDIR ${CMAKE_INSTALL_LIBDIR}/cmake/ctrlpp)
@@ -192,9 +159,22 @@ if (NOT CTRLPP_CMAKE_FETCH_DEPS)
         INSTALL_DESTINATION ${ctrlpp_INSTALL_CMAKEDIR}
     )
 
+    # The compatibility argument is the whole of the version contract this package publishes.
+    # Under this mode a 0.3.6 install satisfies a consumer who asked for 0.3.0 and refuses one
+    # who asked for 0.1.0. Major-version compatibility would accept the 0.1.0 request, which
+    # contradicts this project's own policy that pre-1.0 API breakage is free -- a consumer
+    # would be handed a package built against a different API and told it matched.
+    #
+    # The accepted cost is on the far side of 1.0: this mode is stricter than semantic
+    # versioning requires there, because a 1.1 install would refuse a request for 1.0 even
+    # though nothing broke. At the 1.0 release the intended replacement is CMake's
+    # semantic-version compatibility mode, which special-cases a zero major component and is
+    # the exact semantics wanted -- NOT a return to major-version compatibility. It is not
+    # written today because it needs a CMake 4.4 producer, above this project's declared floor.
     write_basic_package_version_file(
         "${CMAKE_CURRENT_BINARY_DIR}/ctrlppConfigVersion.cmake"
-        COMPATIBILITY SameMajorVersion
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMinorVersion
     )
 
     install(FILES

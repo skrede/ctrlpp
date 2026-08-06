@@ -6,6 +6,42 @@ if (Eigen3_VERSION VERSION_LESS "3.4")
     message(FATAL_ERROR "ctrlpp requires Eigen >= 3.4, found ${Eigen3_VERSION}")
 endif ()
 
+# No version floor: osqp's own listfile declares no project version, so every osqp config
+# package reports 0.0.0 and a floor would reject every install that exists. Gated on the flag
+# the build recorded, so an install without the backend does not force the requirement. Every
+# find_dependency has to precede the targets include below, because find_dependency returns
+# out of this file on failure.
+if (@CTRLPP_OSQP_INSTALLED@)
+    find_dependency(osqp)
+endif ()
+
 include("${CMAKE_CURRENT_LIST_DIR}/ctrlppTargets.cmake")
+
+set(ctrlpp_ctrlpp_FOUND TRUE)
+set(_ctrlpp_missing "")
+foreach (_ctrlpp_component IN ITEMS osqp nlopt argmin)
+    if (TARGET ctrlpp::${_ctrlpp_component})
+        set(ctrlpp_${_ctrlpp_component}_FOUND TRUE)
+    else ()
+        set(ctrlpp_${_ctrlpp_component}_FOUND FALSE)
+        if (ctrlpp_FIND_REQUIRED_${_ctrlpp_component})
+            list(APPEND _ctrlpp_missing ${_ctrlpp_component})
+        endif ()
+    endif ()
+endforeach ()
+
+# check_required_components below sets the package-level found flag and names nothing, which
+# sends a consumer off to reinstall the package when the fix is to enable a backend.
+if (_ctrlpp_missing)
+    list(JOIN _ctrlpp_missing ", " _ctrlpp_missing_names)
+    string(CONCAT ctrlpp_NOT_FOUND_MESSAGE
+        "this ctrlpp install was built without the requested component(s): "
+        "${_ctrlpp_missing_names}. Rebuild ctrlpp with the matching CTRLPP_BUILD_<COMPONENT> "
+        "option on against a discoverable dependency and reinstall."
+    )
+    unset(_ctrlpp_missing_names)
+endif ()
+unset(_ctrlpp_component)
+unset(_ctrlpp_missing)
 
 check_required_components(ctrlpp)
