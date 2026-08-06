@@ -20,12 +20,15 @@
 /// The procedure, which is the one the published Riccati figures were taken
 /// with:
 ///
-///   1. Spawn a thread whose stack is set to 64 MiB through the thread
-///      attribute rather than inherited and hoped for. The painted region must
-///      fit below the current frame without reaching the guard page, which is
-///      why the stack is sixteen times the painted region.
+///   1. Spawn a thread whose stack is set through the thread attribute rather
+///      than inherited and hoped for, at sixteen times the painted region. The
+///      painted region must fit below the current frame without reaching the
+///      guard page, which is what that relation buys.
 ///   2. Inside the thread, take the current frame's address as the origin.
-///   3. Paint 4 MiB below the origin with a 64-bit pattern.
+///   3. Paint the window below the origin with a 64-bit pattern. The window is
+///      4 MiB by default and is a compile-time selector, because it is a
+///      ceiling on what can be reported and the deepest chains this instrument
+///      is driven over reach it.
 ///   4. Run the chain under measurement. Construction and one warm-up call
 ///      happen OUTSIDE the painted window, because construction is offline and
 ///      only the hot path is being measured -- the same split the library's
@@ -102,9 +105,11 @@
 /// chain exactly as a caller at that dimension would.
 ///
 /// Output is one line carrying the row, the dimensions, the scalar type, the
-/// whole-chain watermark in bytes and the harness floor in bytes. The floor is
-/// on the same line as the figure by construction: a watermark reported without
-/// its floor is not a measurement of anything.
+/// whole-chain watermark in bytes, the harness floor in bytes, the painted
+/// window and whether the figure saturated it. The floor is on the same line as
+/// the figure by construction: a watermark reported without its floor is not a
+/// measurement of anything, and one that reached the bottom of its window is a
+/// lower bound rather than a figure.
 
 /// The row under measurement. One selector per hot path the matrix publishes.
 ///
@@ -186,15 +191,43 @@
 
 namespace {
 
+/// The painted window and the thread stack that has to hold it, both in
+/// mebibytes.
+///
+/// **BOTH ARE SELECTORS RATHER THAN CONSTANTS, BECAUSE THE WINDOW IS A CEILING
+/// ON WHAT THIS INSTRUMENT CAN REPORT AND THE INTERIOR OF THE GRID REACHES IT.**
+/// A chain deeper than the window disturbs the window's bottom word, and the
+/// walk then returns the window's own size rather than the chain's depth: a
+/// number that looks exactly like a measurement and is not one. That case is
+/// reported below as a saturation rather than left for a reader to notice, and
+/// the window is raised for the dimensions that need it rather than the figure
+/// being silently truncated.
+///
+/// **Raising the window cannot move a figure that was already resolved.** The
+/// walk runs upward from the bottom and returns the DEEPEST disturbed word, so a
+/// deeper bottom can only add words the chain never touched, which the walk
+/// passes over. That is a claim about the instrument rather than about the
+/// library, so the driver checks it by re-measuring points the published tables
+/// already carry instead of asserting it here.
+#ifndef WATERMARK_PAINTED_MIB
+#define WATERMARK_PAINTED_MIB 4
+#endif
+
+#ifndef WATERMARK_THREAD_STACK_MIB
+#define WATERMARK_THREAD_STACK_MIB 64
+#endif
+
+constexpr std::size_t painted_bytes = std::size_t{WATERMARK_PAINTED_MIB} * 1024 * 1024;
+
 /// Sixteen times the painted region. The paint must fit below the current frame
 /// without reaching the guard page, and a thread stack is the only stack whose
-/// size this program gets to choose.
-constexpr std::size_t thread_stack_bytes = std::size_t{64} * 1024 * 1024;
+/// size this program gets to choose. The relation is the one the published
+/// figures were taken under, and it is asserted rather than left as a default a
+/// selector could quietly drop below.
+constexpr std::size_t thread_stack_bytes = std::size_t{WATERMARK_THREAD_STACK_MIB} * 1024 * 1024;
 
-/// The painted window. Every published figure is three orders of magnitude
-/// below this, so a watermark that reached the bottom would be reported as a
-/// saturation rather than as a number.
-constexpr std::size_t painted_bytes = std::size_t{4} * 1024 * 1024;
+static_assert(thread_stack_bytes >= 16 * painted_bytes,
+              "the thread stack must be at least sixteen times the painted window");
 
 /// The top of the painted window is held this far below the origin so that the
 /// painting and walking routines' own frames are never painted over. Anything
@@ -940,6 +973,16 @@ struct measurement
     bool        solved;
 };
 
+/// A peak equal to the window's own size means the chain reached the bottom
+/// word, so the walk returned where it stopped looking rather than where the
+/// chain stopped writing. Such a figure is a LOWER BOUND and not a measurement,
+/// and it is reported as one.
+auto is_saturated(const measurement &result) noexcept -> bool
+{
+    return result.watermark_bytes == painted_bytes || result.first_call_bytes == painted_bytes
+           || result.construction_bytes == painted_bytes;
+}
+
 auto watermark_thread(void *argument) noexcept -> void *
 {
     auto *const result = static_cast<measurement *>(argument);
@@ -1029,8 +1072,11 @@ auto main() -> int
                 result.construction_bytes);
 #endif
 
-    std::printf(" gap_bytes=%zu scalar=double solved=%s watermark_bytes=%zu floor_bytes=%zu\n",
+    std::printf(" gap_bytes=%zu painted_bytes=%zu saturated=%s scalar=double solved=%s"
+                " watermark_bytes=%zu floor_bytes=%zu\n",
                 harness_gap_bytes,
+                painted_bytes,
+                is_saturated(result) ? "yes" : "no",
                 result.solved ? "yes" : "no",
                 result.watermark_bytes,
                 result.floor_bytes);

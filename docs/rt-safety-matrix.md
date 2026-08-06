@@ -318,7 +318,7 @@ two-dimensional measurement and the fifth carries a one-dimensional one, and the
 fifth says so rather than presenting five readings of one configuration as a
 trend.
 
-### What each column is, and what the ladder can and cannot resolve
+### What each column is, and what the tables can and cannot resolve
 
 Every row below carries a pair of tables. The first is the measurement:
 
@@ -334,15 +334,40 @@ Every row below carries a pair of tables. The first is the measurement:
   measurement dimension swept with the other held, and the other swept with the
   measurement dimension held. **Every column heading names what it holds.**
 
-The second table is the supported maximum by task stack. The dimension ladder is
-GEOMETRIC, so an entry names the largest MEASURED rung that fits and says nothing
-whatever about the dimensions between rungs. It is not a claim that the next
-integer up does not fit.
+The second table is the supported maximum by task stack, and it is computed from
+the whole-chain peak of an INTERIOR FILL rather than from those three lines. The
+fill measures **every value of one axis against every value of the other** at a
+**stride of four**, from the smallest instantiable value to the largest, so an
+entry below names the largest measured value that fits. **The stride is four and
+nothing is measured between two adjacent values of it**, so an entry is not a
+claim about the three integers above it. It is never computed from the frame
+column: that column excludes every library frame beneath the named function and
+would overstate what fits.
+
+Two limits are published per row, and **they answer different questions**. The
+first is the largest dimension that COMPILES AT ALL: past it the instantiation
+does not exist and no task stack changes that. The second is the largest whose
+whole-chain peak FITS a given task stack: past it the instantiation exists and
+the task overflows. A caller who does not fit a dimension needs to know which of
+the two it is, because a bigger stack answers one of them and nothing answers the
+other.
 
 The harness floor read zero on every one of the sixty-eight measurements behind
-the tables below, printed beside each figure by the instrument, so every peak is
-attributable to the call rather than to the harness. Each figure reproduced
-byte-identically across two independent runs of the whole grid.
+the three-line tables and on every one of the 4,677 behind the fill, printed
+beside each figure by the instrument, so every peak is attributable to the call
+rather than to the harness. The three-line figures reproduced byte-identically
+across two independent runs of the whole grid, and **the fill reproduces all 44
+of the published cells it covers, byte for byte**, having been taken at a
+different painted window and a different build parallelism.
+
+**One caveat at the very bottom of the grid.** The measurement has a resolution
+floor: a chain shallower than the harness gap of 1,024 bytes disturbs nothing the
+walk can see and reports zero, which is the value the harness floor reports.
+Three points in the fill are there -- `kalman_filter`, `ekf` and `ukf` at one
+state and one output. Re-measured at gaps of 512, 256, 128 and 64 bytes, with a
+zero floor at every one, they resolve to **720, 880 and 1,008 bytes** and are
+byte-identical across all four gaps. No other point in the grid is inside the
+gap.
 
 ### `kalman_filter`
 
@@ -358,14 +383,17 @@ The frame column belongs to the equal-dimension build.
 
 Strict: no margin for the caller's own frames and none for RTOS overhead.
 
-| task stack | largest fitting rung, `NX` = `NY`, nothing held | largest fitting `NY`, `NX` held at 4 | largest fitting `NX`, `NY` held at 4 |
+From the interior fill, at a stride of four. **The largest dimension that
+compiles at all is 128 on both axes**, and the entries below are far inside it.
+
+| task stack | largest fitting value, `NX` = `NY`, nothing held | largest fitting `NY`, `NX` held at 4 | largest fitting `NX`, `NY` held at 4 |
 |---|---|---|---|
 | 4 KiB | 4 | 4 | 4 |
 | 8 KiB | 4 | 8 | 8 |
-| 16 KiB | 8 | 16 | 8 |
-| 32 KiB | 8 | 16 | 16 |
-| 48 KiB | 16 | 32 | 16 |
-| 64 KiB | 16 | 32 | 16 |
+| 16 KiB | 8 | 16 | 12 |
+| 32 KiB | 12 | 24 | 16 |
+| 48 KiB | 16 | 32 | 24 |
+| 64 KiB | 16 | 36 | 28 |
 
 ### `ekf`
 
@@ -381,14 +409,17 @@ The frame column belongs to the equal-dimension build.
 
 Strict: no margin for the caller's own frames and none for RTOS overhead.
 
-| task stack | largest fitting rung, `NX` = `NY`, nothing held | largest fitting `NY`, `NX` held at 4 | largest fitting `NX`, `NY` held at 4 |
+From the interior fill, at a stride of four. **The largest dimension that
+compiles at all is 128 on both axes**, and the entries below are far inside it.
+
+| task stack | largest fitting value, `NX` = `NY`, nothing held | largest fitting `NY`, `NX` held at 4 | largest fitting `NX`, `NY` held at 4 |
 |---|---|---|---|
 | 4 KiB | 4 | 4 | 4 |
 | 8 KiB | 4 | 8 | 4 |
-| 16 KiB | 8 | 8 | 8 |
-| 32 KiB | 8 | 16 | 16 |
-| 48 KiB | 8 | 16 | 16 |
-| 64 KiB | 16 | 32 | 16 |
+| 16 KiB | 8 | 12 | 8 |
+| 32 KiB | 12 | 20 | 16 |
+| 48 KiB | 12 | 24 | 20 |
+| 64 KiB | 16 | 32 | 24 |
 
 ### `ukf`
 
@@ -406,14 +437,19 @@ state dimension twice: once in the covariance it factors and once in the set.
 
 Strict: no margin for the caller's own frames and none for RTOS overhead.
 
-| task stack | largest fitting rung, `NX` = `NY`, nothing held | largest fitting `NY`, `NX` held at 4 | largest fitting `NX`, `NY` held at 4 |
+From the interior fill, at a stride of four. **The largest dimension that
+compiles at all is 128 on both axes** -- the sigma-point set is a `std::array` of
+vectors rather than one fixed-size object, so the allocation limit does not bind
+on it and this row's limit is the same as the two above.
+
+| task stack | largest fitting value, `NX` = `NY`, nothing held | largest fitting `NY`, `NX` held at 4 | largest fitting `NX`, `NY` held at 4 |
 |---|---|---|---|
 | 4 KiB | 4 | 4 | 4 |
 | 8 KiB | 4 | 8 | 4 |
-| 16 KiB | 8 | 8 | 8 |
-| 32 KiB | 8 | 16 | 16 |
-| 48 KiB | 16 | 16 | 16 |
-| 64 KiB | 16 | 32 | 16 |
+| 16 KiB | 8 | 12 | 12 |
+| 32 KiB | 12 | 20 | 16 |
+| 48 KiB | 16 | 28 | 20 |
+| 64 KiB | 16 | 32 | 24 |
 
 The 4 KiB entry in the first column clears by **8 bytes** at four states and four
 outputs: 4,088 against 4,096. Read it as "does not fit" unless the whole rest of
@@ -438,14 +474,17 @@ at its structural three and the measurement dimension swept.
 
 Strict: no margin for the caller's own frames and none for RTOS overhead.
 
+From the interior fill, at a stride of four. **The largest `NY` that compiles at
+all is 128.**
+
 | task stack | largest fitting `NY`, rotation state held at 3 |
 |---|---|
 | 4 KiB | 4 |
 | 8 KiB | 8 |
-| 16 KiB | 8 |
-| 32 KiB | 16 |
-| 48 KiB | 16 |
-| 64 KiB | 32 |
+| 16 KiB | 12 |
+| 32 KiB | 20 |
+| 48 KiB | 28 |
+| 64 KiB | 36 |
 
 ### `mekf`
 
@@ -467,18 +506,25 @@ The frame column belongs to the equal-dimension build.
 
 Strict: no margin for the caller's own frames and none for RTOS overhead.
 
-| task stack | largest fitting rung, `NB` = `NY`, nothing held | largest fitting `NY`, `NB` held at 4 | largest fitting `NB`, `NY` held at 4 |
+From the interior fill, at a stride of four. **The largest `NB` that compiles at
+all is 125** -- the error state `NE = 3 + NB` is what the covariance is sized by,
+so this row's bias limit sits three below the other rows' -- **and the largest
+`NY` is 128.**
+
+| task stack | largest fitting value, `NB` = `NY`, nothing held | largest fitting `NY`, `NB` held at 4 | largest fitting `NB`, `NY` held at 4 |
 |---|---|---|---|
-| 4 KiB | no measured rung | no measured rung | no measured rung |
+| 4 KiB | no measured value | no measured value | no measured value |
 | 8 KiB | 4 | 4 | 4 |
 | 16 KiB | 4 | 8 | 4 |
 | 32 KiB | 8 | 16 | 8 |
-| 48 KiB | 8 | 16 | 8 |
-| 64 KiB | 8 | 16 | 16 |
+| 48 KiB | 12 | 20 | 12 |
+| 64 KiB | 12 | 28 | 16 |
 
-"No measured rung" is not "nothing fits": `NB = 3` is a legal configuration and
-was not measured, and the smallest measured configuration on the measurement axis
-needs 4,840 bytes against 4 KiB's 4,096.
+"No measured value" is not "nothing fits": `NB = 3` is a legal configuration --
+`NB = 2` is refused at compile time and `NB = 3` is accepted, both checked -- and
+the fill's stride does not land on it, so it is not measured. The smallest
+measured configuration on the measurement axis needs 4,840 bytes against 4 KiB's
+4,096.
 
 ### The two dimensions INTERACT, and that is measured rather than assumed
 
@@ -499,26 +545,105 @@ prediction, at the top rung:
 | `ukf` | 184,568 | 212,488 | 1.15x |
 | `mekf` | 220,072 | 310,840 | 1.41x |
 
-**Every row exceeds its separable prediction, and the excess grows with the
-dimension**: `ekf` runs 1.08x above prediction at rung 2 and 1.68x above it at
-rung 32. So a caller cannot size one dimension from a table taken at another
-value of the second, which is exactly why every heading above names what it
-holds.
+**Every row exceeds its separable prediction on the equal-dimension line**, so a
+caller cannot size one dimension from a table taken at another value of the
+second, which is exactly why every heading above names what it holds.
 
-What this does NOT establish is the SHAPE of that interaction away from the three
-lines measured. Each axis was swept at one held value, so the tables locate the
-interaction and do not describe it. Describing it is what an interior fill would
-do, and no interior point was measured here.
+### The shape of that interaction, from the interior fill
+
+The four two-dimensional rows were then filled over their whole interior at a
+stride of four -- 1,089 points each for `kalman_filter`, `ekf` and `ukf` and
+1,023 for `mekf` -- and the same separability ratio evaluated at every one of
+them:
+
+| row | interior points | ratio, smallest | ratio, largest | where the largest sits | above the separable prediction |
+|---|---:|---:|---:|---|---:|
+| `kalman_filter` | 1,088 | 0.700 | 1.543 | `NX` 52, `NY` 52 | 87.4% |
+| `ekf` | 1,088 | 0.598 | 2.101 | `NX` 52, `NY` 116 | 88.3% |
+| `ukf` | 1,088 | 0.533 | 1.393 | `NX` 28, `NY` 72 | 80.8% |
+| `mekf` | 1,023 | 0.806 | 1.906 | `NB` 48, `NY` 128 | 90.8% |
+
+**Four fifths to nine tenths of the interior lies above the separable
+prediction**, so the interaction is not a feature of the diagonal. Below the
+prediction the ratio falls only where one dimension is at the very bottom of its
+range, where a fixed part that does not scale with either dimension dominates.
+
+**AND THE INTERACTION DOES NOT KEEP GROWING WITH THE DIMENSION.** The three-line
+tables reach dimension 32, and up to there the excess rises monotonically. The
+fill continues to 128 and it does not: on the equal-dimension line
+`kalman_filter` runs 1.45 at 32, peaks near 1.48 around 96 and falls back to 1.43
+at 128; `ukf` runs 1.15 at 32, peaks near 1.22 around 80 to 96 and falls to 1.13
+at 128. The largest excess on every row sits in the MIDDLE of the grid rather
+than at its corner. A reader extrapolating "the excess grows with dimension" past
+32 would be extrapolating past where it holds.
+
+What the fill still does not resolve is anything between two adjacent values of
+its stride: it says nothing about the three integers between 96 and 100.
+
+### The largest dimension that COMPILES, per row
+
+This answers the other of the two questions, and it is not the one the tables
+above answer. Past the value below, the configuration **does not exist as an
+instantiation**: the linear-algebra library refuses to place the object on the
+stack and the translation unit does not build, whatever task stack the caller
+has.
+
+Each was **walked to, one integer at a time**, upward from a point the interior
+fill had already compiled AND run, and each refusal was checked to be that
+library's `OBJECT_ALLOCATED_ON_STACK_IS_TOO_BIG` assertion rather than an
+unrelated instantiation error at the same dimension. Both sides of every boundary
+are recorded: the value below it that builds, and the value at it that does not.
+
+| row | axis | largest that compiles | first refused |
+|---|---|---:|---:|
+| `kalman_filter` | `NX` with `NY` at 4, `NY` with `NX` at 4, and both equal | 128 | 129 |
+| `ekf` | the same three | 128 | 129 |
+| `ukf` | the same three | 128 | 129 |
+| `manifold_ukf` | `NY`, rotation state at its structural 3 | 128 | 129 |
+| `mekf` | `NB`, i.e. error state `NE = 3 + NB` | 125 | 126 |
+| `mekf` | `NY` with `NB` at 4 | 128 | 129 |
+
+**The arithmetic these figures agree with, stated so the reader can see why 128
+and not some other number.** Each row's dominant fixed-size object is a square
+`double` matrix of the axis dimension -- the state covariance for `kalman_filter`
+and `ekf`, the same for `ukf` beside a sigma-point set that is a `std::array` of
+vectors rather than one object, the innovation covariance on the measurement
+axis, and the error-state covariance for `mekf`. The library's fixed-size
+allocation limit is 131,072 bytes and its check is `size * sizeof(T) <= limit`,
+so `d * d * 8 <= 131,072` gives `d <= 128` exactly, and `mekf`'s selector is
+three below its error state, giving `NB <= 125`. **The published numbers are the
+walk's, not this arithmetic's**; the arithmetic is here because a number without
+one is the kind of constant this document should not carry, and the agreement is
+a check rather than a derivation.
+
+The corner of each rectangle is measured rather than assumed: `NX = NY = 128`
+builds and runs on all three two-dimensional rows and `NB = 124, NY = 128` on
+`mekf`, so the region below the limits is a full rectangle and not only its axes.
+
+**The second limit binds first, by two orders of magnitude.** No entry in any
+supported-maximum table above reaches 40, and every instantiation limit is 125 or
+128. On these rows a caller who does not fit a dimension has a stack problem, not
+an instantiation problem -- which is the opposite of nothing, because it means a
+larger task stack is a real answer.
 
 ### Growth, stated from the measurement
 
 On the equal-dimension line the whole-chain peak grows by a factor of 3.7 to 4.8
-per doubling at the top rung -- an exponent of 1.87 to 2.26 -- so the quadratic
-growth is measured to hold for the whole chain and not only for the dominant
-object. `manifold_ukf`, whose only
-axis is the measurement dimension, grows at 1.46. The exponent is not constant
-down the ladder: every row is markedly sub-quadratic between the first two rungs,
-where a fixed overhead that does not scale with the dimension still dominates.
+per doubling at rung 32 -- an exponent of 1.87 to 2.26 -- so the quadratic growth
+is measured to hold for the whole chain and not only for the dominant object.
+`manifold_ukf`, whose only axis is the measurement dimension, grows at 1.46 there.
+The exponent is not constant along the axis: every row is markedly sub-quadratic
+between the first two rungs, where a fixed overhead that does not scale with the
+dimension still dominates, and it settles slightly BELOW quadratic at the top.
+Measured over the fill's last doubling, from 64 to 128 on the equal-dimension
+line, the exponent is 1.93 (`kalman_filter`), 1.92 (`ekf`), 1.87 (`ukf`), 1.95
+(`mekf` from 60 to 120) and 1.65 (`manifold_ukf`).
+
+The deepest points the grid holds, all at the instantiation limit: `ekf`
+3,221,736 bytes at 128 states and 128 outputs, `ukf` 3,037,928, `mekf` 3,195,880
+at 124 bias states and 128 outputs, `kalman_filter` 2,495,304, and
+`manifold_ukf` 562,576 at 128 outputs. **Roughly three megabytes of stack**, on
+rows whose `allocation-free?` cell says `YES`.
 
 Against the Riccati row measured under the same instrument, at eight states and
 eight outputs the four two-dimensional rows sit at 11,928 to 29,272 bytes where
@@ -531,8 +656,28 @@ Riccati row was not measured there.
 `g++ (GNU) 16.1.1 20260728`, `-std=c++20 -O2 -fno-exceptions -fno-rtti -pthread`,
 no `-march` (driver default `-mtune=generic -march=x86-64`), x86-64 Linux,
 `double`, Eigen 3.4.1. HOST measurements. Runtime watermarks taken on a pthread
-with a 64 MiB stack against a **zero-byte harness floor** and a 1,024-byte
-harness gap; the painted region is 4 MiB.
+against a **zero-byte harness floor** and a 1,024-byte harness gap. The
+three-line tables were taken with a 4 MiB painted region on a 64 MiB thread
+stack; **the interior fill raises those to 32 MiB on a 512 MiB stack, and that is
+load-bearing rather than cautious.**
+
+**Why the window had to be raised, in one number.** The painted region is a
+CEILING on what the instrument can report: a chain that reaches its bottom
+disturbs the last word the walk looks at, and the walk then returns the window's
+own size rather than the chain's depth -- a figure indistinguishable from a
+measurement. The deepest chain in this grid is 3,221,736 bytes, which is 77
+percent of the 4 MiB the three-line tables were taken with, and the deepest in
+the predictive controller section below is 4,135,224 bytes, which is **98.6
+percent of it**. Every record in the fill carries whether it saturated; none did.
+
+**Reproducing the fill and the limits.** The fill is
+`tools/stack_watermark.sh --interior`, 4,677 points, journalled point by point so
+that a run cut off part-way resumes rather than restarting -- this one was cut
+off once and did. The limits are `tools/stack_watermark.sh --ceilings`. The fill
+ran at `-j6`, and at that parallelism a per-point compile time is a campaign wall
+time under the driver's own concurrency rather than a build cost; the driver's
+station-quiet gate therefore applies at `-j1` only and the station is censused on
+both sides of the stage instead.
 
 **Corpus.** The three vector-state rows are driven over the same forward-Euler
 damped chain the discrete Riccati row is measured on -- `-0.5` on the diagonal,
@@ -564,14 +709,16 @@ so nothing is claimed about the other two columns under that release.
 
 ### What is still outstanding here
 
-- **The interior of the grid is not measured.** Each axis was swept at one held
-  value. The interaction is established; its shape is not.
-- **The largest dimension that COMPILES is not published for any row here.** The
-  ladder stops at thirty-two because that is where it stops, not because
-  thirty-three fails. A caller must be able to tell "does not fit your stack"
-  from "does not exist as an instantiation", and only the first of those is
-  answered above. The predictive controller section below does answer it for
-  that row, where the ceiling is near enough to reach.
+- **The fill's stride is four, so nothing is measured between two adjacent values
+  of it.** The interaction is described rather than located, and the supported
+  maxima are exact to within the stride rather than exact. Closing that is an
+  exhaustive fill, which is 72,635 points against this one's 4,677.
+- **The frame column was not re-measured over the interior.** It belongs to the
+  equal-dimension build at the five rungs it is printed at, and taking it costs a
+  second compile per point.
+- **The linear-algebra release was varied only on the equal-dimension line.** It
+  moves 15 of 24 points there and flips one supported-maximum entry, and the fill
+  was taken against 3.4.1 alone.
 - **`arm64` and MSVC are absent**, and every figure is `double` at `-O2`. A frame
   size is an optimizer output, so these figures belong to that optimization level
   alone.
@@ -700,23 +847,59 @@ state line rung 1 (47,872), and the input line still has nothing; at 64 KiB none
 of the four moves further. Construct off the real-time task, or size the task
 for construction rather than for the solve.
 
-### The instantiation ceiling, which this row reaches
+### The largest configuration that COMPILES, which this row reaches
 
-The dominant fixed-size object is the `NV x NV` Hessian, so the instantiation
-ceiling is a statement about the decision dimension and the linear-algebra
-library's fixed-size allocation limit fixes it exactly: `NV * NV * 8 <= 131,072`
-gives `NV <= 128`. **Measured, and approached from three different directions:
+This is the other of the two limits, and it answers a different question from the
+table above: past it the configuration **does not exist as an instantiation** and
+no task stack changes that.
+
+The dominant fixed-size object is the `NV x NV` Hessian, so the limit is a
+statement about the decision dimension and the linear-algebra library's
+fixed-size allocation limit fixes it exactly: `NV * NV * 8 <= 131,072` gives
+`NV <= 128`. **Measured, and approached from three different directions:
 `NV = 128` instantiates and `NV = 131` does not.** The refusal is that library's
 `OBJECT_ALLOCATED_ON_STACK_IS_TOO_BIG` assertion, and it arrives at
 `NX = 21, NU = 1, NH = 5`, at `NX = 2, NU = 24, NH = 5` and at
 `NX = 2, NU = 1, NH = 43` -- three configurations with nothing in common except
 the decision dimension they induce. A separate probe at `NV = 129` is refused
-too, which closes the bracket on the derived bound.
+too, which closes the bracket on the derived bound. Each of the three boundaries
+was re-walked, one integer at a time from the value below it, with the refusal
+classified: `NX` 20 builds and 21 does not, `NU` 23 builds and 24 does not, `NH`
+42 builds and 43 does not.
 
 So a caller can tell the two failures apart on this row: above `NV = 128` the
 configuration **does not exist as an instantiation**, and well below it the
 configuration exists and **does not fit a small task stack**. The second limit
 binds first by a wide margin.
+
+### The supported maximum over the reachable configurations, from the fill
+
+The three ladders above hold two dimensions fixed while sweeping the third. The
+interior fill instead enumerates **354 reachable triples** -- every combination of
+the three chosen dimensions at a stride of four whose induced decision dimension
+is at most 128 -- and reports the supported maximum against the FIRST-SOLVE peak,
+for the same reason the ladders do.
+
+| task stack | largest fitting `NV` | every measured configuration below this `NV` fits |
+|---|---|---|
+| 4 KiB | none | `NV` 3 already does not fit |
+| 8 KiB | none | `NV` 3 already does not fit |
+| 16 KiB | 9 | 10 |
+| 32 KiB | 17 | 17 |
+| 48 KiB | 22 | 24 |
+| 64 KiB | 26 | 25 |
+
+**THE TWO COLUMNS DISAGREE AT 48 AND 64 KiB, AND THAT DISAGREEMENT IS THE
+RESULT.** The peak is dominated by the decision dimension and is not a function
+of it, so "the largest `NV` that fits" and "the `NV` below which everything fits"
+are different numbers. At 64 KiB a configuration inducing `NV = 26` fits --
+`NX = 1, NU = 24, NH = 1` -- while one inducing `NV = 25` does not:
+`NX = 12, NU = 1, NH = 1` needs 65,848 bytes. Over the 44 decision dimensions the
+fill reaches by more than one route, the deepest and shallowest configurations at
+the same `NV` differ by up to **1.16x**, and the pattern is consistent: horizon
+buys the decision dimension more cheaply than state does.
+
+Size a task from the configuration, not from the decision dimension it induces.
 
 ### The three chosen dimensions INTERACT
 
@@ -745,17 +928,23 @@ held lines as `W(d,1,5) + W(2,d,5) + W(2,1,d) - 2*W(2,1,5)` gives 1,952 against
 sum of the three dimensions is not a sum of three one-dimensional costs, and the
 three-axis null over-subtracts the fixed part at the small end.
 
-What this does NOT establish is the interior. Each axis was swept with the other
-two held at ONE pair of values, so the tables locate the interaction and do not
-describe it.
+The interior fill of 354 reachable triples describes that dependence rather than
+only locating it, and the numbers above under the supported maximum are its
+statement: at one decision dimension the peak varies by up to 1.16x with the
+route taken to it. What the fill still does not resolve is anything between two
+adjacent values of its stride of four.
 
 ### Provenance
 
 `g++ (GNU) 16.1.1 20260728`, `-std=c++20 -O2 -fno-exceptions -fno-rtti -pthread`,
 no `-march` (driver default `-mtune=generic -march=x86-64`), x86-64 Linux,
 `double`, Eigen 3.4.1. HOST measurements. Runtime watermarks taken on a pthread
-with a 64 MiB stack against a **zero-byte harness floor** and a 1,024-byte
-harness gap; the painted region is 4 MiB.
+against a **zero-byte harness floor** and a 1,024-byte harness gap. The three
+ladders were taken with a 4 MiB painted region on a 64 MiB thread stack; the
+interior fill raises those to 32 MiB on a 512 MiB stack, which this row is the
+reason for: its deepest construction chain is 4,135,224 bytes, 98.6 percent of
+the 4 MiB window, so the fill would have been within 59,080 bytes of reporting
+the window instead of the chain.
 
 **THE BACKEND REVISION IS PART OF EVERY FIGURE IN THIS SECTION.** All of them
 were measured against argmin at commit
@@ -774,14 +963,17 @@ are measured over -- `-0.5` on the diagonal, `1.0` on the superdiagonal, step
 first component is one, and no path or terminal constraint. Every measured
 configuration solved.
 
-Reproduce with `tools/stack_watermark.sh --rows controller --diagonal` and
-`--held-dimension`. The driver configures a tree from empty to fetch the backend
+Reproduce the ladders with `tools/stack_watermark.sh --rows controller
+--diagonal` and `--held-dimension`, the fill with `--interior` and the two limits
+with `--ceilings`. The driver configures a tree from empty to fetch the backend
 when it does not already have one.
 
 ### What is still outstanding here
 
-- **The interior of the three-dimensional grid is not measured.** Each axis was
-  swept with the other two held at one pair of values.
+- **The fill's stride is four**, so it reaches 354 of the 7,611 reachable
+  configurations and says nothing between two adjacent values of a stride.
+- **The frame column belongs to the equal-dimension ladder** and was not
+  re-measured over the fill.
 - **`arm64` and MSVC are absent**, every figure is `double` at `-O2`, and one
   backend revision was measured. A frame size is an optimizer output.
 - **The linear-algebra release was not varied for this row.** It moves published
