@@ -44,22 +44,35 @@
 # nonzero harness floor, which means the figure beside it is not attributable to
 # the call under measurement.
 #
-# Usage: tools/stack_watermark.sh [--rows riccati|estimators]
+# Usage: tools/stack_watermark.sh [--rows riccati|estimators|controller]
 #                                 [--control | --diagonal | --held-dimension]
 #                                 [--frames] [--input-dimension N]
-#                                 [--eigen PATH] [--gap-bytes N] [--jobs N]
+#                                 [--eigen PATH] [--backend-tree PATH]
+#                                 [--gap-bytes N] [--jobs N]
 #
 #   --rows riccati       the discrete Riccati rows, checked and unchecked
 #   --rows estimators    the five estimator rows
+#   --rows controller    the predictive controller row, whose build needs the
+#                        optional nonlinear-programming backend
 #   --control            the Riccati positive control (implies --rows riccati)
-#   --diagonal           equal state and measurement dimension, with the
-#                        per-grid-point build cost timed on a quiet station
-#   --held-dimension     measurement swept at fixed state, then state swept at
-#                        fixed measurement, per row
+#   --diagonal           equal dimensions on every swept axis, with the
+#                        per-grid-point build cost timed on a quiet station.
+#                        The controller row takes its frame measurement here
+#                        without being asked, because its published diagonal
+#                        carries the frame column.
+#   --held-dimension     each swept axis in turn with the others held, per row
 #   --frames             also take the per-function frame measurement, which
 #                        costs a second compile per grid point
-#   --input-dimension N  the corpus input dimension (default 1)
+#   --input-dimension N  the corpus input dimension (default 1); on the
+#                        controller row the input dimension is a swept axis and
+#                        this sets the value the other two sweeps hold it at
 #   --eigen PATH         the linear-algebra include root (default the system one)
+#   --backend-tree PATH  a cmake tree carrying the fetched nonlinear-programming
+#                        backend. Configured FROM EMPTY at the backend's pinned
+#                        revision when it is absent, so the figures belong to
+#                        that revision rather than to a local working checkout,
+#                        and the RESOLVED commit is read out of the fetched
+#                        source rather than out of the pin that selected it.
 #   --gap-bytes N        the harness gap, i.e. the measurement's resolution floor
 #   --jobs N             concurrent compiles (default 1; the build-cost timings
 #                        are only meaningful at 1)
@@ -96,9 +109,11 @@ ROW_EKF=4
 ROW_UKF=5
 ROW_MANIFOLD_UKF=6
 ROW_MEKF=7
+ROW_NMPC_STATIC=8
 
 ESTIMATOR_ROWS=("${ROW_KALMAN}" "${ROW_EKF}" "${ROW_UKF}" "${ROW_MANIFOLD_UKF}" "${ROW_MEKF}")
 RICCATI_ROWS=("${ROW_RICCATI_DISCRETE}" "${ROW_RICCATI_DISCRETE_UNCHECKED}")
+CONTROLLER_ROWS=("${ROW_NMPC_STATIC}")
 
 declare -A ROW_NAME=(
     ["${ROW_RICCATI_DISCRETE}"]=riccati-discrete
@@ -108,6 +123,7 @@ declare -A ROW_NAME=(
     ["${ROW_UKF}"]=ukf
     ["${ROW_MANIFOLD_UKF}"]=manifold-ukf
     ["${ROW_MEKF}"]=mekf
+    ["${ROW_NMPC_STATIC}"]=nmpc-static
 )
 
 # What a row's first axis IS. It is not "the state dimension" in three of the
@@ -123,6 +139,7 @@ declare -A ROW_STATE_AXIS=(
     ["${ROW_UKF}"]=state-dimension
     ["${ROW_MANIFOLD_UKF}"]=rotation-state-dimension-not-caller-controlled
     ["${ROW_MEKF}"]=bias-dimension
+    ["${ROW_NMPC_STATIC}"]=state-dimension
 )
 
 # The state dimension the Riccati control is taken at, and the geometric ladder
@@ -136,6 +153,31 @@ ESTIMATOR_LADDER=(2 4 8 16 32)
 # multiplicative filter's bias dimension is at least three, so the ladder's first
 # rung does not exist for it.
 HELD_RUNG=4
+
+# The predictive controller row's three CHOSEN dimensions, swept one at a time
+# with the other two held, plus a diagonal. The values held are the
+# configuration the shipped allocation proof pins, so the row's two pieces of
+# evidence meet at one point.
+#
+# The ladders double while doubling is affordable and then bracket the
+# instantiation ceiling, which on this row arrives at modest chosen dimensions:
+# the dominant fixed-size object is the `NV x NV` Hessian, so the ceiling is a
+# statement about the DERIVED decision dimension and the ladders approach it
+# from three different directions. Each ladder's last two rungs sit either side
+# of it, so the ceiling is bracketed rather than asserted.
+# The horizon a row that has no horizon is compiled at. Only the controller row
+# reads the selector, so the value is arbitrary and is named rather than spelled
+# as a bare number at every call site.
+HORIZON_NOT_READ=1
+
+CONTROLLER_HELD_STATE=2
+CONTROLLER_HELD_INPUT=1
+CONTROLLER_HELD_HORIZON=5
+
+CONTROLLER_STATE_LADDER=(1 2 4 8 16 20 21)
+CONTROLLER_INPUT_LADDER=(1 2 4 8 16 23 24)
+CONTROLLER_HORIZON_LADDER=(1 2 4 8 16 32 42 43)
+CONTROLLER_DIAGONAL_LADDER=(1 2 3 4 5 6 7 8)
 
 # The whole-chain runtime peaks and the acceptance-check frames the real-time
 # safety matrix publishes for the discrete Riccati rows, keyed by state
@@ -159,6 +201,9 @@ STAGE="control"
 ROW_SET="riccati"
 GAP_BYTES=1024
 EIGEN_ROOT="/usr/include/eigen3"
+BACKEND_TREE=""
+BACKEND_INCLUDE=""
+BACKEND_REVISION="not-resolved"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -191,6 +236,10 @@ while [ "$#" -gt 0 ]; do
             EIGEN_ROOT="$2"
             shift 2
             ;;
+        --backend-tree)
+            BACKEND_TREE="$2"
+            shift 2
+            ;;
         --gap-bytes)
             GAP_BYTES="$2"
             shift 2
@@ -207,15 +256,15 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "${ROW_SET}" in
-    riccati|estimators) ;;
+    riccati|estimators|controller) ;;
     *)
         printf 'unrecognized row set: %s\n' "${ROW_SET}" >&2
         exit 2
         ;;
 esac
 
-if [ "${STAGE}" = "control" ] && [ "${ROW_SET}" = "estimators" ]; then
-    printf 'the positive control is a Riccati measurement and has no estimator form\n' >&2
+if [ "${STAGE}" = "control" ] && [ "${ROW_SET}" != "riccati" ]; then
+    printf 'the positive control is a Riccati measurement and has no form on other rows\n' >&2
     exit 2
 fi
 
@@ -226,12 +275,61 @@ fi
 
 INCLUDE_FLAGS=(-I "${REPOSITORY_ROOT}/lib/ctrlpp/include" -isystem "${EIGEN_ROOT}")
 
+# The optional nonlinear-programming backend, resolved for the controller row
+# alone.
+#
+# ##########################################################################
+# # THE PIN AND THE RESOLVED COMMIT ARE TWO DIFFERENT FACTS, AND ONLY THE   #
+# # SECOND IS WHAT WAS MEASURED.                                           #
+# #                                                                        #
+# # The tree is configured FROM EMPTY so the backend is fetched at the      #
+# # revision the project pins, rather than read out of whatever local       #
+# # working checkout happens to be on the station carrying whatever         #
+# # uncommitted work. The commit below is then read out of the FETCHED      #
+# # source. Frames are an output of inlining that backend's templates, so a #
+# # figure published without the revision beside it is a figure a reader    #
+# # cannot re-derive.                                                      #
+# ##########################################################################
+resolve_backend()
+{
+    if [ -z "${BACKEND_TREE}" ]; then
+        BACKEND_TREE="${REPOSITORY_ROOT}/build/stack_watermark_backend"
+    fi
+
+    local source_directory="${BACKEND_TREE}/_deps/argmin-src"
+    if [ ! -d "${source_directory}" ]; then
+        printf 'configuring %s from empty to fetch the backend at its pinned revision\n' "${BACKEND_TREE}" >&2
+        rm -rf "${BACKEND_TREE}"
+        if ! cmake -S "${REPOSITORY_ROOT}" -B "${BACKEND_TREE}" -G "Unix Makefiles" \
+            -DCTRLPP_BUILD_ARGMIN=ON -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+            >"${WORK_DIRECTORY}/backend_configure.log" 2>&1
+        then
+            printf 'the backend could not be fetched; nothing was measured\n' >&2
+            exit 1
+        fi
+    fi
+
+    BACKEND_INCLUDE="${source_directory}/lib/argmin/include"
+    if [ ! -d "${BACKEND_INCLUDE}" ]; then
+        printf 'the fetched backend carries no include root at %s\n' "${BACKEND_INCLUDE}" >&2
+        exit 1
+    fi
+
+    BACKEND_REVISION="$(git -C "${source_directory}" rev-parse HEAD 2>/dev/null)"
+    BACKEND_REVISION="${BACKEND_REVISION:-unresolved}"
+    INCLUDE_FLAGS+=(-isystem "${BACKEND_INCLUDE}")
+}
+
 # Named for the sweep rather than for the instrument, so that the directory does
 # not collide with a single-configuration binary a developer builds by hand at
 # the obvious path.
 WORK_DIRECTORY="${TMPDIR:-/tmp}/stack_watermark_sweep"
 rm -rf "${WORK_DIRECTORY}"
 mkdir -p "${WORK_DIRECTORY}"
+
+if [ "${ROW_SET}" = "controller" ]; then
+    resolve_backend
+fi
 
 COMPILER_VERSION="$("${COMPILER_COMMAND}" --version 2>/dev/null | head -1)"
 HOST_ARCHITECTURE="$(uname -m)"
@@ -274,14 +372,40 @@ elapsed_seconds()
     awk -v start="$1" -v finish="$2" 'BEGIN { printf "%.2f", finish - start }'
 }
 
+# A grid point's own output path. Every dimension the instrument reads is in the
+# name, because the controller row sweeps three of them and two points that
+# differ only in the third would otherwise share a binary.
+point_stem()
+{
+    printf '%s/%s_%s_%s_%s_%s' "${WORK_DIRECTORY}" "$1" "$2" "$3" "$4" "$5"
+}
+
+# The two DERIVED dimensions of the controller row, computed here from the
+# relation as it is written in the published prose. The instrument computes them
+# independently from its own template parameters and prints them, and the two
+# are compared at every point: a disagreement means the relation is misstated in
+# one of the two places, which is exactly the error a reader would inherit.
+derived_decision_dimension()
+{
+    printf '%s' "$(( ($3 + 1) * $1 + $3 * $2 ))"
+}
+
+derived_constraint_dimension()
+{
+    printf '%s' "$(( $1 * ($3 + 1) ))"
+}
+
 # One grid point: compile and run in the same step, timing the compile and
 # recording the station's condition on both sides of it. A wall-clock compile
 # time taken beside another build measures station load rather than build cost,
 # so the condition travels with the number instead of being asserted afterwards.
 measure_point()
 {
-    local row="$1" state_dimension="$2" measurement_dimension="$3" tag="$4"
-    local stem="${WORK_DIRECTORY}/${row}_${state_dimension}_${measurement_dimension}"
+    local row="$1" state_dimension="$2" measurement_dimension="$3"
+    local input_dimension="$4" horizon="$5" tag="$6"
+    local stem
+    stem="$(point_stem "${row}" "${state_dimension}" "${measurement_dimension}" \
+        "${input_dimension}" "${horizon}")"
     local binary="${stem}.bin"
     local diagnostics="${stem}.diagnostics"
     local result="${stem}.result"
@@ -296,7 +420,8 @@ measure_point()
         "-DWATERMARK_ROW=${row}" \
         "-DWATERMARK_STATE_DIMENSION=${state_dimension}" \
         "-DWATERMARK_MEASUREMENT_DIMENSION=${measurement_dimension}" \
-        "-DWATERMARK_INPUT_DIMENSION=${INPUT_DIMENSION}" \
+        "-DWATERMARK_INPUT_DIMENSION=${input_dimension}" \
+        "-DWATERMARK_HORIZON=${horizon}" \
         "-DWATERMARK_HARNESS_GAP_BYTES=${GAP_BYTES}" \
         "${INSTRUMENT_SOURCE}" -o "${binary}" >"${diagnostics}" 2>&1
     then
@@ -346,7 +471,10 @@ owning_function()
 measure_frames()
 {
     local row="$1" state_dimension="$2" measurement_dimension="$3"
-    local stem="${WORK_DIRECTORY}/${row}_${state_dimension}_${measurement_dimension}"
+    local input_dimension="$4" horizon="$5"
+    local stem
+    stem="$(point_stem "${row}" "${state_dimension}" "${measurement_dimension}" \
+        "${input_dimension}" "${horizon}")"
     local object="${stem}.o"
     local report="${stem}.su"
     local diagnostics="${stem}.frame_diagnostics"
@@ -356,7 +484,8 @@ measure_frames()
         "-DWATERMARK_ROW=${row}" \
         "-DWATERMARK_STATE_DIMENSION=${state_dimension}" \
         "-DWATERMARK_MEASUREMENT_DIMENSION=${measurement_dimension}" \
-        "-DWATERMARK_INPUT_DIMENSION=${INPUT_DIMENSION}" \
+        "-DWATERMARK_INPUT_DIMENSION=${input_dimension}" \
+        "-DWATERMARK_HORIZON=${horizon}" \
         "-DWATERMARK_HARNESS_GAP_BYTES=${GAP_BYTES}" \
         -fstack-usage -c "${INSTRUMENT_SOURCE}" -o "${object}" >"${diagnostics}" 2>&1
     then
@@ -397,12 +526,31 @@ print_provenance()
     printf '  corpus            damped chain (vector-state rows) and constant body rate on SO(3)\n'
     printf '                    (attitude rows), input dimension %s\n' "${INPUT_DIMENSION}"
     printf '  concurrency       compiles run at -j%s\n' "${PARALLEL_JOBS}"
+    if [ "${ROW_SET}" = "controller" ]; then
+        printf '  backend           argmin at RESOLVED commit %s\n' "${BACKEND_REVISION}"
+        printf '                    fetched from empty at the project pin into %s\n' "${BACKEND_TREE}"
+        printf '                    figures are NOT comparable across revisions of it\n'
+    fi
     printf '\n'
 }
 
 NONZERO_FLOOR_COUNT=0
 FAILURE_COUNT=0
 BUSY_TIMING_COUNT=0
+RELATION_MISMATCH_COUNT=0
+
+# A timed compile is qualified by the station's condition on BOTH sides of it. A
+# nonzero count on either side means the number beside it measures station load
+# rather than build cost.
+count_busy_sides()
+{
+    if [ "$1" != "--" ] && [ "$1" != "0" ]; then
+        BUSY_TIMING_COUNT=$((BUSY_TIMING_COUNT + 1))
+    fi
+    if [ "$2" != "--" ] && [ "$2" != "0" ]; then
+        BUSY_TIMING_COUNT=$((BUSY_TIMING_COUNT + 1))
+    fi
+}
 
 # One machine-readable record per grid point. The harness floor travels on the
 # same line as the figure it qualifies, and so does the dimension held fixed: a
@@ -410,14 +558,51 @@ BUSY_TIMING_COUNT=0
 # its held dimension is a figure a reader will take for a general one.
 emit_record()
 {
-    local row="$1" state_dimension="$2" measurement_dimension="$3" held="$4"
-    local stem="${WORK_DIRECTORY}/${row}_${state_dimension}_${measurement_dimension}"
+    local row="$1" state_dimension="$2" measurement_dimension="$3"
+    local input_dimension="$4" horizon="$5" held="$6"
+    local stem
+    stem="$(point_stem "${row}" "${state_dimension}" "${measurement_dimension}" \
+        "${input_dimension}" "${horizon}")"
     local line measured floor reported_nx reported_ny reported_nu
     line="$(cat "${stem}.result")"
 
+    # The controller row's derived dimensions travel on the record whether the
+    # point instantiated or not: the decision dimension at the point where the
+    # instantiation stops compiling is precisely what a ceiling is a statement
+    # about, and it is computed from the chosen dimensions rather than read back
+    # from a binary that does not exist.
+    local derived=""
+    local expected_nv="" expected_maxm=""
+    if [ "${row}" = "${ROW_NMPC_STATIC}" ]; then
+        expected_nv="$(derived_decision_dimension "${state_dimension}" "${input_dimension}" "${horizon}")"
+        expected_maxm="$(derived_constraint_dimension "${state_dimension}" "${input_dimension}" "${horizon}")"
+        derived=" nh=${horizon} nv=${expected_nv} maxm=${expected_maxm}"
+    fi
+
+    # The first solve's whole-chain peak travels beside the steady-state one on
+    # the row that has both, because the two are peaks of DIFFERENT chains and
+    # the deeper of them is what a task stack has to cover.
+    local first_call=""
+    if [ "${row}" = "${ROW_NMPC_STATIC}" ] && [ -f "${stem}.result" ]; then
+        local reported_first reported_construction
+        reported_first="$(read_field "$(cat "${stem}.result")" first_call_bytes)"
+        reported_construction="$(read_field "$(cat "${stem}.result")" construction_bytes)"
+        if [ -n "${reported_first}" ]; then
+            first_call=" first_call_watermark_bytes=${reported_first} construction_watermark_bytes=${reported_construction}"
+        fi
+    fi
+
+    local seconds="--" busy_before="--" busy_after="--" load_before="--"
+    if [ -f "${stem}.timing" ]; then
+        IFS=$'\t' read -r seconds busy_before busy_after load_before _ <"${stem}.timing"
+    fi
+
     if [ "${line}" = "compile-failed" ] || [ "${line}" = "run-failed" ]; then
-        printf '%s nx=%s ny=%s held=%s not-instantiable=%s\n' \
-            "${ROW_NAME[${row}]}" "${state_dimension}" "${measurement_dimension}" "${held}" "${line}"
+        printf '%s nx=%s ny=%s nu=%s%s held=%s not-instantiable=%s compile_seconds=%s jobs=-j%s loadavg_before=%s quiet_before=%s quiet_after=%s\n' \
+            "${ROW_NAME[${row}]}" "${state_dimension}" "${measurement_dimension}" \
+            "${input_dimension}" "${derived}" "${held}" "${line}" \
+            "${seconds}" "${PARALLEL_JOBS}" "${load_before}" "${busy_before}" "${busy_after}"
+        count_busy_sides "${busy_before}" "${busy_after}"
         return
     fi
 
@@ -430,37 +615,44 @@ emit_record()
         NONZERO_FLOOR_COUNT=$((NONZERO_FLOOR_COUNT + 1))
     fi
 
+    # The instrument computed the same two derived dimensions from its own
+    # template parameters. Comparing them here is what keeps the relation the
+    # document publishes and the relation the measurement was taken at from
+    # drifting apart silently.
+    if [ "${row}" = "${ROW_NMPC_STATIC}" ]; then
+        local reported_nv reported_maxm
+        reported_nv="$(read_field "${line}" nv)"
+        reported_maxm="$(read_field "${line}" maxm)"
+        if [ "${reported_nv}" != "${expected_nv}" ] || [ "${reported_maxm}" != "${expected_maxm}" ]; then
+            printf 'THE STATED RELATION DISAGREES WITH THE INSTANTIATION at nx=%s nu=%s nh=%s: stated (%s, %s), instantiated (%s, %s)\n' \
+                "${state_dimension}" "${input_dimension}" "${horizon}" \
+                "${expected_nv}" "${expected_maxm}" "${reported_nv}" "${reported_maxm}"
+            RELATION_MISMATCH_COUNT=$((RELATION_MISMATCH_COUNT + 1))
+        fi
+    fi
+
     local frame_bytes="--" frame_function="--"
     if [ "${WITH_FRAMES}" -eq 1 ] && [ -f "${stem}.frame" ]; then
         IFS=$'\t' read -r frame_bytes frame_function _ <"${stem}.frame"
     fi
 
-    local seconds="--" busy_before="--" busy_after="--" load_before="--"
-    if [ -f "${stem}.timing" ]; then
-        IFS=$'\t' read -r seconds busy_before busy_after load_before _ <"${stem}.timing"
-    fi
-
-    printf '%s nx=%s ny=%s nu=%s held=%s watermark_bytes=%s floor_bytes=%s deepest_frame_bytes=%s deepest_frame_function=%s compile_seconds=%s jobs=-j%s loadavg_before=%s quiet_before=%s quiet_after=%s\n' \
-        "${ROW_NAME[${row}]}" "${reported_nx}" "${reported_ny}" "${reported_nu}" "${held}" \
-        "${measured}" "${floor}" "${frame_bytes}" "${frame_function}" \
+    printf '%s nx=%s ny=%s nu=%s%s held=%s watermark_bytes=%s%s floor_bytes=%s deepest_frame_bytes=%s deepest_frame_function=%s compile_seconds=%s jobs=-j%s loadavg_before=%s quiet_before=%s quiet_after=%s\n' \
+        "${ROW_NAME[${row}]}" "${reported_nx}" "${reported_ny}" "${reported_nu}" "${derived}" "${held}" \
+        "${measured}" "${first_call}" "${floor}" "${frame_bytes}" "${frame_function}" \
         "${seconds}" "${PARALLEL_JOBS}" "${load_before}" "${busy_before}" "${busy_after}"
 
-    if [ "${busy_before}" != "--" ] && [ "${busy_before}" != "0" ]; then
-        BUSY_TIMING_COUNT=$((BUSY_TIMING_COUNT + 1))
-    fi
-    if [ "${busy_after}" != "--" ] && [ "${busy_after}" != "0" ]; then
-        BUSY_TIMING_COUNT=$((BUSY_TIMING_COUNT + 1))
-    fi
+    count_busy_sides "${busy_before}" "${busy_after}"
 }
 
 run_grid()
 {
     local -n points="$1"
     local running=0
-    local point row state_dimension measurement_dimension
+    local point row state_dimension measurement_dimension input_dimension horizon
     for point in "${points[@]}"; do
-        IFS=' ' read -r row state_dimension measurement_dimension _ <<<"${point}"
-        measure_point "${row}" "${state_dimension}" "${measurement_dimension}" "${point}" &
+        IFS=' ' read -r row state_dimension measurement_dimension input_dimension horizon _ <<<"${point}"
+        measure_point "${row}" "${state_dimension}" "${measurement_dimension}" \
+            "${input_dimension}" "${horizon}" "${point}" &
         running=$((running + 1))
         if [ "${running}" -ge "${PARALLEL_JOBS}" ]; then
             wait -n
@@ -471,8 +663,9 @@ run_grid()
 
     if [ "${WITH_FRAMES}" -eq 1 ]; then
         for point in "${points[@]}"; do
-            IFS=' ' read -r row state_dimension measurement_dimension _ <<<"${point}"
-            measure_frames "${row}" "${state_dimension}" "${measurement_dimension}"
+            IFS=' ' read -r row state_dimension measurement_dimension input_dimension horizon _ <<<"${point}"
+            measure_frames "${row}" "${state_dimension}" "${measurement_dimension}" \
+                "${input_dimension}" "${horizon}"
         done
     fi
 }
@@ -484,7 +677,7 @@ if [ "${STAGE}" = "control" ]; then
     POINTS=()
     for row in "${RICCATI_ROWS[@]}"; do
         for state_dimension in "${CONTROL_DIMENSIONS[@]}"; do
-            POINTS+=("${row} ${state_dimension} 1")
+            POINTS+=("${row} ${state_dimension} 1 ${INPUT_DIMENSION} ${HORIZON_NOT_READ}")
         done
     done
 
@@ -498,7 +691,7 @@ if [ "${STAGE}" = "control" ]; then
         row NX NU measured floor recorded delta match
     for row in "${RICCATI_ROWS[@]}"; do
         for state_dimension in "${CONTROL_DIMENSIONS[@]}"; do
-            stem="${WORK_DIRECTORY}/${row}_${state_dimension}_1"
+            stem="$(point_stem "${row}" "${state_dimension}" 1 "${INPUT_DIMENSION}" "${HORIZON_NOT_READ}")"
             line="$(cat "${stem}.result")"
             measured="$(read_field "${line}" watermark_bytes)"
             reported_floor="$(read_field "${line}" floor_bytes)"
@@ -541,7 +734,7 @@ if [ "${STAGE}" = "control" ]; then
     printf '%-4s %-10s %-46s %-14s %-12s %-6s\n' \
         NX deepest owner acceptance recorded match
     for state_dimension in "${CONTROL_DIMENSIONS[@]}"; do
-        stem="${WORK_DIRECTORY}/${ROW_RICCATI_DISCRETE}_${state_dimension}_1"
+        stem="$(point_stem "${ROW_RICCATI_DISCRETE}" "${state_dimension}" 1 "${INPUT_DIMENSION}" "${HORIZON_NOT_READ}")"
         IFS=$'\t' read -r deepest_bytes deepest_function named_bytes <"${stem}.frame"
         recorded="${CONTROL_FRAME[${state_dimension}]}"
         if [ "${named_bytes}" = "${recorded}" ]; then
@@ -558,17 +751,91 @@ if [ "${STAGE}" = "control" ]; then
 
     for row in "${RICCATI_ROWS[@]}"; do
         for state_dimension in "${CONTROL_DIMENSIONS[@]}"; do
-            emit_record "${row}" "${state_dimension}" 1 "input-dimension-${INPUT_DIMENSION}"
+            emit_record "${row}" "${state_dimension}" 1 "${INPUT_DIMENSION}" "${HORIZON_NOT_READ}" \
+                "input-dimension-${INPUT_DIMENSION}"
         done
     done
     printf '\n'
 fi
 
-if [ "${STAGE}" = "diagonal" ]; then
+if [ "${STAGE}" = "diagonal" ] && [ "${ROW_SET}" = "controller" ]; then
+    # The published diagonal for this row carries the frame column, so the frame
+    # compile is taken here without being asked for rather than left to a flag a
+    # reproducer could forget.
+    WITH_FRAMES=1
+    POINTS=()
+    for row in "${CONTROLLER_ROWS[@]}"; do
+        for rung in "${CONTROLLER_DIAGONAL_LADDER[@]}"; do
+            POINTS+=("${row} ${rung} 0 ${rung} ${rung}")
+        done
+    done
+
+    printf 'The diagonal: the state, input and horizon dimensions equal, one line per\n'
+    printf 'rung. Every line carries the three CHOSEN dimensions, the two DERIVED\n'
+    printf 'dimensions they induce, the whole-chain runtime watermark, the harness floor\n'
+    printf 'that qualifies it, the deepest single frame with the function that owns it,\n'
+    printf 'and the compile that produced the point with the station condition it was\n'
+    printf 'timed under.\n\n'
+    printf 'The derived dimensions are NOT gridded over and are not a caller choice:\n'
+    printf '  NV   = (NH + 1) * NX + NH * NU\n'
+    printf '  MaxM = NX * (NH + 1)\n'
+    printf 'Most pairs of them correspond to no reachable configuration, so a grid over\n'
+    printf 'them would describe a surface a caller cannot reach.\n\n'
+    print_provenance
+    run_grid POINTS
+
+    for row in "${CONTROLLER_ROWS[@]}"; do
+        for rung in "${CONTROLLER_DIAGONAL_LADDER[@]}"; do
+            emit_record "${row}" "${rung}" 0 "${rung}" "${rung}" "nothing-diagonal"
+        done
+    done
+    printf '\n'
+fi
+
+if [ "${STAGE}" = "held" ] && [ "${ROW_SET}" = "controller" ]; then
+    POINTS=()
+    for row in "${CONTROLLER_ROWS[@]}"; do
+        for rung in "${CONTROLLER_STATE_LADDER[@]}"; do
+            POINTS+=("${row} ${rung} 0 ${CONTROLLER_HELD_INPUT} ${CONTROLLER_HELD_HORIZON}")
+        done
+        for rung in "${CONTROLLER_INPUT_LADDER[@]}"; do
+            POINTS+=("${row} ${CONTROLLER_HELD_STATE} 0 ${rung} ${CONTROLLER_HELD_HORIZON}")
+        done
+        for rung in "${CONTROLLER_HORIZON_LADDER[@]}"; do
+            POINTS+=("${row} ${CONTROLLER_HELD_STATE} 0 ${CONTROLLER_HELD_INPUT} ${rung}")
+        done
+    done
+
+    printf 'The held-dimension sweeps: each of the three CHOSEN dimensions swept in turn\n'
+    printf 'with the other two held. Every line names what it holds and the value it\n'
+    printf 'holds it at, and carries the two derived dimensions the point induces. No\n'
+    printf 'interior point is measured: every point below lies on one of the three\n'
+    printf 'held-dimension lines.\n\n'
+    print_provenance
+    run_grid POINTS
+
+    for row in "${CONTROLLER_ROWS[@]}"; do
+        for rung in "${CONTROLLER_STATE_LADDER[@]}"; do
+            emit_record "${row}" "${rung}" 0 "${CONTROLLER_HELD_INPUT}" "${CONTROLLER_HELD_HORIZON}" \
+                "input-dimension-at-${CONTROLLER_HELD_INPUT}-horizon-at-${CONTROLLER_HELD_HORIZON}"
+        done
+        for rung in "${CONTROLLER_INPUT_LADDER[@]}"; do
+            emit_record "${row}" "${CONTROLLER_HELD_STATE}" 0 "${rung}" "${CONTROLLER_HELD_HORIZON}" \
+                "state-dimension-at-${CONTROLLER_HELD_STATE}-horizon-at-${CONTROLLER_HELD_HORIZON}"
+        done
+        for rung in "${CONTROLLER_HORIZON_LADDER[@]}"; do
+            emit_record "${row}" "${CONTROLLER_HELD_STATE}" 0 "${CONTROLLER_HELD_INPUT}" "${rung}" \
+                "state-dimension-at-${CONTROLLER_HELD_STATE}-input-dimension-at-${CONTROLLER_HELD_INPUT}"
+        done
+    done
+    printf '\n'
+fi
+
+if [ "${STAGE}" = "diagonal" ] && [ "${ROW_SET}" != "controller" ]; then
     POINTS=()
     for row in "${ESTIMATOR_ROWS[@]}"; do
         for rung in "${ESTIMATOR_LADDER[@]}"; do
-            POINTS+=("${row} ${rung} ${rung}")
+            POINTS+=("${row} ${rung} ${rung} ${INPUT_DIMENSION} ${HORIZON_NOT_READ}")
         done
     done
 
@@ -586,24 +853,24 @@ if [ "${STAGE}" = "diagonal" ]; then
             held="${ROW_STATE_AXIS[${row}]}-at-3"
         fi
         for rung in "${ESTIMATOR_LADDER[@]}"; do
-            emit_record "${row}" "${rung}" "${rung}" "${held}"
+            emit_record "${row}" "${rung}" "${rung}" "${INPUT_DIMENSION}" "${HORIZON_NOT_READ}" "${held}"
         done
     done
     printf '\n'
 fi
 
-if [ "${STAGE}" = "held" ]; then
+if [ "${STAGE}" = "held" ] && [ "${ROW_SET}" != "controller" ]; then
     POINTS=()
     for row in "${ESTIMATOR_ROWS[@]}"; do
         for rung in "${ESTIMATOR_LADDER[@]}"; do
-            POINTS+=("${row} ${HELD_RUNG} ${rung}")
+            POINTS+=("${row} ${HELD_RUNG} ${rung} ${INPUT_DIMENSION} ${HORIZON_NOT_READ}")
         done
         # The manifold filter's state is a rotation, so there is no state
         # dimension for a caller to sweep and none is swept. Emitting one would
         # publish five readings of one configuration as if they were a trend.
         if [ "${row}" != "${ROW_MANIFOLD_UKF}" ]; then
             for rung in "${ESTIMATOR_LADDER[@]}"; do
-                POINTS+=("${row} ${rung} ${HELD_RUNG}")
+                POINTS+=("${row} ${rung} ${HELD_RUNG} ${INPUT_DIMENSION} ${HORIZON_NOT_READ}")
             done
         fi
     done
@@ -622,11 +889,13 @@ if [ "${STAGE}" = "held" ]; then
             held_at=3
         fi
         for rung in "${ESTIMATOR_LADDER[@]}"; do
-            emit_record "${row}" "${HELD_RUNG}" "${rung}" "${ROW_STATE_AXIS[${row}]}-at-${held_at}"
+            emit_record "${row}" "${HELD_RUNG}" "${rung}" "${INPUT_DIMENSION}" "${HORIZON_NOT_READ}" \
+                "${ROW_STATE_AXIS[${row}]}-at-${held_at}"
         done
         if [ "${row}" != "${ROW_MANIFOLD_UKF}" ]; then
             for rung in "${ESTIMATOR_LADDER[@]}"; do
-                emit_record "${row}" "${rung}" "${HELD_RUNG}" "measurement-dimension-at-${HELD_RUNG}"
+                emit_record "${row}" "${rung}" "${HELD_RUNG}" "${INPUT_DIMENSION}" "${HORIZON_NOT_READ}" \
+                    "measurement-dimension-at-${HELD_RUNG}"
             done
         else
             printf '%s no-second-sweep held=%s-at-3\n' \
@@ -653,6 +922,15 @@ if [ "${NONZERO_FLOOR_COUNT}" -ne 0 ]; then
         "${NONZERO_FLOOR_COUNT}"
     printf 'attributable to the call under measurement and nothing may be derived from\n'
     printf 'them until the floor reads zero.\n'
+    exit 1
+fi
+
+if [ "${RELATION_MISMATCH_COUNT}" -ne 0 ]; then
+    printf 'THE PUBLISHED RELATION AND THE INSTANTIATION DISAGREE on %s point(s). The\n' \
+        "${RELATION_MISMATCH_COUNT}"
+    printf 'derived dimensions above are computed twice, once from the relation as it is\n'
+    printf 'written and once from the template parameters the measurement ran at, and a\n'
+    printf 'reader would inherit whichever of the two is wrong.\n'
     exit 1
 fi
 

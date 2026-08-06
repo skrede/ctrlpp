@@ -66,6 +66,22 @@
 /// rate on SO(3) and measure the gravity direction, repeated to whatever output
 /// dimension is asked for, because their state is a rotation and not a vector.
 ///
+/// **The predictive controller row is measured over that same forward-Euler
+/// chain as its prediction model**, with a state weight of `10 I`, an input
+/// weight of `0.1 I` and no path or terminal constraint, so its only
+/// constraints are the dynamics continuity and the initial state. It is the
+/// only row whose build needs the optional nonlinear-programming backend, and
+/// the backend's revision is part of its provenance: the frames are an output
+/// of inlining that backend's templates, so figures taken against two revisions
+/// of it are not comparable and the driver prints the revision it resolved.
+///
+/// **This row grids over what a CALLER CHOOSES and reports what that induces.**
+/// The controller's decision dimension `NV = (NH + 1) * NX + NH * NU` and its
+/// constraint bound `MaxM = NX * (NH + 1)` are derived from the state, input
+/// and horizon dimensions rather than selected, so a grid over the derived pair
+/// would describe configurations no caller can reach. Both are computed here
+/// from the selectors and printed beside every figure.
+///
 /// **The input dimension is part of the provenance of every row here.** It is a
 /// separate compile-time selector rather than a constant, it is printed on
 /// every output line, and it moves the discrete Riccati watermark by more than
@@ -90,28 +106,6 @@
 /// on the same line as the figure by construction: a watermark reported without
 /// its floor is not a measurement of anything.
 
-#include "ctrlpp/control/dare.h"
-
-#include "ctrlpp/estimation/ekf.h"
-#include "ctrlpp/estimation/ukf.h"
-#include "ctrlpp/estimation/mekf.h"
-#include "ctrlpp/estimation/kalman.h"
-#include "ctrlpp/estimation/manifold_ukf.h"
-
-#include "ctrlpp/lie/so3.h"
-
-#include "ctrlpp/model/state_space.h"
-
-#include <Eigen/Core>
-#include <Eigen/Geometry>
-
-#include <atomic>
-#include <cstdio>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <pthread.h>
-
 /// The row under measurement. One selector per hot path the matrix publishes.
 ///
 /// The unchecked discrete Riccati row is the same chain with the acceptance
@@ -126,10 +120,42 @@
 #define WATERMARK_ROW_UKF                        5
 #define WATERMARK_ROW_MANIFOLD_UKF               6
 #define WATERMARK_ROW_MEKF                       7
+#define WATERMARK_ROW_NMPC_STATIC                8
 
 #ifndef WATERMARK_ROW
 #define WATERMARK_ROW WATERMARK_ROW_RICCATI_DISCRETE
 #endif
+
+#include "ctrlpp/control/dare.h"
+
+#include "ctrlpp/estimation/ekf.h"
+#include "ctrlpp/estimation/ukf.h"
+#include "ctrlpp/estimation/mekf.h"
+#include "ctrlpp/estimation/kalman.h"
+#include "ctrlpp/estimation/manifold_ukf.h"
+
+#include "ctrlpp/lie/so3.h"
+
+#include "ctrlpp/model/state_space.h"
+
+// The predictive controller row alone needs the optional nonlinear-programming
+// backend, and pulling its headers into every row would put that backend's
+// instantiation cost on rows that never call it.
+#if WATERMARK_ROW == WATERMARK_ROW_NMPC_STATIC
+#include "ctrlpp/nmpc.h"
+
+#include "ctrlpp/mpc/argmin_solver.h"
+#endif
+
+#include <Eigen/Core>
+#include <Eigen/Geometry>
+
+#include <atomic>
+#include <cstdio>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <pthread.h>
 
 /// The state dimension the caller chooses. It is `NX` for the Riccati rows and
 /// for the three vector-state filters, and the BIAS dimension `NB` for the
@@ -148,7 +174,13 @@
 #define WATERMARK_INPUT_DIMENSION 1
 #endif
 
-#if WATERMARK_ROW < WATERMARK_ROW_RICCATI_DISCRETE || WATERMARK_ROW > WATERMARK_ROW_MEKF
+/// The prediction horizon, which is the predictive controller row's third
+/// caller-chosen dimension and is read by no other row.
+#ifndef WATERMARK_HORIZON
+#define WATERMARK_HORIZON 5
+#endif
+
+#if WATERMARK_ROW < WATERMARK_ROW_RICCATI_DISCRETE || WATERMARK_ROW > WATERMARK_ROW_NMPC_STATIC
 #error "WATERMARK_ROW names no row this instrument implements"
 #endif
 
@@ -613,9 +645,88 @@ auto build_mekf_chain()
             gravity_direction<NY>(Eigen::Quaternion<double>::Identity())};
 }
 
+#if WATERMARK_ROW == WATERMARK_ROW_NMPC_STATIC
+
+/// The predictive controller's carried objects, and the two DERIVED dimensions
+/// computed here from the three the caller chose.
+///
+/// `NV = (NH + 1) * NX + NH * NU` counts one state block per horizon node
+/// including the initial one, plus one input block per interval;
+/// `MaxM = NX * (NH + 1)` counts the dynamics-continuity rows plus the
+/// initial-state rows, which are the only equalities this pose carries. There
+/// are no path or terminal constraints and no slack, so the bound is met with
+/// equality and the solver's per-call multiplier storage stays inline.
+template<std::size_t NX, std::size_t NU, std::size_t NH>
+struct controller_chain
+{
+    static constexpr int decision_dimension   = static_cast<int>((NH + 1) * NX + NH * NU);
+    static constexpr int constraint_dimension = static_cast<int>(NX * (NH + 1));
+
+    using solver_type =
+        ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp, true, decision_dimension, constraint_dimension>;
+    using controller_type =
+        ctrlpp::nmpc_static<double, NX, NU, NH, solver_type, chain_dynamics<NX, NU>>;
+
+    chain_dynamics<NX, NU>     dynamics;
+    controller_type            controller;
+    ctrlpp::Vector<double, NX> state;
+};
+
+/// The measured call: one steady-state solve followed by the caller's own plant
+/// step. That pair is the loop body the shipped allocation test arms, so the
+/// two pieces of evidence for this row cover the same block rather than two
+/// different ones. The plant step is a fixed-size linear map and the solve is
+/// everything else.
+template<std::size_t NX, std::size_t NU, std::size_t NH>
+[[gnu::noinline]] void run_controller(controller_chain<NX, NU, NH> &chain) noexcept
+{
+    std::uint64_t bits = 1;
+
+    const auto stepped = chain.controller.solve(chain.state);
+    if(stepped)
+    {
+        const double reduction = stepped->input.sum();
+        std::memcpy(&bits, &reduction, sizeof(bits));
+        chain.state = chain.dynamics(chain.state, stepped->input);
+    }
+    chain_sink.store(bits, std::memory_order_relaxed);
+}
+
+/// Construction and the walk into steady state both sit outside every painted
+/// window. The first solves construct the solver's state and flush its one-time
+/// lazy instantiation, and each of them advances the plant, so the call the
+/// paint sees is a warm-started solve at a state the previous solve did not
+/// answer -- a steady-state step rather than a converged re-solve at an
+/// unchanged pose, which would report a shorter chain than a caller runs.
+template<std::size_t NX, std::size_t NU, std::size_t NH>
+auto build_controller_chain(int warm_up_solves) -> controller_chain<NX, NU, NH>
+{
+    const chain_dynamics<NX, NU> dynamics{chain_state_matrix<NX>(), chain_input_matrix<NX, NU>()};
+
+    ctrlpp::nmpc_config<double, NX, NU> config;
+    config.horizon = static_cast<int>(NH);
+    config.Q       = ctrlpp::Matrix<double, NX, NX>::Identity() * 10.0;
+    config.R       = ctrlpp::Matrix<double, NU, NU>::Identity() * 0.1;
+
+    ctrlpp::Vector<double, NX> initial_state = ctrlpp::Vector<double, NX>::Zero();
+    initial_state(0)                         = 1.0;
+
+    controller_chain<NX, NU, NH> chain{
+        dynamics,
+        typename controller_chain<NX, NU, NH>::controller_type{dynamics, config},
+        initial_state};
+
+    for(int solve = 0; solve < warm_up_solves; ++solve)
+        run_controller(chain);
+    return chain;
+}
+
+#endif
+
 constexpr std::size_t selected_state_dimension       = WATERMARK_STATE_DIMENSION;
 constexpr std::size_t selected_measurement_dimension = WATERMARK_MEASUREMENT_DIMENSION;
 constexpr std::size_t selected_input_dimension       = WATERMARK_INPUT_DIMENSION;
+constexpr std::size_t selected_horizon               = WATERMARK_HORIZON;
 
 /// Each row names itself, states the dimensions it was ACTUALLY instantiated at
 /// -- which for the attitude rows is not always the dimension asked for, since
@@ -733,7 +844,7 @@ void run_measured_chain(Chain &chain) noexcept
     run_filter(chain);
 }
 
-#else
+#elif WATERMARK_ROW == WATERMARK_ROW_MEKF
 
 /// The selector carries the BIAS dimension, and the error state the covariance
 /// recursion runs at is three larger. Both are reported: the first is what the
@@ -754,11 +865,77 @@ void run_measured_chain(Chain &chain) noexcept
     run_filter(chain);
 }
 
+#else
+
+/// The three selectors this row reads are the state, input and horizon
+/// dimensions, which is what a caller picks. There is no measurement dimension
+/// to report and the two dimensions the frames are sized by are derived, so
+/// they are printed as their own fields rather than folded into one of the
+/// three above.
+constexpr const char *row_name                        = "nmpc-static";
+constexpr std::size_t instantiated_state_dimension    = selected_state_dimension;
+constexpr std::size_t instantiated_input_dimension    = selected_input_dimension;
+constexpr std::size_t instantiated_output_dimension   = 0;
+
+using selected_controller_chain =
+    controller_chain<selected_state_dimension, selected_input_dimension, selected_horizon>;
+
+constexpr std::size_t instantiated_decision_dimension =
+    static_cast<std::size_t>(selected_controller_chain::decision_dimension);
+constexpr std::size_t instantiated_constraint_dimension =
+    static_cast<std::size_t>(selected_controller_chain::constraint_dimension);
+
+/// The steady-state chain has walked into steady state before it is returned;
+/// the first-call chain has not, so the call the paint sees on it is the solve
+/// that emplaces the solver.
+constexpr int steady_state_warm_up_solves = 20;
+
+auto build_measured_chain()
+{
+    return build_controller_chain<selected_state_dimension, selected_input_dimension, selected_horizon>(
+        steady_state_warm_up_solves);
+}
+
+auto build_first_call_chain()
+{
+    return build_controller_chain<selected_state_dimension, selected_input_dimension, selected_horizon>(0);
+}
+
+/// Construction, measured as its own chain rather than reported as an absence.
+///
+/// It is offline and it is excluded from both solve figures above, exactly as
+/// the allocation guards exclude it -- but the frame report puts the deepest
+/// frame in the whole translation unit inside this constructor, larger than
+/// either solve's whole chain, and a caller who constructs the controller on
+/// the task's own stack pays it. Publishing the solve figures alone would leave
+/// the largest of the three unmeasured.
+///
+/// Kept out of line for the same reason every other measured chain is: an
+/// inlined body would put its locals in the painting routine's own frame, above
+/// the origin, where the paint cannot see them.
+[[gnu::noinline]] void run_construction() noexcept
+{
+    auto built = build_first_call_chain();
+
+    std::uint64_t bits      = 0;
+    const double  reduction = built.state.sum();
+    std::memcpy(&bits, &reduction, sizeof(bits));
+    chain_sink.store(bits, std::memory_order_relaxed);
+}
+
+template<typename Chain>
+void run_measured_chain(Chain &chain) noexcept
+{
+    run_controller(chain);
+}
+
 #endif
 
 struct measurement
 {
     std::size_t watermark_bytes;
+    std::size_t first_call_bytes;
+    std::size_t construction_bytes;
     std::size_t floor_bytes;
     bool        solved;
 };
@@ -773,9 +950,33 @@ auto watermark_thread(void *argument) noexcept -> void *
     const auto call  = [&chain]() noexcept { run_measured_chain(chain); };
     call();
 
-    result->solved      = chain_sink.load(std::memory_order_relaxed) != 1;
-    result->floor_bytes = painted_pass(call, false);
-    result->watermark_bytes = painted_pass(call, true);
+    result->solved             = chain_sink.load(std::memory_order_relaxed) != 1;
+    result->first_call_bytes   = 0;
+    result->construction_bytes = 0;
+    result->floor_bytes        = painted_pass(call, false);
+    result->watermark_bytes    = painted_pass(call, true);
+
+#if WATERMARK_ROW == WATERMARK_ROW_NMPC_STATIC
+    // ON THIS ROW THE FIRST CALL IS A DIFFERENT CHAIN FROM THE STEADY-STATE
+    // ONE, AND IT IS THE DEEPER OF THE TWO. The solver instance is emplaced
+    // lazily on the first solve and only reset on every later one, so the
+    // first solve reaches a setup path that no steady-state solve enters. The
+    // per-function frame report already shows that path's frame exceeding the
+    // steady-state whole-chain peak at several dimensions, which would make a
+    // supported maximum derived from the steady-state figure alone an
+    // UNDERSTATEMENT -- and an understated stack figure overflows a task
+    // rather than returning a wrong answer.
+    //
+    // It is measured on a freshly built chain, so construction stays outside
+    // the painted window exactly as it does above and the difference between
+    // the two figures is the first solve and nothing else.
+    auto       fresh      = build_first_call_chain();
+    const auto first_call = [&fresh]() noexcept { run_measured_chain(fresh); };
+    result->first_call_bytes = painted_pass(first_call, true);
+
+    const auto construct      = []() noexcept { run_construction(); };
+    result->construction_bytes = painted_pass(construct, true);
+#endif
 
     return nullptr;
 }
@@ -798,7 +999,7 @@ auto main() -> int
         return 1;
     }
 
-    measurement result{0, 0, false};
+    measurement result{0, 0, 0, 0, false};
     pthread_t   thread{};
     if(pthread_create(&thread, &attributes, &watermark_thread, &result) != 0)
     {
@@ -810,12 +1011,25 @@ auto main() -> int
     static_cast<void>(pthread_join(thread, nullptr));
     static_cast<void>(pthread_attr_destroy(&attributes));
 
-    std::printf("row=%s nx=%zu ny=%zu nu=%zu gap_bytes=%zu scalar=double solved=%s "
-                "watermark_bytes=%zu floor_bytes=%zu\n",
+    std::printf("row=%s nx=%zu ny=%zu nu=%zu",
                 row_name,
                 instantiated_state_dimension,
                 instantiated_output_dimension,
-                instantiated_input_dimension,
+                instantiated_input_dimension);
+
+    // The horizon and the two dimensions it induces are printed by the one row
+    // that has them and by no other. Printing a zero for a row that carries no
+    // horizon would put a number where there is no quantity.
+#if WATERMARK_ROW == WATERMARK_ROW_NMPC_STATIC
+    std::printf(" nh=%zu nv=%zu maxm=%zu first_call_bytes=%zu construction_bytes=%zu",
+                selected_horizon,
+                instantiated_decision_dimension,
+                instantiated_constraint_dimension,
+                result.first_call_bytes,
+                result.construction_bytes);
+#endif
+
+    std::printf(" gap_bytes=%zu scalar=double solved=%s watermark_bytes=%zu floor_bytes=%zu\n",
                 harness_gap_bytes,
                 result.solved ? "yes" : "no",
                 result.watermark_bytes,
