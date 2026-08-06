@@ -68,12 +68,14 @@ jobs:
               -DCMAKE_C_FLAGS="--coverage" \
               -DCTRLPP_BUILD_TESTS=ON \
               -DCTRLPP_BUILD_EXAMPLES=OFF \
-              -DCTRLPP_CMAKE_FETCH_DEPS=ON
+              -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+              -DCTRLPP_INSTALL=OFF
           else
             cmake . -B build -DCMAKE_BUILD_TYPE=Release \
               -DCTRLPP_BUILD_TESTS=ON \
               -DCTRLPP_BUILD_EXAMPLES=ON \
-              -DCTRLPP_CMAKE_FETCH_DEPS=ON
+              -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+              -DCTRLPP_INSTALL=OFF
           fi
 
       - name: Build
@@ -127,7 +129,7 @@ jobs:
       # minutes. -gsplit-dwarf was measured too and saves 2%; the other debug
       # knobs save nothing.
       - name: Configure (default -fno-exceptions tree)
-        run: cmake --preset dev -DCMAKE_CXX_FLAGS_DEBUG=-g1
+        run: cmake --preset dev -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCTRLPP_INSTALL=OFF
 
       # Bounded parallelism, measured rather than chosen. Ninja defaults to
       # nproc+2, which is six slots on these runners; the Makefile-generator
@@ -166,7 +168,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
       - name: Configure (exceptions preset, OSQP + NLopt on)
-        run: cmake --preset exceptions -DCMAKE_CXX_FLAGS_DEBUG=-g1
+        run: cmake --preset exceptions -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCTRLPP_INSTALL=OFF
 
       # Same measured bound as the no-exceptions job. This tree is heavier
       # still: at full -g it carries fifty translation units above 1 GiB against
@@ -200,7 +202,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
       - name: Configure (default tree at C++23)
-        run: cmake --preset dev-cxx23 -DCMAKE_CXX_FLAGS_DEBUG=-g1
+        run: cmake --preset dev-cxx23 -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCTRLPP_INSTALL=OFF
 
       # Same measured bound: this preset builds the same tree as the
       # no-exceptions job, one standard above the floor.
@@ -210,8 +212,29 @@ jobs:
       - name: Test
         run: ctest --test-dir build/dev-cxx23 --output-on-failure
 
+  # The installed tree is the artifact a consumer actually receives, and it is the
+  # one thing an ordinary build never exercises: a target that never joined the
+  # export set, or a dependency the config package forgets to resolve, only shows
+  # up on the far side of an install. One cell per advertised configuration, each
+  # with its own install prefix and its own dependency prefix -- a prefix shared
+  # between cells could answer a later cell's package search out of a tree an
+  # earlier cell wrote, which is exactly the defect this job exists to catch.
   install-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: core
+            option: ""
+          - backend: osqp
+            option: CTRLPP_BUILD_OSQP
+          - backend: nlopt
+            option: CTRLPP_BUILD_NLOPT
+          - backend: argmin
+            option: CTRLPP_BUILD_ARGMIN
+
     runs-on: ubuntu-24.04
+    name: install-test (${{ matrix.backend }})
 
     steps:
       - uses: actions/checkout@v4
@@ -219,24 +242,196 @@ jobs:
       - name: Install Eigen
         run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
 
+      # Each backend is built from the commit this repository already pins, read out
+      # of the file that pins it rather than restated here, so the source built for
+      # this cell and the source the build expects cannot drift apart. All three take
+      # the same route rather than one of them arriving as a distribution package,
+      # which would make the cell depend on whatever that package happens to put in
+      # its CMake config directory.
+      - name: Build and install the backend from its pinned source
+        if: matrix.backend != 'core'
+        run: |
+          set -euo pipefail
+          declared() {
+            awk -v want="$1" -v field="$2" '
+              /FetchContent_Declare\($/ { pending = 1; inblock = 0; next }
+              pending                   { pending = 0; inblock = ($1 == want); next }
+              inblock && $1 == field    { print $2; exit }
+              inblock && /^[[:space:]]*\)[[:space:]]*$/ { inblock = 0 }
+            ' lib/dependencies.cmake
+          }
+          case "${{ matrix.backend }}" in
+            osqp)
+              PIN=$(declared osqp GIT_TAG)
+              FLAGS=(-DOSQP_BUILD_DEMO=OFF)
+              ;;
+            nlopt)
+              PIN=$(declared nlopt GIT_TAG)
+              FLAGS=(-DNLOPT_PYTHON=OFF -DNLOPT_OCTAVE=OFF -DNLOPT_GUILE=OFF
+                     -DNLOPT_TESTS=OFF -DBUILD_SHARED_LIBS=OFF)
+              ;;
+            argmin)
+              # argmin takes its commit from a cache entry rather than a literal, so
+              # the pin is read from the file that defines that entry. Its install
+              # rules are gated on being the top-level project with its own fetching
+              # off, so that is the only configuration producing an installable argmin.
+              PIN=$(sed -n 's/^set(CTRLPP_ARGMIN_GIT_TAG "\([^"]*\)".*/\1/p' CMakeLists.txt)
+              FLAGS=(-DARGMIN_CMAKE_FETCH_DEPS=OFF)
+              ;;
+          esac
+          REPO=$(declared ${{ matrix.backend }} GIT_REPOSITORY)
+          test -n "$REPO" && test -n "$PIN"
+          SRC=src-${{ matrix.backend }}
+          git clone --quiet "$REPO" "$SRC"
+          git -C "$SRC" checkout --quiet "$PIN"
+          cmake -S "$SRC" -B "$SRC/build" -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps-${{ matrix.backend }} \
+            "${FLAGS[@]}"
+          cmake --build "$SRC/build"
+          cmake --install "$SRC/build"
+
       - name: Build and install
         run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ -n "${{ matrix.option }}" ]; then
+            EXTRA=(-D${{ matrix.option }}=ON
+                   -DCMAKE_PREFIX_PATH=${{ github.workspace }}/deps-${{ matrix.backend }})
+          fi
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install \
-            -DCTRLPP_CMAKE_FETCH_DEPS=OFF
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-${{ matrix.backend }} \
+            -DCTRLPP_CMAKE_FETCH_DEPS=OFF \
+            -DCTRLPP_INSTALL=ON \
+            "${EXTRA[@]}"
           cmake --build build
           cmake --install build
 
+      # The dependency prefix is on the consumer's search path as well as ctrlpp's,
+      # because the installed config package resolves the backend dependency itself
+      # rather than leaving it to whoever links the target.
       - name: Build consumer project
         run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ -n "${{ matrix.option }}" ]; then
+            EXTRA=(-DCTRLPP_CONSUMER_BACKEND=${{ matrix.backend }})
+          fi
           cmake tests/integration/consumer -B build-consumer \
-            -DCMAKE_PREFIX_PATH=${{ github.workspace }}/install \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install-${{ matrix.backend }};${{ github.workspace }}/deps-${{ matrix.backend }}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            "${EXTRA[@]}"
           cmake --build build-consumer
 
       - name: Run consumer test
         run: |
           ./build-consumer/integration_test
+
+  # Two configurations used to be accepted and produce something unusable: a build
+  # that fetched a dependency and then installed a package whose export referenced
+  # it, and a consumer that asked an install for a backend it was not built with
+  # and was told the package had been found. Both are refused now, and each
+  # assertion below checks the refusal message as well as the exit status --
+  # an exit status alone is satisfied by a failure for any other reason, which is
+  # the way an assertion like this rots into a test of nothing.
+  install-negative:
+    runs-on: ubuntu-24.04
+    name: install-negative (refusals)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Eigen
+        run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
+
+      - name: A fetched backend cannot be shipped
+        run: |
+          set -uo pipefail
+          out=$(cmake . -B build-fetched -DCMAKE_BUILD_TYPE=Release \
+            -DCTRLPP_BUILD_OSQP=ON \
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+            -DCTRLPP_INSTALL=ON 2>&1) && rc=0 || rc=$?
+          echo "$out"
+          if [ "$rc" -eq 0 ]; then
+            echo "ASSERTION FAILED: the configure was accepted"
+            exit 1
+          fi
+          for want in osqp CTRLPP_CMAKE_FETCH_DEPS CTRLPP_INSTALL; do
+            if ! printf '%s\n' "$out" | grep -qF "$want"; then
+              echo "ASSERTION FAILED: the refusal never mentions $want"
+              exit 1
+            fi
+          done
+          # The configure must not reach the end. Left to itself CMake rejects this
+          # same state at generate time, naming a sub-build target nobody asked for
+          # instead of the option a reader can change -- so an assertion that only
+          # wanted a non-zero exit and the text somewhere in it would go on passing
+          # if the early refusal were downgraded to a warning.
+          if printf '%s\n' "$out" | grep -qF "Configuring done"; then
+            echo "ASSERTION FAILED: the refusal came after the configure completed"
+            exit 1
+          fi
+
+      - name: A core-only install refuses a backend component
+        run: |
+          set -euo pipefail
+          cmake . -B build-core -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install-core \
+            -DCTRLPP_CMAKE_FETCH_DEPS=OFF \
+            -DCTRLPP_INSTALL=ON
+          cmake --build build-core
+          cmake --install build-core
+          set +e
+          out=$(cmake tests/integration/consumer -B build-consumer-osqp \
+            -DCMAKE_PREFIX_PATH=${{ github.workspace }}/install-core \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCTRLPP_CONSUMER_BACKEND=osqp 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          if [ "$rc" -eq 0 ]; then
+            echo "ASSERTION FAILED: a core-only install answered a component request"
+            exit 1
+          fi
+          for want in component osqp; do
+            if ! printf '%s\n' "$out" | grep -qF "$want"; then
+              echo "ASSERTION FAILED: the refusal never mentions $want"
+              exit 1
+            fi
+          done
+
+      # Asserted by asking a real install for a version rather than by matching the
+      # compatibility keyword in a listfile, which would pass just as well against a
+      # version file that was never written or never installed.
+      - name: The install answers a version request by its compatibility mode
+        run: |
+          set -uo pipefail
+          probe() {
+            rm -rf probe-src probe-build
+            mkdir probe-src
+            {
+              echo 'cmake_minimum_required(VERSION 3.25)'
+              echo 'project(ctrlpp_version_probe)'
+              echo "find_package(ctrlpp $1 CONFIG REQUIRED)"
+            } > probe-src/CMakeLists.txt
+            cmake probe-src -B probe-build \
+              -DCMAKE_PREFIX_PATH=${{ github.workspace }}/install-core 2>&1
+          }
+          out=$(probe 0.1.0) && rc=0 || rc=$?
+          echo "$out"
+          if [ "$rc" -eq 0 ]; then
+            echo "ASSERTION FAILED: a 0.1.0 request was satisfied"
+            exit 1
+          fi
+          if ! printf '%s\n' "$out" | grep -qF "0.1.0"; then
+            echo "ASSERTION FAILED: the refusal never names the requested version"
+            exit 1
+          fi
+          out=$(probe 0.3.0) && rc=0 || rc=$?
+          echo "$out"
+          if [ "$rc" -ne 0 ]; then
+            echo "ASSERTION FAILED: a 0.3.0 request was refused"
+            exit 1
+          fi
 
   backends:
     runs-on: ubuntu-24.04
@@ -250,6 +445,12 @@ jobs:
       - name: Install system Eigen for the argmin subbuild
         run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
 
+      # A fetched dependency installs nothing, so it belongs to no export set and an
+      # export referencing it cannot be written; the build refuses an install request
+      # made on top of one instead of emitting a package that does not work. This job
+      # fetches all three backends to prove they build and their tests pass, and
+      # ships none of them, so it says so rather than tripping a check that has
+      # nothing to say about it.
       - name: Configure
         run: |
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
@@ -258,7 +459,8 @@ jobs:
             -DCTRLPP_BUILD_NLOPT=ON \
             -DCTRLPP_BUILD_ARGMIN=ON \
             -DCTRLPP_TESTS_WITH_EXCEPTIONS=ON \
-            -DCTRLPP_CMAKE_FETCH_DEPS=ON
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+            -DCTRLPP_INSTALL=OFF
 
       - name: Build
         run: cmake --build build
@@ -321,7 +523,8 @@ jobs:
             -DCTRLPP_BUILD_NLOPT=ON \
             -DCTRLPP_BUILD_ARGMIN=ON \
             -DCTRLPP_TESTS_WITH_EXCEPTIONS=ON \
-            -DCTRLPP_CMAKE_FETCH_DEPS=ON
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+            -DCTRLPP_INSTALL=OFF
 
       - name: Build
         run: cmake --build build
@@ -399,6 +602,7 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS="$SAN" \
             -DCTRLPP_BUILD_TESTS=ON \
             -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+            -DCTRLPP_INSTALL=OFF \
             $EXTRA
 
       - name: Build
@@ -495,7 +699,8 @@ jobs:
             -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
             -DCMAKE_EXE_LINKER_FLAGS="$LINK_FLAGS" \
             -DCTRLPP_BUILD_TESTS=ON \
-            -DCTRLPP_CMAKE_FETCH_DEPS=ON
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+            -DCTRLPP_INSTALL=OFF
 
       - name: Build
         run: cmake --build build
