@@ -1,6 +1,6 @@
 # Curated fuzz seed corpus
 
-A small, hand-authored regression set for the fuzz targets that have one. One directory per target,
+A small, hand-curated regression set for the fuzz targets that have one. One directory per target,
 named to match the target binary exactly, which is libFuzzer's own corpus-directory convention:
 the directory is handed to the binary with no translation layer. A target without a directory here
 is explored and not replayed; adding one is what pins a recorded counterexample.
@@ -10,6 +10,8 @@ tests/fuzz/corpus/
   fuzz_trapezoidal/
   fuzz_double_s/
   fuzz_ekf/
+  fuzz_care/
+  fuzz_dare/
 ```
 
 This is a curated set, not a captured campaign. Each seed is a configuration that pins one named
@@ -42,6 +44,45 @@ The source revision column is the commit that last changed the target's decoder,
 these bytes were authored against. If a target's `LLVMFuzzerTestOneInput` gains, drops, or reorders
 a field, every one of its seeds must be regenerated and this table updated in the same change.
 
+## A decoder revision is not a filter revision, and both can retire a seed
+
+The column above tracks the byte layout, because that is what silently reinterprets a stored entry.
+A target's input FILTERS are a second, independent axis: a filter change leaves every byte meaning
+exactly what it meant before and can still stop a seed reaching the branch it was written for, which
+is the corpus form of a check that cannot fire. A seed that is filtered out replays clean while
+covering nothing, and no verdict in the replay log distinguishes the two.
+
+So the rule for a filter change is the same as for a layout change with a different remedy: every
+seed of that target is re-verified to still reach its branch, and the ones that no longer do are
+re-authored. The two Riccati targets are where these axes currently differ. Both decoders were last
+changed in `ef911e5`. The continuous target's entitlement filter was rewritten later, in `1bb2b53`,
+which replaced an invertibility test on the weight factor with a detectability test on the pair and
+so admits a family the target never explored before; the discrete target's filters have not moved
+since `ef911e5`.
+
+## The Riccati field-order contract, stated once
+
+Both algebraic Riccati targets read the same eleven fields in the same order, so one encoder serves
+both and the order is a single contract rather than two:
+
+```
+11 little-endian binary64, in decode order:
+    A(0,0), A(0,1), A(1,0), A(1,1),   the state matrix by rows
+    B(0), B(1),                       the input matrix
+    Q(0,0), Q(0,1), Q(1,0), Q(1,1),   the raw weight factor by rows
+    R                                 the raw input weight
+minimum 88 bytes
+```
+
+`tools/fuzz_corpus_encode.py` writes exactly this order and carries the same wording in its own
+header, so the tool and this document cannot drift apart without one of them being visibly wrong.
+
+A stored field is not the value the target solves with, in two separate ways, and a reader of the
+tables below needs both. Each of the first ten is clamped to the bound the decoder states and then
+flushed to exact zero below the floor the decoder derives from that bound, so a value under the
+floor reaches the solve as nothing at all. The eleventh is clamped and then SQUARED and added to a
+derived floor, so the input weight the solve receives is never the number stored in the file.
+
 ## Provenance
 
 | target | seed file | what it reproduces | source revision | decoder contract assumed |
@@ -63,6 +104,16 @@ a field, every one of its seeds must be regenerated and this table updated in th
 | `fuzz_double_s` | `rest_to_rest_closed_form.bin` | rest-to-rest retiming, the closed-form path where the scale is a single quotient of two durations | `b03a1a2` | 8 little-endian binary64: `q0, q1, v_max, a_max, j_max, v0, v1, stretch`; minimum 64 bytes |
 | `fuzz_double_s` | `equal_boundary_velocities.bin` | equal nonzero boundary velocities, the family the earlier construction happened to survive and which must therefore keep passing | `b03a1a2` | 8 little-endian binary64: `q0, q1, v_max, a_max, j_max, v0, v1, stretch`; minimum 64 bytes |
 | `fuzz_double_s` | `rejection_past_reachable_supremum.bin` | a request at twice the reachable supremum: a typed rejection that leaves the profile untouched | `b03a1a2` | 8 little-endian binary64: `q0, q1, v_max, a_max, j_max, v0, v1, stretch`; minimum 64 bytes |
+| `fuzz_care` | `marginal_mode_rank_deficient_weight.bin` | the ordinary output-map regulator: a mode exactly on the imaginary axis observed through a rank-one weight factor. The retired invertibility guard rejected every such factor outright, so this whole family was unexplored; the detectability test admits it, and this seed pins that the entitlement test runs at a mode of zero real part and admits there | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_care` | `unstable_mode_rank_deficient_weight.bin` | the same rank-one weight factor against a mode of strictly positive real part, so the entitlement test is exercised in the open right half-plane and not only on its boundary | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_care` | `stable_pair_full_rank_weight.bin` | every mode strictly stable and the factor full rank, so the entitlement loop tests no mode at all. The complementary branch to the two above: a pose whose filter is vacuous by construction and which must still be judged by the forward error | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_care` | `zero_weight_zero_solution_no_verdict.bin` | a weight factor flushed to exact zero against a stable pair, so the returned solution is the exact zero matrix and a RELATIVE forward error has no scale to be relative to. The reference converges and the oracle then declines, which is the largest single abstention class this target's population carries and is neither ill-conditioning nor an exhausted budget | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_care` | `refusal_unobservable_unstable_mode.bin` | a mode of positive real part invisible through the weight factor, so the pair is undetectable and no stabilizing solution is unique. The target refuses before it is entitled to demand an answer, which is a typed refusal and not an oracle verdict | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_dare` | `unstable_mode_weakly_controllable.bin` | the one-parameter family the error enumerator's own reliance statement is measured on, at the weakest input coupling this target's controllability-conditioning filter admits. It pins a pose reaching toward the resolution boundary rather than only well-conditioned ones, and it is 2.4 decades above that boundary because the filter, not the arithmetic, is what stops it going lower | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_dare` | `stable_pair_full_rank_weight.bin` | an ordinary well-conditioned pose with both modes inside the unit disk, so the forward error against the binary128 reference resolves and passes with the whole solve exercised | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_dare` | `unstable_mode_well_conditioned.bin` | a mode outside the unit disk on a well-conditioned pair, so the invariant-subspace reordering has a genuine separation to make rather than a trivial one | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_dare` | `refusal_rank_deficient_weight.bin` | a singular weight factor, refused by the invertibility guard this target still carries and its continuous twin no longer does. The seed pins that asymmetry: the same bytes are a refusal here and an admitted regulator pose there | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_dare` | `refusal_ill_conditioned_state_matrix.bin` | a state matrix whose singular-value ratio exceeds this target's own bound, refused before the weight factor is read at all. The guard exists because the solve forms the inverse transpose of that matrix as an intermediate, and it has no counterpart in the continuous target | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
 | `fuzz_ekf` | `rejected_step_poisoned_covariance.bin` | an initial state one finite-difference step short of the largest representable value, so the central-difference stencil's lower sample overflows, one Jacobian entry becomes infinite and the propagated covariance carries a NaN. `predict` is infallible by contract and is allowed to do this; the update that follows then rejects the step naming the carried covariance and leaves it bitwise untouched, which is the contract. The seed pins how that is CHECKED: an elementwise `operator!=` reports a NaN-carrying matrix as different from a byte-for-byte copy of itself, so the target read a met contract as a violation | `0148c3c` | 10 little-endian binary64: `x0(2), z(2), Q_diag(2), R_diag(2), a00, a11`; minimum 80 bytes |
 
 ## Decoded field values
@@ -113,10 +164,141 @@ A `stretch` of one is below the target's own `T_new > T` guard, so those two see
 construction and the dense scan without entering the time-scaling leg. That is deliberate: it keeps
 the construction of each recorded counterexample pinned independently of the retiming.
 
+`fuzz_care`
+
+Decimal, because every stored field is an ordinary named quantity and each is the binary64 nearest
+the decimal shown. The last column is derived rather than stored: it is the input weight the solve
+actually receives, which is the stored eleventh field squared plus the floor the decoder derives from
+the clamp bound.
+
+| seed file | A(0,0) | A(0,1) | A(1,0) | A(1,1) | B(0) | B(1) | Q(0,0) | Q(0,1) | Q(1,0) | Q(1,1) | R stored | R solved with |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `marginal_mode_rank_deficient_weight.bin` | 0 | 1 | 0 | -0.5 | 0 | 1 | 1 | 0 | 0 | 0 | 1 | 1.004 |
+| `unstable_mode_rank_deficient_weight.bin` | 0.5 | 1 | 0 | -1 | 0 | 1 | 1 | 0 | 0 | 0 | 1 | 1.004 |
+| `stable_pair_full_rank_weight.bin` | -0.5 | 1 | 0 | -1.5 | 0 | 1 | 1 | 0 | 0.5 | 1 | 1 | 1.004 |
+| `zero_weight_zero_solution_no_verdict.bin` | -0.5 | 1 | 0 | -1.5 | 0 | 1 | 0 | 0 | 0 | 0 | 1 | 1.004 |
+| `refusal_unobservable_unstable_mode.bin` | 0.5 | 0 | 0 | -1 | 1 | 1 | 0 | 0 | 0 | 1 | 1 | 1.004 |
+
+Every entry is inside the clamp bound and above the zero floor or exactly zero already, so the
+decoded configuration is the configuration above with nothing altered.
+
+`fuzz_dare`
+
+Decimal, on the same convention.
+
+| seed file | A(0,0) | A(0,1) | A(1,0) | A(1,1) | B(0) | B(1) | Q(0,0) | Q(0,1) | Q(1,0) | Q(1,1) | R stored | R solved with |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `unstable_mode_weakly_controllable.bin` | 2 | 0 | 0 | 0.5 | 0.085 | 1 | 1 | 0 | 0 | 1 | 0.99799799498397 | 0.99999999799202421 |
+| `stable_pair_full_rank_weight.bin` | 0.5 | 0.2 | 0 | -0.4 | 1 | 0.5 | 1 | 0.3 | 0 | 0.8 | 0.5 | 0.254 |
+| `unstable_mode_well_conditioned.bin` | 1.5 | 0.3 | 0 | 0.4 | 1 | 0.5 | 1 | 0.3 | 0 | 0.8 | 0.5 | 0.254 |
+| `refusal_rank_deficient_weight.bin` | 0.5 | 0.2 | 0 | -0.4 | 1 | 0.5 | 1 | 0.5 | 2 | 1 | 0.5 | 0.254 |
+| `refusal_ill_conditioned_state_matrix.bin` | 2 | 0 | 0 | 0.1 | 1 | 0.5 | 1 | 0.3 | 0 | 0.8 | 0.5 | 0.254 |
+
+`unstable_mode_weakly_controllable.bin` stores an eleventh field chosen so the solve receives an
+input weight of one to nine significant figures rather than exactly one, because the field is
+squared and offset before use and no stored value reproduces one exactly. The family it belongs to
+is the one the discrete error enumerator's reliance statement is measured on, `A = diag(2, 1/2)`,
+`B = [d; 1]`, `Q = I`, `R = 1`, whose accepted range ends at `d = 3.6e-4`. **This target cannot
+reach that boundary and the reason is its own filter, not its arithmetic.** Its controllability
+conditioning bound refuses the family below a measured crossing of `0.0845 < d <= 0.085` -- located
+identically under four builds, `clang++ 22.1.8` at `-O0`, `-O2` and `-O3` and `g++ 16.1.1` at `-O2`
+-- and the seed sits at `0.085`, the first admitted rung, which is 2.4 decades above the boundary.
+Written down here so nobody reads this corpus as pinning the boundary itself.
+
+## Recorded reproducing inputs, which are deliberately NOT seeds
+
+Two inputs that abort this tree's continuous target are recorded here in full and are **not** in
+`fuzz_care/`, for one reason: the replay leg is a deterministic regression gate over the curated
+directory, so a curated seed that aborts turns that gate red by construction and would replace a
+regression signal with a permanent failure. An input that aborts is a defect to triage or an
+entitlement question to answer; it is not a corpus entry. They are recorded rather than dropped
+because the first of them is the one input a whole oracle rewrite was diagnosed from, and until now
+it existed only as an opaque blob.
+
+Both abort at the same place, and it is the pre-existing positive semi-definiteness pivot check
+rather than either of the entitlement or accuracy gates. Both carry a solution that is rank one in
+exact arithmetic, so the smallest pivot is pure cancellation.
+
+Hexadecimal, because these are bit-specific: a decimal rendering of either does not survive the
+round trip, and the exact bits are what the diagnosis rested on. The values are the pose AFTER the
+decoder's clamp and zero-flush, which is what the target solves; the raw stored fields behind the
+clamped entries are not recoverable beyond the bound they exceeded.
+
+| input | A(0,0) | A(0,1) | A(1,0) | A(1,1) | B(0) | B(1) | Q(0,0) | Q(0,1) | Q(1,0) | Q(1,1) | R solved with |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| the oracle-rewrite diagnosis input | `-0x1p+1` | `0x0p+0` | `0x1p+1` | `0x0p+0` | `-0x1.fbfbfbf01p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbfbf60ffp-4` | `-0x1.fbfbfbfbfbfbfp-4` | `0x0p+0` | `0x0p+0` | `0x1.0624dd2f1a9fcp-8` |
+| the campaign input | `0x0p+0` | `0x1p+1` | `0x1p+1` | `0x0p+0` | `0x0p+0` | `-0x1.fbfbf02p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbf002fbfp-4` | `-0x1.fbfbfbfp-4` | `0x1.0624dd2f1a9fcp-8` |
+
+The same eleven values per input, one to a line, as the encoder invocation that regenerates each
+pose. This is the useful form: it is a command, not a transcription. It reproduces an input the
+target decodes to the pose above, which is not the same as reproducing the recorded input's own
+bytes -- a clamped entry hides which value above the bound produced it, and the recorded inputs
+carry such entries. Both invocations were run and both abort at the same check with the same pivot
+as the recorded inputs do.
+
+The oracle-rewrite diagnosis input:
+
+```sh
+tools/fuzz_corpus_encode.py --out oracle_rewrite_diagnosis.bin \
+  --a00 -0x1p+1 \
+  --a01 0x0p+0 \
+  --a10 0x1p+1 \
+  --a11 0x0p+0 \
+  --b0 -0x1.fbfbfbf01p-4 \
+  --b1 -0x1.fbfbfbfbfbfbfp-4 \
+  --q00 -0x1.fbfbfbfbf60ffp-4 \
+  --q01 -0x1.fbfbfbfbfbfbfp-4 \
+  --q10 0x0p+0 \
+  --q11 0x0p+0 \
+  --r 0x0p+0
+```
+
+Its solution's four entries are all `0.031622776623…`, its smallest pivot is
+`-2.0816681711721685e-17` against a floor of `-1.4043333884132805e-17`, a ratio of `1.4823`, and the
+binary128 reference converges in two steps to a relative forward error squared of `6.82e-31`, which
+is fifteen decades inside the accuracy criterion. **The answer is accurate and the target aborts on
+it.**
+
+The campaign input:
+
+```sh
+tools/fuzz_corpus_encode.py --out campaign_input.bin \
+  --a00 0x0p+0 \
+  --a01 0x1p+1 \
+  --a10 0x1p+1 \
+  --a11 0x0p+0 \
+  --b0 0x0p+0 \
+  --b1 -0x1.fbfbf02p-4 \
+  --q00 -0x1.fbfbfbfbfbfbfp-4 \
+  --q01 -0x1.fbfbfbfbfbfbfp-4 \
+  --q10 -0x1.fbfbfbf002fbfp-4 \
+  --q11 -0x1.fbfbfbfp-4 \
+  --r 0x0p+0
+```
+
+Its smallest pivot is `-6.6613381477509392e-16` against a floor of `-4.653561350979949e-16`, a ratio
+of `1.4315`. Here the binary128 reference **withdraws its own verdict**, because its own determinant
+is negative too, so whether that answer is right is not settled by anything in this tree.
+
+The two inputs the bytes were recovered from are 88 and 104 bytes. The decoder copies exactly 88 and
+ignores anything past them, so the sixteen trailing bytes of the longer one carry nothing; a
+mutation length is not a field.
+
 ## Adding a seed
 
-Author the bytes from named configuration values with a throwaway encoder rather than assembling
-them by hand: a hand-assembled seed is unverifiable and undebuggable. Check the emitted values
-against the target's own clamps so the decoded configuration is the one intended, keep the file at or
-above the target's minimum decoded size and below the smoke run's length cap, give it a descriptive
-name so a failing replay reads clearly, and add its row above.
+Author the bytes from named configuration values with `tools/fuzz_corpus_encode.py` rather than
+assembling them by hand: a hand-assembled seed is unverifiable and undebuggable. The tool takes
+values by NAME so two fields cannot be silently transposed, accepts hexadecimal float input as well
+as decimal because a recorded input is bit-specific, and reads the file back after writing to report
+the decoded configuration against the target's own clamps, so checking the emitted values is a step
+it performs rather than one a reader may skip. It covers the two algebraic Riccati targets, which
+share one field order; a target with a different layout needs the same treatment and not a throwaway
+script.
+
+Keep the file at or above the target's minimum decoded size and below the smoke run's length cap,
+give it a descriptive name so a failing replay reads clearly, and add its row above.
+
+Two more things, neither of which the replay log will tell you. **Verify the seed actually reaches
+the branch it was written for**, because a filtered-out seed replays clean while covering nothing.
+**Do not author a seed that is expected to abort**, because the replay leg is a deterministic
+regression gate and every curated seed must replay without a finding.
