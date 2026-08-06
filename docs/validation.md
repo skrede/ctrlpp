@@ -28,11 +28,10 @@ The reference scripts collectively require four Octave packages: **control**,
 `signal` by 2, and `splines` and `quaternion` by 1 each; one case
 (`fir_filter`) loads no package at all.
 
-`validation/cases/` holds one directory beyond the 18 registered cases:
-`ekf_numerical_jacobian` is not a cross-validation case but a pair of mutually
-independent Octave and Python oracles for the linear Kalman recursion exercised
-by an EKF unit test, so it has neither a reference script named after the case
-nor a build file, and the harness skips it.
+Separately from the cases, `validation/oracles/linear_kalman/` holds a pair of
+mutually independent Octave and Python implementations of the linear Kalman
+recursion; they are not a cross-validation case but the external oracle for the
+golden state an EKF unit test asserts against.
 
 Run the suite:
 
@@ -40,8 +39,11 @@ Run the suite:
 cd validation && CTRLPP_VALIDATE_JOBS=6 ./validate.sh
 ```
 
-`CTRLPP_VALIDATE_JOBS` sets the build parallelism (default 2) and
-`CTRLPP_VALIDATE_GENERATOR` sets the CMake generator (default `Unix Makefiles`).
+`CTRLPP_VALIDATE_JOBS` sets the build parallelism (default 2),
+`CTRLPP_VALIDATE_GENERATOR` sets the CMake generator (default `Unix Makefiles`),
+and `CTRLPP_VALIDATE_OCTAVE` selects the interpreter to invoke (default
+`octave`).  Every case is registered as a test, so a case whose executable was
+never built fails the run rather than being reported as skipped.
 
 **The reference environment is not pinned.** The results below were produced by
 a local run on GNU Octave 11.3.0 with Control 4.2.2 and Quaternion 2.4.2; the
@@ -77,11 +79,10 @@ abs error" is the absolute error of that worst signal.
 | `batch_arx` | `arx()` | 13.5 | 9.66e-15 | PASS |
 | `moesp` (cross-algorithm) | `n4sid()` | 10.7 | 2.59e-13 | PASS |
 
-Census for that run: 15 cases compared and passed, 0 compared and failed, 3 not
-run because their packages were absent, and 1 directory skipped because it is
-not a case.  The harness exits nonzero because it counts the three unrunnable
-cases as failures; that exit status reflects the missing packages, not a
-numerical disagreement.
+Census for that run: 15 cases compared and passed, 0 compared and failed, and 3
+not run because their packages were absent.  The harness exits nonzero because
+it counts the three unrunnable cases as failures; that exit status reflects the
+missing packages, not a numerical disagreement.
 
 The `moesp` row is a **cross-algorithm** comparison.  Octave's `n4sid()` is a
 different subspace identification algorithm than the routine under test, so the

@@ -86,6 +86,8 @@ option(CTRLPP_TESTS_WITH_EXCEPTIONS "Build ctrlpp's root tests in the exceptions
 
 option(CTRLPP_BUILD_EXAMPLES "Build examples" OFF)
 
+option(CTRLPP_BUILD_VALIDATION "Build the Octave cross-validation harness" OFF)
+
 # Deliberately not following the default-OFF convention the CTRLPP_BUILD_* options above
 # share: those decide what this build contains, and this decides where it ends up. Standalone
 # builds are asked to be installed often enough that OFF would be a trap; a parent that adds
@@ -110,7 +112,16 @@ if (CTRLPP_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif ()
 
-if (CTRLPP_BUILD_TESTS OR CTRLPP_BUILD_FUZZ_TESTS OR CTRLPP_BUILD_PROPERTY_TESTS)
+if (CTRLPP_BUILD_TESTS OR CTRLPP_BUILD_FUZZ_TESTS OR CTRLPP_BUILD_PROPERTY_TESTS OR CTRLPP_BUILD_VALIDATION)
     enable_testing()
+endif ()
+
+if (CTRLPP_BUILD_TESTS OR CTRLPP_BUILD_FUZZ_TESTS OR CTRLPP_BUILD_PROPERTY_TESTS)
     add_subdirectory(tests)
+endif ()
+
+# After lib, because the cross-validation cases link the library target this
+# project builds rather than one the harness declares for itself.
+if (CTRLPP_BUILD_VALIDATION)
+    add_subdirectory(validation)
 endif ()

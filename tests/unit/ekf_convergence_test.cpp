@@ -189,7 +189,7 @@ TEST_CASE("ekf with numerical Jacobians converges on linear system")
     // closed forms is therefore an external, independent oracle for this
     // filter's central-difference numerical Jacobian path. Two independent
     // implementations of that recursion (numpy/scipy and Octave, see
-    // validation/cases/ekf_numerical_jacobian/oracle_kf.{py,m}) agree on
+    // validation/oracles/linear_kalman/oracle_kf.{py,m}) agree on
     // the state after 50 predict/update steps to within a few ULP
     // (observed max |disagreement| ~ 1e-15, i.e. within a handful of
     // std::numeric_limits<double>::epsilon()), which is the expected
