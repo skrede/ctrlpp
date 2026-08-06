@@ -16,5 +16,12 @@
 # four times the workflow's per-seed budget and from none of them at that
 # budget, so a quiet run is evidence about the budget before it is evidence
 # about the defect. Re-triage at a larger budget before deleting a line here.
+#
+# A REASON IS CORRECTED IN PLACE when the defect it names is repaired and the
+# target still reproduces. A stale reason is worse than no reason at all: the
+# next reader checks whether the named defect is gone, finds that it is, and
+# deletes a line the evidence still supports. The entry below has had its reason
+# corrected once for exactly that, and the target it names carries the measured
+# characterization of what actually refuses beside the check that refuses.
 
-fuzz_care  conditioning-aware oracle bound owed
+fuzz_care  accuracy verdict owes a conditioning entitlement; definiteness floor owes the returned solution's own rounding

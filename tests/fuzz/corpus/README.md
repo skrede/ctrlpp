@@ -207,7 +207,7 @@ Written down here so nobody reads this corpus as pinning the boundary itself.
 
 ## Recorded reproducing inputs, which are deliberately NOT seeds
 
-Two inputs that abort this tree's continuous target are recorded here in full and are **not** in
+Four inputs that abort this tree's continuous target are recorded here in full and are **not** in
 `fuzz_care/`, for one reason: the replay leg is a deterministic regression gate over the curated
 directory, so a curated seed that aborts turns that gate red by construction and would replace a
 regression signal with a permanent failure. An input that aborts is a defect to triage or an
@@ -215,9 +215,14 @@ entitlement question to answer; it is not a corpus entry. They are recorded rath
 because the first of them is the one input a whole oracle rewrite was diagnosed from, and until now
 it existed only as an opaque blob.
 
-Both abort at the same place, and it is the pre-existing positive semi-definiteness pivot check
-rather than either of the entitlement or accuracy gates. Both carry a solution that is rank one in
-exact arithmetic, so the smallest pivot is pure cancellation.
+**They do not all abort at the same place, and the difference is the point.** Three reach the
+pre-existing positive semi-definiteness pivot check; each carries a solution that is rank one in
+exact arithmetic, so its smallest pivot is pure cancellation, and on all three that pivot is exactly
+THREE units in the last place of the solution's largest entry against a floor standing at just over
+two. The fourth aborts at the **accuracy** gate instead, on a pose whose closed loop sits `2.05e-9`
+from the imaginary axis: there the conditioning exceeds `1/sqrt(eps)`, so a half-significand answer
+is not attainable at binary64 by any backward-stable algorithm, and the target has no entitlement
+test that would decline to ask for one. Two different questions, and neither is a seed.
 
 Hexadecimal, because these are bit-specific: a decimal rendering of either does not survive the
 round trip, and the exact bits are what the diagnosis rested on. The values are the pose AFTER the
@@ -228,6 +233,8 @@ clamped entries are not recoverable beyond the bound they exceeded.
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | the oracle-rewrite diagnosis input | `-0x1p+1` | `0x0p+0` | `0x1p+1` | `0x0p+0` | `-0x1.fbfbfbf01p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbfbf60ffp-4` | `-0x1.fbfbfbfbfbfbfp-4` | `0x0p+0` | `0x0p+0` | `0x1.0624dd2f1a9fcp-8` |
 | the campaign input | `0x0p+0` | `0x1p+1` | `0x1p+1` | `0x0p+0` | `0x0p+0` | `-0x1.fbfbf02p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbf002fbfp-4` | `-0x1.fbfbfbfp-4` | `0x1.0624dd2f1a9fcp-8` |
+| the accuracy-gate input | `0x0p+0` | `0x0p+0` | `-0x1p+1` | `-0x1p+1` | `-0x1.fbdbfbfbebfbfp-4` | `0x0p+0` | `-0x1.fbfbf31bfbf00p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `0x0p+0` | `0x0p+0` | `0x1.004189374bc6ap+2` |
+| the second definiteness input | `0x0p+0` | `0x1p+1` | `0x0p+0` | `-0x1p+1` | `0x0p+0` | `-0x1p+1` | `-0x1.fbfbfbfe3e3e3p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1p+1` | `-0x1p+1` | `0x1.0624dd2f1a9fcp-8` |
 
 The same eleven values per input, one to a line, as the encoder invocation that regenerates each
 pose. This is the useful form: it is a command, not a transcription. It reproduces an input the
@@ -280,9 +287,62 @@ Its smallest pivot is `-6.6613381477509392e-16` against a floor of `-4.653561350
 of `1.4315`. Here the binary128 reference **withdraws its own verdict**, because its own determinant
 is negative too, so whether that answer is right is not settled by anything in this tree.
 
-The two inputs the bytes were recovered from are 88 and 104 bytes. The decoder copies exactly 88 and
-ignores anything past them, so the sixteen trailing bytes of the longer one carry nothing; a
-mutation length is not a field.
+The accuracy-gate input, which is the only one of the four that does not reach the definiteness
+check:
+
+```sh
+tools/fuzz_corpus_encode.py --out accuracy_gate.bin \
+  --a00 0x0p+0 \
+  --a01 0x0p+0 \
+  --a10 -0x1p+1 \
+  --a11 -0x1p+1 \
+  --b0 -0x1.fbdbfbfbebfbfp-4 \
+  --b1 0x0p+0 \
+  --q00 -0x1.fbfbf31bfbf00p-4 \
+  --q01 -0x1.fbfbfbfbfbfbfp-4 \
+  --q10 0x0p+0 \
+  --q11 0x0p+0 \
+  --r -0x1p+1
+```
+
+Its state matrix has a marginal mode at zero whose eigenvector is `[1, -1]/sqrt(2)`, so the mode's
+visibility through the weight factor is `|Q(0,0) - Q(0,1)| = 3.3061954049506959e-08`. The returned
+solution places the closed loop at an abscissa of `-2.0478149176383909e-09`, giving a Lyapunov
+separation whose reciprocal is `2.44e8` against the `6.71e7` past which a half-significand answer is
+unattainable at binary64. The relative forward error squared is `1.2006016725322539e-15`, `2.33`
+times the criterion, so the accuracy gate aborts -- while the definiteness pivot is strictly positive
+and the closed loop is resolvably stable. The measured forward error `3.5e-8` sits just inside the
+backward-stable prediction `kappa * eps = 5.4e-8`, so **the answer is at the arithmetic's own bound
+and the criterion is below it.** Walking `Q(0,0)` across 41 units in the last place at that same
+visibility, the solver declines on 37 rungs and answers on 4, and all four abort here.
+
+The second definiteness input, which is the same class as the first two and was found independently:
+
+```sh
+tools/fuzz_corpus_encode.py --out second_definiteness.bin \
+  --a00 0x0p+0 \
+  --a01 0x1p+1 \
+  --a10 0x0p+0 \
+  --a11 -0x1p+1 \
+  --b0 0x0p+0 \
+  --b1 -0x1p+1 \
+  --q00 -0x1.fbfbfbfe3e3e3p-4 \
+  --q01 -0x1.fbfbfbfbfbfbfp-4 \
+  --q10 -0x1p+1 \
+  --q11 -0x1p+1 \
+  --r 0x0p+0
+```
+
+Its smallest pivot is `-4.163336342344337e-17` against a floor of `-2.8140615587208564e-17`, a ratio
+of `1.4795`. Its solution's largest entry is `0.06336703293626443`, whose unit in the last place is
+`1.3877787807814457e-17`, so the pivot is **exactly three** of those units and the floor stands at
+`2.0277` of them. The binary128 reference withdraws its own verdict here, as it does on the campaign
+input, and the forward error computed for triage is `1.03e-30`, 14.3 decades inside the criterion.
+
+**All four invocations were run and each reproduces its recorded pose, pivot, floor and forward error
+exactly.** The four inputs the bytes were recovered from are 88, 104, 102 and 95 bytes. The decoder
+copies exactly 88 and ignores anything past them, so the trailing bytes of the longer ones carry
+nothing; a mutation length is not a field.
 
 ## Adding a seed
 

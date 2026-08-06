@@ -309,9 +309,44 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         // square root of the type's own epsilon, 2^-52. Squaring both sides
         // removes the square root -- one at binary128 would be a library call
         // and so a new dependency -- and leaves the comparison below. Nothing
-        // here is fitted, and NO CONDITIONING FACTOR APPEARS ANYWHERE, which is
-        // why the question of what to do when an honest conditioning factor runs
-        // to infinity does not have to be answered at all.
+        // here is fitted, and NO CONDITIONING FACTOR APPEARS ANYWHERE.
+        //
+        // THAT HAS A CONSEQUENCE THIS TARGET DOES NOT YET HANDLE, AND SAYING SO
+        // HERE IS THE POINT. A criterion with no conditioning factor is not
+        // neutral about conditioning; it is unconditionally TIGHT. The forward
+        // error of any backward-stable algorithm at binary64 is about kappa*eps,
+        // so a half-significand answer stops being attainable by ANY such
+        // algorithm once kappa exceeds 1/sqrt(eps), about 6.7e7. Past that point
+        // this comparison aborts on an answer sitting at the arithmetic's own
+        // floor. An infinite tolerance would be an oracle that cannot fail; an
+        // unconditionally tight one is an oracle that fails on correct behavior,
+        // and the two are the same mistake pointed in opposite directions.
+        //
+        // A campaign found such a pose rather than one being built to make the
+        // point. A = [0 0 ; -2 -2], whose marginal mode at zero has eigenvector
+        // [1, -1]/sqrt(2) and is visible through the weight factor at 3.3e-8,
+        // giving a closed-loop abscissa of -2.05e-9 and a Lyapunov separation
+        // whose reciprocal is 2.44e8 -- well past the 6.7e7 above. The returned
+        // answer's relative forward error there is 3.5e-8 against a
+        // backward-stable prediction of kappa*eps = 5.4e-8, so the answer is AT
+        // the bound, and this comparison aborts at 2.33 times the criterion. The
+        // reference converged in five steps, its own answer is positive
+        // semi-definite, and both other gates pass, so none of that is a
+        // reference artifact. Walking one weight entry across 41 units in the
+        // last place at that same visibility, the solver declines on 37 rungs and
+        // answers on 4, and all four fail here: at this conditioning the
+        // acceptance decision is selected by rounding rather than by what is
+        // attainable.
+        //
+        // WHAT IS MISSING IS AN ENTITLEMENT TEST, NOT A LOOSER CRITERION. The
+        // filters above decide entitlement on the OPEN-loop state matrix and on
+        // the pair (A, B); neither sees the closed loop's distance to the
+        // imaginary axis, which is what governs this solution's conditioning. A
+        // target that demands a half-significand answer has to establish first
+        // that it is asking for one that exists in the arithmetic it asks in.
+        // Choosing that test's form, and its constant, on the single pose above
+        // would be fitting to a population of one, which is why it is recorded
+        // here and not written here.
         const ctrlpp::fuzz::quad margin_squared{std::numeric_limits<double>::epsilon()};
         if(distance_squared > margin_squared)
             abort();
@@ -351,6 +386,54 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // P must be positive semi-definite: LDLT pivot-sign check against the same
     // floor the library's own extraction uses, called rather than re-spelled so
     // the two cannot drift apart again (see the fuzz_dare twin).
+    //
+    // THIS CHECK IS WHY THIS TARGET IS LISTED AS KNOWN RED, AND IT IS NEITHER OF
+    // THE TWO GATES ABOVE. What it refuses is characterized here rather than left
+    // to be recovered from a recorded artifact, because the characterization is
+    // what says a longer campaign cannot settle it.
+    //
+    //  * On a returned solution that is rank one to within rounding, this pivot
+    //    is a Schur complement of two nearly equal quantities, so it takes only
+    //    INTEGER multiples of one unit in the last place of the largest entry of
+    //    P. Measured to five significant figures on both recorded refusals.
+    //  * The floor is a RELATIVE quantity, floor_factor * N * eps * max|P_ij|.
+    //    Its width in those same integer units runs from exactly two at the
+    //    bottom of a binade to just under four at the top, because eps times a
+    //    value is a fixed fraction of it while a unit in the last place is a
+    //    step. So the check admits a pivot of one or two units and refuses at
+    //    three -- but only while the largest entry sits in the lower half of its
+    //    binade. The identical three-unit pivot on the identical matrix shape is
+    //    admitted higher up: measured on the floor primitive alone, refused at
+    //    1.05 and 1.25 and admitted at 1.50, 1.75 and 1.99. Both recorded
+    //    refusals sit within five percent of the bottom, where it is tightest.
+    //  * The refusal is therefore a BAND and not a knife edge. Walking one input
+    //    field in units in the last place around a refusing pose refuses on
+    //    thirteen consecutive rungs in one band and five in another, while a
+    //    census of 298,112 poses drawn by a campaign of 1,200,000 executions
+    //    produced none at all. The region is one a random draw essentially never
+    //    enters and a plateau once entered, which is why refusals arrive in
+    //    clusters or not at all, and why one clean campaign settles nothing.
+    //  * THE ANSWERS INSIDE THAT BAND ARE ACCURATE. Across every swept rung the
+    //    forward error squared sits between 5.4e-33 and 3.4e-28, eleven to
+    //    sixteen decades inside the accuracy criterion above, and on six rungs
+    //    the accuracy oracle ISSUED its verdict, the verdict PASSED, and this
+    //    check refused the same solution anyway.
+    //  * Six build configurations reproduce the whole band byte for byte --
+    //    three optimization levels, two compilers, both linear-algebra patch
+    //    releases and the sanitizer configuration this tree builds -- so it is a
+    //    property of the arithmetic rather than of instruction selection. Fused
+    //    multiply-add contraction removes every refusal, which is the mechanism
+    //    confirming itself: the three-unit pivot exists because three separate
+    //    roundings accumulate, and fusing them collapses it.
+    //
+    // THE FLOOR WAS NOT WIDENED, and its exposed factor is left at its default.
+    // A coefficient chosen after observing pivots at three units is a constant
+    // fitted to a measured population whatever derivation is written beside it.
+    // The open question is whether the floor should carry a second term for the
+    // rounding already present in P as the solver returned it, since today it
+    // counts only the factorization's own. That is a question about a library
+    // primitive both solvers' acceptance machinery calls rather than about this
+    // target, which is why it is not answered here.
     Eigen::LDLT<Eigen::Matrix<double, 2, 2>> ldlt(P);
     if(ldlt.info() != Eigen::Success
        || ldlt.vectorD().minCoeff() < ctrlpp::detail::psd_pivot_floor<double, 2>(P))
