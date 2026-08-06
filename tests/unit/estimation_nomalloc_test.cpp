@@ -1,7 +1,10 @@
+// Verify the estimators' predict/update hot paths do zero heap allocation on
 // fixed-size templated inputs, using the belt-and-suspenders harness from
-// nomalloc_harness.h: a throwing eigen_assert that survives -DNDEBUG plus a
-// global allocation counter that catches heap traffic outside Eigen's own
-// bookkeeping. The harness header must stay the first include of this file.
+// nomalloc_harness.h: an eigen_assert that stores into a pollable sentinel and
+// survives -DNDEBUG, plus a global allocation counter that catches heap traffic
+// outside Eigen's own bookkeeping. Neither mechanism substitutes for the other
+// and either alone can silently false-pass, so a negative control below proves
+// both fire. The harness header must stay the first include of this file.
 //
 // Coverage: kalman_filter, ekf, ukf, mekf, manifold_ukf, complementary_filter,
 // and particle_filter predict/update. Construction (including the create
@@ -11,6 +14,14 @@
 // posterior covariance inside the armed window, and asserts that two identically
 // seeded filters fed identical measurements stay bitwise equal in both the
 // estimate and the reported uncertainty.
+//
+// The five rows whose frames a caller's dimensions size -- kalman_filter, ekf,
+// ukf, manifold_ukf and mekf -- additionally carry a DIMENSION GRID, one
+// translation unit per row in estimation_<row>_nomalloc_test.cpp, driven over
+// the same corpus the published stack figures were taken on so that the heap
+// claim and the stack claim cover the same configurations. The cases here are
+// the single fixed instantiation each row was proved at before those grids
+// existed, and they keep their 128-step windows.
 
 #include "nomalloc_harness.h"
 #include "hardening_helpers.h"
@@ -33,6 +44,7 @@
 
 #include <Eigen/Dense>
 
+#include <new>
 #include <random>
 #include <cstddef>
 #include <utility>
@@ -122,6 +134,42 @@ struct attitude_measurement
 
 }
 
+
+// The negative control. Without it every case below can report zero
+// allocations while neither mechanism is capable of firing, which is a false
+// pass indistinguishable from a measurement. Both mechanisms are controlled
+// separately because neither substitutes for the other: Eigen's internal
+// aligned_malloc bypasses operator new, so the sentinel covers what the counter
+// cannot see, and the counter covers every non-Eigen allocation the sentinel
+// cannot see.
+TEST_CASE("harness detects heap allocation",
+          "[estimation][hardening][nomalloc]")
+{
+    SECTION("global counter fires on operator new inside the armed window")
+    {
+        std::size_t allocations = guarded_allocations([] {
+            // Call the replaced allocation function directly: unlike a
+            // new-expression, a plain function call cannot be elided.
+            void* heap_block = ::operator new(sizeof(double));
+            ::operator delete(heap_block);
+        });
+
+        REQUIRE(allocations > 0);
+    }
+
+    SECTION("eigen_assert sentinel fires on an Eigen allocation under -DNDEBUG")
+    {
+        ctrlpp_test::scoped_no_malloc guard;
+
+        // Constructing a dynamically sized vector goes through Eigen's aligned
+        // allocation check, which sets the pollable sentinel while the window is
+        // armed even when the stock assert is compiled out.
+        Eigen::VectorXd forced(1);
+        (void)forced;
+
+        REQUIRE(guard.eigen_violation());
+    }
+}
 
 TEST_CASE("kalman_filter predict/update performs zero heap allocation",
           "[kalman][hardening][nomalloc]")

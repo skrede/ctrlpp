@@ -23,11 +23,32 @@ this table was written.
   pollable sentinel (`ctrlpp_test::detail::eigen_alloc_violation`, so
   `EIGEN_RUNTIME_NO_MALLOC` cannot be elided and the trap compiles under
   `-fno-exceptions`) plus a process-global `operator new`/`operator delete`
-  counter (so `aligned_malloc` cannot slip past), warms the object up, then
-  asserts zero allocations and no sentinel violation across a steady-state
-  loop.  All six targets are registered in `tests/unit/CMakeLists.txt`, run
-  serially, and compile in the default `-fno-exceptions` tree.  Verified green:
-  `ctest --test-dir build/dev -R nomalloc` passes 6 of 6.
+  counter, warms the object up, then asserts an exact allocation count across a
+  steady-state loop.  All eleven targets are registered in
+  `tests/unit/CMakeLists.txt`, run serially because the counter is
+  process-global, and compile in the default `-fno-exceptions` tree; a twelfth,
+  `nmpc_static_nomalloc_test`, needs the optional nonlinear-programming backend
+  and is registered with it.  Verified green: `ctest --test-dir build/dev -R
+  nomalloc` passes 11 of 11.
+  - **Neither mechanism substitutes for the other, and that is measured on this
+    library rather than argued.**  The allocations the caller-dimensioned rows
+    make above the boundary described below go through Eigen's `aligned_malloc`,
+    which calls `std::malloc` directly, so **the counter reads zero at every one
+    of them** and a guard carrying only the counter would report every one
+    allocation-free.  The counter covers the converse case, every non-Eigen heap
+    allocation Eigen's own bookkeeping cannot see.
+  - **Both mechanisms are demonstrated to fire.**  `estimation_nomalloc_test`
+    and `dare_care_nomalloc_test` each carry a negative control with one case
+    per mechanism: a direct call to the replaced allocation function, which
+    unlike a new-expression cannot be elided, and an Eigen allocation inside an
+    armed window.  Without it a grid can report zero at every point while
+    neither mechanism is capable of firing.
+  - **The whole family is SKIPPED under MemorySanitizer.**  That runtime ships
+    its own strong `operator new`/`delete`, which collide at link with the
+    counting replacements, so the targets are excluded there rather than having
+    the harness drop the replacements and pass without testing anything.  A
+    claim that this project's evidence includes a MemorySanitizer leg must say
+    that the no-allocation grid is not in it.
 - **`scripts/cross_compile_check.sh` leg 1**: host build of the core surface
   with `-fno-exceptions -fno-rtti -DCTRLPP_NO_EXCEPTIONS` at Scalar `double`
   and `float`.  This is the authoritative exceptions-off evidence; verified
@@ -59,11 +80,11 @@ this table was written.
 |--------|------------------|---------------------|------------------|-----------------------|------------------------|----------|
 | `pid` | YES | YES (no loop) | YES | YES | YES | `pid_nomalloc_test` (position form, velocity form, composed anti-windup and derivative filter); leg 1 + `embedded_core_float` |
 | `lqr` / `lqr_time_varying` steady-state control law | YES | YES (no loop in the gain application) | YES | YES | YES | lqr TEST_CASEs in `pid_nomalloc_test.cpp` ("lqr steady-state control law", "lqr_time_varying steady-state control law"); leg 1 witness instantiates `lqr_gain` |
-| `kalman_filter` | YES | YES (closed form) | YES | YES | YES | `estimation_nomalloc_test` (kalman_filter case); leg 1 + `embedded_core_float` |
-| `ekf` | YES | YES (closed form) | YES | YES | YES | `estimation_nomalloc_test` (ekf case); leg 1 + `embedded_core_float` |
-| `ukf` | YES | YES (fixed sigma-point set) | YES | YES | YES | `estimation_nomalloc_test` (ukf case); leg 1 + `embedded_core_float` |
-| `mekf` | YES | YES (closed form) | YES | YES | YES | `estimation_nomalloc_test` (mekf case); leg 1 + `embedded_core_float` |
-| `manifold_ukf` | YES | YES (fixed sigma-point set) | YES | YES | YES | `estimation_nomalloc_test` (manifold_ukf case); leg 1 + `embedded_core_float` |
+| `kalman_filter` | YES below a measurement dimension of 48, **NO at and above it** at two states or more, where the gain solve's Householder sequence goes blocked and the linear-algebra library heap-allocates its block reflector factor once per update (see "The heap claim's boundary" below). A single-state filter stays allocation-free at every measurement dimension. | YES (closed form) | YES | YES | YES | `estimation_kalman_nomalloc_test` (26 configurations spanning 1 to 128 on both axes: the 13 its measurement table prints, the 6 values only its supported-maximum table names, the state axis at its instantiation limit, both sides of the boundary at 47 and 48, and the single-state exemption); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float` |
+| `ekf` | YES below a measurement dimension of 48, **NO at and above it** at two states or more, for the same reason and with the same single-state exemption as the row above. | YES (closed form) | YES | YES | YES | `estimation_ekf_nomalloc_test` (25 configurations spanning 1 to 128 on both axes: the 13 its measurement table prints, the 6 values only its supported-maximum table names, the state axis at its instantiation limit, both sides of the boundary at 47 and 48, and the single-state exemption); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float` |
+| `ukf` | YES at every measured configuration, including 128 states by 128 outputs, **because its gain decomposition defaults to LDLT and builds no Householder sequence at all**. Selecting the QR option puts it on the boundary the rows beside it have, at a measurement dimension of 48. | YES (fixed sigma-point set) | YES | YES | YES | `estimation_ukf_nomalloc_test` (25 configurations spanning 2 to 128 on both axes, including both instantiation limits and the corner, plus 2 more with the QR option selected, walking both sides of the boundary that option brings back); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float` |
+| `mekf` | YES below a measurement dimension of 48, **NO at and above it** (see "The heap claim's boundary" below). The boundary is on the measurement dimension and not on the error state: 125 bias states against 4 outputs is allocation-free. This row has no single-state exemption, since its right-hand side is the error state and is never one column. | YES (closed form) | YES | YES | YES | `estimation_mekf_nomalloc_test` (20 configurations: the 11 of the 13 its measurement table prints that instantiate, the 4 values only its supported-maximum table names, both axes at their instantiation limits with the corner, and both sides of the boundary at 47 and 48); `estimation_nomalloc_test` (the fixed instantiation at three bias states and three outputs); leg 1 + `embedded_core_float` |
+| `manifold_ukf` | YES below a measurement dimension of 48, **NO at and above it** (see "The heap claim's boundary" below). No single-state exemption: the right-hand side is the rotation's three columns. | YES (fixed sigma-point set) | YES | YES | YES | `estimation_manifold_ukf_nomalloc_test` (12 configurations spanning 2 to 128 on its one caller axis: the 5 its measurement table prints, the 4 values only its supported-maximum table names, the axis at its instantiation limit, and both sides of the boundary at 47 and 48); `estimation_nomalloc_test` (the fixed instantiation at three outputs); leg 1 + `embedded_core_float` |
 | `particle_filter` | YES (guard covers resample, roughening and the covariance read) | YES (fixed particle count) | YES | YES | YES (injected seeded RNG) | `estimation_nomalloc_test` (particle_filter case forces resampling every update and reads `covariance()` inside the armed window; twin filters seeded `std::mt19937_64{42}` must agree bitwise over 64 steps in both the estimate and the reported uncertainty) |
 | `complementary_filter` | YES | YES (closed form) | YES | YES | YES | `estimation_nomalloc_test` (complementary_filter case); leg 1 + `embedded_core_float` |
 | dsp: `biquad` / `cascaded_biquad` / `vector_biquad` / `fir` | YES | YES (fixed sections and taps) | YES | YES | YES | `dsp_nomalloc_test` (one case per filter); leg 1 + `embedded_core_float` |
@@ -74,10 +95,98 @@ this table was written.
 | trajectory time scaling: `rescale_to` / `can_rescale_to` / `synchronize` (trapezoidal, double-S) | YES (two-pass over a `std::span`, no owning copy, no allocation; the trapezoidal solve's boundary-duration helper returns a two-scalar aggregate by value and owns no storage) | YES (closed form on the trapezoidal and the rest-to-rest double-S paths -- the trapezoidal plateau and valley shapes are each a single quadratic in the cruise velocity's distance from that shape's own boundary, straight-line with no iteration; bracket exhaustion on the nonzero-boundary-velocity double-S path, bounded by one more than the significand width, so 25 evaluations for `float` and 54 for `double`, plus one step per binary exponent the bracket spans) | YES | YES | YES (no random source; identical inputs exhaust the bracket at the identical step) | `trajectory_nomalloc_test`; `trajectory_rescale_anchor_test` and the rescaling cases in `trajectory_hardening_test`; leg 1 + `embedded_core_float` |
 | `recursive_arx` / `rls` | YES (the update's result is a `ctrlpp::expected<void, rls_update_error>` holding one enumerator and no owning member; the two norms feeding the resolution floor are unevaluated Eigen expressions over existing storage) | YES (rank-one update, no loop; the refusal guard adds a fixed count of reads per cycle, every dimension a compile-time template parameter -- `NP*NP + NP` for the carried-state scan, `NP` for the regressor scan, and two `NP`-term norms for the denominator's scale) | YES | not covered (the leg 1 witness does not include the sysid headers) | YES (the guard is a pure predicate on the operands and the carried members; no random source, no clock) | `sysid_nomalloc_test` (rls and recursive_arx update cases, re-run green with the guard on every cycle of both 256-cycle armed windows); the typed refusals asserted in `sysid_hardening_test` |
 | `mpc` / `nmpc_dynamic` / `mhe` / `nmhe` (runtime-horizon, dynamic solver) | NO (soft real-time: the solve allocates and iterates) | YES when capped (`max_eval`, OSQP `max_iter`) | YES with `max_time = 0` (the default); the `max_time` budget is non-RT | not covered (opt-in OSQP/NLopt/argmin backends sit outside the embedded core witness) | solver-dependent | labeled soft real-time; caps and defaults in `mpc/nlopt_solver.h`, `mpc/argmin_policies.h`, `mpc/osqp_solver.h`, `mpc/argmin_qp_solver.h` |
-| `nmpc` (the DEFAULT; = `nmpc_static`, compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES — strict-zero: 0.00 allocs/step in steady state, **and the heap is not the binding cost here either** (see "Stack cost of the predictive controller row" below, which a hard-real-time caller must read before sizing a task stack: the configuration this cell's own evidence pins needs 33,304 bytes of stack in steady state, and constructing it needs 87,768) | YES when capped (`max_eval`) | YES with `max_time = 0` (the default); the `max_time` budget is non-RT | not covered by this witness (argmin's `-fno-exceptions` instantiation is clean upstream; the ctrlpp-side no-exceptions dogfood is a separate witness) | YES — the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test` (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; throwing `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`) |
+| `nmpc` (the DEFAULT; = `nmpc_static`, compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES below a decision dimension `NV` of 48, strict-zero at 0.00 allocs/step in steady state, and **NO at and above it**, where the solve crosses the same blocked-Householder boundary the estimator rows do (see "The heap claim's boundary" below). **The heap is not the binding cost here either** (see "Stack cost of the predictive controller row" below, which a hard-real-time caller must read before sizing a task stack: the configuration this cell's own evidence pins needs 33,304 bytes of stack in steady state, and constructing it needs 87,768) | YES when capped (`max_eval`) | YES with `max_time = 0` (the default); the `max_time` budget is non-RT | not covered by this witness (argmin's `-fno-exceptions` instantiation is clean upstream; the ctrlpp-side no-exceptions dogfood is a separate witness) | YES — the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test`: the shipped pin (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; sentinel `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`), plus a two-configuration bracket over the damped chain that walks the boundary, at `NV` 47 and 48. **That is 2 of the 25 configurations this row publishes a figure for**, and the reason is measured: a unit holding all 25 peaked at 21.9 GB of compiler resident set and was killed by the kernel, and one holding 8 built and ran green at all 8 but cost 17.4 GB to compile and 232 s to run against roughly a second for the pin alone |
 | static-memory linear MPC | planned | planned | planned | planned | planned | not implemented; the future hard real-time path (see below) |
 | the estimator `update` rejection guard (`kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf`, `luenberger_observer`, `complementary_filter`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<void, E>` holding one enumerator and no owning member) | YES (a fixed count of reads per step: state + covariance + measurement, every dimension a compile-time template parameter -- `NX + NX*NX + NY` for the covariance filters, `NX + NY` for the observer, `4 + NB + NE*NE + NY` for the MEKF, at most `7 + 9 + 1` for the complementary filter) | YES | YES | YES (a pure predicate on the operands; no random source and no state read beyond the members it scans) | `estimation_nomalloc_test` re-run green with the guard on every step of all six converted cases (128-step armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{kalman,ekf,ukf,mekf,manifold_ukf,luenberger,complementary_filter}_hardening_test`; `scripts/cross_compile_check.sh` all three legs PASS |
 | the controller step rejection guard (`pid::compute` both overloads, `mrac_controller::evaluate`, `l1_controller::evaluate`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<vector_t, E>` whose payload is the same by-value vector the surface already returned, so no owning member is added) | YES (a fixed count of reads per cycle, every dimension a compile-time template parameter: `pid` scans only the members its policy composition makes live, at most `11*NY` plus one scalar test on the step; `mrac` scans `NX + NU` vector and `NU*(NX + NU)` matrix entries; `l1` scans `2*NX + 2*NU`. The `l1` cycle additionally scans `NU` more for the pre-projection finiteness test that feeds `health()`) | YES | YES | YES (a pure predicate on the operands and the carried members; no random source, no clock) | `pid_nomalloc_test` re-run green with the guard on every cycle of all three composed cases (256-cycle armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{pid,mrac,l1}_hardening_test`, each proven to fail with its guard deleted; both standing trees green at baseline (90/90, 129/129) |
+
+## The heap claim's boundary on the caller-dimensioned rows
+
+The `allocation-free?` cells above read `YES` for the five estimator rows and for
+the default `nmpc`. **On five of those six that holds below a boundary and not
+above it, and the boundary is at 48.** It was found by arming the no-allocation
+guard at every configuration this document prints a figure for, which is what the
+grids in `estimation_<row>_nomalloc_test` and `nmpc_static_nomalloc_test` do; the
+single-configuration tests that preceded them sat at two states and one output,
+far below it, and could not have found it.
+
+**Where the 48 comes from.** The gain solve on `kalman_filter`, `ekf`, `mekf` and
+`manifold_ukf` is a column-pivoting Householder QR of the `NY x NY` innovation
+covariance applied to a right-hand side with one column per state -- per error
+state on `mekf`, three on `manifold_ukf`. Eigen applies a Householder sequence
+BY BLOCK once the sequence is at least `BlockSize = 48` long and the destination
+has more than one column (`Householder/HouseholderSequence.h`), and the blocked
+application declares its block reflector factor as
+
+    Matrix<Scalar, TFactorSize, TFactorSize, RowMajor> T(nbVecs, nbVecs)
+
+with `TFactorSize` taken from the destination's compile-time column count
+(`Householder/BlockHouseholder.h`). The destination there is a dynamically sized
+block, so `TFactorSize` is `Dynamic` and **`T` is heap allocated: 18,432 bytes,
+once per update, through Eigen's own aligned allocator.** The 48 is therefore
+read out of the linear-algebra library rather than fitted, and it is the same in
+3.4.0 and 3.4.1, which is the one axis this document otherwise has to qualify
+every figure against. **The published numbers below are the walk's, not that
+arithmetic's:** every row was measured on both sides.
+
+| row | axis the boundary lies on | last allocation-free | first allocating |
+|---|---|---:|---:|
+| `kalman_filter` | measurement dimension, at two states or more | 47 | 48 |
+| `ekf` | the same | 47 | 48 |
+| `ukf` | none at the default decomposition; see below | -- | -- |
+| `mekf` | measurement dimension, at any bias dimension | 47 | 48 |
+| `manifold_ukf` | measurement dimension | 47 | 48 |
+| `nmpc_static` | decision dimension `NV` | 47 | 48 |
+
+**Two exemptions, measured rather than inferred from the condition.**
+
+- A single-state `kalman_filter` or `ekf` gives that solve a one-column
+  right-hand side, so the blocked path is never entered. Both are measured
+  allocation-free at one state against 48 outputs, and `kalman_filter` at one
+  state against 128 outputs as well.
+- **`ukf` builds no Householder sequence at all**, because its gain
+  decomposition defaults to LDLT. Its whole grid is allocation-free, including
+  the corner at 128 states and 128 outputs. Selecting the QR option -- a public
+  configuration field -- puts it back on the boundary exactly: measured clean at
+  47 outputs and allocating at 48.
+
+**THE GLOBAL ALLOCATION COUNTER CANNOT SEE ANY OF IT.** Every one of those
+allocations goes through Eigen's `aligned_malloc`, which calls `std::malloc`
+directly and never reaches the replaced `operator new`. The counter read **zero
+at every allocating configuration**, and each of those points asserts that zero
+alongside the fired sentinel, because that is the demonstration: a guard carrying
+only the counter -- the guard most projects write -- would report every one of
+these configurations allocation-free. The two mechanisms are not redundancy.
+
+**What this means for a caller sizing a system.** Every entry in every
+supported-maximum table in this document is at most 36, so **a configuration that
+fits a 64 KiB task stack is below the boundary on every row**. Reaching it needs
+a task stack much larger than any tabulated here. The boundary is not on the path
+of a caller sizing from those tables; it is on the path of a caller with a large
+stack who reads `YES` in the matrix and stops there.
+
+**What is armed, and what is not.** 112 configurations across the six rows: 26 on
+`kalman_filter`, 25 on `ekf`, 27 on `ukf` (two of them with the QR option), 12 on
+`manifold_ukf`, 20 on `mekf` and 2 on `nmpc_static`. Each row's test asserts its
+own count rather than describing it, so a point cannot be dropped without the
+test failing. Two gaps, stated rather than left to be inferred:
+
+- The five estimator rows arm **every configuration their tables print a figure
+  for**. The interior fill behind their supported-maximum tables is 4,677
+  configurations and is **not** individually armed: nothing above is a claim
+  about a dimension lying between two armed ones.
+- The predictive controller row arms **2 of its 25**, both sides of its
+  boundary, plus the shipped pin at `NV` 17. Each of its points instantiates the
+  whole nonlinear-programming substrate and then solves at that dimension: a unit
+  holding all 25 peaked at 21.9 GB of compiler resident set and was killed by the
+  kernel, and one holding 8 -- the endpoint of every published line plus the
+  bracket -- built and ran green at all 8 but cost 17.4 GB to compile and 232 s
+  to run. Neither is a cost this suite can carry on an ordinary machine, so what
+  is kept is the pair that walks the boundary. **The published endpoints of this
+  row are not armed.** Armed against `g++ (GNU) 16.1.1`,
+`-std=c++20 -fno-exceptions -fno-rtti`, `double`, Eigen 3.4.0 -- the release the
+test tree fetches, which is not the 3.4.1 the stack figures above were taken
+against.
 
 ## Stack cost of the Riccati solve
 

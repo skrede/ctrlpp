@@ -132,6 +132,29 @@ if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
     make_test(sysid_nomalloc_test)
     make_test(estimation_nomalloc_test)
     make_test(trajectory_nomalloc_test)
+    # The five estimator rows whose frames a caller's dimensions size carry a
+    # no-allocation dimension grid, ONE TRANSLATION UNIT PER ROW. Every grid
+    # point is a distinct instantiation chain and the compile cost of a point is
+    # dominated by that instantiation rather than by the dimension it
+    # instantiates at, so one unit holding all five grids would be a single-core
+    # serialization point that no build parallelism could reduce, with a peak
+    # resident set equal to the sum of every row's instantiations in one
+    # process. One unit per row is the same total work spread over as many cores
+    # as the build has; the harness already forces one executable per unit, so
+    # the split adds no serialization the family did not already have.
+    #
+    # BUILD THIS FAMILY AT LOW PARALLELISM ON A MEMORY-CONSTRAINED MACHINE. Peak
+    # compiler resident set, measured one target at a time: 12.0 GB for the
+    # 26-point kalman_filter unit, 6.6 GB for the 12-point manifold_ukf one,
+    # against 6.3 GB for dare_care_nomalloc_test, which is the heaviest unit this
+    # family had before these grids existed. The cost is roughly 0.4 GB per armed
+    # dimension point on top of a 2 GB base, so four of these compiling at once
+    # is tens of gigabytes.
+    make_test(estimation_kalman_nomalloc_test)
+    make_test(estimation_ekf_nomalloc_test)
+    make_test(estimation_ukf_nomalloc_test)
+    make_test(estimation_manifold_ukf_nomalloc_test)
+    make_test(estimation_mekf_nomalloc_test)
     # Every *_nomalloc_test consumes the process-global allocation counter from
     # nomalloc_harness.h and must be registered RUN_SERIAL.
     set_tests_properties(dare_care_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
@@ -140,6 +163,11 @@ if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
     set_tests_properties(sysid_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
     set_tests_properties(estimation_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
     set_tests_properties(trajectory_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(estimation_kalman_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(estimation_ekf_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(estimation_ukf_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(estimation_manifold_ukf_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(estimation_mekf_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
 endif()
 make_test(lqr_continuous_test)
 make_test(mrac_hardening_test)
