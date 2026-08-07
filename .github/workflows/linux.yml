@@ -148,6 +148,25 @@ jobs:
       # the heaviest units, which is under the cap on its own -- so it holds
       # whatever order the scheduler picks, where four survives only because
       # those units do not all peak together.
+      #
+      # Those figures predate the estimator dimension grids, and the step below
+      # is what keeps them true: with those five in this pass, three slots die.
+      # Peak resident set at the -g1 above, measured one target at a time: 9.4
+      # GiB for ukf, 8.0 for kalman, 7.8 for ekf, 7.2 for mekf and 4.6 for
+      # manifold_ukf. ANY TWO OF THE TOP FOUR EXCEED THIS RUNNER ON THEIR OWN, so
+      # no slot count above one is safe while they share a pass, and the
+      # scheduler pairs them precisely because the cheap units drain out from
+      # under it. Built alone the largest is 9.4 GiB, and what is left for the
+      # parallel pass peaks at 4.4 GiB in dare_care_nomalloc_test.
+      - name: Build the estimator dimension grids serially
+        run: >-
+          cmake --build build/dev -j 1 --target
+          estimation_kalman_nomalloc_test
+          estimation_ekf_nomalloc_test
+          estimation_ukf_nomalloc_test
+          estimation_manifold_ukf_nomalloc_test
+          estimation_mekf_nomalloc_test
+
       - name: Build
         run: cmake --build build/dev -j 3
 
@@ -170,9 +189,19 @@ jobs:
       - name: Configure (exceptions preset, OSQP + NLopt on)
         run: cmake --preset exceptions -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCTRLPP_INSTALL=OFF
 
-      # Same measured bound as the no-exceptions job. This tree is heavier
-      # still: at full -g it carries fifty translation units above 1 GiB against
-      # thirty-four, and twelve above 3 GiB against ten.
+      # Same measured bound as the no-exceptions job, and the same serial pass
+      # over the estimator dimension grids for the same reason. This tree is
+      # heavier still: at full -g it carries fifty translation units above 1 GiB
+      # against thirty-four, and twelve above 3 GiB against ten.
+      - name: Build the estimator dimension grids serially
+        run: >-
+          cmake --build build/exceptions -j 1 --target
+          estimation_kalman_nomalloc_test
+          estimation_ekf_nomalloc_test
+          estimation_ukf_nomalloc_test
+          estimation_manifold_ukf_nomalloc_test
+          estimation_mekf_nomalloc_test
+
       - name: Build
         run: cmake --build build/exceptions -j 3
 
@@ -204,8 +233,17 @@ jobs:
       - name: Configure (default tree at C++23)
         run: cmake --preset dev-cxx23 -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCTRLPP_INSTALL=OFF
 
-      # Same measured bound: this preset builds the same tree as the
-      # no-exceptions job, one standard above the floor.
+      # Same measured bound and the same serial pass: this preset builds the
+      # same tree as the no-exceptions job, one standard above the floor.
+      - name: Build the estimator dimension grids serially
+        run: >-
+          cmake --build build/dev-cxx23 -j 1 --target
+          estimation_kalman_nomalloc_test
+          estimation_ekf_nomalloc_test
+          estimation_ukf_nomalloc_test
+          estimation_manifold_ukf_nomalloc_test
+          estimation_mekf_nomalloc_test
+
       - name: Build
         run: cmake --build build/dev-cxx23 -j 3
 

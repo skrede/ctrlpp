@@ -163,12 +163,21 @@ if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
     # the split adds no serialization the family did not already have.
     #
     # BUILD THIS FAMILY AT LOW PARALLELISM ON A MEMORY-CONSTRAINED MACHINE. Peak
-    # compiler resident set, measured one target at a time: 12.0 GB for the
-    # 26-point kalman_filter unit, 6.6 GB for the 12-point manifold_ukf one,
-    # against 6.3 GB for dare_care_nomalloc_test, which is the heaviest unit this
-    # family had before these grids existed. The cost is roughly 0.4 GB per armed
-    # dimension point on top of a 2 GB base, so four of these compiling at once
-    # is tens of gigabytes.
+    # compiler resident set at full -g, measured one target at a time: 12.0 GB
+    # for the 26-point kalman_filter unit, 6.6 GB for the 12-point manifold_ukf
+    # one, against 6.3 GB for dare_care_nomalloc_test, which is the heaviest unit
+    # this family had before these grids existed. The cost is roughly 0.4 GB per
+    # armed dimension point on top of a 2 GB base, so four of these compiling at
+    # once is tens of gigabytes.
+    #
+    # HOW MUCH DEBUG INFORMATION IS ASKED FOR REORDERS THE FAMILY, so a reader
+    # sizing a machine must take the figures for the flags they build with. At
+    # -g1, which is what continuous integration uses, the same measurement gives
+    # 9.4 GiB for ukf, 8.0 for kalman_filter, 7.8 for ekf, 7.2 for mekf and 4.6
+    # for manifold_ukf, against 4.4 for dare_care_nomalloc_test: ukf is the
+    # heaviest there, not kalman_filter. Four of the five still exceed 7 GiB, so
+    # two of them in flight together is over a 16 GiB machine on its own, which
+    # is why the Linux workflow builds these five serially ahead of the rest.
     make_test(estimation_kalman_nomalloc_test)
     make_test(estimation_ekf_nomalloc_test)
     make_test(estimation_ukf_nomalloc_test)
