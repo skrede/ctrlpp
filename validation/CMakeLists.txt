@@ -32,6 +32,51 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     include(CTest)
 endif ()
 
+# Reads one KEY="value" line out of a waiver file. The file is written so that a
+# shell can source it and a regular expression can read it, which is why the
+# quotes are optional and stripped here rather than required.
+function(ctrlpp_validation_waiver_value path key out)
+    file(STRINGS "${path}" matches REGEX "^${key}=")
+
+    set(value "")
+    if (matches)
+        list(GET matches 0 value)
+        string(REGEX REPLACE "^${key}=[ \t]*" "" value "${value}")
+        string(STRIP "${value}" value)
+        string(REGEX REPLACE "^\"(.*)\"$" "\\1" value "${value}")
+    endif ()
+
+    set(${out} "${value}" PARENT_SCOPE)
+endfunction()
+
+# A case may carry cases/<name>/waiver.cfg, holding WAIVER_REASON and
+# WAIVER_DATE. Both keys are mandatory: a waiver with no reason or no date is a
+# hole wearing a waiver's name, so a missing one stops the configure.
+#
+# A waived case is registered as a disabled test, so it neither runs nor
+# contributes to the run's exit status -- but it keeps its row on the published
+# results page, where its reason is reproduced verbatim. That is the whole
+# difference between a waiver and a hole: the case stays visible, and the
+# reason travels with it.
+function(ctrlpp_validation_waive_if_requested name)
+    set(waiver "${CMAKE_CURRENT_SOURCE_DIR}/cases/${name}/waiver.cfg")
+    if (NOT EXISTS "${waiver}")
+        return()
+    endif ()
+
+    ctrlpp_validation_waiver_value("${waiver}" WAIVER_REASON reason)
+    ctrlpp_validation_waiver_value("${waiver}" WAIVER_DATE date)
+    if (reason STREQUAL "" OR date STREQUAL "")
+        message(FATAL_ERROR
+            "validation case ${name}: waiver.cfg must set both WAIVER_REASON and "
+            "WAIVER_DATE, and neither may be empty"
+        )
+    endif ()
+
+    set_tests_properties(${name} PROPERTIES DISABLED TRUE)
+    message(STATUS "validation case ${name} waived ${date}: ${reason}")
+endfunction()
+
 # The cases compile under the same warning set as the rest of the tree rather
 # than a weaker one of their own. The cost of that parity was measured before it
 # was adopted: the case sources emit no diagnostics of their own under the full
@@ -59,6 +104,8 @@ function(ctrlpp_validation_case name)
     # wrapper discover it missing, so a case that was never built is reported as
     # a case that did not run and not as one that ran and disagreed.
     set_tests_properties(${name} PROPERTIES REQUIRED_FILES "$<TARGET_FILE:${name}>")
+
+    ctrlpp_validation_waive_if_requested(${name})
 endfunction()
 
 # Control module

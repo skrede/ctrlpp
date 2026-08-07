@@ -45,44 +45,69 @@ and `CTRLPP_VALIDATE_OCTAVE` selects the interpreter to invoke (default
 `octave`).  Every case is registered as a test, so a case whose executable was
 never built fails the run rather than being reported as skipped.
 
-**The reference environment is not pinned.** The results below were produced by
-a local run on GNU Octave 11.3.0 with Control 4.2.2 and Quaternion 2.4.2; the
-`signal` and `splines` packages were not installed on that host, so the three
-cases that need them did not run and carry no verdict.  Hermetic provisioning of
-a fixed reference environment, and promotion of this suite into continuous
+A case can be waived by placing a `waiver.cfg` in its directory under
+`validation/cases/`, holding `WAIVER_REASON` and `WAIVER_DATE`.  Both keys are
+mandatory; a missing or empty one stops the configure and names the case.  A
+waived case is registered as a disabled test, so it does not run and does not
+fail the suite, but it keeps its row in the table below with its reason
+reproduced verbatim.  No case is waived today.
+
+`tools/validation_results.py --gate` fails a run in which any case failed, or
+did not run without a waiver, or is a disabled case carrying no waiver file; the
+test runner alone lets the last two cost nothing.
+`tools/validation_results.py --check docs/validation.md` fails when the table
+below no longer matches the run, and prints the difference.
+
+**The reference environment is not pinned.** The results below come from one
+local run on this host: GNU Octave 11.3.0 with Control 4.2.2 and Quaternion
+2.4.2, against the library built in Release with GCC 16.1.1.  The `signal` and
+`splines` packages were not installed, so the three cases that need them fail.
+These numbers will be replaced wholesale by the first run on a pinned reference
+environment, which carries a different interpreter and different reference
+package versions and will therefore produce different digits.  Hermetic
+provisioning of that environment, and promotion of this suite into continuous
 integration, are tracked separately and are not claimed here.
 
 ### Results
 
-Regenerated from the run described above.  "Digits" is the minimum digits of
-agreement across the signals of a case, `-log10(max relative error)`, and "max
-abs error" is the absolute error of that worst signal.
+The table below is generated from the run described above by
+`tools/validation_results.py`; it is regenerated with `--write` in a reviewed
+commit, so a hand edit to it is a difference the check mode reports rather than
+a correction.  "Digits" is the minimum digits of agreement across the signals of
+a case, `-log10(max relative error)`, and "max abs error" is the absolute error
+of that worst signal.  A row reading `n/a` is a case that failed before it
+produced anything to compare.
 
+<!-- results:begin: generated from a harness run; edit the harness, not this region -->
 | Component | Octave function | Worst-case digits | Max abs error | Verdict |
 |-----------|----------------|:-----------------:|:-------------:|:-------:|
-| `dare` | `dare()` | 12.9 | 5.66e-12 | PASS |
-| `care` | `care()` | 14.7 | 4.00e-15 | PASS |
-| `lqr` (infinite horizon) | `dlqr()` | 10.0 | 3.51e-14 | PASS |
+| `dare` | `dare()` | 13.8 | 6.61e-13 | PASS |
+| `care` | `care()` | 14.5 | 6.00e-15 | PASS |
+| `lqr` (infinite horizon) | `dlqr()` | 10.9 | 5.44e-15 | PASS |
 | `lqr` (finite horizon) | backward Riccati | 12.5 | 7.99e-15 | PASS |
-| `lqi` | `dlqr()` augmented | 2.8 | 6.39e-12 | PASS |
+| `lqi` | `dlqr()` augmented | 2.8 | 2.40e-14 | PASS |
 | `pid` (linear PI) | `lsim()` | 10.8 | 1.05e-14 | PASS |
 | `place` | `place()` | 13.9 | 1.14e-15 | PASS |
 | `discretize` (ZOH) | `c2d()` | 15.6 | 1.39e-17 | PASS |
 | `analysis` (poles) | `pole()`, `ctrb()`, `obsv()` | 15.4 | 2.08e-17 | PASS |
-| `tf2ss` / `ss2tf` | `tf2ss()`, `ss2tf()` | not run | not run | NOT RUN, needs `signal` |
-| `kalman_filter` | time-varying KF | 10.4 | 2.08e-14 | PASS |
+| `tf2ss` / `ss2tf` | `tf2ss()`, `ss2tf()` | n/a | n/a | FAIL |
+| `kalman_filter` | time-varying KF | 11.0 | 2.48e-15 | PASS |
 | `luenberger_observer` | `place()` on dual | 13.1 | 4.61e-15 | PASS |
-| `butterworth` (4th order) | `butter()`, `filter()` | not run | not run | NOT RUN, needs `signal` |
+| `butterworth` (4th order) | `butter()`, `filter()` | n/a | n/a | FAIL |
 | `fir` | `filter()` | 15.0 | 1.11e-15 | PASS |
-| `cubic_spline` (natural) | `csape()`, `ppder()` | not run | not run | NOT RUN, needs `splines` |
-| `so3::exp` / `so3::log` | `rot2q()`, `q2rot()` | 15.6 | 1.11e-16 | PASS |
+| `cubic_spline` (natural) | `csape()`, `ppder()` | n/a | n/a | FAIL |
+| `so3::exp` / `so3::log` | `rot2q()`, `q2rot()` | 15.5 | 1.11e-16 | PASS |
 | `batch_arx` | `arx()` | 13.5 | 9.66e-15 | PASS |
 | `moesp` (cross-algorithm) | `n4sid()` | 10.7 | 2.59e-13 | PASS |
+<!-- results:end -->
 
-Census for that run: 15 cases compared and passed, 0 compared and failed, and 3
-not run because their packages were absent.  The harness exits nonzero because
-it counts the three unrunnable cases as failures; that exit status reflects the
-missing packages, not a numerical disagreement.
+Census for that run: 15 rows carry PASS, 3 carry FAIL, and none carries WAIVED.
+All three failures are the absent Octave packages named above: `tf2ss` / `ss2tf`
+and `butterworth` need `signal`, and `cubic_spline` needs `splines`.  Each
+failed while its reference script was loading its package, before producing
+anything to compare, which is why those three rows carry no numbers.  None of
+the three is a numerical disagreement.  The run's exit status is the test
+runner's, so it is nonzero.
 
 The `moesp` row is a **cross-algorithm** comparison.  Octave's `n4sid()` is a
 different subspace identification algorithm than the routine under test, so the
@@ -96,13 +121,16 @@ rejected record as a case failure rather than emitting an empty comparison file.
 
 ### What this page does and does not claim
 
-These numbers come from one local run on one host with the package set named
-above.  They are not from a pinned environment and not from continuous
-integration, so a reader cannot assume they reproduce byte-for-byte elsewhere.
-Three rows have no verdict at all because the packages they need were absent on
-that host; they are recorded as not run rather than carried forward from an
-earlier run.  Making the reference environment reproducible and running this
-suite automatically are separate pieces of work.
+What the run establishes is that fifteen cases agree with their Octave
+references to the digits shown, on one host with the package set named above.
+It does not establish that those digits reproduce anywhere else: the run is not
+from a pinned environment and not from continuous integration, and the freshness
+check that guards this table is byte-exact, so a different environment will fail
+it until the region is regenerated in a reviewed commit.  Three rows carry no
+numbers because the packages they need were absent on that host; they are
+recorded as failures rather than carried forward from an earlier run, and none
+of them is waived.  Making the reference environment reproducible and running
+this suite automatically are separate pieces of work.
 
 ## Full component matrix
 

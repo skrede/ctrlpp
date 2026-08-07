@@ -64,6 +64,10 @@ validation/analysis/
 # Benchmark output CSVs
 benchmarks/*.csv
 
+# Python bytecode caches
+__pycache__/
+*.pyc
+
 # Agents
 build*/
 build_*/
