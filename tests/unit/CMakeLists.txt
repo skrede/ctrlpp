@@ -106,10 +106,29 @@ make_test(dare_error_test)
 make_test(dare_float_precision_test)
 make_test(care_error_test)
 make_test(care_convergence_anchor_test)
-make_test(care_quad_reference_test)
-# The binary128 reference lives beside the fuzz targets that consume it, and is
-# included as "fuzz/care_quad_reference.h"; this is what resolves that quote.
-target_include_directories(care_quad_reference_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")
+# The reference's `quad` is `__float128`, which Apple clang on arm64 rejects and
+# MSVC does not have. Substituting `long double` would be worse than skipping the
+# target: it is binary64 on both of those toolchains, so the reference would carry
+# no more precision than the answer it judges and would stop being an oracle while
+# still reporting verdicts. The probe asserts the same condition the header does,
+# and compiles the type rather than trusting the macro alone.
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
+#if !defined(__SIZEOF_FLOAT128__)
+#error no __float128
+#endif
+__float128 x = 0;
+int main() { return static_cast<int>(x); }
+" CTRLPP_HAVE_FLOAT128)
+
+if (CTRLPP_HAVE_FLOAT128)
+    make_test(care_quad_reference_test)
+    # The binary128 reference lives beside the fuzz targets that consume it, and is
+    # included as "fuzz/care_quad_reference.h"; this is what resolves that quote.
+    target_include_directories(care_quad_reference_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")
+else ()
+    message(STATUS "ctrlpp: no __float128 on this toolchain, skipping care_quad_reference_test (the binary128 reference has no lower-precision substitute)")
+endif ()
 # MemorySanitizer ships its own strong operator new/delete in
 # libclang_rt.msan_cxx, which collides at link time with the replacements in
 # nomalloc_harness.h ("multiple definition of operator new"). AddressSanitizer

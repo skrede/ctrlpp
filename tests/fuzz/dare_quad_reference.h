@@ -36,6 +36,14 @@
 
 #include <cstddef>
 
+// Apple clang on arm64 rejects the type and MSVC has no such type at all, and
+// without this the absence surfaces as a cascade of syntax errors naming `quad`
+// rather than the type it is spelled from. Consumers are gated on the same
+// condition through CTRLPP_HAVE_FLOAT128.
+#if !defined(__SIZEOF_FLOAT128__)
+#error "the binary128 reference requires __float128, which this toolchain does not provide"
+#endif
+
 namespace ctrlpp::fuzz
 {
 
