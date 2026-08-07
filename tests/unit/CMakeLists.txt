@@ -183,6 +183,21 @@ if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
     make_test(estimation_ukf_nomalloc_test)
     make_test(estimation_manifold_ukf_nomalloc_test)
     make_test(estimation_mekf_nomalloc_test)
+    # These five arm dimensions whose whole-chain stack cost is published in
+    # docs/rt-safety-matrix.md, and at the top of both axes that cost is above
+    # the 1 MB main-thread stack MSVC reserves by default: the kalman_filter row
+    # measures 71,224 bytes at 32 states against 4 outputs and grows
+    # quadratically from there, so the 128-state points cost roughly a megabyte
+    # on their own and the 128 x 128 corner several times that. The reserve
+    # below is address space, committed on demand. Other toolchains here get 8 MB
+    # from the operating system and need nothing.
+    if (MSVC)
+        foreach (nomalloc_grid_target estimation_kalman_nomalloc_test estimation_ekf_nomalloc_test
+                                      estimation_ukf_nomalloc_test estimation_manifold_ukf_nomalloc_test
+                                      estimation_mekf_nomalloc_test)
+            target_link_options(${nomalloc_grid_target} PRIVATE "/STACK:16777216")
+        endforeach ()
+    endif ()
     # Every *_nomalloc_test consumes the process-global allocation counter from
     # nomalloc_harness.h and must be registered RUN_SERIAL.
     set_tests_properties(dare_care_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
