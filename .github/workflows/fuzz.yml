@@ -68,6 +68,7 @@ jobs:
           -DCMAKE_CXX_COMPILER=clang++
           -DCTRLPP_BUILD_FUZZ_TESTS=ON
           -DCTRLPP_CMAKE_FETCH_DEPS=ON
+          -DCTRLPP_INSTALL=OFF
 
       - name: Build fuzz targets
         run: cmake --build build -j$(nproc)

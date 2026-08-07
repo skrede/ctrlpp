@@ -11,7 +11,8 @@
                 "CMAKE_CXX_STANDARD": "20",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CTRLPP_BUILD_TESTS": "ON",
-                "CTRLPP_CMAKE_FETCH_DEPS": "ON"
+                "CTRLPP_CMAKE_FETCH_DEPS": "ON",
+                "CTRLPP_INSTALL": "OFF"
             }
         },
         {
@@ -27,7 +28,8 @@
                 "CTRLPP_BUILD_EXAMPLES": "ON",
                 "CTRLPP_BUILD_FUZZ_TESTS": "ON",
                 "CTRLPP_BUILD_PROPERTY_TESTS": "ON",
-                "CTRLPP_CMAKE_FETCH_DEPS": "ON"
+                "CTRLPP_CMAKE_FETCH_DEPS": "ON",
+                "CTRLPP_INSTALL": "OFF"
             }
         },
         {
@@ -41,6 +43,7 @@
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CTRLPP_BUILD_TESTS": "ON",
                 "CTRLPP_CMAKE_FETCH_DEPS": "ON",
+                "CTRLPP_INSTALL": "OFF",
                 "CTRLPP_TESTS_WITH_EXCEPTIONS": "ON",
                 "CTRLPP_BUILD_OSQP": "ON",
                 "CTRLPP_BUILD_NLOPT": "ON"
@@ -76,7 +79,8 @@
                 "CMAKE_CXX_FLAGS": "--coverage -fprofile-arcs -ftest-coverage",
                 "CTRLPP_BUILD_TESTS": "ON",
                 "CTRLPP_ENABLE_COVERAGE": "ON",
-                "CTRLPP_CMAKE_FETCH_DEPS": "ON"
+                "CTRLPP_CMAKE_FETCH_DEPS": "ON",
+                "CTRLPP_INSTALL": "OFF"
             }
         },
         {
@@ -94,7 +98,8 @@
                 "CTRLPP_BUILD_OSQP": "ON",
                 "CTRLPP_BUILD_NLOPT": "ON",
                 "CTRLPP_BUILD_PROPERTY_TESTS": "ON",
-                "CTRLPP_CMAKE_FETCH_DEPS": "ON"
+                "CTRLPP_CMAKE_FETCH_DEPS": "ON",
+                "CTRLPP_INSTALL": "OFF"
             }
         }
     ],

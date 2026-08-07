@@ -38,6 +38,7 @@ jobs:
             -DCTRLPP_BUILD_TESTS=ON `
             -DCTRLPP_BUILD_EXAMPLES=ON `
             -DCTRLPP_CMAKE_FETCH_DEPS=ON `
+            -DCTRLPP_INSTALL=OFF `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
 
       - name: Build
