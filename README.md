@@ -99,9 +99,8 @@ target_link_libraries(my_app PRIVATE ctrlpp::ctrlpp)
 
 ### Optional solver backends
 
-OSQP, NLopt, and Argmin are opt-in backends: each is off by default and must be requested
-explicitly, and dependency acquisition itself is opt-in via `CTRLPP_CMAKE_FETCH_DEPS` (when
-off, dependencies are resolved via `find_package` instead of being fetched).
+OSQP, NLopt, and Argmin are opt-in backends: each is off by default and is requested by its own
+option.
 
 ```cmake
 set(CTRLPP_BUILD_OSQP ON)
@@ -109,6 +108,39 @@ set(CTRLPP_BUILD_NLOPT ON)
 set(CTRLPP_BUILD_ARGMIN ON)
 set(CTRLPP_CMAKE_FETCH_DEPS ON)
 ```
+
+Every dependency, Eigen included, is declared once and carries both acquisition routes;
+`CTRLPP_CMAKE_FETCH_DEPS` selects between them. With it off (the default), a discoverable
+installation of the dependency is used, and the pinned source is fetched only when that lookup finds
+nothing. With it on, the pinned source is built inside this build tree and no installed copy is
+consulted.
+
+A dependency acquired by fetching cannot be shipped. A target built inside this build tree belongs
+to no export set, so ctrlpp's own export cannot reference it, and asking for a fetch and an install
+in the same build is a configure error naming every dependency in that state rather than a silent
+downgrade:
+
+```
+ctrlpp cannot be installed.  These dependencies were fetched into this
+build and install nothing, so they belong to no export set and ctrlpp's own
+export cannot reference them: Eigen3, osqp.  Either supply a discoverable
+version of each one and configure with CTRLPP_CMAKE_FETCH_DEPS=OFF, or
+configure with CTRLPP_INSTALL=OFF if this build was never meant to ship.
+```
+
+Eigen is subject to the same rule, so a fetching build cannot be installed at all. Shipping ctrlpp,
+with a backend or without one, therefore requires a discoverable installation of every dependency it
+uses:
+
+```sh
+cmake -S . -B build -DCTRLPP_BUILD_OSQP=ON -DCTRLPP_CMAKE_FETCH_DEPS=OFF -DCTRLPP_INSTALL=ON
+cmake --install build --prefix /your/prefix
+```
+
+`CTRLPP_INSTALL` decides whether ctrlpp reaches the install prefix at all. It defaults to on for a
+top-level build and off when ctrlpp is added as a subproject, so a parent project's `cmake --install`
+carries only what that parent asked for; a parent that does want ctrlpp installed sets the option
+before adding it.
 
 `CTRLPP_ARGMIN_GIT_TAG` and `CTRLPP_ARGMIN_SOURCE_DIR` pin the Argmin backend to a specific
 git tag or a local source checkout, respectively.

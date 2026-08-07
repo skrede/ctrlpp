@@ -6,7 +6,10 @@
   Fallible solvers return `ctrlpp::expected`, which resolves to `std::expected`
   automatically when compiled at C++23 or later and to an in-library C++20
   fallback with the same call surface otherwise.
-- CMake 3.25+
+- CMake 3.28+ to build ctrlpp<br/>
+  That floor is what building ctrlpp itself requires. A project that only consumes an
+  installed ctrlpp may declare a lower `cmake_minimum_required`; the installed package
+  imposes no such floor on it.
 - Eigen 3.4+ (fetched automatically via FetchContent)
 
 ## Installation
@@ -34,6 +37,53 @@ installation required.
 find_package(ctrlpp CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE ctrlpp::ctrlpp)
 ```
+
+## Versioning and compatibility
+
+An install answers a versioned request. An install of `0.3.6` satisfies a request for the same
+major and minor version with an equal or lower patch, and refuses a request for any other minor
+version. So a request for `0.3.0` succeeds against it:
+
+```cmake
+find_package(ctrlpp 0.3.0 CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE ctrlpp::ctrlpp)
+```
+
+while `find_package(ctrlpp 0.1.0 CONFIG REQUIRED)` against the same install fails with `Could not
+find a configuration file for package "ctrlpp" that is compatible with requested version "0.1.0"`.
+Before 1.0 that is the honest contract, because a minor bump is free to break the API. Past 1.0 it
+is stricter than semantic versioning requires, since a 1.1 install would refuse a request for 1.0
+even though nothing broke; the intended replacement then is CMake's semantic-version compatibility
+mode, which is not used today because generating it requires CMake 4.4 and this project asks for
+3.28.
+
+## Solver backend components
+
+Backends are requested as package components. The component names are `osqp`, `nlopt` and `argmin`,
+and each one brings a target of the same name under the `ctrlpp::` namespace:
+
+```cmake
+find_package(ctrlpp CONFIG REQUIRED COMPONENTS nlopt)
+target_link_libraries(my_app PRIVATE ctrlpp::nlopt)
+```
+
+`ctrlpp::osqp` and `ctrlpp::argmin` are requested the same way, naming `osqp` or `argmin` as the
+component. An install answers a component request only if it was built with that backend; asking
+for one it does not carry fails at `find_package` time and names the component:
+
+```
+this ctrlpp install was built without the requested component(s): osqp.
+Rebuild ctrlpp with the matching CTRLPP_BUILD_<COMPONENT> option on against
+a discoverable dependency and reinstall.
+```
+
+The installed package resolves each backend's own dependency on your behalf, so your environment
+has to make that dependency discoverable: an OSQP installation for `osqp`, NLopt 2.10 or newer for
+`nlopt`, and Argmin 0.3 or newer for `argmin`. Two of those requirements are looser than they read.
+The OSQP one carries no version floor, because OSQP's package publishes no project version and every
+install of it reports `0.0.0`. The Argmin floor is satisfied by any 0.x install today, because
+Argmin's package declares major-version compatibility; it starts to bite once Argmin narrows that
+mode.
 
 ## Your first PID controller
 
