@@ -62,11 +62,25 @@ below no longer matches the run, and prints the difference.
 local run on this host: GNU Octave 11.3.0 with Control 4.2.2 and Quaternion
 2.4.2, against the library built in Release with GCC 16.1.1.  The `signal` and
 `splines` packages were not installed, so the three cases that need them fail.
-These numbers will be replaced wholesale by the first run on a pinned reference
+These numbers will be replaced wholesale by the first run on the pinned reference
 environment, which carries a different interpreter and different reference
-package versions and will therefore produce different digits.  Hermetic
-provisioning of that environment, and promotion of this suite into continuous
-integration, are tracked separately and are not claimed here.
+package versions and will therefore produce different digits.
+
+The reference environment itself is described by two files.
+`validation/octave-packages.sha256` holds the content hash of each of the four
+reference package tarballs, and the continuous-integration workflow verifies
+every tarball against it before installing any of them, asserts the
+interpreter's version at start, and then runs this suite and the freshness
+comparison above.  To reproduce that environment locally, download the four
+tarballs at the versions the workflow names, check them with
+`sha256sum -c validation/octave-packages.sha256`, and install them with `control`
+first, because `signal` declares a dependency on it.
+
+That pinning is not a claim of hermetic reproduction.  The reference *packages*
+are pinned by content hash and the interpreter's version is asserted; the
+interpreter itself, its linear-algebra library, the compiler and the runner image
+are not pinned, so reproducing a run from months ago is not achievable on this
+route.
 
 ### Results
 

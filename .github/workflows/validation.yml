@@ -1,0 +1,228 @@
+name: Validation
+
+# The cross-validation harness runs as a workflow of its own rather than as a job
+# in the Linux workflow. Its provisioning has nothing in common with that
+# workflow's -- it compiles a set of Octave reference packages from source, which
+# needs an extension compiler and a Fortran compiler and costs minutes -- and a
+# red run here means something different from a unit-test failure: either the
+# library and the reference implementation disagree numerically, or the published
+# results page no longer describes the run that produced it.
+#
+# What the pinning claims: the four reference packages are pinned by content hash
+# and every tarball is verified before any of them is installed, and the
+# interpreter's version is asserted at job start so a moved runner image fails
+# loudly instead of quietly changing the published digits.
+#
+# What the pinning does NOT claim: this environment is not hermetic and offers no
+# byte-identical reproduction. Four things are unpinned -- the interpreter, its
+# linear-algebra library, the compiler, and the runner image itself. Reproducing
+# a run from months ago is not achievable on this route at all: the distribution
+# can move the interpreter's revision within a release and the runner image is
+# replaced on a rolling schedule.
+#
+# Two of the four packages are served from SourceForge, which answers through a
+# mirror redirect, so the host that serves the bytes is not the host named in the
+# URL. That is why the content hash and not the transport is what is trusted
+# here. One of those two, splines, has had no release since 2023 and is kept
+# because a single case depends on its interpolation routines; the content hash
+# is the mitigation for that staleness.
+
+# The branch lists and the manual trigger are the same merge-path gating whose
+# reasoning the Linux workflow's header sets out, and it applies here unchanged.
+# The path filter deliberately does NOT match the sibling workflows: those ignore
+# the documentation directory, and this one must watch it, because hand-editing
+# the validation page is precisely the act the freshness comparison exists to
+# reject. An allowlist is used rather than no filter at all so that unrelated
+# documentation churn does not pay for a package build. Do not align this block
+# with the sibling workflows.
+on:
+  push:
+    branches: [ develop, 'milestone/**' ]
+    paths:
+      - 'docs/validation.md'
+      - 'validation/**'
+      - 'lib/**'
+      - 'tools/validation_results.py'
+      - '.github/workflows/validation.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'docs/validation.md'
+      - 'validation/**'
+      - 'lib/**'
+      - 'tools/validation_results.py'
+      - '.github/workflows/validation.yml'
+  workflow_dispatch:
+
+# This workflow reports on the repository and never writes to it. The freshness
+# comparison prints a difference and fails; a human applies it in a reviewed
+# commit. Read-only contents makes that structural rather than a matter of
+# discipline.
+permissions:
+  contents: read
+
+env:
+  # The version the published numbers were produced against. An exact match is
+  # required: a runner image that moves its interpreter moves the digits, and
+  # that must be a loud failure rather than a silent regeneration.
+  OCTAVE_EXPECTED_VERSION: '8.4.0'
+
+jobs:
+  cross-validation:
+    runs-on: ubuntu-24.04
+    name: octave reference comparison
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # mkoctfile ships in octave-dev rather than in the interpreter's own
+      # package, and control compiles 629 Fortran sources, so neither the
+      # extension compiler nor the Fortran compiler arrives with the interpreter.
+      #
+      # The full interpreter package is required rather than a command-line-only
+      # one, and the reason is the plots. Every case prints a figure to a file,
+      # and only the qt graphics toolkit renders an invisible figure; the
+      # fallback toolkit refuses one with "rendering requires visible figure",
+      # which fails every case that plots. The qt toolkit arrives with this
+      # package and not with the standalone command-line binary. Measured: with
+      # no display present, an invisible figure prints to a file under this
+      # package. Do not force a Qt platform plugin here -- selecting the
+      # offscreen plugin explicitly makes the same print fail inside imwrite.
+      - name: Install the interpreter and the package build tools
+        run: sudo apt-get update && sudo apt-get install -y octave octave-dev gfortran
+
+      - name: Assert the interpreter version
+        run: |
+          set -euo pipefail
+          actual=$(octave --no-gui --quiet --eval 'printf("%s\n", version())')
+          if [ "$actual" != "$OCTAVE_EXPECTED_VERSION" ]; then
+            echo "the runner image moved its interpreter" >&2
+            echo "  expected: $OCTAVE_EXPECTED_VERSION" >&2
+            echo "  actual:   $actual" >&2
+            echo "the published numbers were produced against the expected version;" >&2
+            echo "repin this workflow and regenerate the results region together." >&2
+            exit 1
+          fi
+          echo "octave $actual"
+
+      # The package prefix and the list file both move with the interpreter's
+      # package-interface version, so ask the interpreter where they are instead
+      # of hardcoding paths a version bump would silently invalidate. The two
+      # prefixes coincide on some builds, hence the deduplication.
+      - name: Resolve the package tree locations
+        run: |
+          set -euo pipefail
+          api=$(octave --no-gui --quiet --eval 'printf("%s\n", __octave_config_info__("api_version"))')
+          prefix=$(octave --no-gui --quiet --eval '[p, a] = pkg("prefix"); printf("%s\n", p)')
+          archprefix=$(octave --no-gui --quiet --eval '[p, a] = pkg("prefix"); printf("%s\n", a)')
+          list=$(octave --no-gui --quiet --eval 'printf("%s\n", pkg("local_list"))')
+          echo "OCTAVE_API_VERSION=${api}" >> "$GITHUB_ENV"
+          {
+            echo 'OCTAVE_CACHE_PATHS<<CACHE_PATHS_END'
+            printf '%s\n%s\n%s\n' "$prefix" "$archprefix" "$list" | sort -u
+            echo 'CACHE_PATHS_END'
+          } >> "$GITHUB_ENV"
+
+      # A package tree built against a different package-interface version will
+      # not load, and a moved pin must never be served out of a tree built from
+      # the old one, so the key carries the interface version and the checksum
+      # file together. The per-user prefix is cached rather than the system-wide
+      # one, which needs elevated privileges and is harder to restore.
+      - name: Restore the built package tree
+        id: package-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.OCTAVE_CACHE_PATHS }}
+          key: octave-packages-${{ runner.os }}-${{ env.OCTAVE_API_VERSION }}-${{ hashFiles('validation/octave-packages.sha256') }}
+
+      # Verification is its own step so that nothing is installed until every
+      # tarball has been checked. sha256sum reports each mismatch by name and
+      # exits non-zero, which stops the job here and leaves the install step
+      # below unreached.
+      - name: Download and verify the reference packages
+        if: steps.package-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o control-4.2.3.tar.gz \
+            'https://github.com/gnu-octave/pkg-control/releases/download/control-4.2.3/control-4.2.3.tar.gz'
+          curl -fsSL --retry 3 -o signal-1.4.7.tar.gz \
+            'https://github.com/gnu-octave/octave-signal/releases/download/1.4.7/signal-1.4.7.tar.gz'
+          curl -fsSL --retry 3 -o splines-1.3.5.tar.gz \
+            'https://downloads.sourceforge.net/project/octave/Octave%20Forge%20Packages/Individual%20Package%20Releases/splines-1.3.5.tar.gz'
+          curl -fsSL --retry 3 -o quaternion-2.4.2.tar.gz \
+            'https://downloads.sourceforge.net/project/octave/Octave%20Forge%20Packages/Individual%20Package%20Releases/quaternion-2.4.2.tar.gz'
+          sha256sum -c --strict "${GITHUB_WORKSPACE}/validation/octave-packages.sha256"
+
+      # signal declares a dependency on control, so control is installed first;
+      # the other two declare only an interpreter floor.
+      - name: Install the reference packages
+        if: steps.package-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          for package in control-4.2.3 signal-1.4.7 splines-1.3.5 quaternion-2.4.2; do
+            octave --no-gui --quiet --eval "pkg install ${package}.tar.gz"
+          done
+
+      # What the run actually had, in the log, whether the tree was built here or
+      # restored from the cache.
+      - name: Report the installed package set
+        run: octave --no-gui --quiet --eval 'pkg list'
+
+      - name: Run the cross-validation harness
+        env:
+          CTRLPP_VALIDATE_OCTAVE: octave
+        run: CTRLPP_VALIDATE_JOBS=$(nproc) ./validation/validate.sh
+
+      # The run's own accounting: a case that did not run must be a disabled test
+      # carrying a waiver file, and nothing else. Without this a case that never
+      # built would be published as waived on the strength of a waiver file
+      # alone, which the freshness comparison cannot see because it compares the
+      # page against the same wrong region.
+      - name: Gate the run's accounting
+        run: python3 tools/validation_results.py --gate
+
+      # The freshness comparison. It regenerates into a temporary copy and never
+      # writes the tracked page; a difference is printed and fails the job.
+      - name: Gate the results page against the run
+        run: python3 tools/validation_results.py --check docs/validation.md
+
+      # The waiver mechanism has no live occupants, so a regression in it is
+      # otherwise invisible until the day someone waives a case.
+      - name: Exercise the waiver verdicts
+        run: python3 tools/validation_results.py --self-test
+
+      # These three cases need the reference packages this job pins and cannot
+      # run without them. They are named rather than left to the suite's exit
+      # status because a waiver would make the suite green while leaving them
+      # unrun, which is the outcome this job exists to refuse.
+      - name: Assert the package-dependent cases report a passing verdict
+        run: |
+          python3 - <<'ASSERT_CASES'
+          import sys
+          sys.path.insert(0, 'tools')
+          import validation_results as results
+
+          required = ('tf_ss_conversion', 'butterworth_filter', 'cubic_spline_natural')
+          outcomes = dict((name, status) for name, status, _ in
+                          results.load_entries(results.find_results('validation/build')))
+          wrong = [(name, outcomes.get(name, 'not registered'))
+                   for name in required if outcomes.get(name) != 'passed']
+          for name, status in wrong:
+              print(f'{name}: expected "passed", the run reports "{status}"', file=sys.stderr)
+          sys.exit(1 if wrong else 0)
+          ASSERT_CASES
+
+      # A convenience for diagnosing a failure from the run rather than
+      # reproducing it blind. The evidence is the committed page, which is why
+      # the page is committed and this is not.
+      - name: Upload the run's results and per-case analyses
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: validation-run
+          path: |
+            validation/build/Testing/**
+            validation/cases/*/analysis/**
+          if-no-files-found: warn
