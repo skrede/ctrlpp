@@ -58,13 +58,11 @@ test runner alone lets the last two cost nothing.
 `tools/validation_results.py --check docs/validation.md` fails when the table
 below no longer matches the run, and prints the difference.
 
-**The reference environment is not pinned.** The results below come from one
-local run on this host: GNU Octave 11.3.0 with Control 4.2.2 and Quaternion
-2.4.2, against the library built in Release with GCC 16.1.1.  The `signal` and
-`splines` packages were not installed, so the three cases that need them fail.
-These numbers will be replaced wholesale by the first run on the pinned reference
-environment, which carries a different interpreter and different reference
-package versions and will therefore produce different digits.
+The results below come from the pinned reference environment in continuous
+integration rather than from a developer's host: GNU Octave 8.4.0 with Control
+4.2.3, Signal 1.4.7, Splines 1.3.5 and Quaternion 2.4.2, against the library
+built in Release on the `ubuntu-24.04` runner image.  All four reference
+packages are present there, so every registered case runs.
 
 The reference environment itself is described by two files.
 `validation/octave-packages.sha256` holds the content hash of each of the four
@@ -95,33 +93,31 @@ produced anything to compare.
 <!-- results:begin: generated from a harness run; edit the harness, not this region -->
 | Component | Octave function | Worst-case digits | Max abs error | Verdict |
 |-----------|----------------|:-----------------:|:-------------:|:-------:|
-| `dare` | `dare()` | 13.8 | 6.61e-13 | PASS |
-| `care` | `care()` | 14.5 | 6.00e-15 | PASS |
-| `lqr` (infinite horizon) | `dlqr()` | 10.9 | 5.44e-15 | PASS |
-| `lqr` (finite horizon) | backward Riccati | 12.5 | 7.99e-15 | PASS |
-| `lqi` | `dlqr()` augmented | 2.8 | 2.40e-14 | PASS |
+| `dare` | `dare()` | 13.5 | 1.49e-12 | PASS |
+| `care` | `care()` | 14.6 | 4.88e-15 | PASS |
+| `lqr` (infinite horizon) | `dlqr()` | 10.6 | 7.88e-15 | PASS |
+| `lqr` (finite horizon) | backward Riccati | 12.6 | 9.10e-15 | PASS |
+| `lqi` | `dlqr()` augmented | 2.8 | 9.73e-14 | PASS |
 | `pid` (linear PI) | `lsim()` | 10.8 | 1.05e-14 | PASS |
-| `place` | `place()` | 13.9 | 1.14e-15 | PASS |
+| `place` | `place()` | 13.7 | 2.21e-15 | PASS |
 | `discretize` (ZOH) | `c2d()` | 15.6 | 1.39e-17 | PASS |
 | `analysis` (poles) | `pole()`, `ctrb()`, `obsv()` | 15.4 | 2.08e-17 | PASS |
-| `tf2ss` / `ss2tf` | `tf2ss()`, `ss2tf()` | n/a | n/a | FAIL |
-| `kalman_filter` | time-varying KF | 11.0 | 2.48e-15 | PASS |
-| `luenberger_observer` | `place()` on dual | 13.1 | 4.61e-15 | PASS |
-| `butterworth` (4th order) | `butter()`, `filter()` | n/a | n/a | FAIL |
+| `tf2ss` / `ss2tf` | `tf2ss()`, `ss2tf()` | 15.0 | 1.11e-15 | PASS |
+| `kalman_filter` | time-varying KF | 10.6 | 5.55e-15 | PASS |
+| `luenberger_observer` | `place()` on dual | 12.9 | 4.72e-15 | PASS |
+| `butterworth` (4th order) | `butter()`, `filter()` | 13.2 | 5.94e-14 | PASS |
 | `fir` | `filter()` | 15.0 | 1.11e-15 | PASS |
-| `cubic_spline` (natural) | `csape()`, `ppder()` | n/a | n/a | FAIL |
+| `cubic_spline` (natural) | `csape()`, `ppder()` | 12.5 | 1.11e-15 | PASS |
 | `so3::exp` / `so3::log` | `rot2q()`, `q2rot()` | 15.5 | 1.11e-16 | PASS |
-| `batch_arx` | `arx()` | 13.5 | 9.66e-15 | PASS |
-| `moesp` (cross-algorithm) | `n4sid()` | 10.7 | 2.59e-13 | PASS |
+| `batch_arx` | `arx()` | 13.8 | 3.08e-15 | PASS |
+| `moesp` (cross-algorithm) | `n4sid()` | 10.7 | 2.74e-13 | PASS |
 <!-- results:end -->
 
-Census for that run: 15 rows carry PASS, 3 carry FAIL, and none carries WAIVED.
-All three failures are the absent Octave packages named above: `tf2ss` / `ss2tf`
-and `butterworth` need `signal`, and `cubic_spline` needs `splines`.  Each
-failed while its reference script was loading its package, before producing
-anything to compare, which is why those three rows carry no numbers.  None of
-the three is a numerical disagreement.  The run's exit status is the test
-runner's, so it is nonzero.
+Census for that run: all 18 rows carry PASS, none carries FAIL, and none carries
+WAIVED.  The three cases that depend on the `signal` and `splines` packages
+(`tf2ss` / `ss2tf`, `butterworth`, and `cubic_spline`) run here because the
+pinned environment installs those packages; the workflow asserts those three
+verdicts by name rather than resting on the suite's exit status.
 
 The `moesp` row is a **cross-algorithm** comparison.  Octave's `n4sid()` is a
 different subspace identification algorithm than the routine under test, so the
@@ -135,16 +131,14 @@ rejected record as a case failure rather than emitting an empty comparison file.
 
 ### What this page does and does not claim
 
-What the run establishes is that fifteen cases agree with their Octave
-references to the digits shown, on one host with the package set named above.
-It does not establish that those digits reproduce anywhere else: the run is not
-from a pinned environment and not from continuous integration, and the freshness
-check that guards this table is byte-exact, so a different environment will fail
-it until the region is regenerated in a reviewed commit.  Three rows carry no
-numbers because the packages they need were absent on that host; they are
-recorded as failures rather than carried forward from an earlier run, and none
-of them is waived.  Making the reference environment reproducible and running
-this suite automatically are separate pieces of work.
+What the run establishes is that all eighteen cases agree with their Octave
+references to the digits shown, in the environment named above.  It does not
+establish that those digits reproduce elsewhere: the interpreter, its
+linear-algebra library, the compiler and the runner image are all unpinned, and
+the freshness check that guards this table is byte-exact, so a run in a
+different environment will fail it until the region is regenerated in a
+reviewed commit.  The table is the published record of one run, not a standing
+claim about every environment.
 
 ## Full component matrix
 
@@ -174,9 +168,9 @@ this suite automatically are separate pieces of work.
 | **Model** | | |
 | `discretize` (ZOH) | 2 | Cross-validated against Octave `c2d()` |
 | `state_space` | 2 | Implicitly validated via all state-space cross-validation cases |
-| `transfer_function` | 2 | Cross-validated via `tf2ss` / `ss2tf` round-trip; same case, same `signal` package requirement |
+| `transfer_function` | 2 | Cross-validated via `tf2ss` / `ss2tf` round-trip; same case |
 | `analysis` (poles, stability, controllability, observability) | 2 | Cross-validated against Octave `pole()`, `ctrb()`, `obsv()` |
-| `conversion` (`tf2ss`, `ss2tf`) | 2 | Cross-validated against Octave `tf2ss()`, `ss2tf()`; not reproduced in the reference run, the case needs the `signal` package |
+| `conversion` (`tf2ss`, `ss2tf`) | 2 | Cross-validated against Octave `tf2ss()`, `ss2tf()`; the case needs the `signal` package |
 | `propagate` | 2 | Implicitly validated via LQR and Kalman time-series cases |
 | **MPC / MHE** | | |
 | `mpc` | 1 | Optimization-based; requires solver integration |
@@ -184,7 +178,7 @@ this suite automatically are separate pieces of work.
 | `mhe` | 1 | Optimization-based estimation |
 | `nmhe` | 1 | Optimization-based estimation |
 | **Signal Processing** | | |
-| `butterworth` (cascaded biquad) | 2 | Cross-validated against Octave `butter()` + `filter()`; not reproduced in the reference run, the case needs the `signal` package |
+| `butterworth` (cascaded biquad) | 2 | Cross-validated against Octave `butter()` + `filter()`; the case needs the `signal` package |
 | `fir` | 2 | Cross-validated against Octave `filter()` |
 | `biquad` (low-pass, notch, dirty derivative) | 1 | RBJ cookbook coefficients; no direct Octave equivalent |
 | `vector_biquad` | 1 | Multi-channel wrapper over biquad |
@@ -196,7 +190,7 @@ this suite automatically are separate pieces of work.
 | **Lie Groups** | | |
 | `so3` (exp, log, quaternion) | 2 | Cross-validated against Octave quaternion package |
 | **Trajectory** | | |
-| `cubic_spline` (natural) | 2 | Cross-validated against Octave `csape()` + `ppder()`; not reproduced in the reference run, the case needs the `splines` package |
+| `cubic_spline` (natural) | 2 | Cross-validated against Octave `csape()` + `ppder()`; the case needs the `splines` package |
 | `cubic_path` / `cubic_trajectory` | 1 | Polynomial evaluation; unit tested |
 | `quintic_path` / `quintic_trajectory` | 1 | Polynomial evaluation; unit tested |
 | `septic_path` / `septic_trajectory` | 1 | Polynomial evaluation; unit tested |
