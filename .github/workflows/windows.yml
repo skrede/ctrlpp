@@ -52,15 +52,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Eigen
-        run: vcpkg install eigen3:x64-windows
+      # Eigen comes from the version this repository pins, read out of the file
+      # that pins it, and not from a package manager. vcpkg and Homebrew both
+      # serve Eigen 5 now, whose config package refuses a request for 3.4, and
+      # what that refusal produces is not a configure failure but a silent
+      # fallback to the fetched copy: the cell would then install nothing it
+      # could export and would stop testing the system-Eigen route it exists for.
+      # vcpkg was here only to supply Eigen, so nothing on this job needs its
+      # toolchain file any more.
+      #
+      # The pin is read under bash because the reader is shared with the other
+      # workflows, and the install runs under the default shell so the prefix
+      # stays a native path.
+      - name: Read the pinned Eigen version
+        shell: bash
+        run: |
+          set -euo pipefail
+          declared() {
+            awk -v want="$1" -v field="$2" '
+              /FetchContent_Declare\($/ { pending = 1; inblock = 0; next }
+              pending                   { pending = 0; inblock = ($1 == want); next }
+              inblock && $1 == field    { print $2; exit }
+              inblock && /^[[:space:]]*\)[[:space:]]*$/ { inblock = 0 }
+            ' lib/dependencies.cmake
+          }
+          REPO=$(declared Eigen3 GIT_REPOSITORY)
+          PIN=$(declared Eigen3 GIT_TAG)
+          test -n "$REPO" && test -n "$PIN"
+          echo "EIGEN_REPO=$REPO" >> "$GITHUB_ENV"
+          echo "EIGEN_PIN=$PIN" >> "$GITHUB_ENV"
+
+      - name: Install Eigen at the pinned version
+        run: |
+          git clone --quiet --depth 1 --branch $env:EIGEN_PIN $env:EIGEN_REPO src-eigen
+          cmake -S src-eigen -B src-eigen/build `
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/deps-eigen"
+          cmake --install src-eigen/build
 
       - name: Configure
         run: |
           cmake . -B build -A x64 `
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/install" `
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/deps-eigen" `
             -DCTRLPP_CMAKE_FETCH_DEPS=OFF `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
 
       - name: Build and install
@@ -71,8 +105,7 @@ jobs:
       - name: Build consumer
         run: |
           cmake tests/integration/consumer -B build-consumer -A x64 `
-            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install" `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install;${{ github.workspace }}/deps-eigen" `
             '-DCMAKE_CXX_FLAGS=/std:c++latest'
           cmake --build build-consumer --config Release
 
