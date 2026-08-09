@@ -1,35 +1,10 @@
-// These anchors probe the one blind spot that isotropic (scalar-multiple-
-// of-identity) covariance tests cannot see: any bug that only shows up when
-// a covariance matrix has distinct eigenvalues and off-diagonal
-// correlation. A rotation R and a coordinate-aligned identity or uniform
-// covariance commute trivially (R * (c*I) * R^T = c*I for any orthogonal
-// R), so a transpose or permutation error hidden inside a rotation-like
-// operator produces zero error on isotropic P and only appears once P is
-// genuinely anisotropic.
-//
-// The first case constructs a strongly anisotropic, non-identity-pivot
-// covariance and checks that the unscented sigma point set's weighted
-// covariance reconstructs it exactly, as the sigma point construction
-// guarantees by definition. The generator's matrix square root is now the
-// unpivoted Cholesky factor, which satisfies S*S^T = P exactly with no
-// permutation to track, so the reconstruction squares back to the original P
-// even for anisotropic matrices that would force a pivoted factorization to
-// permute. A companion case checks that the SO(3) manifold sigma points,
-// which delegate to the same square root, inherit the fix on the same
-// anisotropic tangent-space covariance.
-//
-// The second case checks the MEKF's one-step error-state covariance
-// transition against an independently computed analytic transform on the
-// same anisotropic attitude block. It currently fails because the
-// transition uses the incremental rotation where its own multiplicative
-// correction convention requires the incremental rotation's transpose;
-// since a rotation matrix is orthogonal, this transpose error vanishes
-// exactly on isotropic P and only surfaces once the attitude covariance is
-// anisotropic.
-//
-// The sigma-point cases now pass as active tests. The MEKF case's transpose
-// defect is not yet corrected, so it stays tagged with [!shouldfail] until
-// that transition matrix is fixed, at which point its tag is removed too.
+// A rotation and an isotropic covariance commute trivially
+// (R * (c*I) * R^T = c*I for any orthogonal R), so a transpose or permutation
+// error hidden inside a rotation-like operator produces exactly zero error on
+// isotropic P. These anchors therefore use a strongly anisotropic,
+// non-identity-pivot P, which is the only shape that can see that class of
+// defect. The generator's square root is the unpivoted Cholesky factor, so
+// S*S^T = P holds exactly with no permutation to track.
 
 #include "ctrlpp/lie/so3.h"
 #include "ctrlpp/estimation/mekf.h"
