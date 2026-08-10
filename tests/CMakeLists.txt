@@ -123,14 +123,24 @@ if (CTRLPP_BUILD_TESTS)
 
     # Match Catch2's exception posture to the tree so ctrlpp's own tests and their
     # test framework share one setting. The default tree compiles the fetched
-    # Catch2 -fno-exceptions -fno-rtti with CATCH_CONFIG_DISABLE_EXCEPTIONS, so its
-    # failure path reports-and-aborts (REQUIRE_THROWS* / CHECK_THROWS* become
+    # Catch2 -fno-exceptions with CATCH_CONFIG_DISABLE_EXCEPTIONS, so its failure
+    # path reports-and-aborts (REQUIRE_THROWS* / CHECK_THROWS* become
     # unavailable); the exceptions carve-out tree leaves Catch2 exceptions-on. The
     # PUBLIC definition reaches every test TU through Catch2WithMain.
+    #
+    # Catch2 keeps RTTI even though ctrlpp's own test TUs are compiled -fno-rtti.
+    # RapidCheck's type-erased Any and its ShowType printer call typeid in headers
+    # the property TUs instantiate, so those TUs cannot drop RTTI; and an
+    # RTTI-enabled TU that decomposes an assertion emits the typeinfo of a
+    # Catch::UnaryExpr/BinaryExpr instantiation, which references the typeinfo of
+    # their base Catch::ITransientExpression. A -fno-rtti Catch2 never emits that
+    # base typeinfo, so the reference goes unresolved at link time. Dropping the
+    # flag on the framework costs nothing the discipline is about: ctrlpp's own
+    # test sources still compile without exceptions and without RTTI.
     if (CTRLPP_CMAKE_FETCH_DEPS AND NOT CTRLPP_TESTS_WITH_EXCEPTIONS AND NOT MSVC)
         target_compile_definitions(Catch2 PUBLIC CATCH_CONFIG_DISABLE_EXCEPTIONS)
-        target_compile_options(Catch2 PRIVATE -fno-exceptions -fno-rtti)
-        target_compile_options(Catch2WithMain PRIVATE -fno-exceptions -fno-rtti)
+        target_compile_options(Catch2 PRIVATE -fno-exceptions)
+        target_compile_options(Catch2WithMain PRIVATE -fno-exceptions)
     endif ()
     if (CTRLPP_BUILD_PROPERTY_TESTS)
         FetchContent_Declare(
