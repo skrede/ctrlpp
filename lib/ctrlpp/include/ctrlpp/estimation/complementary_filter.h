@@ -82,8 +82,8 @@ template <ctrlpp_floating_scalar Scalar>
 struct cf_config
 {
     Scalar k_p{Scalar{2}};
-    Scalar k_i{Scalar{0.005}};
-    Scalar dt{Scalar{0.01}};
+    Scalar k_i{static_cast<Scalar>(0.005)};
+    Scalar dt{static_cast<Scalar>(0.01)};
     Eigen::Quaternion<Scalar> q0{Eigen::Quaternion<Scalar>::Identity()};
 };
 

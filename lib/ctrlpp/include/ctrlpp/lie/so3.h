@@ -104,7 +104,7 @@ Vector<Scalar, 3> log(const Eigen::Quaternion<Scalar>& q)
     Scalar vec_norm = qc.vec().norm();
 
     Scalar inv_sinc_half;
-    if(vec_norm < Scalar{1e-7})
+    if(vec_norm < static_cast<Scalar>(1e-7))
         inv_sinc_half = Scalar{2}; // Taylor limit: 2 * atan2(eps, ~1) / eps -> 2
     else
         inv_sinc_half = Scalar{2} * std::atan2(vec_norm, qc.w()) / vec_norm;

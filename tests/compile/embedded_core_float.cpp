@@ -110,7 +110,7 @@ int main()
     pid_cfg.kp = ctrlpp::Vector<scalar, 1>::Constant(scalar{1});
     ctrlpp::pid<scalar, 1> controller(pid_cfg);
     const auto u = controller.compute(
-        ctrlpp::Vector<scalar, 1>::Zero(), ctrlpp::Vector<scalar, 1>::Zero(), scalar{0.01});
+        ctrlpp::Vector<scalar, 1>::Zero(), ctrlpp::Vector<scalar, 1>::Zero(), static_cast<scalar>(0.01));
     witness += (u.has_value() && (*u)[0] == (*u)[0]) ? 1 : 0;
 
     const ctrlpp::Matrix<scalar, 2, 2> a = ctrlpp::Matrix<scalar, 2, 2>::Identity();

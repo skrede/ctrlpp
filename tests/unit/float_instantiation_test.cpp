@@ -1,12 +1,16 @@
-// Compile-and-smoke tier: instantiates every type in the embedded-clean core
-// (per the project stack map: PID, LQR, KF, EKF, UKF, MEKF, complementary
-// filter, SO3 -- excluding mpc/nmpc/mhe/nmhe/trajectory/sysid) at Scalar=float
-// and drives one trivial construct-plus-step call on each. This proves the
-// core template code compiles and runs cleanly at float today; it
-// deliberately avoids the two known float-fatal absolute tolerances
-// (place.h's 1e-12 conjugate-pair check and the biquad 1e-12/1e-15 guards),
-// which are exercised separately in the held-green float runtime tier. No
-// tag: this must pass now.
+// Compile-and-smoke tier: constructs PID, LQR, KF, EKF, UKF, MEKF, the particle
+// filter, the manifold UKF, the complementary filter, SO3 and the double-S
+// trajectory at Scalar=float, and drives one trivial step or evaluation on
+// each. It deliberately avoids the two float-fatal absolute tolerances
+// (place.h's conjugate-pair check and the biquad DC-gain guard), which the
+// float runtime tier exercises separately.
+//
+// Every case CONSTRUCTS its type rather than naming it. An explicit class
+// template instantiation instantiates member function definitions but not the
+// default member initializers of a configuration aggregate nothing builds, and
+// those initializers are where the single-precision conversion diagnostics sit,
+// so a tier that only named its types would read clean over code no compiler
+// had looked at.
 
 #include "hardening_helpers.h"
 #include "ctrlpp/lie/so3.h"
@@ -16,13 +20,17 @@
 #include "ctrlpp/estimation/ukf.h"
 #include "ctrlpp/estimation/mekf.h"
 #include "ctrlpp/estimation/kalman.h"
+#include "ctrlpp/estimation/manifold_ukf.h"
+#include "ctrlpp/estimation/particle_filter.h"
 #include "ctrlpp/estimation/complementary_filter.h"
+#include "ctrlpp/trajectory/double_s_trajectory.h"
 
 #include <Eigen/Dense>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <random>
 #include <cstddef>
 
 using namespace ctrlpp;
@@ -153,6 +161,52 @@ TEST_CASE("MEKF instantiates and steps at Scalar=float", "[float][anchor]")
     REQUIRE(filt.covariance().allFinite());
 }
 
+TEST_CASE("particle filter instantiates and steps at Scalar=float", "[float][anchor]")
+{
+    constexpr std::size_t NP = 16;
+
+    auto filt = make_particle_filter<NP>(
+        linear_dynamics_f{}, position_measurement_f{}, pf_config<float, NX, NU, NY>{}, std::mt19937_64{42U});
+
+    filt.predict(Vector<float, NU>::Zero());
+    filt.update(Vector<float, NY>::Constant(0.5f));
+
+    REQUIRE(filt.state().allFinite());
+}
+
+TEST_CASE("manifold UKF instantiates and steps at Scalar=float", "[float][anchor]")
+{
+    constexpr std::size_t NY_MUKF = 3;
+
+    struct attitude_propagation_f
+    {
+        auto operator()(const Eigen::Quaternion<float>& q, const Vector<float, 3>& /*omega*/) const -> Eigen::Quaternion<float>
+        {
+            return q;
+        }
+    };
+
+    struct gravity_observation_f
+    {
+        auto operator()(const Eigen::Quaternion<float>& q) const -> Vector<float, NY_MUKF>
+        {
+            Vector<float, 3> r_w{0.0f, 0.0f, 1.0f};
+            return q.conjugate() * r_w;
+        }
+    };
+
+    auto filt_result = manifold_ukf<float, NY_MUKF, attitude_propagation_f, gravity_observation_f>::create(
+        attitude_propagation_f{}, gravity_observation_f{}, manifold_ukf_config<float, NY_MUKF>{});
+    REQUIRE(filt_result.has_value());
+    auto& filt = *filt_result;
+
+    filt.predict(Vector<float, 3>{0.1f, 0.0f, 0.0f});
+    REQUIRE(filt.update(Vector<float, NY_MUKF>{0.0f, 0.0f, 1.0f}).has_value());
+
+    REQUIRE(filt.state().allFinite());
+    REQUIRE(filt.covariance().allFinite());
+}
+
 TEST_CASE("complementary_filter instantiates and steps at Scalar=float", "[float][anchor]")
 {
     cf_config<float> cfg;
@@ -175,4 +229,18 @@ TEST_CASE("SO3 exp/log round-trip at Scalar=float", "[float][anchor]")
 
     REQUIRE(phi_back.allFinite());
     REQUIRE(q.coeffs().allFinite());
+}
+
+TEST_CASE("double-S trajectory instantiates and evaluates at Scalar=float", "[float][anchor]")
+{
+    auto traj_result = double_s_trajectory<float>::create(
+        {.q0 = 0.0f, .q1 = 1.0f, .v_max = 1.0f, .a_max = 1.0f, .j_max = 1.0f});
+    REQUIRE(traj_result.has_value());
+    auto& traj = *traj_result;
+
+    const auto point = traj.evaluate(traj.duration() * 0.5f);
+
+    REQUIRE(point.position.allFinite());
+    REQUIRE(point.velocity.allFinite());
+    REQUIRE(point.acceleration.allFinite());
 }

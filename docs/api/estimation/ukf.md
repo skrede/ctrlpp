@@ -181,9 +181,9 @@ The default sigma point strategy. Generates 2N+1 sigma points using the scaled u
 template <typename Scalar>
 struct merwe_options
 {
-    Scalar alpha{Scalar{1e-3}};  // spread around mean (small -> tight)
-    Scalar beta{Scalar{2}};     // prior knowledge (2 optimal for Gaussian)
-    Scalar kappa{Scalar{0}};    // secondary scaling
+    Scalar alpha{static_cast<Scalar>(1e-3)};  // spread around mean (small -> tight)
+    Scalar beta{Scalar{2}};                   // prior knowledge (2 optimal for Gaussian)
+    Scalar kappa{Scalar{0}};                  // secondary scaling
 };
 ```
 

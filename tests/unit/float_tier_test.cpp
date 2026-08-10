@@ -63,8 +63,13 @@ TEST_CASE("place() accepts a numerically-conjugate float pole pair the way it do
 
     const float eps = std::numeric_limits<float>::epsilon();
     const float tol = 2.0f * eps * (1.0f + static_cast<float>(K_ref->norm()));
-    REQUIRE_THAT((*K_f)(0, 0), WithinAbs(static_cast<float>((*K_ref)(0, 0)), tol));
-    REQUIRE_THAT((*K_f)(0, 1), WithinAbs(static_cast<float>((*K_ref)(0, 1)), tol));
+
+    // WithinAbs is declared over double, so it is the matcher's signature and
+    // not the library that promotes; the casts spell that promotion out.
+    REQUIRE_THAT(static_cast<double>((*K_f)(0, 0)),
+                 WithinAbs(static_cast<double>(static_cast<float>((*K_ref)(0, 0))), static_cast<double>(tol)));
+    REQUIRE_THAT(static_cast<double>((*K_f)(0, 1)),
+                 WithinAbs(static_cast<double>(static_cast<float>((*K_ref)(0, 1))), static_cast<double>(tol)));
 }
 
 TEST_CASE("biquad steady-state reset() at float matches the double reference near a singular DC gain", "[float][anchor]")
@@ -98,5 +103,6 @@ TEST_CASE("biquad steady-state reset() at float matches the double reference nea
 
     const float eps = std::numeric_limits<float>::epsilon();
     const float tol = 2.0f * eps * (1.0f + std::abs(static_cast<float>(y_d)));
-    REQUIRE_THAT(y_f, WithinAbs(static_cast<float>(y_d), tol));
+    REQUIRE_THAT(static_cast<double>(y_f),
+                 WithinAbs(static_cast<double>(static_cast<float>(y_d)), static_cast<double>(tol)));
 }

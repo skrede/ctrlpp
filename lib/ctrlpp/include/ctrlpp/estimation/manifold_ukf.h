@@ -106,7 +106,7 @@ struct manifold_ukf_config
     Eigen::Quaternion<Scalar> q0{Eigen::Quaternion<Scalar>::Identity()};
     Matrix<Scalar, 3, 3> P0{Matrix<Scalar, 3, 3>::Identity()};
     std::size_t geodesic_mean_max_iter{30};
-    Scalar geodesic_mean_tol{Scalar{1e-9}};
+    Scalar geodesic_mean_tol{static_cast<Scalar>(1e-9)};
 };
 
 namespace detail

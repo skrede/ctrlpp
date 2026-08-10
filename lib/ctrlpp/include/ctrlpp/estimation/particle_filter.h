@@ -56,7 +56,7 @@ struct pf_config
     Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};
     Matrix<Scalar, NX, NX> P0{Matrix<Scalar, NX, NX>::Identity()};
     Scalar ess_threshold{Scalar{-1}};
-    Scalar roughening_scale{Scalar{0.2}};
+    Scalar roughening_scale{static_cast<Scalar>(0.2)};
     extraction_method extraction{extraction_method::weighted_mean};
     weight_representation weights{weight_representation::log};
 };

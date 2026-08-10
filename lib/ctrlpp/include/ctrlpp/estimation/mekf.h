@@ -104,7 +104,7 @@ struct mekf_config
     Eigen::Quaternion<Scalar> q0{Eigen::Quaternion<Scalar>::Identity()};
     Vector<Scalar, NB> b0{Vector<Scalar, NB>::Zero()};
     Matrix<Scalar, NE, NE> P0{Matrix<Scalar, NE, NE>::Identity()};
-    Scalar dt{Scalar{0.01}};
+    Scalar dt{static_cast<Scalar>(0.01)};
     Scalar numerical_eps{std::cbrt(std::numeric_limits<Scalar>::epsilon())};
 };
 

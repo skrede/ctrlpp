@@ -22,7 +22,7 @@ namespace ctrlpp
 template <typename Scalar>
 struct merwe_options
 {
-    Scalar alpha{Scalar{1e-3}};
+    Scalar alpha{static_cast<Scalar>(1e-3)};
     Scalar beta{Scalar{2}};
     Scalar kappa{Scalar{0}};
 };
