@@ -7,7 +7,7 @@ add_test(NAME concept_check_test COMMAND concept_check_test)
 
 add_executable(embedded_core_float embedded_core_float.cpp)
 target_link_libraries(embedded_core_float PRIVATE ctrlpp::ctrlpp)
-target_compile_options(embedded_core_float PRIVATE ${CTRLPP_WARNING_FLAGS})
+target_compile_options(embedded_core_float PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_FLOAT_TIER_STRICT_FLAGS})
 add_test(NAME embedded_core_float COMMAND embedded_core_float)
 
 add_executable(moving_horizon_factory_compile moving_horizon_factory_compile.cpp)

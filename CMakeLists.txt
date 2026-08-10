@@ -84,6 +84,26 @@ option(CTRLPP_BUILD_PROPERTY_TESTS "Build property-based test targets (requires 
 # nanobench implementation currently requires exceptions.
 option(CTRLPP_TESTS_WITH_EXCEPTIONS "Build ctrlpp's root tests in the exceptions carve-out instead of the default -fno-exceptions tree" OFF)
 
+# Raises the promotion and narrowing diagnostics from warnings to errors on the
+# three targets that instantiate the library at single precision, and on nothing
+# else. The promotion is target-scoped rather than global because the volume
+# outside that tier has never been measured: promoting across the whole tree
+# would turn an unmeasured population of pre-existing diagnostics into build
+# failures. Default OFF, so an ordinary build sees exactly what it saw before.
+#
+# The clang list carries a third promotion because the compilers group these
+# diagnostics differently: gcc's float-conversion covers both the narrowing into
+# single precision and a float-to-integer conversion, while clang keeps the
+# narrowing in a group gcc has no option for at all.
+option(CTRLPP_FLOAT_TIER_STRICT "Promote the promotion and narrowing diagnostics to errors on the single-precision targets" OFF)
+set(CTRLPP_FLOAT_TIER_STRICT_FLAGS "")
+if (CTRLPP_FLOAT_TIER_STRICT AND NOT MSVC)
+    set(CTRLPP_FLOAT_TIER_STRICT_FLAGS -Werror=double-promotion -Werror=float-conversion)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        list(APPEND CTRLPP_FLOAT_TIER_STRICT_FLAGS -Werror=implicit-float-conversion)
+    endif ()
+endif ()
+
 option(CTRLPP_BUILD_EXAMPLES "Build examples" OFF)
 
 option(CTRLPP_BUILD_VALIDATION "Build the Octave cross-validation harness" OFF)

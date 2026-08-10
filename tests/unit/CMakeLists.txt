@@ -243,6 +243,8 @@ make_test(trajectory_envelope_anchor_test)
 make_test(trajectory_rescale_anchor_test)
 make_test(float_tier_test)
 make_test(float_instantiation_test)
+target_compile_options(float_tier_test PRIVATE ${CTRLPP_FLOAT_TIER_STRICT_FLAGS})
+target_compile_options(float_instantiation_test PRIVATE ${CTRLPP_FLOAT_TIER_STRICT_FLAGS})
 make_test(expected_test)
 # The owned expected's throwing value() accessor is asserted with CHECK_THROWS,
 # which is unavailable under CATCH_CONFIG_DISABLE_EXCEPTIONS, so this TU lives in

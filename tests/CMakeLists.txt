@@ -50,6 +50,68 @@ if (CTRLPP_BUILD_TESTS)
             "${CTRLPP_DISCARDED_EXPECTED_OUTPUT}")
     endif ()
 
+    # Prove with the active compiler that a single-to-double promotion and a
+    # narrowing into single precision are errors under the promotions the
+    # single-precision targets carry when CTRLPP_FLOAT_TIER_STRICT is on. A text
+    # search for the options cannot establish that the compiler recognizes them
+    # or that it still emits the diagnostics they promote, and the tier is clean,
+    # so a green build says nothing on its own.
+    #
+    # The clang branch carries a third promotion because the two compilers group
+    # these diagnostics differently: gcc's float-conversion covers both the
+    # narrowing into single precision and a float-to-integer conversion, while
+    # clang keeps the narrowing in a group gcc has no option for at all -- so one
+    # shared list either misses the narrowing on clang or fails to parse on gcc.
+    # The Microsoft compiler promotes neither diagnostic on its own, and a pair
+    # run with no promotion to apply would report the absence of an option as an
+    # unenforced gate.
+    if (MSVC)
+        message(STATUS
+            "ctrlpp: the Microsoft compiler has no single-warning promotion for the "
+            "single-precision diagnostics, skipping the float promotion canary pair.")
+    else ()
+        if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            set(CTRLPP_FLOAT_WARNING_ERROR_FLAG "-Werror=double-promotion"
+                "-Werror=float-conversion" "-Werror=implicit-float-conversion")
+        else ()
+            set(CTRLPP_FLOAT_WARNING_ERROR_FLAG "-Werror=double-promotion"
+                "-Werror=float-conversion")
+        endif ()
+        try_compile(
+            CTRLPP_FLOAT_PROMOTION_BASELINE_COMPILED
+            SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/float_promotion_canary.cpp
+            CMAKE_FLAGS
+                "-DCMAKE_CXX_STANDARD=20"
+                "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+                "-DCMAKE_CXX_EXTENSIONS=OFF"
+            OUTPUT_VARIABLE CTRLPP_FLOAT_PROMOTION_BASELINE_OUTPUT
+        )
+        if (NOT CTRLPP_FLOAT_PROMOTION_BASELINE_COMPILED)
+            message(FATAL_ERROR
+                "The float promotion compile canary is not a valid positive "
+                "control without warning promotion.\n"
+                "${CTRLPP_FLOAT_PROMOTION_BASELINE_OUTPUT}")
+        endif ()
+        try_compile(
+            CTRLPP_FLOAT_PROMOTION_COMPILED
+            SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/float_promotion_canary.cpp
+            CMAKE_FLAGS
+                "-DCMAKE_CXX_STANDARD=20"
+                "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+                "-DCMAKE_CXX_EXTENSIONS=OFF"
+            COMPILE_DEFINITIONS ${CTRLPP_FLOAT_WARNING_ERROR_FLAG}
+            OUTPUT_VARIABLE CTRLPP_FLOAT_PROMOTION_OUTPUT
+        )
+        if (CTRLPP_FLOAT_PROMOTION_COMPILED)
+            message(FATAL_ERROR
+                "A single-to-double promotion and a narrowing into single "
+                "precision compiled successfully under the promotions "
+                "${CTRLPP_FLOAT_WARNING_ERROR_FLAG}; the single-precision "
+                "diagnostics are not enforced.\n"
+                "${CTRLPP_FLOAT_PROMOTION_OUTPUT}")
+        endif ()
+    endif ()
+
     # Every runtime test of the recursive ARX estimator passes whether or not the
     # estimator accepts input- and output-count template arguments, because no
     # legal instantiation ever supplied them. A refusal to compile is therefore

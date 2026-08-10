@@ -5,11 +5,17 @@
 #
 # Two diagnostics are counted: -Wdouble-promotion, which is the softfloat-timing
 # and determinism hazard the single-precision surface exists to keep out, and
-# -Wfloat-conversion, which catches a decimal constant that is in range but not
-# exactly representable at single precision. They are counted together because
+# the narrowing into single precision, which catches a decimal constant that is
+# in range but not exactly representable there. They are counted together because
 # neither compiler reports the whole union on its own -- gcc reports the
 # conversions and clang reports the promotions -- so a single compiler's zero
 # says nothing about the other's.
+#
+# The narrowing has two spellings. gcc files it under float-conversion together
+# with a float-to-integer conversion; clang keeps float-conversion for the
+# integer case only and reports the narrowing as implicit-float-conversion, which
+# -Wconversion below already enables. Counting only gcc's spelling would make
+# every clang narrowing invisible while still printing a zero.
 #
 # The warning set below mirrors the non-MSVC branch of CTRLPP_WARNING_FLAGS, and
 # the include incantation mirrors what the build actually passes: Eigen arrives
@@ -78,7 +84,7 @@ units=(
 
 compilers=(g++ clang++)
 
-counted='\[-W(double-promotion|float-conversion)\]'
+counted='\[-W(double-promotion|float-conversion|implicit-float-conversion)\]'
 
 total=0
 printf '%-46s %-10s %s\n' "translation unit" "compiler" "diagnostics"

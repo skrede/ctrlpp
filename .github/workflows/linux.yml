@@ -250,6 +250,58 @@ jobs:
       - name: Test
         run: ctest --test-dir build/dev-cxx23 --output-on-failure
 
+  # The single-precision tier with its promotion and narrowing diagnostics raised
+  # to errors. What this protects is a timing and determinism property rather than
+  # a style rule: on a core whose floating-point unit is single-precision only, an
+  # intermediate that promotes to double precision becomes a software
+  # floating-point call, so the operation's cost and its rounding both change
+  # underneath a control loop that was written to run in single precision.
+  #
+  # Two cells because the compilers group these diagnostics differently and
+  # neither reports the whole union on its own. Only the single-precision targets
+  # are built, so this job deliberately does not carry the serial estimator
+  # pre-pass the memory-bound jobs above need -- none of these three targets is
+  # anywhere near that class.
+  float-tier:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc-14
+            cc: gcc-14
+            cxx: g++-14
+          - compiler: clang-18
+            cc: clang-18
+            cxx: clang++-18
+
+    runs-on: ubuntu-24.04
+    name: single-precision tier (${{ matrix.compiler }}, blocking)
+
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure (default tree, single-precision diagnostics promoted)
+        run: cmake --preset dev -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCTRLPP_INSTALL=OFF -DCTRLPP_FLOAT_TIER_STRICT=ON
+
+      - name: Build the single-precision targets
+        run: >-
+          cmake --build build/dev -j 3 --target
+          embedded_core_float
+          float_tier_test
+          float_instantiation_test
+
+      # Anchored rather than a substring, because a substring also selects tests
+      # this job never built and ctest reports a missing executable as a failure.
+      - name: Test
+        run: ctest --test-dir build/dev -R "^(embedded_core_float|float_tier_test|float_instantiation_test)$" --output-on-failure
+
   # The installed tree is the artifact a consumer actually receives, and it is the
   # one thing an ordinary build never exercises: a target that never joined the
   # export set, or a dependency the config package forgets to resolve, only shows
