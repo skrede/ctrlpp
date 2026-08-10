@@ -1,9 +1,14 @@
-// Competitive benchmark: ctrlpp OSQP wrapper vs osqp-eigen
-// Problem: Convex QP with 10 variables, 5 constraints (representative MPC-sized QP)
+// Competitive benchmark: ctrlpp OSQP wrapper vs osqp-eigen.
 // Both ultimately call OSQP v1.0.0 underneath -- this measures wrapper overhead.
 
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
+
+#include "bench_csv.h"
+
+#include "qp/qp_accuracy.h"
+#include "qp/qp_reference.h"
+#include "qp/dense_mpc_shaped.h"
 
 #include "ctrlpp/mpc/osqp_solver.h"
 #include "ctrlpp/mpc/qp_types.h"
@@ -19,117 +24,138 @@
 namespace
 {
 
-constexpr char const* comma_csv_tpl = R"TEMPLATE(
-"title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
+namespace problems = ctrlpp::bench::problems::qp;
 
-constexpr int n_vars = 10;
-constexpr int n_cons = 5;
+constexpr char const* deviation_metric = "max abs deviation of the two arms' primal solutions x";
+constexpr char const* kkt_metric = "relative Karush-Kuhn-Tucker residual of this arm's own primal-dual answer";
+constexpr char const* ctrlpp_label = "ctrlpp::osqp_solver::solve";
+constexpr char const* osqp_eigen_label = "OsqpEigen::Solver::solve";
+constexpr double tolerance = 1e-3;
+constexpr int iteration_budget = 4000;
 
-auto make_hessian() -> Eigen::SparseMatrix<double>
+class ctrlpp_arm
 {
-    // Positive-definite diagonal-dominant Hessian
-    Eigen::SparseMatrix<double> H(n_vars, n_vars);
-    std::vector<Eigen::Triplet<double>> triplets;
-    for (int i = 0; i < n_vars; ++i) {
-        triplets.emplace_back(i, i, 2.0 + 0.1 * i);
-        if (i + 1 < n_vars) {
-            triplets.emplace_back(i, i + 1, 0.1);
-            triplets.emplace_back(i + 1, i, 0.1);
-        }
-    }
-    H.setFromTriplets(triplets.begin(), triplets.end());
-    return H;
-}
-
-auto make_constraint_matrix() -> Eigen::SparseMatrix<double>
-{
-    // Sparse constraint matrix: each constraint involves 2-3 variables
-    Eigen::SparseMatrix<double> A(n_cons, n_vars);
-    std::vector<Eigen::Triplet<double>> triplets;
-    for (int i = 0; i < n_cons; ++i) {
-        triplets.emplace_back(i, 2 * i, 1.0);
-        triplets.emplace_back(i, 2 * i + 1, 0.5);
-    }
-    A.setFromTriplets(triplets.begin(), triplets.end());
-    return A;
-}
-
-} // namespace
-
-int main()
-{
-    auto H = make_hessian();
-    auto A_con = make_constraint_matrix();
-    Eigen::VectorXd q = Eigen::VectorXd::LinSpaced(n_vars, -1.0, 1.0);
-    Eigen::VectorXd l = Eigen::VectorXd::Constant(n_cons, -2.0);
-    Eigen::VectorXd u = Eigen::VectorXd::Constant(n_cons, 2.0);
-
-    // ---- ctrlpp OSQP wrapper setup ----
-    ctrlpp::qp_problem<double> problem{
-        .P = H,
-        .q = q,
-        .A = A_con,
-        .l = l,
-        .u = u};
-
-    ctrlpp::osqp_solver ctrlpp_solver(1e-3, 1e-3, 4000, false, true, true);
-    if(!ctrlpp_solver.setup(problem).has_value())
+public:
+    explicit ctrlpp_arm(const problems::dense_program& program)
+        : ready{false}, solver{tolerance, tolerance, iteration_budget, false, true, true}, answer{},
+          update{.q = program.q, .l = program.l, .u = program.u},
+          problem{.P = problems::make_dense_mpc_hessian(),
+                  .q = program.q,
+                  .A = problems::make_dense_mpc_constraint_matrix(),
+                  .l = program.l,
+                  .u = program.u}
     {
-        std::fprintf(stderr, "ctrlpp::osqp_solver setup failed; a timing measured against a solver that was never set up is meaningless\n");
+        ready = solver.setup(problem).has_value();
+        if(ready)
+            answer = solver.solve(update);
+    }
+
+    void solve() { answer = solver.solve(update); }
+
+    const Eigen::VectorXd& primal() const { return answer.x; }
+
+    const Eigen::VectorXd& dual() const { return answer.y; }
+
+    bool usable() const
+    {
+        return ready && (answer.status == ctrlpp::solve_status::optimal
+                         || answer.status == ctrlpp::solve_status::solved_inaccurate);
+    }
+
+private:
+    bool ready;
+    ctrlpp::osqp_solver solver;
+    ctrlpp::qp_result<double> answer;
+    ctrlpp::qp_update<double> update;
+    ctrlpp::qp_problem<double> problem;
+};
+
+// osqp-eigen's data setters take non-const references, so the operands live
+// beside the solver rather than in the caller's frame.
+class osqp_eigen_arm
+{
+public:
+    explicit osqp_eigen_arm(const problems::dense_program& program)
+        : lower{program.l}, upper{program.u}, gradient{program.q},
+          hessian{problems::make_dense_mpc_hessian()},
+          constraints{problems::make_dense_mpc_constraint_matrix()}
+    {
+        configure(program);
+        solver.solve();
+    }
+
+    void solve() { solver.solve(); }
+
+    const Eigen::VectorXd& primal() { return solver.getSolution(); }
+
+    const Eigen::VectorXd& dual() { return solver.getDualSolution(); }
+
+private:
+    Eigen::VectorXd lower;
+    Eigen::VectorXd upper;
+    OsqpEigen::Solver solver;
+    Eigen::VectorXd gradient;
+    Eigen::SparseMatrix<double> hessian;
+    Eigen::SparseMatrix<double> constraints;
+
+    void configure(const problems::dense_program& program)
+    {
+        solver.settings()->setVerbosity(false);
+        solver.settings()->setWarmStart(true);
+        solver.settings()->setAbsoluteTolerance(tolerance);
+        solver.settings()->setRelativeTolerance(tolerance);
+        solver.settings()->setMaxIteration(iteration_budget);
+        solver.settings()->setPolish(true);
+        solver.data()->setNumberOfVariables(static_cast<int>(program.P.cols()));
+        solver.data()->setNumberOfConstraints(static_cast<int>(program.A.rows()));
+        solver.data()->setHessianMatrix(hessian);
+        solver.data()->setGradient(gradient);
+        solver.data()->setLinearConstraintsMatrix(constraints);
+        solver.data()->setLowerBound(lower);
+        solver.data()->setUpperBound(upper);
+        solver.initSolver();
+    }
+};
+
+void emit_rows(ankerl::nanobench::Bench& bench, const problems::dense_program& program, ctrlpp_arm& mine,
+               osqp_eigen_arm& theirs)
+{
+    auto solve_mine = [&] { mine.solve(); ankerl::nanobench::doNotOptimizeAway(mine.primal()); };
+    auto solve_theirs = [&] { theirs.solve(); ankerl::nanobench::doNotOptimizeAway(theirs.primal()); };
+
+    ctrlpp::bench::report_accuracy(bench, deviation_metric,
+                                   (mine.primal() - theirs.primal()).cwiseAbs().maxCoeff());
+    bench.run(ctrlpp_label, solve_mine).run(osqp_eigen_label, solve_theirs);
+    ctrlpp::bench::run_own_criterion_pair(
+        bench, kkt_metric, ctrlpp_label, problems::kkt_relative_residual(program, mine.primal(), mine.dual()),
+        solve_mine, osqp_eigen_label, problems::kkt_relative_residual(program, theirs.primal(), theirs.dual()),
+        solve_theirs);
+}
+
+}
+
+int main(int argc, char** argv)
+{
+    const problems::dense_program program = problems::make_dense_mpc_program();
+    if(!problems::poses_active_constraint(program))
+    {
+        std::fprintf(stderr, "no constraint row binds at the solution; the rows would not measure constraint handling\n");
         return 1;
     }
 
-    ctrlpp::qp_update<double> ctrlpp_update;
-    ctrlpp_update.q = q;
-    ctrlpp_update.l = l;
-    ctrlpp_update.u = u;
+    ctrlpp_arm mine{program};
+    if(!mine.usable())
+    {
+        std::fprintf(stderr, "ctrlpp::osqp_solver declined the program; the reported figures would be meaningless\n");
+        return 1;
+    }
+    osqp_eigen_arm theirs{program};
 
-    // Warm up
-    ctrlpp_solver.solve(ctrlpp_update);
-
-    // ---- osqp-eigen setup ----
-    OsqpEigen::Solver osqp_eigen_solver;
-    osqp_eigen_solver.settings()->setVerbosity(false);
-    osqp_eigen_solver.settings()->setWarmStart(true);
-    osqp_eigen_solver.settings()->setAbsoluteTolerance(1e-3);
-    osqp_eigen_solver.settings()->setRelativeTolerance(1e-3);
-    osqp_eigen_solver.settings()->setMaxIteration(4000);
-    osqp_eigen_solver.settings()->setPolish(true);
-    osqp_eigen_solver.data()->setNumberOfVariables(n_vars);
-    osqp_eigen_solver.data()->setNumberOfConstraints(n_cons);
-    osqp_eigen_solver.data()->setHessianMatrix(H);
-    osqp_eigen_solver.data()->setGradient(q);
-    osqp_eigen_solver.data()->setLinearConstraintsMatrix(A_con);
-    osqp_eigen_solver.data()->setLowerBound(l);
-    osqp_eigen_solver.data()->setUpperBound(u);
-    osqp_eigen_solver.initSolver();
-
-    // Warm up
-    osqp_eigen_solver.solve();
-
-    // ---- Benchmark ----
     ankerl::nanobench::Bench bench;
-    bench.title("QP: ctrlpp vs osqp-eigen")
-        .warmup(50)
-        .minEpochIterations(100)
-        .performanceCounters(true)
-        .relative(true)
-        .run("ctrlpp::osqp_solver::solve",
-             [&]
-             {
-                 auto r = ctrlpp_solver.solve(ctrlpp_update);
-                 ankerl::nanobench::doNotOptimizeAway(r);
-             })
-        .run("OsqpEigen::Solver::solve",
-             [&]
-             {
-                 osqp_eigen_solver.solve();
-                 auto sol = osqp_eigen_solver.getSolution();
-                 ankerl::nanobench::doNotOptimizeAway(sol);
-             });
+    bench.title("QP: ctrlpp vs osqp-eigen").warmup(50).minEpochIterations(100).performanceCounters(true).relative(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
+    emit_rows(bench, program, mine, theirs);
 
     std::ofstream csv("bench_qp_vs_osqp_eigen.csv");
-    bench.render(comma_csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }

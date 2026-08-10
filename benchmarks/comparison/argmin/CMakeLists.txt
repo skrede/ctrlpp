@@ -68,6 +68,7 @@ if(TARGET ctrlpp::osqp AND EXISTS "${argmin_SOURCE_DIR}/lib/argmin/include/argmi
         add_executable(${qp_bench} ${qp_bench}.cpp)
         target_link_libraries(${qp_bench} PRIVATE
             ctrlpp::ctrlpp
+            ctrlpp::bench_problems
             ctrlpp::osqp
             nanobench
             argmin::argmin

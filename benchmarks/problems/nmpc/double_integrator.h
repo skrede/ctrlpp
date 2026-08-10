@@ -44,6 +44,29 @@ inline auto double_integrator_8(const Eigen::Matrix<double, 8, 1>& x,
     return xn;
 }
 
+/// The same plant, carrying the analytic partials a solver can be handed
+/// instead of differencing the map itself.
+struct differentiable_double_integrator_2
+{
+    auto operator()(const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>& u) const -> Eigen::Vector2d
+    {
+        return double_integrator_2(x, u);
+    }
+
+    auto jacobian_x(const Eigen::Vector2d&, const Eigen::Matrix<double, 1, 1>&) const -> Eigen::Matrix2d
+    {
+        Eigen::Matrix2d partials;
+        partials << 1.0, double_integrator_dt, 0.0, 1.0;
+        return partials;
+    }
+
+    auto jacobian_u(const Eigen::Vector2d&, const Eigen::Matrix<double, 1, 1>&) const
+        -> Eigen::Matrix<double, 2, 1>
+    {
+        return Eigen::Matrix<double, 2, 1>{0.0, double_integrator_dt};
+    }
+};
+
 template <std::size_t NX, std::size_t NU>
 auto make_nmpc_quadratic_config(int horizon) -> ctrlpp::nmpc_config<double, NX, NU>
 {

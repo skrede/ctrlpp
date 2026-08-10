@@ -1,100 +1,37 @@
-#include "bench_construct.h"
+// Sequential quadratic programming across warm-start modes and problem sizes:
+// the reference nonlinear-programming library against argmin's own variants, on
+// the same nonlinear predictive-control problem.
 
+#define ANKERL_NANOBENCH_IMPLEMENT
+#include <nanobench.h>
+
+#include "bench_csv.h"
+
+#include "arm_accuracy.h"
 #include "bench_metrics.h"
+#include "bench_construct.h"
+#include "nmpc_arm_probe.h"
+#include "convergence_rate.h"
+
+#include "nmpc/pendulum.h"
+#include "nmpc/double_integrator.h"
 
 #include "ctrlpp/nmpc.h"
 #include "ctrlpp/mpc/nlopt_solver.h"
 #include "ctrlpp/mpc/argmin_solver.h"
 
-#define ANKERL_NANOBENCH_IMPLEMENT
-#include <nanobench.h>
 #include <Eigen/Dense>
 
-#include <cmath>
-#include <cstddef>
-#include <fstream>
-#include <random>
 #include <string>
 #include <vector>
-#include <type_traits>
+#include <cstddef>
+#include <fstream>
 
 namespace
 {
 
-constexpr char const* comma_csv_tpl = R"TEMPLATE(
-"title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
-
-// ---------------------------------------------------------------------------
-// Dynamics definitions
-// ---------------------------------------------------------------------------
-
-constexpr double di2_dt = 0.1;
-auto double_integrator_2 = [](const Eigen::Vector2d& x,
-                              const Eigen::Matrix<double, 1, 1>& u) -> Eigen::Vector2d
-{
-    return Eigen::Vector2d{x(0) + di2_dt * x(1), x(1) + di2_dt * u(0)};
-};
-
-auto pendulum_2 = [](const Eigen::Vector2d& x,
-                     const Eigen::Matrix<double, 1, 1>& u) -> Eigen::Vector2d
-{
-    constexpr double dt = 0.05;
-    constexpr double g = 9.81;
-    constexpr double l = 1.0;
-    double theta = x(0);
-    double omega = x(1);
-    double alpha = -g / l * std::sin(theta) + u(0);
-    return Eigen::Vector2d{theta + dt * omega, omega + dt * alpha};
-};
-
-constexpr double di4_dt = 0.1;
-auto double_integrator_4 = [](const Eigen::Vector4d& x,
-                              const Eigen::Vector2d& u) -> Eigen::Vector4d
-{
-    return Eigen::Vector4d{
-        x(0) + di4_dt * x(1),
-        x(1) + di4_dt * u(0),
-        x(2) + di4_dt * x(3),
-        x(3) + di4_dt * u(1)};
-};
-
-constexpr double di8_dt = 0.1;
-using Vec8 = Eigen::Matrix<double, 8, 1>;
-using Vec4 = Eigen::Vector4d;
-
-auto double_integrator_8 = [](const Vec8& x, const Vec4& u) -> Vec8
-{
-    Vec8 xn;
-    xn(0) = x(0) + di8_dt * x(1);
-    xn(1) = x(1) + di8_dt * u(0);
-    xn(2) = x(2) + di8_dt * x(3);
-    xn(3) = x(3) + di8_dt * u(1);
-    xn(4) = x(4) + di8_dt * x(5);
-    xn(5) = x(5) + di8_dt * u(2);
-    xn(6) = x(6) + di8_dt * x(7);
-    xn(7) = x(7) + di8_dt * u(3);
-    return xn;
-};
-
-// ---------------------------------------------------------------------------
-// NMPC config factory
-// ---------------------------------------------------------------------------
-
-template <std::size_t NX, std::size_t NU>
-auto make_nmpc_config(int horizon) -> ctrlpp::nmpc_config<double, NX, NU>
-{
-    return {
-        .horizon = horizon,
-        .Q = Eigen::Matrix<double, NX, NX>::Identity(),
-        .R = Eigen::Matrix<double, NU, NU>::Identity() * 0.1,
-    };
-}
-
-// ---------------------------------------------------------------------------
-// Type aliases
-// ---------------------------------------------------------------------------
+namespace arms = ctrlpp::bench::argmin_arms;
+namespace problems = ctrlpp::bench::problems::nmpc;
 
 using NloptSolver = ctrlpp::nlopt_solver<double>;
 using ArgminSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp>;
@@ -102,9 +39,9 @@ using ArgminNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp>;
 using ArgminFilterSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_slsqp>;
 using ArgminFilterNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_nw_sqp>;
 
-auto warm_start_label(ctrlpp::warm_start_mode ws) -> std::string
+auto warm_start_label(ctrlpp::warm_start_mode mode) -> std::string
 {
-    switch(ws)
+    switch(mode)
     {
     case ctrlpp::warm_start_mode::cold:        return "cold";
     case ctrlpp::warm_start_mode::primal_only: return "primal_only";
@@ -113,220 +50,136 @@ auto warm_start_label(ctrlpp::warm_start_mode ws) -> std::string
     return "unknown";
 }
 
-// ---------------------------------------------------------------------------
-// Benchmark runner
-// ---------------------------------------------------------------------------
+auto bounded_settings(ctrlpp::warm_start_mode mode) -> ctrlpp::argmin_settings<double>
+{
+    ctrlpp::argmin_settings<double> cfg{};
+    cfg.warm_start = mode;
+    cfg.max_time = 2.0;
+    return cfg;
+}
+
+// The variant list is spelled once; each pass over it supplies its own action.
+// Large cells make the Newton variants cost minutes of nanobench repetition even
+// under the time bound, so they keep their single-shot quality record and stay
+// out of the timed set.
+template <typename Action>
+void for_each_variant(Action&& action, const ctrlpp::argmin_settings<double>& cfg, bool include_nw_sqp)
+{
+    ctrlpp::nlopt_settings<double> nlopt_cfg{};
+    nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
+    action(NloptSolver{nlopt_cfg}, "nlopt", "slsqp", true, true);
+    action(ArgminSlsqp{cfg}, "argmin", "slsqp", true, true);
+    action(ArgminNwSqp{cfg}, "argmin", "nw_sqp", include_nw_sqp, true);
+    action(ArgminFilterSlsqp{cfg}, "argmin", "filter_slsqp", true, true);
+    action(ArgminFilterNwSqp{cfg}, "argmin", "filter_nw_sqp", false, true);
+}
+
+// nanobench clears its accumulated results whenever the title changes, so a
+// per-cell title would leave only the last cell in the rendered file; the cell
+// rides in the row name instead. The family rides there too, because two arms
+// both called "slsqp" would collide and a lookup by name would then hand one
+// arm the other's figure.
+auto row_label(char const* family, char const* algorithm, const std::string& system_name, std::size_t nx,
+               int horizon, const std::string& warm_start) -> std::string
+{
+    return std::string{family} + "_" + algorithm + " " + system_name + " NX=" + std::to_string(nx) + " N="
+         + std::to_string(horizon) + " ws=" + warm_start;
+}
 
 template <std::size_t NX, std::size_t NU, typename Dynamics>
-void run_benchmark(const std::string& system_name,
-                   Dynamics dynamics,
-                   int horizon,
-                   ankerl::nanobench::Bench& bench,
-                   std::ostream& quality_csv,
-                   ctrlpp::warm_start_mode ws_mode)
+void run_benchmark(const std::string& system_name, Dynamics dynamics, int horizon,
+                   ankerl::nanobench::Bench& bench, std::ostream& quality_csv, ctrlpp::warm_start_mode mode)
 {
-    auto config = make_nmpc_config<NX, NU>(horizon);
-    auto ws_label = warm_start_label(ws_mode);
+    const auto config = problems::make_nmpc_quadratic_config<NX, NU>(horizon);
+    const auto x0 = problems::unit_first_axis_x0<NX>();
+    const std::string warm_start = warm_start_label(mode);
+    const auto cfg = bounded_settings(mode);
+    const bool include_nw_sqp = !((NX >= 8 && horizon >= 20) || (NX == 4 && horizon >= 30));
 
-    Eigen::Matrix<double, NX, 1> x0 = Eigen::Matrix<double, NX, 1>::Zero();
-    x0(0) = 1.0;
-
-    auto title = system_name + " NX=" + std::to_string(NX)
-               + " N=" + std::to_string(horizon) + " ws=" + ws_label;
-
-    int min_iters = (NX >= 8) ? ((horizon >= 20) ? 3 : 10) : 50;
-    int warmup_iters = (NX >= 8 && horizon >= 20) ? 5 : 50;
-
-    bench.warmup(warmup_iters).minEpochIterations(min_iters).title(title);
-
-    // NLopt SLSQP baseline (no warm-start; runs at every ws_mode for parity)
-    {
-        ctrlpp::nlopt_settings<double> nlopt_cfg{};
-        nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
-
-        auto nmpc = ctrlpp::bench::built_or_exit(
-            ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics>::create(dynamics, config, NloptSolver{nlopt_cfg}), "nmpc");
-        bench.run("nlopt_slsqp",
-                  [&]
-                  {
-                      auto u = nmpc.solve(x0);
-                      ankerl::nanobench::doNotOptimizeAway(u);
-                  });
-
-        auto q = ctrlpp::bench::built_or_exit(
-            ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics>::create(dynamics, config, NloptSolver{nlopt_cfg}), "q");
-        q.solve(x0);
-        auto diag = q.diagnostics();
-        auto grad = compute_gradient_norm<double, NX, NU>(q);
-        write_quality_csv_row(quality_csv, system_name, "nlopt", "slsqp", "cold",
-                              static_cast<int>(NX), horizon, quality_metrics{
-                                  .objective = diag.cost,
-                                  .max_constraint_violation = diag.max_constraint_violation,
-                                  .gradient_norm = grad,
-                                  .success = (diag.status == ctrlpp::solve_status::optimal),
-                                  .iterations = diag.iterations,
-                                  .solve_time_ms = diag.solve_time * 1000.0,
-                              });
-    }
-
-    // Common argmin settings: warm-start as requested, max_time bounds each
-    // solve so a non-converging cell cannot stall the bench.
-    ctrlpp::argmin_settings<double> argmin_cfg{};
-    argmin_cfg.warm_start = ws_mode;
-    argmin_cfg.max_time = 2.0;
-    bool const include_nw_sqp_in_bench =
-        !((NX >= 8 && horizon >= 20) || (NX == 4 && horizon >= 30));
-
-    auto run_argmin_variant = [&]<typename Solver>(std::type_identity<Solver>,
-                                                    char const* bench_name,
-                                                    char const* algo_short,
-                                                    bool include_in_bench)
-    {
-        if (include_in_bench)
+    std::vector<arms::arm_answer> answers;
+    for_each_variant(
+        [&](auto solver, char const* family, char const* algorithm, bool benched, bool)
         {
-            auto nmpc = ctrlpp::bench::built_or_exit(
-                ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics>::create(dynamics, config, Solver{argmin_cfg}), "nmpc");
-            bench.run(bench_name,
-                      [&]
-                      {
-                          auto u = nmpc.solve(x0);
-                          ankerl::nanobench::doNotOptimizeAway(u);
-                      });
-        }
+            const std::string label = row_label(family, algorithm, system_name, NX, horizon, warm_start);
+            auto probe = arms::probe_nmpc_arm<NX, NU>(dynamics, config, x0, std::move(solver), label);
+            write_quality_csv_row(quality_csv, system_name, family, algorithm, warm_start,
+                                  static_cast<int>(NX), horizon, probe.quality);
+            if(benched)
+                answers.push_back(probe.answer);
+        },
+        cfg, include_nw_sqp);
 
-        auto q = ctrlpp::bench::built_or_exit(
-            ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics>::create(dynamics, config, Solver{argmin_cfg}), "q");
-        q.solve(x0);
-        auto diag = q.diagnostics();
-        auto grad = compute_gradient_norm<double, NX, NU>(q);
-        write_quality_csv_row(quality_csv, system_name, "argmin", algo_short, ws_label,
-                              static_cast<int>(NX), horizon, quality_metrics{
-                                  .objective = diag.cost,
-                                  .max_constraint_violation = diag.max_constraint_violation,
-                                  .gradient_norm = grad,
-                                  .success = (diag.status == ctrlpp::solve_status::optimal),
-                                  .iterations = diag.iterations,
-                                  .solve_time_ms = diag.solve_time * 1000.0,
-                              });
-    };
-
-    run_argmin_variant(std::type_identity<ArgminSlsqp>{},        "argmin_slsqp",         "slsqp",         true);
-    // Large NW-SQP cells can require minutes of nanobench repetition even with
-    // max_time. Keep their single-shot quality rows without dominating this sweep.
-    run_argmin_variant(std::type_identity<ArgminNwSqp>{},        "argmin_nw_sqp",        "nw_sqp",        include_nw_sqp_in_bench);
-    run_argmin_variant(std::type_identity<ArgminFilterSlsqp>{},  "argmin_filter_slsqp",  "filter_slsqp",  true);
-    // filter_nw_sqp tends to hit max_time on these cells; nanobench batched
-    // timing balloons to minutes per cell. Single-shot quality only.
-    run_argmin_variant(std::type_identity<ArgminFilterNwSqp>{},  "argmin_filter_nw_sqp", "filter_nw_sqp", false);
+    const double spread = arms::solution_spread(answers);
+    bench.warmup((NX >= 8 && horizon >= 20) ? 5 : 50)
+        .minEpochIterations((NX >= 8) ? ((horizon >= 20) ? 3 : 10) : 50);
+    for_each_variant(
+        [&](auto solver, char const* family, char const* algorithm, bool benched, bool)
+        {
+            const arms::arm_answer* answer = arms::answer_for_label(
+                answers, row_label(family, algorithm, system_name, NX, horizon, warm_start));
+            if(!benched || answer == nullptr)
+                return;
+            auto controller = ctrlpp::bench::built_or_exit(
+                ctrlpp::nmpc_dynamic<double, NX, NU, decltype(solver), Dynamics>::create(dynamics, config,
+                                                                                         std::move(solver)),
+                "arm");
+            arms::emit_variant_rows(bench, *answer, spread,
+                                    [&] { ankerl::nanobench::doNotOptimizeAway(controller.solve(x0)); });
+        },
+        cfg, include_nw_sqp);
 }
-
-// ---------------------------------------------------------------------------
-// Convergence reliability runner
-// ---------------------------------------------------------------------------
 
 template <std::size_t NX, std::size_t NU, typename Dynamics>
-void run_convergence(const std::string& system_name,
-                     Dynamics dynamics,
-                     int horizon,
-                     std::ostream& quality_csv)
+void run_convergence(const std::string& system_name, Dynamics dynamics, int horizon, std::ostream& quality_csv)
 {
-    auto config = make_nmpc_config<NX, NU>(horizon);
-    constexpr int num_trials = 100;
+    const auto cfg = bounded_settings(ctrlpp::warm_start_mode::cold);
+    arms::write_convergence_rates<NX, NU>(system_name, dynamics,
+                                          problems::make_nmpc_quadratic_config<NX, NU>(horizon), horizon,
+                                          quality_csv,
+                                          [&](auto&& action) { for_each_variant(action, cfg, true); });
+}
 
-    std::mt19937 rng(42);
-    std::uniform_real_distribution<double> dist(-2.0, 2.0);
-
-    int nlopt_successes = 0;
-    int slsqp_successes = 0;
-    int nw_sqp_successes = 0;
-    int filter_slsqp_successes = 0;
-    int filter_nw_sqp_successes = 0;
-
-    for(int trial = 0; trial < num_trials; ++trial)
+void run_warm_start_sweep(ankerl::nanobench::Bench& bench, std::ostream& quality_csv)
+{
+    for(auto mode : {ctrlpp::warm_start_mode::cold, ctrlpp::warm_start_mode::primal_only,
+                     ctrlpp::warm_start_mode::curvature})
     {
-        Eigen::Matrix<double, NX, 1> x0;
-        for(std::size_t i = 0; i < NX; ++i)
-            x0(static_cast<Eigen::Index>(i)) = dist(rng);
-
-        ctrlpp::nlopt_settings<double> nlopt_cfg{};
-        nlopt_cfg.algorithm = ctrlpp::nlopt_algorithm::slsqp;
-        ctrlpp::argmin_settings<double> argmin_cfg{};
-        argmin_cfg.max_time = 2.0;
-
-        auto nmpc_nlopt = ctrlpp::bench::built_or_exit(
-            ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics>::create(dynamics, config, NloptSolver{nlopt_cfg}), "nmpc_nlopt");
-        auto nmpc_slsqp = ctrlpp::bench::built_or_exit(
-            ctrlpp::nmpc_dynamic<double, NX, NU, ArgminSlsqp, Dynamics>::create(dynamics, config, ArgminSlsqp{argmin_cfg}), "nmpc_slsqp");
-        auto nmpc_nw = ctrlpp::bench::built_or_exit(
-            ctrlpp::nmpc_dynamic<double, NX, NU, ArgminNwSqp, Dynamics>::create(dynamics, config, ArgminNwSqp{argmin_cfg}), "nmpc_nw");
-        auto nmpc_fs = ctrlpp::bench::built_or_exit(
-            ctrlpp::nmpc_dynamic<double, NX, NU, ArgminFilterSlsqp, Dynamics>::create(dynamics, config, ArgminFilterSlsqp{argmin_cfg}), "nmpc_fs");
-        auto nmpc_fnw = ctrlpp::bench::built_or_exit(
-            ctrlpp::nmpc_dynamic<double, NX, NU, ArgminFilterNwSqp, Dynamics>::create(dynamics, config, ArgminFilterNwSqp{argmin_cfg}), "nmpc_fnw");
-
-        if(nmpc_nlopt.solve(x0).has_value()) ++nlopt_successes;
-        if(nmpc_slsqp.solve(x0).has_value()) ++slsqp_successes;
-        if(nmpc_nw.solve(x0).has_value()) ++nw_sqp_successes;
-        if(nmpc_fs.solve(x0).has_value()) ++filter_slsqp_successes;
-        if(nmpc_fnw.solve(x0).has_value()) ++filter_nw_sqp_successes;
+        run_benchmark<4, 2>("double_integrator", problems::double_integrator_4, 10, bench, quality_csv, mode);
+        run_benchmark<2, 1>("pendulum", problems::pendulum_2, 10, bench, quality_csv, mode);
     }
+}
 
-    auto write_rate = [&](char const* solver, char const* algo, int successes)
+void run_size_sweep(ankerl::nanobench::Bench& bench, std::ostream& quality_csv)
+{
+    const auto cold = ctrlpp::warm_start_mode::cold;
+    for(int horizon : {10, 20, 30})
     {
-        double rate = static_cast<double>(successes) / num_trials;
-        write_quality_csv_row(quality_csv, system_name, solver, algo, "convergence",
-                              static_cast<int>(NX), horizon, quality_metrics{
-                                  .objective = rate,
-                                  .max_constraint_violation = 0.0,
-                                  .gradient_norm = 0.0,
-                                  .success = true,
-                                  .iterations = num_trials,
-                                  .solve_time_ms = 0.0,
-                              });
-    };
-
-    write_rate("nlopt",  "slsqp",         nlopt_successes);
-    write_rate("argmin", "slsqp",         slsqp_successes);
-    write_rate("argmin", "nw_sqp",        nw_sqp_successes);
-    write_rate("argmin", "filter_slsqp",  filter_slsqp_successes);
-    write_rate("argmin", "filter_nw_sqp", filter_nw_sqp_successes);
+        run_benchmark<2, 1>("double_integrator", problems::double_integrator_2, horizon, bench, quality_csv, cold);
+        run_benchmark<4, 2>("double_integrator", problems::double_integrator_4, horizon, bench, quality_csv, cold);
+        run_benchmark<8, 4>("double_integrator", problems::double_integrator_8, horizon, bench, quality_csv, cold);
+    }
 }
 
 }
 
-int main()
+int main(int argc, char** argv)
 {
     ankerl::nanobench::Bench bench;
-    bench.performanceCounters(true).relative(true);
+    bench.title("NMPC: reference SLSQP vs argmin sequential quadratic programming variants")
+        .warmup(50)
+        .minEpochIterations(50)
+        .performanceCounters(true)
+        .relative(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
 
     std::ofstream timing_csv("bench_slsqp_timing.csv");
     std::ofstream quality_csv("bench_slsqp_quality.csv");
     write_quality_csv_header(quality_csv);
 
-    // Warm-start sweep: double_integrator_4 and pendulum_2
-    for(auto ws : {ctrlpp::warm_start_mode::cold,
-                   ctrlpp::warm_start_mode::primal_only,
-                   ctrlpp::warm_start_mode::curvature})
-    {
-        run_benchmark<4, 2>("double_integrator", double_integrator_4, 10, bench, quality_csv, ws);
-        run_benchmark<2, 1>("pendulum", pendulum_2, 10, bench, quality_csv, ws);
-    }
+    run_warm_start_sweep(bench, quality_csv);
+    run_size_sweep(bench, quality_csv);
+    run_convergence<4, 2>("double_integrator", problems::double_integrator_4, 10, quality_csv);
+    run_convergence<2, 1>("pendulum", problems::pendulum_2, 10, quality_csv);
 
-    // Size sweep: horizons 10, 20, 30 with cold start
-    for(int h : {10, 20, 30})
-    {
-        run_benchmark<2, 1>("double_integrator", double_integrator_2, h, bench, quality_csv,
-                            ctrlpp::warm_start_mode::cold);
-        run_benchmark<4, 2>("double_integrator", double_integrator_4, h, bench, quality_csv,
-                            ctrlpp::warm_start_mode::cold);
-        run_benchmark<8, 4>("double_integrator", double_integrator_8, h, bench, quality_csv,
-                            ctrlpp::warm_start_mode::cold);
-    }
-
-    // Convergence reliability
-    run_convergence<4, 2>("double_integrator", double_integrator_4, 10, quality_csv);
-    run_convergence<2, 1>("pendulum", pendulum_2, 10, quality_csv);
-
-    // Render timing CSV
-    bench.render(comma_csv_tpl, timing_csv);
+    bench.render(ctrlpp::bench::csv_tpl, timing_csv);
 }
