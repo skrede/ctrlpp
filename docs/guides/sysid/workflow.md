@@ -85,6 +85,14 @@ int main()
         return 1;
     }
 
+    // A record can be accepted and still leave coefficients undetermined. That
+    // is reported rather than refused, so it has to be read off the diagnostics.
+    if (result->diagnostics.numerical_rank < result->diagnostics.parameter_count)
+    {
+        std::cerr << "the record did not excite every coefficient direction\n";
+        return 1;
+    }
+
     std::cerr << "NRMSE=" << result->metrics.nrmse
               << " VAF=" << result->metrics.vaf << "%\n";
 

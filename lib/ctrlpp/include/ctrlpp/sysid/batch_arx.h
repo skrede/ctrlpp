@@ -19,6 +19,7 @@
 #include <Eigen/Dense>
 
 #include <cstddef>
+#include <optional>
 #include <algorithm>
 
 namespace ctrlpp
@@ -46,15 +47,30 @@ namespace ctrlpp
 /// conditions on the fit. In particular the routine does NOT require the
 /// regressor row count to reach the parameter count NA + NB, so a record that
 /// passes every check can still yield an under-determined or rank-deficient
-/// fit; the returned `fit_metrics` are the place to judge that.
+/// fit. Such a fit is returned rather than refused, and the returned
+/// `arx_diagnostics` are the place to judge it: a numerical rank below the
+/// parameter count means the record left some coefficient directions
+/// undetermined.
+///
+/// The fit metrics come from simulating the identified model FROM A ZERO
+/// INITIAL STATE and scoring every sample of the record, the first max(NA, NB)
+/// of which are produced from a state the identification never estimated. The
+/// regressor skips those samples, so the row count the fit was formed from is
+/// smaller than the scored sample count; it is reported as the diagnostics'
+/// effective sample count.
+///
+/// `rank_threshold` is a reporting policy and nothing else: it is forwarded to
+/// the column-pivoting QR's rank test, which compares each pivot against this
+/// multiple of the largest pivot. Omitting it reproduces Eigen's own default
+/// exactly, and no value of it changes the identified system or the metrics.
 ///
 /// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999, Ch. 4
 template <std::size_t NA, std::size_t NB, typename Derived1, typename Derived2>
-auto batch_arx(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U)
+auto batch_arx(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U,
+               std::optional<typename Derived1::Scalar> rank_threshold = std::nullopt)
     -> expected<arx_result<typename Derived1::Scalar, std::max(NA, NB), 1, 1>, sysid_error>
 {
     using Scalar = typename Derived1::Scalar;
-    static constexpr std::size_t NP = NA + NB;
     static constexpr std::size_t NX = std::max(NA, NB);
 
     if(Y.cols() != U.cols())
@@ -67,15 +83,15 @@ auto batch_arx(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Der
         return unexpected(sysid_error::non_finite_sample);
 
     auto const regression = detail::assemble_arx_regression<NA, NB>(Y, U);
-    Eigen::Matrix<Scalar, static_cast<int>(NP), 1> theta = regression.Phi.colPivHouseholderQr().solve(regression.target);
+    auto const fit = detail::solve_arx_least_squares(regression, rank_threshold);
 
-    auto const sys = detail::realize_arx_observer_form<NA, NB>(theta);
+    auto const sys = detail::realize_arx_observer_form<NA, NB>(fit.theta);
     auto const y_predicted = detail::simulate_arx_open_loop(sys, U);
     Eigen::VectorX<Scalar> const y_actual = Y.row(0).transpose();
 
     auto metrics = detail::compute_fit_metrics_unchecked(y_actual, y_predicted);
 
-    return arx_result<Scalar, NX, 1, 1>{.system = sys, .metrics = metrics};
+    return arx_result<Scalar, NX, 1, 1>{.system = sys, .metrics = metrics, .diagnostics = fit.diagnostics};
 }
 
 }

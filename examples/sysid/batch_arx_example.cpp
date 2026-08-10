@@ -61,6 +61,15 @@ int main()
         return 1;
     }
 
+    // A record can be valid and still fail to determine the model. That is not a
+    // rejection and has no error enumerator: the fit comes back with the
+    // deficiency reported in its diagnostics, and it is the caller's call
+    // whether to use it.
+    auto const& diagnostics = result->diagnostics;
+    if(diagnostics.numerical_rank < diagnostics.parameter_count)
+        std::cerr << "Batch ARX: the record determined only " << diagnostics.numerical_rank << " of "
+                  << diagnostics.parameter_count << " coefficients\n";
+
     // Simulate the identified model to produce predicted output
     auto const& sys = result->system;
     Eigen::Vector<double, 1> x = Eigen::Vector<double, 1>::Zero();
@@ -78,7 +87,9 @@ int main()
     // Print model info to stderr so it doesn't mix with CSV
     std::cerr << "Batch ARX: A=" << sys.A << " B=" << sys.B
               << " NRMSE=" << result->metrics.nrmse
-              << " VAF=" << result->metrics.vaf << "%\n";
+              << " VAF=" << result->metrics.vaf << "%"
+              << " fit residual=" << diagnostics.residual_norm
+              << " over " << diagnostics.effective_samples << " rows\n";
 
     return 0;
 }

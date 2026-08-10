@@ -10,9 +10,12 @@
 
 #include "ctrlpp/model/state_space.h"
 
+#include "ctrlpp/sysid/sysid_result.h"
+
 #include <Eigen/Dense>
 
 #include <cstddef>
+#include <optional>
 #include <algorithm>
 
 namespace ctrlpp
@@ -51,6 +54,41 @@ auto assemble_arx_regression(const Eigen::MatrixBase<Derived1>& Y, const Eigen::
         regression.target(i) = Y(0, row);
     }
     return regression;
+}
+
+template <typename Scalar, std::size_t NP>
+struct arx_least_squares_fit
+{
+    Eigen::Matrix<Scalar, static_cast<int>(NP), 1> theta{};
+    arx_diagnostics<Scalar> diagnostics{};
+};
+
+/// The threshold reaches `rank()` only. Eigen decides how many pivots to solve
+/// through from a separate count fixed during the factorization from epsilon
+/// alone, so a caller-supplied threshold changes what is reported and never
+/// what is returned.
+///
+/// Left disengaged, `setThreshold` is not called and Eigen's own default
+/// applies: epsilon times the runtime diagonal size, which its source
+/// attributes to Higham's LDLT formula
+/// (Eigen/src/QR/ColPivHouseholderQR.h, threshold()). Omitting the argument
+/// therefore reproduces that default exactly. The value is compared against the
+/// largest pivot, so it is a relative, dimensionless multiplier.
+template <typename Scalar, std::size_t NP>
+auto solve_arx_least_squares(const arx_regression<Scalar, NP>& regression, std::optional<Scalar> rank_threshold)
+    -> arx_least_squares_fit<Scalar, NP>
+{
+    Eigen::ColPivHouseholderQR<Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NP)>> qr(regression.Phi);
+    if(rank_threshold)
+        qr.setThreshold(*rank_threshold);
+
+    arx_least_squares_fit<Scalar, NP> fit{};
+    fit.theta = qr.solve(regression.target);
+    fit.diagnostics.numerical_rank = static_cast<std::size_t>(qr.rank());
+    fit.diagnostics.parameter_count = NP;
+    fit.diagnostics.effective_samples = static_cast<std::size_t>(regression.Phi.rows());
+    fit.diagnostics.residual_norm = (regression.Phi * fit.theta - regression.target).norm();
+    return fit;
 }
 
 /// Observer canonical realization dimension = max(deg A, deg B) (Ljung 1999, Ch. 4).

@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <algorithm>
 
 using namespace ctrlpp;
 
@@ -80,6 +81,14 @@ TEST_CASE("sysid property tests", "[sysid][property]")
 
             // All system matrices should be finite
             RC_ASSERT(std::isfinite(result->system.A.norm()));
-            RC_ASSERT(std::isfinite(result->system.B.norm())); });
+            RC_ASSERT(std::isfinite(result->system.B.norm()));
+
+            // A rank cannot exceed either dimension of the matrix it counts.
+            auto const& diagnostics = result->diagnostics;
+            RC_ASSERT(diagnostics.parameter_count == NA + NB);
+            RC_ASSERT(diagnostics.effective_samples == N_SAMPLES - std::max(NA, NB));
+            RC_ASSERT(diagnostics.numerical_rank <= diagnostics.parameter_count);
+            RC_ASSERT(diagnostics.numerical_rank <= diagnostics.effective_samples);
+            RC_ASSERT(diagnostics.residual_norm >= 0.0); });
     }
 }
