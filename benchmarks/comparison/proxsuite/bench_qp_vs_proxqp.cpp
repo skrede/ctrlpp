@@ -3,6 +3,9 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_csv.h"
+
+#include "qp/qp_accuracy.h"
 #include "qp/dense_mpc_shaped.h"
 
 #include "ctrlpp/mpc/osqp_solver.h"
@@ -18,76 +21,85 @@
 namespace
 {
 
-constexpr char const* comma_csv_tpl = R"TEMPLATE(
-"title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
+namespace problems = ctrlpp::bench::problems::qp;
+
+constexpr char const* deviation_metric = "max abs deviation of the two arms' primal solutions x";
+constexpr char const* kkt_metric = "relative Karush-Kuhn-Tucker residual of this arm's own primal-dual answer";
+constexpr char const* ctrlpp_label = "ctrlpp::osqp_solver::solve";
+constexpr char const* proxqp_label = "proxsuite::proxqp::dense::QP::solve";
+constexpr double tolerance = 1e-3;
+constexpr int iteration_budget = 4000;
+
+// A solver that declined the program performs a fraction of the work and its
+// answer scores nothing, so a run that included one would report a figure for a
+// problem nobody solved.
+bool accepted(ctrlpp::solve_status status)
+{
+    return status == ctrlpp::solve_status::optimal || status == ctrlpp::solve_status::solved_inaccurate;
+}
 
 }
 
-int main()
+int main(int argc, char** argv)
 {
-    namespace problems = ctrlpp::bench::problems::qp;
+    const problems::dense_program program = problems::make_dense_mpc_program();
 
-    auto H_sparse = problems::make_dense_mpc_hessian();
-    auto A_sparse = problems::make_dense_mpc_constraint_matrix();
-    auto q = problems::make_dense_mpc_gradient();
-    auto lb = problems::make_dense_mpc_lower_bound();
-    auto ub = problems::make_dense_mpc_upper_bound();
-
-    Eigen::MatrixXd H = Eigen::MatrixXd(H_sparse);
-    Eigen::MatrixXd A = Eigen::MatrixXd(A_sparse);
-
-    constexpr int n = problems::dense_mpc_n_vars;
-    constexpr int n_eq = 0;
-    constexpr int n_in = problems::dense_mpc_n_cons;
-
-    // ---- ctrlpp OSQP wrapper -----------------------------------------------
-    ctrlpp::qp_problem<double> ctrlpp_problem{
-        .P = H_sparse,
-        .q = q,
-        .A = A_sparse,
-        .l = lb,
-        .u = ub};
-    ctrlpp::osqp_solver ctrlpp_solver(1e-3, 1e-3, 4000, false, true, true);
+    ctrlpp::qp_problem<double> ctrlpp_problem{.P = problems::make_dense_mpc_hessian(),
+                                              .q = program.q,
+                                              .A = problems::make_dense_mpc_constraint_matrix(),
+                                              .l = program.l,
+                                              .u = program.u};
+    ctrlpp::osqp_solver ctrlpp_solver(tolerance, tolerance, iteration_budget, false, true, true);
     if(!ctrlpp_solver.setup(ctrlpp_problem).has_value())
     {
         std::fprintf(stderr, "ctrlpp::osqp_solver setup failed; a timing measured against a solver that was never set up is meaningless\n");
         return 1;
     }
-    ctrlpp::qp_update<double> ctrlpp_update{.q = q, .l = lb, .u = ub};
-    ctrlpp_solver.solve(ctrlpp_update);
+    ctrlpp::qp_update<double> ctrlpp_update{.q = program.q, .l = program.l, .u = program.u};
+    const ctrlpp::qp_result<double> ctrlpp_answer = ctrlpp_solver.solve(ctrlpp_update);
 
-    // ---- ProxQP (dense) ----------------------------------------------------
-    proxsuite::proxqp::dense::QP<double> proxqp(n, n_eq, n_in);
-    proxqp.settings.eps_abs = 1e-3;
-    proxqp.settings.eps_rel = 1e-3;
+    proxsuite::proxqp::dense::QP<double> proxqp(program.P.cols(), 0, program.A.rows());
+    proxqp.settings.eps_abs = tolerance;
+    proxqp.settings.eps_rel = tolerance;
     proxqp.settings.verbose = false;
-    proxqp.settings.max_iter = 4000;
-    proxqp.init(H, q, std::nullopt, std::nullopt, A, lb, ub);
+    proxqp.settings.max_iter = iteration_budget;
+    proxqp.init(program.P, program.q, std::nullopt, std::nullopt, program.A, program.l, program.u);
     proxqp.solve();
+    const Eigen::VectorXd proxqp_x = proxqp.results.x;
+    const Eigen::VectorXd proxqp_y = proxqp.results.z;
 
-    // ---- Benchmark ---------------------------------------------------------
+    if(!accepted(ctrlpp_answer.status) || proxqp.results.info.status != proxsuite::proxqp::QPSolverOutput::PROXQP_SOLVED)
+    {
+        std::fprintf(stderr, "a solver declined the program; the reported figures would be meaningless\n");
+        return 1;
+    }
+
+    auto solve_ctrlpp = [&] {
+        auto r = ctrlpp_solver.solve(ctrlpp_update);
+        ankerl::nanobench::doNotOptimizeAway(r);
+    };
+    auto solve_proxqp = [&] {
+        proxqp.solve();
+        auto x = proxqp.results.x;
+        ankerl::nanobench::doNotOptimizeAway(x);
+    };
+
     ankerl::nanobench::Bench bench;
     bench.title("QP: ctrlpp vs ProxQP")
         .warmup(50)
         .minEpochIterations(100)
         .performanceCounters(true)
-        .relative(true)
-        .run("ctrlpp::osqp_solver::solve",
-             [&]
-             {
-                 auto r = ctrlpp_solver.solve(ctrlpp_update);
-                 ankerl::nanobench::doNotOptimizeAway(r);
-             })
-        .run("proxsuite::proxqp::dense::QP::solve",
-             [&]
-             {
-                 proxqp.solve();
-                 auto x = proxqp.results.x;
-                 ankerl::nanobench::doNotOptimizeAway(x);
-             });
+        .relative(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
+
+    ctrlpp::bench::report_accuracy(bench, deviation_metric,
+                                   (ctrlpp_answer.x - proxqp_x).cwiseAbs().maxCoeff());
+    bench.run(ctrlpp_label, solve_ctrlpp).run(proxqp_label, solve_proxqp);
+    ctrlpp::bench::run_own_criterion_pair(
+        bench, kkt_metric, ctrlpp_label,
+        problems::kkt_relative_residual(program, ctrlpp_answer.x, ctrlpp_answer.y), solve_ctrlpp, proxqp_label,
+        problems::kkt_relative_residual(program, proxqp_x, proxqp_y), solve_proxqp);
 
     std::ofstream csv("bench_qp_vs_proxqp.csv");
-    bench.render(comma_csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }

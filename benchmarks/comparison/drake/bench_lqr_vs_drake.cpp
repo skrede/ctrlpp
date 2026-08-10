@@ -7,9 +7,10 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
-#include "ctrlpp/control/lqr.h"
-
+#include "bench_csv.h"
 #include "bench_construct.h"
+
+#include "ctrlpp/control/lqr.h"
 
 #include <drake/systems/controllers/linear_quadratic_regulator.h>
 
@@ -20,11 +21,6 @@
 
 namespace
 {
-
-constexpr char const* comma_csv_tpl = R"TEMPLATE(
-"title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
 
 template <std::size_t NX, std::size_t NU>
 auto build_chain_of_integrators(double dt)
@@ -77,7 +73,7 @@ void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, c
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
     ankerl::nanobench::Bench bench;
     bench.title("LQR: ctrlpp::lqr_gain (DARE) vs drake::LinearQuadraticRegulator (size sweep)")
@@ -85,6 +81,13 @@ int main()
         .minEpochIterations(100)
         .performanceCounters(true)
         .relative(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
+    // The agreement figure for this row is unwritten because the competitor is
+    // not available on the station this file was edited on, so it could neither
+    // be computed nor checked there. Whoever builds this target where the
+    // competitor IS available should replace the marker with a cross-arm
+    // deviation and each arm's own criterion.
+    ctrlpp::bench::report_competitor_not_installed(bench);
 
     run_size_sweep<2, 1>(bench,  "ctrlpp::lqr_gain NX=2",  "drake::LQR NX=2");
     run_size_sweep<4, 2>(bench,  "ctrlpp::lqr_gain NX=4",  "drake::LQR NX=4");
@@ -97,5 +100,5 @@ int main()
     run_size_sweep<30, 6>(bench, "ctrlpp::lqr_gain NX=30", "drake::LQR NX=30");
 
     std::ofstream csv("bench_lqr_vs_drake.csv");
-    bench.render(comma_csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }

@@ -4,6 +4,7 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_csv.h"
 #include "bench_construct.h"
 
 #include "lmpc/double_integrator.h"
@@ -20,17 +21,7 @@
 #include <cstdint>
 #include <fstream>
 
-namespace
-{
-
-constexpr char const* comma_csv_tpl = R"TEMPLATE(
-"title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
-
-}
-
-int main()
+int main(int argc, char** argv)
 {
     namespace problems = ctrlpp::bench::problems::lmpc;
 
@@ -85,7 +76,16 @@ int main()
         .warmup(50)
         .minEpochIterations(100)
         .performanceCounters(true)
-        .relative(true)
+        .relative(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
+    // The agreement figure for this row is unwritten because the competitor is
+    // not available on the station this file was edited on, so it could neither
+    // be computed nor checked there. Whoever builds this target where the
+    // competitor IS available should replace the marker with a cross-arm
+    // deviation and each arm's own criterion.
+    ctrlpp::bench::report_competitor_not_installed(bench);
+
+    bench
         .run("ctrlpp::mpc::solve",
              [&]
              {
@@ -101,5 +101,5 @@ int main()
              });
 
     std::ofstream csv("bench_lmpc_vs_tinympc.csv");
-    bench.render(comma_csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }
