@@ -51,6 +51,14 @@ cmake --build build -j$(nproc)
 
 ## Internal benchmark results
 
+> **Stale environment, pending remeasurement.** Every figure in the table below
+> was taken on a compiler version that is no longer installed on the measuring
+> station, against a linear-algebra dependency recorded as a version range
+> rather than a version, and with processor frequency scaling left enabled, so
+> the clock was not held at any stated frequency.  None of the three can be
+> reconstructed after the fact.  Read the figures as an order of magnitude and
+> not as a current measurement.
+
 All measurements taken with nanobench, `Release` build, full perf counters
 enabled.  Object construction is outside the benchmark lambda — only the
 hot-path call is measured.
@@ -284,6 +292,14 @@ scale-independence conclusion; the times do not have to.
 
 ## Competitive comparisons
 
+> **Stale environment, pending remeasurement.** Every figure and every ratio in
+> this section was taken on a compiler version that is no longer installed on
+> the measuring station, against a linear-algebra dependency recorded as a
+> version range rather than a version, and with processor frequency scaling
+> left enabled, so the clock was not held at any stated frequency.  None of the
+> three can be reconstructed after the fact.  Read the ratios as an order of
+> magnitude and not as a current measurement.
+
 nanobench relative mode: ctrlpp is the baseline (100%).  Higher percentage
 means the competitor is faster; lower means ctrlpp wins.
 
@@ -324,34 +340,49 @@ confirms that ctrlpp's QP layer adds negligible overhead.
 |-----------|-------:|----------:|------:|
 | LQR gain (NX=4, NU=2) | 9.0 us (102K ins) | 3.1 us (47K ins) | **ct 2.8x faster** |
 
-ct_optcon's LQR solver is faster because it uses a different algebraic
-Riccati equation solver.  The key differences:
+The two sides do not solve the same equation, and they do not do the same
+amount of work around the solve.  What each one does:
 
-- **Arithmetic**: ct uses real Schur decomposition (`Eigen::RealSchur`) on
-  the Hamiltonian matrix with real `double` arithmetic.  ctrlpp uses complex
-  Schur decomposition (`Eigen::ComplexSchur`) on the symplectic matrix with
-  `std::complex<double>` — double the memory footprint and more expensive
-  multiply-accumulate operations.
-- **Schur reordering**: ct calls LAPACK `dtrsen` directly, a
-  decades-optimized Fortran routine for reordering real Schur forms.  ctrlpp
-  implements its own Givens rotation swaps in C++ for complex Schur
-  reordering.
+- **Arithmetic**: both factor a `2n x 2n` matrix in real arithmetic.  ct
+  applies `Eigen::RealSchur` to the Hamiltonian; `ctrlpp::dare` applies
+  `Eigen::RealSchur` to the symplectic matrix
+  (`lib/ctrlpp/include/ctrlpp/control/dare.h`).
+- **Schur reordering**: ct hands its real Schur factor to the system LAPACK
+  library's reordering routine, taking that path only when the toolbox is
+  built against LAPACK and falling back to a matrix-sign iteration when it is
+  not.  ctrlpp reorders in the repository, in
+  `lib/ctrlpp/include/ctrlpp/detail/schur_reorder.h`: the Bai and Demmel 1993
+  predicated swap kernel over all four adjacent-block configurations, with
+  Murnaghan standardization of every `2x2` block a swap touches.  The
+  eigenvalues it moves to the leading position are the ones the discrete
+  solver's predicate accepts, `|lambda| < 1 - 2n eps ||T||_max`: inside the
+  unit disk by more than the Schur factor's own backward error.
 - **Problem formulation**: ct solves the continuous-time ARE (CARE) while
-  ctrlpp solves the discrete-time ARE (DARE).  The symplectic matrix for
-  DARE requires an additional matrix inverse during setup that the
-  Hamiltonian for CARE does not.
-
-The planned fix is to switch the DARE solver to real Schur decomposition
-with LAPACK `dtrsen` for reordering.
+  `ctrlpp::lqr_gain` solves the discrete-time ARE (DARE).  The symplectic
+  matrix requires an inverse of `A^T` during setup that the Hamiltonian does
+  not; both sides invert `R`.
+- **Acceptance**: `ctrlpp::dare` verifies the matrix it is about to return
+  before returning it -- a definiteness factorization, a forward-error
+  estimate against a half-significand criterion, and a closed-loop eigenvalue
+  check -- and repeats that verification at the caller's weight scale whenever
+  the scale is not one.  ct returns the extracted solution unverified.  That
+  verification is a measurable share of the discrete entry point's cost;
+  [Discrete Riccati: the acceptance check and the equilibrated
+  path](#discrete-riccati-the-acceptance-check-and-the-equilibrated-path)
+  measures it on its own.
 
 ## Environment
 
 Results above were collected on:
 
-- CPU: AMD (Zen-class, frequency scaling enabled &mdash; results may vary)
+- CPU: AMD (Zen-class), processor frequency scaling left enabled.  The clock
+  was not held at any stated frequency and no governor, boost range or core
+  pinning was recorded, so these figures cannot be reproduced even on this
+  machine.
 - OS: EndeavourOS (Arch Linux), kernel 6.18
 - Compiler: GCC 15.2.1, `-O2` (Release)
-- Eigen: 3.4+
+- Eigen: not recorded.  `3.4+` names a release family, not the build these
+  figures were measured against.
 - OSQP: 1.0.0
 - nanobench: 4.3.11
 
