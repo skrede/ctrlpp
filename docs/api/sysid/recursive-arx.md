@@ -2,16 +2,17 @@
 
 Recursive ARX model identification using RLS internally. Processes input/output data one sample at a time and maintains a running ARX(NA, NB) parameter estimate. Can convert the current estimate to an observer canonical form discrete state-space model at any time.
 
+The estimator is single-input single-output: `update` takes one scalar output and one scalar input, and the realization it produces has one input and one output. Multi-channel (MIMO) ARX identification is not implemented, and there is no way to ask this type for it.
+
 ## Header and Alias
 
 | Form | Header |
 |------|--------|
-| `recursive_arx<Scalar, NA, NB, NU, NY>` | `#include <ctrlpp/sysid/recursive_arx.h>` |
+| `recursive_arx<Scalar, NA, NB>` | `#include <ctrlpp/sysid/recursive_arx.h>` |
 | (convenience) | `#include <ctrlpp/sysid.h>` |
 
 ```cpp
-template <typename Scalar, std::size_t NA, std::size_t NB,
-          std::size_t NU = 1, std::size_t NY = 1>
+template <typename Scalar, std::size_t NA, std::size_t NB>
 class recursive_arx;
 ```
 
@@ -22,8 +23,6 @@ class recursive_arx;
 | `Scalar` | floating-point | Numeric type |
 | `NA` | `>= 1` | Number of auto-regressive (output) terms |
 | `NB` | `>= 1` | Number of exogenous (input) terms |
-| `NU` | `>= 1` | Number of inputs (default 1) |
-| `NY` | `>= 1` | Number of outputs (default 1) |
 
 ## Construction
 
@@ -32,7 +31,7 @@ static auto create(rls_config<Scalar, NP> config = {})
     -> ctrlpp::expected<recursive_arx, rls_error>;
 ```
 
-Where `NP = NA * NY + NB * NU`. `create` is the only construction path; there is
+Where `NP = NA + NB`. `create` is the only construction path; there is
 no public constructor. It builds the identifier from an optional RLS
 configuration (forgetting factor, initial covariance, covariance bound).
 
@@ -53,12 +52,14 @@ if(!identifier)
 ### update
 
 ```cpp
-ctrlpp::expected<void, rls_update_error> update(Scalar y, Scalar u);
+ctrlpp::expected<void, recursive_arx_update_error> update(Scalar y, Scalar u);
 ```
 
 Processes a new input/output pair. Builds the regressor vector from the internal history buffers and updates the RLS parameter estimate.
 
-The estimator's refusal is **forwarded verbatim** rather than restated under a second name that could drift out of step with the arithmetic it describes; see [`rls_update_error`](rls.md#update). A refused cycle also leaves the regressor history, the write index and the sample count untouched -- recording a sample the estimator refused as non-finite would poison every regressor built afterwards, so the poison would latch here after the estimator had correctly declined it.
+The underlying estimator's refusal is **forwarded verbatim**: every enumerator of [`rls_update_error`](rls.md#update) has a same-named counterpart in `recursive_arx_update_error`, so the reason is never restated under a name that could drift out of step with the arithmetic it describes. One enumerator is the wrapper's own: `non_finite_input`, reported when `u` is not finite, before the regressor is built.
+
+A refused cycle also leaves the regressor history, the write index and the sample count untouched -- recording a sample the estimator refused as non-finite would poison every regressor built afterwards, so the poison would latch here after the estimator had correctly declined it.
 
 ### parameters
 
@@ -79,10 +80,10 @@ Returns the current RLS covariance matrix.
 ### to_state_space
 
 ```cpp
-discrete_state_space<Scalar, std::max(NA, NB), NU, NY> to_state_space() const;
+discrete_state_space<Scalar, std::max(NA, NB), 1, 1> to_state_space() const;
 ```
 
-Converts the current parameter estimate to observer canonical form state-space matrices (A, B, C, D). The realization has `max(NA, NB)` states so that every b-coefficient is represented even when `NB > NA` (Ljung 1999, Ch. 4).
+Converts the current parameter estimate to observer canonical form state-space matrices (A, B, C, D). The realization has `max(NA, NB)` states so that every b-coefficient is represented even when `NB > NA` (Ljung 1999, Ch. 4), one input and one output.
 
 ## Usage Example
 
@@ -100,7 +101,13 @@ int main()
     constexpr std::size_t NA = 2;
     constexpr std::size_t NB = 1;
 
-    ctrlpp::recursive_arx<double, NA, NB> identifier;
+    auto created = ctrlpp::recursive_arx<double, NA, NB>::create();
+    if(!created)
+    {
+        std::cerr << "recursive ARX refused its configuration\n";
+        return 1;
+    }
+    auto& identifier = *created;
 
     std::mt19937 rng(42);
     std::normal_distribution<double> input_dist(0.0, 1.0);
@@ -108,11 +115,12 @@ int main()
 
     double y_prev = 0.0;
     double y_prev2 = 0.0;
+    double u_prev = 0.0;
 
     for(int k = 0; k < 300; ++k)
     {
         double u = input_dist(rng);
-        double y = 0.7 * y_prev - 0.2 * y_prev2 + 0.5 * u + noise(rng);
+        double y = 0.7 * y_prev - 0.2 * y_prev2 + 0.5 * u_prev + noise(rng);
 
         if(const auto applied = identifier.update(y, u); !applied)
         {
@@ -129,6 +137,7 @@ int main()
             std::cout << "  A=\n" << sys.A << "\n  B=\n" << sys.B << "\n";
         }
 
+        u_prev = u;
         y_prev2 = y_prev;
         y_prev = y;
     }

@@ -50,6 +50,51 @@ if (CTRLPP_BUILD_TESTS)
             "${CTRLPP_DISCARDED_EXPECTED_OUTPUT}")
     endif ()
 
+    # Every runtime test of the recursive ARX estimator passes whether or not the
+    # estimator accepts input- and output-count template arguments, because no
+    # legal instantiation ever supplied them. A refusal to compile is therefore
+    # the only observable evidence that the unimplemented multi-channel surface
+    # is gone.
+    get_target_property(CTRLPP_CANARY_EIGEN_TARGET Eigen3::Eigen ALIASED_TARGET)
+    if (NOT CTRLPP_CANARY_EIGEN_TARGET)
+        set(CTRLPP_CANARY_EIGEN_TARGET Eigen3::Eigen)
+    endif ()
+    get_target_property(CTRLPP_CANARY_EIGEN_INCLUDE
+        ${CTRLPP_CANARY_EIGEN_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
+    try_compile(
+        CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_COMPILED
+        SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/recursive_arx_arity_canary.cpp
+        CMAKE_FLAGS
+            "-DCMAKE_CXX_STANDARD=20"
+            "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+            "-DCMAKE_CXX_EXTENSIONS=OFF"
+            "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include;${CTRLPP_CANARY_EIGEN_INCLUDE}"
+        OUTPUT_VARIABLE CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_OUTPUT
+    )
+    if (NOT CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_COMPILED)
+        message(FATAL_ERROR
+            "The recursive ARX arity canary is not a valid positive control: its "
+            "three-argument arm does not compile.\n"
+            "${CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_OUTPUT}")
+    endif ()
+    try_compile(
+        CTRLPP_RECURSIVE_ARX_ARITY_COMPILED
+        SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/recursive_arx_arity_canary.cpp
+        CMAKE_FLAGS
+            "-DCMAKE_CXX_STANDARD=20"
+            "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+            "-DCMAKE_CXX_EXTENSIONS=OFF"
+            "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include;${CTRLPP_CANARY_EIGEN_INCLUDE}"
+        COMPILE_DEFINITIONS -DCTRLPP_CANARY_FIVE_PARAMETER_ARITY
+        OUTPUT_VARIABLE CTRLPP_RECURSIVE_ARX_ARITY_OUTPUT
+    )
+    if (CTRLPP_RECURSIVE_ARX_ARITY_COMPILED)
+        message(FATAL_ERROR
+            "A five-argument recursive ARX instantiation compiled successfully; "
+            "the estimator still accepts the wider arity.\n"
+            "${CTRLPP_RECURSIVE_ARX_ARITY_OUTPUT}")
+    endif ()
+
     if (CTRLPP_CMAKE_FETCH_DEPS)
         FetchContent_Declare(
             Catch2

@@ -37,13 +37,13 @@ enum class recursive_arx_update_error
     non_finite_result,
 };
 
-template <ctrlpp_floating_scalar Scalar, std::size_t NA, std::size_t NB, std::size_t NU = 1, std::size_t NY = 1>
+template <ctrlpp_floating_scalar Scalar, std::size_t NA, std::size_t NB>
 class recursive_arx
 {
     static_assert(NA >= 1 && NB >= 1, "recursive_arx requires NA >= 1 and NB >= 1");
 
 public:
-    static constexpr std::size_t NP = NA * NY + NB * NU;
+    static constexpr std::size_t NP = NA + NB;
 
     /// @brief Fallible factory, and the only way to originate an estimator.
     ///
@@ -105,7 +105,7 @@ public:
 
     const Matrix<Scalar, NP, NP>& covariance() const { return m_rls.covariance(); }
 
-    discrete_state_space<Scalar, std::max(NA, NB), NU, NY> to_state_space() const
+    discrete_state_space<Scalar, std::max(NA, NB), 1, 1> to_state_space() const
     {
         auto theta = m_rls.parameters();
 
@@ -114,9 +114,9 @@ public:
         static constexpr std::size_t NX = std::max(NA, NB);
 
         Matrix<Scalar, NX, NX> A = Matrix<Scalar, NX, NX>::Zero();
-        Matrix<Scalar, NX, NU> B = Matrix<Scalar, NX, NU>::Zero();
-        Matrix<Scalar, NY, NX> C = Matrix<Scalar, NY, NX>::Zero();
-        Matrix<Scalar, NY, NU> D = Matrix<Scalar, NY, NU>::Zero();
+        Matrix<Scalar, NX, 1> B = Matrix<Scalar, NX, 1>::Zero();
+        Matrix<Scalar, 1, NX> C = Matrix<Scalar, 1, NX>::Zero();
+        Matrix<Scalar, 1, 1> D = Matrix<Scalar, 1, 1>::Zero();
 
         // Observer canonical form for ARX (NX = max(NA, NB) states):
         //   y(t) = a1*y(t-1) + ... + aNa*y(t-NA) + b1*u(t-1) + ... + bNb*u(t-NB)
