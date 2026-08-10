@@ -6,6 +6,7 @@
 #include "bench_csv.h"
 
 #include "qp/qp_accuracy.h"
+#include "qp/qp_reference.h"
 #include "qp/dense_mpc_shaped.h"
 
 #include "ctrlpp/mpc/osqp_solver.h"
@@ -43,6 +44,11 @@ bool accepted(ctrlpp::solve_status status)
 int main(int argc, char** argv)
 {
     const problems::dense_program program = problems::make_dense_mpc_program();
+    if(!problems::poses_active_constraint(program))
+    {
+        std::fprintf(stderr, "no constraint row binds at the solution; the rows would not measure constraint handling\n");
+        return 1;
+    }
 
     ctrlpp::qp_problem<double> ctrlpp_problem{.P = problems::make_dense_mpc_hessian(),
                                               .q = program.q,

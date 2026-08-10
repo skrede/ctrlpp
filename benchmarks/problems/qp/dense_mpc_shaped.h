@@ -47,14 +47,34 @@ inline auto make_dense_mpc_gradient() -> Eigen::VectorXd
     return Eigen::VectorXd::LinSpaced(dense_mpc_n_vars, -1.0, 1.0);
 }
 
-inline auto make_dense_mpc_lower_bound() -> Eigen::VectorXd
+/// How much each constraint row is asked for by the minimizer of the objective
+/// alone. It is the only scale the posed program itself offers for how large a
+/// bound has to be to matter, so the bounds below are derived from it rather
+/// than chosen.
+inline auto dense_mpc_row_demand() -> Eigen::VectorXd
 {
-    return Eigen::VectorXd::Constant(dense_mpc_n_cons, -2.0);
+    const Eigen::MatrixXd P(make_dense_mpc_hessian());
+    const Eigen::MatrixXd A(make_dense_mpc_constraint_matrix());
+    return (A * P.ldlt().solve(-make_dense_mpc_gradient())).cwiseAbs();
 }
 
-inline auto make_dense_mpc_upper_bound() -> Eigen::VectorXd
+/// Bounds sit at the mean demand, so the rows that ask for more than average
+/// bind and the rest stay slack. A corpus whose rows are all slack races the
+/// solvers on an effectively unconstrained dense program; one whose rows are all
+/// tight poses an equality-constrained problem with no active set to find.
+inline auto dense_mpc_bound_magnitude() -> double
 {
-    return Eigen::VectorXd::Constant(dense_mpc_n_cons, 2.0);
+    return dense_mpc_row_demand().mean();
+}
+
+inline auto make_dense_mpc_lower_bound(double magnitude = dense_mpc_bound_magnitude()) -> Eigen::VectorXd
+{
+    return Eigen::VectorXd::Constant(dense_mpc_n_cons, -magnitude);
+}
+
+inline auto make_dense_mpc_upper_bound(double magnitude = dense_mpc_bound_magnitude()) -> Eigen::VectorXd
+{
+    return Eigen::VectorXd::Constant(dense_mpc_n_cons, magnitude);
 }
 
 }
