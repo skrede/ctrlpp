@@ -10,7 +10,7 @@ namespace ctrlpp::bench
 {
 
 template <std::size_t NX, std::size_t NU>
-struct damped_chain
+struct riccati_plant
 {
     Eigen::Matrix<double, int(NX), int(NX)> A;
     Eigen::Matrix<double, int(NX), int(NU)> B;
@@ -21,7 +21,7 @@ struct damped_chain
 // The spectrum is Re(lambda) < 0 on every rung, so the continuous Riccati
 // equation is well-defined across the whole size sweep.
 template <std::size_t NX, std::size_t NU>
-damped_chain<NX, NU> build_damped_chain()
+riccati_plant<NX, NU> build_damped_chain()
 {
     Eigen::Matrix<double, int(NX), int(NX)> A = Eigen::Matrix<double, int(NX), int(NX)>::Zero();
     for(std::size_t i = 0; i < NX; ++i)
@@ -39,13 +39,35 @@ damped_chain<NX, NU> build_damped_chain()
 
     Eigen::Matrix<double, int(NX), int(NX)> Q = Eigen::Matrix<double, int(NX), int(NX)>::Identity();
     Eigen::Matrix<double, int(NU), int(NU)> R = 0.1 * Eigen::Matrix<double, int(NU), int(NU)>::Identity();
-    return damped_chain<NX, NU>{A, B, Q, R};
+    return riccati_plant<NX, NU>{A, B, Q, R};
+}
+
+// A chain of integrators sampled at dt, so A is a transition matrix and the
+// discrete Riccati equation is the one this plant poses.
+template <std::size_t NX, std::size_t NU>
+riccati_plant<NX, NU> build_integrator_chain(double dt)
+{
+    Eigen::Matrix<double, int(NX), int(NX)> A = Eigen::Matrix<double, int(NX), int(NX)>::Identity();
+    for(std::size_t i = 0; i + 1 < NX; ++i)
+        A(int(i), int(i + 1)) = dt;
+
+    Eigen::Matrix<double, int(NX), int(NU)> B = Eigen::Matrix<double, int(NX), int(NU)>::Zero();
+    const std::size_t group = NX / NU;
+    for(std::size_t j = 0; j < NU; ++j)
+    {
+        const std::size_t last_row = std::min((j + 1) * group, NX) - 1;
+        B(int(last_row), int(j)) = dt;
+    }
+
+    Eigen::Matrix<double, int(NX), int(NX)> Q = Eigen::Matrix<double, int(NX), int(NX)>::Identity();
+    Eigen::Matrix<double, int(NU), int(NU)> R = 0.1 * Eigen::Matrix<double, int(NU), int(NU)>::Identity();
+    return riccati_plant<NX, NU>{A, B, Q, R};
 }
 
 // The residual norm over the sum of the norms of the terms that cancel to form
 // it, so the figure is dimensionless and comparable across the size sweep.
 template <std::size_t NX, std::size_t NU>
-double riccati_relative_residual(const damped_chain<NX, NU>& plant, const Eigen::Matrix<double, int(NX), int(NX)>& P)
+double riccati_relative_residual(const riccati_plant<NX, NU>& plant, const Eigen::Matrix<double, int(NX), int(NX)>& P)
 {
     const Eigen::Matrix<double, int(NX), int(NX)> cross = plant.A.transpose() * P + P * plant.A;
     const Eigen::Matrix<double, int(NX), int(NX)> quad =
@@ -54,11 +76,30 @@ double riccati_relative_residual(const damped_chain<NX, NU>& plant, const Eigen:
 }
 
 template <std::size_t NX, std::size_t NU>
-double closed_loop_abscissa(const damped_chain<NX, NU>& plant, const Eigen::Matrix<double, int(NU), int(NX)>& K)
+double dare_relative_residual(const riccati_plant<NX, NU>& plant, const Eigen::Matrix<double, int(NX), int(NX)>& P)
+{
+    const Eigen::Matrix<double, int(NX), int(NX)> transported = plant.A.transpose() * P * plant.A;
+    const Eigen::Matrix<double, int(NU), int(NU)> inner = plant.R + plant.B.transpose() * P * plant.B;
+    const Eigen::Matrix<double, int(NU), int(NX)> cross = plant.B.transpose() * P * plant.A;
+    const Eigen::Matrix<double, int(NX), int(NX)> quad = cross.transpose() * inner.inverse() * cross;
+    return (transported - P - quad + plant.Q).norm()
+           / (transported.norm() + P.norm() + quad.norm() + plant.Q.norm());
+}
+
+template <std::size_t NX, std::size_t NU>
+double closed_loop_abscissa(const riccati_plant<NX, NU>& plant, const Eigen::Matrix<double, int(NU), int(NX)>& K)
 {
     const Eigen::Matrix<double, int(NX), int(NX)> closed_loop = plant.A - plant.B * K;
     const Eigen::EigenSolver<Eigen::Matrix<double, int(NX), int(NX)>> spectrum(closed_loop, false);
     return spectrum.eigenvalues().real().maxCoeff();
+}
+
+template <std::size_t NX, std::size_t NU>
+double closed_loop_spectral_radius(const riccati_plant<NX, NU>& plant, const Eigen::Matrix<double, int(NU), int(NX)>& K)
+{
+    const Eigen::Matrix<double, int(NX), int(NX)> closed_loop = plant.A - plant.B * K;
+    const Eigen::EigenSolver<Eigen::Matrix<double, int(NX), int(NX)>> spectrum(closed_loop, false);
+    return spectrum.eigenvalues().cwiseAbs().maxCoeff();
 }
 
 // Matrix form of X -> Ac' X + X Ac, laid out for Eigen's column-major vec:
@@ -84,7 +125,7 @@ Eigen::MatrixXd lyapunov_operator(const Eigen::Matrix<double, int(NX), int(NX)>&
 // cost that gain achieves, whose Riccati residual is then the gain's own
 // distance from optimality.
 template <std::size_t NX, std::size_t NU>
-Eigen::Matrix<double, int(NX), int(NX)> realized_cost_matrix(const damped_chain<NX, NU>& plant,
+Eigen::Matrix<double, int(NX), int(NX)> realized_cost_matrix(const riccati_plant<NX, NU>& plant,
                                                              const Eigen::Matrix<double, int(NU), int(NX)>& K)
 {
     constexpr int n = int(NX);
@@ -99,7 +140,7 @@ Eigen::Matrix<double, int(NX), int(NX)> realized_cost_matrix(const damped_chain<
 // when K = R^-1 B' P for that gain's own P, and quadratic in the gain error
 // elsewhere, so it is an upper bound rather than a sensitive discriminator.
 template <std::size_t NX, std::size_t NU>
-double gain_optimality_residual(const damped_chain<NX, NU>& plant, const Eigen::Matrix<double, int(NU), int(NX)>& K)
+double gain_optimality_residual(const riccati_plant<NX, NU>& plant, const Eigen::Matrix<double, int(NU), int(NX)>& K)
 {
     return riccati_relative_residual<NX, NU>(plant, realized_cost_matrix<NX, NU>(plant, K));
 }

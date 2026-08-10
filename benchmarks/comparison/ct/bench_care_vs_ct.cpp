@@ -27,14 +27,14 @@ namespace
 {
 
 using ctrlpp::bench::build_damped_chain;
-using ctrlpp::bench::damped_chain;
+using ctrlpp::bench::riccati_plant;
 using ctrlpp::bench::riccati_relative_residual;
 
 template <std::size_t NX, std::size_t NU>
 class ct_care_arm
 {
 public:
-    explicit ct_care_arm(const damped_chain<NX, NU>& plant)
+    explicit ct_care_arm(const riccati_plant<NX, NU>& plant)
         : m_solver{}, m_A{plant.A}, m_Q{plant.Q}, m_R{plant.R}, m_B{plant.B}
     {
     }
@@ -60,7 +60,7 @@ constexpr char const* residual_metric = "relative residual of this arm's own con
 // is taken on that solver's own solution: routing one solver's P through the
 // other's acceptance expression would judge it by a criterion it never met.
 template <std::size_t NX, std::size_t NU>
-void emit_rows(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plant, ct_care_arm<NX, NU>& ct_arm,
+void emit_rows(ankerl::nanobench::Bench& bench, const riccati_plant<NX, NU>& plant, ct_care_arm<NX, NU>& ct_arm,
                const char* label_ctrlpp, const char* label_ct,
                const Eigen::Matrix<double, int(NX), int(NX)>& P_ctrlpp,
                const Eigen::Matrix<double, int(NX), int(NX)>& P_ct)
@@ -86,7 +86,7 @@ void emit_rows(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plan
 template <std::size_t NX, std::size_t NU>
 void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, const char* label_ct)
 {
-    const damped_chain<NX, NU> plant = build_damped_chain<NX, NU>();
+    const riccati_plant<NX, NU> plant = build_damped_chain<NX, NU>();
     const Eigen::Matrix<double, int(NX), int(NX)> P_ctrlpp =
         ctrlpp::bench::built_or_exit(ctrlpp::care<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R), label_ctrlpp)
             .P;

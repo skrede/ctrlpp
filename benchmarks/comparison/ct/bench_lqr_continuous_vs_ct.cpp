@@ -12,6 +12,7 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "ct_lqr_arm.h"
 #include "riccati_problem.h"
 
 #include "bench_csv.h"
@@ -19,14 +20,6 @@
 
 #include "ctrlpp/control/lqr.h"
 #include "ctrlpp/control/care.h"
-
-#include <cassert>  // must precede ct_optcon includes; DynamicRiccatiEquation.hpp uses assert() without <cassert>
-#include <ct/core/types/StateVector.h>
-#include <ct/core/types/ControlVector.h>
-#include <ct/optcon/lqr/riccati/CARE.hpp>
-#include <ct/optcon/lqr/riccati/CARE-impl.hpp>
-#include <ct/optcon/lqr/LQR.hpp>
-#include <ct/optcon/lqr/LQR-impl.hpp>
 
 #include <Eigen/Dense>
 
@@ -38,39 +31,9 @@ namespace
 
 using ctrlpp::bench::build_damped_chain;
 using ctrlpp::bench::closed_loop_abscissa;
-using ctrlpp::bench::damped_chain;
+using ctrlpp::bench::ct_lqr_arm;
 using ctrlpp::bench::gain_optimality_residual;
-
-// ct's LQR writes its gain into a caller-owned matrix, so the arm holds that
-// matrix rather than returning one: a return by value inside the timed region
-// would charge the ct arm for a copy the ctrlpp arm never makes.
-template <std::size_t NX, std::size_t NU>
-class ct_lqr_arm
-{
-public:
-    explicit ct_lqr_arm(const damped_chain<NX, NU>& plant)
-        : m_lqr{}, m_K{}, m_B{plant.B}, m_A{plant.A}, m_Q{plant.Q}, m_R{plant.R}
-    {
-    }
-
-    void solve()
-    {
-        m_lqr.compute(m_Q, m_R, m_A, m_B, m_K);
-    }
-
-    const Eigen::Matrix<double, int(NU), int(NX)>& gain() const
-    {
-        return m_K;
-    }
-
-private:
-    ct::optcon::LQR<NX, NU>                            m_lqr;
-    Eigen::Matrix<double, int(NU), int(NX)>            m_K;
-    Eigen::Matrix<double, int(NX), int(NU)>            m_B;
-    typename ct::optcon::LQR<NX, NU>::state_matrix_t   m_A;
-    typename ct::optcon::LQR<NX, NU>::state_matrix_t   m_Q;
-    typename ct::optcon::LQR<NX, NU>::control_matrix_t m_R;
-};
+using ctrlpp::bench::riccati_plant;
 
 constexpr char const* deviation_metric = "max abs entrywise deviation of the two arms' gains K";
 constexpr char const* residual_metric =
@@ -83,7 +46,7 @@ constexpr char const* abscissa_metric =
 // cost matrix comes from that arm's own gain rather than from a second Riccati
 // solve, which would measure a different object than the one being benchmarked.
 template <std::size_t NX, std::size_t NU>
-void emit_rows(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plant, ct_lqr_arm<NX, NU>& ct_arm,
+void emit_rows(ankerl::nanobench::Bench& bench, const riccati_plant<NX, NU>& plant, ct_lqr_arm<NX, NU>& ct_arm,
                const char* label_ctrlpp, const char* label_ct,
                const Eigen::Matrix<double, int(NU), int(NX)>& K_ctrlpp,
                const Eigen::Matrix<double, int(NU), int(NX)>& K_ct)
@@ -112,7 +75,7 @@ void emit_rows(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plan
 template <std::size_t NX, std::size_t NU>
 void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, const char* label_ct)
 {
-    const damped_chain<NX, NU> plant = build_damped_chain<NX, NU>();
+    const riccati_plant<NX, NU> plant = build_damped_chain<NX, NU>();
     const Eigen::Matrix<double, int(NU), int(NX)> K_ctrlpp = ctrlpp::bench::built_or_exit(
         ctrlpp::lqr_gain_continuous<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R), label_ctrlpp);
     ct_lqr_arm<NX, NU> ct_arm{plant};
