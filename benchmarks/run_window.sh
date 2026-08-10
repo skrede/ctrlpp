@@ -43,7 +43,13 @@ schema_header='"title","name","unit","batch","elapsed","error%","instructions","
 # switch, so preparation runs them whole.
 # "hold" marks a target that must keep compiling but whose row is not published,
 # so it is given no measurement time.
+#
+# The two targets whose cost cannot be derived from an earlier archived run are
+# listed first, so an unexpectedly long one surfaces while there is still
+# measuring time left rather than after the budget is spent.
 targets=(
+"g comparison/ct bench_nmpc_vs_ct 4 run"
+"w comparison/libmpc bench_mpc_vs_libmpc 4 run"
 "w internal bench_pid 1 run"
 "w internal bench_lqr 4 run"
 "w internal bench_dare 108 run"
@@ -56,29 +62,27 @@ targets=(
 "w internal bench_trajectory 4 run"
 "w internal bench_dsp 4 run"
 "w internal bench_so3 4 run"
-"w internal bench_care_vs_ct_nx16 4 run"
-"w internal bench_care_vs_ct_nx30 4 run"
-"w internal bench_care_methods 81 run"
+"w internal bench_care_vs_ct_nx16 4 hold"
+"w internal bench_care_vs_ct_nx30 4 hold"
+"w internal bench_care_methods 81 hold"
 "w comparison/ct bench_care_vs_ct 36 run"
 "w comparison/ct bench_lqr_continuous_vs_ct 54 run"
 "w comparison/ct bench_dare_vs_ct 20 run"
 "w comparison/ct bench_lqr_vs_ct 20 hold"
 "w comparison/ruckig bench_trajectory_vs_ruckig 10 run"
-"w comparison/libmpc bench_mpc_vs_libmpc 4 run"
 "w comparison/osqp_eigen bench_qp_vs_osqp_eigen 4 run"
-"w comparison/proxsuite bench_qp_vs_proxqp 4 run"
-"w comparison/argmin bench_qp_vs_osqp 24 run"
-"w comparison/argmin bench_jacobian 16 run"
-"w comparison/argmin bench_slsqp 114 run"
-"w comparison/argmin bench_sqp_variants 88 run"
-"w comparison/argmin bench_nmpc 48 run"
-"w comparison/argmin bench_nmhe 8 run"
-"w comparison/argmin bench_schedule 10 run"
-"w comparison/argmin bench_qp_vs_osqp_closedloop - run"
+"w comparison/proxsuite bench_qp_vs_proxqp 4 hold"
+"w comparison/argmin bench_qp_vs_osqp 24 hold"
+"w comparison/argmin bench_jacobian 16 hold"
+"w comparison/argmin bench_slsqp 114 hold"
+"w comparison/argmin bench_sqp_variants 88 hold"
+"w comparison/argmin bench_nmpc 48 hold"
+"w comparison/argmin bench_nmhe 8 hold"
+"w comparison/argmin bench_schedule 10 hold"
+"w comparison/argmin bench_qp_vs_osqp_closedloop - hold"
 "w comparison/argmin bench_qp_vs_osqp_churning - run"
-"w comparison/argmin bench_qp_periter - run"
-"w comparison/argmin bench_step_budget - run"
-"g comparison/ct bench_nmpc_vs_ct 4 run"
+"w comparison/argmin bench_qp_periter - hold"
+"w comparison/argmin bench_step_budget - hold"
 )
 
 die()
