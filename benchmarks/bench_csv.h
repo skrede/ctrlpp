@@ -48,24 +48,47 @@ inline std::string certificate_row(char const* arm_name)
     return std::string{arm_name} + " certificate";
 }
 
+// Every row-running helper below funnels through this one, so the set-then-run
+// ordering the schema depends on is written once. A row whose accuracy was set
+// before some EARLIER row ran inherits that row's figure silently, with exit 0
+// and no diagnostic; only never-set aborts. Nothing downstream can detect the
+// inherited case, so no benchmark spells the ordering itself.
+template <typename Op>
+void run_with_accuracy(ankerl::nanobench::Bench& bench, char const* metric, std::string const& name, double value,
+                       Op&& op)
+{
+    report_accuracy(bench, metric, value);
+    bench.run(name, std::forward<Op>(op));
+}
+
+template <typename Op>
+void run_own_criterion_row(ankerl::nanobench::Bench& bench, char const* metric, char const* arm_name, double value,
+                           Op&& op)
+{
+    run_with_accuracy(bench, metric, own_criterion_row(arm_name), value, std::forward<Op>(op));
+}
+
+template <typename Op>
+void run_certificate_row(ankerl::nanobench::Bench& bench, char const* metric, char const* arm_name, double value,
+                         Op&& op)
+{
+    run_with_accuracy(bench, metric, certificate_row(arm_name), value, std::forward<Op>(op));
+}
+
 template <typename OpA, typename OpB>
 void run_own_criterion_pair(ankerl::nanobench::Bench& bench, char const* metric, char const* name_a, double value_a,
                             OpA&& op_a, char const* name_b, double value_b, OpB&& op_b)
 {
-    report_accuracy(bench, metric, value_a);
-    bench.run(own_criterion_row(name_a), std::forward<OpA>(op_a));
-    report_accuracy(bench, metric, value_b);
-    bench.run(own_criterion_row(name_b), std::forward<OpB>(op_b));
+    run_own_criterion_row(bench, metric, name_a, value_a, std::forward<OpA>(op_a));
+    run_own_criterion_row(bench, metric, name_b, value_b, std::forward<OpB>(op_b));
 }
 
 template <typename OpA, typename OpB>
 void run_certificate_pair(ankerl::nanobench::Bench& bench, char const* metric, char const* name_a, double value_a,
                           OpA&& op_a, char const* name_b, double value_b, OpB&& op_b)
 {
-    report_accuracy(bench, metric, value_a);
-    bench.run(certificate_row(name_a), std::forward<OpA>(op_a));
-    report_accuracy(bench, metric, value_b);
-    bench.run(certificate_row(name_b), std::forward<OpB>(op_b));
+    run_certificate_row(bench, metric, name_a, value_a, std::forward<OpA>(op_a));
+    run_certificate_row(bench, metric, name_b, value_b, std::forward<OpB>(op_b));
 }
 
 inline void report_single_implementation(ankerl::nanobench::Bench& bench)
@@ -78,6 +101,20 @@ inline void report_competitor_not_installed(ankerl::nanobench::Bench& bench)
 {
     bench.context("accuracy_metric", competitor_absent_metric)
         .context("accuracy_value", competitor_absent_value);
+}
+
+template <typename Op>
+void run_single_implementation_row(ankerl::nanobench::Bench& bench, std::string const& name, Op&& op)
+{
+    report_single_implementation(bench);
+    bench.run(name, std::forward<Op>(op));
+}
+
+template <typename Op>
+void run_competitor_absent_row(ankerl::nanobench::Bench& bench, std::string const& name, Op&& op)
+{
+    report_competitor_not_installed(bench);
+    bench.run(name, std::forward<Op>(op));
 }
 
 inline void apply_smoke_switch(ankerl::nanobench::Bench& bench, int32_t argc, char const* const* argv)

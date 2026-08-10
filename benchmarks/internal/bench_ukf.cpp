@@ -1,6 +1,7 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_csv.h"
 #include "bench_construct.h"
 
 #include "ctrlpp/ukf.h"
@@ -8,11 +9,6 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
-
-static constexpr char const* csv_tpl =
-    R"TEMPLATE("title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
 
 namespace
 {
@@ -43,7 +39,7 @@ struct measurement
 
 }
 
-int main()
+int main(int argc, char** argv)
 {
     ctrlpp::ukf_config<double, 4, 1, 2> cfg{};
     cfg.Q = Eigen::Matrix4d::Identity() * 0.01;
@@ -61,8 +57,9 @@ int main()
         .warmup(50)
         .minEpochIterations(1000)
         .performanceCounters(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
 
-    bench.run("ukf::predict", [&] {
+    ctrlpp::bench::run_single_implementation_row(bench, "ukf::predict", [&] {
         filter.predict(u);
         ankerl::nanobench::doNotOptimizeAway(filter.state());
     });
@@ -78,11 +75,11 @@ int main()
         return 1;
     }
 
-    bench.run("ukf::update", [&] {
+    ctrlpp::bench::run_single_implementation_row(bench, "ukf::update", [&] {
         ankerl::nanobench::doNotOptimizeAway(filter.update(z).has_value());
         ankerl::nanobench::doNotOptimizeAway(filter.state());
     });
 
     std::ofstream csv("bench_ukf.csv");
-    bench.render(csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }

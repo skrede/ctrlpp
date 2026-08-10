@@ -1,6 +1,7 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_csv.h"
 #include "bench_construct.h"
 
 #include "ctrlpp/control/l1.h"
@@ -8,12 +9,7 @@
 #include <iostream>
 #include <fstream>
 
-static constexpr char const* csv_tpl =
-    R"TEMPLATE("title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
-
-int main()
+int main(int argc, char** argv)
 {
     // SISO L1: NX=1, NU=1, predictor model with pole at 0.9
     ctrlpp::l1_config<double, 1, 1> cfg{};
@@ -48,11 +44,13 @@ int main()
     bench.title("L1")
         .warmup(100)
         .minEpochIterations(10000)
-        .performanceCounters(true)
-        .run("l1::evaluate", [&] {
-            ankerl::nanobench::doNotOptimizeAway(controller.evaluate(x, r).has_value());
-        });
+        .performanceCounters(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
+
+    ctrlpp::bench::run_single_implementation_row(bench, "l1::evaluate", [&] {
+        ankerl::nanobench::doNotOptimizeAway(controller.evaluate(x, r).has_value());
+    });
 
     std::ofstream csv("bench_l1.csv");
-    bench.render(csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }

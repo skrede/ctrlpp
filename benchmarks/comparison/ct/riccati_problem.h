@@ -136,6 +136,44 @@ Eigen::Matrix<double, int(NX), int(NX)> realized_cost_matrix(const riccati_plant
     return Eigen::Map<const Eigen::Matrix<double, n, n>>(solution.data());
 }
 
+// Matrix form of X -> Ac' X Ac, laid out for Eigen's column-major vec:
+// vec(Ac' X Ac) = (Ac' kron Ac') vec(X).
+template <std::size_t NX>
+Eigen::MatrixXd stein_operator(const Eigen::Matrix<double, int(NX), int(NX)>& Ac)
+{
+    constexpr int n = int(NX);
+    Eigen::MatrixXd op(n * n, n * n);
+    for(int i = 0; i < n; ++i)
+        for(int k = 0; k < n; ++k)
+            for(int j = 0; j < n; ++j)
+                for(int m = 0; m < n; ++m)
+                    op(i * n + k, j * n + m) = Ac(j, i) * Ac(m, k);
+    return op;
+}
+
+// The discrete counterpart of realized_cost_matrix: the cost a gain achieves on
+// a sampled plant, recovered from that gain through the closed-loop Stein
+// equation rather than from a second Riccati solve.
+template <std::size_t NX, std::size_t NU>
+Eigen::Matrix<double, int(NX), int(NX)> realized_cost_matrix_discrete(
+    const riccati_plant<NX, NU>& plant, const Eigen::Matrix<double, int(NU), int(NX)>& K)
+{
+    constexpr int n = int(NX);
+    const Eigen::Matrix<double, n, n> closed_loop = plant.A - plant.B * K;
+    const Eigen::Matrix<double, n, n> cost = plant.Q + K.transpose() * plant.R * K;
+    const Eigen::VectorXd rhs = -Eigen::Map<const Eigen::VectorXd>(cost.data(), n * n);
+    const Eigen::MatrixXd op = stein_operator<NX>(closed_loop) - Eigen::MatrixXd::Identity(n * n, n * n);
+    const Eigen::VectorXd solution = op.colPivHouseholderQr().solve(rhs);
+    return Eigen::Map<const Eigen::Matrix<double, n, n>>(solution.data());
+}
+
+template <std::size_t NX, std::size_t NU>
+double discrete_gain_optimality_residual(const riccati_plant<NX, NU>& plant,
+                                         const Eigen::Matrix<double, int(NU), int(NX)>& K)
+{
+    return dare_relative_residual<NX, NU>(plant, realized_cost_matrix_discrete<NX, NU>(plant, K));
+}
+
 // How far a gain is from being optimal for the cost it realizes: zero exactly
 // when K = R^-1 B' P for that gain's own P, and quadratic in the gain error
 // elsewhere, so it is an upper bound rather than a sensitive discriminator.

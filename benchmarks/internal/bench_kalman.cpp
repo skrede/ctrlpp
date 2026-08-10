@@ -1,6 +1,7 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_csv.h"
 #include "bench_construct.h"
 
 #include "ctrlpp/kalman.h"
@@ -9,12 +10,7 @@
 #include <fstream>
 #include <iostream>
 
-static constexpr char const* csv_tpl =
-    R"TEMPLATE("title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
-
-int main()
+int main(int argc, char** argv)
 {
     // 4-state, 2-measurement, 1-input system
     constexpr double dt = 0.01;
@@ -44,8 +40,9 @@ int main()
         .warmup(100)
         .minEpochIterations(10000)
         .performanceCounters(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
 
-    bench.run("kf::predict", [&] {
+    ctrlpp::bench::run_single_implementation_row(bench, "kf::predict", [&] {
         kf.predict(u);
         ankerl::nanobench::doNotOptimizeAway(kf.state());
     });
@@ -61,11 +58,11 @@ int main()
         return 1;
     }
 
-    bench.run("kf::update", [&] {
+    ctrlpp::bench::run_single_implementation_row(bench, "kf::update", [&] {
         ankerl::nanobench::doNotOptimizeAway(kf.update(z).has_value());
         ankerl::nanobench::doNotOptimizeAway(kf.state());
     });
 
     std::ofstream csv("bench_kalman.csv");
-    bench.render(csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }

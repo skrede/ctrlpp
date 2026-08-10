@@ -1,17 +1,14 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_csv.h"
+
 #include "ctrlpp/control/pid.h"
 
 #include <iostream>
 #include <fstream>
 
-static constexpr char const* csv_tpl =
-    R"TEMPLATE("title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
-
-int main()
+int main(int argc, char** argv)
 {
     using Pid = ctrlpp::pid<double, 1>;
     using Vec = Pid::vector_t;
@@ -43,11 +40,13 @@ int main()
     bench.title("PID")
         .warmup(100)
         .minEpochIterations(10000)
-        .performanceCounters(true)
-        .run("pid::compute", [&] {
-            ankerl::nanobench::doNotOptimizeAway(ctrl.compute(sp, meas, dt).has_value());
-        });
+        .performanceCounters(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
+
+    ctrlpp::bench::run_single_implementation_row(bench, "pid::compute", [&] {
+        ankerl::nanobench::doNotOptimizeAway(ctrl.compute(sp, meas, dt).has_value());
+    });
 
     std::ofstream csv("bench_pid.csv");
-    bench.render(csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }

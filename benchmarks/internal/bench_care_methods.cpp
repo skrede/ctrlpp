@@ -18,17 +18,13 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "comparison/ct/ct_care_arm.h"
+
 #include "ctrlpp/detail/care_postconditions.h"
-#include "ctrlpp/control/care.h"
-
-#include <cassert>  // must precede ct_optcon includes; DynamicRiccatiEquation.hpp uses assert() without <cassert>
-#include <ct/optcon/lqr/riccati/CARE.hpp>
-#include <ct/optcon/lqr/riccati/CARE-impl.hpp>
-
-#include <Eigen/Dense>
 
 #include <cstdio>
 #include <chrono>
+#include <string>
 #include <fstream>
 #include <cstddef>
 #include <iostream>
@@ -36,114 +32,120 @@
 namespace
 {
 
-constexpr char const* comma_csv_tpl = R"TEMPLATE(
-"title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
+using ctrlpp::bench::care_residual_metric;
+using ctrlpp::bench::riccati_plant;
+
+// Four arms admit no pairwise agreement figure, so what the arm rows carry is
+// the spread of the set: how far the widest-separated pair of the four
+// solutions stand apart, one number shared by all four rows exactly as a
+// two-arm deviation is shared by both of its rows.
+constexpr char const* spread_metric = "max abs entrywise spread of the four arms' Riccati solutions P";
+
+template <std::size_t NX>
+using care_solution = Eigen::Matrix<double, int(NX), int(NX)>;
 
 template <std::size_t NX, std::size_t NU>
-auto build_damped_chain()
+struct method_arms
 {
-    // Continuous-time damped chain: A has -0.5 on the diagonal and 1.0 on the superdiagonal.
-    // Spectrum is Re(lambda) < 0 so CARE is well-defined.
-    Eigen::Matrix<double, int(NX), int(NX)> A = Eigen::Matrix<double, int(NX), int(NX)>::Zero();
-    for(std::size_t i = 0; i < NX; ++i)
-        A(int(i), int(i)) = -0.5;
-    for(std::size_t i = 0; i + 1 < NX; ++i)
-        A(int(i), int(i + 1)) = 1.0;
+    care_solution<NX> schur;
+    care_solution<NX> sign;
+    care_solution<NX> balanced;
+    care_solution<NX> competitor;
+};
 
-    Eigen::Matrix<double, int(NX), int(NU)> B = Eigen::Matrix<double, int(NX), int(NU)>::Zero();
-    const std::size_t group = NX / NU;
-    for(std::size_t j = 0; j < NU; ++j)
-    {
-        const std::size_t last_row = std::min((j + 1) * group, NX) - 1;
-        B(int(last_row), int(j)) = 1.0;
-    }
-
-    Eigen::Matrix<double, int(NX), int(NX)> Q = Eigen::Matrix<double, int(NX), int(NX)>::Identity();
-    Eigen::Matrix<double, int(NU), int(NU)> R = 0.1 * Eigen::Matrix<double, int(NU), int(NU)>::Identity();
-
-    return std::tuple{A, B, Q, R};
+template <std::size_t NX, std::size_t NU>
+method_arms<NX, NU> solve_all(const riccati_plant<NX, NU>& plant, ctrlpp::bench::ct_care_arm<NX, NU>& ct_arm)
+{
+    using ctrlpp::bench::built_or_exit;
+    return {built_or_exit(ctrlpp::care<double, NX, NU, ctrlpp::detail::schur_care_method>(
+                              plant.A, plant.B, plant.Q, plant.R), "ctrlpp::care[schur]").P,
+            built_or_exit(ctrlpp::care<double, NX, NU, ctrlpp::detail::sign_function_care_method>(
+                              plant.A, plant.B, plant.Q, plant.R), "ctrlpp::care[sign]").P,
+            built_or_exit(ctrlpp::care<double, NX, NU, ctrlpp::detail::balanced_schur_care_method>(
+                              plant.A, plant.B, plant.Q, plant.R), "ctrlpp::care[balanced]").P,
+            ct_arm.solve()};
 }
 
 template <std::size_t NX, std::size_t NU>
-void run_size_sweep(ankerl::nanobench::Bench& bench)
+double entrywise_spread(const method_arms<NX, NU>& arms)
 {
-    auto [A, B, Q, R] = build_damped_chain<NX, NU>();
+    const care_solution<NX> high =
+        arms.schur.cwiseMax(arms.sign).cwiseMax(arms.balanced).cwiseMax(arms.competitor);
+    const care_solution<NX> low =
+        arms.schur.cwiseMin(arms.sign).cwiseMin(arms.balanced).cwiseMin(arms.competitor);
+    return (high - low).cwiseAbs().maxCoeff();
+}
 
-    ct::optcon::CARE<NX, NU> ct_care;
-    typename ct::optcon::CARE<NX, NU>::state_matrix_t        A_ct = A;
-    typename ct::optcon::CARE<NX, NU>::control_gain_matrix_t B_ct = B;
-    typename ct::optcon::CARE<NX, NU>::state_matrix_t        Q_ct = Q;
-    typename ct::optcon::CARE<NX, NU>::control_matrix_t      R_ct = R;
+template <std::size_t NX, std::size_t NU, typename Op>
+void emit_arm(ankerl::nanobench::Bench& bench, const std::string& label, const riccati_plant<NX, NU>& plant,
+              const care_solution<NX>& P, double spread, Op&& op)
+{
+    ctrlpp::bench::run_with_accuracy(bench, spread_metric, label, spread, op);
+    ctrlpp::bench::run_own_criterion_row(bench, care_residual_metric, label.c_str(),
+                                         ctrlpp::bench::riccati_relative_residual<NX, NU>(plant, P),
+                                         std::forward<Op>(op));
+}
 
-    // Warm-ups (outside measurement window).
-    auto w_schur = ctrlpp::care<double, NX, NU, ctrlpp::detail::schur_care_method>(A, B, Q, R);
-    auto w_sign  = ctrlpp::care<double, NX, NU, ctrlpp::detail::sign_function_care_method>(A, B, Q, R);
-    auto w_bal   = ctrlpp::care<double, NX, NU, ctrlpp::detail::balanced_schur_care_method>(A, B, Q, R);
-    auto w_ct    = ct_care.computeSteadyStateRiccatiMatrix(Q_ct, R_ct, A_ct, B_ct);
-    ankerl::nanobench::doNotOptimizeAway(w_schur);
-    ankerl::nanobench::doNotOptimizeAway(w_sign);
-    ankerl::nanobench::doNotOptimizeAway(w_bal);
-    ankerl::nanobench::doNotOptimizeAway(w_ct);
-
-    char buf[64];
-
-    std::snprintf(buf, sizeof(buf), "ctrlpp::care[schur] NX=%zu", NX);
-    bench.run(buf, [&]
-    {
-        auto r = ctrlpp::care<double, NX, NU, ctrlpp::detail::schur_care_method>(A, B, Q, R);
+template <std::size_t NX, std::size_t NU, typename Method>
+auto tag_solver(const riccati_plant<NX, NU>& plant)
+{
+    return [&plant] {
+        auto r = ctrlpp::care<double, NX, NU, Method>(plant.A, plant.B, plant.Q, plant.R);
         ankerl::nanobench::doNotOptimizeAway(r);
-    });
+    };
+}
 
-    std::snprintf(buf, sizeof(buf), "ctrlpp::care[sign] NX=%zu", NX);
-    bench.run(buf, [&]
-    {
-        auto r = ctrlpp::care<double, NX, NU, ctrlpp::detail::sign_function_care_method>(A, B, Q, R);
-        ankerl::nanobench::doNotOptimizeAway(r);
-    });
-
-    std::snprintf(buf, sizeof(buf), "ctrlpp::care[balanced] NX=%zu", NX);
-    bench.run(buf, [&]
-    {
-        auto r = ctrlpp::care<double, NX, NU, ctrlpp::detail::balanced_schur_care_method>(A, B, Q, R);
-        ankerl::nanobench::doNotOptimizeAway(r);
-    });
-
-    std::snprintf(buf, sizeof(buf), "ct::optcon::CARE NX=%zu", NX);
-    bench.run(buf, [&]
-    {
-        auto P_ct = ct_care.computeSteadyStateRiccatiMatrix(Q_ct, R_ct, A_ct, B_ct);
-        ankerl::nanobench::doNotOptimizeAway(P_ct);
-    });
-
-    // The acceptance check, timed on the operands the solver hands it: the
-    // Hamiltonian the caller's problem defines and the matrix the extraction
-    // produced. Q = I and R = 0.1 I put the weight scale at exactly one, so the
-    // equilibrated Hamiltonian and the caller's are the same object here and
-    // this row measures what every tag actually pays.
-    auto H = ctrlpp::detail::build_care_hamiltonian<double, NX, NU>(A, B, Q, R);
-    if (!H || !w_schur)
+// The acceptance check, timed on the operands the solver hands it: the
+// Hamiltonian the caller's problem defines and the matrix the extraction
+// produced. Q = I and R = 0.1 I put the weight scale at exactly one, so the
+// equilibrated Hamiltonian and the caller's are the same object here and this
+// row measures what every tag actually pays. It answers a verdict rather than a
+// Riccati equation, so it has no residual of its own.
+template <std::size_t NX, std::size_t NU>
+void emit_accept_row(ankerl::nanobench::Bench& bench, const riccati_plant<NX, NU>& plant,
+                     const care_solution<NX>& P)
+{
+    auto H = ctrlpp::detail::build_care_hamiltonian<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R);
+    if(!H)
     {
         std::cerr << "SKIP acceptance row NX=" << NX << ": operands unavailable\n";
         return;
     }
     const Eigen::Matrix<double, 2 * int(NX), 2 * int(NX)> H_accept = *H;
-    const Eigen::Matrix<double, int(NX), int(NX)>         P_accept = w_schur->P;
-    if (!ctrlpp::detail::care_solution_satisfies_postconditions<double, NX>(H_accept, P_accept))
+    if(!ctrlpp::detail::care_solution_satisfies_postconditions<double, NX>(H_accept, P))
     {
-        // A check that declines exits early and would time a fraction of the
-        // work the accepted path does. Refusing to report it is the point.
         std::cerr << "SKIP acceptance row NX=" << NX << ": postcondition declined\n";
         return;
     }
 
+    char buf[64];
     std::snprintf(buf, sizeof(buf), "ctrlpp::care[accept] NX=%zu", NX);
-    bench.run(buf, [&]
-    {
-        auto ok = ctrlpp::detail::care_solution_satisfies_postconditions<double, NX>(H_accept, P_accept);
+    ctrlpp::bench::run_single_implementation_row(bench, buf, [&] {
+        auto ok = ctrlpp::detail::care_solution_satisfies_postconditions<double, NX>(H_accept, P);
         ankerl::nanobench::doNotOptimizeAway(ok);
     });
+}
+
+template <std::size_t NX, std::size_t NU>
+void run_size_sweep(ankerl::nanobench::Bench& bench)
+{
+    const riccati_plant<NX, NU> plant = ctrlpp::bench::build_damped_chain<NX, NU>();
+    ctrlpp::bench::ct_care_arm<NX, NU> ct_arm{plant};
+    const method_arms<NX, NU> arms = solve_all<NX, NU>(plant, ct_arm);
+    const double spread = entrywise_spread<NX, NU>(arms);
+    const std::string size = " NX=" + std::to_string(NX);
+
+    emit_arm<NX, NU>(bench, "ctrlpp::care[schur]" + size, plant, arms.schur, spread,
+                     tag_solver<NX, NU, ctrlpp::detail::schur_care_method>(plant));
+    emit_arm<NX, NU>(bench, "ctrlpp::care[sign]" + size, plant, arms.sign, spread,
+                     tag_solver<NX, NU, ctrlpp::detail::sign_function_care_method>(plant));
+    emit_arm<NX, NU>(bench, "ctrlpp::care[balanced]" + size, plant, arms.balanced, spread,
+                     tag_solver<NX, NU, ctrlpp::detail::balanced_schur_care_method>(plant));
+    emit_arm<NX, NU>(bench, "ct::optcon::CARE" + size, plant, arms.competitor, spread, [&ct_arm] {
+        auto P = ct_arm.solve();
+        ankerl::nanobench::doNotOptimizeAway(P);
+    });
+    emit_accept_row<NX, NU>(bench, plant, arms.schur);
 }
 
 void check_perf_event_paranoid()
@@ -159,7 +161,7 @@ void check_perf_event_paranoid()
 
 }
 
-int main()
+int main(int argc, char** argv)
 {
     check_perf_event_paranoid();
 
@@ -176,6 +178,7 @@ int main()
         .minEpochTime(std::chrono::milliseconds(1))
         .performanceCounters(true)
         .relative(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
 
     run_size_sweep<2,  1>(bench);
     run_size_sweep<4,  2>(bench);
@@ -188,5 +191,5 @@ int main()
     run_size_sweep<30, 6>(bench);
 
     std::ofstream csv("bench_care_methods.csv");
-    bench.render(comma_csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }
