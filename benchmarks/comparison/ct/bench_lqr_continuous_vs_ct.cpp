@@ -30,7 +30,6 @@
 
 #include <cstddef>
 #include <fstream>
-#include <iostream>
 
 namespace
 {
@@ -106,19 +105,35 @@ double closed_loop_abscissa(const damped_chain<NX, NU>& plant, const Eigen::Matr
     return spectrum.eigenvalues().real().maxCoeff();
 }
 
+constexpr char const* deviation_metric = "max abs entrywise deviation of the two arms' gains K";
+constexpr char const* abscissa_metric = "closed-loop spectral abscissa of this arm's own gain";
+
 // A gain deviation alone cannot say the two arms solved the same problem; the
-// abscissae are what show both gains actually stabilize the plant, so a rung
-// with a nonnegative abscissa on either arm is not a speed comparison at all.
+// abscissa is what shows a gain actually stabilizes the plant, and unlike the
+// deviation it is defined for one arm alone. The own-criterion rows re-run the
+// identical arm, so their timing columns are a second sample of the same work.
 template <std::size_t NX, std::size_t NU>
-void report_agreement(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plant,
-                      const Eigen::Matrix<double, int(NU), int(NX)>& K_ctrlpp,
-                      const Eigen::Matrix<double, int(NU), int(NX)>& K_ct)
+void emit_rows(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plant, ct_lqr_arm<NX, NU>& ct_arm,
+               const char* label_ctrlpp, const char* label_ct,
+               const Eigen::Matrix<double, int(NU), int(NX)>& K_ctrlpp,
+               const Eigen::Matrix<double, int(NU), int(NX)>& K_ct)
 {
-    std::cout << "NX=" << NX << " closed-loop spectral abscissa: ctrlpp "
-              << closed_loop_abscissa<NX, NU>(plant, K_ctrlpp) << ", ct "
-              << closed_loop_abscissa<NX, NU>(plant, K_ct) << '\n';
-    ctrlpp::bench::report_accuracy(bench, "max abs entrywise deviation of the two arms' gains K",
-                                   (K_ctrlpp - K_ct).cwiseAbs().maxCoeff());
+    auto solve_ctrlpp = [&]
+    {
+        auto K = ctrlpp::lqr_gain_continuous<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R);
+        ankerl::nanobench::doNotOptimizeAway(K);
+    };
+    auto solve_ct = [&]
+    {
+        ct_arm.solve();
+        ankerl::nanobench::doNotOptimizeAway(ct_arm.gain());
+    };
+
+    ctrlpp::bench::report_accuracy(bench, deviation_metric, (K_ctrlpp - K_ct).cwiseAbs().maxCoeff());
+    bench.run(label_ctrlpp, solve_ctrlpp).run(label_ct, solve_ct);
+    ctrlpp::bench::run_own_criterion_pair(bench, abscissa_metric, label_ctrlpp,
+                                          closed_loop_abscissa<NX, NU>(plant, K_ctrlpp), solve_ctrlpp, label_ct,
+                                          closed_loop_abscissa<NX, NU>(plant, K_ct), solve_ct);
 }
 
 template <std::size_t NX, std::size_t NU>
@@ -129,20 +144,8 @@ void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, c
         ctrlpp::lqr_gain_continuous<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R), label_ctrlpp);
     ct_lqr_arm<NX, NU> ct_arm{plant};
     ct_arm.solve();
-    report_agreement<NX, NU>(bench, plant, K_ctrlpp, ct_arm.gain());
-
-    bench.run(label_ctrlpp,
-              [&]
-              {
-                  auto K = ctrlpp::lqr_gain_continuous<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R);
-                  ankerl::nanobench::doNotOptimizeAway(K);
-              })
-        .run(label_ct,
-             [&]
-             {
-                 ct_arm.solve();
-                 ankerl::nanobench::doNotOptimizeAway(ct_arm.gain());
-             });
+    const Eigen::Matrix<double, int(NU), int(NX)> K_ct = ct_arm.gain();
+    emit_rows<NX, NU>(bench, plant, ct_arm, label_ctrlpp, label_ct, K_ctrlpp, K_ct);
 }
 
 } // namespace

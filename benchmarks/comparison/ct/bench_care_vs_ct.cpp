@@ -20,7 +20,6 @@
 
 #include <cstddef>
 #include <fstream>
-#include <iostream>
 
 namespace
 {
@@ -93,19 +92,35 @@ double care_relative_residual(const damped_chain<NX, NU>& plant, const Eigen::Ma
     return (cross - quad + plant.Q).norm() / (cross.norm() + quad.norm() + plant.Q.norm());
 }
 
-// Each residual is taken on that solver's own solution: routing one solver's P
-// through the other's acceptance expression would judge it by a criterion it
-// never agreed to meet.
+constexpr char const* deviation_metric = "max abs entrywise deviation of the two arms' Riccati solutions P";
+constexpr char const* residual_metric = "relative residual of this arm's own continuous Riccati solution";
+
+// The own-criterion rows re-run the identical arm, so their timing columns are a
+// second sample of the same work rather than a different workload. Each residual
+// is taken on that solver's own solution: routing one solver's P through the
+// other's acceptance expression would judge it by a criterion it never met.
 template <std::size_t NX, std::size_t NU>
-void report_agreement(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plant,
-                      const Eigen::Matrix<double, int(NX), int(NX)>& P_ctrlpp,
-                      const Eigen::Matrix<double, int(NX), int(NX)>& P_ct)
+void emit_rows(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plant, ct_care_arm<NX, NU>& ct_arm,
+               const char* label_ctrlpp, const char* label_ct,
+               const Eigen::Matrix<double, int(NX), int(NX)>& P_ctrlpp,
+               const Eigen::Matrix<double, int(NX), int(NX)>& P_ct)
 {
-    std::cout << "NX=" << NX << " own relative Riccati residual: ctrlpp "
-              << care_relative_residual<NX, NU>(plant, P_ctrlpp) << ", ct "
-              << care_relative_residual<NX, NU>(plant, P_ct) << '\n';
-    ctrlpp::bench::report_accuracy(bench, "max abs entrywise deviation of the two arms' Riccati solutions P",
-                                   (P_ctrlpp - P_ct).cwiseAbs().maxCoeff());
+    auto solve_ctrlpp = [&]
+    {
+        auto P = ctrlpp::care<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R);
+        ankerl::nanobench::doNotOptimizeAway(P);
+    };
+    auto solve_ct = [&]
+    {
+        auto P = ct_arm.solve();
+        ankerl::nanobench::doNotOptimizeAway(P);
+    };
+
+    ctrlpp::bench::report_accuracy(bench, deviation_metric, (P_ctrlpp - P_ct).cwiseAbs().maxCoeff());
+    bench.run(label_ctrlpp, solve_ctrlpp).run(label_ct, solve_ct);
+    ctrlpp::bench::run_own_criterion_pair(bench, residual_metric, label_ctrlpp,
+                                          care_relative_residual<NX, NU>(plant, P_ctrlpp), solve_ctrlpp, label_ct,
+                                          care_relative_residual<NX, NU>(plant, P_ct), solve_ct);
 }
 
 template <std::size_t NX, std::size_t NU>
@@ -116,20 +131,8 @@ void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, c
         ctrlpp::bench::built_or_exit(ctrlpp::care<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R), label_ctrlpp)
             .P;
     ct_care_arm<NX, NU> ct_arm{plant};
-    report_agreement<NX, NU>(bench, plant, P_ctrlpp, ct_arm.solve());
-
-    bench.run(label_ctrlpp,
-              [&]
-              {
-                  auto P = ctrlpp::care<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R);
-                  ankerl::nanobench::doNotOptimizeAway(P);
-              })
-        .run(label_ct,
-             [&]
-             {
-                 auto P_ct = ct_arm.solve();
-                 ankerl::nanobench::doNotOptimizeAway(P_ct);
-             });
+    const Eigen::Matrix<double, int(NX), int(NX)> P_ct = ct_arm.solve();
+    emit_rows<NX, NU>(bench, plant, ct_arm, label_ctrlpp, label_ct, P_ctrlpp, P_ct);
 }
 
 } // namespace
