@@ -7,6 +7,9 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "bench_csv.h"
+#include "bench_construct.h"
+
 #include "ctrlpp/control/care.h"
 
 #include <cassert>  // must precede ct_optcon includes; DynamicRiccatiEquation.hpp uses assert() without <cassert>
@@ -15,19 +18,24 @@
 
 #include <Eigen/Dense>
 
-#include <fstream>
 #include <cstddef>
+#include <fstream>
+#include <iostream>
 
 namespace
 {
 
-constexpr char const* comma_csv_tpl = R"TEMPLATE(
-"title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
+template <std::size_t NX, std::size_t NU>
+struct damped_chain
+{
+    Eigen::Matrix<double, int(NX), int(NX)> A;
+    Eigen::Matrix<double, int(NX), int(NU)> B;
+    Eigen::Matrix<double, int(NX), int(NX)> Q;
+    Eigen::Matrix<double, int(NU), int(NU)> R;
+};
 
 template <std::size_t NX, std::size_t NU>
-auto build_damped_chain()
+damped_chain<NX, NU> build_damped_chain()
 {
     // Continuous-time damped chain: A has -0.5 on the diagonal and 1.0 on the superdiagonal.
     // Spectrum is Re(lambda) < 0 so CARE is well-defined.
@@ -48,44 +56,85 @@ auto build_damped_chain()
     Eigen::Matrix<double, int(NX), int(NX)> Q = Eigen::Matrix<double, int(NX), int(NX)>::Identity();
     Eigen::Matrix<double, int(NU), int(NU)> R = 0.1 * Eigen::Matrix<double, int(NU), int(NU)>::Identity();
 
-    return std::tuple{A, B, Q, R};
+    return damped_chain<NX, NU>{A, B, Q, R};
+}
+
+template <std::size_t NX, std::size_t NU>
+class ct_care_arm
+{
+public:
+    explicit ct_care_arm(const damped_chain<NX, NU>& plant)
+        : m_solver{}, m_A{plant.A}, m_Q{plant.Q}, m_R{plant.R}, m_B{plant.B}
+    {
+    }
+
+    Eigen::Matrix<double, int(NX), int(NX)> solve()
+    {
+        return m_solver.computeSteadyStateRiccatiMatrix(m_Q, m_R, m_A, m_B);
+    }
+
+private:
+    ct::optcon::CARE<NX, NU>                                m_solver;
+    typename ct::optcon::CARE<NX, NU>::state_matrix_t        m_A;
+    typename ct::optcon::CARE<NX, NU>::state_matrix_t        m_Q;
+    typename ct::optcon::CARE<NX, NU>::control_matrix_t      m_R;
+    typename ct::optcon::CARE<NX, NU>::control_gain_matrix_t m_B;
+};
+
+// Relative residual of the continuous algebraic Riccati equation: the residual
+// norm over the sum of the norms of the terms that cancel to form it, so the
+// figure is dimensionless and comparable across the size sweep.
+template <std::size_t NX, std::size_t NU>
+double care_relative_residual(const damped_chain<NX, NU>& plant, const Eigen::Matrix<double, int(NX), int(NX)>& P)
+{
+    const Eigen::Matrix<double, int(NX), int(NX)> cross = plant.A.transpose() * P + P * plant.A;
+    const Eigen::Matrix<double, int(NX), int(NX)> quad =
+        P * plant.B * plant.R.inverse() * plant.B.transpose() * P;
+    return (cross - quad + plant.Q).norm() / (cross.norm() + quad.norm() + plant.Q.norm());
+}
+
+// Each residual is taken on that solver's own solution: routing one solver's P
+// through the other's acceptance expression would judge it by a criterion it
+// never agreed to meet.
+template <std::size_t NX, std::size_t NU>
+void report_agreement(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plant,
+                      const Eigen::Matrix<double, int(NX), int(NX)>& P_ctrlpp,
+                      const Eigen::Matrix<double, int(NX), int(NX)>& P_ct)
+{
+    std::cout << "NX=" << NX << " own relative Riccati residual: ctrlpp "
+              << care_relative_residual<NX, NU>(plant, P_ctrlpp) << ", ct "
+              << care_relative_residual<NX, NU>(plant, P_ct) << '\n';
+    ctrlpp::bench::report_accuracy(bench, "max abs entrywise deviation of the two arms' Riccati solutions P",
+                                   (P_ctrlpp - P_ct).cwiseAbs().maxCoeff());
 }
 
 template <std::size_t NX, std::size_t NU>
 void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, const char* label_ct)
 {
-    auto [A, B, Q, R] = build_damped_chain<NX, NU>();
-
-    // ctrlpp warm-up
-    auto P_ctrlpp = ctrlpp::care<double, NX, NU>(A, B, Q, R);
-
-    // ct::optcon::CARE setup
-    ct::optcon::CARE<NX, NU> ct_care;
-    typename ct::optcon::CARE<NX, NU>::state_matrix_t A_ct = A;
-    typename ct::optcon::CARE<NX, NU>::control_gain_matrix_t B_ct = B;
-    typename ct::optcon::CARE<NX, NU>::state_matrix_t Q_ct = Q;
-    typename ct::optcon::CARE<NX, NU>::control_matrix_t R_ct = R;
-
-    // Warm up
-    ct_care.computeSteadyStateRiccatiMatrix(Q_ct, R_ct, A_ct, B_ct);
+    const damped_chain<NX, NU> plant = build_damped_chain<NX, NU>();
+    const Eigen::Matrix<double, int(NX), int(NX)> P_ctrlpp =
+        ctrlpp::bench::built_or_exit(ctrlpp::care<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R), label_ctrlpp)
+            .P;
+    ct_care_arm<NX, NU> ct_arm{plant};
+    report_agreement<NX, NU>(bench, plant, P_ctrlpp, ct_arm.solve());
 
     bench.run(label_ctrlpp,
               [&]
               {
-                  auto P = ctrlpp::care<double, NX, NU>(A, B, Q, R);
+                  auto P = ctrlpp::care<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R);
                   ankerl::nanobench::doNotOptimizeAway(P);
               })
         .run(label_ct,
              [&]
              {
-                 auto P_ct = ct_care.computeSteadyStateRiccatiMatrix(Q_ct, R_ct, A_ct, B_ct);
+                 auto P_ct = ct_arm.solve();
                  ankerl::nanobench::doNotOptimizeAway(P_ct);
              });
 }
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
     ankerl::nanobench::Bench bench;
     bench.title("CARE: ctrlpp vs ct_optcon (size sweep)")
@@ -93,6 +142,7 @@ int main()
         .minEpochIterations(100)
         .performanceCounters(true)
         .relative(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
 
     run_size_sweep<2, 1>(bench,  "ctrlpp::care NX=2",  "ct::optcon::CARE NX=2");
     run_size_sweep<4, 2>(bench,  "ctrlpp::care NX=4",  "ct::optcon::CARE NX=4");
@@ -105,5 +155,5 @@ int main()
     run_size_sweep<30, 6>(bench, "ctrlpp::care NX=30", "ct::optcon::CARE NX=30");
 
     std::ofstream csv("bench_care_vs_ct.csv");
-    bench.render(comma_csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }

@@ -12,10 +12,11 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
-#include "ctrlpp/control/care.h"
-#include "ctrlpp/control/lqr.h"
-
+#include "bench_csv.h"
 #include "bench_construct.h"
+
+#include "ctrlpp/control/lqr.h"
+#include "ctrlpp/control/care.h"
 
 #include <cassert>  // must precede ct_optcon includes; DynamicRiccatiEquation.hpp uses assert() without <cassert>
 #include <ct/core/types/StateVector.h>
@@ -27,18 +28,24 @@
 
 #include <Eigen/Dense>
 
+#include <cstddef>
 #include <fstream>
+#include <iostream>
 
 namespace
 {
 
-constexpr char const* comma_csv_tpl = R"TEMPLATE(
-"title","name","unit","batch","elapsed","error%","instructions","branches","branch_misses","total"
-{{#result}}"{{title}}","{{name}}","{{unit}}",{{batch}},{{median(elapsed)}},{{medianAbsolutePercentError(elapsed)}},{{median(instructions)}},{{median(branchinstructions)}},{{median(branchmisses)}},{{sumProduct(iterations, elapsed)}}
-{{/result}})TEMPLATE";
+template <std::size_t NX, std::size_t NU>
+struct damped_chain
+{
+    Eigen::Matrix<double, int(NX), int(NX)> A;
+    Eigen::Matrix<double, int(NX), int(NU)> B;
+    Eigen::Matrix<double, int(NX), int(NX)> Q;
+    Eigen::Matrix<double, int(NU), int(NU)> R;
+};
 
 template <std::size_t NX, std::size_t NU>
-auto build_damped_chain()
+damped_chain<NX, NU> build_damped_chain()
 {
     Eigen::Matrix<double, int(NX), int(NX)> A = Eigen::Matrix<double, int(NX), int(NX)>::Zero();
     for(std::size_t i = 0; i < NX; ++i)
@@ -57,45 +64,90 @@ auto build_damped_chain()
     Eigen::Matrix<double, int(NX), int(NX)> Q = Eigen::Matrix<double, int(NX), int(NX)>::Identity();
     Eigen::Matrix<double, int(NU), int(NU)> R = 0.1 * Eigen::Matrix<double, int(NU), int(NU)>::Identity();
 
-    return std::tuple{A, B, Q, R};
+    return damped_chain<NX, NU>{A, B, Q, R};
+}
+
+// ct's LQR writes its gain into a caller-owned matrix, so the arm holds that
+// matrix rather than returning one: a return by value inside the timed region
+// would charge the ct arm for a copy the ctrlpp arm never makes.
+template <std::size_t NX, std::size_t NU>
+class ct_lqr_arm
+{
+public:
+    explicit ct_lqr_arm(const damped_chain<NX, NU>& plant)
+        : m_lqr{}, m_K{}, m_B{plant.B}, m_A{plant.A}, m_Q{plant.Q}, m_R{plant.R}
+    {
+    }
+
+    void solve()
+    {
+        m_lqr.compute(m_Q, m_R, m_A, m_B, m_K);
+    }
+
+    const Eigen::Matrix<double, int(NU), int(NX)>& gain() const
+    {
+        return m_K;
+    }
+
+private:
+    ct::optcon::LQR<NX, NU>                            m_lqr;
+    Eigen::Matrix<double, int(NU), int(NX)>            m_K;
+    Eigen::Matrix<double, int(NX), int(NU)>            m_B;
+    typename ct::optcon::LQR<NX, NU>::state_matrix_t   m_A;
+    typename ct::optcon::LQR<NX, NU>::state_matrix_t   m_Q;
+    typename ct::optcon::LQR<NX, NU>::control_matrix_t m_R;
+};
+
+template <std::size_t NX, std::size_t NU>
+double closed_loop_abscissa(const damped_chain<NX, NU>& plant, const Eigen::Matrix<double, int(NU), int(NX)>& K)
+{
+    const Eigen::Matrix<double, int(NX), int(NX)> closed_loop = plant.A - plant.B * K;
+    const Eigen::EigenSolver<Eigen::Matrix<double, int(NX), int(NX)>> spectrum(closed_loop, false);
+    return spectrum.eigenvalues().real().maxCoeff();
+}
+
+// A gain deviation alone cannot say the two arms solved the same problem; the
+// abscissae are what show both gains actually stabilize the plant, so a rung
+// with a nonnegative abscissa on either arm is not a speed comparison at all.
+template <std::size_t NX, std::size_t NU>
+void report_agreement(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plant,
+                      const Eigen::Matrix<double, int(NU), int(NX)>& K_ctrlpp,
+                      const Eigen::Matrix<double, int(NU), int(NX)>& K_ct)
+{
+    std::cout << "NX=" << NX << " closed-loop spectral abscissa: ctrlpp "
+              << closed_loop_abscissa<NX, NU>(plant, K_ctrlpp) << ", ct "
+              << closed_loop_abscissa<NX, NU>(plant, K_ct) << '\n';
+    ctrlpp::bench::report_accuracy(bench, "max abs entrywise deviation of the two arms' gains K",
+                                   (K_ctrlpp - K_ct).cwiseAbs().maxCoeff());
 }
 
 template <std::size_t NX, std::size_t NU>
 void run_size_sweep(ankerl::nanobench::Bench& bench, const char* label_ctrlpp, const char* label_ct)
 {
-    auto [A, B, Q, R] = build_damped_chain<NX, NU>();
-
-    // The warmup also asserts the solve succeeds: a benchmark that times a
-    // refused solve reports a number for a problem the library declined.
-    (void)ctrlpp::bench::built_or_exit(ctrlpp::lqr_gain_continuous<double, NX, NU>(A, B, Q, R),
-                                       "lqr_gain_continuous warmup on the damped chain");
-
-    ct::optcon::LQR<NX, NU> ct_lqr;
-    typename ct::optcon::LQR<NX, NU>::state_matrix_t A_ct = A;
-    typename ct::optcon::LQR<NX, NU>::state_matrix_t Q_ct = Q;
-    typename ct::optcon::LQR<NX, NU>::control_matrix_t R_ct = R;
-    Eigen::Matrix<double, int(NX), int(NU)> B_ct = B;
-    Eigen::Matrix<double, int(NU), int(NX)> K_ct;
-
-    ct_lqr.compute(Q_ct, R_ct, A_ct, B_ct, K_ct);
+    const damped_chain<NX, NU> plant = build_damped_chain<NX, NU>();
+    const Eigen::Matrix<double, int(NU), int(NX)> K_ctrlpp = ctrlpp::bench::built_or_exit(
+        ctrlpp::lqr_gain_continuous<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R), label_ctrlpp);
+    ct_lqr_arm<NX, NU> ct_arm{plant};
+    ct_arm.solve();
+    report_agreement<NX, NU>(bench, plant, K_ctrlpp, ct_arm.gain());
 
     bench.run(label_ctrlpp,
               [&]
               {
-                  auto K = ctrlpp::lqr_gain_continuous<double, NX, NU>(A, B, Q, R);
+                  auto K = ctrlpp::lqr_gain_continuous<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R);
                   ankerl::nanobench::doNotOptimizeAway(K);
               })
         .run(label_ct,
              [&]
              {
-                 ct_lqr.compute(Q_ct, R_ct, A_ct, B_ct, K_ct);
-                 ankerl::nanobench::doNotOptimizeAway(K_ct);
+                 ct_arm.solve();
+                 ankerl::nanobench::doNotOptimizeAway(ct_arm.gain());
              });
 }
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
     ankerl::nanobench::Bench bench;
     bench.title("Continuous LQR: ctrlpp::lqr_gain_continuous vs ct::optcon::LQR (size sweep)")
@@ -103,6 +155,7 @@ int main()
         .minEpochIterations(100)
         .performanceCounters(true)
         .relative(true);
+    ctrlpp::bench::apply_smoke_switch(bench, argc, argv);
 
     run_size_sweep<2, 1>(bench,  "ctrlpp::lqr_gain_continuous NX=2",  "ct::optcon::LQR NX=2");
     run_size_sweep<4, 2>(bench,  "ctrlpp::lqr_gain_continuous NX=4",  "ct::optcon::LQR NX=4");
@@ -115,5 +168,5 @@ int main()
     run_size_sweep<30, 6>(bench, "ctrlpp::lqr_gain_continuous NX=30", "ct::optcon::LQR NX=30");
 
     std::ofstream csv("bench_lqr_continuous_vs_ct.csv");
-    bench.render(comma_csv_tpl, csv);
+    bench.render(ctrlpp::bench::csv_tpl, csv);
 }
