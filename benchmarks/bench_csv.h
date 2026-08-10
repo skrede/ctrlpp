@@ -43,6 +43,11 @@ inline std::string own_criterion_row(char const* arm_name)
     return std::string{arm_name} + " own criterion";
 }
 
+inline std::string certificate_row(char const* arm_name)
+{
+    return std::string{arm_name} + " certificate";
+}
+
 template <typename OpA, typename OpB>
 void run_own_criterion_pair(ankerl::nanobench::Bench& bench, char const* metric, char const* name_a, double value_a,
                             OpA&& op_a, char const* name_b, double value_b, OpB&& op_b)
@@ -51,6 +56,16 @@ void run_own_criterion_pair(ankerl::nanobench::Bench& bench, char const* metric,
     bench.run(own_criterion_row(name_a), std::forward<OpA>(op_a));
     report_accuracy(bench, metric, value_b);
     bench.run(own_criterion_row(name_b), std::forward<OpB>(op_b));
+}
+
+template <typename OpA, typename OpB>
+void run_certificate_pair(ankerl::nanobench::Bench& bench, char const* metric, char const* name_a, double value_a,
+                          OpA&& op_a, char const* name_b, double value_b, OpB&& op_b)
+{
+    report_accuracy(bench, metric, value_a);
+    bench.run(certificate_row(name_a), std::forward<OpA>(op_a));
+    report_accuracy(bench, metric, value_b);
+    bench.run(certificate_row(name_b), std::forward<OpB>(op_b));
 }
 
 inline void report_single_implementation(ankerl::nanobench::Bench& bench)

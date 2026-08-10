@@ -12,6 +12,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "riccati_problem.h"
+
 #include "bench_csv.h"
 #include "bench_construct.h"
 
@@ -34,37 +36,10 @@
 namespace
 {
 
-template <std::size_t NX, std::size_t NU>
-struct damped_chain
-{
-    Eigen::Matrix<double, int(NX), int(NX)> A;
-    Eigen::Matrix<double, int(NX), int(NU)> B;
-    Eigen::Matrix<double, int(NX), int(NX)> Q;
-    Eigen::Matrix<double, int(NU), int(NU)> R;
-};
-
-template <std::size_t NX, std::size_t NU>
-damped_chain<NX, NU> build_damped_chain()
-{
-    Eigen::Matrix<double, int(NX), int(NX)> A = Eigen::Matrix<double, int(NX), int(NX)>::Zero();
-    for(std::size_t i = 0; i < NX; ++i)
-        A(int(i), int(i)) = -0.5;
-    for(std::size_t i = 0; i + 1 < NX; ++i)
-        A(int(i), int(i + 1)) = 1.0;
-
-    Eigen::Matrix<double, int(NX), int(NU)> B = Eigen::Matrix<double, int(NX), int(NU)>::Zero();
-    const std::size_t group = NX / NU;
-    for(std::size_t j = 0; j < NU; ++j)
-    {
-        const std::size_t last_row = std::min((j + 1) * group, NX) - 1;
-        B(int(last_row), int(j)) = 1.0;
-    }
-
-    Eigen::Matrix<double, int(NX), int(NX)> Q = Eigen::Matrix<double, int(NX), int(NX)>::Identity();
-    Eigen::Matrix<double, int(NU), int(NU)> R = 0.1 * Eigen::Matrix<double, int(NU), int(NU)>::Identity();
-
-    return damped_chain<NX, NU>{A, B, Q, R};
-}
+using ctrlpp::bench::build_damped_chain;
+using ctrlpp::bench::closed_loop_abscissa;
+using ctrlpp::bench::damped_chain;
+using ctrlpp::bench::gain_optimality_residual;
 
 // ct's LQR writes its gain into a caller-owned matrix, so the arm holds that
 // matrix rather than returning one: a return by value inside the timed region
@@ -97,21 +72,16 @@ private:
     typename ct::optcon::LQR<NX, NU>::control_matrix_t m_R;
 };
 
-template <std::size_t NX, std::size_t NU>
-double closed_loop_abscissa(const damped_chain<NX, NU>& plant, const Eigen::Matrix<double, int(NU), int(NX)>& K)
-{
-    const Eigen::Matrix<double, int(NX), int(NX)> closed_loop = plant.A - plant.B * K;
-    const Eigen::EigenSolver<Eigen::Matrix<double, int(NX), int(NX)>> spectrum(closed_loop, false);
-    return spectrum.eigenvalues().real().maxCoeff();
-}
-
 constexpr char const* deviation_metric = "max abs entrywise deviation of the two arms' gains K";
-constexpr char const* abscissa_metric = "closed-loop spectral abscissa of this arm's own gain";
+constexpr char const* residual_metric =
+    "relative residual of the Riccati solution reconstructed from this arm's own gain";
+constexpr char const* abscissa_metric =
+    "closed-loop spectral abscissa of this arm's own gain (negative certifies stability)";
 
-// A gain deviation alone cannot say the two arms solved the same problem; the
-// abscissa is what shows a gain actually stabilizes the plant, and unlike the
-// deviation it is defined for one arm alone. The own-criterion rows re-run the
-// identical arm, so their timing columns are a second sample of the same work.
+// The residual says the gain is right and the abscissa says it is admissible;
+// neither substitutes for the other, so both are published. Each reconstructed
+// cost matrix comes from that arm's own gain rather than from a second Riccati
+// solve, which would measure a different object than the one being benchmarked.
 template <std::size_t NX, std::size_t NU>
 void emit_rows(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plant, ct_lqr_arm<NX, NU>& ct_arm,
                const char* label_ctrlpp, const char* label_ct,
@@ -131,9 +101,12 @@ void emit_rows(ankerl::nanobench::Bench& bench, const damped_chain<NX, NU>& plan
 
     ctrlpp::bench::report_accuracy(bench, deviation_metric, (K_ctrlpp - K_ct).cwiseAbs().maxCoeff());
     bench.run(label_ctrlpp, solve_ctrlpp).run(label_ct, solve_ct);
-    ctrlpp::bench::run_own_criterion_pair(bench, abscissa_metric, label_ctrlpp,
-                                          closed_loop_abscissa<NX, NU>(plant, K_ctrlpp), solve_ctrlpp, label_ct,
-                                          closed_loop_abscissa<NX, NU>(plant, K_ct), solve_ct);
+    ctrlpp::bench::run_own_criterion_pair(bench, residual_metric, label_ctrlpp,
+                                          gain_optimality_residual<NX, NU>(plant, K_ctrlpp), solve_ctrlpp, label_ct,
+                                          gain_optimality_residual<NX, NU>(plant, K_ct), solve_ct);
+    ctrlpp::bench::run_certificate_pair(bench, abscissa_metric, label_ctrlpp,
+                                        closed_loop_abscissa<NX, NU>(plant, K_ctrlpp), solve_ctrlpp, label_ct,
+                                        closed_loop_abscissa<NX, NU>(plant, K_ct), solve_ct);
 }
 
 template <std::size_t NX, std::size_t NU>
