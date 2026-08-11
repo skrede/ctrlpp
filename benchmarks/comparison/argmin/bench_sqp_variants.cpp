@@ -1,6 +1,13 @@
 // The sequential-quadratic-programming variants against each other and against
 // the reference nonlinear-programming library, on the same predictive-control
 // problem across problem sizes.
+//
+// This target and bench_slsqp are the two halves of one comparison: they pose
+// the identical problems from the identical initial states over the same variant
+// list, and differ only in warm-start mode. The argmin arms here run at the
+// settings default, which retains curvature, so this is the warm half and
+// bench_slsqp's size sweep is the cold one. The reference library carries no
+// such state and so is timed from scratch in both.
 
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
@@ -90,6 +97,7 @@ void run_benchmark(const std::string& system_name, Dynamics dynamics, int horizo
 {
     const auto config = problems::make_nmpc_quadratic_config<NX, NU>(horizon);
     const auto x0 = problems::unit_first_axis_x0<NX>();
+    const std::string warm_start = warm_start_label(bounded_settings().warm_start);
 
     std::vector<arms::arm_answer> answers;
     for_each_variant(
@@ -97,8 +105,8 @@ void run_benchmark(const std::string& system_name, Dynamics dynamics, int horizo
         {
             const std::string label = row_label(family, algorithm, system_name, NX, horizon);
             auto probe = arms::probe_nmpc_arm<NX, NU>(dynamics, config, x0, std::move(solver), label);
-            write_quality_csv_row(quality_csv, system_name, family, algorithm, "cold", static_cast<int>(NX),
-                                  horizon, probe.quality);
+            write_quality_csv_row(quality_csv, system_name, family, algorithm, warm_start,
+                                  static_cast<int>(NX), horizon, probe.quality);
             if(benched)
                 answers.push_back(probe.answer);
         });

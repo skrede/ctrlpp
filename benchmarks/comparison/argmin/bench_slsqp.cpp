@@ -1,6 +1,13 @@
 // Sequential quadratic programming across warm-start modes and problem sizes:
 // the reference nonlinear-programming library against argmin's own variants, on
 // the same nonlinear predictive-control problem.
+//
+// This target and bench_sqp_variants are the two halves of one comparison: they
+// pose the identical problems from the identical initial states over the same
+// variant list, and differ only in warm-start mode. The size sweep here is cold,
+// so it reads as the from-scratch half; bench_sqp_variants runs at the settings
+// default and reads as the warm half. Comparing a row across the two targets is
+// only meaningful with that difference in hand.
 
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
@@ -38,17 +45,6 @@ using ArgminSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp>;
 using ArgminNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp>;
 using ArgminFilterSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_slsqp>;
 using ArgminFilterNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_nw_sqp>;
-
-auto warm_start_label(ctrlpp::warm_start_mode mode) -> std::string
-{
-    switch(mode)
-    {
-    case ctrlpp::warm_start_mode::cold:        return "cold";
-    case ctrlpp::warm_start_mode::primal_only: return "primal_only";
-    case ctrlpp::warm_start_mode::curvature:   return "curvature";
-    }
-    return "unknown";
-}
 
 auto bounded_settings(ctrlpp::warm_start_mode mode) -> ctrlpp::argmin_settings<double>
 {

@@ -2,6 +2,7 @@
 #define HPP_GUARD_BENCHMARKS_COMPARISON_ARGMIN_BENCH_METRICS_H
 
 #include "ctrlpp/mpc/nlp_solver.h"
+#include "ctrlpp/mpc/argmin_policies.h"
 #include "ctrlpp/detail/numerical_diff.h"
 
 #include <Eigen/Core>
@@ -109,6 +110,20 @@ auto compute_gradient_norm(const NmpcType& controller) -> double
         std::span<const double>{x_buf.data(), n},
         std::span<double>{grad.data(), n});
     return Eigen::Map<Eigen::VectorXd>(grad.data(), static_cast<Eigen::Index>(n)).norm();
+}
+
+/// Names the mode for the warm_start column below. A quality record that spells
+/// the column itself can state a mode the run did not use, so every writer
+/// derives it from the settings the arms were built from.
+inline auto warm_start_label(ctrlpp::warm_start_mode mode) -> std::string
+{
+    switch(mode)
+    {
+    case ctrlpp::warm_start_mode::cold:        return "cold";
+    case ctrlpp::warm_start_mode::primal_only: return "primal_only";
+    case ctrlpp::warm_start_mode::curvature:   return "curvature";
+    }
+    return "unknown";
 }
 
 inline void write_quality_csv_header(std::ostream& os)
