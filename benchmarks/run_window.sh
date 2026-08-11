@@ -5,7 +5,7 @@
 #
 # Usage:
 #   run_window.sh prepare
-#   run_window.sh measure <destination-directory>
+#   run_window.sh measure <destination-directory> [window-class]
 #
 # Everything in "prepare" is insensitive to processor contention and is meant to
 # run well before the measurement. "measure" contains no build step at all: a
@@ -29,6 +29,10 @@ second_cxx="g++-13"
 passes=3
 pin_cpu=2
 
+# Which window class the measurement times; the measurement's second argument
+# overrides it. Preparation ignores it and always covers every target.
+selection=run
+
 # Spelled out because ninja 1.13.2 aborts on this project's dynamic dependency
 # file. Parallelism belongs to the build only; the measurement is serial.
 generator="Unix Makefiles"
@@ -41,8 +45,9 @@ schema_header='"title","name","unit","batch","elapsed","error%","instructions","
 # A dash in the row column marks a benchmark writing its own record format
 # rather than the shared twelve-column one; those four also take no smoke
 # switch, so preparation runs them whole.
-# "hold" marks a target that must keep compiling but whose row is not published,
-# so it is given no measurement time.
+# "hold" marks a target that must keep compiling but whose row is not published.
+# The column records which set a target belongs to and is not edited per run;
+# which set is given measurement time is the measurement's own argument.
 #
 # The two targets whose cost cannot be derived from an earlier archived run are
 # listed first, so an unexpectedly long one surfaces while there is still
@@ -99,10 +104,16 @@ Usage:
       Configure both build trees, build every target the measurement runs, run
       each one under its smoke switch and check the record it writes.
 
-  run_window.sh measure <destination-directory>
+  run_window.sh measure <destination-directory> [window-class]
       Take the measurement runs into the given directory. Builds nothing. The
       destination is required and has no default: the archive lives outside this
       repository and its path may not appear inside it.
+
+      The window class selects which half of the target table is given
+      measurement time, and defaults to "run":
+        run   the publication-critical targets
+        hold  the targets whose rows are not published
+        all   both
 USAGE
 }
 
@@ -236,12 +247,29 @@ prepare()
     printf '%d targets configured, built, ran, and wrote the record their shape predicts\n' "${#targets[@]}"
 }
 
+selected()
+{
+    [ "${selection}" = "all" ] || [ "${selection}" = "$1" ]
+}
+
+selected_count()
+{
+    local entry window count=0
+    for entry in "${targets[@]}"; do
+        read -r _ _ _ _ window <<<"${entry}"
+        if selected "${window}"; then
+            count=$((count + 1))
+        fi
+    done
+    printf '%d\n' "${count}"
+}
+
 require_binaries()
 {
     local entry tree rundir target window missing=0
     for entry in "${targets[@]}"; do
         read -r tree rundir target _ window <<<"${entry}"
-        [ "${window}" = "run" ] || continue
+        selected "${window}" || continue
         if [ ! -x "$(tree_path "${tree}")/${rundir}/${target}" ]; then
             printf 'run_window: %s is not built\n' "${target}" >&2
             missing=$((missing + 1))
@@ -261,6 +289,8 @@ write_environment()
         printf 'boost             %s\n' "$(cat /sys/devices/system/cpu/cpufreq/boost 2>/dev/null || echo unknown)"
         printf 'pinning           taskset -c %s\n' "${pin_cpu}"
         printf 'passes            %s\n' "${passes}"
+        printf 'window class      %s\n' "${selection}"
+        printf 'targets measured  %s of %s\n' "$(selected_count)" "${#targets[@]}"
         printf 'default compiler  %s\n' "$(c++ --version | head -1)"
         printf 'second compiler   %s\n' "$("${second_cxx}" --version | head -1)"
         printf 'library revision  %s\n' "$(git -C "${repo_root}" rev-parse --short HEAD)"
@@ -271,7 +301,7 @@ write_environment()
 measure_one()
 {
     local dest="$1" pass="$2" tree="$3" rundir="$4" target="$5" rows="$6" window="$7" work
-    [ "${window}" = "run" ] || return 0
+    selected "${window}" || return 0
     work="${dest}/pass-${pass}/${target}"
     mkdir -p "${work}"
     printf '  pass %s  %s\n' "${pass}" "${target}"
@@ -283,6 +313,11 @@ measure()
 {
     local dest="${1:-}" pass entry
     [ -n "${dest}" ] || die "measure needs a destination directory, and has no default"
+    selection="${2:-${selection}}"
+    case "${selection}" in
+        run|hold|all) ;;
+        *) die "unknown window class '${selection}'; expected run, hold or all" ;;
+    esac
     command -v taskset >/dev/null || die "taskset is required to pin the runs"
     mkdir -p "${dest}"
     require_binaries
@@ -293,7 +328,8 @@ measure()
             measure_one "${dest}" "${pass}" ${entry}
         done
     done
-    printf 'measurement complete: %d passes under %s\n' "${passes}" "${dest}"
+    printf 'measurement complete: window class %s, %d passes under %s\n' \
+        "${selection}" "${passes}" "${dest}"
 }
 
 case "${1:-}" in
