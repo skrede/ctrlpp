@@ -58,7 +58,7 @@ auto convergence_successes(Dynamics dynamics, const ctrlpp::nmpc_config<double, 
 template <std::size_t NX, std::size_t NU, typename Dynamics, typename Variants>
 void write_convergence_rates(const std::string& system_name, Dynamics dynamics,
                              const ctrlpp::nmpc_config<double, NX, NU>& config, int horizon,
-                             std::ostream& quality_csv, Variants&& variants)
+                             std::ostream& quality_csv, const std::string& warm_start, Variants&& variants)
 {
     const std::vector<int> successes = convergence_successes<NX, NU>(dynamics, config, variants);
     std::size_t index = 0;
@@ -69,7 +69,8 @@ void write_convergence_rates(const std::string& system_name, Dynamics dynamics,
             if(!counted)
                 return;
             write_quality_csv_row(
-                quality_csv, system_name, family, algorithm, "convergence", static_cast<int>(NX), horizon,
+                quality_csv, system_name, family, algorithm, "convergence",
+                has_warm_start_channel(family) ? warm_start : warm_start_absent, static_cast<int>(NX), horizon,
                 quality_metrics{.objective = static_cast<double>(successes[slot]) / convergence_trials,
                                 .max_constraint_violation = 0.0,
                                 .gradient_norm = 0.0,

@@ -121,10 +121,12 @@ void run_jacobian_benchmark(const std::string& system_name, const Dynamics& dyna
     ctrlpp::bench::run_own_criterion_pair(bench, arms::violation_metric, fd_row.c_str(), answers[0].violation,
                                           run_fd, analytic_row.c_str(), answers[1].violation, run_analytic);
 
-    write_quality_csv_row(quality_csv, system_name, "argmin", "slsqp", fd_label, static_cast<int>(NX), horizon,
-                          compute_quality_metrics(differenced, fd_arm.answer()));
-    write_quality_csv_row(quality_csv, system_name, "argmin", "slsqp", analytic_label, static_cast<int>(NX),
-                          horizon, compute_quality_metrics(analytic, analytic_arm.answer()));
+    const std::string warm_start = warm_start_label(ctrlpp::argmin_settings<double>{}.warm_start);
+    write_quality_csv_row(quality_csv, system_name, "argmin", "slsqp", fd_label, warm_start,
+                          static_cast<int>(NX), horizon, compute_quality_metrics(differenced, fd_arm.answer()));
+    write_quality_csv_row(quality_csv, system_name, "argmin", "slsqp", analytic_label, warm_start,
+                          static_cast<int>(NX), horizon,
+                          compute_quality_metrics(analytic, analytic_arm.answer()));
 }
 
 }

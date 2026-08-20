@@ -98,7 +98,8 @@ void run_benchmark(const std::string& system_name, Dynamics dynamics, int horizo
         {
             const std::string label = row_label(family, algorithm, system_name, NX, horizon, warm_start);
             auto probe = arms::probe_nmpc_arm<NX, NU>(dynamics, config, x0, std::move(solver), label);
-            write_quality_csv_row(quality_csv, system_name, family, algorithm, warm_start,
+            write_quality_csv_row(quality_csv, system_name, family, algorithm, "ws=" + warm_start,
+                                  has_warm_start_channel(family) ? warm_start : warm_start_absent,
                                   static_cast<int>(NX), horizon, probe.quality);
             if(benched)
                 answers.push_back(probe.answer);
@@ -131,7 +132,7 @@ void run_convergence(const std::string& system_name, Dynamics dynamics, int hori
     const auto cfg = bounded_settings(ctrlpp::warm_start_mode::cold);
     arms::write_convergence_rates<NX, NU>(system_name, dynamics,
                                           problems::make_nmpc_quadratic_config<NX, NU>(horizon), horizon,
-                                          quality_csv,
+                                          quality_csv, warm_start_label(cfg.warm_start),
                                           [&](auto&& action) { for_each_variant(action, cfg, true); });
 }
 

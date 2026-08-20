@@ -62,7 +62,8 @@ auto build_problem() -> ctrlpp::nlp_problem<double>
 void write_schedule_row(std::ostream& csv, char const* algorithm, const std::string& label,
                         const quality_metrics& quality)
 {
-    write_quality_csv_row(csv, "double_integrator", "argmin", algorithm, label, 4, 10, quality);
+    write_quality_csv_row(csv, "double_integrator", "argmin", algorithm, label,
+                          warm_start_label(ctrlpp::argmin_settings<double>{}.warm_start), 4, 10, quality);
 }
 
 auto probe_budgets(const ctrlpp::nlp_problem<double>& problem) -> std::vector<arms::schedule_probe>

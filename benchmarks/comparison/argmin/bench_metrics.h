@@ -126,22 +126,44 @@ inline auto warm_start_label(ctrlpp::warm_start_mode mode) -> std::string
     return "unknown";
 }
 
-inline void write_quality_csv_header(std::ostream& os)
+/// The warm_start cell for an arm whose library exposes no warm-start channel.
+/// Such an arm runs identically in every pass of a warm-start sweep, so naming
+/// the sweep's mode on its row would report a setting it never received; the
+/// pass it belongs to is carried by the variant column instead.
+constexpr char const* warm_start_absent = "n/a";
+
+/// Whether an arm's family exposes a warm-start channel at all. The family name
+/// is what the variant loops already carry, and it is the property that decides
+/// the cell: a library with no such channel cannot be told a mode, so reporting
+/// one against it would describe the sweep rather than the run.
+inline auto has_warm_start_channel(std::string_view family) -> bool
 {
-    os << "system,solver,algorithm,warm_start,nx,horizon,objective,max_violation,gradient_norm,success,iterations,solve_time_ms\n";
+    return family == "argmin";
 }
 
+inline void write_quality_csv_header(std::ostream& os)
+{
+    os << "system,solver,algorithm,variant,warm_start,nx,horizon,objective,max_violation,gradient_norm,"
+          "success,iterations,solve_time_ms\n";
+}
+
+/// The variant cell names the pass this row belongs to; the warm_start cell
+/// names what this arm actually did. They are separate because a pass is not a
+/// setting: a sweep over warm-start modes, a Jacobian source and a
+/// convergence-rate census all discriminate rows without any of them being a
+/// warm-start mode, and one column carrying all four cannot be read.
 inline void write_quality_csv_row(std::ostream& os,
                                   std::string_view system,
                                   std::string_view solver,
                                   std::string_view algorithm,
+                                  std::string_view variant,
                                   std::string_view warm_start,
                                   int nx,
                                   int horizon,
                                   const quality_metrics& m)
 {
     os << system << ',' << solver << ',' << algorithm << ','
-       << warm_start << ',' << nx << ',' << horizon << ','
+       << variant << ',' << warm_start << ',' << nx << ',' << horizon << ','
        << m.objective << ',' << m.max_constraint_violation << ','
        << m.gradient_norm << ',' << (m.success ? 1 : 0) << ','
        << m.iterations << ',' << m.solve_time_ms << '\n';
