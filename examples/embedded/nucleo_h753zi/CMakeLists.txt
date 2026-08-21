@@ -99,6 +99,7 @@ add_executable(ctrlpp_nucleo_h753zi
     nucleo_main.cpp
     usart3_console.cpp
     init_stubs.cpp
+    build_id.cpp
     "${CMSIS_SYSTEM}"
     "${CMSIS_STARTUP}")
 
@@ -134,6 +135,10 @@ target_link_options(ctrlpp_nucleo_h753zi PRIVATE
     # newlib-nano trims printf: pull in the float-capable variant so the CSV
     # renders %f instead of a literal "f".
     -u _printf_float
+    # The linker computes this over the image's own contents, so it cannot fail
+    # to change when the image does; the firmware prints it and a host capture
+    # refuses a report whose fingerprint is not the one it just built.
+    -Wl,--build-id=sha1
     -Wl,--gc-sections
     -Wl,-Map=ctrlpp_nucleo_h753zi.map)
 

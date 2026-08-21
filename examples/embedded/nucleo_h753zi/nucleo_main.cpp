@@ -7,6 +7,8 @@
 // the independent host-double golden, and halts for the operator to read the
 // console.
 
+#include "build_id.h"
+
 #include "golden_reference.h"
 #include "control_loop_demo.h"
 
@@ -23,6 +25,10 @@ void usart3_console_init() noexcept;
 int main()
 {
     ctrlpp::usart3_console_init();
+
+    char build_id[ctrlpp::kBuildIdTextLength];
+    ctrlpp::render_build_id(build_id);
+    std::printf("[meta] build_id=%s\n", build_id);
 
     std::printf("[ctrlpp] NUCLEO-H753ZI bare-superloop control loop (double)\n");
 

@@ -40,6 +40,21 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
+  /* The linker's --build-id note is placed explicitly rather than left to orphan
+   * placement: objcopy -O binary pads or reorders an orphan section, and the
+   * vector table above must stay at 0x08000000. KEEP holds it against
+   * --gc-sections; the firmware reads the descriptor back through the two
+   * symbols below and prints it, which is what makes a stale resident image
+   * detectable. */
+  .note.gnu.build-id :
+  {
+    . = ALIGN(4);
+    PROVIDE(__start_note_gnu_build_id = .);
+    KEEP(*(.note.gnu.build-id))
+    PROVIDE(__stop_note_gnu_build_id = .);
+    . = ALIGN(4);
+  } >FLASH
+
   .text :
   {
     . = ALIGN(4);
