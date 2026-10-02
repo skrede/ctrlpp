@@ -1,0 +1,35 @@
+name: Install Eigen at the pinned version
+description: Installs the Eigen release that lib/dependencies.cmake pins into a prefix.
+
+# Eigen comes from the version this repository pins, read out of the file
+# that pins it, and not from a package manager. Homebrew and vcpkg both
+# serve Eigen 5 now, whose config package refuses a request for 3.4, and
+# what that refusal produces is not a configure failure but a silent
+# fallback to the fetched copy: an install cell would then install nothing it
+# could export and would stop testing the system-Eigen route it exists for.
+inputs:
+  prefix:
+    description: Directory Eigen is installed into.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        declared() {
+          awk -v want="$1" -v field="$2" '
+            /FetchContent_Declare\($/ { pending = 1; inblock = 0; next }
+            pending                   { pending = 0; inblock = ($1 == want); next }
+            inblock && $1 == field    { print $2; exit }
+            inblock && /^[[:space:]]*\)[[:space:]]*$/ { inblock = 0 }
+          ' lib/dependencies.cmake
+        }
+        REPO=$(declared Eigen3 GIT_REPOSITORY)
+        PIN=$(declared Eigen3 GIT_TAG)
+        test -n "$REPO" && test -n "$PIN"
+        SRC="${{ runner.temp }}/src-eigen"
+        git clone --quiet --depth 1 --branch "$PIN" "$REPO" "$SRC"
+        cmake -S "$SRC" -B "$SRC/build" -DCMAKE_INSTALL_PREFIX="${{ inputs.prefix }}"
+        cmake --install "$SRC/build"

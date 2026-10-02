@@ -30,21 +30,99 @@ jobs:
   build:
     strategy:
       fail-fast: false
+      # Apple Clang release per Xcode selection on this runner, as its compiler
+      # identification reports it: Xcode 15.4 is Apple clang 15.0.0
+      # (clang-1500.3.9) and Xcode 16.2 is Apple clang 16.0.0 (clang-1600.0.26).
+      # These are the Apple Clang releases the library is stated to build and
+      # pass its tests with. The macos-14 image is retired on November 2, 2026
+      # (https://github.com/actions/runner-images/issues/13518) and its
+      # successor does not carry Xcode 15.4, so this matrix expires with it.
       matrix:
         xcode: [ "15.4", "16.2" ]
     runs-on: macos-14
-    name: build (Xcode ${{ matrix.xcode }})
+    name: build (arm64, Xcode ${{ matrix.xcode }})
     steps:
       - uses: actions/checkout@v4
 
       - name: Select Xcode ${{ matrix.xcode }}
         run: sudo xcode-select -s /Applications/Xcode_${{ matrix.xcode }}.app
 
+      - name: Report the selected compiler
+        run: clang --version
+
+      # The argmin backend's own CMake does find_package(Eigen3); the fetched
+      # Eigen below registers no findable Eigen3 package, so that lookup needs
+      # an installed one.
+      - uses: ./.github/actions/install-pinned-eigen
+        with:
+          prefix: ${{ github.workspace }}/deps-eigen
+
+      # The backends are on so the solver-backed surface is compiled by Apple
+      # Clang. The tree stays the default -fno-exceptions one, which leaves the
+      # OSQP- and NLopt-linked unit tests and nmpc_argmin_test, all in the
+      # exceptions carve-out, to the Linux backends job.
       - name: Configure
         run: |
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=${{ github.workspace }}/deps-eigen \
             -DCTRLPP_BUILD_TESTS=ON \
             -DCTRLPP_BUILD_EXAMPLES=ON \
+            -DCTRLPP_BUILD_OSQP=ON \
+            -DCTRLPP_BUILD_NLOPT=ON \
+            -DCTRLPP_BUILD_ARGMIN=ON \
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+            -DCTRLPP_INSTALL=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: cd build && ctest --output-on-failure
+
+  # The arm64 runner above compiles only the vectorized paths the ARM
+  # instruction set selects, so Eigen's SSE and AVX paths would otherwise never
+  # be compiled by Apple Clang at all. Xcode 16.2 is the selection shared with
+  # the arm64 matrix, so the compiler release is held fixed and the instruction
+  # set is what this cell varies.
+  build-x86_64:
+    strategy:
+      fail-fast: false
+      matrix:
+        xcode: [ "16.2" ]
+    # The last x86_64 image the provider offers, supported until August 2027
+    # (https://github.com/actions/runner-images/issues/13045). The date is
+    # stated so the cell announces its expiry instead of silently disappearing.
+    runs-on: macos-15-intel
+    name: build (x86_64, Xcode ${{ matrix.xcode }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode ${{ matrix.xcode }}
+        run: sudo xcode-select -s /Applications/Xcode_${{ matrix.xcode }}.app
+
+      - name: Report the selected compiler
+        run: clang --version
+
+      # The argmin backend's own CMake does find_package(Eigen3); the fetched
+      # Eigen below registers no findable Eigen3 package, so that lookup needs
+      # an installed one.
+      - uses: ./.github/actions/install-pinned-eigen
+        with:
+          prefix: ${{ github.workspace }}/deps-eigen
+
+      # The backends are on so the solver-backed surface is compiled by Apple
+      # Clang. The tree stays the default -fno-exceptions one, which leaves the
+      # OSQP- and NLopt-linked unit tests and nmpc_argmin_test, all in the
+      # exceptions carve-out, to the Linux backends job.
+      - name: Configure
+        run: |
+          cmake . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=${{ github.workspace }}/deps-eigen \
+            -DCTRLPP_BUILD_TESTS=ON \
+            -DCTRLPP_BUILD_EXAMPLES=ON \
+            -DCTRLPP_BUILD_OSQP=ON \
+            -DCTRLPP_BUILD_NLOPT=ON \
+            -DCTRLPP_BUILD_ARGMIN=ON \
             -DCTRLPP_CMAKE_FETCH_DEPS=ON \
             -DCTRLPP_INSTALL=OFF
 
@@ -59,30 +137,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Eigen comes from the version this repository pins, read out of the file
-      # that pins it, and not from a package manager. Homebrew and vcpkg both
-      # serve Eigen 5 now, whose config package refuses a request for 3.4, and
-      # what that refusal produces is not a configure failure but a silent
-      # fallback to the fetched copy: the cell would then install nothing it
-      # could export and would stop testing the system-Eigen route it exists for.
-      - name: Install Eigen at the pinned version
-        run: |
-          set -euo pipefail
-          declared() {
-            awk -v want="$1" -v field="$2" '
-              /FetchContent_Declare\($/ { pending = 1; inblock = 0; next }
-              pending                   { pending = 0; inblock = ($1 == want); next }
-              inblock && $1 == field    { print $2; exit }
-              inblock && /^[[:space:]]*\)[[:space:]]*$/ { inblock = 0 }
-            ' lib/dependencies.cmake
-          }
-          REPO=$(declared Eigen3 GIT_REPOSITORY)
-          PIN=$(declared Eigen3 GIT_TAG)
-          test -n "$REPO" && test -n "$PIN"
-          git clone --quiet --depth 1 --branch "$PIN" "$REPO" src-eigen
-          cmake -S src-eigen -B src-eigen/build \
-            -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/deps-eigen
-          cmake --install src-eigen/build
+      - uses: ./.github/actions/install-pinned-eigen
+        with:
+          prefix: ${{ github.workspace }}/deps-eigen
 
       - name: Build and install
         run: |
