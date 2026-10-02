@@ -8,8 +8,8 @@
  *
  * The symbol names below (_estack, _sdata/_edata/_sidata, _sbss/_ebss,
  * end/_end) are dictated verbatim by Source/Templates/gcc/startup_stm32h753xx.s
- * from the cmsis-device-h7 pack (end/_end are the heap base newlib's _sbrk
- * consumes). Renaming any of them silently breaks the startup copy/zero loops.
+ * from the cmsis-device-h7 pack (end/_end are the heap base _sbrk consumes).
+ * Renaming any of them silently breaks the startup copy/zero loops.
  */
 
 MEMORY
@@ -134,14 +134,18 @@ SECTIONS
   } >DTCM
 
   /* Heap + stack reservation. end/_end mark the heap start (consumed by
-   * newlib's _sbrk); the stack reserve below it makes the linker error out if
-   * DTCM cannot hold data+bss+heap+stack. */
+   * the _sbrk in sbrk_ceiling.cpp); the stack reserve below it makes the linker
+   * error out if DTCM cannot hold data+bss+heap+stack. */
   ._user_heap_stack :
   {
     . = ALIGN(8);
     PROVIDE(end = .);
     PROVIDE(_end = .);
     . = . + _Min_Heap_Size;
+    /* Everything below _eheap is heap and everything above it is stack, so a
+     * break request past it is refused by _sbrk rather than handed memory the
+     * descending stack may already occupy. */
+    PROVIDE(_eheap = .);
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
   } >DTCM

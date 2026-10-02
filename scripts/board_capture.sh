@@ -48,6 +48,8 @@
 #   4  empty stream       5  no fingerprint line
 #   6  fingerprint mismatch (the resident image is not the built one)
 #   7  no verdict line    8  verdict FAIL
+#   9  no allocation-sensor canary line
+#  10  canary FAIL (the sensor did not observe its deliberate allocations)
 #
 # --- What this capture does NOT establish -------------------------------------
 #
@@ -75,6 +77,12 @@
 #      truncated. A truncated report fails on its missing verdict line rather
 #      than passing on what did arrive, but the timeout is a limit chosen by this
 #      script and not a property of the target.
+#
+#   5. A passing canary proves the allocation sensor observed one deliberate
+#      allocation through each path it watches: a direct C allocation, a C++
+#      new, and an Eigen heap vector. It does not extend that sight to the C
+#      library's reentrant allocator entry points, which stdio uses and which
+#      never pass through the wrapped symbols.
 
 set -euo pipefail
 
@@ -110,7 +118,7 @@ destination=""
 for arg in "$@"; do
     case "${arg}" in
         -h|--help)
-            sed -n '2,77p' "${BASH_SOURCE[0]}"
+            sed -n '2,85p' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         --reset-only)
@@ -323,12 +331,29 @@ verify_transcript()
     [ "${printed_id}" = "${built_id}" ] \
         || fail 6 "the running image is NOT the built one: the board reported ${printed_id} but ${elf_path} is ${built_id}. Flash the target before capturing."
 
+    verify_canary
+
     grep -q "${report_end_marker}" "${transcript}" \
         || fail 7 "the captured report carries no '${report_end_marker}' verdict line -- it is truncated or the run did not complete."
 
     if grep -q "${report_end_marker}FAIL" "${transcript}"; then
         fail 8 "the board's golden verdict is FAIL."
     fi
+
+    return 0
+}
+
+# The allocation figure is only evidence behind a canary that proved the sensor
+# can see an allocation, so an absent or failing canary fails the whole capture.
+verify_canary()
+{
+    local canary_line=""
+    canary_line="$(grep -m 1 '^\[canary\] ' "${transcript}" || true)"
+    [ -n "${canary_line}" ] \
+        || fail 9 "the captured report carries no '[canary]' line, so its allocation figure comes from a sensor that never proved it can see an allocation."
+
+    printf '%s\n' "${canary_line}" | grep -q '^\[canary\] PASS observed=[1-9]' \
+        || fail 10 "the allocation-sensor canary did not pass: '${canary_line}'. A zero reported by a sensor that missed its own deliberate allocations is blindness, not evidence."
 
     return 0
 }

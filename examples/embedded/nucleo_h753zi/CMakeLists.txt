@@ -100,6 +100,8 @@ add_executable(ctrlpp_nucleo_h753zi
     usart3_console.cpp
     init_stubs.cpp
     build_id.cpp
+    alloc_sensor.cpp
+    sbrk_ceiling.cpp
     "${CMSIS_SYSTEM}"
     "${CMSIS_STARTUP}")
 
@@ -139,6 +141,9 @@ target_link_options(ctrlpp_nucleo_h753zi PRIVATE
     # to change when the image does; the firmware prints it and a host capture
     # refuses a report whose fingerprint is not the one it just built.
     -Wl,--build-id=sha1
+    # Routes the image's own calls to the C allocation family through the
+    # counting definitions in alloc_sensor.cpp.
+    -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
     -Wl,--gc-sections
     -Wl,-Map=ctrlpp_nucleo_h753zi.map)
 
