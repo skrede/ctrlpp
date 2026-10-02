@@ -10,7 +10,8 @@
 # every ctest entry, so a rename in a library header can delete a symbol nine
 # translation units call and no gate anywhere reports it. That happened.
 #
-# Runs four legs, each of which must exit 0:
+# Runs five legs. Legs 1 to 4 must exit 0; leg 5 must exit 0 when it runs and
+# says so when it cannot:
 #   Leg 1  Host build with exceptions and RTTI off (-fno-exceptions -fno-rtti
 #          -DCTRLPP_NO_EXCEPTIONS). Authoritative test that no throw or stray
 #          .value() leaks onto the embedded path; compiled for Scalar double
@@ -36,6 +37,15 @@
 #          discarded-result diagnostic it promotes to an error because its
 #          executables have no assertions and a dropped failure produces a
 #          plausible-looking output file rather than a diagnostic.
+#   Leg 5  arm-none-eabi Cortex-M7 cross-compile of the predictive witness, the
+#          argmin-backed nmpc_static, with the flags of leg 3 plus the backend's
+#          include path. No standing tree compiles the backend for a bare-metal
+#          target, and the board image that does is a separate project this
+#          script does not reach, so this leg is the only local gate that does.
+#          The backend is optional: its headers are resolved from the build
+#          trees that fetched it, and when none did the leg prints a skip naming
+#          the translation unit it did not compile and the roots it searched, and
+#          the closing line reports the leg as skipped rather than passed.
 #
 # Two project roots are deliberately NOT reached by this script, and are named
 # here so the next rename's author has a list rather than a surprise:
@@ -65,6 +75,7 @@ cd "${repo_root}"
 
 ctrlpp_include="lib/ctrlpp/include"
 witness_tu="tests/compile/embedded_core_float.cpp"
+predictive_tu="tests/compile/embedded_predictive_double.cpp"
 
 host_cxx="${CXX:-g++}"
 arm_cxx="arm-none-eabi-g++"
@@ -262,4 +273,33 @@ echo "  configured and built standalone: ${validation_cases} case executable(s)"
 echo "Leg 4 PASS"
 echo
 
-echo "All legs PASS (Leg 1 host no-exceptions, Leg 2 host C++20 fallback, Leg 3 arm-none-eabi Cortex-M7, Leg 4 standalone validation project)."
+# --- Leg 5: arm-none-eabi Cortex-M7 cross-compile of the predictive witness ---
+
+echo "=== Leg 5: arm-none-eabi-g++ Cortex-M7 no-exceptions, argmin-backed predictive witness ==="
+
+argmin_candidates=(build-tests/_deps/argmin-src/lib/argmin/include build/*/_deps/argmin-src/lib/argmin/include)
+argmin_include=""
+for candidate in "${argmin_candidates[@]}"
+do
+    if [ -f "${candidate}/argmin/argmin.h" ]; then
+        argmin_include="${candidate}"
+        break
+    fi
+done
+
+if [ -z "${argmin_include}" ]; then
+    echo "Leg 5 SKIP: ${predictive_tu} (embedded_predictive_double) was NOT compiled; argmin/argmin.h not found under: ${argmin_candidates[*]} (configure a tree with -DCTRLPP_BUILD_ARGMIN=ON to run this leg)"
+    leg5_result="Leg 5 SKIPPED, predictive witness not compiled"
+else
+    echo "  Using argmin include: ${argmin_include}"
+    arm-none-eabi-g++ -std=c++20 -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard -fno-exceptions -fno-rtti -DCTRLPP_NO_EXCEPTIONS \
+        ${arm_extra_args[@]+"${arm_extra_args[@]}"} \
+        -I "${ctrlpp_include}" -isystem "${eigen_include}" -isystem "${argmin_include}" \
+        -c "${predictive_tu}" -o /dev/null
+    echo "  predictive translation unit: OK"
+    echo "Leg 5 PASS"
+    leg5_result="Leg 5 PASS arm-none-eabi predictive witness"
+fi
+echo
+
+echo "Legs 1-4 PASS (Leg 1 host no-exceptions, Leg 2 host C++20 fallback, Leg 3 arm-none-eabi Cortex-M7, Leg 4 standalone validation project); ${leg5_result}."

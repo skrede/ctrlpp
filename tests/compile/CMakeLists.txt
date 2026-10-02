@@ -10,6 +10,13 @@ target_link_libraries(embedded_core_float PRIVATE ctrlpp::ctrlpp)
 target_compile_options(embedded_core_float PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_FLOAT_TIER_STRICT_FLAGS})
 add_test(NAME embedded_core_float COMMAND embedded_core_float)
 
+if (CTRLPP_BUILD_ARGMIN)
+    add_executable(embedded_predictive_double embedded_predictive_double.cpp)
+    target_link_libraries(embedded_predictive_double PRIVATE ctrlpp::argmin)
+    target_compile_options(embedded_predictive_double PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME embedded_predictive_double COMMAND embedded_predictive_double)
+endif ()
+
 add_executable(moving_horizon_factory_compile moving_horizon_factory_compile.cpp)
 target_link_libraries(moving_horizon_factory_compile PRIVATE ctrlpp::ctrlpp)
 target_compile_options(moving_horizon_factory_compile PRIVATE ${CTRLPP_WARNING_FLAGS})
