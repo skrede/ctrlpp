@@ -195,6 +195,33 @@ public:
         return make_point(q_actual, dq_actual, ddq_actual);
     }
 
+    /// @brief Evaluate trajectory at time t into caller-provided storage.
+    ///
+    /// Writes, component for component, exactly the bits the by-value form
+    /// returns at the same t.
+    ///
+    /// @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30g), p.85-86
+    void evaluate(Scalar t, Scalar& q, Scalar& dq, Scalar& ddq) const
+    {
+        if (T_ <= Scalar{0}) {
+            store_point(q, dq, ddq, q0_, Scalar{0}, Scalar{0});
+            return;
+        }
+        auto const tc = std::clamp(t, Scalar{0}, T_);
+        if (tc >= T_) {
+            store_point(q, dq, ddq, q1_, v1_, Scalar{0});
+            return;
+        }
+        if (tc <= Scalar{0}) {
+            store_point(q, dq, ddq, q0_, v0_, Scalar{0});
+            return;
+        }
+        Scalar pq{}, pdq{}, pddq{};
+        evaluate_positive_frame(tc, pq, pdq, pddq);
+        // @cite biagiotti2009 -- Sec. 3.4.2, eq. (3.33), p.87
+        store_point(q, dq, ddq, q0_ + sigma_ * (pq - Scalar{0}), sigma_ * pdq, sigma_ * pddq);
+    }
+
     auto duration() const -> Scalar { return T_; }
 
     /// @brief Whether the profile is degenerate (v_max or a_max not reached).
@@ -355,6 +382,13 @@ private:
         return {.position = Vector<Scalar, 1>{q},
                 .velocity = Vector<Scalar, 1>{dq},
                 .acceleration = Vector<Scalar, 1>{ddq}};
+    }
+
+    static void store_point(Scalar& q, Scalar& dq, Scalar& ddq, Scalar q_value, Scalar dq_value, Scalar ddq_value)
+    {
+        q = q_value;
+        dq = dq_value;
+        ddq = ddq_value;
     }
 
     /// @brief Rebuild the profile with every kinematic limit scaled, or report that

@@ -1,12 +1,16 @@
 #include "ctrlpp/trajectory/online_planner_3rd.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <bit>
 #include <array>
 #include <cmath>
 #include <limits>
+#include <cstdint>
 #include <utility>
+#include <type_traits>
 
 using Catch::Matchers::WithinAbs;
 
@@ -1213,4 +1217,112 @@ TEST_CASE("OnlinePlanner3rd: the overshoot verdict is relative and scale-invaria
         ++rungs;
     }
     REQUIRE(rungs == 4);
+}
+
+// -- What sample() carries forward, pinned to recorded bits --------------------
+//
+// sample() returns a point and also writes the state the next update() replans
+// from and is_settled() reads. Both halves are pinned here, so a change to the
+// sample body that alters either one fails rather than moving silently.
+//
+// The limits, the command and every sample time are chosen so each phase
+// duration and each sampled state is a short dyadic rational. Every product the
+// evaluation forms is then exact, which makes the recorded bits independent of
+// whether a compiler fuses a multiply-add, and lets one table serve both float
+// and double.
+
+namespace
+{
+
+struct recorded_state
+{
+    double q;
+    double v;
+    double a;
+};
+
+constexpr std::array<recorded_state, 16> recorded_samples{{
+        {0x0p+0, 0x0p+0, 0x0p+0},
+        {0x1.bp-5, 0x1.bp-2, 0x1.2p+1},
+        {0x1.ap-2, 0x1.8p+0, 0x1.8p+1},
+        {0x1.2d8p+0, 0x1.4ap+1, 0x1.2p+1},
+        {0x1.2p+1, 0x1.8p+1, 0x0p+0},
+        {0x1.bp+1, 0x1.8p+1, 0x0p+0},
+        {0x1.2p+2, 0x1.8p+1, 0x0p+0},
+        {0x1.68p+2, 0x1.8p+1, 0x0p+0},
+        {0x1.bp+2, 0x1.8p+1, 0x0p+0},
+        {0x1.f4ap+2, 0x1.4ap+1, -0x1.2p+1},
+        {0x1.13p+3, 0x1.8p+0, -0x1.8p+1},
+        {0x1.1e5p+3, 0x1.bp-2, -0x1.2p+1},
+        {0x1.2p+3, 0x0p+0, 0x0p+0},
+        {0x1.2p+3, 0x0p+0, 0x0p+0},
+        {0x1.2p+3, 0x0p+0, 0x0p+0},
+        {0x1.2p+3, 0x0p+0, 0x0p+0}
+}};
+
+// Sampled a quarter second after a replan to the origin issued from each sample
+// above, so each row also depends on the time sample() recorded.
+constexpr std::array<recorded_state, 16> recorded_replans{{
+        {0x0p+0, 0x0p+0, 0x0p+0},
+        {0x1.b4p-3, 0x1.98p-1, 0x1.8p-1},
+        {0x1.b8p-1, 0x1.08p+1, 0x1.8p+0},
+        {0x1.e08p+0, 0x1.7ap+1, 0x1.8p-1},
+        {0x1.7ep+1, 0x1.68p+1, -0x1.8p+0},
+        {0x1.07p+2, 0x1.68p+1, -0x1.8p+0},
+        {0x1.4fp+2, 0x1.68p+1, -0x1.8p+0},
+        {0x1.97p+2, 0x1.68p+1, -0x1.8p+0},
+        {0x1.dfp+2, 0x1.68p+1, -0x1.8p+0},
+        {0x1.0d3p+3, 0x1.1ap+1, -0x1.8p-1},
+        {0x1.1c8p+3, 0x1.ep-1, -0x1.8p+0},
+        {0x1.1ffp+3, 0x1.8p-5, -0x1.8p-1},
+        {0x1.1f8p+3, -0x1.8p-3, -0x1.8p+0},
+        {0x1.1f8p+3, -0x1.8p-3, -0x1.8p+0},
+        {0x1.1f8p+3, -0x1.8p-3, -0x1.8p+0},
+        {0x1.1f8p+3, -0x1.8p-3, -0x1.8p+0}
+}};
+
+constexpr std::int32_t recorded_first_settled_sample = 12;
+
+template <typename Scalar>
+void require_same_bits(Scalar actual, double recorded)
+{
+    using bits = std::conditional_t<sizeof(Scalar) == sizeof(std::uint64_t), std::uint64_t, std::uint32_t>;
+    REQUIRE(std::bit_cast<bits>(actual) == std::bit_cast<bits>(static_cast<Scalar>(recorded)));
+}
+
+template <typename Scalar>
+void require_recorded(ctrlpp::trajectory_point<Scalar, 1> const& point, recorded_state const& recorded)
+{
+    require_same_bits(point.position(0), recorded.q);
+    require_same_bits(point.velocity(0), recorded.v);
+    require_same_bits(point.acceleration(0), recorded.a);
+}
+
+}
+
+TEMPLATE_TEST_CASE("OnlinePlanner3rd: sample returns and carries exactly the recorded state",
+                   "[traj][online_planner_3rd][sample_contract]", float, double)
+{
+    using Scalar = TestType;
+    auto planner = make_planner<Scalar>({.v_max = Scalar{3}, .a_max = Scalar{3}, .j_max = Scalar{6}});
+    REQUIRE(planner.update(Scalar{9}).has_value());
+    REQUIRE(planner.diagnostics().planned_duration == Scalar{4.5});
+
+    for (std::int32_t k = 0; k < static_cast<std::int32_t>(recorded_samples.size()); ++k) {
+        auto const index = static_cast<std::size_t>(k);
+        auto const t = static_cast<Scalar>(k) * Scalar{3} / Scalar{8};
+        auto const point = planner.sample(t);
+        CAPTURE(k, t);
+        require_recorded(point, recorded_samples[index]);
+        REQUIRE(planner.is_settled() == (k >= recorded_first_settled_sample));
+
+        // A replan snapshots the carried state, and sampling it at the time
+        // sample() recorded integrates no phase, so it hands that state back.
+        auto replanned = planner;
+        REQUIRE(replanned.update(Scalar{0}).has_value());
+        REQUIRE(replanned.diagnostics().initial_velocity == point.velocity(0));
+        auto const resumed = replanned.sample(t);
+        require_recorded(resumed, recorded_samples[index]);
+        require_recorded(replanned.sample(t + Scalar{0.25}), recorded_replans[index]);
+    }
 }

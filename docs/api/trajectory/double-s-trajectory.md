@@ -102,6 +102,7 @@ The profile degenerates when kinematic limits cannot all be reached:
 |----------|-----------|-------------|
 | `create` | `static expected<double_s_trajectory, trajectory_error> create(config const&)` | The only construction path; reports an unrealizable command |
 | `evaluate` | `trajectory_point<Scalar, 1> evaluate(Scalar t) const` | Position, velocity, acceleration at time `t` |
+| `evaluate` | `void evaluate(Scalar t, Scalar& q, Scalar& dq, Scalar& ddq) const` | The same three values written into caller-provided storage, bit-identical to the by-value form |
 | `duration` | `Scalar duration() const` | Total duration |
 | `is_degenerate` | `bool is_degenerate() const` | True if v_max or a_max not reached |
 | `peak_velocity` | `Scalar peak_velocity() const` | Actual peak velocity achieved |

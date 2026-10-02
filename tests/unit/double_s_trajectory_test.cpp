@@ -2,11 +2,15 @@
 #include <ctrlpp/trajectory/trajectory_segment.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <bit>
 #include <array>
 #include <cmath>
 #include <limits>
+#include <cstdint>
+#include <type_traits>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
@@ -22,6 +26,57 @@ auto built(ctrlpp::double_s_trajectory<double>::config const& cfg)
     -> ctrlpp::double_s_trajectory<double>
 {
     auto created = ctrlpp::double_s_trajectory<double>::create(cfg);
+    REQUIRE(created.has_value());
+    return created.value();
+}
+
+template <typename Scalar>
+using scalar_bits = std::conditional_t<sizeof(Scalar) == sizeof(std::uint64_t), std::uint64_t, std::uint32_t>;
+
+template <typename Scalar>
+auto bits_of(Scalar value) -> scalar_bits<Scalar>
+{
+    return std::bit_cast<scalar_bits<Scalar>>(value);
+}
+
+// The out-parameters start as NaN so a component the overload never writes
+// cannot pass by coinciding with the by-value result.
+template <typename Scalar>
+void require_bit_identical_at(ctrlpp::double_s_trajectory<Scalar> const& traj, Scalar t)
+{
+    auto const by_value = traj.evaluate(t);
+    auto q = std::numeric_limits<Scalar>::quiet_NaN();
+    auto dq = q;
+    auto ddq = q;
+    traj.evaluate(t, q, dq, ddq);
+
+    CAPTURE(t);
+    REQUIRE(bits_of(q) == bits_of(by_value.position[0]));
+    REQUIRE(bits_of(dq) == bits_of(by_value.velocity[0]));
+    REQUIRE(bits_of(ddq) == bits_of(by_value.acceleration[0]));
+}
+
+// The sweep runs from an eighth of the duration before the start to an eighth
+// past the end, so both clamped tails are sampled along with every segment.
+template <typename Scalar>
+void require_bit_identical_over_horizon(ctrlpp::double_s_trajectory<Scalar> const& traj)
+{
+    constexpr std::int32_t samples = 1025;
+    auto const T = traj.duration();
+    for (std::int32_t i = 0; i < samples; ++i) {
+        auto const fraction = static_cast<Scalar>(i) / static_cast<Scalar>(samples - 1);
+        require_bit_identical_at(traj, -T / Scalar{8} + T * Scalar{1.25} * fraction);
+    }
+    for (Scalar const t : {Scalar{0}, T, -T, Scalar{2} * T, Scalar{-1}, Scalar{1}}) {
+        require_bit_identical_at(traj, t);
+    }
+}
+
+template <typename Scalar>
+auto built_profile(typename ctrlpp::double_s_trajectory<Scalar>::config const& cfg)
+    -> ctrlpp::double_s_trajectory<Scalar>
+{
+    auto created = ctrlpp::double_s_trajectory<Scalar>::create(cfg);
     REQUIRE(created.has_value());
     return created.value();
 }
@@ -473,4 +528,71 @@ TEST_CASE("double_s: a duration outside the representable range is rejected", "[
         traj_t::create({.q0 = 0.0, .q1 = 1e308, .v_max = 1e6, .a_max = 1.0, .j_max = 1.0});
     REQUIRE(served.has_value());
     REQUIRE(std::isfinite(served.value().duration()));
+}
+
+// --------------------------------------------------------------------------
+// The out-parameter evaluation writes what the by-value one returns
+// --------------------------------------------------------------------------
+TEMPLATE_TEST_CASE("double_s: out-parameter evaluate is bit-identical to by-value evaluate",
+                   "[traj][double_s]", float, double)
+{
+    using Scalar = TestType;
+    using traj_t = ctrlpp::double_s_trajectory<Scalar>;
+
+    SECTION("positive displacement, every segment")
+    {
+        require_bit_identical_over_horizon(built_profile<Scalar>(
+            {.q0 = Scalar{0}, .q1 = Scalar{10}, .v_max = Scalar{5}, .a_max = Scalar{10}, .j_max = Scalar{100}}));
+    }
+
+    SECTION("negative displacement, where the sign frame is active")
+    {
+        auto const traj = built_profile<Scalar>(
+            {.q0 = Scalar{10}, .q1 = Scalar{0}, .v_max = Scalar{5}, .a_max = Scalar{10}, .j_max = Scalar{100}});
+        REQUIRE(traj.evaluate(traj.duration() / Scalar{2}).velocity[0] < Scalar{0});
+        require_bit_identical_over_horizon(traj);
+    }
+
+    SECTION("negative displacement with a nonzero boundary velocity")
+    {
+        require_bit_identical_over_horizon(built_profile<Scalar>({.q0 = Scalar{0},
+                                                                  .q1 = Scalar{-10},
+                                                                  .v_max = Scalar{5},
+                                                                  .a_max = Scalar{10},
+                                                                  .j_max = Scalar{30},
+                                                                  .v0 = Scalar{-1},
+                                                                  .v1 = Scalar{0}}));
+    }
+
+    SECTION("each early return")
+    {
+        auto const standstill = built_profile<Scalar>(
+            {.q0 = Scalar{5}, .q1 = Scalar{5}, .v_max = Scalar{5}, .a_max = Scalar{10}, .j_max = Scalar{100}});
+        REQUIRE(standstill.duration() == Scalar{0});
+        for (Scalar const t : {Scalar{-1}, Scalar{0}, Scalar{1}}) {
+            require_bit_identical_at(standstill, t);
+        }
+
+        typename traj_t::config const cfg{.q0 = Scalar{1},
+                                          .q1 = Scalar{-4},
+                                          .v_max = Scalar{5},
+                                          .a_max = Scalar{10},
+                                          .j_max = Scalar{30},
+                                          .v0 = Scalar{-1},
+                                          .v1 = Scalar{-0.5}};
+        auto const traj = built_profile<Scalar>(cfg);
+        auto const T = traj.duration();
+        for (Scalar const t : {T, Scalar{2} * T}) {
+            Scalar q{}, dq{}, ddq{};
+            traj.evaluate(t, q, dq, ddq);
+            REQUIRE((q == cfg.q1 && dq == cfg.v1 && ddq == Scalar{0}));
+            require_bit_identical_at(traj, t);
+        }
+        for (Scalar const t : {Scalar{0}, -T}) {
+            Scalar q{}, dq{}, ddq{};
+            traj.evaluate(t, q, dq, ddq);
+            REQUIRE((q == cfg.q0 && dq == cfg.v0 && ddq == Scalar{0}));
+            require_bit_identical_at(traj, t);
+        }
+    }
 }

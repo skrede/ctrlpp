@@ -4,13 +4,17 @@
 #include "bench_csv.h"
 #include "bench_construct.h"
 
+#include "comparison/ruckig/trajectory_scan.h"
 #include "comparison/ruckig/ctrlpp_trajectory_arm.h"
 
 #include "ctrlpp/trajectory/cubic_spline.h"
+#include "ctrlpp/trajectory/double_s_trajectory.h"
 
 #include <cmath>
-#include <fstream>
 #include <vector>
+#include <cstdint>
+#include <fstream>
+#include <algorithm>
 
 namespace
 {
@@ -29,6 +33,59 @@ double knot_interpolation_residual(const ctrlpp::cubic_spline<double>& spline,
         span = std::max(span, std::abs(cfg.positions[i]));
     }
     return worst / span;
+}
+
+constexpr char const* return_convention_metric =
+    "max relative deviation between the by-value and out-parameter evaluations of one profile over the sampled horizon";
+
+// Each component is scaled the way the comparison's sampled deviation scales it:
+// position by the commanded displacement, velocity and acceleration by their limits.
+double return_convention_deviation(const ctrlpp::double_s_trajectory<double>& profile,
+                                   const ctrlpp::bench::motion_command& cmd, double step)
+{
+    const double span = std::abs(cmd.q1 - cmd.q0);
+    const auto steps = static_cast<int64_t>(profile.duration() / step);
+    double worst = 0.0;
+    for(int64_t i = 0; i <= steps; ++i)
+    {
+        const double t = static_cast<double>(i) * step;
+        const auto by_value = profile.evaluate(t);
+        double q{}, dq{}, ddq{};
+        profile.evaluate(t, q, dq, ddq);
+        worst = std::max({worst, std::abs(by_value.position[0] - q) / span,
+                          std::abs(by_value.velocity[0] - dq) / cmd.v_max,
+                          std::abs(by_value.acceleration[0] - ddq) / cmd.a_max});
+    }
+    return worst;
+}
+
+// The out-parameter arm sinks the three scalars, not a point assembled from them,
+// or it would pay for the construction its convention exists to avoid.
+void run_return_convention_pair(ankerl::nanobench::Bench& bench, const ctrlpp::double_s_trajectory<double>& profile,
+                                const ctrlpp::bench::motion_command& cmd)
+{
+    const double deviation = return_convention_deviation(profile, cmd, ctrlpp::bench::scan_step(cmd));
+    double by_value_time = 0.0;
+    double out_parameter_time = 0.0;
+
+    auto by_value = [&] {
+        auto pt = profile.evaluate(by_value_time);
+        ctrlpp::bench::wrap_time(by_value_time, cmd.control_period, profile.duration());
+        ankerl::nanobench::doNotOptimizeAway(pt);
+    };
+    auto out_parameter = [&] {
+        double q{}, dq{}, ddq{};
+        profile.evaluate(out_parameter_time, q, dq, ddq);
+        ctrlpp::bench::wrap_time(out_parameter_time, cmd.control_period, profile.duration());
+        ankerl::nanobench::doNotOptimizeAway(q);
+        ankerl::nanobench::doNotOptimizeAway(dq);
+        ankerl::nanobench::doNotOptimizeAway(ddq);
+    };
+
+    ctrlpp::bench::run_with_accuracy(bench, return_convention_metric, "double_s_trajectory::evaluate by value",
+                                     deviation, by_value);
+    ctrlpp::bench::run_with_accuracy(bench, return_convention_metric, "double_s_trajectory::evaluate out-parameter",
+                                     deviation, out_parameter);
 }
 
 }
@@ -56,6 +113,11 @@ int main(int argc, char** argv)
     const double planner_residual =
         ctrlpp::bench::scan_arm(planner, command, ctrlpp::bench::scan_step(command)).symmetry;
     planner.set_horizon(planner.duration());
+
+    const auto profile = ctrlpp::bench::built_or_exit(
+        ctrlpp::double_s_trajectory<double>::create(
+            {.q0 = command.q0, .q1 = command.q1, .v_max = command.v_max, .a_max = command.a_max, .j_max = command.j_max}),
+        "double_s_trajectory");
 
     ankerl::nanobench::Bench bench;
     bench.title("Trajectory")
@@ -87,6 +149,8 @@ int main(int argc, char** argv)
             auto pt = planner.advance();
             ankerl::nanobench::doNotOptimizeAway(pt);
         });
+
+    run_return_convention_pair(bench, profile, command);
 
     std::ofstream csv("bench_trajectory.csv");
     bench.render(ctrlpp::bench::csv_tpl, csv);
