@@ -58,7 +58,7 @@ jobs:
       # The backends are on so the solver-backed surface is compiled by Apple
       # Clang. The tree stays the default -fno-exceptions one, which leaves the
       # OSQP- and NLopt-linked unit tests and nmpc_argmin_test, all in the
-      # exceptions carve-out, to the Linux backends job.
+      # exceptions carve-out, to the exceptions job below.
       - name: Configure
         run: |
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
@@ -111,13 +111,52 @@ jobs:
       # The backends are on so the solver-backed surface is compiled by Apple
       # Clang. The tree stays the default -fno-exceptions one, which leaves the
       # OSQP- and NLopt-linked unit tests and nmpc_argmin_test, all in the
-      # exceptions carve-out, to the Linux backends job.
+      # exceptions carve-out, to the exceptions job below.
       - name: Configure
         run: |
           cmake . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH=${{ github.workspace }}/deps-eigen \
             -DCTRLPP_BUILD_TESTS=ON \
             -DCTRLPP_BUILD_EXAMPLES=ON \
+            -DCTRLPP_BUILD_OSQP=ON \
+            -DCTRLPP_BUILD_NLOPT=ON \
+            -DCTRLPP_BUILD_ARGMIN=ON \
+            -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+            -DCTRLPP_INSTALL=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: cd build && ctest --output-on-failure
+
+  # The exceptions carve-out: the throwing-wrapper tests, the planner tests, and
+  # every OSQP-, NLopt- and argmin-linked test. Without this job none of them
+  # runs under Apple Clang. Release, like the cells above, because Apple Clang
+  # contracts multiply-adds by default and the planner tests hold exact values;
+  # the newest Xcode, because that is the compiler most likely to change them.
+  exceptions:
+    runs-on: macos-15
+    name: exceptions carve-out (arm64, Xcode 26.3)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26.3
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+
+      - name: Report the selected compiler
+        run: clang --version
+
+      - uses: ./.github/actions/install-pinned-eigen
+        with:
+          prefix: ${{ github.workspace }}/deps-eigen
+
+      - name: Configure
+        run: |
+          cmake . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=${{ github.workspace }}/deps-eigen \
+            -DCTRLPP_BUILD_TESTS=ON \
+            -DCTRLPP_TESTS_WITH_EXCEPTIONS=ON \
             -DCTRLPP_BUILD_OSQP=ON \
             -DCTRLPP_BUILD_NLOPT=ON \
             -DCTRLPP_BUILD_ARGMIN=ON \
