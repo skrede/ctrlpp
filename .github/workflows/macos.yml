@@ -30,16 +30,14 @@ jobs:
   build:
     strategy:
       fail-fast: false
-      # Apple Clang release per Xcode selection on this runner, as its compiler
-      # identification reports it: Xcode 15.4 is Apple clang 15.0.0
-      # (clang-1500.3.9) and Xcode 16.2 is Apple clang 16.0.0 (clang-1600.0.26).
-      # These are the Apple Clang releases the library is stated to build and
-      # pass its tests with. The macos-14 image is retired on November 2, 2026
-      # (https://github.com/actions/runner-images/issues/13518) and its
-      # successor does not carry Xcode 15.4, so this matrix expires with it.
+      # The oldest and newest Xcode the macos-15 image carries, so the stated
+      # floor (Xcode 16.0, Apple clang 16) and the current Apple Clang are both
+      # built and tested; the step below reports each selection's compiler. The
+      # macos-14 image, the last to carry Xcode 15.4, is retired on November 2,
+      # 2026 (https://github.com/actions/runner-images/issues/13518).
       matrix:
-        xcode: [ "15.4", "16.2" ]
-    runs-on: macos-14
+        xcode: [ "16.0", "26.3" ]
+    runs-on: macos-15
     name: build (arm64, Xcode ${{ matrix.xcode }})
     steps:
       - uses: actions/checkout@v4
@@ -81,14 +79,14 @@ jobs:
 
   # The arm64 runner above compiles only the vectorized paths the ARM
   # instruction set selects, so Eigen's SSE and AVX paths would otherwise never
-  # be compiled by Apple Clang at all. Xcode 16.2 is the selection shared with
+  # be compiled by Apple Clang at all. Xcode 16.0 is the selection shared with
   # the arm64 matrix, so the compiler release is held fixed and the instruction
   # set is what this cell varies.
   build-x86_64:
     strategy:
       fail-fast: false
       matrix:
-        xcode: [ "16.2" ]
+        xcode: [ "16.0" ]
     # The last x86_64 image the provider offers, supported until August 2027
     # (https://github.com/actions/runner-images/issues/13045). The date is
     # stated so the cell announces its expiry instead of silently disappearing.
@@ -133,7 +131,7 @@ jobs:
         run: cd build && ctest --output-on-failure
 
   install-test:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 

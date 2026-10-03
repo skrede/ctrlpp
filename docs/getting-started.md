@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- C++20 compiler: GCC 13+, Clang 18+, MSVC 17.10+, Xcode 15.4+<br/>
+- C++20 compiler: GCC 13+, Clang 18+, MSVC 17.10+, Xcode 16.0+<br/>
   Fallible solvers return `ctrlpp::expected`, which resolves to `std::expected`
   automatically when compiled at C++23 or later and to an in-library C++20
   fallback with the same call surface otherwise.
