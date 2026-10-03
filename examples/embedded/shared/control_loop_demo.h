@@ -48,28 +48,31 @@ struct control_loop_demo
     Eigen::Matrix<Scalar, 1, 2> K;
     Eigen::Vector<Scalar, 2> x;
 
-    static ctrlpp::expected<control_loop_demo, dare_error> make()
+    static control_loop_demo plant()
     {
         const Scalar dt = static_cast<Scalar>(kDt);
 
-        Eigen::Matrix<Scalar, 2, 2> A;
-        A << Scalar{1}, dt, Scalar{0}, Scalar{1};
-        Eigen::Matrix<Scalar, 2, 1> B;
-        B << Scalar{0.5} * dt * dt, dt;
+        control_loop_demo demo;
+        demo.A << Scalar{1}, dt, Scalar{0}, Scalar{1};
+        demo.B << Scalar{0.5} * dt * dt, dt;
+        demo.K.setZero();
+        demo.x << Scalar{1}, Scalar{0};
+        return demo;
+    }
+
+    static ctrlpp::expected<control_loop_demo, dare_error> make()
+    {
         Eigen::Matrix<Scalar, 2, 2> Q;
         Q << Scalar{10}, Scalar{0}, Scalar{0}, Scalar{1};
         Eigen::Matrix<Scalar, 1, 1> R;
         R << Scalar{0.1};
 
-        const auto gain = ctrlpp::lqr_gain<Scalar, 2, 1>(A, B, Q, R);
+        control_loop_demo demo = plant();
+        const auto gain        = ctrlpp::lqr_gain<Scalar, 2, 1>(demo.A, demo.B, Q, R);
         if(!gain.has_value())
             return ctrlpp::unexpected(gain.error());
 
-        control_loop_demo demo;
-        demo.A = A;
-        demo.B = B;
         demo.K = *gain;
-        demo.x << Scalar{1}, Scalar{0};
         return demo;
     }
 

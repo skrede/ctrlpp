@@ -14,12 +14,12 @@
 #include "alloc_sensor.h"
 #include "sbrk_ceiling.h"
 
+#include "golden_verdict.h"
 #include "golden_reference.h"
 #include "control_loop_demo.h"
 
 #include <Eigen/Dense>
 
-#include <cmath>
 #include <cstdio>
 #include <cstdint>
 #include <cinttypes>
@@ -31,6 +31,8 @@ void usart3_console_init() noexcept;
 namespace {
 
 using demo_type = ctrlpp::control_loop_demo<double>;
+
+ctrlpp::golden_bound golden_workspace = ctrlpp::make_golden_bound();
 
 void halt() noexcept
 {
@@ -62,11 +64,8 @@ void report_heap()
 
 void report_gain(const demo_type &demo)
 {
-    const double dev0 = demo.K(0, 0) - ctrlpp::kHostK0;
-    const double dev1 = demo.K(0, 1) - ctrlpp::kHostK1;
     std::printf("gain    K = [%.9f, %.9f]\n", demo.K(0, 0), demo.K(0, 1));
     std::printf("host    K = [%.9f, %.9f]\n", ctrlpp::kHostK0, ctrlpp::kHostK1);
-    std::printf("double-vs-host gain dev = [%.3e, %.3e]\n", dev0, dev1);
 }
 
 // The sensor is armed around step() alone, so the figure is the controller's
@@ -95,10 +94,12 @@ void report_allocations()
 
 void report_golden(const demo_type &demo)
 {
-    const double final_norm = demo.x.norm();
-    const double err        = std::fabs(final_norm - ctrlpp::kHostFinalNorm);
-    std::printf("settling: final |x| = %.3e (host = %.3e, err = %.3e)\n", final_norm, ctrlpp::kHostFinalNorm, err);
-    std::printf("golden diff %s (tol = %.1e)\n", err < ctrlpp::kH753DoubleTol ? "PASS" : "FAIL", ctrlpp::kH753DoubleTol);
+    const ctrlpp::golden_verdict verdict = ctrlpp::judge_golden(demo, golden_workspace);
+    std::printf("gain check %s: dev = [%.3e, %.3e], tol = %.3e\n", verdict.gain_pass ? "PASS" : "FAIL", verdict.gain_departure[0], verdict.gain_departure[1],
+                verdict.gain_tolerance);
+    std::printf("settling: final |x| = %.6e (host = %.6e, err = %.3e, tol = %.3e)\n", demo.x.norm(), ctrlpp::kHostFinalNorm, verdict.norm_departure,
+                verdict.norm_tolerance);
+    std::printf("golden diff %s (gain %s, final norm %s)\n", verdict.pass ? "PASS" : "FAIL", verdict.gain_pass ? "PASS" : "FAIL", verdict.norm_pass ? "PASS" : "FAIL");
 }
 
 }

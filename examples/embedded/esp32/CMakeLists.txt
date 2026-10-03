@@ -12,7 +12,7 @@
 #   2. `. $IDF_PATH/export.sh`   (e.g. `. /opt/esp-idf/export.sh`)
 #   3. `idf.py -C examples/embedded/esp32 set-target esp32 && idf.py -C examples/embedded/esp32 build`
 #   4. To validate on hardware: `idf.py -p <flash-port> flash monitor`.
-#      The CSV trajectory is streamed on UART2 (ESP TX GPIO17 -> telemetry USB RX).
+#      The CSV trajectory is streamed on UART2 (ESP TX GPIO5 -> telemetry USB RX).
 #
 # Exercises ctrlpp control (lqr_gain, DARE-backed) with Scalar=float, exceptions
 # and RTTI off, size-optimized -- the realistic embedded posture.

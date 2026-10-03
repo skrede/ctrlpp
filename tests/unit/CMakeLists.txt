@@ -109,6 +109,7 @@ make_test(dare_error_test)
 make_test(dare_float_precision_test)
 make_test(care_error_test)
 make_test(care_convergence_anchor_test)
+make_test(embedded_golden_tolerance_test)
 # The reference's `quad` is `__float128`, which Apple clang on arm64 rejects and
 # MSVC does not have. Substituting `long double` would be worse than skipping the
 # target: it is binary64 on both of those toolchains, so the reference would carry

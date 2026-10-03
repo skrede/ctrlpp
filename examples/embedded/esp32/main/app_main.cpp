@@ -1,9 +1,10 @@
 /// ctrlpp ESP32 on-device control-loop leg. Drives the shared float control
 /// kernel from a fixed-cadence FreeRTOS task on real Xtensa silicon: designs the
 /// infinite-horizon LQR gain once, runs the closed loop at 50 Hz, streams the
-/// trajectory as CSV over UART2 (telemetry adapter, ESP TX GPIO17 -> USB RX), and
+/// trajectory as CSV over UART2 (telemetry adapter, ESP TX GPIO5 -> USB RX), and
 /// diffs the on-target float result against an independent host-double golden.
 
+#include "golden_verdict.h"
 #include "golden_reference.h"
 #include "control_loop_demo.h"
 
@@ -17,7 +18,6 @@
 
 #include <Eigen/Dense>
 
-#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
@@ -28,11 +28,15 @@ namespace
 
 constexpr const char* TAG = "ctrlpp_esp32";
 
-// Telemetry UART (UART2): ESP TX GPIO17 -> USB RX, ESP RX GPIO16 <- USB TX. GPIO
-// 16/17 are free on WROOM but the PSRAM lines on WROVER -- keep them named.
+ctrlpp::golden_bound golden_workspace = ctrlpp::make_golden_bound();
+
+// Telemetry UART (UART2): ESP TX GPIO5 -> USB RX, ESP RX GPIO4 <- USB TX. The
+// Olimex ESP32-POE boards drive the Ethernet PHY clock from GPIO17, and GPIO3 is
+// the console UART's RX from the on-board USB bridge, so neither may carry it.
+// GPIO5 is a strapping pin that must be high at boot, which an idle UART line is.
 constexpr uart_port_t kTelemetryUart = UART_NUM_2;
-constexpr int         kTxPin         = 17;
-constexpr int         kRxPin         = 16;
+constexpr int         kTxPin         = 5;
+constexpr int         kRxPin         = 4;
 constexpr int         kBaud          = 115200;
 
 void telemetry_init()
@@ -66,12 +70,9 @@ void control_task(void*)
         return;
     }
 
-    const double dev0 = static_cast<double>(demo->K(0, 0)) - ctrlpp::kHostK0;
-    const double dev1 = static_cast<double>(demo->K(0, 1)) - ctrlpp::kHostK1;
     ESP_LOGI(TAG, "gain    K = [%.7f, %.7f]", static_cast<double>(demo->K(0, 0)),
              static_cast<double>(demo->K(0, 1)));
     ESP_LOGI(TAG, "host    K = [%.7f, %.7f]", ctrlpp::kHostK0, ctrlpp::kHostK1);
-    ESP_LOGI(TAG, "float-vs-host gain dev = [%.3e, %.3e]", dev0, dev1);
 
     telemetry_write("k,t_s,x0,x1,u\n");
 
@@ -93,12 +94,14 @@ void control_task(void*)
     ESP_LOGI(TAG, "stack high-water = %u bytes",
              static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
 
-    const double final_norm = static_cast<double>(demo->x.norm());
-    const double err        = std::fabs(final_norm - ctrlpp::kHostFinalNorm);
-    ESP_LOGI(TAG, "settling: final |x| = %.3e (host = %.3e, err = %.3e)",
-             final_norm, ctrlpp::kHostFinalNorm, err);
-    ESP_LOGI(TAG, "golden diff %s (tol = %.1e)",
-             err < ctrlpp::kEsp32FloatTol ? "PASS" : "FAIL", ctrlpp::kEsp32FloatTol);
+    const ctrlpp::golden_verdict verdict = ctrlpp::judge_golden(*demo, golden_workspace);
+    ESP_LOGI(TAG, "gain check %s: dev = [%.3e, %.3e], tol = %.3e", verdict.gain_pass ? "PASS" : "FAIL",
+             verdict.gain_departure[0], verdict.gain_departure[1], verdict.gain_tolerance);
+    ESP_LOGI(TAG, "settling: final |x| = %.6e (host = %.6e, err = %.3e, tol = %.3e)",
+             static_cast<double>(demo->x.norm()), ctrlpp::kHostFinalNorm, verdict.norm_departure,
+             verdict.norm_tolerance);
+    ESP_LOGI(TAG, "golden diff %s (gain %s, final norm %s)", verdict.pass ? "PASS" : "FAIL",
+             verdict.gain_pass ? "PASS" : "FAIL", verdict.norm_pass ? "PASS" : "FAIL");
 
     // The stack probe starts only now, with the golden verdict already reported.
     // Its second pass ends in a deliberate stack overflow, which resets the chip;
