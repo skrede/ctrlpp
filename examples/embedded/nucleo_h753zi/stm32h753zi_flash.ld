@@ -3,8 +3,11 @@
  * the dual-core H745/747/755/757 parts, so a hand-written script is the only
  * option for the single-core H753.
  *
- * .data/.bss/stack and a small heap live in DTCM (zero-wait-state, CPU-local);
- * code and read-only data live in flash.
+ * .data/.bss and the stack live in DTCM (zero-wait-state, CPU-local); code and
+ * read-only data live in flash. The heap lives in AXI SRAM: the predictive
+ * family's setup needs more of it than DTCM can hold beside its static instance
+ * and the stack. With the D-cache off, as this leg runs, every access to a
+ * heap-resident object pays the AXI SRAM's wait states.
  *
  * The symbol names below (_estack, _sdata/_edata/_sidata, _sbss/_ebss,
  * end/_end) are dictated verbatim by Source/Templates/gcc/startup_stm32h753xx.s
@@ -16,6 +19,7 @@ MEMORY
 {
   FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 2048K
   DTCM  (rwx) : ORIGIN = 0x20000000, LENGTH = 128K
+  AXISRAM (rwx) : ORIGIN = 0x24000000, LENGTH = 512K
 }
 
 ENTRY(Reset_Handler)
@@ -23,10 +27,13 @@ ENTRY(Reset_Handler)
 /* Initial stack pointer = top of DTCM; the stack grows down from here. */
 _estack = ORIGIN(DTCM) + LENGTH(DTCM);
 
-/* This leg is a 2x2 Riccati design plus a K*x product: no solver-sized frame.
- * newlib-nano's %f printf path locks a small heap, so keep a modest reserve;
- * the stack reserve is generous but far below argmin's solver budget. */
-_Min_Heap_Size  = 0x2000;   /* 8 KiB */
+/* The heap reserve is the high-water the board reported for this image with
+ * the predictive family linked in, measured under a 256 KiB reserve: 76,720 B
+ * after the family's setup, and the same at the end of the run, since the armed
+ * steady state allocates nothing. No margin is added: the figure is exact and
+ * repeats for a given image, and a requirement that grows is refused by name at
+ * setup instead of running into anything. */
+_Min_Heap_Size  = 76720;
 _Min_Stack_Size = 0x8000;   /* 32 KiB */
 
 SECTIONS
@@ -133,22 +140,26 @@ SECTIONS
     __bss_end__ = _ebss;
   } >DTCM
 
-  /* Heap + stack reservation. end/_end mark the heap start (consumed by
-   * the _sbrk in sbrk_ceiling.cpp); the stack reserve below it makes the linker
-   * error out if DTCM cannot hold data+bss+heap+stack. */
-  ._user_heap_stack :
+  /* The stack reserve makes the linker error out if DTCM cannot hold
+   * data+bss+stack. */
+  ._user_stack :
+  {
+    . = ALIGN(8);
+    . = . + _Min_Stack_Size;
+    . = ALIGN(8);
+  } >DTCM
+
+  /* end/_end mark the heap start (consumed by the _sbrk in sbrk_ceiling.cpp)
+   * and _eheap its ceiling, so a break request past the reserve is refused by
+   * _sbrk rather than handed memory nothing reserved. */
+  ._user_heap (NOLOAD) :
   {
     . = ALIGN(8);
     PROVIDE(end = .);
     PROVIDE(_end = .);
     . = . + _Min_Heap_Size;
-    /* Everything below _eheap is heap and everything above it is stack, so a
-     * break request past it is refused by _sbrk rather than handed memory the
-     * descending stack may already occupy. */
     PROVIDE(_eheap = .);
-    . = . + _Min_Stack_Size;
-    . = ALIGN(8);
-  } >DTCM
+  } >AXISRAM
 
   /DISCARD/ : { libc.a(*) libm.a(*) libgcc.a(*) }
 

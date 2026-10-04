@@ -6,3 +6,10 @@
 
 extern "C" void _init(void) {}
 extern "C" void _fini(void) {}
+
+// A function-local static with a destructor registers that destructor against
+// this symbol, normally defined by crtbegin.o. The image never returns from
+// main, so the registration is never run; the definition only lets it link.
+extern "C" {
+void *__dso_handle = nullptr;
+}

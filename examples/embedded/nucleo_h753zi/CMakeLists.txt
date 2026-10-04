@@ -1,6 +1,7 @@
 # Standalone flashable NUCLEO-H753ZI image: CMSIS-only bare-metal (no HAL/RTOS),
 # hand-written linker script, register-level USART3 console, and a bare superloop
-# driving the shared double control kernel.
+# driving the shared double kernels, the predictive controller among them unless
+# CTRLPP_MCU_PREDICTIVE is off.
 #
 # This is its OWN project() below the examples/ include boundary: it consumes the
 # ctrlpp headers via an include path only and is NEVER add_subdirectory'd into the
@@ -89,6 +90,14 @@ else()
     FetchContent_MakeAvailable(Eigen3)
 endif()
 
+# The predictive family needs the optional nonlinear-programming backend. It is
+# an option because this leg is an example an integrator configures from empty,
+# and one without network access must still be able to build the core image.
+option(CTRLPP_MCU_PREDICTIVE "Build the predictive controller family into the image (provisions argmin)" ON)
+if(CTRLPP_MCU_PREDICTIVE)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/predictive-backend.cmake")
+endif()
+
 # Cortex-M7 hard-float arch flags. The toolchain file applies these at compile
 # time; the gcc driver also needs them on the link line to select the correct
 # newlib-nano multilib.
@@ -111,7 +120,8 @@ target_include_directories(ctrlpp_nucleo_h753zi SYSTEM PRIVATE
     "${CTRLPP_SHARED_DIR}"
     "${eigen3_SOURCE_DIR}"
     "${CMSIS_CORE_INC}"
-    "${CMSIS_DEV_INC}")
+    "${CMSIS_DEV_INC}"
+    $<$<BOOL:${CTRLPP_MCU_PREDICTIVE}>:${CTRLPP_MCU_ARGMIN_INC}>)
 
 # EIGEN_ALLOCA must be explicit on newlib targets: at strict -std=c++20 (extensions
 # OFF) Eigen's alloca auto-detection finds nothing, so every internal kernel
@@ -123,7 +133,8 @@ target_compile_definitions(ctrlpp_nucleo_h753zi PRIVATE
     EIGEN_MAX_ALIGN_BYTES=8
     EIGEN_ALLOCA=__builtin_alloca
     EIGEN_STACK_ALLOCATION_LIMIT=8192
-    CTRLPP_NO_EXCEPTIONS)
+    CTRLPP_NO_EXCEPTIONS
+    CTRLPP_MCU_PREDICTIVE=$<BOOL:${CTRLPP_MCU_PREDICTIVE}>)
 
 target_compile_options(ctrlpp_nucleo_h753zi PRIVATE
     $<$<COMPILE_LANGUAGE:CXX>:-Os -fno-exceptions -fno-rtti -Wno-psabi>
@@ -148,7 +159,11 @@ target_link_options(ctrlpp_nucleo_h753zi PRIVATE
     -Wl,--gc-sections
     -Wl,-Map=ctrlpp_nucleo_h753zi.map)
 
-set_target_properties(ctrlpp_nucleo_h753zi PROPERTIES SUFFIX ".elf")
+# Without the dependency an edited reserve in the linker script leaves the old
+# image in place, and the capture would describe a layout that was never linked.
+set_target_properties(ctrlpp_nucleo_h753zi PROPERTIES
+    SUFFIX ".elf"
+    LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/stm32h753zi_flash.ld")
 
 # Report size at build time (must fit 2 MB flash / 128 KB DTCM).
 find_program(CTRLPP_ARM_SIZE "${CTRLPP_ARM_TOOLCHAIN_PREFIX}size")

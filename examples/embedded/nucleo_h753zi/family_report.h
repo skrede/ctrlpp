@@ -39,6 +39,19 @@ void report_family(const family_result &result, const window_figures &figures);
 
 // Armed around the steps alone and reset per family, so a nonzero count belongs
 // to this family and not to the program.
+template<class Demo>
+void run_family(const char *name, Demo &demo, double golden, double bound)
+{
+    alloc_sensor_reset();
+    alloc_sensor_arm();
+    double value = 0.0;
+    for(std::size_t k = 0; k < kGoldenSteps; ++k)
+        value = demo.step();
+    alloc_sensor_disarm();
+    const double departure = std::abs(value - golden);
+    report_family({name, value, golden, departure, bound, within_bound(departure, bound)}, read_window());
+}
+
 template<template<class> class Demo>
 void drive_family(const char *name, double golden, double bound)
 {
@@ -48,15 +61,12 @@ void drive_family(const char *name, double golden, double bound)
         std::printf("[family] %s verdict=REFUSED -- %s\n", name, describe(demo.error()));
         return;
     }
-    alloc_sensor_reset();
-    alloc_sensor_arm();
-    double value = 0.0;
-    for(std::size_t k = 0; k < kGoldenSteps; ++k)
-        value = demo->step();
-    alloc_sensor_disarm();
-    const double departure = std::abs(value - golden);
-    report_family({name, value, golden, departure, bound, within_bound(departure, bound)}, read_window());
+    run_family(name, *demo, golden, bound);
 }
+
+// The predictive family needs the optional backend; an image built without it
+// says so on the family's line rather than leaving the tag missing.
+void drive_predictive_family();
 
 }
 

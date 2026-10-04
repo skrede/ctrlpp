@@ -82,6 +82,38 @@ public:
         return departure_[Steps];
     }
 
+    /// The departure of every step of a run whose input departs from the
+    /// reference law by at most `offset[j] + slope * |x_j|` at step j, on the
+    /// reference's own A, B and K; the input's departure enters through B.
+    const std::array<double, Steps + 1> &input_departures(double eps, const std::array<double, Steps> &offset, double slope)
+    {
+        const double g      = a_norm_ + b_norm_ * k_norm_;
+        const double charge = loop_roundings_per_step(Nx, Nu) * eps * g;
+        fill_perturbed_power(0.0);
+        departure_[0] = 0.0;
+        for(std::size_t k = 1; k <= Steps; ++k)
+        {
+            double sum = 0.0;
+            for(std::size_t j = 0; j < k; ++j)
+            {
+                const double state = state_norm_[j] + departure_[j];
+                sum += perturbed_power_[k - 1 - j] * (charge * state + b_norm_ * (offset[j] + slope * state));
+            }
+            departure_[k] = sum;
+        }
+        return departure_;
+    }
+
+    const std::array<double, Steps + 1> &reference_state_norms() const
+    {
+        return state_norm_;
+    }
+
+    double gain_norm() const
+    {
+        return k_norm_;
+    }
+
 private:
     double a_norm_;
     double b_norm_;

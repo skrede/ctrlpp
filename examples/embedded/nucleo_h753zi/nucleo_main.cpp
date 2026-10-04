@@ -7,9 +7,9 @@
 // proves the allocation sensor is not blind, designs the infinite-horizon LQR
 // gain once, runs the closed loop with the sensor armed around each step,
 // streams the trajectory as CSV over USART3 -> ST-Link VCP, runs the
-// estimation, signal-processing and trajectory families each inside its own
-// armed window, diffs every family's double result against its host-double
-// golden, and halts for the operator to read the console.
+// estimation, signal-processing, trajectory and predictive families each inside
+// its own armed window, diffs every family's double result against its
+// host-double golden, and halts for the operator to read the console.
 
 #include "build_id.h"
 #include "alloc_sensor.h"
@@ -123,6 +123,7 @@ int main()
     ctrlpp::drive_family<ctrlpp::estimation_demo>("estimation", ctrlpp::kHostKalmanVelocityVariance, ctrlpp::estimation_tolerance<double>());
     ctrlpp::drive_family<ctrlpp::dsp_demo>("dsp", ctrlpp::kHostBiquadOutput, ctrlpp::dsp_tolerance<double>());
     ctrlpp::drive_family<ctrlpp::trajectory_demo>("trajectory", ctrlpp::kHostTrajectoryPosition, ctrlpp::trajectory_tolerance<double>());
+    ctrlpp::drive_predictive_family();
     report_golden(*demo, control);
     halt();
 }

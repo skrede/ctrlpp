@@ -88,7 +88,11 @@
 #
 #   6. A family's PASS says the value its last step returned lies within its
 #      derived bound of the host reference; it does not compare the steps before
-#      it. The allocation count on the same line is transported, not judged.
+#      it. The predictive family's value is the cost accumulated over the whole
+#      run, so it does weigh every step, but its bound holds only under the
+#      premise its own [predictive] line reports (every solve stopped on the
+#      stationarity test). The allocation count on the same line is
+#      transported, not judged.
 
 set -euo pipefail
 
@@ -117,7 +121,7 @@ report_end_marker="golden diff "
 
 # Every family the image runs. Each must print exactly one verdict line, so a
 # family that ran and reported nothing is a refusal rather than a shorter report.
-expected_families="control estimation dsp trajectory"
+expected_families="control estimation dsp trajectory predictive"
 
 # --- Arguments ----------------------------------------------------------------
 
@@ -128,7 +132,7 @@ destination=""
 for arg in "$@"; do
     case "${arg}" in
         -h|--help)
-            sed -n '2,91p' "${BASH_SOURCE[0]}"
+            sed -n '2,95p' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         --reset-only)

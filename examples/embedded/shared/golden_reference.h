@@ -5,6 +5,7 @@
 #include "derived_tolerance.h"
 
 #include <cstddef>
+#include <cstdint>
 
 namespace ctrlpp
 {
@@ -44,6 +45,32 @@ constexpr double kHostBiquadOutput           = -0.86508002466156553;
 constexpr double kHostBiquadScale            = 16.492588552695306;
 constexpr double kHostTrajectoryPosition     = 6.744791666666667;
 constexpr double kHostTrajectoryScale        = 1206.09375;
+
+// The predictive family: the configuration the strict-zero allocation test
+// pins, run from x0 = (1, 0) for a warm-up and then the armed steps. Its
+// reference is the exact finite-horizon law on the represented plant and
+// weights; the host constants below are that law's gain, the first-input row of
+// the inverse KKT matrix with that matrix's condition number, the smallest
+// singular value and the 2-norm bound of the constraint Jacobian, and the
+// reference loop's realized cost.
+constexpr std::size_t kPredictiveNx            = 2;
+constexpr std::size_t kPredictiveNu            = 1;
+constexpr std::size_t kPredictiveNh            = 5;
+constexpr int kPredictiveNv                    = static_cast<int>((kPredictiveNh + 1) * kPredictiveNx + kPredictiveNh * kPredictiveNu);
+constexpr int kPredictiveMaxM                  = static_cast<int>(kPredictiveNx * (kPredictiveNh + 1));
+constexpr std::int32_t kPredictiveWarmupSolves = 20;
+constexpr std::size_t kPredictiveRunSteps      = static_cast<std::size_t>(kPredictiveWarmupSolves) + kGoldenSteps;
+constexpr double kPredictiveDt                 = 0.1;
+constexpr double kPredictiveStateWeight        = 10.0;
+constexpr double kPredictiveInputWeight        = 0.1;
+
+constexpr double kHostPredictiveK0            = 1.9951805744562641;
+constexpr double kHostPredictiveK1            = 6.4867948990510831;
+constexpr double kHostPredictiveInputRow      = 33.820912149271386;
+constexpr double kHostPredictiveKktCondition  = 2682.0131439072306;
+constexpr double kHostPredictiveJacobianSigma = 0.22307799946689291;
+constexpr double kHostPredictiveJacobianNorm  = 2.1000000000000001;
+constexpr double kHostPredictiveCost          = 189.50222139218934;
 
 constexpr double estimation_roundings()
 {

@@ -74,22 +74,32 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib libeigen3-dev
 
       # The full flashable image, not a representative translation unit: the link
-      # is what the board runs, so the link is what CI replays.
-      - name: Cross-compile the NUCLEO-H753ZI image
+      # is what the board runs, so the link is what CI replays. The default image
+      # carries the predictive family, which fetches its backend at the root
+      # project's pin, so its timed solver alternative's clock reference must
+      # resolve here too; the core image is built as well because an integrator
+      # without network access configures the leg with that family off.
+      - name: Cross-compile the NUCLEO-H753ZI images
         run: |
-          cmake -S examples/embedded/nucleo_h753zi -B build-arm \
-            -DCMAKE_TOOLCHAIN_FILE="$PWD/examples/embedded/nucleo_h753zi/cmake/toolchain-arm-none-eabi.cmake" \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-arm
+          for predictive in ON OFF; do
+            cmake -S examples/embedded/nucleo_h753zi -B "build-arm-${predictive}" \
+              -DCMAKE_TOOLCHAIN_FILE="$PWD/examples/embedded/nucleo_h753zi/cmake/toolchain-arm-none-eabi.cmake" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCTRLPP_MCU_PREDICTIVE="${predictive}"
+            cmake --build "build-arm-${predictive}"
+          done
 
-      - name: Assert a fully resolved image and report its size
+      - name: Assert fully resolved images and report their size
         run: |
-          elf=build-arm/ctrlpp_nucleo_h753zi.elf
-          test -f "$elf"
-          undefined=$(arm-none-eabi-nm --undefined-only "$elf")
-          if [ -n "$undefined" ]; then
-            echo "unresolved symbols in $elf:" >&2
-            echo "$undefined" >&2
-            exit 1
-          fi
-          arm-none-eabi-size "$elf"
+          for predictive in ON OFF; do
+            elf="build-arm-${predictive}/ctrlpp_nucleo_h753zi.elf"
+            test -f "$elf"
+            undefined=$(arm-none-eabi-nm --undefined-only "$elf")
+            if [ -n "$undefined" ]; then
+              echo "unresolved symbols in $elf:" >&2
+              echo "$undefined" >&2
+              exit 1
+            fi
+            arm-none-eabi-size "$elf"
+          done
+          arm-none-eabi-nm build-arm-ON/ctrlpp_nucleo_h753zi.elf | grep -qi nmpc_static

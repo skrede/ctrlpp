@@ -1,14 +1,17 @@
 #include "eigen_alloc_sentinel.h"
 
 #include "alloc_sensor.h"
+#include "sbrk_ceiling.h"
 
 #include <Eigen/Core>
 
 #include <new>
 #include <atomic>
+#include <cstdio>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cinttypes>
 
 // -Wl,--wrap routes every call that names the C allocation family, from any
 // object in the link, to the __wrap_ definitions below and exposes the C
@@ -76,6 +79,12 @@ void *operator new(std::size_t size)
     count_allocation();
     if(void *pointer = __real_malloc(size > 0 ? size : 1))
         return pointer;
+    // Integer conversions only: the float formatter is the one printf path that
+    // allocates, and the heap has just refused. The growth is the break's, not
+    // this call's size: Eigen reports its own refused malloc by calling here
+    // with the largest size there is.
+    std::printf("[heap] REFUSED growth=%" PRIu32 " high_water=%" PRIu32 " reserve=%" PRIu32 " bytes\n", static_cast<std::uint32_t>(ctrlpp::heap_first_refusal_bytes()),
+                static_cast<std::uint32_t>(ctrlpp::heap_high_water_bytes()), static_cast<std::uint32_t>(ctrlpp::heap_reserve_bytes()));
     std::abort();
 }
 

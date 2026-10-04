@@ -1,7 +1,7 @@
 // A strong _sbrk overriding the one --specs=nosys.specs supplies, which advances
-// the break with no upper bound: with nothing between the heap and the
-// descending stack, an over-budget allocation there is a silent collision. This
-// one refuses any request past _eheap with the C library's failure value.
+// the break with no upper bound, so an over-budget allocation would run on into
+// whatever the memory map places next. This one refuses any request past _eheap
+// with the C library's failure value.
 
 #include "sbrk_ceiling.h"
 
@@ -19,6 +19,7 @@ namespace {
 
 std::size_t heap_used        = 0;
 std::size_t heap_used_record = 0;
+std::size_t first_refusal    = 0;
 
 }
 
@@ -34,6 +35,11 @@ std::size_t heap_high_water_bytes() noexcept
     return heap_used_record;
 }
 
+std::size_t heap_first_refusal_bytes() noexcept
+{
+    return first_refusal;
+}
+
 }
 
 extern "C" void *_sbrk(std::ptrdiff_t increment)
@@ -45,6 +51,8 @@ extern "C" void *_sbrk(std::ptrdiff_t increment)
     const std::size_t room      = shrinks ? previous : ctrlpp::heap_reserve_bytes() - previous;
     if(magnitude > room)
     {
+        if(first_refusal == 0)
+            first_refusal = magnitude;
         errno = ENOMEM;
         return reinterpret_cast<void *>(-1);
     }
