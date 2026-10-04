@@ -387,12 +387,14 @@ TEST_CASE("Trapezoidal: a large-velocity triangle keeps its duration on consecut
     // q1 = v0 = v1 = v, a = 1, v_max = 2 v: the peak is sqrt(v^2 + v), within
     // half a unit of v, so each ramp lasts v / (sqrt(v^2 + v) + v) and the
     // duration is 2 / (1 + sqrt(1 + 1 / v)), which is 1 to within 1 / (4 v).
-    // Above about 1e154 the peak comes from hypot and rounds a unit or so either
-    // side of v, which used to decide between a refusal and a duration near
-    // ulp(v). Six roundings bound the duration: the peak carries six (two in
-    // each scaled argument, four in a scaled sum-of-squares hypot), half of
-    // which survive into the peak-plus-v sum, which adds one, as does the
-    // quotient and the final sum of the two ramps.
+    // Above about 1e154 the radicand overflows and the peak comes from the
+    // exactly scaled hypot, rounding a unit or so either side of v. A hypot that
+    // squares unscaled returns infinity there instead, and the profile takes the
+    // cruise shape with a duration near 2 v. Six roundings bound the duration:
+    // the peak carries six (two in each argument, then at most four in the
+    // hypot: a square, two sums, the square root), half of which survive into the
+    // peak-plus-v sum, which adds one, as does the quotient and the final sum of
+    // the two ramps.
     constexpr double duration_rounding_ops = 6.0;
     constexpr int velocities_per_base = 2000;
 

@@ -446,8 +446,30 @@ class trapezoidal_trajectory
             return std::sqrt(radicand);
         }
         auto const root_two = std::sqrt(Scalar{2});
-        return std::hypot(
+        return scaled_hypot(
             std::sqrt(a) * std::sqrt(abs_h), std::abs(v0) / root_two, std::abs(v1) / root_two);
+    }
+
+    /// @brief sqrt(x^2 + y^2 + z^2) of nonnegative operands, scaled by the power of
+    /// two that brings the largest into [1/2, 1).
+    ///
+    /// The scaling is exact, so under every standard library each operand passes
+    /// at most four roundings -- its square, two sums, and the square root --
+    /// where std::hypot's three-operand form promises no scaling and older
+    /// implementations square unscaled and overflow. An operand scaled below the
+    /// normal range has a square far under the sum's last place.
+    ///
+    /// @cite blue1978 -- Blue, "A Portable Fortran Program to Find the Euclidean
+    /// Norm of a Vector", 1978; anderson2017 -- Anderson, "Algorithm 978: Safe
+    /// Scaling in the Level 1 BLAS", 2017
+    static auto scaled_hypot(Scalar x, Scalar y, Scalar z) -> Scalar
+    {
+        int exponent{};
+        std::frexp(std::max({x, y, z}), &exponent);
+        Scalar const xs = std::ldexp(x, -exponent);
+        Scalar const ys = std::ldexp(y, -exponent);
+        Scalar const zs = std::ldexp(z, -exponent);
+        return std::ldexp(std::sqrt(xs * xs + ys * ys + zs * zs), exponent);
     }
 
     /// @brief Duration of the triangular ramp between v_from and the peak.
