@@ -459,3 +459,40 @@ TEST_CASE("Trapezoidal: a subnormal difference of squares still raises the accel
         REQUIRE(std::abs(profile.value().duration() - expected) <= duration_rounding_ops * eps * expected);
     }
 }
+
+// -- Test 19: a difference of squares above the largest finite value ----------
+TEST_CASE("Trapezoidal: an overflowing difference of squares is still tested exactly",
+          "[traj][trapezoidal]")
+{
+    using traj_t = ctrlpp::trapezoidal_trajectory<double>;
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    // Boundary velocities a unit in the last place apart near 1e299, against an
+    // acceleration and displacement whose product also overflows: the product
+    // form of eq. (3.14) compares infinity with infinity and reads as satisfied,
+    // although a h falls short of (v1^2 - v0^2) / 2 by some 150 decades. The
+    // raise that would reconcile them is above the largest finite value, so the
+    // command is refused rather than built with a ramp that runs backwards.
+    auto const refused = traj_t::create({.q0 = 0.0,
+                                         .q1 = -0x1.5e15a74a8e062p+500,
+                                         .v_max = 0x1.6dcd85020ec56p+995,
+                                         .a_max = 0x1.23021f6ae8808p+941,
+                                         .v0 = -0x1.6dcd85020ec55p+995,
+                                         .v1 = -0x1.6dcd85020ec56p+995});
+    REQUIRE_FALSE(refused.has_value());
+    REQUIRE(refused.error() == ctrlpp::trajectory_error::unreachable_boundary_velocity);
+
+    // Where the raise is representable although half the difference of squares
+    // is not, the command is raised as at any other scale and is one
+    // constant-acceleration ramp of duration 2 h / (v0 + v1), bounded by the same
+    // twelve roundings as the subnormal case above.
+    constexpr double duration_rounding_ops = 12.0;
+    constexpr double h = 1e100;
+    constexpr double v1 = 1e200;
+    auto const served =
+        traj_t::create({.q0 = 0.0, .q1 = h, .v_max = v1, .a_max = 1.0, .v0 = 0.0, .v1 = v1});
+    REQUIRE(served.has_value());
+    REQUIRE(served.value().disposition().realized_acceleration > 1.0);
+    double const expected = 2.0 * h / v1;
+    REQUIRE(std::abs(served.value().duration() - expected) <= duration_rounding_ops * eps * expected);
+}

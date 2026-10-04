@@ -129,11 +129,10 @@ class trapezoidal_trajectory
     /// to the smallest value that makes the two feasible together, eq. (3.15);
     /// at a zero commanded displacement no acceleration is large enough, and
     /// just above zero the value the remedy asks for is no longer
-    /// representable. Below the square root of the smallest normal value the
-    /// boundary velocities square into the subnormal range, where the product
-    /// form of eq. (3.14) reads as satisfied on commands that do not satisfy it,
-    /// so the test runs there on the required acceleration formed in scaled
-    /// arithmetic. The realized durations are still checked directly rather
+    /// representable. Where half the difference of the squared boundary
+    /// velocities underflows or overflows, the product form of eq. (3.14) reads
+    /// as satisfied on commands that do not satisfy it, so the test runs there
+    /// on the required acceleration formed in scaled arithmetic. The realized durations are still checked directly rather
     /// than inferred from the test, which keeps the guarantee independent of
     /// the test's own rounding.
     ///
@@ -346,8 +345,8 @@ class trapezoidal_trajectory
     {
         auto const abs_h = std::abs(cfg.q1 - cfg.q0);
         auto const v_diff_sq = half_abs_difference_of_squares(cfg.v0, cfg.v1);
-        if (v_diff_sq < std::numeric_limits<Scalar>::min() && std::abs(cfg.v0) != std::abs(cfg.v1)) {
-            return solve_subnormal_acceleration(cfg, abs_h);
+        if (!std::isnormal(v_diff_sq) && std::abs(cfg.v0) != std::abs(cfg.v1)) {
+            return solve_scaled_acceleration(cfg, abs_h);
         }
         if (cfg.a_max * abs_h >= v_diff_sq) {
             return cfg.a_max;
@@ -355,21 +354,29 @@ class trapezoidal_trajectory
         return v_diff_sq / abs_h + std::numeric_limits<Scalar>::epsilon();
     }
 
-    /// @brief eq. (3.14)-(3.15) where the half difference of squares has fallen
-    /// below the smallest normal value.
+    /// @brief eq. (3.14)-(3.15) where the half difference of squares has left the
+    /// normal range.
     ///
-    /// The product form of the test underflows there and reads as satisfied on
-    /// commands that do not satisfy it, so the acceleration the command requires
-    /// is formed as one scaled quotient and compared instead; neither side leaves
-    /// the range before the comparison. A raise moves one unit in the last place
-    /// above the requirement, onto the feasible side of its rounding.
-    static auto solve_subnormal_acceleration(config const& cfg, Scalar abs_h) -> Scalar
+    /// The product form of the test reads as satisfied there on commands that do
+    /// not satisfy it: below the smallest normal value both sides underflow, and
+    /// above the largest finite one both overflow and compare infinity with
+    /// infinity. The acceleration the command requires is formed instead as one
+    /// scaled quotient and compared, and a raise moves one unit in the last place
+    /// above it, onto the feasible side of its rounding. Velocities above half the
+    /// largest finite value are halved first, exactly, so their difference and
+    /// sum stay finite.
+    static auto solve_scaled_acceleration(config const& cfg, Scalar abs_h) -> Scalar
     {
         if (!(abs_h > Scalar{0})) {
             return std::numeric_limits<Scalar>::infinity();
         }
-        auto const required = half_ratio_of_products(
-            std::abs(cfg.v0 - cfg.v1), std::abs(cfg.v0 + cfg.v1), abs_h, Scalar{1});
+        bool const halve = std::max(std::abs(cfg.v0), std::abs(cfg.v1))
+                           > std::numeric_limits<Scalar>::max() / Scalar{2};
+        auto const s = halve ? Scalar{0.5} : Scalar{1};
+        auto const required = std::ldexp(
+            half_ratio_of_products(
+                std::abs(s * cfg.v0 - s * cfg.v1), std::abs(s * cfg.v0 + s * cfg.v1), abs_h, Scalar{1}),
+            halve ? 2 : 0);
         if (cfg.a_max >= required) {
             return cfg.a_max;
         }
