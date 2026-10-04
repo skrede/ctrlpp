@@ -7,6 +7,7 @@
 
 extern "C" std::uint32_t _ebss[];
 extern "C" std::uint32_t _estack[];
+extern "C" std::uint32_t _Min_Stack_Size[];
 
 namespace ctrlpp {
 
@@ -49,6 +50,13 @@ std::uint32_t *window_bottom() noexcept
 std::uintptr_t stack_top() noexcept
 {
     return reinterpret_cast<std::uintptr_t>(_estack);
+}
+
+// An absolute linker symbol: its address is its value. Printed on every line so
+// the capture can cross-check it against the ELF it refuses the high-water by.
+std::uint32_t stack_reserve() noexcept
+{
+    return static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(_Min_Stack_Size));
 }
 
 std::uint32_t paint_word(const std::uint32_t *address) noexcept
@@ -142,7 +150,8 @@ void report_stack(const char *region, const stack_reading &r)
         std::printf("used=withheld from_top=withheld free=withheld");
     else
         std::printf("used=%" PRIu32 " from_top=%" PRIu32 " free=%" PRIu32, r.used, r.from_top, r.free);
-    std::printf(" of=%" PRIu32 " bytes gap=%" PRIu32 " window=%" PRIu32 " floor=%" PRIu32 " saturated=%s\n", r.room, r.gap, r.window, r.floor, r.saturated ? "yes" : "no");
+    std::printf(" of=%" PRIu32 " reserve=%" PRIu32 " bytes", r.room, stack_reserve());
+    std::printf(" gap=%" PRIu32 " window=%" PRIu32 " floor=%" PRIu32 " saturated=%s\n", r.gap, r.window, r.floor, r.saturated ? "yes" : "no");
 }
 
 stack_step_region::stack_step_region(std::size_t first, std::size_t last)

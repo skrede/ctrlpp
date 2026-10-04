@@ -34,7 +34,14 @@ _estack = ORIGIN(DTCM) + LENGTH(DTCM);
  * repeats for a given image, and a requirement that grows is refused by name at
  * setup instead of running into anything. */
 _Min_Heap_Size  = 76720;
-_Min_Stack_Size = 0x8000;   /* 32 KiB */
+
+/* The stack reserve is the whole-program stack high-water the board reported
+ * for this image, painted from before static construction to the end of the
+ * report: 30,616 B, set by the predictive family's first solve. No interrupt is
+ * enabled, so no exception frame is added; as with the heap, no margin is either.
+ * The reserve does not stop the stack at run time, so the capture reads this
+ * symbol out of the ELF and refuses a report whose high-water exceeds it. */
+_Min_Stack_Size = 30616;
 
 SECTIONS
 {

@@ -937,11 +937,10 @@ auto build_first_call_chain()
 /// Construction, measured as its own chain rather than reported as an absence.
 ///
 /// It is offline and it is excluded from both solve figures above, exactly as
-/// the allocation guards exclude it -- but the frame report puts the deepest
-/// frame in the whole translation unit inside this constructor, larger than
-/// either solve's whole chain, and a caller who constructs the controller on
-/// the task's own stack pays it. Publishing the solve figures alone would leave
-/// the largest of the three unmeasured.
+/// the allocation guards exclude it. A caller who constructs the controller on
+/// the task's own stack still pays it, and with the controller object held in
+/// this frame it can exceed either solve's whole chain, so publishing the solve
+/// figures alone could leave the largest of the three unmeasured.
 ///
 /// Kept out of line for the same reason every other measured chain is: an
 /// inlined body would put its locals in the painting routine's own frame, above

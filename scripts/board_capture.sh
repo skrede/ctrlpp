@@ -77,8 +77,12 @@
 #      measurement of the chain
 #  19  a stack watermark line reports a saturated window: the chain reached the
 #      window's bottom word, so its depth is unknown rather than small
-#  20  a stack watermark line lacks its floor, its saturation verdict or its
-#      figure, or a measured region's line is missing or repeated
+#  20  a stack watermark line lacks its floor, its saturation verdict, its
+#      figure or its reserve, or a measured region's line is missing or repeated
+#  21  a stack line's high-water exceeds the image's stack reserve: the
+#      measured stack needs more than the linker reserved for it
+#  22  the reserve a stack line prints disagrees with the _Min_Stack_Size
+#      symbol in the ELF, so the line and the image disagree on the reserve
 #
 # --- What this capture does NOT establish -------------------------------------
 #
@@ -123,7 +127,10 @@
 #      line. A chain that writes a value equal to a word's pattern would hide
 #      that word; the pattern carries each word's address, so no single value
 #      can hide more than one. The compiler's per-function frames quoted in the
-#      capture header attribute nothing to callees and are a lower bound.
+#      capture header attribute nothing to callees and are a lower bound. The
+#      reserve refusal compares the reserve with the high-water of this run
+#      only: a deeper path the run did not take is not covered, and nothing on
+#      the target stops the stack at the reserve.
 #
 #   8. A family's PASS says the value its last step returned lies within its
 #      derived bound of the host reference; it does not compare the steps before
@@ -178,7 +185,7 @@ destination=""
 for arg in "$@"; do
     case "${arg}" in
         -h|--help)
-            sed -n '2,134p' "${BASH_SOURCE[0]}"
+            sed -n '2,141p' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         --timing)
@@ -283,6 +290,17 @@ resolve_port()
     done
 
     return 1
+}
+
+# The linker script defines it as an absolute symbol, so nm prints its value.
+# awk reads nm to the end: stopping early would kill nm with SIGPIPE, which
+# pipefail turns into a failed assignment.
+elf_stack_reserve()
+{
+    local value=""
+    value="$("${toolchain_prefix}nm" "${elf_path}" | awk '$3 == "_Min_Stack_Size" { print $1 }')"
+    [ -n "${value}" ] || return 0
+    printf '%d\n' "0x${value}"
 }
 
 elf_build_id()
@@ -485,11 +503,14 @@ verify_timing()
     return 0
 }
 
-# A saturated window is not a smaller measurement but no measurement, and a
-# figure beside a nonzero floor measured the harness rather than the chain.
+# A saturated window is not a smaller measurement but no measurement, a figure
+# beside a nonzero floor measured the harness rather than the chain, and a
+# high-water past the reserve ran on memory the link never set aside for it.
 verify_stack()
 {
-    local line="" region="" count=0
+    local line="" region="" count=0 reserve="" printed="" from_top=""
+    reserve="$(elf_stack_reserve)"
+    [ -n "${reserve}" ] || fail 3 "${elf_path} carries no _Min_Stack_Size symbol, so the stack reserve is unknown."
     while IFS= read -r line; do
         printf '%s\n' "${line}" | grep -Eq ' floor=[0-9]+( |$)' \
             || fail 20 "a stack line carries no floor: '${line}'."
@@ -501,6 +522,14 @@ verify_stack()
             || fail 19 "a stack line reports a saturated window, which is no measurement: '${line}'."
         printf '%s\n' "${line}" | grep -Eq ' used=[0-9]+ from_top=[0-9]+ free=[0-9]+ of=[0-9]+ ' \
             || fail 20 "a stack line with a zero floor and an unsaturated window carries no figure: '${line}'."
+        printed="$(printf '%s\n' "${line}" | sed -n 's/.* reserve=\([0-9][0-9]*\) .*/\1/p')"
+        [ -n "${printed}" ] \
+            || fail 20 "a stack line carries no reserve: '${line}'."
+        [ "${printed}" -eq "${reserve}" ] \
+            || fail 22 "a stack line prints a reserve of ${printed} B where ${elf_path} has _Min_Stack_Size = ${reserve} B: '${line}'."
+        from_top="$(printf '%s\n' "${line}" | sed -n 's/.* from_top=\([0-9][0-9]*\) .*/\1/p')"
+        [ "${from_top}" -le "${reserve}" ] \
+            || fail 21 "the measured stack high-water of ${from_top} B exceeds the image's ${reserve} B reserve: '${line}'."
     done < <(grep '^\[stack\] ' "${transcript}")
 
     for region in ${expected_stack_regions}; do
@@ -567,6 +596,10 @@ write_artifact()
             band_cause
         else
             static_frames
+            echo "#"
+            echo "# Stack reserve: $(elf_stack_reserve) bytes, the _Min_Stack_Size symbol read"
+            echo "# with ${toolchain_prefix}nm out of the image above. Every [stack] line below"
+            echo "# prints the same figure and none of their high-waters exceeds it."
         fi
         echo
         cat "${transcript}"
