@@ -101,6 +101,7 @@ add_executable(ctrlpp_nucleo_h753zi
     init_stubs.cpp
     build_id.cpp
     alloc_sensor.cpp
+    family_report.cpp
     sbrk_ceiling.cpp
     "${CMSIS_SYSTEM}"
     "${CMSIS_STARTUP}")

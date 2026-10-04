@@ -56,27 +56,45 @@ constexpr double riccati_roundings(std::size_t nx, std::size_t nu)
     return assembly + schur + stages + reorder;
 }
 
+/// @brief Largest departure a quantity computed at `Scalar` may show from its
+/// exact value, when the computation is charged `roundings` operations at
+/// `scale`.
+///
+/// Every counted operation is charged one epsilon at the scale, whether or not
+/// it rounds, with no cancellation credited, so the count bounds the departure
+/// from above rather than describing it. Epsilon is twice the unit roundoff u,
+/// and k*u/(1 - k*u) <= 2*k*u whenever k*u <= 1/2, so charging k epsilons
+/// covers the gamma_k accumulation exactly.
+///
+/// @cite higham2002 -- Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2002, Ch. 3 (one unit in the last place per operation, accumulated without cancellation; Lemma 3.1 for gamma_k)
+template<class Scalar>
+constexpr double counted_departure_bound(double roundings, double scale)
+{
+    const double eps = static_cast<double>(std::numeric_limits<Scalar>::epsilon());
+    return roundings * eps * scale;
+}
+
+/// @brief How far a board result at `Scalar` and the host's double reference
+/// may part: each is within the counted bound of the exact run, so the two may
+/// part by the sum.
+template<class Scalar>
+constexpr double paired_departure_bound(double roundings, double scale)
+{
+    return counted_departure_bound<Scalar>(roundings, scale) + counted_departure_bound<double>(roundings, scale);
+}
+
 /// @brief Largest departure any entry of a gain designed at `Scalar` may show
 /// from the exact gain, for a gain whose entries sum in magnitude to
 /// `gain_norm`.
-///
-/// Every operation `riccati_roundings` counts is charged one epsilon at the
-/// gain's own scale, whether or not it rounds, with no cancellation credited,
-/// so the count bounds the departure from above rather than describing it.
-/// Epsilon is twice the unit roundoff u, and k*u/(1 - k*u) <= 2*k*u whenever
-/// k*u <= 1/2, so charging k epsilons covers the gamma_k accumulation exactly.
 ///
 /// The count treats the solve as forward-stable to its operation count. It
 /// does not carry the Riccati equation's condition number, so for an
 /// ill-conditioned plant it is not a bound; the cross-validation suite, not
 /// this function, answers whether the solve is right.
-///
-/// @cite higham2002 -- Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2002, Ch. 3 (one unit in the last place per operation, accumulated without cancellation; Lemma 3.1 for gamma_k)
 template<class Scalar>
 constexpr double gain_departure_bound(std::size_t nx, std::size_t nu, double gain_norm)
 {
-    const double eps = static_cast<double>(std::numeric_limits<Scalar>::epsilon());
-    return riccati_roundings(nx, nu) * eps * gain_norm;
+    return counted_departure_bound<Scalar>(riccati_roundings(nx, nu), gain_norm);
 }
 
 }

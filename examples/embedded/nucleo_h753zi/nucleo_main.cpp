@@ -1,20 +1,25 @@
 // Armed before Eigen is parsed, or the Eigen allocation sentinel is never compiled in.
 #include "eigen_alloc_sentinel.h"
 
-// ctrlpp NUCLEO-H753ZI on-device control-loop leg (bare superloop, double FPU).
+// ctrlpp NUCLEO-H753ZI on-device leg (bare superloop, double FPU).
 //
 // CMSIS startup runs SystemInit + C++ static ctors, then calls main(). This
 // proves the allocation sensor is not blind, designs the infinite-horizon LQR
 // gain once, runs the closed loop with the sensor armed around each step,
-// streams the trajectory as CSV over USART3 -> ST-Link VCP, diffs the on-target
-// double result against the independent host-double golden, and halts for the
-// operator to read the console.
+// streams the trajectory as CSV over USART3 -> ST-Link VCP, runs the
+// estimation, signal-processing and trajectory families each inside its own
+// armed window, diffs every family's double result against its host-double
+// golden, and halts for the operator to read the console.
 
 #include "build_id.h"
 #include "alloc_sensor.h"
 #include "sbrk_ceiling.h"
+#include "family_report.h"
 
+#include "dsp_demo.h"
 #include "golden_verdict.h"
+#include "estimation_demo.h"
+#include "trajectory_demo.h"
 #include "golden_reference.h"
 #include "control_loop_demo.h"
 
@@ -83,22 +88,15 @@ void run_loop(demo_type &demo)
     }
 }
 
-void report_allocations()
-{
-    const std::uint32_t observed = ctrlpp::alloc_sensor_observed();
-    const std::uint32_t trips    = ctrlpp::alloc_sensor_eigen_trips();
-    const std::int32_t steps     = ctrlpp::kSteps + 1;
-    std::printf("[alloc] steady_state allocations=%" PRIu32 " steps=%" PRId32 " per_step=%.2f eigen_sentinel=%s trips=%" PRIu32 "\n", observed, steps,
-                static_cast<double>(observed) / steps, trips == 0 ? "clean" : "TRIPPED", trips);
-}
-
-void report_golden(const demo_type &demo)
+void report_golden(const demo_type &demo, const ctrlpp::window_figures &figures)
 {
     const ctrlpp::golden_verdict verdict = ctrlpp::judge_golden(demo, golden_workspace);
+    const double final_norm              = demo.x.norm();
     std::printf("gain check %s: dev = [%.3e, %.3e], tol = %.3e\n", verdict.gain_pass ? "PASS" : "FAIL", verdict.gain_departure[0], verdict.gain_departure[1],
                 verdict.gain_tolerance);
-    std::printf("settling: final |x| = %.6e (host = %.6e, err = %.3e, tol = %.3e)\n", demo.x.norm(), ctrlpp::kHostFinalNorm, verdict.norm_departure,
+    std::printf("settling: final |x| = %.6e (host = %.6e, err = %.3e, tol = %.3e)\n", final_norm, ctrlpp::kHostFinalNorm, verdict.norm_departure,
                 verdict.norm_tolerance);
+    ctrlpp::report_family({"control", final_norm, ctrlpp::kHostFinalNorm, verdict.norm_departure, verdict.norm_tolerance, verdict.pass}, figures);
     std::printf("golden diff %s (gain %s, final norm %s)\n", verdict.pass ? "PASS" : "FAIL", verdict.gain_pass ? "PASS" : "FAIL", verdict.norm_pass ? "PASS" : "FAIL");
 }
 
@@ -120,7 +118,11 @@ int main()
     report_heap();
     report_gain(*demo);
     run_loop(*demo);
-    report_allocations();
-    report_golden(*demo);
+    const ctrlpp::window_figures control = ctrlpp::read_window();
+    ctrlpp::report_allocations(control);
+    ctrlpp::drive_family<ctrlpp::estimation_demo>("estimation", ctrlpp::kHostKalmanVelocityVariance, ctrlpp::estimation_tolerance<double>());
+    ctrlpp::drive_family<ctrlpp::dsp_demo>("dsp", ctrlpp::kHostBiquadOutput, ctrlpp::dsp_tolerance<double>());
+    ctrlpp::drive_family<ctrlpp::trajectory_demo>("trajectory", ctrlpp::kHostTrajectoryPosition, ctrlpp::trajectory_tolerance<double>());
+    report_golden(*demo, control);
     halt();
 }

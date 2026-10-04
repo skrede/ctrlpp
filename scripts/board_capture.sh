@@ -50,6 +50,8 @@
 #   7  no verdict line    8  verdict FAIL
 #   9  no allocation-sensor canary line
 #  10  canary FAIL (the sensor did not observe its deliberate allocations)
+#  11  a family's verdict line is missing or repeated
+#  12  a family's verdict is not PASS
 #
 # --- What this capture does NOT establish -------------------------------------
 #
@@ -83,6 +85,10 @@
 #      new, and an Eigen heap vector. It does not extend that sight to the C
 #      library's reentrant allocator entry points, which stdio uses and which
 #      never pass through the wrapped symbols.
+#
+#   6. A family's PASS says the value its last step returned lies within its
+#      derived bound of the host reference; it does not compare the steps before
+#      it. The allocation count on the same line is transported, not judged.
 
 set -euo pipefail
 
@@ -109,6 +115,10 @@ generator="Unix Makefiles"
 # can stop before the timeout rather than always paying it.
 report_end_marker="golden diff "
 
+# Every family the image runs. Each must print exactly one verdict line, so a
+# family that ran and reported nothing is a refusal rather than a shorter report.
+expected_families="control estimation dsp trajectory"
+
 # --- Arguments ----------------------------------------------------------------
 
 subcommand=""
@@ -118,7 +128,7 @@ destination=""
 for arg in "$@"; do
     case "${arg}" in
         -h|--help)
-            sed -n '2,85p' "${BASH_SOURCE[0]}"
+            sed -n '2,91p' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         --reset-only)
@@ -340,6 +350,22 @@ verify_transcript()
         fail 8 "the board's golden verdict is FAIL."
     fi
 
+    verify_families
+
+    return 0
+}
+
+verify_families()
+{
+    local family="" line="" count=0
+    for family in ${expected_families}; do
+        count="$(grep -c "^\[family\] ${family} " "${transcript}" || true)"
+        [ "${count}" -eq 1 ] \
+            || fail 11 "the captured report carries ${count} '[family] ${family}' lines where exactly one is required."
+        line="$(grep -m 1 "^\[family\] ${family} " "${transcript}")"
+        printf '%s\n' "${line}" | grep -q ' verdict=PASS ' \
+            || fail 12 "the ${family} family did not pass: '${line}'."
+    done
     return 0
 }
 
