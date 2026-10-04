@@ -128,12 +128,14 @@ effective_flags()
 {
     python3 - "${build_tree}/compile_commands.json" <<'PY'
 import json, sys
-units = {"osqp": "/_deps/osqp-build/", "qpoases": "/_deps/qpoases-build/", "daqp": "/_deps/daqp-build/",
-         "blasfeo": "/_deps/blasfeo-build/", "hpipm": "/_deps/hpipm-build/", "tinympc": "/_deps/tinympc-build/",
-         "harness (argmin, proxsuite headers)": "/comparison/qp_solvers/CMakeFiles/ctrlpp_qp_solvers.dir/proxqp_arms"}
+units = {"osqp": ("/_deps/osqp-build", ".c"), "qpoases": ("/_deps/qpoases-build", ".cpp"),
+         "daqp": ("/_deps/daqp-build", ".c"), "blasfeo": ("/_deps/blasfeo-build", ".c"),
+         "hpipm": ("/_deps/hpipm-build", ".c"), "tinympc": ("/_deps/tinympc-build", "admm.cpp"),
+         "tinympc session unit": ("/comparison/qp_solvers", "tinympc_session.cpp"),
+         "argmin and proxsuite (header-only, in the harness)": ("/comparison/qp_solvers", "proxqp_arms.cpp")}
 commands = json.load(open(sys.argv[1]))
-for name, marker in units.items():
-    entry = next((c for c in commands if marker in c.get("output", c["file"]) or marker in c["command"]), None)
+for name, (marker, suffix) in units.items():
+    entry = next((c for c in commands if marker in c["directory"] and c["file"].endswith(suffix)), None)
     words = entry["command"].split() if entry else []
     flags = [w for w in words if w.startswith(("-O", "-D", "-m", "-f", "-g", "-std")) and not w.startswith("-DCMAKE")]
     print(f"{name}: {' '.join(flags) if entry else 'no compile command found'}")
@@ -261,8 +263,10 @@ run_driver()
     if [ -n "${refused}" ]; then
         filters+=(--refused-families "${refused}")
     fi
+    # Solver libraries print from inside their solves; a file keeps that cost the same wherever the
+    # script's own output goes.
     "${launcher}" "${driver_dir}/qp_solvers_${cohort}" --rep "${rep}" --out "${dest}" --run-id "${run_id}" "${filters[@]}" \
-        2> "${dest}/${cohort}_rep${rep}.log"
+        > "${dest}/${cohort}_rep${rep}.out" 2> "${dest}/${cohort}_rep${rep}.log"
 }
 
 compress_records()
@@ -387,12 +391,20 @@ prepare()
 ${failed})}"
 }
 
-# A run that aborts after its directory exists is still counted in the ledger.
+# Every attempted run is counted: a run that stops for any reason after its directory exists is
+# recorded as not completed.
+ledger_path=""
+ledger_run_id=""
+ledger_started=""
+ledger_clock=""
+ledger_completed=false
+
 append_ledger()
 {
-    local ledger="$1" run_id="$2" started="$3" clock="$4" completed="$5"
+    [ -n "${ledger_path}" ] || return 0
     printf '{"run_id": "%s", "started_utc": "%s", "finished_utc": "%s", "clock_state": "%s", "completed": %s}\n' \
-        "${run_id}" "${started}" "$(utc_now)" "${clock}" "${completed}" >> "${ledger}"
+        "${ledger_run_id}" "${ledger_started}" "$(utc_now)" "${ledger_clock}" "${ledger_completed}" >> "${ledger_path}"
+    ledger_path=""
 }
 
 refuse_unless_ready()
@@ -410,7 +422,10 @@ measure_repetitions()
     for rep in $(seq 0 $((repetitions - 1))); do
         for cohort in dense sparse; do
             printf '  rep %s  %s\n' "${rep}" "${cohort}"
-            run_driver pinned "${cohort}" "${rep}" "${dest}" "${run_id}" "${refused}" || return 1
+            if ! run_driver pinned "${cohort}" "${rep}" "${dest}" "${run_id}" "${refused}"; then
+                tail -n 20 "${dest}/${cohort}_rep${rep}.log" >&2
+                return 1
+            fi
         done
     done
 }
@@ -437,7 +452,12 @@ measure()
     dest="${dest_root}/${run_id}"
     mkdir -p "${dest}"
     started="$(utc_now)"
-    trap 'append_ledger "${dest_root}/runs.jsonl" "${run_id}" "${started}" "${clock}" false' ERR
+    ledger_path="${dest_root}/runs.jsonl"
+    ledger_run_id="${run_id}"
+    ledger_started="${started}"
+    ledger_clock="${clock}"
+    trap append_ledger EXIT
+    trap 'exit 1' INT TERM
     write_environment "${dest}"
     describe_harness "${dest}"
     run_gate "${dest}" pinned
@@ -448,8 +468,8 @@ measure()
     fill_json "${run_id}" "${started}" "$(utc_now)" "${host}" "${clock}" > "${dest}/fill.json"
     assemble "${dest}"
     verify_record "${dest}" --schema-only
-    trap - ERR
-    append_ledger "${dest_root}/runs.jsonl" "${run_id}" "${started}" "${clock}" true
+    ledger_completed=true
+    append_ledger
     printf 'measurement complete: %s (clock %s)\n' "${dest}" "${clock}"
 }
 
