@@ -1,0 +1,1143 @@
+{
+  "argmin_sha": "ca7ec854a02dc90f0b423cec52bda9a4f306c43a",
+  "arm_settings": {
+    "argmin_dense_active_set": {
+      "high": {
+        "max_iterations": 4000,
+        "tolerance": 1e-06
+      },
+      "mpc": {
+        "max_iterations": 4000,
+        "tolerance": 0.001
+      }
+    },
+    "argmin_dense_admm": {
+      "high": {
+        "eps_abs": 1e-06,
+        "eps_rel": 1e-06,
+        "max_iterations": 4000,
+        "polish": true,
+        "warm_start": true
+      },
+      "mpc": {
+        "eps_abs": 0.001,
+        "eps_rel": 0.001,
+        "max_iterations": 4000,
+        "polish": false,
+        "warm_start": true
+      }
+    },
+    "argmin_dense_admm_polished": {
+      "mpc": {
+        "eps_abs": 0.001,
+        "eps_rel": 0.001,
+        "max_iterations": 4000,
+        "polish": true,
+        "warm_start": true
+      }
+    },
+    "argmin_sparse_admm": {
+      "high": {
+        "eps_abs": 1e-06,
+        "eps_rel": 1e-06,
+        "max_iterations": 4000,
+        "polish": true,
+        "warm_start": true
+      },
+      "mpc": {
+        "eps_abs": 0.001,
+        "eps_rel": 0.001,
+        "max_iterations": 4000,
+        "polish": false,
+        "warm_start": true
+      }
+    },
+    "argmin_sparse_admm_polished": {
+      "mpc": {
+        "eps_abs": 0.001,
+        "eps_rel": 0.001,
+        "max_iterations": 4000,
+        "polish": true,
+        "warm_start": true
+      }
+    },
+    "daqp": {
+      "high": {
+        "iter_limit": 4000,
+        "primal_tol": 1e-06
+      },
+      "mpc": {
+        "iter_limit": 4000,
+        "primal_tol": 0.001
+      }
+    },
+    "hpipm": {
+      "high": {
+        "iter_max": 100,
+        "mode": "BALANCE",
+        "tol_comp": 1e-06,
+        "tol_eq": 1e-06,
+        "tol_ineq": 1e-06,
+        "tol_stat": 1e-06,
+        "warm_start": 1
+      },
+      "mpc": {
+        "iter_max": 50,
+        "mode": "SPEED",
+        "tol_comp": 0.001,
+        "tol_eq": 0.001,
+        "tol_ineq": 0.001,
+        "tol_stat": 0.001,
+        "warm_start": 1
+      }
+    },
+    "osqp": {
+      "high": {
+        "adaptive_rho": true,
+        "adaptive_rho_interval": 25,
+        "eps_abs": 1e-06,
+        "eps_rel": 1e-06,
+        "max_iter": 4000,
+        "polishing": true,
+        "verbose": false,
+        "warm_starting": true
+      },
+      "mpc": {
+        "adaptive_rho": true,
+        "adaptive_rho_interval": 25,
+        "eps_abs": 0.001,
+        "eps_rel": 0.001,
+        "max_iter": 4000,
+        "polishing": false,
+        "verbose": false,
+        "warm_starting": true
+      }
+    },
+    "osqp_polished": {
+      "mpc": {
+        "adaptive_rho": true,
+        "adaptive_rho_interval": 25,
+        "eps_abs": 0.001,
+        "eps_rel": 0.001,
+        "max_iter": 4000,
+        "polishing": true,
+        "verbose": false,
+        "warm_starting": true
+      }
+    },
+    "proxqp_dense": {
+      "high": {
+        "eps_abs": 1e-06,
+        "eps_rel": 1e-06,
+        "initial_guess": "WARM_START_WITH_PREVIOUS_RESULT",
+        "max_iter": 4000
+      },
+      "mpc": {
+        "eps_abs": 0.001,
+        "eps_rel": 0.001,
+        "initial_guess": "WARM_START_WITH_PREVIOUS_RESULT",
+        "max_iter": 4000
+      }
+    },
+    "proxqp_sparse": {
+      "high": {
+        "backend": "SparseCholesky",
+        "eps_abs": 1e-06,
+        "eps_rel": 1e-06,
+        "initial_guess": "WARM_START_WITH_PREVIOUS_RESULT",
+        "max_iter": 4000
+      },
+      "mpc": {
+        "backend": "SparseCholesky",
+        "eps_abs": 0.001,
+        "eps_rel": 0.001,
+        "initial_guess": "WARM_START_WITH_PREVIOUS_RESULT",
+        "max_iter": 4000
+      }
+    },
+    "qpoases": {
+      "high": {
+        "nwsr_cap": 4000,
+        "preset": "RELIABLE",
+        "print_level": "NONE"
+      },
+      "mpc": {
+        "nwsr_cap": 4000,
+        "preset": "MPC",
+        "print_level": "NONE"
+      }
+    },
+    "tinympc": {
+      "high": {
+        "abs_dua_tol": 1e-06,
+        "abs_pri_tol": 1e-06,
+        "adaptive_rho": false,
+        "max_iter": 4000,
+        "rho": 1.0
+      },
+      "mpc": {
+        "abs_dua_tol": 0.001,
+        "abs_pri_tol": 0.001,
+        "adaptive_rho": false,
+        "max_iter": 4000,
+        "rho": 1.0
+      }
+    }
+  },
+  "binding_gate": null,
+  "build": {
+    "blasfeo_la": "HIGH_PERFORMANCE",
+    "blasfeo_mf": "PANELMAJ",
+    "blasfeo_target": "X64_INTEL_HASWELL",
+    "build_type": "Release",
+    "c_flags": "-O3 -DNDEBUG -march=x86-64-v3",
+    "compiler": "gcc",
+    "compiler_version": null,
+    "cxx_flags": "-O3 -DNDEBUG -march=x86-64-v3",
+    "daqp_faster_math": false,
+    "daqp_native_optimization": false,
+    "hpipm_target": "AVX",
+    "march": "-march=x86-64-v3",
+    "release_flags": "-O3 -DNDEBUG"
+  },
+  "clock_state": null,
+  "competitor_pins": {
+    "blasfeo": "9628393214623b29e5dd2a8784f7423edbc93e04",
+    "daqp": "29a8987d8b9a596c1ab6acf84c17d38b068b73bc",
+    "hpipm": "16a8db59f595bda642f460aa0f62e308f4b76db3",
+    "osqp": "236713ce9a56c182ac3230d52108f952afce1523",
+    "proxsuite": "b93d7778ffc3299d84b5cb0851022a29bf24a596",
+    "qpoases": "680f18c8ef0018a120e1604b769f056e8368df97",
+    "tinympc": "023f36bd5b27267e1a96ed47a774d120b5707f13"
+  },
+  "constants": {
+    "binding_median_fraction_min": 0.1,
+    "binding_row_tolerance": 1e-06,
+    "binding_state_row_step_fraction_min": 0.5,
+    "convention_probe_tolerance": 1e-06,
+    "fixed_timed_resolves": 60,
+    "fixed_warmup_resolves": 20,
+    "legacy_terminal_weight": 10.0,
+    "nominal_variant": {
+      "input_limit": 0.5,
+      "state_limit": null,
+      "tracking_target": 0.0,
+      "x0_amplitude": 5.0
+    },
+    "osqp_adaptive_rho_interval": 25,
+    "reference_solution_kkt_max": 1e-09,
+    "repetitions": 5,
+    "steps_per_sequence": 60,
+    "terminal_riccati": {
+      "gain_tolerance": 1e-05,
+      "max_iterations": 1000,
+      "rho": 1.0
+    },
+    "tiers": {
+      "high": 1e-06,
+      "mpc": 0.001
+    },
+    "tight_variant": {
+      "input_limit": 0.2,
+      "state_limit": 1.0,
+      "tracking_target": 2.0,
+      "x0_amplitude": 1.0
+    }
+  },
+  "csv_files": null,
+  "ctrlpp_harness_dirty": null,
+  "ctrlpp_harness_sha": null,
+  "expressibility": [
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "nx2_nu1_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "nx4_nu2_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "nx4_nu2_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "nx8_nu3_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "nx8_nu3_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "nx12_nu4_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "nx4_nu2_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "nx4_nu2_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "nx8_nu3_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "nx8_nu3_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm",
+      "cell": "dense_mpc_shaped",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "nx2_nu1_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "nx4_nu2_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "nx4_nu2_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "nx8_nu3_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "nx8_nu3_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "nx12_nu4_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "nx4_nu2_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "nx4_nu2_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "nx8_nu3_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "nx8_nu3_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_active_set",
+      "cell": "dense_mpc_shaped",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "nx2_nu1_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "nx4_nu2_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "nx4_nu2_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "nx8_nu3_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "nx8_nu3_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "nx12_nu4_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "nx4_nu2_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "nx4_nu2_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "nx8_nu3_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "nx8_nu3_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "qpoases",
+      "cell": "dense_mpc_shaped",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "nx2_nu1_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "nx4_nu2_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "nx4_nu2_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "nx8_nu3_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "nx8_nu3_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "nx12_nu4_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "nx4_nu2_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "nx4_nu2_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "nx8_nu3_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "nx8_nu3_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "daqp",
+      "cell": "dense_mpc_shaped",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "nx2_nu1_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "nx4_nu2_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "nx4_nu2_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "nx8_nu3_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "nx8_nu3_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "nx12_nu4_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "nx4_nu2_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "nx4_nu2_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "nx8_nu3_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "nx8_nu3_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_dense",
+      "cell": "dense_mpc_shaped",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx2_nu1_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx4_nu2_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx4_nu2_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx8_nu3_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx8_nu3_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx12_nu4_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx4_nu2_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx4_nu2_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx8_nu3_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx8_nu3_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "dense_mpc_shaped",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "nx2_nu1_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "nx4_nu2_N10",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "nx4_nu2_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "nx8_nu3_N20",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "nx8_nu3_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "nx12_nu4_N30",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "nx4_nu2_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "nx4_nu2_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "nx8_nu3_N50",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "nx8_nu3_N100",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_dense_admm_polished",
+      "cell": "dense_mpc_shaped",
+      "cohort": "dense",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm",
+      "cell": "nx2_nu1_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm",
+      "cell": "nx4_nu2_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm",
+      "cell": "nx4_nu2_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm",
+      "cell": "nx8_nu3_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm",
+      "cell": "nx8_nu3_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm",
+      "cell": "nx12_nu4_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm",
+      "cell": "nx4_nu2_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm",
+      "cell": "nx4_nu2_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm",
+      "cell": "nx8_nu3_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm",
+      "cell": "nx8_nu3_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx2_nu1_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx4_nu2_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx4_nu2_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx8_nu3_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx8_nu3_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx12_nu4_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx4_nu2_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx4_nu2_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx8_nu3_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp",
+      "cell": "nx8_nu3_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_sparse",
+      "cell": "nx2_nu1_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_sparse",
+      "cell": "nx4_nu2_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_sparse",
+      "cell": "nx4_nu2_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_sparse",
+      "cell": "nx8_nu3_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_sparse",
+      "cell": "nx8_nu3_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_sparse",
+      "cell": "nx12_nu4_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_sparse",
+      "cell": "nx4_nu2_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_sparse",
+      "cell": "nx4_nu2_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_sparse",
+      "cell": "nx8_nu3_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "proxqp_sparse",
+      "cell": "nx8_nu3_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "hpipm",
+      "cell": "nx2_nu1_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "hpipm",
+      "cell": "nx4_nu2_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "hpipm",
+      "cell": "nx4_nu2_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "hpipm",
+      "cell": "nx8_nu3_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "hpipm",
+      "cell": "nx8_nu3_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "hpipm",
+      "cell": "nx12_nu4_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "hpipm",
+      "cell": "nx4_nu2_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "hpipm",
+      "cell": "nx4_nu2_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "hpipm",
+      "cell": "nx8_nu3_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "hpipm",
+      "cell": "nx8_nu3_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "tinympc",
+      "cell": "nx2_nu1_N10",
+      "cohort": "sparse",
+      "expressible": false
+    },
+    {
+      "arm": "tinympc",
+      "cell": "nx4_nu2_N10",
+      "cohort": "sparse",
+      "expressible": false
+    },
+    {
+      "arm": "tinympc",
+      "cell": "nx4_nu2_N20",
+      "cohort": "sparse",
+      "expressible": false
+    },
+    {
+      "arm": "tinympc",
+      "cell": "nx8_nu3_N20",
+      "cohort": "sparse",
+      "expressible": false
+    },
+    {
+      "arm": "tinympc",
+      "cell": "nx8_nu3_N30",
+      "cohort": "sparse",
+      "expressible": false
+    },
+    {
+      "arm": "tinympc",
+      "cell": "nx12_nu4_N30",
+      "cohort": "sparse",
+      "expressible": false
+    },
+    {
+      "arm": "tinympc",
+      "cell": "nx4_nu2_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "tinympc",
+      "cell": "nx4_nu2_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "tinympc",
+      "cell": "nx8_nu3_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "tinympc",
+      "cell": "nx8_nu3_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm_polished",
+      "cell": "nx2_nu1_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm_polished",
+      "cell": "nx4_nu2_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm_polished",
+      "cell": "nx4_nu2_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm_polished",
+      "cell": "nx8_nu3_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm_polished",
+      "cell": "nx8_nu3_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm_polished",
+      "cell": "nx12_nu4_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm_polished",
+      "cell": "nx4_nu2_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm_polished",
+      "cell": "nx4_nu2_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm_polished",
+      "cell": "nx8_nu3_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "argmin_sparse_admm_polished",
+      "cell": "nx8_nu3_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp_polished",
+      "cell": "nx2_nu1_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp_polished",
+      "cell": "nx4_nu2_N10",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp_polished",
+      "cell": "nx4_nu2_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp_polished",
+      "cell": "nx8_nu3_N20",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp_polished",
+      "cell": "nx8_nu3_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp_polished",
+      "cell": "nx12_nu4_N30",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp_polished",
+      "cell": "nx4_nu2_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp_polished",
+      "cell": "nx4_nu2_N100",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp_polished",
+      "cell": "nx8_nu3_N50",
+      "cohort": "sparse",
+      "expressible": true
+    },
+    {
+      "arm": "osqp_polished",
+      "cell": "nx8_nu3_N100",
+      "cohort": "sparse",
+      "expressible": true
+    }
+  ],
+  "finished_utc": null,
+  "host": null,
+  "preregistration_commit": null,
+  "probes": null,
+  "run_id": null,
+  "schema": "qp-head-to-head-manifest/1",
+  "started_utc": null,
+  "terminal_weights": null,
+  "update_api": null
+}

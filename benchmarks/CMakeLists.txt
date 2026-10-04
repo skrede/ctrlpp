@@ -54,14 +54,24 @@ else()
     find_package(nanobench CONFIG REQUIRED)
 endif()
 
-# Optional solver backends for MPC/MHE benchmarks
-find_package(osqp QUIET)
+# Optional solver backends for MPC/MHE benchmarks. The cross-solver QP suite builds OSQP from source
+# so that every solver it compares shares one set of compiler flags; every other configuration keeps
+# the installed package, which other installed wrappers (osqp-eigen) also link against.
+if(CTRLPP_FETCH_BENCHMARK_DEPS AND CTRLPP_BENCH_QP_SOLVERS)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/comparison/deps/osqp.cmake)
+    set(ctrlpp_bench_osqp_target osqp::osqpstatic)
+else()
+    find_package(osqp QUIET)
+    if(osqp_FOUND)
+        set(ctrlpp_bench_osqp_target osqp::osqp)
+    endif()
+endif()
 find_package(NLopt QUIET)
 
-if(osqp_FOUND)
+if(ctrlpp_bench_osqp_target)
     add_library(ctrlpp_benchmarks_osqp INTERFACE)
     add_library(ctrlpp::osqp ALIAS ctrlpp_benchmarks_osqp)
-    target_link_libraries(ctrlpp_benchmarks_osqp INTERFACE ctrlpp::ctrlpp osqp::osqp)
+    target_link_libraries(ctrlpp_benchmarks_osqp INTERFACE ctrlpp::ctrlpp ${ctrlpp_bench_osqp_target})
     target_compile_definitions(ctrlpp_benchmarks_osqp INTERFACE CTRLPP_HAS_OSQP=1)
 endif()
 
