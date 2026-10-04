@@ -900,7 +900,8 @@ TEST_CASE("OnlinePlanner3rd: a wide settle tolerance still plans a far smaller m
 // j*s and a speed j*s^2/2, so the two margins stand in the ratio s*a_max/(2
 // v_max), which is below one for every s short of the whole acceleration
 // stretch. The velocity clause is therefore exercised in the other direction,
-// below, where a state carries a real speed and exactly zero acceleration.
+// below, where a state carries a real speed and an acceleration within one
+// rounding of zero.
 TEST_CASE("OnlinePlanner3rd: the numerical-no-op floors scale with the limits",
           "[traj][online_planner_3rd][no_op_floor]")
 {
@@ -968,9 +969,15 @@ TEST_CASE("OnlinePlanner3rd: the numerical-no-op floors scale with the limits",
     REQUIRE(straddles == 3);
 
     // The velocity clause, from the other side. At cruise the acceleration is
-    // EXACTLY zero -- the two jerk ramps that built the cruise added and removed
-    // the same value -- so the acceleration clause cannot be what keeps the
-    // short-circuit shut, and the speed is what the planner is left deciding on.
+    // zero to one rounding: the two jerk ramps that built the cruise add and
+    // remove the same product j*T, which cancels exactly when both are rounded,
+    // and leaves the first one's rounding when a fused multiply-add removes the
+    // exact product. Rounding to nearest keeps that within half a unit in the
+    // last place of j*T <= a_max, below the acceleration floor, so the
+    // acceleration clause cannot be what keeps the short-circuit shut, and the
+    // speed is what the planner is left deciding on.
+    constexpr double cruise_acceleration_rounding_ops = 1.0;
+    constexpr double unit_roundoff = 0.5 * std::numeric_limits<double>::epsilon();
     int cruises = 0;
     for (auto const& limits : limit_sets) {
         auto planner = make_planner<double>(
@@ -979,7 +986,8 @@ TEST_CASE("OnlinePlanner3rd: the numerical-no-op floors scale with the limits",
         auto const cruising = cruise_up(planner, 1000.0 * limits[0], 0.01, 400);
         CAPTURE(limits[0], cruising.q, cruising.v);
 
-        REQUIRE(planner.sample(cruising.t).acceleration[0] == 0.0);
+        REQUIRE(std::abs(planner.sample(cruising.t).acceleration[0])
+                <= cruise_acceleration_rounding_ops * unit_roundoff * limits[1]);
         REQUIRE(std::abs(cruising.v)
                 > std::numeric_limits<double>::epsilon() * limits[0]);
 
@@ -1179,6 +1187,12 @@ TEST_CASE("OnlinePlanner3rd: the overshoot verdict is relative and scale-invaria
     // tested is the relativity and not the width.
     constexpr double relative_shortfall = 1e-6;
 
+    // Cruise leaves the acceleration within one rounding of zero, half a unit in
+    // the last place of the ramp product j*T <= a_max, as the no-op floor case
+    // derives; a fused multiply-add is what leaves it nonzero.
+    constexpr double cruise_acceleration_rounding_ops = 1.0;
+    constexpr double unit_roundoff = 0.5 * std::numeric_limits<double>::epsilon();
+
     int rungs = 0;
     for (auto const& limits : limit_sets) {
         double const v_max = limits[0];
@@ -1199,7 +1213,8 @@ TEST_CASE("OnlinePlanner3rd: the overshoot verdict is relative and scale-invaria
         double const step = 4.0 * (a_max / j_max + v_max / a_max) / 100.0;
         auto const cruising = cruise_up(planner, 1000.0 * v_max, step, 400);
         REQUIRE_THAT(cruising.v, WithinAbs(v_max, v_max * 1e-9));
-        REQUIRE(planner.sample(cruising.t).acceleration[0] == 0.0);
+        REQUIRE(std::abs(planner.sample(cruising.t).acceleration[0])
+                <= cruise_acceleration_rounding_ops * unit_roundoff * a_max);
 
         double const stop_dist = jerk_limited_stop_distance(cruising.v, a_max, j_max);
         REQUIRE(stop_dist > 0.0);
