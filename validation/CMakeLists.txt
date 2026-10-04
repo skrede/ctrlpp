@@ -90,7 +90,7 @@ endfunction()
 # rather than a diagnostic anyone reads.
 #
 # Applied by the registration helper so every case inherits it, rather than
-# repeated in eighteen leaf files where one could quietly drift.
+# repeated in every leaf file where one could quietly drift.
 function(ctrlpp_validation_case name)
     add_subdirectory(cases/${name})
     target_compile_options(${name} PRIVATE ${CTRLPP_WARNING_FLAGS})
@@ -116,6 +116,7 @@ ctrlpp_validation_case(lqr_finite_horizon)
 ctrlpp_validation_case(lqi_tracking)
 ctrlpp_validation_case(pid_linear_step)
 ctrlpp_validation_case(pole_placement)
+ctrlpp_validation_case(lqr_closed_loop_settling)
 
 # Model module
 ctrlpp_validation_case(c2d_zoh)

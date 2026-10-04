@@ -17,14 +17,14 @@ level 1 coverage.
 
 ## Cross-validation against GNU Octave
 
-The `validation/` directory registers 18 test cases that run identical
+The `validation/` directory registers 19 test cases that run identical
 scenarios in both ctrlpp (C++20) and GNU Octave, then compare outputs
 column-by-column.  The comparison uses a combined tolerance criterion: pass iff
 `|ref - cand| <= atol + rtol * |ref|` for every element (default
 `atol = 1e-10`, `rtol = 1e-8`).
 
 The reference scripts collectively require four Octave packages: **control**,
-**signal**, **splines**, and **quaternion**.  `control` is loaded by 14 cases,
+**signal**, **splines**, and **quaternion**.  `control` is loaded by 15 cases,
 `signal` by 2, and `splines` and `quaternion` by 1 each; one case
 (`fir_filter`) loads no package at all.
 
@@ -150,6 +150,7 @@ claim about every environment.
 | `pid_performance` | 1 | IAE/ISE/ITAE metrics |
 | `lqr` (infinite horizon) | 2 | Cross-validated against Octave `dlqr()` |
 | `lqr` (finite horizon) | 2 | Cross-validated against Octave backward Riccati |
+| `lqr` on the board closed loop | 2 | Cross-validated against Octave `dare()`, with the gain for `u = -Kx` written out and the loop iterated in Octave; the case builds the board legs' own kernel, so the cell the boards diff against their host-double golden is the cell compared here |
 | `lqi` | 2 | Cross-validated against Octave `dlqr()` on augmented system |
 | `dare` | 2 | Cross-validated against Octave `dare()` |
 | `care` | 2 | Cross-validated against Octave `care()` |

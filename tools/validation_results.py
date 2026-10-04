@@ -38,6 +38,7 @@ CASE_LABELS = {
     'lqi_tracking': ('`lqi`', '`dlqr()` augmented'),
     'pid_linear_step': ('`pid` (linear PI)', '`lsim()`'),
     'pole_placement': ('`place`', '`place()`'),
+    'lqr_closed_loop_settling': ('`lqr` (board closed loop)', '`dare()`, gain for `u = -Kx`'),
     'c2d_zoh': ('`discretize` (ZOH)', '`c2d()`'),
     'analysis_poles': ('`analysis` (poles)', '`pole()`, `ctrb()`, `obsv()`'),
     'tf_ss_conversion': ('`tf2ss` / `ss2tf`', '`tf2ss()`, `ss2tf()`'),
