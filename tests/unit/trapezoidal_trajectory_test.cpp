@@ -496,3 +496,52 @@ TEST_CASE("Trapezoidal: an overflowing difference of squares is still tested exa
     double const expected = 2.0 * h / v1;
     REQUIRE(std::abs(served.value().duration() - expected) <= duration_rounding_ops * eps * expected);
 }
+
+// -- Test 20: a boundary velocity pointing away from the target ---------------
+TEST_CASE("Trapezoidal: a larger velocity pointing away needs no raised acceleration",
+          "[traj][trapezoidal]")
+{
+    using traj_t = ctrlpp::trapezoidal_trajectory<double>;
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    // The shape exists exactly when the peak sqrt(a h + (v0^2 + v1^2) / 2)
+    // reaches the larger boundary velocity, a h >= (v_hi - v_lo)(v_hi + v_lo) / 2,
+    // which binds only when v_hi + v_lo > 0. Here v0 = -2 points away from the
+    // target and outweighs v1 = 1, so the ramp from v0 crosses zero and the
+    // commanded acceleration serves, although |v0^2 - v1^2| / 2 = 1.5 exceeds
+    // a h = 0.1. The duration is 2 sqrt(a h + 2.5) + 1. Eighteen roundings bound
+    // it: six in the peak, eight in the rationalized ramp from v1 (the
+    // denominator sum, the cruise quotient, the difference, the sum, the
+    // product, the divisor product, the quotient and their sum), one in the
+    // total and three in the reference expression itself.
+    constexpr double duration_rounding_ops = 18.0;
+    auto const away = traj_t::create({.q0 = 0.0, .q1 = 0.1, .v_max = 2.0, .a_max = 1.0, .v0 = -2.0, .v1 = 1.0});
+    REQUIRE(away.has_value());
+    REQUIRE(away.value().disposition().realized_acceleration == 1.0);
+    double const expected = 2.0 * std::sqrt(0.1 + 2.5) + 1.0;
+    REQUIRE(std::abs(away.value().duration() - expected) <= duration_rounding_ops * eps * expected);
+
+    // At a zero displacement the frame is the positive one. Entered moving away
+    // at 0.5 and leaving at rest, the axis reverses through zero and returns, in
+    // 2 sqrt(0.125) + 0.5; the mirror command that sheds speed toward the target
+    // over no ground stays refused, as Test 11 asserts.
+    auto const reversal = traj_t::create({.q0 = 2.0, .q1 = 2.0, .v_max = 2.0, .a_max = 1.0, .v0 = -0.5, .v1 = 0.0});
+    REQUIRE(reversal.has_value());
+    REQUIRE(reversal.value().disposition().realized_acceleration == 1.0);
+    double const reversal_expected = 2.0 * std::sqrt(0.125) + 0.5;
+    REQUIRE(std::abs(reversal.value().duration() - reversal_expected)
+            <= duration_rounding_ops * eps * reversal_expected);
+
+    // The same away-pointing structure near the top of the range, where the
+    // raise eq. (3.14) used to demand, (1e200)^2 / (2e-100), is not representable
+    // and the command was refused. Its duration is (2 v_tri + 1e200) / a with
+    // v_tri = sqrt(a h + 5e399), within 1e-200 of v1 / sqrt(2). Thirteen
+    // roundings bound it: six in the scaled hypot peak, a sum and a quotient in
+    // each ramp, one in the total and four in the reference expression.
+    constexpr double huge_rounding_ops = 13.0;
+    auto const huge = traj_t::create({.q0 = 0.0, .q1 = 1e-100, .v_max = 1e200, .a_max = 1e300, .v0 = 0.0, .v1 = -1e200});
+    REQUIRE(huge.has_value());
+    REQUIRE(huge.value().disposition().realized_acceleration == 1e300);
+    double const huge_expected = (std::sqrt(2.0) + 1.0) * (1e200 / 1e300);
+    REQUIRE(std::abs(huge.value().duration() - huge_expected) <= huge_rounding_ops * eps * huge_expected);
+}

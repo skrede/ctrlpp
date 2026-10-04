@@ -96,7 +96,8 @@ class trapezoidal_trajectory
     ///  * a negative phase duration or total duration ->
     ///    trajectory_error::unreachable_boundary_velocity
     ///  * a duration outside the representable range, or a total duration that
-    ///    underflowed to zero on a nonzero commanded displacement ->
+    ///    underflowed to zero on a nonzero commanded displacement or velocity
+    ///    change ->
     ///    trajectory_error::unrepresentable_duration
     ///
     /// The velocity limit is a PRECONDITION on the boundary velocities, not a
@@ -124,17 +125,18 @@ class trapezoidal_trajectory
     /// The last two checks are one guard against two spellings of the same
     /// failure. Both ramps of a three-phase profile run toward one cruise
     /// velocity lying at or above each boundary velocity, so the profile sweeps
-    /// at least the ground the transition between those two velocities already
-    /// sweeps. B&M's remedy for a shorter command is to raise the acceleration
-    /// to the smallest value that makes the two feasible together, eq. (3.15);
-    /// at a zero commanded displacement no acceleration is large enough, and
-    /// just above zero the value the remedy asks for is no longer
-    /// representable. Where half the difference of the squared boundary
-    /// velocities underflows or overflows, the product form of eq. (3.14) reads
-    /// as satisfied on commands that do not satisfy it, so the test runs there
-    /// on the required acceleration formed in scaled arithmetic. The realized durations are still checked directly rather
-    /// than inferred from the test, which keeps the guarantee independent of
-    /// the test's own rounding.
+    /// at least the signed ground the transition between those two velocities
+    /// already sweeps. B&M's remedy for a shorter command is to raise the
+    /// acceleration to the smallest value that makes the two feasible together,
+    /// eq. (3.15); where that ground is positive, no acceleration is large
+    /// enough at a zero commanded displacement, and just above zero the value
+    /// the remedy asks for is no longer representable. Where half the
+    /// difference of the squared boundary velocities underflows or overflows,
+    /// the product form of eq. (3.14) reads as satisfied on commands that do not
+    /// satisfy it, so the test runs there on the required acceleration formed
+    /// in scaled arithmetic. The realized durations are still checked directly
+    /// rather than inferred from the test, which keeps the guarantee independent
+    /// of the test's own rounding.
     ///
     /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
     static auto create(config const& cfg)
@@ -174,10 +176,11 @@ class trapezoidal_trajectory
             return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
         }
         // A nonzero commanded displacement is not traversed in zero time at any
-        // finite velocity, so a total duration that underflowed to zero under
-        // one describes no motion the command asked for. The predicate is the
-        // physical statement itself and carries no threshold.
-        if (cfg.q1 != cfg.q0 && !(profile.T_ > Scalar{0})) {
+        // finite velocity, nor a velocity change made at any finite
+        // acceleration, so a total duration that underflowed to zero under
+        // either describes no motion the command asked for. The predicate is
+        // the physical statement itself and carries no threshold.
+        if ((cfg.q1 != cfg.q0 || cfg.v0 != cfg.v1) && !(profile.T_ > Scalar{0})) {
             return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
         }
         return profile;
@@ -325,25 +328,33 @@ class trapezoidal_trajectory
     /// @brief Acceleration magnitude the command is realized at.
     ///
     /// The commanded value, except where the two boundary velocities are not
-    /// feasible over the commanded displacement at it: B&M eq. (3.14) is the
-    /// test and eq. (3.15) is the remedy, which raises the acceleration to the
-    /// smallest value that makes the two ramps cover the displacement exactly.
-    /// The added unit in the last place keeps the raised value on the feasible
-    /// side of the test it was derived from after rounding. The remedy divides
-    /// by the commanded displacement, so it leaves the representable range
-    /// exactly when that displacement is too small to reconcile the two
-    /// boundary velocities at any acceleration the scalar type can hold, and at
-    /// a zero displacement at any acceleration whatsoever. `create` tests that
-    /// before it builds anything.
+    /// feasible over the commanded displacement at it; eq. (3.15) then raises
+    /// the acceleration to the smallest value that makes the two ramps cover the
+    /// displacement exactly. The remedy divides by the commanded displacement,
+    /// so it leaves the representable range exactly when that displacement is
+    /// too small to reconcile the two boundary velocities at any acceleration
+    /// the scalar type can hold. `create` tests that before it builds anything.
     ///
-    /// The sign frame does not enter: the test and the remedy are both built
-    /// from the squares of the boundary velocities, which the sigma transform
-    /// leaves alone.
+    /// The test is eq. (3.14) made necessary as well as sufficient. In the
+    /// positive-displacement frame both ramps run toward one peak with
+    /// v_v^2 = a h + (v0^2 + v1^2) / 2, so the shape exists exactly when v_v
+    /// reaches the larger boundary velocity v_hi, that is when
+    /// a h >= (v_hi - v_lo)(v_hi + v_lo) / 2. The right side is positive only
+    /// when v_hi + v_lo > 0, and there it equals eq. (3.14)'s |v0^2 - v1^2| / 2.
+    /// Otherwise the velocity pointing away from the target is the larger in
+    /// magnitude, its ramp crosses zero, and any acceleration serves. A cruise
+    /// shape adds no condition: its peak is the velocity limit, which bounds both
+    /// boundary velocities. At a zero displacement the frame is the positive one,
+    /// the limit of a vanishing positive displacement.
     ///
     /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
     static auto solve_acceleration(config const& cfg) -> Scalar
     {
-        auto const abs_h = std::abs(cfg.q1 - cfg.q0);
+        auto const h = cfg.q1 - cfg.q0;
+        if (!(positive_frame_sign(h) * (cfg.v0 + cfg.v1) > Scalar{0})) {
+            return cfg.a_max;
+        }
+        auto const abs_h = std::abs(h);
         auto const v_diff_sq = half_abs_difference_of_squares(cfg.v0, cfg.v1);
         if (!std::isnormal(v_diff_sq) && std::abs(cfg.v0) != std::abs(cfg.v1)) {
             return solve_scaled_acceleration(cfg, abs_h);
@@ -381,6 +392,13 @@ class trapezoidal_trajectory
             return cfg.a_max;
         }
         return std::nextafter(required, std::numeric_limits<Scalar>::infinity());
+    }
+
+    /// @brief Sign that maps the commanded displacement onto a nonnegative one;
+    /// a zero displacement takes the positive frame.
+    static auto positive_frame_sign(Scalar h) -> Scalar
+    {
+        return h >= Scalar{0} ? Scalar{1} : Scalar{-1};
     }
 
     static auto half_abs_difference_of_squares(Scalar lhs, Scalar rhs) -> Scalar
@@ -486,7 +504,7 @@ class trapezoidal_trajectory
         , disposition_{cfg.a_max, a_}
     {
         auto const h = cfg.q1 - cfg.q0;
-        sigma_ = (h >= Scalar{0}) ? Scalar{1} : Scalar{-1};
+        sigma_ = positive_frame_sign(h);
         auto const abs_h = std::abs(h);
 
         // Transform velocities into the positive-displacement frame

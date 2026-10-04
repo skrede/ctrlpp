@@ -41,7 +41,7 @@ if (!profile) {
 
 Construction solves phase durations from the kinematic constraints. Negative displacement is handled via sigma transformation. When `v_max` cannot be reached, the profile degenerates to a triangular shape with `v_peak = sqrt((2*a*h + v0^2 + v1^2) / 2)`; that is one of the shapes this family covers and is reported by `is_triangular()`, not a rejection.
 
-When the two boundary velocities are not feasible over the commanded displacement at the commanded acceleration, the acceleration is raised to the smallest value that makes them feasible together (B&M eq. (3.15)). That raise is a division by the commanded displacement, so it has no representable answer once the displacement is small enough, and none at all when it is zero.
+When the two boundary velocities are not feasible over the commanded displacement at the commanded acceleration (see Realizability below for the exact test), the acceleration is raised to the smallest value that makes them feasible together (B&M eq. (3.15)). That raise is a division by the commanded displacement, so it has no representable answer once the displacement is small enough, and none at all when it is zero.
 
 ## The acceleration raise is a disposition, not a rejection
 
@@ -83,7 +83,7 @@ Checked in order:
 | `abs(v0) > v_max` or `abs(v1) > v_max` | `trajectory_error::boundary_velocity_exceeds_limit` |
 | a displacement the two boundary velocities cannot be reconciled with at a representable acceleration | `trajectory_error::unreachable_boundary_velocity` |
 | a negative phase duration or total duration | `trajectory_error::unreachable_boundary_velocity` |
-| a duration outside the representable range, or a total that underflowed to zero on a nonzero displacement | `trajectory_error::unrepresentable_duration` |
+| a duration outside the representable range, or a total that underflowed to zero on a nonzero displacement or velocity change | `trajectory_error::unrepresentable_duration` |
 
 ### The velocity limit is a precondition
 
@@ -91,9 +91,11 @@ Checked in order:
 
 ### Realizability
 
-Both ramps of a three-phase profile run toward one cruise velocity lying at or above each boundary velocity, so the profile sweeps at least the ground the transition between those two velocities already sweeps. A command below that is not realizable within this shape at any acceleration the scalar type can hold; the clearest instance is a zero commanded displacement with two boundary speeds that differ, which asks the axis to change speed while covering no ground.
+Both ramps of a three-phase profile run toward one cruise velocity lying at or above each boundary velocity, so the profile sweeps at least the signed ground the transition between those two velocities already sweeps. In the positive-displacement frame, with `v_hi` and `v_lo` the larger and smaller boundary velocity, that ground is `(v_hi - v_lo)(v_hi + v_lo) / (2a)`, and the shape exists exactly when the triangular peak reaches `v_hi`, that is when `a h` is at least `(v_hi - v_lo)(v_hi + v_lo) / 2`. This is B&M eq. (3.14) made necessary as well as sufficient: the right side is positive only when `v_hi + v_lo > 0`, and there it equals the equation's `|v0^2 - v1^2| / 2`. When `v_hi + v_lo <= 0`, the boundary velocity pointing away from the target is the larger in magnitude, the ramp from it crosses zero, and the commanded acceleration serves however short the displacement is; no raise is applied. A cruise shape adds no condition, since its peak is the velocity limit, which bounds both boundary velocities.
 
-Two zero-displacement commands are realizable and are not rejected: equal boundary velocities, where there is no speed change to cover, and opposed boundary velocities of equal magnitude, where the ramp between them sweeps exactly zero ground.
+A command short of a positive ground is not realizable within this shape at any acceleration the scalar type can hold. The clearest instance is a zero commanded displacement whose boundary velocities sum to a positive value, which asks the axis to shed speed it carries toward the target while covering no ground.
+
+Three kinds of zero-displacement command are realizable and are not rejected: equal boundary velocities, where there is no speed change to cover; opposed boundary velocities of equal magnitude, where the ramp between them sweeps exactly zero ground; and boundary velocities summing to a negative value, where the axis reverses through zero and returns. A zero displacement takes the positive frame, so its verdict is the limit of a vanishing positive displacement: `(v0, v1) = (-0.5, 0)` is realized, and its mirror `(0.5, 0)` is not.
 
 The feasibility test is not trusted where its own arithmetic underflows. Below the square root of the smallest normal value the boundary velocities square into the subnormal range, and below the square root of the smallest subnormal they square to exactly zero, so the product form of eq. (3.14) can read as satisfied on a command that does not satisfy it. Above the square root of the largest finite value the mirror failure occurs: both sides of the product form overflow and the test compares infinity with infinity. Wherever half the difference of the squares is subnormal or not finite, the acceleration the command requires is formed instead as one scaled quotient, with fractions and exponents carried apart, and compared with the commanded one, so such a command is raised, or refused when the raise is not representable or the displacement is zero, exactly as it would be at any other scale.
 
