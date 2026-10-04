@@ -130,13 +130,12 @@ class trapezoidal_trajectory
     /// at a zero commanded displacement no acceleration is large enough, and
     /// just above zero the value the remedy asks for is no longer
     /// representable. Below the square root of the smallest normal value the
-    /// remedy cannot even see the case: a boundary velocity squares to zero
-    /// there, so eq. (3.14)'s feasibility test reads as satisfied, the
-    /// triangular peak underflows below the boundary velocity it is
-    /// analytically bounded by, and the ramp duration formed from the
-    /// difference comes out negative. The realized durations are therefore
-    /// checked directly rather than inferred from the test that was supposed to
-    /// guarantee them.
+    /// boundary velocities square into the subnormal range, where the product
+    /// form of eq. (3.14) reads as satisfied on commands that do not satisfy it,
+    /// so the test runs there on the required acceleration formed in scaled
+    /// arithmetic. The realized durations are still checked directly rather
+    /// than inferred from the test, which keeps the guarantee independent of
+    /// the test's own rounding.
     ///
     /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
     static auto create(config const& cfg)
@@ -347,10 +346,34 @@ class trapezoidal_trajectory
     {
         auto const abs_h = std::abs(cfg.q1 - cfg.q0);
         auto const v_diff_sq = half_abs_difference_of_squares(cfg.v0, cfg.v1);
+        if (v_diff_sq < std::numeric_limits<Scalar>::min() && std::abs(cfg.v0) != std::abs(cfg.v1)) {
+            return solve_subnormal_acceleration(cfg, abs_h);
+        }
         if (cfg.a_max * abs_h >= v_diff_sq) {
             return cfg.a_max;
         }
         return v_diff_sq / abs_h + std::numeric_limits<Scalar>::epsilon();
+    }
+
+    /// @brief eq. (3.14)-(3.15) where the half difference of squares has fallen
+    /// below the smallest normal value.
+    ///
+    /// The product form of the test underflows there and reads as satisfied on
+    /// commands that do not satisfy it, so the acceleration the command requires
+    /// is formed as one scaled quotient and compared instead; neither side leaves
+    /// the range before the comparison. A raise moves one unit in the last place
+    /// above the requirement, onto the feasible side of its rounding.
+    static auto solve_subnormal_acceleration(config const& cfg, Scalar abs_h) -> Scalar
+    {
+        if (!(abs_h > Scalar{0})) {
+            return std::numeric_limits<Scalar>::infinity();
+        }
+        auto const required = half_ratio_of_products(
+            std::abs(cfg.v0 - cfg.v1), std::abs(cfg.v0 + cfg.v1), abs_h, Scalar{1});
+        if (cfg.a_max >= required) {
+            return cfg.a_max;
+        }
+        return std::nextafter(required, std::numeric_limits<Scalar>::infinity());
     }
 
     static auto half_abs_difference_of_squares(Scalar lhs, Scalar rhs) -> Scalar
@@ -364,15 +387,80 @@ class trapezoidal_trajectory
         if (!std::isfinite(difference) || !std::isfinite(sum)) {
             return std::numeric_limits<Scalar>::infinity();
         }
+        return half_ratio_of_products(difference, sum, Scalar{1}, Scalar{1});
+    }
 
-        int difference_exponent{};
-        int sum_exponent{};
-        Scalar const difference_fraction =
-            std::frexp(difference, &difference_exponent);
-        Scalar const sum_fraction = std::frexp(sum, &sum_exponent);
+    /// @brief x y / (2 z w) with each operand split into fraction and exponent,
+    /// so no intermediate product leaves the range and only the result rounds
+    /// into it. z and w are positive and finite.
+    static auto half_ratio_of_products(Scalar x, Scalar y, Scalar z, Scalar w) -> Scalar
+    {
+        int x_exponent{};
+        int y_exponent{};
+        int z_exponent{};
+        int w_exponent{};
+        Scalar const x_fraction = std::frexp(x, &x_exponent);
+        Scalar const y_fraction = std::frexp(y, &y_exponent);
+        Scalar const z_fraction = std::frexp(z, &z_exponent);
+        Scalar const w_fraction = std::frexp(w, &w_exponent);
         return std::ldexp(
-            Scalar{0.5} * difference_fraction * sum_fraction,
-            difference_exponent + sum_exponent);
+            Scalar{0.5} * x_fraction * y_fraction / (z_fraction * w_fraction),
+            x_exponent + y_exponent - z_exponent - w_exponent);
+    }
+
+    /// @brief Peak of the triangular shape, sqrt(a h + (v0^2 + v1^2) / 2).
+    ///
+    /// The nominal expression keeps its own rounding wherever its radicand is a
+    /// finite normal number. Outside that the scaled hypot form takes over: past
+    /// the top of the range the radicand overflows, and below the smallest normal
+    /// value it has lost the relative precision the ramp durations divide by.
+    static auto triangular_peak(Scalar abs_h, Scalar v0, Scalar v1, Scalar a) -> Scalar
+    {
+        auto const radicand = (Scalar{2} * a * abs_h + v0 * v0 + v1 * v1) / Scalar{2};
+        if (std::isfinite(radicand) && radicand >= std::numeric_limits<Scalar>::min()) {
+            return std::sqrt(radicand);
+        }
+        auto const root_two = std::sqrt(Scalar{2});
+        return std::hypot(
+            std::sqrt(a) * std::sqrt(abs_h), std::abs(v0) / root_two, std::abs(v1) / root_two);
+    }
+
+    /// @brief Duration of the triangular ramp between v_from and the peak.
+    ///
+    /// The peak is a rounded result, so (v_peak - v_from) / a cancels
+    /// catastrophically when the two lie close. For a positive v_from it is
+    /// rationalized to (h + (v_to^2 - v_from^2) / (2 a)) / (v_peak + v_from),
+    /// whose numerator is the peak's own definition less v_from^2 and carries no
+    /// rounded peak; otherwise the difference is already a sum. Operands above
+    /// half the largest finite value are halved first, exactly, so the sums stay
+    /// finite.
+    ///
+    /// @cite goldberg1991 -- Goldberg, "What Every Computer Scientist Should Know
+    /// About Floating-Point Arithmetic", 1991, Sec. 1.4; higham2002 -- Higham,
+    /// "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2002, Sec. 1.8
+    static auto triangular_ramp_duration(
+        Scalar abs_h, Scalar v_peak, Scalar v_from, Scalar v_to, Scalar a) -> Scalar
+    {
+        if (!(v_from > Scalar{0})) {
+            return (v_peak - v_from) / a;
+        }
+        auto const largest = std::max({v_peak, v_from, std::abs(v_to)});
+        auto const s = largest > std::numeric_limits<Scalar>::max() / Scalar{2} ? Scalar{0.5}
+                                                                                 : Scalar{1};
+        auto const peak_sum = s * v_peak + s * v_from;
+        auto const cruise_term = abs_h / peak_sum * s;
+        auto const swept_term =
+            half_ratio_of_products(s * v_to - s * v_from, s * v_to + s * v_from, a, s * peak_sum);
+        auto const duration = cruise_term + swept_term;
+        // On the boundary eq. (3.15) raises the acceleration onto, the two terms
+        // cancel to a ramp that is exactly zero, so a negative residual within
+        // their rounding is that zero, not an unreachable command. Four roundings
+        // separate them: the cruise quotient, the swept divisor and quotient, and
+        // the raise's quotient. The difference of squares is the rounded value
+        // the raise divided, and the sum is exact by Sterbenz's lemma.
+        constexpr Scalar rounding_ops{4};
+        auto const resolution = rounding_ops * std::numeric_limits<Scalar>::epsilon() * cruise_term;
+        return duration < Scalar{0} && -duration <= resolution ? Scalar{0} : duration;
     }
 
     /// @brief Solve the profile from a configuration `create` has checked.
@@ -400,50 +488,19 @@ class trapezoidal_trajectory
         auto const a = a_;
         auto const v = cfg.v_max;
 
-        // Compute cruise velocity and phase durations
-        // @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a)-(3.13c), p.71
-        // T_a = (v_v - v0) / a, T_d = (v_v - v1) / a; the cruise duration is the
-        // residual displacement (after the accel and decel distances) divided by
-        // the cruise velocity, which is exact for nonzero boundary velocities.
-
-        // Check triangular degenerate case
-        // When v_max cannot be reached: v_v = sqrt((2*a*h + v0^2 + v1^2) / 2)
-        // Preserve the nominal expression's rounding whenever its intermediate
-        // is representable. Only its overflow case needs the scaled hypot form.
-        auto const direct_v_tri_sq =
-            (Scalar{2} * a * abs_h + sv0 * sv0 + sv1 * sv1) / Scalar{2};
-        auto const v_tri = std::isfinite(direct_v_tri_sq)
-                               ? std::sqrt(direct_v_tri_sq)
-                               : std::hypot(
-                                     std::sqrt(a) * std::sqrt(abs_h),
-                                     std::abs(sv0)
-                                         / std::sqrt(Scalar{2}),
-                                     std::abs(sv1)
-                                         / std::sqrt(Scalar{2}));
-
-        if (sv0 == sv1 && sv0 > Scalar{0} && v_tri == sv0) {
-            v_v_ = sv0;
-            triangular_ = false;
-        } else if (v_tri < v) {
-            // Triangular: cruise velocity limited by displacement
-            v_v_ = v_tri;
-            triangular_ = true;
-        } else {
-            v_v_ = v;
-            triangular_ = false;
-        }
-
-        // Acceleration and deceleration rates (symmetric a for now)
+        auto const v_tri = triangular_peak(abs_h, sv0, sv1, a);
+        triangular_ = v_tri < v;
+        v_v_ = triangular_ ? v_tri : v;
         a_a_ = a;
         a_d_ = a;
 
-        // Phase durations
-        T_a_ = (v_v_ - sv0) / a_a_;
-        T_d_ = (v_v_ - sv1) / a_d_;
-
         if (triangular_) {
+            T_a_ = triangular_ramp_duration(abs_h, v_tri, sv0, sv1, a);
+            T_d_ = triangular_ramp_duration(abs_h, v_tri, sv1, sv0, a);
             T_v_ = Scalar{0};
         } else {
+            T_a_ = (v_v_ - sv0) / a_a_;
+            T_d_ = (v_v_ - sv1) / a_d_;
             // Cruise duration from the residual displacement: the accel and decel
             // phases cover d_a = v0*T_a + a_a*T_a^2/2 and d_d = v1*T_d + a_d*T_d^2/2,
             // so the cruise phase covers (abs_h - d_a - d_d) at v_v. This keeps the

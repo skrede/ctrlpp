@@ -1275,7 +1275,7 @@ TEST_CASE("Trapezoidal trajectory rescale_to extends motion",
 TEST_CASE("Trapezoidal trajectory preserves representable large-velocity motion",
           "[trapezoidal][hardening][coverage]")
 {
-    SECTION("equal boundary velocities produce a constant-velocity segment")
+    SECTION("equal boundary velocities produce a shallow triangle")
     {
         ctrlpp::trapezoidal_trajectory<double>::config cfg{
             .q0 = 0.0,
@@ -1286,13 +1286,26 @@ TEST_CASE("Trapezoidal trajectory preserves representable large-velocity motion"
             .v1 = 1e200,
         };
 
+        // The peak sqrt(v^2 + v) lies half a unit above v, so the command is a
+        // triangle whose two ramps each last v / (sqrt(v^2 + v) + v), one half
+        // to within 1 / (8 v). The peak carries six roundings (two in each
+        // scaled hypot argument, four in the scaled sum-of-squares hypot); half
+        // survive into the peak-plus-v divisor, which adds one, and the quotient
+        // adds one more, so five bound each ramp and a sixth the total.
+        constexpr double eps = std::numeric_limits<double>::epsilon();
+        constexpr double peak_rounding_ops = 6.0;
+        constexpr double ramp_rounding_ops = 5.0;
+        constexpr double duration_rounding_ops = 6.0;
+
         auto const built = ctrlpp::trapezoidal_trajectory<double>::create(cfg);
         REQUIRE(built.has_value());
-        CHECK(built->duration() == 1.0);
-        CHECK(built->peak_velocity() == cfg.v0);
-        CHECK(built->phase_durations()[0] == 0.0);
-        CHECK(built->phase_durations()[1] == 1.0);
-        CHECK(built->phase_durations()[2] == 0.0);
+        auto const phases = built->phase_durations();
+        CHECK(built->is_triangular());
+        CHECK(std::abs(phases[0] - 0.5) <= ramp_rounding_ops * eps * 0.5);
+        CHECK(phases[1] == 0.0);
+        CHECK(std::abs(phases[2] - 0.5) <= ramp_rounding_ops * eps * 0.5);
+        CHECK(std::abs(built->duration() - 1.0) <= duration_rounding_ops * eps);
+        CHECK(std::abs(built->peak_velocity() - cfg.v0) <= peak_rounding_ops * eps * cfg.v0);
         require_swept_displacement(*built, cfg.q1 - cfg.q0, cfg.a_max);
     }
 

@@ -3,8 +3,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <array>
 #include <cmath>
 #include <limits>
+#include <algorithm>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
@@ -373,4 +375,87 @@ TEST_CASE("Trapezoidal: a duration outside the representable range is rejected",
     auto const served = traj_t::create({.q0 = 0.0, .q1 = 1e308, .v_max = 1e6, .a_max = 1.0});
     REQUIRE(served.has_value());
     REQUIRE(std::isfinite(served.value().duration()));
+}
+
+// -- Test 17: a triangular peak that rounds onto its boundary velocity -------
+TEST_CASE("Trapezoidal: a large-velocity triangle keeps its duration on consecutive doubles",
+          "[traj][trapezoidal]")
+{
+    using traj_t = ctrlpp::trapezoidal_trajectory<double>;
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    // q1 = v0 = v1 = v, a = 1, v_max = 2 v: the peak is sqrt(v^2 + v), within
+    // half a unit of v, so each ramp lasts v / (sqrt(v^2 + v) + v) and the
+    // duration is 2 / (1 + sqrt(1 + 1 / v)), which is 1 to within 1 / (4 v).
+    // Above about 1e154 the peak comes from hypot and rounds a unit or so either
+    // side of v, which used to decide between a refusal and a duration near
+    // ulp(v). Six roundings bound the duration: the peak carries six (two in
+    // each scaled argument, four in a scaled sum-of-squares hypot), half of
+    // which survive into the peak-plus-v sum, which adds one, as does the
+    // quotient and the final sum of the two ramps.
+    constexpr double duration_rounding_ops = 6.0;
+    constexpr int velocities_per_base = 2000;
+
+    for (double const base : {1e160, 1e180, 1e200}) {
+        int rejected = 0;
+        int off_bound = 0;
+        double first_offender = 0.0;
+        double v = base;
+        for (int i = 0; i < velocities_per_base; ++i, v = std::nextafter(v, 2.0 * v)) {
+            auto const profile =
+                traj_t::create({.q0 = 0.0, .q1 = v, .v_max = 2.0 * v, .a_max = 1.0, .v0 = v, .v1 = v});
+            bool const accepted = profile.has_value();
+            bool const on_bound = accepted
+                                  && std::abs(profile.value().duration() - 1.0)
+                                         <= duration_rounding_ops * eps;
+            rejected += accepted ? 0 : 1;
+            off_bound += (accepted && !on_bound) ? 1 : 0;
+            if (!on_bound && first_offender == 0.0) {
+                first_offender = v;
+            }
+        }
+        CAPTURE(base, first_offender);
+        REQUIRE(rejected == 0);
+        REQUIRE(off_bound == 0);
+    }
+}
+
+// -- Test 18: an infeasible command whose difference of squares underflows ----
+TEST_CASE("Trapezoidal: a subnormal difference of squares still raises the acceleration",
+          "[traj][trapezoidal]")
+{
+    using traj_t = ctrlpp::trapezoidal_trajectory<double>;
+    constexpr double eps = std::numeric_limits<double>::epsilon();
+
+    // Boundary velocities a unit in the last place apart below the square root
+    // of the smallest normal value: half the difference of their squares is far
+    // below it, so the product form of eq. (3.14) reads 0 >= 0 and the command
+    // used to be taken at an acceleration that cannot reconcile the two. Each
+    // command must instead be raised, as at any other scale, and is then a single
+    // constant-acceleration ramp of duration 2 h / (v0 + v1). Twelve roundings
+    // bound it: three in the raise (the scaled product, its quotient and the
+    // one-unit nudge), one in the ramp quotient, seven in the cruise residual
+    // (four in the ramp distance, two subtractions and a quotient) and one in the
+    // final sum.
+    constexpr double duration_rounding_ops = 12.0;
+    struct command
+    {
+        double h, v0, v1, a_max;
+    };
+    constexpr std::array<command, 3> commands{{
+        {0x1.2eab4f0d30693p-401, 0x1.81fbf2bd3a103p-560, 0x1.81fbf2bd3a104p-560, 0x1.fe947b000311fp-843},
+        {0x1.116219ab16035p-733, 0x1.0e9fc6c702afcp-517, 0x1.0e9fc6c702afbp-517, 0x1.ae8826c6dcbb1p-609},
+        {0x0.00000000c3d45p-1022, 0x1.86e9f91dc1282p-558, 0x1.86e9f91dc1283p-558, 0x1.8d78a808a0e02p-162},
+    }};
+
+    for (auto const& c : commands) {
+        double const v_max = std::max(c.v0, c.v1);
+        auto const profile =
+            traj_t::create({.q0 = 0.0, .q1 = c.h, .v_max = v_max, .a_max = c.a_max, .v0 = c.v0, .v1 = c.v1});
+        CAPTURE(c.h, c.v0, c.v1, c.a_max);
+        REQUIRE(profile.has_value());
+        REQUIRE(profile.value().disposition().realized_acceleration > c.a_max);
+        double const expected = 2.0 * c.h / (c.v0 + c.v1);
+        REQUIRE(std::abs(profile.value().duration() - expected) <= duration_rounding_ops * eps * expected);
+    }
 }
