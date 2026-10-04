@@ -8,6 +8,11 @@
 # Writes the reference CSV, the candidate CSV, the plots and the report into
 # cases/<case_name>/analysis/, and exits with the comparison's own status.
 #
+# A case's optional tolerance.cfg is sourced as shell. It may set the case-wide
+# pair atol and rtol, and per-column overrides atol_<column> and rtol_<column>,
+# where <column> is a CSV header; a column without an override keeps the
+# case-wide pair.
+#
 # Environment:
 #   CTRLPP_VALIDATE_OCTAVE  interpreter to invoke (default: octave)
 #
@@ -50,9 +55,22 @@ CANDIDATE_CSV="${ANALYSIS_DIR}/${CASE_NAME}_cpp.csv"
 
 atol="1e-10"
 rtol="1e-8"
-if [ -f "${CASE_DIR}/tolerance.cfg" ]; then
+overrides=()
+TOLERANCE_CFG="${CASE_DIR}/tolerance.cfg"
+if [ -f "$TOLERANCE_CFG" ]; then
     # shellcheck source=/dev/null
-    source "${CASE_DIR}/tolerance.cfg"
+    source "$TOLERANCE_CFG"
+    # Read in an empty environment, so an atol_* or rtol_* the caller happens to
+    # export cannot pass for one the case set.
+    while IFS= read -r override; do
+        overrides+=("$override")
+    done < <(env -i "$BASH" --norc --noprofile -c '
+        source "$1"
+        for name in $(compgen -v); do
+            case "$name" in
+                atol_?*|rtol_?*) printf "%s=%s\n" "$name" "${!name}" ;;
+            esac
+        done' run_case "$TOLERANCE_CFG")
 fi
 
 if ! "$OCTAVE" --no-gui "$REFERENCE_SCRIPT" > "$REFERENCE_CSV"; then
@@ -66,4 +84,4 @@ if ! "$CASE_BINARY" > "$CANDIDATE_CSV"; then
 fi
 
 "$OCTAVE" --no-gui "${SCRIPT_DIR}/validate_compare.m" \
-    "$REFERENCE_CSV" "$CANDIDATE_CSV" "$atol" "$rtol" "$ANALYSIS_DIR"
+    "$REFERENCE_CSV" "$CANDIDATE_CSV" "$atol" "$rtol" "$ANALYSIS_DIR" ${overrides[@]+"${overrides[@]}"}

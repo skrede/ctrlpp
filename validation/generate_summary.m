@@ -168,7 +168,7 @@ function generate_summary()
     fprintf(fid, '- **Date**: %s\n', datestr(now, 'yyyy-mm-dd HH:MM:SS'));
     fprintf(fid, '- **Reference**: GNU Octave %s, Control %s, Signal %s\n', version(), pkg_version('control'), pkg_version('signal'));
     fprintf(fid, '- **Cases**: %d tested, %d passed, %d failed\n', n_cases, n_pass, n_fail);
-    fprintf(fid, '- **Default tolerances**: atol=1e-10, rtol=1e-8\n\n');
+    fprintf(fid, '- **Default tolerances**: atol=1e-10, rtol=1e-8; a case''s tolerance.cfg may override them, case-wide or per column\n\n');
 
     fprintf(fid, '## Overview\n\n');
     fprintf(fid, '| Case | Module | Type | Signals | Rows | Worst digits | Worst signal | Max abs err | Verdict |\n');

@@ -1,10 +1,16 @@
 % validate_compare.m -- Universal CSV signal comparator for ctrlpp validation.
 %
 % Usage: octave --no-gui validate_compare.m <ref.csv> <cand.csv> [atol] [rtol] [output_dir]
+%                                           [atol_<column>=value | rtol_<column>=value ...]
 %
 % Compares two CSV files column-by-column. Both must have identical column
 % headers (first row). Comparison uses combined absolute + relative tolerance:
 %   pass iff |ref - cand| <= atol + rtol * |ref|   for every element.
+%
+% Each trailing argument overrides one of the pair for the column whose header
+% it names; a column it does not name keeps the case-wide atol and rtol. An
+% override naming no column, or carrying no finite non-negative value, is an
+% error rather than a silently unused bound.
 %
 % When output_dir is given, writes:
 %   - Per-signal overlay + error plots (PNG)
@@ -19,7 +25,7 @@ function validate_compare()
     args = argv();
 
     if numel(args) < 2
-        fprintf(2, 'usage: validate_compare.m <ref.csv> <cand.csv> [atol] [rtol] [output_dir]\n');
+        fprintf(2, 'usage: validate_compare.m <ref.csv> <cand.csv> [atol] [rtol] [output_dir] [atol_<column>=v | rtol_<column>=v ...]\n');
         exit(2);
     end
 
@@ -32,6 +38,7 @@ function validate_compare()
     if numel(args) >= 3, atol = str2double(args{3}); end
     if numel(args) >= 4, rtol = str2double(args{4}); end
     if numel(args) >= 5, output_dir = args{5}; end
+    overrides = args(6:end);
 
     [ref_hdr,  ref_data]  = load_csv(ref_file);
     [cand_hdr, cand_data] = load_csv(cand_file);
@@ -52,6 +59,8 @@ function validate_compare()
         fprintf(2, 'FAIL: row count mismatch (%d vs %d)\n', size(ref_data, 1), size(cand_data, 1));
         exit(1);
     end
+
+    [col_atol, col_rtol, per_column] = column_tolerances(overrides, ref_hdr, atol, rtol);
 
     n_rows = size(ref_data, 1);
     n_cols = numel(ref_hdr);
@@ -76,7 +85,7 @@ function validate_compare()
         r = ref_data(:, col);
         c = cand_data(:, col);
         err = abs(r - c);
-        tol = atol + rtol * abs(r);
+        tol = col_atol(col) + col_rtol(col) * abs(r);
         violations = err > tol;
 
         s.name = ref_hdr{col};
@@ -142,13 +151,18 @@ function validate_compare()
 
         s.pass = ~any(violations);
 
+        bound = '';
+        if per_column(col)
+            bound = sprintf('  per-column atol=%.3e rtol=%.3e', col_atol(col), col_rtol(col));
+        end
+
         if any(violations)
             worst_idx = find(err == max(err(violations)), 1);
-            fprintf('FAIL  %-20s  max_err=%.3e  at row %d  (ref=%.6e  cand=%.6e  tol=%.3e)\n', ...
-                    ref_hdr{col}, max(err(violations)), worst_idx, r(worst_idx), c(worst_idx), tol(worst_idx));
+            fprintf('FAIL  %-20s  max_err=%.3e  at row %d  (ref=%.6e  cand=%.6e  tol=%.3e)%s\n', ...
+                    ref_hdr{col}, max(err(violations)), worst_idx, r(worst_idx), c(worst_idx), tol(worst_idx), bound);
             all_pass = false;
         else
-            fprintf('PASS  %-20s  max_err=%.3e  digits=%.1f\n', ref_hdr{col}, max(err), s.digits);
+            fprintf('PASS  %-20s  max_err=%.3e  digits=%.1f%s\n', ref_hdr{col}, max(err), s.digits, bound);
         end
 
         col_stats(col).s = s;
@@ -162,13 +176,45 @@ function validate_compare()
             generate_algebraic_plot(ref_hdr, ref_data, cand_data, output_dir);
         end
 
-        write_report(ref_hdr, col_stats, all_pass, atol, rtol, n_rows, is_timeseries, time_col, output_dir);
+        tolerances = struct('atol', atol, 'rtol', rtol, 'col_atol', col_atol, 'col_rtol', col_rtol, 'per_column', per_column);
+        write_report(ref_hdr, col_stats, all_pass, tolerances, n_rows, is_timeseries, time_col, output_dir);
     end
 
     if all_pass
         exit(0);
     else
         exit(1);
+    end
+end
+
+function [col_atol, col_rtol, per_column] = column_tolerances(overrides, headers, atol, rtol)
+    n_cols = numel(headers);
+    col_atol = repmat(atol, 1, n_cols);
+    col_rtol = repmat(rtol, 1, n_cols);
+    per_column = false(1, n_cols);
+
+    for i = 1:numel(overrides)
+        tok = regexp(overrides{i}, '^(atol|rtol)_([^=]+)=(.+)$', 'tokens', 'once');
+        if isempty(tok)
+            fprintf(2, 'ERROR: malformed tolerance override "%s"\n', overrides{i});
+            exit(2);
+        end
+        col = find(strcmp(headers, tok{2}));
+        value = str2double(tok{3});
+        if isempty(col)
+            fprintf(2, 'ERROR: tolerance override "%s" names no column\n', overrides{i});
+            exit(2);
+        end
+        if ~isfinite(value) || value < 0
+            fprintf(2, 'ERROR: tolerance override "%s" is not a finite non-negative number\n', overrides{i});
+            exit(2);
+        end
+        if strcmp(tok{1}, 'atol')
+            col_atol(col) = value;
+        else
+            col_rtol(col) = value;
+        end
+        per_column(col) = true;
     end
 end
 
@@ -247,7 +293,7 @@ function generate_algebraic_plot(headers, ref_data, cand_data, output_dir)
     close(f);
 end
 
-function write_report(headers, col_stats, all_pass, atol, rtol, n_rows, is_timeseries, time_col, output_dir)
+function write_report(headers, col_stats, all_pass, tolerances, n_rows, is_timeseries, time_col, output_dir)
     report_path = fullfile(output_dir, 'report.md');
     fid = fopen(report_path, 'w');
 
@@ -265,7 +311,11 @@ function write_report(headers, col_stats, all_pass, atol, rtol, n_rows, is_times
     fprintf(fid, '- **Date**: %s\n', datestr(now, 'yyyy-mm-dd HH:MM:SS'));
     fprintf(fid, '- **Verdict**: **%s**\n', verdict);
     fprintf(fid, '- **Rows**: %d\n', n_rows);
-    fprintf(fid, '- **Tolerances**: atol=%.0e, rtol=%.0e\n\n', atol, rtol);
+    if any(tolerances.per_column)
+        fprintf(fid, '- **Tolerances**: atol=%.0e, rtol=%.0e case-wide; per-signal overrides below\n\n', tolerances.atol, tolerances.rtol);
+    else
+        fprintf(fid, '- **Tolerances**: atol=%.0e, rtol=%.0e\n\n', tolerances.atol, tolerances.rtol);
+    end
 
     fprintf(fid, '## Per-signal statistics\n\n');
     fprintf(fid, '| Signal | Max abs | Mean abs | Std err | Max rel | Mean rel | Digits | Rel L2 |');
@@ -309,6 +359,10 @@ function write_report(headers, col_stats, all_pass, atol, rtol, n_rows, is_times
         fprintf(fid, ' %s |\n', result_str);
     end
 
+    if any(tolerances.per_column)
+        write_tolerance_table(fid, headers, tolerances);
+    end
+
     fprintf(fid, '\n## Plots\n\n');
 
     if is_timeseries
@@ -324,6 +378,20 @@ function write_report(headers, col_stats, all_pass, atol, rtol, n_rows, is_times
     end
 
     fclose(fid);
+end
+
+function write_tolerance_table(fid, headers, tolerances)
+    fprintf(fid, '\n## Per-signal tolerances\n\n');
+    fprintf(fid, '| Signal | atol | rtol | Bound |\n');
+    fprintf(fid, '|--------|------|------|-------|\n');
+    for col = 1:numel(headers)
+        if tolerances.per_column(col)
+            origin = 'per-column';
+        else
+            origin = 'case-wide';
+        end
+        fprintf(fid, '| %s | %.3e | %.3e | %s |\n', headers{col}, tolerances.col_atol(col), tolerances.col_rtol(col), origin);
+    end
 end
 
 function [headers, data] = load_csv(filename)

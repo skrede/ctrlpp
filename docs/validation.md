@@ -23,6 +23,25 @@ column-by-column.  The comparison uses a combined tolerance criterion: pass iff
 `|ref - cand| <= atol + rtol * |ref|` for every element (default
 `atol = 1e-10`, `rtol = 1e-8`).
 
+A case may override that pair with a `tolerance.cfg` in its directory under
+`validation/cases/`, sourced as shell.  `atol` and `rtol` replace the case-wide
+pair, and `atol_<column>` and `rtol_<column>` replace it for the single column
+whose CSV header is `<column>`; every column without an override keeps the
+case-wide pair.  An override naming no column, or holding anything but a finite
+non-negative number, stops the comparison with an error.  The comparator prints
+each overridden column's bound beside its PASS or FAIL line, and the case's
+report lists the bound that judged every column.
+
+One case ships a `tolerance.cfg` today: `lqr_closed_loop_settling`.  Its
+per-column values are derived, not fitted.  The two gain columns take ctrlpp's
+counted Riccati gain bound, 4.27e-11 per entry.  The final-state columns take
+the closed-loop trajectory bound evaluated at double precision over the case's
+201 steps: 1.54e-13 per state entry, and 2.18e-13 on the final norm.  Every
+column also carries the rounding of printing both arms at 16 significant digits
+and reading them back.  The bound charges ctrlpp's arm only; the operation count
+of Octave's `dare()` is not counted, so it is not a bound on the pair.
+`examples/embedded/shared/generate_golden.cpp` prints the values.
+
 The reference scripts collectively require four Octave packages: **control**,
 **signal**, **splines**, and **quaternion**.  `control` is loaded by 15 cases,
 `signal` by 2, and `splines` and `quaternion` by 1 each; one case

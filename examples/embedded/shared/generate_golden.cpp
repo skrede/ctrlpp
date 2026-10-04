@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <cstdlib>
 #include <cstddef>
 
@@ -40,6 +41,28 @@ void print_verdict(const char *leg, const ctrlpp::golden_verdict &verdict)
     std::printf("%s verdict = %s\n", leg, verdict.pass ? "PASS" : "FAIL");
 }
 
+// The bounds validation/cases/lqr_closed_loop_settling/tolerance.cfg carries,
+// for ctrlpp's arm only; Octave's arm is not counted. Each gain entry is within
+// the counted gain bound of the exact design, so the gain row departs by at most
+// nx times it, and the run is bounded against the exact loop, whose norms are
+// evaluated at the host's gain. Every column also carries both arms' printing at
+// kPrintedDecimals digits after the point and the comparator's reading back.
+void print_cross_validation_tolerances()
+{
+    constexpr int kPrintedDecimals = 15;
+    const double eps               = std::numeric_limits<double>::epsilon();
+    const double gain_norm         = std::abs(ctrlpp::kHostK0) + std::abs(ctrlpp::kHostK1);
+    const double gain              = ctrlpp::gain_departure_bound<double>(ctrlpp::kGoldenNx, ctrlpp::kGoldenNu, gain_norm);
+    ctrlpp::golden_bound bound     = ctrlpp::make_golden_bound();
+    const double state             = bound.final_state_departure(eps, ctrlpp::kPlantRoundings, static_cast<double>(ctrlpp::kGoldenNx) * gain);
+    const double printing          = 2.0 * (0.5 * std::pow(10.0, -kPrintedDecimals) + eps / 2.0);
+    const double norm_roundings    = static_cast<double>(ctrlpp::kGoldenNx + 1) * eps;
+    std::printf("cross-validation: gain_norm = %.17g, gain bound = %.17g, state bound = %.17g\n", gain_norm, gain, state);
+    std::printf("atol_K_00=%.17g\nrtol_K_00=%.17g\natol_K_01=%.17g\nrtol_K_01=%.17g\n", gain, printing, gain, printing);
+    std::printf("atol_x0_final=%.17g\nrtol_x0_final=%.17g\natol_x1_final=%.17g\nrtol_x1_final=%.17g\n", state, printing, state, printing);
+    std::printf("atol_final_norm=%.17g\nrtol_final_norm=%.17g\n", std::sqrt(static_cast<double>(ctrlpp::kGoldenNx)) * state, printing + norm_roundings);
+}
+
 bool report_control()
 {
     auto host   = ctrlpp::control_loop_demo<double>::make();
@@ -59,6 +82,7 @@ bool report_control()
     ctrlpp::golden_bound bound = ctrlpp::make_golden_bound();
     print_verdict("float", ctrlpp::judge_golden(*single, bound));
     print_verdict("double", ctrlpp::judge_golden(*host, bound));
+    print_cross_validation_tolerances();
     return true;
 }
 
