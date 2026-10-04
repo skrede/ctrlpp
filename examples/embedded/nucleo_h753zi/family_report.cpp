@@ -3,6 +3,7 @@
 #include "alloc_sensor.h"
 #include "sbrk_ceiling.h"
 #include "family_report.h"
+#include "stack_watermark_board.h"
 
 #include "golden_reference.h"
 
@@ -76,12 +77,25 @@ void report_predictive(const predictive_verdict &verdict)
                 static_cast<std::uint32_t>(kGoldenSteps), verdict.premise ? "PASS" : "FAIL", verdict.gate ? "PASS" : "FAIL");
 }
 
+void construct_predictive()
+{
+    if constexpr(kStackWatermarkPresent)
+        report_stack("predictive.construct", painted_pass([] { predictive_instance(); }));
+}
+
     #if CTRLPP_MCU_ALLOC_SENTINEL
 
+stack_step_region first_solve_stack{0, 0};
+stack_step_region steady_stack{kPredictiveWarmupSolves, kPredictiveRunSteps - 1};
+
+// The stack regions open before the sensor arms and close after it disarms, so
+// neither instrument runs inside the other's window.
 ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double> &demo)
 {
     const auto arm = [](std::size_t k)
     {
+        first_solve_stack.enter(k);
+        steady_stack.enter(k);
         if(in_predictive_window(k))
             alloc_sensor_arm();
     };
@@ -89,8 +103,13 @@ ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double> &d
     {
         if(in_predictive_window(k))
             alloc_sensor_disarm();
+        first_solve_stack.leave(k);
+        steady_stack.leave(k);
     };
-    return run_predictive(demo, predictive_run, arm, disarm);
+    const auto ran = run_predictive(demo, predictive_run, arm, disarm);
+    report_stack("predictive.first_solve", first_solve_stack.reading());
+    report_stack("predictive.steady", steady_stack.reading());
+    return ran;
 }
 
     #else
@@ -114,6 +133,7 @@ ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double> &d
 // setup's, construction and the first solves included.
 void drive_predictive_family()
 {
+    construct_predictive();
     predictive_demo<double> &demo = predictive_instance();
     alloc_sensor_reset();
     const auto ran               = run_instrumented(demo);

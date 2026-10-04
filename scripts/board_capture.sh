@@ -72,6 +72,13 @@
 #  16  a timing line without its sample count, or a per-iteration figure
 #      without the block size it was divided by
 #  17  a timed region lacks exactly one cold and one warm line
+#  18  a stack watermark line reports a nonzero harness floor: the gap is
+#      smaller than the harness's own frames, so its figure is not a
+#      measurement of the chain
+#  19  a stack watermark line reports a saturated window: the chain reached the
+#      window's bottom word, so its depth is unknown rather than small
+#  20  a stack watermark line lacks its floor, its saturation verdict or its
+#      figure, or a measured region's line is missing or repeated
 #
 # --- What this capture does NOT establish -------------------------------------
 #
@@ -111,7 +118,14 @@
 #      subtracting. The cold figure is one sample per boot; its spread is a
 #      property of repeated captures, not of one.
 #
-#   7. A family's PASS says the value its last step returned lies within its
+#   7. A stack line's figure is the deepest word the chain disturbed in a
+#      painted window, at word resolution and no finer than the gap on the same
+#      line. A chain that writes a value equal to a word's pattern would hide
+#      that word; the pattern carries each word's address, so no single value
+#      can hide more than one. The compiler's per-function frames quoted in the
+#      capture header attribute nothing to callees and are a lower bound.
+#
+#   8. A family's PASS says the value its last step returned lies within its
 #      derived bound of the host reference; it does not compare the steps before
 #      it. The predictive family's value is the cost accumulated over the whole
 #      run, so it does weigh every step, but its bound holds only under the
@@ -148,6 +162,9 @@ report_end_marker="golden diff "
 # family that ran and reported nothing is a refusal rather than a shorter report.
 expected_families="control estimation dsp trajectory predictive"
 
+# Every region the evidence image measures the stack of, each owed one line.
+expected_stack_regions="startup predictive.construct predictive.first_solve predictive.steady program"
+
 # Every region the timing image times, each owed one cold and one warm line.
 expected_regions="overhead control.design control.step estimation.step dsp.step trajectory.step predictive.step"
 
@@ -161,7 +178,7 @@ destination=""
 for arg in "$@"; do
     case "${arg}" in
         -h|--help)
-            sed -n '2,120p' "${BASH_SOURCE[0]}"
+            sed -n '2,134p' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         --timing)
@@ -406,6 +423,8 @@ verify_transcript()
 
     if [ "${image_kind}" = "timing" ]; then
         verify_timing
+    else
+        verify_stack
     fi
 
     return 0
@@ -466,6 +485,32 @@ verify_timing()
     return 0
 }
 
+# A saturated window is not a smaller measurement but no measurement, and a
+# figure beside a nonzero floor measured the harness rather than the chain.
+verify_stack()
+{
+    local line="" region="" count=0
+    while IFS= read -r line; do
+        printf '%s\n' "${line}" | grep -Eq ' floor=[0-9]+( |$)' \
+            || fail 20 "a stack line carries no floor: '${line}'."
+        printf '%s\n' "${line}" | grep -Eq ' saturated=(yes|no)( |$)' \
+            || fail 20 "a stack line carries no saturation verdict: '${line}'."
+        printf '%s\n' "${line}" | grep -Eq ' floor=0( |$)' \
+            || fail 18 "a stack line reports a nonzero harness floor, so its figure is withheld: '${line}'."
+        printf '%s\n' "${line}" | grep -q ' saturated=no' \
+            || fail 19 "a stack line reports a saturated window, which is no measurement: '${line}'."
+        printf '%s\n' "${line}" | grep -Eq ' used=[0-9]+ from_top=[0-9]+ free=[0-9]+ of=[0-9]+ ' \
+            || fail 20 "a stack line with a zero floor and an unsaturated window carries no figure: '${line}'."
+    done < <(grep '^\[stack\] ' "${transcript}")
+
+    for region in ${expected_stack_regions}; do
+        count="$(grep -c "^\[stack\] region=${region} " "${transcript}" || true)"
+        [ "${count}" -eq 1 ] \
+            || fail 20 "the report carries ${count} '${region}' stack lines where exactly one is required."
+    done
+    return 0
+}
+
 verify_families()
 {
     local family="" line="" count=0
@@ -520,10 +565,32 @@ write_artifact()
         echo "# It is an identity check against accidental staleness, not a signature."
         if [ "${image_kind}" = "timing" ]; then
             band_cause
+        else
+            static_frames
         fi
         echo
         cat "${transcript}"
     } > "${destination}"
+}
+
+# The compiler's prediction, quoted beside the runtime figure it does not replace.
+static_frames()
+{
+    local su_dir="${build_dir}/CMakeFiles/${target_name}.dir" worst=""
+    worst="$(find "${su_dir}" -name '*.su' -exec cat {} + 2>/dev/null \
+        | awk -F '\t' '$2 + 0 > worst { worst = $2 + 0; line = $0 } END { print line }')"
+    echo "#"
+    if [ -z "${worst}" ]; then
+        echo "# Static frames: no -fstack-usage report was found under ${su_dir}."
+        return 0
+    fi
+    echo "# Static frames: the worst named frame in this image's -fstack-usage report is"
+    echo "# $(printf '%s\n' "${worst}" | cut -f2) bytes ($(printf '%s\n' "${worst}" | cut -f3)), in"
+    echo "# $(printf '%s\n' "${worst}" | cut -f1 | sed -e "s|^${repo_root}/||" -e 's/ \[with .*//')."
+    echo "# That report attributes nothing to callees, so a frame or a sum of frames is a"
+    echo "# lower bound on what a stack must hold. The [stack] lines below are the runtime"
+    echo "# watermark over the whole chain, the figure a stack must actually cover. Both"
+    echo "# are published; neither replaces the other."
 }
 
 # Assembled from the posture and work lines, so it can name a cache as a cause

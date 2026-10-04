@@ -19,6 +19,7 @@
 #include "alloc_sensor.h"
 #include "sbrk_ceiling.h"
 #include "family_report.h"
+#include "stack_watermark_board.h"
 
 #include "dsp_demo.h"
 #include "golden_verdict.h"
@@ -100,10 +101,9 @@ void run_loop(demo_type &demo)
     }
 }
 
-void report_golden(const demo_type &demo, const ctrlpp::window_figures &figures)
+void report_golden(const demo_type &demo, const ctrlpp::golden_verdict &verdict, const ctrlpp::window_figures &figures)
 {
-    const ctrlpp::golden_verdict verdict = ctrlpp::judge_golden(demo, golden_workspace);
-    const double final_norm              = demo.x.norm();
+    const double final_norm = demo.x.norm();
     std::printf("gain check %s: dev = [%.3e, %.3e], tol = %.3e\n", verdict.gain_pass ? "PASS" : "FAIL", verdict.gain_departure[0], verdict.gain_departure[1],
                 verdict.gain_tolerance);
     std::printf("settling: final |x| = %.6e (host = %.6e, err = %.3e, tol = %.3e)\n", final_norm, ctrlpp::kHostFinalNorm, verdict.norm_departure,
@@ -114,11 +114,16 @@ void report_golden(const demo_type &demo, const ctrlpp::window_figures &figures)
 
 }
 
+// The startup figure is read before main does anything else, so it covers reset
+// and static construction; the program figure is read after the last family and
+// the golden judgment, ahead of the closing report.
 int main()
 {
+    const ctrlpp::stack_reading startup = ctrlpp::read_program_stack();
     ctrlpp::usart3_console_init();
     report_identity();
     ctrlpp::report_posture();
+    ctrlpp::report_stack("startup", startup);
     prove_instrument();
 
     auto demo = demo_type::make();
@@ -137,6 +142,8 @@ int main()
     ctrlpp::drive_family<ctrlpp::dsp_demo>("dsp", ctrlpp::kHostBiquadOutput, ctrlpp::dsp_tolerance<double>());
     ctrlpp::drive_family<ctrlpp::trajectory_demo>("trajectory", ctrlpp::kHostTrajectoryPosition, ctrlpp::trajectory_tolerance<double>());
     ctrlpp::drive_predictive_family();
-    report_golden(*demo, control);
+    const ctrlpp::golden_verdict verdict = ctrlpp::judge_golden(*demo, golden_workspace);
+    ctrlpp::report_stack("program", ctrlpp::read_program_stack());
+    report_golden(*demo, verdict, control);
     halt();
 }

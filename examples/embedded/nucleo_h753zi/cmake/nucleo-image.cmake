@@ -16,6 +16,7 @@ function(ctrlpp_nucleo_image target sentinel)
         cycle_record.cpp
         posture.cpp
         timing_run.cpp
+        stack_watermark_board.cpp
         "${CMSIS_SYSTEM}"
         "${CMSIS_STARTUP}")
 
