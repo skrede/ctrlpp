@@ -509,9 +509,17 @@ public:
 
     using problem_type = nlp_problem_static<Scalar, problem_dimension>;
 
+    // Builds the solver in place rather than delegating with a default-built
+    // one: a solver that carries its workspace inline (argmin's fixed-N policies,
+    // tens of kilobytes) would otherwise exist twice on the caller's stack.
     nmpc_static(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
-        : nmpc_static{std::move(dynamics), config, Solver{}}
-    {}
+        : m_dynamics{std::move(dynamics)}
+        , m_config{config}
+        , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>()}
+        , m_solver{}
+    {
+        initialize();
+    }
 
     nmpc_static(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
         : m_dynamics{std::move(dynamics)}
@@ -519,14 +527,7 @@ public:
         , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>()}
         , m_solver{std::move(solver)}
     {
-        m_state->x_ref.resize(static_cast<std::size_t>(horizon) + 1, Vector<Scalar, NX>::Zero());
-        build_problem_and_setup();
-        // Pre-size the reused solve buffers ONCE (construction may allocate), so
-        // the steady-state assignments below hit the same-size fast path and the
-        // hot solve loop stays allocation-free.
-        m_warm_z = Eigen::VectorX<Scalar>::Zero(problem_dimension);
-        m_update.x0 = Eigen::VectorX<Scalar>::Zero(problem_dimension);
-        m_last_solution = Eigen::VectorX<Scalar>::Zero(problem_dimension);
+        initialize();
     }
 
     // Move is correct-by-default for the same reason as runtime-horizon nmpc:
@@ -581,6 +582,18 @@ public:
     const Eigen::VectorX<Scalar>& last_solution() const { return m_last_solution; }
 
 private:
+    void initialize()
+    {
+        m_state->x_ref.resize(static_cast<std::size_t>(horizon) + 1, Vector<Scalar, NX>::Zero());
+        build_problem_and_setup();
+        // Pre-size the reused solve buffers ONCE (construction may allocate), so
+        // the steady-state assignments below hit the same-size fast path and the
+        // hot solve loop stays allocation-free.
+        m_warm_z = Eigen::VectorX<Scalar>::Zero(problem_dimension);
+        m_update.x0 = Eigen::VectorX<Scalar>::Zero(problem_dimension);
+        m_last_solution = Eigen::VectorX<Scalar>::Zero(problem_dimension);
+    }
+
     // Pose the compile-time-dimension problem and set the solver up against it.
     //
     // The formulation factory rejects a configuration whose runtime horizon

@@ -58,9 +58,9 @@ void report_family(const family_result &result, const window_figures &figures)
 
 namespace {
 
-// The controller's constructor materializes a second solver of about 41 KB and
-// moves it in; building the instance in a call that returns first pops that
-// copy off the stack before the solves need the room.
+// The controller carries its solver's workspace inline, about 41 KB, so the
+// instance lives in static storage rather than on the stack. The call stays out
+// of line so its construction runs below the painted origin that measures it.
 [[gnu::noinline]] predictive_demo<double> &predictive_instance()
 {
     static predictive_demo<double> demo;
