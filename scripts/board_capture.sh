@@ -5,13 +5,26 @@
 #
 # Usage:
 #   board_capture.sh prepare
-#   board_capture.sh capture [--reset-only | --no-reset] <destination-file>
+#   board_capture.sh capture [--timing] [--reset-only | --no-reset] <destination-file>
+#   board_capture.sh check [--timing] <transcript-or-capture-file>
 #
-# "prepare" configures, builds and produces the raw binary beside the ELF. It
-# touches no hardware. "capture" performs no build at all: a build discovered
+# "prepare" configures, builds and produces the raw binaries beside the two
+# ELFs, the allocation-evidence image and the timing image. It touches no
+# hardware. "check" runs every refusal of the chosen mode over a transcript
+# already on disk, against the ELFs the last "prepare" built; it touches no
+# hardware either. "capture" performs no build at all: a build discovered
 # inside a capture is how a capture ends up describing an image that was never
 # flashed, which is the failure this split exists to prevent, so a missing ELF
 # or binary is an error naming the target.
+#
+# Images:
+#   (default)      the evidence image: carries the allocation sensor, so its
+#                  report must carry a passing canary.
+#   --timing       the timing image: built from the same sources without the
+#                  allocation sensor, so the code it times carries none of the
+#                  sentinel's checks. Its report must carry the timing lines and
+#                  need not carry a canary; the written capture names the
+#                  evidence image's fingerprint beside its own.
 #
 # Capture modes:
 #   (default)      copy the binary onto the ST-LINK mass-storage mount, which
@@ -52,6 +65,13 @@
 #  10  canary FAIL (the sensor did not observe its deliberate allocations)
 #  11  a family's verdict line is missing or repeated
 #  12  a family's verdict is not PASS
+#  13  the image's kind line is missing or names the other image
+#  14  no posture line
+#  15  timing UNAVAILABLE: the cycle counter did not prove itself live, or the
+#      timing image printed no timing line at all
+#  16  a timing line without its sample count, or a per-iteration figure
+#      without the block size it was divided by
+#  17  a timed region lacks exactly one cold and one warm line
 #
 # --- What this capture does NOT establish -------------------------------------
 #
@@ -86,7 +106,12 @@
 #      library's reentrant allocator entry points, which stdio uses and which
 #      never pass through the wrapped symbols.
 #
-#   6. A family's PASS says the value its last step returned lies within its
+#   6. A timing line's figures are raw: each carries the instrument's own
+#      overhead, which the report publishes on its own lines rather than
+#      subtracting. The cold figure is one sample per boot; its spread is a
+#      property of repeated captures, not of one.
+#
+#   7. A family's PASS says the value its last step returned lies within its
 #      derived bound of the host reference; it does not compare the steps before
 #      it. The predictive family's value is the cost accumulated over the whole
 #      run, so it does weigh every step, but its bound holds only under the
@@ -107,9 +132,9 @@ byte_cap="${CAPTURE_BYTE_CAP:-262144}"
 build_jobs="${CAPTURE_BUILD_JOBS:-6}"
 
 toolchain_prefix="${CTRLPP_ARM_TOOLCHAIN_PREFIX:-arm-none-eabi-}"
-target_name="ctrlpp_nucleo_h753zi"
-elf_path="${build_dir}/${target_name}.elf"
-bin_path="${build_dir}/${target_name}.bin"
+evidence_target="ctrlpp_nucleo_h753zi"
+timing_target="ctrlpp_nucleo_h753zi_timing"
+evidence_elf="${build_dir}/${evidence_target}.elf"
 
 # Spelled out because ninja 1.13.2 aborts on this project's dynamic dependency
 # file. Parallelism belongs to the build only; the capture is serial.
@@ -123,17 +148,24 @@ report_end_marker="golden diff "
 # family that ran and reported nothing is a refusal rather than a shorter report.
 expected_families="control estimation dsp trajectory predictive"
 
+# Every region the timing image times, each owed one cold and one warm line.
+expected_regions="overhead control.design control.step estimation.step dsp.step trajectory.step predictive.step"
+
 # --- Arguments ----------------------------------------------------------------
 
 subcommand=""
 capture_mode="flash"
+image_kind="evidence"
 destination=""
 
 for arg in "$@"; do
     case "${arg}" in
         -h|--help)
-            sed -n '2,95p' "${BASH_SOURCE[0]}"
+            sed -n '2,120p' "${BASH_SOURCE[0]}"
             exit 0
+            ;;
+        --timing)
+            image_kind="timing"
             ;;
         --reset-only)
             capture_mode="reset-only"
@@ -144,7 +176,8 @@ for arg in "$@"; do
         -*)
             echo "ERROR: unknown option '${arg}'." >&2
             echo "  Usage: scripts/board_capture.sh prepare" >&2
-            echo "         scripts/board_capture.sh capture [--reset-only | --no-reset] <destination-file>" >&2
+            echo "         scripts/board_capture.sh capture [--timing] [--reset-only | --no-reset] <destination-file>" >&2
+            echo "         scripts/board_capture.sh check [--timing] <transcript-or-capture-file>" >&2
             exit 2
             ;;
         *)
@@ -159,6 +192,13 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+target_name="${evidence_target}"
+if [ "${image_kind}" = "timing" ]; then
+    target_name="${timing_target}"
+fi
+elf_path="${build_dir}/${target_name}.elf"
+bin_path="${build_dir}/${target_name}.bin"
 
 fail()
 {
@@ -179,16 +219,19 @@ do_prepare()
         || fail 3 "configure of ${leg_dir} failed."
 
     cmake --build "${build_dir}" --parallel "${build_jobs}" \
-        || fail 3 "build of ${target_name} failed."
+        || fail 3 "build of ${leg_dir} failed."
 
-    [ -f "${elf_path}" ] || fail 3 "the build produced no ${elf_path}."
-
-    "${toolchain_prefix}objcopy" -O binary "${elf_path}" "${bin_path}" \
-        || fail 3 "objcopy could not produce ${bin_path}."
-
-    echo "prepared: ${elf_path}"
-    echo "prepared: ${bin_path}"
-    echo "build id: $(elf_build_id)"
+    local target elf bin
+    for target in "${evidence_target}" "${timing_target}"; do
+        elf="${build_dir}/${target}.elf"
+        bin="${build_dir}/${target}.bin"
+        [ -f "${elf}" ] || fail 3 "the build produced no ${elf}."
+        "${toolchain_prefix}objcopy" -O binary "${elf}" "${bin}" \
+            || fail 3 "objcopy could not produce ${bin}."
+        echo "prepared: ${elf}"
+        echo "prepared: ${bin}"
+        echo "build id: $(elf_build_id "${elf}")"
+    done
 }
 
 # --- discovery ----------------------------------------------------------------
@@ -227,7 +270,7 @@ resolve_port()
 
 elf_build_id()
 {
-    "${toolchain_prefix}readelf" -n "${elf_path}" \
+    "${toolchain_prefix}readelf" -n "${1:-${elf_path}}" \
         | sed -n 's/^[[:space:]]*Build ID:[[:space:]]*\([0-9a-f]\{40\}\)[[:space:]]*$/\1/p' \
         | head -1
 }
@@ -345,7 +388,12 @@ verify_transcript()
     [ "${printed_id}" = "${built_id}" ] \
         || fail 6 "the running image is NOT the built one: the board reported ${printed_id} but ${elf_path} is ${built_id}. Flash the target before capturing."
 
-    verify_canary
+    verify_kind
+    verify_posture
+
+    if [ "${image_kind}" = "evidence" ]; then
+        verify_canary
+    fi
 
     grep -q "${report_end_marker}" "${transcript}" \
         || fail 7 "the captured report carries no '${report_end_marker}' verdict line -- it is truncated or the run did not complete."
@@ -356,6 +404,65 @@ verify_transcript()
 
     verify_families
 
+    if [ "${image_kind}" = "timing" ]; then
+        verify_timing
+    fi
+
+    return 0
+}
+
+# The two images run the same report, so a capture of the wrong one could
+# otherwise pass every refusal the other image's mode applies.
+verify_kind()
+{
+    local kind=""
+    kind="$(sed -n 's/^\[meta\] kind=\([a-z]*\).*$/\1/p' "${transcript}" | head -1)"
+    [ "${kind}" = "${image_kind}" ] \
+        || fail 13 "the report names its image kind as '${kind:-absent}' where this capture requires '${image_kind}'."
+    return 0
+}
+
+verify_posture()
+{
+    local posture="" field=""
+    posture="$(grep -m 1 '^\[posture\] ' "${transcript}" || true)"
+    [ -n "${posture}" ] \
+        || fail 14 "the captured report carries no '[posture]' line, so the configuration its figures were taken under is unstated."
+    for field in core_hz icache dcache flash_latency_ws cycle_wrap_ms compiler; do
+        printf '%s\n' "${posture}" | grep -Eq " ${field}=[^ ]+" \
+            || fail 14 "the posture line carries no '${field}=' field: '${posture}'."
+    done
+    return 0
+}
+
+# A figure from a counter that never proved it runs is not a measurement, and a
+# worst-of-N without its N, or a per-iteration figure without its divisor, is
+# not a bound.
+verify_timing()
+{
+    local line="" region="" regime="" count=0
+    line="$(grep -m 1 '^\[timing\] UNAVAILABLE' "${transcript}" || true)"
+    [ -z "${line}" ] \
+        || fail 15 "the cycle counter did not prove itself live: '${line}'."
+    grep -q '^\[timing\] region=' "${transcript}" \
+        || fail 15 "the timing image printed no timing line."
+
+    while IFS= read -r line; do
+        printf '%s\n' "${line}" | grep -Eq ' n=[1-9][0-9]*( |$)' \
+            || fail 16 "a timing line carries no sample count: '${line}'."
+        if printf '%s\n' "${line}" | grep -q 'per_iteration'; then
+            printf '%s\n' "${line}" | grep -Eq ' block=[1-9][0-9]*( |$)' \
+                || fail 16 "a per-iteration figure carries no block size: '${line}'."
+        fi
+    done < <(grep '^\[timing\] region=' "${transcript}")
+
+    for region in ${expected_regions}; do
+        for regime in cold warm; do
+            count="$(grep -c "^\[timing\] region=${region} regime=${regime} " "${transcript}" || true)"
+            [ "${count}" -eq 1 ] \
+                || fail 17 "the report carries ${count} '${region}' ${regime} lines where exactly one is required."
+        done
+    done
     return 0
 }
 
@@ -401,15 +508,46 @@ write_artifact()
         echo "# port:      ${port}"
         echo "# mount:     ${mount_note}"
         echo "# image:     ${elf_path}"
+        echo "# kind:      ${image_kind}"
         echo "# build id:  ${built_id}"
+        if [ "${image_kind}" = "timing" ]; then
+            echo "# evidence:  $(elf_build_id "${evidence_elf}") (the allocation-evidence image built from the same sources)"
+        fi
         echo "# toolchain: $("${toolchain_prefix}gcc" --version | head -1)"
         echo "#"
         echo "# The build id above is the linker's SHA-1 note, read out of the ELF with"
         echo "# ${toolchain_prefix}readelf -n and matched against the line the firmware printed."
         echo "# It is an identity check against accidental staleness, not a signature."
+        if [ "${image_kind}" = "timing" ]; then
+            band_cause
+        fi
         echo
         cat "${transcript}"
     } > "${destination}"
+}
+
+# Assembled from the posture and work lines, so it can name a cache as a cause
+# only when the image reports that cache enabled, and quotes the solver's own
+# iteration counts rather than asserting what varied.
+band_cause()
+{
+    local posture="" latency="" icache="" dcache="" caches="" cold="" warm=""
+    posture="$(grep -m 1 '^\[posture\] ' "${transcript}")"
+    latency="$(printf '%s\n' "${posture}" | sed -n 's/.* flash_latency_ws=\([^ ]*\).*/\1/p')"
+    icache="$(printf '%s\n' "${posture}" | sed -n 's/.* icache=\([^ ]*\).*/\1/p')"
+    dcache="$(printf '%s\n' "${posture}" | sed -n 's/.* dcache=\([^ ]*\).*/\1/p')"
+    caches="both caches are off (icache=${icache} dcache=${dcache}), so no part of the cold-to-warm difference is a cache effect"
+    if [ "${icache}" != "off" ] || [ "${dcache}" != "off" ]; then
+        caches="the posture reports icache=${icache} dcache=${dcache}, so the cold-to-warm difference includes cache fill"
+    fi
+    cold="$(sed -n 's/^\[work\] region=predictive.step regime=cold iterations=\([0-9]*\).*/\1/p' "${transcript}")"
+    warm="$(sed -n 's/^\[work\] region=predictive.step regime=warm .*iterations_min=\([0-9]*\) iterations_max=\([0-9]*\).*/\1 to \2/p' "${transcript}")"
+    echo "#"
+    echo "# Band cause: ${caches}. Beyond the caches it can come only from branch"
+    echo "# prediction and instruction-fetch buffering in front of flash read at ${latency}"
+    echo "# wait states, and this capture does not separate the two. The predictive"
+    echo "# step's band is solver work: its cold solve ran ${cold:-?} iterations against"
+    echo "# ${warm:-?} in the window."
 }
 
 # --- capture ------------------------------------------------------------------
@@ -466,6 +604,23 @@ do_capture()
     echo "build id:        ${built_id}"
 }
 
+# The same refusals over a file already on disk. A capture file's header lines
+# start with '#', which no refusal's anchored pattern matches.
+do_check()
+{
+    [ -n "${destination}" ] || fail 2 "check needs a transcript file."
+    [ -f "${destination}" ] || fail 2 "'${destination}' is not a file."
+    [ -f "${elf_path}" ] || fail 3 "no ${elf_path}; run 'board_capture.sh prepare' first."
+
+    local built_id
+    built_id="$(elf_build_id)"
+    transcript="$(mktemp "${TMPDIR:-/tmp}/ctrlpp-board-check.XXXXXX")"
+    trap cleanup EXIT
+    tr -d '\r' < "${destination}" > "${transcript}"
+    verify_transcript "${built_id}"
+    echo "check passed: ${destination}"
+}
+
 case "${subcommand}" in
     prepare)
         [ -z "${destination}" ] || fail 2 "prepare takes no destination."
@@ -474,10 +629,13 @@ case "${subcommand}" in
     capture)
         do_capture
         ;;
+    check)
+        do_check
+        ;;
     "")
-        fail 2 "no subcommand. Usage: scripts/board_capture.sh {prepare|capture <destination-file>}"
+        fail 2 "no subcommand. Usage: scripts/board_capture.sh {prepare|capture <destination-file>|check <transcript-file>}"
         ;;
     *)
-        fail 2 "unknown subcommand '${subcommand}'. Expected 'prepare' or 'capture'."
+        fail 2 "unknown subcommand '${subcommand}'. Expected 'prepare', 'capture' or 'check'."
         ;;
 esac

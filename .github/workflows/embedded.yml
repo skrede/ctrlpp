@@ -89,17 +89,23 @@ jobs:
             cmake --build "build-arm-${predictive}"
           done
 
+      # Each configuration links two images from the same sources: the
+      # allocation-evidence image and the timing image built without the
+      # allocation sensor. Both are what a board runs, so both must resolve.
       - name: Assert fully resolved images and report their size
         run: |
           for predictive in ON OFF; do
-            elf="build-arm-${predictive}/ctrlpp_nucleo_h753zi.elf"
-            test -f "$elf"
-            undefined=$(arm-none-eabi-nm --undefined-only "$elf")
-            if [ -n "$undefined" ]; then
-              echo "unresolved symbols in $elf:" >&2
-              echo "$undefined" >&2
-              exit 1
-            fi
-            arm-none-eabi-size "$elf"
+            for image in ctrlpp_nucleo_h753zi ctrlpp_nucleo_h753zi_timing; do
+              elf="build-arm-${predictive}/${image}.elf"
+              test -f "$elf"
+              undefined=$(arm-none-eabi-nm --undefined-only "$elf")
+              if [ -n "$undefined" ]; then
+                echo "unresolved symbols in $elf:" >&2
+                echo "$undefined" >&2
+                exit 1
+              fi
+              arm-none-eabi-size "$elf"
+            done
           done
           arm-none-eabi-nm build-arm-ON/ctrlpp_nucleo_h753zi.elf | grep -qi nmpc_static
+          arm-none-eabi-nm build-arm-ON/ctrlpp_nucleo_h753zi_timing.elf | grep -qi nmpc_static

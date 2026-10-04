@@ -4,14 +4,18 @@
 // ctrlpp NUCLEO-H753ZI on-device leg (bare superloop, double FPU).
 //
 // CMSIS startup runs SystemInit + C++ static ctors, then calls main(). This
-// proves the allocation sensor is not blind, designs the infinite-horizon LQR
-// gain once, runs the closed loop with the sensor armed around each step,
-// streams the trajectory as CSV over USART3 -> ST-Link VCP, runs the
-// estimation, signal-processing, trajectory and predictive families each inside
-// its own armed window, diffs every family's double result against its
-// host-double golden, and halts for the operator to read the console.
+// prints the posture the run is taken under, then either proves the allocation
+// sensor is not blind (the evidence image) or proves the cycle counter live and
+// times every family cold and warm (the timing image). It then designs the
+// infinite-horizon LQR gain once, runs the closed loop with the sensor armed
+// around each step, streams the trajectory as CSV over USART3 -> ST-Link VCP,
+// runs the estimation, signal-processing, trajectory and predictive families
+// each inside its own armed window, diffs every family's double result against
+// its host-double golden, and halts for the operator to read the console.
 
+#include "posture.h"
 #include "build_id.h"
+#include "timing_run.h"
 #include "alloc_sensor.h"
 #include "sbrk_ceiling.h"
 #include "family_report.h"
@@ -51,14 +55,22 @@ void report_identity()
     char build_id[ctrlpp::kBuildIdTextLength];
     ctrlpp::render_build_id(build_id);
     std::printf("[meta] build_id=%s\n", build_id);
+    std::printf("[meta] kind=%s\n", ctrlpp::kAllocSensorPresent ? "evidence" : "timing");
     std::printf("[ctrlpp] NUCLEO-H753ZI bare-superloop control loop (double)\n");
 }
 
-void report_canary()
+// Runs before anything else executes a timed region, so the timing image's
+// cold figures are first executions after reset.
+void prove_instrument()
 {
-    const ctrlpp::canary_verdict verdict = ctrlpp::run_alloc_canary();
-    std::printf("[canary] %s observed=%" PRIu32 " expected=%" PRIu32 " eigen_trips=%" PRIu32 "\n", verdict.live ? "PASS" : "FAIL", verdict.observed, verdict.expected,
-                verdict.eigen_trips);
+    if constexpr(ctrlpp::kAllocSensorPresent)
+    {
+        const ctrlpp::canary_verdict verdict = ctrlpp::run_alloc_canary();
+        std::printf("[canary] %s observed=%" PRIu32 " expected=%" PRIu32 " eigen_trips=%" PRIu32 "\n", verdict.live ? "PASS" : "FAIL", verdict.observed, verdict.expected,
+                    verdict.eigen_trips);
+    }
+    else
+        ctrlpp::run_timing();
 }
 
 void report_heap()
@@ -106,7 +118,8 @@ int main()
 {
     ctrlpp::usart3_console_init();
     report_identity();
-    report_canary();
+    ctrlpp::report_posture();
+    prove_instrument();
 
     auto demo = demo_type::make();
     if(!demo.has_value())

@@ -15,6 +15,7 @@ namespace ctrlpp {
 
 struct window_figures
 {
+    bool measured;
     std::uint32_t allocations;
     std::uint32_t eigen_trips;
 };

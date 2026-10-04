@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstddef>
 #include <cstdlib>
 
 namespace {
@@ -48,7 +49,7 @@ bool report_host_run(predictive_workspace &workspace)
 {
     predictive_demo<double> demo;
     predictive_record record{};
-    const auto ran = run_predictive(demo, record, [] {}, [] {});
+    const auto ran = run_predictive(demo, record, [](std::size_t) {}, [](std::size_t) {});
     if(!ran.has_value())
     {
         std::fprintf(stderr, "predictive solve refused on the host: %s\n", describe(ran.error()));

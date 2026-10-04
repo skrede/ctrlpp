@@ -7,11 +7,13 @@
 #include "golden_reference.h"
 
 #if CTRLPP_MCU_PREDICTIVE
+    #include "timing_run.h"
     #include "predictive_demo.h"
     #include "predictive_verdict.h"
 #endif
 
 #include <cstdio>
+#include <cstddef>
 #include <cstdint>
 #include <cinttypes>
 
@@ -19,12 +21,20 @@ namespace ctrlpp {
 
 window_figures read_window() noexcept
 {
-    return {alloc_sensor_observed(), alloc_sensor_eigen_trips()};
+    if constexpr(kAllocSensorPresent)
+        return {true, alloc_sensor_observed(), alloc_sensor_eigen_trips()};
+    else
+        return {false, 0, 0};
 }
 
 void report_allocations(const window_figures &figures)
 {
     const std::uint32_t steps = static_cast<std::uint32_t>(kGoldenSteps);
+    if(!figures.measured)
+    {
+        std::printf("[alloc] steady_state allocations=unmeasured -- this image carries no allocation sensor\n");
+        return;
+    }
     std::printf("[alloc] steady_state allocations=%" PRIu32 " steps=%" PRIu32 " per_step=%.2f eigen_sentinel=%s trips=%" PRIu32 "\n", figures.allocations, steps,
                 static_cast<double>(figures.allocations) / steps, figures.eigen_trips == 0 ? "clean" : "TRIPPED", figures.eigen_trips);
 }
@@ -32,9 +42,15 @@ void report_allocations(const window_figures &figures)
 void report_family(const family_result &result, const window_figures &figures)
 {
     const std::uint32_t steps = static_cast<std::uint32_t>(kGoldenSteps);
-    std::printf("[family] %s value=%.17g golden=%.17g departure=%.3e bound=%.3e verdict=%s allocations=%" PRIu32 " steps=%" PRIu32 " per_step=%.2f eigen_trips=%" PRIu32 "\n",
-                result.name, result.value, result.golden, result.departure, result.bound, result.pass ? "PASS" : "FAIL", figures.allocations, steps,
-                static_cast<double>(figures.allocations) / steps, figures.eigen_trips);
+    std::printf("[family] %s value=%.17g golden=%.17g departure=%.3e bound=%.3e verdict=%s", result.name, result.value, result.golden, result.departure, result.bound,
+                result.pass ? "PASS" : "FAIL");
+    if(!figures.measured)
+    {
+        std::printf(" allocations=unmeasured\n");
+        return;
+    }
+    std::printf(" allocations=%" PRIu32 " steps=%" PRIu32 " per_step=%.2f eigen_trips=%" PRIu32 "\n", figures.allocations, steps, static_cast<double>(figures.allocations) / steps,
+                figures.eigen_trips);
 }
 
 #if CTRLPP_MCU_PREDICTIVE
@@ -60,6 +76,38 @@ void report_predictive(const predictive_verdict &verdict)
                 static_cast<std::uint32_t>(kGoldenSteps), verdict.premise ? "PASS" : "FAIL", verdict.gate ? "PASS" : "FAIL");
 }
 
+    #if CTRLPP_MCU_ALLOC_SENTINEL
+
+ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double> &demo)
+{
+    const auto arm = [](std::size_t k)
+    {
+        if(in_predictive_window(k))
+            alloc_sensor_arm();
+    };
+    const auto disarm = [](std::size_t k)
+    {
+        if(in_predictive_window(k))
+            alloc_sensor_disarm();
+    };
+    return run_predictive(demo, predictive_run, arm, disarm);
+}
+
+    #else
+
+solve_timer predictive_timer;
+
+ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double> &demo)
+{
+    const auto enter = [](std::size_t k) { predictive_timer.enter(k); };
+    const auto leave = [&demo](std::size_t k) { predictive_timer.leave(k, demo.controller().diagnostics().iterations); };
+    const auto ran   = run_predictive(demo, predictive_run, enter, leave);
+    predictive_timer.report();
+    return ran;
+}
+
+    #endif
+
 }
 
 // The armed steps allocate nothing, so the high-water after the run is the
@@ -68,7 +116,7 @@ void drive_predictive_family()
 {
     predictive_demo<double> &demo = predictive_instance();
     alloc_sensor_reset();
-    const auto ran               = run_predictive(demo, predictive_run, alloc_sensor_arm, alloc_sensor_disarm);
+    const auto ran               = run_instrumented(demo);
     const window_figures figures = read_window();
     std::printf("[heap] predictive_setup_high_water=%" PRIu32 " reserve=%" PRIu32 " bytes\n", static_cast<std::uint32_t>(heap_high_water_bytes()),
                 static_cast<std::uint32_t>(heap_reserve_bytes()));

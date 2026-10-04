@@ -1,4 +1,4 @@
-# Standalone flashable NUCLEO-H753ZI image: CMSIS-only bare-metal (no HAL/RTOS),
+# Standalone flashable NUCLEO-H753ZI images: CMSIS-only bare-metal (no HAL/RTOS),
 # hand-written linker script, register-level USART3 console, and a bare superloop
 # driving the shared double kernels, the predictive controller among them unless
 # CTRLPP_MCU_PREDICTIVE is off.
@@ -104,71 +104,10 @@ endif()
 set(CTRLPP_M7_LINK_ARCH
     -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb)
 
-add_executable(ctrlpp_nucleo_h753zi
-    nucleo_main.cpp
-    usart3_console.cpp
-    init_stubs.cpp
-    build_id.cpp
-    alloc_sensor.cpp
-    family_report.cpp
-    sbrk_ceiling.cpp
-    "${CMSIS_SYSTEM}"
-    "${CMSIS_STARTUP}")
-
-target_include_directories(ctrlpp_nucleo_h753zi SYSTEM PRIVATE
-    "${CTRLPP_INCLUDE_DIR}"
-    "${CTRLPP_SHARED_DIR}"
-    "${eigen3_SOURCE_DIR}"
-    "${CMSIS_CORE_INC}"
-    "${CMSIS_DEV_INC}"
-    $<$<BOOL:${CTRLPP_MCU_PREDICTIVE}>:${CTRLPP_MCU_ARGMIN_INC}>)
-
-# EIGEN_ALLOCA must be explicit on newlib targets: at strict -std=c++20 (extensions
-# OFF) Eigen's alloca auto-detection finds nothing, so every internal kernel
-# temporary would heap-allocate instead of landing on the stack. FPv5 is scalar,
-# so EIGEN_MAX_ALIGN_BYTES=8 (natural double) removes the aligned-allocation path.
-target_compile_definitions(ctrlpp_nucleo_h753zi PRIVATE
-    STM32H753xx
-    EIGEN_DONT_VECTORIZE
-    EIGEN_MAX_ALIGN_BYTES=8
-    EIGEN_ALLOCA=__builtin_alloca
-    EIGEN_STACK_ALLOCATION_LIMIT=8192
-    CTRLPP_NO_EXCEPTIONS
-    CTRLPP_MCU_PREDICTIVE=$<BOOL:${CTRLPP_MCU_PREDICTIVE}>)
-
-target_compile_options(ctrlpp_nucleo_h753zi PRIVATE
-    $<$<COMPILE_LANGUAGE:CXX>:-Os -fno-exceptions -fno-rtti -Wno-psabi>
-    -ffunction-sections -fdata-sections
-    -fstack-usage)
-
-target_link_options(ctrlpp_nucleo_h753zi PRIVATE
-    ${CTRLPP_M7_LINK_ARCH}
-    -T "${CMAKE_CURRENT_SOURCE_DIR}/stm32h753zi_flash.ld"
-    -nostartfiles
-    --specs=nano.specs --specs=nosys.specs
-    # newlib-nano trims printf: pull in the float-capable variant so the CSV
-    # renders %f instead of a literal "f".
-    -u _printf_float
-    # The linker computes this over the image's own contents, so it cannot fail
-    # to change when the image does; the firmware prints it and a host capture
-    # refuses a report whose fingerprint is not the one it just built.
-    -Wl,--build-id=sha1
-    # Routes the image's own calls to the C allocation family through the
-    # counting definitions in alloc_sensor.cpp.
-    -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc
-    -Wl,--gc-sections
-    -Wl,-Map=ctrlpp_nucleo_h753zi.map)
-
-# Without the dependency an edited reserve in the linker script leaves the old
-# image in place, and the capture would describe a layout that was never linked.
-set_target_properties(ctrlpp_nucleo_h753zi PROPERTIES
-    SUFFIX ".elf"
-    LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/stm32h753zi_flash.ld")
-
-# Report size at build time (must fit 2 MB flash / 128 KB DTCM).
-find_program(CTRLPP_ARM_SIZE "${CTRLPP_ARM_TOOLCHAIN_PREFIX}size")
-if(CTRLPP_ARM_SIZE)
-    add_custom_command(TARGET ctrlpp_nucleo_h753zi POST_BUILD
-        COMMAND "${CTRLPP_ARM_SIZE}" "$<TARGET_FILE:ctrlpp_nucleo_h753zi>"
-        VERBATIM)
-endif()
+# Two images from the same sources. The evidence image carries the allocation
+# sensor: the Eigen sentinel and the wrapped C allocation family. The timing
+# image is built without both, so the code it times carries none of the
+# sentinel's checks; each prints its kind and has its own fingerprint.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/nucleo-image.cmake")
+ctrlpp_nucleo_image(ctrlpp_nucleo_h753zi ON)
+ctrlpp_nucleo_image(ctrlpp_nucleo_h753zi_timing OFF)

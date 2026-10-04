@@ -1,17 +1,16 @@
 #include "eigen_alloc_sentinel.h"
 
 #include "alloc_sensor.h"
-#include "sbrk_ceiling.h"
 
 #include <Eigen/Core>
 
 #include <new>
 #include <atomic>
-#include <cstdio>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <cinttypes>
+
+#if CTRLPP_MCU_ALLOC_SENTINEL
 
 // -Wl,--wrap routes every call that names the C allocation family, from any
 // object in the link, to the __wrap_ definitions below and exposes the C
@@ -23,7 +22,11 @@ extern "C" void *__real_calloc(std::size_t count, std::size_t size);
 extern "C" void *__real_realloc(void *pointer, std::size_t size);
 extern "C" void __real_free(void *pointer);
 
+#endif
+
 namespace {
+
+#if CTRLPP_MCU_ALLOC_SENTINEL
 
 std::atomic<bool> armed{false};
 std::atomic<std::uint32_t> allocations{0};
@@ -46,7 +49,11 @@ void escape(void *pointer) noexcept
     __asm__ __volatile__("" : : "r"(pointer) : "memory");
 }
 
+#endif
+
 }
+
+#if CTRLPP_MCU_ALLOC_SENTINEL
 
 extern "C" void *__wrap_malloc(std::size_t size)
 {
@@ -71,49 +78,25 @@ extern "C" void __wrap_free(void *pointer)
     __real_free(pointer);
 }
 
+#endif
+
+namespace ctrlpp {
+
+#if CTRLPP_MCU_ALLOC_SENTINEL
+
 // Forwarded to __real_malloc and never to malloc: inside this image malloc IS
 // the wrapped, counting one, so going through it would count every C++
 // allocation twice.
-void *operator new(std::size_t size)
+void *allocate_for_new(std::size_t size) noexcept
 {
     count_allocation();
-    if(void *pointer = __real_malloc(size > 0 ? size : 1))
-        return pointer;
-    // Integer conversions only: the float formatter is the one printf path that
-    // allocates, and the heap has just refused. The growth is the break's, not
-    // this call's size: Eigen reports its own refused malloc by calling here
-    // with the largest size there is.
-    std::printf("[heap] REFUSED growth=%" PRIu32 " high_water=%" PRIu32 " reserve=%" PRIu32 " bytes\n", static_cast<std::uint32_t>(ctrlpp::heap_first_refusal_bytes()),
-                static_cast<std::uint32_t>(ctrlpp::heap_high_water_bytes()), static_cast<std::uint32_t>(ctrlpp::heap_reserve_bytes()));
-    std::abort();
+    return __real_malloc(size);
 }
 
-void *operator new[](std::size_t size)
-{
-    return ::operator new(size);
-}
-
-void operator delete(void *pointer) noexcept
+void release_for_delete(void *pointer) noexcept
 {
     __real_free(pointer);
 }
-
-void operator delete[](void *pointer) noexcept
-{
-    __real_free(pointer);
-}
-
-void operator delete(void *pointer, std::size_t) noexcept
-{
-    __real_free(pointer);
-}
-
-void operator delete[](void *pointer, std::size_t) noexcept
-{
-    __real_free(pointer);
-}
-
-namespace ctrlpp {
 
 void alloc_sensor_arm() noexcept
 {
@@ -165,5 +148,31 @@ canary_verdict run_alloc_canary() noexcept
     std::free(c_block);
     return {observed == kCanaryAllocations && eigen > 0, observed, kCanaryAllocations, eigen};
 }
+
+#else
+
+void *allocate_for_new(std::size_t size) noexcept
+{
+    return std::malloc(size);
+}
+
+void release_for_delete(void *pointer) noexcept
+{
+    std::free(pointer);
+}
+
+void alloc_sensor_arm() noexcept
+{
+}
+
+void alloc_sensor_disarm() noexcept
+{
+}
+
+void alloc_sensor_reset() noexcept
+{
+}
+
+#endif
 
 }

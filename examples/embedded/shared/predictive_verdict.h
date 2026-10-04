@@ -89,21 +89,25 @@ inline void observe(predictive_record &record, const Eigen::Vector2d &before, co
         ++record.stationarity_stops;
 }
 
-// The first kPredictiveWarmupSolves steps walk the solver into steady state
-// unarmed; the rest are armed around the solve and the plant step alone.
-template<class Arm, class Disarm>
-ctrlpp::expected<void, solver_error> run_predictive(predictive_demo<double> &demo, predictive_record &record, Arm arm, Disarm disarm)
+// The first kPredictiveWarmupSolves steps walk the solver into steady state;
+// the rest are the window the board's figures cover.
+constexpr bool in_predictive_window(std::size_t k)
+{
+    return k >= static_cast<std::size_t>(kPredictiveWarmupSolves);
+}
+
+// The hooks bracket the solve and the plant step alone, on every step, and are
+// told which step it is.
+template<class Enter, class Leave>
+ctrlpp::expected<void, solver_error> run_predictive(predictive_demo<double> &demo, predictive_record &record, Enter enter, Leave leave)
 {
     record = predictive_record{{}, 0.0, 0.0, 0};
     for(std::size_t k = 0; k < kPredictiveRunSteps; ++k)
     {
-        const bool armed             = k >= static_cast<std::size_t>(kPredictiveWarmupSolves);
         const Eigen::Vector2d before = demo.state();
-        if(armed)
-            arm();
+        enter(k);
         const auto advanced = demo.advance();
-        if(armed)
-            disarm();
+        leave(k);
         if(!advanced.has_value())
             return advanced;
         observe(record, before, demo, k);

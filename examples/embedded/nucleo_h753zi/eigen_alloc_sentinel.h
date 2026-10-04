@@ -17,10 +17,14 @@
     #error "eigen_alloc_sentinel.h must be the first include of the translation unit, before any Eigen or ctrlpp header"
 #endif
 
-#define EIGEN_RUNTIME_NO_MALLOC
+// The timing image is built from the same sources with the sentinel off, so the
+// code it times carries none of these checks.
+#if CTRLPP_MCU_ALLOC_SENTINEL
 
-#include <atomic>
-#include <cstdint>
+    #define EIGEN_RUNTIME_NO_MALLOC
+
+    #include <atomic>
+    #include <cstdint>
 
 namespace ctrlpp::detail {
 
@@ -28,11 +32,13 @@ inline std::atomic<std::uint32_t> eigen_alloc_violations{0};
 
 }
 
-#define eigen_assert(X)                                                                                                                                                                 \
-    do                                                                                                                                                                                  \
-    {                                                                                                                                                                                   \
-        if(!(X))                                                                                                                                                                        \
-            ::ctrlpp::detail::eigen_alloc_violations.fetch_add(1, ::std::memory_order_relaxed);                                                                                         \
-    } while(false)
+    #define eigen_assert(X)                                                                                                                                                             \
+        do                                                                                                                                                                              \
+        {                                                                                                                                                                               \
+            if(!(X))                                                                                                                                                                    \
+                ::ctrlpp::detail::eigen_alloc_violations.fetch_add(1, ::std::memory_order_relaxed);                                                                                     \
+        } while(false)
+
+#endif
 
 #endif
