@@ -217,6 +217,49 @@ mpc_diagnostics<Scalar> diagnostics() const;
 
 Returns solver diagnostics including constraint violation metrics and total slack.
 
+`stop_criterion` says which stopping test ended the last solve, for backends that report it (`argmin_solver` does; the others leave it `unreported`). `status` folds every successful stop into `solve_status::optimal`, which is enough for acting on the answer but not for saying how close the answer is to the exact optimum. Only a stop on `nlp_stop_criterion::stationarity` means the first-order optimality residual fell below its threshold, and a bound on the distance to the optimum can be built from that. A stop on the change in the objective (`objective_change`) or in the iterate (`step_size`) certifies no such distance.
+
+| Value | The solve stopped because |
+|-------|---------------------------|
+| `unreported` | the backend does not say |
+| `stationarity` | the KKT residual fell below `argmin_settings::kkt_tol` |
+| `objective_change` | the relative change in the objective fell below `ftol_rel` |
+| `step_size` | the relative change in the iterate fell below `xtol_rel` |
+| `stalled` | the iterate or the objective stopped making progress |
+| `iteration_limit` | `max_eval` ran out |
+| `time_limit` | `max_time` ran out |
+| `other` | any other stop, including a failed solve |
+
+### argmin backend settings
+
+`argmin_solver` takes an `argmin_settings<Scalar>`:
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `ftol_rel` | `1e-6` | relative objective-change threshold |
+| `xtol_rel` | `1e-6` | relative step threshold |
+| `max_eval` | `500` | iteration cap |
+| `max_time` | `0` | wall-clock budget in seconds; `0` selects the step-budget driver, which reads no clock |
+| `constraint_tol` | `1e-8` | constraint and feasibility tolerance |
+| `warm_start` | `curvature` | what a re-solve keeps from the previous one |
+| `kkt_tol` | `1e-5` | threshold on the composite KKT residual, the largest of the stationarity and feasibility legs in the infinity norm |
+
+`kkt_tol` is absolute, not relative to the problem's scale. Its default is the backend's own, the `pgtol` default of Byrd, Lu, Nocedal and Zhu (1995), so leaving it unset changes nothing. On a problem whose state shrinks toward zero, an absolute threshold stops each solve once the residual is small in absolute terms. The input it returns is then accurate to an absolute amount, not a relative one. A caller who needs relative accuracy at small states tightens `kkt_tol`, and pays for it in iterations:
+
+```cpp
+ctrlpp::argmin_settings<double> settings;
+settings.kkt_tol = 1e-9;
+
+using solver = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp, true, NV, MaxM>;
+ctrlpp::nmpc<double, NX, NU, NH, solver, plant> controller{plant{}, config, solver{settings}};
+
+auto u = controller.solve(x);
+if(u && controller.diagnostics().stop_criterion == ctrlpp::nlp_stop_criterion::stationarity)
+{
+    // The KKT residual is below 1e-9 at this answer.
+}
+```
+
 ## Usage Example
 
 ```cpp

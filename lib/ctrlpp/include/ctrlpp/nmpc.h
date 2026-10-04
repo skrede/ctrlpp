@@ -326,7 +326,8 @@ private:
                                                      .max_constraint_violation = result.primal_residual,
                                                      .max_path_constraint_violation = Scalar{0},
                                                      .max_terminal_constraint_violation = Scalar{0},
-                                                     .total_slack = Scalar{0}};
+                                                     .total_slack = Scalar{0},
+                                                     .stop_criterion = result.stop_criterion};
     }
 
     void populate_constraint_diagnostics(const Eigen::VectorX<Scalar>& z)
@@ -699,7 +700,8 @@ private:
                                                      .max_constraint_violation = result.primal_residual,
                                                      .max_path_constraint_violation = Scalar{0},
                                                      .max_terminal_constraint_violation = Scalar{0},
-                                                     .total_slack = Scalar{0}};
+                                                     .total_slack = Scalar{0},
+                                                     .stop_criterion = result.stop_criterion};
     }
 
     // Warm-start shift for the slack-free formulation: advance the state and input

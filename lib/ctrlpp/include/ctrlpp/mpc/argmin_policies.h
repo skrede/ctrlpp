@@ -33,6 +33,15 @@ struct argmin_settings
     Scalar max_time{Scalar{0}};
     Scalar constraint_tol{Scalar{1e-8}};
     warm_start_mode warm_start{warm_start_mode::curvature};
+    /// Threshold on argmin's composite first-order optimality residual -- the
+    /// largest of the Lagrangian-stationarity, primal-feasibility,
+    /// dual-feasibility and complementarity legs, each in the infinity norm --
+    /// below which a solve stops as `nlp_stop_criterion::stationarity`. It is
+    /// absolute, not relative to the problem's scale. The default is argmin's
+    /// own, so leaving it unset changes nothing.
+    ///
+    /// @cite byrd1995 -- Byrd, Lu, Nocedal & Zhu, "A Limited Memory Algorithm for Bound Constrained Optimization", SIAM J. Sci. Comput. 16(5):1190-1208, 1995 (the pgtol default of 1e-5)
+    Scalar kkt_tol{Scalar{1e-5}};
 };
 
 struct argmin_slsqp

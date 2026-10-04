@@ -241,6 +241,7 @@ private:
         // criteria (see argmin_ctrlpp_convergence in argmin_policies.h).
         opts.set_objective_threshold_rel(static_cast<double>(s.ftol_rel));
         opts.set_step_threshold_rel(static_cast<double>(s.xtol_rel));
+        opts.set_gradient_threshold(static_cast<double>(s.kkt_tol));
 
         return opts;
     }
@@ -304,6 +305,36 @@ private:
         return solve_status::error;
     }
 
+    static constexpr auto map_stop_criterion(argmin::solver_status s) -> nlp_stop_criterion
+    {
+        switch(s)
+        {
+        case argmin::solver_status::converged:
+            return nlp_stop_criterion::stationarity;
+        case argmin::solver_status::ftol_reached:
+            return nlp_stop_criterion::objective_change;
+        case argmin::solver_status::xtol_reached:
+            return nlp_stop_criterion::step_size;
+        case argmin::solver_status::stalled:
+        case argmin::solver_status::objective_stalled:
+            return nlp_stop_criterion::stalled;
+        case argmin::solver_status::max_iterations:
+        case argmin::solver_status::budget_exhausted:
+        case argmin::solver_status::maxeval_reached:
+            return nlp_stop_criterion::iteration_limit;
+        case argmin::solver_status::time_limit_reached:
+            return nlp_stop_criterion::time_limit;
+        case argmin::solver_status::roundoff_limited:
+        case argmin::solver_status::trust_region_step_rejected:
+        case argmin::solver_status::invalid_problem:
+        case argmin::solver_status::diverged:
+        case argmin::solver_status::aborted:
+        case argmin::solver_status::running:
+            return nlp_stop_criterion::other;
+        }
+        return nlp_stop_criterion::other;
+    }
+
     // Scalar-only translation: fills every diagnostic field but leaves `.x` empty
     // (default-constructed, size 0), so it allocates nothing. solve_into returns
     // this directly; translate_result layers the by-value `.x` copy on top.
@@ -317,6 +348,7 @@ private:
             .solve_time = result_wall_time(r),
             .iterations = static_cast<int>(r.iterations),
             .primal_residual = r.constraint_violation,
+            .stop_criterion = map_stop_criterion(r.status),
         };
     }
 

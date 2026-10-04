@@ -2,6 +2,7 @@
 #define HPP_GUARD_CTRLPP_MPC_NLP_SOLVER_H
 
 #include "ctrlpp/mpc/qp_types.h"
+#include "ctrlpp/mpc/nlp_types.h"
 
 #include <Eigen/Core>
 
@@ -73,6 +74,7 @@ struct nlp_result
     Scalar solve_time;
     int iterations;
     Scalar primal_residual;
+    nlp_stop_criterion stop_criterion{nlp_stop_criterion::unreported};
 };
 
 /// @brief Concept defining the NLP solver interface used by nonlinear MPC and
