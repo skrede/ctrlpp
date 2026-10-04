@@ -9,36 +9,7 @@ if(NOT CTRLPP_FETCH_BENCHMARK_DEPS)
     message(FATAL_ERROR "The HPIPM comparison benchmark has no usable system package (upstream ships LTO-only archives) and must be fetched; re-run with -DCTRLPP_FETCH_BENCHMARK_DEPS=ON.")
 endif()
 
-include(FetchContent)
-
-FetchContent_Declare(blasfeo
-    GIT_REPOSITORY https://github.com/giaf/blasfeo.git
-    GIT_TAG master
-    GIT_SHALLOW TRUE
-    EXCLUDE_FROM_ALL)
-
-set(BLASFEO_TARGET GENERIC CACHE STRING "" FORCE)
-set(LA HIGH_PERFORMANCE CACHE STRING "" FORCE)
-set(BLASFEO_TESTING OFF CACHE BOOL "" FORCE)
-set(BLASFEO_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BLASFEO_BENCHMARKS OFF CACHE BOOL "" FORCE)
-
-# Both HPIPM 0.1.4.2 and BLASFEO 0.1.4.2 ship CMake 2.x minimums; lift to 3.5
-# for this configure pass only.
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
-
-FetchContent_MakeAvailable(blasfeo)
-
-FetchContent_Declare(hpipm
-    GIT_REPOSITORY https://github.com/giaf/hpipm.git
-    GIT_TAG master
-    GIT_SHALLOW TRUE
-    EXCLUDE_FROM_ALL)
-
-set(HPIPM_TESTING OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(hpipm)
+include(${CMAKE_CURRENT_LIST_DIR}/../deps/hpipm.cmake)
 
 add_executable(bench_qp_vs_hpipm bench_qp_vs_hpipm.cpp)
 

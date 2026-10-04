@@ -1,28 +1,4 @@
-# A local checkout (CTRLPP_ARGMIN_SOURCE_DIR) always wins; otherwise fetch only
-# when opted in, else expect an installed argmin via find_package.
-if(CTRLPP_ARGMIN_SOURCE_DIR)
-    include(FetchContent)
-    FetchContent_Declare(argmin
-        SOURCE_DIR ${CTRLPP_ARGMIN_SOURCE_DIR}
-        EXCLUDE_FROM_ALL)
-    set(ARGMIN_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(ARGMIN_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(ARGMIN_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(argmin)
-elseif(CTRLPP_FETCH_BENCHMARK_DEPS)
-    include(FetchContent)
-    FetchContent_Declare(argmin
-        GIT_REPOSITORY https://github.com/skrede/argmin.git
-        GIT_TAG ${CTRLPP_ARGMIN_GIT_TAG}
-        GIT_SHALLOW TRUE
-        EXCLUDE_FROM_ALL)
-    set(ARGMIN_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(ARGMIN_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(ARGMIN_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(argmin)
-else()
-    find_package(argmin CONFIG REQUIRED)
-endif()
+include(${CMAKE_CURRENT_LIST_DIR}/../../comparison/deps/argmin.cmake)
 
 find_package(NLopt REQUIRED)
 

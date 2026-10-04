@@ -6,18 +6,7 @@ if(NOT CTRLPP_FETCH_BENCHMARK_DEPS)
     message(FATAL_ERROR "The DAQP comparison benchmark is fetched from upstream and must be opted into; re-run with -DCTRLPP_FETCH_BENCHMARK_DEPS=ON.")
 endif()
 
-include(FetchContent)
-
-FetchContent_Declare(daqp
-    GIT_REPOSITORY https://github.com/darnstrom/daqp.git
-    GIT_TAG v0.7.2
-    GIT_SHALLOW TRUE
-    EXCLUDE_FROM_ALL)
-
-set(DAQP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(DAQP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(daqp)
+include(${CMAKE_CURRENT_LIST_DIR}/../deps/daqp.cmake)
 
 add_executable(bench_qp_vs_daqp bench_qp_vs_daqp.cpp)
 

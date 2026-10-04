@@ -8,18 +8,7 @@ if(NOT CTRLPP_FETCH_BENCHMARK_DEPS)
     message(FATAL_ERROR "The TinyMPC comparison benchmark is fetched from upstream and must be opted into; re-run with -DCTRLPP_FETCH_BENCHMARK_DEPS=ON.")
 endif()
 
-include(FetchContent)
-
-FetchContent_Declare(tinympc
-    GIT_REPOSITORY https://github.com/TinyMPC/TinyMPC.git
-    GIT_TAG main
-    GIT_SHALLOW TRUE
-    EXCLUDE_FROM_ALL)
-
-set(TINYMPC_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(TINYMPC_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-
-FetchContent_MakeAvailable(tinympc)
+include(${CMAKE_CURRENT_LIST_DIR}/../deps/tinympc.cmake)
 
 add_executable(bench_lmpc_vs_tinympc bench_lmpc_vs_tinympc.cpp)
 
