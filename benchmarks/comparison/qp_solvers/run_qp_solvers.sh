@@ -214,7 +214,9 @@ import json, sys
 h, counter, cpu = json.loads(sys.argv[1]), sys.argv[2], sys.argv[3]
 checks = [
     (h["boost_global"] == "0", f"global boost is {h['boost_global']}, needs 0"),
-    (all(v == "0" for v in h["boost_policies"].values()), "a per-policy boost is not 0"),
+    # A policy whose CPUs SMT control took offline reads EBUSY, so it is absent rather than boosted.
+    (all(v == "0" or (v is None and h["smt_control"] == "off") for v in h["boost_policies"].values()),
+     "a per-policy boost is not 0"),
     (h["governor"] == "performance", f"governor of cpu{cpu} is {h['governor']}, needs performance"),
     (h["scaling_min_freq"] is not None and h["scaling_min_freq"] == h["scaling_max_freq"],
      f"cpu{cpu} frequency bounds {h['scaling_min_freq']}..{h['scaling_max_freq']} are not equal"),
