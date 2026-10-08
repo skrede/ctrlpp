@@ -7,6 +7,8 @@
 #   board_capture.sh prepare
 #   board_capture.sh capture [--timing] [--reset-only | --no-reset] <destination-file>
 #   board_capture.sh check [--timing] <transcript-or-capture-file>
+#   board_capture.sh compare [--timing --bound=<cycles>] <count> <reset-class> <destination-directory>
+#   board_capture.sh compare --replay [--timing --bound=<cycles>] <reset-class> <series-directory>
 #
 # "prepare" configures, builds and produces the raw binaries beside the two
 # ELFs, the allocation-evidence image and the timing image. It touches no
@@ -16,6 +18,29 @@
 # inside a capture is how a capture ends up describing an image that was never
 # flashed, which is the failure this split exists to prevent, so a missing ELF
 # or binary is an error naming the target.
+#
+# "compare" collects a series: one uncounted priming run, then <count> captures of
+# the resident image, each restarted by the reset class the series is for, each
+# kept as run-NN.txt and each passing every refusal "capture" applies. It then
+# compares them and writes compare-summary.txt beside them. --replay compares the
+# run-NN.txt files already in a directory, after re-applying "check" to each.
+#   reset class    the class the image decodes and prints as reset=<class>. A
+#                  'pin' series is restarted with `st-flash reset`. A 'power_on'
+#                  series prompts the operator to unplug and replug the board and
+#                  waits, bounded, for the serial node to vanish and return; no
+#                  tool here can cut the target's power. A run whose decoded
+#                  class is not the requested one is refused and not counted.
+#   exact class    the [exact] lines, compared byte for byte in order against the
+#                  first run, with no rounding, normalization or sorting; the
+#                  refusal names the first differing line and byte.
+#   spread class   per [spread] row and field, the minimum, maximum and spread
+#                  across the runs. raw_min, raw_median and raw_max are cycle
+#                  counts held to --bound; max_at and per_iteration_raw_max are
+#                  reported without one; n, n_basis, block and wraps say what was
+#                  measured and must agree. A spread is reported even when zero.
+#   shared         every run carries one build id and one posture line apart
+#                  from its reset fields; the summary quotes both, with the
+#                  toolchain, the run count and every run's decoded reset.
 #
 # Images:
 #   (default)      the evidence image: carries the allocation sensor, so its
@@ -75,6 +100,10 @@
 #   CAPTURE_READ_TIMEOUT     seconds (default: 45)
 #   CAPTURE_BYTE_CAP         bytes (default: 262144)
 #   CAPTURE_BUILD_JOBS       build parallelism (default: 6)
+#   COMPARE_ATTEMPTS         captures per run when the report head is lost,
+#                            status 4 or 5 (default: 3)
+#   COMPARE_PLUG_TIMEOUT     seconds the power-on prompt waits for the node to
+#                            vanish, and again to return (default: 120)
 #
 # Exit status:
 #   0  capture written    2  usage       3  environment or build
@@ -113,6 +142,12 @@
 #      width differs from its header's, an exact row's index breaks the
 #      sequence 0, 1, 2, ... (a reordering is a difference, not a pass), or an
 #      exact value is not a 16-digit bit pattern
+#  26  a run's decoded reset class is not the class the series requires
+#  27  the exact-class blocks of two runs differ
+#  28  a cycle field's spread across the runs exceeds the stated bound
+#  29  the runs do not share what a comparison needs them to share: the build
+#      id, the posture outside the reset fields, the spread rows and their
+#      shape fields, or a spread column this script can classify
 #
 # --- What this capture does NOT establish -------------------------------------
 #
@@ -174,6 +209,25 @@
 #      premise its own [verdict] predictive line reports (every solve stopped on the
 #      stationarity test). The allocation count on the same line is
 #      transported, not judged.
+#
+#   9. A series that compares identical shows the runs it holds were identical,
+#      no more: zero differences in N runs leaves a per-run difference rate up
+#      to about 3/N plausible at 95 percent confidence, so the run count is
+#      part of the result. Every run restarts one resident image; a reflash
+#      between runs is not part of the comparison, and only the [exact] block
+#      is compared byte for byte, not the verdict lines.
+#
+#  10. The power-on prompt cannot verify the cycle it asks for. The node
+#      vanishing proves the ST-LINK lost its USB connection, not that the
+#      target's supply decayed; the decoded class is the only evidence, and it
+#      is only as good as the priming run that cleared the flags before it.
+#      The reader attaches after the ST-LINK enumerates and the target does not
+#      wait for that, so a power-on report can lose its head and refuse with
+#      status 5.
+#
+#  11. The spread bound is one absolute cycle count applied to every timed
+#      region's raw figures, from the 129-cycle overhead to the predictive
+#      solve; it is the invocation's stated claim, not a figure derived here.
 
 set -euo pipefail
 
@@ -219,6 +273,18 @@ subcommand=""
 capture_mode="flash"
 image_kind="evidence"
 destination=""
+replay="no"
+spread_bound=""
+operands=()
+
+usage()
+{
+    echo "  Usage: scripts/board_capture.sh prepare" >&2
+    echo "         scripts/board_capture.sh capture [--timing] [--reset-only | --no-reset] <destination-file>" >&2
+    echo "         scripts/board_capture.sh check [--timing] <transcript-or-capture-file>" >&2
+    echo "         scripts/board_capture.sh compare [--timing --bound=<cycles>] <count> <reset-class> <destination-directory>" >&2
+    echo "         scripts/board_capture.sh compare --replay [--timing --bound=<cycles>] <reset-class> <series-directory>" >&2
+}
 
 for arg in "$@"; do
     case "${arg}" in
@@ -235,25 +301,34 @@ for arg in "$@"; do
         --no-reset)
             capture_mode="no-reset"
             ;;
+        --replay)
+            replay="yes"
+            ;;
+        --bound=*)
+            spread_bound="${arg#--bound=}"
+            ;;
         -*)
             echo "ERROR: unknown option '${arg}'." >&2
-            echo "  Usage: scripts/board_capture.sh prepare" >&2
-            echo "         scripts/board_capture.sh capture [--timing] [--reset-only | --no-reset] <destination-file>" >&2
-            echo "         scripts/board_capture.sh check [--timing] <transcript-or-capture-file>" >&2
+            usage
             exit 2
             ;;
         *)
             if [ -z "${subcommand}" ]; then
                 subcommand="${arg}"
-            elif [ -z "${destination}" ]; then
-                destination="${arg}"
             else
-                echo "ERROR: unexpected extra argument '${arg}'." >&2
-                exit 2
+                operands+=("${arg}")
             fi
             ;;
     esac
 done
+
+if [ "${subcommand}" != "compare" ]; then
+    if [ "${#operands[@]}" -gt 1 ]; then
+        echo "ERROR: unexpected extra argument '${operands[1]}'." >&2
+        exit 2
+    fi
+    destination="${operands[0]:-}"
+fi
 
 target_name="${evidence_target}"
 if [ "${image_kind}" = "timing" ]; then
@@ -830,6 +905,402 @@ do_check()
     echo "check passed: ${destination}"
 }
 
+# --- compare ------------------------------------------------------------------
+#
+# A series is N restarts of one resident image, each captured and refused on its
+# own, then compared: the exact-class block byte for byte, the spread-class block
+# field by field against a stated bound. The capture subcommand does the
+# capturing, so every run of a series passes every refusal a single capture does.
+
+script_path="${script_dir}/$(basename "${BASH_SOURCE[0]}")"
+compare_attempts="${COMPARE_ATTEMPTS:-3}"
+plug_timeout="${COMPARE_PLUG_TIMEOUT:-120}"
+
+# Every spread-class column belongs to one of these. A shape field says what was
+# measured, so runs that disagree on it measured different things and are not
+# compared; a bounded field is a cycle count held to the bound; a reported field
+# is published with its spread but is not a cycle count the bound can apply to.
+spread_key_fields="region regime"
+spread_shape_fields="n n_basis block wraps"
+spread_bounded_fields="raw_min raw_median raw_max"
+spread_reported_fields="max_at per_iteration_raw_max"
+
+requested_class=""
+series_count=""
+series_dir=""
+compare_tmp=""
+compare_status=0
+compare_note=""
+runs=()
+run_log=()
+
+# The first failure decides the exit status; the comparison still completes so
+# the summary reports every spread, including on a series that failed.
+compare_fail()
+{
+    echo "REFUSED: $2" >&2
+    if [ "${compare_status}" -eq 0 ]; then
+        compare_status="$1"
+        compare_note="$2"
+    fi
+    return 0
+}
+
+# Anchored on the tag, so the '# Reset:' header line of a capture file is not
+# mistaken for the image's own report.
+posture_of()
+{
+    tr -d '\r' < "$1" | grep -m 1 '^\[meta\] posture ' || true
+}
+
+posture_field()
+{
+    posture_of "$1" | sed -n "s/.* $2=\([^ ]*\).*/\1/p"
+}
+
+block_of()
+{
+    tr -d '\r' < "$2" | grep "^\[$1\] " || true
+}
+
+# The node the operator's replug makes vanish and return. The by-id link is
+# stable across a re-enumeration where the tty number is not.
+port_node()
+{
+    local link
+    if [ -n "${CAPTURE_PORT:-}" ]; then
+        printf '%s\n' "${CAPTURE_PORT}"
+        return 0
+    fi
+    for link in /dev/serial/by-id/*STLINK*; do
+        if [ -e "${link}" ]; then
+            printf '%s\n' "${link}"
+            return 0
+        fi
+    done
+    resolve_port
+}
+
+# The script cannot cut the target's power, so it asks for the cycle and waits,
+# bounded both ways, for the node to go and come back. The prompt is only an
+# instruction: the decoded class on the run's posture line is what counts.
+await_power_cycle()
+{
+    local node="" waited=0
+    node="$(port_node)" || fail 3 "no ST-LINK serial port found to watch for the power cycle."
+    echo ">>> UNPLUG the board's ST-LINK USB cable now, leave it out for a few seconds, then plug it back in." >&2
+    while [ "${waited}" -lt $((plug_timeout * 10)) ] && [ -e "${node}" ]; do
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+    [ ! -e "${node}" ] \
+        || fail 3 "power cycle timed out: ${node} did not disappear within ${plug_timeout} s, so the cable was not unplugged."
+    waited=0
+    while [ "${waited}" -lt $((plug_timeout * 10)) ] && [ ! -e "${node}" ]; do
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+    [ -e "${node}" ] \
+        || fail 3 "power cycle timed out: ${node} did not reappear within ${plug_timeout} s after the unplug."
+    echo ">>> device node back: ${node}" >&2
+}
+
+# A lost report head (an empty stream, or no fingerprint line) is the transport
+# failing, not the run, so it is retried; any other refusal ends the series.
+collect_one()
+{
+    local file="$1" mode="$2" attempt=1 status=0
+    while [ "${attempt}" -le "${compare_attempts}" ]; do
+        status=0
+        if [ "${mode}" = "power_on" ]; then
+            await_power_cycle
+            "${script_path}" capture ${kind_flag} --no-reset "${file}" || status=$?
+        else
+            "${script_path}" capture ${kind_flag} --reset-only "${file}" || status=$?
+        fi
+        if [ "${status}" -ne 4 ] && [ "${status}" -ne 5 ]; then
+            run_log+=("$(basename "${file}") attempts=${attempt} capture_status=${status}")
+            return "${status}"
+        fi
+        echo "capture of $(basename "${file}") lost the report head (status ${status}); attempt ${attempt} of ${compare_attempts}." >&2
+        attempt=$((attempt + 1))
+    done
+    run_log+=("$(basename "${file}") attempts=${compare_attempts} capture_status=${status}")
+    return "${status}"
+}
+
+# The priming run is not counted. The image clears the reset flags after it
+# reports them, so a run after it labels only its own reset; without it the first
+# counted run could carry flags accumulated under an image that never cleared.
+collect_series()
+{
+    local index=1 file="" status=0 class=""
+    collect_one "${series_dir}/priming.txt" pin || fail "$?" "the priming run was refused; the series was not started."
+    while [ "${index}" -le "${series_count}" ]; do
+        file="$(printf '%s/run-%02d.txt' "${series_dir}" "${index}")"
+        status=0
+        collect_one "${file}" "${requested_class}" || status=$?
+        [ "${status}" -eq 0 ] || fail "${status}" "run ${index} of the series was refused by the capture; the series stops at $((index - 1)) runs."
+        class="$(posture_field "${file}" reset)"
+        if [ "${class}" != "${requested_class}" ]; then
+            mv -- "${file}" "${file%.txt}-refused.txt"
+            compare_fail 26 "run ${index} decoded reset=${class:-absent} where the series requires reset=${requested_class}; it is kept as $(basename "${file%.txt}")-refused.txt and not counted, and the series stops."
+            return 0
+        fi
+        index=$((index + 1))
+    done
+    return 0
+}
+
+check_classes()
+{
+    local run="" class=""
+    for run in "${runs[@]}"; do
+        class="$(posture_field "${run}" reset)"
+        [ "${class}" = "${requested_class}" ] \
+            || compare_fail 26 "$(basename "${run}") decoded reset=${class:-absent} where the series requires reset=${requested_class}."
+    done
+    return 0
+}
+
+# The fingerprint and every posture field but the reset's own must agree, since
+# a spread is only reported against the one posture that produced it.
+check_shared()
+{
+    local run="" first_id="" id="" first_posture="" posture=""
+    first_id="$(block_of meta "${runs[0]}" | sed -n 's/^\[meta\] build_id=\([0-9a-f]*\).*/\1/p' | head -1)"
+    first_posture="$(posture_of "${runs[0]}" | sed -E 's/ reset(_flags|_rsr)?=[^ ]*//g')"
+    for run in "${runs[@]}"; do
+        id="$(block_of meta "${run}" | sed -n 's/^\[meta\] build_id=\([0-9a-f]*\).*/\1/p' | head -1)"
+        [ "${id}" = "${first_id}" ] \
+            || compare_fail 29 "$(basename "${run}") carries build id ${id:-absent} where $(basename "${runs[0]}") carries ${first_id:-absent}; a series is one image."
+        posture="$(posture_of "${run}" | sed -E 's/ reset(_flags|_rsr)?=[^ ]*//g')"
+        [ "${posture}" = "${first_posture}" ] \
+            || compare_fail 29 "$(basename "${run}") reports the posture '${posture}' where $(basename "${runs[0]}") reports '${first_posture}'."
+    done
+    shared_id="${first_id}"
+    shared_posture="${first_posture}"
+    return 0
+}
+
+# Byte for byte and positional: no rounding, no normalization, no sorting, so a
+# one-bit difference or a reordered row is a difference.
+compare_exact()
+{
+    local run="" where="" line="" reference="${compare_tmp}/exact-reference" candidate="${compare_tmp}/exact-candidate"
+    block_of exact "${runs[0]}" > "${reference}"
+    exact_rows=$(($(wc -l < "${reference}") - 1))
+    exact_digest="$(sha256sum < "${reference}" | cut -d' ' -f1)"
+    exact_verdict="byte-identical"
+    for run in "${runs[@]:1}"; do
+        block_of exact "${run}" > "${candidate}"
+        where="$(cmp -- "${reference}" "${candidate}" 2>&1)" && continue
+        line="$(printf '%s\n' "${where}" | sed -n 's/.*line \([0-9][0-9]*\).*/\1/p')"
+        exact_verdict="DIFFERS"
+        if printf '%s\n' "${where}" | grep -q 'EOF on'; then
+            compare_fail 27 "$(basename "${run}") and $(basename "${runs[0]}") carry exact-class blocks of different lengths: ${where##*: }."
+            continue
+        fi
+        compare_fail 27 "$(basename "${run}") differs from $(basename "${runs[0]}") in the exact-class block at block line ${line:-?}, byte $(first_differing_byte "${reference}" "${candidate}" "${line:-1}") of that line: '$(sed -n "${line:-1}p" "${reference}")' against '$(sed -n "${line:-1}p" "${candidate}")'."
+    done
+    return 0
+}
+
+first_differing_byte()
+{
+    awk -v n="$3" 'FNR == n { line[++seen] = $0 } END {
+        a = line[1]; b = line[2]; i = 1
+        while (i <= length(a) && substr(a, i, 1) == substr(b, i, 1)) ++i
+        print i }' "$1" "$2"
+}
+
+# One table row per spread row and field: the minimum, maximum and spread across
+# the runs, the bound where the field is a cycle count, and the verdict.
+compare_spread()
+{
+    local index=0 run="" files=() problem=""
+    for run in "${runs[@]}"; do
+        index=$((index + 1))
+        block_of spread "${run}" | sed 's/^\[spread\] //' > "${compare_tmp}/spread-${index}"
+        files+=("${compare_tmp}/spread-${index}")
+    done
+    awk -F, -v key="${spread_key_fields}" -v shape="${spread_shape_fields}" \
+        -v bounded="${spread_bounded_fields}" -v reported="${spread_reported_fields}" \
+        -v bound="${spread_bound:-}" -f /dev/stdin "${files[@]}" > "${compare_tmp}/spread-table" <<'AWK'
+function classify(list, kind,    n, i, names) { n = split(list, names, " "); for (i = 1; i <= n; ++i) cls[names[i]] = kind }
+function problem(status, text) { if (!reported_problem) print "PROBLEM\t" status "\t" text; reported_problem = 1 }
+function decimals(v) { return index(v, ".") ? length(v) - index(v, ".") : 0 }
+BEGIN { classify(key, "key"); classify(shape, "shape"); classify(bounded, "bounded"); classify(reported, "reported") }
+FNR == 1 {
+    if (run > 0 && count[run] != count[1]) problem(29, "run " run " carries " count[run] " spread rows where run 1 carries " count[1] ".")
+    ++run
+    if (run == 1) {
+        header = $0; width = NF
+        for (i = 1; i <= NF; ++i) { name[i] = $i; if (!($i in cls)) problem(29, "the spread-class column '" $i "' belongs to no class this comparison knows, so it can be neither bounded nor required equal.") }
+    } else if ($0 != header) problem(29, "run " run " carries the spread header '" $0 "' where run 1 carries '" header "'.")
+    next
+}
+{
+    row = ++count[run]
+    if (run == 1) keys[row] = $1 "," $2
+    else if (keys[row] != $1 "," $2) problem(29, "run " run " carries the spread row '" $1 "," $2 "' at position " row " where run 1 carries '" keys[row] "'.")
+    for (i = 3; i <= width; ++i) {
+        kind = cls[name[i]]
+        if (kind == "shape") {
+            if (run == 1) first[row, i] = $i
+            else if ($i != first[row, i]) problem(29, "run " run " measured " keys[row] " with " name[i] "=" $i " where run 1 used " first[row, i] ".")
+            continue
+        }
+        if ($i !~ /^[0-9]+(\.[0-9]+)?$/) { problem(25, "run " run " carries the non-numeric " name[i] " '" $i "' in the spread row " keys[row] "."); continue }
+        if (run == 1 || $i + 0 < lo[row, i] + 0) lo[row, i] = $i
+        if (run == 1 || $i + 0 > hi[row, i] + 0) hi[row, i] = $i
+    }
+}
+END {
+    if (run > 1 && count[run] != count[1]) problem(29, "run " run " carries " count[run] " spread rows where run 1 carries " count[1] ".")
+    for (row = 1; row <= count[1]; ++row)
+        for (i = 3; i <= width; ++i) {
+            kind = cls[name[i]]
+            if (kind != "bounded" && kind != "reported") continue
+            d = decimals(lo[row, i]) > decimals(hi[row, i]) ? decimals(lo[row, i]) : decimals(hi[row, i])
+            spread = sprintf("%." d "f", hi[row, i] - lo[row, i])
+            verdict = "reported"
+            limit = "-"
+            if (kind == "bounded") {
+                limit = bound
+                verdict = (spread + 0 <= bound + 0) ? "within" : "EXCEEDS"
+                if (verdict == "EXCEEDS") problem(28, "the spread of " name[i] " for " keys[row] " is " spread " cycles across " run " runs, past the stated bound of " bound " cycles (" lo[row, i] " to " hi[row, i] ").")
+            }
+            print "ROW\t" keys[row] "," name[i] "," lo[row, i] "," hi[row, i] "," spread "," limit "," verdict
+        }
+}
+AWK
+    problem="$(grep -m 1 '^PROBLEM' "${compare_tmp}/spread-table" || true)"
+    if [ -n "${problem}" ]; then
+        compare_fail "$(printf '%s\n' "${problem}" | cut -f2)" "$(printf '%s\n' "${problem}" | cut -f3-)"
+    fi
+    spread_rows="$(sed -n 's/^ROW\t//p' "${compare_tmp}/spread-table")"
+    return 0
+}
+
+write_summary()
+{
+    local run="" verdict="PASS"
+    [ "${compare_status}" -eq 0 ] || verdict="FAIL (status ${compare_status}): ${compare_note}"
+    {
+        echo "# ctrlpp NUCLEO-H753ZI determinism comparison"
+        echo "# compared:      $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "# mode:          $([ "${replay}" = "yes" ] && echo "replay of transcripts on disk" || echo "collected by this invocation")"
+        echo "# kind:          ${image_kind}"
+        echo "# reset class:   ${requested_class} (requested; every counted run's decoded class is listed below)"
+        echo "# runs:          ${#runs[@]} counted$([ -n "${series_count}" ] && echo " of ${series_count} requested")"
+        echo "# build id:      ${shared_id:-absent} (shared by every counted run)"
+        if [ "${image_kind}" = "timing" ]; then
+            echo "# evidence:      $(elf_build_id "${evidence_elf}") (the allocation-evidence image built from the same sources)"
+        fi
+        echo "# toolchain:     $("${toolchain_prefix}gcc" --version | head -1)"
+        echo "# posture:       ${shared_posture:-absent}"
+        echo "# host load:     $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo unknown) (the figures count core cycles on the target, not host time)"
+        echo "#"
+        echo "# Per run, as each image decoded its own reset status register:"
+        if [ -f "${series_dir}/priming.txt" ] && [ "${replay}" = "no" ]; then
+            echo "#   priming.txt (not counted) $(posture_of "${series_dir}/priming.txt" | grep -o 'reset=[^ ]* reset_flags=[^ ]* reset_rsr=[^ ]*')"
+        fi
+        for run in "${runs[@]}"; do
+            echo "#   $(basename "${run}") $(posture_of "${run}" | grep -o 'reset=[^ ]* reset_flags=[^ ]* reset_rsr=[^ ]*')"
+        done
+        for run in "${run_log[@]+"${run_log[@]}"}"; do
+            echo "#   collection: ${run}"
+        done
+        echo "#"
+        echo "# Exact class: ${exact_rows:-0} rows plus the header, ${exact_verdict:-not compared} across ${#runs[@]} runs."
+        echo "#   sha256 of the block in $(basename "${runs[0]:-none}"): ${exact_digest:-none}"
+        echo "#"
+        echo "# Spread class: bound ${spread_bound:-none} cycles on ${spread_bounded_fields}; ${spread_reported_fields} are"
+        echo "# reported without a bound; ${spread_shape_fields} must agree across runs."
+        echo "region,regime,field,min,max,spread,bound,verdict"
+        if [ -n "${spread_rows:-}" ]; then
+            printf '%s\n' "${spread_rows}"
+        else
+            echo "# the spread-class block carries no rows on this image"
+        fi
+        echo "#"
+        echo "# Verdict: ${verdict}"
+    } > "${series_dir}/compare-summary.txt"
+}
+
+compare_arguments()
+{
+    if [ "${replay}" = "yes" ]; then
+        [ "${#operands[@]}" -eq 2 ] || { usage; fail 2 "compare --replay takes a reset class and a series directory."; }
+        requested_class="${operands[0]}"
+        series_dir="${operands[1]}"
+    else
+        [ "${#operands[@]}" -eq 3 ] || { usage; fail 2 "compare takes a run count, a reset class and a destination directory."; }
+        series_count="${operands[0]}"
+        requested_class="${operands[1]}"
+        series_dir="${operands[2]}"
+        printf '%s\n' "${series_count}" | grep -Eqx '[1-9][0-9]*' && [ "${series_count}" -ge 2 ] \
+            || fail 2 "the run count must be an integer of at least 2, since one run compares with nothing: '${series_count}'."
+        case "${requested_class}" in
+            pin|power_on) ;;
+            *) fail 2 "this station can collect a 'pin' or a 'power_on' series, not '${requested_class}'; a series of another class can be compared with --replay." ;;
+        esac
+        printf '%s\n' "${plug_timeout}" | grep -Eqx '[1-9][0-9]*' \
+            || fail 2 "COMPARE_PLUG_TIMEOUT must be a whole number of seconds: '${plug_timeout}'."
+        printf '%s\n' "${compare_attempts}" | grep -Eqx '[1-9][0-9]*' \
+            || fail 2 "COMPARE_ATTEMPTS must be a positive integer: '${compare_attempts}'."
+    fi
+    printf '%s\n' "${requested_class}" | grep -Eqx '[a-z_]+' || fail 2 "'${requested_class}' is not a reset class name."
+    if [ "${image_kind}" = "timing" ]; then
+        printf '%s\n' "${spread_bound}" | grep -Eqx '[0-9]+' \
+            || fail 2 "a timing series needs its spread bound stated as --bound=<cycles>, a non-negative integer: '${spread_bound}'."
+    else
+        [ -z "${spread_bound}" ] || fail 2 "--bound applies to the timing image only; the evidence image times nothing."
+    fi
+    kind_flag=""
+    [ "${image_kind}" = "timing" ] && kind_flag="--timing"
+    return 0
+}
+
+do_compare()
+{
+    compare_arguments
+    [ -f "${elf_path}" ] || fail 3 "no ${elf_path}; run 'board_capture.sh prepare' first."
+    compare_tmp="$(mktemp -d "${TMPDIR:-/tmp}/ctrlpp-board-compare.XXXXXX")"
+    trap 'cleanup; rm -rf -- "${compare_tmp}"' EXIT
+
+    local run=""
+    if [ "${replay}" = "yes" ]; then
+        [ -d "${series_dir}" ] || fail 2 "'${series_dir}' is not a directory."
+        for run in "${series_dir}"/run-[0-9][0-9].txt; do
+            [ -f "${run}" ] || continue
+            "${script_path}" check ${kind_flag} "${run}" > /dev/null || fail "$?" "$(basename "${run}") fails a single-capture refusal; it is not compared."
+            runs+=("${run}")
+        done
+        [ "${#runs[@]}" -ge 2 ] || fail 2 "'${series_dir}' holds ${#runs[@]} run-NN.txt files; a comparison needs at least 2."
+    else
+        mkdir -p -- "${series_dir}" || fail 2 "cannot create '${series_dir}'."
+        ! compgen -G "${series_dir}/run-*.txt" > /dev/null \
+            || fail 2 "'${series_dir}' already holds run files; a series is collected into a directory of its own."
+        collect_series
+        for run in "${series_dir}"/run-[0-9][0-9].txt; do
+            [ -f "${run}" ] && runs+=("${run}")
+        done
+    fi
+
+    check_classes
+    if [ "${#runs[@]}" -gt 0 ]; then
+        check_shared
+        compare_exact
+        compare_spread
+    fi
+    write_summary
+    echo "summary written: ${series_dir}/compare-summary.txt"
+    [ "${compare_status}" -eq 0 ] || exit "${compare_status}"
+    echo "series PASS: ${#runs[@]} runs, reset=${requested_class}, build id ${shared_id}"
+}
+
 case "${subcommand}" in
     prepare)
         [ -z "${destination}" ] || fail 2 "prepare takes no destination."
@@ -841,10 +1312,14 @@ case "${subcommand}" in
     check)
         do_check
         ;;
+    compare)
+        do_compare
+        ;;
     "")
-        fail 2 "no subcommand. Usage: scripts/board_capture.sh {prepare|capture <destination-file>|check <transcript-file>}"
+        usage
+        fail 2 "no subcommand."
         ;;
     *)
-        fail 2 "unknown subcommand '${subcommand}'. Expected 'prepare', 'capture' or 'check'."
+        fail 2 "unknown subcommand '${subcommand}'. Expected 'prepare', 'capture', 'check' or 'compare'."
         ;;
 esac
