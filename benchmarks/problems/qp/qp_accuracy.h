@@ -55,16 +55,26 @@ inline double primal_violation(const dense_program& program, const Eigen::Vector
 /// so the product of the multiplier with the slack against that bound must
 /// vanish. The two signs are separated because a two-sided row's multiplier
 /// names which of its bounds is active by its sign.
-inline double complementarity_residual(const dense_program& program, const Eigen::VectorXd& x,
-                                       const Eigen::VectorXd& y)
+inline double complementarity_product(const dense_program& program, const Eigen::VectorXd& x,
+                                      const Eigen::VectorXd& y)
 {
     const Eigen::VectorXd row = program.A * x;
     const double upper = y.cwiseMax(0.0).cwiseProduct(program.u - row).lpNorm<Eigen::Infinity>();
     const double lower = y.cwiseMin(0.0).cwiseProduct(program.l - row).lpNorm<Eigen::Infinity>();
-    return relative_part(std::max(upper, lower),
-                         y.lpNorm<Eigen::Infinity>()
-                             * (row.lpNorm<Eigen::Infinity>() + program.l.lpNorm<Eigen::Infinity>()
-                                + program.u.lpNorm<Eigen::Infinity>()));
+    return std::max(upper, lower);
+}
+
+inline double row_bound_scale(const dense_program& program, const Eigen::VectorXd& x)
+{
+    return (program.A * x).lpNorm<Eigen::Infinity>() + program.l.lpNorm<Eigen::Infinity>()
+           + program.u.lpNorm<Eigen::Infinity>();
+}
+
+inline double complementarity_residual(const dense_program& program, const Eigen::VectorXd& x,
+                                       const Eigen::VectorXd& y)
+{
+    return relative_part(complementarity_product(program, x, y),
+                         y.lpNorm<Eigen::Infinity>() * row_bound_scale(program, x));
 }
 
 /// The worst of the three conditions a primal-dual pair must satisfy to be the

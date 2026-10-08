@@ -1,10 +1,12 @@
 #include "probe.h"
 #include "arm_factory.h"
 #include "probe_problems.h"
+#include "competitor_arms.h"
 
 #include <array>
 #include <cmath>
 #include <limits>
+#include <memory>
 
 namespace ctrlpp::bench::qp_solvers
 {
@@ -29,13 +31,31 @@ auto probe_tier(const arm_spec& arm) -> tier
     return arm.runs_high ? tier::high : tier::mpc;
 }
 
+auto probe_solve_tolerance(const arm_spec& arm) -> std::optional<double>
+{
+    if(arm.kind == arm_kind::proxqp_dense || arm.kind == arm_kind::proxqp_sparse)
+        return proxqp_probe_solver_tolerance;
+    return std::nullopt;
+}
+
+auto probe_arm(const arm_spec& arm, std::optional<double> tolerance, const hpipm_settlement& hpipm)
+    -> std::unique_ptr<qp_arm>
+{
+    if(!tolerance)
+        return make_arm(arm, probe_tier(arm), hpipm.best);
+    if(arm.kind == arm_kind::proxqp_sparse)
+        return make_proxqp_sparse_arm(*tolerance);
+    return make_proxqp_dense_arm(*tolerance);
+}
+
 auto probe_of(const arm_spec& arm, const probe_problem& probe, const hpipm_settlement& hpipm) -> probe_result
 {
     if(arm.kind == arm_kind::hpipm)
-        return {std::string(arm.id), hpipm.signs.has_value(), hpipm.error};
-    const auto solver = make_arm(arm, probe_tier(arm), hpipm.best);
+        return {std::string(arm.id), hpipm.signs.has_value(), hpipm.error, std::nullopt};
+    const std::optional<double> tolerance = probe_solve_tolerance(arm);
+    const auto solver = probe_arm(arm, tolerance, hpipm);
     const double error = dual_error(*solver, probe);
-    return {std::string(arm.id), error <= probe_tolerance, error};
+    return {std::string(arm.id), error <= probe_tolerance, error, tolerance};
 }
 
 }
@@ -79,6 +99,13 @@ void write_probes(json_writer& out, const std::vector<probe_result>& results, co
         out.open(result.arm);
         out.flag("passed", result.passed);
         out.number("max_dual_error", result.max_dual_error);
+        if(result.solve_tolerance)
+        {
+            out.open("solve_settings");
+            out.number("eps_abs", *result.solve_tolerance);
+            out.number("eps_rel", *result.solve_tolerance);
+            out.close();
+        }
         out.close();
     }
     out.close();

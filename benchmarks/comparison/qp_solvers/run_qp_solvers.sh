@@ -30,7 +30,7 @@ driver_dir="${build_tree}/comparison/qp_solvers"
 generator="Unix Makefiles"
 march="-march=x86-64-v3"
 
-preregistration_commit=595da516fa770279855eff1eb9bbd03d5c70e767
+preregistration_commit=b91820d929bbad8edb73c1e890ca75935523b25f
 argmin_pin=ca7ec854a02dc90f0b423cec52bda9a4f306c43a
 proxsuite_upstream=b93d7778ffc3299d84b5cb0851022a29bf24a596
 competitor_pins=(
@@ -282,13 +282,13 @@ fill_json()
     local run_id="$1" started="$2" finished="$3" host="$4" clock="$5"
     python3 - "${run_id}" "${started}" "${finished}" "${host}" "${clock}" "$(fetched_commit argmin)" "$(git -C "${repo_root}" rev-parse HEAD)" \
         "$(harness_dirty)" "$(compiler_version)" "$(release_flags C)" "$(release_flags CXX)" "${proxsuite_upstream}" \
-        "$(for e in "${competitor_pins[@]}"; do read -r n _ <<<"${e}"; printf '%s=%s ' "${n}" "$(fetched_commit "${n}")"; done)" <<'PY'
+        "${preregistration_commit}" "$(for e in "${competitor_pins[@]}"; do read -r n _ <<<"${e}"; printf '%s=%s ' "${n}" "$(fetched_commit "${n}")"; done)" <<'PY'
 import json, sys
-(run_id, started, finished, host, clock, argmin, harness, dirty, compiler, c_flags, cxx_flags, proxsuite, pins) = sys.argv[1:]
+(run_id, started, finished, host, clock, argmin, harness, dirty, compiler, c_flags, cxx_flags, proxsuite, preregistration, pins) = sys.argv[1:]
 competitor = dict(item.split("=") for item in pins.split())
 competitor["proxsuite"] = proxsuite
 print(json.dumps({"run_id": run_id, "started_utc": started, "finished_utc": finished, "host": json.loads(host),
-                  "clock_state": clock, "preregistration_commit": "595da516fa770279855eff1eb9bbd03d5c70e767",
+                  "clock_state": clock, "preregistration_commit": preregistration,
                   "argmin_sha": argmin, "competitor_pins": competitor, "ctrlpp_harness_sha": harness,
                   "ctrlpp_harness_dirty": dirty == "true", "compiler_version": compiler,
                   "c_flags": " ".join(c_flags.split()), "cxx_flags": " ".join(cxx_flags.split())}))

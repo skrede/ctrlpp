@@ -48,9 +48,9 @@ auto make_arm(const arm_spec& arm, tier level, hpipm_dual_signs hpipm_signs) -> 
         case arm_kind::daqp:
             return make_daqp_arm(level);
         case arm_kind::proxqp_dense:
-            return make_proxqp_dense_arm(level);
+            return make_proxqp_dense_arm(solver_tolerance(level));
         case arm_kind::proxqp_sparse:
-            return make_proxqp_sparse_arm(level);
+            return make_proxqp_sparse_arm(solver_tolerance(level));
         case arm_kind::hpipm:
             return make_hpipm_arm(level, hpipm_signs);
         default:

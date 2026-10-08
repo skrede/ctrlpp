@@ -17,10 +17,10 @@ namespace
 namespace proxqp = proxsuite::proxqp;
 
 template <typename Settings>
-void apply_tier(Settings& settings, tier level)
+void apply_tolerance(Settings& settings, double tolerance)
 {
-    settings.eps_abs = solver_tolerance(level);
-    settings.eps_rel = solver_tolerance(level);
+    settings.eps_abs = tolerance;
+    settings.eps_rel = tolerance;
     settings.max_iter = iteration_cap;
 }
 
@@ -59,8 +59,8 @@ template <typename Solver>
 class proxqp_arm final : public qp_arm
 {
 public:
-    explicit proxqp_arm(tier level)
-        : level_(level)
+    explicit proxqp_arm(double tolerance)
+        : tolerance_(tolerance)
         , rows_{}
         , b_{}
         , lower_{}
@@ -74,7 +74,7 @@ public:
         rows_ = split_rows(tick.l, tick.u);
         const Eigen::Index n = instance.P.rows();
         solver_.emplace(n, rows_.equalities.size(), rows_.inequalities.size());
-        apply_tier(solver_->settings, level_);
+        apply_tolerance(solver_->settings, tolerance_);
         configure();
         rows_.gather(tick.l, tick.u, b_, lower_, upper_);
         initialize(instance, tick);
@@ -104,7 +104,7 @@ public:
     }
 
 private:
-    tier level_;
+    double tolerance_;
     row_split rows_;
     Eigen::VectorXd b_;
     Eigen::VectorXd lower_;
@@ -148,20 +148,20 @@ void proxqp_arm<sparse_qp>::initialize(const qp_instance& instance, const qp_tic
 
 }
 
-auto make_proxqp_dense_arm(tier level) -> std::unique_ptr<qp_arm>
+auto make_proxqp_dense_arm(double tolerance) -> std::unique_ptr<qp_arm>
 {
-    return std::make_unique<proxqp_arm<dense_qp>>(level);
+    return std::make_unique<proxqp_arm<dense_qp>>(tolerance);
 }
 
-auto make_proxqp_sparse_arm(tier level) -> std::unique_ptr<qp_arm>
+auto make_proxqp_sparse_arm(double tolerance) -> std::unique_ptr<qp_arm>
 {
-    return std::make_unique<proxqp_arm<sparse_qp>>(level);
+    return std::make_unique<proxqp_arm<sparse_qp>>(tolerance);
 }
 
 void describe_proxqp(json_writer& out, tier level, bool sparse)
 {
     proxqp::Settings<double> s;
-    apply_tier(s, level);
+    apply_tolerance(s, solver_tolerance(level));
     out.number("eps_abs", s.eps_abs);
     out.number("eps_rel", s.eps_rel);
     out.integer("max_iter", s.max_iter);

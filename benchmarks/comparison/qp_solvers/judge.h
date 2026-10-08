@@ -15,8 +15,8 @@
 namespace ctrlpp::bench::qp_solvers
 {
 
-/// The three parts of qp_accuracy.h's kkt_relative_residual and their maximum, which is that function's
-/// value. An answer of the wrong shape or with a non-finite entry scores NaN throughout.
+/// The three parts of qp_accuracy.h's kkt_relative_residual and their maximum, except that complementarity
+/// is judged_complementarity's. An answer of the wrong shape or with a non-finite entry scores NaN throughout.
 struct kkt_terms
 {
     double stationarity;
@@ -25,6 +25,16 @@ struct kkt_terms
     double worst;
 };
 
+/// The pre-registration's amended term scales by 1 + ||y||_inf instead of ||y||_inf: on a tick where no
+/// row binds, y is the solver's residual noise, and dividing by it fails a first-order arm whose products
+/// are already at its own tolerance.
+inline auto judged_complementarity(const problems::qp::dense_program& program, const Eigen::VectorXd& x,
+                                   const Eigen::VectorXd& y) -> double
+{
+    return problems::qp::relative_part(problems::qp::complementarity_product(program, x, y),
+                                       (1.0 + y.lpNorm<Eigen::Infinity>()) * problems::qp::row_bound_scale(program, x));
+}
+
 inline auto judge(const problems::qp::dense_program& program, const Eigen::VectorXd& x, const Eigen::VectorXd& y)
     -> kkt_terms
 {
@@ -32,7 +42,7 @@ inline auto judge(const problems::qp::dense_program& program, const Eigen::Vecto
     if(x.size() != program.P.cols() || y.size() != program.A.rows() || !x.allFinite() || !y.allFinite())
         return {missing, missing, missing, missing};
     kkt_terms terms{problems::qp::stationarity_residual(program, x, y), problems::qp::primal_violation(program, x),
-                    problems::qp::complementarity_residual(program, x, y), 0.0};
+                    judged_complementarity(program, x, y), 0.0};
     const bool finite = std::isfinite(terms.stationarity) && std::isfinite(terms.primal) && std::isfinite(terms.complementarity);
     terms.worst = finite ? std::max({terms.stationarity, terms.primal, terms.complementarity}) : missing;
     return terms;

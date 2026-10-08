@@ -95,6 +95,9 @@ inline constexpr double reference_solver_tolerance = 1e-10;
 inline constexpr double mpc_threshold = 1e-3;
 inline constexpr double high_threshold = 1e-6;
 inline constexpr double probe_tolerance = 1e-6;
+// ProxQP's multipliers carry its stopping tolerance as error, which the probe would read as a mapping
+// error at the high tier; the probe is untimed, so ProxQP alone solves it tighter.
+inline constexpr double proxqp_probe_solver_tolerance = 1e-9;
 inline constexpr double reference_kkt_max = 1e-9;
 inline constexpr double binding_row_tolerance = 1e-6;
 inline constexpr double binding_median_fraction_min = 0.10;
