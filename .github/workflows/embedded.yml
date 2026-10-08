@@ -27,7 +27,11 @@ on:
   workflow_dispatch:
 
 # Build-only gate: it catches cross-compile regressions in the two board legs.
-# Run correctness is established on the physical boards, not here.
+# Run correctness is established on the physical boards, not here. The one job
+# that runs anything replays the NUCLEO-H753ZI capture script's refusals over
+# committed recordings and then states that no board was found: it establishes
+# that the script still parses a report and still refuses what it must, and
+# nothing about any board.
 jobs:
   esp-idf:
     runs-on: ubuntu-24.04
@@ -109,3 +113,30 @@ jobs:
           done
           arm-none-eabi-nm build-arm-ON/ctrlpp_nucleo_h753zi.elf | grep -qi nmpc_static
           arm-none-eabi-nm build-arm-ON/ctrlpp_nucleo_h753zi_timing.elf | grep -qi nmpc_static
+
+  board-capture-self-test:
+    # No hosted runner has a board, so the discovery step must end in its SKIP
+    # line; the assertion is there so that a discovery which stops saying so
+    # fails the job instead of passing it quietly.
+    runs-on: ubuntu-24.04
+    name: board capture self-test (no board attached)
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Replay every capture refusal over the committed recordings
+        run: |
+          scripts/board_capture.sh --self-test | tee self-test.log
+          if ! grep -Eq '^self-test PASS: [1-9][0-9]* refusal assertions seen red' self-test.log; then
+            echo "ASSERTION FAILED: the self-test exited 0 without reporting a refusal seen red" >&2
+            exit 1
+          fi
+
+      - name: Discover the board and state the skipped on-target capture
+        run: |
+          out=$(scripts/board_capture.sh discover)
+          echo "$out"
+          if [ "$(printf '%s\n' "$out" | wc -l)" -ne 1 ] || ! printf '%s\n' "$out" | grep -q '^SKIP: no board found'; then
+            echo "ASSERTION FAILED: discovery with no board attached did not print exactly its one SKIP line" >&2
+            exit 1
+          fi

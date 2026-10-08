@@ -9,6 +9,8 @@
 #   board_capture.sh check [--timing] <transcript-or-capture-file>
 #   board_capture.sh compare [--timing --bound=<cycles>] <count> <reset-class> <destination-directory>
 #   board_capture.sh compare --replay [--timing --bound=<cycles>] <reset-class> <series-directory>
+#   board_capture.sh discover
+#   board_capture.sh --self-test
 #
 # "prepare" configures, builds and produces the raw binaries beside the two
 # ELFs, the allocation-evidence image and the timing image. It touches no
@@ -41,6 +43,20 @@
 #   shared         every run carries one build id and one posture line apart
 #                  from its reset fields; the summary quotes both, with the
 #                  toolchain, the run count and every run's decoded reset.
+#
+# "discover" looks for the board the way "capture" does and reports what it
+# found, then exits 0 either way: it flashes nothing, reads no report and forms
+# no verdict. With no board attached it prints one line beginning "SKIP: no board
+# found" that names the on-target part of the check as not performed, so a
+# machine without the board says so instead of passing quietly.
+#
+# "--self-test" replays the committed recordings in board_capture_fixtures/, one
+# per image, against the references recorded beside them. It copies the fixture
+# tree to a temporary root and, for each refusal status this script implements,
+# synthesizes one corruption into the copy and asserts that status and its
+# message; it also asserts that the untouched recordings and series built from
+# them pass, so the refusals are shown to be selective. It needs no board, no
+# port, no flash and no built image.
 #
 # Images:
 #   (default)      the evidence image: carries the allocation sensor, so its
@@ -107,6 +123,7 @@
 #
 # Exit status:
 #   0  capture written    2  usage       3  environment or build
+#   1  a self-test assertion did not hold
 #   4  empty stream       5  no fingerprint line
 #   6  fingerprint mismatch (the resident image is not the built one)
 #   7  no verdict line    8  verdict FAIL
@@ -228,6 +245,18 @@
 #  11. The spread bound is one absolute cycle count applied to every timed
 #      region's raw figures, from the 129-cycle overhead to the predictive
 #      solve; it is the invocation's stated claim, not a figure derived here.
+#
+#  12. The self-test proves the parser, the fingerprint comparison, the class
+#      assignment and every refusal against recordings and corruptions of them.
+#      It proves nothing about the board: it opens no port, flashes nothing, and
+#      its references are the values recorded beside the fixtures, not read from
+#      a built image. The recordings are a fixed sample of the format: if the
+#      firmware's report changes, the self-test goes on proving the parser
+#      against the old format until a new recording replaces the fixture.
+#
+#  13. "discover" reports absence; it does not prove it. A board on a port the
+#      discovery does not search reads as absent, and a SKIP line from a machine
+#      that does have a board means the discovery, not the board, is missing.
 
 set -euo pipefail
 
@@ -274,6 +303,7 @@ capture_mode="flash"
 image_kind="evidence"
 destination=""
 replay="no"
+self_test="no"
 spread_bound=""
 operands=()
 
@@ -284,6 +314,8 @@ usage()
     echo "         scripts/board_capture.sh check [--timing] <transcript-or-capture-file>" >&2
     echo "         scripts/board_capture.sh compare [--timing --bound=<cycles>] <count> <reset-class> <destination-directory>" >&2
     echo "         scripts/board_capture.sh compare --replay [--timing --bound=<cycles>] <reset-class> <series-directory>" >&2
+    echo "         scripts/board_capture.sh discover" >&2
+    echo "         scripts/board_capture.sh --self-test" >&2
 }
 
 for arg in "$@"; do
@@ -303,6 +335,9 @@ for arg in "$@"; do
             ;;
         --replay)
             replay="yes"
+            ;;
+        --self-test)
+            self_test="yes"
             ;;
         --bound=*)
             spread_bound="${arg#--bound=}"
@@ -416,6 +451,28 @@ elf_stack_reserve()
     printf '%d\n' "0x${value}"
 }
 
+# What a transcript is checked against: the fingerprint, the stack reserve and
+# the toolchain of the image it claims to come from. Read from the built ELF
+# here; the self-test reads the values recorded beside its fixtures instead.
+reference_id=""
+reference_reserve=""
+reference_origin=""
+reference_evidence_id=""
+reference_toolchain=""
+
+load_elf_reference()
+{
+    [ -f "${elf_path}" ] || fail 3 "no ${elf_path}; run 'board_capture.sh prepare' first."
+    reference_id="$(elf_build_id)"
+    [ -n "${reference_id}" ] || fail 3 "${elf_path} carries no NT_GNU_BUILD_ID note; the image cannot be fingerprinted."
+    reference_reserve="$(elf_stack_reserve)"
+    reference_origin="${elf_path}"
+    reference_toolchain="$("${toolchain_prefix}gcc" --version | head -1)"
+    if [ "${image_kind}" = "timing" ]; then
+        reference_evidence_id="$(elf_build_id "${evidence_elf}")"
+    fi
+}
+
 elf_build_id()
 {
     "${toolchain_prefix}readelf" -n "${1:-${elf_path}}" \
@@ -524,7 +581,7 @@ wait_for_report()
 
 verify_transcript()
 {
-    local built_id="$1" printed_id=""
+    local printed_id=""
 
     grep -q '[^[:space:]]' "${transcript}" \
         || fail 4 "the capture read an EMPTY stream from the board -- no report was observed, and an absent report is not a pass. The image reports once at boot: reset the target while this script holds the port (drop the --no-reset flag), or press B2 and re-run."
@@ -533,8 +590,8 @@ verify_transcript()
     [ -n "${printed_id}" ] \
         || fail 5 "the captured report carries no '[meta] build_id=' line, so the image that produced it cannot be identified."
 
-    [ "${printed_id}" = "${built_id}" ] \
-        || fail 6 "the running image is NOT the built one: the board reported ${printed_id} but ${elf_path} is ${built_id}. Flash the target before capturing."
+    [ "${printed_id}" = "${reference_id}" ] \
+        || fail 6 "the running image is NOT the built one: the board reported ${printed_id} but ${reference_origin} is ${reference_id}. Flash the target before capturing."
 
     verify_kind
     verify_posture
@@ -594,7 +651,8 @@ verify_classes()
 
 # Positional, never sorted: rows that agree as a set but not in order are a
 # difference in the run, and a value that is not a bit pattern cannot carry a
-# bitwise claim.
+# bitwise claim. The width is tested with length() rather than an interval
+# expression, which older mawk builds do not parse.
 verify_exact()
 {
     local problem=""
@@ -602,7 +660,7 @@ verify_exact()
         NR == 1 { width = NF; if ($1 != "k") { print "the exact-class header does not key its rows by the loop index: \047" $0 "\047"; exit } next }
         NF != width { print "an exact-class row carries " NF " fields against a header of " width ": \047" $0 "\047"; exit }
         $1 != (NR - 2) "" { print "an exact-class row carries index " $1 " where " NR - 2 " is required: \047" $0 "\047"; exit }
-        { for (i = 2; i <= NF; ++i) if ($i !~ /^[0-9A-F]{16}$/) { print "an exact-class value is not a 16-digit bit pattern: \047" $0 "\047"; exit } }
+        { for (i = 2; i <= NF; ++i) if (length($i) != 16 || $i ~ /[^0-9A-F]/) { print "an exact-class value is not a 16-digit bit pattern: \047" $0 "\047"; exit } }
         END { if (NR == 1) print "the exact-class block carries a header and no rows." }')"
     [ -z "${problem}" ] || fail 25 "${problem}"
     return 0
@@ -685,8 +743,8 @@ verify_timing()
 verify_stack()
 {
     local line="" region="" count=0 reserve="" printed="" from_top=""
-    reserve="$(elf_stack_reserve)"
-    [ -n "${reserve}" ] || fail 3 "${elf_path} carries no _Min_Stack_Size symbol, so the stack reserve is unknown."
+    reserve="${reference_reserve}"
+    [ -n "${reserve}" ] || fail 3 "${reference_origin} names no stack reserve (_Min_Stack_Size), so the reserve is unknown."
     while IFS= read -r line; do
         printf '%s\n' "${line}" | grep -Eq ' floor=[0-9]+( |$)' \
             || fail 20 "a stack line carries no floor: '${line}'."
@@ -702,7 +760,7 @@ verify_stack()
         [ -n "${printed}" ] \
             || fail 20 "a stack line carries no reserve: '${line}'."
         [ "${printed}" -eq "${reserve}" ] \
-            || fail 22 "a stack line prints a reserve of ${printed} B where ${elf_path} has _Min_Stack_Size = ${reserve} B: '${line}'."
+            || fail 22 "a stack line prints a reserve of ${printed} B where ${reference_origin} has _Min_Stack_Size = ${reserve} B: '${line}'."
         from_top="$(printf '%s\n' "${line}" | sed -n 's/.* from_top=\([0-9][0-9]*\) .*/\1/p')"
         [ "${from_top}" -le "${reserve}" ] \
             || fail 21 "the measured stack high-water of ${from_top} B exceeds the image's ${reserve} B reserve: '${line}'."
@@ -841,12 +899,10 @@ do_capture()
     [ -n "${destination}" ] || fail 2 "capture needs a destination file."
     [ -d "$(dirname "${destination}")" ] \
         || fail 2 "the destination directory '$(dirname "${destination}")' does not exist."
-    [ -f "${elf_path}" ] || fail 3 "no ${elf_path}; run 'board_capture.sh prepare' first."
     [ -f "${bin_path}" ] || fail 3 "no ${bin_path}; run 'board_capture.sh prepare' first."
+    load_elf_reference
 
-    local built_id port
-    built_id="$(elf_build_id)"
-    [ -n "${built_id}" ] || fail 3 "${elf_path} carries no NT_GNU_BUILD_ID note; the image cannot be fingerprinted."
+    local port
 
     port="$(resolve_port)" || fail 3 "no ST-LINK serial port found: neither /dev/serial/by-id/*STLINK* nor a USB device 0483:374e with a tty child resolved."
     [ -c "${port}" ] || fail 3 "'${port}' is not a character device."
@@ -881,11 +937,11 @@ do_capture()
     reader_stop
 
     tr -d '\r' < "${raw_stream}" > "${transcript}"
-    verify_transcript "${built_id}"
-    write_artifact "${port}" "${built_id}"
+    verify_transcript
+    write_artifact "${port}" "${reference_id}"
 
     echo "capture written: ${destination}"
-    echo "build id:        ${built_id}"
+    echo "build id:        ${reference_id}"
 }
 
 # The same refusals over a file already on disk. A capture file's header lines
@@ -894,15 +950,31 @@ do_check()
 {
     [ -n "${destination}" ] || fail 2 "check needs a transcript file."
     [ -f "${destination}" ] || fail 2 "'${destination}' is not a file."
-    [ -f "${elf_path}" ] || fail 3 "no ${elf_path}; run 'board_capture.sh prepare' first."
+    load_elf_reference
 
-    local built_id
-    built_id="$(elf_build_id)"
-    transcript="$(mktemp "${TMPDIR:-/tmp}/ctrlpp-board-check.XXXXXX")"
-    trap cleanup EXIT
-    tr -d '\r' < "${destination}" > "${transcript}"
-    verify_transcript "${built_id}"
+    check_file "${destination}"
+    [ "${check_status}" -eq 0 ] || exit "${check_status}"
     echo "check passed: ${destination}"
+}
+
+# Every refusal of the chosen mode over one file, against the loaded reference.
+# A refusal exits, so the verification runs in a subshell and its status lands
+# in check_status. The function itself always returns 0: called on the left of
+# || it would suspend errexit inside the subshell too, and a verification that
+# runs on past a failed command is not one.
+check_status=0
+
+check_file()
+{
+    transcript="$(mktemp "${TMPDIR:-/tmp}/ctrlpp-board-check.XXXXXX")"
+    tr -d '\r' < "$1" > "${transcript}"
+    set +e
+    ( set -e; verify_transcript )
+    check_status=$?
+    set -e
+    rm -f -- "${transcript}"
+    transcript=""
+    return 0
 }
 
 # --- compare ------------------------------------------------------------------
@@ -1196,9 +1268,9 @@ write_summary()
         echo "# runs:          ${#runs[@]} counted$([ -n "${series_count}" ] && echo " of ${series_count} requested")"
         echo "# build id:      ${shared_id:-absent} (shared by every counted run)"
         if [ "${image_kind}" = "timing" ]; then
-            echo "# evidence:      $(elf_build_id "${evidence_elf}") (the allocation-evidence image built from the same sources)"
+            echo "# evidence:      ${reference_evidence_id:-absent} (the allocation-evidence image built from the same sources)"
         fi
-        echo "# toolchain:     $("${toolchain_prefix}gcc" --version | head -1)"
+        echo "# toolchain:     ${reference_toolchain:-absent}"
         echo "# posture:       ${shared_posture:-absent}"
         echo "# host load:     $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo unknown) (the figures count core cycles on the target, not host time)"
         echo "#"
@@ -1266,7 +1338,12 @@ compare_arguments()
 do_compare()
 {
     compare_arguments
-    [ -f "${elf_path}" ] || fail 3 "no ${elf_path}; run 'board_capture.sh prepare' first."
+    load_elf_reference
+    run_compare
+}
+
+run_compare()
+{
     compare_tmp="$(mktemp -d "${TMPDIR:-/tmp}/ctrlpp-board-compare.XXXXXX")"
     trap 'cleanup; rm -rf -- "${compare_tmp}"' EXIT
 
@@ -1275,7 +1352,8 @@ do_compare()
         [ -d "${series_dir}" ] || fail 2 "'${series_dir}' is not a directory."
         for run in "${series_dir}"/run-[0-9][0-9].txt; do
             [ -f "${run}" ] || continue
-            "${script_path}" check ${kind_flag} "${run}" > /dev/null || fail "$?" "$(basename "${run}") fails a single-capture refusal; it is not compared."
+            check_file "${run}"
+            [ "${check_status}" -eq 0 ] || fail "${check_status}" "$(basename "${run}") fails a single-capture refusal; it is not compared."
             runs+=("${run}")
         done
         [ "${#runs[@]}" -ge 2 ] || fail 2 "'${series_dir}' holds ${#runs[@]} run-NN.txt files; a comparison needs at least 2."
@@ -1301,6 +1379,218 @@ do_compare()
     echo "series PASS: ${#runs[@]} runs, reset=${requested_class}, build id ${shared_id}"
 }
 
+# --- discover -----------------------------------------------------------------
+
+do_discover()
+{
+    local port=""
+    if port="$(resolve_port)" && [ -c "${port}" ]; then
+        echo "board found: ${port}. Nothing was flashed or read here, so no verdict is formed; 'capture' takes the evidence."
+        return 0
+    fi
+    echo "SKIP: no board found (no /dev/serial/by-id/*STLINK* link, no USB device 0483:374e with a tty, no CAPTURE_PORT naming a character device); the on-target check was not performed: no image was flashed, no boot report was read and no resident image was fingerprinted."
+}
+
+# --- self-test ----------------------------------------------------------------
+#
+# Each red case is one corruption synthesized into a temporary copy of the
+# committed recordings, asserted to draw one refusal status and its message.
+# Corruptions are synthesized rather than committed, so covering a new refusal
+# is one more line below and the fixtures stay the recordings themselves.
+
+fixture_dir="${script_dir}/board_capture_fixtures"
+self_test_root=""
+self_test_cases=0
+self_test_failures=0
+self_test_green=0
+self_test_red=()
+
+fixture_value()
+{
+    sed -n "s/^$1=//p" "${self_test_root}/reference.txt" | head -1
+}
+
+use_fixture_reference()
+{
+    image_kind="$1"
+    reference_id="$(fixture_value "$1_build_id")"
+    reference_reserve="$(fixture_value stack_reserve)"
+    reference_evidence_id="$(fixture_value evidence_build_id)"
+    reference_toolchain="$(fixture_value toolchain)"
+    reference_origin="board_capture_fixtures/reference.txt"
+}
+
+self_test_check()
+{
+    use_fixture_reference "$1"
+    check_file "$2"
+    return "${check_status}"
+}
+
+self_test_compare()
+{
+    use_fixture_reference "$1"
+    replay="yes"
+    operands=("$2" "$4")
+    spread_bound="$3"
+    compare_arguments
+    run_compare
+}
+
+# A refusal exits, so each case runs in a subshell; errexit is restated there
+# for the reason check_file gives.
+expect_status()
+{
+    local want="$1" fragment="$2" label="$3" status=0 log="${self_test_root}/case.log" verdict="red"
+    shift 3
+    self_test_cases=$((self_test_cases + 1))
+    set +e
+    ( set -e; "$@" ) > /dev/null 2> "${log}"
+    status=$?
+    set -e
+    if [ "${status}" -ne "${want}" ] || { [ -n "${fragment}" ] && ! grep -qF -- "${fragment}" "${log}"; }; then
+        self_test_failures=$((self_test_failures + 1))
+        printf '  FAILED %2d  %s: exited %d where %d with "%s" was expected\n' "${want}" "${label}" "${status}" "${want}" "${fragment}"
+        sed 's/^/             /' "${log}"
+        return 0
+    fi
+    if [ "${want}" -eq 0 ]; then
+        verdict="green"
+        self_test_green=$((self_test_green + 1))
+    else
+        self_test_red+=("${want}")
+    fi
+    printf '  %-6s %2d  %s\n' "${verdict}" "${want}" "${label}"
+}
+
+corrupt()
+{
+    local file="${self_test_root}/case-${self_test_cases}.txt"
+    sed -e "$2" "${self_test_root}/$1.txt" > "${file}"
+    printf '%s\n' "${file}"
+}
+
+# Three runs of one recording, the second corrupted.
+series()
+{
+    local dir="${self_test_root}/series-${self_test_cases}" index=""
+    mkdir -- "${dir}"
+    for index in 01 03; do
+        cp -- "${self_test_root}/$1.txt" "${dir}/run-${index}.txt"
+    done
+    sed -e "$2" "${self_test_root}/$1.txt" > "${dir}/run-02.txt"
+    printf '%s\n' "${dir}"
+}
+
+red_check()
+{
+    local file=""
+    file="$(corrupt "$1" "$5")"
+    expect_status "$2" "$3" "$4" self_test_check "$1" "${file}"
+}
+
+red_series()
+{
+    local dir=""
+    dir="$(series "$1" "$7")"
+    expect_status "$4" "$5" "$6" self_test_compare "$1" "$2" "$3" "${dir}"
+}
+
+# Read from this script's own source, so a refusal added without a case here
+# leaves the self-test red rather than quietly uncovered.
+implemented_refusals()
+{
+    {
+        grep -oE '(^|[^[:alnum:]_])(compare_)?fail [0-9]+' "${script_path}" | grep -oE '[0-9]+$'
+        grep -oE 'problem\([0-9]+,' "${script_path}" | grep -oE '[0-9]+'
+    } | awk '$1 >= 4' | sort -n -u
+}
+
+self_test_cases_single()
+{
+    local reserve=""
+    reserve="$(fixture_value stack_reserve)"
+    red_check evidence 4 "EMPTY stream" "empty stream" 'd'
+    red_check evidence 5 "carries no '[meta] build_id=' line" "fingerprint line missing" '/^\[meta\] build_id=/d'
+    red_check evidence 6 "is NOT the built one" "fingerprint of another image" 's/^\(\[meta\] build_id=\)[0-9a-f]*/\10000000000000000000000000000000000000000/'
+    red_check evidence 7 "verdict line -- it is truncated" "golden verdict missing" '/^\[verdict\] golden diff /d'
+    red_check evidence 8 "golden verdict is FAIL" "golden verdict FAIL" 's/^\(\[verdict\] golden diff \)PASS/\1FAIL/'
+    red_check evidence 9 "carries no '[canary] allocation' line" "allocation canary missing" '/^\[canary\] allocation /d'
+    red_check evidence 10 "canary did not pass" "allocation canary blind" 's/^\(\[canary\] allocation \)PASS observed=[0-9]*/\1FAIL observed=0/'
+    red_check evidence 11 "0 '[verdict] family dsp' lines" "family verdict missing" '/^\[verdict\] family dsp /d'
+    red_check evidence 12 "the dsp family did not pass" "family verdict FAIL" '/^\[verdict\] family dsp /s/ verdict=PASS / verdict=FAIL /'
+    red_check evidence 13 "names its image kind as 'timing'" "image kind of the other image" 's/^\[meta\] kind=evidence$/[meta] kind=timing/'
+    red_check evidence 14 "carries no '[meta] posture' line" "posture line missing" '/^\[meta\] posture /d'
+    red_check timing 15 "cycle counter did not prove itself live" "cycle counter not live" 's/^\[canary\] cycle_counter PASS.*/[canary] cycle_counter UNAVAILABLE state=locked/'
+    red_check timing 16 "carries no sample count" "timing row without its sample count" 's/^\(\[spread\] dsp\.step,warm,\)[0-9]*,/\1,/'
+    red_check timing 17 "carries 2 'dsp.step' cold rows" "timed region with two cold rows" '/^\[spread\] dsp\.step,cold,/p'
+    red_check evidence 18 "nonzero harness floor" "watermark floor nonzero" '/^\[verdict\] stack region=startup /s/ floor=0 / floor=8 /'
+    red_check evidence 19 "saturated window" "watermark window saturated" '/^\[verdict\] stack region=startup /s/ saturated=no/ saturated=yes/'
+    red_check evidence 20 "carries 0 'predictive.steady' stack lines" "stack region missing" '/^\[verdict\] stack region=predictive\.steady /d'
+    red_check evidence 21 "exceeds the image's ${reserve} B reserve" "stack high-water past the reserve" "/^\\[verdict\\] stack region=program /s/ from_top=[0-9]* / from_top=$((reserve + 4)) /"
+    red_check evidence 22 "prints a reserve of $((reserve - 4)) B" "stack line disagreeing with the image's reserve" "/^\\[verdict\\] stack region=startup /s/ reserve=[0-9]* / reserve=$((reserve - 4)) /"
+    red_check evidence 23 "carries no '[spread]' line" "stream tag missing" '/^\[spread\] /d'
+    red_check evidence 24 "the field 'x0' is named in both class headers" "field under both class tags" 's/^\(\[spread\] region,.*\)wraps$/\1x0/'
+    red_check evidence 25 "carries index 4 where 3 is required" "exact rows reordered" '/^\[exact\] 3,/{h;d};/^\[exact\] 4,/G'
+}
+
+self_test_cases_series()
+{
+    local row="" flipped="" raised=""
+    row="$(grep -m 1 '^\[exact\] 100,' "${self_test_root}/evidence.txt")"
+    flipped="${row%?}$([ "${row: -1}" = "0" ] && echo 1 || echo 0)"
+    row="$(grep -m 1 '^\[spread\] dsp\.step,warm,' "${self_test_root}/timing.txt")"
+    raised="$(printf '%s\n' "${row}" | awk -F, -v OFS=, '{ $8 = $8 + 7; print }')"
+
+    red_series evidence pin "" 26 "decoded reset=software where the series requires reset=pin" "run of another reset class" 's/^\(\[meta\] posture reset=\)pin /\1software /'
+    red_series evidence pin "" 27 "in the exact-class block at block line" "exact block one hex digit apart" "s|^\\[exact\\] 100,.*|${flipped}|"
+    red_series timing pin 6 28 "past the stated bound of 6 cycles" "raw_max 7 cycles apart under a bound of 6" "s|^\\[spread\\] dsp\\.step,warm,.*|${raised}|"
+    red_series evidence pin "" 29 "reports the posture" "posture differing outside the reset fields" 's/^\(\[meta\] posture .*\) core_hz=[0-9]*/\1 core_hz=48000000/'
+
+    expect_status 0 "" "raw_max 7 cycles apart under a bound of 7" self_test_compare timing pin 7 "$(series timing "s|^\\[spread\\] dsp\\.step,warm,.*|${raised}|")"
+}
+
+self_test_cases_green()
+{
+    expect_status 0 "" "evidence recording, unchanged" self_test_check evidence "${self_test_root}/evidence.txt"
+    expect_status 0 "" "timing recording, unchanged" self_test_check timing "${self_test_root}/timing.txt"
+    expect_status 0 "" "three unchanged evidence runs, reset=pin" self_test_compare evidence pin "" "$(series evidence '')"
+    expect_status 0 "" "three unchanged timing runs, reset=pin, bound 0" self_test_compare timing pin 0 "$(series timing '')"
+}
+
+do_self_test()
+{
+    local file="" status="" implemented="" missing="" counts=""
+    for file in evidence.txt timing.txt reference.txt; do
+        [ -f "${fixture_dir}/${file}" ] || fail 3 "the fixture ${fixture_dir}/${file} is missing."
+    done
+    self_test_root="$(mktemp -d "${TMPDIR:-/tmp}/ctrlpp-board-self-test.XXXXXX")"
+    trap 'rm -rf -- "${self_test_root}"' EXIT
+    cp -R "${fixture_dir}/." "${self_test_root}/"
+
+    echo "board_capture.sh self-test: committed recordings, replayed from a temporary copy; no board, port, flash or built image is used."
+    self_test_cases_green
+    self_test_cases_single
+    self_test_cases_series
+
+    implemented="$(implemented_refusals)"
+    for status in ${implemented}; do
+        printf '%s\n' "${self_test_red[@]+"${self_test_red[@]}"}" | grep -qx "${status}" || missing="${missing} ${status}"
+    done
+    counts="${#self_test_red[@]} refusal assertions seen red against the $(printf '%s\n' "${implemented}" | wc -l) refusal statuses this script implements ($(printf '%s\n' "${implemented}" | head -1) to $(printf '%s\n' "${implemented}" | tail -1)); ${self_test_green} acceptance assertions seen green"
+    if [ "${self_test_failures}" -ne 0 ] || [ -n "${missing}" ]; then
+        echo "self-test FAILED: ${counts}; ${self_test_failures} assertion(s) did not hold; statuses with no red case:${missing:- none}." >&2
+        exit 1
+    fi
+    echo "self-test PASS: ${counts}."
+}
+
+if [ "${self_test}" = "yes" ]; then
+    [ -z "${subcommand}" ] || fail 2 "--self-test replays its own fixtures and takes no subcommand or operand."
+    do_self_test
+    exit 0
+fi
+
 case "${subcommand}" in
     prepare)
         [ -z "${destination}" ] || fail 2 "prepare takes no destination."
@@ -1315,11 +1605,15 @@ case "${subcommand}" in
     compare)
         do_compare
         ;;
+    discover)
+        [ -z "${destination}" ] || fail 2 "discover takes no operand."
+        do_discover
+        ;;
     "")
         usage
         fail 2 "no subcommand."
         ;;
     *)
-        fail 2 "unknown subcommand '${subcommand}'. Expected 'prepare', 'capture', 'check' or 'compare'."
+        fail 2 "unknown subcommand '${subcommand}'. Expected 'prepare', 'capture', 'check', 'compare' or 'discover'."
         ;;
 esac

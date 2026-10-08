@@ -80,22 +80,22 @@ this table was written.
 |--------|------------------|---------------------|------------------|-----------------------|------------------------|----------|
 | `pid` | YES | YES (no loop) | YES | YES | YES | `pid_nomalloc_test` (position form, velocity form, composed anti-windup and derivative filter); leg 1 + `embedded_core_float` |
 | `lqr` / `lqr_time_varying` steady-state control law | YES | YES (no loop in the gain application) | YES | YES | YES | lqr TEST_CASEs in `pid_nomalloc_test.cpp` ("lqr steady-state control law", "lqr_time_varying steady-state control law"); leg 1 witness instantiates `lqr_gain` |
-| `kalman_filter` | YES below a measurement dimension of 48, **NO at and above it** at two states or more, where the gain solve's Householder sequence goes blocked and the linear-algebra library heap-allocates its block reflector factor once per update (see "The heap claim's boundary" below). A single-state filter stays allocation-free at every measurement dimension. | YES (closed form) | YES | YES | YES | `estimation_kalman_nomalloc_test` (26 configurations spanning 1 to 128 on both axes: the 13 its measurement table prints, the 6 values only its supported-maximum table names, the state axis at its instantiation limit, both sides of the boundary at 47 and 48, and the single-state exemption); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float` |
+| `kalman_filter` | YES below a measurement dimension of 48, **NO at and above it** at two states or more, where the gain solve's Householder sequence goes blocked and the linear-algebra library heap-allocates its block reflector factor once per update (see "The heap claim's boundary" below). A single-state filter stays allocation-free at every measurement dimension. | YES (closed form) | YES | YES | YES | `estimation_kalman_nomalloc_test` (26 configurations spanning 1 to 128 on both axes: the 13 its measurement table prints, the 6 values only its supported-maximum table names, the state axis at its instantiation limit, both sides of the boundary at 47 and 48, and the single-state exemption); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float`. On silicon at `double` and that same instantiation, the NUCLEO-H753ZI evidence image reports 0 allocations over 201 steps behind a passing allocation canary, with its last step's value within the derived bound of the host golden (`scripts/board_capture_fixtures/evidence.txt`, `arm-none-eabi-gcc` 16.2.0; see "On silicon: the NUCLEO-H753ZI leg" below) |
 | `ekf` | YES below a measurement dimension of 48, **NO at and above it** at two states or more, for the same reason and with the same single-state exemption as the row above. | YES (closed form) | YES | YES | YES | `estimation_ekf_nomalloc_test` (25 configurations spanning 1 to 128 on both axes: the 13 its measurement table prints, the 6 values only its supported-maximum table names, the state axis at its instantiation limit, both sides of the boundary at 47 and 48, and the single-state exemption); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float` |
 | `ukf` | YES at every measured configuration, including 128 states by 128 outputs, **because its gain decomposition defaults to LDLT and builds no Householder sequence at all**. Selecting the QR option puts it on the boundary the rows beside it have, at a measurement dimension of 48. | YES (fixed sigma-point set) | YES | YES | YES | `estimation_ukf_nomalloc_test` (25 configurations spanning 2 to 128 on both axes, including both instantiation limits and the corner, plus 2 more with the QR option selected, walking both sides of the boundary that option brings back); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float` |
 | `mekf` | YES below a measurement dimension of 48, **NO at and above it** (see "The heap claim's boundary" below). The boundary is on the measurement dimension and not on the error state: 125 bias states against 4 outputs is allocation-free. This row has no single-state exemption, since its right-hand side is the error state and is never one column. | YES (closed form) | YES | YES | YES | `estimation_mekf_nomalloc_test` (20 configurations: the 11 of the 13 its measurement table prints that instantiate, the 4 values only its supported-maximum table names, both axes at their instantiation limits with the corner, and both sides of the boundary at 47 and 48); `estimation_nomalloc_test` (the fixed instantiation at three bias states and three outputs); leg 1 + `embedded_core_float` |
 | `manifold_ukf` | YES below a measurement dimension of 48, **NO at and above it** (see "The heap claim's boundary" below). No single-state exemption: the right-hand side is the rotation's three columns. | YES (fixed sigma-point set) | YES | YES | YES | `estimation_manifold_ukf_nomalloc_test` (12 configurations spanning 2 to 128 on its one caller axis: the 5 its measurement table prints, the 4 values only its supported-maximum table names, the axis at its instantiation limit, and both sides of the boundary at 47 and 48); `estimation_nomalloc_test` (the fixed instantiation at three outputs); leg 1 + `embedded_core_float` |
 | `particle_filter` | YES (guard covers resample, roughening and the covariance read) | YES (fixed particle count) | YES | YES | YES (injected seeded RNG) | `estimation_nomalloc_test` (particle_filter case forces resampling every update and reads `covariance()` inside the armed window; twin filters seeded `std::mt19937_64{42}` must agree bitwise over 64 steps in both the estimate and the reported uncertainty) |
 | `complementary_filter` | YES | YES (closed form) | YES | YES | YES | `estimation_nomalloc_test` (complementary_filter case); leg 1 + `embedded_core_float` |
-| dsp: `biquad` / `cascaded_biquad` / `vector_biquad` / `fir` | YES | YES (fixed sections and taps) | YES | YES | YES | `dsp_nomalloc_test` (one case per filter); leg 1 + `embedded_core_float` |
-| Riccati steady-state solve: `dare` / `care` | YES **on the heap, and the heap is not the binding cost here** (see the stack note below this table, which a hard-real-time caller must read before sizing a task stack: at `NX = 8` the whole chain reaches 41,304 bytes) | YES (Eigen Schur iteration bound; sign-function Newton capped at `max_iters = 40` in `detail/care_sign_function.h`, followed by a fixed-size rescale-and-factorize extraction. On every accepted solve, on **every** continuous method tag and on the discrete solver, fixed-size checks of the returned solution run before it is reported: the discrete path solves a fixed-size Stein system of dimension `NX(NX+1)/2` on the symmetric subspace to estimate the answer's own forward error, and every continuous path evaluates the counted Riccati residual and one non-accumulating real Schur factorization of the closed-loop spectrum, from the single definition in `detail/care_postconditions.h`. All three continuous tags reach that definition -- the sign-function path, the real-Schur path and the balanced-Schur path, the last verifying against the caller's Hamiltonian rather than the balanced one -- so no tag carries a bound the others do not. The balanced tag additionally runs a DGEBAL-style balance ahead of all of this. It allocates nothing, and it terminates because every accepted rescale strictly reduces that row's norm sum by the factor 19/20 using power-of-two scalings clamped to the scalar type's range. Its sweep count is data-dependent, and it is now **bounded at compile time** the way `max_iters` bounds the Newton loop: the cap is `2 * NX * (max_exponent - min_exponent)`, derived from the scalar type and the dimension rather than tuned, and reaching it stops the sweep and returns the partially balanced matrix. Stopping early is safe because balancing is a similarity preconditioner and every applied step updates `H` and `D` together, so `H_returned == D^-1 * H_original * D` holds exactly at any cut point -- a capped run is less well balanced, never wrong. The cap is a guarantee rather than a budget: over 550,000 draws with entries spread across `2^-280` to `2^+280`, the worst sweep counts observed were 2 / 12 / 43 / 45 at NX = 1 / 2 / 4 / 8 against ceilings of 4,090 / 8,180 / 16,360 / 32,720, so the worst measured run sits about three orders of magnitude below its ceiling. Budget from the measurement and treat the cap as the backstop) | YES | YES | YES | `dare_care_nomalloc_test` (NX = 2, 4, 8 across the Schur, sign-function, and balanced-Schur variants); `care_convergence_anchor_test` (fixed-seed near-axis and simple-input scale sweeps under all three method tags, plus magnitude-band anchors); `riccati_magnitude_test` (both ends of the arithmetic range); leg 1 witness calls `dare` and `care`. The allocation cell's heap claim is proved by `dare_care_nomalloc_test`; its stack claim is proved by the `-fstack-usage` frames and runtime watermarks in the stack note below, which are host `double` measurements, now corroborated on silicon by the ESP32 stack probe in `examples/embedded/esp32/main/app_main.cpp` -- the on-target `float` peaks track the host `double` prediction to within the scalar width, and that probe also establishes that at `float` the ACCEPTANCE CHECK, not the stack, is what bounds the usable state dimension |
+| dsp: `biquad` / `cascaded_biquad` / `vector_biquad` / `fir` | YES | YES (fixed sections and taps) | YES | YES | YES | `dsp_nomalloc_test` (one case per filter); leg 1 + `embedded_core_float`. On silicon at `double`, a `biquad` low-pass on the NUCLEO-H753ZI evidence image reports 0 allocations over 201 samples behind a passing allocation canary, and its last step's value equals the host golden (`scripts/board_capture_fixtures/evidence.txt`, `arm-none-eabi-gcc` 16.2.0; see "On silicon: the NUCLEO-H753ZI leg" below) |
+| Riccati steady-state solve: `dare` / `care` | YES **on the heap, and the heap is not the binding cost here** (see the stack note below this table, which a hard-real-time caller must read before sizing a task stack: at `NX = 8` the whole chain reaches 41,304 bytes) | YES (Eigen Schur iteration bound; sign-function Newton capped at `max_iters = 40` in `detail/care_sign_function.h`, followed by a fixed-size rescale-and-factorize extraction. On every accepted solve, on **every** continuous method tag and on the discrete solver, fixed-size checks of the returned solution run before it is reported: the discrete path solves a fixed-size Stein system of dimension `NX(NX+1)/2` on the symmetric subspace to estimate the answer's own forward error, and every continuous path evaluates the counted Riccati residual and one non-accumulating real Schur factorization of the closed-loop spectrum, from the single definition in `detail/care_postconditions.h`. All three continuous tags reach that definition -- the sign-function path, the real-Schur path and the balanced-Schur path, the last verifying against the caller's Hamiltonian rather than the balanced one -- so no tag carries a bound the others do not. The balanced tag additionally runs a DGEBAL-style balance ahead of all of this. It allocates nothing, and it terminates because every accepted rescale strictly reduces that row's norm sum by the factor 19/20 using power-of-two scalings clamped to the scalar type's range. Its sweep count is data-dependent, and it is now **bounded at compile time** the way `max_iters` bounds the Newton loop: the cap is `2 * NX * (max_exponent - min_exponent)`, derived from the scalar type and the dimension rather than tuned, and reaching it stops the sweep and returns the partially balanced matrix. Stopping early is safe because balancing is a similarity preconditioner and every applied step updates `H` and `D` together, so `H_returned == D^-1 * H_original * D` holds exactly at any cut point -- a capped run is less well balanced, never wrong. The cap is a guarantee rather than a budget: over 550,000 draws with entries spread across `2^-280` to `2^+280`, the worst sweep counts observed were 2 / 12 / 43 / 45 at NX = 1 / 2 / 4 / 8 against ceilings of 4,090 / 8,180 / 16,360 / 32,720, so the worst measured run sits about three orders of magnitude below its ceiling. Budget from the measurement and treat the cap as the backstop) | YES | YES | YES | `dare_care_nomalloc_test` (NX = 2, 4, 8 across the Schur, sign-function, and balanced-Schur variants); `care_convergence_anchor_test` (fixed-seed near-axis and simple-input scale sweeps under all three method tags, plus magnitude-band anchors); `riccati_magnitude_test` (both ends of the arithmetic range); leg 1 witness calls `dare` and `care`. The allocation cell's heap claim is proved by `dare_care_nomalloc_test`; its stack claim is proved by the `-fstack-usage` frames and runtime watermarks in the stack note below, which are host `double` measurements, now corroborated on silicon by the ESP32 stack probe in `examples/embedded/esp32/main/app_main.cpp` -- the on-target `float` peaks track the host `double` prediction to within the scalar width, and that probe also establishes that at `float` the ACCEPTANCE CHECK, not the stack, is what bounds the usable state dimension. At `double` the NUCLEO-H753ZI image designs a two-state gain through `dare` on every boot: the gain agrees with the host's within its derived tolerance, and the closed loop it drives is bit-identical across 26 warm resets (`scripts/board_capture_fixtures/evidence.txt` and `timing.txt`, `arm-none-eabi-gcc` 16.2.0; see "On silicon: the NUCLEO-H753ZI leg" below). That board measures no stack figure of its own for the solve |
 | velocity profile construction: `trapezoidal_trajectory::create` / `double_s_trajectory::create` | YES (the profile is returned by value inside a `ctrlpp::expected`; nothing on the path owns storage) | YES (closed form on the trapezoidal path and on every double-S path but one; the cruise-free double-S rise is a bracket halved to exhaustion, bounded by one more than the significand width, so 25 evaluations for `float` and 54 for `double`) | YES | YES | YES (no random source; identical inputs exhaust the bracket at the identical step) | `trajectory_nomalloc_test` (construction is outside the armed window, as for every other type there); leg 1 + `embedded_core_float`, which instantiate both `create` factories |
-| trajectory evaluation (polynomial paths, velocity profiles, `cubic_spline`, `smoothing_spline`, `bspline_trajectory`) | YES | YES (closed form; B-spline recursion bounded by compile-time degree) | YES | YES | YES | `trajectory_nomalloc_test` (evaluate cases for cubic/quintic/septic, trapezoidal, double-S, modified sin/trap, cubic_spline, smoothing_spline, bspline_trajectory); leg 1 + `embedded_core_float` |
+| trajectory evaluation (polynomial paths, velocity profiles, `cubic_spline`, `smoothing_spline`, `bspline_trajectory`) | YES | YES (closed form; B-spline recursion bounded by compile-time degree) | YES | YES | YES | `trajectory_nomalloc_test` (evaluate cases for cubic/quintic/septic, trapezoidal, double-S, modified sin/trap, cubic_spline, smoothing_spline, bspline_trajectory); leg 1 + `embedded_core_float`. On silicon at `double`, double-S evaluation on the NUCLEO-H753ZI evidence image reports 0 allocations over 201 evaluations behind a passing allocation canary, and its last step's value equals the host golden (`scripts/board_capture_fixtures/evidence.txt`, `arm-none-eabi-gcc` 16.2.0; see "On silicon: the NUCLEO-H753ZI leg" below) |
 | online planners: `online_planner_2nd` / `online_planner_3rd` | YES | YES (closed-form segment logic) | YES | YES | YES | `trajectory_nomalloc_test` (update and sample cases for both planners); leg 1 + `embedded_core_float` |
 | trajectory time scaling: `rescale_to` / `can_rescale_to` / `synchronize` (trapezoidal, double-S) | YES (two-pass over a `std::span`, no owning copy, no allocation; the trapezoidal solve's boundary-duration helper returns a two-scalar aggregate by value and owns no storage) | YES (closed form on the trapezoidal and the rest-to-rest double-S paths -- the trapezoidal plateau and valley shapes are each a single quadratic in the cruise velocity's distance from that shape's own boundary, straight-line with no iteration; bracket exhaustion on the nonzero-boundary-velocity double-S path, bounded by one more than the significand width, so 25 evaluations for `float` and 54 for `double`, plus one step per binary exponent the bracket spans) | YES | YES | YES (no random source; identical inputs exhaust the bracket at the identical step) | `trajectory_nomalloc_test`; `trajectory_rescale_anchor_test` and the rescaling cases in `trajectory_hardening_test`; leg 1 + `embedded_core_float` |
 | `recursive_arx` / `rls` | YES (the update's result is a `ctrlpp::expected<void, rls_update_error>` holding one enumerator and no owning member; the two norms feeding the resolution floor are unevaluated Eigen expressions over existing storage) | YES (rank-one update, no loop; the refusal guard adds a fixed count of reads per cycle, every dimension a compile-time template parameter -- `NP*NP + NP` for the carried-state scan, `NP` for the regressor scan, and two `NP`-term norms for the denominator's scale) | YES | not covered (the leg 1 witness does not include the sysid headers) | YES (the guard is a pure predicate on the operands and the carried members; no random source, no clock) | `sysid_nomalloc_test` (rls and recursive_arx update cases, re-run green with the guard on every cycle of both 256-cycle armed windows); the typed refusals asserted in `sysid_hardening_test` |
 | `mpc` / `nmpc_dynamic` / `mhe` / `nmhe` (runtime-horizon, dynamic solver) | NO (soft real-time: the solve allocates and iterates) | YES when capped (`max_eval`, OSQP `max_iter`) | YES with `max_time = 0` (the default); the `max_time` budget is non-RT | not covered (opt-in OSQP/NLopt/argmin backends sit outside the embedded core witness) | solver-dependent | labeled soft real-time; caps and defaults in `mpc/nlopt_solver.h`, `mpc/argmin_policies.h`, `mpc/osqp_solver.h`, `mpc/argmin_qp_solver.h` |
-| `nmpc` (the DEFAULT; = `nmpc_static`, compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES below a decision dimension `NV` of 48, strict-zero at 0.00 allocs/step in steady state, and **NO at and above it**, where the solve crosses the same blocked-Householder boundary the estimator rows do (see "The heap claim's boundary" below). **The heap is not the binding cost here either** (see "Stack cost of the predictive controller row" below, which a hard-real-time caller must read before sizing a task stack: the configuration this cell's own evidence pins needs 33,304 bytes of stack in steady state, and constructing it needs 45,592) | YES when capped (`max_eval`) | YES with `max_time = 0` (the default); the `max_time` budget is non-RT | YES at `double`, and this row has no `float` form: the backend's `nw_sqp` policy fixes its scalar type to `double`, so the same instantiation at `float` does not compile. `embedded_predictive_double`, registered only with the backend on, builds and runs the shipped pin through one construction and one solve, every fallible result handled without the exception machinery, and leg 5 of `scripts/cross_compile_check.sh` cross-compiles that unit for arm-none-eabi Cortex-M7 under `-fno-exceptions -fno-rtti -DCTRLPP_NO_EXCEPTIONS`, printing a skip instead when no tree has fetched the backend. The flashable NUCLEO-H753ZI image the `arm-crosscompile` job links carries this path too, and the job asserts that image has no unresolved symbols. That covers the never-selected timed alternative's clock reference, which resolves to newlib's `_gettimeofday` stub, one that always fails; the default `max_time = 0` never calls it | YES — the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test`: the shipped pin (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; sentinel `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`), plus a two-configuration bracket over the damped chain that walks the boundary, at `NV` 47 and 48. **That is 2 of the 25 configurations this row publishes a figure for**, and the reason is measured: a unit holding all 25 peaked at 21.9 GB of compiler resident set and was killed by the kernel, and one holding 8 built and ran green at all 8 but cost 17.4 GB to compile and 232 s to run against roughly a second for the pin alone ; `embedded_predictive_double` (the `double` compile witness at the same pin) and leg 5 of `scripts/cross_compile_check.sh` (its arm-none-eabi cross-compile). The `arm-crosscompile` CI job links the NUCLEO-H753ZI image with this row in it, which is link evidence. The same image, run on the board, reports 0 allocations over 201 armed steps behind a passing allocation canary. Every one of its solves stops on the stationarity test, and its realized closed-loop cost lies within a derived bound of the exact finite-horizon law's |
+| `nmpc` (the DEFAULT; = `nmpc_static`, compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES below a decision dimension `NV` of 48, strict-zero at 0.00 allocs/step in steady state, and **NO at and above it**, where the solve crosses the same blocked-Householder boundary the estimator rows do (see "The heap claim's boundary" below). **The heap is not the binding cost here either** (see "Stack cost of the predictive controller row" below, which a hard-real-time caller must read before sizing a task stack: the configuration this cell's own evidence pins needs 33,304 bytes of stack in steady state, and constructing it needs 45,592) | YES when capped (`max_eval`) | YES with `max_time = 0` (the default); the `max_time` budget is non-RT | YES at `double`, and this row has no `float` form: the backend's `nw_sqp` policy fixes its scalar type to `double`, so the same instantiation at `float` does not compile. `embedded_predictive_double`, registered only with the backend on, builds and runs the shipped pin through one construction and one solve, every fallible result handled without the exception machinery, and leg 5 of `scripts/cross_compile_check.sh` cross-compiles that unit for arm-none-eabi Cortex-M7 under `-fno-exceptions -fno-rtti -DCTRLPP_NO_EXCEPTIONS`, printing a skip instead when no tree has fetched the backend. The flashable NUCLEO-H753ZI image the `arm-crosscompile` job links carries this path too, and the job asserts that image has no unresolved symbols. That covers the never-selected timed alternative's clock reference, which resolves to newlib's `_gettimeofday` stub, one that always fails; the default `max_time = 0` never calls it | YES — the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test`: the shipped pin (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; sentinel `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`), plus a two-configuration bracket over the damped chain that walks the boundary, at `NV` 47 and 48. **That is 2 of the 25 configurations this row publishes a figure for**, and the reason is measured: a unit holding all 25 peaked at 21.9 GB of compiler resident set and was killed by the kernel, and one holding 8 built and ran green at all 8 but cost 17.4 GB to compile and 232 s to run against roughly a second for the pin alone ; `embedded_predictive_double` (the `double` compile witness at the same pin) and leg 5 of `scripts/cross_compile_check.sh` (its arm-none-eabi cross-compile). The `arm-crosscompile` CI job links the NUCLEO-H753ZI image with this row in it, which is link evidence. The same image, run on the board, reports 0 allocations over 201 armed steps behind a passing allocation canary. Every one of its solves stops on the stationarity test, and its realized closed-loop cost lies within a derived bound of the exact finite-horizon law's (`scripts/board_capture_fixtures/evidence.txt`, image `f9f8aeae88400eacd54fad58674d994f43fbf0b1`, `arm-none-eabi-gcc` 16.2.0). Its stack high-water, cycle counts and compile ceiling on that board are in "On silicon: the NUCLEO-H753ZI leg" below |
 | static-memory linear MPC | planned | planned | planned | planned | planned | not implemented; the future hard real-time path (see below) |
 | the estimator `update` rejection guard (`kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf`, `luenberger_observer`, `complementary_filter`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<void, E>` holding one enumerator and no owning member) | YES (a fixed count of reads per step: state + covariance + measurement, every dimension a compile-time template parameter -- `NX + NX*NX + NY` for the covariance filters, `NX + NY` for the observer, `4 + NB + NE*NE + NY` for the MEKF, at most `7 + 9 + 1` for the complementary filter) | YES | YES | YES (a pure predicate on the operands; no random source and no state read beyond the members it scans) | `estimation_nomalloc_test` re-run green with the guard on every step of all six converted cases (128-step armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{kalman,ekf,ukf,mekf,manifold_ukf,luenberger,complementary_filter}_hardening_test`; `scripts/cross_compile_check.sh` all three legs PASS |
 | the controller step rejection guard (`pid::compute` both overloads, `mrac_controller::evaluate`, `l1_controller::evaluate`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<vector_t, E>` whose payload is the same by-value vector the surface already returned, so no owning member is added) | YES (a fixed count of reads per cycle, every dimension a compile-time template parameter: `pid` scans only the members its policy composition makes live, at most `11*NY` plus one scalar test on the step; `mrac` scans `NX + NU` vector and `NU*(NX + NU)` matrix entries; `l1` scans `2*NX + 2*NU`. The `l1` cycle additionally scans `NU` more for the pre-projection finiteness test that feeds `health()`) | YES | YES | YES (a pure predicate on the operands and the carried members; no random source, no clock) | `pid_nomalloc_test` re-run green with the guard on every cycle of all three composed cases (256-cycle armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{pid,mrac,l1}_hardening_test`, each proven to fail with its guard deleted; both standing trees green at baseline (90/90, 129/129) |
@@ -404,6 +404,156 @@ to sit on the margin either way. `double` answers every pose in the table.
 Witness: `examples/embedded/esp32/main/app_main.cpp`, whose control loop still
 designs its gain, runs its 201 steps, streams them over UART2 and reports
 `golden diff PASS` in the same boot that carries the probe.
+
+### On silicon: the NUCLEO-H753ZI leg
+
+A second board runs five of this table's families at `double`, judges each
+against a host golden within a derived bound, and reports what it measured
+about itself while doing so. Measured on a NUCLEO-H753ZI (STM32H753ZI, Cortex-M7
+with a double-precision FPU), built with `arm-none-eabi-gcc (Arch Repository)
+16.2.0` at `-Os` with exceptions and RTTI off, newlib-nano, Eigen 3.4.0 with
+`EIGEN_STACK_ALLOCATION_LIMIT=8192`, and the backend at the pinned
+`30a2cd4ea2fdab5b548080644908db640542eacd`. The image reads its posture off the
+hardware and prints it: the core at 64 MHz from the internal oscillator with no
+PLL, both L1 caches off, 7 flash wait states, code in flash, data and stack in
+DTCM, the heap in AXI SRAM, no interrupt enabled, one bare superloop.
+
+**EVERY FIGURE IN THIS SUBSECTION BELONGS TO THAT TOOLCHAIN, THAT FIXED-SIZE
+ALLOCATION LIMIT, THAT SCALAR AND THAT POSTURE.** None of them carries over to a
+different compiler or compiler version, a different
+`EIGEN_STACK_ALLOCATION_LIMIT`, `float`, or a different clock and cache setup.
+With the instruction cache off and 7 wait states, code placement alone moves the
+cycle counts, so a timing figure belongs to the image it was read from and not
+to the source. The ESP32 figures above were taken on `xtensa-esp32-elf-g++`
+15.2.0 at `float`; the two legs are not interchangeable.
+
+| family | what the image runs | row it bears on |
+|---|---|---|
+| control | `lqr_gain`, through `dare`, on a two-state, one-input plant, then 201 closed-loop steps of the designed gain | Riccati steady-state solve |
+| estimation | `kalman_filter` at two states, one input and one output, 201 predict-and-update steps | `kalman_filter` |
+| signal processing | `biquad::low_pass`, 201 samples | dsp |
+| trajectory | `double_s_trajectory::create`, then 201 evaluations | trajectory evaluation |
+| predictive | the default `nmpc` at the shipped pin (`NX = 2`, `NU = 1`, `NH = 5`, so `NV = 17` and `MaxM = 12`), 20 warm-up solves, then 201 solve-and-plant steps | `nmpc` |
+
+Two images are linked from the same sources, and every figure below names the
+one it came from:
+
+- the allocation-evidence image, `ctrlpp_nucleo_h753zi`, build id
+  `f9f8aeae88400eacd54fad58674d994f43fbf0b1`, which carries an allocation
+  sensor. Its boot report is committed as
+  `scripts/board_capture_fixtures/evidence.txt`.
+- the timing image, `ctrlpp_nucleo_h753zi_timing`, build id
+  `3c9d730f018c95535e6d8b76f77aa245a170780a`, linked without the sensor so the
+  timed code carries none of its checks. Its boot report is committed as
+  `scripts/board_capture_fixtures/timing.txt`.
+
+Both reports were captured with `scripts/board_capture.sh`. It refuses a report
+whose fingerprint is not the built image's, whose canary did not pass, or whose
+stack, timing or verdict lines are incomplete, and its `--self-test` replays
+every one of those refusals over the two committed reports on every change.
+
+**Every family passes.** The departure from the host golden, against the bound
+derived for it:
+
+| family | quantity judged | departure | derived bound |
+|---|---|---:|---:|
+| control | final state norm | 2.062e-17 | 6.070e-15 |
+| estimation | the last step's value | 6.661e-16 | 2.226e-11 |
+| signal processing | the last step's value | 0 | 3.239e-11 |
+| trajectory | the last step's value | 0 | 2.303e-11 |
+| predictive | closed-loop cost over the run | 1.425e-04 | 1.134 |
+
+The designed gain departs from the host's by `[-1.506e-12, -4.006e-13]` against
+a tolerance of `8.538e-11`. The predictive bound holds only under its own
+premise, which the report checks: all 221 of the run's solves stopped on the
+stationarity test.
+
+**Allocation, on the evidence image.** A canary first proves the sensor can see
+an allocation: it makes one deliberate allocation through each path the sensor
+watches (a C allocation, a C++ `new` and an Eigen heap vector) and reads
+`observed=3 expected=3`. Behind that canary every family reports 0 allocations
+and 0 sentinel trips over its 201 steps. The canary does not extend the sensor's
+sight to the C library's reentrant allocator entry points, which never pass
+through the wrapped symbols. Setup heap: 1,088 bytes before the predictive
+family is built, then 76,720 bytes after its construction and its 20 warm-up
+solves. That is exactly the heap the image reserves: the reserve is set to the
+measured requirement, and a request past it is refused by name on the console.
+
+**Stack, on the evidence image.** The watermark paints the stack below each
+region's origin, down to the end of bss, 73,020 bytes below the stack top, and
+walks it after the region. Every line reports a zero harness floor and an
+unsaturated window:
+
+| region | high-water below the stack top, bytes |
+|---|---:|
+| startup: reset, static constructors, entry to `main` | 468 |
+| predictive construction | 2,752 |
+| predictive first solve | 30,616 |
+| predictive steady state, the 201 window solves | 26,588 |
+| whole program | 30,616 |
+
+The whole program's high-water is the first solve, and the image's link-time
+stack reserve, `_Min_Stack_Size`, is set to exactly that figure. The capture
+refuses any report whose high-water exceeds the reserve it reads out of the
+image. **The construction figure is not the host table's construction figure.**
+The board builds the controller in static storage, so 2,752 bytes is the
+constructor chain alone; the host table builds the controller as a local and so
+counts the object and its inline solver. The first-solve and steady-state
+figures measure the corresponding chains on a different toolchain and
+instruction set; they do not replace the host's 33,304 bytes at this pin.
+
+**Compile ceiling.** At `EIGEN_STACK_ALLOCATION_LIMIT=8192` and `double`, with
+the leg's own flags, the largest decision dimension of the predictive row that
+compiles is `NV = 32` (`NX = 2, NH = 10` and `NX = 10, NH = 2`, one input), and
+`NV = 33` does not (`NX = 1, NH = 16` and `NX = 16, NH = 1`). The first object
+to trip is an `NV x NV` fixed-size matrix in the backend's SQP state buffers,
+built on the first solve, and the library's assertion reads `8712 <= 8192`.
+This is the mechanism behind the host ceiling of `NV = 128` in "The largest
+configuration that COMPILES" below, at a limit sixteen times smaller. No stack
+figure on this board covers a configuration other than the shipped pin.
+
+**Timing, on the timing image.** Cycles from the core's DWT cycle counter, which
+the image proves live before printing any figure. Every figure is raw: the
+sampling overhead is published as its own region and never subtracted. The cold
+figure is the first execution after reset (`n = 1`); the warm figures cover 201
+repeats. A region of block 201 times 201 consecutive steps, and its
+per-iteration figure divides by that block:
+
+| region | block | cold | warm min | warm median | warm max | warm max per iteration | at 64 MHz |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| sampling overhead | 1 | 129 | 95 | 95 | 129 | 129 | 2.02 us |
+| control: gain design (`lqr_gain`) | 1 | 323,177 | 323,042 | 323,144 | 323,144 | 323,144 | 5.05 ms |
+| control: closed-loop step | 201 | 84,295 | 84,187 | 84,187 | 84,245 | 419.1 | 6.55 us |
+| estimation: `kalman_filter` step | 201 | 2,378,473 | 2,378,498 | 2,378,515 | 2,378,515 | 11,833.4 | 184.9 us |
+| dsp: `biquad` sample | 201 | 11,940 | 11,898 | 11,898 | 11,940 | 59.4 | 0.93 us |
+| trajectory: double-S evaluation | 201 | 34,693 | 34,528 | 34,528 | 34,712 | 172.7 | 2.70 us |
+| predictive: one solve and plant step | 1 | 141,863,737 | 4,943,867 | 4,968,672 | 9,751,062 | 9,751,062 | 152.4 ms |
+
+In the cheap regions cold and warm differ by tens of cycles, and with both
+caches off none of that is a cache effect. The predictive band is solver work:
+the cold solve ran 30 iterations against 1 to 2 for a window solve. At this
+posture the worst window solve, 152.4 ms, is longer than the demonstration's
+100 ms sample period, the median of 77.6 ms is shorter, and the cold first solve
+takes 2.22 s. A faster posture is not measured here.
+
+**Determinism across warm resets.** The control family's closed loop is printed
+as 201 rows of binary64 bit patterns, so a one-bit difference anywhere in the
+trajectory is a difference in the report. Over 26 runs of the timing image (two
+`scripts/board_capture.sh compare` series of 5 and 20 runs restarted with
+`st-flash reset`, plus the mass-storage flash that loaded the image), every run
+decoded its own reset as a pin reset, the block was byte-identical in all 26,
+and it is identical to the evidence image's. Every timing figure in every region
+had zero spread across the same 26 runs, so the cold figures above are not one
+boot's luck. Zero differences in 26 runs leaves a per-run difference rate up to
+about 11.5 percent plausible at 95 percent confidence; the count is part of the
+result.
+
+**Power-cycle determinism on this board: PENDING.** No run after a power-on
+reset has been collected yet. The series needs an operator to unplug and replug
+the board, and until it exists the determinism stated above is a warm-reset
+result only. When it is collected, the power-on series is compared under the
+same refusals and its run count, decoded reset class, exact-class verdict and
+spread are recorded here.
 
 ## Stack cost of the estimator rows
 
