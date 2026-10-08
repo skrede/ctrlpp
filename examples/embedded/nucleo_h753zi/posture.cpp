@@ -1,4 +1,6 @@
 #include "posture.h"
+#include "telemetry.h"
+#include "reset_cause.h"
 
 #include "stm32h7xx.h"
 
@@ -71,14 +73,18 @@ namespace ctrlpp {
 
 void report_posture()
 {
+    const reset_cause cause = read_reset_cause();
     SystemCoreClockUpdate();
     const std::uint32_t ccr      = SCB->CCR;
     const std::uint32_t latency  = (FLASH->ACR & FLASH_ACR_LATENCY_Msk) >> FLASH_ACR_LATENCY_Pos;
     const std::uint64_t clock_hz = SystemCoreClock != 0U ? SystemCoreClock : 1U;
     const std::uint32_t wrap_ms  = static_cast<std::uint32_t>(kCounterStates * kMillisecond / clock_hz);
     char frame_marker            = 0;
-    std::printf("[posture] core_hz=%" PRIu32 " axi_hz=%" PRIu32 " clock_source=%s icache=%s dcache=%s flash_latency_ws=%" PRIu32 " cycle_wrap_ms=%" PRIu32, SystemCoreClock,
-                SystemD2Clock, clock_source(), bit_state(ccr, SCB_CCR_IC_Msk), bit_state(ccr, SCB_CCR_DC_Msk), latency, wrap_ms);
+    open_line(stream_tag::meta);
+    std::printf("posture ");
+    print_reset_cause(cause);
+    std::printf(" core_hz=%" PRIu32 " axi_hz=%" PRIu32 " clock_source=%s icache=%s dcache=%s flash_latency_ws=%" PRIu32 " cycle_wrap_ms=%" PRIu32, SystemCoreClock, SystemD2Clock,
+                clock_source(), bit_state(ccr, SCB_CCR_IC_Msk), bit_state(ccr, SCB_CCR_DC_Msk), latency, wrap_ms);
     std::printf(" code=%s data=%s stack=%s heap=%s optimize=%s compiler=gcc-%s\n", region_of(&report_posture), region_of(&SystemCoreClock), region_of(&frame_marker), region_of(end),
                 optimization(), __VERSION__);
 }

@@ -13,8 +13,9 @@ function(ctrlpp_nucleo_image target sentinel)
         family_report.cpp
         sbrk_ceiling.cpp
         cycle_counter.cpp
-        cycle_record.cpp
         posture.cpp
+        reset_cause.cpp
+        telemetry.cpp
         timing_run.cpp
         stack_watermark_board.cpp
         "${CMSIS_SYSTEM}"
@@ -49,10 +50,10 @@ function(ctrlpp_nucleo_image target sentinel)
         -fstack-usage)
 
     # newlib-nano trims printf, so the float-capable variant is pulled in for
-    # the CSV's %f. The build id is computed by the linker over the image's own
-    # contents, so it cannot fail to change when the image does; the firmware
-    # prints it and a host capture refuses a report whose fingerprint is not the
-    # one it just built.
+    # the verdict lines' %g and %e. The build id is computed by the linker over
+    # the image's own contents, so it cannot fail to change when the image does;
+    # the firmware prints it and a host capture refuses a report whose
+    # fingerprint is not the one it just built.
     target_link_options(${target} PRIVATE
         ${CTRLPP_M7_LINK_ARCH}
         -T "${CMAKE_CURRENT_SOURCE_DIR}/stm32h753zi_flash.ld"

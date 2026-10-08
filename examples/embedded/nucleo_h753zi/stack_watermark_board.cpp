@@ -1,3 +1,4 @@
+#include "telemetry.h"
 #include "stack_watermark_board.h"
 
 #include <cstdio>
@@ -17,7 +18,7 @@ namespace {
 // words below it. A build that deepens the harness reads a nonzero floor, which
 // withholds the figures rather than misstating them.
 #ifndef CTRLPP_MCU_STACK_GAP_BYTES
-#define CTRLPP_MCU_STACK_GAP_BYTES 12
+    #define CTRLPP_MCU_STACK_GAP_BYTES 12
 #endif
 
 constexpr std::uint32_t kGapBytes = CTRLPP_MCU_STACK_GAP_BYTES;
@@ -145,7 +146,8 @@ void report_stack(const char *region, const stack_reading &r)
 {
     if constexpr(!kStackWatermarkPresent)
         return;
-    std::printf("[stack] region=%s ", region);
+    open_line(stream_tag::verdict);
+    std::printf("stack region=%s ", region);
     if(r.floor != 0 || r.saturated)
         std::printf("used=withheld from_top=withheld free=withheld");
     else

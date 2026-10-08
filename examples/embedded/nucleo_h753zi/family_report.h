@@ -1,6 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_EXAMPLES_EMBEDDED_NUCLEO_H753ZI_FAMILY_REPORT_H
 #define HPP_GUARD_CTRLPP_EXAMPLES_EMBEDDED_NUCLEO_H753ZI_FAMILY_REPORT_H
 
+#include "telemetry.h"
 #include "alloc_sensor.h"
 
 #include "golden_verdict.h"
@@ -59,7 +60,8 @@ void drive_family(const char *name, double golden, double bound)
     auto demo = Demo<double>::make();
     if(!demo.has_value())
     {
-        std::printf("[family] %s verdict=REFUSED -- %s\n", name, describe(demo.error()));
+        open_line(stream_tag::verdict);
+        std::printf("family %s verdict=REFUSED -- %s\n", name, describe(demo.error()));
         return;
     }
     run_family(name, *demo, golden, bound);

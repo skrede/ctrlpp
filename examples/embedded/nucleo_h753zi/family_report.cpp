@@ -1,5 +1,6 @@
 #include "eigen_alloc_sentinel.h"
 
+#include "telemetry.h"
 #include "alloc_sensor.h"
 #include "sbrk_ceiling.h"
 #include "family_report.h"
@@ -33,17 +34,20 @@ void report_allocations(const window_figures &figures)
     const std::uint32_t steps = static_cast<std::uint32_t>(kGoldenSteps);
     if(!figures.measured)
     {
-        std::printf("[alloc] steady_state allocations=unmeasured -- this image carries no allocation sensor\n");
+        open_line(stream_tag::verdict);
+        std::printf("alloc steady_state allocations=unmeasured -- this image carries no allocation sensor\n");
         return;
     }
-    std::printf("[alloc] steady_state allocations=%" PRIu32 " steps=%" PRIu32 " per_step=%.2f eigen_sentinel=%s trips=%" PRIu32 "\n", figures.allocations, steps,
+    open_line(stream_tag::verdict);
+    std::printf("alloc steady_state allocations=%" PRIu32 " steps=%" PRIu32 " per_step=%.2f eigen_sentinel=%s trips=%" PRIu32 "\n", figures.allocations, steps,
                 static_cast<double>(figures.allocations) / steps, figures.eigen_trips == 0 ? "clean" : "TRIPPED", figures.eigen_trips);
 }
 
 void report_family(const family_result &result, const window_figures &figures)
 {
     const std::uint32_t steps = static_cast<std::uint32_t>(kGoldenSteps);
-    std::printf("[family] %s value=%.17g golden=%.17g departure=%.3e bound=%.3e verdict=%s", result.name, result.value, result.golden, result.departure, result.bound,
+    open_line(stream_tag::verdict);
+    std::printf("family %s value=%.17g golden=%.17g departure=%.3e bound=%.3e verdict=%s", result.name, result.value, result.golden, result.departure, result.bound,
                 result.pass ? "PASS" : "FAIL");
     if(!figures.measured)
     {
@@ -72,7 +76,8 @@ predictive_workspace predictive_bound = make_predictive_workspace();
 
 void report_predictive(const predictive_verdict &verdict)
 {
-    std::printf("[predictive] stationarity_stops=%" PRIu32 " of %" PRIu32 " worst_gate=%.3e run_steps=%" PRIu32 " armed_steps=%" PRIu32 " premise=%s gate=%s\n",
+    open_line(stream_tag::verdict);
+    std::printf("predictive stationarity_stops=%" PRIu32 " of %" PRIu32 " worst_gate=%.3e run_steps=%" PRIu32 " armed_steps=%" PRIu32 " premise=%s gate=%s\n",
                 predictive_run.stationarity_stops, static_cast<std::uint32_t>(kPredictiveRunSteps), verdict.worst_gate, static_cast<std::uint32_t>(kPredictiveRunSteps),
                 static_cast<std::uint32_t>(kGoldenSteps), verdict.premise ? "PASS" : "FAIL", verdict.gate ? "PASS" : "FAIL");
 }
@@ -138,11 +143,13 @@ void drive_predictive_family()
     alloc_sensor_reset();
     const auto ran               = run_instrumented(demo);
     const window_figures figures = read_window();
-    std::printf("[heap] predictive_setup_high_water=%" PRIu32 " reserve=%" PRIu32 " bytes\n", static_cast<std::uint32_t>(heap_high_water_bytes()),
+    open_line(stream_tag::verdict);
+    std::printf("heap predictive_setup_high_water=%" PRIu32 " reserve=%" PRIu32 " bytes\n", static_cast<std::uint32_t>(heap_high_water_bytes()),
                 static_cast<std::uint32_t>(heap_reserve_bytes()));
     if(!ran.has_value())
     {
-        std::printf("[family] predictive verdict=REFUSED -- %s\n", describe(ran.error()));
+        open_line(stream_tag::verdict);
+        std::printf("family predictive verdict=REFUSED -- %s\n", describe(ran.error()));
         return;
     }
     const predictive_verdict verdict = judge_predictive(predictive_run, predictive_bound);
@@ -154,7 +161,8 @@ void drive_predictive_family()
 
 void drive_predictive_family()
 {
-    std::printf("[family] predictive verdict=ABSENT -- the image was built without the predictive backend\n");
+    open_line(stream_tag::verdict);
+    std::printf("family predictive verdict=ABSENT -- the image was built without the predictive backend\n");
 }
 
 #endif

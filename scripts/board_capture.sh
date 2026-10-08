@@ -47,6 +47,26 @@
 # 45) and at most CAPTURE_BYTE_CAP bytes (default 262144), whichever comes first,
 # and it stops early on the report's closing verdict line.
 #
+# Stream:
+#   Every report line opens with one of five tags, and a block is the set of
+#   lines carrying its tag:
+#     [meta]     the fingerprint, the image kind, and the posture line, which
+#                carries the reset class the image decoded from its own reset
+#                status register before clearing it
+#     [canary]   the instrument's proof of sight: the allocation sensor on the
+#                evidence image, the cycle counter on the timing image
+#     [exact]    a header row, then one row per loop index in index order; the
+#                computed columns, each double printed as its 16-digit binary64
+#                bit pattern, asserted identical across runs
+#     [spread]   a header row, then one row per timed region and regime; the
+#                timing columns, which carry a spread bound and never a bitwise
+#                claim (the evidence image times nothing, so its block is the
+#                header alone)
+#     [verdict]  every family's verdict, the stack, heap and allocation figures,
+#                and the closing golden diff
+#   A field belongs to exactly one of the two claim classes, so a name in both
+#   headers is refused.
+#
 # Environment:
 #   CAPTURE_BUILD_DIR        build tree (default: <repo>/build-arm-capture)
 #   CAPTURE_MOUNT            ST-LINK mass-storage mount
@@ -83,6 +103,16 @@
 #      measured stack needs more than the linker reserved for it
 #  22  the reserve a stack line prints disagrees with the _Min_Stack_Size
 #      symbol in the ELF, so the line and the image disagree on the reserve
+#  23  one of the five stream tags is missing, so a block of the report is
+#      absent rather than empty
+#  24  a field name appears in both the exact-class and the spread-class
+#      header, or twice in one, so it would be claimed bitwise identical and
+#      bounded by a spread at once
+#  25  a class block is malformed: its header does not key its rows (the loop
+#      index for the exact class, the region for the spread class), a row's
+#      width differs from its header's, an exact row's index breaks the
+#      sequence 0, 1, 2, ... (a reordering is a difference, not a pass), or an
+#      exact value is not a 16-digit bit pattern
 #
 # --- What this capture does NOT establish -------------------------------------
 #
@@ -101,10 +131,15 @@
 #      tamper-evidence: SHA-1 is collision-attackable, the note travels in the
 #      clear inside the image, and nothing here authenticates who produced it.
 #
-#   3. A passing capture says the report arrived and matched. It says nothing
-#      about how the target was reset, and this script cannot distinguish a power
-#      cycle from a warm reset -- that distinction has to come from the firmware's
-#      own reset-cause reporting, which this script only transports.
+#   3. A passing capture says the report arrived and matched. This script
+#      cannot tell a power cycle from a warm reset; the image decodes its own
+#      reset status register and prints the class on the posture line, and this
+#      script requires and transports that label without judging it. The flags
+#      accumulate until cleared and a power-on sets every flag a pin reset sets,
+#      so the label describes this run only if the image that ran before it
+#      cleared them: the first run after an image that never cleared the
+#      register reports every reset since the last power-on, and reads as a
+#      power-on.
 #
 #   4. The read is bounded, so a report that is slower than the timeout is
 #      truncated. A truncated report fails on its missing verdict line rather
@@ -117,7 +152,7 @@
 #      library's reentrant allocator entry points, which stdio uses and which
 #      never pass through the wrapped symbols.
 #
-#   6. A timing line's figures are raw: each carries the instrument's own
+#   6. A spread row's figures are raw: each carries the instrument's own
 #      overhead, which the report publishes on its own lines rather than
 #      subtracting. The cold figure is one sample per boot; its spread is a
 #      property of repeated captures, not of one.
@@ -136,7 +171,7 @@
 #      derived bound of the host reference; it does not compare the steps before
 #      it. The predictive family's value is the cost accumulated over the whole
 #      run, so it does weigh every step, but its bound holds only under the
-#      premise its own [predictive] line reports (every solve stopped on the
+#      premise its own [verdict] predictive line reports (every solve stopped on the
 #      stationarity test). The allocation count on the same line is
 #      transported, not judged.
 
@@ -165,6 +200,9 @@ generator="Unix Makefiles"
 # can stop before the timeout rather than always paying it.
 report_end_marker="golden diff "
 
+# Every tag the report carries, each owed at least one line.
+expected_tags="meta canary exact spread verdict"
+
 # Every family the image runs. Each must print exactly one verdict line, so a
 # family that ran and reported nothing is a refusal rather than a shorter report.
 expected_families="control estimation dsp trajectory predictive"
@@ -185,7 +223,7 @@ destination=""
 for arg in "$@"; do
     case "${arg}" in
         -h|--help)
-            sed -n '2,141p' "${BASH_SOURCE[0]}"
+            sed -n '2,/^$/p' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         --timing)
@@ -438,6 +476,8 @@ verify_transcript()
     fi
 
     verify_families
+    verify_tags
+    verify_spread_header
 
     if [ "${image_kind}" = "timing" ]; then
         verify_timing
@@ -445,7 +485,65 @@ verify_transcript()
         verify_stack
     fi
 
+    verify_classes
+    verify_exact
     return 0
+}
+
+# The lines carrying one tag, with the tag removed.
+block_lines()
+{
+    sed -n "s/^\[$1\] //p" "${transcript}"
+}
+
+verify_tags()
+{
+    local tag=""
+    for tag in ${expected_tags}; do
+        grep -q "^\[${tag}\] " "${transcript}" \
+            || fail 23 "the captured report carries no '[${tag}]' line, so that block of the report is absent."
+    done
+    return 0
+}
+
+# A field in both headers would be asserted bitwise identical and bounded by a
+# spread at once, which is the mixing the two classes exist to prevent.
+verify_classes()
+{
+    local repeated=""
+    repeated="$( { block_lines exact | head -1; block_lines spread | head -1; } | tr ',' '\n' | sort | uniq -d | head -1)"
+    [ -z "${repeated}" ] \
+        || fail 24 "the field '${repeated}' is named in both class headers, or twice in one: '$(block_lines exact | head -1)' and '$(block_lines spread | head -1)'."
+    return 0
+}
+
+# Positional, never sorted: rows that agree as a set but not in order are a
+# difference in the run, and a value that is not a bit pattern cannot carry a
+# bitwise claim.
+verify_exact()
+{
+    local problem=""
+    problem="$(block_lines exact | awk -F, '
+        NR == 1 { width = NF; if ($1 != "k") { print "the exact-class header does not key its rows by the loop index: \047" $0 "\047"; exit } next }
+        NF != width { print "an exact-class row carries " NF " fields against a header of " width ": \047" $0 "\047"; exit }
+        $1 != (NR - 2) "" { print "an exact-class row carries index " $1 " where " NR - 2 " is required: \047" $0 "\047"; exit }
+        { for (i = 2; i <= NF; ++i) if ($i !~ /^[0-9A-F]{16}$/) { print "an exact-class value is not a 16-digit bit pattern: \047" $0 "\047"; exit } }
+        END { if (NR == 1) print "the exact-class block carries a header and no rows." }')"
+    [ -z "${problem}" ] || fail 25 "${problem}"
+    return 0
+}
+
+verify_spread_header()
+{
+    [ "$(block_lines spread | head -1 | cut -d, -f1)" = "region" ] \
+        || fail 25 "the spread-class header does not key its rows by region: '$(block_lines spread | head -1)'."
+    return 0
+}
+
+# The header that keys the spread rows, which the timing refusals index by name.
+spread_column()
+{
+    block_lines spread | head -1 | tr ',' '\n' | grep -n -x -m 1 "$1" | cut -d: -f1
 }
 
 # The two images run the same report, so a capture of the wrong one could
@@ -462,10 +560,10 @@ verify_kind()
 verify_posture()
 {
     local posture="" field=""
-    posture="$(grep -m 1 '^\[posture\] ' "${transcript}" || true)"
+    posture="$(grep -m 1 '^\[meta\] posture ' "${transcript}" || true)"
     [ -n "${posture}" ] \
-        || fail 14 "the captured report carries no '[posture]' line, so the configuration its figures were taken under is unstated."
-    for field in core_hz icache dcache flash_latency_ws cycle_wrap_ms compiler; do
+        || fail 14 "the captured report carries no '[meta] posture' line, so the reset and the configuration its figures were taken under are unstated."
+    for field in reset reset_flags reset_rsr core_hz icache dcache flash_latency_ws cycle_wrap_ms compiler; do
         printf '%s\n' "${posture}" | grep -Eq " ${field}=[^ ]+" \
             || fail 14 "the posture line carries no '${field}=' field: '${posture}'."
     done
@@ -477,27 +575,30 @@ verify_posture()
 # not a bound.
 verify_timing()
 {
-    local line="" region="" regime="" count=0
-    line="$(grep -m 1 '^\[timing\] UNAVAILABLE' "${transcript}" || true)"
-    [ -z "${line}" ] \
-        || fail 15 "the cycle counter did not prove itself live: '${line}'."
-    grep -q '^\[timing\] region=' "${transcript}" \
-        || fail 15 "the timing image printed no timing line."
+    local line="" region="" regime="" count=0 rows="" width=0 n_at="" block_at=""
+    line="$(grep -m 1 '^\[canary\] cycle_counter ' "${transcript}" || true)"
+    printf '%s\n' "${line}" | grep -q '^\[canary\] cycle_counter PASS' \
+        || fail 15 "the cycle counter did not prove itself live: '${line:-no [canary] cycle_counter line}'."
+    rows="$(block_lines spread | tail -n +2)"
+    [ -n "${rows}" ] || fail 15 "the timing image printed no spread-class row."
 
+    width="$(block_lines spread | head -1 | awk -F, '{ print NF }')"
+    n_at="$(spread_column n)"
+    block_at="$(spread_column block)"
     while IFS= read -r line; do
-        printf '%s\n' "${line}" | grep -Eq ' n=[1-9][0-9]*( |$)' \
-            || fail 16 "a timing line carries no sample count: '${line}'."
-        if printf '%s\n' "${line}" | grep -q 'per_iteration'; then
-            printf '%s\n' "${line}" | grep -Eq ' block=[1-9][0-9]*( |$)' \
-                || fail 16 "a per-iteration figure carries no block size: '${line}'."
-        fi
-    done < <(grep '^\[timing\] region=' "${transcript}")
+        [ "$(printf '%s\n' "${line}" | awk -F, '{ print NF }')" -eq "${width}" ] \
+            || fail 25 "a spread-class row's width differs from its header's: '${line}'."
+        [ -n "${n_at}" ] && printf '%s\n' "${line}" | cut -d, -f"${n_at}" | grep -Eqx '[1-9][0-9]*' \
+            || fail 16 "a timing row carries no sample count: '${line}'."
+        [ -n "${block_at}" ] && printf '%s\n' "${line}" | cut -d, -f"${block_at}" | grep -Eqx '[1-9][0-9]*' \
+            || fail 16 "a per-iteration figure carries no block size: '${line}'."
+    done <<< "${rows}"
 
     for region in ${expected_regions}; do
         for regime in cold warm; do
-            count="$(grep -c "^\[timing\] region=${region} regime=${regime} " "${transcript}" || true)"
+            count="$(printf '%s\n' "${rows}" | grep -c "^${region},${regime}," || true)"
             [ "${count}" -eq 1 ] \
-                || fail 17 "the report carries ${count} '${region}' ${regime} lines where exactly one is required."
+                || fail 17 "the report carries ${count} '${region}' ${regime} rows where exactly one is required."
         done
     done
     return 0
@@ -530,10 +631,10 @@ verify_stack()
         from_top="$(printf '%s\n' "${line}" | sed -n 's/.* from_top=\([0-9][0-9]*\) .*/\1/p')"
         [ "${from_top}" -le "${reserve}" ] \
             || fail 21 "the measured stack high-water of ${from_top} B exceeds the image's ${reserve} B reserve: '${line}'."
-    done < <(grep '^\[stack\] ' "${transcript}")
+    done < <(grep '^\[verdict\] stack ' "${transcript}")
 
     for region in ${expected_stack_regions}; do
-        count="$(grep -c "^\[stack\] region=${region} " "${transcript}" || true)"
+        count="$(grep -c "^\[verdict\] stack region=${region} " "${transcript}" || true)"
         [ "${count}" -eq 1 ] \
             || fail 20 "the report carries ${count} '${region}' stack lines where exactly one is required."
     done
@@ -544,10 +645,10 @@ verify_families()
 {
     local family="" line="" count=0
     for family in ${expected_families}; do
-        count="$(grep -c "^\[family\] ${family} " "${transcript}" || true)"
+        count="$(grep -c "^\[verdict\] family ${family} " "${transcript}" || true)"
         [ "${count}" -eq 1 ] \
-            || fail 11 "the captured report carries ${count} '[family] ${family}' lines where exactly one is required."
-        line="$(grep -m 1 "^\[family\] ${family} " "${transcript}")"
+            || fail 11 "the captured report carries ${count} '[verdict] family ${family}' lines where exactly one is required."
+        line="$(grep -m 1 "^\[verdict\] family ${family} " "${transcript}")"
         printf '%s\n' "${line}" | grep -q ' verdict=PASS ' \
             || fail 12 "the ${family} family did not pass: '${line}'."
     done
@@ -559,11 +660,11 @@ verify_families()
 verify_canary()
 {
     local canary_line=""
-    canary_line="$(grep -m 1 '^\[canary\] ' "${transcript}" || true)"
+    canary_line="$(grep -m 1 '^\[canary\] allocation ' "${transcript}" || true)"
     [ -n "${canary_line}" ] \
-        || fail 9 "the captured report carries no '[canary]' line, so its allocation figure comes from a sensor that never proved it can see an allocation."
+        || fail 9 "the captured report carries no '[canary] allocation' line, so its allocation figure comes from a sensor that never proved it can see an allocation."
 
-    printf '%s\n' "${canary_line}" | grep -q '^\[canary\] PASS observed=[1-9]' \
+    printf '%s\n' "${canary_line}" | grep -q '^\[canary\] allocation PASS observed=[1-9]' \
         || fail 10 "the allocation-sensor canary did not pass: '${canary_line}'. A zero reported by a sensor that missed its own deliberate allocations is blindness, not evidence."
 
     return 0
@@ -592,13 +693,21 @@ write_artifact()
         echo "# The build id above is the linker's SHA-1 note, read out of the ELF with"
         echo "# ${toolchain_prefix}readelf -n and matched against the line the firmware printed."
         echo "# It is an identity check against accidental staleness, not a signature."
+        echo "#"
+        echo "# Reset: $(sed -n 's/^\[meta\] posture \(reset=[^ ]* reset_flags=[^ ]* reset_rsr=[^ ]*\).*/\1/p' "${transcript}" | head -1),"
+        echo "# as the image decoded its reset status register before clearing it. The label"
+        echo "# describes this run only if the image that ran before it cleared the flags."
+        echo "#"
+        echo "# The [exact] rows print each double as its binary64 bit pattern in 16"
+        echo "# uppercase hexadecimal digits, so two runs that differ in the last bit differ"
+        echo "# in the row."
         if [ "${image_kind}" = "timing" ]; then
             band_cause
         else
             static_frames
             echo "#"
             echo "# Stack reserve: $(elf_stack_reserve) bytes, the _Min_Stack_Size symbol read"
-            echo "# with ${toolchain_prefix}nm out of the image above. Every [stack] line below"
+            echo "# with ${toolchain_prefix}nm out of the image above. Every [verdict] stack line below"
             echo "# prints the same figure and none of their high-waters exceeds it."
         fi
         echo
@@ -621,7 +730,7 @@ static_frames()
     echo "# $(printf '%s\n' "${worst}" | cut -f2) bytes ($(printf '%s\n' "${worst}" | cut -f3)), in"
     echo "# $(printf '%s\n' "${worst}" | cut -f1 | sed -e "s|^${repo_root}/||" -e 's/ \[with .*//')."
     echo "# That report attributes nothing to callees, so a frame or a sum of frames is a"
-    echo "# lower bound on what a stack must hold. The [stack] lines below are the runtime"
+    echo "# lower bound on what a stack must hold. The [verdict] stack lines below are the runtime"
     echo "# watermark over the whole chain, the figure a stack must actually cover. Both"
     echo "# are published; neither replaces the other."
 }
@@ -632,7 +741,7 @@ static_frames()
 band_cause()
 {
     local posture="" latency="" icache="" dcache="" caches="" cold="" warm=""
-    posture="$(grep -m 1 '^\[posture\] ' "${transcript}")"
+    posture="$(grep -m 1 '^\[meta\] posture ' "${transcript}")"
     latency="$(printf '%s\n' "${posture}" | sed -n 's/.* flash_latency_ws=\([^ ]*\).*/\1/p')"
     icache="$(printf '%s\n' "${posture}" | sed -n 's/.* icache=\([^ ]*\).*/\1/p')"
     dcache="$(printf '%s\n' "${posture}" | sed -n 's/.* dcache=\([^ ]*\).*/\1/p')"
@@ -640,8 +749,8 @@ band_cause()
     if [ "${icache}" != "off" ] || [ "${dcache}" != "off" ]; then
         caches="the posture reports icache=${icache} dcache=${dcache}, so the cold-to-warm difference includes cache fill"
     fi
-    cold="$(sed -n 's/^\[work\] region=predictive.step regime=cold iterations=\([0-9]*\).*/\1/p' "${transcript}")"
-    warm="$(sed -n 's/^\[work\] region=predictive.step regime=warm .*iterations_min=\([0-9]*\) iterations_max=\([0-9]*\).*/\1 to \2/p' "${transcript}")"
+    cold="$(sed -n 's/^\[verdict\] work region=predictive.step regime=cold iterations=\([0-9]*\).*/\1/p' "${transcript}")"
+    warm="$(sed -n 's/^\[verdict\] work region=predictive.step regime=warm .*iterations_min=\([0-9]*\) iterations_max=\([0-9]*\).*/\1 to \2/p' "${transcript}")"
     echo "#"
     echo "# Band cause: ${caches}. Beyond the caches it can come only from branch"
     echo "# prediction and instruction-fetch buffering in front of flash read at ${latency}"

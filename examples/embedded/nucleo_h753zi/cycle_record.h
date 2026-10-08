@@ -75,10 +75,6 @@ private:
     std::uint32_t max_at_;
 };
 
-// One tagged line per region and regime. The figures are raw: each carries the
-// instrument overhead, which the report publishes on its own lines.
-void report_timing(const timing_region &region, const cycle_distribution &d);
-
 }
 
 #endif
