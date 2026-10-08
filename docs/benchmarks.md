@@ -83,7 +83,9 @@ The **spread** column is the cross-pass spread on wall time,
 | `so3::exp` | exp map | 41.27 | 24M | 217 | GCC 16.1.1 | 0.94% |
 | `so3::log` | log map | 15.96 | 63M | 190 | GCC 16.1.1 | 0.76% |
 | `cubic_spline` | `evaluate()` | 3.80 | 263M | 92 | GCC 16.1.1 | 1.22% |
-| `online_planner_3rd` | `sample()` | 8.25 | 121M | 128 | GCC 16.1.1 | 0.23% |
+| `online_planner_3rd` | `sample()` | 8.21 | 122M | 128 | GCC 16.2.1 | 1.22% |
+| `double_s_trajectory` | `evaluate()` by value | 4.35 | 230M | 61.7 | GCC 16.2.1 | 0.21% |
+| `double_s_trajectory` | `evaluate()` out-parameter | 4.29 | 233M | 62.2 | GCC 16.2.1 | 0.24% |
 | `dare` | solve + acceptance check | 10.78 us | 92.8K | 153K | GCC 16.1.1 | 2.08% |
 | `lqr_gain` | DARE + gain | 3.01 us | 333K | 36.4K | GCC 16.1.1 | 0.34% |
 | `batch_arx` | `identify()` | 4.38 us | 228K | 58.1K | GCC 16.1.1 | 0.51% |
@@ -91,6 +93,17 @@ The **spread** column is the cross-pass spread on wall time,
 
 System dimensions: NX=2 for estimators and sysid, NX=4/NU=2 for LQR/DARE,
 5-tap for FIR, 5-knot natural cubic spline.
+
+The three trajectory rows built with GCC 16.2.1 come from a second window on
+2026-10-08, taken after the out-parameter form of `double_s_trajectory::evaluate`
+was added; every other row is from the 2026-08-10 window.  In the second window
+boost was switched off and the frequency range capped, but the processor's own
+cycles per call over wall time per call are the same as in the first window, so
+the cap did not hold the clock and these wall times sit on the same boost-range
+footing as the rows around them.  Simultaneous multithreading was off in the
+second window.  The two `double_s_trajectory` rows give instructions to one
+decimal because the pair differs by half an instruction per call, which a whole
+number would hide.
 
 ### What each row checks about its own answer
 
@@ -107,6 +120,7 @@ processor contention.
 | `so3::log` | relative deviation of `log(exp(w))` from the rotation vector it was built from | 1.2e-16 |
 | `cubic_spline::evaluate` | max relative deviation from the knot positions it interpolates | 1.1e-16 |
 | `online_planner_3rd::sample` | max relative violation of the point symmetry of its own profile about its own midpoint | 8.9e-16 |
+| `double_s_trajectory::evaluate` (both forms) | max relative deviation between the by-value and out-parameter evaluations of one profile over the sampled horizon | 0.0 |
 | `dare` | relative residual of its own discrete Riccati solution | 2.7e-15 |
 | `lqr_gain` | discrete closed-loop spectral radius of its own gain (below one certifies stability) | 0.9914 |
 | `batch_arx::identify` | max relative deviation of its Markov parameters from the generating system's | 2.3e-15 |
@@ -348,9 +362,10 @@ handed to both sides of every comparison.  Medians of three serial passes.
 
 Two columns carry the disclosure that a bare ratio cannot:
 
-- **Compiler.**  Every row below was built with GCC 16.1.1 except the nonlinear
-  predictive control row, which needs GCC 13.4.1 and says so.  Absolute times
-  are not comparable across that boundary.
+- **Compiler.**  Every row below was built with GCC 16.1.1 except two: the
+  trajectory evaluation row, remeasured in a second window with GCC 16.2.1, and
+  the nonlinear predictive control row, which needs GCC 13.4.1.  Both say so.
+  Absolute times are not comparable across a compiler boundary.
 - **Agreement.**  How far apart the two implementations' answers are.  A speed
   ratio between two arms that did not reach the same answer is not a
   comparison, so this figure is what makes each row legitimate.  Beside it,
@@ -371,15 +386,31 @@ different operations, and they are timed apart.
 | Benchmark | ctrlpp | ruckig | wall x | **instr x** | Compiler | Agreement |
 |-----------|-------:|-------:|-------:|------------:|----------|----------:|
 | Jerk-limited profile **synthesis** | 24.7 ns (314 ins) | 297.3 ns (3309 ins) | 12.0 | **10.5** | GCC 16.1.1 | 2.2e-16 |
-| Built-profile **evaluation** | 8.2 ns (128 ins) | 5.7 ns (101 ins) | 0.70 | **0.79** | GCC 16.1.1 | 8.9e-16 |
+| Built-profile **evaluation** | 8.1 ns (128 ins) | 5.7 ns (101 ins) | 0.70 | **0.79** | GCC 16.2.1 | 8.9e-16 |
 
-Cross-pass spread at or below 4.35% on all four arms.
+Cross-pass spread at or below 4.35% on the two synthesis arms and at or below
+0.91% on the two evaluation arms.  The evaluation row comes from the 2026-10-08
+window described under the internal table; its wall times sit on the same
+boost-range footing as the synthesis row, because the frequency cap set for
+that window did not hold the clock.
 
 **ctrlpp is about 10.5x fewer instructions on synthesis; ruckig is about 1.27x
 fewer on evaluation.**  The synthesis row races
 `ctrlpp::online_planner_3rd::update` against `ruckig::Ruckig::calculate`; the
 evaluation row races `online_planner_3rd::sample` against
 `ruckig::Trajectory::at_time`.
+
+Part of the evaluation gap is the price of a contract.  `sample()` is a stateful
+call: besides returning the point, it decides whether the motion has settled on
+its target and carries the sampled position, velocity, acceleration and time
+forward so that a replan starts from where the trajectory actually is.  Counted
+with callgrind over one horizon of this benchmark's command (GCC 16.2.1,
+`-O3 -DNDEBUG`), the settle predicate costs 9.0 instructions per call and the
+carried-state writes 4.0, 15.0 together.  `ruckig::Trajectory::at_time` reads a
+built trajectory and does neither.  The remaining instructions are in the
+profile evaluation itself, which walks every completed constant-jerk phase on
+each call; that share is not bookkeeping, and the count above does not divide it
+further.
 
 Both sides produce the **same** time-optimal profile: their total durations
 agree to 2.2e-16, one unit in the last place.  Agreement on synthesis is that
@@ -683,7 +714,9 @@ nonlinear predictive control; and at parity on the quadratic program.
 
 The [Internal benchmark results](#internal-benchmark-results) and the
 [Competitive comparisons](#competitive-comparisons) were taken in a single
-measurement window on 2026-08-10, under these conditions.  The
+measurement window on 2026-08-10, under these conditions, except the rows marked
+GCC 16.2.1, which come from a second window on 2026-10-08 described under the
+internal table.  The
 [Discrete Riccati deep dive](#discrete-riccati-the-acceptance-check-and-the-equilibrated-path)
 was taken separately and states its own machine settings and toolchain in place.
 
