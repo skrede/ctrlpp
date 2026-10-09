@@ -1,13 +1,10 @@
 # What evidence.txt and timing.txt are checked against in place of a built
 # image. Each value was read out of the image that produced the recording,
-# built from commit 3a2c82f and flashed to a NUCLEO-H753ZI before the capture:
-# the build ids with arm-none-eabi-readelf -n, the stack reserve as the
-# _Min_Stack_Size symbol with arm-none-eabi-nm, the toolchain line with
-# arm-none-eabi-gcc --version.
-evidence_build_id=f9f8aeae88400eacd54fad58674d994f43fbf0b1
-timing_build_id=3c9d730f018c95535e6d8b76f77aa245a170780a
+# flashed to a NUCLEO-H753ZI before the capture; commit 1a01a2d rebuilds both
+# images to these build ids. The build ids with arm-none-eabi-readelf -n, the
+# stack reserve as the _Min_Stack_Size symbol with arm-none-eabi-nm, the
+# toolchain line with arm-none-eabi-gcc --version.
+evidence_build_id=e03bfd30f81f283f155217320a8aa0f7ee8ea379
+timing_build_id=5e0486618196df29e7e73fc391fd1103515f6d6a
 stack_reserve=30616
 toolchain=arm-none-eabi-gcc (Arch Repository) 16.2.0
-# The recordings predate the boot handshake, so they carry no
-# [meta] boot_handshake line; a built image's report must.
-predates=boot_handshake

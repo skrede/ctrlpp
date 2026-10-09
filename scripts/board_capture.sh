@@ -356,7 +356,7 @@
 #      the wait releases it as this script would.
 #
 #  11. The spread bound is one absolute cycle count applied to every timed
-#      region's raw figures, from the 129-cycle overhead to the predictive
+#      region's raw figures, from the 114-cycle overhead to the predictive
 #      solve; it is the invocation's stated claim, not a figure derived here.
 #
 #  12. The self-test proves the parser, the fingerprint comparison, the class
@@ -2429,8 +2429,8 @@ self_test_check()
     return "${check_status}"
 }
 
-# The checks a built image gets: nothing is predated, so a line the recording
-# was made without is required, and a case supplies it by synthesis.
+# The checks a built image gets: nothing is predated, so every line a built
+# image prints is required of the recording.
 self_test_check_current()
 {
     use_fixture_reference "$1"
@@ -2649,16 +2649,16 @@ self_test_cases_en_pin()
     expect_status 0 "refused-01.txt (refused, not counted) reset=panic" "ESP32: en_pin series listing a run of another class as refused" self_test_compare_summary esp32-evidence en_pin "" "${dir}" "refused-01.txt (refused, not counted) reset=panic"
 }
 
-# Lines the NUCLEO-H753ZI recordings were made without: the boot handshake. It
-# is synthesized into a copy and checked as a built image's report would be.
+# The boot handshake, checked as a built image's report would be, with nothing
+# predated, over the line the NUCLEO-H753ZI evidence recording carries.
 self_test_cases_current()
 {
-    local handshake='/^\[meta\] kind=evidence$/{p;s/.*/[meta] boot_handshake state=STATE waited_ms=WAITED timeout_ms=10000/;}'
+    local handshake='s/^\(\[meta\] boot_handshake state=\)received waited_ms=[0-9]*/\1STATE waited_ms=WAITED/'
 
-    red_current evidence 5 "carries no '[meta] boot_handshake' line" "boot handshake line missing" ''
-    red_current evidence 5 "boot handshake was not received" "boot handshake expired" "$(printf '%s' "${handshake}" | sed 's/STATE/timeout/;s/WAITED/10000/')"
+    red_current evidence 5 "carries no '[meta] boot_handshake' line" "boot handshake line missing" '/^\[meta\] boot_handshake /d'
+    red_current evidence 5 "boot handshake was not received" "boot handshake expired" "$(printf '%s' "${handshake}" | sed 's/STATE/timeout/;s/WAITED/30000/')"
 
-    expect_status 0 "" "boot handshake received" self_test_check_current evidence "$(corrupt evidence "$(printf '%s' "${handshake}" | sed 's/STATE/received/;s/WAITED/812/')")"
+    expect_status 0 "" "boot handshake received" self_test_check_current evidence "$(corrupt evidence '')"
 }
 
 self_test_cases_green()

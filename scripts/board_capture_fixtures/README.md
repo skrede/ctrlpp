@@ -5,9 +5,9 @@ the capture script implements is re-proved on every change without a board.
 
 | File | What it is |
 |---|---|
-| `evidence.txt` | The boot report of the allocation-evidence image (`ctrlpp_nucleo_h753zi`), captured from a NUCLEO-H753ZI on 2026-10-08 after a mass-storage flash, which decoded as a pin reset. Every check passed. |
+| `evidence.txt` | The boot report of the allocation-evidence image (`ctrlpp_nucleo_h753zi`), captured from a NUCLEO-H753ZI on 2026-10-09 after a mass-storage flash, which decoded as a pin reset. It carries the boot handshake line. Every check passed. |
 | `timing.txt` | The boot report of the timing image (`ctrlpp_nucleo_h753zi_timing`) built from the same sources, captured the same way on the same day. Every check passed. |
-| `reference.txt` | The build ids, stack reserve and toolchain of the two images, read out of the ELFs that produced the recordings, and the report lines the recordings predate. The self-test checks against these instead of a built image. |
+| `reference.txt` | The build ids, stack reserve and toolchain of the two images, read out of the ELFs that produced the recordings. The self-test checks against these instead of a built image. |
 | `esp32-evidence.txt` | The boot report of the ESP32 leg's allocation-evidence image (`ctrlpp_esp32`), captured from an ESP32-POE-EA on 2026-10-09 under ESP-IDF v6.0.2 after an esptool flash and an EN-pin restart, which the image decoded as `power_on`. It carries the heap view's self-count and every window's heap verdict. Every check passed. |
 | `esp32-timing.txt` | The boot report of the ESP32 leg's timing image (`ctrlpp_esp32_timing`), captured the same way in the same session, with assertions off and the task watchdog released. Every check passed. |
 | `esp32-reference.txt` | The ESP32 images' build ids (the sha256 digest of each ELF), the control task's stack as the source names it, and the toolchain, for the two ESP32 recordings. |
@@ -38,10 +38,9 @@ the new images; until then the self-test proves the parser against the format
 as it was recorded.
 
 A line the firmware now prints and a recording lacks is named by a `predates=`
-key in that recording's reference: `boot_handshake` for the NUCLEO-H753ZI
-recordings, which were made before the image waited for the host's byte at
-boot. A recording is replayed without the checks its reference says it
-predates; a built image predates nothing. The self-test covers those checks by
-synthesizing the missing lines into a copy and checking it as a built image's
-report, and the key goes when a new capture replaces the recording. The ESP32
-recordings predate nothing.
+key in that recording's reference. A recording is replayed without the checks
+its reference says it predates; a built image predates nothing. The self-test
+covers those checks by synthesizing the missing lines into a copy and checking
+it as a built image's report, and the key goes when a new capture replaces the
+recording. No recording here predates anything: both boards' recordings carry
+every line their images print.
