@@ -187,6 +187,9 @@
 #                            stack probe that prints after it (default: 15)
 #   CAPTURE_READ_TIMEOUT     seconds (default: 45)
 #   CAPTURE_BYTE_CAP         bytes (default: 262144)
+#   CAPTURE_KEEP_RAW         a directory that receives the unparsed streams of
+#                            every capture before they are removed, so a refused
+#                            capture can be diagnosed (default: unset, discarded)
 #   CAPTURE_BUILD_JOBS       build parallelism (default: 6)
 #   COMPARE_ATTEMPTS         captures per run when the report head is lost,
 #                            status 4 or 5 (default: 3)
@@ -860,6 +863,7 @@ cleanup()
         reader_pid=""
     fi
     console_stop
+    keep_raw
     for scratch in "${console_raw}" "${flash_log}"; do
         [ -z "${scratch}" ] || rm -f -- "${scratch}"
     done
@@ -869,6 +873,19 @@ cleanup()
     if [ -n "${transcript}" ]; then
         rm -f -- "${transcript}"
     fi
+    return 0
+}
+
+keep_raw()
+{
+    local stamp="" scratch=""
+    [ -n "${CAPTURE_KEEP_RAW:-}" ] || return 0
+    mkdir -p -- "${CAPTURE_KEEP_RAW}" || return 0
+    stamp="$(date -u '+%Y%m%dT%H%M%S')-$$"
+    for scratch in "${raw_stream}" "${console_raw}"; do
+        [ -z "${scratch}" ] || [ ! -f "${scratch}" ] \
+            || cp -- "${scratch}" "${CAPTURE_KEEP_RAW}/${stamp}-$(basename "${scratch}")"
+    done
     return 0
 }
 
@@ -1504,9 +1521,12 @@ await_esp32_power_cycle()
     echo ">>> device node back: ${node}" >&2
 }
 
+# While the board is unpowered its TX line idles low, which the telemetry adapter
+# reads as NUL bytes; they can land at the head of the build id line. The report
+# is text and never carries a NUL, so they are dropped.
 stream_since_mark()
 {
-    tail -c +"$((stream_mark + 1))" "${raw_stream}" 2>/dev/null
+    tail -c +"$((stream_mark + 1))" "${raw_stream}" 2>/dev/null | tr -d '\000'
 }
 
 # A closing line counts only after a build id line, since a reader attached to a
