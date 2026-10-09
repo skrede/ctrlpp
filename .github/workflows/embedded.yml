@@ -28,8 +28,8 @@ on:
 
 # Build-only gate: it catches cross-compile regressions in the two board legs.
 # Run correctness is established on the physical boards, not here. The one job
-# that runs anything replays the NUCLEO-H753ZI capture script's refusals over
-# committed recordings and then states that no board was found: it establishes
+# that runs anything replays the capture script's refusals over recordings
+# committed from both boards and then states that no board was found: it establishes
 # that the script still parses a report and still refuses what it must, and
 # nothing about any board.
 jobs:
@@ -39,9 +39,9 @@ jobs:
 
     # The manifest floor is 5.3 (UART moved into esp_driver_uart there) with no
     # upper bound, so the gate brackets the claimed range: oldest supported,
-    # most widely deployed, newest stable. The board captures were taken on a
-    # 6.1-dev checkout, which is outside this range by construction -- a dev
-    # branch is not a pinnable gate.
+    # most widely deployed, newest stable. The board's figures are taken under
+    # the released v6.0.2, inside this range; the figures they replaced came
+    # from a development checkout, which no gate can pin.
     strategy:
       fail-fast: false
       matrix:

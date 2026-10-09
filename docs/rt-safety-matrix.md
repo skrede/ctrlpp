@@ -281,21 +281,31 @@ The host figures above were a PREDICTION. They have now been tested on a board,
 and they hold once the one variable that separates the two measurements is
 accounted for: **the host table is `double` and the board runs `float`.**
 
-Measured on an ESP32-WROOM (Xtensa LX6, 240 MHz, single-precision FPU), ESP-IDF
-v6.0.2, `xtensa-esp32-elf-g++` 15.2.0 at `-Os` with exceptions and RTTI off,
-Eigen 3.4.0, one FreeRTOS task per dimension so each figure is that dimension's
-own peak rather than a running minimum over a sweep:
+Measured on an Olimex ESP32-POE-EA (ESP32-D0WD-V3, chip revision v3.1, Xtensa LX6
+at 160 MHz, single-precision FPU) under the released ESP-IDF v6.0.2,
+`xtensa-esp-elf-gcc` 15.2.0 (crosstool-NG esp-15.2.0_20251204) at `-Os` with
+exceptions and RTTI off and the framework's default C assertions on, Eigen 3.4.0,
+the end-of-stack watchpoint on, one FreeRTOS task per dimension so each figure is
+that dimension's own peak rather than a running minimum over a sweep. The probe
+runs in both images the leg builds, and the two differ only in the allocation
+sensor, so both columns are given; the ratio uses the image without the sensor:
 
-| `NX` | on-silicon peak, `float` | host peak, `double` | host / board | accepted? |
-|---:|---:|---:|---:|:--|
-| 2 | 3,100 | 4,552 | 1.47x | solved |
-| 3 | 4,160 | -- | -- | refused |
-| 4 | 5,932 | 11,176 | 1.88x | solved |
-| 5 | 8,336 | -- | -- | refused |
-| 6 | 11,500 | 21,912 | 1.91x | refused |
-| 8 | 20,560 | 41,304 | 2.01x | refused |
+| `NX` | on-silicon peak, `float`, no sensor | with the allocation sensor | host peak, `double` | host / board | accepted? |
+|---:|---:|---:|---:|---:|:--|
+| 2 | 2,804 | 2,700 | 4,552 | 1.62x | solved |
+| 3 | 4,120 | 4,032 | -- | -- | refused |
+| 4 | 5,948 | 5,924 | 11,176 | 1.88x | solved |
+| 5 | 8,344 | 8,368 | -- | -- | refused |
+| 6 | 11,500 | 11,492 | 21,912 | 1.91x | refused |
+| 8 | 20,552 | 20,560 | 41,304 | 2.01x | refused |
 
-**The ratio converges on exactly the scalar width.** It is 1.47x at `NX = 2` and
+These figures replace earlier ones whose framework version could not be pinned.
+They moved by as much as 296 bytes (`NX = 2`, from 3,100) and by at most 40 bytes
+elsewhere, and the accepted and refused dimensions did not change. A figure here
+belongs to this toolchain, this framework version and this image, not to the
+source.
+
+**The ratio converges on exactly the scalar width.** It is 1.62x at `NX = 2` and
 climbs to 2.01x at `NX = 8`, which is what a halved scalar predicts for a chain
 whose cost is dominated by `NX`-dimensioned arrays and diluted at small `NX` by
 fixed overhead that does not scale with the scalar. The host table is therefore
@@ -306,14 +316,14 @@ probe drives one input at `NX = 2, 3, 5` and two at `NX = 4, 6, 8`. The ratio is
 therefore a statement about the scalar across that pair of pose families and not
 a conversion factor to apply cell by cell.
 
-**Supported maximum ON THE STACK for this board: `NX = 4`, leaving 2,256 bytes of
-an 8,192-byte task stack.** That is the stack answer only -- the accuracy gate
+**Supported maximum ON THE STACK for this board: `NX = 4`, leaving 2,248 bytes of
+an 8,192-byte task stack (2,256 with the allocation sensor).** That is the stack answer only -- the accuracy gate
 refuses `NX = 3` and everything above `NX = 4` at `float`, and clears `NX = 4`
 itself by just 3.4 percent, so the usable maximum is lower than this line alone
 implies. See the accuracy paragraph below. Established twice and by different
 means. A pass giving every
-dimension 49,152 bytes recorded `NX = 5` needing 8,336 bytes, which is 144 more
-than the task stack has; a second pass at the control task's own 8,192 bytes then
+dimension 49,152 bytes recorded `NX = 5` needing 8,344 bytes, which is 152 more
+than the task stack has (8,368 and 176 with the sensor); a second pass at the control task's own 8,192 bytes then
 walked the same dimensions and the board reported
 
     Debug exception reason: Stack canary watchpoint triggered (probe_nx5)

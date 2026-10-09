@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
 #
-# board_capture.sh -- build the NUCLEO-H753ZI image, then capture one boot-once
-# report from the board and refuse anything that is not evidence.
+# board_capture.sh -- build a board's image, then capture one boot report from
+# the board and refuse anything that is not evidence.
 #
 # Usage:
-#   board_capture.sh prepare
-#   board_capture.sh capture [--timing] [--reset-only | --no-reset] <destination-file>
-#   board_capture.sh check [--timing] <transcript-or-capture-file>
-#   board_capture.sh compare [--timing --bound=<cycles>] <count> <reset-class> <destination-directory>
-#   board_capture.sh compare --replay [--timing --bound=<cycles>] <reset-class> <series-directory>
-#   board_capture.sh discover
+#   board_capture.sh [--board=esp32] prepare
+#   board_capture.sh [--board=esp32] capture [--timing] [--reset-only | --no-reset | --power-cycle] <destination-file>
+#   board_capture.sh [--board=esp32] check [--timing] <transcript-or-capture-file>
+#   board_capture.sh [--board=esp32] compare [--timing --bound=<cycles>] <count> <reset-class> <destination-directory>
+#   board_capture.sh [--board=esp32] compare --replay [--timing --bound=<cycles>] <reset-class> <series-directory>
+#   board_capture.sh [--board=esp32] discover
 #   board_capture.sh --self-test
+#
+# Boards:
+#   (default)      the NUCLEO-H753ZI leg, examples/embedded/nucleo_h753zi, built
+#                  here into build-arm-capture. Everything below describes it
+#                  unless a paragraph names the ESP32.
+#   --board=esp32  the ESP32-POE-EA leg, examples/embedded/esp32, built by the
+#                  framework into its build/ directory ("prepare" needs the
+#                  framework exported and that tree configured once with
+#                  idf.py set-target esp32). Both legs emit the same tagged
+#                  two-class stream, so the parse and every refusal are shared;
+#                  what differs is listed in "The ESP32 leg" below.
 #
 # "prepare" configures, builds and produces the raw binaries beside the two
 # ELFs, the allocation-evidence image and the timing image. It touches no
@@ -78,6 +89,45 @@
 #                  emitting right now. Used when the operator has reset the board
 #                  themselves (the B2 button, a power cycle) or when the running
 #                  image must not be perturbed.
+#   --power-cycle  ESP32 only: do not program; attach the readers, ask the
+#                  operator to unplug and replug the board's USB cable, and read
+#                  the report of the boot that follows. The telemetry adapter is
+#                  a USB device of its own, so its reader is attached through
+#                  the cycle and the report keeps its head.
+#
+# The ESP32 leg:
+#   transport      esptool, the framework's own flasher, on the console port
+#                  (the board's USB bridge), writes the bootloader, the
+#                  partition table and the image named by the build's
+#                  flash_args, and verifies what it wrote; the image of the
+#                  timing kind takes the application slot in place of the
+#                  evidence image. idf.py flash is not used because it builds
+#                  first. The board is restarted by its EN pin, driven through
+#                  the bridge's RTS line exactly as esptool's own hard reset
+#                  does: the readers attach, EN is held low until both ports
+#                  are quiet, and only the bytes after that point are read. The
+#                  report arrives on a second port, the telemetry adapter, and
+#                  the console is recorded beside the capture in
+#                  <destination>-console.txt, transported and not judged.
+#   identity       the sha256 digest of the ELF, which the framework's build
+#                  writes into the image descriptor and the image prints as its
+#                  build id; sha256sum of the built ELF reproduces it. Before
+#                  flashing, the binary's descriptor is read with esptool and
+#                  must name the same digest, so the binary written is the ELF
+#                  the report is checked against.
+#   report         the image keeps running after its report: the stack probe
+#                  that follows it ends in a deliberate overflow and the panic
+#                  handler restarts the chip, so the board emits a report on
+#                  every boot. The capture is the first report after the
+#                  restart this script made, from its build id line to its
+#                  closing verdict; residue before that line is discarded and
+#                  its size is stated in the capture header.
+#   differences    binary32 exact rows (8 hexadecimal digits); the predictive
+#                  family must be declared ABSENT on exactly one line; no
+#                  predictive timing region; posture fields reset_reason and
+#                  reset_rom in place of reset_flags and reset_rsr, plus a
+#                  schedule line; one stack line, the control task's
+#                  high-water, judged against the task's stack.
 #
 # The reader is attached BEFORE anything resets the target. The image prints its
 # report once at boot and then idles, so a reader attached afterwards reads an
@@ -112,7 +162,13 @@
 #   CAPTURE_BUILD_DIR        build tree (default: <repo>/build-arm-capture)
 #   CAPTURE_MOUNT            ST-LINK mass-storage mount
 #                            (default: /run/media/$USER/NOD_H753ZI)
-#   CAPTURE_PORT             serial port, when discovery must be overridden
+#   CAPTURE_PORT             serial port, when discovery must be overridden (on
+#                            the ESP32 leg, the telemetry port)
+#   CAPTURE_CONSOLE_PORT     ESP32 only: the console port, the board's USB
+#                            bridge, when discovery must be overridden
+#   CAPTURE_CONSOLE_TAIL     ESP32 only: seconds the console is read past the
+#                            report's closing line, for the stack probe that
+#                            prints after it (default: 15)
 #   CAPTURE_READ_TIMEOUT     seconds (default: 45)
 #   CAPTURE_BYTE_CAP         bytes (default: 262144)
 #   CAPTURE_BUILD_JOBS       build parallelism (default: 6)
@@ -129,10 +185,12 @@
 #   7  no verdict line    8  verdict FAIL
 #   9  no allocation-sensor canary line
 #  10  canary FAIL (the sensor did not observe its deliberate allocations)
-#  11  a family's verdict line is missing or repeated
+#  11  a family's verdict line is missing or repeated, or on the ESP32 leg the
+#      predictive family is not declared ABSENT on exactly one line
 #  12  a family's verdict is not PASS
 #  13  the image's kind line is missing or names the other image
-#  14  no posture line
+#  14  no posture line, a posture field missing, or on the ESP32 leg no
+#      schedule line
 #  15  timing UNAVAILABLE: the cycle counter did not prove itself live, or the
 #      timing image printed no timing line at all
 #  16  a timing line without its sample count, or a per-iteration figure
@@ -142,13 +200,16 @@
 #      smaller than the harness's own frames, so its figure is not a
 #      measurement of the chain
 #  19  a stack watermark line reports a saturated window: the chain reached the
-#      window's bottom word, so its depth is unknown rather than small
+#      window's bottom word, so its depth is unknown rather than small (on the
+#      ESP32 leg, a control-task high-water with zero bytes free)
 #  20  a stack watermark line lacks its floor, its saturation verdict, its
 #      figure or its reserve, or a measured region's line is missing or repeated
+#      (on the ESP32 leg, the line's used and free do not sum to its stack)
 #  21  a stack line's high-water exceeds the image's stack reserve: the
 #      measured stack needs more than the linker reserved for it
 #  22  the reserve a stack line prints disagrees with the _Min_Stack_Size
-#      symbol in the ELF, so the line and the image disagree on the reserve
+#      symbol in the ELF, so the line and the image disagree on the reserve (on
+#      the ESP32 leg, with the control task's stack as the source names it)
 #  23  one of the five stream tags is missing, so a block of the report is
 #      absent rather than empty
 #  24  a field name appears in both the exact-class and the spread-class
@@ -158,7 +219,8 @@
 #      index for the exact class, the region for the spread class), a row's
 #      width differs from its header's, an exact row's index breaks the
 #      sequence 0, 1, 2, ... (a reordering is a difference, not a pass), or an
-#      exact value is not a 16-digit bit pattern
+#      exact value is not a bit pattern of the leg's scalar: 16 hexadecimal
+#      digits for binary64, 8 for binary32
 #  26  a run's decoded reset class is not the class the series requires
 #  27  the exact-class blocks of two runs differ
 #  28  a cycle field's spread across the runs exceeds the stated bound
@@ -257,6 +319,51 @@
 #  13. "discover" reports absence; it does not prove it. A board on a port the
 #      discovery does not search reads as absent, and a SKIP line from a machine
 #      that does have a board means the discovery, not the board, is missing.
+#
+#  On the ESP32 leg, in addition:
+#
+#  14. The fingerprint is the sha256 digest of the whole ELF, debug sections
+#      included, so two builds of identical code from different paths carry
+#      different ids; it is stricter than the code it names, never looser. Like
+#      the NUCLEO's build id it is an identity check against staleness and not
+#      a signature: this image enables no secure boot, and the descriptor that
+#      carries the digest travels in the clear. esptool's verification after
+#      writing proves the flash holds the bytes sent, which the mass-storage
+#      copy of limit 1 cannot.
+#
+#  15. The reset label cannot tell a power cycle from an EN-pin reset: the part
+#      latches the same chip power-on code for both, so the framework reports
+#      ESP_RST_POWERON for a power cycle, the EN button, and the RTS-driven EN
+#      pulse this script and esptool issue. Every capture this script restarts
+#      therefore reads reset=power_on, and that label says nothing about the
+#      supply. In --power-cycle mode the console node vanishing proves the USB
+#      bridge lost its connection, not that the supply decayed: a telemetry
+#      adapter wired to the board can feed it through a signal pin. The labels
+#      this leg can separate are panic, software, the watchdogs and brownout.
+#
+#  16. The stack figure is the control task's high-water as FreeRTOS counts it,
+#      the untouched bytes of the fill pattern at the bottom of the task's
+#      stack, read once after the report's last step. A value that equals the
+#      fill byte hides itself, so the figure is a lower bound on the depth by
+#      at most that run of bytes. It is judged against the task's stack as the
+#      source constant names it, not against a symbol in the image, so a
+#      source edited after the build would not be caught by this check; the
+#      fingerprint is what ties the report to the build. The end-of-stack
+#      watchpoint the posture reports costs up to 60 bytes of every task's
+#      usable stack, so the figure is only comparable with one taken under the
+#      same setting. The per-dimension stack probe prints on the console after
+#      the report; its lines are transported in the side file and judged by
+#      nothing here.
+#
+#  17. The allocation canary proves the counter saw a plain and an aligned C++
+#      new; this leg does not wrap the C allocation family, so a C allocation
+#      is visible only to the free-heap view printed beside it, which this
+#      script transports and does not judge.
+#
+#  18. The timed task runs with the scheduler and interrupts enabled, so a
+#      timing figure includes whatever preempted it. The interruption lines
+#      count the samples the scheduler tick landed in, a lower bound on how
+#      often a sample was interrupted; other interrupts leave no mark.
 
 set -euo pipefail
 
@@ -296,6 +403,26 @@ expected_stack_regions="startup predictive.construct predictive.first_solve pred
 # Every region the timing image times, each owed one cold and one warm line.
 expected_regions="overhead control.design control.step estimation.step dsp.step trajectory.step predictive.step"
 
+# Families the image declares absent, each owed exactly one ABSENT line.
+absent_families=""
+
+# The hexadecimal digits of one exact value: the scalar's bit width over four.
+exact_digits=16
+
+# Every posture field a report must carry, beside the reset class.
+posture_fields="reset reset_flags reset_rsr core_hz icache dcache flash_latency_ws cycle_wrap_ms compiler"
+
+# The reset fields a posture line carries, quoted per run and set aside when two
+# runs' postures are compared.
+reset_quote='reset=[^ ]* reset_flags=[^ ]* reset_rsr=[^ ]*'
+
+# The reset classes "compare" can produce on this station.
+collectable_classes="pin power_on"
+
+board="nucleo"
+board_label="NUCLEO-H753ZI"
+console_tail="${CAPTURE_CONSOLE_TAIL:-15}"
+
 # --- Arguments ----------------------------------------------------------------
 
 subcommand=""
@@ -309,13 +436,45 @@ operands=()
 
 usage()
 {
-    echo "  Usage: scripts/board_capture.sh prepare" >&2
-    echo "         scripts/board_capture.sh capture [--timing] [--reset-only | --no-reset] <destination-file>" >&2
-    echo "         scripts/board_capture.sh check [--timing] <transcript-or-capture-file>" >&2
-    echo "         scripts/board_capture.sh compare [--timing --bound=<cycles>] <count> <reset-class> <destination-directory>" >&2
-    echo "         scripts/board_capture.sh compare --replay [--timing --bound=<cycles>] <reset-class> <series-directory>" >&2
-    echo "         scripts/board_capture.sh discover" >&2
+    echo "  Usage: scripts/board_capture.sh [--board=esp32] prepare" >&2
+    echo "         scripts/board_capture.sh [--board=esp32] capture [--timing] [--reset-only | --no-reset | --power-cycle] <destination-file>" >&2
+    echo "         scripts/board_capture.sh [--board=esp32] check [--timing] <transcript-or-capture-file>" >&2
+    echo "         scripts/board_capture.sh [--board=esp32] compare [--timing --bound=<cycles>] <count> <reset-class> <destination-directory>" >&2
+    echo "         scripts/board_capture.sh [--board=esp32] compare --replay [--timing --bound=<cycles>] <reset-class> <series-directory>" >&2
+    echo "         scripts/board_capture.sh [--board=esp32] discover" >&2
     echo "         scripts/board_capture.sh --self-test" >&2
+}
+
+# The ESP32 leg emits the same stream from a binary32 kernel without the
+# predictive backend, on a part whose reset decode and stack figure differ.
+select_board()
+{
+    board="$1"
+    case "${board}" in
+        nucleo)
+            return 0
+            ;;
+        esp32)
+            ;;
+        *)
+            echo "ERROR: unknown board '${board}'; expected 'esp32', or no --board for the NUCLEO-H753ZI." >&2
+            exit 2
+            ;;
+    esac
+    board_label="ESP32-POE-EA"
+    leg_dir="${repo_root}/examples/embedded/esp32"
+    build_dir="${CAPTURE_BUILD_DIR:-${leg_dir}/build}"
+    evidence_target="ctrlpp_esp32"
+    timing_target="ctrlpp_esp32_timing"
+    evidence_elf="${build_dir}/${evidence_target}.elf"
+    expected_families="control estimation dsp trajectory"
+    absent_families="predictive"
+    expected_stack_regions="program"
+    expected_regions="overhead control.design control.step estimation.step dsp.step trajectory.step"
+    exact_digits=8
+    posture_fields="reset reset_reason reset_rom core_mhz cycle_bits cycle_wrap_ms stack_watchpoint assertions optimize compiler idf"
+    reset_quote='reset=[^ ]* reset_reason=[^ ]* reset_rom=[^ ]*'
+    collectable_classes="power_on"
 }
 
 for arg in "$@"; do
@@ -332,6 +491,12 @@ for arg in "$@"; do
             ;;
         --no-reset)
             capture_mode="no-reset"
+            ;;
+        --power-cycle)
+            capture_mode="power-cycle"
+            ;;
+        --board=*)
+            board="${arg#--board=}"
             ;;
         --replay)
             replay="yes"
@@ -365,6 +530,14 @@ if [ "${subcommand}" != "compare" ]; then
     destination="${operands[0]:-}"
 fi
 
+select_board "${board}"
+case "${capture_mode}" in
+    power-cycle)
+        [ "${board}" = "esp32" ] \
+            || { echo "ERROR: --power-cycle is an ESP32 capture mode; the NUCLEO-H753ZI's power-on runs are collected by 'compare'." >&2; exit 2; }
+        ;;
+esac
+
 target_name="${evidence_target}"
 if [ "${image_kind}" = "timing" ]; then
     target_name="${timing_target}"
@@ -384,6 +557,10 @@ fail()
 
 do_prepare()
 {
+    if [ "${board}" = "esp32" ]; then
+        prepare_esp32
+        return 0
+    fi
     cmake -S "${leg_dir}" -B "${build_dir}" \
         -G "${generator}" \
         -DCMAKE_TOOLCHAIN_FILE="${leg_dir}/cmake/toolchain-arm-none-eabi.cmake" \
@@ -406,13 +583,78 @@ do_prepare()
     done
 }
 
+# The framework owns this leg's build tree, its compiler and its image
+# conversion, so the build is the framework's and only its outputs are checked.
+prepare_esp32()
+{
+    [ -n "${IDF_PATH:-}" ] || fail 3 "the framework is not exported; run '. \$IDF_PATH/export.sh' (for example '. /opt/esp-idf/export.sh') first."
+    [ -f "${build_dir}/CMakeCache.txt" ] \
+        || fail 3 "${build_dir} is not configured; run 'idf.py -C ${leg_dir} -B ${build_dir} -G \"${generator}\" set-target esp32' once first."
+    cmake --build "${build_dir}" --parallel "${build_jobs}" \
+        || fail 3 "build of ${leg_dir} failed."
+
+    local target elf bin
+    for target in "${evidence_target}" "${timing_target}"; do
+        elf="${build_dir}/${target}.elf"
+        bin="${build_dir}/${target}.bin"
+        [ -f "${elf}" ] || fail 3 "the build produced no ${elf}."
+        [ -f "${bin}" ] || fail 3 "the build produced no ${bin}."
+        echo "prepared: ${elf}"
+        echo "prepared: ${bin}"
+        echo "build id: $(elf_build_id "${elf}")"
+        check_descriptor "${bin}" "$(elf_build_id "${elf}")"
+    done
+}
+
+# The binary carries the digest of the ELF it was converted from; reading it
+# back proves the binary about to be written is the ELF the report is checked
+# against.
+check_descriptor()
+{
+    local described=""
+    described="$(python -m esptool --chip esp32 image-info "$1" 2>/dev/null \
+        | sed -n 's/^ELF file SHA256:[[:space:]]*\([0-9a-f]\{64\}\)[[:space:]]*$/\1/p' | head -1)" \
+        || fail 3 "esptool could not read the descriptor of $1; export the framework first."
+    [ -n "${described}" ] || fail 3 "the descriptor of $1 names no ELF digest, or esptool is not available."
+    [ "${described}" = "$2" ] \
+        || fail 3 "$1 describes the ELF ${described}, not the built ${2}; the binary is stale against its ELF. Rebuild."
+}
+
 # --- discovery ----------------------------------------------------------------
+
+# The first by-id link matching a pattern, resolved to its device node.
+by_id_device()
+{
+    local pattern="$1" link
+    for link in /dev/serial/by-id/${pattern}; do
+        if [ -e "${link}" ]; then
+            readlink -f "${link}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# The ESP32-POE-EA's own bridge is a CH340; CP210x bridges are the common
+# alternative on other ESP32 boards. The telemetry adapter is an FT232R.
+resolve_console_port()
+{
+    if [ -n "${CAPTURE_CONSOLE_PORT:-}" ]; then
+        printf '%s\n' "${CAPTURE_CONSOLE_PORT}"
+        return 0
+    fi
+    by_id_device '*1a86*' || by_id_device '*CP210*'
+}
 
 resolve_port()
 {
     if [ -n "${CAPTURE_PORT:-}" ]; then
         printf '%s\n' "${CAPTURE_PORT}"
         return 0
+    fi
+    if [ "${board}" = "esp32" ]; then
+        by_id_device '*FTDI*'
+        return
     fi
 
     local link
@@ -446,9 +688,42 @@ resolve_port()
 elf_stack_reserve()
 {
     local value=""
+    if [ "${board}" = "esp32" ]; then
+        source_stack_reserve
+        return 0
+    fi
     value="$("${toolchain_prefix}nm" "${elf_path}" | awk '$3 == "_Min_Stack_Size" { print $1 }')"
     [ -n "${value}" ] || return 0
     printf '%d\n' "0x${value}"
+}
+
+# The control task's stack as the source names it. The expression is checked to
+# be digits and multiplications before the shell evaluates it.
+source_stack_reserve()
+{
+    local expression=""
+    expression="$(sed -n 's/^inline constexpr std::uint32_t kControlTaskStackBytes = \([0-9][0-9 *]*\);$/\1/p' "${leg_dir}/main/stack_probe.h")"
+    printf '%s\n' "${expression}" | grep -Eqx '[0-9]+( \* [0-9]+)*' || return 0
+    echo "$((expression))"
+}
+
+# The compiler the build used, as the framework recorded it.
+toolchain_line()
+{
+    local compiler=""
+    if [ "${board}" != "esp32" ]; then
+        "${toolchain_prefix}gcc" --version | head -1
+        return 0
+    fi
+    compiler="$(sed -n 's/^ *"c_compiler": *"\([^"]*\)".*/\1/p' "${build_dir}/project_description.json" 2>/dev/null | head -1)"
+    [ -x "${compiler}" ] || { echo "unknown (no c_compiler in ${build_dir}/project_description.json)"; return 0; }
+    "${compiler}" --version | head -1
+}
+
+# The framework revision the build was configured against.
+framework_line()
+{
+    sed -n 's/^ *"git_revision": *"\([^"]*\)".*/ESP-IDF \1/p' "${build_dir}/project_description.json" 2>/dev/null | head -1
 }
 
 # What a transcript is checked against: the fingerprint, the stack reserve and
@@ -467,7 +742,7 @@ load_elf_reference()
     [ -n "${reference_id}" ] || fail 3 "${elf_path} carries no NT_GNU_BUILD_ID note; the image cannot be fingerprinted."
     reference_reserve="$(elf_stack_reserve)"
     reference_origin="${elf_path}"
-    reference_toolchain="$("${toolchain_prefix}gcc" --version | head -1)"
+    reference_toolchain="$(toolchain_line)"
     if [ "${image_kind}" = "timing" ]; then
         reference_evidence_id="$(elf_build_id "${evidence_elf}")"
     fi
@@ -475,6 +750,10 @@ load_elf_reference()
 
 elf_build_id()
 {
+    if [ "${board}" = "esp32" ]; then
+        sha256sum "${1:-${elf_path}}" | cut -d' ' -f1
+        return 0
+    fi
     "${toolchain_prefix}readelf" -n "${1:-${elf_path}}" \
         | sed -n 's/^[[:space:]]*Build ID:[[:space:]]*\([0-9a-f]\{40\}\)[[:space:]]*$/\1/p' \
         | head -1
@@ -492,11 +771,16 @@ transcript=""
 
 cleanup()
 {
+    local scratch=""
     if [ -n "${reader_pid}" ]; then
         kill "${reader_pid}" 2>/dev/null || true
         wait "${reader_pid}" 2>/dev/null || true
         reader_pid=""
     fi
+    console_stop
+    for scratch in "${console_raw}" "${flash_log}"; do
+        [ -z "${scratch}" ] || rm -f -- "${scratch}"
+    done
     if [ -n "${raw_stream}" ]; then
         rm -f -- "${raw_stream}"
     fi
@@ -613,7 +897,8 @@ verify_transcript()
 
     if [ "${image_kind}" = "timing" ]; then
         verify_timing
-    else
+    fi
+    if [ "${image_kind}" = "evidence" ] || [ "${board}" = "esp32" ]; then
         verify_stack
     fi
 
@@ -656,11 +941,11 @@ verify_classes()
 verify_exact()
 {
     local problem=""
-    problem="$(block_lines exact | awk -F, '
+    problem="$(block_lines exact | awk -F, -v digits="${exact_digits}" '
         NR == 1 { width = NF; if ($1 != "k") { print "the exact-class header does not key its rows by the loop index: \047" $0 "\047"; exit } next }
         NF != width { print "an exact-class row carries " NF " fields against a header of " width ": \047" $0 "\047"; exit }
         $1 != (NR - 2) "" { print "an exact-class row carries index " $1 " where " NR - 2 " is required: \047" $0 "\047"; exit }
-        { for (i = 2; i <= NF; ++i) if (length($i) != 16 || $i ~ /[^0-9A-F]/) { print "an exact-class value is not a 16-digit bit pattern: \047" $0 "\047"; exit } }
+        { for (i = 2; i <= NF; ++i) if (length($i) != digits || $i ~ /[^0-9A-F]/) { print "an exact-class value is not a bit pattern of " digits " hexadecimal digits: \047" $0 "\047"; exit } }
         END { if (NR == 1) print "the exact-class block carries a header and no rows." }')"
     [ -z "${problem}" ] || fail 25 "${problem}"
     return 0
@@ -696,10 +981,14 @@ verify_posture()
     posture="$(grep -m 1 '^\[meta\] posture ' "${transcript}" || true)"
     [ -n "${posture}" ] \
         || fail 14 "the captured report carries no '[meta] posture' line, so the reset and the configuration its figures were taken under are unstated."
-    for field in reset reset_flags reset_rsr core_hz icache dcache flash_latency_ws cycle_wrap_ms compiler; do
+    for field in ${posture_fields}; do
         printf '%s\n' "${posture}" | grep -Eq " ${field}=[^ ]+" \
             || fail 14 "the posture line carries no '${field}=' field: '${posture}'."
     done
+    if [ "${board}" = "esp32" ]; then
+        grep -q '^\[meta\] schedule ' "${transcript}" \
+            || fail 14 "the captured report carries no '[meta] schedule' line, so the scheduler, interrupt and code-placement posture its timing ran under is unstated."
+    fi
     return 0
 }
 
@@ -743,6 +1032,10 @@ verify_timing()
 verify_stack()
 {
     local line="" region="" count=0 reserve="" printed="" from_top=""
+    if [ "${board}" = "esp32" ]; then
+        verify_task_stack
+        return 0
+    fi
     reserve="${reference_reserve}"
     [ -n "${reserve}" ] || fail 3 "${reference_origin} names no stack reserve (_Min_Stack_Size), so the reserve is unknown."
     while IFS= read -r line; do
@@ -774,6 +1067,31 @@ verify_stack()
     return 0
 }
 
+# A FreeRTOS high-water is the fill pattern left untouched at the bottom of the
+# task's stack. Zero bytes left means the task reached its last byte, which is a
+# depth this figure cannot state, and a figure whose parts do not sum to the
+# stack it names is not a figure of that stack.
+verify_task_stack()
+{
+    local line="" used="" free="" of=""
+    [ -n "${reference_reserve}" ] || fail 3 "${leg_dir}/main/stack_probe.h names no control-task stack (kControlTaskStackBytes), so the stack is unknown."
+    [ "$(grep -c '^\[verdict\] stack region=program ' "${transcript}" || true)" -eq 1 ] \
+        || fail 20 "the report carries $(grep -c '^\[verdict\] stack region=program ' "${transcript}" || true) 'program' stack lines where exactly one is required."
+    line="$(grep -m 1 '^\[verdict\] stack region=program ' "${transcript}")"
+    printf '%s\n' "${line}" | grep -Eq ' used=[0-9]+ free=[0-9]+ of=[0-9]+ bytes$' \
+        || fail 20 "the control task's stack line carries no figure: '${line}'."
+    used="$(printf '%s\n' "${line}" | sed -n 's/.* used=\([0-9]*\) .*/\1/p')"
+    free="$(printf '%s\n' "${line}" | sed -n 's/.* free=\([0-9]*\) .*/\1/p')"
+    of="$(printf '%s\n' "${line}" | sed -n 's/.* of=\([0-9]*\) .*/\1/p')"
+    [ "$((used + free))" -eq "${of}" ] \
+        || fail 20 "the control task's stack line does not add up: used ${used} and free ${free} against ${of} bytes: '${line}'."
+    [ "${of}" -eq "${reference_reserve}" ] \
+        || fail 22 "the control task's stack line names a ${of} B stack where the source names ${reference_reserve} B: '${line}'."
+    [ "${free}" -gt 0 ] \
+        || fail 19 "the control task's stack was used to its last byte, so its depth is unknown rather than ${used} B: '${line}'."
+    return 0
+}
+
 verify_families()
 {
     local family="" line="" count=0
@@ -784,6 +1102,12 @@ verify_families()
         line="$(grep -m 1 "^\[verdict\] family ${family} " "${transcript}")"
         printf '%s\n' "${line}" | grep -q ' verdict=PASS ' \
             || fail 12 "the ${family} family did not pass: '${line}'."
+    done
+    for family in ${absent_families}; do
+        count="$(grep -c "^\[verdict\] family ${family} " "${transcript}" || true)"
+        line="$(grep -m 1 "^\[verdict\] family ${family} " "${transcript}" || true)"
+        [ "${count}" -eq 1 ] && printf '%s\n' "${line}" | grep -Eq ' verdict=ABSENT( |$)' \
+            || fail 11 "the ${family} family, which this image is built without, must be declared ABSENT on exactly one line; the report carries ${count}: '${line}'."
     done
     return 0
 }
@@ -892,10 +1216,351 @@ band_cause()
     echo "# ${warm:-?} in the window."
 }
 
+# --- the ESP32 transport ------------------------------------------------------
+
+console_raw=""
+console_pid=""
+console_file=""
+flash_log=""
+chip_line=""
+stream_mark=0
+console_mark=0
+discarded=0
+
+console_stop()
+{
+    if [ -n "${console_pid}" ]; then
+        kill "${console_pid}" 2>/dev/null || true
+        wait "${console_pid}" 2>/dev/null || true
+        console_pid=""
+    fi
+}
+
+# esptool leaves the port's termios with a zero minimum read, under which a
+# blocking reader sees end of file at the first pause, so the reader restates it.
+esp32_reader()
+{
+    stty -F "$1" 115200 raw -echo -echoe -echok min 1 time 0
+    timeout "$3" cat < "$1" >> "$2" &
+}
+
+# The by-id link of the board's own USB bridge. The link survives a replug
+# where the tty number may not, so a power cycle is watched through it.
+console_link()
+{
+    local link
+    if [ -n "${CAPTURE_CONSOLE_PORT:-}" ]; then
+        printf '%s\n' "${CAPTURE_CONSOLE_PORT}"
+        return 0
+    fi
+    for link in /dev/serial/by-id/*1a86* /dev/serial/by-id/*CP210*; do
+        if [ -e "${link}" ]; then
+            printf '%s\n' "${link}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# The lines are set through a descriptor of their own with ioctls, leaving the
+# termios the readers rely on untouched. The kernel raises DTR and RTS on every
+# open, which this board's reset circuit reads as run; DTR low with RTS high
+# pulls EN low. The console reader holds the port open throughout, so closing
+# this descriptor does not drop the lines.
+drive_en()
+{
+    python3 - "$1" "$2" <<'PYTHON' || fail 3 "could not drive the reset lines of $1."
+import fcntl, os, struct, sys, termios
+fd = os.open(sys.argv[1], os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+if sys.argv[2] == "hold":
+    fcntl.ioctl(fd, termios.TIOCMBIC, struct.pack("I", termios.TIOCM_DTR))
+    fcntl.ioctl(fd, termios.TIOCMBIS, struct.pack("I", termios.TIOCM_RTS))
+else:
+    fcntl.ioctl(fd, termios.TIOCMBIS, struct.pack("I", termios.TIOCM_DTR | termios.TIOCM_RTS))
+os.close(fd)
+PYTHON
+}
+
+# The build's own flash_args, with the image of the requested kind in the
+# application slot. The chip is left in the flasher, not restarted, so nothing
+# runs until this script releases EN with its readers attached.
+flash_esp32()
+{
+    local console="$1" settings="" offset="" file="" app="no" regions=0 args=()
+    [ -f "${build_dir}/flash_args" ] || fail 3 "no ${build_dir}/flash_args; the framework's build writes it."
+    settings="$(head -1 "${build_dir}/flash_args")"
+    printf '%s\n' "${settings}" | grep -Eqx '(--flash-[a-z]+ [0-9A-Za-z]+ ?)+' \
+        || fail 3 "the first line of ${build_dir}/flash_args is not a list of flash settings: '${settings}'."
+    while read -r offset file; do
+        [ -n "${offset}" ] || continue
+        if [ "${file}" = "${evidence_target}.bin" ]; then
+            file="$(basename "${bin_path}")"
+            app="yes"
+        fi
+        args+=("${offset}" "${build_dir}/${file}")
+        regions=$((regions + 1))
+    done < <(tail -n +2 "${build_dir}/flash_args")
+    [ "${app}" = "yes" ] || fail 3 "${build_dir}/flash_args names no ${evidence_target}.bin application slot."
+    # shellcheck disable=SC2086
+    python -m esptool --chip esp32 -p "${console}" -b 460800 --before default-reset --after no-reset \
+        write-flash ${settings} "${args[@]}" > "${flash_log}" 2>&1 \
+        || { cat "${flash_log}" >&2; fail 3 "esptool could not write ${bin_path} to the board on ${console}."; }
+    [ "$(grep -c 'Hash of data verified' "${flash_log}" || true)" -eq "${regions}" ] \
+        || { cat "${flash_log}" >&2; fail 3 "esptool did not report a verified hash for each of the ${regions} regions it wrote."; }
+    chip_line="$(sed -n 's/^Chip type:[[:space:]]*//p' "${flash_log}" | head -1)"
+}
+
+# The NUCLEO-H753ZI's power-on prompt watches the ST-LINK; here the readers are
+# already attached to the telemetry adapter, which stays enumerated, so the mark
+# is taken when the board's own bridge goes and the report keeps its head.
+await_esp32_power_cycle()
+{
+    local node="$1" waited=0
+    echo ">>> UNPLUG the ${board_label}'s own USB cable now, leave it out for a few seconds, then plug it back in." >&2
+    while [ "${waited}" -lt $((plug_timeout * 10)) ] && [ -e "${node}" ]; do
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+    [ ! -e "${node}" ] \
+        || fail 3 "power cycle timed out: ${node} did not disappear within ${plug_timeout} s, so the cable was not unplugged."
+    stream_mark="$(wc -c < "${raw_stream}")"
+    console_mark="$(wc -c < "${console_raw}")"
+    waited=0
+    while [ "${waited}" -lt $((plug_timeout * 10)) ] && [ ! -e "${node}" ]; do
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+    [ -e "${node}" ] \
+        || fail 3 "power cycle timed out: ${node} did not reappear within ${plug_timeout} s after the unplug."
+    echo ">>> device node back: ${node}" >&2
+}
+
+stream_since_mark()
+{
+    tail -c +"$((stream_mark + 1))" "${raw_stream}" 2>/dev/null
+}
+
+# A closing line counts only after a build id line, since a reader attached to a
+# running board can join a report midway. awk reads to the end rather than
+# quitting at the first match, so tail is not killed by a closed pipe, which
+# pipefail would report as a failure.
+report_closed()
+{
+    stream_since_mark | awk -v marker="${report_end_marker}" '/^\[meta\] build_id=/ { opened = 1 } opened && index($0, marker) { seen = 1 } END { exit !seen }'
+}
+
+wait_for_report_esp32()
+{
+    local waited=0
+    while [ "${waited}" -lt "${read_timeout}" ]; do
+        [ "$(stream_since_mark | wc -c)" -lt "${byte_cap}" ] || return 0
+        if report_closed; then
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    return 0
+}
+
+# The first report after the mark, from its build id line through its closing
+# verdict: the board reports on every boot, so the next one is cut away, and
+# what came before the build id line is residue from before the restart.
+cut_report()
+{
+    local all="${transcript}.all" start=""
+    stream_since_mark | tr -d '\r' > "${all}"
+    start="$(grep -n -m 1 '^\[meta\] build_id=' "${all}" | cut -d: -f1 || true)"
+    discarded=0
+    if [ -n "${start}" ]; then
+        discarded="$(head -n "$((start - 1))" "${all}" | wc -c)"
+    fi
+    awk -v start="${start:-1}" -v marker="${report_end_marker}" 'NR >= start { print } NR >= start && index($0, marker) { exit }' "${all}" > "${transcript}"
+    rm -f -- "${all}"
+}
+
+# Written before the refusals run, so a refused capture still leaves the
+# console, where a panic or a probe overflow is reported.
+write_console_record()
+{
+    {
+        echo "# ctrlpp ${board_label} console, recorded beside $(basename "${destination}")"
+        echo "# port:     $1"
+        echo "# The board's own console: the framework's boot log, the stack probe and the"
+        echo "# panic it ends in. Transported, not judged; the capture's refusals read only"
+        echo "# the telemetry report."
+        echo
+        tail -c +"$((console_mark + 1))" "${console_raw}" | tr -d '\r'
+    } > "${console_file}"
+}
+
+do_capture_esp32()
+{
+    [ -n "${destination}" ] || fail 2 "capture needs a destination file."
+    [ -d "$(dirname "${destination}")" ] \
+        || fail 2 "the destination directory '$(dirname "${destination}")' does not exist."
+    [ -f "${bin_path}" ] || fail 3 "no ${bin_path}; run 'board_capture.sh --board=esp32 prepare' first."
+    command -v python3 > /dev/null || fail 3 "python3 is needed to drive the board's reset lines."
+    load_elf_reference
+
+    local telemetry="" link="" console="" seconds=0
+    telemetry="$(resolve_port)" || fail 3 "no telemetry port found: no /dev/serial/by-id/*FTDI* link and no CAPTURE_PORT."
+    [ -c "${telemetry}" ] || fail 3 "'${telemetry}' is not a character device."
+    link="$(console_link)" || fail 3 "no console port found: no /dev/serial/by-id/*1a86* or *CP210* link and no CAPTURE_CONSOLE_PORT."
+    console="$(readlink -f "${link}")"
+    [ -c "${console}" ] || fail 3 "'${console}' is not a character device."
+    console_file="${destination%.txt}-console.txt"
+
+    raw_stream="$(mktemp "${TMPDIR:-/tmp}/ctrlpp-board-capture-raw.XXXXXX")"
+    transcript="$(mktemp "${TMPDIR:-/tmp}/ctrlpp-board-capture.XXXXXX")"
+    console_raw="$(mktemp "${TMPDIR:-/tmp}/ctrlpp-board-console.XXXXXX")"
+    flash_log="$(mktemp "${TMPDIR:-/tmp}/ctrlpp-board-flash.XXXXXX")"
+    trap cleanup EXIT
+
+    if [ "${capture_mode}" = "flash" ]; then
+        check_descriptor "${bin_path}" "${reference_id}"
+        flash_esp32 "${console}"
+    fi
+
+    seconds=$((read_timeout + console_tail + 5))
+    [ "${capture_mode}" != "power-cycle" ] || seconds=$((seconds + 2 * plug_timeout))
+    esp32_reader "${console}" "${console_raw}" "${seconds}"
+    console_pid=$!
+    esp32_reader "${telemetry}" "${raw_stream}" "${seconds}"
+    reader_pid=$!
+
+    case "${capture_mode}" in
+        flash|reset-only)
+            drive_en "${console}" hold
+            sleep 1
+            stream_mark="$(wc -c < "${raw_stream}")"
+            console_mark="$(wc -c < "${console_raw}")"
+            drive_en "${console}" release
+            ;;
+        power-cycle)
+            await_esp32_power_cycle "${link}"
+            console_stop
+            console="$(readlink -f "${link}")"
+            esp32_reader "${console}" "${console_raw}" "${seconds}"
+            console_pid=$!
+            ;;
+    esac
+
+    wait_for_report_esp32
+    reader_stop
+    if report_closed; then
+        sleep "${console_tail}"
+    fi
+    console_stop
+
+    write_console_record "${console}"
+    cut_report
+    verify_transcript
+    write_artifact_esp32 "${telemetry}" "${console}"
+
+    echo "capture written: ${destination}"
+    echo "console written: ${console_file}"
+    echo "build id:        ${reference_id}"
+}
+
+reset_note()
+{
+    case "${capture_mode}" in
+        flash|reset-only)
+            echo "# This run was started by this script's EN-pin pulse through the bridge's RTS"
+            echo "# line. It was NOT a power cycle: the part reports an EN-pin reset and a power"
+            echo "# cycle as the same power_on class, so the label cannot say which happened."
+            ;;
+        power-cycle)
+            echo "# The operator was asked to unplug and replug the board, and its console node"
+            echo "# vanished and returned. That proves the USB bridge lost its connection, not"
+            echo "# that the supply decayed, and the label cannot tell the two apart either."
+            ;;
+        *)
+            echo "# This script did not restart the board; the report is the first to begin"
+            echo "# after the readers attached, and the label is the image's own."
+            ;;
+    esac
+}
+
+schedule_field()
+{
+    grep -m 1 '^\[meta\] schedule ' "${transcript}" | sed -n "s/.* $1=\([^ ]*\).*/\1/p"
+}
+
+# Assembled from the schedule and interruption lines, so it names only causes
+# the posture reports and quotes the tick count rather than asserting what varied.
+band_cause_esp32()
+{
+    local crossed=""
+    crossed="$(sed -n 's/^\[verdict\] interruption region=\([^ ]*\) regime=warm tick_crossed=\([0-9]*\) of=\([0-9]*\)$/\1 \2 of \3/p' "${transcript}" | paste -sd ';' - | sed 's/;/; /g')"
+    echo "#"
+    echo "# Band cause: the timed code runs from $(schedule_field code), fetched through the"
+    echo "# cache at flash_mode=$(schedule_field flash_mode) flash_freq=$(schedule_field flash_freq), so the cold-to-warm"
+    echo "# difference includes cache fill. Within the warm series the spread includes"
+    echo "# interrupts landing in a sample, with the scheduler ticking at $(schedule_field tick_hz) Hz and"
+    echo "# the enabled-interrupt mask $(schedule_field intr_enabled) on the timed core, and the other core"
+    echo "# competing for the same flash interface; this capture does not separate them."
+    echo "# The tick landed in, per warm region: ${crossed:-no interruption line}."
+}
+
+write_artifact_esp32()
+{
+    {
+        echo "# ctrlpp ${board_label} on-target capture"
+        echo "# captured:  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "# mode:      ${capture_mode}"
+        echo "# telemetry: $1"
+        echo "# console:   $2 (recorded in $(basename "${console_file}"))"
+        echo "# image:     ${elf_path}"
+        echo "# kind:      ${image_kind}"
+        echo "# build id:  ${reference_id}"
+        if [ "${image_kind}" = "timing" ]; then
+            echo "# evidence:  ${reference_evidence_id} (the allocation-evidence image built from the same sources)"
+        fi
+        echo "# toolchain: ${reference_toolchain}"
+        echo "# framework: $(framework_line), as the build recorded it"
+        echo "# chip:      ${chip_line:-not read in this mode; esptool reports it when flashing}"
+        echo "#"
+        echo "# The build id above is the sha256 digest of the ELF, which the framework's"
+        echo "# build writes into the image descriptor and the image prints; sha256sum of"
+        echo "# the ELF reproduces it. It is an identity check against accidental"
+        echo "# staleness, not a signature."
+        if [ "${capture_mode}" = "flash" ]; then
+            echo "# Before flashing, the descriptor of $(basename "${bin_path}") was read with esptool"
+            echo "# and named the same digest, and esptool verified every region it wrote."
+        fi
+        echo "#"
+        echo "# Reset: $(posture_of "${transcript}" | grep -o "${reset_quote}" || true)."
+        reset_note
+        echo "#"
+        echo "# The [exact] rows print each float as its binary32 bit pattern in 8"
+        echo "# uppercase hexadecimal digits, so two runs that differ in the last bit differ"
+        echo "# in the row."
+        echo "#"
+        echo "# Stack: the [verdict] stack line is the control task's high-water as FreeRTOS"
+        echo "# counts it, against the ${reference_reserve}-byte task stack the source names, taken"
+        echo "# with $(posture_of "${transcript}" | grep -o 'stack_watchpoint=[^ ]*' || true). The stack probe's per-dimension lines are in"
+        echo "# the console record and are not judged here."
+        if [ "${image_kind}" = "timing" ]; then
+            band_cause_esp32
+        fi
+        echo "#"
+        echo "# Report window: ${discarded} bytes before the report's build id line were"
+        echo "# discarded, the previous boot's residue or line noise across the restart."
+        echo
+        cat "${transcript}"
+    } > "${destination}"
+}
+
 # --- capture ------------------------------------------------------------------
 
 do_capture()
 {
+    if [ "${board}" = "esp32" ]; then
+        do_capture_esp32
+        return 0
+    fi
     [ -n "${destination}" ] || fail 2 "capture needs a destination file."
     [ -d "$(dirname "${destination}")" ] \
         || fail 2 "the destination directory '$(dirname "${destination}")' does not exist."
@@ -1084,11 +1749,13 @@ collect_one()
     local file="$1" mode="$2" attempt=1 status=0
     while [ "${attempt}" -le "${compare_attempts}" ]; do
         status=0
-        if [ "${mode}" = "power_on" ]; then
+        if [ "${mode}" = "power_on" ] && [ "${board}" = "esp32" ]; then
+            "${script_path}" capture ${board_flag} ${kind_flag} --power-cycle "${file}" || status=$?
+        elif [ "${mode}" = "power_on" ]; then
             await_power_cycle
             "${script_path}" capture ${kind_flag} --no-reset "${file}" || status=$?
         else
-            "${script_path}" capture ${kind_flag} --reset-only "${file}" || status=$?
+            "${script_path}" capture ${board_flag} ${kind_flag} --reset-only "${file}" || status=$?
         fi
         if [ "${status}" -ne 4 ] && [ "${status}" -ne 5 ]; then
             run_log+=("$(basename "${file}") attempts=${attempt} capture_status=${status}")
@@ -1104,6 +1771,9 @@ collect_one()
 # The priming run is not counted. The image clears the reset flags after it
 # reports them, so a run after it labels only its own reset; without it the first
 # counted run could carry flags accumulated under an image that never cleared.
+# The ESP32 rewrites its reset code on every reset and needs no clearing, but it
+# is primed the same way, an EN-pin restart, so the resident image is checked
+# before the operator is asked for anything.
 collect_series()
 {
     local index=1 file="" status=0 class=""
@@ -1141,12 +1811,12 @@ check_shared()
 {
     local run="" first_id="" id="" first_posture="" posture=""
     first_id="$(block_of meta "${runs[0]}" | sed -n 's/^\[meta\] build_id=\([0-9a-f]*\).*/\1/p' | head -1)"
-    first_posture="$(posture_of "${runs[0]}" | sed -E 's/ reset(_flags|_rsr)?=[^ ]*//g')"
+    first_posture="$(posture_of "${runs[0]}" | sed -E 's/ reset(_flags|_rsr|_reason|_rom)?=[^ ]*//g')"
     for run in "${runs[@]}"; do
         id="$(block_of meta "${run}" | sed -n 's/^\[meta\] build_id=\([0-9a-f]*\).*/\1/p' | head -1)"
         [ "${id}" = "${first_id}" ] \
             || compare_fail 29 "$(basename "${run}") carries build id ${id:-absent} where $(basename "${runs[0]}") carries ${first_id:-absent}; a series is one image."
-        posture="$(posture_of "${run}" | sed -E 's/ reset(_flags|_rsr)?=[^ ]*//g')"
+        posture="$(posture_of "${run}" | sed -E 's/ reset(_flags|_rsr|_reason|_rom)?=[^ ]*//g')"
         [ "${posture}" = "${first_posture}" ] \
             || compare_fail 29 "$(basename "${run}") reports the posture '${posture}' where $(basename "${runs[0]}") reports '${first_posture}'."
     done
@@ -1260,7 +1930,7 @@ write_summary()
     local run="" verdict="PASS"
     [ "${compare_status}" -eq 0 ] || verdict="FAIL (status ${compare_status}): ${compare_note}"
     {
-        echo "# ctrlpp NUCLEO-H753ZI determinism comparison"
+        echo "# ctrlpp ${board_label} determinism comparison"
         echo "# compared:      $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "# mode:          $([ "${replay}" = "yes" ] && echo "replay of transcripts on disk" || echo "collected by this invocation")"
         echo "# kind:          ${image_kind}"
@@ -1276,10 +1946,10 @@ write_summary()
         echo "#"
         echo "# Per run, as each image decoded its own reset status register:"
         if [ -f "${series_dir}/priming.txt" ] && [ "${replay}" = "no" ]; then
-            echo "#   priming.txt (not counted) $(posture_of "${series_dir}/priming.txt" | grep -o 'reset=[^ ]* reset_flags=[^ ]* reset_rsr=[^ ]*')"
+            echo "#   priming.txt (not counted) $(posture_of "${series_dir}/priming.txt" | grep -o "${reset_quote}")"
         fi
         for run in "${runs[@]}"; do
-            echo "#   $(basename "${run}") $(posture_of "${run}" | grep -o 'reset=[^ ]* reset_flags=[^ ]* reset_rsr=[^ ]*')"
+            echo "#   $(basename "${run}") $(posture_of "${run}" | grep -o "${reset_quote}")"
         done
         for run in "${run_log[@]+"${run_log[@]}"}"; do
             echo "#   collection: ${run}"
@@ -1314,9 +1984,9 @@ compare_arguments()
         series_dir="${operands[2]}"
         printf '%s\n' "${series_count}" | grep -Eqx '[1-9][0-9]*' && [ "${series_count}" -ge 2 ] \
             || fail 2 "the run count must be an integer of at least 2, since one run compares with nothing: '${series_count}'."
-        case "${requested_class}" in
-            pin|power_on) ;;
-            *) fail 2 "this station can collect a 'pin' or a 'power_on' series, not '${requested_class}'; a series of another class can be compared with --replay." ;;
+        case " ${collectable_classes} " in
+            *" ${requested_class} "*) ;;
+            *) fail 2 "on the ${board_label} this station can collect a series of these classes only: ${collectable_classes}; not '${requested_class}'. A series of another class can be compared with --replay." ;;
         esac
         printf '%s\n' "${plug_timeout}" | grep -Eqx '[1-9][0-9]*' \
             || fail 2 "COMPARE_PLUG_TIMEOUT must be a whole number of seconds: '${plug_timeout}'."
@@ -1332,6 +2002,8 @@ compare_arguments()
     fi
     kind_flag=""
     [ "${image_kind}" = "timing" ] && kind_flag="--timing"
+    board_flag=""
+    [ "${board}" = "esp32" ] && board_flag="--board=esp32"
     return 0
 }
 
@@ -1383,7 +2055,15 @@ run_compare()
 
 do_discover()
 {
-    local port=""
+    local port="" console=""
+    if [ "${board}" = "esp32" ]; then
+        if port="$(resolve_port)" && [ -c "${port}" ] && console="$(resolve_console_port)" && [ -c "${console}" ]; then
+            echo "board found: console ${console}, telemetry ${port}. Nothing was flashed or read here, so no verdict is formed; 'capture' takes the evidence."
+            return 0
+        fi
+        echo "SKIP: no ${board_label} found (no console bridge under /dev/serial/by-id/*1a86* or *CP210* and telemetry adapter under *FTDI*, and no CAPTURE_CONSOLE_PORT and CAPTURE_PORT naming character devices); the on-target check was not performed: no image was flashed, no boot report was read and no resident image was fingerprinted."
+        return 0
+    fi
     if port="$(resolve_port)" && [ -c "${port}" ]; then
         echo "board found: ${port}. Nothing was flashed or read here, so no verdict is formed; 'capture' takes the evidence."
         return 0
@@ -1407,17 +2087,26 @@ self_test_red=()
 
 fixture_value()
 {
-    sed -n "s/^$1=//p" "${self_test_root}/reference.txt" | head -1
+    sed -n "s/^$1=//p" "${self_test_root}/${2:-reference.txt}" | head -1
 }
 
+# A recording named esp32-<kind> is the ESP32 leg's and is checked against that
+# leg's references. Every case runs in a subshell, so the board selected here
+# does not outlive the case.
 use_fixture_reference()
 {
-    image_kind="$1"
-    reference_id="$(fixture_value "$1_build_id")"
-    reference_reserve="$(fixture_value stack_reserve)"
-    reference_evidence_id="$(fixture_value evidence_build_id)"
-    reference_toolchain="$(fixture_value toolchain)"
-    reference_origin="board_capture_fixtures/reference.txt"
+    local kind="$1" file="reference.txt"
+    if [ "${kind#esp32-}" != "${kind}" ]; then
+        select_board esp32
+        kind="${kind#esp32-}"
+        file="esp32-reference.txt"
+    fi
+    image_kind="${kind}"
+    reference_id="$(fixture_value "${kind}_build_id" "${file}")"
+    reference_reserve="$(fixture_value stack_reserve "${file}")"
+    reference_evidence_id="$(fixture_value evidence_build_id "${file}")"
+    reference_toolchain="$(fixture_value toolchain "${file}")"
+    reference_origin="board_capture_fixtures/${file}"
 }
 
 self_test_check()
@@ -1550,6 +2239,29 @@ self_test_cases_series()
     expect_status 0 "" "raw_max 7 cycles apart under a bound of 7" self_test_compare timing pin 7 "$(series timing "s|^\\[spread\\] dsp\\.step,warm,.*|${raised}|")"
 }
 
+# The same refusals on the ESP32 leg's recordings, where its stream differs
+# from the NUCLEO-H753ZI's: the scalar's width, the absent family, the posture
+# fields, the schedule line, the task stack and the reset classes.
+self_test_cases_esp32()
+{
+    red_check esp32-evidence 6 "is NOT the built one" "ESP32: fingerprint of another image" 's/^\(\[meta\] build_id=\)[0-9a-f]*/\1'"$(printf '0%.0s' $(seq 64))"'/'
+    red_check esp32-evidence 11 "must be declared ABSENT on exactly one line; the report carries 0" "ESP32: absent family undeclared" '/^\[verdict\] family predictive /d'
+    red_check esp32-evidence 11 "must be declared ABSENT on exactly one line; the report carries 1" "ESP32: absent family claiming a verdict" '/^\[verdict\] family predictive /s/ verdict=ABSENT / verdict=PASS /'
+    red_check esp32-evidence 14 "carries no '[meta] schedule' line" "ESP32: schedule line missing" '/^\[meta\] schedule /d'
+    red_check esp32-evidence 14 "carries no 'reset_rom=' field" "ESP32: posture without its ROM reset code" 's/ reset_rom=[0-9]*//'
+    red_check esp32-timing 17 "carries 0 'trajectory.step' warm rows" "ESP32: timed region without its warm row" '/^\[spread\] trajectory\.step,warm,/d'
+    red_check esp32-evidence 19 "used to its last byte" "ESP32: task stack used to its last byte" 's/^\(\[verdict\] stack region=program \).*/\1used=8192 free=0 of=8192 bytes/'
+    red_check esp32-evidence 20 "does not add up" "ESP32: task stack figures that do not sum" '/^\[verdict\] stack region=program /s/ used=\([0-9]*\)/ used=\14/'
+    red_check esp32-evidence 22 "names a 4096 B stack where the source names 8192 B" "ESP32: task stack disagreeing with the source" 's/^\(\[verdict\] stack region=program \).*/\1used=3152 free=944 of=4096 bytes/'
+    red_check esp32-evidence 25 "is not a bit pattern of 8 hexadecimal digits" "ESP32: binary64-width value on the binary32 leg" '/^\[exact\] 7,/s/$/00000000/'
+    red_series esp32-evidence power_on "" 26 "decoded reset=panic where the series requires reset=power_on" "ESP32: run of another reset class" 's/^\(\[meta\] posture reset=\)power_on reset_reason=1 /\1panic reset_reason=4 /'
+    red_series esp32-evidence power_on "" 29 "reports the posture" "ESP32: posture differing outside the reset fields" 's/ core_mhz=160 / core_mhz=240 /'
+
+    expect_status 0 "" "ESP32: evidence recording, unchanged" self_test_check esp32-evidence "${self_test_root}/esp32-evidence.txt"
+    expect_status 0 "" "ESP32: timing recording, unchanged" self_test_check esp32-timing "${self_test_root}/esp32-timing.txt"
+    expect_status 0 "" "ESP32: three unchanged timing runs, reset=power_on, bound 0" self_test_compare esp32-timing power_on 0 "$(series esp32-timing '')"
+}
+
 self_test_cases_green()
 {
     expect_status 0 "" "evidence recording, unchanged" self_test_check evidence "${self_test_root}/evidence.txt"
@@ -1561,7 +2273,7 @@ self_test_cases_green()
 do_self_test()
 {
     local file="" status="" implemented="" missing="" counts=""
-    for file in evidence.txt timing.txt reference.txt; do
+    for file in evidence.txt timing.txt reference.txt esp32-evidence.txt esp32-timing.txt esp32-reference.txt; do
         [ -f "${fixture_dir}/${file}" ] || fail 3 "the fixture ${fixture_dir}/${file} is missing."
     done
     self_test_root="$(mktemp -d "${TMPDIR:-/tmp}/ctrlpp-board-self-test.XXXXXX")"
@@ -1572,6 +2284,7 @@ do_self_test()
     self_test_cases_green
     self_test_cases_single
     self_test_cases_series
+    self_test_cases_esp32
 
     implemented="$(implemented_refusals)"
     for status in ${implemented}; do
