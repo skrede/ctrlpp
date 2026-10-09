@@ -10,6 +10,11 @@
 #   QP_SOLVERS_BUILD   build tree (default <repo>/build/qp-solvers)
 #   QP_SOLVERS_JOBS    build parallelism (default 4)
 #   QP_SOLVERS_CPU     the CPU the measurement is pinned to (default 2; never 0)
+#   QP_SOLVERS_CLOCK_PROBE_SECONDS  how long "measure" loads the pinned CPU before measuring to observe
+#                      its clock (default 2)
+#   QP_SOLVERS_CLOCK_PROBE_SAMPLES  scaling_cur_freq reads taken over that load (default 20)
+#   QP_SOLVERS_CLOCK_FLOOR  the fraction of scaling_max_freq every observed sample must reach; no
+#                      sample may exceed scaling_max_freq itself (default 0.99)
 #   ARGMIN_CHECKOUT    argmin checkout whose verdict command validates the run, used read-only
 #                      (default <repo>/../argmin)
 #
@@ -23,6 +28,9 @@ repo_root="$(cd "${script_dir}/../../.." && pwd)"
 build_tree="${QP_SOLVERS_BUILD:-${repo_root}/build/qp-solvers}"
 build_jobs="${QP_SOLVERS_JOBS:-4}"
 pin_cpu="${QP_SOLVERS_CPU:-2}"
+probe_seconds="${QP_SOLVERS_CLOCK_PROBE_SECONDS:-2}"
+probe_samples="${QP_SOLVERS_CLOCK_PROBE_SAMPLES:-20}"
+clock_floor="${QP_SOLVERS_CLOCK_FLOOR:-0.99}"
 argmin_checkout="${ARGMIN_CHECKOUT:-${repo_root}/../argmin}"
 driver_dir="${build_tree}/comparison/qp_solvers"
 
@@ -58,7 +66,7 @@ die()
 
 usage()
 {
-    sed -n '3,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '3,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 utc_now()
@@ -205,6 +213,49 @@ print(json.dumps(state, sort_keys=True))
 PY
 }
 
+# Loads the pinned CPU and records its observed frequency in the driver's frequency-log format, so
+# host_state reads it like a run's samples. The first read waits one interval for the load to land.
+observe_clock()
+{
+    local out="$1"
+    python3 - "${pin_cpu}" "${probe_seconds}" "${probe_samples}" > "${out}" <<'PY'
+import subprocess, sys, time
+cpu, seconds, count = sys.argv[1], float(sys.argv[2]), int(sys.argv[3])
+interval = seconds / count
+load = subprocess.Popen(["taskset", "-c", cpu, "sh", "-c", "while :; do :; done"])
+try:
+    for _ in range(count):
+        time.sleep(interval)
+        try:
+            khz = int(open(f"/sys/devices/system/cpu/cpu{cpu}/cpufreq/scaling_cur_freq").read())
+        except (OSError, ValueError):
+            continue
+        print(f"probe {cpu} {khz}")
+finally:
+    load.kill()
+    load.wait()
+PY
+}
+
+# Every observed frequency sample of the pinned CPU that leaves [floor * scaling_max_freq, scaling_max_freq].
+frequency_failures()
+{
+    local host="$1"
+    python3 - "${host}" "${clock_floor}" "${pin_cpu}" <<'PY'
+import json, sys
+h, floor, cpu = json.loads(sys.argv[1]), float(sys.argv[2]), sys.argv[3]
+observed, bound = h["scaling_cur_freq"], h["scaling_max_freq"]
+if observed["samples"] == 0 or bound is None:
+    print(f"cpu{cpu} has no observed frequency to hold against its bound")
+    sys.exit()
+bound = int(bound)
+if observed["max"] > bound:
+    print(f"cpu{cpu} ran at up to {observed['max']} kHz, above its {bound} kHz bound")
+if observed["min"] < floor * bound:
+    print(f"cpu{cpu} fell to {observed['min']} kHz, below {floor} of its {bound} kHz bound")
+PY
+}
+
 # Every condition a fixed clock needs that the host does not meet, one per line.
 clock_failures()
 {
@@ -220,6 +271,9 @@ checks = [
     (h["governor"] == "performance", f"governor of cpu{cpu} is {h['governor']}, needs performance"),
     (h["scaling_min_freq"] is not None and h["scaling_min_freq"] == h["scaling_max_freq"],
      f"cpu{cpu} frequency bounds {h['scaling_min_freq']}..{h['scaling_max_freq']} are not equal"),
+    # In active mode the firmware picks the frequency and the scaling bounds are only hints to it.
+    (not (h["pstate_driver"] == "amd-pstate-epp" and h["pstate_mode"] == "active"),
+     "amd-pstate is in active mode, which does not hold the frequency bounds; needs passive"),
     (h["smt_control"] == "off", f"SMT control is {h['smt_control']}, needs off"),
     (h["affinity"].strip() == cpu and cpu != "0", f"affinity is '{h['affinity']}', needs the single CPU {cpu} (not 0)"),
     (counter == "true", "the instruction counter does not open"),
@@ -228,6 +282,7 @@ for ok, message in checks:
     if not ok:
         print(message)
 PY
+    frequency_failures "${host}"
 }
 
 pinned()
@@ -441,7 +496,8 @@ measure()
     scratch="$(mktemp -d)"
     describe_harness "${scratch}"
     affinity="$(taskset -c "${pin_cpu}" bash -c 'taskset -pc $$' | sed 's/.*: //')"
-    host="$(host_state "${affinity}" "/nonexistent")"
+    observe_clock "${scratch}/probe_frequency.txt"
+    host="$(host_state "${affinity}" "${scratch}/probe_frequency.txt")"
     failures="$(clock_failures "${host}" "$(counter_opens "${scratch}")")"
     rm -rf "${scratch}"
     clock=fixed
@@ -467,6 +523,12 @@ measure()
     measure_repetitions "${dest}" "${run_id}" "${refused}"
     compress_records "${dest}"
     host="$(host_state "${affinity}" "${dest}/*_frequency.txt")"
+    failures="$(frequency_failures "${host}")"
+    if [ -n "${failures}" ]; then
+        clock=unfixed
+        ledger_clock=unfixed
+        printf 'run_qp_solvers: the run did not hold its clock:\n%s\n' "${failures}" >&2
+    fi
     fill_json "${run_id}" "${started}" "$(utc_now)" "${host}" "${clock}" > "${dest}/fill.json"
     assemble "${dest}"
     verify_record "${dest}" --schema-only
