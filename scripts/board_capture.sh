@@ -41,11 +41,22 @@
 #                  'pin' series is restarted with `st-flash reset`. A 'power_on'
 #                  series prompts the operator to unplug and replug the board and
 #                  waits, bounded, for the serial node to vanish and return; no
-#                  tool here can cut the target's power. A run whose decoded
-#                  class is not the requested one is not counted: it is kept as
-#                  refused-NN.txt, listed in the summary with its decoded class,
-#                  and the operator is prompted again until <count> runs are
-#                  counted. Any other refusal of a run ends the series.
+#                  tool here can cut the target's power. An 'en_pin' series, on
+#                  the ESP32 leg only, is restarted by this script's EN-pin pulse
+#                  through the console bridge's RTS line, as capture --reset-only
+#                  does, with no prompt; the image decodes that pulse as
+#                  reset=power_on, which is what each run must decode, so its
+#                  summary and every run's header say the restart was an EN-pin
+#                  pulse and not a power cycle, and that the label cannot tell
+#                  the two apart. An en_pin series is never power-on evidence and
+#                  is never pooled with a power_on series: on the ESP32 leg each
+#                  run's header must record the restart its series' class names,
+#                  reset-only for en_pin and power-cycle for power_on. A run whose
+#                  decoded class is not the required one is not counted: it is
+#                  kept as refused-NN.txt, listed in the summary with its decoded
+#                  class, and the run is collected again, prompting the operator
+#                  where its class needs one, until <count> runs are counted. Any
+#                  other refusal of a run ends the series.
 #   exact class    the [exact] lines, compared byte for byte in order against the
 #                  first run, with no rounding, normalization or sorting; the
 #                  refusal names the first differing line and byte.
@@ -244,7 +255,9 @@
 #      sequence 0, 1, 2, ... (a reordering is a difference, not a pass), or an
 #      exact value is not a bit pattern of the leg's scalar: 16 hexadecimal
 #      digits for binary64, 8 for binary32
-#  26  a run's decoded reset class is not the class the series requires
+#  26  a run's decoded reset class is not the class the series requires, or on
+#      the ESP32 leg its header records a restart other than the one the
+#      series' class names, so an EN-pin run is not pooled with power-on runs
 #  27  the exact-class blocks of two runs differ
 #  28  a cycle field's spread across the runs exceeds the stated bound
 #  29  the runs do not share what a comparison needs them to share: the build
@@ -369,10 +382,12 @@
 #      ESP_RST_POWERON for a power cycle, the EN button, and the RTS-driven EN
 #      pulse this script and esptool issue. Every capture this script restarts
 #      therefore reads reset=power_on, and that label says nothing about the
-#      supply. In --power-cycle mode the console node vanishing proves the USB
-#      bridge lost its connection, not that the supply decayed: a telemetry
-#      adapter wired to the board can feed it through a signal pin. The labels
-#      this leg can separate are panic, software, the watchdogs and brownout.
+#      supply. An en_pin series is named for the restart this script made, not
+#      for the label, and is not power-on evidence. In --power-cycle mode the
+#      console node vanishing proves the USB bridge lost its connection, not
+#      that the supply decayed: a telemetry adapter wired to the board can feed
+#      it through a signal pin. The labels this leg can separate are panic,
+#      software, the watchdogs and brownout.
 #
 #  16. The stack figure is the control task's high-water as FreeRTOS counts it,
 #      the untouched bytes of the fill pattern at the bottom of the task's
@@ -524,7 +539,7 @@ select_board()
     exact_digits=8
     posture_fields="reset reset_reason reset_rom core_mhz cycle_bits cycle_wrap_ms stack_watchpoint assertions optimize compiler idf"
     reset_quote='reset=[^ ]* reset_reason=[^ ]* reset_rom=[^ ]*'
-    collectable_classes="power_on"
+    collectable_classes="power_on en_pin"
     handshake_required="no"
     heap_view_judged="yes"
 }
@@ -1658,7 +1673,8 @@ reset_note()
         flash|reset-only)
             echo "# This run was started by this script's EN-pin pulse through the bridge's RTS"
             echo "# line. It was NOT a power cycle: the part reports an EN-pin reset and a power"
-            echo "# cycle as the same power_on class, so the label cannot say which happened."
+            echo "# cycle as the same power_on class, so the label cannot say which happened,"
+            echo "# and neither this run nor a series of such runs is power-on evidence."
             ;;
         power-cycle)
             echo "# The operator was asked to unplug and replug the board, and its console node"
@@ -1853,6 +1869,7 @@ spread_bounded_fields="raw_min raw_median raw_max"
 spread_reported_fields="max_at per_iteration_raw_max"
 
 requested_class=""
+decoded_class=""
 series_count=""
 series_dir=""
 compare_tmp=""
@@ -1997,7 +2014,7 @@ collect_series()
             return 0
         fi
         class="$(posture_field "${file}" reset)"
-        if [ "${class}" = "${requested_class}" ]; then
+        if [ "${class}" = "${decoded_class}" ]; then
             index=$((index + 1))
             continue
         fi
@@ -2005,7 +2022,7 @@ collect_series()
         kept="$(printf '%s/refused-%02d.txt' "${series_dir}" "${refused}")"
         mv -- "${file}" "${kept}"
         run_log[${#run_log[@]} - 1]="$(basename "${kept}") (collected as $(basename "${file}")) ${run_log[${#run_log[@]} - 1]#* }"
-        echo "run ${index} decoded reset=${class:-absent} where the series requires reset=${requested_class}; it is kept as $(basename "${kept}"), not counted, and run ${index} is collected again." >&2
+        echo "run ${index} decoded reset=${class:-absent} where the series requires reset=${decoded_class}; it is kept as $(basename "${kept}"), not counted, and run ${index} is collected again." >&2
     done
     return 0
 }
@@ -2015,10 +2032,54 @@ check_classes()
     local run="" class=""
     for run in "${runs[@]}"; do
         class="$(posture_field "${run}" reset)"
-        [ "${class}" = "${requested_class}" ] \
-            || compare_fail 26 "$(basename "${run}") decoded reset=${class:-absent} where the series requires reset=${requested_class}."
+        [ "${class}" = "${decoded_class}" ] \
+            || compare_fail 26 "$(basename "${run}") decoded reset=${class:-absent} where the series requires reset=${decoded_class}."
     done
     return 0
+}
+
+# The ESP32 decodes an EN-pin pulse and a power cycle alike, so the label cannot
+# keep the two series apart; the capture mode each run's header records does.
+restart_mode()
+{
+    case "$1" in
+        en_pin) echo "reset-only" ;;
+        power_on) echo "power-cycle" ;;
+    esac
+}
+
+check_restarts()
+{
+    local run="" mode="" want=""
+    want="$(restart_mode "${requested_class}")"
+    [ "${board}" = "esp32" ] && [ -n "${want}" ] || return 0
+    for run in "${runs[@]}"; do
+        mode="$(sed -n 's/^# mode:[[:space:]]*//p' "${run}" | head -1)"
+        [ "${mode}" = "${want}" ] \
+            || compare_fail 26 "$(basename "${run}") records the restart mode '${mode:-none}' where this ${requested_class} series requires '${want}'; both decode reset=power_on, so the runs of one are not pooled with the other."
+    done
+    return 0
+}
+
+restart_line()
+{
+    case "${requested_class}" in
+        en_pin)
+            echo "# restart:       this script's EN-pin pulse through the console bridge's RTS line, NOT a power"
+            echo "#                cycle. The image decodes both as reset=power_on, so the decoded label cannot"
+            echo "#                distinguish them, and this series is not power-on evidence."
+            ;;
+        power_on)
+            echo "# restart:       a power cycle the operator was asked for; the decoded class is the only"
+            echo "#                evidence of it$([ "${board}" = "esp32" ] && echo ", and on this leg it cannot tell a power cycle from an EN-pin reset")."
+            ;;
+        pin)
+            echo "# restart:       this script's st-flash reset."
+            ;;
+        *)
+            echo "# restart:       not recorded by this comparison; the decoded class is the image's own."
+            ;;
+    esac
 }
 
 # The fingerprint and every posture field but the reset's own must agree, since
@@ -2153,7 +2214,8 @@ write_summary()
         echo "# compared:      $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "# mode:          $([ "${replay}" = "yes" ] && echo "replay of transcripts on disk" || echo "collected by this invocation")"
         echo "# kind:          ${image_kind}"
-        echo "# reset class:   ${requested_class} (requested; every counted and every refused run's decoded class is listed below)"
+        echo "# reset class:   ${requested_class} (requested; each run must decode reset=${decoded_class}; every counted and every refused run's decoded class is listed below)"
+        restart_line
         echo "# runs:          ${#runs[@]} counted$([ -n "${series_count}" ] && echo " of ${series_count} requested")"
         echo "# refused:       ${#refused[@]} decoded another class and were not counted"
         echo "# build id:      ${shared_id:-absent} (shared by every counted run)"
@@ -2194,17 +2256,25 @@ write_summary()
     } > "${series_dir}/compare-summary.txt"
 }
 
+refuse_en_pin_off_esp32()
+{
+    [ "${requested_class}" != "en_pin" ] || [ "${board}" = "esp32" ] \
+        || { usage; fail 2 "en_pin is the ESP32 leg's EN-pin restart class; the ${board_label} has no EN pin this script drives, and its script-driven restart is the 'pin' class."; }
+}
+
 compare_arguments()
 {
     if [ "${replay}" = "yes" ]; then
         [ "${#operands[@]}" -eq 2 ] || { usage; fail 2 "compare --replay takes a reset class and a series directory."; }
         requested_class="${operands[0]}"
         series_dir="${operands[1]}"
+        refuse_en_pin_off_esp32
     else
         [ "${#operands[@]}" -eq 3 ] || { usage; fail 2 "compare takes a run count, a reset class and a destination directory."; }
         series_count="${operands[0]}"
         requested_class="${operands[1]}"
         series_dir="${operands[2]}"
+        refuse_en_pin_off_esp32
         printf '%s\n' "${series_count}" | grep -Eqx '[1-9][0-9]*' && [ "${series_count}" -ge 2 ] \
             || fail 2 "the run count must be an integer of at least 2, since one run compares with nothing: '${series_count}'."
         case " ${collectable_classes} " in
@@ -2217,6 +2287,8 @@ compare_arguments()
             || fail 2 "COMPARE_ATTEMPTS must be a positive integer: '${compare_attempts}'."
     fi
     printf '%s\n' "${requested_class}" | grep -Eqx '[a-z_]+' || fail 2 "'${requested_class}' is not a reset class name."
+    decoded_class="${requested_class}"
+    [ "${requested_class}" != "en_pin" ] || decoded_class="power_on"
     if [ "${image_kind}" = "timing" ]; then
         printf '%s\n' "${spread_bound}" | grep -Eqx '[0-9]+' \
             || fail 2 "a timing series needs its spread bound stated as --bound=<cycles>, a non-negative integer: '${spread_bound}'."
@@ -2263,6 +2335,7 @@ run_compare()
     fi
 
     check_classes
+    check_restarts
     if [ "${#runs[@]}" -gt 0 ]; then
         check_shared
         compare_exact
@@ -2271,7 +2344,11 @@ run_compare()
     write_summary
     echo "summary written: ${series_dir}/compare-summary.txt"
     [ "${compare_status}" -eq 0 ] || exit "${compare_status}"
-    echo "series PASS: ${#runs[@]} runs, reset=${requested_class}, build id ${shared_id}"
+    if [ "${requested_class}" = "en_pin" ]; then
+        echo "series PASS: ${#runs[@]} runs, each restarted by an EN-pin pulse (not a power cycle) and decoded reset=power_on, build id ${shared_id}"
+    else
+        echo "series PASS: ${#runs[@]} runs, reset=${requested_class}, build id ${shared_id}"
+    fi
 }
 
 # --- discover -----------------------------------------------------------------
@@ -2393,15 +2470,21 @@ corrupt()
     printf '%s\n' "${file}"
 }
 
-# Three runs of one recording, the second corrupted.
+# Three runs of one recording, the second corrupted. A third argument names the
+# capture mode each run's header records, as a capture file's header would, so
+# the corruption can reach the header too.
 series()
 {
-    local dir="${self_test_root}/series-${self_test_cases}" index=""
+    local dir="${self_test_root}/series-${self_test_cases}" index="" source="${self_test_root}/$1.txt"
     mkdir -- "${dir}"
+    if [ -n "${3:-}" ]; then
+        source="${dir}/source"
+        { echo "# mode:      $3"; cat "${self_test_root}/$1.txt"; } > "${source}"
+    fi
     for index in 01 03; do
-        cp -- "${self_test_root}/$1.txt" "${dir}/run-${index}.txt"
+        cp -- "${source}" "${dir}/run-${index}.txt"
     done
-    sed -e "$2" "${self_test_root}/$1.txt" > "${dir}/run-02.txt"
+    sed -e "$2" "${source}" > "${dir}/run-02.txt"
     printf '%s\n' "${dir}"
 }
 
@@ -2422,8 +2505,35 @@ red_current()
 red_series()
 {
     local dir=""
-    dir="$(series "$1" "$7")"
+    dir="$(series "$1" "$7" "${8:-}")"
     expect_status "$4" "$5" "$6" self_test_compare "$1" "$2" "$3" "${dir}"
+}
+
+# A replay of a series, then the summary line the case names, echoed to the log
+# the case's fragment is matched against.
+self_test_compare_summary()
+{
+    self_test_compare "$1" "$2" "$3" "$4"
+    grep -F -- "$5" "$4/compare-summary.txt" >&2
+}
+
+# The ESP32 cut over a raw telemetry stream: an earlier report before the mark,
+# then the NUL bytes an unpowered board's idle-low TX line reads as, ahead of
+# the build id line, which the cut must still find.
+self_test_cut()
+{
+    use_fixture_reference "$1"
+    raw_stream="${self_test_root}/raw-${self_test_cases}"
+    transcript="${self_test_root}/cut-${self_test_cases}"
+    head -3 "${self_test_root}/$1.txt" > "${raw_stream}"
+    stream_mark="$(wc -c < "${raw_stream}")"
+    { printf '\000\000\000\000'; sed 's/$/\r/' "${self_test_root}/$1.txt"; cat "${self_test_root}/$1.txt"; } >> "${raw_stream}"
+    report_closed
+    cut_report
+    [ "${discarded}" -eq 0 ]
+    cp -- "${transcript}" "${transcript}.txt"
+    check_file "${transcript}.txt"
+    return "${check_status}"
 }
 
 # Read from this script's own source, so a refusal added without a case here
@@ -2495,12 +2605,31 @@ self_test_cases_esp32()
     red_check esp32-evidence 20 "does not add up" "ESP32: task stack figures that do not sum" '/^\[verdict\] stack region=program /s/ used=\([0-9]*\)/ used=\14/'
     red_check esp32-evidence 22 "names a 4096 B stack where the source names 8192 B" "ESP32: task stack disagreeing with the source" 's/^\(\[verdict\] stack region=program \).*/\1used=3152 free=944 of=4096 bytes/'
     red_check esp32-evidence 25 "is not a bit pattern of 8 hexadecimal digits" "ESP32: binary64-width value on the binary32 leg" '/^\[exact\] 7,/s/$/00000000/'
-    red_series esp32-evidence power_on "" 26 "decoded reset=panic where the series requires reset=power_on" "ESP32: run of another reset class" 's/^\(\[meta\] posture reset=\)power_on reset_reason=1 /\1panic reset_reason=4 /'
-    red_series esp32-evidence power_on "" 29 "reports the posture" "ESP32: posture differing outside the reset fields" 's/ core_mhz=160 / core_mhz=240 /'
+    red_series esp32-evidence power_on "" 26 "decoded reset=panic where the series requires reset=power_on" "ESP32: run of another reset class" 's/^\(\[meta\] posture reset=\)power_on reset_reason=1 /\1panic reset_reason=4 /' power-cycle
+    red_series esp32-evidence power_on "" 29 "reports the posture" "ESP32: posture differing outside the reset fields" 's/ core_mhz=160 / core_mhz=240 /' power-cycle
 
     expect_status 0 "" "ESP32: evidence recording, unchanged" self_test_check esp32-evidence "${self_test_root}/esp32-evidence.txt"
     expect_status 0 "" "ESP32: timing recording, unchanged" self_test_check esp32-timing "${self_test_root}/esp32-timing.txt"
-    expect_status 0 "" "ESP32: three unchanged timing runs, reset=power_on, bound 0" self_test_compare esp32-timing power_on 0 "$(series esp32-timing '')"
+    expect_status 0 "" "ESP32: three unchanged timing runs, reset=power_on, bound 0" self_test_compare esp32-timing power_on 0 "$(series esp32-timing '' power-cycle)"
+    expect_status 0 "" "ESP32: report head behind idle-low NUL bytes, cut and checked" self_test_cut esp32-timing
+    self_test_cases_en_pin
+}
+
+# The EN-pin class decodes as power_on, so what keeps it apart from a power_on
+# series is the restart each run's header records.
+self_test_cases_en_pin()
+{
+    local panic='s/^\(\[meta\] posture reset=\)power_on reset_reason=1 /\1panic reset_reason=4 /' dir=""
+    expect_status 2 "en_pin is the ESP32 leg's EN-pin restart class" "en_pin on the NUCLEO-H753ZI" self_test_compare timing en_pin 0 "$(series timing '' reset-only)"
+    red_series esp32-evidence en_pin "" 26 "decoded reset=panic where the series requires reset=power_on" "ESP32: en_pin run of another reset class" "${panic}" reset-only
+    red_series esp32-evidence en_pin "" 26 "records the restart mode 'power-cycle' where this en_pin series requires 'reset-only'" "ESP32: power-cycle run pooled into an en_pin series" 's/^# mode:      reset-only$/# mode:      power-cycle/' reset-only
+    red_series esp32-evidence power_on "" 26 "records the restart mode 'reset-only' where this power_on series requires 'power-cycle'" "ESP32: EN-pin run pooled into a power_on series" 's/^# mode:      power-cycle$/# mode:      reset-only/' power-cycle
+    red_series esp32-evidence en_pin "" 26 "records the restart mode 'none' where this en_pin series requires 'reset-only'" "ESP32: run without a restart record in an en_pin series" '/^# mode: /d' reset-only
+
+    expect_status 0 "NOT a power" "ESP32: three unchanged timing runs, en_pin, bound 0, summary naming the EN pulse" self_test_compare_summary esp32-timing en_pin 0 "$(series esp32-timing '' reset-only)" "EN-pin pulse through the console bridge's RTS line, NOT a power"
+    dir="$(series esp32-evidence '' reset-only)"
+    sed -e "${panic}" "${dir}/run-02.txt" > "${dir}/refused-01.txt"
+    expect_status 0 "refused-01.txt (refused, not counted) reset=panic" "ESP32: en_pin series listing a run of another class as refused" self_test_compare_summary esp32-evidence en_pin "" "${dir}" "refused-01.txt (refused, not counted) reset=panic"
 }
 
 # Lines the recordings were made without: the NUCLEO-H753ZI's boot handshake

@@ -25,7 +25,11 @@ image. The ESP32 leg's one stack line is judged on both.
 The self-test never edits these files. It copies the directory to a temporary
 root and synthesizes each corruption there, one per refusal status, then
 asserts the status and its message. It also asserts that the unchanged
-recordings, and three-run series built from them, pass.
+recordings, and three-run series built from them, pass. The ESP32 series get
+one synthesized header line, the capture mode a real run's header records,
+because the image decodes an EN-pin restart and a power cycle alike as
+`power_on`, and `compare` keeps an `en_pin` series apart from a `power_on` one
+by that mode alone.
 
 These recordings say nothing about the board on their own. They are a fixed
 sample of the stream format. When the firmware's report format changes, a new
