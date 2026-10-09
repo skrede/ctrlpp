@@ -90,7 +90,7 @@ auto setup(const qp_problem<double>& problem)
     -> ctrlpp::expected<void, argmin_qp_setup_error>;
 ```
 
-Fallible setup: poses and factorizes the problem once from the cost matrices P, q and constraint matrices A, l, u. Returns an empty `expected` on success and an `argmin_qp_setup_error` on failure. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
+Fallible setup: poses and factorizes the problem once from the cost matrices P, q and constraint matrices A, l, u. P is read as upper-triangular, the same convention `osqp_solver` uses and `build_cost_matrix` emits; setup expands it to the full symmetric matrix argmin's solver requires. Returns an empty `expected` on success and an `argmin_qp_setup_error` on failure. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
 
 ### solve
 

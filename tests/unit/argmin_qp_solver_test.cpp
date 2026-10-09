@@ -89,6 +89,27 @@ TEST_CASE("argmin_qp_solver setup then resolve reaches the analytic optimum", "[
     CHECK_THAT(result.x(1), WithinAbs(0.0, 1e-4));
 }
 
+TEST_CASE("argmin_qp_solver reads an upper-triangular P as the full symmetric Hessian", "[mpc][argmin][qp]")
+{
+    // P = [[2, 1], [1, 2]] stored upper-only, as build_cost_matrix emits it, and
+    // q = -(1, 1): the unconstrained optimum P^-1 (1, 1) = (1/3, 1/3) lies inside the box.
+    auto problem = make_box_qp();
+    problem.P.coeffRef(0, 0) = 2.0;
+    problem.P.coeffRef(1, 1) = 2.0;
+    problem.P.coeffRef(0, 1) = 1.0;
+    problem.P.makeCompressed();
+    problem.q = Eigen::Vector2d::Constant(-1.0);
+
+    ctrlpp::argmin_qp_solver solver(1e-8, 1e-8);
+    REQUIRE(solver.setup(problem).has_value());
+    auto result = solver.solve({.q = problem.q, .l = problem.l, .u = problem.u, .warm_x = {}, .warm_y = {}});
+
+    CHECK(result.status == ctrlpp::solve_status::optimal);
+    REQUIRE(result.x.size() == 2);
+    CHECK_THAT(result.x(0), WithinAbs(1.0 / 3.0, 1e-6));
+    CHECK_THAT(result.x(1), WithinAbs(1.0 / 3.0, 1e-6));
+}
+
 TEST_CASE("argmin_qp_solver preset constructors both solve the box QP", "[mpc][argmin][qp]")
 {
     auto problem = make_box_qp();

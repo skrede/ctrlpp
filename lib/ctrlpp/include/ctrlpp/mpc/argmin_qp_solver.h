@@ -94,7 +94,9 @@ public:
     /// only setup shape, and it is available in every build mode.
     auto setup(const qp_problem<double>& problem) -> ctrlpp::expected<void, argmin_qp_setup_error>
     {
-        if(auto err = solver_.solve_into(problem.P, problem.q, problem.A, problem.l, problem.u, last_, opts_))
+        // qp_problem carries P upper-triangular, OSQP's convention; argmin reads P as full symmetric.
+        const Eigen::SparseMatrix<double> full_p = problem.P.template selfadjointView<Eigen::Upper>();
+        if(auto err = solver_.solve_into(full_p, problem.q, problem.A, problem.l, problem.u, last_, opts_))
             return ctrlpp::unexpected(argmin_qp_setup_error::pose_failed);
         posed_ = true;
         return {};
