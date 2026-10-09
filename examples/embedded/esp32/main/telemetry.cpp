@@ -3,9 +3,7 @@
 #include "golden_reference.h"
 
 #include "sdkconfig.h"
-#include "esp_rom_sys.h"
 #include "esp_app_desc.h"
-#include "esp_idf_version.h"
 
 #include "driver/uart.h"
 
@@ -33,14 +31,6 @@ constexpr std::int32_t kBaud         = 115200;
 
 constexpr std::size_t kShaBytes = sizeof(esp_app_desc_t::app_elf_sha256);
 
-// The watchpoint makes up to 60 bytes of every task's stack unusable, so a stack
-// figure is only comparable with one taken under the same setting.
-#ifdef CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK
-constexpr bool kStackWatchpoint = true;
-#else
-constexpr bool kStackWatchpoint = false;
-#endif
-
 void write(std::string_view text)
 {
     uart_write_bytes(kTelemetryUart, text.data(), text.size());
@@ -67,17 +57,6 @@ std::array<char, 2 * kShaBytes + 1> elf_sha256_text()
         text[2 * i + 1] = digits[desc->app_elf_sha256[i] & 0xFU];
     }
     return text;
-}
-
-const char *optimization() noexcept
-{
-#if defined(__OPTIMIZE_SIZE__)
-    return "size";
-#elif defined(__OPTIMIZE__)
-    return "speed";
-#else
-    return "none";
-#endif
 }
 
 }
@@ -109,24 +88,30 @@ void emit_identity()
     char body[kLineBytes];
     std::snprintf(body, sizeof(body), "build_id=%s", elf_sha256_text().data());
     send_line(stream_tag::meta, body);
-    send_line(stream_tag::meta, "kind=uninstrumented");
+    send_line(stream_tag::meta, kAllocSensorPresent ? "kind=evidence" : "kind=timing");
     std::snprintf(body, sizeof(body), "board=ESP32-POE-EA target=%s loop=freertos-task-50hz scalar=float", CONFIG_IDF_TARGET);
     send_line(stream_tag::meta, body);
 }
 
-void emit_posture(const reset_cause &cause)
+void emit_allocation_canary(const canary_verdict &verdict)
 {
     char body[kLineBytes];
-    std::snprintf(body, sizeof(body), "posture reset=%s reset_reason=%" PRId32 " reset_rom=%" PRIu32 " core_mhz=%" PRIu32 " stack_watchpoint=%s optimize=%s compiler=gcc-%s idf=%s",
-                  name_of(cause.event), cause.reason, cause.rom_code, esp_rom_get_cpu_ticks_per_us(), kStackWatchpoint ? "on" : "off", optimization(), __VERSION__,
-                  esp_get_idf_version());
-    send_line(stream_tag::meta, body);
+    std::snprintf(body, sizeof(body), "allocation %s observed=%" PRIu32 " expected=%" PRIu32 " eigen_trips=%" PRIu32, verdict.live ? "PASS" : "FAIL", verdict.observed, verdict.expected,
+                  verdict.eigen_trips);
+    send_line(stream_tag::canary, body);
+    std::snprintf(body, sizeof(body), "heap_view %s retained=%" PRId32 " requested=%" PRIu32 " dip=%" PRIu32, verdict.heap_live ? "PASS" : "FAIL", verdict.heap.retained,
+                  verdict.requested, verdict.heap.dip);
+    send_line(stream_tag::canary, body);
 }
 
-void emit_canaries()
+void emit_counter_canary(counter_state state)
 {
-    send_line(stream_tag::canary, "allocation UNAVAILABLE -- this image carries no allocation sensor; no allocation figure is printed");
-    send_line(stream_tag::canary, "cycle_counter UNAVAILABLE -- this image carries no cycle counter; no timing figure is printed");
+    char body[kLineBytes];
+    if(state == counter_state::live)
+        std::snprintf(body, sizeof(body), "cycle_counter PASS state=live");
+    else
+        std::snprintf(body, sizeof(body), "cycle_counter UNAVAILABLE -- %s; no timing figure is printed", describe(state));
+    send_line(stream_tag::canary, body);
 }
 
 void emit_header(claim_class claim)
@@ -154,6 +139,29 @@ void emit_exact_row(std::int32_t k, const std::array<float, kExactValues> &value
     char body[kLineBytes];
     std::snprintf(body, sizeof(body), "%" PRId32 ",%s,%s,%s,%s", k, bits[0].data(), bits[1].data(), bits[2].data(), bits[3].data());
     send_line(stream_tag::exact, body);
+}
+
+void emit_spread_row(const timing_region &region, const cycle_distribution &d)
+{
+    static_assert(column_count(claim_class::spread) == 11, "emit_spread_row prints eleven values in the table's order");
+    constexpr std::uint64_t kTenthsPerCycle = 10;
+    char figures[kLineBytes / 2]            = ",,,,,";
+    if(d.n > 0)
+    {
+        const std::uint64_t tenths = (std::uint64_t{d.max} * kTenthsPerCycle + region.block / 2U) / region.block;
+        std::snprintf(figures, sizeof(figures), ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ".%" PRIu32, d.min, d.median, d.max, d.max_at,
+                      static_cast<std::uint32_t>(tenths / kTenthsPerCycle), static_cast<std::uint32_t>(tenths % kTenthsPerCycle));
+    }
+    char body[kLineBytes];
+    std::snprintf(body, sizeof(body), "%s,%s,%" PRIu32 ",%s,%" PRIu32 "%s,%" PRIu32, region.name, region.regime, d.n, region.basis, region.block, figures, d.wraps);
+    send_line(stream_tag::spread, body);
+}
+
+void emit_interruption(const timing_region &region, const cycle_distribution &d)
+{
+    char body[kLineBytes];
+    std::snprintf(body, sizeof(body), "interruption region=%s regime=%s tick_crossed=%" PRIu32 " of=%" PRIu32, region.name, region.regime, d.tick_crossed, d.n + d.wraps);
+    send_line(stream_tag::verdict, body);
 }
 
 void emit_gain(float k0, float k1)

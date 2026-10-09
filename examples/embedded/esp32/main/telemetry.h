@@ -1,7 +1,9 @@
 #ifndef HPP_GUARD_CTRLPP_EXAMPLES_EMBEDDED_ESP32_MAIN_TELEMETRY_H
 #define HPP_GUARD_CTRLPP_EXAMPLES_EMBEDDED_ESP32_MAIN_TELEMETRY_H
 
-#include "reset_reason.h"
+#include "alloc_sensor.h"
+#include "cycle_record.h"
+#include "cycle_counter.h"
 
 #include "telemetry_format.h"
 
@@ -11,7 +13,7 @@
 
 namespace ctrlpp {
 
-inline constexpr std::size_t kLineBytes = 256;
+inline constexpr std::size_t kLineBytes = 320;
 
 void telemetry_init();
 
@@ -21,15 +23,25 @@ void send_line(stream_tag tag, const char *body);
 
 void emit_identity();
 
-void emit_posture(const reset_cause &cause);
+void emit_allocation_canary(const canary_verdict &verdict);
 
-void emit_canaries();
+void emit_counter_canary(counter_state state);
 
 void emit_header(claim_class claim);
 
 inline constexpr std::size_t kExactValues = column_count(claim_class::exact) - 1;
 
 void emit_exact_row(std::int32_t k, const std::array<float, kExactValues> &values);
+
+// The figures are raw: each carries the instrument overhead, which the report
+// publishes on its own rows. A region whose every sample wrapped prints a zero
+// count and no figures.
+void emit_spread_row(const timing_region &region, const cycle_distribution &d);
+
+// How many of the region's samples the scheduler tick interrupt landed in: a
+// lower bound on how often it was interrupted, since other interrupts leave no
+// mark the instrument can read.
+void emit_interruption(const timing_region &region, const cycle_distribution &d);
 
 void emit_gain(float k0, float k1);
 

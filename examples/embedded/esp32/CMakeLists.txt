@@ -8,12 +8,22 @@
 # patterns, and the estimation, signal-processing, trajectory and control
 # families each judged against its host-double reference.
 #
+# Two images from the same sources. ctrlpp_esp32 is the allocation-evidence
+# image: it carries the allocation sensor and proves it can see an allocation.
+# ctrlpp_esp32_timing is built without the sensor, so the code it times carries
+# none of the sensor's checks; it proves the core's cycle counter live and times
+# the families. Each prints its kind and its own fingerprint.
+#
 # To run:
 #   1. Install ESP-IDF v5.3+ (https://docs.espressif.com/projects/esp-idf/).
 #   2. `. $IDF_PATH/export.sh`   (e.g. `. /opt/esp-idf/export.sh`)
 #   3. `idf.py -C examples/embedded/esp32 set-target esp32 && idf.py -C examples/embedded/esp32 build`
 #   4. To validate on hardware: `idf.py -p <flash-port> flash monitor`.
 #      The report is streamed on UART2 (ESP TX GPIO5 -> telemetry USB RX).
+#   5. For the timing image, after step 4 has written the bootloader and the
+#      partition table: `python -m esptool --chip esp32 -p <flash-port>
+#      write_flash 0x10000 build/ctrlpp_esp32_timing.bin` (the factory app
+#      offset in partitions.csv).
 #
 # Exercises ctrlpp control (lqr_gain, DARE-backed) with Scalar=float, exceptions
 # and RTTI off, size-optimized -- the realistic embedded posture.
@@ -29,3 +39,6 @@ list(APPEND CMAKE_INCLUDE_PATH "${CTRLPP_ROOT}/lib/ctrlpp/include")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(ctrlpp_esp32)
+
+include("${CMAKE_CURRENT_LIST_DIR}/timing_image.cmake")
+ctrlpp_esp32_timing_image()

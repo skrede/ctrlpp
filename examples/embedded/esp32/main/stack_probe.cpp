@@ -17,6 +17,8 @@
 // attempted, so a dimension that does not fit leaves a complete record of every
 // dimension below it.
 
+#include "eigen_alloc_sentinel.h"
+
 #include "stack_probe.h"
 
 #include "control_loop_demo.h"
