@@ -206,6 +206,10 @@
 #                            status 4 or 5 (default: 3)
 #   COMPARE_PLUG_TIMEOUT     seconds the power-on prompt waits for the node to
 #                            vanish, and again to return (default: 120)
+#   COMPARE_MAX_REFUSED      runs of another class a series may keep before it
+#                            stops with status 26, so an unattended series over an
+#                            image that never decodes the class ends (default:
+#                            unset, no limit)
 #
 # Exit status:
 #   0  capture written    2  usage       3  environment or build
@@ -257,7 +261,8 @@
 #      digits for binary64, 8 for binary32
 #  26  a run's decoded reset class is not the class the series requires, or on
 #      the ESP32 leg its header records a restart other than the one the
-#      series' class names, so an EN-pin run is not pooled with power-on runs
+#      series' class names, so an EN-pin run is not pooled with power-on runs,
+#      or a series kept COMPARE_MAX_REFUSED runs of another class
 #  27  the exact-class blocks of two runs differ
 #  28  a cycle field's spread across the runs exceeds the stated bound
 #  29  the runs do not share what a comparison needs them to share: the build
@@ -1857,6 +1862,7 @@ check_file()
 
 script_path="${script_dir}/$(basename "${BASH_SOURCE[0]}")"
 compare_attempts="${COMPARE_ATTEMPTS:-3}"
+max_refused="${COMPARE_MAX_REFUSED:-}"
 plug_timeout="${COMPARE_PLUG_TIMEOUT:-120}"
 
 # Every spread-class column belongs to one of these. A shape field says what was
@@ -2022,6 +2028,10 @@ collect_series()
         kept="$(printf '%s/refused-%02d.txt' "${series_dir}" "${refused}")"
         mv -- "${file}" "${kept}"
         run_log[${#run_log[@]} - 1]="$(basename "${kept}") (collected as $(basename "${file}")) ${run_log[${#run_log[@]} - 1]#* }"
+        if [ -n "${max_refused}" ] && [ "${refused}" -ge "${max_refused}" ]; then
+            compare_fail 26 "run ${index} decoded reset=${class:-absent}, and ${refused} runs of another class reach COMPARE_MAX_REFUSED; the series stops at $((index - 1)) counted runs."
+            return 0
+        fi
         echo "run ${index} decoded reset=${class:-absent} where the series requires reset=${decoded_class}; it is kept as $(basename "${kept}"), not counted, and run ${index} is collected again." >&2
     done
     return 0
@@ -2285,6 +2295,8 @@ compare_arguments()
             || fail 2 "COMPARE_PLUG_TIMEOUT must be a whole number of seconds: '${plug_timeout}'."
         printf '%s\n' "${compare_attempts}" | grep -Eqx '[1-9][0-9]*' \
             || fail 2 "COMPARE_ATTEMPTS must be a positive integer: '${compare_attempts}'."
+        [ -z "${max_refused}" ] || printf '%s\n' "${max_refused}" | grep -Eqx '[1-9][0-9]*' \
+            || fail 2 "COMPARE_MAX_REFUSED must be a positive integer: '${max_refused}'."
     fi
     printf '%s\n' "${requested_class}" | grep -Eqx '[a-z_]+' || fail 2 "'${requested_class}' is not a reset class name."
     decoded_class="${requested_class}"
