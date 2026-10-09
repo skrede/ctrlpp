@@ -40,8 +40,12 @@ Rejections, checked in order:
 | Condition | Error |
 |-----------|-------|
 | Fewer than `Degree + 1` control points | `spline_error::too_few_control_points` |
+| A NaN or infinite control point or knot | `spline_error::non_finite_input` |
 | Knot vector size differs from `control_points.size() + Degree + 1` | `spline_error::bad_knot_count` |
 | Knot vector not non-decreasing | `spline_error::non_monotonic_knots` |
+| A derivative control point leaves the representable range of `Scalar` | `spline_error::unrepresentable_spline` |
+
+The last check reads the derivative control points that `evaluate` uses for velocity and acceleration. Finite control points far enough apart that their difference quotient overflows are refused at construction rather than evaluating to NaN.
 
 ## Methods
 
@@ -81,6 +85,12 @@ Rejections, checked in order:
 |-----------|-------|
 | `times` and `positions` differ in length | `spline_error::size_mismatch` |
 | Fewer than `Degree + 1` waypoints | `spline_error::too_few_points` |
+| A NaN or infinite time or position | `spline_error::non_finite_input` |
+| A span `times[i + 1] - times[i]` overflows `Scalar` | `spline_error::unrepresentable_spline` |
+| `times` not strictly increasing | `spline_error::non_increasing_times` |
+| A solved control point leaves the representable range of `Scalar` | `spline_error::unrepresentable_spline` |
+
+The solved control points are checked directly because finite waypoints can still drive the solve out of range: a single waypoint of `1e308` among unit-scale neighbors yields infinite control points.
 
 Any downstream `bspline_trajectory::create` failure is propagated.
 

@@ -27,6 +27,8 @@ namespace ctrlpp
 ///                                 (2 for cubic and smoothing splines,
 ///                                 Degree + 1 for B-spline interpolation).
 ///  * size_mismatch              : times and positions differ in length.
+///  * non_finite_input           : a time, position, boundary velocity, control
+///                                 point, or knot is NaN or infinite.
 ///  * non_increasing_times       : knot times are not strictly increasing.
 ///  * periodic_endpoint_mismatch : periodic boundary conditions require the first
 ///                                 and last positions to match within the endpoint
@@ -46,7 +48,7 @@ namespace ctrlpp
 ///                                 statement about the type rather than about
 ///                                 the caller's data: nothing is wrong with the
 ///                                 waypoints, and a wider Scalar accepts the same
-///                                 configuration unchanged. Two constructions
+///                                 configuration unchanged. These constructions
 ///                                 raise it, for the same reason and with the same
 ///                                 remedy -- carry the command at a scale the type
 ///                                 spans:
@@ -59,7 +61,11 @@ namespace ctrlpp
 ///                                   - a smoothing spline whose regularized normal
 ///                                     equations cannot be squared without
 ///                                     overflow, which the decomposition that
-///                                     solves them does to every entry.
+///                                     solves them does to every entry;
+///                                   - a B-spline interpolation whose solved
+///                                     control points, or a B-spline whose
+///                                     derivative control points, leave the
+///                                     representable range.
 enum class spline_error
 {
     too_few_points,

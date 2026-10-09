@@ -14,6 +14,7 @@ Structured failure modes for the spline factories: `cubic_spline`, `smoothing_sp
 |------------|---------|
 | `too_few_points` | Fewer waypoints than the factory minimum (2 for cubic and smoothing splines, `Degree + 1` for B-spline interpolation) |
 | `size_mismatch` | `times` and `positions` differ in length |
+| `non_finite_input` | A time, position, boundary velocity, control point or knot is NaN/Inf |
 | `non_increasing_times` | Knot times are not strictly increasing |
 | `periodic_endpoint_mismatch` | Periodic boundary conditions require the first and last positions to match within the endpoint rounding budget |
 | `periodic_too_few_points` | Periodic boundary conditions require at least 3 waypoints |
@@ -21,7 +22,7 @@ Structured failure modes for the spline factories: `cubic_spline`, `smoothing_sp
 | `bad_knot_count` | Knot vector size differs from `control_points.size() + Degree + 1` |
 | `non_monotonic_knots` | Knot vector is not non-decreasing |
 | `mu_out_of_range` | Smoothing parameter mu lies outside (0, 1] |
-| `unrepresentable_spline` | The configuration is well posed and the arithmetic that would realize it is not representable in `Scalar`. A statement about the type rather than about the data: nothing is wrong with the waypoints, and a wider `Scalar` accepts the same configuration unchanged. Raised by a cubic or smoothing spline whose polynomial coefficients leave the representable range, and by a smoothing spline whose regularized normal equations cannot be squared without overflow |
+| `unrepresentable_spline` | The configuration is well posed and the arithmetic that would realize it is not representable in `Scalar`. A statement about the type rather than about the data: nothing is wrong with the waypoints, and a wider `Scalar` accepts the same configuration unchanged. Raised by a cubic or smoothing spline whose polynomial coefficients leave the representable range, by a smoothing spline whose regularized normal equations cannot be squared without overflow, by a time span that overflows, and by a B-spline interpolation whose solved control points, or a B-spline whose derivative control points, leave the representable range |
 
 ## Enum: `trajectory_error`
 

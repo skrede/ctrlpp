@@ -4,9 +4,11 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <limits>
 #include <vector>
 #include <cstddef>
 #include <utility>
+#include <algorithm>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
@@ -17,12 +19,25 @@ namespace
 // Construction is fallible, so every valid-input site goes through the factory
 // and asserts success here; a config that becomes unrealizable fails the test
 // instead of quietly skipping it. Rejection cases never use this helper.
-template <std::size_t Degree>
+template <int Degree>
+void require_finite_evaluation(ctrlpp::bspline_trajectory<double, Degree> const& spline, double t_begin)
+{
+    for (int i = 0; i <= 100; ++i) {
+        auto const pt = spline.evaluate(t_begin + spline.duration() * static_cast<double>(i) / 100.0);
+        REQUIRE(std::isfinite(pt.position(0)));
+        REQUIRE(std::isfinite(pt.velocity(0)));
+        REQUIRE(std::isfinite(pt.acceleration(0)));
+    }
+}
+
+template <int Degree>
 auto make_bspline(typename ctrlpp::bspline_trajectory<double, Degree>::config const& cfg)
     -> ctrlpp::bspline_trajectory<double, Degree>
 {
     auto created = ctrlpp::bspline_trajectory<double, Degree>::create(cfg);
     REQUIRE(created.has_value());
+    auto const t_begin = cfg.knot_vector.empty() ? 0.0 : cfg.knot_vector[static_cast<std::size_t>(Degree)];
+    require_finite_evaluation(*created, t_begin);
     return *std::move(created);
 }
 
@@ -70,6 +85,7 @@ TEST_CASE("make_bspline_interpolation passes through waypoints", "[bspline]")
 
     auto const bs = ctrlpp::make_bspline_interpolation<double, 3>(times, positions);
     REQUIRE(bs.has_value());
+    require_finite_evaluation(*bs, times.front());
 
     for (std::size_t i = 0; i < times.size(); ++i) {
         auto const pt = bs->evaluate(times[i]);
@@ -218,4 +234,115 @@ TEST_CASE("Velocity and acceleration via derivative de Boor", "[bspline]")
     // At interior points, velocity should be positive for ascending control points
     auto const mid = bs.evaluate(T * 0.5);
     REQUIRE(mid.velocity(0) > 0.0);
+}
+
+TEST_CASE("make_bspline_interpolation rejects a repeated time", "[trajectory][bspline][validation]")
+{
+    std::vector<double> times = {0.0, 1.0, 1.0, 2.0, 3.0, 4.0};
+    std::vector<double> positions = {0.0, 1.0, 5.0, 2.0, 3.0, 4.0};
+
+    auto const result = ctrlpp::make_bspline_interpolation<double, 3>(times, positions);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::non_increasing_times);
+}
+
+TEST_CASE("make_bspline_interpolation rejects a decreasing time", "[trajectory][bspline][validation]")
+{
+    std::vector<double> times = {0.0, 2.0, 1.0, 3.0, 4.0};
+    std::vector<double> positions = {0.0, 1.0, 2.0, 3.0, 4.0};
+
+    auto const result = ctrlpp::make_bspline_interpolation<double, 3>(times, positions);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::non_increasing_times);
+}
+
+TEST_CASE("make_bspline_interpolation rejects non-finite input", "[trajectory][bspline][validation]")
+{
+    auto const nan = std::numeric_limits<double>::quiet_NaN();
+    auto const inf = std::numeric_limits<double>::infinity();
+    std::vector<double> const times = {0.0, 1.0, 2.0, 3.0, 4.0};
+    std::vector<double> const positions = {0.0, 2.0, 1.0, 3.0, 5.0};
+
+    auto with = [](std::vector<double> values, double bad) {
+        values[2] = bad;
+        return values;
+    };
+
+    auto const nan_time = ctrlpp::make_bspline_interpolation<double, 3>(with(times, nan), positions);
+    auto const inf_time = ctrlpp::make_bspline_interpolation<double, 3>(with(times, inf), positions);
+    auto const nan_position = ctrlpp::make_bspline_interpolation<double, 3>(times, with(positions, nan));
+
+    REQUIRE_FALSE(nan_time.has_value());
+    REQUIRE(nan_time.error() == ctrlpp::spline_error::non_finite_input);
+    REQUIRE_FALSE(inf_time.has_value());
+    REQUIRE(inf_time.error() == ctrlpp::spline_error::non_finite_input);
+    REQUIRE_FALSE(nan_position.has_value());
+    REQUIRE(nan_position.error() == ctrlpp::spline_error::non_finite_input);
+}
+
+TEST_CASE("make_bspline_interpolation rejects a time span that overflows", "[trajectory][bspline][validation]")
+{
+    std::vector<double> times = {-1.5e308, 1.5e308, 1.6e308, 1.7e308};
+    std::vector<double> positions = {0.0, 1.0, 2.0, 3.0};
+
+    auto const result = ctrlpp::make_bspline_interpolation<double, 3>(times, positions);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::unrepresentable_spline);
+}
+
+TEST_CASE("make_bspline_interpolation rejects control points that leave the range", "[trajectory][bspline][validation]")
+{
+    std::vector<double> times = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
+    std::vector<double> positions = {0.0, 1.0, 1e308, 2.0, 3.0, 4.0};
+
+    auto const result = ctrlpp::make_bspline_interpolation<double, 3>(times, positions);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::unrepresentable_spline);
+}
+
+TEST_CASE("make_bspline_interpolation rejects a time range whose basis overflows", "[trajectory][bspline][validation]")
+{
+    std::vector<double> times = {-1e308, -0.5e308, 0.0, 0.5e308, 1e308};
+    std::vector<double> positions = {0.0, 1.0, 2.0, 3.0, 4.0};
+
+    auto const result = ctrlpp::make_bspline_interpolation<double, 3>(times, positions);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::unrepresentable_spline);
+}
+
+TEST_CASE("create rejects a NaN control point", "[trajectory][bspline][validation]")
+{
+    auto const result = ctrlpp::bspline_trajectory<double, 3>::create({
+        .control_points = {0.0, 1.0, std::numeric_limits<double>::quiet_NaN(), 2.0, 4.0},
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::non_finite_input);
+}
+
+TEST_CASE("create rejects infinite knots", "[trajectory][bspline][validation]")
+{
+    auto const inf = std::numeric_limits<double>::infinity();
+    auto const result = ctrlpp::bspline_trajectory<double, 3>::create({
+        .control_points = {0.0, 1.0, 2.0, 3.0},
+        .knot_vector = {0.0, 0.0, 0.0, 0.0, inf, inf, inf, inf},
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::non_finite_input);
+}
+
+TEST_CASE("create rejects control points whose derivative overflows", "[trajectory][bspline][validation]")
+{
+    auto const result = ctrlpp::bspline_trajectory<double, 3>::create({
+        .control_points = {0.0, 1.0, 1.5e308, -1.5e308},
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::unrepresentable_spline);
 }

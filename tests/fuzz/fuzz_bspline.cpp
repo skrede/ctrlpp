@@ -1,11 +1,12 @@
 #include "ctrlpp/trajectory/bspline_trajectory.h"
 
-#include <algorithm>
 #include <cmath>
+#include <vector>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
-#include <vector>
+#include <algorithm>
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
 {
@@ -50,12 +51,13 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     auto pt = result->evaluate(eval_t);
 
+    // An accepted spline built from finite input must evaluate finite.
     if(!std::isfinite(pt.position(0)))
-        return 0;
+        abort();
     if(!std::isfinite(pt.velocity(0)))
-        return 0;
+        abort();
     if(!std::isfinite(pt.acceleration(0)))
-        return 0;
+        abort();
 
     return 0;
 }
