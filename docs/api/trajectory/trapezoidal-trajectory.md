@@ -21,6 +21,7 @@ struct config {
     Scalar q0, q1;         // start/end positions
     Scalar v_max, a_max;   // kinematic limits
     Scalar v0{}, v1{};     // initial/final velocities (default 0)
+    std::uint32_t boundary_velocity_rounding_ops{}; // admitted excess of v0, v1 over v_max, in units of eps * v_max; default 0
 };
 ```
 
@@ -80,7 +81,7 @@ Checked in order:
 | NaN or infinite `q0`, `q1`, `v0`, or `v1` | `trajectory_error::non_finite_input` |
 | NaN, infinite, or non-positive `v_max` | `trajectory_error::non_positive_velocity_limit` |
 | NaN, infinite, or non-positive `a_max` | `trajectory_error::non_positive_acceleration_limit` |
-| `abs(v0) > v_max` or `abs(v1) > v_max` | `trajectory_error::boundary_velocity_exceeds_limit` |
+| `abs(v0) - v_max` or `abs(v1) - v_max` above `boundary_velocity_rounding_ops * eps * v_max` | `trajectory_error::boundary_velocity_exceeds_limit` |
 | a displacement the two boundary velocities cannot be reconciled with at a representable acceleration | `trajectory_error::unreachable_boundary_velocity` |
 | a negative phase duration or total duration | `trajectory_error::unreachable_boundary_velocity` |
 | a duration outside the representable range, or a total that underflowed to zero on a nonzero displacement or velocity change | `trajectory_error::unrepresentable_duration` |
@@ -88,6 +89,8 @@ Checked in order:
 ### The velocity limit is a precondition
 
 `abs(v0) <= v_max` and `abs(v1) <= v_max` are preconditions of the type, not invariants construction restores. Raising the limit to fit a boundary velocity would return a profile that violates a bound the caller stated, which is the same silent-success defect a rejection exists to prevent; honoring the limit while accepting the command would need a ramp that runs backwards in time, since the acceleration phase spans `(v_v - v0) / a` and a cruise velocity held under the limit with `v0` above it makes that span negative. Reaching the limit exactly is inside the domain: the ramp attached to that boundary velocity simply vanishes.
+
+`boundary_velocity_rounding_ops` counts the roundings the caller's own chain put on a boundary velocity, for example a velocity handed over from evaluating a previous segment. A boundary velocity whose excess over `v_max` is at most `boundary_velocity_rounding_ops * eps * v_max` is admitted and clamped to `+-v_max`, and that clamped value is what the profile stores and `evaluate` reports. The default 0 is the exact contract. The library picks no count of its own because it cannot see the caller's chain.
 
 ### Realizability
 

@@ -91,7 +91,9 @@ enum class spline_error
 ///                                      raising it would violate a bound the
 ///                                      caller asked for, and honoring it would
 ///                                      require a ramp that runs backwards in
-///                                      time.
+///                                      time. The comparison admits an excess
+///                                      of boundary_velocity_rounding_ops * eps
+///                                      * v_max, zero by default.
 ///  * unrepresentable_duration        : the arithmetic cannot represent or
 ///                                      resolve what the answer needs. Five
 ///                                      cases, all of them facts about the

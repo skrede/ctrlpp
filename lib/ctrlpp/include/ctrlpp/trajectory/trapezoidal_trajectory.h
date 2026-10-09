@@ -16,12 +16,15 @@
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
+#include "ctrlpp/trajectory/detail/boundary_velocity.h"
+
 #include "ctrlpp/util/concepts.h"
 
 #include <array>
 #include <cmath>
 #include <limits>
 #include <cstddef>
+#include <cstdint>
 #include <algorithm>
 
 namespace ctrlpp
@@ -77,6 +80,7 @@ class trapezoidal_trajectory
         Scalar q0, q1;
         Scalar v_max, a_max;
         Scalar v0{}, v1{};
+        std::uint32_t boundary_velocity_rounding_ops{};
     };
 
     /// @brief Construct a profile, or report why the command has none.
@@ -88,7 +92,8 @@ class trapezoidal_trajectory
     ///    trajectory_error::non_positive_velocity_limit
     ///  * a NaN, infinite, or non-positive acceleration limit ->
     ///    trajectory_error::non_positive_acceleration_limit
-    ///  * a boundary velocity above the velocity limit in magnitude ->
+    ///  * a boundary velocity above the velocity limit by more than
+    ///    `boundary_velocity_rounding_ops * eps * v_max` ->
     ///    trajectory_error::boundary_velocity_exceeds_limit
     ///  * a commanded displacement the two boundary velocities cannot be
     ///    reconciled with at a representable acceleration ->
@@ -108,6 +113,10 @@ class trapezoidal_trajectory
     /// backwards in time: the acceleration phase spans (v_v - v0) / a, and a
     /// cruise velocity held under the limit while v0 sits above it makes that
     /// span negative.
+    ///
+    /// Within that excess the boundary velocity is admitted and clamped to
+    /// `+-v_max`, which is the value the profile stores and `evaluate` reports.
+    /// The default 0 is the exact contract.
     ///
     /// One outcome deliberately does NOT appear in that list. Where the two
     /// boundary velocities cannot be reconciled over the commanded displacement
@@ -139,22 +148,24 @@ class trapezoidal_trajectory
     /// of the test's own rounding.
     ///
     /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
-    static auto create(config const& cfg)
+    static auto create(config const& requested)
         -> ctrlpp::expected<trapezoidal_trajectory, trajectory_error>
     {
-        if (!std::isfinite(cfg.q0) || !std::isfinite(cfg.q1) || !std::isfinite(cfg.v0)
-            || !std::isfinite(cfg.v1)) {
+        if (!std::isfinite(requested.q0) || !std::isfinite(requested.q1) || !std::isfinite(requested.v0)
+            || !std::isfinite(requested.v1)) {
             return ctrlpp::unexpected(trajectory_error::non_finite_input);
         }
-        if (!std::isfinite(cfg.v_max) || cfg.v_max <= Scalar{0}) {
+        if (!std::isfinite(requested.v_max) || requested.v_max <= Scalar{0}) {
             return ctrlpp::unexpected(trajectory_error::non_positive_velocity_limit);
         }
-        if (!std::isfinite(cfg.a_max) || cfg.a_max <= Scalar{0}) {
+        if (!std::isfinite(requested.a_max) || requested.a_max <= Scalar{0}) {
             return ctrlpp::unexpected(trajectory_error::non_positive_acceleration_limit);
         }
-        if (std::abs(cfg.v0) > cfg.v_max || std::abs(cfg.v1) > cfg.v_max) {
-            return ctrlpp::unexpected(trajectory_error::boundary_velocity_exceeds_limit);
+        auto const admitted = admit_boundary_velocities(requested);
+        if (!admitted.has_value()) {
+            return ctrlpp::unexpected(admitted.error());
         }
+        auto const& cfg = *admitted;
         if (!std::isfinite(solve_acceleration(cfg))) {
             return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
         }
@@ -324,6 +335,19 @@ class trapezoidal_trajectory
     {
         explicit unchecked_t() = default;
     };
+
+    static auto admit_boundary_velocities(config const& cfg) -> ctrlpp::expected<config, trajectory_error>
+    {
+        auto const v0 = detail::admit_boundary_velocity(cfg.v0, cfg.v_max, cfg.boundary_velocity_rounding_ops);
+        auto const v1 = detail::admit_boundary_velocity(cfg.v1, cfg.v_max, cfg.boundary_velocity_rounding_ops);
+        if (!v0.has_value() || !v1.has_value()) {
+            return ctrlpp::unexpected(trajectory_error::boundary_velocity_exceeds_limit);
+        }
+        auto admitted = cfg;
+        admitted.v0 = *v0;
+        admitted.v1 = *v1;
+        return admitted;
+    }
 
     /// @brief Acceleration magnitude the command is realized at.
     ///

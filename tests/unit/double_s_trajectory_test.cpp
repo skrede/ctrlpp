@@ -540,6 +540,49 @@ TEST_CASE("Double-S: entering at the limit near the fastest transition builds at
     }
 }
 
+TEMPLATE_TEST_CASE("Double-S: a counted boundary velocity tolerance admits and clamps, and refuses beyond it",
+                   "[trajectory][double_s]", float, double)
+{
+    using Scalar = TestType;
+    using traj_t = ctrlpp::double_s_trajectory<Scalar>;
+    auto const create = [](Scalar q1, Scalar v0, Scalar v1, std::uint32_t rounding_ops) {
+        return traj_t::create({.q0 = Scalar{0},
+                               .q1 = q1,
+                               .v_max = Scalar{1},
+                               .a_max = Scalar{1},
+                               .j_max = Scalar{1},
+                               .v0 = v0,
+                               .v1 = v1,
+                               .boundary_velocity_rounding_ops = rounding_ops});
+    };
+    auto const one_ulp_above = std::nextafter(Scalar{1}, Scalar{2});
+    auto const two_ulp_above = std::nextafter(one_ulp_above, Scalar{2});
+
+    auto const exact = create(Scalar{10}, one_ulp_above, Scalar{0}, 0);
+    REQUIRE_FALSE(exact.has_value());
+    REQUIRE(exact.error() == ctrlpp::trajectory_error::boundary_velocity_exceeds_limit);
+
+    auto const entering = create(Scalar{10}, one_ulp_above, Scalar{0}, 1);
+    REQUIRE(entering.has_value());
+    REQUIRE(entering.value().evaluate(Scalar{0}).velocity[0] == Scalar{1});
+    REQUIRE(entering.value().peak_velocity() <= Scalar{1});
+
+    auto const beyond = create(Scalar{10}, two_ulp_above, Scalar{0}, 1);
+    REQUIRE_FALSE(beyond.has_value());
+    REQUIRE(beyond.error() == ctrlpp::trajectory_error::boundary_velocity_exceeds_limit);
+    REQUIRE(create(Scalar{10}, two_ulp_above, Scalar{0}, 2).has_value());
+
+    auto const negative = create(Scalar{-10}, -one_ulp_above, Scalar{0}, 1);
+    REQUIRE(negative.has_value());
+    REQUIRE(negative.value().evaluate(Scalar{0}).velocity[0] == Scalar{-1});
+
+    auto const leaving = create(Scalar{10}, Scalar{0}, one_ulp_above, 1);
+    REQUIRE(leaving.has_value());
+    REQUIRE(leaving.value().evaluate(leaving.value().duration()).velocity[0] == Scalar{1});
+
+    REQUIRE(create(Scalar{10}, Scalar{1}, Scalar{0}, 0).has_value());
+}
+
 // --------------------------------------------------------------------------
 // A displacement below what the boundary velocities already sweep
 // --------------------------------------------------------------------------

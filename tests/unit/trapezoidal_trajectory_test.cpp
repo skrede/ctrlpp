@@ -1,11 +1,13 @@
 #include "ctrlpp/trajectory/trapezoidal_trajectory.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <array>
 #include <cmath>
 #include <limits>
+#include <cstdint>
 #include <algorithm>
 
 using Catch::Matchers::WithinAbs;
@@ -24,6 +26,27 @@ auto built(ctrlpp::trapezoidal_trajectory<double>::config const& cfg)
     auto created = ctrlpp::trapezoidal_trajectory<double>::create(cfg);
     REQUIRE(created.has_value());
     return created.value();
+}
+
+template <typename Scalar>
+auto sampled_peak_speed(ctrlpp::trapezoidal_trajectory<Scalar> const& traj) -> Scalar
+{
+    constexpr std::int32_t samples = 4096;
+    auto peak = Scalar{0};
+    for (std::int32_t i = 0; i <= samples; ++i) {
+        auto const t = traj.duration() * static_cast<Scalar>(i) / static_cast<Scalar>(samples);
+        peak = std::max(peak, std::abs(traj.evaluate(t).velocity[0]));
+    }
+    return peak;
+}
+
+auto stepped(double value, std::int32_t steps) -> double
+{
+    auto const toward = (steps < 0) ? -std::numeric_limits<double>::infinity() : std::numeric_limits<double>::infinity();
+    for (std::int32_t i = 0; i < std::abs(steps); ++i) {
+        value = std::nextafter(value, toward);
+    }
+    return value;
 }
 
 }
@@ -264,6 +287,94 @@ TEST_CASE("Trapezoidal: a boundary velocity above the velocity limit is rejected
     auto const phases = at_limit.value().phase_durations();
     REQUIRE_THAT(phases[0], WithinAbs(0.0, 0.0));
     REQUIRE(at_limit.value().duration() > 0.0);
+}
+
+TEMPLATE_TEST_CASE("Trapezoidal: a counted boundary velocity tolerance admits and clamps, and refuses beyond it",
+                   "[trajectory][trapezoidal]", float, double)
+{
+    using Scalar = TestType;
+    using traj_t = ctrlpp::trapezoidal_trajectory<Scalar>;
+    auto const create = [](Scalar q1, Scalar v0, Scalar v1, std::uint32_t rounding_ops) {
+        return traj_t::create({.q0 = Scalar{0},
+                               .q1 = q1,
+                               .v_max = Scalar{1},
+                               .a_max = Scalar{1},
+                               .v0 = v0,
+                               .v1 = v1,
+                               .boundary_velocity_rounding_ops = rounding_ops});
+    };
+    auto const one_ulp_above = std::nextafter(Scalar{1}, Scalar{2});
+    auto const two_ulp_above = std::nextafter(one_ulp_above, Scalar{2});
+
+    auto const exact = create(Scalar{10}, one_ulp_above, Scalar{0}, 0);
+    REQUIRE_FALSE(exact.has_value());
+    REQUIRE(exact.error() == ctrlpp::trajectory_error::boundary_velocity_exceeds_limit);
+
+    auto const entering = create(Scalar{10}, one_ulp_above, Scalar{0}, 1);
+    REQUIRE(entering.has_value());
+    REQUIRE(entering.value().evaluate(Scalar{0}).velocity[0] == Scalar{1});
+    REQUIRE(sampled_peak_speed(entering.value()) <= Scalar{1});
+
+    auto const beyond = create(Scalar{10}, two_ulp_above, Scalar{0}, 1);
+    REQUIRE_FALSE(beyond.has_value());
+    REQUIRE(beyond.error() == ctrlpp::trajectory_error::boundary_velocity_exceeds_limit);
+    REQUIRE(create(Scalar{10}, two_ulp_above, Scalar{0}, 2).has_value());
+
+    auto const negative = create(Scalar{-10}, -one_ulp_above, Scalar{0}, 1);
+    REQUIRE(negative.has_value());
+    REQUIRE(negative.value().evaluate(Scalar{0}).velocity[0] == Scalar{-1});
+    REQUIRE(sampled_peak_speed(negative.value()) <= Scalar{1});
+
+    auto const leaving = create(Scalar{10}, Scalar{0}, one_ulp_above, 1);
+    REQUIRE(leaving.has_value());
+    REQUIRE(leaving.value().evaluate(leaving.value().duration()).velocity[0] == Scalar{1});
+    REQUIRE(sampled_peak_speed(leaving.value()) <= Scalar{1});
+
+    REQUIRE(create(Scalar{10}, Scalar{1}, Scalar{0}, 0).has_value());
+}
+
+TEST_CASE("Trapezoidal: boundary velocities stepped across the limit build at it or are refused",
+          "[trajectory][trapezoidal]")
+{
+    struct limit
+    {
+        double v_max;
+        std::int32_t steps_within_four_ops;
+    };
+    struct end
+    {
+        double sigma;
+        bool entering;
+    };
+    // Above 1 one step is eps; above 0.7 one step is eps / 2, so 4 eps * 0.7 spans five steps.
+    for (auto const l : std::array<limit, 2>{{{1.0, 4}, {0.7, 5}}}) {
+        for (auto const e : std::array<end, 4>{{{1.0, true}, {1.0, false}, {-1.0, true}, {-1.0, false}}}) {
+            for (std::uint32_t const k : std::array<std::uint32_t, 2>{0, 4}) {
+                for (std::int32_t step = -3; step <= 6; ++step) {
+                    auto const v = e.sigma * stepped(l.v_max, step);
+                    CAPTURE(l.v_max, e.sigma, e.entering, k, step, v);
+                    auto const created = ctrlpp::trapezoidal_trajectory<double>::create(
+                        {.q0 = 0.0,
+                         .q1 = 10.0 * e.sigma,
+                         .v_max = l.v_max,
+                         .a_max = 1.0,
+                         .v0 = e.entering ? v : 0.0,
+                         .v1 = e.entering ? 0.0 : v,
+                         .boundary_velocity_rounding_ops = k});
+                    if (step > (k == 0 ? 0 : l.steps_within_four_ops)) {
+                        REQUIRE_FALSE(created.has_value());
+                        REQUIRE(created.error() == ctrlpp::trajectory_error::boundary_velocity_exceeds_limit);
+                        continue;
+                    }
+                    REQUIRE(created.has_value());
+                    auto const& traj = created.value();
+                    REQUIRE(sampled_peak_speed(traj) <= l.v_max);
+                    auto const at_end = traj.evaluate(e.entering ? 0.0 : traj.duration()).velocity[0];
+                    REQUIRE(at_end == (step > 0 ? e.sigma * l.v_max : v));
+                }
+            }
+        }
+    }
 }
 
 // -- Test 14: the subnormal underflow route to a negative duration -----------

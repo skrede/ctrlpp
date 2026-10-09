@@ -21,6 +21,7 @@ struct config {
     Scalar q0, q1;              // start/end positions
     Scalar v_max, a_max, j_max; // kinematic limits
     Scalar v0{}, v1{};          // initial/final velocities (default 0)
+    std::uint32_t boundary_velocity_rounding_ops{}; // admitted excess of v0, v1 over v_max, in units of eps * v_max; default 0
 };
 ```
 
@@ -55,7 +56,7 @@ Checked in order:
 | NaN, infinite, or non-positive `v_max` | `trajectory_error::non_positive_velocity_limit` |
 | NaN, infinite, or non-positive `a_max` | `trajectory_error::non_positive_acceleration_limit` |
 | NaN, infinite, or non-positive `j_max` | `trajectory_error::non_positive_jerk_limit` |
-| `abs(v0) > v_max` or `abs(v1) > v_max` | `trajectory_error::boundary_velocity_exceeds_limit` |
+| `abs(v0) - v_max` or `abs(v1) - v_max` above `boundary_velocity_rounding_ops * eps * v_max` | `trajectory_error::boundary_velocity_exceeds_limit` |
 | a displacement below the distance the transition between the boundary velocities already sweeps | `trajectory_error::unreachable_boundary_velocity` |
 | a negative segment duration or total duration | `trajectory_error::unreachable_boundary_velocity` |
 | a duration outside the representable range | `trajectory_error::unrepresentable_duration` |
@@ -65,6 +66,8 @@ Checked in order:
 ### The velocity limit is a precondition
 
 `abs(v0) <= v_max` and `abs(v1) <= v_max` are preconditions of the type, not invariants construction restores. Raising the limit to fit a boundary velocity would return a profile that violates a bound the caller stated, which is the same silent-success defect a rejection exists to prevent. Reaching the limit exactly is inside the domain: the ramp attached to that boundary velocity simply vanishes.
+
+`boundary_velocity_rounding_ops` counts the roundings the caller's own chain put on a boundary velocity, for example a velocity handed over from evaluating a previous segment. A boundary velocity whose excess over `v_max` is at most `boundary_velocity_rounding_ops * eps * v_max` is admitted and clamped to `+-v_max`, and that clamped value is what the profile stores and `evaluate` reports. The default 0 is the exact contract. The library picks no count of its own because it cannot see the caller's chain.
 
 ### Realizability
 

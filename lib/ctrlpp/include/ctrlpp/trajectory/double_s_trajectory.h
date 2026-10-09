@@ -19,11 +19,14 @@
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
+#include "ctrlpp/trajectory/detail/boundary_velocity.h"
+
 #include "ctrlpp/util/concepts.h"
 
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <algorithm>
 
 namespace ctrlpp
@@ -52,6 +55,7 @@ public:
         Scalar q0, q1;
         Scalar v_max, a_max, j_max;
         Scalar v0{}, v1{}; ///< initial/final velocities (default 0)
+        std::uint32_t boundary_velocity_rounding_ops{};
     };
 
     /// @brief Construct a profile, or report why the command has none.
@@ -65,7 +69,8 @@ public:
     ///    trajectory_error::non_positive_acceleration_limit
     ///  * a NaN, infinite, or non-positive jerk limit ->
     ///    trajectory_error::non_positive_jerk_limit
-    ///  * a boundary velocity above the velocity limit in magnitude ->
+    ///  * a boundary velocity above the velocity limit by more than
+    ///    `boundary_velocity_rounding_ops * eps * v_max` ->
     ///    trajectory_error::boundary_velocity_exceeds_limit
     ///  * a commanded displacement below the distance the fastest admissible
     ///    transition between the two boundary velocities already sweeps, of
@@ -83,6 +88,10 @@ public:
     /// return a profile that violates a limit the caller stated, which is the
     /// same silent-success defect a rejection exists to prevent.
     ///
+    /// Within that excess the boundary velocity is admitted and clamped to
+    /// `+-v_max`, which is the value the profile stores and `evaluate` reports.
+    /// The default 0 is the exact contract.
+    ///
     /// A seven-segment profile cannot sweep less ground than the fastest
     /// admissible transition from the larger of the two positive-frame boundary
     /// velocities to the smaller one: covering less would require overshooting
@@ -95,25 +104,27 @@ public:
     /// when both boundary velocities are zero as well.
     ///
     /// @cite biagiotti2009 -- Sec. 3.4.1, p.79-85
-    static auto create(config const& cfg)
+    static auto create(config const& requested)
         -> ctrlpp::expected<double_s_trajectory, trajectory_error>
     {
-        if (!std::isfinite(cfg.q0) || !std::isfinite(cfg.q1) || !std::isfinite(cfg.v0)
-            || !std::isfinite(cfg.v1)) {
+        if (!std::isfinite(requested.q0) || !std::isfinite(requested.q1) || !std::isfinite(requested.v0)
+            || !std::isfinite(requested.v1)) {
             return ctrlpp::unexpected(trajectory_error::non_finite_input);
         }
-        if (!std::isfinite(cfg.v_max) || cfg.v_max <= Scalar{0}) {
+        if (!std::isfinite(requested.v_max) || requested.v_max <= Scalar{0}) {
             return ctrlpp::unexpected(trajectory_error::non_positive_velocity_limit);
         }
-        if (!std::isfinite(cfg.a_max) || cfg.a_max <= Scalar{0}) {
+        if (!std::isfinite(requested.a_max) || requested.a_max <= Scalar{0}) {
             return ctrlpp::unexpected(trajectory_error::non_positive_acceleration_limit);
         }
-        if (!std::isfinite(cfg.j_max) || cfg.j_max <= Scalar{0}) {
+        if (!std::isfinite(requested.j_max) || requested.j_max <= Scalar{0}) {
             return ctrlpp::unexpected(trajectory_error::non_positive_jerk_limit);
         }
-        if (std::abs(cfg.v0) > cfg.v_max || std::abs(cfg.v1) > cfg.v_max) {
-            return ctrlpp::unexpected(trajectory_error::boundary_velocity_exceeds_limit);
+        auto const admitted = admit_boundary_velocities(requested);
+        if (!admitted.has_value()) {
+            return ctrlpp::unexpected(admitted.error());
         }
+        auto const& cfg = *admitted;
 
         auto const h_signed = cfg.q1 - cfg.q0;
         if (h_signed == Scalar{0}) {
@@ -393,6 +404,19 @@ private:
         q = q_value;
         dq = dq_value;
         ddq = ddq_value;
+    }
+
+    static auto admit_boundary_velocities(config const& cfg) -> ctrlpp::expected<config, trajectory_error>
+    {
+        auto const v0 = detail::admit_boundary_velocity(cfg.v0, cfg.v_max, cfg.boundary_velocity_rounding_ops);
+        auto const v1 = detail::admit_boundary_velocity(cfg.v1, cfg.v_max, cfg.boundary_velocity_rounding_ops);
+        if (!v0.has_value() || !v1.has_value()) {
+            return ctrlpp::unexpected(trajectory_error::boundary_velocity_exceeds_limit);
+        }
+        auto admitted = cfg;
+        admitted.v0 = *v0;
+        admitted.v1 = *v1;
+        return admitted;
     }
 
     /// @brief Rebuild the profile with every kinematic limit scaled, or report that
