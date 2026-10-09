@@ -23,7 +23,8 @@ void usart3_console_init() noexcept
     RCC->APB1LENR |= RCC_APB1LENR_USART3EN;
     (void)RCC->APB1LENR;
 
-    // PD8 = USART3_TX, alternate function 7. (RX/PD9 not needed for output.)
+    // PD8 = USART3_TX, alternate function 7. PD9, the receiver, is configured
+    // only for the boot handshake, by boot_handshake.cpp.
     GPIOD->MODER = (GPIOD->MODER & ~(0x3u << (8 * 2))) | (0x2u << (8 * 2));
     GPIOD->AFR[1] = (GPIOD->AFR[1] & ~(0xFu << ((8 - 8) * 4)))
                   | (0x7u << ((8 - 8) * 4));

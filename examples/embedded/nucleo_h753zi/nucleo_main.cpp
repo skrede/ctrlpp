@@ -4,9 +4,10 @@
 // ctrlpp NUCLEO-H753ZI on-device leg (bare superloop, double FPU).
 //
 // CMSIS startup runs SystemInit + C++ static ctors, then calls main(). This
-// prints the reset that started the run and the posture it is taken under, then
-// either proves the allocation sensor is not blind (the evidence image) or proves
-// the cycle counter live and times every family cold and warm (the timing image).
+// waits, bounded, for the host's handshake byte, prints the reset that started
+// the run and the posture it is taken under, then either proves the allocation
+// sensor is not blind (the evidence image) or proves the cycle counter live and
+// times every family cold and warm (the timing image).
 // It then designs the infinite-horizon LQR gain once, runs the closed loop with
 // the sensor armed around each step, streams the trajectory's exact rows over
 // USART3 -> ST-Link VCP, runs the estimation, signal-processing, trajectory and
@@ -20,6 +21,7 @@
 #include "reset_cause.h"
 #include "alloc_sensor.h"
 #include "family_report.h"
+#include "boot_handshake.h"
 #include "stack_watermark_board.h"
 
 #include "dsp_demo.h"
@@ -92,13 +94,17 @@ void report_golden(const demo_type &demo, const ctrlpp::golden_verdict &verdict,
 
 // The startup figure is read before main does anything else, so it covers reset
 // and static construction; the program figure is read after the last family and
-// the golden judgment, ahead of the closing report. The reset flags are cleared
-// only once the posture line carrying them has been printed.
+// the golden judgment, ahead of the closing report. The boot handshake waits
+// after the startup read and before the first line, so a reader that attaches
+// late still gets the report's head. The reset flags are cleared only once the
+// posture line carrying them has been printed.
 int main()
 {
     const ctrlpp::stack_reading startup = ctrlpp::read_program_stack();
     ctrlpp::usart3_console_init();
+    ctrlpp::await_boot_handshake();
     ctrlpp::emit_identity();
+    ctrlpp::emit_boot_handshake();
     ctrlpp::report_posture();
     ctrlpp::clear_reset_cause();
     ctrlpp::report_stack("startup", startup);

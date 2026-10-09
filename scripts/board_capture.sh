@@ -42,7 +42,10 @@
 #                  series prompts the operator to unplug and replug the board and
 #                  waits, bounded, for the serial node to vanish and return; no
 #                  tool here can cut the target's power. A run whose decoded
-#                  class is not the requested one is refused and not counted.
+#                  class is not the requested one is not counted: it is kept as
+#                  refused-NN.txt, listed in the summary with its decoded class,
+#                  and the operator is prompted again until <count> runs are
+#                  counted. Any other refusal of a run ends the series.
 #   exact class    the [exact] lines, compared byte for byte in order against the
 #                  first run, with no rounding, normalization or sorting; the
 #                  refusal names the first differing line and byte.
@@ -115,13 +118,16 @@
 #                  flashing, the binary's descriptor is read with esptool and
 #                  must name the same digest, so the binary written is the ELF
 #                  the report is checked against.
-#   report         the image keeps running after its report: the stack probe
-#                  that follows it ends in a deliberate overflow and the panic
-#                  handler restarts the chip, so the board emits a report on
-#                  every boot. The capture is the first report after the
-#                  restart this script made, from its build id line to its
+#   report         the evidence image keeps running after its report: the
+#                  stack probe that follows it ends in a deliberate overflow and
+#                  the panic handler restarts the chip, so that image emits a
+#                  report on every boot. The timing image runs no probe and
+#                  reports once per boot. The capture is the first report after
+#                  the restart this script made, from its build id line to its
 #                  closing verdict; residue before that line is discarded and
-#                  its size is stated in the capture header.
+#                  its size is stated in the capture header. The ESP32 leg has
+#                  no boot handshake: its telemetry adapter is a USB device of
+#                  its own and stays attached through a restart.
 #   differences    binary32 exact rows (8 hexadecimal digits); the predictive
 #                  family must be declared ABSENT on exactly one line; no
 #                  predictive timing region; posture fields reset_reason and
@@ -133,6 +139,16 @@
 # report once at boot and then idles, so a reader attached afterwards reads an
 # empty stream; that is a failed capture and this script says so rather than
 # reporting a pass it did not earn.
+#
+# Boot handshake (the NUCLEO-H753ZI leg): the image waits at boot, before it
+# measures or prints anything, for one byte from the host on the virtual COM
+# port, the kBootHandshakeByte that boot_handshake.h names, for at most the
+# timeout that header documents. Once its reader is attached, this script sends
+# that byte about once a second until the report's build id line arrives, in
+# every capture mode, so a reader that attaches late, after a power cycle or a
+# re-enumeration, still gets the report's head. The image reports the outcome
+# on a [meta] boot_handshake line, and a report whose wait expired is refused:
+# it began with no reader attached, so its head may be lost.
 #
 # The read is bounded twice over: at most CAPTURE_READ_TIMEOUT seconds (default
 # 45) and at most CAPTURE_BYTE_CAP bytes (default 262144), whichever comes first,
@@ -167,8 +183,8 @@
 #   CAPTURE_CONSOLE_PORT     ESP32 only: the console port, the board's USB
 #                            bridge, when discovery must be overridden
 #   CAPTURE_CONSOLE_TAIL     ESP32 only: seconds the console is read past the
-#                            report's closing line, for the stack probe that
-#                            prints after it (default: 15)
+#                            report's closing line, for the evidence image's
+#                            stack probe that prints after it (default: 15)
 #   CAPTURE_READ_TIMEOUT     seconds (default: 45)
 #   CAPTURE_BYTE_CAP         bytes (default: 262144)
 #   CAPTURE_BUILD_JOBS       build parallelism (default: 6)
@@ -180,11 +196,15 @@
 # Exit status:
 #   0  capture written    2  usage       3  environment or build
 #   1  a self-test assertion did not hold
-#   4  empty stream       5  no fingerprint line
+#   4  empty stream
+#   5  no fingerprint line, or on the NUCLEO-H753ZI leg no boot handshake line
+#      or one whose wait expired: either way the report's head may be lost
 #   6  fingerprint mismatch (the resident image is not the built one)
 #   7  no verdict line    8  verdict FAIL
-#   9  no allocation-sensor canary line
-#  10  canary FAIL (the sensor did not observe its deliberate allocations)
+#   9  no allocation-sensor canary line, or on the ESP32 leg no heap-view
+#      canary line or one without its self-count
+#  10  canary FAIL (the sensor did not observe its deliberate allocations), or
+#      on the ESP32 leg a heap-view canary that is not PASS
 #  11  a family's verdict line is missing or repeated, or on the ESP32 leg the
 #      predictive family is not declared ABSENT on exactly one line
 #  12  a family's verdict is not PASS
@@ -227,6 +247,10 @@
 #  29  the runs do not share what a comparison needs them to share: the build
 #      id, the posture outside the reset fields, the spread rows and their
 #      shape fields, or a spread column this script can classify
+#  30  on the ESP32 leg, an armed window's heap view is not clean: a verdict
+#      line carrying heap figures carries no heap_view verdict, or one other
+#      than clean, so the window kept or dipped by more than the view's own
+#      snapshot
 #
 # --- What this capture does NOT establish -------------------------------------
 #
@@ -300,9 +324,15 @@
 #      vanishing proves the ST-LINK lost its USB connection, not that the
 #      target's supply decayed; the decoded class is the only evidence, and it
 #      is only as good as the priming run that cleared the flags before it.
-#      The reader attaches after the ST-LINK enumerates and the target does not
-#      wait for that, so a power-on report can lose its head and refuse with
-#      status 5.
+#      The reader attaches after the ST-LINK enumerates; the image's boot
+#      handshake holds the report until this script's byte arrives, and only
+#      up to its timeout, so a replug slower than that still loses the head
+#      and is refused with status 5. A series counts only runs that decoded
+#      the requested class, so its exit status alone does not say how many
+#      replugs it took: the refused runs are listed in its summary.
+#      The handshake byte is a control character a modem manager's AT probe
+#      never sends, but any process that writes that byte to the port during
+#      the wait releases it as this script would.
 #
 #  11. The spread bound is one absolute cycle count applied to every timed
 #      region's raw figures, from the 129-cycle overhead to the predictive
@@ -357,13 +387,23 @@
 #
 #  17. The allocation canary proves the counter saw a plain and an aligned C++
 #      new; this leg does not wrap the C allocation family, so a C allocation
-#      is visible only to the free-heap view printed beside it, which this
-#      script transports and does not judge.
+#      is visible only to the free-heap view printed beside it. That view's
+#      own start call allocates a snapshot inside every window, so it never
+#      reads zero: the image measures that self-count with an empty window,
+#      prints it on the heap-view canary line, and judges each window against
+#      it, and this script refuses a heap-view canary that did not see the
+#      requested bytes beyond the self-count and a window that kept or dipped
+#      by more than it. The view counts the whole heap, so another task's
+#      allocation inside a window fails it too; it cannot say whose it was.
 #
 #  18. The timed task runs with the scheduler and interrupts enabled, so a
 #      timing figure includes whatever preempted it. The interruption lines
 #      count the samples the scheduler tick landed in, a lower bound on how
-#      often a sample was interrupted; other interrupts leave no mark.
+#      often a sample was interrupted; other interrupts leave no mark. The
+#      timing image stops the task watchdog before it reports, since a timed
+#      block outlasts its timeout without yielding, and its schedule line
+#      prints the watchdog's state; this script transports that field and does
+#      not require it.
 
 set -euo pipefail
 
@@ -418,6 +458,13 @@ reset_quote='reset=[^ ]* reset_flags=[^ ]* reset_rsr=[^ ]*'
 
 # The reset classes "compare" can produce on this station.
 collectable_classes="pin power_on"
+
+# The NUCLEO-H753ZI image waits at boot for the host's byte; the ESP32 leg's
+# telemetry adapter stays attached through a restart, so it needs none.
+handshake_required="yes"
+
+# The ESP32 evidence image prints a free-heap view beside its allocation count.
+heap_view_judged="no"
 
 board="nucleo"
 board_label="NUCLEO-H753ZI"
@@ -475,6 +522,8 @@ select_board()
     posture_fields="reset reset_reason reset_rom core_mhz cycle_bits cycle_wrap_ms stack_watchpoint assertions optimize compiler idf"
     reset_quote='reset=[^ ]* reset_reason=[^ ]* reset_rom=[^ ]*'
     collectable_classes="power_on"
+    handshake_required="no"
+    heap_view_judged="yes"
 }
 
 for arg in "$@"; do
@@ -734,17 +783,50 @@ reference_reserve=""
 reference_origin=""
 reference_evidence_id=""
 reference_toolchain=""
+reference_predates=""
+
+# A recording made before the image printed a line names that line in its
+# reference, so the self-test replays it under the checks it was made for. A
+# built image predates nothing.
+predates()
+{
+    case " ${reference_predates} " in
+        *" $1 "*) return 0 ;;
+    esac
+    return 1
+}
 
 load_elf_reference()
 {
     [ -f "${elf_path}" ] || fail 3 "no ${elf_path}; run 'board_capture.sh prepare' first."
     reference_id="$(elf_build_id)"
     [ -n "${reference_id}" ] || fail 3 "${elf_path} carries no NT_GNU_BUILD_ID note; the image cannot be fingerprinted."
+    reference_predates="$(elf_predates)"
     reference_reserve="$(elf_stack_reserve)"
     reference_origin="${elf_path}"
     reference_toolchain="$(toolchain_line)"
     if [ "${image_kind}" = "timing" ]; then
         reference_evidence_id="$(elf_build_id "${evidence_elf}")"
+    fi
+}
+
+# The report lines an image predates, read from its symbols: an image built
+# before a line existed carries no code to print it, so its transcripts are
+# checked as they were made. Here-strings rather than pipes, so grep stopping at
+# its first match cannot fail the pipeline under pipefail.
+elf_predates()
+{
+    local nm="${toolchain_prefix}nm" compiler="" symbols=""
+    if [ "${board}" = "esp32" ]; then
+        compiler="$(sed -n 's/^ *"c_compiler": *"\([^"]*\)".*/\1/p' "${build_dir}/project_description.json" 2>/dev/null | head -1)"
+        nm="${compiler%gcc}nm"
+    fi
+    symbols="$("${nm}" "${elf_path}" 2>/dev/null)" || fail 3 "'${nm}' could not read the symbols of ${elf_path}, so the report lines the image prints are unknown."
+    if [ "${handshake_required}" = "yes" ] && ! grep -q 'await_boot_handshake' <<< "${symbols}"; then
+        printf 'boot_handshake '
+    fi
+    if [ "${heap_view_judged}" = "yes" ] && ! grep -q 'alloc_sensor_heap_self' <<< "${symbols}"; then
+        printf 'heap_self '
     fi
 }
 
@@ -846,7 +928,7 @@ board_reset()
 
 wait_for_report()
 {
-    local waited=0 size=0
+    local port="$1" waited=0 size=0
     while [ "${waited}" -lt "${read_timeout}" ]; do
         size="$(wc -c < "${raw_stream}" 2>/dev/null || echo 0)"
         if [ "${size}" -ge "${byte_cap}" ]; then
@@ -855,10 +937,35 @@ wait_for_report()
         if grep -q "${report_end_marker}" "${raw_stream}" 2>/dev/null; then
             return 0
         fi
+        release_handshake "${port}"
         sleep 1
         waited=$((waited + 1))
     done
     return 0
+}
+
+# The byte the image waits for, as boot_handshake.h names it, checked to be one
+# hexadecimal byte and turned into the octal escape POSIX printf takes.
+handshake_escape=""
+
+load_handshake_byte()
+{
+    local value=""
+    value="$(sed -n 's/^inline constexpr std::uint8_t kBootHandshakeByte = 0x\([0-9A-Fa-f][0-9A-Fa-f]\);$/\1/p' "${leg_dir}/boot_handshake.h")"
+    [ -n "${value}" ] || fail 3 "${leg_dir}/boot_handshake.h names no kBootHandshakeByte, so the byte the image waits for at boot is unknown."
+    printf -v handshake_escape '\\%03o' "0x${value}"
+}
+
+# Sent until the report opens: a byte sent while the target is still held in
+# reset is lost, and once the image has taken one it no longer reads the line.
+# The open is bounded because a serial node can block an open for its carrier.
+release_handshake()
+{
+    [ "${handshake_required}" = "yes" ] || return 0
+    if grep -q '^\[meta\] build_id=' "${raw_stream}" 2>/dev/null; then
+        return 0
+    fi
+    timeout 2 sh -c 'printf "$1" > "$2"' sh "${handshake_escape}" "$1" 2>/dev/null || true
 }
 
 # --- refusals -----------------------------------------------------------------
@@ -877,6 +984,7 @@ verify_transcript()
     [ "${printed_id}" = "${reference_id}" ] \
         || fail 6 "the running image is NOT the built one: the board reported ${printed_id} but ${reference_origin} is ${reference_id}. Flash the target before capturing."
 
+    verify_handshake
     verify_kind
     verify_posture
 
@@ -892,6 +1000,9 @@ verify_transcript()
     fi
 
     verify_families
+    if [ "${image_kind}" = "evidence" ] && [ "${heap_view_judged}" = "yes" ]; then
+        verify_heap_windows
+    fi
     verify_tags
     verify_spread_header
 
@@ -911,6 +1022,58 @@ verify_transcript()
 block_lines()
 {
     sed -n "s/^\[$1\] //p" "${transcript}"
+}
+
+# A report whose wait expired began with no reader attached, so its head may be
+# missing even where the fingerprint line survived.
+verify_handshake()
+{
+    local line=""
+    [ "${handshake_required}" = "yes" ] || return 0
+    if predates boot_handshake; then
+        return 0
+    fi
+    line="$(grep -m 1 '^\[meta\] boot_handshake ' "${transcript}" || true)"
+    [ -n "${line}" ] \
+        || fail 5 "the captured report carries no '[meta] boot_handshake' line, so whether its head reached the reader is unstated."
+    printf '%s\n' "${line}" | grep -q '^\[meta\] boot_handshake state=received ' \
+        || fail 5 "the image's boot handshake was not received: '${line}'. It began reporting with no reader attached, so the head of its report may be lost."
+    return 0
+}
+
+# The heap view never reads zero, since its own snapshot lands in every window,
+# so its canary is live only if the window kept the requested bytes beyond that
+# self-count, and the self-count must be printed for the windows to be judged.
+verify_heap_canary()
+{
+    local line=""
+    line="$(grep -m 1 '^\[canary\] heap_view ' "${transcript}" || true)"
+    [ -n "${line}" ] \
+        || fail 9 "the captured report carries no '[canary] heap_view' line, so the heap view printed beside the allocation figures never proved it can see an allocation."
+    printf '%s\n' "${line}" | grep -q '^\[canary\] heap_view PASS ' \
+        || fail 10 "the heap-view canary did not pass: '${line}'. A view that did not see the canary's bytes beyond its own snapshot is blind to the allocations it is printed beside."
+    if predates heap_self; then
+        return 0
+    fi
+    printf '%s\n' "${line}" | grep -Eq ' self=[0-9]+( |$)' \
+        || fail 9 "the heap-view canary line carries no self-count, so the windows' heap figures have nothing to be judged against: '${line}'."
+    return 0
+}
+
+# Each window's view is judged on the board against the self-count; one that
+# kept or dipped by more saw an allocation, the library's or another task's.
+verify_heap_windows()
+{
+    local line=""
+    while IFS= read -r line; do
+        if printf '%s\n' "${line}" | grep -q ' heap_view='; then
+            printf '%s\n' "${line}" | grep -Eq ' heap_view=clean( |$)' \
+                || fail 30 "an armed window's heap view is not clean: it kept or dipped by more than the view's own snapshot: '${line}'."
+        elif ! predates heap_self; then
+            fail 30 "a line carrying heap figures carries no heap_view verdict: '${line}'."
+        fi
+    done < <(grep '^\[verdict\] .* heap_retained=' "${transcript}" || true)
+    return 0
 }
 
 verify_tags()
@@ -1124,6 +1287,9 @@ verify_canary()
     printf '%s\n' "${canary_line}" | grep -q '^\[canary\] allocation PASS observed=[1-9]' \
         || fail 10 "the allocation-sensor canary did not pass: '${canary_line}'. A zero reported by a sensor that missed its own deliberate allocations is blindness, not evidence."
 
+    if [ "${heap_view_judged}" = "yes" ]; then
+        verify_heap_canary
+    fi
     return 0
 }
 
@@ -1150,6 +1316,9 @@ write_artifact()
         echo "# The build id above is the linker's SHA-1 note, read out of the ELF with"
         echo "# ${toolchain_prefix}readelf -n and matched against the line the firmware printed."
         echo "# It is an identity check against accidental staleness, not a signature."
+        echo "#"
+        echo "# Handshake: $(sed -n 's/^\[meta\] boot_handshake //p' "${transcript}" | head -1), the image's"
+        echo "# wait at boot for this script's byte before it printed anything."
         echo "#"
         echo "# Reset: $(sed -n 's/^\[meta\] posture \(reset=[^ ]* reset_flags=[^ ]* reset_rsr=[^ ]*\).*/\1/p' "${transcript}" | head -1),"
         echo "# as the image decoded its reset status register before clearing it. The label"
@@ -1540,8 +1709,8 @@ write_artifact_esp32()
         echo "#"
         echo "# Stack: the [verdict] stack line is the control task's high-water as FreeRTOS"
         echo "# counts it, against the ${reference_reserve}-byte task stack the source names, taken"
-        echo "# with $(posture_of "${transcript}" | grep -o 'stack_watchpoint=[^ ]*' || true). The stack probe's per-dimension lines are in"
-        echo "# the console record and are not judged here."
+        echo "# with $(posture_of "${transcript}" | grep -o 'stack_watchpoint=[^ ]*' || true). The evidence image's stack probe prints its"
+        echo "# per-dimension lines in the console record, and they are not judged here."
         if [ "${image_kind}" = "timing" ]; then
             band_cause_esp32
         fi
@@ -1577,6 +1746,7 @@ do_capture()
         mountpoint -q "${mount_dir}" || fail 3 "'${mount_dir}' exists but is not a mount point; refusing to write the image into the local filesystem."
     fi
 
+    load_handshake_byte
     raw_stream="$(mktemp "${TMPDIR:-/tmp}/ctrlpp-board-capture-raw.XXXXXX")"
     transcript="$(mktemp "${TMPDIR:-/tmp}/ctrlpp-board-capture.XXXXXX")"
     trap cleanup EXIT
@@ -1598,7 +1768,7 @@ do_capture()
             ;;
     esac
 
-    wait_for_report
+    wait_for_report "${port}"
     reader_stop
 
     tr -d '\r' < "${raw_stream}" > "${transcript}"
@@ -1740,6 +1910,21 @@ await_power_cycle()
     [ -e "${node}" ] \
         || fail 3 "power cycle timed out: ${node} did not reappear within ${plug_timeout} s after the unplug."
     echo ">>> device node back: ${node}" >&2
+    await_node_open "${node}"
+}
+
+# A node can appear before the device manager has made it accessible, so it is
+# opened once, bounded, before the capture's reader needs it. The image waits
+# for the handshake meanwhile, so the wait costs no part of the report.
+await_node_open()
+{
+    local waited=0
+    until stty -F "$1" 115200 raw -echo 2>/dev/null; do
+        [ "${waited}" -lt $((plug_timeout * 10)) ] \
+            || fail 3 "power cycle: $1 came back but could not be opened within ${plug_timeout} s."
+        sleep 0.1
+        waited=$((waited + 1))
+    done
 }
 
 # A lost report head (an empty stream, or no fingerprint line) is the transport
@@ -1774,22 +1959,33 @@ collect_one()
 # The ESP32 rewrites its reset code on every reset and needs no clearing, but it
 # is primed the same way, an EN-pin restart, so the resident image is checked
 # before the operator is asked for anything.
+#
+# A run that decoded another class is evidence about the restart, not about the
+# image, so it is kept under its own name, listed in the summary and collected
+# again; a run the capture refused ends the series, and the summary is still
+# written for the runs that were counted.
 collect_series()
 {
-    local index=1 file="" status=0 class=""
+    local index=1 refused=0 file="" status=0 class="" kept=""
     collect_one "${series_dir}/priming.txt" pin || fail "$?" "the priming run was refused; the series was not started."
     while [ "${index}" -le "${series_count}" ]; do
         file="$(printf '%s/run-%02d.txt' "${series_dir}" "${index}")"
         status=0
         collect_one "${file}" "${requested_class}" || status=$?
-        [ "${status}" -eq 0 ] || fail "${status}" "run ${index} of the series was refused by the capture; the series stops at $((index - 1)) runs."
-        class="$(posture_field "${file}" reset)"
-        if [ "${class}" != "${requested_class}" ]; then
-            mv -- "${file}" "${file%.txt}-refused.txt"
-            compare_fail 26 "run ${index} decoded reset=${class:-absent} where the series requires reset=${requested_class}; it is kept as $(basename "${file%.txt}")-refused.txt and not counted, and the series stops."
+        if [ "${status}" -ne 0 ]; then
+            compare_fail "${status}" "run ${index} of the series was refused by the capture; the series stops at $((index - 1)) counted runs."
             return 0
         fi
-        index=$((index + 1))
+        class="$(posture_field "${file}" reset)"
+        if [ "${class}" = "${requested_class}" ]; then
+            index=$((index + 1))
+            continue
+        fi
+        refused=$((refused + 1))
+        kept="$(printf '%s/refused-%02d.txt' "${series_dir}" "${refused}")"
+        mv -- "${file}" "${kept}"
+        run_log[${#run_log[@]} - 1]="$(basename "${kept}") (collected as $(basename "${file}")) ${run_log[${#run_log[@]} - 1]#* }"
+        echo "run ${index} decoded reset=${class:-absent} where the series requires reset=${requested_class}; it is kept as $(basename "${kept}"), not counted, and run ${index} is collected again." >&2
     done
     return 0
 }
@@ -1927,15 +2123,19 @@ AWK
 
 write_summary()
 {
-    local run="" verdict="PASS"
+    local run="" verdict="PASS" refused=()
+    for run in "${series_dir}"/refused-[0-9][0-9].txt; do
+        [ -f "${run}" ] && refused+=("${run}")
+    done
     [ "${compare_status}" -eq 0 ] || verdict="FAIL (status ${compare_status}): ${compare_note}"
     {
         echo "# ctrlpp ${board_label} determinism comparison"
         echo "# compared:      $(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "# mode:          $([ "${replay}" = "yes" ] && echo "replay of transcripts on disk" || echo "collected by this invocation")"
         echo "# kind:          ${image_kind}"
-        echo "# reset class:   ${requested_class} (requested; every counted run's decoded class is listed below)"
+        echo "# reset class:   ${requested_class} (requested; every counted and every refused run's decoded class is listed below)"
         echo "# runs:          ${#runs[@]} counted$([ -n "${series_count}" ] && echo " of ${series_count} requested")"
+        echo "# refused:       ${#refused[@]} decoded another class and were not counted"
         echo "# build id:      ${shared_id:-absent} (shared by every counted run)"
         if [ "${image_kind}" = "timing" ]; then
             echo "# evidence:      ${reference_evidence_id:-absent} (the allocation-evidence image built from the same sources)"
@@ -1950,6 +2150,9 @@ write_summary()
         fi
         for run in "${runs[@]}"; do
             echo "#   $(basename "${run}") $(posture_of "${run}" | grep -o "${reset_quote}")"
+        done
+        for run in "${refused[@]+"${refused[@]}"}"; do
+            echo "#   $(basename "${run}") (refused, not counted) $(posture_of "${run}" | grep -o "${reset_quote}" || echo "no posture line")"
         done
         for run in "${run_log[@]+"${run_log[@]}"}"; do
             echo "#   collection: ${run}"
@@ -2031,7 +2234,7 @@ run_compare()
         [ "${#runs[@]}" -ge 2 ] || fail 2 "'${series_dir}' holds ${#runs[@]} run-NN.txt files; a comparison needs at least 2."
     else
         mkdir -p -- "${series_dir}" || fail 2 "cannot create '${series_dir}'."
-        ! compgen -G "${series_dir}/run-*.txt" > /dev/null \
+        ! compgen -G "${series_dir}/run-*.txt" > /dev/null && ! compgen -G "${series_dir}/refused-*.txt" > /dev/null \
             || fail 2 "'${series_dir}' already holds run files; a series is collected into a directory of its own."
         collect_series
         for run in "${series_dir}"/run-[0-9][0-9].txt; do
@@ -2106,12 +2309,23 @@ use_fixture_reference()
     reference_reserve="$(fixture_value stack_reserve "${file}")"
     reference_evidence_id="$(fixture_value evidence_build_id "${file}")"
     reference_toolchain="$(fixture_value toolchain "${file}")"
+    reference_predates="$(fixture_value predates "${file}")"
     reference_origin="board_capture_fixtures/${file}"
 }
 
 self_test_check()
 {
     use_fixture_reference "$1"
+    check_file "$2"
+    return "${check_status}"
+}
+
+# The checks a built image gets: nothing is predated, so a line the recording
+# was made without is required, and a case supplies it by synthesis.
+self_test_check_current()
+{
+    use_fixture_reference "$1"
+    reference_predates=""
     check_file "$2"
     return "${check_status}"
 }
@@ -2176,6 +2390,13 @@ red_check()
     local file=""
     file="$(corrupt "$1" "$5")"
     expect_status "$2" "$3" "$4" self_test_check "$1" "${file}"
+}
+
+red_current()
+{
+    local file=""
+    file="$(corrupt "$1" "$5")"
+    expect_status "$2" "$3" "$4" self_test_check_current "$1" "${file}"
 }
 
 red_series()
@@ -2262,6 +2483,26 @@ self_test_cases_esp32()
     expect_status 0 "" "ESP32: three unchanged timing runs, reset=power_on, bound 0" self_test_compare esp32-timing power_on 0 "$(series esp32-timing '')"
 }
 
+# Lines the recordings were made without: the NUCLEO-H753ZI's boot handshake
+# and the ESP32 heap view's self-count and per-window verdicts. Each is
+# synthesized into a copy and checked as a built image's report would be.
+self_test_cases_current()
+{
+    local handshake='/^\[meta\] kind=evidence$/{p;s/.*/[meta] boot_handshake state=STATE waited_ms=WAITED timeout_ms=10000/;}'
+    local heap='s/^\(\[canary\] heap_view .*\)$/\1 self=24/;/ heap_retained=4824 /s/$/ heap_windows=201 heap_view=clean/;/ heap_retained=24 /s/$/ heap_windows=1 heap_view=clean/'
+
+    red_current evidence 5 "carries no '[meta] boot_handshake' line" "boot handshake line missing" ''
+    red_current evidence 5 "boot handshake was not received" "boot handshake expired" "$(printf '%s' "${handshake}" | sed 's/STATE/timeout/;s/WAITED/10000/')"
+    red_check esp32-evidence 9 "carries no '[canary] heap_view' line" "ESP32: heap-view canary missing" '/^\[canary\] heap_view /d'
+    red_check esp32-evidence 10 "heap-view canary did not pass" "ESP32: heap-view canary blind" 's/^\(\[canary\] heap_view \)PASS/\1FAIL/'
+    red_current esp32-evidence 9 "carries no self-count" "ESP32: heap-view canary without its self-count" ''
+    red_current esp32-evidence 30 "carries no heap_view verdict" "ESP32: heap figures without a verdict" 's/^\(\[canary\] heap_view .*\)$/\1 self=24/'
+    red_check esp32-evidence 30 "heap view is not clean" "ESP32: window kept more than the view's snapshot" '/^\[verdict\] family dsp /s/$/ heap_windows=1 heap_view=FAIL/'
+
+    expect_status 0 "" "boot handshake received" self_test_check_current evidence "$(corrupt evidence "$(printf '%s' "${handshake}" | sed 's/STATE/received/;s/WAITED/812/')")"
+    expect_status 0 "" "ESP32: heap view clean against its self-count" self_test_check_current esp32-evidence "$(corrupt esp32-evidence "${heap}")"
+}
+
 self_test_cases_green()
 {
     expect_status 0 "" "evidence recording, unchanged" self_test_check evidence "${self_test_root}/evidence.txt"
@@ -2285,6 +2526,7 @@ do_self_test()
     self_test_cases_single
     self_test_cases_series
     self_test_cases_esp32
+    self_test_cases_current
 
     implemented="$(implemented_refusals)"
     for status in ${implemented}; do

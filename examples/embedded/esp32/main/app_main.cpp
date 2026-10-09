@@ -106,11 +106,14 @@ void run_report(demo_type &demo)
     // running it concurrently would take the board down before this loop -- the
     // harness's actual witness -- had finished its steps and said whether it
     // agreed with the host.
-    ctrlpp::start_stack_probe();
+    if constexpr(ctrlpp::kStackProbeRuns)
+        ctrlpp::start_stack_probe();
 }
 
 void control_task(void *)
 {
+    if constexpr(!ctrlpp::kAllocSensorPresent)
+        ctrlpp::stop_task_watchdog();
     report_opening();
     auto demo = demo_type::make();
     if(demo.has_value())

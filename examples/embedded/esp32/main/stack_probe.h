@@ -8,7 +8,12 @@ namespace ctrlpp {
 // ESP-IDF FreeRTOS stack sizes are in bytes, not words.
 inline constexpr std::uint32_t kControlTaskStackBytes = 8 * 1024;
 
-// Its second pass ends in a deliberate stack overflow, which resets the chip.
+// The probe's second pass ends in a deliberate stack overflow, which panics and
+// resets the chip, so it runs in the evidence image only: the timing image then
+// restarts when its capture restarts it rather than in a panic after every
+// report.
+inline constexpr bool kStackProbeRuns = CTRLPP_MCU_ALLOC_SENTINEL != 0;
+
 void start_stack_probe();
 
 }

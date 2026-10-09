@@ -12,6 +12,13 @@ namespace ctrlpp {
 // Interrupts and the scheduler are left as the demonstration runs them.
 counter_state run_timing();
 
+// The estimation family's warm block runs for longer than the task watchdog's
+// timeout without yielding, and the watchdog's report would then land inside a
+// timed sample. Feeding it or yielding inside the block would change what the
+// block measures, so the timing image stops the watchdog before it reports and
+// the posture line says so; the evidence image keeps the shipped watchdog.
+void stop_task_watchdog() noexcept;
+
 }
 
 #endif

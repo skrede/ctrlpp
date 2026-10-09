@@ -99,8 +99,8 @@ void emit_allocation_canary(const canary_verdict &verdict)
     std::snprintf(body, sizeof(body), "allocation %s observed=%" PRIu32 " expected=%" PRIu32 " eigen_trips=%" PRIu32, verdict.live ? "PASS" : "FAIL", verdict.observed, verdict.expected,
                   verdict.eigen_trips);
     send_line(stream_tag::canary, body);
-    std::snprintf(body, sizeof(body), "heap_view %s retained=%" PRId32 " requested=%" PRIu32 " dip=%" PRIu32, verdict.heap_live ? "PASS" : "FAIL", verdict.heap.retained,
-                  verdict.requested, verdict.heap.dip);
+    std::snprintf(body, sizeof(body), "heap_view %s retained=%" PRId32 " requested=%" PRIu32 " dip=%" PRIu32 " self=%" PRIu32, verdict.heap_live ? "PASS" : "FAIL",
+                  verdict.heap.retained, verdict.requested, verdict.heap.dip, verdict.heap_self);
     send_line(stream_tag::canary, body);
 }
 

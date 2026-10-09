@@ -14,6 +14,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "esp_task_wdt.h"
+
 #include <cstdio>
 #include <cstddef>
 #include <cstdint>
@@ -43,7 +45,7 @@ void report(const timing_region &region)
 // cache, so the cold figure pays the misses a warm one may not; within the warm
 // series the spread is interrupts landing in a sample and the other core
 // competing for the same flash interface. The task yields between regions and
-// never inside one, so the idle task feeds the task watchdog.
+// never inside one.
 template<class Region>
 void time_region(const char *name, const char *cold_basis, std::uint32_t block, Region region)
 {
@@ -94,6 +96,11 @@ void time_steps(const char *name)
     time_region(name, "first_after_reset", static_cast<std::uint32_t>(kGoldenSteps), [&demo] { return time_block(*demo); });
 }
 
+}
+
+void stop_task_watchdog() noexcept
+{
+    esp_task_wdt_deinit();
 }
 
 counter_state run_timing()

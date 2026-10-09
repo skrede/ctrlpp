@@ -286,9 +286,13 @@ at 160 MHz, single-precision FPU) under the released ESP-IDF v6.0.2,
 `xtensa-esp-elf-gcc` 15.2.0 (crosstool-NG esp-15.2.0_20251204) at `-Os` with
 exceptions and RTTI off and the framework's default C assertions on, Eigen 3.4.0,
 the end-of-stack watchpoint on, one FreeRTOS task per dimension so each figure is
-that dimension's own peak rather than a running minimum over a sweep. The probe
-runs in both images the leg builds, and the two differ only in the allocation
-sensor, so both columns are given; the ratio uses the image without the sensor:
+that dimension's own peak rather than a running minimum over a sweep. These
+figures were taken while the probe ran in both images the leg builds, which then
+differed only in the allocation sensor, so both columns are given; the ratio uses
+the image without the sensor. The probe now runs in the allocation-evidence
+image only, and the timing image is built without it and without assertions, so
+the column without the sensor belongs to that earlier timing build and is not
+reproduced by the current one:
 
 | `NX` | on-silicon peak, `float`, no sensor | with the allocation sensor | host peak, `double` | host / board | accepted? |
 |---:|---:|---:|---:|---:|:--|
@@ -562,9 +566,12 @@ result.
 **Power-cycle determinism on this board: PENDING.** No run after a power-on
 reset has been collected yet. The series needs an operator to unplug and replug
 the board, and until it exists the determinism stated above is a warm-reset
-result only. When it is collected, the power-on series is compared under the
-same refusals and its run count, decoded reset class, exact-class verdict and
-spread are recorded here.
+result only. Both images now wait at boot, for at most 10 s, for a byte the
+capture sends once its reader is attached, so a report read after a replug keeps
+its head, and a report whose wait expired is refused. When the series is
+collected, it is compared under the same refusals, and its run count, decoded
+reset class, every run that decoded another class and was not counted, its
+exact-class verdict and its spread are recorded here.
 
 ## Stack cost of the estimator rows
 

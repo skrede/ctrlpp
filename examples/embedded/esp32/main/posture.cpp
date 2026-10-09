@@ -8,6 +8,7 @@
 #include "esp_cpu.h"
 #include "sdkconfig.h"
 #include "esp_rom_sys.h"
+#include "esp_task_wdt.h"
 #include "esp_idf_version.h"
 #include "esp_memory_utils.h"
 
@@ -37,8 +38,8 @@ const char *optimization() noexcept
 }
 
 // The framework's default build keeps C assertions, and with them Eigen's own
-// checks, in the timed code; a figure from a build without them is a different
-// figure.
+// checks; the timing image is built without them, the evidence image with them,
+// and a figure from one build is not a figure of the other.
 #ifdef NDEBUG
 constexpr bool kAssertions = false;
 #else
@@ -57,6 +58,13 @@ const char *scheduler_state() noexcept
             return "not_started";
     }
     return "unknown";
+}
+
+// Read from the framework rather than the configuration, since the timing image
+// stops the watchdog the configuration starts.
+const char *task_watchdog() noexcept
+{
+    return esp_task_wdt_status(nullptr) == ESP_ERR_INVALID_STATE ? "off" : "on";
 }
 
 // Code outside instruction RAM is fetched from flash through the cache, so its
@@ -83,9 +91,10 @@ void emit_posture(const reset_cause &cause)
                   kAssertions ? "on" : "off", optimization(), __VERSION__, esp_get_idf_version());
     send_line(stream_tag::meta, body);
     std::snprintf(body, sizeof(body),
-                  "schedule tick_hz=%" PRIu32 " task_core=%" PRId32 " task_priority=%" PRIu32 " scheduler=%s intr_enabled=0x%08" PRIx32 " code=%s flash_mode=%s flash_freq=%s",
+                  "schedule tick_hz=%" PRIu32 " task_core=%" PRId32 " task_priority=%" PRIu32 " scheduler=%s intr_enabled=0x%08" PRIx32
+                  " task_wdt=%s code=%s flash_mode=%s flash_freq=%s",
                   static_cast<std::uint32_t>(configTICK_RATE_HZ), static_cast<std::int32_t>(xPortGetCoreID()), static_cast<std::uint32_t>(uxTaskPriorityGet(nullptr)), scheduler_state(),
-                  esp_cpu_intr_get_enabled_mask(), code_region(), CONFIG_ESPTOOLPY_FLASHMODE, CONFIG_ESPTOOLPY_FLASHFREQ);
+                  esp_cpu_intr_get_enabled_mask(), task_watchdog(), code_region(), CONFIG_ESPTOOLPY_FLASHMODE, CONFIG_ESPTOOLPY_FLASHFREQ);
     send_line(stream_tag::meta, body);
 }
 

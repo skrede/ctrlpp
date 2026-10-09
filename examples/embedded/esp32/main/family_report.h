@@ -19,6 +19,7 @@ struct window_figures
     std::uint32_t allocations;
     std::uint32_t eigen_trips;
     heap_view heap;
+    std::uint32_t heap_self;
 };
 
 struct family_result

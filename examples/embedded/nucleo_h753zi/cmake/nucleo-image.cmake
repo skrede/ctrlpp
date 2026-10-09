@@ -6,6 +6,7 @@ function(ctrlpp_nucleo_image target sentinel)
     add_executable(${target}
         nucleo_main.cpp
         usart3_console.cpp
+        boot_handshake.cpp
         init_stubs.cpp
         build_id.cpp
         alloc_sensor.cpp
@@ -42,6 +43,7 @@ function(ctrlpp_nucleo_image target sentinel)
         EIGEN_STACK_ALLOCATION_LIMIT=8192
         CTRLPP_NO_EXCEPTIONS
         CTRLPP_MCU_PREDICTIVE=$<BOOL:${CTRLPP_MCU_PREDICTIVE}>
+        CTRLPP_MCU_BOOT_HANDSHAKE_MS=${CTRLPP_MCU_BOOT_HANDSHAKE_MS}
         CTRLPP_MCU_ALLOC_SENTINEL=$<BOOL:${sentinel}>)
 
     target_compile_options(${target} PRIVATE

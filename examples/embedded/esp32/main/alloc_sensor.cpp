@@ -9,7 +9,6 @@
 
 #include <Eigen/Core>
 
-#include <new>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -32,16 +31,7 @@ std::atomic<TaskHandle_t> armed_task{nullptr};
 std::atomic<std::uint32_t> allocations{0};
 
 std::size_t free_at_arm  = 0;
-ctrlpp::heap_view window = {0, 0};
-
-constexpr std::size_t kCanaryBytes     = sizeof(double);
-constexpr std::size_t kCanaryAlignment = 2 * __STDCPP_DEFAULT_NEW_ALIGNMENT__;
-// A dynamic-size vector always takes heap storage, so one element is enough.
-constexpr Eigen::Index kCanaryElements = 1;
-// Four blocks of the same size, two of them through the replaced operators.
-constexpr std::uint32_t kCanaryBlocks    = 4;
-constexpr std::uint32_t kCanaryCounted   = 2;
-constexpr std::uint32_t kCanaryRequested = kCanaryBlocks * kCanaryBytes;
+ctrlpp::heap_view window = {0, 0, 0};
 
 void count_allocation() noexcept
 {
@@ -53,13 +43,6 @@ void count_allocation() noexcept
 std::size_t free_bytes() noexcept
 {
     return heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
-}
-
-// Hands the address to an opaque consumer so the compiler cannot prove a
-// deliberate allocation unused and remove it together with its free.
-void escape(void *pointer) noexcept
-{
-    __asm__ __volatile__("" : : "r"(pointer) : "memory");
 }
 
 #endif
@@ -98,6 +81,7 @@ void alloc_sensor_disarm() noexcept
     heap_caps_monitor_local_minimum_free_size_stop();
     window.retained += static_cast<std::int32_t>(free_at_arm) - static_cast<std::int32_t>(now);
     window.dip = std::max(window.dip, static_cast<std::uint32_t>(free_at_arm - std::min(minimum, free_at_arm)));
+    ++window.windows;
     Eigen::internal::set_is_malloc_allowed(true);
 }
 
@@ -105,7 +89,7 @@ void alloc_sensor_reset() noexcept
 {
     allocations.store(0, std::memory_order_relaxed);
     detail::eigen_alloc_violations.store(0, std::memory_order_relaxed);
-    window = {0, 0};
+    window = {0, 0, 0};
 }
 
 std::uint32_t alloc_sensor_observed() noexcept
@@ -121,33 +105,6 @@ std::uint32_t alloc_sensor_eigen_trips() noexcept
 heap_view alloc_sensor_heap() noexcept
 {
     return window;
-}
-
-// Exactly one count per allocation through a replaced operator is required:
-// fewer means a path is blind, more means one is counted twice. Every block is
-// still held when the window closes, so the heap view must have kept at least
-// the bytes requested.
-canary_verdict run_alloc_canary() noexcept
-{
-    alloc_sensor_reset();
-    alloc_sensor_arm();
-    void *c_block               = std::malloc(kCanaryBytes);
-    void *cpp_block             = ::operator new(kCanaryBytes);
-    void *aligned_block         = ::operator new(kCanaryBytes, std::align_val_t{kCanaryAlignment});
-    Eigen::VectorXd eigen_block = Eigen::VectorXd::Ones(kCanaryElements);
-    escape(c_block);
-    escape(cpp_block);
-    escape(aligned_block);
-    escape(eigen_block.data());
-    alloc_sensor_disarm();
-
-    const std::uint32_t observed = alloc_sensor_observed();
-    const std::uint32_t eigen    = alloc_sensor_eigen_trips();
-    ::operator delete(aligned_block, std::align_val_t{kCanaryAlignment});
-    ::operator delete(cpp_block);
-    std::free(c_block);
-    const bool heap_live = window.retained >= static_cast<std::int32_t>(kCanaryRequested);
-    return {observed == kCanaryCounted && eigen > 0, observed, kCanaryCounted, eigen, heap_live, window, kCanaryRequested};
 }
 
 #else

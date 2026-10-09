@@ -10,3 +10,7 @@ evidence_build_id=c8749219a7c0bb5602a6a1b97aa185c491023b65971be335df00ec2da0f0bc
 timing_build_id=ad8b6150403c70b2cff8e3d7fffbbe88ec00d5f499d49dee870c4bf81e3f0ef4
 stack_reserve=8192
 toolchain=xtensa-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0
+# The recordings predate the heap view's self-count and per-window verdicts, so
+# their canary line carries no self= and their windows no heap_view=; a built
+# image's report must carry both.
+predates=heap_self

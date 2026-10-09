@@ -98,6 +98,14 @@ if(CTRLPP_MCU_PREDICTIVE)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/predictive-backend.cmake")
 endif()
 
+# How long each image waits at boot for the host's handshake byte on USART3
+# before it reports anyway; boot_handshake.h states why the default is 10 s.
+set(CTRLPP_MCU_BOOT_HANDSHAKE_MS 10000 CACHE STRING
+    "Milliseconds the image waits at boot for the host's handshake byte before reporting anyway")
+if(NOT CTRLPP_MCU_BOOT_HANDSHAKE_MS MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "CTRLPP_MCU_BOOT_HANDSHAKE_MS must be a whole number of milliseconds, not '${CTRLPP_MCU_BOOT_HANDSHAKE_MS}'")
+endif()
+
 # Cortex-M7 hard-float arch flags. The toolchain file applies these at compile
 # time; the gcc driver also needs them on the link line to select the correct
 # newlib-nano multilib.

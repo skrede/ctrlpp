@@ -8,6 +8,7 @@ set(ctrlpp_esp32_sources
     reset_reason.cpp
     family_report.cpp
     alloc_sensor.cpp
+    alloc_canary.cpp
     operator_new.cpp
     cycle_counter.cpp
     timing_run.cpp)
@@ -26,7 +27,12 @@ idf_component_register(
 
 # Everything one image's copy of this component needs. Both images share every
 # source, definition and option below; `sentinel` switches the allocation
-# sensor -- the Eigen sentinel and the counting operators -- and nothing else.
+# sensor -- the Eigen sentinel and the counting operators -- and with it the
+# image kind, which the sources read to run the stack probe and the task
+# watchdog in the evidence image only. The timing copy is also built with
+# NDEBUG, so the code it times carries neither Eigen's checks nor the C
+# assertions, as the other board's timing image does; the evidence copy keeps
+# the framework's assertions and counts Eigen's checks through the sentinel.
 #
 # SYSTEM keeps the strict warning surface from tripping on third-party Eigen and
 # the ctrlpp template depth. Eigen lives outside ESP-IDF's component graph and is
@@ -63,6 +69,9 @@ function(ctrlpp_esp32_image lib sentinel)
         target_include_directories(${lib} SYSTEM PRIVATE "$ENV{CTRLPP_EIGEN_DIR}")
     endif ()
     target_compile_definitions(${lib} PRIVATE CTRLPP_NO_EXCEPTIONS CTRLPP_MCU_ALLOC_SENTINEL=${sentinel})
+    if (NOT sentinel)
+        target_compile_definitions(${lib} PRIVATE NDEBUG)
+    endif ()
     target_compile_features(${lib} PRIVATE cxx_std_20)
     if (CMAKE_C_COMPILER MATCHES "xtensa")
         target_compile_options(${lib} PRIVATE -mtext-section-literals)

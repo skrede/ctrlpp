@@ -8,3 +8,6 @@ evidence_build_id=f9f8aeae88400eacd54fad58674d994f43fbf0b1
 timing_build_id=3c9d730f018c95535e6d8b76f77aa245a170780a
 stack_reserve=30616
 toolchain=arm-none-eabi-gcc (Arch Repository) 16.2.0
+# The recordings predate the boot handshake, so they carry no
+# [meta] boot_handshake line; a built image's report must.
+predates=boot_handshake
