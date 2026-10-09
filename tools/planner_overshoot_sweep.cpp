@@ -1,6 +1,12 @@
 /// @file
 /// @brief Probe: do the online planners' overshoot verdicts and the chain each
-/// one reports against still disagree anywhere, and over what population?
+/// one reports against still disagree anywhere, and over what population? Does
+/// every retargeted plan stay inside its limits, and does each shape
+/// constructor honor its boundary-velocity precondition exactly?
+///
+/// The program runs two families of legs. The agreement legs, described first,
+/// compare two booleans the library returns. The limit legs, described after
+/// them, compare sampled values against the limits the caller stated.
 ///
 /// Each planner decides whether a command overshoots, and then either carries
 /// its current velocity into a profile or brakes to rest first. Each verdict is
@@ -77,11 +83,43 @@
 /// its initial speed spans the reachable range. Neither leg reaches into a
 /// private member or reconstructs one.
 ///
+/// **The limit legs**
+///
+///   * Retarget envelope, in double and float. The jerk-limited planner is
+///     driven from rest toward a far target and retargeted further along the
+///     same direction from 40 instants in each of its cruise, acceleration-ramp
+///     and acceleration-nulling windows, on eight limit sets. Every sample of
+///     the new plan is checked against v_max and a_max: densely over its first
+///     and last twenty seconds, where every phase but the cruise lives, and once
+///     a second between. Every dense pair of samples is checked against j_max
+///     times their spacing plus an allowance built from two counted rounding
+///     chains, one on elapsed time and one on acceleration. That allowance is
+///     printed beside j_max dt for each row, so the resolution of the jerk check
+///     is visible: in float its time term dominates once elapsed time reaches
+///     the order of a thousand seconds. A same-direction retarget that reports
+///     any substitution is counted as a brake to rest that was not needed.
+///   * Reversing, in double and float. The same planner is retargeted behind
+///     its current position from the cruise and acceleration-ramp windows. It
+///     must report a reversal and keep the same envelope while it brakes and
+///     replans.
+///   * Boundary-velocity precondition, for both the double-S and the
+///     trapezoidal constructor in double and float. A boundary speed is
+///     stepped from three representable values below v_max to six above it, as
+///     the initial or the final velocity, in both directions of travel, under a
+///     boundary-velocity rounding count of 0, 1, 2 and 4. A speed at or below
+///     the limit must build. A speed above it must build only within the
+///     admitted excess, and the clamped end must then report exactly +-v_max.
+///     The realized peak, the double-S shape's reported peak or the trapezoidal
+///     shape's peak sampled on a millisecond grid, must not exceed the limit.
+///
+/// Like the agreement legs, the limit legs reach no private member: they use
+/// only create, update, sample, diagnostics, evaluate and peak_velocity.
+///
 /// Building: standalone, no test framework and no build system. Eigen enters as
 /// a system include, the way the library's own build treats it, so the only
 /// diagnostics a build reports are this file's own.
 ///
-///     g++ -std=c++20 -O2 -fno-exceptions -fno-rtti
+///     g++ -std=c++20 -O2 -Wall -Wextra -fno-exceptions -fno-rtti
 ///         -I lib/ctrlpp/include -isystem /usr/include/eigen3
 ///         tools/planner_overshoot_sweep.cpp -o build/tools/planner_overshoot_sweep
 ///
@@ -98,13 +136,18 @@
 #include "ctrlpp/trajectory/online_planner_2nd.h"
 #include "ctrlpp/trajectory/online_planner_3rd.h"
 #include "ctrlpp/trajectory/double_s_trajectory.h"
+#include "ctrlpp/trajectory/trapezoidal_trajectory.h"
 
 #include <bit>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <algorithm>
+#include <type_traits>
 
 namespace {
 
@@ -113,6 +156,8 @@ using ctrlpp::online_planner_2nd;
 using ctrlpp::online_planner_3rd;
 using ctrlpp::online_planner_substitution_reason;
 using ctrlpp::trajectory_error;
+using ctrlpp::trajectory_point;
+using ctrlpp::trapezoidal_trajectory;
 
 constexpr double machine_epsilon = std::numeric_limits<double>::epsilon();
 
@@ -779,6 +824,539 @@ void report_leg(char const* name, leg_counts const& counts)
                 static_cast<long long>(counts.narrowest_band_ulps));
 }
 
+// ---------------------------------------------------------------------------
+// Retarget envelope and reversing legs: every sample of a retargeted plan
+// against the limits the planner was given
+// ---------------------------------------------------------------------------
+
+// The last three are sets on which a cruise integrated forward through its ramp rounds above v_max.
+constexpr limit_set retarget_limits[] = {
+    {1.0, 1.0, 1.0},       {5.0, 10.0, 50.0}, {2.0, 3.0, 7.0},     {0.7, 1.3, 2.9},
+    {10.0, 100.0, 1000.0}, {1.0, 5.0, 50.0},  {40.0, 20.0, 100.0}, {1e-3, 1e-2, 1e-1},
+};
+
+constexpr double grid_step = 1e-3;
+constexpr std::int32_t instants_per_window = 40;
+constexpr std::int32_t dense_seconds = 20;
+
+// Elapsed time reaches a sample through at most 13 roundings, and the sampled acceleration carries at most 4
+// since the last pinned phase end; a finite-difference jerk is admitted twice the excess those counts allow.
+constexpr std::int32_t time_rounding_ops = 13;
+constexpr std::int32_t acceleration_rounding_ops = 4;
+
+template <typename Scalar>
+struct typed_limits
+{
+    Scalar v_max;
+    Scalar a_max;
+    Scalar j_max;
+};
+
+template <typename Scalar>
+auto typed(limit_set const& limits) -> typed_limits<Scalar>
+{
+    return {static_cast<Scalar>(limits.v_max), static_cast<Scalar>(limits.a_max),
+            static_cast<Scalar>(limits.j_max)};
+}
+
+template <typename Scalar>
+auto scalar_name() -> char const*
+{
+    return std::is_same_v<Scalar, float> ? "float" : "double";
+}
+
+enum class retarget_window : std::uint8_t
+{
+    cruise,
+    acceleration_ramp,
+    acceleration_nulling,
+};
+
+constexpr retarget_window retarget_windows[] = {retarget_window::cruise, retarget_window::acceleration_ramp,
+                                                retarget_window::acceleration_nulling};
+
+auto window_name(retarget_window window) -> char const*
+{
+    switch (window) {
+    case retarget_window::cruise:               return "cruise";
+    case retarget_window::acceleration_ramp:    return "acceleration ramp";
+    case retarget_window::acceleration_nulling: return "acceleration nulling";
+    }
+    return "unnamed";
+}
+
+template <typename Scalar>
+struct window_span
+{
+    Scalar begin;
+    Scalar end;
+};
+
+// @cite biagiotti2009 -- Sec. 3.4.3, rest-to-rest ramp with and without a_max reached
+template <typename Scalar>
+auto window_span_of(retarget_window window, typed_limits<Scalar> const& limits, Scalar dt) -> window_span<Scalar>
+{
+    auto T_j = limits.a_max / limits.j_max;
+    auto T_a = T_j + limits.v_max / limits.a_max;
+    if (limits.v_max * limits.j_max < limits.a_max * limits.a_max) {
+        T_j = std::sqrt(limits.v_max / limits.j_max);
+        T_a = Scalar{2} * T_j;
+    }
+    switch (window) {
+    case retarget_window::cruise:               return {Scalar{1.5} * T_a, Scalar{1.5} * T_a + Scalar{40} * dt};
+    case retarget_window::acceleration_ramp:    return {dt, T_a - dt};
+    case retarget_window::acceleration_nulling: break;
+    }
+    return {T_a - T_j, T_a - dt};
+}
+
+template <typename Scalar>
+auto window_instant(window_span<Scalar> const& span, Scalar dt, std::int32_t i) -> Scalar
+{
+    auto const first = static_cast<std::int32_t>(std::ceil(span.begin / dt));
+    auto const last = static_cast<std::int32_t>(std::floor(span.end / dt));
+    auto const k = first + (last - first) * i / (instants_per_window - 1);
+    return static_cast<Scalar>(k) * dt;
+}
+
+struct envelope_counts
+{
+    std::int64_t retargets;
+    std::int64_t unexpected_reason;
+    std::int64_t velocity_violations;
+    std::int64_t acceleration_violations;
+    std::int64_t jerk_violations;
+};
+
+void accumulate(envelope_counts& total, envelope_counts const& row)
+{
+    total.retargets += row.retargets;
+    total.unexpected_reason += row.unexpected_reason;
+    total.velocity_violations += row.velocity_violations;
+    total.acceleration_violations += row.acceleration_violations;
+    total.jerk_violations += row.jerk_violations;
+}
+
+template <typename Scalar>
+struct envelope_scan
+{
+    online_planner_3rd<Scalar>& planner;
+    typed_limits<Scalar> const& limits;
+    envelope_counts& counts;
+    char const* configuration;
+    bool print_points;
+    Scalar largest_allowance;
+};
+
+template <typename Scalar>
+void report_violation(envelope_scan<Scalar> const& scan, char const* what, Scalar t, Scalar value)
+{
+    if (scan.print_points) {
+        std::printf("      VIOLATION  [%s]  %s  t=%.17g  value=%.17g\n", scan.configuration, what,
+                    static_cast<double>(t), static_cast<double>(value));
+    }
+}
+
+template <typename Scalar>
+void record_sample(envelope_scan<Scalar>& scan, Scalar t, trajectory_point<Scalar, 1> const& point)
+{
+    auto const v = std::abs(point.velocity[0]);
+    auto const a = std::abs(point.acceleration[0]);
+    if (v > scan.limits.v_max) {
+        ++scan.counts.velocity_violations;
+        report_violation(scan, "|v| above v_max", t, v);
+    }
+    if (a > scan.limits.a_max) {
+        ++scan.counts.acceleration_violations;
+        report_violation(scan, "|a| above a_max", t, a);
+    }
+}
+
+template <typename Scalar>
+void record_jerk(envelope_scan<Scalar>& scan, Scalar t_prev, Scalar t, Scalar a_prev, Scalar a)
+{
+    auto const eps = std::numeric_limits<Scalar>::epsilon();
+    auto const& limits = scan.limits;
+    auto const time_scale = std::max(std::abs(t), scan.planner.diagnostics().planned_duration);
+    auto const allowance = Scalar{2}
+                           * (static_cast<Scalar>(time_rounding_ops) * eps * limits.j_max * time_scale
+                              + static_cast<Scalar>(acceleration_rounding_ops) * eps * limits.a_max);
+    scan.largest_allowance = std::max(scan.largest_allowance, allowance);
+    auto const bound = limits.j_max * (t - t_prev) + allowance;
+    if (std::abs(a - a_prev) > bound) {
+        ++scan.counts.jerk_violations;
+        report_violation(scan, "|a_k - a_(k-1)| above j_max dt plus the allowance", t, std::abs(a - a_prev) - bound);
+    }
+}
+
+template <typename Scalar>
+void scan_dense(envelope_scan<Scalar>& scan, Scalar t_begin)
+{
+    auto const dt = static_cast<Scalar>(grid_step);
+    auto const steps = static_cast<std::int32_t>(std::lround(dense_seconds / grid_step));
+    Scalar t_prev{};
+    Scalar a_prev{};
+    for (std::int32_t k = 0; k <= steps; ++k) {
+        auto const t = t_begin + static_cast<Scalar>(k) * dt;
+        auto const point = scan.planner.sample(t);
+        record_sample(scan, t, point);
+        if (k > 0) {
+            record_jerk(scan, t_prev, t, a_prev, point.acceleration[0]);
+        }
+        t_prev = t;
+        a_prev = point.acceleration[0];
+    }
+}
+
+// Dense over the first and last stretch of the plan, where every phase but the cruise lives, and every second between.
+template <typename Scalar>
+void scan_plan(envelope_scan<Scalar>& scan, Scalar t0)
+{
+    auto const duration = scan.planner.diagnostics().planned_duration;
+    auto const dense = static_cast<Scalar>(dense_seconds);
+    scan_dense(scan, t0);
+    for (std::int32_t k = dense_seconds; static_cast<Scalar>(k) + dense < duration; ++k) {
+        auto const t = t0 + static_cast<Scalar>(k);
+        record_sample(scan, t, scan.planner.sample(t));
+    }
+    scan_dense(scan, t0 + std::max(duration - dense, Scalar{0}));
+}
+
+template <typename Scalar>
+void record_reason(envelope_scan<Scalar>& scan, Scalar t, bool reversing)
+{
+    auto const expected = reversing ? online_planner_substitution_reason::reversal_or_overshoot
+                                    : online_planner_substitution_reason::none;
+    auto const reason = scan.planner.diagnostics().substitution_reason;
+    if (reason == expected) {
+        return;
+    }
+    ++scan.counts.unexpected_reason;
+    if (scan.print_points) {
+        std::printf("      REASON  [%s]  t=%.17g  reported=%s\n", scan.configuration, static_cast<double>(t),
+                    reason_name(reason));
+    }
+}
+
+template <typename Scalar>
+void retarget_once(envelope_scan<Scalar>& scan, Scalar t, bool reversing)
+{
+    auto& planner = scan.planner;
+    auto const v_max = scan.limits.v_max;
+    planner.reset(Scalar{0});
+    auto const driven = planner.update(Scalar{1000} * v_max).has_value();
+    auto const q = planner.sample(t).position[0];
+    auto const target = reversing ? q - Scalar{1000} * v_max : Scalar{2000} * v_max;
+    if (!driven || !planner.update(target).has_value()) {
+        std::printf("      REFUSED  [%s]  t=%.17g\n", scan.configuration, static_cast<double>(t));
+        return;
+    }
+    ++scan.counts.retargets;
+    record_reason(scan, t, reversing);
+    scan_plan(scan, t);
+}
+
+template <typename Scalar>
+void measure_window(online_planner_3rd<Scalar>& planner, typed_limits<Scalar> const& limits,
+                    retarget_window window, bool reversing, bool print_points, envelope_counts& total)
+{
+    char configuration[128]{};
+    std::snprintf(configuration, sizeof(configuration), "v=%.4g a=%.4g j=%.4g %s", static_cast<double>(limits.v_max),
+                  static_cast<double>(limits.a_max), static_cast<double>(limits.j_max), window_name(window));
+    envelope_counts row{};
+    envelope_scan<Scalar> scan{planner, limits, row, configuration, print_points, Scalar{0}};
+    auto const dt = static_cast<Scalar>(grid_step);
+    auto const span = window_span_of(window, limits, dt);
+    for (std::int32_t i = 0; i < instants_per_window; ++i) {
+        retarget_once(scan, window_instant(span, dt, i), reversing);
+    }
+    std::printf("  [%s]  retargets %lld  reason %lld  |v|>v_max %lld  |a|>a_max %lld  jerk %lld"
+                "  allowance %.3e  j_max dt %.3e\n",
+                configuration, static_cast<long long>(row.retargets), static_cast<long long>(row.unexpected_reason),
+                static_cast<long long>(row.velocity_violations), static_cast<long long>(row.acceleration_violations),
+                static_cast<long long>(row.jerk_violations), static_cast<double>(scan.largest_allowance),
+                static_cast<double>(limits.j_max * dt));
+    accumulate(total, row);
+}
+
+void report_count(char const* label, std::int64_t count)
+{
+    std::printf("      %-44s %lld\n", label, static_cast<long long>(count));
+}
+
+void report_envelope(char const* leg, char const* type, char const* reason_label, envelope_counts const& counts)
+{
+    std::printf("\n  %s, %s totals\n", leg, type);
+    report_count("retargets", counts.retargets);
+    report_count(reason_label, counts.unexpected_reason);
+    report_count("velocity samples above the limit", counts.velocity_violations);
+    report_count("acceleration samples above the limit", counts.acceleration_violations);
+    report_count("jerk pairs above the allowance", counts.jerk_violations);
+}
+
+template <typename Scalar>
+void run_retarget_leg(char const* leg, bool reversing, bool print_points)
+{
+    std::printf("\n%s, %s\n\n", leg, scalar_name<Scalar>());
+    envelope_counts total{};
+    auto const windows = reversing ? 2 : 3;
+    for (auto const& raw : retarget_limits) {
+        auto const limits = typed<Scalar>(raw);
+        auto made = online_planner_3rd<Scalar>::create(
+            {.v_max = limits.v_max, .a_max = limits.a_max, .j_max = limits.j_max});
+        if (!made.has_value()) {
+            std::printf("  [v=%.4g]  SKIPPED: %s\n", raw.v_max, error_name(made.error()));
+            continue;
+        }
+        for (auto w = 0; w < windows; ++w) {
+            measure_window(*made, limits, retarget_windows[w], reversing, print_points, total);
+        }
+    }
+    report_envelope(leg, scalar_name<Scalar>(), reversing ? "reason other than reversal_or_overshoot" : "substituted",
+                    total);
+}
+
+// ---------------------------------------------------------------------------
+// Boundary-velocity precondition of both shape constructors
+// ---------------------------------------------------------------------------
+
+constexpr std::int32_t lowest_speed_step = -3;
+constexpr std::int32_t highest_speed_step = 6;
+constexpr std::uint32_t knob_values[] = {0, 1, 2, 4};
+constexpr auto error_count = static_cast<std::size_t>(trajectory_error::unreachable_duration) + 1;
+
+struct precondition_counts
+{
+    std::int64_t commands;
+    std::int64_t builds;
+    std::array<std::int64_t, error_count> refusals;
+    std::int64_t peak_above_limit;
+    std::int64_t refused_at_or_below;
+    std::int64_t refused_within_allowance;
+    std::int64_t admitted_beyond_allowance;
+    std::int64_t clamped_exact;
+    std::int64_t clamped_off;
+    double largest_peak_ratio;
+};
+
+void accumulate(precondition_counts& total, precondition_counts const& row)
+{
+    total.commands += row.commands;
+    total.builds += row.builds;
+    for (std::size_t e = 0; e < error_count; ++e) {
+        total.refusals[e] += row.refusals[e];
+    }
+    total.peak_above_limit += row.peak_above_limit;
+    total.refused_at_or_below += row.refused_at_or_below;
+    total.refused_within_allowance += row.refused_within_allowance;
+    total.admitted_beyond_allowance += row.admitted_beyond_allowance;
+    total.clamped_exact += row.clamped_exact;
+    total.clamped_off += row.clamped_off;
+    total.largest_peak_ratio = std::max(total.largest_peak_ratio, row.largest_peak_ratio);
+}
+
+template <typename Scalar>
+struct boundary_command
+{
+    std::int32_t step;
+    Scalar speed;
+    Scalar sigma;
+    bool final_role;
+    std::uint32_t knob;
+};
+
+template <typename Scalar>
+auto stepped_speed(Scalar v_max, std::int32_t step) -> Scalar
+{
+    auto const toward = step < 0 ? Scalar{0} : std::numeric_limits<Scalar>::infinity();
+    auto speed = v_max;
+    for (std::int32_t k = 0; k < std::abs(step); ++k) {
+        speed = std::nextafter(speed, toward);
+    }
+    return speed;
+}
+
+template <typename Scalar>
+auto allowance_of(boundary_command<Scalar> const& command, Scalar v_max) -> Scalar
+{
+    return static_cast<Scalar>(command.knob) * std::numeric_limits<Scalar>::epsilon() * v_max;
+}
+
+template <typename Shape, typename Scalar>
+auto build_shape(typed_limits<Scalar> const& limits, boundary_command<Scalar> const& command)
+    -> ctrlpp::expected<Shape, trajectory_error>
+{
+    auto const v = command.sigma * command.speed;
+    auto const q1 = command.sigma * Scalar{10} * limits.v_max;
+    auto const v0 = command.final_role ? Scalar{0} : v;
+    auto const v1 = command.final_role ? v : Scalar{0};
+    if constexpr (std::is_same_v<Shape, double_s_trajectory<Scalar>>) {
+        return Shape::create({.q0 = Scalar{0}, .q1 = q1, .v_max = limits.v_max, .a_max = limits.a_max,
+                              .j_max = limits.j_max, .v0 = v0, .v1 = v1,
+                              .boundary_velocity_rounding_ops = command.knob});
+    } else {
+        return Shape::create({.q0 = Scalar{0}, .q1 = q1, .v_max = limits.v_max, .a_max = limits.a_max,
+                              .v0 = v0, .v1 = v1, .boundary_velocity_rounding_ops = command.knob});
+    }
+}
+
+template <typename Scalar>
+auto realized_peak(double_s_trajectory<Scalar> const& shape) -> Scalar
+{
+    return std::abs(shape.peak_velocity());
+}
+
+template <typename Scalar>
+auto realized_peak(trapezoidal_trajectory<Scalar> const& shape) -> Scalar
+{
+    auto const dt = static_cast<Scalar>(grid_step);
+    auto peak = std::abs(shape.evaluate(shape.duration()).velocity[0]);
+    for (std::int32_t k = 0; static_cast<Scalar>(k) * dt < shape.duration(); ++k) {
+        peak = std::max(peak, std::abs(shape.evaluate(static_cast<Scalar>(k) * dt).velocity[0]));
+    }
+    return peak;
+}
+
+template <typename Scalar>
+void print_command(char const* configuration, boundary_command<Scalar> const& command, char const* outcome)
+{
+    std::printf("      [%s  speed %+d ulp  sigma %+d  %s  knob %u]  %s\n", configuration, command.step,
+                static_cast<std::int32_t>(command.sigma), command.final_role ? "v1" : "v0", command.knob, outcome);
+}
+
+template <typename Scalar>
+void record_refusal(typed_limits<Scalar> const& limits, boundary_command<Scalar> const& command,
+                    trajectory_error error, precondition_counts& counts)
+{
+    ++counts.refusals[static_cast<std::size_t>(error)];
+    if (command.speed <= limits.v_max) {
+        ++counts.refused_at_or_below;
+    } else if (command.speed - limits.v_max <= allowance_of(command, limits.v_max)) {
+        ++counts.refused_within_allowance;
+    }
+}
+
+template <typename Shape, typename Scalar>
+auto record_build(typed_limits<Scalar> const& limits, boundary_command<Scalar> const& command, Shape const& shape,
+                  precondition_counts& counts) -> Scalar
+{
+    ++counts.builds;
+    auto const peak = realized_peak(shape);
+    counts.peak_above_limit += (peak > limits.v_max) ? 1 : 0;
+    counts.largest_peak_ratio = std::max(counts.largest_peak_ratio, static_cast<double>(peak / limits.v_max));
+    if (command.speed > limits.v_max) {
+        counts.admitted_beyond_allowance += (command.speed - limits.v_max > allowance_of(command, limits.v_max)) ? 1 : 0;
+        auto const end = shape.evaluate(command.final_role ? shape.duration() : Scalar{0}).velocity[0];
+        ++(end == command.sigma * limits.v_max ? counts.clamped_exact : counts.clamped_off);
+    }
+    return peak;
+}
+
+template <typename Shape, typename Scalar>
+void measure_command(typed_limits<Scalar> const& limits, boundary_command<Scalar> const& command,
+                     char const* configuration, bool print_points, precondition_counts& counts)
+{
+    ++counts.commands;
+    char outcome[96]{};
+    auto const built = build_shape<Shape>(limits, command);
+    if (built.has_value()) {
+        auto const peak = record_build(limits, command, *built, counts);
+        std::snprintf(outcome, sizeof(outcome), "built  peak %.17g", static_cast<double>(peak));
+    } else {
+        record_refusal(limits, command, built.error(), counts);
+        std::snprintf(outcome, sizeof(outcome), "refused  %s", error_name(built.error()));
+    }
+    if (print_points) {
+        print_command(configuration, command, outcome);
+    }
+}
+
+void print_precondition_row(char const* configuration, precondition_counts const& row)
+{
+    std::printf("  [%s]  commands %lld  builds %lld", configuration, static_cast<long long>(row.commands),
+                static_cast<long long>(row.builds));
+    for (std::size_t e = 0; e < error_count; ++e) {
+        if (row.refusals[e] != 0) {
+            std::printf("  %s %lld", error_name(static_cast<trajectory_error>(e)),
+                        static_cast<long long>(row.refusals[e]));
+        }
+    }
+    std::printf("  largest peak / v_max - 1 %+.3e\n", row.largest_peak_ratio - 1.0);
+}
+
+template <typename Shape, typename Scalar>
+void measure_limit_set(typed_limits<Scalar> const& limits, char const* shape_name, bool print_points,
+                       precondition_counts& total)
+{
+    char configuration[128]{};
+    std::snprintf(configuration, sizeof(configuration), "%s %s v=%.4g a=%.4g j=%.4g", shape_name,
+                  scalar_name<Scalar>(), static_cast<double>(limits.v_max), static_cast<double>(limits.a_max),
+                  static_cast<double>(limits.j_max));
+    precondition_counts row{};
+    for (auto step = lowest_speed_step; step <= highest_speed_step; ++step) {
+        for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+            for (auto const final_role : {false, true}) {
+                for (auto const knob : knob_values) {
+                    boundary_command<Scalar> const command{step, stepped_speed(limits.v_max, step), sigma,
+                                                           final_role, knob};
+                    measure_command<Shape>(limits, command, configuration, print_points, row);
+                }
+            }
+        }
+    }
+    print_precondition_row(configuration, row);
+    accumulate(total, row);
+}
+
+void report_precondition(char const* shape_name, char const* type, precondition_counts const& counts)
+{
+    std::printf("\n  Boundary-velocity precondition, %s, %s totals\n", shape_name, type);
+    report_count("commands", counts.commands);
+    report_count("built", counts.builds);
+    for (std::size_t e = 0; e < error_count; ++e) {
+        if (counts.refusals[e] != 0) {
+            std::printf("      refused, %-35s %lld\n", error_name(static_cast<trajectory_error>(e)),
+                        static_cast<long long>(counts.refusals[e]));
+        }
+    }
+    report_count("builds with a peak above the limit", counts.peak_above_limit);
+    report_count("refusals at or below the limit", counts.refused_at_or_below);
+    report_count("refused within the allowance above the limit", counts.refused_within_allowance);
+    report_count("admissions beyond the allowance", counts.admitted_beyond_allowance);
+    report_count("clamped ends reported exactly at the limit", counts.clamped_exact);
+    report_count("clamped ends reported off the limit", counts.clamped_off);
+}
+
+template <typename Shape>
+void run_precondition_leg(char const* shape_name, bool print_points)
+{
+    using Scalar = typename Shape::scalar_type;
+    std::printf("\nBoundary-velocity precondition, %s, %s\n\n", shape_name, scalar_name<Scalar>());
+    precondition_counts total{};
+    for (auto const& raw : retarget_limits) {
+        measure_limit_set<Shape>(typed<Scalar>(raw), shape_name, print_points, total);
+    }
+    report_precondition(shape_name, scalar_name<Scalar>(), total);
+}
+
+void run_limit_legs(bool print_points)
+{
+    std::printf("\n\nThird-order planner retargeted from its cruise, acceleration-ramp and acceleration-nulling\n");
+    std::printf("windows: every sample of the new plan against v_max and a_max, and every dense pair of\n");
+    std::printf("samples against j_max plus the counted rounding allowance.\n");
+    run_retarget_leg<double>("Retarget envelope", false, print_points);
+    run_retarget_leg<float>("Retarget envelope", false, print_points);
+    run_retarget_leg<double>("Reversing", true, print_points);
+    run_retarget_leg<float>("Reversing", true, print_points);
+
+    std::printf("\n\nShape constructors handed a boundary speed stepped across v_max one representable value\n");
+    std::printf("at a time, as v0 and as v1, in both frames, under each boundary-velocity rounding count.\n");
+    run_precondition_leg<double_s_trajectory<double>>("double_s_trajectory", print_points);
+    run_precondition_leg<double_s_trajectory<float>>("double_s_trajectory", print_points);
+    run_precondition_leg<trapezoidal_trajectory<double>>("trapezoidal_trajectory", print_points);
+    run_precondition_leg<trapezoidal_trajectory<float>>("trapezoidal_trajectory", print_points);
+}
+
 }
 
 auto main(int argc, char** argv) -> int
@@ -819,6 +1397,8 @@ auto main(int argc, char** argv) -> int
         }
     }
     report_leg("Second-order", second);
+
+    run_limit_legs(print_points);
 
     std::printf("\n");
     return 0;
