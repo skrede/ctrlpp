@@ -2619,6 +2619,11 @@ self_test_cases_esp32()
     red_check esp32-evidence 25 "is not a bit pattern of 8 hexadecimal digits" "ESP32: binary64-width value on the binary32 leg" '/^\[exact\] 7,/s/$/00000000/'
     red_series esp32-evidence power_on "" 26 "decoded reset=panic where the series requires reset=power_on" "ESP32: run of another reset class" 's/^\(\[meta\] posture reset=\)power_on reset_reason=1 /\1panic reset_reason=4 /' power-cycle
     red_series esp32-evidence power_on "" 29 "reports the posture" "ESP32: posture differing outside the reset fields" 's/ core_mhz=160 / core_mhz=240 /' power-cycle
+    red_check esp32-evidence 9 "carries no '[canary] heap_view' line" "ESP32: heap-view canary missing" '/^\[canary\] heap_view /d'
+    red_check esp32-evidence 9 "carries no self-count" "ESP32: heap-view canary without its self-count" '/^\[canary\] heap_view /s/ self=[0-9]*//'
+    red_check esp32-evidence 10 "heap-view canary did not pass" "ESP32: heap-view canary blind" 's/^\(\[canary\] heap_view \)PASS/\1FAIL/'
+    red_check esp32-evidence 30 "carries no heap_view verdict" "ESP32: heap figures without a verdict" '/^\[verdict\] family dsp /s/ heap_windows=1 heap_view=clean$//'
+    red_check esp32-evidence 30 "heap view is not clean" "ESP32: window kept more than the view's snapshot" '/^\[verdict\] family dsp /s/ heap_view=clean$/ heap_view=FAIL/'
 
     expect_status 0 "" "ESP32: evidence recording, unchanged" self_test_check esp32-evidence "${self_test_root}/esp32-evidence.txt"
     expect_status 0 "" "ESP32: timing recording, unchanged" self_test_check esp32-timing "${self_test_root}/esp32-timing.txt"
@@ -2644,24 +2649,16 @@ self_test_cases_en_pin()
     expect_status 0 "refused-01.txt (refused, not counted) reset=panic" "ESP32: en_pin series listing a run of another class as refused" self_test_compare_summary esp32-evidence en_pin "" "${dir}" "refused-01.txt (refused, not counted) reset=panic"
 }
 
-# Lines the recordings were made without: the NUCLEO-H753ZI's boot handshake
-# and the ESP32 heap view's self-count and per-window verdicts. Each is
-# synthesized into a copy and checked as a built image's report would be.
+# Lines the NUCLEO-H753ZI recordings were made without: the boot handshake. It
+# is synthesized into a copy and checked as a built image's report would be.
 self_test_cases_current()
 {
     local handshake='/^\[meta\] kind=evidence$/{p;s/.*/[meta] boot_handshake state=STATE waited_ms=WAITED timeout_ms=10000/;}'
-    local heap='s/^\(\[canary\] heap_view .*\)$/\1 self=24/;/ heap_retained=4824 /s/$/ heap_windows=201 heap_view=clean/;/ heap_retained=24 /s/$/ heap_windows=1 heap_view=clean/'
 
     red_current evidence 5 "carries no '[meta] boot_handshake' line" "boot handshake line missing" ''
     red_current evidence 5 "boot handshake was not received" "boot handshake expired" "$(printf '%s' "${handshake}" | sed 's/STATE/timeout/;s/WAITED/10000/')"
-    red_check esp32-evidence 9 "carries no '[canary] heap_view' line" "ESP32: heap-view canary missing" '/^\[canary\] heap_view /d'
-    red_check esp32-evidence 10 "heap-view canary did not pass" "ESP32: heap-view canary blind" 's/^\(\[canary\] heap_view \)PASS/\1FAIL/'
-    red_current esp32-evidence 9 "carries no self-count" "ESP32: heap-view canary without its self-count" ''
-    red_current esp32-evidence 30 "carries no heap_view verdict" "ESP32: heap figures without a verdict" 's/^\(\[canary\] heap_view .*\)$/\1 self=24/'
-    red_check esp32-evidence 30 "heap view is not clean" "ESP32: window kept more than the view's snapshot" '/^\[verdict\] family dsp /s/$/ heap_windows=1 heap_view=FAIL/'
 
     expect_status 0 "" "boot handshake received" self_test_check_current evidence "$(corrupt evidence "$(printf '%s' "${handshake}" | sed 's/STATE/received/;s/WAITED/812/')")"
-    expect_status 0 "" "ESP32: heap view clean against its self-count" self_test_check_current esp32-evidence "$(corrupt esp32-evidence "${heap}")"
 }
 
 self_test_cases_green()

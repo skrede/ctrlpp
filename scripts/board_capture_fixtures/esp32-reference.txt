@@ -1,16 +1,12 @@
 # What esp32-evidence.txt and esp32-timing.txt are checked against in place of a
 # built image. Each value was read from the build that produced the recording,
-# built from commit 4375e2c under ESP-IDF v6.0.2 and flashed to an ESP32-POE-EA
+# built from commit fff3dc3 under ESP-IDF v6.0.2 and flashed to an ESP32-POE-EA
 # (ESP32-D0WD-V3, revision v3.1) before the capture: the build ids with
 # sha256sum of each ELF, which equals the digest the framework wrote into the
 # image descriptor; the stack as kControlTaskStackBytes in
 # examples/embedded/esp32/main/stack_probe.h; the toolchain line with the
 # --version of the compiler named in the build's project_description.json.
-evidence_build_id=c8749219a7c0bb5602a6a1b97aa185c491023b65971be335df00ec2da0f0bc32
-timing_build_id=ad8b6150403c70b2cff8e3d7fffbbe88ec00d5f499d49dee870c4bf81e3f0ef4
+evidence_build_id=c7bc0e9faef5707f2ec9d327766ecc397c84312c91872c51383a3e628aa25f98
+timing_build_id=a7d830451598f39f56a1b579900c59613d420dc5f89e872a18d0e2fcbdb7fbd5
 stack_reserve=8192
 toolchain=xtensa-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0
-# The recordings predate the heap view's self-count and per-window verdicts, so
-# their canary line carries no self= and their windows no heap_view=; a built
-# image's report must carry both.
-predates=heap_self

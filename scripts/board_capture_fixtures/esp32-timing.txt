@@ -1,33 +1,33 @@
-[meta] build_id=ad8b6150403c70b2cff8e3d7fffbbe88ec00d5f499d49dee870c4bf81e3f0ef4
+[meta] build_id=a7d830451598f39f56a1b579900c59613d420dc5f89e872a18d0e2fcbdb7fbd5
 [meta] kind=timing
 [meta] board=ESP32-POE-EA target=esp32 loop=freertos-task-50hz scalar=float
-[meta] posture reset=power_on reset_reason=1 reset_rom=1 core_mhz=160 cycle_bits=32 cycle_wrap_ms=26843 stack_watchpoint=on assertions=on optimize=size compiler=gcc-15.2.0 idf=v6.0.2
-[meta] schedule tick_hz=100 task_core=0 task_priority=5 scheduler=running intr_enabled=0x1300006e code=flash flash_mode=dio flash_freq=40m
+[meta] posture reset=power_on reset_reason=1 reset_rom=1 core_mhz=160 cycle_bits=32 cycle_wrap_ms=26843 stack_watchpoint=on assertions=off optimize=size compiler=gcc-15.2.0 idf=v6.0.2
+[meta] schedule tick_hz=100 task_core=0 task_priority=5 scheduler=running intr_enabled=0x1300006e task_wdt=off code=flash flash_mode=dio flash_freq=40m
 [spread] region,regime,n,n_basis,block,raw_min,raw_median,raw_max,max_at,per_iteration_raw_max,wraps
 [canary] cycle_counter PASS state=live
-[spread] overhead,cold,1,first_after_proof,1,657,657,657,0,657.0,0
+[spread] overhead,cold,1,first_after_proof,1,24,24,24,0,24.0,0
 [verdict] interruption region=overhead regime=cold tick_crossed=0 of=1
-[spread] overhead,warm,201,golden_window,1,25,25,25,0,25.0,0
+[spread] overhead,warm,201,golden_window,1,24,24,24,0,24.0,0
 [verdict] interruption region=overhead regime=warm tick_crossed=0 of=201
-[spread] control.design,cold,1,first_after_reset,1,1819540,1819540,1819540,0,1819540.0,0
-[verdict] interruption region=control.design regime=cold tick_crossed=1 of=1
-[spread] control.design,warm,201,golden_window,1,1558834,1566962,1621178,0,1621178.0,0
-[verdict] interruption region=control.design regime=warm tick_crossed=198 of=201
-[spread] control.step,cold,1,first_after_reset,201,106222,106222,106222,0,528.5,0
+[spread] control.design,cold,1,first_after_reset,1,951561,951561,951561,0,951561.0,0
+[verdict] interruption region=control.design regime=cold tick_crossed=0 of=1
+[spread] control.design,warm,201,golden_window,1,506512,509052,614744,0,614744.0,0
+[verdict] interruption region=control.design regime=warm tick_crossed=65 of=201
+[spread] control.step,cold,1,first_after_reset,201,48021,48021,48021,0,238.9,0
 [verdict] interruption region=control.step regime=cold tick_crossed=0 of=1
-[spread] control.step,warm,201,golden_window,201,97311,97311,100491,0,500.0,0
-[verdict] interruption region=control.step regime=warm tick_crossed=12 of=201
-[spread] estimation.step,cold,1,first_after_reset,201,4740312,4740312,4740312,0,23583.6,0
-[verdict] interruption region=estimation.step regime=cold tick_crossed=1 of=1
-[spread] estimation.step,warm,201,golden_window,201,4612744,4614494,10610528,173,52788.7,0
-[verdict] interruption region=estimation.step regime=warm tick_crossed=201 of=201
-[spread] dsp.step,cold,1,first_after_reset,201,11292,11292,11292,0,56.2,0
+[spread] control.step,warm,201,golden_window,201,41030,41030,42301,162,210.5,0
+[verdict] interruption region=control.step regime=warm tick_crossed=5 of=201
+[spread] estimation.step,cold,1,first_after_reset,201,1033128,1033128,1033128,0,5139.9,0
+[verdict] interruption region=estimation.step regime=cold tick_crossed=0 of=1
+[spread] estimation.step,warm,201,golden_window,201,953131,954382,964545,0,4798.7,0
+[verdict] interruption region=estimation.step regime=warm tick_crossed=120 of=201
+[spread] dsp.step,cold,1,first_after_reset,201,10017,10017,10017,0,49.8,0
 [verdict] interruption region=dsp.step regime=cold tick_crossed=0 of=1
-[spread] dsp.step,warm,201,golden_window,201,7477,7477,8662,24,43.1,0
+[spread] dsp.step,warm,201,golden_window,201,7476,7476,9375,0,46.6,0
 [verdict] interruption region=dsp.step regime=warm tick_crossed=1 of=201
-[spread] trajectory.step,cold,1,first_after_reset,201,42234,42234,42234,0,210.1,0
+[spread] trajectory.step,cold,1,first_after_reset,201,41602,41602,41602,0,207.0,0
 [verdict] interruption region=trajectory.step regime=cold tick_crossed=0 of=1
-[spread] trajectory.step,warm,201,golden_window,201,26401,26401,27586,81,137.2,0
+[spread] trajectory.step,warm,201,golden_window,201,26400,26400,28299,0,140.8,0
 [verdict] interruption region=trajectory.step regime=warm tick_crossed=4 of=201
 [verdict] gain device=9.467988014221191,5.282016277313232 host=9.467093672154508,5.281739638040154
 [exact] k,t_s,x0,x1,u
@@ -237,7 +237,7 @@
 [verdict] family dsp value=-0.8650799989700317 golden=-0.8650800246615655 departure=2.569e-08 bound=8.694e-03 verdict=PASS allocations=unmeasured
 [verdict] family trajectory value=6.744791507720947 golden=6.744791666666667 departure=1.589e-07 bound=6.182e-03 verdict=PASS allocations=unmeasured
 [verdict] family predictive verdict=ABSENT -- the image was built without the predictive backend
-[verdict] stack region=program used=3672 free=4520 of=8192 bytes
+[verdict] stack region=program used=3576 free=4616 of=8192 bytes
 [verdict] gain check PASS: dev = [8.943e-04, 2.766e-04], tol = 2.292e-02
 [verdict] settling: final |x| = 2.020805e-05 (host = 2.020687e-05, err = 1.183e-09, tol = 3.370e-06)
 [verdict] family control value=2.0208050045766868e-05 golden=2.020686725801993e-05 departure=1.183e-09 bound=3.370e-06 verdict=PASS allocations=unmeasured
