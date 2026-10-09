@@ -47,7 +47,7 @@ function(ctrlpp_nucleo_image target sentinel)
         CTRLPP_MCU_ALLOC_SENTINEL=$<BOOL:${sentinel}>)
 
     target_compile_options(${target} PRIVATE
-        $<$<COMPILE_LANGUAGE:CXX>:-Os -fno-exceptions -fno-rtti -Wno-psabi>
+        $<$<COMPILE_LANGUAGE:CXX>:${CTRLPP_MCU_OPTIMIZE_FLAG} -fno-exceptions -fno-rtti -Wno-psabi>
         -ffunction-sections -fdata-sections
         -fstack-usage)
 
@@ -71,6 +71,15 @@ function(ctrlpp_nucleo_image target sentinel)
     if(sentinel)
         target_link_options(${target} PRIVATE
             -Wl,--wrap=malloc,--wrap=free,--wrap=calloc,--wrap=realloc)
+    endif()
+
+    # The tuned clock tree is raised inside a wrapped SystemInit rather than from
+    # main, so an image built without the option is the reference image bit for
+    # bit.
+    if(CTRLPP_MCU_TUNED_POSTURE)
+        target_sources(${target} PRIVATE clock_tree.cpp clock_tree_report.cpp)
+        target_compile_definitions(${target} PRIVATE CTRLPP_MCU_TUNED_POSTURE)
+        target_link_options(${target} PRIVATE -Wl,--wrap=SystemInit)
     endif()
 
     # Without the dependency an edited reserve in the linker script leaves the

@@ -6,8 +6,8 @@
  * .data/.bss and the stack live in DTCM (zero-wait-state, CPU-local); code and
  * read-only data live in flash. The heap lives in AXI SRAM: the predictive
  * family's setup needs more of it than DTCM can hold beside its static instance
- * and the stack. With the D-cache off, as this leg runs, every access to a
- * heap-resident object pays the AXI SRAM's wait states.
+ * and the stack. With the D-cache off, as the reference posture runs, every
+ * access to a heap-resident object pays the AXI SRAM's wait states.
  *
  * The symbol names below (_estack, _sdata/_edata/_sidata, _sbss/_ebss,
  * end/_end) are dictated verbatim by Source/Templates/gcc/startup_stm32h753xx.s

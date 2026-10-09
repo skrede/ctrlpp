@@ -1,6 +1,9 @@
 #include "posture.h"
 #include "telemetry.h"
 #include "reset_cause.h"
+#ifdef CTRLPP_MCU_TUNED_POSTURE
+    #include "clock_tree.h"
+#endif
 
 #include "stm32h7xx.h"
 
@@ -85,6 +88,9 @@ void report_posture()
     print_reset_cause(cause);
     std::printf(" core_hz=%" PRIu32 " axi_hz=%" PRIu32 " clock_source=%s icache=%s dcache=%s flash_latency_ws=%" PRIu32 " cycle_wrap_ms=%" PRIu32, SystemCoreClock, SystemD2Clock,
                 clock_source(), bit_state(ccr, SCB_CCR_IC_Msk), bit_state(ccr, SCB_CCR_DC_Msk), latency, wrap_ms);
+#ifdef CTRLPP_MCU_TUNED_POSTURE
+    print_clock_tree();
+#endif
     std::printf(" code=%s data=%s stack=%s heap=%s optimize=%s compiler=gcc-%s\n", region_of(&report_posture), region_of(&SystemCoreClock), region_of(&frame_marker), region_of(end),
                 optimization(), __VERSION__);
 }

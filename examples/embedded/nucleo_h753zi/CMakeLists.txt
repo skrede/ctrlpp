@@ -106,6 +106,26 @@ if(NOT CTRLPP_MCU_BOOT_HANDSHAKE_MS MATCHES "^[0-9]+$")
     message(FATAL_ERROR "CTRLPP_MCU_BOOT_HANDSHAKE_MS must be a whole number of milliseconds, not '${CTRLPP_MCU_BOOT_HANDSHAKE_MS}'")
 endif()
 
+# The reference posture is the reset clock tree: 64 MHz HSI, both caches off,
+# seven flash wait states, -Os. CTRLPP_MCU_TUNED_POSTURE raises the core to the
+# highest clock its silicon revision supports and turns both caches on
+# (clock_tree.cpp). CTRLPP_MCU_OPTIMIZE sets the C++ optimization flag apart
+# from it, so the clock's share of a difference and the compiler's can be
+# measured separately.
+option(CTRLPP_MCU_TUNED_POSTURE "Run the images on PLL1 at the silicon's highest core clock with both caches on" OFF)
+set(CTRLPP_MCU_OPTIMIZE "" CACHE STRING
+    "C++ optimization flag; empty selects -O2 under CTRLPP_MCU_TUNED_POSTURE and -Os otherwise")
+if(NOT CTRLPP_MCU_OPTIMIZE STREQUAL "")
+    set(CTRLPP_MCU_OPTIMIZE_FLAG "${CTRLPP_MCU_OPTIMIZE}")
+elseif(CTRLPP_MCU_TUNED_POSTURE)
+    set(CTRLPP_MCU_OPTIMIZE_FLAG -O2)
+else()
+    set(CTRLPP_MCU_OPTIMIZE_FLAG -Os)
+endif()
+if(NOT CTRLPP_MCU_OPTIMIZE_FLAG MATCHES "^-O[0-3sgz]$")
+    message(FATAL_ERROR "CTRLPP_MCU_OPTIMIZE must be one optimization flag such as -Os or -O2, not '${CTRLPP_MCU_OPTIMIZE}'")
+endif()
+
 # Cortex-M7 hard-float arch flags. The toolchain file applies these at compile
 # time; the gcc driver also needs them on the link line to select the correct
 # newlib-nano multilib.

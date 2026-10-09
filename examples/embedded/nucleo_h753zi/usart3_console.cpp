@@ -5,7 +5,8 @@
 // out USART3 makes std::printf reach the host's /dev/ttyACM0 with no
 // debugger/semihosting. After the CMSIS SystemInit (which does not configure
 // the PLL) the H753 runs on HSI = 64 MHz, so PCLK1 = 64 MHz and USART3's kernel
-// clock = 64 MHz; BRR = 64e6 / 115200 ~= 556 for oversampling-by-16.
+// clock = 64 MHz; BRR = 64e6 / 115200 ~= 556 for oversampling-by-16. The tuned
+// posture keeps that kernel clock by moving USART3 onto HSI (clock_tree.cpp).
 
 #include "stm32h7xx.h"
 

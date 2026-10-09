@@ -187,6 +187,11 @@
 #
 # Environment:
 #   CAPTURE_BUILD_DIR        build tree (default: <repo>/build-arm-capture)
+#   CAPTURE_CONFIGURE_ARGS   NUCLEO-H753ZI only: cache arguments added to the
+#                            configure "prepare" runs, for example
+#                            -DCTRLPP_MCU_TUNED_POSTURE=ON, which belongs in a
+#                            CAPTURE_BUILD_DIR of its own (default: none; a
+#                            build tree keeps what it was configured with)
 #   CAPTURE_MOUNT            ST-LINK mass-storage mount
 #                            (default: /run/media/$USER/NOD_H753ZI)
 #   CAPTURE_PORT             serial port, when discovery must be overridden (on
@@ -633,10 +638,13 @@ do_prepare()
         prepare_esp32
         return 0
     fi
+    local configure_args=()
+    read -r -a configure_args <<< "${CAPTURE_CONFIGURE_ARGS:-}"
     cmake -S "${leg_dir}" -B "${build_dir}" \
         -G "${generator}" \
         -DCMAKE_TOOLCHAIN_FILE="${leg_dir}/cmake/toolchain-arm-none-eabi.cmake" \
         -DCMAKE_BUILD_TYPE=Release \
+        "${configure_args[@]}" \
         || fail 3 "configure of ${leg_dir} failed."
 
     cmake --build "${build_dir}" --parallel "${build_jobs}" \
