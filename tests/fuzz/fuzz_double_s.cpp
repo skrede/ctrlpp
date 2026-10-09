@@ -112,14 +112,11 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     // Boundary velocities, in a range derived from the decoded velocity limit
     // rather than a fixed interval, so no bound of its own is introduced here.
-    // The range is open at both ends: a boundary velocity that reaches the
-    // velocity limit exactly leaves no admissible profile between the two, which
-    // is outside the domain these profiles are defined on rather than a defect
-    // in them. The neighboring representable value is the largest speed still
-    // inside that domain, so it is what the clamp uses.
-    const double v_bound = std::nextafter(v_max, 0.0);
-    const double v0 = std::clamp(buf[5], -v_bound, v_bound);
-    const double v1 = std::clamp(buf[6], -v_bound, v_bound);
+    // The range is closed at both ends: a boundary velocity equal to the
+    // velocity limit is inside the domain these profiles are defined on, where
+    // the ramp attached to it has zero duration.
+    const double v0 = std::clamp(buf[5], -v_max, v_max);
+    const double v1 = std::clamp(buf[6], -v_max, v_max);
 
     // Retiming multiplier, on the same positive-range domain clamp the limits use.
     const double stretch = std::clamp(std::abs(buf[7]), 1.0, 1e6);

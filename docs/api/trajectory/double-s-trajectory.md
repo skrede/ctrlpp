@@ -43,7 +43,7 @@ Construction follows the B&M flowchart (Fig 3.18) to solve all phase durations. 
 
 Nonzero initial and final velocities `v0`, `v1` are supported through the general B&M Sec 3.4.1 formulation: the acceleration phase ramps from `v0` and the deceleration phase ramps to `v1`, so `evaluate(0)` reports `v0` and `evaluate(duration())` reports `v1`, both with zero acceleration. When `v0 = v1 = 0` the solver reduces exactly to the symmetric Sec 3.4.3 special case.
 
-In the no-cruise sub-case the peak velocity is solved directly against the commanded displacement, and each ramp takes whichever of its two closed forms applies -- constant-acceleration segment present, or triangular in acceleration when the velocity change is too small to build up to `a_max`. All three limits stay respected in both shapes. Where the two ramps carry different square roots of the peak the solve falls back to a bracketed search that terminates by exhaustion of the floating-point bracket, not on an iteration count.
+In the no-cruise sub-case the peak velocity is solved directly against the commanded displacement, and each ramp takes whichever of its two closed forms applies -- constant-acceleration segment present, or triangular in acceleration when the velocity change is too small to build up to `a_max`. All three limits stay respected in both shapes. Where the two ramps carry different square roots of the peak the solve falls back to a bracketed search that terminates by exhaustion of the floating-point bracket, not on an iteration count. The solved peak is capped at `v_max`: the no-cruise sub-case is entered only when the cruise duration is not positive, which is equivalent to a peak at or below `v_max`, so the cap absorbs the rounding at that boundary the same way the floor on the constant-acceleration remainders in `phase_durations()` absorbs its own.
 
 ## Rejections
 
@@ -58,7 +58,9 @@ Checked in order:
 | `abs(v0) > v_max` or `abs(v1) > v_max` | `trajectory_error::boundary_velocity_exceeds_limit` |
 | a displacement below the distance the transition between the boundary velocities already sweeps | `trajectory_error::unreachable_boundary_velocity` |
 | a negative segment duration or total duration | `trajectory_error::unreachable_boundary_velocity` |
-| a duration outside the representable range, or a total that underflowed to zero on a nonzero displacement | `trajectory_error::unrepresentable_duration` |
+| a duration outside the representable range | `trajectory_error::unrepresentable_duration` |
+| a constructed peak velocity that did not come out at or below `v_max`, which after the cruise-free peak is capped only a non-finite peak can produce | `trajectory_error::unrepresentable_duration` |
+| a total that underflowed to zero on a nonzero displacement | `trajectory_error::unrepresentable_duration` |
 
 ### The velocity limit is a precondition
 

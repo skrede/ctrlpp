@@ -73,9 +73,10 @@ public:
     ///    extreme case -> trajectory_error::unreachable_boundary_velocity
     ///  * a negative segment duration or total duration ->
     ///    trajectory_error::unreachable_boundary_velocity
-    ///  * a duration outside the representable range, or a total duration that
-    ///    underflowed to zero on a nonzero commanded displacement ->
-    ///    trajectory_error::unrepresentable_duration
+    ///  * a duration outside the representable range, a constructed peak
+    ///    velocity that did not come out at or below the velocity limit, or a
+    ///    total duration that underflowed to zero on a nonzero commanded
+    ///    displacement -> trajectory_error::unrepresentable_duration
     ///
     /// The velocity limit is a PRECONDITION on the boundary velocities, not a
     /// bound the construction raises to accommodate them. Raising it would
@@ -145,6 +146,9 @@ public:
             if (!std::isfinite(stored)) {
                 return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
             }
+        }
+        if (!(profile.v_lim_ <= cfg.v_max)) {
+            return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
         }
         // A nonzero commanded displacement is not traversed in zero time at any
         // finite velocity, so a total duration that underflowed to zero under
@@ -595,7 +599,8 @@ private:
                 auto const b = a_max / j_max;
                 auto const c = -h;
                 auto const disc = b * b - Scalar{4} * a * c;
-                auto const v_lim = (-b + std::sqrt(disc)) / (Scalar{2} * a);
+                // Capped at v_max for the reason given in compute_general_bc.
+                auto const v_lim = std::min((-b + std::sqrt(disc)) / (Scalar{2} * a), v_max);
 
                 v_lim_ = v_lim;
                 T_j1_ = a_max / j_max;
@@ -633,10 +638,12 @@ private:
 
         // Steps 1-3: try the shape that reaches the velocity limit. A cruise
         // segment at v_max only exists when the limit is at least as large as
-        // both boundary velocities; when it is not, the peak must lie above both
-        // of them and only the cruise-free construction below can express that.
+        // both boundary velocities, and at equality the ramp attached to that
+        // boundary velocity has zero duration; when it is not, the peak must lie
+        // above both of them and only the cruise-free construction below can
+        // express that.
         // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.21), p.80-81
-        if (v_max > pv_hi) {
+        if (v_max >= pv_hi) {
             auto const accel = make_velocity_ramp(v_max - pv0_, a_max, j_max);
             auto const decel = make_velocity_ramp(v_max - pv1_, a_max, j_max);
             auto const swept = (pv0_ + v_max) * accel.T / Scalar{2}
@@ -706,7 +713,12 @@ private:
             rise = solve_no_cruise_rise(h, pv_hi, pv_lo, a_max, j_max);
         }
 
-        auto const v_peak = pv_hi + rise;
+        // This branch is entered only when the cruise duration is not positive, i.e. a peak at or below v_max,
+        // so the cap absorbs the rounding of that boundary exactly as the phase_durations() floor absorbs its own.
+        if (pv_hi + rise > v_max) {
+            rise = v_max - pv_hi;
+        }
+        auto const v_peak = std::min(pv_hi + rise, v_max);
         auto const near_ramp = make_velocity_ramp(rise, a_max, j_max);
         auto const far_ramp = make_velocity_ramp(rise + (pv_hi - pv_lo), a_max, j_max);
         auto const& accel = (pv0_ >= pv1_) ? near_ramp : far_ramp;
@@ -846,7 +858,8 @@ private:
         T_v_ = Scalar{0};
         a_lim_a_ = j_max * T_j;
         a_lim_d_ = a_lim_a_;
-        v_lim_ = a_lim_a_ * T_j;
+        // Capped at v_max for the reason given in compute_general_bc.
+        v_lim_ = std::min(a_lim_a_ * T_j, v_max_);
     }
 
     /// @brief Evaluate acceleration-phase segments 1-3.

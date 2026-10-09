@@ -10,10 +10,12 @@
 #include <cmath>
 #include <limits>
 #include <cstdint>
+#include <algorithm>
 #include <type_traits>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
+using Catch::Matchers::WithinULP;
 
 namespace
 {
@@ -79,6 +81,32 @@ auto built_profile(typename ctrlpp::double_s_trajectory<Scalar>::config const& c
     auto created = ctrlpp::double_s_trajectory<Scalar>::create(cfg);
     REQUIRE(created.has_value());
     return created.value();
+}
+
+auto sampled_peak_speed(ctrlpp::double_s_trajectory<double> const& traj) -> double
+{
+    auto const T = traj.duration();
+    auto peak = std::abs(traj.evaluate(T).velocity[0]);
+    for (std::int64_t i = 0; static_cast<double>(i) * 1e-3 < T; ++i) {
+        peak = std::max(peak, std::abs(traj.evaluate(static_cast<double>(i) * 1e-3).velocity[0]));
+    }
+    return peak;
+}
+
+struct limit_set
+{
+    double v_max, a_max, j_max;
+};
+
+constexpr std::array<limit_set, 4> near_limit_sets{{{1.0, 1.0, 1.0}, {5.0, 10.0, 50.0}, {0.7, 1.3, 2.9}, {1.0, 5.0, 50.0}}};
+
+auto stepped(double value, std::int32_t steps) -> double
+{
+    auto const toward = (steps < 0) ? -std::numeric_limits<double>::infinity() : std::numeric_limits<double>::infinity();
+    for (std::int32_t i = 0; i < std::abs(steps); ++i) {
+        value = std::nextafter(value, toward);
+    }
+    return value;
 }
 
 }
@@ -432,7 +460,84 @@ TEST_CASE("double_s: a boundary velocity above the velocity limit is rejected",
     auto const at_limit = traj_t::create(
         {.q0 = 0.0, .q1 = 10.0, .v_max = 1.0, .a_max = 1.0, .j_max = 1.0, .v0 = 1.0, .v1 = 0.0});
     REQUIRE(at_limit.has_value());
-    REQUIRE(at_limit.value().duration() > 0.0);
+    REQUIRE(at_limit.value().peak_velocity() <= 1.0);
+    // Two roundings: the subtraction of the swept distance and the division by v_max.
+    REQUIRE_THAT(at_limit.value().phase_durations()[3], WithinULP(9.0, 2));
+}
+
+TEST_CASE("Double-S: a boundary velocity at the limit builds a profile at the limit",
+          "[trajectory][double_s]")
+{
+    struct frame
+    {
+        double q1, v0, v1;
+    };
+    for (auto const f : std::array<frame, 4>{{{10.0, 1.0, 0.0}, {10.0, 0.0, 1.0}, {-10.0, -1.0, 0.0}, {-10.0, 0.0, -1.0}}}) {
+        CAPTURE(f.q1, f.v0, f.v1);
+        auto const traj =
+            built({.q0 = 0.0, .q1 = f.q1, .v_max = 1.0, .a_max = 1.0, .j_max = 1.0, .v0 = f.v0, .v1 = f.v1});
+        REQUIRE(traj.peak_velocity() <= 1.0);
+        // Four roundings: the subtraction of the swept distance, the division by
+        // v_max and the two sums that total the segments.
+        REQUIRE_THAT(traj.duration(), WithinULP(11.0, 4));
+        // Two roundings: the subtraction of the swept distance and the division by v_max.
+        REQUIRE_THAT(traj.phase_durations()[3], WithinULP(9.0, 2));
+        REQUIRE(sampled_peak_speed(traj) <= 1.0);
+    }
+}
+
+TEST_CASE("Double-S: a rest-to-rest peak that rounds above the limit is held at the limit", "[trajectory][double_s]")
+{
+    // Two representable steps below the cruise boundary; v_max * j_max == a_max^2
+    // sends it to the doubly degenerate branch.
+    auto const traj = built({.q0 = 0.0, .q1 = 1.9999999999999996, .v_max = 1.0, .a_max = 1.0, .j_max = 1.0});
+    REQUIRE(traj.peak_velocity() <= 1.0);
+}
+
+TEST_CASE("Double-S: rest-to-rest commands around the cruise boundary build at or below the limit",
+          "[trajectory][double_s]")
+{
+    for (auto const l : near_limit_sets) {
+        // @cite biagiotti2009 -- Sec. 3.4.3, p.89
+        auto const T_a = (l.v_max * l.j_max >= l.a_max * l.a_max) ? l.a_max / l.j_max + l.v_max / l.a_max
+                                                                   : 2.0 * std::sqrt(l.v_max / l.j_max);
+        auto h = stepped(l.v_max * T_a, -400);
+        for (std::int32_t i = 0; i <= 800; ++i, h = stepped(h, 1)) {
+            CAPTURE(l.v_max, l.a_max, l.j_max, h);
+            auto const created = ctrlpp::double_s_trajectory<double>::create(
+                {.q0 = 0.0, .q1 = h, .v_max = l.v_max, .a_max = l.a_max, .j_max = l.j_max});
+            REQUIRE(created.has_value());
+            REQUIRE(created.value().peak_velocity() <= l.v_max);
+        }
+    }
+}
+
+TEST_CASE("Double-S: entering at the limit near the fastest transition builds at or below the limit or is unreachable",
+          "[trajectory][double_s]")
+{
+    for (auto const l : near_limit_sets) {
+        for (double const fraction : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+            auto const v1 = fraction * l.v_max;
+            auto const dv = l.v_max - v1;
+            // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.20), p.80
+            auto const T = (dv * l.j_max < l.a_max * l.a_max) ? 2.0 * std::sqrt(dv / l.j_max) : dv / l.a_max + l.a_max / l.j_max;
+            auto h = stepped((l.v_max + v1) * T / 2.0, -20);
+            for (std::int32_t i = 0; i <= 420; ++i, h = stepped(h, 1)) {
+                CAPTURE(l.v_max, l.a_max, l.j_max, v1, h);
+                auto const created = ctrlpp::double_s_trajectory<double>::create(
+                    {.q0 = 0.0, .q1 = h, .v_max = l.v_max, .a_max = l.a_max, .j_max = l.j_max, .v0 = l.v_max, .v1 = v1});
+                if (created.has_value()) {
+                    REQUIRE(created.value().peak_velocity() <= l.v_max);
+                } else if (h != 0.0 && h / l.v_max == 0.0) {
+                    // With both boundary velocities at the limit the fastest transition is zero, so the scan
+                    // reaches subnormal displacements whose traversal time at the limit underflows.
+                    REQUIRE(created.error() == ctrlpp::trajectory_error::unrepresentable_duration);
+                } else {
+                    REQUIRE(created.error() == ctrlpp::trajectory_error::unreachable_boundary_velocity);
+                }
+            }
+        }
+    }
 }
 
 // --------------------------------------------------------------------------

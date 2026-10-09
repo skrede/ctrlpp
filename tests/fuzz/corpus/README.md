@@ -97,6 +97,7 @@ derived floor, so the input weight the solve receives is never the number stored
 | `fuzz_trapezoidal` | `valley_equal_boundary_long_realization.bin` | the counterexample's equal-boundary neighbor, which IS reachable: the retired parametrization accepted it and realized a duration 3.3e6 units in the last place LONG, where the shape-boundary parametrization lands within a fraction of one. The two seeds together are why an acceptance verdict alone was never evidence -- the retired form got the verdict wrong in one direction here and in the other on its neighbor, reporting success both times | `b03a1a2` | 7 little-endian binary64: `q0, q1, v_max, a_max, v0, v1, stretch`; minimum 56 bytes |
 | `fuzz_trapezoidal` | `valley_ramps_sweep_displacement_exactly.bin` | equal boundary velocities whose two ramps sweep the commanded displacement exactly, so the cruise-velocity form's constant term cancels to a representable zero while its linear coefficient stays negative. The library takes the root selection that ADDS two magnitudes there and resolves the retiming to the last bit; the retired conditioning model charged that selection the constant term's relative error regardless, and an exactly cancelled term makes that error unbounded, so the model called an exact answer a defect | `b03a1a2` | 7 little-endian binary64: `q0, q1, v_max, a_max, v0, v1, stretch`; minimum 56 bytes |
 | `fuzz_trapezoidal` | `plateau_rise_vanishing_boundary_velocity.bin` | a displacement of 1e143 against a larger boundary velocity of 1e-11, which puts the shifted solve's linear coefficient and that coefficient's own error budget 149 and 160 decades out. Their product leaves the representable range while every quantity the model is built from is still ordinary, so this seed pins the conditioning model's divide-before-multiply structure: a model that FORMS the discriminant's error instead of dividing into it reports an unbounded amplification on a retiming the library lands within four parts per million of | `b03a1a2` | 7 little-endian binary64: `q0, q1, v_max, a_max, v0, v1, stretch`; minimum 56 bytes |
+| `fuzz_trapezoidal` | `boundary_velocity_at_limit.bin` | a boundary velocity equal to the limit, which builds a profile that cruises at the limit | `b03a1a2` | 7 little-endian binary64: `q0, q1, v_max, a_max, v0, v1, stretch`; minimum 56 bytes |
 | `fuzz_double_s` | `no_cruise_unequal_boundary.bin` | the recorded counterexample, construction only: a shape with no cruise segment and unequal boundary velocities, the family whose earlier back-off loop could not terminate | `b03a1a2` | 8 little-endian binary64: `q0, q1, v_max, a_max, j_max, v0, v1, stretch`; minimum 64 bytes |
 | `fuzz_double_s` | `no_cruise_unequal_boundary_stretched.bin` | the same configuration retimed halfway to its reachable supremum, so the seed also carries the time-scaling leg | `b03a1a2` | 8 little-endian binary64: `q0, q1, v_max, a_max, j_max, v0, v1, stretch`; minimum 64 bytes |
 | `fuzz_double_s` | `no_cruise_negative_boundary.bin` | the recorded counterexample whose position was wrong by three orders of magnitude, construction only: no cruise segment, both boundary velocities negative against a negative displacement | `b03a1a2` | 8 little-endian binary64: `q0, q1, v_max, a_max, j_max, v0, v1, stretch`; minimum 64 bytes |
@@ -104,6 +105,7 @@ derived floor, so the input weight the solve receives is never the number stored
 | `fuzz_double_s` | `rest_to_rest_closed_form.bin` | rest-to-rest retiming, the closed-form path where the scale is a single quotient of two durations | `b03a1a2` | 8 little-endian binary64: `q0, q1, v_max, a_max, j_max, v0, v1, stretch`; minimum 64 bytes |
 | `fuzz_double_s` | `equal_boundary_velocities.bin` | equal nonzero boundary velocities, the family the earlier construction happened to survive and which must therefore keep passing | `b03a1a2` | 8 little-endian binary64: `q0, q1, v_max, a_max, j_max, v0, v1, stretch`; minimum 64 bytes |
 | `fuzz_double_s` | `rejection_past_reachable_supremum.bin` | a request at twice the reachable supremum: a typed rejection that leaves the profile untouched | `b03a1a2` | 8 little-endian binary64: `q0, q1, v_max, a_max, j_max, v0, v1, stretch`; minimum 64 bytes |
+| `fuzz_double_s` | `boundary_velocity_at_limit.bin` | a boundary velocity equal to the limit, which builds a profile that cruises at the limit | `b03a1a2` | 8 little-endian binary64: `q0, q1, v_max, a_max, j_max, v0, v1, stretch`; minimum 64 bytes |
 | `fuzz_care` | `marginal_mode_rank_deficient_weight.bin` | the ordinary output-map regulator: a mode exactly on the imaginary axis observed through a rank-one weight factor. The retired invertibility guard rejected every such factor outright, so this whole family was unexplored; the detectability test admits it, and this seed pins that the entitlement test runs at a mode of zero real part and admits there | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
 | `fuzz_care` | `unstable_mode_rank_deficient_weight.bin` | the same rank-one weight factor against a mode of strictly positive real part, so the entitlement test is exercised in the open right half-plane and not only on its boundary | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
 | `fuzz_care` | `stable_pair_full_rank_weight.bin` | every mode strictly stable and the factor full rank, so the entitlement loop tests no mode at all. The complementary branch to the two above: a pose whose filter is vacuous by construction and which must still be judged by the forward error | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
@@ -136,6 +138,7 @@ the minimum decoded size, well inside the length cap the smoke run imposes.
 | `valley_equal_boundary_long_realization.bin` | 0 | 0.00390625 | 0.9999999999999821 | 1e-6 | 0.999999999999982 | 0.999999999999982 | 1.0000000009095642 |
 | `valley_ramps_sweep_displacement_exactly.bin` | 0 | 1 | 10 | 1 | 1 | 1 | 2 |
 | `plateau_rise_vanishing_boundary_velocity.bin` | 0 | 1e143 | 1e6 | 1e6 | -999999 | 1e-11 | 1e6 |
+| `boundary_velocity_at_limit.bin` | 0 | 10 | 1 | 1 | 1 | 0 | 1 |
 
 `fuzz_double_s`
 
@@ -148,6 +151,7 @@ the minimum decoded size, well inside the length cap the smoke run imposes.
 | `rest_to_rest_closed_form.bin` | 0 | 10 | 3 | 2 | 5 | 0 | 0 | 3 |
 | `equal_boundary_velocities.bin` | 0 | 5 | 3 | 2 | 10 | 1 | 1 | 1.5135135135135132 |
 | `rejection_past_reachable_supremum.bin` | 0 | 5 | 3 | 2 | 10 | 1 | 1 | 4.0540540540540526 |
+| `boundary_velocity_at_limit.bin` | 0 | 10 | 1 | 1 | 1 | 1 | 0 | 1 |
 
 `fuzz_ekf`
 
@@ -160,9 +164,10 @@ the minimum decoded size, well inside the length cap the smoke run imposes.
 ordinary; nothing about the seed depends on the exact value beyond its being within one such step of
 the range's edge.
 
-A `stretch` of one is below the target's own `T_new > T` guard, so those two seeds exercise
+A `stretch` of one is below the target's own `T_new > T` guard, so every seed that stores it exercises
 construction and the dense scan without entering the time-scaling leg. That is deliberate: it keeps
-the construction of each recorded counterexample pinned independently of the retiming.
+the construction of each recorded counterexample, and of a boundary velocity at the limit, pinned
+independently of the retiming.
 
 `fuzz_care`
 

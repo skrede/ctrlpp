@@ -93,7 +93,7 @@ enum class spline_error
 ///                                      require a ramp that runs backwards in
 ///                                      time.
 ///  * unrepresentable_duration        : the arithmetic cannot represent or
-///                                      resolve what the answer needs. Four
+///                                      resolve what the answer needs. Five
 ///                                      cases, all of them facts about the
 ///                                      arithmetic rather than about the
 ///                                      kinematics: a duration of the
@@ -107,14 +107,19 @@ enum class spline_error
 ///                                      out of that difference, by less than the
 ///                                      rounding of the expression that would
 ///                                      solve for it, so it cannot be told apart
-///                                      from that duration; or the discriminant
+///                                      from that duration; the discriminant
 ///                                      of the shape's own quadratic left the
 ///                                      finite range, which would drive its root
 ///                                      to zero and return the shape boundary
-///                                      itself. Every case past the first two
-///                                      says a profile may well exist and the
-///                                      arithmetic cannot locate it, which is
-///                                      why they are reported separately from
+///                                      itself; or the constructed profile's
+///                                      peak velocity did not come out at or
+///                                      below the velocity limit, which after
+///                                      the cruise-free peak is capped only a
+///                                      non-finite peak can produce. Every case
+///                                      past the first two says a profile may
+///                                      well exist and the arithmetic cannot
+///                                      locate it, which is why they are
+///                                      reported separately from
 ///                                      unreachable_duration: the caller should
 ///                                      change the request, not the limits.
 ///  * unreachable_boundary_velocity   : the commanded displacement is smaller
