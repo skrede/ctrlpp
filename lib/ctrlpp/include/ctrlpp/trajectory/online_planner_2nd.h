@@ -336,12 +336,16 @@ class online_planner_2nd
 
         settled_ = false;
         auto const v0 = v_ref_;
-        auto const stop_dist = v0 * v0 / (Scalar{2} * a_max_);
 
-        // The three decisions below ask three different questions about
-        // quantities in two different units, and one number cannot be the right
-        // answer to all of them. Each gets the scale of the quantity it tests
-        // and a count of the operations that formed it.
+        // One braking distance serves the overshoot decision and the stop placement, so the two cannot
+        // disagree; the mean-speed form is kept because it forms no square of the speed.
+        auto const T_brake = std::abs(v0) / a_max_;
+        auto const brake_dist = std::abs(v0) * T_brake / Scalar{2};
+
+        // The two floors below ask questions about quantities in two different
+        // units, and one number cannot be the right answer to both. Each gets
+        // the scale of the quantity it tests and a count of the operations that
+        // formed it.
 
         // Speed floor. The scale is the velocity limit: it is the only velocity
         // the planner is given, and every velocity the profile carries is
@@ -376,31 +380,17 @@ class online_planner_2nd
         auto const length_floor = Scalar{length_rounding_ops}
                                   * std::numeric_limits<Scalar>::epsilon() * length_scale;
 
-        // Overshoot, compared RELATIVELY. Both sides are lengths this planner
-        // has already computed, so the comparison needs no external scale at
-        // all and its slack is the rounding the two chains carry rather than a
-        // distance taken from somewhere else. Three operations form the
-        // stopping distance -- the squared speed, the doubled acceleration
-        // limit and the division -- and one forms the remaining distance. The
-        // chains here are short where the jerk-limited planner's are long,
-        // which is the whole reason its count is not this one.
-        constexpr int stopping_distance_chain_rounding_ops = 3;
-        constexpr int overshoot_rounding_ops = stopping_distance_chain_rounding_ops
-                                               + displacement_rounding_ops;
-        auto const overshoot_slack = Scalar{overshoot_rounding_ops}
-                                     * std::numeric_limits<Scalar>::epsilon();
-
         bool const wrong_direction = (h_signed > Scalar{0} && v0 < Scalar{0})
                                      || (h_signed < Scalar{0} && v0 > Scalar{0})
                                      || (std::abs(h_signed) < length_floor
                                          && std::abs(v0) > speed_floor);
         bool const overshoot = !wrong_direction
-                               && (stop_dist > std::abs(h_signed) * (Scalar{1} + overshoot_slack))
+                               && brake_dist > std::abs(h_signed)
                                && std::abs(v0) > speed_floor;
 
         if (wrong_direction || overshoot) {
             needs_brake_ = true;
-            T_brake_ = std::abs(v0) / a_max_;
+            T_brake_ = T_brake;
             q_after_brake_ = q_ref_ + v0 * T_brake_ / Scalar{2};
             v_after_brake_ = Scalar{0};
             compute_rest_to_rest(q_after_brake_, target_);

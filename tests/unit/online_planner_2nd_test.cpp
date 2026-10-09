@@ -820,11 +820,11 @@ TEST_CASE("OnlinePlanner2nd: the numerical-no-op velocity floor scales with the 
 // -- Test 22: the overshoot verdict is relative, so it is scale-invariant -------
 //
 // The overshoot test compares two lengths the planner has already computed --
-// the stopping distance and the remaining distance -- with a slack that is a
-// counted multiple of epsilon rather than a distance. Its verdict is therefore a
-// property of the RATIO of the two lengths and nothing else, and the same
-// relative shortfall must be called an overshoot on an axis whose stopping
-// distance is metres and on one whose stopping distance is picometres.
+// the braking distance and the remaining distance -- with no slack and no
+// external distance. Its verdict is therefore a property of the RATIO of the two
+// lengths and nothing else, and the same relative shortfall must be called an
+// overshoot on an axis whose stopping distance is meters and on one whose
+// stopping distance is picometers.
 //
 // The lower rungs of the ladder are where an absolute slack could not follow: at
 // the smallest limit set the shortfall the axis is asked to resolve is five
@@ -840,8 +840,8 @@ TEST_CASE("OnlinePlanner2nd: the overshoot verdict is relative and scale-invaria
         {1e-5, 5.0},
     }};
 
-    // A relative shortfall many decades above the counted slack, so what is being
-    // tested is the relativity and not the width.
+    // A relative shortfall many decades above the rounding of either length, so
+    // what is being tested is the relativity and not the boundary.
     constexpr double relative_shortfall = 1e-6;
 
     int rungs = 0;
@@ -863,8 +863,8 @@ TEST_CASE("OnlinePlanner2nd: the overshoot verdict is relative and scale-invaria
         double const q0 = cruising.position[0];
         double const v0 = cruising.velocity[0];
 
-        // The planner's own stopping-distance expression, spelled the same way.
-        double const stop_dist = v0 * v0 / (2.0 * a_max);
+        // The planner's own braking-distance expression, spelled the same way.
+        double const stop_dist = std::abs(v0) * (std::abs(v0) / a_max) / 2.0;
         REQUIRE(stop_dist > 0.0);
 
         REQUIRE(planner.update(q0 + stop_dist * (1.0 - relative_shortfall)).has_value());
@@ -879,4 +879,65 @@ TEST_CASE("OnlinePlanner2nd: the overshoot verdict is relative and scale-invaria
         ++rungs;
     }
     REQUIRE(rungs == 4);
+}
+
+// -- Test 23: one braking distance decides the overshoot and places the stop ----
+//
+// The overshoot verdict and the stopping point are the same length, the mean
+// speed over the braking duration, so the verdict flips exactly where the
+// remaining distance crosses the distance the brake then sweeps. States are
+// taken part way up the acceleration ramp, so the reachable speed range is
+// swept rather than one cruise speed.
+TEST_CASE("OnlinePlanner2nd: the overshoot verdict and the stop placement use one braking distance",
+          "[trajectory][online_planner_2nd][overshoot]")
+{
+    constexpr std::array<std::array<double, 2>, 4> limit_sets{{
+        {5.0, 10.0},
+        {1.0, 5.0},
+        {0.25, 1.0},
+        {40.0, 20.0},
+    }};
+    constexpr std::array<double, 4> speed_fractions{0.1, 0.35, 0.7, 0.95};
+    constexpr int probes_each_side = 4;
+
+    int braked = 0;
+    int carried = 0;
+    for (auto const& limits : limit_sets) {
+        for (double const fraction : speed_fractions) {
+            double const v_max = limits[0];
+            double const a_max = limits[1];
+            auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max});
+            planner.reset(0.0);
+            REQUIRE(planner.update(200.0 * v_max * v_max / a_max).has_value());
+            auto const ramp = planner.sample(fraction * v_max / a_max);
+            double const q0 = ramp.position[0];
+            double const v0 = ramp.velocity[0];
+            REQUIRE(v0 > 0.0);
+            REQUIRE(v0 <= v_max);
+
+            double const T = std::abs(v0) / a_max;
+            double const d = std::abs(v0) * T / 2.0;
+            double target = q0 + d;
+            for (int i = 0; i < probes_each_side; ++i) {
+                target = std::nextafter(target, q0);
+            }
+            for (int i = 0; i <= 2 * probes_each_side; ++i, target = std::nextafter(target, q0 + 2.0 * d)) {
+                REQUIRE(planner.update(target).has_value());
+                auto const& diag = planner.diagnostics();
+                bool const short_of_brake = std::abs(target - q0) < d;
+                CAPTURE(v_max, a_max, fraction, q0, v0, d, i, target);
+                if (short_of_brake) {
+                    CHECK(diag.substitution_reason
+                          == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
+                    CHECK(diag.replan_start_position == q0 + v0 * T / 2.0);
+                    ++braked;
+                } else {
+                    CHECK(diag.substitution_reason == ctrlpp::online_planner_substitution_reason::none);
+                    ++carried;
+                }
+            }
+        }
+    }
+    CHECK(braked > 0);
+    CHECK(carried > 0);
 }

@@ -1,26 +1,26 @@
 /// @file
-/// @brief Probe: do the online planners' overshoot tests and the minimum
-/// displacement a carry-velocity shape needs still disagree, and over what
-/// population?
+/// @brief Probe: do the online planners' overshoot verdicts and the chain each
+/// one reports against still disagree anywhere, and over what population?
 ///
-/// Two tests in the trajectory module answer overlapping questions about the
-/// same command, with two different arithmetic chains behind them:
+/// Each planner decides whether a command overshoots, and then either carries
+/// its current velocity into a profile or brakes to rest first. Each verdict is
+/// meant to share one arithmetic chain with what it reports against:
 ///
-///   * the planner asks whether the distance it needs to stop exceeds the
-///     distance that remains, and admits the command when it does not. The
-///     comparison is relative between two lengths the planner has already
-///     computed, with a slack that is a counted multiple of the scalar type's
-///     epsilon;
-///   * the shape the planner then asks for refuses a commanded displacement
-///     below the distance the fastest admissible transition from the current
-///     velocity to rest already sweeps. That refusal carries no slack at all.
+///   * the jerk-limited planner's overshoot verdict calls the double-S shape's
+///     own minimum-displacement predicate on the operands the shape's
+///     constructor sees, so the planner and the constructor answer the same
+///     question with the same arithmetic. A target the planner admits that the
+///     shape still refuses is a disagreement, and the planner reports it as an
+///     unavailable carry-velocity shape;
+///   * the trapezoidal planner's overshoot verdict and the stopping point it
+///     places are one braking distance, the mean speed times the braking
+///     duration. This leg's reference is that documented formula, so it checks
+///     the implementation against the formula rather than against a second
+///     chain.
 ///
-/// Both quantities are the same length mathematically. They are not the same
-/// number, because they are computed along different chains, and the planner's
-/// side is additionally widened by its slack. Where the two boundaries differ
-/// lies a band of commanded targets the planner admits and the shape cannot
-/// serve. The planner reports every one of them, so the band is public behavior
-/// rather than an internal detail.
+/// Where a verdict and its reference differ lies a band of commanded targets
+/// the two classify differently. The planner reports every substitution, so a
+/// band would be public behavior rather than an internal detail.
 ///
 /// This program measures that band. It compares no quantity against a tolerance
 /// of its own: both verdicts are booleans the library itself returns, and the
@@ -59,18 +59,13 @@
 /// disposition would compare the shape's verdict against itself and find
 /// perfect agreement by construction.
 ///
-/// **The two legs are not the same comparison, and the difference is a
-/// finding.** The jerk-limited planner calls the double-S constructor directly,
-/// so its leg compares the planner's verdict against that constructor's own
-/// rejection on exactly the command the planner hands it. The trapezoidal
-/// planner never calls that constructor -- it bounds no jerk and has no shape
-/// with a domain to fall outside of -- so no such rejection exists to compare
-/// against. Its leg compares the planner's overshoot verdict against the second
-/// route the planner itself takes to the same length: the braking distance it
-/// uses to place its own stopping point, formed as the mean speed times the
-/// braking duration where the decision chain forms it as a squared speed over a
-/// doubled acceleration limit. That is the closest analogue available, and it
-/// is reported as an analogue rather than as the same measurement.
+/// **The two legs are not the same comparison.** The jerk-limited planner
+/// calls the double-S constructor directly, so its leg compares the planner's
+/// verdict against that constructor's own rejection on exactly the command the
+/// planner hands it. The trapezoidal planner never calls that constructor -- it
+/// bounds no jerk and has no shape with a domain to fall outside of -- so its
+/// leg compares the planner's verdict against the braking distance formula the
+/// planner documents for both its decision and its stopping point.
 ///
 /// **Every state the sweep probes is one a caller can present.** The jerk
 /// limited planner is driven to its own cruise phase and probed there, where
@@ -88,20 +83,17 @@
 ///
 ///     g++ -std=c++20 -O2 -fno-exceptions -fno-rtti
 ///         -I lib/ctrlpp/include -isystem /usr/include/eigen3
-///         tools/planner_overshoot_sweep.cpp -o /tmp/overshoot_sweep
+///         tools/planner_overshoot_sweep.cpp -o build/tools/planner_overshoot_sweep
 ///
 /// Usage: no argument prints the full report. `--summary` prints the per
 /// configuration measurements and the totals without the per-point lines.
 ///
 /// **Where the boundaries this program locates were located.** A crossing that
 /// moves with instruction selection is a crossing that has to name the
-/// toolchain it was found on. This one does not move: the whole report is
-/// BYTE-IDENTICAL across g++ 16.1.1, clang 22.1.8 and clang 18.1.8, at
-/// optimization levels zero, two and three, and with floating-point contraction
-/// off, at the compiler default and at `fast`, against Eigen 3.4.1. Eigen takes
-/// no part in either verdict -- neither planner nor the double-S constructor
-/// forms a matrix -- which is why one Eigen release is enough here where a
-/// Riccati measurement would need two.
+/// toolchain it was found on. The archived report was produced by the build
+/// command above with g++ 16.2.1 against Eigen 3.4.1, and by no other
+/// toolchain. Eigen takes no part in either verdict -- neither planner nor the
+/// double-S constructor forms a matrix.
 
 #include "ctrlpp/trajectory/online_planner_2nd.h"
 #include "ctrlpp/trajectory/online_planner_3rd.h"
@@ -129,12 +121,6 @@ constexpr double machine_epsilon = std::numeric_limits<double>::epsilon();
 /// from where the bisection put it is still inside the walk, and narrow enough
 /// that the walk's own count stays readable.
 constexpr std::int64_t walk_margin_ulps = 64;
-
-/// The counted slacks the two planners carry, quoted so the measured relative
-/// band width can be read against the width the counts predict. They enter no
-/// comparison; nothing here is decided by them.
-constexpr int third_order_slack_ops = 46;
-constexpr int second_order_slack_ops = 4;
 
 // ---------------------------------------------------------------------------
 // Arithmetic on representable targets
@@ -396,12 +382,9 @@ void accumulate(leg_counts& leg, configuration_counts const& counts)
 
 /// Locate both boundaries, walk the region between them, climb the ladder
 /// around them, and print what came out.
-///
-/// `slack_ops` is quoted beside the measured relative width so the two can be
-/// read against each other. It enters no comparison.
 template <typename PlannerVerdict, typename ShapeVerdict, typename Probe>
 void measure_configuration(char const* configuration, double q0, double seed_distance,
-                           double length_scale, int slack_ops, PlannerVerdict planner_verdict,
+                           double length_scale, PlannerVerdict planner_verdict,
                            ShapeVerdict shape_verdict, Probe probe, bool print_points,
                            leg_counts& leg)
 {
@@ -431,10 +414,8 @@ void measure_configuration(char const* configuration, double q0, double seed_dis
                     shape_side.target);
         std::printf("      band width            %lld ulp of the commanded target\n",
                     static_cast<long long>(band_ulps));
-        std::printf("      band width relative   %.6e  against a counted slack of %.6e"
-                    " (%d eps)\n",
-                    (shape_side.target - planner_side.target) / remaining_at_planner,
-                    static_cast<double>(slack_ops) * machine_epsilon, slack_ops);
+        std::printf("      band width relative   %.6e\n",
+                    (shape_side.target - planner_side.target) / remaining_at_planner);
         if (band_ulps != 0) {
             ++leg.configurations_with_a_band;
         }
@@ -630,13 +611,13 @@ void sweep_third_order_configuration(limit_set const& limits, double q_start, bo
     auto const length_scale = limits.v_max * limits.v_max / (2.0 * limits.a_max);
 
     measure_configuration(configuration, cruise.q0, seed_distance, length_scale,
-                          third_order_slack_ops, planner_verdict, shape_verdict, probe,
+                          planner_verdict, shape_verdict, probe,
                           print_points, leg);
 }
 
 // ---------------------------------------------------------------------------
 // Second-order leg: the planner's overshoot test against the braking distance
-// it computes for itself along a second route
+// formula it documents for its decision and its stopping point
 // ---------------------------------------------------------------------------
 
 struct ramp_state
@@ -714,14 +695,11 @@ void sweep_second_order_configuration(limit_set const& limits, double q_start,
         return result;
     };
 
-    // The second route to the same length, and the planner's own: the distance
-    // braking to rest sweeps, formed as the mean speed times the braking
-    // duration, which is how the planner places its own stopping point. The
-    // decision chain forms the same length as a squared speed over a doubled
-    // acceleration limit. A commanded displacement below what braking already
-    // sweeps has no carry-velocity trapezoid, for the same reason a commanded
-    // displacement below the jerk-limited transition has no carry-velocity
-    // double-S.
+    // The distance braking to rest sweeps, formed as the mean speed times the
+    // braking duration, which the planner documents as both its overshoot
+    // verdict and its stopping point. A commanded displacement below it has no
+    // carry-velocity trapezoid, for the same reason a commanded displacement
+    // below the jerk-limited transition has no carry-velocity double-S.
     auto const shape_verdict = [&](double target) {
         auto const remaining = target - ramp.q0;
         auto const braking_duration = std::abs(ramp.v0) / limits.a_max;
@@ -743,7 +721,7 @@ void sweep_second_order_configuration(limit_set const& limits, double q_start,
     auto const length_scale = limits.v_max * limits.v_max / (2.0 * limits.a_max);
 
     measure_configuration(configuration, ramp.q0, seed_distance, length_scale,
-                          second_order_slack_ops, planner_verdict, shape_verdict, probe,
+                          planner_verdict, shape_verdict, probe,
                           print_points, leg);
 }
 
@@ -758,7 +736,7 @@ void sweep_second_order_configuration(limit_set const& limits, double q_start,
 /// Which branch each set takes is printed with its result rather than asserted
 /// here.
 constexpr limit_set third_order_limits[] = {
-    {5.0, 10.0, 50.0},   // the set the coupled regression case commands
+    {5.0, 10.0, 50.0},   // the set the boundary-agreement regression case commands
     {1.0, 5.0, 50.0},    // unit scale
     {0.25, 1.0, 4.0},    // slow axis
     {40.0, 20.0, 100.0}, // fast axis
@@ -766,10 +744,10 @@ constexpr limit_set third_order_limits[] = {
     {1e3, 1e4, 1e5},     // three decades up
 };
 
-/// Axis positions at which the same limit set is probed. The band is a fixed
-/// relative width, so its width in representable targets shrinks as the axis
-/// travels away from the origin, and where it closes entirely a caller can no
-/// longer land in it. That is measured rather than argued.
+/// Axis positions at which the same limit set is probed. A band of fixed
+/// relative width shrinks in representable targets as the axis travels away
+/// from the origin, so agreement is measured at several positions rather than
+/// argued from one.
 constexpr double axis_positions[] = {0.0, 1e2, 1e4};
 
 constexpr limit_set second_order_limits[] = {
@@ -827,10 +805,10 @@ auto main(int argc, char** argv) -> int
     }
     report_leg("Third-order", third);
 
-    std::printf("\n\nSecond-order planner: its overshoot test against the braking distance it\n");
-    std::printf("computes for itself along a second route. The double-S constructor is not\n");
-    std::printf("reachable from this planner, so no rejection of its own exists to compare\n");
-    std::printf("against.\n\n");
+    std::printf("\n\nSecond-order planner: its overshoot test against the braking distance\n");
+    std::printf("formula it documents for its decision and its stopping point. The double-S\n");
+    std::printf("constructor is not reachable from this planner, so no rejection of its own\n");
+    std::printf("exists to compare against.\n\n");
 
     leg_counts second{};
     for (auto const& limits : second_order_limits) {

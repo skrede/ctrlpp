@@ -20,6 +20,7 @@
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
 #include "ctrlpp/trajectory/detail/boundary_velocity.h"
+#include "ctrlpp/trajectory/detail/jerk_limited_ramp.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -135,7 +136,7 @@ public:
             auto const sigma = (h_signed > Scalar{0}) ? Scalar{1} : Scalar{-1};
             auto const pv0 = sigma * cfg.v0;
             auto const pv1 = sigma * cfg.v1;
-            auto const h_min = no_cruise_displacement(
+            auto const h_min = detail::no_cruise_displacement(
                 Scalar{0}, std::max(pv0, pv1), std::min(pv0, pv1), cfg.a_max, cfg.j_max);
             if (sigma * h_signed < h_min) {
                 return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
@@ -668,8 +669,8 @@ private:
         // express that.
         // @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.21), p.80-81
         if (v_max >= pv_hi) {
-            auto const accel = make_velocity_ramp(v_max - pv0_, a_max, j_max);
-            auto const decel = make_velocity_ramp(v_max - pv1_, a_max, j_max);
+            auto const accel = detail::make_velocity_ramp(v_max - pv0_, a_max, j_max);
+            auto const decel = detail::make_velocity_ramp(v_max - pv1_, a_max, j_max);
             auto const swept = (pv0_ + v_max) * accel.T / Scalar{2}
                              + (v_max + pv1_) * decel.T / Scalar{2};
             auto const T_v = (h - swept) / v_max;
@@ -725,7 +726,7 @@ private:
         auto const a_sq_over_j = a_max * a_max / j_max;
 
         Scalar rise{};
-        if (h >= no_cruise_displacement(a_sq_over_j, pv_hi, pv_lo, a_max, j_max)) {
+        if (h >= detail::no_cruise_displacement(a_sq_over_j, pv_hi, pv_lo, a_max, j_max)) {
             auto const linear = Scalar{2} * pv_hi + a_sq_over_j;
             auto const constant = (pv_hi - pv_lo) * (pv_hi + pv_lo) / Scalar{2}
                                 + a_sq_over_j * (Scalar{3} * pv_hi + pv_lo) / Scalar{2}
@@ -743,8 +744,8 @@ private:
             rise = v_max - pv_hi;
         }
         auto const v_peak = std::min(pv_hi + rise, v_max);
-        auto const near_ramp = make_velocity_ramp(rise, a_max, j_max);
-        auto const far_ramp = make_velocity_ramp(rise + (pv_hi - pv_lo), a_max, j_max);
+        auto const near_ramp = detail::make_velocity_ramp(rise, a_max, j_max);
+        auto const far_ramp = detail::make_velocity_ramp(rise + (pv_hi - pv_lo), a_max, j_max);
         auto const& accel = (pv0_ >= pv1_) ? near_ramp : far_ramp;
         auto const& decel = (pv0_ >= pv1_) ? far_ramp : near_ramp;
 
@@ -758,55 +759,6 @@ private:
         v_lim_ = v_peak;
         degenerate_ = true;
         T_ = T_a_ + T_v_ + T_d_;
-    }
-
-    /// @brief Shape of a jerk-limited ramp between two velocities whose endpoint
-    /// accelerations are both zero.
-    struct velocity_ramp
-    {
-        Scalar T{};     ///< total ramp duration
-        Scalar T_j{};   ///< duration of each constant-jerk sub-segment
-        Scalar a_lim{}; ///< acceleration magnitude actually reached
-    };
-
-    /// @brief Fastest admissible ramp spanning a velocity change.
-    ///
-    /// The ramp is jerk, constant acceleration, jerk. When the velocity change is
-    /// too small to build the acceleration up to a_max the constant-acceleration
-    /// sub-segment vanishes, the ramp is triangular in acceleration, and it peaks
-    /// at j_max * T_j instead. Both branches are exact closed forms; there is no
-    /// sub-case left over for which the acceleration bound has to be lowered and
-    /// the solve retried.
-    ///
-    /// @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.20), p.80
-    static auto make_velocity_ramp(Scalar dv, Scalar a_max, Scalar j_max) -> velocity_ramp
-    {
-        auto const d = std::abs(dv);
-        if (d * j_max < a_max * a_max) {
-            auto const T_j = std::sqrt(d / j_max);
-            return {Scalar{2} * T_j, T_j, j_max * T_j};
-        }
-        auto const T_j = a_max / j_max;
-        return {d / a_max + T_j, T_j, a_max};
-    }
-
-    /// @brief Distance swept by the two ramps of a cruise-free profile whose peak
-    /// velocity rises by `rise` above the larger boundary velocity.
-    ///
-    /// Each ramp's acceleration is point-symmetric about the ramp's own midpoint,
-    /// so the velocity it sweeps has mean exactly the average of its two
-    /// endpoints and the swept distance is that mean times the ramp duration.
-    /// Derived in place from that symmetry, which is the same argument
-    /// compute_q_at_Ta() rests on. Both mean velocities are formed from the rise
-    /// rather than from the peak so that a rise far below the boundary velocities
-    /// keeps every digit it has.
-    static auto no_cruise_displacement(Scalar rise, Scalar pv_hi, Scalar pv_lo, Scalar a_max, Scalar j_max) -> Scalar
-    {
-        auto const far_rise = rise + (pv_hi - pv_lo);
-        auto const near_ramp = make_velocity_ramp(rise, a_max, j_max);
-        auto const far_ramp = make_velocity_ramp(far_rise, a_max, j_max);
-        return (Scalar{2} * pv_hi + rise) * near_ramp.T / Scalar{2}
-             + (Scalar{2} * pv_lo + far_rise) * far_ramp.T / Scalar{2};
     }
 
     /// @brief Rise of the cruise-free profile that sweeps exactly h.
@@ -826,7 +778,7 @@ private:
     static auto solve_no_cruise_rise(Scalar h, Scalar pv_hi, Scalar pv_lo, Scalar a_max, Scalar j_max) -> Scalar
     {
         auto const swept_at = [&](Scalar rise) {
-            return no_cruise_displacement(rise, pv_hi, pv_lo, a_max, j_max);
+            return detail::no_cruise_displacement(rise, pv_hi, pv_lo, a_max, j_max);
         };
 
         // The bracket starts where the peak velocity reaches zero, not where the

@@ -22,6 +22,8 @@
 #include "ctrlpp/trajectory/double_s_trajectory.h"
 #include "ctrlpp/trajectory/online_planner_diagnostics.h"
 
+#include "ctrlpp/trajectory/detail/jerk_limited_ramp.h"
+
 #include "ctrlpp/util/concepts.h"
 
 #include <cmath>
@@ -115,8 +117,11 @@ class online_planner_3rd
     /// respecting v_max, a_max, and j_max. A same-direction move carries the
     /// current velocity through the profile; a velocity pointing away from the
     /// target (or too large to stop in the available distance) is braked to rest
-    /// first, then replanned. The carry-velocity shape has a domain of its own,
-    /// and a commanded state outside it is braked to rest and replanned as well.
+    /// first, then replanned. "Too large to stop" is the carry-velocity shape's
+    /// own displacement test, so the shape refuses a command the planner admitted
+    /// only for a reason that test does not cover: a carried speed the planner's
+    /// own arithmetic left above the velocity limit, or an arithmetic rejection.
+    /// Such a state is braked to rest and replanned as well.
     ///
     /// A non-finite target is rejected before any member changes. For a finite
     /// target, the commanded shape is not always the one realized: which
@@ -476,10 +481,10 @@ class online_planner_3rd
     {
         auto const h_signed = target_ - q0;
 
-        // The four decisions below ask four different questions about
-        // quantities in two different units, and one number cannot be the right
-        // answer to all of them. Each gets the scale of the quantity it tests
-        // and a count of the operations that formed it.
+        // The two floors below ask questions about quantities in two different
+        // units, and one number cannot be the right answer to both. Each gets
+        // the scale of the quantity it tests and a count of the operations that
+        // formed it.
 
         // Speed floor. The scale is the velocity limit: it is the only velocity
         // the planner is given, and every velocity the profile carries is
@@ -545,34 +550,11 @@ class online_planner_3rd
                                || (h_signed < -length_floor && v0 > speed_floor)
                                || (std::abs(h_signed) < length_floor);
 
-        // Overshoot, compared RELATIVELY. Both sides are lengths this planner
-        // has already computed, so the comparison needs no external scale at
-        // all and its slack is the rounding the two chains carry rather than a
-        // distance taken from somewhere else.
-        //
-        // The count is the sum along the two chains. The stopping distance's
-        // deeper chain is the one that reaches the acceleration limit: the
-        // jerk-phase duration is one, the constant-phase duration two, and the
-        // three-phase distance twenty-nine -- four for the speed after the
-        // first ramp, six for its distance, two for the speed after the
-        // constant stretch, six for its distance and eleven for the final ramp
-        // -- plus the sign multiplication, which is exact and is counted anyway:
-        // thirty-three. The shorter chain, where the acceleration limit is not
-        // reached, is four: a division, a square root and two products. The
-        // deeper branch is the maximum and is the one written down. The
-        // remaining distance carries the twelve of the nulled-acceleration
-        // position plus one for the subtraction, and one alone on the branch
-        // that nulled nothing.
-        constexpr int stopping_distance_chain_rounding_ops = 33;
-        constexpr int remaining_distance_chain_rounding_ops = nulling_position_rounding_ops
-                                                              + displacement_rounding_ops;
-        constexpr int overshoot_rounding_ops = stopping_distance_chain_rounding_ops
-                                               + remaining_distance_chain_rounding_ops;
-        auto const overshoot_slack = Scalar{overshoot_rounding_ops}
-                                     * std::numeric_limits<Scalar>::epsilon();
+        // The carry shape's own displacement test on the operands create() sees, so the verdict and the
+        // shape's refusal agree bit for bit.
         bool const overshoot = !wrong_way
-                               && (std::abs(stop_dist)
-                                   > std::abs(h_signed) * (Scalar{1} + overshoot_slack));
+                               && std::abs(h_signed) < detail::no_cruise_displacement(
+                                      Scalar{0}, std::abs(v0), Scalar{0}, a_max_, j_max_);
 
         if (wrong_way || overshoot) {
             // Velocity points away from the target or is too large to stop in the
@@ -597,20 +579,12 @@ class online_planner_3rd
             return {};
         }
 
-        // That shape has a domain of its own, and the tests above are a
-        // planner-side approximation of it rather than a statement of it: the
-        // current speed may sit above the velocity limit after a limit change,
-        // and the remaining distance may fall below what the transition from
-        // the current velocity to rest already sweeps. Where the shape does
-        // not exist the planner brakes to rest and replans from the stopping
-        // point, which is the same always-admissible fallback the two tests
-        // above select and reaches the same target under the same limits. It
-        // costs time, not correctness, and nothing is emitted from a profile
-        // that was not built.
-        //
-        // The gap between the approximation and the domain is what the reported
-        // reason names: this is the one substitution the two tests above do not
-        // predict, so it is the one a caller has no way to anticipate.
+        // The displacement test above is the shape's own, so the shape refuses here only for a reason that
+        // test does not cover: a carried speed the planner's own arithmetic left above the velocity limit,
+        // or an arithmetic rejection inside the construction. Where the shape does not exist the planner
+        // brakes to rest and replans from the stopping point, the same always-admissible fallback the two
+        // tests above select, reaching the same target under the same limits. It costs time, not
+        // correctness, and nothing is emitted from a profile that was not built.
         append_brake_phases(v0, stop_info);
         auto const q_after = q0 + stop_dist;
         plan_rest_to_rest(q_after);

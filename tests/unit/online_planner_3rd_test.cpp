@@ -1,4 +1,5 @@
 #include "ctrlpp/trajectory/online_planner_3rd.h"
+#include "ctrlpp/trajectory/double_s_trajectory.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_template_test_macros.hpp>
@@ -398,109 +399,109 @@ TEST_CASE("OnlinePlanner3rd: create rejects invalid limits",
     }
 }
 
-// -- Test 13: a substituted carry-velocity shape is REPORTED --------------------
+// -- Test 13: the overshoot verdict and the carry-velocity shape agree ----------
 //
-// The planner selects the brake-then-replan fallback from two tests of its own
-// (direction, and stopping distance against remaining distance), and then from a
-// third condition those two do not predict: the double-S that carries the
-// current velocity through the profile has a domain, and a commanded state can
-// pass both tests and still fall outside it.
-//
-// The resulting motion is limit-respecting and reaches the target, which is
-// exactly why the substitution went unreported for so long: nothing about the
-// motion distinguishes it. So the assertions below are on the REPORT. The motion
-// is checked afterwards, and would pass either way.
-TEST_CASE("OnlinePlanner3rd: carry-velocity shape substitution is reported",
-          "[traj][online_planner_3rd][diagnostics]")
+// The planner brakes to rest when the remaining distance is shorter than the
+// carried velocity sweeps on its way to rest, and the carry-velocity double-S
+// refuses exactly that command. The boundary is located from the shape's own
+// verdict, and every probe around it is a fresh planner driven to the same
+// cruise, so the report at each target can be held against the shape's answer
+// for the same operands. A target the shape refuses must be reported as a
+// predicted overshoot, never as an unpredicted shape refusal.
+TEST_CASE("OnlinePlanner3rd: the overshoot verdict agrees with the carry-velocity shape at its boundary",
+          "[trajectory][online_planner_3rd][diagnostics]")
 {
     double constexpr v_max = 5.0;
     double constexpr a_max = 10.0;
     double constexpr j_max = 50.0;
+    int constexpr probes_each_side = 8;
 
-    auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max, .j_max = j_max});
+    auto const cruise = [&](ctrlpp::online_planner_3rd<double>& planner) {
+        return cruise_up(planner, 100.0, 0.01, 200);
+    };
+    auto reference = make_planner<double>({.v_max = v_max, .a_max = a_max, .j_max = j_max});
+    auto const cruising = cruise(reference);
+    REQUIRE(cruising.v > 0.0);
+    REQUIRE(cruising.v <= v_max);
 
-    auto const cruising = cruise_up(planner, 100.0, 0.01, 200);
-    REQUIRE_THAT(cruising.v, WithinAbs(v_max, 1e-9));
+    auto const shape = [&](double target) {
+        return ctrlpp::double_s_trajectory<double>::create({
+            .q0 = cruising.q,
+            .q1 = target,
+            .v_max = v_max,
+            .a_max = a_max,
+            .j_max = j_max,
+            .v0 = cruising.v,
+            .v1 = 0.0,
+        });
+    };
+    auto const commanded = [&](double target) {
+        auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max, .j_max = j_max});
+        auto const state = cruise(planner);
+        REQUIRE(state.q == cruising.q);
+        REQUIRE(state.v == cruising.v);
+        REQUIRE(planner.update(target).has_value());
+        return planner;
+    };
 
     double const stop_dist = jerk_limited_stop_distance(cruising.v, a_max, j_max);
+    double refused = cruising.q;
+    double admitted = cruising.q + 2.0 * stop_dist;
+    REQUIRE_FALSE(shape(refused).has_value());
+    REQUIRE(shape(admitted).has_value());
+    while (std::nextafter(refused, admitted) != admitted) {
+        double const mid = refused + (admitted - refused) / 2.0;
+        (shape(mid).has_value() ? admitted : refused) = mid;
+    }
+    CAPTURE(cruising.q, cruising.v, stop_dist, refused, admitted);
 
-    // Where the commanded target has to sit, read off the two branch conditions
-    // rather than searched for:
-    //
-    //  * the planner calls it an overshoot when the stopping distance exceeds
-    //    the remaining distance by more than its own comparison slack, and that
-    //    slack is RELATIVE: the remaining distance is scaled by one plus a
-    //    counted number of roundings, so a target short of the stopping point
-    //    by less than the stopping distance times that slack passes the test;
-    //  * the carry-velocity double-S exists only when the remaining distance is
-    //    at least what the transition from the current velocity to rest already
-    //    sweeps, which is the stopping distance outright, so a target short of
-    //    the stopping point by ANY amount has no such shape.
-    //
-    // Between the two lies a band of commanded targets one slack wide that the
-    // planner accepts and the shape cannot serve. Command its midpoint.
-    //
-    // This test is coupled to the planner's comparison slack by construction:
-    // the slack is what opens the band, and a redesign of that constant changes
-    // where the band is. That coupling is the point, not an accident of the
-    // test. The count below is the planner's own: thirty-three roundings along
-    // the stopping-distance chain that reaches the acceleration limit, plus
-    // thirteen along the chain that forms the remaining distance.
-    int constexpr planner_overshoot_rounding_ops = 33 + 13;
-    double const band = stop_dist * static_cast<double>(planner_overshoot_rounding_ops)
-                        * std::numeric_limits<double>::epsilon();
-    double const shortfall = band / 2.0;
-    double const target = cruising.q + stop_dist - shortfall;
+    auto const refusal = shape(refused);
+    REQUIRE_FALSE(refusal.has_value());
+    REQUIRE(refusal.error() == ctrlpp::trajectory_error::unreachable_boundary_velocity);
+    CHECK(commanded(admitted).diagnostics().substitution_reason
+          == ctrlpp::online_planner_substitution_reason::none);
+    CHECK(commanded(refused).diagnostics().substitution_reason
+          == ctrlpp::online_planner_substitution_reason::reversal_or_overshoot);
 
-    // The band is now a few tens of units in the last place of the stopping
-    // distance rather than an absolute picometre, so whether the command landed
-    // inside it is no longer self-evident from the arithmetic above: forming the
-    // target rounds twice at the scale of the stopping POINT, which is larger
-    // than the stopping distance. Assert the premise rather than assume it, so a
-    // miss reports itself as a miss instead of as a surprising branch.
-    double const realized_shortfall = stop_dist - (target - cruising.q);
-    CAPTURE(cruising.q, cruising.v, stop_dist, band, shortfall, realized_shortfall, target);
-    REQUIRE(realized_shortfall > 0.0);
-    REQUIRE(realized_shortfall < band);
+    double target = admitted;
+    for (int i = 0; i < probes_each_side; ++i) {
+        target = std::nextafter(target, cruising.q);
+    }
+    for (int i = 0; i <= 2 * probes_each_side; ++i, target = std::nextafter(target, admitted + stop_dist)) {
+        auto const reason = commanded(target).diagnostics().substitution_reason;
+        auto const expected = shape(target).has_value()
+                                  ? ctrlpp::online_planner_substitution_reason::none
+                                  : ctrlpp::online_planner_substitution_reason::reversal_or_overshoot;
+        CAPTURE(i, target);
+        CHECK(reason == expected);
+        CHECK(reason != ctrlpp::online_planner_substitution_reason::carry_velocity_shape_unavailable);
+    }
 
-    REQUIRE(planner.update(target).has_value());
-
-    // The report, first.
+    auto planner = commanded(refused);
     auto const& diag = planner.diagnostics();
     REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::braked_and_replanned);
-    REQUIRE(diag.substitution_reason
-            == ctrlpp::online_planner_substitution_reason::carry_velocity_shape_unavailable);
     REQUIRE(diag.brake_duration > 0.0);
-    REQUIRE(diag.commanded_target == target);
+    REQUIRE(diag.commanded_target == refused);
     REQUIRE(diag.initial_velocity == cruising.v);
-
-    // Commanded against planned: the replan does not start where the command
-    // did, it starts where the braking ended.
     REQUIRE(diag.replan_start_position != cruising.q);
     REQUIRE_THAT(diag.replan_start_position, WithinAbs(cruising.q + stop_dist, 1e-9));
-
-    // Braking lands one shortfall past the commanded target. That displacement
-    // is nonzero, so the bounded return profile has a positive duration even
-    // though it lies below the planner's comparison slack.
     REQUIRE(diag.planned_duration > diag.brake_duration);
     REQUIRE(std::isfinite(diag.planned_duration));
 
-    // The motion, second. It respects every limit and ends at the target, as it
-    // did before the substitution was reported at all.
+    // The motion runs from the commanded start to the stopping point, never
+    // turning back: the interval it stays inside is the one the report names.
     double constexpr tol = 1e-6;
     double const t_end = cruising.t + diag.planned_duration;
     for (double t = cruising.t; t < t_end; t += 0.001) {
         auto const pt = planner.sample(t);
         REQUIRE(std::abs(pt.velocity[0]) <= v_max + tol);
         REQUIRE(std::abs(pt.acceleration[0]) <= a_max + tol);
-        // The motion runs from the commanded start to the stopping point, never
-        // turning back: the interval it stays inside is the one the report names.
         REQUIRE(pt.position[0] >= cruising.q - tol);
         REQUIRE(pt.position[0] <= diag.replan_start_position + tol);
     }
 
     auto const settled = planner.sample(t_end + 1.0);
-    REQUIRE_THAT(settled.position[0], WithinAbs(target, 1e-6));
+    REQUIRE_THAT(settled.position[0], WithinAbs(refused, 1e-6));
     REQUIRE_THAT(settled.velocity[0], WithinAbs(0.0, 1e-6));
 }
 
@@ -1162,12 +1163,13 @@ TEST_CASE("OnlinePlanner3rd: the zero-displacement floor scales with the limits"
 
 // -- Test 24: the overshoot verdict is relative, so it is scale-invariant -------
 //
-// The overshoot test compares two lengths the planner has already computed, with
-// a slack that is a counted multiple of epsilon rather than a distance. Its
-// verdict is therefore a property of the RATIO of the two lengths and nothing
-// else, and the same relative shortfall must be called an overshoot on an axis
-// whose stopping distance is metres and on one whose stopping distance is
-// picometres.
+// The overshoot test is the carry-velocity shape's own minimum-displacement
+// test: the remaining distance against what the transition from the current
+// velocity to rest sweeps, both lengths the planner computes from its own state
+// and limits, with no slack and no external distance. Its verdict is therefore a
+// property of the RATIO of the two lengths and nothing else, and the same
+// relative shortfall must be called an overshoot on an axis whose stopping
+// distance is meters and on one whose stopping distance is picometers.
 //
 // The lower rungs of the ladder are where an absolute slack could not follow: at
 // the smallest limit set the shortfall the axis is asked to resolve is some
@@ -1183,8 +1185,8 @@ TEST_CASE("OnlinePlanner3rd: the overshoot verdict is relative and scale-invaria
         {1e-5, 5.0, 50.0},
     }};
 
-    // A relative shortfall many decades above the counted slack, so what is being
-    // tested is the relativity and not the width.
+    // A relative shortfall many decades above the rounding of either length, so
+    // what is being tested is the relativity and not the boundary.
     constexpr double relative_shortfall = 1e-6;
 
     // Cruise leaves the acceleration within one rounding of zero, half a unit in
