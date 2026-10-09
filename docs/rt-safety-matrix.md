@@ -566,7 +566,7 @@ result.
 **Power-cycle determinism on this board: PENDING.** No run after a power-on
 reset has been collected yet. The series needs an operator to unplug and replug
 the board, and until it exists the determinism stated above is a warm-reset
-result only. Both images now wait at boot, for at most 10 s, for a byte the
+result only. Both images now wait at boot, for at most 30 s, for a byte the
 capture sends once its reader is attached, so a report read after a replug keeps
 its head, and a report whose wait expired is refused. When the series is
 collected, it is compared under the same refusals, and its run count, decoded
