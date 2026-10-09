@@ -26,9 +26,11 @@
 
 #include "ctrlpp/util/concepts.h"
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <cstddef>
+#include <cstdint>
 #include <algorithm>
 
 namespace ctrlpp
@@ -118,10 +120,9 @@ class online_planner_3rd
     /// current velocity through the profile; a velocity pointing away from the
     /// target (or too large to stop in the available distance) is braked to rest
     /// first, then replanned. "Too large to stop" is the carry-velocity shape's
-    /// own displacement test, so the shape refuses a command the planner admitted
-    /// only for a reason that test does not cover: a carried speed the planner's
-    /// own arithmetic left above the velocity limit, or an arithmetic rejection.
-    /// Such a state is braked to rest and replanned as well.
+    /// own displacement test, and the carried speed is exact by construction, so
+    /// the shape refuses a command the planner admitted only through an
+    /// arithmetic rejection. Such a state is braked to rest and replanned as well.
     ///
     /// A non-finite target is rejected before any member changes. For a finite
     /// target, the commanded shape is not always the one realized: which
@@ -236,6 +237,9 @@ class online_planner_3rd
         , position_settle_tol_{cfg.position_settle_tol}
         , velocity_settle_tol_{cfg.velocity_settle_tol}
         , acceleration_settle_tol_{cfg.acceleration_settle_tol}
+        , phase_end_velocity_{}
+        , phase_end_acceleration_{}
+        , phase_end_pinned_{}
     {
     }
 
@@ -271,11 +275,25 @@ class online_planner_3rd
     // Profile as a sequence of constant-jerk phases.
     // Each phase has duration T_ph_[i] and jerk j_ph_[i].
     // Maximum 11 phases: up to 4 for bringing accel to zero + 7 for double-S.
+    // A phase whose end state is known analytically records it, and evaluation
+    // takes that state in place of the integrated one.
     static constexpr int max_phases_ = 11;
     int n_phases_{0};
     Scalar T_ph_[max_phases_]{};
     Scalar j_ph_[max_phases_]{};
+    std::array<Scalar, max_phases_> phase_end_velocity_;
+    std::array<Scalar, max_phases_> phase_end_acceleration_;
+    std::array<bool, max_phases_> phase_end_pinned_;
     Scalar T_{};  ///< total duration
+
+    // The roundings this planner performs on a speed it hands to the zero-acceleration planning step, taken over the
+    // branches that reach it and maximized. On the branch that plans straight from the caller's snapshot it performed
+    // none, and the snapshot's own error is the caller's, out of scope exactly as the trapezoidal retiming floor scopes
+    // its own. On the branch that nulled a starting acceleration first, seven operations formed the speed: the phase
+    // duration's division, the product of the starting acceleration with it, the three products of the jerk term, and
+    // the two sums. The scaling by one half inside that term is exact in a binary radix and is counted anyway, which
+    // makes the total an upper bound rather than an estimate.
+    static constexpr std::int32_t speed_rounding_ops = 7;
 
     /// @brief Compute jerk-limited profile from current state to target.
     ///
@@ -290,6 +308,7 @@ class online_planner_3rd
     void compute_profile()
     {
         n_phases_ = 0;
+        phase_end_pinned_.fill(false);
 
         // Is the commanded state a numerical no-op -- a command the arithmetic
         // cannot tell apart from the one already in force?
@@ -411,14 +430,16 @@ class online_planner_3rd
             auto const j_az = (a_start > Scalar{0}) ? -j_max_ : j_max_;
 
             // State after this phase:
-            auto const v_after = v_start + a_start * T_az + Scalar{0.5} * j_az * T_az * T_az;
+            auto const v_after = snap_nulling_end_speed(v_start + a_start * T_az + Scalar{0.5} * j_az * T_az * T_az);
             auto const q_after = q_start + v_start * T_az
                                  + Scalar{0.5} * a_start * T_az * T_az
                                  + j_az * T_az * T_az * T_az / Scalar{6};
 
+            auto const first = n_phases_;
             T_ph_[n_phases_] = T_az;
             j_ph_[n_phases_] = j_az;
             ++n_phases_;
+            pin_group_end(first, v_after, Scalar{0});
 
             q_start = q_after;
             v_start = v_after;
@@ -489,19 +510,9 @@ class online_planner_3rd
         // Speed floor. The scale is the velocity limit: it is the only velocity
         // the planner is given, and every velocity the profile carries is
         // bounded by it. The count is the roundings this planner performed on
-        // the speed being tested, taken over the branches that reach here and
-        // maximized. On the branch that plans straight from the caller's
-        // snapshot it performed none, and the snapshot's own error is the
-        // caller's, out of scope exactly as the trapezoidal retiming floor
-        // scopes its own. On the branch that nulled a starting acceleration
-        // first, seven operations formed the speed: the phase duration's
-        // division, the product of the starting acceleration with it, the three
-        // products of the jerk term, and the two sums. The scaling by one half
-        // inside that term is exact in a binary radix and is counted anyway,
-        // which makes the total an upper bound rather than an estimate. Below
-        // the floor the commanded state is at rest to the precision available.
-        constexpr int speed_rounding_ops = 7;
-        auto const speed_floor = Scalar{speed_rounding_ops}
+        // the speed being tested. Below the floor the commanded state is at
+        // rest to the precision available.
+        auto const speed_floor = static_cast<Scalar>(speed_rounding_ops)
                                  * std::numeric_limits<Scalar>::epsilon() * v_max_;
 
         // Length floor. The scale is the planner's own stopping distance from
@@ -579,12 +590,11 @@ class online_planner_3rd
             return {};
         }
 
-        // The displacement test above is the shape's own, so the shape refuses here only for a reason that
-        // test does not cover: a carried speed the planner's own arithmetic left above the velocity limit,
-        // or an arithmetic rejection inside the construction. Where the shape does not exist the planner
-        // brakes to rest and replans from the stopping point, the same always-admissible fallback the two
-        // tests above select, reaching the same target under the same limits. It costs time, not
-        // correctness, and nothing is emitted from a profile that was not built.
+        // The displacement test above is the shape's own and the carried speed is exact by construction, so
+        // the shape refuses here only through an arithmetic rejection inside the construction. Where the
+        // shape does not exist the planner brakes to rest and replans from the stopping point, the same
+        // always-admissible fallback the two tests above select, reaching the same target under the same
+        // limits. It costs time, not correctness, and nothing is emitted from a profile that was not built.
         append_brake_phases(v0, stop_info);
         auto const q_after = q0 + stop_dist;
         plan_rest_to_rest(q_after);
@@ -624,18 +634,54 @@ class online_planner_3rd
 
         auto const durations = profile.phase_durations();
         auto const sigma = (target_ - q0 > Scalar{0}) ? Scalar{1} : Scalar{-1};
+        append_double_s_phases(durations, sigma, sigma * profile.peak_velocity());
+        return true;
+    }
+
+    /// @brief Append the seven phases of a double-S, accel(3) + cruise(1) + decel(3), pinning the ramp
+    /// and cruise ends at (peak, 0) and the deceleration end at rest.
+    void append_double_s_phases(std::array<Scalar, 7> const& durations, Scalar sigma, Scalar peak)
+    {
         auto const j_pos = sigma * j_max_;
         auto const j_neg = -sigma * j_max_;
 
-        // 7-phase double-S: accel(3) + cruise(1) + decel(3).
-        append_phase(durations[0], j_pos);      // jerk(+): build acceleration
-        append_phase(durations[1], Scalar{0});  // constant acceleration
-        append_phase(durations[2], j_neg);      // jerk(-): null acceleration at v_lim
-        append_phase(durations[3], Scalar{0});  // cruise at v_lim
-        append_phase(durations[4], j_neg);      // jerk(-): build deceleration
-        append_phase(durations[5], Scalar{0});  // constant deceleration
-        append_phase(durations[6], j_pos);      // jerk(+): null acceleration at rest
-        return true;
+        auto const ramp = n_phases_;
+        append_phase(durations[0], j_pos);
+        append_phase(durations[1], Scalar{0});
+        append_phase(durations[2], j_neg);
+        pin_group_end(ramp, peak, Scalar{0});
+        auto const cruise = n_phases_;
+        append_phase(durations[3], Scalar{0});
+        pin_group_end(cruise, peak, Scalar{0});
+        auto const decel = n_phases_;
+        append_phase(durations[4], j_neg);
+        append_phase(durations[5], Scalar{0});
+        append_phase(durations[6], j_pos);
+        pin_group_end(decel, Scalar{0}, Scalar{0});
+    }
+
+    /// @brief Record (v, a) as the end state of the last phase appended since index `first`, if any.
+    void pin_group_end(std::int32_t first, Scalar v, Scalar a)
+    {
+        if (n_phases_ > first) {
+            auto const last = static_cast<std::size_t>(n_phases_ - 1);
+            phase_end_velocity_[last] = v;
+            phase_end_acceleration_[last] = a;
+            phase_end_pinned_[last] = true;
+        }
+    }
+
+    // Analytically the nulling-end speed of a state this planner produced is at most the ramp's peak, so an
+    // excess within the counted roundings is that rounding and is placed on the limit; a larger excess is
+    // left alone for the brake path.
+    auto snap_nulling_end_speed(Scalar v_after) const -> Scalar
+    {
+        auto const excess = std::abs(v_after) - v_max_;
+        auto const rounding = static_cast<Scalar>(speed_rounding_ops) * std::numeric_limits<Scalar>::epsilon() * v_max_;
+        if (excess > Scalar{0} && excess <= rounding) {
+            return std::copysign(v_max_, v_after);
+        }
+        return v_after;
     }
 
     /// @brief Information about stopping from a given velocity.
@@ -719,38 +765,13 @@ class online_planner_3rd
     void append_brake_phases(Scalar v0, stop_result const& info)
     {
         auto const sign_v = (v0 >= Scalar{0}) ? Scalar{1} : Scalar{-1};
-        // Deceleration jerk: opposite sign of velocity
-        auto const j_decel = -sign_v * j_max_;
-        auto const j_accel = sign_v * j_max_;
-
+        auto const first = n_phases_;
+        append_phase(info.T_j, -sign_v * j_max_);
         if (info.a_max_reached) {
-            auto const T_const = info.T_a - Scalar{2} * info.T_j;
-            // Phase 1: jerk to build deceleration
-            T_ph_[n_phases_] = info.T_j;
-            j_ph_[n_phases_] = j_decel;
-            ++n_phases_;
-
-            // Phase 2: constant deceleration (jerk = 0)
-            if (T_const > Scalar{0}) {
-                T_ph_[n_phases_] = T_const;
-                j_ph_[n_phases_] = Scalar{0};
-                ++n_phases_;
-            }
-
-            // Phase 3: jerk to bring acceleration back to zero
-            T_ph_[n_phases_] = info.T_j;
-            j_ph_[n_phases_] = j_accel;
-            ++n_phases_;
-        } else {
-            // Only two jerk phases (triangular deceleration)
-            T_ph_[n_phases_] = info.T_j;
-            j_ph_[n_phases_] = j_decel;
-            ++n_phases_;
-
-            T_ph_[n_phases_] = info.T_j;
-            j_ph_[n_phases_] = j_accel;
-            ++n_phases_;
+            append_phase(info.T_a - Scalar{2} * info.T_j, Scalar{0});
         }
+        append_phase(info.T_j, sign_v * j_max_);
+        pin_group_end(first, Scalar{0}, Scalar{0});
     }
 
     /// @brief Append a single constant-jerk phase if its duration is non-negligible.
@@ -780,20 +801,11 @@ class online_planner_3rd
         auto const sigma = (h_signed > Scalar{0}) ? Scalar{1} : Scalar{-1};
         auto const h = std::abs(h_signed);
 
-        Scalar T_j1{}, T_a{}, T_v{}, T_d{}, T_j2{};
-        compute_double_s_durations(h, T_j1, T_a, T_v, T_d, T_j2);
+        Scalar T_j1{}, T_a{}, T_v{}, T_d{}, T_j2{}, v_lim{};
+        compute_double_s_durations(h, T_j1, T_a, T_v, T_d, T_j2, v_lim);
 
-        auto const j_pos = sigma * j_max_;
-        auto const j_neg = -sigma * j_max_;
-
-        // 7-phase double-S: accel(3) + cruise(1) + decel(3)
-        append_phase(T_j1, j_pos);
-        append_phase(T_a - Scalar{2} * T_j1, Scalar{0});
-        append_phase(T_j1, j_neg);
-        append_phase(T_v, Scalar{0});
-        append_phase(T_j2, j_neg);
-        append_phase(T_d - Scalar{2} * T_j2, Scalar{0});
-        append_phase(T_j2, j_pos);
+        append_double_s_phases({T_j1, T_a - Scalar{2} * T_j1, T_j1, T_v, T_j2, T_d - Scalar{2} * T_j2, T_j2},
+                               sigma, sigma * v_lim);
     }
 
     /// @brief Assign doubly-degenerate durations (neither v_max nor a_max reached).
@@ -810,40 +822,41 @@ class online_planner_3rd
     }
 
     /// @brief Solve no-cruise case where v_max is not reached.
+    ///
+    /// The peak `v_lim` is capped at v_max: the branch is entered only when the cruise duration is not positive,
+    /// which is equivalent to a peak at most v_max, so a computed excess is rounding.
     /// @cite biagiotti2009 -- Sec. 3.4.3, p.89-91
-    void solve_no_cruise(Scalar h, bool a_max_reached,
-                         Scalar& T_j1, Scalar& T_a, Scalar& T_v,
-                         Scalar& T_d, Scalar& T_j2) const
+    void solve_no_cruise(Scalar h, bool a_max_reached, Scalar& T_j1, Scalar& T_a, Scalar& T_v,
+                         Scalar& T_d, Scalar& T_j2, Scalar& v_lim) const
     {
         T_v = Scalar{0};
         auto const a = a_max_;
         auto const j = j_max_;
-
         if (a_max_reached) {
             auto const coeff_a = Scalar{1} / a;
             auto const coeff_b = a / j;
-            auto const coeff_c = -h;
-            auto const disc = coeff_b * coeff_b - Scalar{4} * coeff_a * coeff_c;
-            auto const v_lim = (-coeff_b + std::sqrt(disc)) / (Scalar{2} * coeff_a);
+            auto const disc = coeff_b * coeff_b + Scalar{4} * coeff_a * h;
+            auto const root = (-coeff_b + std::sqrt(disc)) / (Scalar{2} * coeff_a);
 
             T_j1 = a / j;
             T_j2 = T_j1;
-            T_a = T_j1 + v_lim / a;
+            T_a = T_j1 + root / a;
             T_d = T_a;
+            v_lim = std::min(root, v_max_);
 
-            if (T_a < Scalar{2} * T_j1) {
-                assign_doubly_degenerate(h, j, T_j1, T_a, T_d, T_j2);
+            if (!(T_a < Scalar{2} * T_j1)) {
+                return;
             }
-        } else {
-            assign_doubly_degenerate(h, j, T_j1, T_a, T_d, T_j2);
         }
+        assign_doubly_degenerate(h, j, T_j1, T_a, T_d, T_j2);
+        v_lim = std::min(j * T_j1 * T_j1, v_max_);
     }
 
     /// @brief Compute double-S phase durations for rest-to-rest displacement h.
     /// @cite biagiotti2009 -- Sec. 3.4.3, p.88-91
     void compute_double_s_durations(Scalar h,
                                     Scalar& T_j1, Scalar& T_a, Scalar& T_v,
-                                    Scalar& T_d, Scalar& T_j2) const
+                                    Scalar& T_d, Scalar& T_j2, Scalar& v_lim) const
     {
         auto const v = v_max_;
         auto const a = a_max_;
@@ -861,8 +874,9 @@ class online_planner_3rd
             T_a = T_a_val;
             T_d = T_a_val;
             T_v = T_v_val;
+            v_lim = v_max_;
         } else {
-            solve_no_cruise(h, a_max_reached, T_j1, T_a, T_v, T_d, T_j2);
+            solve_no_cruise(h, a_max_reached, T_j1, T_a, T_v, T_d, T_j2, v_lim);
         }
     }
 
@@ -889,7 +903,6 @@ class online_planner_3rd
 
         for (int i = 0; i < n_phases_; ++i) {
             auto const T_i = T_ph_[i];
-            auto const j_i = j_ph_[i];
             auto const t_remaining = dt - t_elapsed;
 
             if (t_remaining <= Scalar{0}) {
@@ -897,21 +910,31 @@ class online_planner_3rd
             }
 
             if (t_remaining < T_i) {
-                // Partial phase
-                auto const tau = t_remaining;
-                q += v * tau + Scalar{0.5} * a * tau * tau + j_i * tau * tau * tau / Scalar{6};
-                v += a * tau + Scalar{0.5} * j_i * tau * tau;
-                a += j_i * tau;
+                advance_phase(i, t_remaining, q, v, a);
                 break;
             }
 
-            // Full phase
-            q += v * T_i + Scalar{0.5} * a * T_i * T_i + j_i * T_i * T_i * T_i / Scalar{6};
-            v += a * T_i + Scalar{0.5} * j_i * T_i * T_i;
-            a += j_i * T_i;
-
+            advance_phase(i, T_i, q, v, a);
             t_elapsed += T_i;
         }
+    }
+
+    // Inside a pinned phase the sample is formed backward from the pinned end state, the backward-time form
+    // double_s_trajectory::eval_accel_phase uses for its last segment, because a forward sum can round past the
+    // end value just before the boundary.
+    void advance_phase(std::int32_t i, Scalar tau, Scalar& q, Scalar& v, Scalar& a) const
+    {
+        auto const j_i = j_ph_[i];
+        q += v * tau + Scalar{0.5} * a * tau * tau + j_i * tau * tau * tau / Scalar{6};
+        auto const index = static_cast<std::size_t>(i);
+        if (!phase_end_pinned_[index]) {
+            v += a * tau + Scalar{0.5} * j_i * tau * tau;
+            a += j_i * tau;
+            return;
+        }
+        auto const s = T_ph_[i] - tau;
+        v = phase_end_velocity_[index] - phase_end_acceleration_[index] * s + Scalar{0.5} * j_i * s * s;
+        a = phase_end_acceleration_[index] - j_i * s;
     }
 };
 
