@@ -80,7 +80,7 @@ this table was written.
 |--------|------------------|---------------------|------------------|-----------------------|------------------------|----------|
 | `pid` | YES | YES (no loop) | YES | YES | YES | `pid_nomalloc_test` (position form, velocity form, composed anti-windup and derivative filter); leg 1 + `embedded_core_float` |
 | `lqr` / `lqr_time_varying` steady-state control law | YES | YES (no loop in the gain application) | YES | YES | YES | lqr TEST_CASEs in `pid_nomalloc_test.cpp` ("lqr steady-state control law", "lqr_time_varying steady-state control law"); leg 1 witness instantiates `lqr_gain` |
-| `kalman_filter` | YES below a measurement dimension of 48, **NO at and above it** at two states or more, where the gain solve's Householder sequence goes blocked and the linear-algebra library heap-allocates its block reflector factor once per update (see "The heap claim's boundary" below). A single-state filter stays allocation-free at every measurement dimension. | YES (closed form) | YES | YES | YES | `estimation_kalman_nomalloc_test` (26 configurations spanning 1 to 128 on both axes: the 13 its measurement table prints, the 6 values only its supported-maximum table names, the state axis at its instantiation limit, both sides of the boundary at 47 and 48, and the single-state exemption); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float`. On silicon at `double` and that same instantiation, the NUCLEO-H753ZI evidence image reports 0 allocations over 201 steps behind a passing allocation canary, with its last step's value within the derived bound of the host golden (`scripts/board_capture_fixtures/evidence.txt`, `arm-none-eabi-gcc` 16.2.0; see "On silicon: the NUCLEO-H753ZI leg" below). At `float` and the same dimensions, the ESP32-POE-EA evidence image reports 0 allocations over 201 steps behind its passing allocation and heap-view canaries, with a clean heap view in the window, and its last step's value within the single-precision bound derived for it (`scripts/board_capture_fixtures/esp32-evidence.txt`, `xtensa-esp-elf-gcc` 15.2.0 under ESP-IDF v6.0.2; see "On silicon, and what it does to the table above") |
+| `kalman_filter` | YES below a measurement dimension of 48, **NO at and above it** at two states or more, where the gain solve's Householder sequence goes blocked and the linear-algebra library heap-allocates its block reflector factor once per update (see "The heap claim's boundary" below). A single-state filter stays allocation-free at every measurement dimension. | YES (closed form) | YES | YES | YES | `estimation_kalman_nomalloc_test` (26 configurations spanning 1 to 128 on both axes: the 13 its measurement table prints, the 6 values only its supported-maximum table names, the state axis at its instantiation limit, both sides of the boundary at 47 and 48, and the single-state exemption); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float`. On silicon at `double` and that same instantiation, the NUCLEO-H753ZI evidence image reports 0 allocations over 201 steps behind a passing allocation canary, with the covariance entry `P(1,1)`, the velocity variance, after its last step within the derived bound of the host golden; the state estimate is not compared (`scripts/board_capture_fixtures/evidence.txt`, `arm-none-eabi-gcc` 16.2.0; see "On silicon: the NUCLEO-H753ZI leg" below). At `float` and the same dimensions, the ESP32-POE-EA evidence image reports 0 allocations over 201 steps behind its passing allocation and heap-view canaries, with a clean heap view in the window, and its covariance entry `P(1,1)` after the last step within the single-precision bound derived for it (`scripts/board_capture_fixtures/esp32-evidence.txt`, `xtensa-esp-elf-gcc` 15.2.0 under ESP-IDF v6.0.2; see "On silicon, and what it does to the table above") |
 | `ekf` | YES below a measurement dimension of 48, **NO at and above it** at two states or more, for the same reason and with the same single-state exemption as the row above. | YES (closed form) | YES | YES | YES | `estimation_ekf_nomalloc_test` (25 configurations spanning 1 to 128 on both axes: the 13 its measurement table prints, the 6 values only its supported-maximum table names, the state axis at its instantiation limit, both sides of the boundary at 47 and 48, and the single-state exemption); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float` |
 | `ukf` | YES at every measured configuration, including 128 states by 128 outputs, **because its gain decomposition defaults to LDLT and builds no Householder sequence at all**. Selecting the QR option puts it on the boundary the rows beside it have, at a measurement dimension of 48. | YES (fixed sigma-point set) | YES | YES | YES | `estimation_ukf_nomalloc_test` (25 configurations spanning 2 to 128 on both axes, including both instantiation limits and the corner, plus 2 more with the QR option selected, walking both sides of the boundary that option brings back); `estimation_nomalloc_test` (the fixed instantiation at two states and one output); leg 1 + `embedded_core_float` |
 | `mekf` | YES below a measurement dimension of 48, **NO at and above it** (see "The heap claim's boundary" below). The boundary is on the measurement dimension and not on the error state: 125 bias states against 4 outputs is allocation-free. This row has no single-state exemption, since its right-hand side is the error state and is never one column. | YES (closed form) | YES | YES | YES | `estimation_mekf_nomalloc_test` (20 configurations: the 11 of the 13 its measurement table prints that instantiate, the 4 values only its supported-maximum table names, both axes at their instantiation limits with the corner, and both sides of the boundary at 47 and 48); `estimation_nomalloc_test` (the fixed instantiation at three bias states and three outputs); leg 1 + `embedded_core_float` |
@@ -460,7 +460,7 @@ precision:
 | family | quantity judged | departure | derived bound | departure / bound |
 |---|---|---:|---:|---:|
 | control | final state norm | 1.183e-09 | 3.370e-06 | 3.5e-04 |
-| estimation | the last step's value | 2.764e-07 | 5.976e-03 | 4.6e-05 |
+| estimation | the covariance entry `P(1,1)`, the velocity variance, after the last step | 2.764e-07 | 5.976e-03 | 4.6e-05 |
 | signal processing | the last step's value | 2.569e-08 | 8.694e-03 | 3.0e-06 |
 | trajectory | the last step's value | 1.589e-07 | 6.182e-03 | 2.6e-05 |
 
@@ -617,7 +617,7 @@ derived for it:
 | family | quantity judged | departure | derived bound |
 |---|---|---:|---:|
 | control | final state norm | 2.062e-17 | 6.070e-15 |
-| estimation | the last step's value | 6.661e-16 | 2.226e-11 |
+| estimation | the covariance entry `P(1,1)`, the velocity variance, after the last step | 6.661e-16 | 2.226e-11 |
 | signal processing | the last step's value | 0 | 3.239e-11 |
 | trajectory | the last step's value | 0 | 2.303e-11 |
 | predictive | closed-loop cost over the run | 1.425e-04 | 1.134 |
@@ -1446,6 +1446,29 @@ result-multiplier storage inline, so the steady-state solve allocates nothing
 (measured 0.00 allocs/step) once warmed up.  It remains iteration-bounded by
 `max_eval` and clock-free with `max_time = 0`, so on those axes it meets the hard
 real-time obligations the runtime-horizon `nmpc_dynamic` path cannot.
+
+**Measured on silicon, the default `nmpc` does not fit its demonstration's
+period at the worst case.** No runtime-horizon optimizer runs on either board.
+The one predictive figure on silicon is the default `nmpc` at the shipped pin
+(`NV = 17`, `MaxM = 12`), on the NUCLEO-H753ZI's timing image (build id
+`5e0486618196df29e7e73fc391fd1103515f6d6a`,
+`scripts/board_capture_fixtures/timing.txt`, `arm-none-eabi-gcc` 16.2.0, 64 MHz
+with both caches off; see "On silicon: the NUCLEO-H753ZI leg" above). There, one
+solve and its plant step took a median of 76.3 ms and a worst of 151.2 ms over
+the 201 window solves, and the cold first solve after reset took 2.22 s. The
+demonstration's control period is 100 ms (`kPredictiveDt` in
+`examples/embedded/shared/golden_reference.h`). **The worst window solve
+overruns that period, and so does the cold first solve; only the median fits
+within it.** A bounded iteration count and zero steady-state allocation do not
+bound the solve's time inside a given period, so a caller on a deadline sizes it
+against the measured worst case at its own posture. The ESP32-POE-EA has no
+predictive figure: both of its images declare the predictive family absent
+(`scripts/board_capture_fixtures/esp32-evidence.txt`, ELF sha256
+`c7bc0e9faef5707f2ec9d327766ecc397c84312c91872c51383a3e628aa25f98`, and
+`scripts/board_capture_fixtures/esp32-timing.txt`, ELF sha256
+`a7d830451598f39f56a1b579900c59613d420dc5f89e872a18d0e2fcbdb7fbd5`), because
+the backend's solver computes in `double` only and its first solve's stack
+exceeds that leg's 8,192-byte control task.
 
 ## Static-memory linear MPC: the future hard real-time path
 
