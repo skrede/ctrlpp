@@ -127,9 +127,13 @@ otherwise produce silent corruption through intermediate overflow:
   machine epsilon, preventing overflow when adjacent knots are very close but
   not identical.
 
-- **Thomas solver pivot collapse:** The tridiagonal solver detects near-zero
-  pivots during forward elimination and returns zero rather than producing
-  Inf from division.
+- **Thomas solver pivot collapse:** The tridiagonal solver checks every pivot
+  once during forward elimination against a counted rounding bound scaled by
+  the pivot's row, and refuses a pivot it cannot tell from zero (a NaN pivot
+  included) as a typed error instead of returning a solution. The cyclic solver
+  applies the same refusal to its Sherman-Morrison denominator, which vanishes
+  exactly when the cyclic matrix is singular. `cubic_spline::create` reports
+  either refusal as `spline_error::unrepresentable_spline`.
 
 - **DARE arithmetic range, and what a common rescale carries:** The discrete
   algebraic Riccati equation solver equilibrates the weights before forming the

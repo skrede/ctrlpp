@@ -75,6 +75,8 @@ class cubic_spline
     ///  * knot times not strictly increasing        -> spline_error::non_increasing_times
     ///  * periodic BC with fewer than 3 waypoints   -> spline_error::periodic_too_few_points
     ///  * periodic BC with q_0 != q_n beyond budget -> spline_error::periodic_endpoint_mismatch
+    ///  * a velocity system whose elimination meets
+    ///    a pivot indistinguishable from zero       -> spline_error::unrepresentable_spline
     ///  * coefficients outside the representable
     ///    range of Scalar                           -> spline_error::unrepresentable_spline
     ///
@@ -140,7 +142,7 @@ class cubic_spline
         }
 
         cubic_spline spline{unchecked_t{}, cfg};
-        if (!spline.coefficients_representable_) {
+        if (!spline.system_solved_ || !spline.coefficients_representable_) {
             return ctrlpp::unexpected(spline_error::unrepresentable_spline);
         }
         return spline;
@@ -190,6 +192,7 @@ class cubic_spline
     /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
     cubic_spline(unchecked_t, config const& cfg)
         : times_{cfg.times}
+        , system_solved_{true}
     {
         auto const n_pts = times_.size();
         auto const n = n_pts - 1; // number of spans
@@ -204,13 +207,12 @@ class cubic_spline
 
         // Solve for velocities at each waypoint
         std::vector<Scalar> vel(n_pts);
-
-        if (cfg.bc == boundary_condition::natural) {
-            solve_natural(h, delta, cfg.positions, vel, n_pts, n);
-        } else if (cfg.bc == boundary_condition::clamped) {
-            solve_clamped(h, delta, cfg.positions, vel, n_pts, n, cfg.v0, cfg.vn);
-        } else {
-            solve_periodic(h, delta, cfg.positions, vel, n_pts, n);
+        auto const solved = (cfg.bc == boundary_condition::natural)   ? solve_natural(h, delta, cfg.positions, vel, n_pts, n)
+                            : (cfg.bc == boundary_condition::clamped) ? solve_clamped(h, delta, cfg.positions, vel, n_pts, n, cfg.v0, cfg.vn)
+                                                                      : solve_periodic(h, delta, cfg.positions, vel, n_pts, n);
+        if (!solved) {
+            system_solved_ = false;
+            return;
         }
 
         // Compute polynomial coefficients for each span
@@ -329,12 +331,12 @@ class cubic_spline
     /// Interior: h_i * v_{i-1} + 2*(h_{i-1}+h_i) * v_i + h_{i-1} * v_{i+1} = RHS_i
     ///
     /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-    static void solve_natural(std::vector<Scalar> const& h,
+    static auto solve_natural(std::vector<Scalar> const& h,
                               std::vector<Scalar> const& delta,
                               std::vector<Scalar> const& /*pos*/,
                               std::vector<Scalar>& vel,
                               std::size_t n_pts,
-                              std::size_t n)
+                              std::size_t n) -> ctrlpp::expected<void, spline_error>
     {
         // Full system of size n+1
         std::vector<Scalar> a(n_pts, Scalar{0});
@@ -360,11 +362,15 @@ class cubic_spline
         b[n] = Scalar{2} * h[n - 1];
         d[n] = Scalar{3} * delta[n - 1] * h[n - 1];
 
-        detail::thomas_solve(a, b, c, d);
+        auto solved = detail::thomas_solve(a, b, c, d);
+        if (!solved) {
+            return solved;
+        }
 
         for (std::size_t i = 0; i < n_pts; ++i) {
             vel[i] = d[i];
         }
+        return {};
     }
 
     /// @brief Solve clamped BC: (n-1)x(n-1) system for interior velocities.
@@ -372,21 +378,21 @@ class cubic_spline
     /// v_0 and v_n are known from config. Interior system moves known terms to RHS.
     ///
     /// @cite biagiotti2009 -- Sec. 4.4.1
-    static void solve_clamped(std::vector<Scalar> const& h,
+    static auto solve_clamped(std::vector<Scalar> const& h,
                               std::vector<Scalar> const& delta,
                               std::vector<Scalar> const& /*pos*/,
                               std::vector<Scalar>& vel,
                               std::size_t /*n_pts*/,
                               std::size_t n,
                               Scalar v0,
-                              Scalar vn)
+                              Scalar vn) -> ctrlpp::expected<void, spline_error>
     {
         vel[0] = v0;
         vel[n] = vn;
 
         if (n <= 1) {
             // Only 2 waypoints -- no interior unknowns
-            return;
+            return {};
         }
 
         auto const n_int = n - 1; // number of interior unknowns (v_1 .. v_{n-1})
@@ -411,11 +417,15 @@ class cubic_spline
             }
         }
 
-        detail::thomas_solve(a, b, c, d);
+        auto solved = detail::thomas_solve(a, b, c, d);
+        if (!solved) {
+            return solved;
+        }
 
         for (std::size_t j = 0; j < n_int; ++j) {
             vel[j + 1] = d[j];
         }
+        return {};
     }
 
     /// @brief Solve periodic BC: n x n cyclic tridiagonal for v_0 .. v_{n-1}.
@@ -424,12 +434,12 @@ class cubic_spline
     /// Uses cyclic Thomas solver (Sherman-Morrison).
     ///
     /// @cite biagiotti2009 -- Sec. 4.4.2
-    static void solve_periodic(std::vector<Scalar> const& h,
+    static auto solve_periodic(std::vector<Scalar> const& h,
                                std::vector<Scalar> const& delta,
                                std::vector<Scalar> const& /*pos*/,
                                std::vector<Scalar>& vel,
                                std::size_t /*n_pts*/,
-                               std::size_t n)
+                               std::size_t n) -> ctrlpp::expected<void, spline_error>
     {
         // System of size n for v_0 .. v_{n-1} (v_n = v_0)
         std::vector<Scalar> a(n, Scalar{0});
@@ -459,12 +469,16 @@ class cubic_spline
         auto const alpha = h[0];
         auto const beta = h[n - 2];
 
-        detail::cyclic_thomas_solve(a, b, c, d, alpha, beta);
+        auto solved = detail::cyclic_thomas_solve(a, b, c, d, alpha, beta);
+        if (!solved) {
+            return solved;
+        }
 
         for (std::size_t i = 0; i < n; ++i) {
             vel[i] = d[i];
         }
         vel[n] = vel[0]; // periodic wrap
+        return {};
     }
 
     std::vector<Scalar> times_;
@@ -473,6 +487,7 @@ class cubic_spline
     /// Whether every coefficient the construction formed stayed inside the type.
     /// Read once, by `create`, which is the only caller that can still refuse.
     bool coefficients_representable_{true};
+    bool system_solved_;
 };
 
 static_assert(trajectory_segment<cubic_spline<double>, double, 1>);

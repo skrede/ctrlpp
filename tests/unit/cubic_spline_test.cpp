@@ -6,6 +6,7 @@
 
 #include <Eigen/Dense>
 #include <cmath>
+#include <limits>
 #include <vector>
 #include <utility>
 
@@ -22,6 +23,13 @@ auto make_spline(ctrlpp::cubic_spline<double>::config const& cfg) -> ctrlpp::cub
     auto created = ctrlpp::cubic_spline<double>::create(cfg);
     REQUIRE(created.has_value());
     return *std::move(created);
+}
+
+auto solve_tridiagonal(std::vector<double> const& a, std::vector<double> b, std::vector<double> const& c)
+    -> ctrlpp::expected<void, ctrlpp::spline_error>
+{
+    std::vector<double> d(b.size(), 1.0);
+    return ctrlpp::detail::thomas_solve(a, b, c, d);
 }
 
 }
@@ -44,7 +52,8 @@ TEST_CASE("thomas_solve: 3x3 system", "[traj][tridiagonal]")
     Eigen::Vector3d rhs(1.0, 2.0, 3.0);
     Eigen::Vector3d x_ref = A.colPivHouseholderQr().solve(rhs);
 
-    ctrlpp::detail::thomas_solve(a, b, c, d);
+    auto const solved = ctrlpp::detail::thomas_solve(a, b, c, d);
+    REQUIRE(solved.has_value());
 
     for (int i = 0; i < 3; ++i) {
         REQUIRE_THAT(d[static_cast<std::size_t>(i)], WithinAbs(x_ref(i), 1e-12));
@@ -76,7 +85,8 @@ TEST_CASE("thomas_solve: 5x5 diagonal-dominant system", "[traj][tridiagonal]")
 
     Eigen::VectorXd x_ref = A.colPivHouseholderQr().solve(rhs);
 
-    ctrlpp::detail::thomas_solve(a, b, c, d);
+    auto const solved = ctrlpp::detail::thomas_solve(a, b, c, d);
+    REQUIRE(solved.has_value());
 
     for (int i = 0; i < n; ++i) {
         REQUIRE_THAT(d[static_cast<std::size_t>(i)], WithinAbs(x_ref(i), 1e-12));
@@ -100,7 +110,8 @@ TEST_CASE("cyclic_thomas_solve: 3x3 cyclic system", "[traj][tridiagonal]")
     Eigen::Vector3d rhs(1.0, 2.0, 3.0);
     Eigen::Vector3d x_ref = A.colPivHouseholderQr().solve(rhs);
 
-    ctrlpp::detail::cyclic_thomas_solve(a, b, c, d, alpha, beta);
+    auto const solved = ctrlpp::detail::cyclic_thomas_solve(a, b, c, d, alpha, beta);
+    REQUIRE(solved.has_value());
 
     for (int i = 0; i < n; ++i) {
         REQUIRE_THAT(d[static_cast<std::size_t>(i)], WithinAbs(x_ref(i), 1e-12));
@@ -137,11 +148,70 @@ TEST_CASE("cyclic_thomas_solve: 5x5 cyclic system", "[traj][tridiagonal]")
 
     Eigen::VectorXd x_ref = A.colPivHouseholderQr().solve(rhs);
 
-    ctrlpp::detail::cyclic_thomas_solve(a, b, c, d, alpha, beta);
+    auto const solved = ctrlpp::detail::cyclic_thomas_solve(a, b, c, d, alpha, beta);
+    REQUIRE(solved.has_value());
 
     for (int i = 0; i < n; ++i) {
         REQUIRE_THAT(d[static_cast<std::size_t>(i)], WithinAbs(x_ref(i), 1e-12));
     }
+}
+
+TEST_CASE("thomas_solve: a zero leading pivot is refused", "[trajectory][tridiagonal]")
+{
+    auto const solved = solve_tridiagonal({0.0, 1.0, 1.0}, {0.0, 2.0, 2.0}, {1.0, 1.0, 0.0});
+    REQUIRE_FALSE(solved.has_value());
+    REQUIRE(solved.error() == ctrlpp::spline_error::unrepresentable_spline);
+}
+
+TEST_CASE("thomas_solve: a zero 1x1 system is refused", "[trajectory][tridiagonal]")
+{
+    auto const solved = solve_tridiagonal({0.0}, {0.0}, {0.0});
+    REQUIRE_FALSE(solved.has_value());
+    REQUIRE(solved.error() == ctrlpp::spline_error::unrepresentable_spline);
+}
+
+TEST_CASE("thomas_solve: a NaN pivot is refused", "[trajectory][tridiagonal]")
+{
+    auto const nan = std::numeric_limits<double>::quiet_NaN();
+    auto const solved = solve_tridiagonal({0.0, 1.0}, {nan, 1.0}, {1.0, 0.0});
+    REQUIRE_FALSE(solved.has_value());
+    REQUIRE(solved.error() == ctrlpp::spline_error::unrepresentable_spline);
+}
+
+TEST_CASE("thomas_solve: an exactly singular 2x2 is refused", "[trajectory][tridiagonal]")
+{
+    auto const solved = solve_tridiagonal({0.0, 1.0}, {1.0, 1.0}, {1.0, 0.0});
+    REQUIRE_FALSE(solved.has_value());
+    REQUIRE(solved.error() == ctrlpp::spline_error::unrepresentable_spline);
+}
+
+TEST_CASE("thomas_solve: a reduced pivot is judged against the rounding bound",
+          "[trajectory][tridiagonal]")
+{
+    auto const eps = std::numeric_limits<double>::epsilon();
+
+    auto const within = solve_tridiagonal({0.0, 1.0}, {1.0, 1.0 + eps}, {1.0, 0.0});
+    REQUIRE_FALSE(within.has_value());
+    REQUIRE(within.error() == ctrlpp::spline_error::unrepresentable_spline);
+
+    std::vector<double> b = {1.0, 1.0 + 8.0 * eps};
+    std::vector<double> d = {1.0, 1.0};
+    auto const beyond = ctrlpp::detail::thomas_solve({0.0, 1.0}, b, {1.0, 0.0}, d);
+    REQUIRE(beyond.has_value());
+    REQUIRE_THAT(d[0], WithinAbs(1.0, 1e-12));
+    REQUIRE_THAT(d[1], WithinAbs(0.0, 1e-12));
+}
+
+TEST_CASE("cyclic_thomas_solve: a singular circulant is refused", "[trajectory][tridiagonal]")
+{
+    std::vector<double> a = {0.0, -1.0, -1.0, -1.0};
+    std::vector<double> b = {2.0, 2.0, 2.0, 2.0};
+    std::vector<double> c = {-1.0, -1.0, -1.0, 0.0};
+    std::vector<double> d = {1.0, 0.0, -1.0, 0.0};
+
+    auto const solved = ctrlpp::detail::cyclic_thomas_solve(a, b, c, d, -1.0, -1.0);
+    REQUIRE_FALSE(solved.has_value());
+    REQUIRE(solved.error() == ctrlpp::spline_error::unrepresentable_spline);
 }
 
 // -- Cubic spline tests -------------------------------------------------------
