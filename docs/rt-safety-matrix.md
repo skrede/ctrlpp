@@ -420,6 +420,41 @@ Witness: `examples/embedded/esp32/main/stack_probe.cpp` for the probe, started f
 designs its gain, runs its 201 steps, streams them over UART2 and reports
 `golden diff PASS` in the same boot that carries the probe.
 
+**Determinism on this board.** The control family's closed loop is printed as
+201 rows of binary32 bit patterns. Both series ran on the timing image whose ELF
+has the sha256 digest
+`a7d830451598f39f56a1b579900c59613d420dc5f89e872a18d0e2fcbdb7fbd5` (its
+allocation-evidence twin is
+`c7bc0e9faef5707f2ec9d327766ecc397c84312c91872c51383a3e628aa25f98`), built with
+assertions off and with the task watchdog released before it reports, and
+compared with `scripts/board_capture.sh compare` at a bound of 0 cycles stated
+before collection:
+
+- 20 runs, each restarted by a pulse on the chip's enable pin through the console
+  bridge, with no operator action;
+- 5 runs, each after the operator unplugged and replugged the board's own USB
+  cable. Two of them were accepted on a second replug, because the first
+  attempt's report had lost its head and was refused.
+
+Every run in both series decoded `reset=power_on reset_reason=1 reset_rom=1`.
+The block was byte-identical in all 25 runs (sha256
+`512113e3b1844698fca4ac90bc779044081be75e19d073b016d50ef7916ae8df`), the same
+block the leg's earlier images printed with the probe and assertions on. Every
+timing figure in every region had zero spread within each series, and the two
+series measured the same figures.
+
+**WHAT THE LABEL CANNOT SAY.** This chip reports a power cycle and an
+enable-pin pulse with the same reset reason, so on this board, unlike the
+NUCLEO-H753ZI below, the decoded label does not separate the two series. The
+enable-pin series is warm-restart evidence only, whatever its label reads; its
+summary says so, and the capture refuses to pool it with power-on runs. The
+power-on series rests on the operator's replug, and the only check the capture
+makes of it is that the console bridge's device node vanished and returned,
+which shows that the USB connection dropped, not that the supply decayed. Zero
+differences leaves a per-run difference rate up to about 15 percent plausible at
+95 percent confidence for the 20 warm runs, and up to about 60 percent for the 5
+power-on runs.
+
 ### On silicon: the NUCLEO-H753ZI leg
 
 A second board runs five of this table's families at `double`, judges each
@@ -563,15 +598,28 @@ boot's luck. Zero differences in 26 runs leaves a per-run difference rate up to
 about 11.5 percent plausible at 95 percent confidence; the count is part of the
 result.
 
-**Power-cycle determinism on this board: PENDING.** No run after a power-on
-reset has been collected yet. The series needs an operator to unplug and replug
-the board, and until it exists the determinism stated above is a warm-reset
-result only. Both images now wait at boot, for at most 30 s, for a byte the
-capture sends once its reader is attached, so a report read after a replug keeps
-its head, and a report whose wait expired is refused. When the series is
-collected, it is compared under the same refusals, and its run count, decoded
-reset class, every run that decoded another class and was not counted, its
-exact-class verdict and its spread are recorded here.
+**Determinism across power cycles.** The power-on series ran on a later timing
+image, build id `5e0486618196df29e7e73fc391fd1103515f6d6a` (its
+allocation-evidence twin is `e03bfd30f81f283f155217320a8aa0f7ee8ea379`), which
+adds a boot handshake: before printing anything, the image waits, for at most
+30 s, for a byte the capture sends once its reader is attached, so a report read
+after a replug keeps its head, and a report whose wait expired is refused. The
+operator unplugged and replugged the board's USB cable once per run. All 5 runs
+decoded their own reset as a power-on reset,
+`reset=power_on reset_flags=cpu+d1+d2+bor+pin+por reset_rsr=0x00FE0000`, no run
+decoded another class, every run was accepted on its first attempt, and the
+image waited 75 to 134 ms for the handshake byte. The block was byte-identical in
+all 5 runs, and it is the same block as the warm series above (sha256
+`6ec241518d693cfe6c411d54573478f2a8508e53b63cc08841ee601876e92702`). Every
+timing figure in every region had zero spread across the 5 runs, against a bound
+of 0 cycles stated before collection, and every figure equals the one a 20-run
+warm series of the same image measured (`st-flash reset`, every run decoding a
+pin reset). The handshake moved the code, so these cycle figures are not the
+ones in the table above, which belongs to the earlier image: `control.step`
+cold, for example, is 80,450 cycles on the handshake image against 84,295. Zero
+differences in 5 runs leaves a per-run difference rate up to about 60 percent
+plausible at 95 percent confidence, so the power-on half of this claim is much
+weaker than the warm half.
 
 ## Stack cost of the estimator rows
 
