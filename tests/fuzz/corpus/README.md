@@ -12,6 +12,7 @@ tests/fuzz/corpus/
   fuzz_ekf/
   fuzz_care/
   fuzz_dare/
+  fuzz_online_planner_3rd/
 ```
 
 This is a curated set, not a captured campaign. Each seed is a configuration that pins one named
@@ -117,6 +118,10 @@ derived floor, so the input weight the solve receives is never the number stored
 | `fuzz_dare` | `refusal_rank_deficient_weight.bin` | a singular weight factor, refused by the invertibility guard this target still carries and its continuous twin no longer does. The seed pins that asymmetry: the same bytes are a refusal here and an admitted regulator pose there | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
 | `fuzz_dare` | `refusal_ill_conditioned_state_matrix.bin` | a state matrix whose singular-value ratio exceeds this target's own bound, refused before the weight factor is read at all. The guard exists because the solve forms the inverse transpose of that matrix as an intermediate, and it has no counterpart in the continuous target | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
 | `fuzz_ekf` | `rejected_step_poisoned_covariance.bin` | an initial state one finite-difference step short of the largest representable value, so the central-difference stencil's lower sample overflows, one Jacobian entry becomes infinite and the propagated covariance carries a NaN. `predict` is infallible by contract and is allowed to do this; the update that follows then rejects the step naming the carried covariance and leaves it bitwise untouched, which is the contract. The seed pins how that is CHECKED: an elementwise `operator!=` reports a NaN-carrying matrix as different from a byte-for-byte copy of itself, so the target read a met contract as a violation | `0148c3c` | 10 little-endian binary64: `x0(2), z(2), Q_diag(2), R_diag(2), a00, a11`; minimum 80 bytes |
+| `fuzz_online_planner_3rd` | `retarget_cruise_unit_limits.bin` | the recorded counterexample: a retarget to a farther target while cruising at the velocity limit on unit limits, where the earlier replan kept accelerating from the cruise state and exceeded the velocity limit on its first sample | `d8b2b04` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes |
+| `fuzz_online_planner_3rd` | `retarget_cruise_review_limits.bin` | the same cruise retarget on non-unit limits whose acceleration phase reaches the acceleration limit, so the cruise is entered through a constant-acceleration phase | `d8b2b04` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes |
+| `fuzz_online_planner_3rd` | `retarget_ramp_unit_limits.bin` | a retarget at half the acceleration limit while the jerk is still raising it, so the replan starts from a nonzero acceleration and must null it first | `d8b2b04` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes |
+| `fuzz_online_planner_3rd` | `retarget_nulling_unit_limits.bin` | a retarget at half the acceleration limit while the jerk is bringing it back to zero, the phase that ends at the velocity limit | `d8b2b04` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes |
 
 ## Decoded field values
 
@@ -158,6 +163,25 @@ the minimum decoded size, well inside the length cap the smoke run imposes.
 | seed file | x0(0) | x0(1) | z(0) | z(1) | Q(0,0) | Q(1,1) | R(0,0) | R(1,1) | a00 | a11 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | `rejected_step_poisoned_covariance.bin` | 0 | -1.7976931348623157e308 | 0 | 0 | 1 | 1 | 1 | 1 | 0.5 | -0.5 |
+
+`fuzz_online_planner_3rd`
+
+| seed file | pos | target | v_max | a_max | j_max | dt | t_start | retarget_fraction | retarget_target |
+|---|---|---|---|---|---|---|---|---|---|
+| `retarget_cruise_unit_limits.bin` | 0 | 1000 | 1 | 1 | 1 | 0.01 | 0 | 0.5 | 2000 |
+| `retarget_cruise_review_limits.bin` | 0 | 700 | 0.7 | 1.3 | 2.9 | 0.005 | 0 | 0.5 | 1400 |
+| `retarget_ramp_unit_limits.bin` | 0 | 1000 | 1 | 1 | 1 | 0.01 | 0 | 0.025 | 2000 |
+| `retarget_nulling_unit_limits.bin` | 0 | 1000 | 1 | 1 | 1 | 0.01 | 0 | 0.075 | 2000 |
+
+The retarget is applied after the scan sample whose index is `retarget_fraction * 1999`, truncated, so
+the four seeds replan at t = 10, 5, 0.5 and 1.5 s. Sampled there, the planner reports v = 1 and a = 0,
+v = 0.7 and a = 0, v = 0.125 and a = 0.5, and v = 0.875 and a = 0.5: cruise, cruise, the rising
+acceleration ramp and the nulling phase. `tools/fuzz_corpus_encode.py` covers only the Riccati
+layout, so these were written from the named values with a one-line `struct.pack`, for example:
+
+```sh
+python3 -c "import struct; open('retarget_cruise_unit_limits.bin', 'wb').write(struct.pack('<9d', 0, 1000, 1, 1, 1, 0.01, 0, 0.5, 2000))"
+```
 
 `x0(1)` is the negative of the largest finite binary64. The stencil's step there is
 `cbrt(eps) * |x0(1)|`, so the lower sample leaves the representable range while every other field is
