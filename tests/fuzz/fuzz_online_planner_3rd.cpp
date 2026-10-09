@@ -10,14 +10,14 @@
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
 {
-    // 8 doubles: pos, target, v_max, a_max, j_max, dt, t_start, retarget = 64 bytes
-    if(size < 64)
+    // 9 doubles: pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target = 72 bytes
+    if(size < 72)
         return 0;
 
-    double buf[8];
-    std::memcpy(buf, data, 64);
+    double buf[9];
+    std::memcpy(buf, data, 72);
 
-    for(int i = 0; i < 8; ++i)
+    for(int i = 0; i < 9; ++i)
     {
         if(!std::isfinite(buf[i]))
             return 0;
@@ -30,6 +30,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     double j_max = std::abs(buf[4]);
     double dt = std::abs(buf[5]);
     double t_start = buf[6];
+    const double retarget_fraction = std::clamp(std::abs(buf[7]), 0.0, 1.0);
+    const double retarget_target   = buf[8];
 
     // Clamp limits to positive and reasonable
     v_max = std::clamp(v_max, 1e-3, 1e6);
@@ -65,7 +67,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // step's motion to a position of this magnitude rounds away completely,
     // and no continuity signal survives to check -- this is a floating-point
     // representation limit, not a planner defect.
-    const double position_scale = std::max({std::abs(pos), std::abs(target), 1.0});
+    const double position_scale = std::max({std::abs(pos), std::abs(target), std::abs(retarget_target), 1.0});
     const double continuity_bound_reject = v_max * dt + 0.5 * a_max * dt * dt;
     if(std::numeric_limits<double>::epsilon() * rounding_op_margin * position_scale >= continuity_bound_reject)
         return 0;
@@ -89,15 +91,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         return 0;
     auto& planner = *planner_result;
 
-    // reset() always starts the planner at rest with zero acceleration, and a
-    // single update() right after it always plans a rest-to-rest,
-    // zero-acceleration move to the target, so both the start and end
-    // boundary velocities (and accelerations) of the scanned profile are
-    // zero. The decoded retarget byte is intentionally left unused: replanning
-    // mid-motion would start from a nonzero velocity/acceleration state, and
-    // that nonzero boundary case is not yet exact for this jerk-limited
-    // profile, so it is left out of this scan; a later phase broadens the
-    // fuzzer domain to that case.
+    // The retarget replans mid-motion from the state the planner last reported, as a servo loop
+    // does. After it, |v| and |a| are held to the limits with no tolerance, because the planner
+    // evaluates each phase-group end from its analytic state instead of accumulating rounding.
+    const std::int32_t retarget_index = static_cast<std::int32_t>(retarget_fraction * (num_samples - 1));
     planner.reset(pos);
     if(!planner.update(target).has_value())
         return 0;
@@ -137,6 +134,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         if(std::abs(v) > v_max + v_env_tol)
             abort();
         if(std::abs(a) > a_max + a_env_tol)
+            abort();
+        if(i > retarget_index && (std::abs(v) > v_max || std::abs(a) > a_max))
             abort();
 
         if(have_prev)
@@ -202,6 +201,9 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         prev_v = v;
         prev_a = a;
         have_prev = true;
+
+        if(i == retarget_index && !planner.update(retarget_target).has_value())
+            return 0;
     }
 
     return 0;
