@@ -1,9 +1,10 @@
 set(CTRLPP_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../..")
 
 idf_component_register(
-    SRCS "app_main.cpp"
+    SRCS "app_main.cpp" "telemetry.cpp" "stack_probe.cpp" "reset_reason.cpp" "family_report.cpp"
     INCLUDE_DIRS "."
     REQUIRES esp_driver_uart
+    PRIV_REQUIRES esp_app_format
 )
 
 # ctrlpp's public include tree plus the shared board-leg kernel. SYSTEM keeps the
