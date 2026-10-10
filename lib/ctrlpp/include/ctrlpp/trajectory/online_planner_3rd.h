@@ -372,61 +372,10 @@ class online_planner_3rd
         Scalar v_start = v_ref_;
         Scalar a_start = a_ref_;
 
-        // Phase 0: bring the acceleration to zero, when doing so changes
-        // anything.
-        //
-        // The question is not whether the starting acceleration is nonzero --
-        // that comparison has no scale to be against, and a floor placed
-        // directly on the acceleration is an absolute length borrowed from an
-        // axis nobody named. The question is whether the phase that nulls it
-        // moves the axis by anything the arithmetic can still see. The phase
-        // lasts |a_start| / j_max, and over that time it
-        //   * changes the velocity by exactly a_start^2 / (2 j_max), and
-        //   * moves the axis by at most v_max * |a_start| / j_max, which is the
-        //     leading term v_start * T_az with the speed replaced by the only
-        //     bound the planner has for it.
-        // Both follow from the limits alone, which is what makes them the
-        // better question.
-        //
-        // Velocity side: three operations form the contribution -- the square,
-        // the doubled jerk limit and the division -- compared against the
-        // resolution of the velocity limit. Length side: two operations form
-        // the bound -- the product and the division -- compared against the
-        // resolution of the stopping distance from full speed, which three more
-        // form: the squared velocity limit, the doubled acceleration limit and
-        // the division. That distance is the right length scale here for the
-        // same reason it is below: it is intrinsic to the two limits the
-        // planner was given and needs no knowledge of the sample period, which
-        // the planner is never told.
-        //
-        // The phase is emitted unless BOTH contributions are unresolvable.
-        // Skipping it when only the velocity contribution vanishes would leave
-        // the axis a resolvable distance from where the plan assumes it is: the
-        // length contribution is linear in the starting acceleration where the
-        // velocity contribution is quadratic, so on any ordinary axis the
-        // length side binds first, by several decades. Below both, the phase
-        // moves nothing that survives being written down.
-        constexpr int nulling_velocity_rounding_ops = 3;
-        constexpr int nulling_length_rounding_ops = 2;
-        constexpr int nulling_scale_rounding_ops = 3;
-        constexpr int nulling_displacement_rounding_ops = nulling_length_rounding_ops
-                                                          + nulling_scale_rounding_ops;
-
-        auto const abs_a_start = std::abs(a_start);
-        auto const nulling_velocity_change = abs_a_start * abs_a_start / (Scalar{2} * j_max_);
-        auto const nulling_displacement_bound = v_max_ * abs_a_start / j_max_;
-        auto const nulling_length_scale = v_max_ * v_max_ / (Scalar{2} * a_max_);
-
-        bool const nulling_moves_the_velocity =
-            nulling_velocity_change > Scalar{nulling_velocity_rounding_ops}
-                                          * std::numeric_limits<Scalar>::epsilon() * v_max_;
-        bool const nulling_moves_the_axis =
-            nulling_displacement_bound > Scalar{nulling_displacement_rounding_ops}
-                                             * std::numeric_limits<Scalar>::epsilon()
-                                             * nulling_length_scale;
-
-        if (nulling_moves_the_velocity || nulling_moves_the_axis) {
-            auto const T_az = abs_a_start / j_max_;
+        // The evaluation starts from the snapshot's acceleration, so every nonzero one is nulled by its own phase,
+        // however short. A phase too short to represent still pins its end state.
+        if (a_start != Scalar{0}) {
+            auto const T_az = std::min(std::abs(a_start) / j_max_, jerk_time_within_limit());
             auto const j_az = (a_start > Scalar{0}) ? -j_max_ : j_max_;
 
             // State after this phase:
@@ -507,11 +456,11 @@ class online_planner_3rd
         // the scale of the quantity it tests and a count of the operations that
         // formed it.
 
-        // Speed floor. The scale is the velocity limit: it is the only velocity
-        // the planner is given, and every velocity the profile carries is
-        // bounded by it. The count is the roundings this planner performed on
-        // the speed being tested. Below the floor the commanded state is at
-        // rest to the precision available.
+        // Speed floor, used only by the direction test. The scale is the velocity
+        // limit: it is the only velocity the planner is given, and every
+        // velocity the profile carries is bounded by it. The count is the
+        // roundings this planner performed on the speed being tested. Below the
+        // floor the speed's sign does not say which way the axis is moving.
         auto const speed_floor = static_cast<Scalar>(speed_rounding_ops)
                                  * std::numeric_limits<Scalar>::epsilon() * v_max_;
 
@@ -543,8 +492,8 @@ class online_planner_3rd
         auto const length_floor = Scalar{length_rounding_ops}
                                   * std::numeric_limits<Scalar>::epsilon() * length_scale;
 
-        // If velocity is zero (or nearly), plan rest-to-rest directly
-        if (std::abs(v0) < speed_floor) {
+        // The evaluation integrates from any nonzero speed, so only an exactly zero one is planned as rest.
+        if (v0 == Scalar{0}) {
             plan_rest_to_rest(q0);
             return {};
         }
@@ -711,26 +660,15 @@ class online_planner_3rd
         bool a_reached{};
 
         if (abs_v > v_threshold) {
-            // a_max reached: jerk phase T_j = a_max/j_max, const decel, jerk phase
-            T_j = a_max_ / j_max_;
+            T_j = jerk_time_within_limit();
             auto const T_const = abs_v / a_max_ - T_j;
             T_total = T_j + T_const + T_j;
-            // Distance: integral of velocity during deceleration
-            // v(t) starts at abs_v and goes to 0
-            dist = sign_v * abs_v * (T_total) / Scalar{2};
-            // More precise: area = abs_v*T_j - j_max*T_j^3/6
-            //                    + (abs_v - j_max*T_j^2/2)*T_const - a_max*T_const^2/2
-            //                    + ... (backward phase)
-            // Use the fact that for symmetric decel: area = abs_v * T_total / 2
-            // This holds when v goes linearly from abs_v to 0 on average.
-            // Actually let's compute precisely:
             dist = sign_v * compute_decel_distance(abs_v, T_j, T_const);
             a_reached = true;
         } else {
-            // a_max not reached: only jerk phases
-            T_j = std::sqrt(abs_v / j_max_);
+            T_j = std::min(std::sqrt(abs_v / j_max_), jerk_time_within_limit());
             T_total = Scalar{2} * T_j;
-            dist = sign_v * abs_v * T_j; // = sign_v * j_max * T_j^2 * T_j = sign_v * abs_v * T_j
+            dist = sign_v * abs_v * T_j;
             a_reached = false;
         }
 
@@ -775,13 +713,27 @@ class online_planner_3rd
     }
 
     /// @brief Append a single constant-jerk phase if its duration is non-negligible.
+    ///
+    /// Every emitted jerk phase starts, or pinned ends, at an exactly zero acceleration, so bounding its duration bounds every
+    /// acceleration it and the constant phase after it produce. Analytically none exceeds a_max / j_max: this trims only rounding.
     void append_phase(Scalar duration, Scalar jerk)
     {
         if (duration > Scalar{0}) {
-            T_ph_[n_phases_] = duration;
+            T_ph_[n_phases_] = (jerk == Scalar{0}) ? duration : std::min(duration, jerk_time_within_limit());
             j_ph_[n_phases_] = jerk;
             ++n_phases_;
         }
+    }
+
+    // The longest jerk time whose product with j_max does not round above a_max. One step suffices for a finite
+    // quotient, because round-to-nearest leaves the quotient's predecessor below a_max / j_max.
+    auto jerk_time_within_limit() const -> Scalar
+    {
+        auto const T_j = a_max_ / j_max_;
+        if (j_max_ * T_j > a_max_) {
+            return std::nextafter(T_j, Scalar{0});
+        }
+        return T_j;
     }
 
     /// @brief Plan a rest-to-rest double-S profile from q0 to target_.

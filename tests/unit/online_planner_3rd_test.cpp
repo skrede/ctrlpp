@@ -1000,24 +1000,14 @@ TEST_CASE("OnlinePlanner3rd: the numerical-no-op floors scale with the limits",
     REQUIRE(cruises == 3);
 }
 
-// -- Test 22: the acceleration-nulling phase is emitted when it moves the axis --
+// -- Test 22: every nonzero starting acceleration is nulled in its own phase --
 //
-// The phase that brings a starting acceleration to zero used to be gated on the
-// acceleration exceeding an absolute number, which is a comparison with no scale
-// to be against. It is now gated on whether the phase changes anything: over its
-// own duration |a_start| / j_max it changes the velocity by a_start^2 / (2 j_max)
-// and moves the axis by at most v_max * |a_start| / j_max, and it is emitted
-// unless both are below the resolution of the quantity they are measured
-// against. The length side binds first, being linear where the velocity side is
-// quadratic, so the boundary sits where
-//
-//     v_max * a_start / j_max == 5 * eps * v_max^2 / (2 a_max)
-//
-// -- five being two operations for the contribution and three for the scale.
-// Below it the axis is left where it was; above it the phase is emitted and the
-// acceleration is nulled, which is directly observable by sampling at the
-// phase's own duration.
-TEST_CASE("OnlinePlanner3rd: the acceleration-nulling phase is emitted when it moves the axis",
+// The evaluation starts from the snapshot's acceleration, so the plan nulls every nonzero one in its own phase first,
+// however short, and is planned from exactly the state it is evaluated from. Sampled at the phase's own duration
+// |a_start| / j_max, the acceleration is zero. The starting accelerations straddle the one whose nulling phase moves
+// the axis by five roundings of the stopping distance from full speed, so both are far below anything a phase that
+// short changes on the velocity.
+TEST_CASE("OnlinePlanner3rd: the acceleration-nulling phase is emitted for every nonzero starting acceleration",
           "[traj][online_planner_3rd][no_op_floor]")
 {
     constexpr std::array<std::array<double, 3>, 3> limit_sets{{
@@ -1026,10 +1016,7 @@ TEST_CASE("OnlinePlanner3rd: the acceleration-nulling phase is emitted when it m
         {40.0, 200.0, 2000.0},
     }};
 
-    constexpr int nulling_length_rounding_ops = 2;
-    constexpr int nulling_scale_rounding_ops = 3;
-    constexpr int nulling_displacement_rounding_ops = nulling_length_rounding_ops
-                                                      + nulling_scale_rounding_ops;
+    constexpr int displacement_rounding_ops = 5;
 
     int straddles = 0;
     for (auto const& limits : limit_sets) {
@@ -1037,11 +1024,8 @@ TEST_CASE("OnlinePlanner3rd: the acceleration-nulling phase is emitted when it m
         double const a_max = limits[1];
         double const j_max = limits[2];
 
-        // The starting acceleration at which the phase's displacement bound
-        // equals the resolution of the stopping distance from full speed.
-        double const a_boundary = static_cast<double>(nulling_displacement_rounding_ops)
-                                  * std::numeric_limits<double>::epsilon() * v_max * j_max
-                                  / (2.0 * a_max);
+        double const a_reference = static_cast<double>(displacement_rounding_ops)
+                                   * std::numeric_limits<double>::epsilon() * v_max * j_max / (2.0 * a_max);
 
         for (double const below_or_above : {0.5, 4.0}) {
             auto planner = make_planner<double>(
@@ -1049,32 +1033,20 @@ TEST_CASE("OnlinePlanner3rd: the acceleration-nulling phase is emitted when it m
             planner.reset(0.0);
             REQUIRE(planner.update(100.0 * v_max).has_value());
 
-            double const s = below_or_above * a_boundary / j_max;
+            double const s = below_or_above * a_reference / j_max;
             auto const probe = planner.sample(s);
             double const a_start = probe.acceleration[0];
             REQUIRE(a_start > 0.0);
 
-            // Replan to a far target from that state, then sample at exactly the
-            // duration the nulling phase would occupy.
             REQUIRE(planner.update(100.0 * v_max).has_value());
             double const nulling_duration = a_start / j_max;
             auto const after = planner.sample(s + nulling_duration);
 
             CAPTURE(v_max, a_max, j_max, below_or_above, std::log10(a_start),
-                    std::log10(a_boundary), std::log10(std::abs(after.acceleration[0]) + 1e-300));
+                    std::log10(a_reference), std::log10(std::abs(after.acceleration[0]) + 1e-300));
 
-            if (below_or_above < 1.0) {
-                REQUIRE(a_start < a_boundary);
-                // No phase was emitted, so the acceleration is still climbing the
-                // profile's own opening ramp rather than having been nulled.
-                REQUIRE(std::abs(after.acceleration[0]) >= a_start);
-            } else {
-                REQUIRE(a_start > a_boundary);
-                // The phase was emitted and did its job: the acceleration is zero
-                // at its end, to the resolution of the acceleration limit.
-                REQUIRE(std::abs(after.acceleration[0])
-                        < std::numeric_limits<double>::epsilon() * a_max);
-            }
+            REQUIRE(std::abs(after.acceleration[0])
+                    < std::numeric_limits<double>::epsilon() * a_max);
         }
         ++straddles;
     }
