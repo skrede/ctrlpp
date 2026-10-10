@@ -435,7 +435,7 @@ TEST_CASE("OnlinePlanner2nd: an ordinary move reports the commanded profile",
     REQUIRE(diag.planned_duration > 0.0);
 }
 
-// -- Test 15: a move commanded from inside the settle tolerance reports settled -
+// -- Test 15: a command at the target from rest reports settled -----------------
 TEST_CASE("OnlinePlanner2nd: a settled command reports a zero-duration plan",
           "[trajectory][online_planner_2nd][diagnostics]")
 {

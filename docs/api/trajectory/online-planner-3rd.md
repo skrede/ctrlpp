@@ -194,7 +194,7 @@ enum class online_planner_disposition
 {
     commanded_profile,     // the commanded shape was planned as asked
     braked_and_replanned,  // braked to rest, then replanned from the stopping point
-    settled,               // already within the settle tolerance; a zero-duration profile
+    settled,               // exactly at the target with zero velocity and acceleration; a zero-duration profile
 };
 
 enum class online_planner_substitution_reason

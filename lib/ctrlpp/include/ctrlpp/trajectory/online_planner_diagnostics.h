@@ -9,7 +9,7 @@ enum class online_planner_disposition
 {
     commanded_profile,     ///< the commanded shape was planned as asked
     braked_and_replanned,  ///< braked to rest, then replanned from the stopping point
-    settled,               ///< already within the settle tolerance; the move became a zero-duration profile
+    settled,               ///< already exactly at the target and at rest; the move became a zero-duration profile
 };
 
 /// Why the commanded profile shape was replaced by a brake-then-replan.

@@ -583,7 +583,7 @@ TEST_CASE("OnlinePlanner3rd: an ordinary move reports the commanded profile",
     REQUIRE(diag.initial_velocity == cruising.v);
 }
 
-// -- Test 16: a move commanded from inside the settle tolerance reports settled -
+// -- Test 16: a command at the target from rest reports settled -----------------
 TEST_CASE("OnlinePlanner3rd: a settled command reports a zero-duration plan",
           "[trajectory][online_planner_3rd][diagnostics]")
 {
