@@ -749,46 +749,33 @@ class online_planner_3rd
 
     /// @brief Assign doubly-degenerate durations (neither v_max nor a_max reached).
     /// @cite biagiotti2009 -- Sec. 3.4.3, p.90
-    static void assign_doubly_degenerate(Scalar h, Scalar j,
-                                         Scalar& T_j1, Scalar& T_a,
-                                         Scalar& T_d, Scalar& T_j2)
+    void assign_doubly_degenerate(Scalar h, Scalar& T_j1, Scalar& T_a, Scalar& T_d, Scalar& T_j2, Scalar& v_lim) const
     {
-        auto const T_j_dd = std::cbrt(h / (Scalar{2} * j));
+        auto const T_j_dd = detail::doubly_degenerate_jerk_time(h, v_max_, a_max_, j_max_);
         T_j1 = T_j_dd;
         T_j2 = T_j_dd;
         T_a = Scalar{2} * T_j_dd;
         T_d = Scalar{2} * T_j_dd;
+        v_lim = j_max_ * T_j_dd * T_j_dd;
     }
 
-    /// @brief Solve no-cruise case where v_max is not reached.
-    ///
-    /// The peak `v_lim` is capped at v_max: the branch is entered only when the cruise duration is not positive,
-    /// which is equivalent to a peak at most v_max, so a computed excess is rounding.
+    /// @brief Solve the no-cruise case, where c = v_max T_a - h >= 0 is the distance the cruise-free profile at
+    /// v_max lacks. Each peak is formed at or below v_max, by the same arithmetic as double_s_trajectory.
     /// @cite biagiotti2009 -- Sec. 3.4.3, p.89-91
-    void solve_no_cruise(Scalar h, bool a_max_reached, Scalar& T_j1, Scalar& T_a, Scalar& T_v,
-                         Scalar& T_d, Scalar& T_j2, Scalar& v_lim) const
+    void solve_no_cruise(Scalar h, Scalar c, bool a_max_reached, Scalar& T_j1, Scalar& T_a, Scalar& T_d, Scalar& T_j2,
+                         Scalar& v_lim) const
     {
-        T_v = Scalar{0};
-        auto const a = a_max_;
-        auto const j = j_max_;
         if (a_max_reached) {
-            auto const coeff_a = Scalar{1} / a;
-            auto const coeff_b = a / j;
-            auto const disc = coeff_b * coeff_b + Scalar{4} * coeff_a * h;
-            auto const root = (-coeff_b + std::sqrt(disc)) / (Scalar{2} * coeff_a);
-
-            T_j1 = a / j;
+            v_lim = detail::no_cruise_peak(c, h, v_max_, a_max_, j_max_);
+            T_j1 = a_max_ / j_max_;
             T_j2 = T_j1;
-            T_a = T_j1 + root / a;
+            T_a = T_j1 + v_lim / a_max_;
             T_d = T_a;
-            v_lim = std::min(root, v_max_);
-
             if (!(T_a < Scalar{2} * T_j1)) {
                 return;
             }
         }
-        assign_doubly_degenerate(h, j, T_j1, T_a, T_d, T_j2);
-        v_lim = std::min(j * T_j1 * T_j1, v_max_);
+        assign_doubly_degenerate(h, T_j1, T_a, T_d, T_j2, v_lim);
     }
 
     /// @brief Compute double-S phase durations for rest-to-rest displacement h.
@@ -803,19 +790,19 @@ class online_planner_3rd
 
         bool const a_max_reached = (v * j >= a * a);
 
-        Scalar T_j_val = a_max_reached ? (a / j) : std::sqrt(v / j);
-        Scalar T_a_val = a_max_reached ? (T_j_val + v / a) : (Scalar{2} * T_j_val);
-        Scalar T_v_val = h / v - T_a_val;
+        auto const ramp = detail::make_velocity_ramp(v, a, j);
+        auto const c = v * ramp.T - h;
 
-        if (T_v_val > Scalar{0}) {
-            T_j1 = T_j_val;
-            T_j2 = T_j_val;
-            T_a = T_a_val;
-            T_d = T_a_val;
-            T_v = T_v_val;
+        if (c < Scalar{0}) {
+            T_j1 = ramp.T_j;
+            T_j2 = ramp.T_j;
+            T_a = ramp.T;
+            T_d = ramp.T;
+            T_v = -c / v;
             v_lim = v_max_;
         } else {
-            solve_no_cruise(h, a_max_reached, T_j1, T_a, T_v, T_d, T_j2, v_lim);
+            T_v = Scalar{0};
+            solve_no_cruise(h, c, a_max_reached, T_j1, T_a, T_d, T_j2, v_lim);
         }
     }
 

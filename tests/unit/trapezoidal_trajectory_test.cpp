@@ -336,6 +336,40 @@ TEMPLATE_TEST_CASE("Trapezoidal: a counted boundary velocity tolerance admits an
     REQUIRE(create(Scalar{10}, Scalar{1}, Scalar{0}, 0).has_value());
 }
 
+TEMPLATE_TEST_CASE("Trapezoidal: a rounding count above one over eps is refused before either boundary velocity",
+                   "[trajectory][trapezoidal]", float, double)
+{
+    using Scalar = TestType;
+    using traj_t = ctrlpp::trapezoidal_trajectory<Scalar>;
+    auto const create = [](Scalar v0, std::uint32_t rounding_ops) {
+        return traj_t::create({.q0 = Scalar{0},
+                               .q1 = Scalar{10},
+                               .v_max = Scalar{1},
+                               .a_max = Scalar{1},
+                               .v0 = v0,
+                               .v1 = Scalar{0},
+                               .boundary_velocity_rounding_ops = rounding_ops});
+    };
+    auto const one_ulp_above = std::nextafter(Scalar{1}, Scalar{2});
+    auto const ceiling = std::is_same_v<Scalar, float> ? std::uint32_t{1} << 23 : std::numeric_limits<std::uint32_t>::max();
+
+    for (auto const v0 : {Scalar{0.5}, Scalar{-0.5}, Scalar{1}, Scalar{-1}}) {
+        CAPTURE(v0);
+        REQUIRE(create(v0, ceiling).has_value());
+    }
+    auto const clamped = create(one_ulp_above, ceiling);
+    REQUIRE(clamped.has_value());
+    REQUIRE(clamped.value().evaluate(Scalar{0}).velocity[0] == Scalar{1});
+
+    if constexpr (std::is_same_v<Scalar, float>) {
+        for (auto const v0 : {Scalar{0.5}, Scalar{5}}) {
+            auto const beyond = create(v0, ceiling + 1);
+            REQUIRE_FALSE(beyond.has_value());
+            REQUIRE(beyond.error() == ctrlpp::trajectory_error::boundary_velocity_rounding_ops_out_of_range);
+        }
+    }
+}
+
 TEST_CASE("Trapezoidal: boundary velocities stepped across the limit build at it or are refused",
           "[trajectory][trapezoidal]")
 {

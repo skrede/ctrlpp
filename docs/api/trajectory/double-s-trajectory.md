@@ -21,7 +21,7 @@ struct config {
     Scalar q0, q1;              // start/end positions
     Scalar v_max, a_max, j_max; // kinematic limits
     Scalar v0{}, v1{};          // initial/final velocities (default 0)
-    std::uint32_t boundary_velocity_rounding_ops{}; // admitted excess of v0, v1 over v_max, in units of eps * v_max; default 0
+    std::uint32_t boundary_velocity_rounding_ops{}; // admitted excess of v0, v1 over v_max, in units of eps * v_max; default 0, at most 1 / eps
 };
 ```
 
@@ -44,7 +44,7 @@ Construction follows the B&M flowchart (Fig 3.18) to solve all phase durations. 
 
 Nonzero initial and final velocities `v0`, `v1` are supported through the general B&M Sec 3.4.1 formulation: the acceleration phase ramps from `v0` and the deceleration phase ramps to `v1`, so `evaluate(0)` reports `v0` and `evaluate(duration())` reports `v1`, both with zero acceleration. When `v0 = v1 = 0` the solver reduces exactly to the symmetric Sec 3.4.3 special case.
 
-In the no-cruise sub-case the peak velocity is solved directly against the commanded displacement, and each ramp takes whichever of its two closed forms applies -- constant-acceleration segment present, or triangular in acceleration when the velocity change is too small to build up to `a_max`. All three limits stay respected in both shapes. `evaluate` uses each constant-jerk segment only at times strictly within it, measured from the end its formula is anchored at, and the constant-acceleration segments report the stored peak acceleration, so a sample at a segment switch never rounds above `a_max`. Each constant-acceleration segment is sampled from the nearer of its two exact end states, the exit state of the jerk segment before it or the entry state of the one after it, so no sample rounds past either end velocity, however short the neighboring jerk segment is. Every jerk time the profile stores is at most the longest time whose product with `j_max` does not round above `a_max`. Where the two ramps carry different square roots of the peak the solve falls back to a bracketed search that terminates by exhaustion of the floating-point bracket, not on an iteration count. The solved peak is capped at `v_max`: the no-cruise sub-case is entered only when the cruise duration is not positive, which is equivalent to a peak at or below `v_max`, so the cap absorbs the rounding at that boundary the same way the floor on the constant-acceleration remainders in `phase_durations()` absorbs its own.
+In the no-cruise sub-case the peak velocity is solved directly against the commanded displacement, and each ramp takes whichever of its two closed forms applies -- constant-acceleration segment present, or triangular in acceleration when the velocity change is too small to build up to `a_max`. All three limits stay respected in both shapes. `evaluate` uses each constant-jerk segment only at times strictly within it, measured from the end its formula is anchored at, and the constant-acceleration segments report the stored peak acceleration, so a sample at a segment switch never rounds above `a_max`. Each constant-acceleration segment is sampled from the nearer of its two exact end states, the exit state of the jerk segment before it or the entry state of the one after it, so no sample rounds past either end velocity, however short the neighboring jerk segment is. Every jerk time the profile stores is at most the longest time whose product with `j_max` does not round above `a_max`. Where the two ramps carry different square roots of the peak the solve falls back to a bracketed search that terminates by exhaustion of the floating-point bracket, not on an iteration count. Every cruise-free peak is formed at or below `v_max` by construction, never clipped to it. At rest-to-rest the cruise is decided on `c = v_max T_a - h`, the distance the cruise-free profile at `v_max` lacks, and the peak is formed as `v_max` minus its deficit, or directly as the root when that is nearer. The profile that reaches neither limit bounds its jerk time so that `j_max T_j^2` does not round above `v_max`. With nonzero boundary velocities the rise is solved within the branch's own domain, at most `v_max - max(v0, v1)` in the positive frame, and the peak is formed from the nearer of `v_max` and the larger boundary velocity.
 
 ## Rejections
 
@@ -56,18 +56,19 @@ Checked in order:
 | NaN, infinite, or non-positive `v_max` | `trajectory_error::non_positive_velocity_limit` |
 | NaN, infinite, or non-positive `a_max` | `trajectory_error::non_positive_acceleration_limit` |
 | NaN, infinite, or non-positive `j_max` | `trajectory_error::non_positive_jerk_limit` |
+| `boundary_velocity_rounding_ops * eps` above 1 | `trajectory_error::boundary_velocity_rounding_ops_out_of_range` |
 | `abs(v0) - v_max` or `abs(v1) - v_max` above `boundary_velocity_rounding_ops * eps * v_max` | `trajectory_error::boundary_velocity_exceeds_limit` |
 | a displacement below the distance the transition between the boundary velocities already sweeps | `trajectory_error::unreachable_boundary_velocity` |
 | a negative segment duration or total duration | `trajectory_error::unreachable_boundary_velocity` |
 | a duration outside the representable range | `trajectory_error::unrepresentable_duration` |
-| a constructed peak velocity that did not come out at or below `v_max`, which after the cruise-free peak is capped only a non-finite peak can produce | `trajectory_error::unrepresentable_duration` |
+| a constructed peak velocity that did not come out at or below `v_max`, which, with every peak formed at or below it by construction, only a non-finite peak can produce | `trajectory_error::unrepresentable_duration` |
 | a total that underflowed to zero on a nonzero displacement | `trajectory_error::unrepresentable_duration` |
 
 ### The velocity limit is a precondition
 
 `abs(v0) <= v_max` and `abs(v1) <= v_max` are preconditions of the type, not invariants construction restores. Raising the limit to fit a boundary velocity would return a profile that violates a bound the caller stated, which is the same silent-success defect a rejection exists to prevent. Reaching the limit exactly is inside the domain: the ramp attached to that boundary velocity simply vanishes.
 
-`boundary_velocity_rounding_ops` counts the roundings the caller's own chain put on a boundary velocity, for example a velocity handed over from evaluating a previous segment. A boundary velocity whose excess over `v_max` is at most `boundary_velocity_rounding_ops * eps * v_max` is admitted and clamped to `+-v_max`, and that clamped value is what the profile stores and `evaluate` reports. The default 0 is the exact contract. The library picks no count of its own because it cannot see the caller's chain.
+`boundary_velocity_rounding_ops` counts the roundings the caller's own chain put on a boundary velocity, for example a velocity handed over from evaluating a previous segment. A boundary velocity whose excess over `v_max` is at most `boundary_velocity_rounding_ops * eps * v_max` is admitted and clamped to `+-v_max`, and that clamped value is what the profile stores and `evaluate` reports. The default 0 is the exact contract. The library picks no count of its own because it cannot see the caller's chain. The count is refused above `1 / eps`, which is `2^23` in `float`: `k` roundings bound a relative error by `k u / (1 - k u)` with `u = eps / 2` (Higham 2002, Lemma 3.1), the admitted `k eps` covers that bound exactly while `k eps <= 1`, and a larger count describes no chain of roundings.
 
 ### Realizability
 

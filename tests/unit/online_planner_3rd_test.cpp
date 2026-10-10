@@ -9,6 +9,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <vector>
 #include <cstdint>
 #include <utility>
 #include <type_traits>
@@ -1354,5 +1355,70 @@ TEMPLATE_TEST_CASE("OnlinePlanner3rd: sample returns and carries exactly the rec
         auto const resumed = replanned.sample(t);
         require_recorded(resumed, recorded_samples[index]);
         require_recorded(replanned.sample(t + Scalar{0.25}), recorded_replans[index]);
+    }
+}
+
+namespace
+{
+
+template <typename Scalar>
+struct rest_to_rest_command
+{
+    Scalar h, v_max, a_max, j_max;
+};
+
+// Rest-to-rest commands whose cruise-free peak, as solved before it was formed from the limit side, rounded above
+// v_max by one to six ulps: the quadratic root where a_max is reached and the doubly degenerate peak.
+template <typename Scalar>
+auto rest_to_rest_peak_commands() -> std::vector<rest_to_rest_command<Scalar>>
+{
+    if constexpr (std::is_same_v<Scalar, double>) {
+        return {{0x1.cp+1, 5, 10, 50},
+                {0x1.61a58d1b06a78p-1, 0.7, 1.3, 2.9},
+                {0x1.5600d03ed0857p+20, 0x1.67f9e8721c5a7p+9, 0x1.7ae695a7dde87p-2, 0x1.4acebc3ac628dp+3},
+                {0x1.974b7e1e7faf1p-9, 0x1.54ea2b0c5c43p-8, 0x1.1ff1d3ec394f9p-7, 0x1.a26b26a35ab2ap+0},
+                {0x1.ffffffffffffep+0, 1, 1, 1},
+                {0x1.24d037bce8b6cp+5, 0x1.8851333f8c53cp+0, 0x1.4638aca7a722bp+1, 0x1.6020b4e0da91ap-7},
+                {0x1.f5a47028a379ap+5, 0x1.4b094ced91319p+3, 0x1.97e65b96537edp+8, 0x1.2050df7387627p+0},
+                {0x1.5707cbf3ba2a2p-5, 0x1.369a4d44f024p-7, 0x1.193d9294d762fp-6, 0x1.fd4ed86642263p-10},
+                {0x1.7a8f254b9fa5bp+1, 0x1.c6a6fd2303d4fp+1, 0x1.110535fa05b0dp+5, 0x1.47e640cce757fp+4}};
+    } else {
+        return {{0x1.32c914p+8f, 0x1.536974p+2f, 0x1.201be2p-3f, 0x1.c98c8p-8f},
+                {0x1.806a76p+10f, 0x1.355ae8p+2f, 0x1.f479cap-7f, 0x1.31d874p-7f},
+                {0x1.32c712p+1f, 0x1.2546d4p+1f, 0x1.234036p+1f, 0x1.d1cd4cp+5f},
+                {0x1.ad4736p+15f, 0x1.a23aaep+9f, 0x1.89ba2ep+8f, 0x1.8cfa26p-1f},
+                {0x1.9f3f24p+7f, 0x1.37faaep+2f, 0x1.4148fep+6f, 0x1.60345p-7f},
+                {0x1.8bca8ap-17f, 0x1.468358p-10f, 0x1.4352a2p+5f, 0x1.bc6d0ap+5f},
+                {0x1.62118p-5f, 0x1.f59a3p-7f, 0x1.634e36p-5f, 0x1.f75adep-8f},
+                {0x1.1ec1d4p-16f, 0x1.9fd178p-8f, 0x1.2d7ba6p+4f, 0x1.b52bf8p+11f}};
+    }
+}
+
+}
+
+// The peak is pinned at the end of the ramp, which a symmetric rest-to-rest plan reaches at half its duration.
+TEMPLATE_TEST_CASE("OnlinePlanner3rd: a rest-to-rest peak next to the cruise boundary is pinned at or below the limit",
+                   "[traj][online_planner_3rd]", float, double)
+{
+    using Scalar = TestType;
+    for (auto const& c : rest_to_rest_peak_commands<Scalar>()) {
+        for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+            CAPTURE(c.h, c.v_max, c.a_max, c.j_max, sigma);
+            auto planner = make_planner<Scalar>({.v_max = c.v_max, .a_max = c.a_max, .j_max = c.j_max});
+            REQUIRE(planner.update(sigma * c.h).has_value());
+            auto const T = planner.diagnostics().planned_duration;
+            auto t = T / Scalar{2};
+            for (std::int32_t i = 0; i < 64; ++i) {
+                t = std::nextafter(t, Scalar{0});
+            }
+            std::int32_t above = 0;
+            for (std::int32_t i = 0; i <= 128; ++i, t = std::nextafter(t, T)) {
+                above += (std::abs(planner.sample(t).velocity[0]) > c.v_max) ? 1 : 0;
+            }
+            for (std::int32_t i = 0; i <= 1024; ++i) {
+                above += (std::abs(planner.sample(T * static_cast<Scalar>(i) / Scalar{1024}).velocity[0]) > c.v_max) ? 1 : 0;
+            }
+            CHECK(above == 0);
+        }
     }
 }

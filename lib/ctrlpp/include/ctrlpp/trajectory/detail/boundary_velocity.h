@@ -28,6 +28,26 @@ auto admit_boundary_velocity(Scalar v, Scalar v_max, std::uint32_t rounding_ops)
     return ctrlpp::unexpected(trajectory_error::boundary_velocity_exceeds_limit);
 }
 
+template <typename Config>
+auto admit_boundary_velocities(Config const& cfg) -> ctrlpp::expected<Config, trajectory_error>
+{
+    using Scalar = decltype(Config::v_max);
+    // k roundings carry a relative error of at most gamma_k = k u / (1 - k u), defined for k u < 1 (@cite higham2002, Lemma 3.1).
+    // The admitted k eps = 2 k u is at least gamma_k exactly while k eps <= 1, so a larger count describes no chain of roundings.
+    if (!(static_cast<Scalar>(cfg.boundary_velocity_rounding_ops) * std::numeric_limits<Scalar>::epsilon() <= Scalar{1})) {
+        return ctrlpp::unexpected(trajectory_error::boundary_velocity_rounding_ops_out_of_range);
+    }
+    auto const v0 = admit_boundary_velocity(cfg.v0, cfg.v_max, cfg.boundary_velocity_rounding_ops);
+    auto const v1 = admit_boundary_velocity(cfg.v1, cfg.v_max, cfg.boundary_velocity_rounding_ops);
+    if (!v0.has_value() || !v1.has_value()) {
+        return ctrlpp::unexpected(trajectory_error::boundary_velocity_exceeds_limit);
+    }
+    auto admitted = cfg;
+    admitted.v0 = *v0;
+    admitted.v1 = *v1;
+    return admitted;
+}
+
 }
 
 #endif

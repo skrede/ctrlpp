@@ -93,6 +93,8 @@ class trapezoidal_trajectory
     ///    trajectory_error::non_positive_velocity_limit
     ///  * a NaN, infinite, or non-positive acceleration limit ->
     ///    trajectory_error::non_positive_acceleration_limit
+    ///  * a `boundary_velocity_rounding_ops` count whose product with eps
+    ///    exceeds one -> trajectory_error::boundary_velocity_rounding_ops_out_of_range
     ///  * a boundary velocity above the velocity limit by more than
     ///    `boundary_velocity_rounding_ops * eps * v_max` ->
     ///    trajectory_error::boundary_velocity_exceeds_limit
@@ -162,7 +164,7 @@ class trapezoidal_trajectory
         if (!std::isfinite(requested.a_max) || requested.a_max <= Scalar{0}) {
             return ctrlpp::unexpected(trajectory_error::non_positive_acceleration_limit);
         }
-        auto const admitted = admit_boundary_velocities(requested);
+        auto const admitted = detail::admit_boundary_velocities(requested);
         if (!admitted.has_value()) {
             return ctrlpp::unexpected(admitted.error());
         }
@@ -346,19 +348,6 @@ class trapezoidal_trajectory
         auto const q_start = ramp_end_position() + v_v_ * T_v_;
         return {detail::nearer_anchor_position(q_start, v_v_, std::abs(q1_ - q0_), v1_, -a_d_, from_start, dt_end),
                 detail::nearer_anchor_velocity(v_v_, v1_, -a_d_, from_start, dt_end), -a_d_};
-    }
-
-    static auto admit_boundary_velocities(config const& cfg) -> ctrlpp::expected<config, trajectory_error>
-    {
-        auto const v0 = detail::admit_boundary_velocity(cfg.v0, cfg.v_max, cfg.boundary_velocity_rounding_ops);
-        auto const v1 = detail::admit_boundary_velocity(cfg.v1, cfg.v_max, cfg.boundary_velocity_rounding_ops);
-        if (!v0.has_value() || !v1.has_value()) {
-            return ctrlpp::unexpected(trajectory_error::boundary_velocity_exceeds_limit);
-        }
-        auto admitted = cfg;
-        admitted.v0 = *v0;
-        admitted.v1 = *v1;
-        return admitted;
     }
 
     /// @brief Acceleration magnitude the command is realized at.

@@ -12,6 +12,7 @@
 #include <cmath>
 #include <limits>
 #include <random>
+#include <vector>
 #include <cstdint>
 #include <algorithm>
 #include <type_traits>
@@ -489,7 +490,7 @@ TEST_CASE("Double-S: a boundary velocity at the limit builds a profile at the li
     }
 }
 
-TEST_CASE("Double-S: a rest-to-rest peak that rounds above the limit is held at the limit", "[trajectory][double_s]")
+TEST_CASE("Double-S: a rest-to-rest peak that rounds above the limit builds at or below the limit", "[trajectory][double_s]")
 {
     // Two representable steps below the cruise boundary; v_max * j_max == a_max^2
     // sends it to the doubly degenerate branch.
@@ -584,6 +585,41 @@ TEMPLATE_TEST_CASE("Double-S: a counted boundary velocity tolerance admits and c
     REQUIRE(leaving.value().evaluate(leaving.value().duration()).velocity[0] == Scalar{1});
 
     REQUIRE(create(Scalar{10}, Scalar{1}, Scalar{0}, 0).has_value());
+}
+
+TEMPLATE_TEST_CASE("Double-S: a rounding count above one over eps is refused before either boundary velocity",
+                   "[trajectory][double_s]", float, double)
+{
+    using Scalar = TestType;
+    using traj_t = ctrlpp::double_s_trajectory<Scalar>;
+    auto const create = [](Scalar v0, std::uint32_t rounding_ops) {
+        return traj_t::create({.q0 = Scalar{0},
+                               .q1 = Scalar{10},
+                               .v_max = Scalar{1},
+                               .a_max = Scalar{1},
+                               .j_max = Scalar{1},
+                               .v0 = v0,
+                               .v1 = Scalar{0},
+                               .boundary_velocity_rounding_ops = rounding_ops});
+    };
+    auto const one_ulp_above = std::nextafter(Scalar{1}, Scalar{2});
+    auto const ceiling = std::is_same_v<Scalar, float> ? std::uint32_t{1} << 23 : std::numeric_limits<std::uint32_t>::max();
+
+    for (auto const v0 : {Scalar{0.5}, Scalar{-0.5}, Scalar{1}, Scalar{-1}}) {
+        CAPTURE(v0);
+        REQUIRE(create(v0, ceiling).has_value());
+    }
+    auto const clamped = create(one_ulp_above, ceiling);
+    REQUIRE(clamped.has_value());
+    REQUIRE(clamped.value().evaluate(Scalar{0}).velocity[0] == Scalar{1});
+
+    if constexpr (std::is_same_v<Scalar, float>) {
+        for (auto const v0 : {Scalar{0.5}, Scalar{5}}) {
+            auto const beyond = create(v0, ceiling + 1);
+            REQUIRE_FALSE(beyond.has_value());
+            REQUIRE(beyond.error() == ctrlpp::trajectory_error::boundary_velocity_rounding_ops_out_of_range);
+        }
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -1039,4 +1075,99 @@ TEMPLATE_TEST_CASE("Double-S: long profiles with jerk segments near the time res
     CAPTURE(failing[0], failing[1]);
     CHECK(failing[0] == 0);
     CHECK(failing[1] == 0);
+}
+
+namespace
+{
+
+template <typename Scalar>
+struct peak_command
+{
+    Scalar q1, v0, v1, v_max, a_max, j_max;
+};
+
+// Commands whose cruise-free peak, as solved before it was formed from the limit side, rounded above v_max by one to
+// six ulps: the rest-to-rest quadratic root, the boundary-velocity rise and peak, and the doubly degenerate peak.
+template <typename Scalar>
+auto peak_commands() -> std::vector<peak_command<Scalar>>
+{
+    if constexpr (std::is_same_v<Scalar, double>) {
+        return {{0x1.cp+1, 0, 0, 5, 10, 50},
+                {0x1.61a58d1b06a78p-1, 0, 0, 0.7, 1.3, 2.9},
+                {0x1.5600d03ed0857p+20, 0, 0, 0x1.67f9e8721c5a7p+9, 0x1.7ae695a7dde87p-2, 0x1.4acebc3ac628dp+3},
+                {0x1.974b7e1e7faf1p-9, 0, 0, 0x1.54ea2b0c5c43p-8, 0x1.1ff1d3ec394f9p-7, 0x1.a26b26a35ab2ap+0},
+                {0x1.2954dfd1cd901p+20, 0x1.42cc9e0b52f7bp+7, 0x1.575aca8c1e4abp+6, 0x1.a367b58cde177p+7,
+                 0x1.6ecfb2dbfc79ep-6, 0x1.fd762e9c774bep+1},
+                {0x1.0bc10a31f93c5p+9, -0x1.2e18d8cba391dp+5, 0x1.9f9689f8aea38p+3, 0x1.30653c9245fa9p+5,
+                 0x1.36f25f83e2641p+0, 0x1.d3a7e7f548609p+11},
+                {0x1.ef6645ae2330ep-11, -0x1.420b7a91db745p-4, 0x1.6617f46b04865p-6, 0x1.d90399f8981ccp-4,
+                 0x1.029ad2b9db84p+8, 0x1.db3b7c5aeccc7p+11},
+                {0x1.ba7929f3129ep-5, -0x1.2f8f5fc44a4fcp-6, -0x1.9228f1bde1cc1p-7, 0x1.30d7d6fd4ea51p-6,
+                 0x1.e1a09a15d0e8bp-10, 0x1.0ee2754f8c2b2p+9},
+                {0x1.2e699ebfeddfdp-15, -0x1.a60e235562508p-10, -0x1.7affd00afd262p-10, 0x1.e30d29dd88399p-10,
+                 0x1.14f2ec0b4003ap-5, 0x1.1814c9a2d9f21p+1},
+                {0x1.24d037bce8b6cp+5, 0, 0, 0x1.8851333f8c53cp+0, 0x1.4638aca7a722bp+1, 0x1.6020b4e0da91ap-7},
+                {0x1.f5a47028a379ap+5, 0, 0, 0x1.4b094ced91319p+3, 0x1.97e65b96537edp+8, 0x1.2050df7387627p+0},
+                {0x1.5707cbf3ba2a2p-5, 0, 0, 0x1.369a4d44f024p-7, 0x1.193d9294d762fp-6, 0x1.fd4ed86642263p-10},
+                {0x1.7a8f254b9fa5bp+1, 0, 0, 0x1.c6a6fd2303d4fp+1, 0x1.110535fa05b0dp+5, 0x1.47e640cce757fp+4},
+                {0x1.ffffffffffffep+0, 0, 0, 1, 1, 1}};
+    } else {
+        return {{0x1.32c914p+8f, 0, 0, 0x1.536974p+2f, 0x1.201be2p-3f, 0x1.c98c8p-8f},
+                {0x1.806a76p+10f, 0, 0, 0x1.355ae8p+2f, 0x1.f479cap-7f, 0x1.31d874p-7f},
+                {0x1.32c712p+1f, 0, 0, 0x1.2546d4p+1f, 0x1.234036p+1f, 0x1.d1cd4cp+5f},
+                {0x1.d11d3cp+8f, -0x1.e948cp-1f, -0x1.3f0478p-1f, 0x1.666172p+0f, 0x1.70e674p-9f, 0x1.180ddep+2f},
+                {0x1.470d18p+8f, 0x1.5fc228p+3f, -0x1.a2dedcp-1f, 0x1.26139cp+4f, 0x1.b1c1ap-1f, 0x1.4cd88ep+11f},
+                {0x1.fe2b64p+7f, -0x1.f268f4p+1f, -0x1.16902ap+2f, 0x1.3003ecp+2f, 0x1.620046p-6f, 0x1.66c69ap+5f},
+                {0x1.c837d6p+13f, -0x1.b9f04p+7f, -0x1.260aa4p+8f, 0x1.897c3ep+8f, 0x1.8bbcd2p+2f, 0x1.af7ea4p+0f},
+                {0x1.ad4736p+15f, 0, 0, 0x1.a23aaep+9f, 0x1.89ba2ep+8f, 0x1.8cfa26p-1f},
+                {0x1.9f3f24p+7f, 0, 0, 0x1.37faaep+2f, 0x1.4148fep+6f, 0x1.60345p-7f},
+                {0x1.8bca8ap-17f, 0, 0, 0x1.468358p-10f, 0x1.4352a2p+5f, 0x1.bc6d0ap+5f},
+                {0x1.62118p-5f, 0, 0, 0x1.f59a3p-7f, 0x1.634e36p-5f, 0x1.f75adep-8f},
+                {0x1.1ec1d4p-16f, 0, 0, 0x1.9fd178p-8f, 0x1.2d7ba6p+4f, 0x1.b52bf8p+11f}};
+    }
+}
+
+}
+
+TEMPLATE_TEST_CASE("Double-S: cruise-free peaks next to the cruise boundary build at or below the limit",
+                   "[trajectory][double_s]", float, double)
+{
+    using Scalar = TestType;
+    for (auto const& c : peak_commands<Scalar>()) {
+        for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+            CAPTURE(c.q1, c.v0, c.v1, c.v_max, c.a_max, c.j_max, sigma);
+            auto const created = ctrlpp::double_s_trajectory<Scalar>::create({.q0 = Scalar{0},
+                                                                             .q1 = sigma * c.q1,
+                                                                             .v_max = c.v_max,
+                                                                             .a_max = c.a_max,
+                                                                             .j_max = c.j_max,
+                                                                             .v0 = sigma * c.v0,
+                                                                             .v1 = sigma * c.v1});
+            REQUIRE(created.has_value());
+            CHECK(created.value().peak_velocity() <= c.v_max);
+            require_switch_windows_within(created.value(), double_s_limits<Scalar>{c.v_max, c.a_max, c.j_max});
+        }
+    }
+}
+
+TEMPLATE_TEST_CASE("Double-S: the velocity-bounded jerk time steps down at most four times and holds its peak",
+                   "[trajectory][double_s]", float, double)
+{
+    using Scalar = TestType;
+    std::mt19937 engine{std::is_same_v<Scalar, double> ? 801u : 802u};
+    std::int32_t most_steps = 0;
+    for (std::int32_t pair = 0; pair < 65536; ++pair) {
+        auto const v_max = seeded_magnitude<Scalar>(engine, -20, 40);
+        auto const j_max = seeded_magnitude<Scalar>(engine, -20, 40);
+        auto const T_j = ctrlpp::detail::jerk_time_within_velocity(v_max, j_max);
+        std::int32_t steps = 0;
+        for (auto t = std::sqrt(v_max) / std::sqrt(j_max); t > T_j; t = std::nextafter(t, Scalar{0})) {
+            ++steps;
+        }
+        CAPTURE(v_max, j_max, T_j);
+        REQUIRE(j_max * T_j * T_j <= v_max);
+        most_steps = std::max(most_steps, steps);
+    }
+    CAPTURE(most_steps);
+    CHECK(most_steps <= 4);
 }

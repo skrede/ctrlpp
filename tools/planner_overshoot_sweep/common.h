@@ -94,6 +94,8 @@ inline auto error_name(trajectory_error error) -> char const*
     case trajectory_error::non_positive_duration:           return "non_positive_duration";
     case trajectory_error::non_finite_input:                return "non_finite_input";
     case trajectory_error::boundary_velocity_exceeds_limit: return "boundary_velocity_exceeds_limit";
+    case trajectory_error::boundary_velocity_rounding_ops_out_of_range:
+        return "boundary_velocity_rounding_ops_out_of_range";
     case trajectory_error::unrepresentable_duration:        return "unrepresentable_duration";
     case trajectory_error::unreachable_boundary_velocity:   return "unreachable_boundary_velocity";
     case trajectory_error::duration_shorter_than_current:   return "duration_shorter_than_current";

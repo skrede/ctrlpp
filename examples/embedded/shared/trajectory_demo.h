@@ -28,6 +28,8 @@ inline const char *describe(trajectory_error e)
             return "non-finite input";
         case trajectory_error::boundary_velocity_exceeds_limit:
             return "boundary velocity exceeds the limit";
+        case trajectory_error::boundary_velocity_rounding_ops_out_of_range:
+            return "boundary velocity rounding count is out of range";
         case trajectory_error::unrepresentable_duration:
             return "duration is not representable";
         case trajectory_error::unreachable_boundary_velocity:

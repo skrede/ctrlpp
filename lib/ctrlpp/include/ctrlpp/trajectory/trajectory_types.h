@@ -100,6 +100,15 @@ enum class spline_error
 ///                                      time. The comparison admits an excess
 ///                                      of boundary_velocity_rounding_ops * eps
 ///                                      * v_max, zero by default.
+///  * boundary_velocity_rounding_ops_out_of_range
+///                                    : boundary_velocity_rounding_ops times eps
+///                                      exceeds one. k roundings bound a
+///                                      relative error by k u / (1 - k u)
+///                                      (@cite higham2002, Lemma 3.1), which the
+///                                      admitted excess of k eps covers only
+///                                      while k eps <= 1, so a larger count
+///                                      names no chain of roundings. Checked
+///                                      before either boundary velocity.
 ///  * unrepresentable_duration        : the arithmetic cannot represent or
 ///                                      resolve what the answer needs. Five
 ///                                      cases, all of them facts about the
@@ -121,9 +130,10 @@ enum class spline_error
 ///                                      to zero and return the shape boundary
 ///                                      itself; or the constructed profile's
 ///                                      peak velocity did not come out at or
-///                                      below the velocity limit, which after
-///                                      the cruise-free peak is capped only a
-///                                      non-finite peak can produce. Every case
+///                                      below the velocity limit, which, with
+///                                      every peak formed at or below it by
+///                                      construction, only a non-finite peak
+///                                      can produce. Every case
 ///                                      past the first two says a profile may
 ///                                      well exist and the arithmetic cannot
 ///                                      locate it, which is why they are
@@ -151,6 +161,7 @@ enum class trajectory_error
     non_positive_duration,
     non_finite_input,
     boundary_velocity_exceeds_limit,
+    boundary_velocity_rounding_ops_out_of_range,
     unrepresentable_duration,
     unreachable_boundary_velocity,
     duration_shorter_than_current,
