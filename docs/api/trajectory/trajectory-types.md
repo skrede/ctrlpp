@@ -15,7 +15,7 @@ Structured failure modes for the spline factories: `cubic_spline`, `smoothing_sp
 | `too_few_points` | Fewer waypoints than the factory minimum (2 for cubic and smoothing splines, `Degree + 1` for B-spline interpolation) |
 | `size_mismatch` | `times` and `positions` differ in length |
 | `non_finite_input` | A time, position, boundary velocity, control point or knot is NaN/Inf |
-| `non_increasing_times` | Knot times are not strictly increasing |
+| `non_increasing_times` | Knot times are not strictly increasing, or a B-spline's active domain has zero length |
 | `periodic_endpoint_mismatch` | Periodic boundary conditions require the first and last positions to match within the endpoint rounding budget |
 | `periodic_too_few_points` | Periodic boundary conditions require at least 3 waypoints |
 | `too_few_control_points` | A B-spline of degree p requires at least p + 1 control points |

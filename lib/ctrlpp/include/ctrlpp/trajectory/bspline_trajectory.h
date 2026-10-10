@@ -18,12 +18,13 @@
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
+#include "ctrlpp/trajectory/detail/bspline_checks.h"
+
 #include "ctrlpp/util/concepts.h"
 
 #include <Eigen/Dense>
 
 #include <array>
-#include <cmath>
 #include <vector>
 #include <cstddef>
 #include <utility>
@@ -31,36 +32,6 @@
 
 namespace ctrlpp
 {
-
-namespace detail
-{
-
-template <typename Scalar>
-auto all_finite(std::vector<Scalar> const& values) -> bool
-{
-    return std::all_of(values.begin(), values.end(), [](Scalar value) { return std::isfinite(value); });
-}
-
-template <typename Scalar>
-auto check_interpolation_input(std::vector<Scalar> const& times, std::vector<Scalar> const& positions)
-    -> ctrlpp::expected<void, spline_error>
-{
-    if (!all_finite(times) || !all_finite(positions)) {
-        return ctrlpp::unexpected(spline_error::non_finite_input);
-    }
-    for (std::size_t i = 0; i + 1 < times.size(); ++i) {
-        auto const span = times[i + 1] - times[i];
-        if (!std::isfinite(span)) {
-            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
-        }
-        if (!(span > Scalar{0})) {
-            return ctrlpp::unexpected(spline_error::non_increasing_times);
-        }
-    }
-    return {};
-}
-
-}
 
 /// @brief B-spline trajectory with compile-time degree and de Boor evaluation.
 ///
@@ -95,6 +66,8 @@ class bspline_trajectory
     ///  * knot vector not non-decreasing       -> spline_error::non_monotonic_knots
     ///  * knot range back() - front() not
     ///    representable in Scalar              -> spline_error::unrepresentable_spline
+    ///  * active domain knot_vector[Degree] ..
+    ///    knot_vector[n + 1] of zero length    -> spline_error::non_increasing_times
     ///  * derivative control points outside
     ///    the representable range of Scalar    -> spline_error::unrepresentable_spline
     ///
@@ -114,7 +87,7 @@ class bspline_trajectory
         if (!detail::all_finite(cfg.control_points) || !detail::all_finite(cfg.knot_vector)) {
             return ctrlpp::unexpected(spline_error::non_finite_input);
         }
-        if (auto const knots = check_knots(cfg); !knots) {
+        if (auto const knots = detail::check_knots<Degree>(cfg.control_points.size(), cfg.knot_vector); !knots) {
             return ctrlpp::unexpected(knots.error());
         }
 
@@ -235,23 +208,6 @@ class bspline_trajectory
     std::vector<Scalar> d1_knots_;
     std::vector<Scalar> d2_points_;
     std::vector<Scalar> d2_knots_;
-
-    static auto check_knots(config const& cfg) -> ctrlpp::expected<void, spline_error>
-    {
-        if (cfg.knot_vector.empty()) {
-            return {};
-        }
-        if (cfg.knot_vector.size() != cfg.control_points.size() + static_cast<std::size_t>(Degree) + 1) {
-            return ctrlpp::unexpected(spline_error::bad_knot_count);
-        }
-        if (!std::is_sorted(cfg.knot_vector.begin(), cfg.knot_vector.end())) {
-            return ctrlpp::unexpected(spline_error::non_monotonic_knots);
-        }
-        if (!std::isfinite(cfg.knot_vector.back() - cfg.knot_vector.front())) {
-            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
-        }
-        return {};
-    }
 
     /// @brief De Boor's algorithm for B-spline evaluation.
     ///
@@ -423,8 +379,8 @@ auto basis_function(
 ///  * times/positions length mismatch      -> spline_error::size_mismatch
 ///  * fewer than Degree + 1 waypoints      -> spline_error::too_few_points
 ///  * a NaN or infinite time or position   -> spline_error::non_finite_input
-///  * a time span that overflows Scalar    -> spline_error::unrepresentable_spline
 ///  * times not strictly increasing        -> spline_error::non_increasing_times
+///  * a time span that overflows Scalar    -> spline_error::unrepresentable_spline
 ///  * solved control points outside the
 ///    representable range of Scalar        -> spline_error::unrepresentable_spline
 /// Any downstream `bspline_trajectory::create` failure is propagated.

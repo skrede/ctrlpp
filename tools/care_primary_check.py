@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D-12 primary gate: median instructions <= ct::optcon at NX in {8, 12, 16, 20, 24, 30}.
+"""Primary instruction-count gate: median instructions of --bench-label <= those of --ct-label at NX in {8, 12, 16, 20, 24, 30}.
 
 Usage:  tools/care_primary_check.py <bench_care_vs_ct.csv>  [--bench-label ctrlpp::care]
         tools/care_primary_check.py <bench_lqr_continuous_vs_ct.csv> --bench-label ctrlpp::lqr_gain_continuous --ct-label ct::optcon::LQR

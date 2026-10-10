@@ -310,6 +310,19 @@ TEST_CASE("make_bspline_interpolation rejects a time span that overflows", "[tra
     REQUIRE(result.error() == ctrlpp::spline_error::unrepresentable_spline);
 }
 
+TEMPLATE_TEST_CASE("make_bspline_interpolation reports decreasing times before an overflowing span", "[trajectory][bspline][validation]", float, double)
+{
+    using Scalar = TestType;
+    auto const m = std::numeric_limits<Scalar>::max() / static_cast<Scalar>(1.5);
+    std::vector<Scalar> const times = {m, -m, Scalar{0}, Scalar{1}};
+    std::vector<Scalar> const positions = {0, 1, 2, 3};
+
+    auto const result = ctrlpp::make_bspline_interpolation<Scalar, 3>(times, positions);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::non_increasing_times);
+}
+
 TEST_CASE("make_bspline_interpolation rejects control points that leave the range", "[trajectory][bspline][validation]")
 {
     std::vector<double> times = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0};
@@ -457,16 +470,25 @@ TEMPLATE_TEST_CASE("Knots far below unit scale evaluate the same normalized curv
 TEST_CASE("An empty knot span at the end of the domain evaluates finite", "[trajectory][bspline]")
 {
     // Only t == U[n + 1] with U[n] == U[n + 1] reaches an empty span inside de Boor's triangle.
-    std::vector<std::vector<double>> const knot_vectors = {
-        {0, 1, 2, 3, 4, 4, 6, 7, 8},
+    std::vector<double> const knots = {0, 1, 2, 3, 4, 4, 6, 7, 8};
+    auto const spline = make_bspline<3>({.control_points = {0.0, 1.0, 3.0, 2.0, 4.0}, .knot_vector = knots});
+    auto const end = spline.evaluate(knots[5]);
+    REQUIRE(std::isfinite(end.position(0)));
+    REQUIRE(std::isfinite(end.velocity(0)));
+    REQUIRE(std::isfinite(end.acceleration(0)));
+}
+
+TEMPLATE_TEST_CASE("create refuses a knot vector whose active domain has zero length", "[trajectory][bspline][validation]", float, double)
+{
+    using Scalar = TestType;
+    std::vector<std::vector<Scalar>> const knot_vectors = {
         {2, 2, 2, 2, 2, 2, 2, 2, 2},
+        {0, 0, 0, 1, 1, 1, 2, 2, 2},
     };
     for (auto const& knots : knot_vectors) {
-        auto const spline = make_bspline<3>({.control_points = {0.0, 1.0, 3.0, 2.0, 4.0}, .knot_vector = knots});
-        auto const end = spline.evaluate(knots[5]);
-        REQUIRE(std::isfinite(end.position(0)));
-        REQUIRE(std::isfinite(end.velocity(0)));
-        REQUIRE(std::isfinite(end.acceleration(0)));
+        auto const result = ctrlpp::bspline_trajectory<Scalar, 3>::create({.control_points = {0, 1, 3, 2, 4}, .knot_vector = knots});
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error() == ctrlpp::spline_error::non_increasing_times);
     }
 }
 

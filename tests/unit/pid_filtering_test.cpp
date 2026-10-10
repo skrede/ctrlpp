@@ -111,7 +111,6 @@ TEST_CASE("setpoint_filter + pv_filter combined", "[pid][siso][filter-combo]")
 
 TEST_CASE("No filter policies: output unchanged from baseline", "[pid][siso][no-filter]")
 {
-    // Bare PID (no filter policies) should match Plan 01 baseline exactly
     SisoPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.5);

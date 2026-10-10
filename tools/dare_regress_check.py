@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D-14 DARE non-regression gate.
+"""DARE non-regression gate.
 
 Instruction-count is the governor-independent primary metric: the symmetric
 band abs(instr_delta) <= 1% flags both slowdowns (regression) and unexpected
@@ -9,7 +9,7 @@ Wall-clock is noise-dominated on boost-capable CPUs inside the performance
 governor; the gate enforces only the non-regression direction: a positive
 wall_delta above 3% fails, and a negative wall_delta (measurement run is
 faster than baseline) passes regardless of magnitude. This is strict
-non-regression as documented in D-14, not symmetric.
+non-regression, not symmetric.
 
 Default target: NX in {8, 12, 16, 20, 24, 30} against the frozen baseline
 2026-04-18_15-54_bench_dare_vs_ct_wide_sweep.csv.

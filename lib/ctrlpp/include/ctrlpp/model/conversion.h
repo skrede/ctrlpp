@@ -16,7 +16,7 @@ namespace ctrlpp
 
 /// @brief Transfer function to controllable canonical form state-space.
 ///
-/// H(s) = num(s) / den(s), coefficients highest-degree-first (MATLAB convention).
+/// H(s) = num(s) / den(s), coefficients highest-degree-first.
 /// Requires NumDeg <= DenDeg (proper transfer function).
 /// Returns continuous_state_space with NX = DenDeg states.
 ///
@@ -49,7 +49,7 @@ constexpr continuous_state_space<Scalar, DenDeg, 1, 1> tf2ss(const transfer_func
     for(std::size_t i = 0; i <= NumDeg; ++i)
         num[offset + i] = tf.numerator[i] / a0;
 
-    // Controllable canonical form (MATLAB convention)
+    // Controllable canonical form
     mat_a A = mat_a::Zero();
 
     // Superdiagonal of 1s

@@ -42,7 +42,7 @@ void print_verdict(const char *leg, const ctrlpp::golden_verdict &verdict)
 }
 
 // The bounds validation/cases/lqr_closed_loop_settling/tolerance.cfg carries,
-// for ctrlpp's arm only; Octave's arm is not counted. Each gain entry is within
+// for ctrlpp's arm only; the reference arm is not counted. Each gain entry is within
 // the counted gain bound of the exact design, so the gain row departs by at most
 // nx times it, and the run is bounded against the exact loop, whose norms are
 // evaluated at the host's gain. Every column also carries both arms' printing at

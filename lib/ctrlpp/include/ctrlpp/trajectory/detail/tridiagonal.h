@@ -24,13 +24,10 @@
 namespace ctrlpp::detail
 {
 
-// The computed Thomas solution is exact for (A + F) with |F| <= (4u + O(u^2)) |L^||U^|: one rounding per
-// entry from the factorization, one from forward substitution, two from back substitution (@cite higham1990,
-// eqs. (2.5)-(2.7)), so a pivot below that perturbation cannot be told from zero by anything the solver computes.
-// Roundings are counted in units of eps = 2u, the per-operation model of @cite trefethenbau eq. (13.7), so 4 eps
-// is twice the first-order bound, conservative toward refusing. The scale is the pivot row's coefficient
-// magnitudes: for rows diagonally dominant |L^||U^| <= 3|A| (@cite higham1990, Theorem 4.1), and every system
-// cubic_spline forms is strictly diagonally dominant by rows.
+// The computed Thomas solution is exact for A + F with |F| <= (4u + O(u^2)) |L^||U^| (@cite higham1990, eqs. (2.5)-(2.7)), so a smaller pivot cannot be told from zero.
+// With b_k the reduced pivot and l_k = a_k / b_(k-1), (|L^||U^|)_kk = |l_k c_(k-1)| + |b_k|; on rows diagonally dominant, as every cubic_spline system is,
+// |b_(k-1)| >= |c_(k-1)| by induction, so it is at most |a_k| + |b_k|, which the row scale formed with the reduced pivot bounds.
+// The threshold 4 eps = 8u (@cite trefethenbau eq. (13.7)) is twice that first-order bound.
 template <typename Scalar>
 constexpr Scalar pivot_singular_ulps = Scalar{4};
 

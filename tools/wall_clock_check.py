@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""D-13 secondary gate: median wall-clock must not regress against a baseline CSV.
+"""Secondary gate: median wall-clock must not regress against a baseline CSV.
 
 Usage:  tools/wall_clock_check.py <baseline.csv> <current.csv> [--label-substring ctrlpp::] [--tolerance 0.0]
 
-By default the gate is strict (delta <= 0) per D-13. A --tolerance flag
-allows a small measurement-noise band if the operator chooses (CONTEXT.md
-D-13 is silent on the exact noise band; default strict).
+By default the gate is strict (delta <= 0). A --tolerance flag allows a
+small measurement-noise band if the operator chooses.
 """
 import argparse
 import csv

@@ -29,7 +29,8 @@ namespace ctrlpp
 ///  * size_mismatch              : times and positions differ in length.
 ///  * non_finite_input           : a time, position, boundary velocity, control
 ///                                 point, or knot is NaN or infinite.
-///  * non_increasing_times       : knot times are not strictly increasing.
+///  * non_increasing_times       : knot times are not strictly increasing, or a
+///                                 B-spline's active domain has zero length.
 ///  * periodic_endpoint_mismatch : periodic boundary conditions require the first
 ///                                 and last positions to match within the endpoint
 ///                                 rounding budget.

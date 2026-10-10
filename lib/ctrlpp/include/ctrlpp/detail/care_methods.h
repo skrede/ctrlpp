@@ -24,13 +24,8 @@
 /// parameter on `care_solve_from_hamiltonian`, `care`, and `lqr_gain_continuous`
 /// so overload resolution rejects foreign types.
 ///
-/// The default assignment was picked by a governor-locked instruction-count
-/// bakeoff. At the benchmarked revision, the sign-function path reached 31.8
-/// to 35.8 percent fewer median instructions than `ct::optcon::CARE` at every
-/// target NX in the 8 to 30 sweep; both Schur variants failed the primary gate
-/// by 39 to 41 percent. The archived percentages document the method-selection
-/// decision and are not a current instruction count: that revision verified
-/// nothing, and the path has since gained and then partly given back work.
+/// The default is the sign-function path because it took the fewest median
+/// instructions of the three at every NX in a governor-locked bakeoff from 8 to 30.
 ///
 /// What the accepting path carries now, counted analytically against the same
 /// cubic measure. The verification of the returned solution runs on every
@@ -51,7 +46,7 @@
 /// accounting, the projector check that is now gone was 10.7 percent.
 ///
 /// So the selection argument is not weakened by verifying every answer: a
-/// 2.7 percent addition to the cubic work does not close a 31.8 percent margin,
+/// 2.7 percent addition to the cubic work does not close the margin it was selected on,
 /// and the alternative to paying it was a path that could report success for a
 /// solution it never examined.
 ///
@@ -74,11 +69,9 @@
 /// The gap to the default therefore widened, and by how much is arithmetic
 /// rather than a measurement: the default now costs 1.027 times its unverified
 /// self and each Schur variant 1.083 times its own, so the ratio between them
-/// grows by 1.083 / 1.027 = 1.055. The variants were already behind by the
-/// archived 39 to 41 percent; they are now behind by about five and a half
-/// percent more of that disadvantage. **Every number in this section is
-/// COUNTED**, and the archived percentages remain archived rather than restated
-/// as current.
+/// grows by 1.083 / 1.027 = 1.055. The variants were already behind; they are
+/// now behind by about five and a half percent more of that disadvantage.
+/// **Every number in this section is COUNTED.**
 ///
 /// ## The same acceptance check, TIMED
 ///
@@ -160,7 +153,7 @@
 /// to select a tag to get an answer. The selection argument is now the
 /// instruction count above and, for the balanced variant, the sweep it runs.
 ///
-/// Unlike the archived percentages above, THESE ACCEPTANCE COUNTS ARE PINNED
+/// Unlike the instruction figures above, THESE ACCEPTANCE COUNTS ARE PINNED
 /// rather than recorded. `CARE keeps the same promise under every method tag`
 /// asserts both counts as exact equalities against the drawn counts, for every
 /// tag, so a tightening of the acceptance rule that costs those answers breaks a
@@ -236,11 +229,8 @@ struct sign_function_care_method
 /// @brief Schur + Bai-Demmel reorder CARE solve path.
 ///
 /// @note Retained for reproducibility; superseded by `sign_function_care_method`
-///       after the bakeoff. The Schur path fails its primary gate by ~40
-///       percent at NX=8 to 30 -- an ARCHIVED MEDIAN INSTRUCTION COUNT from the
-///       bakeoff revision, not a wall-clock figure and not current. Timed on the
-///       corpus and machine recorded above, it is behind the default by more
-///       than that: 1.81x its wall time at NX=8 and 2.04x at NX=24, the worst of
+///       after the bakeoff. Timed on the corpus and machine recorded above, it
+///       is behind the default by 1.81x its wall time at NX=8 and 2.04x at NX=24, the worst of
 ///       the nine swept sizes, easing to 1.96x at NX=30. Like every
 ///       other tag it verifies the matrix it extracted before returning it, and
 ///       reports `unverified_solution` when that matrix does not satisfy the

@@ -317,7 +317,6 @@ class cubic_spline
             return 0;
         }
         auto idx = static_cast<std::size_t>(it - times_.begin()) - 1;
-        // Clamp to valid range (Pitfall 6)
         if (idx >= n_spans) {
             idx = n_spans - 1;
         }
