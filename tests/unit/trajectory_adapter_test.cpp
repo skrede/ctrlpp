@@ -24,7 +24,7 @@ static_assert(ctrlpp::trajectory_segment<harmonic_traj_t, double, 1>);
 
 // ---- Harmonic via trajectory ----
 
-TEST_CASE("trajectory harmonic rest-to-rest", "[traj][trajectory_adapter]")
+TEST_CASE("trajectory harmonic rest-to-rest", "[trajectory][trajectory_adapter]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -40,7 +40,7 @@ TEST_CASE("trajectory harmonic rest-to-rest", "[traj][trajectory_adapter]")
     CHECK_THAT(pT.velocity[0], WithinAbs(0.0, 1e-12));
 }
 
-TEST_CASE("trajectory harmonic midpoint symmetry", "[traj][trajectory_adapter]")
+TEST_CASE("trajectory harmonic midpoint symmetry", "[trajectory][trajectory_adapter]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -50,7 +50,7 @@ TEST_CASE("trajectory harmonic midpoint symmetry", "[traj][trajectory_adapter]")
     CHECK_THAT(pm.position[0], WithinAbs(5.0, 1e-10));
 }
 
-TEST_CASE("trajectory harmonic endpoint acceleration", "[traj][trajectory_adapter]")
+TEST_CASE("trajectory harmonic endpoint acceleration", "[trajectory][trajectory_adapter]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -67,7 +67,7 @@ TEST_CASE("trajectory harmonic endpoint acceleration", "[traj][trajectory_adapte
 
 // ---- Cycloidal via trajectory ----
 
-TEST_CASE("trajectory cycloidal rest-to-rest", "[traj][trajectory_adapter]")
+TEST_CASE("trajectory cycloidal rest-to-rest", "[trajectory][trajectory_adapter]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Constant(5.0);
     Vector<double, 1> q1 = Vector<double, 1>::Constant(15.0);
@@ -80,7 +80,7 @@ TEST_CASE("trajectory cycloidal rest-to-rest", "[traj][trajectory_adapter]")
     CHECK_THAT(seg.evaluate(3.0).velocity[0], WithinAbs(0.0, 1e-12));
 }
 
-TEST_CASE("trajectory cycloidal zero endpoint acceleration", "[traj][trajectory_adapter]")
+TEST_CASE("trajectory cycloidal zero endpoint acceleration", "[trajectory][trajectory_adapter]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Constant(5.0);
     Vector<double, 1> q1 = Vector<double, 1>::Constant(15.0);
@@ -93,7 +93,7 @@ TEST_CASE("trajectory cycloidal zero endpoint acceleration", "[traj][trajectory_
 
 // ---- ND=3 multi-dimensional ----
 
-TEST_CASE("trajectory ND=3 per-axis displacement", "[traj][trajectory_adapter]")
+TEST_CASE("trajectory ND=3 per-axis displacement", "[trajectory][trajectory_adapter]")
 {
     Vector<double, 3> q0;
     q0 << 0.0, 10.0, -5.0;
@@ -115,7 +115,7 @@ TEST_CASE("trajectory ND=3 per-axis displacement", "[traj][trajectory_adapter]")
 
 // ---- Boundary clamping ----
 
-TEST_CASE("trajectory boundary clamping", "[traj][trajectory_adapter]")
+TEST_CASE("trajectory boundary clamping", "[trajectory][trajectory_adapter]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -134,7 +134,7 @@ TEST_CASE("trajectory boundary clamping", "[traj][trajectory_adapter]")
 // ---- Rejection tests: duration and finiteness domain ----
 
 TEST_CASE("make_trajectory rejects invalid duration and positions",
-          "[traj][trajectory_adapter][negative]")
+          "[trajectory][trajectory_adapter][negative]")
 {
     Vector<double, 1> const q0 = Vector<double, 1>::Zero();
     Vector<double, 1> const q1 = Vector<double, 1>::Constant(10.0);
@@ -174,7 +174,7 @@ TEST_CASE("make_trajectory rejects invalid duration and positions",
     }
 }
 
-TEST_CASE("trajectory duration()", "[traj][trajectory_adapter]")
+TEST_CASE("trajectory duration()", "[trajectory][trajectory_adapter]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);

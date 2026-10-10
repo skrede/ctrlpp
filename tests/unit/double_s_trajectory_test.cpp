@@ -118,7 +118,7 @@ auto stepped(double value, std::int32_t steps) -> double
 // --------------------------------------------------------------------------
 // Test 1: Full 7-segment profile reaches q1 with 7 distinct phases
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: full 7-segment profile", "[traj][double_s]")
+TEST_CASE("double_s: full 7-segment profile", "[trajectory][double_s]")
 {
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0};
@@ -147,7 +147,7 @@ TEST_CASE("double_s: full 7-segment profile", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 2: Velocity not reached (degenerate -- v_lim < v_max)
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: velocity not reached degenerate", "[traj][double_s]")
+TEST_CASE("double_s: velocity not reached degenerate", "[trajectory][double_s]")
 {
     // Short distance forces v_lim < v_max
     ctrlpp::double_s_trajectory<double>::config cfg{
@@ -166,7 +166,7 @@ TEST_CASE("double_s: velocity not reached degenerate", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 3: Acceleration not reached (a_lim < a_max)
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: acceleration not reached degenerate", "[traj][double_s]")
+TEST_CASE("double_s: acceleration not reached degenerate", "[trajectory][double_s]")
 {
     // Very high a_max but low j_max -- can't reach full a_max
     ctrlpp::double_s_trajectory<double>::config cfg{
@@ -184,7 +184,7 @@ TEST_CASE("double_s: acceleration not reached degenerate", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 4: Both v and a not reached (doubly degenerate)
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: doubly degenerate (v and a not reached)", "[traj][double_s]")
+TEST_CASE("double_s: doubly degenerate (v and a not reached)", "[trajectory][double_s]")
 {
     // Tiny distance with high limits -- neither v_max nor a_max reached
     ctrlpp::double_s_trajectory<double>::config cfg{
@@ -203,7 +203,7 @@ TEST_CASE("double_s: doubly degenerate (v and a not reached)", "[traj][double_s]
 // --------------------------------------------------------------------------
 // Test 5: Triangular-like (very short distance)
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: very short distance simplifies", "[traj][double_s]")
+TEST_CASE("double_s: very short distance simplifies", "[trajectory][double_s]")
 {
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 0.001, .v_max = 10.0, .a_max = 10.0, .j_max = 100.0};
@@ -218,7 +218,7 @@ TEST_CASE("double_s: very short distance simplifies", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 6: Velocity constraint -- sample 1000 points, |velocity| <= v_max + eps
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: velocity constraint satisfied", "[traj][double_s]")
+TEST_CASE("double_s: velocity constraint satisfied", "[trajectory][double_s]")
 {
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0};
@@ -236,7 +236,7 @@ TEST_CASE("double_s: velocity constraint satisfied", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 7: Acceleration constraint -- sample 1000 points
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: acceleration constraint satisfied", "[traj][double_s]")
+TEST_CASE("double_s: acceleration constraint satisfied", "[trajectory][double_s]")
 {
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0};
@@ -254,7 +254,7 @@ TEST_CASE("double_s: acceleration constraint satisfied", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 8: Jerk constraint -- finite difference check
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: jerk constraint satisfied", "[traj][double_s]")
+TEST_CASE("double_s: jerk constraint satisfied", "[trajectory][double_s]")
 {
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0};
@@ -275,7 +275,7 @@ TEST_CASE("double_s: jerk constraint satisfied", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 9: Phase boundary continuity
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: phase boundary continuity", "[traj][double_s]")
+TEST_CASE("double_s: phase boundary continuity", "[trajectory][double_s]")
 {
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0};
@@ -302,7 +302,7 @@ TEST_CASE("double_s: phase boundary continuity", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 10: Negative displacement (q1 < q0) via sigma transformation
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: negative displacement sigma transformation", "[traj][double_s]")
+TEST_CASE("double_s: negative displacement sigma transformation", "[trajectory][double_s]")
 {
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 10.0, .q1 = 0.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0};
@@ -325,7 +325,7 @@ TEST_CASE("double_s: negative displacement sigma transformation", "[traj][double
 // --------------------------------------------------------------------------
 // Test 11: Introspection methods
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: introspection", "[traj][double_s]")
+TEST_CASE("double_s: introspection", "[trajectory][double_s]")
 {
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0};
@@ -356,7 +356,7 @@ TEST_CASE("double_s: introspection", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 12: Satisfies trajectory_segment concept
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: satisfies trajectory_segment concept", "[traj][double_s]")
+TEST_CASE("double_s: satisfies trajectory_segment concept", "[trajectory][double_s]")
 {
     static_assert(ctrlpp::trajectory_segment<
                   ctrlpp::double_s_trajectory<double>, double, 1>);
@@ -368,7 +368,7 @@ TEST_CASE("double_s: satisfies trajectory_segment concept", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 13: Zero displacement (q0 == q1) returns stationary profile
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: zero displacement stationary profile", "[traj][double_s]")
+TEST_CASE("double_s: zero displacement stationary profile", "[trajectory][double_s]")
 {
     ctrlpp::double_s_trajectory<double>::config cfg{
         .q0 = 5.0, .q1 = 5.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0};
@@ -385,7 +385,7 @@ TEST_CASE("double_s: zero displacement stationary profile", "[traj][double_s]")
 // --------------------------------------------------------------------------
 // Test 14: Nonzero boundary velocities (B&M Example 3.9 parameters)
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: nonzero boundary velocities", "[traj][double_s]")
+TEST_CASE("double_s: nonzero boundary velocities", "[trajectory][double_s]")
 {
     // Biagiotti & Melchiorri, Example 3.9, p.84: q0=0, q1=10, v0=1, v1=0,
     // v_max=5, a_max=10, j_max=30. v_max is reached, so peak velocity is v_max.
@@ -440,7 +440,7 @@ TEST_CASE("double_s: nonzero boundary velocities", "[traj][double_s]")
 // The velocity limit is a precondition on the boundary velocities
 // --------------------------------------------------------------------------
 TEST_CASE("double_s: a boundary velocity above the velocity limit is rejected",
-          "[traj][double_s]")
+          "[trajectory][double_s]")
 {
     using traj_t = ctrlpp::double_s_trajectory<double>;
 
@@ -625,7 +625,7 @@ TEMPLATE_TEST_CASE("Double-S: a rounding count above one over eps is refused bef
 // --------------------------------------------------------------------------
 // A displacement below what the boundary velocities already sweep
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: a command below the transition distance is rejected", "[traj][double_s]")
+TEST_CASE("double_s: a command below the transition distance is rejected", "[trajectory][double_s]")
 {
     using traj_t = ctrlpp::double_s_trajectory<double>;
 
@@ -664,7 +664,7 @@ TEST_CASE("double_s: a command below the transition distance is rejected", "[tra
 // --------------------------------------------------------------------------
 // Input domain of the three limits and the boundary values
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: out-of-domain limits and non-finite inputs are rejected", "[traj][double_s]")
+TEST_CASE("double_s: out-of-domain limits and non-finite inputs are rejected", "[trajectory][double_s]")
 {
     using traj_t = ctrlpp::double_s_trajectory<double>;
     auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
@@ -702,7 +702,7 @@ TEST_CASE("double_s: out-of-domain limits and non-finite inputs are rejected", "
 // --------------------------------------------------------------------------
 // A profile that does not fit the scalar type
 // --------------------------------------------------------------------------
-TEST_CASE("double_s: a duration outside the representable range is rejected", "[traj][double_s]")
+TEST_CASE("double_s: a duration outside the representable range is rejected", "[trajectory][double_s]")
 {
     using traj_t = ctrlpp::double_s_trajectory<double>;
 
@@ -721,7 +721,7 @@ TEST_CASE("double_s: a duration outside the representable range is rejected", "[
 // The out-parameter evaluation writes what the by-value one returns
 // --------------------------------------------------------------------------
 TEMPLATE_TEST_CASE("double_s: out-parameter evaluate is bit-identical to by-value evaluate",
-                   "[traj][double_s]", float, double)
+                   "[trajectory][double_s]", float, double)
 {
     using Scalar = TestType;
     using traj_t = ctrlpp::double_s_trajectory<Scalar>;

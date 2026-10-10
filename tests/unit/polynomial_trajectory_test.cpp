@@ -23,7 +23,7 @@ static_assert(ctrlpp::trajectory_segment<ctrlpp::cubic_trajectory<double, 3>, do
 
 // ---- Cubic trajectory tests ----
 
-TEST_CASE("cubic_trajectory rest-to-rest boundary conditions", "[traj][polynomial]")
+TEST_CASE("cubic_trajectory rest-to-rest boundary conditions", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -41,7 +41,7 @@ TEST_CASE("cubic_trajectory rest-to-rest boundary conditions", "[traj][polynomia
     CHECK_THAT(pT.velocity[0], WithinAbs(0.0, 1e-12));
 }
 
-TEST_CASE("cubic_trajectory midpoint symmetry", "[traj][polynomial]")
+TEST_CASE("cubic_trajectory midpoint symmetry", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -53,7 +53,7 @@ TEST_CASE("cubic_trajectory midpoint symmetry", "[traj][polynomial]")
     CHECK_THAT(pm.position[0], WithinAbs(5.0, 1e-10));
 }
 
-TEST_CASE("cubic_trajectory boundary clamping", "[traj][polynomial]")
+TEST_CASE("cubic_trajectory boundary clamping", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -71,7 +71,7 @@ TEST_CASE("cubic_trajectory boundary clamping", "[traj][polynomial]")
     CHECK_THAT(p_over.position[0], WithinAbs(pT.position[0], 1e-15));
 }
 
-TEST_CASE("cubic_trajectory non-zero velocity BCs", "[traj][polynomial]")
+TEST_CASE("cubic_trajectory non-zero velocity BCs", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -86,7 +86,7 @@ TEST_CASE("cubic_trajectory non-zero velocity BCs", "[traj][polynomial]")
     CHECK_THAT(seg.evaluate(4.0).position[0], WithinAbs(10.0, 1e-12));
 }
 
-TEST_CASE("cubic_trajectory duration()", "[traj][polynomial]")
+TEST_CASE("cubic_trajectory duration()", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -99,7 +99,7 @@ TEST_CASE("cubic_trajectory duration()", "[traj][polynomial]")
 
 // ---- Quintic trajectory tests ----
 
-TEST_CASE("quintic_trajectory rest-to-rest boundary conditions", "[traj][polynomial]")
+TEST_CASE("quintic_trajectory rest-to-rest boundary conditions", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -121,7 +121,7 @@ TEST_CASE("quintic_trajectory rest-to-rest boundary conditions", "[traj][polynom
     CHECK_THAT(pT.acceleration[0], WithinAbs(0.0, 1e-12));
 }
 
-TEST_CASE("quintic_trajectory midpoint symmetry", "[traj][polynomial]")
+TEST_CASE("quintic_trajectory midpoint symmetry", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -132,7 +132,7 @@ TEST_CASE("quintic_trajectory midpoint symmetry", "[traj][polynomial]")
     CHECK_THAT(pm.position[0], WithinAbs(5.0, 1e-10));
 }
 
-TEST_CASE("quintic_trajectory boundary clamping", "[traj][polynomial]")
+TEST_CASE("quintic_trajectory boundary clamping", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -149,7 +149,7 @@ TEST_CASE("quintic_trajectory boundary clamping", "[traj][polynomial]")
     CHECK_THAT(p_over.position[0], WithinAbs(pT.position[0], 1e-15));
 }
 
-TEST_CASE("quintic_trajectory non-zero BCs", "[traj][polynomial]")
+TEST_CASE("quintic_trajectory non-zero BCs", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -170,7 +170,7 @@ TEST_CASE("quintic_trajectory non-zero BCs", "[traj][polynomial]")
 
 // ---- Septic trajectory tests ----
 
-TEST_CASE("septic_trajectory rest-to-rest boundary conditions", "[traj][polynomial]")
+TEST_CASE("septic_trajectory rest-to-rest boundary conditions", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -189,7 +189,7 @@ TEST_CASE("septic_trajectory rest-to-rest boundary conditions", "[traj][polynomi
     CHECK_THAT(pT.acceleration[0], WithinAbs(0.0, 1e-12));
 }
 
-TEST_CASE("septic_trajectory midpoint symmetry", "[traj][polynomial]")
+TEST_CASE("septic_trajectory midpoint symmetry", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -200,7 +200,7 @@ TEST_CASE("septic_trajectory midpoint symmetry", "[traj][polynomial]")
     CHECK_THAT(pm.position[0], WithinAbs(5.0, 1e-10));
 }
 
-TEST_CASE("septic_trajectory boundary clamping", "[traj][polynomial]")
+TEST_CASE("septic_trajectory boundary clamping", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -217,7 +217,7 @@ TEST_CASE("septic_trajectory boundary clamping", "[traj][polynomial]")
     CHECK_THAT(p_over.position[0], WithinAbs(pT.position[0], 1e-15));
 }
 
-TEST_CASE("septic_trajectory non-zero jerk BCs", "[traj][polynomial]")
+TEST_CASE("septic_trajectory non-zero jerk BCs", "[trajectory][polynomial]")
 {
     Vector<double, 1> q0 = Vector<double, 1>::Zero();
     Vector<double, 1> q1 = Vector<double, 1>::Constant(10.0);
@@ -238,7 +238,7 @@ TEST_CASE("septic_trajectory non-zero jerk BCs", "[traj][polynomial]")
 // ---- Rejection tests: duration and finiteness domain ----
 
 TEST_CASE("cubic_trajectory factory rejects invalid duration and waypoints",
-          "[traj][polynomial][negative]")
+          "[trajectory][polynomial][negative]")
 {
     Vector<double, 1> const q0 = Vector<double, 1>::Zero();
     Vector<double, 1> const q1 = Vector<double, 1>::Constant(10.0);
@@ -276,7 +276,7 @@ TEST_CASE("cubic_trajectory factory rejects invalid duration and waypoints",
 }
 
 TEST_CASE("quintic_trajectory factory rejects invalid duration and waypoints",
-          "[traj][polynomial][negative]")
+          "[trajectory][polynomial][negative]")
 {
     Vector<double, 1> const q0 = Vector<double, 1>::Zero();
     Vector<double, 1> const q1 = Vector<double, 1>::Constant(10.0);
@@ -318,7 +318,7 @@ TEST_CASE("quintic_trajectory factory rejects invalid duration and waypoints",
 }
 
 TEST_CASE("septic_trajectory factory rejects invalid duration and waypoints",
-          "[traj][polynomial][negative]")
+          "[trajectory][polynomial][negative]")
 {
     Vector<double, 1> const q0 = Vector<double, 1>::Zero();
     Vector<double, 1> const q1 = Vector<double, 1>::Constant(10.0);
@@ -361,7 +361,7 @@ TEST_CASE("septic_trajectory factory rejects invalid duration and waypoints",
 
 // ---- ND=3 multi-dimensional test ----
 
-TEST_CASE("cubic_trajectory ND=3 independent axes", "[traj][polynomial]")
+TEST_CASE("cubic_trajectory ND=3 independent axes", "[trajectory][polynomial]")
 {
     Vector<double, 3> q0;
     q0 << 0.0, 0.0, 0.0;

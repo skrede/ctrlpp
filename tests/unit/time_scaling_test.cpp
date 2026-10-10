@@ -14,7 +14,7 @@ using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
 
 // -- Test 1: Cycloidal path, velocity-limited --------------------------------
-TEST_CASE("Time scaling: cycloidal path velocity-limited", "[traj][time_scaling]")
+TEST_CASE("Time scaling: cycloidal path velocity-limited", "[trajectory][time_scaling]")
 {
     // h=10, v_max=5, a_max=100, j_max=1000
     // peak_derivs = {2.0, 2*pi, 4*pi^2}
@@ -30,7 +30,7 @@ TEST_CASE("Time scaling: cycloidal path velocity-limited", "[traj][time_scaling]
 }
 
 // -- Test 2: Cubic path, acceleration-limited --------------------------------
-TEST_CASE("Time scaling: cubic path acceleration-limited", "[traj][time_scaling]")
+TEST_CASE("Time scaling: cubic path acceleration-limited", "[trajectory][time_scaling]")
 {
     // h=1, v_max=100, a_max=2, j_max=1000
     // peak_derivs = {1.5, 6.0, 12.0}
@@ -46,7 +46,7 @@ TEST_CASE("Time scaling: cubic path acceleration-limited", "[traj][time_scaling]
 }
 
 // -- Test 3: Septic path, jerk-limited ---------------------------------------
-TEST_CASE("Time scaling: septic path jerk-limited", "[traj][time_scaling]")
+TEST_CASE("Time scaling: septic path jerk-limited", "[trajectory][time_scaling]")
 {
     // h=1, v_max=100, a_max=100, j_max=1
     // peak_derivs = {35/16, 7.5132, 52.5}
@@ -62,7 +62,7 @@ TEST_CASE("Time scaling: septic path jerk-limited", "[traj][time_scaling]")
 }
 
 // -- Test 4: Verify resulting trajectory satisfies limits ---------------------
-TEST_CASE("Time scaling: trajectory respects limits", "[traj][time_scaling]")
+TEST_CASE("Time scaling: trajectory respects limits", "[trajectory][time_scaling]")
 {
     double const h = 5.0;
     double const v_max = 3.0;
@@ -87,7 +87,7 @@ TEST_CASE("Time scaling: trajectory respects limits", "[traj][time_scaling]")
 }
 
 // -- Test 5: Vector overload - per-DOF durations -----------------------------
-TEST_CASE("Time scaling: vector overload per-DOF", "[traj][time_scaling]")
+TEST_CASE("Time scaling: vector overload per-DOF", "[trajectory][time_scaling]")
 {
     auto const pd = ctrlpp::cycloidal_path_peak_derivatives<double>();
     std::array<double, 3> const h = {1.0, 5.0, 10.0};
@@ -106,7 +106,7 @@ TEST_CASE("Time scaling: vector overload per-DOF", "[traj][time_scaling]")
 }
 
 // -- Test 6: Scalar synchronized overload ------------------------------------
-TEST_CASE("Time scaling: scalar synchronized overload", "[traj][time_scaling]")
+TEST_CASE("Time scaling: scalar synchronized overload", "[trajectory][time_scaling]")
 {
     auto const pd = ctrlpp::cycloidal_path_peak_derivatives<double>();
     std::array<double, 3> const h = {1.0, 5.0, 10.0};
@@ -120,7 +120,7 @@ TEST_CASE("Time scaling: scalar synchronized overload", "[traj][time_scaling]")
 }
 
 // -- Test 7: Composite profiles do NOT use time_scaling (conceptual) ---------
-TEST_CASE("Time scaling: composite profiles solve timing internally", "[traj][time_scaling]")
+TEST_CASE("Time scaling: composite profiles solve timing internally", "[trajectory][time_scaling]")
 {
     // Composite profiles (trapezoidal, double-S) do NOT use time_scaling.
     // They solve timing internally from v_max, a_max constraints.

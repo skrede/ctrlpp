@@ -272,7 +272,7 @@ auto slow_axis() -> ctrlpp::trapezoidal_trajectory<double>
 // --------------------------------------------------------------------------
 // Test 1: Three trapezoidal axes synchronize to slowest
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: 3 trapezoidal axes equal duration", "[traj][sync]")
+TEST_CASE("synchronize: 3 trapezoidal axes equal duration", "[trajectory][sync]")
 {
     auto ax1 = trapezoidal_axis(
         {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
@@ -301,7 +301,7 @@ TEST_CASE("synchronize: 3 trapezoidal axes equal duration", "[traj][sync]")
 // --------------------------------------------------------------------------
 // Test 2: Two double-S axes synchronize to slowest
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: 2 double-S axes equal duration", "[traj][sync]")
+TEST_CASE("synchronize: 2 double-S axes equal duration", "[trajectory][sync]")
 {
     auto ax1 = double_s_axis(
         {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0, .j_max = 100.0});
@@ -323,7 +323,7 @@ TEST_CASE("synchronize: 2 double-S axes equal duration", "[traj][sync]")
 // --------------------------------------------------------------------------
 // Test 3: Heterogeneous mix -- trapezoidal + double-S
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: heterogeneous trapezoidal + double-S", "[traj][sync]")
+TEST_CASE("synchronize: heterogeneous trapezoidal + double-S", "[trajectory][sync]")
 {
     auto trap = trapezoidal_axis(
         {.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0});
@@ -347,7 +347,7 @@ TEST_CASE("synchronize: heterogeneous trapezoidal + double-S", "[traj][sync]")
 // --------------------------------------------------------------------------
 // Test 4: Post-sync traversal is preserved
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: post-sync traversal preserved", "[traj][sync]")
+TEST_CASE("synchronize: post-sync traversal preserved", "[trajectory][sync]")
 {
     auto ax1 = trapezoidal_axis(
         {.q0 = 1.0, .q1 = 11.0, .v_max = 5.0, .a_max = 10.0});
@@ -398,7 +398,7 @@ TEST_CASE("synchronize: post-sync traversal preserved", "[traj][sync]")
 // --------------------------------------------------------------------------
 // Test 5: Post-sync velocity never exceeds v_max
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: post-sync velocity within v_max", "[traj][sync]")
+TEST_CASE("synchronize: post-sync velocity within v_max", "[trajectory][sync]")
 {
     double constexpr v_max = 5.0;
     auto ax1 = trapezoidal_axis(
@@ -431,7 +431,7 @@ TEST_CASE("synchronize: post-sync velocity within v_max", "[traj][sync]")
 // --------------------------------------------------------------------------
 // Test 6: Post-sync acceleration never exceeds a_max
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: post-sync acceleration within a_max", "[traj][sync]")
+TEST_CASE("synchronize: post-sync acceleration within a_max", "[trajectory][sync]")
 {
     double constexpr a_max = 10.0;
     auto ax1 = trapezoidal_axis(
@@ -463,7 +463,7 @@ TEST_CASE("synchronize: post-sync acceleration within a_max", "[traj][sync]")
 // --------------------------------------------------------------------------
 // Test 7: Single axis is a no-op
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: single axis no-op", "[traj][sync]")
+TEST_CASE("synchronize: single axis no-op", "[trajectory][sync]")
 {
     auto ax = trapezoidal_axis(
         {.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
@@ -485,7 +485,7 @@ TEST_CASE("synchronize: single axis no-op", "[traj][sync]")
 // --------------------------------------------------------------------------
 // Test 8: Vector overload with trapezoidal axes
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: vector overload", "[traj][sync]")
+TEST_CASE("synchronize: vector overload", "[trajectory][sync]")
 {
     std::vector<ctrlpp::trapezoidal_trajectory<double>> axes;
     axes.push_back(trapezoidal_axis({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0}));
@@ -513,7 +513,7 @@ TEST_CASE("synchronize: vector overload", "[traj][sync]")
 // Test 9: A rejected synchronization leaves every axis bitwise untouched
 //         (variadic overload)
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: rejection mutates no axis, variadic overload", "[traj][sync]")
+TEST_CASE("synchronize: rejection mutates no axis, variadic overload", "[trajectory][sync]")
 {
     auto ax1 = slow_axis();
     auto ax2 = bounded_axis();
@@ -539,7 +539,7 @@ TEST_CASE("synchronize: rejection mutates no axis, variadic overload", "[traj][s
 // --------------------------------------------------------------------------
 // Test 10: The same, through the contiguous-view overload
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: rejection mutates no axis, contiguous-view overload", "[traj][sync]")
+TEST_CASE("synchronize: rejection mutates no axis, contiguous-view overload", "[trajectory][sync]")
 {
     std::array<ctrlpp::trapezoidal_trajectory<double>, 3> axes{slow_axis(), bounded_axis(),
                                                                slow_axis()};
@@ -561,7 +561,7 @@ TEST_CASE("synchronize: rejection mutates no axis, contiguous-view overload", "[
 // --------------------------------------------------------------------------
 // Test 11: The slowest axis takes the success no-op path
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: the slowest axis is a success no-op", "[traj][sync]")
+TEST_CASE("synchronize: the slowest axis is a success no-op", "[trajectory][sync]")
 {
     auto slowest = slow_axis();
     auto faster = trapezoidal_axis(
@@ -594,7 +594,7 @@ TEST_CASE("synchronize: the slowest axis is a success no-op", "[traj][sync]")
 // --------------------------------------------------------------------------
 // Test 12: An empty view is a successful no-op
 // --------------------------------------------------------------------------
-TEST_CASE("synchronize: empty view succeeds", "[traj][sync]")
+TEST_CASE("synchronize: empty view succeeds", "[trajectory][sync]")
 {
     std::array<ctrlpp::trapezoidal_trajectory<double>, 0> none{};
     REQUIRE(ctrlpp::synchronize(std::span<ctrlpp::trapezoidal_trajectory<double>>{none}).has_value());

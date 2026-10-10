@@ -55,7 +55,7 @@ auto stepped(double value, std::int32_t steps) -> double
 }
 
 // -- Test 1: Full trapezoidal profile ----------------------------------------
-TEST_CASE("Trapezoidal: full trapezoidal profile", "[traj][trapezoidal]")
+TEST_CASE("Trapezoidal: full trapezoidal profile", "[trajectory][trapezoidal]")
 {
     // q0=0, q1=10, v_max=5, a_max=10
     // T_a = v_max/a_max = 0.5s, T_v = h/v_max - T_a = 2-0.5 = 1.5s, T_d = 0.5s, T = 2.5s
@@ -71,7 +71,7 @@ TEST_CASE("Trapezoidal: full trapezoidal profile", "[traj][trapezoidal]")
 }
 
 // -- Test 2: Triangular degenerate -------------------------------------------
-TEST_CASE("Trapezoidal: triangular degenerate case", "[traj][trapezoidal]")
+TEST_CASE("Trapezoidal: triangular degenerate case", "[trajectory][trapezoidal]")
 {
     // q0=0, q1=1, v_max=10, a_max=2 -> h*a_max = 2 < v_max^2 = 100
     auto const traj = built({.q0 = 0.0, .q1 = 1.0, .v_max = 10.0, .a_max = 2.0});
@@ -85,7 +85,7 @@ TEST_CASE("Trapezoidal: triangular degenerate case", "[traj][trapezoidal]")
 }
 
 // -- Test 3: Velocity constraint ---------------------------------------------
-TEST_CASE("Trapezoidal: velocity constraint satisfied", "[traj][trapezoidal]")
+TEST_CASE("Trapezoidal: velocity constraint satisfied", "[trajectory][trapezoidal]")
 {
     auto const traj = built({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
 
@@ -98,7 +98,7 @@ TEST_CASE("Trapezoidal: velocity constraint satisfied", "[traj][trapezoidal]")
 }
 
 // -- Test 4: Acceleration constraint -----------------------------------------
-TEST_CASE("Trapezoidal: acceleration constraint satisfied", "[traj][trapezoidal]")
+TEST_CASE("Trapezoidal: acceleration constraint satisfied", "[trajectory][trapezoidal]")
 {
     auto const traj = built({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
 
@@ -111,7 +111,7 @@ TEST_CASE("Trapezoidal: acceleration constraint satisfied", "[traj][trapezoidal]
 }
 
 // -- Test 5: Phase boundary continuity ---------------------------------------
-TEST_CASE("Trapezoidal: phase boundary continuity", "[traj][trapezoidal]")
+TEST_CASE("Trapezoidal: phase boundary continuity", "[trajectory][trapezoidal]")
 {
     auto const traj = built({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
 
@@ -133,7 +133,7 @@ TEST_CASE("Trapezoidal: phase boundary continuity", "[traj][trapezoidal]")
 }
 
 // -- Test 6: Non-null boundary conditions ------------------------------------
-TEST_CASE("Trapezoidal: non-null boundary conditions", "[traj][trapezoidal]")
+TEST_CASE("Trapezoidal: non-null boundary conditions", "[trajectory][trapezoidal]")
 {
     auto const traj = built({.q0 = 0.0, .q1 = 20.0, .v_max = 5.0, .a_max = 10.0, .v0 = 1.0, .v1 = 2.0});
 
@@ -146,7 +146,7 @@ TEST_CASE("Trapezoidal: non-null boundary conditions", "[traj][trapezoidal]")
 }
 
 // -- Test 7: Infeasible case - a_max adjusted per eq 3.15 --------------------
-TEST_CASE("Trapezoidal: infeasible BCs adjust acceleration", "[traj][trapezoidal]")
+TEST_CASE("Trapezoidal: infeasible BCs adjust acceleration", "[trajectory][trapezoidal]")
 {
     // a_max*h should be < |v0^2 - v1^2|/2 to trigger infeasibility
     // h=1, a_max=1, v0=0, v1=3 -> a_max*h=1 < (9-0)/2=4.5 -> infeasible
@@ -159,7 +159,7 @@ TEST_CASE("Trapezoidal: infeasible BCs adjust acceleration", "[traj][trapezoidal
 }
 
 // -- Test 8: Negative displacement -------------------------------------------
-TEST_CASE("Trapezoidal: negative displacement", "[traj][trapezoidal]")
+TEST_CASE("Trapezoidal: negative displacement", "[trajectory][trapezoidal]")
 {
     auto const traj = built({.q0 = 10.0, .q1 = 0.0, .v_max = 5.0, .a_max = 10.0});
 
@@ -175,7 +175,7 @@ TEST_CASE("Trapezoidal: negative displacement", "[traj][trapezoidal]")
 }
 
 // -- Test 9: Introspection ---------------------------------------------------
-TEST_CASE("Trapezoidal: introspection", "[traj][trapezoidal]")
+TEST_CASE("Trapezoidal: introspection", "[trajectory][trapezoidal]")
 {
     auto const traj = built({.q0 = 0.0, .q1 = 10.0, .v_max = 5.0, .a_max = 10.0});
 
@@ -187,7 +187,7 @@ TEST_CASE("Trapezoidal: introspection", "[traj][trapezoidal]")
 }
 
 // -- Test 10: Satisfies trajectory_segment concept ---------------------------
-TEST_CASE("Trapezoidal: satisfies trajectory_segment concept", "[traj][trapezoidal]")
+TEST_CASE("Trapezoidal: satisfies trajectory_segment concept", "[trajectory][trapezoidal]")
 {
     STATIC_REQUIRE(ctrlpp::trajectory_segment<ctrlpp::trapezoidal_trajectory<double>, double, 1>);
     STATIC_REQUIRE(ctrlpp::trajectory_segment<ctrlpp::trapezoidal_trajectory<float>, float, 1>);
@@ -195,7 +195,7 @@ TEST_CASE("Trapezoidal: satisfies trajectory_segment concept", "[traj][trapezoid
 
 // -- Test 11: Zero-displacement speed change is a typed rejection ------------
 TEST_CASE("Trapezoidal: zero displacement with unequal boundary speeds is rejected",
-          "[traj][trapezoidal]")
+          "[trajectory][trapezoidal]")
 {
     // Both ramps of this family run toward one cruise velocity at or above each
     // boundary velocity, so the profile sweeps at least what the transition
@@ -224,7 +224,7 @@ TEST_CASE("Trapezoidal: zero displacement with unequal boundary speeds is reject
 
 // -- Test 12: The rejection is confined to the infeasible set ----------------
 TEST_CASE("Trapezoidal: zero displacement at equal boundary speeds is realizable",
-          "[traj][trapezoidal]")
+          "[trajectory][trapezoidal]")
 {
     using traj_t = ctrlpp::trapezoidal_trajectory<double>;
 
@@ -259,7 +259,7 @@ TEST_CASE("Trapezoidal: zero displacement at equal boundary speeds is realizable
 
 // -- Test 13: the velocity limit is a precondition on the boundary velocities --
 TEST_CASE("Trapezoidal: a boundary velocity above the velocity limit is rejected",
-          "[traj][trapezoidal]")
+          "[trajectory][trapezoidal]")
 {
     using traj_t = ctrlpp::trapezoidal_trajectory<double>;
 
@@ -416,7 +416,7 @@ TEST_CASE("Trapezoidal: boundary velocities stepped across the limit build at it
 
 // -- Test 14: the subnormal underflow route to a negative duration -----------
 TEST_CASE("Trapezoidal: a boundary velocity whose square underflows is rejected",
-          "[traj][trapezoidal]")
+          "[trajectory][trapezoidal]")
 {
     using traj_t = ctrlpp::trapezoidal_trajectory<double>;
 
@@ -466,7 +466,7 @@ TEST_CASE("Trapezoidal: a boundary velocity whose square underflows is rejected"
 
 // -- Test 15: the input domain of the limits and the boundary values ---------
 TEST_CASE("Trapezoidal: out-of-domain limits and non-finite inputs are rejected",
-          "[traj][trapezoidal]")
+          "[trajectory][trapezoidal]")
 {
     using traj_t = ctrlpp::trapezoidal_trajectory<double>;
     auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
@@ -505,7 +505,7 @@ TEST_CASE("Trapezoidal: out-of-domain limits and non-finite inputs are rejected"
 
 // -- Test 16: a profile that does not fit the scalar type --------------------
 TEST_CASE("Trapezoidal: a duration outside the representable range is rejected",
-          "[traj][trapezoidal]")
+          "[trajectory][trapezoidal]")
 {
     using traj_t = ctrlpp::trapezoidal_trajectory<double>;
 
@@ -527,7 +527,7 @@ TEST_CASE("Trapezoidal: a duration outside the representable range is rejected",
 
 // -- Test 17: a triangular peak that rounds onto its boundary velocity -------
 TEST_CASE("Trapezoidal: a large-velocity triangle keeps its duration on consecutive doubles",
-          "[traj][trapezoidal]")
+          "[trajectory][trapezoidal]")
 {
     using traj_t = ctrlpp::trapezoidal_trajectory<double>;
     constexpr double eps = std::numeric_limits<double>::epsilon();
@@ -572,7 +572,7 @@ TEST_CASE("Trapezoidal: a large-velocity triangle keeps its duration on consecut
 
 // -- Test 18: an infeasible command whose difference of squares underflows ----
 TEST_CASE("Trapezoidal: a subnormal difference of squares still raises the acceleration",
-          "[traj][trapezoidal]")
+          "[trajectory][trapezoidal]")
 {
     using traj_t = ctrlpp::trapezoidal_trajectory<double>;
     constexpr double eps = std::numeric_limits<double>::epsilon();
@@ -612,7 +612,7 @@ TEST_CASE("Trapezoidal: a subnormal difference of squares still raises the accel
 
 // -- Test 19: a difference of squares above the largest finite value ----------
 TEST_CASE("Trapezoidal: an overflowing difference of squares is still tested exactly",
-          "[traj][trapezoidal]")
+          "[trajectory][trapezoidal]")
 {
     using traj_t = ctrlpp::trapezoidal_trajectory<double>;
     constexpr double eps = std::numeric_limits<double>::epsilon();
@@ -649,7 +649,7 @@ TEST_CASE("Trapezoidal: an overflowing difference of squares is still tested exa
 
 // -- Test 20: a boundary velocity pointing away from the target ---------------
 TEST_CASE("Trapezoidal: a larger velocity pointing away needs no raised acceleration",
-          "[traj][trapezoidal]")
+          "[trajectory][trapezoidal]")
 {
     using traj_t = ctrlpp::trapezoidal_trajectory<double>;
     constexpr double eps = std::numeric_limits<double>::epsilon();

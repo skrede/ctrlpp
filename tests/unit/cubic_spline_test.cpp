@@ -36,7 +36,7 @@ auto solve_tridiagonal(std::vector<double> const& a, std::vector<double> b, std:
 
 // -- Tridiagonal solver tests -------------------------------------------------
 
-TEST_CASE("thomas_solve: 3x3 system", "[traj][tridiagonal]")
+TEST_CASE("thomas_solve: 3x3 system", "[trajectory][tridiagonal]")
 {
     // System: [[2,1,0],[1,3,1],[0,1,2]] * x = [1,2,3]
     std::vector<double> a = {0.0, 1.0, 1.0};    // sub-diagonal (a[0] unused)
@@ -60,7 +60,7 @@ TEST_CASE("thomas_solve: 3x3 system", "[traj][tridiagonal]")
     }
 }
 
-TEST_CASE("thomas_solve: 5x5 diagonal-dominant system", "[traj][tridiagonal]")
+TEST_CASE("thomas_solve: 5x5 diagonal-dominant system", "[trajectory][tridiagonal]")
 {
     constexpr int n = 5;
     std::vector<double> a(n), b(n), c(n), d(n);
@@ -93,7 +93,7 @@ TEST_CASE("thomas_solve: 5x5 diagonal-dominant system", "[traj][tridiagonal]")
     }
 }
 
-TEST_CASE("cyclic_thomas_solve: 3x3 cyclic system", "[traj][tridiagonal]")
+TEST_CASE("cyclic_thomas_solve: 3x3 cyclic system", "[trajectory][tridiagonal]")
 {
     constexpr int n = 3;
     std::vector<double> a = {0.0, 1.0, 1.0};
@@ -118,7 +118,7 @@ TEST_CASE("cyclic_thomas_solve: 3x3 cyclic system", "[traj][tridiagonal]")
     }
 }
 
-TEST_CASE("cyclic_thomas_solve: 5x5 cyclic system", "[traj][tridiagonal]")
+TEST_CASE("cyclic_thomas_solve: 5x5 cyclic system", "[trajectory][tridiagonal]")
 {
     constexpr int n = 5;
     std::vector<double> a(n), b(n), c(n), d(n);
@@ -218,7 +218,7 @@ TEST_CASE("cyclic_thomas_solve: a singular circulant is refused", "[trajectory][
 
 // -- Natural BC ---------------------------------------------------------------
 
-TEST_CASE("Natural BC: passes through all waypoints", "[traj][cubic_spline][natural]")
+TEST_CASE("Natural BC: passes through all waypoints", "[trajectory][cubic_spline][natural]")
 {
     auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
@@ -235,7 +235,7 @@ TEST_CASE("Natural BC: passes through all waypoints", "[traj][cubic_spline][natu
     }
 }
 
-TEST_CASE("Natural BC: zero acceleration at endpoints", "[traj][cubic_spline][natural]")
+TEST_CASE("Natural BC: zero acceleration at endpoints", "[trajectory][cubic_spline][natural]")
 {
     auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
@@ -250,7 +250,7 @@ TEST_CASE("Natural BC: zero acceleration at endpoints", "[traj][cubic_spline][na
     REQUIRE_THAT(pT.acceleration[0], WithinAbs(0.0, 1e-10));
 }
 
-TEST_CASE("Natural BC: C2 continuity at interior knots", "[traj][cubic_spline][natural]")
+TEST_CASE("Natural BC: C2 continuity at interior knots", "[trajectory][cubic_spline][natural]")
 {
     auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
@@ -272,7 +272,7 @@ TEST_CASE("Natural BC: C2 continuity at interior knots", "[traj][cubic_spline][n
     }
 }
 
-TEST_CASE("Natural BC: duration returns t_n - t_0", "[traj][cubic_spline][natural]")
+TEST_CASE("Natural BC: duration returns t_n - t_0", "[trajectory][cubic_spline][natural]")
 {
     auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
@@ -285,7 +285,7 @@ TEST_CASE("Natural BC: duration returns t_n - t_0", "[traj][cubic_spline][natura
 
 // -- Clamped BC ---------------------------------------------------------------
 
-TEST_CASE("Clamped BC: respects endpoint velocities", "[traj][cubic_spline][clamped]")
+TEST_CASE("Clamped BC: respects endpoint velocities", "[trajectory][cubic_spline][clamped]")
 {
     auto spline = make_spline({
         .times = {0.0, 1.0, 2.0},
@@ -302,7 +302,7 @@ TEST_CASE("Clamped BC: respects endpoint velocities", "[traj][cubic_spline][clam
     REQUIRE_THAT(pT.velocity[0], WithinAbs(-1.0, 1e-10));
 }
 
-TEST_CASE("Clamped BC: passes through all waypoints", "[traj][cubic_spline][clamped]")
+TEST_CASE("Clamped BC: passes through all waypoints", "[trajectory][cubic_spline][clamped]")
 {
     auto spline = make_spline({
         .times = {0.0, 1.0, 2.0},
@@ -319,7 +319,7 @@ TEST_CASE("Clamped BC: passes through all waypoints", "[traj][cubic_spline][clam
 
 // -- Periodic BC --------------------------------------------------------------
 
-TEST_CASE("Periodic BC: matching velocity and acceleration at endpoints", "[traj][cubic_spline][periodic]")
+TEST_CASE("Periodic BC: matching velocity and acceleration at endpoints", "[trajectory][cubic_spline][periodic]")
 {
     auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0},
@@ -334,7 +334,7 @@ TEST_CASE("Periodic BC: matching velocity and acceleration at endpoints", "[traj
     REQUIRE_THAT(p0.acceleration[0], WithinAbs(pT.acceleration[0], 1e-10));
 }
 
-TEST_CASE("Periodic BC: passes through all waypoints", "[traj][cubic_spline][periodic]")
+TEST_CASE("Periodic BC: passes through all waypoints", "[trajectory][cubic_spline][periodic]")
 {
     auto spline = make_spline({
         .times = {0.0, 1.0, 2.0, 3.0},
@@ -354,7 +354,7 @@ TEST_CASE("Periodic BC: passes through all waypoints", "[traj][cubic_spline][per
 // only by assert(), so release builds accepted them silently and computed on
 // garbage. Each case pins the specific rejection enumerator.
 
-TEST_CASE("create rejects fewer than 2 waypoints", "[traj][cubic_spline][validation]")
+TEST_CASE("create rejects fewer than 2 waypoints", "[trajectory][cubic_spline][validation]")
 {
     auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0},
@@ -365,7 +365,7 @@ TEST_CASE("create rejects fewer than 2 waypoints", "[traj][cubic_spline][validat
     REQUIRE(result.error() == ctrlpp::spline_error::too_few_points);
 }
 
-TEST_CASE("create rejects times/positions length mismatch", "[traj][cubic_spline][validation]")
+TEST_CASE("create rejects times/positions length mismatch", "[trajectory][cubic_spline][validation]")
 {
     auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0, 2.0},
@@ -376,7 +376,7 @@ TEST_CASE("create rejects times/positions length mismatch", "[traj][cubic_spline
     REQUIRE(result.error() == ctrlpp::spline_error::size_mismatch);
 }
 
-TEST_CASE("create rejects non-increasing knot times", "[traj][cubic_spline][validation]")
+TEST_CASE("create rejects non-increasing knot times", "[trajectory][cubic_spline][validation]")
 {
     auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 2.0, 1.0},
@@ -387,7 +387,7 @@ TEST_CASE("create rejects non-increasing knot times", "[traj][cubic_spline][vali
     REQUIRE(result.error() == ctrlpp::spline_error::non_increasing_times);
 }
 
-TEST_CASE("create rejects periodic BC with 2 waypoints", "[traj][cubic_spline][validation][periodic]")
+TEST_CASE("create rejects periodic BC with 2 waypoints", "[trajectory][cubic_spline][validation][periodic]")
 {
     // A periodic spline needs at least 3 waypoints: with only 2 the cyclic
     // system for the interior velocities is empty and the closed curve is
@@ -403,7 +403,7 @@ TEST_CASE("create rejects periodic BC with 2 waypoints", "[traj][cubic_spline][v
     REQUIRE(result.error() == ctrlpp::spline_error::periodic_too_few_points);
 }
 
-TEST_CASE("create accepts periodic BC with 3 waypoints", "[traj][cubic_spline][validation][periodic]")
+TEST_CASE("create accepts periodic BC with 3 waypoints", "[trajectory][cubic_spline][validation][periodic]")
 {
     auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0, 2.0},
@@ -422,7 +422,7 @@ TEST_CASE("create accepts periodic BC with 3 waypoints", "[traj][cubic_spline][v
     REQUIRE_THAT(p0.acceleration[0], WithinAbs(pT.acceleration[0], 1e-10));
 }
 
-TEST_CASE("create rejects periodic BC with mismatched endpoints", "[traj][cubic_spline][validation][periodic]")
+TEST_CASE("create rejects periodic BC with mismatched endpoints", "[trajectory][cubic_spline][validation][periodic]")
 {
     auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0, 2.0, 3.0},
@@ -434,7 +434,7 @@ TEST_CASE("create rejects periodic BC with mismatched endpoints", "[traj][cubic_
     REQUIRE(result.error() == ctrlpp::spline_error::periodic_endpoint_mismatch);
 }
 
-TEST_CASE("create accepts a valid natural configuration", "[traj][cubic_spline][validation]")
+TEST_CASE("create accepts a valid natural configuration", "[trajectory][cubic_spline][validation]")
 {
     auto const result = ctrlpp::cubic_spline<double>::create({
         .times = {0.0, 1.0, 2.0, 3.0, 4.0},
@@ -453,7 +453,7 @@ TEST_CASE("create accepts a valid natural configuration", "[traj][cubic_spline][
 
 // -- Clamping behavior --------------------------------------------------------
 
-TEST_CASE("All BCs: evaluate clamps outside [t0, tn]", "[traj][cubic_spline]")
+TEST_CASE("All BCs: evaluate clamps outside [t0, tn]", "[trajectory][cubic_spline]")
 {
     auto spline = make_spline({
         .times = {0.0, 1.0, 2.0},

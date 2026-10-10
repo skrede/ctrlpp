@@ -88,7 +88,7 @@ auto cruise_up(ctrlpp::online_planner_3rd<double>& planner, double far_target,
 }
 
 // -- Test 1: Step response settles to target -----------------------------------
-TEST_CASE("OnlinePlanner3rd: step response settles", "[traj][online_planner_3rd]")
+TEST_CASE("OnlinePlanner3rd: step response settles", "[trajectory][online_planner_3rd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
@@ -102,7 +102,7 @@ TEST_CASE("OnlinePlanner3rd: step response settles", "[traj][online_planner_3rd]
 }
 
 TEST_CASE("OnlinePlanner3rd: non-finite targets are rejected without mutation",
-          "[traj][online_planner_3rd][negative]")
+          "[trajectory][online_planner_3rd][negative]")
 {
     auto planner =
         make_planner<double>({.v_max = 1.0, .a_max = 1.0, .j_max = 1.0});
@@ -123,7 +123,7 @@ TEST_CASE("OnlinePlanner3rd: non-finite targets are rejected without mutation",
 }
 
 TEST_CASE("OnlinePlanner3rd: nonzero sub-picometer moves remain bounded",
-          "[traj][online_planner_3rd][precision]")
+          "[trajectory][online_planner_3rd][precision]")
 {
     auto planner =
         make_planner<double>({.v_max = 1.0, .a_max = 1.0, .j_max = 1.0});
@@ -148,7 +148,7 @@ TEST_CASE("OnlinePlanner3rd: nonzero sub-picometer moves remain bounded",
 }
 
 // -- Test 2: Velocity never exceeds v_max --------------------------------------
-TEST_CASE("OnlinePlanner3rd: velocity constraint", "[traj][online_planner_3rd]")
+TEST_CASE("OnlinePlanner3rd: velocity constraint", "[trajectory][online_planner_3rd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
@@ -163,7 +163,7 @@ TEST_CASE("OnlinePlanner3rd: velocity constraint", "[traj][online_planner_3rd]")
 }
 
 // -- Test 3: Acceleration never exceeds a_max ----------------------------------
-TEST_CASE("OnlinePlanner3rd: acceleration constraint", "[traj][online_planner_3rd]")
+TEST_CASE("OnlinePlanner3rd: acceleration constraint", "[trajectory][online_planner_3rd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
@@ -178,7 +178,7 @@ TEST_CASE("OnlinePlanner3rd: acceleration constraint", "[traj][online_planner_3r
 }
 
 // -- Test 4: Jerk never exceeds j_max (numerical differentiation) ---------------
-TEST_CASE("OnlinePlanner3rd: jerk constraint", "[traj][online_planner_3rd]")
+TEST_CASE("OnlinePlanner3rd: jerk constraint", "[trajectory][online_planner_3rd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
@@ -197,7 +197,7 @@ TEST_CASE("OnlinePlanner3rd: jerk constraint", "[traj][online_planner_3rd]")
 }
 
 // -- Test 5: Mid-motion target change ------------------------------------------
-TEST_CASE("OnlinePlanner3rd: mid-motion target change", "[traj][online_planner_3rd]")
+TEST_CASE("OnlinePlanner3rd: mid-motion target change", "[trajectory][online_planner_3rd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
@@ -226,7 +226,7 @@ TEST_CASE("OnlinePlanner3rd: mid-motion target change", "[traj][online_planner_3
 }
 
 // -- Test 6: Negative displacement ---------------------------------------------
-TEST_CASE("OnlinePlanner3rd: negative displacement", "[traj][online_planner_3rd]")
+TEST_CASE("OnlinePlanner3rd: negative displacement", "[trajectory][online_planner_3rd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
@@ -238,7 +238,7 @@ TEST_CASE("OnlinePlanner3rd: negative displacement", "[traj][online_planner_3rd]
 }
 
 // -- Test 7: is_settled returns correct state ----------------------------------
-TEST_CASE("OnlinePlanner3rd: is_settled transitions", "[traj][online_planner_3rd]")
+TEST_CASE("OnlinePlanner3rd: is_settled transitions", "[trajectory][online_planner_3rd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
@@ -253,7 +253,7 @@ TEST_CASE("OnlinePlanner3rd: is_settled transitions", "[traj][online_planner_3rd
 }
 
 // -- Test 8: Reset functionality -----------------------------------------------
-TEST_CASE("OnlinePlanner3rd: reset", "[traj][online_planner_3rd]")
+TEST_CASE("OnlinePlanner3rd: reset", "[trajectory][online_planner_3rd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
@@ -268,7 +268,7 @@ TEST_CASE("OnlinePlanner3rd: reset", "[traj][online_planner_3rd]")
 }
 
 // -- Test 9: Profile has smooth acceleration (double-S shape) ------------------
-TEST_CASE("OnlinePlanner3rd: smooth acceleration profile", "[traj][online_planner_3rd]")
+TEST_CASE("OnlinePlanner3rd: smooth acceleration profile", "[trajectory][online_planner_3rd]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
@@ -289,7 +289,7 @@ TEST_CASE("OnlinePlanner3rd: smooth acceleration profile", "[traj][online_planne
 }
 
 // -- Test 10: Float type works -------------------------------------------------
-TEST_CASE("OnlinePlanner3rd: float type", "[traj][online_planner_3rd]")
+TEST_CASE("OnlinePlanner3rd: float type", "[trajectory][online_planner_3rd]")
 {
     auto planner = make_planner<float>({.v_max = 5.0f, .a_max = 10.0f, .j_max = 50.0f});
 
@@ -305,7 +305,7 @@ TEST_CASE("OnlinePlanner3rd: float type", "[traj][online_planner_3rd]")
 // current velocity and simply extends the profile, so once the planner is
 // cruising the velocity never rises again after the retarget.
 TEST_CASE("OnlinePlanner3rd: same-direction retarget keeps velocity",
-          "[traj][online_planner_3rd]")
+          "[trajectory][online_planner_3rd]")
 {
     double constexpr v_max = 5.0;
     auto planner = make_planner<double>({.v_max = v_max, .a_max = 10.0, .j_max = 50.0});
@@ -361,7 +361,7 @@ TEST_CASE("OnlinePlanner3rd: same-direction retarget keeps velocity",
 // finite and strictly positive; everything else is rejected with the
 // limit-specific enumerator.
 TEST_CASE("OnlinePlanner3rd: create rejects invalid limits",
-          "[traj][online_planner_3rd][negative]")
+          "[trajectory][online_planner_3rd][negative]")
 {
     using planner_t = ctrlpp::online_planner_3rd<double>;
     auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
@@ -512,7 +512,7 @@ TEST_CASE("OnlinePlanner3rd: the overshoot verdict agrees with the carry-velocit
 // substituted" could not choose between axes or explain the extra time; the
 // reason enumerator is what makes the two causes separable.
 TEST_CASE("OnlinePlanner3rd: reversal substitution reports a distinct reason",
-          "[traj][online_planner_3rd][diagnostics]")
+          "[trajectory][online_planner_3rd][diagnostics]")
 {
     double constexpr v_max = 5.0;
     double constexpr a_max = 10.0;
@@ -558,7 +558,7 @@ TEST_CASE("OnlinePlanner3rd: reversal substitution reports a distinct reason",
 
 // -- Test 15: an unsubstituted plan reports itself as such ---------------------
 TEST_CASE("OnlinePlanner3rd: an ordinary move reports the commanded profile",
-          "[traj][online_planner_3rd][diagnostics]")
+          "[trajectory][online_planner_3rd][diagnostics]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
     planner.reset(0.0);
@@ -585,7 +585,7 @@ TEST_CASE("OnlinePlanner3rd: an ordinary move reports the commanded profile",
 
 // -- Test 16: a move commanded from inside the settle tolerance reports settled -
 TEST_CASE("OnlinePlanner3rd: a settled command reports a zero-duration plan",
-          "[traj][online_planner_3rd][diagnostics]")
+          "[trajectory][online_planner_3rd][diagnostics]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
     planner.reset(3.0);
@@ -606,7 +606,7 @@ TEST_CASE("OnlinePlanner3rd: a settled command reports a zero-duration plan",
 // A report that outlived the plan it describes would be the same defect in a
 // different place.
 TEST_CASE("OnlinePlanner3rd: reset clears the substitution report",
-          "[traj][online_planner_3rd][diagnostics]")
+          "[trajectory][online_planner_3rd][diagnostics]")
 {
     auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
 
@@ -665,7 +665,7 @@ constexpr std::array<planner_limits, 7> bit_identity_limits{{
 // defaults, the omitting planner and the naming planner part company on the
 // settle ladder and this case fails, which is what it is for.
 TEST_CASE("OnlinePlanner3rd: omitting the settle tolerances is bit-identical to naming them",
-          "[traj][online_planner_3rd][settle_tolerance]")
+          "[trajectory][online_planner_3rd][settle_tolerance]")
 {
     constexpr int drive_steps = 64;
     constexpr int retarget_steps = 64;
@@ -766,7 +766,7 @@ TEST_CASE("OnlinePlanner3rd: omitting the settle tolerances is bit-identical to 
 // The bracketing values are read off the sampled state rather than written as
 // literals, so the case moves with the knob instead of duplicating it.
 TEST_CASE("OnlinePlanner3rd: each settle tolerance governs its own dimension",
-          "[traj][online_planner_3rd][settle_tolerance]")
+          "[trajectory][online_planner_3rd][settle_tolerance]")
 {
     constexpr double v_max = 0x1p+0;
     constexpr double a_max = 0x1p+1;
@@ -862,7 +862,7 @@ TEST_CASE("OnlinePlanner3rd: each settle tolerance governs its own dimension",
 // able to answer the second, or it would decide what the planner is allowed to
 // compute.
 TEST_CASE("OnlinePlanner3rd: a wide settle tolerance still plans a far smaller move",
-          "[traj][online_planner_3rd][settle_tolerance]")
+          "[trajectory][online_planner_3rd][settle_tolerance]")
 {
     auto planner = make_planner<double>({
         .v_max = 0x1p+0,
@@ -896,7 +896,7 @@ TEST_CASE("OnlinePlanner3rd: a wide settle tolerance still plans a far smaller m
 // left there is decades smaller still. From cruise the acceleration is zero to one rounding and the speed is the
 // cruise speed, so that state is planned too.
 TEST_CASE("OnlinePlanner3rd: a command at the current position is a no-op only from rest",
-          "[traj][online_planner_3rd][no_op_floor]")
+          "[trajectory][online_planner_3rd][no_op_floor]")
 {
     // Three limit sets spanning five decades of acceleration limit, with the
     // ratios held so the sweep is a sweep of scale and not of branch structure.
@@ -978,7 +978,7 @@ TEST_CASE("OnlinePlanner3rd: a command at the current position is a no-op only f
 // the axis by five roundings of the stopping distance from full speed, so both are far below anything a phase that
 // short changes on the velocity.
 TEST_CASE("OnlinePlanner3rd: the acceleration-nulling phase is emitted for every nonzero starting acceleration",
-          "[traj][online_planner_3rd][no_op_floor]")
+          "[trajectory][online_planner_3rd][no_op_floor]")
 {
     constexpr std::array<std::array<double, 3>, 3> limit_sets{{
         {5.0, 10.0, 50.0},
@@ -1026,7 +1026,7 @@ TEST_CASE("OnlinePlanner3rd: the acceleration-nulling phase is emitted for every
 // A nulling duration |a| / j_max cannot underflow through the public API, because every sampled acceleration is
 // j_max times a time. So the groups emptied here are a degenerate plan's cruise and a cruise retarget's ramp.
 TEST_CASE("OnlinePlanner3rd: a group whose phases all vanish still re-bases the evaluation at its end",
-          "[traj][online_planner_3rd]")
+          "[trajectory][online_planner_3rd]")
 {
     // A zero-length phase adds v*0 + a*0*0/2 + j*0*0*0/6 = 0 to the position and re-bases (v, a) to the values the
     // previous pin already left, so the bound is zero roundings: these are the samples recorded before it existed.
@@ -1075,7 +1075,7 @@ TEST_CASE("OnlinePlanner3rd: a group whose phases all vanish still re-bases the 
 // period -- which the planner is never told, and which is why an absolute
 // constant was never the right answer here.
 TEST_CASE("OnlinePlanner3rd: the zero-displacement floor scales with the limits",
-          "[traj][online_planner_3rd][no_op_floor]")
+          "[trajectory][online_planner_3rd][no_op_floor]")
 {
     // One displacement, commanded on both axes.
     constexpr double displacement = 1e-15;
@@ -1160,7 +1160,7 @@ TEST_CASE("OnlinePlanner3rd: the zero-displacement floor scales with the limits"
 // three decades below the absolute slack this comparison used to carry, so that
 // comparison would have reported no overshoot there.
 TEST_CASE("OnlinePlanner3rd: the overshoot verdict is relative and scale-invariant",
-          "[traj][online_planner_3rd][overshoot]")
+          "[trajectory][online_planner_3rd][overshoot]")
 {
     constexpr std::array<std::array<double, 3>, 4> limit_sets{{
         {5.0, 10.0, 50.0},
@@ -1302,7 +1302,7 @@ void require_recorded(ctrlpp::trajectory_point<Scalar, 1> const& point, recorded
 }
 
 TEMPLATE_TEST_CASE("OnlinePlanner3rd: sample returns and carries exactly the recorded state",
-                   "[traj][online_planner_3rd][sample_contract]", float, double)
+                   "[trajectory][online_planner_3rd][sample_contract]", float, double)
 {
     using Scalar = TestType;
     auto planner = make_planner<Scalar>({.v_max = Scalar{3}, .a_max = Scalar{3}, .j_max = Scalar{6}});
@@ -1368,7 +1368,7 @@ auto rest_to_rest_peak_commands() -> std::vector<rest_to_rest_command<Scalar>>
 
 // The peak is pinned at the end of the ramp, which a symmetric rest-to-rest plan reaches at half its duration.
 TEMPLATE_TEST_CASE("OnlinePlanner3rd: a rest-to-rest peak next to the cruise boundary is pinned at or below the limit",
-                   "[traj][online_planner_3rd]", float, double)
+                   "[trajectory][online_planner_3rd]", float, double)
 {
     using Scalar = TestType;
     for (auto const& c : rest_to_rest_peak_commands<Scalar>()) {

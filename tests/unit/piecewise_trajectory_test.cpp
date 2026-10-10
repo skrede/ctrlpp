@@ -24,7 +24,7 @@ auto val1(double v) -> Eigen::Matrix<double, 1, 1> { return Eigen::Matrix<double
 
 // ---- piecewise_trajectory tests ----
 
-TEST_CASE("piecewise_trajectory with two cubic trajectories", "[traj][piecewise]")
+TEST_CASE("piecewise_trajectory with two cubic trajectories", "[trajectory][piecewise]")
 {
     auto seg1 = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0).value();
     auto seg2 = ctrlpp::make_cubic_trajectory(val1(5.0), val1(10.0), zero1(), zero1(), 1.0).value();
@@ -70,7 +70,7 @@ TEST_CASE("piecewise_trajectory with two cubic trajectories", "[traj][piecewise]
     }
 }
 
-TEST_CASE("piecewise_trajectory with cubic + quintic (heterogeneous)", "[traj][piecewise]")
+TEST_CASE("piecewise_trajectory with cubic + quintic (heterogeneous)", "[trajectory][piecewise]")
 {
     auto cubic = ctrlpp::make_cubic_trajectory(val1(0.0), val1(10.0), zero1(), zero1(), 2.0).value();
     auto quintic = ctrlpp::make_quintic_trajectory(val1(10.0), val1(20.0), zero1(), zero1(), zero1(), zero1(), 3.0).value();
@@ -98,7 +98,7 @@ TEST_CASE("piecewise_trajectory with cubic + quintic (heterogeneous)", "[traj][p
     }
 }
 
-TEST_CASE("piecewise_trajectory with three segments: cubic + quintic + trajectory cycloidal", "[traj][piecewise]")
+TEST_CASE("piecewise_trajectory with three segments: cubic + quintic + trajectory cycloidal", "[trajectory][piecewise]")
 {
     auto cubic = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0).value();
     auto quintic = ctrlpp::make_quintic_trajectory(val1(5.0), val1(15.0), zero1(), zero1(), zero1(), zero1(), 2.0).value();
@@ -121,7 +121,7 @@ TEST_CASE("piecewise_trajectory with three segments: cubic + quintic + trajector
     }
 }
 
-TEST_CASE("piecewise_trajectory clamping", "[traj][piecewise]")
+TEST_CASE("piecewise_trajectory clamping", "[trajectory][piecewise]")
 {
     auto seg1 = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0).value();
     auto seg2 = ctrlpp::make_cubic_trajectory(val1(5.0), val1(10.0), zero1(), zero1(), 1.0).value();
@@ -142,7 +142,7 @@ TEST_CASE("piecewise_trajectory clamping", "[traj][piecewise]")
     }
 }
 
-TEST_CASE("piecewise_trajectory satisfies trajectory_segment concept", "[traj][piecewise]")
+TEST_CASE("piecewise_trajectory satisfies trajectory_segment concept", "[trajectory][piecewise]")
 {
     using cubic_t = ctrlpp::cubic_trajectory<double, 1>;
     using quintic_t = ctrlpp::quintic_trajectory<double, 1>;
@@ -151,7 +151,7 @@ TEST_CASE("piecewise_trajectory satisfies trajectory_segment concept", "[traj][p
     SUCCEED("piecewise_trajectory satisfies trajectory_segment concept");
 }
 
-TEST_CASE("piecewise_trajectory continuity at joints", "[traj][piecewise]")
+TEST_CASE("piecewise_trajectory continuity at joints", "[trajectory][piecewise]")
 {
     auto seg1 = ctrlpp::make_cubic_trajectory(val1(0.0), val1(5.0), zero1(), zero1(), 1.0).value();
     auto seg2 = ctrlpp::make_cubic_trajectory(val1(5.0), val1(10.0), zero1(), zero1(), 1.0).value();
@@ -182,7 +182,7 @@ struct path_segment_wrapper
 
 } // namespace
 
-TEST_CASE("piecewise_path composes two cubic paths", "[traj][piecewise_path]")
+TEST_CASE("piecewise_path composes two cubic paths", "[trajectory][piecewise_path]")
 {
     using cubic_seg = path_segment_wrapper<double, ctrlpp::cubic_path<double>>;
     auto seg1 = cubic_seg{.dur = 1.0};
@@ -214,7 +214,7 @@ TEST_CASE("piecewise_path composes two cubic paths", "[traj][piecewise_path]")
     }
 }
 
-TEST_CASE("piecewise_path composes cubic + quintic (heterogeneous)", "[traj][piecewise_path]")
+TEST_CASE("piecewise_path composes cubic + quintic (heterogeneous)", "[trajectory][piecewise_path]")
 {
     using cubic_seg = path_segment_wrapper<double, ctrlpp::cubic_path<double>>;
     using quintic_seg = path_segment_wrapper<double, ctrlpp::quintic_path<double>>;

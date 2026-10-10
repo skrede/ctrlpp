@@ -14,7 +14,7 @@
 
 using Catch::Matchers::WithinAbs;
 
-TEST_CASE("Modified sinusoidal: endpoint accuracy", "[traj][modified_sin]")
+TEST_CASE("Modified sinusoidal: endpoint accuracy", "[trajectory][modified_sin]")
 {
     ctrlpp::modified_sin_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
@@ -25,7 +25,7 @@ TEST_CASE("Modified sinusoidal: endpoint accuracy", "[traj][modified_sin]")
     CHECK_THAT(pT.position[0], WithinAbs(10.0, 1e-12));
 }
 
-TEST_CASE("Modified sinusoidal: symmetry about T/2", "[traj][modified_sin]")
+TEST_CASE("Modified sinusoidal: symmetry about T/2", "[trajectory][modified_sin]")
 {
     ctrlpp::modified_sin_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
@@ -34,7 +34,7 @@ TEST_CASE("Modified sinusoidal: symmetry about T/2", "[traj][modified_sin]")
     CHECK_THAT(mid.position[0], WithinAbs(5.0, 1e-12));
 }
 
-TEST_CASE("Modified sinusoidal: zero endpoint velocities", "[traj][modified_sin]")
+TEST_CASE("Modified sinusoidal: zero endpoint velocities", "[trajectory][modified_sin]")
 {
     ctrlpp::modified_sin_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
@@ -45,7 +45,7 @@ TEST_CASE("Modified sinusoidal: zero endpoint velocities", "[traj][modified_sin]
     CHECK_THAT(pT.velocity[0], WithinAbs(0.0, 1e-12));
 }
 
-TEST_CASE("Modified sinusoidal: peak velocity ~= 1.76*h/T", "[traj][modified_sin]")
+TEST_CASE("Modified sinusoidal: peak velocity ~= 1.76*h/T", "[trajectory][modified_sin]")
 {
     // B&M Sec 3.8: max velocity = 4*pi*h / ((pi+4)*T) ~= 1.7596*h/T
     // h=10, T=2 -> max_vel ~= 8.798
@@ -61,7 +61,7 @@ TEST_CASE("Modified sinusoidal: peak velocity ~= 1.76*h/T", "[traj][modified_sin
     CHECK_THAT(mid.velocity[0], WithinAbs(expected_peak_vel, 1e-10));
 }
 
-TEST_CASE("Modified sinusoidal: peak acceleration ~= 5.528*h/T^2", "[traj][modified_sin]")
+TEST_CASE("Modified sinusoidal: peak acceleration ~= 5.528*h/T^2", "[trajectory][modified_sin]")
 {
     // B&M Sec 3.8: max acc = 4*pi^2*h / ((pi+4)*T^2) ~= 5.528*h/T^2
     // For h=10, T=2: max_acc ~= 5.528*10/4 = 13.82
@@ -76,7 +76,7 @@ TEST_CASE("Modified sinusoidal: peak acceleration ~= 5.528*h/T^2", "[traj][modif
     CHECK_THAT(pt.acceleration[0], WithinAbs(expected_max_acc, 1e-8));
 }
 
-TEST_CASE("Modified sinusoidal: phase boundary continuity", "[traj][modified_sin]")
+TEST_CASE("Modified sinusoidal: phase boundary continuity", "[trajectory][modified_sin]")
 {
     ctrlpp::modified_sin_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
@@ -95,7 +95,7 @@ TEST_CASE("Modified sinusoidal: phase boundary continuity", "[traj][modified_sin
     }
 }
 
-TEST_CASE("Modified sinusoidal: negative displacement", "[traj][modified_sin]")
+TEST_CASE("Modified sinusoidal: negative displacement", "[trajectory][modified_sin]")
 {
     ctrlpp::modified_sin_trajectory<double> traj({.q0 = 10.0, .q1 = 0.0, .T = 2.0});
 
@@ -111,7 +111,7 @@ TEST_CASE("Modified sinusoidal: negative displacement", "[traj][modified_sin]")
     CHECK(mid.velocity[0] < 0.0);
 }
 
-TEST_CASE("Modified sinusoidal: satisfies trajectory_segment concept", "[traj][modified_sin]")
+TEST_CASE("Modified sinusoidal: satisfies trajectory_segment concept", "[trajectory][modified_sin]")
 {
     static_assert(ctrlpp::trajectory_segment<
         ctrlpp::modified_sin_trajectory<double>, double, 1>);

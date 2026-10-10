@@ -14,7 +14,7 @@
 
 using Catch::Matchers::WithinAbs;
 
-TEST_CASE("Modified trapezoidal: endpoint accuracy", "[traj][modified_trap]")
+TEST_CASE("Modified trapezoidal: endpoint accuracy", "[trajectory][modified_trap]")
 {
     ctrlpp::modified_trap_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
@@ -25,7 +25,7 @@ TEST_CASE("Modified trapezoidal: endpoint accuracy", "[traj][modified_trap]")
     CHECK_THAT(pT.position[0], WithinAbs(10.0, 1e-12));
 }
 
-TEST_CASE("Modified trapezoidal: symmetry about T/2", "[traj][modified_trap]")
+TEST_CASE("Modified trapezoidal: symmetry about T/2", "[trajectory][modified_trap]")
 {
     ctrlpp::modified_trap_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
@@ -34,7 +34,7 @@ TEST_CASE("Modified trapezoidal: symmetry about T/2", "[traj][modified_trap]")
     CHECK_THAT(mid.position[0], WithinAbs(5.0, 1e-12));
 }
 
-TEST_CASE("Modified trapezoidal: zero endpoint velocities", "[traj][modified_trap]")
+TEST_CASE("Modified trapezoidal: zero endpoint velocities", "[trajectory][modified_trap]")
 {
     ctrlpp::modified_trap_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
@@ -45,7 +45,7 @@ TEST_CASE("Modified trapezoidal: zero endpoint velocities", "[traj][modified_tra
     CHECK_THAT(pT.velocity[0], WithinAbs(0.0, 1e-12));
 }
 
-TEST_CASE("Modified trapezoidal: peak velocity == 2*h/T", "[traj][modified_trap]")
+TEST_CASE("Modified trapezoidal: peak velocity == 2*h/T", "[trajectory][modified_trap]")
 {
     // B&M Sec 3.7: max velocity = 2*h/T
     // h=10, T=2 -> max_vel = 2*10/2 = 10.0
@@ -58,7 +58,7 @@ TEST_CASE("Modified trapezoidal: peak velocity == 2*h/T", "[traj][modified_trap]
     CHECK_THAT(mid.velocity[0], WithinAbs(10.0, 1e-10));
 }
 
-TEST_CASE("Modified trapezoidal: peak acceleration == 4.888*h/T^2", "[traj][modified_trap]")
+TEST_CASE("Modified trapezoidal: peak acceleration == 4.888*h/T^2", "[trajectory][modified_trap]")
 {
     // B&M Sec 3.7: max acc = 2*h*(2+pi)/(pi*T^2) ~= 4.888*h/T^2
     // h=10, T=2 -> max_acc ~= 4.888*10/4 = 12.22
@@ -74,7 +74,7 @@ TEST_CASE("Modified trapezoidal: peak acceleration == 4.888*h/T^2", "[traj][modi
     CHECK_THAT(pt.acceleration[0], WithinAbs(expected_max_acc, 1e-10));
 }
 
-TEST_CASE("Modified trapezoidal: phase boundary continuity", "[traj][modified_trap]")
+TEST_CASE("Modified trapezoidal: phase boundary continuity", "[trajectory][modified_trap]")
 {
     ctrlpp::modified_trap_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 
@@ -94,7 +94,7 @@ TEST_CASE("Modified trapezoidal: phase boundary continuity", "[traj][modified_tr
     }
 }
 
-TEST_CASE("Modified trapezoidal: negative displacement", "[traj][modified_trap]")
+TEST_CASE("Modified trapezoidal: negative displacement", "[trajectory][modified_trap]")
 {
     ctrlpp::modified_trap_trajectory<double> traj({.q0 = 10.0, .q1 = 0.0, .T = 2.0});
 
@@ -110,14 +110,14 @@ TEST_CASE("Modified trapezoidal: negative displacement", "[traj][modified_trap]"
     CHECK(mid.velocity[0] < 0.0);
 }
 
-TEST_CASE("Modified trapezoidal: satisfies trajectory_segment concept", "[traj][modified_trap]")
+TEST_CASE("Modified trapezoidal: satisfies trajectory_segment concept", "[trajectory][modified_trap]")
 {
     static_assert(ctrlpp::trajectory_segment<
         ctrlpp::modified_trap_trajectory<double>, double, 1>);
     SUCCEED("Concept satisfied");
 }
 
-TEST_CASE("Modified trapezoidal: introspection", "[traj][modified_trap]")
+TEST_CASE("Modified trapezoidal: introspection", "[trajectory][modified_trap]")
 {
     ctrlpp::modified_trap_trajectory<double> traj({.q0 = 0.0, .q1 = 10.0, .T = 2.0});
 

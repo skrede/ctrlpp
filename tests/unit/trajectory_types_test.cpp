@@ -13,7 +13,7 @@ using Catch::Matchers::WithinAbs;
 
 // --- trajectory_point tests ---
 
-TEST_CASE("trajectory_point<double, 1> has correct field types", "[traj][types]")
+TEST_CASE("trajectory_point<double, 1> has correct field types", "[trajectory][types]")
 {
     trajectory_point<double, 1> pt{};
     pt.position[0] = 1.0;
@@ -25,7 +25,7 @@ TEST_CASE("trajectory_point<double, 1> has correct field types", "[traj][types]"
     CHECK_THAT(pt.acceleration[0], WithinAbs(3.0, 1e-15));
 }
 
-TEST_CASE("trajectory_point<double, 3> has 3D vector fields", "[traj][types]")
+TEST_CASE("trajectory_point<double, 3> has 3D vector fields", "[trajectory][types]")
 {
     trajectory_point<double, 3> pt{};
     pt.position = Vector<double, 3>{1.0, 2.0, 3.0};
@@ -39,7 +39,7 @@ TEST_CASE("trajectory_point<double, 3> has 3D vector fields", "[traj][types]")
 
 // --- path_point tests ---
 
-TEST_CASE("path_point default-initializes to zero", "[traj][types]")
+TEST_CASE("path_point default-initializes to zero", "[trajectory][types]")
 {
     path_point<double> pt{};
     CHECK_THAT(pt.q, WithinAbs(0.0, 1e-15));
@@ -48,7 +48,7 @@ TEST_CASE("path_point default-initializes to zero", "[traj][types]")
     CHECK_THAT(pt.dddq, WithinAbs(0.0, 1e-15));
 }
 
-TEST_CASE("path_point stores assigned values", "[traj][types]")
+TEST_CASE("path_point stores assigned values", "[trajectory][types]")
 {
     path_point<double> pt{.q = 0.5, .dq = 1.5, .ddq = -3.0, .dddq = 12.0};
     CHECK_THAT(pt.q, WithinAbs(0.5, 1e-15));
@@ -85,19 +85,19 @@ struct missing_evaluate_segment
 
 } // namespace
 
-TEST_CASE("trajectory_segment concept accepts valid type", "[traj][concept]")
+TEST_CASE("trajectory_segment concept accepts valid type", "[trajectory][concept]")
 {
     static_assert(trajectory_segment<mock_segment, double, 2>);
     SUCCEED();
 }
 
-TEST_CASE("trajectory_segment concept rejects missing duration", "[traj][concept]")
+TEST_CASE("trajectory_segment concept rejects missing duration", "[trajectory][concept]")
 {
     static_assert(!trajectory_segment<missing_duration_segment, double, 2>);
     SUCCEED();
 }
 
-TEST_CASE("trajectory_segment concept rejects missing evaluate", "[traj][concept]")
+TEST_CASE("trajectory_segment concept rejects missing evaluate", "[trajectory][concept]")
 {
     static_assert(!trajectory_segment<missing_evaluate_segment, double, 2>);
     SUCCEED();
@@ -105,7 +105,7 @@ TEST_CASE("trajectory_segment concept rejects missing evaluate", "[traj][concept
 
 // --- Horner evaluation tests ---
 
-TEST_CASE("horner_eval with [1, 2, 3] at tau=0.5 gives 2.75", "[traj][horner]")
+TEST_CASE("horner_eval with [1, 2, 3] at tau=0.5 gives 2.75", "[trajectory][horner]")
 {
     // p(tau) = 1 + 2*tau + 3*tau^2 = 1 + 1 + 0.75 = 2.75
     using V = Vector<double, 1>;
@@ -115,7 +115,7 @@ TEST_CASE("horner_eval with [1, 2, 3] at tau=0.5 gives 2.75", "[traj][horner]")
     CHECK_THAT(result[0], WithinAbs(2.75, 1e-14));
 }
 
-TEST_CASE("horner_deriv1 with [1, 2, 3] at tau=0.5 gives 5.0", "[traj][horner]")
+TEST_CASE("horner_deriv1 with [1, 2, 3] at tau=0.5 gives 5.0", "[trajectory][horner]")
 {
     // p'(tau) = 2 + 6*tau = 2 + 3 = 5.0
     using V = Vector<double, 1>;
@@ -125,7 +125,7 @@ TEST_CASE("horner_deriv1 with [1, 2, 3] at tau=0.5 gives 5.0", "[traj][horner]")
     CHECK_THAT(result[0], WithinAbs(5.0, 1e-14));
 }
 
-TEST_CASE("horner_deriv2 with [1, 2, 3] at tau=0.5 gives 6.0", "[traj][horner]")
+TEST_CASE("horner_deriv2 with [1, 2, 3] at tau=0.5 gives 6.0", "[trajectory][horner]")
 {
     // p''(tau) = 2*3 = 6.0 (constant)
     using V = Vector<double, 1>;
@@ -135,7 +135,7 @@ TEST_CASE("horner_deriv2 with [1, 2, 3] at tau=0.5 gives 6.0", "[traj][horner]")
     CHECK_THAT(result[0], WithinAbs(6.0, 1e-14));
 }
 
-TEST_CASE("horner_eval with 4 coefficients (cubic) at tau=0.5", "[traj][horner]")
+TEST_CASE("horner_eval with 4 coefficients (cubic) at tau=0.5", "[trajectory][horner]")
 {
     // p(tau) = 1 + 0*tau + 3*tau^2 + (-2)*tau^3
     // = 1 + 0 + 0.75 + (-0.25) = 1.5
@@ -146,7 +146,7 @@ TEST_CASE("horner_eval with 4 coefficients (cubic) at tau=0.5", "[traj][horner]"
     CHECK_THAT(result[0], WithinAbs(1.5, 1e-14));
 }
 
-TEST_CASE("horner_deriv3 with 4 coefficients gives constant 3rd derivative", "[traj][horner]")
+TEST_CASE("horner_deriv3 with 4 coefficients gives constant 3rd derivative", "[trajectory][horner]")
 {
     // p(tau) = c0 + c1*tau + c2*tau^2 + c3*tau^3
     // p'''(tau) = 6*c3 = 6*(-2) = -12
