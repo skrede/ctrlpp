@@ -65,7 +65,7 @@ struct control_loop_demo
         Eigen::Matrix<Scalar, 2, 2> Q;
         Q << Scalar{10}, Scalar{0}, Scalar{0}, Scalar{1};
         Eigen::Matrix<Scalar, 1, 1> R;
-        R << Scalar{0.1};
+        R << static_cast<Scalar>(0.1);
 
         control_loop_demo demo = plant();
         const auto gain        = ctrlpp::lqr_gain<Scalar, 2, 1>(demo.A, demo.B, Q, R);
