@@ -237,6 +237,9 @@ class online_planner_3rd
         , position_settle_tol_{cfg.position_settle_tol}
         , velocity_settle_tol_{cfg.velocity_settle_tol}
         , acceleration_settle_tol_{cfg.acceleration_settle_tol}
+        , n_phases_{0}
+        , T_ph_{}
+        , j_ph_{}
         , phase_end_velocity_{}
         , phase_end_acceleration_{}
         , phase_end_pinned_{}
@@ -272,27 +275,19 @@ class online_planner_3rd
     // field from one branch surviving into the report of another.
     online_planner_diagnostics<Scalar> diagnostics_{};
 
-    // Profile as a sequence of constant-jerk phases.
-    // Each phase has duration T_ph_[i] and jerk j_ph_[i].
-    // Maximum 11 phases: up to 4 for bringing accel to zero + 7 for double-S.
-    // A phase whose end state is known analytically records it, and evaluation
-    // takes that state in place of the integrated one.
-    static constexpr int max_phases_ = 11;
-    int n_phases_{0};
-    Scalar T_ph_[max_phases_]{};
-    Scalar j_ph_[max_phases_]{};
+    // At most nulling 1 + brake 3 + ramp 3 + cruise 1 + deceleration 3; an emptied group stores one pinned phase.
+    // A phase whose end state is known analytically records it, and evaluation takes that state in place of the integrated one.
+    static constexpr std::int32_t max_phases_ = 11;
+    std::int32_t n_phases_;
+    std::array<Scalar, max_phases_> T_ph_;
+    std::array<Scalar, max_phases_> j_ph_;
     std::array<Scalar, max_phases_> phase_end_velocity_;
     std::array<Scalar, max_phases_> phase_end_acceleration_;
     std::array<bool, max_phases_> phase_end_pinned_;
     Scalar T_{};  ///< total duration
 
-    // The roundings this planner performs on a speed it hands to the zero-acceleration planning step, taken over the
-    // branches that reach it and maximized. On the branch that plans straight from the caller's snapshot it performed
-    // none, and the snapshot's own error is the caller's, out of scope exactly as the trapezoidal retiming floor scopes
-    // its own. On the branch that nulled a starting acceleration first, seven operations formed the speed: the phase
-    // duration's division, the product of the starting acceleration with it, the three products of the jerk term, and
-    // the two sums. The scaling by one half inside that term is exact in a binary radix and is counted anyway, which
-    // makes the total an upper bound rather than an estimate.
+    // Upper bound on the roundings in the nulling-end speed: the duration's division, the product a T, the three products of
+    // the jerk term (its exact halving counted anyway) and the two sums. A plan straight from the snapshot performs none.
     static constexpr std::int32_t speed_rounding_ops = 7;
 
     /// @brief Compute jerk-limited profile from current state to target.
@@ -339,8 +334,8 @@ class online_planner_3rd
         // Below these floors the commanded velocity and acceleration are zero
         // to the precision the limits leave available, so there is nothing for
         // a profile to remove.
-        constexpr int command_velocity_rounding_ops = 1;
-        constexpr int command_acceleration_rounding_ops = 1;
+        constexpr std::int32_t command_velocity_rounding_ops = 1;
+        constexpr std::int32_t command_acceleration_rounding_ops = 1;
         auto const command_velocity_resolution = Scalar{command_velocity_rounding_ops}
                                                  * std::numeric_limits<Scalar>::epsilon()
                                                  * v_max_;
@@ -370,29 +365,8 @@ class online_planner_3rd
 
         Scalar q_start = q_ref_;
         Scalar v_start = v_ref_;
-        Scalar a_start = a_ref_;
-
-        // The evaluation starts from the snapshot's acceleration, so every nonzero one is nulled by its own phase,
-        // however short. A phase too short to represent still pins its end state.
-        if (a_start != Scalar{0}) {
-            auto const T_az = std::min(std::abs(a_start) / j_max_, detail::jerk_time_within(a_max_, j_max_));
-            auto const j_az = (a_start > Scalar{0}) ? -j_max_ : j_max_;
-
-            // State after this phase:
-            auto const v_after = snap_nulling_end_speed(v_start + a_start * T_az + Scalar{0.5} * j_az * T_az * T_az);
-            auto const q_after = q_start + v_start * T_az
-                                 + Scalar{0.5} * a_start * T_az * T_az
-                                 + j_az * T_az * T_az * T_az / Scalar{6};
-
-            auto const first = n_phases_;
-            T_ph_[n_phases_] = T_az;
-            j_ph_[n_phases_] = j_az;
-            ++n_phases_;
-            pin_group_end(first, v_after, Scalar{0});
-
-            q_start = q_after;
-            v_start = v_after;
-            a_start = Scalar{0};
+        if (a_ref_ != Scalar{0}) {
+            append_nulling_phase(q_start, v_start);
         }
 
         // Now state is (q_start, v_start, 0). Plan double-S from here.
@@ -400,8 +374,8 @@ class online_planner_3rd
 
         // Compute total duration
         T_ = Scalar{0};
-        for (int i = 0; i < n_phases_; ++i) {
-            T_ += T_ph_[i];
+        for (std::int32_t i = 0; i < n_phases_; ++i) {
+            T_ += T_ph_[static_cast<std::size_t>(i)];
         }
 
         if (outcome.reason == online_planner_substitution_reason::none) {
@@ -425,6 +399,21 @@ class online_planner_3rd
                 .replan_start_position = outcome.replan_start_position,
             };
         }
+    }
+
+    // The evaluation starts from the snapshot's acceleration, so every nonzero one is nulled by its own phase,
+    // however short. A phase too short to represent still pins its end state.
+    void append_nulling_phase(Scalar& q_start, Scalar& v_start)
+    {
+        auto const a_start = a_ref_;
+        auto const T_az = std::min(std::abs(a_start) / j_max_, detail::jerk_time_within(a_max_, j_max_));
+        auto const j_az = (a_start > Scalar{0}) ? -j_max_ : j_max_;
+        auto const v_after = snap_nulling_end_speed(v_start + a_start * T_az + Scalar{0.5} * j_az * T_az * T_az);
+        q_start = q_start + v_start * T_az + Scalar{0.5} * a_start * T_az * T_az + j_az * T_az * T_az * T_az / Scalar{6};
+        auto const first = n_phases_;
+        append_phase(T_az, j_az);
+        pin_group_end(first, v_after, Scalar{0});
+        v_start = v_after;
     }
 
     /// @brief What `plan_from_zero_accel` did with the commanded shape.
@@ -482,12 +471,12 @@ class online_planner_3rd
         // acceleration the first term is zero, so the total is again an upper
         // bound. Below the floor the commanded displacement is zero to the
         // precision the limits leave available.
-        constexpr int nulling_position_rounding_ops = 12;
-        constexpr int displacement_rounding_ops = 1;
-        constexpr int length_scale_rounding_ops = 3;
-        constexpr int length_rounding_ops = nulling_position_rounding_ops
-                                            + displacement_rounding_ops
-                                            + length_scale_rounding_ops;
+        constexpr std::int32_t nulling_position_rounding_ops = 12;
+        constexpr std::int32_t displacement_rounding_ops = 1;
+        constexpr std::int32_t length_scale_rounding_ops = 3;
+        constexpr std::int32_t length_rounding_ops = nulling_position_rounding_ops
+                                                     + displacement_rounding_ops
+                                                     + length_scale_rounding_ops;
         auto const length_scale = v_max_ * v_max_ / (Scalar{2} * a_max_);
         auto const length_floor = Scalar{length_rounding_ops}
                                   * std::numeric_limits<Scalar>::epsilon() * length_scale;
@@ -596,7 +585,13 @@ class online_planner_3rd
 
         auto const ramp = n_phases_;
         append_phase(durations[0], j_pos);
+        auto const hold = n_phases_;
         append_phase(durations[1], Scalar{0});
+        // Its second half is sampled backward from the closing phase's analytic start, so it never exceeds the peak however short that phase is.
+        if (durations[1] > Scalar{0}) {
+            auto const T_c = std::min(durations[2], detail::jerk_time_within(a_max_, j_max_));
+            pin_group_end(hold, peak + Scalar{0.5} * j_neg * T_c * T_c, -j_neg * T_c);
+        }
         append_phase(durations[2], j_neg);
         pin_group_end(ramp, peak, Scalar{0});
         auto const cruise = n_phases_;
@@ -609,15 +604,19 @@ class online_planner_3rd
         pin_group_end(decel, Scalar{0}, Scalar{0});
     }
 
-    /// @brief Record (v, a) as the end state of the last phase appended since index `first`, if any.
+    /// @brief Record (v, a) as the end state of the last phase appended since index `first`, storing a zero-length
+    /// phase to carry it when the group stored none.
     void pin_group_end(std::int32_t first, Scalar v, Scalar a)
     {
-        if (n_phases_ > first) {
-            auto const last = static_cast<std::size_t>(n_phases_ - 1);
-            phase_end_velocity_[last] = v;
-            phase_end_acceleration_[last] = a;
-            phase_end_pinned_[last] = true;
+        if (n_phases_ == first) {
+            T_ph_[static_cast<std::size_t>(n_phases_)] = Scalar{0};
+            j_ph_[static_cast<std::size_t>(n_phases_)] = Scalar{0};
+            ++n_phases_;
         }
+        auto const last = static_cast<std::size_t>(n_phases_ - 1);
+        phase_end_velocity_[last] = v;
+        phase_end_acceleration_[last] = a;
+        phase_end_pinned_[last] = true;
     }
 
     // Analytically the nulling-end speed of a state this planner produced is at most the ramp's peak, so an
@@ -712,15 +711,14 @@ class online_planner_3rd
         pin_group_end(first, Scalar{0}, Scalar{0});
     }
 
-    /// @brief Append a single constant-jerk phase if its duration is non-negligible.
-    ///
-    /// Every emitted jerk phase starts, or pinned ends, at an exactly zero acceleration, so bounding its duration bounds every
-    /// acceleration it and the constant phase after it produce. Analytically none exceeds a_max / j_max: this trims only rounding.
+    /// @brief Append a constant-jerk phase if its duration is positive. A jerk phase starts or pinned ends at zero
+    /// acceleration, so bounding its duration, which analytically never exceeds a_max / j_max, bounds every acceleration.
     void append_phase(Scalar duration, Scalar jerk)
     {
         if (duration > Scalar{0}) {
-            T_ph_[n_phases_] = (jerk == Scalar{0}) ? duration : std::min(duration, detail::jerk_time_within(a_max_, j_max_));
-            j_ph_[n_phases_] = jerk;
+            auto const index = static_cast<std::size_t>(n_phases_);
+            T_ph_[index] = (jerk == Scalar{0}) ? duration : std::min(duration, detail::jerk_time_within(a_max_, j_max_));
+            j_ph_[index] = jerk;
             ++n_phases_;
         }
     }
@@ -842,8 +840,8 @@ class online_planner_3rd
 
         Scalar t_elapsed = Scalar{0};
 
-        for (int i = 0; i < n_phases_; ++i) {
-            auto const T_i = T_ph_[i];
+        for (std::int32_t i = 0; i < n_phases_; ++i) {
+            auto const T_i = T_ph_[static_cast<std::size_t>(i)];
             auto const t_remaining = dt - t_elapsed;
 
             if (t_remaining <= Scalar{0}) {
@@ -860,20 +858,19 @@ class online_planner_3rd
         }
     }
 
-    // Inside a pinned phase the sample is formed backward from the pinned end state, the backward-time form
-    // double_s_trajectory::eval_accel_phase uses for its last segment, because a forward sum can round past the
-    // end value just before the boundary.
+    // Inside a pinned phase the sample is formed backward from the pinned end state, because a forward sum can round past the end value just before the boundary.
+    // A pinned zero-jerk phase is sampled from its nearer end, since near its start the pin's magnitude would quantize a much smaller velocity.
     void advance_phase(std::int32_t i, Scalar tau, Scalar& q, Scalar& v, Scalar& a) const
     {
-        auto const j_i = j_ph_[i];
-        q += v * tau + Scalar{0.5} * a * tau * tau + j_i * tau * tau * tau / Scalar{6};
         auto const index = static_cast<std::size_t>(i);
-        if (!phase_end_pinned_[index]) {
+        auto const j_i = j_ph_[index];
+        q += v * tau + Scalar{0.5} * a * tau * tau + j_i * tau * tau * tau / Scalar{6};
+        auto const s = T_ph_[index] - tau;
+        if (!phase_end_pinned_[index] || (j_i == Scalar{0} && tau < s)) {
             v += a * tau + Scalar{0.5} * j_i * tau * tau;
             a += j_i * tau;
             return;
         }
-        auto const s = T_ph_[i] - tau;
         v = phase_end_velocity_[index] - phase_end_acceleration_[index] * s + Scalar{0.5} * j_i * s * s;
         a = phase_end_acceleration_[index] - j_i * s;
     }

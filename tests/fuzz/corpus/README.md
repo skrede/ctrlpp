@@ -13,6 +13,7 @@ tests/fuzz/corpus/
   fuzz_care/
   fuzz_dare/
   fuzz_online_planner_3rd/
+  fuzz_online_planner_3rd_float/
 ```
 
 This is a curated set, not a captured campaign. Each seed is a configuration that pins one named
@@ -122,6 +123,8 @@ derived floor, so the input weight the solve receives is never the number stored
 | `fuzz_online_planner_3rd` | `retarget_cruise_review_limits.bin` | the same cruise retarget on non-unit limits whose acceleration phase reaches the acceleration limit, so the cruise is entered through a constant-acceleration phase | `d8b2b04` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes |
 | `fuzz_online_planner_3rd` | `retarget_ramp_unit_limits.bin` | a retarget at half the acceleration limit while the jerk is still raising it, so the replan starts from a nonzero acceleration and must null it first | `d8b2b04` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes |
 | `fuzz_online_planner_3rd` | `retarget_nulling_unit_limits.bin` | a retarget at half the acceleration limit while the jerk is bringing it back to zero, the phase that ends at the velocity limit | `d8b2b04` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes |
+| `fuzz_online_planner_3rd` | `cr04_constant_phase_end.bin` | the recorded counterexample: a retarget from the acceleration ramp on a jerk limit large enough that the replan's closing jerk phase is shorter than the resolution of the sample times, so the last sample in the constant-acceleration phase before it read one unit in the last place above the velocity limit. It aborted at `1f2ea88`, before that phase was evaluated backward from its analytic end | `c45c886` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes |
+| `fuzz_online_planner_3rd_float` | `cr04_constant_phase_end.bin` | the same counterexample in `float` on ordinary limits, where the closing jerk phase lasts less than one sample-time resolution near t = 1809 s. It aborted at `1f2ea88` | `c45c886` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes, each field narrowed to `float` after the clamps |
 
 ## Decoded field values
 
@@ -172,6 +175,18 @@ the minimum decoded size, well inside the length cap the smoke run imposes.
 | `retarget_cruise_review_limits.bin` | 0 | 700 | 0.7 | 1.3 | 2.9 | 0.005 | 0 | 0.5 | 1400 |
 | `retarget_ramp_unit_limits.bin` | 0 | 1000 | 1 | 1 | 1 | 0.01 | 0 | 0.025 | 2000 |
 | `retarget_nulling_unit_limits.bin` | 0 | 1000 | 1 | 1 | 1 | 0.01 | 0 | 0.075 | 2000 |
+| `cr04_constant_phase_end.bin` | 0 | 0x1.095967f30a7fep+17 | 0x1.2c6932p+4 | 0x1.541afep-7 | 0x1.541afep+36 | 0x1.ea91a70c48f32p-1 | 0 | 0x1.808b5acbe418fp-3 | 0x1.095967f30a7fep+18 |
+
+`fuzz_online_planner_3rd_float`
+
+| seed file | pos | target | v_max | a_max | j_max | dt | t_start | retarget_fraction | retarget_target |
+|---|---|---|---|---|---|---|---|---|---|
+| `cr04_constant_phase_end.bin` | 0 | 0x1.095968ae6013p+17 | 0x1.2c6932p+4 | 0x1.541afep-7 | 0x1.10b2b4p+7 | 0x1.d25bacp-1 | 0 | 0x1.88bb00858be25p-6 | 0x1.095968ae6013p+18 |
+
+The two `cr04_constant_phase_end.bin` seeds are recorded inputs, so their fields are given in hexadecimal, exactly
+as stored. The `float` target narrows each field after the clamps, so it plans with target `0x1.095968p+17`,
+retarget target `0x1.095968p+18` and the other fields unchanged. The retarget follows sample 47 in `float` and
+sample 375 in `double`, on the ramp, and both jerk limits are inside their targets' clamps.
 
 The retarget is applied after the scan sample whose index is `retarget_fraction * 1999`, truncated, so
 the four seeds replan at t = 10, 5, 0.5 and 1.5 s. Sampled there, the planner reports v = 1 and a = 0,

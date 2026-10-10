@@ -1053,6 +1053,47 @@ TEST_CASE("OnlinePlanner3rd: the acceleration-nulling phase is emitted for every
     REQUIRE(straddles == 3);
 }
 
+// A nulling duration |a| / j_max cannot underflow through the public API, because every sampled acceleration is
+// j_max times a time. So the groups emptied here are a degenerate plan's cruise and a cruise retarget's ramp.
+TEST_CASE("OnlinePlanner3rd: a group whose phases all vanish still re-bases the evaluation at its end",
+          "[traj][online_planner_3rd]")
+{
+    // A zero-length phase adds v*0 + a*0*0/2 + j*0*0*0/6 = 0 to the position and re-bases (v, a) to the values the
+    // previous pin already left, so the bound is zero roundings: these are the samples recorded before it existed.
+    using sample_row = std::array<double, 4>;
+    constexpr std::array<sample_row, 4> degenerate{{
+        {0x1.e3cf476542bdp-1, 0x1.0aaaaaaaaaaaap-3, 0x1.6393ed095c075p-2, 0x1.428a2f98d728cp-2},
+        {0x1.932cbb7f0cf2ep+0, 0x1.7aaaaaaaaaaabp-2, 0x1.6393ed095c075p-2, -0x1.428a2f98d728cp-2},
+        {0x1.e3cf476542bdp+0, 0x1.d555555555555p-2, 0x1.965fea53d6e4p-3, -0x1.428a2f98d728ap-1},
+        {0x1.1a38e9a5bc43ap+1, 0x1.faaaaaaaaaaacp-2, 0x1.965fea53d6e3p-5, -0x1.428a2f98d7286p-2},
+    }};
+    constexpr std::array<sample_row, 2> cruise_retarget{{
+        {0x1.5p+2, 0x1.1p+2, 0x1p+0, 0x0p+0},
+        {0x1.98p+3, 0x1.75cp+3, 0x1.7p-1, -0x1.8p-1},
+    }};
+    auto planner = make_planner<double>({.v_max = 1.0, .a_max = 1.0, .j_max = 1.0});
+    planner.reset(0.0);
+    REQUIRE(planner.update(0.5).has_value());
+    for (auto const& row : degenerate) {
+        auto const point = planner.sample(row[0]);
+        CAPTURE(row[0]);
+        CHECK(point.position[0] == row[1]);
+        CHECK(point.velocity[0] == row[2]);
+        CHECK(point.acceleration[0] == row[3]);
+    }
+    planner.reset(0.0);
+    REQUIRE(planner.update(10.0).has_value());
+    REQUIRE(planner.sample(4.0).velocity[0] == 1.0);
+    REQUIRE(planner.update(12.0).has_value());
+    for (auto const& row : cruise_retarget) {
+        auto const point = planner.sample(row[0]);
+        CAPTURE(row[0]);
+        CHECK(point.position[0] == row[1]);
+        CHECK(point.velocity[0] == row[2]);
+        CHECK(point.acceleration[0] == row[3]);
+    }
+}
+
 // -- Test 23: the zero-displacement floor scales with the planner's own limits --
 //
 // The headline consequence of scaling the floor rather than fixing it. The SAME

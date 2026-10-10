@@ -1,4 +1,5 @@
 #include "ctrlpp/trajectory/online_planner_3rd.h"
+#include "ctrlpp/trajectory/double_s_trajectory.h"
 #include "ctrlpp/trajectory/online_planner_diagnostics.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -7,6 +8,8 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <random>
+#include <vector>
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -261,6 +264,173 @@ auto round_up_limits() -> limit_set<Scalar>
     return {Scalar{4} * a_max * a_max / j_max, a_max, j_max};
 }
 
+template <typename Scalar>
+auto carry_shape(limit_set<Scalar> const& limits, Scalar q0, Scalar q1, Scalar v0) -> ctrlpp::double_s_trajectory<Scalar>
+{
+    auto created = ctrlpp::double_s_trajectory<Scalar>::create(
+        {.q0 = q0, .q1 = q1, .v_max = limits.v_max, .a_max = limits.a_max, .j_max = limits.j_max, .v0 = v0, .v1 = Scalar{0}});
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
+// The planner appends the shape's nonzero phases, so it switches at their running sums from the plan's start.
+template <typename Scalar>
+auto shape_switches(ctrlpp::double_s_trajectory<Scalar> const& shape, Scalar start) -> std::vector<Scalar>
+{
+    std::vector<Scalar> switches{};
+    auto elapsed = Scalar{0};
+    for (auto const phase : shape.phase_durations()) {
+        elapsed += phase;
+        if (phase > Scalar{0}) {
+            switches.push_back(start + elapsed);
+        }
+    }
+    return switches;
+}
+
+template <typename Scalar>
+struct nulled_state
+{
+    Scalar duration;
+    Scalar position;
+    Scalar velocity;
+};
+
+// @cite biagiotti2009 -- Sec. 4.6.1: a replan first brings the acceleration to zero at the jerk limit.
+template <typename Scalar>
+auto null_acceleration(limit_set<Scalar> const& limits, ctrlpp::trajectory_point<Scalar, 1> const& point) -> nulled_state<Scalar>
+{
+    auto const q = point.position(0);
+    auto const v = point.velocity(0);
+    auto const a = point.acceleration(0);
+    auto const T = std::abs(a) / limits.j_max;
+    auto const j = (a > Scalar{0}) ? -limits.j_max : limits.j_max;
+    auto const v_end = v + a * T + Scalar{0.5} * j * T * T;
+    auto const q_end = q + v * T + Scalar{0.5} * a * T * T + j * T * T * T / Scalar{6};
+    return {T, q_end, std::copysign(std::min(std::abs(v_end), limits.v_max), v_end)};
+}
+
+struct window_excess
+{
+    std::int32_t velocity{};
+    std::int32_t acceleration{};
+};
+
+// Samples every representable instant within representable_window steps of each center, once where windows overlap.
+template <typename Scalar>
+void scan_switch_windows(ctrlpp::online_planner_3rd<Scalar> const& planner, std::vector<Scalar> centers,
+                         limit_set<Scalar> const& limits, window_excess& excess)
+{
+    auto const infinity = std::numeric_limits<Scalar>::infinity();
+    std::sort(centers.begin(), centers.end());
+    auto next = -infinity;
+    for (auto const center : centers) {
+        auto t = center;
+        for (std::int32_t i = 0; i < representable_window; ++i) {
+            t = std::nextafter(t, -infinity);
+        }
+        auto last = center;
+        for (std::int32_t i = 0; i < representable_window; ++i) {
+            last = std::nextafter(last, infinity);
+        }
+        for (t = std::max(t, next); t <= last; t = std::nextafter(t, infinity)) {
+            auto const point = planner.sample(t);
+            excess.velocity += (std::abs(point.velocity(0)) > limits.v_max) ? 1 : 0;
+            excess.acceleration += (std::abs(point.acceleration(0)) > limits.a_max) ? 1 : 0;
+        }
+        next = t;
+    }
+}
+
+// A plan from rest toward `target`, sampled at t_r and retargeted to twice as far, scanned around each switch of
+// the replan: the nulling end and the carried double-S.
+template <typename Scalar>
+void scan_retarget(limit_set<Scalar> const& limits, Scalar target, Scalar t_r, window_excess& excess)
+{
+    auto planner = make_planner(limits);
+    planner.reset(Scalar{0});
+    REQUIRE(planner.update(target).has_value());
+    auto const nulled = null_acceleration(limits, planner.sample(t_r));
+    REQUIRE(planner.update(Scalar{2} * target).has_value());
+    CHECK(planner.diagnostics().substitution_reason == online_planner_substitution_reason::none);
+    auto const start = t_r + nulled.duration;
+    auto centers = shape_switches(carry_shape(limits, nulled.position, Scalar{2} * target, nulled.velocity), start);
+    centers.push_back(start);
+    scan_switch_windows(planner, centers, limits, excess);
+}
+
+template <typename Scalar>
+auto unit_fraction(std::mt19937& engine) -> Scalar
+{
+    return std::ldexp(static_cast<Scalar>(engine() >> 8), -24);
+}
+
+constexpr std::int32_t ramp_retargets_per_plan = 4;
+
+// From rest, then retargeted from a seeded cruise instant and from seeded instants on the acceleration ramp.
+template <typename Scalar>
+void scan_long_profile(limit_set<Scalar> const& limits, Scalar target, std::mt19937& engine, window_excess& excess)
+{
+    auto planner = make_planner(limits);
+    planner.reset(Scalar{0});
+    REQUIRE(planner.update(target).has_value());
+    auto const shape = carry_shape(limits, Scalar{0}, target, Scalar{0});
+    scan_switch_windows(planner, shape_switches(shape, Scalar{0}), limits, excess);
+    auto const p = shape.phase_durations();
+    auto const ramp = p[0] + p[1] + p[2];
+    scan_retarget(limits, target, ramp + unit_fraction<Scalar>(engine) * p[3], excess);
+    for (std::int32_t k = 0; k < ramp_retargets_per_plan; ++k) {
+        scan_retarget(limits, target, unit_fraction<Scalar>(engine) * ramp, excess);
+    }
+}
+
+template <typename Scalar>
+auto time_resolution_at(Scalar t) -> Scalar
+{
+    return std::nextafter(t, std::numeric_limits<Scalar>::infinity()) - t;
+}
+
+
+template <typename Scalar>
+struct fuzz_retarget
+{
+    limit_set<Scalar> limits;
+    Scalar target;
+    Scalar dt;
+    Scalar retarget_target;
+    std::int32_t retarget_index;
+};
+
+// Replays the fuzz harness's sampling: from rest at 0, one sample every dt from 0, retargeted after sample
+// retarget_index. Scans the replan's ramp switch from its constant phase to its closing jerk phase, then the samples.
+template <typename Scalar>
+void replay_fuzz_retarget(fuzz_retarget<Scalar> const& input)
+{
+    constexpr std::int32_t samples = 2000;
+    auto planner = make_planner(input.limits);
+    planner.reset(Scalar{0});
+    REQUIRE(planner.update(input.target).has_value());
+    Scalar t{};
+    for (std::int32_t i = 0; i <= input.retarget_index; ++i) {
+        t += input.dt;
+        (void)planner.sample(t);
+    }
+    auto const nulled = null_acceleration(input.limits, planner.sample(t));
+    REQUIRE(planner.update(input.retarget_target).has_value());
+    auto const p = carry_shape(input.limits, nulled.position, input.retarget_target, nulled.velocity).phase_durations();
+    REQUIRE(p[1] > Scalar{0});
+    window_excess excess{};
+    scan_switch_windows(planner, std::vector<Scalar>{t + nulled.duration + p[0] + p[1]}, input.limits, excess);
+    CHECK(excess.velocity == 0);
+    CHECK(excess.acceleration == 0);
+    for (std::int32_t i = input.retarget_index + 1; i < samples; ++i) {
+        t += input.dt;
+        auto const point = planner.sample(t);
+        CAPTURE(i, t);
+        CHECK(std::abs(point.velocity(0)) <= input.limits.v_max);
+        CHECK(std::abs(point.acceleration(0)) <= input.limits.a_max);
+    }
+}
 }
 
 TEST_CASE("OnlinePlanner3rd retarget: a cruise that integrated above the limit now carries it exactly",
@@ -520,4 +690,47 @@ TEMPLATE_TEST_CASE("OnlinePlanner3rd retarget: nulling an acceleration held at a
     REQUIRE(sampled.planner.update(Scalar{1000} * limits.v_max).has_value());
     auto const peaks = scan_representable(sampled.planner, t, 0, representable_window);
     CHECK(peaks.acceleration <= limits.a_max);
+}
+
+TEST_CASE("OnlinePlanner3rd retarget: the decoded fuzz inputs keep the ramp's constant-acceleration phase below v_max",
+          "[trajectory][online_planner_3rd][retarget]")
+{
+    // The decoded fuzz inputs whose last sample before the ramp's closing jerk phase read one unit in the last place
+    // above v_max: 18.7756844 in float, and 18.775682449340824 in double once the jerk clamp admitted 9.1e10.
+    SECTION("float")
+    {
+        auto const limits = limit_set<float>{0x1.2c6932p+4f, 0x1.541afep-7f, 0x1.10b2b4p+7f};
+        replay_fuzz_retarget<float>({limits, 0x1.095968p+17f, 0x1.d25bacp-1f, 0x1.095968p+18f, 47});
+    }
+    SECTION("double")
+    {
+        auto const limits = limit_set<double>{0x1.2c6932p+4, 0x1.541afep-7, 0x1.541afep+36};
+        replay_fuzz_retarget<double>({limits, 0x1.095967f30a7fep+17, 0x1.ea91a70c48f32p-1, 0x1.095967f30a7fep+18, 375});
+    }
+}
+
+TEMPLATE_TEST_CASE("OnlinePlanner3rd retarget: jerk phases near the time resolution keep every switch window within "
+                   "the limits",
+                   "[trajectory][online_planner_3rd][retarget]", float, double)
+{
+    using Scalar = TestType;
+    std::mt19937 engine{std::is_same_v<Scalar, float> ? 702U : 701U};
+    window_excess excess{};
+    std::int32_t profiles = 0;
+    for (auto const& base : retarget_limit_sets<Scalar>()) {
+        auto const stretch = base.v_max / base.a_max + base.a_max / base.j_max;
+        for (auto const c : {0.25, 0.5, 1.0, 2.0, 4.0}) {
+            auto limits = base;
+            limits.j_max = base.a_max / (static_cast<Scalar>(c) * time_resolution_at(stretch));
+            auto const reach = Scalar{4} * limits.v_max * (limits.v_max / limits.a_max + limits.a_max / limits.j_max);
+            for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+                CAPTURE(limits.v_max, limits.a_max, limits.j_max, sigma);
+                scan_long_profile(limits, sigma * reach, engine, excess);
+                ++profiles;
+            }
+        }
+    }
+    CHECK(excess.velocity == 0);
+    CHECK(excess.acceleration == 0);
+    REQUIRE(profiles == 80);
 }
