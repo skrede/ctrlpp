@@ -1,6 +1,6 @@
 # transfer_function
 
-SISO transfer function representation as numerator and denominator polynomial coefficient arrays. Coefficients are stored in highest-degree-first order (MATLAB convention).
+SISO transfer function representation as numerator and denominator polynomial coefficient arrays. Coefficients are stored highest degree first: `numerator[0]` multiplies `s^NumDeg` and `numerator[NumDeg]` is the constant term, and likewise `denominator[0]` multiplies `s^DenDeg`.
 
 ## Header and Alias
 
