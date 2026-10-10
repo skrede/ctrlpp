@@ -470,6 +470,34 @@ TEST_CASE("An empty knot span at the end of the domain evaluates finite", "[traj
     }
 }
 
+TEMPLATE_TEST_CASE("A domain ending on an empty knot span evaluates its left limit", "[trajectory][bspline]", float, double)
+{
+    using Scalar = TestType;
+    std::vector<Scalar> const control_points = {0, 1, 3, 2, 4};
+
+    // B_{4,3} has the empty support [1, 1], so the curve is the Bezier cubic on P0..P3:
+    // q(1) = P3, v(1) = 3 (P3 - P2), a(1) = 6 (P3 - 2 P2 + P1), all exact in both types.
+    auto const clamped = ctrlpp::bspline_trajectory<Scalar, 3>::create({
+        .control_points = control_points,
+        .knot_vector = {0, 0, 0, 0, 1, 1, 1, 1, 1},
+    });
+    REQUIRE(clamped.has_value());
+    auto const at_one = clamped->evaluate(Scalar{1});
+    REQUIRE(at_one.position(0) == Scalar{2});
+    REQUIRE(at_one.velocity(0) == Scalar{-3});
+    REQUIRE(at_one.acceleration(0) == Scalar{-18});
+
+    // Second-derivative control points are {2, -8, 3} on knots {2, 3, 4, 4, 6}; the span [3, 4] holds -8.
+    auto const double_knot = ctrlpp::bspline_trajectory<Scalar, 3>::create({
+        .control_points = control_points,
+        .knot_vector = {0, 1, 2, 3, 4, 4, 6, 7, 8},
+    });
+    REQUIRE(double_knot.has_value());
+    auto const at_four = double_knot->evaluate(Scalar{4});
+    REQUIRE(at_four.velocity(0) == Scalar{-1});
+    REQUIRE(at_four.acceleration(0) == Scalar{-8});
+}
+
 TEMPLATE_TEST_CASE("basis_function stays a partition of unity beside a span of the smallest normal width", "[trajectory][bspline]", float, double)
 {
     using Scalar = TestType;

@@ -286,11 +286,8 @@ class bspline_trajectory
                 auto const denom =
                     U[static_cast<std::size_t>(idx + degree - r + 1)] -
                     U[static_cast<std::size_t>(idx)];
-                // Only t == U[n + 1] with U[n] == U[n + 1] reaches an empty span here.
-                if (denom == Scalar{0}) {
-                    continue;
-                }
-                auto const alpha = (t - U[static_cast<std::size_t>(idx)]) / denom;
+                // 0/0 := 0, Piegl & Tiller Eq. 2.5; only t == U[n + 1] with U[n] == U[n + 1] reaches it.
+                auto const alpha = denom == Scalar{0} ? Scalar{0} : (t - U[static_cast<std::size_t>(idx)]) / denom;
                 d[static_cast<std::size_t>(j)] =
                     (Scalar{1} - alpha) * d[static_cast<std::size_t>(j - 1)] +
                     alpha * d[static_cast<std::size_t>(j)];
