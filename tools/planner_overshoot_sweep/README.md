@@ -134,6 +134,63 @@ boundary. Every probe drives a planner afresh from rest to the same instant.
 Like the agreement legs, the limit legs reach no private member: they use
 only create, update, sample, diagnostics, evaluate and peak_velocity.
 
+**The phase-switch legs**
+
+These legs sample every representable instant within 64 steps of each phase
+switch, for the trapezoidal and double-S shapes and for both online
+planners, in double and float. Each sampled speed is compared against
+v_max. Each sampled acceleration is compared against a_max, or for the
+trapezoid against the realized acceleration its disposition reports.
+Windows that overlap are merged, so every instant is sampled once.
+
+Rounding lands a sample above a limit only in particular regimes:
+
+  * a boundary velocity that is negative, or below half the limit;
+  * an end velocity at the limit, pointing away from the target;
+  * a jerk phase near or below the time resolution of a long profile;
+  * a ramp at the threshold where it stops reaching a_max.
+
+The populations aim at those regimes rather than at fixed fractions.
+
+  * Trapezoidal: the eight limit sets, both directions, seven fixed and 512
+    seeded pairs of boundary fractions in [-1, 1) over a seeded displacement.
+    Every profile is also rescaled to 1.5 and 3 times its duration where
+    can_rescale_to allows it.
+  * Double-S: the same pairs over a displacement that admits both cruise and
+    no-cruise shapes. It adds long profiles of about 2^m seconds, for three m
+    taken from the type's significand width, with a jerk phase of 1/4 to 2
+    units of the time resolution there and an end velocity of +-v_max. It
+    also adds a boundary speed walked one representable value at a time across
+    a_max^2 / j_max.
+  * Second-order planner: same-direction retargets from a seeded instant in
+    the first half of the first plan's ramp, where the carried speed is below
+    v_max / 2. The limits are the eight pairs plus one pair with full-width
+    significands; on the short ones v_max - v_r is often exact. The switch is
+    placed at t_r + (v_max - |v_r|) / a_max. A window in which the sampled
+    acceleration does not go from +-a_max to 0 counts as missing the switch.
+  * Third-order planner: the eight sets with j_max set to a_max over 1/4 to
+    4 units of the time resolution at the end of the ramp. Each set runs
+    three plans, all driven from rest:
+      - the move from rest itself;
+      - a retarget from a seeded cruise instant;
+      - a retarget from a seeded instant on the acceleration ramp.
+    Switches come from a double-S shape built on the same command from the
+    sampled state. After a ramp retarget, the acceleration-nulling phase is
+    first rebuilt in closed form. The planner trims that phase in private
+    arithmetic the closed form does not mirror, so a window placed this way
+    that shows no switch is counted as not located. That count is reported,
+    and is not a zero claim. A window placed from public values alone that
+    shows no switch counts as missing it, which is a zero claim.
+
+Every boundary fraction and magnitude is formed from the raw output of a
+seeded std::mt19937, whose sequence the standard fixes, as a 24-bit dyadic
+value that float and double both hold exactly. The standard distributions
+are not used, because their output differs between standard libraries. Each
+block prints its seed. Full mode prints every violating sample with its
+configuration and instant in hexadecimal floating point, its value, the
+limit, and the excess in units in the last place. It also prints every
+window that missed or was not located.
+
 Building: standalone, no test framework and no build system. Eigen enters as
 a system include, the way the library's own build treats it, so the only
 diagnostics a build reports are the tool's own.

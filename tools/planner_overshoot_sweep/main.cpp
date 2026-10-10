@@ -1,3 +1,6 @@
+#include "switch_shapes.h"
+#include "switch_planners.h"
+#include "switch_third_order.h"
 #include "envelope_legs.h"
 #include "agreement_legs.h"
 #include "acceleration_legs.h"
@@ -30,9 +33,26 @@ void run_limit_legs(bool print_points)
     run_precondition_leg<trapezoidal_trajectory<float>>("trapezoidal_trajectory", print_points);
 }
 
+void run_switch_legs(bool print_points)
+{
+    std::printf("\n\nEvery representable instant within %d steps of each phase switch of the two shapes and the two\n",
+                switch_window_steps);
+    std::printf("online planners, over seeded boundary fractions, end velocities at the limit and profiles whose jerk\n");
+    std::printf("phases are near or below the sample-time resolution: |v| against v_max, |a| against the bound.\n");
+    run_trapezoid_switch_leg<double>(print_points);
+    run_trapezoid_switch_leg<float>(print_points);
+    run_double_s_switch_leg<double>(print_points);
+    run_double_s_switch_leg<float>(print_points);
+    run_second_order_switch_leg<double>(print_points);
+    run_second_order_switch_leg<float>(print_points);
+    run_third_order_switch_leg<double>(print_points);
+    run_third_order_switch_leg<float>(print_points);
+}
+
 }
 
 using planner_overshoot_sweep::run_limit_legs;
+using planner_overshoot_sweep::run_switch_legs;
 using planner_overshoot_sweep::run_agreement_legs;
 using planner_overshoot_sweep::run_acceleration_legs;
 
@@ -52,6 +72,7 @@ auto main(int argc, char** argv) -> int
     run_agreement_legs<float>(print_points);
     run_acceleration_legs(print_points);
     run_limit_legs(print_points);
+    run_switch_legs(print_points);
 
     std::printf("\n");
     return 0;
