@@ -122,10 +122,11 @@ handed.
 ctrlpp hardens its internals against degenerate-but-valid inputs that would
 otherwise produce silent corruption through intermediate overflow:
 
-- **Spline near-zero spans:** B-spline and cubic spline evaluation uses
-  relative epsilon thresholds (scaled by knot magnitude) rather than absolute
-  machine epsilon, preventing overflow when adjacent knots are very close but
-  not identical.
+- **Spline knot spans:** B-spline evaluation treats a knot span as empty only
+  when it is exactly zero, the 0/0 := 0 convention of the B-spline recurrences,
+  and evaluates every positive span as given. A span short enough that a
+  derivative control point overflows is refused by `bspline_trajectory::create`
+  as `spline_error::unrepresentable_spline` instead of being evaluated.
 
 - **Thomas solver pivot collapse:** The tridiagonal solver checks every pivot
   once during forward elimination against a counted rounding bound scaled by

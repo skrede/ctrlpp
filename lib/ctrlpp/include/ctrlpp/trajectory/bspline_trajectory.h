@@ -24,7 +24,6 @@
 
 #include <array>
 #include <cmath>
-#include <limits>
 #include <vector>
 #include <cstddef>
 #include <utility>
@@ -287,8 +286,8 @@ class bspline_trajectory
                 auto const denom =
                     U[static_cast<std::size_t>(idx + degree - r + 1)] -
                     U[static_cast<std::size_t>(idx)];
-                if (std::abs(denom) < Scalar{1e-10} * (Scalar{1} + std::abs(U[static_cast<std::size_t>(idx)]))) {
-                    // Near-zero knot span relative to knot magnitude, keep value
+                // Only t == U[n + 1] with U[n] == U[n + 1] reaches an empty span here.
+                if (denom == Scalar{0}) {
                     continue;
                 }
                 auto const alpha = (t - U[static_cast<std::size_t>(idx)]) / denom;
@@ -344,15 +343,9 @@ class bspline_trajectory
             auto const denom =
                 U[static_cast<std::size_t>(i + deg + 1)] -
                 U[static_cast<std::size_t>(i + 1)];
-            if (std::abs(denom) < Scalar{1e-10} * (Scalar{1} + std::abs(U[static_cast<std::size_t>(i + 1)]))) {
-                d_points[static_cast<std::size_t>(i)] = Scalar{0};
-            } else {
-                d_points[static_cast<std::size_t>(i)] =
-                    static_cast<Scalar>(deg) *
-                    (points[static_cast<std::size_t>(i + 1)] -
-                     points[static_cast<std::size_t>(i)]) /
-                    denom;
-            }
+            auto const rise = points[static_cast<std::size_t>(i + 1)] - points[static_cast<std::size_t>(i)];
+            // 0/0 := 0, Piegl & Tiller Eq. 2.5.
+            d_points[static_cast<std::size_t>(i)] = denom == Scalar{0} ? Scalar{0} : static_cast<Scalar>(deg) * rise / denom;
         }
 
         // Derivative knot vector: drop first and last knot
@@ -394,18 +387,15 @@ auto bspline_basis(
     Scalar left{0};
     Scalar right{0};
 
-    auto const denom_left =
-        U[static_cast<std::size_t>(i + p)] - U[static_cast<std::size_t>(i)];
-    if (std::abs(denom_left) > std::numeric_limits<Scalar>::epsilon()) {
-        left = (t - U[static_cast<std::size_t>(i)]) / denom_left *
-               bspline_basis(i, p - 1, t, U);
+    auto const denom_left = U[static_cast<std::size_t>(i + p)] - U[static_cast<std::size_t>(i)];
+    // 0/0 := 0, Piegl & Tiller Eq. 2.5; outside the lower basis' support the ratio may overflow, so skip it.
+    if (auto const lower = bspline_basis(i, p - 1, t, U); denom_left != Scalar{0} && lower != Scalar{0}) {
+        left = (t - U[static_cast<std::size_t>(i)]) / denom_left * lower;
     }
 
-    auto const denom_right =
-        U[static_cast<std::size_t>(i + p + 1)] - U[static_cast<std::size_t>(i + 1)];
-    if (std::abs(denom_right) > std::numeric_limits<Scalar>::epsilon()) {
-        right = (U[static_cast<std::size_t>(i + p + 1)] - t) / denom_right *
-                bspline_basis(i + 1, p - 1, t, U);
+    auto const denom_right = U[static_cast<std::size_t>(i + p + 1)] - U[static_cast<std::size_t>(i + 1)];
+    if (auto const lower = bspline_basis(i + 1, p - 1, t, U); denom_right != Scalar{0} && lower != Scalar{0}) {
+        right = (U[static_cast<std::size_t>(i + p + 1)] - t) / denom_right * lower;
     }
 
     return left + right;

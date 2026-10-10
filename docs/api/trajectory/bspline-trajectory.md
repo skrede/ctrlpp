@@ -56,7 +56,7 @@ The last check reads the derivative control points that `evaluate` uses for velo
 auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>;
 ```
 
-Evaluate position, velocity, and acceleration at parameter `t` using de Boor's algorithm. The parameter is clamped to the active range [U[p], U[n+1]]. Velocity and acceleration are computed from derivative control points. Near-zero knot spans are handled with a relative epsilon threshold scaled by knot magnitude, preventing overflow when adjacent knots are very close but not identical.
+Evaluate position, velocity, and acceleration at parameter `t` using de Boor's algorithm. The parameter is clamped to the active range [U[p], U[n+1]]. Velocity and acceleration are computed from derivative control points. Repeated knots are handled by the 0/0 := 0 convention of the B-spline recurrences, and any strictly positive knot span is evaluated as given, however short.
 
 ### duration
 

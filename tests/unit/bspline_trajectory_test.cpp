@@ -8,8 +8,10 @@
 #include <limits>
 #include <vector>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 #include <algorithm>
+#include <type_traits>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
@@ -40,6 +42,20 @@ auto make_bspline(typename ctrlpp::bspline_trajectory<double, Degree>::config co
     auto const t_begin = cfg.knot_vector.empty() ? 0.0 : cfg.knot_vector[static_cast<std::size_t>(Degree)];
     require_finite_evaluation(*created, t_begin);
     return *std::move(created);
+}
+
+// Marsden's identity (de Boor 2001, Ch. IX): 3 t^2 + 3 t = sum_i (a b + a c + b c + a + b + c) N_{i,3}(t)
+// with (a, b, c) = (U[i + 1], U[i + 2], U[i + 3]).
+auto marsden_control_points(std::vector<double> const& knots) -> std::vector<double>
+{
+    std::vector<double> points(knots.size() - 4);
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        auto const a = knots[i + 1];
+        auto const b = knots[i + 2];
+        auto const c = knots[i + 3];
+        points[i] = a * b + a * c + b * c + a + b + c;
+    }
+    return points;
 }
 
 }
@@ -359,4 +375,115 @@ TEMPLATE_TEST_CASE("create rejects a knot vector whose range overflows", "[traje
 
     REQUIRE_FALSE(result.has_value());
     REQUIRE(result.error() == ctrlpp::spline_error::unrepresentable_spline);
+}
+
+TEST_CASE("A knot span far below the knot scale is evaluated as given", "[trajectory][bspline]")
+{
+    // The curve is 3 t^2 + 3 t on [-1, 1]. These dyadic knots make every control point exact, and the
+    // central difference of a quadratic is exact for any h, so only rounding separates it from v.
+    auto const delta = std::ldexp(1.0, -35);
+    std::vector<std::vector<double>> const knot_vectors = {
+        {-1, -1, -1, -1, 0, delta, 1, 1, 1, 1},
+        {-1, -1, -1, -1, 0, delta, 2 * delta, 3 * delta, 1, 1, 1, 1},
+    };
+    // A de Boor level adds at most 7 u max|d|: alpha's two roundings weight a difference of at most
+    // 2 max|d|, then one each for 1 - alpha, the two products together, and the sum. Position takes
+    // 3 levels on |P| <= 6; velocity takes 4 roundings in Q and 2 levels on |Q| <= 9; the difference
+    // adds the rounding of q(t + h) - q(t - h), at most 2 max|P|, all divided by the exact 2 h.
+    auto const u = std::numeric_limits<double>::epsilon() / 2.0;
+    auto const h = 0.0625;
+    auto const bound = 44.0 * u * 6.0 / (2.0 * h) + 18.0 * u * 9.0;
+
+    std::vector<double> grid;
+    for (std::int32_t j = -15; j <= 15; ++j) {
+        grid.push_back(static_cast<double>(j) / 16.0);
+    }
+    for (std::int32_t k = -64; k <= 160; ++k) {
+        grid.push_back(std::ldexp(static_cast<double>(k), -40));
+    }
+
+    for (auto const& knots : knot_vectors) {
+        auto const spline = make_bspline<3>({.control_points = marsden_control_points(knots), .knot_vector = knots});
+        for (auto const t : grid) {
+            auto const difference =
+                (spline.evaluate(t + h).position(0) - spline.evaluate(t - h).position(0)) / (2.0 * h);
+            INFO("knots " << knots.size() << " t " << t);
+            REQUIRE_THAT(spline.evaluate(t).velocity(0), WithinAbs(difference, bound));
+        }
+    }
+}
+
+TEMPLATE_TEST_CASE("Knots far below unit scale evaluate the same normalized curve", "[trajectory][bspline]", float, double)
+{
+    using Scalar = TestType;
+    // Scaling every knot by 2^-s commutes with rounding while nothing goes subnormal or overflows, so the
+    // scaled curve is a bit-exact image. float interpolates at 2^-40 because the second derivative
+    // scales by 2^(2 s) and 2^132 exceeds FLT_MAX.
+    std::int32_t const basis_shift = 66;
+    std::int32_t const shift = std::is_same_v<Scalar, float> ? 40 : basis_shift;
+    auto const scaled = [](std::vector<Scalar> values, std::int32_t s) {
+        for (auto& value : values) {
+            value = std::ldexp(value, -s);
+        }
+        return values;
+    };
+
+    std::vector<Scalar> const knots = {0, 0, 0, 0, Scalar{0.25F}, Scalar{0.5F}, 1, 1, 1, 1};
+    auto const small_knots = scaled(knots, basis_shift);
+    for (std::int32_t i = 0; i <= 5; ++i) {
+        for (std::int32_t k = 0; k <= 16; ++k) {
+            auto const t = static_cast<Scalar>(k) / Scalar{16};
+            REQUIRE(ctrlpp::basis_function(i, 3, std::ldexp(t, -basis_shift), small_knots) ==
+                    ctrlpp::basis_function(i, 3, t, knots));
+        }
+    }
+
+    std::vector<Scalar> const times = {0, Scalar{0.25F}, Scalar{0.5F}, Scalar{0.625F}, Scalar{0.75F}, 1};
+    std::vector<Scalar> const positions = {0, 1, 3, 2, 4, 5};
+    auto const unit = ctrlpp::make_bspline_interpolation<Scalar, 3>(times, positions);
+    auto const small = ctrlpp::make_bspline_interpolation<Scalar, 3>(scaled(times, shift), positions);
+    REQUIRE(unit.has_value());
+    REQUIRE(small.has_value());
+    for (std::int32_t k = 0; k <= 64; ++k) {
+        auto const t = static_cast<Scalar>(k) / Scalar{64};
+        auto const expected = unit->evaluate(t);
+        auto const actual = small->evaluate(std::ldexp(t, -shift));
+        REQUIRE(actual.position(0) == expected.position(0));
+        REQUIRE(actual.velocity(0) == std::ldexp(expected.velocity(0), shift));
+        REQUIRE(actual.acceleration(0) == std::ldexp(expected.acceleration(0), 2 * shift));
+    }
+}
+
+TEST_CASE("An empty knot span at the end of the domain evaluates finite", "[trajectory][bspline]")
+{
+    // Only t == U[n + 1] with U[n] == U[n + 1] reaches an empty span inside de Boor's triangle.
+    std::vector<std::vector<double>> const knot_vectors = {
+        {0, 1, 2, 3, 4, 4, 6, 7, 8},
+        {2, 2, 2, 2, 2, 2, 2, 2, 2},
+    };
+    for (auto const& knots : knot_vectors) {
+        auto const spline = make_bspline<3>({.control_points = {0.0, 1.0, 3.0, 2.0, 4.0}, .knot_vector = knots});
+        auto const end = spline.evaluate(knots[5]);
+        REQUIRE(std::isfinite(end.position(0)));
+        REQUIRE(std::isfinite(end.velocity(0)));
+        REQUIRE(std::isfinite(end.acceleration(0)));
+    }
+}
+
+TEMPLATE_TEST_CASE("basis_function stays a partition of unity beside a span of the smallest normal width", "[trajectory][bspline]", float, double)
+{
+    using Scalar = TestType;
+    // (t - U[3]) / (U[4] - U[3]) = 8 / min() overflows, where B_{3,0}(t) is zero.
+    auto const tiny = std::numeric_limits<Scalar>::min();
+    std::vector<Scalar> const knots = {0, 0, 0, 0, tiny, 8, 8, 8, 8};
+    for (auto const t : {Scalar{8}, Scalar{4}, tiny}) {
+        Scalar sum{0};
+        for (std::int32_t i = 0; i <= 4; ++i) {
+            auto const value = ctrlpp::basis_function(i, 3, t, knots);
+            INFO("i " << i << " t " << t);
+            REQUIRE(value >= Scalar{0});
+            sum += value;
+        }
+        REQUIRE_THAT(static_cast<double>(sum), WithinAbs(1.0, 4.0 * static_cast<double>(std::numeric_limits<Scalar>::epsilon())));
+    }
 }
