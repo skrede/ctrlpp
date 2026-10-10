@@ -29,6 +29,14 @@ class pid
         explicit unchecked_t() = default;
     };
 
+    using mask_t = Eigen::Array<bool, static_cast<int>(NY), 1>;
+
+    struct limited_command
+    {
+        Vector<Scalar, NY> value;
+        mask_t clipped;
+    };
+
 public:
     using config_type = pid_config<Scalar, NY, Policies...>;
     using vector_t = Vector<Scalar, NY>;
@@ -487,17 +495,14 @@ private:
         auto d = compute_derivative_term(filtered_sp, filtered_meas, dt);
         // Unconstrained control command, before rate limiting and output saturation.
         auto u_unconstrained = compute_raw_output(p, updated_integral, d, sp, dt);
-        auto u_limited = apply_rate_limit(u_unconstrained, dt);
-        auto u_sat = u_limited.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
-        // saturated() reports output-limit saturation, the clamp against
-        // output_min/output_max.
-        m_saturated = (u_sat.array() != u_limited.array()).any();
-        // Anti-windup feeds back against the fully unconstrained command, so both the
-        // rate limiter and the output saturation contribute. Feeding back only the
-        // post-rate-limit value would let the integrator wind up freely along a
-        // rate-limited ramp, where the applied output already equals the rate-limited
-        // command.
-        apply_anti_windup(u_sat, u_unconstrained, e, integral_increment, dt);
+        auto limited = apply_rate_limit(u_unconstrained, dt);
+        auto u_sat = limited.value.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
+        auto saturated = (limited.value.array() < m_cfg.output_min.array() || limited.value.array() > m_cfg.output_max.array()).eval();
+        m_saturated = saturated.any();
+        // Anti-windup feeds back against the command taken before the rate limiter, so a
+        // rate-limited ramp, where the applied output already equals the limited command,
+        // engages it as well as output saturation does.
+        apply_anti_windup(u_sat, u_unconstrained, (limited.clipped || saturated).eval(), e, integral_increment, dt);
         update_state(e, filtered_meas, filtered_sp, u_sat);
         return u_sat;
     }
@@ -598,40 +603,41 @@ private:
         return u_raw;
     }
 
-    auto apply_rate_limit(vector_t u_raw, Scalar dt) -> vector_t
+    auto apply_rate_limit(const vector_t& u_raw, Scalar dt) const -> limited_command
     {
+        limited_command limited{u_raw, mask_t::Constant(false)};
         if constexpr(detail::contains_v<rate_limit, Policies...>)
         {
-            auto delta = (u_raw - m_prev_output).eval();
-            const auto& rl_cfg = m_cfg.template policy<rate_limit>();
-            vector_t lo, hi;
+            const auto& rate_max = m_cfg.template policy<rate_limit>().rate_max;
             for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             {
-                if(rl_cfg.rate_max[static_cast<std::size_t>(i)] > Scalar{0} && rl_cfg.rate_max[static_cast<std::size_t>(i)] != std::numeric_limits<Scalar>::infinity())
+                const Scalar rate = rate_max[static_cast<std::size_t>(i)];
+                if(!(rate > Scalar{0}) || rate == std::numeric_limits<Scalar>::infinity())
+                    continue;
+                const Scalar step = rate * dt;
+                const Scalar delta = u_raw[i] - m_prev_output[i];
+                // Re-forming p + (u - p) rounds, so a channel within its bound keeps its input bit for bit.
+                if(delta > step || delta < -step)
                 {
-                    hi[i] = rl_cfg.rate_max[static_cast<std::size_t>(i)] * dt;
-                    lo[i] = -hi[i];
-                }
-                else
-                {
-                    hi[i] = std::numeric_limits<Scalar>::max();
-                    lo[i] = std::numeric_limits<Scalar>::lowest();
+                    limited.value[i] = m_prev_output[i] + (delta > step ? step : -step);
+                    limited.clipped[i] = true;
                 }
             }
-            return (m_prev_output + delta.cwiseMax(lo).cwiseMin(hi)).eval();
         }
-        return u_raw;
+        return limited;
     }
 
-    void apply_anti_windup(const vector_t& u_sat, const vector_t& u_unconstrained, const vector_t& e, const vector_t& integral_increment, Scalar dt)
+    void apply_anti_windup(const vector_t& u_sat, const vector_t& u_unconstrained, const mask_t& constrained, const vector_t& e, const vector_t& integral_increment, Scalar dt)
     {
+        if(m_integral_frozen)
+            return;
         if constexpr(detail::has_policy_v<anti_windup, Policies...>)
         {
             using AW = detail::find_policy_t<anti_windup, Policies...>;
             if constexpr(std::is_same_v<AW, anti_windup<back_calc>>)
                 apply_back_calculation(u_sat, u_unconstrained, dt);
             else if constexpr(std::is_same_v<AW, anti_windup<clamping>>)
-                apply_clamping(u_sat, u_unconstrained, e, integral_increment);
+                apply_clamping(constrained, e, integral_increment);
             else if constexpr(std::is_same_v<AW, anti_windup<conditional_integration>>)
                 apply_conditional_integration(e, integral_increment);
         }
@@ -643,13 +649,13 @@ private:
         m_integral = (m_integral + feedback * dt).eval();
     }
 
-    void apply_clamping(const vector_t& u_sat, const vector_t& u_unconstrained, const vector_t& e, const vector_t& integral_increment)
+    void apply_clamping(const mask_t& constrained, const vector_t& e, const vector_t& integral_increment)
     {
         // Gate the integral undo per channel on that channel's own constraint
-        // (applied output differs from the unconstrained command), so a
+        // (the rate limiter clipped it or the output clamp saturated it), so a
         // saturated channel does not freeze an unsaturated one.
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-            if(u_sat[i] != u_unconstrained[i]
+            if(constrained[i]
                 && ((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0})))
                 m_integral[i] -= integral_increment[i];
     }

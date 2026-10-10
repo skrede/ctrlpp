@@ -7,8 +7,11 @@
 
 #include <cmath>
 #include <limits>
+#include <random>
+#include <cstdint>
 #include <utility>
 #include <algorithm>
+#include <type_traits>
 
 using Catch::Matchers::WithinAbs;
 
@@ -62,6 +65,76 @@ auto back_calc_refusal(Scalar kp, Scalar ki, Scalar kd) -> ctrlpp::pid_config_er
     const auto created = AwPid::create(cfg);
     REQUIRE_FALSE(created.has_value());
     return created.error();
+}
+
+template <typename Scalar, typename AW, typename Config>
+void configure_anti_windup(Config& cfg)
+{
+    using vector_t = ctrlpp::Vector<Scalar, 1>;
+    cfg.kp = vector_t::Constant(Scalar{1});
+    cfg.ki = vector_t::Constant(Scalar{1} / Scalar{2});
+    if constexpr(std::is_same_v<AW, ctrlpp::anti_windup<ctrlpp::back_calc>>)
+        cfg.template policy<AW>().kb = {Scalar{1}};
+    if constexpr(std::is_same_v<AW, ctrlpp::anti_windup<ctrlpp::conditional_integration>>)
+        cfg.template policy<AW>().error_threshold = {Scalar{2}};
+}
+
+struct trajectory_mismatch
+{
+    std::int32_t cycles;
+    std::int32_t first;
+};
+
+// Drives a controller with a rate limiter and its twin without one through the same random setpoints,
+// which cross zero so that p + (u - p) is inexact on many cycles.
+template <typename Scalar, typename AW>
+auto rate_limited_mismatch(Scalar rate_max) -> trajectory_mismatch
+{
+    using Limited = ctrlpp::pid<Scalar, 1, ctrlpp::rate_limit, AW>;
+    using Plain = ctrlpp::pid<Scalar, 1, AW>;
+    using vector_t = typename Plain::vector_t;
+    typename Limited::config_type limited_cfg{};
+    typename Plain::config_type plain_cfg{};
+    configure_anti_windup<Scalar, AW>(limited_cfg);
+    configure_anti_windup<Scalar, AW>(plain_cfg);
+    limited_cfg.template policy<ctrlpp::rate_limit>().rate_max = {rate_max};
+    auto limited = ctrlpp::test::constructed(Limited::create(limited_cfg));
+    auto plain = ctrlpp::test::constructed(Plain::create(plain_cfg));
+    std::mt19937 rng{std::mt19937::default_seed};
+    std::uniform_real_distribution<Scalar> sp_dist{Scalar{-1}, Scalar{1}};
+    std::uniform_real_distribution<Scalar> meas_dist{Scalar{-1} / Scalar{10}, Scalar{1} / Scalar{10}};
+    const Scalar dt = Scalar{1} / Scalar{100};
+    trajectory_mismatch mismatch{0, -1};
+    for(std::int32_t k = 0; k < 20000; ++k)
+    {
+        const vector_t sp = vector_t::Constant(sp_dist(rng));
+        const vector_t meas = vector_t::Constant(meas_dist(rng));
+        const auto u_limited = ctrlpp::test::commanded(limited.compute(sp, meas, dt));
+        const auto u_plain = ctrlpp::test::commanded(plain.compute(sp, meas, dt));
+        if(u_limited[0] == u_plain[0] && limited.integral()[0] == plain.integral()[0])
+            continue;
+        mismatch.first = mismatch.cycles == 0 ? k : mismatch.first;
+        ++mismatch.cycles;
+    }
+    return mismatch;
+}
+
+// The frozen cycle's unconstrained command, kp*1 plus the seeded integrator 1/2, saturates at output_max = 1/2.
+template <typename Scalar, typename AW>
+auto frozen_through_saturation() -> ctrlpp::pid<Scalar, 1, AW>
+{
+    using AwPid = ctrlpp::pid<Scalar, 1, AW>;
+    using vector_t = typename AwPid::vector_t;
+    typename AwPid::config_type cfg{};
+    configure_anti_windup<Scalar, AW>(cfg);
+    cfg.ki = vector_t::Constant(Scalar{1});
+    cfg.output_max = vector_t::Constant(Scalar{1} / Scalar{2});
+    auto controller = ctrlpp::test::constructed(AwPid::create(cfg));
+    REQUIRE(controller.set_integral(vector_t::Constant(Scalar{1} / Scalar{2})).has_value());
+    controller.freeze_integral(true);
+    const auto u = ctrlpp::test::commanded(controller.compute(vector_t::Constant(Scalar{1}), vector_t::Zero(), Scalar{1} / Scalar{100}));
+    REQUIRE(u[0] == Scalar{1} / Scalar{2});
+    return controller;
 }
 
 }
@@ -251,6 +324,68 @@ TEST_CASE("back_calc anti-windup limits windup during a rate-limited ramp",
     // the integral would wind up to ki*e*dt*steps = 100. The rate-aware feedback keeps it
     // bounded.
     REQUIRE(pid.integral()[0] < 50.0);
+}
+
+// rate_max = 1e6 cannot bind: with |sp| <= 1, |meas| <= 1/10 and no saturation, consecutive commands differ by
+// at most kp*(2 + 2/10) in the proportional term plus one increment ki*(11/10)*dt, about 2.21, against a
+// per-cycle bound rate_max*dt = 1e4.
+TEMPLATE_TEST_CASE("an idle rate limiter leaves the command and the integrator bitwise unchanged",
+    "[pid][siso][anti-windup][rate-limit]", float, double)
+{
+    using Scalar = TestType;
+    const Scalar idle = static_cast<Scalar>(1e6);
+
+    SECTION("clamping")
+    {
+        const auto mismatch = rate_limited_mismatch<Scalar, ctrlpp::anti_windup<ctrlpp::clamping>>(idle);
+        CAPTURE(mismatch.first);
+        REQUIRE(mismatch.cycles == 0);
+    }
+
+    SECTION("back_calc")
+    {
+        const auto mismatch = rate_limited_mismatch<Scalar, ctrlpp::anti_windup<ctrlpp::back_calc>>(idle);
+        CAPTURE(mismatch.first);
+        REQUIRE(mismatch.cycles == 0);
+    }
+
+    SECTION("a binding rate limit changes the trajectory")
+    {
+        const Scalar binding = Scalar{10};
+        REQUIRE(rate_limited_mismatch<Scalar, ctrlpp::anti_windup<ctrlpp::clamping>>(binding).cycles > 0);
+        REQUIRE(rate_limited_mismatch<Scalar, ctrlpp::anti_windup<ctrlpp::back_calc>>(binding).cycles > 0);
+    }
+}
+
+TEMPLATE_TEST_CASE("a frozen integrator holds through saturation under every anti-windup strategy",
+    "[pid][siso][anti-windup][freeze]", float, double)
+{
+    using Scalar = TestType;
+    const Scalar half = Scalar{1} / Scalar{2};
+
+    SECTION("back_calc holds while frozen and resumes on unfreeze")
+    {
+        auto controller = frozen_through_saturation<Scalar, ctrlpp::anti_windup<ctrlpp::back_calc>>();
+        REQUIRE(controller.integral()[0] == half);
+
+        controller.freeze_integral(false);
+        const Scalar kp = 1, ki = 1, kb = 1, e = 1, dt = Scalar{1} / Scalar{100};
+        const auto u = ctrlpp::test::commanded(controller.compute(ctrlpp::Vector<Scalar, 1>::Constant(e), ctrlpp::Vector<Scalar, 1>::Zero(), dt));
+        const Scalar integrated = half + ki * e * dt;
+        const Scalar u_unconstrained = kp * e + integrated;
+        REQUIRE(u[0] == half);
+        REQUIRE(controller.integral()[0] == integrated + kb * (half - u_unconstrained) * dt);
+    }
+
+    SECTION("clamping")
+    {
+        REQUIRE(frozen_through_saturation<Scalar, ctrlpp::anti_windup<ctrlpp::clamping>>().integral()[0] == half);
+    }
+
+    SECTION("conditional_integration")
+    {
+        REQUIRE(frozen_through_saturation<Scalar, ctrlpp::anti_windup<ctrlpp::conditional_integration>>().integral()[0] == half);
+    }
 }
 
 TEST_CASE("clamping anti-windup freezes integral during saturation",

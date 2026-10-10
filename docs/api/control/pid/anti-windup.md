@@ -50,6 +50,10 @@ No additional config fields. The integrator is simply frozen when the output is 
 - **clamping**: The integrator is held whenever the applied output is constrained and the error would increase the constraint. The decision is made per channel, so saturation in one channel of a MIMO controller does not freeze the integrators of unsaturated channels. Simple and robust.
 - **conditional_integration**: Integration is paused entirely when the error magnitude exceeds `error_threshold`. Useful for large setpoint changes where integration during the transient would cause overshoot.
 
+A channel counts as constrained when the rate limiter clipped it or the output clamp saturated it. The verdict comes from the limiter and the clamp themselves, never from comparing the applied output with the unconstrained command, so a composed rate limiter that does not clip leaves anti-windup exactly as it is without one.
+
+While `freeze_integral` holds the integrator, no strategy changes it, back-calculation included: a frozen integrator cannot wind up, so the explicit hold takes precedence. Back-calculation resumes on the first cycle after the integrator is unfrozen.
+
 ## Usage Example
 
 ```cpp

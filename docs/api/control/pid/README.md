@@ -212,7 +212,7 @@ Resets all internal state (integral, previous error, filter states, performance 
 void freeze_integral(bool freeze = true);
 ```
 
-Freezes or unfreezes the integral accumulator. While frozen, the integral term does not change.
+Freezes or unfreezes the integral accumulator. While frozen, the integral term does not change, including through back-calculation anti-windup, which resumes once the accumulator is unfrozen.
 
 ### set_integral
 
