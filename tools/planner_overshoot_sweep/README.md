@@ -204,9 +204,17 @@ configuration measurements and the totals without the per-point lines.
 
 **Where the boundaries this program locates were located.** A crossing that
 moves with instruction selection is a crossing that has to name the
-toolchain it was found on. The report was taken from eight builds on x86-64
-Linux against Eigen 3.4.1 and came out byte-identical from all of them:
-g++ 16.2.1 at -O0, -O2 and -O3, and at -O2 with -ffp-contract=off and with
+toolchain it was found on. The full report, the agreement, limit and
+phase-switch legs alike, was taken from eight builds on x86-64 Linux against
+Eigen 3.4.1, each with -Werror and without a warning, and came out
+byte-identical from all of them, in summary and in full mode: g++ 16.2.1 at
+-O0, -O2 and -O3, and at -O2 with -ffp-contract=off and with
 -ffp-contract=fast; clang 23.1.1 at -O2 with and without -ffp-contract=fast;
-and clang 18.1.8 at -O2 against libstdc++ 15.3.0. Eigen takes no part in
-any verdict -- neither planner nor the double-S constructor forms a matrix.
+and clang 18.1.8 at -O2 against libstdc++ 15.3.0. On every build every
+zero claim reads zero: the disagreeing totals, the shape refusals and
+substitutions at or above a located boundary, the precondition violations,
+the windows missing their switch, every sample above a limit and every jerk
+pair above its allowance. The third-order count of windows not located is
+reported, not claimed zero, and reads 9 in double and 5 in float. Eigen
+takes no part in any verdict, since neither planner nor any shape
+constructor forms a matrix.
