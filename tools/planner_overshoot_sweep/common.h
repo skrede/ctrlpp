@@ -98,6 +98,7 @@ inline auto error_name(trajectory_error error) -> char const*
         return "boundary_velocity_rounding_ops_out_of_range";
     case trajectory_error::unrepresentable_duration:        return "unrepresentable_duration";
     case trajectory_error::unreachable_boundary_velocity:   return "unreachable_boundary_velocity";
+    case trajectory_error::acceleration_limit_infeasible:   return "acceleration_limit_infeasible";
     case trajectory_error::duration_shorter_than_current:   return "duration_shorter_than_current";
     case trajectory_error::unreachable_duration:            return "unreachable_duration";
     }

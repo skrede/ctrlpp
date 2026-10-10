@@ -154,8 +154,16 @@ The populations aim at those regimes rather than at fixed fractions.
 
   * Trapezoidal: the eight limit sets, both directions, seven fixed and 512
     seeded pairs of boundary fractions in [-1, 1) over a seeded displacement.
-    Every profile is also rescaled to 1.5 and 3 times its duration where
-    can_rescale_to allows it.
+    Each command whose boundary velocities sweep positive ground,
+    (v_hi - v_lo)(v_hi + v_lo) / (2 a_max) in the positive frame, adds two
+    more at 1/2 and 2^-20 of that ground, which are realizable only above
+    a_max. Every command is built under raise_to_feasible, so those are
+    measured as raised profiles, and again under the default refuse policy:
+    the default must refuse with acceleration_limit_infeasible exactly the
+    commands raise_to_feasible builds above a_max, and return the identical
+    outcome on every other. The block reports both counts. Every profile is
+    also rescaled to 1.5 and 3 times its duration where can_rescale_to
+    allows it.
   * Double-S: the same pairs over a displacement that admits both cruise and
     no-cruise shapes. It adds long profiles of about 2^m seconds, for three m
     taken from the type's significand width, with a jerk phase of 1/4 to 2

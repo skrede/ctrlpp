@@ -253,7 +253,7 @@ manifest=(
     # loses the substitution silently.
     "lib/ctrlpp/include/ctrlpp/trajectory/online_planner_diagnostics.h|struct [[nodiscard]] online_planner_diagnostics"
     # What the trapezoidal profile realized against what it was commanded, when
-    # boundary velocities force the acceleration up. Same reason.
+    # raise_to_feasible lets boundary velocities force the acceleration up. Same reason.
     "lib/ctrlpp/include/ctrlpp/trajectory/trapezoidal_trajectory.h|struct [[nodiscard]] trapezoidal_disposition"
 )
 

@@ -34,6 +34,8 @@ inline const char *describe(trajectory_error e)
             return "duration is not representable";
         case trajectory_error::unreachable_boundary_velocity:
             return "boundary velocity is unreachable";
+        case trajectory_error::acceleration_limit_infeasible:
+            return "command needs more than the acceleration limit";
         case trajectory_error::duration_shorter_than_current:
             return "duration is shorter than the current one";
         case trajectory_error::unreachable_duration:

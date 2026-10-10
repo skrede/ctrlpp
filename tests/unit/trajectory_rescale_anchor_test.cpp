@@ -1109,7 +1109,8 @@ void sweep_branch_scaling(branch_case const& drawn, branch_tally& tally)
         .v_max = static_cast<Scalar>(drawn.v_max),
         .a_max = static_cast<Scalar>(drawn.a_max),
         .v0 = static_cast<Scalar>(drawn.v0),
-        .v1 = static_cast<Scalar>(drawn.v1)};
+        .v1 = static_cast<Scalar>(drawn.v1),
+        .acceleration_policy = acceleration_limit_policy::raise_to_feasible};
 
     auto built = trapezoidal_trajectory<Scalar>::create(tcfg);
     if(!built.has_value())
@@ -1968,7 +1969,8 @@ TEST_CASE("trapezoidal retiming rejects a valley request whose governing residua
                                                          .v_max = 0.9999999999999996,
                                                          .a_max = 1e-6,
                                                          .v0 = 0.9999999999999994,
-                                                         .v1 = 0.9999999050046706});
+                                                         .v1 = 0.9999999050046706,
+                                                         .acceleration_policy = acceleration_limit_policy::raise_to_feasible});
     REQUIRE(built.has_value());
     auto profile = built.value();
 

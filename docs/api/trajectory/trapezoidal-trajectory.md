@@ -1,10 +1,10 @@
 # trapezoidal_trajectory
 
-Trapezoidal velocity profile (LSPB) with three phases: acceleration, cruise, deceleration. Solves phase durations from kinematic limits `v_max` and `a_max`. Handles the triangular degenerate case when displacement is too short for full cruise phase, and non-null initial/final velocities with feasibility adjustment.
+Trapezoidal velocity profile (LSPB) with three phases: acceleration, cruise, deceleration. Solves phase durations from kinematic limits `v_max` and `a_max`. Handles the triangular degenerate case when displacement is too short for full cruise phase, and non-null initial/final velocities, refusing by default a command they make feasible only above `a_max`.
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/trajectory/trapezoidal_trajectory.h` |
+| **Header** | `ctrlpp/trajectory/trapezoidal_trajectory.h` (also declares `acceleration_limit_policy` and `trapezoidal_disposition`) |
 
 ## Template Parameters
 
@@ -22,6 +22,7 @@ struct config {
     Scalar v_max, a_max;   // kinematic limits
     Scalar v0{}, v1{};     // initial/final velocities (default 0)
     std::uint32_t boundary_velocity_rounding_ops{}; // admitted excess of v0, v1 over v_max, in units of eps * v_max; default 0, at most 1 / eps
+    acceleration_limit_policy acceleration_policy{acceleration_limit_policy::refuse}; // what to do when v0, v1 need more than a_max
 };
 ```
 
@@ -42,11 +43,21 @@ if (!profile) {
 
 Construction solves phase durations from the kinematic constraints. Negative displacement is handled via sigma transformation. When `v_max` cannot be reached, the profile degenerates to a triangular shape with `v_peak = sqrt((2*a*h + v0^2 + v1^2) / 2)`; that is one of the shapes this family covers and is reported by `is_triangular()`, not a rejection.
 
-When the two boundary velocities are not feasible over the commanded displacement at the commanded acceleration (see Realizability below for the exact test), the acceleration is raised to the smallest value that makes them feasible together (B&M eq. (3.15)). That raise is a division by the commanded displacement, so it has no representable answer once the displacement is small enough, and none at all when it is zero.
+When the two boundary velocities are not feasible over the commanded displacement at the commanded acceleration (see Realizability below for the exact test), they are feasible at the smallest larger acceleration given by B&M eq. (3.15). That value is a division by the commanded displacement, so it has no representable answer once the displacement is small enough, and none at all when it is zero; such a command is `unreachable_boundary_velocity` under either policy below.
 
-## The acceleration raise is a disposition, not a rejection
+## The acceleration limit policy
 
-A raised acceleration is a **success whose realized limit differs from the commanded one**, and it is reported through `disposition()` rather than through the failure channel.
+```cpp
+enum class acceleration_limit_policy
+{
+    refuse,             // default
+    raise_to_feasible,
+};
+```
+
+An acceleration limit the caller states is a bound, so by default `create` honors it. A command that is realizable only at an acceleration above `a_max` is refused with `trajectory_error::acceleration_limit_infeasible`. That is a different answer from `unreachable_boundary_velocity`, which no acceleration realizes: here a larger `a_max`, or the opt-in below, builds the command.
+
+With `.acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible`, the limit is raised to the eq. (3.15) value and the profile is built at it. The profile is correct and respects the raised limit in every phase, and the raise is reported through `disposition()`:
 
 ```cpp
 template <typename Scalar>
@@ -58,19 +69,22 @@ struct trapezoidal_disposition
 ```
 
 ```cpp
-auto const& d = traj.disposition();
-if(d.realized_acceleration > d.commanded_acceleration)
+auto cfg = ctrlpp::trapezoidal_trajectory<double>::config{
+    .q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 1.0, .v0 = 0.0, .v1 = 3.0,
+    .acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible};
+auto const profile = ctrlpp::trapezoidal_trajectory<double>::create(cfg);
+if(profile && profile->disposition().realized_acceleration > profile->disposition().commanded_acceleration)
 {
-    // the profile is valid and respects d.realized_acceleration in every
+    // the profile is valid and respects realized_acceleration in every
     // phase; it does NOT respect the limit that was commanded
 }
 ```
 
-The profile that comes back is correct and limit-respecting **under the realized limit**, and it is the profile the command asks for at the only acceleration that can deliver it. So it is not a failure, and it does not become one: forcing a caller to handle a non-failure through the failure path teaches the caller that the failure path is usually noise.
+The commanded and realized values are carried rather than a flag, so a supervisory layer can compare the two and act. `realized_acceleration == commanded_acceleration` exactly when nothing was raised, which is every successful profile under `refuse`.
 
-It is not a flag either. A supervisory layer that learns only that something was substituted cannot decide anything with it; the commanded and realized values are what let a caller whose acceleration limit is physical rather than advisory compare the two and act. `realized_acceleration == commanded_acceleration` exactly when nothing was raised.
+The refusal is the last check `create` makes, after the realized phase durations have been checked. So `refuse` returns `acceleration_limit_infeasible` exactly where `raise_to_feasible` would return a profile whose realized acceleration exceeds `a_max`, and every other outcome, success or rejection, is the same under both policies.
 
-The disposition is fixed when the profile is built and is never recomputed: the raise is decided once, and `rescale_to` holds the acceleration magnitude fixed by construction. No enumerator was added to `trajectory_error` for it.
+The disposition is fixed when the profile is built and is never recomputed: the raise is decided once, and `rescale_to` holds the acceleration magnitude fixed by construction.
 
 ## Rejections
 
@@ -86,6 +100,7 @@ Checked in order:
 | a displacement the two boundary velocities cannot be reconciled with at a representable acceleration | `trajectory_error::unreachable_boundary_velocity` |
 | a negative phase duration or total duration | `trajectory_error::unreachable_boundary_velocity` |
 | a duration outside the representable range, or a total that underflowed to zero on a nonzero displacement or velocity change | `trajectory_error::unrepresentable_duration` |
+| under `acceleration_limit_policy::refuse` (the default), a command the checks above admit only at an acceleration above `a_max` | `trajectory_error::acceleration_limit_infeasible` |
 
 ### The velocity limit is a precondition
 
@@ -101,9 +116,9 @@ A command short of a positive ground is not realizable within this shape at any 
 
 Three kinds of zero-displacement command are realizable and are not rejected: equal boundary velocities, where there is no speed change to cover; opposed boundary velocities of equal magnitude, where the ramp between them sweeps exactly zero ground; and boundary velocities summing to a negative value, where the axis reverses through zero and returns. A zero displacement takes the positive frame, so its verdict is the limit of a vanishing positive displacement: `(v0, v1) = (-0.5, 0)` is realized, and its mirror `(0.5, 0)` is not.
 
-The feasibility test is not trusted where its own arithmetic underflows. Below the square root of the smallest normal value the boundary velocities square into the subnormal range, and below the square root of the smallest subnormal they square to exactly zero, so the product form of eq. (3.14) can read as satisfied on a command that does not satisfy it. Above the square root of the largest finite value the mirror failure occurs: both sides of the product form overflow and the test compares infinity with infinity. Wherever half the difference of the squares is subnormal or not finite, the acceleration the command requires is formed instead as one scaled quotient, with fractions and exponents carried apart, and compared with the commanded one, so such a command is raised, or refused when the raise is not representable or the displacement is zero, exactly as it would be at any other scale.
+The feasibility test is not trusted where its own arithmetic underflows. Below the square root of the smallest normal value the boundary velocities square into the subnormal range, and below the square root of the smallest subnormal they square to exactly zero, so the product form of eq. (3.14) can read as satisfied on a command that does not satisfy it. Above the square root of the largest finite value the mirror failure occurs: both sides of the product form overflow and the test compares infinity with infinity. Wherever half the difference of the squares is subnormal or not finite, the acceleration the command requires is formed instead as one scaled quotient, with fractions and exponents carried apart, and compared with the commanded one, so such a command needs a raise (refused under the default policy, raised under `raise_to_feasible`), or is unreachable when the raise is not representable or the displacement is zero, exactly as it would be at any other scale.
 
-The triangular ramps are computed in the rationalized form `(h + (v_to^2 - v_from^2) / (2a)) / (v_peak + v_from)` whenever the boundary velocity they leave from is positive, rather than as `(v_peak - v_from) / a`. The peak is a rounded result, and when it lies within a few units in the last place of the boundary velocity the difference cancels catastrophically: at `q1 = v0 = v1 = 1e200` with `a_max = 1` and `v_max = 2e200` the analytic profile is a triangle of duration 1, while the difference form yields either a refusal or a duration of the order of one unit in the last place of `v0` (about 1e184 s here), depending on which way the standard library's `hypot` rounds. On the boundary where eq. (3.15) raises the acceleration, the rationalized ramp is exactly zero and is computed as a residual within four roundings of it, which is read as that zero. The peak itself switches to a scaled `hypot` form below the smallest normal radicand as well as above the largest finite one.
+The triangular ramps are computed in the rationalized form `(h + (v_to^2 - v_from^2) / (2a)) / (v_peak + v_from)` whenever the boundary velocity they leave from is positive, rather than as `(v_peak - v_from) / a`. The peak is a rounded result, and when it lies within a few units in the last place of the boundary velocity the difference cancels catastrophically: at `q1 = v0 = v1 = 1e200` with `a_max = 1` and `v_max = 2e200` the analytic profile is a triangle of duration 1, while the difference form yields either a refusal or a duration of the order of one unit in the last place of `v0` (about 1e184 s here), depending on which way the standard library's `hypot` rounds. On the boundary where eq. (3.15) places a raised acceleration, the rationalized ramp is exactly zero and is computed as a residual within four roundings of it, which is read as that zero. The peak itself switches to a scaled `hypot` form below the smallest normal radicand as well as above the largest finite one.
 
 The realized phase durations are still checked directly rather than inferred from the test that is supposed to guarantee them: a negative one is reported as `unreachable_boundary_velocity`, because `evaluate` clamps into `[0, T]`, where a lower bound above the upper one is undefined behavior rather than an odd clamp. Checking the durations themselves keeps that guarantee independent of the test's own rounding, without introducing a constant of its own.
 
@@ -123,7 +138,7 @@ The realized phase durations are still checked directly rather than inferred fro
 
 `evaluate` forms each ramp sample from whichever of the ramp's two exact end states is nearer in time, so no sample rounds past either end velocity, and none exceeds `v_max`. `evaluate(duration())` returns `q1`, `v1` and the acceleration of the last phase the profile runs.
 
-This is measured in `double` and in `float` by sampling every representable instant within 64 steps of each phase switch. The boundary velocities are a few fixed fractions of `v_max` and seeded values over `[-v_max, v_max)`, in both directions of travel: 8,305 commands in `double` and 8,304 in `float`. Each is also rescaled to longer durations where `can_rescale_to` allows it, adding 16,610 and 16,608 rescaled profiles. Over 8,044,457 sampled instants in `double` and 8,042,188 in `float`, zero samples exceed `v_max`, and zero exceed the acceleration the profile reports. The output is byte-identical from eight builds on x86-64 Linux: g++ 16.2.1 at `-O0`, `-O2` and `-O3`, and at `-O2` with `-ffp-contract=off` and with `-ffp-contract=fast`; clang 23.1.1 at `-O2` with and without `-ffp-contract=fast`; and clang 18.1.8 at `-O2` against libstdc++ 15.3.0.
+This is measured in `double` and in `float` by sampling every representable instant within 64 steps of each phase switch. The boundary velocities are a few fixed fractions of `v_max` and seeded values over `[-v_max, v_max)`, in both directions of travel: 8,305 commands in `double` and 8,304 in `float`. Each command whose boundary velocities sweep positive ground adds two more at a half and at 2^-20 of that ground, which are realizable only above `a_max`: 8,398 in `double` and 8,590 in `float`. Every command is built under `raise_to_feasible`, so those are measured as raised profiles, and again under the default, which refuses every one of them with `acceleration_limit_infeasible` and returns the identical outcome on every other command. Each profile is also rescaled to longer durations where `can_rescale_to` allows it, adding 17,070 and 17,138 rescaled profiles. Over 9,057,580 sampled instants in `double` and 9,119,135 in `float`, zero samples exceed `v_max`, and zero exceed the acceleration the profile reports. The output is byte-identical from eight builds on x86-64 Linux: g++ 16.2.1 at `-O0`, `-O2` and `-O3`, and at `-O2` with `-ffp-contract=off` and with `-ffp-contract=fast`; clang 23.1.1 at `-O2` with and without `-ffp-contract=fast`; and clang 18.1.8 at `-O2` against libstdc++ 15.3.0.
 
 ## Time Rescaling
 
@@ -175,7 +190,7 @@ The last two are kept apart on purpose, because they tell the caller to change d
 
 Four forward conditions on the inputs decide the second, and all are stated against the inputs rather than by comparing a realized duration back against the request. No tolerance anywhere in the library compares the two.
 
-- **The ramp residual must be resolved.** The residual is the commanded displacement less the distance the two ramps sweep between the boundary velocities. It collapses whenever the constructor had to raise the acceleration to make the boundary velocities feasible, because that raised value is defined by making those two equal. Both solved branches are governed by it: the plateau's whole admissible velocity range and the valley's whole admissible duration window are functions of it alone. Its floor is six chained rounding operations, at the scale of the largest operand that entered.
+- **The ramp residual must be resolved.** The residual is the commanded displacement less the distance the two ramps sweep between the boundary velocities. It collapses whenever the profile was built at a raised acceleration under `raise_to_feasible`, because that raised value is defined by making those two equal. Both solved branches are governed by it: the plateau's whole admissible velocity range and the valley's whole admissible duration window are functions of it alone. Its floor is six chained rounding operations, at the scale of the largest operand that entered.
 - **The increment or decrement against the boundary duration must be resolved.** That boundary duration is itself accurate only to some units in the last place, and the difference measured against it inherits that error. Its floor is fifteen chained rounding operations, at the scale of the largest operand that entered the boundary duration rather than at the scale of the duration alone.
 - **The plateau's linear coefficient must be resolved.** That coefficient is the residual over the larger boundary velocity less the duration decrement, a difference where the valley's mirror is a sum. Both of its terms grow without bound as that boundary velocity vanishes against the commanded displacement, and deep in the plateau they agree to the full width of the significand. Its floor is twenty-three chained rounding operations, at the larger of the two terms' own scales. Only a coefficient that cannot be told apart from zero is reported here; one that is decisively negative means no such shape exists and is reported as unreachable.
 - **The discriminant must be representable.** A squared linear coefficient leaves the finite range on a long move at a small cruise velocity, well before anything about the request is unreasonable. An infinite discriminant drives the root selection's denominator to infinity and its root to zero, which yields a cruise velocity sitting exactly on the shape boundary -- inside its own validity interval, with every phase duration nonnegative, and realizing the boundary's duration for a request that asked for something else.

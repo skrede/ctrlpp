@@ -31,21 +31,23 @@
 namespace ctrlpp
 {
 
+/// @brief What `trapezoidal_trajectory::create` does with a command whose
+/// boundary velocities are feasible over its displacement only at an
+/// acceleration above the commanded limit: refuse it with
+/// trajectory_error::acceleration_limit_infeasible, or raise the limit to the
+/// smallest feasible value (B&M eq. (3.15)) and report both on the disposition.
+enum class acceleration_limit_policy
+{
+    refuse,
+    raise_to_feasible,
+};
+
 /// @brief Disposition of a constructed trapezoidal profile: the acceleration
 /// limit the caller commanded, against the one the profile realizes.
 ///
-/// This is a report on a SUCCESSFUL construction, not a failure. Where the two
-/// boundary velocities cannot be reconciled over the commanded displacement at
-/// the commanded limit, the construction raises the limit to the smallest value
-/// that makes them feasible together (B&M eq. (3.15)) and builds a profile that
-/// is correct and limit-respecting under the RAISED value. A caller whose
-/// acceleration limit is physical rather than advisory reads these two fields
-/// and decides what to do; a caller for whom it was advisory ignores them.
-///
-/// The two accelerations are carried rather than a flag, because a supervisory
-/// layer that learns only that something was substituted cannot decide
-/// anything with it. `realized_acceleration` equals `commanded_acceleration`
-/// exactly when nothing was raised.
+/// The two differ only under acceleration_limit_policy::raise_to_feasible, and
+/// are carried rather than a flag so a supervisory layer can compare them.
+/// They are equal exactly when nothing was raised.
 ///
 /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
 template <typename Scalar>
@@ -82,6 +84,7 @@ class trapezoidal_trajectory
         Scalar v_max, a_max;
         Scalar v0{}, v1{};
         std::uint32_t boundary_velocity_rounding_ops{};
+        acceleration_limit_policy acceleration_policy{acceleration_limit_policy::refuse};
     };
 
     /// @brief Construct a profile, or report why the command has none.
@@ -107,6 +110,9 @@ class trapezoidal_trajectory
     ///    underflowed to zero on a nonzero commanded displacement or velocity
     ///    change ->
     ///    trajectory_error::unrepresentable_duration
+    ///  * under acceleration_limit_policy::refuse, the default, a command the
+    ///    checks above admit only at an acceleration above `a_max` ->
+    ///    trajectory_error::acceleration_limit_infeasible
     ///
     /// The velocity limit is a PRECONDITION on the boundary velocities, not a
     /// bound the construction raises to accommodate them. Raising it would
@@ -121,34 +127,26 @@ class trapezoidal_trajectory
     /// `+-v_max`, which is the value the profile stores and `evaluate` reports.
     /// The default 0 is the exact contract.
     ///
-    /// One outcome deliberately does NOT appear in that list. Where the two
-    /// boundary velocities cannot be reconciled over the commanded displacement
-    /// at the commanded acceleration limit, the construction raises the limit to
-    /// the smallest value that makes them feasible together (eq. (3.15)) and
-    /// succeeds. That is a SUCCESS whose realized limit differs from the
-    /// commanded one, not a failure: the profile that comes back is correct and
-    /// respects the raised limit in every phase, and it is the profile the
-    /// command asks for at the only acceleration that can deliver it. It is
-    /// reported on the disposition channel -- `disposition()` carries the
-    /// commanded and the realized acceleration -- so a caller whose limit is
-    /// physical rather than advisory can compare them and decide, and no caller
-    /// is made to handle a non-failure through the failure path.
+    /// By default the acceleration limit is honored like the velocity limit.
+    /// The refusal is the last check, so it is returned exactly where
+    /// raise_to_feasible would build a profile above the limit; under
+    /// raise_to_feasible the limit is raised to the smallest value that makes
+    /// the command feasible (eq. (3.15)) and `disposition()` reports both.
     ///
-    /// The last two checks are one guard against two spellings of the same
-    /// failure. Both ramps of a three-phase profile run toward one cruise
-    /// velocity lying at or above each boundary velocity, so the profile sweeps
-    /// at least the signed ground the transition between those two velocities
-    /// already sweeps. B&M's remedy for a shorter command is to raise the
-    /// acceleration to the smallest value that makes the two feasible together,
-    /// eq. (3.15); where that ground is positive, no acceleration is large
-    /// enough at a zero commanded displacement, and just above zero the value
-    /// the remedy asks for is no longer representable. Where half the
-    /// difference of the squared boundary velocities underflows or overflows,
-    /// the product form of eq. (3.14) reads as satisfied on commands that do not
-    /// satisfy it, so the test runs there on the required acceleration formed
-    /// in scaled arithmetic. The realized durations are still checked directly
-    /// rather than inferred from the test, which keeps the guarantee independent
-    /// of the test's own rounding.
+    /// The two unreachable_boundary_velocity checks are one guard against two
+    /// spellings of the same failure. Both ramps of a three-phase profile run
+    /// toward one cruise velocity lying at or above each boundary velocity, so the
+    /// profile sweeps at least the signed ground the transition between those two
+    /// velocities already sweeps. B&M's remedy for a shorter command is to raise
+    /// the acceleration to the smallest value that makes the two feasible together,
+    /// eq. (3.15); where that ground is positive, no acceleration is large enough
+    /// at a zero commanded displacement, and just above zero the value the remedy
+    /// asks for is no longer representable. Where half the difference of the
+    /// squared boundary velocities underflows or overflows, the product form of
+    /// eq. (3.14) reads as satisfied on commands that do not satisfy it, so the
+    /// test runs there on the required acceleration formed in scaled arithmetic.
+    /// The realized durations are still checked directly rather than inferred from
+    /// the test, which keeps the guarantee independent of the test's own rounding.
     ///
     /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
     static auto create(config const& requested)
@@ -168,36 +166,10 @@ class trapezoidal_trajectory
         if (!admitted.has_value()) {
             return ctrlpp::unexpected(admitted.error());
         }
-        auto const& cfg = *admitted;
-        if (!std::isfinite(solve_acceleration(cfg))) {
+        if (!std::isfinite(solve_acceleration(*admitted))) {
             return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
         }
-
-        trapezoidal_trajectory profile{unchecked_t{}, cfg};
-
-        for (auto const phase : profile.phase_durations()) {
-            if (phase < Scalar{0}) {
-                return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
-            }
-            if (!std::isfinite(phase)) {
-                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
-            }
-        }
-        if (profile.T_ < Scalar{0}) {
-            return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
-        }
-        if (!std::isfinite(profile.T_)) {
-            return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
-        }
-        // A nonzero commanded displacement is not traversed in zero time at any
-        // finite velocity, nor a velocity change made at any finite
-        // acceleration, so a total duration that underflowed to zero under
-        // either describes no motion the command asked for. The predicate is
-        // the physical statement itself and carries no threshold.
-        if ((cfg.q1 != cfg.q0 || cfg.v0 != cfg.v1) && !(profile.T_ > Scalar{0})) {
-            return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
-        }
-        return profile;
+        return checked(trapezoidal_trajectory{unchecked_t{}, *admitted}, *admitted);
     }
 
     /// @brief Evaluate trajectory at time t, clamped to [0, T].
@@ -591,6 +563,30 @@ class trapezoidal_trajectory
         T_ = T_a_ + T_v_ + T_d_;
         v0_ = sv0;
         v1_ = sv1;
+    }
+
+    /// @brief The realized durations, checked directly rather than inferred from
+    /// the feasibility test, then the acceleration policy.
+    static auto checked(trapezoidal_trajectory const& profile, config const& cfg)
+        -> ctrlpp::expected<trapezoidal_trajectory, trajectory_error>
+    {
+        for (auto const span : std::array{profile.T_a_, profile.T_v_, profile.T_d_, profile.T_}) {
+            if (span < Scalar{0}) {
+                return ctrlpp::unexpected(trajectory_error::unreachable_boundary_velocity);
+            }
+            if (!std::isfinite(span)) {
+                return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+            }
+        }
+        // A nonzero displacement or velocity change takes nonzero time at finite limits, so a total
+        // that underflowed to zero describes no commanded motion. The predicate carries no threshold.
+        if ((cfg.q1 != cfg.q0 || cfg.v0 != cfg.v1) && !(profile.T_ > Scalar{0})) {
+            return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
+        }
+        if (cfg.acceleration_policy == acceleration_limit_policy::refuse && profile.a_ != cfg.a_max) {
+            return ctrlpp::unexpected(trajectory_error::acceleration_limit_infeasible);
+        }
+        return profile;
     }
 
     /// @brief Complete profile state produced by a rescaling solve.

@@ -1,5 +1,6 @@
 #include "switch_shapes.h"
 #include "switch_planners.h"
+#include "switch_trapezoid.h"
 #include "switch_third_order.h"
 #include "envelope_legs.h"
 #include "agreement_legs.h"

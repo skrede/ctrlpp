@@ -344,12 +344,15 @@ inputs that genuinely have no unit representative; every other finite quaternion
 is normalized, including ones whose squared norm is not representable. See
 [so3](../../api/lie/so3.md).
 
-### A raised limit is channel 2, not channel 1
+### A limit the caller stated is refused by default, and raised only on request
 
-`trapezoidal_trajectory` raises the commanded acceleration when the boundary
-velocities cannot be reconciled over the commanded displacement at it. The
-operation **succeeded** and the profile is correct under the raised limit, so it
-is reported through `disposition()` -- carrying the commanded and the realized
-acceleration, not a flag -- and no enumerator was added to `trajectory_error`
-for it. See
+`trapezoidal_trajectory` cannot reconcile some boundary velocities over the
+commanded displacement at the commanded acceleration. By default that is a
+failure, `trajectory_error::acceleration_limit_infeasible`, because returning a
+profile above a limit the caller stated is the silent success channel 1 exists
+to prevent. A caller whose limit is advisory opts in with
+`acceleration_limit_policy::raise_to_feasible`; the operation then **succeeds**
+with the profile correct under the raised limit, and the raise is channel 2,
+reported through `disposition()` -- carrying the commanded and the realized
+acceleration, not a flag. See
 [trapezoidal_trajectory](../../api/trajectory/trapezoidal-trajectory.md).

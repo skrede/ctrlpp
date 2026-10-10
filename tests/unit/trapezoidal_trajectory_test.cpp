@@ -150,7 +150,13 @@ TEST_CASE("Trapezoidal: infeasible BCs adjust acceleration", "[trajectory][trape
 {
     // a_max*h should be < |v0^2 - v1^2|/2 to trigger infeasibility
     // h=1, a_max=1, v0=0, v1=3 -> a_max*h=1 < (9-0)/2=4.5 -> infeasible
-    auto const traj = built({.q0 = 0.0, .q1 = 1.0, .v_max = 5.0, .a_max = 1.0, .v0 = 0.0, .v1 = 3.0});
+    auto const traj = built({.q0 = 0.0,
+                             .q1 = 1.0,
+                             .v_max = 5.0,
+                             .a_max = 1.0,
+                             .v0 = 0.0,
+                             .v1 = 3.0,
+                             .acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible});
 
     auto const pT = traj.evaluate(traj.duration());
     REQUIRE_THAT(pT.position[0], WithinAbs(1.0, 1e-10));
@@ -250,8 +256,14 @@ TEST_CASE("Trapezoidal: zero displacement at equal boundary speeds is realizable
     // that the raised acceleration leaves the representable range: served, not
     // rejected. The boundary between the two is where the quotient overflows,
     // which is a property of the scalar type and is not a chosen threshold.
-    auto const raised = traj_t::create(
-        {.q0 = 0.0, .q1 = 1e-300, .v_max = 2.0, .a_max = 1.0, .v0 = 0.5, .v1 = 0.0});
+    // Under the default policy the same command is refused as needing more
+    // acceleration than commanded, not as unreachable.
+    traj_t::config raising{.q0 = 0.0, .q1 = 1e-300, .v_max = 2.0, .a_max = 1.0, .v0 = 0.5, .v1 = 0.0};
+    auto const refused = traj_t::create(raising);
+    REQUIRE_FALSE(refused.has_value());
+    REQUIRE(refused.error() == ctrlpp::trajectory_error::acceleration_limit_infeasible);
+    raising.acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible;
+    auto const raised = traj_t::create(raising);
     REQUIRE(raised.has_value());
     REQUIRE(raised.value().duration() > 0.0);
     REQUIRE(std::isfinite(raised.value().duration()));
@@ -600,8 +612,13 @@ TEST_CASE("Trapezoidal: a subnormal difference of squares still raises the accel
 
     for (auto const& c : commands) {
         double const v_max = std::max(c.v0, c.v1);
-        auto const profile =
-            traj_t::create({.q0 = 0.0, .q1 = c.h, .v_max = v_max, .a_max = c.a_max, .v0 = c.v0, .v1 = c.v1});
+        auto const profile = traj_t::create({.q0 = 0.0,
+                                             .q1 = c.h,
+                                             .v_max = v_max,
+                                             .a_max = c.a_max,
+                                             .v0 = c.v0,
+                                             .v1 = c.v1,
+                                             .acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible});
         CAPTURE(c.h, c.v0, c.v1, c.a_max);
         REQUIRE(profile.has_value());
         REQUIRE(profile.value().disposition().realized_acceleration > c.a_max);
@@ -639,8 +656,13 @@ TEST_CASE("Trapezoidal: an overflowing difference of squares is still tested exa
     constexpr double duration_rounding_ops = 12.0;
     constexpr double h = 1e100;
     constexpr double v1 = 1e200;
-    auto const served =
-        traj_t::create({.q0 = 0.0, .q1 = h, .v_max = v1, .a_max = 1.0, .v0 = 0.0, .v1 = v1});
+    auto const served = traj_t::create({.q0 = 0.0,
+                                        .q1 = h,
+                                        .v_max = v1,
+                                        .a_max = 1.0,
+                                        .v0 = 0.0,
+                                        .v1 = v1,
+                                        .acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible});
     REQUIRE(served.has_value());
     REQUIRE(served.value().disposition().realized_acceleration > 1.0);
     double const expected = 2.0 * h / v1;
@@ -869,5 +891,102 @@ TEMPLATE_TEST_CASE("Trapezoidal: the end sample reports the acceleration of the 
         REQUIRE(offset.has_value());
         CHECK(offset.value().evaluate(offset.value().duration()).position[0] == q1);
         CHECK(offset.value().evaluate(offset.value().duration()).velocity[0] == sigma);
+    }
+}
+
+namespace
+{
+
+template <typename Scalar>
+struct raised_profile
+{
+    std::array<Scalar, 3> phases;
+    Scalar duration;
+    Scalar realized_acceleration;
+};
+
+// h = 0.3, v0 = 0.1, v1 = 0.7 needs a h >= (v1^2 - v0^2) / 2 = 0.24, so the commanded 0.2 is raised to a
+// unit in the last place above 0.8. The values are the raised profile, bit for bit, in each type.
+template <typename Scalar>
+auto raised_reference() -> raised_profile<Scalar>
+{
+    if constexpr (std::is_same_v<Scalar, double>) {
+        return {{0x1.7ffffffffffffp-1, 0.0, 0x1p-54}, 0x1.8p-1, 0x1.999999999999bp-1};
+    } else {
+        return {{0x1.8p-1f, 0.0f, 0x1.8p-25f}, 0x1.800002p-1f, 0x1.99999cp-1f};
+    }
+}
+
+template <typename Scalar>
+auto raising_command() -> typename ctrlpp::trapezoidal_trajectory<Scalar>::config
+{
+    return {.q0 = Scalar{0},
+            .q1 = static_cast<Scalar>(0.3),
+            .v_max = Scalar{1},
+            .a_max = static_cast<Scalar>(0.2),
+            .v0 = static_cast<Scalar>(0.1),
+            .v1 = static_cast<Scalar>(0.7)};
+}
+
+}
+
+TEMPLATE_TEST_CASE("Trapezoidal: a command that needs more than the acceleration limit is refused by default",
+                   "[trajectory][trapezoidal]", float, double)
+{
+    using traj_t = ctrlpp::trapezoidal_trajectory<TestType>;
+    auto cfg = raising_command<TestType>();
+    auto const by_default = traj_t::create(cfg);
+    REQUIRE_FALSE(by_default.has_value());
+    CHECK(by_default.error() == ctrlpp::trajectory_error::acceleration_limit_infeasible);
+
+    cfg.acceleration_policy = ctrlpp::acceleration_limit_policy::refuse;
+    auto const refused = traj_t::create(cfg);
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error() == ctrlpp::trajectory_error::acceleration_limit_infeasible);
+}
+
+TEMPLATE_TEST_CASE("Trapezoidal: raise_to_feasible builds the raised profile exactly",
+                   "[trajectory][trapezoidal]", float, double)
+{
+    using traj_t = ctrlpp::trapezoidal_trajectory<TestType>;
+    auto cfg = raising_command<TestType>();
+    cfg.acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible;
+    auto const raised = traj_t::create(cfg);
+    REQUIRE(raised.has_value());
+    auto const reference = raised_reference<TestType>();
+    CHECK(raised->phase_durations() == reference.phases);
+    CHECK(raised->duration() == reference.duration);
+    CHECK(raised->is_triangular());
+    CHECK(raised->disposition().commanded_acceleration == cfg.a_max);
+    CHECK(raised->disposition().realized_acceleration == reference.realized_acceleration);
+}
+
+TEMPLATE_TEST_CASE("Trapezoidal: a command feasible at the acceleration limit builds alike under both policies",
+                   "[trajectory][trapezoidal]", float, double)
+{
+    using Scalar = TestType;
+    using traj_t = ctrlpp::trapezoidal_trajectory<Scalar>;
+    typename traj_t::config cfg{.q0 = 0, .q1 = 10, .v_max = 5, .a_max = 2, .v0 = 1, .v1 = 2};
+    auto const refusing = traj_t::create(cfg);
+    cfg.acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible;
+    auto const raising = traj_t::create(cfg);
+    REQUIRE(refusing.has_value());
+    REQUIRE(raising.has_value());
+    CHECK(refusing->disposition().realized_acceleration == refusing->disposition().commanded_acceleration);
+    CHECK(raising->disposition().realized_acceleration == Scalar{2});
+    CHECK(refusing->phase_durations() == raising->phase_durations());
+    CHECK(refusing->duration() == raising->duration());
+}
+
+TEMPLATE_TEST_CASE("Trapezoidal: a command no acceleration realizes is unreachable under both policies",
+                   "[trajectory][trapezoidal]", float, double)
+{
+    using Scalar = TestType;
+    using traj_t = ctrlpp::trapezoidal_trajectory<Scalar>;
+    for (auto const policy : {ctrlpp::acceleration_limit_policy::refuse, ctrlpp::acceleration_limit_policy::raise_to_feasible}) {
+        auto const created = traj_t::create(
+            {.q0 = 2, .q1 = 2, .v_max = 2, .a_max = 1, .v0 = Scalar{0.5}, .v1 = 0, .acceleration_policy = policy});
+        REQUIRE_FALSE(created.has_value());
+        CHECK(created.error() == ctrlpp::trajectory_error::unreachable_boundary_velocity);
     }
 }

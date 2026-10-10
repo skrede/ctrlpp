@@ -16,8 +16,6 @@
 namespace planner_overshoot_sweep
 {
 
-inline constexpr double rescale_factors[] = {1.5, 3.0};
-
 struct shape_leg
 {
     switch_counts counts;
@@ -74,31 +72,6 @@ void scan_shape(Shape const& shape, typed_limits<Scalar> const& limits, char con
 }
 
 template <typename Scalar>
-void measure_trapezoid(shape_command<Scalar> const& c, char const* tag, shape_leg& leg)
-{
-    ++leg.counts.configurations;
-    char configuration[320];
-    describe(c, tag, configuration);
-    auto const created = trapezoidal_trajectory<Scalar>::create(
-        {.q0 = c.q0, .q1 = c.q1, .v_max = c.limits.v_max, .a_max = c.limits.a_max, .v0 = c.v0, .v1 = c.v1});
-    if (!created.has_value()) {
-        ++leg.counts.not_measured;
-        return;
-    }
-    scan_shape(*created, c.limits, configuration, leg);
-    for (auto const factor : rescale_factors) {
-        auto rescaled = *created;
-        auto const T_new = static_cast<Scalar>(factor) * created->duration();
-        if (rescaled.can_rescale_to(T_new).has_value() && rescaled.rescale_to(T_new).has_value()) {
-            ++leg.rescaled;
-            char stretched[352];
-            std::snprintf(stretched, sizeof(stretched), "%s rescaled x%g", configuration, factor);
-            scan_shape(rescaled, c.limits, stretched, leg);
-        }
-    }
-}
-
-template <typename Scalar>
 void measure_double_s(shape_command<Scalar> const& c, char const* tag, shape_leg& leg)
 {
     ++leg.counts.configurations;
@@ -111,18 +84,6 @@ void measure_double_s(shape_command<Scalar> const& c, char const* tag, shape_leg
         return;
     }
     scan_shape(*created, c.limits, configuration, leg);
-}
-
-// Configurations on which an earlier random search sampled a value above a limit next to a phase switch.
-template <typename Scalar>
-auto trapezoid_reproducers() -> std::vector<shape_command<Scalar>>
-{
-    if constexpr (std::is_same_v<Scalar, double>) {
-        return {{0.35790432359834429, 9621.0167335908081, 0.0028366887302119395, 0.006388618899210774,
-                 {0.006846007648171031, 0.20062093968092909, 0.0}}};
-    } else {
-        return {};
-    }
 }
 
 template <typename Scalar>
@@ -144,26 +105,6 @@ auto double_s_reproducers() -> std::vector<shape_command<Scalar>>
 inline void report_population(char const* name, char const* type, char const* parts)
 {
     std::printf("  [%s, %s population]  %s\n", name, type, parts);
-}
-
-template <typename Scalar>
-void run_trapezoid_switch_leg(bool print_points)
-{
-    auto const seed = switch_seed<Scalar>(switch_leg::trapezoidal);
-    fraction_source<Scalar> source{seed};
-    shape_leg leg{{}, 0, print_points};
-    for_each_trapezoid_command(source, [&](shape_command<Scalar> const& c) { measure_trapezoid(c, "", leg); });
-    for (auto const& c : trapezoid_reproducers<Scalar>()) {
-        measure_trapezoid(c, "reproducer ", leg);
-    }
-    if (print_points) {
-        char parts[160];
-        std::snprintf(parts, sizeof(parts), "commands %lld, rescaled profiles %lld, reproducers %zu",
-                      static_cast<long long>(leg.counts.configurations), static_cast<long long>(leg.rescaled),
-                      trapezoid_reproducers<Scalar>().size());
-        report_population("trapezoidal", scalar_name<Scalar>(), parts);
-    }
-    report_switch_block("trapezoidal", scalar_name<Scalar>(), seed, leg.counts);
 }
 
 template <typename Scalar>

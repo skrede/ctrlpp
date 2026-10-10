@@ -2111,11 +2111,12 @@ TEST_CASE("Trapezoidal reports the acceleration it raised the command to",
           "[trapezoidal][hardening][coverage]")
 {
     // v0 and v1 are high relative to the displacement, so the two boundary
-    // velocities cannot be reconciled over it at the commanded limit and the
-    // construction raises the limit rather than refusing the command.
+    // velocities cannot be reconciled over it at the commanded limit, and
+    // raise_to_feasible raises the limit rather than refusing the command.
     ctrlpp::trapezoidal_trajectory<double>::config cfg{
         .q0 = 0.0, .q1 = 0.1, .v_max = 5.0, .a_max = 1.0,
         .v0 = 3.0, .v1 = 2.0,
+        .acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible,
     };
 
     auto const profile = trapezoidal_profile(cfg);
@@ -2137,8 +2138,7 @@ TEST_CASE("Trapezoidal reports the acceleration it raised the command to",
     CAPTURE(disp.realized_acceleration, expected_a);
     REQUIRE(disp.realized_acceleration == expected_a);
 
-    // The profile is correct and limit-respecting under the REALIZED limit,
-    // which is the whole reason the raise is a disposition and not a failure.
+    // The profile is correct and limit-respecting under the REALIZED limit.
     // The commanded limit is not the scale these contracts are measured at --
     // it is not the limit the ramps run at.
     require_nonnegative_phases(profile);

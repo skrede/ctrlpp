@@ -136,6 +136,13 @@ enum class spline_error
 ///                                      transition between the two boundary
 ///                                      velocities already sweeps, so no profile
 ///                                      of the requested shape realizes it.
+///  * acceleration_limit_infeasible   : a trapezoidal command is realizable only
+///                                      at an acceleration above the commanded
+///                                      limit, under the default
+///                                      acceleration_limit_policy::refuse. It
+///                                      differs from unreachable_boundary_velocity,
+///                                      which no acceleration realizes: here a
+///                                      larger limit, or raise_to_feasible, builds it.
 ///  * duration_shorter_than_current   : time rescaling only slows a profile down.
 ///                                      The profile already runs at the fastest
 ///                                      shape its limits allow, so a duration
@@ -155,6 +162,7 @@ enum class trajectory_error
     boundary_velocity_rounding_ops_out_of_range,
     unrepresentable_duration,
     unreachable_boundary_velocity,
+    acceleration_limit_infeasible,
     duration_shorter_than_current,
     unreachable_duration,
 };

@@ -1,3 +1,5 @@
+#include "ctrlpp/expected.h"
+
 #include "ctrlpp/trajectory/trapezoidal_trajectory.h"
 
 #include "../support/trapezoidal_solve_conditioning.h"
@@ -76,6 +78,25 @@ swept integrate_velocity(const ctrlpp::trapezoidal_trajectory<double>& traj)
     return out;
 }
 
+using created_profile = ctrlpp::expected<ctrlpp::trapezoidal_trajectory<double>, ctrlpp::trajectory_error>;
+
+// The default policy refuses exactly the commands raise_to_feasible builds above the commanded
+// acceleration, and returns what raise_to_feasible returns, bit for bit, everywhere else.
+bool policies_agree(const created_profile& raised, const created_profile& refused)
+{
+    const bool above = raised.has_value()
+                       && raised->disposition().realized_acceleration != raised->disposition().commanded_acceleration;
+    if(above)
+        return !refused.has_value() && refused.error() == ctrlpp::trajectory_error::acceleration_limit_infeasible;
+    if(raised.has_value() != refused.has_value())
+        return false;
+    if(!raised.has_value())
+        return raised.error() == refused.error();
+    return raised->phase_durations() == refused->phase_durations() && raised->duration() == refused->duration()
+           && raised->peak_velocity() == refused->peak_velocity()
+           && raised->disposition().realized_acceleration == refused->disposition().realized_acceleration;
+}
+
 }
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
@@ -126,9 +147,16 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // shape, and the construction reports that rather than returning a profile
     // built on an unbounded acceleration. That is a correct outcome, not a
     // finding. create() is the only construction path, so there is no way for
-    // this target to hold an unvalidated profile.
+    // this target to hold an unvalidated profile. The profile is built under
+    // raise_to_feasible so that raised profiles are held to the checks below,
+    // and the default policy is held to its agreement with it.
     auto created = ctrlpp::trapezoidal_trajectory<double>::create(
+        {.q0 = q0, .q1 = q1, .v_max = v_max, .a_max = a_max, .v0 = v0, .v1 = v1,
+         .acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible});
+    const auto refused = ctrlpp::trapezoidal_trajectory<double>::create(
         {.q0 = q0, .q1 = q1, .v_max = v_max, .a_max = a_max, .v0 = v0, .v1 = v1});
+    if(!policies_agree(created, refused))
+        abort();
     if(!created.has_value())
         return 0;
     ctrlpp::trapezoidal_trajectory<double> traj = created.value();
