@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <random>
 #include <cstdint>
 #include <utility>
 #include <algorithm>
@@ -1062,5 +1063,89 @@ TEMPLATE_TEST_CASE("OnlinePlanner2nd: velocity stays within the limit at every r
         auto const v_max = static_cast<Scalar>(limits[0]);
         auto const a_max = static_cast<Scalar>(limits[1]);
         require_switches_within_limit(v_max, a_max, Scalar{10} * v_max * v_max / a_max);
+    }
+}
+
+namespace
+{
+
+template <typename Scalar>
+struct carried_retarget
+{
+    Scalar h1;
+    Scalar t_r;
+    Scalar h2;
+};
+
+// std::mt19937's output sequence is fixed by the standard and the standard distributions are not, so each
+// fraction is formed from 24 raw bits, which float and double both hold exactly.
+template <typename Scalar>
+auto seeded_unit_fraction(std::mt19937& engine) -> Scalar
+{
+    return std::ldexp(static_cast<Scalar>(engine() >> 8), -24);
+}
+
+// The retarget is taken in the first half of the first plan's ramp, so the new plan carries a velocity below
+// v_max / 2 into a ramp that reaches v_max after (v_max - |v_r|) / a_max.
+template <typename Scalar>
+auto draw_carried_retarget(std::mt19937& engine, Scalar v_max, Scalar a_max, Scalar sigma) -> carried_retarget<Scalar>
+{
+    auto const scale = v_max * v_max / a_max;
+    auto const h1 = sigma * (Scalar{1} + Scalar{63} * seeded_unit_fraction<Scalar>(engine)) * scale;
+    auto const t_r = seeded_unit_fraction<Scalar>(engine) * v_max / a_max / Scalar{2};
+    return {h1, t_r, h1 + sigma * (Scalar{1} + Scalar{63} * seeded_unit_fraction<Scalar>(engine)) * scale};
+}
+
+template <typename Scalar>
+void require_carried_ramp_within_limit(Scalar v_max, Scalar a_max, carried_retarget<Scalar> const& r)
+{
+    constexpr std::int32_t steps = 64;
+    auto planner = make_planner<Scalar>({.v_max = v_max, .a_max = a_max});
+    planner.reset(Scalar{0});
+    REQUIRE(planner.update(r.h1).has_value());
+    auto const v_r = planner.sample(r.t_r).velocity[0];
+    REQUIRE(planner.update(r.h2).has_value());
+    REQUIRE(planner.diagnostics().substitution_reason == ctrlpp::online_planner_substitution_reason::none);
+    auto t = r.t_r + (v_max - std::abs(v_r)) / a_max;
+    for (std::int32_t i = 0; i < steps; ++i) {
+        t = std::nextafter(t, Scalar{0});
+    }
+    auto scan = switch_scan<Scalar>{0, 0, Scalar{0}};
+    auto const first = planner.sample(t).acceleration[0];
+    auto last = first;
+    for (std::int32_t i = 0; i <= 2 * steps; ++i, t = std::nextafter(t, std::numeric_limits<Scalar>::infinity())) {
+        scan_instant(planner, v_max, a_max, t, scan);
+        last = planner.sample(t).acceleration[0];
+    }
+    CAPTURE(v_max, a_max, r.h1, r.t_r, r.h2, v_r, scan.peak_speed);
+    CHECK(scan.velocity == 0);
+    CHECK(scan.acceleration == 0);
+    CHECK(first != Scalar{0});
+    CHECK(last == Scalar{0});
+}
+
+}
+
+TEMPLATE_TEST_CASE("OnlinePlanner2nd: a carried acceleration ramp stays within the limit at every representable instant around its end",
+                   "[trajectory][online_planner]", float, double)
+{
+    using Scalar = TestType;
+    if constexpr (std::is_same_v<Scalar, double>) {
+        // Full-width significands: on the short limit pairs below, v_max - |v_r| is often exact in double.
+        require_carried_ramp_within_limit(0x1.c0a8f2f501e9fp-8, 0x1.9adf26b6943b8p-3,
+                                          carried_retarget<double>{0x1.b1772e7a0e75ep-7, 0x1.9597c004de8e4p-7, 0x1.2a3544220e9ep-6});
+    }
+    constexpr std::int32_t retargets = 256;
+    constexpr std::array<std::array<double, 2>, 8> sweep_limits{
+        {{1, 1}, {5, 10}, {2, 3}, {0.7, 1.3}, {10, 100}, {1, 5}, {40, 20}, {1e-3, 1e-2}}};
+    std::mt19937 engine{std::is_same_v<Scalar, float> ? 302u : 301u};
+    for (auto const& limits : sweep_limits) {
+        auto const v_max = static_cast<Scalar>(limits[0]);
+        auto const a_max = static_cast<Scalar>(limits[1]);
+        for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+            for (std::int32_t k = 0; k < retargets; ++k) {
+                require_carried_ramp_within_limit(v_max, a_max, draw_carried_retarget(engine, v_max, a_max, sigma));
+            }
+        }
     }
 }

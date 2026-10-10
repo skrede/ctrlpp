@@ -21,6 +21,8 @@
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/online_planner_diagnostics.h"
 
+#include "ctrlpp/trajectory/detail/ramp_anchor.h"
+
 #include "ctrlpp/util/concepts.h"
 
 #include <cmath>
@@ -605,20 +607,16 @@ class online_planner_2nd
             return;
         }
         auto const dt_end = T_total - dt;
+        auto const q_end_accel = q_ref_ + v_ref_ * T_a_ + s * Scalar{0.5} * aa * T_a_ * T_a_;
 
         if (dt < T_a_) {
-            // Acceleration phase
             a = s * aa;
-            v = v_ref_ + s * aa * dt;
-            q = q_ref_ + v_ref_ * dt + s * Scalar{0.5} * aa * dt * dt;
+            v = detail::nearer_anchor_velocity(v_ref_, s * v_v_, s * aa, dt, T_a_ - dt);
+            q = detail::nearer_anchor_position(q_ref_, v_ref_, q_end_accel, s * v_v_, s * aa, dt, T_a_ - dt);
         } else if (dt_end >= T_d_) {
-            // Cruise phase
-            auto const dt_c = dt - T_a_;
-            auto const q_end_accel = q_ref_ + v_ref_ * T_a_
-                                     + s * Scalar{0.5} * aa * T_a_ * T_a_;
             a = Scalar{0};
             v = s * v_v_;
-            q = q_end_accel + s * v_v_ * dt_c;
+            q = q_end_accel + s * v_v_ * (dt - T_a_);
         } else {
             // T_total is a rounded sum, so deceleration is used only strictly inside T_d_, timed back from the end.
             a = -s * a_d_;

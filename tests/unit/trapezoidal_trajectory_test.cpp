@@ -7,8 +7,11 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <random>
+#include <cstddef>
 #include <cstdint>
 #include <algorithm>
+#include <type_traits>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
@@ -681,7 +684,6 @@ template <typename Scalar>
 auto peaks_around_switches(ctrlpp::trapezoidal_trajectory<Scalar> const& traj) -> sampled_peaks<Scalar>
 {
     constexpr std::int32_t steps = 64;
-    constexpr auto grid_step = static_cast<Scalar>(1e-3);
     auto peaks = sampled_peaks<Scalar>{Scalar{0}, Scalar{0}};
     auto const phases = traj.phase_durations();
     for (auto const center : {phases[0], phases[0] + phases[1], traj.duration() - phases[2]}) {
@@ -693,11 +695,41 @@ auto peaks_around_switches(ctrlpp::trapezoidal_trajectory<Scalar> const& traj) -
             sample_into(traj, t, peaks);
         }
     }
+    sample_into(traj, traj.duration(), peaks);
+    return peaks;
+}
+
+template <typename Scalar>
+void sample_grid(ctrlpp::trapezoidal_trajectory<Scalar> const& traj, sampled_peaks<Scalar>& peaks)
+{
+    constexpr auto grid_step = static_cast<Scalar>(1e-3);
     for (std::int32_t i = 0; static_cast<Scalar>(i) * grid_step < traj.duration(); ++i) {
         sample_into(traj, static_cast<Scalar>(i) * grid_step, peaks);
     }
-    sample_into(traj, traj.duration(), peaks);
-    return peaks;
+}
+
+// std::mt19937's output sequence is fixed by the standard and the standard distributions are not, so each
+// fraction is formed from 24 raw bits, which float and double both hold exactly.
+template <typename Scalar>
+auto seeded_fraction(std::mt19937& engine) -> Scalar
+{
+    auto const raw = static_cast<std::int32_t>(engine() >> 8);
+    return std::ldexp(static_cast<Scalar>(raw - (1 << 23)), -23);
+}
+
+template <typename Scalar>
+void require_within_limits(ctrlpp::trapezoidal_trajectory<Scalar> const& traj, sampled_peaks<Scalar> const& peaks,
+                           Scalar v_max, Scalar q1, Scalar v0, Scalar v1)
+{
+    auto const ulp = std::nextafter(v_max, std::numeric_limits<Scalar>::infinity()) - v_max;
+    auto const excess_ulps = (peaks.speed - v_max) / ulp;
+    CAPTURE(v_max, traj.disposition().realized_acceleration, traj.duration(), q1, v0, v1, peaks.speed, excess_ulps);
+    CHECK(peaks.speed <= v_max);
+    CHECK(peaks.acceleration <= traj.disposition().realized_acceleration);
+    CHECK(traj.evaluate(Scalar{0}).position[0] == Scalar{0});
+    CHECK(traj.evaluate(Scalar{0}).velocity[0] == v0);
+    CHECK(traj.evaluate(traj.duration()).position[0] == q1);
+    CHECK(traj.evaluate(traj.duration()).velocity[0] == v1);
 }
 
 }
@@ -728,26 +760,80 @@ TEMPLATE_TEST_CASE("Trapezoidal: velocity stays within the limit at every repres
     constexpr Scalar half{0.5};
     constexpr std::array<ends, 7> fractions{
         {{0, 0}, {1, 0}, {0, 1}, {0, half}, {0, -half}, {half, 0}, {-half, 0}}};
+    constexpr std::int32_t seeded_pairs = 256;
+    std::mt19937 engine{std::is_same_v<Scalar, float> ? 102u : 101u};
     for (auto const l : limit_pairs) {
         for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
-            for (auto const f : fractions) {
+            for (std::int32_t k = 0; k < 7 + seeded_pairs; ++k) {
+                auto const f = (k < 7) ? fractions[static_cast<std::size_t>(k)]
+                                       : ends{seeded_fraction<Scalar>(engine), seeded_fraction<Scalar>(engine)};
                 auto const v0 = sigma * f.v0 * l.v_max;
                 auto const v1 = sigma * f.v1 * l.v_max;
                 auto const q1 = sigma * Scalar{10} * l.v_max;
                 auto const created = traj_t::create({.q0 = 0, .q1 = q1, .v_max = l.v_max, .a_max = l.a_max, .v0 = v0, .v1 = v1});
                 REQUIRE(created.has_value());
                 auto const& traj = created.value();
-                auto const peaks = peaks_around_switches(traj);
-                auto const ulp = std::nextafter(l.v_max, std::numeric_limits<Scalar>::infinity()) - l.v_max;
-                auto const excess_ulps = (peaks.speed - l.v_max) / ulp;
-                CAPTURE(l.v_max, l.a_max, sigma, v0, v1, peaks.speed, excess_ulps);
-                CHECK(peaks.speed <= l.v_max);
-                CHECK(peaks.acceleration <= traj.disposition().realized_acceleration);
-                CHECK(traj.evaluate(Scalar{0}).position[0] == Scalar{0});
-                CHECK(traj.evaluate(Scalar{0}).velocity[0] == v0);
-                CHECK(traj.evaluate(traj.duration()).position[0] == q1);
-                CHECK(traj.evaluate(traj.duration()).velocity[0] == v1);
+                auto peaks = peaks_around_switches(traj);
+                if (k < 7) {
+                    sample_grid(traj, peaks);
+                }
+                require_within_limits(traj, peaks, l.v_max, q1, v0, v1);
+                for (auto const stretch : {static_cast<Scalar>(1.5), Scalar{3}}) {
+                    auto rescaled = traj;
+                    if (rescaled.can_rescale_to(stretch * traj.duration()).has_value()) {
+                        REQUIRE(rescaled.rescale_to(stretch * traj.duration()).has_value());
+                        require_within_limits(rescaled, peaks_around_switches(rescaled), l.v_max, q1, v0, v1);
+                    }
+                }
             }
         }
+    }
+}
+
+TEST_CASE("Trapezoidal: an acceleration ramp from a nonzero boundary velocity stays within the limit at its last instant",
+          "[trajectory][trapezoidal]")
+{
+    constexpr double v_max = 0.006846007648171031;
+    auto const traj = built({.q0 = 0.35790432359834429,
+                             .q1 = 9621.0167335908081,
+                             .v_max = v_max,
+                             .a_max = 0.20062093968092909,
+                             .v0 = 0.0028366887302119395,
+                             .v1 = 0.006388618899210774});
+    auto const last = traj.evaluate(std::nextafter(traj.phase_durations()[0], 0.0));
+    CAPTURE(last.velocity[0]);
+    CHECK(std::abs(last.velocity[0]) <= v_max);
+}
+
+TEMPLATE_TEST_CASE("Trapezoidal: the end sample reports the acceleration of the last phase the profile runs",
+                   "[trajectory][trapezoidal]", float, double)
+{
+    using Scalar = TestType;
+    using traj_t = ctrlpp::trapezoidal_trajectory<Scalar>;
+    for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+        CAPTURE(sigma);
+        auto const cruise_end = traj_t::create({.q0 = 0, .q1 = sigma * Scalar{10}, .v_max = 1, .a_max = 1, .v0 = 0, .v1 = sigma});
+        REQUIRE(cruise_end.has_value());
+        REQUIRE(cruise_end.value().duration() == static_cast<Scalar>(10.5));
+        auto const at_end = cruise_end.value().evaluate(static_cast<Scalar>(10.5));
+        auto const before_end = cruise_end.value().evaluate(std::nextafter(static_cast<Scalar>(10.5), Scalar{0}));
+        CHECK(at_end.acceleration[0] == Scalar{0});
+        CHECK(at_end.acceleration[0] == before_end.acceleration[0]);
+
+        auto const ramp_end = traj_t::create({.q0 = 0, .q1 = sigma * static_cast<Scalar>(0.5), .v_max = 1, .a_max = 1, .v0 = 0, .v1 = sigma});
+        REQUIRE(ramp_end.has_value());
+        auto const& ramp = ramp_end.value();
+        REQUIRE(ramp.phase_durations()[1] == Scalar{0});
+        REQUIRE(ramp.phase_durations()[2] == Scalar{0});
+        auto const ramp_last = ramp.evaluate(ramp.duration());
+        CHECK(ramp_last.acceleration[0] == sigma);
+        CHECK(ramp_last.acceleration[0] == ramp.evaluate(std::nextafter(ramp.duration(), Scalar{0})).acceleration[0]);
+
+        auto const q0 = sigma * static_cast<Scalar>(0.1);
+        auto const q1 = sigma * static_cast<Scalar>(10.3);
+        auto const offset = traj_t::create({.q0 = q0, .q1 = q1, .v_max = 1, .a_max = 1, .v0 = 0, .v1 = sigma});
+        REQUIRE(offset.has_value());
+        CHECK(offset.value().evaluate(offset.value().duration()).position[0] == q1);
+        CHECK(offset.value().evaluate(offset.value().duration()).velocity[0] == sigma);
     }
 }

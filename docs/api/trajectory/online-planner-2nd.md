@@ -169,7 +169,7 @@ The planner produces trapezoidal velocity profiles with three phases:
 
 For short displacements where `v_max` cannot be reached, the profile degenerates to a triangular velocity shape. Mid-motion target changes trigger replanning from the current state, with automatic brake-and-replan for reversal and overshoot scenarios.
 
-`sample` uses the deceleration ramp's formula only at times strictly inside that ramp, measured backward from the end of the plan. So at the switch from cruise it reports the cruise velocity itself, never a rounded value above `v_max`.
+`sample` uses the deceleration ramp's formula only at times strictly inside that ramp, measured backward from the end of the plan. So at the switch from cruise it reports the cruise velocity itself, never a rounded value above `v_max`. A carried acceleration ramp, which a retarget starts from a nonzero velocity, is sampled from whichever of its two exact end states is nearer in time, so it cannot round past `v_max` either.
 
 ## Substitution Reporting
 

@@ -120,7 +120,7 @@ The realized phase durations are still checked directly rather than inferred fro
 | `rescale_to` | `expected<void, trajectory_error> rescale_to(Scalar T_new)` | Rebuild at a longer duration for multi-axis sync |
 | `can_rescale_to` | `expected<void, trajectory_error> can_rescale_to(Scalar T_new) const` | Whether `rescale_to(T_new)` would succeed, without mutating |
 
-`evaluate` uses a ramp's formula only at times strictly inside that ramp: the acceleration ramp measured forward from 0, the deceleration ramp measured backward from the duration. So at a phase switch it reports the cruise velocity itself, never a rounded value above `v_max`.
+`evaluate` forms each ramp sample from whichever of the ramp's two exact end states is nearer in time, so no sample rounds past either end velocity, and none exceeds `v_max`. `evaluate(duration())` returns `q1`, `v1` and the acceleration of the last phase the profile runs.
 
 ## Time Rescaling
 

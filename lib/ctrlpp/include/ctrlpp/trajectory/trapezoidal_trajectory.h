@@ -16,6 +16,7 @@
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
+#include "ctrlpp/trajectory/detail/ramp_anchor.h"
 #include "ctrlpp/trajectory/detail/boundary_velocity.h"
 
 #include "ctrlpp/util/concepts.h"
@@ -199,9 +200,6 @@ class trapezoidal_trajectory
 
     /// @brief Evaluate trajectory at time t, clamped to [0, T].
     ///
-    /// Three-phase branching: acceleration, cruise, deceleration.
-    /// Deceleration uses backward time (T - t) for numerical precision.
-    ///
     /// The clamp below is well defined because no object of this type exists
     /// with a negative duration: `create` is the only construction path and it
     /// rejects one. `std::clamp` with a lower bound above its upper bound is
@@ -213,36 +211,21 @@ class trapezoidal_trajectory
     auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>
     {
         auto const tc = std::clamp(t, Scalar{0}, T_);
-        auto const dt_end = T_ - tc;
-        Scalar q{}, dq{}, ddq{};
-
-        if (tc < T_a_) {
-            // Acceleration phase
-            // @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a), p.71
-            ddq = a_a_;
-            dq = v0_ + a_a_ * tc;
-            q = v0_ * tc + Scalar{0.5} * a_a_ * tc * tc;
-        } else if (dt_end >= T_d_ && dt_end > Scalar{0}) {
-            // Constant velocity (cruise) phase
-            auto const dt = tc - T_a_;
-            ddq = Scalar{0};
-            dq = v_v_;
-            // Position at end of accel phase + cruise distance
-            q = v0_ * T_a_ + Scalar{0.5} * a_a_ * T_a_ * T_a_ + v_v_ * dt;
-        } else {
-            // The stored total is a rounded sum, so the time back from it can exceed T_d_ at the switch;
-            // each ramp's formula is used only strictly inside that ramp, timed from its own anchor.
-            ddq = -a_d_;
-            dq = v1_ + a_d_ * dt_end;
-            // Position from end: q1 - backward integration
-            auto const abs_h = std::abs(q1_ - q0_);
-            q = abs_h - v1_ * dt_end - Scalar{0.5} * a_d_ * dt_end * dt_end;
+        if (tc >= T_) {
+            return {
+                .position = Vector<Scalar, 1>{q1_},
+                .velocity = Vector<Scalar, 1>{sigma_ * v1_},
+                .acceleration = Vector<Scalar, 1>{sigma_ * last_phase_acceleration()},
+            };
         }
-
+        // The stored total is a rounded sum, so the time back from it can exceed T_d_ at the switch;
+        // each ramp's formula is used only strictly inside that ramp, timed from its own anchor.
+        auto const dt_end = T_ - tc;
+        auto const s = (tc < T_a_) ? acceleration_ramp(tc) : (dt_end >= T_d_) ? cruise(tc) : deceleration_ramp(dt_end);
         return {
-            .position = Vector<Scalar, 1>{q0_ + sigma_ * q},
-            .velocity = Vector<Scalar, 1>{sigma_ * dq},
-            .acceleration = Vector<Scalar, 1>{sigma_ * ddq},
+            .position = Vector<Scalar, 1>{q0_ + sigma_ * s.q},
+            .velocity = Vector<Scalar, 1>{sigma_ * s.dq},
+            .acceleration = Vector<Scalar, 1>{sigma_ * s.ddq},
         };
     }
 
@@ -335,6 +318,35 @@ class trapezoidal_trajectory
     {
         explicit unchecked_t() = default;
     };
+
+    struct frame_sample
+    {
+        Scalar q, dq, ddq;
+    };
+
+    auto last_phase_acceleration() const -> Scalar
+    {
+        return (T_d_ > Scalar{0}) ? -a_d_ : (T_v_ > Scalar{0} || !(T_a_ > Scalar{0})) ? Scalar{0} : a_a_;
+    }
+
+    auto ramp_end_position() const -> Scalar { return v0_ * T_a_ + Scalar{0.5} * a_a_ * T_a_ * T_a_; }
+
+    auto acceleration_ramp(Scalar tc) const -> frame_sample
+    {
+        auto const to_end = T_a_ - tc;
+        return {detail::nearer_anchor_position(Scalar{0}, v0_, ramp_end_position(), v_v_, a_a_, tc, to_end),
+                detail::nearer_anchor_velocity(v0_, v_v_, a_a_, tc, to_end), a_a_};
+    }
+
+    auto cruise(Scalar tc) const -> frame_sample { return {ramp_end_position() + v_v_ * (tc - T_a_), v_v_, Scalar{0}}; }
+
+    auto deceleration_ramp(Scalar dt_end) const -> frame_sample
+    {
+        auto const from_start = T_d_ - dt_end;
+        auto const q_start = ramp_end_position() + v_v_ * T_v_;
+        return {detail::nearer_anchor_position(q_start, v_v_, std::abs(q1_ - q0_), v1_, -a_d_, from_start, dt_end),
+                detail::nearer_anchor_velocity(v_v_, v1_, -a_d_, from_start, dt_end), -a_d_};
+    }
 
     static auto admit_boundary_velocities(config const& cfg) -> ctrlpp::expected<config, trajectory_error>
     {
@@ -553,7 +565,6 @@ class trapezoidal_trajectory
         sigma_ = positive_frame_sign(h);
         auto const abs_h = std::abs(h);
 
-        // Transform velocities into the positive-displacement frame
         auto const sv0 = sigma_ * cfg.v0;
         auto const sv1 = sigma_ * cfg.v1;
         auto const a = a_;
@@ -572,11 +583,6 @@ class trapezoidal_trajectory
         } else {
             T_a_ = (v_v_ - sv0) / a_a_;
             T_d_ = (v_v_ - sv1) / a_d_;
-            // Cruise duration from the residual displacement: the accel and decel
-            // phases cover d_a = v0*T_a + a_a*T_a^2/2 and d_d = v1*T_d + a_d*T_d^2/2,
-            // so the cruise phase covers (abs_h - d_a - d_d) at v_v. This keeps the
-            // position continuous at the cruise-to-decel boundary for nonzero v0/v1.
-            //
             // The residual is nonnegative wherever this branch runs, and the
             // guard below is a rounding guard rather than a stand-in for a
             // rejected command: the branch is entered only when the triangular
@@ -768,7 +774,6 @@ class trapezoidal_trajectory
         // The duration diverges as that velocity vanishes exactly when that shape's
         // residual displacement is positive; otherwise the cruise duration reaches
         // zero first and pins a finite supremum.
-        //
         // Only the two shapes whose boundary velocities straddle zero are decided
         // here. When both are positive the valley is the shape that reaches the
         // vanishing-cruise limit, and its supremum is decided by the sign of its
@@ -822,7 +827,6 @@ class trapezoidal_trajectory
         // itself accurate only to a handful of units in the last place. An
         // increment or decrement smaller than that error is indistinguishable
         // from zero, and the shape it selects would be located by noise.
-        //
         // duration_and_scale_at chains fifteen arithmetic operations to produce
         // the boundary duration: a subtraction and a division for each of the two
         // ramp durations (four), an addition, a multiplication and a division for
@@ -846,7 +850,6 @@ class trapezoidal_trajectory
         // phase durations ever see it. It is the parametrization the double-S
         // profile's general boundary-condition solve already uses for the peak's
         // rise above the larger boundary velocity, for the identical reason.
-        //
         // It is also what makes these solves well conditioned rather than merely
         // better spelled, and the reason is one identity. Writing r for the
         // ramp-through residual computed above, the constant terms of the two
@@ -864,13 +867,11 @@ class trapezoidal_trajectory
         // sqrt(v_hi^2 + a r) - v_hi and the valley's whole duration window close
         // with it, so the loss covers the entire branch rather than a
         // neighborhood of one endpoint.
-        //
         // Each rearrangement is derived in place by substituting the shifted
         // cruise velocity into the corresponding duration named in this
         // function's contract above and clearing the division by that velocity;
         // only the underlying three-phase parametrization is taken from the
         // reference cited there.
-        //
         // The gates are the same on both, and none of them introduces a constant.
         // A non-positive linear coefficient means the quadratic's two roots are
         // both non-positive, so the shape admits no cruise velocity on the far
@@ -881,7 +882,6 @@ class trapezoidal_trajectory
         // different -- a shape may well exist, but the request is below the
         // arithmetic resolution of the expressions that would locate it, so the
         // caller should change the request rather than the limits.
-        //
         // The floors are tested FIRST, and the order is load-bearing rather than
         // stylistic. The linear coefficient is built from the residual, so when
         // the residual is below its own floor the coefficient's SIGN is noise
