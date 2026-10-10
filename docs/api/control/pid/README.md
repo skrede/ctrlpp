@@ -72,7 +72,7 @@ cfg.template policy<feed_forward<FF>>().ff_func = my_ff_func;
 | `anti_windup<back_calc>` | Back-calculation anti-windup | `kb` | [anti-windup](anti-windup.md) |
 | `anti_windup<clamping>` | Integrator clamping | (none) | [anti-windup](anti-windup.md) |
 | `anti_windup<conditional_integration>` | Error-threshold gated integration | `error_threshold` | [anti-windup](anti-windup.md) |
-| `deriv_filter` | Low-pass filtered derivative | `n` | [derivative-filter](derivative-filter.md) |
+| `deriv_filter` | Low-pass filtered derivative | `n`, `tf` | [derivative-filter](derivative-filter.md) |
 | `setpoint_filter` | Setpoint prefilter | `tf` | [setpoint-filter](setpoint-filter.md) |
 | `pv_filter` | Process variable filter | `tf` | [setpoint-filter](setpoint-filter.md) |
 | `velocity_form` | Incremental output form | (none) | [velocity-form](velocity-form.md) |
@@ -99,14 +99,17 @@ if(!made) {
 | Enumerator | Cause | Repair |
 |---|---|---|
 | `non_finite_gain` | A `kp`, `ki` or `kd` component is `NaN` or infinite. In ISA form `ki` is the integral time, and a `NaN` or negative-infinite one is refused. | The tuning that produced the gains. |
+| `zero_integral_time` | In ISA form an integral time `ki` is zero, which is an infinite integral gain Kp / Ti, not "off". | A positive integral time. |
 | `invalid_output_limits` | An output limit is `NaN`, `output_min` exceeds `output_max` in some channel, `output_min` is `+inf`, or `output_max` is `-inf`. Equal limits are accepted. | The actuator range. |
 | `non_finite_setpoint_weight` | A `b` or `c` component is `NaN` or infinite. | The setpoint weights. |
 | `invalid_filter_time_constant` | A `setpoint_filter` or `pv_filter` time constant is `NaN`, negative or `+inf`. Zero means no filter. | The filter's `tf`. |
 | `invalid_rate_limit` | A `rate_limit` `rate_max` is `NaN` or negative. Zero and `+inf` mean no limit. | The rate limit. |
 | `invalid_back_calculation_gain` | An explicit `anti_windup<back_calc>` gain `kb` is `NaN` or infinite. Zero selects the default gain. | The tracking gain. |
 | `invalid_error_threshold` | An `anti_windup<conditional_integration>` `error_threshold` is `NaN`. | The integration threshold. |
-| `invalid_derivative_filter` | A `deriv_filter` `n` is `NaN` or infinite. | The filter divisor. |
-| `unrepresentable_gain` | Each field is finite, but an internal gain derived from them overflows `Scalar`: in ISA form `kp` over the integral time, or `kp` times the derivative time. | Smaller gains or a wider `Scalar`. |
+| `invalid_derivative_filter` | A `deriv_filter` `n` is `NaN` or infinite, or an explicit `tf` is `NaN`, infinite, zero or negative. | The filter divisor or time constant. |
+| `undefined_tracking_time` | `anti_windup<back_calc>` leaves a channel's `kb` at zero, the channel has integral action (`ki != 0`), and its nonzero gains do not share a sign, so the default tracking time does not exist. | An explicit `kb`, or gains of one sign. |
+| `undefined_derivative_filter` | `deriv_filter` is composed, a channel has derivative action (`kd != 0`) and no `tf`, and its default Tf = kd/(kp*n) is not a positive time: `kp` is zero, `n` is zero or negative, or `kd` and `kp` differ in sign. | An explicit `tf`, or a positive `n`. |
+| `unrepresentable_gain` | Each field is finite, but a quantity derived from them is not representable in `Scalar`: in ISA form `kp` over the integral time, or `kp` times the derivative time, overflows; the default derivative filter time constant kd/(kp*n) is not a positive finite number; or the default back-calculation gain is not finite. | Smaller gains, an explicit `tf` or `kb`, or a wider `Scalar`. |
 
 ## Methods
 

@@ -9,12 +9,11 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <type_traits>
 
 namespace ctrlpp
 {
-
-// --- Anti-windup strategy tags ---
 
 struct back_calc
 {
@@ -27,8 +26,6 @@ struct clamping
 struct conditional_integration
 {
 };
-
-// --- Policy types ---
 
 template <typename Strategy = back_calc>
 struct anti_windup;
@@ -67,6 +64,7 @@ struct deriv_filter
     struct config
     {
         std::array<Scalar, N> n{};
+        std::array<std::optional<Scalar>, N> tf{};
     };
 };
 

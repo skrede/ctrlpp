@@ -92,6 +92,12 @@ void gain_fault(Config& cfg)
 }
 
 template <typename Config>
+void zero_integral_time_fault(Config& cfg)
+{
+    cfg.ki[1] = typename Config::vector_t::Scalar{0};
+}
+
+template <typename Config>
 void limits_fault(Config& cfg)
 {
     using Scalar = typename Config::vector_t::Scalar;
@@ -121,6 +127,7 @@ auto filtered_faults() -> std::vector<fault<typename filtered_pid<Scalar>::confi
     using C = typename filtered_pid<Scalar>::config_type;
     return {
         {gain_fault<C>, pid_config_error::non_finite_gain},
+        {zero_integral_time_fault<C>, pid_config_error::zero_integral_time},
         {limits_fault<C>, pid_config_error::invalid_output_limits},
         {weight_fault<C>, pid_config_error::non_finite_setpoint_weight},
         {[](C& c) { c.template policy<ctrlpp::pv_filter>().tf[1] = Scalar{-1}; }, pid_config_error::invalid_filter_time_constant},
@@ -128,6 +135,8 @@ auto filtered_faults() -> std::vector<fault<typename filtered_pid<Scalar>::confi
         {[](C& c) { c.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb[1] = infinity<Scalar>(); },
          pid_config_error::invalid_back_calculation_gain},
         {[](C& c) { c.template policy<ctrlpp::deriv_filter>().n[1] = not_a_number<Scalar>(); }, pid_config_error::invalid_derivative_filter},
+        {[](C& c) { c.ki[1] = static_cast<Scalar>(-0.5); }, pid_config_error::undefined_tracking_time},
+        {[](C& c) { c.template policy<ctrlpp::deriv_filter>().n[1] = Scalar{0}; }, pid_config_error::undefined_derivative_filter},
         {unrepresentable_fault<C>, pid_config_error::unrepresentable_gain},
     };
 }
@@ -138,12 +147,14 @@ auto conditional_faults() -> std::vector<fault<typename conditional_pid<Scalar>:
     using C = typename conditional_pid<Scalar>::config_type;
     return {
         {gain_fault<C>, pid_config_error::non_finite_gain},
+        {zero_integral_time_fault<C>, pid_config_error::zero_integral_time},
         {limits_fault<C>, pid_config_error::invalid_output_limits},
         {weight_fault<C>, pid_config_error::non_finite_setpoint_weight},
         {[](C& c) { c.template policy<ctrlpp::rate_limit>().rate_max[1] = Scalar{-1}; }, pid_config_error::invalid_rate_limit},
         {[](C& c) { c.template policy<ctrlpp::anti_windup<ctrlpp::conditional_integration>>().error_threshold[1] = not_a_number<Scalar>(); },
          pid_config_error::invalid_error_threshold},
         {[](C& c) { c.template policy<ctrlpp::deriv_filter>().n[1] = infinity<Scalar>(); }, pid_config_error::invalid_derivative_filter},
+        {[](C& c) { c.template policy<ctrlpp::deriv_filter>().n[1] = Scalar{-1}; }, pid_config_error::undefined_derivative_filter},
         {unrepresentable_fault<C>, pid_config_error::unrepresentable_gain},
     };
 }
@@ -204,7 +215,8 @@ auto same_policies(const typename filtered_pid<Scalar>::config_type& a, const ty
         && same_bits(a.template policy<ctrlpp::rate_limit>().rate_max, b.template policy<ctrlpp::rate_limit>().rate_max)
         && same_bits(a.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb,
                      b.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb)
-        && same_bits(a.template policy<ctrlpp::deriv_filter>().n, b.template policy<ctrlpp::deriv_filter>().n);
+        && same_bits(a.template policy<ctrlpp::deriv_filter>().n, b.template policy<ctrlpp::deriv_filter>().n)
+        && a.template policy<ctrlpp::deriv_filter>().tf == b.template policy<ctrlpp::deriv_filter>().tf;
 }
 
 }
@@ -362,6 +374,21 @@ TEMPLATE_TEST_CASE("PID factory refuses each documented condition", "[pid][confi
         derivative.kd[1] = Scalar{2};
         REQUIRE(refusal_of<Isa>(integral) == pid_config_error::unrepresentable_gain);
         REQUIRE(refusal_of<Isa>(derivative) == pid_config_error::unrepresentable_gain);
+    }
+
+    SECTION("derived filter time constant and default tracking gain that are not representable")
+    {
+        auto underflow = base, overflow = base, sqrt_kb = base, ratio_kb = base;
+        underflow.kd[1] = std::numeric_limits<Scalar>::denorm_min();
+        underflow.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb[1] = Scalar{1};
+        overflow.kd[1] = std::numeric_limits<Scalar>::max();
+        overflow.template policy<ctrlpp::deriv_filter>().n[1] = static_cast<Scalar>(0.25);
+        sqrt_kb.ki[1] = std::numeric_limits<Scalar>::max();
+        ratio_kb.ki[1] = std::numeric_limits<Scalar>::max();
+        ratio_kb.kp[1] = static_cast<Scalar>(0.25);
+        ratio_kb.kd[1] = Scalar{0};
+        for(auto const& cfg : {underflow, overflow, sqrt_kb, ratio_kb})
+            REQUIRE(refusal_of<Pid>(cfg) == pid_config_error::unrepresentable_gain);
     }
 }
 

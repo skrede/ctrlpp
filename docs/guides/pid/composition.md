@@ -107,6 +107,7 @@ composition above, `cfg` includes:
 | Base PID                 | `output_max` | Upper output clamp                   |
 | `anti_windup<back_calc>` | `kb`         | Back-calculation gain                |
 | `deriv_filter`           | `n`          | Derivative filter bandwidth          |
+| `deriv_filter`           | `tf`         | Explicit derivative filter time      |
 | `rate_limit`             | `rate_max`   | Maximum output rate of change        |
 
 Access policy fields through `cfg.template policy<PolicyType>()`.

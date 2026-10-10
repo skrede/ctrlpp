@@ -88,13 +88,18 @@ enum class pid_health
 /// @brief Structured failure modes of `pid::create`, `pid::set_params` and
 /// `pid::set_integral`.
 ///
-/// The first nine are checked by `create` and `set_params` in the order listed;
-/// a configuration with several faults reports the first.
+/// The first twelve are checked by `create` and `set_params` in the order
+/// listed; a configuration with several faults reports the first. Where a
+/// condition names the internal gains, those are the parallel gains: in ISA form
+/// kp/Ti and kp*Td.
 ///
 ///  * non_finite_gain               : a kp, ki or kd component is NaN or
 ///                                    infinite. In ISA form ki is the integral
 ///                                    time, and a NaN or negative-infinite one
 ///                                    is refused.
+///  * zero_integral_time            : in ISA form an integral time is zero. The
+///                                    integral gain kp/Ti is then infinite, not
+///                                    zero.
 ///  * invalid_output_limits         : an output limit is NaN, output_min
 ///                                    exceeds output_max in some channel,
 ///                                    output_min is +infinity, or output_max is
@@ -110,17 +115,34 @@ enum class pid_health
 ///                                    gain.
 ///  * invalid_error_threshold       : a conditional-integration error_threshold
 ///                                    is NaN.
-///  * invalid_derivative_filter     : a deriv_filter n is NaN or infinite.
-///  * unrepresentable_gain          : the configuration is well posed, and an
-///                                    internal gain derived from it is not
+///  * invalid_derivative_filter     : a deriv_filter n is NaN or infinite, or
+///                                    an explicit filter time constant tf is
+///                                    NaN, infinite, zero or negative.
+///  * undefined_tracking_time       : back_calc leaves a channel's kb at its
+///                                    default, the channel's internal ki is
+///                                    nonzero, and the nonzero internal kp, ki
+///                                    and kd do not share a sign. The tracking
+///                                    time behind the default gain is then not a
+///                                    positive time; an explicit kb is accepted.
+///  * undefined_derivative_filter   : deriv_filter is composed, a channel's
+///                                    internal kd is nonzero and its tf is
+///                                    absent, and the default Tf = kd/(kp*n) is
+///                                    not a positive time: kp is zero, n is zero
+///                                    or negative, or kd and kp differ in sign.
+///  * unrepresentable_gain          : the configuration is well posed, and a
+///                                    quantity derived from it is not
 ///                                    representable in Scalar: in ISA form kp
 ///                                    divided by the integral time, or kp times
-///                                    the derivative time, overflows.
+///                                    the derivative time, overflows; the default
+///                                    filter time constant kd/(kp*n) is not a
+///                                    positive finite number; or the default
+///                                    back-calculation gain is not finite.
 ///  * non_finite_integral           : `set_integral` was handed a NaN or
 ///                                    infinite component.
 enum class pid_config_error
 {
     non_finite_gain,
+    zero_integral_time,
     invalid_output_limits,
     non_finite_setpoint_weight,
     invalid_filter_time_constant,
@@ -128,6 +150,8 @@ enum class pid_config_error
     invalid_back_calculation_gain,
     invalid_error_threshold,
     invalid_derivative_filter,
+    undefined_tracking_time,
+    undefined_derivative_filter,
     unrepresentable_gain,
     non_finite_integral,
 };

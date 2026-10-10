@@ -2,6 +2,7 @@
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <limits>
@@ -150,21 +151,39 @@ TEST_CASE("error() returns last error", "[pid][siso]")
     REQUIRE_THAT(pid.error()[0], WithinAbs(2.0, tol));
 }
 
-TEST_CASE("ISA form with Ti=0 sets Ki to zero (no integral action)",
-    "[pid][siso][isa][edge-case]")
+TEMPLATE_TEST_CASE("ISA form refuses a zero integral time and integrates with kp/Ti otherwise",
+    "[pid][siso][isa][edge-case]", float, double)
 {
-    using IsaPid = ctrlpp::pid<double, 1, ctrlpp::isa_form>;
-    IsaPid::config_type cfg{};
-    cfg.kp = vec1(2.0);
-    cfg.ki = vec1(0.0);  // Ti=0 in ISA form -> Ki should be 0 (no divide-by-zero)
-    cfg.kd = vec1(0.05);
-    auto pid = ctrlpp::test::constructed(IsaPid::create(cfg));
+    using Scalar = TestType;
+    using IsaPid = ctrlpp::pid<Scalar, 1, ctrlpp::isa_form>;
+    using vector_t = typename IsaPid::vector_t;
+    const Scalar kp = 2;
+    const Scalar ti = static_cast<Scalar>(0.5);
+    const Scalar dt = static_cast<Scalar>(0.01);
+    typename IsaPid::config_type cfg{};
+    cfg.kp = vector_t::Constant(kp);
+    cfg.ki = vector_t::Constant(ti);
+    cfg.kd = vector_t::Constant(static_cast<Scalar>(0.05));
+    auto controller = ctrlpp::test::constructed(IsaPid::create(cfg));
+    auto twin = ctrlpp::test::constructed(IsaPid::create(cfg));
+    const auto e = vector_t::Constant(Scalar{1});
+    REQUIRE(controller.compute(e, vector_t::Zero(), dt).has_value());
+    REQUIRE(twin.compute(e, vector_t::Zero(), dt).has_value());
+    REQUIRE(controller.integral()[0] == kp / ti * e[0] * dt);
 
-    // With Ki=0, integral should stay at zero after multiple steps
-    for (int i = 0; i < 10; ++i)
-        REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
+    auto zero_ti = cfg;
+    zero_ti.ki = vector_t::Zero();
+    const auto created = IsaPid::create(zero_ti);
+    REQUIRE_FALSE(created.has_value());
+    REQUIRE(created.error() == ctrlpp::pid_config_error::zero_integral_time);
 
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
+    const auto refused = controller.set_params(zero_ti);
+    REQUIRE_FALSE(refused.has_value());
+    REQUIRE(refused.error() == ctrlpp::pid_config_error::zero_integral_time);
+    REQUIRE(controller.params().ki[0] == ti);
+    REQUIRE(controller.integral()[0] == twin.integral()[0]);
+    const auto next = ctrlpp::test::commanded(controller.compute(e, e, dt));
+    REQUIRE(next[0] == ctrlpp::test::commanded(twin.compute(e, e, dt))[0]);
 }
 
 TEST_CASE("Tracking signal with zero dt is rejected without modifying the integral",

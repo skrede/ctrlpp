@@ -2,10 +2,12 @@
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <algorithm>
 
 using Catch::Matchers::WithinAbs;
@@ -29,6 +31,37 @@ double integral_reconstruction_tol(double scale)
 {
     constexpr int arithmetic_ops = 10; // products/sums forming the stored integral
     return 2.0 * arithmetic_ops * std::numeric_limits<double>::epsilon() * std::abs(scale);
+}
+
+template <typename Scalar>
+auto back_calc_first_step(Scalar kp, Scalar ki, Scalar kd, Scalar kb_config, Scalar meas) -> std::pair<Scalar, Scalar>
+{
+    using AwPid = ctrlpp::pid<Scalar, 1, ctrlpp::anti_windup<ctrlpp::back_calc>>;
+    using vector_t = typename AwPid::vector_t;
+    typename AwPid::config_type cfg{};
+    cfg.kp = vector_t::Constant(kp);
+    cfg.ki = vector_t::Constant(ki);
+    cfg.kd = vector_t::Constant(kd);
+    cfg.output_max = vector_t::Constant(Scalar{5});
+    cfg.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb = {kb_config};
+    auto controller = ctrlpp::test::constructed(AwPid::create(cfg));
+    const Scalar dt = static_cast<Scalar>(0.01);
+    const auto u = ctrlpp::test::commanded(controller.compute(vector_t::Zero(), vector_t::Constant(meas), dt));
+    return {u[0], controller.integral()[0]};
+}
+
+template <typename Scalar>
+auto back_calc_refusal(Scalar kp, Scalar ki, Scalar kd) -> ctrlpp::pid_config_error
+{
+    using AwPid = ctrlpp::pid<Scalar, 1, ctrlpp::anti_windup<ctrlpp::back_calc>>;
+    using vector_t = typename AwPid::vector_t;
+    typename AwPid::config_type cfg{};
+    cfg.kp = vector_t::Constant(kp);
+    cfg.ki = vector_t::Constant(ki);
+    cfg.kd = vector_t::Constant(kd);
+    const auto created = AwPid::create(cfg);
+    REQUIRE_FALSE(created.has_value());
+    return created.error();
 }
 
 }
@@ -153,6 +186,43 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
         const double increment = ki * e * Ts;
         REQUIRE(u[0] == out_max); // saturated
         REQUIRE_THAT(pid.integral()[0], WithinAbs(increment, integral_reconstruction_tol(increment)));
+    }
+}
+
+TEMPLATE_TEST_CASE("back_calc default kb is refused when the gains do not share a sign",
+    "[pid][siso][anti-windup][backcalc][auto-kb]", float, double)
+{
+    using Scalar = TestType;
+    REQUIRE(back_calc_refusal<Scalar>(Scalar{1}, static_cast<Scalar>(-0.1), static_cast<Scalar>(0.1))
+        == ctrlpp::pid_config_error::undefined_tracking_time);
+    REQUIRE(back_calc_refusal<Scalar>(Scalar{1}, static_cast<Scalar>(-0.5), Scalar{0})
+        == ctrlpp::pid_config_error::undefined_tracking_time);
+
+    // The first step saturates at output_max = 5 from setpoint 0; the expected command and integral are
+    // formed in the controller's operation order, so they match bit for bit.
+    const Scalar dt = static_cast<Scalar>(0.01);
+    const Scalar sp = 0;
+    const auto reconstructed = [&](Scalar kp, Scalar ki, Scalar kb, Scalar meas) {
+        const Scalar increment = ki * (sp - meas) * dt;
+        const Scalar u_raw = kp * (Scalar{1} * sp - meas) + increment;
+        const Scalar u_sat = std::min(u_raw, Scalar{5});
+        return std::pair<Scalar, Scalar>{u_sat, increment + kb * (u_sat - u_raw) * dt};
+    };
+
+    SECTION("reverse-acting gains of one sign take kb = sqrt(ki/kd)")
+    {
+        const Scalar kp = -1, ki = static_cast<Scalar>(-0.5), kd = static_cast<Scalar>(-0.1), meas = 10;
+        const auto expected = reconstructed(kp, ki, std::sqrt(ki / kd), meas);
+        REQUIRE(expected.first == Scalar{5});
+        REQUIRE(back_calc_first_step<Scalar>(kp, ki, kd, Scalar{0}, meas) == expected);
+    }
+
+    SECTION("an explicit kb is accepted whatever the gain signs")
+    {
+        const Scalar kp = 1, ki = static_cast<Scalar>(-0.1), kd = static_cast<Scalar>(0.1), meas = -10;
+        const auto expected = reconstructed(kp, ki, Scalar{2}, meas);
+        REQUIRE(expected.first == Scalar{5});
+        REQUIRE(back_calc_first_step<Scalar>(kp, ki, kd, Scalar{2}, meas) == expected);
     }
 }
 

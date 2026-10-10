@@ -24,13 +24,15 @@ Fields added to `pid_config` when this policy is active:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `kb` | `std::array<Scalar, N>` | `{}` (zeros) | Back-calculation gain per channel (units of 1/time). Controls how fast the integrator is driven back when saturated. Leaving a channel at zero selects the automatic default described below. `create` refuses a `NaN` or infinite `kb` with `invalid_back_calculation_gain`. |
+| `kb` | `std::array<Scalar, N>` | `{}` (zeros) | Back-calculation gain per channel (units of 1/time). Controls how fast the integrator is driven back when saturated. Leaving a channel at zero selects the automatic default described below. `create` refuses a `NaN` or infinite `kb` with `invalid_back_calculation_gain`, and a default it cannot form with `undefined_tracking_time` or `unrepresentable_gain`. |
 
 The back-calculation gain multiplies the saturation error (the clipped minus unclipped output, in output units) into the integrator, whose rate is in output-per-time, so `kb` must carry units of 1/time. When a channel's `kb` is left at zero, it is auto-computed using the Astrom tracking-time-constant form `kb = 1/Tt` with `Tt = sqrt(Ti*Td)`:
 
 - with derivative action (`kd != 0`): `kb = sqrt(ki/kd)`,
 - without derivative action (`kd == 0`): the tracking time collapses to the integral time, giving the fallback `kb = ki/kp`,
 - for a pure integral controller (`kp == 0` and `kd == 0`): there is no proportional or derivative reference for a tracking time, so back-calculation is disabled (`kb = 0`).
+
+The gains above are the internal parallel gains (in ISA form `ki = Kp/Ti` and `kd = Kp*Td`). The tracking time exists only when `Ti = kp/ki` and `Td = kd/kp` are positive, which holds exactly when the nonzero gains share a sign. A channel with integral action (`ki != 0`) whose nonzero gains do not share a sign has no default: `sqrt(ki/kd)` is not a number and `ki/kp` is negative, so `create` and `set_params` refuse it with `undefined_tracking_time` while its `kb` is left at zero. An explicit nonzero `kb` is accepted for such a channel. A reverse-acting controller, with every gain negative, shares a sign and gets the positive default. A default that overflows `Scalar` (for example `ki/kd` beyond the largest finite value) is refused with `unrepresentable_gain`.
 
 ### clamping
 

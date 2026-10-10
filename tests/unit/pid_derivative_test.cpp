@@ -2,9 +2,14 @@
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <array>
 #include <cmath>
+#include <limits>
+#include <optional>
+#include <type_traits>
 
 using Catch::Matchers::WithinAbs;
 
@@ -17,6 +22,29 @@ constexpr double Ts = 0.01;
 constexpr double tol = 1e-12;
 
 Vec1 vec1(double v) { Vec1 r; r << v; return r; }
+
+template <typename Scalar>
+using filtered_pid = ctrlpp::pid<Scalar, 1, ctrlpp::deriv_filter>;
+
+template <typename Scalar>
+auto filtered_config(Scalar kp, Scalar kd, Scalar n, std::optional<Scalar> tf) -> typename filtered_pid<Scalar>::config_type
+{
+    using DfPid = filtered_pid<Scalar>;
+    typename DfPid::config_type cfg{};
+    cfg.kp = DfPid::vector_t::Constant(kp);
+    cfg.kd = DfPid::vector_t::Constant(kd);
+    cfg.template policy<ctrlpp::deriv_filter>().n = {n};
+    cfg.template policy<ctrlpp::deriv_filter>().tf = {tf};
+    return cfg;
+}
+
+template <typename Scalar>
+auto filter_refusal(Scalar kp, Scalar kd, Scalar n, std::optional<Scalar> tf) -> ctrlpp::pid_config_error
+{
+    const auto created = filtered_pid<Scalar>::create(filtered_config(kp, kd, n, tf));
+    REQUIRE_FALSE(created.has_value());
+    return created.error();
+}
 
 }
 
@@ -151,4 +179,63 @@ TEST_CASE("Without deriv_filter policy, unfiltered derivative is used",
     // D = -1.0 * (1-0)/0.01 = -100
     // P = 1.0 * (0-1) = -1
     REQUIRE_THAT(u[0], WithinAbs(-101.0, tol));
+}
+
+TEMPLATE_TEST_CASE("deriv_filter refuses a derivative channel whose filter time constant is undefined",
+    "[pid][siso][deriv-filter]", float, double)
+{
+    using Scalar = TestType;
+    using DfPid = filtered_pid<Scalar>;
+    const Scalar kd = static_cast<Scalar>(0.1);
+    const auto none = std::optional<Scalar>{};
+    REQUIRE(filter_refusal<Scalar>(Scalar{0}, kd, Scalar{10}, none) == ctrlpp::pid_config_error::undefined_derivative_filter);
+    REQUIRE(filter_refusal<Scalar>(Scalar{1}, kd, Scalar{0}, none) == ctrlpp::pid_config_error::undefined_derivative_filter);
+    REQUIRE(filter_refusal<Scalar>(Scalar{1}, -kd, Scalar{10}, none) == ctrlpp::pid_config_error::undefined_derivative_filter);
+
+    for(const Scalar n : {Scalar{-1}, Scalar{0}, Scalar{10}})
+        REQUIRE(DfPid::create(filtered_config<Scalar>(Scalar{1}, Scalar{0}, n, none)).has_value());
+
+    for(const Scalar tf : {Scalar{0}, Scalar{-1}, std::numeric_limits<Scalar>::quiet_NaN(), std::numeric_limits<Scalar>::infinity()})
+        REQUIRE(filter_refusal<Scalar>(Scalar{1}, kd, Scalar{10}, tf) == ctrlpp::pid_config_error::invalid_derivative_filter);
+}
+
+TEMPLATE_TEST_CASE("deriv_filter with an explicit time constant filters a channel without proportional gain",
+    "[pid][siso][deriv-filter]", float, double)
+{
+    using Scalar = TestType;
+    using DfPid = filtered_pid<Scalar>;
+    using vector_t = typename DfPid::vector_t;
+    const Scalar kd = static_cast<Scalar>(0.1);
+    const Scalar tf = static_cast<Scalar>(0.02);
+    const Scalar dt = static_cast<Scalar>(0.01);
+    auto controller = ctrlpp::test::constructed(DfPid::create(filtered_config<Scalar>(Scalar{0}, kd, Scalar{0}, tf)));
+    REQUIRE(controller.compute(vector_t::Zero(), vector_t::Zero(), dt).has_value());
+    const auto u = ctrlpp::test::commanded(controller.compute(vector_t::Zero(), vector_t::Constant(Scalar{1}), dt));
+
+    const Scalar alpha = tf / (tf + dt);
+    const Scalar raw = -(kd * ((Scalar{1} - Scalar{0}) / dt));
+    REQUIRE(u[0] == alpha * Scalar{0} + (Scalar{1} - alpha) * raw);
+}
+
+TEMPLATE_TEST_CASE("deriv_filter default time constant output sequence is pinned", "[pid][siso][deriv-filter]", float, double)
+{
+    using Scalar = TestType;
+    using DfPid = filtered_pid<Scalar>;
+    using vector_t = typename DfPid::vector_t;
+    const auto cfg = filtered_config<Scalar>(Scalar{2}, static_cast<Scalar>(0.1), Scalar{10}, std::nullopt);
+    auto controller = ctrlpp::test::constructed(DfPid::create(cfg));
+    constexpr std::array<double, 8> measurements{0, 1, 1, 0.5, 0.25, 0.75, 0.75, -0.5};
+    std::array<Scalar, 8> expected{};
+    if constexpr(std::is_same_v<Scalar, float>)
+        expected = {0x0p+0f, -0x1.155554p+3f, -0x1.0e38e4p+2f, 0x1.97b42p+0f,
+                    0x1.03f35ap+1f, -0x1.feaeep+1f, -0x1.2a3a4cp+1f, 0x1.21d07ap+3f};
+    else
+        expected = {0x0p+0, -0x1.1555555555555p+3, -0x1.0e38e38e38e39p+2, 0x1.97b425ed097b2p+0,
+                    0x1.03f35ba781948p+1, -0x1.feaee172d4ce7p+1, -0x1.2a3a4b2646ef8p+1, 0x1.21d079bccf6cp+3};
+    for(std::size_t k = 0; k < measurements.size(); ++k)
+    {
+        CAPTURE(k);
+        const auto meas = vector_t::Constant(static_cast<Scalar>(measurements[k]));
+        REQUIRE(ctrlpp::test::commanded(controller.compute(vector_t::Zero(), meas, static_cast<Scalar>(0.01)))[0] == expected[k]);
+    }
 }

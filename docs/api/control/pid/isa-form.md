@@ -15,10 +15,12 @@ When `isa_form` is active, the `ki` and `kd` fields in `pid_config` are reinterp
 | Field | Interpretation | Description |
 |-------|---------------|-------------|
 | `kp` | Kp | Proportional gain (same as standard form). `create` refuses a `NaN` or infinite component with `non_finite_gain`. |
-| `ki` | Ti | Integral time constant. Actual integral gain = Kp / Ti. `create` refuses a `NaN` or negative-infinite Ti with `non_finite_gain`, and a Kp / Ti that overflows `Scalar` with `unrepresentable_gain`. |
+| `ki` | Ti | Integral time constant. Actual integral gain = Kp / Ti. `create` refuses a `NaN` or negative-infinite Ti with `non_finite_gain`, a zero Ti with `zero_integral_time`, and a Kp / Ti that overflows `Scalar` with `unrepresentable_gain`. |
 | `kd` | Td | Derivative time constant. Actual derivative gain = Kp * Td. `create` refuses a `NaN` or infinite Td with `non_finite_gain`, and a Kp * Td that overflows `Scalar` with `unrepresentable_gain`. |
 
 No additional config struct fields are added. The ISA form modifies how the existing `kp`, `ki`, `kd` fields are used internally.
+
+A zero integral time is not "no integral action": the integral gain Kp / Ti is then infinite, so `create` and `set_params` refuse it with `zero_integral_time`. The `ki` field defaults to zero, so an ISA-form configuration must set Ti in every channel.
 
 ## Behavior
 

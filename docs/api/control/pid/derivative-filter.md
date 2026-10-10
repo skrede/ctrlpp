@@ -1,6 +1,6 @@
 # deriv_filter
 
-First-order low-pass filter on the derivative term to attenuate high-frequency noise amplification. Without filtering, the derivative action amplifies measurement noise proportionally to frequency. The filter coefficient N controls the bandwidth: larger N allows more high-frequency content through (less filtering), while smaller N provides heavier smoothing at the cost of slower derivative response.
+First-order low-pass filter on the derivative term to attenuate high-frequency noise amplification. Without filtering, the derivative action amplifies measurement noise proportionally to frequency. The filter time constant Tf sets the bandwidth. By default it is derived from the divisor N as Tf = Td/N: larger N allows more high-frequency content through (less filtering), while smaller N provides heavier smoothing at the cost of slower derivative response. A channel can instead state Tf directly in seconds.
 
 ## Header
 
@@ -14,11 +14,30 @@ Fields added to `pid_config` when this policy is active:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `n` | `std::array<Scalar, N>` | `{}` (zeros) | Derivative filter coefficient per channel. Typical range: 3--20. Higher values mean less filtering. `create` refuses a `NaN` or infinite `n` with `invalid_derivative_filter`. |
+| `n` | `std::array<Scalar, N>` | `{}` (zeros) | Derivative filter divisor N per channel, giving the default time constant Tf = kd/(kp*N). Typical values are 8 to 20. Higher values mean less filtering. `create` refuses a `NaN` or infinite `n` with `invalid_derivative_filter`. |
+| `tf` | `std::array<std::optional<Scalar>, N>` | `{}` (absent) | Explicit filter time constant Tf per channel, in seconds. When present it replaces the default kd/(kp*N) and `n` is not used for that channel. It must be finite and positive; `create` refuses a `NaN`, infinite, zero or negative `tf` with `invalid_derivative_filter`. |
+
+The gains in this page are the internal parallel gains (in ISA form `kd = Kp*Td`). A channel without derivative action (`kd == 0`) is not filtered, and any finite `n` is accepted for it. A channel with derivative action and no `tf` must have a default time constant that is a positive time, so `create` and `set_params` refuse it with `undefined_derivative_filter` when:
+
+- `kp == 0` (a D-only or I-D channel), since Tf = kd/(kp*N) has no value,
+- `n <= 0`, which includes the default `n` of zero,
+- `kd` and `kp` differ in sign, which would make Tf negative and the filter unstable.
+
+A default Tf that is not representable as a positive finite `Scalar` (kd/(kp*N) overflowing, or underflowing to zero) is refused with `unrepresentable_gain`. For a D-only or I-D channel, state the time constant directly:
+
+```cpp
+using Pid = ctrlpp::pid<double, 1, ctrlpp::deriv_filter>;
+using Vec = Pid::vector_t;
+
+Pid::config_type cfg{};
+cfg.ki = Vec::Constant(0.5);
+cfg.kd = Vec::Constant(0.1);
+cfg.template policy<ctrlpp::deriv_filter>().tf = {0.02};  // seconds; kp is zero, so there is no default
+```
 
 ## Behavior
 
-Replaces the pure derivative s*Kd with the filtered form Kd*N*s / (1 + N/s), implemented in discrete time. This limits the derivative gain at high frequencies to Kd*N rather than letting it grow unbounded.
+The ideal derivative s*Td is filtered by a first-order system with time constant Tf = Td/N, so the derivative term becomes Kp*Td*s / (1 + s*Td/N), or kd*s / (1 + s*Tf) in parallel gains. Its gain at high frequencies is limited to kd/Tf, which is Kp*N with the default time constant, rather than growing without bound (Astrom and Hagglund, *Advanced PID Control*, 2006). In discrete time the filter is the backward-difference form D_k = alpha*D_(k-1) + (1 - alpha)*D_raw with alpha = Tf/(Tf + dt), which lies between 0 and 1 for every positive Tf and dt, so the filter is stable for all accepted parameters.
 
 ## Usage Example
 

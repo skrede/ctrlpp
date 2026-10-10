@@ -39,6 +39,7 @@ public:
     /// Rejections, checked in order:
     ///  * a NaN or infinite kp, ki or kd component, or in ISA form a NaN or
     ///    negative-infinite integral time -> pid_config_error::non_finite_gain
+    ///  * in ISA form a zero integral time -> pid_config_error::zero_integral_time
     ///  * a NaN output limit, output_min above output_max, output_min at
     ///    +infinity or output_max at -infinity -> pid_config_error::invalid_output_limits
     ///  * a NaN or infinite b or c component -> pid_config_error::non_finite_setpoint_weight
@@ -48,9 +49,17 @@ public:
     ///  * a NaN or infinite explicit back-calculation kb ->
     ///    pid_config_error::invalid_back_calculation_gain
     ///  * a NaN conditional-integration error_threshold -> pid_config_error::invalid_error_threshold
-    ///  * a NaN or infinite deriv_filter n -> pid_config_error::invalid_derivative_filter
+    ///  * a NaN or infinite deriv_filter n, or an explicit deriv_filter tf that is
+    ///    not finite and positive -> pid_config_error::invalid_derivative_filter
+    ///  * a default back-calculation kb on a channel with integral action whose
+    ///    nonzero gains differ in sign -> pid_config_error::undefined_tracking_time
+    ///  * a derivative channel without an explicit tf whose kp is zero, whose n is
+    ///    not positive, or whose kd and kp differ in sign
+    ///    -> pid_config_error::undefined_derivative_filter
     ///  * an ISA-form internal gain, kp over the integral time or kp times the
-    ///    derivative time, that overflows -> pid_config_error::unrepresentable_gain
+    ///    derivative time, that overflows, a default filter time constant
+    ///    kd/(kp*n) that is not positive and finite, or a default back-calculation
+    ///    kb that is not finite -> pid_config_error::unrepresentable_gain
     static auto create(const config_type& cfg) -> expected<pid, pid_config_error>
     {
         auto derived = detail::derive_pid_gains(cfg);
@@ -559,12 +568,10 @@ private:
     {
         if constexpr(detail::contains_v<deriv_filter, Policies...>)
         {
-            const auto& df_cfg = m_cfg.template policy<deriv_filter>();
             for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-                if(df_cfg.n[static_cast<std::size_t>(i)] > Scalar{0} && m_gains.kp[i] != Scalar{0})
+                if(m_gains.tf[i] > Scalar{0})
                 {
-                    Scalar tf = m_gains.kd[i] / (m_gains.kp[i] * df_cfg.n[static_cast<std::size_t>(i)]);
-                    Scalar alpha = tf / (tf + dt);
+                    Scalar alpha = m_gains.tf[i] / (m_gains.tf[i] + dt);
                     d[i] = alpha * m_prev_deriv_filtered[i] + (Scalar{1} - alpha) * d[i];
                 }
             m_prev_deriv_filtered = d;
