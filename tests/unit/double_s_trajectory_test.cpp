@@ -1,6 +1,8 @@
 #include <ctrlpp/trajectory/double_s_trajectory.h>
 #include <ctrlpp/trajectory/trajectory_segment.h>
 
+#include <ctrlpp/trajectory/detail/jerk_limited_ramp.h>
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -9,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <random>
 #include <cstdint>
 #include <algorithm>
 #include <type_traits>
@@ -772,12 +775,12 @@ void sample_into(ctrlpp::double_s_trajectory<Scalar> const& traj, double_s_limit
     excess.velocity += (std::abs(point.velocity[0]) > l.v_max) ? 1 : 0;
 }
 
+// The windows hold every representable instant within 64 steps of each cumulative switch, plus pred(T) and T.
 template <typename Scalar>
-auto excess_around_switches(ctrlpp::double_s_trajectory<Scalar> const& traj, double_s_limits<Scalar> const& l)
+auto excess_in_switch_windows(ctrlpp::double_s_trajectory<Scalar> const& traj, double_s_limits<Scalar> const& l)
     -> sampled_excess<Scalar>
 {
     constexpr std::int32_t steps = 64;
-    constexpr auto grid_step = static_cast<Scalar>(1e-3);
     auto excess = sampled_excess<Scalar>{0, 0};
     auto center = Scalar{0};
     for (auto const segment : traj.phase_durations()) {
@@ -790,10 +793,20 @@ auto excess_around_switches(ctrlpp::double_s_trajectory<Scalar> const& traj, dou
             sample_into(traj, l, t, excess);
         }
     }
+    sample_into(traj, l, std::nextafter(traj.duration(), Scalar{0}), excess);
+    sample_into(traj, l, traj.duration(), excess);
+    return excess;
+}
+
+template <typename Scalar>
+auto excess_around_switches(ctrlpp::double_s_trajectory<Scalar> const& traj, double_s_limits<Scalar> const& l)
+    -> sampled_excess<Scalar>
+{
+    constexpr auto grid_step = static_cast<Scalar>(1e-3);
+    auto excess = excess_in_switch_windows(traj, l);
     for (std::int32_t i = 0; static_cast<Scalar>(i) * grid_step < traj.duration(); ++i) {
         sample_into(traj, l, static_cast<Scalar>(i) * grid_step, excess);
     }
-    sample_into(traj, l, traj.duration(), excess);
     return excess;
 }
 
@@ -818,6 +831,24 @@ auto round_up_limits() -> double_s_limits<Scalar>
     return {Scalar{4} * a_max * a_max / j_max, a_max, j_max};
 }
 
+constexpr std::array<std::array<double, 2>, 8> sweep_rates{
+    {{1, 1}, {10, 50}, {3, 7}, {1.3, 2.9}, {100, 1000}, {5, 50}, {20, 100}, {1e-2, 1e-1}}};
+
+template <typename Scalar>
+auto stepped_down(Scalar value, std::int32_t steps) -> Scalar
+{
+    for (std::int32_t i = 0; i < steps; ++i) {
+        value = std::nextafter(value, Scalar{0});
+    }
+    return value;
+}
+
+template <typename Scalar>
+auto stepped_up(Scalar value) -> Scalar
+{
+    return std::nextafter(value, std::numeric_limits<Scalar>::infinity());
+}
+
 }
 
 TEMPLATE_TEST_CASE("Double-S: acceleration stays within the limit at every representable instant around each segment switch",
@@ -838,8 +869,6 @@ TEMPLATE_TEST_CASE("Double-S: acceleration stays within the limit at every repre
         require_within_limits(round_up, sigma * Scalar{10} * round_up.v_max * round_up_T_a, Scalar{0}, Scalar{0});
     }
 
-    constexpr std::array<std::array<double, 2>, 8> sweep_rates{
-        {{1, 1}, {10, 50}, {3, 7}, {1.3, 2.9}, {100, 1000}, {5, 50}, {20, 100}, {1e-2, 1e-1}}};
     for (auto const& rates : sweep_rates) {
         auto const a_max = static_cast<Scalar>(rates[0]);
         auto const j_max = static_cast<Scalar>(rates[1]);
@@ -852,4 +881,162 @@ TEMPLATE_TEST_CASE("Double-S: acceleration stays within the limit at every repre
             require_within_limits(double_s_limits<Scalar>{v_max, a_max, j_max}, Scalar{10} * v_max * T_a, Scalar{0}, Scalar{0});
         }
     }
+}
+
+namespace
+{
+
+template <typename Scalar>
+void require_switch_windows_within(ctrlpp::double_s_trajectory<Scalar> const& traj, double_s_limits<Scalar> const& l)
+{
+    auto const excess = excess_in_switch_windows(traj, l);
+    CAPTURE(l.v_max, l.a_max, l.j_max, excess.acceleration, excess.velocity);
+    CHECK(excess.acceleration == 0);
+    CHECK(excess.velocity == 0);
+}
+
+// Full-mantissa magnitude over the given span of binary octaves, from raw engine words only.
+template <typename Scalar>
+auto seeded_magnitude(std::mt19937& engine, std::int32_t lowest_exponent, std::uint32_t octaves) -> Scalar
+{
+    constexpr auto fraction_bits = std::numeric_limits<Scalar>::digits - 1;
+    auto const high = static_cast<std::uint64_t>(engine());
+    auto const low = static_cast<std::uint64_t>(engine());
+    auto const fraction = static_cast<Scalar>(((high << 32) | low) >> (64 - fraction_bits));
+    auto const exponent = lowest_exponent + static_cast<std::int32_t>(engine() % octaves);
+    return std::ldexp(Scalar{1} + std::ldexp(fraction, -fraction_bits), exponent);
+}
+
+template <typename Scalar>
+auto seeded_fraction(std::mt19937& engine) -> Scalar
+{
+    return std::ldexp(static_cast<Scalar>(static_cast<std::int32_t>(engine() >> 8) - (1 << 23)), -23);
+}
+
+}
+
+TEST_CASE("Double-S: a triangular ramp at its threshold holds its peak acceleration within the limit", "[trajectory][double_s]")
+{
+    auto const d = 0.50507005729686805;
+    auto const l = double_s_limits<double>{2.0 * d, 0.029259168123834691, 0.0016950102405212067};
+    auto const traj = built({.q0 = 0, .q1 = 1000, .v_max = l.v_max, .a_max = l.a_max, .j_max = l.j_max, .v0 = d, .v1 = 0});
+    CHECK(traj.evaluate(traj.phase_durations()[0]).acceleration[0] <= l.a_max);
+    require_switch_windows_within(traj, l);
+}
+
+// A jerk segment is sampled strictly before its stored end, so its largest sampled time is the predecessor of T_j.
+TEMPLATE_TEST_CASE("Double-S: a velocity ramp near its triangular threshold never reaches above the acceleration limit",
+                   "[trajectory][double_s]", float, double)
+{
+    using Scalar = TestType;
+    std::mt19937 engine{std::is_same_v<Scalar, double> ? 501u : 502u};
+    std::int32_t above = 0;
+    auto first = std::array<Scalar, 3>{};
+    for (std::int32_t pair = 0; pair < 4096; ++pair) {
+        auto const a_max = seeded_magnitude<Scalar>(engine, -10, 20);
+        auto const j_max = seeded_magnitude<Scalar>(engine, -10, 30);
+        auto d = stepped_down(a_max * a_max / j_max, 16);
+        for (std::int32_t k = -16; k <= 16; ++k, d = stepped_up(d)) {
+            auto const ramp = ctrlpp::detail::make_velocity_ramp(d, a_max, j_max);
+            if (!(ramp.a_lim <= a_max) || !(j_max * std::nextafter(ramp.T_j, Scalar{0}) <= a_max)) {
+                first = (above == 0) ? std::array<Scalar, 3>{a_max, j_max, d} : first;
+                ++above;
+            }
+        }
+    }
+    CAPTURE(first[0], first[1], first[2]);
+    CHECK(above == 0);
+}
+
+TEMPLATE_TEST_CASE("Double-S: rest-to-rest profiles around the triangular threshold stay within the acceleration limit",
+                   "[trajectory][double_s]", float, double)
+{
+    using Scalar = TestType;
+    for (auto const& rates : sweep_rates) {
+        auto const a_max = static_cast<Scalar>(rates[0]);
+        auto const j_max = static_cast<Scalar>(rates[1]);
+        auto v_max = stepped_down(a_max * a_max / j_max, 8);
+        auto h = stepped_down(Scalar{2} * a_max * a_max * a_max / (j_max * j_max), 8);
+        for (std::int32_t k = -8; k <= 8; ++k, v_max = stepped_up(v_max), h = stepped_up(h)) {
+            auto const at_cruise_boundary = Scalar{2} * v_max * std::sqrt(v_max / j_max);
+            auto const reaching = double_s_limits<Scalar>{Scalar{4} * a_max * a_max / j_max, a_max, j_max};
+            for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+                require_within_limits(double_s_limits<Scalar>{v_max, a_max, j_max}, sigma * at_cruise_boundary, Scalar{0}, Scalar{0});
+                require_within_limits(reaching, sigma * h, Scalar{0}, Scalar{0});
+            }
+        }
+    }
+}
+
+TEST_CASE("Double-S: the constant-deceleration segment of a long profile ends within the velocity limit", "[trajectory][double_s]")
+{
+    SECTION("float")
+    {
+        auto const v = static_cast<float>(0.0044597648084163666);
+        auto const l = double_s_limits<float>{v, static_cast<float>(0.0015443010488525033), static_cast<float>(30.257682800292969)};
+        auto const traj = built_profile<float>({.q0 = static_cast<float>(0.00033788720611482859),
+                                                .q1 = static_cast<float>(-5.8095717430114746),
+                                                .v_max = l.v_max,
+                                                .a_max = l.a_max,
+                                                .j_max = l.j_max,
+                                                .v0 = static_cast<float>(-0.0035865840036422014),
+                                                .v1 = v});
+        CHECK(std::abs(traj.evaluate(std::nextafter(traj.duration(), 0.0f)).velocity[0]) <= v);
+        require_switch_windows_within(traj, l);
+    }
+
+    SECTION("double")
+    {
+        auto const v = 0.086115804201940746;
+        auto const l = double_s_limits<double>{v, 0.0037083513761102535, 4124533871.0118299};
+        auto const traj = built({.q0 = 0, .q1 = 1015.7326884443336, .v_max = v, .a_max = l.a_max, .j_max = l.j_max, .v0 = 0, .v1 = -v});
+        CHECK(std::abs(traj.evaluate(std::nextafter(traj.duration(), 0.0)).velocity[0]) <= v);
+        require_switch_windows_within(traj, l);
+    }
+}
+
+// Durations near 2^m resolve time to ulp(2^m), and each jerk segment lasts c of those units. The long-ramp variant
+// stretches the acceleration ramp across a large part of the profile, which is where the constant-acceleration
+// segment's switch is decided at a coarse resolution.
+TEMPLATE_TEST_CASE("Double-S: long profiles with jerk segments near the time resolution stay within their limits",
+                   "[trajectory][double_s]", float, double)
+{
+    using Scalar = TestType;
+    constexpr std::array<std::array<double, 3>, 8> sets{{{1, 1, 1}, {5, 10, 50}, {2, 3, 7}, {0.7, 1.3, 2.9},
+                                                         {10, 100, 1000}, {1, 5, 50}, {40, 20, 100}, {1e-3, 1e-2, 1e-1}}};
+    constexpr auto digits = std::numeric_limits<Scalar>::digits;
+    std::mt19937 engine{std::is_same_v<Scalar, double> ? 601u : 602u};
+    auto failing = std::array<std::int32_t, 2>{0, 0};
+    for (auto const& set : sets) {
+        for (auto const m : {digits / 2, 3 * digits / 4}) {
+            auto const span = std::ldexp(Scalar{1}, m);
+            auto const resolution = stepped_up(span) - span;
+            for (auto const long_ramp : {false, true}) {
+                auto const v_max = static_cast<Scalar>(set[0]);
+                auto const a_max = long_ramp ? Scalar{4} * v_max / span : static_cast<Scalar>(set[1]);
+                for (auto const c : {Scalar{0.25}, Scalar{0.5}, Scalar{1}, Scalar{2}}) {
+                    auto const l = double_s_limits<Scalar>{v_max, a_max, a_max / (c * resolution)};
+                    for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+                        for (auto const end : {Scalar{-1}, Scalar{1}}) {
+                            for (std::int32_t k = 0; k < 8; ++k) {
+                                auto const v0 = sigma * seeded_fraction<Scalar>(engine) * v_max;
+                                auto const traj = built_profile<Scalar>({.q0 = Scalar{0},
+                                                                         .q1 = sigma * v_max * span,
+                                                                         .v_max = v_max,
+                                                                         .a_max = a_max,
+                                                                         .j_max = l.j_max,
+                                                                         .v0 = v0,
+                                                                         .v1 = end * sigma * v_max});
+                                auto const excess = excess_in_switch_windows(traj, l);
+                                failing[long_ramp ? 1 : 0] += (excess.velocity + excess.acceleration > 0) ? 1 : 0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    CAPTURE(failing[0], failing[1]);
+    CHECK(failing[0] == 0);
+    CHECK(failing[1] == 0);
 }

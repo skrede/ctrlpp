@@ -375,7 +375,7 @@ class online_planner_3rd
         // The evaluation starts from the snapshot's acceleration, so every nonzero one is nulled by its own phase,
         // however short. A phase too short to represent still pins its end state.
         if (a_start != Scalar{0}) {
-            auto const T_az = std::min(std::abs(a_start) / j_max_, jerk_time_within_limit());
+            auto const T_az = std::min(std::abs(a_start) / j_max_, detail::jerk_time_within(a_max_, j_max_));
             auto const j_az = (a_start > Scalar{0}) ? -j_max_ : j_max_;
 
             // State after this phase:
@@ -660,13 +660,13 @@ class online_planner_3rd
         bool a_reached{};
 
         if (abs_v > v_threshold) {
-            T_j = jerk_time_within_limit();
+            T_j = detail::jerk_time_within(a_max_, j_max_);
             auto const T_const = abs_v / a_max_ - T_j;
             T_total = T_j + T_const + T_j;
             dist = sign_v * compute_decel_distance(abs_v, T_j, T_const);
             a_reached = true;
         } else {
-            T_j = std::min(std::sqrt(abs_v / j_max_), jerk_time_within_limit());
+            T_j = std::min(std::sqrt(abs_v / j_max_), detail::jerk_time_within(a_max_, j_max_));
             T_total = Scalar{2} * T_j;
             dist = sign_v * abs_v * T_j;
             a_reached = false;
@@ -719,21 +719,10 @@ class online_planner_3rd
     void append_phase(Scalar duration, Scalar jerk)
     {
         if (duration > Scalar{0}) {
-            T_ph_[n_phases_] = (jerk == Scalar{0}) ? duration : std::min(duration, jerk_time_within_limit());
+            T_ph_[n_phases_] = (jerk == Scalar{0}) ? duration : std::min(duration, detail::jerk_time_within(a_max_, j_max_));
             j_ph_[n_phases_] = jerk;
             ++n_phases_;
         }
-    }
-
-    // The longest jerk time whose product with j_max does not round above a_max. One step suffices for a finite
-    // quotient, because round-to-nearest leaves the quotient's predecessor below a_max / j_max.
-    auto jerk_time_within_limit() const -> Scalar
-    {
-        auto const T_j = a_max_ / j_max_;
-        if (j_max_ * T_j > a_max_) {
-            return std::nextafter(T_j, Scalar{0});
-        }
-        return T_j;
     }
 
     /// @brief Plan a rest-to-rest double-S profile from q0 to target_.

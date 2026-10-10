@@ -2,6 +2,7 @@
 #define HPP_GUARD_CTRLPP_TRAJECTORY_DETAIL_JERK_LIMITED_RAMP_H
 
 #include <cmath>
+#include <algorithm>
 
 namespace ctrlpp::detail
 {
@@ -25,13 +26,27 @@ struct velocity_ramp
 /// sub-case left over for which the acceleration bound has to be lowered and
 /// the solve retried.
 ///
+// The longest jerk time whose product with j_max does not round above a_max. One step suffices for a finite
+// quotient, because round-to-nearest leaves the quotient's predecessor below a_max / j_max.
+template <typename Scalar>
+auto jerk_time_within(Scalar a_max, Scalar j_max) -> Scalar
+{
+    auto const T_j = a_max / j_max;
+    if (j_max * T_j > a_max) {
+        return std::nextafter(T_j, Scalar{0});
+    }
+    return T_j;
+}
+
 /// @cite biagiotti2009 -- Sec. 3.4.1, eq. (3.19)-(3.20), p.80
 template <typename Scalar>
 auto make_velocity_ramp(Scalar dv, Scalar a_max, Scalar j_max) -> velocity_ramp<Scalar>
 {
     auto const d = std::abs(dv);
     if (d * j_max < a_max * a_max) {
-        auto const T_j = std::sqrt(d / j_max);
+        // Analytically the triangular jerk time is below a_max / j_max, so the bound trims only the rounding that
+        // carried it across the branch test.
+        auto const T_j = std::min(std::sqrt(d / j_max), jerk_time_within(a_max, j_max));
         return {Scalar{2} * T_j, T_j, j_max * T_j};
     }
     auto const T_j = a_max / j_max;

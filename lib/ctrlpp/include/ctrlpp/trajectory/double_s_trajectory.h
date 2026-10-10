@@ -19,6 +19,7 @@
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
+#include "ctrlpp/trajectory/detail/ramp_anchor.h"
 #include "ctrlpp/trajectory/detail/boundary_velocity.h"
 #include "ctrlpp/trajectory/detail/jerk_limited_ramp.h"
 
@@ -566,60 +567,29 @@ private:
     /// @cite biagiotti2009 -- Sec. 3.4.3, p.88-91
     void compute_zero_bc(Scalar h, Scalar v_max, Scalar a_max, Scalar j_max)
     {
-        // Case 1: Assume both v_max and a_max are reached
         // @cite biagiotti2009 -- Sec. 3.4.3, eq. before (3.34), p.89
-        auto const T_j = a_max / j_max;
-
-        // Check if a_max is reached: need v_max * j_max >= a_max^2
-        // @cite biagiotti2009 -- Sec. 3.4.3, p.89
         bool const a_max_reached = (v_max * j_max >= a_max * a_max);
-
-        Scalar T_a{}, T_v{}, T_d{};
-
-        if (a_max_reached) {
-            // a_max is reached
-            T_a = T_j + v_max / a_max;
-            T_d = T_a; // symmetric for v0 = v1 = 0
-            T_v = h / v_max - T_a;
-            // T_v = h/v_max - (T_a + T_d)/2 but T_a == T_d => T_v = h/v_max - T_a
-        } else {
-            // a_max not reached: T_j limited by sqrt(v_max / j_max)
-            auto const T_j_actual = std::sqrt(v_max / j_max);
-            T_a = Scalar{2} * T_j_actual;
-            T_d = T_a;
-            T_v = h / v_max - T_a;
-        }
+        auto const T_j = a_max_reached ? a_max / j_max : std::min(std::sqrt(v_max / j_max), detail::jerk_time_within(a_max, j_max));
+        auto const T_a = a_max_reached ? T_j + v_max / a_max : Scalar{2} * T_j;
+        auto const T_v = h / v_max - T_a;
 
         if (T_v > Scalar{0}) {
-            // Case 1 or variant: v_max is reached (cruise phase exists)
-            if (a_max_reached) {
-                T_j1_ = T_j;
-                T_j2_ = T_j;
-                a_lim_a_ = a_max;
-                a_lim_d_ = a_max;
-            } else {
-                T_j1_ = std::sqrt(v_max / j_max);
-                T_j2_ = T_j1_;
-                a_lim_a_ = T_j1_ * j_max;
-                a_lim_d_ = a_lim_a_;
-            }
+            T_j1_ = T_j;
+            T_j2_ = T_j;
+            a_lim_a_ = a_max_reached ? a_max : j_max * T_j;
+            a_lim_d_ = a_lim_a_;
             T_a_ = T_a;
-            T_d_ = T_d;
+            T_d_ = T_a;
             T_v_ = T_v;
             v_lim_ = v_max;
             degenerate_ = !a_max_reached;
         } else {
-            // Case 2: v_max not reached (T_v < 0 => no cruise phase)
             degenerate_ = true;
             T_v_ = Scalar{0};
 
-            // Need to find actual v_lim < v_max
             // @cite biagiotti2009 -- Sec. 3.4.3, p.89-91
             if (a_max_reached) {
-                // a_max is reached but v_max is not
-                // Solve: h = (v_lim/a_max + a_max/j_max) * v_lim
-                // This is a quadratic in v_lim:
-                // v_lim^2/a_max + v_lim * a_max/j_max - h = 0
+                // a_max is reached but v_max is not: h = (v_lim / a_max + a_max / j_max) v_lim is a quadratic in v_lim.
                 auto const a = Scalar{1} / a_max;
                 auto const b = a_max / j_max;
                 auto const c = -h;
@@ -635,13 +605,10 @@ private:
                 a_lim_a_ = a_max;
                 a_lim_d_ = a_max;
 
-                // Check if T_a >= 2*T_j1 (a_max truly reached)
                 if (T_a_ < Scalar{2} * T_j1_) {
-                    // Actually a_max is also not reached: fall through to bisection
                     solve_doubly_degenerate(h, a_max, j_max);
                 }
             } else {
-                // a_max not reached either
                 solve_doubly_degenerate(h, a_max, j_max);
             }
         }
@@ -819,13 +786,10 @@ private:
 
     /// @brief Solve doubly degenerate case using bisection on gamma.
     /// @cite biagiotti2009 -- Sec. 3.4.3, p.90-91
-    void solve_doubly_degenerate(Scalar h, Scalar /*a_max*/, Scalar j_max)
+    void solve_doubly_degenerate(Scalar h, Scalar a_max, Scalar j_max)
     {
-        // When neither v_max nor a_max is reached, the profile is purely jerk-limited.
-        // Symmetric case (v0=v1=0): the profile has T_a = T_d = 2*T_j, T_v = 0
-        // and displacement h = 2 * j_max * T_j^3
-        // => T_j = cbrt(h / (2 * j_max))
-        auto const T_j = std::cbrt(h / (Scalar{2} * j_max));
+        // Purely jerk-limited and symmetric: T_a = T_d = 2 T_j, T_v = 0 and h = 2 j_max T_j^3.
+        auto const T_j = std::min(std::cbrt(h / (Scalar{2} * j_max)), detail::jerk_time_within(a_max, j_max));
 
         T_j1_ = T_j;
         T_j2_ = T_j;
@@ -848,24 +812,28 @@ private:
         // The stored switch times are rounded sums, so each jerk segment's formula is used only strictly
         // within that segment, timed from the end it is anchored at; between them the stored peak is held.
         if (tc < T_j1_) {
-            // Segment 1: jerk(+), velocity starts at pv0_.
             q = pv0_ * tc + j * tc * tc * tc / Scalar{6};
             dq = pv0_ + j * tc * tc / Scalar{2};
             ddq = j * tc;
         } else if (dt < T_j1_) {
-            auto const q_at_Ta = compute_q_at_Ta();
-            q = q_at_Ta - v_lim_ * dt + j * dt * dt * dt / Scalar{6};
+            q = compute_q_at_Ta() - v_lim_ * dt + j * dt * dt * dt / Scalar{6};
             dq = v_lim_ - j * dt * dt / Scalar{2};
             ddq = j * dt;
         } else {
-            // Segment 2: constant accel, carrying the pv0_ offset forward.
-            auto const t = tc - T_j1_;
-            auto const q1 = pv0_ * T_j1_ + j * T_j1_ * T_j1_ * T_j1_ / Scalar{6};
-            auto const dq1 = pv0_ + j * T_j1_ * T_j1_ / Scalar{2};
-            q = q1 + dq1 * t + a_lim_a_ * t * t / Scalar{2};
-            dq = dq1 + a_lim_a_ * t;
+            eval_constant_accel(tc - T_j1_, dt - T_j1_, q, dq);
             ddq = a_lim_a_;
         }
+    }
+
+    void eval_constant_accel(Scalar t_from_start, Scalar t_to_end, Scalar& q, Scalar& dq) const
+    {
+        auto const j = j_max_;
+        auto const q_start = pv0_ * T_j1_ + j * T_j1_ * T_j1_ * T_j1_ / Scalar{6};
+        auto const v_start = pv0_ + j * T_j1_ * T_j1_ / Scalar{2};
+        auto const q_end = compute_q_at_Ta() - v_lim_ * T_j1_ + j * T_j1_ * T_j1_ * T_j1_ / Scalar{6};
+        auto const v_end = v_lim_ - j * T_j1_ * T_j1_ / Scalar{2};
+        q = detail::nearer_anchor_position(q_start, v_start, q_end, v_end, a_lim_a_, t_from_start, t_to_end);
+        dq = detail::nearer_anchor_velocity(v_start, v_end, a_lim_a_, t_from_start, t_to_end);
     }
 
     /// @brief Evaluate deceleration-phase segments 5-7.
@@ -874,31 +842,33 @@ private:
     {
         auto const j = j_max_;
         auto const dt_end = T_ - tc;
-        auto const h = std::abs(q1_ - q0_);
-        auto const t5 = T_a_ + T_v_ + T_j2_;
         auto const t = tc - (T_a_ + T_v_);
 
         if (t < T_j2_) {
-            auto const q_at_Tv_end = compute_q_at_Ta() + v_lim_ * T_v_;
-            q = q_at_Tv_end + v_lim_ * t - j * t * t * t / Scalar{6};
+            q = compute_q_at_Ta() + v_lim_ * T_v_ + v_lim_ * t - j * t * t * t / Scalar{6};
             dq = v_lim_ - j * t * t / Scalar{2};
             ddq = -j * t;
         } else if (dt_end < T_j2_) {
-            // Segment 7: final jerk(+), velocity ends at pv1_ (not zero).
-            q = h - pv1_ * dt_end - j * dt_end * dt_end * dt_end / Scalar{6};
+            q = std::abs(q1_ - q0_) - pv1_ * dt_end - j * dt_end * dt_end * dt_end / Scalar{6};
             dq = pv1_ + j * dt_end * dt_end / Scalar{2};
             ddq = -j * dt_end;
         } else {
-            auto const t5_local = T_j2_;
-            auto const v_at_t5 = v_lim_ - j * t5_local * t5_local / Scalar{2};
-            auto const a_at_t5 = -a_lim_d_;
-            auto const q_at_t5 = compute_q_at_Ta() + v_lim_ * T_v_
-                                 + v_lim_ * t5_local - j * t5_local * t5_local * t5_local / Scalar{6};
-            auto const dt_from_t5 = tc - t5;
-            q = q_at_t5 + v_at_t5 * dt_from_t5 + a_at_t5 * dt_from_t5 * dt_from_t5 / Scalar{2};
-            dq = v_at_t5 + a_at_t5 * dt_from_t5;
-            ddq = a_at_t5;
+            // Timed from the selection tests' own differences, so neither is negative; tc - t5 could be, since t5
+            // is a separately rounded sum.
+            eval_constant_decel(t - T_j2_, dt_end - T_j2_, q, dq);
+            ddq = -a_lim_d_;
         }
+    }
+
+    void eval_constant_decel(Scalar t_from_start, Scalar t_to_end, Scalar& q, Scalar& dq) const
+    {
+        auto const j = j_max_;
+        auto const q_start = compute_q_at_Ta() + v_lim_ * T_v_ + v_lim_ * T_j2_ - j * T_j2_ * T_j2_ * T_j2_ / Scalar{6};
+        auto const v_start = v_lim_ - j * T_j2_ * T_j2_ / Scalar{2};
+        auto const q_end = std::abs(q1_ - q0_) - pv1_ * T_j2_ - j * T_j2_ * T_j2_ * T_j2_ / Scalar{6};
+        auto const v_end = pv1_ + j * T_j2_ * T_j2_ / Scalar{2};
+        q = detail::nearer_anchor_position(q_start, v_start, q_end, v_end, -a_lim_d_, t_from_start, t_to_end);
+        dq = detail::nearer_anchor_velocity(v_start, v_end, -a_lim_d_, t_from_start, t_to_end);
     }
 
     /// @brief Evaluate in the positive-displacement frame (sigma=+1).
