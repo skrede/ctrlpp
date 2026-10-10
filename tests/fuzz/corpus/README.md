@@ -125,6 +125,12 @@ derived floor, so the input weight the solve receives is never the number stored
 | `fuzz_online_planner_3rd` | `retarget_nulling_unit_limits.bin` | a retarget at half the acceleration limit while the jerk is bringing it back to zero, the phase that ends at the velocity limit | `d8b2b04` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes |
 | `fuzz_online_planner_3rd` | `cr04_constant_phase_end.bin` | the recorded counterexample: a retarget from the acceleration ramp on a jerk limit large enough that the replan's closing jerk phase is shorter than the resolution of the sample times, so the last sample in the constant-acceleration phase before it read one unit in the last place above the velocity limit. It aborted at `1f2ea88`, before that phase was evaluated backward from its analytic end | `c45c886` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes |
 | `fuzz_online_planner_3rd_float` | `cr04_constant_phase_end.bin` | the same counterexample in `float` on ordinary limits, where the closing jerk phase lasts less than one sample-time resolution near t = 1809 s. It aborted at `1f2ea88` | `c45c886` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes, each field narrowed to `float` after the clamps |
+| `fuzz_online_planner_3rd_float` | `retarget_in_place_large_limits.bin` | a retarget after the first sample to the position the axis still holds, on limits of `1e6` and the jerk floor `1e-3`, while the first jerk phase has raised the acceleration to 2001 times `j_max dt`. The replan was taken as a no-op and the acceleration dropped to zero in one sample. It aborted at `361f725` | `c45c886` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes, each field narrowed to `float` after the clamps |
+| `fuzz_online_planner_3rd_float` | `retarget_in_place_negative_position.bin` | the same retarget in place at a negative position with the opposite acceleration sign. It aborted at `361f725` | `c45c886` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes, each field narrowed to `float` after the clamps |
+| `fuzz_online_planner_3rd_float` | `retarget_in_place_small_acceleration_limit.bin` | the same retarget in place on `a_max = 29.2`, where the dropped acceleration was 478 times `j_max dt`. It aborted at `361f725` | `c45c886` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes, each field narrowed to `float` after the clamps |
+| `fuzz_online_planner_3rd_float` | `retarget_in_place_unit_scale_position.bin` | the same retarget in place at position 2.125. It aborted at `361f725` | `c45c886` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes, each field narrowed to `float` after the clamps |
+| `fuzz_online_planner_3rd_float` | `retarget_in_place_coarse_sample_period.bin` | the same retarget in place at a sample period of 5.3e-4 s, near position 2.26e6. It aborted at `361f725` | `c45c886` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes, each field narrowed to `float` after the clamps |
+| `fuzz_online_planner_3rd_float` | `retarget_in_place_moderate_limits.bin` | the same retarget in place on `v_max = 130` and `a_max = 32.5`. It aborted at `361f725` | `c45c886` | 9 little-endian binary64: `pos, target, v_max, a_max, j_max, dt, t_start, retarget_fraction, retarget_target`; minimum 72 bytes, each field narrowed to `float` after the clamps |
 
 ## Decoded field values
 
@@ -182,11 +188,22 @@ the minimum decoded size, well inside the length cap the smoke run imposes.
 | seed file | pos | target | v_max | a_max | j_max | dt | t_start | retarget_fraction | retarget_target |
 |---|---|---|---|---|---|---|---|---|---|
 | `cr04_constant_phase_end.bin` | 0 | 0x1.095968ae6013p+17 | 0x1.2c6932p+4 | 0x1.541afep-7 | 0x1.10b2b4p+7 | 0x1.d25bacp-1 | 0 | 0x1.88bb00858be25p-6 | 0x1.095968ae6013p+18 |
+| `retarget_in_place_large_limits.bin` | 0x1.fffff0affffffp+16 | 0x0.000007c00470ap-1022 | -0x1.0000000000000p+1009 | -0x1.000f5000027ffp+865 | 0x1.f0aff40b9b8ffp-1008 | 0x0.0c2bf4647000ap-1022 | 0x1.4e00129000000p+105 | 0x1.0ffffb5be0000p-959 | 0x1.fffff00000000p+16 |
+| `retarget_in_place_negative_position.bin` | -0x1.d26e7e7215b00p-13 | -0x1.6fff9ee1918f5p-79 | -0x1.7e70ae7000000p+639 | -0x1.ae7c7e7e7e7e7p+625 | 0x0.140000001e7e7p-1022 | 0x1.5b80000000000p-608 | 0x1.0000000000000p+129 | 0x0.00001e6e7e70ap-1022 | -0x1.d26e7e7000000p-13 |
+| `retarget_in_place_small_acceleration_limit.bin` | 0x1.f3f3f3f373f0ep-12 | 0x1.03f3ffb3f3f3fp-11 | -0x1.0c0c0c0c0c13fp+13 | 0x1.d3f3f3f3f3faep+4 | 0x1.f3f3f3f3f3f3fp-12 | 0x0.00000003f003fp-1022 | 0x1.f3f3f3f3f0000p-12 | 0x1.f3f3f3f4a3f3fp-12 | 0x1.f3f3f3f3f403dp-12 |
+| `retarget_in_place_unit_scale_position.bin` | 0x1.100000000000ap+1 | 0x0.0000001000000p-1022 | 0x1.0010000040000p+241 | 0x1.5555555555555p+342 | 0x0.0000000000055p-1022 | 0x0.000ff00ffff00p-1022 | 0x1.777774a016700p+888 | 0x0.0000000007777p-1022 | 0x1.100000000000ap+1 |
+| `retarget_in_place_coarse_sample_period.bin` | 0x1.1414141404341p+21 | 0x1.14541c0414141p+21 | 0x1.1414141414141p+29 | 0x1.100410a07cf00p+21 | 0x0.0000000000001p-1022 | -0x1.1415b41410041p-11 | 0x1.1414141bebebep+21 | -0x1.ebeb641414141p-20 | 0x1.1414141414141p+21 |
+| `retarget_in_place_moderate_limits.bin` | 0x1.040404040402dp+5 | 0x1.0404040404040p-299 | 0x1.0402c4040402cp+7 | 0x1.0404040403940p+5 | -0x1.4a34040404040p-871 | 0x1.dfd00007b2192p-317 | 0x1.0404240404040p+5 | 0x1.14040404040c1p-493 | 0x1.0404040404021p+5 |
 
 The two `cr04_constant_phase_end.bin` seeds are recorded inputs, so their fields are given in hexadecimal, exactly
 as stored. The `float` target narrows each field after the clamps, so it plans with target `0x1.095968p+17`,
 retarget target `0x1.095968p+18` and the other fields unchanged. The retarget follows sample 47 in `float` and
 sample 375 in `double`, on the ramp, and both jerk limits are inside their targets' clamps.
+
+The six `retarget_in_place_*.bin` seeds are recorded inputs as well, stored byte for byte with the trailing bytes the
+fuzzer left. Each clamps `j_max` to `1e-3`. Five clamp `t_start` to `2000 dt`, so their first sample lies 2001 sample
+periods into the first jerk phase; `retarget_in_place_small_acceleration_limit.bin` starts at 477 sample periods. Each retargets after that sample (`retarget_fraction` truncates to index 0) to its own
+starting position, which the axis still holds to the position's resolution.
 
 The retarget is applied after the scan sample whose index is `retarget_fraction * 1999`, truncated, so
 the four seeds replan at t = 10, 5, 0.5 and 1.5 s. Sampled there, the planner reports v = 1 and a = 0,

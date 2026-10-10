@@ -314,14 +314,18 @@ struct window_excess
 {
     std::int32_t velocity{};
     std::int32_t acceleration{};
+    std::int32_t position{};
 };
 
 // Samples every representable instant within representable_window steps of each center, once where windows overlap.
+// A position counts when it lies beyond the commanded target in the plan's direction.
 template <typename Scalar>
 void scan_switch_windows(ctrlpp::online_planner_3rd<Scalar> const& planner, std::vector<Scalar> centers,
                          limit_set<Scalar> const& limits, window_excess& excess)
 {
     auto const infinity = std::numeric_limits<Scalar>::infinity();
+    auto const target = planner.diagnostics().commanded_target;
+    auto const sigma = (target > planner.diagnostics().replan_start_position) ? Scalar{1} : Scalar{-1};
     std::sort(centers.begin(), centers.end());
     auto next = -infinity;
     for (auto const center : centers) {
@@ -337,6 +341,7 @@ void scan_switch_windows(ctrlpp::online_planner_3rd<Scalar> const& planner, std:
             auto const point = planner.sample(t);
             excess.velocity += (std::abs(point.velocity(0)) > limits.v_max) ? 1 : 0;
             excess.acceleration += (std::abs(point.acceleration(0)) > limits.a_max) ? 1 : 0;
+            excess.position += (sigma * (point.position(0) - target) > Scalar{0}) ? 1 : 0;
         }
         next = t;
     }
@@ -392,6 +397,42 @@ auto time_resolution_at(Scalar t) -> Scalar
 
 
 template <typename Scalar>
+struct harness_input
+{
+    std::array<Scalar, 8> fields;
+};
+
+// Replays the fuzz harness's scan, retargeted after sample 0, and counts the sample pairs failing its
+// finite-difference jerk check, whose allowance is its own: 32 roundings per sample over 2000 samples.
+template <typename Scalar>
+auto harness_jerk_excess(harness_input<Scalar> const& input) -> std::int32_t
+{
+    auto const [pos, target, v_max, a_max, j_max, dt, t_start, retarget_target] = input.fields;
+    constexpr std::int32_t samples = 2000;
+    auto const eps = std::numeric_limits<Scalar>::epsilon();
+    auto const margin = Scalar{32} * eps;
+    auto const time_resolution_floor = margin * static_cast<Scalar>(samples);
+    auto planner = make_planner(limit_set<Scalar>{v_max, a_max, j_max});
+    planner.reset(pos);
+    REQUIRE(planner.update(target).has_value());
+    auto t = t_start;
+    Scalar a_prev{};
+    std::int32_t excess = 0;
+    for (std::int32_t i = 0; i < samples; ++i) {
+        t += dt;
+        auto const a = planner.sample(t).acceleration(0);
+        auto const allowance = margin * j_max * static_cast<Scalar>(samples) + time_resolution_floor
+                               + margin * (std::abs(a) + std::abs(a_prev)) / dt;
+        excess += (i > 0 && std::abs((a - a_prev) / dt) > j_max + allowance) ? 1 : 0;
+        a_prev = a;
+        if (i == 0) {
+            REQUIRE(planner.update(retarget_target).has_value());
+        }
+    }
+    return excess;
+}
+
+template <typename Scalar>
 struct fuzz_retarget
 {
     limit_set<Scalar> limits;
@@ -423,6 +464,7 @@ void replay_fuzz_retarget(fuzz_retarget<Scalar> const& input)
     scan_switch_windows(planner, std::vector<Scalar>{t + nulled.duration + p[0] + p[1]}, input.limits, excess);
     CHECK(excess.velocity == 0);
     CHECK(excess.acceleration == 0);
+    CHECK(excess.position == 0);
     for (std::int32_t i = input.retarget_index + 1; i < samples; ++i) {
         t += input.dt;
         auto const point = planner.sample(t);
@@ -732,5 +774,35 @@ TEMPLATE_TEST_CASE("OnlinePlanner3rd retarget: jerk phases near the time resolut
     }
     CHECK(excess.velocity == 0);
     CHECK(excess.acceleration == 0);
+    CHECK(excess.position == 0);
     REQUIRE(profiles == 80);
+}
+
+TEMPLATE_TEST_CASE("OnlinePlanner3rd retarget: a retarget to the position just reached nulls its acceleration within "
+                   "the jerk limit",
+                   "[trajectory][online_planner_3rd][retarget]", float, double)
+{
+    using Scalar = TestType;
+    // The decoded float fuzz inputs. Each retargets after its first sample to the position it still holds, while the
+    // first jerk phase has raised the acceleration to 2001 j_max dt (478 in the third): pos, target, v_max, a_max,
+    // j_max, dt, t_start, retarget target.
+    constexpr std::array<std::array<float, 8>, 6> inputs{{
+        {0x1.fffffp+16f, 0.0f, 0x1.e848p+19f, 0x1.e848p+19f, 0x1.0624dep-10f, 0x1.0c6f7ap-20f, 0x1.0624dep-9f,
+         0x1.fffffp+16f},
+        {-0x1.d26e7ep-13f, -0x1.6fff9ep-79f, 0x1.e848p+19f, 0x1.e848p+19f, 0x1.0624dep-10f, 0x1.0c6f7ap-20f,
+         0x1.0624dep-9f, -0x1.d26e7ep-13f},
+        {0x1.f3f3f4p-12f, 0x1.03f4p-11f, 0x1.0c0c0cp+13f, 0x1.d3f3f4p+4f, 0x1.0624dep-10f, 0x1.0c6f7ap-20f,
+         0x1.f3f3f4p-12f, 0x1.f3f3f4p-12f},
+        {0x1.1p+1f, 0.0f, 0x1.e848p+19f, 0x1.e848p+19f, 0x1.0624dep-10f, 0x1.0c6f7ap-20f, 0x1.0624dep-9f, 0x1.1p+1f},
+        {0x1.141414p+21f, 0x1.14541cp+21f, 0x1.e848p+19f, 0x1.e848p+19f, 0x1.0624dep-10f, 0x1.1415b4p-11f,
+         0x1.0d9d32p+0f, 0x1.141414p+21f},
+        {0x1.040404p+5f, 0.0f, 0x1.0402c4p+7f, 0x1.040404p+5f, 0x1.0624dep-10f, 0x1.0c6f7ap-20f, 0x1.0624dep-9f,
+         0x1.040404p+5f},
+    }};
+    for (auto const& raw : inputs) {
+        harness_input<Scalar> input{};
+        std::transform(raw.begin(), raw.end(), input.fields.begin(), [](float x) { return static_cast<Scalar>(x); });
+        CAPTURE(input.fields);
+        CHECK(harness_jerk_excess(input) == 0);
+    }
 }

@@ -140,8 +140,6 @@ class online_planner_3rd
 
         target_ = target;
         t_ref_ = t_last_;
-
-        // Snapshot current state
         q_ref_ = q_;
         v_ref_ = v_;
         a_ref_ = a_;
@@ -238,8 +236,10 @@ class online_planner_3rd
         , velocity_settle_tol_{cfg.velocity_settle_tol}
         , acceleration_settle_tol_{cfg.acceleration_settle_tol}
         , n_phases_{0}
+        , target_anchor_first_{0}
         , T_ph_{}
         , j_ph_{}
+        , phase_end_position_{}
         , phase_end_velocity_{}
         , phase_end_acceleration_{}
         , phase_end_pinned_{}
@@ -277,10 +277,13 @@ class online_planner_3rd
 
     // At most nulling 1 + brake 3 + ramp 3 + cruise 1 + deceleration 3; an emptied group stores one pinned phase.
     // A phase whose end state is known analytically records it, and evaluation takes that state in place of the integrated one.
+    // From the cruise end on, or over the last phase when there is no double-S, end positions are formed backward from the target.
     static constexpr std::int32_t max_phases_ = 11;
     std::int32_t n_phases_;
+    std::int32_t target_anchor_first_;
     std::array<Scalar, max_phases_> T_ph_;
     std::array<Scalar, max_phases_> j_ph_;
+    std::array<Scalar, max_phases_> phase_end_position_;
     std::array<Scalar, max_phases_> phase_end_velocity_;
     std::array<Scalar, max_phases_> phase_end_acceleration_;
     std::array<bool, max_phases_> phase_end_pinned_;
@@ -303,50 +306,12 @@ class online_planner_3rd
     void compute_profile()
     {
         n_phases_ = 0;
+        target_anchor_first_ = max_phases_;
         phase_end_pinned_.fill(false);
 
-        // Is the commanded state a numerical no-op -- a command the arithmetic
-        // cannot tell apart from the one already in force?
-        //
-        // This is NOT the settle policy the caller configures. That policy
-        // answers "is the motion done", which is a statement about the machine
-        // and has no derivation. This answers "is there anything left to
-        // compute", which is a statement about the arithmetic and has one. The
-        // two are deliberately separate, and the window between them is wide:
-        // on a unit-scale axis the policy default sits some seven decades above
-        // the floors below. Letting a policy tolerance decide what the planner
-        // is allowed to compute would collapse them into one question, and they
-        // are not one question.
-        //
-        // The position clause stays an exact comparison. A commanded target one
-        // unit in the last place away from the reference position is a
-        // different target, and no rounding argument says otherwise: both are
-        // inputs, and neither is the result of a chain this planner ran.
-        //
-        // The velocity and acceleration clauses compare a caller-supplied
-        // snapshot against the resolution of the limit that bounds it. This
-        // function performs no arithmetic on either before the test, so the
-        // honest local count is one operation each, the comparison itself.
-        // Whatever error the caller's own sampling carried into the snapshot is
-        // the caller's, and is out of scope here -- the same scoping the
-        // trapezoidal retiming floor applies to its own.
-        //
-        // Below these floors the commanded velocity and acceleration are zero
-        // to the precision the limits leave available, so there is nothing for
-        // a profile to remove.
-        constexpr std::int32_t command_velocity_rounding_ops = 1;
-        constexpr std::int32_t command_acceleration_rounding_ops = 1;
-        auto const command_velocity_resolution = Scalar{command_velocity_rounding_ops}
-                                                 * std::numeric_limits<Scalar>::epsilon()
-                                                 * v_max_;
-        auto const command_acceleration_resolution = Scalar{command_acceleration_rounding_ops}
-                                                     * std::numeric_limits<Scalar>::epsilon()
-                                                     * a_max_;
-
-        // Check if already settled
-        if (target_ == q_ref_
-            && std::abs(v_ref_) < command_velocity_resolution
-            && std::abs(a_ref_) < command_acceleration_resolution) {
+        // A command at the target is a no-op only from rest: removing any nonzero velocity or acceleration takes time
+        // at the limits, and no magnitude exists below which dropping it would respect them.
+        if (target_ == q_ref_ && v_ref_ == Scalar{0} && a_ref_ == Scalar{0}) {
             T_ = Scalar{0};
             settled_ = true;
             diagnostics_ = online_planner_diagnostics<Scalar>{
@@ -371,8 +336,8 @@ class online_planner_3rd
 
         // Now state is (q_start, v_start, 0). Plan double-S from here.
         auto const outcome = plan_from_zero_accel(q_start, v_start);
+        anchor_target_positions();
 
-        // Compute total duration
         T_ = Scalar{0};
         for (std::int32_t i = 0; i < n_phases_; ++i) {
             T_ += T_ph_[static_cast<std::size_t>(i)];
@@ -585,23 +550,58 @@ class online_planner_3rd
 
         auto const ramp = n_phases_;
         append_phase(durations[0], j_pos);
-        auto const hold = n_phases_;
-        append_phase(durations[1], Scalar{0});
-        // Its second half is sampled backward from the closing phase's analytic start, so it never exceeds the peak however short that phase is.
-        if (durations[1] > Scalar{0}) {
-            auto const T_c = std::min(durations[2], detail::jerk_time_within(a_max_, j_max_));
-            pin_group_end(hold, peak + Scalar{0.5} * j_neg * T_c * T_c, -j_neg * T_c);
-        }
+        append_hold_phase(durations[1], durations[2], peak, j_neg);
         append_phase(durations[2], j_neg);
         pin_group_end(ramp, peak, Scalar{0});
         auto const cruise = n_phases_;
         append_phase(durations[3], Scalar{0});
         pin_group_end(cruise, peak, Scalar{0});
+        target_anchor_first_ = n_phases_ - 1;
         auto const decel = n_phases_;
         append_phase(durations[4], j_neg);
-        append_phase(durations[5], Scalar{0});
+        append_hold_phase(durations[5], durations[6], Scalar{0}, j_pos);
         append_phase(durations[6], j_pos);
         pin_group_end(decel, Scalar{0}, Scalar{0});
+    }
+
+    // Pinned where the closing jerk phase's backward form from (v_end, 0) starts, so a sample in its second half
+    // never passes v_end however short that phase is.
+    void append_hold_phase(Scalar duration, Scalar closing_duration, Scalar v_end, Scalar j_close)
+    {
+        auto const hold = n_phases_;
+        append_phase(duration, Scalar{0});
+        if (duration > Scalar{0}) {
+            auto const T_c = std::min(closing_duration, detail::jerk_time_within(a_max_, j_max_));
+            pin_group_end(hold, v_end + Scalar{0.5} * j_close * T_c * T_c, -j_close * T_c);
+        }
+    }
+
+    // Walks back from (target_, 0, 0) through the pinned or back-integrated end states, so on the final approach no
+    // forward sum of earlier roundings can carry a position past the target.
+    void anchor_target_positions()
+    {
+        target_anchor_first_ = std::max(std::min(target_anchor_first_, n_phases_ - 1), std::int32_t{0});
+        auto q = target_;
+        Scalar v{};
+        Scalar a{};
+        for (auto i = n_phases_ - 1; i >= target_anchor_first_; --i) {
+            auto const index = static_cast<std::size_t>(i);
+            if (phase_end_pinned_[index]) {
+                v = phase_end_velocity_[index];
+                a = phase_end_acceleration_[index];
+            }
+            phase_end_position_[index] = q;
+            auto const T = T_ph_[index];
+            auto const j = j_ph_[index];
+            q -= travel(v, -a, j, T);
+            v = v - a * T + Scalar{0.5} * j * T * T;
+            a = a - j * T;
+        }
+    }
+
+    static auto travel(Scalar v, Scalar a, Scalar j, Scalar t) -> Scalar
+    {
+        return v * t + Scalar{0.5} * a * t * t + j * t * t * t / Scalar{6};
     }
 
     /// @brief Record (v, a) as the end state of the last phase appended since index `first`, storing a zero-length
@@ -677,21 +677,10 @@ class online_planner_3rd
     /// @brief Compute distance during jerk-limited deceleration (a_max reached case).
     auto compute_decel_distance(Scalar abs_v, Scalar T_j, Scalar T_const) const -> Scalar
     {
-        // Phase 1: jerk = -j_max, duration T_j
-        // v(t) = abs_v - j_max*t^2/2
-        // q(t) = abs_v*t - j_max*t^3/6
         auto const v1 = abs_v - j_max_ * T_j * T_j / Scalar{2};
         auto const q1 = abs_v * T_j - j_max_ * T_j * T_j * T_j / Scalar{6};
-
-        // Phase 2: jerk = 0, a = -a_max, duration T_const
-        // v(t) = v1 - a_max*t
-        // q(t) = v1*t - a_max*t^2/2
         auto const v2 = v1 - a_max_ * T_const;
         auto const q2 = q1 + v1 * T_const - a_max_ * T_const * T_const / Scalar{2};
-
-        // Phase 3: jerk = +j_max, duration T_j
-        // v(t) = v2 - a_max*t + j_max*t^2/2
-        // q(t) = v2*t - a_max*t^2/2 + j_max*t^3/6
         auto const q3 = q2 + v2 * T_j - a_max_ * T_j * T_j / Scalar{2}
                          + j_max_ * T_j * T_j * T_j / Scalar{6};
 
@@ -847,13 +836,19 @@ class online_planner_3rd
 
     // Inside a pinned phase the sample is formed backward from the pinned end state, because a forward sum can round past the end value just before the boundary.
     // A pinned zero-jerk phase is sampled from its nearer end, since near its start the pin's magnitude would quantize a much smaller velocity.
+    // Positions take the backward form only where they are anchored to the target; before that they are summed forward.
     void advance_phase(std::int32_t i, Scalar tau, Scalar& q, Scalar& v, Scalar& a) const
     {
         auto const index = static_cast<std::size_t>(i);
         auto const j_i = j_ph_[index];
-        q += v * tau + Scalar{0.5} * a * tau * tau + j_i * tau * tau * tau / Scalar{6};
         auto const s = T_ph_[index] - tau;
-        if (!phase_end_pinned_[index] || (j_i == Scalar{0} && tau < s)) {
+        bool const forward = !phase_end_pinned_[index] || (j_i == Scalar{0} && tau < s);
+        if (forward || i < target_anchor_first_) {
+            q += travel(v, a, j_i, tau);
+        } else {
+            q = phase_end_position_[index] - travel(phase_end_velocity_[index], -phase_end_acceleration_[index], j_i, s);
+        }
+        if (forward) {
             v += a * tau + Scalar{0.5} * j_i * tau * tau;
             a += j_i * tau;
             return;

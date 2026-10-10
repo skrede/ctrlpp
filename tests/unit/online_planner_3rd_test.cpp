@@ -886,25 +886,16 @@ TEST_CASE("OnlinePlanner3rd: a wide settle tolerance still plans a far smaller m
     CHECK(planner.sample(diag.planned_duration).position(0) == tiny_target);
 }
 
-// -- Test 21: the numerical-no-op floors are derived, and they scale ------------
+// -- Test 21: a command at the current position is a no-op only from rest ------
 //
-// A separate question from the settle policy above, with a separate owner. The
-// policy says when the application considers the axis arrived; this says when
-// the arithmetic can no longer tell the commanded state from the one already in
-// force. The floors are one unit in the last place at the scale of the limit
-// that bounds each quantity, so they move with the limits rather than sitting at
-// an absolute distance borrowed from an axis nobody named.
+// Removing any nonzero acceleration takes |a| / j_max at the jerk limit, and the planner is never told the sample
+// period, so no magnitude exists below which dropping it would respect j_max. A command at the position just sampled
+// is therefore planned whenever the sampled velocity or acceleration is nonzero, however small.
 //
-// The acceleration clause is the one that decides here, and that is structural
-// rather than incidental: every state this planner reaches on the way to rest
-// leaves the acceleration above its own floor before the velocity reaches
-// velocity's. Sampling a jerk ramp a time s from rest gives an acceleration
-// j*s and a speed j*s^2/2, so the two margins stand in the ratio s*a_max/(2
-// v_max), which is below one for every s short of the whole acceleration
-// stretch. The velocity clause is therefore exercised in the other direction,
-// below, where a state carries a real speed and an acceleration within one
-// rounding of zero.
-TEST_CASE("OnlinePlanner3rd: the numerical-no-op floors scale with the limits",
+// The accelerations are taken a time s into the opening jerk ramp, at half and twice eps * a_max; the speed j*s^2/2
+// left there is decades smaller still. From cruise the acceleration is zero to one rounding and the speed is the
+// cruise speed, so that state is planned too.
+TEST_CASE("OnlinePlanner3rd: a command at the current position is a no-op only from rest",
           "[traj][online_planner_3rd][no_op_floor]")
 {
     // Three limit sets spanning five decades of acceleration limit, with the
@@ -915,17 +906,12 @@ TEST_CASE("OnlinePlanner3rd: the numerical-no-op floors scale with the limits",
         {40.0, 200.0, 2000.0},
     }};
 
-    int straddles = 0;
+    int planned = 0;
     for (auto const& limits : limit_sets) {
         double const v_max = limits[0];
         double const a_max = limits[1];
         double const j_max = limits[2];
-
-        // One operation forms the compared quantity -- the comparison itself --
-        // at the scale of the limit that bounds it.
-        constexpr int command_acceleration_rounding_ops = 1;
-        double const acceleration_floor = static_cast<double>(command_acceleration_rounding_ops)
-                                          * std::numeric_limits<double>::epsilon() * a_max;
+        double const unit_acceleration = std::numeric_limits<double>::epsilon() * a_max;
 
         for (double const half_or_double : {0.5, 2.0}) {
             auto planner = make_planner<double>(
@@ -933,51 +919,27 @@ TEST_CASE("OnlinePlanner3rd: the numerical-no-op floors scale with the limits",
             planner.reset(0.0);
             REQUIRE(planner.update(100.0 * v_max).has_value());
 
-            // A time s into the opening jerk ramp leaves an acceleration j*s and
-            // a speed j*s^2/2, so s is chosen to place the acceleration at half
-            // the floor and at twice it.
-            double const s = half_or_double * acceleration_floor / j_max;
+            double const s = half_or_double * unit_acceleration / j_max;
             auto const probe = planner.sample(s);
-
-            // Commanding the position just sampled makes the position clause an
-            // exact equality, so the two magnitude clauses are what decide.
             REQUIRE(planner.update(probe.position[0]).has_value());
 
-            CAPTURE(v_max, a_max, j_max, half_or_double,
-                    std::log10(std::abs(probe.acceleration[0])),
-                    std::log10(acceleration_floor), std::log10(std::abs(probe.velocity[0])));
+            CAPTURE(v_max, a_max, j_max, half_or_double, probe.acceleration[0], probe.velocity[0]);
+            REQUIRE(probe.acceleration[0] != 0.0);
+            REQUIRE(std::abs(probe.velocity[0]) < std::numeric_limits<double>::epsilon() * v_max);
 
-            // The speed left behind is quadratic in s where the acceleration is
-            // linear, so it sits decades below its own floor either way: the
-            // acceleration clause is what flips.
-            REQUIRE(std::abs(probe.velocity[0])
-                    < std::numeric_limits<double>::epsilon() * v_max);
-
-            if (half_or_double < 1.0) {
-                REQUIRE(std::abs(probe.acceleration[0]) < acceleration_floor);
-                REQUIRE(planner.diagnostics().disposition
-                        == ctrlpp::online_planner_disposition::settled);
-                REQUIRE(planner.diagnostics().planned_duration == 0.0);
-            } else {
-                REQUIRE(std::abs(probe.acceleration[0]) > acceleration_floor);
-                REQUIRE(planner.diagnostics().disposition
-                        != ctrlpp::online_planner_disposition::settled);
-            }
+            // The plan nulls the acceleration at the jerk limit before anything else, so it lasts at least that long.
+            REQUIRE(planner.diagnostics().disposition
+                    != ctrlpp::online_planner_disposition::settled);
+            REQUIRE(planner.diagnostics().planned_duration >= std::abs(probe.acceleration[0]) / j_max);
+            ++planned;
         }
-        ++straddles;
     }
+    REQUIRE(planned == 6);
 
-    // An exact count, not a bound the loop cannot fail.
-    REQUIRE(straddles == 3);
-
-    // The velocity clause, from the other side. At cruise the acceleration is
-    // zero to one rounding: the two jerk ramps that built the cruise add and
+    // The same from cruise. The two jerk ramps that built the cruise add and
     // remove the same product j*T, which cancels exactly when both are rounded,
     // and leaves the first one's rounding when a fused multiply-add removes the
-    // exact product. Rounding to nearest keeps that within half a unit in the
-    // last place of j*T <= a_max, below the acceleration floor, so the
-    // acceleration clause cannot be what keeps the short-circuit shut, and the
-    // speed is what the planner is left deciding on.
+    // exact product: within half a unit in the last place of j*T <= a_max.
     constexpr double cruise_acceleration_rounding_ops = 1.0;
     constexpr double unit_roundoff = 0.5 * std::numeric_limits<double>::epsilon();
     int cruises = 0;
@@ -999,6 +961,13 @@ TEST_CASE("OnlinePlanner3rd: the numerical-no-op floors scale with the limits",
         ++cruises;
     }
     REQUIRE(cruises == 3);
+
+    // From rest the command is the one already in force.
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0, .j_max = 50.0});
+    planner.reset(0x1.8p+1);
+    REQUIRE(planner.update(0x1.8p+1).has_value());
+    REQUIRE(planner.diagnostics().disposition == ctrlpp::online_planner_disposition::settled);
+    REQUIRE(planner.diagnostics().planned_duration == 0.0);
 }
 
 // -- Test 22: every nonzero starting acceleration is nulled in its own phase --
@@ -1061,12 +1030,13 @@ TEST_CASE("OnlinePlanner3rd: a group whose phases all vanish still re-bases the 
 {
     // A zero-length phase adds v*0 + a*0*0/2 + j*0*0*0/6 = 0 to the position and re-bases (v, a) to the values the
     // previous pin already left, so the bound is zero roundings: these are the samples recorded before it existed.
+    // From the empty cruise on, positions are formed backward from the target, within 1.22 ulp of the exact profile.
     using sample_row = std::array<double, 4>;
     constexpr std::array<sample_row, 4> degenerate{{
         {0x1.e3cf476542bdp-1, 0x1.0aaaaaaaaaaaap-3, 0x1.6393ed095c075p-2, 0x1.428a2f98d728cp-2},
-        {0x1.932cbb7f0cf2ep+0, 0x1.7aaaaaaaaaaabp-2, 0x1.6393ed095c075p-2, -0x1.428a2f98d728cp-2},
-        {0x1.e3cf476542bdp+0, 0x1.d555555555555p-2, 0x1.965fea53d6e4p-3, -0x1.428a2f98d728ap-1},
-        {0x1.1a38e9a5bc43ap+1, 0x1.faaaaaaaaaaacp-2, 0x1.965fea53d6e3p-5, -0x1.428a2f98d7286p-2},
+        {0x1.932cbb7f0cf2ep+0, 0x1.7aaaaaaaaaaaap-2, 0x1.6393ed095c075p-2, -0x1.428a2f98d728cp-2},
+        {0x1.e3cf476542bdp+0, 0x1.d555555555554p-2, 0x1.965fea53d6e4p-3, -0x1.428a2f98d728ap-1},
+        {0x1.1a38e9a5bc43ap+1, 0x1.faaaaaaaaaaabp-2, 0x1.965fea53d6e3p-5, -0x1.428a2f98d7286p-2},
     }};
     constexpr std::array<sample_row, 2> cruise_retarget{{
         {0x1.5p+2, 0x1.1p+2, 0x1p+0, 0x0p+0},
@@ -1204,7 +1174,7 @@ TEST_CASE("OnlinePlanner3rd: the overshoot verdict is relative and scale-invaria
     constexpr double relative_shortfall = 1e-6;
 
     // Cruise leaves the acceleration within one rounding of zero, half a unit in
-    // the last place of the ramp product j*T <= a_max, as the no-op floor case
+    // the last place of the ramp product j*T <= a_max, as the no-op case
     // derives; a fused multiply-add is what leaves it nonzero.
     constexpr double cruise_acceleration_rounding_ops = 1.0;
     constexpr double unit_roundoff = 0.5 * std::numeric_limits<double>::epsilon();
