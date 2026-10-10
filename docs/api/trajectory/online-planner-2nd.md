@@ -60,18 +60,20 @@ They are knobs rather than derived constants because no derivation exists for th
 Two different distance questions live in the planner, and they have different answers on purpose.
 
 1. **"Is the motion done?"** is asked by `sample`, at the policy distance above. It is the caller's to choose.
-2. **"Is this command a numerical no-op?"** is asked when a new target arrives. It is not policy and is not tunable. Its position side is an exact comparison against zero, so a target differing from the current position at all is planned in full however wide the settle policy is; its velocity side is answered against the resolution of the limit that bounds it, derived below.
+2. **"Is this command a numerical no-op?"** is asked when a new target arrives. It is not policy and is not tunable. It holds only when the commanded displacement is exactly zero and the current velocity is exactly zero. A target differing from the current position at all is planned in full however wide the settle policy is.
 
 Take the axis `v_max = 1`, `a_max = 5` and `double` arithmetic, where `eps = 2.22e-16`.
 
 | Question | Compared against | Value on that axis | Where it comes from |
 |---|---|---|---|
 | Is the motion done? | `velocity_settle_tol` | `1e-9` | Policy. The default is the value the planner used before the field existed. No derivation, because none exists: the speed at which a machine counts as stopped is a property of the machine. |
-| Is this command a numerical no-op? | `1 * eps * v_max` | `2.22e-16` | Derived. One operation forms the compared quantity, the comparison itself, because the planner does no arithmetic on the caller's snapshot before testing it; the scale is the velocity limit, which is the only speed the planner is given and the bound on every speed the profile carries. |
+| Is this command a numerical no-op? | exactly zero | `0` | Derived. Removing any nonzero speed takes `abs(v) / a_max` at the acceleration limit, however small the speed is. The planner is never told the sample period, so no magnitude exists below which dropping it would respect `a_max`. |
 
-**The gap is about 6.7 decades, and it is deliberate.** A policy tolerance must not decide what the planner is allowed to compute. The settle policy states when the application considers the axis arrived, which is a statement about the machine; the no-op floor states when the arithmetic can no longer tell one command from another, which is a statement about the type and the limits. Collapsing them would let a caller who widens the arrival distance silently stop the planner from computing moves it can represent perfectly well.
+**The gap is deliberate.** A policy tolerance must not decide what the planner is allowed to compute. The settle policy states when the application considers the axis arrived, which is a statement about the machine; the no-op test states when there is nothing left to remove, which is a statement about the limits. Collapsing them would let a caller who widens the arrival distance silently stop the planner from computing moves it can represent perfectly well.
 
 The window between the two is the range in which the planner reports the axis arrived while remaining willing to plan a move to a nearer target. Widening the settle policy widens that window. It never narrows what the planner will plan.
+
+A command at the current position that still carries a speed is not `settled`. The planner brings the speed to rest at `a_max` and ends at the target, which takes a short time. A speed above the speed floor below reports `braked_and_replanned` with `reversal_or_overshoot`. A speed at or below it, at most `eps * v_max`, is carried rather than braked first and reports `commanded_profile`, with the velocity continuous at the command and within `v_max` and `a_max`. A negative speed is reversed and returned to the target. A positive speed is brought to rest with its stopping point placed at the target, up to `(eps * v_max)^2 / (2 a_max)` short of where braking from that speed ends. That distance is below the target's own resolution unless the target lies within `eps * v_max^2 / a_max` of zero.
 
 #### Constants the planner derives rather than fixes
 

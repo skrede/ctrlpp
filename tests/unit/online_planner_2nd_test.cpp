@@ -749,22 +749,13 @@ TEST_CASE("OnlinePlanner2nd: a wide settle tolerance still plans a far smaller m
     CHECK(planner.sample(diag.planned_duration).position(0) == tiny_target);
 }
 
-// -- Test 21: the numerical-no-op velocity floor is derived, and it scales ------
+// -- Test 21: a command at the current position is a no-op only from rest ------
 //
-// A separate question from the settle policy above, with a separate owner. The
-// policy says when the application considers the axis arrived; this says when
-// the arithmetic can no longer tell the commanded state from the one already in
-// force. This planner carries no acceleration state, so its short-circuit is
-// decided by two clauses alone: an EXACT comparison of the commanded
-// displacement against zero, and the speed against one unit in the last place at
-// the scale of the velocity limit. The floor moves with the limit rather than
-// sitting at an absolute speed borrowed from an axis nobody named.
-//
-// The count is one because this planner performs no arithmetic on the snapshot
-// before the test. That is why it is not the jerk-limited planner's seven: the
-// chains differ, and copying that number across would be an unexplained constant
-// wearing a different name.
-TEST_CASE("OnlinePlanner2nd: the numerical-no-op velocity floor scales with the limit",
+// Removing any nonzero speed takes |v| / a_max at the acceleration limit, and the planner is never told the sample
+// period, so no magnitude exists below which dropping it would respect a_max. A command at the position just sampled
+// is therefore planned whenever the sampled speed is nonzero, however small. The speeds are taken a time s into the
+// opening acceleration ramp, at half and twice eps * v_max.
+TEST_CASE("OnlinePlanner2nd: a command at the current position is a no-op only from rest",
           "[traj][online_planner_2nd][no_op_floor]")
 {
     // Three limit sets spanning nearly three decades, ratios held so the sweep is
@@ -775,51 +766,82 @@ TEST_CASE("OnlinePlanner2nd: the numerical-no-op velocity floor scales with the 
         {40.0, 200.0},
     }};
 
-    constexpr int command_velocity_rounding_ops = 1;
-
-    int straddles = 0;
+    int planned = 0;
     for (auto const& limits : limit_sets) {
         double const v_max = limits[0];
         double const a_max = limits[1];
-        double const velocity_floor = static_cast<double>(command_velocity_rounding_ops)
-                                      * std::numeric_limits<double>::epsilon() * v_max;
+        double const unit_speed = std::numeric_limits<double>::epsilon() * v_max;
 
         for (double const half_or_double : {0.5, 2.0}) {
             auto planner = make_planner<double>({.v_max = v_max, .a_max = a_max});
             planner.reset(0.0);
             REQUIRE(planner.update(100.0 * v_max).has_value());
 
-            // A time s into the opening acceleration ramp leaves a speed a*s and
-            // a position a*s^2/2, so s places the speed at half the floor and at
-            // twice it.
-            double const s = half_or_double * velocity_floor / a_max;
+            double const s = half_or_double * unit_speed / a_max;
             auto const probe = planner.sample(s);
-
-            // Commanding the position just sampled makes the displacement clause
-            // an exact zero, so the speed clause is what decides.
             REQUIRE(planner.update(probe.position[0]).has_value());
 
-            CAPTURE(v_max, a_max, half_or_double, std::log10(std::abs(probe.velocity[0])),
-                    std::log10(velocity_floor), std::log10(std::abs(probe.position[0])));
-
-            if (half_or_double < 1.0) {
-                REQUIRE(std::abs(probe.velocity[0]) < velocity_floor);
-                REQUIRE(planner.diagnostics().disposition
-                        == ctrlpp::online_planner_disposition::settled);
-                REQUIRE(planner.diagnostics().planned_duration == 0.0);
-                REQUIRE(planner.is_settled());
-            } else {
-                REQUIRE(std::abs(probe.velocity[0]) > velocity_floor);
-                REQUIRE(planner.diagnostics().disposition
-                        != ctrlpp::online_planner_disposition::settled);
-                REQUIRE_FALSE(planner.is_settled());
-            }
+            CAPTURE(v_max, a_max, half_or_double, probe.velocity[0], probe.position[0]);
+            REQUIRE(probe.velocity[0] != 0.0);
+            REQUIRE(planner.diagnostics().disposition
+                    != ctrlpp::online_planner_disposition::settled);
+            REQUIRE(planner.diagnostics().planned_duration >= std::abs(probe.velocity[0]) / a_max);
+            REQUIRE_FALSE(planner.is_settled());
+            ++planned;
         }
-        ++straddles;
     }
+    REQUIRE(planned == 6);
 
-    // An exact count, not a bound the loop cannot fail.
-    REQUIRE(straddles == 3);
+    // From rest the command is the one already in force.
+    auto planner = make_planner<double>({.v_max = 5.0, .a_max = 10.0});
+    planner.reset(0x1.8p+1);
+    REQUIRE(planner.update(0x1.8p+1).has_value());
+    REQUIRE(planner.diagnostics().disposition == ctrlpp::online_planner_disposition::settled);
+    REQUIRE(planner.diagnostics().planned_duration == 0.0);
+}
+
+// A speed below eps * v_max is under the direction test's speed floor, so the plan carries it rather than braking
+// first, and reports the commanded profile.
+TEMPLATE_TEST_CASE("OnlinePlanner2nd: a speed left at the target is braked within the limits rather than dropped",
+                   "[trajectory][online_planner_2nd]", float, double)
+{
+    using Scalar = TestType;
+    constexpr Scalar v_max{5};
+    constexpr Scalar a_max{10};
+    constexpr Scalar target{3};
+    auto const unit_speed = std::numeric_limits<Scalar>::epsilon() * v_max;
+    auto const s = Scalar{0.5} * unit_speed / a_max;
+
+    std::int32_t braked = 0;
+    for (auto const direction : {Scalar{1}, Scalar{-1}}) {
+        auto planner = make_planner<Scalar>({.v_max = v_max, .a_max = a_max});
+        planner.reset(target);
+        REQUIRE(planner.update(target + direction * Scalar{100} * v_max).has_value());
+        auto const held = planner.sample(s);
+        REQUIRE(held.position[0] == target);
+        REQUIRE(held.velocity[0] != Scalar{0});
+        REQUIRE(std::abs(held.velocity[0]) < unit_speed);
+
+        REQUIRE(planner.update(target).has_value());
+        auto const diag = planner.diagnostics();
+        CAPTURE(direction, held.velocity[0], diag.planned_duration);
+        REQUIRE(diag.disposition == ctrlpp::online_planner_disposition::commanded_profile);
+        REQUIRE(diag.planned_duration >= std::abs(held.velocity[0]) / a_max);
+        REQUIRE(planner.sample(s).velocity[0] == held.velocity[0]);
+
+        constexpr std::int32_t samples = 64;
+        for (std::int32_t i = 1; i < samples; ++i) {
+            auto const p = planner.sample(s + diag.planned_duration * static_cast<Scalar>(i) / Scalar{samples});
+            REQUIRE(std::abs(p.velocity[0]) <= v_max);
+            REQUIRE(std::abs(p.acceleration[0]) <= a_max);
+            REQUIRE(p.position[0] == target);
+        }
+        auto const end = planner.sample(s + diag.planned_duration);
+        REQUIRE(end.position[0] == target);
+        REQUIRE(end.velocity[0] == Scalar{0});
+        ++braked;
+    }
+    REQUIRE(braked == 2);
 }
 
 // -- Test 22: the overshoot verdict is relative, so it is scale-invariant -------

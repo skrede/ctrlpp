@@ -290,39 +290,9 @@ class online_planner_2nd
     {
         auto const h_signed = target_ - q_ref_;
 
-        // Is the commanded state a numerical no-op -- a command the arithmetic
-        // cannot tell apart from the one already in force?
-        //
-        // This is NOT the settle policy the caller configures. That policy
-        // answers "is the motion done", which is a statement about the machine
-        // and has no derivation. This answers "is there anything left to
-        // compute", which is a statement about the arithmetic and has one. The
-        // two are deliberately separate, and the window between them is wide:
-        // on a unit-scale axis the policy default sits some seven decades above
-        // the floor below. Letting a policy tolerance decide what the planner
-        // is allowed to compute would collapse them into one question, and they
-        // are not one question.
-        //
-        // The displacement clause stays an exact comparison against zero. A
-        // commanded target one unit in the last place away from the reference
-        // position is a different target, and no rounding argument says
-        // otherwise: both are inputs, and neither is the result of a chain this
-        // planner ran.
-        //
-        // The velocity clause compares a caller-supplied snapshot against the
-        // resolution of the limit that bounds it. This function performs no
-        // arithmetic on it before the test, so the honest local count is one
-        // operation, the comparison itself. Whatever error the caller's own
-        // sampling carried into the snapshot is the caller's, and is out of
-        // scope here -- the same scoping the trapezoidal retiming floor applies
-        // to its own. Below the floor the commanded velocity is zero to the
-        // precision the velocity limit leaves available.
-        constexpr int command_velocity_rounding_ops = 1;
-        auto const command_velocity_resolution = Scalar{command_velocity_rounding_ops}
-                                                 * std::numeric_limits<Scalar>::epsilon()
-                                                 * v_max_;
-
-        if (h_signed == Scalar{0} && std::abs(v_ref_) < command_velocity_resolution) {
+        // A command at the target is a no-op only from rest: removing any nonzero speed takes |v| / a_max, and the
+        // planner is never told the sample period, so no magnitude exists below which dropping it respects a_max.
+        if (h_signed == Scalar{0} && v_ref_ == Scalar{0}) {
             set_settled_profile();
             diagnostics_ = online_planner_diagnostics<Scalar>{
                 .disposition = online_planner_disposition::settled,
@@ -357,9 +327,7 @@ class online_planner_2nd
         // overshoot tests see is the one the caller sampled. That is why this
         // count is one where the jerk-limited planner's is seven: the chains
         // differ, and importing that planner's number would be an unexplained
-        // constant wearing a different name. It coincides in value with the
-        // no-op resolution above because both chains are empty, which is an
-        // agreement of two derivations and not a shared constant.
+        // constant wearing a different name.
         constexpr int speed_rounding_ops = 1;
         auto const speed_floor = Scalar{speed_rounding_ops}
                                  * std::numeric_limits<Scalar>::epsilon() * v_max_;
