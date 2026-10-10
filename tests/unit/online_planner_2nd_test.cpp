@@ -1,12 +1,16 @@
 #include "ctrlpp/trajectory/online_planner_2nd.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <array>
 #include <cmath>
 #include <limits>
+#include <cstdint>
 #include <utility>
+#include <algorithm>
+#include <type_traits>
 
 using Catch::Matchers::WithinAbs;
 
@@ -940,4 +944,123 @@ TEST_CASE("OnlinePlanner2nd: the overshoot verdict and the stop placement use on
     }
     CHECK(braked > 0);
     CHECK(carried > 0);
+}
+
+namespace
+{
+
+template <typename Scalar>
+struct switch_scan
+{
+    std::int32_t velocity;
+    std::int32_t acceleration;
+    Scalar peak_speed;
+};
+
+template <typename Scalar>
+void scan_instant(ctrlpp::online_planner_2nd<Scalar> const& planner, Scalar v_max, Scalar a_max, Scalar t,
+                  switch_scan<Scalar>& scan)
+{
+    auto const point = planner.sample(t);
+    scan.velocity += (std::abs(point.velocity[0]) > v_max) ? 1 : 0;
+    scan.acceleration += (std::abs(point.acceleration[0]) > a_max) ? 1 : 0;
+    scan.peak_speed = std::max(scan.peak_speed, std::abs(point.velocity[0]));
+}
+
+// The grid step widens past 1e-3 only on plans too long to sample at that step; the switch windows
+// are scanned at every representable instant regardless.
+template <typename Scalar>
+auto scan_plan(ctrlpp::online_planner_2nd<Scalar> const& planner, Scalar v_max, Scalar a_max, Scalar t_ref,
+               std::array<Scalar, 2> const& switches) -> switch_scan<Scalar>
+{
+    constexpr std::int32_t steps = 64;
+    auto scan = switch_scan<Scalar>{0, 0, Scalar{0}};
+    auto const duration = planner.diagnostics().planned_duration;
+    for (auto const center : switches) {
+        auto t = t_ref + center;
+        for (std::int32_t i = 0; i < steps; ++i) {
+            t = std::nextafter(t, t_ref);
+        }
+        for (std::int32_t i = 0; i <= 2 * steps; ++i, t = std::nextafter(t, t_ref + duration)) {
+            scan_instant(planner, v_max, a_max, t, scan);
+        }
+    }
+    auto const grid_step = std::max(static_cast<Scalar>(1e-3), duration / Scalar{16384});
+    for (std::int32_t i = 0; static_cast<Scalar>(i) * grid_step < duration; ++i) {
+        scan_instant(planner, v_max, a_max, t_ref + static_cast<Scalar>(i) * grid_step, scan);
+    }
+    return scan;
+}
+
+template <typename Scalar>
+void require_exact_end(ctrlpp::online_planner_2nd<Scalar> const& planner, Scalar t_ref, Scalar target)
+{
+    auto const duration = planner.diagnostics().planned_duration;
+    auto t_end = t_ref + duration;
+    while (t_end - t_ref < duration) {
+        t_end = std::nextafter(t_end, std::numeric_limits<Scalar>::infinity());
+    }
+    auto const end = planner.sample(t_end);
+    CHECK(end.position[0] == target);
+    CHECK(end.velocity[0] == Scalar{0});
+}
+
+template <typename Scalar>
+void require_switches_within_limit(Scalar v_max, Scalar a_max, Scalar h)
+{
+    auto planner = make_planner<Scalar>({.v_max = v_max, .a_max = a_max});
+    planner.reset(Scalar{0});
+    REQUIRE(planner.update(h).has_value());
+    auto const T_a = v_max / a_max;
+    auto const T = planner.diagnostics().planned_duration;
+    auto const rest = scan_plan(planner, v_max, a_max, Scalar{0}, {T_a, T - T_a});
+    require_exact_end(planner, Scalar{0}, h);
+
+    auto const t_mid = T / Scalar{2};
+    auto const mid = planner.sample(t_mid);
+    REQUIRE(planner.update(h + h).has_value());
+    auto const T_carried = planner.diagnostics().planned_duration;
+    auto const carried_T_a = (v_max - std::abs(mid.velocity[0])) / a_max;
+    auto const carried = scan_plan(planner, v_max, a_max, t_mid, {carried_T_a, T_carried - T_a});
+    require_exact_end(planner, t_mid, h + h);
+
+    planner.reset(Scalar{0});
+    REQUIRE(planner.update(h).has_value());
+    planner.sample(t_mid);
+    REQUIRE(planner.update(Scalar{0}).has_value());
+    auto const T_brake = planner.diagnostics().brake_duration;
+    auto const T_braked = planner.diagnostics().planned_duration;
+    auto const braked = scan_plan(planner, v_max, a_max, t_mid, {T_brake + T_a, T_braked - T_a});
+    require_exact_end(planner, t_mid, Scalar{0});
+
+    CAPTURE(v_max, a_max, h, rest.peak_speed, carried.peak_speed, braked.peak_speed);
+    CHECK(rest.velocity == 0);
+    CHECK(rest.acceleration == 0);
+    CHECK(carried.velocity == 0);
+    CHECK(carried.acceleration == 0);
+    CHECK(braked.velocity == 0);
+    CHECK(braked.acceleration == 0);
+}
+
+}
+
+TEMPLATE_TEST_CASE("OnlinePlanner2nd: velocity stays within the limit at every representable instant around the deceleration switch",
+                   "[trajectory][online_planner]", float, double)
+{
+    using Scalar = TestType;
+    if constexpr (std::is_same_v<Scalar, double>) {
+        require_switches_within_limit(0.5, 20.0, 7.123);
+        require_switches_within_limit(1.0, 1000.0, 1e9);
+        require_switches_within_limit(1.0, 1.0, 1e3);
+        require_switches_within_limit(1.0, 1e3, 1e3);
+        require_switches_within_limit(1.0, 10.0, 100.3);
+        require_switches_within_limit(2.0, 50.0, 1234.5678);
+    }
+    constexpr std::array<std::array<double, 2>, 8> sweep_limits{
+        {{1, 1}, {5, 10}, {2, 3}, {0.7, 1.3}, {10, 100}, {1, 5}, {40, 20}, {1e-3, 1e-2}}};
+    for (auto const& limits : sweep_limits) {
+        auto const v_max = static_cast<Scalar>(limits[0]);
+        auto const a_max = static_cast<Scalar>(limits[1]);
+        require_switches_within_limit(v_max, a_max, Scalar{10} * v_max * v_max / a_max);
+    }
 }

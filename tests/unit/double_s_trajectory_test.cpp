@@ -744,3 +744,112 @@ TEMPLATE_TEST_CASE("double_s: out-parameter evaluate is bit-identical to by-valu
         }
     }
 }
+
+namespace
+{
+
+template <typename Scalar>
+struct double_s_limits
+{
+    Scalar v_max;
+    Scalar a_max;
+    Scalar j_max;
+};
+
+template <typename Scalar>
+struct sampled_excess
+{
+    std::int32_t acceleration;
+    std::int32_t velocity;
+};
+
+template <typename Scalar>
+void sample_into(ctrlpp::double_s_trajectory<Scalar> const& traj, double_s_limits<Scalar> const& l, Scalar t,
+                 sampled_excess<Scalar>& excess)
+{
+    auto const point = traj.evaluate(t);
+    excess.acceleration += (std::abs(point.acceleration[0]) > l.a_max) ? 1 : 0;
+    excess.velocity += (std::abs(point.velocity[0]) > l.v_max) ? 1 : 0;
+}
+
+template <typename Scalar>
+auto excess_around_switches(ctrlpp::double_s_trajectory<Scalar> const& traj, double_s_limits<Scalar> const& l)
+    -> sampled_excess<Scalar>
+{
+    constexpr std::int32_t steps = 64;
+    constexpr auto grid_step = static_cast<Scalar>(1e-3);
+    auto excess = sampled_excess<Scalar>{0, 0};
+    auto center = Scalar{0};
+    for (auto const segment : traj.phase_durations()) {
+        center += segment;
+        auto t = center;
+        for (std::int32_t i = 0; i < steps; ++i) {
+            t = std::nextafter(t, Scalar{0});
+        }
+        for (std::int32_t i = 0; i <= 2 * steps; ++i, t = std::nextafter(t, traj.duration())) {
+            sample_into(traj, l, t, excess);
+        }
+    }
+    for (std::int32_t i = 0; static_cast<Scalar>(i) * grid_step < traj.duration(); ++i) {
+        sample_into(traj, l, static_cast<Scalar>(i) * grid_step, excess);
+    }
+    sample_into(traj, l, traj.duration(), excess);
+    return excess;
+}
+
+template <typename Scalar>
+void require_within_limits(double_s_limits<Scalar> const& l, Scalar q1, Scalar v0, Scalar v1)
+{
+    auto const created = ctrlpp::double_s_trajectory<Scalar>::create(
+        {.q0 = 0, .q1 = q1, .v_max = l.v_max, .a_max = l.a_max, .j_max = l.j_max, .v0 = v0, .v1 = v1});
+    REQUIRE(created.has_value());
+    auto const excess = excess_around_switches(created.value(), l);
+    CAPTURE(l.v_max, l.a_max, l.j_max, q1, v0, v1, excess.acceleration, excess.velocity);
+    CHECK(excess.acceleration == 0);
+    CHECK(excess.velocity == 0);
+}
+
+// j_max times the rounded quotient a_max / j_max rounds above a_max on this set.
+template <typename Scalar>
+auto round_up_limits() -> double_s_limits<Scalar>
+{
+    auto const a_max = std::is_same_v<Scalar, double> ? static_cast<Scalar>(0x1.fbfbfbdbfbfbfp-4) : static_cast<Scalar>(0.1);
+    auto const j_max = std::is_same_v<Scalar, double> ? static_cast<Scalar>(1e6) : static_cast<Scalar>(3);
+    return {Scalar{4} * a_max * a_max / j_max, a_max, j_max};
+}
+
+}
+
+TEMPLATE_TEST_CASE("Double-S: acceleration stays within the limit at every representable instant around each segment switch",
+                   "[trajectory][double_s]", float, double)
+{
+    using Scalar = TestType;
+    constexpr auto fast = double_s_limits<Scalar>{Scalar{40}, Scalar{20}, Scalar{100}};
+    for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+        require_within_limits(fast, sigma * Scalar{400}, Scalar{0}, sigma * fast.v_max);
+        require_within_limits(fast, sigma * Scalar{400}, Scalar{0}, Scalar{0});
+        require_within_limits(fast, sigma * Scalar{400}, sigma * fast.v_max, Scalar{0});
+    }
+
+    auto const round_up = round_up_limits<Scalar>();
+    REQUIRE(round_up.j_max * (round_up.a_max / round_up.j_max) > round_up.a_max);
+    auto const round_up_T_a = round_up.v_max / round_up.a_max + round_up.a_max / round_up.j_max;
+    for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+        require_within_limits(round_up, sigma * Scalar{10} * round_up.v_max * round_up_T_a, Scalar{0}, Scalar{0});
+    }
+
+    constexpr std::array<std::array<double, 2>, 8> sweep_rates{
+        {{1, 1}, {10, 50}, {3, 7}, {1.3, 2.9}, {100, 1000}, {5, 50}, {20, 100}, {1e-2, 1e-1}}};
+    for (auto const& rates : sweep_rates) {
+        auto const a_max = static_cast<Scalar>(rates[0]);
+        auto const j_max = static_cast<Scalar>(rates[1]);
+        auto v_max = a_max * a_max / j_max;
+        for (std::int32_t i = 0; i < 8; ++i) {
+            v_max = std::nextafter(v_max, Scalar{0});
+        }
+        for (std::int32_t k = -8; k <= 8; ++k, v_max = std::nextafter(v_max, std::numeric_limits<Scalar>::infinity())) {
+            auto const T_a = v_max / a_max + a_max / j_max;
+            require_within_limits(double_s_limits<Scalar>{v_max, a_max, j_max}, Scalar{10} * v_max * T_a, Scalar{0}, Scalar{0});
+        }
+    }
+}

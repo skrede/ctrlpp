@@ -1,6 +1,7 @@
 #include "ctrlpp/trajectory/bspline_trajectory.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
@@ -341,6 +342,19 @@ TEST_CASE("create rejects control points whose derivative overflows", "[trajecto
 {
     auto const result = ctrlpp::bspline_trajectory<double, 3>::create({
         .control_points = {0.0, 1.0, 1.5e308, -1.5e308},
+    });
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error() == ctrlpp::spline_error::unrepresentable_spline);
+}
+
+TEMPLATE_TEST_CASE("create rejects a knot vector whose range overflows", "[trajectory][bspline][validation]", float, double)
+{
+    using Scalar = TestType;
+    auto const m = std::numeric_limits<Scalar>::max() / static_cast<Scalar>(1.5);
+    auto const result = ctrlpp::bspline_trajectory<Scalar, 3>::create({
+        .control_points = {Scalar{0}, Scalar{1}, Scalar{2}, Scalar{3}, Scalar{4}},
+        .knot_vector = {-m, -m, -m, -m, Scalar{0}, m, m, m, m},
     });
 
     REQUIRE_FALSE(result.has_value());

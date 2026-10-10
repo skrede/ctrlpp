@@ -213,15 +213,16 @@ class trapezoidal_trajectory
     auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>
     {
         auto const tc = std::clamp(t, Scalar{0}, T_);
+        auto const dt_end = T_ - tc;
         Scalar q{}, dq{}, ddq{};
 
-        if (tc <= T_a_ && T_a_ > Scalar{0}) {
+        if (tc < T_a_) {
             // Acceleration phase
             // @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a), p.71
             ddq = a_a_;
             dq = v0_ + a_a_ * tc;
             q = v0_ * tc + Scalar{0.5} * a_a_ * tc * tc;
-        } else if (tc < T_a_ + T_v_) {
+        } else if (dt_end >= T_d_ && dt_end > Scalar{0}) {
             // Constant velocity (cruise) phase
             auto const dt = tc - T_a_;
             ddq = Scalar{0};
@@ -229,8 +230,8 @@ class trapezoidal_trajectory
             // Position at end of accel phase + cruise distance
             q = v0_ * T_a_ + Scalar{0.5} * a_a_ * T_a_ * T_a_ + v_v_ * dt;
         } else {
-            // Deceleration phase -- use backward time for precision (Pitfall 1)
-            auto const dt_end = T_ - tc;
+            // The stored total is a rounded sum, so the time back from it can exceed T_d_ at the switch;
+            // each ramp's formula is used only strictly inside that ramp, timed from its own anchor.
             ddq = -a_d_;
             dq = v1_ + a_d_ * dt_end;
             // Position from end: q1 - backward integration
@@ -238,7 +239,6 @@ class trapezoidal_trajectory
             q = abs_h - v1_ * dt_end - Scalar{0.5} * a_d_ * dt_end * dt_end;
         }
 
-        // Apply sigma transformation for sign
         return {
             .position = Vector<Scalar, 1>{q0_ + sigma_ * q},
             .velocity = Vector<Scalar, 1>{sigma_ * dq},

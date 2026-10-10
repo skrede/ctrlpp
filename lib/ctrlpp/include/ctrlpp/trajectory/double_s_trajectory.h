@@ -843,15 +843,21 @@ private:
     void eval_accel_phase(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
         auto const j = j_max_;
-        auto const t1 = T_j1_;
-        auto const t2 = T_a_ - T_j1_;
+        auto const dt = T_a_ - tc;
 
-        if (tc < t1) {
+        // The stored switch times are rounded sums, so each jerk segment's formula is used only strictly
+        // within that segment, timed from the end it is anchored at; between them the stored peak is held.
+        if (tc < T_j1_) {
             // Segment 1: jerk(+), velocity starts at pv0_.
             q = pv0_ * tc + j * tc * tc * tc / Scalar{6};
             dq = pv0_ + j * tc * tc / Scalar{2};
             ddq = j * tc;
-        } else if (tc < t2) {
+        } else if (dt < T_j1_) {
+            auto const q_at_Ta = compute_q_at_Ta();
+            q = q_at_Ta - v_lim_ * dt + j * dt * dt * dt / Scalar{6};
+            dq = v_lim_ - j * dt * dt / Scalar{2};
+            ddq = j * dt;
+        } else {
             // Segment 2: constant accel, carrying the pv0_ offset forward.
             auto const t = tc - T_j1_;
             auto const q1 = pv0_ * T_j1_ + j * T_j1_ * T_j1_ * T_j1_ / Scalar{6};
@@ -859,12 +865,6 @@ private:
             q = q1 + dq1 * t + a_lim_a_ * t * t / Scalar{2};
             dq = dq1 + a_lim_a_ * t;
             ddq = a_lim_a_;
-        } else {
-            auto const dt = T_a_ - tc;
-            auto const q_at_Ta = compute_q_at_Ta();
-            q = q_at_Ta - v_lim_ * dt + j * dt * dt * dt / Scalar{6};
-            dq = v_lim_ - j * dt * dt / Scalar{2};
-            ddq = j * dt;
         }
     }
 
@@ -876,28 +876,28 @@ private:
         auto const dt_end = T_ - tc;
         auto const h = std::abs(q1_ - q0_);
         auto const t5 = T_a_ + T_v_ + T_j2_;
+        auto const t = tc - (T_a_ + T_v_);
 
-        if (dt_end > T_d_ - T_j2_) {
+        if (t < T_j2_) {
             auto const q_at_Tv_end = compute_q_at_Ta() + v_lim_ * T_v_;
-            auto const t = tc - (T_a_ + T_v_);
             q = q_at_Tv_end + v_lim_ * t - j * t * t * t / Scalar{6};
             dq = v_lim_ - j * t * t / Scalar{2};
             ddq = -j * t;
-        } else if (dt_end > T_j2_) {
+        } else if (dt_end < T_j2_) {
+            // Segment 7: final jerk(+), velocity ends at pv1_ (not zero).
+            q = h - pv1_ * dt_end - j * dt_end * dt_end * dt_end / Scalar{6};
+            dq = pv1_ + j * dt_end * dt_end / Scalar{2};
+            ddq = -j * dt_end;
+        } else {
             auto const t5_local = T_j2_;
             auto const v_at_t5 = v_lim_ - j * t5_local * t5_local / Scalar{2};
-            auto const a_at_t5 = -j * t5_local;
+            auto const a_at_t5 = -a_lim_d_;
             auto const q_at_t5 = compute_q_at_Ta() + v_lim_ * T_v_
                                  + v_lim_ * t5_local - j * t5_local * t5_local * t5_local / Scalar{6};
             auto const dt_from_t5 = tc - t5;
             q = q_at_t5 + v_at_t5 * dt_from_t5 + a_at_t5 * dt_from_t5 * dt_from_t5 / Scalar{2};
             dq = v_at_t5 + a_at_t5 * dt_from_t5;
             ddq = a_at_t5;
-        } else {
-            // Segment 7: final jerk(+), velocity ends at pv1_ (not zero).
-            q = h - pv1_ * dt_end - j * dt_end * dt_end * dt_end / Scalar{6};
-            dq = pv1_ + j * dt_end * dt_end / Scalar{2};
-            ddq = -j * dt_end;
         }
     }
 

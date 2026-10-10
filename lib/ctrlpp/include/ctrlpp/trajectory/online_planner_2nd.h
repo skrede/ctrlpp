@@ -569,13 +569,14 @@ class online_planner_2nd
 
         auto const s = sigma_;
         auto const aa = a_a_;
+        auto const dt_end = T_total - dt;
 
         if (dt < T_a_) {
             // Acceleration phase
             a = s * aa;
             v = s * aa * dt;
             q = q0 + s * Scalar{0.5} * aa * dt * dt;
-        } else if (dt < T_a_ + T_v_) {
+        } else if (dt_end >= T_d_) {
             // Cruise phase
             auto const dt_c = dt - T_a_;
             auto const q_end_accel = q0 + s * Scalar{0.5} * aa * T_a_ * T_a_;
@@ -583,8 +584,7 @@ class online_planner_2nd
             v = s * v_v_;
             q = q_end_accel + s * v_v_ * dt_c;
         } else {
-            // Deceleration phase -- backward time for precision
-            auto const dt_end = T_total - dt;
+            // T_total is a rounded sum, so deceleration is used only strictly inside T_d_, timed back from the end.
             a = -s * a_d_;
             v = s * a_d_ * dt_end;
             q = target_ - s * Scalar{0.5} * a_d_ * dt_end * dt_end;
@@ -604,13 +604,14 @@ class online_planner_2nd
             a = Scalar{0};
             return;
         }
+        auto const dt_end = T_total - dt;
 
         if (dt < T_a_) {
             // Acceleration phase
             a = s * aa;
             v = v_ref_ + s * aa * dt;
             q = q_ref_ + v_ref_ * dt + s * Scalar{0.5} * aa * dt * dt;
-        } else if (dt < T_a_ + T_v_) {
+        } else if (dt_end >= T_d_) {
             // Cruise phase
             auto const dt_c = dt - T_a_;
             auto const q_end_accel = q_ref_ + v_ref_ * T_a_
@@ -619,8 +620,7 @@ class online_planner_2nd
             v = s * v_v_;
             q = q_end_accel + s * v_v_ * dt_c;
         } else {
-            // Deceleration phase -- backward time for precision (Pitfall 1)
-            auto const dt_end = T_total - dt;
+            // T_total is a rounded sum, so deceleration is used only strictly inside T_d_, timed back from the end.
             a = -s * a_d_;
             v = s * a_d_ * dt_end;
             q = target_ - s * Scalar{0.5} * a_d_ * dt_end * dt_end;

@@ -43,6 +43,7 @@ Rejections, checked in order:
 | A NaN or infinite control point or knot | `spline_error::non_finite_input` |
 | Knot vector size differs from `control_points.size() + Degree + 1` | `spline_error::bad_knot_count` |
 | Knot vector not non-decreasing | `spline_error::non_monotonic_knots` |
+| Knot range `knot_vector.back() - knot_vector.front()` overflows `Scalar` | `spline_error::unrepresentable_spline` |
 | A derivative control point leaves the representable range of `Scalar` | `spline_error::unrepresentable_spline` |
 
 The last check reads the derivative control points that `evaluate` uses for velocity and acceleration. Finite control points far enough apart that their difference quotient overflows are refused at construction rather than evaluating to NaN.

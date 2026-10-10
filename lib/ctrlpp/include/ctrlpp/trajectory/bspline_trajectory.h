@@ -94,6 +94,8 @@ class bspline_trajectory
     ///  * knot vector size differs from
     ///    control_points.size() + Degree + 1   -> spline_error::bad_knot_count
     ///  * knot vector not non-decreasing       -> spline_error::non_monotonic_knots
+    ///  * knot range back() - front() not
+    ///    representable in Scalar              -> spline_error::unrepresentable_spline
     ///  * derivative control points outside
     ///    the representable range of Scalar    -> spline_error::unrepresentable_spline
     ///
@@ -245,6 +247,9 @@ class bspline_trajectory
         }
         if (!std::is_sorted(cfg.knot_vector.begin(), cfg.knot_vector.end())) {
             return ctrlpp::unexpected(spline_error::non_monotonic_knots);
+        }
+        if (!std::isfinite(cfg.knot_vector.back() - cfg.knot_vector.front())) {
+            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
         }
         return {};
     }

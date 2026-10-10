@@ -658,3 +658,96 @@ TEST_CASE("Trapezoidal: a larger velocity pointing away needs no raised accelera
     double const huge_expected = (std::sqrt(2.0) + 1.0) * (1e200 / 1e300);
     REQUIRE(std::abs(huge.value().duration() - huge_expected) <= huge_rounding_ops * eps * huge_expected);
 }
+
+namespace
+{
+
+template <typename Scalar>
+struct sampled_peaks
+{
+    Scalar speed;
+    Scalar acceleration;
+};
+
+template <typename Scalar>
+void sample_into(ctrlpp::trapezoidal_trajectory<Scalar> const& traj, Scalar t, sampled_peaks<Scalar>& peaks)
+{
+    auto const point = traj.evaluate(t);
+    peaks.speed = std::max(peaks.speed, std::abs(point.velocity[0]));
+    peaks.acceleration = std::max(peaks.acceleration, std::abs(point.acceleration[0]));
+}
+
+template <typename Scalar>
+auto peaks_around_switches(ctrlpp::trapezoidal_trajectory<Scalar> const& traj) -> sampled_peaks<Scalar>
+{
+    constexpr std::int32_t steps = 64;
+    constexpr auto grid_step = static_cast<Scalar>(1e-3);
+    auto peaks = sampled_peaks<Scalar>{Scalar{0}, Scalar{0}};
+    auto const phases = traj.phase_durations();
+    for (auto const center : {phases[0], phases[0] + phases[1], traj.duration() - phases[2]}) {
+        auto t = center;
+        for (std::int32_t i = 0; i < steps; ++i) {
+            t = std::nextafter(t, Scalar{0});
+        }
+        for (std::int32_t i = 0; i <= 2 * steps; ++i, t = std::nextafter(t, traj.duration())) {
+            sample_into(traj, t, peaks);
+        }
+    }
+    for (std::int32_t i = 0; static_cast<Scalar>(i) * grid_step < traj.duration(); ++i) {
+        sample_into(traj, static_cast<Scalar>(i) * grid_step, peaks);
+    }
+    sample_into(traj, traj.duration(), peaks);
+    return peaks;
+}
+
+}
+
+TEMPLATE_TEST_CASE("Trapezoidal: velocity stays within the limit at every representable instant around each phase switch",
+                   "[trajectory][trapezoidal]", float, double)
+{
+    using Scalar = TestType;
+    using traj_t = ctrlpp::trapezoidal_trajectory<Scalar>;
+    struct limits
+    {
+        Scalar v_max;
+        Scalar a_max;
+    };
+    struct ends
+    {
+        Scalar v0;
+        Scalar v1;
+    };
+    constexpr std::array<limits, 8> limit_pairs{{{Scalar{1}, Scalar{1}},
+                                                 {Scalar{5}, Scalar{10}},
+                                                 {Scalar{2}, Scalar{3}},
+                                                 {static_cast<Scalar>(0.7), static_cast<Scalar>(1.3)},
+                                                 {Scalar{10}, Scalar{100}},
+                                                 {Scalar{1}, Scalar{5}},
+                                                 {Scalar{40}, Scalar{20}},
+                                                 {static_cast<Scalar>(1e-3), static_cast<Scalar>(1e-2)}}};
+    constexpr Scalar half{0.5};
+    constexpr std::array<ends, 7> fractions{
+        {{0, 0}, {1, 0}, {0, 1}, {0, half}, {0, -half}, {half, 0}, {-half, 0}}};
+    for (auto const l : limit_pairs) {
+        for (auto const sigma : {Scalar{1}, Scalar{-1}}) {
+            for (auto const f : fractions) {
+                auto const v0 = sigma * f.v0 * l.v_max;
+                auto const v1 = sigma * f.v1 * l.v_max;
+                auto const q1 = sigma * Scalar{10} * l.v_max;
+                auto const created = traj_t::create({.q0 = 0, .q1 = q1, .v_max = l.v_max, .a_max = l.a_max, .v0 = v0, .v1 = v1});
+                REQUIRE(created.has_value());
+                auto const& traj = created.value();
+                auto const peaks = peaks_around_switches(traj);
+                auto const ulp = std::nextafter(l.v_max, std::numeric_limits<Scalar>::infinity()) - l.v_max;
+                auto const excess_ulps = (peaks.speed - l.v_max) / ulp;
+                CAPTURE(l.v_max, l.a_max, sigma, v0, v1, peaks.speed, excess_ulps);
+                CHECK(peaks.speed <= l.v_max);
+                CHECK(peaks.acceleration <= traj.disposition().realized_acceleration);
+                CHECK(traj.evaluate(Scalar{0}).position[0] == Scalar{0});
+                CHECK(traj.evaluate(Scalar{0}).velocity[0] == v0);
+                CHECK(traj.evaluate(traj.duration()).position[0] == q1);
+                CHECK(traj.evaluate(traj.duration()).velocity[0] == v1);
+            }
+        }
+    }
+}

@@ -120,6 +120,8 @@ The realized phase durations are still checked directly rather than inferred fro
 | `rescale_to` | `expected<void, trajectory_error> rescale_to(Scalar T_new)` | Rebuild at a longer duration for multi-axis sync |
 | `can_rescale_to` | `expected<void, trajectory_error> can_rescale_to(Scalar T_new) const` | Whether `rescale_to(T_new)` would succeed, without mutating |
 
+`evaluate` uses a ramp's formula only at times strictly inside that ramp: the acceleration ramp measured forward from 0, the deceleration ramp measured backward from the duration. So at a phase switch it reports the cruise velocity itself, never a rounded value above `v_max`.
+
 ## Time Rescaling
 
 `rescale_to()` rebuilds the profile at a lower cruise velocity rather than patching the one it has. The commanded displacement, both boundary velocities, and the acceleration magnitude are held fixed and the cruise velocity that realizes the requested duration is solved in closed form, so the traversed displacement and the terminal velocity hold by construction.
