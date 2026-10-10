@@ -97,8 +97,8 @@ handed.
   that query exists for. `pid` is the exception: `create`, `set_params` and
   `set_integral` refuse a non-finite or contradictory value with a
   `pid_config_error`, and `freeze_integral` and `reset` take no value that could
-  be non-finite. Its plain constructor still stands beside `create` and checks
-  nothing.
+  be non-finite. `create` is its only construction path; the constructor is
+  private.
 - **`l1_controller`'s projection, in one specific case.** The elementwise clamp
   propagates a `NaN` unchanged, but it *replaces* an infinity with the configured
   bound whenever that bound is finite -- so a finite, in-range command can come

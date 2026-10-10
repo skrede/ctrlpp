@@ -257,8 +257,8 @@ problem as well as the filter.
 
 `pid` validates its configuration on channel 1: `pid::create`,
 `pid::set_params` and `pid::set_integral` refuse a value that cannot work with a
-`pid_config_error` and leave the controller untouched. Its plain constructor
-still stands beside `create` and checks nothing.
+`pid_config_error` and leave the controller untouched. `create` is its only
+construction path; the constructor is private.
 
 Not yet converted: `predict` on those seven estimator types; the configuration
 and reset paths of the two adaptive controllers (their construction and

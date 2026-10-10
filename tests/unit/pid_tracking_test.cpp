@@ -24,7 +24,7 @@ TEST_CASE("Tracking signal drives integral for bumpless transfer",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Run a few normal steps to accumulate integral
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
@@ -50,7 +50,7 @@ TEST_CASE("Tracking enables bumpless manual-to-auto transition",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(1.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Simulate manual mode: operator holds output at 5.0
     // Track the manual output for several steps
@@ -79,7 +79,7 @@ TEST_CASE("Tracking with feed_forward: integral accounts for ff contribution",
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
     cfg.template policy<FF>().ff_func = ff_func;
-    FfPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(FfPid::create(cfg));
 
     // Step with tracking signal = 10.0
     // u = compute(sp, meas, Ts) includes ff contribution
@@ -101,7 +101,7 @@ TEST_CASE("Tracking after saturation resets integral appropriately",
     cfg.ki = vec1(1.0);
     cfg.output_max = vec1(5.0);
     cfg.output_min = vec1(-5.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Drive into saturation
     for (int i = 0; i < 20; ++i)

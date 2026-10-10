@@ -135,8 +135,7 @@ int fold_all()
     int witness = 0;
 
     ctrlpp::pid_config<scalar, 1> pid_cfg{};
-    ctrlpp::pid<scalar, 1> controller(pid_cfg);
-    witness += static_cast<int>(sizeof(controller) > 0);
+    witness += ctrlpp::pid<scalar, 1>::create(pid_cfg).has_value() ? 1 : 0;
 
     witness += ctrlpp::biquad<scalar>::low_pass(scalar{100}, scalar{1000}).has_value() ? 1 : 0;
 

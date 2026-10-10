@@ -14,9 +14,9 @@ When `isa_form` is active, the `ki` and `kd` fields in `pid_config` are reinterp
 
 | Field | Interpretation | Description |
 |-------|---------------|-------------|
-| `kp` | Kp | Proportional gain (same as standard form) |
-| `ki` | Ti | Integral time constant. Actual integral gain = Kp / Ti. |
-| `kd` | Td | Derivative time constant. Actual derivative gain = Kp * Td. |
+| `kp` | Kp | Proportional gain (same as standard form). `create` refuses a `NaN` or infinite component with `non_finite_gain`. |
+| `ki` | Ti | Integral time constant. Actual integral gain = Kp / Ti. `create` refuses a `NaN` or negative-infinite Ti with `non_finite_gain`, and a Kp / Ti that overflows `Scalar` with `unrepresentable_gain`. |
+| `kd` | Td | Derivative time constant. Actual derivative gain = Kp * Td. `create` refuses a `NaN` or infinite Td with `non_finite_gain`, and a Kp * Td that overflows `Scalar` with `unrepresentable_gain`. |
 
 No additional config struct fields are added. The ISA form modifies how the existing `kp`, `ki`, `kd` fields are used internally.
 
@@ -43,7 +43,9 @@ int main()
     cfg.ki = Vec::Constant(0.5);   // Ti = 0.5s (integral time)
     cfg.kd = Vec::Constant(0.1);   // Td = 0.1s (derivative time)
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    auto& ctrl = *created;
 
     double y = 0.0;
     constexpr double dt = 0.01;

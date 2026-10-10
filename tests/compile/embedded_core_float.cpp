@@ -108,10 +108,14 @@ int main()
 
     ctrlpp::pid_config<scalar, 1> pid_cfg{};
     pid_cfg.kp = ctrlpp::Vector<scalar, 1>::Constant(scalar{1});
-    ctrlpp::pid<scalar, 1> controller(pid_cfg);
-    const auto u = controller.compute(
-        ctrlpp::Vector<scalar, 1>::Zero(), ctrlpp::Vector<scalar, 1>::Zero(), static_cast<scalar>(0.01));
-    witness += (u.has_value() && (*u)[0] == (*u)[0]) ? 1 : 0;
+    auto controller = ctrlpp::pid<scalar, 1>::create(pid_cfg);
+    witness += fold(controller);
+    if(controller)
+    {
+        const auto u = controller->compute(
+            ctrlpp::Vector<scalar, 1>::Zero(), ctrlpp::Vector<scalar, 1>::Zero(), static_cast<scalar>(0.01));
+        witness += (u.has_value() && (*u)[0] == (*u)[0]) ? 1 : 0;
+    }
 
     const ctrlpp::Matrix<scalar, 2, 2> a = ctrlpp::Matrix<scalar, 2, 2>::Identity();
     ctrlpp::Matrix<scalar, 2, 1> b;

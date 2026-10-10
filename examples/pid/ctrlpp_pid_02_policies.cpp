@@ -19,7 +19,13 @@ int main()
     cfg.output_max = Vec::Constant(5.0);
     cfg.template policy<ctrlpp::deriv_filter>().n = {10.0};
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if(!created.has_value())
+    {
+        std::cerr << "pid::create refused the configuration\n";
+        return 1;
+    }
+    auto& ctrl = *created;
 
     double y = 0.0;
     constexpr double setpoint = 1.0;

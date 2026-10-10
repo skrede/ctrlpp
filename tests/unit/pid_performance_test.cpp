@@ -23,7 +23,7 @@ TEST_CASE("IAE accumulates integral of |error| * dt",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     // Constant error=1.0, 10 steps of dt=0.1
     // IAE = sum(|1.0| * 0.1) = 1.0
@@ -40,7 +40,7 @@ TEST_CASE("ISE accumulates integral of error^2 * dt",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     // Constant error=2.0, 10 steps of dt=0.1
     // ISE = sum(4.0 * 0.1) = 4.0
@@ -57,7 +57,7 @@ TEST_CASE("ITAE accumulates integral of t * |error| * dt",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     // Constant error=1.0, dt=0.1
     // After step k: accumulated_time = k * 0.1
@@ -77,7 +77,7 @@ TEST_CASE("Multiple metrics accumulate simultaneously",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     for (int i = 0; i < 10; ++i)
         REQUIRE(pid.compute(vec1(2.0), vec1(0.0), 0.1).has_value());
@@ -95,7 +95,7 @@ TEST_CASE("oscillation_detect counts zero-crossings and detects oscillation",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     // Alternating error sign: +1, -1, +1, -1, ...  for 10 steps at dt=0.1
     // 9 zero-crossings over 1.0 second -> rate = 9/1.0 = 9 > threshold 5
@@ -121,7 +121,7 @@ TEST_CASE("oscillation verdict follows the configurable crossing_rate_threshold"
         PaPid::config_type cfg{};
         cfg.kp = vec1(1.0);
         cfg.template policy<PA>().crossing_rate_threshold = threshold;
-        PaPid pid(cfg);
+        auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
         for (int i = 0; i < 10; ++i) {
             double sp = (i % 2 == 0) ? 1.0 : -1.0;
             REQUIRE(pid.compute(vec1(sp), vec1(0.0), 0.1).has_value());
@@ -140,7 +140,7 @@ TEST_CASE("oscillation_detect: constant error sign -> not oscillating",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     for (int i = 0; i < 10; ++i)
         REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());
@@ -156,7 +156,7 @@ TEST_CASE("oscillation_detect + IAE both accumulate",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     for (int i = 0; i < 10; ++i) {
         double sp = (i % 2 == 0) ? 1.0 : -1.0;
@@ -175,7 +175,7 @@ TEST_CASE("reset_metrics clears all metric accumulators",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     for (int i = 0; i < 10; ++i) {
         double sp = (i % 2 == 0) ? 1.0 : -1.0;
@@ -199,7 +199,7 @@ TEST_CASE("IAE accumulates absolute value for negative errors",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     // Negative error: sp=0, meas=1 -> e=-1
     for (int i = 0; i < 10; ++i)
@@ -216,7 +216,7 @@ TEST_CASE("ITAE weights later errors more heavily than earlier errors",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     // Negative error: sp=0, meas=2 -> e=-2
     // ITAE = sum(t_k * |e| * dt), |e|=2
@@ -235,7 +235,7 @@ TEST_CASE("oscillation_detect skips zero-error steps (no false crossing)",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     // Sequence: +1, 0, -1, 0, +1
     // Zero errors should be ignored for crossing detection
@@ -256,7 +256,7 @@ TEST_CASE("oscillating() returns false when accumulated_time is zero",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     // No steps computed yet -> accumulated_time = 0 -> oscillating() returns false
     REQUIRE(pid.oscillating() == false);
@@ -269,7 +269,7 @@ TEST_CASE("All four metrics accumulate simultaneously",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     // Alternating error: 1, -1, 1 at dt=0.1
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());  // e=1, t=0.1
@@ -293,7 +293,7 @@ TEST_CASE("reset() clears performance metrics when perf_assessment is enabled",
     using PaPid = ctrlpp::pid<double, 1, PA>;
     PaPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    PaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PaPid::create(cfg));
 
     for (int i = 0; i < 5; ++i)
         REQUIRE(pid.compute(vec1(1.0), vec1(0.0), 0.1).has_value());

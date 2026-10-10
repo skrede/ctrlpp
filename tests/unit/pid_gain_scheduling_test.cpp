@@ -48,8 +48,8 @@ TEST_CASE("set_params with a Ki change is bumpless (integral state unchanged)",
     cfg.ki = vec1(ki_old);
 
     // Two controllers driven identically hold bit-identical state; one then changes Ki.
-    SisoPid ref(cfg);
-    SisoPid sched(cfg);
+    auto ref = ctrlpp::test::constructed(SisoPid::create(cfg));
+    auto sched = ctrlpp::test::constructed(SisoPid::create(cfg));
     for (int i = 0; i < 10; ++i) {
         REQUIRE(ref.compute(vec1(sp), vec1(meas), Ts).has_value());
         REQUIRE(sched.compute(vec1(sp), vec1(meas), Ts).has_value());
@@ -84,7 +84,7 @@ TEST_CASE("set_params with Ki going to zero preserves the accumulated integral",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(kp);
     cfg.ki = vec1(ki);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     for (int i = 0; i < 10; ++i)
         REQUIRE(pid.compute(vec1(sp), vec1(meas), Ts).has_value());
@@ -118,8 +118,8 @@ TEST_CASE("set_params with a Kp change steps only the proportional term",
     cfg.kp = vec1(kp_old);
     cfg.ki = vec1(ki);
 
-    SisoPid ref(cfg);
-    SisoPid sched(cfg);
+    auto ref = ctrlpp::test::constructed(SisoPid::create(cfg));
+    auto sched = ctrlpp::test::constructed(SisoPid::create(cfg));
     for (int i = 0; i < 20; ++i) {
         REQUIRE(ref.compute(vec1(sp), vec1(meas), Ts).has_value());
         REQUIRE(sched.compute(vec1(sp), vec1(meas), Ts).has_value());
@@ -149,7 +149,7 @@ TEST_CASE("params() returns current config after set_params",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     SisoPid::config_type new_cfg = cfg;
     new_cfg.kp = vec1(3.0);
@@ -166,7 +166,7 @@ TEST_CASE("set_integral sets integral to known value",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(1.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     REQUIRE(pid.set_integral(vec1(5.0)).has_value());
     REQUIRE_THAT(pid.integral()[0], WithinAbs(5.0, tol));
@@ -183,7 +183,7 @@ TEST_CASE("freeze_integral prevents integral growth",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(1.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Accumulate some integral
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
@@ -212,7 +212,7 @@ TEST_CASE("set_params from Ki=0 to Ki!=0 leaves the zero integral in place",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Run some steps with Ki=0 -> integral never accumulates, stays 0
     for (int i = 0; i < 10; ++i)
@@ -248,8 +248,8 @@ TEST_CASE("ISA form set_params with a Ti change is bumpless",
     cfg.ki = vec1(ti_old);
     cfg.kd = vec1(0.0);
 
-    IsaPid ref(cfg);
-    IsaPid sched(cfg);
+    auto ref = ctrlpp::test::constructed(IsaPid::create(cfg));
+    auto sched = ctrlpp::test::constructed(IsaPid::create(cfg));
     for (int i = 0; i < 10; ++i) {
         REQUIRE(ref.compute(vec1(sp), vec1(meas), Ts).has_value());
         REQUIRE(sched.compute(vec1(sp), vec1(meas), Ts).has_value());
@@ -278,7 +278,7 @@ TEST_CASE("repeated set_params never rescales the integral state",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(1.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Accumulate integral = Ki*e*dt*5 = 1.0*1.0*0.01*5 = 0.05
     for (int i = 0; i < 5; ++i)

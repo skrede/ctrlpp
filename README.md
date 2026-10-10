@@ -40,7 +40,9 @@ int main()
     cfg.output_min = Vec::Constant(-10.0);
     cfg.output_max = Vec::Constant(10.0);
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    auto& ctrl = *created;
 
     double y = 0.0;
     constexpr double setpoint = 1.0;
@@ -48,8 +50,9 @@ int main()
 
     for (double t = 0.0; t < 10.0; t += dt)
     {
-        auto u = ctrl.compute(Vec::Constant(setpoint), Vec::Constant(y), dt);
-        y = 0.9 * y + 0.1 * u[0];
+        auto step = ctrl.compute(Vec::Constant(setpoint), Vec::Constant(y), dt);
+        if (!step.has_value()) return 1;
+        y = 0.9 * y + 0.1 * (*step)[0];
     }
 
     std::cout << "final output: " << y << "\n";

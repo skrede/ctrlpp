@@ -47,7 +47,9 @@ TEST_CASE("pid bibo stability property", "[pid][property]")
                  cfg.output_min = vec1(out_min);
                  cfg.output_max = vec1(out_max);
 
-                 PidType pid(cfg);
+                 auto created = PidType::create(cfg);
+                 RC_ASSERT(created.has_value());
+                 auto pid = *created;
 
                  constexpr double dt = 0.01;
                  constexpr double eps = 1e-9;
@@ -76,7 +78,9 @@ TEST_CASE("pid proportional-only constant error", "[pid][property]")
                  typename PidType::config_type cfg{};
                  cfg.kp = vec1(kp);
 
-                 PidType pid(cfg);
+                 auto created = PidType::create(cfg);
+                 RC_ASSERT(created.has_value());
+                 auto pid = *created;
 
                  auto target = *bounded_double(-100.0, 100.0);
                  constexpr double dt = 0.01;
@@ -115,7 +119,9 @@ TEST_CASE("pid robustness - extreme inputs do not crash", "[pid][property]")
                  cfg.output_min = vec1(-1e9);
                  cfg.output_max = vec1(1e9);
 
-                 PidType pid(cfg);
+                 auto created = PidType::create(cfg);
+                 RC_ASSERT(created.has_value());
+                 auto pid = *created;
 
                  auto n_steps = *rc::gen::inRange(1, 50);
                  for(int i = 0; i < n_steps; ++i)

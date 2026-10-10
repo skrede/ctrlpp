@@ -41,7 +41,9 @@ int main()
     cfg.ki = Vec::Constant(1.0);
     cfg.kd = Vec::Constant(0.1);
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    auto& ctrl = *created;
 
     double y = 0.0;
     double u_accum = 0.0;  // actuator integrates the incremental output

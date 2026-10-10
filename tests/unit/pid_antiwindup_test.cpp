@@ -39,7 +39,7 @@ TEST_CASE("Without anti_windup: integral winds up unboundedly", "[pid][siso][win
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(1.0);
     cfg.output_max = vec1(5.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Constant error of 1.0 for many steps
     for (int i = 0; i < 1000; ++i)
@@ -61,7 +61,7 @@ TEST_CASE("back_calc anti-windup limits integral growth during saturation",
     cfg.ki = vec1(1.0);
     cfg.output_max = vec1(5.0);
     cfg.template policy<AW>().kb = {1.0};
-    AwPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(AwPid::create(cfg));
 
     // Run many steps with large error to cause saturation
     for (int i = 0; i < 1000; ++i)
@@ -100,7 +100,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
         cfg.output_max = vec1(out_max);
         // kb left at 0 -> auto default. sqrt(ki/kd) = sqrt(8/2) = 2, which is
         // distinct from the dimensionally-wrong sqrt(ki*kd) = sqrt(16) = 4.
-        AwPid pid(cfg);
+        auto pid = ctrlpp::test::constructed(AwPid::create(cfg));
 
         auto u = ctrlpp::test::commanded(pid.compute(vec1(sp), vec1(meas), Ts));
 
@@ -123,7 +123,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
         cfg.ki = vec1(ki);
         // kd left at 0 -> auto default kb = ki/kp = 0.5, distinct from the old kb = ki = 2.
         cfg.output_max = vec1(out_max);
-        AwPid pid(cfg);
+        auto pid = ctrlpp::test::constructed(AwPid::create(cfg));
 
         auto u = ctrlpp::test::commanded(pid.compute(vec1(sp), vec1(meas), Ts));
 
@@ -143,7 +143,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
         AwPid::config_type cfg{};
         cfg.ki = vec1(ki);
         cfg.output_max = vec1(out_max);
-        AwPid pid(cfg);
+        auto pid = ctrlpp::test::constructed(AwPid::create(cfg));
 
         auto u = ctrlpp::test::commanded(pid.compute(vec1(sp), vec1(meas), Ts));
 
@@ -168,7 +168,7 @@ TEST_CASE("back_calc anti-windup limits windup during a rate-limited ramp",
     cfg.template policy<AW>().kb = {1.0};
     cfg.template policy<ctrlpp::rate_limit>().rate_max = {1.0}; // slow actuator, no output clamp
 
-    RlPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(RlPid::create(cfg));
 
     // Large constant setpoint: the unconstrained command wants to jump far, but the
     // rate limiter allows only rate_max*dt per step. Because back-calculation feeds back
@@ -193,7 +193,7 @@ TEST_CASE("clamping anti-windup freezes integral during saturation",
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(1.0);
     cfg.output_max = vec1(5.0);
-    AwPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(AwPid::create(cfg));
 
     // Step until saturation
     double integral_at_saturation = 0.0;
@@ -226,7 +226,7 @@ TEST_CASE("conditional_integration freezes integral when error exceeds threshold
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(1.0);
     cfg.template policy<AW>().error_threshold = {2.0};
-    AwPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(AwPid::create(cfg));
 
     // Error = 5 > threshold 2 -> integral should not accumulate
     for (int i = 0; i < 100; ++i)

@@ -25,7 +25,7 @@ TEST_CASE("PD derivative on measurement (default)", "[pid][siso][derivative]")
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.kd = vec1(0.1);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Step 1: first step, derivative is zero
     auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
@@ -45,7 +45,7 @@ TEST_CASE("PD derivative on error", "[pid][siso][derivative]")
     cfg.kp = vec1(1.0);
     cfg.kd = vec1(0.1);
     cfg.derivative_on_error = true;
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Step 1: first step, derivative is zero
     auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
@@ -66,7 +66,7 @@ TEST_CASE("deriv_filter reduces peak derivative on step input",
     SisoPid::config_type cfg_unfiltered{};
     cfg_unfiltered.kp = vec1(1.0);
     cfg_unfiltered.kd = vec1(1.0);
-    SisoPid pid_unfiltered(cfg_unfiltered);
+    auto pid_unfiltered = ctrlpp::test::constructed(SisoPid::create(cfg_unfiltered));
 
     // Filtered PID
     using DfPid = ctrlpp::pid<double, 1, ctrlpp::deriv_filter>;
@@ -74,7 +74,7 @@ TEST_CASE("deriv_filter reduces peak derivative on step input",
     cfg_filtered.kp = vec1(1.0);
     cfg_filtered.kd = vec1(1.0);
     cfg_filtered.template policy<ctrlpp::deriv_filter>().n = {10.0};
-    DfPid pid_filtered(cfg_filtered);
+    auto pid_filtered = ctrlpp::test::constructed(DfPid::create(cfg_filtered));
 
     // Step 1: first step, D=0 for both
     REQUIRE(pid_unfiltered.compute(vec1(0.0), vec1(0.0), Ts).has_value());
@@ -111,7 +111,7 @@ TEST_CASE("deriv_filter with N parameter smooths derivative over multiple steps"
     cfg.kp = vec1(2.0);
     cfg.kd = vec1(0.5);
     cfg.template policy<ctrlpp::deriv_filter>().n = {20.0};
-    DfPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(DfPid::create(cfg));
 
     // Tf = Kd / (Kp * N) = 0.5 / (2.0 * 20.0) = 0.0125
     double tf_val = 0.5 / (2.0 * 20.0);
@@ -144,7 +144,7 @@ TEST_CASE("Without deriv_filter policy, unfiltered derivative is used",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.kd = vec1(1.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     REQUIRE(pid.compute(vec1(0.0), vec1(0.0), Ts).has_value());
     auto u = ctrlpp::test::commanded(pid.compute(vec1(0.0), vec1(1.0), Ts));

@@ -22,7 +22,7 @@ TEST_CASE("velocity_form P-only: delta_u = Kp*(e(k)-e(k-1))", "[pid][siso][veloc
     using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(2.0);
-    VPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
     // Step 1: e=1.0, prev_e=0.0
     // delta_u = Kp*(1-0) + 0 + 0 = 2.0
@@ -46,7 +46,7 @@ TEST_CASE("velocity_form PI: includes Ki*e*dt incremental term", "[pid][siso][ve
     VPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    VPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
     // Step 1: e=1.0, prev_e=0
     // dP = 1*(1-0) = 1.0, dI = 0.5*1*0.01 = 0.005
@@ -72,7 +72,7 @@ TEST_CASE("velocity_form PID: full formula with second-order D difference",
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.5);
     cfg.kd = vec1(0.1);
-    VPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
     // Step 1: e(1)=1.0, e(0)=0, e(-1)=0
     // dP = 2*(1-0) = 2, dI = 0.5*1*0.01 = 0.005
@@ -104,7 +104,7 @@ TEST_CASE("velocity_form steady-state: delta_u converges to Ki*e*dt",
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(2.0);
     cfg.kd = vec1(0.1);
-    VPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
     // First few steps build up history, then with constant error:
     // dP = 0 (error unchanged), dD = 0 (e(k)-2e(k-1)+e(k-2)=0), dI = Ki*e*dt
@@ -129,7 +129,7 @@ TEST_CASE("velocity_form + anti_windup compiles and runs (anti-windup is no-op)"
     VPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    VPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
     // Should produce same result as without anti_windup
     auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
@@ -143,7 +143,7 @@ TEST_CASE("velocity_form reset clears history", "[pid][siso][velocity-form][rese
     VPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.5);
-    VPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
     // Build up history
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
@@ -168,7 +168,7 @@ TEST_CASE("velocity_form injects the change in feed-forward so a constant feed-f
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.0);
     cfg.template policy<FF>().ff_func = ff_func;
-    VFfPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(VFfPid::create(cfg));
 
     // Step 1: dP = 1*(1-0) = 1.0. The feed-forward level rises from 0 to sp*0.5 = 0.5,
     // so its increment is 0.5. delta_u = 1.0 + 0.5 = 1.5.
@@ -193,7 +193,7 @@ TEST_CASE("velocity_form tracking signal is a no-op (integral not modified)",
     VPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    VPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
     // Run a step with tracking; velocity form should ignore tracking signal
     // (the if constexpr branch for !velocity_form is not entered)
@@ -213,7 +213,7 @@ TEST_CASE("velocity_form clamps the accumulated output so it can rise and fall u
     cfg.kp = vec1(10.0);
     cfg.output_min = vec1(0.0);   // valve-like: the output cannot go below zero
     cfg.output_max = vec1(1.0);
-    VPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
     // The output limits bound the accumulated output, not the per-step increment, so
     // the running sum of the emitted increments must stay in [output_min, output_max].
@@ -246,7 +246,7 @@ TEST_CASE("velocity_form zero dt is rejected rather than answered with the held 
     using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
     VPid::config_type cfg{};
     cfg.kp = vec1(2.0);
-    VPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
     auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(2.0, tol));

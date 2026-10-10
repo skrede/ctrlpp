@@ -18,7 +18,13 @@ int main()
     cfg.output_min = Vec::Constant(-10.0);
     cfg.output_max = Vec::Constant(10.0);
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if(!created.has_value())
+    {
+        std::cerr << "pid::create refused the configuration\n";
+        return 1;
+    }
+    auto& ctrl = *created;
 
     double y = 0.0;
     constexpr double setpoint = 1.0;

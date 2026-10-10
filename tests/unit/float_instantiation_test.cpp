@@ -70,7 +70,7 @@ TEST_CASE("PID instantiates and steps at Scalar=float", "[float][anchor]")
     cfg.ki = Vector<float, 1>::Constant(0.1f);
     cfg.kd = Vector<float, 1>::Constant(0.01f);
 
-    pid<float, 1> controller(cfg);
+    auto controller = ctrlpp::test::constructed(pid<float, 1>::create(cfg));
     auto u = ctrlpp::test::commanded(controller.compute(Vector<float, 1>::Constant(1.0f), Vector<float, 1>::Zero(), 0.1f));
 
     REQUIRE(std::isfinite(u(0)));

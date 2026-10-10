@@ -157,6 +157,42 @@ if (CTRLPP_BUILD_TESTS)
             "${CTRLPP_RECURSIVE_ARX_ARITY_OUTPUT}")
     endif ()
 
+    # No runtime test can observe a constructor that is never called, so a
+    # refusal to compile is the only observable evidence that the unchecked PID
+    # construction path is closed.
+    try_compile(
+        CTRLPP_PID_CONSTRUCTOR_BASELINE_COMPILED
+        SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/pid_private_constructor_canary.cpp
+        CMAKE_FLAGS
+            "-DCMAKE_CXX_STANDARD=20"
+            "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+            "-DCMAKE_CXX_EXTENSIONS=OFF"
+            "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include;${CTRLPP_CANARY_EIGEN_INCLUDE}"
+        OUTPUT_VARIABLE CTRLPP_PID_CONSTRUCTOR_BASELINE_OUTPUT
+    )
+    if (NOT CTRLPP_PID_CONSTRUCTOR_BASELINE_COMPILED)
+        message(FATAL_ERROR
+            "The pid constructor canary is not a valid positive control: its "
+            "create arm does not compile.\n"
+            "${CTRLPP_PID_CONSTRUCTOR_BASELINE_OUTPUT}")
+    endif ()
+    try_compile(
+        CTRLPP_PID_DIRECT_CONSTRUCTION_COMPILED
+        SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/pid_private_constructor_canary.cpp
+        CMAKE_FLAGS
+            "-DCMAKE_CXX_STANDARD=20"
+            "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+            "-DCMAKE_CXX_EXTENSIONS=OFF"
+            "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include;${CTRLPP_CANARY_EIGEN_INCLUDE}"
+        COMPILE_DEFINITIONS -DCTRLPP_CANARY_PID_DIRECT_CONSTRUCTION
+        OUTPUT_VARIABLE CTRLPP_PID_DIRECT_CONSTRUCTION_OUTPUT
+    )
+    if (CTRLPP_PID_DIRECT_CONSTRUCTION_COMPILED)
+        message(FATAL_ERROR
+            "A direct pid construction compiled; the constructor is not private.\n"
+            "${CTRLPP_PID_DIRECT_CONSTRUCTION_OUTPUT}")
+    endif ()
+
     if (CTRLPP_CMAKE_FETCH_DEPS)
         FetchContent_Declare(
             Catch2

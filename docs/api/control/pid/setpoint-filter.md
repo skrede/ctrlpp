@@ -17,20 +17,20 @@ Uses the base `pid_config` fields `b` and `c` (already present in all PID config
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `b` | `Vector<Scalar, N>` | `1.0` (all channels) | Proportional setpoint weight. The proportional term uses b*r - y instead of r - y. |
-| `c` | `Vector<Scalar, N>` | `1.0` (all channels) | Derivative setpoint weight. The derivative term uses c*r - y instead of r - y. |
+| `b` | `Vector<Scalar, N>` | `1.0` (all channels) | Proportional setpoint weight. The proportional term uses b*r - y instead of r - y. `create` refuses a `NaN` or infinite component with `non_finite_setpoint_weight`. |
+| `c` | `Vector<Scalar, N>` | `1.0` (all channels) | Derivative setpoint weight. The derivative term uses c*r - y instead of r - y. `create` refuses a `NaN` or infinite component with `non_finite_setpoint_weight`. |
 
 Additionally, the policy adds a filter time constant:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `tf` | `std::array<Scalar, N>` | `{}` (zeros) | Setpoint prefilter time constant per channel. |
+| `tf` | `std::array<Scalar, N>` | `{}` (zeros) | Setpoint prefilter time constant per channel. Zero leaves the channel unfiltered. `create` refuses a `NaN`, negative or `+inf` `tf` with `invalid_filter_time_constant`. |
 
 ### pv_filter
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `tf` | `std::array<Scalar, N>` | `{}` (zeros) | Process variable filter time constant per channel. Larger values mean heavier smoothing. |
+| `tf` | `std::array<Scalar, N>` | `{}` (zeros) | Process variable filter time constant per channel. Larger values mean heavier smoothing. Zero leaves the channel unfiltered. `create` refuses a `NaN`, negative or `+inf` `tf` with `invalid_filter_time_constant`. |
 
 ## Behavior
 
@@ -58,7 +58,9 @@ int main()
     cfg.b = Vec::Constant(0.7);   // reduce proportional kick
     cfg.c = Vec::Constant(0.0);   // no derivative kick
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    auto& ctrl = *created;
 
     double y = 0.0;
     constexpr double dt = 0.01;

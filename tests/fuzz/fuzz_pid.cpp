@@ -4,7 +4,42 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <algorithm>
+
+namespace
+{
+
+using PidType = ctrlpp::pid<double, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
+
+// The decoded gains and limits are finite, so the only refusal the factory may
+// give is the one for a lower output limit above the upper one.
+auto checked_create(const PidType::config_type& cfg) -> ctrlpp::expected<PidType, ctrlpp::pid_config_error>
+{
+    auto created = PidType::create(cfg);
+    const bool expect_refusal = cfg.output_min[0] > cfg.output_max[0];
+    if(created.has_value() == expect_refusal)
+        abort();
+    if(!created && created.error() != ctrlpp::pid_config_error::invalid_output_limits)
+        abort();
+    return created;
+}
+
+// compute rejects a non-finite result in the same cycle, so a command it
+// returns as a success is finite by contract.
+auto checked_step(PidType& controller, const PidType::vector_t& sp, const PidType::vector_t& meas, double dt) -> bool
+{
+    auto step = controller.compute(sp, meas, dt);
+    const bool timestep_refused = !step && step.error() == ctrlpp::pid_step_error::invalid_timestep;
+    if(timestep_refused != (dt <= 0.0))
+        abort();
+    if(step && !std::isfinite((*step)(0)))
+        abort();
+    return step.has_value();
+}
+
+}
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
 {
@@ -15,64 +50,29 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     double buf[8];
     std::memcpy(buf, data, 64);
 
-    for(int i = 0; i < 8; ++i)
+    for(std::int32_t i = 0; i < 8; ++i)
     {
         if(!std::isfinite(buf[i]))
             return 0;
     }
 
-    double kp = std::clamp(buf[0], -100.0, 100.0);
-    double ki = std::clamp(buf[1], -100.0, 100.0);
-    double kd = std::clamp(buf[2], -100.0, 100.0);
-    double output_min = std::clamp(buf[3], -1e3, 1e3);
-    double output_max = std::clamp(buf[4], -1e3, 1e3);
-    double dt = buf[5];
-    double setpoint = std::clamp(buf[6], -100.0, 100.0);
-    double measurement = std::clamp(buf[7], -100.0, 100.0);
+    PidType::config_type cfg;
+    cfg.kp[0] = std::clamp(buf[0], -100.0, 100.0);
+    cfg.ki[0] = std::clamp(buf[1], -100.0, 100.0);
+    cfg.kd[0] = std::clamp(buf[2], -100.0, 100.0);
+    cfg.output_min[0] = std::clamp(buf[3], -1e3, 1e3);
+    cfg.output_max[0] = std::clamp(buf[4], -1e3, 1e3);
+    const double dt = buf[5];
+    const PidType::vector_t sp = PidType::vector_t::Constant(std::clamp(buf[6], -100.0, 100.0));
+    const PidType::vector_t meas = PidType::vector_t::Constant(std::clamp(buf[7], -100.0, 100.0));
 
-    // Ensure dt > 0
-    if(dt < 1e-6)
-        dt = 1e-6;
+    auto created = checked_create(cfg);
+    if(!created)
+        return 0;
 
-    // Ensure output_min < output_max
-    if(output_min >= output_max)
+    for(std::int32_t step = 0; step < 20; ++step)
     {
-        double tmp = output_min;
-        output_min = output_max - 1.0;
-        output_max = tmp + 1.0;
-        if(output_min >= output_max)
-            return 0;
-    }
-
-    using PidType = ctrlpp::pid<double, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
-    using ConfigType = PidType::config_type;
-
-    ConfigType cfg;
-    cfg.kp[0] = kp;
-    cfg.ki[0] = ki;
-    cfg.kd[0] = kd;
-    cfg.output_min[0] = output_min;
-    cfg.output_max[0] = output_max;
-
-    PidType pid(cfg);
-
-    Eigen::Matrix<double, 1, 1> sp;
-    sp << setpoint;
-    Eigen::Matrix<double, 1, 1> meas;
-    meas << measurement;
-
-    for(int step = 0; step < 20; ++step)
-    {
-        auto step_result = pid.compute(sp, meas, dt);
-        // A refusal is a DEFINED outcome, not a crash to be tolerated: the
-        // controller declined the cycle and mutated nothing, so the run stops
-        // here with nothing further to exercise.
-        if(!step_result.has_value())
-            return 0;
-        const auto& u = *step_result;
-        // A finite-but-extreme configuration can still drive the command
-        // non-finite, and the guard only catches that on the NEXT cycle.
-        if(!std::isfinite(u(0)))
+        if(!checked_step(*created, sp, meas, dt))
             return 0;
     }
 

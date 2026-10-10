@@ -39,7 +39,9 @@ int main()
     cfg.output_min = Vec::Constant(-10.0);
     cfg.output_max = Vec::Constant(10.0);
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    auto& ctrl = *created;
 
     // Simulated first-order plant
     double y = 0.0;

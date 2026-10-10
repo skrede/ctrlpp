@@ -18,7 +18,13 @@ int main()
     cfg.ki = Vec::Constant(1.0);
     cfg.kd = Vec::Constant(0.0);
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if(!created)
+    {
+        std::fprintf(stderr, "the factory refused the controller configuration\n");
+        return 1;
+    }
+    auto& ctrl = *created;
 
     constexpr double dt = 0.01;
     constexpr int n_steps = 500;

@@ -1,6 +1,6 @@
 # rate_limit
 
-Limits the rate of change of the PID output between consecutive time steps. This protects actuators from excessive slew rates and reduces mechanical stress. The output change per step is clamped to +/- rate_max, regardless of what the PID computation requests.
+Limits the rate of change of the PID output between consecutive time steps. This protects actuators from excessive slew rates and reduces mechanical stress. The output change over a step of length dt is clamped to +/- rate_max * dt, regardless of what the PID computation requests.
 
 ## Header
 
@@ -14,11 +14,11 @@ Fields added to `pid_config` when this policy is active:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `rate_max` | `std::array<Scalar, N>` | `{}` (zeros) | Maximum allowable output change per time step, per channel. Units are output-units per sample period. |
+| `rate_max` | `std::array<Scalar, N>` | `{}` (zeros) | Maximum rate of change of the output per channel, in output units per second; a cycle of step `dt` moves the output by at most `rate_max * dt`. Zero and `+inf` leave the channel unlimited. `create` refuses a `NaN` or negative `rate_max` with `invalid_rate_limit`. |
 
 ## Behavior
 
-After the PID output is computed, the change from the previous output is clamped: delta_u = clamp(u_new - u_prev, -rate_max, +rate_max). The actual output becomes u_prev + delta_u. This is applied independently per channel.
+After the PID output is computed, the change from the previous output is clamped: delta_u = clamp(u_new - u_prev, -rate_max * dt, +rate_max * dt). The actual output becomes u_prev + delta_u. This is applied independently per channel.
 
 Rate limiting interacts with anti-windup: if both are active, anti-windup sees the rate-limited (actual) output as the saturated value.
 
@@ -40,9 +40,11 @@ int main()
     cfg.kp = Vec::Constant(10.0);   // aggressive gain
     cfg.ki = Vec::Constant(1.0);
     cfg.kd = Vec::Constant(0.0);
-    cfg.template policy<ctrlpp::rate_limit>().rate_max = {0.1};  // max 0.1 per step
+    cfg.template policy<ctrlpp::rate_limit>().rate_max = {0.1};  // max 0.1 output units per second
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    auto& ctrl = *created;
 
     double y = 0.0;
     constexpr double dt = 0.01;

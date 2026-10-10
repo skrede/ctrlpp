@@ -25,8 +25,15 @@ int main()
     inner_cfg.output_min = Vec::Constant(-1.0);
     inner_cfg.output_max = Vec::Constant(1.0);
 
-    Pid outer(outer_cfg);
-    Pid inner(inner_cfg);
+    auto outer_created = Pid::create(outer_cfg);
+    auto inner_created = Pid::create(inner_cfg);
+    if(!outer_created.has_value() || !inner_created.has_value())
+    {
+        std::cerr << "pid::create refused the " << (outer_created ? "inner" : "outer") << " loop configuration\n";
+        return 1;
+    }
+    auto& outer = *outer_created;
+    auto& inner = *inner_created;
 
     constexpr double J = 0.01;
     constexpr double b = 0.1;

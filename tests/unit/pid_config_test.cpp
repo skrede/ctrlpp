@@ -238,23 +238,6 @@ TEMPLATE_TEST_CASE("PID factory accepts a default and a typical configuration wi
         REQUIRE(same_bits(typical_output, vector_t(vector_t::Constant(0x1.0147ae147ae14p+1))));
 }
 
-TEMPLATE_TEST_CASE("PID factory and direct construction run the same controller", "[pid][config]", float, double)
-{
-    using Scalar = TestType;
-    using Pid = filtered_pid<Scalar>;
-    auto const cfg = filtered_baseline<Scalar>();
-    auto created = ctrlpp::test::constructed(Pid::create(cfg));
-    Pid direct(cfg);
-    drive(created, 12);
-    drive(direct, 12);
-    REQUIRE(same_bits(created.integral(), direct.integral()));
-    auto const sp = Pid::vector_t::Constant(Scalar{3});
-    auto const meas = Pid::vector_t::Constant(Scalar{1});
-    auto const from_created = ctrlpp::test::commanded(created.compute(sp, meas, static_cast<Scalar>(0.01)));
-    auto const from_direct = ctrlpp::test::commanded(direct.compute(sp, meas, static_cast<Scalar>(0.01)));
-    REQUIRE(same_bits(from_created, from_direct));
-}
-
 TEMPLATE_TEST_CASE("PID factory names the first fault in check order", "[pid][config]", float, double)
 {
     using Scalar = TestType;

@@ -14,7 +14,7 @@ Fields added to `pid_config` when this policy is active:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `n` | `std::array<Scalar, N>` | `{}` (zeros) | Derivative filter coefficient per channel. Typical range: 3--20. Higher values mean less filtering. |
+| `n` | `std::array<Scalar, N>` | `{}` (zeros) | Derivative filter coefficient per channel. Typical range: 3--20. Higher values mean less filtering. `create` refuses a `NaN` or infinite `n` with `invalid_derivative_filter`. |
 
 ## Behavior
 
@@ -41,7 +41,9 @@ int main()
     cfg.kd = Vec::Constant(0.1);
     cfg.template policy<ctrlpp::deriv_filter>().n = {10.0};
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    auto& ctrl = *created;
 
     double y = 0.0;
     constexpr double dt = 0.01;

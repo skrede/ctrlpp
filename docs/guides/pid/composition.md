@@ -59,7 +59,9 @@ int main()
     // Rate limit: maximum change per second
     cfg.template policy<ctrlpp::rate_limit>().rate_max = {2.0};
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    auto& ctrl = *created;
 
     // Simulated first-order plant
     double y = 0.0;

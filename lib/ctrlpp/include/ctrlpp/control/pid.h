@@ -33,11 +33,8 @@ public:
     using config_type = pid_config<Scalar, NY, Policies...>;
     using vector_t = Vector<Scalar, NY>;
 
-    explicit pid(const config_type& cfg) : pid(unchecked_t{}, cfg, detail::compute_pid_gains(cfg))
-    {
-    }
-
     /// @brief Construct a controller, or report why the configuration cannot work.
+    /// This is the only construction path.
     ///
     /// Rejections, checked in order:
     ///  * a NaN or infinite kp, ki or kd component, or in ISA form a NaN or

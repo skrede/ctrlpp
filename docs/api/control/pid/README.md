@@ -87,7 +87,7 @@ cfg.template policy<feed_forward<FF>>().ff_func = my_ff_func;
 static auto create(const config_type& cfg) -> expected<pid, pid_config_error>;
 ```
 
-Validates the configuration and constructs the controller, or reports the first fault it finds. A configuration that cannot work is refused where it is given rather than discovered on the first cycle. The checks run in the order of the table, so a configuration with several faults reports the earliest; a check on a policy field runs only when that policy is composed. Every configuration `create` accepts runs exactly as the constructor below runs it.
+Validates the configuration and constructs the controller, or reports the first fault it finds. A configuration that cannot work is refused where it is given rather than discovered on the first cycle. The checks run in the order of the table, so a configuration with several faults reports the earliest; a check on a policy field runs only when that policy is composed. `create` is the only construction path: the constructor is private, so no configuration reaches the controller without these checks.
 
 ```cpp
 auto made = ctrlpp::pid<double, 1>::create(cfg);
@@ -107,14 +107,6 @@ if(!made) {
 | `invalid_error_threshold` | An `anti_windup<conditional_integration>` `error_threshold` is `NaN`. | The integration threshold. |
 | `invalid_derivative_filter` | A `deriv_filter` `n` is `NaN` or infinite. | The filter divisor. |
 | `unrepresentable_gain` | Each field is finite, but an internal gain derived from them overflows `Scalar`: in ISA form `kp` over the integral time, or `kp` times the derivative time. | Smaller gains or a wider `Scalar`. |
-
-## Constructor
-
-```cpp
-explicit pid(const config_type& cfg);
-```
-
-Constructs the controller from a config struct. Computes internal gains and initializes policy state. It performs none of the checks `create` performs.
 
 ## Methods
 
@@ -278,7 +270,9 @@ int main()
     cfg.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb = {2.0};
     cfg.template policy<ctrlpp::deriv_filter>().n = {10.0};
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    auto& ctrl = *created;
 
     double y = 0.0;
     constexpr double dt = 0.01;

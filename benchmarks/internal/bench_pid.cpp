@@ -20,7 +20,13 @@ int main(int argc, char** argv)
     cfg.output_min = Vec::Constant(-10.0);
     cfg.output_max = Vec::Constant(10.0);
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if(!created)
+    {
+        std::cerr << "bench_pid: pid::create refused the configuration; there is no controller to measure\n";
+        return 1;
+    }
+    auto& ctrl = *created;
     auto sp = Vec::Constant(1.0);
     auto meas = Vec::Constant(0.5);
     constexpr double dt = 0.01;

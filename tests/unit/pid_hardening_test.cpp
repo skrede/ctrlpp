@@ -13,10 +13,8 @@
 //    the proportional-only output, the all-zero-gain output, the extreme-gain
 //    outputs, and the known-gain output whose decimal value the arithmetic
 //    reproduces bit for bit.
-//  * An infinite gain does NOT produce an infinite command: the output
-//    saturation clamps against the configured output_max, whose default is the
-//    largest finite value of the scalar type. The realized value is that bound,
-//    exactly, and asserting it is what proves the clamp runs.
+//  * An infinite gain is refused by the factory, so no controller with one
+//    exists to produce a command.
 //  * Convergence is asserted against the CLOSED-LOOP MAP of the composite
 //    plant-plus-controller system, raised to the number of steps taken and
 //    applied to the initial deviation. Neither loop in this file has converged
@@ -34,6 +32,7 @@
 #include "ctrlpp/control/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
@@ -117,7 +116,7 @@ auto make_pid_with_memory() -> SisoPid
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(2.0);
     cfg.kd = vec1(0.5);
-    return SisoPid{cfg};
+    return ctrlpp::test::constructed(SisoPid::create(cfg));
 }
 
 }
@@ -166,7 +165,7 @@ TEST_CASE("PID rejects integral overflow without committing it",
 {
     SisoPid::config_type cfg{};
     cfg.ki = vec1(std::numeric_limits<double>::max());
-    SisoPid controller{cfg};
+    auto controller = ctrlpp::test::constructed(SisoPid::create(cfg));
     auto const integral_before = controller.integral();
     auto const error_before = controller.error();
 
@@ -213,23 +212,16 @@ TEST_CASE("PID NaN measurement is rejected without touching the carried state",
     CHECK(pid.error() == reference.error());
 }
 
-TEST_CASE("PID with an infinite gain saturates at the configured output bound",
-          "[pid][hardening][negative]")
+TEMPLATE_TEST_CASE("PID factory refuses an infinite gain", "[pid][hardening][negative]", float, double)
 {
-    SisoPid::config_type cfg{};
-    cfg.kp = vec1(std::numeric_limits<double>::infinity());
-    SisoPid pid(cfg);
+    using Pid = ctrlpp::pid<TestType, 1>;
+    typename Pid::config_type cfg{};
+    cfg.kp = Pid::vector_t::Constant(std::numeric_limits<TestType>::infinity());
 
-    auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
-
-    // An infinite proportional gain against a unit error makes the raw command
-    // exactly +infinity, and the output clamp then pins it to output_max, whose
-    // default is the largest finite value of the scalar type. That bound is the
-    // realized command, exactly. Excluding only NaN passed for every finite
-    // value as well, so it could not see either the overflow or the clamp; and
-    // the value is NOT infinity, which is what a reader would otherwise assume.
-    CHECK(u[0] == std::numeric_limits<double>::max());
-    CHECK(u[0] == pid.params().output_max[0]);
+    // A non-finite gain has no finite command to produce for a nonzero error.
+    auto created = Pid::create(cfg);
+    REQUIRE_FALSE(created.has_value());
+    CHECK(created.error() == ctrlpp::pid_config_error::non_finite_gain);
 }
 
 TEST_CASE("PID admits any positive step and refuses a stopped clock",
@@ -249,7 +241,7 @@ TEST_CASE("PID admits any positive step and refuses a stopped clock",
 
     SECTION("a stopped, reversed or garbage clock is refused and mutates nothing")
     {
-        SisoPid pid(cfg);
+        auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
         REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
 
         const auto integral_before = pid.integral();
@@ -271,7 +263,7 @@ TEST_CASE("PID admits any positive step and refuses a stopped clock",
     SECTION("a step below the resolution of the clock is a valid step")
     {
         constexpr double tiny_step = 1e-15;
-        SisoPid pid(cfg);
+        auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
         auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
         auto u2 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.25), tiny_step));
@@ -308,7 +300,7 @@ TEST_CASE("PID P-only exact output", "[pid][hardening][precision]")
 {
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // A unit gain against a unit error, with both other terms an exact product of
     // zero: the command is exactly one and the case name already said so.
@@ -322,7 +314,7 @@ TEST_CASE("PID precision with known PID gains", "[pid][hardening][precision]")
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.5);
     cfg.kd = vec1(0.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Step 1: e = 1, P = 2, I = 0.5 * 1 * 0.01, D = 0.
     //
@@ -359,7 +351,7 @@ void assert_closed_loop_trajectory(double kp, double ki, double kd, int steps)
     cfg.kp = vec1(kp);
     cfg.ki = vec1(ki);
     cfg.kd = vec1(kd);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     constexpr double setpoint = 1.0;
     double x = 0.0;
@@ -412,7 +404,7 @@ TEST_CASE("PID extreme gains produce exactly the commanded sum", "[pid][hardenin
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1e12);
     cfg.ki = vec1(1e12);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Both terms are exact: 1e12 and 1e12 * 0.01 are representable, and so is
     // their sum. Finiteness held for every value the controller could return,
@@ -432,7 +424,7 @@ TEST_CASE("PID zero gains produce zero output", "[pid][hardening][robustness]")
     cfg.kp = vec1(0.0);
     cfg.ki = vec1(0.0);
     cfg.kd = vec1(0.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Every term is an exact product of a zero gain, so the sum is exactly zero
     // and a tolerance said less than the arithmetic guarantees.

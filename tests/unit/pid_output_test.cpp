@@ -24,7 +24,7 @@ TEST_CASE("Output clamping", "[pid][siso]")
     cfg.kp = vec1(10.0);
     cfg.output_min = vec1(-5.0);
     cfg.output_max = vec1(5.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // P = 10*1 = 10, clamped to 5
     auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
@@ -41,7 +41,7 @@ TEST_CASE("saturated() returns true when output is clamped", "[pid][siso][satura
     cfg.kp = vec1(10.0);
     cfg.output_min = vec1(-5.0);
     cfg.output_max = vec1(5.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // P = 10*1 = 10, clamped to 5 -> saturated
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
@@ -58,7 +58,7 @@ TEST_CASE("Bare pid with zero policies compiles", "[pid][siso][compile]")
     using BarePid = ctrlpp::pid<double, 1>;
     BarePid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    BarePid pid(cfg);
+    auto pid = ctrlpp::test::constructed(BarePid::create(cfg));
     auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u[0], WithinAbs(1.0, tol));
 }
@@ -69,7 +69,7 @@ TEST_CASE("Setpoint weighting b=0.5 modifies proportional term",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.b = vec1(0.5);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // ep = b*sp - meas = 0.5*1.0 - 0.0 = 0.5
     // P = 2.0 * 0.5 = 1.0
@@ -83,7 +83,7 @@ TEST_CASE("Setpoint weighting b=0 gives measurement-only proportional",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.b = vec1(0.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // ep = 0*sp - meas = -0.3
     // P = 2.0 * (-0.3) = -0.6
@@ -98,7 +98,7 @@ TEST_CASE("Setpoint weighting does not affect integral (uses full error)",
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(1.0);
     cfg.b = vec1(0.5);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     REQUIRE(pid.compute(vec1(2.0), vec1(0.0), Ts).has_value());
     // Integral uses full error e = sp - meas = 2.0
@@ -114,7 +114,7 @@ TEST_CASE("Setpoint weighting c modifies derivative on error",
     cfg.kd = vec1(0.1);
     cfg.derivative_on_error = true;
     cfg.c = vec1(0.5);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Step 1: first step, D=0
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
@@ -137,7 +137,7 @@ TEST_CASE("Setpoint weighting c=0 with derivative on error uses only measurement
     cfg.kd = vec1(0.1);
     cfg.derivative_on_error = true;
     cfg.c = vec1(0.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Step 1
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
@@ -157,7 +157,7 @@ TEST_CASE("rate_limit constrains output change per step", "[pid][siso][rate-limi
     RlPid::config_type cfg{};
     cfg.kp = vec1(100.0);
     cfg.template policy<ctrlpp::rate_limit>().rate_max = {10.0};
-    RlPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(RlPid::create(cfg));
 
     // Step 1: prev_output = 0, raw = 100*1 = 100
     // max_delta = 10 * 0.01 = 0.1
@@ -178,7 +178,7 @@ TEST_CASE("rate_limit applies before output clamp", "[pid][siso][rate-limit][pip
     cfg.kp = vec1(100.0);
     cfg.output_max = vec1(0.05);
     cfg.template policy<ctrlpp::rate_limit>().rate_max = {10.0};
-    RlPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(RlPid::create(cfg));
 
     // Raw = 100, rate limited to 0.1, then clamped to 0.05
     auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));

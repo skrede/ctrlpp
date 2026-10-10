@@ -55,7 +55,9 @@ int main()
     cfg.kd = Vec::Constant(0.0);
     cfg.template policy<ctrlpp::feed_forward<FF>>().ff_func = ff;
 
-    Pid ctrl(cfg);
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    auto& ctrl = *created;
 
     double y = 0.0;
     constexpr double dt = 0.01;

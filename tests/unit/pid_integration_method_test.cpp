@@ -23,7 +23,7 @@ TEST_CASE("PI backward Euler accumulation", "[pid][siso][backward-euler]")
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Step 1: e=1.0, P=1.0, I=0.5*1.0*0.01=0.005
     auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
@@ -46,7 +46,7 @@ TEST_CASE("PI forward Euler uses previous error", "[pid][siso][forward-euler]")
     FEPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    FEPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(FEPid::create(cfg));
 
     // Step 1: prev_error = 0 (initialized), so I uses 0 * dt = 0
     auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
@@ -66,7 +66,7 @@ TEST_CASE("PI tustin uses trapezoidal average", "[pid][siso][tustin]")
     TPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    TPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(TPid::create(cfg));
 
     // Step 1: avg = (1.0 + 0.0) / 2 = 0.5, I = 0.5*0.5*0.01 = 0.0025
     auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));

@@ -24,7 +24,7 @@ TEST_CASE("P-only controller", "[pid][siso]")
 {
     SisoPid::config_type cfg{};
     cfg.kp = vec1(2.5);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u[0], WithinAbs(2.5, tol));
@@ -36,7 +36,7 @@ TEST_CASE("Full PID matches hand computation", "[pid][siso]")
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.5);
     cfg.kd = vec1(0.1);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Step 1: sp=1, meas=0, e=1
     // P = 2*1 = 2, I = 0.5*1*0.01 = 0.005, D = 0 (first step)
@@ -60,14 +60,14 @@ TEST_CASE("ISA form converts to parallel form", "[pid][siso][isa]")
     isa_cfg.kp = vec1(2.0);
     isa_cfg.ki = vec1(4.0);  // This is Ti for ISA form
     isa_cfg.kd = vec1(0.05); // This is Td for ISA form
-    IsaPid isa_pid(isa_cfg);
+    auto isa_pid = ctrlpp::test::constructed(IsaPid::create(isa_cfg));
 
     // Parallel form reference
     SisoPid::config_type par_cfg{};
     par_cfg.kp = vec1(2.0);
     par_cfg.ki = vec1(0.5);
     par_cfg.kd = vec1(0.1);
-    SisoPid par_pid(par_cfg);
+    auto par_pid = ctrlpp::test::constructed(SisoPid::create(par_cfg));
 
     auto u_isa = ctrlpp::test::commanded(isa_pid.compute(vec1(1.0), vec1(0.0), Ts));
     auto u_par = ctrlpp::test::commanded(par_pid.compute(vec1(1.0), vec1(0.0), Ts));
@@ -83,7 +83,7 @@ TEST_CASE("reset() zeros state", "[pid][siso]")
     SisoPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(1.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
@@ -104,7 +104,7 @@ TEST_CASE("First step derivative is zero", "[pid][siso]")
     SisoPid::config_type cfg{};
     cfg.kp = vec1(0.0);
     cfg.kd = vec1(10.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Even with large measurement, derivative should be zero on first step
     auto u = ctrlpp::test::commanded(pid.compute(vec1(0.0), vec1(100.0), Ts));
@@ -116,7 +116,7 @@ TEST_CASE("Zero and negative dt are rejected rather than answered with the held 
 {
     SisoPid::config_type cfg{};
     cfg.kp = vec1(2.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(2.0, tol));
@@ -144,7 +144,7 @@ TEST_CASE("error() returns last error", "[pid][siso]")
 {
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     REQUIRE(pid.compute(vec1(3.0), vec1(1.0), Ts).has_value());
     REQUIRE_THAT(pid.error()[0], WithinAbs(2.0, tol));
@@ -158,7 +158,7 @@ TEST_CASE("ISA form with Ti=0 sets Ki to zero (no integral action)",
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.0);  // Ti=0 in ISA form -> Ki should be 0 (no divide-by-zero)
     cfg.kd = vec1(0.05);
-    IsaPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(IsaPid::create(cfg));
 
     // With Ki=0, integral should stay at zero after multiple steps
     for (int i = 0; i < 10; ++i)
@@ -173,7 +173,7 @@ TEST_CASE("Tracking signal with zero dt is rejected without modifying the integr
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // Run one normal step
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());
@@ -208,7 +208,7 @@ TEST_CASE("Tracking signal with negative error adjusts integral correctly",
     SisoPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     // sp=0, meas=1 -> negative error
     REQUIRE(pid.compute(vec1(0.0), vec1(1.0), Ts, vec1(2.0)).has_value());

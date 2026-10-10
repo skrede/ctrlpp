@@ -12,6 +12,7 @@
 // armed window; only the steady-state call is guarded.
 
 #include "nomalloc_harness.h"
+#include "hardening_helpers.h"
 
 #include "ctrlpp/pid.h"
 
@@ -54,7 +55,7 @@ TEST_CASE("pid position-form compute performs zero heap allocation",
     cfg.kp = ctrlpp::Vector<double, 1>::Constant(2.5);
     cfg.ki = ctrlpp::Vector<double, 1>::Constant(0.5);
     cfg.kd = ctrlpp::Vector<double, 1>::Constant(0.1);
-    pid_type controller(cfg);
+    auto controller = ctrlpp::test::constructed(pid_type::create(cfg));
 
     const auto sp = ctrlpp::Vector<double, 1>::Constant(1.0);
     const auto meas = ctrlpp::Vector<double, 1>::Zero();
@@ -87,7 +88,7 @@ TEST_CASE("pid velocity-form compute performs zero heap allocation",
     cfg.kp = ctrlpp::Vector<double, 1>::Constant(2.0);
     cfg.ki = ctrlpp::Vector<double, 1>::Constant(1.0);
     cfg.kd = ctrlpp::Vector<double, 1>::Constant(0.05);
-    pid_type controller(cfg);
+    auto controller = ctrlpp::test::constructed(pid_type::create(cfg));
 
     const auto sp = ctrlpp::Vector<double, 1>::Constant(1.0);
     const auto meas = ctrlpp::Vector<double, 1>::Zero();
@@ -125,7 +126,7 @@ TEST_CASE("pid composed anti-windup and derivative-filter compute performs zero 
     cfg.output_max = ctrlpp::Vector<double, 3>::Constant(1.0);
     cfg.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb = {1.0, 1.0, 1.0};
     cfg.template policy<ctrlpp::deriv_filter>().n = {10.0, 10.0, 10.0};
-    pid_type controller(cfg);
+    auto controller = ctrlpp::test::constructed(pid_type::create(cfg));
 
     const auto sp = ctrlpp::Vector<double, 3>::Constant(5.0);
     const auto meas = ctrlpp::Vector<double, 3>::Zero();

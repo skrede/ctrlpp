@@ -24,7 +24,7 @@ TEST_CASE("setpoint_filter smooths step setpoint", "[pid][siso][setpoint-filter]
     SpfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.template policy<ctrlpp::setpoint_filter>().tf = {0.1};
-    SpfPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SpfPid::create(cfg));
 
     // alpha = 0.1 / (0.1 + 0.01) = 10/11 ~ 0.9091
     double alpha = 0.1 / (0.1 + Ts);
@@ -51,7 +51,7 @@ TEST_CASE("pv_filter smooths step measurement", "[pid][siso][pv-filter]")
     PvfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.template policy<ctrlpp::pv_filter>().tf = {0.05};
-    PvfPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(PvfPid::create(cfg));
 
     double alpha = 0.05 / (0.05 + Ts);
 
@@ -81,7 +81,7 @@ TEST_CASE("feed_forward adds callable output to control signal", "[pid][siso][fe
     FfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.template policy<FF>().ff_func = ff_func;
-    FfPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(FfPid::create(cfg));
 
     // P = 1.0 * (1.0 - 0.0) = 1.0, FF = sp = 1.0, total = 2.0
     auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
@@ -96,7 +96,7 @@ TEST_CASE("setpoint_filter + pv_filter combined", "[pid][siso][filter-combo]")
     cfg.kp = vec1(1.0);
     cfg.template policy<ctrlpp::setpoint_filter>().tf = {0.1};
     cfg.template policy<ctrlpp::pv_filter>().tf = {0.05};
-    ComboPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(ComboPid::create(cfg));
 
     double alpha_sp = 0.1 / (0.1 + Ts);
     double alpha_pv = 0.05 / (0.05 + Ts);
@@ -114,7 +114,7 @@ TEST_CASE("No filter policies: output unchanged from baseline", "[pid][siso][no-
     SisoPid::config_type cfg{};
     cfg.kp = vec1(2.0);
     cfg.ki = vec1(0.5);
-    SisoPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
 
     auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     // P=2*1=2, I=0.5*1*0.01=0.005
@@ -127,7 +127,7 @@ TEST_CASE("setpoint_filter reset clears filter state", "[pid][siso][setpoint-fil
     SpfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.template policy<ctrlpp::setpoint_filter>().tf = {0.1};
-    SpfPid pid(cfg);
+    auto pid = ctrlpp::test::constructed(SpfPid::create(cfg));
 
     double alpha = 0.1 / (0.1 + Ts);
 

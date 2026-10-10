@@ -23,7 +23,7 @@ TEST_CASE("SISO PID with Eigen - P-only", "[pid][eigen][siso]")
 
     pid::config_type cfg{};
     cfg.kp = Vec::Constant(2.5);
-    pid ctrl(cfg);
+    auto ctrl = ctrlpp::test::constructed(pid::create(cfg));
 
     auto u = ctrlpp::test::commanded(ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), Ts));
     REQUIRE_THAT(u[0], WithinAbs(2.5, tol));
@@ -37,7 +37,7 @@ TEST_CASE("SISO PID with Eigen - PI", "[pid][eigen][siso]")
     pid::config_type cfg{};
     cfg.kp = Vec::Constant(1.0);
     cfg.ki = Vec::Constant(0.5);
-    pid ctrl(cfg);
+    auto ctrl = ctrlpp::test::constructed(pid::create(cfg));
 
     auto u1 = ctrlpp::test::commanded(ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
@@ -56,7 +56,7 @@ TEST_CASE("SISO PID with Eigen - PID", "[pid][eigen][siso]")
     cfg.ki = Vec::Constant(0.5);
     cfg.kd = Vec::Constant(0.1);
     cfg.derivative_on_error = true;
-    pid ctrl(cfg);
+    auto ctrl = ctrlpp::test::constructed(pid::create(cfg));
 
     auto u1 = ctrlpp::test::commanded(ctrl.compute(Vec::Constant(1.0), Vec::Constant(0.0), Ts));
     REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
@@ -75,7 +75,7 @@ TEST_CASE("MIMO PID with Eigen - 2-channel independence", "[pid][eigen][mimo]")
     cfg.ki = (Vec() << 0.0, 0.0).finished();
     cfg.kd = (Vec() << 0.0, 0.0).finished();
 
-    pid ctrl(cfg);
+    auto ctrl = ctrlpp::test::constructed(pid::create(cfg));
 
     Vec sp = (Vec() << 1.0, 3.0).finished();
     Vec meas = (Vec() << 0.0, 1.0).finished();
@@ -95,7 +95,7 @@ TEST_CASE("MIMO PID with Eigen - per-channel PI gains", "[pid][eigen][mimo]")
     cfg.kp = (Vec() << 1.0, 2.0).finished();
     cfg.ki = (Vec() << 0.5, 1.0).finished();
 
-    pid ctrl(cfg);
+    auto ctrl = ctrlpp::test::constructed(pid::create(cfg));
 
     Vec sp = (Vec() << 1.0, 1.0).finished();
     Vec meas = Vec::Zero();
@@ -123,7 +123,7 @@ TEST_CASE("Full-featured PID with Eigen - anti_windup + deriv_filter + perf_asse
     cfg.output_max = Vec::Constant(10.0);
     cfg.template policy<ctrlpp::deriv_filter>().n = {10.0};
 
-    pid ctrl(cfg);
+    auto ctrl = ctrlpp::test::constructed(pid::create(cfg));
 
     Vec sp = Vec::Constant(1.0);
     Vec meas = Vec::Constant(0.0);
@@ -156,7 +156,7 @@ TEST_CASE("SISO with all composable policies - compile and run", "[pid][eigen][c
     cfg.template policy<ctrlpp::pv_filter>().tf = {0.02};
     cfg.template policy<ctrlpp::rate_limit>().rate_max = {50.0};
 
-    pid ctrl(cfg);
+    auto ctrl = ctrlpp::test::constructed(pid::create(cfg));
 
     Vec sp = Vec::Constant(1.0);
     Vec meas = Vec::Constant(0.0);
