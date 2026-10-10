@@ -2,6 +2,8 @@
 #include "ctrlpp/trajectory/double_s_trajectory.h"
 #include "ctrlpp/trajectory/online_planner_diagnostics.h"
 
+#include "fuzz/online_planner_3rd_case.h"
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_template_test_macros.hpp>
 
@@ -127,37 +129,29 @@ void record_limits(ctrlpp::trajectory_point<Scalar, 1> const& point, limit_set<S
     scan.acceleration_violations += (std::abs(point.acceleration(0)) > limits.a_max) ? 1 : 0;
 }
 
-// Elapsed time reaches a sample through at most 13 roundings: the reference subtraction, ten full-phase sums, the
-// in-phase subtraction and, in a pinned phase, the time-to-end subtraction. Every phase group ends pinned, so
-// acceleration carries at most 4 since the last pin: two phases integrated forward at a product and a sum each.
+// t_ref is the instant the plan was commanded at, from which the planner measures the time its jerk bound counts.
 template <typename Scalar>
-auto jerk_allowance(Scalar time_scale, limit_set<Scalar> const& limits) -> Scalar
+void scan_dense(ctrlpp::online_planner_3rd<Scalar> const& planner, Scalar t_ref, Scalar t_begin, Scalar dt,
+                std::int32_t steps, limit_set<Scalar> const& limits, plan_scan& scan)
 {
-    constexpr std::int32_t time_rounding_ops = 13;
-    constexpr std::int32_t acceleration_rounding_ops = 4;
-    auto const eps = std::numeric_limits<Scalar>::epsilon();
-    return static_cast<Scalar>(time_rounding_ops) * eps * limits.j_max * time_scale
-           + static_cast<Scalar>(acceleration_rounding_ops) * eps * limits.a_max;
-}
-
-template <typename Scalar>
-void scan_dense(ctrlpp::online_planner_3rd<Scalar> const& planner, Scalar t_begin, Scalar dt, std::int32_t steps,
-                limit_set<Scalar> const& limits, plan_scan& scan)
-{
-    auto const duration = planner.diagnostics().planned_duration;
     Scalar t_prev{};
     Scalar a_prev{};
+    Scalar rounding_prev{};
     for (std::int32_t k = 0; k <= steps; ++k) {
         auto const t = t_begin + static_cast<Scalar>(k) * dt;
         auto const point = planner.sample(t);
         record_limits(point, limits, scan);
         auto const a = point.acceleration(0);
-        auto const allowance = Scalar{2} * jerk_allowance(std::max(std::abs(t), duration), limits);
-        if (k > 0 && std::abs(a - a_prev) > limits.j_max * (t - t_prev) + allowance) {
+        auto const elapsed = std::max(t - t_ref, Scalar{0});
+        auto const rounding = ctrlpp::fuzz::online_planner_3rd_acceleration_rounding(limits.a_max, limits.j_max, elapsed);
+        if (k > 0
+            && std::abs(a - a_prev)
+                   > ctrlpp::fuzz::online_planner_3rd_difference_bound(limits.j_max, t - t_prev, elapsed, rounding_prev, rounding)) {
             ++scan.jerk_violations;
         }
         t_prev = t;
         a_prev = a;
+        rounding_prev = rounding;
     }
 }
 
@@ -170,12 +164,12 @@ auto scan_plan(ctrlpp::online_planner_3rd<Scalar> const& planner, Scalar t0, lim
     auto const duration = planner.diagnostics().planned_duration;
     auto const steps = static_cast<std::int32_t>(std::lround(static_cast<Scalar>(dense_seconds) / dt));
     plan_scan scan{};
-    scan_dense(planner, t0, dt, steps, limits, scan);
+    scan_dense(planner, t0, t0, dt, steps, limits, scan);
     for (std::int32_t k = dense_seconds; static_cast<Scalar>(k + dense_seconds) < duration; ++k) {
         record_limits(planner.sample(t0 + static_cast<Scalar>(k)), limits, scan);
     }
     auto const tail = std::max(duration - static_cast<Scalar>(dense_seconds), Scalar{0});
-    scan_dense(planner, t0 + tail, dt, steps, limits, scan);
+    scan_dense(planner, t0, t0 + tail, dt, steps, limits, scan);
     return scan;
 }
 
@@ -402,31 +396,37 @@ struct harness_input
     std::array<Scalar, 8> fields;
 };
 
-// Replays the fuzz harness's scan, retargeted after sample 0, and counts the sample pairs failing its
-// finite-difference jerk check, whose allowance is its own: 32 roundings per sample over 2000 samples.
+// Replays the fuzz harness's scan, retargeted after sample 0, and counts the sample pairs failing its counted
+// finite-difference jerk check.
 template <typename Scalar>
 auto harness_jerk_excess(harness_input<Scalar> const& input) -> std::int32_t
 {
     auto const [pos, target, v_max, a_max, j_max, dt, t_start, retarget_target] = input.fields;
     constexpr std::int32_t samples = 2000;
-    auto const eps = std::numeric_limits<Scalar>::epsilon();
-    auto const margin = Scalar{32} * eps;
-    auto const time_resolution_floor = margin * static_cast<Scalar>(samples);
     auto planner = make_planner(limit_set<Scalar>{v_max, a_max, j_max});
     planner.reset(pos);
     REQUIRE(planner.update(target).has_value());
     auto t = t_start;
+    Scalar t_ref{};
+    Scalar t_prev{};
     Scalar a_prev{};
     std::int32_t excess = 0;
     for (std::int32_t i = 0; i < samples; ++i) {
         t += dt;
         auto const a = planner.sample(t).acceleration(0);
-        auto const allowance = margin * j_max * static_cast<Scalar>(samples) + time_resolution_floor
-                               + margin * (std::abs(a) + std::abs(a_prev)) / dt;
-        excess += (i > 0 && std::abs((a - a_prev) / dt) > j_max + allowance) ? 1 : 0;
+        if (i > 0) {
+            auto const elapsed = std::max(t - t_ref, Scalar{0});
+            auto const bound = ctrlpp::fuzz::online_planner_3rd_difference_bound(
+                j_max, t - t_prev, elapsed,
+                ctrlpp::fuzz::online_planner_3rd_acceleration_rounding(a_max, j_max, std::max(t_prev - t_ref, Scalar{0})),
+                ctrlpp::fuzz::online_planner_3rd_acceleration_rounding(a_max, j_max, elapsed));
+            excess += (std::abs(a - a_prev) > bound) ? 1 : 0;
+        }
+        t_prev = t;
         a_prev = a;
         if (i == 0) {
             REQUIRE(planner.update(retarget_target).has_value());
+            t_ref = t;
         }
     }
     return excess;
@@ -528,17 +528,19 @@ TEMPLATE_TEST_CASE("OnlinePlanner3rd retarget: same-direction retargets from cru
     REQUIRE(retargets == 192);
 }
 
-TEST_CASE("OnlinePlanner3rd retarget: finite-difference jerk stays within j_max plus counted rounding",
-          "[trajectory][online_planner_3rd][retarget]")
+TEMPLATE_TEST_CASE("OnlinePlanner3rd retarget: finite-difference jerk stays within j_max plus counted rounding",
+                   "[trajectory][online_planner_3rd][retarget]", float, double)
 {
+    using Scalar = TestType;
+    auto const dt = static_cast<Scalar>(grid_dt);
     std::int32_t retargets = 0;
-    for (auto const& limits : retarget_limit_sets<double>()) {
+    for (auto const& limits : retarget_limit_sets<Scalar>()) {
         for (auto const window : all_windows) {
-            for (auto const t : window_instants(window_bounds(window, ramp_of(limits), grid_dt), grid_dt)) {
+            for (auto const t : window_instants(window_bounds(window, ramp_of(limits), dt), dt)) {
                 CAPTURE(limits.v_max, limits.a_max, limits.j_max, static_cast<std::int32_t>(window), t);
                 auto sampled = cruise_planner_sampled_at(limits, t);
-                REQUIRE(sampled.planner.update(2000.0 * limits.v_max).has_value());
-                CHECK(scan_plan(sampled.planner, t, limits, grid_dt).jerk_violations == 0);
+                REQUIRE(sampled.planner.update(Scalar{2000} * limits.v_max).has_value());
+                CHECK(scan_plan(sampled.planner, t, limits, dt).jerk_violations == 0);
                 ++retargets;
             }
         }
@@ -659,8 +661,8 @@ TEST_CASE("OnlinePlanner3rd retarget: the decoded rest-to-rest fuzz input on a r
     // second costs far more than the rest of the suite.
     auto const steps = static_cast<std::int32_t>(std::lround(20.0 / grid_dt));
     plan_scan scan{};
-    scan_dense(planner, t0, grid_dt, steps, limits, scan);
-    scan_dense(planner, t0 + planner.diagnostics().planned_duration - 20.0, grid_dt, steps, limits, scan);
+    scan_dense(planner, t0, t0, grid_dt, steps, limits, scan);
+    scan_dense(planner, t0, t0 + planner.diagnostics().planned_duration - 20.0, grid_dt, steps, limits, scan);
     CHECK(scan.acceleration_violations == 0);
     CHECK(scan.velocity_violations == 0);
 }
@@ -804,5 +806,59 @@ TEMPLATE_TEST_CASE("OnlinePlanner3rd retarget: a retarget to the position just r
         std::transform(raw.begin(), raw.end(), input.fields.begin(), [](float x) { return static_cast<Scalar>(x); });
         CAPTURE(input.fields);
         CHECK(harness_jerk_excess(input) == 0);
+    }
+}
+
+TEMPLATE_TEST_CASE("OnlinePlanner3rd fuzz oracle: a sample one representable value past a limit is caught",
+                   "[trajectory][online_planner_3rd][fuzz_oracle]", float, double)
+{
+    using Scalar = TestType;
+    auto const infinity = std::numeric_limits<Scalar>::infinity();
+    ctrlpp::fuzz::online_planner_3rd_case<Scalar> c{};
+    c.v_max = Scalar{1};
+    c.a_max = Scalar{1};
+    c.j_max = Scalar{1};
+    c.dt = static_cast<Scalar>(grid_dt);
+    CHECK(ctrlpp::fuzz::online_planner_3rd_within_limits(c, {Scalar{1}, Scalar{0}, -c.v_max, c.a_max}));
+    CHECK_FALSE(ctrlpp::fuzz::online_planner_3rd_within_limits(c, {Scalar{1}, Scalar{0}, std::nextafter(c.v_max, infinity), Scalar{0}}));
+    CHECK_FALSE(ctrlpp::fuzz::online_planner_3rd_within_limits(c, {Scalar{1}, Scalar{0}, Scalar{0}, -std::nextafter(c.a_max, infinity)}));
+}
+
+TEMPLATE_TEST_CASE("OnlinePlanner3rd fuzz oracle: a difference one representable value past its counted bound is caught",
+                   "[trajectory][online_planner_3rd][fuzz_oracle]", float, double)
+{
+    using Scalar = TestType;
+    using ctrlpp::fuzz::online_planner_3rd_difference_bound;
+    auto const infinity = std::numeric_limits<Scalar>::infinity();
+    ctrlpp::fuzz::online_planner_3rd_case<Scalar> c{};
+    c.v_max = Scalar{1};
+    c.a_max = Scalar{1};
+    c.j_max = Scalar{1};
+    c.dt = static_cast<Scalar>(grid_dt);
+    ctrlpp::fuzz::online_planner_3rd_plan<Scalar> const plan{Scalar{0}, Scalar{1}};
+    // The first pair of the fuzz harness's scan and its last, 4000 sample periods from the plan's reference instant.
+    for (auto const t_prev : {c.dt, Scalar{3999} * c.dt}) {
+        auto const t = t_prev + c.dt;
+        auto const dt = t - t_prev;
+        CAPTURE(t_prev);
+        auto const jerk = online_planner_3rd_difference_bound(
+            c.j_max, dt, t, ctrlpp::fuzz::online_planner_3rd_acceleration_rounding(c.a_max, c.j_max, t_prev),
+            ctrlpp::fuzz::online_planner_3rd_acceleration_rounding(c.a_max, c.j_max, t));
+        auto const acceleration = online_planner_3rd_difference_bound(
+            c.a_max, dt, t, ctrlpp::fuzz::online_planner_3rd_velocity_rounding(c.v_max, c.a_max, t_prev),
+            ctrlpp::fuzz::online_planner_3rd_velocity_rounding(c.v_max, c.a_max, t));
+        auto const velocity = online_planner_3rd_difference_bound(
+            c.v_max, dt, t,
+            ctrlpp::fuzz::online_planner_3rd_position_rounding(c.v_max, c.a_max, c.j_max, t_prev, plan.position_scale),
+            ctrlpp::fuzz::online_planner_3rd_position_rounding(c.v_max, c.a_max, c.j_max, t, plan.position_scale));
+        auto const holds = [&](Scalar q, Scalar v, Scalar a) {
+            return ctrlpp::fuzz::online_planner_3rd_differences_hold(c, plan, {t_prev, Scalar{0}, Scalar{0}, Scalar{0}}, {t, q, v, a});
+        };
+        CHECK(holds(Scalar{0}, Scalar{0}, jerk));
+        CHECK_FALSE(holds(Scalar{0}, Scalar{0}, std::nextafter(jerk, infinity)));
+        CHECK(holds(Scalar{0}, acceleration, Scalar{0}));
+        CHECK_FALSE(holds(Scalar{0}, std::nextafter(acceleration, infinity), Scalar{0}));
+        CHECK(holds(velocity, Scalar{0}, Scalar{0}));
+        CHECK_FALSE(holds(std::nextafter(velocity, infinity), Scalar{0}, Scalar{0}));
     }
 }

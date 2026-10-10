@@ -74,6 +74,40 @@ swept integrate_velocity(const ctrlpp::double_s_trajectory<double>& traj)
     return out;
 }
 
+constexpr double unit_roundoff = std::numeric_limits<double>::epsilon() / 2.0;
+
+// An acceleration at time t carries 3 roundings of j_max t, the summed deceleration start and the two sums forming the
+// end anchor T it is timed back from, and 5 of a_max: the anchor's excess T - t < a_max / j_max, the in-segment
+// subtraction, the product, and the stored peak's quotient and product (Higham 2002, Lemma 3.1).
+double acceleration_rounding(double a_max, double j_max, double t)
+{
+    return unit_roundoff * (3.0 * j_max * t + 5.0 * a_max);
+}
+
+// A velocity carries 2 roundings of a_max t, the summed deceleration start and end, and 48 of v_max, since every time
+// it is formed from lies within one ramp, over which |a| t <= 2 |dv| <= 4 v_max: 16 for the subtractions and the end
+// anchor, 10 forming it, and 22 for a ramp's stored durations reproducing its velocity change (Higham 2002, Lemma 3.1).
+double velocity_rounding(double v_max, double a_max, double t)
+{
+    return unit_roundoff * (2.0 * a_max * t + 48.0 * v_max);
+}
+
+// A position carries 41 roundings of |q0| + |h| + 2 v_max tau, 31 along its longest segment formula and 10 for the
+// stored durations sweeping h, and 5 of v_max tau from its time subtractions, where tau = t + 2 v_max / a_max +
+// a_max / j_max bounds every time it is formed from, a deceleration lasting at most 2 v_max / a_max + a_max / j_max.
+double position_rounding(double q0, double h, double v_max, double a_max, double j_max, double t)
+{
+    double const tau = t + 2.0 * v_max / a_max + a_max / j_max;
+    return unit_roundoff * (41.0 * (std::abs(q0) + std::abs(h)) + 87.0 * v_max * tau);
+}
+
+// The mean of a derivative over a step stays within the derivative's limit, so each difference is held to the limit
+// times the step, the two samples' rounding, and three roundings of the comparison itself.
+bool difference_holds(double previous, double current, double rate, double dt, double previous_rounding, double current_rounding)
+{
+    return std::abs(current - previous) <= rate * dt + previous_rounding + current_rounding + 3.0 * unit_roundoff * rate * dt;
+}
+
 }
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
@@ -154,7 +188,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     // Dense scan of the time domain: enough samples to exercise every segment
     // (jerk/accel/cruise/jerk/decel) multiple times regardless of duration.
-    constexpr int num_samples = 500;
+    constexpr std::int32_t num_samples = 500;
     const double dt = (T > 0.0) ? T / static_cast<double>(num_samples) : 0.0;
 
     // Rounding-op margin: evaluate() chains several multiply-adds per sample
@@ -166,8 +200,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     constexpr double rounding_op_margin = 32.0;
 
     // Reject configurations whose position scale swamps the per-step motion:
-    // if a handful of ULPs of q0/q1's own magnitude (the same rounding-op
-    // margin used below) already exceeds the kinematic bound on how far the
+    // if a handful of ULPs of q0/q1's own magnitude (the rounding-op
+    // margin) already exceeds the kinematic bound on how far the
     // position can move in a single sample step, adding that step's motion to
     // a position of this magnitude rounds away completely, and no continuity
     // signal survives to check -- this is a floating-point representation
@@ -194,20 +228,11 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             return 0;
     }
 
-    // Sample-time floor: advancing through num_samples discrete sample times
-    // carries its own fixed rounding floor of about one part in num_samples of
-    // machine epsilon once divided back out by dt in a finite difference,
-    // independent of which physical limit (v_max/a_max/j_max) is being
-    // checked; it only matters once that limit is itself very small.
-    const double time_resolution_floor
-        = std::numeric_limits<double>::epsilon() * rounding_op_margin * static_cast<double>(num_samples);
-
+    double prev_t = 0.0;
     double prev_q = 0.0;
     double prev_v = 0.0;
     double prev_a = 0.0;
-    bool have_prev = false;
-
-    for(int i = 0; i <= num_samples; ++i)
+    for(std::int32_t i = 0; i <= num_samples; ++i)
     {
         const double t = static_cast<double>(i) * dt;
         auto pt = traj.evaluate(t);
@@ -219,83 +244,24 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         if(!std::isfinite(q) || !std::isfinite(v) || !std::isfinite(a))
             return 0;
 
-        // Envelope: the analytically-returned velocity/acceleration must not
-        // exceed the configured limits beyond a rounding-scaled tolerance.
-        const double v_env_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin * v_max * static_cast<double>(num_samples);
-        const double a_env_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin * a_max * static_cast<double>(num_samples);
-        if(std::abs(v) > v_max + v_env_tol)
-            abort();
-        if(std::abs(a) > a_max + a_env_tol)
+        if(std::abs(v) > v_max || std::abs(a) > a_max)
             abort();
 
-        if(have_prev)
+        if(i > 0)
         {
-            // Continuity: position cannot move faster than the kinematic bound
-            // set by bounded velocity and acceleration over one sample step
-            // (this bound only uses the v/a limits, so it holds regardless of
-            // how the acceleration itself varies within the step).
-            const double continuity_bound = v_max * dt + 0.5 * a_max * dt * dt;
-            // The deceleration segments form their position by subtracting the
-            // distance still to run from the commanded displacement, so their
-            // rounding lives at the scale of that displacement rather than at
-            // the scale of the position value returned; when the move ends near
-            // the origin those two differ by every digit.
-            const double continuity_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin
-                * (std::abs(q) + std::abs(prev_q) + abs_h + continuity_bound);
-            if(std::abs(q - prev_q) > continuity_bound + continuity_tol)
-                abort();
-
-            // Finite-difference velocity from the position trace: the average
-            // velocity over one step differs from an instantaneous sample by
-            // at most a_max*dt, since velocity's own rate of change (the
-            // acceleration) never exceeds a_max.
-            const double v_fd = (q - prev_q) / dt;
-            // The same displacement-scale rounding, divided back out by the step
-            // to land in velocity units.
-            const double seam_v_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin
-                * (std::abs(q) + std::abs(prev_q) + abs_h) / dt;
-            const double v_fd_tol = a_max * dt
-                + std::numeric_limits<double>::epsilon() * rounding_op_margin * v_max * static_cast<double>(num_samples)
-                + time_resolution_floor + seam_v_tol;
-            if(std::abs(v_fd) > v_max + v_fd_tol)
-                abort();
-
-            // Finite-difference acceleration from the velocity trace: the
-            // average acceleration over one step differs from an
-            // instantaneous sample by at most j_max*dt, since acceleration's
-            // own rate of change (the jerk) never exceeds j_max.
-            const double a_fd = (v - prev_v) / dt;
-            // A sample pair straddling a phase boundary is evaluated by two
-            // distinct closed-form branches that meet exactly only in real
-            // arithmetic, so one unit in the last place of the velocity
-            // magnitude in play, divided back out by the step, has to be
-            // absorbed here; at a large velocity over a short step that term
-            // dwarfs the acceleration limit itself.
-            const double seam_a_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin
-                * (std::abs(v) + std::abs(prev_v)) / dt;
-            const double a_fd_tol = j_max * dt
-                + std::numeric_limits<double>::epsilon() * rounding_op_margin * a_max * static_cast<double>(num_samples)
-                + time_resolution_floor + seam_a_tol;
-            if(std::abs(a_fd) > a_max + a_fd_tol)
-                abort();
-
-            // Finite-difference jerk from the acceleration trace: the profile's
-            // jerk is piecewise constant, so the average jerk over one sample
-            // step cannot exceed j_max beyond rounding.
-            const double j_fd = (a - prev_a) / dt;
-            // The same phase-boundary seam term, one derivative order up.
-            const double seam_j_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin
-                * (std::abs(a) + std::abs(prev_a)) / dt;
-            const double j_fd_tol = std::numeric_limits<double>::epsilon() * rounding_op_margin * j_max * static_cast<double>(num_samples)
-                + time_resolution_floor + seam_j_tol;
-            if(std::abs(j_fd) > j_max + j_fd_tol)
+            const double step = t - prev_t;
+            if(!difference_holds(prev_q, q, v_max, step, position_rounding(q0, abs_h, v_max, a_max, j_max, prev_t),
+                                 position_rounding(q0, abs_h, v_max, a_max, j_max, t))
+               || !difference_holds(prev_v, v, a_max, step, velocity_rounding(v_max, a_max, prev_t), velocity_rounding(v_max, a_max, t))
+               || !difference_holds(prev_a, a, j_max, step, acceleration_rounding(a_max, j_max, prev_t),
+                                    acceleration_rounding(a_max, j_max, t)))
                 abort();
         }
 
+        prev_t = t;
         prev_q = q;
         prev_v = v;
         prev_a = a;
-        have_prev = true;
     }
 
     // -----------------------------------------------------------------------
@@ -409,14 +375,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         const double a_sample = point.acceleration(0);
         if(!std::isfinite(v_sample) || !std::isfinite(a_sample))
             return 0;
-        // The same backward-time margin the boundary check carries: near the end
-        // of a long move one unit in the last place of the duration converts,
-        // through the slew there, into a velocity uncertainty that can exceed
-        // the velocity limit itself.
-        if(std::abs(v_sample) > v_ceiling + v_tol)
-            abort();
-        if(std::abs(a_sample)
-           > a_max + std::numeric_limits<double>::epsilon() * rounding_op_margin * a_max)
+        if(std::abs(v_sample) > v_ceiling || std::abs(a_sample) > a_max)
             abort();
     }
 

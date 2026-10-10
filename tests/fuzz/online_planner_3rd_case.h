@@ -29,6 +29,12 @@ inline constexpr double online_planner_3rd_rounding_op_margin = 32.0;
 inline constexpr double online_planner_3rd_largest_limit = 1e6;
 inline constexpr double online_planner_3rd_largest_dt = 1.0;
 
+// The planner stores at most eleven phases, so a sample's phase start is a sum of at most ten durations.
+inline constexpr std::int32_t online_planner_3rd_phase_starts = 10;
+
+template <typename Scalar>
+inline constexpr Scalar online_planner_3rd_unit_roundoff = std::numeric_limits<Scalar>::epsilon() / Scalar{2};
+
 template <typename Scalar>
 struct online_planner_3rd_case
 {
@@ -94,97 +100,92 @@ auto decode_online_planner_3rd_case(const std::uint8_t* data, std::size_t size, 
 template <typename Scalar>
 struct online_planner_3rd_state
 {
+    Scalar t;
     Scalar q;
     Scalar v;
     Scalar a;
 };
 
-// Envelope: the analytically-returned velocity/acceleration must not
-// exceed the configured limits beyond a rounding-scaled tolerance.
-// The velocity check adds an a_max*dt physical term and the
-// acceleration check adds a j_max*dt physical term: when a phase
-// transition falls within a single dt-sized sampling step (coarse
-// sampling relative to that phase's own, possibly tiny, duration),
-// the returned value can differ from the clean limit/0 value by up
-// to one step's worth of the next-higher derivative's limit.
-// After the retarget, |v| and |a| are held to the limits with no tolerance,
-// because the planner evaluates each phase-group end from its analytic state
-// instead of accumulating rounding.
 template <typename Scalar>
-void check_online_planner_3rd_envelope(online_planner_3rd_case<Scalar> const& c, online_planner_3rd_state<Scalar> const& s,
-                                       Scalar time_resolution_floor, bool after_retarget)
+struct online_planner_3rd_plan
 {
-    constexpr Scalar eps = std::numeric_limits<Scalar>::epsilon();
-    constexpr auto margin = static_cast<Scalar>(online_planner_3rd_rounding_op_margin);
-    constexpr auto samples = static_cast<Scalar>(online_planner_3rd_samples);
-    const Scalar v_env_tol = c.a_max * c.dt + eps * margin * c.v_max * samples + time_resolution_floor;
-    const Scalar a_env_tol = c.j_max * c.dt + eps * margin * c.a_max * samples + time_resolution_floor;
-    if (std::abs(s.v) > c.v_max + v_env_tol)
-        std::abort();
-    if (std::abs(s.a) > c.a_max + a_env_tol)
-        std::abort();
-    if (after_retarget && (std::abs(s.v) > c.v_max || std::abs(s.a) > c.a_max))
-        std::abort();
+    Scalar t_ref;
+    Scalar position_scale;
+};
+
+template <typename Scalar>
+auto online_planner_3rd_within_limits(online_planner_3rd_case<Scalar> const& c, online_planner_3rd_state<Scalar> const& s) -> bool
+{
+    return std::abs(s.v) <= c.v_max && std::abs(s.a) <= c.a_max;
 }
 
+// Two samples in one phase share its rounded start time, so a pair adds one rounding of the elapsed time per phase
+// start between them, at most ten, and three for the comparison itself.
 template <typename Scalar>
-void check_online_planner_3rd_differences(online_planner_3rd_case<Scalar> const& c, online_planner_3rd_state<Scalar> const& prev,
-                                          online_planner_3rd_state<Scalar> const& s, Scalar time_resolution_floor)
+auto online_planner_3rd_difference_bound(Scalar rate, Scalar dt, Scalar elapsed, Scalar previous_rounding,
+                                         Scalar current_rounding) -> Scalar
 {
-    constexpr Scalar eps = std::numeric_limits<Scalar>::epsilon();
-    constexpr auto margin = static_cast<Scalar>(online_planner_3rd_rounding_op_margin);
-    constexpr auto samples = static_cast<Scalar>(online_planner_3rd_samples);
-    // Continuity: position cannot move faster than the kinematic bound
-    // set by bounded velocity and acceleration over one sample step
-    // (this bound only uses the v/a limits, so it holds regardless of
-    // how the acceleration itself varies within the step).
-    const Scalar continuity_bound = c.v_max * c.dt + Scalar{0.5} * c.a_max * c.dt * c.dt;
-    const Scalar continuity_tol = eps * margin * (std::abs(s.q) + std::abs(prev.q) + continuity_bound);
-    if (std::abs(s.q - prev.q) > continuity_bound + continuity_tol)
-        std::abort();
+    constexpr auto phase_starts = static_cast<Scalar>(online_planner_3rd_phase_starts);
+    return rate * dt + previous_rounding + current_rounding
+           + online_planner_3rd_unit_roundoff<Scalar> * rate * (phase_starts * elapsed + Scalar{3} * dt);
+}
 
-    // Finite-difference velocity from the position trace: the average
-    // velocity over one step differs from an instantaneous sample by
-    // at most a_max*dt, since velocity's own rate of change (the
-    // acceleration) never exceeds a_max. A sample pair straddling a
-    // phase boundary is evaluated by two distinct closed-form
-    // branches that meet exactly only in real arithmetic, so an
-    // extra term scaled by the position magnitude in play (the same
-    // rounding-op margin, divided back out by dt to land in velocity
-    // units) absorbs that seam's rounding.
-    const Scalar v_fd = (s.q - prev.q) / c.dt;
-    const Scalar seam_v_tol = eps * margin * (std::abs(s.q) + std::abs(prev.q)) / c.dt;
-    const Scalar v_fd_tol = c.a_max * c.dt + eps * margin * c.v_max * samples + time_resolution_floor + seam_v_tol;
-    if (std::abs(v_fd) > c.v_max + v_fd_tol)
-        std::abort();
+// An acceleration carries one rounding of the elapsed time and at most 9 of a_max, since a jerk phase lasts at most
+// a_max / j_max: the in-phase and time-to-end subtractions, its product and sum, a carried phase's product and sum, and
+// a stored duration's quotient and its one-ulp trim, worth two (Higham 2002, Lemma 3.1).
+template <typename Scalar>
+auto online_planner_3rd_acceleration_rounding(Scalar a_max, Scalar j_max, Scalar elapsed) -> Scalar
+{
+    return online_planner_3rd_unit_roundoff<Scalar> * (j_max * elapsed + Scalar{9} * a_max);
+}
 
-    // Finite-difference acceleration from the velocity trace: the
-    // average acceleration over one step differs from an
-    // instantaneous sample by at most j_max*dt, since acceleration's
-    // own rate of change (the jerk) never exceeds j_max, plus the
-    // same phase-boundary seam term one derivative order up (scaled
-    // by the velocity magnitude in play).
-    const Scalar a_fd = (s.v - prev.v) / c.dt;
-    const Scalar seam_a_tol = eps * margin * (std::abs(s.v) + std::abs(prev.v)) / c.dt;
-    const Scalar a_fd_tol = c.j_max * c.dt + eps * margin * c.a_max * samples + time_resolution_floor + seam_a_tol;
-    if (std::abs(a_fd) > c.a_max + a_fd_tol)
-        std::abort();
+// A velocity carries one rounding of the elapsed time and at most 42 of v_max, since a phase changes the velocity by at
+// most 2 v_max and so lasts at most 4 v_max / |a|: 5 forming it, 7 for a carried phase, 8 for the in-phase and
+// time-to-end subtractions, and 22 for a ramp's stored durations reproducing its velocity change (Higham 2002, Lemma 3.1).
+template <typename Scalar>
+auto online_planner_3rd_velocity_rounding(Scalar v_max, Scalar a_max, Scalar elapsed) -> Scalar
+{
+    return online_planner_3rd_unit_roundoff<Scalar> * (a_max * elapsed + Scalar{42} * v_max);
+}
 
-    // Finite-difference jerk from the acceleration trace: the
-    // profile's jerk is piecewise constant, so the average jerk over
-    // one sample step cannot exceed j_max beyond rounding, plus the
-    // same phase-boundary seam term one more derivative order up
-    // (scaled by the acceleration magnitude in play).
-    const Scalar j_fd = (s.a - prev.a) / c.dt;
-    const Scalar seam_j_tol = eps * margin * (std::abs(s.a) + std::abs(prev.a)) / c.dt;
-    const Scalar j_fd_tol = eps * margin * c.j_max * samples + time_resolution_floor + seam_j_tol;
-    if (std::abs(j_fd) > c.j_max + j_fd_tol)
-        std::abort();
+// A position carries one rounding of the elapsed time d, 11 sums of positions within P0 + v_max tau, 51 roundings of
+// v_max tau for travel, carried velocity and acceleration, and subtractions, and 20 of |h| + v_max tau for the stored
+// durations sweeping |h| <= 2 P0 (Higham 2002, Lemma 3.1). tau = 2 d + v_max / a_max + 2 a_max / j_max bounds the time
+// traversed, since a target-anchored position lies past the cruise midpoint and a deceleration lasts at most
+// v_max / a_max + a_max / j_max, and the duration of any brake and nulling overshoot.
+template <typename Scalar>
+auto online_planner_3rd_position_rounding(Scalar v_max, Scalar a_max, Scalar j_max, Scalar elapsed, Scalar position_scale)
+    -> Scalar
+{
+    auto const traversed = Scalar{2} * elapsed + v_max / a_max + Scalar{2} * a_max / j_max;
+    return online_planner_3rd_unit_roundoff<Scalar>
+           * (v_max * elapsed + Scalar{51} * position_scale + Scalar{82} * v_max * traversed);
+}
+
+// The mean of a derivative over a step stays within the derivative's limit, so each difference is held to the limit
+// times the step and the counted rounding alone.
+template <typename Scalar>
+auto online_planner_3rd_differences_hold(online_planner_3rd_case<Scalar> const& c, online_planner_3rd_plan<Scalar> const& plan,
+                                         online_planner_3rd_state<Scalar> const& prev, online_planner_3rd_state<Scalar> const& s) -> bool
+{
+    auto const dt = s.t - prev.t;
+    auto const elapsed = std::max(s.t - plan.t_ref, Scalar{0});
+    auto const elapsed_prev = std::max(prev.t - plan.t_ref, Scalar{0});
+    auto const position = online_planner_3rd_difference_bound(
+        c.v_max, dt, elapsed, online_planner_3rd_position_rounding(c.v_max, c.a_max, c.j_max, elapsed_prev, plan.position_scale),
+        online_planner_3rd_position_rounding(c.v_max, c.a_max, c.j_max, elapsed, plan.position_scale));
+    auto const velocity = online_planner_3rd_difference_bound(c.a_max, dt, elapsed,
+                                                              online_planner_3rd_velocity_rounding(c.v_max, c.a_max, elapsed_prev),
+                                                              online_planner_3rd_velocity_rounding(c.v_max, c.a_max, elapsed));
+    auto const acceleration = online_planner_3rd_difference_bound(
+        c.j_max, dt, elapsed, online_planner_3rd_acceleration_rounding(c.a_max, c.j_max, elapsed_prev),
+        online_planner_3rd_acceleration_rounding(c.a_max, c.j_max, elapsed));
+    return std::abs(s.q - prev.q) <= position && std::abs(s.v - prev.v) <= velocity && std::abs(s.a - prev.a) <= acceleration;
 }
 
 // Reject configurations whose position scale swamps the per-step motion:
-// if a handful of ULPs of pos/target's own magnitude (the same
-// rounding-op margin used below) already exceeds the kinematic bound on
+// if a handful of ULPs of pos/target's own magnitude (the
+// rounding-op margin) already exceeds the kinematic bound on
 // how far the position can move in a single sample step, adding that
 // step's motion to a position of this magnitude rounds away completely,
 // and no continuity signal survives to check -- this is a floating-point
@@ -205,15 +206,6 @@ auto run_online_planner_3rd_case(const std::uint8_t* data, std::size_t size) -> 
     if (!decode_online_planner_3rd_case(data, size, c) || !online_planner_3rd_position_resolvable(c))
         return 0;
 
-    // Sample-time floor: advancing through num_samples discrete sample times
-    // carries its own fixed rounding floor of about one part in num_samples of
-    // machine epsilon once divided back out by dt in a finite difference,
-    // independent of which physical limit (v_max/a_max/j_max) is being
-    // checked; it only matters once that limit is itself very small.
-    const Scalar time_resolution_floor = std::numeric_limits<Scalar>::epsilon()
-                                         * static_cast<Scalar>(online_planner_3rd_rounding_op_margin)
-                                         * static_cast<Scalar>(online_planner_3rd_samples);
-
     // Construction goes through create: a limit outside the finite,
     // strictly positive domain is rejected by design (each limit divides in
     // the planner math), and that rejection is the correct behavior for such
@@ -229,20 +221,23 @@ auto run_online_planner_3rd_case(const std::uint8_t* data, std::size_t size) -> 
     if (!planner.update(c.target).has_value())
         return 0;
 
+    online_planner_3rd_plan<Scalar> plan{Scalar{0}, std::max(std::abs(c.pos), std::abs(c.target))};
     online_planner_3rd_state<Scalar> prev{};
     Scalar t = c.t_start;
     for (std::int32_t i = 0; i < online_planner_3rd_samples; ++i) {
         t += c.dt;
         auto const pt = planner.sample(t);
-        online_planner_3rd_state<Scalar> const s{pt.position(0), pt.velocity(0), pt.acceleration(0)};
+        online_planner_3rd_state<Scalar> const s{t, pt.position(0), pt.velocity(0), pt.acceleration(0)};
         if (!std::isfinite(s.q) || !std::isfinite(s.v) || !std::isfinite(s.a))
             return 0;
-        check_online_planner_3rd_envelope(c, s, time_resolution_floor, i > c.retarget_index);
-        if (i > 0)
-            check_online_planner_3rd_differences(c, prev, s, time_resolution_floor);
+        if (!online_planner_3rd_within_limits(c, s) || (i > 0 && !online_planner_3rd_differences_hold(c, plan, prev, s)))
+            std::abort();
         prev = s;
-        if (i == c.retarget_index && !planner.update(c.retarget_target).has_value())
-            return 0;
+        if (i == c.retarget_index) {
+            if (!planner.update(c.retarget_target).has_value())
+                return 0;
+            plan = {t, std::max(std::abs(s.q), std::abs(c.retarget_target))};
+        }
     }
     return 0;
 }

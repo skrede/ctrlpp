@@ -95,6 +95,8 @@ make_test(cubic_spline_test)
 make_test(online_planner_2nd_test)
 make_test(online_planner_3rd_test)
 make_test(online_planner_3rd_retarget_test)
+# Checks the fuzz harness's oracle, included as "fuzz/online_planner_3rd_case.h".
+target_include_directories(online_planner_3rd_retarget_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")
 make_test(bspline_trajectory_test)
 make_test(smoothing_spline_test)
 make_test(synchronize_test)
