@@ -7,9 +7,10 @@
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/online_planner_3rd.h"
 
+#include "../../tests/fuzz/online_planner_3rd_case.h"
+
 #include <cmath>
 #include <cstdio>
-#include <limits>
 #include <cstdint>
 #include <algorithm>
 
@@ -69,17 +70,21 @@ void record_sample(envelope_scan<Scalar>& scan, Scalar t, trajectory_point<Scala
     }
 }
 
+// The counted bound is shared with the planner's fuzz oracle and retarget tests; t_ref is the instant the plan was
+// commanded at, from which the planner measures elapsed time.
 template <typename Scalar>
-void record_jerk(envelope_scan<Scalar>& scan, Scalar t_prev, Scalar t, Scalar a_prev, Scalar a)
+void record_jerk(envelope_scan<Scalar>& scan, Scalar t_ref, Scalar t_prev, Scalar t, Scalar a_prev, Scalar a)
 {
-    auto const eps = std::numeric_limits<Scalar>::epsilon();
+    using ctrlpp::fuzz::online_planner_3rd_difference_bound;
+    using ctrlpp::fuzz::online_planner_3rd_acceleration_rounding;
     auto const& limits = scan.limits;
-    auto const time_scale = std::max(std::abs(t), scan.planner.diagnostics().planned_duration);
-    auto const allowance = Scalar{2}
-                           * (static_cast<Scalar>(time_rounding_ops) * eps * limits.j_max * time_scale
-                              + static_cast<Scalar>(acceleration_rounding_ops) * eps * limits.a_max);
-    scan.largest_allowance = std::max(scan.largest_allowance, allowance);
-    auto const bound = limits.j_max * (t - t_prev) + allowance;
+    auto const elapsed = std::max(t - t_ref, Scalar{0});
+    auto const elapsed_prev = std::max(t_prev - t_ref, Scalar{0});
+    auto const step = limits.j_max * (t - t_prev);
+    auto const bound = online_planner_3rd_difference_bound(
+        limits.j_max, t - t_prev, elapsed, online_planner_3rd_acceleration_rounding(limits.a_max, limits.j_max, elapsed_prev),
+        online_planner_3rd_acceleration_rounding(limits.a_max, limits.j_max, elapsed));
+    scan.largest_allowance = std::max(scan.largest_allowance, bound - step);
     if (std::abs(a - a_prev) > bound) {
         ++scan.counts.jerk_violations;
         report_violation(scan, "|a_k - a_(k-1)| above j_max dt plus the allowance", t, std::abs(a - a_prev) - bound);
@@ -87,7 +92,7 @@ void record_jerk(envelope_scan<Scalar>& scan, Scalar t_prev, Scalar t, Scalar a_
 }
 
 template <typename Scalar>
-void scan_dense(envelope_scan<Scalar>& scan, Scalar t_begin)
+void scan_dense(envelope_scan<Scalar>& scan, Scalar t_ref, Scalar t_begin)
 {
     auto const dt = static_cast<Scalar>(grid_step);
     auto const steps = static_cast<std::int32_t>(std::lround(dense_seconds / grid_step));
@@ -98,7 +103,7 @@ void scan_dense(envelope_scan<Scalar>& scan, Scalar t_begin)
         auto const point = scan.planner.sample(t);
         record_sample(scan, t, point);
         if (k > 0) {
-            record_jerk(scan, t_prev, t, a_prev, point.acceleration[0]);
+            record_jerk(scan, t_ref, t_prev, t, a_prev, point.acceleration[0]);
         }
         t_prev = t;
         a_prev = point.acceleration[0];
@@ -111,12 +116,12 @@ void scan_plan(envelope_scan<Scalar>& scan, Scalar t0)
 {
     auto const duration = scan.planner.diagnostics().planned_duration;
     auto const dense = static_cast<Scalar>(dense_seconds);
-    scan_dense(scan, t0);
+    scan_dense(scan, t0, t0);
     for (std::int32_t k = dense_seconds; static_cast<Scalar>(k) + dense < duration; ++k) {
         auto const t = t0 + static_cast<Scalar>(k);
         record_sample(scan, t, scan.planner.sample(t));
     }
-    scan_dense(scan, t0 + std::max(duration - dense, Scalar{0}));
+    scan_dense(scan, t0, t0 + std::max(duration - dense, Scalar{0}));
 }
 
 }

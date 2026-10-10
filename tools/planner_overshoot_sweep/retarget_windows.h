@@ -19,11 +19,6 @@ inline constexpr double grid_step = 1e-3;
 inline constexpr std::int32_t instants_per_window = 40;
 inline constexpr std::int32_t dense_seconds = 20;
 
-// Elapsed time reaches a sample through at most 13 roundings, and the sampled acceleration carries at most 4
-// since the last pinned phase end; a finite-difference jerk is admitted twice the excess those counts allow.
-inline constexpr std::int32_t time_rounding_ops = 13;
-inline constexpr std::int32_t acceleration_rounding_ops = 4;
-
 enum class retarget_window : std::uint8_t
 {
     cruise,

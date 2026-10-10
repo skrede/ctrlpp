@@ -111,12 +111,17 @@ boundary. Every probe drives a planner afresh from rest to the same instant.
     the new plan is checked against v_max and a_max: densely over its first
     and last twenty seconds, where every phase but the cruise lives, and once
     a second between. Every dense pair of samples is checked against j_max
-    times their spacing plus an allowance built from two counted rounding
-    chains, one on elapsed time and one on acceleration. That allowance is
-    printed beside j_max dt for each row, so the resolution of the jerk check
-    is visible: in float its time term dominates once elapsed time reaches
-    the order of a thousand seconds. A same-direction retarget that reports
-    any substitution is counted as a brake to rest that was not needed.
+    times their spacing plus the counted per-pair rounding bound that the
+    planner's fuzz oracle and retarget tests use
+    (tests/fuzz/online_planner_3rd_case.h): each sample's acceleration
+    carries one rounding of the time elapsed since the retarget and nine of
+    a_max, and the pair adds one rounding of the elapsed time per phase start
+    between its samples, at most ten, and three for the comparison. The
+    largest allowance in each row is printed beside j_max dt, so the
+    resolution of the jerk check is visible: in float its time term reaches
+    the order of j_max dt once elapsed time reaches a thousand seconds. A
+    same-direction retarget that reports any substitution is counted as a
+    brake to rest that was not needed.
   * Reversing, in double and float. The same planner is retargeted behind
     its current position from the cruise and acceleration-ramp windows. It
     must report a reversal and keep the same envelope while it brakes and
