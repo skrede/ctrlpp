@@ -255,11 +255,15 @@ rejection verbatim. That is not plumbing: both also invert `Q` and `R` to form
 the arrival-cost and stage weights, so a non-finite entry poisons the posed
 problem as well as the filter.
 
+`pid` validates its configuration on channel 1: `pid::create`,
+`pid::set_params` and `pid::set_integral` refuse a value that cannot work with a
+`pid_config_error` and leave the controller untouched. Its plain constructor
+still stands beside `create` and checks nothing.
+
 Not yet converted: `predict` on those seven estimator types; the configuration
-and reset paths of the three controllers (`pid::set_params`, `pid::set_integral`,
-the adaptive controllers' construction and `reset`), through which a non-finite
-value still enters silently and is caught only by the next cycle's rejection and
-the `health()` latch; `rls::update`, which still returns a bare `bool` and so
+and reset paths of the two adaptive controllers (their construction and
+`reset`), through which a non-finite value still enters silently and is caught
+only by the next cycle's rejection and the `health()` latch; `rls::update`, which still returns a bare `bool` and so
 cannot say why a sample was skipped; `ekf_config::numerical_eps`, whose own
 domain condition (finite and strictly positive, since the central-difference
 stencil divides by it) is not yet checked at construction; the configuration

@@ -42,6 +42,7 @@ failure channel):
 | `mhe::update` | `expected<void, ekf_update_error>` (forwarded from the embedded filter) |
 | `nmhe::update` | `expected<void, ekf_update_error>` (forwarded from the embedded filter) |
 | `complementary_filter::update`, all three overloads | `expected<void, cf_update_error>` |
+| `pid::set_params`, `pid::set_integral` | `expected<void, pid_config_error>` |
 | `pid::compute`, both overloads | `expected<vector_t, pid_step_error>` |
 | `mrac_controller::evaluate` | `expected<input_type, mrac_step_error>` |
 | `l1_controller::evaluate` | `expected<input_type, l1_step_error>` |
@@ -89,12 +90,15 @@ handed.
   filter with no propagation for a step that happened. A prediction that poisons
   the carried estimate is not silent: the next `update` rejects, names the cause,
   and latches the type's `health()` query to `non_finite_estimate`.
-- **The configuration and reset paths of all ten converted types.** `pid`'s
-  `set_params`, `set_integral` and `freeze_integral`, the adaptive controllers'
-  construction and `reset` -- none is fallible, so a non-finite gain, initial
+- **The configuration and reset paths of all ten converted types.** The adaptive
+  controllers' construction and `reset` are not fallible, so a non-finite initial
   parameter matrix or reference model still enters through them. The first cycle
   that follows rejects and latches the type's `health()` query, which is what
-  that query exists for.
+  that query exists for. `pid` is the exception: `create`, `set_params` and
+  `set_integral` refuse a non-finite or contradictory value with a
+  `pid_config_error`, and `freeze_integral` and `reset` take no value that could
+  be non-finite. Its plain constructor still stands beside `create` and checks
+  nothing.
 - **`l1_controller`'s projection, in one specific case.** The elementwise clamp
   propagates a `NaN` unchanged, but it *replaces* an infinity with the configured
   bound whenever that bound is finite -- so a finite, in-range command can come

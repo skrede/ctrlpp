@@ -17,6 +17,7 @@ template packs.
 |------|--------|
 | `ctrlpp::pid<Scalar, NY, Policies...>` | `#include <ctrlpp/control/pid.h>` |
 | (convenience) | `#include <ctrlpp/pid.h>` |
+| `pid_config_error`, `pid_step_error`, `pid_health` | `#include <ctrlpp/control/pid_error.h>` (included by `pid.h`) |
 
 ## Template Parameters
 
@@ -80,13 +81,40 @@ cfg.template policy<feed_forward<FF>>().ff_func = my_ff_func;
 | `rate_limit` | Output rate limiting | `rate_max` | [rate-limit](rate-limit.md) |
 | `perf_assessment<Metrics...>` | Online performance metrics | (none) | [performance](performance.md) |
 
+## create
+
+```cpp
+static auto create(const config_type& cfg) -> expected<pid, pid_config_error>;
+```
+
+Validates the configuration and constructs the controller, or reports the first fault it finds. A configuration that cannot work is refused where it is given rather than discovered on the first cycle. The checks run in the order of the table, so a configuration with several faults reports the earliest; a check on a policy field runs only when that policy is composed. Every configuration `create` accepts runs exactly as the constructor below runs it.
+
+```cpp
+auto made = ctrlpp::pid<double, 1>::create(cfg);
+if(!made) {
+    // made.error() names the first field that cannot work
+}
+```
+
+| Enumerator | Cause | Repair |
+|---|---|---|
+| `non_finite_gain` | A `kp`, `ki` or `kd` component is `NaN` or infinite. In ISA form `ki` is the integral time, and a `NaN` or negative-infinite one is refused. | The tuning that produced the gains. |
+| `invalid_output_limits` | An output limit is `NaN`, `output_min` exceeds `output_max` in some channel, `output_min` is `+inf`, or `output_max` is `-inf`. Equal limits are accepted. | The actuator range. |
+| `non_finite_setpoint_weight` | A `b` or `c` component is `NaN` or infinite. | The setpoint weights. |
+| `invalid_filter_time_constant` | A `setpoint_filter` or `pv_filter` time constant is `NaN`, negative or `+inf`. Zero means no filter. | The filter's `tf`. |
+| `invalid_rate_limit` | A `rate_limit` `rate_max` is `NaN` or negative. Zero and `+inf` mean no limit. | The rate limit. |
+| `invalid_back_calculation_gain` | An explicit `anti_windup<back_calc>` gain `kb` is `NaN` or infinite. Zero selects the default gain. | The tracking gain. |
+| `invalid_error_threshold` | An `anti_windup<conditional_integration>` `error_threshold` is `NaN`. | The integration threshold. |
+| `invalid_derivative_filter` | A `deriv_filter` `n` is `NaN` or infinite. | The filter divisor. |
+| `unrepresentable_gain` | Each field is finite, but an internal gain derived from them overflows `Scalar`: in ISA form `kp` over the integral time, or `kp` times the derivative time. | Smaller gains or a wider `Scalar`. |
+
 ## Constructor
 
 ```cpp
 explicit pid(const config_type& cfg);
 ```
 
-Constructs the controller from a config struct. Computes internal gains and initializes policy state.
+Constructs the controller from a config struct. Computes internal gains and initializes policy state. It performs none of the checks `create` performs.
 
 ## Methods
 
@@ -107,7 +135,7 @@ A non-positive step used to be answered with the previous output on the success 
 
 | Enumerator | Cause | Where the caller repairs it |
 |---|---|---|
-| `non_finite_state` | Some piece of carried state is already non-finite when the cycle begins. | `reset`, or `set_integral` for the integrator alone. Reported first because it is upstream of every argument. |
+| `non_finite_state` | Some piece of carried state is already non-finite when the cycle begins. | `reset`, or `set_integral` with a finite value for the integrator alone. Reported first because it is upstream of every argument. |
 | `invalid_timestep` | The step is not a positive finite duration. A `NaN` step cannot be caught by `dt <= 0` alone, because every comparison against a `NaN` is false. | The caller's clock. |
 | `non_finite_setpoint` | The commanded setpoint has a non-finite component. | The trajectory, outer loop, or operator input that generates the reference. |
 | `non_finite_measurement` | The process variable has a non-finite component. | The sensor or estimator. Separate from the setpoint even though the error is their difference, because the two arrive from different subsystems. |
@@ -133,15 +161,15 @@ auto health() const -> pid_health;
 
 Reports whether the controller is still carrying non-finite state from an earlier cycle -- a question a per-cycle result cannot answer, because it outlives the call. Latches until `reset`.
 
-A **rejected cycle does not set it**: a rejection mutates nothing, so it leaves the controller exactly as healthy as it was. The routes in are the non-fallible ones. `set_params`, `set_integral`, `freeze_integral` and `reset` are not converted, so a non-finite gain or a seeded non-finite integrator still enters through them; and a finite-but-extreme configuration can drive the command non-finite on a cycle that legitimately succeeded, which `update_state` then stores. The next cycle rejects with `non_finite_state` and latches `non_finite_carried_state`.
+A **rejected cycle does not set it**: a rejection mutates nothing, so it leaves the controller exactly as healthy as it was. No known public route leads to `non_finite_carried_state`: `create`, `set_params` and `set_integral` refuse non-finite values, and a cycle whose result is non-finite is rejected and leaves no state behind. The latch is kept as defense in depth.
 
 ### set_params
 
 ```cpp
-void set_params(const config_type& new_cfg);
+auto set_params(const config_type& new_cfg) -> expected<void, pid_config_error>;
 ```
 
-Updates tuning parameters with bumpless transfer. The integral state is stored in output units and enters the output directly, so its contribution is already continuous across a gain change; `set_params` leaves the integral state untouched, which is what makes gain scheduling bumpless. No rescaling is applied (rescaling would step the integral contribution instead of preserving it).
+Refuses the configuration with the same checks, in the same order, as `create`; a refusal leaves the current configuration, the integrator and every other piece of state bitwise unchanged. On success it updates tuning parameters with bumpless transfer. The integral state is stored in output units and enters the output directly, so its contribution is already continuous across a gain change; `set_params` leaves the integral state untouched, which is what makes gain scheduling bumpless. No rescaling is applied (rescaling would step the integral contribution instead of preserving it).
 
 ### error
 
@@ -194,10 +222,10 @@ Freezes or unfreezes the integral accumulator. While frozen, the integral term d
 ### set_integral
 
 ```cpp
-void set_integral(const vector_t& val);
+auto set_integral(const vector_t& val) -> expected<void, pid_config_error>;
 ```
 
-Directly sets the integral accumulator to a given value.
+Directly sets the integral accumulator to a given value. A `NaN` or infinite component is refused with `pid_config_error::non_finite_integral`, and the integrator is left bitwise unchanged.
 
 ### metric (requires `perf_assessment`)
 

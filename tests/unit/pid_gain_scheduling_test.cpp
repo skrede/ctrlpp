@@ -60,7 +60,7 @@ TEST_CASE("set_params with a Ki change is bumpless (integral state unchanged)",
 
     SisoPid::config_type new_cfg = cfg;
     new_cfg.ki = vec1(ki_new);
-    sched.set_params(new_cfg);
+    REQUIRE(sched.set_params(new_cfg).has_value());
 
     // Bumpless transfer: the stored integral (in output units) is not rescaled.
     REQUIRE_THAT(sched.integral()[0], WithinAbs(integral_before, tol));
@@ -97,7 +97,7 @@ TEST_CASE("set_params with Ki going to zero preserves the accumulated integral",
     // while its stored contribution persists.
     SisoPid::config_type new_cfg = cfg;
     new_cfg.ki = vec1(0.0);
-    pid.set_params(new_cfg);
+    REQUIRE(pid.set_params(new_cfg).has_value());
     REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
 
     // A further step adds no increment and holds the integral, so the output is the
@@ -129,7 +129,7 @@ TEST_CASE("set_params with a Kp change steps only the proportional term",
 
     SisoPid::config_type new_cfg = cfg;
     new_cfg.kp = vec1(kp_new);
-    sched.set_params(new_cfg);
+    REQUIRE(sched.set_params(new_cfg).has_value());
 
     // Changing Kp leaves the integral state untouched (Ki unchanged), so the only
     // difference on the next step is the deliberate proportional change on the current
@@ -154,7 +154,7 @@ TEST_CASE("params() returns current config after set_params",
     SisoPid::config_type new_cfg = cfg;
     new_cfg.kp = vec1(3.0);
     new_cfg.ki = vec1(1.5);
-    pid.set_params(new_cfg);
+    REQUIRE(pid.set_params(new_cfg).has_value());
 
     REQUIRE_THAT(pid.params().kp[0], WithinAbs(3.0, tol));
     REQUIRE_THAT(pid.params().ki[0], WithinAbs(1.5, tol));
@@ -168,7 +168,7 @@ TEST_CASE("set_integral sets integral to known value",
     cfg.ki = vec1(1.0);
     SisoPid pid(cfg);
 
-    pid.set_integral(vec1(5.0));
+    REQUIRE(pid.set_integral(vec1(5.0)).has_value());
     REQUIRE_THAT(pid.integral()[0], WithinAbs(5.0, tol));
 
     // Next output should include this integral
@@ -223,7 +223,7 @@ TEST_CASE("set_params from Ki=0 to Ki!=0 leaves the zero integral in place",
     // starts accumulating from where it was.
     SisoPid::config_type new_cfg = cfg;
     new_cfg.ki = vec1(2.0);
-    pid.set_params(new_cfg);
+    REQUIRE(pid.set_params(new_cfg).has_value());
 
     REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
 
@@ -260,7 +260,7 @@ TEST_CASE("ISA form set_params with a Ti change is bumpless",
 
     IsaPid::config_type new_cfg = cfg;
     new_cfg.ki = vec1(ti_new);
-    sched.set_params(new_cfg);
+    REQUIRE(sched.set_params(new_cfg).has_value());
 
     // The stored integral (output units) is not rescaled when Ti changes.
     REQUIRE_THAT(sched.integral()[0], WithinAbs(integral_before, tol));
@@ -290,12 +290,12 @@ TEST_CASE("repeated set_params never rescales the integral state",
     // is left untouched, so the integral contribution stays continuous.
     SisoPid::config_type new_cfg = cfg;
     new_cfg.ki = vec1(2.0);
-    pid.set_params(new_cfg);
+    REQUIRE(pid.set_params(new_cfg).has_value());
     REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
 
     // Halving Ki back likewise leaves the stored integral in place.
     SisoPid::config_type newer_cfg = cfg;
     newer_cfg.ki = vec1(1.0);
-    pid.set_params(newer_cfg);
+    REQUIRE(pid.set_params(newer_cfg).has_value());
     REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_before, tol));
 }

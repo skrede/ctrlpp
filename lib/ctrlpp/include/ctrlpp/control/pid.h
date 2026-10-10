@@ -8,9 +8,12 @@
 #include "ctrlpp/types.h"
 #include "ctrlpp/expected.h"
 
+#include "ctrlpp/control/pid_error.h"
 #include "ctrlpp/control/pid_config.h"
 #include "ctrlpp/control/pid_policies.h"
 #include "ctrlpp/control/pid_performance.h"
+
+#include "ctrlpp/control/detail/pid_gains.h"
 
 #include <cmath>
 #include <limits>
@@ -18,96 +21,45 @@
 namespace ctrlpp
 {
 
-/// @brief Structured failure modes of a single `pid::compute` cycle.
-///
-/// Every enumerator is an exact domain condition, not a tuning preference. The
-/// order below is the order the guard tests them, and it is a severity order:
-/// the controller's own carried state first, then the caller's clock, then the
-/// two signals. The rule is that the most upstream cause is named, because a
-/// caller told "your measurement is bad" would replace a working sensor while
-/// the real fault sits in the integrator that a previous cycle poisoned.
-///
-///  * non_finite_state       : some piece of carried state -- the integrator,
-///                             the error history, an input filter state, the
-///                             accumulated output -- is already non-finite when
-///                             the cycle begins. Nothing this cycle can produce
-///                             is meaningful, whatever the arguments are. Only
-///                             `reset` (or `set_integral` for the integrator
-///                             alone) recovers.
-///  * invalid_timestep       : the step is not a positive finite duration. A
-///                             non-positive step is a clock that did not advance
-///                             or ran backwards; a non-finite one is a clock
-///                             that produced garbage. Both are the caller's
-///                             timing, not the caller's signals, and both are
-///                             fatal to the cycle: the step divides the
-///                             derivative and multiplies the integral, so it
-///                             poisons the command even from a perfect setpoint
-///                             and measurement.
-///  * non_finite_setpoint    : the commanded setpoint has a non-finite
-///                             component. The repair is in whatever generates
-///                             the reference -- a trajectory, an outer loop, an
-///                             operator input.
-///  * non_finite_measurement : the process variable has a non-finite component.
-///                             The repair is in the sensor or the estimator
-///                             feeding it. This is a genuinely different fault
-///                             from a bad setpoint even though the error is
-///                             their difference: the two arrive from different
-///                             subsystems and are fixed in different places.
-///  * non_finite_tracking_signal : the external tracking signal handed to the
-///                             four-argument overload has a non-finite
-///                             component. It is checked before the cycle runs
-///                             because it is back-assigned into the integrator,
-///                             so admitting it would destroy the integrator
-///                             after an otherwise valid cycle had already
-///                             committed.
-enum class pid_step_error
-{
-    non_finite_state,
-    invalid_timestep,
-    non_finite_setpoint,
-    non_finite_measurement,
-    non_finite_tracking_signal,
-    non_finite_result,
-};
-
-/// @brief Persistent state-health status of a `pid`.
-///
-/// A per-cycle result cannot answer whether the controller is still carrying
-/// damage from a cycle several samples ago, because that question outlives the
-/// call. The status latches until `reset` replaces the state it describes.
-///
-///  * ok                      : every cycle so far began from finite carried
-///                              state.
-///  * non_finite_carried_state : a cycle found the carried state already
-///                              non-finite. The usual route in is a finite but
-///                              extreme configuration -- an infinite gain
-///                              multiplies a finite error into an infinite
-///                              command, which `update_state` then stores --
-///                              or a non-finite value seeded through
-///                              `set_integral` or `set_params`, neither of
-///                              which is fallible. A rejected cycle does NOT
-///                              set this: a rejection mutates nothing, so it
-///                              leaves the controller exactly as healthy as it
-///                              was.
-enum class pid_health
-{
-    ok,
-    non_finite_carried_state,
-};
-
 template <typename Scalar, std::size_t NY, typename... Policies>
 class pid
 {
+    struct unchecked_t
+    {
+        explicit unchecked_t() = default;
+    };
+
 public:
     using config_type = pid_config<Scalar, NY, Policies...>;
     using vector_t = Vector<Scalar, NY>;
 
-    explicit pid(const config_type& cfg) : m_cfg{cfg}
+    explicit pid(const config_type& cfg) : pid(unchecked_t{}, cfg, detail::compute_pid_gains(cfg))
     {
-        compute_internal_gains(cfg);
-        if constexpr(detail::has_policy_v<anti_windup, Policies...>)
-            initialize_back_calc_gains();
-        initialize_perf_config();
+    }
+
+    /// @brief Construct a controller, or report why the configuration cannot work.
+    ///
+    /// Rejections, checked in order:
+    ///  * a NaN or infinite kp, ki or kd component, or in ISA form a NaN or
+    ///    negative-infinite integral time -> pid_config_error::non_finite_gain
+    ///  * a NaN output limit, output_min above output_max, output_min at
+    ///    +infinity or output_max at -infinity -> pid_config_error::invalid_output_limits
+    ///  * a NaN or infinite b or c component -> pid_config_error::non_finite_setpoint_weight
+    ///  * a setpoint_filter or pv_filter time constant that is NaN, negative or
+    ///    +infinity -> pid_config_error::invalid_filter_time_constant
+    ///  * a NaN or negative rate_limit rate_max -> pid_config_error::invalid_rate_limit
+    ///  * a NaN or infinite explicit back-calculation kb ->
+    ///    pid_config_error::invalid_back_calculation_gain
+    ///  * a NaN conditional-integration error_threshold -> pid_config_error::invalid_error_threshold
+    ///  * a NaN or infinite deriv_filter n -> pid_config_error::invalid_derivative_filter
+    ///  * an ISA-form internal gain, kp over the integral time or kp times the
+    ///    derivative time, that overflows -> pid_config_error::unrepresentable_gain
+    static auto create(const config_type& cfg) -> expected<pid, pid_config_error>
+    {
+        auto derived = detail::derive_pid_gains(cfg);
+        if(!derived)
+            return unexpected(derived.error());
+        return pid{unchecked_t{}, cfg, *derived};
     }
 
     /// @brief Produce the control command for one cycle.
@@ -136,11 +88,8 @@ public:
     /// from a command the controller had actually computed -- so a stopped
     /// clock read as a steady loop.
     ///
-    /// `set_params`, `set_integral`, `freeze_integral` and `reset` are NOT
-    /// fallible and are not converted here. A non-finite gain or a non-finite
-    /// seeded integrator therefore still enters through them; the first cycle
-    /// that follows rejects with `non_finite_state` and latches `health()`,
-    /// which is what that query exists for.
+    /// Configuration is checked where it is given, by `create`, `set_params`
+    /// and `set_integral`, and a rejected cycle mutates nothing.
     auto compute(const vector_t& sp, const vector_t& meas, Scalar dt) -> expected<vector_t, pid_step_error>
     {
         if(const auto step = check_step(sp, meas, dt); !step)
@@ -205,17 +154,19 @@ public:
         return u;
     }
 
-    void set_params(const config_type& new_cfg)
+    /// @brief Replace the configuration, or report why it cannot work and keep
+    /// the current one bitwise. Refusals are those of `create`, in its order.
+    auto set_params(const config_type& new_cfg) -> expected<void, pid_config_error>
     {
-        // The integral state is stored in output units (each increment is ki*e*dt and
-        // enters the output directly), so its contribution to the output is already
-        // continuous across a gain change. Leaving the state untouched gives true
-        // bumpless transfer; rescaling it would inject a bump instead of removing one.
+        auto derived = detail::derive_pid_gains(new_cfg);
+        if(!derived)
+            return unexpected(derived.error());
+        // The integral is stored in output units, so its contribution is already continuous across a
+        // gain change: leaving it untouched is the bumpless transfer, rescaling it would inject a bump.
         m_cfg = new_cfg;
-        compute_internal_gains(new_cfg);
-        if constexpr(detail::has_policy_v<anti_windup, Policies...>)
-            initialize_back_calc_gains();
+        m_gains = *derived;
         initialize_perf_config();
+        return {};
     }
 
     const vector_t& error() const { return m_prev_error; }
@@ -258,7 +209,14 @@ public:
     }
 
     void freeze_integral(bool freeze = true) { m_integral_frozen = freeze; }
-    void set_integral(const vector_t& val) { m_integral = val; }
+
+    auto set_integral(const vector_t& val) -> expected<void, pid_config_error>
+    {
+        if(!val.allFinite())
+            return unexpected(pid_config_error::non_finite_integral);
+        m_integral = val;
+        return {};
+    }
 
     template <typename Metric>
     auto metric() const -> const vector_t&
@@ -280,6 +238,11 @@ public:
     }
 
 private:
+    pid(unchecked_t, const config_type& cfg, const detail::pid_gains<Scalar, NY>& gains) : m_cfg{cfg}, m_gains{gains}
+    {
+        initialize_perf_config();
+    }
+
     struct cycle_state
     {
         vector_t integral;
@@ -416,61 +379,6 @@ private:
         return fault;
     }
 
-    void compute_internal_gains(const config_type& cfg)
-    {
-        if constexpr(detail::contains_v<isa_form, Policies...>)
-        {
-            for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-            {
-                if(cfg.ki[i] != Scalar{0})
-                    m_ki[i] = cfg.kp[i] / cfg.ki[i];
-                else
-                    m_ki[i] = Scalar{0};
-                m_kd[i] = cfg.kp[i] * cfg.kd[i];
-                m_kp[i] = cfg.kp[i];
-            }
-        }
-        else
-        {
-            m_kp = cfg.kp;
-            m_ki = cfg.ki;
-            m_kd = cfg.kd;
-        }
-    }
-
-    void initialize_back_calc_gains()
-    {
-        using AW = detail::find_policy_t<anti_windup, Policies...>;
-        if constexpr(std::is_same_v<AW, anti_windup<back_calc>>)
-        {
-            const auto& aw_cfg = m_cfg.template policy<AW>();
-            for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-            {
-                if(aw_cfg.kb[static_cast<std::size_t>(i)] != Scalar{0})
-                    kb_[i] = aw_cfg.kb[static_cast<std::size_t>(i)];
-                else
-                {
-                    // The back-calculation gain multiplies the saturation error
-                    // (u_sat - u_raw, in output units) into the integrator whose rate
-                    // is in output-per-time, so kb must carry units of 1/time. The
-                    // Astrom tracking-time-constant default sets kb = 1/Tt with
-                    // Tt = sqrt(Ti*Td); in the internal parallel gains Ti = kp/ki and
-                    // Td = kd/kp, so 1/Tt = sqrt(ki/kd). With no derivative action the
-                    // tracking time collapses to Ti, giving the fallback kb = ki/kp.
-                    if(m_kd[i] != Scalar{0})
-                        kb_[i] = std::sqrt(m_ki[i] / m_kd[i]);
-                    else if(m_kp[i] != Scalar{0})
-                        kb_[i] = m_ki[i] / m_kp[i];
-                    else
-                        // Pure-I controller: no proportional or derivative reference for
-                        // a tracking time, so disable back-calculation (kb = 0) rather
-                        // than divide by zero.
-                        kb_[i] = Scalar{0};
-                }
-            }
-        }
-    }
-
     void initialize_perf_config()
     {
         if constexpr(detail::has_policy_v<perf_assessment, Policies...>)
@@ -525,10 +433,10 @@ private:
 
     auto compute_velocity_form(const vector_t& e, const vector_t& sp, const vector_t& filtered_sp, const vector_t& filtered_meas, Scalar dt) -> vector_t
     {
-        auto dp = m_kp.cwiseProduct(e - m_prev_error).eval();
-        auto di = (m_ki.cwiseProduct(e) * dt).eval();
+        auto dp = m_gains.kp.cwiseProduct(e - m_prev_error).eval();
+        auto di = (m_gains.ki.cwiseProduct(e) * dt).eval();
         auto d_num = (e - m_prev_error * Scalar{2} + m_prev_prev_error).eval();
-        auto dd = m_kd.cwiseProduct(d_num / dt).eval();
+        auto dd = m_gains.kd.cwiseProduct(d_num / dt).eval();
         auto delta_u = (dp + di + dd).eval();
         delta_u = apply_feed_forward_velocity(delta_u, sp, dt);
         // Clamp the accumulated output to the output limits, not the raw increment,
@@ -594,7 +502,7 @@ private:
         vector_t ep;
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             ep[i] = m_cfg.b[i] * filtered_sp[i] - filtered_meas[i];
-        return m_kp.cwiseProduct(ep).eval();
+        return m_gains.kp.cwiseProduct(ep).eval();
     }
 
     /// @cite astrom2006 -- Ch. 3.3 (integral action, discretization methods)
@@ -604,14 +512,14 @@ private:
         if(!m_integral_frozen)
         {
             if constexpr(detail::contains_v<forward_euler, Policies...>)
-                integral_increment = (m_ki.cwiseProduct(m_prev_error) * dt).eval();
+                integral_increment = (m_gains.ki.cwiseProduct(m_prev_error) * dt).eval();
             else if constexpr(detail::contains_v<tustin, Policies...>)
             {
                 auto avg = ((e + m_prev_error) * Scalar{0.5}).eval();
-                integral_increment = (m_ki.cwiseProduct(avg) * dt).eval();
+                integral_increment = (m_gains.ki.cwiseProduct(avg) * dt).eval();
             }
             else
-                integral_increment = (m_ki.cwiseProduct(e) * dt).eval();
+                integral_increment = (m_gains.ki.cwiseProduct(e) * dt).eval();
             m_integral = (m_integral + integral_increment).eval();
         }
         return {integral_increment, m_integral};
@@ -641,12 +549,12 @@ private:
                 ed_curr[i] = m_cfg.c[i] * filtered_sp[i] - filtered_meas[i];
                 ed_prev[i] = m_cfg.c[i] * m_prev_sp[i] - m_prev_meas[i];
             }
-            return m_kd.cwiseProduct((ed_curr - ed_prev) / dt).eval();
+            return m_gains.kd.cwiseProduct((ed_curr - ed_prev) / dt).eval();
         }
         else
         {
             auto dm_dt = ((filtered_meas - m_prev_meas) / dt).eval();
-            return (-m_kd.cwiseProduct(dm_dt)).eval();
+            return (-m_gains.kd.cwiseProduct(dm_dt)).eval();
         }
     }
 
@@ -656,9 +564,9 @@ private:
         {
             const auto& df_cfg = m_cfg.template policy<deriv_filter>();
             for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-                if(df_cfg.n[static_cast<std::size_t>(i)] > Scalar{0} && m_kp[i] != Scalar{0})
+                if(df_cfg.n[static_cast<std::size_t>(i)] > Scalar{0} && m_gains.kp[i] != Scalar{0})
                 {
-                    Scalar tf = m_kd[i] / (m_kp[i] * df_cfg.n[static_cast<std::size_t>(i)]);
+                    Scalar tf = m_gains.kd[i] / (m_gains.kp[i] * df_cfg.n[static_cast<std::size_t>(i)]);
                     Scalar alpha = tf / (tf + dt);
                     d[i] = alpha * m_prev_deriv_filtered[i] + (Scalar{1} - alpha) * d[i];
                 }
@@ -717,30 +625,39 @@ private:
         {
             using AW = detail::find_policy_t<anti_windup, Policies...>;
             if constexpr(std::is_same_v<AW, anti_windup<back_calc>>)
-            {
-                auto feedback = kb_.cwiseProduct((u_sat - u_unconstrained).eval()).eval();
-                m_integral = (m_integral + feedback * dt).eval();
-            }
+                apply_back_calculation(u_sat, u_unconstrained, dt);
             else if constexpr(std::is_same_v<AW, anti_windup<clamping>>)
-            {
-                // Gate the integral undo per channel on that channel's own constraint
-                // (applied output differs from the unconstrained command), so a
-                // saturated channel does not freeze an unsaturated one.
-                for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-                    if(u_sat[i] != u_unconstrained[i]
-                        && ((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0})))
-                        m_integral[i] -= integral_increment[i];
-            }
+                apply_clamping(u_sat, u_unconstrained, e, integral_increment);
             else if constexpr(std::is_same_v<AW, anti_windup<conditional_integration>>)
-            {
-                const auto& ci_cfg = m_cfg.template policy<AW>();
-                for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-                {
-                    Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
-                    if(abs_e > ci_cfg.error_threshold[static_cast<std::size_t>(i)])
-                        m_integral[i] -= integral_increment[i];
-                }
-            }
+                apply_conditional_integration(e, integral_increment);
+        }
+    }
+
+    void apply_back_calculation(const vector_t& u_sat, const vector_t& u_unconstrained, Scalar dt)
+    {
+        auto feedback = m_gains.kb.cwiseProduct((u_sat - u_unconstrained).eval()).eval();
+        m_integral = (m_integral + feedback * dt).eval();
+    }
+
+    void apply_clamping(const vector_t& u_sat, const vector_t& u_unconstrained, const vector_t& e, const vector_t& integral_increment)
+    {
+        // Gate the integral undo per channel on that channel's own constraint
+        // (applied output differs from the unconstrained command), so a
+        // saturated channel does not freeze an unsaturated one.
+        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
+            if(u_sat[i] != u_unconstrained[i]
+                && ((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0})))
+                m_integral[i] -= integral_increment[i];
+    }
+
+    void apply_conditional_integration(const vector_t& e, const vector_t& integral_increment)
+    {
+        const auto& ci_cfg = m_cfg.template policy<anti_windup<conditional_integration>>();
+        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
+        {
+            Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
+            if(abs_e > ci_cfg.error_threshold[static_cast<std::size_t>(i)])
+                m_integral[i] -= integral_increment[i];
         }
     }
 
@@ -756,10 +673,7 @@ private:
     }
 
     config_type m_cfg;
-    vector_t m_kp = vector_t::Zero();
-    vector_t m_ki = vector_t::Zero();
-    vector_t m_kd = vector_t::Zero();
-    vector_t kb_ = vector_t::Zero();
+    detail::pid_gains<Scalar, NY> m_gains;
     vector_t m_integral = vector_t::Zero();
     vector_t m_prev_error = vector_t::Zero();
     vector_t m_prev_prev_error = vector_t::Zero();

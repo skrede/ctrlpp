@@ -306,7 +306,7 @@ fi
 # require an exemption for every correct call to an infallible surface, and a
 # rule whose exemption list grows as correct code is written is not a ratchet.
 
-fallible_call_names="create|setup|place_observer|place|lqr_gain_continuous|lqr_gain|partition_lqi_gain|lqi_gain|validate_biquad_design|can_rescale_to|rescale_to|dare|care"
+fallible_call_names="create|setup|place_observer|place|lqr_gain_continuous|lqr_gain|partition_lqi_gain|lqi_gain|validate_biquad_design|can_rescale_to|rescale_to|dare|care|set_params|set_integral"
 
 # --- Rule 8's identifier forms ------------------------------------------------
 #
