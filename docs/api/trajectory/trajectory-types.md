@@ -5,6 +5,7 @@ Core output and error types for trajectory generation. `trajectory_point` holds 
 | Property | Value |
 |----------|-------|
 | **Header** | `ctrlpp/trajectory/trajectory_types.h` |
+| **Error header** | `ctrlpp/trajectory/trajectory_error.h` (`spline_error`, `trajectory_error`), included by `trajectory_types.h` |
 
 ## Enum: `spline_error`
 
