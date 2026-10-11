@@ -198,7 +198,7 @@ Returns a const reference to the current config.
 bool saturated() const;
 ```
 
-Returns true if the output was clipped on the most recent `compute()` call.
+Returns true if the output was clipped on the most recent `compute()` call. In velocity form it is true when the accumulated output was clamped to the output limits on that call.
 
 ### reset
 

@@ -2,7 +2,12 @@
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
 
 using Catch::Matchers::WithinAbs;
 
@@ -14,6 +19,45 @@ constexpr double Ts = 0.01;
 constexpr double tol = 1e-12;
 
 Vec1 vec1(double v) { Vec1 r; r << v; return r; }
+
+template <typename S>
+auto vs(S v) -> ctrlpp::Vector<S, 1>
+{
+    return ctrlpp::Vector<S, 1>::Constant(v);
+}
+
+// Inputs lie on a 2^-3 grid below 2^2 and the gains and steps are powers of two, so over eight steps
+// every intermediate of either form, including the halving of the alpha = 1/2 filters, lies on a
+// 2^-18 grid below 2^4: 22 bits, inside float's 24-bit significand. Both sides are then exact and
+// the running sum equals the position output bit for bit; no tolerance is needed.
+template <typename S, typename... Policies>
+auto velocity_position_mismatches(const auto& configure_velocity, const auto& configure_position, bool alternate_dt) -> std::int32_t
+{
+    using VPid = ctrlpp::pid<S, 1, ctrlpp::velocity_form, Policies...>;
+    using PPid = ctrlpp::pid<S, 1, Policies...>;
+    constexpr std::array<double, 8> setpoints{1.0, 1.0, 1.5, 1.5, 2.0, 0.5, 0.5, 1.0};
+    constexpr std::array<double, 8> measurements{0.0, 0.125, 0.375, 0.625, 1.0, 1.125, 0.875, 0.75};
+    const auto gains = [](auto& cfg) { cfg.kp = vs(S{1}); cfg.ki = vs(S{1} / S{2}); cfg.kd = vs(S{1} / S{8}); };
+    typename VPid::config_type vcfg{};
+    typename PPid::config_type pcfg{};
+    gains(vcfg);
+    gains(pcfg);
+    configure_velocity(vcfg);
+    configure_position(pcfg);
+    auto velocity = ctrlpp::test::constructed(VPid::create(vcfg));
+    auto position = ctrlpp::test::constructed(PPid::create(pcfg));
+    S sum{0};
+    std::int32_t mismatches = 0;
+    for(std::size_t k = 0; k < setpoints.size(); ++k)
+    {
+        const S dt = alternate_dt && k % 2 == 1 ? S{1} / S{32} : S{1} / S{64};
+        const auto sp = vs(static_cast<S>(setpoints[k]));
+        const auto meas = vs(static_cast<S>(measurements[k]));
+        sum += ctrlpp::test::commanded(velocity.compute(sp, meas, dt))[0];
+        mismatches += sum == ctrlpp::test::commanded(position.compute(sp, meas, dt))[0] ? 0 : 1;
+    }
+    return mismatches;
+}
 
 }
 
@@ -64,36 +108,59 @@ TEST_CASE("velocity_form PI: includes Ki*e*dt incremental term", "[pid][siso][ve
     REQUIRE_THAT(u3[0], WithinAbs(-0.5 + 0.0025, tol));
 }
 
-TEST_CASE("velocity_form PID: full formula with second-order D difference",
-    "[pid][siso][velocity-form]")
+TEMPLATE_TEST_CASE("velocity_form PID emits no derivative increment on the first step, then a first and a second difference",
+    "[pid][siso][velocity-form]", float, double)
 {
-    using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
-    VPid::config_type cfg{};
-    cfg.kp = vec1(2.0);
-    cfg.ki = vec1(0.5);
-    cfg.kd = vec1(0.1);
+    using S = TestType;
+    using VPid = ctrlpp::pid<S, 1, ctrlpp::velocity_form>;
+    const S kp{2};
+    const S ki = S{1} / S{2};
+    const S kd = S{1} / S{8};
+    const S dt = S{1} / S{64};
+    typename VPid::config_type cfg{};
+    cfg.kp = vs(kp);
+    cfg.ki = vs(ki);
+    cfg.kd = vs(kd);
     auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
-    // Step 1: e(1)=1.0, e(0)=0, e(-1)=0
-    // dP = 2*(1-0) = 2, dI = 0.5*1*0.01 = 0.005
-    // dD = 0.1*(1 - 2*0 + 0)/0.01 = 0.1*100 = 10
-    double du1 = 2.0 + 0.005 + 10.0;
-    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
-    REQUIRE_THAT(u1[0], WithinAbs(du1, tol));
+    const S p1 = kp * (S{1} - S{0});
+    const S du1 = ((p1 - S{0}) + (ki * S{1}) * dt) + (S{0} - S{0});
+    CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt))[0] == du1);
 
-    // Step 2: e(2)=0.8, e(1)=1.0, e(0)=0
-    // dP = 2*(0.8-1.0) = -0.4, dI = 0.5*0.8*0.01 = 0.004
-    // dD = 0.1*(0.8 - 2*1.0 + 0)/0.01 = 0.1*(-1.2/0.01) = 0.1*(-120) = -12
-    double du2 = -0.4 + 0.004 + (-12.0);
-    auto u2 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.2), Ts));
-    REQUIRE_THAT(u2[0], WithinAbs(du2, tol));
+    const S m2 = S{1} / S{4};
+    const S p2 = kp * (S{1} - m2);
+    const S d2 = -(kd * ((m2 - S{0}) / dt));
+    const S du2 = ((p2 - p1) + (ki * (S{1} - m2)) * dt) + (d2 - S{0});
+    CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(m2), dt))[0] == du2);
 
-    // Step 3: e(3)=0.8, e(2)=0.8, e(1)=1.0
-    // dP = 2*(0.8-0.8) = 0, dI = 0.5*0.8*0.01 = 0.004
-    // dD = 0.1*(0.8 - 2*0.8 + 1.0)/0.01 = 0.1*(0.2/0.01) = 0.1*20 = 2
-    double du3 = 0.0 + 0.004 + 2.0;
-    auto u3 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.2), Ts));
-    REQUIRE_THAT(u3[0], WithinAbs(du3, tol));
+    const S d3 = -(kd * ((m2 - m2) / dt));
+    const S du3 = ((p2 - p2) + (ki * (S{1} - m2)) * dt) + (d3 - d2);
+    CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(m2), dt))[0] == du3);
+}
+
+TEMPLATE_TEST_CASE("velocity_form PD setpoint step emits kp*e once, with no derivative kick and no parked offset",
+    "[pid][siso][velocity-form]", float, double)
+{
+    using S = TestType;
+    using VPid = ctrlpp::pid<S, 1, ctrlpp::velocity_form>;
+    const S dt = S{1} / S{1000};
+    for(const bool on_error : {false, true})
+    {
+        CAPTURE(on_error);
+        typename VPid::config_type cfg{};
+        cfg.kp = vs(S{1});
+        cfg.kd = vs(S{1});
+        cfg.output_min = vs(S{-100});
+        cfg.output_max = vs(S{100});
+        cfg.derivative_on_error = on_error;
+        auto pid = ctrlpp::test::constructed(VPid::create(cfg));
+        for(std::int32_t step = 1; step <= 10; ++step)
+        {
+            CAPTURE(step);
+            CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt))[0] == (step == 1 ? S{1} : S{0}));
+            CHECK_FALSE(pid.saturated());
+        }
+    }
 }
 
 TEST_CASE("velocity_form steady-state: delta_u converges to Ki*e*dt",
@@ -107,7 +174,7 @@ TEST_CASE("velocity_form steady-state: delta_u converges to Ki*e*dt",
     auto pid = ctrlpp::test::constructed(VPid::create(cfg));
 
     // First few steps build up history, then with constant error:
-    // dP = 0 (error unchanged), dD = 0 (e(k)-2e(k-1)+e(k-2)=0), dI = Ki*e*dt
+    // dP = 0 (error unchanged), dD = 0 (measurement unchanged), dI = Ki*e*dt
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());  // step 1
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());  // step 2
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts).has_value());  // step 3
@@ -151,7 +218,7 @@ TEST_CASE("velocity_form reset clears history", "[pid][siso][velocity-form][rese
 
     pid.reset();
 
-    // After reset: behaves as first step (prev_error=0, prev_prev_error=0)
+    // After reset: behaves as the first step
     auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
     // dP = 2*(1-0) = 2, dI = 0.5*1*0.01 = 0.005, dD = 0 (Kd=0)
     REQUIRE_THAT(u[0], WithinAbs(2.005, tol));
@@ -260,4 +327,116 @@ TEST_CASE("velocity_form zero dt is rejected rather than answered with the held 
     CHECK(stopped.error() == ctrlpp::pid_step_error::invalid_timestep);
     CHECK(pid.error() == error_before);
     CHECK(pid.health() == ctrlpp::pid_health::ok);
+}
+
+TEMPLATE_TEST_CASE("velocity_form reports saturated exactly on cycles whose accumulated output is clamped",
+    "[pid][siso][velocity-form][clamping]", float, double)
+{
+    using S = TestType;
+    using VPid = ctrlpp::pid<S, 1, ctrlpp::velocity_form>;
+    typename VPid::config_type cfg{};
+    cfg.kp = vs(S{10});
+    cfg.output_min = vs(S{0});
+    cfg.output_max = vs(S{1});
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
+    const S dt = S{1} / S{64};
+
+    CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt))[0] == S{1});
+    CHECK(pid.saturated());
+    CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt))[0] == S{0});
+    CHECK_FALSE(pid.saturated());
+}
+
+TEMPLATE_TEST_CASE("velocity_form derivative increment is exact under non-uniform sampling",
+    "[pid][siso][velocity-form][derivative]", float, double)
+{
+    using S = TestType;
+    using VPid = ctrlpp::pid<S, 1, ctrlpp::velocity_form>;
+    const S kd = S{1} / S{8};
+    for(const bool uniform : {false, true})
+    {
+        CAPTURE(uniform);
+        typename VPid::config_type cfg{};
+        cfg.kd = vs(kd);
+        auto pid = ctrlpp::test::constructed(VPid::create(cfg));
+        S t{0};
+        for(std::int32_t step = 1; step <= 8; ++step)
+        {
+            CAPTURE(step);
+            const S dt = uniform || step % 2 == 1 ? S{1} / S{64} : S{1} / S{32};
+            t += dt;
+            const auto du = ctrlpp::test::commanded(pid.compute(vs(S{0}), vs(t), dt));
+            CHECK(du[0] == (step == 2 ? -kd : S{0}));
+        }
+    }
+}
+
+TEMPLATE_TEST_CASE("velocity_form freeze_integral zeroes the integral increment until unfrozen",
+    "[pid][siso][velocity-form][freeze]", float, double)
+{
+    using S = TestType;
+    using VPid = ctrlpp::pid<S, 1, ctrlpp::velocity_form>;
+    const S ki = S{1} / S{2};
+    const S dt = S{1} / S{64};
+    typename VPid::config_type cfg{};
+    cfg.kp = vs(S{1});
+    cfg.ki = vs(ki);
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
+
+    pid.freeze_integral(true);
+    CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt))[0] == S{1});
+    for(std::int32_t step = 2; step <= 4; ++step)
+        CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt))[0] == S{0});
+    pid.freeze_integral(false);
+    CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt))[0] == (ki * S{1}) * dt);
+}
+
+TEMPLATE_TEST_CASE("velocity_form running sum equals the position form output when no limit binds",
+    "[pid][siso][velocity-form][differential]", float, double)
+{
+    using S = TestType;
+    const auto base = [](auto&) {};
+    SECTION("setpoint weights with the derivative on the weighted error")
+    {
+        const auto weights = [](auto& cfg) { cfg.b = vs(S{1} / S{2}); cfg.c = vs(S{1} / S{4}); cfg.derivative_on_error = true; };
+        CHECK(velocity_position_mismatches<S>(weights, weights, false) == 0);
+    }
+    SECTION("derivative filter")
+    {
+        const auto filter = [](auto& cfg) { cfg.template policy<ctrlpp::deriv_filter>().n = {S{8}}; };
+        CHECK(velocity_position_mismatches<S, ctrlpp::deriv_filter>(filter, filter, false) == 0);
+    }
+    SECTION("forward Euler integration")
+    {
+        CHECK(velocity_position_mismatches<S, ctrlpp::forward_euler>(base, base, false) == 0);
+    }
+    SECTION("Tustin integration")
+    {
+        CHECK(velocity_position_mismatches<S, ctrlpp::tustin>(base, base, false) == 0);
+    }
+    SECTION("setpoint and measurement filters")
+    {
+        const auto filters = [](auto& cfg) {
+            cfg.template policy<ctrlpp::setpoint_filter>().tf = {S{1} / S{64}};
+            cfg.template policy<ctrlpp::pv_filter>().tf = {S{1} / S{64}};
+        };
+        CHECK(velocity_position_mismatches<S, ctrlpp::setpoint_filter, ctrlpp::pv_filter>(filters, filters, false) == 0);
+    }
+    SECTION("feed-forward")
+    {
+        auto ff_func = [](const ctrlpp::Vector<S, 1>& sp, S) -> ctrlpp::Vector<S, 1> { return sp / S{4}; };
+        using FF = ctrlpp::feed_forward<decltype(ff_func)>;
+        const auto feed = [&](auto& cfg) { cfg.template policy<FF>().ff_func = ff_func; };
+        CHECK(velocity_position_mismatches<S, FF>(feed, feed, false) == 0);
+    }
+    SECTION("non-uniform sampling")
+    {
+        CHECK(velocity_position_mismatches<S>(base, base, true) == 0);
+    }
+    SECTION("negative control: a different setpoint weight on one side is detected")
+    {
+        const auto half = [](auto& cfg) { cfg.b = vs(S{1} / S{2}); cfg.c = vs(S{1} / S{4}); cfg.derivative_on_error = true; };
+        const auto unit = [](auto& cfg) { cfg.c = vs(S{1} / S{4}); cfg.derivative_on_error = true; };
+        CHECK(velocity_position_mismatches<S>(half, unit, false) > 0);
+    }
 }

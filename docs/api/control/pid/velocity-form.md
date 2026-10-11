@@ -18,8 +18,12 @@ Instead of computing u(k) directly, the controller computes the change delta_u(k
 
 - No explicit integrator state is maintained internally, eliminating integrator windup.
 - Switching between manual and automatic control is bumpless: the incremental output starts from zero regardless of the previous manual setting.
-- The derivative term uses backward differences of the error rather than the filtered derivative.
-- `output_min` and `output_max` bound the accumulated output, not the individual increment. The emitted increment is the change needed to bring the accumulated output to that clamped value, so the output can both rise and fall against asymmetric limits (for example a valve with `output_min = 0`).
+- The increment is the difference of the position form's own proportional and derivative terms plus the integral increment: `delta_u(k) = (P(k) - P(k-1)) + delta_I(k) + (D(k) - D(k-1))`. `P(k-1)` is recomputed from the previous filtered setpoint and measurement with the current gains, and `D(k-1)` is the derivative term of the previous cycle. When no limit binds, the running sum of the increments equals the position form's output.
+- The first step emits only the proportional and integral increments. The derivative term is zero on the first step, as in the position form, so step 2 emits a first difference and later steps a second difference. A setpoint step does not kick the output and leaves no parked offset.
+- The derivative acts on the measurement unless `derivative_on_error` is set, as in the position form. This is a behavior change: the velocity form previously differentiated the error, so a setpoint step kicked it. With `derivative_on_error` set it differentiates `c*setpoint - measurement`.
+- The setpoint weights `b` and `c`, `deriv_filter`, the integral discretization (the default `ki*e(k)*dt`, or `forward_euler` and `tustin` when composed), `setpoint_filter`, `pv_filter` and `freeze_integral` are honored. While the integral is frozen the integral increment is zero.
+- Non-uniform sampling is exact: each cycle's derivative divides its own measurement difference by its own `dt`, so a measurement ramp sampled at a varying rate produces no spurious derivative increment.
+- `output_min` and `output_max` bound the accumulated output, not the individual increment. The emitted increment is the change needed to bring the accumulated output to that clamped value, so the output can both rise and fall against asymmetric limits (for example a valve with `output_min = 0`). `saturated()` is true exactly on the cycles where this clamp changed the accumulated output.
 - Feed-forward is injected incrementally: the emitted increment carries the change in the feed-forward level, so a constant feed-forward adds nothing to the increment and the actuator does not drift.
 
 ## Usage Example

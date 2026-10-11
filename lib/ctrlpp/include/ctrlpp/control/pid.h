@@ -79,8 +79,8 @@ public:
     /// @brief Produce the control command for one cycle.
     ///
     /// The cycle is classified before any member is written, so a rejected
-    /// cycle leaves every piece of carried state -- the integrator, both error
-    /// histories, the input filter states, the accumulated output -- bitwise
+    /// cycle leaves every piece of carried state -- the integrator, the error
+    /// and derivative histories, the input filter states, the accumulated output -- bitwise
     /// unchanged, and the caller may retry on the next sample.
     ///
     /// **What a refusal means for the caller.** A rejected cycle produced NO
@@ -207,13 +207,10 @@ public:
         m_prev_output = vector_t::Zero();
         m_accumulated_output = vector_t::Zero();
         m_prev_ff = vector_t::Zero();
-        m_prev_prev_error = vector_t::Zero();
-        if constexpr(detail::contains_v<setpoint_filter, Policies...>)
-            m_filtered_sp = vector_t::Zero();
-        if constexpr(detail::contains_v<pv_filter, Policies...>)
-            m_filtered_meas = vector_t::Zero();
-        if constexpr(detail::contains_v<deriv_filter, Policies...>)
-            m_prev_deriv_filtered = vector_t::Zero();
+        m_prev_derivative = vector_t::Zero();
+        m_filtered_sp = vector_t::Zero();
+        m_filtered_meas = vector_t::Zero();
+        m_prev_deriv_filtered = vector_t::Zero();
         m_first_step = true;
         m_integral_frozen = false;
         m_saturated = false;
@@ -266,7 +263,7 @@ private:
     {
         vector_t integral;
         vector_t prev_error;
-        vector_t prev_prev_error;
+        vector_t prev_derivative;
         vector_t prev_meas;
         vector_t prev_sp;
         vector_t prev_output;
@@ -285,7 +282,7 @@ private:
         return cycle_state{
             .integral = m_integral,
             .prev_error = m_prev_error,
-            .prev_prev_error = m_prev_prev_error,
+            .prev_derivative = m_prev_derivative,
             .prev_meas = m_prev_meas,
             .prev_sp = m_prev_sp,
             .prev_output = m_prev_output,
@@ -303,7 +300,7 @@ private:
     {
         m_integral = previous.integral;
         m_prev_error = previous.prev_error;
-        m_prev_prev_error = previous.prev_prev_error;
+        m_prev_derivative = previous.prev_derivative;
         m_prev_meas = previous.prev_meas;
         m_prev_sp = previous.prev_sp;
         m_prev_output = previous.prev_output;
@@ -352,40 +349,21 @@ private:
             return false;
         if constexpr(detail::contains_v<velocity_form, Policies...>)
         {
-            if(!m_accumulated_output.allFinite() || !m_prev_prev_error.allFinite())
+            if(!m_accumulated_output.allFinite() || !m_prev_derivative.allFinite())
                 return false;
         }
-        else
-        {
-            if(!m_integral.allFinite())
-                return false;
-        }
-        if constexpr(detail::contains_v<rate_limit, Policies...>)
-        {
-            if(!m_prev_output.allFinite())
-                return false;
-        }
-        if constexpr(detail::has_policy_v<feed_forward, Policies...>)
-        {
-            if(!m_prev_ff.allFinite())
-                return false;
-        }
-        if constexpr(detail::contains_v<setpoint_filter, Policies...>)
-        {
-            if(!m_filtered_sp.allFinite())
-                return false;
-        }
-        if constexpr(detail::contains_v<pv_filter, Policies...>)
-        {
-            if(!m_filtered_meas.allFinite())
-                return false;
-        }
-        if constexpr(detail::contains_v<deriv_filter, Policies...>)
-        {
-            if(!m_prev_deriv_filtered.allFinite())
-                return false;
-        }
-        return true;
+        else if(!m_integral.allFinite())
+            return false;
+        return policy_state_finite();
+    }
+
+    auto policy_state_finite() const -> bool
+    {
+        return (!detail::contains_v<rate_limit, Policies...> || m_prev_output.allFinite())
+            && (!detail::has_policy_v<feed_forward, Policies...> || m_prev_ff.allFinite())
+            && (!detail::contains_v<setpoint_filter, Policies...> || m_filtered_sp.allFinite())
+            && (!detail::contains_v<pv_filter, Policies...> || m_filtered_meas.allFinite())
+            && (!detail::contains_v<deriv_filter, Policies...> || m_prev_deriv_filtered.allFinite());
     }
 
     /// @brief Latch the persistent status for the one fault that describes the
@@ -450,25 +428,28 @@ private:
             return meas;
     }
 
+    // The incremental form as the first difference of the positional terms, so step 1 has no
+    // derivative increment and each cycle's own dt divides its own difference.
     auto compute_velocity_form(const vector_t& e, const vector_t& sp, const vector_t& filtered_sp, const vector_t& filtered_meas, Scalar dt) -> vector_t
     {
-        auto dp = m_gains.kp.cwiseProduct(e - m_prev_error).eval();
-        auto di = (m_gains.ki.cwiseProduct(e) * dt).eval();
-        auto d_num = (e - m_prev_error * Scalar{2} + m_prev_prev_error).eval();
-        auto dd = m_gains.kd.cwiseProduct(d_num / dt).eval();
-        auto delta_u = (dp + di + dd).eval();
-        delta_u = apply_feed_forward_velocity(delta_u, sp, dt);
-        // Clamp the accumulated output to the output limits, not the raw increment,
-        // then emit the increment that reaches the clamped accumulated output. Clamping
-        // the increment itself would forbid motion against an asymmetric limit (for
-        // example output_min = 0 would make the output monotone non-decreasing);
-        // clamping the accumulated output keeps it in range while still letting it rise
-        // and fall.
+        auto dp = (compute_proportional_term(filtered_sp, filtered_meas) - compute_proportional_term(m_prev_sp, m_prev_meas)).eval();
+        auto d = compute_derivative_term(filtered_sp, filtered_meas, dt);
+        auto delta_u = (dp + integral_increment(e, dt) + (d - m_prev_derivative)).eval();
+        m_prev_derivative = d;
+        auto emitted = accumulate_output(apply_feed_forward_velocity(delta_u, sp, dt));
+        update_state(e, filtered_meas, filtered_sp, emitted);
+        return emitted;
+    }
+
+    // Clamping the accumulated output rather than the increment keeps it in range while still letting it
+    // rise and fall against an asymmetric limit. The clamp returns its input when inside, so != is exact.
+    auto accumulate_output(const vector_t& delta_u) -> vector_t
+    {
         auto target = (m_accumulated_output + delta_u).eval();
         auto clamped = target.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
+        m_saturated = (clamped.array() != target.array()).any();
         auto emitted = (clamped - m_accumulated_output).eval();
         m_accumulated_output = clamped;
-        update_state(e, filtered_meas, filtered_sp, emitted);
         return emitted;
     }
 
@@ -522,23 +503,24 @@ private:
     }
 
     /// @cite astrom2006 -- Ch. 3.3 (integral action, discretization methods)
+    auto integral_increment(const vector_t& e, Scalar dt) const -> vector_t
+    {
+        if(m_integral_frozen)
+            return vector_t::Zero();
+        if constexpr(detail::contains_v<forward_euler, Policies...>)
+            return (m_gains.ki.cwiseProduct(m_prev_error) * dt).eval();
+        else if constexpr(detail::contains_v<tustin, Policies...>)
+            return (m_gains.ki.cwiseProduct(((e + m_prev_error) * Scalar{0.5}).eval()) * dt).eval();
+        else
+            return (m_gains.ki.cwiseProduct(e) * dt).eval();
+    }
+
     auto compute_integral_term(const vector_t& e, Scalar dt) -> std::pair<vector_t, vector_t>
     {
-        vector_t integral_increment = vector_t::Zero();
+        auto increment = integral_increment(e, dt);
         if(!m_integral_frozen)
-        {
-            if constexpr(detail::contains_v<forward_euler, Policies...>)
-                integral_increment = (m_gains.ki.cwiseProduct(m_prev_error) * dt).eval();
-            else if constexpr(detail::contains_v<tustin, Policies...>)
-            {
-                auto avg = ((e + m_prev_error) * Scalar{0.5}).eval();
-                integral_increment = (m_gains.ki.cwiseProduct(avg) * dt).eval();
-            }
-            else
-                integral_increment = (m_gains.ki.cwiseProduct(e) * dt).eval();
-            m_integral = (m_integral + integral_increment).eval();
-        }
-        return {integral_increment, m_integral};
+            m_integral = (m_integral + increment).eval();
+        return {increment, m_integral};
     }
 
     /// @cite astrom2006 -- Ch. 3.4 (derivative action, setpoint weighting c parameter)
@@ -677,7 +659,6 @@ private:
 
     void update_state(const vector_t& e, const vector_t& filtered_meas, const vector_t& filtered_sp, const vector_t& output)
     {
-        m_prev_prev_error = m_prev_error;
         m_prev_error = e;
         m_prev_meas = filtered_meas;
         m_prev_sp = filtered_sp;
@@ -690,7 +671,7 @@ private:
     detail::pid_gains<Scalar, NY> m_gains;
     vector_t m_integral = vector_t::Zero();
     vector_t m_prev_error = vector_t::Zero();
-    vector_t m_prev_prev_error = vector_t::Zero();
+    vector_t m_prev_derivative = vector_t::Zero();
     vector_t m_prev_meas = vector_t::Zero();
     vector_t m_prev_sp = vector_t::Zero();
     vector_t m_prev_output = vector_t::Zero();
