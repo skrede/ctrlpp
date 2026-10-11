@@ -22,13 +22,28 @@ constexpr double tol = 1e-12;
 
 Vec1 vec1(double v) { Vec1 r; r << v; return r; }
 
+struct detector_knobs
+{
+    double load_count_limit;
+    double supervision_periods;
+};
+
+auto default_knobs() -> detector_knobs
+{
+    const ctrlpp::perf_assessment<ctrlpp::oscillation_detect>::config<double, 1> defaults{};
+    return {defaults.load_count_limit, defaults.supervision_periods};
+}
+
 template <typename Scalar, typename PA>
-auto detector_config(Scalar amplitude, Scalar ultimate_frequency) -> typename ctrlpp::pid<Scalar, 1, PA>::config_type
+auto detector_config(Scalar amplitude, Scalar ultimate_frequency, detector_knobs knobs = default_knobs())
+    -> typename ctrlpp::pid<Scalar, 1, PA>::config_type
 {
     typename ctrlpp::pid<Scalar, 1, PA>::config_type cfg{};
     cfg.kp = ctrlpp::Vector<Scalar, 1>::Constant(Scalar{1});
     cfg.template policy<PA>().amplitude = {amplitude};
     cfg.template policy<PA>().ultimate_frequency = {ultimate_frequency};
+    cfg.template policy<PA>().load_count_limit = static_cast<Scalar>(knobs.load_count_limit);
+    cfg.template policy<PA>().supervision_periods = static_cast<Scalar>(knobs.supervision_periods);
     return cfg;
 }
 
@@ -53,12 +68,12 @@ struct detector_run
 // The error is fed as the setpoint against a zero measurement with kp = 1, so the controller's error is
 // the signal itself. Sign changes are counted on that sequence, an exact zero being no sign.
 template <typename Scalar, typename Signal>
-auto run_detector(Scalar amplitude, int steps, Signal&& signal) -> detector_run
+auto run_detector(Scalar amplitude, int steps, Signal&& signal, detector_knobs knobs = default_knobs()) -> detector_run
 {
     using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
     using Pid = ctrlpp::pid<Scalar, 1, PA>;
     using vector_t = typename Pid::vector_t;
-    auto pid = ctrlpp::test::constructed(Pid::create(detector_config<Scalar, PA>(amplitude, ultimate_frequency<Scalar>())));
+    auto pid = ctrlpp::test::constructed(Pid::create(detector_config<Scalar, PA>(amplitude, ultimate_frequency<Scalar>(), knobs)));
     detector_run run{{}, -1, true, 0.0};
     Scalar previous{0};
     for(int k = 0; k < steps; ++k)
@@ -80,16 +95,32 @@ auto run_detector(Scalar amplitude, int steps, Signal&& signal) -> detector_run
 }
 
 // Hagglund's x right after the n-th load event is the sum over the loads so far of gamma^(k_n - k_i), with
-// gamma = 1 - h/T_sup = 1 - 2e-5 per step. Half-period spacing (500 steps) gives gamma^500 ~ 0.990, so ten
-// loads sum to about 9.56 < 10 = n_lim and eleven to about 10.46 > 10: the verdict first holds at the
-// eleventh load. The sum is formed here from the observed load steps rather than the nominal spacing.
-auto load_rate_after(const std::vector<int>& loads, std::size_t n) -> double
+// gamma = 1 - h/T_sup per step (hagglund2002 Sec. 2.1) and T_sup = supervision_periods * T_u. At the default
+// window gamma = 1 - 2e-5; half-period spacing (500 steps) gives gamma^500 ~ 0.990, so ten loads sum to about
+// 9.56 < 10 = n_lim and eleven to about 10.46 > 10: the verdict first holds at the eleventh load. The sum is
+// formed here from the observed load steps rather than the nominal spacing.
+auto forgetting_per_step(double supervision_periods) -> double
 {
-    const double gamma = 1.0 - 0.01 / 500.0;
+    return 1.0 - 0.01 / (supervision_periods * 10.0);
+}
+
+auto load_rate_after(const std::vector<int>& loads, std::size_t n,
+    double gamma = forgetting_per_step(default_knobs().supervision_periods)) -> double
+{
     double x = 0.0;
     for(std::size_t i = 0; i < n; ++i)
         x += std::pow(gamma, loads[n - 1] - loads[i]);
     return x;
+}
+
+// One-based index of the first load whose x exceeds n_lim, or 0 if none does.
+auto first_load_over_limit(const std::vector<int>& loads, detector_knobs knobs) -> std::size_t
+{
+    const double gamma = forgetting_per_step(knobs.supervision_periods);
+    for(std::size_t n = 1; n <= loads.size(); ++n)
+        if(load_rate_after(loads, n, gamma) > knobs.load_count_limit)
+            return n;
+    return 0;
 }
 
 void require_detection_at_eleventh_load(const detector_run& run)
@@ -187,6 +218,46 @@ TEMPLATE_TEST_CASE("oscillation_detect flags a 10 s limit cycle at the eleventh 
     };
     auto const run = run_detector<Scalar>(Scalar{1} / Scalar{2}, 10 * steps_per_period, sine);
     require_detection_at_eleventh_load(run);
+}
+
+// Every sign change of the amplitude-1 limit cycle is a load, spaced 500 steps apart. With n_lim = 5 and
+// the default window the sixth load is the first with x above 5 (the default n_lim = 10 would wait for the
+// eleventh). With a window of 10 T_u, gamma^500 ~ e^-0.05, so x saturates near 20 and first exceeds
+// n_lim = 10 at the fourteenth load, where the default window would already have fired at the eleventh.
+TEMPLATE_TEST_CASE("oscillation_detect honors the load count limit and the supervision window",
+    "[pid][siso][perf-assessment][oscillation]", float, double)
+{
+    using Scalar = TestType;
+    auto const sine = [](int k) {
+        return std::sin(Scalar{2} * std::numbers::pi_v<Scalar> * static_cast<Scalar>(k % steps_per_period) / Scalar{1000});
+    };
+    detector_knobs knobs = default_knobs();
+
+    SECTION("a lower load count limit fires at the sixth load")
+    {
+        knobs.load_count_limit = 5.0;
+        auto const run = run_detector<Scalar>(Scalar{1} / Scalar{2}, 10 * steps_per_period, sine, knobs);
+        REQUIRE(run.sign_changes.size() >= 6);
+        REQUIRE(first_load_over_limit(run.sign_changes, knobs) == 6);
+        REQUIRE(load_rate_after(run.sign_changes, 5) < 5.0);
+        REQUIRE(load_rate_after(run.sign_changes, 6) > 5.0);
+        CAPTURE(run.sign_changes[5], run.first_detection);
+        REQUIRE(run.first_detection == run.sign_changes[5]);
+        REQUIRE(run.held_after_first_detection);
+    }
+
+    SECTION("a shorter supervision window delays the verdict to the fourteenth load")
+    {
+        knobs.supervision_periods = 10.0;
+        auto const run = run_detector<Scalar>(Scalar{1} / Scalar{2}, 10 * steps_per_period, sine, knobs);
+        const std::size_t n = first_load_over_limit(run.sign_changes, knobs);
+        REQUIRE(n == 14);
+        const double gamma = forgetting_per_step(knobs.supervision_periods);
+        REQUIRE(load_rate_after(run.sign_changes, n - 1, gamma) < knobs.load_count_limit);
+        REQUIRE(load_rate_after(run.sign_changes, n, gamma) > knobs.load_count_limit);
+        CAPTURE(run.sign_changes[n - 1], run.first_detection);
+        REQUIRE(run.first_detection == run.sign_changes[n - 1]);
+    }
 }
 
 // At amplitude a/2 the half-period IAE is IAE_lim/2. Sampling moves it by the (omega h)^2/12 ~ 3.3e-6
