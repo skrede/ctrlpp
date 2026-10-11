@@ -79,7 +79,7 @@ cfg.template policy<feed_forward<FF>>().ff_func = my_ff_func;
 | `isa_form` | ISA standard form (Kp, Ti, Td) | (none) | [isa-form](isa-form.md) |
 | `feed_forward<Callable>` | Additive feed-forward | `ff_func` | [feed-forward](feed-forward.md) |
 | `rate_limit` | Output rate limiting | `rate_max` | [rate-limit](rate-limit.md) |
-| `perf_assessment<Metrics...>` | Online performance metrics | (none) | [performance](performance.md) |
+| `perf_assessment<Metrics...>` | Online performance metrics | `amplitude`, `ultimate_frequency`, `load_count_limit`, `supervision_periods` (read only by `oscillation_detect`) | [performance](performance.md) |
 
 ## create
 
@@ -107,6 +107,8 @@ if(!made) {
 | `invalid_back_calculation_gain` | An explicit `anti_windup<back_calc>` gain `kb` is `NaN` or infinite. Zero selects the default gain. | The tracking gain. |
 | `invalid_error_threshold` | An `anti_windup<conditional_integration>` `error_threshold` is `NaN`. | The integration threshold. |
 | `invalid_derivative_filter` | A `deriv_filter` `n` is `NaN` or infinite, or an explicit `tf` is `NaN`, infinite, zero or negative. | The filter divisor or time constant. |
+| `missing_oscillation_parameters` | `perf_assessment` includes `oscillation_detect` and an `amplitude` or `ultimate_frequency` component is not positive and finite. Both default to zero, the unset value. | The acceptable oscillation amplitude and the loop's ultimate frequency. |
+| `invalid_oscillation_supervision` | `perf_assessment` includes `oscillation_detect` and `load_count_limit` or `supervision_periods` is not positive and finite. | The detector's load count limit and window. |
 | `undefined_tracking_time` | `anti_windup<back_calc>` leaves a channel's `kb` at zero, the channel has integral action (`ki != 0`), and its nonzero gains do not share a sign, so the default tracking time does not exist. | An explicit `kb`, or gains of one sign. |
 | `undefined_derivative_filter` | `deriv_filter` is composed, a channel has derivative action (`kd != 0`) and no `tf`, and its default Tf = kd/(kp*n) is not a positive time: `kp` is zero, `n` is zero or negative, or `kd` and `kp` differ in sign. | An explicit `tf`, or a positive `n`. |
 | `unrepresentable_gain` | Each field is finite, but a quantity derived from them is not representable in `Scalar`: in ISA form `kp` over the integral time, or `kp` times the derivative time, overflows; the default derivative filter time constant kd/(kp*n) is not a positive finite number; or the default back-calculation gain is not finite. | Smaller gains, an explicit `tf` or `kb`, or a wider `Scalar`. |
@@ -233,7 +235,7 @@ template <typename Metric>
 const vector_t& metric() const;
 ```
 
-Returns the accumulated value of a performance metric. `Metric` must be one of the types in the `perf_assessment` pack (e.g., `IAE`, `ISE`, `ITAE`, `oscillation_detect`).
+Returns the accumulated value of a performance metric. `Metric` must be one of the types in the `perf_assessment` pack (e.g., `IAE`, `ISE`, `ITAE`, `oscillation_detect`). For `oscillation_detect` the value is the detector state `x` per channel: the exponentially weighted count of load disturbances (see [performance](performance.md#oscillation-detection)).
 
 ### oscillating (requires `perf_assessment` with `oscillation_detect`)
 
@@ -241,7 +243,7 @@ Returns the accumulated value of a performance metric. `Metric` must be one of t
 bool oscillating() const;
 ```
 
-Returns true if the zero-crossing rate exceeds the configured threshold.
+Returns true while the weighted load-disturbance count `x` exceeds `load_count_limit` in any channel. It is a query of the current state, not a latch: it clears by itself as `x` decays. Under a sustained oscillation that holds `x` near the limit it toggles at roughly the half-period cadence; apply hysteresis to `metric<oscillation_detect>()` for a steady signal.
 
 ### reset_metrics (requires `perf_assessment`)
 

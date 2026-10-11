@@ -76,6 +76,22 @@ TEST_CASE("PID instantiates and steps at Scalar=float", "[float][anchor]")
     REQUIRE(std::isfinite(u(0)));
 }
 
+TEST_CASE("PID with every performance metric instantiates and steps at Scalar=float", "[float][anchor]")
+{
+    using assessment = perf_assessment<IAE, ISE, ITAE, oscillation_detect>;
+    pid_config<float, 1, assessment> cfg;
+    cfg.kp = Vector<float, 1>::Constant(1.0f);
+    cfg.policy<assessment>().amplitude = {0.01f};
+    cfg.policy<assessment>().ultimate_frequency = {1.0f};
+
+    auto controller = ctrlpp::test::constructed(pid<float, 1, assessment>::create(cfg));
+    for(float sp : {1.0f, -1.0f, 1.0f})
+        REQUIRE(controller.compute(Vector<float, 1>::Constant(sp), Vector<float, 1>::Zero(), 0.1f).has_value());
+
+    REQUIRE(controller.metric<oscillation_detect>()(0) > 1.0f);
+    REQUIRE_FALSE(controller.oscillating());
+}
+
 TEST_CASE("LQR instantiates and computes at Scalar=float", "[float][anchor]")
 {
     // Constructed directly from a precomputed gain (no DARE solve involved):

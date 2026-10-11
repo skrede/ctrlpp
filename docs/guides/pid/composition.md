@@ -126,7 +126,7 @@ Access policy fields through `cfg.template policy<PolicyType>()`.
 | `rate_limit`                              | Rate-of-change output limiter            |
 | `velocity_form`                           | Incremental (velocity) PID form          |
 | `isa_form`                                | ISA standard form (Ti, Td parameters)    |
-| `perf_assessment<Metrics...>`             | Online performance metrics (IAE, ISE, ITAE) |
+| `perf_assessment<Metrics...>`             | Online performance metrics (IAE, ISE, ITAE, oscillation detection) |
 
 `velocity_form` does not compose with `anti_windup`: the combination is a compile error, because clamping
 the accumulated output already prevents windup.

@@ -62,6 +62,10 @@ public:
     ///  * a NaN conditional-integration error_threshold -> pid_config_error::invalid_error_threshold
     ///  * a NaN or infinite deriv_filter n, or an explicit deriv_filter tf that is
     ///    not finite and positive -> pid_config_error::invalid_derivative_filter
+    ///  * with oscillation_detect, an amplitude or ultimate_frequency component that
+    ///    is not positive and finite -> pid_config_error::missing_oscillation_parameters
+    ///  * with oscillation_detect, a load_count_limit or supervision_periods that is
+    ///    not positive and finite -> pid_config_error::invalid_oscillation_supervision
     ///  * a default back-calculation kb on a channel with integral action whose
     ///    nonzero gains differ in sign -> pid_config_error::undefined_tracking_time
     ///  * a derivative channel without an explicit tf whose kp is zero, whose n is
@@ -116,19 +120,9 @@ public:
         auto filtered_sp = apply_setpoint_filter(sp, dt);
         auto filtered_meas = apply_pv_filter(meas, dt);
         auto e = (filtered_sp - filtered_meas).eval();
-        m_perf.accumulate(e, dt);
-
-        auto result = [&] {
-            if constexpr(detail::contains_v<velocity_form, Policies...>)
-                return compute_velocity_form(
-                    e, sp, filtered_sp, filtered_meas, dt);
-            else
-                return compute_position_form(
-                    e, sp, filtered_sp, filtered_meas, dt);
-        }();
-
-        if(!result.allFinite() || !carried_state_finite()
-            || !m_perf.all_finite())
+        m_perf.accumulate(e, dt, m_cfg);
+        auto result = compute_form(e, sp, filtered_sp, filtered_meas, dt);
+        if(!result.allFinite() || !carried_state_finite() || !m_perf.all_finite())
         {
             restore_cycle_state(previous);
             return unexpected(pid_step_error::non_finite_result);
@@ -192,7 +186,6 @@ public:
         // gain change: leaving it untouched is the bumpless transfer, rescaling it would inject a bump.
         m_cfg = new_cfg;
         m_gains = *derived;
-        initialize_perf_config();
         return {};
     }
 
@@ -226,10 +219,7 @@ public:
         // the status no longer describes anything and clearing it is honest.
         m_health = pid_health::ok;
         if constexpr(detail::has_policy_v<perf_assessment, Policies...>)
-        {
             m_perf.reset();
-            m_perf.set_first_step(true);
-        }
     }
 
     void freeze_integral(bool freeze = true) { m_integral_frozen = freeze; }
@@ -252,7 +242,7 @@ public:
     auto oscillating() const -> bool
         requires detail::has_policy_v<perf_assessment, Policies...>
     {
-        return m_perf.oscillating();
+        return m_perf.oscillating(m_cfg);
     }
 
     void reset_metrics()
@@ -264,7 +254,6 @@ public:
 private:
     pid(unchecked_t, const config_type& cfg, const detail::pid_gains<Scalar, NY>& gains) : m_cfg{cfg}, m_gains{gains}, m_last_non_integral{vector_t::Zero()}
     {
-        initialize_perf_config();
     }
 
     struct cycle_state
@@ -384,16 +373,6 @@ private:
         return fault;
     }
 
-    void initialize_perf_config()
-    {
-        if constexpr(detail::has_policy_v<perf_assessment, Policies...>)
-        {
-            using PA = detail::find_policy_t<perf_assessment, Policies...>;
-            m_perf.set_oscillation_threshold(
-                static_cast<Scalar>(m_cfg.template policy<PA>().crossing_rate_threshold));
-        }
-    }
-
     auto apply_setpoint_filter(const vector_t& sp, Scalar dt) -> vector_t
     {
         if constexpr(detail::contains_v<setpoint_filter, Policies...>)
@@ -434,6 +413,14 @@ private:
         }
         else
             return meas;
+    }
+
+    auto compute_form(const vector_t& e, const vector_t& sp, const vector_t& filtered_sp, const vector_t& filtered_meas, Scalar dt) -> vector_t
+    {
+        if constexpr(detail::contains_v<velocity_form, Policies...>)
+            return compute_velocity_form(e, sp, filtered_sp, filtered_meas, dt);
+        else
+            return compute_position_form(e, sp, filtered_sp, filtered_meas, dt);
     }
 
     // The incremental form as the first difference of the positional terms, so step 1 has no
@@ -680,7 +667,6 @@ private:
         m_prev_sp = filtered_sp;
         m_prev_output = output;
         m_first_step = false;
-        m_perf.set_first_step(false);
     }
 
     config_type m_cfg;

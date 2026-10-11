@@ -33,9 +33,11 @@ auto infinity() -> Scalar
     return std::numeric_limits<Scalar>::infinity();
 }
 
+using oscillation_pa = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
+
 template <typename Scalar>
 using filtered_pid = ctrlpp::pid<Scalar, 2, ctrlpp::isa_form, ctrlpp::setpoint_filter, ctrlpp::pv_filter, ctrlpp::rate_limit,
-                                 ctrlpp::anti_windup<ctrlpp::back_calc>, ctrlpp::deriv_filter>;
+                                 ctrlpp::anti_windup<ctrlpp::back_calc>, ctrlpp::deriv_filter, oscillation_pa>;
 
 template <typename Scalar>
 using conditional_pid = ctrlpp::pid<Scalar, 2, ctrlpp::isa_form, ctrlpp::rate_limit,
@@ -65,6 +67,8 @@ auto filtered_baseline() -> typename filtered_pid<Scalar>::config_type
     cfg.template policy<ctrlpp::pv_filter>().tf = {static_cast<Scalar>(0.02), static_cast<Scalar>(0.02)};
     cfg.template policy<ctrlpp::rate_limit>().rate_max = {Scalar{50}, Scalar{50}};
     cfg.template policy<ctrlpp::deriv_filter>().n = {Scalar{10}, Scalar{10}};
+    cfg.template policy<oscillation_pa>().amplitude = {Scalar{1} / Scalar{100}, Scalar{1} / Scalar{100}};
+    cfg.template policy<oscillation_pa>().ultimate_frequency = {Scalar{1}, Scalar{1}};
     return cfg;
 }
 
@@ -135,6 +139,8 @@ auto filtered_faults() -> std::vector<fault<typename filtered_pid<Scalar>::confi
         {[](C& c) { c.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb[1] = infinity<Scalar>(); },
          pid_config_error::invalid_back_calculation_gain},
         {[](C& c) { c.template policy<ctrlpp::deriv_filter>().n[1] = not_a_number<Scalar>(); }, pid_config_error::invalid_derivative_filter},
+        {[](C& c) { c.template policy<oscillation_pa>().amplitude[1] = Scalar{0}; }, pid_config_error::missing_oscillation_parameters},
+        {[](C& c) { c.template policy<oscillation_pa>().load_count_limit = Scalar{0}; }, pid_config_error::invalid_oscillation_supervision},
         {[](C& c) { c.ki[1] = static_cast<Scalar>(-0.5); }, pid_config_error::undefined_tracking_time},
         {[](C& c) { c.template policy<ctrlpp::deriv_filter>().n[1] = Scalar{0}; }, pid_config_error::undefined_derivative_filter},
         {unrepresentable_fault<C>, pid_config_error::unrepresentable_gain},
@@ -216,7 +222,11 @@ auto same_policies(const typename filtered_pid<Scalar>::config_type& a, const ty
         && same_bits(a.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb,
                      b.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb)
         && same_bits(a.template policy<ctrlpp::deriv_filter>().n, b.template policy<ctrlpp::deriv_filter>().n)
-        && a.template policy<ctrlpp::deriv_filter>().tf == b.template policy<ctrlpp::deriv_filter>().tf;
+        && a.template policy<ctrlpp::deriv_filter>().tf == b.template policy<ctrlpp::deriv_filter>().tf
+        && same_bits(a.template policy<oscillation_pa>().amplitude, b.template policy<oscillation_pa>().amplitude)
+        && same_bits(a.template policy<oscillation_pa>().ultimate_frequency, b.template policy<oscillation_pa>().ultimate_frequency)
+        && a.template policy<oscillation_pa>().load_count_limit == b.template policy<oscillation_pa>().load_count_limit
+        && a.template policy<oscillation_pa>().supervision_periods == b.template policy<oscillation_pa>().supervision_periods;
 }
 
 }
@@ -362,6 +372,31 @@ TEMPLATE_TEST_CASE("PID factory refuses each documented condition", "[pid][confi
         auto threshold = conditional_baseline<Scalar>();
         threshold.template policy<ctrlpp::anti_windup<ctrlpp::conditional_integration>>().error_threshold[1] = not_a_number<Scalar>();
         REQUIRE(refusal_of<conditional_pid<Scalar>>(threshold) == pid_config_error::invalid_error_threshold);
+    }
+
+    SECTION("oscillation detector parameters")
+    {
+        using Detector = ctrlpp::pid<Scalar, 2, oscillation_pa>;
+        using Assessed = ctrlpp::pid<Scalar, 2, ctrlpp::perf_assessment<ctrlpp::IAE>>;
+        REQUIRE(Assessed::create(typename Assessed::config_type{}).has_value());
+        REQUIRE(refusal_of<Detector>(typename Detector::config_type{}) == pid_config_error::missing_oscillation_parameters);
+
+        typename Detector::config_type valid{};
+        valid.template policy<oscillation_pa>().amplitude = {Scalar{1}, Scalar{1}};
+        valid.template policy<oscillation_pa>().ultimate_frequency = {Scalar{1}, Scalar{1}};
+        REQUIRE(Detector::create(valid).has_value());
+        for(auto const bad : {not_a_number<Scalar>(), infinity<Scalar>(), Scalar{0}, Scalar{-1}})
+        {
+            auto amplitude = valid, frequency = valid, count = valid, window = valid;
+            amplitude.template policy<oscillation_pa>().amplitude[1] = bad;
+            frequency.template policy<oscillation_pa>().ultimate_frequency[1] = bad;
+            count.template policy<oscillation_pa>().load_count_limit = bad;
+            window.template policy<oscillation_pa>().supervision_periods = bad;
+            REQUIRE(refusal_of<Detector>(amplitude) == pid_config_error::missing_oscillation_parameters);
+            REQUIRE(refusal_of<Detector>(frequency) == pid_config_error::missing_oscillation_parameters);
+            REQUIRE(refusal_of<Detector>(count) == pid_config_error::invalid_oscillation_supervision);
+            REQUIRE(refusal_of<Detector>(window) == pid_config_error::invalid_oscillation_supervision);
+        }
     }
 
     SECTION("ISA internal gains that overflow")

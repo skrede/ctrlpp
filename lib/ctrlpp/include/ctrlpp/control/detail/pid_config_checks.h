@@ -137,6 +137,31 @@ auto derivative_filter_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> 
         return true;
 }
 
+template <typename Scalar>
+auto positive_finite(Scalar value) -> bool
+{
+    return value > Scalar{0} && std::isfinite(value);
+}
+
+template <typename Scalar, std::size_t NY, typename... Policies>
+auto oscillation_detector_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> ctrlpp::expected<void, pid_config_error>
+{
+    if constexpr(has_policy_v<perf_assessment, Policies...>)
+    {
+        using PA = find_policy_t<perf_assessment, Policies...>;
+        if constexpr(perf_has_metric_v<oscillation_detect, PA>)
+        {
+            const auto& detector = cfg.template policy<PA>();
+            if(!std::ranges::all_of(detector.amplitude, positive_finite<Scalar>)
+               || !std::ranges::all_of(detector.ultimate_frequency, positive_finite<Scalar>))
+                return ctrlpp::unexpected(pid_config_error::missing_oscillation_parameters);
+            if(!positive_finite(detector.load_count_limit) || !positive_finite(detector.supervision_periods))
+                return ctrlpp::unexpected(pid_config_error::invalid_oscillation_supervision);
+        }
+    }
+    return {};
+}
+
 template <typename Scalar, std::size_t NY, typename... Policies>
 auto check_policy_fields(const pid_config<Scalar, NY, Policies...>& cfg) -> ctrlpp::expected<void, pid_config_error>
 {
@@ -148,7 +173,7 @@ auto check_policy_fields(const pid_config<Scalar, NY, Policies...>& cfg) -> ctrl
         return anti_windup_fields;
     if(!derivative_filter_valid(cfg))
         return ctrlpp::unexpected(pid_config_error::invalid_derivative_filter);
-    return {};
+    return oscillation_detector_valid(cfg);
 }
 
 }

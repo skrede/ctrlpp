@@ -138,21 +138,20 @@ struct oscillation_detect
 {
 };
 
-// Default oscillation verdict threshold in zero-crossings per second. A sustained
-// error sign change rate above this marks a limit cycle.
-/// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3
-inline constexpr double default_crossing_rate_threshold = 5.0;
-
 template <typename... Metrics>
 struct perf_assessment
 {
     using metrics = std::tuple<Metrics...>;
 
+    template <typename Scalar, std::size_t N>
     struct config
     {
-        // Zero-crossing rate (per second) above which oscillating() reports a limit
-        // cycle. Used only when oscillation_detect is among the metrics.
-        double crossing_rate_threshold{default_crossing_rate_threshold};
+        std::array<Scalar, N> amplitude{};          // error units; required by oscillation_detect
+        std::array<Scalar, N> ultimate_frequency{}; // rad/s; required by oscillation_detect
+        /// @cite hagglund1995 -- Hagglund, "A control-loop performance monitor", 1995 (n_lim, via hagglund2002 Sec. 2.1)
+        Scalar load_count_limit{10};
+        /// @cite hagglund1995 -- T_sup = 5 n_lim T_u, in ultimate periods (via hagglund2002 Sec. 2.1)
+        Scalar supervision_periods{50};
     };
 };
 

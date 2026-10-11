@@ -88,7 +88,7 @@ enum class pid_health
 /// @brief Structured failure modes of `pid::create`, `pid::set_params` and
 /// `pid::set_integral`.
 ///
-/// The first twelve are checked by `create` and `set_params` in the order
+/// The first fourteen are checked by `create` and `set_params` in the order
 /// listed; a configuration with several faults reports the first. Where a
 /// condition names the internal gains, those are the parallel gains: in ISA form
 /// kp/Ti and kp*Td.
@@ -118,6 +118,14 @@ enum class pid_health
 ///  * invalid_derivative_filter     : a deriv_filter n is NaN or infinite, or
 ///                                    an explicit filter time constant tf is
 ///                                    NaN, infinite, zero or negative.
+///  * missing_oscillation_parameters : oscillation_detect is composed and an
+///                                    amplitude or ultimate_frequency component
+///                                    is not positive and finite. Both default
+///                                    to zero, the unset value: the detector
+///                                    has no scale without them.
+///  * invalid_oscillation_supervision : oscillation_detect is composed and
+///                                    load_count_limit or supervision_periods
+///                                    is not positive and finite.
 ///  * undefined_tracking_time       : back_calc leaves a channel's kb at its
 ///                                    default, the channel's internal ki is
 ///                                    nonzero, and the nonzero internal kp, ki
@@ -150,6 +158,8 @@ enum class pid_config_error
     invalid_back_calculation_gain,
     invalid_error_threshold,
     invalid_derivative_filter,
+    missing_oscillation_parameters,
+    invalid_oscillation_supervision,
     undefined_tracking_time,
     undefined_derivative_filter,
     unrepresentable_gain,
