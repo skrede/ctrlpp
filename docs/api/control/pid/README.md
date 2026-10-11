@@ -75,7 +75,7 @@ cfg.template policy<feed_forward<FF>>().ff_func = my_ff_func;
 | `deriv_filter` | Low-pass filtered derivative | `n`, `tf` | [derivative-filter](derivative-filter.md) |
 | `setpoint_filter` | Setpoint prefilter | `tf` | [setpoint-filter](setpoint-filter.md) |
 | `pv_filter` | Process variable filter | `tf` | [setpoint-filter](setpoint-filter.md) |
-| `velocity_form` | Incremental output form | (none) | [velocity-form](velocity-form.md) |
+| `velocity_form` | Incremental output form; does not compose with `anti_windup` | (none) | [velocity-form](velocity-form.md) |
 | `isa_form` | ISA standard form (Kp, Ti, Td) | (none) | [isa-form](isa-form.md) |
 | `feed_forward<Callable>` | Additive feed-forward | `ff_func` | [feed-forward](feed-forward.md) |
 | `rate_limit` | Output rate limiting | `rate_max` | [rate-limit](rate-limit.md) |
@@ -144,11 +144,13 @@ auto compute(const vector_t& sp, const vector_t& meas, Scalar dt,
     -> expected<vector_t, pid_step_error>;
 ```
 
-Overload for controller output tracking (bumpless transfer in cascade configurations). The tracking signal adjusts the integral term so the controller output tracks an external signal.
+Overload for controller output tracking (bumpless transfer in cascade configurations). After the cycle succeeds the controller is re-seeded so its output tracks an external signal, and the returned value is that cycle's own computed command, or increment in velocity form. Position form re-seeds the integrator; velocity form re-seeds the accumulated output.
 
 In position form, after the cycle succeeds the integrator is assigned `I = clamp(w, output_min, output_max) - (P + D + FF)`, where `w` is the tracking signal and `P + D + FF` is the sum of the proportional, derivative and feed-forward terms of the cycle that formed the output, taken before rate limiting and saturation. It is not reconstructed from the returned command, which may have been saturated or rate-limited, and the anti-windup step of that cycle has no influence on it. A target outside the output limits is clamped first, so the integrator never holds an offset that drives the unconstrained command past a limit. For example, with `kp = 1`, `ki = 0.1`, limits of `+-10`, setpoint 20 and measurement 0, tracking 5 leaves the integrator at -15, and tracking 50 leaves it at `10 - 20 = -10`.
 
-The tracking signal is checked *before* the cycle is delegated, because it is written straight into the integrator once the cycle succeeds: admitting a non-finite one would destroy the integrator after the cycle had already committed its other state. A rejection from the delegated cycle is forwarded unchanged with its own specific cause, and the tracking assignment does not run.
+In velocity form, after the cycle succeeds the accumulated output is assigned `clamp(w, output_min, output_max)`, and the next cycle's increment is accumulated from it. For example, with `kp = 1` and limits of `+-10`, a cycle at setpoint 1 tracking 9.5 re-seeds the accumulated output to 9.5, and a following setpoint step to 3 emits 0.5 and reports `saturated()`.
+
+The tracking signal is checked *before* the cycle is delegated, because it is written straight into carried state once the cycle succeeds: admitting a non-finite one would destroy that state after the cycle had already committed the rest. A rejection from the delegated cycle is forwarded unchanged with its own specific cause, and the tracking assignment does not run.
 
 ### health
 

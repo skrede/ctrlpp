@@ -52,6 +52,8 @@ No additional config fields. The integrator is simply frozen when the output is 
 
 A channel counts as constrained when the rate limiter clipped it or the output clamp saturated it. The verdict comes from the limiter and the clamp themselves, never from comparing the applied output with the unconstrained command, so a composed rate limiter that does not clip leaves anti-windup exactly as it is without one.
 
+`anti_windup` does not compose with `velocity_form`: the combination is a compile error whose message states that clamping the accumulated output already prevents windup. See [velocity-form](velocity-form.md).
+
 While `freeze_integral` holds the integrator, no strategy changes it, back-calculation included: a frozen integrator cannot wind up, so the explicit hold takes precedence. Back-calculation resumes on the first cycle after the integrator is unfrozen.
 
 ## Usage Example
@@ -100,7 +102,7 @@ int main()
 ## See Also
 
 - [PID overview](README.md)<br/> parent PID documentation
-- [velocity-form](velocity-form.md)<br/> bumpless transfer via incremental output
+- [velocity-form](velocity-form.md)<br/> incremental output, which refuses anti_windup
 - [rate-limit](rate-limit.md)<br/>output rate limiting
 - [guides/pid/composition](../../../guides/pid/composition.md)<br/>composing policies
 - [background/pid](../../../background/pid.md)<br/>anti-windup theory

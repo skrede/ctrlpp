@@ -25,6 +25,9 @@ Instead of computing u(k) directly, the controller computes the change delta_u(k
 - Non-uniform sampling is exact: each cycle's derivative divides its own measurement difference by its own `dt`, so a measurement ramp sampled at a varying rate produces no spurious derivative increment.
 - `output_min` and `output_max` bound the accumulated output, not the individual increment. The emitted increment is the change needed to bring the accumulated output to that clamped value, so the output can both rise and fall against asymmetric limits (for example a valve with `output_min = 0`). `saturated()` is true exactly on the cycles where this clamp changed the accumulated output.
 - Feed-forward is injected incrementally: the emitted increment carries the change in the feed-forward level, so a constant feed-forward adds nothing to the increment and the actuator does not drift.
+- With `rate_limit` composed, each channel's increment, feed-forward increment included, is clipped to `+-rate_max * dt` before it is accumulated. A channel within its bound, or with `rate_max` at zero or `+inf`, passes its increment through bit for bit. The clipped part of an increment is dropped, not carried into later cycles: the controller does not catch up on a change the limiter refused.
+- The tracking overload of `compute` re-seeds the accumulated output to the tracking signal clamped to `output_min` and `output_max`, after the cycle succeeds. It returns that cycle's computed increment, and the next cycle accumulates from the re-seeded value. `integral()` stays zero.
+- Composing `velocity_form` with any `anti_windup` strategy is a compile error: clamping the accumulated output already prevents windup. The accumulated output never moves past a limit, so inhibiting integration while the output saturates, which is equivalent to back-calculation (Astrom, *Control System Design*, 2002, Sec. 6.5), is built into the form.
 
 ## Usage Example
 
@@ -71,7 +74,7 @@ int main()
 ## See Also
 
 - [PID overview](README.md)<br/> parent PID documentation
-- [anti-windup](anti-windup.md)<br/> explicit anti-windup for position form
+- [anti-windup](anti-windup.md)<br/> anti-windup strategies for the position form; they do not compose with velocity_form
 - [isa-form](isa-form.md)<br/>ISA standard PID parametrization
 - [guides/pid/composition](../../../guides/pid/composition.md)<br/>composing policies
 - [background/pid](../../../background/pid.md)<br/>velocity form derivation

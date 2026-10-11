@@ -8,6 +8,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
 
@@ -188,22 +189,6 @@ TEST_CASE("velocity_form steady-state: delta_u converges to Ki*e*dt",
     REQUIRE_THAT(u5[0], WithinAbs(0.02, tol));
 }
 
-TEST_CASE("velocity_form + anti_windup compiles and runs (anti-windup is no-op)",
-    "[pid][siso][velocity-form][anti-windup]")
-{
-    using VPid = ctrlpp::pid<double, 1,
-        ctrlpp::velocity_form, ctrlpp::anti_windup<ctrlpp::back_calc>>;
-    VPid::config_type cfg{};
-    cfg.kp = vec1(1.0);
-    cfg.ki = vec1(0.5);
-    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
-
-    // Should produce same result as without anti_windup
-    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
-    // dP = 1*(1-0) = 1, dI = 0.5*1*0.01 = 0.005
-    REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
-}
-
 TEST_CASE("velocity_form reset clears history", "[pid][siso][velocity-form][reset]")
 {
     using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
@@ -253,23 +238,37 @@ TEST_CASE("velocity_form injects the change in feed-forward so a constant feed-f
     REQUIRE_THAT(u3[0], WithinAbs(0.0, tol));
 }
 
-TEST_CASE("velocity_form tracking signal is a no-op (integral not modified)",
-    "[pid][siso][velocity-form][tracking]")
+TEMPLATE_TEST_CASE("velocity_form tracking re-seeds the accumulated output to the clamped tracking signal",
+    "[pid][siso][velocity-form][tracking]", float, double)
 {
-    using VPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form>;
-    VPid::config_type cfg{};
-    cfg.kp = vec1(1.0);
-    cfg.ki = vec1(0.5);
-    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
+    using S = TestType;
+    using VPid = ctrlpp::pid<S, 1, ctrlpp::velocity_form>;
+    typename VPid::config_type cfg{};
+    cfg.kp = vs(S{1});
+    cfg.output_min = vs(S{-10});
+    cfg.output_max = vs(S{10});
+    const S dt = S{1} / S{64};
+    const auto tracked_then_stepped = [&](S w) {
+        auto pid = ctrlpp::test::constructed(VPid::create(cfg));
+        CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt))[0] == S{1});
+        CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt, vs(w)))[0] == S{0});
+        CHECK(pid.integral()[0] == S{0});
+        const S increment = ctrlpp::test::commanded(pid.compute(vs(S{3}), vs(S{0}), dt))[0];
+        return std::pair{increment, pid.saturated()};
+    };
 
-    // Run a step with tracking; velocity form should ignore tracking signal
-    // (the if constexpr branch for !velocity_form is not entered)
-    auto u1 = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts, vec1(99.0)));
-    // dP = 1*(1-0) = 1, dI = 0.5*1*0.01 = 0.005
-    REQUIRE_THAT(u1[0], WithinAbs(1.005, tol));
-
-    // Integral should be zero (velocity form doesn't maintain position-form integral)
-    REQUIRE_THAT(pid.integral()[0], WithinAbs(0.0, tol));
+    SECTION("a target inside the limits")
+    {
+        const auto [increment, saturated] = tracked_then_stepped(S{19} / S{2});
+        CHECK(increment == S{1} / S{2});
+        CHECK(saturated);
+    }
+    SECTION("a target past the upper limit re-seeds to the limit")
+    {
+        const auto [increment, saturated] = tracked_then_stepped(S{50});
+        CHECK(increment == S{0});
+        CHECK(saturated);
+    }
 }
 
 TEST_CASE("velocity_form clamps the accumulated output so it can rise and fall under an asymmetric limit",
@@ -438,5 +437,52 @@ TEMPLATE_TEST_CASE("velocity_form running sum equals the position form output wh
         const auto half = [](auto& cfg) { cfg.b = vs(S{1} / S{2}); cfg.c = vs(S{1} / S{4}); cfg.derivative_on_error = true; };
         const auto unit = [](auto& cfg) { cfg.c = vs(S{1} / S{4}); cfg.derivative_on_error = true; };
         CHECK(velocity_position_mismatches<S>(half, unit, false) > 0);
+    }
+}
+
+TEMPLATE_TEST_CASE("velocity_form clips each increment to the rate bound and carries no remainder",
+    "[pid][siso][velocity-form][rate-limit]", float, double)
+{
+    using S = TestType;
+    using VPid = ctrlpp::pid<S, 1, ctrlpp::velocity_form, ctrlpp::rate_limit>;
+    typename VPid::config_type cfg{};
+    cfg.kp = vs(S{10});
+    cfg.output_min = vs(S{-100});
+    cfg.output_max = vs(S{100});
+    cfg.template policy<ctrlpp::rate_limit>().rate_max = {S{1}};
+    auto pid = ctrlpp::test::constructed(VPid::create(cfg));
+    const S dt = S{1} / S{64};
+
+    CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt))[0] == S{1} / S{64});
+    CHECK_FALSE(pid.saturated());
+    CHECK(ctrlpp::test::commanded(pid.compute(vs(S{1}), vs(S{0}), dt))[0] == S{0});
+    CHECK_FALSE(pid.saturated());
+}
+
+// rate_max = 1e6 cannot bind: |dP| <= 2 for these inputs, |D| <= kd*(3/8)/dt = 3 so |dD| <= 6, and the
+// integral increment is below 1/32, so every increment stays below 9 against a per-cycle bound of 15625.
+TEMPLATE_TEST_CASE("velocity_form with an idle rate limiter emits the unlimited increments bit for bit",
+    "[pid][siso][velocity-form][rate-limit]", float, double)
+{
+    using S = TestType;
+    using LimitedPid = ctrlpp::pid<S, 1, ctrlpp::velocity_form, ctrlpp::rate_limit>;
+    using FreePid = ctrlpp::pid<S, 1, ctrlpp::velocity_form>;
+    constexpr std::array<double, 8> setpoints{1.0, 1.0, 1.5, 1.5, 2.0, 0.5, 0.5, 1.0};
+    constexpr std::array<double, 8> measurements{0.0, 0.125, 0.375, 0.625, 1.0, 1.125, 0.875, 0.75};
+    const auto gains = [](auto& cfg) { cfg.kp = vs(S{1}); cfg.ki = vs(S{1} / S{2}); cfg.kd = vs(S{1} / S{8}); };
+    typename LimitedPid::config_type lcfg{};
+    typename FreePid::config_type fcfg{};
+    gains(lcfg);
+    gains(fcfg);
+    lcfg.template policy<ctrlpp::rate_limit>().rate_max = {static_cast<S>(1e6)};
+    auto limited = ctrlpp::test::constructed(LimitedPid::create(lcfg));
+    auto unlimited = ctrlpp::test::constructed(FreePid::create(fcfg));
+    const S dt = S{1} / S{64};
+    for(std::size_t k = 0; k < setpoints.size(); ++k)
+    {
+        CAPTURE(k);
+        const auto sp = vs(static_cast<S>(setpoints[k]));
+        const auto meas = vs(static_cast<S>(measurements[k]));
+        CHECK(ctrlpp::test::commanded(limited.compute(sp, meas, dt))[0] == ctrlpp::test::commanded(unlimited.compute(sp, meas, dt))[0]);
     }
 }

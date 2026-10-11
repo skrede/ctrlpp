@@ -20,6 +20,8 @@ Fields added to `pid_config` when this policy is active:
 
 The limiter runs per channel, after the PID command is formed and before the output clamp. `rate_max` is in output units per second, so the bound for one cycle is `rate_max * dt`. When the requested change `u_new - u_prev` exceeds `+rate_max * dt`, the output becomes `u_prev + rate_max * dt`; when it falls below `-rate_max * dt`, it becomes `u_prev - rate_max * dt`; either way the channel is reported as clipped. A channel within its bound, or with `rate_max` at zero or `+inf`, passes the command through bit for bit, so composing a limiter that never binds changes neither the output nor the integrator.
 
+In velocity form the limiter clips the emitted increment itself: each channel's increment is bounded to `+-rate_max * dt` before it is added to the accumulated output, and the clipped part is not carried into later cycles. The output clamp then applies to the accumulated output as usual. See [velocity-form](velocity-form.md).
+
 Rate limiting interacts with anti-windup: the constraint verdict is the limiter's own clip report together with the output clamp's, per channel, so a channel the limiter did not clip never engages clamping anti-windup. Back-calculation feeds back against the command taken before the limiter, so a rate-limited ramp drives the integrator back just as output saturation does.
 
 ## Usage Example

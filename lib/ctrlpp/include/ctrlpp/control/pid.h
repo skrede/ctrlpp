@@ -24,6 +24,9 @@ namespace ctrlpp
 template <typename Scalar, std::size_t NY, typename... Policies>
 class pid
 {
+    static_assert(!(detail::contains_v<velocity_form, Policies...> && detail::has_policy_v<anti_windup, Policies...>),
+        "anti_windup does not compose with velocity_form: clamping the accumulated output already prevents windup");
+
     struct unchecked_t
     {
         explicit unchecked_t() = default;
@@ -133,23 +136,26 @@ public:
         return result;
     }
 
-    /// @brief Produce the control command for one cycle and back-assign the
-    /// integrator so the output tracks an external signal (bumpless transfer).
+    /// @brief Produce the control command for one cycle and re-seed the
+    /// controller so the output tracks an external signal (bumpless transfer).
     ///
-    /// The integrator becomes the tracking signal clamped to the output limits,
-    /// minus the cycle's proportional, derivative and feed-forward terms taken
-    /// before rate limiting and saturation, so it never holds an offset that
-    /// drives the unconstrained command past a limit.
+    /// The returned value is the cycle's own computed command, or increment in
+    /// the velocity form. In the position form the integrator becomes the
+    /// tracking signal clamped to the output limits, minus the cycle's
+    /// proportional, derivative and feed-forward terms taken before rate
+    /// limiting and saturation, so it never holds an offset that drives the
+    /// unconstrained command past a limit. In the velocity form the accumulated
+    /// output becomes the clamped tracking signal.
     ///
     /// The tracking signal is checked BEFORE the cycle is delegated, because it
-    /// is written straight into the integrator once the cycle succeeds:
-    /// admitting a non-finite one would destroy the integrator after the cycle
+    /// is written straight into carried state once the cycle succeeds:
+    /// admitting a non-finite one would destroy that state after the cycle
     /// had already committed its other state, which is exactly the
     /// partially-applied step the reject-before-mutate rule exists to forbid.
     ///
     /// A rejection from the delegated cycle is forwarded unchanged, carrying
     /// its own specific cause, and the tracking assignment is not performed --
-    /// so a rejected cycle leaves the integrator bitwise unchanged here too.
+    /// so a rejected cycle leaves the carried state bitwise unchanged here too.
     auto compute(const vector_t& sp, const vector_t& meas, Scalar dt, const vector_t& tracking_signal) -> expected<vector_t, pid_step_error>
     {
         if(!tracking_signal.allFinite())
@@ -159,9 +165,11 @@ public:
         auto u = compute(sp, meas, dt);
         if(!u)
             return u;
-        if constexpr(!detail::contains_v<velocity_form, Policies...>)
+        auto target = tracking_signal.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
+        if constexpr(detail::contains_v<velocity_form, Policies...>)
+            m_accumulated_output = target;
+        else
         {
-            auto target = tracking_signal.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
             auto next_integral = (target - m_last_non_integral).eval();
             if(!next_integral.allFinite())
             {
@@ -436,7 +444,7 @@ private:
         auto d = compute_derivative_term(filtered_sp, filtered_meas, dt);
         auto delta_u = (dp + integral_increment(e, dt) + (d - m_prev_derivative)).eval();
         m_prev_derivative = d;
-        auto emitted = accumulate_output(apply_feed_forward_velocity(delta_u, sp, dt));
+        auto emitted = accumulate_output(clip_increment(apply_feed_forward_velocity(delta_u, sp, dt), dt).value);
         update_state(e, filtered_meas, filtered_sp, emitted);
         return emitted;
     }
@@ -591,21 +599,29 @@ private:
 
     auto apply_rate_limit(const vector_t& u_raw, Scalar dt) const -> limited_command
     {
-        limited_command limited{u_raw, mask_t::Constant(false)};
+        if constexpr(!detail::contains_v<rate_limit, Policies...>)
+            return {u_raw, mask_t::Constant(false)};
+        auto limited = clip_increment((u_raw - m_prev_output).eval(), dt);
+        // Re-forming p + (u - p) rounds, so a channel within its bound keeps its input bit for bit.
+        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
+            limited.value[i] = limited.clipped[i] ? m_prev_output[i] + limited.value[i] : u_raw[i];
+        return limited;
+    }
+
+    // A zero rate leaves its channel unlimited, and an infinite one gives an infinite bound that never binds.
+    auto clip_increment(const vector_t& delta, Scalar dt) const -> limited_command
+    {
+        limited_command limited{delta, mask_t::Constant(false)};
         if constexpr(detail::contains_v<rate_limit, Policies...>)
         {
             const auto& rate_max = m_cfg.template policy<rate_limit>().rate_max;
             for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             {
                 const Scalar rate = rate_max[static_cast<std::size_t>(i)];
-                if(!(rate > Scalar{0}) || rate == std::numeric_limits<Scalar>::infinity())
-                    continue;
                 const Scalar step = rate * dt;
-                const Scalar delta = u_raw[i] - m_prev_output[i];
-                // Re-forming p + (u - p) rounds, so a channel within its bound keeps its input bit for bit.
-                if(delta > step || delta < -step)
+                if(rate > Scalar{0} && (delta[i] > step || delta[i] < -step))
                 {
-                    limited.value[i] = m_prev_output[i] + (delta > step ? step : -step);
+                    limited.value[i] = delta[i] > step ? step : -step;
                     limited.clipped[i] = true;
                 }
             }

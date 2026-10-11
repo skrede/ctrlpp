@@ -128,6 +128,9 @@ Access policy fields through `cfg.template policy<PolicyType>()`.
 | `isa_form`                                | ISA standard form (Ti, Td parameters)    |
 | `perf_assessment<Metrics...>`             | Online performance metrics (IAE, ISE, ITAE) |
 
+`velocity_form` does not compose with `anti_windup`: the combination is a compile error, because clamping
+the accumulated output already prevents windup.
+
 ## Zero-Cost Abstraction
 
 Policies are resolved entirely at compile time. A `pid<double, 1>` with

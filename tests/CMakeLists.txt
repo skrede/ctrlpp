@@ -123,75 +123,70 @@ if (CTRLPP_BUILD_TESTS)
     endif ()
     get_target_property(CTRLPP_CANARY_EIGEN_INCLUDE
         ${CTRLPP_CANARY_EIGEN_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
-    try_compile(
-        CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_COMPILED
-        SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/recursive_arx_arity_canary.cpp
-        CMAKE_FLAGS
-            "-DCMAKE_CXX_STANDARD=20"
-            "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
-            "-DCMAKE_CXX_EXTENSIONS=OFF"
-            "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include;${CTRLPP_CANARY_EIGEN_INCLUDE}"
-        OUTPUT_VARIABLE CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_OUTPUT
-    )
+    function(ctrlpp_try_canary result source)
+        try_compile(${result}
+            SOURCES ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/compile/${source}
+            CMAKE_FLAGS
+                "-DCMAKE_CXX_STANDARD=20"
+                "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+                "-DCMAKE_CXX_EXTENSIONS=OFF"
+                "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include;${CTRLPP_CANARY_EIGEN_INCLUDE}"
+            COMPILE_DEFINITIONS ${ARGN}
+            OUTPUT_VARIABLE output)
+        set(${result} ${${result}} PARENT_SCOPE)
+        set(${result}_OUTPUT "${output}" PARENT_SCOPE)
+    endfunction()
+    ctrlpp_try_canary(CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_COMPILED recursive_arx_arity_canary.cpp)
     if (NOT CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_COMPILED)
         message(FATAL_ERROR
             "The recursive ARX arity canary is not a valid positive control: its "
             "three-argument arm does not compile.\n"
-            "${CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_OUTPUT}")
+            "${CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_COMPILED_OUTPUT}")
     endif ()
-    try_compile(
-        CTRLPP_RECURSIVE_ARX_ARITY_COMPILED
-        SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/recursive_arx_arity_canary.cpp
-        CMAKE_FLAGS
-            "-DCMAKE_CXX_STANDARD=20"
-            "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
-            "-DCMAKE_CXX_EXTENSIONS=OFF"
-            "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include;${CTRLPP_CANARY_EIGEN_INCLUDE}"
-        COMPILE_DEFINITIONS -DCTRLPP_CANARY_FIVE_PARAMETER_ARITY
-        OUTPUT_VARIABLE CTRLPP_RECURSIVE_ARX_ARITY_OUTPUT
-    )
+    ctrlpp_try_canary(CTRLPP_RECURSIVE_ARX_ARITY_COMPILED recursive_arx_arity_canary.cpp -DCTRLPP_CANARY_FIVE_PARAMETER_ARITY)
     if (CTRLPP_RECURSIVE_ARX_ARITY_COMPILED)
         message(FATAL_ERROR
             "A five-argument recursive ARX instantiation compiled successfully; "
             "the estimator still accepts the wider arity.\n"
-            "${CTRLPP_RECURSIVE_ARX_ARITY_OUTPUT}")
+            "${CTRLPP_RECURSIVE_ARX_ARITY_COMPILED_OUTPUT}")
     endif ()
 
     # No runtime test can observe a constructor that is never called, so a
     # refusal to compile is the only observable evidence that the unchecked PID
     # construction path is closed.
-    try_compile(
-        CTRLPP_PID_CONSTRUCTOR_BASELINE_COMPILED
-        SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/pid_private_constructor_canary.cpp
-        CMAKE_FLAGS
-            "-DCMAKE_CXX_STANDARD=20"
-            "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
-            "-DCMAKE_CXX_EXTENSIONS=OFF"
-            "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include;${CTRLPP_CANARY_EIGEN_INCLUDE}"
-        OUTPUT_VARIABLE CTRLPP_PID_CONSTRUCTOR_BASELINE_OUTPUT
-    )
+    ctrlpp_try_canary(CTRLPP_PID_CONSTRUCTOR_BASELINE_COMPILED pid_private_constructor_canary.cpp)
     if (NOT CTRLPP_PID_CONSTRUCTOR_BASELINE_COMPILED)
         message(FATAL_ERROR
             "The pid constructor canary is not a valid positive control: its "
             "create arm does not compile.\n"
-            "${CTRLPP_PID_CONSTRUCTOR_BASELINE_OUTPUT}")
+            "${CTRLPP_PID_CONSTRUCTOR_BASELINE_COMPILED_OUTPUT}")
     endif ()
-    try_compile(
-        CTRLPP_PID_DIRECT_CONSTRUCTION_COMPILED
-        SOURCES ${CMAKE_CURRENT_LIST_DIR}/compile/pid_private_constructor_canary.cpp
-        CMAKE_FLAGS
-            "-DCMAKE_CXX_STANDARD=20"
-            "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
-            "-DCMAKE_CXX_EXTENSIONS=OFF"
-            "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include;${CTRLPP_CANARY_EIGEN_INCLUDE}"
-        COMPILE_DEFINITIONS -DCTRLPP_CANARY_PID_DIRECT_CONSTRUCTION
-        OUTPUT_VARIABLE CTRLPP_PID_DIRECT_CONSTRUCTION_OUTPUT
-    )
+    ctrlpp_try_canary(CTRLPP_PID_DIRECT_CONSTRUCTION_COMPILED pid_private_constructor_canary.cpp -DCTRLPP_CANARY_PID_DIRECT_CONSTRUCTION)
     if (CTRLPP_PID_DIRECT_CONSTRUCTION_COMPILED)
         message(FATAL_ERROR
             "A direct pid construction compiled; the constructor is not private.\n"
-            "${CTRLPP_PID_DIRECT_CONSTRUCTION_OUTPUT}")
+            "${CTRLPP_PID_DIRECT_CONSTRUCTION_COMPILED_OUTPUT}")
     endif ()
+
+    # A composed policy that does nothing is invisible at run time, so each anti-windup strategy must fail
+    # to compile with velocity_form, and for the stated reason rather than an unrelated error.
+    ctrlpp_try_canary(CTRLPP_PID_VELOCITY_BASELINE_COMPILED pid_velocity_anti_windup_canary.cpp)
+    if (NOT CTRLPP_PID_VELOCITY_BASELINE_COMPILED)
+        message(FATAL_ERROR
+            "The pid velocity anti-windup canary is not a valid positive control: "
+            "its velocity_form arm does not compile.\n"
+            "${CTRLPP_PID_VELOCITY_BASELINE_COMPILED_OUTPUT}")
+    endif ()
+    foreach (strategy back_calc clamping conditional_integration)
+        ctrlpp_try_canary(CTRLPP_PID_VELOCITY_${strategy}_COMPILED pid_velocity_anti_windup_canary.cpp
+            -DCTRLPP_CANARY_VELOCITY_ANTI_WINDUP=ctrlpp::${strategy})
+        set(output "${CTRLPP_PID_VELOCITY_${strategy}_COMPILED_OUTPUT}")
+        if (CTRLPP_PID_VELOCITY_${strategy}_COMPILED)
+            message(FATAL_ERROR "velocity_form with anti_windup<${strategy}> compiled.\n${output}")
+        elseif (NOT output MATCHES "already prevents windup")
+            message(FATAL_ERROR "velocity_form with anti_windup<${strategy}> failed for another reason.\n${output}")
+        endif ()
+    endforeach ()
 
     if (CTRLPP_CMAKE_FETCH_DEPS)
         FetchContent_Declare(
