@@ -144,3 +144,92 @@ TEMPLATE_TEST_CASE("Tracking overrides the back-calculation step of the tracked 
     auto pid = saturated_tracking<Scalar, ctrlpp::anti_windup<ctrlpp::back_calc>>(Scalar{5});
     REQUIRE(pid.integral()[0] == Scalar{-15});
 }
+
+TEMPLATE_TEST_CASE("Tracking re-anchors the rate limiter on the tracked command",
+    "[pid][siso][tracking][rate-limit][bumpless]", float, double)
+{
+    using Scalar = TestType;
+    using Pid = ctrlpp::pid<Scalar, 1, ctrlpp::rate_limit>;
+    using Vec = ctrlpp::Vector<Scalar, 1>;
+    typename Pid::config_type cfg{};
+    cfg.kp = Vec::Constant(Scalar{1});
+    cfg.ki = Vec::Constant(Scalar{1} / Scalar{2});
+    cfg.output_min = Vec::Constant(Scalar{-10});
+    cfg.output_max = Vec::Constant(Scalar{10});
+    cfg.template policy<ctrlpp::rate_limit>().rate_max = {Scalar{1}};
+    auto pid = ctrlpp::test::constructed(Pid::create(cfg));
+    const Scalar dt = Scalar{1} / Scalar{64};
+    const Scalar w = Scalar{1} / Scalar{2};
+    const Vec sp = Vec::Constant(Scalar{1});
+    const Vec meas = Vec::Constant(Scalar{0});
+    Vec u = Vec::Zero();
+    for(int k = 0; k < 4; ++k)
+        u = ctrlpp::test::commanded(pid.compute(sp, meas, dt));
+    REQUIRE(u[0] == Scalar{4} * dt);
+    REQUIRE(ctrlpp::test::commanded(pid.compute(sp, meas, dt, Vec::Constant(w)))[0] == Scalar{5} * dt);
+
+    const Scalar p = Scalar{1};
+    const Scalar tracked = w - (p + Scalar{0});
+    REQUIRE(pid.integral()[0] == tracked);
+    const Scalar integral = tracked + (cfg.ki[0] * Scalar{1}) * dt;
+    const Scalar expected = (p + integral) + Scalar{0};
+    u = ctrlpp::test::commanded(pid.compute(sp, meas, dt));
+    REQUIRE(u[0] >= w - dt);
+    REQUIRE(u[0] <= w + dt);
+    REQUIRE(u[0] == expected);
+}
+
+TEMPLATE_TEST_CASE("Tracking clears the carried clamping verdict",
+    "[pid][siso][tracking][clamping]", float, double)
+{
+    using Scalar = TestType;
+    using Pid = ctrlpp::pid<Scalar, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
+    using Vec = ctrlpp::Vector<Scalar, 1>;
+    typename Pid::config_type cfg{};
+    cfg.kp = Vec::Constant(Scalar{1});
+    cfg.ki = Vec::Constant(Scalar{1} / Scalar{2});
+    cfg.output_min = Vec::Constant(Scalar{-1});
+    cfg.output_max = Vec::Constant(Scalar{1});
+    auto pid = ctrlpp::test::constructed(Pid::create(cfg));
+    const Scalar dt = Scalar{1} / Scalar{64};
+    const Scalar e = Scalar{2};
+    const Vec sp = Vec::Constant(e);
+    const Vec meas = Vec::Constant(Scalar{0});
+    REQUIRE(pid.compute(sp, meas, dt).has_value());
+    REQUIRE(pid.saturated());
+    REQUIRE(pid.compute(sp, meas, dt, Vec::Constant(Scalar{1} / Scalar{2})).has_value());
+    REQUIRE(pid.saturated());
+
+    const Scalar tracked = Scalar{1} / Scalar{2} - (e + Scalar{0});
+    REQUIRE(pid.integral()[0] == tracked);
+    const Scalar integral = tracked + (cfg.ki[0] * e) * dt;
+    auto u = ctrlpp::test::commanded(pid.compute(sp, meas, dt));
+    REQUIRE(pid.integral()[0] == integral);
+    REQUIRE(u[0] == (e + integral) + Scalar{0});
+    REQUIRE_FALSE(pid.saturated());
+}
+
+TEMPLATE_TEST_CASE("Tracking assigns a frozen integrator and the freeze still holds afterward",
+    "[pid][siso][tracking][freeze]", float, double)
+{
+    using Scalar = TestType;
+    using Pid = ctrlpp::pid<Scalar, 1>;
+    using Vec = ctrlpp::Vector<Scalar, 1>;
+    typename Pid::config_type cfg{};
+    cfg.kp = Vec::Constant(Scalar{1});
+    cfg.ki = Vec::Constant(Scalar{1} / Scalar{2});
+    auto pid = ctrlpp::test::constructed(Pid::create(cfg));
+    const Scalar dt = Scalar{1} / Scalar{64};
+    const Scalar p = Scalar{1} / Scalar{4};
+    const Vec sp = Vec::Constant(p);
+    const Vec meas = Vec::Constant(Scalar{0});
+    REQUIRE(pid.set_integral(Vec::Constant(Scalar{1} / Scalar{4})).has_value());
+    pid.freeze_integral(true);
+    REQUIRE(pid.compute(sp, meas, dt, Vec::Constant(Scalar{1})).has_value());
+
+    const Scalar tracked = Scalar{1} - (p + Scalar{0});
+    REQUIRE(pid.integral()[0] == tracked);
+    auto u = ctrlpp::test::commanded(pid.compute(sp, meas, dt));
+    REQUIRE(pid.integral()[0] == tracked);
+    REQUIRE(u[0] == Scalar{1});
+}

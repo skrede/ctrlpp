@@ -143,6 +143,15 @@ public:
     /// unconstrained command past a limit. In the velocity form the accumulated
     /// output becomes the clamped tracking signal.
     ///
+    /// In the position form the rate limiter's anchor also becomes the clamped
+    /// tracking signal and the carried clamping verdict is cleared, so the next
+    /// automatic cycle neither rate-limits from the discarded automatic command
+    /// nor withholds its increment on that command's constraint.
+    ///
+    /// Tracking assigns the integrator even while `freeze_integral` holds it:
+    /// like `set_integral` it is an explicit assignment, and the freeze holds the
+    /// integrator only against the integral increment and anti-windup.
+    ///
     /// The tracking signal is checked BEFORE the cycle is delegated, because it
     /// is written straight into carried state once the cycle succeeds:
     /// admitting a non-finite one would destroy that state after the cycle
@@ -161,18 +170,10 @@ public:
         auto u = compute(sp, meas, dt);
         if(!u)
             return u;
-        auto target = tracking_signal.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
-        if constexpr(detail::contains_v<velocity_form, Policies...>)
-            m_accumulated_output = target;
-        else
+        if(!track(tracking_signal.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval()))
         {
-            auto next_integral = (target - m_last_non_integral).eval();
-            if(!next_integral.allFinite())
-            {
-                restore_cycle_state(previous);
-                return unexpected(pid_step_error::non_finite_result);
-            }
-            m_integral = std::move(next_integral);
+            restore_cycle_state(previous);
+            return unexpected(pid_step_error::non_finite_result);
         }
         return u;
     }
@@ -316,6 +317,23 @@ private:
         m_perf = previous.performance;
         m_first_step = previous.first_step;
         m_saturated = previous.saturated;
+    }
+
+    auto track(const vector_t& target) -> bool
+    {
+        if constexpr(detail::contains_v<velocity_form, Policies...>)
+            m_accumulated_output = target;
+        else
+        {
+            auto next_integral = (target - m_last_non_integral).eval();
+            if(!next_integral.allFinite())
+                return false;
+            m_integral = std::move(next_integral);
+            // The actuator received the tracked command, not the automatic one.
+            m_prev_output = target;
+            m_constraint_direction = direction_t::Zero();
+        }
+        return true;
     }
 
     /// @brief Classify a cycle's operands without touching a single member.

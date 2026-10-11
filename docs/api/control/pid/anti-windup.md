@@ -54,7 +54,7 @@ A channel counts as constrained when the rate limiter clipped it or the output c
 
 `anti_windup` does not compose with `velocity_form`: the combination is a compile error whose message states that clamping the accumulated output already prevents windup. See [velocity-form](velocity-form.md).
 
-While `freeze_integral` holds the integrator, no strategy changes it, back-calculation included: a frozen integrator cannot wind up, so the explicit hold takes precedence. Back-calculation resumes on the first cycle after the integrator is unfrozen. Clamping still records each frozen cycle's constraint, so the first cycle after unfreezing withholds an increment that would push further into a limit the last frozen cycle met.
+While `freeze_integral` holds the integrator, no strategy changes it, back-calculation included: a frozen integrator cannot wind up, so the explicit hold takes precedence. Back-calculation resumes on the first cycle after the integrator is unfrozen. Clamping still records each frozen cycle's constraint, so the first cycle after unfreezing withholds an increment that would push further into a limit the last frozen cycle met. The freeze does not block the explicit assignments: `set_integral` and the tracking overload of `compute` write a frozen integrator, and tracking also clears the carried clamping verdict, since the command it re-seeds lies within the limits.
 
 ## Usage Example
 

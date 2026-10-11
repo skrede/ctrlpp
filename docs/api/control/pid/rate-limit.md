@@ -22,6 +22,8 @@ The limiter runs per channel, after the PID command is formed and before the out
 
 In velocity form the limiter clips the emitted increment itself: each channel's increment is bounded to `+-rate_max * dt` before it is added to the accumulated output, and the clipped part is not carried into later cycles. The output clamp then applies to the accumulated output as usual. See [velocity-form](velocity-form.md).
 
+The anchor `u_prev` is the previous cycle's applied output. After a cycle of the tracking overload of `compute`, the position form sets it to the tracking signal clamped to `output_min` and `output_max` instead, since that is the command the actuator received, so the first automatic cycle after a manual-to-automatic switch rate-limits from the tracked command rather than from the discarded automatic one. See [compute (with tracking signal)](README.md#compute-with-tracking-signal).
+
 Rate limiting interacts with anti-windup: the constraint verdict is the limiter's own clip report together with the output clamp's, per channel, so a channel the limiter did not clip never engages clamping anti-windup. Back-calculation feeds back against the command taken before the limiter, so a rate-limited ramp drives the integrator back just as output saturation does.
 
 ## Usage Example

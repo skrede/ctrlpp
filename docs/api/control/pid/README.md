@@ -150,6 +150,13 @@ Overload for controller output tracking (bumpless transfer in cascade configurat
 
 In position form, after the cycle succeeds the integrator is assigned `I = clamp(w, output_min, output_max) - (P + D + FF)`, where `w` is the tracking signal and `P + D + FF` is the sum of the proportional, derivative and feed-forward terms of the cycle that formed the output, taken before rate limiting and saturation. It is not reconstructed from the returned command, which may have been saturated or rate-limited, and the anti-windup step of that cycle has no influence on it. A target outside the output limits is clamped first, so the integrator never holds an offset that drives the unconstrained command past a limit. For example, with `kp = 1`, `ki = 0.1`, limits of `+-10`, setpoint 20 and measurement 0, tracking 5 leaves the integrator at -15, and tracking 50 leaves it at `10 - 20 = -10`.
 
+The position form re-seeds two more pieces of carried state, so the first automatic cycle after tracking starts from the command the actuator actually received:
+
+- With `rate_limit`, the limiter's anchor becomes `clamp(w, output_min, output_max)`, not the discarded automatic command. For example, with `kp = 1`, `ki = 0.5`, `rate_max = 1`, `dt = 1/64`, setpoint 1 and measurement 0, four automatic cycles ramp the output to `4/64`; a tracking cycle at `w = 0.5` returns `5/64`, and the next automatic cycle emits `0.5 + 1/128` instead of ramping on from `5/64` to `6/64`.
+- With `anti_windup<clamping>`, the carried constraint verdict is cleared, so the next automatic cycle does not withhold its increment on the constraint of the command that tracking replaced.
+
+Tracking assigns the integrator even while `freeze_integral` holds it. Like `set_integral` it is an explicit assignment, not anti-windup, and the freeze stays in force afterward: the following automatic cycles leave the tracked integrator unchanged until it is unfrozen.
+
 In velocity form, after the cycle succeeds the accumulated output is assigned `clamp(w, output_min, output_max)`, and the next cycle's increment is accumulated from it. For example, with `kp = 1` and limits of `+-10`, a cycle at setpoint 1 tracking 9.5 re-seeds the accumulated output to 9.5, and a following setpoint step to 3 emits 0.5 and reports `saturated()`.
 
 The tracking signal is checked *before* the cycle is delegated, because it is written straight into carried state once the cycle succeeds: admitting a non-finite one would destroy that state after the cycle had already committed the rest. A rejection from the delegated cycle is forwarded unchanged with its own specific cause, and the tracking assignment does not run.
@@ -218,7 +225,7 @@ Resets all internal state (integral, previous error, filter states, performance 
 void freeze_integral(bool freeze = true);
 ```
 
-Freezes or unfreezes the integral accumulator. While frozen, the integral term does not change, including through back-calculation anti-windup, which resumes once the accumulator is unfrozen.
+Freezes or unfreezes the integral accumulator. While frozen, the integral term does not change, including through back-calculation anti-windup, which resumes once the accumulator is unfrozen. The freeze holds the integrator against the integral increment and anti-windup only: the explicit assignments, `set_integral` and the tracking overload of `compute`, still write it.
 
 ### set_integral
 
