@@ -136,6 +136,11 @@ public:
     /// @brief Produce the control command for one cycle and back-assign the
     /// integrator so the output tracks an external signal (bumpless transfer).
     ///
+    /// The integrator becomes the tracking signal clamped to the output limits,
+    /// minus the cycle's proportional, derivative and feed-forward terms taken
+    /// before rate limiting and saturation, so it never holds an offset that
+    /// drives the unconstrained command past a limit.
+    ///
     /// The tracking signal is checked BEFORE the cycle is delegated, because it
     /// is written straight into the integrator once the cycle succeeds:
     /// admitting a non-finite one would destroy the integrator after the cycle
@@ -156,8 +161,8 @@ public:
             return u;
         if constexpr(!detail::contains_v<velocity_form, Policies...>)
         {
-            auto non_integral = (*u - m_integral).eval();
-            auto next_integral = (tracking_signal - non_integral).eval();
+            auto target = tracking_signal.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
+            auto next_integral = (target - m_last_non_integral).eval();
             if(!next_integral.allFinite())
             {
                 restore_cycle_state(previous);
@@ -252,7 +257,7 @@ public:
     }
 
 private:
-    pid(unchecked_t, const config_type& cfg, const detail::pid_gains<Scalar, NY>& gains) : m_cfg{cfg}, m_gains{gains}
+    pid(unchecked_t, const config_type& cfg, const detail::pid_gains<Scalar, NY>& gains) : m_cfg{cfg}, m_gains{gains}, m_last_non_integral{vector_t::Zero()}
     {
         initialize_perf_config();
     }
@@ -586,17 +591,16 @@ private:
 
     auto compute_raw_output(const vector_t& p, const vector_t& integral, const vector_t& d, const vector_t& sp, Scalar dt) -> vector_t
     {
-        return apply_feed_forward((p + integral + d).eval(), sp, dt);
-    }
-
-    auto apply_feed_forward(vector_t u_raw, const vector_t& sp, Scalar dt) -> vector_t
-    {
+        auto u_raw = (p + integral + d).eval();
+        m_last_non_integral = (p + d).eval();
         if constexpr(detail::has_policy_v<feed_forward, Policies...>)
         {
             using ff_policy_t = detail::find_policy_t<feed_forward, Policies...>;
             if constexpr(!std::is_same_v<ff_policy_t, feed_forward<void>>)
             {
-                auto ff = m_cfg.template policy<ff_policy_t>().ff_func(sp, dt);
+                // The feed-forward callable may be stateful, so it is evaluated once per cycle.
+                const vector_t ff = m_cfg.template policy<ff_policy_t>().ff_func(sp, dt);
+                m_last_non_integral += ff;
                 return (u_raw + ff).eval();
             }
         }
@@ -695,6 +699,8 @@ private:
     vector_t m_filtered_sp = vector_t::Zero();
     vector_t m_filtered_meas = vector_t::Zero();
     vector_t m_prev_deriv_filtered = vector_t::Zero();
+    // Per-cycle scratch, read only right after a successful cycle, so it is not part of the snapshot.
+    vector_t m_last_non_integral;
     pid_performance_tracker<Scalar, NY, Policies...> m_perf;
     bool m_first_step{true};
     bool m_integral_frozen{false};

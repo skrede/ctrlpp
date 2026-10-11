@@ -2,6 +2,7 @@
 #include "ctrlpp/pid.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 using Catch::Matchers::WithinAbs;
@@ -15,6 +16,25 @@ constexpr double Ts = 0.01;
 constexpr double tol = 1e-12;
 
 Vec1 vec1(double v) { Vec1 r; r << v; return r; }
+
+template <typename Scalar, typename... Policies>
+auto saturated_tracking(Scalar tracking) -> ctrlpp::pid<Scalar, 1, Policies...>
+{
+    using Pid = ctrlpp::pid<Scalar, 1, Policies...>;
+    using Vec = ctrlpp::Vector<Scalar, 1>;
+    typename Pid::config_type cfg{};
+    cfg.kp = Vec::Constant(Scalar{1});
+    cfg.ki = Vec::Constant(Scalar{1} / Scalar{10});
+    cfg.output_min = Vec::Constant(Scalar{-10});
+    cfg.output_max = Vec::Constant(Scalar{10});
+    if constexpr(sizeof...(Policies) > 0)
+        cfg.template policy<Policies...>().kb = {Scalar{1}};
+    auto pid = ctrlpp::test::constructed(Pid::create(cfg));
+    const Scalar dt = Scalar{1} / Scalar{100};
+    REQUIRE(pid.compute(Vec::Constant(Scalar{20}), Vec::Constant(Scalar{0}), dt, Vec::Constant(tracking)).has_value());
+    REQUIRE(pid.saturated());
+    return pid;
+}
 
 }
 
@@ -82,41 +102,45 @@ TEST_CASE("Tracking with feed_forward: integral accounts for ff contribution",
     auto pid = ctrlpp::test::constructed(FfPid::create(cfg));
 
     // Step with tracking signal = 10.0
-    // u = compute(sp, meas, Ts) includes ff contribution
-    // non_integral = u - integral, integral = tracking - non_integral
+    // integral = tracking - (P + D + FF)
     REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts, vec1(10.0)).has_value());
 
     // P = 1*(1-0) = 1.0, I = 0.5*1*0.01 = 0.005, D = 0 (first step), FF = 1*2 = 2.0
-    // u = 1.0 + 0.005 + 0 + 2.0 = 3.005
-    // non_integral = u - integral = 3.005 - 0.005 = 3.0
-    // new integral = tracking - non_integral = 10.0 - 3.0 = 7.0
+    // new integral = tracking - (P + D + FF) = 10.0 - 3.0 = 7.0
     REQUIRE_THAT(pid.integral()[0], WithinAbs(7.0, tol));
 }
 
-TEST_CASE("Tracking after saturation resets integral appropriately",
-    "[pid][siso][tracking][saturation]")
+TEMPLATE_TEST_CASE("Tracking after saturation assigns the integrator from the unconstrained terms",
+    "[pid][siso][tracking][saturation]", float, double)
 {
-    SisoPid::config_type cfg{};
-    cfg.kp = vec1(10.0);
-    cfg.ki = vec1(1.0);
-    cfg.output_max = vec1(5.0);
-    cfg.output_min = vec1(-5.0);
-    auto pid = ctrlpp::test::constructed(SisoPid::create(cfg));
+    using Scalar = TestType;
+    using Vec = ctrlpp::Vector<Scalar, 1>;
+    const Scalar ki = Scalar{1} / Scalar{10};
+    const Scalar dt = Scalar{1} / Scalar{100};
+    const Scalar e = 20;
+    auto pid = saturated_tracking<Scalar>(Scalar{5});
+    REQUIRE(pid.integral()[0] == Scalar{-15});
 
-    // Drive into saturation
-    for (int i = 0; i < 20; ++i)
-        REQUIRE(pid.compute(vec1(10.0), vec1(0.0), Ts).has_value());
+    // The next automatic output is 5 before this cycle's own integral increment.
+    const Scalar increment = (ki * e) * dt;
+    const Scalar integral = Scalar{-15} + increment;
+    const Scalar expected = (Scalar{20} + integral) + Scalar{0};
+    auto u = ctrlpp::test::commanded(pid.compute(Vec::Constant(e), Vec::Constant(Scalar{0}), dt));
+    REQUIRE(u[0] == expected);
+}
 
-    REQUIRE(pid.saturated() == true);
+TEMPLATE_TEST_CASE("Tracking clamps a target outside the output limits",
+    "[pid][siso][tracking][saturation]", float, double)
+{
+    using Scalar = TestType;
+    REQUIRE(saturated_tracking<Scalar>(Scalar{50}).integral()[0] == Scalar{-10});
+    REQUIRE(saturated_tracking<Scalar>(Scalar{-50}).integral()[0] == Scalar{-30});
+}
 
-    // Now use tracking to pull integral back to a reasonable value
-    REQUIRE(pid.compute(vec1(1.0), vec1(0.0), Ts, vec1(2.0)).has_value());
-
-    // P = 10*1 = 10, clamped output = 5
-    // non_integral = output - integral_before_tracking_adjustment
-    // After tracking: integral = 2.0 - (5 - integral)
-    // The integral should now be adjusted so next auto output is near 2.0
-    auto u = ctrlpp::test::commanded(pid.compute(vec1(1.0), vec1(0.0), Ts));
-    // Should be within reasonable range of the tracking target
-    REQUIRE(u[0] < 10.0);
+TEMPLATE_TEST_CASE("Tracking overrides the back-calculation step of the tracked cycle",
+    "[pid][siso][tracking][saturation][backcalc]", float, double)
+{
+    using Scalar = TestType;
+    auto pid = saturated_tracking<Scalar, ctrlpp::anti_windup<ctrlpp::back_calc>>(Scalar{5});
+    REQUIRE(pid.integral()[0] == Scalar{-15});
 }

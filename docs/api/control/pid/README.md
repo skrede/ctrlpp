@@ -146,6 +146,8 @@ auto compute(const vector_t& sp, const vector_t& meas, Scalar dt,
 
 Overload for controller output tracking (bumpless transfer in cascade configurations). The tracking signal adjusts the integral term so the controller output tracks an external signal.
 
+In position form, after the cycle succeeds the integrator is assigned `I = clamp(w, output_min, output_max) - (P + D + FF)`, where `w` is the tracking signal and `P + D + FF` is the sum of the proportional, derivative and feed-forward terms of the cycle that formed the output, taken before rate limiting and saturation. It is not reconstructed from the returned command, which may have been saturated or rate-limited, and the anti-windup step of that cycle has no influence on it. A target outside the output limits is clamped first, so the integrator never holds an offset that drives the unconstrained command past a limit. For example, with `kp = 1`, `ki = 0.1`, limits of `+-10`, setpoint 20 and measurement 0, tracking 5 leaves the integrator at -15, and tracking 50 leaves it at `10 - 20 = -10`.
+
 The tracking signal is checked *before* the cycle is delegated, because it is written straight into the integrator once the cycle succeeds: admitting a non-finite one would destroy the integrator after the cycle had already committed its other state. A rejection from the delegated cycle is forwarded unchanged with its own specific cause, and the tracking assignment does not run.
 
 ### health
