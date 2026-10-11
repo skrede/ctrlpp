@@ -124,7 +124,7 @@ auto compute(const vector_t& sp, const vector_t& meas, Scalar dt)
 
 Computes the control output given a setpoint, measurement, and time step. On success the result carries the clamped output vector.
 
-The cycle is classified before any member is written, so a rejected cycle leaves every piece of carried state -- the integrator, both error histories, the input filter states, the accumulated output -- bitwise unchanged, and the caller may retry on the next sample.
+The cycle is classified before any member is written, so a rejected cycle leaves every piece of carried state -- the integrator, the error and derivative histories, the input filter states, the accumulated output -- bitwise unchanged, and the caller may retry on the next sample.
 
 **A refused cycle produced no command.** That is a different situation from an estimator declining a measurement, where the estimate simply stands: an actuator will be driven by something regardless of what `compute` returns, and the caller must choose what. The three defensible responses are to hold the command the last successful cycle returned, to command a configured safe value, or to fail over to a redundant channel. The controller does not choose, because the right answer is a property of the plant: holding is correct for a slow thermal loop and dangerous for an unstable attitude loop.
 

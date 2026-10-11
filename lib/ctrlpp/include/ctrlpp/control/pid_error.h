@@ -48,10 +48,10 @@ namespace ctrlpp
 ///  * non_finite_tracking_signal : the external tracking signal handed to the
 ///                             four-argument overload has a non-finite
 ///                             component. It is checked before the cycle runs
-///                             because it is back-assigned into the integrator,
-///                             so admitting it would destroy the integrator
-///                             after an otherwise valid cycle had already
-///                             committed.
+///                             because it is assigned into the integrator, or
+///                             in the velocity form the accumulated output, so
+///                             admitting it would destroy that state after an
+///                             otherwise valid cycle had already committed.
 enum class pid_step_error
 {
     non_finite_state,

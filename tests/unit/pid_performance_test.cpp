@@ -9,6 +9,7 @@
 #include <random>
 #include <vector>
 #include <cstddef>
+#include <cstdint>
 #include <numbers>
 
 using Catch::Matchers::WithinAbs;
@@ -226,6 +227,43 @@ TEMPLATE_TEST_CASE("oscillation_detect flags a slow square wave with the noise c
     auto const square = [](int k) { return k % steps_per_period < steps_per_period / 2 ? Scalar{1} : Scalar{-1}; };
     auto const run = run_detector<Scalar>(Scalar{1} / Scalar{100}, 10 * steps_per_period, square);
     require_detection_at_eleventh_load(run);
+}
+
+// Holding the error at the sign of the last limit-cycle sample adds no load event, so x only decays by
+// gamma per step. The verdict is a state query on x, not a latch: it clears on the first step x falls to
+// n_lim, and x is not reset. Ten windows shrink x by e^-10, far below n_lim for the at most 20 loads the
+// limit cycle can contribute.
+TEMPLATE_TEST_CASE("oscillation_detect clears its verdict as the load rate decays",
+    "[pid][siso][perf-assessment][oscillation]", float, double)
+{
+    using Scalar = TestType;
+    using PA = ctrlpp::perf_assessment<ctrlpp::oscillation_detect>;
+    using Pid = ctrlpp::pid<Scalar, 1, PA>;
+    using vector_t = typename Pid::vector_t;
+    auto pid = ctrlpp::test::constructed(Pid::create(detector_config<Scalar, PA>(Scalar{1} / Scalar{2}, ultimate_frequency<Scalar>())));
+    const Scalar dt = Scalar{1} / Scalar{100};
+    const Scalar n_lim = PA::config<Scalar, 1>{}.load_count_limit;
+    Scalar e{0};
+    for(std::int32_t k = 0; k < 10 * steps_per_period; ++k)
+    {
+        e = std::sin(Scalar{2} * std::numbers::pi_v<Scalar> * static_cast<Scalar>(k % steps_per_period) / Scalar{1000});
+        REQUIRE(pid.compute(vector_t::Constant(e), vector_t::Zero(), dt).has_value());
+    }
+    const Scalar quiet = std::copysign(Scalar{1}, e);
+    REQUIRE(pid.oscillating());
+    Scalar x = pid.template metric<ctrlpp::oscillation_detect>()[0];
+    std::int32_t quiet_steps = 0;
+    for(; pid.oscillating() && quiet_steps < 10 * 50 * steps_per_period; ++quiet_steps)
+    {
+        REQUIRE(pid.compute(vector_t::Constant(quiet), vector_t::Zero(), dt).has_value());
+        const Scalar next = pid.template metric<ctrlpp::oscillation_detect>()[0];
+        REQUIRE(next < x);
+        REQUIRE(pid.oscillating() == (next > n_lim));
+        x = next;
+    }
+    CAPTURE(quiet_steps);
+    REQUIRE_FALSE(pid.oscillating());
+    REQUIRE(x > Scalar{0});
 }
 
 TEST_CASE("oscillation_detect: constant error sign -> not oscillating",

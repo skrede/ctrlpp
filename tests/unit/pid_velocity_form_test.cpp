@@ -319,7 +319,7 @@ TEST_CASE("velocity_form zero dt is rejected rather than answered with the held 
 
     // A stopped clock names the fault instead of handing back the stored
     // output, which the caller could not tell apart from a computed one. The
-    // accumulated output and both error histories are left untouched.
+    // accumulated output and the error and derivative histories are left untouched.
     const auto error_before = pid.error();
     auto stopped = pid.compute(vec1(5.0), vec1(0.0), 0.0);
     REQUIRE_FALSE(stopped.has_value());

@@ -78,7 +78,7 @@ auto compute_pid_gains(const pid_config<Scalar, NY, Policies...>& cfg) -> pid_ga
     {
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
         {
-            gains.ki[i] = cfg.ki[i] != Scalar{0} ? cfg.kp[i] / cfg.ki[i] : Scalar{0};
+            gains.ki[i] = cfg.kp[i] / cfg.ki[i];
             gains.kd[i] = cfg.kp[i] * cfg.kd[i];
         }
     }

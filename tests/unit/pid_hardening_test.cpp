@@ -4,7 +4,7 @@
 // is a claim about the command, the carried state, or the typed rejection that
 // protects both:
 //
-//  * A rejected cycle leaves the integrator and both error histories BITWISE
+//  * A rejected cycle leaves the integrator and the error and derivative histories BITWISE
 //    unchanged, and a later valid cycle produces exactly what it would have
 //    produced had the bad one never been attempted. Exact, because a rejected
 //    cycle performs no arithmetic on the carried state at all.
