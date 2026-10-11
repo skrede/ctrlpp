@@ -133,6 +133,16 @@ $$
 This is simpler than back-calculation but can be less smooth during
 transitions.
 
+In discrete time the saturation verdict depends on the output, and the output on
+the integrator, so `anti_windup<clamping>` takes the verdict from the previous
+cycle's constraint: the increment $\Delta u_I[k]$ is withheld when cycle $k-1$
+was constrained and $\Delta u_I[k]$ has the sign of
+$u[k-1] - u_{\text{sat}}[k-1]$ [4, Algorithm 2]. This is the standard clamping
+scheme in reference implementations that form the output from the pre-update
+integrator state, and it costs at most one increment on the first constrained
+cycle. Comparing the increment's sign rather than the error's keeps the rule
+correct for a reverse-acting controller with a negative $K_i$.
+
 ## Setpoint Weighting
 
 Setpoint weighting separates the response to setpoint changes from the
@@ -184,3 +194,6 @@ improve transient response.
 Lessons Learned and New Approaches," Springer, 2012.
 
 [3] N. S. Nise, "Control Systems Engineering," 7th ed., Wiley, 2015.
+
+[4] M. Caparroz, K. Soltesz, T. Hagglund and J. L. Guzman, "Anti-Windup in PID
+Control: Review, Analysis, and New Tuning Directions," arXiv:2606.01959, 2026.

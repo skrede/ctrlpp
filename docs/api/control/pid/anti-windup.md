@@ -36,7 +36,7 @@ The gains above are the internal parallel gains (in ISA form `ki = Kp/Ti` and `k
 
 ### clamping
 
-No additional config fields. The integrator is simply frozen when the output is at its limit and the integrator would push it further.
+No additional config fields. A channel's integral increment is withheld when the previous cycle constrained that channel and the increment would move the command further into the limit that constrained it.
 
 ### conditional_integration
 
@@ -47,14 +47,14 @@ No additional config fields. The integrator is simply frozen when the output is 
 ## Behavior
 
 - **back_calc**: The difference between the applied output and the unconstrained command is fed back through gain `kb` to adjust the integrator state. The unconstrained command is taken before both the rate limiter and the output clamp, so a rate-limited ramp also engages the anti-windup, not only output saturation. This provides smooth recovery from saturation.
-- **clamping**: The integrator is held whenever the applied output is constrained and the error would increase the constraint. The decision is made per channel, so saturation in one channel of a MIMO controller does not freeze the integrators of unsaturated channels. Simple and robust.
-- **conditional_integration**: Integration is paused entirely when the error magnitude exceeds `error_threshold`. Useful for large setpoint changes where integration during the transient would cause overshoot.
+- **clamping**: The decision is made before the cycle's output is formed, so the stored integrator always reproduces the emitted command and no increment that formed a command is removed afterward. An increment is withheld when the previous cycle was constrained and the increment has the sign of the violation: positive when the unconstrained command lay above the applied one, negative when it lay below. The rule compares the increment's sign, not the error's, so it holds for a reverse-acting controller with a negative `ki`. The verdict comes from the previous cycle's constraint, which is the standard clamping scheme in reference implementations that form the output from the pre-update integrator state (Caparroz, Soltesz, Hagglund and Guzman, *Anti-Windup in PID Control: Review, Analysis, and New Tuning Directions*, arXiv:2606.01959, 2026, Algorithm 2); it costs at most one increment on the first constrained cycle. A command that needs the limit still reaches it, since the increment that carries it there is kept. The decision is made per channel, so saturation in one channel of a MIMO controller does not freeze the integrators of unsaturated channels.
+- **conditional_integration**: The increment is withheld on every cycle whose error magnitude exceeds `error_threshold`. The threshold is tested before the output is formed, so the command never contains an increment the integrator does not keep. Useful for large setpoint changes where integration during the transient would cause overshoot.
 
 A channel counts as constrained when the rate limiter clipped it or the output clamp saturated it. The verdict comes from the limiter and the clamp themselves, never from comparing the applied output with the unconstrained command, so a composed rate limiter that does not clip leaves anti-windup exactly as it is without one.
 
 `anti_windup` does not compose with `velocity_form`: the combination is a compile error whose message states that clamping the accumulated output already prevents windup. See [velocity-form](velocity-form.md).
 
-While `freeze_integral` holds the integrator, no strategy changes it, back-calculation included: a frozen integrator cannot wind up, so the explicit hold takes precedence. Back-calculation resumes on the first cycle after the integrator is unfrozen.
+While `freeze_integral` holds the integrator, no strategy changes it, back-calculation included: a frozen integrator cannot wind up, so the explicit hold takes precedence. Back-calculation resumes on the first cycle after the integrator is unfrozen. Clamping still records each frozen cycle's constraint, so the first cycle after unfreezing withholds an increment that would push further into a limit the last frozen cycle met.
 
 ## Usage Example
 

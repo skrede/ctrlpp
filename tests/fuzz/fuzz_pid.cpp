@@ -78,6 +78,15 @@ auto idle_twin(const PidType::config_type& cfg, double rate_max) -> LimitedPid
     return *std::move(created);
 }
 
+// The measurement is constant and there is no feed-forward, so the derivative is zero on every cycle and the
+// stored integrator must reproduce the emitted command with the proportional term alone.
+auto reproduced_command(const PidType& controller, double sp, double meas) -> double
+{
+    const auto& cfg = controller.params();
+    const double unconstrained = cfg.kp[0] * (cfg.b[0] * sp - meas) + controller.integral()[0];
+    return std::min(std::max(unconstrained, cfg.output_min[0]), cfg.output_max[0]);
+}
+
 // compute rejects a non-finite result in the same cycle, so a command it
 // returns as a success is finite by contract.
 auto checked_step(PidType& controller, const PidType::vector_t& sp, const PidType::vector_t& meas, double dt) -> step_result
@@ -87,6 +96,8 @@ auto checked_step(PidType& controller, const PidType::vector_t& sp, const PidTyp
     if(timestep_refused != (dt <= 0.0))
         abort();
     if(step && !std::isfinite((*step)(0)))
+        abort();
+    if(step && (*step)(0) != reproduced_command(controller, sp(0), meas(0)))
         abort();
     return step;
 }

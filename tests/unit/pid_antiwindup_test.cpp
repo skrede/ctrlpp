@@ -137,6 +137,18 @@ auto frozen_through_saturation() -> ctrlpp::pid<Scalar, 1, AW>
     return controller;
 }
 
+// kp = ki = 1 and dt = 1/64 make every increment e/64, so with dyadic errors each command and integral is exact.
+template <typename Controller>
+auto unit_gain_config() -> typename Controller::config_type
+{
+    using vector_t = typename Controller::vector_t;
+    using Scalar = typename vector_t::Scalar;
+    typename Controller::config_type cfg{};
+    cfg.kp = vector_t::Constant(Scalar{1});
+    cfg.ki = vector_t::Constant(Scalar{1});
+    return cfg;
+}
+
 }
 
 TEST_CASE("Without anti_windup: integral winds up unboundedly", "[pid][siso][windup]")
@@ -377,14 +389,111 @@ TEMPLATE_TEST_CASE("a frozen integrator holds through saturation under every ant
         REQUIRE(controller.integral()[0] == integrated + kb * (half - u_unconstrained) * dt);
     }
 
-    SECTION("clamping")
+    // The frozen cycle had no earlier constraint, so only the freeze keeps its increment out; the next cycle's
+    // increment is withheld by the saturation the frozen cycle reported.
+    SECTION("clamping holds while frozen and keeps holding against that saturation on unfreeze")
     {
-        REQUIRE(frozen_through_saturation<Scalar, ctrlpp::anti_windup<ctrlpp::clamping>>().integral()[0] == half);
+        auto controller = frozen_through_saturation<Scalar, ctrlpp::anti_windup<ctrlpp::clamping>>();
+        REQUIRE(controller.integral()[0] == half);
+
+        controller.freeze_integral(false);
+        const auto u = ctrlpp::test::commanded(controller.compute(ctrlpp::Vector<Scalar, 1>::Constant(Scalar{1}), ctrlpp::Vector<Scalar, 1>::Zero(), Scalar{1} / Scalar{100}));
+        REQUIRE(u[0] == half);
+        REQUIRE(controller.integral()[0] == half);
     }
 
-    SECTION("conditional_integration")
+    // |e| = 1 is below the threshold 2, so only the freeze keeps the increment out.
+    SECTION("conditional_integration holds while frozen below its threshold")
     {
         REQUIRE(frozen_through_saturation<Scalar, ctrlpp::anti_windup<ctrlpp::conditional_integration>>().integral()[0] == half);
+    }
+}
+
+// An error of 3/8 adds 3/512 per cycle, so the unconstrained command 3/8 + k*3/512 first passes output_max = 1 on
+// cycle 107: 510/512 after cycle 106, 513/512 after cycle 107.
+TEMPLATE_TEST_CASE("clamping stores an integrator that reproduces every emitted command",
+    "[pid][siso][anti-windup][clamping]", float, double)
+{
+    using Scalar = TestType;
+    using AwPid = ctrlpp::pid<Scalar, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
+    using Plain = ctrlpp::pid<Scalar, 1>;
+    using vector_t = typename AwPid::vector_t;
+    constexpr std::int32_t crossing = 107;
+    const Scalar e = Scalar{3} / Scalar{8}, dt = Scalar{1} / Scalar{64}, output_max = 1;
+    auto cfg = unit_gain_config<AwPid>();
+    auto plain_cfg = unit_gain_config<Plain>();
+    cfg.output_max = vector_t::Constant(output_max);
+    plain_cfg.output_max = cfg.output_max;
+    auto clamped = ctrlpp::test::constructed(AwPid::create(cfg));
+    auto plain = ctrlpp::test::constructed(Plain::create(plain_cfg));
+    for(std::int32_t k = 1; k <= 200; ++k)
+    {
+        CAPTURE(k);
+        const auto u = ctrlpp::test::commanded(clamped.compute(vector_t::Constant(e), vector_t::Zero(), dt));
+        const auto u_plain = ctrlpp::test::commanded(plain.compute(vector_t::Constant(e), vector_t::Zero(), dt));
+        REQUIRE(std::min(e + clamped.integral()[0], output_max) == u[0]);
+        if(k < crossing)
+        {
+            REQUIRE(u[0] < output_max);
+            REQUIRE(u[0] == u_plain[0]);
+            REQUIRE(clamped.integral()[0] == plain.integral()[0]);
+        }
+        else
+            REQUIRE(u[0] == output_max);
+    }
+}
+
+// Reverse acting: kp = ki = -1 and an error of 3/8 move the command down by 3/512 per cycle onto output_min = -1,
+// so the increment, not the error, has the sign of the violated limit.
+TEMPLATE_TEST_CASE("clamping holds a reverse-acting integrator once its command saturates",
+    "[pid][siso][anti-windup][clamping]", float, double)
+{
+    using Scalar = TestType;
+    using AwPid = ctrlpp::pid<Scalar, 1, ctrlpp::anti_windup<ctrlpp::clamping>>;
+    using vector_t = typename AwPid::vector_t;
+    const Scalar e = Scalar{3} / Scalar{8}, dt = Scalar{1} / Scalar{64}, output_min = -1;
+    auto cfg = unit_gain_config<AwPid>();
+    cfg.kp = -cfg.kp;
+    cfg.ki = -cfg.ki;
+    cfg.output_min = vector_t::Constant(output_min);
+    auto clamped = ctrlpp::test::constructed(AwPid::create(cfg));
+    bool constrained = false;
+    Scalar previous = 0;
+    for(std::int32_t k = 1; k <= 200; ++k)
+    {
+        CAPTURE(k);
+        const auto u = ctrlpp::test::commanded(clamped.compute(vector_t::Constant(e), vector_t::Zero(), dt));
+        const Scalar integral = clamped.integral()[0];
+        REQUIRE(std::max(-e + integral, output_min) == u[0]);
+        if(constrained)
+            REQUIRE(std::abs(integral) <= std::abs(previous));
+        constrained = constrained || clamped.saturated();
+        previous = integral;
+    }
+    REQUIRE(constrained);
+}
+
+// The error alternates between 1/8, which integrates, and 1/2, past the threshold 1/4; with no output limits the
+// command is the proportional term plus the stored integrator on every cycle.
+TEMPLATE_TEST_CASE("conditional integration stores an integrator that reproduces every emitted command",
+    "[pid][siso][anti-windup][conditional]", float, double)
+{
+    using Scalar = TestType;
+    using AwPid = ctrlpp::pid<Scalar, 1, ctrlpp::anti_windup<ctrlpp::conditional_integration>>;
+    using vector_t = typename AwPid::vector_t;
+    const Scalar small = Scalar{1} / Scalar{8}, large = Scalar{1} / Scalar{2}, dt = Scalar{1} / Scalar{64};
+    auto cfg = unit_gain_config<AwPid>();
+    cfg.template policy<ctrlpp::anti_windup<ctrlpp::conditional_integration>>().error_threshold = {Scalar{1} / Scalar{4}};
+    auto controller = ctrlpp::test::constructed(AwPid::create(cfg));
+    Scalar integrated = 0;
+    for(std::int32_t k = 0; k < 64; ++k)
+    {
+        CAPTURE(k);
+        const Scalar e = k % 2 == 0 ? small : large;
+        const auto u = ctrlpp::test::commanded(controller.compute(vector_t::Constant(e), vector_t::Zero(), dt));
+        integrated += k % 2 == 0 ? small * dt : Scalar{0};
+        REQUIRE(u[0] == e + controller.integral()[0]);
+        REQUIRE(controller.integral()[0] == integrated);
     }
 }
 
@@ -412,8 +521,7 @@ TEST_CASE("clamping anti-windup freezes integral during saturation",
     }
     REQUIRE(found_saturation);
 
-    // After many more steps during saturation, integral should be frozen
-    // (error > 0 and integral > 0 during saturation -> undo increment)
+    // Every later cycle follows a cycle saturated at output_max, so each positive increment is withheld.
     for (int i = 0; i < 100; ++i)
         REQUIRE(pid.compute(vec1(10.0), vec1(0.0), Ts).has_value());
 

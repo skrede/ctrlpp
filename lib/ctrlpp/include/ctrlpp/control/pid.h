@@ -17,6 +17,7 @@
 
 #include <cmath>
 #include <limits>
+#include <cstdint>
 
 namespace ctrlpp
 {
@@ -33,6 +34,7 @@ class pid
     };
 
     using mask_t = Eigen::Array<bool, static_cast<int>(NY), 1>;
+    using direction_t = Eigen::Array<std::int8_t, static_cast<int>(NY), 1>;
 
     struct limited_command
     {
@@ -215,6 +217,7 @@ public:
         m_first_step = true;
         m_integral_frozen = false;
         m_saturated = false;
+        m_constraint_direction = direction_t::Zero();
         // Every member the latched status describes has just been replaced, so
         // the status no longer describes anything and clearing it is honest.
         m_health = pid_health::ok;
@@ -252,7 +255,8 @@ public:
     }
 
 private:
-    pid(unchecked_t, const config_type& cfg, const detail::pid_gains<Scalar, NY>& gains) : m_cfg{cfg}, m_gains{gains}, m_last_non_integral{vector_t::Zero()}
+    pid(unchecked_t, const config_type& cfg, const detail::pid_gains<Scalar, NY>& gains) : m_cfg{cfg}, m_gains{gains}, m_constraint_direction{direction_t::Zero()},
+        m_last_non_integral{vector_t::Zero()}
     {
     }
 
@@ -269,6 +273,7 @@ private:
         vector_t filtered_sp;
         vector_t filtered_meas;
         vector_t prev_deriv_filtered;
+        direction_t constraint_direction;
         pid_performance_tracker<Scalar, NY, Policies...> performance;
         bool first_step;
         bool saturated;
@@ -288,6 +293,7 @@ private:
             .filtered_sp = m_filtered_sp,
             .filtered_meas = m_filtered_meas,
             .prev_deriv_filtered = m_prev_deriv_filtered,
+            .constraint_direction = m_constraint_direction,
             .performance = m_perf,
             .first_step = m_first_step,
             .saturated = m_saturated};
@@ -306,6 +312,7 @@ private:
         m_filtered_sp = previous.filtered_sp;
         m_filtered_meas = previous.filtered_meas;
         m_prev_deriv_filtered = previous.prev_deriv_filtered;
+        m_constraint_direction = previous.constraint_direction;
         m_perf = previous.performance;
         m_first_step = previous.first_step;
         m_saturated = previous.saturated;
@@ -472,10 +479,10 @@ private:
     auto compute_position_form(const vector_t& e, const vector_t& sp, const vector_t& filtered_sp, const vector_t& filtered_meas, Scalar dt) -> vector_t
     {
         auto p = compute_proportional_term(filtered_sp, filtered_meas);
-        auto [integral_increment, updated_integral] = compute_integral_term(e, dt);
+        auto integral = compute_integral_term(e, dt);
         auto d = compute_derivative_term(filtered_sp, filtered_meas, dt);
         // Unconstrained control command, before rate limiting and output saturation.
-        auto u_unconstrained = compute_raw_output(p, updated_integral, d, sp, dt);
+        auto u_unconstrained = compute_raw_output(p, integral, d, sp, dt);
         auto limited = apply_rate_limit(u_unconstrained, dt);
         auto u_sat = limited.value.cwiseMax(m_cfg.output_min).cwiseMin(m_cfg.output_max).eval();
         auto saturated = (limited.value.array() < m_cfg.output_min.array() || limited.value.array() > m_cfg.output_max.array()).eval();
@@ -483,7 +490,7 @@ private:
         // Anti-windup feeds back against the command taken before the rate limiter, so a
         // rate-limited ramp, where the applied output already equals the limited command,
         // engages it as well as output saturation does.
-        apply_anti_windup(u_sat, u_unconstrained, (limited.clipped || saturated).eval(), e, integral_increment, dt);
+        apply_anti_windup(u_sat, u_unconstrained, (limited.clipped || saturated).eval(), dt);
         update_state(e, filtered_meas, filtered_sp, u_sat);
         return u_sat;
     }
@@ -510,12 +517,33 @@ private:
             return (m_gains.ki.cwiseProduct(e) * dt).eval();
     }
 
-    auto compute_integral_term(const vector_t& e, Scalar dt) -> std::pair<vector_t, vector_t>
+    auto compute_integral_term(const vector_t& e, Scalar dt) -> vector_t
     {
-        auto increment = integral_increment(e, dt);
         if(!m_integral_frozen)
-            m_integral = (m_integral + increment).eval();
-        return {increment, m_integral};
+            m_integral = (m_integral + gate_increment(integral_increment(e, dt), e)).eval();
+        return m_integral;
+    }
+
+    // Clamping and conditional integration decide before the output is formed, so no increment that formed a
+    // command is removed afterward; clamping therefore reads the previous cycle's constraint.
+    auto gate_increment(vector_t increment, const vector_t& e) const -> vector_t
+    {
+        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
+        {
+            if constexpr(detail::contains_v<anti_windup<clamping>, Policies...>)
+            {
+                const std::int8_t direction = m_constraint_direction[i];
+                if((direction > 0 && increment[i] > Scalar{0}) || (direction < 0 && increment[i] < Scalar{0}))
+                    increment[i] = Scalar{0};
+            }
+            else if constexpr(detail::contains_v<anti_windup<conditional_integration>, Policies...>)
+            {
+                const auto& threshold = m_cfg.template policy<anti_windup<conditional_integration>>().error_threshold;
+                if(std::abs(e[i]) > threshold[static_cast<std::size_t>(i)])
+                    increment[i] = Scalar{0};
+            }
+        }
+        return increment;
     }
 
     /// @cite astrom2006 -- Ch. 3.4 (derivative action, setpoint weighting c parameter)
@@ -616,19 +644,16 @@ private:
         return limited;
     }
 
-    void apply_anti_windup(const vector_t& u_sat, const vector_t& u_unconstrained, const mask_t& constrained, const vector_t& e, const vector_t& integral_increment, Scalar dt)
+    // A frozen integrator is held against back-calculation too, while the clamping verdict is recorded regardless,
+    // since it describes the emitted command rather than the integrator.
+    void apply_anti_windup(const vector_t& u_sat, const vector_t& u_unconstrained, const mask_t& constrained, Scalar dt)
     {
-        if(m_integral_frozen)
-            return;
-        if constexpr(detail::has_policy_v<anti_windup, Policies...>)
+        if constexpr(detail::contains_v<anti_windup<clamping>, Policies...>)
+            m_constraint_direction = constraint_direction(u_sat, u_unconstrained, constrained);
+        else if constexpr(detail::contains_v<anti_windup<back_calc>, Policies...>)
         {
-            using AW = detail::find_policy_t<anti_windup, Policies...>;
-            if constexpr(std::is_same_v<AW, anti_windup<back_calc>>)
+            if(!m_integral_frozen)
                 apply_back_calculation(u_sat, u_unconstrained, dt);
-            else if constexpr(std::is_same_v<AW, anti_windup<clamping>>)
-                apply_clamping(constrained, e, integral_increment);
-            else if constexpr(std::is_same_v<AW, anti_windup<conditional_integration>>)
-                apply_conditional_integration(e, integral_increment);
         }
     }
 
@@ -638,26 +663,15 @@ private:
         m_integral = (m_integral + feedback * dt).eval();
     }
 
-    void apply_clamping(const mask_t& constrained, const vector_t& e, const vector_t& integral_increment)
+    /// @cite caparroz2026 -- clamping decided from the previous sample's saturation error, Algorithm 2. The
+    /// verdict is taken from the masks; the unconstrained command only names the side of the violated limit.
+    auto constraint_direction(const vector_t& u_sat, const vector_t& u_unconstrained, const mask_t& constrained) const -> direction_t
     {
-        // Gate the integral undo per channel on that channel's own constraint
-        // (the rate limiter clipped it or the output clamp saturated it), so a
-        // saturated channel does not freeze an unsaturated one.
+        direction_t direction = direction_t::Zero();
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-            if(constrained[i]
-                && ((e[i] > Scalar{0} && m_integral[i] > Scalar{0}) || (e[i] < Scalar{0} && m_integral[i] < Scalar{0})))
-                m_integral[i] -= integral_increment[i];
-    }
-
-    void apply_conditional_integration(const vector_t& e, const vector_t& integral_increment)
-    {
-        const auto& ci_cfg = m_cfg.template policy<anti_windup<conditional_integration>>();
-        for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
-        {
-            Scalar abs_e = e[i] < Scalar{0} ? -e[i] : e[i];
-            if(abs_e > ci_cfg.error_threshold[static_cast<std::size_t>(i)])
-                m_integral[i] -= integral_increment[i];
-        }
+            if(constrained[i] && u_unconstrained[i] != u_sat[i])
+                direction[i] = u_unconstrained[i] > u_sat[i] ? std::int8_t{1} : std::int8_t{-1};
+        return direction;
     }
 
     void update_state(const vector_t& e, const vector_t& filtered_meas, const vector_t& filtered_sp, const vector_t& output)
@@ -682,6 +696,7 @@ private:
     vector_t m_filtered_sp = vector_t::Zero();
     vector_t m_filtered_meas = vector_t::Zero();
     vector_t m_prev_deriv_filtered = vector_t::Zero();
+    direction_t m_constraint_direction;
     // Per-cycle scratch, read only right after a successful cycle, so it is not part of the snapshot.
     vector_t m_last_non_integral;
     pid_performance_tracker<Scalar, NY, Policies...> m_perf;
