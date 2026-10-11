@@ -31,7 +31,7 @@ auto gains_finite(const pid_config<Scalar, NY, Policies...>& cfg) -> bool
 {
     if(!cfg.kp.allFinite() || !cfg.kd.allFinite())
         return false;
-    // In ISA form ki is the integral time, and +infinity yields the internal gain kp/Ti = 0.
+    // In ISA form ki is the integral time, and +infinity is the contract for no integral action: kp/Ti = 0 exactly.
     if constexpr(contains_v<isa_form, Policies...>)
         return !cfg.ki.hasNaN() && (cfg.ki.array() != -std::numeric_limits<Scalar>::infinity()).all();
     else
@@ -107,12 +107,12 @@ auto anti_windup_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> ctrlpp
     using conditional_t = anti_windup<conditional_integration>;
     if constexpr(selects_policy<anti_windup, back_calc_t, Policies...>())
     {
-        if(!std::ranges::all_of(cfg.template policy<back_calc_t>().kb, [](Scalar kb) { return std::isfinite(kb); }))
+        if(!std::ranges::all_of(cfg.template policy<back_calc_t>().kb, [](Scalar kb) { return std::isfinite(kb) && kb >= Scalar{0}; }))
             return ctrlpp::unexpected(pid_config_error::invalid_back_calculation_gain);
     }
     else if constexpr(selects_policy<anti_windup, conditional_t, Policies...>())
     {
-        if(std::ranges::any_of(cfg.template policy<conditional_t>().error_threshold, [](Scalar e) { return std::isnan(e); }))
+        if(!std::ranges::all_of(cfg.template policy<conditional_t>().error_threshold, [](Scalar e) { return e > Scalar{0}; }))
             return ctrlpp::unexpected(pid_config_error::invalid_error_threshold);
     }
     return {};

@@ -168,8 +168,8 @@ if (CTRLPP_BUILD_TESTS)
             "${CTRLPP_PID_DIRECT_CONSTRUCTION_COMPILED_OUTPUT}")
     endif ()
 
-    # A composed policy that does nothing is invisible at run time, so each anti-windup strategy must fail
-    # to compile with velocity_form, and for the stated reason rather than an unrelated error.
+    # A composed policy or a setter that does nothing is invisible at run time, so each anti-windup strategy
+    # and set_integral must fail to compile with velocity_form, and for the stated reason.
     ctrlpp_try_canary(CTRLPP_PID_VELOCITY_BASELINE_COMPILED pid_velocity_anti_windup_canary.cpp)
     if (NOT CTRLPP_PID_VELOCITY_BASELINE_COMPILED)
         message(FATAL_ERROR
@@ -187,6 +187,11 @@ if (CTRLPP_BUILD_TESTS)
             message(FATAL_ERROR "velocity_form with anti_windup<${strategy}> failed for another reason.\n${output}")
         endif ()
     endforeach ()
+    ctrlpp_try_canary(CTRLPP_PID_VELOCITY_SET_INTEGRAL_COMPILED pid_velocity_anti_windup_canary.cpp -DCTRLPP_CANARY_VELOCITY_SET_INTEGRAL)
+    set(output "${CTRLPP_PID_VELOCITY_SET_INTEGRAL_COMPILED_OUTPUT}")
+    if (CTRLPP_PID_VELOCITY_SET_INTEGRAL_COMPILED OR NOT output MATCHES "set_integral" OR NOT output MATCHES "constraint")
+        message(FATAL_ERROR "set_integral on a velocity_form pid compiled, or failed for another reason.\n${output}")
+    endif ()
 
     if (CTRLPP_CMAKE_FETCH_DEPS)
         FetchContent_Declare(

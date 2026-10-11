@@ -96,10 +96,13 @@ enum class pid_health
 ///  * non_finite_gain               : a kp, ki or kd component is NaN or
 ///                                    infinite. In ISA form ki is the integral
 ///                                    time, and a NaN or negative-infinite one
-///                                    is refused.
+///                                    is refused; +infinity is accepted and
+///                                    means no integral action (kp/Ti = 0).
 ///  * zero_integral_time            : in ISA form an integral time is zero. The
 ///                                    integral gain kp/Ti is then infinite, not
-///                                    zero.
+///                                    zero. No integral action is an integral
+///                                    time of +infinity, or the parallel form
+///                                    with ki = 0.
 ///  * invalid_output_limits         : an output limit is NaN, output_min
 ///                                    exceeds output_max in some channel,
 ///                                    output_min is +infinity, or output_max is
@@ -111,10 +114,13 @@ enum class pid_health
 ///  * invalid_rate_limit            : a rate_limit rate_max is NaN or negative.
 ///                                    Zero and +infinity mean no limit.
 ///  * invalid_back_calculation_gain : an explicit back-calculation gain kb is
-///                                    NaN or infinite. Zero selects the default
-///                                    gain.
+///                                    NaN, infinite or negative. Zero selects
+///                                    the default gain.
 ///  * invalid_error_threshold       : a conditional-integration error_threshold
-///                                    is NaN.
+///                                    is not positive: NaN, zero (the default)
+///                                    or negative. Such a threshold withholds
+///                                    every nonzero increment, so the
+///                                    integrator never moves.
 ///  * invalid_derivative_filter     : a deriv_filter n is NaN or infinite, or
 ///                                    an explicit filter time constant tf is
 ///                                    NaN, infinite, zero or negative.
@@ -128,10 +134,13 @@ enum class pid_health
 ///                                    is not positive and finite.
 ///  * undefined_tracking_time       : back_calc leaves a channel's kb at its
 ///                                    default, the channel's internal ki is
-///                                    nonzero, and the nonzero internal kp, ki
-///                                    and kd do not share a sign. The tracking
-///                                    time behind the default gain is then not a
-///                                    positive time; an explicit kb is accepted.
+///                                    nonzero, and either kp and kd are both
+///                                    zero or the nonzero internal kp, ki and kd
+///                                    do not share a sign. The tracking time
+///                                    behind the default gain then does not
+///                                    exist; an explicit kb is accepted. A
+///                                    channel with ki = 0 keeps kb = 0, the
+///                                    limit of an infinite tracking time.
 ///  * undefined_derivative_filter   : deriv_filter is composed, a channel's
 ///                                    internal kd is nonzero and its tf is
 ///                                    absent, and the default Tf = kd/(kp*n) is
@@ -141,10 +150,14 @@ enum class pid_health
 ///                                    quantity derived from it is not
 ///                                    representable in Scalar: in ISA form kp
 ///                                    divided by the integral time, or kp times
-///                                    the derivative time, overflows; the default
-///                                    filter time constant kd/(kp*n) is not a
-///                                    positive finite number; or the default
-///                                    back-calculation gain is not finite.
+///                                    the derivative time, overflows, or rounds
+///                                    to zero while both factors are nonzero (an
+///                                    integral time of +infinity excepted); the
+///                                    default filter time constant kd/(kp*n) is
+///                                    not a positive finite number; or the
+///                                    default back-calculation gain is not
+///                                    finite, or rounds to zero while the
+///                                    internal ki is nonzero.
 ///  * non_finite_integral           : `set_integral` was handed a NaN or
 ///                                    infinite component.
 enum class pid_config_error

@@ -1,6 +1,6 @@
 # velocity_form
 
-Switches the PID from position form (output = absolute value) to velocity form (output = incremental change). In velocity form, the controller outputs delta-u at each step, and the actuator integrates. This provides automatic bumpless transfer when switching between manual and automatic modes, and avoids integrator windup by construction since the integrator is in the actuator, not the controller.
+Switches the PID from position form (output = absolute value) to velocity form (output = incremental change). In velocity form, the controller outputs delta-u at each step, and the actuator integrates. The controller keeps no integrator of its own: it accumulates the increments it emits so it can clamp that running sum to the output limits, which avoids windup by construction. A switch from manual to automatic is bumpless when the tracking overload of `compute` re-seeds that sum, as described below.
 
 ## Header
 
@@ -16,8 +16,8 @@ No additional config fields. The velocity form policy modifies the internal comp
 
 Instead of computing u(k) directly, the controller computes the change delta_u(k) = u(k) - u(k-1). The actual output is accumulated externally (or by the actuator). This means:
 
-- No explicit integrator state is maintained internally, eliminating integrator windup.
-- Switching between manual and automatic control is bumpless: the incremental output starts from zero regardless of the previous manual setting.
+- There is no integrator separate from the accumulated output, the running sum of the emitted increments that the output clamp acts on. `integral()` stays zero, and `set_integral` is not available: calling it on a velocity-form controller is a compile error.
+- After `create` or `reset` the previous proportional term is formed from a zero setpoint and a zero measurement, and the accumulated output is zero. The first increment therefore carries the full proportional term `kp*(b*setpoint - measurement)` plus the integral increment, and the output limits act on a sum that starts at zero, not at the actuator's position. Switching from manual to automatic is bumpless only through tracking: while in manual, run the tracking overload of `compute` with the manual output on every cycle. Each such cycle re-seeds the accumulated output to the manual output clamped to the limits and keeps the previous setpoint and measurement current, so the first automatic cycle emits only the change in the proportional and derivative terms plus the integral increment, accumulated from the manual output. This replaces `set_integral` as the way to seed a velocity-form controller.
 - The increment is the difference of the position form's own proportional and derivative terms plus the integral increment: `delta_u(k) = (P(k) - P(k-1)) + delta_I(k) + (D(k) - D(k-1))`. `P(k-1)` is recomputed from the previous filtered setpoint and measurement with the current gains, and `D(k-1)` is the derivative term of the previous cycle. When no limit binds, the running sum of the increments equals the position form's output.
 - The first step emits only the proportional and integral increments. The derivative term is zero on the first step, as in the position form, so step 2 emits a first difference and later steps a second difference. A setpoint step does not kick the output and leaves no parked offset.
 - The derivative acts on the measurement unless `derivative_on_error` is set, as in the position form. This is a behavior change: the velocity form previously differentiated the error, so a setpoint step kicked it. With `derivative_on_error` set it differentiates `c*setpoint - measurement`.

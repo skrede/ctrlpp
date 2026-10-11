@@ -6,6 +6,8 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <limits>
+#include <cstdint>
+#include <cstring>
 
 using Catch::Matchers::WithinAbs;
 
@@ -184,6 +186,33 @@ TEMPLATE_TEST_CASE("ISA form refuses a zero integral time and integrates with kp
     REQUIRE(controller.integral()[0] == twin.integral()[0]);
     const auto next = ctrlpp::test::commanded(controller.compute(e, e, dt));
     REQUIRE(next[0] == ctrlpp::test::commanded(twin.compute(e, e, dt))[0]);
+}
+
+TEMPLATE_TEST_CASE("ISA form reads an infinite integral time as no integral action", "[pid][siso][isa]", float, double)
+{
+    using Scalar = TestType;
+    using IsaPid = ctrlpp::pid<Scalar, 1, ctrlpp::isa_form>;
+    using ParallelPid = ctrlpp::pid<Scalar, 1>;
+    using vector_t = typename IsaPid::vector_t;
+    const Scalar kp = 2, td = Scalar{1} / Scalar{20}, dt = Scalar{1} / Scalar{64};
+    typename IsaPid::config_type isa{};
+    isa.kp = vector_t::Constant(kp);
+    isa.ki = vector_t::Constant(std::numeric_limits<Scalar>::infinity());
+    isa.kd = vector_t::Constant(td);
+    typename ParallelPid::config_type parallel{};
+    parallel.kp = vector_t::Constant(kp);
+    parallel.kd = vector_t::Constant(kp * td);
+    auto controller = ctrlpp::test::constructed(IsaPid::create(isa));
+    auto reference = ctrlpp::test::constructed(ParallelPid::create(parallel));
+    for(std::int32_t k = 0; k < 10; ++k)
+    {
+        CAPTURE(k);
+        const auto meas = vector_t::Constant(static_cast<Scalar>(k) / Scalar{8});
+        const auto u = ctrlpp::test::commanded(controller.compute(vector_t::Constant(Scalar{1}), meas, dt));
+        const auto expected = ctrlpp::test::commanded(reference.compute(vector_t::Constant(Scalar{1}), meas, dt));
+        REQUIRE(std::memcmp(&u[0], &expected[0], sizeof(Scalar)) == 0);
+        REQUIRE(controller.integral()[0] == Scalar{0});
+    }
 }
 
 TEST_CASE("Tracking signal with zero dt is rejected without modifying the integral",

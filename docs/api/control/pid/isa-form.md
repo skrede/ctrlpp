@@ -15,12 +15,14 @@ When `isa_form` is active, the `ki` and `kd` fields in `pid_config` are reinterp
 | Field | Interpretation | Description |
 |-------|---------------|-------------|
 | `kp` | Kp | Proportional gain (same as standard form). `create` refuses a `NaN` or infinite component with `non_finite_gain`. |
-| `ki` | Ti | Integral time constant. Actual integral gain = Kp / Ti. `create` refuses a `NaN` or negative-infinite Ti with `non_finite_gain`, a zero Ti with `zero_integral_time`, and a Kp / Ti that overflows `Scalar` with `unrepresentable_gain`. |
-| `kd` | Td | Derivative time constant. Actual derivative gain = Kp * Td. `create` refuses a `NaN` or infinite Td with `non_finite_gain`, and a Kp * Td that overflows `Scalar` with `unrepresentable_gain`. |
+| `ki` | Ti | Integral time constant. Actual integral gain = Kp / Ti. Ti = `+inf` means no integral action (see below). `create` refuses a `NaN` or negative-infinite Ti with `non_finite_gain`, a zero Ti with `zero_integral_time`, and a Kp / Ti that overflows `Scalar`, or that rounds to zero while Kp is nonzero and Ti is finite, with `unrepresentable_gain`. |
+| `kd` | Td | Derivative time constant. Actual derivative gain = Kp * Td. `create` refuses a `NaN` or infinite Td with `non_finite_gain`, and a Kp * Td that overflows `Scalar`, or that rounds to zero while Kp and Td are nonzero, with `unrepresentable_gain`. |
 
 No additional config struct fields are added. The ISA form modifies how the existing `kp`, `ki`, `kd` fields are used internally.
 
-A zero integral time is not "no integral action": the integral gain Kp / Ti is then infinite, so `create` and `set_params` refuse it with `zero_integral_time`. The `ki` field defaults to zero, so an ISA-form configuration must set Ti in every channel.
+An ISA-form controller without integral action, a P or PD controller, sets the integral time to `+inf`. The internal integral gain is then Kp / inf, exactly zero, so the integrator never moves and the controller runs bit for bit like the parallel form with `ki = 0` and the same `kp` and `kp * Td`. It is the only infinite value `create` accepts in the `kp`, `ki` and `kd` fields.
+
+A zero integral time is not "no integral action", although several industrial PID blocks use Ti = 0 with that meaning: the integral gain Kp / Ti is then infinite, so `create` and `set_params` refuse it with `zero_integral_time`. For no integral action, use Ti = `+inf`, or the parallel form with `ki = 0`. The `ki` field defaults to zero, so an ISA-form configuration must set Ti in every channel.
 
 ## Behavior
 

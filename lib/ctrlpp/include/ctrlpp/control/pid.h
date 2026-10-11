@@ -51,32 +51,40 @@ public:
     ///
     /// Rejections, checked in order:
     ///  * a NaN or infinite kp, ki or kd component, or in ISA form a NaN or
-    ///    negative-infinite integral time -> pid_config_error::non_finite_gain
-    ///  * in ISA form a zero integral time -> pid_config_error::zero_integral_time
+    ///    negative-infinite integral time -> pid_config_error::non_finite_gain.
+    ///    An ISA integral time of +infinity is accepted and means no integral
+    ///    action: the internal ki is exactly zero.
+    ///  * in ISA form a zero integral time -> pid_config_error::zero_integral_time;
+    ///    no integral action is an integral time of +infinity, or the parallel form
     ///  * a NaN output limit, output_min above output_max, output_min at
     ///    +infinity or output_max at -infinity -> pid_config_error::invalid_output_limits
     ///  * a NaN or infinite b or c component -> pid_config_error::non_finite_setpoint_weight
     ///  * a setpoint_filter or pv_filter time constant that is NaN, negative or
     ///    +infinity -> pid_config_error::invalid_filter_time_constant
     ///  * a NaN or negative rate_limit rate_max -> pid_config_error::invalid_rate_limit
-    ///  * a NaN or infinite explicit back-calculation kb ->
+    ///  * a NaN, infinite or negative explicit back-calculation kb ->
     ///    pid_config_error::invalid_back_calculation_gain
-    ///  * a NaN conditional-integration error_threshold -> pid_config_error::invalid_error_threshold
+    ///  * a conditional-integration error_threshold that is not positive, its
+    ///    zero default included -> pid_config_error::invalid_error_threshold
     ///  * a NaN or infinite deriv_filter n, or an explicit deriv_filter tf that is
     ///    not finite and positive -> pid_config_error::invalid_derivative_filter
     ///  * with oscillation_detect, an amplitude or ultimate_frequency component that
     ///    is not positive and finite -> pid_config_error::missing_oscillation_parameters
     ///  * with oscillation_detect, a load_count_limit or supervision_periods that is
     ///    not positive and finite -> pid_config_error::invalid_oscillation_supervision
-    ///  * a default back-calculation kb on a channel with integral action whose
-    ///    nonzero gains differ in sign -> pid_config_error::undefined_tracking_time
+    ///  * a default back-calculation kb on a channel with integral action that has
+    ///    neither proportional nor derivative action, or whose nonzero gains differ
+    ///    in sign -> pid_config_error::undefined_tracking_time. A channel without
+    ///    integral action keeps kb = 0, the limit of an infinite tracking time.
     ///  * a derivative channel without an explicit tf whose kp is zero, whose n is
     ///    not positive, or whose kd and kp differ in sign
     ///    -> pid_config_error::undefined_derivative_filter
     ///  * an ISA-form internal gain, kp over the integral time or kp times the
-    ///    derivative time, that overflows, a default filter time constant
-    ///    kd/(kp*n) that is not positive and finite, or a default back-calculation
-    ///    kb that is not finite -> pid_config_error::unrepresentable_gain
+    ///    derivative time, that overflows, or that rounds to zero while both
+    ///    factors are nonzero and the integral time is finite; a default filter
+    ///    time constant kd/(kp*n) that is not positive and finite; or a default
+    ///    back-calculation kb that is not finite, or that rounds to zero on a
+    ///    channel with integral action -> pid_config_error::unrepresentable_gain
     static auto create(const config_type& cfg) -> expected<pid, pid_config_error>
     {
         auto derived = detail::derive_pid_gains(cfg);
@@ -228,7 +236,11 @@ public:
 
     void freeze_integral(bool freeze = true) { m_integral_frozen = freeze; }
 
+    /// @brief Assign the integrator, or refuse a non-finite value and keep it bitwise.
+    /// Absent in the velocity form, which has no integrator; there the tracking
+    /// overload of `compute` re-seeds the accumulated output instead.
     auto set_integral(const vector_t& val) -> expected<void, pid_config_error>
+        requires(!detail::contains_v<velocity_form, Policies...>)
     {
         if(!val.allFinite())
             return unexpected(pid_config_error::non_finite_integral);

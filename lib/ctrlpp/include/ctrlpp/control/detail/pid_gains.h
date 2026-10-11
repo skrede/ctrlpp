@@ -29,7 +29,7 @@ struct pid_gains
 
 // kb multiplies the saturation error (output units) into the integrator rate (output per time), so it is
 // 1/Tt with the tracking time Tt = sqrt(Ti*Td) = sqrt(kd/ki) in parallel gains, or Ti = kp/ki without
-// derivative action. A pure-I channel has no reference for a tracking time, so back-calculation is off.
+// derivative action. A pure-I channel has no tracking time, so create refuses its default.
 /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3
 template <typename Scalar, std::size_t NY>
 auto default_back_calc_gain(const pid_gains<Scalar, NY>& gains, Eigen::Index i) -> Scalar
@@ -96,8 +96,20 @@ auto zero_or_same_sign(Scalar a, Scalar b) -> bool
 }
 
 // Ti = kp/ki and Td = kd/kp in Tt = sqrt(Ti*Td) are both positive exactly when the nonzero gains share a
-// sign, so only then does the default kb exist.
+// sign, and a pure-I channel has neither. Without integral action the default kb = 0 is the limit of an
+// infinite tracking time: there is no integrator to drive.
 /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3
+template <typename Scalar, std::size_t NY>
+auto default_tracking_time_exists(const pid_gains<Scalar, NY>& gains, Eigen::Index i) -> bool
+{
+    const Scalar kp = gains.kp[i];
+    const Scalar ki = gains.ki[i];
+    const Scalar kd = gains.kd[i];
+    if(ki == Scalar{0})
+        return true;
+    return (kp != Scalar{0} || kd != Scalar{0}) && zero_or_same_sign(ki, kp) && zero_or_same_sign(ki, kd);
+}
+
 template <typename Scalar, std::size_t NY, typename... Policies>
 auto tracking_times_defined(const pid_config<Scalar, NY, Policies...>& cfg, const pid_gains<Scalar, NY>& gains) -> bool
 {
@@ -106,9 +118,7 @@ auto tracking_times_defined(const pid_config<Scalar, NY, Policies...>& cfg, cons
         const auto& kb = cfg.template policy<anti_windup<back_calc>>().kb;
         for(std::size_t i = 0; i < NY; ++i)
         {
-            const auto row = static_cast<Eigen::Index>(i);
-            if(kb[i] == Scalar{0} && gains.ki[row] != Scalar{0}
-               && !(zero_or_same_sign(gains.ki[row], gains.kp[row]) && zero_or_same_sign(gains.ki[row], gains.kd[row])))
+            if(kb[i] == Scalar{0} && !default_tracking_time_exists(gains, static_cast<Eigen::Index>(i)))
                 return false;
         }
     }
@@ -133,10 +143,28 @@ auto derivative_filters_defined(const pid_config<Scalar, NY, Policies...>& cfg, 
     return true;
 }
 
+// A derived gain that rounds to zero silently removes an action the caller configured. An ISA integral
+// time of +infinity is exempt: it is the exact zero that means no integral action.
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto derived_gains_representable(const pid_config<Scalar, NY, Policies...>&, const pid_gains<Scalar, NY>& gains) -> bool
+auto derived_gains_nonzero(const pid_config<Scalar, NY, Policies...>& cfg, const pid_gains<Scalar, NY>& gains) -> bool
 {
-    if(!gains.kp.allFinite() || !gains.ki.allFinite() || !gains.kd.allFinite() || !gains.kb.allFinite())
+    if constexpr(contains_v<isa_form, Policies...>)
+    {
+        const auto kp_zero = (cfg.kp.array() == Scalar{0}).eval();
+        if(!(kp_zero || cfg.ki.array() == std::numeric_limits<Scalar>::infinity() || gains.ki.array() != Scalar{0}).all()
+           || !(kp_zero || cfg.kd.array() == Scalar{0} || gains.kd.array() != Scalar{0}).all())
+            return false;
+    }
+    if constexpr(selects_policy<anti_windup, anti_windup<back_calc>, Policies...>())
+        return (gains.ki.array() == Scalar{0} || gains.kb.array() != Scalar{0}).all();
+    else
+        return true;
+}
+
+template <typename Scalar, std::size_t NY, typename... Policies>
+auto derived_gains_representable(const pid_config<Scalar, NY, Policies...>& cfg, const pid_gains<Scalar, NY>& gains) -> bool
+{
+    if(!gains.kp.allFinite() || !gains.ki.allFinite() || !gains.kd.allFinite() || !gains.kb.allFinite() || !derived_gains_nonzero(cfg, gains))
         return false;
     if constexpr(contains_v<deriv_filter, Policies...>)
     {

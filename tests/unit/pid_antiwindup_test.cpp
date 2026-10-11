@@ -9,6 +9,7 @@
 #include <limits>
 #include <random>
 #include <cstdint>
+#include <cstring>
 #include <utility>
 #include <algorithm>
 #include <type_traits>
@@ -54,7 +55,7 @@ auto back_calc_first_step(Scalar kp, Scalar ki, Scalar kd, Scalar kb_config, Sca
 }
 
 template <typename Scalar>
-auto back_calc_refusal(Scalar kp, Scalar ki, Scalar kd) -> ctrlpp::pid_config_error
+auto back_calc_refusal(Scalar kp, Scalar ki, Scalar kd, Scalar kb = Scalar{0}) -> ctrlpp::pid_config_error
 {
     using AwPid = ctrlpp::pid<Scalar, 1, ctrlpp::anti_windup<ctrlpp::back_calc>>;
     using vector_t = typename AwPid::vector_t;
@@ -62,6 +63,7 @@ auto back_calc_refusal(Scalar kp, Scalar ki, Scalar kd) -> ctrlpp::pid_config_er
     cfg.kp = vector_t::Constant(kp);
     cfg.ki = vector_t::Constant(ki);
     cfg.kd = vector_t::Constant(kd);
+    cfg.template policy<ctrlpp::anti_windup<ctrlpp::back_calc>>().kb = {kb};
     const auto created = AwPid::create(cfg);
     REQUIRE_FALSE(created.has_value());
     return created.error();
@@ -253,28 +255,9 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
 
         REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_expected, integral_reconstruction_tol(u_raw)));
     }
-
-    SECTION("pure-I controller disables back-calc (kb = 0) with kp == 0 and kd == 0") {
-        using AwPid = ctrlpp::pid<double, 1, AW>;
-        const double ki = 2.0, out_max = 0.1; // kp = kd = 0
-
-        AwPid::config_type cfg{};
-        cfg.ki = vec1(ki);
-        cfg.output_max = vec1(out_max);
-        auto pid = ctrlpp::test::constructed(AwPid::create(cfg));
-
-        auto u = ctrlpp::test::commanded(pid.compute(vec1(sp), vec1(meas), Ts));
-
-        // No proportional or derivative reference for a tracking time, so kb defaults
-        // to 0: the output still saturates, but the integrator receives no
-        // back-calculation feedback and holds only its integration increment.
-        const double increment = ki * e * Ts;
-        REQUIRE(u[0] == out_max); // saturated
-        REQUIRE_THAT(pid.integral()[0], WithinAbs(increment, integral_reconstruction_tol(increment)));
-    }
 }
 
-TEMPLATE_TEST_CASE("back_calc default kb is refused when the gains do not share a sign",
+TEMPLATE_TEST_CASE("back_calc default kb is refused when the channel has no tracking time",
     "[pid][siso][anti-windup][backcalc][auto-kb]", float, double)
 {
     using Scalar = TestType;
@@ -282,6 +265,8 @@ TEMPLATE_TEST_CASE("back_calc default kb is refused when the gains do not share 
         == ctrlpp::pid_config_error::undefined_tracking_time);
     REQUIRE(back_calc_refusal<Scalar>(Scalar{1}, static_cast<Scalar>(-0.5), Scalar{0})
         == ctrlpp::pid_config_error::undefined_tracking_time);
+    REQUIRE(back_calc_refusal<Scalar>(Scalar{0}, Scalar{2}, Scalar{0}) == ctrlpp::pid_config_error::undefined_tracking_time);
+    REQUIRE(back_calc_refusal<Scalar>(Scalar{0}, Scalar{-2}, Scalar{0}) == ctrlpp::pid_config_error::undefined_tracking_time);
 
     // The first step saturates at output_max = 5 from setpoint 0; the expected command and integral are
     // formed in the controller's operation order, so they match bit for bit.
@@ -308,6 +293,64 @@ TEMPLATE_TEST_CASE("back_calc default kb is refused when the gains do not share 
         const auto expected = reconstructed(kp, ki, Scalar{2}, meas);
         REQUIRE(expected.first == Scalar{5});
         REQUIRE(back_calc_first_step<Scalar>(kp, ki, kd, Scalar{2}, meas) == expected);
+    }
+
+    SECTION("a pure-integral channel takes an explicit kb")
+    {
+        const Scalar ki = 2, meas = -1000;
+        const auto expected = reconstructed(Scalar{0}, ki, Scalar{1}, meas);
+        REQUIRE(expected.first == Scalar{5});
+        REQUIRE(back_calc_first_step<Scalar>(Scalar{0}, ki, Scalar{0}, Scalar{1}, meas) == expected);
+    }
+}
+
+TEMPLATE_TEST_CASE("back_calc refuses a negative explicit kb", "[pid][siso][anti-windup][backcalc]", float, double)
+{
+    using Scalar = TestType;
+    const Scalar ki = Scalar{1} / Scalar{2};
+    for(const Scalar kb : {Scalar{-1}, -std::numeric_limits<Scalar>::denorm_min()})
+    {
+        CAPTURE(kb);
+        REQUIRE(back_calc_refusal<Scalar>(Scalar{1}, ki, Scalar{0}, kb) == ctrlpp::pid_config_error::invalid_back_calculation_gain);
+    }
+    const Scalar dt = static_cast<Scalar>(0.01), meas = -10;
+    const Scalar increment = ki * (Scalar{0} - meas) * dt;
+    const Scalar u_raw = Scalar{1} * (Scalar{1} * Scalar{0} - meas) + increment;
+    const auto expected = std::pair<Scalar, Scalar>{Scalar{5}, increment + Scalar{1} * (Scalar{5} - u_raw) * dt};
+    REQUIRE(back_calc_first_step<Scalar>(Scalar{1}, ki, Scalar{0}, Scalar{1}, meas) == expected);
+}
+
+// Without integral action the default kb = sqrt(ki/kd) is sqrt(+-0) = +-0, the limit of an infinite tracking time:
+// there is no integrator to drive, so the channel runs exactly as it would without anti-windup.
+TEMPLATE_TEST_CASE("back_calc keeps a zero default kb on a mixed-sign channel without integral action",
+    "[pid][siso][anti-windup][backcalc][auto-kb]", float, double)
+{
+    using Scalar = TestType;
+    using AwPid = ctrlpp::pid<Scalar, 1, ctrlpp::anti_windup<ctrlpp::back_calc>>;
+    using PlainPid = ctrlpp::pid<Scalar, 1>;
+    using vector_t = typename AwPid::vector_t;
+    typename AwPid::config_type cfg{};
+    cfg.kp = vector_t::Constant(Scalar{1});
+    cfg.kd = vector_t::Constant(-Scalar{1} / Scalar{10});
+    cfg.output_min = vector_t::Constant(-Scalar{1} / Scalar{2});
+    cfg.output_max = vector_t::Constant(Scalar{1} / Scalar{2});
+    typename PlainPid::config_type plain_cfg{};
+    plain_cfg.kp = cfg.kp;
+    plain_cfg.kd = cfg.kd;
+    plain_cfg.output_min = cfg.output_min;
+    plain_cfg.output_max = cfg.output_max;
+    auto controller = ctrlpp::test::constructed(AwPid::create(cfg));
+    auto plain = ctrlpp::test::constructed(PlainPid::create(plain_cfg));
+    const Scalar dt = Scalar{1} / Scalar{64};
+    for(std::int32_t k = 0; k < 10; ++k)
+    {
+        CAPTURE(k);
+        const auto u = ctrlpp::test::commanded(controller.compute(vector_t::Constant(Scalar{1}), vector_t::Zero(), dt));
+        const auto expected = ctrlpp::test::commanded(plain.compute(vector_t::Constant(Scalar{1}), vector_t::Zero(), dt));
+        REQUIRE(controller.saturated());
+        REQUIRE(std::memcmp(&u[0], &expected[0], sizeof(Scalar)) == 0);
+        REQUIRE(std::memcmp(&controller.integral()[0], &plain.integral()[0], sizeof(Scalar)) == 0);
+        REQUIRE(controller.integral()[0] == Scalar{0});
     }
 }
 

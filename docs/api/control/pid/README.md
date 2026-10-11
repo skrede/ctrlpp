@@ -98,20 +98,20 @@ if(!made) {
 
 | Enumerator | Cause | Repair |
 |---|---|---|
-| `non_finite_gain` | A `kp`, `ki` or `kd` component is `NaN` or infinite. In ISA form `ki` is the integral time, and a `NaN` or negative-infinite one is refused. | The tuning that produced the gains. |
-| `zero_integral_time` | In ISA form an integral time `ki` is zero, which is an infinite integral gain Kp / Ti, not "off". | A positive integral time. |
+| `non_finite_gain` | A `kp`, `ki` or `kd` component is `NaN` or infinite. In ISA form `ki` is the integral time, and a `NaN` or negative-infinite one is refused; `+inf` is accepted and means no integral action. | The tuning that produced the gains. |
+| `zero_integral_time` | In ISA form an integral time `ki` is zero, which is an infinite integral gain Kp / Ti, not "off". | A nonzero integral time, or for no integral action an integral time of `+inf` or the parallel form with `ki = 0`. |
 | `invalid_output_limits` | An output limit is `NaN`, `output_min` exceeds `output_max` in some channel, `output_min` is `+inf`, or `output_max` is `-inf`. Equal limits are accepted. | The actuator range. |
 | `non_finite_setpoint_weight` | A `b` or `c` component is `NaN` or infinite. | The setpoint weights. |
 | `invalid_filter_time_constant` | A `setpoint_filter` or `pv_filter` time constant is `NaN`, negative or `+inf`. Zero means no filter. | The filter's `tf`. |
 | `invalid_rate_limit` | A `rate_limit` `rate_max` is `NaN` or negative. Zero and `+inf` mean no limit. | The rate limit. |
-| `invalid_back_calculation_gain` | An explicit `anti_windup<back_calc>` gain `kb` is `NaN` or infinite. Zero selects the default gain. | The tracking gain. |
-| `invalid_error_threshold` | An `anti_windup<conditional_integration>` `error_threshold` is `NaN`. | The integration threshold. |
+| `invalid_back_calculation_gain` | An explicit `anti_windup<back_calc>` gain `kb` is `NaN`, infinite or negative. Zero selects the default gain. | A positive tracking gain. |
+| `invalid_error_threshold` | An `anti_windup<conditional_integration>` `error_threshold` is not positive: `NaN`, zero (the default) or negative. | A positive integration threshold in every channel. |
 | `invalid_derivative_filter` | A `deriv_filter` `n` is `NaN` or infinite, or an explicit `tf` is `NaN`, infinite, zero or negative. | The filter divisor or time constant. |
 | `missing_oscillation_parameters` | `perf_assessment` includes `oscillation_detect` and an `amplitude` or `ultimate_frequency` component is not positive and finite. Both default to zero, the unset value. | The acceptable oscillation amplitude and the loop's ultimate frequency. |
 | `invalid_oscillation_supervision` | `perf_assessment` includes `oscillation_detect` and `load_count_limit` or `supervision_periods` is not positive and finite. | The detector's load count limit and window. |
-| `undefined_tracking_time` | `anti_windup<back_calc>` leaves a channel's `kb` at zero, the channel has integral action (`ki != 0`), and its nonzero gains do not share a sign, so the default tracking time does not exist. | An explicit `kb`, or gains of one sign. |
+| `undefined_tracking_time` | `anti_windup<back_calc>` leaves a channel's `kb` at zero, the channel has integral action (`ki != 0`), and either it has neither proportional nor derivative action or its nonzero gains do not share a sign, so the default tracking time does not exist. A channel with `ki = 0` keeps `kb = 0`, the limit of an infinite tracking time. | An explicit positive `kb`, or gains of one sign. |
 | `undefined_derivative_filter` | `deriv_filter` is composed, a channel has derivative action (`kd != 0`) and no `tf`, and its default Tf = kd/(kp*n) is not a positive time: `kp` is zero, `n` is zero or negative, or `kd` and `kp` differ in sign. | An explicit `tf`, or a positive `n`. |
-| `unrepresentable_gain` | Each field is finite, but a quantity derived from them is not representable in `Scalar`: in ISA form `kp` over the integral time, or `kp` times the derivative time, overflows; the default derivative filter time constant kd/(kp*n) is not a positive finite number; or the default back-calculation gain is not finite. | Smaller gains, an explicit `tf` or `kb`, or a wider `Scalar`. |
+| `unrepresentable_gain` | The fields are well posed, but a quantity derived from them is not representable in `Scalar`: in ISA form `kp` over the integral time, or `kp` times the derivative time, overflows, or rounds to zero while both factors are nonzero (an integral time of `+inf` excepted); the default derivative filter time constant kd/(kp*n) is not a positive finite number; or the default back-calculation gain is not finite, or rounds to zero on a channel with integral action. | Gains of less extreme magnitude, an explicit `tf` or `kb`, or a wider `Scalar`. |
 
 ## Methods
 
@@ -234,6 +234,8 @@ auto set_integral(const vector_t& val) -> expected<void, pid_config_error>;
 ```
 
 Directly sets the integral accumulator to a given value. A `NaN` or infinite component is refused with `pid_config_error::non_finite_integral`, and the integrator is left bitwise unchanged.
+
+A velocity-form controller has no integrator, so `set_integral` is not available there: calling it is a compile error. Seed a velocity-form controller through the tracking overload of `compute`, which re-seeds the accumulated output (see [velocity-form](velocity-form.md)).
 
 ### metric (requires `perf_assessment`)
 
