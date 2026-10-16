@@ -248,11 +248,13 @@ auto build_nmhe_problem(const Dynamics& dynamics,
         c_lower[i] = -std::numeric_limits<Scalar>::infinity();
     }
 
+    // No analytic constraint Jacobian is supplied, so the backend finite-differences it.
     return nlp_problem<Scalar>{.n_vars = n_vars,
                                .n_constraints = n_constraints,
                                .cost = std::move(cost),
                                .gradient = std::move(gradient),
                                .constraints = std::move(constraints),
+                               .constraint_jacobian = nullptr,
                                .x_lower = std::move(x_lower),
                                .x_upper = std::move(x_upper),
                                .c_lower = std::move(c_lower),

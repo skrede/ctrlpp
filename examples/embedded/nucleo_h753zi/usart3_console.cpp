@@ -1,15 +1,16 @@
 // Minimal USART3 console for headless CSV capture over the ST-Link VCP.
 //
 // The NUCLEO-144 ST-Link virtual COM port is wired to USART3 (PD8=TX, PD9=RX)
-// by the on-board solder bridges, so a strong _write override routing stdout
-// out USART3 makes std::printf reach the host's /dev/ttyACM0 with no
-// debugger/semihosting. After the CMSIS SystemInit (which does not configure
+// by the on-board solder bridges, so routing the console descriptors' _write
+// (syscalls.cpp) out USART3 makes std::printf reach the host's /dev/ttyACM0 with
+// no debugger/semihosting. After the CMSIS SystemInit (which does not configure
 // the PLL) the H753 runs on HSI = 64 MHz, so PCLK1 = 64 MHz and USART3's kernel
 // clock = 64 MHz; BRR = 64e6 / 115200 ~= 556 for oversampling-by-16. The tuned
 // posture keeps that kernel clock by moving USART3 onto HSI (clock_tree.cpp).
 
 #include "stm32h7xx.h"
 
+#include <span>
 #include <cstddef>
 
 namespace ctrlpp
@@ -41,17 +42,14 @@ inline void usart3_putc(char c) noexcept
     USART3->TDR = static_cast<uint8_t>(c);
 }
 
+void usart3_write(std::span<const char> text) noexcept
+{
+    for(const char c : text)
+    {
+        if(c == '\n')
+            usart3_putc('\r');
+        usart3_putc(c);
+    }
 }
 
-// Strong override of newlib's _write (nosys.specs supplies a weak stub): route
-// all stdout/stderr through USART3, expanding '\n' to CR+LF.
-extern "C" int _write(int, const char* ptr, int len)
-{
-    for(int i = 0; i < len; ++i)
-    {
-        if(ptr[i] == '\n')
-            ctrlpp::usart3_putc('\r');
-        ctrlpp::usart3_putc(ptr[i]);
-    }
-    return len;
 }

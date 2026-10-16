@@ -1,7 +1,6 @@
-// A strong _sbrk overriding the one --specs=nosys.specs supplies, which advances
-// the break with no upper bound, so an over-budget allocation would run on into
-// whatever the memory map places next. This one refuses any request past _eheap
-// with the C library's failure value.
+// The C library's allocator grows the heap through _sbrk. This one refuses any
+// request past _eheap with the C library's failure value, so an over-budget
+// allocation cannot run on into whatever the memory map places next.
 
 #include "sbrk_ceiling.h"
 

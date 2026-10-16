@@ -392,7 +392,15 @@ private:
             using solver_t = std::decay_t<decltype(solver)>;
             if constexpr(std::is_same_v<solver_t, std::monostate>)
             {
-                return nlp_result<Scalar>{.status = solve_status::error};
+                return nlp_result<Scalar>{
+                    .status = solve_status::error,
+                    .x = {},
+                    .objective = Scalar{0},
+                    .solve_time = Scalar{0},
+                    .iterations = 0,
+                    .primal_residual = Scalar{0},
+                    .stop_criterion = nlp_stop_criterion::unreported,
+                };
             }
             else
             {
