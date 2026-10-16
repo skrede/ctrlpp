@@ -295,7 +295,7 @@ TEST_CASE("OnlinePlanner3rd: float type", "[trajectory][online_planner_3rd]")
 
     REQUIRE(planner.update(10.0f).has_value());
     auto const pt = planner.sample(100.0f);
-    REQUIRE_THAT(pt.position[0], WithinAbs(10.0, 1e-3));
+    REQUIRE_THAT(static_cast<double>(pt.position[0]), WithinAbs(10.0, 1e-3));
 }
 
 // -- Test 11: Same-direction retarget carries velocity through (no full-stop dip)

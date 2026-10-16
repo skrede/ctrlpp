@@ -373,7 +373,7 @@ auto trapezoidal_velocity_amplification(trapezoidal_solve_form form, Scalar v_cr
         double const boundary = std::abs(static_cast<double>(v_ref));
         double const coefficient_error =
             static_cast<double>(a)
-            * (trapezoidal_amplification(residual_error, v_ref) + increment_error);
+            * (trapezoidal_amplification(residual_error, static_cast<double>(v_ref)) + increment_error);
         double const constant_error = static_cast<double>(a) * boundary * increment_error;
         // The root selection ADDS the square root to the linear coefficient
         // rather than subtracting it, so its denominator carries the two
@@ -402,8 +402,9 @@ auto trapezoidal_velocity_amplification(trapezoidal_solve_form form, Scalar v_cr
     {
         Scalar const ramp_span = std::abs(v1 - v0) / a;
         Scalar const denominator = T_target - ramp_span;
-        return trapezoidal_amplification(residual_error, ramp_residual)
-               + trapezoidal_amplification(std::max(T_target, ramp_span), denominator);
+        return trapezoidal_amplification(residual_error, static_cast<double>(ramp_residual))
+               + trapezoidal_amplification(static_cast<double>(std::max(T_target, ramp_span)),
+                                           static_cast<double>(denominator));
     }
     default:
     {
@@ -435,7 +436,7 @@ auto trapezoidal_velocity_amplification(trapezoidal_solve_form form, Scalar v_cr
         // unbounded wherever the constant term cancels exactly -- a displacement
         // the two ramps sweep precisely, which the shifted parametrization is
         // built to handle -- on retimings the library resolves to the last bit.
-        return (b > Scalar{0}) ? trapezoidal_amplification(constant_error, c) + selection
+        return (b > Scalar{0}) ? trapezoidal_amplification(constant_error, static_cast<double>(c)) + selection
                                : selection;
     }
     }
@@ -480,7 +481,8 @@ auto trapezoidal_solve_conditioning(Scalar v_cruise, Scalar a, Scalar h, Scalar 
         trapezoidal_duration_sensitivity(form, v_cruise, a, h, v0, v1, T_target);
 
     auto const realized = trapezoidal_duration_and_scale_at(v_cruise, v0, v1, a, h);
-    double const recomputation = trapezoidal_amplification(realized.scale, T_target);
+    double const recomputation =
+        trapezoidal_amplification(static_cast<double>(realized.scale), static_cast<double>(T_target));
 
     if(!std::isfinite(velocity) || !std::isfinite(sensitivity) || !std::isfinite(recomputation))
         return unbounded_solve_conditioning;

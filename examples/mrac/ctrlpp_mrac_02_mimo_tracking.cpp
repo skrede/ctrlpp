@@ -30,6 +30,7 @@ int main()
     ref_model.B << 0.1, 0.0,
                    0.0, 0.15;
     ref_model.C = ctrlpp::Matrix<double, NX, NX>::Identity();
+    ref_model.D = ctrlpp::Matrix<double, NX, NU>::Zero();
 
     config cfg{};
     cfg.reference_model = ref_model;

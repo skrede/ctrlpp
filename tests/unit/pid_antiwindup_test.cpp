@@ -253,6 +253,7 @@ TEST_CASE("back_calc default Kb auto-computation", "[pid][siso][anti-windup][bac
         const double kb = ki / kp;
         const double integral_expected = increment + kb * (u_sat - u_raw) * Ts;
 
+        REQUIRE_THAT(u[0], WithinAbs(u_sat, integral_reconstruction_tol(u_raw)));
         REQUIRE_THAT(pid.integral()[0], WithinAbs(integral_expected, integral_reconstruction_tol(u_raw)));
     }
 }

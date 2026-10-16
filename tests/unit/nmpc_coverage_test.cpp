@@ -280,6 +280,7 @@ TEST_CASE("warm-start shift reduces solve time on consecutive calls", "[nmpc][co
     auto diag3 = controller.diagnostics();
 
     // Warm-started solves should use fewer or equal iterations
+    CHECK(diag2.iterations <= diag1.iterations);
     CHECK(diag3.iterations <= diag1.iterations);
 }
 

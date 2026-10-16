@@ -216,6 +216,7 @@ int main()
     ref_model.A(0, 0) = 0.9;
     ref_model.B(0, 0) = 0.1;
     ref_model.C(0, 0) = 1.0;
+    ref_model.D(0, 0) = 0.0;
 
     config cfg{};
     cfg.reference_model = ref_model;
@@ -280,6 +281,7 @@ int main()
     ref_model.B << 0.1, 0.0,
                    0.0, 0.15;
     ref_model.C = ctrlpp::Matrix<double, NX, NX>::Identity();
+    ref_model.D = ctrlpp::Matrix<double, NX, NU>::Zero();
 
     config cfg{};
     cfg.reference_model = ref_model;
