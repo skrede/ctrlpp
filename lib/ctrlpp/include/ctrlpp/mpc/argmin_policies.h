@@ -54,26 +54,16 @@ struct argmin_nw_sqp
     using algorithm = argmin::nw_sqp_policy<>;
 };
 
-// Compile-time-N form of argmin_nw_sqp for the allocation-free static path: it
-// resolves argmin::nw_sqp_policy<NV>, whose state_type
-// sizes its decision-vector buffers (x, g, bounds, the QP working set) with
-// fixed-size Eigen types when NV is a positive compile-time bound. The default
-// NV == Eigen::Dynamic yields nw_sqp_policy<> — byte-identical to argmin_nw_sqp.
-// The constraint bound M stays derived internally by argmin (dynamic here).
+// A compile-time NV sizes the policy's decision-vector buffers with fixed-size Eigen types on the allocation-free
+// static path; NV == Eigen::Dynamic yields the same type as argmin_nw_sqp's policy.
 template <int NV = Eigen::Dynamic>
 struct argmin_nw_sqp_static
 {
-    using algorithm = argmin::nw_sqp_policy<NV>;
+    using algorithm = argmin::nw_sqp_policy<double, NV>;
 };
 
-// Rebind a ctrlpp policy binding's argmin algorithm to a compile-time decision
-// dimension N when the underlying argmin policy exposes a rebind<N> hook (the
-// SQP families do). Policies without the hook are returned unchanged — they have
-// no compile-time-N form and are only ever used on the dynamic path. argmin_solver
-// uses this to select argmin's compile-time-N step_budget_solver on the static
-// path while leaving the dynamic default (N == Eigen::Dynamic) byte-identical:
-// for nw_sqp, rebind<Eigen::Dynamic> is nw_sqp_policy<Eigen::Dynamic>, the same
-// type as the default-argument nw_sqp_policy<>.
+// Policies with a rebind hook are re-dimensioned to the compile-time N and others pass through unchanged; rebinding
+// to Eigen::Dynamic leaves the dynamic default's type unchanged.
 template <typename Algorithm, int N, typename = void>
 struct rebind_argmin_algorithm
 {
@@ -121,10 +111,10 @@ struct argmin_auglag
 // counterparts and is a deliberate convergence-behavior change: argmin-backed
 // solvers observe re-pinned iterate counts relative to default_convergence.
 using argmin_ctrlpp_convergence = argmin::convergence_policy<
-    argmin::gradient_tolerance_criterion,
-    argmin::objective_tolerance_rel_criterion,
-    argmin::step_tolerance_rel_criterion,
-    argmin::stall_tolerance_criterion>;
+    argmin::gradient_tolerance_criterion<>,
+    argmin::objective_tolerance_rel_criterion<>,
+    argmin::step_tolerance_rel_criterion<>,
+    argmin::stall_tolerance_criterion<>>;
 
 }
 

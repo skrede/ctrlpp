@@ -74,16 +74,16 @@ public:
 
     // Move is correct-by-default: `bridge_` lives behind a `unique_ptr` (a stable
     // heap address), so moving relocates only the owning pointer while the
-    // pointed-to bridge stays put. argmin's `solver_core` caches the problem BY
-    // REFERENCE (`const Problem* problem_ptr_`, solver_core.h:657) and its policy
-    // state likewise caches `&problem`; both back-pointers therefore remain valid
-    // across a defaulted move. A hand-written move ctor is deliberately avoided.
+    // pointed-to bridge stays put. argmin's `detail::solver_core` caches the problem
+    // BY REFERENCE through its `problem_ptr_` member and its policy state likewise
+    // caches `&problem`; both back-pointers therefore remain valid across a
+    // defaulted move. A hand-written move ctor is deliberately avoided.
     argmin_solver(argmin_solver&&) = default;
     argmin_solver& operator=(argmin_solver&&) = default;
 
     // Fork-copy: the ONE deliberately hand-written special member. argmin's
-    // `solver_core` is copy-deleted (solver_core.h:306-307), so a defaulted copy
-    // is ill-formed. This snapshots the settings and the external problem pointer,
+    // `detail::solver_core` deletes its copy constructor and copy assignment, so a
+    // defaulted copy is ill-formed. This snapshots the settings and the external problem pointer,
     // allocates a FRESH bridge rebound to the same problem, and leaves `solver_`
     // as `std::monostate` so it is re-emplaced lazily on the next solve()/step()
     // via prepare_solver's monostate branch. The result is a clean independent
@@ -393,7 +393,7 @@ private:
     settings_type settings_;
     const problem_type* problem_{nullptr};
     // Held behind a stable heap address so a defaulted move keeps argmin's
-    // by-reference problem back-pointer (solver_core.h:657) valid. Declared
+    // by-reference problem back-pointer (`detail::solver_core::problem_ptr_`) valid. Declared
     // before `solver_` so that, at destruction, `solver_` (which caches this
     // bridge) is torn down first.
     std::unique_ptr<bridge_type> bridge_;

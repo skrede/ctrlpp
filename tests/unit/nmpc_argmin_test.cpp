@@ -407,8 +407,8 @@ TEST_CASE("nmpc argmin trajectory tracking", "[nmpc][argmin]")
 
 // --- move & copy safety ------------------------------------------------------
 //
-// argmin's solver_core caches the problem BY REFERENCE (const Problem*,
-// solver_core.h:657) and the ctrlpp bridge caches &m_problem, so a naive move of
+// argmin's detail::solver_core caches the problem BY REFERENCE through its
+// problem_ptr_ member and the ctrlpp bridge caches &m_problem, so a naive move of
 // an nmpc / argmin_solver would relocate the pointed-to bridge and problem while
 // the cached back-pointers kept the stale addresses. These cases relocate a
 // controller and then drive a full solve through those back-pointers; they are

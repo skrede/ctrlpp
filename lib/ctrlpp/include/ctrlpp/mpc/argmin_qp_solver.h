@@ -151,7 +151,7 @@ private:
     }
 
     argmin::sparse_admm_qp_solver<double> solver_{};
-    argmin::sparse_qp_options opts_{};
+    argmin::sparse_qp_options<> opts_{};
     argmin::qp_result<double> last_{};
     bool posed_{false};
 };

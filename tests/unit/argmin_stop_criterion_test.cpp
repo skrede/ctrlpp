@@ -80,13 +80,13 @@ run_record run(const ctrlpp::argmin_settings<double>& settings)
 
 TEST_CASE("kkt_tol defaults to the backend's own stationarity threshold", "[argmin][settings]")
 {
-    REQUIRE(ctrlpp::argmin_settings<double>{}.kkt_tol == argmin::gradient_tolerance_criterion{}.threshold);
+    REQUIRE(ctrlpp::argmin_settings<double>{}.kkt_tol == argmin::gradient_tolerance_criterion<>{}.threshold);
 }
 
 TEST_CASE("leaving kkt_tol at its default reproduces the run that sets the backend's threshold bit for bit", "[argmin][settings]")
 {
     ctrlpp::argmin_settings<double> explicit_default;
-    explicit_default.kkt_tol = argmin::gradient_tolerance_criterion{}.threshold;
+    explicit_default.kkt_tol = argmin::gradient_tolerance_criterion<>{}.threshold;
 
     const run_record defaulted = run(ctrlpp::argmin_settings<double>{});
     const run_record pinned    = run(explicit_default);
