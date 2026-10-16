@@ -297,7 +297,8 @@ TEMPLATE_TEST_CASE("PID factory refuses each documented condition", "[pid][confi
     {
         for(auto const bad : {not_a_number<Scalar>(), infinity<Scalar>(), -infinity<Scalar>()})
         {
-            auto kp = base, ki = base, kd = base, ti = isa;
+            auto kp = base, ki = base, kd = base;
+            auto ti = isa;
             kp.kp[1] = bad;
             ki.ki[1] = bad;
             kd.kd[1] = bad;

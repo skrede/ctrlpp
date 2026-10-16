@@ -269,14 +269,18 @@ TEMPLATE_TEST_CASE("back_calc default kb is refused when the channel has no trac
     REQUIRE(back_calc_refusal<Scalar>(Scalar{0}, Scalar{-2}, Scalar{0}) == ctrlpp::pid_config_error::undefined_tracking_time);
 
     // The first step saturates at output_max = 5 from setpoint 0; the expected command and integral are
-    // formed in the controller's operation order, so they match bit for bit.
+    // formed in the controller's operation order, one rounding per statement, so they match bit for bit. A
+    // multiply-add written as one expression may be contracted to a fused operation ([expr.pre]/6), which the
+    // controller's separate vector operations never are.
     const Scalar dt = static_cast<Scalar>(0.01);
     const Scalar sp = 0;
     const auto reconstructed = [&](Scalar kp, Scalar ki, Scalar kb, Scalar meas) {
         const Scalar increment = ki * (sp - meas) * dt;
-        const Scalar u_raw = kp * (Scalar{1} * sp - meas) + increment;
+        const Scalar proportional = kp * (Scalar{1} * sp - meas);
+        const Scalar u_raw = proportional + increment;
         const Scalar u_sat = std::min(u_raw, Scalar{5});
-        return std::pair<Scalar, Scalar>{u_sat, increment + kb * (u_sat - u_raw) * dt};
+        const Scalar feedback = kb * (u_sat - u_raw) * dt;
+        return std::pair<Scalar, Scalar>{u_sat, increment + feedback};
     };
 
     SECTION("reverse-acting gains of one sign take kb = sqrt(ki/kd)")
@@ -315,8 +319,10 @@ TEMPLATE_TEST_CASE("back_calc refuses a negative explicit kb", "[pid][siso][anti
     }
     const Scalar dt = static_cast<Scalar>(0.01), meas = -10;
     const Scalar increment = ki * (Scalar{0} - meas) * dt;
-    const Scalar u_raw = Scalar{1} * (Scalar{1} * Scalar{0} - meas) + increment;
-    const auto expected = std::pair<Scalar, Scalar>{Scalar{5}, increment + Scalar{1} * (Scalar{5} - u_raw) * dt};
+    const Scalar proportional = Scalar{1} * (Scalar{1} * Scalar{0} - meas);
+    const Scalar u_raw = proportional + increment;
+    const Scalar feedback = Scalar{1} * (Scalar{5} - u_raw) * dt;
+    const auto expected = std::pair<Scalar, Scalar>{Scalar{5}, increment + feedback};
     REQUIRE(back_calc_first_step<Scalar>(Scalar{1}, ki, Scalar{0}, Scalar{1}, meas) == expected);
 }
 
