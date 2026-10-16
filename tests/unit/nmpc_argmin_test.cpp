@@ -276,7 +276,7 @@ TEST_CASE("nlopt auglag_eq + ld_mma smoke", "[nmpc][argmin][nlopt]")
     ctrlpp::nlp_update<double> update;
     update.x0 = Eigen::VectorXd::Zero(problem.n_vars);
 
-    ctrlpp::nlp_result<double> result;
+    ctrlpp::nlp_result<double> result{};
     REQUIRE_NOTHROW(result = solver.solve(update));
 
     CHECK(result.status != ctrlpp::solve_status::error);
