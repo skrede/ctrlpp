@@ -366,6 +366,11 @@ if (CTRLPP_BUILD_ARGMIN)
     target_compile_options(argmin_stepper_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
     add_test(NAME argmin_stepper_test COMMAND argmin_stepper_test)
 
+    add_executable(argmin_budget_test "${CMAKE_CURRENT_LIST_DIR}/argmin_budget_test.cpp")
+    target_link_libraries(argmin_budget_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
+    target_compile_options(argmin_budget_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
+    add_test(NAME argmin_budget_test COMMAND argmin_budget_test)
+
     add_executable(argmin_stop_criterion_test "${CMAKE_CURRENT_LIST_DIR}/argmin_stop_criterion_test.cpp")
     target_link_libraries(argmin_stop_criterion_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
     target_compile_options(argmin_stop_criterion_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})

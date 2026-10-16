@@ -36,10 +36,16 @@ namespace arms = ctrlpp::bench::argmin_arms;
 namespace problems = ctrlpp::bench::problems::nmpc;
 
 using NloptSolver = ctrlpp::nlopt_solver<double>;
-using ArgminSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp>;
-using ArgminNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp>;
-using ArgminFilterSlsqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_slsqp>;
-using ArgminFilterNwSqp = ctrlpp::argmin_solver<double, ctrlpp::argmin_filter_nw_sqp>;
+
+// The time bound needs the wall-clock budget, which an argmin solver carries only when built with it.
+template <typename Policy>
+using TimedArgmin = ctrlpp::argmin_solver<double, Policy, true, Eigen::Dynamic, Eigen::Dynamic,
+                                          ctrlpp::argmin_step_and_time_budget>;
+
+using ArgminSlsqp = TimedArgmin<ctrlpp::argmin_slsqp>;
+using ArgminNwSqp = TimedArgmin<ctrlpp::argmin_nw_sqp>;
+using ArgminFilterSlsqp = TimedArgmin<ctrlpp::argmin_filter_slsqp>;
+using ArgminFilterNwSqp = TimedArgmin<ctrlpp::argmin_filter_nw_sqp>;
 
 struct closed_loop_trace
 {
@@ -51,9 +57,9 @@ struct closed_loop_trace
 
 // Bounding each step's solve keeps a variant that stops converging from
 // stalling the whole closed loop.
-auto bounded_settings() -> ctrlpp::argmin_settings<double>
+auto bounded_settings() -> ctrlpp::argmin_timed_settings<double>
 {
-    ctrlpp::argmin_settings<double> cfg{};
+    ctrlpp::argmin_timed_settings<double> cfg{};
     cfg.max_time = 0.5;
     return cfg;
 }

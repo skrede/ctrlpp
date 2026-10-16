@@ -227,30 +227,47 @@ Returns solver diagnostics including constraint violation metrics and total slac
 | `step_size` | the relative change in the iterate fell below `xtol_rel` |
 | `stalled` | the iterate or the objective stopped making progress |
 | `iteration_limit` | `max_eval` ran out |
-| `time_limit` | `max_time` ran out |
+| `time_limit` | `max_time` ran out (only under the wall-clock budget, below) |
 | `other` | any other stop, including a failed solve |
 
 ### argmin backend settings
 
-`argmin_solver` takes an `argmin_settings<Scalar>`:
+`argmin_solver` takes its `settings_type`. Under the default budget, `argmin_step_budget`, that is `argmin_settings<Scalar>`:
 
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `ftol_rel` | `1e-6` | relative objective-change threshold |
 | `xtol_rel` | `1e-6` | relative step threshold |
 | `max_eval` | `500` | iteration cap |
-| `max_time` | `0` | wall-clock budget in seconds; `0` selects the step-budget driver, which reads no clock |
 | `constraint_tol` | `1e-8` | constraint and feasibility tolerance |
 | `warm_start` | `curvature` | what a re-solve keeps from the previous one |
 | `kkt_tol` | `1e-5` | threshold on the composite KKT residual, the largest of the stationarity and feasibility legs in the infinity norm |
 
+The budget is the sixth template parameter, and it is chosen at compile time. The default instantiates only the
+step-budget driver, so the solver reads no clock, and its settings have no `max_time`: setting one is a compile
+error, not a value the solver ignores. A wall-clock budget is opt-in:
+
+```cpp
+using timed = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp, true, Eigen::Dynamic, Eigen::Dynamic,
+                                    ctrlpp::argmin_step_and_time_budget>;
+
+timed::settings_type settings;  // argmin_timed_settings<double>: every field above, plus max_time
+settings.max_time = 0.5;        // seconds; the default 0 runs the step-budget driver
+```
+
+This differs from `nlopt_solver`, whose `nlopt_settings::max_time` is a run-time field on every instance. The two
+backends' settings otherwise carry the same tolerance and cap fields, but an argmin solver has a `max_time` to set
+only when it is built with `argmin_step_and_time_budget`. A wall-clock budget is not real-time safe (see the
+[RT-safety matrix](../../rt-safety-matrix.md)).
+
 `kkt_tol` is absolute, not relative to the problem's scale. Its default is the backend's own, the `pgtol` default of Byrd, Lu, Nocedal and Zhu (1995), so leaving it unset changes nothing. On a problem whose state shrinks toward zero, an absolute threshold stops each solve once the residual is small in absolute terms. The input it returns is then accurate to an absolute amount, not a relative one. A caller who needs relative accuracy at small states tightens `kkt_tol`, and pays for it in iterations:
 
 ```cpp
-ctrlpp::argmin_settings<double> settings;
+using solver = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp, true, NV, MaxM>;
+
+solver::settings_type settings;
 settings.kkt_tol = 1e-9;
 
-using solver = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp, true, NV, MaxM>;
 ctrlpp::nmpc<double, NX, NU, NH, solver, plant> controller{plant{}, config, solver{settings}};
 
 auto u = controller.solve(x);

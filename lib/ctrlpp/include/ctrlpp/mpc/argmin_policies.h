@@ -12,6 +12,7 @@
 #include <Eigen/Core>
 
 #include <cstdint>
+#include <concepts>
 #include <type_traits>
 
 namespace ctrlpp
@@ -30,7 +31,6 @@ struct argmin_settings
     Scalar ftol_rel{Scalar{1e-6}};
     Scalar xtol_rel{Scalar{1e-6}};
     int max_eval{500};
-    Scalar max_time{Scalar{0}};
     Scalar constraint_tol{Scalar{1e-8}};
     warm_start_mode warm_start{warm_start_mode::curvature};
     /// Threshold on argmin's composite first-order optimality residual -- the
@@ -43,6 +43,30 @@ struct argmin_settings
     /// @cite byrd1995 -- Byrd, Lu, Nocedal & Zhu, "A Limited Memory Algorithm for Bound Constrained Optimization", SIAM J. Sci. Comput. 16(5):1190-1208, 1995 (the pgtol default of 1e-5)
     Scalar kkt_tol{Scalar{1e-5}};
 };
+
+// A max_time of 0 runs the step-budget driver, which reads no clock.
+template <typename Scalar>
+struct argmin_timed_settings : argmin_settings<Scalar>
+{
+    Scalar max_time{Scalar{0}};
+};
+
+// Only argmin_step_and_time_budget instantiates argmin's time-budgeted driver,
+// and with it a clock read; the settings of a step budget have no max_time to set.
+struct argmin_step_budget
+{
+    template <typename Scalar>
+    using settings_type = argmin_settings<Scalar>;
+};
+
+struct argmin_step_and_time_budget
+{
+    template <typename Scalar>
+    using settings_type = argmin_timed_settings<Scalar>;
+};
+
+template <typename Budget>
+concept argmin_budget = std::same_as<Budget, argmin_step_budget> || std::same_as<Budget, argmin_step_and_time_budget>;
 
 struct argmin_slsqp
 {

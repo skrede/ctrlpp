@@ -41,9 +41,16 @@ namespace ctrlpp
 //     MaxM gives the strict-zero steady-state solve. MaxM is an upper bound
 //     (runtime_m <= MaxM), counting equality + general-inequality rows only (box
 //     bounds are free via argmin's +2N slack).
-template <typename Scalar, typename Policy, bool Constrained = true, int NV = Eigen::Dynamic, int MaxM = Eigen::Dynamic>
+//   * Budget selects the drivers: argmin_step_budget (the DEFAULT) instantiates
+//     only the step-budget driver, so the solver reads no clock;
+//     argmin_step_and_time_budget adds the wall-clock driver, which a solve runs
+//     when settings_type::max_time is positive.
+template <typename Scalar, typename Policy, bool Constrained = true, int NV = Eigen::Dynamic,
+          int MaxM = Eigen::Dynamic, argmin_budget Budget = argmin_step_budget>
 class argmin_solver
 {
+    static constexpr bool time_budgeted = std::is_same_v<Budget, argmin_step_and_time_budget>;
+
 public:
     using scalar_type = Scalar;
     // On the static path (NV != Eigen::Dynamic) the policy algorithm is rebound
@@ -63,9 +70,10 @@ public:
     using timed_solver_type =
         argmin::step_and_time_budget_solver<argmin_policy, NV, bridge_type,
             argmin_ctrlpp_convergence>;
-    using solver_storage_type =
-        std::variant<std::monostate, step_solver_type, timed_solver_type>;
-    using settings_type = argmin_settings<Scalar>;
+    using solver_storage_type = std::conditional_t<time_budgeted,
+        std::variant<std::monostate, step_solver_type, timed_solver_type>,
+        std::variant<std::monostate, step_solver_type>>;
+    using settings_type = typename Budget::template settings_type<Scalar>;
 
     explicit argmin_solver(settings_type settings = {})
         : settings_{settings}
@@ -193,11 +201,7 @@ private:
     {
         if(std::holds_alternative<std::monostate>(solver_))
         {
-            if(has_time_budget())
-                emplace_timed_solver(x0);
-            else
-                emplace_step_solver(x0);
-
+            emplace_solver(x0);
             return;
         }
 
@@ -259,9 +263,17 @@ private:
         return opts;
     }
 
-    auto has_time_budget() const -> bool
+    void emplace_solver(const Eigen::VectorX<Scalar>& x0)
     {
-        return settings_.max_time > Scalar{0};
+        if constexpr(time_budgeted)
+        {
+            if(settings_.max_time > Scalar{0})
+            {
+                emplace_timed_solver(x0);
+                return;
+            }
+        }
+        emplace_step_solver(x0);
     }
 
     void emplace_step_solver(const Eigen::VectorX<Scalar>& x0)
@@ -275,7 +287,6 @@ private:
         solver_.template emplace<timed_solver_type>(
             argmin_policy{}, *bridge_, x0, make_time_budget_options());
     }
-
 
     static constexpr auto map_status(argmin::solver_status s) -> solve_status
     {
