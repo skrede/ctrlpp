@@ -7,10 +7,13 @@ Nonlinear Model Predictive Controller using NLP optimization with multiple shoot
 ## Header and Alias
 
 The public `nmpc` name is the **compile-time-horizon** static controller (the
-horizon `NH` is a template parameter), which is allocation-free at the solver's
-fixed-N floor and is the default. `nmpc_dynamic` is the **runtime-horizon**
-controller (horizon taken from `nmpc_config::horizon`) — the opt-in soft-RT path
-this NLopt example uses.
+horizon `NH` is a template parameter) and is the default. Below a decision
+dimension `NV` of 48 its solve is allocation-free at the solver's fixed-N floor
+on the static path, in steady state and at an exact equilibrium; the default
+`nmpc` row of the [RT-safety matrix](../../rt-safety-matrix.md) states the
+measured coverage.
+`nmpc_dynamic` is the **runtime-horizon** controller (horizon taken from
+`nmpc_config::horizon`), the opt-in soft-RT path this NLopt example uses.
 
 | Form | Header |
 |------|--------|
@@ -18,14 +21,15 @@ this NLopt example uses.
 | `nmpc_dynamic<Scalar, NX, NU, Solver, Dynamics, NC, NTC>` (opt-in, runtime horizon) | `#include <ctrlpp/nmpc.h>` |
 
 ```cpp
-// Default: compile-time horizon NH — allocation-free at the solver's fixed-N floor.
+// Default: compile-time horizon NH, allocation-free on the static path in steady state
+// and at an exact equilibrium (measured coverage: the RT-safety matrix's nmpc row).
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NH,
           typename Solver,
           dynamics_model<Scalar, NX, NU> Dynamics,
           std::size_t NC = 0, std::size_t NTC = 0>
 using nmpc = nmpc_static<Scalar, NX, NU, NH, Solver, Dynamics, NC, NTC>;
 
-// Opt-in: runtime horizon from nmpc_config::horizon — soft-RT.
+// Opt-in: runtime horizon from nmpc_config::horizon, soft-RT.
 template <typename Scalar, std::size_t NX, std::size_t NU,
           nlp_solver Solver,
           dynamics_model<Scalar, NX, NU> Dynamics,

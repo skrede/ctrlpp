@@ -14,6 +14,10 @@
 // The second case walks the boundary below, over the same corpus the published
 // stack figures for this row were taken on.
 //
+// The third case holds the pin's controller exactly at its regulation
+// equilibrium, for both the nw_sqp and the filter_nw_sqp policy, so the armed
+// solves run the path a converging trajectory never takes.
+//
 // THIS ROW ARMS TWO CONFIGURATIONS BESIDE THE PIN, NOT THE 25 IT PUBLISHES A
 // FIGURE FOR, AND THE REASON IS MEASURED RATHER THAN ASSERTED. Every point here
 // instantiates the whole nonlinear-programming substrate and then solves at that
@@ -54,6 +58,7 @@
 #include "ctrlpp/nmpc.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 
 #include <Eigen/Dense>
 
@@ -320,4 +325,61 @@ TEST_CASE("nmpc_static is allocation-free below a decision dimension of 48 and a
     const std::size_t armed = controller_grid::arm([](auto point) { arm_configuration(point); });
 
     REQUIRE(armed == armed_points);
+}
+
+// At the equilibrium the warm start is the exact optimum, so every solve takes the SQP null step, a path a
+// converging trajectory never reaches.
+TEMPLATE_TEST_CASE("nmpc_static solves held at the regulation equilibrium perform zero heap allocation",
+                   "[nmpc][argmin][static][hardening][nomalloc]", ctrlpp::argmin_nw_sqp, ctrlpp::argmin_filter_nw_sqp)
+{
+    using Solver = ctrlpp::argmin_solver<double, TestType, true, NV, MaxM>;
+    using Controller = ctrlpp::nmpc_static<double, NX, NU, NH, Solver, decltype(double_integrator)>;
+
+    static_assert(Controller::problem_dimension == NV,
+        "nmpc_static must derive the compile-time decision dimension NV");
+    static_assert(Solver::bridge_type::strict_allocation_free,
+        "the fixed-(NV,MaxM) argmin bridge backing nmpc_static must be strict_allocation_free");
+
+    auto config = ctrlpp::nmpc_config<double, NX, NU>{
+        .horizon = static_cast<int>(NH),
+        .Q = 10.0 * Eigen::Matrix2d::Identity(),
+        .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
+    };
+
+    Controller controller{double_integrator, config};
+
+    Eigen::Vector2d x = Eigen::Vector2d::Zero();
+
+    for(int step = 0; step < 20; ++step)
+    {
+        auto warm = controller.solve(x);
+        REQUIRE(warm.has_value());
+        REQUIRE(warm->input(0) == 0.0);
+        x = double_integrator(x, warm->input);
+    }
+
+    std::size_t allocations = 0;
+    bool all_ok = true;
+    bool stayed = true;
+    bool eigen_ok = true;
+    {
+        ctrlpp_test::scoped_no_malloc guard;
+        for(int step = 0; step < 32; ++step)
+        {
+            auto u = controller.solve(x);
+            all_ok = all_ok && u.has_value();
+            stayed = stayed && u.has_value() && u->input(0) == 0.0;
+            if(u)
+                x = double_integrator(x, u->input);
+        }
+        allocations = guard.allocations();
+        eigen_ok = !guard.eigen_violation();
+    }
+
+    REQUIRE(all_ok);
+    REQUIRE(stayed);
+    REQUIRE(x(0) == 0.0);
+    REQUIRE(x(1) == 0.0);
+    REQUIRE(allocations == 0);
+    REQUIRE(eigen_ok);
 }
