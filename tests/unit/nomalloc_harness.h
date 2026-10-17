@@ -13,14 +13,18 @@
 //    through eigen_assert; a failed predicate stores true into the sentinel
 //    and lets execution continue, while the allocation counter still records
 //    the allocation, so both defenses stay live.
-// 2. The global allocation functions (operator new, operator new[], and the
-//    matching deletes) are replaced with counting versions. Eigen's internal
+// 2. The global allocation functions (operator new, operator new[], their
+//    std::nothrow_t forms, and the matching deletes) are replaced with counting
+//    versions. Every form is replaced because a sanitizer runtime supplies its
+//    own definition of any form left out, and its memory then reaches the
+//    replaced std::free-based deletes as an allocator mismatch. Eigen's internal
 //    aligned_malloc calls std::malloc directly and bypasses operator new, so
 //    the Eigen-side check covers what the counter cannot see, while the
 //    counter covers every non-Eigen heap allocation that Eigen's bookkeeping
 //    cannot see. Either mechanism alone can silently false-pass. A hard
-//    allocation failure (operator new may not return null) calls std::abort:
-//    raising an exception is unavailable under -fno-exceptions.
+//    allocation failure in a throwing form (which may not return null) calls
+//    std::abort, since raising an exception is unavailable under
+//    -fno-exceptions; the nothrow forms return null as the standard requires.
 //
 // Usage contract:
 //   1. Construct inputs and run one warm-up call OUTSIDE the guarded window
@@ -84,18 +88,16 @@ namespace detail
 
 std::atomic<std::size_t> allocation_count{0};
 
-inline void* counted_allocate(std::size_t size)
+inline void* counted_try_allocate(std::size_t size) noexcept
 {
     allocation_count.fetch_add(1, std::memory_order_relaxed);
 
     // operator new must return a distinct non-null pointer even for a
     // zero-size request, while std::malloc(0) may return a null pointer.
-    if(void* pointer = std::malloc(size > 0 ? size : 1))
-        return pointer;
-    std::abort();
+    return std::malloc(size > 0 ? size : 1);
 }
 
-inline void* counted_allocate(std::size_t size, std::align_val_t alignment)
+inline void* counted_try_allocate(std::size_t size, std::align_val_t alignment) noexcept
 {
     allocation_count.fetch_add(1, std::memory_order_relaxed);
 
@@ -106,12 +108,23 @@ inline void* counted_allocate(std::size_t size, std::align_val_t alignment)
 #if defined(_MSC_VER)
     // MSVC's UCRT ships no std::aligned_alloc; _aligned_malloc takes (size,
     // alignment) and its result must be released with _aligned_free.
-    if(void* pointer = _aligned_malloc(request, align))
-        return pointer;
+    return _aligned_malloc(request, align);
 #else
-    if(void* pointer = std::aligned_alloc(align, request))
-        return pointer;
+    return std::aligned_alloc(align, request);
 #endif
+}
+
+inline void* counted_allocate(std::size_t size)
+{
+    if(void* pointer = counted_try_allocate(size))
+        return pointer;
+    std::abort();
+}
+
+inline void* counted_allocate(std::size_t size, std::align_val_t alignment)
+{
+    if(void* pointer = counted_try_allocate(size, alignment))
+        return pointer;
     std::abort();
 }
 
@@ -153,6 +166,26 @@ void* operator new[](std::size_t size, std::align_val_t alignment)
     return ctrlpp_test::detail::counted_allocate(size, alignment);
 }
 
+void* operator new(std::size_t size, const std::nothrow_t&) noexcept
+{
+    return ctrlpp_test::detail::counted_try_allocate(size);
+}
+
+void* operator new[](std::size_t size, const std::nothrow_t&) noexcept
+{
+    return ctrlpp_test::detail::counted_try_allocate(size);
+}
+
+void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
+{
+    return ctrlpp_test::detail::counted_try_allocate(size, alignment);
+}
+
+void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
+{
+    return ctrlpp_test::detail::counted_try_allocate(size, alignment);
+}
+
 void operator delete(void* pointer) noexcept
 {
     std::free(pointer);
@@ -189,6 +222,26 @@ void operator delete(void* pointer, std::size_t, std::align_val_t) noexcept
 }
 
 void operator delete[](void* pointer, std::size_t, std::align_val_t) noexcept
+{
+    ctrlpp_test::detail::counted_aligned_free(pointer);
+}
+
+void operator delete(void* pointer, const std::nothrow_t&) noexcept
+{
+    std::free(pointer);
+}
+
+void operator delete[](void* pointer, const std::nothrow_t&) noexcept
+{
+    std::free(pointer);
+}
+
+void operator delete(void* pointer, std::align_val_t, const std::nothrow_t&) noexcept
+{
+    ctrlpp_test::detail::counted_aligned_free(pointer);
+}
+
+void operator delete[](void* pointer, std::align_val_t, const std::nothrow_t&) noexcept
 {
     ctrlpp_test::detail::counted_aligned_free(pointer);
 }
