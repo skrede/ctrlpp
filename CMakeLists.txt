@@ -60,9 +60,11 @@ set(CTRLPP_WARNING_FLAGS
         # gcc reports a discarded value of an attributed class TYPE under the promotion above, while clang reports it under the promotion below and reserves the one above for a discarded attributed FUNCTION result, so neither promotion alone enforces the gate on every supported compiler.
         -Werror=unused-value
     >
-    # gcc 15 and 16 warn on provably dead branches of Eigen 3.4's Householder and LDLT solves at one-row operands
-    # (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=106247 under PR56456; Eigen issues 2506 and 2906, fixed on Eigen master
-    # by f7772e3); silencing one of the two reports the same code under the other. Remove once the fetched Eigen is clean.
+    # gcc reports provably dead one-row branches of Eigen 3.4's Householder solves
+    # (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=106247; Eigen issues 2506 and 2906, fixed on Eigen master by f7772e3)
+    # and LDLT solves (unfixed, GCC PR56456) under either flag. Tree-wide because the need follows from instantiated
+    # dimensions the build cannot see; clang's -Wsometimes-uninitialized and -Warray-bounds remain the backstop.
+    # Remove once the fetched Eigen is clean.
     $<$<CXX_COMPILER_ID:GNU>:-Wno-array-bounds -Wno-maybe-uninitialized>
 )
 

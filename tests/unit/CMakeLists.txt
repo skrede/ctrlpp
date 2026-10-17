@@ -359,7 +359,8 @@ if (CTRLPP_BUILD_ARGMIN)
             target_link_libraries(nmpc_argmin_asan_test PRIVATE ctrlpp::osqp)
             target_compile_definitions(nmpc_argmin_asan_test PRIVATE CTRLPP_HAS_OSQP)
         endif ()
-        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=116026: remove once the supported gcc releases carry the fix.
+        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=116026, independent of Eigen, so this outlives the shared Eigen
+        # flags; remove once the supported gcc releases carry the fix.
         target_compile_options(nmpc_argmin_asan_test PRIVATE ${CTRLPP_WARNING_FLAGS} -fsanitize=address -g
                                $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
         target_link_options(nmpc_argmin_asan_test PRIVATE -fsanitize=address)
