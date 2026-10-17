@@ -2,7 +2,10 @@
 # own test targets compile -fno-exceptions -fno-rtti. Empty in the exceptions
 # carve-out tree and on MSVC (which needs /EHsc for its own runtime).
 if (NOT CTRLPP_TESTS_WITH_EXCEPTIONS AND NOT MSVC)
-    set(CTRLPP_NOEXCEPT_FLAGS -fno-exceptions -fno-rtti)
+    # Under -fno-exceptions Eigen 3.4's size-overflow check falls through to operator new(SIZE_MAX) instead of throwing,
+    # so gcc keeps an impossible negative SimplicialLDLT workspace size live into aligned_malloc and reports it.
+    # Remove once the fetched Eigen's no-exceptions allocation path no longer leaves that range reachable.
+    set(CTRLPP_NOEXCEPT_FLAGS -fno-exceptions -fno-rtti $<$<CXX_COMPILER_ID:GNU>:-Wno-alloc-size-larger-than>)
 else ()
     set(CTRLPP_NOEXCEPT_FLAGS "")
 endif ()
@@ -356,7 +359,9 @@ if (CTRLPP_BUILD_ARGMIN)
             target_link_libraries(nmpc_argmin_asan_test PRIVATE ctrlpp::osqp)
             target_compile_definitions(nmpc_argmin_asan_test PRIVATE CTRLPP_HAS_OSQP)
         endif ()
-        target_compile_options(nmpc_argmin_asan_test PRIVATE ${CTRLPP_WARNING_FLAGS} -fsanitize=address -g)
+        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=116026: remove once the supported gcc releases carry the fix.
+        target_compile_options(nmpc_argmin_asan_test PRIVATE ${CTRLPP_WARNING_FLAGS} -fsanitize=address -g
+                               $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
         target_link_options(nmpc_argmin_asan_test PRIVATE -fsanitize=address)
         add_test(NAME nmpc_argmin_asan_test COMMAND nmpc_argmin_asan_test)
     endif ()
