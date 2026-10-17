@@ -138,7 +138,9 @@ int main()
 
     // -- estimation: create factories (kalman, ekf, ukf, mekf, manifold_ukf, complementary) --
 
-    ctrlpp::discrete_state_space<scalar, 2, 1, 1> system{};
+    ctrlpp::Matrix<scalar, 1, 2> c;
+    c << scalar{1}, scalar{0};
+    const ctrlpp::discrete_state_space<scalar, 2, 1, 1> system{a, b, c, ctrlpp::Matrix<scalar, 1, 1>::Zero()};
     witness += fold(
         ctrlpp::kalman_filter<scalar, 2, 1, 1>::create(system, ctrlpp::kalman_config<scalar, 2, 1, 1>{}));
 
