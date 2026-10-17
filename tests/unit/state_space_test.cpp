@@ -88,3 +88,35 @@ TEST_CASE("SISO alias template works", "[state_space]")
     static_assert(std::is_same_v<ctrlpp::siso_continuous_state_space<double, 2>, ctrlpp::continuous_state_space<double, 2, 1, 1>>);
     SUCCEED();
 }
+
+TEST_CASE("value-initialized state-space models are the zero system", "[state_space]")
+{
+    static_assert(std::is_aggregate_v<DSS> && std::is_aggregate_v<CSS>);
+
+    const ctrlpp::discrete_state_space<double, 3, 2, 4> dsys{};
+    REQUIRE(dsys.A.isZero(0.0));
+    REQUIRE(dsys.B.isZero(0.0));
+    REQUIRE(dsys.C.isZero(0.0));
+    REQUIRE(dsys.D.isZero(0.0));
+
+    const ctrlpp::continuous_state_space<float, 2, 3, 1> csys{};
+    REQUIRE(csys.A.isZero(0.0F));
+    REQUIRE(csys.B.isZero(0.0F));
+    REQUIRE(csys.C.isZero(0.0F));
+    REQUIRE(csys.D.isZero(0.0F));
+}
+
+TEST_CASE("designated initialization sets the named matrices and zeroes the rest", "[state_space]")
+{
+    const DSS sys{.A = ctrlpp::Matrix<double, 2, 2>::Identity(), .C = ctrlpp::Matrix<double, 1, 2>::Ones()};
+    REQUIRE(sys.A.isIdentity(0.0));
+    REQUIRE(sys.B.isZero(0.0));
+    REQUIRE((sys.C.array() == 1.0).all());
+    REQUIRE(sys.D.isZero(0.0));
+
+    const CSS csys{.B = ctrlpp::Vector<double, 2>::Ones()};
+    REQUIRE(csys.A.isZero(0.0));
+    REQUIRE((csys.B.array() == 1.0).all());
+    REQUIRE(csys.C.isZero(0.0));
+    REQUIRE(csys.D.isZero(0.0));
+}

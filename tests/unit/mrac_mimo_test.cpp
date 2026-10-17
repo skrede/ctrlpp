@@ -36,6 +36,15 @@ auto make_mimo_config() -> ctrlpp::mrac_config<double, 2, 2>
 
 }
 
+TEST_CASE("MIMO MRAC default config carries a zero reference model", "[mrac][mimo]")
+{
+    const ctrlpp::mrac_config<double, 2, 2> cfg{};
+    REQUIRE(cfg.reference_model.A.isZero(0.0));
+    REQUIRE(cfg.reference_model.B.isZero(0.0));
+    REQUIRE(cfg.reference_model.C.isZero(0.0));
+    REQUIRE(cfg.reference_model.D.isZero(0.0));
+}
+
 TEST_CASE("MIMO MRAC construction and accessors", "[mrac][mimo]")
 {
     auto cfg = make_mimo_config();
