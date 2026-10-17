@@ -242,7 +242,7 @@ int main()
             }
 
             // ---- argmin: pose once, replay (polish flag in opts) ----
-            argmin::sparse_qp_options opts;
+            argmin::sparse_qp_options<> opts;
             opts.eps_abs = 1e-3;
             opts.eps_rel = 1e-3;
             opts.max_iterations = 4000;

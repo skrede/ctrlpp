@@ -34,13 +34,13 @@ auto probe_nmpc_arm(const Dynamics& dynamics, const ctrlpp::nmpc_config<double, 
     auto controller = ctrlpp::bench::built_or_exit(
         ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics>::create(dynamics, config, std::move(solver)),
         "arm");
-    controller.solve(x0);
+    const auto solved = controller.solve(x0);
     const auto diagnostics = controller.diagnostics();
     return {{compute_constraint_violation(controller), label, controller.last_solution()},
             quality_metrics{.objective = diagnostics.cost,
                             .max_constraint_violation = diagnostics.max_constraint_violation,
                             .gradient_norm = compute_gradient_norm<double, NX, NU>(controller),
-                            .success = (diagnostics.status == ctrlpp::solve_status::optimal),
+                            .success = solved.has_value() && diagnostics.status == ctrlpp::solve_status::optimal,
                             .iterations = diagnostics.iterations,
                             .solve_time_ms = diagnostics.solve_time * 1000.0}};
 }

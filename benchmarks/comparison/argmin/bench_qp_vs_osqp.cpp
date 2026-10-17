@@ -43,9 +43,9 @@ constexpr char const* kkt_metric = "relative Karush-Kuhn-Tucker residual of this
 constexpr double tolerance = 1e-3;
 constexpr int iteration_budget = 4000;
 
-auto matched_options() -> argmin::sparse_qp_options
+auto matched_options() -> argmin::sparse_qp_options<>
 {
-    argmin::sparse_qp_options options;
+    argmin::sparse_qp_options<> options;
     options.eps_abs = tolerance;
     options.eps_rel = tolerance;
     options.max_iterations = iteration_budget;
@@ -97,7 +97,7 @@ private:
     argmin::sparse_admm_qp_solver<double> admm;
     argmin::qp_result<double> admm_answer;
     ctrlpp::qp_result<double> osqp_answer;
-    argmin::sparse_qp_options options;
+    argmin::sparse_qp_options<> options;
     ctrlpp::qp_update<double> update;
     const problems::mpc_sweep_problem& program;
 };

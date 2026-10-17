@@ -31,7 +31,7 @@ namespace ctrlpp::bench::argmin_arms
 template <typename Schedule>
 using group_type = argmin::basic_solver_group<Schedule, Eigen::Dynamic,
                                               ctrlpp::argmin_constrained_problem<double>,
-                                              argmin::kraft_slsqp_policy<>, argmin::cobyla_policy>;
+                                              argmin::kraft_slsqp_policy<>, argmin::cobyla_policy<>>;
 
 using baseline_solver = ctrlpp::argmin_solver<double, ctrlpp::argmin_slsqp>;
 

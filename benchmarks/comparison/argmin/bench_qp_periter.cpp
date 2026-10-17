@@ -34,9 +34,10 @@
 #include <Eigen/Sparse>
 
 #include <cstdio>
-#include <fstream>
 #include <string>
 #include <vector>
+#include <cstdint>
+#include <fstream>
 
 namespace
 {
@@ -176,15 +177,19 @@ int main()
             }
             // ---- argmin: same forcing ----
             {
-                argmin::sparse_qp_options opts;
+                argmin::sparse_qp_options<> opts;
                 opts.eps_abs = 1e-14;
                 opts.eps_rel = 1e-14;
-                opts.max_iterations = static_cast<std::uint16_t>(N);
+                opts.max_iterations = static_cast<std::uint32_t>(N);
                 opts.warm_start = false;
                 opts.polish = false;
                 argmin::sparse_admm_qp_solver<double> aq;
                 argmin::qp_result<double> aout;
-                aq.solve_into(data.problem.P, data.q, data.problem.A, data.l, data.u, aout, opts);
+                if(aq.solve_into(data.problem.P, data.q, data.problem.A, data.l, data.u, aout, opts).has_value())
+                {
+                    std::fprintf(stderr, "argmin::sparse_admm_qp_solver refused to pose the problem; a timing measured against a solver that was never posed is meaningless\n");
+                    return 1;
+                }
                 const int iters = aout.iterations;
                 bench.run("argmin " + tag + " N=" + std::to_string(N),
                           [&] { aq.resolve_into(data.q, data.l, data.u, aout, opts); ankerl::nanobench::doNotOptimizeAway(aout); });

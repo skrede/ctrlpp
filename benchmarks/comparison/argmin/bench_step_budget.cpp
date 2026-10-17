@@ -193,7 +193,7 @@ void run_step_budget(const std::string& system_name,
     {
         auto controller = ctrlpp::bench::built_or_exit(
             ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, Dynamics>::create(dynamics, config), "controller");
-        controller.solve(x0);
+        const auto solved = controller.solve(x0);
         auto diag = controller.diagnostics();
         auto grad = compute_gradient_norm<double, NX, NU>(controller);
 
@@ -201,7 +201,7 @@ void run_step_budget(const std::string& system_name,
             .objective = diag.cost,
             .max_constraint_violation = diag.max_constraint_violation,
             .gradient_norm = grad,
-            .success = (diag.status == ctrlpp::solve_status::optimal),
+            .success = solved.has_value() && diag.status == ctrlpp::solve_status::optimal,
             .iterations = diag.iterations,
             .solve_time_ms = diag.solve_time * 1000.0,
         };
