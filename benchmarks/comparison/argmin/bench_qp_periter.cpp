@@ -24,6 +24,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "qp_refusal.h"
+
 #include "ctrlpp/mpc/osqp_solver.h"
 #include "ctrlpp/mpc/qp_types.h"
 
@@ -38,6 +40,7 @@
 #include <vector>
 #include <cstdint>
 #include <fstream>
+#include <optional>
 
 namespace
 {
@@ -185,14 +188,19 @@ int main()
                 opts.polish = false;
                 argmin::sparse_admm_qp_solver<double> aq;
                 argmin::qp_result<double> aout;
-                if(aq.solve_into(data.problem.P, data.q, data.problem.A, data.l, data.u, aout, opts).has_value())
-                {
-                    std::fprintf(stderr, "argmin::sparse_admm_qp_solver refused to pose the problem; a timing measured against a solver that was never posed is meaningless\n");
+                if(ctrlpp::bench::admm_refused("solve_into", aq.solve_into(data.problem.P, data.q, data.problem.A, data.l, data.u, aout, opts)))
                     return 1;
-                }
                 const int iters = aout.iterations;
+                std::optional<argmin::qp_error> replay_error;
                 bench.run("argmin " + tag + " N=" + std::to_string(N),
-                          [&] { aq.resolve_into(data.q, data.l, data.u, aout, opts); ankerl::nanobench::doNotOptimizeAway(aout); });
+                          [&]
+                          {
+                              if(auto error = aq.resolve_into(data.q, data.l, data.u, aout, opts))
+                                  replay_error = error;
+                              ankerl::nanobench::doNotOptimizeAway(aout);
+                          });
+                if(ctrlpp::bench::admm_refused("resolve_into", replay_error))
+                    return 1;
                 csv << '"' << tag << "\",\"argmin::sparse_admm\"," << N << ',' << iters << ','
                     << instr_of(bench.results().back()) << "\n";
             }

@@ -16,6 +16,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "qp_refusal.h"
+
 #include "bench_csv.h"
 
 #include "qp/qp_accuracy.h"
@@ -30,8 +32,9 @@
 #include <Eigen/Dense>
 
 #include <cstdio>
-#include <fstream>
 #include <string>
+#include <fstream>
+#include <optional>
 
 namespace
 {
@@ -65,23 +68,32 @@ class cell_arms
 {
 public:
     explicit cell_arms(const problems::mpc_sweep_problem& posed)
-        : ready{false}, osqp{tolerance, tolerance, iteration_budget, false, true, true}, admm{}, admm_answer{},
-          osqp_answer{}, options{matched_options()}, update{.q = posed.q, .l = posed.l, .u = posed.u},
+        : ready{false}, pose_error{}, resolve_error{}, osqp{tolerance, tolerance, iteration_budget, false, true, true}, admm{},
+          admm_answer{}, osqp_answer{}, options{matched_options()}, update{.q = posed.q, .l = posed.l, .u = posed.u},
           program{posed}
     {
         ready = osqp.setup(posed.problem).has_value();
         if(!ready)
             return;
         osqp_answer = osqp.solve(update);
-        admm.solve_into(posed.problem.P, posed.q, posed.problem.A, posed.l, posed.u, admm_answer, options);
-        solve_admm();
+        pose_error = admm.solve_into(posed.problem.P, posed.q, posed.problem.A, posed.l, posed.u, admm_answer, options);
+        if(!pose_error)
+            solve_admm();
     }
 
     void solve_osqp() { osqp_answer = osqp.solve(update); }
 
-    void solve_admm() { admm.resolve_into(program.q, program.l, program.u, admm_answer, options); }
+    void solve_admm()
+    {
+        if(auto error = admm.resolve_into(program.q, program.l, program.u, admm_answer, options))
+            resolve_error = error;
+    }
 
     bool usable() const { return ready; }
+
+    const std::optional<argmin::qp_error>& admm_pose_error() const { return pose_error; }
+
+    const std::optional<argmin::qp_error>& admm_resolve_error() const { return resolve_error; }
 
     const Eigen::VectorXd& osqp_primal() const { return osqp_answer.x; }
 
@@ -93,6 +105,8 @@ public:
 
 private:
     bool ready;
+    std::optional<argmin::qp_error> pose_error;
+    std::optional<argmin::qp_error> resolve_error;
     ctrlpp::osqp_solver osqp;
     argmin::sparse_admm_qp_solver<double> admm;
     argmin::qp_result<double> admm_answer;
@@ -129,8 +143,10 @@ bool run_cell(ankerl::nanobench::Bench& bench, const problems::mpc_sweep_cell& c
         std::fprintf(stderr, "ctrlpp::osqp_solver setup failed; a timing measured against a solver that was never set up is meaningless\n");
         return false;
     }
+    if(ctrlpp::bench::admm_refused("solve_into", arms.admm_pose_error()) || ctrlpp::bench::admm_refused("resolve_into", arms.admm_resolve_error()))
+        return false;
     emit_cell_rows(bench, problems::dense_form(posed), arms, cell_tag(cell, problems::sweep_layout(cell)));
-    return true;
+    return !ctrlpp::bench::admm_refused("resolve_into", arms.admm_resolve_error());
 }
 
 }

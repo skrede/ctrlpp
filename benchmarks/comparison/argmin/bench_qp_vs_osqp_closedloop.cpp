@@ -24,6 +24,8 @@
 #define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
+#include "qp_refusal.h"
+
 #include "ctrlpp/mpc/osqp_solver.h"
 #include "ctrlpp/mpc/qp_types.h"
 
@@ -33,12 +35,13 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
-#include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <fstream>
 #include <string>
 #include <vector>
+#include <fstream>
+#include <optional>
+#include <algorithm>
 
 namespace
 {
@@ -250,7 +253,8 @@ int main()
             opts.polish = polish;
             argmin::sparse_admm_qp_solver<double> aq;
             argmin::qp_result<double> aout;
-            aq.solve_into(data.problem.P, data.q, data.problem.A, data.l, data.u, aout, opts);
+            if(ctrlpp::bench::admm_refused("solve_into", aq.solve_into(data.problem.P, data.q, data.problem.A, data.l, data.u, aout, opts)))
+                return 1;
 
             Eigen::VectorXd al = data.l, au = data.u;
             std::vector<int> argmin_iters;
@@ -261,7 +265,8 @@ int main()
                 auto xi = x_init_at(s, nx);
                 al.head(nx) = xi;
                 au.head(nx) = xi;
-                aq.resolve_into(data.q, al, au, aout, opts);
+                if(ctrlpp::bench::admm_refused("resolve_into", aq.resolve_into(data.q, al, au, aout, opts)))
+                    return 1;
                 argmin_iters.push_back(aout.iterations);
                 max_sol_dev = std::max(max_sol_dev, (aout.x - osqp_sol[static_cast<std::size_t>(s)]).cwiseAbs().maxCoeff());
             }
@@ -282,15 +287,19 @@ int main()
             const auto ro = bench.results().back();
 
             int step_a = 0;
+            std::optional<argmin::qp_error> replay_error;
             bench.run("argmin  " + tag + " polish=" + pol,
                       [&]
                       {
                           auto xi = x_init_at(step_a++ % kSteps, nx);
                           al.head(nx) = xi;
                           au.head(nx) = xi;
-                          aq.resolve_into(data.q, al, au, aout, opts);
+                          if(auto error = aq.resolve_into(data.q, al, au, aout, opts))
+                              replay_error = error;
                           ankerl::nanobench::doNotOptimizeAway(aout);
                       });
+            if(ctrlpp::bench::admm_refused("resolve_into", replay_error))
+                return 1;
             const auto ra = bench.results().back();
 
             auto row = [&](const char* solver, const iter_stats& st,
