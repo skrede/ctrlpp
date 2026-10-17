@@ -77,7 +77,7 @@ option(CTRLPP_CMAKE_FETCH_DEPS "Use CMake FetchContent to download and install d
 
 option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)
 option(CTRLPP_BUILD_FUZZ_TESTS "Build fuzz test targets" OFF)
-option(CTRLPP_BUILD_PROPERTY_TESTS "Build property-based test targets (requires RapidCheck)" OFF)
+option(CTRLPP_BUILD_PROPERTY_TESTS "Build property-based test targets (requires RapidCheck and CTRLPP_TESTS_WITH_EXCEPTIONS)" OFF)
 
 # Selects which posture ctrlpp's own root test targets compile in. This is
 # self-imposed dogfood of the throw-free discipline, not a consumer mandate: the

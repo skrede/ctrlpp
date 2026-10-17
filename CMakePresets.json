@@ -17,7 +17,7 @@
         },
         {
             "name": "dev-full",
-            "displayName": "Full development (tests + examples + fuzz + property)",
+            "displayName": "Full development (tests + examples + fuzz)",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/dev-full",
             "cacheVariables": {
@@ -27,14 +27,13 @@
                 "CTRLPP_BUILD_TESTS": "ON",
                 "CTRLPP_BUILD_EXAMPLES": "ON",
                 "CTRLPP_BUILD_FUZZ_TESTS": "ON",
-                "CTRLPP_BUILD_PROPERTY_TESTS": "ON",
                 "CTRLPP_CMAKE_FETCH_DEPS": "ON",
                 "CTRLPP_INSTALL": "OFF"
             }
         },
         {
             "name": "exceptions",
-            "displayName": "Exceptions carve-out (throwing-wrapper + OSQP/NLopt tests, Catch2 exceptions-on)",
+            "displayName": "Exceptions carve-out (throwing-wrapper + OSQP/NLopt + property tests, Catch2 exceptions-on)",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/exceptions",
             "cacheVariables": {
@@ -46,7 +45,8 @@
                 "CTRLPP_INSTALL": "OFF",
                 "CTRLPP_TESTS_WITH_EXCEPTIONS": "ON",
                 "CTRLPP_BUILD_OSQP": "ON",
-                "CTRLPP_BUILD_NLOPT": "ON"
+                "CTRLPP_BUILD_NLOPT": "ON",
+                "CTRLPP_BUILD_PROPERTY_TESTS": "ON"
             }
         },
         {
@@ -95,6 +95,7 @@
                 "CMAKE_CXX_FLAGS": "--coverage -fprofile-arcs -ftest-coverage",
                 "CTRLPP_BUILD_TESTS": "ON",
                 "CTRLPP_ENABLE_COVERAGE": "ON",
+                "CTRLPP_TESTS_WITH_EXCEPTIONS": "ON",
                 "CTRLPP_BUILD_OSQP": "ON",
                 "CTRLPP_BUILD_NLOPT": "ON",
                 "CTRLPP_BUILD_PROPERTY_TESTS": "ON",
