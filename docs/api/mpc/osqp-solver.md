@@ -36,7 +36,7 @@ Any type satisfying this concept can replace `osqp_solver` as the solver backend
 ```cpp
 explicit osqp_solver(double eps_abs = 1e-3,
                      double eps_rel = 1e-3,
-                     int max_iter = 4000,
+                     std::int32_t max_iter = 4000,
                      bool verbose = false,
                      bool warm_starting = true,
                      bool polishing = true);
@@ -48,7 +48,7 @@ Constructs the solver with OSQP settings. Default values provide a good balance 
 |-----------|---------|-------------|
 | `eps_abs` | `1e-3` | Absolute convergence tolerance |
 | `eps_rel` | `1e-3` | Relative convergence tolerance |
-| `max_iter` | `4000` | Maximum ADMM iterations |
+| `max_iter` | `4000` | Maximum ADMM iterations. Valid range `[1, 2147483647]`; `setup` refuses 0 or a negative value with `osqp_setup_error::setup_failed` |
 | `verbose` | `false` | Print solver progress |
 | `warm_starting` | `true` | Enable primal/dual warm-starting |
 | `polishing` | `true` | Enable solution polishing |
@@ -122,6 +122,7 @@ OSQP operates in double precision only.
 
 #include <Eigen/Dense>
 
+#include <utility>
 #include <iostream>
 
 int main()
@@ -136,15 +137,18 @@ int main()
         .C = Eigen::Matrix2d::Identity(),
         .D = Eigen::Matrix<double, 2, 1>::Zero()};
 
-    // Custom solver settings: tighter tolerance, fewer iterations
-    ctrlpp::osqp_solver solver(1e-5, 1e-5, 2000);
-
     ctrlpp::mpc_config<double, NX, NU> cfg{
         .horizon = 15,
         .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
         .R = Eigen::Matrix<double, 1, 1>::Identity()};
 
-    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(sys, cfg);
+    // Custom solver settings: tighter tolerance, fewer iterations
+    ctrlpp::osqp_solver solver(1e-5, 1e-5, 2000);
+
+    auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg, std::move(solver));
+    if(!created)
+        return 1;
+    auto& controller = *created;
 
     Eigen::Vector2d x(3.0, 0.0);
 

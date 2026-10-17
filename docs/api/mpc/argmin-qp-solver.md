@@ -29,19 +29,19 @@ The class is defined only when `CTRLPP_BUILD_ARGMIN=ON` **and** argmin's QP head
 ```cpp
 explicit argmin_qp_solver(double eps_abs = 1e-3,
                           double eps_rel = 1e-3,
-                          int max_iter = 4000,
+                          std::int32_t max_iter = 4000,
                           bool verbose = false,
                           bool warm_starting = true,
                           bool polishing = true);
 ```
 
-Constructs the solver, binding argmin's stable QP contract: tolerances, iteration budget, and warm-start. The signature mirrors `osqp_solver` so the two backends are drop-in interchangeable.
+Constructs the solver, binding argmin's stable QP contract: tolerances, iteration budget, warm start and polish. The signature mirrors `osqp_solver` so the two backends are drop-in interchangeable.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `eps_abs` | `1e-3` | Absolute convergence tolerance |
-| `eps_rel` | `1e-3` | Relative convergence tolerance |
-| `max_iter` | `4000` | Maximum ADMM iterations |
+| `eps_abs` | `1e-3` | Absolute convergence tolerance. Must be finite and nonnegative, and not zero together with `eps_rel`, or `setup` refuses it with `argmin_qp_setup_error::invalid_options` |
+| `eps_rel` | `1e-3` | Relative convergence tolerance. Must be finite and nonnegative, and not zero together with `eps_abs`, or `setup` refuses it with `argmin_qp_setup_error::invalid_options` |
+| `max_iter` | `4000` | Maximum ADMM iterations. Valid range `[1, 2147483647]`; `setup` refuses 0 or a negative value with `argmin_qp_setup_error::invalid_options` |
 | `verbose` | `false` | Accepted for signature parity; argmin's sparse solver has no progress print, so this is ignored |
 | `warm_starting` | `true` | Enable primal/dual warm-starting |
 | `polishing` | `true` | Enable solution polishing |
@@ -75,9 +75,10 @@ Defined in `<ctrlpp/mpc/argmin_qp_solver.h>`.
 
 ```cpp
 enum class argmin_qp_setup_error : std::uint8_t {
-    pose_failed  // argmin rejected the problem at pose time (dimension
-                 // mismatch, non-finite data, invalid bounds, or an
-                 // unposeable KKT system) -- no factorization exists
+    pose_failed,     // argmin rejected the problem data (dimension mismatch, non-finite
+                     // data, invalid bounds, an asymmetric P, or an unposeable KKT system)
+    invalid_options  // an option lies outside argmin's domain (a budget outside
+                     // [1, 2147483647], or tolerances negative, non-finite or both zero)
 };
 ```
 
@@ -90,7 +91,7 @@ auto setup(const qp_problem<double>& problem)
     -> ctrlpp::expected<void, argmin_qp_setup_error>;
 ```
 
-Fallible setup: poses and factorizes the problem once from the cost matrices P, q and constraint matrices A, l, u. P is read as upper-triangular, the same convention `osqp_solver` uses and `build_cost_matrix` emits; setup expands it to the full symmetric matrix argmin's solver requires. Returns an empty `expected` on success and an `argmin_qp_setup_error` on failure. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
+Fallible setup: poses and factorizes the problem once from the cost matrices P, q and constraint matrices A, l, u. P is read as upper-triangular, the same convention `osqp_solver` uses and `build_cost_matrix` emits; setup expands it to the full symmetric matrix argmin's solver requires. Returns an empty `expected` on success and an `argmin_qp_setup_error` on failure: `invalid_options` when an option lies outside argmin's domain (the budget or tolerances above), checked before the problem is posed, and `pose_failed` when argmin rejects the problem data. Either way no factorization exists, so `solve` returns `solve_status::error` until a `setup` succeeds. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
 
 ### solve
 

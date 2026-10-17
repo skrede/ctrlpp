@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <utility>
 #include <type_traits>
@@ -74,6 +75,17 @@ TEST_CASE("osqp_solver setup reports setup failure as an expected error", "[mpc]
         auto result = solver.setup(problem);
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == ctrlpp::osqp_setup_error::setup_failed);
+    }
+
+    SECTION("an iteration budget below one is refused as setup_failed")
+    {
+        for(const std::int32_t budget : {std::int32_t{0}, std::int32_t{-1}})
+        {
+            ctrlpp::osqp_solver solver{1e-3, 1e-3, budget};
+            auto result = solver.setup(problem);
+            REQUIRE_FALSE(result.has_value());
+            CHECK(result.error() == ctrlpp::osqp_setup_error::setup_failed);
+        }
     }
 
     SECTION("a setup that fails after OSQP has allocated leaves the solver reusable")

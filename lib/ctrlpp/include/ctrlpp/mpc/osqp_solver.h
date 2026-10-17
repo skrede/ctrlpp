@@ -13,6 +13,7 @@
 
 #include <osqp.h>
 
+#include <cstdint>
 #include <utility>
 #include <type_traits>
 
@@ -28,8 +29,18 @@ class osqp_solver
 public:
     using scalar_type = double;
 
-    explicit osqp_solver(double eps_abs = 1e-3, double eps_rel = 1e-3, int max_iter = 4000, bool verbose = false, bool warm_starting = true, bool polishing = true)
-        : eps_abs_{eps_abs}, eps_rel_{eps_rel}, max_iter_{max_iter}, verbose_{verbose}, warm_starting_{warm_starting}, polishing_{polishing}
+    explicit osqp_solver(double eps_abs = 1e-3, double eps_rel = 1e-3, std::int32_t max_iter = 4000, bool verbose = false, bool warm_starting = true, bool polishing = true)
+        : solver_{nullptr}
+        , p_upper_{}
+        , a_{}
+        , n_{0}
+        , m_{0}
+        , eps_abs_{eps_abs}
+        , eps_rel_{eps_rel}
+        , max_iter_{max_iter}
+        , verbose_{verbose}
+        , warm_starting_{warm_starting}
+        , polishing_{polishing}
     {
     }
 
@@ -211,15 +222,15 @@ private:
         }
     }
 
-    OSQPSolver* solver_{nullptr};
+    OSQPSolver* solver_;
     sparse_t p_upper_;
     sparse_t a_;
-    OSQPInt n_{0};
-    OSQPInt m_{0};
+    OSQPInt n_;
+    OSQPInt m_;
 
     double eps_abs_;
     double eps_rel_;
-    int max_iter_;
+    std::int32_t max_iter_;
     bool verbose_;
     bool warm_starting_;
     bool polishing_;

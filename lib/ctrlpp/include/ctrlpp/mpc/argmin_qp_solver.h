@@ -46,13 +46,18 @@ namespace ctrlpp
 
 /// @brief Structured failure modes for `argmin_qp_solver::setup`.
 ///
-///  * pose_failed : argmin rejected the problem at pose time (dimension
-///                  mismatch, non-finite data, invalid bounds, or an
-///                  unposeable KKT system). No factorization exists, so no
-///                  solve can run.
+///  * pose_failed     : argmin rejected the problem data at pose time
+///                      (dimension mismatch, non-finite data, invalid bounds,
+///                      an asymmetric P, or an unposeable KKT system).
+///  * invalid_options : an option lies outside argmin's domain (a budget
+///                      outside [1, 2147483647], or tolerances that are
+///                      negative, non-finite or both zero).
+///
+/// Either way no factorization exists, so no solve can run.
 enum class argmin_qp_setup_error : std::uint8_t
 {
     pose_failed,
+    invalid_options,
 };
 
 /// @brief `qp_solver`-conforming policy wrapping `argmin::sparse_admm_qp_solver`.
@@ -67,18 +72,16 @@ class argmin_qp_solver
 public:
     using scalar_type = double;
 
-    explicit argmin_qp_solver(double eps_abs = 1e-3, double eps_rel = 1e-3, int max_iter = 4000, bool /*verbose*/ = false, bool warm_starting = true, bool polishing = true)
+    // This binds only argmin's stable QP contract (tolerances, budget, warm start, polish); the operator-splitting
+    // knobs are the volatile surface argmin intends to demote, so a reshape of them is a no-op here.
+    // Every negative std::int32_t converts to a value above INT32_MAX, which argmin's option-domain check refuses,
+    // so the conversion never wraps a budget into the valid range.
+    explicit argmin_qp_solver(double eps_abs = 1e-3, double eps_rel = 1e-3, std::int32_t max_iter = 4000, bool /*verbose*/ = false, bool warm_starting = true, bool polishing = true)
+        : solver_{}
+        , opts_{.eps_abs = eps_abs, .eps_rel = eps_rel, .max_iterations = static_cast<std::uint32_t>(max_iter), .polish = polishing, .warm_start = warm_starting}
+        , last_{}
+        , posed_{false}
     {
-        // This binds only argmin's stable QP contract: tolerances, iteration
-        // budget, and warm-start. The operator-splitting knobs (rho / sigma /
-        // alpha / adaptive_rho) are the volatile surface argmin intends to
-        // demote to an opt-in sub-struct, so this policy deliberately never
-        // touches them -- a future reshape of those knobs is a no-op here.
-        opts_.eps_abs = eps_abs;
-        opts_.eps_rel = eps_rel;
-        opts_.max_iterations = static_cast<std::uint16_t>(max_iter);
-        opts_.warm_start = warm_starting;
-        opts_.polish = polishing;
     }
 
     /// @brief Preset constructor: `accuracy` polishes, `speed` does not. See
@@ -97,7 +100,7 @@ public:
         // qp_problem carries P upper-triangular, OSQP's convention; argmin reads P as full symmetric.
         const Eigen::SparseMatrix<double> full_p = problem.P.template selfadjointView<Eigen::Upper>();
         if(auto err = solver_.solve_into(full_p, problem.q, problem.A, problem.l, problem.u, last_, opts_))
-            return ctrlpp::unexpected(argmin_qp_setup_error::pose_failed);
+            return ctrlpp::unexpected(translate_error(*err));
         posed_ = true;
         return {};
     }
@@ -118,6 +121,11 @@ public:
     }
 
 private:
+    argmin::sparse_admm_qp_solver<double> solver_;
+    argmin::sparse_qp_options<> opts_;
+    argmin::qp_result<double> last_;
+    bool posed_;
+
     static auto translate(const argmin::qp_result<double>& r) -> qp_result<double>
     {
         qp_result<double> out;
@@ -150,10 +158,23 @@ private:
         return solve_status::error;
     }
 
-    argmin::sparse_admm_qp_solver<double> solver_{};
-    argmin::sparse_qp_options<> opts_{};
-    argmin::qp_result<double> last_{};
-    bool posed_{false};
+    static auto translate_error(argmin::qp_error e) -> argmin_qp_setup_error
+    {
+        switch(e)
+        {
+        case argmin::qp_error::invalid_options:
+            return argmin_qp_setup_error::invalid_options;
+        case argmin::qp_error::dimension_mismatch:
+        case argmin::qp_error::invalid_bounds:
+        case argmin::qp_error::non_finite_input:
+        case argmin::qp_error::capacity_exceeded:
+        case argmin::qp_error::infeasible_start:
+        case argmin::qp_error::invalid_problem:
+        case argmin::qp_error::factorization_failed:
+            return argmin_qp_setup_error::pose_failed;
+        }
+        return argmin_qp_setup_error::pose_failed;
+    }
 };
 
 }
