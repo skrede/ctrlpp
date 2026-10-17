@@ -37,9 +37,12 @@
 //      !guard.eigen_violation() (equivalently ctrlpp_test::eigen_violation());
 //      a set sentinel marks an Eigen-side violation.
 //
-// The allocation counter is process-global: every test consuming this harness
-// must be its own translation unit and executable, must include this header
-// exactly once, and must be registered RUN_SERIAL.
+// The replacement allocation functions and the counter they feed are defined
+// once, in nomalloc_harness.cpp, which every consuming executable links exactly
+// once through the ctrlpp_nomalloc_harness object library. Several translation
+// units of one executable may include this header, each as its first include.
+// The counter is process-global, so every consuming executable must be
+// registered RUN_SERIAL.
 //
 // The include order in this header is load-bearing and intentionally deviates
 // from the project ordering: the sentinel and the eigen_assert macro must
@@ -71,181 +74,15 @@ inline std::atomic<bool> eigen_alloc_violation{false};
 
 #include <Eigen/Dense>
 
-#include <new>
 #include <cstddef>
-#include <cstdlib>
-
-#if defined(_MSC_VER)
-#include <malloc.h>
-#endif
 
 
-namespace ctrlpp_test
+namespace ctrlpp_test::detail
 {
 
-namespace detail
-{
-
-std::atomic<std::size_t> allocation_count{0};
-
-inline void* counted_try_allocate(std::size_t size) noexcept
-{
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-
-    // operator new must return a distinct non-null pointer even for a
-    // zero-size request, while std::malloc(0) may return a null pointer.
-    return std::malloc(size > 0 ? size : 1);
-}
-
-inline void* counted_try_allocate(std::size_t size, std::align_val_t alignment) noexcept
-{
-    allocation_count.fetch_add(1, std::memory_order_relaxed);
-
-    // std::aligned_alloc requires the size to be a multiple of the alignment.
-    const auto align = static_cast<std::size_t>(alignment);
-    const std::size_t padded = align * ((size + align - 1) / align);
-    const std::size_t request = padded > 0 ? padded : align;
-#if defined(_MSC_VER)
-    // MSVC's UCRT ships no std::aligned_alloc; _aligned_malloc takes (size,
-    // alignment) and its result must be released with _aligned_free.
-    return _aligned_malloc(request, align);
-#else
-    return std::aligned_alloc(align, request);
-#endif
-}
-
-inline void* counted_allocate(std::size_t size)
-{
-    if(void* pointer = counted_try_allocate(size))
-        return pointer;
-    std::abort();
-}
-
-inline void* counted_allocate(std::size_t size, std::align_val_t alignment)
-{
-    if(void* pointer = counted_try_allocate(size, alignment))
-        return pointer;
-    std::abort();
-}
-
-// Aligned allocations from counted_allocate must be released with the matching
-// deallocator: _aligned_free on MSVC (_aligned_malloc), std::free elsewhere
-// (std::aligned_alloc). The non-aligned deletes pair with std::malloc and stay
-// on std::free.
-inline void counted_aligned_free(void* pointer) noexcept
-{
-#if defined(_MSC_VER)
-    _aligned_free(pointer);
-#else
-    std::free(pointer);
-#endif
-}
+extern std::atomic<std::size_t> allocation_count;
 
 }
-
-}
-
-
-void* operator new(std::size_t size)
-{
-    return ctrlpp_test::detail::counted_allocate(size);
-}
-
-void* operator new[](std::size_t size)
-{
-    return ctrlpp_test::detail::counted_allocate(size);
-}
-
-void* operator new(std::size_t size, std::align_val_t alignment)
-{
-    return ctrlpp_test::detail::counted_allocate(size, alignment);
-}
-
-void* operator new[](std::size_t size, std::align_val_t alignment)
-{
-    return ctrlpp_test::detail::counted_allocate(size, alignment);
-}
-
-void* operator new(std::size_t size, const std::nothrow_t&) noexcept
-{
-    return ctrlpp_test::detail::counted_try_allocate(size);
-}
-
-void* operator new[](std::size_t size, const std::nothrow_t&) noexcept
-{
-    return ctrlpp_test::detail::counted_try_allocate(size);
-}
-
-void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
-{
-    return ctrlpp_test::detail::counted_try_allocate(size, alignment);
-}
-
-void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept
-{
-    return ctrlpp_test::detail::counted_try_allocate(size, alignment);
-}
-
-void operator delete(void* pointer) noexcept
-{
-    std::free(pointer);
-}
-
-void operator delete[](void* pointer) noexcept
-{
-    std::free(pointer);
-}
-
-void operator delete(void* pointer, std::size_t) noexcept
-{
-    std::free(pointer);
-}
-
-void operator delete[](void* pointer, std::size_t) noexcept
-{
-    std::free(pointer);
-}
-
-void operator delete(void* pointer, std::align_val_t) noexcept
-{
-    ctrlpp_test::detail::counted_aligned_free(pointer);
-}
-
-void operator delete[](void* pointer, std::align_val_t) noexcept
-{
-    ctrlpp_test::detail::counted_aligned_free(pointer);
-}
-
-void operator delete(void* pointer, std::size_t, std::align_val_t) noexcept
-{
-    ctrlpp_test::detail::counted_aligned_free(pointer);
-}
-
-void operator delete[](void* pointer, std::size_t, std::align_val_t) noexcept
-{
-    ctrlpp_test::detail::counted_aligned_free(pointer);
-}
-
-void operator delete(void* pointer, const std::nothrow_t&) noexcept
-{
-    std::free(pointer);
-}
-
-void operator delete[](void* pointer, const std::nothrow_t&) noexcept
-{
-    std::free(pointer);
-}
-
-void operator delete(void* pointer, std::align_val_t, const std::nothrow_t&) noexcept
-{
-    ctrlpp_test::detail::counted_aligned_free(pointer);
-}
-
-void operator delete[](void* pointer, std::align_val_t, const std::nothrow_t&) noexcept
-{
-    ctrlpp_test::detail::counted_aligned_free(pointer);
-}
-
 
 namespace ctrlpp_test
 {

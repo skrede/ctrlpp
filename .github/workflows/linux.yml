@@ -144,29 +144,17 @@ jobs:
       #
       # At full -g, six, four and three slots all died and only two survived.
       # With the -g1 above, four, three and two all survive. Three is taken
-      # rather than four because at three the worst case is 11.2 GiB summed over
-      # the heaviest units, which is under the cap on its own -- so it holds
-      # whatever order the scheduler picks, where four survives only because
-      # those units do not all peak together.
+      # rather than four because at three the worst case is the sum over the
+      # three heaviest units below, which is under the cap on its own -- so it
+      # holds whatever order the scheduler picks, where four survives only
+      # because those units do not all peak together.
       #
-      # Those figures predate the estimator dimension grids, and the step below
-      # is what keeps them true: with those five in this pass, three slots die.
-      # Peak resident set at the -g1 above, measured one target at a time: 9.4
-      # GiB for ukf, 8.0 for kalman, 7.8 for ekf, 7.2 for mekf and 4.6 for
-      # manifold_ukf. ANY TWO OF THE TOP FOUR EXCEED THIS RUNNER ON THEIR OWN, so
-      # no slot count above one is safe while they share a pass, and the
-      # scheduler pairs them precisely because the cheap units drain out from
-      # under it. Built alone the largest is 9.4 GiB, and what is left for the
-      # parallel pass peaks at 4.4 GiB in dare_care_nomalloc_test.
-      - name: Build the estimator dimension grids serially
-        run: >-
-          cmake --build build/dev -j 1 --target
-          estimation_kalman_nomalloc_test
-          estimation_ekf_nomalloc_test
-          estimation_ukf_nomalloc_test
-          estimation_manifold_ukf_nomalloc_test
-          estimation_mekf_nomalloc_test
-
+      # The estimator dimension grids are cut into units of at most five points
+      # (tests/unit/CMakeLists.txt) and share this pass. Remeasured over every
+      # test unit of this tree at the -g1 above, one at a time with gcc 16.2:
+      # the heaviest three are dare_care_nomalloc_test and
+      # care_convergence_anchor_test at 4.6 GiB and dare_test at 4.1, 13.3 GiB
+      # summed, and the largest grid unit is 3.7 GiB.
       - name: Build
         run: cmake --build build/dev -j 3
 
@@ -189,19 +177,9 @@ jobs:
       - name: Configure (exceptions preset, OSQP + NLopt on)
         run: cmake --preset exceptions -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCTRLPP_INSTALL=OFF
 
-      # Same measured bound as the no-exceptions job, and the same serial pass
-      # over the estimator dimension grids for the same reason. This tree is
-      # heavier still: at full -g it carries fifty translation units above 1 GiB
-      # against thirty-four, and twelve above 3 GiB against ten.
-      - name: Build the estimator dimension grids serially
-        run: >-
-          cmake --build build/exceptions -j 1 --target
-          estimation_kalman_nomalloc_test
-          estimation_ekf_nomalloc_test
-          estimation_ukf_nomalloc_test
-          estimation_manifold_ukf_nomalloc_test
-          estimation_mekf_nomalloc_test
-
+      # Same measured bound as the no-exceptions job. Remeasured the same way,
+      # this tree's heaviest three units sum to the same 13.3 GiB and its
+      # largest grid unit is 3.7 GiB.
       - name: Build
         run: cmake --build build/exceptions -j 3
 

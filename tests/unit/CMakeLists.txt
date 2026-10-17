@@ -144,7 +144,7 @@ else ()
 endif ()
 # MemorySanitizer ships its own strong operator new/delete in
 # libclang_rt.msan_cxx, which collides at link time with the replacements in
-# nomalloc_harness.h ("multiple definition of operator new"). AddressSanitizer
+# nomalloc_harness.cpp ("multiple definition of operator new"). AddressSanitizer
 # intercepts allocation instead of replacing these operators, so only MSan is
 # affected. These targets are skipped there rather than having the harness drop
 # its replacements under MSan: without them the counter would see nothing and
@@ -158,44 +158,57 @@ else()
 endif()
 
 if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
-    make_test(dare_care_nomalloc_test)
-    make_test(pid_nomalloc_test)
-    make_test(dsp_nomalloc_test)
-    make_test(sysid_nomalloc_test)
-    make_test(estimation_nomalloc_test)
-    make_test(trajectory_nomalloc_test)
+    add_library(ctrlpp_nomalloc_harness OBJECT "${CMAKE_CURRENT_LIST_DIR}/nomalloc_harness.cpp")
+    target_link_libraries(ctrlpp_nomalloc_harness PRIVATE ctrlpp::ctrlpp)
+    target_compile_options(ctrlpp_nomalloc_harness PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
+
+    # Every consumer of nomalloc_harness.h links its replacement allocation
+    # functions exactly once and shares their process-global counter, so it runs
+    # serially.
+    function(make_nomalloc_test TEST_NAME)
+        add_executable(${TEST_NAME} ${ARGN})
+        target_link_libraries(${TEST_NAME} PRIVATE ctrlpp_nomalloc_harness ctrlpp::ctrlpp Catch2::Catch2WithMain)
+        target_compile_options(${TEST_NAME} PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
+        add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
+        set_tests_properties(${TEST_NAME} PROPERTIES RUN_SERIAL TRUE)
+    endfunction()
+
+    # One estimator row's executable: its own unit plus PARTS units generated from
+    # estimation_nomalloc_grid_part.cpp.in, each arming one cut of the row's
+    # allocation-free grid. The cuts cover the grid exactly by construction, and
+    # arm_part refuses a cut above max_points_per_unit at compile time.
+    function(make_nomalloc_grid_test GRID_ROW GRID_LABEL GRID_TAG GRID_PARTS)
+        set(test_name estimation_${GRID_ROW}_nomalloc_test)
+        set(sources "${CMAKE_CURRENT_LIST_DIR}/${test_name}.cpp")
+        math(EXPR last_part "${GRID_PARTS} - 1")
+        foreach (GRID_PART RANGE ${last_part})
+            math(EXPR GRID_PART_NUMBER "${GRID_PART} + 1")
+            set(part_source "${CMAKE_CURRENT_BINARY_DIR}/${test_name}_part_${GRID_PART_NUMBER}.cpp")
+            configure_file("${CMAKE_CURRENT_LIST_DIR}/estimation_nomalloc_grid_part.cpp.in" "${part_source}" @ONLY)
+            list(APPEND sources "${part_source}")
+        endforeach ()
+        make_nomalloc_test(${test_name} ${sources})
+        target_include_directories(${test_name} PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
+    endfunction()
+
+    make_nomalloc_test(dare_care_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/dare_care_nomalloc_test.cpp")
+    make_nomalloc_test(pid_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/pid_nomalloc_test.cpp")
+    make_nomalloc_test(dsp_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/dsp_nomalloc_test.cpp")
+    make_nomalloc_test(sysid_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/sysid_nomalloc_test.cpp")
+    make_nomalloc_test(estimation_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/estimation_nomalloc_test.cpp")
+    make_nomalloc_test(trajectory_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/trajectory_nomalloc_test.cpp")
     # The five estimator rows whose frames a caller's dimensions size carry a
-    # no-allocation dimension grid, ONE TRANSLATION UNIT PER ROW. Every grid
-    # point is a distinct instantiation chain and the compile cost of a point is
-    # dominated by that instantiation rather than by the dimension it
-    # instantiates at, so one unit holding all five grids would be a single-core
-    # serialization point that no build parallelism could reduce, with a peak
-    # resident set equal to the sum of every row's instantiations in one
-    # process. One unit per row is the same total work spread over as many cores
-    # as the build has; the harness already forces one executable per unit, so
-    # the split adds no serialization the family did not already have.
-    #
-    # BUILD THIS FAMILY AT LOW PARALLELISM ON A MEMORY-CONSTRAINED MACHINE. Peak
-    # compiler resident set at full -g, measured one target at a time: 12.0 GB
-    # for the 26-point kalman_filter unit, 6.6 GB for the 12-point manifold_ukf
-    # one, against 6.3 GB for dare_care_nomalloc_test, which is the heaviest unit
-    # this family had before these grids existed. The cost is roughly 0.4 GB per
-    # armed dimension point on top of a 2 GB base, so four of these compiling at
-    # once is tens of gigabytes.
-    #
-    # HOW MUCH DEBUG INFORMATION IS ASKED FOR REORDERS THE FAMILY, so a reader
-    # sizing a machine must take the figures for the flags they build with. At
-    # -g1, which is what continuous integration uses, the same measurement gives
-    # 9.4 GiB for ukf, 8.0 for kalman_filter, 7.8 for ekf, 7.2 for mekf and 4.6
-    # for manifold_ukf, against 4.4 for dare_care_nomalloc_test: ukf is the
-    # heaviest there, not kalman_filter. Four of the five still exceed 7 GiB, so
-    # two of them in flight together is over a 16 GiB machine on its own, which
-    # is why the Linux workflow builds these five serially ahead of the rest.
-    make_test(estimation_kalman_nomalloc_test)
-    make_test(estimation_ekf_nomalloc_test)
-    make_test(estimation_ukf_nomalloc_test)
-    make_test(estimation_manifold_ukf_nomalloc_test)
-    make_test(estimation_mekf_nomalloc_test)
+    # no-allocation dimension grid. A grid point costs its own instantiation
+    # chain, so each row is one executable whose grid is cut into units of at
+    # most max_points_per_unit points (estimation_nomalloc_grid.h); in one unit
+    # the kalman_filter row peaked at 12.3 GiB. Measured one unit at a time with
+    # gcc 16.2, the heaviest grid unit is ukf's, at 5.2 GiB at full -g and 3.7
+    # GiB at -g1, below dare_care_nomalloc_test at 6.4 and 4.6.
+    make_nomalloc_grid_test(kalman kalman_filter kalman 5)
+    make_nomalloc_grid_test(ekf ekf ekf 5)
+    make_nomalloc_grid_test(ukf ukf ukf 5)
+    make_nomalloc_grid_test(manifold_ukf manifold_ukf manifold_ukf 2)
+    make_nomalloc_grid_test(mekf mekf mekf 4)
     # These five arm dimensions whose whole-chain stack cost is published in
     # docs/rt-safety-matrix.md, and at the top of both axes that cost is above
     # the 1 MB main-thread stack MSVC reserves by default: the kalman_filter row
@@ -211,19 +224,6 @@ if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
             target_link_options(${nomalloc_grid_target} PRIVATE "/STACK:16777216")
         endforeach ()
     endif ()
-    # Every *_nomalloc_test consumes the process-global allocation counter from
-    # nomalloc_harness.h and must be registered RUN_SERIAL.
-    set_tests_properties(dare_care_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-    set_tests_properties(pid_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-    set_tests_properties(dsp_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-    set_tests_properties(sysid_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-    set_tests_properties(estimation_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-    set_tests_properties(trajectory_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-    set_tests_properties(estimation_kalman_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-    set_tests_properties(estimation_ekf_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-    set_tests_properties(estimation_ukf_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-    set_tests_properties(estimation_manifold_ukf_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
-    set_tests_properties(estimation_mekf_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
 endif()
 make_test(lqr_continuous_test)
 make_test(mrac_hardening_test)
@@ -402,11 +402,8 @@ if (CTRLPP_BUILD_ARGMIN)
     # run serially, and is skipped under MemorySanitizer for the same
     # link-collision reason as the other *_nomalloc_test targets above.
     if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
-        add_executable(nmpc_static_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_static_nomalloc_test.cpp")
-        target_link_libraries(nmpc_static_nomalloc_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
-        target_compile_options(nmpc_static_nomalloc_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
-        add_test(NAME nmpc_static_nomalloc_test COMMAND nmpc_static_nomalloc_test)
-        set_tests_properties(nmpc_static_nomalloc_test PROPERTIES RUN_SERIAL TRUE)
+        make_nomalloc_test(nmpc_static_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_static_nomalloc_test.cpp")
+        target_link_libraries(nmpc_static_nomalloc_test PRIVATE ctrlpp::argmin)
     endif()
 endif ()
 

@@ -9,17 +9,14 @@
 // pulls in Eigen. That ordering is not left to convention: the harness errors
 // out if Eigen was parsed before it.
 //
-// WHY THE GRID LIVES IN SEVERAL TRANSLATION UNITS. Every point is a distinct
+// WHY A ROW'S GRID SPANS SEVERAL TRANSLATION UNITS. Every point is a distinct
 // instantiation chain, and the compile cost of a point is dominated by that
-// instantiation rather than by the dimension it instantiates at. One
-// translation unit holding every row's grid is therefore a single-core
-// serialization point that no build parallelism can reduce, and its peak
-// resident set is the sum of every row's instantiations in one process. One
-// unit per row is the same total work spread over as many cores as the build
-// has, at the cost of one repeated header parse per unit, one more link, and
-// one more serialized test. The harness's own contract already forces one
-// executable per unit, so the split costs no additional serialization beyond
-// that.
+// instantiation rather than by the dimension it instantiates at: the compiler's
+// peak resident set grows by roughly 0.4 to 0.65 GiB per point, depending on
+// the row, over a 2 GiB base. A unit holding a whole row is a single-core
+// serialization point whose peak is the sum of the row's instantiations, so
+// each row is one executable whose allocation-free grid is cut into parts of at
+// most max_points_per_unit, one unit per part.
 //
 // WHAT EACH ROW ARMS. Every configuration the real-time safety matrix prints a
 // per-configuration figure for, which is three groups:
@@ -84,6 +81,7 @@
 
 #include <Eigen/Dense>
 
+#include <tuple>
 #include <cstddef>
 #include <utility>
 
@@ -185,13 +183,36 @@ struct point
     static constexpr std::size_t second = Second;
 };
 
+template <typename... Points>
+struct over;
+
+namespace detail
+{
+
+template <typename Points, std::size_t Begin, typename Offsets>
+struct subrange;
+
+template <typename Points, std::size_t Begin, std::size_t... Offsets>
+struct subrange<Points, Begin, std::index_sequence<Offsets...>>
+{
+    using type = over<std::tuple_element_t<Begin + Offsets, Points>...>;
+};
+
+}
+
 // A row's grid. arm() applies the callable to every point and returns how many
 // points it armed, so the count a case asserts on is produced by the traversal
-// rather than restated beside it.
+// rather than restated beside it. part<Part, Parts> is the Part-th of Parts
+// contiguous, near-equal cuts of the points, so the cuts of one grid cover it
+// exactly once by construction.
 template <typename... Points>
 struct over
 {
     static constexpr std::size_t size = sizeof...(Points);
+
+    template <std::size_t Part, std::size_t Parts>
+    using part = typename detail::subrange<std::tuple<Points...>, Part * size / Parts,
+                                           std::make_index_sequence<(Part + 1) * size / Parts - Part * size / Parts>>::type;
 
     template <typename Arm>
     static std::size_t arm(Arm&& arm_point)
@@ -200,6 +221,23 @@ struct over
         return size;
     }
 };
+
+// The most grid points one translation unit instantiates. It keeps every grid
+// unit below dare_care_nomalloc_test, the heaviest unit outside the grids
+// (5.2 against 6.4 GiB at full debug information, gcc 16.2).
+constexpr std::size_t max_points_per_unit = 5;
+
+// Arms one part of a row's grid, as one translation unit's share of it.
+template <typename Grid, std::size_t Part, std::size_t Parts, typename Arm>
+void arm_part(Arm arm_point)
+{
+    using cut = typename Grid::template part<Part, Parts>;
+    static_assert(Part < Parts);
+    static_assert(cut::size > 0 && cut::size <= max_points_per_unit,
+                  "re-cut this row: raise its PARTS in tests/unit/CMakeLists.txt");
+
+    REQUIRE(cut::arm(arm_point) == cut::size);
+}
 
 
 // The corpus, in the shape the stack-watermark instrument builds it, so an

@@ -1,0 +1,13 @@
+#include "nomalloc_harness.h"
+#include "estimation_@GRID_ROW@_nomalloc_grid.h"
+
+#include <catch2/catch_test_macros.hpp>
+
+
+TEST_CASE("@GRID_LABEL@ predict/update performs zero heap allocation across the published grid, part @GRID_PART_NUMBER@ of @GRID_PARTS@",
+          "[@GRID_TAG@][hardening][nomalloc][grid]")
+{
+    namespace row = ctrlpp_test::@GRID_ROW@_grid;
+
+    ctrlpp_test::grid::arm_part<row::allocation_free_grid, @GRID_PART@, @GRID_PARTS@>(row::arm_allocation_free{});
+}
