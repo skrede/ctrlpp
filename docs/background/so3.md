@@ -119,6 +119,10 @@ $$
 \exp(\phi) = \begin{bmatrix} \cos(\theta/2) \\ \frac{\sin(\theta/2)}{\theta} \phi \end{bmatrix}
 $$
 
+Near $\theta = 0$ both parts take their Taylor series,
+$\cos(\theta/2) \approx 1 - \theta^2/8$ and $\sin(\theta/2)/\theta \approx 1/2 - \theta^2/48$,
+so the small-angle quaternion is plain arithmetic and does not depend on the platform's math library.
+
 ## Logarithmic Map
 
 The logarithmic map is the inverse of the exponential map, taking a rotation

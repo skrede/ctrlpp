@@ -66,9 +66,8 @@ Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3>& phi)
     Eigen::Quaternion<Scalar> q;
     if(theta < static_cast<Scalar>(1e-7L))
     {
-        Scalar const half_theta = theta / Scalar{2};
         Scalar const sinc_half = Scalar{0.5} - theta * theta / Scalar{48};
-        q.w() = std::cos(half_theta);
+        q.w() = Scalar{1} - theta * theta / Scalar{8};
         q.vec() = sinc_half * phi;
     }
     else
