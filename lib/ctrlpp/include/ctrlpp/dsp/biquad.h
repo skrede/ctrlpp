@@ -429,7 +429,8 @@ auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
 
     constexpr auto num_sections = Order / 2;
 
-    auto const eps = std::sqrt(std::pow(Scalar{10}, ripple_db / Scalar{10}) - Scalar{1});
+    // 10^(ripple_db / 10) - 1 through expm1, so a small ripple does not cancel against the 1.
+    auto const eps = std::sqrt(std::expm1(std::numbers::ln10_v<Scalar> * ripple_db / Scalar{10}));
     auto const v = std::asinh(Scalar{1} / eps) / static_cast<Scalar>(Order);
     auto const sinh_v = std::sinh(v);
     auto const cosh_v = std::cosh(v);

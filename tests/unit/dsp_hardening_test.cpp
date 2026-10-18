@@ -328,21 +328,21 @@ TEST_CASE("make_chebyshev1 leaves a conforming design unchanged",
 {
     // Rounding-op margin for the Chebyshev Type I design chain. Each reference
     // coefficient below terminates a fixed closed-form chain: the ripple factor
-    // (pow, subtract, sqrt), the prototype parameter (reciprocal, asinh, divide,
+    // (product, divide, expm1, sqrt), the prototype parameter (reciprocal, asinh, divide,
     // sinh, cosh), the pre-warped cutoff (tan, two products), the pole
     // coordinates (two products and a three-term sum of squares), the bilinear
     // denominator (two products and a three-term sum), its reciprocal, the
     // section coefficient product, and the DC-gain normalization across both
     // sections (two four-term quotients, their product, the target gain, and a
     // final scaling). Counting one rounding per arithmetic operation and one
-    // unit in the last place per library transcendental gives 34 roundings along
+    // unit in the last place per library transcendental gives 35 roundings along
     // the longest chain; the margin is that count times the scalar's machine
     // epsilon, applied relative to the magnitude of the coefficient compared.
     // It is not a tolerance on the design: the arithmetic here is unchanged, so
     // the same toolchain reproduces these values exactly. The margin exists only
     // so that another library's one-unit transcendental differences cannot fail
     // a bit-exact comparison.
-    constexpr double design_roundings = 34.0;
+    constexpr double design_roundings = 35.0;
     constexpr double design_margin = design_roundings * std::numeric_limits<double>::epsilon();
 
     auto const design = ctrlpp::make_chebyshev1<4>(100.0, 1000.0, 1.0);
@@ -380,6 +380,34 @@ TEST_CASE("make_chebyshev1 leaves a conforming design unchanged",
     }
 }
 
+TEST_CASE("make_chebyshev1 keeps a small ripple's precision in single precision",
+          "[biquad][hardening][precision]")
+{
+    // Formed as 10^(r / 10) - 1, the radicand at 1e-4 dB cancels to about three
+    // significant digits in float and the coefficients land thousands of float
+    // epsilons from the double design. Through expm1 they stay within the same
+    // 35-rounding chain the reference case above counts, here in float epsilons.
+    constexpr float ripple_db = 1e-4f;
+    constexpr double design_margin = 35.0 * static_cast<double>(std::numeric_limits<float>::epsilon());
+
+    auto const single = ctrlpp::make_chebyshev1<4>(100.0f, 1000.0f, ripple_db);
+    auto const reference = ctrlpp::make_chebyshev1<4>(100.0, 1000.0, static_cast<double>(ripple_db));
+    REQUIRE(single.has_value());
+    REQUIRE(reference.has_value());
+
+    for(std::size_t k = 0; k < 2; ++k)
+    {
+        CAPTURE(k);
+        auto const& c = single->section(k).coefficients();
+        auto const& r = reference->section(k).coefficients();
+        CHECK_THAT(static_cast<double>(c.b0), WithinRel(r.b0, design_margin));
+        CHECK_THAT(static_cast<double>(c.b1), WithinRel(r.b1, design_margin));
+        CHECK_THAT(static_cast<double>(c.b2), WithinRel(r.b2, design_margin));
+        CHECK_THAT(static_cast<double>(c.a1), WithinRel(r.a1, design_margin));
+        CHECK_THAT(static_cast<double>(c.a2), WithinRel(r.a2, design_margin));
+    }
+}
+
 TEST_CASE("make_chebyshev1 rejects a design whose coefficients degenerate",
           "[biquad][hardening][error]")
 {
@@ -390,11 +418,12 @@ TEST_CASE("make_chebyshev1 rejects a design whose coefficients degenerate",
     // domain check and still degenerate, so they reach the sweep, not a guard.
     SECTION("a positive ripple so small the ripple factor underflows to zero")
     {
-        // 10^(ripple_db / 10) rounds to exactly one here, so the radicand
-        // 10^(ripple_db / 10) - 1 is exactly zero, eps is zero, and the
-        // following asinh(1 / eps) takes an infinite argument. The
-        // specification is strictly positive, so the ripple guard passes it.
-        auto const design = ctrlpp::make_chebyshev1<4>(100.0, 1000.0, 1e-300);
+        // ln(10) ripple_db / 10 underflows to zero at the smallest subnormal,
+        // so the radicand is exactly zero, eps is zero, and the following
+        // asinh(1 / eps) takes an infinite argument. The specification is
+        // strictly positive, so the ripple guard passes it.
+        auto const design
+            = ctrlpp::make_chebyshev1<4>(100.0, 1000.0, std::numeric_limits<double>::denorm_min());
         REQUIRE(!design.has_value());
         CHECK(design.error() == ctrlpp::dsp_error::non_finite_input);
     }
