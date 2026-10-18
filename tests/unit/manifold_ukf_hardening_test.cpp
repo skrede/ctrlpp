@@ -67,6 +67,7 @@
 #include <limits>
 #include <numbers>
 #include <utility>
+#include <algorithm>
 
 namespace {
 
@@ -154,6 +155,15 @@ const double unit_norm_budget = normalize_rounding_ops * std::numeric_limits<dou
 // mean, the innovation covariance and the cross-covariance, at five terms each.
 constexpr int transform_rounding_ops = 25;
 
+// The libm results those terms carry: the predicted mean's exp and log (cos,
+// sin, atan2), the predicted covariance's log, the measurement mean's and the
+// innovation covariance's exp, and the cross-covariance's exp and log. A
+// correctly rounded operation is within half an ulp of its exact value, so two
+// runs part by at most one, which is what each count above is taken at; a
+// faithful libm result is within one ulp, so two runs part by up to two.
+constexpr int transform_libm_ops = 11;
+constexpr int libm_parting_ulps = 2;
+
 auto sigma_cancellation_amplification() -> double
 {
     // lambda = alpha^2 (n + kappa) - n at the strategy's own defaults.
@@ -162,6 +172,7 @@ auto sigma_cancellation_amplification() -> double
     const double lambda = opts.alpha * opts.alpha * (n + opts.kappa) - n;
     return std::abs(lambda) / (n + lambda);
 }
+
 
 }
 
@@ -368,13 +379,36 @@ TEST_CASE("Manifold UKF posterior covariance matches an affine tangent-state clo
     const auto zero_measurement = ctrlpp::Vector<double, 3>::Zero();
     REQUIRE(filter.update(zero_measurement).has_value());
 
-    // Opposite affine measurements cancel exactly on this fixture, so the
-    // correction and reset Jacobian are the identity. This premise is asserted:
-    // if it moves, the scalar posterior below is no longer the applicable
-    // closed form and must not be allowed to pass accidentally.
-    REQUIRE(filter.innovation() == zero_measurement);
-    REQUIRE(filter.attitude().coeffs()
-            == Eigen::Quaterniond::Identity().coeffs());
+    // Opposite affine measurements cancel on this fixture, so the correction
+    // and reset Jacobian are the identity to rounding. The premise is asserted
+    // to that rounding: if it moves further, the scalar posterior below is no
+    // longer the applicable closed form and must not be allowed to pass
+    // accidentally. Each innovation component is the seven-term weighted sum
+    // of the sigma measurements, nonzero only for the opposite pair along its
+    // own axis, whose terms are exact negatives under any rounding; the sum's
+    // rounding is then at most gamma_7 times the weighted magnitudes, a
+    // fused multiply-add being what keeps it off zero. The correction is the
+    // fixture's diagonal gain times it, and its half angle is at most that.
+    // @cite higham2002 -- Higham, "Accuracy and Stability of Numerical
+    // Algorithms", 2nd ed., 2002, eq. (3.5)
+    const double eps = std::numeric_limits<double>::epsilon();
+    const double unit_roundoff = eps / 2.0;
+    constexpr double sigma_terms = 7.0;
+    const double gamma_7 = sigma_terms * unit_roundoff / (1.0 - sigma_terms * unit_roundoff);
+    constexpr double pair_weight = 1.0 / 6.0;
+    for(int i = 0; i < 3; ++i)
+    {
+        const auto index = static_cast<std::size_t>(i);
+        const double prior = prior_variances[index];
+        const double gain = measurement_gains[index];
+        const double spread = std::sqrt(3.0 * prior);
+        const double innovation_bound = gamma_7 * 2.0 * pair_weight * std::abs(gain) * spread;
+        const double kalman_gain = prior * gain / (gain * gain * prior + measurement_variances[index]);
+        CAPTURE(i, filter.innovation()(i), innovation_bound);
+        REQUIRE(std::abs(filter.innovation()(i)) <= innovation_bound);
+        REQUIRE(std::abs(filter.attitude().vec()(i)) <= std::abs(kalman_gain) * innovation_bound);
+    }
+    REQUIRE(std::abs(filter.attitude().w() - 1.0) <= unit_norm_budget);
 
     // A conservative forward-error budget counted from the six non-central
     // sigma points: each exp/log tangent round trip and diagonal measurement
@@ -384,7 +418,6 @@ TEST_CASE("Manifold UKF posterior covariance matches an affine tangent-state clo
     // at most 52. Every contribution is bounded at the largest covariance
     // operand's scale, for 256 operations in total.
     constexpr int posterior_covariance_rounding_ops = 256;
-    const double eps = std::numeric_limits<double>::epsilon();
 
     for(int i = 0; i < 3; ++i)
     {
@@ -436,16 +469,41 @@ TEST_CASE("Manifold UKF attitude converges for slow rotation",
         return cfg;
     };
 
-    // The truth is an EXACT fixed point: seeded at the identity and fed the
-    // gravity of the identity, the filter must not move at all.
+    // The truth is a fixed point to rounding. Seeded at the identity and fed
+    // the gravity of the identity, every sigma pair is an exact negative pair
+    // in the tangent, so the predicted mean, the tilt-plane innovation and the
+    // cross-covariance column coupling the tilt to the gravity component all
+    // cancel; a fused multiply-add keeps each off zero by at most gamma_7
+    // times its weighted magnitudes. The positive-weight spread (alpha = 1,
+    // kappa = 0) makes those bounds close: the weights sum to one in
+    // magnitude, the predicted measurement is a convex combination of unit
+    // vectors so no deviation exceeds 2, and S >= R = r I. The correction
+    // P_xz S^-1 y then moves the tilt at most the sum of the three terms each
+    // step, and rotation about gravity leaves the measurement exactly
+    // unchanged, so the yaw rows are exactly zero. An offset in the
+    // correction, or a drifting propagation, moves it by its own magnitude
+    // every step.
     {
-        auto at_truth = make_filter(configured(Eigen::Quaterniond::Identity()));
-        const ctrlpp::Vector<double, 4> seeded = at_truth.state();
-        for(int k = 0; k < 500; ++k)
+        const auto cfg = configured(Eigen::Quaterniond::Identity());
+        const ctrlpp::merwe_options<double> positive_weights{.alpha = 1.0, .beta = 0.0, .kappa = 0.0};
+        auto strategy = ctrlpp::so3_merwe_sigma_points<double>::try_create(positive_weights);
+        REQUIRE(strategy.has_value());
+        auto at_truth = ctrlpp::test::constructed(MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, cfg, *strategy));
+        constexpr int steps = 500;
+        const double unit_roundoff = std::numeric_limits<double>::epsilon() / 2.0;
+        constexpr double sigma_terms = 7.0;
+        const double gamma_7 = sigma_terms * unit_roundoff / (1.0 - sigma_terms * unit_roundoff);
+        const double spread = std::sqrt(3.0 * (cfg.P0.norm() + steps * cfg.Q.norm()));
+        constexpr double deviation = 2.0;
+        constexpr double innovation = 2.0;
+        const double noise = cfg.R(0, 0);
+        const double step_bound = gamma_7 * spread * (1.0 + deviation * (innovation + std::sqrt(2.0)) / noise);
+        for(int k = 1; k <= steps; ++k)
         {
             at_truth.predict(ctrlpp::Vector<double, 3>::Zero());
             REQUIRE(at_truth.update(gravity_of_identity()).has_value());
-            REQUIRE(at_truth.state() == seeded);
+            CAPTURE(k, rotation_angle(at_truth.attitude()));
+            REQUIRE(rotation_angle(at_truth.attitude()) <= k * step_bound);
         }
     }
 
@@ -484,18 +542,20 @@ TEST_CASE("Manifold UKF attitude converges for slow rotation",
 
     // A gravity measurement is invariant under rotation about gravity, so an
     // initial tilt about x and one about y are the same problem in different
-    // coordinates. The two trajectories agree to the level the sigma-point
+    // coordinates. Each cycle the two trajectories part by what the sigma-point
     // recombination allows: a quantity of order one assembled from terms of
-    // order a million, so each rounding is amplified by that ratio.
-    const double symmetry_budget = transform_rounding_ops * sigma_cancellation_amplification()
-        * std::numeric_limits<double>::epsilon();
+    // order a million, so each rounding is amplified by that ratio. The parting
+    // a cycle injects relative to the tilt is carried by the same contraction
+    // the tilt follows, so the relative partings of successive cycles add.
+    const double symmetry_budget = (transform_rounding_ops + libm_parting_ulps * transform_libm_ops)
+        * sigma_cancellation_amplification() * std::numeric_limits<double>::epsilon();
 
     auto about_x = make_filter(configured(
         Eigen::Quaterniond(Eigen::AngleAxisd(initial_tilt, Eigen::Vector3d::UnitX()))));
     auto about_y = make_filter(configured(
         Eigen::Quaterniond(Eigen::AngleAxisd(initial_tilt, Eigen::Vector3d::UnitY()))));
 
-    for(int k = 0; k < 500; ++k)
+    for(int k = 1; k <= 500; ++k)
     {
         about_x.predict(ctrlpp::Vector<double, 3>::Zero());
         about_y.predict(ctrlpp::Vector<double, 3>::Zero());
@@ -504,7 +564,8 @@ TEST_CASE("Manifold UKF attitude converges for slow rotation",
 
         const double tilt_x = rotation_angle(about_x.attitude());
         const double tilt_y = rotation_angle(about_y.attitude());
-        REQUIRE(std::abs(tilt_x - tilt_y) <= symmetry_budget * std::max(tilt_x, tilt_y));
+        CAPTURE(k, tilt_x, tilt_y);
+        REQUIRE(std::abs(tilt_x - tilt_y) <= k * symmetry_budget * std::max(tilt_x, tilt_y));
     }
 }
 

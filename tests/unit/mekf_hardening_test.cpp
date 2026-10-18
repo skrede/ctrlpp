@@ -21,9 +21,10 @@
 //    initial error: the true attitude is an EXACT FIXED POINT (an instance
 //    seeded there never moves, bitwise, over the whole run); the tilt keeps
 //    falling across four checkpoints an order apart, which no filter that
-//    stalls at a floor can do; and the trajectory is BITWISE identical whether
-//    the initial tilt is about x or about y, which is the rotational symmetry
-//    of a gravity measurement and which an axis-asymmetric Jacobian breaks.
+//    stalls at a floor can do; and the trajectory agrees, to the rounding its
+//    numerical Jacobian amplifies, whether the initial tilt is about x or about
+//    y, which is the rotational symmetry of a gravity measurement and which an
+//    axis-asymmetric Jacobian breaks by its own magnitude.
 //  * The near-half-turn case is a case about UNOBSERVABILITY, not about a
 //    branch cut. Its fixture puts the whole initial error in yaw, which
 //    gravity cannot see, so the innovation is exactly zero at every step, the
@@ -54,6 +55,7 @@
 #include <limits>
 #include <numbers>
 #include <utility>
+#include <algorithm>
 
 namespace {
 
@@ -331,22 +333,41 @@ TEST_CASE("MEKF attitude converges to true orientation", "[mekf][hardening][conv
 
     // A gravity measurement is invariant under rotation about gravity, so an
     // initial tilt about x and one about y are the same problem in different
-    // coordinates and the filter must produce the same tilt trajectory. It does
-    // so BITWISE, which is a far sharper statement than any tolerance: an
-    // axis-asymmetric measurement Jacobian, gain or reset Jacobian breaks it
-    // immediately.
+    // coordinates, and an axis-asymmetric measurement Jacobian, gain or reset
+    // Jacobian parts the two tilt trajectories by its own magnitude. Rounding
+    // parts them too, once a compiler fuses multiply-adds differently for each
+    // axis. The measurement carries no Jacobian, so the filter differences it
+    // centrally at a step of cbrt(eps): each evaluation, an exponential, a
+    // quaternion product, a normalization and one rotation column, is within
+    // 21 roundings of a unit value, so a Jacobian entry parts by 2 * 21 eps
+    // over twice the step. H enters the gain once directly and twice through
+    // S, whose condition number is below (|P0| + steps |Q| + r) / r with
+    // R = r I. The parting a cycle injects relative to the tilt is carried by
+    // the contraction the tilt follows, so successive cycles' partings add.
+    constexpr int symmetry_steps = 500;
+    constexpr int evaluation_rounding_ops = 21;
+    const auto cfg_x = configured(Eigen::Quaterniond(Eigen::AngleAxisd(initial_tilt, Eigen::Vector3d::UnitX())));
+    const double eps = std::numeric_limits<double>::epsilon();
+    const double step = std::cbrt(eps);
+    const double jacobian_parting = 2.0 * evaluation_rounding_ops * eps / (2.0 * step);
+    const double noise = cfg_x.R(0, 0);
+    const double condition = (cfg_x.P0.norm() + symmetry_steps * cfg_x.Q.norm() + noise) / noise;
+    const double cycle_parting = (1.0 + 2.0 * condition) * jacobian_parting;
+
     auto about_y = build_mekf(configured(
         Eigen::Quaterniond(Eigen::AngleAxisd(initial_tilt, Eigen::Vector3d::UnitY()))));
-    auto about_x = build_mekf(configured(
-        Eigen::Quaterniond(Eigen::AngleAxisd(initial_tilt, Eigen::Vector3d::UnitX()))));
+    auto about_x = build_mekf(cfg_x);
 
-    for(int k = 0; k < 500; ++k)
+    for(int k = 1; k <= symmetry_steps; ++k)
     {
         about_x.predict(ctrlpp::Vector<double, 3>::Zero());
         about_y.predict(ctrlpp::Vector<double, 3>::Zero());
         REQUIRE(about_x.update(gravity_of_identity()).has_value());
         REQUIRE(about_y.update(gravity_of_identity()).has_value());
-        REQUIRE(rotation_angle(about_x.attitude()) == rotation_angle(about_y.attitude()));
+        const double tilt_x = rotation_angle(about_x.attitude());
+        const double tilt_y = rotation_angle(about_y.attitude());
+        CAPTURE(k, tilt_x, tilt_y);
+        REQUIRE(std::abs(tilt_x - tilt_y) <= k * cycle_parting * std::max(tilt_x, tilt_y));
     }
 }
 

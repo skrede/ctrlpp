@@ -37,6 +37,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <cstddef>
@@ -103,15 +104,79 @@ using compile_time_controller = ctrlpp::nmpc_static<double, NX, NU, 5, ctrlpp_te
 constexpr std::size_t NY = 1;
 constexpr std::size_t window = 3;
 
+// The Jacobians are exact, so the fallback filter's linearization carries no
+// finite-difference step whose rounding it would amplify.
 struct window_dynamics
 {
     auto operator()(const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>& u) const -> Eigen::Vector2d { return Eigen::Vector2d{x(0) + dt * x(1), x(1) + dt * u(0)}; }
+
+    auto jacobian_x(const Eigen::Vector2d&, const Eigen::Matrix<double, 1, 1>&) const -> Eigen::Matrix2d
+    {
+        Eigen::Matrix2d F;
+        F << 1.0, dt, 0.0, 1.0;
+        return F;
+    }
+
+    auto jacobian_u(const Eigen::Vector2d&, const Eigen::Matrix<double, 1, 1>&) const -> Eigen::Vector2d { return Eigen::Vector2d{0.0, dt}; }
 };
 
 struct window_measurement
 {
     auto operator()(const Eigen::Vector2d& x) const -> Eigen::Matrix<double, 1, 1> { return x.head<1>(); }
+
+    auto jacobian(const Eigen::Vector2d&) const -> Eigen::Matrix<double, 1, 2> { return Eigen::Matrix<double, 1, 2>{1.0, 0.0}; }
 };
+
+// How far two runs of the fallback filter on the same inputs may part, to first
+// order in eps. They part only by rounding, which a compiler may perform
+// differently for each, fusing multiply-adds in one inlining context and not in
+// another. Each step's partings are propagated through the reference run's own
+// recursion and the step's roundings are added at eps, which covers both runs:
+// the state prediction rounds each component twice, the covariance prediction
+// six times (two two-term inner products, the noise sum and the
+// symmetrization), the gain divides once by an S rounded once, the correction
+// rounds three times, and the Joseph update seven (forming I - K H, two two-term
+// inner products, the noise sum and the symmetrization). The Joseph form is
+// first-order insensitive to the gain, so a gain parting moves the state but
+// not the covariance.
+struct fallback_parting
+{
+    Eigen::Vector2d state{Eigen::Vector2d::Zero()};
+    Eigen::Matrix2d covariance{Eigen::Matrix2d::Zero()};
+
+    void predict(const Eigen::Vector2d& x, const Eigen::Matrix2d& P, const Eigen::Matrix2d& Q, const Eigen::Matrix<double, 1, 1>& u)
+    {
+        const double eps = std::numeric_limits<double>::epsilon();
+        const Eigen::Matrix2d F = window_dynamics{}.jacobian_x(x, u).cwiseAbs();
+        const Eigen::Vector2d G = window_dynamics{}.jacobian_u(x, u).cwiseAbs();
+        state = (F * state + 2.0 * eps * (F * x.cwiseAbs() + G * std::abs(u(0)))).eval();
+        covariance = (F * covariance * F.transpose() + 6.0 * eps * (F * P.cwiseAbs() * F.transpose() + Q.cwiseAbs())).eval();
+    }
+
+    void update(const Eigen::Vector2d& x_prior, const Eigen::Matrix2d& P_prior, double innovation, double r)
+    {
+        const double eps = std::numeric_limits<double>::epsilon();
+        const double S = P_prior(0, 0) + r;
+        const Eigen::Vector2d K = P_prior.col(0) / S;
+        const Eigen::Vector2d K_parting = (covariance.col(0) + K.cwiseAbs() * covariance(0, 0)) / S + 2.0 * eps * K.cwiseAbs();
+        const double innovation_parting = state(0) + eps * std::abs(innovation);
+        state = (state + K_parting * std::abs(innovation) + K.cwiseAbs() * innovation_parting
+                 + 3.0 * eps * (x_prior.cwiseAbs() + K.cwiseAbs() * std::abs(innovation))).eval();
+        Eigen::Matrix2d IKH = Eigen::Matrix2d::Identity();
+        IKH.col(0) -= K;
+        const Eigen::Matrix2d A = IKH.cwiseAbs();
+        covariance = (A * covariance * A.transpose()
+                      + 7.0 * eps * (A * P_prior.cwiseAbs() * A.transpose() + r * K.cwiseAbs() * K.cwiseAbs().transpose())).eval();
+    }
+};
+
+template <typename Estimator, typename Reference>
+void require_within_parting(const Estimator& estimator, const Reference& reference, const fallback_parting& parting)
+{
+    CAPTURE(estimator.state(), reference.state(), parting.state, estimator.covariance(), reference.covariance(), parting.covariance);
+    REQUIRE(((estimator.state() - reference.state()).cwiseAbs().array() <= parting.state.array()).all());
+    REQUIRE(((estimator.covariance() - reference.covariance()).cwiseAbs().array() <= parting.covariance.array()).all());
+}
 
 template <ctrlpp_test::report_lengths Reported>
 using linear_estimator = ctrlpp::mhe<double, NX, NU, NY, window, ctrlpp_test::stub_qp_solver<double, Reported>, window_dynamics, window_measurement>;
@@ -200,6 +265,17 @@ void require_refused_measurement_refills_window(Estimator& estimator)
             window_measurement{},
             ctrlpp::ekf_config<double, NX, NU, NY>{}));
 
+    const ctrlpp::ekf_config<double, NX, NU, NY> noise{};
+    const double r = noise.R(0, 0);
+    fallback_parting parting;
+    auto predict_both = [&](const Eigen::Matrix<double, 1, 1>& input) {
+        const Eigen::Vector2d x = reference.state();
+        const Eigen::Matrix2d P = reference.covariance();
+        estimator.predict(input);
+        reference.predict(input);
+        parting.predict(x, P, noise.Q, input);
+    };
+
     Eigen::Vector2d true_state = Eigen::Vector2d::Zero();
     auto advance = [&](std::size_t step) {
         Eigen::Matrix<double, 1, 1> input;
@@ -210,10 +286,12 @@ void require_refused_measurement_refills_window(Estimator& estimator)
         Eigen::Matrix<double, 1, 1> measurement;
         measurement << true_state(0);
 
-        estimator.predict(input);
-        reference.predict(input);
+        predict_both(input);
+        const Eigen::Vector2d x_prior = reference.state();
+        const Eigen::Matrix2d P_prior = reference.covariance();
         REQUIRE(estimator.update(measurement).has_value());
         REQUIRE(reference.update(measurement).has_value());
+        parting.update(x_prior, P_prior, measurement(0) - x_prior(0), r);
     };
 
     for(std::size_t step = 0; step <= window; ++step)
@@ -223,8 +301,7 @@ void require_refused_measurement_refills_window(Estimator& estimator)
     Eigen::Matrix<double, 1, 1> refused_input;
     refused_input << 100.0;
     true_state = window_dynamics{}(true_state, refused_input);
-    estimator.predict(refused_input);
-    reference.predict(refused_input);
+    predict_both(refused_input);
 
     auto bad_measurement =
         Eigen::Matrix<double, 1, 1>::Constant(
@@ -232,16 +309,14 @@ void require_refused_measurement_refills_window(Estimator& estimator)
     REQUIRE_FALSE(estimator.update(bad_measurement).has_value());
     REQUIRE_FALSE(reference.update(bad_measurement).has_value());
     REQUIRE_FALSE(estimator.is_initialized());
-    REQUIRE(estimator.state() == reference.state());
-    REQUIRE(estimator.covariance() == reference.covariance());
+    require_within_parting(estimator, reference, parting);
 
     for(std::size_t step = 0; step < window; ++step)
     {
         advance(window + 2 + step);
         REQUIRE(estimator.diagnostics().used_ekf_fallback);
         REQUIRE_FALSE(estimator.is_initialized());
-        REQUIRE(estimator.state() == reference.state());
-        REQUIRE(estimator.covariance() == reference.covariance());
+        require_within_parting(estimator, reference, parting);
     }
 
     advance(2 * window + 2);

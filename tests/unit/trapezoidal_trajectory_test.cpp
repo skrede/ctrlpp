@@ -898,26 +898,6 @@ namespace
 {
 
 template <typename Scalar>
-struct raised_profile
-{
-    std::array<Scalar, 3> phases;
-    Scalar duration;
-    Scalar realized_acceleration;
-};
-
-// h = 0.3, v0 = 0.1, v1 = 0.7 needs a h >= (v1^2 - v0^2) / 2 = 0.24, so the commanded 0.2 is raised to a
-// unit in the last place above 0.8. The values are the raised profile, bit for bit, in each type.
-template <typename Scalar>
-auto raised_reference() -> raised_profile<Scalar>
-{
-    if constexpr (std::is_same_v<Scalar, double>) {
-        return {{0x1.7ffffffffffffp-1, 0.0, 0x1p-54}, 0x1.8p-1, 0x1.999999999999bp-1};
-    } else {
-        return {{0x1.8p-1f, 0.0f, 0x1.8p-25f}, 0x1.800002p-1f, 0x1.99999cp-1f};
-    }
-}
-
-template <typename Scalar>
 auto raising_command() -> typename ctrlpp::trapezoidal_trajectory<Scalar>::config
 {
     return {.q0 = Scalar{0},
@@ -945,7 +925,11 @@ TEMPLATE_TEST_CASE("Trapezoidal: a command that needs more than the acceleration
     CHECK(refused.error() == ctrlpp::trajectory_error::acceleration_limit_infeasible);
 }
 
-TEMPLATE_TEST_CASE("Trapezoidal: raise_to_feasible builds the raised profile exactly",
+// h = 0.3, v0 = 0.1, v1 = 0.7 need a h >= (v1^2 - v0^2) / 2 = 0.24, so the commanded 0.2 is raised to 0.8 and the
+// profile is the single ramp (v1 - v0) / a = 0.75. Each ramp duration is two terms summing to it, and four roundings
+// separate them, the bound triangular_ramp_duration resolves its residual by; how they round is the platform's, as a
+// fused multiply-add rounds once where separate operations round twice.
+TEMPLATE_TEST_CASE("Trapezoidal: raise_to_feasible builds the raised profile to its rounding",
                    "[trajectory][trapezoidal]", float, double)
 {
     using traj_t = ctrlpp::trapezoidal_trajectory<TestType>;
@@ -953,12 +937,22 @@ TEMPLATE_TEST_CASE("Trapezoidal: raise_to_feasible builds the raised profile exa
     cfg.acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasible;
     auto const raised = traj_t::create(cfg);
     REQUIRE(raised.has_value());
-    auto const reference = raised_reference<TestType>();
-    CHECK(raised->phase_durations() == reference.phases);
-    CHECK(raised->duration() == reference.duration);
+    auto const ramp = static_cast<TestType>(0.75);
+    auto const resolution = TestType{4} * std::numeric_limits<TestType>::epsilon() * ramp;
+    auto const phases = raised->phase_durations();
+    CHECK_THAT(static_cast<double>(phases[0]), WithinAbs(static_cast<double>(ramp), static_cast<double>(resolution)));
+    CHECK(phases[1] == TestType{0});
+    CHECK_THAT(static_cast<double>(phases[2]), WithinAbs(0.0, static_cast<double>(resolution)));
+    CHECK(raised->duration() == phases[0] + phases[1] + phases[2]);
     CHECK(raised->is_triangular());
     CHECK(raised->disposition().commanded_acceleration == cfg.a_max);
-    CHECK(raised->disposition().realized_acceleration == reference.realized_acceleration);
+    CHECK(raised->disposition().realized_acceleration > cfg.a_max);
+
+    cfg.a_max = raised->disposition().realized_acceleration;
+    cfg.acceleration_policy = ctrlpp::acceleration_limit_policy::refuse;
+    auto const at_realized = traj_t::create(cfg);
+    REQUIRE(at_realized.has_value());
+    CHECK(at_realized->phase_durations() == phases);
 }
 
 TEMPLATE_TEST_CASE("Trapezoidal: a command feasible at the acceleration limit builds alike under both policies",

@@ -217,25 +217,25 @@ TEMPLATE_TEST_CASE("deriv_filter with an explicit time constant filters a channe
     REQUIRE(u[0] == alpha * Scalar{0} + (Scalar{1} - alpha) * raw);
 }
 
-TEMPLATE_TEST_CASE("deriv_filter default time constant output sequence is pinned", "[pid][siso][deriv-filter]", float, double)
+// The default time constant is Td / N = kd / (kp * n). Here kp * n = 20 is exact and the quotient rounds once, so a
+// controller handed that quotient runs the defaulted one's arithmetic on any platform and must agree with it bit for bit.
+TEMPLATE_TEST_CASE("deriv_filter omitting the time constant is bit-identical to naming kd / (kp * n)", "[pid][siso][deriv-filter]", float, double)
 {
     using Scalar = TestType;
     using DfPid = filtered_pid<Scalar>;
     using vector_t = typename DfPid::vector_t;
-    const auto cfg = filtered_config<Scalar>(Scalar{2}, static_cast<Scalar>(0.1), Scalar{10}, std::nullopt);
-    auto controller = ctrlpp::test::constructed(DfPid::create(cfg));
+    const Scalar kp = 2;
+    const Scalar kd = static_cast<Scalar>(0.1);
+    const Scalar n = 10;
+    auto defaulted = ctrlpp::test::constructed(DfPid::create(filtered_config<Scalar>(kp, kd, n, std::nullopt)));
+    auto named = ctrlpp::test::constructed(DfPid::create(filtered_config<Scalar>(kp, kd, n, kd / (kp * n))));
     constexpr std::array<double, 8> measurements{0, 1, 1, 0.5, 0.25, 0.75, 0.75, -0.5};
-    std::array<Scalar, 8> expected{};
-    if constexpr(std::is_same_v<Scalar, float>)
-        expected = {0x0p+0f, -0x1.155554p+3f, -0x1.0e38e4p+2f, 0x1.97b42p+0f,
-                    0x1.03f35ap+1f, -0x1.feaeep+1f, -0x1.2a3a4cp+1f, 0x1.21d07ap+3f};
-    else
-        expected = {0x0p+0, -0x1.1555555555555p+3, -0x1.0e38e38e38e39p+2, 0x1.97b425ed097b2p+0,
-                    0x1.03f35ba781948p+1, -0x1.feaee172d4ce7p+1, -0x1.2a3a4b2646ef8p+1, 0x1.21d079bccf6cp+3};
     for(std::size_t k = 0; k < measurements.size(); ++k)
     {
         CAPTURE(k);
         const auto meas = vector_t::Constant(static_cast<Scalar>(measurements[k]));
-        REQUIRE(ctrlpp::test::commanded(controller.compute(vector_t::Zero(), meas, static_cast<Scalar>(0.01)))[0] == expected[k]);
+        const auto u_defaulted = ctrlpp::test::commanded(defaulted.compute(vector_t::Zero(), meas, static_cast<Scalar>(0.01)));
+        const auto u_named = ctrlpp::test::commanded(named.compute(vector_t::Zero(), meas, static_cast<Scalar>(0.01)));
+        REQUIRE(u_defaulted[0] == u_named[0]);
     }
 }

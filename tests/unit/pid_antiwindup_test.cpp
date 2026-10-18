@@ -31,10 +31,29 @@ Vec1 vec1(double v) { Vec1 r; r << v; return r; }
 // operations composing the stored integral is rounded once in the controller and
 // once in the test, so the accumulated forward error is bounded by twice the
 // operation count times one unit in the last place at the working scale.
-double integral_reconstruction_tol(double scale)
+template <typename Scalar>
+Scalar integral_reconstruction_tol(Scalar scale)
 {
     constexpr int arithmetic_ops = 10; // products/sums forming the stored integral
-    return 2.0 * arithmetic_ops * std::numeric_limits<double>::epsilon() * std::abs(scale);
+    return Scalar{2} * arithmetic_ops * std::numeric_limits<Scalar>::epsilon() * std::abs(scale);
+}
+
+template <typename Scalar>
+struct back_calc_expectation
+{
+    Scalar command;
+    Scalar integral;
+    Scalar unsaturated;
+};
+
+// The saturated command is output_max exactly. The integral is compared at the scale of the unsaturated command
+// its feedback term cancels against.
+template <typename Scalar>
+void require_back_calc_step(std::pair<Scalar, Scalar> const& step, back_calc_expectation<Scalar> const& expected)
+{
+    REQUIRE(step.first == expected.command);
+    REQUIRE_THAT(static_cast<double>(step.second),
+                 WithinAbs(static_cast<double>(expected.integral), static_cast<double>(integral_reconstruction_tol(expected.unsaturated))));
 }
 
 template <typename Scalar>
@@ -269,10 +288,9 @@ TEMPLATE_TEST_CASE("back_calc default kb is refused when the channel has no trac
     REQUIRE(back_calc_refusal<Scalar>(Scalar{0}, Scalar{2}, Scalar{0}) == ctrlpp::pid_config_error::undefined_tracking_time);
     REQUIRE(back_calc_refusal<Scalar>(Scalar{0}, Scalar{-2}, Scalar{0}) == ctrlpp::pid_config_error::undefined_tracking_time);
 
-    // The first step saturates at output_max = 5 from setpoint 0; the expected command and integral are
-    // formed in the controller's operation order, one rounding per statement, so they match bit for bit. A
-    // multiply-add written as one expression may be contracted to a fused operation ([expr.pre]/6), which the
-    // controller's separate vector operations never are.
+    // The first step saturates at output_max = 5 from setpoint 0. The expected integral is formed in the
+    // controller's operation order, but a compiler may contract a multiply-add to a fused operation
+    // ([expr.pre]/6), across statements as well under -ffp-contract=fast, so the two agree to their rounding.
     const Scalar dt = static_cast<Scalar>(0.01);
     const Scalar sp = 0;
     const auto reconstructed = [&](Scalar kp, Scalar ki, Scalar kb, Scalar meas) {
@@ -281,31 +299,31 @@ TEMPLATE_TEST_CASE("back_calc default kb is refused when the channel has no trac
         const Scalar u_raw = proportional + increment;
         const Scalar u_sat = std::min(u_raw, Scalar{5});
         const Scalar feedback = kb * (u_sat - u_raw) * dt;
-        return std::pair<Scalar, Scalar>{u_sat, increment + feedback};
+        return back_calc_expectation<Scalar>{u_sat, increment + feedback, u_raw};
     };
 
     SECTION("reverse-acting gains of one sign take kb = sqrt(ki/kd)")
     {
         const Scalar kp = -1, ki = static_cast<Scalar>(-0.5), kd = static_cast<Scalar>(-0.1), meas = 10;
         const auto expected = reconstructed(kp, ki, std::sqrt(ki / kd), meas);
-        REQUIRE(expected.first == Scalar{5});
-        REQUIRE(back_calc_first_step<Scalar>(kp, ki, kd, Scalar{0}, meas) == expected);
+        REQUIRE(expected.command == Scalar{5});
+        require_back_calc_step(back_calc_first_step<Scalar>(kp, ki, kd, Scalar{0}, meas), expected);
     }
 
     SECTION("an explicit kb is accepted whatever the gain signs")
     {
         const Scalar kp = 1, ki = static_cast<Scalar>(-0.1), kd = static_cast<Scalar>(0.1), meas = -10;
         const auto expected = reconstructed(kp, ki, Scalar{2}, meas);
-        REQUIRE(expected.first == Scalar{5});
-        REQUIRE(back_calc_first_step<Scalar>(kp, ki, kd, Scalar{2}, meas) == expected);
+        REQUIRE(expected.command == Scalar{5});
+        require_back_calc_step(back_calc_first_step<Scalar>(kp, ki, kd, Scalar{2}, meas), expected);
     }
 
     SECTION("a pure-integral channel takes an explicit kb")
     {
         const Scalar ki = 2, meas = -1000;
         const auto expected = reconstructed(Scalar{0}, ki, Scalar{1}, meas);
-        REQUIRE(expected.first == Scalar{5});
-        REQUIRE(back_calc_first_step<Scalar>(Scalar{0}, ki, Scalar{0}, Scalar{1}, meas) == expected);
+        REQUIRE(expected.command == Scalar{5});
+        require_back_calc_step(back_calc_first_step<Scalar>(Scalar{0}, ki, Scalar{0}, Scalar{1}, meas), expected);
     }
 }
 
@@ -323,8 +341,8 @@ TEMPLATE_TEST_CASE("back_calc refuses a negative explicit kb", "[pid][siso][anti
     const Scalar proportional = Scalar{1} * (Scalar{1} * Scalar{0} - meas);
     const Scalar u_raw = proportional + increment;
     const Scalar feedback = Scalar{1} * (Scalar{5} - u_raw) * dt;
-    const auto expected = std::pair<Scalar, Scalar>{Scalar{5}, increment + feedback};
-    REQUIRE(back_calc_first_step<Scalar>(Scalar{1}, ki, Scalar{0}, Scalar{1}, meas) == expected);
+    const auto expected = back_calc_expectation<Scalar>{Scalar{5}, increment + feedback, u_raw};
+    require_back_calc_step(back_calc_first_step<Scalar>(Scalar{1}, ki, Scalar{0}, Scalar{1}, meas), expected);
 }
 
 // Without integral action the default kb = sqrt(ki/kd) is sqrt(+-0) = +-0, the limit of an infinite tracking time:
