@@ -115,6 +115,7 @@ Solves the NLP from the initial guess in `update.x0`. Returns the solution, obje
 #include <Eigen/Dense>
 
 #include <cmath>
+#include <utility>
 #include <iostream>
 
 struct spring_mass
@@ -152,8 +153,11 @@ int main()
         .u_min = Eigen::Matrix<double, 1, 1>::Constant(-2.0),
         .u_max = Eigen::Matrix<double, 1, 1>::Constant(2.0)};
 
-    ctrlpp::nmpc<double, NX, NU, ctrlpp::nlopt_solver<double>, spring_mass>
-        controller(dynamics, cfg);
+    auto created = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, spring_mass>::create(
+        dynamics, cfg, ctrlpp::nlopt_solver<double>{solver_settings});
+    if(!created)
+        return 1;
+    auto controller = *std::move(created);
 
     Eigen::Vector2d x(2.0, 0.0);
     Eigen::Vector2d x_ref(0.0, 0.0);

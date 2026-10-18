@@ -196,7 +196,7 @@ When `Qf` is not set, the infinite-horizon Riccati solution is what the terminal
 The flag is latched when the terminal cost is computed, which happens at construction rather than per solve. It is therefore readable before the first solve, and reads the same on every solve afterwards.
 
 ```cpp
-auto controller = *ctrlpp::mpc<double, NX, NU>::create(system, config);
+auto controller = *ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(system, config);
 
 if (controller.diagnostics().used_state_weight_terminal_cost)
 {

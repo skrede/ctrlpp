@@ -12,28 +12,31 @@ gives you compile-time solver dispatch with zero virtual overhead.
 ```cpp
 template <typename S>
 concept qp_solver = requires { typename S::scalar_type; }
-    && requires(S solver,
-                const qp_problem<typename S::scalar_type>& prob,
-                const qp_update<typename S::scalar_type>& upd) {
-    { solver.setup(prob) } -> std::same_as<void>;
-    { solver.solve(upd) } -> std::same_as<qp_result<typename S::scalar_type>>;
-};
+    && requires(S solver, const qp_update<typename S::scalar_type>& upd) {
+        { solver.solve(upd) } -> std::same_as<qp_result<typename S::scalar_type>>;
+    }
+    && requires(S solver, const qp_problem<typename S::scalar_type>& prob) {
+        { solver.setup(prob).has_value() } -> std::convertible_to<bool>;
+    };
 ```
 
 A QP solver stores problem structure in `setup()` and solves updated instances
-in `solve()`. The separation allows warm-starting between MPC calls.
+in `solve()`. The separation allows warm-starting between MPC calls. `setup()`
+is fallible: it returns a `ctrlpp::expected<void, E>` over the backend's own
+setup-error enum, and a backend with no setup failure mode returns a trivially
+succeeding one.
 
 ### nlp_solver
 
 ```cpp
 template <typename S>
 concept nlp_solver = requires { typename S::scalar_type; }
-    && requires(S solver,
-                const nlp_problem<typename S::scalar_type>& prob,
-                const nlp_update<typename S::scalar_type>& upd) {
-    { solver.setup(prob) } -> std::same_as<void>;
-    { solver.solve(upd) } -> std::same_as<nlp_result<typename S::scalar_type>>;
-};
+    && requires(S solver, const nlp_update<typename S::scalar_type>& upd) {
+        { solver.solve(upd) } -> std::same_as<nlp_result<typename S::scalar_type>>;
+    }
+    && requires(S solver, const nlp_problem<typename S::scalar_type>& prob) {
+        { solver.setup(prob).has_value() } -> std::convertible_to<bool>;
+    };
 ```
 
 The NLP interface mirrors the QP interface. The `nlp_problem` carries cost
@@ -59,6 +62,7 @@ ctrlpp provides two solver backends: OSQP for QP and NLopt for NLP.
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <utility>
 
 int main()
 {
@@ -84,7 +88,13 @@ int main()
         .x_max = Eigen::Vector2d(
             std::numeric_limits<double>::infinity(), 2.0)};
 
-    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(sys, cfg);
+    auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
+    if (!created)
+    {
+        std::cerr << "MPC configuration rejected\n";
+        return EXIT_FAILURE;
+    }
+    auto controller = *std::move(created);
 
     Eigen::Vector2d x(5.0, 0.0);
 
@@ -106,15 +116,22 @@ int main()
 
 > **Requires NLopt.** Enable with `-DCTRLPP_BUILD_NLOPT=ON`.
 
-Swap the solver template parameter and provide nonlinear dynamics:
+Swap the solver template parameter and provide nonlinear dynamics. With NLopt
+the controller is the runtime-horizon `nmpc_dynamic`, which takes its horizon
+from `cfg.horizon`:
 
 ```cpp
 #include <ctrlpp/nmpc.h>
 #include <ctrlpp/mpc/nlopt_solver.h>
 
-// ... define dynamics_model and nmpc_config ...
+// ... define a dynamics_model type pendulum_dynamics, an instance dynamics,
+// and an nmpc_config<double, NX, NU> cfg ...
 
-ctrlpp::nmpc<double, NX, NU, ctrlpp::nlopt_solver> controller(dynamics, cfg);
+auto created = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>,
+                                    pendulum_dynamics>::create(dynamics, cfg);
+if (!created)
+    return EXIT_FAILURE;
+auto controller = *std::move(created);
 ```
 
 The rest of the API is identical: `controller.solve(x)` returns
@@ -128,31 +145,46 @@ Any type satisfying `qp_solver` or `nlp_solver` can be injected. Here is a
 skeleton for a custom QP solver:
 
 ```cpp
+#include <ctrlpp/expected.h>
+#include <ctrlpp/mpc/qp_solver.h>
+
+#include <cstdint>
+
+enum class my_setup_error : std::uint8_t
+{
+    rejected
+};
+
 struct my_qp_solver
 {
     using scalar_type = double;
 
-    void setup(const ctrlpp::qp_problem<double>& problem)
+    auto setup(const ctrlpp::qp_problem<double>& /*problem*/)
+        -> ctrlpp::expected<void, my_setup_error>
     {
-        // Store problem structure (H, A matrices, bounds)
-        // Allocate workspace
+        // Store problem structure (H, A matrices, bounds) and allocate the
+        // workspace; report a failure as ctrlpp::unexpected(my_setup_error::rejected)
+        return {};
     }
 
-    auto solve(const ctrlpp::qp_update<double>& update)
+    auto solve(const ctrlpp::qp_update<double>& /*update*/)
         -> ctrlpp::qp_result<double>
     {
+        ctrlpp::qp_result<double> result;
         // Solve QP with updated linear terms / bounds
-        // Return solution vector, status, cost, timing
+        // Fill in solution vector, status, cost, timing
+        return result;
     }
 };
 
 static_assert(ctrlpp::qp_solver<my_qp_solver>);
 ```
 
-Then use it:
+Then use it. The two-argument `create` default-constructs the solver; the
+three-argument form takes a preconfigured instance:
 
 ```cpp
-ctrlpp::mpc<double, NX, NU, my_qp_solver> controller(sys, cfg);
+auto created = ctrlpp::mpc<double, NX, NU, my_qp_solver>::create(sys, cfg);
 ```
 
 The `static_assert` catches concept mismatches at compile time with clear

@@ -28,8 +28,9 @@ C++20 concepts define what a solver backend must provide. MPC and NMPC accept
 any type satisfying `qp_solver` or `nlp_solver` as a template parameter:
 
 ```cpp
-ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> linear_mpc(sys, cfg);
-ctrlpp::nmpc<double, NX, NU, ctrlpp::nlopt_solver> nonlinear_mpc(dyn, cfg);
+auto linear_mpc = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, mpc_cfg);
+auto nonlinear_mpc = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>,
+                                          Dynamics>::create(dyn, nmpc_cfg);
 ```
 
 Swap `osqp_solver` for your own type and MPC works identically. The concept

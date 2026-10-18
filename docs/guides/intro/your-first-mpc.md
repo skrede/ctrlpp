@@ -36,6 +36,7 @@ A = [1  dt ]    B = [0.5*dt^2]
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <utility>
 
 int main()
 {
@@ -63,8 +64,15 @@ int main()
         .x_max = Eigen::Vector2d(
             std::numeric_limits<double>::infinity(), 2.0)};
 
-    // Create MPC with OSQP solver backend
-    ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver> controller(sys, cfg);
+    // Create MPC with OSQP solver backend. create validates the configuration
+    // and returns ctrlpp::expected<mpc, controller_construction_error>.
+    auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
+    if (!created)
+    {
+        std::cerr << "MPC configuration rejected\n";
+        return EXIT_FAILURE;
+    }
+    auto controller = *std::move(created);
 
     // Initial state: position=5, velocity=0 (regulate to origin)
     Eigen::Vector2d x(5.0, 0.0);
