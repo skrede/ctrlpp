@@ -2134,7 +2134,7 @@ TEST_CASE("Trapezoidal reports the acceleration it raised the command to",
     // equality is the contract rather than a tolerance.
     double const abs_h = std::abs(cfg.q1 - cfg.q0);
     double const v_diff_sq = std::abs(cfg.v0 * cfg.v0 - cfg.v1 * cfg.v1) / 2.0;
-    double const expected_a = v_diff_sq / abs_h + std::numeric_limits<double>::epsilon();
+    double const expected_a = std::nextafter(v_diff_sq / abs_h, std::numeric_limits<double>::infinity());
     CAPTURE(disp.realized_acceleration, expected_a);
     REQUIRE(disp.realized_acceleration == expected_a);
 

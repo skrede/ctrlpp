@@ -359,7 +359,7 @@ class trapezoidal_trajectory
         if (cfg.a_max * abs_h >= v_diff_sq) {
             return cfg.a_max;
         }
-        return v_diff_sq / abs_h + std::numeric_limits<Scalar>::epsilon();
+        return std::nextafter(v_diff_sq / abs_h, std::numeric_limits<Scalar>::infinity());
     }
 
     /// @brief eq. (3.14)-(3.15) where the half difference of squares has left the
