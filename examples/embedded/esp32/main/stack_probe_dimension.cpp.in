@@ -1,0 +1,10 @@
+#include "eigen_alloc_sentinel.h"
+
+#include "stack_probe_dimension_impl.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
+#include <cstdint>
+
+template void ctrlpp::probe::run_one<@PROBE_NX@, @PROBE_NU@>(std::uint32_t, SemaphoreHandle_t);

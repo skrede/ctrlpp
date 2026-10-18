@@ -423,14 +423,15 @@ dimension: at `float`, on a plant whose inputs must act through chains of more
 than two states, expect the solver to refuse, and expect poses near `group = 2`
 to sit on the margin either way. `double` answers every pose in the table.
 
-Witness: `examples/embedded/esp32/main/stack_probe.cpp` for the probe, started from
+Witness: `examples/embedded/esp32/main/stack_probe.cpp` for the probe, with each
+dimension's solve in `examples/embedded/esp32/main/stack_probe_dimension_impl.h`, started from
 `examples/embedded/esp32/main/app_main.cpp`, whose control loop still
 designs its gain, runs its 201 steps, streams them over UART2 and reports
 `golden diff PASS` in the same boot that carries the probe.
 
 **The families, the allocation sensor and the cycle counter on this board.** The
-leg builds two images from the same sources, and every figure below names the
-one it came from:
+leg builds two images from the same sources, the stack probe's aside, which only
+the evidence image compiles, and every figure below names the one it came from:
 
 - the allocation-evidence image, `ctrlpp_esp32`, whose ELF has the sha256 digest
   `c7bc0e9faef5707f2ec9d327766ecc397c84312c91872c51383a3e628aa25f98`. It keeps

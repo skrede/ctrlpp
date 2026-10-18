@@ -8,9 +8,10 @@
 # patterns, and the estimation, signal-processing, trajectory and control
 # families each judged against its host-double reference.
 #
-# Two images from the same sources. ctrlpp_esp32 is the allocation-evidence
-# image: it carries the allocation sensor and proves it can see an allocation,
-# then runs the stack probe, which ends in a deliberate overflow and a restart.
+# Two images from the same sources, the stack probe's aside. ctrlpp_esp32 is
+# the allocation-evidence image: it carries the allocation sensor and proves it
+# can see an allocation, then runs the stack probe, which ends in a deliberate
+# overflow and a restart.
 # ctrlpp_esp32_timing is built without the sensor and without assertions, so the
 # code it times carries none of their checks; it stops the task watchdog,
 # proves the core's cycle counter live, times the families, and runs no stack

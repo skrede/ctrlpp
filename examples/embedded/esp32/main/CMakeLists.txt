@@ -4,7 +4,6 @@ set(ctrlpp_esp32_sources
     app_main.cpp
     telemetry.cpp
     posture.cpp
-    stack_probe.cpp
     reset_reason.cpp
     family_report.cpp
     alloc_sensor.cpp
@@ -13,12 +12,30 @@ set(ctrlpp_esp32_sources
     cycle_counter.cpp
     timing_run.cpp)
 
+# The stack probe runs in the evidence image only, so only that image compiles
+# it, one translation unit per dimension: the six discrete solves in one unit
+# needed 11 GB to compile, and each image's copy was compiled in parallel with
+# the other's. The pairs are the ones stack_probe_dimension.h declares. The
+# framework first runs this file in script mode for its requirements alone,
+# where nothing can be generated.
+set(ctrlpp_esp32_probe_sources stack_probe.cpp)
+if (NOT CMAKE_BUILD_EARLY_EXPANSION)
+    foreach (dimension IN ITEMS 2x1 3x1 4x2 5x1 6x2 8x2)
+        string(REPLACE "x" ";" pair ${dimension})
+        list(GET pair 0 PROBE_NX)
+        list(GET pair 1 PROBE_NU)
+        set(unit "${CMAKE_CURRENT_BINARY_DIR}/stack_probe_nx${PROBE_NX}_nu${PROBE_NU}.cpp")
+        configure_file(stack_probe_dimension.cpp.in "${unit}" @ONLY)
+        list(APPEND ctrlpp_esp32_probe_sources "${unit}")
+    endforeach ()
+endif ()
+
 # Linked whole so the replaced operator new is the one in the image: as an
 # archive member it would be pulled only if something had already left the
 # operator undefined when the archive was scanned, and the C++ library's own
 # definition would otherwise win.
 idf_component_register(
-    SRCS ${ctrlpp_esp32_sources}
+    SRCS ${ctrlpp_esp32_sources} ${ctrlpp_esp32_probe_sources}
     INCLUDE_DIRS "."
     REQUIRES esp_driver_uart
     PRIV_REQUIRES esp_app_format
@@ -26,7 +43,8 @@ idf_component_register(
 )
 
 # Everything one image's copy of this component needs. Both images share every
-# source, definition and option below; `sentinel` switches the allocation
+# definition and option below, and every source but the stack probe's, which
+# the evidence image alone compiles; `sentinel` switches the allocation
 # sensor -- the Eigen sentinel and the counting operators -- and with it the
 # image kind, which the sources read to run the stack probe and the task
 # watchdog in the evidence image only. The timing copy is also built with
@@ -89,3 +107,17 @@ get_target_property(ctrlpp_esp32_main_links ${COMPONENT_LIB} LINK_LIBRARIES)
 target_link_libraries(ctrlpp_esp32_timing_main PRIVATE ${ctrlpp_esp32_main_links})
 target_include_directories(ctrlpp_esp32_timing_main PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 ctrlpp_esp32_image(ctrlpp_esp32_timing_main 0)
+
+# Nearly every source here parses Eigen and the ctrlpp surface, and the heaviest,
+# the probe's dimension-eight solve, peaks at 3.4 GiB under the v6.0.2
+# toolchain, so a build that schedules one per core runs out of memory on a
+# machine with less than 3.4 GiB a core. The pool is sized from the machine's own
+# memory and binds only where memory rather than the core count limits the
+# build. Ninja alone honors it.
+cmake_host_system_information(RESULT ctrlpp_esp32_memory_mib QUERY TOTAL_PHYSICAL_MEMORY)
+math(EXPR ctrlpp_esp32_heavy_jobs "${ctrlpp_esp32_memory_mib} / 3482")
+if (ctrlpp_esp32_heavy_jobs LESS 1)
+    set(ctrlpp_esp32_heavy_jobs 1)
+endif ()
+set_property(GLOBAL APPEND PROPERTY JOB_POOLS ctrlpp_esp32_heavy=${ctrlpp_esp32_heavy_jobs})
+set_property(TARGET ${COMPONENT_LIB} ctrlpp_esp32_timing_main PROPERTY JOB_POOL_COMPILE ctrlpp_esp32_heavy)

@@ -17,7 +17,7 @@
     #error "eigen_alloc_sentinel.h must be the first include of the translation unit, before any Eigen or ctrlpp header"
 #endif
 
-// The timing image is built from the same sources with the sentinel off, so the
+// The timing image is built from these sources with the sentinel off, so the
 // code it times carries none of these checks.
 #if CTRLPP_MCU_ALLOC_SENTINEL
 
