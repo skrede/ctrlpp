@@ -56,6 +56,8 @@ enum class dsp_error {
     non_positive_q,
     non_positive_ripple,
     non_finite_input,
+    invalid_resolution_factor,
+    cutoff_below_coefficient_resolution,
 };
 ```
 
@@ -68,21 +70,76 @@ Every design factory returns `ctrlpp::expected<Filter, dsp_error>` and rejects i
 | `cutoff_exceeds_nyquist` | The design frequency lies outside the open interval `(0, sample_hz / 2)`. A discrete-time filter can only realize a response strictly below half the sample rate; at or above it the design frequency aliases (Nyquist criterion) |
 | `non_positive_q` | Notch quality factor `q <= 0` |
 | `non_positive_ripple` | Chebyshev Type I passband ripple `ripple_db <= 0`. The ripple factor is `eps = sqrt(10^(ripple_db / 10) - 1)`, whose radicand is non-positive for every `ripple_db <= 0`, and at exactly zero the following `asinh(1 / eps)` takes an infinite argument. An equiripple passband is defined by a strictly positive ripple, so this is an exact domain bound and carries no tolerance |
+| `invalid_resolution_factor` | The `resolution_factor` of `low_pass`, `make_butterworth` or `make_chebyshev1` is NaN, infinite, or not strictly positive, so the refusal bound it scales has no meaning |
+| `cutoff_below_coefficient_resolution` | A section's design gap `D = 1 + a1 + a2` is at or below `resolution_factor * eps`, so the stored coefficients cannot carry one correct digit of it. See [Coefficient-resolution floor](#coefficient-resolution-floor) |
 
-The checks run in the order listed, so a design with several defects reports the first matching enumerator. The Nyquist bound is strict on both sides: `cutoff == sample_hz / 2` is rejected. The zero-ripple boundary is rejected too, along with negative zero: a Chebyshev Type I design with no ripple is not a degenerate Butterworth, it is outside the design's domain. Use `make_butterworth` for a maximally flat passband.
+The low-pass family (`low_pass`, `make_butterworth`, `make_chebyshev1`) checks, in order: the ripple (Chebyshev only), non-finite parameters, the sample rate, the Nyquist interval, the resolution factor, a cutoff ratio that rounds onto zero or Nyquist in the pre-warp `tan(pi * cutoff_hz / sample_hz)` (`cutoff_exceeds_nyquist`), and then, per section, a non-finite coefficient followed by the coefficient-resolution floor; a design with several defects reports the first matching enumerator. The Nyquist bound is strict on both sides: `cutoff == sample_hz / 2` is rejected. The zero-ripple boundary is rejected too, along with negative zero: a Chebyshev Type I design with no ripple is not a degenerate Butterworth, it is outside the design's domain. Use `make_butterworth` for a maximally flat passband.
 
-`make_chebyshev1` additionally sweeps the coefficients it is about to emit and reports `non_finite_input` rather than returning them, so a successful design never hands back a filter whose difference equation immediately contaminates its state.
+The low-pass family additionally sweeps the coefficients it is about to emit and reports `non_finite_input` rather than returning them, so a successful design never hands back a filter whose difference equation immediately contaminates its state.
+
+## Coefficient-resolution floor
+
+A low-pass section's poles approach `z = 1` as the cutoff ratio `fc / fs` falls, and its behavior lives in the gap `D = 1 + a1 + a2` (the DC gain is `(b0 + b1 + b2) / D`), which shrinks as `(2 pi fc / fs)^2`. Stored in a scalar type with machine epsilon `eps`, `a1` near -2 and `a2` near 1 are each rounded to half an ulp, `eps / 2` and `eps / 4`, so even the best coefficients the type can hold carry an error of up to `3/4 eps` in `D` (Oppenheim and Schafer, 3rd ed., Sec. 6.8, coefficient quantization with poles near `z = 1`). The relative error of the design's gap is then
+
+```
+rho = resolution_factor * eps / D
+```
+
+and every low-pass-family factory refuses a design with `rho >= 1`, where `D = 4 beta0 / (1 + beta1 + beta0)` is computed from the design (never from the stored coefficients) and, for a cascade, the smallest section gap decides. `resolution_factor` defaults to the counted `3/4`. A caller who needs the gap resolved to a relative accuracy `tau` passes `3/4 / tau`; for example `0.75f / 1e-3f` refuses a float low-pass at 1 Hz / 1000 Hz, which the default accepts.
+
+The sections are formed at unit scale from `Omega = tan(pi * fc / fs)` with `a1` and `a2` stored as offsets from -2 and 1, so the gap is never formed by cancellation and the representation, not the formula, is what limits a design: across the float sweep below, every float coefficient is within its counted rounding bound of the double design rounded to float.
+
+| Design | `float` floor `fc / fs` | `double` floor `fc / fs` |
+|--------|-------------------------|--------------------------|
+| `low_pass` | `4.76e-5` | `2.05e-9` |
+| `make_butterworth<4>` | `4.76e-5` | `2.05e-9` |
+| `make_chebyshev1<4>`, 1 dB ripple | `9.00e-5` (second section, pole radius squared 0.279) | `3.89e-9` |
+
+`rho` and the measured error of a float `low_pass` at `fs = 1000`, evaluated in double from the stored coefficients:
+
+| `fc / fs` | `rho` | DC gain error | `|H(fc)|` error |
+|-----------|-------|---------------|-----------------|
+| `1e-1` | `3.3e-7` | `2.2e-7` | `8.7e-8` |
+| `1e-2` | `2.4e-5` | `3.0e-6` | `-2.3e-7` |
+| `1e-3` | `2.3e-3` | `-9.0e-4` | `1.3e-7` |
+| `5e-4` | `9.1e-3` | `-4.7e-3` | `-7.2e-6` |
+| `2e-4` | `5.7e-2` | `-2.0e-2` | `-9.3e-5` |
+| `1e-4` | `0.23` | `-5.4e-2` | `-8.1e-4` |
+| `7e-5` | `0.46` | `-0.19` | `-1.3e-2` |
+| `5e-5` | `0.91` | `-0.17` | `-1.1e-2` |
+| `4.8e-5` | `0.98` | `-0.24` | `-2.3e-2` |
+| `3e-5` | `2.5` | refused | refused |
+
+Just above the floor the design is accepted but not accurate: the storage error alone can move the DC gain by up to `rho / (1 - rho)`, which grows without bound as `rho` approaches 1, and the measured DC error is 17 percent at `5e-5` and 24 percent at `4.8e-5`. The floor refuses a design whose gap has no correct digit; it does not promise accuracy near it. Pass a larger `resolution_factor` for that. `double` reaches the floor only at ratios about four decades below `float`'s.
+
+The vector forwarders take the same trailing parameter and forward the scalar factory's verdict unchanged:
+
+```cpp
+static auto vector_biquad<Scalar, N>::low_pass(Scalar cutoff_hz, Scalar sample_hz,
+    Scalar resolution_factor = /* 3/4 */) -> ctrlpp::expected<vector_biquad, dsp_error>;
+
+template <std::size_t Order, std::size_t N, typename Scalar>
+auto make_vector_butterworth(Scalar cutoff_hz, Scalar sample_hz,
+    Scalar resolution_factor = /* 3/4 */)
+    -> ctrlpp::expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error>;
+
+template <std::size_t Order, std::size_t N, typename Scalar>
+auto make_vector_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db,
+    Scalar resolution_factor = /* 3/4 */)
+    -> ctrlpp::expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error>;
+```
 
 ## Factory Functions
 
 ### low_pass
 
 ```cpp
-static auto low_pass(Scalar cutoff_hz, Scalar sample_hz)
+static auto low_pass(Scalar cutoff_hz, Scalar sample_hz,
+    Scalar resolution_factor = /* 3/4 */)
     -> ctrlpp::expected<biquad, dsp_error>;
 ```
 
-Creates a second-order Butterworth (maximally flat, quality factor `Q = 1/sqrt(2)`) low-pass filter at the given cutoff frequency. The response is monotone across the passband with no peaking and reaches -3.01 dB at the cutoff. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)`.
+Creates a second-order Butterworth (maximally flat, quality factor `Q = 1/sqrt(2)`) low-pass filter at the given cutoff frequency. The response is monotone across the passband with no peaking and reaches -3.01 dB at the cutoff. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)` and above the [coefficient-resolution floor](#coefficient-resolution-floor) of `Scalar`.
 
 ### notch
 
@@ -153,22 +210,24 @@ Chains N biquad sections in series. Each `process()` call passes the sample thro
 ```cpp
 template <std::size_t Order, typename Scalar>
     requires (Order % 2 == 0 && Order >= 2)
-auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz)
+auto make_butterworth(Scalar cutoff_hz, Scalar sample_hz,
+    Scalar resolution_factor = /* 3/4 */)
     -> ctrlpp::expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>;
 ```
 
-Designs an `Order`-th order Butterworth low-pass filter as a cascade of `Order/2` biquad sections. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)`.
+Designs an `Order`-th order Butterworth low-pass filter as a cascade of `Order/2` biquad sections. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)` and every section above the [coefficient-resolution floor](#coefficient-resolution-floor) of `Scalar`.
 
 ### make_chebyshev1
 
 ```cpp
 template <std::size_t Order, typename Scalar>
     requires (Order % 2 == 0 && Order >= 2)
-auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
+auto make_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db,
+    Scalar resolution_factor = /* 3/4 */)
     -> ctrlpp::expected<cascaded_biquad<Scalar, Order / 2>, dsp_error>;
 ```
 
-Designs an `Order`-th order Chebyshev Type I low-pass filter with the specified passband ripple. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)`, and `ripple_db` must be finite and strictly positive. A design that succeeds carries only finite coefficients.
+Designs an `Order`-th order Chebyshev Type I low-pass filter with the specified passband ripple. `cutoff_hz` must lie in the open interval `(0, sample_hz / 2)` with every section above the [coefficient-resolution floor](#coefficient-resolution-floor) of `Scalar`, and `ripple_db` must be finite and strictly positive. The section with the smaller pole radius sets the floor, so it sits above the Butterworth floor of the same order. A design that succeeds carries only finite coefficients.
 
 ## Usage Example
 

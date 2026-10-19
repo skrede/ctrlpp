@@ -26,7 +26,9 @@ namespace ctrlpp
 ///  * invalid_filter_config : the output low-pass filter design was rejected
 ///                            by the dsp factory (see `ctrlpp::dsp_error`):
 ///                            non-finite parameter, non-positive sample rate,
-///                            or cutoff outside (0, sample_hz / 2).
+///                            cutoff outside (0, sample_hz / 2), or cutoff
+///                            below the coefficient-resolution floor of the
+///                            scalar type.
 enum class l1_error
 {
     singular_predictor,

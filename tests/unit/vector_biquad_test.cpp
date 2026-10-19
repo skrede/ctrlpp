@@ -166,6 +166,30 @@ TEST_CASE("vector cascade factories propagate the proto cascade's error", "[vect
     CHECK(negative_fs.error() == dsp_error::non_positive_sample_rate);
 }
 
+TEST_CASE("vector factories forward the resolution floor and its factor", "[vector_biquad][error]")
+{
+    auto const low_pass = vector_biquad<float, 2>::low_pass(0.03f, 1000.f);
+    REQUIRE(!low_pass.has_value());
+    CHECK(low_pass.error() == dsp_error::cutoff_below_coefficient_resolution);
+    auto const strict_low_pass = vector_biquad<float, 2>::low_pass(1.0f, 1000.f, 750.0f);
+    REQUIRE(!strict_low_pass.has_value());
+    CHECK(strict_low_pass.error() == dsp_error::cutoff_below_coefficient_resolution);
+
+    auto const butterworth = make_vector_butterworth<4, 2>(0.03f, 1000.f);
+    REQUIRE(!butterworth.has_value());
+    CHECK(butterworth.error() == dsp_error::cutoff_below_coefficient_resolution);
+    auto const invalid_butterworth = make_vector_butterworth<4, 2>(100.f, 1000.f, -1.0f);
+    REQUIRE(!invalid_butterworth.has_value());
+    CHECK(invalid_butterworth.error() == dsp_error::invalid_resolution_factor);
+
+    auto const chebyshev = make_vector_chebyshev1<4, 2>(0.07f, 1000.f, 1.0f);
+    REQUIRE(!chebyshev.has_value());
+    CHECK(chebyshev.error() == dsp_error::cutoff_below_coefficient_resolution);
+    auto const invalid_chebyshev = make_vector_chebyshev1<4, 2>(100.f, 1000.f, 1.0f, std::numeric_limits<float>::infinity());
+    REQUIRE(!invalid_chebyshev.has_value());
+    CHECK(invalid_chebyshev.error() == dsp_error::invalid_resolution_factor);
+}
+
 TEST_CASE("vector_discrete_filter concept check", "[vector_biquad]")
 {
     static_assert(vector_discrete_filter<vector_biquad<double, 2>, Vector<double, 2>>);

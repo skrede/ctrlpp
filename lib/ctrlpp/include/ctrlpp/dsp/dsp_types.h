@@ -41,6 +41,18 @@ namespace ctrlpp
 ///                               quality factor, or ripple) is NaN or infinite,
 ///                               or the design chain produced a non-finite
 ///                               coefficient.
+///  * invalid_resolution_factor : the coefficient-resolution factor is NaN,
+///                               infinite, or not strictly positive, so the
+///                               refusal bound it scales has no meaning.
+///  * cutoff_below_coefficient_resolution : a section's design gap
+///                               D = 1 + a1 + a2 (how far its poles sit from
+///                               z = 1) is at or below resolution_factor * eps,
+///                               so the stored coefficients cannot carry one
+///                               correct digit of it (oppenheim2010dsp
+///                               Sec. 6.8, coefficient quantization with poles
+///                               near z = 1). The bound is a property of the
+///                               scalar type: double reaches it only at
+///                               cutoff ratios far below float's.
 enum class dsp_error
 {
     non_positive_sample_rate,
@@ -48,6 +60,8 @@ enum class dsp_error
     non_positive_q,
     non_positive_ripple,
     non_finite_input,
+    invalid_resolution_factor,
+    cutoff_below_coefficient_resolution,
 };
 
 }

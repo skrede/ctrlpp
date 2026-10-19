@@ -41,8 +41,8 @@ constexpr std::size_t kKalmanPlantRoundings = 1;
 
 constexpr double kHostKalmanVelocityVariance = 1.3104323528650401;
 constexpr double kHostKalmanScale            = 1.5685167138038882;
-constexpr double kHostBiquadOutput           = -0.86508002466156553;
-constexpr double kHostBiquadScale            = 16.492588552695306;
+constexpr double kHostBiquadOutput           = -0.86508002466156531;
+constexpr double kHostBiquadScale            = 16.492588552695299;
 constexpr double kHostTrajectoryPosition     = 6.744791666666667;
 constexpr double kHostTrajectoryScale        = 1206.09375;
 

@@ -30,6 +30,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <complex>
@@ -42,19 +43,238 @@ namespace
 {
 
 /// Exact digital magnitude |H(e^{jOmega})| at Omega = 2*pi*f/fs, evaluated
-/// directly from the biquad's own reported coefficients.
-auto magnitude_linear(const biquad_coeffs<double>& c, double f, double fs) -> double
+/// in double directly from the biquad's own reported coefficients.
+template <typename Scalar>
+auto magnitude_linear(const biquad_coeffs<Scalar>& c, double f, double fs) -> double
 {
     const double omega = 2.0 * std::numbers::pi * f / fs;
     const std::complex<double> z_inv = std::exp(std::complex<double>(0.0, -omega));
-    const std::complex<double> num = c.b0 + c.b1 * z_inv + c.b2 * z_inv * z_inv;
-    const std::complex<double> den = 1.0 + c.a1 * z_inv + c.a2 * z_inv * z_inv;
+    const std::complex<double> num = static_cast<double>(c.b0) + static_cast<double>(c.b1) * z_inv + static_cast<double>(c.b2) * z_inv * z_inv;
+    const std::complex<double> den = 1.0 + static_cast<double>(c.a1) * z_inv + static_cast<double>(c.a2) * z_inv * z_inv;
     return std::abs(num / den);
+}
+
+/// |1 + a1 z^-1 + a2 z^-2| at Omega = 2*pi*f/fs: the denominator a coefficient perturbation moves.
+auto denominator_magnitude(const biquad_coeffs<double>& c, double f, double fs) -> double
+{
+    const double omega = 2.0 * std::numbers::pi * f / fs;
+    const std::complex<double> z_inv = std::exp(std::complex<double>(0.0, -omega));
+    return std::abs(1.0 + c.a1 * z_inv + c.a2 * z_inv * z_inv);
 }
 
 auto magnitude_db(const biquad_coeffs<double>& c, double f, double fs) -> double
 {
     return 20.0 * std::log10(magnitude_linear(c, f, fs));
+}
+
+// Running error bound (Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2002, Sec. 3.3): a value
+// carries how many eps its relative error can reach to first order, and every operation adds one rounding, exact or not.
+struct counted
+{
+    double value;
+    double roundings;
+};
+
+auto exact(double v) -> counted
+{
+    return {v, 0.0};
+}
+
+auto operator*(counted a, counted b) -> counted
+{
+    return {a.value * b.value, a.roundings + b.roundings + 1.0};
+}
+
+auto operator/(counted a, counted b) -> counted
+{
+    return {a.value / b.value, a.roundings + b.roundings + 1.0};
+}
+
+auto operator+(counted a, counted b) -> counted
+{
+    const double sum = a.value + b.value;
+    return {sum, (std::abs(a.value) * a.roundings + std::abs(b.value) * b.roundings) / std::abs(sum) + 1.0};
+}
+
+/// A library function with a one-ulp error; slope = |x f'(x) / f(x)| carries the argument's relative error through it.
+auto through(double fx, double slope, counted x) -> counted
+{
+    return {fx, slope * x.roundings + 1.0};
+}
+
+/// Omega = tan(pi * (fc / fs)) as biquad.h forms it, pi rounded into the scalar type.
+auto count_prewarp(double fc, double fs) -> counted
+{
+    const counted x = counted{std::numbers::pi, 1.0} * (exact(fc) / exact(fs));
+    return through(std::tan(x.value), 2.0 * x.value / std::sin(2.0 * x.value), x);
+}
+
+struct section_count
+{
+    counted b0;
+    counted q1;
+    counted p2;
+    counted dc_denominator;
+};
+
+/// The offset-form section as biquad.h forms it: b0, the a1 offset q1 = a1 + 2, the a2 offset p2 = 1 - a2, and D.
+auto count_section(counted omega, counted g1, counted g0) -> section_count
+{
+    const counted beta1 = omega * g1;
+    const counted beta0 = omega * omega * g0;
+    const counted den0 = exact(1.0) + beta1 + beta0;
+    return {beta0 / den0, (exact(2.0) * beta1 + exact(4.0) * beta0) / den0, exact(2.0) * beta1 / den0, exact(4.0) * beta0 / den0};
+}
+
+auto count_low_pass(double fc, double fs) -> section_count
+{
+    return count_section(count_prewarp(fc, fs), counted{std::numbers::sqrt2, 1.0}, exact(1.0));
+}
+
+constexpr double eps_single = static_cast<double>(std::numeric_limits<float>::epsilon());
+constexpr double eps_double = std::numeric_limits<double>::epsilon();
+
+// Storing a1 in [1, 2) costs half its ulp, eps / 2, and a2 below 1 at most eps / 4.
+constexpr double offset_storage_roundings = 0.75;
+
+auto float_ulp(float v) -> double
+{
+    const float a = std::abs(v);
+    return static_cast<double>(std::nextafter(a, std::numeric_limits<float>::infinity()) - a);
+}
+
+/// |float coefficient - double design rounded to float|: half an ulp for each of the two stores into float, the
+/// counted formation error of the term the coefficient is stored from at both precisions, and the double store.
+void check_coefficient(float single, double reference, counted term)
+{
+    const float rounded = static_cast<float>(reference);
+    const double error = std::abs(static_cast<double>(single) - static_cast<double>(rounded));
+    const double bound = float_ulp(rounded) + (eps_single + eps_double) * term.roundings * std::abs(term.value) + eps_double * std::abs(reference);
+    CAPTURE(single, reference, error / float_ulp(rounded), bound / float_ulp(rounded));
+    CHECK(error <= bound);
+}
+
+void check_section_coefficients(const biquad_coeffs<float>& single, const biquad_coeffs<double>& reference, const section_count& n)
+{
+    check_coefficient(single.b0, reference.b0, n.b0);
+    check_coefficient(single.b1, reference.b1, counted{2.0 * n.b0.value, n.b0.roundings});
+    check_coefficient(single.b2, reference.b2, n.b0);
+    check_coefficient(single.a1, reference.a1, n.q1);
+    check_coefficient(single.a2, reference.a2, n.p2);
+}
+
+/// Relative error of a stored float section's response where its denominator 1 + a1 z^-1 + a2 z^-2 has magnitude
+/// denominator: the numerator's counted error, and the denominator moved by at most the offset storage plus the
+/// counted formation of the two offsets. Exact in the denominator perturbation, which nears 1 at the floor.
+auto section_response_bound(const section_count& n, double denominator) -> double
+{
+    const double moved = (offset_storage_roundings + n.q1.roundings * n.q1.value + n.p2.roundings * n.p2.value) * eps_single / denominator;
+    REQUIRE(moved < 1.0);
+    return (n.b0.roundings * eps_single + moved) / (1.0 - moved);
+}
+
+// Evaluating the response in double from the coefficients: the rounding-op margin of the anchors above.
+constexpr double evaluation_bound = 16.0 * eps_double;
+
+/// Butterworth section k of an order-Order cascade: g1 = 2 cos(theta_k), theta_k = pi (2k + 1) / (2 Order).
+auto count_butterworth_section(counted omega, std::size_t k, std::size_t order) -> section_count
+{
+    const counted theta = counted{std::numbers::pi, 1.0} * exact(static_cast<double>(2 * k + 1)) / exact(static_cast<double>(2 * order));
+    const counted cosine = through(std::cos(theta.value), theta.value * std::tan(theta.value), theta);
+    return count_section(omega, exact(2.0) * cosine, exact(1.0));
+}
+
+struct chebyshev1_count
+{
+    std::array<section_count, 2> sections;
+    counted target_dc;
+};
+
+/// make_chebyshev1<4>'s chain: the ripple factor through expm1 and sqrt, the prototype through asinh, sinh and cosh,
+/// each section's pole pair through sin and cos, and the DC target 1 / sqrt(1 + eps^2).
+auto count_chebyshev1_order4(double fc, double fs, double ripple_db) -> chebyshev1_count
+{
+    const counted y = counted{std::numbers::ln10, 1.0} * exact(ripple_db) / exact(10.0);
+    const counted radicand = through(std::expm1(y.value), y.value * std::exp(y.value) / std::expm1(y.value), y);
+    const counted ripple = through(std::sqrt(radicand.value), 0.5, radicand);
+    const counted z = exact(1.0) / ripple;
+    const double arc = std::asinh(z.value);
+    const counted v = through(arc, z.value / (std::sqrt(1.0 + z.value * z.value) * arc), z) / exact(4.0);
+    const counted sinh_v = through(std::sinh(v.value), v.value / std::tanh(v.value), v);
+    const counted cosh_v = through(std::cosh(v.value), v.value * std::tanh(v.value), v);
+    const counted omega = count_prewarp(fc, fs);
+
+    chebyshev1_count n{};
+    for(std::size_t k = 0; k < 2; ++k)
+    {
+        const counted theta = counted{std::numbers::pi, 1.0} * exact(static_cast<double>(2 * k + 1)) / exact(8.0);
+        const counted sigma = sinh_v * through(std::sin(theta.value), theta.value / std::tan(theta.value), theta);
+        const counted imag = cosh_v * through(std::cos(theta.value), theta.value * std::tan(theta.value), theta);
+        n.sections[k] = count_section(omega, exact(2.0) * sigma, sigma * sigma + imag * imag);
+    }
+    const counted root = through(std::sqrt(1.0 + ripple.value * ripple.value), 0.5, exact(1.0) + ripple * ripple);
+    n.target_dc = exact(1.0) / root;
+    return n;
+}
+
+// The DC normalization of a two-section cascade: per section two numerator and two denominator sums, the quotient
+// and the running product, then the correction quotient and the scaling of the first section's numerator.
+constexpr double chebyshev1_normalization_roundings = 2.0 * 6.0 + 2.0;
+
+/// Bounds on |a1_float - a1_double| and |a2_float - a2_double|: the half-ulp store of a1 below 2 and of a2 below 1 at
+/// either precision, and the counted formation of both offsets at either precision.
+auto offset_perturbation(const section_count& n) -> std::array<double, 2>
+{
+    const double both = eps_single + eps_double;
+    return {both / 2.0 + n.q1.roundings * n.q1.value * both, both / 4.0 + n.p2.roundings * n.p2.value * both};
+}
+
+/// | |H_f(fc) / H_f(0)| / |H_d(fc) / H_d(0)| - 1 | for a section whose numerator shape is fixed and whose a1, a2 move by
+/// at most s[0], s[1]. With w = (d1 z^-1 + d2 z^-2) / A(z) the ratio is (1 + (d1 + d2) / gap) / |1 + w|, and
+/// 1 + Re w <= |1 + w| <= 1 + Re w + (Im w)^2 / (2 (1 + Re w)) bounds it to all orders.
+auto shape_ratio_bound(const biquad_coeffs<double>& d, double gap, double f, double fs, std::array<double, 2> s) -> double
+{
+    const std::complex<double> z_inv = std::exp(std::complex<double>(0.0, -2.0 * std::numbers::pi * f / fs));
+    const std::complex<double> a = 1.0 + d.a1 * z_inv + d.a2 * z_inv * z_inv;
+    const std::complex<double> w1 = z_inv / a;
+    const std::complex<double> w2 = z_inv * z_inv / a;
+    const double linear = s[0] * std::abs(1.0 / gap - w1.real()) + s[1] * std::abs(1.0 / gap - w2.real());
+    const double real = s[0] * std::abs(w1.real()) + s[1] * std::abs(w2.real());
+    const double imag = s[0] * std::abs(w1.imag()) + s[1] * std::abs(w2.imag());
+    REQUIRE(real < 1.0);
+    return (linear + imag * imag / (2.0 * (1.0 - real))) / (1.0 - real);
+}
+
+auto dc_gain(const biquad_coeffs<float>& c) -> double
+{
+    const double numerator = static_cast<double>(c.b0) + static_cast<double>(c.b1) + static_cast<double>(c.b2);
+    return numerator / (1.0 + static_cast<double>(c.a1) + static_cast<double>(c.a2));
+}
+
+template <typename Scalar>
+void check_resolution_floor_boundary()
+{
+    using wide = long double;
+    const wide eps = static_cast<wide>(std::numeric_limits<Scalar>::epsilon());
+    const wide c_eps = wide{3} / wide{4} * eps;
+    // 4 Omega^2 / (1 + sqrt(2) Omega + Omega^2) = c eps solved for its positive root, no cancellation in the numerator.
+    const wide a = wide{4} - c_eps;
+    const wide b = c_eps * std::numbers::sqrt2_v<wide>;
+    const wide omega = (b + std::sqrt(b * b + wide{4} * a * c_eps)) / (wide{2} * a);
+    const wide ratio = std::atan(omega) / std::numbers::pi_v<wide>;
+
+    // The D chain at Scalar precision plus rounding the ratio into Scalar, and the closed form's fourteen roundings
+    // above at long double precision expressed in Scalar eps. D grows as the ratio squared, so a ratio m eps off r*
+    // moves D twice as far as its own computed error.
+    const wide d_chain = static_cast<wide>(count_low_pass(static_cast<double>(ratio), 1.0).dc_denominator.roundings + 1.0);
+    const wide m = d_chain + wide{14} * std::numeric_limits<wide>::epsilon() / eps;
+    CAPTURE(static_cast<double>(ratio), static_cast<double>(m));
+
+    const auto above = biquad<Scalar>::low_pass(static_cast<Scalar>(ratio * (wide{1} + m * eps)), Scalar{1});
+    REQUIRE(above.has_value());
+    const auto below = biquad<Scalar>::low_pass(static_cast<Scalar>(ratio * (wide{1} - m * eps)), Scalar{1});
+    REQUIRE(!below.has_value());
+    CHECK(below.error() == dsp_error::cutoff_below_coefficient_resolution);
 }
 
 } // namespace
@@ -147,4 +367,123 @@ TEST_CASE("dirty_derivative magnitude tracks 2*pi*f well below its bandwidth", "
         REQUIRE(measured <= expected * (1.0 + rel_tol));
         REQUIRE(measured >= expected * (1.0 - rel_tol));
     }
+}
+
+TEST_CASE("Single-precision low-pass designs carry the double design down to the coefficient-resolution floor", "[dsp][anchor][float]")
+{
+    constexpr std::array<double, 11> accepted{1e-1, 3e-2, 1e-2, 3e-3, 1e-3, 5e-4, 3e-4, 2e-4, 1e-4, 7e-5, 5e-5};
+    constexpr float fs = 1000.0f;
+
+    for(double ratio : accepted)
+    {
+        CAPTURE(ratio);
+        const float fc = static_cast<float>(ratio * static_cast<double>(fs));
+        const auto single = biquad<float>::low_pass(fc, fs);
+        const auto reference = biquad<double>::low_pass(static_cast<double>(fc), static_cast<double>(fs));
+        REQUIRE(single.has_value());
+        REQUIRE(reference.has_value());
+        const auto n = count_low_pass(static_cast<double>(fc), static_cast<double>(fs));
+        check_section_coefficients(single->coefficients(), reference->coefficients(), n);
+
+        const double dc_bound = section_response_bound(n, n.dc_denominator.value) + evaluation_bound;
+        CHECK(std::abs(dc_gain(single->coefficients()) - 1.0) <= dc_bound);
+
+        const double at_cutoff = magnitude_linear(single->coefficients(), static_cast<double>(fc), static_cast<double>(fs));
+        const double denominator = denominator_magnitude(reference->coefficients(), static_cast<double>(fc), static_cast<double>(fs));
+        const double cutoff_bound = section_response_bound(n, denominator) + evaluation_bound;
+        CAPTURE(at_cutoff, dc_bound, cutoff_bound);
+        CHECK(std::abs(at_cutoff * std::numbers::sqrt2 - 1.0) <= cutoff_bound);
+    }
+
+    for(double ratio : {3e-5, 1e-5})
+    {
+        CAPTURE(ratio);
+        const auto single = biquad<float>::low_pass(static_cast<float>(ratio * static_cast<double>(fs)), fs);
+        REQUIRE(!single.has_value());
+        CHECK(single.error() == dsp_error::cutoff_below_coefficient_resolution);
+    }
+}
+
+TEST_CASE("The low-pass coefficient-resolution floor sits where its closed form puts it", "[dsp][anchor][float]")
+{
+    check_resolution_floor_boundary<float>();
+    check_resolution_floor_boundary<double>();
+}
+
+TEST_CASE("A single-precision Butterworth cascade at 20 Hz / 48 kHz carries the double design", "[dsp][anchor][float]")
+{
+    constexpr float fc = 20.0f;
+    constexpr float fs = 48000.0f;
+    const auto single = make_butterworth<4>(fc, fs);
+    const auto reference = make_butterworth<4>(static_cast<double>(fc), static_cast<double>(fs));
+    REQUIRE(single.has_value());
+    REQUIRE(reference.has_value());
+
+    const counted omega = count_prewarp(static_cast<double>(fc), static_cast<double>(fs));
+    double at_cutoff = 1.0;
+    double dc = 1.0;
+    double cutoff_bound = 1.0;
+    double dc_bound = 1.0;
+    for(std::size_t k = 0; k < 2; ++k)
+    {
+        CAPTURE(k);
+        const auto n = count_butterworth_section(omega, k, 4);
+        const auto& c = single->section(k).coefficients();
+        const auto& d = reference->section(k).coefficients();
+        check_section_coefficients(c, d, n);
+        at_cutoff *= magnitude_linear(c, static_cast<double>(fc), static_cast<double>(fs));
+        dc *= dc_gain(c);
+        cutoff_bound *= 1.0 + section_response_bound(n, denominator_magnitude(d, static_cast<double>(fc), static_cast<double>(fs))) + evaluation_bound;
+        dc_bound *= 1.0 + section_response_bound(n, n.dc_denominator.value) + evaluation_bound;
+    }
+    CAPTURE(20.0 * std::log10(at_cutoff), dc, cutoff_bound - 1.0, dc_bound - 1.0);
+    CHECK(std::abs(at_cutoff * std::numbers::sqrt2 - 1.0) <= cutoff_bound - 1.0);
+    CHECK(std::abs(dc - 1.0) <= dc_bound - 1.0);
+}
+
+TEST_CASE("A single-precision Chebyshev cascade at 20 Hz / 48 kHz matches the double design within its representation bound",
+          "[dsp][anchor][float]")
+{
+    constexpr float fc = 20.0f;
+    constexpr float fs = 48000.0f;
+    const auto single = make_chebyshev1<4>(fc, fs, 1.0f);
+    const auto reference = make_chebyshev1<4>(static_cast<double>(fc), static_cast<double>(fs), 1.0);
+    REQUIRE(single.has_value());
+    REQUIRE(reference.has_value());
+    const auto n = count_chebyshev1_order4(static_cast<double>(fc), static_cast<double>(fs), 1.0);
+
+    // The normalization fixes each cascade's DC gain to its own target, and every section's numerator shape is
+    // (1 + z^-1)^2 in both, so the two responses at the cutoff differ only through the stored denominators.
+    const double normalization = (n.target_dc.roundings + chebyshev1_normalization_roundings) * (eps_single + eps_double);
+    double upper = 1.0 + normalization;
+    double lower = 1.0 - normalization;
+    double single_cutoff = 1.0;
+    double reference_cutoff = 1.0;
+    for(std::size_t k = 0; k < 2; ++k)
+    {
+        CAPTURE(k);
+        const auto& c = single->section(k).coefficients();
+        const auto& d = reference->section(k).coefficients();
+        const double gap = n.sections[k].dc_denominator.value;
+        const double shape = shape_ratio_bound(d, gap, static_cast<double>(fc), static_cast<double>(fs), offset_perturbation(n.sections[k]));
+        upper *= 1.0 + shape;
+        lower *= 1.0 - shape;
+        // The first section's numerator carries the normalization, which absorbs the cascade's DC error.
+        if(k == 0)
+        {
+            check_coefficient(c.a1, d.a1, n.sections[k].q1);
+            check_coefficient(c.a2, d.a2, n.sections[k].p2);
+        }
+        else
+        {
+            check_section_coefficients(c, d, n.sections[k]);
+        }
+        single_cutoff *= magnitude_linear(c, static_cast<double>(fc), static_cast<double>(fs));
+        reference_cutoff *= magnitude_linear(d, static_cast<double>(fc), static_cast<double>(fs));
+    }
+    const double ratio = single_cutoff / reference_cutoff;
+    const double evaluation = 4.0 * evaluation_bound;
+    CAPTURE(20.0 * std::log10(single_cutoff), 20.0 * std::log10(reference_cutoff), ratio - 1.0, upper - 1.0, 1.0 - lower);
+    CHECK(ratio <= upper + evaluation);
+    CHECK(ratio >= lower - evaluation);
 }

@@ -27,6 +27,10 @@ inline const char *describe(dsp_error e)
             return "ripple is not positive";
         case dsp_error::non_finite_input:
             return "non-finite input";
+        case dsp_error::invalid_resolution_factor:
+            return "resolution factor is not finite and positive";
+        case dsp_error::cutoff_below_coefficient_resolution:
+            return "cutoff is below the coefficient resolution";
     }
     return "unknown";
 }
@@ -70,8 +74,8 @@ private:
     static constexpr Scalar kSampleHz         = Scalar{1000};
     static constexpr std::int32_t kHalfPeriod = 25;
 
-    // biquad_roundings_per_step charges the design's cosine and sine for a
-    // normalized cutoff of at most one radian.
+    // biquad_roundings_per_step charges the design's tangent through its slope
+    // for a normalized cutoff of at most one radian.
     static_assert(Scalar{2} * std::numbers::pi_v<Scalar> * kCutoffHz <= kSampleHz);
 
     biquad<Scalar> filter_;

@@ -72,9 +72,10 @@ public:
         }
     }
 
-    static auto low_pass(Scalar cutoff_hz, Scalar sample_hz) -> expected<vector_biquad, dsp_error>
+    static auto low_pass(Scalar cutoff_hz, Scalar sample_hz, Scalar resolution_factor = detail::second_order_resolution_count<Scalar>())
+        -> expected<vector_biquad, dsp_error>
     {
-        auto const proto = biquad<Scalar>::low_pass(cutoff_hz, sample_hz);
+        auto const proto = biquad<Scalar>::low_pass(cutoff_hz, sample_hz, resolution_factor);
         if(!proto.has_value())
             return unexpected(proto.error());
         return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};
@@ -143,10 +144,10 @@ private:
 
 template <std::size_t Order, std::size_t N, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-auto make_vector_butterworth(Scalar cutoff_hz, Scalar sample_hz)
+auto make_vector_butterworth(Scalar cutoff_hz, Scalar sample_hz, Scalar resolution_factor = detail::second_order_resolution_count<Scalar>())
     -> expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error>
 {
-    auto const proto = make_butterworth<Order>(cutoff_hz, sample_hz);
+    auto const proto = make_butterworth<Order>(cutoff_hz, sample_hz, resolution_factor);
     if(!proto.has_value())
         return unexpected(proto.error());
     return vector_cascaded_biquad<Scalar, N, Order / 2>{
@@ -155,10 +156,10 @@ auto make_vector_butterworth(Scalar cutoff_hz, Scalar sample_hz)
 
 template <std::size_t Order, std::size_t N, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-auto make_vector_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db)
+auto make_vector_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db, Scalar resolution_factor = detail::second_order_resolution_count<Scalar>())
     -> expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error>
 {
-    auto const proto = make_chebyshev1<Order>(cutoff_hz, sample_hz, ripple_db);
+    auto const proto = make_chebyshev1<Order>(cutoff_hz, sample_hz, ripple_db, resolution_factor);
     if(!proto.has_value())
         return unexpected(proto.error());
     return vector_cascaded_biquad<Scalar, N, Order / 2>{

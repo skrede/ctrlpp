@@ -42,6 +42,7 @@
 #include <limits>
 #include <random>
 #include <cstddef>
+#include <numbers>
 
 using Catch::Matchers::WithinRel;
 
@@ -261,6 +262,45 @@ TEST_CASE("Single-tap FIR with coefficient 1.0 is identity", "[fir][hardening][p
     REQUIRE(filter.process(0.0) == 0.0);
 }
 
+TEST_CASE("biquad low_pass refuses a single-precision cutoff below the coefficient resolution", "[biquad][hardening][error]")
+{
+    // At 0.03 Hz / 1000 Hz the design gap 1 + a1 + a2 is about 0.3 float eps, below the 3/4 eps the stored
+    // a1 and a2 resolve, so no float filter carries this design.
+    auto const design = ctrlpp::biquad<float>::low_pass(0.03f, 1000.f);
+    REQUIRE(!design.has_value());
+    CHECK(design.error() == ctrlpp::dsp_error::cutoff_below_coefficient_resolution);
+}
+
+TEST_CASE("biquad low_pass refuses a resolution factor that is not finite and positive", "[biquad][hardening][error]")
+{
+    for(double factor : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 0.0, -0.0, -1.0})
+    {
+        CAPTURE(factor);
+        auto const design = ctrlpp::biquad<double>::low_pass(100.0, 1000.0, factor);
+        REQUIRE(!design.has_value());
+        CHECK(design.error() == ctrlpp::dsp_error::invalid_resolution_factor);
+    }
+}
+
+TEST_CASE("biquad low_pass resolution factor sets the refusal floor", "[biquad][hardening][error]")
+{
+    // At 1 Hz / 1000 Hz the float design gap is about 330 eps: accepted at the default 3/4, refused when the caller
+    // asks the gap to be resolved to a relative accuracy of 1e-3, a factor of 3/4 / 1e-3 = 750.
+    REQUIRE(ctrlpp::biquad<float>::low_pass(1.0f, 1000.f).has_value());
+    auto const strict = ctrlpp::biquad<float>::low_pass(1.0f, 1000.f, 750.0f);
+    REQUIRE(!strict.has_value());
+    CHECK(strict.error() == ctrlpp::dsp_error::cutoff_below_coefficient_resolution);
+}
+
+TEST_CASE("biquad low_pass refuses a cutoff ratio that rounds to zero in the pre-warp", "[biquad][hardening][error]")
+{
+    // 1e-38 / 1e30 lies inside (0, fs / 2) but the ratio underflows to zero in float, so the pre-warped frequency is
+    // zero: the design frequency rounded onto the lower edge of the open interval.
+    auto const design = ctrlpp::biquad<float>::low_pass(1e-38f, 1e30f);
+    REQUIRE(!design.has_value());
+    CHECK(design.error() == ctrlpp::dsp_error::cutoff_exceeds_nyquist);
+}
+
 TEST_CASE("make_butterworth rejects invalid designs with the specific error", "[biquad][hardening][error]")
 {
     auto zero_fs = ctrlpp::make_butterworth<4>(100.0, 0.0);
@@ -275,6 +315,31 @@ TEST_CASE("make_butterworth rejects invalid designs with the specific error", "[
     auto nan_cutoff = ctrlpp::make_butterworth<4>(std::numeric_limits<double>::quiet_NaN(), 1000.0);
     REQUIRE(!nan_cutoff.has_value());
     CHECK(nan_cutoff.error() == ctrlpp::dsp_error::non_finite_input);
+}
+
+TEST_CASE("Single-precision cascades below the coefficient-resolution floor are refused", "[biquad][hardening][error]")
+{
+    // Butterworth sections all have g0 = 1, so at 3e-5 of the sample rate each gap is about 0.3 float eps.
+    auto const butterworth = ctrlpp::make_butterworth<4>(0.03f, 1000.f);
+    REQUIRE(!butterworth.has_value());
+    CHECK(butterworth.error() == ctrlpp::dsp_error::cutoff_below_coefficient_resolution);
+
+    // At 7e-5 the 1 dB Chebyshev cascade's first section (pole radius squared 0.987) clears the floor with a gap of
+    // 1.6 float eps, and its second (0.279) does not, at 0.45 eps: every section is checked, the smallest gap deciding.
+    auto const chebyshev = ctrlpp::make_chebyshev1<4>(0.07f, 1000.f, 1.0f);
+    REQUIRE(!chebyshev.has_value());
+    CHECK(chebyshev.error() == ctrlpp::dsp_error::cutoff_below_coefficient_resolution);
+
+    for(float factor : {std::numeric_limits<float>::quiet_NaN(), 0.0f})
+    {
+        CAPTURE(factor);
+        auto const invalid_butterworth = ctrlpp::make_butterworth<4>(100.f, 1000.f, factor);
+        REQUIRE(!invalid_butterworth.has_value());
+        CHECK(invalid_butterworth.error() == ctrlpp::dsp_error::invalid_resolution_factor);
+        auto const invalid_chebyshev = ctrlpp::make_chebyshev1<4>(100.f, 1000.f, 1.0f, factor);
+        REQUIRE(!invalid_chebyshev.has_value());
+        CHECK(invalid_chebyshev.error() == ctrlpp::dsp_error::invalid_resolution_factor);
+    }
 }
 
 TEST_CASE("make_chebyshev1 rejects invalid designs with the specific error", "[biquad][hardening][error]")
@@ -326,24 +391,16 @@ TEST_CASE("make_chebyshev1 rejects a non-positive ripple specification",
 TEST_CASE("make_chebyshev1 leaves a conforming design unchanged",
           "[biquad][hardening][precision]")
 {
-    // Rounding-op margin for the Chebyshev Type I design chain. Each reference
-    // coefficient below terminates a fixed closed-form chain: the ripple factor
-    // (product, divide, expm1, sqrt), the prototype parameter (reciprocal, asinh, divide,
-    // sinh, cosh), the pre-warped cutoff (tan, two products), the pole
-    // coordinates (two products and a three-term sum of squares), the bilinear
-    // denominator (two products and a three-term sum), its reciprocal, the
-    // section coefficient product, and the DC-gain normalization across both
-    // sections (two four-term quotients, their product, the target gain, and a
-    // final scaling). Counting one rounding per arithmetic operation and one
-    // unit in the last place per library transcendental gives 35 roundings along
-    // the longest chain; the margin is that count times the scalar's machine
-    // epsilon, applied relative to the magnitude of the coefficient compared.
-    // It is not a tolerance on the design: the arithmetic here is unchanged, so
-    // the same toolchain reproduces these values exactly. The margin exists only
-    // so that another library's one-unit transcendental differences cannot fail
-    // a bit-exact comparison.
-    constexpr double design_roundings = 35.0;
-    constexpr double design_margin = design_roundings * std::numeric_limits<double>::epsilon();
+    // Reference coefficients printed from the unit-scale formation. The margins are counted for that formation with a
+    // running error bound (Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2002, Sec. 3.3): one
+    // eps per operation and per library call, carried through each call's slope, doubled because another
+    // toolchain's result and this one's may err on opposite sides. The stored offsets a1 and a2 carry at most 26 eps
+    // of their own magnitude and the unnormalized numerator 82. The first section's numerator carries the DC
+    // normalization, which divides by each stored gap 1 + a1 + a2, 0.0945 for the second section, so every eps of
+    // the offsets' formation weighs about ten times there: 671.
+    constexpr double offset_margin = 26.0 * eps;
+    constexpr double numerator_margin = 82.0 * eps;
+    constexpr double normalized_margin = 671.0 * eps;
 
     auto const design = ctrlpp::make_chebyshev1<4>(100.0, 1000.0, 1.0);
     REQUIRE(design.has_value());
@@ -352,18 +409,18 @@ TEST_CASE("make_chebyshev1 leaves a conforming design unchanged",
     // a 100 Hz cutoff and a 1000 Hz sample rate.
     constexpr std::array<ctrlpp::biquad_coeffs<double>, 2> reference{
         ctrlpp::biquad_coeffs<double>{
-            .b0 = 0.077686820472834692,
-            .b1 = 0.15537364094566938,
-            .b2 = 0.077686820472834692,
-            .a1 = -1.49955449681044,
-            .a2 = 0.84821868171669568,
+            .b0 = 0.077686820472834386,
+            .b1 = 0.15537364094566877,
+            .b2 = 0.077686820472834386,
+            .a1 = -1.4995544968104402,
+            .a2 = 0.84821868171669579,
         },
         ctrlpp::biquad_coeffs<double>{
-            .b0 = 0.023627564635016508,
-            .b1 = 0.047255129270033017,
-            .b2 = 0.023627564635016508,
-            .a1 = -1.5547851795965146,
-            .a2 = 0.64929543813658086,
+            .b0 = 0.023627564635016512,
+            .b1 = 0.047255129270033024,
+            .b2 = 0.023627564635016512,
+            .a1 = -1.5547851795965149,
+            .a2 = 0.64929543813658075,
         },
     };
 
@@ -372,23 +429,28 @@ TEST_CASE("make_chebyshev1 leaves a conforming design unchanged",
         CAPTURE(k);
         auto const& c = design->section(k).coefficients();
         auto const& r = reference[k];
-        CHECK_THAT(c.b0, WithinRel(r.b0, design_margin));
-        CHECK_THAT(c.b1, WithinRel(r.b1, design_margin));
-        CHECK_THAT(c.b2, WithinRel(r.b2, design_margin));
-        CHECK_THAT(c.a1, WithinRel(r.a1, design_margin));
-        CHECK_THAT(c.a2, WithinRel(r.a2, design_margin));
+        double const b_margin = k == 0 ? normalized_margin : numerator_margin;
+        CHECK_THAT(c.b0, WithinRel(r.b0, b_margin));
+        CHECK_THAT(c.b1, WithinRel(r.b1, b_margin));
+        CHECK_THAT(c.b2, WithinRel(r.b2, b_margin));
+        CHECK_THAT(c.a1, WithinRel(r.a1, offset_margin));
+        CHECK_THAT(c.a2, WithinRel(r.a2, offset_margin));
     }
 }
 
 TEST_CASE("make_chebyshev1 keeps a small ripple's precision in single precision",
           "[biquad][hardening][precision]")
 {
-    // Formed as 10^(r / 10) - 1, the radicand at 1e-4 dB cancels to about three
-    // significant digits in float and the coefficients land thousands of float
-    // epsilons from the double design. Through expm1 they stay within the same
-    // 35-rounding chain the reference case above counts, here in float epsilons.
+    // Formed as 10^(r / 10) - 1, the radicand at 1e-4 dB cancels to about three significant digits in float and the
+    // coefficients land thousands of float epsilons from the double design. Through expm1 they stay within their
+    // counted bounds, counted as in the case above but one-sided, in float eps (the double design's own error is nine
+    // orders smaller): the stored offsets 385 eps of their own magnitude, since a2 of the second section is 0.076 and
+    // its offset 0.924 weighs twelve times; the unnormalized numerator 48; the normalized first-section numerator 273.
     constexpr float ripple_db = 1e-4f;
-    constexpr double design_margin = 35.0 * static_cast<double>(std::numeric_limits<float>::epsilon());
+    constexpr double single_eps = static_cast<double>(std::numeric_limits<float>::epsilon());
+    constexpr double offset_margin = 385.0 * single_eps;
+    constexpr double numerator_margin = 48.0 * single_eps;
+    constexpr double normalized_margin = 273.0 * single_eps;
 
     auto const single = ctrlpp::make_chebyshev1<4>(100.0f, 1000.0f, ripple_db);
     auto const reference = ctrlpp::make_chebyshev1<4>(100.0, 1000.0, static_cast<double>(ripple_db));
@@ -400,11 +462,12 @@ TEST_CASE("make_chebyshev1 keeps a small ripple's precision in single precision"
         CAPTURE(k);
         auto const& c = single->section(k).coefficients();
         auto const& r = reference->section(k).coefficients();
-        CHECK_THAT(static_cast<double>(c.b0), WithinRel(r.b0, design_margin));
-        CHECK_THAT(static_cast<double>(c.b1), WithinRel(r.b1, design_margin));
-        CHECK_THAT(static_cast<double>(c.b2), WithinRel(r.b2, design_margin));
-        CHECK_THAT(static_cast<double>(c.a1), WithinRel(r.a1, design_margin));
-        CHECK_THAT(static_cast<double>(c.a2), WithinRel(r.a2, design_margin));
+        double const b_margin = k == 0 ? normalized_margin : numerator_margin;
+        CHECK_THAT(static_cast<double>(c.b0), WithinRel(r.b0, b_margin));
+        CHECK_THAT(static_cast<double>(c.b1), WithinRel(r.b1, b_margin));
+        CHECK_THAT(static_cast<double>(c.b2), WithinRel(r.b2, b_margin));
+        CHECK_THAT(static_cast<double>(c.a1), WithinRel(r.a1, offset_margin));
+        CHECK_THAT(static_cast<double>(c.a2), WithinRel(r.a2, offset_margin));
     }
 }
 
@@ -414,8 +477,8 @@ TEST_CASE("make_chebyshev1 rejects a design whose coefficients degenerate",
     // The ripple guard is a domain bound on the specification; the coefficient
     // sweep before the success return is what catches the remaining parameter
     // combinations that reach a non-finite coefficient through a path the
-    // domain bounds do not describe. Both cases below satisfy every input
-    // domain check and still degenerate, so they reach the sweep, not a guard.
+    // domain bounds do not describe. The case below satisfies every input
+    // domain check and still degenerates, so it reaches the sweep, not a guard.
     SECTION("a positive ripple so small the ripple factor underflows to zero")
     {
         // ln(10) ripple_db / 10 underflows to zero at the smallest subnormal,
@@ -428,16 +491,33 @@ TEST_CASE("make_chebyshev1 rejects a design whose coefficients degenerate",
         CHECK(design.error() == ctrlpp::dsp_error::non_finite_input);
     }
 
-    SECTION("a sample rate large enough to overflow the bilinear pre-warp")
+}
+
+TEST_CASE("make_chebyshev1 designs at a sample rate near the top of the double range",
+          "[biquad][hardening][precision]")
+{
+    // The unit-scale formation forms tan(pi cutoff / fs) and never 2 fs tan(...), so it does not overflow here.
+    // With an even order the DC gain sits at the ripple's trough 1 / sqrt(1 + eps^2), which puts the passband peak
+    // at 0 dB. The DC gain matches it within the normalization's 14 roundings, this evaluation's 12 and the target's
+    // own chain counted twice, 7: 33 eps.
+    auto const design = ctrlpp::make_chebyshev1<4>(4.9e299, 1e300, 1.0);
+    REQUIRE(design.has_value());
+
+    double dc = 1.0;
+    for(std::size_t k = 0; k < 2; ++k)
     {
-        // The pre-warped cutoff is wc = 2 fs tan(pi cutoff / fs); at this scale
-        // it overflows, the section numerator becomes infinite, the reciprocal
-        // of the denominator becomes zero, and their product is NaN. The cutoff
-        // still lies strictly inside (0, fs / 2), so the Nyquist guard passes it.
-        auto const design = ctrlpp::make_chebyshev1<4>(4.9e299, 1e300, 1.0);
-        REQUIRE(!design.has_value());
-        CHECK(design.error() == ctrlpp::dsp_error::non_finite_input);
+        CAPTURE(k);
+        auto const& c = design->section(k).coefficients();
+        REQUIRE(std::isfinite(c.b0));
+        REQUIRE(std::isfinite(c.b1));
+        REQUIRE(std::isfinite(c.b2));
+        REQUIRE(std::isfinite(c.a1));
+        REQUIRE(std::isfinite(c.a2));
+        dc *= (c.b0 + c.b1 + c.b2) / (1.0 + c.a1 + c.a2);
     }
+    double const ripple = std::sqrt(std::expm1(std::numbers::ln10 / 10.0));
+    double const trough = 1.0 / std::sqrt(1.0 + ripple * ripple);
+    CHECK_THAT(dc, WithinRel(trough, 33.0 * eps));
 }
 
 TEST_CASE("A successful chebyshev1 design never carries a non-finite coefficient",

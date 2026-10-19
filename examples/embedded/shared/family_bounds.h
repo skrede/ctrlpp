@@ -45,13 +45,17 @@ constexpr double covariance_roundings_per_filter_step(std::size_t nx, std::size_
 /// rounding lands on the state and reaches the output through the powers of
 /// F = [-a1 1; -a2 0]; the worse state component collects y's and w0''s, 6.
 ///
-/// The design forms w0 = 2*pi*fc/fs (3 roundings), its cosine and sine (each
-/// one rounding for the library and, for w0 <= 1, the argument's three carried
-/// through a slope of at most one), alpha = sin/sqrt(2) (2), 1 + alpha and its
-/// reciprocal (2), and one or two more operations per coefficient. Measured at
-/// its surrogate -- its formula in absolute values with |cos| <= 1 -- a1
-/// carries 13 roundings, b0, b1 and b2 14, and a2 16. Those errors multiply
-/// operands that sum to at most the scale, adding 16: 22 per step.
+/// The design forms Omega = tan(pi*(fc/fs)): the ratio, pi and their product
+/// (3) carried through the tangent's slope 2x/sin(2x), at most 1.19 for
+/// 2*pi*fc/fs <= 1, and one rounding for the library. Then beta1 = Omega*sqrt(2)
+/// (2), beta0 = Omega^2 (1), den0 = 1 + beta1 + beta0 (2), the quotients
+/// b0 = beta0/den0 (1), q1 = (2*beta1 + 4*beta0)/den0 (2, its sum and
+/// quotient) and p2 = 2*beta1/den0 (1), and the offsets a1 = -2 + q1 and
+/// a2 = 1 - p2 (1 each). Measured against each coefficient's share of the
+/// scale -- 1 for b0, b2 and a2, 2 for b1 and a1 -- and maximized over that
+/// cutoff range, b0, b1 and b2 carry 3 roundings, a2 11 and a1 11. Those
+/// errors multiply operands that sum to at most the scale, adding 11: 17 per
+/// step.
 ///
 /// The count charges every step without crediting the filter's decay, which
 /// bounds the run when the sum of the infinity norms of the powers of F over it
@@ -62,14 +66,14 @@ constexpr double covariance_roundings_per_filter_step(std::size_t nx, std::size_
 /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae for Audio EQ Biquad Filter Coefficients", 2005 (the low-pass formulas the design evaluates)
 constexpr double biquad_roundings_per_step()
 {
-    return 6.0 + 16.0;
+    return 6.0 + 11.0;
 }
 
 /// @brief Scale at which `biquad_roundings_per_step` charges, for a run whose
 /// input and output never exceed `peak` in magnitude.
 ///
-/// At their surrogates b0 and b2 are at most 1, b1 and a1 at most 2, and a2 is
-/// 1, so the coefficients sum to c <= 7. The state follows from the output,
+/// For a stable low-pass section b0 and b2 are at most 1, b1 and |a1| at most
+/// 2, and |a2| at most 1, so the coefficients sum to c <= 7. The state follows from the output,
 /// w0 = y - b0*x and w1 = w0' - b1*x + a1*y, so every sum the step forms is at
 /// most (1 + 2*c) * peak.
 constexpr double biquad_scale(double peak)
