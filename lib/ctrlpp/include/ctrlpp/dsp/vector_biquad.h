@@ -81,18 +81,19 @@ public:
         return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};
     }
 
-    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> expected<vector_biquad, dsp_error>
+    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q, Scalar resolution_factor = detail::notch_resolution_count<Scalar>())
+        -> expected<vector_biquad, dsp_error>
     {
-        auto const proto = biquad<Scalar>::notch(freq_hz, sample_hz, q);
+        auto const proto = biquad<Scalar>::notch(freq_hz, sample_hz, q, resolution_factor);
         if(!proto.has_value())
             return unexpected(proto.error());
         return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};
     }
 
-    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz)
+    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz, Scalar resolution_factor = detail::first_order_resolution_count<Scalar>())
         -> expected<vector_biquad, dsp_error>
     {
-        auto const proto = biquad<Scalar>::dirty_derivative(bandwidth_hz, sample_hz);
+        auto const proto = biquad<Scalar>::dirty_derivative(bandwidth_hz, sample_hz, resolution_factor);
         if(!proto.has_value())
             return unexpected(proto.error());
         return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};

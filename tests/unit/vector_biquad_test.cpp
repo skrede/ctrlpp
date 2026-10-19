@@ -190,6 +190,32 @@ TEST_CASE("vector factories forward the resolution floor and its factor", "[vect
     CHECK(invalid_chebyshev.error() == dsp_error::invalid_resolution_factor);
 }
 
+TEST_CASE("vector notch and dirty_derivative forward the resolution floor and its factor", "[vector_biquad][error]")
+{
+    auto const notch = vector_biquad<float, 2>::notch(0.03f, 1000.f, 0.7f);
+    REQUIRE(!notch.has_value());
+    CHECK(notch.error() == dsp_error::cutoff_below_coefficient_resolution);
+    REQUIRE(vector_biquad<float, 2>::notch(1.0f, 1000.f, 0.7f).has_value());
+    auto const strict_notch = vector_biquad<float, 2>::notch(1.0f, 1000.f, 0.7f, 1750.0f);
+    REQUIRE(!strict_notch.has_value());
+    CHECK(strict_notch.error() == dsp_error::cutoff_below_coefficient_resolution);
+    auto const invalid_notch = vector_biquad<float, 2>::notch(1.0f, 1000.f, 0.7f, 0.0f);
+    REQUIRE(!invalid_notch.has_value());
+    CHECK(invalid_notch.error() == dsp_error::invalid_resolution_factor);
+
+    auto const derivative = vector_biquad<float, 2>::dirty_derivative(1e-6f, 1000.f);
+    REQUIRE(!derivative.has_value());
+    CHECK(derivative.error() == dsp_error::cutoff_below_coefficient_resolution);
+    // At 1e-3 Hz / 1000 Hz the float gap is about 53 eps: accepted at the default 1/4, refused at a factor of 100.
+    REQUIRE(vector_biquad<float, 2>::dirty_derivative(1e-3f, 1000.f).has_value());
+    auto const strict_derivative = vector_biquad<float, 2>::dirty_derivative(1e-3f, 1000.f, 100.0f);
+    REQUIRE(!strict_derivative.has_value());
+    CHECK(strict_derivative.error() == dsp_error::cutoff_below_coefficient_resolution);
+    auto const invalid_derivative = vector_biquad<float, 2>::dirty_derivative(50.f, 1000.f, std::numeric_limits<float>::quiet_NaN());
+    REQUIRE(!invalid_derivative.has_value());
+    CHECK(invalid_derivative.error() == dsp_error::invalid_resolution_factor);
+}
+
 TEST_CASE("vector_discrete_filter concept check", "[vector_biquad]")
 {
     static_assert(vector_discrete_filter<vector_biquad<double, 2>, Vector<double, 2>>);

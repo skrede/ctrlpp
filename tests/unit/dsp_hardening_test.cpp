@@ -301,6 +301,76 @@ TEST_CASE("biquad low_pass refuses a cutoff ratio that rounds to zero in the pre
     CHECK(design.error() == ctrlpp::dsp_error::cutoff_exceeds_nyquist);
 }
 
+TEST_CASE("biquad notch refuses a single-precision center below the coefficient resolution", "[biquad][hardening][error]")
+{
+    // At 0.03 Hz / 1000 Hz and q = 0.7 the design gap is about 0.3 float eps, below the 7/4 eps the stored numerator
+    // and denominator resolve between them.
+    auto const design = ctrlpp::biquad<float>::notch(0.03f, 1000.f, 0.7f);
+    REQUIRE(!design.has_value());
+    CHECK(design.error() == ctrlpp::dsp_error::cutoff_below_coefficient_resolution);
+
+    // At 1 Hz / 1000 Hz the gap is about 330 float eps: accepted at the default, refused at a relative accuracy of
+    // 1e-3, a factor of 7/4 / 1e-3 = 1750.
+    REQUIRE(ctrlpp::biquad<float>::notch(1.0f, 1000.f, 0.7f).has_value());
+    auto const strict = ctrlpp::biquad<float>::notch(1.0f, 1000.f, 0.7f, 1750.0f);
+    REQUIRE(!strict.has_value());
+    CHECK(strict.error() == ctrlpp::dsp_error::cutoff_below_coefficient_resolution);
+}
+
+TEST_CASE("biquad notch and dirty_derivative refuse a resolution factor that is not finite and positive", "[biquad][hardening][error]")
+{
+    for(double factor : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), 0.0, -0.0, -1.0})
+    {
+        CAPTURE(factor);
+        auto const notch = ctrlpp::biquad<double>::notch(60.0, 1000.0, 10.0, factor);
+        REQUIRE(!notch.has_value());
+        CHECK(notch.error() == ctrlpp::dsp_error::invalid_resolution_factor);
+        auto const derivative = ctrlpp::biquad<double>::dirty_derivative(50.0, 1000.0, factor);
+        REQUIRE(!derivative.has_value());
+        CHECK(derivative.error() == ctrlpp::dsp_error::invalid_resolution_factor);
+    }
+}
+
+TEST_CASE("biquad notch refuses a quality factor whose reciprocal overflows", "[biquad][hardening][error]")
+{
+    // The smallest subnormal q is positive, but 1 / q overflows and the design would carry NaN coefficients.
+    auto const single = ctrlpp::biquad<float>::notch(100.f, 1000.f, std::numeric_limits<float>::denorm_min());
+    REQUIRE(!single.has_value());
+    CHECK(single.error() == ctrlpp::dsp_error::non_finite_input);
+    auto const twice = ctrlpp::biquad<double>::notch(100.0, 1000.0, std::numeric_limits<double>::denorm_min());
+    REQUIRE(!twice.has_value());
+    CHECK(twice.error() == ctrlpp::dsp_error::non_finite_input);
+}
+
+TEST_CASE("biquad dirty_derivative refuses a bandwidth below its first-order floor", "[biquad][hardening][error]")
+{
+    // At 1e-6 Hz / 1000 Hz the gap 1 + a1 is about 2 pi 1e-9, below the eps / 4 a1 resolves near -1.
+    auto const design = ctrlpp::biquad<float>::dirty_derivative(1e-6f, 1000.f);
+    REQUIRE(!design.has_value());
+    CHECK(design.error() == ctrlpp::dsp_error::cutoff_below_coefficient_resolution);
+}
+
+TEST_CASE("biquad dirty_derivative refuses a gain that overflows", "[biquad][hardening][error]")
+{
+    // The derivative gain 2 sample_hz is not representable, so b0 is infinite.
+    auto const twice = ctrlpp::biquad<double>::dirty_derivative(100.0, 1e308);
+    REQUIRE(!twice.has_value());
+    CHECK(twice.error() == ctrlpp::dsp_error::non_finite_input);
+    auto const single = ctrlpp::biquad<float>::dirty_derivative(100.f, 3e38f);
+    REQUIRE(!single.has_value());
+    CHECK(single.error() == ctrlpp::dsp_error::non_finite_input);
+}
+
+TEST_CASE("biquad notch and dirty_derivative refuse a ratio that rounds to zero in the pre-warp", "[biquad][hardening][error]")
+{
+    auto const notch = ctrlpp::biquad<float>::notch(1e-38f, 1e30f, 0.7f);
+    REQUIRE(!notch.has_value());
+    CHECK(notch.error() == ctrlpp::dsp_error::cutoff_exceeds_nyquist);
+    auto const derivative = ctrlpp::biquad<float>::dirty_derivative(1e-38f, 1e30f);
+    REQUIRE(!derivative.has_value());
+    CHECK(derivative.error() == ctrlpp::dsp_error::cutoff_exceeds_nyquist);
+}
+
 TEST_CASE("make_butterworth rejects invalid designs with the specific error", "[biquad][hardening][error]")
 {
     auto zero_fs = ctrlpp::make_butterworth<4>(100.0, 0.0);

@@ -77,11 +77,31 @@ auto second_order_resolution_count() -> Scalar
     return Scalar{3} / Scalar{4};
 }
 
+/// The representation error of a notch section's DC gain, the ratio of its numerator gap b0 + b1 + b2 to its design gap
+/// 1 + a1 + a2: a1 (eps / 2) and a2 (eps / 4) as in the low-pass section, b1 stored like a1 (eps / 2), and b0 and b2
+/// stored in [1/2, 1) (eps / 4 each), 7/4 eps in all.
+template <typename Scalar>
+auto notch_resolution_count() -> Scalar
+{
+    return Scalar{7} / Scalar{4};
+}
+
+/// The representation error of a first-order section's design gap 1 + a1, with a1 stored in [-1, -1/2): half an ulp,
+/// eps / 4, the gap's only cancellation.
+template <typename Scalar>
+auto first_order_resolution_count() -> Scalar
+{
+    return Scalar{1} / Scalar{4};
+}
+
+/// pole_offset is 1 minus the product of the poles (1 - a2, or 1 + a1 for a first-order section), kept so an
+/// offset-form numerator reuses it instead of re-forming it.
 template <typename Scalar>
 struct offset_section
 {
     biquad_coeffs<Scalar> coeffs;
     Scalar dc_denominator;
+    Scalar pole_offset;
 };
 
 /// Unit-scale bilinear low-pass section with a1 and a2 stored as offsets from their limits -2 and 1, so the design
@@ -93,15 +113,45 @@ auto bilinear_low_pass_section(Scalar omega, Scalar g1, Scalar g0) -> offset_sec
     auto const beta0 = omega * omega * g0;
     auto const den0 = Scalar{1} + beta1 + beta0;
     auto const b0 = beta0 / den0;
+    auto const pole_offset = Scalar{2} * beta1 / den0;
     return offset_section<Scalar>{
         .coeffs = biquad_coeffs<Scalar>{
             .b0 = b0,
             .b1 = Scalar{2} * b0,
             .b2 = b0,
             .a1 = Scalar{-2} + (Scalar{2} * beta1 + Scalar{4} * beta0) / den0,
-            .a2 = Scalar{1} - Scalar{2} * beta1 / den0,
+            .a2 = Scalar{1} - pole_offset,
         },
         .dc_denominator = Scalar{4} * beta0 / den0,
+        .pole_offset = pole_offset,
+    };
+}
+
+/// The RBJ notch rewritten exactly in Omega: the low-pass denominator with g1 = 1 / q and g0 = 1, b1 = a1, and
+/// b0 = b2 = (1 + Omega^2) / den0 stored as the offset 1 - beta1 / den0, so the numerator gap equals the design gap.
+template <typename Scalar>
+auto bilinear_notch_section(Scalar omega, Scalar q) -> offset_section<Scalar>
+{
+    auto section = bilinear_low_pass_section(omega, Scalar{1} / q, Scalar{1});
+    auto const b0 = Scalar{1} - section.pole_offset / Scalar{2};
+    section.coeffs.b0 = b0;
+    section.coeffs.b1 = section.coeffs.a1;
+    section.coeffs.b2 = b0;
+    return section;
+}
+
+/// The bilinear map of wc s / (s + wc) with k = 2 fs and wc = k Omega, divided through by k (1 + Omega): a1 is stored
+/// as the offset -1 + D1 from its limit, D1 = 1 + a1 = 2 Omega / (1 + Omega).
+template <typename Scalar>
+auto bilinear_differentiator_section(Scalar omega, Scalar k) -> offset_section<Scalar>
+{
+    auto const share = omega / (Scalar{1} + omega);
+    auto const b0 = k * share;
+    auto const gap = Scalar{2} * share;
+    return offset_section<Scalar>{
+        .coeffs = biquad_coeffs<Scalar>{.b0 = b0, .b1 = -b0, .b2 = Scalar{0}, .a1 = Scalar{-1} + gap, .a2 = Scalar{0}},
+        .dc_denominator = gap,
+        .pole_offset = gap,
     };
 }
 
@@ -230,16 +280,28 @@ public:
         return biquad{*section};
     }
 
-    /// Notch (band-stop) biquad section via the RBJ cookbook formulas.
+    /// Notch (band-stop) biquad section via the RBJ cookbook formulas, formed at
+    /// unit scale in Omega = tan(pi freq_hz / sample_hz) with the low-pass
+    /// section's denominator and a numerator stored as offsets from its limits.
     ///
-    /// Rejects non-finite parameters, sample_hz <= 0, freq_hz outside the open
-    /// interval (0, sample_hz / 2) (Nyquist criterion, oppenheim2010dsp Ch. 4),
-    /// and q <= 0 (the design bandwidth alpha = sin(w0) / (2 q) requires a
-    /// strictly positive quality factor) with the matching `dsp_error`.
+    /// Rejections, checked in order, each with the matching `dsp_error`:
+    /// a non-finite q; non-finite freq_hz or sample_hz; sample_hz <= 0; freq_hz
+    /// outside the open interval (0, sample_hz / 2) (Nyquist criterion,
+    /// oppenheim2010dsp Ch. 4); q <= 0 (the design bandwidth
+    /// alpha = sin(w0) / (2 q) requires a strictly positive quality factor); a
+    /// resolution_factor that is not finite and strictly positive; a frequency
+    /// ratio that rounds onto zero or Nyquist in the pre-warp
+    /// (cutoff_exceeds_nyquist); a non-finite coefficient, such as a q whose
+    /// reciprocal overflows; a design gap 1 + a1 + a2 at or below
+    /// resolution_factor * eps (cutoff_below_coefficient_resolution).
+    ///
+    /// resolution_factor defaults to the counted representation error of the
+    /// DC gain, which the numerator gap and the design gap carry together.
     ///
     /// @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (notch section)
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6
-    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q) -> expected<biquad, dsp_error>
+    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q, Scalar resolution_factor = detail::notch_resolution_count<Scalar>())
+        -> expected<biquad, dsp_error>
     {
         if(!std::isfinite(q))
             return unexpected(dsp_error::non_finite_input);
@@ -247,19 +309,15 @@ public:
             return unexpected(validated.error());
         if(q <= Scalar{0})
             return unexpected(dsp_error::non_positive_q);
-
-        auto const w0 = Scalar{2} * std::numbers::pi_v<Scalar> * freq_hz / sample_hz;
-        auto const cos_w0 = std::cos(w0);
-        auto const alpha = std::sin(w0) / (Scalar{2} * q);
-
-        auto const a0_inv = Scalar{1} / (Scalar{1} + alpha);
-        return biquad{biquad_coeffs<Scalar>{
-            .b0 = a0_inv,
-            .b1 = (Scalar{-2} * cos_w0) * a0_inv,
-            .b2 = a0_inv,
-            .a1 = (Scalar{-2} * cos_w0) * a0_inv,
-            .a2 = (Scalar{1} - alpha) * a0_inv,
-        }};
+        if(auto const factor = detail::validate_resolution_factor(resolution_factor); !factor.has_value())
+            return unexpected(factor.error());
+        auto const omega = detail::prewarped_frequency(freq_hz, sample_hz);
+        if(!omega.has_value())
+            return unexpected(omega.error());
+        auto const section = detail::resolved_coefficients(detail::bilinear_notch_section(*omega, q), resolution_factor);
+        if(!section.has_value())
+            return unexpected(section.error());
+        return biquad{*section};
     }
 
     /// "Dirty" derivative: a band-limited differentiator with analog prototype
@@ -272,27 +330,34 @@ public:
     /// numerator carries the differentiator gain, so the denominator is
     /// unchanged.
     ///
-    /// Rejects non-finite parameters, sample_hz <= 0, and bandwidth_hz outside
-    /// the open interval (0, sample_hz / 2) (Nyquist criterion, oppenheim2010dsp
-    /// Ch. 4; at half the sample rate the pre-warped cutoff tan(pi/2) also
-    /// diverges) with the matching `dsp_error`.
+    /// The section is formed in Omega = tan(pi bandwidth_hz / sample_hz) with a1
+    /// stored as an offset from -1. Its design gap D1 = 1 + a1 =
+    /// 2 Omega / (1 + Omega) is the first-order counterpart of the second-order
+    /// gap 1 + a1 + a2 and equals w0 = 2 pi bandwidth_hz / sample_hz to first
+    /// order.
+    ///
+    /// Rejections, checked in order, each with the matching `dsp_error`:
+    /// non-finite parameters; sample_hz <= 0; bandwidth_hz outside the open
+    /// interval (0, sample_hz / 2) (Nyquist criterion, oppenheim2010dsp Ch. 4;
+    /// at half the sample rate the pre-warped cutoff tan(pi/2) also diverges); a
+    /// resolution_factor that is not finite and strictly positive; a bandwidth
+    /// ratio that rounds onto zero or Nyquist in the pre-warp
+    /// (cutoff_exceeds_nyquist); a non-finite coefficient, such as a gain
+    /// 2 sample_hz that overflows; D1 at or below resolution_factor * eps
+    /// (cutoff_below_coefficient_resolution).
     ///
     /// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform with pre-warping)
-    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz) -> expected<biquad, dsp_error>
+    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz, Scalar resolution_factor = detail::first_order_resolution_count<Scalar>())
+        -> expected<biquad, dsp_error>
     {
-        if(auto const validated = detail::validate_biquad_design(bandwidth_hz, sample_hz); !validated.has_value())
-            return unexpected(validated.error());
-
-        auto const wc = Scalar{2} * sample_hz * std::tan(std::numbers::pi_v<Scalar> * bandwidth_hz / sample_hz);
+        auto const omega = detail::validated_prewarp(bandwidth_hz, sample_hz, resolution_factor);
+        if(!omega.has_value())
+            return unexpected(omega.error());
         auto const k = Scalar{2} * sample_hz;
-        auto const a0_inv = Scalar{1} / (k + wc);
-        return biquad{biquad_coeffs<Scalar>{
-            .b0 = wc * k * a0_inv,
-            .b1 = -wc * k * a0_inv,
-            .b2 = Scalar{0},
-            .a1 = (wc - k) * a0_inv,
-            .a2 = Scalar{0},
-        }};
+        auto const section = detail::resolved_coefficients(detail::bilinear_differentiator_section(*omega, k), resolution_factor);
+        if(!section.has_value())
+            return unexpected(section.error());
+        return biquad{*section};
     }
 
 private:

@@ -251,28 +251,138 @@ auto dc_gain(const biquad_coeffs<float>& c) -> double
     return numerator / (1.0 + static_cast<double>(c.a1) + static_cast<double>(c.a2));
 }
 
-template <typename Scalar>
-void check_resolution_floor_boundary()
+/// Brackets the floor of a unit-scale second-order section with g0 = 1: the design closed over its frequency ratio is
+/// accepted at r* (1 + m eps) and refused at r* (1 - m eps), where D = count * eps.
+template <typename Scalar, typename Design>
+void check_second_order_floor_boundary(long double count, counted g1, Design design)
 {
     using wide = long double;
     const wide eps = static_cast<wide>(std::numeric_limits<Scalar>::epsilon());
-    const wide c_eps = wide{3} / wide{4} * eps;
-    // 4 Omega^2 / (1 + sqrt(2) Omega + Omega^2) = c eps solved for its positive root, no cancellation in the numerator.
+    const wide c_eps = count * eps;
+    // 4 Omega^2 / (1 + g1 Omega + Omega^2) = c eps solved for its positive root, no cancellation in the numerator.
     const wide a = wide{4} - c_eps;
-    const wide b = c_eps * std::numbers::sqrt2_v<wide>;
+    const wide b = c_eps * static_cast<wide>(g1.value);
     const wide omega = (b + std::sqrt(b * b + wide{4} * a * c_eps)) / (wide{2} * a);
     const wide ratio = std::atan(omega) / std::numbers::pi_v<wide>;
 
-    // The D chain at Scalar precision plus rounding the ratio into Scalar, and the closed form's fourteen roundings
-    // above at long double precision expressed in Scalar eps. D grows as the ratio squared, so a ratio m eps off r*
-    // moves D twice as far as its own computed error.
-    const wide d_chain = static_cast<wide>(count_low_pass(static_cast<double>(ratio), 1.0).dc_denominator.roundings + 1.0);
+    // The D chain at Scalar precision plus rounding the ratio into Scalar, and the closed form's at most fourteen
+    // roundings above at long double precision expressed in Scalar eps. D grows as the ratio squared, so a ratio m eps
+    // off r* moves D twice as far as its own computed error.
+    const wide d_chain = static_cast<wide>(count_section(count_prewarp(static_cast<double>(ratio), 1.0), g1, exact(1.0)).dc_denominator.roundings + 1.0);
     const wide m = d_chain + wide{14} * std::numeric_limits<wide>::epsilon() / eps;
     CAPTURE(static_cast<double>(ratio), static_cast<double>(m));
 
-    const auto above = biquad<Scalar>::low_pass(static_cast<Scalar>(ratio * (wide{1} + m * eps)), Scalar{1});
+    const auto above = design(static_cast<Scalar>(ratio * (wide{1} + m * eps)));
     REQUIRE(above.has_value());
-    const auto below = biquad<Scalar>::low_pass(static_cast<Scalar>(ratio * (wide{1} - m * eps)), Scalar{1});
+    const auto below = design(static_cast<Scalar>(ratio * (wide{1} - m * eps)));
+    REQUIRE(!below.has_value());
+    CHECK(below.error() == dsp_error::cutoff_below_coefficient_resolution);
+}
+
+template <typename Scalar>
+void check_low_pass_floor_boundary()
+{
+    check_second_order_floor_boundary<Scalar>(3.0L / 4.0L, counted{std::numbers::sqrt2, 1.0},
+                                              [](Scalar ratio) { return biquad<Scalar>::low_pass(ratio, Scalar{1}); });
+}
+
+template <typename Scalar>
+void check_notch_floor_boundary(Scalar q)
+{
+    check_second_order_floor_boundary<Scalar>(7.0L / 4.0L, exact(1.0) / exact(static_cast<double>(q)),
+                                              [q](Scalar ratio) { return biquad<Scalar>::notch(ratio, Scalar{1}, q); });
+}
+
+auto count_notch(double f, double fs, double q) -> section_count
+{
+    return count_section(count_prewarp(f, fs), exact(1.0) / exact(q), exact(1.0));
+}
+
+struct notch_errors
+{
+    double b0;
+    double a1;
+    double a2;
+};
+
+/// Absolute errors, in eps of the precision a notch is formed in, of b0 = b2, b1 = a1 and a2: the store of each (b0
+/// below 1 at eps / 4, a1 below 2 at eps / 2, a2 below 1 at eps / 4) and the counted formation of the offset it is
+/// stored from, b0 = 1 - p2 / 2, a1 = -2 + q1, a2 = 1 - p2.
+auto notch_coefficient_errors(const section_count& n) -> notch_errors
+{
+    return {0.25 + n.p2.roundings * n.p2.value / 2.0, 0.5 + n.q1.roundings * n.q1.value, 0.25 + n.p2.roundings * n.p2.value};
+}
+
+void check_notch_coefficients(const biquad_coeffs<float>& single, const biquad_coeffs<double>& reference, const section_count& n)
+{
+    const counted half_offset{n.p2.value / 2.0, n.p2.roundings};
+    check_coefficient(single.b0, reference.b0, half_offset);
+    check_coefficient(single.b1, reference.b1, n.q1);
+    check_coefficient(single.b2, reference.b2, half_offset);
+    check_coefficient(single.a1, reference.a1, n.q1);
+    check_coefficient(single.a2, reference.a2, n.p2);
+}
+
+/// |H_stored / H - 1| for a numerator and a denominator moved by at most the relative errors e_n and e_a: exact in the
+/// denominator perturbation, which nears 1 at the floor.
+auto response_bound(double e_n, double e_a) -> double
+{
+    REQUIRE(e_a < 1.0);
+    return (e_n + e_a) / (1.0 - e_a);
+}
+
+/// The notch response bound at a frequency where the design's numerator and denominator have the given magnitudes.
+auto notch_response_bound(const section_count& n, double numerator, double denominator, double eps) -> double
+{
+    const notch_errors e = notch_coefficient_errors(n);
+    return response_bound((2.0 * e.b0 + e.a1) * eps / numerator, (e.a1 + e.a2) * eps / denominator);
+}
+
+auto numerator_magnitude(const biquad_coeffs<double>& c, double f, double fs) -> double
+{
+    const std::complex<double> z_inv = std::exp(std::complex<double>(0.0, -2.0 * std::numbers::pi * f / fs));
+    return std::abs(c.b0 + c.b1 * z_inv + c.b2 * z_inv * z_inv);
+}
+
+struct differentiator_count
+{
+    counted b0;
+    counted gap;
+};
+
+/// The first-order section as biquad.h forms it: share = Omega / (1 + Omega), b0 = 2 fs share, D1 = 2 share.
+auto count_differentiator(double f, double fs) -> differentiator_count
+{
+    const counted omega = count_prewarp(f, fs);
+    const counted share = omega / (exact(1.0) + omega);
+    return {exact(2.0 * fs) * share, exact(2.0) * share};
+}
+
+/// Relative errors of a dirty derivative's numerator b0 (1 - z^-1) and of its a1 = -1 + D1 stored below 1 at eps / 4.
+auto differentiator_response_bound(const differentiator_count& n, double denominator, double eps) -> double
+{
+    return response_bound(n.b0.roundings * eps, (0.25 + n.gap.roundings * n.gap.value) * eps / denominator);
+}
+
+template <typename Scalar>
+void check_first_order_floor_boundary()
+{
+    using wide = long double;
+    const wide eps = static_cast<wide>(std::numeric_limits<Scalar>::epsilon());
+    const wide c_eps = eps / wide{4};
+    // 2 Omega / (1 + Omega) = c eps solved for Omega.
+    const wide omega = c_eps / (wide{2} - c_eps);
+    const wide ratio = std::atan(omega) / std::numbers::pi_v<wide>;
+
+    // The D1 chain at Scalar precision plus rounding the ratio into Scalar, and the closed form's five roundings above
+    // (two for Omega, atan, pi and the division by it). D1 grows as the ratio, so m is the computed error itself.
+    const wide d_chain = static_cast<wide>(count_differentiator(static_cast<double>(ratio), 1.0).gap.roundings + 1.0);
+    const wide m = d_chain + wide{5} * std::numeric_limits<wide>::epsilon() / eps;
+    CAPTURE(static_cast<double>(ratio), static_cast<double>(m));
+
+    const auto above = biquad<Scalar>::dirty_derivative(static_cast<Scalar>(ratio * (wide{1} + m * eps)), Scalar{1});
+    REQUIRE(above.has_value());
+    const auto below = biquad<Scalar>::dirty_derivative(static_cast<Scalar>(ratio * (wide{1} - m * eps)), Scalar{1});
     REQUIRE(!below.has_value());
     CHECK(below.error() == dsp_error::cutoff_below_coefficient_resolution);
 }
@@ -406,8 +516,8 @@ TEST_CASE("Single-precision low-pass designs carry the double design down to the
 
 TEST_CASE("The low-pass coefficient-resolution floor sits where its closed form puts it", "[dsp][anchor][float]")
 {
-    check_resolution_floor_boundary<float>();
-    check_resolution_floor_boundary<double>();
+    check_low_pass_floor_boundary<float>();
+    check_low_pass_floor_boundary<double>();
 }
 
 TEST_CASE("A single-precision Butterworth cascade at 20 Hz / 48 kHz carries the double design", "[dsp][anchor][float]")
@@ -486,4 +596,92 @@ TEST_CASE("A single-precision Chebyshev cascade at 20 Hz / 48 kHz matches the do
     CAPTURE(20.0 * std::log10(single_cutoff), 20.0 * std::log10(reference_cutoff), ratio - 1.0, upper - 1.0, 1.0 - lower);
     CHECK(ratio <= upper + evaluation);
     CHECK(ratio >= lower - evaluation);
+}
+
+TEST_CASE("Single-precision notch designs carry the double design down to the coefficient-resolution floor", "[dsp][anchor][float]")
+{
+    constexpr std::array<double, 5> accepted{1e-1, 1e-2, 1e-3, 3e-4, 1e-4};
+    constexpr float fs = 1000.0f;
+    constexpr float q = 0.7f;
+    const double quarter = static_cast<double>(fs) / 4.0;
+
+    for(double ratio : accepted)
+    {
+        CAPTURE(ratio);
+        const float f = static_cast<float>(ratio * static_cast<double>(fs));
+        const auto single = biquad<float>::notch(f, fs, q);
+        const auto reference = biquad<double>::notch(static_cast<double>(f), static_cast<double>(fs), static_cast<double>(q));
+        REQUIRE(single.has_value());
+        REQUIRE(reference.has_value());
+        const auto n = count_notch(static_cast<double>(f), static_cast<double>(fs), static_cast<double>(q));
+        check_notch_coefficients(single->coefficients(), reference->coefficients(), n);
+
+        // The numerator gap equals the design gap D, so the DC gain is 1.
+        const double gap = n.dc_denominator.value;
+        const double dc_bound = notch_response_bound(n, gap, gap, eps_single) + evaluation_bound;
+        CHECK(std::abs(dc_gain(single->coefficients()) - 1.0) <= dc_bound);
+
+        const double numerator = numerator_magnitude(reference->coefficients(), quarter, static_cast<double>(fs));
+        const double denominator = denominator_magnitude(reference->coefficients(), quarter, static_cast<double>(fs));
+        const double e_single = notch_response_bound(n, numerator, denominator, eps_single);
+        const double e_double = notch_response_bound(n, numerator, denominator, eps_double);
+        const double quarter_bound = (e_single + e_double) / (1.0 - e_double) + 2.0 * evaluation_bound;
+        const double quarter_ratio = magnitude_linear(single->coefficients(), quarter, static_cast<double>(fs))
+                                     / magnitude_linear(reference->coefficients(), quarter, static_cast<double>(fs));
+        CAPTURE(dc_gain(single->coefficients()), dc_bound, quarter_ratio, quarter_bound);
+        CHECK(std::abs(quarter_ratio - 1.0) <= quarter_bound);
+    }
+
+    for(double ratio : {7e-5, 3e-5, 1e-5})
+    {
+        CAPTURE(ratio);
+        const auto single = biquad<float>::notch(static_cast<float>(ratio * static_cast<double>(fs)), fs, q);
+        REQUIRE(!single.has_value());
+        CHECK(single.error() == dsp_error::cutoff_below_coefficient_resolution);
+    }
+}
+
+TEST_CASE("The notch coefficient-resolution floor sits where its closed form puts it", "[dsp][anchor][float]")
+{
+    check_notch_floor_boundary<float>(0.7f);
+    check_notch_floor_boundary<double>(0.7);
+}
+
+TEST_CASE("A single-precision dirty derivative carries the double design down to its first-order floor", "[dsp][anchor][float]")
+{
+    constexpr std::array<double, 7> accepted{1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7};
+    constexpr float fs = 1000.0f;
+
+    for(double ratio : accepted)
+    {
+        CAPTURE(ratio);
+        const float f = static_cast<float>(ratio * static_cast<double>(fs));
+        const auto single = biquad<float>::dirty_derivative(f, fs);
+        const auto reference = biquad<double>::dirty_derivative(static_cast<double>(f), static_cast<double>(fs));
+        REQUIRE(single.has_value());
+        REQUIRE(reference.has_value());
+        const auto n = count_differentiator(static_cast<double>(f), static_cast<double>(fs));
+        const auto& c = single->coefficients();
+        const auto& d = reference->coefficients();
+        check_coefficient(c.b0, d.b0, n.b0);
+        check_coefficient(c.b1, d.b1, n.b0);
+        check_coefficient(c.a1, d.a1, n.gap);
+        CHECK(c.b2 == 0.0f);
+        CHECK(c.a2 == 0.0f);
+
+        const double denominator = denominator_magnitude(d, static_cast<double>(f), static_cast<double>(fs));
+        const double e_single = differentiator_response_bound(n, denominator, eps_single);
+        const double e_double = differentiator_response_bound(n, denominator, eps_double);
+        const double bound = (e_single + e_double) / (1.0 - e_double) + 2.0 * evaluation_bound;
+        const double at_bandwidth = magnitude_linear(c, static_cast<double>(f), static_cast<double>(fs))
+                                    / magnitude_linear(d, static_cast<double>(f), static_cast<double>(fs));
+        CAPTURE(at_bandwidth, bound);
+        CHECK(std::abs(at_bandwidth - 1.0) <= bound);
+    }
+}
+
+TEST_CASE("The dirty-derivative first-order floor sits where its closed form puts it", "[dsp][anchor][float]")
+{
+    check_first_order_floor_boundary<float>();
+    check_first_order_floor_boundary<double>();
 }
