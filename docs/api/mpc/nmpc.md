@@ -229,7 +229,7 @@ Returns solver diagnostics including constraint violation metrics and total slac
 | `stationarity` | the KKT residual fell below `argmin_settings::kkt_tol` |
 | `objective_change` | the relative change in the objective fell below `ftol_rel` |
 | `step_size` | the relative change in the iterate fell below `xtol_rel` |
-| `stalled` | the iterate or the objective stopped making progress |
+| `stalled` | the iterate or the objective stopped making progress, including a line search that accepted no step |
 | `iteration_limit` | `max_eval` ran out |
 | `time_limit` | `max_time` ran out (only under the wall-clock budget, below) |
 | `other` | any other stop, including a failed solve |

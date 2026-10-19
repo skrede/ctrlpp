@@ -2,6 +2,7 @@
 #include "ctrlpp/types.h"
 
 #include "ctrlpp/mpc/nlp_types.h"
+#include "ctrlpp/mpc/nlp_solver.h"
 #include "ctrlpp/mpc/diagnostics.h"
 #include "ctrlpp/mpc/argmin_solver.h"
 #include "ctrlpp/mpc/argmin_policies.h"
@@ -12,6 +13,7 @@
 
 #include <Eigen/Dense>
 
+#include <span>
 #include <cstddef>
 #include <cstdint>
 
@@ -135,4 +137,30 @@ TEST_CASE("the stopping test is passed through to the controller's diagnostics",
     {
         REQUIRE(ctrlpp::mpc_diagnostics<double>{}.stop_criterion == ctrlpp::nlp_stop_criterion::unreported);
     }
+}
+
+TEST_CASE("a line search that accepts no step reports an inaccurate solve that stalled", "[argmin][diagnostics]")
+{
+    ctrlpp::nlp_problem<double> uphill;
+    uphill.n_vars        = 2;
+    uphill.n_constraints = 0;
+    uphill.cost          = [](std::span<const double> x) { return x[0] * x[0] + x[1] * x[1]; };
+    // The reported gradient has the wrong sign, so every search direction climbs the cost.
+    uphill.gradient = [](std::span<const double> x, std::span<double> g)
+    {
+        g[0] = -2.0 * x[0];
+        g[1] = -2.0 * x[1];
+    };
+    uphill.x_lower = Eigen::Vector2d::Constant(-10.0);
+    uphill.x_upper = Eigen::Vector2d::Constant(10.0);
+
+    ctrlpp::argmin_solver<double, ctrlpp::argmin_lbfgsb, false> solver{ctrlpp::argmin_settings<double>{}};
+    REQUIRE(solver.setup(uphill).has_value());
+
+    const Eigen::Vector2d x0{1.0, 1.0};
+    const ctrlpp::nlp_result<double> result = solver.solve(ctrlpp::nlp_update<double>{x0});
+
+    REQUIRE(result.status == ctrlpp::solve_status::solved_inaccurate);
+    REQUIRE(result.stop_criterion == ctrlpp::nlp_stop_criterion::stalled);
+    REQUIRE(result.x == x0);
 }

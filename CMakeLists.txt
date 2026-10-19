@@ -72,7 +72,9 @@ option(CTRLPP_BUILD_OSQP "Build OSQP solver backend for MPC" OFF)
 option(CTRLPP_BUILD_NLOPT "Build NLopt solver backend for NMPC" OFF)
 option(CTRLPP_BUILD_ARGMIN "Build with Argmin NLP solver backend" OFF)
 set(CTRLPP_ARGMIN_SOURCE_DIR "" CACHE PATH "Path to local Argmin source checkout")
-set(CTRLPP_ARGMIN_GIT_TAG "fcfb88b477899ed905c9504293bccc0020de1cc6" CACHE STRING "Argmin git tag/branch/commit to fetch. The default is a full commit SHA for reproducibility. It selects argmin's scalar-first template revision, a forward move whose ancestry from the previous default was verified, which carries the argmin/qp/ sparse operator-splitting QP backend with a 32-bit, domain-validated iteration budget, the allocation-free at-solution null step of the NW-SQP policies, and zero-initialized L-BFGS-B workspaces. A named release tag replaces this development pin once an upstream release carries this surface. Override with a branch name or commit SHA to track another revision")
+set(CTRLPP_ARGMIN_GIT_TAG "29de9ae75d2d6d5c07977dbee3dc10d6071f3bcd" CACHE STRING "Argmin git tag/branch/commit to fetch. The default is a full commit SHA for reproducibility. It selects argmin 0.3.5, a forward move from the scalar-first template revision whose ancestry was verified, which carries the argmin/qp/ sparse operator-splitting QP backend with a 32-bit, domain-validated iteration budget and a nothrow-movable solver, so linear MPC and MHE hold argmin_qp_solver by value, the allocation-free at-solution null step of the NW-SQP policies, and zero-initialized L-BFGS-B workspaces. A named release tag replaces this development pin once an upstream release carries this surface. Override with a branch name or commit SHA to track another revision")
+# An installed argmin older than this predates the scalar-first templates and the movable sparse QP solver the adapters use.
+set(CTRLPP_ARGMIN_MIN_VERSION "0.3.5")
 option(CTRLPP_CMAKE_FETCH_DEPS "Use CMake FetchContent to download and install dependencies" OFF)
 
 option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)

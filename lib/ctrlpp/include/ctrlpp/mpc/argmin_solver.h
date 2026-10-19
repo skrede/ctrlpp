@@ -305,6 +305,7 @@ private:
         case argmin::solver_status::stalled:
         case argmin::solver_status::roundoff_limited:
         case argmin::solver_status::objective_stalled:
+        case argmin::solver_status::line_search_failed:
         case argmin::solver_status::trust_region_step_rejected:
             return solve_status::solved_inaccurate;
         case argmin::solver_status::invalid_problem:
@@ -328,6 +329,7 @@ private:
             return nlp_stop_criterion::step_size;
         case argmin::solver_status::stalled:
         case argmin::solver_status::objective_stalled:
+        case argmin::solver_status::line_search_failed:
             return nlp_stop_criterion::stalled;
         case argmin::solver_status::max_iterations:
         case argmin::solver_status::budget_exhausted:

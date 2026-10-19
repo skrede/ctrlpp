@@ -17,6 +17,8 @@ function(ctrlpp_mcu_read_declared out file pattern)
         message(FATAL_ERROR "ctrlpp_nucleo: no match for '${pattern}' in ${file}")
     endif()
     set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+    # file(STRINGS) adds no configure dependency, so without this a tree keeps the argmin it fetched first.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${file}")
 endfunction()
 
 if(CTRLPP_MCU_ARGMIN_DIR)

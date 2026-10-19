@@ -79,11 +79,10 @@ a discoverable dependency and reinstall.
 
 The installed package resolves each backend's own dependency on your behalf, so your environment
 has to make that dependency discoverable: an OSQP installation for `osqp`, NLopt 2.10 or newer for
-`nlopt`, and Argmin 0.3 or newer for `argmin`. Two of those requirements are looser than they read.
-The OSQP one carries no version floor, because OSQP's package publishes no project version and every
-install of it reports `0.0.0`. The Argmin floor is satisfied by any 0.x install today, because
-Argmin's package declares major-version compatibility; it starts to bite once Argmin narrows that
-mode.
+`nlopt`, and Argmin 0.3.5 or newer for `argmin`. The OSQP requirement carries no version floor,
+because OSQP's package publishes no project version and every install of it reports `0.0.0`. An
+Argmin install older than 0.3.5 is not used: building ctrlpp itself fetches the pinned Argmin
+revision instead, and for a consumer of an installed ctrlpp, `find_package` fails naming Argmin.
 
 ## Your first PID controller
 

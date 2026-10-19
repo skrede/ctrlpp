@@ -19,11 +19,10 @@ if (@CTRLPP_NLOPT_INSTALLED@)
     find_dependency(NLopt 2.10)
 endif ()
 
-# The floor below does not bite yet: argmin publishes a real project version but its version
-# file declares major-version compatibility, so every 0.x install satisfies this request until
-# argmin narrows its own compatibility mode.
+# argmin's version file declares same-major-version compatibility, so any 0.x install at or above
+# this floor satisfies the request and an older one is rejected.
 if (@CTRLPP_ARGMIN_INSTALLED@)
-    find_dependency(argmin 0.3)
+    find_dependency(argmin @CTRLPP_ARGMIN_MIN_VERSION@)
 endif ()
 
 include("${CMAKE_CURRENT_LIST_DIR}/ctrlppTargets.cmake")

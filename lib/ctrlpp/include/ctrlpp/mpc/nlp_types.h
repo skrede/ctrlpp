@@ -56,7 +56,8 @@ enum class nlp_formulation_error : std::uint8_t
 ///                       threshold.
 ///  * step_size        : the relative change in the iterate fell below its
 ///                       threshold.
-///  * stalled          : the iterate or the objective stopped making progress.
+///  * stalled          : the iterate or the objective stopped making progress,
+///                       including a line search that accepted no step.
 ///  * iteration_limit  : the iteration or evaluation budget ran out.
 ///  * time_limit       : the wall-clock budget ran out.
 ///  * other            : any other stop, including a failed solve.
