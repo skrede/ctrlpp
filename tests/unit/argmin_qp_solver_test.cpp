@@ -1,27 +1,18 @@
-// Regression coverage for the argmin QP backend policy.
-//
-// argmin_qp_solver.h is __has_include-gated on argmin/qp/sparse_admm_qp.h. The
-// default pinned argmin revision ships that header, so with
-// CTRLPP_HAS_ARGMIN the policy is defined by default and the real checks below run:
-// concept conformance and a functional solve on a small bound-constrained QP with
-// a closed-form optimum. Only an override to a pre-argmin/qp/ pin leaves the policy
-// compiled out, in which case this file is an empty (trivially passing) TU.
+// argmin_qp_solver.h is __has_include-gated on argmin/qp/sparse_admm_qp.h, which
+// every argmin at or above CTRLPP_ARGMIN_MIN_VERSION ships, so with CTRLPP_HAS_ARGMIN
+// the policy is defined and the gated cases below run.
 
 #include "ctrlpp/mpc/argmin_qp_solver.h"
 
 #include <catch2/catch_test_macros.hpp>
 
-// Always-present sentinel: if the pin is overridden back to a pre-argmin/qp/ SHA
-// the QP header is absent and every gated case below compiles out, which would
-// leave a Catch2 binary with zero registered tests -- and Catch2 exits non-zero
-// ("No tests ran"), reddening CI. This keeps at least one test case in every
-// configuration and records which path was taken.
+// Catch2 exits non-zero from a binary with no registered test, so this case stays outside the gate.
 TEST_CASE("argmin_qp_solver policy gate", "[mpc][argmin][qp]")
 {
 #if defined(CTRLPP_HAS_ARGMIN_QP)
     SUCCEED("argmin QP header present: policy active, functional cases below run");
 #else
-    SUCCEED("argmin QP header absent (pin override to a pre-QP SHA): policy compiled out");
+    SUCCEED("argmin QP header absent: policy compiled out");
 #endif
 }
 

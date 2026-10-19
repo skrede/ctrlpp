@@ -4,20 +4,18 @@
 /// @brief Linear-MPC QP backend over argmin's sparse operator-splitting solver.
 ///
 /// This is the argmin-native alternative to `osqp_solver`: it models the same
-/// `qp_solver` concept, so `mpc<Scalar, NX, NU, argmin_qp_solver>` compiles and
-/// runs without the vendored OSQP C library. Both solve the canonical OSQP-form
+/// `qp_solver` concept, so `mpc<Scalar, NX, NU, argmin_qp_solver>` and
+/// `mhe<Scalar, NX, NU, NY, N, argmin_qp_solver, Dynamics, Measurement>` compile
+/// and run without the vendored OSQP C library. Both solve the canonical OSQP-form
 /// QP `min ½·xᵀPx + qᵀx  s.t.  l ≤ Ax ≤ u`; argmin ships a header-only C++
 /// implementation of the same operator-splitting algorithm, returning results
 /// on a typed error channel rather than through C-pointer ownership.
 ///
-/// The adapter is `__has_include`-gated on `argmin/qp/sparse_admm_qp.h`. The
-/// default pinned argmin revision ships that header, so the gate
-/// is satisfied by default: with `CTRLPP_BUILD_ARGMIN=ON` this policy is ACTIVE
-/// and `mpc<Scalar, NX, NU, argmin_qp_solver>` compiles out of the box. The gate
-/// is retained as a defensive fallback: overriding the pin back to an argmin SHA
-/// that predates `argmin/qp/` (or pointing `CTRLPP_ARGMIN_SOURCE_DIR` at such a
-/// checkout) degrades this file to an empty translation unit instead of a hard
-/// compile error.
+/// The adapter is `__has_include`-gated on `argmin/qp/sparse_admm_qp.h` and
+/// defines `CTRLPP_HAS_ARGMIN_QP` when active. Every argmin at or above the
+/// version this library requires (`CTRLPP_ARGMIN_MIN_VERSION`) ships that header,
+/// so with `CTRLPP_BUILD_ARGMIN=ON` the policy is active. An argmin below that
+/// version is not supported, and the gate is not a fallback for one.
 ///
 /// Scope note: this is DEPENDENCY RELIEF plus a typed-error-channel upgrade, not
 /// a real-time upgrade. argmin's sparse QP variant is a host-tier solver that

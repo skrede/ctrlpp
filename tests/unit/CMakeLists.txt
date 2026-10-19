@@ -387,14 +387,18 @@ if (CTRLPP_BUILD_ARGMIN)
     target_compile_options(nmhe_argmin_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
     add_test(NAME nmhe_argmin_test COMMAND nmhe_argmin_test)
 
-    # QP backend policy over argmin's sparse ADMM solver. Self-gates on the
-    # argmin QP header via __has_include: the default pin ships it, so the test
-    # exercises the concept + a functional solve; a pin override to a pre-QP SHA
-    # degrades it to a trivially-passing empty TU.
+    # argmin_qp_solver.h defines CTRLPP_HAS_ARGMIN_QP when argmin's QP header is present, as it is in every argmin at
+    # or above CTRLPP_ARGMIN_MIN_VERSION. Both backend tests gate their cases on it and keep one ungated case, since
+    # Catch2 fails a binary that registers no test.
     add_executable(argmin_qp_solver_test "${CMAKE_CURRENT_LIST_DIR}/argmin_qp_solver_test.cpp")
     target_link_libraries(argmin_qp_solver_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
     target_compile_options(argmin_qp_solver_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
     add_test(NAME argmin_qp_solver_test COMMAND argmin_qp_solver_test)
+
+    add_executable(mpc_mhe_argmin_qp_test "${CMAKE_CURRENT_LIST_DIR}/mpc_mhe_argmin_qp_test.cpp")
+    target_link_libraries(mpc_mhe_argmin_qp_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
+    target_compile_options(mpc_mhe_argmin_qp_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
+    add_test(NAME mpc_mhe_argmin_qp_test COMMAND mpc_mhe_argmin_qp_test)
 
     # Proof that the static NMPC path allocates nothing in steady state:
     # nmpc_static's solve is allocation-free at argmin's fixed-N floor. Consumes

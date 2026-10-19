@@ -1,8 +1,8 @@
 # argmin_qp_solver
 
-> **Requires argmin.** Enable with `-DCTRLPP_BUILD_ARGMIN=ON` when configuring CMake. Active at the default pinned argmin revision, which ships `argmin/qp/`.
+> **Requires argmin 0.3.5 or newer** (`CTRLPP_ARGMIN_MIN_VERSION`). Enable with `-DCTRLPP_BUILD_ARGMIN=ON` when configuring CMake. Every argmin at or above that version ships `argmin/qp/`, so the backend is active whenever argmin is enabled.
 
-argmin-native QP solver backend for linear MPC and MHE, and the header-only alternative to [`osqp_solver`](osqp-solver.md). Satisfies the `qp_solver` concept and can be injected as the `Solver` template parameter of `mpc` and `mhe`. Wraps `argmin::sparse_admm_qp_solver`, a header-only C++ implementation of the same OSQP-class operator-splitting algorithm, returning results on a typed error channel rather than through C-pointer ownership.
+argmin-native QP solver backend for linear MPC and MHE, and the header-only alternative to [`osqp_solver`](osqp-solver.md). Satisfies the `qp_solver` concept and can be named as the `Solver` template parameter of `mpc` and `mhe`. A preconfigured instance is injected through `mpc`'s `create` (its `solver` argument); `mhe` constructs its solver from the `Solver` type. Wraps `argmin::sparse_admm_qp_solver`, a header-only C++ implementation of the same OSQP-class operator-splitting algorithm, returning results on a typed error channel rather than through C-pointer ownership.
 
 Both backends solve the canonical OSQP-form QP `min ½·xᵀPx + qᵀx s.t. l ≤ Ax ≤ u` and are interchangeable at a call site. Choosing this backend drops the vendored OSQP C library (and its C-pointer-ownership failure modes) from the build in favor of a header-only dependency.
 
@@ -18,7 +18,7 @@ Both backends solve the canonical OSQP-form QP `min ½·xᵀPx + qᵀx s.t. l �
 class argmin_qp_solver;
 ```
 
-The class is defined only when `CTRLPP_BUILD_ARGMIN=ON` **and** argmin's QP header (`argmin/qp/sparse_admm_qp.h`) is present. When present, the macro `CTRLPP_HAS_ARGMIN_QP` is defined. The default pin ships the header, so no local checkout is required; overriding the pin back to a pre-`argmin/qp/` SHA degrades the translation unit to empty rather than failing to compile.
+The class is defined only when `CTRLPP_BUILD_ARGMIN=ON` **and** argmin's QP header (`argmin/qp/sparse_admm_qp.h`) is present. When present, the macro `CTRLPP_HAS_ARGMIN_QP` is defined. Every argmin at or above `CTRLPP_ARGMIN_MIN_VERSION` (0.3.5) ships the header, so no local checkout is required. An argmin below that version is not supported, and the header gate is not a fallback for one; see [Solver backend components](../../getting-started.md#solver-backend-components) for how an older installed argmin is refused.
 
 ## qp_solver Concept
 
@@ -111,13 +111,18 @@ The sparse ADMM QP backend operates in double precision only.
 
 ## Usage Example
 
-`argmin_qp_solver` is a drop-in replacement for `osqp_solver` — swap the `Solver` template argument, or inject a preconfigured instance through the third `mpc`/`mhe` constructor argument:
+`argmin_qp_solver` is a drop-in replacement for `osqp_solver`: swap the `Solver` template argument. A preconfigured instance is injected through the `solver` argument of `mpc`'s `create`, as below; `mhe` takes no solver argument and constructs its solver from the `Solver` type.
 
 ```cpp
 #include <ctrlpp/mpc.h>
 #include <ctrlpp/mpc/argmin_qp_solver.h>
+#include <ctrlpp/model/propagate.h>
 
 #include <Eigen/Dense>
+
+#include <cstdint>
+#include <cstdlib>
+#include <iostream>
 
 int main()
 {
@@ -136,12 +141,29 @@ int main()
         .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
         .R = Eigen::Matrix<double, 1, 1>::Identity()};
 
-    // Skip per-step polishing on the warm-resolve path — see qp_preset.
-    ctrlpp::mpc<double, NX, NU, ctrlpp::argmin_qp_solver> controller(
+    // Skip per-step polishing on the warm-resolve path; see qp_preset.
+    auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::argmin_qp_solver>::create(
         sys, cfg, ctrlpp::argmin_qp_solver{ctrlpp::qp_preset::speed});
+    if(!created)
+    {
+        // created.error() carries the controller_construction_error.
+        return EXIT_FAILURE;
+    }
+    auto controller = *std::move(created);
 
     Eigen::Vector2d x(3.0, 0.0);
-    auto u_opt = controller.solve(x);
+    for(std::int32_t step = 0; step < 20; ++step)
+    {
+        auto u_opt = controller.solve(x);
+        if(!u_opt)
+        {
+            // u_opt.error() carries the solver_error describing the failure.
+            std::cerr << "MPC solve failed at step " << step << "\n";
+            return EXIT_FAILURE;
+        }
+        x = ctrlpp::propagate(sys, x, u_opt->input);
+    }
+    std::cout << "x after 20 steps: [" << x.transpose() << "]\n";
 }
 ```
 
