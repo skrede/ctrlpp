@@ -38,17 +38,17 @@ void write_admm_options(json_writer& out, const Options& options)
 
 void describe_argmin_dense_admm(json_writer& out, tier level, bool forced_polish)
 {
-    write_admm_options(out, admm_options<argmin::dense_qp_options>(level, forced_polish));
+    write_admm_options(out, admm_options<argmin::dense_qp_options<double>>(level, forced_polish));
 }
 
 void describe_argmin_sparse_admm(json_writer& out, tier level, bool forced_polish)
 {
-    write_admm_options(out, admm_options<argmin::sparse_qp_options>(level, forced_polish));
+    write_admm_options(out, admm_options<argmin::sparse_qp_options<double>>(level, forced_polish));
 }
 
 void describe_argmin_active_set(json_writer& out, tier level)
 {
-    argmin::dense_active_set_qp_options options;
+    argmin::dense_active_set_qp_options<double> options;
     options.tolerance = solver_tolerance(level);
     options.max_iterations = iteration_cap;
     out.number("tolerance", options.tolerance);

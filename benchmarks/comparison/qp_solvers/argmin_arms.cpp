@@ -66,7 +66,7 @@ using dense_admm = argmin::dense_admm_qp_solver<double, Eigen::Dynamic>;
 using dense_active_set = argmin::dense_active_set_qp_solver<double, Eigen::Dynamic>;
 using sparse_admm = argmin::sparse_admm_qp_solver<double>;
 
-class dense_admm_arm final : public argmin_arm_base<dense_admm, argmin::dense_qp_options>
+class dense_admm_arm final : public argmin_arm_base<dense_admm, argmin::dense_qp_options<double>>
 {
 public:
     using argmin_arm_base::argmin_arm_base;
@@ -79,7 +79,7 @@ public:
     }
 };
 
-class sparse_admm_arm final : public argmin_arm_base<sparse_admm, argmin::sparse_qp_options>
+class sparse_admm_arm final : public argmin_arm_base<sparse_admm, argmin::sparse_qp_options<double>>
 {
 public:
     using argmin_arm_base::argmin_arm_base;
@@ -94,10 +94,10 @@ public:
 
 /// The active-set method needs a feasible start; when the retained solution is infeasible for the new
 /// bounds the solver is reset to U = 0 (feasible for every posed tick) and the resolve repeated.
-class active_set_arm final : public argmin_arm_base<dense_active_set, argmin::dense_active_set_qp_options>
+class active_set_arm final : public argmin_arm_base<dense_active_set, argmin::dense_active_set_qp_options<double>>
 {
 public:
-    explicit active_set_arm(const argmin::dense_active_set_qp_options& options)
+    explicit active_set_arm(const argmin::dense_active_set_qp_options<double>& options)
         : argmin_arm_base(options)
         , fallback_(false)
     {
@@ -131,9 +131,9 @@ private:
     bool fallback_;
 };
 
-auto active_set_options(double tolerance) -> argmin::dense_active_set_qp_options
+auto active_set_options(double tolerance) -> argmin::dense_active_set_qp_options<double>
 {
-    argmin::dense_active_set_qp_options options;
+    argmin::dense_active_set_qp_options<double> options;
     options.tolerance = tolerance;
     options.max_iterations = iteration_cap;
     return options;
@@ -143,7 +143,7 @@ auto active_set_options(double tolerance) -> argmin::dense_active_set_qp_options
 
 auto make_argmin_dense_admm_arm(tier level, bool forced_polish) -> std::unique_ptr<qp_arm>
 {
-    return std::make_unique<dense_admm_arm>(admm_options<argmin::dense_qp_options>(level, forced_polish));
+    return std::make_unique<dense_admm_arm>(admm_options<argmin::dense_qp_options<double>>(level, forced_polish));
 }
 
 auto make_argmin_active_set_arm(tier level) -> std::unique_ptr<qp_arm>
@@ -153,7 +153,7 @@ auto make_argmin_active_set_arm(tier level) -> std::unique_ptr<qp_arm>
 
 auto make_argmin_sparse_admm_arm(tier level, bool forced_polish) -> std::unique_ptr<qp_arm>
 {
-    return std::make_unique<sparse_admm_arm>(admm_options<argmin::sparse_qp_options>(level, forced_polish));
+    return std::make_unique<sparse_admm_arm>(admm_options<argmin::sparse_qp_options<double>>(level, forced_polish));
 }
 
 auto make_argmin_active_set_reference() -> std::unique_ptr<qp_arm>
