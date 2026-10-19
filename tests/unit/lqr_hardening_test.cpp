@@ -16,6 +16,10 @@
 //  * Where the problem has a closed form (the scalar integrator's golden-ratio
 //    fixed point) the closed form is asserted, with the budget carried from the
 //    residual through the residual's own Frechet derivative at the solution.
+//  * The sequence helpers refuse every length, step or entry they cannot index
+//    or compute on, with the enumerator that names it. This file is built with
+//    the standard library's bounds assertions, so an out-of-range read that a
+//    refusal misses aborts the test instead of returning garbage.
 //
 // What they deliberately do not decide. Nothing here asserts optimality against
 // a competing controller, and nothing asserts a conditioning model: the
@@ -33,6 +37,85 @@
 
 #include <cmath>
 #include <limits>
+#include <span>
+#include <vector>
+#include <cstddef>
+#include <utility>
+
+namespace
+{
+
+using state_matrix = Eigen::Matrix<double, 2, 2>;
+using input_matrix = Eigen::Matrix<double, 2, 1>;
+using weight_matrix = Eigen::Matrix<double, 1, 1>;
+using gain_matrix = Eigen::Matrix<double, 1, 2>;
+using tv_result = ctrlpp::expected<std::vector<gain_matrix>, ctrlpp::lqr_error>;
+
+struct tv_sequences
+{
+    std::vector<state_matrix> As;
+    std::vector<input_matrix> Bs;
+    std::vector<state_matrix> Qs;
+    std::vector<weight_matrix> Rs;
+    state_matrix Qf;
+};
+
+// The double integrator with unit weights, each per-step sequence sized on its own.
+auto double_integrator_sequences(std::size_t na, std::size_t nb, std::size_t nq, std::size_t nr) -> tv_sequences
+{
+    state_matrix A;
+    A << 1.0, 1.0, 0.0, 1.0;
+    input_matrix B;
+    B << 0.5, 1.0;
+    const weight_matrix R = weight_matrix::Identity();
+    const state_matrix Q = state_matrix::Identity();
+    return {std::vector<state_matrix>(na, A), std::vector<input_matrix>(nb, B), std::vector<state_matrix>(nq, Q),
+            std::vector<weight_matrix>(nr, R), Q};
+}
+
+auto tv_gains_of(const tv_sequences& s) -> tv_result
+{
+    return ctrlpp::lqr_tv_gains<double, 2, 1>(s.As, s.Bs, s.Qs, s.Rs, s.Qf);
+}
+
+auto cost_of(const std::vector<input_matrix>& xs, const std::vector<weight_matrix>& us, const state_matrix& Q,
+             const weight_matrix& R) -> ctrlpp::expected<double, ctrlpp::lqr_error>
+{
+    return ctrlpp::lqr_cost<double, 2, 1>(std::span<const input_matrix>{xs}, std::span<const weight_matrix>{us}, Q, R);
+}
+
+// Dyadic entries small enough that every product and partial sum is exact in
+// double, so the trajectory cost has a single correct value and no tolerance.
+auto dyadic_states(std::size_t n) -> std::vector<input_matrix>
+{
+    std::vector<input_matrix> xs(n);
+    for(std::size_t k = 0; k < n; ++k)
+        xs[k] << 0.5 * static_cast<double>(k + 1), -0.25 * static_cast<double>(k);
+    return xs;
+}
+
+auto dyadic_inputs(std::size_t n) -> std::vector<weight_matrix>
+{
+    std::vector<weight_matrix> us(n);
+    for(std::size_t k = 0; k < n; ++k)
+        us[k] << 0.125 * static_cast<double>(k + 2);
+    return us;
+}
+
+auto trajectory_weights() -> std::pair<state_matrix, weight_matrix>
+{
+    return {state_matrix::Identity(), 2.0 * weight_matrix::Identity()};
+}
+
+auto ramp_gains(std::size_t n) -> std::vector<gain_matrix>
+{
+    std::vector<gain_matrix> gains(n);
+    for(std::size_t k = 0; k < n; ++k)
+        gains[k] << 1.0 + static_cast<double>(k), -0.5 * static_cast<double>(k);
+    return gains;
+}
+
+}
 
 TEST_CASE("LQR refuses a non-finite state weighting", "[lqr][hardening][negative]")
 {
@@ -272,4 +355,163 @@ TEST_CASE("LQR scalar integrator analytical gain", "[lqr][hardening][precision]"
 
     CAPTURE((*result)(0, 0), expected_K, gain_budget);
     REQUIRE(std::abs((*result)(0, 0) - expected_K) <= gain_budget);
+}
+
+TEST_CASE("lqr_tv_gains refuses a state sequence one shorter than the rest", "[lqr][hardening][negative]")
+{
+    auto const result = tv_gains_of(double_integrator_sequences(49, 50, 50, 50));
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::lqr_error::sequence_length_mismatch);
+}
+
+TEST_CASE("lqr_tv_gains refuses any one sequence one short of the others", "[lqr][hardening][negative]")
+{
+    constexpr std::size_t n = 50;
+    for(std::size_t shortened = 0; shortened < 4; ++shortened)
+    {
+        auto const size_of = [&](std::size_t which) { return which == shortened ? n - 1 : n; };
+        auto const result = tv_gains_of(double_integrator_sequences(size_of(0), size_of(1), size_of(2), size_of(3)));
+        CAPTURE(shortened);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::lqr_error::sequence_length_mismatch);
+    }
+}
+
+TEST_CASE("lqr_tv_gains refuses a NaN state weighting at one step", "[lqr][hardening][negative]")
+{
+    auto sequences = double_integrator_sequences(20, 20, 20, 20);
+    sequences.Qs[7](1, 0) = std::numeric_limits<double>::quiet_NaN();
+
+    auto const result = tv_gains_of(sequences);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::lqr_error::non_finite_input);
+}
+
+TEST_CASE("lqr_tv_gains refuses an infinite terminal weighting", "[lqr][hardening][negative]")
+{
+    auto sequences = double_integrator_sequences(20, 20, 20, 20);
+    sequences.Qf(0, 0) = std::numeric_limits<double>::infinity();
+
+    auto const result = tv_gains_of(sequences);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::lqr_error::non_finite_input);
+}
+
+TEST_CASE("lqr_tv_gains on constant sequences reproduces lqr_finite bitwise", "[lqr][hardening][precision]")
+{
+    constexpr std::size_t horizon = 20;
+    auto const sequences = double_integrator_sequences(horizon, horizon, horizon, horizon);
+
+    // Both recursions evaluate the same expressions in the same order, so with
+    // constant matrices nothing but bit-identical gains is correct.
+    auto const finite = ctrlpp::lqr_finite<double, 2, 1>(sequences.As[0], sequences.Bs[0], sequences.Qs[0],
+                                                         sequences.Rs[0], sequences.Qf, horizon);
+    auto const result = tv_gains_of(sequences);
+    REQUIRE(result.has_value());
+    REQUIRE(result->size() == horizon);
+    for(std::size_t k = 0; k < horizon; ++k)
+    {
+        CAPTURE(k);
+        CHECK((*result)[k] == finite[k]);
+    }
+}
+
+TEST_CASE("lqr_tv_gains on empty sequences returns no gains", "[lqr][hardening][precision]")
+{
+    auto const result = tv_gains_of(double_integrator_sequences(0, 0, 0, 0));
+    REQUIRE(result.has_value());
+    CHECK(result->empty());
+}
+
+TEST_CASE("lqr_time_varying refuses a step at the horizon", "[lqr][hardening][negative]")
+{
+    ctrlpp::lqr_time_varying<double, 2, 1> law(ramp_gains(50));
+    input_matrix x;
+    x << 1.0, -0.5;
+
+    auto const u = law.compute(x, law.horizon());
+    REQUIRE_FALSE(u.has_value());
+    CHECK(u.error() == ctrlpp::lqr_error::step_out_of_range);
+
+    auto const K = law.gain(law.horizon());
+    REQUIRE_FALSE(K.has_value());
+    CHECK(K.error() == ctrlpp::lqr_error::step_out_of_range);
+}
+
+TEST_CASE("lqr_time_varying serves every step before the horizon", "[lqr][hardening][precision]")
+{
+    auto const gains = ramp_gains(8);
+    ctrlpp::lqr_time_varying<double, 2, 1> law(gains);
+    input_matrix x;
+    x << 1.0, -0.5;
+
+    for(std::size_t k = 0; k < law.horizon(); ++k)
+    {
+        CAPTURE(k);
+        auto const u = law.compute(x, k);
+        auto const K = law.gain(k);
+        REQUIRE(u.has_value());
+        REQUIRE(K.has_value());
+        CHECK(*u == (-gains[k] * x).eval());
+        CHECK(*K == gains[k]);
+    }
+}
+
+TEST_CASE("lqr_cost refuses two states against three inputs", "[lqr][hardening][negative]")
+{
+    auto const [Q, R] = trajectory_weights();
+    auto const result = cost_of(dyadic_states(2), dyadic_inputs(3), Q, R);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::lqr_error::trajectory_length_mismatch);
+}
+
+TEST_CASE("lqr_cost refuses a state sequence two longer than the inputs", "[lqr][hardening][negative]")
+{
+    auto const [Q, R] = trajectory_weights();
+    auto const result = cost_of(dyadic_states(5), dyadic_inputs(3), Q, R);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::lqr_error::trajectory_length_mismatch);
+}
+
+TEST_CASE("lqr_cost refuses a non-finite state, input or weight", "[lqr][hardening][negative]")
+{
+    auto const [Q, R] = trajectory_weights();
+    constexpr double nan = std::numeric_limits<double>::quiet_NaN();
+
+    auto xs = dyadic_states(4);
+    xs[2](1) = nan;
+    auto us = dyadic_inputs(3);
+    us[1](0) = nan;
+    state_matrix Q_nan = Q;
+    Q_nan(0, 1) = nan;
+    weight_matrix R_nan = R;
+    R_nan(0, 0) = nan;
+
+    auto const refusals = {cost_of(xs, dyadic_inputs(3), Q, R), cost_of(dyadic_states(4), us, Q, R),
+                           cost_of(dyadic_states(4), dyadic_inputs(3), Q_nan, R),
+                           cost_of(dyadic_states(4), dyadic_inputs(3), Q, R_nan)};
+    for(auto const& result : refusals)
+    {
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::lqr_error::non_finite_input);
+    }
+}
+
+TEST_CASE("lqr_cost sums both accepted trajectory shapes exactly", "[lqr][hardening][precision]")
+{
+    auto const [Q, R] = trajectory_weights();
+    auto const xs = dyadic_states(4);
+    auto const us = dyadic_inputs(3);
+
+    double stage = 0.0;
+    for(std::size_t k = 0; k < us.size(); ++k)
+        stage += xs[k].squaredNorm() + 2.0 * us[k].squaredNorm();
+    double const terminal = xs[3].squaredNorm();
+
+    auto const without_terminal = cost_of(dyadic_states(3), us, Q, R);
+    auto const with_terminal = cost_of(xs, us, Q, R);
+    REQUIRE(without_terminal.has_value());
+    REQUIRE(with_terminal.has_value());
+    CHECK(*without_terminal == stage);
+    CHECK(*with_terminal == stage + terminal);
 }

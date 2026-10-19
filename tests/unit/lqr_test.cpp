@@ -182,11 +182,12 @@ TEST_CASE("lqr_tv_gains with constant matrices matches lqr_finite")
     std::vector<Eigen::Matrix<double, 2, 2>> Qs(horizon, Q);
     std::vector<Eigen::Matrix<double, 1, 1>> Rs(horizon, R);
 
-    auto gains_tv = ctrlpp::lqr_tv_gains<double, 2, 1>(As, Bs, Qs, Rs, Qf, horizon);
+    auto gains_tv = ctrlpp::lqr_tv_gains<double, 2, 1>(As, Bs, Qs, Rs, Qf);
+    REQUIRE(gains_tv.has_value());
 
-    REQUIRE(gains_tv.size() == gains_finite.size());
+    REQUIRE(gains_tv->size() == gains_finite.size());
     for(std::size_t k = 0; k < horizon; ++k)
-        CHECK((gains_tv[k] - gains_finite[k]).norm() < 1e-12);
+        CHECK(((*gains_tv)[k] - gains_finite[k]).norm() < 1e-12);
 }
 
 TEST_CASE("lqi_result achieves zero steady-state error")
@@ -272,8 +273,9 @@ TEST_CASE("lqr_cost evaluates trajectory cost")
     expected += 0.1 * 0.1 + 0.05 * 0.05;
 
     auto cost = ctrlpp::lqr_cost<double, 2, 1>(std::span<const Eigen::Matrix<double, 2, 1>>{xs}, std::span<const Eigen::Matrix<double, 1, 1>>{us}, Q, R);
+    REQUIRE(cost.has_value());
 
-    CHECK_THAT(cost, Catch::Matchers::WithinAbs(expected, 1e-12));
+    CHECK_THAT(*cost, Catch::Matchers::WithinAbs(expected, 1e-12));
 }
 
 TEST_CASE("lqr class compute returns -K*x")
@@ -413,8 +415,11 @@ TEST_CASE("lqr_time_varying indexes correctly")
     for(std::size_t k = 0; k < horizon; ++k)
     {
         auto u = lqr_tv.compute(x, k);
+        auto gain = lqr_tv.gain(k);
+        REQUIRE(u.has_value());
+        REQUIRE(gain.has_value());
         Eigen::Matrix<double, 1, 1> expected = -gains_ref[k] * x;
-        CHECK((u - expected).norm() < 1e-12);
-        CHECK((lqr_tv.gain(k) - gains_ref[k]).norm() < 1e-12);
+        CHECK((*u - expected).norm() < 1e-12);
+        CHECK((*gain - gains_ref[k]).norm() < 1e-12);
     }
 }

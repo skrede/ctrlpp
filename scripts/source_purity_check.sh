@@ -293,8 +293,9 @@ fi
 #             returns nothing on the particle filter, on both online planners,
 #             on the null observer, and inside the observer concept's
 #             requires-expression
-#   compute   fallible on the proportional-integral-derivative controller;
-#             returns a control vector on the linear-quadratic gain
+#   compute   fallible on the proportional-integral-derivative controller and
+#             on the time-varying linear-quadratic law; returns a control
+#             vector on the constant linear-quadratic gain
 #   evaluate  fallible on the two adaptive controllers; returns a trajectory
 #             point across the whole trajectory family
 #   solve     fallible on the predictive controllers; returns a solver result
@@ -306,7 +307,7 @@ fi
 # require an exemption for every correct call to an infallible surface, and a
 # rule whose exemption list grows as correct code is written is not a ratchet.
 
-fallible_call_names="create|setup|place_observer|place|lqr_gain_continuous|lqr_gain|partition_lqi_gain|lqi_gain|validate_biquad_design|can_rescale_to|rescale_to|dare|care|set_params|set_integral"
+fallible_call_names="create|setup|place_observer|place|lqr_gain_continuous|lqr_gain|partition_lqi_gain|lqi_gain|validate_biquad_design|can_rescale_to|rescale_to|dare|care|set_params|set_integral|lqr_tv_gains|lqr_cost"
 
 # --- Rule 8's identifier forms ------------------------------------------------
 #

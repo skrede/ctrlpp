@@ -220,15 +220,22 @@ TEST_CASE("lqr_time_varying steady-state control law performs zero heap allocati
     x << 1.0, -0.5, 0.25, -0.125;
 
     for(std::size_t k = 0; k < horizon; ++k)
-        controller.compute(x, k);
+        REQUIRE(controller.compute(x, k).has_value());
 
+    bool all_in_range = true;
     std::size_t allocations = 0;
     ctrlpp::lqr_time_varying<double, NX, NU>::input_type u =
         ctrlpp::lqr_time_varying<double, NX, NU>::input_type::Zero();
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 256; ++i)
-            u = controller.compute(x, static_cast<std::size_t>(i) % horizon);
+        {
+            auto const step = controller.compute(x, static_cast<std::size_t>(i) % horizon);
+            all_in_range = all_in_range && step.has_value();
+            if(step)
+                u = *step;
+        }
     });
+    REQUIRE(all_in_range);
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
 
     REQUIRE(allocations == 0);

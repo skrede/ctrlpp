@@ -159,16 +159,18 @@ Finite-horizon LQR via backward Riccati recursion. Returns gain sequence {K_0, K
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>>
-lqr_tv_gains(const std::vector<Matrix<Scalar, NX, NX>>& As,
-             const std::vector<Matrix<Scalar, NX, NU>>& Bs,
-             const std::vector<Matrix<Scalar, NX, NX>>& Qs,
-             const std::vector<Matrix<Scalar, NU, NU>>& Rs,
-             const Matrix<Scalar, NX, NX>& Qf,
-             std::size_t horizon);
+auto lqr_tv_gains(const std::vector<Matrix<Scalar, NX, NX>>& As,
+                  const std::vector<Matrix<Scalar, NX, NU>>& Bs,
+                  const std::vector<Matrix<Scalar, NX, NX>>& Qs,
+                  const std::vector<Matrix<Scalar, NU, NU>>& Rs,
+                  const Matrix<Scalar, NX, NX>& Qf)
+    -> ctrlpp::expected<std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>>, lqr_error>;
 ```
 
-Time-varying LQR via backward Riccati recursion with per-step system and cost matrices.
+Time-varying LQR via backward Riccati recursion with per-step system and cost matrices. The horizon is the common length of the four sequences; empty sequences give an empty gain sequence. Refuses with:
+
+- `lqr_error::sequence_length_mismatch` when the four sequences hold different counts.
+- `lqr_error::non_finite_input` when any entry of any matrix, `Qf` included, is NaN or infinite.
 
 ### lqi_gain
 
@@ -188,13 +190,17 @@ LQR with integral action. Augments the state with integral of tracking error and
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU>
-Scalar lqr_cost(std::span<const Vector<Scalar, NX>> xs,
-                std::span<const Vector<Scalar, NU>> us,
-                const Matrix<Scalar, NX, NX>& Q,
-                const Matrix<Scalar, NU, NU>& R);
+auto lqr_cost(std::span<const Vector<Scalar, NX>> xs,
+              std::span<const Vector<Scalar, NU>> us,
+              const Matrix<Scalar, NX, NX>& Q,
+              const Matrix<Scalar, NU, NU>& R)
+    -> ctrlpp::expected<Scalar, lqr_error>;
 ```
 
-Evaluates the quadratic trajectory cost: sum of x'Qx + u'Ru. If `xs` has one more element than `us`, the terminal state cost is included.
+Evaluates the quadratic trajectory cost: sum of x'Qx + u'Ru. `xs` holds either as many states as `us` holds inputs, or one more, in which case the terminal state cost is included. Refuses with:
+
+- `lqr_error::trajectory_length_mismatch` for any other state count.
+- `lqr_error::non_finite_input` when a state, an input, `Q` or `R` holds a NaN or an infinity.
 
 ## lqr Class
 
@@ -239,18 +245,18 @@ Constructs a time-varying controller from a precomputed gain sequence.
 #### compute
 
 ```cpp
-auto compute(const state_type& x, std::size_t k) const -> input_type;
+auto compute(const state_type& x, std::size_t k) const -> ctrlpp::expected<input_type, lqr_error>;
 ```
 
-Returns u = -K_k * x at time step k.
+Returns u = -K_k * x at time step k, or `lqr_error::step_out_of_range` when `k >= horizon()`.
 
 #### gain
 
 ```cpp
-auto gain(std::size_t k) const -> const gain_type&;
+auto gain(std::size_t k) const -> ctrlpp::expected<gain_type, lqr_error>;
 ```
 
-Returns gain matrix at step k.
+Returns a copy of the gain matrix at step k, or `lqr_error::step_out_of_range` when `k >= horizon()`.
 
 #### horizon
 
@@ -261,6 +267,20 @@ auto horizon() const -> std::size_t;
 Returns the number of time steps in the gain sequence.
 
 ## Supporting Types
+
+### lqr_error
+
+```cpp
+enum class lqr_error
+{
+    sequence_length_mismatch,
+    trajectory_length_mismatch,
+    step_out_of_range,
+    non_finite_input,
+};
+```
+
+Declared in `ctrlpp/control/lqr_types.h` and included by `ctrlpp/control/lqr.h`. The refusals of `lqr_tv_gains`, `lqr_cost` and `lqr_time_varying::compute` and `gain`. Each is an exact precondition of the indexing or of the arithmetic's domain, so none carries a tolerance.
 
 ### lqi_result
 

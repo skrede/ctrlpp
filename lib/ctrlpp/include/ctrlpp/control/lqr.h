@@ -12,6 +12,7 @@
 
 #include "ctrlpp/control/care.h"
 #include "ctrlpp/control/dare.h"
+#include "ctrlpp/control/lqr_types.h"
 
 #include <Eigen/Dense>
 
@@ -20,6 +21,7 @@
 #include <vector>
 #include <cstddef>
 #include <utility>
+#include <algorithm>
 
 namespace ctrlpp
 {
@@ -238,35 +240,56 @@ std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_finite(const Eigen::Mat
     return gains;
 }
 
-// Time-varying LQR via backward Riccati recursion with per-step matrices.
-// Returns gain sequence {K_0, K_1, ..., K_{N-1}}.
+namespace detail
+{
+
 template <typename Scalar, std::size_t NX, std::size_t NU>
-std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>> lqr_tv_gains(const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>>& As,
-                                                                  const std::vector<Eigen::Matrix<Scalar, int(NX), int(NU)>>& Bs,
-                                                                  const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>>& Qs,
-                                                                  const std::vector<Eigen::Matrix<Scalar, int(NU), int(NU)>>& Rs,
-                                                                  const Eigen::Matrix<Scalar, int(NX), int(NX)>& Qf,
-                                                                  std::size_t horizon)
+auto check_lqr_tv_sequences(const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>>& As,
+                            const std::vector<Eigen::Matrix<Scalar, int(NX), int(NU)>>& Bs,
+                            const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>>& Qs,
+                            const std::vector<Eigen::Matrix<Scalar, int(NU), int(NU)>>& Rs,
+                            const Eigen::Matrix<Scalar, int(NX), int(NX)>& Qf) -> ctrlpp::expected<void, lqr_error>
+{
+    if(Bs.size() != As.size() || Qs.size() != As.size() || Rs.size() != As.size())
+        return ctrlpp::unexpected(lqr_error::sequence_length_mismatch);
+
+    const auto finite = [](const auto& M) { return M.allFinite(); };
+    if(!Qf.allFinite() || !std::ranges::all_of(As, finite) || !std::ranges::all_of(Bs, finite)
+       || !std::ranges::all_of(Qs, finite) || !std::ranges::all_of(Rs, finite))
+        return ctrlpp::unexpected(lqr_error::non_finite_input);
+    return {};
+}
+
+}
+
+// Time-varying LQR via backward Riccati recursion with per-step matrices; the horizon is the common
+// length of the four sequences. Returns {K_0, ..., K_{N-1}}, or refuses unequal lengths or a non-finite entry.
+template <typename Scalar, std::size_t NX, std::size_t NU>
+auto lqr_tv_gains(const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>>& As,
+                  const std::vector<Eigen::Matrix<Scalar, int(NX), int(NU)>>& Bs,
+                  const std::vector<Eigen::Matrix<Scalar, int(NX), int(NX)>>& Qs,
+                  const std::vector<Eigen::Matrix<Scalar, int(NU), int(NU)>>& Rs,
+                  const Eigen::Matrix<Scalar, int(NX), int(NX)>& Qf)
+    -> ctrlpp::expected<std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>>, lqr_error>
 {
     using MatNxN = Eigen::Matrix<Scalar, int(NX), int(NX)>;
     using MatK = Eigen::Matrix<Scalar, int(NU), int(NX)>;
 
-    std::vector<MatK> gains(horizon);
-    MatNxN P = Qf;
+    if(auto checked = detail::check_lqr_tv_sequences<Scalar, NX, NU>(As, Bs, Qs, Rs, Qf); !checked)
+        return ctrlpp::unexpected(checked.error());
 
-    for(std::size_t i = horizon; i > 0; --i)
+    std::vector<MatK> gains(As.size());
+    MatNxN P = Qf;
+    for(std::size_t i = As.size(); i > 0; --i)
     {
         std::size_t k = i - 1;
         const auto& Ak = As[k];
         const auto& Bk = Bs[k];
-        const auto& Qk = Qs[k];
-        const auto& Rk = Rs[k];
-
         auto BtP = (Bk.transpose() * P).eval();
-        auto S = (Rk + BtP * Bk).eval();
+        auto S = (Rs[k] + BtP * Bk).eval();
         MatK K = S.colPivHouseholderQr().solve(BtP * Ak).eval();
         gains[k] = K;
-        P = (Qk + Ak.transpose() * P * Ak - Ak.transpose() * P * Bk * K).eval();
+        P = (Qs[k] + Ak.transpose() * P * Ak - Ak.transpose() * P * Bk * K).eval();
     }
 
     return gains;
@@ -320,6 +343,16 @@ auto partition_lqi_gain(const Eigen::Matrix<Scalar, int(NX + NY), int(NX + NY)>&
     return result;
 }
 
+template <typename Scalar, std::size_t NX, std::size_t NU>
+auto lqr_cost_operands_finite(std::span<const Eigen::Matrix<Scalar, int(NX), 1>> xs,
+                              std::span<const Eigen::Matrix<Scalar, int(NU), 1>> us,
+                              const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
+                              const Eigen::Matrix<Scalar, int(NU), int(NU)>& R) -> bool
+{
+    const auto finite = [](const auto& v) { return v.allFinite(); };
+    return Q.allFinite() && R.allFinite() && std::ranges::all_of(xs, finite) && std::ranges::all_of(us, finite);
+}
+
 }
 
 /// LQI gain: augments state with integral of tracking error.
@@ -341,23 +374,26 @@ auto lqi_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
     return detail::partition_lqi_gain<Scalar, NX, NU, NY>(A_aug, B_aug, Q_aug, R);
 }
 
-// Evaluate quadratic trajectory cost: sum of x^T Q x + u^T R u.
-// If xs has one more element than us, the terminal state cost x_N^T Q x_N is included.
+// Sum of x' Q x + u' R u, with a terminal x_N' Q x_N when xs holds one more state than us; refuses any
+// other state count and any non-finite entry.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto lqr_cost(std::span<const Eigen::Matrix<Scalar, int(NX), 1>> xs,
               std::span<const Eigen::Matrix<Scalar, int(NU), 1>> us,
               const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
-              const Eigen::Matrix<Scalar, int(NU), int(NU)>& R) -> Scalar
+              const Eigen::Matrix<Scalar, int(NU), int(NU)>& R) -> ctrlpp::expected<Scalar, lqr_error>
 {
-    Scalar cost{0};
+    if(xs.size() != us.size() && xs.size() != us.size() + 1)
+        return ctrlpp::unexpected(lqr_error::trajectory_length_mismatch);
+    if(!detail::lqr_cost_operands_finite<Scalar, NX, NU>(xs, us, Q, R))
+        return ctrlpp::unexpected(lqr_error::non_finite_input);
 
+    Scalar cost{0};
     for(std::size_t k = 0; k < us.size(); ++k)
     {
         cost += (xs[k].transpose() * Q * xs[k])(0, 0);
         cost += (us[k].transpose() * R * us[k])(0, 0);
     }
 
-    // Terminal state cost if xs has one more element
     if(xs.size() == us.size() + 1)
         cost += (xs.back().transpose() * Q * xs.back())(0, 0);
 
@@ -400,9 +436,19 @@ public:
 
     explicit lqr_time_varying(std::vector<gain_type> gains) : gains_(std::move(gains)) {}
 
-    auto compute(const state_type& x, std::size_t k) const -> input_type { return (-gains_[k] * x).eval(); }
+    auto compute(const state_type& x, std::size_t k) const -> ctrlpp::expected<input_type, lqr_error>
+    {
+        if(k >= gains_.size())
+            return ctrlpp::unexpected(lqr_error::step_out_of_range);
+        return (-gains_[k] * x).eval();
+    }
 
-    auto gain(std::size_t k) const -> const gain_type& { return gains_[k]; }
+    auto gain(std::size_t k) const -> ctrlpp::expected<gain_type, lqr_error>
+    {
+        if(k >= gains_.size())
+            return ctrlpp::unexpected(lqr_error::step_out_of_range);
+        return gains_[k];
+    }
 
     auto horizon() const -> std::size_t { return gains_.size(); }
 
