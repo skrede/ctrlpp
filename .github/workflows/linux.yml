@@ -507,12 +507,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The argmin backend's own CMake does find_package(Eigen3); ctrlpp's
-      # FETCH_DEPS path downloads Eigen headers directly and never registers a
-      # findable Eigen3 package, so the subbuild needs a system Eigen config.
-      - name: Install system Eigen for the argmin subbuild
-        run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
-
       # A fetched dependency installs nothing, so it belongs to no export set and an
       # export referencing it cannot be written; the build refuses an install request
       # made on top of one instead of emitting a package that does not work. This job
@@ -564,12 +558,6 @@ jobs:
 
       - name: Install gcovr
         run: pip install gcovr
-
-      # The argmin backend's own CMake does find_package(Eigen3); ctrlpp's
-      # FETCH_DEPS path downloads Eigen headers directly and never registers a
-      # findable Eigen3 package, so the subbuild needs a system Eigen config.
-      - name: Install system Eigen for the argmin subbuild
-        run: sudo apt-get update && sudo apt-get install -y libeigen3-dev
 
       # The compiler is pinned rather than left to the image default, because
       # gcov reads notes written by the compiler that produced them and the
