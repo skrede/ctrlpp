@@ -39,7 +39,7 @@ generator="Unix Makefiles"
 march="-march=x86-64-v3"
 
 preregistration_commit=12bc9791082453bfc037ce1bbec6d177e39f5bb3
-argmin_pin=29de9ae75d2d6d5c07977dbee3dc10d6071f3bcd
+argmin_pin=775a756c9097f23abd868303734484dbf3c5888c
 proxsuite_upstream=b93d7778ffc3299d84b5cb0851022a29bf24a596
 competitor_pins=(
 "osqp 236713ce9a56c182ac3230d52108f952afce1523"
