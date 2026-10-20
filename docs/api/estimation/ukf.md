@@ -67,8 +67,9 @@ every other sole factory in the library. The sigma-point strategies keep
 
 The first overload takes a strategy already built, so the strategy was validated
 where it was built; omit it and the strategy's own in-domain defaults are used.
-A strategy with no domain to validate, such as `julier_sigma_points`, is built
-directly and handed to this overload.
+Both shipped strategies, `merwe_sigma_points` and `julier_sigma_points`, are
+built through their own `try_create`, so either works with this overload and
+with the next one.
 
 The second overload builds the strategy inside the filter, so it is the only
 path on which a sigma-point parameter set can be out of domain. It forwards the
@@ -215,7 +216,34 @@ Choosing good default values across dimension, scale, and scalar tier is a separ
 
 Alternative strategy with a single kappa parameter. Generates 2N+1 sigma points.
 
+```cpp
+template <typename Scalar>
+struct julier_options
+{
+    Scalar kappa{Scalar{0}};
+};
+```
+
 Header: `#include <ctrlpp/estimation/sigma_points/julier_sigma_points.h>`
+
+#### Parameter domain
+
+The strategy is constructed through a fallible factory, because kappa has an exact admissible domain:
+
+```cpp
+static auto try_create(options_t opts = options_t{})
+    -> ctrlpp::expected<julier_sigma_points, filter_error>;
+```
+
+The sum `n + kappa` is both the radicand of the offset scale `gamma = sqrt(n + kappa)` and the weight denominator, which fixes the domain exactly. There is no tolerance and no fitted constant.
+
+| Rejection | Enumerator | Why |
+|-----------|------------|-----|
+| `kappa` is NaN or infinite, or `n + kappa <= 0` | `filter_error::non_positive_scaling_radicand` | The sum sits under the square root that scales the offsets and divides every weight, so a non-positive sum yields non-finite offsets or non-finite weights |
+
+A negative `kappa` with `n + kappa > 0` is inside the domain. Julier's own choice `kappa = 3 - n` is such a value for `n > 3`; it gives a negative center weight, which the method permits.
+
+Default construction (`julier_sigma_points<Scalar, NX>{}`) cannot fail: with the default zero `kappa` the sum `n + kappa` reduces to `NX`, which is required to be positive. There is no public constructor from options; a non-default `kappa` goes through `try_create`, or through the options overload of the filter's `create`, which forwards the same rejection.
 
 ### gain_decomposition
 

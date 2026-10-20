@@ -57,14 +57,9 @@ TEST_CASE("ukf with julier strategy")
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 10.0;
 
-    // The Julier strategy has no domain to validate, so it is built here and
-    // handed to the strategy-taking factory. A strategy that does validate its
-    // options is built through the options-taking overload instead, which
-    // forwards the strategy's own rejection.
     auto filter = ctrlpp::test::constructed(
         ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement, julier_sigma_points<double, 2>>::create(
-            dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0},
-            julier_sigma_points<double, 2>{julier_options<double>{.kappa = 1.0}}));
+            dyn, meas, ukf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}, julier_options<double>{.kappa = 1.0}));
 
     double true_pos = 0.0;
     double true_vel = 1.0;
@@ -85,6 +80,21 @@ TEST_CASE("ukf with julier strategy")
     auto est = filter.state();
     CHECK_THAT(est(0), Catch::Matchers::WithinAbs(true_pos, 0.5));
     CHECK_THAT(est(1), Catch::Matchers::WithinAbs(true_vel, 0.5));
+}
+
+TEST_CASE("ukf options factory forwards the julier strategy's refusal")
+{
+    using filter_t = ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement, julier_sigma_points<double, 2>>;
+
+    Matrix<double, 1, 1> R;
+    R << 1.0;
+    const ukf_config<double, 2, 1, 1> config{
+        .Q = Matrix<double, 2, 2>::Identity() * 0.01, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity()};
+
+    auto result = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, config, julier_options<double>{.kappa = -2.0});
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == filter_error::non_positive_scaling_radicand);
 }
 
 TEST_CASE("ukf with qr gain decomposition")
