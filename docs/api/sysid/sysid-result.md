@@ -66,10 +66,11 @@ struct moesp_result {
     Eigen::VectorX<Scalar> singular_values;
     fit_metrics<Scalar> metrics;
     Scalar condition_number;
+    Vector<Scalar, NX> initial_state;
 };
 ```
 
-Returned by `moesp` inside a `ctrlpp::expected`. Contains the identified system, the oblique projection singular values (for model order selection), fit metrics, and the condition number of the observability matrix truncation.
+Returned by `moesp` inside a `ctrlpp::expected`. Contains the identified system, the oblique projection singular values (for model order selection), fit metrics, the condition number of the observability matrix truncation, and the estimated initial state. The metrics simulate the identified model from `initial_state`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -77,6 +78,7 @@ Returned by `moesp` inside a `ctrlpp::expected`. Contains the identified system,
 | `singular_values` | `Eigen::VectorX<Scalar>` | SVD singular values from oblique projection |
 | `metrics` | `fit_metrics<Scalar>` | NRMSE and VAF |
 | `condition_number` | `Scalar` | Condition number of the truncated observability matrix; always finite on a returned result |
+| `initial_state` | `Vector<Scalar, NX>` | State at the first sample in the identified state basis, estimated jointly with `B` and `D` |
 
 ## Usage Example
 

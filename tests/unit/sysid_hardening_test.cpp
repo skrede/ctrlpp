@@ -50,6 +50,7 @@
 #include <complex>
 #include <utility>
 #include <optional>
+#include <algorithm>
 
 namespace {
 
@@ -772,21 +773,33 @@ TEST_CASE("Batch ARX with rank-deficient regressors", "[arx][hardening][negative
 
 namespace {
 
-/// Noise-free single-input single-output record of the second-order system
-/// A = [[0.8, 0.1], [-0.2, 0.9]], B = (0.5, 0.3), C = (1, 0), D = 0, from a zero
-/// initial state under a seeded Gaussian input. Its poles are 0.85 +- 0.1323i.
-auto complex_pair_record(int samples) -> std::pair<Eigen::RowVectorXd, Eigen::RowVectorXd>
+struct complex_pair_system
+{
+    Eigen::Matrix2d A;
+    Eigen::Vector2d B;
+    Eigen::RowVector2d C;
+};
+
+/// A = [[0.8, 0.1], [-0.2, 0.9]], B = (0.5, 0.3), C = (1, 0), D = 0. Its poles are
+/// 0.85 +- 0.1323i.
+auto complex_pair() -> complex_pair_system
 {
     Eigen::Matrix2d A;
     A << 0.8, 0.1, -0.2, 0.9;
-    Eigen::Vector2d const B(0.5, 0.3);
-    Eigen::RowVector2d const C(1.0, 0.0);
+    return {A, Eigen::Vector2d(0.5, 0.3), Eigen::RowVector2d(1.0, 0.0)};
+}
 
+/// Noise-free single-input single-output record of the complex-pair system from
+/// the initial state x0 under a seeded Gaussian input.
+auto complex_pair_record(int samples, Eigen::Vector2d const& x0 = Eigen::Vector2d::Zero())
+    -> std::pair<Eigen::RowVectorXd, Eigen::RowVectorXd>
+{
+    auto const [A, B, C] = complex_pair();
     std::mt19937 gen(42);
     std::normal_distribution<double> input(0.0, 1.0);
     Eigen::RowVectorXd Y(samples);
     Eigen::RowVectorXd U(samples);
-    Eigen::Vector2d x = Eigen::Vector2d::Zero();
+    Eigen::Vector2d x = x0;
     for (int t = 0; t < samples; ++t) {
         U(t) = input(gen);
         Y(t) = (C * x)(0);
@@ -795,26 +808,35 @@ auto complex_pair_record(int samples) -> std::pair<Eigen::RowVectorXd, Eigen::Ro
     return {Y, U};
 }
 
-/// First-order bound on the eigenvalue error of a noise-free order-two
-/// identification with i block rows.
+auto spectral_norm(Eigen::Matrix2d const& M) -> double
+{
+    return Eigen::JacobiSVD<Eigen::Matrix2d>(M).singularValues()(0);
+}
+
+/// First-order bound on the angle between the computed and the exact
+/// observability range of a noise-free identification with i block rows.
 ///
 /// The Householder LQ of the j-by-4i Hankel stack H is backward stable with
 /// ||dH|| <= gamma_{4ij} ||H||_F (Higham, "Accuracy and Stability of Numerical
 /// Algorithms", 2002, Thm 19.4); Wedin's theorem turns that into a subspace angle
-/// over the projection's second singular value; the shift solve amplifies the
-/// angle by the condition of the truncated observability matrix and by one plus
-/// ||A||; Bauer-Fike carries the result to the eigenvalues through the condition
-/// of the eigenvector matrix. Every factor is read off the identified model.
-auto complex_pair_eigenvalue_bound(Eigen::RowVectorXd const& Y, Eigen::RowVectorXd const& U, int i,
-                                   ctrlpp::moesp_result<double, 2, 1, 1> const& result) -> double
+/// over the projection's second singular value.
+auto observability_angle_bound(Eigen::RowVectorXd const& Y, Eigen::RowVectorXd const& U, int i,
+                               ctrlpp::moesp_result<double, 2, 1, 1> const& result) -> double
 {
     int const j = static_cast<int>(Y.size()) - 2 * i + 1;
     double hankel_norm_sq = 0.0;
     for (int k = 0; k < 2 * i; ++k)
         hankel_norm_sq += Y.segment(k, j).squaredNorm() + U.segment(k, j).squaredNorm();
     double const ku = 4.0 * i * j * eps / 2.0;
-    double const angle = ku / (1.0 - ku) * std::sqrt(hankel_norm_sq) / result.singular_values(1);
+    return ku / (1.0 - ku) * std::sqrt(hankel_norm_sq) / result.singular_values(1);
+}
 
+/// First-order bound on ||A_hat - A|| in the identified basis: the shift solve
+/// amplifies the observability angle by the condition of the truncated
+/// observability matrix and by one plus ||A||, both read off the identified model.
+auto shift_error_bound(Eigen::RowVectorXd const& Y, Eigen::RowVectorXd const& U, int i,
+                       ctrlpp::moesp_result<double, 2, 1, 1> const& result) -> double
+{
     Eigen::Matrix2d const A = result.system.A;
     Eigen::MatrixXd O(i - 1, 2);
     Eigen::RowVector2d row = result.system.C;
@@ -824,11 +846,140 @@ auto complex_pair_eigenvalue_bound(Eigen::RowVectorXd const& Y, Eigen::RowVector
     }
     Eigen::JacobiSVD<Eigen::MatrixXd> const shift_svd(O);
     double const shift_condition = shift_svd.singularValues()(0) / shift_svd.singularValues()(1);
-    Eigen::EigenSolver<Eigen::Matrix2d> const eig(A);
+    return shift_condition * (1.0 + spectral_norm(A)) * observability_angle_bound(Y, U, i, result);
+}
+
+/// First-order bound on the eigenvalue error: Bauer-Fike carries the shift error
+/// to the eigenvalues through the condition of the eigenvector matrix.
+auto complex_pair_eigenvalue_bound(Eigen::RowVectorXd const& Y, Eigen::RowVectorXd const& U, int i,
+                                   ctrlpp::moesp_result<double, 2, 1, 1> const& result) -> double
+{
+    Eigen::EigenSolver<Eigen::Matrix2d> const eig(result.system.A);
     Eigen::JacobiSVD<Eigen::Matrix2cd> const vec_svd(eig.eigenvectors());
     double const eigvec_condition = vec_svd.singularValues()(0) / vec_svd.singularValues()(1);
-    double const a_norm = Eigen::JacobiSVD<Eigen::Matrix2d>(A).singularValues()(0);
-    return eigvec_condition * shift_condition * (1.0 + a_norm) * angle;
+    return eigvec_condition * shift_error_bound(Y, U, i, result);
+}
+
+/// The joint regression rebuilt from an identified A and C: row t holds the
+/// responses C X_t of the B basis, the input u_t, and the free response C A^t.
+auto joint_regression(Eigen::Matrix2d const& A, Eigen::RowVector2d const& C, Eigen::RowVectorXd const& U)
+    -> Eigen::MatrixXd
+{
+    Eigen::MatrixXd Phi(U.size(), 5);
+    Eigen::Matrix2d X = Eigen::Matrix2d::Zero();
+    Eigen::RowVector2d free_response = C;
+    for (Eigen::Index t = 0; t < U.size(); ++t) {
+        Phi.row(t) << C * X, U(t), free_response;
+        X = A * X + U(t) * Eigen::Matrix2d::Identity();
+        free_response = free_response * A;
+    }
+    return Phi;
+}
+
+/// Frobenius bound on Phi(A + dA, C + dC) - Phi(A, C), first order:
+/// ||d(C A^t)|| <= ||dC|| ||A^t|| + ||C|| ||dA|| sum_k ||A^k|| ||A^(t-1-k)||, and
+/// a B-basis row is the input convolved with those rows.
+auto regression_perturbation_bound(Eigen::Matrix2d const& A, double c_norm, Eigen::RowVectorXd const& U,
+                                   double a_error, double c_error) -> double
+{
+    Eigen::Index const N = U.size();
+    Eigen::VectorXd power(N + 1);
+    Eigen::Matrix2d P = Eigen::Matrix2d::Identity();
+    for (Eigen::Index k = 0; k <= N; ++k, P = P * A)
+        power(k) = spectral_norm(P);
+    Eigen::VectorXd row(N);
+    for (Eigen::Index t = 0; t < N; ++t)
+        row(t) = c_error * power(t) + c_norm * a_error * power.head(t).dot(power.head(t).reverse());
+    double sum_sq = 0.0;
+    for (Eigen::Index t = 0; t < N; ++t) {
+        double const basis = U.head(t).cwiseAbs().dot(row.head(t).reverse());
+        sum_sq += row(t) * row(t) + basis * basis;
+    }
+    return std::sqrt(sum_sq);
+}
+
+/// Absolute first-order error bounds, in the identified basis, on A, C, the joint
+/// least-squares solution theta = (B, D, x0), and the fit's NRMSE.
+struct joint_estimate_bound
+{
+    double a;
+    double c;
+    double theta;
+    double nrmse;
+};
+
+/// The regression Phi is rebuilt from the identified A and C, and two first-order
+/// contributions add. Householder least squares has relative backward error
+/// m n eps (Higham 2002, Thm 20.3; m = N rows and n = 2 NX + 1 columns, counted),
+/// which the consistent system carries to theta as 2 cond(Phi) times it
+/// (Thm 20.1). The subspace error of A and C, the shift bound above plus the
+/// gamma_{NX+1} rounding of each propagation step, and the observability angle
+/// times ||Gamma|| = sqrt(sigma_1), perturbs Phi by dPhi, which moves theta by
+/// at most ||dPhi|| ||theta|| / sigma_min(Phi) and leaves a residual of at most
+/// ||dPhi|| ||theta||.
+auto joint_estimate_error_bound(Eigen::RowVectorXd const& Y, Eigen::RowVectorXd const& U, int i,
+                                ctrlpp::moesp_result<double, 2, 1, 1> const& result) -> joint_estimate_bound
+{
+    Eigen::Matrix2d const A = result.system.A;
+    Eigen::RowVector2d const C = result.system.C;
+    Eigen::MatrixXd const Phi = joint_regression(A, C, U);
+    Eigen::JacobiSVD<Eigen::MatrixXd> const svd(Phi, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    double const theta_norm = svd.solve(Y.transpose()).norm();
+    double const s_max = svd.singularValues()(0);
+    double const s_min = svd.singularValues()(svd.singularValues().size() - 1);
+
+    double const backward = static_cast<double>(Phi.rows() * Phi.cols()) * eps;
+    double const forward = 2.0 * backward * (s_max / s_min) / (1.0 - backward * (s_max / s_min));
+    double const step_rounding = 3.0 * eps / (1.0 - 3.0 * eps) * A.norm();
+    double const a_error = shift_error_bound(Y, U, i, result) + step_rounding;
+    double const c_error = observability_angle_bound(Y, U, i, result) * std::sqrt(result.singular_values(0));
+    double const dphi = regression_perturbation_bound(A, C.norm(), U, a_error, c_error);
+
+    double const residual = dphi * theta_norm + backward * (s_max * theta_norm + Y.norm());
+    double const centered = (Y.array() - Y.mean()).matrix().norm();
+    return {a_error, c_error, (dphi / s_min + forward) * theta_norm, residual / centered};
+}
+
+/// First-order bound on the error of C A^k v from the bounds on C, A and v.
+auto markov_error_bound(int k, double v_norm, ctrlpp::moesp_result<double, 2, 1, 1> const& result,
+                        joint_estimate_bound const& bound) -> double
+{
+    double const a = spectral_norm(result.system.A);
+    double const c = result.system.C.norm();
+    return bound.c * std::pow(a, k) * v_norm + c * k * std::pow(a, k - 1) * bound.a * v_norm
+           + c * std::pow(a, k) * bound.theta;
+}
+
+/// The basis-invariant products D, C B, C A B, C x0 and C A x0 against the
+/// system and initial state that generated the record, and the NRMSE, each to
+/// its derived bound; the initial state itself to the bound on theta.
+void require_joint_estimate(Eigen::RowVectorXd const& Y, Eigen::RowVectorXd const& U, Eigen::Vector2d const& x0,
+                            ctrlpp::moesp_result<double, 2, 1, 1> const& result)
+{
+    auto const truth = complex_pair();
+    int const default_block_rows = std::min(static_cast<int>(Y.size()) / 4, 30);
+    auto const bound = joint_estimate_error_bound(Y, U, default_block_rows, result);
+    auto const& sys = result.system;
+    auto const& x0_hat = result.initial_state;
+    double const b_norm = sys.B.norm();
+    double const x0_norm = x0_hat.norm();
+
+    double const d_error = std::abs(sys.D(0, 0));
+    double const cb_error = std::abs((sys.C * sys.B)(0) - (truth.C * truth.B)(0));
+    double const cab_error = std::abs((sys.C * sys.A * sys.B)(0) - (truth.C * truth.A * truth.B)(0));
+    double const cx0_error = std::abs((sys.C * x0_hat)(0) - (truth.C * x0)(0));
+    double const cax0_error = std::abs((sys.C * sys.A * x0_hat)(0) - (truth.C * truth.A * x0)(0));
+    CAPTURE(sys.D(0, 0), (sys.C * sys.B)(0), (sys.C * sys.A * sys.B)(0), result.metrics.nrmse);
+    CAPTURE((sys.C * x0_hat)(0), (sys.C * sys.A * x0_hat)(0), x0_norm);
+    CAPTURE(bound.a, bound.c, bound.theta, bound.nrmse);
+    CHECK(d_error <= bound.theta);
+    CHECK(cb_error <= markov_error_bound(0, b_norm, result, bound));
+    CHECK(cab_error <= markov_error_bound(1, b_norm, result, bound));
+    CHECK(cx0_error <= markov_error_bound(0, x0_norm, result, bound));
+    CHECK(cax0_error <= markov_error_bound(1, x0_norm, result, bound));
+    CHECK(result.metrics.nrmse <= bound.nrmse);
+    if (x0.isZero(0.0))
+        CHECK(x0_norm <= bound.theta);
 }
 
 template <typename Result>
@@ -1138,6 +1289,32 @@ TEST_CASE("MOESP singular values refuse the records the identification refuses",
         Eigen::RowVectorXd Y_nan = Y;
         Y_nan(3) = std::numeric_limits<double>::quiet_NaN();
         CHECK(refusal_of(ctrlpp::moesp_singular_values(Y_nan, U)) == ctrlpp::sysid_error::non_finite_sample);
+    }
+}
+
+TEST_CASE("MOESP identifies from a record that does not start at rest", "[moesp][hardening]")
+{
+    // The free response C A^t x0 is part of the output; a regression without it
+    // absorbs it into B and D.
+    auto const identify_from = [](Eigen::Vector2d const& x0) {
+        auto const [Y, U] = complex_pair_record(500, x0);
+        auto const result = ctrlpp::test::constructed(ctrlpp::moesp<2>(Y, U));
+        require_joint_estimate(Y, U, x0, result);
+    };
+
+    SECTION("started at (5, -5)")
+    {
+        identify_from(Eigen::Vector2d(5.0, -5.0));
+    }
+
+    SECTION("started at (20, -20)")
+    {
+        identify_from(Eigen::Vector2d(20.0, -20.0));
+    }
+
+    SECTION("started at rest, where the initial state estimate is zero")
+    {
+        identify_from(Eigen::Vector2d::Zero());
     }
 }
 

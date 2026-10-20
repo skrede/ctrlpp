@@ -1,6 +1,8 @@
 #ifndef HPP_GUARD_CTRLPP_SYSID_SYSID_RESULT_H
 #define HPP_GUARD_CTRLPP_SYSID_SYSID_RESULT_H
 
+#include "ctrlpp/types.h"
+
 #include "ctrlpp/model/state_space.h"
 
 #include "ctrlpp/sysid/fit_metrics.h"
@@ -47,6 +49,8 @@ struct moesp_result
     Eigen::VectorX<Scalar> singular_values{};
     fit_metrics<Scalar> metrics{};
     Scalar condition_number{};
+    /// The initial state in the identified state basis.
+    Vector<Scalar, NX> initial_state;
 };
 
 }

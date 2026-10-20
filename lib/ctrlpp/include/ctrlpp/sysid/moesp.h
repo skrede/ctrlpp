@@ -138,74 +138,55 @@ Matrix<Scalar, NX, NX> extract_system_A(const Eigen::MatrixX<Scalar>& Gamma, Eig
     return A;
 }
 
-/// Recover B and D via least-squares on state basis propagation.
+template <typename Scalar, std::size_t NX>
+struct moesp_input_response
+{
+    Matrix<Scalar, NX, 1> B;
+    Matrix<Scalar, 1, 1> D;
+    Vector<Scalar, NX> x0;
+};
+
+/// @cite verhaegen2007 -- the initial state is estimated jointly with B and D:
+/// row t of the regression is [C X_t, u_t, C A^t], with X_{t+1} = A X_t + u_t I.
 template <typename Scalar, std::size_t NX, typename Derived1, typename Derived2>
-std::pair<Matrix<Scalar, NX, 1>, Matrix<Scalar, 1, 1>> recover_BD(const Matrix<Scalar, NX, NX>& A,
-                                                                    const Matrix<Scalar, 1, NX>& C,
-                                                                    const Eigen::MatrixBase<Derived1>& Y,
-                                                                    const Eigen::MatrixBase<Derived2>& U)
+moesp_input_response<Scalar, NX> recover_initial_state_and_BD(const Matrix<Scalar, NX, NX>& A,
+                                                              const Matrix<Scalar, 1, NX>& C,
+                                                              const Eigen::MatrixBase<Derived1>& Y,
+                                                              const Eigen::MatrixBase<Derived2>& U)
 {
     static constexpr auto nx = static_cast<Eigen::Index>(NX);
-    auto N_data = Y.cols();
-
-    Eigen::MatrixX<Scalar> Phi(N_data, nx + 1);
-    Phi.setZero();
-    Eigen::VectorX<Scalar> y_target(N_data);
-
-    Eigen::MatrixX<Scalar> x_basis = Eigen::MatrixX<Scalar>::Zero(nx, nx);
-
-    for(Eigen::Index t = 0; t < N_data; ++t)
+    auto const samples = Y.cols();
+    Eigen::MatrixX<Scalar> Phi(samples, 2 * nx + 1);
+    Matrix<Scalar, NX, NX> X = Matrix<Scalar, NX, NX>::Zero();
+    Matrix<Scalar, 1, NX> free_response = C;
+    for(Eigen::Index t = 0; t < samples; ++t)
     {
-        Scalar u_t = U(0, t);
-        y_target(t) = Y(0, t);
-
-        for(Eigen::Index j = 0; j < nx; ++j)
-            Phi(t, j) = (C * x_basis.col(j))(0, 0);
-        Phi(t, nx) = u_t;
-
-        Eigen::MatrixX<Scalar> x_basis_new = A * x_basis;
-        for(Eigen::Index j = 0; j < nx; ++j)
-            x_basis_new(j, j) += u_t;
-        x_basis = x_basis_new;
+        Phi.block(t, 0, 1, nx) = C * X;
+        Phi(t, nx) = U(0, t);
+        Phi.block(t, nx + 1, 1, nx) = free_response;
+        X = (A * X).eval();
+        X.diagonal().array() += U(0, t);
+        free_response = (free_response * A).eval();
     }
-
-    Eigen::VectorX<Scalar> bd = Phi.colPivHouseholderQr().solve(y_target);
-
-    Matrix<Scalar, NX, 1> B;
-    for(Eigen::Index r = 0; r < nx; ++r)
-        B(r, 0) = bd(r);
-
-    Matrix<Scalar, 1, 1> D;
-    D(0, 0) = bd(nx);
-
-    return {B, D};
+    Eigen::VectorX<Scalar> const theta = Phi.colPivHouseholderQr().solve(Y.row(0).transpose());
+    return {theta.head(nx), theta.segment(nx, 1), theta.tail(nx)};
 }
 
-/// Simulate identified model and compute fit metrics.
 template <typename Scalar, std::size_t NX, typename Derived1, typename Derived2>
-auto compute_moesp_metrics(const Matrix<Scalar, NX, NX>& A,
-                           const Matrix<Scalar, NX, 1>& B,
-                           const Matrix<Scalar, 1, NX>& C,
-                           const Matrix<Scalar, 1, 1>& D,
-                           const Eigen::MatrixBase<Derived1>& Y,
-                           const Eigen::MatrixBase<Derived2>& U) -> fit_metrics<Scalar>
+fit_metrics<Scalar> compute_moesp_metrics(const discrete_state_space<Scalar, NX, 1, 1>& sys,
+                                          const Vector<Scalar, NX>& x0,
+                                          const Eigen::MatrixBase<Derived1>& Y,
+                                          const Eigen::MatrixBase<Derived2>& U)
 {
-    auto N_data = Y.cols();
-    Vector<Scalar, NX> x = Vector<Scalar, NX>::Zero();
-    Eigen::VectorX<Scalar> y_predicted(N_data);
-    Eigen::VectorX<Scalar> y_actual(N_data);
-
-    for(Eigen::Index t = 0; t < N_data; ++t)
+    auto const samples = Y.cols();
+    Vector<Scalar, NX> x = x0;
+    Eigen::VectorX<Scalar> y_predicted(samples);
+    for(Eigen::Index t = 0; t < samples; ++t)
     {
-        Matrix<Scalar, 1, 1> u_vec;
-        u_vec(0, 0) = U(0, t);
-        auto y_hat = (C * x + D * u_vec).eval();
-        y_predicted(t) = y_hat(0, 0);
-        x = (A * x + B * u_vec).eval();
-        y_actual(t) = Y(0, t);
+        y_predicted(t) = (sys.C * x)(0, 0) + sys.D(0, 0) * U(0, t);
+        x = (sys.A * x + sys.B * U(0, t)).eval();
     }
-
-    return compute_fit_metrics_unchecked(y_actual, y_predicted);
+    return compute_fit_metrics_unchecked(Y.row(0).transpose(), y_predicted);
 }
 
 template <typename Scalar>
@@ -267,22 +248,27 @@ auto moesp_observability(const Eigen::MatrixX<Scalar>& O_i) -> expected<moesp_su
 }
 
 template <std::size_t NX, typename Scalar, typename Derived1, typename Derived2>
-auto moesp_system(const Eigen::MatrixX<Scalar>& Gamma, const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U)
-    -> expected<discrete_state_space<Scalar, NX, 1, 1>, sysid_error>
+auto moesp_system(moesp_subspace<Scalar> subspace, const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U)
+    -> expected<moesp_result<Scalar, NX, 1, 1>, sysid_error>
 {
     // The output row is the first block row of Gamma; its first column only
     // coincides with it for NX = 1.
-    Matrix<Scalar, 1, NX> C = Gamma.topRows(1);
+    Matrix<Scalar, 1, NX> C = subspace.gamma.topRows(1);
 
-    auto A = extract_system_A<Scalar, NX>(Gamma, Y.rows());
+    auto A = extract_system_A<Scalar, NX>(subspace.gamma, Y.rows());
     if(!A.allFinite())
         return unexpected(sysid_error::model_not_identified);
 
-    auto [B, D] = recover_BD<Scalar, NX>(A, C, Y, U);
-    if(!B.allFinite() || !D.allFinite())
+    auto const fit = recover_initial_state_and_BD<Scalar, NX>(A, C, Y, U);
+    if(!fit.B.allFinite() || !fit.D.allFinite() || !fit.x0.allFinite())
         return unexpected(sysid_error::model_not_identified);
 
-    return discrete_state_space<Scalar, NX, 1, 1>{.A = A, .B = B, .C = C, .D = D};
+    discrete_state_space<Scalar, NX, 1, 1> const sys{.A = A, .B = fit.B, .C = C, .D = fit.D};
+    return moesp_result<Scalar, NX, 1, 1>{.system = sys,
+                                          .singular_values = std::move(subspace.singular_values),
+                                          .metrics = compute_moesp_metrics(sys, fit.x0, Y, U),
+                                          .condition_number = subspace.condition_number,
+                                          .initial_state = fit.x0};
 }
 
 }
@@ -315,15 +301,16 @@ auto moesp_singular_values(const Eigen::MatrixBase<Derived1>& Y, const Eigen::Ma
 ///  * (i - 1) * ny < NX, an underdetermined shift relation -> sysid_error::block_rows_below_order.
 ///  * N - 2i + 1 < i + NX, too few projection columns -> sysid_error::too_few_samples.
 ///  * a sample is NaN or infinite -> sysid_error::non_finite_sample.
-/// After the projection, a non-finite condition number or system matrix is
-/// reported as sysid_error::model_not_identified. On success the condition
-/// number sv(0) / sv(NX - 1) is finite.
+/// After the projection, a non-finite condition number, system matrix or initial
+/// state is reported as sysid_error::model_not_identified. On success the
+/// condition number sv(0) / sv(NX - 1) is finite. The record need not start at
+/// rest: the initial state is estimated with B and D, and the fit metrics score
+/// the model simulated from it.
 template <std::size_t NX, typename Derived1, typename Derived2>
     requires ctrlpp_floating_scalar<typename Derived1::Scalar>
 auto moesp(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
     -> expected<moesp_result<typename Derived1::Scalar, NX, 1, 1>, sysid_error>
 {
-    using Scalar = typename Derived1::Scalar;
     static_assert(NX >= 1, "moesp requires NX >= 1");
     auto const i = detail::resolve_block_rows(block_rows, Y.cols());
     if(auto const gate = detail::check_moesp_record(Y, U, i, NX); !gate)
@@ -333,15 +320,7 @@ auto moesp(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived
     auto subspace = detail::moesp_observability<NX>(projection.O_i);
     if(!subspace)
         return unexpected(subspace.error());
-    auto const sys = detail::moesp_system<NX>(subspace->gamma, Y, U);
-    if(!sys)
-        return unexpected(sys.error());
-
-    return moesp_result<Scalar, NX, 1, 1>{
-        .system = *sys,
-        .singular_values = std::move(subspace->singular_values),
-        .metrics = detail::compute_moesp_metrics<Scalar, NX>(sys->A, sys->B, sys->C, sys->D, Y, U),
-        .condition_number = subspace->condition_number};
+    return detail::moesp_system<NX>(std::move(*subspace), Y, U);
 }
 
 }

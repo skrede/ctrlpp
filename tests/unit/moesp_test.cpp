@@ -92,6 +92,7 @@ TEST_CASE("MOESP identifies 2nd-order system with good fit")
 
     // Simulate identified model on input data and check output match
     REQUIRE(result.metrics.nrmse < 0.1);
+    REQUIRE(result.initial_state.allFinite());
 }
 
 TEST_CASE("MOESP condition number is finite and positive")

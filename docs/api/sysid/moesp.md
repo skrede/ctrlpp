@@ -1,6 +1,6 @@
 # moesp
 
-Subspace system identification using the PO-MOESP algorithm. Identifies a discrete-time linear state-space model of a given order from input/output data by projecting the future outputs onto the past inputs and outputs (the instrumental variables) and the orthogonal complement of the future inputs, then recovering the extended observability matrix via a singular value decomposition. Returns a `ctrlpp::expected` holding the identified system in state-space form with fit metrics and condition number, or a `sysid_error` naming why the record was refused.
+Subspace system identification using the PO-MOESP algorithm. Identifies a discrete-time linear state-space model of a given order from input/output data by projecting the future outputs onto the past inputs and outputs (the instrumental variables) and the orthogonal complement of the future inputs, then recovering the extended observability matrix via a singular value decomposition. `A` and `C` follow from the observability matrix; `B`, `D` and the initial state are then estimated together by one least-squares fit, so the record need not start at rest. Returns a `ctrlpp::expected` holding the identified system in state-space form with its estimated initial state, fit metrics and condition number, or a `sysid_error` naming why the record was refused.
 
 ## Header and Alias
 
@@ -40,10 +40,13 @@ struct moesp_result {
     Eigen::VectorX<Scalar> singular_values;
     fit_metrics<Scalar> metrics;
     Scalar condition_number;
+    Vector<Scalar, NX> initial_state;
 };
 ```
 
 The `singular_values` field from the oblique projection SVD can be used to determine the appropriate model order (look for a gap in the singular value spectrum). `condition_number` is `sv(0) / sv(NX - 1)`, the ratio of the largest singular value to the last one the requested order consumes. It is a diagnostic of how well the order-NX subspace is separated, and on a returned model it is always finite.
+
+`initial_state` is the state at the first sample, expressed in the identified state basis (the realization is determined only up to a similarity transform, so compare `C * initial_state` with the record's free response rather than with a state vector from another basis). It is estimated jointly with `B` and `D`: row `t` of the regression holds the responses `C X_t` of the `B` basis, the input `u_t`, and the free response `C A^t`, so a record that starts away from rest does not bias `B` and `D`. The fit `metrics` score the identified model simulated from `initial_state`, not from zero.
 
 ## Refusals
 
@@ -57,7 +60,7 @@ With `N` the sample count and `i` the block-row count actually used (`block_rows
 | `N - 2i + 1 < i + NX` | `sysid_error::too_few_samples` | The block Hankel matrices cannot supply the `NX` projection columns the order needs. At `N - 2i + 1 <= 0` they do not exist at all. |
 | a sample is NaN or infinite | `sysid_error::non_finite_sample` | Samples enter the factorization directly. |
 
-After the projection, the identification is refused with `sysid_error::model_not_identified` when the condition number is not finite (the `NX`-th singular value is zero, as for an all-zero record, or so small against the leading one that the ratio overflows) or when an extracted system matrix is non-finite. No partially identified or zeroed model is returned.
+After the projection, the identification is refused with `sysid_error::model_not_identified` when the condition number is not finite (the `NX`-th singular value is zero, as for an all-zero record, or so small against the leading one that the ratio overflows) or when an extracted system matrix or the estimated initial state is non-finite. No partially identified or zeroed model is returned.
 
 ## Singular Value Helper
 
@@ -130,6 +133,7 @@ int main()
               << "  A =\n" << result->system.A << "\n"
               << "  B =\n" << result->system.B << "\n"
               << "  C = " << result->system.C << "\n"
+              << "  x0 =\n" << result->initial_state << "\n"
               << "  NRMSE = " << result->metrics.nrmse << "\n"
               << "  VAF   = " << result->metrics.vaf << " %\n"
               << "  Cond  = " << result->condition_number << "\n";

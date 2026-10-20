@@ -200,6 +200,11 @@ Both offline methods return a `ctrlpp::expected` whose value carries a
 constructors; check it before use, since a record either method cannot
 identify from is reported as a `sysid_error`.
 
+`moesp` also estimates the state at the first sample, together with `B` and
+`D`, and returns it as `initial_state` in the identified state basis. Its record
+therefore need not start at rest, and its fit metrics score the model simulated
+from that estimated state.
+
 ## Next Steps
 
 - [Batch ARX API](../../api/sysid/batch-arx.md)<br/> offline identification
