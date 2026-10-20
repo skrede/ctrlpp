@@ -44,7 +44,7 @@
 # nonzero harness floor, which means the figure beside it is not attributable to
 # the call under measurement.
 #
-# Usage: tools/stack_watermark.sh [--rows riccati|estimators|controller]
+# Usage: tools/stack_watermark.sh [--rows riccati|estimators|controller|NAME[,NAME...]]
 #                                 [--control | --diagonal | --held-dimension
 #                                  | --interior | --ceilings]
 #                                 [--frames] [--input-dimension N]
@@ -56,6 +56,8 @@
 #   --rows estimators    the five estimator rows
 #   --rows controller    the predictive controller row, whose build needs the
 #                        optional nonlinear-programming backend
+#   --rows NAME[,NAME]   the named estimator rows alone (kalman-filter, ekf,
+#                        ukf, manifold-ukf, mekf), on every estimator stage
 #   --control            the Riccati positive control (implies --rows riccati)
 #   --diagonal           equal dimensions on every swept axis, with the
 #                        per-grid-point build cost timed on a quiet station.
@@ -63,16 +65,18 @@
 #                        without being asked, because its published diagonal
 #                        carries the frame column.
 #   --held-dimension     each swept axis in turn with the others held, per row
-#   --interior           the interior fill, over every row at once: a stride of
+#   --interior           the interior fill, over every row at once unless --rows
+#                        names estimator or controller rows: a stride of
 #                        four on every caller-chosen axis, from the first
 #                        instantiable value to the instantiation limit. It is a
 #                        build campaign rather than a build job, so it JOURNALS
 #                        each finished point and skips what the journal already
 #                        holds when it is re-run.
-#   --ceilings           the two limits per row: the last dimension that
-#                        compiles at all, walked to from the fill's top rung
-#                        with the refusing diagnostic classified, and the last
-#                        that fits each task stack, read off the fill's journal
+#   --ceilings           the two limits per row, over the same rows as the fill:
+#                        the last dimension that compiles at all, walked to
+#                        from the fill's top rung with the refusing diagnostic
+#                        classified, and the last that fits each task stack,
+#                        read off the fill's journal
 #   --frames             also take the per-function frame measurement, which
 #                        costs a second compile per grid point
 #   --input-dimension N  the corpus input dimension (default 1); on the
@@ -257,6 +261,7 @@ STAGE="control"
 # carry would be counted as a row by anything scanning them.
 STAGE_LABEL=""
 ROW_SET="riccati"
+ROWS_EXPLICIT=0
 GAP_BYTES=1024
 EIGEN_ROOT="/usr/include/eigen3"
 BACKEND_TREE=""
@@ -323,6 +328,7 @@ while [ "$#" -gt 0 ]; do
             ;;
         --rows)
             ROW_SET="$2"
+            ROWS_EXPLICIT=1
             shift 2
             ;;
         --input-dimension)
@@ -366,11 +372,22 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
+SELECTED_ESTIMATOR_ROWS=("${ESTIMATOR_ROWS[@]}")
 case "${ROW_SET}" in
     riccati|estimators|controller) ;;
     *)
-        printf 'unrecognized row set: %s\n' "${ROW_SET}" >&2
-        exit 2
+        SELECTED_ESTIMATOR_ROWS=()
+        for name in ${ROW_SET//,/ }; do
+            for row in "${ESTIMATOR_ROWS[@]}"; do
+                if [ "${ROW_NAME[${row}]}" = "${name}" ]; then
+                    SELECTED_ESTIMATOR_ROWS+=("${row}")
+                    continue 2
+                fi
+            done
+            printf 'unrecognized row set: %s\n' "${ROW_SET}" >&2
+            exit 2
+        done
+        ROW_SET="estimators"
         ;;
 esac
 
@@ -379,13 +396,18 @@ if [ "${STAGE}" = "control" ] && [ "${ROW_SET}" != "riccati" ]; then
     exit 2
 fi
 
-# The interior fill and the limit stage span every published row at once,
-# including the one whose build needs the optional backend, so the row selector
-# does not apply to them and is not silently honored.
+# The interior fill and the limit stage span every published row at once unless
+# --rows narrows them. Without it they include the row whose build needs the
+# optional backend; with it the backend is fetched only for the controller row.
 SPANS_EVERY_ROW=0
 if [ "${STAGE}" = "interior" ] || [ "${STAGE}" = "ceilings" ]; then
-    SPANS_EVERY_ROW=1
-    ROW_SET="every"
+    if [ "${ROWS_EXPLICIT}" -eq 0 ]; then
+        SPANS_EVERY_ROW=1
+        ROW_SET="every"
+    elif [ "${ROW_SET}" = "riccati" ]; then
+        printf 'the Riccati rows have no interior fill and no limit stage\n' >&2
+        exit 2
+    fi
     if [ "${PAINT_MIB_EXPLICIT}" -eq 0 ]; then
         PAINT_MIB="${INTERIOR_PAINT_MIB}"
         STACK_MIB="${INTERIOR_STACK_MIB}"
@@ -396,6 +418,33 @@ if ! command -v "${COMPILER_COMMAND}" >/dev/null 2>&1; then
     printf '%s is not available; nothing was measured\n' "${COMPILER_COMMAND}" >&2
     exit 1
 fi
+
+row_selected()
+{
+    local row="$1" selected
+    case "${ROW_SET}" in
+        every)
+            return 0
+            ;;
+        controller)
+            [ "${row}" = "${ROW_NMPC_STATIC}" ]
+            return
+            ;;
+    esac
+    for selected in "${SELECTED_ESTIMATOR_ROWS[@]}"; do
+        [ "${selected}" = "${row}" ] && return 0
+    done
+    return 1
+}
+
+selected_row_names()
+{
+    local row names=()
+    for row in "${ESTIMATOR_ROWS[@]}" "${CONTROLLER_ROWS[@]}"; do
+        row_selected "${row}" && names+=("${ROW_NAME[${row}]}")
+    done
+    printf '%s' "${names[*]}"
+}
 
 INCLUDE_FLAGS=(-I "${REPOSITORY_ROOT}/lib/ctrlpp/include" -isystem "${EIGEN_ROOT}")
 
@@ -1065,7 +1114,7 @@ fi
 
 if [ "${STAGE}" = "diagonal" ] && [ "${ROW_SET}" != "controller" ]; then
     POINTS=()
-    for row in "${ESTIMATOR_ROWS[@]}"; do
+    for row in "${SELECTED_ESTIMATOR_ROWS[@]}"; do
         for rung in "${ESTIMATOR_LADDER[@]}"; do
             POINTS+=("${row} ${rung} ${rung} ${INPUT_DIMENSION} ${HORIZON_NOT_READ}")
         done
@@ -1079,7 +1128,7 @@ if [ "${STAGE}" = "diagonal" ] && [ "${ROW_SET}" != "controller" ]; then
     print_provenance
     run_grid POINTS
 
-    for row in "${ESTIMATOR_ROWS[@]}"; do
+    for row in "${SELECTED_ESTIMATOR_ROWS[@]}"; do
         held="nothing-diagonal"
         if [ "${row}" = "${ROW_MANIFOLD_UKF}" ]; then
             held="${ROW_STATE_AXIS[${row}]}-at-3"
@@ -1093,7 +1142,7 @@ fi
 
 if [ "${STAGE}" = "held" ] && [ "${ROW_SET}" != "controller" ]; then
     POINTS=()
-    for row in "${ESTIMATOR_ROWS[@]}"; do
+    for row in "${SELECTED_ESTIMATOR_ROWS[@]}"; do
         for rung in "${ESTIMATOR_LADDER[@]}"; do
             POINTS+=("${row} ${HELD_RUNG} ${rung} ${INPUT_DIMENSION} ${HORIZON_NOT_READ}")
         done
@@ -1115,7 +1164,7 @@ if [ "${STAGE}" = "held" ] && [ "${ROW_SET}" != "controller" ]; then
     print_provenance
     run_grid POINTS
 
-    for row in "${ESTIMATOR_ROWS[@]}"; do
+    for row in "${SELECTED_ESTIMATOR_ROWS[@]}"; do
         held_at="${HELD_RUNG}"
         if [ "${row}" = "${ROW_MANIFOLD_UKF}" ]; then
             held_at=3
@@ -1195,6 +1244,7 @@ if [ "${STAGE}" = "interior" ]; then
 
     POINTS=()
     for row in "${ROW_KALMAN}" "${ROW_EKF}" "${ROW_UKF}"; do
+        row_selected "${row}" || continue
         for state_dimension in "${INTERIOR_AXIS[@]}"; do
             for measurement_dimension in "${INTERIOR_AXIS[@]}"; do
                 POINTS+=("${row} ${state_dimension} ${measurement_dimension} ${INPUT_DIMENSION} ${HORIZON_NOT_READ} nothing-interior-fill")
@@ -1203,37 +1253,44 @@ if [ "${STAGE}" = "interior" ]; then
     done
 
     # One axis, because the rotation state is not a caller's to choose.
-    for measurement_dimension in "${INTERIOR_AXIS[@]}"; do
-        POINTS+=("${ROW_MANIFOLD_UKF} 3 ${measurement_dimension} ${INPUT_DIMENSION} ${HORIZON_NOT_READ} ${ROW_STATE_AXIS[${ROW_MANIFOLD_UKF}]}-at-3")
-    done
+    if row_selected "${ROW_MANIFOLD_UKF}"; then
+        for measurement_dimension in "${INTERIOR_AXIS[@]}"; do
+            POINTS+=("${ROW_MANIFOLD_UKF} 3 ${measurement_dimension} ${INPUT_DIMENSION} ${HORIZON_NOT_READ} ${ROW_STATE_AXIS[${ROW_MANIFOLD_UKF}]}-at-3")
+        done
+    fi
 
     # The bias axis starts at four rather than one: below three the propagation
     # has no leading bias block to subtract and the filter does not instantiate.
     # Three is legal and is not on the stride, which the published tables say.
-    for state_dimension in "${INTERIOR_BIAS_AXIS[@]}"; do
-        for measurement_dimension in "${INTERIOR_AXIS[@]}"; do
-            POINTS+=("${ROW_MEKF} ${state_dimension} ${measurement_dimension} ${INPUT_DIMENSION} ${HORIZON_NOT_READ} nothing-interior-fill")
+    if row_selected "${ROW_MEKF}"; then
+        for state_dimension in "${INTERIOR_BIAS_AXIS[@]}"; do
+            for measurement_dimension in "${INTERIOR_AXIS[@]}"; do
+                POINTS+=("${ROW_MEKF} ${state_dimension} ${measurement_dimension} ${INPUT_DIMENSION} ${HORIZON_NOT_READ} nothing-interior-fill")
+            done
         done
-    done
+    fi
 
     # The predictive controller row is enumerated over the REACHABLE triples
     # rather than over a rectangle: its decision dimension is derived, and most
     # of the rectangle induces one past the instantiation limit.
-    for state_dimension in "${INTERIOR_AXIS[@]}"; do
-        for input_dimension in "${INTERIOR_AXIS[@]}"; do
-            for horizon in "${INTERIOR_AXIS[@]}"; do
-                decision="$(derived_decision_dimension "${state_dimension}" "${input_dimension}" "${horizon}")"
-                if [ "${decision}" -le "${CONTROLLER_DECISION_LIMIT}" ]; then
-                    POINTS+=("${ROW_NMPC_STATIC} ${state_dimension} 0 ${input_dimension} ${horizon} nothing-interior-fill")
-                fi
+    if row_selected "${ROW_NMPC_STATIC}"; then
+        for state_dimension in "${INTERIOR_AXIS[@]}"; do
+            for input_dimension in "${INTERIOR_AXIS[@]}"; do
+                for horizon in "${INTERIOR_AXIS[@]}"; do
+                    decision="$(derived_decision_dimension "${state_dimension}" "${input_dimension}" "${horizon}")"
+                    if [ "${decision}" -le "${CONTROLLER_DECISION_LIMIT}" ]; then
+                        POINTS+=("${ROW_NMPC_STATIC} ${state_dimension} 0 ${input_dimension} ${horizon} nothing-interior-fill")
+                    fi
+                done
             done
         done
-    done
+    fi
 
     printf 'The interior fill: every caller-chosen axis of every row swept at a stride of\n'
     printf 'four, against every value of every other axis of that row. This describes the\n'
     printf 'shape of the interaction between the axes rather than only locating it, and it\n'
     printf 'resolves nothing between two adjacent values of a stride.\n\n'
+    printf 'Rows: %s.\n' "$(selected_row_names)"
     printf 'Points: %s. The run journals each finished point to\n' "${#POINTS[@]}"
     printf '%s and skips what that journal already holds, so an\n' "${JOURNAL}"
     printf 'interruption costs the chunk in flight rather than the campaign.\n\n'
@@ -1329,6 +1386,7 @@ if [ "${STAGE}" = "ceilings" ]; then
         local row="$1" axis="$2" start="$3" other="$4" held="$5"
         local value="${start}" verdict tuple
         local below="none" refused="none" refusal="none" steps=0
+        row_selected "${row}" || return 0
 
         tuple="$(point_for_axis "${axis}" "${value}" "${other}")"
         # shellcheck disable=SC2086
@@ -1412,6 +1470,11 @@ if [ "${STAGE}" = "ceilings" ]; then
         "${ROW_MEKF} ${HELD_RUNG} ${HELD_RUNG} ${INPUT_DIMENSION} ${HORIZON_NOT_READ} nothing-limit-witness"
         "${ROW_NMPC_STATIC} ${CONTROLLER_HELD_STATE} 0 ${CONTROLLER_HELD_INPUT} ${CONTROLLER_HELD_HORIZON} nothing-limit-witness"
     )
+    WITNESS_POINTS=()
+    for point in "${POINTS[@]}"; do
+        row_selected "${point%% *}" && WITNESS_POINTS+=("${point}")
+    done
+    POINTS=("${WITNESS_POINTS[@]}")
     run_grid POINTS
     printf 'A measured point per row, so every line of this stage carries a harness floor:\n\n'
     for point in "${POINTS[@]}"; do
@@ -1428,7 +1491,7 @@ if [ "${STAGE}" = "ceilings" ]; then
         printf 'nothing to callees and would overstate what fits a task stack.\n\n'
     else
         for stack_bytes in "${TASK_STACK_LADDER[@]}"; do
-            awk -v limit="${stack_bytes}" '
+            awk -v limit="${stack_bytes}" -v selected=" $(selected_row_names) " '
                 # The rotation-state row holds its state at three rather than at
                 # the four the other rows hold theirs at, because three is what
                 # it structurally is. Reading its swept line at four would find
@@ -1450,6 +1513,7 @@ if [ "${STAGE}" = "ceilings" ]; then
                         else if(pair[1] == "first_call_watermark_bytes") first_solve = pair[2] + 0
                     }
                     if(peak < 0) next
+                    if(index(selected, " " row " ") == 0) next
 
                     # A caller that solves at all runs the first solve once, and
                     # on the row that has a first solve deeper than its steady

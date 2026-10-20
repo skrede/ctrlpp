@@ -89,7 +89,7 @@ this table was written.
 | `manifold_ukf` | YES below a measurement dimension of 48, **NO at and above it** (see "The heap claim's boundary" below). No single-state exemption: the right-hand side is the rotation's three columns. | YES (fixed sigma-point set) | YES | YES | YES | `estimation_manifold_ukf_nomalloc_test` (12 configurations spanning 2 to 128 on its one caller axis: the 5 its measurement table prints, the 4 values only its supported-maximum table names, the axis at its instantiation limit, and both sides of the boundary at 47 and 48); `estimation_nomalloc_test` (the fixed instantiation at three outputs); leg 1 + `embedded_core_float` |
 | `particle_filter` | YES (guard covers resample, roughening and the covariance read). `update` returns a typed `ctrlpp::expected<void, pf_update_error>`, and the new weights are staged in a member array rather than a local one, so the update's stack frame does not grow with the particle count | YES (fixed particle count) | YES | YES | YES (injected seeded RNG; a refused update draws nothing from it) | `estimation_nomalloc_test` (particle_filter case forces resampling every update, checks every update's result and reads `covariance()` inside the armed window; twin filters seeded `std::mt19937_64{42}` must agree bitwise over 64 steps in both the estimate and the reported uncertainty); `embedded_core_float` steps it once at `float` |
 | `complementary_filter` | YES | YES (closed form) | YES | YES | YES | `estimation_nomalloc_test` (complementary_filter case); leg 1 + `embedded_core_float` |
-| dsp: `biquad` / `cascaded_biquad` / `vector_biquad` / `fir` | YES | YES (fixed sections and taps) | YES | YES | YES | `dsp_nomalloc_test` (one case per filter); leg 1 + `embedded_core_float`. On silicon at `double`, a `biquad` low-pass on the NUCLEO-H753ZI evidence image reports 0 allocations over 201 samples behind a passing allocation canary, and its last step's value equals the host golden (`scripts/board_capture_fixtures/evidence.txt`, `arm-none-eabi-gcc` 16.2.0; see "On silicon: the NUCLEO-H753ZI leg" below). At `float`, the same `biquad` on the ESP32-POE-EA evidence image reports 0 allocations over 201 samples behind its passing allocation and heap-view canaries, with a clean heap view in the window, and its last step's value within the single-precision bound derived for it (`scripts/board_capture_fixtures/esp32-evidence.txt`, `xtensa-esp-elf-gcc` 15.2.0 under ESP-IDF v6.0.2; see "On silicon, and what it does to the table above") |
+| dsp: `biquad` / `cascaded_biquad` / `vector_biquad` / `fir` | YES | YES (fixed sections and taps) | YES | YES | YES | `dsp_nomalloc_test` (one case per filter); leg 1 + `embedded_core_float`. On silicon at `double`, a `biquad` low-pass on the NUCLEO-H753ZI evidence image reports 0 allocations over 201 samples behind a passing allocation canary, and its last step's value equals the host golden of the section formation that image was built from (`scripts/board_capture_fixtures/evidence.txt`, `arm-none-eabi-gcc` 16.2.0; see "On silicon: the NUCLEO-H753ZI leg" below). Neither board has been captured with the current formation, whose host golden differs from that one in the last two digits. At `float`, the same `biquad` on the ESP32-POE-EA evidence image reports 0 allocations over 201 samples behind its passing allocation and heap-view canaries, with a clean heap view in the window, and its last step's value within the single-precision bound derived for it (`scripts/board_capture_fixtures/esp32-evidence.txt`, `xtensa-esp-elf-gcc` 15.2.0 under ESP-IDF v6.0.2; see "On silicon, and what it does to the table above") |
 | Riccati steady-state solve: `dare` / `care` | YES **on the heap, and the heap is not the binding cost here** (see the stack note below this table, which a hard-real-time caller must read before sizing a task stack: at `NX = 8` the whole chain reaches 41,304 bytes) | YES (Eigen Schur iteration bound; sign-function Newton capped at `max_iters = 40` in `detail/care_sign_function.h`, followed by a fixed-size rescale-and-factorize extraction. On every accepted solve, on **every** continuous method tag and on the discrete solver, fixed-size checks of the returned solution run before it is reported: the discrete path solves a fixed-size Stein system of dimension `NX(NX+1)/2` on the symmetric subspace to estimate the answer's own forward error, and every continuous path evaluates the counted Riccati residual and one non-accumulating real Schur factorization of the closed-loop spectrum, from the single definition in `detail/care_postconditions.h`. All three continuous tags reach that definition -- the sign-function path, the real-Schur path and the balanced-Schur path, the last verifying against the caller's Hamiltonian rather than the balanced one -- so no tag carries a bound the others do not. The balanced tag additionally runs a DGEBAL-style balance ahead of all of this. It allocates nothing, and it terminates because every accepted rescale strictly reduces that row's norm sum by the factor 19/20 using power-of-two scalings clamped to the scalar type's range. Its sweep count is data-dependent, and it is now **bounded at compile time** the way `max_iters` bounds the Newton loop: the cap is `2 * NX * (max_exponent - min_exponent)`, derived from the scalar type and the dimension rather than tuned, and reaching it stops the sweep and returns the partially balanced matrix. Stopping early is safe because balancing is a similarity preconditioner and every applied step updates `H` and `D` together, so `H_returned == D^-1 * H_original * D` holds exactly at any cut point -- a capped run is less well balanced, never wrong. The cap is a guarantee rather than a budget: over 550,000 draws with entries spread across `2^-280` to `2^+280`, the worst sweep counts observed were 2 / 12 / 43 / 45 at NX = 1 / 2 / 4 / 8 against ceilings of 4,090 / 8,180 / 16,360 / 32,720, so the worst measured run sits about three orders of magnitude below its ceiling. Budget from the measurement and treat the cap as the backstop) | YES | YES | YES | `dare_care_nomalloc_test` (NX = 2, 4, 8 across the Schur, sign-function, and balanced-Schur variants); `care_convergence_anchor_test` (fixed-seed near-axis and simple-input scale sweeps under all three method tags, plus magnitude-band anchors); `riccati_magnitude_test` (both ends of the arithmetic range); leg 1 witness calls `dare` and `care`. The allocation cell's heap claim is proved by `dare_care_nomalloc_test`; its stack claim is proved by the `-fstack-usage` frames and runtime watermarks in the stack note below, which are host `double` measurements, now corroborated on silicon by the ESP32 stack probe in `examples/embedded/esp32/main/stack_probe.cpp` -- the on-target `float` peaks track the host `double` prediction to within the scalar width, and that probe also establishes that at `float` the ACCEPTANCE CHECK, not the stack, is what bounds the usable state dimension. At `double` the NUCLEO-H753ZI image designs a two-state gain through `dare` on every boot: the gain agrees with the host's within its derived tolerance, and the closed loop it drives is bit-identical across 21 warm resets (`scripts/board_capture_fixtures/evidence.txt` and `timing.txt`, `arm-none-eabi-gcc` 16.2.0; see "On silicon: the NUCLEO-H753ZI leg" below). That board measures no stack figure of its own for the solve. At `float` the ESP32-POE-EA image designs the same two-state gain through `dare` on every boot: the gain agrees with the host's within its derived tolerance, the closed loop's last state lies within its derived bound, and the closed loop is bit-identical across 25 restarts of the timing image, 20 by the chip's enable pin and 5 by a replug (`scripts/board_capture_fixtures/esp32-evidence.txt` and `esp32-timing.txt`, `xtensa-esp-elf-gcc` 15.2.0 under ESP-IDF v6.0.2; see "On silicon, and what it does to the table above") |
 | velocity profile construction: `trapezoidal_trajectory::create` / `double_s_trajectory::create` | YES (the profile is returned by value inside a `ctrlpp::expected`; nothing on the path owns storage) | YES (closed form on the trapezoidal path and on every double-S path but one; the cruise-free double-S rise is a bracket halved to exhaustion, bounded by one more than the significand width, so 25 evaluations for `float` and 54 for `double`) | YES | YES | YES (no random source; identical inputs exhaust the bracket at the identical step) | `trajectory_nomalloc_test` (construction is outside the armed window, as for every other type there); leg 1 + `embedded_core_float`, which instantiate both `create` factories |
 | trajectory evaluation (polynomial paths, velocity profiles, `cubic_spline`, `smoothing_spline`, `bspline_trajectory`) | YES | YES (closed form; B-spline recursion bounded by compile-time degree) | YES | YES | YES | `trajectory_nomalloc_test` (evaluate cases for cubic/quintic/septic, trapezoidal, double-S, modified sin/trap, cubic_spline, smoothing_spline, bspline_trajectory); leg 1 + `embedded_core_float`. On silicon at `double`, double-S evaluation on the NUCLEO-H753ZI evidence image reports 0 allocations over 201 evaluations behind a passing allocation canary, and its last step's value equals the host golden (`scripts/board_capture_fixtures/evidence.txt`, `arm-none-eabi-gcc` 16.2.0; see "On silicon: the NUCLEO-H753ZI leg" below). At `float`, double-S evaluation on the ESP32-POE-EA evidence image reports 0 allocations over 201 evaluations behind its passing allocation and heap-view canaries, with a clean heap view in the window, and its last step's value within the single-precision bound derived for it (`scripts/board_capture_fixtures/esp32-evidence.txt`, `xtensa-esp-elf-gcc` 15.2.0 under ESP-IDF v6.0.2; see "On silicon, and what it does to the table above") |
@@ -174,9 +174,12 @@ own count rather than describing it, so a point cannot be dropped without the
 test failing. Two gaps, stated rather than left to be inferred:
 
 - The five estimator rows arm **every configuration their tables print a figure
-  for**. The interior fill behind their supported-maximum tables is 4,677
-  configurations and is **not** individually armed: nothing above is a claim
-  about a dimension lying between two armed ones.
+  for**, except the value one in the 4 KiB rows of the `ukf` and `manifold_ukf`
+  supported-maximum tables: one state and one output, one state at four outputs
+  and four states at one output on `ukf`, and one output on `manifold_ukf`. The
+  interior fill behind their supported-maximum tables is 4,323 configurations and
+  is **not** individually armed: nothing above is a claim about a dimension lying
+  between two armed ones.
 - The predictive controller row arms **2 of its 25**, both sides of its
   boundary, plus the shipped pin at `NV` 17. Each of its points instantiates the
   whole nonlinear-programming substrate and then solves at that dimension: a unit
@@ -467,6 +470,11 @@ precision:
 | signal processing | the last step's value | 2.569e-08 | 8.694e-03 | 3.0e-06 |
 | trajectory | the last step's value | 1.589e-07 | 6.182e-03 | 2.6e-05 |
 
+The signal-processing row and the `biquad` timing row below, like the
+NUCLEO-H753ZI's, were captured from images of the earlier `biquad` section
+formation, and the row is judged against that formation's golden and bound. The current formation's single-precision bound is
+`6.718e-03`, and no image of it has been captured on this board.
+
 The designed gain departs from the host's by `[8.943e-04, 2.766e-04]` against a
 tolerance of `2.292e-02`, which at 3.9 percent of its bound is the tightest
 margin on the board. Both images print the same verdicts. The predictive family
@@ -624,6 +632,13 @@ derived for it:
 | signal processing | the last step's value | 0 | 3.239e-11 |
 | trajectory | the last step's value | 0 | 2.303e-11 |
 | predictive | closed-loop cost over the run | 1.425e-04 | 1.134 |
+
+**The signal-processing row and the `biquad` timing row below belong to the
+section formation both images were built from**, which rounds 22 times per step:
+its golden is `-0.86508002466156553` and its bound `3.239e-11`. The current
+formation builds the low-pass section at unit scale and rounds 17 times per step;
+its host golden is `-0.86508002466156531` and its `double` bound `2.503e-11`. No
+image of the current formation has been captured on this board.
 
 The designed gain departs from the host's by `[-1.506e-12, -4.006e-13]` against
 a tolerance of `8.538e-11`. The predictive bound holds only under its own
@@ -784,7 +799,7 @@ the two it is, because a bigger stack answers one of them and nothing answers th
 other.
 
 The harness floor read zero on every one of the sixty-eight measurements behind
-the three-line tables and on every one of the 4,677 behind the fill, printed
+the three-line tables and on every one of the 4,323 behind the fill, printed
 beside each figure by the instrument, so every peak is attributable to the call
 rather than to the harness. The three-line figures reproduced byte-identically
 across two independent runs of the whole grid, and **the fill reproduces all 44
@@ -794,10 +809,11 @@ different painted window and a different build parallelism.
 **One caveat at the very bottom of the grid.** The measurement has a resolution
 floor: a chain shallower than the harness gap of 1,024 bytes disturbs nothing the
 walk can see and reports zero, which is the value the harness floor reports.
-Three points in the fill are there -- `kalman_filter`, `ekf` and `ukf` at one
-state and one output. Re-measured at gaps of 512, 256, 128 and 64 bytes, with a
-zero floor at every one, they resolve to **720, 880 and 1,008 bytes** and are
-byte-identical across all four gaps. No other point in the grid is inside the
+Two points in the fill are there: `kalman_filter` and `ekf` at one state and
+one output. Re-measured at gaps of 512, 256, 128 and 64 bytes, with a zero floor
+at every one, they resolve to **720 and 880 bytes** and are byte-identical across
+all four gaps. `ukf` at one state and one output needs 1,040 bytes, which the
+fill resolves at the standard gap. No other point in the grid is inside the
 gap.
 
 ### `kalman_filter`
@@ -860,11 +876,11 @@ state dimension twice: once in the covariance it factors and once in the set.
 
 | dimension | deepest single frame | function owning it | peak, `NX` = `NY`, nothing held | peak, `NY` swept, `NX` held at 4 | peak, `NX` swept, `NY` held at 4 |
 |---:|---:|---|---:|---:|---:|
-| 2 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 2,344 | 2,952 | 3,112 |
-| 4 | 2,704 | `ukf::update` | 4,088 | 4,088 | 4,088 |
-| 8 | 8,704 | `ukf::update` | 12,272 | 7,544 | 8,640 |
-| 16 | 35,376 | `ukf::update` | 46,976 | 20,344 | 26,832 |
-| 32 | 135,568 | `ukf::update` | **212,488** | 60,008 | 128,648 |
+| 2 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 2,376 | 3,192 | 3,144 |
+| 4 | 2,896 | `ukf::update` | 4,280 | 4,280 | 4,280 |
+| 8 | 9,872 | `ukf::update` | 13,376 | 7,832 | 10,416 |
+| 16 | 38,768 | `ukf::update` | 50,384 | 20,520 | 33,104 |
+| 32 | 150,544 | `ukf::update` | **227,320** | 60,280 | 150,888 |
 
 Strict: no margin for the caller's own frames and none for RTOS overhead.
 
@@ -875,18 +891,19 @@ on it and this row's limit is the same as the two above.
 
 | task stack | largest fitting value, `NX` = `NY`, nothing held | largest fitting `NY`, `NX` held at 4 | largest fitting `NX`, `NY` held at 4 |
 |---|---|---|---|
-| 4 KiB | 4 | 4 | 4 |
+| 4 KiB | 1 | 1 | 1 |
 | 8 KiB | 4 | 8 | 4 |
-| 16 KiB | 8 | 12 | 12 |
-| 32 KiB | 12 | 20 | 16 |
-| 48 KiB | 16 | 28 | 20 |
-| 64 KiB | 16 | 32 | 24 |
+| 16 KiB | 8 | 12 | 8 |
+| 32 KiB | 12 | 20 | 12 |
+| 48 KiB | 12 | 28 | 16 |
+| 64 KiB | 16 | 32 | 20 |
 
-The 4 KiB entry in the first column clears by **8 bytes** at four states and four
-outputs: 4,088 against 4,096. Read it as "does not fit" unless the whole rest of
-the task is the empty frame this measurement was taken in -- and see the
-linear-algebra release paragraph below, which turns that eight bytes into a
-measured sign flip rather than a caution.
+The 4 KiB entries are 1 on all three lines: four states and four outputs need
+4,280 bytes against 4,096, and the next value the fill measures below four, one
+state and one output, needs 1,040. The sigma-point set carries the `NX x NX`
+factor it was generated from, so that after a repair the update reduces the
+repaired covariance `factor * factor^T` rather than the carried one, and that
+factor is part of every figure in both tables.
 
 ### `manifold_ukf`
 
@@ -897,11 +914,11 @@ at its structural three and the measurement dimension swept.
 
 | `NY` | deepest single frame | function owning it | whole-chain peak, rotation state held at 3 |
 |---:|---:|---|---:|
-| 2 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 3,008 |
-| 4 | 2,048 | `manifold_ukf::update` | 3,776 |
-| 8 | 3,312 | `manifold_ukf::update` | 5,648 |
-| 16 | 12,288 | `manifold_ukf::update` | 17,936 |
-| 32 | 31,040 | `manifold_ukf::update` | **49,472** |
+| 2 | 1,792 | `manifold_ukf::update` | 3,312 |
+| 4 | 2,400 | `manifold_ukf::update` | 4,128 |
+| 8 | 3,440 | `manifold_ukf::update` | 5,776 |
+| 16 | 13,584 | `manifold_ukf::update` | 18,736 |
+| 32 | 31,328 | `manifold_ukf::update` | **49,760** |
 
 Strict: no margin for the caller's own frames and none for RTOS overhead.
 
@@ -910,7 +927,7 @@ all is 128.**
 
 | task stack | largest fitting `NY`, rotation state held at 3 |
 |---|---|
-| 4 KiB | 4 |
+| 4 KiB | 1 |
 | 8 KiB | 8 |
 | 16 KiB | 12 |
 | 32 KiB | 20 |
@@ -932,7 +949,7 @@ The frame column belongs to the equal-dimension build.
 | 2 | 5 | -- | does not instantiate | does not instantiate | 4,840 | does not instantiate |
 | 4 | 7 | 4,064 | `mekf::update` | 6,776 | 6,776 | 6,776 |
 | 8 | 11 | 21,392 | `mekf::update` | 29,272 | 12,760 | 20,376 |
-| 16 | 19 | 68,816 | `mekf::update` | 84,904 | 25,112 | 57,592 |
+| 16 | 19 | 68,816 | `mekf::update` | 84,904 | 25,112 | 56,104 |
 | 32 | 35 | 262,784 | `mekf::update` | **310,840** | 74,200 | 152,648 |
 
 Strict: no margin for the caller's own frames and none for RTOS overhead.
@@ -973,7 +990,7 @@ prediction, at the top rung:
 |---|---:|---:|---:|
 | `kalman_filter` | 109,496 | 158,712 | 1.45x |
 | `ekf` | 146,392 | 245,752 | 1.68x |
-| `ukf` | 184,568 | 212,488 | 1.15x |
+| `ukf` | 206,888 | 227,320 | 1.10x |
 | `mekf` | 220,072 | 310,840 | 1.41x |
 
 **Every row exceeds its separable prediction on the equal-dimension line**, so a
@@ -991,22 +1008,34 @@ them:
 |---|---:|---:|---:|---|---:|
 | `kalman_filter` | 1,088 | 0.700 | 1.543 | `NX` 52, `NY` 52 | 87.4% |
 | `ekf` | 1,088 | 0.598 | 2.101 | `NX` 52, `NY` 116 | 88.3% |
-| `ukf` | 1,088 | 0.533 | 1.393 | `NX` 28, `NY` 72 | 80.8% |
-| `mekf` | 1,023 | 0.806 | 1.906 | `NB` 48, `NY` 128 | 90.8% |
+| `ukf` | 1,088 | 0.533 | 1.477 | `NX` 1, `NY` 1 | 82.0% |
+| `mekf` | 1,022 | 0.806 | 1.906 | `NB` 48, `NY` 128 | 90.9% |
 
 **Four fifths to nine tenths of the interior lies above the separable
 prediction**, so the interaction is not a feature of the diagonal. Below the
-prediction the ratio falls only where one dimension is at the very bottom of its
-range, where a fixed part that does not scale with either dimension dominates.
+prediction the ratio falls mostly where one dimension is at the very bottom of
+its range, where a fixed part that does not scale with either dimension
+dominates. On `ekf` that is the only place it falls below. Away from the first
+value of either axis it falls below at one point on `mekf` (12 bias states, 8
+outputs), at 12 on `kalman_filter` (8 states with 88 outputs or more, and 12
+states with 128), and at 70 on `ukf`, all with the state dimension between 8 and
+24 and the measurement dimension anywhere from 8 to 128, none of them below
+0.834. The interior points exclude the reference point at 4 and 4, where the
+ratio is one by construction, and the smallest ratios exclude the one-state,
+one-output points the caveat above places inside the harness gap. `ukf`'s largest
+ratio sits at that bottom corner, where the separable prediction is a sum of two
+small figures; away from the first value of either axis it is 1.337, at `NX` 24
+and `NY` 72.
 
 **AND THE INTERACTION DOES NOT KEEP GROWING WITH THE DIMENSION.** The three-line
 tables reach dimension 32, and up to there the excess rises monotonically. The
 fill continues to 128 and it does not: on the equal-dimension line
-`kalman_filter` runs 1.45 at 32, peaks near 1.48 around 96 and falls back to 1.43
-at 128; `ukf` runs 1.15 at 32, peaks near 1.22 around 80 to 96 and falls to 1.13
-at 128. The largest excess on every row sits in the MIDDLE of the grid rather
-than at its corner. A reader extrapolating "the excess grows with dimension" past
-32 would be extrapolating past where it holds.
+`kalman_filter` runs 1.45 at 32, climbs to 1.48 around 96 and falls back to 1.43
+at 128, with one isolated point at 52 reaching 1.54; `ukf` runs 1.10 at 32, rises
+to 1.19 at 108 and falls to 1.15 from 112 to 128. Away from `ukf`'s bottom
+corner, the largest excess on every row sits at a state dimension of 24 to 52
+rather than at the top corner. A reader extrapolating "the excess grows with
+dimension" past 32 would be extrapolating past where it holds.
 
 What the fill still does not resolve is anything between two adjacent values of
 its stride: it says nothing about the three integers between 96 and 100.
@@ -1062,18 +1091,18 @@ larger task stack is a real answer.
 On the equal-dimension line the whole-chain peak grows by a factor of 3.7 to 4.8
 per doubling at rung 32 -- an exponent of 1.87 to 2.26 -- so the quadratic growth
 is measured to hold for the whole chain and not only for the dominant object.
-`manifold_ukf`, whose only axis is the measurement dimension, grows at 1.46 there.
+`manifold_ukf`, whose only axis is the measurement dimension, grows at 1.41 there.
 The exponent is not constant along the axis: every row is markedly sub-quadratic
 between the first two rungs, where a fixed overhead that does not scale with the
 dimension still dominates, and it settles slightly BELOW quadratic at the top.
 Measured over the fill's last doubling, from 64 to 128 on the equal-dimension
-line, the exponent is 1.93 (`kalman_filter`), 1.92 (`ekf`), 1.87 (`ukf`), 1.95
-(`mekf` from 60 to 120) and 1.65 (`manifold_ukf`).
+line, the exponent is 1.93 (`kalman_filter`), 1.92 (`ekf`), 1.94 (`ukf`), 1.95
+(`mekf` from 60 to 120) and 1.64 (`manifold_ukf`).
 
-The deepest points the grid holds, all at the instantiation limit: `ekf`
-3,221,736 bytes at 128 states and 128 outputs, `ukf` 3,037,928, `mekf` 3,195,880
+The deepest points the grid holds, all at the instantiation limit: `ukf`
+3,425,464 bytes at 128 states and 128 outputs, `ekf` 3,221,912, `mekf` 3,195,880
 at 124 bias states and 128 outputs, `kalman_filter` 2,495,304, and
-`manifold_ukf` 562,576 at 128 outputs. **Roughly three megabytes of stack**, on
+`manifold_ukf` 565,936 at 128 outputs. **Roughly three megabytes of stack**, on
 rows whose `allocation-free?` cell says `YES`.
 
 Against the Riccati row measured under the same instrument, at eight states and
@@ -1084,9 +1113,14 @@ Riccati row was not measured there.
 
 ### Provenance
 
-`g++ (GNU) 16.1.1 20260728`, `-std=c++20 -O2 -fno-exceptions -fno-rtti -pthread`,
+`g++ (GCC) 16.2.1 20260810`, `-std=c++20 -O2 -fno-exceptions -fno-rtti -pthread`,
 no `-march` (driver default `-mtune=generic -march=x86-64`), x86-64 Linux,
-`double`, Eigen 3.4.1. HOST measurements. Runtime watermarks taken on a pthread
+`double`, Eigen 3.4.1, taken on 2026-10-20. Every figure in this section belongs
+to that compiler: the three-line tables, the fill, the limits and every ratio and
+exponent drawn from them. The same three-line commands run on the library as it
+was before the sigma-point factor and the covariance checks reproduced every
+cell published under `g++ (GNU) 16.1.1 20260728` exactly, so the compiler change
+moves none of them. HOST measurements. Runtime watermarks taken on a pthread
 against a **zero-byte harness floor** and a 1,024-byte harness gap. The
 three-line tables were taken with a 4 MiB painted region on a 64 MiB thread
 stack; **the interior fill raises those to 32 MiB on a 512 MiB stack, and that is
@@ -1096,16 +1130,19 @@ load-bearing rather than cautious.**
 CEILING on what the instrument can report: a chain that reaches its bottom
 disturbs the last word the walk looks at, and the walk then returns the window's
 own size rather than the chain's depth -- a figure indistinguishable from a
-measurement. The deepest chain in this grid is 3,221,736 bytes, which is 77
+measurement. The deepest chain in this grid is 3,425,464 bytes, which is 82
 percent of the 4 MiB the three-line tables were taken with, and the deepest in
 the predictive controller section below is 4,135,224 bytes, which is **98.6
 percent of it**. Every record in the fill carries whether it saturated; none did.
 
 **Reproducing the fill and the limits.** The fill is
-`tools/stack_watermark.sh --interior`, 4,677 points, journalled point by point so
-that a run cut off part-way resumes rather than restarting -- this one was cut
-off once and did. The limits are `tools/stack_watermark.sh --ceilings`. The fill
-ran at `-j6`, and at that parallelism a per-point compile time is a campaign wall
+`tools/stack_watermark.sh --rows estimators --interior`, 4,323 points, journalled
+point by point so that a run cut off part-way resumes rather than restarting;
+this one was cut off and resumed. `--rows` also takes a comma-separated list of
+row names, so one row can be filled alone; without `--rows` the stage fills the
+predictive controller row as well. The limits are
+`tools/stack_watermark.sh --rows estimators --ceilings`. The fill ran at `-j6`
+and `-j3`, and at that parallelism a per-point compile time is a campaign wall
 time under the driver's own concurrency rather than a build cost; the driver's
 station-quiet gate therefore applies at `-j1` only and the station is censused on
 both sides of the stage instead.
@@ -1124,35 +1161,41 @@ and `--held-dimension`. A target's own frames differ with its ABI, register file
 and calling convention -- as the ESP32 capture above shows, where the `float`
 peaks run at roughly half the host `double` figures.
 
-**THE LINEAR-ALGEBRA RELEASE IS AN AXIS HERE, AND IT FLIPS A PUBLISHED CELL.**
-The tables above are Eigen 3.4.1, which is the system release; the project's test
-tree fetches 3.4.0. Re-running the whole equal-dimension line against 3.4.0 moves
-**15 of the 24 measured points**, by -144 to +768 bytes -- at most 3.4% of the
-figure, on `manifold_ukf`, whose shift is the largest and grows monotonically
-with the measurement dimension. That is small, and it is not harmless: `ukf` at
-four states and four outputs needs 4,088 bytes against 3.4.1 and **4,104 against
-3.4.0**, so its 4 KiB entry above reads 4 under one patch release of a
-header-only dependency and 2 under the next. A frame size is an output of
-inlining a header-only template library, and a patch release of that library is
-therefore part of the provenance of every figure here. **The held-dimension
-sweeps were NOT re-measured against 3.4.0**; only the equal-dimension line was,
-so nothing is claimed about the other two columns under that release.
+**THE LINEAR-ALGEBRA RELEASE IS AN AXIS HERE.** The tables above are Eigen
+3.4.1, which is the system release; the project's test tree fetches 3.4.0.
+Re-running the whole equal-dimension line against 3.4.0 moves **16 of the 24
+measured points**, by -144 to +768 bytes, at most 3.3% of the figure, on
+`manifold_ukf`, whose shift is the largest and grows monotonically with the
+measurement dimension. That is small, and it is not harmless: it is the size of
+the margin by which a supported-maximum entry can clear its task stack, so an
+entry close to its stack can read differently under one patch release of a
+header-only dependency and the next. `ukf` at four states and four outputs needs
+4,280 bytes against 3.4.1 and 4,296 against 3.4.0, past 4 KiB under both. A
+frame size is an output of inlining a header-only template library, and a patch
+release of that library is therefore part of the provenance of every figure
+here. **The held-dimension sweeps were NOT re-measured against 3.4.0**; only the
+equal-dimension line was, so nothing is claimed about the other two columns under
+that release.
 
 ### What is still outstanding here
 
 - **The fill's stride is four, so nothing is measured between two adjacent values
   of it.** The interaction is described rather than located, and the supported
   maxima are exact to within the stride rather than exact. Closing that is an
-  exhaustive fill, which is 72,635 points against this one's 4,677.
+  exhaustive fill, which is 65,024 points against this one's 4,323.
 - **The frame column was not re-measured over the interior.** It belongs to the
   equal-dimension build at the five rungs it is printed at, and taking it costs a
   second compile per point.
 - **The linear-algebra release was varied only on the equal-dimension line.** It
-  moves 15 of 24 points there and flips one supported-maximum entry, and the fill
-  was taken against 3.4.1 alone.
+  moves 16 of 24 points there, and the fill was taken against 3.4.1 alone.
 - **`arm64` and MSVC are absent**, and every figure is `double` at `-O2`. A frame
   size is an optimizer output, so these figures belong to that optimization level
   alone.
+- **Construction is not watermarked.** Every row's factory checks each noise and
+  initial covariance with a symmetric eigendecomposition, outside the painted
+  window. Its frames are measured but its whole-chain depth is not: at dimension
+  32 the deepest are the decomposition's 17,808 bytes and the check's 16,976,
+  and at the `mekf` error state of 35 they are 21,232 and 20,224.
 
 ## Stack cost of the predictive controller row
 
