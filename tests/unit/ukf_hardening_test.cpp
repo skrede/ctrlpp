@@ -30,6 +30,8 @@
 #include "ctrlpp/estimation/ukf.h"
 #include "ctrlpp/estimation/kalman.h"
 
+#include "ctrlpp/estimation/sigma_points/julier_sigma_points.h"
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -129,6 +131,21 @@ auto make_ukf()
     cfg.x0 = Eigen::Vector2d::Zero();
     cfg.P0 = Eigen::Matrix<double, 2, 2>::Identity() * 10.0;
     return ctrlpp::test::constructed(ctrlpp::ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg));
+}
+
+/// @brief The floor a repaired covariance is held to: the symmetric
+/// eigensolver's backward error N eps max|P_ij|, the same scale the repair
+/// clamps its spectrum to.
+template <int N>
+auto repair_floor(const Eigen::Matrix<double, N, N>& P) -> double
+{
+    return N * ukf_eps * P.cwiseAbs().maxCoeff();
+}
+
+template <int N>
+auto min_eigenvalue(const Eigen::Matrix<double, N, N>& P) -> double
+{
+    return Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, N, N>>(P).eigenvalues().minCoeff();
 }
 
 }
@@ -632,4 +649,75 @@ TEST_CASE("UKF near-singular P0", "[ukf][hardening][robustness]")
     // means the filter claims a confidence its estimate does not earn.
     CAPTURE(filter.state()[0], filter.covariance()(0, 0));
     REQUIRE(std::abs(filter.state()[0] - 1.0) <= std::sqrt(filter.covariance()(0, 0)));
+}
+
+TEST_CASE("UKF update after a covariance repair carries the repaired covariance", "[ukf][hardening][repair]")
+{
+    // The gain and the innovation covariance are built from the repaired sigma
+    // set, so a reduction taken from the unrepaired matrix keeps its negative
+    // eigenvalue: here diag(1, -0.5) would leave diag(0.5, -0.5).
+    ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
+    cfg.Q = Eigen::Matrix2d::Zero();
+    cfg.R = Eigen::Matrix<double, 1, 1>::Identity();
+    cfg.x0 = Eigen::Vector2d::Zero();
+    cfg.P0 = Eigen::Vector2d{1.0, -0.5}.asDiagonal();
+
+    using filter_t = ctrlpp::ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>;
+    const ctrlpp::merwe_options<double> options{.alpha = 1.0, .beta = 0.0, .kappa = 1.0};
+    auto filter = ctrlpp::test::constructed(filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg, options));
+
+    REQUIRE(filter.update(Eigen::Matrix<double, 1, 1>::Zero()).has_value());
+
+    CAPTURE(filter.covariance());
+    REQUIRE(min_eigenvalue(filter.covariance()) >= -repair_floor(filter.covariance()));
+    REQUIRE(filter.health() == ctrlpp::ukf_health::covariance_repaired);
+}
+
+TEST_CASE("UKF update after a prediction-driven repair carries the repaired covariance", "[ukf][hardening][repair]")
+{
+    // A repair reached from a valid configuration. Julier's kappa = 3 - n is
+    // negative for n > 3, so the center weight is negative and a positive
+    // definite prior can predict an indefinite covariance. At x = 0, P = I and
+    // n = 4 the points are 0 and +/- sqrt(3) e_i with weights -1/3 and 1/6; the
+    // sum of squares maps them to 0 and 3, whose weighted mean is 4 and whose
+    // weighted variance is -16/3 + 8 (1/6) = -4.
+    struct sum_of_squares_dynamics
+    {
+        auto operator()(const ctrlpp::Vector<double, 4>& x, const ctrlpp::Vector<double, 1>& /*u*/) const -> ctrlpp::Vector<double, 4>
+        {
+            ctrlpp::Vector<double, 4> xn = x;
+            xn(0) = x.squaredNorm();
+            return xn;
+        }
+    };
+
+    struct first_state_measurement
+    {
+        auto operator()(const ctrlpp::Vector<double, 4>& x) const -> ctrlpp::Vector<double, 1>
+        {
+            return x.head<1>();
+        }
+    };
+
+    ctrlpp::ukf_config<double, 4, 1, 1> cfg{};
+    cfg.Q = Eigen::Matrix4d::Zero();
+
+    using filter_t = ctrlpp::ukf<double, 4, 1, 1, sum_of_squares_dynamics, first_state_measurement, ctrlpp::julier_sigma_points<double, 4>>;
+    auto filter = ctrlpp::test::constructed(filter_t::create(sum_of_squares_dynamics{}, first_state_measurement{}, cfg, ctrlpp::julier_options<double>{.kappa = -1.0}));
+
+    filter.predict(ctrlpp::Vector<double, 1>::Zero());
+
+    // Nine weighted squared deviations: nine differences, nine squares, nine
+    // weight products and eight sums, each at most the largest squared
+    // deviation, 16. The error in the mean enters only at second order.
+    constexpr int predicted_variance_ops = 35;
+    CAPTURE(filter.covariance());
+    REQUIRE_THAT(filter.covariance()(0, 0), WithinAbs(-4.0, predicted_variance_ops * ukf_eps * 16.0));
+    REQUIRE(filter.health() == ctrlpp::ukf_health::ok);
+
+    REQUIRE(filter.update(ctrlpp::Vector<double, 1>::Constant(4.0)).has_value());
+
+    CAPTURE(filter.covariance());
+    REQUIRE(min_eigenvalue(filter.covariance()) >= -repair_floor(filter.covariance()));
+    REQUIRE(filter.health() == ctrlpp::ukf_health::covariance_repaired);
 }

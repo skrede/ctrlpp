@@ -28,9 +28,24 @@ namespace ctrlpp
 template <typename Scalar, std::size_t NP>
 struct manifold_sigma_result
 {
+    manifold_sigma_result()
+        : spd_repaired{false}
+    {
+    }
+
     std::array<Eigen::Quaternion<Scalar>, NP> points;
     std::array<Scalar, NP> Wm;
     std::array<Scalar, NP> Wc;
+
+    /// Set when the tangent covariance was not positive definite and had to be
+    /// repaired to the nearest symmetric positive definite matrix before
+    /// factoring.
+    bool spd_repaired;
+
+    /// The matrix S with S*S^T equal to the tangent covariance the points were
+    /// built from, which is the repaired one after a repair. Read only when
+    /// `spd_repaired` is set, so a strategy that sets the flag must fill it.
+    Matrix<Scalar, 3, 3> factor;
 };
 
 template <typename S, typename Scalar>
@@ -80,6 +95,8 @@ public:
 
         result.Wm = tangent.Wm;
         result.Wc = tangent.Wc;
+        result.spd_repaired = tangent.spd_repaired;
+        result.factor = tangent.factor;
 
         return result;
     }

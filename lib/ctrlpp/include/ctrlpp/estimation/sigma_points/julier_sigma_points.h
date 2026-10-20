@@ -82,6 +82,7 @@ public:
         auto sqrt_result = detail::covariance_sqrt<Scalar, nx>(P);
         const Eigen::Matrix<Scalar, nx, nx> S = sqrt_result.factor;
         result.spd_repaired = sqrt_result.repaired;
+        result.factor = sqrt_result.factor;
 
         // Center sigma point
         result.points[0] = x;

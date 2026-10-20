@@ -20,6 +20,11 @@ struct sigma_result
     /// Set when the covariance was not positive definite and had to be repaired
     /// to the nearest symmetric positive definite matrix before factoring.
     bool spd_repaired{false};
+
+    /// The matrix S with S*S^T equal to the covariance the points were built
+    /// from, which is the repaired one after a repair. Read only when
+    /// `spd_repaired` is set, so a strategy that sets the flag must fill it.
+    Matrix<Scalar, NX, NX> factor;
 };
 
 template <typename S, typename Scalar, std::size_t NX>

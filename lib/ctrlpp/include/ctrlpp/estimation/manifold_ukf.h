@@ -76,8 +76,13 @@ enum class manifold_ukf_update_error
 /// never returns to a lower rung on its own.
 ///
 ///  * ok                  : every geodesic (Karcher) mean converged within the
-///                          configured tolerance and every step began from a
-///                          finite estimate.
+///                          configured tolerance, every tangent covariance
+///                          factored so far was positive definite and every
+///                          step began from a finite estimate.
+///  * covariance_repaired : a non-positive-definite tangent covariance had to
+///                          be repaired to the nearest symmetric positive
+///                          definite matrix, so the estimate has entered a
+///                          numerically degraded but still usable regime.
 ///  * mean_not_converged  : a geodesic-mean iteration exhausted its budget
 ///                          without meeting the tolerance, so the predicted
 ///                          attitude may be a non-converged iterate rather than
@@ -93,6 +98,7 @@ enum class manifold_ukf_update_error
 enum class manifold_ukf_health
 {
     ok,
+    covariance_repaired,
     mean_not_converged,
     non_finite_estimate
 };
@@ -198,12 +204,13 @@ public:
     void predict(const input_vector_t& omega)
     {
         auto sigma = m_strategy.generate(m_q, m_P);
+        note_health(sigma);
         auto q_prop = propagate_manifold_sigma_points(sigma.points, omega);
         auto mean_result = compute_manifold_predicted_mean(q_prop, sigma.Wm);
         // Never lowers an already-latched non_finite_estimate, which is the more
         // severe rung: a non-converged mean is a usable iterate, a non-finite
         // attitude is not an attitude at all.
-        if(!mean_result.converged && m_health == manifold_ukf_health::ok)
+        if(!mean_result.converged && m_health < manifold_ukf_health::mean_not_converged)
             m_health = manifold_ukf_health::mean_not_converged;
         auto q_new = mean_result.mean;
         m_P = compute_manifold_predicted_covariance(q_prop, q_new, sigma.Wc);
@@ -240,18 +247,17 @@ public:
         auto K = compute_kalman_gain(Pxz, S);
 
         m_innovation = (z - z_pred).eval();
-        apply_manifold_correction(K, S);
+        apply_manifold_correction(K, S, reduction_base(sigma));
         update_state_cache();
-        if(!m_q.coeffs().allFinite() || !m_P.allFinite()
-            || !m_innovation.allFinite() || !m_state_cache.allFinite())
+        if(!m_q.coeffs().allFinite() || !m_P.allFinite() || !m_innovation.allFinite() || !m_state_cache.allFinite())
         {
             m_q = previous_q;
             m_P = previous_P;
             m_innovation = previous_innovation;
             m_state_cache = previous_state;
-            return ctrlpp::unexpected(
-                manifold_ukf_update_error::non_finite_result);
+            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_result);
         }
+        note_health(sigma);
         return {};
     }
 
@@ -264,8 +270,9 @@ public:
     const Eigen::Quaternion<Scalar>& attitude() const { return m_q; }
 
     /// @brief Report whether the carried estimate is still degraded from an
-    /// earlier step: a non-converged geodesic mean, or an estimate that was
-    /// already non-finite. Latches; a rejected measurement does not set it.
+    /// earlier step: a repaired covariance, a non-converged geodesic mean, or an
+    /// estimate that was already non-finite. Latches; a rejected measurement
+    /// does not set it.
     manifold_ukf_health health() const { return m_health; }
 
 private:
@@ -295,13 +302,34 @@ private:
     /// carried estimate, and pass the fault through so the caller still receives
     /// the specific cause on the failure channel.
     ///
-    /// `non_finite_estimate` is the top rung and is never downgraded to
-    /// `mean_not_converged` by a later step.
+    /// `non_finite_estimate` is the top rung and is never downgraded by a later
+    /// step.
     auto latch_health(manifold_ukf_update_error fault) -> manifold_ukf_update_error
     {
         if(fault != manifold_ukf_update_error::non_finite_measurement)
             m_health = manifold_ukf_health::non_finite_estimate;
         return fault;
+    }
+
+    /// @brief Latch `covariance_repaired` when a sigma-point generation had to
+    /// repair a non-positive-definite tangent covariance. Latches only from
+    /// `ok`, so it never lowers a more severe rung.
+    template <typename Sigma>
+    void note_health(const Sigma& sigma)
+    {
+        if(sigma.spd_repaired && m_health == manifold_ukf_health::ok)
+            m_health = manifold_ukf_health::covariance_repaired;
+    }
+
+    /// @brief The tangent covariance a sigma set represents: the repaired
+    /// matrix `factor * factor^T` when the generation had to repair, the carried
+    /// covariance otherwise.
+    template <typename Sigma>
+    auto reduction_base(const Sigma& sigma) const -> cov_matrix_t
+    {
+        if(sigma.spd_repaired)
+            return (sigma.factor * sigma.factor.transpose()).eval();
+        return m_P;
     }
 
     manifold_ukf(validated_tag, Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy)
@@ -425,8 +453,12 @@ private:
 
     /// @brief Apply manifold correction and update covariance.
     ///
+    /// The reduction is taken from `base`, the tangent covariance the sigma set
+    /// represents. After a repair that is the repaired matrix: K and S describe
+    /// it, so reducing the unrepaired one would keep its negative eigenvalues.
+    ///
     /// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
-    void apply_manifold_correction(const Eigen::Matrix<Scalar, 3, ny>& K, const meas_cov_t& S)
+    void apply_manifold_correction(const Eigen::Matrix<Scalar, 3, ny>& K, const meas_cov_t& S, const cov_matrix_t& base)
     {
         Vector<Scalar, 3> delta_phi = K * m_innovation;
         m_q = (m_q * so3::exp(delta_phi)).normalized();
@@ -436,7 +468,7 @@ private:
         // Without it the covariance stays anchored to the pre-correction frame
         // and misreports confidence after a large correction.
         cov_matrix_t G = cov_matrix_t::Identity() - Scalar{0.5} * so3::skew(delta_phi);
-        m_P = detail::symmetrize((G * (m_P - K * S * K.transpose()) * G.transpose()).eval());
+        m_P = detail::symmetrize((G * (base - K * S * K.transpose()) * G.transpose()).eval());
     }
 
     Scalar m_tol;

@@ -3,6 +3,8 @@
 #include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/lie/so3.h"
 
+#include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
+
 #include <Eigen/Eigenvalues>
 #include <Eigen/Geometry>
 
@@ -10,6 +12,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <limits>
 #include <utility>
 
 using namespace ctrlpp;
@@ -47,6 +50,59 @@ auto make_filter(simple_rotation_dynamics dyn, const manifold_ukf_config<double,
     auto created = MukfType::create(std::move(dyn), gravity_meas{}, cfg);
     REQUIRE(created.has_value());
     return *std::move(created);
+}
+
+constexpr double mukf_eps = std::numeric_limits<double>::epsilon();
+
+struct tangent_measurement
+{
+    auto operator()(const Eigen::Quaternion<double>& q) const -> Vector<double, 3>
+    {
+        return so3::log(q);
+    }
+};
+
+// q <- exp((3b - b |log q|^2) e_z). With Merwe alpha = 1, beta = 0, kappa = -1
+// at n = 3 the center weight is -1/2, the six outer weights are 1/4 and the
+// outer points of P = I sit at |log q|^2 = 2, so the center maps to the angle 3b
+// and the outer points to b: the weighted mean angle is -3b/2 + 6b/4 = 0 and the
+// weighted variance is -9b^2/2 + 6b^2/4 = -3b^2, from a positive definite prior.
+struct z_spread_dynamics
+{
+    double b;
+
+    auto operator()(const Eigen::Quaternion<double>& q, const Vector<double, 3>& /*omega*/) const -> Eigen::Quaternion<double>
+    {
+        const double angle = 3.0 * b - b * so3::log(q).squaredNorm();
+        return so3::exp(Vector<double, 3>{0.0, 0.0, angle});
+    }
+};
+
+using tangent_filter_t = manifold_ukf<double, 3, z_spread_dynamics, tangent_measurement>;
+
+constexpr double z_spread_b = 0.1;
+
+auto z_spread_filter(manifold_ukf_config<double, 3> cfg) -> tangent_filter_t
+{
+    auto strategy = so3_merwe_sigma_points<double>::try_create({.alpha = 1.0, .beta = 0.0, .kappa = -1.0});
+    REQUIRE(strategy.has_value());
+    cfg.Q.setZero();
+    auto created = tangent_filter_t::create(z_spread_dynamics{z_spread_b}, tangent_measurement{}, cfg, *strategy);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
+/// @brief The floor a repaired covariance is held to: the symmetric
+/// eigensolver's backward error 3 eps max|P_ij|, the same scale the repair
+/// clamps its spectrum to.
+auto repair_floor(const Matrix<double, 3, 3>& P) -> double
+{
+    return 3.0 * mukf_eps * P.cwiseAbs().maxCoeff();
+}
+
+auto min_eigenvalue(const Matrix<double, 3, 3>& P) -> double
+{
+    return Eigen::SelfAdjointEigenSolver<Matrix<double, 3, 3>>(P).eigenvalues().minCoeff();
 }
 
 } // namespace
@@ -383,4 +439,73 @@ TEST_CASE("manifold_ukf create accepts a non-unit nonzero quaternion", "[manifol
     auto filter = MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
     REQUIRE(filter.has_value());
     REQUIRE((filter->attitude().coeffs().array() == cfg.q0.normalized().coeffs().array()).all());
+}
+
+TEST_CASE("manifold_ukf update after a covariance repair carries the repaired covariance", "[manifold_ukf][repair]")
+{
+    // The gain and the innovation covariance come from the repaired sigma set,
+    // so a reduction taken from the unrepaired tangent covariance would keep
+    // its negative eigenvalue.
+    manifold_ukf_config<double, 3> cfg;
+    cfg.Q.setZero();
+    cfg.P0 = Vector<double, 3>{1.0, 1.0, -0.5}.asDiagonal();
+    auto created = manifold_ukf<double, 3, simple_rotation_dynamics, tangent_measurement>::create(simple_rotation_dynamics{}, tangent_measurement{}, cfg);
+    REQUIRE(created.has_value());
+    auto filter = *std::move(created);
+
+    REQUIRE(filter.update(Vector<double, 3>::Zero()).has_value());
+
+    CAPTURE(filter.covariance());
+    REQUIRE(min_eigenvalue(filter.covariance()) >= -repair_floor(filter.covariance()));
+    REQUIRE(filter.health() == manifold_ukf_health::covariance_repaired);
+}
+
+TEST_CASE("manifold_ukf update after a prediction-driven repair carries the repaired covariance", "[manifold_ukf][repair]")
+{
+    auto filter = z_spread_filter(manifold_ukf_config<double, 3>{});
+
+    filter.predict(Vector<double, 3>::Zero());
+
+    // Seven weighted terms, each through one log, one product and one sum, at
+    // most the center's angle 3b for the mean and its square for the variance.
+    constexpr double sigma_ops = 3.0 * 7.0;
+    const double angle_scale = 3.0 * z_spread_b;
+    CAPTURE(filter.attitude().coeffs(), filter.covariance());
+    REQUIRE(so3::log(filter.attitude()).norm() <= sigma_ops * mukf_eps * angle_scale);
+    REQUIRE_THAT(filter.covariance()(2, 2), WithinAbs(-3.0 * z_spread_b * z_spread_b, sigma_ops * mukf_eps * angle_scale * angle_scale));
+    REQUIRE(filter.health() == manifold_ukf_health::ok);
+
+    REQUIRE(filter.update(Vector<double, 3>::Zero()).has_value());
+
+    CAPTURE(filter.covariance());
+    REQUIRE(min_eigenvalue(filter.covariance()) >= -repair_floor(filter.covariance()));
+    REQUIRE(filter.health() == manifold_ukf_health::covariance_repaired);
+}
+
+TEST_CASE("manifold_ukf health latches a repair and a non-converged mean by severity", "[manifold_ukf][repair]")
+{
+    manifold_ukf_config<double, 3> cfg;
+    cfg.geodesic_mean_max_iter = 1;
+
+    SECTION("a later repair does not lower a non-converged mean")
+    {
+        auto filter = z_spread_filter(cfg);
+        filter.predict(Vector<double, 3>::Zero());
+        REQUIRE(filter.health() == manifold_ukf_health::mean_not_converged);
+
+        REQUIRE(filter.update(Vector<double, 3>::Zero()).has_value());
+        REQUIRE(min_eigenvalue(filter.covariance()) >= -repair_floor(filter.covariance()));
+        REQUIRE(filter.health() == manifold_ukf_health::mean_not_converged);
+    }
+
+    SECTION("a later non-converged mean raises a repair")
+    {
+        cfg.P0 = Vector<double, 3>{1.0, 1.0, -0.5}.asDiagonal();
+        auto filter = z_spread_filter(cfg);
+        REQUIRE(filter.update(Vector<double, 3>::Zero()).has_value());
+        REQUIRE(filter.health() == manifold_ukf_health::covariance_repaired);
+
+        filter.predict(Vector<double, 3>::Zero());
+        REQUIRE(filter.health() == manifold_ukf_health::mean_not_converged);
+    }
 }

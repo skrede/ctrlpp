@@ -314,9 +314,14 @@ otherwise produce silent corruption through intermediate overflow:
   complete minimum mean-square-error reduction `P = P - K*S*K^T`, where
   `S = Pzz + R` and `K = Pxz*S^{-1}`. Because `K*S*K^T = K*Pxz^T`, this term is
   exactly the uncertainty the measurement removes and no extra `K*R*K^T` term is
-  added. The sigma points are built from a permutation-correct covariance square
-  root, so the reduction stays symmetric positive semidefinite without requiring
-  an eigendecomposition.
+  added. The reduction is taken from the covariance the sigma set represents,
+  which is the matrix `S S^T` of the square root the points were built from.
+  When the carried covariance was not positive definite and had to be repaired
+  to the nearest symmetric positive definite matrix, that is the repaired
+  matrix, so the posterior is the repaired covariance less the gain term and is
+  positive semidefinite up to rounding. The repair is reported through
+  `health()` as `covariance_repaired`. The manifold UKF follows the same rule in
+  its tangent space and reports the repair through its own `health()`.
 
 - **MOESP degenerate data:** The subspace identification algorithm refuses
   with `sysid_error::model_not_identified` when the condition number of the

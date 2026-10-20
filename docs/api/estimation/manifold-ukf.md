@@ -82,7 +82,7 @@ The step is rejected **before any member is assigned**, so a rejected step leave
 
 `predict` is deliberately not fallible. Its input is a command the caller already owns and the plant already took, so refusing it would leave the filter with no propagation for a step that happened. A prediction that poisons the carried estimate is reported by [`health`](#health) instead, which the next `update` latches.
 
-On a step that runs: generates manifold sigma points, transforms through measurement model, computes innovation covariance S and manifold cross-covariance Pxz (using log-map deviations), then applies the Kalman gain correction via the exponential map. After the correction, the tangent-space covariance is transported into the corrected frame with the reset Jacobian G = I - 0.5 * skew(delta_phi), mirroring the MEKF reset, so the reported covariance stays anchored to the updated attitude rather than the pre-correction frame.
+On a step that runs: generates manifold sigma points, transforms through measurement model, computes innovation covariance S and manifold cross-covariance Pxz (using log-map deviations), then applies the Kalman gain correction via the exponential map. After the correction, the tangent-space covariance is transported into the corrected frame with the reset Jacobian G = I - 0.5 * skew(delta_phi), mirroring the MEKF reset, so the reported covariance stays anchored to the updated attitude rather than the pre-correction frame. The reduction is taken from the tangent covariance the sigma set represents: after a repair of a non-positive-definite covariance that is the repaired matrix, so a repaired update carries a covariance that is positive semidefinite up to rounding, and `health()` reports `covariance_repaired`.
 
 ### state
 
@@ -120,7 +120,7 @@ Returns the quaternion estimate directly.
 manifold_ukf_health health() const;
 ```
 
-Returns the persistent state-health status, one of `manifold_ukf_health::ok`, `manifold_ukf_health::mean_not_converged` or `manifold_ukf_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The enumerators are ordered by severity and the status latches, never returning to a lower rung on its own. It moves to `mean_not_converged` the first time a geodesic (Karcher) mean iteration exhausts its iteration budget without meeting `geodesic_mean_tol`, signaling that the predicted attitude may be a non-converged iterate rather than the true geodesic mean; it moves to `non_finite_estimate` the first time a step finds the carried attitude or covariance already non-finite, which is not recoverable by any further step and is how a poisoned `predict` becomes visible. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.
+Returns the persistent state-health status, one of `manifold_ukf_health::ok`, `manifold_ukf_health::covariance_repaired`, `manifold_ukf_health::mean_not_converged` or `manifold_ukf_health::non_finite_estimate`, in that order of severity. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The enumerators are ordered by severity and the status latches, never returning to a lower rung on its own. It moves to `covariance_repaired` the first time a non-positive-definite tangent covariance had to be repaired to the nearest symmetric positive definite matrix during sigma-point generation, in `predict` or in a committed `update`, signaling a numerically degraded but still usable estimate; it moves to `mean_not_converged` the first time a geodesic (Karcher) mean iteration exhausts its iteration budget without meeting `geodesic_mean_tol`, signaling that the predicted attitude may be a non-converged iterate rather than the true geodesic mean; it moves to `non_finite_estimate` the first time a step finds the carried attitude or covariance already non-finite, which is not recoverable by any further step and is how a poisoned `predict` becomes visible. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.
 
 ## Supporting Types
 
@@ -138,6 +138,8 @@ static auto try_create(options_t opts = options_t{})
 ```
 
 See [ukf](ukf.md) for the two rejections and the reason each parameter has an exact domain. This strategy keeps the `try_` prefix because it has a real non-fallible counterpart: default construction takes in-domain defaults and cannot fail, so the prefix distinguishes two genuine alternatives rather than restating the return type.
+
+Its `generate` returns a `manifold_sigma_result` carrying the points, the weights, `spd_repaired` and the 3 x 3 `factor`, the square root of the tangent covariance the points were built from, all forwarded from the tangent-space strategy. A custom manifold strategy that sets `spd_repaired` must fill `factor` with the repaired square root, since the filter reduces the covariance from `factor * factor^T` when the flag is set.
 
 ## Usage Example
 

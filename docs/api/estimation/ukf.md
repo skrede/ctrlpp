@@ -136,7 +136,7 @@ The step is rejected **before any member is assigned**, so a rejected step leave
 
 `predict` is deliberately not fallible. Its input is a command the caller already owns and the plant already took, so refusing it would leave the filter with no propagation for a step that happened. A prediction that poisons the carried estimate is reported by [`health`](#health) instead, which the next `update` latches.
 
-On a step that runs: generates sigma points, transforms through measurement model, computes innovation covariance S and cross-covariance Pxz, then applies the Kalman gain correction. The covariance update uses the algebraically complete minimum mean-square-error reduction `P = P - K*S*K^T`, with `S = Pzz + R` and `K = Pxz*S^{-1}`. Since `K*S*K^T = K*Pxz^T`, this term is exactly the uncertainty the measurement removes, and no extra `K*R*K^T` term is added. The sigma points feeding this update are built from a permutation-correct covariance square root, so the reduction stays symmetric positive semidefinite.
+On a step that runs: generates sigma points, transforms through measurement model, computes innovation covariance S and cross-covariance Pxz, then applies the Kalman gain correction. The covariance update uses the algebraically complete minimum mean-square-error reduction `P = P - K*S*K^T`, with `S = Pzz + R` and `K = Pxz*S^{-1}`. Since `K*S*K^T = K*Pxz^T`, this term is exactly the uncertainty the measurement removes, and no extra `K*R*K^T` term is added. The reduction is taken from the covariance the sigma set represents, which is `S S^T` for the square root `S` the points were built from. When the carried covariance was not positive definite and had to be repaired, that is the repaired matrix, so a repaired update carries the repaired covariance less the gain term, which is positive semidefinite up to rounding, and `health()` reports `covariance_repaired`.
 
 ### state
 
@@ -244,6 +244,24 @@ The sum `n + kappa` is both the radicand of the offset scale `gamma = sqrt(n + k
 A negative `kappa` with `n + kappa > 0` is inside the domain. Julier's own choice `kappa = 3 - n` is such a value for `n > 3`; it gives a negative center weight, which the method permits.
 
 Default construction (`julier_sigma_points<Scalar, NX>{}`) cannot fail: with the default zero `kappa` the sum `n + kappa` reduces to `NX`, which is required to be positive. There is no public constructor from options; a non-default `kappa` goes through `try_create`, or through the options overload of the filter's `create`, which forwards the same rejection.
+
+### Custom strategies
+
+A strategy satisfies `sigma_point_strategy` by exposing `num_points`, an `options_t` and a `generate(x, P)` returning `sigma_result<Scalar, NX, num_points>`:
+
+```cpp
+template <typename Scalar, std::size_t NX, std::size_t NumPoints>
+struct sigma_result
+{
+    std::array<Vector<Scalar, NX>, NumPoints> points;
+    std::array<Scalar, NumPoints> Wm;
+    std::array<Scalar, NumPoints> Wc;
+    bool spd_repaired{false};
+    Matrix<Scalar, NX, NX> factor;
+};
+```
+
+`factor` is the matrix `S` with `S S^T` equal to the covariance the points were built from. The filter reads it only when `spd_repaired` is set, as the base of the covariance reduction, so a custom strategy that repairs the covariance and sets the flag must fill `factor` with the repaired square root.
 
 ### gain_decomposition
 

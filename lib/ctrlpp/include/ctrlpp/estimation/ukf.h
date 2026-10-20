@@ -218,7 +218,7 @@ public:
 
         m_innovation = (z - z_pred).eval();
         m_nis = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
-        apply_correction_and_update_covariance(K, S);
+        apply_correction_and_update_covariance(K, S, reduction_base(sigma));
         if(!m_x.allFinite() || !m_P.allFinite()
             || !m_innovation.allFinite() || !std::isfinite(m_nis))
         {
@@ -309,6 +309,17 @@ private:
     {
         if(sigma.spd_repaired && m_health == ukf_health::ok)
             m_health = ukf_health::covariance_repaired;
+    }
+
+    /// @brief The covariance a sigma set represents: the repaired matrix
+    /// `factor * factor^T` when the generation had to repair, the carried
+    /// covariance otherwise.
+    template <typename Sigma>
+    auto reduction_base(const Sigma& sigma) const -> cov_matrix_t
+    {
+        if(sigma.spd_repaired)
+            return (sigma.factor * sigma.factor.transpose()).eval();
+        return m_P;
     }
 
     /// @brief Propagate sigma points through dynamics model.
@@ -410,11 +421,15 @@ private:
     /// K = Pxz*S^{-1}. Since K*S*K^T = K*Pxz^T, this is exactly the amount of
     /// uncertainty the measurement removes; no extra term is added.
     ///
+    /// The reduction is taken from `base`, the covariance the sigma set
+    /// represents. After a repair that is the repaired matrix: K and S describe
+    /// it, so reducing the unrepaired one would keep its negative eigenvalues.
+    ///
     /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 26-27
-    void apply_correction_and_update_covariance(const Eigen::Matrix<Scalar, nx, ny>& K, const meas_cov_matrix_t& S)
+    void apply_correction_and_update_covariance(const Eigen::Matrix<Scalar, nx, ny>& K, const meas_cov_matrix_t& S, const cov_matrix_t& base)
     {
         m_x = (m_x + K * m_innovation).eval();
-        m_P = detail::symmetrize((m_P - K * S * K.transpose()).eval());
+        m_P = detail::symmetrize((base - K * S * K.transpose()).eval());
     }
 
     Dynamics m_dynamics;
