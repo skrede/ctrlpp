@@ -22,12 +22,13 @@
 //  * A design sweep over in-domain specifications asserts that each one designs.
 //    A body inside a presence test asserts nothing on the absent branch, so if
 //    every specification had failed the case would have passed silently.
-//
-// What they deliberately do not decide. The Chebyshev design case compares
-// against reference coefficients with a counted rounding margin and its own
-// comment already disclaims that the margin is a tolerance on the design; it is
-// left as it stands and cited here as the file-local template for the counted
-// budgets above.
+//  * The Chebyshev precision cases compare against the EXACT design, computed at
+//    60 significant digits by a standard-library generator, with one-sided
+//    counted rounding margins. The first section's numerator, which carries the
+//    DC normalization, is judged through the stored cascade's DC gain, evaluated
+//    in double-double against the exact DC target, so the margin covers the
+//    normalization's own rounding and not the offsets' formation error divided by
+//    each gap.
 
 #include "hardening_helpers.h"
 
@@ -86,6 +87,112 @@ auto bounded_input_gain(ctrlpp::biquad_coeffs<double> const& c) -> double
         y1 = y;
     }
     return gain;
+}
+
+// Double-double arithmetic, so a cascade's DC gain can be evaluated from its stored coefficients with a relative error
+// near 2^-104: TwoSum, Fast2Sum and the fma-based TwoProduct (Dekker, "A floating-point technique for extending the
+// available precision", Numer. Math. 18, 1971; Muller et al., "Handbook of Floating-Point Arithmetic", 2nd ed., 2018,
+// Ch. 4 and 14), with the quotient refined by one Newton correction.
+struct double_double
+{
+    double hi;
+    double lo;
+};
+
+auto two_sum(double a, double b) -> double_double
+{
+    double const s = a + b;
+    double const b_virtual = s - a;
+    return {s, (a - (s - b_virtual)) + (b - b_virtual)};
+}
+
+auto fast_two_sum(double a, double b) -> double_double
+{
+    double const s = a + b;
+    return {s, b - (s - a)};
+}
+
+auto two_product(double a, double b) -> double_double
+{
+    double const p = a * b;
+    return {p, std::fma(a, b, -p)};
+}
+
+auto add(double_double x, double_double y) -> double_double
+{
+    auto const s = two_sum(x.hi, y.hi);
+    auto const t = two_sum(x.lo, y.lo);
+    auto const v = fast_two_sum(s.hi, s.lo + t.hi);
+    return fast_two_sum(v.hi, t.lo + v.lo);
+}
+
+auto multiply(double_double x, double_double y) -> double_double
+{
+    auto const p = two_product(x.hi, y.hi);
+    return fast_two_sum(p.hi, p.lo + (x.hi * y.lo + x.lo * y.hi));
+}
+
+auto divide(double_double x, double_double y) -> double_double
+{
+    double const q = x.hi / y.hi;
+    auto const residual = add(x, multiply(y, double_double{-q, 0.0}));
+    return fast_two_sum(q, residual.hi / y.hi);
+}
+
+template <typename Scalar, std::size_t N>
+auto stored_dc_gain(ctrlpp::cascaded_biquad<Scalar, N> const& cascade) -> double_double
+{
+    double_double gain{1.0, 0.0};
+    for(std::size_t k = 0; k < N; ++k)
+    {
+        auto const& c = cascade.section(k).coefficients();
+        auto const numerator = add(add({static_cast<double>(c.b0), 0.0}, {static_cast<double>(c.b1), 0.0}), {static_cast<double>(c.b2), 0.0});
+        auto const denominator = add(add({1.0, 0.0}, {static_cast<double>(c.a1), 0.0}), {static_cast<double>(c.a2), 0.0});
+        gain = multiply(gain, divide(numerator, denominator));
+    }
+    return gain;
+}
+
+auto relative_deviation(double_double value, double_double exact) -> double
+{
+    return std::abs(add(value, {-exact.hi, -exact.lo}).hi / exact.hi);
+}
+
+struct exact_section
+{
+    double_double a1;
+    double_double a2;
+    double_double b0;
+};
+
+struct counted_margins
+{
+    double offset;
+    double numerator;
+    double dc_gain;
+};
+
+/// The first section's numerator carries the DC normalization, so it is judged through the stored cascade's DC gain,
+/// which does not see the offsets' formation error: the normalization divided by the same stored gaps.
+template <typename Scalar>
+void check_against_exact_design(ctrlpp::cascaded_biquad<Scalar, 2> const& design, std::array<exact_section, 2> const& exact, double_double dc_target, counted_margins const& counts)
+{
+    auto const unit = static_cast<double>(std::numeric_limits<Scalar>::epsilon());
+    auto const deviation = [unit](Scalar value, double_double reference) {
+        return relative_deviation({static_cast<double>(value), 0.0}, reference) / unit;
+    };
+    for(std::size_t k = 0; k < exact.size(); ++k)
+    {
+        CAPTURE(k);
+        auto const& c = design.section(k).coefficients();
+        CHECK(c.b1 == Scalar{2} * c.b0);
+        CHECK(c.b2 == c.b0);
+        CHECK(deviation(c.a1, exact[k].a1) <= counts.offset);
+        CHECK(deviation(c.a2, exact[k].a2) <= counts.offset);
+        if(k > 0)
+            CHECK(deviation(c.b0, exact[k].b0) <= counts.numerator);
+    }
+    CHECK(relative_deviation(stored_dc_gain(design), dc_target) / unit <= counts.dc_gain);
 }
 
 }
@@ -458,87 +565,65 @@ TEST_CASE("make_chebyshev1 rejects a non-positive ripple specification",
     }
 }
 
-TEST_CASE("make_chebyshev1 leaves a conforming design unchanged",
+TEST_CASE("make_chebyshev1 matches the exact design within its counted rounding",
           "[biquad][hardening][precision]")
 {
-    // Reference coefficients printed from the unit-scale formation. The margins are counted for that formation with a
-    // running error bound (Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2002, Sec. 3.3): one
-    // eps per operation and per library call, carried through each call's slope, doubled because another
-    // toolchain's result and this one's may err on opposite sides. The stored offsets a1 and a2 carry at most 26 eps
-    // of their own magnitude and the unnormalized numerator 82. The first section's numerator carries the DC
-    // normalization, which divides by each stored gap 1 + a1 + a2, 0.0945 for the second section, so every eps of
-    // the offsets' formation weighs about ten times there: 671.
-    constexpr double offset_margin = 26.0 * eps;
-    constexpr double numerator_margin = 82.0 * eps;
-    constexpr double normalized_margin = 671.0 * eps;
+    // The reference is the exact 4th-order, 1 dB design at a 100 Hz cutoff and a 1000 Hz sample rate, printed by
+    // validation/oracles/chebyshev1/oracle_chebyshev1.py as the double nearest each value and the double nearest the
+    // remainder. The margins are one-sided counts of the formation's running error bound (Higham, "Accuracy and
+    // Stability of Numerical Algorithms", 2nd ed., 2002, Sec. 3.3): one eps per operation and per library call, each
+    // call carrying its argument's error through its slope |x f'(x) / f(x)|, power-of-two scalings and Sterbenz-exact
+    // differences free, the first-order sum rounded up so the ceiling absorbs the second-order terms. The largest
+    // offset count is 10.97 (a2 of the second section), so 11; the second section's unnormalized numerator 35.07, so
+    // 36; the DC gain 10.5 for the normalization (per section 1.75 for b0 + b1 + b2, 1 for the gap since 1 + a1 is
+    // Sterbenz-exact, 1 for the quotient; then the product, the correction and its product) plus 3.14 for the target
+    // 1 / sqrt(1 + eps^2), so 14. The double-double evaluation adds near 2^-104.
+    constexpr std::array<exact_section, 2> exact{
+        exact_section{
+            .a1 = {-0x1.7fe2cdb25ede1p+0, -0x1.5c458107b7f71p-56},
+            .a2 = {0x1.b249b813a8ac9p-1, -0x1.f3cfa944b02f0p-56},
+            .b0 = {0x1.6508395dd5e0dp-4, 0x1.5fd5ab672fb3ep-59},
+        },
+        exact_section{
+            .a1 = {-0x1.8e0666caac2a1p+0, -0x1.78d46386e4c90p-54},
+            .a2 = {0x1.4c7073a07a2a8p-1, 0x1.228a08a43bd25p-57},
+            .b0 = {0x1.831d30590eb2bp-6, -0x1.48322725d4ebdp-60},
+        },
+    };
+    constexpr double_double dc_target{0x1.c8520affa0a4bp-1, -0x1.2e5103f561a6fp-55};
 
     auto const design = ctrlpp::make_chebyshev1<4>(100.0, 1000.0, 1.0);
     REQUIRE(design.has_value());
-
-    // Reference coefficients of the 4th-order, 1 dB passband ripple design at
-    // a 100 Hz cutoff and a 1000 Hz sample rate.
-    constexpr std::array<ctrlpp::biquad_coeffs<double>, 2> reference{
-        ctrlpp::biquad_coeffs<double>{
-            .b0 = 0.077686820472834386,
-            .b1 = 0.15537364094566877,
-            .b2 = 0.077686820472834386,
-            .a1 = -1.4995544968104402,
-            .a2 = 0.84821868171669579,
-        },
-        ctrlpp::biquad_coeffs<double>{
-            .b0 = 0.023627564635016512,
-            .b1 = 0.047255129270033024,
-            .b2 = 0.023627564635016512,
-            .a1 = -1.5547851795965149,
-            .a2 = 0.64929543813658075,
-        },
-    };
-
-    for(std::size_t k = 0; k < reference.size(); ++k)
-    {
-        CAPTURE(k);
-        auto const& c = design->section(k).coefficients();
-        auto const& r = reference[k];
-        double const b_margin = k == 0 ? normalized_margin : numerator_margin;
-        CHECK_THAT(c.b0, WithinRel(r.b0, b_margin));
-        CHECK_THAT(c.b1, WithinRel(r.b1, b_margin));
-        CHECK_THAT(c.b2, WithinRel(r.b2, b_margin));
-        CHECK_THAT(c.a1, WithinRel(r.a1, offset_margin));
-        CHECK_THAT(c.a2, WithinRel(r.a2, offset_margin));
-    }
+    check_against_exact_design(*design, exact, dc_target, counted_margins{.offset = 11.0, .numerator = 36.0, .dc_gain = 14.0});
 }
 
-TEST_CASE("make_chebyshev1 keeps a small ripple's precision in single precision",
+TEST_CASE("make_chebyshev1 matches the exact small-ripple design within its counted rounding in single precision",
           "[biquad][hardening][precision]")
 {
     // Formed as 10^(r / 10) - 1, the radicand at 1e-4 dB cancels to about three significant digits in float and the
-    // coefficients land thousands of float epsilons from the double design. Through expm1 they stay within their
-    // counted bounds, counted as in the case above but one-sided, in float eps (the double design's own error is nine
-    // orders smaller): the stored offsets 385 eps of their own magnitude, since a2 of the second section is 0.076 and
-    // its offset 0.924 weighs twelve times; the unnormalized numerator 48; the normalized first-section numerator 273.
-    constexpr float ripple_db = 1e-4f;
-    constexpr double single_eps = static_cast<double>(std::numeric_limits<float>::epsilon());
-    constexpr double offset_margin = 385.0 * single_eps;
-    constexpr double numerator_margin = 48.0 * single_eps;
-    constexpr double normalized_margin = 273.0 * single_eps;
+    // coefficients land thousands of float epsilons from the exact design. Through expm1 they stay within their
+    // counted bounds, counted as in the case above in float eps against the exact design at the float ripple
+    // 0x1.a36e2ep-14 from the same generator: the offsets 306.55 of their own magnitude, so 307, since a2 of the
+    // second section is 0.076 and its offset 0.924 weighs twelve times; the unnormalized numerator 40.62, so 41; the
+    // DC gain 11.94 for the normalization (1 + a1 is not Sterbenz-exact here, |a1| < 1/2) plus 2.50 for the target,
+    // so 15.
+    constexpr std::array<exact_section, 2> exact{
+        exact_section{
+            .a1 = {-0x1.99cb3a3f35f6cp-2, -0x1.67211adbfd55ap-57},
+            .a2 = {0x1.f9d4743f2ddf5p-2, -0x1.7fddec3773b9ap-61},
+            .b0 = {0x1.18024e7ffdfa2p-2, 0x1.a038419822dbbp-57},
+        },
+        exact_section{
+            .a1 = {-0x1.6c9db86fd1829p-2, -0x1.e7383d4f08c4ep-56},
+            .a2 = {0x1.383bdc84a1aa0p-4, 0x1.cf157bfb1030ep-59},
+            .b0 = {0x1.70b89f58ab73fp-3, 0x1.295539182ca0ap-57},
+        },
+    };
+    constexpr double_double dc_target{0x1.fffe7db14b8a2p-1, 0x1.057f05701de2ap-58};
 
-    auto const single = ctrlpp::make_chebyshev1<4>(100.0f, 1000.0f, ripple_db);
-    auto const reference = ctrlpp::make_chebyshev1<4>(100.0, 1000.0, static_cast<double>(ripple_db));
-    REQUIRE(single.has_value());
-    REQUIRE(reference.has_value());
-
-    for(std::size_t k = 0; k < 2; ++k)
-    {
-        CAPTURE(k);
-        auto const& c = single->section(k).coefficients();
-        auto const& r = reference->section(k).coefficients();
-        double const b_margin = k == 0 ? normalized_margin : numerator_margin;
-        CHECK_THAT(static_cast<double>(c.b0), WithinRel(r.b0, b_margin));
-        CHECK_THAT(static_cast<double>(c.b1), WithinRel(r.b1, b_margin));
-        CHECK_THAT(static_cast<double>(c.b2), WithinRel(r.b2, b_margin));
-        CHECK_THAT(static_cast<double>(c.a1), WithinRel(r.a1, offset_margin));
-        CHECK_THAT(static_cast<double>(c.a2), WithinRel(r.a2, offset_margin));
-    }
+    auto const design = ctrlpp::make_chebyshev1<4>(100.0f, 1000.0f, 1e-4f);
+    REQUIRE(design.has_value());
+    check_against_exact_design(*design, exact, dc_target, counted_margins{.offset = 307.0, .numerator = 41.0, .dc_gain = 15.0});
 }
 
 TEST_CASE("make_chebyshev1 rejects a design whose coefficients degenerate",
