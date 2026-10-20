@@ -77,12 +77,13 @@ Rebuild ctrlpp with the matching CTRLPP_BUILD_<COMPONENT> option on against
 a discoverable dependency and reinstall.
 ```
 
-The installed package resolves each backend's own dependency on your behalf, so your environment
-has to make that dependency discoverable: an OSQP installation for `osqp`, NLopt 2.10 or newer for
-`nlopt`, and Argmin 0.3.5 or newer for `argmin`. The OSQP requirement carries no version floor,
-because OSQP's package publishes no project version and every install of it reports `0.0.0`. An
-Argmin install older than 0.3.5 is not used: building ctrlpp itself fetches the pinned Argmin
-revision instead, and for a consumer of an installed ctrlpp, `find_package` fails naming Argmin.
+The installed package resolves each backend's own dependency on your behalf, so your environment has
+to make that dependency discoverable: an OSQP installation for `osqp`, NLopt 2.10 or newer for
+`nlopt`, and Argmin 0.3.5 or a later 0.3 release for `argmin`. The OSQP requirement carries no
+version floor, because OSQP's package publishes no project version and every install of it reports
+`0.0.0`. An Argmin install older than 0.3.5, or from another minor release, is not used: building
+ctrlpp itself fetches the pinned Argmin revision instead, and for a consumer of an installed ctrlpp,
+`find_package` fails naming Argmin.
 
 ## Your first PID controller
 
