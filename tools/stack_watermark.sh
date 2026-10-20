@@ -474,7 +474,7 @@ resolve_backend()
         printf 'configuring %s from empty to fetch the backend at its pinned revision\n' "${BACKEND_TREE}" >&2
         rm -rf "${BACKEND_TREE}"
         if ! cmake -S "${REPOSITORY_ROOT}" -B "${BACKEND_TREE}" -G "Unix Makefiles" \
-            -DCTRLPP_BUILD_ARGMIN=ON -DCTRLPP_CMAKE_FETCH_DEPS=ON \
+            -DCTRLPP_BUILD_ARGMIN=ON -DCTRLPP_CMAKE_FETCH_DEPS=ON -DCTRLPP_INSTALL=OFF \
             >"${WORK_DIRECTORY}/backend_configure.log" 2>&1
         then
             printf 'the backend could not be fetched; nothing was measured\n' >&2
