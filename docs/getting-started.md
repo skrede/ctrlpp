@@ -31,6 +31,28 @@ target_link_libraries(my_app PRIVATE ctrlpp::ctrlpp)
 This pulls ctrlpp and its Eigen dependency automatically. No manual
 installation required.
 
+#### Supplying your own Eigen or backend
+
+If your project already defines `Eigen3::Eigen` before it adds ctrlpp, ctrlpp uses that target
+as-is: it neither calls `find_package(Eigen3)` nor fetches Eigen. The same rule applies to the
+solver backends, keyed on the exact target each adapter links: `osqp::osqpstatic` for
+`CTRLPP_BUILD_OSQP`, `NLopt::nlopt` for `CTRLPP_BUILD_NLOPT` and `argmin::argmin` for
+`CTRLPP_BUILD_ARGMIN`. A target you supply this way is yours to install; ctrlpp does not count it
+as a dependency it fetched.
+
+```cmake
+add_library(my_eigen INTERFACE)
+add_library(Eigen3::Eigen ALIAS my_eigen)
+target_include_directories(my_eigen SYSTEM INTERFACE "${MY_EIGEN_DIR}")
+
+FetchContent_MakeAvailable(ctrlpp)
+```
+
+The Eigen target has to hand its headers out as system includes, as an imported target does by
+default and as the `SYSTEM` keyword above requests. Otherwise ctrlpp stops the configure with an
+error naming the target, because ctrlpp passes Eigen's headers on to every consumer and ordinary
+includes would bury the consumer's own diagnostics under Eigen's.
+
 ### find_package
 
 ```cmake

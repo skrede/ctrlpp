@@ -12,26 +12,12 @@ else ()
     set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE ALWAYS)
 endif ()
 
-# One recorded fact per acquired dependency, in a global property rather than a scoped
-# variable because the decision that reads them back is taken in a directory that ran none
-# of these sites. An empty install_option means the dependency has no setting that would
-# place it in this build's prefix at all, so it can never belong to an export set.
-function(_ctrlpp_record_dependency_install name install_option source_dir)
-    set(_fetched FALSE)
-    set(_installs FALSE)
-    if (source_dir)
-        set(_fetched TRUE)
-    endif ()
-    if (install_option)
-        if (${install_option})
-            set(_installs TRUE)
-        endif ()
-    endif ()
-    set_property(GLOBAL APPEND PROPERTY CTRLPP_DEPENDENCY_INSTALL_FACTS
-        "${name}|${install_option}|${_fetched}|${_installs}"
-    )
-endfunction()
+include(${CMAKE_CURRENT_LIST_DIR}/dependency_helpers.cmake)
 
+# A dependency whose target a parent project already defines is the parent's: it is used as-is,
+# with no find_package and no fetch, and no fact is recorded for it because whether it reaches an
+# install prefix is the parent's decision rather than this build's.
+#
 # The version is a floor on the find path only, which changes one behavior: with fetching off,
 # a system Eigen older than the floor no longer stops the configure but falls back to the pinned
 # fetch. That fallback belongs to no export set, so an install asked for on top of it is refused
@@ -39,56 +25,34 @@ endfunction()
 #
 # Deliberately not pinned to a commit like the two backends below: GIT_SHALLOW can fetch a tag
 # but not an arbitrary commit on every host.
-FetchContent_Declare(
-    Eigen3
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.0
-    GIT_SHALLOW TRUE
-    EXCLUDE_FROM_ALL
-    SOURCE_SUBDIR this-directory-does-not-exist
-    SYSTEM
-    FIND_PACKAGE_ARGS 3.4 CONFIG NAMES Eigen3 GLOBAL
-)
-FetchContent_MakeAvailable(Eigen3)
-
-# SOURCE_SUBDIR names a directory that does not exist so the fetch adds no subdirectory and
-# builds none of Eigen's own tree; the target the headers travel on is made here instead.
 if (NOT TARGET Eigen3::Eigen)
-    add_library(eigen_headers INTERFACE)
-    add_library(Eigen3::Eigen ALIAS eigen_headers)
-    target_include_directories(eigen_headers SYSTEM INTERFACE
-        "${eigen3_SOURCE_DIR}"
+    FetchContent_Declare(
+        Eigen3
+        GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+        GIT_TAG 3.4.0
+        GIT_SHALLOW TRUE
+        EXCLUDE_FROM_ALL
+        SOURCE_SUBDIR this-directory-does-not-exist
+        SYSTEM
+        FIND_PACKAGE_ARGS 3.4 CONFIG NAMES Eigen3 GLOBAL
     )
-endif ()
-_ctrlpp_record_dependency_install(Eigen3 "" "${eigen3_SOURCE_DIR}")
+    FetchContent_MakeAvailable(Eigen3)
 
-# Eigen's are the only third-party headers this library puts in its own interface, and the
-# warning set every target here compiles with draws roughly twelve thousand diagnostics out of
-# them the moment they stop being treated as system headers -- a wall of noise no source change
-# explains. An imported target carries that treatment by default and the interface target above
-# asks for it, so the outcome is asserted rather than left to a default a policy could flip.
-get_target_property(_eigen_aliased Eigen3::Eigen ALIASED_TARGET)
-if (_eigen_aliased)
-    set(_eigen_target ${_eigen_aliased})
-else ()
-    set(_eigen_target Eigen3::Eigen)
+    # SOURCE_SUBDIR names a directory that does not exist so the fetch adds no subdirectory and
+    # builds none of Eigen's own tree; the target the headers travel on is made here instead.
+    if (NOT TARGET Eigen3::Eigen)
+        add_library(eigen_headers INTERFACE)
+        add_library(Eigen3::Eigen ALIAS eigen_headers)
+        target_include_directories(eigen_headers SYSTEM INTERFACE
+            "${eigen3_SOURCE_DIR}"
+        )
+    endif ()
+    _ctrlpp_record_dependency_install(Eigen3 "" "${eigen3_SOURCE_DIR}")
 endif ()
-get_target_property(_eigen_imported ${_eigen_target} IMPORTED)
-get_target_property(_eigen_system_inc ${_eigen_target} INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
-set(_eigen_no_system FALSE)
-if (_eigen_imported)
-    get_target_property(_eigen_no_system ${_eigen_target} IMPORTED_NO_SYSTEM)
-endif ()
-if (_eigen_no_system OR NOT (_eigen_imported OR _eigen_system_inc))
-    message(FATAL_ERROR
-        "the Eigen target ${_eigen_target} would hand its headers to every consumer as ordinary "
-        "includes instead of system includes, which buries this project's own diagnostics under "
-        "third-party ones."
-    )
-endif ()
+_ctrlpp_require_system_eigen(Eigen3::Eigen)
 
 # --- OSQP solver backend (optional) ---
-if (CTRLPP_BUILD_OSQP)
+if (CTRLPP_BUILD_OSQP AND NOT TARGET osqp::osqpstatic)
     # No version in FIND_PACKAGE_ARGS: osqp's own listfile declares no project version, so
     # every osqp config package reports 0.0.0 -- the distribution one and the one built from
     # the commit pinned here alike -- and any floor would make the find path fail for
@@ -123,7 +87,7 @@ if (CTRLPP_BUILD_OSQP)
 endif ()
 
 # --- NLopt solver backend (optional) ---
-if (CTRLPP_BUILD_NLOPT)
+if (CTRLPP_BUILD_NLOPT AND NOT TARGET NLopt::nlopt)
     # The find name is capitalized because the installed config file is NLoptConfig.cmake,
     # while the content name stays lowercase to match the sub-build's own project name.
     FetchContent_Declare(
@@ -165,7 +129,7 @@ if (CTRLPP_BUILD_NLOPT)
 endif ()
 
 # --- Argmin solver backend (optional) ---
-if (CTRLPP_BUILD_ARGMIN)
+if (CTRLPP_BUILD_ARGMIN AND NOT TARGET argmin::argmin)
     if (CTRLPP_ARGMIN_SOURCE_DIR)
         FetchContent_Declare(
             argmin

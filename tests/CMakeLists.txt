@@ -262,11 +262,7 @@ if (CTRLPP_BUILD_TESTS)
             set_target_properties(rapidcheck_catch PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_rc_catch_inc}")
         endif ()
     endif ()
-    # The source purity gate and the self-test that proves it can fail. Both are
-    # registered here at the top level rather than under integration/, which is
-    # added only when dependencies are resolved by package discovery instead of
-    # fetched, and would therefore be skipped in the configuration this project
-    # builds by default.
+    # The source purity gate and the self-test that proves it can fail.
     #
     # Neither carries a target dependency, unlike every other registration in
     # this tree: the gate reads source and consumes no build product. The
@@ -308,9 +304,7 @@ if (CTRLPP_BUILD_TESTS)
 
     add_subdirectory(unit)
     add_subdirectory(compile)
-    if (NOT CTRLPP_CMAKE_FETCH_DEPS)
-        add_subdirectory(integration)
-    endif ()
+    add_subdirectory(integration)
 endif ()
 
 if (CTRLPP_BUILD_FUZZ_TESTS)

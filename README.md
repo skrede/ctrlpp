@@ -93,6 +93,9 @@ FetchContent_MakeAvailable(ctrlpp)
 target_link_libraries(my_app PRIVATE ctrlpp::ctrlpp)
 ```
 
+A parent project that already defines `Eigen3::Eigen`, or a backend target ctrlpp links, has that
+target used as-is; see [Getting Started](docs/getting-started.md#supplying-your-own-eigen-or-backend).
+
 ### find_package
 
 ```cmake
