@@ -73,6 +73,10 @@ auto characteristic_polynomial_bound(const Eigen::Matrix<double, N, N>& M, const
     const Eigen::EigenSolver<Eigen::Matrix<double, N, N>> left(balanced.transpose());
     REQUIRE(right.info() == Eigen::Success);
     REQUIRE(left.info() == Eigen::Success);
+    // eigenvectors() returns by value; a column taken straight from it dangles once the statement ends.
+    using eigenvectors = typename Eigen::EigenSolver<Eigen::Matrix<double, N, N>>::EigenvectorsType;
+    const eigenvectors right_vectors = right.eigenvectors();
+    const eigenvectors left_vectors = left.eigenvectors();
     Eigen::Matrix<double, N, 1> reach;
     Eigen::Matrix<double, N, 1> radius;
     int roundings = 0;
@@ -81,8 +85,8 @@ auto characteristic_polynomial_bound(const Eigen::Matrix<double, N, N>& M, const
         const std::complex<double> lambda = right.eigenvalues()(i);
         Eigen::Index j = 0;
         (left.eigenvalues().array() - lambda).abs().minCoeff(&j);
-        const auto x = right.eigenvectors().col(i);
-        const auto y = left.eigenvectors().col(j);
+        const auto x = right_vectors.col(i);
+        const auto y = left_vectors.col(j);
         radius(i) = x.norm() * y.norm() / std::abs((y.transpose() * x).value()) * backward;
         reach(i) = std::abs(lambda) + radius(i);
         if(lambda.imag() == 0)
