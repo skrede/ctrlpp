@@ -52,23 +52,32 @@ configuration, and uses C++20 designated initializers for the config.
 
 Rejections, checked in the order the config aggregate declares its fields (the
 fields are independent, so the order is declaration order rather than a claim
-about causality). Each matrix is checked for finiteness, then for definiteness:
+about causality). Each matrix is checked for finiteness, then for symmetry, then for definiteness:
 
 | Enumerator | Condition | What it prevents |
 |------------|-----------|------------------|
 | `filter_error::non_finite_process_noise` | `Q` has a non-finite entry | `Q` is added to the propagated covariance, so an infinite entry gives `P = Inf`, a gain formed from `Inf/Inf` and therefore `NaN`, and a non-finite estimate at the first step |
+| `filter_error::asymmetric_process_noise` | `Q`'s asymmetry exceeds the rounding bound | a covariance is symmetric by definition; triangles that differ by more than rounding describe two different matrices |
 | `filter_error::indefinite_process_noise` | `Q` has an eigenvalue below `-floor` | a matrix that is not positive semidefinite is not a covariance, so the predicted covariance it is added to stops being one |
 | `filter_error::non_finite_measurement_noise` | `R` has a non-finite entry | `R` is added to the innovation covariance the gain solve is posed against, so that solve is meaningless for every measurement |
+| `filter_error::asymmetric_measurement_noise` | `R`'s asymmetry exceeds the rounding bound | the innovation covariance the gain is posed against would carry it |
 | `filter_error::indefinite_measurement_noise` | `R` has an eigenvalue below `-floor` | the innovation covariance the gain is posed against stops being a covariance |
 | `filter_error::non_finite_initial_state` | `x0` has a non-finite component | `x0` seeds the carried estimate, which is the filter's memory, so every later estimate is formed from it |
 | `filter_error::non_finite_initial_covariance` | `P0` has a non-finite entry | `P0` seeds the covariance recursion, which has no mechanism that returns a non-finite covariance to a finite one |
+| `filter_error::asymmetric_initial_covariance` | `P0`'s asymmetry exceeds the rounding bound | there is no Gaussian prior with an asymmetric covariance |
 | `filter_error::indefinite_initial_covariance` | `P0` has an eigenvalue below `-floor` | there is no Gaussian prior with an indefinite covariance |
 
-The floor is `N eps max|M_ij|`, the order of the symmetric eigensolver's
-backward error, so an eigenvalue within it of zero is indistinguishable from
-zero. The verdict is taken on the symmetric part of the matrix. This is the
-same rule every filter in the estimation module applies: a matrix that is not
-positive semidefinite is not a covariance, whatever the filter does with it.
+The bound is `max(N eps max|M_ij|, N denorm_min)` for both checks. As a
+definiteness floor it is the order of the symmetric eigensolver's backward
+error, so an eigenvalue within it of zero is indistinguishable from zero; the
+absolute term keeps it from underflowing to zero for a subnormal-scale matrix.
+An asymmetry `max|M_ij - M_ji|` within it is rounding drift: the matrix is
+accepted, the filter stores its symmetrized form (each differing pair replaced
+by its midpoint), and the definiteness verdict is taken on that symmetrized
+matrix. This is the same rule every filter in the estimation module applies: a
+matrix that is not symmetric positive semidefinite is not a covariance,
+whatever the filter does with it. The convention and its count are in
+[Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused).
 
 A **singular** positive semidefinite matrix is **accepted**: a point-mass
 `P0 = 0`, a rank-one `Q` and a noiseless `R = 0` are legitimate configurations,
@@ -165,13 +174,16 @@ Returns true if the covariance has converged (relative change below tolerance).
 ### reset_covariance
 
 ```cpp
-auto reset_covariance(const cov_matrix_t& P0) -> ctrlpp::expected<void, filter_error>;
+auto reset_covariance(cov_matrix_t P0) -> ctrlpp::expected<void, filter_error>;
 ```
 
 Resets the covariance to a new initial value. A `P0` that `create` would refuse
-is refused with the same enumerator (`non_finite_initial_covariance` or
-`indefinite_initial_covariance`) before anything is assigned, so a refused call
-leaves the filter unchanged.
+is refused with the same enumerator (`non_finite_initial_covariance`,
+`asymmetric_initial_covariance` or `indefinite_initial_covariance`) before
+anything is assigned, so a refused call leaves the filter unchanged. `P0` is
+taken by value: a drift-asymmetric `P0` is assigned as its symmetrized copy
+([Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused)),
+and the caller's matrix is not modified.
 
 ### set_model
 
@@ -190,7 +202,7 @@ auto set_noise(cov_matrix_t Q, meas_cov_matrix_t R) -> ctrlpp::expected<void, fi
 Updates the process and measurement noise covariances. `Q` and then `R` are
 checked as `create` checks them, and both are validated before either is
 assigned: a refused call replaces neither, and the filter continues with the
-noise it had.
+noise it had. A drift-asymmetric matrix is assigned as its symmetrized copy.
 
 ## Usage Example
 

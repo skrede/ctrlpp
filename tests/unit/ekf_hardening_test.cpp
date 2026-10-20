@@ -91,6 +91,11 @@ struct linear_measurement
     }
 };
 
+struct full_state_measurement
+{
+    auto operator()(const ctrlpp::Vector<double, 2>& x) const -> ctrlpp::Vector<double, 2> { return x; }
+};
+
 /// @brief The same model, carrying the Jacobians it could have computed by hand.
 ///
 /// The filter takes this path only when the model satisfies the differentiable
@@ -311,6 +316,66 @@ TEST_CASE("EKF refuses a configuration matrix that is not a covariance", "[ekf][
     const auto rejected = ekf_t::create(linear_dynamics{}, linear_measurement{}, cfg);
     REQUIRE_FALSE(rejected.has_value());
     CHECK(rejected.error() == expected);
+}
+
+TEST_CASE("EKF refuses a structurally asymmetric configuration matrix by name", "[ekf][hardening][negative]")
+{
+    Eigen::Matrix2d asymmetric;
+    asymmetric << 1.0, 0.5, 0.4, 1.0;
+
+    SECTION("process noise")
+    {
+        ctrlpp::ekf_config<double, 2, 1, 1> cfg{};
+        cfg.Q = asymmetric;
+        const auto rejected = ekf_t::create(linear_dynamics{}, linear_measurement{}, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::asymmetric_process_noise);
+    }
+
+    SECTION("measurement noise of a two-output filter")
+    {
+        ctrlpp::ekf_config<double, 2, 1, 2> cfg{};
+        cfg.R = asymmetric;
+        const auto rejected = ctrlpp::ekf<double, 2, 1, 2, linear_dynamics, full_state_measurement>::create(linear_dynamics{}, full_state_measurement{}, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::asymmetric_measurement_noise);
+    }
+
+    SECTION("initial covariance")
+    {
+        ctrlpp::ekf_config<double, 2, 1, 1> cfg{};
+        cfg.P0 = asymmetric;
+        const auto rejected = ekf_t::create(linear_dynamics{}, linear_measurement{}, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::asymmetric_initial_covariance);
+    }
+}
+
+TEST_CASE("EKF stores a drift-asymmetric configuration matrix as its midpoint symmetrization", "[ekf][hardening]")
+{
+    ctrlpp::ekf_config<double, 2, 1, 1> drifted{};
+    drifted.Q << 0.02, 0.005, std::nextafter(0.005, 1.0), 0.01;
+    drifted.P0 << 2.0, 0.3, std::nextafter(0.3, 0.0), 1.0;
+
+    ctrlpp::ekf_config<double, 2, 1, 1> symmetric = drifted;
+    symmetric.Q(0, 1) = symmetric.Q(1, 0) = drifted.Q(0, 1) + (drifted.Q(1, 0) - drifted.Q(0, 1)) / 2.0;
+    symmetric.P0(0, 1) = symmetric.P0(1, 0) = drifted.P0(0, 1) + (drifted.P0(1, 0) - drifted.P0(0, 1)) / 2.0;
+
+    auto filter = build_ekf(drifted);
+    auto twin = build_ekf(symmetric);
+    CHECK((filter.covariance().array() == symmetric.P0.array()).all());
+
+    const ctrlpp::Vector<double, 1> u = ctrlpp::Vector<double, 1>::Constant(0.3);
+    for(int k = 0; k < 10; ++k)
+    {
+        const ctrlpp::Vector<double, 1> z = ctrlpp::Vector<double, 1>::Constant(1.0 + 0.05 * k);
+        filter.predict(u);
+        twin.predict(u);
+        REQUIRE(filter.update(z).has_value());
+        REQUIRE(twin.update(z).has_value());
+    }
+    CHECK((filter.state().array() == twin.state().array()).all());
+    CHECK((filter.covariance().array() == twin.covariance().array()).all());
 }
 
 TEST_CASE("EKF rejects correction overflow without committing it",

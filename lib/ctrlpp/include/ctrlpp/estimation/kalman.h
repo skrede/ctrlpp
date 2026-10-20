@@ -17,6 +17,8 @@
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/estimation_types.h"
 
+#include "ctrlpp/estimation/detail/filter_configuration.h"
+
 #include <cmath>
 #include <limits>
 #include <cstddef>
@@ -122,6 +124,10 @@ public:
     /// R) and a merely ill-conditioned one are legitimately posed problems and
     /// are accepted: the recursion inverts only the innovation covariance, and
     /// conditioning is a numerical-behavior question, not a domain violation.
+    ///
+    /// An asymmetry within the rounding bound is drift and is stored as its
+    /// symmetrized matrix, on which the definiteness check runs; a structural
+    /// asymmetry is refused with the matrix's `asymmetric_*` enumerator.
     static auto create(system_t sys, kalman_config<Scalar, NX, NU, NY> config) -> ctrlpp::expected<kalman_filter, filter_error>
     {
         if(const auto valid = detail::validate_filter_configuration(config.Q, config.R, config.x0, config.P0); !valid)
@@ -200,8 +206,9 @@ public:
     }
 
     /// @brief Replace the covariance, refusing a P0 that `create` would refuse
-    /// before assigning anything.
-    auto reset_covariance(const cov_matrix_t& P0) -> ctrlpp::expected<void, filter_error>
+    /// before assigning anything; a drift-asymmetric P0 is assigned as its
+    /// symmetrized matrix.
+    auto reset_covariance(cov_matrix_t P0) -> ctrlpp::expected<void, filter_error>
     {
         if(const auto valid = detail::validate_initial_covariance(P0); !valid)
             return ctrlpp::unexpected(valid.error());
@@ -213,7 +220,8 @@ public:
     void set_model(system_t sys) { m_sys = std::move(sys); }
 
     /// @brief Replace both noise matrices or neither: Q and then R are
-    /// validated as `create` validates them before either is assigned.
+    /// validated as `create` validates them before either is assigned, and a
+    /// drift-asymmetric matrix is assigned as its symmetrized form.
     auto set_noise(cov_matrix_t Q, meas_cov_matrix_t R) -> ctrlpp::expected<void, filter_error>
     {
         if(const auto valid = detail::validate_noise(Q, R); !valid)

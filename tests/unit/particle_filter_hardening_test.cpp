@@ -760,6 +760,47 @@ TEST_CASE("PF factory refuses a configuration with no Gaussian to sample or scor
         config.Q = diag2(-1.0, 1.0);
         CHECK(refusal_of(config) == ctrlpp::filter_error::indefinite_process_noise);
     }
+
+    SECTION("structurally asymmetric matrices, each after its own finiteness")
+    {
+        auto config = valid;
+        config.P0(1, 0) = 0.5;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::asymmetric_initial_covariance);
+        config.R << 0.0;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::singular_measurement_noise);
+        config.Q(0, 1) = 0.5;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::asymmetric_process_noise);
+        config.Q(1, 1) = nan;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::non_finite_process_noise);
+    }
+}
+
+TEST_CASE("PF factory refuses a structurally asymmetric multi-output measurement noise",
+          "[particle_filter][hardening][negative]")
+{
+    struct full_measurement
+    {
+        auto operator()(const ctrlpp::Vector<double, 2>& x) const -> ctrlpp::Vector<double, 2> { return x; }
+    };
+    ctrlpp::pf_config<double, 2, 1, 2> config{};
+    config.R(0, 1) = 0.5;
+    config.P0 = diag2(1.0, -1.0);
+    auto pf = ctrlpp::make_particle_filter<16>(identity_dynamics{}, full_measurement{}, config);
+    REQUIRE_FALSE(pf.has_value());
+    CHECK(pf.error() == ctrlpp::filter_error::asymmetric_measurement_noise);
+}
+
+// At this scale the relative floor 2 eps max|Q_ij| underflows to zero, so Q is
+// judged against the absolute floor 2 denorm_min.
+TEST_CASE("PF factory accepts a subnormal-scale process noise within the underflow floor",
+          "[particle_filter][hardening][construction]")
+{
+    const double dm = std::numeric_limits<double>::denorm_min();
+    pf_config_2 config{};
+    config.Q = diag2(std::ldexp(dm, 20), 0.0);
+    CHECK(ctrlpp::make_particle_filter<16>(identity_dynamics{}, pf_position_measurement{}, config).has_value());
+    config.Q = diag2(std::ldexp(dm, 20), -dm);
+    CHECK(ctrlpp::make_particle_filter<16>(identity_dynamics{}, pf_position_measurement{}, config).has_value());
 }
 
 TEST_CASE("PF factory refuses a singular multi-output measurement noise",
@@ -829,4 +870,36 @@ TEST_CASE("PF factory samples a positive-definite configuration through its Chol
 
     for(std::size_t i = 0; i < NP; ++i)
         CHECK(pf.particles()[i] == expected[i]);
+}
+
+TEST_CASE("PF factory samples a drift-asymmetric process noise through the factor of its symmetrization",
+          "[particle_filter][hardening][construction]")
+{
+    constexpr std::size_t NP = 8;
+    ctrlpp::Matrix<double, 2, 2> drifted;
+    drifted << 0.01, 0.004, std::nextafter(0.004, 1.0), 0.02;
+    ctrlpp::Matrix<double, 2, 2> Q = drifted;
+    Q(0, 1) = Q(1, 0) = drifted(0, 1) + (drifted(1, 0) - drifted(0, 1)) / 2.0;
+    const pf_config_2 config{.Q = drifted, .x0 = ctrlpp::Vector<double, 2>(0.3, -0.2), .P0 = ctrlpp::Matrix<double, 2, 2>::Zero()};
+
+    auto pf = ctrlpp::test::constructed(ctrlpp::make_particle_filter<NP>(identity_dynamics{}, pf_position_measurement{}, config, std::mt19937_64{42}));
+    pf.predict(ctrlpp::Vector<double, 1>::Zero());
+
+    const ctrlpp::Matrix<double, 2, 2> L_Q = Q.llt().matrixL();
+    std::mt19937_64 rng{42};
+    std::normal_distribution<double> prior(0.0, 1.0);
+    for(std::size_t i = 0; i < NP; ++i)
+    {
+        prior(rng);
+        prior(rng);
+    }
+    for(std::size_t i = 0; i < NP; ++i)
+    {
+        std::normal_distribution<double> process(0.0, 1.0);
+        ctrlpp::Vector<double, 2> noise;
+        noise(0) = process(rng);
+        noise(1) = process(rng);
+        const ctrlpp::Vector<double, 2> expected = config.x0 + (L_Q * noise).eval();
+        CHECK(pf.particles()[i] == expected);
+    }
 }

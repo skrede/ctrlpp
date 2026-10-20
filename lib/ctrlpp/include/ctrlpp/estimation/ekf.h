@@ -21,6 +21,8 @@
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/estimation_types.h"
 
+#include "ctrlpp/estimation/detail/filter_configuration.h"
+
 #include <cmath>
 #include <limits>
 #include <cstddef>
@@ -128,6 +130,10 @@ public:
     /// R) and a merely ill-conditioned one are legitimately posed problems and
     /// are accepted: the recursion inverts only the innovation covariance, and
     /// conditioning is a numerical-behavior question, not a domain violation.
+    ///
+    /// An asymmetry within the rounding bound is drift and is stored as its
+    /// symmetrized matrix, on which the definiteness check runs; a structural
+    /// asymmetry is refused with the matrix's `asymmetric_*` enumerator.
     ///
     /// `numerical_eps` is NOT validated here. It is the finite-difference step
     /// used only when the model is not analytically differentiable, and it

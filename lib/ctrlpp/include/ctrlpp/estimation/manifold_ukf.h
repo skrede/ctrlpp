@@ -18,6 +18,8 @@
 #include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
 
+#include "ctrlpp/estimation/detail/filter_configuration.h"
+
 #include <Eigen/Geometry>
 
 #include <array>
@@ -194,9 +196,11 @@ public:
     /// such a config is rejected with `filter_error::degenerate_quaternion`.
     /// Any finite nonzero quaternion is accepted and normalized.
     ///
-    /// Q, R and P0 are then refused, in that order, when non-finite or
-    /// indefinite, as every Kalman-family factory refuses them (see
-    /// `filter_error`). A singular positive semidefinite matrix is accepted.
+    /// Q, R and P0 are then refused, in that order, when non-finite,
+    /// structurally asymmetric or indefinite, as every Kalman-family factory
+    /// refuses them (see `filter_error`). A drift-level asymmetry is stored as
+    /// its symmetrized matrix, on which the definiteness check runs, and a
+    /// singular positive semidefinite matrix is accepted.
     static auto create(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<manifold_ukf, filter_error>
     {
         const Scalar q0_norm = config.q0.norm();

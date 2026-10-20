@@ -443,6 +443,29 @@ TEST_CASE("Moving-horizon factories report an indefinite process noise as the em
             window_dynamics{}, window_measurement{}, nonlinear));
 }
 
+TEST_CASE("Moving-horizon factories report a structurally asymmetric process noise as the embedded filter's error",
+          "[mhe][nmhe][configuration][hardening]")
+{
+    auto require_asymmetric = [](const auto& result) {
+        REQUIRE_FALSE(result.has_value());
+        auto const* error = std::get_if<ctrlpp::filter_error>(&result.error());
+        REQUIRE(error != nullptr);
+        REQUIRE(*error == ctrlpp::filter_error::asymmetric_process_noise);
+    };
+
+    ctrlpp::mhe_config<double, NX, NU, NY, window> linear;
+    linear.Q << 1.0, 0.5, 0.4, 1.0;
+    require_asymmetric(
+        linear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+            window_dynamics{}, window_measurement{}, linear));
+
+    ctrlpp::nmhe_config<double, NX, NU, NY, window> nonlinear;
+    nonlinear.Q << 1.0, 0.5, 0.4, 1.0;
+    require_asymmetric(
+        nonlinear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+            window_dynamics{}, window_measurement{}, nonlinear));
+}
+
 TEST_CASE("Moving-horizon factories validate every common formulation option",
           "[mhe][nmhe][configuration][hardening]")
 {

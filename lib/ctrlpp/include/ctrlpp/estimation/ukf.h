@@ -21,6 +21,8 @@
 #include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
 #include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
 
+#include "ctrlpp/estimation/detail/filter_configuration.h"
+
 #include <Eigen/Cholesky>
 
 #include <array>
@@ -146,6 +148,10 @@ public:
     /// are accepted: whether the sigma-point factorization of a singular or
     /// near-singular covariance needs a repair is reported by `health()`, not
     /// refused here.
+    ///
+    /// An asymmetry within the rounding bound is drift and is stored as its
+    /// symmetrized matrix, on which the definiteness check runs; a structural
+    /// asymmetry is refused with the matrix's `asymmetric_*` enumerator.
     ///
     /// The strategy is taken already built, so it was validated where it was
     /// built; the overload below takes its options instead and forwards the

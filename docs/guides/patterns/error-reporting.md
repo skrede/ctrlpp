@@ -250,13 +250,24 @@ aggregates declare the same four fields and feed them into the same recursion.
 `rls` carries its own `rls_error`, whose conditions are read off the covariance
 update rather than asserted as a range.
 
-**Every filter that takes a `Q`, `R` or `P0` refuses one that is non-finite or
-indefinite.** A matrix with an eigenvalue below `-floor`, with the floor
-`N eps max|M_ij|` (the symmetric eigensolver's backward-error order), is not a
+**Every filter that takes a `Q`, `R` or `P0` refuses one that is non-finite,
+structurally asymmetric or indefinite.** A matrix with an eigenvalue below
+`-floor`, with the floor `max(N eps max|M_ij|, N denorm_min)` (the symmetric
+eigensolver's backward-error order, kept from underflowing to zero), is not a
 covariance, whatever the filter does with it, so `filter_error` also carries
 `indefinite_process_noise`, `indefinite_measurement_noise` and
-`indefinite_initial_covariance`, and each matrix is checked for finiteness and
-then for definiteness, in declaration order. A **singular** positive
+`indefinite_initial_covariance`. Nor is a matrix whose triangles differ by more
+than rounding: `filter_error` carries `asymmetric_process_noise`,
+`asymmetric_measurement_noise` and `asymmetric_initial_covariance` for an
+asymmetry `max|M_ij - M_ji|` beyond the counted bound
+`max(N eps max|M_ij|, N denorm_min)`. An asymmetry within that bound is drift:
+the matrix is accepted, the filter stores its symmetrized form (each differing
+pair replaced by its midpoint), and the definiteness check runs on that
+symmetrized matrix. Each matrix is checked for finiteness, then for symmetry,
+then for definiteness, and the matrices in declaration order; the convention
+and its count are in
+[numerical-behavior.md](numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused).
+A **singular** positive
 semidefinite matrix is accepted: a point-mass `P0`, a rank-one `Q` and a
 noiseless `R` are legitimate models, and the Kalman-family recursions invert
 only the innovation covariance, never `R` alone. An ill-conditioned
@@ -278,7 +289,7 @@ matrices before it assigns either.
 
 The two moving-horizon estimators embed an extended filter and hand it the same
 noise fields, so `mhe` and `nmhe` became fallible too and forward that filter's
-rejection verbatim, the definiteness refusals included. That is not plumbing:
+rejection verbatim, the symmetry and definiteness refusals included. That is not plumbing:
 both also invert `Q` and `R` to form the arrival-cost and stage weights, so a
 non-finite entry poisons the posed problem as well as the filter, and a
 singular `Q` or `R`, which the filter accepts, is refused by their own
@@ -287,8 +298,9 @@ singular `Q` or `R`, which the filter accepts, is refused by their own
 `particle_filter` validates its configuration on channel 1 as well, through
 `particle_filter::create` and `make_particle_filter`, which return
 `ctrlpp::expected<particle_filter, filter_error>`; its constructors are private
-behind a `validated_tag`. It refuses the same finiteness and definiteness
-conditions and, in addition, a singular `R` (`singular_measurement_noise`): it
+behind a `validated_tag`. It refuses the same finiteness, symmetry and
+definiteness conditions, samples and scores the symmetrized matrices, and, in
+addition, refuses a singular `R` (`singular_measurement_noise`): it
 scores every particle with R's inverse and log-determinant, which a singular R
 does not have. A singular but positive semidefinite `Q` or `P0` is still
 accepted, because a rank-one process noise and a point-mass prior have a

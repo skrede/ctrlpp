@@ -1,10 +1,13 @@
 #ifndef HPP_GUARD_CTRLPP_DETAIL_COVARIANCE_OPS_H
 #define HPP_GUARD_CTRLPP_DETAIL_COVARIANCE_OPS_H
 
-/// @brief Covariance-matrix utilities (symmetrisation, matrix square root).
+/// @brief Covariance-matrix utilities: the counted rounding bound, admission of
+/// a covariance (drift symmetrized, structural asymmetry and indefiniteness
+/// refused), symmetrization and the matrix square root.
 ///
 /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 5 (covariance conditioning / Joseph form)
 /// @cite higham1988 -- Higham, "Computing a nearest symmetric positive semidefinite matrix", Linear Algebra Appl. 103, 1988
+/// @cite higham2002 -- Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., 2002, Sec. 2.1 and 3.1
 /// @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 8.1 (symmetric eigenvalue perturbation)
 
 #include <Eigen/Core>
@@ -12,9 +15,55 @@
 #include <Eigen/Eigenvalues>
 
 #include <limits>
+#include <cstdint>
+#include <algorithm>
 
 namespace ctrlpp::detail
 {
+
+/// @brief The rounding bound `factor * count * eps * scale`, never below the
+/// underflow term `count * denorm_min`.
+///
+/// `count` is in machine epsilons, eps = 2 u, derived by each caller from the
+/// convention that an n-term inner product carries at most gamma_n, about n u,
+/// of its scale (@cite higham2002, Sec. 3.1); `factor` is the order-one
+/// prefactor left to the caller. The absolute term is the gradual-underflow
+/// part of the standard model, fl(x op y) = (x op y)(1 + delta) + eta with
+/// |eta| <= denorm_min / 2 (@cite higham2002, Sec. 2.1): without it the bound
+/// collapses to zero below scale = denorm_min / (factor eps), and at and above
+/// that scale the bound is the relative term exactly.
+template <typename Scalar>
+inline auto rounding_bound(std::int32_t count, Scalar scale, Scalar factor) -> Scalar
+{
+    const Scalar n = static_cast<Scalar>(count);
+    return std::max(factor * n * std::numeric_limits<Scalar>::epsilon() * scale, n * std::numeric_limits<Scalar>::denorm_min());
+}
+
+/// @brief Symmetrize M in place when its asymmetry is rounding drift, and
+/// refuse it, unchanged, when the asymmetry is structural.
+///
+/// The asymmetry max|M_ij - M_ji| is drift when it is within
+/// `rounding_bound(N, max|M_ij|, factor)`. The count behind `factor = 1`: each
+/// triangle of a matrix formed by products carries at most N u of its scale,
+/// so the two triangles of one exactly symmetric matrix differ by at most
+/// 2 N u = N eps times it. Each differing pair is replaced in both positions by
+/// its midpoint M_ij + (M_ji - M_ij) / 2, which cannot overflow; an equal pair
+/// is never written, so a symmetric M is left bitwise untouched. A non-finite
+/// M is refused: an infinite entry would make the bound infinite too.
+template <typename Scalar, int N>
+inline auto symmetrize_within_drift(Eigen::Matrix<Scalar, N, N>& M, Scalar factor = Scalar{1}) -> bool
+{
+    if(!M.allFinite())
+        return false;
+    const Scalar bound = rounding_bound(N, M.cwiseAbs().maxCoeff(), factor);
+    if(!((M - M.transpose()).cwiseAbs().array() <= bound).all())
+        return false;
+    for(int j = 1; j < N; ++j)
+        for(int i = 0; i < j; ++i)
+            if(M(i, j) != M(j, i))
+                M(i, j) = M(j, i) = M(i, j) + (M(j, i) - M(i, j)) / Scalar{2};
+    return true;
+}
 
 /// @brief Symmetrize a square matrix: 0.5 * (M + M^T)
 ///
@@ -94,17 +143,20 @@ struct psd_decomposition_result
 /// repairing.
 ///
 /// M is PSD when its smallest eigenvalue is at least `-floor`, with the floor
-/// `floor_factor * N * eps * max|M_ij|` that `covariance_sqrt` uses: the order
+/// `rounding_bound(N, max|M_ij|, floor_factor)`. Its relative term is the
+/// `floor_factor * N * eps * max|M_ij|` that `covariance_sqrt` uses, the order
 /// of the symmetric eigensolver's backward error (Weyl perturbation bound), so
 /// a computed eigenvalue within the floor of zero is indistinguishable from
-/// zero. A non-finite spectrum is not PSD.
+/// zero. Its absolute term `N * denorm_min` keeps the floor from collapsing to
+/// zero for a subnormal-scale M, below max|M_ij| = denorm_min / (floor_factor
+/// eps); at and above that scale the floor is the relative term exactly. A
+/// non-finite spectrum is not PSD.
 ///
 /// @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 8.1
 template <typename Scalar, int N>
 inline auto psd_decomposition(const Eigen::Matrix<Scalar, N, N>& M, Scalar floor_factor = Scalar{1}) -> psd_decomposition_result<Scalar, N>
 {
-    const Scalar eps = std::numeric_limits<Scalar>::epsilon();
-    const Scalar floor = floor_factor * static_cast<Scalar>(N) * eps * M.cwiseAbs().maxCoeff();
+    const Scalar floor = rounding_bound(N, M.cwiseAbs().maxCoeff(), floor_factor);
 
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix<Scalar, N, N>> eig(symmetrize(M));
     const bool psd = (eig.eigenvalues().array() >= -floor).all();

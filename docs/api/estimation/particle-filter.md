@@ -79,20 +79,31 @@ auto make_particle_filter(Dynamics dynamics, Measurement measurement,
 cannot be deduced from the arguments. Passing a custom `Likelihood` as the
 trailing argument threads it through to the filter.
 
-Rejections, checked in the order `pf_config` declares its fields. The floor is
-`N eps max|M_ij|` for an N x N matrix M, the order of the symmetric
-eigensolver's backward error, below which a computed eigenvalue is
-indistinguishable from zero.
+Rejections, checked in the order `pf_config` declares its fields, and for each
+matrix in the order finiteness, symmetry, definiteness (then, for R,
+invertibility). The bound for an N x N matrix M is
+`max(N eps max|M_ij|, N denorm_min)`. As a definiteness floor it is the order of
+the symmetric eigensolver's backward error, below which a computed eigenvalue is
+indistinguishable from zero, kept from underflowing to zero for a
+subnormal-scale matrix. An asymmetry `max|M_ij - M_ji|` within it is rounding
+drift: the matrix is not refused but symmetrized (each differing pair replaced
+by its midpoint), and the definiteness verdict, the sampling factor, R's
+inverse and its log-determinant are all formed from that symmetrized matrix.
+The convention and its count are in
+[Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused).
 
 | Enumerator | Condition | Why it is refused |
 |------------|-----------|-------------------|
 | `non_finite_process_noise` | Q has a non-finite entry | No Gaussian to sample the process noise from |
+| `asymmetric_process_noise` | Q's asymmetry exceeds the bound | Not a covariance, so no Gaussian to sample |
 | `indefinite_process_noise` | Q has an eigenvalue below `-floor` | Not a covariance, so no Gaussian to sample |
 | `non_finite_measurement_noise` | R has a non-finite entry | No density to score a particle with |
+| `asymmetric_measurement_noise` | R's asymmetry exceeds the bound | Not a covariance, so no density to score with |
 | `indefinite_measurement_noise` | R has an eigenvalue below `-floor` | Not a covariance, so no density to score with |
 | `singular_measurement_noise` | `lambda_min(R) <= NY eps lambda_max(R)` | R is inverted and its log-determinant enters every weight; a singular R has neither |
 | `non_finite_initial_state` | x0 has a non-finite component | Every particle is drawn around it |
 | `non_finite_initial_covariance` | P0 has a non-finite entry | No Gaussian prior to sample |
+| `asymmetric_initial_covariance` | P0's asymmetry exceeds the bound | Not a covariance, so no Gaussian prior |
 | `indefinite_initial_covariance` | P0 has an eigenvalue below `-floor` | Not a covariance, so no Gaussian prior |
 
 Definiteness is a domain condition for this filter, not a numerical-behavior

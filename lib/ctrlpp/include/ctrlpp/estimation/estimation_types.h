@@ -8,14 +8,8 @@
 /// `manifold_ukf`, `complementary_filter`), the sigma-point strategies, the
 /// filters that build one from an options aggregate, and the configuration
 /// validation of every filter that takes a Q, R or P0, which refuses a matrix
-/// that is non-finite or not positive semidefinite. It forms their
-/// `ctrlpp::expected<T, filter_error>` construction contract.
-
-#include "ctrlpp/expected.h"
-
-#include "ctrlpp/detail/covariance_ops.h"
-
-#include <limits>
+/// that is non-finite, structurally asymmetric or not positive semidefinite.
+/// It forms their `ctrlpp::expected<T, filter_error>` construction contract.
 
 namespace ctrlpp
 {
@@ -67,12 +61,14 @@ namespace ctrlpp
 ///                                    mechanism that could return a non-finite
 ///                                    covariance to a finite one.
 ///  * indefinite_process_noise      : Q has an eigenvalue below -floor, with
-///                                    floor = N eps max|Q_ij| (the symmetric
-///                                    eigensolver's backward-error order, the
-///                                    convention `detail::covariance_sqrt`
-///                                    cites). Such a matrix is not a covariance:
-///                                    there is no Gaussian with it to propagate
-///                                    or to sample the process noise from.
+///                                    floor = max(N eps max|Q_ij|, N denorm_min):
+///                                    the symmetric eigensolver's backward-error
+///                                    order, the convention
+///                                    `detail::covariance_sqrt` cites, kept from
+///                                    underflowing to zero at subnormal scale.
+///                                    Such a matrix is not a covariance: there
+///                                    is no Gaussian with it to propagate or to
+///                                    sample the process noise from.
 ///  * indefinite_measurement_noise  : R has an eigenvalue below the same floor,
 ///                                    so there is no Gaussian density with it to
 ///                                    score a measurement against.
@@ -84,10 +80,22 @@ namespace ctrlpp
 ///                                    that evaluates a Gaussian density needs.
 ///  * indefinite_initial_covariance : P0 has an eigenvalue below the same floor,
 ///                                    so there is no Gaussian prior with it.
+///  * asymmetric_process_noise      : max|Q_ij - Q_ji| exceeds the rounding
+///                                    bound max(N eps max|Q_ij|, N denorm_min).
+///                                    A covariance is symmetric by definition,
+///                                    and an asymmetry beyond the rounding of
+///                                    the products that formed Q is not drift
+///                                    but a different matrix in each triangle.
+///  * asymmetric_measurement_noise  : R's asymmetry exceeds the same bound.
+///  * asymmetric_initial_covariance : P0's asymmetry exceeds the same bound.
 ///
-/// Every filter that takes a Q, R or P0 refuses one that is non-finite or
-/// indefinite: a matrix that is not positive semidefinite is not a covariance,
-/// whatever the filter does with it. A singular positive semidefinite matrix is
+/// Every filter that takes a Q, R or P0 refuses one that is non-finite,
+/// structurally asymmetric or indefinite, in that order for each matrix: a
+/// matrix that is not symmetric positive semidefinite is not a covariance,
+/// whatever the filter does with it. An asymmetry within the rounding bound is
+/// drift: it is accepted, the matrix the filter stores is its symmetrized form
+/// (each differing pair replaced by its midpoint), and the definiteness verdict
+/// runs on that symmetrized matrix. A singular positive semidefinite matrix is
 /// accepted: a point-mass prior, a rank-one process noise and a noiseless
 /// measurement channel are legitimate configurations, and the Kalman-family
 /// filters only add and multiply Q, R and P0, inverting the innovation
@@ -110,74 +118,10 @@ enum class filter_error
     indefinite_measurement_noise,
     singular_measurement_noise,
     indefinite_initial_covariance,
+    asymmetric_process_noise,
+    asymmetric_measurement_noise,
+    asymmetric_initial_covariance,
 };
-
-namespace detail
-{
-
-/// @brief Refuse a candidate covariance that is non-finite, then one that is
-/// not positive semidefinite, naming the matrix through the two enumerators the
-/// caller passes; on success hand back the decomposition for factoring.
-template <typename Scalar, int N>
-auto checked_covariance(const Eigen::Matrix<Scalar, N, N>& M, filter_error non_finite, filter_error indefinite) -> ctrlpp::expected<psd_decomposition_result<Scalar, N>, filter_error>
-{
-    if(!M.allFinite())
-        return ctrlpp::unexpected(non_finite);
-    auto decomposition = psd_decomposition(M);
-    if(!decomposition.psd)
-        return ctrlpp::unexpected(indefinite);
-    return decomposition;
-}
-
-/// @brief Whether a decomposed positive semidefinite matrix is invertible:
-/// lambda_min > N eps lambda_max, written so that a NaN spectrum is singular.
-template <typename Scalar, int N>
-auto nonsingular_spectrum(const psd_decomposition_result<Scalar, N>& d) -> bool
-{
-    return d.eigenvalues.minCoeff() > static_cast<Scalar>(N) * std::numeric_limits<Scalar>::epsilon() * d.eigenvalues.maxCoeff();
-}
-
-/// @brief Refuse a process noise Q, then a measurement noise R, that is
-/// non-finite or indefinite.
-template <typename Scalar, int NQ, int NR>
-auto validate_noise(const Eigen::Matrix<Scalar, NQ, NQ>& Q, const Eigen::Matrix<Scalar, NR, NR>& R) -> ctrlpp::expected<void, filter_error>
-{
-    if(const auto process = checked_covariance(Q, filter_error::non_finite_process_noise, filter_error::indefinite_process_noise); !process)
-        return ctrlpp::unexpected(process.error());
-    if(const auto measurement = checked_covariance(R, filter_error::non_finite_measurement_noise, filter_error::indefinite_measurement_noise); !measurement)
-        return ctrlpp::unexpected(measurement.error());
-    return {};
-}
-
-/// @brief Refuse an initial covariance P0 that is non-finite or indefinite.
-template <typename Scalar, int N>
-auto validate_initial_covariance(const Eigen::Matrix<Scalar, N, N>& P0) -> ctrlpp::expected<void, filter_error>
-{
-    if(const auto prior = checked_covariance(P0, filter_error::non_finite_initial_covariance, filter_error::indefinite_initial_covariance); !prior)
-        return ctrlpp::unexpected(prior.error());
-    return {};
-}
-
-/// @brief Validate the noise and initial-condition fields that `kalman_config`,
-/// `ekf_config` and `ukf_config` declare identically, and that `mekf_config`
-/// declares with its initial bias in the initial state's place.
-///
-/// The fields are independent of one another, unlike a step's carried estimate
-/// and its measurement, so the report order is the order the aggregates
-/// declare, not a claim about causality. Each matrix is refused when it is
-/// non-finite, then when it is indefinite; a singular positive semidefinite
-/// matrix is accepted.
-template <typename Process, typename Measurement, typename State, typename Covariance>
-auto validate_filter_configuration(const Process& Q, const Measurement& R, const State& x0, const Covariance& P0) -> ctrlpp::expected<void, filter_error>
-{
-    if(const auto noise = validate_noise(Q, R); !noise)
-        return ctrlpp::unexpected(noise.error());
-    if(!x0.allFinite())
-        return ctrlpp::unexpected(filter_error::non_finite_initial_state);
-    return validate_initial_covariance(P0);
-}
-
-}
 
 }
 

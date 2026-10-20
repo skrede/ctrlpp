@@ -40,6 +40,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <cstddef>
 
 using Catch::Matchers::WithinAbs;
 
@@ -96,6 +97,11 @@ struct ukf_position_measurement
         z(0) = x(0);
         return z;
     }
+};
+
+struct ukf_full_state_measurement
+{
+    auto operator()(const ctrlpp::Vector<double, 2>& x) const -> ctrlpp::Vector<double, 2> { return x; }
 };
 
 /// @brief The linear system `ukf_linear_dynamics` and the position measurement
@@ -236,6 +242,71 @@ TEST_CASE("UKF refuses a configuration matrix that is not a covariance", "[ukf][
     const auto rejected = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg);
     REQUIRE_FALSE(rejected.has_value());
     CHECK(rejected.error() == expected);
+}
+
+TEST_CASE("UKF refuses a structurally asymmetric configuration matrix by name through either factory", "[ukf][hardening][negative]")
+{
+    Eigen::Matrix2d asymmetric;
+    asymmetric << 1.0, 0.5, 0.4, 1.0;
+    const ctrlpp::merwe_options<double> options{.alpha = 1.0, .beta = 2.0, .kappa = 0.0};
+    auto require_both = [&]<std::size_t NY, typename Measurement>(const ctrlpp::ukf_config<double, 2, 1, NY>& cfg, Measurement measurement, ctrlpp::filter_error expected) {
+        using filter_t = ctrlpp::ukf<double, 2, 1, NY, ukf_linear_dynamics, Measurement>;
+        const auto built = filter_t::create(ukf_linear_dynamics{}, measurement, cfg);
+        REQUIRE_FALSE(built.has_value());
+        CHECK(built.error() == expected);
+        const auto from_options = filter_t::create(ukf_linear_dynamics{}, measurement, cfg, options);
+        REQUIRE_FALSE(from_options.has_value());
+        CHECK(from_options.error() == expected);
+    };
+
+    SECTION("process noise")
+    {
+        ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
+        cfg.Q = asymmetric;
+        require_both(cfg, ukf_position_measurement{}, ctrlpp::filter_error::asymmetric_process_noise);
+    }
+
+    SECTION("measurement noise of a two-output filter")
+    {
+        ctrlpp::ukf_config<double, 2, 1, 2> cfg{};
+        cfg.R = asymmetric;
+        require_both(cfg, ukf_full_state_measurement{}, ctrlpp::filter_error::asymmetric_measurement_noise);
+    }
+
+    SECTION("initial covariance")
+    {
+        ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
+        cfg.P0 = asymmetric;
+        require_both(cfg, ukf_position_measurement{}, ctrlpp::filter_error::asymmetric_initial_covariance);
+    }
+}
+
+TEST_CASE("UKF stores a drift-asymmetric configuration matrix as its midpoint symmetrization", "[ukf][hardening]")
+{
+    using filter_t = ctrlpp::ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>;
+    ctrlpp::ukf_config<double, 2, 1, 1> drifted{};
+    drifted.Q << 0.02, 0.005, std::nextafter(0.005, 1.0), 0.01;
+    drifted.P0 << 2.0, 0.3, std::nextafter(0.3, 0.0), 1.0;
+
+    ctrlpp::ukf_config<double, 2, 1, 1> symmetric = drifted;
+    symmetric.Q(0, 1) = symmetric.Q(1, 0) = drifted.Q(0, 1) + (drifted.Q(1, 0) - drifted.Q(0, 1)) / 2.0;
+    symmetric.P0(0, 1) = symmetric.P0(1, 0) = drifted.P0(0, 1) + (drifted.P0(1, 0) - drifted.P0(0, 1)) / 2.0;
+
+    auto filter = ctrlpp::test::constructed(filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, drifted));
+    auto twin = ctrlpp::test::constructed(filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, symmetric));
+    CHECK((filter.covariance().array() == symmetric.P0.array()).all());
+
+    const ctrlpp::Vector<double, 1> u = ctrlpp::Vector<double, 1>::Constant(0.3);
+    for(int k = 0; k < 10; ++k)
+    {
+        const ctrlpp::Vector<double, 1> z = ctrlpp::Vector<double, 1>::Constant(1.0 + 0.05 * k);
+        filter.predict(u);
+        twin.predict(u);
+        REQUIRE(filter.update(z).has_value());
+        REQUIRE(twin.update(z).has_value());
+    }
+    CHECK((filter.state().array() == twin.state().array()).all());
+    CHECK((filter.covariance().array() == twin.covariance().array()).all());
 }
 
 TEST_CASE("UKF rejects correction overflow without committing it",

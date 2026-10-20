@@ -295,9 +295,78 @@ TEST_CASE("mekf create refuses a noise, bias or initial covariance it cannot use
         expected = filter_error::indefinite_initial_covariance;
     }
 
+    SECTION("a degenerate quaternion is reported ahead of an asymmetric matrix")
+    {
+        cfg.q0 = Eigen::Quaternion<double>{0.0, 0.0, 0.0, 0.0};
+        cfg.R(0, 2) = 0.5;
+        expected = filter_error::degenerate_quaternion;
+    }
+
+    SECTION("structurally asymmetric process noise")
+    {
+        cfg.Q(5, 1) = 0.5;
+        expected = filter_error::asymmetric_process_noise;
+    }
+
+    SECTION("structurally asymmetric measurement noise")
+    {
+        cfg.R(0, 2) = 0.5;
+        expected = filter_error::asymmetric_measurement_noise;
+    }
+
+    SECTION("an asymmetric measurement noise is reported ahead of a non-finite initial bias")
+    {
+        cfg.R(0, 2) = 0.5;
+        cfg.b0(0) = std::numeric_limits<double>::quiet_NaN();
+        expected = filter_error::asymmetric_measurement_noise;
+    }
+
+    SECTION("structurally asymmetric initial covariance")
+    {
+        cfg.P0(3, 4) = 0.5;
+        expected = filter_error::asymmetric_initial_covariance;
+    }
+
     const auto rejected = Mekf3::create(gravity_measurement{}, cfg);
     REQUIRE_FALSE(rejected.has_value());
     REQUIRE(rejected.error() == expected);
+}
+
+TEST_CASE("mekf create stores a drift-asymmetric matrix as its midpoint symmetrization", "[mekf]")
+{
+    mekf_config<double, 3, 3> drifted;
+    drifted.Q = Matrix<double, 6, 6>::Identity() * 1e-4;
+    drifted.Q(1, 4) = 1e-6;
+    drifted.Q(4, 1) = std::nextafter(1e-6, 1.0);
+    drifted.R = Matrix<double, 3, 3>::Identity() * 0.05;
+    drifted.P0 = Matrix<double, 6, 6>::Identity() * 0.2;
+    drifted.P0(0, 3) = 0.01;
+    drifted.P0(3, 0) = std::nextafter(0.01, 0.0);
+
+    mekf_config<double, 3, 3> symmetric = drifted;
+    symmetric.Q(1, 4) = symmetric.Q(4, 1) = drifted.Q(1, 4) + (drifted.Q(4, 1) - drifted.Q(1, 4)) / 2.0;
+    symmetric.P0(0, 3) = symmetric.P0(3, 0) = drifted.P0(0, 3) + (drifted.P0(3, 0) - drifted.P0(0, 3)) / 2.0;
+
+    auto created = Mekf3::create(gravity_measurement{}, drifted);
+    auto twin_created = Mekf3::create(gravity_measurement{}, symmetric);
+    REQUIRE(created.has_value());
+    REQUIRE(twin_created.has_value());
+    auto& filter = *created;
+    auto& twin = *twin_created;
+    REQUIRE((filter.covariance().array() == symmetric.P0.array()).all());
+
+    for(int k = 0; k < 10; ++k)
+    {
+        const Vector<double, 3> omega{0.2, -0.1, 0.3};
+        const Vector<double, 3> z = Vector<double, 3>{0.05, 0.01 * k, 1.0}.normalized();
+        filter.predict(omega);
+        twin.predict(omega);
+        REQUIRE(filter.update(z).has_value());
+        REQUIRE(twin.update(z).has_value());
+    }
+    REQUIRE((filter.attitude().coeffs().array() == twin.attitude().coeffs().array()).all());
+    REQUIRE((filter.bias().array() == twin.bias().array()).all());
+    REQUIRE((filter.covariance().array() == twin.covariance().array()).all());
 }
 
 TEST_CASE("mekf create accepts a singular positive semidefinite process noise", "[mekf]")

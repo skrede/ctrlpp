@@ -23,6 +23,8 @@
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/estimation_types.h"
 
+#include "ctrlpp/estimation/detail/filter_configuration.h"
+
 #include <Eigen/Geometry>
 
 #include <cmath>
@@ -136,11 +138,13 @@ public:
     /// such a config is rejected with `filter_error::degenerate_quaternion`.
     /// Any finite nonzero quaternion is accepted and normalized.
     ///
-    /// Q, R and P0 are then refused when non-finite or indefinite, and the
-    /// initial bias b0 when non-finite (as
+    /// Q, R and P0 are then refused when non-finite, structurally asymmetric
+    /// or indefinite, and the initial bias b0 when non-finite (as
     /// `filter_error::non_finite_initial_state`), in the order the config
     /// declares them, as every Kalman-family factory refuses them (see
-    /// `filter_error`). A singular positive semidefinite matrix is accepted.
+    /// `filter_error`). A drift-level asymmetry is stored as its symmetrized
+    /// matrix, on which the definiteness check runs, and a singular positive
+    /// semidefinite matrix is accepted.
     static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config) -> ctrlpp::expected<mekf, filter_error>
     {
         const Scalar q0_norm = config.q0.norm();

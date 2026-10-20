@@ -1192,10 +1192,11 @@ that release.
   size is an optimizer output, so these figures belong to that optimization level
   alone.
 - **Construction is not watermarked.** Every row's factory checks each noise and
-  initial covariance with a symmetric eigendecomposition, outside the painted
-  window. Its frames are measured but its whole-chain depth is not: at dimension
-  32 the deepest are the decomposition's 17,808 bytes and the check's 16,976,
-  and at the `mekf` error state of 35 they are 21,232 and 20,224.
+  initial covariance for symmetry and then with a symmetric eigendecomposition,
+  outside the painted window. Its frames are measured but its whole-chain depth
+  is not: at dimension 32 the deepest are the decomposition's 17,824 bytes and
+  the check's 16,992, and at the `mekf` error state of 35 they are 21,232 and
+  20,240 (g++ 16.2.1, Eigen 3.4.1, `-O2`).
 
 ## Stack cost of the predictive controller row
 

@@ -55,15 +55,15 @@ static auto create(Dynamics dynamics, Measurement measurement,
 
 `create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. Any finite nonzero `q0` is accepted and normalized. As a static member of a class template, `create` requires explicit template arguments, e.g. `manifold_ukf<double, 3, Dynamics, Measurement>::create(d, m, cfg)`.
 
-After the quaternion, `create` checks `Q`, `R` and `P0` in that order, each for finiteness and then for definiteness, as every Kalman-family factory does:
+After the quaternion, `create` checks `Q`, `R` and `P0` in that order, each for finiteness, then for symmetry, then for definiteness, as every Kalman-family factory does:
 
 | Enumerator | Condition |
 |------------|-----------|
-| `filter_error::non_finite_process_noise` / `indefinite_process_noise` | `Q` has a non-finite entry / an eigenvalue below `-floor` |
-| `filter_error::non_finite_measurement_noise` / `indefinite_measurement_noise` | `R` has a non-finite entry / an eigenvalue below `-floor` |
-| `filter_error::non_finite_initial_covariance` / `indefinite_initial_covariance` | `P0` has a non-finite entry / an eigenvalue below `-floor` |
+| `filter_error::non_finite_process_noise` / `asymmetric_process_noise` / `indefinite_process_noise` | `Q` has a non-finite entry / an asymmetry beyond the rounding bound / an eigenvalue below `-floor` |
+| `filter_error::non_finite_measurement_noise` / `asymmetric_measurement_noise` / `indefinite_measurement_noise` | `R` has a non-finite entry / an asymmetry beyond the rounding bound / an eigenvalue below `-floor` |
+| `filter_error::non_finite_initial_covariance` / `asymmetric_initial_covariance` / `indefinite_initial_covariance` | `P0` has a non-finite entry / an asymmetry beyond the rounding bound / an eigenvalue below `-floor` |
 
-The floor is `N eps max|M_ij|`, the order of the symmetric eigensolver's backward error, and the verdict is taken on the symmetric part: a matrix that is not positive semidefinite is not a covariance. A singular positive semidefinite matrix is accepted; when the unpivoted Cholesky factorization the sigma points are built from fails on it, the first sigma-point generation repairs it and `health()` reports `covariance_repaired`. The geodesic-mean options are not validated here.
+The bound is `max(N eps max|M_ij|, N denorm_min)` for both checks; as a definiteness floor it is the order of the symmetric eigensolver's backward error, kept from underflowing to zero. An asymmetry `max|M_ij - M_ji|` within it is rounding drift: the matrix is accepted, stored as its symmetrized form (each differing pair replaced by its midpoint), and judged for definiteness as that matrix. A matrix that is not symmetric positive semidefinite is not a covariance; the convention and its count are in [Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused). A singular positive semidefinite matrix is accepted; when the unpivoted Cholesky factorization the sigma points are built from fails on it, the first sigma-point generation repairs it and `health()` reports `covariance_repaired`. The geodesic-mean options are not validated here.
 
 ## Methods
 

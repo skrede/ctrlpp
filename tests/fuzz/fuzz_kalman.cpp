@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
 {
@@ -78,24 +79,31 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     ctrlpp::discrete_state_space<double, 2, 1, 1> sys{Ad, Bd, C, D};
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
-    // Every field is finite, but Q is a Gram matrix: positive semidefinite in
-    // exact arithmetic, while the rounded product of a nearly rank-deficient
-    // Q_raw can put an eigenvalue below the definiteness floor. The factory must
-    // accept exactly when each matrix's own decomposition is positive
-    // semidefinite and otherwise name the first one that is not, in declaration
-    // order; anything else is a defect rather than a fuzz finding.
-    const bool q_psd = ctrlpp::detail::psd_decomposition(Q).psd;
-    const bool r_psd = ctrlpp::detail::psd_decomposition(R).psd;
-    const bool p_psd = ctrlpp::detail::psd_decomposition(P0).psd;
+    // Every field is finite, but Q is a Gram matrix: symmetric positive
+    // semidefinite in exact arithmetic, while its rounded product can leave the
+    // triangles apart by rounding drift or put an eigenvalue below the
+    // definiteness floor. The factory must admit a matrix exactly when its own
+    // copy symmetrizes within drift and the projected copy is positive
+    // semidefinite, and otherwise name the first failing check in declaration
+    // order, asymmetry ahead of definiteness within a matrix; anything else is
+    // a defect rather than a fuzz finding.
+    auto verdict = [](auto M, ctrlpp::filter_error asymmetric, ctrlpp::filter_error indefinite) -> std::optional<ctrlpp::filter_error> {
+        if(!ctrlpp::detail::symmetrize_within_drift(M))
+            return asymmetric;
+        if(!ctrlpp::detail::psd_decomposition(M).psd)
+            return indefinite;
+        return std::nullopt;
+    };
+    const auto q_fault = verdict(Q, ctrlpp::filter_error::asymmetric_process_noise, ctrlpp::filter_error::indefinite_process_noise);
+    const auto r_fault = verdict(R, ctrlpp::filter_error::asymmetric_measurement_noise, ctrlpp::filter_error::indefinite_measurement_noise);
+    const auto p_fault = verdict(P0, ctrlpp::filter_error::asymmetric_initial_covariance, ctrlpp::filter_error::indefinite_initial_covariance);
+    const auto first = q_fault ? q_fault : r_fault ? r_fault : p_fault;
     auto created = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
-    if(created.has_value() != (q_psd && r_psd && p_psd))
+    if(created.has_value() == first.has_value())
         abort();
     if(!created)
     {
-        const auto first = !q_psd ? ctrlpp::filter_error::indefinite_process_noise
-                         : !r_psd ? ctrlpp::filter_error::indefinite_measurement_noise
-                                  : ctrlpp::filter_error::indefinite_initial_covariance;
-        if(created.error() != first)
+        if(created.error() != *first)
             abort();
         return 0;
     }

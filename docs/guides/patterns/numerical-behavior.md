@@ -76,12 +76,19 @@ at which such a mistake can be reported, and reporting it here is what keeps it
 from surfacing as a non-finite estimate several steps later, in a place that
 names nothing.
 
-The boundary is **finiteness and definiteness**. A `Q`, `R` or `P0` with an
-eigenvalue below `-floor`, with the floor `N eps max|M_ij|` (the symmetric
-eigensolver's backward-error order), is refused as `indefinite_process_noise`,
-`indefinite_measurement_noise` or `indefinite_initial_covariance`: a matrix
-that is not positive semidefinite is not a covariance, for any filter. The same
-check runs in `mekf` and `manifold_ukf` after their initial quaternion, and in
+The boundary is **finiteness, symmetry and definiteness**. A `Q`, `R` or `P0`
+whose asymmetry exceeds the rounding bound is refused as
+`asymmetric_process_noise`, `asymmetric_measurement_noise` or
+`asymmetric_initial_covariance`, and one whose asymmetry is within it is stored
+as its symmetrized matrix (see
+[the drift convention below](#rounding-drift-is-accepted-structure-is-refused)).
+A matrix with an eigenvalue below `-floor`, with the floor
+`max(N eps max|M_ij|, N denorm_min)` (the symmetric eigensolver's
+backward-error order, kept from underflowing to zero), is refused as
+`indefinite_process_noise`, `indefinite_measurement_noise` or
+`indefinite_initial_covariance`: a matrix that is not symmetric positive
+semidefinite is not a covariance, for any filter. The same checks run in `mekf`
+and `manifold_ukf` after their initial quaternion, and in
 `kalman_filter::set_noise` and `kalman_filter::reset_covariance`, which refuse
 before assigning anything. A singular positive semidefinite matrix (a singular
 or zero `P0`, a rank-one `Q`, a noiseless `R`) is accepted, and so is an
@@ -352,12 +359,79 @@ otherwise produce silent corruption through intermediate overflow:
   NaN from `0 * Inf` in the gain computation. The `update()` method returns
   `false` when this occurs so the caller can detect skipped updates.
 
+## Rounding drift is accepted, structure is refused
+
+An input that must carry a structural property, such as the symmetry of a
+covariance, is judged by its defect: how far it is from having the property.
+The defect is compared with a counted rounding bound `c * N * eps * scale`,
+never below the underflow term `N * denorm_min`.
+
+- A defect within the bound is **drift**, the residue of the rounded arithmetic
+  that formed the input. It is accepted and projected onto the property, and
+  the projected input is what the library stores and uses. An input that
+  already has the property is left bitwise untouched.
+- A defect beyond the bound is **structure**: the input is a different object
+  from the one the property describes. It is refused with a typed error that
+  names the input.
+
+`N` is a count in machine epsilons, `eps = 2 u`, derived for each application
+from the convention that an `n`-term inner product carries at most about `n u`
+of its scale, with `u` the unit roundoff (Higham, *Accuracy and Stability of
+Numerical Algorithms*, 2nd ed., 2002, Sec. 3.1). The counted factor `c` is the
+order-one prefactor of that count. It
+is a defaulted parameter of the shared helpers in `ctrlpp/detail/covariance_ops.h`
+(`symmetrize_within_drift` and `psd_decomposition`), default 1, and not a field
+of any configuration. The absolute term is the gradual-underflow part of the
+standard model, `fl(x op y) = (x op y)(1 + delta) + eta` with
+`|eta| <= denorm_min / 2` (Higham, Sec. 2.1). Without it the bound would
+collapse to zero for a subnormal-scale input, which would then be judged with
+no tolerance at all; at and above `scale = denorm_min / (c eps)` the bound is
+the relative term exactly, so no normal-scale verdict depends on it.
+
+### Covariances
+
+A covariance is symmetric positive semidefinite by definition. Each `Q`, `R` and
+`P0` is checked in this order:
+
+1. A non-finite entry is refused (`non_finite_process_noise`,
+   `non_finite_measurement_noise`, `non_finite_initial_covariance`).
+2. The defect is `max|M_ij - M_ji|` and the scale is `max|M_ij|`. Each triangle
+   of a matrix formed by products carries at most `N u` of that scale, so the
+   two triangles of one exactly symmetric matrix differ by at most
+   `2 N u = N eps` times it: that is the count behind `c = 1`. Within the bound,
+   each differing pair is replaced in both positions by its midpoint
+   `M_ij + (M_ji - M_ij) / 2`, which cannot overflow, and an equal pair is never
+   written. Beyond it the matrix is refused (`asymmetric_process_noise`,
+   `asymmetric_measurement_noise`, `asymmetric_initial_covariance`).
+3. The definiteness verdict runs on the symmetrized matrix. An eigenvalue below
+   `-floor`, with `floor = max(c N eps max|M_ij|, N denorm_min)`, is refused
+   (`indefinite_process_noise`, `indefinite_measurement_noise`,
+   `indefinite_initial_covariance`). The relative term is the order of the
+   symmetric eigensolver's backward error (the Weyl perturbation bound). The
+   absolute term exists because the relative one underflows to zero below
+   `max|M_ij| = denorm_min / (c eps)`, where a positive semidefinite matrix
+   whose rounded entries put an eigenvalue one subnormal unit below zero would
+   otherwise be refused.
+
+Across matrices the order is the order the configuration declares its fields;
+the particle filter's singular-`R` check follows `R`'s definiteness.
+
+This applies today to `Q`, `R` and `P0` at every filter factory
+(`kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf` and `particle_filter`,
+whose sampling factors, inverse and log-determinant are formed from the
+symmetrized matrices) and at `kalman_filter::set_noise` and
+`kalman_filter::reset_covariance`. It does not yet apply to the weight matrices
+of the regulators, the Riccati solvers and the predictive controllers, nor to
+the moving-horizon estimators' own copies of `Q`, `R` and `P0`: `mhe` and
+`nmhe` forward the embedded filter's refusal, but the copies they keep for
+their own cost are stored as given.
+
 ## Summary
 
 | Layer | Behavior |
 |---|---|
 | Inputs (your code) | Validate at system boundaries |
-| Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; `kalman_filter`, `ekf`, `ukf`, `mekf` and `manifold_ukf` also refuse an indefinite `Q`, `R` or `P0`, and `kalman_filter::set_noise` and `reset_covariance` refuse the same before assigning. A singular positive semidefinite or an ill-conditioned configuration is accepted. `particle_filter` (through `create` or `make_particle_filter`, likewise its only path) additionally refuses a singular `R`, because it scores with `R`'s inverse and log-determinant; a singular positive semidefinite `Q` or `P0` is accepted and sampled without lifting its zero eigenvalues |
+| Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; `kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf` and `particle_filter` also refuse a structurally asymmetric or indefinite `Q`, `R` or `P0` and store a drift-asymmetric one symmetrized ([the drift convention](#rounding-drift-is-accepted-structure-is-refused)), and `kalman_filter::set_noise` and `reset_covariance` do the same before assigning. A singular positive semidefinite or an ill-conditioned configuration is accepted. `particle_filter` (through `create` or `make_particle_filter`, likewise its only path) additionally refuses a singular `R`, because it scores with `R`'s inverse and log-determinant; a singular positive semidefinite `Q` or `P0` is accepted and sampled without lifting its zero eigenvalues |
 | Algorithm internals | Library uses numerically stable formulations |
 | Outputs | NaN/Inf propagates faithfully, never silently clamped, except on the surfaces named above |
 | Carried estimator state | The seven `update` surfaces named above reject a non-finite operand before mutating anything |

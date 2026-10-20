@@ -490,9 +490,66 @@ TEST_CASE("manifold_ukf create refuses a noise or initial covariance that is not
         expected = filter_error::indefinite_initial_covariance;
     }
 
+    SECTION("a degenerate quaternion is reported ahead of an asymmetric matrix")
+    {
+        cfg.q0 = Eigen::Quaternion<double>{0.0, 0.0, 0.0, 0.0};
+        cfg.Q(0, 1) = 0.5;
+        expected = filter_error::degenerate_quaternion;
+    }
+
+    SECTION("structurally asymmetric process noise")
+    {
+        cfg.Q(0, 1) = 0.5;
+        expected = filter_error::asymmetric_process_noise;
+    }
+
+    SECTION("structurally asymmetric measurement noise")
+    {
+        cfg.R(2, 0) = 0.5;
+        expected = filter_error::asymmetric_measurement_noise;
+    }
+
+    SECTION("structurally asymmetric initial covariance")
+    {
+        cfg.P0(1, 2) = 0.5;
+        expected = filter_error::asymmetric_initial_covariance;
+    }
+
     const auto rejected = MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
     REQUIRE_FALSE(rejected.has_value());
     REQUIRE(rejected.error() == expected);
+}
+
+TEST_CASE("manifold_ukf create stores a drift-asymmetric matrix as its midpoint symmetrization", "[manifold_ukf]")
+{
+    manifold_ukf_config<double, 3> drifted;
+    drifted.Q = Vector<double, 3>{1e-4, 2e-4, 1e-4}.asDiagonal();
+    drifted.Q(0, 2) = 2e-5;
+    drifted.Q(2, 0) = std::nextafter(2e-5, 1.0);
+    drifted.R = Matrix<double, 3, 3>::Identity() * 0.05;
+    drifted.P0 = Matrix<double, 3, 3>::Identity() * 0.3;
+    drifted.P0(0, 1) = 0.05;
+    drifted.P0(1, 0) = std::nextafter(0.05, 0.0);
+
+    manifold_ukf_config<double, 3> symmetric = drifted;
+    symmetric.Q(0, 2) = symmetric.Q(2, 0) = drifted.Q(0, 2) + (drifted.Q(2, 0) - drifted.Q(0, 2)) / 2.0;
+    symmetric.P0(0, 1) = symmetric.P0(1, 0) = drifted.P0(0, 1) + (drifted.P0(1, 0) - drifted.P0(0, 1)) / 2.0;
+
+    auto filter = make_filter(simple_rotation_dynamics{}, drifted);
+    auto twin = make_filter(simple_rotation_dynamics{}, symmetric);
+    REQUIRE((filter.covariance().array() == symmetric.P0.array()).all());
+
+    for(int k = 0; k < 10; ++k)
+    {
+        const Vector<double, 3> omega{0.2, -0.1, 0.3};
+        const Vector<double, 3> z = Vector<double, 3>{0.05, 0.01 * k, 1.0}.normalized();
+        filter.predict(omega);
+        twin.predict(omega);
+        REQUIRE(filter.update(z).has_value());
+        REQUIRE(twin.update(z).has_value());
+    }
+    REQUIRE((filter.attitude().coeffs().array() == twin.attitude().coeffs().array()).all());
+    REQUIRE((filter.covariance().array() == twin.covariance().array()).all());
 }
 
 TEST_CASE("manifold_ukf create accepts a singular positive semidefinite configuration", "[manifold_ukf]")

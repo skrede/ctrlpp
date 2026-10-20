@@ -40,6 +40,12 @@ inline const char *describe(filter_error e)
             return "measurement noise is singular";
         case filter_error::indefinite_initial_covariance:
             return "initial covariance is not positive semidefinite";
+        case filter_error::asymmetric_process_noise:
+            return "process noise is not symmetric";
+        case filter_error::asymmetric_measurement_noise:
+            return "measurement noise is not symmetric";
+        case filter_error::asymmetric_initial_covariance:
+            return "initial covariance is not symmetric";
     }
     return "unknown";
 }

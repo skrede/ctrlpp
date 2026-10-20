@@ -19,6 +19,8 @@
 #include "ctrlpp/estimation/resampling/resampling_strategy.h"
 #include "ctrlpp/estimation/resampling/systematic_resampling.h"
 
+#include "ctrlpp/estimation/detail/filter_configuration.h"
+
 #include <Eigen/Dense>
 
 #include <array>
@@ -158,13 +160,16 @@ public:
 
     /// @brief Fallible factory, and the only way to originate a filter.
     ///
-    /// Refuses, in the order `pf_config` declares the fields: a non-finite Q,
-    /// an indefinite Q, a non-finite R, an indefinite R, a singular R, a
-    /// non-finite x0, a non-finite P0 and an indefinite P0. Definiteness is a
-    /// domain condition here rather than a numerical-behavior one, because the
-    /// filter samples from N(0, Q) and N(x0, P0) and scores every particle with
-    /// R's inverse and log-determinant: a matrix with a negative eigenvalue has
-    /// no Gaussian to sample, and a singular R has no density to score.
+    /// Refuses, in the order `pf_config` declares the fields: a non-finite,
+    /// structurally asymmetric or indefinite Q; a non-finite, structurally
+    /// asymmetric, indefinite or singular R; a non-finite x0; and a non-finite,
+    /// structurally asymmetric or indefinite P0. A drift-level asymmetry is not
+    /// refused: the matrix is symmetrized, then judged, sampled and scored as
+    /// that symmetrized matrix. Definiteness is a domain condition here rather
+    /// than a numerical-behavior one, because the filter samples from N(0, Q)
+    /// and N(x0, P0) and scores every particle with R's inverse and
+    /// log-determinant: a matrix with a negative eigenvalue has no Gaussian to
+    /// sample, and a singular R has no density to score.
     ///
     /// A singular but positive semidefinite Q or P0 is accepted, since a
     /// rank-one process noise and a point-mass prior are legitimate models. Its
@@ -379,19 +384,19 @@ private:
         initialize_particles(config.x0, factors.prior);
     }
 
-    static auto validated_sampling_factors(const pf_config<Scalar, NX, NU, NY>& config) -> ctrlpp::expected<sampling_factors, filter_error>
+    static auto validated_sampling_factors(pf_config<Scalar, NX, NU, NY>& config) -> ctrlpp::expected<sampling_factors, filter_error>
     {
-        const auto Q = detail::checked_covariance(config.Q, filter_error::non_finite_process_noise, filter_error::indefinite_process_noise);
+        const auto Q = detail::checked_covariance(config.Q, detail::process_noise_faults);
         if(!Q)
             return ctrlpp::unexpected(Q.error());
-        const auto R = detail::checked_covariance(config.R, filter_error::non_finite_measurement_noise, filter_error::indefinite_measurement_noise);
+        const auto R = detail::checked_covariance(config.R, detail::measurement_noise_faults);
         if(!R)
             return ctrlpp::unexpected(R.error());
         if(!detail::nonsingular_spectrum(*R))
             return ctrlpp::unexpected(filter_error::singular_measurement_noise);
         if(!config.x0.allFinite())
             return ctrlpp::unexpected(filter_error::non_finite_initial_state);
-        const auto P0 = detail::checked_covariance(config.P0, filter_error::non_finite_initial_covariance, filter_error::indefinite_initial_covariance);
+        const auto P0 = detail::checked_covariance(config.P0, detail::initial_covariance_faults);
         if(!P0)
             return ctrlpp::unexpected(P0.error());
         return sampling_factors{sampling_factor(config.Q, *Q), sampling_factor(config.P0, *P0)};
