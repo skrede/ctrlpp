@@ -1149,12 +1149,15 @@ verify_classes()
 verify_exact()
 {
     local problem=""
+    # awk reads to the end after the first problem: exiting early would kill sed
+    # with SIGPIPE, which pipefail turns into a failed assignment.
     problem="$(block_lines exact | awk -F, -v digits="${exact_digits}" '
-        NR == 1 { width = NF; if ($1 != "k") { print "the exact-class header does not key its rows by the loop index: \047" $0 "\047"; exit } next }
-        NF != width { print "an exact-class row carries " NF " fields against a header of " width ": \047" $0 "\047"; exit }
-        $1 != (NR - 2) "" { print "an exact-class row carries index " $1 " where " NR - 2 " is required: \047" $0 "\047"; exit }
-        { for (i = 2; i <= NF; ++i) if (length($i) != digits || $i ~ /[^0-9A-F]/) { print "an exact-class value is not a bit pattern of " digits " hexadecimal digits: \047" $0 "\047"; exit } }
-        END { if (NR == 1) print "the exact-class block carries a header and no rows." }')"
+        found { next }
+        NR == 1 { width = NF; if ($1 != "k") { print "the exact-class header does not key its rows by the loop index: \047" $0 "\047"; found = 1 } next }
+        NF != width { print "an exact-class row carries " NF " fields against a header of " width ": \047" $0 "\047"; found = 1; next }
+        $1 != (NR - 2) "" { print "an exact-class row carries index " $1 " where " NR - 2 " is required: \047" $0 "\047"; found = 1; next }
+        { for (i = 2; i <= NF; ++i) if (length($i) != digits || $i ~ /[^0-9A-F]/) { print "an exact-class value is not a bit pattern of " digits " hexadecimal digits: \047" $0 "\047"; found = 1; break } }
+        END { if (!found && NR == 1) print "the exact-class block carries a header and no rows." }')"
     [ -z "${problem}" ] || fail 25 "${problem}"
     return 0
 }
