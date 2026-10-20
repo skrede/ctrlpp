@@ -129,17 +129,25 @@ public:
     using meas_cov_t = Matrix<Scalar, NY, NY>;
 
     /// @brief Fallible factory. Validates the initial quaternion before the
-    /// normalization that seeds the filter state.
+    /// normalization that seeds the filter state, then Q, R, b0 and P0.
     ///
     /// A zero or non-finite `config.q0` norm makes `q0.normalized()` produce
     /// NaN, which would silently poison the whole filter state at construction;
     /// such a config is rejected with `filter_error::degenerate_quaternion`.
     /// Any finite nonzero quaternion is accepted and normalized.
+    ///
+    /// Q, R and P0 are then refused when non-finite or indefinite, and the
+    /// initial bias b0 when non-finite (as
+    /// `filter_error::non_finite_initial_state`), in the order the config
+    /// declares them, as every Kalman-family factory refuses them (see
+    /// `filter_error`). A singular positive semidefinite matrix is accepted.
     static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config) -> ctrlpp::expected<mekf, filter_error>
     {
         const Scalar q0_norm = config.q0.norm();
         if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
             return ctrlpp::unexpected(filter_error::degenerate_quaternion);
+        if(const auto valid = detail::validate_filter_configuration(config.Q, config.R, config.b0, config.P0); !valid)
+            return ctrlpp::unexpected(valid.error());
         return mekf{validated_tag{}, std::move(measurement), std::move(config)};
     }
 

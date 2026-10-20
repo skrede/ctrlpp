@@ -76,18 +76,22 @@ at which such a mistake can be reported, and reporting it here is what keeps it
 from surfacing as a non-finite estimate several steps later, in a place that
 names nothing.
 
-The boundary is **finiteness only**. An ill-conditioned but finite
-configuration -- a covariance with entries many orders of magnitude apart, a
-singular or zero `P0` -- is a legitimately posed problem and is accepted;
-conditioning is a numerical-behavior question, which is what this page is about,
-and not a domain violation. Symmetry and positive definiteness are not tested
-either, because the types do not promise them of the configuration they are
-handed.
+The boundary is **finiteness and definiteness**. A `Q`, `R` or `P0` with an
+eigenvalue below `-floor`, with the floor `N eps max|M_ij|` (the symmetric
+eigensolver's backward-error order), is refused as `indefinite_process_noise`,
+`indefinite_measurement_noise` or `indefinite_initial_covariance`: a matrix
+that is not positive semidefinite is not a covariance, for any filter. The same
+check runs in `mekf` and `manifold_ukf` after their initial quaternion, and in
+`kalman_filter::set_noise` and `kalman_filter::reset_covariance`, which refuse
+before assigning anything. A singular positive semidefinite matrix (a singular
+or zero `P0`, a rank-one `Q`, a noiseless `R`) is accepted, and so is an
+ill-conditioned one with entries many orders of magnitude apart: conditioning
+is a numerical-behavior question, which is what this page is about, and not a
+domain violation.
 
 `particle_filter` is built the same way, through `create` or
-`make_particle_filter`, and draws a different boundary for a stated reason: it
-samples from `Q` and `P0` and scores with `R`'s inverse and log-determinant, so
-it also refuses an indefinite `Q`, `R` or `P0` and a singular `R`. A singular
+`make_particle_filter`, and additionally refuses a singular `R`, because it
+scores every particle with `R`'s inverse and log-determinant. A singular
 positive semidefinite `Q` or `P0` is still accepted. The refusals are listed in
 [particle-filter.md](../../api/estimation/particle-filter.md).
 
@@ -119,11 +123,12 @@ positive semidefinite `Q` or `P0` is still accepted. The refusals are listed in
   denominator is non-finite or near zero, so the caller learns that something was
   skipped but never why. Its *construction* is now validated; its per-step
   surface is not yet on the failure channel.
-- **`ekf_config::numerical_eps`, and the `Q`/`R`/`P0` of `mekf`,
-  `manifold_ukf` and `complementary_filter`.** Those three factories exist and
-  validate their initial quaternion, but not their noise configuration; the
-  finite-difference step is likewise unchecked. Both are the same defect class
-  the four types above just closed, on surfaces this change did not open.
+- **`ekf_config::numerical_eps`, and the scalar options of the quaternion
+  filters** (`mekf_config::dt` and `numerical_eps`, the geodesic-mean options of
+  `manifold_ukf_config`, and the gains and step of `cf_config`). Their factories
+  validate the initial quaternion and the noise and initial covariances, but not
+  these scalars; they are the same defect class, on surfaces this change did
+  not open.
 - Every other surface in the library, including the online planners. These are
   being moved onto the failure channel too, but they have not been moved yet,
   and until they are the propagation contract above is what governs them.
@@ -352,7 +357,7 @@ otherwise produce silent corruption through intermediate overflow:
 | Layer | Behavior |
 |---|---|
 | Inputs (your code) | Validate at system boundaries |
-| Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; finiteness only, so ill-conditioned-but-finite configurations are accepted. `particle_filter` (through `create` or `make_particle_filter`, likewise its only path) additionally refuses an indefinite `Q`, `R` or `P0` and a singular `R`, because it samples from `Q` and `P0` and scores with `R`'s inverse and log-determinant; a singular positive semidefinite `Q` or `P0` is accepted and sampled without lifting its zero eigenvalues |
+| Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; `kalman_filter`, `ekf`, `ukf`, `mekf` and `manifold_ukf` also refuse an indefinite `Q`, `R` or `P0`, and `kalman_filter::set_noise` and `reset_covariance` refuse the same before assigning. A singular positive semidefinite or an ill-conditioned configuration is accepted. `particle_filter` (through `create` or `make_particle_filter`, likewise its only path) additionally refuses a singular `R`, because it scores with `R`'s inverse and log-determinant; a singular positive semidefinite `Q` or `P0` is accepted and sampled without lifting its zero eigenvalues |
 | Algorithm internals | Library uses numerically stable formulations |
 | Outputs | NaN/Inf propagates faithfully, never silently clamped, except on the surfaces named above |
 | Carried estimator state | The seven `update` surfaces named above reject a non-finite operand before mutating anything |

@@ -10,6 +10,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <limits>
 #include <utility>
 
 using namespace ctrlpp;
@@ -236,4 +237,75 @@ TEST_CASE("mekf create accepts a non-unit nonzero quaternion", "[mekf]")
     auto filter = Mekf3::create(gravity_measurement{}, cfg);
     REQUIRE(filter.has_value());
     REQUIRE((filter->attitude().coeffs().array() == cfg.q0.normalized().coeffs().array()).all());
+}
+
+TEST_CASE("mekf create refuses a noise, bias or initial covariance it cannot use", "[mekf]")
+{
+    const Matrix<double, 6, 6> indefinite = (Vector<double, 6>() << 1.0, 1.0, 1.0, 1.0, 1.0, -1.0).finished().asDiagonal();
+    mekf_config<double, 3, 3> cfg;
+    filter_error expected{};
+
+    SECTION("a degenerate quaternion is reported ahead of the matrices")
+    {
+        cfg.q0 = Eigen::Quaternion<double>{0.0, 0.0, 0.0, 0.0};
+        cfg.Q = indefinite;
+        expected = filter_error::degenerate_quaternion;
+    }
+
+    SECTION("non-finite process noise")
+    {
+        cfg.Q(4, 4) = std::numeric_limits<double>::quiet_NaN();
+        expected = filter_error::non_finite_process_noise;
+    }
+
+    SECTION("indefinite process noise")
+    {
+        cfg.Q = indefinite;
+        expected = filter_error::indefinite_process_noise;
+    }
+
+    SECTION("non-finite measurement noise")
+    {
+        cfg.R(0, 1) = std::numeric_limits<double>::infinity();
+        expected = filter_error::non_finite_measurement_noise;
+    }
+
+    SECTION("indefinite measurement noise")
+    {
+        cfg.R(2, 2) = -1.0;
+        expected = filter_error::indefinite_measurement_noise;
+    }
+
+    SECTION("a non-finite initial bias is reported ahead of an indefinite initial covariance")
+    {
+        cfg.b0(1) = std::numeric_limits<double>::quiet_NaN();
+        cfg.P0 = indefinite;
+        expected = filter_error::non_finite_initial_state;
+    }
+
+    SECTION("non-finite initial covariance")
+    {
+        cfg.P0(0, 0) = std::numeric_limits<double>::quiet_NaN();
+        expected = filter_error::non_finite_initial_covariance;
+    }
+
+    SECTION("indefinite initial covariance")
+    {
+        cfg.P0 = indefinite;
+        expected = filter_error::indefinite_initial_covariance;
+    }
+
+    const auto rejected = Mekf3::create(gravity_measurement{}, cfg);
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == expected);
+}
+
+TEST_CASE("mekf create accepts a singular positive semidefinite process noise", "[mekf]")
+{
+    mekf_config<double, 3, 3> cfg;
+    cfg.Q.setZero();
+
+    const auto accepted = Mekf3::create(gravity_measurement{}, cfg);
+    REQUIRE(accepted.has_value());
+    REQUIRE(accepted->covariance() == cfg.P0);
 }

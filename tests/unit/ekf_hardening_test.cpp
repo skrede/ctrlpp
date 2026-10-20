@@ -284,6 +284,35 @@ TEST_CASE("EKF rejects each non-finite configuration field by name", "[ekf][hard
     }
 }
 
+TEST_CASE("EKF refuses a configuration matrix that is not a covariance", "[ekf][hardening][negative]")
+{
+    const Eigen::Matrix2d indefinite = Eigen::Vector2d{1.0, -1.0}.asDiagonal();
+    ctrlpp::ekf_config<double, 2, 1, 1> cfg{};
+    ctrlpp::filter_error expected{};
+
+    SECTION("process noise")
+    {
+        cfg.Q = indefinite;
+        expected = ctrlpp::filter_error::indefinite_process_noise;
+    }
+
+    SECTION("measurement noise")
+    {
+        cfg.R << -1.0;
+        expected = ctrlpp::filter_error::indefinite_measurement_noise;
+    }
+
+    SECTION("initial covariance")
+    {
+        cfg.P0 = indefinite;
+        expected = ctrlpp::filter_error::indefinite_initial_covariance;
+    }
+
+    const auto rejected = ekf_t::create(linear_dynamics{}, linear_measurement{}, cfg);
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error() == expected);
+}
+
 TEST_CASE("EKF rejects correction overflow without committing it",
           "[ekf][hardening][negative]")
 {

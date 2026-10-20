@@ -187,17 +187,25 @@ public:
     using meas_cov_t = Matrix<Scalar, NY, NY>;
 
     /// @brief Fallible factory. Validates the initial quaternion before the
-    /// normalization that seeds the filter state.
+    /// normalization that seeds the filter state, then Q, R and P0.
     ///
     /// A zero or non-finite `config.q0` norm makes `q0.normalized()` produce
     /// NaN, which would silently poison the whole filter state at construction;
     /// such a config is rejected with `filter_error::degenerate_quaternion`.
     /// Any finite nonzero quaternion is accepted and normalized.
+    ///
+    /// Q, R and P0 are then refused, in that order, when non-finite or
+    /// indefinite, as every Kalman-family factory refuses them (see
+    /// `filter_error`). A singular positive semidefinite matrix is accepted.
     static auto create(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<manifold_ukf, filter_error>
     {
         const Scalar q0_norm = config.q0.norm();
         if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
             return ctrlpp::unexpected(filter_error::degenerate_quaternion);
+        if(const auto noise = detail::validate_noise(config.Q, config.R); !noise)
+            return ctrlpp::unexpected(noise.error());
+        if(const auto prior = detail::validate_initial_covariance(config.P0); !prior)
+            return ctrlpp::unexpected(prior.error());
         return manifold_ukf{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config), std::move(strategy)};
     }
 

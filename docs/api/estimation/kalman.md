@@ -52,21 +52,30 @@ configuration, and uses C++20 designated initializers for the config.
 
 Rejections, checked in the order the config aggregate declares its fields (the
 fields are independent, so the order is declaration order rather than a claim
-about causality):
+about causality). Each matrix is checked for finiteness, then for definiteness:
 
 | Enumerator | Condition | What it prevents |
 |------------|-----------|------------------|
 | `filter_error::non_finite_process_noise` | `Q` has a non-finite entry | `Q` is added to the propagated covariance, so an infinite entry gives `P = Inf`, a gain formed from `Inf/Inf` and therefore `NaN`, and a non-finite estimate at the first step |
+| `filter_error::indefinite_process_noise` | `Q` has an eigenvalue below `-floor` | a matrix that is not positive semidefinite is not a covariance, so the predicted covariance it is added to stops being one |
 | `filter_error::non_finite_measurement_noise` | `R` has a non-finite entry | `R` is added to the innovation covariance the gain solve is posed against, so that solve is meaningless for every measurement |
+| `filter_error::indefinite_measurement_noise` | `R` has an eigenvalue below `-floor` | the innovation covariance the gain is posed against stops being a covariance |
 | `filter_error::non_finite_initial_state` | `x0` has a non-finite component | `x0` seeds the carried estimate, which is the filter's memory, so every later estimate is formed from it |
 | `filter_error::non_finite_initial_covariance` | `P0` has a non-finite entry | `P0` seeds the covariance recursion, which has no mechanism that returns a non-finite covariance to a finite one |
+| `filter_error::indefinite_initial_covariance` | `P0` has an eigenvalue below `-floor` | there is no Gaussian prior with an indefinite covariance |
 
-Finiteness is the domain condition and the whole of it. An ill-conditioned but
-finite configuration -- entries many orders of magnitude apart, or a singular
-`P0` -- is a legitimately posed problem and is **accepted**. Symmetry and
-positive definiteness are not tested either: the filter does not promise them of
-the configuration it is handed, and rejecting them would turn a
-numerical-behavior question into a domain violation.
+The floor is `N eps max|M_ij|`, the order of the symmetric eigensolver's
+backward error, so an eigenvalue within it of zero is indistinguishable from
+zero. The verdict is taken on the symmetric part of the matrix. This is the
+same rule every filter in the estimation module applies: a matrix that is not
+positive semidefinite is not a covariance, whatever the filter does with it.
+
+A **singular** positive semidefinite matrix is **accepted**: a point-mass
+`P0 = 0`, a rank-one `Q` and a noiseless `R = 0` are legitimate configurations,
+because the recursion only adds and multiplies them and inverts the innovation
+covariance, never `R` alone. An ill-conditioned configuration, with entries many
+orders of magnitude apart, is accepted as well: conditioning is a
+numerical-behavior question, not a domain violation.
 
 As a static member of a class template it requires explicit template arguments:
 
@@ -156,10 +165,13 @@ Returns true if the covariance has converged (relative change below tolerance).
 ### reset_covariance
 
 ```cpp
-void reset_covariance(const cov_matrix_t& P0);
+auto reset_covariance(const cov_matrix_t& P0) -> ctrlpp::expected<void, filter_error>;
 ```
 
-Resets the covariance to a new initial value.
+Resets the covariance to a new initial value. A `P0` that `create` would refuse
+is refused with the same enumerator (`non_finite_initial_covariance` or
+`indefinite_initial_covariance`) before anything is assigned, so a refused call
+leaves the filter unchanged.
 
 ### set_model
 
@@ -172,10 +184,13 @@ Replaces the state-space model (for adaptive or switched systems).
 ### set_noise
 
 ```cpp
-void set_noise(cov_matrix_t Q, meas_cov_matrix_t R);
+auto set_noise(cov_matrix_t Q, meas_cov_matrix_t R) -> ctrlpp::expected<void, filter_error>;
 ```
 
-Updates the process and measurement noise covariances.
+Updates the process and measurement noise covariances. `Q` and then `R` are
+checked as `create` checks them, and both are validated before either is
+assigned: a refused call replaces neither, and the filter continues with the
+noise it had.
 
 ## Usage Example
 

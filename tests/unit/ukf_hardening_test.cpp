@@ -208,6 +208,36 @@ TEST_CASE("UKF rejects each non-finite configuration field by name", "[ukf][hard
     }
 }
 
+TEST_CASE("UKF refuses a configuration matrix that is not a covariance", "[ukf][hardening][negative]")
+{
+    using filter_t = ctrlpp::ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>;
+    const Eigen::Matrix2d indefinite = Eigen::Vector2d{1.0, -1.0}.asDiagonal();
+    ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
+    ctrlpp::filter_error expected{};
+
+    SECTION("process noise")
+    {
+        cfg.Q = indefinite;
+        expected = ctrlpp::filter_error::indefinite_process_noise;
+    }
+
+    SECTION("measurement noise")
+    {
+        cfg.R << -1.0;
+        expected = ctrlpp::filter_error::indefinite_measurement_noise;
+    }
+
+    SECTION("initial covariance")
+    {
+        cfg.P0 = indefinite;
+        expected = ctrlpp::filter_error::indefinite_initial_covariance;
+    }
+
+    const auto rejected = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg);
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error() == expected);
+}
+
 TEST_CASE("UKF rejects correction overflow without committing it",
           "[ukf][hardening][negative]")
 {
@@ -651,26 +681,19 @@ TEST_CASE("UKF near-singular P0", "[ukf][hardening][robustness]")
     REQUIRE(std::abs(filter.state()[0] - 1.0) <= std::sqrt(filter.covariance()(0, 0)));
 }
 
-TEST_CASE("UKF update after a covariance repair carries the repaired covariance", "[ukf][hardening][repair]")
+TEST_CASE("UKF refuses an indefinite initial covariance at construction", "[ukf][hardening][repair]")
 {
-    // The gain and the innovation covariance are built from the repaired sigma
-    // set, so a reduction taken from the unrepaired matrix keeps its negative
-    // eigenvalue: here diag(1, -0.5) would leave diag(0.5, -0.5).
+    // The repaired-update property is covered by the prediction-route case below.
     ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
     cfg.Q = Eigen::Matrix2d::Zero();
-    cfg.R = Eigen::Matrix<double, 1, 1>::Identity();
-    cfg.x0 = Eigen::Vector2d::Zero();
     cfg.P0 = Eigen::Vector2d{1.0, -0.5}.asDiagonal();
 
     using filter_t = ctrlpp::ukf<double, 2, 1, 1, ukf_linear_dynamics, ukf_position_measurement>;
     const ctrlpp::merwe_options<double> options{.alpha = 1.0, .beta = 0.0, .kappa = 1.0};
-    auto filter = ctrlpp::test::constructed(filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg, options));
+    const auto rejected = filter_t::create(ukf_linear_dynamics{}, ukf_position_measurement{}, cfg, options);
 
-    REQUIRE(filter.update(Eigen::Matrix<double, 1, 1>::Zero()).has_value());
-
-    CAPTURE(filter.covariance());
-    REQUIRE(min_eigenvalue(filter.covariance()) >= -repair_floor(filter.covariance()));
-    REQUIRE(filter.health() == ctrlpp::ukf_health::covariance_repaired);
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == ctrlpp::filter_error::indefinite_initial_covariance);
 }
 
 TEST_CASE("UKF update after a prediction-driven repair carries the repaired covariance", "[ukf][hardening][repair]")

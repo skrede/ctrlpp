@@ -4,9 +4,9 @@
 // form at every operating point the cases use, so the file asserts closed forms
 // and typed rejections, never finiteness:
 //
-//  * The typed rejections: each non-finite configuration field by name, and a
-//    non-finite measurement, the latter leaving state and covariance BITWISE
-//    unchanged.
+//  * The typed rejections: each non-finite or indefinite configuration field by
+//    name, and a non-finite measurement, the latter leaving state and
+//    covariance BITWISE unchanged.
 //  * The deadbeat identity when the measurement noise is zero -- the corrected
 //    estimate IS the measurement in the observed coordinate and the posterior
 //    covariance there is exactly zero, both bitwise.
@@ -172,6 +172,165 @@ TEST_CASE("Kalman rejects each non-finite configuration field by name", "[kalman
         REQUIRE_FALSE(rejected.has_value());
         CHECK(rejected.error() == ctrlpp::filter_error::non_finite_initial_covariance);
     }
+}
+
+TEST_CASE("Kalman refuses a configuration matrix that is not a covariance", "[kalman][hardening][negative]")
+{
+    auto sys = make_const_velocity_system();
+    const Eigen::Matrix2d indefinite = Eigen::Vector2d{1.0, -1.0}.asDiagonal();
+
+    SECTION("process noise")
+    {
+        ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+        cfg.Q = indefinite;
+        const auto rejected = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::indefinite_process_noise);
+    }
+
+    SECTION("measurement noise")
+    {
+        ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+        cfg.R << -1.0;
+        const auto rejected = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::indefinite_measurement_noise);
+    }
+
+    SECTION("initial covariance")
+    {
+        ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+        cfg.P0 = indefinite;
+        const auto rejected = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::indefinite_initial_covariance);
+    }
+
+    SECTION("an earlier field's finiteness is reported ahead of a later field's definiteness")
+    {
+        ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+        cfg.Q = ctrlpp::test::inf_matrix<double, 2, 2>();
+        cfg.P0 = indefinite;
+        const auto rejected = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg);
+        REQUIRE_FALSE(rejected.has_value());
+        CHECK(rejected.error() == ctrlpp::filter_error::non_finite_process_noise);
+    }
+}
+
+TEST_CASE("Kalman accepts a singular positive semidefinite configuration", "[kalman][hardening]")
+{
+    auto sys = make_const_velocity_system();
+    ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+
+    SECTION("rank-one process noise") { cfg.Q << 1.0, 2.0, 2.0, 4.0; }
+
+    SECTION("noiseless measurement channel") { cfg.R << 0.0; }
+
+    SECTION("point-mass prior") { cfg.P0.setZero(); }
+
+    // The floor is 2 eps max|P0_ij| for this 2x2: an eigenvalue at half of it
+    // below zero is indistinguishable from zero for the symmetric eigensolver.
+    SECTION("an eigenvalue inside the eigensolver's backward error")
+    {
+        cfg.P0 = Eigen::Vector2d{1.0, -kf_eps}.asDiagonal();
+    }
+
+    const auto accepted = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg);
+    REQUIRE(accepted.has_value());
+    CHECK(accepted->covariance() == cfg.P0);
+    CHECK(accepted->state() == cfg.x0);
+}
+
+TEST_CASE("Kalman setters refuse a matrix that is not a covariance and assign nothing", "[kalman][hardening][negative]")
+{
+    auto sys = make_const_velocity_system();
+    ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+    cfg.Q = Eigen::Matrix2d::Identity() * 0.01;
+    auto filter = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg));
+    auto twin = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg));
+
+    const Eigen::Matrix2d indefinite = Eigen::Vector2d{1.0, -1.0}.asDiagonal();
+    const Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
+    const Eigen::Matrix<double, 1, 1> z = Eigen::Matrix<double, 1, 1>::Constant(1.0);
+
+    // Each refused call carries one valid matrix that differs from the
+    // filter's, so an assignment of either one would part the twins.
+    SECTION("set_noise with an indefinite Q")
+    {
+        const auto refused = filter.set_noise(indefinite, Eigen::Matrix<double, 1, 1>::Constant(4.0));
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error() == ctrlpp::filter_error::indefinite_process_noise);
+    }
+
+    SECTION("set_noise with an indefinite R")
+    {
+        const auto refused = filter.set_noise(Eigen::Matrix2d::Identity() * 2.0, Eigen::Matrix<double, 1, 1>::Constant(-1.0));
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error() == ctrlpp::filter_error::indefinite_measurement_noise);
+    }
+
+    SECTION("set_noise with a non-finite R")
+    {
+        const auto refused = filter.set_noise(Eigen::Matrix2d::Identity() * 2.0, ctrlpp::test::nan_matrix<double, 1, 1>());
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error() == ctrlpp::filter_error::non_finite_measurement_noise);
+    }
+
+    SECTION("reset_covariance with an indefinite P0")
+    {
+        filter.predict(u);
+        twin.predict(u);
+        const auto refused = filter.reset_covariance(indefinite);
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error() == ctrlpp::filter_error::indefinite_initial_covariance);
+        CHECK(filter.covariance() == twin.covariance());
+    }
+
+    SECTION("reset_covariance with a non-finite P0")
+    {
+        const auto refused = filter.reset_covariance(ctrlpp::test::inf_matrix<double, 2, 2>());
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error() == ctrlpp::filter_error::non_finite_initial_covariance);
+    }
+
+    for(int k = 0; k < 5; ++k)
+    {
+        filter.predict(u);
+        twin.predict(u);
+        REQUIRE(filter.update(z).has_value());
+        REQUIRE(twin.update(z).has_value());
+    }
+    CHECK((filter.state().array() == twin.state().array()).all());
+    CHECK((filter.covariance().array() == twin.covariance().array()).all());
+    CHECK(filter.is_steady_state() == twin.is_steady_state());
+}
+
+TEST_CASE("Kalman setters accept a covariance as an assignment", "[kalman][hardening]")
+{
+    auto sys = make_const_velocity_system();
+    ctrlpp::kalman_config<double, 2, 1, 1> cfg{};
+    ctrlpp::kalman_config<double, 2, 1, 1> replaced = cfg;
+    replaced.Q << 1.0, 2.0, 2.0, 4.0;
+    replaced.R << 0.25;
+    auto filter = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, cfg));
+    auto twin = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, replaced));
+
+    REQUIRE(filter.set_noise(replaced.Q, replaced.R).has_value());
+
+    const Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
+    const Eigen::Matrix<double, 1, 1> z = Eigen::Matrix<double, 1, 1>::Constant(1.0);
+    for(int k = 0; k < 5; ++k)
+    {
+        filter.predict(u);
+        twin.predict(u);
+        REQUIRE(filter.update(z).has_value());
+        REQUIRE(twin.update(z).has_value());
+    }
+    CHECK((filter.state().array() == twin.state().array()).all());
+    CHECK((filter.covariance().array() == twin.covariance().array()).all());
+
+    REQUIRE(filter.reset_covariance(Eigen::Matrix2d::Zero()).has_value());
+    CHECK(filter.covariance() == Eigen::Matrix2d::Zero());
 }
 
 TEST_CASE("Kalman rejects correction overflow without committing it",

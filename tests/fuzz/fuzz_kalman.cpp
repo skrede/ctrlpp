@@ -1,5 +1,8 @@
 #include "ctrlpp/estimation/kalman.h"
+
 #include "ctrlpp/model/state_space.h"
+
+#include "ctrlpp/detail/covariance_ops.h"
 
 #include <cmath>
 #include <cstddef>
@@ -75,13 +78,27 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     ctrlpp::discrete_state_space<double, 2, 1, 1> sys{Ad, Bd, C, D};
     Eigen::Matrix<double, 2, 2> P0 = Eigen::Matrix<double, 2, 2>::Identity();
 
-    // The harness clamps every configuration field to a finite range above, so
-    // the configuration validation cannot reject here. A rejection would mean
-    // the validation refused a finite configuration, which is a defect rather
-    // than a fuzz finding.
+    // Every field is finite, but Q is a Gram matrix: positive semidefinite in
+    // exact arithmetic, while the rounded product of a nearly rank-deficient
+    // Q_raw can put an eigenvalue below the definiteness floor. The factory must
+    // accept exactly when each matrix's own decomposition is positive
+    // semidefinite and otherwise name the first one that is not, in declaration
+    // order; anything else is a defect rather than a fuzz finding.
+    const bool q_psd = ctrlpp::detail::psd_decomposition(Q).psd;
+    const bool r_psd = ctrlpp::detail::psd_decomposition(R).psd;
+    const bool p_psd = ctrlpp::detail::psd_decomposition(P0).psd;
     auto created = ctrlpp::kalman_filter<double, 2, 1, 1>::create(sys, {.Q = Q, .R = R, .x0 = x0, .P0 = P0});
-    if(!created)
+    if(created.has_value() != (q_psd && r_psd && p_psd))
         abort();
+    if(!created)
+    {
+        const auto first = !q_psd ? ctrlpp::filter_error::indefinite_process_noise
+                         : !r_psd ? ctrlpp::filter_error::indefinite_measurement_noise
+                                  : ctrlpp::filter_error::indefinite_initial_covariance;
+        if(created.error() != first)
+            abort();
+        return 0;
+    }
     auto& kf = *created;
 
     for(int step = 0; step < 10; ++step)

@@ -65,6 +65,17 @@ static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config)
 
 `create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. Any finite nonzero `q0` is accepted and normalized. As a static member of a class template, `create` requires explicit template arguments, e.g. `mekf<double, 3, 3, Measurement>::create(m, cfg)`.
 
+After the quaternion, `create` checks the remaining fields in the order the config declares them, each matrix for finiteness and then for definiteness, as every Kalman-family factory does:
+
+| Enumerator | Condition |
+|------------|-----------|
+| `filter_error::non_finite_process_noise` / `indefinite_process_noise` | `Q` has a non-finite entry / an eigenvalue below `-floor` |
+| `filter_error::non_finite_measurement_noise` / `indefinite_measurement_noise` | `R` has a non-finite entry / an eigenvalue below `-floor` |
+| `filter_error::non_finite_initial_state` | `b0` has a non-finite component |
+| `filter_error::non_finite_initial_covariance` / `indefinite_initial_covariance` | `P0` has a non-finite entry / an eigenvalue below `-floor` |
+
+The floor is `N eps max|M_ij|`, the order of the symmetric eigensolver's backward error, and the verdict is taken on the symmetric part: a matrix that is not positive semidefinite is not a covariance. A singular positive semidefinite matrix, such as `Q = 0` for a constant bias or a point-mass `P0`, is accepted. `dt` and `numerical_eps` are not validated here.
+
 ## Methods
 
 ### predict

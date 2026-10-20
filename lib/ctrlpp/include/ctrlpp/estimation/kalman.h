@@ -109,18 +109,19 @@ public:
     /// @brief Fallible factory, and the only way to originate a filter.
     ///
     /// Rejects a configuration whose process noise, measurement noise, initial
-    /// state or initial covariance carries a non-finite entry, naming which of
-    /// the four it is. Such a configuration is a mistake the caller made before
-    /// the filter ever ran: an infinite Q makes the predicted covariance
-    /// infinite, the gain a ratio of infinities and the estimate non-finite at
-    /// the first step, which surfaces the fault as far as possible from where it
-    /// was introduced.
+    /// state or initial covariance carries a non-finite entry, or whose Q, R or
+    /// P0 is not positive semidefinite, naming the field and the fault. Such a
+    /// configuration is a mistake the caller made before the filter ever ran:
+    /// an infinite Q makes the predicted covariance infinite, the gain a ratio
+    /// of infinities and the estimate non-finite at the first step, which
+    /// surfaces the fault as far as possible from where it was introduced.
     ///
-    /// Finiteness is the domain condition and the whole of it. A covariance that
-    /// is merely ill-conditioned -- entries many orders of magnitude apart, or a
-    /// singular P0 -- is a legitimately posed problem and is accepted. Rejecting
-    /// it would convert a numerical-behavior question into a domain violation
-    /// and refuse configurations that work.
+    /// A matrix with an eigenvalue below the eigensolver's backward-error floor
+    /// is not a covariance and is refused (see `filter_error`). A singular
+    /// positive semidefinite matrix (a point-mass P0, a rank-one Q, a noiseless
+    /// R) and a merely ill-conditioned one are legitimately posed problems and
+    /// are accepted: the recursion inverts only the innovation covariance, and
+    /// conditioning is a numerical-behavior question, not a domain violation.
     static auto create(system_t sys, kalman_config<Scalar, NX, NU, NY> config) -> ctrlpp::expected<kalman_filter, filter_error>
     {
         if(const auto valid = detail::validate_filter_configuration(config.Q, config.R, config.x0, config.P0); !valid)
@@ -198,18 +199,28 @@ public:
         return (m_P - m_P_post_prev).norm() / p_norm < tol;
     }
 
-    void reset_covariance(const cov_matrix_t& P0)
+    /// @brief Replace the covariance, refusing a P0 that `create` would refuse
+    /// before assigning anything.
+    auto reset_covariance(const cov_matrix_t& P0) -> ctrlpp::expected<void, filter_error>
     {
+        if(const auto valid = detail::validate_initial_covariance(P0); !valid)
+            return ctrlpp::unexpected(valid.error());
         m_P = P0;
         m_P_post_prev = P0;
+        return {};
     }
 
     void set_model(system_t sys) { m_sys = std::move(sys); }
 
-    void set_noise(cov_matrix_t Q, meas_cov_matrix_t R)
+    /// @brief Replace both noise matrices or neither: Q and then R are
+    /// validated as `create` validates them before either is assigned.
+    auto set_noise(cov_matrix_t Q, meas_cov_matrix_t R) -> ctrlpp::expected<void, filter_error>
     {
+        if(const auto valid = detail::validate_noise(Q, R); !valid)
+            return ctrlpp::unexpected(valid.error());
         m_Q = std::move(Q);
         m_R = std::move(R);
+        return {};
     }
 
 private:

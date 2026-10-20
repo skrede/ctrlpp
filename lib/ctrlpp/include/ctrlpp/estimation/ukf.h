@@ -132,19 +132,20 @@ public:
     /// @brief Fallible factory, and the only way to originate a filter.
     ///
     /// Rejects a configuration whose process noise, measurement noise, initial
-    /// state or initial covariance carries a non-finite entry, naming which of
-    /// the four it is. Such a configuration is a mistake the caller made before
-    /// the filter ever ran: an infinite Q makes the predicted covariance
-    /// infinite, the gain a ratio of infinities and the estimate non-finite at
-    /// the first step, which surfaces the fault as far as possible from where it
-    /// was introduced.
+    /// state or initial covariance carries a non-finite entry, or whose Q, R or
+    /// P0 is not positive semidefinite, naming the field and the fault. Such a
+    /// configuration is a mistake the caller made before the filter ever ran:
+    /// an infinite Q makes the predicted covariance infinite, the gain a ratio
+    /// of infinities and the estimate non-finite at the first step, which
+    /// surfaces the fault as far as possible from where it was introduced.
     ///
-    /// Finiteness is the domain condition and the whole of it. A covariance that
-    /// is merely ill-conditioned -- entries many orders of magnitude apart, or a
-    /// near-singular P0 whose Cholesky factorization is the interesting question
-    /// -- is a legitimately posed problem and is accepted. Rejecting it would
-    /// convert a numerical-behavior question into a domain violation and refuse
-    /// configurations that work.
+    /// A matrix with an eigenvalue below the eigensolver's backward-error floor
+    /// is not a covariance and is refused (see `filter_error`). A singular
+    /// positive semidefinite matrix (a point-mass P0, a rank-one Q, a noiseless
+    /// R) and a merely ill-conditioned one are legitimately posed problems and
+    /// are accepted: whether the sigma-point factorization of a singular or
+    /// near-singular covariance needs a repair is reported by `health()`, not
+    /// refused here.
     ///
     /// The strategy is taken already built, so it was validated where it was
     /// built; the overload below takes its options instead and forwards the

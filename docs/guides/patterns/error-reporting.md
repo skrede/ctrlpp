@@ -250,36 +250,49 @@ aggregates declare the same four fields and feed them into the same recursion.
 `rls` carries its own `rls_error`, whose conditions are read off the covariance
 update rather than asserted as a range.
 
-**For the three Kalman filters, finiteness is the domain condition and the
-whole of it.** An ill-conditioned but finite configuration, such as a
-covariance with entries many orders of magnitude apart or a singular `P0`, is
-accepted. Rejecting it would convert a
-numerical-behavior question into a domain violation and refuse problems the
-library solves. `rls_error` keeps one enumerator that is explicitly *not* a
+**Every filter that takes a `Q`, `R` or `P0` refuses one that is non-finite or
+indefinite.** A matrix with an eigenvalue below `-floor`, with the floor
+`N eps max|M_ij|` (the symmetric eigensolver's backward-error order), is not a
+covariance, whatever the filter does with it, so `filter_error` also carries
+`indefinite_process_noise`, `indefinite_measurement_noise` and
+`indefinite_initial_covariance`, and each matrix is checked for finiteness and
+then for definiteness, in declaration order. A **singular** positive
+semidefinite matrix is accepted: a point-mass `P0`, a rank-one `Q` and a
+noiseless `R` are legitimate models, and the Kalman-family recursions invert
+only the innovation covariance, never `R` alone. An ill-conditioned
+configuration, such as a covariance with entries many orders of magnitude
+apart, is accepted too: conditioning is a numerical-behavior question, not a
+domain violation. `rls_error` keeps one enumerator that is explicitly *not* a
 domain condition, `forgetting_factor_above_unity`, and says so: the arithmetic
 there is well defined and the consequence is an estimator that silently stops
 adapting, so it is enforced as the type's stated `(0, 1]` contract, not as
 arithmetic.
 
+`mekf` and `manifold_ukf` apply the same checks to their `Q`, `R` and `P0` (and
+`mekf` the finiteness of its initial bias, as `non_finite_initial_state`) after
+the initial quaternion. `kalman_filter::set_noise` and
+`kalman_filter::reset_covariance`, the two setters that replace a covariance
+after construction, return `ctrlpp::expected<void, filter_error>` and refuse
+with the same enumerators before assigning anything; `set_noise` validates both
+matrices before it assigns either.
+
 The two moving-horizon estimators embed an extended filter and hand it the same
 noise fields, so `mhe` and `nmhe` became fallible too and forward that filter's
-rejection verbatim. That is not plumbing: both also invert `Q` and `R` to form
-the arrival-cost and stage weights, so a non-finite entry poisons the posed
-problem as well as the filter.
+rejection verbatim, the definiteness refusals included. That is not plumbing:
+both also invert `Q` and `R` to form the arrival-cost and stage weights, so a
+non-finite entry poisons the posed problem as well as the filter, and a
+singular `Q` or `R`, which the filter accepts, is refused by their own
+`moving_horizon_configuration_error`.
 
 `particle_filter` validates its configuration on channel 1 as well, through
 `particle_filter::create` and `make_particle_filter`, which return
 `ctrlpp::expected<particle_filter, filter_error>`; its constructors are private
-behind a `validated_tag`. It refuses the four finiteness conditions above and,
-in addition, an indefinite `Q`, `R` or `P0` (`indefinite_process_noise`,
-`indefinite_measurement_noise`, `indefinite_initial_covariance`) and a singular
-`R` (`singular_measurement_noise`). For a sampling filter these are domain
-conditions, not numerical-behavior questions: it draws its particles from
-N(0, Q) and N(x0, P0), and a matrix with a negative eigenvalue has no Gaussian to
-draw from; it scores every particle with R's inverse and log-determinant, which
-a singular R does not have. A singular but positive semidefinite `Q` or `P0` is
-still accepted, because a rank-one process noise and a point-mass prior are
-legitimate models with a Gaussian to sample.
+behind a `validated_tag`. It refuses the same finiteness and definiteness
+conditions and, in addition, a singular `R` (`singular_measurement_noise`): it
+scores every particle with R's inverse and log-determinant, which a singular R
+does not have. A singular but positive semidefinite `Q` or `P0` is still
+accepted, because a rank-one process noise and a point-mass prior have a
+Gaussian to sample.
 
 `pid` validates its configuration on channel 1: `pid::create`,
 `pid::set_params` and `pid::set_integral` refuse a value that cannot work with a
@@ -292,10 +305,11 @@ and reset paths of the two adaptive controllers (their construction and
 only by the next cycle's rejection and the `health()` latch; `rls::update`, which still returns a bare `bool` and so
 cannot say why a sample was skipped; `ekf_config::numerical_eps`, whose own
 domain condition (finite and strictly positive, since the central-difference
-stencil divides by it) is not yet checked at construction; the configuration
-validation of `mekf`, `manifold_ukf` and `complementary_filter`, whose factories
-exist but validate only their initial quaternion and not their `Q`, `R` or `P0`;
-and the online planners' `update`. Those surfaces are
+stencil divides by it) is not yet checked at construction; the remaining
+configuration fields of the quaternion filters, `mekf_config::dt` and
+`numerical_eps`, the geodesic-mean options of `manifold_ukf_config`, and the
+gains and step of `cf_config`, whose `complementary_filter` factory validates
+only the initial quaternion; and the online planners' `update`. Those surfaces are
 being moved onto channel 1. Until each one is, the NaN and Inf propagation
 contract described in [numerical-behavior.md](numerical-behavior.md) is what
 governs them.
@@ -332,7 +346,7 @@ one thing that cannot help.
 as such: it returned `std::optional<dsp_error>`, an **inverted** channel where
 an empty result meant success and an engaged one carried the error. It lost no
 information. It was converted so the library has one channel shape rather than
-two, and that is the whole of its justification -- it is not a defect fix.
+two, and that is its only justification: it is not a defect fix.
 
 Every call site branches. None substitutes a default value for a refused
 result, because relocating a dishonesty is not removing it.

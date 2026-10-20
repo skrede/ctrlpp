@@ -420,6 +420,29 @@ TEST_CASE("Moving-horizon factories preserve embedded-filter configuration error
             window_dynamics{}, window_measurement{}, nonlinear));
 }
 
+TEST_CASE("Moving-horizon factories report an indefinite process noise as the embedded filter's error",
+          "[mhe][nmhe][configuration][hardening]")
+{
+    auto require_indefinite = [](const auto& result) {
+        REQUIRE_FALSE(result.has_value());
+        auto const* error = std::get_if<ctrlpp::filter_error>(&result.error());
+        REQUIRE(error != nullptr);
+        REQUIRE(*error == ctrlpp::filter_error::indefinite_process_noise);
+    };
+
+    ctrlpp::mhe_config<double, NX, NU, NY, window> linear;
+    linear.Q = Eigen::Vector2d{1.0, -1.0}.asDiagonal();
+    require_indefinite(
+        linear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+            window_dynamics{}, window_measurement{}, linear));
+
+    ctrlpp::nmhe_config<double, NX, NU, NY, window> nonlinear;
+    nonlinear.Q = Eigen::Vector2d{1.0, -1.0}.asDiagonal();
+    require_indefinite(
+        nonlinear_estimator<ctrlpp_test::report_lengths::conforming>::create(
+            window_dynamics{}, window_measurement{}, nonlinear));
+}
+
 TEST_CASE("Moving-horizon factories validate every common formulation option",
           "[mhe][nmhe][configuration][hardening]")
 {

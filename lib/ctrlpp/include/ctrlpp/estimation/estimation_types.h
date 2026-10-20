@@ -7,8 +7,9 @@
 /// factories in the estimation module: the quaternion attitude filters (`mekf`,
 /// `manifold_ukf`, `complementary_filter`), the sigma-point strategies, the
 /// filters that build one from an options aggregate, and the configuration
-/// validation of the three Kalman filters and the particle filter. It forms
-/// their `ctrlpp::expected<T, filter_error>` construction contract.
+/// validation of every filter that takes a Q, R or P0, which refuses a matrix
+/// that is non-finite or not positive semidefinite. It forms their
+/// `ctrlpp::expected<T, filter_error>` construction contract.
 
 #include "ctrlpp/expected.h"
 
@@ -69,9 +70,9 @@ namespace ctrlpp
 ///                                    floor = N eps max|Q_ij| (the symmetric
 ///                                    eigensolver's backward-error order, the
 ///                                    convention `detail::covariance_sqrt`
-///                                    cites). Such a matrix is not a covariance,
-///                                    so there is no Gaussian with it to sample
-///                                    the process noise from.
+///                                    cites). Such a matrix is not a covariance:
+///                                    there is no Gaussian with it to propagate
+///                                    or to sample the process noise from.
 ///  * indefinite_measurement_noise  : R has an eigenvalue below the same floor,
 ///                                    so there is no Gaussian density with it to
 ///                                    score a measurement against.
@@ -84,17 +85,18 @@ namespace ctrlpp
 ///  * indefinite_initial_covariance : P0 has an eigenvalue below the same floor,
 ///                                    so there is no Gaussian prior with it.
 ///
-/// The Kalman filters validate finiteness only. An ill-conditioned but finite
-/// configuration, such as a covariance with entries many orders of magnitude
-/// apart or a singular P0, is a legitimate, deliberately posed problem for them
-/// and is accepted: conditioning is a numerical-behavior question and finiteness
-/// is the domain condition.
+/// Every filter that takes a Q, R or P0 refuses one that is non-finite or
+/// indefinite: a matrix that is not positive semidefinite is not a covariance,
+/// whatever the filter does with it. A singular positive semidefinite matrix is
+/// accepted: a point-mass prior, a rank-one process noise and a noiseless
+/// measurement channel are legitimate configurations, and the Kalman-family
+/// filters only add and multiply Q, R and P0, inverting the innovation
+/// covariance and never R alone. An ill-conditioned configuration, such as a
+/// covariance with entries many orders of magnitude apart, is accepted as well:
+/// conditioning is a numerical-behavior question, not a domain condition.
 ///
-/// The particle filter additionally refuses an indefinite Q, R or P0 and a
-/// singular R, because it samples from N(0, Q) and N(x0, P0) and scores every
-/// particle with R's inverse and log-determinant. A singular but positive
-/// semidefinite Q or P0 is still accepted: it is a rank-one process noise or a
-/// point-mass prior, both of which have a Gaussian to sample.
+/// The particle filter additionally refuses a singular R, because it scores
+/// every particle with R's inverse and log-determinant.
 enum class filter_error
 {
     degenerate_quaternion,
@@ -112,33 +114,6 @@ enum class filter_error
 
 namespace detail
 {
-
-/// @brief Validate the noise and initial-condition fields that `kalman_config`,
-/// `ekf_config` and `ukf_config` declare identically.
-///
-/// The three aggregates carry the same four fields in the same order and feed
-/// them into the same recursion, so the condition is shared rather than
-/// per-filter and lives here rather than being copied three times.
-///
-/// The fields are independent of one another -- unlike a step's carried estimate
-/// and its measurement, no one of them is upstream of another -- so the report
-/// order is the order the aggregates declare, not a claim about causality.
-///
-/// Finiteness is the whole test. Nothing here rejects a small, singular or
-/// asymmetric matrix.
-template <typename Process, typename Measurement, typename State, typename Covariance>
-auto validate_filter_configuration(const Process& Q, const Measurement& R, const State& x0, const Covariance& P0) -> ctrlpp::expected<void, filter_error>
-{
-    if(!Q.allFinite())
-        return ctrlpp::unexpected(filter_error::non_finite_process_noise);
-    if(!R.allFinite())
-        return ctrlpp::unexpected(filter_error::non_finite_measurement_noise);
-    if(!x0.allFinite())
-        return ctrlpp::unexpected(filter_error::non_finite_initial_state);
-    if(!P0.allFinite())
-        return ctrlpp::unexpected(filter_error::non_finite_initial_covariance);
-    return {};
-}
 
 /// @brief Refuse a candidate covariance that is non-finite, then one that is
 /// not positive semidefinite, naming the matrix through the two enumerators the
@@ -160,6 +135,46 @@ template <typename Scalar, int N>
 auto nonsingular_spectrum(const psd_decomposition_result<Scalar, N>& d) -> bool
 {
     return d.eigenvalues.minCoeff() > static_cast<Scalar>(N) * std::numeric_limits<Scalar>::epsilon() * d.eigenvalues.maxCoeff();
+}
+
+/// @brief Refuse a process noise Q, then a measurement noise R, that is
+/// non-finite or indefinite.
+template <typename Scalar, int NQ, int NR>
+auto validate_noise(const Eigen::Matrix<Scalar, NQ, NQ>& Q, const Eigen::Matrix<Scalar, NR, NR>& R) -> ctrlpp::expected<void, filter_error>
+{
+    if(const auto process = checked_covariance(Q, filter_error::non_finite_process_noise, filter_error::indefinite_process_noise); !process)
+        return ctrlpp::unexpected(process.error());
+    if(const auto measurement = checked_covariance(R, filter_error::non_finite_measurement_noise, filter_error::indefinite_measurement_noise); !measurement)
+        return ctrlpp::unexpected(measurement.error());
+    return {};
+}
+
+/// @brief Refuse an initial covariance P0 that is non-finite or indefinite.
+template <typename Scalar, int N>
+auto validate_initial_covariance(const Eigen::Matrix<Scalar, N, N>& P0) -> ctrlpp::expected<void, filter_error>
+{
+    if(const auto prior = checked_covariance(P0, filter_error::non_finite_initial_covariance, filter_error::indefinite_initial_covariance); !prior)
+        return ctrlpp::unexpected(prior.error());
+    return {};
+}
+
+/// @brief Validate the noise and initial-condition fields that `kalman_config`,
+/// `ekf_config` and `ukf_config` declare identically, and that `mekf_config`
+/// declares with its initial bias in the initial state's place.
+///
+/// The fields are independent of one another, unlike a step's carried estimate
+/// and its measurement, so the report order is the order the aggregates
+/// declare, not a claim about causality. Each matrix is refused when it is
+/// non-finite, then when it is indefinite; a singular positive semidefinite
+/// matrix is accepted.
+template <typename Process, typename Measurement, typename State, typename Covariance>
+auto validate_filter_configuration(const Process& Q, const Measurement& R, const State& x0, const Covariance& P0) -> ctrlpp::expected<void, filter_error>
+{
+    if(const auto noise = validate_noise(Q, R); !noise)
+        return ctrlpp::unexpected(noise.error());
+    if(!x0.allFinite())
+        return ctrlpp::unexpected(filter_error::non_finite_initial_state);
+    return validate_initial_covariance(P0);
 }
 
 }

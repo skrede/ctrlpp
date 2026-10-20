@@ -441,23 +441,81 @@ TEST_CASE("manifold_ukf create accepts a non-unit nonzero quaternion", "[manifol
     REQUIRE((filter->attitude().coeffs().array() == cfg.q0.normalized().coeffs().array()).all());
 }
 
-TEST_CASE("manifold_ukf update after a covariance repair carries the repaired covariance", "[manifold_ukf][repair]")
+TEST_CASE("manifold_ukf create refuses a noise or initial covariance that is not a covariance", "[manifold_ukf]")
 {
-    // The gain and the innovation covariance come from the repaired sigma set,
-    // so a reduction taken from the unrepaired tangent covariance would keep
-    // its negative eigenvalue.
+    const Matrix<double, 3, 3> indefinite = Vector<double, 3>{1.0, 1.0, -1.0}.asDiagonal();
+    manifold_ukf_config<double, 3> cfg;
+    filter_error expected{};
+
+    SECTION("a degenerate quaternion is reported ahead of the matrices")
+    {
+        cfg.q0 = Eigen::Quaternion<double>{0.0, 0.0, 0.0, 0.0};
+        cfg.Q = indefinite;
+        expected = filter_error::degenerate_quaternion;
+    }
+
+    SECTION("non-finite process noise")
+    {
+        cfg.Q(0, 0) = std::numeric_limits<double>::quiet_NaN();
+        expected = filter_error::non_finite_process_noise;
+    }
+
+    SECTION("indefinite process noise")
+    {
+        cfg.Q = indefinite;
+        expected = filter_error::indefinite_process_noise;
+    }
+
+    SECTION("non-finite measurement noise")
+    {
+        cfg.R(1, 1) = std::numeric_limits<double>::quiet_NaN();
+        expected = filter_error::non_finite_measurement_noise;
+    }
+
+    SECTION("indefinite measurement noise")
+    {
+        cfg.R = indefinite;
+        expected = filter_error::indefinite_measurement_noise;
+    }
+
+    SECTION("non-finite initial covariance")
+    {
+        cfg.P0(2, 2) = std::numeric_limits<double>::infinity();
+        expected = filter_error::non_finite_initial_covariance;
+    }
+
+    SECTION("indefinite initial covariance")
+    {
+        cfg.P0 = indefinite;
+        expected = filter_error::indefinite_initial_covariance;
+    }
+
+    const auto rejected = MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == expected);
+}
+
+TEST_CASE("manifold_ukf create accepts a singular positive semidefinite configuration", "[manifold_ukf]")
+{
+    manifold_ukf_config<double, 3> cfg;
+    cfg.Q.setZero();
+    cfg.P0 = Vector<double, 3>{1.0, 1.0, 0.0}.asDiagonal();
+
+    const auto accepted = MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
+    REQUIRE(accepted.has_value());
+    REQUIRE(accepted->covariance() == cfg.P0);
+}
+
+TEST_CASE("manifold_ukf refuses an indefinite initial covariance at construction", "[manifold_ukf][repair]")
+{
+    // The repaired-update property is covered by the prediction-route case below.
     manifold_ukf_config<double, 3> cfg;
     cfg.Q.setZero();
     cfg.P0 = Vector<double, 3>{1.0, 1.0, -0.5}.asDiagonal();
-    auto created = manifold_ukf<double, 3, simple_rotation_dynamics, tangent_measurement>::create(simple_rotation_dynamics{}, tangent_measurement{}, cfg);
-    REQUIRE(created.has_value());
-    auto filter = *std::move(created);
+    const auto rejected = manifold_ukf<double, 3, simple_rotation_dynamics, tangent_measurement>::create(simple_rotation_dynamics{}, tangent_measurement{}, cfg);
 
-    REQUIRE(filter.update(Vector<double, 3>::Zero()).has_value());
-
-    CAPTURE(filter.covariance());
-    REQUIRE(min_eigenvalue(filter.covariance()) >= -repair_floor(filter.covariance()));
-    REQUIRE(filter.health() == manifold_ukf_health::covariance_repaired);
+    REQUIRE_FALSE(rejected.has_value());
+    REQUIRE(rejected.error() == filter_error::indefinite_initial_covariance);
 }
 
 TEST_CASE("manifold_ukf update after a prediction-driven repair carries the repaired covariance", "[manifold_ukf][repair]")
@@ -498,9 +556,11 @@ TEST_CASE("manifold_ukf health latches a repair and a non-converged mean by seve
         REQUIRE(filter.health() == manifold_ukf_health::mean_not_converged);
     }
 
+    // The unpivoted Cholesky factorization fails on this singular prior, so the
+    // first update repairs it.
     SECTION("a later non-converged mean raises a repair")
     {
-        cfg.P0 = Vector<double, 3>{1.0, 1.0, -0.5}.asDiagonal();
+        cfg.P0 = Vector<double, 3>{1.0, 1.0, 0.0}.asDiagonal();
         auto filter = z_spread_filter(cfg);
         REQUIRE(filter.update(Vector<double, 3>::Zero()).has_value());
         REQUIRE(filter.health() == manifold_ukf_health::covariance_repaired);

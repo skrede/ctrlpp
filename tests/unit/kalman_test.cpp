@@ -176,7 +176,7 @@ TEST_CASE("kalman filter reset covariance")
     CHECK((kf.covariance() - P0).norm() > 0.1);
 
     // Reset
-    kf.reset_covariance(P0);
+    REQUIRE(kf.reset_covariance(P0).has_value());
     CHECK((kf.covariance() - P0).norm() < 1e-10);
 }
 
@@ -239,7 +239,7 @@ TEST_CASE("kalman filter set_model updates system")
     // State should have been propagated with new A
     // x = A_new * x0 + B * u = 0 (since x0 = 0 and u = 0)
     // Now set a nonzero state and verify
-    kf.reset_covariance(P0);
+    REQUIRE(kf.reset_covariance(P0).has_value());
 
     // Re-test with nonzero state via update
     Eigen::Matrix<double, 1, 1> z;
