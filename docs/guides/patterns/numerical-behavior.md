@@ -42,6 +42,7 @@ failure channel):
 | `mhe::update` | `expected<void, ekf_update_error>` (forwarded from the embedded filter) |
 | `nmhe::update` | `expected<void, ekf_update_error>` (forwarded from the embedded filter) |
 | `complementary_filter::update`, all three overloads | `expected<void, cf_update_error>` |
+| `particle_filter::update` | `expected<void, pf_update_error>` (particles, weights and random generator unchanged on refusal) |
 | `pid::set_params`, `pid::set_integral` | `expected<void, pid_config_error>` |
 | `pid::compute`, both overloads | `expected<vector_t, pid_step_error>` |
 | `mrac_controller::evaluate` | `expected<input_type, mrac_step_error>` |
@@ -123,10 +124,9 @@ positive semidefinite `Q` or `P0` is still accepted. The refusals are listed in
   validate their initial quaternion, but not their noise configuration; the
   finite-difference step is likewise unchecked. Both are the same defect class
   the four types above just closed, on surfaces this change did not open.
-- Every other surface in the library, including `particle_filter::update` and the
-  online planners. These are being moved onto the failure channel too, but they
-  have not been moved yet, and until they are the propagation contract above is
-  what governs them.
+- Every other surface in the library, including the online planners. These are
+  being moved onto the failure channel too, but they have not been moved yet,
+  and until they are the propagation contract above is what governs them.
 
 ## What the library does guard against
 
@@ -313,9 +313,14 @@ otherwise produce silent corruption through intermediate overflow:
   non-finite, and `l1_error::non_finite_gain` when `K_r` is non-finite. It does
   not throw.
 
-- **Particle filter weight degeneracy:** When all particles have negligible
-  likelihood (complete weight collapse), the log-weight normalizer resets to
-  uniform weights rather than producing NaN from `-inf - (-inf)`.
+- **Particle filter weight depletion:** When no particle explains a finite
+  measurement (every likelihood is zero), the normalizer resets to uniform
+  weights rather than producing NaN from `-inf - (-inf)` or dividing by a zero
+  total. The step succeeds and latches `pf_health::weights_reset`, so the
+  depletion stays distinguishable from a refused measurement. A non-finite
+  measurement never reaches this guard: `update` refuses it with
+  `pf_update_error::non_finite_measurement` and leaves the particles, the weights
+  and the random generator unchanged.
 
 - **UKF covariance update:** The unscented Kalman filter uses the algebraically
   complete minimum mean-square-error reduction `P = P - K*S*K^T`, where

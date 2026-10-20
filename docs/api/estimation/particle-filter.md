@@ -117,10 +117,23 @@ Propagates all NP particles through the dynamics model with additive Gaussian pr
 ### update
 
 ```cpp
-void update(const output_vector_t& z);
+auto update(const output_vector_t& z)
+    -> ctrlpp::expected<void, pf_update_error>;
 ```
 
-Updates particle weights using the configured measurement-likelihood policy (Gaussian by default), normalizes, and resamples (with roughening) if the Effective Sample Size drops below `ess_threshold`. If all particles have negligible likelihood (complete weight collapse), the normalizer resets to uniform weights to recover from particle depletion. This recovery applies to both weight modes: the log mode resets when the maximum log-weight is not finite, and the linear mode resets when the total weight underflows to a non-positive sum.
+The step is refused **before any weight is committed and before the random generator is drawn from**, so a refused step leaves the particles, the weights and the generator bitwise unchanged and the caller may continue with the next sample. The checks run in this order, the carried estimate ahead of the measurement:
+
+| Condition | Error | Why it is refused |
+|---|---|---|
+| a carried particle is already non-finite | `pf_update_error::non_finite_state` | No weight computed from it means anything; `health()` latches `non_finite_estimate` |
+| the supplied measurement has a non-finite component | `pf_update_error::non_finite_measurement` | Every weight would be non-finite and the posterior would be discarded |
+| the measurement is finite but a new weight would be NaN or +inf | `pf_update_error::non_finite_result` | A custom likelihood policy or a measurement model produced a non-finite likelihood |
+
+The new weights are computed into a staging array and committed only when none is NaN or +inf; a log-weight of -inf (a linear weight of zero) is a legitimate zero likelihood. On a step that runs, the weights are updated with the configured measurement-likelihood policy (Gaussian by default), normalized, and the particles are resampled (with roughening) if the Effective Sample Size drops below `ess_threshold`.
+
+When no particle explains a finite measurement (every likelihood is zero), the normalizer resets to uniform weights and `health()` reports `pf_health::weights_reset`. The step still succeeds: the posterior is valid but uninformed. This applies to both weight modes: the log mode resets when the maximum log-weight is -inf, and the linear mode resets when the total weight underflows to zero.
+
+`predict` is not fallible. A prediction that makes the particles non-finite is reported by the next `update` as `non_finite_state` and through [`health`](#health).
 
 ### state
 
@@ -150,7 +163,7 @@ Three properties of the definition:
 
 - The center is always the weighted mean, including when `extraction` is `map`. A second moment about any other point is larger than the covariance and is not one; dispersion about the MAP estimate can be formed from `particles()` and `map_estimate()`.
 - There is no Bessel correction. The weights sum to one, so this is the weighted second moment, matching the convention the unscented filter's sigma-point covariance uses.
-- Uniform weights need no special case. The expression reduces exactly to the plain second moment of the particles about their plain mean, which is the correct answer after the weight-degeneracy recovery described under `update`: the measurement carried no information, so the reported uncertainty is the dispersion the filter was already carrying.
+- Uniform weights need no special case. The expression reduces exactly to the plain second moment of the particles about their plain mean, which is the correct answer after a depletion that `health()` reports as `weights_reset`: the measurement carried no information, so the reported uncertainty is the dispersion the filter was already carrying.
 
 ### map_estimate
 
@@ -167,6 +180,22 @@ auto particles() const -> const std::array<state_vector_t, NP>&;
 ```
 
 Returns a const reference to the particle array for inspection or visualization.
+
+### health
+
+```cpp
+auto health() const -> pf_health;
+```
+
+Returns the persistent health status. The enumerators are ordered by severity and the status latches, never returning to a lower rung on its own.
+
+| Enumerator | Meaning |
+|---|---|
+| `pf_health::ok` | Every update so far conditioned the particles on its measurement |
+| `pf_health::weights_reset` | A finite measurement that no particle explains reset the weights to uniform; the step succeeded with an uninformed posterior |
+| `pf_health::non_finite_estimate` | A step found the particles already non-finite, which is how a poisoned control or dynamics model becomes visible |
+
+A refused measurement does not set it: the refusal mutates nothing.
 
 ## Supporting Types
 
@@ -273,7 +302,10 @@ int main()
         z(0) = std::atan2(x_true(1), x_true(0)) + noise(rng);
 
         pf.predict(u);
-        pf.update(z);
+        if (const auto stepped = pf.update(z); !stepped.has_value()) {
+            std::cerr << "measurement refused at step " << k << "\n";
+            continue;
+        }
 
         auto est = pf.state();
         std::cout << k * 0.1 << "," << x_true(0) << "," << est(0) << "\n";

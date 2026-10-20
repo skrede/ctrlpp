@@ -183,6 +183,17 @@ degraded from an earlier step. Two of those queries predate this convention
 (`ukf_health`, `manifold_ukf_health`) and were extended rather than replaced.
 None of the seven carries a discard annotation on `health()`.
 
+`particle_filter::update` is on channel 1 as well, returning
+`ctrlpp::expected<void, pf_update_error>` (`non_finite_state`,
+`non_finite_measurement`, `non_finite_result`). It refuses before committing a
+weight or drawing from its random generator, so a refused step leaves the
+particles, the weights and the generator bitwise unchanged. Its channel-3 query
+`health()` returns `pf_health` (`ok`, `weights_reset`, `non_finite_estimate`).
+A weight depletion, where no particle explains a finite measurement, is not a
+rejection: the step resets the weights to uniform, succeeds with a valid but
+uninformed posterior, and latches `weights_reset`, so it stays distinguishable
+from a refused measurement.
+
 The complementary filter's zero-norm acceleration and magnetic skips stay on the
 success path and are **not** rejections. They are channel-2 shaped -- the step
 ran and produced a valid attitude, it simply had no correction to apply -- and
@@ -284,7 +295,7 @@ domain condition (finite and strictly positive, since the central-difference
 stencil divides by it) is not yet checked at construction; the configuration
 validation of `mekf`, `manifold_ukf` and `complementary_filter`, whose factories
 exist but validate only their initial quaternion and not their `Q`, `R` or `P0`;
-`particle_filter::update` and the online planners' `update`. Those surfaces are
+and the online planners' `update`. Those surfaces are
 being moved onto channel 1. Until each one is, the NaN and Inf propagation
 contract described in [numerical-behavior.md](numerical-behavior.md) is what
 governs them.

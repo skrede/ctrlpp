@@ -88,6 +88,34 @@ struct lcg_noise
     }
 };
 
+auto refusal_cause(ctrlpp::pf_update_error error) -> const char*
+{
+    switch(error)
+    {
+    case ctrlpp::pf_update_error::non_finite_state:
+        return "the particles are non-finite";
+    case ctrlpp::pf_update_error::non_finite_measurement:
+        return "the measurement is non-finite";
+    case ctrlpp::pf_update_error::non_finite_result:
+        return "the likelihood is non-finite";
+    }
+    return "unknown";
+}
+
+auto health_name(ctrlpp::pf_health health) -> const char*
+{
+    switch(health)
+    {
+    case ctrlpp::pf_health::ok:
+        return "ok";
+    case ctrlpp::pf_health::weights_reset:
+        return "weights reset by a measurement no particle explained";
+    case ctrlpp::pf_health::non_finite_estimate:
+        return "non-finite estimate";
+    }
+    return "unknown";
+}
+
 } // namespace
 
 int main()
@@ -160,8 +188,13 @@ int main()
         ctrlpp::Vector<double, 1> z;
         z << meas_bearing;
 
-        // PF update
-        filter.update(z);
+        // A refused measurement leaves the particles, weights and generator
+        // untouched, so the filter carries on with the next sample.
+        if(const auto stepped = filter.update(z); !stepped)
+        {
+            std::cerr << "Measurement refused at step " << k << ": " << refusal_cause(stepped.error()) << '\n';
+            continue;
+        }
 
         auto est = filter.state();
 
@@ -177,6 +210,7 @@ int main()
     auto P_final = filter.covariance();
     std::cerr << "Final position error: " << err_pos << " m\n";
     std::cerr << "Reported position standard deviation: " << std::sqrt(P_final(0, 0)) << ", " << std::sqrt(P_final(1, 1)) << " m\n";
+    std::cerr << "Filter health: " << health_name(filter.health()) << '\n';
 
     return 0;
 }

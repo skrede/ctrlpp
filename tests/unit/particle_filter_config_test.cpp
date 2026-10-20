@@ -67,7 +67,7 @@ TEST_CASE("particle filter ESS-adaptive resampling triggers correctly")
 
     Vector<double, 1> z;
     z << 5.0;
-    pf.update(z);
+    REQUIRE(pf.update(z).has_value());
 
     // After update with highly informative measurement, the filter should still
     // produce a finite estimate (resampling should have occurred)
@@ -94,7 +94,7 @@ TEST_CASE("particle filter roughening prevents impoverishment")
 
     Vector<double, 1> z;
     z << 5.0;
-    pf.update(z);
+    REQUIRE(pf.update(z).has_value());
 
     // After resampling + roughening, particles should not all be identical
     auto& particles = pf.particles();
@@ -152,7 +152,7 @@ TEST_CASE("particle filter with multinomial resampling")
 
         Vector<double, 1> z;
         z << true_pos + 0.1 * std::sin(static_cast<double>(i));
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
     }
 
     auto est = pf.state();
@@ -180,7 +180,7 @@ TEST_CASE("particle filter log-weight stability over many iterations")
 
         Vector<double, 1> z;
         z << static_cast<double>(i) * 0.1;
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
 
         auto est = pf.state();
         CHECK(std::isfinite(est(0)));
@@ -209,7 +209,7 @@ TEST_CASE("particle filter linear-weight mode works for small particle count")
 
         Vector<double, 1> z;
         z << static_cast<double>(i) * 0.1;
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
 
         auto est = pf.state();
         CHECK(std::isfinite(est(0)));

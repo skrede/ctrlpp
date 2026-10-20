@@ -68,7 +68,7 @@ TEST_CASE("particle filter tracks linear system")
 
         Vector<double, 1> z;
         z << true_pos + 0.1 * std::sin(static_cast<double>(i));
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
     }
 
     auto est = pf.state();
@@ -97,7 +97,7 @@ TEST_CASE("particle filter deterministic with fixed seed")
 
         Vector<double, 1> z;
         z << 1.0;
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
 
         return pf.state();
     };
@@ -121,7 +121,7 @@ TEST_CASE("particle filter weighted_mean and map_estimate both accessible")
 
     Vector<double, 1> z;
     z << 1.0;
-    pf.update(z);
+    REQUIRE(pf.update(z).has_value());
 
     auto wm = pf.weighted_mean();
     auto me = pf.map_estimate();
@@ -145,7 +145,7 @@ TEST_CASE("particle filter extraction_method config switches state() output")
         pf.predict(u);
         Vector<double, 1> z;
         z << 1.0;
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
 
         auto st = pf.state();
         auto wm = pf.weighted_mean();
@@ -161,7 +161,7 @@ TEST_CASE("particle filter extraction_method config switches state() output")
         pf.predict(u);
         Vector<double, 1> z;
         z << 1.0;
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
 
         auto st = pf.state();
         auto me = pf.map_estimate();
@@ -199,7 +199,7 @@ TEST_CASE("particle filter shares dynamics_model with EKF")
 
     Vector<double, 1> z;
     z << 1.0;
-    pf.update(z);
+    REQUIRE(pf.update(z).has_value());
 
     CHECK(std::isfinite(pf.state()(0)));
 }

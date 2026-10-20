@@ -16,14 +16,18 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     double buf[8];
     std::memcpy(buf, data, 64);
 
-    for(int i = 0; i < 8; ++i)
+    for(int i = 2; i < 8; ++i)
     {
         if(!std::isfinite(buf[i]))
             return 0;
     }
 
+    // A non-finite measurement reaches the filter as it came; a finite one is
+    // clamped like the configuration.
     Eigen::Matrix<double, 2, 1> z;
-    z << std::clamp(buf[0], -1e3, 1e3), std::clamp(buf[1], -1e3, 1e3);
+    for(int i = 0; i < 2; ++i)
+        z(i) = std::isfinite(buf[i]) ? std::clamp(buf[i], -1e3, 1e3) : buf[i];
+    const bool finite_measurement = z.allFinite();
 
     double q0 = std::clamp(std::abs(buf[2]), 1e-10, 1e4);
     double q1 = std::clamp(std::abs(buf[3]), 1e-10, 1e4);
@@ -69,16 +73,23 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
 
+    // Verdict oracle: the dynamics and measurement are finite and linear, so a
+    // finite measurement must be accepted with a finite estimate, and a
+    // non-finite one must be refused as such with the estimate bitwise unchanged.
     for(int step = 0; step < 10; ++step)
     {
         filter->predict(u);
-        filter->update(z);
+        const Eigen::Matrix<double, 2, 1> before = filter->state();
+        const auto result = filter->update(z);
 
-        auto x_est = filter->state();
-        for(int i = 0; i < 2; ++i)
+        if(finite_measurement && (!result.has_value() || !filter->state().allFinite()))
+            std::abort();
+        if(!finite_measurement)
         {
-            if(!std::isfinite(x_est(i)))
-            return 0;
+            if(result.has_value() || result.error() != ctrlpp::pf_update_error::non_finite_measurement)
+                std::abort();
+            if(!(filter->state().array() == before.array()).all())
+                std::abort();
         }
     }
 

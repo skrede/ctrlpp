@@ -289,8 +289,8 @@ fi
 # Deliberately EXCLUDED, because each name is shared with an infallible surface
 # and a name-based search cannot tell them apart from a call site:
 #
-#   update    fallible on the six estimators and the complementary filter;
-#             returns nothing on the particle filter, on both online planners,
+#   update    fallible on the six estimators, the complementary filter and
+#             the particle filter; returns nothing on both online planners,
 #             on the null observer, and inside the observer concept's
 #             requires-expression
 #   compute   fallible on the proportional-integral-derivative controller and

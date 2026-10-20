@@ -4,13 +4,14 @@
 // two kinds and the file keeps them apart:
 //
 //  * Where the answer is DETERMINISTIC, it is asserted exactly or against a
-//    counted-operation budget. The weight-degeneracy guard is the important
-//    case: when every log-weight is non-finite the filter resets to uniform
-//    weights, so the reported state is the plain particle mean, and that is an
-//    identity rather than a statistical claim. Two cases below reach that guard
-//    from opposite directions -- a non-finite measurement and a total underflow
-//    -- and both assert the same identity with the same budget, counted over the
-//    particle count.
+//    counted-operation budget. A refused measurement is asserted bitwise, by
+//    twin filters of which only one saw it. The weight-depletion guard is the
+//    other case: when no particle explains a finite measurement the filter
+//    resets to uniform weights and reports it through health, so the reported
+//    state is the plain particle mean, and that is an identity rather than a
+//    statistical claim. Two cases below reach that guard, one per weight
+//    representation, and both assert the same identity with the same budget,
+//    counted over the particle count.
 //  * Where the answer is STATISTICAL, it is asserted against the exact posterior
 //    the model admits. Every tracking case here is linear and Gaussian, so the
 //    exact posterior is a ctrlpp::kalman_filter's, and the deviation from it is
@@ -198,57 +199,69 @@ struct bearing_wrap_likelihood
     }
 };
 
+struct nan_dynamics
+{
+    auto operator()(const ctrlpp::Vector<double, 2>&, const ctrlpp::Vector<double, 1>&) const -> ctrlpp::Vector<double, 2>
+    {
+        return ctrlpp::test::nan_vector<double, 2>();
+    }
+};
+
+// A Gaussian policy that scores a negative measurement NaN and one above 100
+// +inf, so a finite measurement can poison the likelihood on demand.
+struct poisoned_likelihood
+{
+    double operator()(const ctrlpp::Vector<double, 1>& z, const ctrlpp::Vector<double, 1>& z_pred,
+                      const ctrlpp::Matrix<double, 1, 1>& R_inv, double log_det_2piR) const
+    {
+        if(z(0) < 0.0)
+            return std::numeric_limits<double>::quiet_NaN();
+        if(z(0) > 100.0)
+            return std::numeric_limits<double>::infinity();
+        return ctrlpp::detail::gaussian_likelihood<double, 1>{}(z, z_pred, R_inv, log_det_2piR);
+    }
+};
+
+template <typename Particles>
+auto same_particles(const Particles& a, const Particles& b) -> bool
+{
+    for(std::size_t i = 0; i < a.size(); ++i)
+    {
+        if(!(a[i].array() == b[i].array()).all())
+            return false;
+    }
+    return true;
 }
 
-TEST_CASE("PF non-finite measurement recovers to the uniform particle mean",
-          "[particle_filter][hardening][negative]")
+template <typename Filter>
+auto same_filter(const Filter& a, const Filter& b) -> bool
 {
-    auto pf = make_pf();
+    return same_particles(a.particles(), b.particles()) && (a.state().array() == b.state().array()).all()
+           && (a.covariance().array() == b.covariance().array()).all();
+}
 
-    ctrlpp::Vector<double, 1> u = ctrlpp::Vector<double, 1>::Zero();
-    pf.predict(u);
-
-    ctrlpp::Vector<double, 1> z;
-    z << std::numeric_limits<double>::quiet_NaN();
-    pf.update(z);
-
-    // The disjunction this replaces accepted both answers and so decided
-    // nothing, and it hid a contract the filter genuinely has. A non-finite
-    // measurement makes every log-weight non-finite; the normalization tests the
-    // maximum log-weight for finiteness and, failing it, RESETS to uniform
-    // weights. Uniform weights give an effective sample size equal to the
-    // particle count, which is above the resampling threshold, so no resampling
-    // occurs and the reported state is the plain mean of the particles -- FINITE,
-    // not NaN.
-    //
-    // This is the identical property, reached through the identical guard, that
-    // "PF linear-mode total underflow recovers to the uniform particle mean"
-    // asserts further down this file; the two differ only in how the weights were
-    // destroyed. Both use the same budget: an NP-term weighted sum
-    // accumulates at most one rounding per term, at the scale of the largest
-    // operand.
+/// @brief Assert that the reported state and covariance are the plain mean and
+/// second moment of the particles, as uniform weights make them.
+///
+/// An NP-term weighted sum accumulates at most one rounding per term, at the
+/// scale of the largest operand. Uniform weights get no special case in
+/// `covariance()`, so the weighted second moment reduces to the plain one with
+/// the 1/NP normalization the weights carry: the measurement carried no
+/// information, so the reported uncertainty is the dispersion the filter was
+/// already carrying.
+template <typename Filter>
+void check_uniform_weight_identity(const Filter& pf)
+{
     const auto particle_count = static_cast<double>(pf.particles().size());
     ctrlpp::Vector<double, 2> ref_mean = ctrlpp::Vector<double, 2>::Zero();
     for(const auto& p : pf.particles())
         ref_mean += p;
     ref_mean /= particle_count;
 
-    const double tol = std::max(1.0, ref_mean.cwiseAbs().maxCoeff()) * particle_count
-                       * std::numeric_limits<double>::epsilon();
-
-    CHECK(std::isfinite(pf.state()[0]));
-    CHECK(std::isfinite(pf.state()[1]));
+    const double tol = std::max(1.0, ref_mean.cwiseAbs().maxCoeff()) * particle_count * std::numeric_limits<double>::epsilon();
     CHECK(std::abs(pf.state()(0) - ref_mean(0)) <= tol);
     CHECK(std::abs(pf.state()(1) - ref_mean(1)) <= tol);
 
-    // The reported uncertainty follows the same identity, and asserting it here
-    // is what makes the accessor's stated design decision checkable rather than
-    // merely documented: uniform weights are handled by no special case at all,
-    // so the weighted second moment reduces EXACTLY to the plain second moment
-    // of the particles about their plain mean, with the 1/NP normalization the
-    // weights carry. That is the honest answer after this guard fires -- the
-    // measurement carried no information, so the reported uncertainty is the
-    // dispersion the filter was already carrying.
     ctrlpp::Matrix<double, 2, 2> ref_moment = ctrlpp::Matrix<double, 2, 2>::Zero();
     for(const auto& p : pf.particles())
     {
@@ -257,10 +270,107 @@ TEST_CASE("PF non-finite measurement recovers to the uniform particle mean",
     }
     ref_moment /= particle_count;
 
-    const double moment_tol = ref_moment.cwiseAbs().maxCoeff() * particle_count
-                              * std::numeric_limits<double>::epsilon();
+    const double moment_tol = ref_moment.cwiseAbs().maxCoeff() * particle_count * std::numeric_limits<double>::epsilon();
     CHECK((pf.covariance() - ref_moment).cwiseAbs().maxCoeff() <= moment_tol);
-    CHECK(pf.covariance()(0, 1) == pf.covariance()(1, 0));
+}
+
+void check_poisoned_likelihood_refusal(ctrlpp::weight_representation weights, double poison)
+{
+    ctrlpp::pf_config<double, 2, 1, 1> cfg{.Q = ctrlpp::Matrix<double, 2, 2>::Identity() * 0.01};
+    cfg.weights = weights;
+    const auto make = [&] {
+        return ctrlpp::test::constructed(ctrlpp::make_particle_filter<100>(
+            pf_linear_dynamics{}, pf_position_measurement{}, cfg, std::mt19937_64{42}, poisoned_likelihood{}));
+    };
+    auto a = make();
+    auto b = make();
+    const ctrlpp::Vector<double, 1> u = ctrlpp::Vector<double, 1>::Zero();
+    ctrlpp::Vector<double, 1> poisoned;
+    poisoned << poison;
+
+    for(int k = 0; k < 10; ++k)
+    {
+        ctrlpp::Vector<double, 1> z;
+        z << 0.1 * k;
+        a.predict(u);
+        b.predict(u);
+        REQUIRE(a.update(z).has_value());
+        REQUIRE(b.update(z).has_value());
+        const auto before = a.particles();
+        const auto refused = a.update(poisoned);
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error() == ctrlpp::pf_update_error::non_finite_result);
+        REQUIRE(same_particles(a.particles(), before));
+    }
+
+    REQUIRE(same_filter(a, b));
+    CHECK(a.health() == ctrlpp::pf_health::ok);
+}
+
+}
+
+TEST_CASE("PF refuses a non-finite measurement and leaves the filter bitwise unchanged",
+          "[particle_filter][hardening][negative]")
+{
+    // Twin filters from the same seed: A sees one extra NaN measurement that B
+    // never sees. If the refused step touched a weight, a particle or the
+    // generator, the later resampling-capable steps would carry the difference
+    // into every particle, the state and the covariance.
+    auto a = make_pf();
+    auto b = make_pf();
+    const ctrlpp::Vector<double, 1> u = ctrlpp::Vector<double, 1>::Zero();
+    const auto nan_z = ctrlpp::test::nan_vector<double, 1>();
+
+    for(int k = 0; k < 10; ++k)
+    {
+        ctrlpp::Vector<double, 1> z;
+        z << 0.1 * k;
+        a.predict(u);
+        b.predict(u);
+        REQUIRE(a.update(z).has_value());
+        REQUIRE(b.update(z).has_value());
+        if(k == 0)
+        {
+            const auto refused = a.update(nan_z);
+            REQUIRE_FALSE(refused.has_value());
+            CHECK(refused.error() == ctrlpp::pf_update_error::non_finite_measurement);
+        }
+    }
+
+    REQUIRE(same_filter(a, b));
+    CHECK(a.health() == ctrlpp::pf_health::ok);
+    CHECK(b.health() == ctrlpp::pf_health::ok);
+}
+
+TEST_CASE("PF reports particles a dynamics model made non-finite ahead of the measurement",
+          "[particle_filter][hardening][negative]")
+{
+    auto pf = ctrlpp::test::constructed(ctrlpp::make_particle_filter<16>(
+        nan_dynamics{}, pf_position_measurement{}, ctrlpp::pf_config<double, 2, 1, 1>{}));
+    pf.predict(ctrlpp::Vector<double, 1>::Zero());
+
+    const auto finite = pf.update(ctrlpp::Vector<double, 1>::Zero());
+    REQUIRE_FALSE(finite.has_value());
+    CHECK(finite.error() == ctrlpp::pf_update_error::non_finite_state);
+    CHECK(pf.health() == ctrlpp::pf_health::non_finite_estimate);
+
+    const auto non_finite = pf.update(ctrlpp::test::nan_vector<double, 1>());
+    REQUIRE_FALSE(non_finite.has_value());
+    CHECK(non_finite.error() == ctrlpp::pf_update_error::non_finite_state);
+    CHECK(pf.health() == ctrlpp::pf_health::non_finite_estimate);
+}
+
+TEST_CASE("PF refuses a finite measurement whose likelihood is not finite and leaves the filter bitwise unchanged",
+          "[particle_filter][hardening][negative]")
+{
+    for(const auto weights : {ctrlpp::weight_representation::log, ctrlpp::weight_representation::linear})
+    {
+        for(const double poison : {-1.0, 1e3})
+        {
+            CAPTURE(weights == ctrlpp::weight_representation::log, poison);
+            check_poisoned_likelihood_refusal(weights, poison);
+        }
+    }
 }
 
 TEST_CASE("PF posterior mean and variance track the exact Gaussian posterior",
@@ -301,7 +411,7 @@ TEST_CASE("PF posterior mean and variance track the exact Gaussian posterior",
         exact.predict(u_exact);
         ctrlpp::Vector<double, 1> z;
         z << true_pos;
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
         Eigen::Matrix<double, 1, 1> z_exact;
         z_exact << true_pos;
         REQUIRE(exact.update(z_exact).has_value());
@@ -358,7 +468,7 @@ TEST_CASE("PF converges to the exact posterior for a linear Gaussian system",
         exact.predict(u_exact);
         ctrlpp::Vector<double, 1> z;
         z << true_pos;
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
         Eigen::Matrix<double, 1, 1> z_exact;
         z_exact << true_pos;
         REQUIRE(exact.update(z_exact).has_value());
@@ -399,7 +509,7 @@ TEST_CASE("PF with 10 particles still conditions on its measurements",
         exact.predict(u_exact);
         ctrlpp::Vector<double, 1> z;
         z << 1.0;
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
         Eigen::Matrix<double, 1, 1> z_exact;
         z_exact << 1.0;
         REQUIRE(exact.update(z_exact).has_value());
@@ -425,7 +535,28 @@ TEST_CASE("PF with 10 particles still conditions on its measurements",
     REQUIRE(stats.standard_deviation < unconditioned_floor);
 }
 
-TEST_CASE("PF linear-mode total underflow recovers to the uniform particle mean",
+TEST_CASE("PF log-mode depletion resets the weights and reports it through health",
+          "[particle_filter][hardening][robustness]")
+{
+    auto pf = make_pf();
+    pf.predict(ctrlpp::Vector<double, 1>::Zero());
+
+    // Every squared Mahalanobis distance overflows, so every log-likelihood is
+    // -inf: a finite measurement no particle explains.
+    ctrlpp::Vector<double, 1> z;
+    z << 1e200;
+    REQUIRE(pf.update(z).has_value());
+    CHECK(pf.health() == ctrlpp::pf_health::weights_reset);
+    check_uniform_weight_identity(pf);
+    CHECK(pf.covariance()(0, 1) == pf.covariance()(1, 0));
+
+    const auto refused = pf.update(ctrlpp::test::nan_vector<double, 1>());
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error() == ctrlpp::pf_update_error::non_finite_measurement);
+    CHECK(pf.health() == ctrlpp::pf_health::weights_reset);
+}
+
+TEST_CASE("PF linear-mode total underflow resets the weights and reports it through health",
           "[particle_filter][hardening][robustness]")
 {
     ctrlpp::Matrix<double, 2, 2> Q = ctrlpp::Matrix<double, 2, 2>::Identity() * 0.01;
@@ -455,23 +586,12 @@ TEST_CASE("PF linear-mode total underflow recovers to the uniform particle mean"
 
     ctrlpp::Vector<double, 1> z;
     z << max_pos + 2.0 * underflow_radius;
-    pf.update(z);
+    REQUIRE(pf.update(z).has_value());
+    CHECK(pf.health() == ctrlpp::pf_health::weights_reset);
 
     // No resampling occurs (uniform weights give ESS = NP > NP/2), so the
-    // extracted state must be finite and equal the plain mean of the particles.
-    ctrlpp::Vector<double, 2> ref_mean = ctrlpp::Vector<double, 2>::Zero();
-    for(const auto& p : pf.particles())
-        ref_mean += p;
-    ref_mean /= static_cast<double>(NP);
-
-    // An NP-term weighted sum accumulates at most O(NP) ulps of rounding.
-    const double tol = std::max(1.0, ref_mean.cwiseAbs().maxCoeff())
-                       * static_cast<double>(NP) * std::numeric_limits<double>::epsilon();
-
-    CHECK(std::isfinite(pf.state()(0)));
-    CHECK(std::isfinite(pf.state()(1)));
-    CHECK(std::abs(pf.state()(0) - ref_mean(0)) <= tol);
-    CHECK(std::abs(pf.state()(1) - ref_mean(1)) <= tol);
+    // extracted state must equal the plain mean of the particles.
+    check_uniform_weight_identity(pf);
 }
 
 TEST_CASE("PF bearing wrap likelihood fixes the +/-pi cut where the Gaussian policy inverts",
@@ -533,7 +653,7 @@ TEST_CASE("PF bearing wrap likelihood fixes the +/-pi cut where the Gaussian pol
         pf.predict(u);
         ctrlpp::Vector<double, 1> z;
         z << std::remainder(true_bearing + noise(sensor_rng), 2.0 * pi);
-        pf.update(z);
+        REQUIRE(pf.update(z).has_value());
     }
 
     // The fused estimate should track the true bearing to within one raw

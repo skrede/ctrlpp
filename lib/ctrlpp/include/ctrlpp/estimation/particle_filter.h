@@ -46,6 +46,54 @@ enum class weight_representation
     linear
 };
 
+/// @brief Structured failure modes of a `particle_filter` measurement update.
+///
+/// The order is severity: the carried estimate is reported ahead of the
+/// measurement, because the fault is upstream of it. Every refusal leaves the
+/// particles, the weights and the random generator bitwise unchanged.
+///
+///  * non_finite_state       : a carried particle is already non-finite when
+///                             the step begins, so no weight computed from it
+///                             means anything.
+///  * non_finite_measurement : the supplied measurement has a non-finite
+///                             component. It would make every weight
+///                             non-finite and discard the posterior, so it is
+///                             refused and the caller may continue with the
+///                             next sample.
+///  * non_finite_result      : the measurement is finite but its likelihood is
+///                             NaN or +inf for some particle (a custom
+///                             likelihood policy, or a measurement model that
+///                             returned NaN).
+enum class pf_update_error
+{
+    non_finite_state,
+    non_finite_measurement,
+    non_finite_result
+};
+
+/// @brief Persistent health status of a `particle_filter`, ordered by severity
+/// and latching: it never returns to a lower rung on its own.
+///
+///  * ok                  : every update so far conditioned the particles on
+///                          its measurement.
+///  * weights_reset       : a measurement no particle explains (every
+///                          likelihood is zero, or the linear weights' total
+///                          underflows) reset the weights to uniform. The step
+///                          succeeded and left a valid but uninformed
+///                          posterior, so this is reported here rather than as
+///                          an error.
+///  * non_finite_estimate : a step found the particles already non-finite.
+///                          `predict` does not reject its input, so this is how
+///                          a poisoned control or a dynamics model that
+///                          returned a non-finite state becomes visible. A
+///                          refused measurement does not set it.
+enum class pf_health
+{
+    ok,
+    weights_reset,
+    non_finite_estimate
+};
+
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct pf_config
 {
@@ -150,13 +198,18 @@ public:
 
     /// @brief Update particle weights with measurement and resample if ESS is low.
     ///
+    /// The step is refused, with the particles, the weights and the random
+    /// generator untouched, when a particle or the measurement is non-finite or
+    /// a new weight would be; the caller may continue with the next sample.
+    ///
     /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Alg. 1
-    void update(const output_vector_t& z)
+    auto update(const output_vector_t& z) -> ctrlpp::expected<void, pf_update_error>
     {
+        if(const auto step = check_step(z); !step)
+            return ctrlpp::unexpected(latch_health(step.error()));
         if(m_weight_mode == weight_representation::log)
-            update_log(z);
-        else
-            update_linear(z);
+            return update_log(z);
+        return update_linear(z);
     }
 
     state_vector_t state() const
@@ -259,6 +312,10 @@ public:
 
     auto particles() const -> const std::array<state_vector_t, NP>& { return m_particles; }
 
+    /// @brief Report whether an earlier step reset the weights or found the
+    /// particles non-finite. Latches; a refused measurement does not set it.
+    auto health() const -> pf_health { return m_health; }
+
 private:
     /// @brief Tag selecting the non-validating constructor reserved for
     /// `create`, which is what makes the factory the only public path and the
@@ -289,10 +346,14 @@ private:
     Scalar m_roughening_scale;
     extraction_method m_extraction;
     weight_representation m_weight_mode;
+    pf_health m_health;
 
     std::array<state_vector_t, NP> m_particles;
-    std::array<Scalar, NP> m_log_weights{};
-    std::array<Scalar, NP> m_linear_weights{};
+    std::array<Scalar, NP> m_log_weights;
+    std::array<Scalar, NP> m_linear_weights;
+    // Staged so a refused update leaves the weights untouched; a member rather
+    // than a local keeps the update's stack frame independent of NP.
+    std::array<Scalar, NP> m_staged_weights;
 
     particle_filter(validated_tag, Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, sampling_factors factors, Resampler resampler,
                     Rng rng, Likelihood likelihood)
@@ -310,6 +371,10 @@ private:
         , m_roughening_scale{config.roughening_scale}
         , m_extraction{config.extraction}
         , m_weight_mode{config.weights}
+        , m_health{pf_health::ok}
+        , m_log_weights{}
+        , m_linear_weights{}
+        , m_staged_weights{}
     {
         initialize_particles(config.x0, factors.prior);
     }
@@ -400,20 +465,51 @@ private:
         return m_likelihood(z, z_pred, m_R_inv, m_log_det_2piR);
     }
 
-    /// @brief Compute log-weights for all particles given measurement.
-    void compute_log_weights(const output_vector_t& z)
+    /// @brief Classify a step's operands without touching a member: the
+    /// carried particles first, the measurement last.
+    auto check_step(const output_vector_t& z) const -> ctrlpp::expected<void, pf_update_error>
     {
+        for(const auto& particle : m_particles)
+        {
+            if(!particle.allFinite())
+                return ctrlpp::unexpected(pf_update_error::non_finite_state);
+        }
+        if(!z.allFinite())
+            return ctrlpp::unexpected(pf_update_error::non_finite_measurement);
+        return {};
+    }
+
+    auto latch_health(pf_update_error fault) -> pf_update_error
+    {
+        if(fault != pf_update_error::non_finite_measurement)
+            m_health = pf_health::non_finite_estimate;
+        return fault;
+    }
+
+    void note_weights_reset()
+    {
+        if(m_health == pf_health::ok)
+            m_health = pf_health::weights_reset;
+    }
+
+    /// @brief Stage the new log-weights; false when one is NaN or +inf. A -inf
+    /// entry is a legitimate zero likelihood.
+    auto stage_log_weights(const output_vector_t& z) -> bool
+    {
+        bool admissible = true;
         for(std::size_t i = 0; i < NP; ++i)
         {
             output_vector_t z_pred = m_measurement(m_particles[i]);
-            m_log_weights[i] += log_likelihood(z, z_pred);
+            m_staged_weights[i] = m_log_weights[i] + log_likelihood(z, z_pred);
+            admissible = admissible && !std::isnan(m_staged_weights[i]) && m_staged_weights[i] != std::numeric_limits<Scalar>::infinity();
         }
+        return admissible;
     }
 
     /// @brief Normalize log-weights via log-sum-exp trick.
     ///
-    /// When all particles have negligible likelihood (max log-weight is -inf),
-    /// resets to uniform weights to recover from particle depletion.
+    /// When all particles have zero likelihood (max log-weight is -inf),
+    /// resets to uniform weights and reports the depletion through health.
     ///
     /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Sec. III-A
     void normalize_log_weights()
@@ -423,6 +519,7 @@ private:
         {
             Scalar log_uniform = -std::log(static_cast<Scalar>(NP));
             m_log_weights.fill(log_uniform);
+            note_weights_reset();
             return;
         }
         Scalar sum_exp = Scalar{0};
@@ -433,33 +530,39 @@ private:
             lw -= log_sum;
     }
 
-    /// @brief Compute linear weights for all particles given measurement.
-    void compute_linear_weights(const output_vector_t& z)
+    /// @brief Stage the new linear weights; false when their total, summed in
+    /// the order normalization sums them, is not finite.
+    auto stage_linear_weights(const output_vector_t& z) -> bool
     {
+        Scalar total = Scalar{0};
         for(std::size_t i = 0; i < NP; ++i)
         {
             output_vector_t z_pred = m_measurement(m_particles[i]);
             Scalar ll = log_likelihood(z, z_pred);
-            m_linear_weights[i] *= std::exp(ll);
+            m_staged_weights[i] = m_linear_weights[i] * std::exp(ll);
+            total += m_staged_weights[i];
         }
+        return std::isfinite(total);
     }
 
     /// @brief Normalize linear weights.
     ///
     /// On total underflow (every likelihood collapsed to zero, so the sum is
     /// not positive) the weights are reset to uniform 1/NP, mirroring the log
-    /// path's reset, so the filter recovers to the plain particle mean rather
-    /// than leaving stale or zero weights.
+    /// path's reset, and the depletion is reported through health.
     void normalize_linear_weights()
     {
         Scalar sum = Scalar{0};
         for(auto w : m_linear_weights)
             sum += w;
         if(sum > Scalar{0})
+        {
             for(auto& w : m_linear_weights)
                 w /= sum;
-        else
-            m_linear_weights.fill(Scalar{1} / static_cast<Scalar>(NP));
+            return;
+        }
+        m_linear_weights.fill(Scalar{1} / static_cast<Scalar>(NP));
+        note_weights_reset();
     }
 
     /// @brief Compute Effective Sample Size from current weights.
@@ -510,22 +613,30 @@ private:
         m_linear_weights.fill(uniform);
     }
 
-    /// @brief Log-weight update: compute weights, normalize, resample if ESS low.
-    void update_log(const output_vector_t& z)
+    /// @brief Log-weight update: stage weights, commit if admissible,
+    /// normalize, resample if ESS low.
+    auto update_log(const output_vector_t& z) -> ctrlpp::expected<void, pf_update_error>
     {
-        compute_log_weights(z);
+        if(!stage_log_weights(z))
+            return ctrlpp::unexpected(pf_update_error::non_finite_result);
+        m_log_weights = m_staged_weights;
         normalize_log_weights();
         if(compute_ess_from_log() < m_ess_threshold)
             resample_log();
+        return {};
     }
 
-    /// @brief Linear-weight update: compute weights, normalize, resample if ESS low.
-    void update_linear(const output_vector_t& z)
+    /// @brief Linear-weight update: stage weights, commit if admissible,
+    /// normalize, resample if ESS low.
+    auto update_linear(const output_vector_t& z) -> ctrlpp::expected<void, pf_update_error>
     {
-        compute_linear_weights(z);
+        if(!stage_linear_weights(z))
+            return ctrlpp::unexpected(pf_update_error::non_finite_result);
+        m_linear_weights = m_staged_weights;
         normalize_linear_weights();
         if(compute_ess_from_linear() < m_ess_threshold)
             resample_linear();
+        return {};
     }
 
     std::array<Scalar, NP> log_to_linear() const

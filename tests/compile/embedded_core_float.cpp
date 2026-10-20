@@ -155,8 +155,15 @@ int main()
 
     witness += fold(ctrlpp::complementary_filter<scalar>::create(ctrlpp::cf_config<scalar>{}));
 
-    witness += fold(ctrlpp::make_particle_filter<8>(
-        linear_dynamics{}, linear_measurement{}, ctrlpp::pf_config<scalar, 2, 1, 1>{}, std::mt19937_64{42U}));
+    auto particle = ctrlpp::make_particle_filter<8>(
+        linear_dynamics{}, linear_measurement{}, ctrlpp::pf_config<scalar, 2, 1, 1>{}, std::mt19937_64{42U});
+    witness += fold(particle);
+    if(particle.has_value())
+    {
+        auto& pf = *particle;
+        pf.predict(ctrlpp::Vector<scalar, 1>::Zero());
+        witness += fold(pf.update(ctrlpp::Vector<scalar, 1>::Zero()));
+    }
 
     // -- dsp: biquad expected factory + fir plain ctor --
 

@@ -185,7 +185,7 @@ TEST_CASE("particle filter instantiates and steps at Scalar=float", "[float][anc
         linear_dynamics_f{}, position_measurement_f{}, pf_config<float, NX, NU, NY>{}, std::mt19937_64{42U}));
 
     filt.predict(Vector<float, NU>::Zero());
-    filt.update(Vector<float, NY>::Constant(0.5f));
+    REQUIRE(filt.update(Vector<float, NY>::Constant(0.5f)).has_value());
 
     REQUIRE(filt.state().allFinite());
 }

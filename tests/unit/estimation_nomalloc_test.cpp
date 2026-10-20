@@ -405,16 +405,17 @@ TEST_CASE("particle_filter predict/update performs zero heap allocation and is s
     const Vector<double, 1> z = (Vector<double, 1>() << 0.1).finished();
 
     pf.predict(u);
-    pf.update(z);
+    REQUIRE(pf.update(z).has_value());
     pf_repeat.predict(u);
-    pf_repeat.update(z);
+    REQUIRE(pf_repeat.update(z).has_value());
 
+    bool all_stepped = true;
     std::size_t allocations = 0;
     allocations = guarded_allocations([&] {
         for(int i = 0; i < 64; ++i)
         {
             pf.predict(u);
-            pf.update(z);
+            all_stepped = all_stepped && pf.update(z).has_value();
             // The posterior-covariance accessor is inside the armed window
             // because it is a steady-state read a control loop makes every step,
             // and it walks the whole particle array forming an outer product per
@@ -425,6 +426,7 @@ TEST_CASE("particle_filter predict/update performs zero heap allocation and is s
         }
     });
     REQUIRE_FALSE(ctrlpp_test::eigen_violation());
+    REQUIRE(all_stepped);
 
     REQUIRE(allocations == 0);
 
@@ -433,7 +435,7 @@ TEST_CASE("particle_filter predict/update performs zero heap allocation and is s
     for(int i = 0; i < 64; ++i)
     {
         pf_repeat.predict(u);
-        pf_repeat.update(z);
+        REQUIRE(pf_repeat.update(z).has_value());
     }
 
     const Vector<double, 2> a = pf.state();
