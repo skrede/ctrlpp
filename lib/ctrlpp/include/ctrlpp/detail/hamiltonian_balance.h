@@ -36,7 +36,6 @@
 /// downstream treats H as a general 2n x 2n matrix, so plain DGEBAL is
 /// correct.
 ///
-/// @cite lapack_dgebal : Reference LAPACK SRC/dgebal.f phase 2 algorithm
 /// @cite benner2001    : Benner, "Symplectic Balancing of Hamiltonian Matrices", 2001 (structured alternative, deferred)
 
 #include "ctrlpp/expected.h"
@@ -44,6 +43,7 @@
 #include "ctrlpp/control/care_types.h"
 
 #include "ctrlpp/detail/schur_reorder.h"
+#include "ctrlpp/detail/diagonal_balance.h"
 #include "ctrlpp/detail/riccati_solution.h"
 #include "ctrlpp/detail/care_postconditions.h"
 
@@ -70,106 +70,7 @@ auto balance_hamiltonian(
     Eigen::Matrix<Scalar, 2 * int(NX), 1>&           D_out)
     -> void
 {
-    constexpr int n2 = 2 * int(NX);
-    using Vec2N = Eigen::Matrix<Scalar, n2, 1>;
-
-    const Scalar sclfac     = Scalar{2};
-    const Scalar factor_num = Scalar{19};
-    const Scalar factor_den = Scalar{20};
-    const Scalar factor     = factor_num / factor_den;
-    const Scalar sfmin      = std::numeric_limits<Scalar>::min();
-    const Scalar sfmax      = Scalar{1} / sfmin;
-    const Scalar sfmin2     = sfmin * sclfac;
-    const Scalar sfmax2     = sfmax / sclfac;
-
-    D_out = Vec2N::Ones();
-    bool noconv = true;
-
-    // THE SWEEP COUNT IS BOUNDED AT COMPILE TIME, and the bound is a safety
-    // ceiling rather than a prediction. Termination itself does not depend on
-    // it: every accepted rescale reduces that index's row-plus-column sum to
-    // below 19/20 of its previous value, with power-of-two factors clamped to
-    // the scalar type's range, so the loop ends on its own. What it did not have
-    // was a bound a caller could read off the types, which every other iteration
-    // in the Riccati path has -- the Newton loop carries `max_iters`. Without one
-    // this method could not appear in a real-time budget at all, because
-    // "terminates" and "terminates within a stated number of steps" are
-    // different claims and only the second is schedulable.
-    //
-    // The ceiling counts the distinct power-of-two scalings an index can occupy
-    // without leaving the representable range, once per index. It is derived
-    // from the scalar type and the dimension, and no measured population went
-    // anywhere near it -- which is the point: exceeding it means the data is
-    // pathological, not that the tuning was wrong.
-    //
-    // IT IS A GUARANTEE, NOT A BUDGET, and the gap is large enough that saying so
-    // matters. Over 550,000 draws with entries spread across 2^-280 to 2^+280 --
-    // deliberately the regime a cap exists for -- the worst sweep count observed
-    // was 2 at NX=1, 12 at NX=2, 43 at NX=4 and 45 at NX=8, against ceilings of
-    // 4,090 / 8,180 / 16,360 / 32,720 respectively. The worst measured run sits
-    // about three orders of magnitude below its ceiling (1.4e-3 of it at NX=8),
-    // and the means are 2.00 / 3.87 / 6.40 / 8.29. A schedule that must not be
-    // exceeded should be built from the ceiling; a schedule that wants to be
-    // realistic should be built from the measurement and treat the ceiling as the
-    // backstop it is.
-    //
-    // STOPPING EARLY IS SAFE, and that is what makes a cap admissible here at
-    // all. Balancing is a similarity preconditioner: every applied step updates
-    // `H` and `D_out` together, so at any cut point the invariant
-    // `H_returned == D^-1 * H_original * D` holds exactly. A capped run returns a
-    // less well balanced matrix, never a wrong one, and the back-scale downstream
-    // stays consistent because it reads the same `D_out`.
-    constexpr int exponent_span = std::numeric_limits<Scalar>::max_exponent - std::numeric_limits<Scalar>::min_exponent;
-    constexpr int max_sweeps    = n2 * exponent_span;
-
-    for (int sweep = 0; noconv && sweep < max_sweeps; ++sweep)
-    {
-        noconv = false;
-        for (int i = 0; i < n2; ++i)
-        {
-            Scalar r = Scalar{0};
-            Scalar c = Scalar{0};
-            for (int j = 0; j < n2; ++j)
-            {
-                if (j == i) continue;
-                r += std::abs(H(i, j));
-                c += std::abs(H(j, i));
-            }
-            if (r == Scalar{0} || c == Scalar{0}) continue;
-
-            Scalar g = r / sclfac;
-            Scalar f = Scalar{1};
-            const Scalar s = c + r;
-
-            while (c < g
-                   && std::max(f, c) < sfmax2
-                   && std::min(r, g) > sfmin2)
-            {
-                f *= sclfac;
-                c *= sclfac;
-                r /= sclfac;
-                g /= sclfac;
-            }
-            g = c / sclfac;
-            while (g >= r
-                   && std::max(r, g) < sfmax2
-                   && std::min({f, c, g}) > sfmin2)
-            {
-                f /= sclfac;
-                c /= sclfac;
-                g /= sclfac;
-                r *= sclfac;
-            }
-
-            if ((c + r) < factor * s)
-            {
-                noconv = true;
-                D_out(i) *= f;
-                H.row(i) /= f;
-                H.col(i) *= f;
-            }
-        }
-    }
+    balance_diagonal<Scalar, 2 * int(NX)>(H, D_out);
 }
 
 /// @brief CARE solve via DGEBAL pre-balance then real Schur + Bai-Demmel reorder.

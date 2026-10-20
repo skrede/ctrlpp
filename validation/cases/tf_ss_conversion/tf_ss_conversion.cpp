@@ -19,7 +19,13 @@ int main()
     tf.numerator = {2.0, 3.0};
     tf.denominator = {1.0, 0.5, 1.0};
 
-    auto sys = ctrlpp::tf2ss(tf);
+    auto const realized = ctrlpp::tf2ss(tf);
+    if(!realized)
+    {
+        std::fprintf(stderr, "tf2ss refused the transfer function (error %d)\n", static_cast<int>(realized.error()));
+        return 1;
+    }
+    auto const& sys = *realized;
 
     // Poles from A
     Eigen::EigenSolver<Eigen::Matrix<Scalar, 2, 2>> es(sys.A);
@@ -30,7 +36,13 @@ int main()
     });
 
     // Round-trip
-    auto tf_rt = ctrlpp::ss2tf<Scalar, 2>(sys);
+    auto const recovered = ctrlpp::ss2tf<Scalar, 2>(sys);
+    if(!recovered)
+    {
+        std::fprintf(stderr, "ss2tf refused the system (error %d)\n", static_cast<int>(recovered.error()));
+        return 1;
+    }
+    auto const& tf_rt = *recovered;
 
     Scalar d0 = tf_rt.denominator[0];
     Scalar num0 = tf_rt.numerator[0] / d0;

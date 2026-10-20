@@ -48,21 +48,31 @@ int main()
 
     // Convert to state-space
     auto sys = ctrlpp::tf2ss(tf);
+    if(!sys)
+    {
+        std::cerr << "tf2ss refused the transfer function\n";
+        return 1;
+    }
 
     std::cout << "State-space from TF:\n"
-              << "  A =\n" << sys.A << "\n"
-              << "  B = " << sys.B.transpose() << "\n"
-              << "  C = " << sys.C << "\n"
-              << "  D = " << sys.D << "\n";
+              << "  A =\n" << sys->A << "\n"
+              << "  B = " << sys->B.transpose() << "\n"
+              << "  C = " << sys->C << "\n"
+              << "  D = " << sys->D << "\n";
 
     // Round-trip: convert back to TF
-    auto tf_back = ctrlpp::ss2tf(sys);
+    auto tf_back = ctrlpp::ss2tf(*sys);
+    if(!tf_back)
+    {
+        std::cerr << "ss2tf refused the system\n";
+        return 1;
+    }
 
     std::cout << "\nRound-trip TF:\n  num = [";
-    for(auto c : tf_back.numerator)
+    for(auto c : tf_back->numerator)
         std::cout << " " << c;
     std::cout << " ]\n  den = [";
-    for(auto c : tf_back.denominator)
+    for(auto c : tf_back->denominator)
         std::cout << " " << c;
     std::cout << " ]\n";
 }
