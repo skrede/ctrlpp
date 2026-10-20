@@ -571,9 +571,11 @@ TEST_CASE("make_chebyshev1 matches the exact design within its counted rounding"
     // The reference is the exact 4th-order, 1 dB design at a 100 Hz cutoff and a 1000 Hz sample rate, printed by
     // validation/oracles/chebyshev1/oracle_chebyshev1.py as the double nearest each value and the double nearest the
     // remainder. The margins are one-sided counts of the formation's running error bound (Higham, "Accuracy and
-    // Stability of Numerical Algorithms", 2nd ed., 2002, Sec. 3.3): one eps per operation and per library call, each
-    // call carrying its argument's error through its slope |x f'(x) / f(x)|, power-of-two scalings and Sterbenz-exact
-    // differences free, the first-order sum rounded up so the ceiling absorbs the second-order terms. The largest
+    // Stability of Numerical Algorithms", 2nd ed., 2002, Sec. 3.3), each margin the larger of two counts: one eps per
+    // operation and per library call, and half an eps per operation with two per library call, since the C library
+    // does not round its elementary functions correctly. Each call carries its argument's error through its slope
+    // |x f'(x) / f(x)|, power-of-two scalings and Sterbenz-exact differences are free, and the first-order sum is
+    // rounded up so the ceiling absorbs the second-order terms. Every count below is the larger one. The largest
     // offset count is 10.97 (a2 of the second section), so 11; the second section's unnormalized numerator 35.07, so
     // 36; the DC gain 10.5 for the normalization (per section 1.75 for b0 + b1 + b2, 1 for the gap since 1 + a1 is
     // Sterbenz-exact, 1 for the quotient; then the product, the correction and its product) plus 3.14 for the target
@@ -603,7 +605,7 @@ TEST_CASE("make_chebyshev1 matches the exact small-ripple design within its coun
     // Formed as 10^(r / 10) - 1, the radicand at 1e-4 dB cancels to about three significant digits in float and the
     // coefficients land thousands of float epsilons from the exact design. Through expm1 they stay within their
     // counted bounds, counted as in the case above in float eps against the exact design at the float ripple
-    // 0x1.a36e2ep-14 from the same generator: the offsets 306.55 of their own magnitude, so 307, since a2 of the
+    // 0x1.a36e2ep-14 from the same generator: the offsets 311.93 of their own magnitude, so 312, since a2 of the
     // second section is 0.076 and its offset 0.924 weighs twelve times; the unnormalized numerator 40.62, so 41; the
     // DC gain 11.94 for the normalization (1 + a1 is not Sterbenz-exact here, |a1| < 1/2) plus 2.50 for the target,
     // so 15.
@@ -623,7 +625,7 @@ TEST_CASE("make_chebyshev1 matches the exact small-ripple design within its coun
 
     auto const design = ctrlpp::make_chebyshev1<4>(100.0f, 1000.0f, 1e-4f);
     REQUIRE(design.has_value());
-    check_against_exact_design(*design, exact, dc_target, counted_margins{.offset = 307.0, .numerator = 41.0, .dc_gain = 15.0});
+    check_against_exact_design(*design, exact, dc_target, counted_margins{.offset = 312.0, .numerator = 41.0, .dc_gain = 15.0});
 }
 
 TEST_CASE("make_chebyshev1 rejects a design whose coefficients degenerate",
