@@ -1,9 +1,9 @@
-[meta] build_id=e03bfd30f81f283f155217320a8aa0f7ee8ea379
+[meta] build_id=c11feb7d3ff6c253e04337828f47ebaf7af9d9ee
 [meta] kind=evidence
 [meta] board=NUCLEO-H753ZI loop=bare-superloop scalar=double
-[meta] boot_handshake state=received waited_ms=6879 timeout_ms=30000
+[meta] boot_handshake state=received waited_ms=6793 timeout_ms=30000
 [meta] posture reset=pin reset_flags=cpu+pin reset_rsr=0x00460000 core_hz=64000000 axi_hz=64000000 clock_source=hsi icache=off dcache=off flash_latency_ws=7 cycle_wrap_ms=67108 code=flash data=dtcm stack=dtcm heap=axi_sram optimize=size compiler=gcc-16.2.0
-[verdict] stack region=startup used=468 from_top=468 free=72544 of=73012 reserve=30616 bytes gap=88 window=72924 floor=0 saturated=no
+[verdict] stack region=startup used=468 from_top=468 free=70096 of=70564 reserve=32848 bytes gap=88 window=70476 floor=0 saturated=no
 [spread] region,regime,n,n_basis,block,raw_min,raw_median,raw_max,max_at,per_iteration_raw_max,wraps
 [canary] allocation PASS observed=3 expected=3 eigen_trips=1
 [verdict] heap setup_high_water=1088 reserve=76720 bytes
@@ -212,15 +212,15 @@
 [exact] 200,4010000000000000,3EF3909951DC4784,BEE044C34E5E6292,BF240E32EA4F0FAF
 [verdict] alloc steady_state allocations=0 steps=201 per_step=0.00 eigen_sentinel=clean trips=0
 [verdict] family estimation value=1.3104323528650408 golden=1.3104323528650401 departure=6.661e-16 bound=2.226e-11 verdict=PASS allocations=0 steps=201 per_step=0.00 eigen_trips=0
-[verdict] family dsp value=-0.86508002466156553 golden=-0.86508002466156553 departure=0.000e+00 bound=3.239e-11 verdict=PASS allocations=0 steps=201 per_step=0.00 eigen_trips=0
+[verdict] family dsp value=-0.86508002466156531 golden=-0.86508002466156531 departure=0.000e+00 bound=2.503e-11 verdict=PASS allocations=0 steps=201 per_step=0.00 eigen_trips=0
 [verdict] family trajectory value=6.744791666666667 golden=6.744791666666667 departure=0.000e+00 bound=2.303e-11 verdict=PASS allocations=0 steps=201 per_step=0.00 eigen_trips=0
-[verdict] stack region=predictive.construct used=1924 from_top=2752 free=70260 of=73012 reserve=30616 bytes gap=12 window=72172 floor=0 saturated=no
-[verdict] stack region=predictive.first_solve used=29724 from_top=30616 free=42396 of=73012 reserve=30616 bytes gap=12 window=72108 floor=0 saturated=no
-[verdict] stack region=predictive.steady used=25696 from_top=26588 free=46424 of=73012 reserve=30616 bytes gap=12 window=72108 floor=0 saturated=no
+[verdict] stack region=predictive.construct used=1924 from_top=2704 free=67860 of=70564 reserve=32848 bytes gap=12 window=69772 floor=0 saturated=no
+[verdict] stack region=predictive.first_solve used=32004 from_top=32848 free=37716 of=70564 reserve=32848 bytes gap=12 window=69708 floor=0 saturated=no
+[verdict] stack region=predictive.steady used=16176 from_top=17020 free=53544 of=70564 reserve=32848 bytes gap=12 window=69708 floor=0 saturated=no
 [verdict] heap predictive_setup_high_water=76720 reserve=76720 bytes
 [verdict] predictive stationarity_stops=221 of 221 worst_gate=6.083e-02 run_steps=221 armed_steps=201 premise=PASS gate=PASS
 [verdict] family predictive value=189.50207885337679 golden=189.50222139218934 departure=1.425e-04 bound=1.134e+00 verdict=PASS allocations=0 steps=201 per_step=0.00 eigen_trips=0
-[verdict] stack region=program used=30616 from_top=30616 free=42396 of=73012 reserve=30616 bytes gap=88 window=72924 floor=0 saturated=no
+[verdict] stack region=program used=32848 from_top=32848 free=37716 of=70564 reserve=32848 bytes gap=88 window=70476 floor=0 saturated=no
 [verdict] gain check PASS: dev = [-1.506e-12, -4.006e-13], tol = 8.538e-11
 [verdict] settling: final |x| = 2.020687e-05 (host = 2.020687e-05, err = 2.062e-17, tol = 6.070e-15)
 [verdict] family control value=2.0206867257999315e-05 golden=2.0206867258019932e-05 departure=2.062e-17 bound=6.070e-15 verdict=PASS allocations=0 steps=201 per_step=0.00 eigen_trips=0

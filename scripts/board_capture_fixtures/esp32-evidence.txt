@@ -1,4 +1,4 @@
-[meta] build_id=c7bc0e9faef5707f2ec9d327766ecc397c84312c91872c51383a3e628aa25f98
+[meta] build_id=19af29492f397c625fe6fe88fbb2dad12a6b9d71ce689a637176e07d650c44ce
 [meta] kind=evidence
 [meta] board=ESP32-POE-EA target=esp32 loop=freertos-task-50hz scalar=float
 [meta] posture reset=power_on reset_reason=1 reset_rom=1 core_mhz=160 cycle_bits=32 cycle_wrap_ms=26843 stack_watchpoint=on assertions=on optimize=size compiler=gcc-15.2.0 idf=v6.0.2
@@ -211,7 +211,7 @@
 [exact] 200,40800000,379C789A,B7026DE3,B9204CA6
 [verdict] alloc steady_state allocations=0 steps=201 per_step=0.00 eigen_sentinel=clean trips=0 heap_retained=4824 heap_dip=24 heap_windows=201 heap_view=clean
 [verdict] family estimation value=1.3104320764541626 golden=1.3104323528650401 departure=2.764e-07 bound=5.976e-03 verdict=PASS allocations=0 steps=201 per_step=0.00 eigen_trips=0 heap_retained=24 heap_dip=24 heap_windows=1 heap_view=clean
-[verdict] family dsp value=-0.8650799989700317 golden=-0.8650800246615655 departure=2.569e-08 bound=8.694e-03 verdict=PASS allocations=0 steps=201 per_step=0.00 eigen_trips=0 heap_retained=24 heap_dip=24 heap_windows=1 heap_view=clean
+[verdict] family dsp value=-0.8650802373886108 golden=-0.8650800246615653 departure=2.127e-07 bound=6.718e-03 verdict=PASS allocations=0 steps=201 per_step=0.00 eigen_trips=0 heap_retained=24 heap_dip=24 heap_windows=1 heap_view=clean
 [verdict] family trajectory value=6.744791507720947 golden=6.744791666666667 departure=1.589e-07 bound=6.182e-03 verdict=PASS allocations=0 steps=201 per_step=0.00 eigen_trips=0 heap_retained=24 heap_dip=24 heap_windows=1 heap_view=clean
 [verdict] family predictive verdict=ABSENT -- the image was built without the predictive backend
 [verdict] stack region=program used=3160 free=5032 of=8192 bytes
