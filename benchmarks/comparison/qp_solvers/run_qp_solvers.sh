@@ -38,8 +38,8 @@ driver_dir="${build_tree}/comparison/qp_solvers"
 generator="Unix Makefiles"
 march="-march=x86-64-v3"
 
-preregistration_commit=12bc9791082453bfc037ce1bbec6d177e39f5bb3
-argmin_pin=775a756c9097f23abd868303734484dbf3c5888c
+preregistration_commit=e0a87adff3df3be762adc66f719e5afa451608f2
+argmin_pin=0a638cb87b6e959f7cb7b49f0afa34f137b93b69
 proxsuite_upstream=b93d7778ffc3299d84b5cb0851022a29bf24a596
 competitor_pins=(
 "osqp 236713ce9a56c182ac3230d52108f952afce1523"
