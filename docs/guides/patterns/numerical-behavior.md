@@ -318,10 +318,12 @@ otherwise produce silent corruption through intermediate overflow:
   root, so the reduction stays symmetric positive semidefinite without requiring
   an eigendecomposition.
 
-- **MOESP degenerate data:** The subspace identification algorithm checks
-  finiteness of extracted system matrices. When data is rank-deficient,
-  returns a result with `condition_number = infinity` and default-initialized
-  system matrices so the caller can detect and handle the failure.
+- **MOESP degenerate data:** The subspace identification algorithm refuses
+  with `sysid_error::model_not_identified` when the condition number of the
+  projection is not finite (its `NX`-th singular value is zero, as for an
+  all-zero record) or when an extracted system matrix is non-finite. It
+  returns no sentinel model, so a returned model always has a finite
+  condition number.
 
 - **RLS overflow guard:** The recursive least squares estimator skips the
   update step when the quadratic form `phi^T * P * phi` overflows, preventing

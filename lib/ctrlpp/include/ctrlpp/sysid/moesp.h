@@ -6,17 +6,19 @@
 /// @cite verhaegen2007 -- Verhaegen & Verdult, "Filtering and System Identification: A Least Squares Approach", 2007, Sec. 9.6 (PO-MOESP)
 
 #include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
 #include "ctrlpp/model/state_space.h"
 
 #include "ctrlpp/sysid/fit_metrics.h"
+#include "ctrlpp/sysid/sysid_types.h"
 #include "ctrlpp/sysid/sysid_result.h"
 
 #include <Eigen/Dense>
 
-#include <limits>
+#include <cmath>
 #include <cstddef>
 #include <utility>
 #include <algorithm>
@@ -206,120 +208,140 @@ auto compute_moesp_metrics(const Matrix<Scalar, NX, NX>& A,
     return compute_fit_metrics_unchecked(y_actual, y_predicted);
 }
 
-/// @brief Builds the zeroed system returned on every identification-failure path.
-///
-/// `discrete_state_space` is an aggregate of Eigen fixed-size matrices, and
-/// Eigen's default constructor deliberately leaves coefficients uninitialized.
-/// Aggregate members that are omitted or value-initialized therefore hold
-/// indeterminate values rather than zeros, so the documented failure contract
-/// has to be established explicitly.
-template <typename Scalar, std::size_t NX>
-auto zeroed_siso_system() -> discrete_state_space<Scalar, NX, 1, 1>
+template <typename Scalar>
+struct moesp_subspace
 {
-    return {.A = Matrix<Scalar, NX, NX>::Zero(),
-            .B = Matrix<Scalar, NX, 1>::Zero(),
-            .C = Matrix<Scalar, 1, NX>::Zero(),
-            .D = Matrix<Scalar, 1, 1>::Zero()};
-}
+    Scalar condition_number;
+    Eigen::MatrixX<Scalar> gamma;
+    Eigen::VectorX<Scalar> singular_values;
+};
 
+inline std::size_t resolve_block_rows(std::size_t block_rows, Eigen::Index samples)
+{
+    if(block_rows != 0)
+        return block_rows;
+    return static_cast<std::size_t>(std::min(samples / 4, Eigen::Index{30}));
 }
 
 template <typename Derived1, typename Derived2>
-Eigen::VectorX<typename Derived1::Scalar> moesp_singular_values(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
+auto check_moesp_record(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t i, std::size_t order)
+    -> expected<void, sysid_error>
+{
+    if(Y.cols() != U.cols())
+        return unexpected(sysid_error::record_length_mismatch);
+    if(Y.rows() != 1 || U.rows() != 1)
+        return unexpected(sysid_error::record_not_single_row);
+    auto const ny = static_cast<std::size_t>(Y.rows());
+    auto const samples = static_cast<std::size_t>(Y.cols());
+    if(i == 0 || (i - 1) * ny < order)
+        return unexpected(sysid_error::block_rows_below_order);
+    // N - 2i + 1 < i + order, rearranged so no unsigned subtraction wraps; i > N
+    // already implies it and bounds 3i away from overflow.
+    if(i > samples || samples + 1 < 3 * i + order)
+        return unexpected(sysid_error::too_few_samples);
+    if(!Y.allFinite() || !U.allFinite())
+        return unexpected(sysid_error::non_finite_sample);
+    return {};
+}
+
+/// @cite verhaegen2007 -- Gamma = U_1 S_1^{1/2} from the SVD of the projection
+template <std::size_t NX, typename Scalar>
+auto moesp_observability(const Eigen::MatrixX<Scalar>& O_i) -> expected<moesp_subspace<Scalar>, sysid_error>
+{
+    static constexpr auto nx = static_cast<Eigen::Index>(NX);
+    Eigen::BDCSVD<Eigen::MatrixX<Scalar>> svd(O_i, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    auto const& sv = svd.singularValues();
+    auto const& U_svd = svd.matrixU();
+
+    Scalar const cond = sv(0) / sv(nx - 1);
+    if(!std::isfinite(cond))
+        return unexpected(sysid_error::model_not_identified);
+
+    Eigen::MatrixX<Scalar> Gamma(U_svd.rows(), nx);
+    for(Eigen::Index c = 0; c < nx; ++c)
+        Gamma.col(c) = U_svd.col(c) * std::sqrt(sv(c));
+    if(!Gamma.allFinite())
+        return unexpected(sysid_error::model_not_identified);
+
+    return moesp_subspace<Scalar>{.condition_number = cond, .gamma = std::move(Gamma), .singular_values = sv};
+}
+
+template <std::size_t NX, typename Scalar, typename Derived1, typename Derived2>
+auto moesp_system(const Eigen::MatrixX<Scalar>& Gamma, const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U)
+    -> expected<discrete_state_space<Scalar, NX, 1, 1>, sysid_error>
+{
+    // The output row is the first block row of Gamma; its first column only
+    // coincides with it for NX = 1.
+    Matrix<Scalar, 1, NX> C = Gamma.topRows(1);
+
+    auto A = extract_system_A<Scalar, NX>(Gamma, Y.rows());
+    if(!A.allFinite())
+        return unexpected(sysid_error::model_not_identified);
+
+    auto [B, D] = recover_BD<Scalar, NX>(A, C, Y, U);
+    if(!B.allFinite() || !D.allFinite())
+        return unexpected(sysid_error::model_not_identified);
+
+    return discrete_state_space<Scalar, NX, 1, 1>{.A = A, .B = B, .C = C, .D = D};
+}
+
+}
+
+/// @brief Singular values of the PO-MOESP projection, for choosing the model order.
+///
+/// Refuses the records `moesp` refuses, in the same order, checked at the
+/// smallest order NX = 1.
+template <typename Derived1, typename Derived2>
+auto moesp_singular_values(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
+    -> expected<Eigen::VectorX<typename Derived1::Scalar>, sysid_error>
 {
     using Scalar = typename Derived1::Scalar;
 
-    auto N = Y.cols();
-    auto i = static_cast<Eigen::Index>(block_rows);
-    if(i == 0)
-        i = std::min(static_cast<Eigen::Index>(N / 4), Eigen::Index{30});
+    auto const i = detail::resolve_block_rows(block_rows, Y.cols());
+    if(auto const gate = detail::check_moesp_record(Y, U, i, 1); !gate)
+        return unexpected(gate.error());
 
-    Eigen::Index j = N - 2 * i + 1;
-    if(j <= 0)
-        return Eigen::VectorX<Scalar>{};
-
-    auto [O_i, Y_f, U_f, bi, bj] = detail::moesp_projection(Y, U, i);
-
-    Eigen::BDCSVD<Eigen::MatrixX<Scalar>> svd(O_i, Eigen::ComputeThinU | Eigen::ComputeThinV);
-
-    return svd.singularValues();
+    auto const projection = detail::moesp_projection(Y, U, static_cast<Eigen::Index>(i));
+    Eigen::BDCSVD<Eigen::MatrixX<Scalar>> svd(projection.O_i, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    return Eigen::VectorX<Scalar>{svd.singularValues()};
 }
 
+/// @brief Identify an order-NX single-input single-output state-space model.
+///
+/// Refusals, checked in order before anything is allocated, with i the block-row
+/// count actually used (`block_rows`, or min(N / 4, 30) when it is zero):
+///  * Y and U hold different sample counts -> sysid_error::record_length_mismatch.
+///  * either record has a row count other than one -> sysid_error::record_not_single_row.
+///  * (i - 1) * ny < NX, an underdetermined shift relation -> sysid_error::block_rows_below_order.
+///  * N - 2i + 1 < i + NX, too few projection columns -> sysid_error::too_few_samples.
+///  * a sample is NaN or infinite -> sysid_error::non_finite_sample.
+/// After the projection, a non-finite condition number or system matrix is
+/// reported as sysid_error::model_not_identified. On success the condition
+/// number sv(0) / sv(NX - 1) is finite.
 template <std::size_t NX, typename Derived1, typename Derived2>
     requires ctrlpp_floating_scalar<typename Derived1::Scalar>
-moesp_result<typename Derived1::Scalar, NX, 1, 1> moesp(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
+auto moesp(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U, std::size_t block_rows = 0)
+    -> expected<moesp_result<typename Derived1::Scalar, NX, 1, 1>, sysid_error>
 {
     using Scalar = typename Derived1::Scalar;
     static_assert(NX >= 1, "moesp requires NX >= 1");
-    static constexpr auto nx = static_cast<Eigen::Index>(NX);
+    auto const i = detail::resolve_block_rows(block_rows, Y.cols());
+    if(auto const gate = detail::check_moesp_record(Y, U, i, NX); !gate)
+        return unexpected(gate.error());
 
-    auto N = Y.cols();
-    auto ny = Y.rows();
+    auto const projection = detail::moesp_projection(Y, U, static_cast<Eigen::Index>(i));
+    auto subspace = detail::moesp_observability<NX>(projection.O_i);
+    if(!subspace)
+        return unexpected(subspace.error());
+    auto const sys = detail::moesp_system<NX>(subspace->gamma, Y, U);
+    if(!sys)
+        return unexpected(sys.error());
 
-    auto i = static_cast<Eigen::Index>(block_rows);
-    if(i == 0)
-        i = std::min(static_cast<Eigen::Index>(N / 4), Eigen::Index{30});
-
-    auto [O_i, Y_future, U_future, bi, bj] = detail::moesp_projection(Y, U, i);
-
-    Eigen::BDCSVD<Eigen::MatrixX<Scalar>> svd(O_i, Eigen::ComputeThinU | Eigen::ComputeThinV);
-    auto sv = svd.singularValues();
-    auto U_svd = svd.matrixU();
-
-    Scalar cond = (sv.size() >= nx && sv(nx - 1) > Scalar{0}) ? sv(0) / sv(nx - 1) : std::numeric_limits<Scalar>::infinity();
-
-    // Build observability matrix Gamma from SVD
-    Eigen::Index rank = std::min(static_cast<Eigen::Index>(sv.size()), nx);
-    Eigen::MatrixX<Scalar> Gamma(U_svd.rows(), nx);
-    Gamma.setZero();
-    for(Eigen::Index c = 0; c < rank; ++c)
-        Gamma.col(c) = U_svd.col(c) * std::sqrt(sv(c));
-
-    // Extract C from the first block row of the observability matrix Gamma.
-    // For SISO (NY = 1) this is Gamma's first row; reading the first column
-    // instead only coincides for NX = 1.
-    Matrix<Scalar, 1, NX> C;
-    for(Eigen::Index c = 0; c < nx; ++c)
-        C(0, c) = Gamma(0, c);
-
-    if(!C.allFinite() || !Gamma.allFinite())
-    {
-        auto sys = detail::zeroed_siso_system<Scalar, NX>();
-        return {.system = sys, .singular_values = sv,
-                .metrics = fit_metrics<Scalar>{}, .condition_number = std::numeric_limits<Scalar>::infinity()};
-    }
-
-    // Extract A via shift relation on observability matrix
-    auto A = detail::extract_system_A<Scalar, NX>(Gamma, ny);
-
-    // If A is non-finite from rank-deficient data, return degenerate result
-    // with infinity condition number so the caller can detect failure
-    if(!A.allFinite())
-    {
-        auto sys = detail::zeroed_siso_system<Scalar, NX>();
-        return {.system = sys, .singular_values = sv,
-                .metrics = fit_metrics<Scalar>{}, .condition_number = std::numeric_limits<Scalar>::infinity()};
-    }
-
-    // Recover B and D via least-squares
-    auto [B, D] = detail::recover_BD<Scalar, NX>(A, C, Y, U);
-
-    // A and C were recovered here, but the failure contract is uniform: an
-    // identification that could not produce a usable system returns a fully
-    // zeroed one, so a caller that ignores condition_number cannot mistake a
-    // partial result for a model.
-    if(!B.allFinite() || !D.allFinite())
-    {
-        auto sys = detail::zeroed_siso_system<Scalar, NX>();
-        return {.system = sys, .singular_values = sv,
-                .metrics = fit_metrics<Scalar>{}, .condition_number = std::numeric_limits<Scalar>::infinity()};
-    }
-
-    discrete_state_space<Scalar, NX, 1, 1> sys{.A = A, .B = B, .C = C, .D = D};
-
-    auto metrics = detail::compute_moesp_metrics<Scalar, NX>(A, B, C, D, Y, U);
-
-    return {.system = sys, .singular_values = sv, .metrics = metrics, .condition_number = cond};
+    return moesp_result<Scalar, NX, 1, 1>{
+        .system = *sys,
+        .singular_values = std::move(subspace->singular_values),
+        .metrics = detail::compute_moesp_metrics<Scalar, NX>(sys->A, sys->B, sys->C, sys->D, Y, U),
+        .condition_number = subspace->condition_number};
 }
 
 }

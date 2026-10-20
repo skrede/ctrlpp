@@ -5,7 +5,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <algorithm>
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
 {
@@ -18,49 +20,41 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     double buf[n_samples * 2];
     std::memcpy(buf, data, needed);
 
-    for(int i = 0; i < n_samples * 2; ++i)
-    {
-        if(!std::isfinite(buf[i]))
-            return 0;
-    }
+    bool const finite = std::all_of(buf, buf + n_samples * 2, [](double v) { return std::isfinite(v); });
 
-    // Build input and output matrices (1 x n_samples)
     Eigen::Matrix<double, 1, Eigen::Dynamic> U(1, n_samples);
     Eigen::Matrix<double, 1, Eigen::Dynamic> Y(1, n_samples);
 
     for(int i = 0; i < n_samples; ++i)
     {
-        U(0, i) = std::clamp(buf[i * 2], -1e3, 1e3);
-        Y(0, i) = std::clamp(buf[i * 2 + 1], -1e3, 1e3);
+        U(0, i) = finite ? std::clamp(buf[i * 2], -1e3, 1e3) : buf[i * 2];
+        Y(0, i) = finite ? std::clamp(buf[i * 2 + 1], -1e3, 1e3) : buf[i * 2 + 1];
     }
 
-    // Run MOESP with model order 2, block_rows = 3 (minimum for 10 samples)
-    auto result = ctrlpp::moesp<2>(Y, U, 3);
+    // Ten samples with three block rows pass every shape precondition at order
+    // two: (3 - 1) * 1 >= 2 and 10 - 6 + 1 >= 3 + 2. The only refusals left are
+    // a non-finite sample and an identification that produced no model.
+    auto const result = ctrlpp::moesp<2>(Y, U, 3);
 
-    // Degenerate data produces condition_number = infinity -- accepted
-    if(std::isinf(result.condition_number))
+    if(!finite)
+    {
+        if(result.has_value() || result.error() != ctrlpp::sysid_error::non_finite_sample)
+            abort();
         return 0;
-
-    // For non-degenerate results, system matrices must be finite
-    for(int r = 0; r < 2; ++r)
-    {
-        for(int c = 0; c < 2; ++c)
-        {
-            if(!std::isfinite(result.system.A(r, c)))
-            return 0;
-        }
-        if(!std::isfinite(result.system.B(r, 0)))
-            return 0;
     }
 
-    for(int c = 0; c < 2; ++c)
+    if(!result)
     {
-        if(!std::isfinite(result.system.C(0, c)))
-            return 0;
+        if(result.error() != ctrlpp::sysid_error::model_not_identified)
+            abort();
+        return 0;
     }
 
-    if(!std::isfinite(result.system.D(0, 0)))
-            return 0;
+    auto const& sys = result->system;
+    if(!sys.A.allFinite() || !sys.B.allFinite() || !sys.C.allFinite() || !sys.D.allFinite())
+        abort();
+    if(!std::isfinite(result->condition_number))
+        abort();
 
     return 0;
 }

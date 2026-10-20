@@ -10,6 +10,7 @@
 #include <Eigen/Dense>
 
 #include <fstream>
+#include <iostream>
 
 namespace
 {
@@ -76,6 +77,11 @@ int main(int argc, char** argv)
     auto subspace = ctrlpp::moesp<2>(Y, U);
     if(!arx)
         return 1;
+    if(!subspace)
+    {
+        std::cerr << "moesp refused the record: sysid_error " << static_cast<int>(subspace.error()) << '\n';
+        return 1;
+    }
 
     ankerl::nanobench::Bench bench;
     bench.title("SysID")
@@ -92,6 +98,7 @@ int main(int argc, char** argv)
 
     ctrlpp::bench::run_single_implementation_row(bench, "moesp::identify", [&] {
         auto result = ctrlpp::moesp<2>(Y, U);
+        ankerl::nanobench::doNotOptimizeAway(result.has_value());
         ankerl::nanobench::doNotOptimizeAway(result);
     });
 
@@ -103,9 +110,10 @@ int main(int argc, char** argv)
             ankerl::nanobench::doNotOptimizeAway(result.has_value());
             ankerl::nanobench::doNotOptimizeAway(result);
         },
-        "moesp::identify", markov_deviation(subspace.system),
+        "moesp::identify", markov_deviation(subspace->system),
         [&] {
             auto result = ctrlpp::moesp<2>(Y, U);
+            ankerl::nanobench::doNotOptimizeAway(result.has_value());
             ankerl::nanobench::doNotOptimizeAway(result);
         });
 

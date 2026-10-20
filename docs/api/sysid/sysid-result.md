@@ -69,14 +69,14 @@ struct moesp_result {
 };
 ```
 
-Returned by `moesp`. Contains the identified system, the oblique projection singular values (for model order selection), fit metrics, and the condition number of the observability matrix truncation.
+Returned by `moesp` inside a `ctrlpp::expected`. Contains the identified system, the oblique projection singular values (for model order selection), fit metrics, and the condition number of the observability matrix truncation.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `system` | `discrete_state_space<Scalar, NX, NU, NY>` | Identified state-space model |
 | `singular_values` | `Eigen::VectorX<Scalar>` | SVD singular values from oblique projection |
 | `metrics` | `fit_metrics<Scalar>` | NRMSE and VAF |
-| `condition_number` | `Scalar` | Condition number of the truncated observability matrix |
+| `condition_number` | `Scalar` | Condition number of the truncated observability matrix; always finite on a returned result |
 
 ## Usage Example
 
@@ -122,9 +122,14 @@ int main()
 
     // MOESP identification
     auto ss = ctrlpp::moesp<1>(Y, U);
-    std::cout << "MOESP: NRMSE=" << ss.metrics.nrmse
-              << "  VAF=" << ss.metrics.vaf << "%"
-              << "  cond=" << ss.condition_number << "\n";
+    if(!ss)
+    {
+        std::cerr << "MOESP identification rejected the record\n";
+        return 1;
+    }
+    std::cout << "MOESP: NRMSE=" << ss->metrics.nrmse
+              << "  VAF=" << ss->metrics.vaf << "%"
+              << "  cond=" << ss->condition_number << "\n";
 }
 ```
 

@@ -67,7 +67,9 @@ TEST_CASE("MOESP singular values show clear gap for 2nd-order system")
 {
     auto [Y, U] = generate_data(1500);
 
-    auto sv = ctrlpp::moesp_singular_values(Y, U);
+    auto const singular_values = ctrlpp::moesp_singular_values(Y, U);
+    REQUIRE(singular_values.has_value());
+    auto const& sv = *singular_values;
 
     REQUIRE(sv.size() >= 2);
     // First two should be significantly larger than the rest
@@ -84,7 +86,9 @@ TEST_CASE("MOESP identifies 2nd-order system with good fit")
 {
     auto [Y, U] = generate_data(1500);
 
-    auto result = ctrlpp::moesp<2>(Y, U);
+    auto const identified = ctrlpp::moesp<2>(Y, U);
+    REQUIRE(identified.has_value());
+    auto const& result = *identified;
 
     // Simulate identified model on input data and check output match
     REQUIRE(result.metrics.nrmse < 0.1);
@@ -94,7 +98,9 @@ TEST_CASE("MOESP condition number is finite and positive")
 {
     auto [Y, U] = generate_data(1500);
 
-    auto result = ctrlpp::moesp<2>(Y, U);
+    auto const identified = ctrlpp::moesp<2>(Y, U);
+    REQUIRE(identified.has_value());
+    auto const& result = *identified;
 
     REQUIRE(result.condition_number > 0.0);
     REQUIRE(std::isfinite(result.condition_number));
@@ -104,7 +110,9 @@ TEST_CASE("MOESP VAF > 90 for clean data")
 {
     auto [Y, U] = generate_data(1500);
 
-    auto result = ctrlpp::moesp<2>(Y, U);
+    auto const identified = ctrlpp::moesp<2>(Y, U);
+    REQUIRE(identified.has_value());
+    auto const& result = *identified;
 
     REQUIRE(result.metrics.vaf > 90.0);
 }
@@ -113,7 +121,9 @@ TEST_CASE("MOESP with measurement noise produces degraded but positive VAF")
 {
     auto [Y, U] = generate_data(1500, 0.05);
 
-    auto result = ctrlpp::moesp<2>(Y, U);
+    auto const identified = ctrlpp::moesp<2>(Y, U);
+    REQUIRE(identified.has_value());
+    auto const& result = *identified;
 
     REQUIRE(result.metrics.vaf > 0.0);
     // Should still identify something reasonable with mild noise
@@ -132,7 +142,9 @@ TEST_CASE("MOESP recovers C consistent with the observability subspace")
     auto [Y, U] = generate_data(1500);
 
     constexpr int i_blocks = 10;
-    auto result = ctrlpp::moesp<2>(Y, U, i_blocks);
+    auto const identified = ctrlpp::moesp<2>(Y, U, i_blocks);
+    REQUIRE(identified.has_value());
+    auto const& result = *identified;
     auto const& sys = result.system;
 
     // The identified poles match the true plant: the characteristic polynomial

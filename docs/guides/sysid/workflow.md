@@ -195,8 +195,10 @@ int main()
 | `rls`         | Online      | Scalar output, time-varying params    |
 | `recursive_arx`| Online    | ARX structure, streaming data         |
 
-All offline methods return a `discrete_state_space` that plugs directly into
-LQR, MPC, or Kalman filter constructors.
+Both offline methods return a `ctrlpp::expected` whose value carries a
+`discrete_state_space` that plugs directly into LQR, MPC, or Kalman filter
+constructors; check it before use, since a record either method cannot
+identify from is reported as a `sysid_error`.
 
 ## Next Steps
 

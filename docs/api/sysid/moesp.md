@@ -1,6 +1,6 @@
 # moesp
 
-Subspace system identification using the PO-MOESP algorithm. Identifies a discrete-time linear state-space model of a given order from input/output data by projecting the future outputs onto the past inputs and outputs (the instrumental variables) and the orthogonal complement of the future inputs, then recovering the extended observability matrix via a singular value decomposition. Returns the identified system in state-space form with fit metrics and condition number.
+Subspace system identification using the PO-MOESP algorithm. Identifies a discrete-time linear state-space model of a given order from input/output data by projecting the future outputs onto the past inputs and outputs (the instrumental variables) and the orthogonal complement of the future inputs, then recovering the extended observability matrix via a singular value decomposition. Returns a `ctrlpp::expected` holding the identified system in state-space form with fit metrics and condition number, or a `sysid_error` naming why the record was refused.
 
 ## Header and Alias
 
@@ -11,10 +11,10 @@ Subspace system identification using the PO-MOESP algorithm. Identifies a discre
 
 ```cpp
 template <std::size_t NX, typename Derived1, typename Derived2>
-moesp_result<typename Derived1::Scalar, NX, 1, 1>
-moesp(const Eigen::MatrixBase<Derived1>& Y,
-      const Eigen::MatrixBase<Derived2>& U,
-      std::size_t block_rows = 0);
+auto moesp(const Eigen::MatrixBase<Derived1>& Y,
+           const Eigen::MatrixBase<Derived2>& U,
+           std::size_t block_rows = 0)
+    -> ctrlpp::expected<moesp_result<typename Derived1::Scalar, NX, 1, 1>, sysid_error>;
 ```
 
 ## Template Parameters
@@ -43,19 +43,33 @@ struct moesp_result {
 };
 ```
 
-The `singular_values` field from the oblique projection SVD can be used to determine the appropriate model order (look for a gap in the singular value spectrum). When the input data is rank-deficient or produces non-finite system matrices, `condition_number` is set to infinity and the system matrices will be default-initialized (zero). Check `std::isinf(result.condition_number)` to detect identification failure.
+The `singular_values` field from the oblique projection SVD can be used to determine the appropriate model order (look for a gap in the singular value spectrum). `condition_number` is `sv(0) / sv(NX - 1)`, the ratio of the largest singular value to the last one the requested order consumes. It is a diagnostic of how well the order-NX subspace is separated, and on a returned model it is always finite.
+
+## Refusals
+
+With `N` the sample count and `i` the block-row count actually used (`block_rows`, or `min(N/4, 30)` when it is zero), the record is checked in this order before anything is allocated. A record that violates two conditions reports the earlier one.
+
+| Condition | Error | Why |
+|-----------|-------|-----|
+| `Y` and `U` hold different sample counts | `sysid_error::record_length_mismatch` | Sample k of one is paired with sample k of the other. |
+| either record has a row count other than one | `sysid_error::record_not_single_row` | The routine is single-input single-output and reads only row zero. |
+| `(i - 1) * ny < NX` | `sysid_error::block_rows_below_order` | The shift relation that recovers `A` has `(i - 1) * ny` rows and `NX` unknowns per column; below `NX` rows its minimum-norm solution is finite and wrong. The default block-row count is checked too, so a short record can report this without an explicit `block_rows`. |
+| `N - 2i + 1 < i + NX` | `sysid_error::too_few_samples` | The block Hankel matrices cannot supply the `NX` projection columns the order needs. At `N - 2i + 1 <= 0` they do not exist at all. |
+| a sample is NaN or infinite | `sysid_error::non_finite_sample` | Samples enter the factorization directly. |
+
+After the projection, the identification is refused with `sysid_error::model_not_identified` when the condition number is not finite (the `NX`-th singular value is zero, as for an all-zero record, or so small against the leading one that the ratio overflows) or when an extracted system matrix is non-finite. No partially identified or zeroed model is returned.
 
 ## Singular Value Helper
 
 ```cpp
 template <typename Derived1, typename Derived2>
-Eigen::VectorX<typename Derived1::Scalar>
-moesp_singular_values(const Eigen::MatrixBase<Derived1>& Y,
-                      const Eigen::MatrixBase<Derived2>& U,
-                      std::size_t block_rows = 0);
+auto moesp_singular_values(const Eigen::MatrixBase<Derived1>& Y,
+                           const Eigen::MatrixBase<Derived2>& U,
+                           std::size_t block_rows = 0)
+    -> ctrlpp::expected<Eigen::VectorX<typename Derived1::Scalar>, sysid_error>;
 ```
 
-Returns just the singular values without performing full identification. Useful for model order selection.
+Returns just the singular values without performing full identification. Useful for model order selection. It refuses the records `moesp` refuses, in the same order, checked at the smallest order `NX = 1`.
 
 ## Usage Example
 
@@ -97,18 +111,28 @@ int main()
 
     // Check singular values for order selection
     auto sv = ctrlpp::moesp_singular_values(Y, U);
-    std::cout << "Singular values: " << sv.transpose() << "\n\n";
+    if(!sv)
+    {
+        std::cerr << "MOESP refused the record\n";
+        return 1;
+    }
+    std::cout << "Singular values: " << sv->transpose() << "\n\n";
 
     // Identify 2nd-order model
     auto result = ctrlpp::moesp<2>(Y, U);
+    if(!result)
+    {
+        std::cerr << "MOESP identification failed\n";
+        return 1;
+    }
 
     std::cout << "Identified system:\n"
-              << "  A =\n" << result.system.A << "\n"
-              << "  B =\n" << result.system.B << "\n"
-              << "  C = " << result.system.C << "\n"
-              << "  NRMSE = " << result.metrics.nrmse << "\n"
-              << "  VAF   = " << result.metrics.vaf << " %\n"
-              << "  Cond  = " << result.condition_number << "\n";
+              << "  A =\n" << result->system.A << "\n"
+              << "  B =\n" << result->system.B << "\n"
+              << "  C = " << result->system.C << "\n"
+              << "  NRMSE = " << result->metrics.nrmse << "\n"
+              << "  VAF   = " << result->metrics.vaf << " %\n"
+              << "  Cond  = " << result->condition_number << "\n";
 }
 ```
 

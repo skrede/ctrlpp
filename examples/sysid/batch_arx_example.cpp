@@ -56,6 +56,12 @@ int main()
         case ctrlpp::sysid_error::non_finite_sample:
             reason = "a sample is NaN or infinite";
             break;
+        case ctrlpp::sysid_error::block_rows_below_order:
+            reason = "too few block rows for the subspace model order";
+            break;
+        case ctrlpp::sysid_error::model_not_identified:
+            reason = "the subspace identification produced no model";
+            break;
         }
         std::cerr << "Batch ARX identification rejected the data: " << reason << '\n';
         return 1;

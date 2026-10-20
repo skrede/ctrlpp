@@ -34,9 +34,14 @@ int main()
         x = A_true * x + B_true * u(k);
     }
 
-    auto result = ctrlpp::moesp<2>(y, u);
+    auto const result = ctrlpp::moesp<2>(y, u);
+    if(!result)
+    {
+        std::fprintf(stderr, "moesp refused the record: sysid_error %d\n", static_cast<int>(result.error()));
+        return 1;
+    }
 
-    auto& sys = result.system;
+    auto const& sys = result->system;
 
     // Simulate identified model
     Eigen::Vector2d x_id = Eigen::Vector2d::Zero();

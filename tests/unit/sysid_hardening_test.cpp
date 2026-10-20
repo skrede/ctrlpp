@@ -47,6 +47,9 @@
 #include <cmath>
 #include <limits>
 #include <random>
+#include <complex>
+#include <utility>
+#include <optional>
 
 namespace {
 
@@ -767,6 +770,85 @@ TEST_CASE("Batch ARX with rank-deficient regressors", "[arx][hardening][negative
 
 // ── MOESP hardening ────────────────────────────────────────────────────────────
 
+namespace {
+
+/// Noise-free single-input single-output record of the second-order system
+/// A = [[0.8, 0.1], [-0.2, 0.9]], B = (0.5, 0.3), C = (1, 0), D = 0, from a zero
+/// initial state under a seeded Gaussian input. Its poles are 0.85 +- 0.1323i.
+auto complex_pair_record(int samples) -> std::pair<Eigen::RowVectorXd, Eigen::RowVectorXd>
+{
+    Eigen::Matrix2d A;
+    A << 0.8, 0.1, -0.2, 0.9;
+    Eigen::Vector2d const B(0.5, 0.3);
+    Eigen::RowVector2d const C(1.0, 0.0);
+
+    std::mt19937 gen(42);
+    std::normal_distribution<double> input(0.0, 1.0);
+    Eigen::RowVectorXd Y(samples);
+    Eigen::RowVectorXd U(samples);
+    Eigen::Vector2d x = Eigen::Vector2d::Zero();
+    for (int t = 0; t < samples; ++t) {
+        U(t) = input(gen);
+        Y(t) = (C * x)(0);
+        x = A * x + B * U(t);
+    }
+    return {Y, U};
+}
+
+/// First-order bound on the eigenvalue error of a noise-free order-two
+/// identification with i block rows.
+///
+/// The Householder LQ of the j-by-4i Hankel stack H is backward stable with
+/// ||dH|| <= gamma_{4ij} ||H||_F (Higham, "Accuracy and Stability of Numerical
+/// Algorithms", 2002, Thm 19.4); Wedin's theorem turns that into a subspace angle
+/// over the projection's second singular value; the shift solve amplifies the
+/// angle by the condition of the truncated observability matrix and by one plus
+/// ||A||; Bauer-Fike carries the result to the eigenvalues through the condition
+/// of the eigenvector matrix. Every factor is read off the identified model.
+auto complex_pair_eigenvalue_bound(Eigen::RowVectorXd const& Y, Eigen::RowVectorXd const& U, int i,
+                                   ctrlpp::moesp_result<double, 2, 1, 1> const& result) -> double
+{
+    int const j = static_cast<int>(Y.size()) - 2 * i + 1;
+    double hankel_norm_sq = 0.0;
+    for (int k = 0; k < 2 * i; ++k)
+        hankel_norm_sq += Y.segment(k, j).squaredNorm() + U.segment(k, j).squaredNorm();
+    double const ku = 4.0 * i * j * eps / 2.0;
+    double const angle = ku / (1.0 - ku) * std::sqrt(hankel_norm_sq) / result.singular_values(1);
+
+    Eigen::Matrix2d const A = result.system.A;
+    Eigen::MatrixXd O(i - 1, 2);
+    Eigen::RowVector2d row = result.system.C;
+    for (int k = 0; k < i - 1; ++k) {
+        O.row(k) = row;
+        row = row * A;
+    }
+    Eigen::JacobiSVD<Eigen::MatrixXd> const shift_svd(O);
+    double const shift_condition = shift_svd.singularValues()(0) / shift_svd.singularValues()(1);
+    Eigen::EigenSolver<Eigen::Matrix2d> const eig(A);
+    Eigen::JacobiSVD<Eigen::Matrix2cd> const vec_svd(eig.eigenvectors());
+    double const eigvec_condition = vec_svd.singularValues()(0) / vec_svd.singularValues()(1);
+    double const a_norm = Eigen::JacobiSVD<Eigen::Matrix2d>(A).singularValues()(0);
+    return eigvec_condition * shift_condition * (1.0 + a_norm) * angle;
+}
+
+template <typename Result>
+auto refusal_of(Result const& result) -> std::optional<ctrlpp::sysid_error>
+{
+    if (result.has_value())
+        return std::nullopt;
+    return result.error();
+}
+
+auto upper_eigenvalue(Eigen::Matrix2d const& A) -> std::complex<double>
+{
+    Eigen::EigenSolver<Eigen::Matrix2d> const eig(A);
+    auto const lambda = eig.eigenvalues()(0);
+    return lambda.imag() < 0.0 ? std::conj(lambda) : lambda;
+}
+
+}
+
+
 TEST_CASE("MOESP on a record with no underlying system", "[moesp][hardening][negative]")
 {
     // Purely random noise data -- no underlying system
@@ -782,7 +864,7 @@ TEST_CASE("MOESP on a record with no underlying system", "[moesp][hardening][neg
         U(i) = dist(gen);
     }
 
-    auto sv = ctrlpp::moesp_singular_values(Y, U);
+    auto const sv = ctrlpp::test::constructed(ctrlpp::moesp_singular_values(Y, U));
 
     // The count is structural, not merely positive. The routine takes the block
     // row count as the smaller of a quarter of the record and thirty, so twenty
@@ -801,7 +883,7 @@ TEST_CASE("MOESP on a record with no underlying system", "[moesp][hardening][neg
     constexpr double exact_scale = 8.0;
     Eigen::RowVectorXd Y_scaled = exact_scale * Y;
     Eigen::RowVectorXd U_scaled = exact_scale * U;
-    auto sv_scaled = ctrlpp::moesp_singular_values(Y_scaled, U_scaled);
+    auto const sv_scaled = ctrlpp::test::constructed(ctrlpp::moesp_singular_values(Y_scaled, U_scaled));
     REQUIRE(sv_scaled.size() == sv.size());
     for (Eigen::Index k = 0; k < sv.size(); ++k) {
         CAPTURE(k, sv(k), sv_scaled(k));
@@ -815,7 +897,7 @@ TEST_CASE("MOESP on a record with no underlying system", "[moesp][hardening][neg
     // fixture below asserts the same quantity with the opposite outcome.
     REQUIRE(largest_singular_value_gap(sv) != 0);
 
-    auto result = ctrlpp::moesp<2>(Y, U);
+    auto const result = ctrlpp::test::constructed(ctrlpp::moesp<2>(Y, U));
 
     // The single fact the old disjunction refused to state. It accepted every
     // double except a not-a-number, so it held whichever way the routine went,
@@ -823,10 +905,9 @@ TEST_CASE("MOESP on a record with no underlying system", "[moesp][hardening][neg
     // defect because it is written with the infinity test instead.
     //
     // Determined by running: the identification SUCCEEDS on this record and
-    // reports a finite condition number of 1.0239. The documented failure
-    // contract -- an infinite condition number and a zeroed system -- is
-    // therefore not what happens here, and the case below is the one that
-    // exercises it.
+    // reports a finite condition number of 1.0239. A finite model with a finite
+    // condition number is a conditioning question, not a refusal; the all-zero
+    // record below is the one the routine refuses.
     REQUIRE(std::isfinite(result.condition_number));
     REQUIRE_FALSE(result.system.A.isZero(0.0));
 
@@ -844,25 +925,220 @@ TEST_CASE("MOESP on a record with no underlying system", "[moesp][hardening][neg
     // decided without it.
 }
 
-TEST_CASE("MOESP degenerate data returns a zeroed system", "[moesp][hardening][negative]")
+TEST_CASE("MOESP refuses to identify from an all-zero record", "[moesp][hardening][negative]")
 {
-    // The documented failure contract (docs/api/sysid/moesp.md) is that a
-    // failed identification reports condition_number = infinity and hands back
-    // zeroed system matrices. discrete_state_space is an aggregate of Eigen
-    // fixed-size matrices whose default constructor leaves coefficients
-    // uninitialized, so omitting members yields indeterminate values unless the
-    // zeroing is explicit -- this pins that it is.
+    // The record passes every precondition, but its projection is identically
+    // zero, so the condition number is zero over zero and no direction of the
+    // subspace is determined.
     constexpr int N = 64;
     Eigen::RowVectorXd Y = Eigen::RowVectorXd::Zero(N);
     Eigen::RowVectorXd U = Eigen::RowVectorXd::Zero(N);
 
-    auto result = ctrlpp::moesp<2>(Y, U);
+    auto const result = ctrlpp::moesp<2>(Y, U);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::sysid_error::model_not_identified);
+}
 
-    REQUIRE(std::isinf(result.condition_number));
-    REQUIRE(result.system.A.isZero(0.0));
-    REQUIRE(result.system.B.isZero(0.0));
-    REQUIRE(result.system.C.isZero(0.0));
-    REQUIRE(result.system.D.isZero(0.0));
+TEST_CASE("MOESP refuses a block-row count below the shift relation's order",
+          "[moesp][hardening][negative]")
+{
+    // The shift relation Gamma_trunc A = Gamma_shifted has (i - 1) rows for a
+    // single-output record and NX unknowns per column. At i = NX it is
+    // underdetermined, and its minimum-norm solution is a finite, wrong model.
+    auto const [Y, U] = complex_pair_record(500);
+    std::complex<double> const true_pole(0.85, std::sqrt(0.07) / 2.0);
+
+    SECTION("at the order itself")
+    {
+        auto const result = ctrlpp::moesp<2>(Y, U, 2);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::sysid_error::block_rows_below_order);
+    }
+
+    SECTION("one block row above the order identifies the complex pair")
+    {
+        auto const result = ctrlpp::test::constructed(ctrlpp::moesp<2>(Y, U, 3));
+        double const bound = complex_pair_eigenvalue_bound(Y, U, 3, result);
+        double const error = std::abs(upper_eigenvalue(result.system.A) - true_pole);
+        CAPTURE(error, bound);
+        REQUIRE(error <= bound);
+    }
+
+    SECTION("the default block-row count identifies the complex pair")
+    {
+        auto const result = ctrlpp::test::constructed(ctrlpp::moesp<2>(Y, U));
+        double const bound = complex_pair_eigenvalue_bound(Y, U, 30, result);
+        double const error = std::abs(upper_eigenvalue(result.system.A) - true_pole);
+        CAPTURE(error, bound);
+        REQUIRE(error <= bound);
+    }
+
+    SECTION("the default block-row count of a short record is checked too")
+    {
+        // min(8 / 4, 30) = 2 block rows against an order of two.
+        auto const [Y8, U8] = complex_pair_record(8);
+        auto const result = ctrlpp::moesp<2>(Y8, U8);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::sysid_error::block_rows_below_order);
+    }
+}
+
+TEST_CASE("MOESP refuses records of differing length", "[moesp][hardening][negative]")
+{
+    auto const [Y, U] = complex_pair_record(500);
+    Eigen::RowVectorXd const U_short = U.head(499);
+
+    auto const result = ctrlpp::moesp<2>(Y, U_short);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::sysid_error::record_length_mismatch);
+}
+
+TEST_CASE("MOESP refuses a record that is not a single row", "[moesp][hardening][negative]")
+{
+    auto const [Y, U] = complex_pair_record(500);
+    Eigen::MatrixXd Y_two(2, Y.size());
+    Y_two << Y, -Y;
+
+    auto const result = ctrlpp::moesp<2>(Y_two, U);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::sysid_error::record_not_single_row);
+}
+
+TEST_CASE("MOESP refuses a record too short for the projection the order needs",
+          "[moesp][hardening][negative]")
+{
+    // For a single-input record the projection has min(2i, N - 2i + 1 - i)
+    // columns, and the order needs NX of them.
+    SECTION("the Hankel matrices would have a negative column count")
+    {
+        auto const [Y, U] = complex_pair_record(50);
+        auto const result = ctrlpp::moesp<2>(Y, U, 30);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::sysid_error::too_few_samples);
+    }
+
+    SECTION("the Hankel matrices exist but the projection has no columns")
+    {
+        auto const [Y, U] = complex_pair_record(50);
+        auto const result = ctrlpp::moesp<2>(Y, U, 17);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::sysid_error::too_few_samples);
+    }
+
+    SECTION("one sample short of the bound, and exactly at it")
+    {
+        // i = 16 and NX = 2 need N - 31 >= 18, so N = 49.
+        auto const [Y48, U48] = complex_pair_record(48);
+        auto const short_result = ctrlpp::moesp<2>(Y48, U48, 16);
+        REQUIRE_FALSE(short_result.has_value());
+        CHECK(short_result.error() == ctrlpp::sysid_error::too_few_samples);
+
+        auto const [Y49, U49] = complex_pair_record(49);
+        REQUIRE(ctrlpp::moesp<2>(Y49, U49, 16).has_value());
+    }
+}
+
+TEST_CASE("MOESP refuses a non-finite sample", "[moesp][hardening][negative]")
+{
+    auto [Y, U] = complex_pair_record(500);
+
+    SECTION("a NaN in the output record")
+    {
+        Y(100) = std::numeric_limits<double>::quiet_NaN();
+        auto const result = ctrlpp::moesp<2>(Y, U);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::sysid_error::non_finite_sample);
+    }
+
+    SECTION("an infinity in the input record")
+    {
+        U(7) = std::numeric_limits<double>::infinity();
+        auto const result = ctrlpp::moesp<2>(Y, U);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::sysid_error::non_finite_sample);
+    }
+}
+
+TEST_CASE("MOESP reports the earliest of two violated preconditions", "[moesp][hardening][negative]")
+{
+    auto const [Y, U] = complex_pair_record(500);
+    Eigen::RowVectorXd Y_nan = Y;
+    Y_nan(100) = std::numeric_limits<double>::quiet_NaN();
+
+    SECTION("differing length and two rows")
+    {
+        Eigen::MatrixXd Y_two(2, Y.size());
+        Y_two << Y, Y;
+        Eigen::RowVectorXd const U_short = U.head(499);
+        CHECK(refusal_of(ctrlpp::moesp<2>(Y_two, U_short)) == ctrlpp::sysid_error::record_length_mismatch);
+    }
+
+    SECTION("two rows and a NaN")
+    {
+        Eigen::MatrixXd Y_two(2, Y.size());
+        Y_two << Y_nan, Y;
+        CHECK(refusal_of(ctrlpp::moesp<2>(Y_two, U)) == ctrlpp::sysid_error::record_not_single_row);
+    }
+
+    SECTION("block rows below the order and too few samples")
+    {
+        // N = 4 with i = 2: one shift row for two unknowns, and N - 2i + 1 = 1.
+        auto const [Y4, U4] = complex_pair_record(4);
+        CHECK(refusal_of(ctrlpp::moesp<2>(Y4, U4, 2)) == ctrlpp::sysid_error::block_rows_below_order);
+    }
+
+    SECTION("too few samples and a NaN")
+    {
+        Eigen::RowVectorXd Y50 = Y.head(50);
+        Y50(10) = std::numeric_limits<double>::quiet_NaN();
+        CHECK(refusal_of(ctrlpp::moesp<2>(Y50, U.head(50), 30)) == ctrlpp::sysid_error::too_few_samples);
+    }
+
+    SECTION("block rows below the order and a NaN")
+    {
+        CHECK(refusal_of(ctrlpp::moesp<2>(Y_nan, U, 2)) == ctrlpp::sysid_error::block_rows_below_order);
+    }
+}
+
+TEST_CASE("MOESP singular values refuse the records the identification refuses",
+          "[moesp][hardening][negative]")
+{
+    // The same gate at the smallest order, NX = 1.
+    auto const [Y, U] = complex_pair_record(50);
+
+    SECTION("differing length")
+    {
+        Eigen::RowVectorXd const U_short = U.head(49);
+        CHECK(refusal_of(ctrlpp::moesp_singular_values(Y, U_short)) == ctrlpp::sysid_error::record_length_mismatch);
+    }
+
+    SECTION("two rows")
+    {
+        Eigen::MatrixXd Y_two(2, Y.size());
+        Y_two << Y, Y;
+        CHECK(refusal_of(ctrlpp::moesp_singular_values(Y_two, U)) == ctrlpp::sysid_error::record_not_single_row);
+    }
+
+    SECTION("one block row leaves the shift relation without a row")
+    {
+        CHECK(refusal_of(ctrlpp::moesp_singular_values(Y, U, 1)) == ctrlpp::sysid_error::block_rows_below_order);
+    }
+
+    SECTION("too short for one projection column, and exactly long enough")
+    {
+        // i = 17 needs N - 33 >= 18, so N = 51.
+        CHECK(refusal_of(ctrlpp::moesp_singular_values(Y, U, 17)) == ctrlpp::sysid_error::too_few_samples);
+        auto const [Y51, U51] = complex_pair_record(51);
+        auto const sv = ctrlpp::test::constructed(ctrlpp::moesp_singular_values(Y51, U51, 17));
+        CHECK(sv.size() == 1);
+    }
+
+    SECTION("a NaN")
+    {
+        Eigen::RowVectorXd Y_nan = Y;
+        Y_nan(3) = std::numeric_limits<double>::quiet_NaN();
+        CHECK(refusal_of(ctrlpp::moesp_singular_values(Y_nan, U)) == ctrlpp::sysid_error::non_finite_sample);
+    }
 }
 
 TEST_CASE("MOESP with wrong model order", "[moesp][hardening][negative]")
@@ -883,7 +1159,7 @@ TEST_CASE("MOESP with wrong model order", "[moesp][hardening][negative]")
         x = 0.8 * x + 0.5 * U(t);
     }
 
-    auto result = ctrlpp::moesp<4>(Y, U);
+    auto const result = ctrlpp::test::constructed(ctrlpp::moesp<4>(Y, U));
 
     // An over-specified order must still FIT, which is more than finiteness: the
     // surplus modes have nothing to explain, so the residual is still the
@@ -903,7 +1179,7 @@ TEST_CASE("MOESP with wrong model order", "[moesp][hardening][negative]")
     // singular values sits at the front, so one mode stands above the noise and
     // the rest are at it. The noise-only fixture above asserts the same quantity
     // and gets the opposite answer.
-    auto sv = ctrlpp::moesp_singular_values(Y, U);
+    auto const sv = ctrlpp::test::constructed(ctrlpp::moesp_singular_values(Y, U));
     REQUIRE(largest_singular_value_gap(sv) == 0);
 
     // And the reported condition number is that spectrum read at the requested
@@ -932,7 +1208,7 @@ TEST_CASE("MOESP identifies known state-space system", "[moesp][hardening][conve
         x = true_pole * x + true_input_gain * U(t);
     }
 
-    auto result = ctrlpp::moesp<1>(Y, U);
+    auto const result = ctrlpp::test::constructed(ctrlpp::moesp<1>(Y, U));
 
     // The case name promises identification and only a fit metric was asserted.
     // The coefficients themselves CANNOT be compared with the ones that generated
