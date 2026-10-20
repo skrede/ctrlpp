@@ -188,11 +188,15 @@ None of the seven carries a discard annotation on `health()`.
 `non_finite_measurement`, `non_finite_result`). It refuses before committing a
 weight or drawing from its random generator, so a refused step leaves the
 particles, the weights and the generator bitwise unchanged. Its channel-3 query
-`health()` returns `pf_health` (`ok`, `weights_reset`, `non_finite_estimate`).
-A weight depletion, where no particle explains a finite measurement, is not a
-rejection: the step resets the weights to uniform, succeeds with a valid but
-uninformed posterior, and latches `weights_reset`, so it stays distinguishable
-from a refused measurement.
+`health()` returns `pf_health` (`ok`, `weights_reset`,
+`resampling_rolled_back`, `non_finite_estimate`). A weight depletion, where no
+particle explains a finite measurement, is not a rejection: the step resets the
+weights to uniform, succeeds with a valid but uninformed posterior, and latches
+`weights_reset`, so it stays distinguishable from a refused measurement. A
+rolled-back resampling is the same kind of success-path rung: when roughening
+would leave a particle non-finite, the step restores the particles from before
+the resampling, keeps its conditioned weights, succeeds, and latches
+`resampling_rolled_back`.
 
 The complementary filter's zero-norm acceleration and magnetic skips stay on the
 success path and are **not** rejections. They are channel-2 shaped -- the step
@@ -241,6 +245,14 @@ because any caller can take the other door. That also settled the naming: the
 non-fallible constructor, so with `ukf`'s constructors gone the prefix
 contrasted with nothing and the member became `create`. The sigma-point
 strategies keep `try_create`, because their own plain constructors do survive.
+
+A variant keeps the factory the only door while letting the result be built in
+place: the constructor is public, but its tag is a passkey whose default
+constructor is private and which only the class can make. `ctrlpp::expected`
+can then construct the object in its own storage through its `std::in_place`
+constructor, and guaranteed copy elision carries that storage to the caller, so
+the factory never holds a whole object in its frame. `particle_filter` uses it,
+because its object holds the whole particle set.
 
 The three filters share `filter_error`, which gained
 `non_finite_process_noise`, `non_finite_measurement_noise`,
@@ -306,8 +318,9 @@ singular `Q` or `R`, which the filter accepts, is refused by their own
 
 `particle_filter` validates its configuration on channel 1 as well, through
 `particle_filter::create` and `make_particle_filter`, which return
-`ctrlpp::expected<particle_filter, filter_error>`; its constructors are private
-behind a `validated_tag`. It refuses the same finiteness, symmetry and
+`ctrlpp::expected<particle_filter, filter_error>`; its constructor takes the
+`validated_tag` passkey only the class can make, and the factory builds the
+filter in the caller's storage. It refuses the same finiteness, symmetry and
 definiteness conditions, samples and scores the symmetrized matrices, and, in
 addition, refuses a singular `R` (`singular_measurement_noise`): it
 scores every particle with R's inverse and log-determinant, which a singular R

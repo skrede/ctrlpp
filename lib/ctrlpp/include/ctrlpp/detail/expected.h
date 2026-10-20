@@ -142,6 +142,14 @@ public:
     }
 
     template <typename... Args>
+        requires std::is_constructible_v<T, Args...>
+    constexpr explicit expected(std::in_place_t, Args&&... args)
+        : m_has_value(true)
+    {
+        std::construct_at(std::addressof(m_value), std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
     constexpr explicit expected(unexpect_t, Args&&... args)
         : m_has_value(false)
     {

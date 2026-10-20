@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <random>
+#include <algorithm>
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size)
 {
@@ -76,6 +77,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // Verdict oracle: the dynamics and measurement are finite and linear, so a
     // finite measurement must be accepted with a finite estimate, and a
     // non-finite one must be refused as such with the estimate bitwise unchanged.
+    // No accepted update may leave a particle non-finite.
     for(int step = 0; step < 10; ++step)
     {
         filter->predict(u);
@@ -83,6 +85,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         const auto result = filter->update(z);
 
         if(finite_measurement && (!result.has_value() || !filter->state().allFinite()))
+            std::abort();
+        if(result.has_value() && !std::ranges::all_of(filter->particles(), [](const auto& p) { return p.allFinite(); }))
             std::abort();
         if(!finite_measurement)
         {

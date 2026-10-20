@@ -903,3 +903,141 @@ TEST_CASE("PF factory samples a drift-asymmetric process noise through the facto
         CHECK(pf.particles()[i] == expected);
     }
 }
+
+namespace {
+
+// Sends every coordinate to `high` or `low` by its sign, so one predict places
+// the cloud at the edge of the representable range. The input is added so a
+// non-finite control can poison the particles on demand.
+struct saturating_dynamics
+{
+    double high;
+    double low;
+
+    auto operator()(const ctrlpp::Vector<double, 2>& x, const ctrlpp::Vector<double, 1>& u) const -> ctrlpp::Vector<double, 2>
+    {
+        ctrlpp::Vector<double, 2> next;
+        next(0) = (x(0) >= 0.0 ? high : low) + u(0);
+        next(1) = (x(1) >= 0.0 ? high : low) + u(0);
+        return next;
+    }
+};
+
+struct scaled_position_measurement
+{
+    auto operator()(const ctrlpp::Vector<double, 2>& x) const -> ctrlpp::Vector<double, 1>
+    {
+        ctrlpp::Vector<double, 1> z;
+        z(0) = x(0) * 1e-308;
+        return z;
+    }
+};
+
+struct overflow_case
+{
+    double high;
+    double low;
+    double roughening_scale;
+    double measurement;
+};
+
+// Range overflow: max - min of +/-1.5e308 is +inf, so the roughening sigma is.
+constexpr overflow_case range_overflow{1.5e308, -1.5e308, 0.2, 0.5};
+// Jitter overflow: the range 0.8e308 is finite, but a sigma of 0.25 of it
+// carries the particles at 1.7e308 past DBL_MAX.
+constexpr overflow_case jitter_overflow{1.7e308, 0.9e308, 1.0, 1.2};
+
+constexpr std::size_t overflow_particles = 16;
+
+auto make_saturating_pf(const overflow_case& c, ctrlpp::weight_representation weights, double ess_threshold)
+{
+    pf_config_2 config{.Q = ctrlpp::Matrix<double, 2, 2>::Zero()};
+    config.ess_threshold = ess_threshold;
+    config.roughening_scale = c.roughening_scale;
+    config.weights = weights;
+    return ctrlpp::test::constructed(ctrlpp::make_particle_filter<overflow_particles>(
+        saturating_dynamics{c.high, c.low}, scaled_position_measurement{}, config, std::mt19937_64{42}));
+}
+
+auto all_particles_finite(const auto& pf) -> bool
+{
+    return std::ranges::all_of(pf.particles(), [](const auto& p) { return p.allFinite(); });
+}
+
+// The twin never resamples (an ESS threshold of zero), so after the same
+// update it holds the step's conditioned weights over the unresampled set.
+void check_rolled_back_resampling(const overflow_case& c, ctrlpp::weight_representation weights)
+{
+    auto pf = make_saturating_pf(c, weights, 2.0 * static_cast<double>(overflow_particles));
+    auto twin = make_saturating_pf(c, weights, 0.0);
+    const ctrlpp::Vector<double, 1> u = ctrlpp::Vector<double, 1>::Zero();
+    pf.predict(u);
+    twin.predict(u);
+    const auto before = pf.particles();
+    REQUIRE(same_particles(before, twin.particles()));
+
+    ctrlpp::Vector<double, 1> z;
+    z << c.measurement;
+    REQUIRE(pf.update(z).has_value());
+    REQUIRE(twin.update(z).has_value());
+
+    CHECK(all_particles_finite(pf));
+    CHECK(same_particles(pf.particles(), before));
+    CHECK((pf.weighted_mean().array() == twin.weighted_mean().array()).all());
+    CHECK((pf.map_estimate().array() == twin.map_estimate().array()).all());
+    ctrlpp::Vector<double, 2> uniform_mean = ctrlpp::Vector<double, 2>::Zero();
+    for(const auto& p : before)
+        uniform_mean += p / static_cast<double>(overflow_particles);
+    CHECK_FALSE((pf.weighted_mean().array() == uniform_mean.array()).all());
+    CHECK(pf.health() == ctrlpp::pf_health::resampling_rolled_back);
+    CHECK(twin.health() == ctrlpp::pf_health::ok);
+}
+
+}
+
+TEST_CASE("PF rolls back a resampling whose roughening range overflows and keeps the step's weights",
+          "[particle_filter][hardening][robustness]")
+{
+    for(const auto weights : {ctrlpp::weight_representation::log, ctrlpp::weight_representation::linear})
+    {
+        CAPTURE(weights == ctrlpp::weight_representation::log);
+        check_rolled_back_resampling(range_overflow, weights);
+    }
+}
+
+TEST_CASE("PF rolls back a resampling whose roughening jitter overflows and keeps the step's weights",
+          "[particle_filter][hardening][robustness]")
+{
+    for(const auto weights : {ctrlpp::weight_representation::log, ctrlpp::weight_representation::linear})
+    {
+        CAPTURE(weights == ctrlpp::weight_representation::log);
+        check_rolled_back_resampling(jitter_overflow, weights);
+    }
+}
+
+TEST_CASE("PF rolled-back resampling sits between a weight reset and a non-finite estimate in severity",
+          "[particle_filter][hardening][robustness]")
+{
+    for(const auto weights : {ctrlpp::weight_representation::log, ctrlpp::weight_representation::linear})
+    {
+        CAPTURE(weights == ctrlpp::weight_representation::log);
+        auto pf = make_saturating_pf(range_overflow, weights, 2.0 * static_cast<double>(overflow_particles));
+        pf.predict(ctrlpp::Vector<double, 1>::Zero());
+        ctrlpp::Vector<double, 1> z;
+        z << range_overflow.measurement;
+        REQUIRE(pf.update(z).has_value());
+        REQUIRE(pf.health() == ctrlpp::pf_health::resampling_rolled_back);
+
+        // No particle explains this measurement, so the weights reset to uniform.
+        z << 1e200;
+        REQUIRE(pf.update(z).has_value());
+        CHECK(all_particles_finite(pf));
+        CHECK(pf.health() == ctrlpp::pf_health::resampling_rolled_back);
+
+        pf.predict(ctrlpp::test::nan_vector<double, 1>());
+        const auto refused = pf.update(ctrlpp::Vector<double, 1>::Zero());
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error() == ctrlpp::pf_update_error::non_finite_state);
+        CHECK(pf.health() == ctrlpp::pf_health::non_finite_estimate);
+    }
+}

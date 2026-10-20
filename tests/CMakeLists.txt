@@ -168,6 +168,23 @@ if (CTRLPP_BUILD_TESTS)
             "${CTRLPP_PID_DIRECT_CONSTRUCTION_COMPILED_OUTPUT}")
     endif ()
 
+    # The particle filter's constructor is public so the factory can build the filter in the caller's storage,
+    # which leaves the passkey as its only guard: a direct construction must fail, and fail on the tag.
+    ctrlpp_try_canary(CTRLPP_PF_PASSKEY_BASELINE_COMPILED particle_filter_passkey_canary.cpp)
+    if (NOT CTRLPP_PF_PASSKEY_BASELINE_COMPILED)
+        message(FATAL_ERROR
+            "The particle filter passkey canary is not a valid positive control: "
+            "its create arm does not compile.\n"
+            "${CTRLPP_PF_PASSKEY_BASELINE_COMPILED_OUTPUT}")
+    endif ()
+    ctrlpp_try_canary(CTRLPP_PF_DIRECT_CONSTRUCTION_COMPILED particle_filter_passkey_canary.cpp -DCTRLPP_CANARY_PF_DIRECT_CONSTRUCTION)
+    set(output "${CTRLPP_PF_DIRECT_CONSTRUCTION_COMPILED_OUTPUT}")
+    if (CTRLPP_PF_DIRECT_CONSTRUCTION_COMPILED)
+        message(FATAL_ERROR "A direct particle filter construction compiled; the passkey is not enforced.\n${output}")
+    elseif (NOT output MATCHES "validated_tag::validated_tag|constructor of class '[^']*::validated_tag'")
+        message(FATAL_ERROR "A direct particle filter construction failed for another reason than the passkey.\n${output}")
+    endif ()
+
     # A composed policy or a setter that does nothing is invisible at run time, so each anti-windup strategy
     # and set_integral must fail to compile with velocity_form, and for the stated reason.
     ctrlpp_try_canary(CTRLPP_PID_VELOCITY_BASELINE_COMPILED pid_velocity_anti_windup_canary.cpp)

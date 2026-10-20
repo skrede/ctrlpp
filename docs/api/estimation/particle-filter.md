@@ -60,8 +60,40 @@ static auto create(Dynamics dynamics, Measurement measurement,
     -> ctrlpp::expected<particle_filter, filter_error>;
 ```
 
-`create` is the only construction path; there is no public constructor. The
-second overload takes the resampling strategy; the first default-constructs it.
+`create` is the only construction path. The second overload takes the
+resampling strategy; the first default-constructs it. The constructor is public
+only so that the result can be built in place, and it takes a passkey that only
+the filter can make, so no caller can reach it without the factory.
+
+Every refusal happens before any filter state exists. On success the filter is
+constructed directly in the storage the caller initializes from the result, and
+guaranteed copy elision carries that through `make_particle_filter` as well, so
+the factory's frame never holds a whole filter. A `static` or a class member
+initialized from `create` keeps the filter off a task stack altogether:
+
+```cpp
+static auto filter = make_particle_filter<4000>(dynamics, measurement, config);
+if(!filter)
+    return;
+filter->predict(u);
+```
+
+Measured with `g++ (GCC) 16.2.1`, `-std=c++20 -O2 -fno-exceptions -fno-rtti
+-fstack-usage`, Eigen 3.4.1, x86-64 Linux, `double`, NX 2, NY 1, the default
+resampler, generator and likelihood, the factory called through a non-inlined
+wrapper into a function-local `static`:
+
+| NP | `sizeof(particle_filter)` | Factory frames | `resample_log` frame | `resample_linear` frame |
+|---:|---:|---:|---:|---:|
+| 100 | 8,256 | 8,352 | 2,464 | 1,648 |
+| 1,000 | 58,656 | 8,352 | 24,064 | 16,048 |
+| 4,000 | 226,656 | 8,352 | 96,064 | 64,048 |
+
+The factory's frames do not depend on NP. The object holds the particles twice
+(the set and the set before the current resampling) and the weights three times
+(log, linear and staged). The resampling's frame does grow with NP: its index
+array, the resampler's cumulative sum and, in log mode, the linear weights are
+locals of NP entries each.
 
 ```cpp
 template <std::size_t NP, typename Dynamics, typename Measurement, typename Scalar,
@@ -144,6 +176,8 @@ The new weights are computed into a staging array and committed only when none i
 
 When no particle explains a finite measurement (every likelihood is zero), the normalizer resets to uniform weights and `health()` reports `pf_health::weights_reset`. The step still succeeds: the posterior is valid but uninformed. This applies to both weight modes: the log mode resets when the maximum log-weight is -inf, and the linear mode resets when the total weight underflows to zero.
 
+After every resampling the particles are checked for finiteness. Roughening scales its jitter with the cloud's coordinate range, so a cloud near the edge of the representable range can overflow it: the range itself overflows to infinity, or the jitter carries a particle past the largest finite value. The resampling is then undone: the particles are restored to the set before it, the step's conditioned weights are kept (they are the posterior over that set, whose particles passed the step's own finiteness check), the step succeeds, and `health()` latches `pf_health::resampling_rolled_back`. So `update` never reports success with a non-finite particle. The generator has advanced by the draws the undone resampling made.
+
 `predict` is not fallible. A prediction that makes the particles non-finite is reported by the next `update` as `non_finite_state` and through [`health`](#health).
 
 ### state
@@ -204,6 +238,7 @@ Returns the persistent health status. The enumerators are ordered by severity an
 |---|---|
 | `pf_health::ok` | Every update so far conditioned the particles on its measurement |
 | `pf_health::weights_reset` | A finite measurement that no particle explains reset the weights to uniform; the step succeeded with an uninformed posterior |
+| `pf_health::resampling_rolled_back` | A resampling whose roughened particles would have been non-finite was undone; the step succeeded with its weighted posterior over the set before the resampling |
 | `pf_health::non_finite_estimate` | A step found the particles already non-finite, which is how a poisoned control or dynamics model becomes visible |
 
 A refused measurement does not set it: the refusal mutates nothing.

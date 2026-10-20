@@ -76,23 +76,30 @@ enum class pf_update_error
 /// @brief Persistent health status of a `particle_filter`, ordered by severity
 /// and latching: it never returns to a lower rung on its own.
 ///
-///  * ok                  : every update so far conditioned the particles on
-///                          its measurement.
-///  * weights_reset       : a measurement no particle explains (every
-///                          likelihood is zero, or the linear weights' total
-///                          underflows) reset the weights to uniform. The step
-///                          succeeded and left a valid but uninformed
-///                          posterior, so this is reported here rather than as
-///                          an error.
-///  * non_finite_estimate : a step found the particles already non-finite.
-///                          `predict` does not reject its input, so this is how
-///                          a poisoned control or a dynamics model that
-///                          returned a non-finite state becomes visible. A
-///                          refused measurement does not set it.
+///  * ok                     : every update so far conditioned the particles
+///                             on its measurement.
+///  * weights_reset          : a measurement no particle explains (every
+///                             likelihood is zero, or the linear weights' total
+///                             underflows) reset the weights to uniform. The
+///                             step succeeded and left a valid but uninformed
+///                             posterior, so this is reported here rather than
+///                             as an error.
+///  * resampling_rolled_back : a resampling whose roughened particles would
+///                             have been non-finite (a cloud whose coordinate
+///                             range or jitter overflows) was undone. The step
+///                             succeeded with its weighted posterior, and the
+///                             set is no longer being resampled while the
+///                             condition persists.
+///  * non_finite_estimate    : a step found the particles already non-finite.
+///                             `predict` does not reject its input, so this is
+///                             how a poisoned control or a dynamics model that
+///                             returned a non-finite state becomes visible. A
+///                             refused measurement does not set it.
 enum class pf_health
 {
     ok,
     weights_reset,
+    resampling_rolled_back,
     non_finite_estimate
 };
 
@@ -152,11 +159,54 @@ class particle_filter
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int ny = static_cast<int>(NY);
 
+    /// @brief Passkey for the non-validating constructor: only the filter can
+    /// make one, which is what keeps `create` the only way to originate a
+    /// filter and the validation impossible to bypass.
+    class validated_tag
+    {
+        friend particle_filter;
+        validated_tag() = default;
+    };
+
+    /// @brief Square roots S with S*S^T equal to Q and to P0.
+    struct sampling_factors
+    {
+        Matrix<Scalar, NX, NX> process;
+        Matrix<Scalar, NX, NX> prior;
+    };
+
 public:
     using observer_tag = struct pf_tag;
     using state_vector_t = Vector<Scalar, NX>;
     using input_vector_t = Vector<Scalar, NU>;
     using output_vector_t = Vector<Scalar, NY>;
+
+    // Public so ctrlpp::expected can construct the filter in the caller's
+    // storage; unreachable without the validated_tag only the filter can make.
+    particle_filter(validated_tag, Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, sampling_factors factors, Resampler resampler,
+                    Rng rng, Likelihood likelihood)
+        : m_dynamics{std::move(dynamics)}
+        , m_measurement{std::move(measurement)}
+        , m_resampler{std::move(resampler)}
+        , m_rng{std::move(rng)}
+        , m_likelihood{std::move(likelihood)}
+        , m_Q{std::move(config.Q)}
+        , m_Q_sqrt{std::move(factors.process)}
+        , m_R{std::move(config.R)}
+        , m_R_inv{m_R.colPivHouseholderQr().inverse()}
+        , m_log_det_2piR{compute_log_det_2piR()}
+        , m_ess_threshold{config.ess_threshold < Scalar{0} ? static_cast<Scalar>(NP) / Scalar{2} : config.ess_threshold}
+        , m_roughening_scale{config.roughening_scale}
+        , m_extraction{config.extraction}
+        , m_weight_mode{config.weights}
+        , m_health{pf_health::ok}
+        , m_previous_particles{}
+        , m_log_weights{}
+        , m_linear_weights{}
+        , m_staged_weights{}
+    {
+        initialize_particles(config.x0, factors.prior);
+    }
 
     /// @brief Fallible factory, and the only way to originate a filter.
     ///
@@ -175,6 +225,11 @@ public:
     /// rank-one process noise and a point-mass prior are legitimate models. Its
     /// sampling factor keeps every zero eigenvalue at zero, so the particles
     /// carry exactly the covariance they were given.
+    ///
+    /// Every refusal happens before any filter state exists. On success the
+    /// filter is constructed directly in the storage the caller initializes
+    /// from the result, so no whole-filter temporary lives in the factory's
+    /// frame.
     static auto create(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
         -> ctrlpp::expected<particle_filter, filter_error>
     {
@@ -189,8 +244,8 @@ public:
         auto factors = validated_sampling_factors(config);
         if(!factors)
             return ctrlpp::unexpected(factors.error());
-        return particle_filter{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config),
-                               std::move(*factors), std::move(resampler), std::move(rng), std::move(likelihood)};
+        return ctrlpp::expected<particle_filter, filter_error>{std::in_place, validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config),
+                                                              std::move(*factors), std::move(resampler), std::move(rng), std::move(likelihood)};
     }
 
     /// @brief Propagate all particles through dynamics with process noise.
@@ -205,7 +260,10 @@ public:
     ///
     /// The step is refused, with the particles, the weights and the random
     /// generator untouched, when a particle or the measurement is non-finite or
-    /// a new weight would be; the caller may continue with the next sample.
+    /// a new weight would be; the caller may continue with the next sample. A
+    /// resampling whose roughening would leave a particle non-finite is undone,
+    /// and the step succeeds with its conditioned weights over the set before
+    /// the resampling, reported through `health()`.
     ///
     /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Alg. 1
     auto update(const output_vector_t& z) -> ctrlpp::expected<void, pf_update_error>
@@ -317,25 +375,12 @@ public:
 
     auto particles() const -> const std::array<state_vector_t, NP>& { return m_particles; }
 
-    /// @brief Report whether an earlier step reset the weights or found the
-    /// particles non-finite. Latches; a refused measurement does not set it.
+    /// @brief Report whether an earlier step reset the weights, rolled back a
+    /// resampling or found the particles non-finite. Latches; a refused
+    /// measurement does not set it.
     auto health() const -> pf_health { return m_health; }
 
 private:
-    /// @brief Tag selecting the non-validating constructor reserved for
-    /// `create`, which is what makes the factory the only public path and the
-    /// validation impossible to bypass.
-    struct validated_tag
-    {
-    };
-
-    /// @brief Square roots S with S*S^T equal to Q and to P0.
-    struct sampling_factors
-    {
-        Matrix<Scalar, NX, NX> process;
-        Matrix<Scalar, NX, NX> prior;
-    };
-
     Dynamics m_dynamics;
     Measurement m_measurement;
     Resampler m_resampler;
@@ -354,35 +399,14 @@ private:
     pf_health m_health;
 
     std::array<state_vector_t, NP> m_particles;
+    // The set before the current resampling: the resampling gathers from it,
+    // and a roughening that leaves a coordinate non-finite is undone from it.
+    std::array<state_vector_t, NP> m_previous_particles;
     std::array<Scalar, NP> m_log_weights;
     std::array<Scalar, NP> m_linear_weights;
     // Staged so a refused update leaves the weights untouched; a member rather
     // than a local keeps the update's stack frame independent of NP.
     std::array<Scalar, NP> m_staged_weights;
-
-    particle_filter(validated_tag, Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, sampling_factors factors, Resampler resampler,
-                    Rng rng, Likelihood likelihood)
-        : m_dynamics{std::move(dynamics)}
-        , m_measurement{std::move(measurement)}
-        , m_resampler{std::move(resampler)}
-        , m_rng{std::move(rng)}
-        , m_likelihood{std::move(likelihood)}
-        , m_Q{std::move(config.Q)}
-        , m_Q_sqrt{std::move(factors.process)}
-        , m_R{std::move(config.R)}
-        , m_R_inv{m_R.colPivHouseholderQr().inverse()}
-        , m_log_det_2piR{compute_log_det_2piR()}
-        , m_ess_threshold{config.ess_threshold < Scalar{0} ? static_cast<Scalar>(NP) / Scalar{2} : config.ess_threshold}
-        , m_roughening_scale{config.roughening_scale}
-        , m_extraction{config.extraction}
-        , m_weight_mode{config.weights}
-        , m_health{pf_health::ok}
-        , m_log_weights{}
-        , m_linear_weights{}
-        , m_staged_weights{}
-    {
-        initialize_particles(config.x0, factors.prior);
-    }
 
     static auto validated_sampling_factors(pf_config<Scalar, NX, NU, NY>& config) -> ctrlpp::expected<sampling_factors, filter_error>
     {
@@ -497,6 +521,12 @@ private:
             m_health = pf_health::weights_reset;
     }
 
+    void note_resampling_rolled_back()
+    {
+        if(m_health < pf_health::resampling_rolled_back)
+            m_health = pf_health::resampling_rolled_back;
+    }
+
     /// @brief Stage the new log-weights; false when one is NaN or +inf. A -inf
     /// entry is a legitimate zero likelihood.
     auto stage_log_weights(const output_vector_t& z) -> bool
@@ -601,6 +631,8 @@ private:
         m_resampler.resample(lin, indices, m_rng);
         reindex_particles(indices);
         apply_roughening();
+        if(!roughened_particles_kept())
+            return;
 
         Scalar log_uniform = -std::log(static_cast<Scalar>(NP));
         m_log_weights.fill(log_uniform);
@@ -613,6 +645,8 @@ private:
         m_resampler.resample(m_linear_weights, indices, m_rng);
         reindex_particles(indices);
         apply_roughening();
+        if(!roughened_particles_kept())
+            return;
 
         Scalar uniform = Scalar{1} / static_cast<Scalar>(NP);
         m_linear_weights.fill(uniform);
@@ -654,10 +688,29 @@ private:
 
     void reindex_particles(const std::array<std::size_t, NP>& indices)
     {
-        std::array<state_vector_t, NP> resampled;
+        m_previous_particles = m_particles;
         for(std::size_t i = 0; i < NP; ++i)
-            resampled[i] = m_particles[indices[i]];
-        m_particles = resampled;
+            m_particles[i] = m_previous_particles[indices[i]];
+    }
+
+    /// @brief True when the roughened set is finite; otherwise restores the set
+    /// before the resampling, latches the health rung and returns false.
+    ///
+    /// The caller then keeps the step's conditioned weights: they are the
+    /// posterior over the restored set, whose particles passed the step's own
+    /// finiteness check.
+    auto roughened_particles_kept() -> bool
+    {
+        for(const auto& particle : m_particles)
+        {
+            if(!particle.allFinite())
+            {
+                m_particles = m_previous_particles;
+                note_resampling_rolled_back();
+                return false;
+            }
+        }
+        return true;
     }
 
     /// @brief Roughening: add jitter to resampled particles to prevent degeneracy.

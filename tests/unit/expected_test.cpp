@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <cstdint>
 #include <utility>
 #include <version>
 
@@ -24,6 +25,28 @@ struct payload
     int id;
     double gain;
 };
+
+struct pinned
+{
+    pinned(std::int32_t identifier, double scale)
+        : id{identifier}
+        , gain{scale}
+    {
+    }
+
+    pinned(const pinned&) = delete;
+    pinned(pinned&&) = delete;
+
+    std::int32_t id;
+    double gain;
+};
+
+auto make_pinned(std::int32_t id) -> ctrlpp::expected<pinned, fetch_error>
+{
+    if(id < 0)
+        return ctrlpp::unexpected(fetch_error::not_found);
+    return ctrlpp::expected<pinned, fetch_error>{std::in_place, id, 0.5};
+}
 
 }
 
@@ -60,6 +83,19 @@ TEST_CASE("expected constructs the error in place via unexpect", "[expected]")
 
     REQUIRE(!e.has_value());
     CHECK(e.error() == fetch_error::timed_out);
+}
+
+TEST_CASE("expected constructs a value it can neither copy nor move in place", "[expected]")
+{
+    const auto e = make_pinned(7);
+
+    REQUIRE(e.has_value());
+    CHECK(e->id == 7);
+    CHECK(e->gain == 0.5);
+
+    const auto refused = make_pinned(-1);
+    REQUIRE(!refused.has_value());
+    CHECK(refused.error() == fetch_error::not_found);
 }
 
 TEST_CASE("unexpected deduces its error type on both compilers", "[expected]")

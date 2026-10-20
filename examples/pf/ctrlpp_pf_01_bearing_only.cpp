@@ -110,6 +110,8 @@ auto health_name(ctrlpp::pf_health health) -> const char*
         return "ok";
     case ctrlpp::pf_health::weights_reset:
         return "weights reset by a measurement no particle explained";
+    case ctrlpp::pf_health::resampling_rolled_back:
+        return "resampling rolled back after a non-finite roughening";
     case ctrlpp::pf_health::non_finite_estimate:
         return "non-finite estimate";
     }

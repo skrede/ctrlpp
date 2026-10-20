@@ -334,6 +334,15 @@ otherwise produce silent corruption through intermediate overflow:
   `pf_update_error::non_finite_measurement` and leaves the particles, the weights
   and the random generator unchanged.
 
+- **Particle filter resampling overflow:** Roughening scales its jitter with the
+  cloud's coordinate range, so a cloud near the edge of the representable range
+  can overflow it (the range overflows to infinity, or the jitter carries a
+  particle past the largest finite value). Every resampling is checked for
+  finiteness afterward; one that left a particle non-finite is undone from a
+  copy of the set before it, the step keeps its conditioned weights and succeeds,
+  and `pf_health::resampling_rolled_back` latches. `update` therefore never
+  reports success with a non-finite particle.
+
 - **UKF covariance update:** The unscented Kalman filter uses the algebraically
   complete minimum mean-square-error reduction `P = P - K*S*K^T`, where
   `S = Pzz + R` and `K = Pxz*S^{-1}`. Because `K*S*K^T = K*Pxz^T`, this term is
