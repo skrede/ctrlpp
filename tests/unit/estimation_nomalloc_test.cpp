@@ -394,12 +394,12 @@ TEST_CASE("particle_filter predict/update performs zero heap allocation and is s
         return cfg;
     };
 
-    auto pf = ctrlpp::make_particle_filter<np>(
-        linear_dynamics{}, position_measurement{}, make_config(), std::mt19937_64{42});
+    auto pf = ctrlpp::test::constructed(ctrlpp::make_particle_filter<np>(
+        linear_dynamics{}, position_measurement{}, make_config(), std::mt19937_64{42}));
 
     // Second identically seeded filter for the repeatability assertion.
-    auto pf_repeat = ctrlpp::make_particle_filter<np>(
-        linear_dynamics{}, position_measurement{}, make_config(), std::mt19937_64{42});
+    auto pf_repeat = ctrlpp::test::constructed(ctrlpp::make_particle_filter<np>(
+        linear_dynamics{}, position_measurement{}, make_config(), std::mt19937_64{42}));
 
     const Vector<double, 1> u = Vector<double, 1>::Zero();
     const Vector<double, 1> z = (Vector<double, 1>() << 0.1).finished();

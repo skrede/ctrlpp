@@ -44,6 +44,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <random>
@@ -153,10 +154,10 @@ auto make_pf(std::size_t seed = 42)
     ctrlpp::Vector<double, 2> x0 = ctrlpp::Vector<double, 2>::Zero();
     ctrlpp::Matrix<double, 2, 2> P0 = ctrlpp::Matrix<double, 2, 2>::Identity();
 
-    return ctrlpp::make_particle_filter<100>(
+    return ctrlpp::test::constructed(ctrlpp::make_particle_filter<100>(
         pf_linear_dynamics{}, pf_position_measurement{},
         ctrlpp::pf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0},
-        std::mt19937_64{seed});
+        std::mt19937_64{seed}));
 }
 
 // Scalar random-walk bearing model: the state is an unwrapped angle advanced by
@@ -279,10 +280,10 @@ TEST_CASE("PF posterior mean and variance track the exact Gaussian posterior",
     ctrlpp::Matrix<double, 2, 2> P0 = ctrlpp::Matrix<double, 2, 2>::Identity();
 
     constexpr std::size_t NP = 500;
-    auto pf = ctrlpp::make_particle_filter<NP>(
+    auto pf = ctrlpp::test::constructed(ctrlpp::make_particle_filter<NP>(
         pf_linear_dynamics{}, pf_position_measurement{},
         ctrlpp::pf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0},
-        std::mt19937_64{42});
+        std::mt19937_64{42}));
 
     const auto sys = equivalent_system();
     auto exact = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(
@@ -380,10 +381,10 @@ TEST_CASE("PF with 10 particles still conditions on its measurements",
     ctrlpp::Vector<double, 2> x0 = ctrlpp::Vector<double, 2>::Zero();
     ctrlpp::Matrix<double, 2, 2> P0 = ctrlpp::Matrix<double, 2, 2>::Identity();
 
-    auto pf = ctrlpp::make_particle_filter<NP>(
+    auto pf = ctrlpp::test::constructed(ctrlpp::make_particle_filter<NP>(
         pf_linear_dynamics{}, pf_position_measurement{},
         ctrlpp::pf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0},
-        std::mt19937_64{42});
+        std::mt19937_64{42}));
 
     const auto sys = equivalent_system();
     auto exact = ctrlpp::test::constructed(ctrlpp::kalman_filter<double, 2, 1, 1>::create(
@@ -438,8 +439,8 @@ TEST_CASE("PF linear-mode total underflow recovers to the uniform particle mean"
     ctrlpp::pf_config<double, 2, 1, 1> cfg{.Q = Q, .R = R, .x0 = x0, .P0 = P0};
     cfg.weights = ctrlpp::weight_representation::linear;
 
-    auto pf = ctrlpp::make_particle_filter<NP>(
-        pf_linear_dynamics{}, pf_position_measurement{}, cfg, std::mt19937_64{42});
+    auto pf = ctrlpp::test::constructed(ctrlpp::make_particle_filter<NP>(
+        pf_linear_dynamics{}, pf_position_measurement{}, cfg, std::mt19937_64{42}));
 
     // exp(x) underflows to zero once x < log(denorm_min); the Gaussian
     // log-likelihood carries a -0.5 * (z - x_i)^2 / R term, so any innovation
@@ -518,10 +519,10 @@ TEST_CASE("PF bearing wrap likelihood fixes the +/-pi cut where the Gaussian pol
     ctrlpp::Matrix<double, 1, 1> P0;
     P0 << 0.25;
 
-    auto pf = ctrlpp::make_particle_filter<500>(
+    auto pf = ctrlpp::test::constructed(ctrlpp::make_particle_filter<500>(
         bearing_dynamics{}, bearing_measurement{},
         ctrlpp::pf_config<double, 1, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0},
-        std::mt19937_64{7}, bearing_wrap_likelihood{});
+        std::mt19937_64{7}, bearing_wrap_likelihood{}));
 
     std::mt19937_64 sensor_rng{99};
     std::normal_distribution<double> noise(0.0, std::sqrt(R_scalar));
@@ -540,4 +541,172 @@ TEST_CASE("PF bearing wrap likelihood fixes the +/-pi cut where the Gaussian pol
     double wrapped_err = std::remainder(pf.state()(0) - true_bearing, 2.0 * pi);
     CAPTURE(pf.state()(0), wrapped_err);
     CHECK(std::abs(wrapped_err) < std::sqrt(R_scalar));
+}
+
+namespace {
+
+struct identity_dynamics
+{
+    auto operator()(const ctrlpp::Vector<double, 2>& x, const ctrlpp::Vector<double, 1>&) const -> ctrlpp::Vector<double, 2> { return x; }
+};
+
+using pf_config_2 = ctrlpp::pf_config<double, 2, 1, 1>;
+
+auto refusal_of(const pf_config_2& config) -> ctrlpp::filter_error
+{
+    auto pf = ctrlpp::make_particle_filter<16>(identity_dynamics{}, pf_position_measurement{}, config);
+    REQUIRE_FALSE(pf.has_value());
+    return pf.error();
+}
+
+auto diag2(double a, double b) -> ctrlpp::Matrix<double, 2, 2>
+{
+    return ctrlpp::Vector<double, 2>(a, b).asDiagonal();
+}
+
+}
+
+TEST_CASE("PF samples a rank-one process noise as the covariance it was given",
+          "[particle_filter][hardening][sampling]")
+{
+    // The discretized white-noise-acceleration Q is rank one with an exactly zero
+    // second Cholesky pivot. A point-mass prior and identity dynamics make the
+    // cloud after one predict a pure sample of N(0, Q), whose entrywise
+    // Monte-Carlo standard error is sqrt((Q_ij^2 + Q_ii Q_jj) / NP).
+    constexpr std::size_t NP = 4000;
+    ctrlpp::Matrix<double, 2, 2> Q;
+    Q << 1.0, 2.0, 2.0, 4.0;
+    const pf_config_2 config{.Q = Q, .R = ctrlpp::Matrix<double, 1, 1>::Identity(), .x0 = ctrlpp::Vector<double, 2>::Zero(),
+                             .P0 = ctrlpp::Matrix<double, 2, 2>::Zero()};
+
+    auto pf = ctrlpp::test::constructed(ctrlpp::make_particle_filter<NP>(identity_dynamics{}, pf_position_measurement{}, config, std::mt19937_64{42}));
+    pf.predict(ctrlpp::Vector<double, 1>::Zero());
+
+    const auto sampled = pf.covariance();
+    for(int i = 0; i < 2; ++i)
+    {
+        for(int j = 0; j < 2; ++j)
+        {
+            const double standard_error = std::sqrt((Q(i, j) * Q(i, j) + Q(i, i) * Q(j, j)) / static_cast<double>(NP));
+            CAPTURE(i, j, sampled(i, j), Q(i, j), standard_error);
+            CHECK(std::abs(sampled(i, j) - Q(i, j)) <= pf_standard_errors * standard_error);
+        }
+    }
+}
+
+TEST_CASE("PF factory refuses a configuration with no Gaussian to sample or score",
+          "[particle_filter][hardening][negative]")
+{
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const pf_config_2 valid{};
+
+    SECTION("process noise")
+    {
+        auto config = valid;
+        config.Q = diag2(1.0, -1.0);
+        CHECK(refusal_of(config) == ctrlpp::filter_error::indefinite_process_noise);
+        config.Q(0, 0) = nan;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::non_finite_process_noise);
+    }
+
+    SECTION("measurement noise")
+    {
+        auto config = valid;
+        config.R << -1.0;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::indefinite_measurement_noise);
+        config.R << 0.0;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::singular_measurement_noise);
+        config.R << nan;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::non_finite_measurement_noise);
+    }
+
+    SECTION("initial state and covariance")
+    {
+        auto config = valid;
+        config.P0 = diag2(1.0, -1.0);
+        CHECK(refusal_of(config) == ctrlpp::filter_error::indefinite_initial_covariance);
+        config.P0(1, 1) = nan;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::non_finite_initial_covariance);
+        config.x0(0) = nan;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::non_finite_initial_state);
+    }
+
+    SECTION("the earlier field in declaration order is reported")
+    {
+        auto config = valid;
+        config.P0 = diag2(1.0, -1.0);
+        config.R << 0.0;
+        CHECK(refusal_of(config) == ctrlpp::filter_error::singular_measurement_noise);
+        config.Q = diag2(-1.0, 1.0);
+        CHECK(refusal_of(config) == ctrlpp::filter_error::indefinite_process_noise);
+    }
+}
+
+TEST_CASE("PF factory refuses a singular multi-output measurement noise",
+          "[particle_filter][hardening][negative]")
+{
+    struct full_measurement
+    {
+        auto operator()(const ctrlpp::Vector<double, 2>& x) const -> ctrlpp::Vector<double, 2> { return x; }
+    };
+    ctrlpp::pf_config<double, 2, 1, 2> config{};
+    config.R = diag2(1.0, 0.0);
+    auto pf = ctrlpp::make_particle_filter<16>(identity_dynamics{}, full_measurement{}, config);
+    REQUIRE_FALSE(pf.has_value());
+    CHECK(pf.error() == ctrlpp::filter_error::singular_measurement_noise);
+}
+
+TEST_CASE("PF factory accepts a singular positive semidefinite Q and P0",
+          "[particle_filter][hardening][construction]")
+{
+    ctrlpp::Matrix<double, 2, 2> rank_one;
+    rank_one << 1.0, 2.0, 2.0, 4.0;
+    const pf_config_2 config{.Q = rank_one, .P0 = ctrlpp::Matrix<double, 2, 2>::Zero()};
+
+    auto pf = ctrlpp::make_particle_filter<16>(identity_dynamics{}, pf_position_measurement{}, config);
+    REQUIRE(pf.has_value());
+    for(const auto& p : pf->particles())
+        CHECK(p == config.x0);
+}
+
+TEST_CASE("PF factory samples a positive-definite configuration through its Cholesky factors",
+          "[particle_filter][hardening][construction]")
+{
+    // Replays the draws the filter makes (one normal distribution across the
+    // prior, then a fresh one per particle in each predict) through the
+    // unpivoted lower Cholesky factors, so the comparison is exact equality.
+    constexpr std::size_t NP = 8;
+    ctrlpp::Matrix<double, 2, 2> Q;
+    Q << 0.01, 0.004, 0.004, 0.02;
+    ctrlpp::Matrix<double, 2, 2> P0;
+    P0 << 1.0, 0.3, 0.3, 0.5;
+    const pf_config_2 config{.Q = Q, .x0 = ctrlpp::Vector<double, 2>(0.3, -0.2), .P0 = P0};
+
+    auto pf = ctrlpp::test::constructed(ctrlpp::make_particle_filter<NP>(pf_linear_dynamics{}, pf_position_measurement{}, config, std::mt19937_64{42}));
+    pf.predict(ctrlpp::Vector<double, 1>::Zero());
+
+    const ctrlpp::Matrix<double, 2, 2> L_P0 = P0.llt().matrixL();
+    const ctrlpp::Matrix<double, 2, 2> L_Q = Q.llt().matrixL();
+    std::mt19937_64 rng{42};
+    std::array<ctrlpp::Vector<double, 2>, NP> expected{};
+    std::normal_distribution<double> prior(0.0, 1.0);
+    for(auto& x : expected)
+    {
+        ctrlpp::Vector<double, 2> noise;
+        noise(0) = prior(rng);
+        noise(1) = prior(rng);
+        x = config.x0 + L_P0 * noise;
+    }
+    for(auto& x : expected)
+    {
+        std::normal_distribution<double> process(0.0, 1.0);
+        ctrlpp::Vector<double, 2> noise;
+        noise(0) = process(rng);
+        noise(1) = process(rng);
+        x = pf_linear_dynamics{}(x, ctrlpp::Vector<double, 1>::Zero());
+        x += (L_Q * noise).eval();
+    }
+
+    for(std::size_t i = 0; i < NP; ++i)
+        CHECK(pf.particles()[i] == expected[i]);
 }

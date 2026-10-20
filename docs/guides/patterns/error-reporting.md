@@ -239,9 +239,10 @@ aggregates declare the same four fields and feed them into the same recursion.
 `rls` carries its own `rls_error`, whose conditions are read off the covariance
 update rather than asserted as a range.
 
-**Finiteness is the domain condition and the whole of it.** An ill-conditioned
-but finite configuration -- a covariance with entries many orders of magnitude
-apart, a singular `P0` -- is accepted. Rejecting it would convert a
+**For the three Kalman filters, finiteness is the domain condition and the
+whole of it.** An ill-conditioned but finite configuration, such as a
+covariance with entries many orders of magnitude apart or a singular `P0`, is
+accepted. Rejecting it would convert a
 numerical-behavior question into a domain violation and refuse problems the
 library solves. `rls_error` keeps one enumerator that is explicitly *not* a
 domain condition, `forgetting_factor_above_unity`, and says so: the arithmetic
@@ -254,6 +255,20 @@ noise fields, so `mhe` and `nmhe` became fallible too and forward that filter's
 rejection verbatim. That is not plumbing: both also invert `Q` and `R` to form
 the arrival-cost and stage weights, so a non-finite entry poisons the posed
 problem as well as the filter.
+
+`particle_filter` validates its configuration on channel 1 as well, through
+`particle_filter::create` and `make_particle_filter`, which return
+`ctrlpp::expected<particle_filter, filter_error>`; its constructors are private
+behind a `validated_tag`. It refuses the four finiteness conditions above and,
+in addition, an indefinite `Q`, `R` or `P0` (`indefinite_process_noise`,
+`indefinite_measurement_noise`, `indefinite_initial_covariance`) and a singular
+`R` (`singular_measurement_noise`). For a sampling filter these are domain
+conditions, not numerical-behavior questions: it draws its particles from
+N(0, Q) and N(x0, P0), and a matrix with a negative eigenvalue has no Gaussian to
+draw from; it scores every particle with R's inverse and log-determinant, which
+a singular R does not have. A singular but positive semidefinite `Q` or `P0` is
+still accepted, because a rank-one process noise and a point-mass prior are
+legitimate models with a Gaussian to sample.
 
 `pid` validates its configuration on channel 1: `pid::create`,
 `pid::set_params` and `pid::set_integral` refuse a value that cannot work with a

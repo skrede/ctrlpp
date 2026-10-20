@@ -15,6 +15,7 @@
 #include "ctrlpp/detail/covariance_ops.h"
 
 #include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/estimation/resampling/resampling_strategy.h"
 #include "ctrlpp/estimation/resampling/systematic_resampling.h"
 
@@ -107,40 +108,36 @@ public:
     using input_vector_t = Vector<Scalar, NU>;
     using output_vector_t = Vector<Scalar, NY>;
 
-    particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
-        : m_dynamics{std::move(dynamics)}
-        , m_measurement{std::move(measurement)}
-        , m_resampler{}
-        , m_rng{std::move(rng)}
-        , m_likelihood{std::move(likelihood)}
-        , m_Q{std::move(config.Q)}
-        , m_R{std::move(config.R)}
-        , m_R_inv{m_R.colPivHouseholderQr().inverse()}
-        , m_log_det_2piR{compute_log_det_2piR()}
-        , m_ess_threshold{config.ess_threshold < Scalar{0} ? static_cast<Scalar>(NP) / Scalar{2} : config.ess_threshold}
-        , m_roughening_scale{config.roughening_scale}
-        , m_extraction{config.extraction}
-        , m_weight_mode{config.weights}
+    /// @brief Fallible factory, and the only way to originate a filter.
+    ///
+    /// Refuses, in the order `pf_config` declares the fields: a non-finite Q,
+    /// an indefinite Q, a non-finite R, an indefinite R, a singular R, a
+    /// non-finite x0, a non-finite P0 and an indefinite P0. Definiteness is a
+    /// domain condition here rather than a numerical-behavior one, because the
+    /// filter samples from N(0, Q) and N(x0, P0) and scores every particle with
+    /// R's inverse and log-determinant: a matrix with a negative eigenvalue has
+    /// no Gaussian to sample, and a singular R has no density to score.
+    ///
+    /// A singular but positive semidefinite Q or P0 is accepted, since a
+    /// rank-one process noise and a point-mass prior are legitimate models. Its
+    /// sampling factor keeps every zero eigenvalue at zero, so the particles
+    /// carry exactly the covariance they were given.
+    static auto create(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
+        -> ctrlpp::expected<particle_filter, filter_error>
     {
-        initialize_particles(config.x0, config.P0);
+        return create(std::move(dynamics), std::move(measurement), std::move(config), Resampler{}, std::move(rng), std::move(likelihood));
     }
 
-    particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Resampler resampler, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
-        : m_dynamics{std::move(dynamics)}
-        , m_measurement{std::move(measurement)}
-        , m_resampler{std::move(resampler)}
-        , m_rng{std::move(rng)}
-        , m_likelihood{std::move(likelihood)}
-        , m_Q{std::move(config.Q)}
-        , m_R{std::move(config.R)}
-        , m_R_inv{m_R.colPivHouseholderQr().inverse()}
-        , m_log_det_2piR{compute_log_det_2piR()}
-        , m_ess_threshold{config.ess_threshold < Scalar{0} ? static_cast<Scalar>(NP) / Scalar{2} : config.ess_threshold}
-        , m_roughening_scale{config.roughening_scale}
-        , m_extraction{config.extraction}
-        , m_weight_mode{config.weights}
+    /// @brief Fallible factory taking the resampling strategy; refuses exactly
+    /// what the overload above refuses.
+    static auto create(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Resampler resampler, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
+        -> ctrlpp::expected<particle_filter, filter_error>
     {
-        initialize_particles(config.x0, config.P0);
+        auto factors = validated_sampling_factors(config);
+        if(!factors)
+            return ctrlpp::unexpected(factors.error());
+        return particle_filter{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config),
+                               std::move(*factors), std::move(resampler), std::move(rng), std::move(likelihood)};
     }
 
     /// @brief Propagate all particles through dynamics with process noise.
@@ -263,6 +260,20 @@ public:
     auto particles() const -> const std::array<state_vector_t, NP>& { return m_particles; }
 
 private:
+    /// @brief Tag selecting the non-validating constructor reserved for
+    /// `create`, which is what makes the factory the only public path and the
+    /// validation impossible to bypass.
+    struct validated_tag
+    {
+    };
+
+    /// @brief Square roots S with S*S^T equal to Q and to P0.
+    struct sampling_factors
+    {
+        Matrix<Scalar, NX, NX> process;
+        Matrix<Scalar, NX, NX> prior;
+    };
+
     Dynamics m_dynamics;
     Measurement m_measurement;
     Resampler m_resampler;
@@ -270,6 +281,7 @@ private:
     Likelihood m_likelihood;
 
     Matrix<Scalar, NX, NX> m_Q;
+    Matrix<Scalar, NX, NX> m_Q_sqrt;
     Matrix<Scalar, NY, NY> m_R;
     Matrix<Scalar, NY, NY> m_R_inv;
     Scalar m_log_det_2piR;
@@ -282,8 +294,54 @@ private:
     std::array<Scalar, NP> m_log_weights{};
     std::array<Scalar, NP> m_linear_weights{};
 
-    // Cholesky factor of Q for process noise sampling
-    Eigen::Matrix<Scalar, nx, nx> m_Q_L{};
+    particle_filter(validated_tag, Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, sampling_factors factors, Resampler resampler,
+                    Rng rng, Likelihood likelihood)
+        : m_dynamics{std::move(dynamics)}
+        , m_measurement{std::move(measurement)}
+        , m_resampler{std::move(resampler)}
+        , m_rng{std::move(rng)}
+        , m_likelihood{std::move(likelihood)}
+        , m_Q{std::move(config.Q)}
+        , m_Q_sqrt{std::move(factors.process)}
+        , m_R{std::move(config.R)}
+        , m_R_inv{m_R.colPivHouseholderQr().inverse()}
+        , m_log_det_2piR{compute_log_det_2piR()}
+        , m_ess_threshold{config.ess_threshold < Scalar{0} ? static_cast<Scalar>(NP) / Scalar{2} : config.ess_threshold}
+        , m_roughening_scale{config.roughening_scale}
+        , m_extraction{config.extraction}
+        , m_weight_mode{config.weights}
+    {
+        initialize_particles(config.x0, factors.prior);
+    }
+
+    static auto validated_sampling_factors(const pf_config<Scalar, NX, NU, NY>& config) -> ctrlpp::expected<sampling_factors, filter_error>
+    {
+        const auto Q = detail::checked_covariance(config.Q, filter_error::non_finite_process_noise, filter_error::indefinite_process_noise);
+        if(!Q)
+            return ctrlpp::unexpected(Q.error());
+        const auto R = detail::checked_covariance(config.R, filter_error::non_finite_measurement_noise, filter_error::indefinite_measurement_noise);
+        if(!R)
+            return ctrlpp::unexpected(R.error());
+        if(!detail::nonsingular_spectrum(*R))
+            return ctrlpp::unexpected(filter_error::singular_measurement_noise);
+        if(!config.x0.allFinite())
+            return ctrlpp::unexpected(filter_error::non_finite_initial_state);
+        const auto P0 = detail::checked_covariance(config.P0, filter_error::non_finite_initial_covariance, filter_error::indefinite_initial_covariance);
+        if(!P0)
+            return ctrlpp::unexpected(P0.error());
+        return sampling_factors{sampling_factor(config.Q, *Q), sampling_factor(config.P0, *P0)};
+    }
+
+    /// Eigen's LLT leaves the input's entries in the columns after a
+    /// non-positive pivot, so its factor is read only after a successful
+    /// factorization.
+    static auto sampling_factor(const Matrix<Scalar, NX, NX>& M, const detail::psd_decomposition_result<Scalar, nx>& decomposition) -> Matrix<Scalar, NX, NX>
+    {
+        Eigen::LLT<Matrix<Scalar, NX, NX>> llt(M);
+        if(llt.info() == Eigen::Success)
+            return llt.matrixL();
+        return detail::psd_factor(decomposition);
+    }
 
     Scalar compute_log_det_2piR() const
     {
@@ -291,14 +349,8 @@ private:
         return static_cast<Scalar>(NY) * std::log(Scalar{2} * std::numbers::pi_v<Scalar>) + log_det;
     }
 
-    void initialize_particles(const state_vector_t& x0, const Matrix<Scalar, NX, NX>& P0)
+    void initialize_particles(const state_vector_t& x0, const Matrix<Scalar, NX, NX>& P0_sqrt)
     {
-        Eigen::LLT<Eigen::Matrix<Scalar, nx, nx>> llt_P0(P0);
-        Eigen::Matrix<Scalar, nx, nx> sqrt_P0 = llt_P0.matrixL();
-
-        Eigen::LLT<Eigen::Matrix<Scalar, nx, nx>> llt_Q(m_Q);
-        m_Q_L = llt_Q.matrixL();
-
         std::normal_distribution<Scalar> normal(Scalar{0}, Scalar{1});
 
         for(std::size_t i = 0; i < NP; ++i)
@@ -306,7 +358,7 @@ private:
             state_vector_t noise;
             for(std::size_t d = 0; d < NX; ++d)
                 noise(static_cast<int>(d)) = normal(m_rng);
-            m_particles[i] = x0 + sqrt_P0 * noise;
+            m_particles[i] = x0 + P0_sqrt * noise;
         }
 
         Scalar log_uniform = -std::log(static_cast<Scalar>(NP));
@@ -321,7 +373,7 @@ private:
         state_vector_t noise;
         for(std::size_t d = 0; d < NX; ++d)
             noise(static_cast<int>(d)) = normal(m_rng);
-        return m_Q_L * noise;
+        return m_Q_sqrt * noise;
     }
 
     /// @brief Propagate all particles through dynamics model with additive process noise.
@@ -538,11 +590,15 @@ private:
     }
 };
 
-// Factory function since NP cannot be deduced via CTAD
+/// @brief `particle_filter::create` with the particle count named first, since
+/// NP cannot be deduced from the arguments.
 template <std::size_t NP, typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64, typename Likelihood = detail::gaussian_likelihood<Scalar, NY>>
-auto make_particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
+auto make_particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{},
+                          Likelihood likelihood = Likelihood{})
+    -> ctrlpp::expected<particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng, Likelihood>, filter_error>
 {
-    return particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng, Likelihood>(std::move(dynamics), std::move(measurement), std::move(config), std::move(rng), std::move(likelihood));
+    using filter_type = particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng, Likelihood>;
+    return filter_type::create(std::move(dynamics), std::move(measurement), std::move(config), std::move(rng), std::move(likelihood));
 }
 
 // Static assert helpers

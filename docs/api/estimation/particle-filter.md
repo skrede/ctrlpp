@@ -46,19 +46,22 @@ using output_vector_t = Vector<Scalar, NY>;
 | `extraction` | `extraction_method` | `weighted_mean` | State extraction method (`weighted_mean` or `map`) |
 | `weights` | `weight_representation` | `log` | Weight storage mode (`log` for numerical stability, `linear` for simplicity) |
 
-## Constructors
+## Construction
 
 ```cpp
-particle_filter(Dynamics dynamics, Measurement measurement,
-                pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{},
-                Likelihood likelihood = Likelihood{});
+static auto create(Dynamics dynamics, Measurement measurement,
+                   pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{},
+                   Likelihood likelihood = Likelihood{})
+    -> ctrlpp::expected<particle_filter, filter_error>;
 
-particle_filter(Dynamics dynamics, Measurement measurement,
-                pf_config<Scalar, NX, NU, NY> config, Resampler resampler,
-                Rng rng = Rng{}, Likelihood likelihood = Likelihood{});
+static auto create(Dynamics dynamics, Measurement measurement,
+                   pf_config<Scalar, NX, NU, NY> config, Resampler resampler,
+                   Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
+    -> ctrlpp::expected<particle_filter, filter_error>;
 ```
 
-### Factory Function
+`create` is the only construction path; there is no public constructor. The
+second overload takes the resampling strategy; the first default-constructs it.
 
 ```cpp
 template <std::size_t NP, typename Dynamics, typename Measurement, typename Scalar,
@@ -66,10 +69,40 @@ template <std::size_t NP, typename Dynamics, typename Measurement, typename Scal
           typename Likelihood = detail::gaussian_likelihood<Scalar, NY>>
 auto make_particle_filter(Dynamics dynamics, Measurement measurement,
                           pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{},
-                          Likelihood likelihood = Likelihood{});
+                          Likelihood likelihood = Likelihood{})
+    -> ctrlpp::expected<particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement,
+                                        systematic_resampling, Rng, Likelihood>,
+                        filter_error>;
 ```
 
-Since NP cannot be deduced via CTAD, this factory function provides a convenient construction interface. Passing a custom `Likelihood` as the trailing argument threads it through to the filter.
+`make_particle_filter` is `create` with the particle count named first, since NP
+cannot be deduced from the arguments. Passing a custom `Likelihood` as the
+trailing argument threads it through to the filter.
+
+Rejections, checked in the order `pf_config` declares its fields. The floor is
+`N eps max|M_ij|` for an N x N matrix M, the order of the symmetric
+eigensolver's backward error, below which a computed eigenvalue is
+indistinguishable from zero.
+
+| Enumerator | Condition | Why it is refused |
+|------------|-----------|-------------------|
+| `non_finite_process_noise` | Q has a non-finite entry | No Gaussian to sample the process noise from |
+| `indefinite_process_noise` | Q has an eigenvalue below `-floor` | Not a covariance, so no Gaussian to sample |
+| `non_finite_measurement_noise` | R has a non-finite entry | No density to score a particle with |
+| `indefinite_measurement_noise` | R has an eigenvalue below `-floor` | Not a covariance, so no density to score with |
+| `singular_measurement_noise` | `lambda_min(R) <= NY eps lambda_max(R)` | R is inverted and its log-determinant enters every weight; a singular R has neither |
+| `non_finite_initial_state` | x0 has a non-finite component | Every particle is drawn around it |
+| `non_finite_initial_covariance` | P0 has a non-finite entry | No Gaussian prior to sample |
+| `indefinite_initial_covariance` | P0 has an eigenvalue below `-floor` | Not a covariance, so no Gaussian prior |
+
+Definiteness is a domain condition for this filter, not a numerical-behavior
+question: it samples from N(0, Q) and N(x0, P0) and scores with R's inverse and
+log-determinant. A singular but positive semidefinite Q or P0 is accepted, since
+a rank-one process noise (the discretized white-noise-acceleration model) and a
+point-mass prior are legitimate. The sampling factor is the Cholesky factor when
+the matrix is positive definite, and otherwise `V diag(sqrt(max(lambda, 0)))`
+from the symmetric eigendecomposition, which keeps every zero eigenvalue at zero
+so the particles carry exactly the covariance they were given.
 
 ## Methods
 
@@ -219,7 +252,12 @@ int main()
         .P0 = Eigen::Matrix2d::Identity() * 2.0
     };
 
-    auto pf = ctrlpp::make_particle_filter<NP>(dynamics, measurement, cfg, std::mt19937_64{42});
+    auto created = ctrlpp::make_particle_filter<NP>(dynamics, measurement, cfg, std::mt19937_64{42});
+    if (!created.has_value()) {
+        std::cerr << "invalid particle filter configuration\n";
+        return 1;
+    }
+    auto& pf = *created;
 
     std::mt19937 rng(123);
     std::normal_distribution<> noise(0.0, std::sqrt(0.05));

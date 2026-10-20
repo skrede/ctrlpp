@@ -1,3 +1,5 @@
+#include "hardening_helpers.h"
+
 #include "ctrlpp/estimation/particle_filter.h"
 #include "ctrlpp/estimation/resampling/systematic_resampling.h"
 
@@ -51,7 +53,7 @@ TEST_CASE("particle filter tracks linear system")
     Vector<double, 2> x0 = Vector<double, 2>::Zero();
     Matrix<double, 2, 2> P0 = Matrix<double, 2, 2>::Identity() * 1.0;
 
-    auto pf = make_particle_filter<500>(dyn, meas, pf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}, std::mt19937_64{42});
+    auto pf = ctrlpp::test::constructed(make_particle_filter<500>(dyn, meas, pf_config<double, 2, 1, 1>{.Q = Q, .R = R, .x0 = x0, .P0 = P0}, std::mt19937_64{42}));
 
     double true_pos = 0.0;
     double true_vel = 1.0;
@@ -88,7 +90,7 @@ TEST_CASE("particle filter deterministic with fixed seed")
 
     auto run = [&](std::uint64_t seed)
     {
-        auto pf = make_particle_filter<100>(dyn, meas, cfg, std::mt19937_64{seed});
+        auto pf = ctrlpp::test::constructed(make_particle_filter<100>(dyn, meas, cfg, std::mt19937_64{seed}));
 
         Vector<double, 1> u = Vector<double, 1>::Zero();
         pf.predict(u);
@@ -112,7 +114,7 @@ TEST_CASE("particle filter weighted_mean and map_estimate both accessible")
     pf_linear_dynamics dyn;
     pf_position_measurement meas;
 
-    auto pf = make_particle_filter<50>(dyn, meas, pf_config<double, 2, 1, 1>{}, std::mt19937_64{77});
+    auto pf = ctrlpp::test::constructed(make_particle_filter<50>(dyn, meas, pf_config<double, 2, 1, 1>{}, std::mt19937_64{77}));
 
     Vector<double, 1> u = Vector<double, 1>::Zero();
     pf.predict(u);
@@ -137,7 +139,7 @@ TEST_CASE("particle filter extraction_method config switches state() output")
 
     // Default: weighted_mean
     {
-        auto pf = make_particle_filter<50>(dyn, meas, pf_config<double, 2, 1, 1>{.extraction = extraction_method::weighted_mean}, std::mt19937_64{11});
+        auto pf = ctrlpp::test::constructed(make_particle_filter<50>(dyn, meas, pf_config<double, 2, 1, 1>{.extraction = extraction_method::weighted_mean}, std::mt19937_64{11}));
 
         Vector<double, 1> u = Vector<double, 1>::Zero();
         pf.predict(u);
@@ -153,7 +155,7 @@ TEST_CASE("particle filter extraction_method config switches state() output")
 
     // Map mode
     {
-        auto pf = make_particle_filter<50>(dyn, meas, pf_config<double, 2, 1, 1>{.extraction = extraction_method::map}, std::mt19937_64{11});
+        auto pf = ctrlpp::test::constructed(make_particle_filter<50>(dyn, meas, pf_config<double, 2, 1, 1>{.extraction = extraction_method::map}, std::mt19937_64{11}));
 
         Vector<double, 1> u = Vector<double, 1>::Zero();
         pf.predict(u);
@@ -189,7 +191,8 @@ TEST_CASE("particle filter shares dynamics_model with EKF")
 
     static_assert(dynamics_model<decltype(shared_dynamics), double, 2, 1>);
 
-    particle_filter<double, 2, 1, 1, 50, decltype(shared_dynamics), decltype(meas_fn)> pf(shared_dynamics, meas_fn, pf_config<double, 2, 1, 1>{}, systematic_resampling{}, std::mt19937_64{42});
+    using shared_pf = particle_filter<double, 2, 1, 1, 50, decltype(shared_dynamics), decltype(meas_fn)>;
+    auto pf = ctrlpp::test::constructed(shared_pf::create(shared_dynamics, meas_fn, pf_config<double, 2, 1, 1>{}, systematic_resampling{}, std::mt19937_64{42}));
 
     Vector<double, 1> u = Vector<double, 1>::Zero();
     pf.predict(u);

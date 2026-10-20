@@ -129,14 +129,7 @@ int main()
     witness += fold(ctrlpp::dare<scalar, 2, 1>(a, b, q, r));
     witness += fold(ctrlpp::care<scalar, 2, 1>(a, b, q, r));
 
-    // -- estimation: plain-ctor filters (particle) --
-
-    auto pf = ctrlpp::make_particle_filter<8>(
-        linear_dynamics{}, linear_measurement{}, ctrlpp::pf_config<scalar, 2, 1, 1>{},
-        std::mt19937_64{42U});
-    witness += static_cast<int>(sizeof(pf) > 0);
-
-    // -- estimation: create factories (kalman, ekf, ukf, mekf, manifold_ukf, complementary) --
+    // -- estimation: create factories (kalman, ekf, ukf, mekf, manifold_ukf, complementary, particle) --
 
     ctrlpp::Matrix<scalar, 1, 2> c;
     c << scalar{1}, scalar{0};
@@ -161,6 +154,9 @@ int main()
             attitude_dynamics{}, attitude_measurement{}, ctrlpp::manifold_ukf_config<scalar, 3>{}));
 
     witness += fold(ctrlpp::complementary_filter<scalar>::create(ctrlpp::cf_config<scalar>{}));
+
+    witness += fold(ctrlpp::make_particle_filter<8>(
+        linear_dynamics{}, linear_measurement{}, ctrlpp::pf_config<scalar, 2, 1, 1>{}, std::mt19937_64{42U}));
 
     // -- dsp: biquad expected factory + fir plain ctor --
 

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <random>
 
@@ -57,17 +58,23 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     // Use deterministic RNG seed for reproducibility
     std::mt19937_64 rng(42);
 
-    ctrlpp::particle_filter<double, 2, 1, 2, 50, decltype(dynamics), decltype(measurement)>
-        filter(dynamics, measurement, cfg, rng);
+    using filter_type = ctrlpp::particle_filter<double, 2, 1, 2, 50, decltype(dynamics), decltype(measurement)>;
+    auto filter = filter_type::create(dynamics, measurement, cfg, rng);
+
+    // Q and R are diagonal with entries clamped to [1e-10, 1e4], so both are
+    // positive definite and R's eigenvalue ratio is at least 1e-14, far above the
+    // 2 eps singularity floor: the factory must accept every input.
+    if(!filter)
+        std::abort();
 
     Eigen::Matrix<double, 1, 1> u = Eigen::Matrix<double, 1, 1>::Zero();
 
     for(int step = 0; step < 10; ++step)
     {
-        filter.predict(u);
-        filter.update(z);
+        filter->predict(u);
+        filter->update(z);
 
-        auto x_est = filter.state();
+        auto x_est = filter->state();
         for(int i = 0; i < 2; ++i)
         {
             if(!std::isfinite(x_est(i)))

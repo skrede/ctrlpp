@@ -80,6 +80,48 @@ inline covariance_sqrt_result<Scalar, N> covariance_sqrt(const Eigen::Matrix<Sca
     return {factor, true};
 }
 
+/// @brief Symmetric eigendecomposition of a candidate covariance and the
+/// verdict on whether it is positive semidefinite.
+template <typename Scalar, int N>
+struct psd_decomposition_result
+{
+    Eigen::Matrix<Scalar, N, 1> eigenvalues;
+    Eigen::Matrix<Scalar, N, N> eigenvectors;
+    bool psd;
+};
+
+/// @brief Decide whether M is positive semidefinite, refusing rather than
+/// repairing.
+///
+/// M is PSD when its smallest eigenvalue is at least `-floor`, with the floor
+/// `floor_factor * N * eps * max|M_ij|` that `covariance_sqrt` uses: the order
+/// of the symmetric eigensolver's backward error (Weyl perturbation bound), so
+/// a computed eigenvalue within the floor of zero is indistinguishable from
+/// zero. A non-finite spectrum is not PSD.
+///
+/// @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 8.1
+template <typename Scalar, int N>
+inline auto psd_decomposition(const Eigen::Matrix<Scalar, N, N>& M, Scalar floor_factor = Scalar{1}) -> psd_decomposition_result<Scalar, N>
+{
+    const Scalar eps = std::numeric_limits<Scalar>::epsilon();
+    const Scalar floor = floor_factor * static_cast<Scalar>(N) * eps * M.cwiseAbs().maxCoeff();
+
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix<Scalar, N, N>> eig(symmetrize(M));
+    const bool psd = (eig.eigenvalues().array() >= -floor).all();
+    return {eig.eigenvalues(), eig.eigenvectors(), psd};
+}
+
+/// @brief Factor S with S*S^T equal to the decomposed matrix with its
+/// rounding-level negative eigenvalues set to zero.
+///
+/// Unlike `covariance_sqrt`, a zero eigenvalue stays zero, which is what a
+/// point-mass prior or a rank-one process noise requires.
+template <typename Scalar, int N>
+inline auto psd_factor(const psd_decomposition_result<Scalar, N>& d) -> Eigen::Matrix<Scalar, N, N>
+{
+    return d.eigenvectors * d.eigenvalues.cwiseMax(Scalar{0}).cwiseSqrt().asDiagonal();
+}
+
 }
 
 #endif

@@ -6,11 +6,15 @@
 /// `filter_error` enumerates the structured failure modes of the fallible
 /// factories in the estimation module: the quaternion attitude filters (`mekf`,
 /// `manifold_ukf`, `complementary_filter`), the sigma-point strategies, the
-/// filters that build one from an options aggregate, and the three Kalman
-/// filters' configuration validation. It forms their
-/// `ctrlpp::expected<T, filter_error>` construction contract.
+/// filters that build one from an options aggregate, and the configuration
+/// validation of the three Kalman filters and the particle filter. It forms
+/// their `ctrlpp::expected<T, filter_error>` construction contract.
 
 #include "ctrlpp/expected.h"
+
+#include "ctrlpp/detail/covariance_ops.h"
+
+#include <limits>
 
 namespace ctrlpp
 {
@@ -61,14 +65,36 @@ namespace ctrlpp
 ///                                    recursion, and the recursion has no
 ///                                    mechanism that could return a non-finite
 ///                                    covariance to a finite one.
+///  * indefinite_process_noise      : Q has an eigenvalue below -floor, with
+///                                    floor = N eps max|Q_ij| (the symmetric
+///                                    eigensolver's backward-error order, the
+///                                    convention `detail::covariance_sqrt`
+///                                    cites). Such a matrix is not a covariance,
+///                                    so there is no Gaussian with it to sample
+///                                    the process noise from.
+///  * indefinite_measurement_noise  : R has an eigenvalue below the same floor,
+///                                    so there is no Gaussian density with it to
+///                                    score a measurement against.
+///  * singular_measurement_noise    : lambda_min(R) <= NY eps lambda_max(R), the
+///                                    reciprocal-pivot convention the continuous
+///                                    LQR gain applies to its input weight. R
+///                                    then has no inverse and no finite
+///                                    log-determinant, both of which a filter
+///                                    that evaluates a Gaussian density needs.
+///  * indefinite_initial_covariance : P0 has an eigenvalue below the same floor,
+///                                    so there is no Gaussian prior with it.
 ///
-/// The four configuration enumerators state finiteness and nothing else. An
-/// ill-conditioned but finite configuration -- a covariance with entries many
-/// orders of magnitude apart, or a singular P0 -- is a legitimate, deliberately
-/// posed problem and is accepted: conditioning is a numerical-behavior question
-/// and finiteness is the domain condition. Symmetry and positive definiteness
-/// are likewise not tested here, because the filters do not promise them of the
-/// configuration they are handed.
+/// The Kalman filters validate finiteness only. An ill-conditioned but finite
+/// configuration, such as a covariance with entries many orders of magnitude
+/// apart or a singular P0, is a legitimate, deliberately posed problem for them
+/// and is accepted: conditioning is a numerical-behavior question and finiteness
+/// is the domain condition.
+///
+/// The particle filter additionally refuses an indefinite Q, R or P0 and a
+/// singular R, because it samples from N(0, Q) and N(x0, P0) and scores every
+/// particle with R's inverse and log-determinant. A singular but positive
+/// semidefinite Q or P0 is still accepted: it is a rank-one process noise or a
+/// point-mass prior, both of which have a Gaussian to sample.
 enum class filter_error
 {
     degenerate_quaternion,
@@ -78,6 +104,10 @@ enum class filter_error
     non_finite_measurement_noise,
     non_finite_initial_state,
     non_finite_initial_covariance,
+    indefinite_process_noise,
+    indefinite_measurement_noise,
+    singular_measurement_noise,
+    indefinite_initial_covariance,
 };
 
 namespace detail
@@ -108,6 +138,28 @@ auto validate_filter_configuration(const Process& Q, const Measurement& R, const
     if(!P0.allFinite())
         return ctrlpp::unexpected(filter_error::non_finite_initial_covariance);
     return {};
+}
+
+/// @brief Refuse a candidate covariance that is non-finite, then one that is
+/// not positive semidefinite, naming the matrix through the two enumerators the
+/// caller passes; on success hand back the decomposition for factoring.
+template <typename Scalar, int N>
+auto checked_covariance(const Eigen::Matrix<Scalar, N, N>& M, filter_error non_finite, filter_error indefinite) -> ctrlpp::expected<psd_decomposition_result<Scalar, N>, filter_error>
+{
+    if(!M.allFinite())
+        return ctrlpp::unexpected(non_finite);
+    auto decomposition = psd_decomposition(M);
+    if(!decomposition.psd)
+        return ctrlpp::unexpected(indefinite);
+    return decomposition;
+}
+
+/// @brief Whether a decomposed positive semidefinite matrix is invertible:
+/// lambda_min > N eps lambda_max, written so that a NaN spectrum is singular.
+template <typename Scalar, int N>
+auto nonsingular_spectrum(const psd_decomposition_result<Scalar, N>& d) -> bool
+{
+    return d.eigenvalues.minCoeff() > static_cast<Scalar>(N) * std::numeric_limits<Scalar>::epsilon() * d.eigenvalues.maxCoeff();
 }
 
 }

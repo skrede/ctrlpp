@@ -1,3 +1,5 @@
+#include "hardening_helpers.h"
+
 #include "ctrlpp/estimation/particle_filter.h"
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/resampling/multinomial_resampling.h"
@@ -57,8 +59,8 @@ TEST_CASE("particle filter ESS-adaptive resampling triggers correctly")
     Matrix<double, 1, 1> R;
     R << 0.001; // Very small measurement noise -> high info -> ESS drops
 
-    auto pf = make_particle_filter<200>(
-        dyn, meas, pf_config<double, 2, 1, 1>{.Q = Matrix<double, 2, 2>::Identity() * 0.01, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity() * 10.0}, std::mt19937_64{55});
+    auto pf = ctrlpp::test::constructed(make_particle_filter<200>(
+        dyn, meas, pf_config<double, 2, 1, 1>{.Q = Matrix<double, 2, 2>::Identity() * 0.01, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity() * 10.0}, std::mt19937_64{55}));
 
     Vector<double, 1> u = Vector<double, 1>::Zero();
     pf.predict(u);
@@ -82,11 +84,10 @@ TEST_CASE("particle filter roughening prevents impoverishment")
     Matrix<double, 1, 1> R;
     R << 0.001;
 
-    auto pf =
-        make_particle_filter<100>(dyn,
-                                  meas,
-                                  pf_config<double, 2, 1, 1>{.Q = Matrix<double, 2, 2>::Identity() * 0.01, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity() * 10.0, .roughening_scale = 0.5},
-                                  std::mt19937_64{88});
+    auto pf = ctrlpp::test::constructed(make_particle_filter<100>(
+        dyn, meas,
+        pf_config<double, 2, 1, 1>{.Q = Matrix<double, 2, 2>::Identity() * 0.01, .R = R, .x0 = Vector<double, 2>::Zero(), .P0 = Matrix<double, 2, 2>::Identity() * 10.0, .roughening_scale = 0.5},
+        std::mt19937_64{88}));
 
     Vector<double, 1> u = Vector<double, 1>::Zero();
     pf.predict(u);
@@ -126,9 +127,8 @@ TEST_CASE("particle filter with multinomial resampling")
     pf_linear_dynamics dyn;
     pf_position_measurement meas;
 
-    particle_filter<double, 2, 1, 1, 300,
-                    pf_linear_dynamics, pf_position_measurement,
-                    multinomial_resampling> pf(
+    using multinomial_pf = particle_filter<double, 2, 1, 1, 300, pf_linear_dynamics, pf_position_measurement, multinomial_resampling>;
+    auto pf = ctrlpp::test::constructed(multinomial_pf::create(
         dyn, meas,
         pf_config<double, 2, 1, 1>{
             .Q = Matrix<double, 2, 2>::Identity() * 0.01,
@@ -137,7 +137,7 @@ TEST_CASE("particle filter with multinomial resampling")
             .P0 = Matrix<double, 2, 2>::Identity()
         },
         multinomial_resampling{},
-        std::mt19937_64{321});
+        std::mt19937_64{321}));
 
     double true_pos = 0.0;
     double true_vel = 1.0;
@@ -164,14 +164,14 @@ TEST_CASE("particle filter log-weight stability over many iterations")
     pf_linear_dynamics dyn;
     pf_position_measurement meas;
 
-    auto pf = make_particle_filter<200>(
+    auto pf = ctrlpp::test::constructed(make_particle_filter<200>(
         dyn, meas,
         pf_config<double, 2, 1, 1>{
             .Q = Matrix<double, 2, 2>::Identity() * 0.01,
             .R = ([]{ Matrix<double, 1, 1> R; R << 0.5; return R; })(),
             .weights = weight_representation::log
         },
-        std::mt19937_64{999});
+        std::mt19937_64{999}));
 
     for(int i = 0; i < 200; ++i)
     {
@@ -193,14 +193,14 @@ TEST_CASE("particle filter linear-weight mode works for small particle count")
     pf_linear_dynamics dyn;
     pf_position_measurement meas;
 
-    auto pf = make_particle_filter<50>(
+    auto pf = ctrlpp::test::constructed(make_particle_filter<50>(
         dyn, meas,
         pf_config<double, 2, 1, 1>{
             .Q = Matrix<double, 2, 2>::Identity() * 0.01,
             .R = ([]{ Matrix<double, 1, 1> R; R << 0.5; return R; })(),
             .weights = weight_representation::linear
         },
-        std::mt19937_64{777});
+        std::mt19937_64{777}));
 
     for(int i = 0; i < 20; ++i)
     {

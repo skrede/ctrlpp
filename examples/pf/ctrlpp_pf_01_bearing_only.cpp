@@ -115,7 +115,13 @@ int main()
 
     ctrlpp::pf_config<double, 4, 1, 1> config{.Q = Q, .R = R, .x0 = x0, .P0 = P0};
 
-    auto filter = ctrlpp::make_particle_filter<n_particles>(dyn, meas, config, std::mt19937_64{42}, wrapped_bearing_likelihood{});
+    auto filter_result = ctrlpp::make_particle_filter<n_particles>(dyn, meas, config, std::mt19937_64{42}, wrapped_bearing_likelihood{});
+    if(!filter_result.has_value())
+    {
+        std::cerr << "invalid particle filter configuration\n";
+        return 1;
+    }
+    auto& filter = *filter_result;
 
     // True initial state (offset from estimate to test convergence)
     ctrlpp::Vector<double, 4> x_true;

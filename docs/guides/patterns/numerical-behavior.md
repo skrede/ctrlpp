@@ -83,6 +83,13 @@ and not a domain violation. Symmetry and positive definiteness are not tested
 either, because the types do not promise them of the configuration they are
 handed.
 
+`particle_filter` is built the same way, through `create` or
+`make_particle_filter`, and draws a different boundary for a stated reason: it
+samples from `Q` and `P0` and scores with `R`'s inverse and log-determinant, so
+it also refuses an indefinite `Q`, `R` or `P0` and a singular `R`. A singular
+positive semidefinite `Q` or `P0` is still accepted. The refusals are listed in
+[particle-filter.md](../../api/estimation/particle-filter.md).
+
 **Still propagate faithfully,** with no rejection channel:
 
 - **`predict` on every one of those seven types.** Its input is a command the
@@ -340,7 +347,7 @@ otherwise produce silent corruption through intermediate overflow:
 | Layer | Behavior |
 |---|---|
 | Inputs (your code) | Validate at system boundaries |
-| Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; finiteness only, so ill-conditioned-but-finite configurations are accepted |
+| Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; finiteness only, so ill-conditioned-but-finite configurations are accepted. `particle_filter` (through `create` or `make_particle_filter`, likewise its only path) additionally refuses an indefinite `Q`, `R` or `P0` and a singular `R`, because it samples from `Q` and `P0` and scores with `R`'s inverse and log-determinant; a singular positive semidefinite `Q` or `P0` is accepted and sampled without lifting its zero eigenvalues |
 | Algorithm internals | Library uses numerically stable formulations |
 | Outputs | NaN/Inf propagates faithfully, never silently clamped, except on the surfaces named above |
 | Carried estimator state | The seven `update` surfaces named above reject a non-finite operand before mutating anything |

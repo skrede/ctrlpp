@@ -32,6 +32,14 @@ inline const char *describe(filter_error e)
             return "initial state is not finite";
         case filter_error::non_finite_initial_covariance:
             return "initial covariance is not finite";
+        case filter_error::indefinite_process_noise:
+            return "process noise is not positive semidefinite";
+        case filter_error::indefinite_measurement_noise:
+            return "measurement noise is not positive semidefinite";
+        case filter_error::singular_measurement_noise:
+            return "measurement noise is singular";
+        case filter_error::indefinite_initial_covariance:
+            return "initial covariance is not positive semidefinite";
     }
     return "unknown";
 }

@@ -181,8 +181,8 @@ TEST_CASE("particle filter instantiates and steps at Scalar=float", "[float][anc
 {
     constexpr std::size_t NP = 16;
 
-    auto filt = make_particle_filter<NP>(
-        linear_dynamics_f{}, position_measurement_f{}, pf_config<float, NX, NU, NY>{}, std::mt19937_64{42U});
+    auto filt = ctrlpp::test::constructed(make_particle_filter<NP>(
+        linear_dynamics_f{}, position_measurement_f{}, pf_config<float, NX, NU, NY>{}, std::mt19937_64{42U}));
 
     filt.predict(Vector<float, NU>::Zero());
     filt.update(Vector<float, NY>::Constant(0.5f));
