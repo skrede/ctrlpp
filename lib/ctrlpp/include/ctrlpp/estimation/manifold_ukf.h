@@ -193,8 +193,11 @@ public:
     ///
     /// A zero or non-finite `config.q0` norm makes `q0.normalized()` produce
     /// NaN, which would silently poison the whole filter state at construction;
-    /// such a config is rejected with `filter_error::degenerate_quaternion`.
-    /// Any finite nonzero quaternion is accepted and normalized.
+    /// such a config is rejected with `filter_error::degenerate_quaternion`. A
+    /// q0 whose norm differs from one by more than the rounding bound
+    /// max(4 eps, 4 denorm_min) is rejected with
+    /// `filter_error::non_unit_quaternion`; a norm defect within it is drift
+    /// and is normalized away.
     ///
     /// Q, R and P0 are then refused, in that order, when non-finite,
     /// structurally asymmetric or indefinite, as every Kalman-family factory
@@ -203,9 +206,8 @@ public:
     /// singular positive semidefinite matrix is accepted.
     static auto create(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<manifold_ukf, filter_error>
     {
-        const Scalar q0_norm = config.q0.norm();
-        if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
-            return ctrlpp::unexpected(filter_error::degenerate_quaternion);
+        if(const auto attitude = detail::checked_unit_quaternion(config.q0); !attitude)
+            return ctrlpp::unexpected(attitude.error());
         if(const auto noise = detail::validate_noise(config.Q, config.R); !noise)
             return ctrlpp::unexpected(noise.error());
         if(const auto prior = detail::validate_initial_covariance(config.P0); !prior)

@@ -135,23 +135,29 @@ public:
     ///
     /// A zero or non-finite `config.q0` norm makes `q0.normalized()` produce
     /// NaN, which would silently poison the whole filter state at construction;
-    /// such a config is rejected with `filter_error::degenerate_quaternion`.
-    /// Any finite nonzero quaternion is accepted and normalized.
+    /// such a config is rejected with `filter_error::degenerate_quaternion`. A
+    /// q0 whose norm differs from one by more than the rounding bound
+    /// max(4 eps, 4 denorm_min) is rejected with
+    /// `filter_error::non_unit_quaternion`; a norm defect within it is drift
+    /// and is normalized away.
     ///
     /// Q, R and P0 are then refused when non-finite, structurally asymmetric
     /// or indefinite, and the initial bias b0 when non-finite (as
-    /// `filter_error::non_finite_initial_state`), in the order the config
+    /// `filter_error::non_finite_initial_bias`), in the order the config
     /// declares them, as every Kalman-family factory refuses them (see
     /// `filter_error`). A drift-level asymmetry is stored as its symmetrized
     /// matrix, on which the definiteness check runs, and a singular positive
     /// semidefinite matrix is accepted.
     static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config) -> ctrlpp::expected<mekf, filter_error>
     {
-        const Scalar q0_norm = config.q0.norm();
-        if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
-            return ctrlpp::unexpected(filter_error::degenerate_quaternion);
-        if(const auto valid = detail::validate_filter_configuration(config.Q, config.R, config.b0, config.P0); !valid)
-            return ctrlpp::unexpected(valid.error());
+        if(const auto attitude = detail::checked_unit_quaternion(config.q0); !attitude)
+            return ctrlpp::unexpected(attitude.error());
+        if(const auto noise = detail::validate_noise(config.Q, config.R); !noise)
+            return ctrlpp::unexpected(noise.error());
+        if(!config.b0.allFinite())
+            return ctrlpp::unexpected(filter_error::non_finite_initial_bias);
+        if(const auto prior = detail::validate_initial_covariance(config.P0); !prior)
+            return ctrlpp::unexpected(prior.error());
         return mekf{validated_tag{}, std::move(measurement), std::move(config)};
     }
 

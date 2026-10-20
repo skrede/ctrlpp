@@ -458,15 +458,40 @@ TEST_CASE("complementary filter create rejects a zero initial quaternion", "[cf]
     CHECK(cf.error() == filter_error::degenerate_quaternion);
 }
 
-TEST_CASE("complementary filter create accepts and normalizes a non-unit quaternion", "[cf]")
+TEST_CASE("complementary filter create refuses a quaternion that is not unit within rounding", "[cf]")
 {
-    // The guard rejects only degeneracy: any finite nonzero quaternion is
-    // accepted and brought onto the unit sphere at construction, since the
-    // correction terms treat the stored quaternion as a unit rotation.
     Eigen::Quaterniond q0{2.0, 0.0, 0.0, 0.0};
     cf_config<double> cfg{.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = q0};
 
     auto cf = complementary_filter<double>::create(cfg);
-    REQUIRE(cf.has_value());
-    CHECK((cf->attitude().coeffs().array() == q0.normalized().coeffs().array()).all());
+    REQUIRE_FALSE(cf.has_value());
+    CHECK(cf.error() == filter_error::non_unit_quaternion);
+}
+
+TEST_CASE("complementary filter create normalizes a quaternion whose norm drifts within rounding", "[cf]")
+{
+    // Each component 0.5 + eps squares to 0.25 + eps once rounded, so the norm
+    // is exactly 1 + 2 eps and the normalized quaternion exactly 0.5 each.
+    const double component = 0.5 + std::numeric_limits<double>::epsilon();
+    const Eigen::Quaterniond drifted{component, component, component, component};
+    REQUIRE(drifted.norm() == 1.0 + 2.0 * std::numeric_limits<double>::epsilon());
+    const Eigen::Quaterniond unit = drifted.normalized();
+
+    auto created = complementary_filter<double>::create({.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = drifted});
+    auto twin_created = complementary_filter<double>::create({.k_p = 2.0, .k_i = 0.005, .dt = 0.01, .q0 = unit});
+    REQUIRE(created.has_value());
+    REQUIRE(twin_created.has_value());
+    auto& cf = *created;
+    auto& twin = *twin_created;
+    REQUIRE((cf.attitude().coeffs().array() == unit.coeffs().array()).all());
+
+    for(int k = 0; k < 10; ++k)
+    {
+        const Vector<double, 3> gyro{0.2, -0.1, 0.3};
+        const Vector<double, 3> accel = Vector<double, 3>{0.05, 0.01 * k, 1.0}.normalized();
+        REQUIRE(cf.update(gyro, accel, 0.01).has_value());
+        REQUIRE(twin.update(gyro, accel, 0.01).has_value());
+    }
+    REQUIRE((cf.attitude().coeffs().array() == twin.attitude().coeffs().array()).all());
+    REQUIRE((cf.bias().array() == twin.bias().array()).all());
 }

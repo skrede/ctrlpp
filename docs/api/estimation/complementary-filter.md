@@ -42,7 +42,7 @@ struct cf_config
 | `k_p` | `Scalar` | `2.0` | Proportional correction gain. Higher values trust the accelerometer more. |
 | `k_i` | `Scalar` | `0.005` | Integral correction gain for online gyroscope bias estimation. |
 | `dt` | `Scalar` | `0.01` | Default time step used by the ObserverPolicy interface. |
-| `q0` | `Eigen::Quaternion<Scalar>` | identity | Initial orientation estimate. |
+| `q0` | `Eigen::Quaternion<Scalar>` | identity | Initial orientation estimate, unit within rounding. |
 
 ## Construction
 
@@ -53,7 +53,7 @@ static auto create(cf_config<Scalar> config)
     -> ctrlpp::expected<complementary_filter, filter_error>;
 ```
 
-`create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion before it seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the filter state. Any finite nonzero `q0` is accepted and normalized onto the unit sphere at construction; the gravity and magnetic correction terms treat the stored quaternion as a unit rotation. As a static member of a class template, `create` requires explicit template arguments, e.g. `complementary_filter<double>::create(cfg)`.
+`create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion before it seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the filter state. A `q0` whose norm differs from one by more than the rounding bound `max(4 eps, 4 denorm_min)` is rejected with `filter_error::non_unit_quaternion`: a rotation quaternion is unit by definition, so `(2, 0, 0, 0)` names no attitude. A norm defect within the bound is rounding drift and is normalized away at construction, so the gravity and magnetic correction terms, which treat the stored quaternion as a unit rotation, start from one; every quaternion produced by a working-precision normalization, an angle-axis conversion, `so3::exp` or a composition of such rotations is within it. The convention and its count are in [Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused). As a static member of a class template, `create` requires explicit template arguments, e.g. `complementary_filter<double>::create(cfg)`.
 
 ## Methods
 

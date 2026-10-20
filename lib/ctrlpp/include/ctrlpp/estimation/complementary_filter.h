@@ -18,6 +18,8 @@
 #include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/estimation_types.h"
 
+#include "ctrlpp/estimation/detail/filter_configuration.h"
+
 #include <Eigen/Geometry>
 
 #include <cmath>
@@ -101,17 +103,16 @@ public:
     ///
     /// A zero or non-finite `config.q0` norm cannot be normalized without
     /// producing NaN, so such a config is rejected with
-    /// `filter_error::degenerate_quaternion`. Any finite nonzero quaternion is
-    /// accepted and normalized: the correction terms treat the stored
-    /// quaternion as a unit rotation via `toRotationMatrix()`, so a non-unit
-    /// q0 is brought onto the unit sphere at construction (previously it was
-    /// stored raw and a non-unit q0 skewed the first gravity and magnetic
-    /// references until the first gyro integration renormalized it).
+    /// `filter_error::degenerate_quaternion`. A q0 whose norm differs from one
+    /// by more than the rounding bound max(4 eps, 4 denorm_min) names no
+    /// attitude and is rejected with `filter_error::non_unit_quaternion`. A
+    /// norm defect within the bound is drift and is normalized away, so the
+    /// correction terms, which treat the stored quaternion as a unit rotation
+    /// via `toRotationMatrix()`, start from one.
     static auto create(cf_config<Scalar> config) -> ctrlpp::expected<complementary_filter, filter_error>
     {
-        const Scalar q0_norm = config.q0.norm();
-        if(!(q0_norm > Scalar{0}) || !std::isfinite(q0_norm))
-            return ctrlpp::unexpected(filter_error::degenerate_quaternion);
+        if(const auto attitude = detail::checked_unit_quaternion(config.q0); !attitude)
+            return ctrlpp::unexpected(attitude.error());
         return complementary_filter{validated_tag{}, std::move(config)};
     }
 

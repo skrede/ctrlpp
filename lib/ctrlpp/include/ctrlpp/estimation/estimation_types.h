@@ -19,10 +19,9 @@ namespace ctrlpp
 ///  * degenerate_quaternion         : the initial quaternion q0 has zero or
 ///                                    non-finite norm, so normalizing it would
 ///                                    produce NaN and silently poison the filter
-///                                    state at construction. A rotation
-///                                    quaternion is nonzero by definition; any
-///                                    finite nonzero q0 normalizes to a valid
-///                                    unit quaternion and is accepted.
+///                                    state at construction. It is reported
+///                                    ahead of the unit-norm check, which a
+///                                    finite nonzero q0 is judged by next.
 ///  * non_positive_sigma_spread     : the sigma-point spread parameter is not
 ///                                    finite and strictly positive. It is the
 ///                                    divisor of the sigma-point weight
@@ -88,6 +87,19 @@ namespace ctrlpp
 ///                                    but a different matrix in each triangle.
 ///  * asymmetric_measurement_noise  : R's asymmetry exceeds the same bound.
 ///  * asymmetric_initial_covariance : P0's asymmetry exceeds the same bound.
+///  * non_unit_quaternion           : | ||q0|| - 1 | exceeds the rounding bound
+///                                    max(4 eps, 4 denorm_min). A rotation
+///                                    quaternion is unit by definition, and a
+///                                    norm defect beyond the rounding of a
+///                                    normalization is not drift but a
+///                                    quaternion that names no attitude. A
+///                                    defect within the bound is normalized
+///                                    away at construction.
+///  * non_finite_initial_bias       : the initial bias b0 of the multiplicative
+///                                    EKF has a non-finite component. It seeds
+///                                    the bias estimate, which is part of the
+///                                    carried state, so every later attitude
+///                                    is formed from it.
 ///
 /// Every filter that takes a Q, R or P0 refuses one that is non-finite,
 /// structurally asymmetric or indefinite, in that order for each matrix: a
@@ -121,6 +133,8 @@ enum class filter_error
     asymmetric_process_noise,
     asymmetric_measurement_noise,
     asymmetric_initial_covariance,
+    non_unit_quaternion,
+    non_finite_initial_bias,
 };
 
 }

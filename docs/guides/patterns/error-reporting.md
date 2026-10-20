@@ -279,9 +279,18 @@ there is well defined and the consequence is an estimator that silently stops
 adapting, so it is enforced as the type's stated `(0, 1]` contract, not as
 arithmetic.
 
-`mekf` and `manifold_ukf` apply the same checks to their `Q`, `R` and `P0` (and
-`mekf` the finiteness of its initial bias, as `non_finite_initial_state`) after
-the initial quaternion. `kalman_filter::set_noise` and
+`mekf` and `manifold_ukf` apply the same checks to their `Q`, `R` and `P0` after
+the initial quaternion, and `mekf` refuses a non-finite initial bias between `R`
+and `P0`, the order its configuration declares them, with its own
+`non_finite_initial_bias`: the bias seeds part of the carried state, but it is
+not the initial state `x0` the other filters take. All three attitude factories,
+`mekf`, `manifold_ukf` and `complementary_filter`, check the initial quaternion
+first: a zero or non-finite norm is `degenerate_quaternion`, and a norm that
+differs from one by more than the rounding bound `max(4 eps, 4 denorm_min)` is
+`non_unit_quaternion`, because a rotation quaternion is unit by definition. A
+norm defect within the bound is drift and is normalized away, under the same
+[convention](numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused)
+as a covariance's asymmetry. `kalman_filter::set_noise` and
 `kalman_filter::reset_covariance`, the two setters that replace a covariance
 after construction, return `ctrlpp::expected<void, filter_error>` and refuse
 with the same enumerators before assigning anything; `set_noise` validates both

@@ -227,16 +227,47 @@ TEST_CASE("mekf create rejects a zero initial quaternion", "[mekf]")
     REQUIRE(filter.error() == filter_error::degenerate_quaternion);
 }
 
-TEST_CASE("mekf create accepts a non-unit nonzero quaternion", "[mekf]")
+TEST_CASE("mekf create refuses a quaternion that is not unit within rounding", "[mekf]")
 {
-    // The guard rejects only degeneracy: any finite nonzero quaternion is
-    // normalized onto the unit sphere at construction.
     mekf_config<double, 3, 3> cfg;
     cfg.q0 = Eigen::Quaternion<double>{2.0, 0.0, 0.0, 0.0};
 
     auto filter = Mekf3::create(gravity_measurement{}, cfg);
-    REQUIRE(filter.has_value());
-    REQUIRE((filter->attitude().coeffs().array() == cfg.q0.normalized().coeffs().array()).all());
+    REQUIRE_FALSE(filter.has_value());
+    REQUIRE(filter.error() == filter_error::non_unit_quaternion);
+}
+
+TEST_CASE("mekf create normalizes a quaternion whose norm drifts within rounding", "[mekf]")
+{
+    // Each component 0.5 + eps squares to 0.25 + eps once rounded, so the norm
+    // is exactly 1 + 2 eps and the normalized quaternion exactly 0.5 each.
+    const double component = 0.5 + std::numeric_limits<double>::epsilon();
+    mekf_config<double, 3, 3> drifted;
+    drifted.q0 = Eigen::Quaternion<double>{component, component, component, component};
+    REQUIRE(drifted.q0.norm() == 1.0 + 2.0 * std::numeric_limits<double>::epsilon());
+    mekf_config<double, 3, 3> unit = drifted;
+    unit.q0 = drifted.q0.normalized();
+
+    auto created = Mekf3::create(gravity_measurement{}, drifted);
+    auto twin_created = Mekf3::create(gravity_measurement{}, unit);
+    REQUIRE(created.has_value());
+    REQUIRE(twin_created.has_value());
+    auto& filter = *created;
+    auto& twin = *twin_created;
+    REQUIRE((filter.attitude().coeffs().array() == unit.q0.coeffs().array()).all());
+
+    for(int k = 0; k < 10; ++k)
+    {
+        const Vector<double, 3> omega{0.2, -0.1, 0.3};
+        const Vector<double, 3> z = Vector<double, 3>{0.05, 0.01 * k, 1.0}.normalized();
+        filter.predict(omega);
+        twin.predict(omega);
+        REQUIRE(filter.update(z).has_value());
+        REQUIRE(twin.update(z).has_value());
+    }
+    REQUIRE((filter.attitude().coeffs().array() == twin.attitude().coeffs().array()).all());
+    REQUIRE((filter.bias().array() == twin.bias().array()).all());
+    REQUIRE((filter.covariance().array() == twin.covariance().array()).all());
 }
 
 TEST_CASE("mekf create refuses a noise, bias or initial covariance it cannot use", "[mekf]")
@@ -276,11 +307,39 @@ TEST_CASE("mekf create refuses a noise, bias or initial covariance it cannot use
         expected = filter_error::indefinite_measurement_noise;
     }
 
+    SECTION("a non-unit quaternion is reported ahead of the matrices")
+    {
+        cfg.q0 = Eigen::Quaternion<double>{2.0, 0.0, 0.0, 0.0};
+        cfg.Q = indefinite;
+        expected = filter_error::non_unit_quaternion;
+    }
+
+    SECTION("a non-finite process noise is reported ahead of a non-finite initial bias")
+    {
+        cfg.Q(0, 0) = std::numeric_limits<double>::quiet_NaN();
+        cfg.b0(1) = std::numeric_limits<double>::quiet_NaN();
+        expected = filter_error::non_finite_process_noise;
+    }
+
+    SECTION("a non-finite measurement noise is reported ahead of a non-finite initial bias")
+    {
+        cfg.R(1, 1) = std::numeric_limits<double>::quiet_NaN();
+        cfg.b0(1) = std::numeric_limits<double>::quiet_NaN();
+        expected = filter_error::non_finite_measurement_noise;
+    }
+
     SECTION("a non-finite initial bias is reported ahead of an indefinite initial covariance")
     {
         cfg.b0(1) = std::numeric_limits<double>::quiet_NaN();
         cfg.P0 = indefinite;
-        expected = filter_error::non_finite_initial_state;
+        expected = filter_error::non_finite_initial_bias;
+    }
+
+    SECTION("a non-finite initial bias is reported ahead of a non-finite initial covariance")
+    {
+        cfg.b0(2) = std::numeric_limits<double>::quiet_NaN();
+        cfg.P0(0, 0) = std::numeric_limits<double>::quiet_NaN();
+        expected = filter_error::non_finite_initial_bias;
     }
 
     SECTION("non-finite initial covariance")

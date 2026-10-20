@@ -8,12 +8,12 @@
 //  * A rejected measurement leaves the attitude, the covariance and the
 //    quaternion norm BITWISE unchanged, names its enumerator, and does not
 //    degrade the health status.
-//  * "Normalizes a non-unit initial quaternion" is asserted as what that phrase
-//    MEANS: a filter configured with a non-unit quaternion is BITWISE
-//    indistinguishable, in state and in covariance, from one configured with
-//    its normalized form, over a run driven by a non-trivial rate and a
-//    non-trivial measurement. Finiteness, or even a unit norm, would pass for a
-//    filter that normalized to the wrong rotation.
+//  * "Normalizes an initial quaternion whose norm drifts" is asserted as what
+//    that phrase MEANS: a filter configured with a quaternion whose norm is off
+//    one by rounding is BITWISE indistinguishable, in state and in covariance,
+//    from one configured with its normalized form, over a run driven by a
+//    non-trivial rate and a non-trivial measurement. Finiteness, or even a unit
+//    norm, would pass for a filter that normalized to the wrong rotation.
 //  * Positive definiteness carries NO negative floor and symmetry is asserted
 //    EXACTLY, on the same argument as the multiplicative filter next door.
 //  * Convergence is asserted as an exact fixed point at the truth, a no-floor
@@ -176,7 +176,7 @@ auto sigma_cancellation_amplification() -> double
 
 }
 
-TEST_CASE("Manifold UKF non-unit quaternion input normalizes",
+TEST_CASE("Manifold UKF normalizes a drifted quaternion input and refuses a non-unit one",
           "[manifold_ukf][hardening][negative]")
 {
     // "Normalizes" means the filter behaves as though it had been handed the
@@ -191,16 +191,20 @@ TEST_CASE("Manifold UKF non-unit quaternion input normalizes",
         return cfg;
     };
 
-    // Doubling every coefficient of the identity: the normalization is a
-    // division by exactly two, which is exact in a binary radix, so the seeded
-    // attitude is bitwise the identity.
-    auto doubled = make_filter(configured(Eigen::Quaterniond(2.0, 0.0, 0.0, 0.0)));
-    CHECK(doubled.attitude().coeffs() == Eigen::Quaterniond::Identity().coeffs());
+    // Doubling every coefficient of the identity is not drift: a quaternion of
+    // norm two names no attitude and is refused rather than normalized.
+    const auto doubled = MukfType::create(simple_rotation_dynamics{}, gravity_meas{},
+                                          configured(Eigen::Quaterniond(2.0, 0.0, 0.0, 0.0)));
+    REQUIRE_FALSE(doubled.has_value());
+    CHECK(doubled.error() == ctrlpp::filter_error::non_unit_quaternion);
 
-    // And a quaternion whose normalization is not exact, driven by a rate and a
-    // measurement that both break every symmetry of the fixture, so an
-    // agreement here cannot come from both filters sitting still.
-    const Eigen::Quaterniond skew(3.0, 1.0, -2.0, 0.5);
+    // A quaternion whose norm drifts by rounding and whose normalization is not
+    // exact, driven by a rate and a measurement that both break every symmetry
+    // of the fixture, so an agreement here cannot come from both filters sitting
+    // still.
+    const Eigen::Quaterniond unit = Eigen::Quaterniond(3.0, 1.0, -2.0, 0.5).normalized();
+    const Eigen::Quaterniond skew(unit.coeffs() * (1.0 + std::numeric_limits<double>::epsilon()));
+    REQUIRE_FALSE(skew.coeffs() == skew.normalized().coeffs());
     auto raw = make_filter(configured(skew));
     auto pre_normalized = make_filter(configured(skew.normalized()));
 

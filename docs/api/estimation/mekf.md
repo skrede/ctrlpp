@@ -48,7 +48,7 @@ Where NE = 3 + NB (3 rotation dimensions + NB bias dimensions).
 |-------|------|---------|-------------|
 | `Q` | `Matrix<Scalar, NE, NE>` | Identity | Error-state process noise covariance |
 | `R` | `Matrix<Scalar, NY, NY>` | Identity | Measurement noise covariance |
-| `q0` | `Eigen::Quaternion<Scalar>` | Identity | Initial quaternion estimate |
+| `q0` | `Eigen::Quaternion<Scalar>` | Identity | Initial quaternion estimate, unit within rounding |
 | `b0` | `Vector<Scalar, NB>` | Zero | Initial gyroscope bias estimate |
 | `P0` | `Matrix<Scalar, NE, NE>` | Identity | Initial error-state covariance |
 | `dt` | `Scalar` | `0.01` | Default time step for the single-argument `predict()` overload |
@@ -63,7 +63,7 @@ static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config)
     -> ctrlpp::expected<mekf, filter_error>;
 ```
 
-`create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. Any finite nonzero `q0` is accepted and normalized. As a static member of a class template, `create` requires explicit template arguments, e.g. `mekf<double, 3, 3, Measurement>::create(m, cfg)`.
+`create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion first, before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. A `q0` whose norm differs from one by more than the rounding bound `max(4 eps, 4 denorm_min)` is rejected with `filter_error::non_unit_quaternion`: a rotation quaternion is unit by definition, so `(2, 0, 0, 0)` names no attitude. A norm defect within the bound is rounding drift, the residue of the arithmetic that formed `q0`, and is normalized away; every quaternion produced by a working-precision normalization, an angle-axis conversion, `so3::exp` or a composition of such rotations is within it. The convention and its count are in [Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused). As a static member of a class template, `create` requires explicit template arguments, e.g. `mekf<double, 3, 3, Measurement>::create(m, cfg)`.
 
 After the quaternion, `create` checks the remaining fields in the order the config declares them, each matrix for finiteness, then for symmetry, then for definiteness, as every Kalman-family factory does:
 
@@ -71,7 +71,7 @@ After the quaternion, `create` checks the remaining fields in the order the conf
 |------------|-----------|
 | `filter_error::non_finite_process_noise` / `asymmetric_process_noise` / `indefinite_process_noise` | `Q` has a non-finite entry / an asymmetry beyond the rounding bound / an eigenvalue below `-floor` |
 | `filter_error::non_finite_measurement_noise` / `asymmetric_measurement_noise` / `indefinite_measurement_noise` | `R` has a non-finite entry / an asymmetry beyond the rounding bound / an eigenvalue below `-floor` |
-| `filter_error::non_finite_initial_state` | `b0` has a non-finite component |
+| `filter_error::non_finite_initial_bias` | `b0` has a non-finite component |
 | `filter_error::non_finite_initial_covariance` / `asymmetric_initial_covariance` / `indefinite_initial_covariance` | `P0` has a non-finite entry / an asymmetry beyond the rounding bound / an eigenvalue below `-floor` |
 
 The bound is `max(N eps max|M_ij|, N denorm_min)` for both checks; as a definiteness floor it is the order of the symmetric eigensolver's backward error, kept from underflowing to zero. An asymmetry `max|M_ij - M_ji|` within it is rounding drift: the matrix is accepted, stored as its symmetrized form (each differing pair replaced by its midpoint), and judged for definiteness as that matrix. A matrix that is not symmetric positive semidefinite is not a covariance; the convention and its count are in [Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused). A singular positive semidefinite matrix, such as `Q = 0` for a constant bias or a point-mass `P0`, is accepted. `dt` and `numerical_eps` are not validated here.

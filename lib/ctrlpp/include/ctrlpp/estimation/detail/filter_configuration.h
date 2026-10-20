@@ -8,7 +8,9 @@
 #include "ctrlpp/detail/covariance_ops.h"
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 
+#include <cmath>
 #include <limits>
 
 namespace ctrlpp::detail
@@ -47,6 +49,28 @@ auto checked_covariance(Eigen::Matrix<Scalar, N, N>& M, const covariance_faults&
     return decomposition;
 }
 
+/// @brief Refuse an initial quaternion whose norm is zero or non-finite, then
+/// one whose norm is not one within rounding.
+///
+/// The defect | ||q|| - 1 | is drift when it is within
+/// `rounding_bound(N, 1, factor)` with N = 4 components. The count behind
+/// `factor = 1`: a quaternion normalized once in working precision has a norm
+/// defect of at most (N / 2 + 2) u (the N-term sum of squares, the square root
+/// and the division), and this check's own evaluation of the norm adds at most
+/// (N / 2 + 1) u (Higham, "Accuracy and Stability of Numerical Algorithms",
+/// 2nd ed., 2002, Sec. 3.1); their sum, 7 u, is within N eps = 8 u. The caller
+/// normalizes an admitted q, which removes the drift.
+template <typename Scalar>
+auto checked_unit_quaternion(const Eigen::Quaternion<Scalar>& q, Scalar factor = Scalar{1}) -> ctrlpp::expected<void, filter_error>
+{
+    const Scalar norm = q.norm();
+    if(!(norm > Scalar{0}) || !std::isfinite(norm))
+        return ctrlpp::unexpected(filter_error::degenerate_quaternion);
+    if(!(std::abs(norm - Scalar{1}) <= rounding_bound(4, Scalar{1}, factor)))
+        return ctrlpp::unexpected(filter_error::non_unit_quaternion);
+    return {};
+}
+
 /// @brief Whether a decomposed positive semidefinite matrix is invertible:
 /// lambda_min > N eps lambda_max, written so that a NaN spectrum is singular.
 template <typename Scalar, int N>
@@ -82,8 +106,7 @@ auto validate_initial_covariance(Eigen::Matrix<Scalar, N, N>& P0) -> ctrlpp::exp
 }
 
 /// @brief Validate the noise and initial-condition fields that `kalman_config`,
-/// `ekf_config` and `ukf_config` declare identically, and that `mekf_config`
-/// declares with its initial bias in the initial state's place.
+/// `ekf_config` and `ukf_config` declare identically.
 ///
 /// The fields are independent of one another, unlike a step's carried estimate
 /// and its measurement, so the report order is the order the aggregates

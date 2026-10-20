@@ -429,16 +429,46 @@ TEST_CASE("manifold_ukf create rejects a zero initial quaternion", "[manifold_uk
     REQUIRE(filter.error() == filter_error::degenerate_quaternion);
 }
 
-TEST_CASE("manifold_ukf create accepts a non-unit nonzero quaternion", "[manifold_ukf]")
+TEST_CASE("manifold_ukf create refuses a quaternion that is not unit within rounding", "[manifold_ukf]")
 {
-    // The guard rejects only degeneracy: any finite nonzero quaternion is
-    // normalized onto the unit sphere at construction.
     manifold_ukf_config<double, 3> cfg;
     cfg.q0 = Eigen::Quaternion<double>{2.0, 0.0, 0.0, 0.0};
 
     auto filter = MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, cfg);
-    REQUIRE(filter.has_value());
-    REQUIRE((filter->attitude().coeffs().array() == cfg.q0.normalized().coeffs().array()).all());
+    REQUIRE_FALSE(filter.has_value());
+    REQUIRE(filter.error() == filter_error::non_unit_quaternion);
+}
+
+TEST_CASE("manifold_ukf create normalizes a quaternion whose norm drifts within rounding", "[manifold_ukf]")
+{
+    // Each component 0.5 + eps squares to 0.25 + eps once rounded, so the norm
+    // is exactly 1 + 2 eps and the normalized quaternion exactly 0.5 each.
+    const double component = 0.5 + std::numeric_limits<double>::epsilon();
+    manifold_ukf_config<double, 3> drifted;
+    drifted.q0 = Eigen::Quaternion<double>{component, component, component, component};
+    REQUIRE(drifted.q0.norm() == 1.0 + 2.0 * std::numeric_limits<double>::epsilon());
+    manifold_ukf_config<double, 3> unit = drifted;
+    unit.q0 = drifted.q0.normalized();
+
+    auto created = MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, drifted);
+    auto twin_created = MukfType::create(simple_rotation_dynamics{}, gravity_meas{}, unit);
+    REQUIRE(created.has_value());
+    REQUIRE(twin_created.has_value());
+    auto& filter = *created;
+    auto& twin = *twin_created;
+    REQUIRE((filter.attitude().coeffs().array() == unit.q0.coeffs().array()).all());
+
+    for(int k = 0; k < 10; ++k)
+    {
+        const Vector<double, 3> omega{0.2, -0.1, 0.3};
+        const Vector<double, 3> z = Vector<double, 3>{0.05, 0.01 * k, 1.0}.normalized();
+        filter.predict(omega);
+        twin.predict(omega);
+        REQUIRE(filter.update(z).has_value());
+        REQUIRE(twin.update(z).has_value());
+    }
+    REQUIRE((filter.attitude().coeffs().array() == twin.attitude().coeffs().array()).all());
+    REQUIRE((filter.covariance().array() == twin.covariance().array()).all());
 }
 
 TEST_CASE("manifold_ukf create refuses a noise or initial covariance that is not a covariance", "[manifold_ukf]")
@@ -452,6 +482,13 @@ TEST_CASE("manifold_ukf create refuses a noise or initial covariance that is not
         cfg.q0 = Eigen::Quaternion<double>{0.0, 0.0, 0.0, 0.0};
         cfg.Q = indefinite;
         expected = filter_error::degenerate_quaternion;
+    }
+
+    SECTION("a non-unit quaternion is reported ahead of the matrices")
+    {
+        cfg.q0 = Eigen::Quaternion<double>{2.0, 0.0, 0.0, 0.0};
+        cfg.Q = indefinite;
+        expected = filter_error::non_unit_quaternion;
     }
 
     SECTION("non-finite process noise")

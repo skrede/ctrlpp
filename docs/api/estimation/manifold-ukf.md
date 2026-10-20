@@ -37,7 +37,7 @@ using cov_matrix_t    = Matrix<Scalar, 3, 3>;   // tangent-space covariance
 |-------|------|---------|-------------|
 | `Q` | `Matrix<Scalar, 3, 3>` | Identity | Process noise covariance in tangent space |
 | `R` | `Matrix<Scalar, NY, NY>` | Identity | Measurement noise covariance |
-| `q0` | `Eigen::Quaternion<Scalar>` | Identity | Initial quaternion estimate |
+| `q0` | `Eigen::Quaternion<Scalar>` | Identity | Initial quaternion estimate, unit within rounding |
 | `P0` | `Matrix<Scalar, 3, 3>` | Identity | Initial tangent-space covariance |
 | `geodesic_mean_max_iter` | `std::size_t` | `30` | Maximum iterations for geodesic mean computation |
 | `geodesic_mean_tol` | `Scalar` | `1e-9` | Convergence tolerance for geodesic mean |
@@ -53,7 +53,7 @@ static auto create(Dynamics dynamics, Measurement measurement,
     -> ctrlpp::expected<manifold_ukf, filter_error>;
 ```
 
-`create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. Any finite nonzero `q0` is accepted and normalized. As a static member of a class template, `create` requires explicit template arguments, e.g. `manifold_ukf<double, 3, Dynamics, Measurement>::create(d, m, cfg)`.
+`create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion first, before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. A `q0` whose norm differs from one by more than the rounding bound `max(4 eps, 4 denorm_min)` is rejected with `filter_error::non_unit_quaternion`: a rotation quaternion is unit by definition, so `(2, 0, 0, 0)` names no attitude. A norm defect within the bound is rounding drift, the residue of the arithmetic that formed `q0`, and is normalized away; every quaternion produced by a working-precision normalization, an angle-axis conversion, `so3::exp` or a composition of such rotations is within it. The convention and its count are in [Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused). As a static member of a class template, `create` requires explicit template arguments, e.g. `manifold_ukf<double, 3, Dynamics, Measurement>::create(d, m, cfg)`.
 
 After the quaternion, `create` checks `Q`, `R` and `P0` in that order, each for finiteness, then for symmetry, then for definiteness, as every Kalman-family factory does:
 

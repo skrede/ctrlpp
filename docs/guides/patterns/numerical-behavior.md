@@ -362,7 +362,8 @@ otherwise produce silent corruption through intermediate overflow:
 ## Rounding drift is accepted, structure is refused
 
 An input that must carry a structural property, such as the symmetry of a
-covariance, is judged by its defect: how far it is from having the property.
+covariance or the unit norm of a rotation quaternion, is judged by its defect:
+how far it is from having the property.
 The defect is compared with a counted rounding bound `c * N * eps * scale`,
 never below the underflow term `N * denorm_min`.
 
@@ -379,9 +380,10 @@ from the convention that an `n`-term inner product carries at most about `n u`
 of its scale, with `u` the unit roundoff (Higham, *Accuracy and Stability of
 Numerical Algorithms*, 2nd ed., 2002, Sec. 3.1). The counted factor `c` is the
 order-one prefactor of that count. It
-is a defaulted parameter of the shared helpers in `ctrlpp/detail/covariance_ops.h`
-(`symmetrize_within_drift` and `psd_decomposition`), default 1, and not a field
-of any configuration. The absolute term is the gradual-underflow part of the
+is a defaulted parameter of the shared helpers, `symmetrize_within_drift` and
+`psd_decomposition` in `ctrlpp/detail/covariance_ops.h` and
+`checked_unit_quaternion` in `ctrlpp/estimation/detail/filter_configuration.h`,
+default 1, and not a field of any configuration. The absolute term is the gradual-underflow part of the
 standard model, `fl(x op y) = (x op y)(1 + delta) + eta` with
 `|eta| <= denorm_min / 2` (Higham, Sec. 2.1). Without it the bound would
 collapse to zero for a subnormal-scale input, which would then be judged with
@@ -426,12 +428,52 @@ the moving-horizon estimators' own copies of `Q`, `R` and `P0`: `mhe` and
 `nmhe` forward the embedded filter's refusal, but the copies they keep for
 their own cost are stored as given.
 
+### Unit quaternions
+
+A rotation quaternion is unit by definition. The initial attitude `q0` of
+`mekf`, `manifold_ukf` and `complementary_filter` is checked before any other
+configuration field:
+
+1. A zero or non-finite norm is refused (`degenerate_quaternion`): normalizing
+   it would produce NaN.
+2. The defect is `| ||q0|| - 1 |`, the scale is 1 and `N = 4`, so the bound is
+   `max(4 c eps, 4 denorm_min)`, which is `4 c eps` for any `c` of order one.
+   The count behind `c = 1`: a quaternion normalized once in working precision
+   has a norm defect of at most `(N / 2 + 2) u` (the four-term sum of squares,
+   the square root and the division), and the check's own evaluation of the
+   norm adds at most `(N / 2 + 1) u`; their sum, `7 u`, is within
+   `N eps = 8 u`. Beyond the bound `q0` is refused (`non_unit_quaternion`): a
+   quaternion of norm 2 is not an inaccurate attitude but no attitude at all.
+3. Within the bound the drift is projected away: the filter stores
+   `q0.normalized()`. A `q0` whose computed norm is exactly one is divided by
+   one and so stored bitwise as given.
+
+The unit tests sweep quaternions from the producers an application uses, at
+both precisions: normalized Gaussian 4-vectors, angle-axis conversions,
+`so3::exp` of random rotation vectors, yaw-pitch-roll compositions of three
+angle-axis rotations, and a double unit quaternion rounded to float. Every draw
+is accepted at `c = 1`.
+
+### Rotation matrices and rigid transforms
+
+No ctrlpp input takes a rotation matrix or an element of SE(n) today. One that
+does follows the same rule. The defects are the orthogonality defect
+`||R^T R - I||` and the orientation defect `|det R - 1|`, each against a bound
+of the same form `max(c N eps, N denorm_min)` with `N` counted from the
+arithmetic that forms it (an entry of `R^T R` is an `n`-term inner product). Within
+the bound the input is projected onto the group: `R` is replaced by its
+orthogonal polar factor, the nearest orthogonal matrix in the Frobenius norm
+(Higham, "Computing the Polar Decomposition with Applications", SIAM J. Sci.
+Stat. Comput. 7(4), 1986), and the translation of a rigid transform is kept.
+Anything else is refused with a typed error; a reflection, `det R = -1`, is
+structure, not drift.
+
 ## Summary
 
 | Layer | Behavior |
 |---|---|
 | Inputs (your code) | Validate at system boundaries |
-| Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; `kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf` and `particle_filter` also refuse a structurally asymmetric or indefinite `Q`, `R` or `P0` and store a drift-asymmetric one symmetrized ([the drift convention](#rounding-drift-is-accepted-structure-is-refused)), and `kalman_filter::set_noise` and `reset_covariance` do the same before assigning. A singular positive semidefinite or an ill-conditioned configuration is accepted. `particle_filter` (through `create` or `make_particle_filter`, likewise its only path) additionally refuses a singular `R`, because it scores with `R`'s inverse and log-determinant; a singular positive semidefinite `Q` or `P0` is accepted and sampled without lifting its zero eigenvalues |
+| Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; `kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf` and `particle_filter` also refuse a structurally asymmetric or indefinite `Q`, `R` or `P0` and store a drift-asymmetric one symmetrized ([the drift convention](#rounding-drift-is-accepted-structure-is-refused)), and `kalman_filter::set_noise` and `reset_covariance` do the same before assigning. `mekf`, `manifold_ukf` and `complementary_filter` refuse an initial quaternion whose norm is not one within rounding and normalize one whose norm is. A singular positive semidefinite or an ill-conditioned configuration is accepted. `particle_filter` (through `create` or `make_particle_filter`, likewise its only path) additionally refuses a singular `R`, because it scores with `R`'s inverse and log-determinant; a singular positive semidefinite `Q` or `P0` is accepted and sampled without lifting its zero eigenvalues |
 | Algorithm internals | Library uses numerically stable formulations |
 | Outputs | NaN/Inf propagates faithfully, never silently clamped, except on the surfaces named above |
 | Carried estimator state | The seven `update` surfaces named above reject a non-finite operand before mutating anything |

@@ -46,6 +46,10 @@ inline const char *describe(filter_error e)
             return "measurement noise is not symmetric";
         case filter_error::asymmetric_initial_covariance:
             return "initial covariance is not symmetric";
+        case filter_error::non_unit_quaternion:
+            return "initial quaternion is not unit";
+        case filter_error::non_finite_initial_bias:
+            return "initial bias is not finite";
     }
     return "unknown";
 }
