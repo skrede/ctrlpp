@@ -108,7 +108,10 @@ positive semidefinite `Q` or `P0` is still accepted. The refusals are listed in
   caller already owns and the plant already took, so refusing it would leave the
   filter with no propagation for a step that happened. A prediction that poisons
   the carried estimate is not silent: the next `update` rejects, names the cause,
-  and latches the type's `health()` query to `non_finite_estimate`.
+  and latches the type's `health()` query to `non_finite_estimate`. The two
+  unscented filters, `ukf` and `manifold_ukf`, report it earlier: their
+  `predict` judges what it produced and latches `non_finite_estimate` as soon as
+  it returns.
 - **The configuration and reset paths of all ten converted types.** The adaptive
   controllers' construction and `reset` are not fallible, so a non-finite initial
   parameter matrix or reference model still enters through them. The first cycle
@@ -353,8 +356,13 @@ otherwise produce silent corruption through intermediate overflow:
   to the nearest symmetric positive definite matrix, that is the repaired
   matrix, so the posterior is the repaired covariance less the gain term and is
   positive semidefinite up to rounding. The repair is reported through
-  `health()` as `covariance_repaired`. The manifold UKF follows the same rule in
-  its tangent space and reports the repair through its own `health()`.
+  `health()` as `covariance_repaired`. The predicted covariance is judged
+  before that: when its unpivoted Cholesky factorization fails, which is the
+  factorization the next sigma-point generation attempts first on the same
+  matrix, `predict` latches `covariance_repaired` itself, so `covariance()`
+  never reports an indefinite prediction beside a healthy status. The manifold
+  UKF follows the same rule in its tangent space and reports both through its
+  own `health()`.
 
 - **MOESP degenerate data:** The subspace identification algorithm refuses
   with `sysid_error::model_not_identified` when the condition number of the

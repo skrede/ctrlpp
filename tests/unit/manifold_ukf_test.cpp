@@ -625,12 +625,79 @@ TEST_CASE("manifold_ukf update after a prediction-driven repair carries the repa
     CAPTURE(filter.attitude().coeffs(), filter.covariance());
     REQUIRE(so3::log(filter.attitude()).norm() <= sigma_ops * mukf_eps * angle_scale);
     REQUIRE_THAT(filter.covariance()(2, 2), WithinAbs(-3.0 * z_spread_b * z_spread_b, sigma_ops * mukf_eps * angle_scale * angle_scale));
-    REQUIRE(filter.health() == manifold_ukf_health::ok);
+    REQUIRE(filter.health() == manifold_ukf_health::covariance_repaired);
 
     REQUIRE(filter.update(Vector<double, 3>::Zero()).has_value());
 
     CAPTURE(filter.covariance());
     REQUIRE(min_eigenvalue(filter.covariance()) >= -repair_floor(filter.covariance()));
+    REQUIRE(filter.health() == manifold_ukf_health::covariance_repaired);
+}
+
+namespace
+{
+
+// Non-finite for every sigma point rotated off the z axis, so an update whose
+// sigma set spreads about x or y produces a non-finite result.
+struct off_axis_non_finite_measurement
+{
+    auto operator()(const Eigen::Quaternion<double>& q) const -> Vector<double, 3>
+    {
+        const Vector<double, 3> phi = so3::log(q);
+        if(phi.x() != 0.0 || phi.y() != 0.0)
+            return Vector<double, 3>::Constant(std::numeric_limits<double>::quiet_NaN());
+        return phi;
+    }
+};
+
+struct non_finite_rotation_dynamics
+{
+    auto operator()(const Eigen::Quaternion<double>& /*q*/, const Vector<double, 3>& /*omega*/) const -> Eigen::Quaternion<double>
+    {
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        return Eigen::Quaternion<double>{nan, nan, nan, nan};
+    }
+};
+
+}
+
+TEST_CASE("manifold_ukf predict reports a non-finite prediction before the next update", "[manifold_ukf][repair]")
+{
+    using filter_t = manifold_ukf<double, 3, non_finite_rotation_dynamics, gravity_meas>;
+    auto created = filter_t::create(non_finite_rotation_dynamics{}, gravity_meas{}, manifold_ukf_config<double, 3>{});
+    REQUIRE(created.has_value());
+    auto filter = *std::move(created);
+
+    filter.predict(Vector<double, 3>::Zero());
+    REQUIRE(filter.health() == manifold_ukf_health::non_finite_estimate);
+
+    const auto refused = filter.update(Vector<double, 3>::UnitZ());
+    REQUIRE_FALSE(refused.has_value());
+    REQUIRE(refused.error() == manifold_ukf_update_error::non_finite_state);
+    REQUIRE(filter.health() == manifold_ukf_health::non_finite_estimate);
+}
+
+TEST_CASE("manifold_ukf update rolled back after an indefinite prediction keeps the rung predict latched", "[manifold_ukf][repair]")
+{
+    using filter_t = manifold_ukf<double, 3, z_spread_dynamics, off_axis_non_finite_measurement>;
+    auto strategy = so3_merwe_sigma_points<double>::try_create({.alpha = 1.0, .beta = 0.0, .kappa = -1.0});
+    REQUIRE(strategy.has_value());
+    manifold_ukf_config<double, 3> cfg;
+    cfg.Q.setZero();
+    auto created = filter_t::create(z_spread_dynamics{z_spread_b}, off_axis_non_finite_measurement{}, cfg, *strategy);
+    REQUIRE(created.has_value());
+    auto filter = *std::move(created);
+
+    filter.predict(Vector<double, 3>::Zero());
+    REQUIRE(filter.health() == manifold_ukf_health::covariance_repaired);
+    const auto attitude_before = filter.attitude().coeffs().eval();
+    const auto covariance_before = filter.covariance();
+
+    const auto refused = filter.update(Vector<double, 3>::Zero());
+    REQUIRE_FALSE(refused.has_value());
+    REQUIRE(refused.error() == manifold_ukf_update_error::non_finite_result);
+    CHECK(filter.attitude().coeffs() == attitude_before);
+    CHECK(filter.covariance() == covariance_before);
     REQUIRE(filter.health() == manifold_ukf_health::covariance_repaired);
 }
 

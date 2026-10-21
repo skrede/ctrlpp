@@ -35,6 +35,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <Eigen/Cholesky>
 #include <Eigen/Eigenvalues>
 
 #include <algorithm>
@@ -767,51 +768,125 @@ TEST_CASE("UKF refuses an indefinite initial covariance at construction", "[ukf]
     REQUIRE(rejected.error() == ctrlpp::filter_error::indefinite_initial_covariance);
 }
 
-TEST_CASE("UKF update after a prediction-driven repair carries the repaired covariance", "[ukf][hardening][repair]")
+namespace {
+
+// A repair reached from a valid configuration. Julier's kappa = 3 - n is
+// negative for n > 3, so the center weight is negative and a positive definite
+// prior can predict an indefinite covariance. At x = 0, P = I and n = 4 the
+// points are 0 and +/- sqrt(3) e_i with weights -1/3 and 1/6; the sum of
+// squares maps them to 0 and 3, whose weighted mean is 4 and whose weighted
+// variance is -16/3 + 8 (1/6) = -4.
+struct sum_of_squares_dynamics
 {
-    // A repair reached from a valid configuration. Julier's kappa = 3 - n is
-    // negative for n > 3, so the center weight is negative and a positive
-    // definite prior can predict an indefinite covariance. At x = 0, P = I and
-    // n = 4 the points are 0 and +/- sqrt(3) e_i with weights -1/3 and 1/6; the
-    // sum of squares maps them to 0 and 3, whose weighted mean is 4 and whose
-    // weighted variance is -16/3 + 8 (1/6) = -4.
-    struct sum_of_squares_dynamics
+    auto operator()(const ctrlpp::Vector<double, 4>& x, const ctrlpp::Vector<double, 1>& /*u*/) const -> ctrlpp::Vector<double, 4>
     {
-        auto operator()(const ctrlpp::Vector<double, 4>& x, const ctrlpp::Vector<double, 1>& /*u*/) const -> ctrlpp::Vector<double, 4>
-        {
-            ctrlpp::Vector<double, 4> xn = x;
-            xn(0) = x.squaredNorm();
-            return xn;
-        }
-    };
+        ctrlpp::Vector<double, 4> xn = x;
+        xn(0) = x.squaredNorm();
+        return xn;
+    }
+};
 
-    struct first_state_measurement
+struct first_state_measurement
+{
+    auto operator()(const ctrlpp::Vector<double, 4>& x) const -> ctrlpp::Vector<double, 1>
     {
-        auto operator()(const ctrlpp::Vector<double, 4>& x) const -> ctrlpp::Vector<double, 1>
-        {
-            return x.head<1>();
-        }
-    };
+        return x.head<1>();
+    }
+};
 
+// Non-finite for every sigma point displaced along the second state, so an
+// update whose sigma set spreads along it produces a non-finite result.
+struct off_center_non_finite_measurement
+{
+    auto operator()(const ctrlpp::Vector<double, 4>& x) const -> ctrlpp::Vector<double, 1>
+    {
+        if(x(1) != 0.0)
+            return ctrlpp::Vector<double, 1>::Constant(std::numeric_limits<double>::quiet_NaN());
+        return x.head<1>();
+    }
+};
+
+template <typename Measurement>
+using repair_route_filter_t = ctrlpp::ukf<double, 4, 1, 1, sum_of_squares_dynamics, Measurement, ctrlpp::julier_sigma_points<double, 4>>;
+
+template <typename Measurement>
+auto repair_route_filter() -> repair_route_filter_t<Measurement>
+{
     ctrlpp::ukf_config<double, 4, 1, 1> cfg{};
     cfg.Q = Eigen::Matrix4d::Zero();
+    return ctrlpp::test::constructed(repair_route_filter_t<Measurement>::create(sum_of_squares_dynamics{}, Measurement{}, cfg, ctrlpp::julier_options<double>{.kappa = -1.0}));
+}
 
-    using filter_t = ctrlpp::ukf<double, 4, 1, 1, sum_of_squares_dynamics, first_state_measurement, ctrlpp::julier_sigma_points<double, 4>>;
-    auto filter = ctrlpp::test::constructed(filter_t::create(sum_of_squares_dynamics{}, first_state_measurement{}, cfg, ctrlpp::julier_options<double>{.kappa = -1.0}));
+// Nine weighted squared deviations: nine differences, nine squares, nine
+// weight products and eight sums, each at most the largest squared deviation,
+// 16. The error in the mean enters only at second order.
+constexpr int predicted_variance_ops = 35;
+
+struct non_finite_dynamics
+{
+    auto operator()(const ctrlpp::Vector<double, 2>& /*x*/, const ctrlpp::Vector<double, 1>& /*u*/) const -> ctrlpp::Vector<double, 2>
+    {
+        return ctrlpp::Vector<double, 2>::Constant(std::numeric_limits<double>::quiet_NaN());
+    }
+};
+
+}
+
+TEST_CASE("UKF update after a prediction-driven repair carries the repaired covariance", "[ukf][hardening][repair]")
+{
+    auto filter = repair_route_filter<first_state_measurement>();
 
     filter.predict(ctrlpp::Vector<double, 1>::Zero());
 
-    // Nine weighted squared deviations: nine differences, nine squares, nine
-    // weight products and eight sums, each at most the largest squared
-    // deviation, 16. The error in the mean enters only at second order.
-    constexpr int predicted_variance_ops = 35;
     CAPTURE(filter.covariance());
     REQUIRE_THAT(filter.covariance()(0, 0), WithinAbs(-4.0, predicted_variance_ops * ukf_eps * 16.0));
-    REQUIRE(filter.health() == ctrlpp::ukf_health::ok);
+    REQUIRE(filter.health() == ctrlpp::ukf_health::covariance_repaired);
 
     REQUIRE(filter.update(ctrlpp::Vector<double, 1>::Constant(4.0)).has_value());
 
     CAPTURE(filter.covariance());
     REQUIRE(min_eigenvalue(filter.covariance()) >= -repair_floor(filter.covariance()));
+    REQUIRE(filter.health() == ctrlpp::ukf_health::covariance_repaired);
+}
+
+TEST_CASE("UKF predict leaves health ok after a positive definite prediction", "[ukf][hardening][repair]")
+{
+    auto filter = make_ukf();
+
+    filter.predict(ctrlpp::Vector<double, 1>::Zero());
+
+    CAPTURE(filter.covariance());
+    REQUIRE(Eigen::LLT<Eigen::Matrix2d>(filter.covariance()).info() == Eigen::Success);
+    REQUIRE(filter.health() == ctrlpp::ukf_health::ok);
+}
+
+TEST_CASE("UKF predict reports a non-finite prediction before the next update", "[ukf][hardening][negative]")
+{
+    using filter_t = ctrlpp::ukf<double, 2, 1, 1, non_finite_dynamics, ukf_position_measurement>;
+    auto filter = ctrlpp::test::constructed(filter_t::create(non_finite_dynamics{}, ukf_position_measurement{}, ctrlpp::ukf_config<double, 2, 1, 1>{}));
+
+    filter.predict(ctrlpp::Vector<double, 1>::Zero());
+    REQUIRE(filter.health() == ctrlpp::ukf_health::non_finite_estimate);
+
+    const auto refused = filter.update(ctrlpp::Vector<double, 1>::Zero());
+    REQUIRE_FALSE(refused.has_value());
+    REQUIRE(refused.error() == ctrlpp::ukf_update_error::non_finite_state);
+    REQUIRE(filter.health() == ctrlpp::ukf_health::non_finite_estimate);
+}
+
+TEST_CASE("UKF update rolled back after an indefinite prediction keeps the rung predict latched", "[ukf][hardening][repair]")
+{
+    auto filter = repair_route_filter<off_center_non_finite_measurement>();
+
+    filter.predict(ctrlpp::Vector<double, 1>::Zero());
+    REQUIRE(filter.health() == ctrlpp::ukf_health::covariance_repaired);
+    const auto state_before = filter.state();
+    const auto covariance_before = filter.covariance();
+
+    const auto refused = filter.update(ctrlpp::Vector<double, 1>::Constant(4.0));
+    REQUIRE_FALSE(refused.has_value());
+    REQUIRE(refused.error() == ctrlpp::ukf_update_error::non_finite_result);
+    CHECK(filter.state() == state_before);
+    CHECK(filter.covariance() == covariance_before);
     REQUIRE(filter.health() == ctrlpp::ukf_health::covariance_repaired);
 }

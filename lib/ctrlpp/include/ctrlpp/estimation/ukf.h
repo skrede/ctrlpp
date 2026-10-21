@@ -76,19 +76,20 @@ enum class ukf_update_error
 /// call. The enumerators are ordered by severity and the status latches: it
 /// never returns to a lower rung on its own.
 ///
-///  * ok                  : every covariance factored so far was positive
-///                          definite and every step began from a finite
-///                          estimate.
-///  * covariance_repaired : a non-positive-definite covariance had to be
-///                          repaired to the nearest symmetric positive definite
-///                          matrix, so the estimate has entered a numerically
-///                          degraded but still usable regime.
-///  * non_finite_estimate : a step found the carried state or the carried
-///                          covariance already non-finite, which is not
-///                          recoverable by any further step. `predict` does not
-///                          reject its input, so this is how a poisoned control
-///                          vector or a dynamics model that returned a
-///                          non-finite state becomes visible. A rejected
+///  * ok                  : every covariance predicted or factored so far was
+///                          positive definite and every estimate was finite.
+///  * covariance_repaired : `predict` produced a covariance that is not
+///                          positive definite, or a sigma-point generation had
+///                          to repair one to the nearest symmetric positive
+///                          definite matrix, so the estimate has entered a
+///                          numerically degraded but still usable regime.
+///  * non_finite_estimate : the carried state or covariance is non-finite,
+///                          which is not recoverable by any further step.
+///                          `predict` does not reject its input but judges what
+///                          it produced, so a poisoned control vector or a
+///                          dynamics model that returned a non-finite state is
+///                          reported as soon as `predict` returns, and the next
+///                          update refuses to start from it. A rejected
 ///                          measurement does NOT set it: the rejection mutates
 ///                          nothing, so it leaves the filter healthy.
 enum class ukf_health
@@ -192,6 +193,7 @@ public:
         auto x_pred = compute_predicted_mean(sigma.Wm, propagated);
         m_P = compute_predicted_covariance(sigma.Wc, propagated, x_pred);
         m_x = x_pred;
+        note_prediction();
     }
 
     /// @brief Update state and covariance with a measurement.
@@ -204,8 +206,10 @@ public:
     /// `predict` is deliberately not fallible: its input is a control vector the
     /// caller already commanded and owns, and rejecting it would leave the
     /// filter with no propagation for a step the plant did take. A prediction
-    /// that poisons the state is instead reported by `health()`, which the next
-    /// update latches.
+    /// that poisons the state or is not positive definite is instead reported
+    /// by `health()`, which `predict` latches itself. An update refused for a
+    /// non-finite result restores the health it began with, `predict`'s verdict
+    /// included.
     auto update(const output_vector_t& z) -> ctrlpp::expected<void, ukf_update_error>
     {
         if(const auto step = check_step(z); !step)
@@ -250,8 +254,8 @@ public:
     Scalar nis() const { return m_nis; }
 
     /// @brief Report whether the carried estimate is still degraded from an
-    /// earlier step: a repaired covariance, or an estimate that was already
-    /// non-finite. Latches; a rejected measurement does not set it.
+    /// earlier step: a covariance that was not positive definite, or a
+    /// non-finite estimate. Latches; a rejected measurement does not set it.
     ukf_health health() const { return m_health; }
 
 private:
@@ -315,6 +319,20 @@ private:
     void note_health(const Sigma& sigma)
     {
         if(sigma.spd_repaired && m_health == ukf_health::ok)
+            m_health = ukf_health::covariance_repaired;
+    }
+
+    /// @brief Latch the rung the predicted state and covariance warrant.
+    ///
+    /// Definiteness is judged by the unpivoted Cholesky factorization, the one
+    /// the Merwe and Julier generations attempt first on this same matrix, so
+    /// `predict` reports the repair the next generation will make; a strategy
+    /// that factors otherwise still gets this verdict on definiteness.
+    void note_prediction()
+    {
+        if(!m_x.allFinite() || !m_P.allFinite())
+            m_health = ukf_health::non_finite_estimate;
+        else if(m_health == ukf_health::ok && Eigen::LLT<cov_matrix_t>{m_P}.info() != Eigen::Success)
             m_health = ukf_health::covariance_repaired;
     }
 

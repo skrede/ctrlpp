@@ -116,15 +116,23 @@ The unscented filter is the in-tree precedent. From
 enum class ukf_health
 {
     ok,
-    covariance_repaired
+    covariance_repaired,
+    non_finite_estimate
 };
 ```
 
 ```cpp
-/// @brief Report whether the filter has had to repair a non-positive-definite
-/// covariance to the nearest symmetric positive definite matrix.
+/// @brief Report whether the carried estimate is still degraded from an
+/// earlier step: a covariance that was not positive definite, or a
+/// non-finite estimate. Latches; a rejected measurement does not set it.
 ukf_health health() const { return m_health; }
 ```
+
+The status is latched where the degradation happens, not where it is first
+consumed: `ukf::predict` and `manifold_ukf::predict` judge the estimate they
+produced and latch the rung it warrants, so a caller reading `covariance()`
+between `predict` and `update` never sees an indefinite or non-finite
+prediction beside `ok`.
 
 These queries carry **no** `[[nodiscard]]`. Discarding one is
 harmless: it is a
@@ -333,7 +341,9 @@ Gaussian to sample.
 `pid_config_error` and leave the controller untouched. `create` is its only
 construction path; the constructor is private.
 
-Not yet converted: `predict` on those seven estimator types; the configuration
+Not yet converted: `predict` on those seven estimator types (the two unscented
+filters' `predict` latches `health()` on what it produced, but still refuses
+nothing); the configuration
 and reset paths of the two adaptive controllers (their construction and
 `reset`), through which a non-finite value still enters silently and is caught
 only by the next cycle's rejection and the `health()` latch; `rls::update`, which still returns a bare `bool` and so

@@ -894,9 +894,9 @@ state dimension twice: once in the covariance it factors and once in the set.
 |---:|---:|---|---:|---:|---:|
 | 2 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 2,376 | 3,192 | 3,144 |
 | 4 | 2,896 | `ukf::update` | 4,280 | 4,280 | 4,280 |
-| 8 | 9,872 | `ukf::update` | 13,376 | 7,832 | 10,416 |
-| 16 | 38,768 | `ukf::update` | 50,384 | 20,520 | 33,104 |
-| 32 | 150,544 | `ukf::update` | **227,320** | 60,280 | 150,888 |
+| 8 | 9,872 | `ukf::update` | 13,392 | 7,832 | 10,416 |
+| 16 | 38,768 | `ukf::update` | 50,400 | 20,520 | 33,120 |
+| 32 | 150,544 | `ukf::update` | **211,048** | 60,280 | 134,616 |
 
 Strict: no margin for the caller's own frames and none for RTOS overhead.
 
@@ -919,7 +919,8 @@ The 4 KiB entries are 1 on all three lines: four states and four outputs need
 state and one output, needs 1,040. The sigma-point set carries the `NX x NX`
 factor it was generated from, so that after a repair the update reduces the
 repaired covariance `factor * factor^T` rather than the carried one, and that
-factor is part of every figure in both tables.
+factor is part of every figure in both tables. So is the Cholesky factorization
+`predict` takes of the covariance it predicted, to judge its definiteness.
 
 ### `manifold_ukf`
 
@@ -1006,7 +1007,7 @@ prediction, at the top rung:
 |---|---:|---:|---:|
 | `kalman_filter` | 109,496 | 158,712 | 1.45x |
 | `ekf` | 146,392 | 245,752 | 1.68x |
-| `ukf` | 206,888 | 227,320 | 1.10x |
+| `ukf` | 190,616 | 211,048 | 1.11x |
 | `mekf` | 220,072 | 310,840 | 1.41x |
 
 **Every row exceeds its separable prediction on the equal-dimension line**, so a
@@ -1024,7 +1025,7 @@ them:
 |---|---:|---:|---:|---|---:|
 | `kalman_filter` | 1,088 | 0.700 | 1.543 | `NX` 52, `NY` 52 | 87.4% |
 | `ekf` | 1,088 | 0.598 | 2.101 | `NX` 52, `NY` 116 | 88.3% |
-| `ukf` | 1,088 | 0.533 | 1.477 | `NX` 1, `NY` 1 | 82.0% |
+| `ukf` | 1,088 | 0.533 | 1.444 | `NX` 1, `NY` 1 | 81.8% |
 | `mekf` | 1,022 | 0.806 | 1.906 | `NB` 48, `NY` 128 | 90.9% |
 
 **Four fifths to nine tenths of the interior lies above the separable
@@ -1034,7 +1035,7 @@ its range, where a fixed part that does not scale with either dimension
 dominates. On `ekf` that is the only place it falls below. Away from the first
 value of either axis it falls below at one point on `mekf` (12 bias states, 8
 outputs), at 12 on `kalman_filter` (8 states with 88 outputs or more, and 12
-states with 128), and at 70 on `ukf`, all with the state dimension between 8 and
+states with 128), and at 72 on `ukf`, all with the state dimension between 8 and
 24 and the measurement dimension anywhere from 8 to 128, none of them below
 0.834. The interior points exclude the reference point at 4 and 4, where the
 ratio is one by construction, and the smallest ratios exclude the one-state,
@@ -1047,8 +1048,8 @@ and `NY` 72.
 tables reach dimension 32, and up to there the excess rises monotonically. The
 fill continues to 128 and it does not: on the equal-dimension line
 `kalman_filter` runs 1.45 at 32, climbs to 1.48 around 96 and falls back to 1.43
-at 128, with one isolated point at 52 reaching 1.54; `ukf` runs 1.10 at 32, rises
-to 1.19 at 108 and falls to 1.15 from 112 to 128. Away from `ukf`'s bottom
+at 128, with one isolated point at 52 reaching 1.54; `ukf` runs 1.11 at 32, rises
+to 1.21 at 108 and falls to 1.16 and 1.17 from 112 to 128. Away from `ukf`'s bottom
 corner, the largest excess on every row sits at a state dimension of 24 to 52
 rather than at the top corner. A reader extrapolating "the excess grows with
 dimension" past 32 would be extrapolating past where it holds.
@@ -1112,12 +1113,12 @@ The exponent is not constant along the axis: every row is markedly sub-quadratic
 between the first two rungs, where a fixed overhead that does not scale with the
 dimension still dominates, and it settles slightly BELOW quadratic at the top.
 Measured over the fill's last doubling, from 64 to 128 on the equal-dimension
-line, the exponent is 1.93 (`kalman_filter`), 1.92 (`ekf`), 1.94 (`ukf`), 1.95
+line, the exponent is 1.93 (`kalman_filter`), 1.92 (`ekf`), 1.93 (`ukf`), 1.95
 (`mekf` from 60 to 120) and 1.64 (`manifold_ukf`).
 
-The deepest points the grid holds, all at the instantiation limit: `ukf`
-3,425,464 bytes at 128 states and 128 outputs, `ekf` 3,221,912, `mekf` 3,195,880
-at 124 bias states and 128 outputs, `kalman_filter` 2,495,304, and
+The deepest points the grid holds, all at the instantiation limit: `ekf`
+3,221,912 bytes at 128 states and 128 outputs, `mekf` 3,195,880 at 124 bias
+states and 128 outputs, `ukf` 3,163,416, `kalman_filter` 2,495,304, and
 `manifold_ukf` 565,936 at 128 outputs. **Roughly three megabytes of stack**, on
 rows whose `allocation-free?` cell says `YES`.
 
@@ -1136,7 +1137,17 @@ to that compiler: the three-line tables, the fill, the limits and every ratio an
 exponent drawn from them. The same three-line commands run on the library as it
 was before the sigma-point factor and the covariance checks reproduced every
 cell published under `g++ (GNU) 16.1.1 20260728` exactly, so the compiler change
-moves none of them. HOST measurements. Runtime watermarks taken on a pthread
+moves none of them. The `ukf` row was re-taken on 2026-10-21 under the same
+compiler, flags and Eigen, after its `predict` began factoring the covariance it
+predicted: its three lines, its fill (`--rows ukf`, 1,089 points) and its limits,
+and every `ukf` ratio and exponent above. The factorization in `predict` changes
+which Eigen routines the compiler inlines into the sigma-point square root, so
+the chain moves both ways: by +16 bytes at three cells (8 and 16 on the equal
+line, 16 states at 4 outputs) and by -16,272 bytes at both 32-state cells, where
+the square root's own frame falls from 58,800 to 25,712 bytes. 943 of the 1,089
+fill points moved, by -262,048 to +80 bytes. No supported-maximum entry and no
+limit moved. The `manifold_ukf` row was
+re-measured at the same time and no figure of it moved, fill included. HOST measurements. Runtime watermarks taken on a pthread
 against a **zero-byte harness floor** and a 1,024-byte harness gap. The
 three-line tables were taken with a 4 MiB painted region on a 64 MiB thread
 stack; **the interior fill raises those to 32 MiB on a 512 MiB stack, and that is
@@ -1146,7 +1157,7 @@ load-bearing rather than cautious.**
 CEILING on what the instrument can report: a chain that reaches its bottom
 disturbs the last word the walk looks at, and the walk then returns the window's
 own size rather than the chain's depth -- a figure indistinguishable from a
-measurement. The deepest chain in this grid is 3,425,464 bytes, which is 82
+measurement. The deepest chain in this grid is 3,221,912 bytes, which is 77
 percent of the 4 MiB the three-line tables were taken with, and the deepest in
 the predictive controller section below is 4,135,224 bytes, which is **98.6
 percent of it**. Every record in the fill carries whether it saturated; none did.

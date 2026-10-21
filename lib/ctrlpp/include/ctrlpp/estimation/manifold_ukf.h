@@ -20,6 +20,7 @@
 
 #include "ctrlpp/estimation/detail/filter_configuration.h"
 
+#include <Eigen/Cholesky>
 #include <Eigen/Geometry>
 
 #include <array>
@@ -79,24 +80,27 @@ enum class manifold_ukf_update_error
 ///
 ///  * ok                  : every geodesic (Karcher) mean converged within the
 ///                          configured tolerance, every tangent covariance
-///                          factored so far was positive definite and every
-///                          step began from a finite estimate.
-///  * covariance_repaired : a non-positive-definite tangent covariance had to
-///                          be repaired to the nearest symmetric positive
+///                          predicted or factored so far was positive definite
+///                          and every estimate was finite.
+///  * covariance_repaired : `predict` produced a tangent covariance that is not
+///                          positive definite, or a sigma-point generation had
+///                          to repair one to the nearest symmetric positive
 ///                          definite matrix, so the estimate has entered a
 ///                          numerically degraded but still usable regime.
 ///  * mean_not_converged  : a geodesic-mean iteration exhausted its budget
 ///                          without meeting the tolerance, so the predicted
 ///                          attitude may be a non-converged iterate rather than
 ///                          the true mean.
-///  * non_finite_estimate : a step found the carried attitude or the carried
-///                          covariance already non-finite, which is not
-///                          recoverable by any further step. `predict` does not
-///                          reject its input, so this is how a poisoned angular
-///                          rate or a dynamics model that returned a non-finite
-///                          quaternion becomes visible. A rejected measurement
-///                          does NOT set it: the rejection mutates nothing, so
-///                          it leaves the filter healthy.
+///  * non_finite_estimate : the carried attitude or covariance is non-finite,
+///                          which is not recoverable by any further step.
+///                          `predict` does not reject its input but judges what
+///                          it produced, so a poisoned angular rate or a
+///                          dynamics model that returned a non-finite
+///                          quaternion is reported as soon as `predict`
+///                          returns, and the next update refuses to start from
+///                          it. A rejected measurement does NOT set it: the
+///                          rejection mutates nothing, so it leaves the filter
+///                          healthy.
 enum class manifold_ukf_health
 {
     ok,
@@ -221,15 +225,11 @@ public:
         note_health(sigma);
         auto q_prop = propagate_manifold_sigma_points(sigma.points, omega);
         auto mean_result = compute_manifold_predicted_mean(q_prop, sigma.Wm);
-        // Never lowers an already-latched non_finite_estimate, which is the more
-        // severe rung: a non-converged mean is a usable iterate, a non-finite
-        // attitude is not an attitude at all.
-        if(!mean_result.converged && m_health < manifold_ukf_health::mean_not_converged)
-            m_health = manifold_ukf_health::mean_not_converged;
         auto q_new = mean_result.mean;
         m_P = compute_manifold_predicted_covariance(q_prop, q_new, sigma.Wc);
         m_q = q_new;
         update_state_cache();
+        note_prediction(mean_result.converged);
     }
 
     /// @brief Update the attitude and the tangent-space covariance with a
@@ -243,8 +243,9 @@ public:
     /// `predict` is deliberately not fallible: its input is an angular rate the
     /// caller already owns, and rejecting it would leave the filter with no
     /// propagation for a rotation the body did perform. A prediction that
-    /// poisons the attitude is instead reported by `health()`, which the next
-    /// update latches.
+    /// poisons the attitude or whose tangent covariance is not positive
+    /// definite is instead reported by `health()`, which `predict` latches
+    /// itself.
     auto update(const output_vector_t& z) -> ctrlpp::expected<void, manifold_ukf_update_error>
     {
         if(const auto step = check_step(z); !step)
@@ -284,9 +285,9 @@ public:
     const Eigen::Quaternion<Scalar>& attitude() const { return m_q; }
 
     /// @brief Report whether the carried estimate is still degraded from an
-    /// earlier step: a repaired covariance, a non-converged geodesic mean, or an
-    /// estimate that was already non-finite. Latches; a rejected measurement
-    /// does not set it.
+    /// earlier step: a tangent covariance that was not positive definite, a
+    /// non-converged geodesic mean, or a non-finite estimate. Latches; a
+    /// rejected measurement does not set it.
     manifold_ukf_health health() const { return m_health; }
 
 private:
@@ -332,6 +333,22 @@ private:
     void note_health(const Sigma& sigma)
     {
         if(sigma.spd_repaired && m_health == manifold_ukf_health::ok)
+            m_health = manifold_ukf_health::covariance_repaired;
+    }
+
+    /// @brief Latch the rung the predicted attitude and tangent covariance
+    /// warrant, never lowering one already latched.
+    ///
+    /// Definiteness is judged by the unpivoted Cholesky factorization, the one
+    /// the next sigma-point generation attempts first on this same matrix, so
+    /// `predict` reports the repair that generation will make.
+    void note_prediction(bool mean_converged)
+    {
+        if(!m_q.coeffs().allFinite() || !m_P.allFinite())
+            m_health = manifold_ukf_health::non_finite_estimate;
+        else if(!mean_converged && m_health < manifold_ukf_health::mean_not_converged)
+            m_health = manifold_ukf_health::mean_not_converged;
+        else if(m_health == manifold_ukf_health::ok && Eigen::LLT<cov_matrix_t>{m_P}.info() != Eigen::Success)
             m_health = manifold_ukf_health::covariance_repaired;
     }
 
