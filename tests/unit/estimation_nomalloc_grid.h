@@ -63,7 +63,7 @@
 //
 // WHAT IS NOT ARMED, stated because a zero across a grid reads as a claim about
 // everything between its points: the interior fill behind the published
-// supported maxima is 4,677 points and is not individually armed. Nothing here
+// supported maxima is 4,323 points and is not individually armed. Nothing here
 // is a claim about a dimension lying between two armed ones.
 
 #include "ctrlpp/model/state_space.h"
