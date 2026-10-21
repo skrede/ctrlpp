@@ -354,14 +354,20 @@ otherwise produce silent corruption through intermediate overflow:
   which is the matrix `S S^T` of the square root the points were built from.
   When the carried covariance was not positive definite and had to be repaired
   to the nearest symmetric positive definite matrix, that is the repaired
-  matrix, so the posterior is the repaired covariance less the gain term and is
-  positive semidefinite up to rounding. The repair is reported through
-  `health()` as `covariance_repaired`. The predicted covariance is judged
-  before that: when its unpivoted Cholesky factorization fails, which is the
-  factorization the next sigma-point generation attempts first on the same
-  matrix, `predict` latches `covariance_repaired` itself, so `covariance()`
-  never reports an indefinite prediction beside a healthy status. The manifold
-  UKF follows the same rule in its tangent space and reports both through its
+  matrix, so the posterior is the repaired covariance less the gain term and,
+  with a nonnegative center weight, is positive semidefinite up to rounding.
+  The repair is reported through `health()` as `covariance_repaired`. The
+  predicted covariance is judged before that: when its unpivoted Cholesky
+  factorization fails, which is the factorization the next sigma-point
+  generation attempts first on the same matrix, `predict` latches
+  `covariance_repaired` itself. A committed update judges the posterior it
+  leaves the same way, so `covariance()` never reports an indefinite matrix
+  beside a healthy status after either call. That posterior can be indefinite
+  from a positive definite prior when the center weight is negative (Julier
+  with a negative `kappa`, or Merwe with `alpha = 1`, `beta = 0`,
+  `kappa = -1`), because the joint sigma-point covariance of state and
+  measurement is then no longer positive semidefinite. The manifold UKF
+  follows the same rule in its tangent space and reports all of it through its
   own `health()`.
 
 - **MOESP degenerate data:** The subspace identification algorithm refuses

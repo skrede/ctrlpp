@@ -76,13 +76,15 @@ enum class ukf_update_error
 /// call. The enumerators are ordered by severity and the status latches: it
 /// never returns to a lower rung on its own.
 ///
-///  * ok                  : every covariance predicted or factored so far was
-///                          positive definite and every estimate was finite.
-///  * covariance_repaired : `predict` produced a covariance that is not
-///                          positive definite, or a sigma-point generation had
-///                          to repair one to the nearest symmetric positive
-///                          definite matrix, so the estimate has entered a
-///                          numerically degraded but still usable regime.
+///  * ok                  : every covariance predicted, committed by an update
+///                          or factored so far was positive definite and every
+///                          estimate was finite.
+///  * covariance_repaired : `predict` or a committed update produced a
+///                          covariance that is not positive definite, or a
+///                          sigma-point generation had to repair one to the
+///                          nearest symmetric positive definite matrix, so the
+///                          estimate has entered a numerically degraded but
+///                          still usable regime.
 ///  * non_finite_estimate : the carried state or covariance is non-finite,
 ///                          which is not recoverable by any further step.
 ///                          `predict` does not reject its input but judges what
@@ -207,9 +209,11 @@ public:
     /// caller already commanded and owns, and rejecting it would leave the
     /// filter with no propagation for a step the plant did take. A prediction
     /// that poisons the state or is not positive definite is instead reported
-    /// by `health()`, which `predict` latches itself. An update refused for a
-    /// non-finite result restores the health it began with, `predict`'s verdict
-    /// included.
+    /// by `health()`, which `predict` latches itself. A committed update judges
+    /// the covariance it leaves the same way: a negative center weight can make
+    /// that posterior indefinite from a positive definite prior. An update
+    /// refused for a non-finite result restores the health it began with,
+    /// `predict`'s verdict included.
     auto update(const output_vector_t& z) -> ctrlpp::expected<void, ukf_update_error>
     {
         if(const auto step = check_step(z); !step)
@@ -240,6 +244,7 @@ public:
             m_health = previous_health;
             return ctrlpp::unexpected(ukf_update_error::non_finite_result);
         }
+        note_definiteness();
         return {};
     }
 
@@ -254,7 +259,8 @@ public:
     Scalar nis() const { return m_nis; }
 
     /// @brief Report whether the carried estimate is still degraded from an
-    /// earlier step: a covariance that was not positive definite, or a
+    /// earlier step: a covariance that `predict` or a committed update left,
+    /// or a generation repaired, that was not positive definite, or a
     /// non-finite estimate. Latches; a rejected measurement does not set it.
     ukf_health health() const { return m_health; }
 
@@ -323,16 +329,24 @@ private:
     }
 
     /// @brief Latch the rung the predicted state and covariance warrant.
-    ///
-    /// Definiteness is judged by the unpivoted Cholesky factorization, the one
-    /// the Merwe and Julier generations attempt first on this same matrix, so
-    /// `predict` reports the repair the next generation will make; a strategy
-    /// that factors otherwise still gets this verdict on definiteness.
     void note_prediction()
     {
         if(!m_x.allFinite() || !m_P.allFinite())
             m_health = ukf_health::non_finite_estimate;
-        else if(m_health == ukf_health::ok && Eigen::LLT<cov_matrix_t>{m_P}.info() != Eigen::Success)
+        else
+            note_definiteness();
+    }
+
+    /// @brief Latch `covariance_repaired` from `ok` when the carried covariance
+    /// is not positive definite.
+    ///
+    /// Definiteness is judged by the unpivoted Cholesky factorization, the one
+    /// the Merwe and Julier generations attempt first on this same matrix, so
+    /// the status never disagrees with the repair the next generation makes; a
+    /// strategy that factors otherwise still gets this verdict on definiteness.
+    void note_definiteness()
+    {
+        if(m_health == ukf_health::ok && Eigen::LLT<cov_matrix_t>{m_P}.info() != Eigen::Success)
             m_health = ukf_health::covariance_repaired;
     }
 

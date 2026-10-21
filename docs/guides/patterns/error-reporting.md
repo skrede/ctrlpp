@@ -123,16 +123,18 @@ enum class ukf_health
 
 ```cpp
 /// @brief Report whether the carried estimate is still degraded from an
-/// earlier step: a covariance that was not positive definite, or a
+/// earlier step: a covariance that `predict` or a committed update left,
+/// or a generation repaired, that was not positive definite, or a
 /// non-finite estimate. Latches; a rejected measurement does not set it.
 ukf_health health() const { return m_health; }
 ```
 
 The status is latched where the degradation happens, not where it is first
 consumed: `ukf::predict` and `manifold_ukf::predict` judge the estimate they
-produced and latch the rung it warrants, so a caller reading `covariance()`
-between `predict` and `update` never sees an indefinite or non-finite
-prediction beside `ok`.
+produced and latch the rung it warrants, and a committed `update` of either
+filter judges the covariance it leaves the same way, so a caller reading
+`covariance()` after either call never sees an indefinite matrix beside `ok`,
+nor a non-finite prediction.
 
 These queries carry **no** `[[nodiscard]]`. Discarding one is
 harmless: it is a

@@ -167,17 +167,19 @@ a task stack much larger than any tabulated here. The boundary is not on the pat
 of a caller sizing from those tables; it is on the path of a caller with a large
 stack who reads `YES` in the matrix and stops there.
 
-**What is armed, and what is not.** 115 configurations across the six rows: 26 on
-`kalman_filter`, 25 on `ekf`, 29 on `ukf` (two of them with the QR option), 13 on
+**What is armed, and what is not.** 116 configurations across the six rows: 26 on
+`kalman_filter`, 25 on `ekf`, 30 on `ukf` (two of them with the QR option), 13 on
 `manifold_ukf`, 20 on `mekf` and 2 on `nmpc_static`. Each row's test asserts its
 own count rather than describing it, so a point cannot be dropped without the
 test failing. Two gaps, stated rather than left to be inferred:
 
 - The five estimator rows arm **every configuration their tables print a figure
   for**, the value one in the 4 KiB rows of the `ukf` and `manifold_ukf`
-  supported-maximum tables included. The interior fill behind those tables is
-  4,323 configurations and is **not** individually armed: nothing above is a
-  claim about a dimension lying between two armed ones.
+  supported-maximum tables included. `ukf` also arms 24 states at 4 outputs,
+  which no table prints, because Eigen's fixed-size code changes with the
+  dimension, so an armed neighbor does not cover it. The interior fill behind
+  those tables is 4,323 configurations and is **not** individually armed:
+  nothing above is a claim about a dimension lying between two armed ones.
 - The predictive controller row arms **2 of its 25**, both sides of its
   boundary, plus the shipped pin at `NV` 17. Each of its points instantiates the
   whole nonlinear-programming substrate and then solves at that dimension: a unit
@@ -823,11 +825,10 @@ different painted window and a different build parallelism.
 **One caveat at the very bottom of the grid.** The measurement has a resolution
 floor: a chain shallower than the harness gap of 1,024 bytes disturbs nothing the
 walk can see and reports zero, which is the value the harness floor reports.
-Two points in the fill are there: `kalman_filter` and `ekf` at one state and
-one output. Re-measured at gaps of 512, 256, 128 and 64 bytes, with a zero floor
-at every one, they resolve to **720 and 880 bytes** and are byte-identical across
-all four gaps. `ukf` at one state and one output needs 1,040 bytes, which the
-fill resolves at the standard gap. No other point in the grid is inside the
+Three points in the fill are there: `kalman_filter`, `ekf` and `ukf` at one
+state and one output. Re-measured at gaps of 512, 256, 128 and 64 bytes, with a
+zero floor at every one, they resolve to **720, 880 and 864 bytes** and are
+byte-identical across all four gaps. No other point in the grid is inside the
 gap.
 
 ### `kalman_filter`
@@ -890,9 +891,9 @@ state dimension twice: once in the covariance it factors and once in the set.
 
 | dimension | deepest single frame | function owning it | peak, `NX` = `NY`, nothing held | peak, `NY` swept, `NX` held at 4 | peak, `NX` swept, `NY` held at 4 |
 |---:|---:|---|---:|---:|---:|
-| 2 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 2,376 | 3,192 | 3,144 |
-| 4 | 2,896 | `ukf::update` | 4,280 | 4,280 | 4,280 |
-| 8 | 9,872 | `ukf::update` | 13,392 | 7,832 | 10,416 |
+| 2 | 1,504 | `Eigen::internal::make_block_householder_triangular_factor` | 2,392 | 3,192 | 3,160 |
+| 4 | 2,912 | `ukf::update` | 4,296 | 4,296 | 4,296 |
+| 8 | 9,872 | `ukf::update` | 13,392 | 7,848 | 10,416 |
 | 16 | 38,768 | `ukf::update` | 50,400 | 20,520 | 33,120 |
 | 32 | 150,544 | `ukf::update` | **211,048** | 60,280 | 134,616 |
 
@@ -913,12 +914,13 @@ on it and this row's limit is the same as the two above.
 | 64 KiB | 16 | 32 | 20 |
 
 The 4 KiB entries are 1 on all three lines: four states and four outputs need
-4,280 bytes against 4,096, and the next value the fill measures below four, one
-state and one output, needs 1,040. The sigma-point set carries the `NX x NX`
+4,296 bytes against 4,096, and the next value the fill measures below four, one
+state and one output, needs 864. The sigma-point set carries the `NX x NX`
 factor it was generated from, so that after a repair the update reduces the
 repaired covariance `factor * factor^T` rather than the carried one, and that
-factor is part of every figure in both tables. So is the Cholesky factorization
-`predict` takes of the covariance it predicted, to judge its definiteness.
+factor is part of every figure in both tables. So are the Cholesky factorizations
+`predict` and `update` take of the covariance each leaves, to judge its
+definiteness.
 
 ### `manifold_ukf`
 
@@ -1005,7 +1007,7 @@ prediction, at the top rung:
 |---|---:|---:|---:|
 | `kalman_filter` | 109,496 | 158,712 | 1.45x |
 | `ekf` | 146,392 | 245,752 | 1.68x |
-| `ukf` | 190,616 | 211,048 | 1.11x |
+| `ukf` | 190,600 | 211,048 | 1.11x |
 | `mekf` | 220,072 | 310,840 | 1.41x |
 
 **Every row exceeds its separable prediction on the equal-dimension line**, so a
@@ -1023,7 +1025,7 @@ them:
 |---|---:|---:|---:|---|---:|
 | `kalman_filter` | 1,088 | 0.700 | 1.543 | `NX` 52, `NY` 52 | 87.4% |
 | `ekf` | 1,088 | 0.598 | 2.101 | `NX` 52, `NY` 116 | 88.3% |
-| `ukf` | 1,088 | 0.533 | 1.444 | `NX` 1, `NY` 1 | 81.8% |
+| `ukf` | 1,088 | 0.533 | 1.337 | `NX` 24, `NY` 72 | 81.8% |
 | `mekf` | 1,022 | 0.806 | 1.906 | `NB` 48, `NY` 128 | 90.9% |
 
 **Four fifths to nine tenths of the interior lies above the separable
@@ -1033,14 +1035,11 @@ its range, where a fixed part that does not scale with either dimension
 dominates. On `ekf` that is the only place it falls below. Away from the first
 value of either axis it falls below at one point on `mekf` (12 bias states, 8
 outputs), at 12 on `kalman_filter` (8 states with 88 outputs or more, and 12
-states with 128), and at 72 on `ukf`, all with the state dimension between 8 and
+states with 128), and at 71 on `ukf`, all with the state dimension between 8 and
 24 and the measurement dimension anywhere from 8 to 128, none of them below
 0.834. The interior points exclude the reference point at 4 and 4, where the
-ratio is one by construction, and the smallest ratios exclude the one-state,
-one-output points the caveat above places inside the harness gap. `ukf`'s largest
-ratio sits at that bottom corner, where the separable prediction is a sum of two
-small figures; away from the first value of either axis it is 1.337, at `NX` 24
-and `NY` 72.
+ratio is one by construction, and the ratios exclude the one-state, one-output
+points the caveat above places inside the harness gap.
 
 **AND THE INTERACTION DOES NOT KEEP GROWING WITH THE DIMENSION.** The three-line
 tables reach dimension 32, and up to there the excess rises monotonically. The
@@ -1145,7 +1144,18 @@ line, 16 states at 4 outputs) and by -16,272 bytes at both 32-state cells, where
 the square root's own frame falls from 58,800 to 25,712 bytes. 943 of the 1,089
 fill points moved, by -262,048 to +80 bytes. No supported-maximum entry and no
 limit moved. The `manifold_ukf` row was
-re-measured at the same time and no figure of it moved, fill included. HOST measurements. Runtime watermarks taken on a pthread
+re-measured at the same time and no figure of it moved, fill included. Both
+unscented rows were re-measured again later on 2026-10-21, after every one-output
+gain began solving without a one-by-one QR factorization and `update` began
+factoring the covariance it commits: `manifold_ukf` moved nowhere, and `ukf` moved
+by +16 bytes at seven cells of its three lines (2 and 4 on the equal line, the
+frame at 4, 8 and 4 on the `NY` line, 2 and 4 on the `NX` line). 113 of its 1,089
+fill points moved. The one-output gain alone moved 21 of them, all at one output,
+by -272 to +16 bytes, and took one state and one output from 1,040 bytes to inside
+the harness gap. The factorization in `update` moved 90, mostly by 16 bytes either
+way, and by +4,792 to +163,600 bytes at 8 states with 20 outputs, 12 with 60, and
+52 with 112 to 128, where the compiler's inlining of `update` changes. Two moved
+under both. No supported-maximum entry and no limit moved. HOST measurements. Runtime watermarks taken on a pthread
 against a **zero-byte harness floor** and a 1,024-byte harness gap. The
 three-line tables were taken with a 4 MiB painted region on a 64 MiB thread
 stack; **the interior fill raises those to 32 MiB on a 512 MiB stack, and that is
@@ -1195,7 +1205,7 @@ measurement dimension. That is small, and it is not harmless: it is the size of
 the margin by which a supported-maximum entry can clear its task stack, so an
 entry close to its stack can read differently under one patch release of a
 header-only dependency and the next. `ukf` at four states and four outputs needs
-4,280 bytes against 3.4.1 and 4,296 against 3.4.0, past 4 KiB under both. A
+4,296 bytes against 3.4.1 and 4,312 against 3.4.0, past 4 KiB under both. A
 frame size is an output of inlining a header-only template library, and a patch
 release of that library is therefore part of the provenance of every figure
 here. **The held-dimension sweeps were NOT re-measured against 3.4.0**; only the

@@ -31,10 +31,12 @@ namespace ctrlpp_test::ukf_grid
 // 12, 20 and 28 on the measurement axis, 1, 12 and 20 on the state axis (9); the
 // instantiation limit on each axis with the corner where both are largest (3);
 // and both sides of the boundary the other rows have, at 47 and at 48, which
-// this row's default decomposition does not reach (2).
+// this row's default decomposition does not reach (2). The armed grid holds
+// these 27 and one extra below, so it contains them by construction.
 constexpr std::size_t published_points = 13 + 9 + 3 + 2;
 
-using allocation_free_grid = grid::over<
+template <typename... Extras>
+using published_plus = grid::over<
     grid::point<2, 2>, grid::point<4, 4>, grid::point<8, 8>, grid::point<16, 16>, grid::point<32, 32>,
     grid::point<4, 2>, grid::point<4, 8>, grid::point<4, 16>, grid::point<4, 32>,
     grid::point<2, 4>, grid::point<8, 4>, grid::point<16, 4>, grid::point<32, 4>,
@@ -42,10 +44,14 @@ using allocation_free_grid = grid::over<
     grid::point<4, 1>, grid::point<4, 12>, grid::point<4, 20>, grid::point<4, 28>,
     grid::point<1, 4>, grid::point<12, 4>, grid::point<20, 4>,
     grid::point<128, 4>, grid::point<4, 128>, grid::point<128, 128>,
-    grid::point<4, 47>, grid::point<4, 48>>;
+    grid::point<4, 47>, grid::point<4, 48>, Extras...>;
 
-static_assert(allocation_free_grid::size == published_points,
-              "the armed grid must hold exactly the configurations the matrix publishes a figure for");
+static_assert(published_plus<>::size == published_points,
+              "the published list must hold exactly the configurations the matrix publishes a figure for");
+
+// 24 states at 4 outputs is armed although no table prints it: Eigen's
+// fixed-size code changes with the dimension, so an armed neighbor does not cover it.
+using allocation_free_grid = published_plus<grid::point<24, 4>>;
 
 struct arm_allocation_free
 {

@@ -5,6 +5,7 @@
 
 #include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
 
+#include <Eigen/Cholesky>
 #include <Eigen/Eigenvalues>
 #include <Eigen/Geometry>
 
@@ -659,6 +660,38 @@ struct non_finite_rotation_dynamics
     }
 };
 
+struct hold_dynamics
+{
+    auto operator()(const Eigen::Quaternion<double>& q, const Vector<double, 3>& /*omega*/) const -> Eigen::Quaternion<double>
+    {
+        return q;
+    }
+};
+
+struct bump_measurement
+{
+    double height;
+
+    auto operator()(const Eigen::Quaternion<double>& q) const -> Vector<double, 1>
+    {
+        const Vector<double, 3> phi = so3::log(q);
+        return Vector<double, 1>::Constant(phi.x() + height * std::exp(-phi.squaredNorm() / 0.01));
+    }
+};
+
+using bump_filter_t = manifold_ukf<double, 1, hold_dynamics, bump_measurement>;
+
+auto bump_filter(manifold_ukf_config<double, 1> cfg) -> bump_filter_t
+{
+    auto strategy = so3_merwe_sigma_points<double>::try_create({.alpha = 1.0, .beta = 0.0, .kappa = -1.0});
+    REQUIRE(strategy.has_value());
+    cfg.Q.setZero();
+    cfg.R(0, 0) = 0.05;
+    auto created = bump_filter_t::create(hold_dynamics{}, bump_measurement{1.1}, cfg, *strategy);
+    REQUIRE(created.has_value());
+    return *std::move(created);
+}
+
 }
 
 TEST_CASE("manifold_ukf predict reports a non-finite prediction before the next update", "[manifold_ukf][repair]")
@@ -729,4 +762,50 @@ TEST_CASE("manifold_ukf health latches a repair and a non-converged mean by seve
         filter.predict(Vector<double, 3>::Zero());
         REQUIRE(filter.health() == manifold_ukf_health::mean_not_converged);
     }
+}
+
+// Merwe alpha = 1, beta = 0, kappa = -1 at n = 3 gives n + lambda = 2, so the
+// center weight is -1/2 for the mean and the covariance alike and each point
+// q exp(+/- sqrt(2) e_i) is weighted 1/4. The bump reads its height H at the
+// center only, so Pzz = 1 - 3 H^2 / 4, Pxz = e_0 and P(0,0) = 1 - 1/S with
+// S = Pzz + R; the correction lies along e_0, so the reset Jacobian leaves
+// (0,0) unchanged.
+TEST_CASE("manifold_ukf update reports an indefinite tangent covariance it commits", "[manifold_ukf][repair]")
+{
+    auto filter = bump_filter(manifold_ukf_config<double, 1>{});
+
+    REQUIRE(filter.update(Vector<double, 1>::Zero()).has_value());
+
+    CAPTURE(filter.covariance());
+    REQUIRE(filter.covariance()(0, 0) < 0.0);
+    REQUIRE(Eigen::LLT<Matrix<double, 3, 3>>(filter.covariance()).info() != Eigen::Success);
+    REQUIRE(filter.health() == manifold_ukf_health::covariance_repaired);
+}
+
+TEST_CASE("manifold_ukf update does not lower a non-converged mean when it commits an indefinite covariance", "[manifold_ukf][repair]")
+{
+    manifold_ukf_config<double, 1> cfg;
+    cfg.geodesic_mean_max_iter = 0;
+    auto filter = bump_filter(cfg);
+
+    filter.predict(Vector<double, 3>::Zero());
+    REQUIRE(filter.health() == manifold_ukf_health::mean_not_converged);
+
+    REQUIRE(filter.update(Vector<double, 1>::Zero()).has_value());
+
+    CAPTURE(filter.covariance());
+    REQUIRE(filter.covariance()(0, 0) < 0.0);
+    REQUIRE(filter.health() == manifold_ukf_health::mean_not_converged);
+}
+
+TEST_CASE("manifold_ukf update leaves health ok after a positive definite update", "[manifold_ukf][repair]")
+{
+    auto filter = make_filter(simple_rotation_dynamics{}, manifold_ukf_config<double, 3>{});
+
+    filter.predict(Vector<double, 3>::Zero());
+    REQUIRE(filter.update(Vector<double, 3>::UnitZ()).has_value());
+
+    CAPTURE(filter.covariance());
+    REQUIRE(Eigen::LLT<Matrix<double, 3, 3>>(filter.covariance()).info() == Eigen::Success);
+    REQUIRE(filter.health() == manifold_ukf_health::ok);
 }

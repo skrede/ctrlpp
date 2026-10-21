@@ -80,13 +80,15 @@ enum class manifold_ukf_update_error
 ///
 ///  * ok                  : every geodesic (Karcher) mean converged within the
 ///                          configured tolerance, every tangent covariance
-///                          predicted or factored so far was positive definite
-///                          and every estimate was finite.
-///  * covariance_repaired : `predict` produced a tangent covariance that is not
-///                          positive definite, or a sigma-point generation had
-///                          to repair one to the nearest symmetric positive
-///                          definite matrix, so the estimate has entered a
-///                          numerically degraded but still usable regime.
+///                          predicted, committed by an update or factored so
+///                          far was positive definite and every estimate was
+///                          finite.
+///  * covariance_repaired : `predict` or a committed update produced a tangent
+///                          covariance that is not positive definite, or a
+///                          sigma-point generation had to repair one to the
+///                          nearest symmetric positive definite matrix, so the
+///                          estimate has entered a numerically degraded but
+///                          still usable regime.
 ///  * mean_not_converged  : a geodesic-mean iteration exhausted its budget
 ///                          without meeting the tolerance, so the predicted
 ///                          attitude may be a non-converged iterate rather than
@@ -245,7 +247,9 @@ public:
     /// propagation for a rotation the body did perform. A prediction that
     /// poisons the attitude or whose tangent covariance is not positive
     /// definite is instead reported by `health()`, which `predict` latches
-    /// itself.
+    /// itself. A committed update judges the tangent covariance it leaves the
+    /// same way: a negative center weight can make that posterior indefinite
+    /// from a positive definite prior.
     auto update(const output_vector_t& z) -> ctrlpp::expected<void, manifold_ukf_update_error>
     {
         if(const auto step = check_step(z); !step)
@@ -273,6 +277,7 @@ public:
             return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_result);
         }
         note_health(sigma);
+        note_definiteness();
         return {};
     }
 
@@ -285,7 +290,8 @@ public:
     const Eigen::Quaternion<Scalar>& attitude() const { return m_q; }
 
     /// @brief Report whether the carried estimate is still degraded from an
-    /// earlier step: a tangent covariance that was not positive definite, a
+    /// earlier step: a tangent covariance that `predict` or a committed update
+    /// left, or a generation repaired, that was not positive definite, a
     /// non-converged geodesic mean, or a non-finite estimate. Latches; a
     /// rejected measurement does not set it.
     manifold_ukf_health health() const { return m_health; }
@@ -338,17 +344,25 @@ private:
 
     /// @brief Latch the rung the predicted attitude and tangent covariance
     /// warrant, never lowering one already latched.
-    ///
-    /// Definiteness is judged by the unpivoted Cholesky factorization, the one
-    /// the next sigma-point generation attempts first on this same matrix, so
-    /// `predict` reports the repair that generation will make.
     void note_prediction(bool mean_converged)
     {
         if(!m_q.coeffs().allFinite() || !m_P.allFinite())
             m_health = manifold_ukf_health::non_finite_estimate;
         else if(!mean_converged && m_health < manifold_ukf_health::mean_not_converged)
             m_health = manifold_ukf_health::mean_not_converged;
-        else if(m_health == manifold_ukf_health::ok && Eigen::LLT<cov_matrix_t>{m_P}.info() != Eigen::Success)
+        else
+            note_definiteness();
+    }
+
+    /// @brief Latch `covariance_repaired` from `ok` when the carried tangent
+    /// covariance is not positive definite.
+    ///
+    /// Definiteness is judged by the unpivoted Cholesky factorization, the one
+    /// the next sigma-point generation attempts first on this same matrix, so
+    /// the status never disagrees with the repair that generation makes.
+    void note_definiteness()
+    {
+        if(m_health == manifold_ukf_health::ok && Eigen::LLT<cov_matrix_t>{m_P}.info() != Eigen::Success)
             m_health = manifold_ukf_health::covariance_repaired;
     }
 

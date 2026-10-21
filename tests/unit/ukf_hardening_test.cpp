@@ -830,6 +830,33 @@ struct non_finite_dynamics
     }
 };
 
+template <std::size_t N>
+struct identity_dynamics
+{
+    auto operator()(const ctrlpp::Vector<double, N>& x, const ctrlpp::Vector<double, 1>& /*u*/) const -> ctrlpp::Vector<double, N>
+    {
+        return x;
+    }
+};
+
+struct bump_measurement
+{
+    double height;
+
+    auto operator()(const ctrlpp::Vector<double, 4>& x) const -> ctrlpp::Vector<double, 1>
+    {
+        return ctrlpp::Vector<double, 1>::Constant(x(0) + height * std::exp(-x.squaredNorm() / 0.01));
+    }
+};
+
+struct quartic_measurement
+{
+    auto operator()(const ctrlpp::Vector<double, 2>& x) const -> ctrlpp::Vector<double, 1>
+    {
+        return ctrlpp::Vector<double, 1>::Constant(x(0) + 5.0 * x(1) * x(1) * x(1) * x(1));
+    }
+};
+
 }
 
 TEST_CASE("UKF update after a prediction-driven repair carries the repaired covariance", "[ukf][hardening][repair]")
@@ -889,4 +916,44 @@ TEST_CASE("UKF update rolled back after an indefinite prediction keeps the rung 
     CHECK(filter.state() == state_before);
     CHECK(filter.covariance() == covariance_before);
     REQUIRE(filter.health() == ctrlpp::ukf_health::covariance_repaired);
+}
+
+// Julier at n = 4 with kappa = -1 places the points at 0 and +/- sqrt(3) e_i,
+// weighted -1/3 and 1/6, and identity dynamics keep P = I through predict. The
+// bump reads its height H at the center only, since exp(-300) vanishes against
+// every other term, so Pzz = 1 - 4 H^2 / 9, Pxz = e_0 and the posterior
+// P(0,0) = 1 - 1/S with S = Pzz + R: indefinite whenever 4 H^2 / 9 > R.
+TEST_CASE("UKF update reports an indefinite covariance it commits", "[ukf][hardening][repair]")
+{
+    using filter_t = ctrlpp::ukf<double, 4, 1, 1, identity_dynamics<4>, bump_measurement, ctrlpp::julier_sigma_points<double, 4>>;
+    ctrlpp::ukf_config<double, 4, 1, 1> cfg{};
+    cfg.Q = Eigen::Matrix4d::Zero();
+    cfg.R(0, 0) = 0.1;
+    auto filter = ctrlpp::test::constructed(filter_t::create(identity_dynamics<4>{}, bump_measurement{1.4}, cfg, ctrlpp::julier_options<double>{.kappa = -1.0}));
+
+    filter.predict(ctrlpp::Vector<double, 1>::Zero());
+    REQUIRE(Eigen::LLT<Eigen::Matrix4d>(filter.covariance()).info() == Eigen::Success);
+    REQUIRE(filter.health() == ctrlpp::ukf_health::ok);
+
+    REQUIRE(filter.update(ctrlpp::Vector<double, 1>::Zero()).has_value());
+
+    CAPTURE(filter.covariance());
+    REQUIRE(filter.covariance()(0, 0) < 0.0);
+    REQUIRE(Eigen::LLT<Eigen::Matrix4d>(filter.covariance()).info() != Eigen::Success);
+    REQUIRE(filter.health() == ctrlpp::ukf_health::covariance_repaired);
+}
+
+TEST_CASE("UKF update leaves health ok after a positive definite update", "[ukf][hardening][repair]")
+{
+    using filter_t = ctrlpp::ukf<double, 2, 1, 1, identity_dynamics<2>, quartic_measurement>;
+    ctrlpp::ukf_config<double, 2, 1, 1> cfg{};
+    cfg.Q = Eigen::Matrix2d::Zero();
+    cfg.R(0, 0) = 1e-3;
+    auto filter = ctrlpp::test::constructed(filter_t::create(identity_dynamics<2>{}, quartic_measurement{}, cfg));
+
+    REQUIRE(filter.update(ctrlpp::Vector<double, 1>::Zero()).has_value());
+
+    CAPTURE(filter.covariance());
+    REQUIRE(Eigen::LLT<Eigen::Matrix2d>(filter.covariance()).info() == Eigen::Success);
+    REQUIRE(filter.health() == ctrlpp::ukf_health::ok);
 }
