@@ -28,10 +28,10 @@
 namespace ctrlpp_test::manifold_ukf_grid
 {
 
-// Five measurement rungs (5); four values named only by the supported-maximum
-// table -- 12, 20, 28 and 36 (4); and the measurement dimension one below the
-// blocked-Householder boundary (1).
-constexpr std::size_t allocation_free_points = 5 + 4 + 1;
+// Five measurement rungs (5); five values named only by the supported-maximum
+// table -- 1, 12, 20, 28 and 36 (5); and the measurement dimension one below
+// the blocked-Householder boundary (1).
+constexpr std::size_t allocation_free_points = 5 + 5 + 1;
 
 // The boundary itself and the one instantiation limit this row's single axis
 // has.
@@ -41,7 +41,7 @@ constexpr std::size_t published_points = allocation_free_points + library_alloca
 
 using allocation_free_grid = grid::over<
     grid::point<2, 3>, grid::point<4, 3>, grid::point<8, 3>, grid::point<16, 3>, grid::point<32, 3>,
-    grid::point<12, 3>, grid::point<20, 3>, grid::point<28, 3>, grid::point<36, 3>,
+    grid::point<1, 3>, grid::point<12, 3>, grid::point<20, 3>, grid::point<28, 3>, grid::point<36, 3>,
     grid::point<47, 3>>;
 
 using library_allocating_grid = grid::over<

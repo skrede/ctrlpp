@@ -26,20 +26,21 @@ namespace ctrlpp_test::ukf_grid
 {
 
 // Five equal-dimension rungs plus four more on each of the two held-dimension
-// lines, the rung where the three lines cross counted once (13); seven values
-// named only by the supported-maximum table -- 12 on the equal line, 12, 20 and
-// 28 on the measurement axis, 12, 20 and 24 on the state axis (7); the
+// lines, the rung where the three lines cross counted once (13); nine values
+// named only by the supported-maximum table -- 1 and 12 on the equal line, 1,
+// 12, 20 and 28 on the measurement axis, 1, 12 and 20 on the state axis (9); the
 // instantiation limit on each axis with the corner where both are largest (3);
 // and both sides of the boundary the other rows have, at 47 and at 48, which
 // this row's default decomposition does not reach (2).
-constexpr std::size_t published_points = 13 + 7 + 3 + 2;
+constexpr std::size_t published_points = 13 + 9 + 3 + 2;
 
 using allocation_free_grid = grid::over<
     grid::point<2, 2>, grid::point<4, 4>, grid::point<8, 8>, grid::point<16, 16>, grid::point<32, 32>,
     grid::point<4, 2>, grid::point<4, 8>, grid::point<4, 16>, grid::point<4, 32>,
     grid::point<2, 4>, grid::point<8, 4>, grid::point<16, 4>, grid::point<32, 4>,
-    grid::point<12, 12>, grid::point<4, 12>, grid::point<4, 20>, grid::point<4, 28>,
-    grid::point<12, 4>, grid::point<20, 4>, grid::point<24, 4>,
+    grid::point<1, 1>, grid::point<12, 12>,
+    grid::point<4, 1>, grid::point<4, 12>, grid::point<4, 20>, grid::point<4, 28>,
+    grid::point<1, 4>, grid::point<12, 4>, grid::point<20, 4>,
     grid::point<128, 4>, grid::point<4, 128>, grid::point<128, 128>,
     grid::point<4, 47>, grid::point<4, 48>>;
 

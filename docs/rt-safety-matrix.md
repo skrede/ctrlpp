@@ -167,19 +167,17 @@ a task stack much larger than any tabulated here. The boundary is not on the pat
 of a caller sizing from those tables; it is on the path of a caller with a large
 stack who reads `YES` in the matrix and stops there.
 
-**What is armed, and what is not.** 112 configurations across the six rows: 26 on
-`kalman_filter`, 25 on `ekf`, 27 on `ukf` (two of them with the QR option), 12 on
+**What is armed, and what is not.** 115 configurations across the six rows: 26 on
+`kalman_filter`, 25 on `ekf`, 29 on `ukf` (two of them with the QR option), 13 on
 `manifold_ukf`, 20 on `mekf` and 2 on `nmpc_static`. Each row's test asserts its
 own count rather than describing it, so a point cannot be dropped without the
 test failing. Two gaps, stated rather than left to be inferred:
 
 - The five estimator rows arm **every configuration their tables print a figure
-  for**, except the value one in the 4 KiB rows of the `ukf` and `manifold_ukf`
-  supported-maximum tables: one state and one output, one state at four outputs
-  and four states at one output on `ukf`, and one output on `manifold_ukf`. The
-  interior fill behind their supported-maximum tables is 4,323 configurations and
-  is **not** individually armed: nothing above is a claim about a dimension lying
-  between two armed ones.
+  for**, the value one in the 4 KiB rows of the `ukf` and `manifold_ukf`
+  supported-maximum tables included. The interior fill behind those tables is
+  4,323 configurations and is **not** individually armed: nothing above is a
+  claim about a dimension lying between two armed ones.
 - The predictive controller row arms **2 of its 25**, both sides of its
   boundary, plus the shipped pin at `NV` 17. Each of its points instantiates the
   whole nonlinear-programming substrate and then solves at that dimension: a unit

@@ -207,8 +207,8 @@ if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
     # GiB at -g1, below dare_care_nomalloc_test at 6.4 and 4.6.
     make_nomalloc_grid_test(kalman kalman_filter kalman 5)
     make_nomalloc_grid_test(ekf ekf ekf 5)
-    make_nomalloc_grid_test(ukf ukf ukf 5)
-    make_nomalloc_grid_test(manifold_ukf manifold_ukf manifold_ukf 2)
+    make_nomalloc_grid_test(ukf ukf ukf 6)
+    make_nomalloc_grid_test(manifold_ukf manifold_ukf manifold_ukf 3)
     make_nomalloc_grid_test(mekf mekf mekf 4)
     # These five arm dimensions whose whole-chain stack cost is published in
     # docs/rt-safety-matrix.md, and at the top of both axes that cost is above
