@@ -434,6 +434,8 @@ private:
         Eigen::Matrix<Scalar, ny, nx> KT;
         if(m_decomposition == gain_decomposition::ldlt)
             KT = S.ldlt().solve(Pxz.transpose());
+        else if constexpr(ny == 1)
+            KT = detail::one_output_gain_transpose(S(0, 0), Pxz.transpose());
         else
             KT = S.transpose().colPivHouseholderQr().solve(Pxz.transpose());
         return KT.transpose().eval();

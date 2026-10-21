@@ -301,8 +301,13 @@ private:
     /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.2
     auto compute_kalman_gain(const Matrix<Scalar, NY, NX>& H, const meas_cov_matrix_t& S) const -> Eigen::Matrix<Scalar, nx, ny>
     {
-        Eigen::Matrix<Scalar, ny, nx> KT_solved = S.transpose().colPivHouseholderQr().solve(H * m_P);
-        return KT_solved.transpose().eval();
+        if constexpr(ny == 1)
+            return detail::one_output_gain_transpose(S(0, 0), H * m_P).transpose().eval();
+        else
+        {
+            Eigen::Matrix<Scalar, ny, nx> KT_solved = S.transpose().colPivHouseholderQr().solve(H * m_P);
+            return KT_solved.transpose().eval();
+        }
     }
 
     /// @brief Apply state correction: x += K * innovation.

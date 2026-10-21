@@ -315,8 +315,13 @@ private:
     /// @cite markley2003 -- Markley, "Attitude Error Representations for Kalman Filtering", 2003
     auto compute_kalman_gain(const Matrix<Scalar, NY, NE>& H, const meas_cov_t& S) const -> Eigen::Matrix<Scalar, ne, ny>
     {
-        Eigen::Matrix<Scalar, ny, ne> KT = S.transpose().colPivHouseholderQr().solve(H * P_);
-        return KT.transpose().eval();
+        if constexpr(ny == 1)
+            return detail::one_output_gain_transpose(S(0, 0), H * P_).transpose().eval();
+        else
+        {
+            Eigen::Matrix<Scalar, ny, ne> KT = S.transpose().colPivHouseholderQr().solve(H * P_);
+            return KT.transpose().eval();
+        }
     }
 
     /// @brief Apply multiplicative quaternion correction and bias update.

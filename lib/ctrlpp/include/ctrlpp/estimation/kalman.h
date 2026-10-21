@@ -305,8 +305,13 @@ private:
     auto compute_kalman_gain(const meas_cov_matrix_t& S) const -> Eigen::Matrix<Scalar, nx, ny>
     {
         Eigen::Matrix<Scalar, ny, nx> CP = m_sys.C * m_P;
-        Eigen::Matrix<Scalar, ny, nx> KT_solved = S.transpose().colPivHouseholderQr().solve(CP);
-        return KT_solved.transpose().eval();
+        if constexpr(ny == 1)
+            return detail::one_output_gain_transpose(S(0, 0), CP).transpose().eval();
+        else
+        {
+            Eigen::Matrix<Scalar, ny, nx> KT_solved = S.transpose().colPivHouseholderQr().solve(CP);
+            return KT_solved.transpose().eval();
+        }
     }
 
     /// @brief Apply state correction: x += K * innovation.

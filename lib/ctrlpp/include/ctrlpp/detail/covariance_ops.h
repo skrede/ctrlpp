@@ -3,7 +3,7 @@
 
 /// @brief Covariance-matrix utilities: the counted rounding bound, admission of
 /// a covariance (drift symmetrized, structural asymmetry and indefiniteness
-/// refused), symmetrization and the matrix square root.
+/// refused), symmetrization, the matrix square root and the one-output gain.
 ///
 /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 5 (covariance conditioning / Joseph form)
 /// @cite higham1988 -- Higham, "Computing a nearest symmetric positive semidefinite matrix", Linear Algebra Appl. 103, 1988
@@ -172,6 +172,26 @@ template <typename Scalar, int N>
 inline auto psd_factor(const psd_decomposition_result<Scalar, N>& d) -> Eigen::Matrix<Scalar, N, N>
 {
     return d.eigenvectors * d.eigenvalues.cwiseMax(Scalar{0}).cwiseSqrt().asDiagonal();
+}
+
+/// @brief Solve s k = b for the transposed gain k of a one-output filter, with
+/// s the 1 x 1 innovation covariance and b the 1 x N right-hand side.
+///
+/// This is bitwise Eigen 3.4's 1 x 1 column-pivoting QR solve, whose reflector
+/// is the identity and whose triangular kernel divides one right-hand value
+/// unless it is zero and multiplies several by 1 / s. Skipping the
+/// factorization keeps gcc's optimized build from flagging its solve as an
+/// over-read (-Wstringop-overread).
+template <typename Derived>
+inline auto one_output_gain_transpose(typename Derived::Scalar s, const Eigen::MatrixBase<Derived>& b) -> Eigen::Matrix<typename Derived::Scalar, 1, Derived::ColsAtCompileTime>
+{
+    using Scalar = typename Derived::Scalar;
+    using row_t = Eigen::Matrix<Scalar, 1, Derived::ColsAtCompileTime>;
+    const row_t rhs = b;
+    if constexpr(Derived::ColsAtCompileTime == 1)
+        return rhs(0) != Scalar{0} ? row_t{rhs / s} : rhs;
+    else
+        return rhs * (Scalar{1} / s);
 }
 
 }

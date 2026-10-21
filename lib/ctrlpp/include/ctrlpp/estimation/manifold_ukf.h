@@ -478,8 +478,13 @@ private:
     /// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
     auto compute_kalman_gain(const Eigen::Matrix<Scalar, 3, ny>& Pxz, const meas_cov_t& S) const -> Eigen::Matrix<Scalar, 3, ny>
     {
-        Eigen::Matrix<Scalar, ny, 3> KT = S.transpose().colPivHouseholderQr().solve(Pxz.transpose());
-        return KT.transpose().eval();
+        if constexpr(ny == 1)
+            return detail::one_output_gain_transpose(S(0, 0), Pxz.transpose()).transpose().eval();
+        else
+        {
+            Eigen::Matrix<Scalar, ny, 3> KT = S.transpose().colPivHouseholderQr().solve(Pxz.transpose());
+            return KT.transpose().eval();
+        }
     }
 
     /// @brief Apply manifold correction and update covariance.
