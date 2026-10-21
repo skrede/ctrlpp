@@ -53,6 +53,8 @@ static_assert(published_plus<>::size == published_points,
 // fixed-size code changes with the dimension, so an armed neighbor does not cover it.
 using allocation_free_grid = published_plus<grid::point<24, 4>>;
 
+static_assert(allocation_free_grid::size == published_points + 1);
+
 struct arm_allocation_free
 {
     template <std::size_t NX, std::size_t NY>

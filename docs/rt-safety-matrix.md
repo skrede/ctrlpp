@@ -542,7 +542,8 @@ executed, so the first sample fetches that line and every later one finds it
 cached. The same image with one discarded sample before the cold one, its
 sampling code at the same addresses, reads 24 cycles cold. Whether a cold figure
 carries such a refill depends on where the linker places the code, so every cold
-figure on this board belongs to this image rather than to the code it times. The evidence image, the demonstration as shipped,
+figure on this board belongs to this image rather than to the code it times.
+The evidence image, the demonstration as shipped,
 keeps the assertions these figures run without. An earlier timing build that
 kept them, also kept the probe and left the task watchdog armed measured warm
 medians up to 4.8 times higher, and the watchdog's interrupt landed inside an
@@ -1489,7 +1490,8 @@ to that compiler. The same commands run on the library as it was before its port
 to the backend's scalar-first interface, against argmin
 `30a2cd4`, reproduced every cell published under `g++ (GNU) 16.1.1 20260728`
 exactly, so the compiler change moves none of them: what moved these figures is
-the backend revision together with this library's port to it. HOST measurements. Runtime watermarks taken on a pthread
+the backend revision together with this library's port to it. HOST
+measurements. Runtime watermarks taken on a pthread
 against a **zero-byte harness floor** and a 1,024-byte harness gap. The three
 ladders were taken with a 4 MiB painted region on a 64 MiB thread stack; the
 interior fill raises those to 32 MiB on a 512 MiB stack. This row's deepest
