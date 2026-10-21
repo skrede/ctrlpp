@@ -613,9 +613,10 @@ jobs:
   # setup-failure leak survived in a path the existing suite already exercised,
   # because no build had the instrumentation to see it.
   #
-  # Unlike a local triage sweep, this deliberately omits -fsanitize-recover so a
-  # UBSan report aborts the test rather than being logged while ctest still
-  # reports a pass.
+  # Clang's UBSan checks recover by default, so a UBSan report is logged and the
+  # test still passes; only -fno-sanitize-recover or halt_on_error=1 would fail it.
+  # The backends tree logs function-type reports from OSQP's own C sources, which
+  # call their linear-system backend through mismatched function-pointer types.
   sanitize:
     strategy:
       fail-fast: false
