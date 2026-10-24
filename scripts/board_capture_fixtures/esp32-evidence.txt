@@ -1,4 +1,4 @@
-[meta] build_id=19af29492f397c625fe6fe88fbb2dad12a6b9d71ce689a637176e07d650c44ce
+[meta] build_id=77ce95b6fe743e256028f76a284247df90ef26d9eb606933434b1f430f3933be
 [meta] kind=evidence
 [meta] board=ESP32-POE-EA target=esp32 loop=freertos-task-50hz scalar=float
 [meta] posture reset=power_on reset_reason=1 reset_rom=1 core_mhz=160 cycle_bits=32 cycle_wrap_ms=26843 stack_watchpoint=on assertions=on optimize=size compiler=gcc-15.2.0 idf=v6.0.2

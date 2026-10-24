@@ -1,7 +1,7 @@
-[meta] build_id=c11feb7d3ff6c253e04337828f47ebaf7af9d9ee
+[meta] build_id=ba73821bdebbe972555b60a0291eee0fa8fde0fb
 [meta] kind=evidence
 [meta] board=NUCLEO-H753ZI loop=bare-superloop scalar=double
-[meta] boot_handshake state=received waited_ms=6793 timeout_ms=30000
+[meta] boot_handshake state=received waited_ms=7456 timeout_ms=30000
 [meta] posture reset=pin reset_flags=cpu+pin reset_rsr=0x00460000 core_hz=64000000 axi_hz=64000000 clock_source=hsi icache=off dcache=off flash_latency_ws=7 cycle_wrap_ms=67108 code=flash data=dtcm stack=dtcm heap=axi_sram optimize=size compiler=gcc-16.2.0
 [verdict] stack region=startup used=468 from_top=468 free=70096 of=70564 reserve=32848 bytes gap=88 window=70476 floor=0 saturated=no
 [spread] region,regime,n,n_basis,block,raw_min,raw_median,raw_max,max_at,per_iteration_raw_max,wraps

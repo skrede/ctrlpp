@@ -1,22 +1,22 @@
-[meta] build_id=459f605b54b9b37ce9a4540a8a9c77b7e711dc79
+[meta] build_id=114c55e3cb2ad75719dfebcc83aabbdf970dd630
 [meta] kind=timing
 [meta] board=NUCLEO-H753ZI loop=bare-superloop scalar=double
-[meta] boot_handshake state=received waited_ms=6818 timeout_ms=30000
+[meta] boot_handshake state=received waited_ms=6879 timeout_ms=30000
 [meta] posture reset=pin reset_flags=cpu+pin reset_rsr=0x00460000 core_hz=64000000 axi_hz=64000000 clock_source=hsi icache=off dcache=off flash_latency_ws=7 cycle_wrap_ms=67108 code=flash data=dtcm stack=dtcm heap=axi_sram optimize=size compiler=gcc-16.2.0
 [spread] region,regime,n,n_basis,block,raw_min,raw_median,raw_max,max_at,per_iteration_raw_max,wraps
 [canary] cycle_counter PASS state=live
-[spread] overhead,cold,1,first_after_proof,1,114,114,114,0,114.0,0
-[spread] overhead,warm,201,golden_window,1,93,93,114,0,114.0,0
-[spread] control.design,cold,1,first_after_reset,1,344536,344536,344536,0,344536.0,0
-[spread] control.design,warm,201,golden_window,1,344406,344406,344415,0,344415.0,0
-[spread] control.step,cold,1,first_after_reset,201,91627,91627,91627,0,455.9,0
-[spread] control.step,warm,201,golden_window,201,91584,91584,91588,0,455.7,0
-[spread] estimation.step,cold,1,first_after_reset,201,2424167,2424167,2424167,0,12060.5,0
-[spread] estimation.step,warm,201,golden_window,201,2424174,2424174,2424182,0,12060.6,0
-[spread] dsp.step,cold,1,first_after_reset,201,11911,11911,11911,0,59.3,0
-[spread] dsp.step,warm,201,golden_window,201,11881,11881,11911,0,59.3,0
-[spread] trajectory.step,cold,1,first_after_reset,201,31478,31478,31478,0,156.6,0
-[spread] trajectory.step,warm,201,golden_window,201,31408,31408,31478,0,156.6,0
+[spread] overhead,cold,1,first_after_proof,1,121,121,121,0,121.0,0
+[spread] overhead,warm,201,golden_window,1,97,97,121,0,121.0,0
+[spread] control.design,cold,1,first_after_reset,1,317694,317694,317694,0,317694.0,0
+[spread] control.design,warm,201,golden_window,1,317556,317558,317558,1,317558.0,0
+[spread] control.step,cold,1,first_after_reset,201,84047,84047,84047,0,418.1,0
+[spread] control.step,warm,201,golden_window,201,83998,83998,84047,0,418.1,0
+[spread] estimation.step,cold,1,first_after_reset,201,1822736,1822736,1822736,0,9068.3,0
+[spread] estimation.step,warm,201,golden_window,201,1822757,1822757,1822764,0,9068.5,0
+[spread] dsp.step,cold,1,first_after_reset,201,11928,11928,11928,0,59.3,0
+[spread] dsp.step,warm,201,golden_window,201,11904,11904,11928,0,59.3,0
+[spread] trajectory.step,cold,1,first_after_reset,201,32970,32970,32970,0,164.0,0
+[spread] trajectory.step,warm,201,golden_window,201,32970,32991,32991,1,164.1,0
 [verdict] heap setup_high_water=1032 reserve=76720 bytes
 [verdict] gain device=9.4670936721530019,5.2817396380397534 host=9.4670936721545083,5.281739638040154
 [exact] k,t_s,x0,x1,u
@@ -225,8 +225,8 @@
 [verdict] family estimation value=1.3104323528650408 golden=1.3104323528650401 departure=6.661e-16 bound=2.226e-11 verdict=PASS allocations=unmeasured
 [verdict] family dsp value=-0.86508002466156531 golden=-0.86508002466156531 departure=0.000e+00 bound=2.503e-11 verdict=PASS allocations=unmeasured
 [verdict] family trajectory value=6.744791666666667 golden=6.744791666666667 departure=0.000e+00 bound=2.303e-11 verdict=PASS allocations=unmeasured
-[spread] predictive.step,cold,1,first_after_reset,1,153657878,153657878,153657878,0,153657878.0,0
-[spread] predictive.step,warm,201,golden_window,1,5320079,5340691,10499653,3,10499653.0,0
+[spread] predictive.step,cold,1,first_after_reset,1,141790059,141790059,141790059,0,141790059.0,0
+[spread] predictive.step,warm,201,golden_window,1,4861859,4880740,9669296,3,9669296.0,0
 [verdict] work region=predictive.step regime=cold iterations=30
 [verdict] work region=predictive.step regime=warm n=201 iterations_min=1 iterations_max=2 max_at_iterations=2
 [verdict] heap predictive_setup_high_water=76720 reserve=76720 bytes
