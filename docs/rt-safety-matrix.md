@@ -564,22 +564,18 @@ watchdog released before it reports:
   `77ce95b6fe743e256028f76a284247df90ef26d9eb606933434b1f430f3933be`), each
   restarted by a pulse on the chip's enable pin through the console bridge, with
   no operator action;
-- 5 runs of the leg's previous timing image, ELF sha256
-  `c74bb5a35d5af9752fb4b727d64b11a437b13bc5628af552aff775b481ad4bff`, built
-  from commit `7602e4c`, each after the operator unplugged and replugged the
-  board's own USB cable, every one accepted on its first replug. Two earlier
-  series of that image stopped at 2 and at 0 counted runs: a run's report lost
-  its head, and the replug its retry asked for did not come within the capture's
-  timeout. Neither is pooled with this series. The power-on series has not been
-  repeated on the current image.
+- 5 runs of the same image, each after the operator unplugged and replugged the
+  board's own USB cable. Four were accepted on their first replug; the fourth
+  run's report lost its head on two replugs and was accepted on the third, the
+  last attempt the capture allows. Both refused attempts are listed in the
+  series summary and neither is counted.
 
 Every run in both series decoded `reset=power_on reset_reason=1 reset_rom=1`.
-The block was byte-identical in all 25 runs across both images (sha256
+The block was byte-identical in all 25 runs (sha256
 `512113e3b1844698fca4ac90bc779044081be75e19d073b016d50ef7916ae8df`), the same
 block the leg's earlier images printed with the probe and assertions on. Every
-timing figure in every region had zero spread within each series. The
-enable-pin series measured the figures in the table above; the power-on series
-measured those of its own image, which this table no longer carries.
+timing figure in every region had zero spread across each series, and both
+series measured the figures in the table above.
 
 **WHAT THE LABEL CANNOT SAY.** This chip reports a power cycle and an
 enable-pin pulse with the same reset reason, so on this board, unlike the
@@ -709,11 +705,10 @@ assertion reads `8712 <= 8192`. This is the mechanism behind the host ceiling of
 sixteen times smaller. No stack figure on this board covers a configuration
 other than the shipped pin.
 
-**Timing, on the timing image.** Every figure in this part, the warm-reset
-series below included, belongs to timing image
+**Timing, on the timing image.** Every figure in this part, both reset series
+below included, belongs to timing image
 `114c55e3cb2ad75719dfebcc83aabbdf970dd630`, linked against argmin
-`0a638cb87b6e959f7cb7b49f0afa34f137b93b69`. The power-on series below belongs to
-the leg's previous timing image, as it states. Cycles from the core's DWT cycle
+`0a638cb87b6e959f7cb7b49f0afa34f137b93b69`. Cycles from the core's DWT cycle
 counter, which the image proves live before printing any figure. Every figure is
 raw: the sampling overhead is published as its own region and never subtracted.
 The cold figure is the first execution after reset (`n = 1`); the warm figures
@@ -753,18 +748,15 @@ confidence; the count is part of the result.
 **Determinism across power cycles.** Both images wait at boot, before printing
 anything, for at most 30 s, for a byte the capture sends once its reader is
 attached, so a report read after a replug keeps its head, and a report whose
-wait expired is refused. The power-on series ran on the leg's previous timing
-image, build id `459f605b54b9b37ce9a4540a8a9c77b7e711dc79`, built from commit
-`7602e4c` and linked against argmin `775a756c9097f23abd868303734484dbf3c5888c`,
-and has not been repeated on the current image. The operator unplugged and replugged the board's USB cable once per run. All 5 runs
-decoded their own reset as a power-on reset,
+wait expired is refused. The operator unplugged and replugged the board's USB
+cable once per run. All 5 runs decoded their own reset as a power-on reset,
 `reset=power_on reset_flags=cpu+d1+d2+bor+pin+por reset_rsr=0x00FE0000`, no run
 decoded another class, every run was accepted on its first attempt, and the
-image waited 111 to 178 ms for the handshake byte. The block was byte-identical in
-all 5 runs, and it is the same block as the warm series above. Every timing
+image waited 177 to 189 ms for the handshake byte. The block was byte-identical
+in all 5 runs, and it is the same block as the warm series above. Every timing
 figure in every region had zero spread across the 5 runs, against a bound of 0
-cycles stated before collection, and every figure equals that image's own
-flash capture rather than the table above. Zero differences in 5 runs leaves a per-run difference rate up to about
+cycles stated before collection, and every figure equals the table above. Zero
+differences in 5 runs leaves a per-run difference rate up to about
 60 percent plausible at 95 percent confidence, so the power-on half of this
 claim is much weaker than the warm half.
 
