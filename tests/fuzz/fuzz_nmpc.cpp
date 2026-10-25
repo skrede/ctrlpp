@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <algorithm>
 
 namespace
 {
@@ -55,11 +56,6 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     double u_min_val = buf[3];
     double u_max_val = buf[4];
-    if(u_min_val >= u_max_val)
-    {
-        u_min_val = -10.0;
-        u_max_val = 10.0;
-    }
 
     ctrlpp::Vector<double, 2> x0;
     x0 << buf[5], buf[6];
@@ -79,29 +75,22 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     cfg.u_min = umin;
     cfg.u_max = umax;
 
-    try
-    {
-        double_integrator dynamics;
-        // A rejected horizon is a typed outcome, not a finding.
-        auto controller =
-            ctrlpp::nmpc_dynamic<double, 2, 1, ctrlpp::nlopt_solver<double>, double_integrator>::create(dynamics, cfg);
-        if(!controller.has_value())
-            return 0;
-        auto result = controller->solve(x0);
+    double_integrator dynamics;
+    // A refused configuration and an error-branch solve are typed outcomes, not findings; an
+    // exception escaping the controller is one.
+    auto controller = ctrlpp::nmpc_dynamic<double, 2, 1, ctrlpp::nlopt_solver<double>, double_integrator>::create(dynamics, cfg);
+    if(!controller.has_value())
+        return 0;
+    auto result = controller->solve(x0);
 
-        if(result.has_value())
-        {
-            const auto& u = result.value().input;
-            for(int i = 0; i < 1; ++i)
-            {
-                if(!std::isfinite(u(i)))
-            return 0;
-            }
-        }
-    }
-    catch(...)
+    if(result.has_value())
     {
-        // NLopt may throw for degenerate inputs; that is acceptable
+        const auto& u = result.value().input;
+        for(int i = 0; i < 1; ++i)
+        {
+            if(!std::isfinite(u(i)))
+                return 0;
+        }
     }
 
     return 0;

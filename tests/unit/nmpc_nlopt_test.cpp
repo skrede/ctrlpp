@@ -6,9 +6,14 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <new>
+#include <span>
 #include <cmath>
-#include <cstddef>
 #include <vector>
+#include <cstddef>
+#include <utility>
+#include <optional>
+#include <stdexcept>
 
 namespace
 {
@@ -44,6 +49,42 @@ auto make_config(int horizon = 10) -> ctrlpp::nmpc_config<double, NX, NU>
 using NloptSolver = ctrlpp::nlopt_solver<double>;
 using NmpcDI = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator)>;
 using NmpcPend = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(pendulum)>;
+
+auto scalar_problem(double lower, double upper) -> ctrlpp::nlp_problem<double>
+{
+    return {
+        .n_vars = 1,
+        .n_constraints = 0,
+        .cost = [](std::span<const double> x) -> double { return (x[0] - 0.75) * (x[0] - 0.75); },
+        .gradient = [](std::span<const double> x, std::span<double> g) { g[0] = 2.0 * (x[0] - 0.75); },
+        .constraints = [](std::span<const double>, std::span<double>) {},
+        .constraint_jacobian = [](std::span<const double>, std::span<double>) {},
+        .x_lower = Eigen::VectorXd::Constant(1, lower),
+        .x_upper = Eigen::VectorXd::Constant(1, upper),
+        .c_lower = {},
+        .c_upper = {},
+    };
+}
+
+auto zero_start(Eigen::Index size = 1) -> ctrlpp::nlp_update<double>
+{
+    return {.x0 = Eigen::VectorXd::Zero(size)};
+}
+
+struct stale_problem_solver
+{
+    stale_problem_solver() : problem{scalar_problem(-1.0, 1.0)}, source{}
+    {
+        REQUIRE(source.setup(problem).has_value());
+        problem.x_lower = Eigen::VectorXd::Constant(2, -1.0);
+    }
+
+    stale_problem_solver(const stale_problem_solver&) = delete;
+    stale_problem_solver& operator=(const stale_problem_solver&) = delete;
+
+    ctrlpp::nlp_problem<double> problem;
+    NloptSolver source;
+};
 
 } // namespace
 
@@ -336,4 +377,159 @@ TEST_CASE("nmpc nlopt constraint satisfaction closed-loop", "[nmpc][nlopt]")
         CHECK(x(1) >= -3.0 - tol);
         CHECK(x(1) <= 3.0 + tol);
     }
+}
+
+TEST_CASE("nlopt_solver starts inside a box that excludes the zero warm start", "[nlopt][containment]")
+{
+    auto problem = scalar_problem(0.5, 1.0);
+    NloptSolver solver;
+    REQUIRE(solver.setup(problem).has_value());
+
+    ctrlpp::nlp_result<double> result{};
+    REQUIRE_NOTHROW(result = solver.solve(zero_start()));
+    REQUIRE(result.status == ctrlpp::solve_status::optimal);
+    REQUIRE(result.x.size() == 1);
+    CHECK(result.x[0] >= 0.5);
+    CHECK(result.x[0] <= 1.0);
+    CHECK_THAT(result.x[0], WithinAbs(0.75, 1e-6));
+}
+
+TEST_CASE("nlopt_solver reports inverted bounds as an error status", "[nlopt][containment]")
+{
+    auto problem = scalar_problem(1.0, -1.0);
+    NloptSolver solver;
+    REQUIRE(solver.setup(problem).has_value());
+
+    ctrlpp::nlp_result<double> result{};
+    REQUIRE_NOTHROW(result = solver.solve(zero_start()));
+    CHECK(result.status == ctrlpp::solve_status::error);
+}
+
+TEST_CASE("nlopt_solver reports a warm start of the wrong length as an error status", "[nlopt][containment]")
+{
+    auto problem = scalar_problem(-1.0, 1.0);
+    NloptSolver solver;
+    REQUIRE(solver.setup(problem).has_value());
+
+    ctrlpp::nlp_result<double> result{};
+    REQUIRE_NOTHROW(result = solver.solve(zero_start(2)));
+    CHECK(result.status == ctrlpp::solve_status::error);
+}
+
+TEST_CASE("nlopt_solver reports a cost that throws as an error status", "[nlopt][containment]")
+{
+    auto problem = scalar_problem(-1.0, 1.0);
+
+    SECTION("std::invalid_argument")
+    {
+        problem.cost = [](std::span<const double>) -> double { throw std::invalid_argument{"cost refused the iterate"}; };
+    }
+    SECTION("std::bad_alloc")
+    {
+        problem.cost = [](std::span<const double>) -> double { throw std::bad_alloc{}; };
+    }
+
+    NloptSolver solver;
+    REQUIRE(solver.setup(problem).has_value());
+
+    ctrlpp::nlp_result<double> result{};
+    REQUIRE_NOTHROW(result = solver.solve(zero_start()));
+    CHECK(result.status == ctrlpp::solve_status::error);
+}
+
+TEST_CASE("nmpc on nlopt solves an input box that excludes zero", "[nlopt][containment]")
+{
+    auto config = make_config(5);
+    config.u_min = Eigen::Matrix<double, 1, 1>{0.5};
+    config.u_max = Eigen::Matrix<double, 1, 1>{1.0};
+    auto created = NmpcDI::create(double_integrator, config);
+    REQUIRE(created.has_value());
+
+    std::optional<decltype(created->solve(Eigen::Vector2d{}))> solved;
+    REQUIRE_NOTHROW(solved.emplace(created->solve(Eigen::Vector2d{1.0, 0.0})));
+    REQUIRE(solved->has_value());
+    CHECK((*solved)->input(0) >= 0.5);
+    CHECK((*solved)->input(0) <= 1.0);
+}
+
+TEST_CASE("nmpc on nlopt solves a state box that excludes zero", "[nlopt][containment]")
+{
+    auto config = make_config(5);
+    config.x_min = Eigen::Vector2d{0.5, -10.0};
+    config.x_max = Eigen::Vector2d{2.0, 10.0};
+    auto created = NmpcDI::create(double_integrator, config);
+    REQUIRE(created.has_value());
+
+    std::optional<decltype(created->solve(Eigen::Vector2d{}))> solved;
+    REQUIRE_NOTHROW(solved.emplace(created->solve(Eigen::Vector2d{1.0, 0.0})));
+    CHECK(solved->has_value());
+}
+
+TEST_CASE("nmpc on nlopt reports inverted input bounds through the error branch", "[nlopt][containment]")
+{
+    auto config = make_config(5);
+    config.u_min = Eigen::Matrix<double, 1, 1>{1.0};
+    config.u_max = Eigen::Matrix<double, 1, 1>{-1.0};
+    auto created = NmpcDI::create(double_integrator, config);
+    REQUIRE(created.has_value());
+
+    std::optional<decltype(created->solve(Eigen::Vector2d{}))> solved;
+    REQUIRE_NOTHROW(solved.emplace(created->solve(Eigen::Vector2d{1.0, 0.0})));
+    REQUIRE_FALSE(solved->has_value());
+    CHECK(solved->error() == ctrlpp::solver_error::invalid_problem);
+}
+
+TEST_CASE("nlopt_solver setup reports a bound vector of the wrong length as backend_rejected", "[nlopt][containment]")
+{
+    auto problem = scalar_problem(-1.0, 1.0);
+    problem.x_lower = Eigen::VectorXd::Constant(2, -1.0);
+    NloptSolver solver;
+
+    std::optional<ctrlpp::expected<void, ctrlpp::nlopt_setup_error>> outcome;
+    REQUIRE_NOTHROW(outcome.emplace(solver.setup(problem)));
+    REQUIRE_FALSE(outcome->has_value());
+    CHECK(outcome->error() == ctrlpp::nlopt_setup_error::backend_rejected);
+
+    ctrlpp::nlp_result<double> result{};
+    REQUIRE_NOTHROW(result = solver.solve(zero_start()));
+    CHECK(result.status == ctrlpp::solve_status::error);
+}
+
+TEST_CASE("nlopt_solver copy and move carry a failed re-setup to the next solve", "[nlopt][containment]")
+{
+    stale_problem_solver fixture;
+    std::optional<NloptSolver> rebound;
+
+    SECTION("copy construction")
+    {
+        REQUIRE_NOTHROW(rebound.emplace(fixture.source));
+    }
+    SECTION("move construction")
+    {
+        REQUIRE_NOTHROW(rebound.emplace(std::move(fixture.source)));
+    }
+    SECTION("copy assignment")
+    {
+        rebound.emplace();
+        REQUIRE_NOTHROW(*rebound = fixture.source);
+    }
+    SECTION("move assignment")
+    {
+        rebound.emplace();
+        REQUIRE_NOTHROW(*rebound = std::move(fixture.source));
+    }
+
+    REQUIRE(rebound.has_value());
+    ctrlpp::nlp_result<double> result{};
+    REQUIRE_NOTHROW(result = rebound->solve(zero_start()));
+    CHECK(result.status == ctrlpp::solve_status::error);
+}
+
+TEST_CASE("nlopt_solver that was never set up reports an error status", "[nlopt][containment]")
+{
+    NloptSolver solver;
+
+    ctrlpp::nlp_result<double> result{};
+    REQUIRE_NOTHROW(result = solver.solve(zero_start()));
+    CHECK(result.status == ctrlpp::solve_status::error);
 }

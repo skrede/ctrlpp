@@ -14,9 +14,14 @@ namespace ctrlpp
 ///    CCSAQ) cannot handle equality constraints. The auglag-wrapped variants
 ///    (`auglag_mma`, `auglag_ccsaq`) absorb equality constraints into the outer
 ///    augmented-Lagrangian penalty and accept the same problem.
+///  * backend_rejected : NLopt refused the optimizer's construction or
+///    configuration (an allocation failure, an argument it rejects such as a
+///    bound vector of the wrong length, or any other error it raised), so no
+///    optimizer exists.
 enum class nlopt_setup_error : std::uint8_t
 {
-    incompatible_equality_constraints
+    incompatible_equality_constraints,
+    backend_rejected
 };
 
 /// @brief Structured failure modes for the compile-time-horizon NLP

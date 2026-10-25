@@ -5,9 +5,10 @@
 ///
 /// Setup fallibility is reported through `setup` returning
 /// `ctrlpp::expected<void, nlopt_setup_error>`. Note that NLopt's C++ API throws
-/// by upstream design (`solve` contains those exceptions and maps them to
-/// `solve_status` internally), so this opt-in backend requires exception support
-/// and is exempt from the library's embedded no-exceptions floor.
+/// by upstream design (`setup` and `solve` contain every standard exception and
+/// report it as `nlopt_setup_error::backend_rejected` or `solve_status::error`),
+/// so this opt-in backend requires exception support and is exempt from the
+/// library's embedded no-exceptions floor.
 
 #include "ctrlpp/expected.h"
 
@@ -22,7 +23,7 @@
 #include <vector>
 #include <cstdint>
 #include <algorithm>
-#include <stdexcept>
+#include <exception>
 #include <type_traits>
 
 namespace ctrlpp
@@ -63,7 +64,7 @@ class nlopt_solver
 public:
     using scalar_type = Scalar;
 
-    explicit nlopt_solver(nlopt_settings<Scalar> settings = {}) : settings_{settings} {}
+    explicit nlopt_solver(nlopt_settings<Scalar> settings = {}) : settings_{settings}, ready_{false} {}
 
     // Every NLopt callback is registered with the ADDRESS of this solver
     // (`set_min_objective(objective_callback, this)` and the three mconstraint
@@ -77,9 +78,9 @@ public:
     // new address. The problem is referenced, not owned; the caller keeps it at
     // a stable address for the lifetime of the solver, so re-running setup
     // against it is well defined.
-    nlopt_solver(const nlopt_solver& other) : settings_{other.settings_}, problem_{other.problem_} { rebind_callbacks(); }
+    nlopt_solver(const nlopt_solver& other) : settings_{other.settings_}, problem_{other.problem_}, ready_{false} { rebind_callbacks(); }
 
-    nlopt_solver(nlopt_solver&& other) : settings_{other.settings_}, problem_{other.problem_} { rebind_callbacks(); }
+    nlopt_solver(nlopt_solver&& other) : settings_{other.settings_}, problem_{other.problem_}, ready_{false} { rebind_callbacks(); }
 
     auto operator=(const nlopt_solver& other) -> nlopt_solver&
     {
@@ -106,76 +107,34 @@ public:
     ~nlopt_solver() = default;
 
     /// @brief Fallible setup: configures the NLopt optimizer from the problem
-    /// definition. Returns an empty expected on success and an
-    /// `nlopt_setup_error` when the selected algorithm rejects the constraint
-    /// structure. This is the only setup shape.
+    /// definition. Returns an empty expected on success,
+    /// `nlopt_setup_error::incompatible_equality_constraints` when the selected
+    /// algorithm rejects the constraint structure, and
+    /// `nlopt_setup_error::backend_rejected` when NLopt raises any error while
+    /// building or configuring the optimizer. A failed setup leaves the solver
+    /// unusable: `solve` reports `solve_status::error` until a setup succeeds.
+    /// This is the only setup shape.
     auto setup(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
     {
+        ready_ = false;
         problem_ = &problem;
-        opt_ = nlopt::opt(to_nlopt_algorithm(settings_.algorithm), static_cast<unsigned>(problem.n_vars));
-        configure_variable_bounds(problem);
-        opt_.set_min_objective(objective_callback, this);
-
-        if(auto partitioned = partition_constraints(problem); !partitioned.has_value())
-            return partitioned;
-
-        configure_constraint_callbacks();
-        configure_stopping_criteria();
-
-        if(settings_.algorithm == nlopt_algorithm::auglag_mma
-           || settings_.algorithm == nlopt_algorithm::auglag_ccsaq)
+        try
         {
-            nlopt::opt local(to_nlopt_inner(settings_.algorithm), static_cast<unsigned>(problem.n_vars));
-            local.set_ftol_rel(static_cast<double>(settings_.ftol_rel));
-            local.set_xtol_rel(static_cast<double>(settings_.xtol_rel));
-            local.set_maxeval(settings_.max_eval);
-            if(settings_.max_time > Scalar{0})
-                local.set_maxtime(static_cast<double>(settings_.max_time));
-            opt_.set_local_optimizer(local);
+            auto configured = configure(problem);
+            ready_ = configured.has_value();
+            return configured;
         }
-
-        return {};
+        catch(const std::exception&)
+        {
+            return ctrlpp::unexpected(nlopt_setup_error::backend_rejected);
+        }
     }
 
     auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
     {
-        nlp_result<Scalar> result{};
-        auto x = to_stdvec(update.x0);
-        double opt_f{};
-
-        auto t0 = std::chrono::steady_clock::now();
-
-        try
-        {
-            auto rc = opt_.optimize(x, opt_f);
-            result.status = map_result(rc);
-        }
-        catch(const nlopt::roundoff_limited&)
-        {
-            result.status = solve_status::solved_inaccurate;
-            opt_f = problem_->cost({x.data(), x.size()});
-        }
-        catch(const std::runtime_error&)
-        {
-            result.status = solve_status::error;
-        }
-
-        auto t1 = std::chrono::steady_clock::now();
-        result.solve_time = static_cast<Scalar>(std::chrono::duration<double>(t1 - t0).count());
-
-        // Copy solution back to Eigen
-        result.x.resize(static_cast<Eigen::Index>(x.size()));
-        for(Eigen::Index i = 0; i < result.x.size(); ++i)
-        {
-            result.x[i] = static_cast<Scalar>(x[static_cast<std::size_t>(i)]);
-        }
-
-        result.objective = static_cast<Scalar>(opt_f);
-        result.iterations = opt_.get_numevals();
-
-        // Compute primal residual as max constraint violation
-        result.primal_residual = compute_max_violation(x);
-
+        const auto t0 = std::chrono::steady_clock::now();
+        nlp_result<Scalar> result = ready_ ? guarded_solve(update) : failed_result();
+        result.solve_time = static_cast<Scalar>(std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
         return result;
     }
 
@@ -213,6 +172,103 @@ private:
         default:
             return nlopt::LD_SLSQP;
         }
+    }
+
+    auto configure(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
+    {
+        opt_ = nlopt::opt(to_nlopt_algorithm(settings_.algorithm), static_cast<unsigned>(problem.n_vars));
+        configure_variable_bounds(problem);
+        opt_.set_min_objective(objective_callback, this);
+
+        if(auto partitioned = partition_constraints(problem); !partitioned.has_value())
+            return partitioned;
+
+        configure_constraint_callbacks();
+        configure_stopping_criteria();
+        if(settings_.algorithm == nlopt_algorithm::auglag_mma || settings_.algorithm == nlopt_algorithm::auglag_ccsaq)
+            configure_local_optimizer(problem);
+        return {};
+    }
+
+    void configure_local_optimizer(const nlp_problem<Scalar>& problem)
+    {
+        nlopt::opt local(to_nlopt_inner(settings_.algorithm), static_cast<unsigned>(problem.n_vars));
+        local.set_ftol_rel(static_cast<double>(settings_.ftol_rel));
+        local.set_xtol_rel(static_cast<double>(settings_.xtol_rel));
+        local.set_maxeval(settings_.max_eval);
+        if(settings_.max_time > Scalar{0})
+            local.set_maxtime(static_cast<double>(settings_.max_time));
+        opt_.set_local_optimizer(local);
+    }
+
+    // Consumers read solve through an expected-based API, so nothing may escape it: every NLopt
+    // call, allocation and callback of a solve, including the cost re-evaluation that
+    // run_optimizer's roundoff handler performs, runs under this guard.
+    auto guarded_solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
+    {
+        try
+        {
+            auto x = to_stdvec(update.x0);
+            project_onto_bounds(x);
+            double opt_f{};
+            const solve_status status = run_optimizer(x, opt_f);
+            return solved_result(x, opt_f, status);
+        }
+        catch(const std::exception&)
+        {
+            return failed_result();
+        }
+    }
+
+    // NLopt refuses a start outside the bounds, so a valid box that excludes the previous
+    // iterate would otherwise be refused. The comparisons leave inverted or NaN bounds
+    // unchanged for NLopt to refuse, which std::clamp's lower <= upper precondition would not.
+    void project_onto_bounds(std::vector<double>& x) const
+    {
+        const auto n = static_cast<Eigen::Index>(x.size());
+        const bool has_lower = problem_->x_lower.size() == n;
+        const bool has_upper = problem_->x_upper.size() == n;
+        for(Eigen::Index i = 0; i < n; ++i)
+        {
+            double& xi = x[static_cast<std::size_t>(i)];
+            if(has_upper && xi > static_cast<double>(problem_->x_upper[i]))
+                xi = static_cast<double>(problem_->x_upper[i]);
+            if(has_lower && xi < static_cast<double>(problem_->x_lower[i]))
+                xi = static_cast<double>(problem_->x_lower[i]);
+        }
+    }
+
+    auto run_optimizer(std::vector<double>& x, double& opt_f) -> solve_status
+    {
+        try
+        {
+            return map_result(opt_.optimize(x, opt_f));
+        }
+        catch(const nlopt::roundoff_limited&)
+        {
+            opt_f = problem_->cost({x.data(), x.size()});
+            return solve_status::solved_inaccurate;
+        }
+    }
+
+    auto solved_result(const std::vector<double>& x, double opt_f, solve_status status) const -> nlp_result<Scalar>
+    {
+        nlp_result<Scalar> result{};
+        result.status = status;
+        result.x.resize(static_cast<Eigen::Index>(x.size()));
+        for(Eigen::Index i = 0; i < result.x.size(); ++i)
+            result.x[i] = static_cast<Scalar>(x[static_cast<std::size_t>(i)]);
+        result.objective = static_cast<Scalar>(opt_f);
+        result.iterations = opt_.get_numevals();
+        result.primal_residual = compute_max_violation(x);
+        return result;
+    }
+
+    static auto failed_result() -> nlp_result<Scalar>
+    {
+        nlp_result<Scalar> result{};
+        result.status = solve_status::error;
+        return result;
     }
 
     void configure_variable_bounds(const nlp_problem<Scalar>& problem)
@@ -254,13 +310,13 @@ private:
         return {};
     }
 
-    // Re-register every callback against this object's address. A solver that
-    // was never set up has nothing to rebind and stays inert until the caller
-    // sets it up. Setup cannot newly fail here: it already succeeded for this
-    // problem on the source object, and it is a pure function of the problem
-    // and the settings, both of which were carried over unchanged.
+    // Re-register every callback against this object's address. The re-setup can
+    // fail when the referenced problem changed since the source's setup; the copy
+    // or move cannot report it, so it stays unready and its next solve reports
+    // solve_status::error, as does a solver whose source was never set up.
     void rebind_callbacks()
     {
+        ready_ = false;
         if(problem_ != nullptr)
             static_cast<void>(setup(*problem_));
     }
@@ -480,6 +536,7 @@ private:
     nlopt_settings<Scalar> settings_;
     const nlp_problem<Scalar>* problem_{nullptr};
     nlopt::opt opt_{};
+    bool ready_;
 
     std::vector<int> eq_indices_;
     std::vector<int> ineq_upper_indices_;
