@@ -7,6 +7,7 @@
 #include <Eigen/Core>
 
 #include <span>
+#include <cmath>
 #include <concepts>
 #include <functional>
 
@@ -110,6 +111,18 @@ template <typename Solver, typename Problem>
 auto setup_nlp_solver(Solver& solver, const Problem& problem) -> decltype(solver.setup(problem))
 {
     return solver.setup(problem);
+}
+
+/// @brief Whether an NLP result reported under an accepted status can be
+/// consumed: the primal covers the posed dimension, its consumed prefix and the
+/// reported objective, solve time and primal residual are finite, and the
+/// iteration count is non-negative. The primal is a separate argument because a
+/// write-into solve leaves `result.x` empty and the primal in the caller's buffer.
+template <typename Scalar>
+auto nlp_result_is_usable(const nlp_result<Scalar>& result, const Eigen::VectorX<Scalar>& primal, Eigen::Index primal_size) -> bool
+{
+    return primal.size() >= primal_size && primal.head(primal_size).allFinite() && std::isfinite(result.objective) && std::isfinite(result.solve_time)
+        && std::isfinite(result.primal_residual) && result.iterations >= 0;
 }
 
 }

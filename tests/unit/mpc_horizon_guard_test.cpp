@@ -32,15 +32,21 @@
 #include "hardening_helpers.h"
 #include "stub_qp_solver.h"
 #include "stub_nlp_solver.h"
+#include "scripted_nlp_solver.h"
 
 #include <Eigen/Dense>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <span>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <vector>
 #include <cstddef>
+#include <cstring>
+#include <utility>
 #include <variant>
 
 namespace
@@ -996,4 +1002,217 @@ TEST_CASE("Nonlinear moving-horizon estimator rejects non-finite accepted result
     require_nonlinear_estimator_rejects_nonfinite_result<
         ctrlpp_test::report_values::negative_infinity,
         ctrlpp::solve_status::solved_inaccurate>();
+}
+
+namespace
+{
+
+template <bool SolveInto>
+using scripted_static_controller = ctrlpp::nmpc_static<double, NX, NU, 5, ctrlpp_test::scripted_nlp_solver<double, SolveInto>, decltype(double_integrator)>;
+
+using scripted_dynamic_controller = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp_test::scripted_nlp_solver<double>, decltype(double_integrator)>;
+
+using scripted_record = ctrlpp_test::scripted_record<double>;
+
+constexpr std::array accepted_statuses{ctrlpp::solve_status::optimal, ctrlpp::solve_status::solved_inaccurate, ctrlpp::solve_status::max_iterations, ctrlpp::solve_status::time_limit};
+
+struct corruption
+{
+    ctrlpp_test::corrupted_field field;
+    ctrlpp_test::report_values value;
+};
+
+// Every value-carrying field alone with each non-finite value, then the iteration
+// count alone, which the stub sets to -1 whatever the value.
+auto single_field_corruptions() -> std::vector<corruption>
+{
+    std::vector<corruption> out;
+    for(auto const field : {ctrlpp_test::corrupted_field::primal, ctrlpp_test::corrupted_field::objective, ctrlpp_test::corrupted_field::solve_time, ctrlpp_test::corrupted_field::primal_residual})
+        for(auto const value : {ctrlpp_test::report_values::nan, ctrlpp_test::report_values::positive_infinity, ctrlpp_test::report_values::negative_infinity})
+            out.push_back({field, value});
+    out.push_back({ctrlpp_test::corrupted_field::iterations, ctrlpp_test::report_values::nan});
+    return out;
+}
+
+auto scripted(std::vector<ctrlpp_test::scripted_answer> script) -> std::shared_ptr<scripted_record>
+{
+    auto record = std::make_shared<scripted_record>();
+    record->script = std::move(script);
+    return record;
+}
+
+auto rate_limited_config() -> ctrlpp::nmpc_config<double, NX, NU>
+{
+    auto cfg = nonlinear_config(shape_horizon);
+    cfg.du_max = Eigen::Matrix<double, 1, 1>{0.5};
+    return cfg;
+}
+
+auto make_scripted_dynamic(std::shared_ptr<scripted_record> record, const ctrlpp::nmpc_config<double, NX, NU>& cfg) -> scripted_dynamic_controller
+{
+    return ctrlpp::test::constructed(scripted_dynamic_controller::create(double_integrator, cfg, ctrlpp_test::scripted_nlp_solver<double>{std::move(record)}));
+}
+
+template <bool SolveInto>
+auto make_scripted_static(std::shared_ptr<scripted_record> record, const ctrlpp::nmpc_config<double, NX, NU>& cfg) -> scripted_static_controller<SolveInto>
+{
+    return scripted_static_controller<SolveInto>{double_integrator, cfg, ctrlpp_test::scripted_nlp_solver<double, SolveInto>{std::move(record)}};
+}
+
+auto bitwise_equal(const Eigen::VectorXd& a, const Eigen::VectorXd& b) -> bool
+{
+    return a.size() == b.size() && std::memcmp(a.data(), b.data(), sizeof(double) * static_cast<std::size_t>(a.size())) == 0;
+}
+
+template <typename Controller>
+auto constraint_rows_at_origin(const Controller& controller) -> Eigen::VectorXd
+{
+    const auto& problem = controller.problem();
+    const Eigen::VectorXd z = Eigen::VectorXd::Zero(problem.n_vars);
+    Eigen::VectorXd rows = Eigen::VectorXd::Zero(problem.n_constraints);
+    problem.constraints(std::span<const double>{z.data(), static_cast<std::size_t>(z.size())}, std::span<double>{rows.data(), static_cast<std::size_t>(rows.size())});
+    return rows;
+}
+
+template <typename Controller>
+void check_refused(Controller& controller)
+{
+    auto solved = controller.solve(Eigen::Vector2d{1.0, 0.0});
+    CHECK_FALSE(solved.has_value());
+    if(!solved.has_value())
+        CHECK(solved.error() == ctrlpp::solver_error::invalid_backend_result);
+    CHECK(controller.diagnostics().status == ctrlpp::solve_status::invalid_backend_result);
+    if constexpr(requires { controller.trajectory(); })
+        CHECK_FALSE(controller.trajectory().has_value());
+}
+
+template <typename Make>
+void check_every_field_refused(Make make)
+{
+    for(auto const status : accepted_statuses)
+    {
+        for(auto const bad : single_field_corruptions())
+        {
+            CAPTURE(status, bad.field, bad.value);
+            auto controller = make(scripted({ctrlpp_test::scripted_answer{status, bad.field, bad.value}}));
+            check_refused(controller);
+        }
+    }
+}
+
+// Script: finite, corrupted, finite. The refused middle call must leave the next
+// call's warm start, the previous input inside the posed rate rows, and the
+// stored primal exactly as the first accepted call left them. The rows are
+// compared after the second and the third call, because each solve poses the
+// previous input before it calls the backend; the first call's rows guard that
+// the comparison is not vacuous.
+template <typename Make>
+void check_refusal_commits_nothing(Make make)
+{
+    const Eigen::Vector2d x0{1.0, 0.0};
+    for(auto const status : accepted_statuses)
+    {
+        for(auto const bad : single_field_corruptions())
+        {
+            CAPTURE(status, bad.field, bad.value);
+            const ctrlpp_test::scripted_answer finite{status};
+            auto record = scripted({finite, ctrlpp_test::scripted_answer{status, bad.field, bad.value}, finite});
+            auto controller = make(record);
+
+            REQUIRE(controller.solve(x0).has_value());
+            const Eigen::VectorXd rows_first = constraint_rows_at_origin(controller);
+            const Eigen::VectorXd primal_first = controller.last_solution();
+            CHECK(bitwise_equal(primal_first, record->primals[0]));
+
+            CHECK_FALSE(controller.solve(x0).has_value());
+            const Eigen::VectorXd rows_refused = constraint_rows_at_origin(controller);
+            CHECK(bitwise_equal(controller.last_solution(), primal_first));
+
+            CHECK(controller.solve(x0).has_value());
+            REQUIRE(record->warm_starts.size() == 3);
+            CHECK(bitwise_equal(record->warm_starts[2], record->warm_starts[1]));
+            CHECK(rows_refused != rows_first);
+            CHECK(bitwise_equal(constraint_rows_at_origin(controller), rows_refused));
+        }
+    }
+}
+
+}
+
+TEST_CASE("Runtime-horizon nonlinear MPC refuses a NaN primal under every accepted status", "[nmpc][result-finiteness][hardening]")
+{
+    for(auto const status : accepted_statuses)
+    {
+        CAPTURE(status);
+        auto controller = make_scripted_dynamic(scripted({ctrlpp_test::scripted_answer{status, ctrlpp_test::corrupted_field::primal}}), nonlinear_config(shape_horizon));
+
+        auto solved = controller.solve(Eigen::Vector2d{1.0, 0.0});
+        REQUIRE_FALSE(solved.has_value());
+        REQUIRE(solved.error() == ctrlpp::solver_error::invalid_backend_result);
+        REQUIRE(controller.diagnostics().status == ctrlpp::solve_status::invalid_backend_result);
+        REQUIRE_FALSE(controller.trajectory().has_value());
+    }
+}
+
+TEST_CASE("Runtime-horizon nonlinear MPC refuses each malformed result field under every accepted status", "[nmpc][result-finiteness][hardening]")
+{
+    check_every_field_refused([](std::shared_ptr<scripted_record> record) { return make_scripted_dynamic(std::move(record), nonlinear_config(shape_horizon)); });
+}
+
+TEST_CASE("Compile-time-horizon nonlinear MPC refuses each malformed result field under every accepted status", "[nmpc][result-finiteness][hardening]")
+{
+    SECTION("a backend that returns its primal by value")
+    {
+        check_every_field_refused([](std::shared_ptr<scripted_record> record) { return make_scripted_static<false>(std::move(record), nonlinear_config(shape_horizon)); });
+    }
+
+    SECTION("a backend that writes its primal into the controller's buffer")
+    {
+        check_every_field_refused([](std::shared_ptr<scripted_record> record) { return make_scripted_static<true>(std::move(record), nonlinear_config(shape_horizon)); });
+    }
+}
+
+TEST_CASE("Runtime-horizon nonlinear MPC commits nothing from a refused result", "[nmpc][result-finiteness][hardening]")
+{
+    check_refusal_commits_nothing([](std::shared_ptr<scripted_record> record) { return make_scripted_dynamic(std::move(record), rate_limited_config()); });
+}
+
+TEST_CASE("Compile-time-horizon nonlinear MPC commits nothing from a refused result", "[nmpc][result-finiteness][hardening]")
+{
+    SECTION("a backend that returns its primal by value")
+    {
+        check_refusal_commits_nothing([](std::shared_ptr<scripted_record> record) { return make_scripted_static<false>(std::move(record), rate_limited_config()); });
+    }
+
+    SECTION("a backend that writes its primal into the controller's buffer")
+    {
+        check_refusal_commits_nothing([](std::shared_ptr<scripted_record> record) { return make_scripted_static<true>(std::move(record), rate_limited_config()); });
+    }
+}
+
+TEST_CASE("Compile-time-horizon nonlinear MPC keeps its stored primal at the posed dimension on a by-value backend", "[nmpc][result-finiteness][hardening]")
+{
+    constexpr auto posed = static_cast<Eigen::Index>(scripted_static_controller<false>::problem_dimension);
+    const ctrlpp_test::scripted_answer finite{ctrlpp::solve_status::optimal};
+
+    SECTION("a primal one entry short is refused and the stored primal is kept")
+    {
+        auto record = scripted({finite, ctrlpp_test::scripted_answer{ctrlpp::solve_status::optimal, ctrlpp_test::corrupted_field::none, ctrlpp_test::report_values::nan, -1}});
+        auto controller = make_scripted_static<false>(record, nonlinear_config(shape_horizon));
+        REQUIRE(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+
+        check_refused(controller);
+        CHECK(controller.last_solution().size() == posed);
+        CHECK(bitwise_equal(controller.last_solution(), record->primals[0]));
+    }
+
+    SECTION("a primal one entry long is consumed up to the posed dimension")
+    {
+        auto record = scripted({ctrlpp_test::scripted_answer{ctrlpp::solve_status::optimal, ctrlpp_test::corrupted_field::none, ctrlpp_test::report_values::nan, 1}});
+        auto controller = make_scripted_static<false>(record, nonlinear_config(shape_horizon));
+        REQUIRE(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+
+        CHECK(controller.last_solution().size() == posed);
+        CHECK(bitwise_equal(controller.last_solution(), record->primals[0].head(posed)));
+    }
 }

@@ -39,7 +39,6 @@
 
 #include <span>
 #include <array>
-#include <cmath>
 #include <memory>
 #include <cstddef>
 #include <utility>
@@ -309,18 +308,10 @@ private:
 
         if(result.status == solve_status::optimal || result.status == solve_status::solved_inaccurate)
         {
-            // A status is not a numerical postcondition. The consumed prefix
-            // must cover the posed decision vector and be finite, as must the
-            // diagnostics exposed to callers. These checks precede every state
-            // and warm-start write.
-            auto const primal_size =
-                static_cast<Eigen::Index>(m_problem->n_vars);
-            if(result.x.size() < primal_size
-                || !result.x.head(primal_size).allFinite()
-                || !std::isfinite(result.objective)
-                || !std::isfinite(result.solve_time)
-                || !std::isfinite(result.primal_residual)
-                || result.iterations < 0)
+            // A status is not a numerical postcondition; the check precedes
+            // every state and warm-start write.
+            auto const primal_size = static_cast<Eigen::Index>(m_problem->n_vars);
+            if(!detail::nlp_result_is_usable(result, result.x, primal_size))
             {
                 fallback_to_ekf(solve_status::invalid_backend_result);
                 return;

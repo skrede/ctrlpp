@@ -270,12 +270,12 @@ private:
         switch(result.status)
         {
         case solve_status::optimal:
-            return finish_solve(result.x, solve_result_status::converged);
+            return finish_solve(result, solve_result_status::converged);
         case solve_status::solved_inaccurate:
-            return finish_solve(result.x, solve_result_status::solved_inaccurate);
+            return finish_solve(result, solve_result_status::solved_inaccurate);
         case solve_status::max_iterations:
         case solve_status::time_limit:
-            return finish_solve(result.x, solve_result_status::budget_exhausted);
+            return finish_solve(result, solve_result_status::budget_exhausted);
         case solve_status::infeasible:
             return unexpected(solver_error::infeasible);
         case solve_status::unbounded:
@@ -286,20 +286,21 @@ private:
         }
     }
 
-    /// @brief Consume an accepted backend result: validate its reported shape,
-    /// then store it, diagnose it, shift the warm start and extract the input.
+    /// @brief Consume an accepted backend result: validate it, then store it,
+    /// diagnose it, shift the warm start and extract the input.
     ///
     /// The accept-set above is decided purely from the status the backend
-    /// reports, and a status is not a shape. Every read below -- the constraint
-    /// diagnostics' raw pointer maps, the warm-start shift, and the first-input
-    /// slice -- sits at an offset derived from the horizon, so all of them are
-    /// covered by this one comparison against the problem dimension the
-    /// controller derived at construction from its horizon and its state, input,
-    /// path-slack and terminal-slack contributions. Nothing is stored and no
-    /// member is touched when it fails.
-    auto finish_solve(const Eigen::VectorX<Scalar>& z, solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
+    /// reports, and a status is neither a shape nor a number. The primal must
+    /// cover the problem dimension the controller derived at construction, since
+    /// every read below sits at an offset derived from the horizon; its consumed
+    /// prefix, the objective, the solve time and the primal residual must be
+    /// finite; and the iteration count must be non-negative. Nothing is stored
+    /// and no member is touched when any of these fails, so the warm start, the
+    /// previous input and the trajectory keep the last accepted solve.
+    auto finish_solve(const nlp_result<Scalar>& result, solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
     {
-        if(z.size() < static_cast<Eigen::Index>(m_num_vars))
+        const Eigen::VectorX<Scalar>& z = result.x;
+        if(!detail::nlp_result_is_usable(result, z, static_cast<Eigen::Index>(m_num_vars)))
         {
             // Correct the diagnostics the backend's own status just populated, so
             // a reader there is not told the solve was optimal when its answer
@@ -546,6 +547,7 @@ public:
         , m_solver{other.m_solver}
         , m_warm_z{other.m_warm_z}
         , m_last_solution{other.m_last_solution}
+        , m_candidate{other.m_candidate}
         , m_update{other.m_update}
         , m_last_diagnostics{other.m_last_diagnostics}
         , m_u_prev{other.m_u_prev}
@@ -592,6 +594,7 @@ private:
         m_warm_z = Eigen::VectorX<Scalar>::Zero(problem_dimension);
         m_update.x0 = Eigen::VectorX<Scalar>::Zero(problem_dimension);
         m_last_solution = Eigen::VectorX<Scalar>::Zero(problem_dimension);
+        m_candidate = Eigen::VectorX<Scalar>::Zero(problem_dimension);
     }
 
     // Pose the compile-time-dimension problem and set the solver up against it.
@@ -637,12 +640,12 @@ private:
         switch(result.status)
         {
         case solve_status::optimal:
-            return finish_solve(solve_result_status::converged);
+            return finish_solve(result, solve_result_status::converged);
         case solve_status::solved_inaccurate:
-            return finish_solve(solve_result_status::solved_inaccurate);
+            return finish_solve(result, solve_result_status::solved_inaccurate);
         case solve_status::max_iterations:
         case solve_status::time_limit:
-            return finish_solve(solve_result_status::budget_exhausted);
+            return finish_solve(result, solve_result_status::budget_exhausted);
         case solve_status::infeasible:
             return unexpected(solver_error::infeasible);
         case solve_status::unbounded:
@@ -660,35 +663,41 @@ private:
     static constexpr bool solver_has_solve_into =
         requires(Solver& s, const nlp_update<Scalar>& u, Eigen::VectorX<Scalar>& out) { s.solve_into(u, out); };
 
-    // Run the solver, always leaving the primal in the pre-sized m_last_solution
-    // and returning the diagnostics. The solve_into branch writes m_last_solution
-    // in place (no allocation); the solve() fallback copies its by-value primal.
+    // Run the solver without touching the accepted primal. The solve_into branch
+    // writes the pre-sized candidate buffer in place (no allocation); the solve()
+    // fallback leaves its by-value primal in the returned result, so a primal of
+    // the wrong length resizes no member buffer.
     nlp_result<Scalar> dispatch_solve()
     {
         if constexpr(solver_has_solve_into)
-            return m_solver.solve_into(m_update, m_last_solution);
+            return m_solver.solve_into(m_update, m_candidate);
         else
-        {
-            auto result = m_solver.solve(m_update);
-            m_last_solution = result.x;
-            return result;
-        }
+            return m_solver.solve(m_update);
     }
 
-    /// @brief Consume an accepted backend result: validate the shape of the
-    /// primal the dispatch left behind, then shift the warm start and extract the
-    /// input.
-    ///
-    /// One comparison covers both dispatch shapes. The write-into branch fills a
-    /// buffer this class pre-sized to the compile-time dimension, so there the
-    /// check is near-always trivially true; the fallback branch assigns a
-    /// by-value primal of whatever length the backend chose, which resizes the
-    /// buffer and is exactly the case that must not reach the slices below.
-    /// Checking m_last_solution after the dispatch, rather than the result of
-    /// either branch, is what makes the single check sufficient.
-    auto finish_solve(solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
+    auto dispatched_primal(const nlp_result<Scalar>& result) const -> const Eigen::VectorX<Scalar>&
     {
-        if(m_last_solution.size() < static_cast<Eigen::Index>(problem_dimension))
+        if constexpr(solver_has_solve_into)
+            return m_candidate;
+        else
+            return result.x;
+    }
+
+    /// @brief Consume an accepted backend result: validate the primal the
+    /// dispatch produced and the reported values, commit the primal, then shift
+    /// the warm start and extract the input.
+    ///
+    /// The checks are those of the runtime-horizon class: the primal covers the
+    /// compile-time dimension, its consumed prefix, the objective, the solve time
+    /// and the primal residual are finite, and the iteration count is
+    /// non-negative. Only an accepted primal is committed into m_last_solution:
+    /// the candidate by a swap, which exchanges storage and so allocates nothing
+    /// and leaves the candidate sized for the next write, or the posed prefix of a
+    /// by-value primal. A refusal touches no member, so last_solution(), the warm
+    /// start and the previous input keep the last accepted solve.
+    auto finish_solve(const nlp_result<Scalar>& result, solve_result_status status) -> expected<solve_output<Scalar, NU>, solver_error>
+    {
+        if(!detail::nlp_result_is_usable(result, dispatched_primal(result), static_cast<Eigen::Index>(problem_dimension)))
         {
             // Correct the diagnostics the backend's own status just populated, so
             // a reader there is not told the solve was optimal when its answer
@@ -697,6 +706,10 @@ private:
             return unexpected(solver_error::invalid_backend_result);
         }
 
+        if constexpr(solver_has_solve_into)
+            m_last_solution.swap(m_candidate);
+        else
+            m_last_solution = result.x.head(problem_dimension);
         m_has_solution = true;
         shift_warm_start(m_last_solution);
         return solve_output<Scalar, NU>{.input = extract_first_input(m_last_solution), .status = status};
@@ -749,6 +762,7 @@ private:
 
     Eigen::VectorX<Scalar> m_warm_z;
     Eigen::VectorX<Scalar> m_last_solution;
+    Eigen::VectorX<Scalar> m_candidate;
     nlp_update<Scalar> m_update{};
     mpc_diagnostics<Scalar> m_last_diagnostics{};
     Vector<Scalar, NU> m_u_prev{Vector<Scalar, NU>::Zero()};

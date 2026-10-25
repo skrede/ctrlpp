@@ -142,15 +142,28 @@ Two alternatives are deliberately not implemented. Validating at the first solve
   `setup_incomplete`, or `invalid_backend_result`) and no input.
 
 `invalid_backend_result` covers the case where the solver reports a status the
-controller accepts and then returns a decision vector shorter than the problem
-dimension. Both nonlinear controllers check the reported length before consuming
-the result, so the warm-start shift and the first-input slice, whose offsets are
-derived from the horizon, cannot read past the end of the solver's own storage.
-The runtime-horizon controller compares against the dimension it derived at
-construction from its horizon and its state, input, path-slack and terminal-slack
-contributions; the compile-time-horizon controller compares against `NV`, and does
-so after the dispatch, so the check covers both the write-into and the copying
-solver shapes. A longer-than-required result is accepted.
+controller accepts and then returns a result the controller cannot use: a
+decision vector shorter than the problem dimension, a non-finite value in the
+consumed decision vector, a non-finite objective, solve time or primal residual,
+or a negative iteration count. Both nonlinear controllers check all of these
+before consuming the result, so the warm-start shift and the first-input slice,
+whose offsets are derived from the horizon, cannot read past the end of the
+solver's own storage, and no NaN or infinity becomes a command. The
+runtime-horizon controller compares the length against the dimension it derived
+at construction from its horizon and its state, input, path-slack and
+terminal-slack contributions; the compile-time-horizon controller compares it
+against `NV`. A longer-than-required result is accepted, and only its first `NV`
+entries are consumed.
+
+Nothing from a refused result is committed. The warm start of the next solve, the
+previous input the rate constraints are posed against, `last_solution()` and
+`trajectory()` all keep the last accepted solve, and `diagnostics().status` reads
+`solve_status::invalid_backend_result`. On the compile-time-horizon controller, a
+solver that writes into a caller buffer writes into a second, pre-sized candidate
+buffer, and the controller exchanges the two buffers only when the result is
+accepted, so the commit allocates nothing; a solver that returns its decision
+vector by value leaves it in the returned result until it is accepted, and only
+then are its first `NV` entries copied.
 
 The input is reached explicitly through `->input`; there is no implicit conversion
 to `Vector<Scalar, NU>`. On the error branch the internal previous-input record is

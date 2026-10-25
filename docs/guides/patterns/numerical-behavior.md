@@ -382,6 +382,18 @@ otherwise produce silent corruption through intermediate overflow:
   NaN from `0 * Inf` in the gain computation. The `update()` method returns
   `false` when this occurs so the caller can detect skipped updates.
 
+- **Predictive-control backend results:** A solver can report an accepted status
+  and still return a result that is not usable. `nmpc_dynamic` and `nmpc_static`
+  refuse one whose decision vector is shorter than the posed problem, whose
+  consumed decision vector, objective, solve time or primal residual is not
+  finite, or whose iteration count is negative, with
+  `solver_error::invalid_backend_result`, and `nmhe` falls back to its embedded
+  filter under the same check. `mpc` and `mhe` apply the same check and also
+  require a dual of the posed length with finite entries and a finite dual
+  residual. A controller commits nothing from a refused result: the warm start,
+  the previous input used by the rate constraints and the stored solution keep
+  the last accepted solve.
+
 ## Rounding drift is accepted, structure is refused
 
 An input that must carry a structural property, such as the symmetry of a
@@ -500,7 +512,7 @@ structure, not drift.
 | Algorithm internals | Library uses numerically stable formulations |
 | Outputs | NaN/Inf propagates faithfully, never silently clamped, except on the surfaces named above |
 | Carried estimator state | The seven `update` surfaces named above reject a non-finite operand before mutating anything |
-| Carried controller state | `pid::compute` (both overloads), `mrac_controller::evaluate` and `l1_controller::evaluate` reject before mutating anything, and return the command on the success channel |
+| Carried controller state | `pid::compute` (both overloads), `mrac_controller::evaluate` and `l1_controller::evaluate` reject before mutating anything, and return the command on the success channel. `mpc`, `nmpc_dynamic` and `nmpc_static` refuse a non-finite or short backend result as `solver_error::invalid_backend_result` and commit nothing from it |
 
 The outputs row is still being narrowed for the per-step surfaces under
 conversion: where a surface gains a typed failure return, a degenerate step is
