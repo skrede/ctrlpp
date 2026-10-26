@@ -24,10 +24,9 @@
 //    commanded input at all hundred, and the closed-loop matrix that gain
 //    implies has spectral radius under one, which bounds the state through the
 //    conditioning of its own eigenvectors.
-//  * The two fail-closed cases are kept as they stand. Construction succeeds,
-//    the setup failure is latched, and the solve reports no solution rather
-//    than throwing. They are the regression anchor for the deletion of the
-//    separate setup wrappers.
+//  * The two invalid-configuration cases, inverted input bounds and a NaN
+//    weight, are refused at construction with a typed reason, before any
+//    problem reaches the backend.
 //
 //  * The two conditioning cases assert the two invariances a badly weighted
 //    problem must still satisfy: the command depends on the RATIO of the
@@ -130,13 +129,9 @@ TEST_CASE("MPC infeasible constraints: lower > upper", "[mpc][hardening][negativ
         .u_max = Eigen::Matrix<double, 1, 1>{{-5.0}}, // lower > upper
     };
 
-    // OSQP rejects the infeasible bounds at setup. The failure is reported on the
-    // fail-closed channel: construction latches the setup error and solve returns
-    // no solution rather than throwing.
     auto controller_result = OsqpMpc::create(sys, cfg);
-    REQUIRE(controller_result.has_value());
-    auto& controller = *controller_result;
-    REQUIRE_FALSE(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+    REQUIRE_FALSE(controller_result.has_value());
+    CHECK(controller_result.error() == ctrlpp::controller_construction_error::invalid_input_bounds);
 }
 
 TEST_CASE("MPC minimal horizon N=1", "[mpc][hardening][negative]")
@@ -213,13 +208,9 @@ TEST_CASE("MPC with NaN in weight matrices", "[mpc][hardening][negative]")
         .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
     };
 
-    // A NaN weight produces a non-convex QP. OSQP rejects it at setup and the
-    // failure is reported on the fail-closed channel: construction latches the
-    // setup error and solve returns no solution rather than throwing.
     auto controller_result = OsqpMpc::create(sys, cfg);
-    REQUIRE(controller_result.has_value());
-    auto& controller = *controller_result;
-    REQUIRE_FALSE(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+    REQUIRE_FALSE(controller_result.has_value());
+    CHECK(controller_result.error() == ctrlpp::controller_construction_error::non_finite_cost_weight);
 }
 
 // ── MPC hardening: precision ───────────────────────────────────────────────────

@@ -11,6 +11,7 @@
 #include "ctrlpp/mpc/diagnostics.h"
 #include "ctrlpp/mpc/terminal_set.h"
 #include "ctrlpp/mpc/qp_formulation.h"
+#include "ctrlpp/mpc/config_validation.h"
 
 #include "ctrlpp/model/state_space.h"
 
@@ -58,10 +59,7 @@ public:
     /// exception-free build. Builds the solver with its own defaults and chains
     /// into the solver-taking overload below.
     ///
-    /// Rejections, checked in order:
-    ///  * horizon <= 0                   -> controller_construction_error::non_positive_horizon
-    ///  * horizon above the representable
-    ///    bound of the derived dimensions -> controller_construction_error::horizon_overflow
+    /// Rejections and their order are those of the solver-taking overload.
     static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config)
         -> expected<mpc, controller_construction_error>
     {
@@ -73,11 +71,25 @@ public:
     /// to skip per-step polishing on the warm-resolve MPC path. The solver is
     /// moved in before the initial QP is posed, so its settings govern setup.
     ///
-    /// The horizon is the only runtime quantity that scales the posed problem,
-    /// and it is validated here, before any dimension product is formed and
-    /// before any storage is reserved. Rejections, checked in order:
-    ///  * horizon <= 0                     -> controller_construction_error::non_positive_horizon
-    ///  * horizon > horizon_bound(config)   -> controller_construction_error::horizon_overflow
+    /// The configuration is validated here, before any dimension product is
+    /// formed and before any storage is reserved. Rejections, checked in order,
+    /// as controller_construction_error enumerators:
+    ///  * horizon <= 0                        -> non_positive_horizon
+    ///  * horizon > horizon_bound(config)      -> horizon_overflow
+    ///  * u_min / u_max: NaN, lower +inf,
+    ///    upper -inf or lower > upper          -> invalid_input_bounds
+    ///  * x_min / x_max: the same              -> invalid_state_bounds
+    ///  * du_max: NaN or negative              -> invalid_rate_bound
+    ///  * Q, then R, then a set Qf: non-finite -> non_finite_cost_weight,
+    ///    asymmetric beyond rounding drift     -> asymmetric_cost_weight,
+    ///    not positive semidefinite            -> indefinite_cost_weight
+    ///  * soft_penalty, and a set
+    ///    soft_state_penalty, while the state
+    ///    bounds are soft: non-finite or not
+    ///    strictly positive                    -> invalid_constraint_penalty
+    /// A weight whose asymmetry is rounding drift is symmetrized in the
+    /// controller's own copy, so the posed cost uses one symmetric weight
+    /// rather than whichever triangle the QP assembly reads.
     ///
     /// The overflow bound is a representability condition on the horizon's own
     /// type, not a chosen ceiling. At the worst-case configuration (soft state
@@ -103,8 +115,11 @@ public:
             return unexpected(controller_construction_error::non_positive_horizon);
         if(config.horizon > horizon_bound(config))
             return unexpected(controller_construction_error::horizon_overflow);
+        auto admitted = detail::admit_mpc_config(config);
+        if(!admitted)
+            return unexpected(admitted.error());
 
-        return mpc{unchecked_t{}, system, config, std::move(solver)};
+        return mpc{unchecked_t{}, system, *admitted, std::move(solver)};
     }
 
     // Unified soft-constraint / failure contract (shared by mpc and nmpc).

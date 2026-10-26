@@ -394,6 +394,15 @@ otherwise produce silent corruption through intermediate overflow:
   the previous input used by the rate constraints and the stored solution keep
   the last accepted solve.
 
+- **Predictive-control configuration:** `mpc::create` and `nmpc_dynamic::create`
+  refuse, with a typed `controller_construction_error`, input or state bounds
+  that hold a NaN, a lower bound of `+inf`, an upper bound of `-inf` or a lower
+  bound above its upper bound; a rate bound with a NaN or negative entry; a
+  non-finite, structurally asymmetric or indefinite cost weight; and a
+  non-finite or non-positive penalty on an active soft constraint. Equal bounds,
+  an infinite bound in its open direction and a rate bound of zero or `+inf`
+  are accepted.
+
 ## Rounding drift is accepted, structure is refused
 
 An input that must carry a structural property, such as the symmetry of a
@@ -457,8 +466,13 @@ This applies today to `Q`, `R` and `P0` at every filter factory
 (`kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf` and `particle_filter`,
 whose sampling factors, inverse and log-determinant are formed from the
 symmetrized matrices) and at `kalman_filter::set_noise` and
-`kalman_filter::reset_covariance`. It does not yet apply to the weight matrices
-of the regulators, the Riccati solvers and the predictive controllers, nor to
+`kalman_filter::reset_covariance`. It applies in the same order to the cost
+weights `Q`, `R` and a set `Qf` at `mpc::create` and `nmpc_dynamic::create`
+(`non_finite_cost_weight`, `asymmetric_cost_weight`, `indefinite_cost_weight`);
+a cost weight needs only to be positive semidefinite, so the same verdict
+serves, and the symmetrized copy is what the posed cost and its gradient use.
+It does not yet apply to the weight matrices of the regulators, the Riccati
+solvers and `nmpc_static`, nor to
 the moving-horizon estimators' own copies of `Q`, `R` and `P0`: `mhe` and
 `nmhe` forward the embedded filter's refusal, but the copies they keep for
 their own cost are stored as given.
@@ -508,7 +522,7 @@ structure, not drift.
 | Layer | Behavior |
 |---|---|
 | Inputs (your code) | Validate at system boundaries |
-| Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; `kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf` and `particle_filter` also refuse a structurally asymmetric or indefinite `Q`, `R` or `P0` and store a drift-asymmetric one symmetrized ([the drift convention](#rounding-drift-is-accepted-structure-is-refused)), and `kalman_filter::set_noise` and `reset_covariance` do the same before assigning. `mekf`, `manifold_ukf` and `complementary_filter` refuse an initial quaternion whose norm is not one within rounding and normalize one whose norm is. A singular positive semidefinite or an ill-conditioned configuration is accepted. `particle_filter` (through `create` or `make_particle_filter`, likewise its only path) additionally refuses a singular `R`, because it scores with `R`'s inverse and log-determinant; a singular positive semidefinite `Q` or `P0` is accepted and sampled without lifting its zero eigenvalues |
+| Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; `kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf` and `particle_filter` also refuse a structurally asymmetric or indefinite `Q`, `R` or `P0` and store a drift-asymmetric one symmetrized ([the drift convention](#rounding-drift-is-accepted-structure-is-refused)), and `kalman_filter::set_noise` and `reset_covariance` do the same before assigning. `mekf`, `manifold_ukf` and `complementary_filter` refuse an initial quaternion whose norm is not one within rounding and normalize one whose norm is. A singular positive semidefinite or an ill-conditioned configuration is accepted. `particle_filter` (through `create` or `make_particle_filter`, likewise its only path) additionally refuses a singular `R`, because it scores with `R`'s inverse and log-determinant; a singular positive semidefinite `Q` or `P0` is accepted and sampled without lifting its zero eigenvalues. Of the predictive controllers, `mpc` and `nmpc_dynamic` (through `create`, their only path) refuse inconsistent or non-finite bounds, a NaN or negative rate bound, a non-finite, structurally asymmetric or indefinite cost weight, storing a drift-asymmetric one symmetrized, and an invalid penalty on an active soft constraint |
 | Algorithm internals | Library uses numerically stable formulations |
 | Outputs | NaN/Inf propagates faithfully, never silently clamped, except on the surfaces named above |
 | Carried estimator state | The seven `update` surfaces named above reject a non-finite operand before mutating anything |

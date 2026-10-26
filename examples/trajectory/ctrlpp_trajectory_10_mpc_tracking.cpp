@@ -40,7 +40,7 @@ int main()
         .u_min = Eigen::Matrix<double, 1, 1>::Constant(-2.0),
         .u_max = Eigen::Matrix<double, 1, 1>::Constant(2.0)};
 
-    // create validates the horizon and reports a rejection through
+    // create validates the configuration and reports a rejection through
     // ctrlpp::expected<mpc, controller_construction_error> instead of throwing.
     auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
     if(!controller_result.has_value())

@@ -112,27 +112,59 @@ enum class solver_error : std::uint8_t
 
 /// @brief Structured failure modes for the controller construction factories.
 ///
-/// A runtime prediction horizon is a caller-supplied signed value that scales
-/// every derived dimension of the posed problem, so it is validated once, at
-/// construction, before any dimension product is formed or any storage is
-/// reserved. The horizon is deliberately kept signed: a mistaken negative value
-/// stays representable as negative and is therefore rejectable, whereas an
-/// unsigned field would silently turn the same mistake into an enormous
-/// allocation.
+/// The configuration is validated once, at construction, before any dimension
+/// product is formed or any storage is reserved: first the runtime prediction
+/// horizon, which scales every derived dimension of the posed problem, then
+/// the bounds, the rate bound, the cost weights and the constraint penalties,
+/// each of which would otherwise pose a different or poisoned problem. The
+/// horizon is deliberately kept signed: a mistaken negative value stays
+/// representable as negative and is therefore rejectable, whereas an unsigned
+/// field would silently turn the same mistake into an enormous allocation.
 ///
-///  * non_positive_horizon : the prediction horizon is zero or negative. A
-///                           horizon of zero poses no input to optimize over and
-///                           leaves the first-input extraction reading past the
-///                           end of the decision vector; a negative horizon
-///                           drives every derived dimension negative.
-///  * horizon_overflow     : the horizon is large enough that the derived
-///                           decision or constraint dimension would not be
-///                           representable in the horizon's own type, so the
-///                           products that size the problem would wrap.
+///  * non_positive_horizon       : the prediction horizon is zero or negative.
+///                                 A horizon of zero poses no input to optimize
+///                                 over and leaves the first-input extraction
+///                                 reading past the end of the decision vector;
+///                                 a negative horizon drives every derived
+///                                 dimension negative.
+///  * horizon_overflow           : the horizon is large enough that the derived
+///                                 decision or constraint dimension would not be
+///                                 representable in the horizon's own type, so
+///                                 the products that size the problem would wrap.
+///  * invalid_input_bounds       : an input bound holds a NaN, a lower bound of
+///                                 +inf or an upper bound of -inf, or a lower
+///                                 bound exceeds its upper bound. The box is
+///                                 empty, or a NaN passes every comparison a
+///                                 backend makes and reaches the algorithm.
+///  * invalid_state_bounds       : the same rule on the state bounds.
+///  * invalid_rate_bound         : the input rate bound holds a NaN or a
+///                                 negative entry, which poses an empty rate
+///                                 band.
+///  * non_finite_cost_weight     : Q, R or a set Qf holds a NaN or an infinity.
+///  * asymmetric_cost_weight     : Q, R or a set Qf is asymmetric beyond
+///                                 rounding drift. The quadratic cost depends
+///                                 only on the symmetric part, while the
+///                                 analytic gradient and the upper-triangle QP
+///                                 assembly use the matrix as given, so the
+///                                 posed problem would not be the configured one.
+///  * indefinite_cost_weight     : Q, R or a set Qf has an eigenvalue below the
+///                                 eigensolver's rounding floor, which poses a
+///                                 nonconvex cost.
+///  * invalid_constraint_penalty : a penalty that weights an active soft
+///                                 constraint is non-finite or not strictly
+///                                 positive, which makes violating the
+///                                 constraint free, rewarded or undefined.
 enum class controller_construction_error : std::uint8_t
 {
     non_positive_horizon,
-    horizon_overflow
+    horizon_overflow,
+    invalid_input_bounds,
+    invalid_state_bounds,
+    invalid_rate_bound,
+    non_finite_cost_weight,
+    asymmetric_cost_weight,
+    indefinite_cost_weight,
+    invalid_constraint_penalty
 };
 
 /// @brief Success payload of a controller `solve()`.

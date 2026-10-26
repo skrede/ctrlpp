@@ -1,11 +1,17 @@
-// Two guards on the same data path: the horizon that sizes the posed problem,
-// and the shape of the result the backend hands back.
+// Guards on the same data path: the horizon that sizes the posed problem, the
+// configuration that shapes it, and the shape of the result the backend hands
+// back.
 //
 // Construction-time horizon domain. The prediction horizon is the one runtime
 // quantity that scales every derived dimension of the posed problem, and it is
 // caller-supplied. These cases pin the boundary of its accepted domain from both
 // sides and assert the specific typed error on each rejection, never merely that
 // construction "did not crash".
+//
+// Configuration domain. Bounds, the rate bound, the cost weights and the
+// constraint penalties are each pinned from both sides of their boundary, on
+// the linear and the runtime-horizon nonlinear factory, through both overloads
+// of each.
 //
 // Result-shape domain. A valid horizon is not enough: the solve extracts fixed
 // width slices out of whatever vector the backend returns, at offsets derived
@@ -48,6 +54,8 @@
 #include <cstring>
 #include <utility>
 #include <variant>
+#include <optional>
+#include <algorithm>
 
 namespace
 {
@@ -1215,4 +1223,375 @@ TEST_CASE("Compile-time-horizon nonlinear MPC keeps its stored primal at the pos
         CHECK(controller.last_solution().size() == posed);
         CHECK(bitwise_equal(controller.last_solution(), record->primals[0].head(posed)));
     }
+}
+
+namespace
+{
+
+using construction_outcome = std::optional<ctrlpp::controller_construction_error>;
+
+const construction_outcome accepted{};
+
+constexpr double infinity = std::numeric_limits<double>::infinity();
+constexpr double not_a_number = std::numeric_limits<double>::quiet_NaN();
+constexpr double denorm = std::numeric_limits<double>::denorm_min();
+
+using constrained_nonlinear_config = ctrlpp::nmpc_config<double, NX, NU, 1, 1>;
+using constrained_nonlinear_controller = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp_test::stub_nlp_solver<double>, decltype(double_integrator), 1, 1>;
+
+template <typename Result>
+auto agreed_outcome(const Result& two_argument, const Result& solver_taking) -> construction_outcome
+{
+    REQUIRE(two_argument.has_value() == solver_taking.has_value());
+    if(two_argument.has_value())
+        return std::nullopt;
+    REQUIRE(two_argument.error() == solver_taking.error());
+    return two_argument.error();
+}
+
+template <typename Configure>
+auto linear_outcome(Configure configure) -> construction_outcome
+{
+    auto cfg = linear_config(shape_horizon);
+    configure(cfg);
+    return agreed_outcome(linear_controller::create(make_system(), cfg), linear_controller::create(make_system(), cfg, ctrlpp_test::stub_qp_solver<double>{}));
+}
+
+template <typename Controller = nonlinear_controller, typename Config = ctrlpp::nmpc_config<double, NX, NU>, typename Configure>
+auto nonlinear_outcome(Configure configure) -> construction_outcome
+{
+    Config cfg;
+    cfg.horizon = shape_horizon;
+    configure(cfg);
+    return agreed_outcome(Controller::create(double_integrator, cfg), Controller::create(double_integrator, cfg, ctrlpp_test::stub_nlp_solver<double>{}));
+}
+
+template <typename Configure>
+void require_both_predictive(Configure configure, construction_outcome expected)
+{
+    CHECK(linear_outcome(configure) == expected);
+    CHECK(nonlinear_outcome(configure) == expected);
+}
+
+struct input_bounds
+{
+    static constexpr auto refusal = ctrlpp::controller_construction_error::invalid_input_bounds;
+
+    template <typename Config>
+    static void set(Config& cfg, std::optional<double> lower, std::optional<double> upper)
+    {
+        if(lower)
+            cfg.u_min = Eigen::Matrix<double, 1, 1>{*lower};
+        if(upper)
+            cfg.u_max = Eigen::Matrix<double, 1, 1>{*upper};
+    }
+};
+
+// The first component is a valid box, so a refusal can only come from the
+// second, which is the one under test.
+struct state_bounds
+{
+    static constexpr auto refusal = ctrlpp::controller_construction_error::invalid_state_bounds;
+
+    template <typename Config>
+    static void set(Config& cfg, std::optional<double> lower, std::optional<double> upper)
+    {
+        if(lower)
+            cfg.x_min = Eigen::Vector2d{-1.0, *lower};
+        if(upper)
+            cfg.x_max = Eigen::Vector2d{1.0, *upper};
+    }
+};
+
+template <typename Bounds>
+void require_bound_rules()
+{
+    auto check = [](std::optional<double> lower, std::optional<double> upper, construction_outcome expected)
+    {
+        INFO("lower " << lower.value_or(0.0) << (lower ? "" : " (unset)") << ", upper " << upper.value_or(0.0) << (upper ? "" : " (unset)"));
+        require_both_predictive([=](auto& cfg) { Bounds::set(cfg, lower, upper); }, expected);
+    };
+
+    check(not_a_number, std::nullopt, Bounds::refusal);
+    check(std::nullopt, not_a_number, Bounds::refusal);
+    check(not_a_number, 1.0, Bounds::refusal);
+    check(-1.0, not_a_number, Bounds::refusal);
+    check(infinity, std::nullopt, Bounds::refusal);
+    check(std::nullopt, -infinity, Bounds::refusal);
+    check(1.0, -1.0, Bounds::refusal);
+    check(1.0, std::nextafter(1.0, -infinity), Bounds::refusal);
+
+    check(1.0, 1.0, accepted);
+    check(-infinity, std::nullopt, accepted);
+    check(std::nullopt, infinity, accepted);
+    check(-infinity, infinity, accepted);
+    check(-infinity, -1.0, accepted);
+    check(1.0, infinity, accepted);
+}
+
+auto rate_bound(double value)
+{
+    return [value](auto& cfg) { cfg.du_max = Eigen::Matrix<double, 1, 1>{value}; };
+}
+
+// The symmetry bound and the definiteness floor restate the library's
+// rounding_bound(N, scale, 1) = N * eps * scale at a scale where its
+// denorm_min term is inactive, so a change to either derivation is caught.
+auto rounding_bound_2x2(double scale) -> double
+{
+    return 2.0 * std::numeric_limits<double>::epsilon() * scale;
+}
+
+auto weight_2x2(double a, double b, double c, double d) -> Eigen::Matrix2d
+{
+    Eigen::Matrix2d weight;
+    weight << a, b, c, d;
+    return weight;
+}
+
+auto state_weight(const Eigen::Matrix2d& weight)
+{
+    return [weight](auto& cfg) { cfg.Q = weight; };
+}
+
+auto terminal_weight(const Eigen::Matrix2d& weight)
+{
+    return [weight](auto& cfg) { cfg.Qf = weight; };
+}
+
+auto input_weight(double weight)
+{
+    return [weight](auto& cfg) { cfg.R = Eigen::Matrix<double, 1, 1>{weight}; };
+}
+
+template <typename Weight>
+void require_square_weight_rules(Weight weight)
+{
+    const double past_symmetry = std::nextafter(rounding_bound_2x2(2.0), infinity);
+    const double past_floor = std::nextafter(rounding_bound_2x2(1.0), infinity);
+
+    require_both_predictive(weight(weight_2x2(not_a_number, 0.0, 0.0, 1.0)), ctrlpp::controller_construction_error::non_finite_cost_weight);
+    require_both_predictive(weight(weight_2x2(1.0, infinity, infinity, 1.0)), ctrlpp::controller_construction_error::non_finite_cost_weight);
+    require_both_predictive(weight(weight_2x2(1.0, 0.5, 0.4, 1.0)), ctrlpp::controller_construction_error::asymmetric_cost_weight);
+    require_both_predictive(weight(weight_2x2(2.0, 0.0, past_symmetry, 1.0)), ctrlpp::controller_construction_error::asymmetric_cost_weight);
+    require_both_predictive(weight(weight_2x2(1.0, 0.0, 0.0, -1.0)), ctrlpp::controller_construction_error::indefinite_cost_weight);
+    require_both_predictive(weight(weight_2x2(1.0, 0.0, 0.0, -past_floor)), ctrlpp::controller_construction_error::indefinite_cost_weight);
+
+    require_both_predictive(weight(weight_2x2(2.0, 0.0, rounding_bound_2x2(2.0), 1.0)), accepted);
+    require_both_predictive(weight(weight_2x2(2.0, 0.5, 0.5 + (std::nextafter(2.0, infinity) - 2.0), 1.0)), accepted);
+    require_both_predictive(weight(weight_2x2(1.0, 0.0, 0.0, -rounding_bound_2x2(1.0))), accepted);
+    require_both_predictive(weight(weight_2x2(1.0, 1.0, 1.0, 1.0)), accepted);
+    require_both_predictive(weight(weight_2x2(0.0, 0.0, 0.0, 0.0)), accepted);
+}
+
+auto path_constrained(double penalty, bool soft)
+{
+    return [=](constrained_nonlinear_config& cfg)
+    {
+        cfg.soft_constraints = soft;
+        cfg.path_constraint = [](const Eigen::Vector2d&, const Eigen::Matrix<double, 1, 1>&) -> Eigen::Matrix<double, 1, 1> { return Eigen::Matrix<double, 1, 1>::Zero(); };
+        cfg.path_penalty << penalty;
+    };
+}
+
+auto terminal_constrained(double penalty, bool soft)
+{
+    return [=](constrained_nonlinear_config& cfg)
+    {
+        cfg.soft_constraints = soft;
+        cfg.terminal_constraint = [](const Eigen::Vector2d&) -> Eigen::Matrix<double, 1, 1> { return Eigen::Matrix<double, 1, 1>::Zero(); };
+        cfg.terminal_penalty << penalty;
+    };
+}
+
+auto unconstrained_penalties(double penalty)
+{
+    return [=](constrained_nonlinear_config& cfg)
+    {
+        cfg.path_penalty << penalty;
+        cfg.terminal_penalty << penalty;
+    };
+}
+
+auto constrained_outcome(auto configure) -> construction_outcome
+{
+    return nonlinear_outcome<constrained_nonlinear_controller, constrained_nonlinear_config>(configure);
+}
+
+auto soft_state_box(double penalty, bool hard, bool per_state)
+{
+    return [=](ctrlpp::mpc_config<double, NX, NU>& cfg)
+    {
+        cfg.x_min = Eigen::Vector2d{-1.0, -1.0};
+        cfg.x_max = Eigen::Vector2d{1.0, 1.0};
+        cfg.hard_state_constraints = hard;
+        if(per_state)
+            cfg.soft_state_penalty = Eigen::Vector2d{1.0, penalty};
+        else
+            cfg.soft_penalty = penalty;
+    };
+}
+
+auto unbounded_state_penalty(double penalty, bool per_state)
+{
+    return [=](ctrlpp::mpc_config<double, NX, NU>& cfg)
+    {
+        if(per_state)
+            cfg.soft_state_penalty = Eigen::Vector2d{1.0, penalty};
+        else
+            cfg.soft_penalty = penalty;
+    };
+}
+
+const std::array<double, 6> invalid_penalties{0.0, -0.0, -denorm, -1.0, not_a_number, infinity};
+const std::array<double, 2> valid_penalties{denorm, 1.0};
+
+}
+
+TEST_CASE("Predictive factories refuse inconsistent or non-finite input bounds", "[mpc][nmpc][configuration][hardening]")
+{
+    require_bound_rules<input_bounds>();
+}
+
+TEST_CASE("Predictive factories refuse inconsistent or non-finite state bounds", "[mpc][nmpc][configuration][hardening]")
+{
+    require_bound_rules<state_bounds>();
+}
+
+TEST_CASE("Predictive factories refuse a NaN or negative rate bound", "[mpc][nmpc][configuration][hardening]")
+{
+    require_both_predictive(rate_bound(not_a_number), ctrlpp::controller_construction_error::invalid_rate_bound);
+    require_both_predictive(rate_bound(-denorm), ctrlpp::controller_construction_error::invalid_rate_bound);
+    require_both_predictive(rate_bound(-infinity), ctrlpp::controller_construction_error::invalid_rate_bound);
+
+    require_both_predictive(rate_bound(0.0), accepted);
+    require_both_predictive(rate_bound(-0.0), accepted);
+    require_both_predictive(rate_bound(denorm), accepted);
+    require_both_predictive(rate_bound(infinity), accepted);
+}
+
+TEST_CASE("Predictive factories refuse a non-finite, structurally asymmetric or indefinite state weight", "[mpc][nmpc][configuration][hardening]")
+{
+    require_square_weight_rules([](const Eigen::Matrix2d& weight) { return state_weight(weight); });
+}
+
+TEST_CASE("Predictive factories refuse a non-finite, structurally asymmetric or indefinite terminal weight when one is set", "[mpc][nmpc][configuration][hardening]")
+{
+    require_square_weight_rules([](const Eigen::Matrix2d& weight) { return terminal_weight(weight); });
+    require_both_predictive([](auto& cfg) { cfg.Qf.reset(); }, accepted);
+}
+
+TEST_CASE("Predictive factories refuse a non-finite or negative input weight and accept a singular one", "[mpc][nmpc][configuration][hardening]")
+{
+    require_both_predictive(input_weight(not_a_number), ctrlpp::controller_construction_error::non_finite_cost_weight);
+    require_both_predictive(input_weight(-infinity), ctrlpp::controller_construction_error::non_finite_cost_weight);
+    require_both_predictive(input_weight(-1.0), ctrlpp::controller_construction_error::indefinite_cost_weight);
+
+    require_both_predictive(input_weight(0.0), accepted);
+    require_both_predictive(input_weight(1.0), accepted);
+}
+
+TEST_CASE("Runtime-horizon nonlinear MPC poses one symmetric weight when the configured one drifts by rounding", "[nmpc][configuration][hardening]")
+{
+    const double drift = std::nextafter(2.0, infinity) - 2.0;
+    auto cfg = nonlinear_config(shape_horizon);
+    cfg.Q = weight_2x2(2.0, 0.5, 0.5 + drift, 1.0);
+    REQUIRE(cfg.Q(0, 1) != cfg.Q(1, 0));
+    const Eigen::Matrix2d symmetric = weight_2x2(2.0, 0.5 + drift / 2.0, 0.5 + drift / 2.0, 1.0);
+
+    auto controller = nonlinear_controller::create(double_integrator, cfg, ctrlpp_test::stub_nlp_solver<double>{});
+    REQUIRE(controller.has_value());
+    const auto& problem = controller->problem();
+
+    std::vector<double> z(static_cast<std::size_t>(problem.n_vars), 0.0);
+    std::vector<double> gradient(z.size(), 0.0);
+    Eigen::Matrix2d posed;
+    for(int column = 0; column < 2; ++column)
+    {
+        std::fill(z.begin(), z.end(), 0.0);
+        z[static_cast<std::size_t>(column)] = 1.0;
+        problem.gradient(z, gradient);
+        posed.col(column) = Eigen::Vector2d{gradient[0], gradient[1]};
+    }
+    CHECK((posed.array() == symmetric.array()).all());
+
+    std::fill(z.begin(), z.end(), 0.0);
+    z[0] = z[1] = 1.0;
+    const Eigen::Vector2d dx{1.0, 1.0};
+    CHECK(problem.cost(z) == 0.5 * dx.dot(symmetric * dx));
+}
+
+TEST_CASE("Runtime-horizon nonlinear MPC refuses an invalid penalty only while its soft constraint is active", "[nmpc][configuration][hardening]")
+{
+    for(const double penalty : invalid_penalties)
+    {
+        INFO("penalty " << penalty);
+        CHECK(constrained_outcome(path_constrained(penalty, true)) == ctrlpp::controller_construction_error::invalid_constraint_penalty);
+        CHECK(constrained_outcome(terminal_constrained(penalty, true)) == ctrlpp::controller_construction_error::invalid_constraint_penalty);
+
+        CHECK(constrained_outcome(path_constrained(penalty, false)) == accepted);
+        CHECK(constrained_outcome(terminal_constrained(penalty, false)) == accepted);
+        CHECK(constrained_outcome(unconstrained_penalties(penalty)) == accepted);
+    }
+    for(const double penalty : valid_penalties)
+    {
+        INFO("penalty " << penalty);
+        CHECK(constrained_outcome(path_constrained(penalty, true)) == accepted);
+        CHECK(constrained_outcome(terminal_constrained(penalty, true)) == accepted);
+    }
+}
+
+TEST_CASE("Linear MPC refuses an invalid slack penalty only while its soft state constraints are active", "[mpc][configuration][hardening]")
+{
+    for(const bool per_state : {false, true})
+    {
+        for(const double penalty : invalid_penalties)
+        {
+            INFO("penalty " << penalty << (per_state ? " per state" : " uniform"));
+            CHECK(linear_outcome(soft_state_box(penalty, false, per_state)) == ctrlpp::controller_construction_error::invalid_constraint_penalty);
+
+            CHECK(linear_outcome(soft_state_box(penalty, true, per_state)) == accepted);
+            CHECK(linear_outcome(unbounded_state_penalty(penalty, per_state)) == accepted);
+        }
+        for(const double penalty : valid_penalties)
+        {
+            INFO("penalty " << penalty << (per_state ? " per state" : " uniform"));
+            CHECK(linear_outcome(soft_state_box(penalty, false, per_state)) == accepted);
+        }
+    }
+
+    // The uniform penalty weighs nothing while a per-state one is set, but it is
+    // still a configuration field with a valid default.
+    CHECK(linear_outcome([](ctrlpp::mpc_config<double, NX, NU>& cfg) {
+              soft_state_box(1.0, false, true)(cfg);
+              cfg.soft_penalty = not_a_number;
+          })
+          == ctrlpp::controller_construction_error::invalid_constraint_penalty);
+}
+
+TEST_CASE("Predictive factories report the first violated rule in the documented order", "[mpc][nmpc][configuration][hardening]")
+{
+    auto both = [](auto first, auto second) {
+        return [=](auto& cfg)
+        {
+            first(cfg);
+            second(cfg);
+        };
+    };
+    auto inverted_input = [](auto& cfg) { input_bounds::set(cfg, 1.0, -1.0); };
+    auto inverted_state = [](auto& cfg) { state_bounds::set(cfg, 1.0, -1.0); };
+    auto nan_state_weight = state_weight(weight_2x2(not_a_number, 0.0, 0.0, 1.0));
+    auto indefinite_state_weight = state_weight(weight_2x2(1.0, 0.0, 0.0, -1.0));
+
+    require_both_predictive(both(inverted_state, inverted_input), ctrlpp::controller_construction_error::invalid_input_bounds);
+    require_both_predictive(both(rate_bound(-1.0), inverted_state), ctrlpp::controller_construction_error::invalid_state_bounds);
+    require_both_predictive(both(nan_state_weight, rate_bound(-1.0)), ctrlpp::controller_construction_error::invalid_rate_bound);
+    require_both_predictive(both(input_weight(not_a_number), indefinite_state_weight), ctrlpp::controller_construction_error::indefinite_cost_weight);
+    require_both_predictive(both(terminal_weight(weight_2x2(1.0, 0.5, 0.4, 1.0)), input_weight(-1.0)), ctrlpp::controller_construction_error::indefinite_cost_weight);
+
+    CHECK(constrained_outcome(both(path_constrained(0.0, true), nan_state_weight)) == ctrlpp::controller_construction_error::non_finite_cost_weight);
+    CHECK(linear_outcome(both(soft_state_box(0.0, false, false), nan_state_weight)) == ctrlpp::controller_construction_error::non_finite_cost_weight);
+
+    auto negative_horizon = [](auto& cfg) { cfg.horizon = -1; };
+    require_both_predictive(both(inverted_input, negative_horizon), ctrlpp::controller_construction_error::non_positive_horizon);
 }

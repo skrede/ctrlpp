@@ -70,12 +70,27 @@ auto controller = *std::move(created);
 
 ### Rejections
 
-The prediction horizon is the only runtime quantity that scales the posed problem, so it is validated once here, before any dimension product is formed and before any storage is reserved. Rejections, checked in order:
+The configuration is validated once here, before any dimension product is formed and before any storage is reserved. Rejections, checked in order:
 
 | Condition | `controller_construction_error` |
 |-----------|----------------------------------|
 | `config.horizon <= 0` | `non_positive_horizon` |
 | `config.horizon` above the representable bound of the derived dimensions | `horizon_overflow` |
+| `u_min` or `u_max` holds a NaN, `u_min` holds `+inf`, `u_max` holds `-inf`, or `u_min > u_max` in some entry | `invalid_input_bounds` |
+| the same on `x_min` and `x_max` | `invalid_state_bounds` |
+| `du_max` holds a NaN or a negative entry | `invalid_rate_bound` |
+| `Q`, then `R`, then `Qf` when set, holds a NaN or an infinity | `non_finite_cost_weight` |
+| that weight is asymmetric beyond rounding drift | `asymmetric_cost_weight` |
+| that weight is not positive semidefinite | `indefinite_cost_weight` |
+| `soft_penalty`, or a set `soft_state_penalty`, is non-finite or non-positive in some entry while the state bounds are soft | `invalid_constraint_penalty` |
+
+Each weight is checked completely (finite, symmetric, semidefinite) before the next one, so an indefinite `Q` is reported ahead of a non-finite `R`.
+
+Equal bounds pin a variable and are accepted, as is an infinite bound in its open direction (`u_min = -inf`, `u_max = +inf`). A rate bound of zero, `-0.0` or `+inf` is accepted.
+
+The weights follow the library's symmetry convention. An asymmetry within the rounding bound `N * eps * max|W_ij|` (never below `N * denorm_min`) of an `N x N` weight `W` is drift: it is symmetrized in the controller's own copy of the configuration before the QP is assembled. The cost assembly passes only the upper triangle to the backend, so without that step the backend would see the reflection of the upper triangle rather than the symmetric part the configured cost denotes. A larger asymmetry is structure and is refused, never silently symmetrized. Semidefiniteness is decided by the symmetric eigensolver with the floor `N * eps * max|W_ij|`, the order of its backward error. `R` is required positive semidefinite, not definite: the QP needs only a semidefinite Hessian to be convex, and the one consumer that needs `R` nonsingular, the Riccati solve for a missing `Qf`, already reports its failure through [`diagnostics()`](#diagnostics).
+
+The state bounds are soft when `x_min` or `x_max` is set and `hard_state_constraints` is false; only then are the penalties inspected. `soft_penalty` is checked even while a per-state `soft_state_penalty` replaces it, because it is a configuration field with a valid default and an invalid value there is a mistake either way.
 
 `horizon` stays a signed `int` deliberately: a mistaken negative value remains representable as negative and is therefore rejectable, whereas an unsigned field would turn the same mistake into an enormous allocation. The overflow bound is a representability condition on `int`, not a chosen ceiling. At the worst-case configuration the horizon `N` scales the decision vector as `N*(2*NX + NU) + NX` and the constraint rows as `N*(2*NX + 2*NU) + NX + n_terminal`, so both stay representable exactly when `horizon <= (INT_MAX - (NX + n_terminal)) / (2*NX + 2*NU)`.
 

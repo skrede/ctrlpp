@@ -9,6 +9,7 @@
 #include "ctrlpp/mpc/diagnostics.h"
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/mpc/nlp_formulation.h"
+#include "ctrlpp/mpc/config_validation.h"
 
 #include <Eigen/Dense>
 
@@ -47,10 +48,7 @@ public:
     /// exception-free build. Builds the solver with its own defaults and chains
     /// into the solver-taking overload below.
     ///
-    /// Rejections, checked in order:
-    ///  * horizon <= 0                   -> controller_construction_error::non_positive_horizon
-    ///  * horizon above the representable
-    ///    bound of the derived dimensions -> controller_construction_error::horizon_overflow
+    /// Rejections and their order are those of the solver-taking overload.
     static auto create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
         -> expected<nmpc_dynamic, controller_construction_error>
     {
@@ -61,11 +59,24 @@ public:
     /// solver. Both the dynamics and the solver are moved in before the NLP is
     /// posed, so the caller's solver settings govern setup.
     ///
-    /// The horizon is the only runtime quantity that scales the posed problem,
-    /// and it is validated here, before any dimension product is formed and
-    /// before any storage is reserved. Rejections, checked in order:
-    ///  * horizon <= 0             -> controller_construction_error::non_positive_horizon
-    ///  * horizon > horizon_bound   -> controller_construction_error::horizon_overflow
+    /// The configuration is validated here, before any dimension product is
+    /// formed and before any storage is reserved. Rejections, checked in order,
+    /// as controller_construction_error enumerators:
+    ///  * horizon <= 0                        -> non_positive_horizon
+    ///  * horizon > horizon_bound              -> horizon_overflow
+    ///  * u_min / u_max: NaN, lower +inf,
+    ///    upper -inf or lower > upper          -> invalid_input_bounds
+    ///  * x_min / x_max: the same              -> invalid_state_bounds
+    ///  * du_max: NaN or negative              -> invalid_rate_bound
+    ///  * Q, then R, then a set Qf: non-finite -> non_finite_cost_weight,
+    ///    asymmetric beyond rounding drift     -> asymmetric_cost_weight,
+    ///    not positive semidefinite            -> indefinite_cost_weight
+    ///  * path_penalty / terminal_penalty of an
+    ///    active soft constraint: non-finite
+    ///    or not strictly positive             -> invalid_constraint_penalty
+    /// A weight whose asymmetry is rounding drift is symmetrized in the
+    /// controller's own copy, so the posed cost and its analytic gradient use
+    /// one symmetric weight.
     ///
     /// The overflow bound is a representability condition on the horizon's own
     /// type, not a chosen ceiling. At the worst-case configuration (path slack,
@@ -91,8 +102,11 @@ public:
             return unexpected(controller_construction_error::non_positive_horizon);
         if(config.horizon > horizon_bound())
             return unexpected(controller_construction_error::horizon_overflow);
+        auto admitted = detail::admit_nmpc_config(config);
+        if(!admitted)
+            return unexpected(admitted.error());
 
-        return nmpc_dynamic{unchecked_t{}, std::move(dynamics), config, std::move(solver)};
+        return nmpc_dynamic{unchecked_t{}, std::move(dynamics), *admitted, std::move(solver)};
     }
 
 private:

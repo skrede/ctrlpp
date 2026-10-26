@@ -465,18 +465,16 @@ TEST_CASE("nmpc on nlopt solves a state box that excludes zero", "[nlopt][contai
     CHECK(solved->has_value());
 }
 
-TEST_CASE("nmpc on nlopt reports inverted input bounds through the error branch", "[nlopt][containment]")
+TEST_CASE("nmpc on nlopt refuses inverted input bounds at construction", "[nlopt][configuration]")
 {
     auto config = make_config(5);
     config.u_min = Eigen::Matrix<double, 1, 1>{1.0};
     config.u_max = Eigen::Matrix<double, 1, 1>{-1.0};
-    auto created = NmpcDI::create(double_integrator, config);
-    REQUIRE(created.has_value());
 
-    std::optional<decltype(created->solve(Eigen::Vector2d{}))> solved;
-    REQUIRE_NOTHROW(solved.emplace(created->solve(Eigen::Vector2d{1.0, 0.0})));
-    REQUIRE_FALSE(solved->has_value());
-    CHECK(solved->error() == ctrlpp::solver_error::invalid_problem);
+    std::optional<decltype(NmpcDI::create(double_integrator, config))> created;
+    REQUIRE_NOTHROW(created.emplace(NmpcDI::create(double_integrator, config)));
+    REQUIRE_FALSE(created->has_value());
+    CHECK(created->error() == ctrlpp::controller_construction_error::invalid_input_bounds);
 }
 
 TEST_CASE("nlopt_solver setup reports a bound vector of the wrong length as backend_rejected", "[nlopt][containment]")
