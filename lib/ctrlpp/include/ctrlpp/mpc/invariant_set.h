@@ -14,6 +14,7 @@
 #include "ctrlpp/control/dare.h"
 
 #include "ctrlpp/mpc/terminal_set.h"
+#include "ctrlpp/mpc/terminal_cost.h"
 #include "ctrlpp/mpc/output_admissible_set.h"
 
 #include <Eigen/Dense>
@@ -376,18 +377,17 @@ struct terminal_ingredients_result
 
 /// @cite mayne2000 -- Terminal cost and constraint sets from DARE + LQR
 ///
-/// Qf is the DARE solution P. `set` is the ellipsoid {x : x^T P x <= alpha} with the largest alpha
-/// inside the input and state faces; the QP encodes its inscribed box, which is not invariant.
-/// `invariant_set` is the maximal output admissible set of A + B K with its own outcome, or
-/// dimension_unsupported for NX > 4. It runs compute_output_admissible_set with the default step
-/// budget; a caller who needs to bound the construction's time calls that function directly.
-/// The error channel carries dare_failed and compute_ellipsoidal_set's refusals.
+/// `set` is the largest ellipsoid {x : x^T P x <= alpha} inside the input and state faces; the box the QP encodes is not invariant.
+/// `invariant_set` is the maximal output admissible set of A + B K under the default step budget, or dimension_unsupported for NX > 4.
+/// The error channel carries singular_input_weight, dare_failed and compute_ellipsoidal_set's refusals.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto terminal_ingredients(
     const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R,
     const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max, const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max)
     -> ctrlpp::expected<terminal_ingredients_result<Scalar, NX, NU>, terminal_set_error>
 {
+    if(detail::riccati_input_weight_singular<Scalar, NX, NU>(B, Q, R))
+        return ctrlpp::unexpected(terminal_set_error::singular_input_weight);
     auto P_result = dare<Scalar, NX, NU>(A, B, Q, R);
     if(!P_result)
         return ctrlpp::unexpected(terminal_set_error::dare_failed);

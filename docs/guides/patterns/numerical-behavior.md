@@ -473,7 +473,10 @@ weights `Q`, `R` and a set `Qf` at `mpc::create`, `nmpc_dynamic::create` and
 `nmpc_static::create` (`non_finite_cost_weight`, `asymmetric_cost_weight`,
 `indefinite_cost_weight`); a cost weight needs only to be positive
 semidefinite, so the same verdict serves, and the symmetrized copy is what the
-posed cost and its gradient use. It does not yet apply to the weight matrices
+posed cost and its gradient use. The one exception is `R` where the Riccati
+solve inverts it: `mpc::create` with `Qf` unset refuses a singular `R`
+(`singular_input_weight`), by the solve's own rank test on its equilibrated
+weighting, and so does `terminal_ingredients`. It does not yet apply to the weight matrices
 of the regulators and the Riccati solvers, nor to
 the moving-horizon estimators' own copies of `Q`, `R` and `P0`: `mhe` and
 `nmhe` forward the embedded filter's refusal, but the copies they keep for

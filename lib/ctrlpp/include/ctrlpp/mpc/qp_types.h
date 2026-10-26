@@ -154,6 +154,12 @@ enum class solver_error : std::uint8_t
 ///                                 constraint is non-finite or not strictly
 ///                                 positive, which makes violating the
 ///                                 constraint free, rewarded or undefined.
+///  * singular_input_weight      : raised by `mpc::create` only, when Qf is
+///                                 unset: R fails the reciprocal-pivot rank test
+///                                 the Riccati solve applies to its equilibrated
+///                                 weighting, so the terminal cost that solve
+///                                 supplies cannot be formed. A singular positive
+///                                 semidefinite R is accepted everywhere else.
 enum class controller_construction_error : std::uint8_t
 {
     non_positive_horizon,
@@ -164,7 +170,8 @@ enum class controller_construction_error : std::uint8_t
     non_finite_cost_weight,
     asymmetric_cost_weight,
     indefinite_cost_weight,
-    invalid_constraint_penalty
+    invalid_constraint_penalty,
+    singular_input_weight
 };
 
 /// @brief Success payload of a controller `solve()`.

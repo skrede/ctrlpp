@@ -552,6 +552,35 @@ TEST_CASE("terminal_ingredients reports an unsupported dimension through the inv
     CHECK(ingredients->set.alpha == ellipsoid->alpha);
 }
 
+TEST_CASE("terminal_ingredients refuses a singular input weight whatever A is", "[terminal_set][singular_r]")
+{
+    auto const b = symmetric_bounds<2, 1>(1.0, 10.0);
+    ctrlpp::Matrix<double, 2, 2> const Q = ctrlpp::Matrix<double, 2, 2>::Identity();
+    plant<2, 1> nilpotent{.A = (ctrlpp::Matrix<double, 2, 2>() << 0.0, 1.0, 0.0, 0.0).finished(), .B = (ctrlpp::Matrix<double, 2, 1>() << 0.0, 1.0).finished()};
+    auto ingredients_of = [&](const plant<2, 1>& sys, double r) { return ctrlpp::terminal_ingredients<double, 2, 1>(sys.A, sys.B, Q, scalar(r), b.u_min, b.u_max, b.x_min, b.x_max); };
+
+    SECTION("a zero input weight")
+    {
+        auto const ingredients = ingredients_of(double_integrator(), 0.0);
+        REQUIRE_FALSE(ingredients.has_value());
+        CHECK(ingredients.error() == ctrlpp::terminal_set_error::singular_input_weight);
+    }
+
+    SECTION("a rank-deficient A with a definite input weight is still a failed Riccati solve")
+    {
+        auto const ingredients = ingredients_of(nilpotent, 1.0);
+        REQUIRE_FALSE(ingredients.has_value());
+        CHECK(ingredients.error() == ctrlpp::terminal_set_error::dare_failed);
+    }
+
+    SECTION("a rank-deficient A does not hide a zero input weight")
+    {
+        auto const ingredients = ingredients_of(nilpotent, 0.0);
+        REQUIRE_FALSE(ingredients.has_value());
+        CHECK(ingredients.error() == ctrlpp::terminal_set_error::singular_input_weight);
+    }
+}
+
 TEST_CASE("The output admissible set is constructed and invariant at four states", "[terminal_set][output_admissible]")
 {
     plant<4, 2> sys{.A = ctrlpp::Matrix<double, 4, 4>::Zero(), .B = ctrlpp::Matrix<double, 4, 2>::Zero()};

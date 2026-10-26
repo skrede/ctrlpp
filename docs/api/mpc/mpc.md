@@ -57,7 +57,7 @@ static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
     -> expected<mpc, controller_construction_error>;
 ```
 
-`create` is the only construction path. There is no non-fallible constructor, so a rejected configuration is a value the caller has to inspect and never a controller that quietly stands in for one. It validates the configuration, then builds the QP matrices, computes the terminal cost (via DARE if `Qf` is not set), and initializes the solver. The two-argument form default-constructs the solver and chains into the three-argument form, which injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset:
+`create` is the only construction path. There is no non-fallible constructor, so a rejected configuration is a value the caller has to inspect and never a controller that quietly stands in for one. It validates the configuration, computes the terminal cost (via DARE if `Qf` is not set), then builds the QP matrices and initializes the solver. The two-argument form default-constructs the solver and chains into the three-argument form, which injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset:
 
 ```cpp
 // Skip per-step polishing on the warm-resolve path -- see qp_preset.
@@ -83,12 +83,13 @@ The configuration is validated once here, before any dimension product is formed
 | that weight is asymmetric beyond rounding drift | `asymmetric_cost_weight` |
 | that weight is not positive semidefinite | `indefinite_cost_weight` |
 | `soft_penalty`, or a set `soft_state_penalty`, is non-finite or non-positive in some entry while the state bounds are soft | `invalid_constraint_penalty` |
+| `Qf` is not set and `R` is singular to the Riccati solve that supplies the terminal cost, checked after every rule above | `singular_input_weight` |
 
 Each weight is checked completely (finite, symmetric, semidefinite) before the next one, so an indefinite `Q` is reported ahead of a non-finite `R`.
 
 Equal bounds pin a variable and are accepted, as is an infinite bound in its open direction (`u_min = -inf`, `u_max = +inf`). A rate bound of zero, `-0.0` or `+inf` is accepted.
 
-The weights follow the library's symmetry convention. An asymmetry within the rounding bound `N * eps * max|W_ij|` (never below `N * denorm_min`) of an `N x N` weight `W` is drift: it is symmetrized in the controller's own copy of the configuration before the QP is assembled. The cost assembly passes only the upper triangle to the backend, so without that step the backend would see the reflection of the upper triangle rather than the symmetric part the configured cost denotes. A larger asymmetry is structure and is refused, never silently symmetrized. Semidefiniteness is decided by the symmetric eigensolver with the floor `N * eps * max|W_ij|`, the order of its backward error. `R` is required positive semidefinite, not definite: the QP needs only a semidefinite Hessian to be convex, and the one consumer that needs `R` nonsingular, the Riccati solve for a missing `Qf`, already reports its failure through [`diagnostics()`](#diagnostics).
+The weights follow the library's symmetry convention. An asymmetry within the rounding bound `N * eps * max|W_ij|` (never below `N * denorm_min`) of an `N x N` weight `W` is drift: it is symmetrized in the controller's own copy of the configuration before the QP is assembled. The cost assembly passes only the upper triangle to the backend, so without that step the backend would see the reflection of the upper triangle rather than the symmetric part the configured cost denotes. A larger asymmetry is structure and is refused, never silently symmetrized. Semidefiniteness is decided by the symmetric eigensolver with the floor `N * eps * max|W_ij|`, the order of its backward error. `R` is required positive semidefinite in general: the QP needs only a semidefinite Hessian to be convex, so a singular `R` is accepted when `Qf` is set. With `Qf` unset, the Riccati solve that supplies the terminal cost inverts `R`, so `create` refuses a singular `R` there with `singular_input_weight` rather than build a controller with a different terminal cost. The verdict is the solve's own: the reciprocal-pivot rank test at `NU * eps` on the equilibrated weighting `R / max(max|Q_ij|, max|R_ij|)`, with `Q` mapped to state space. It is a rank test, not a zero test, so `R = diag(1, 0)` is refused, and so is a weighting that is positive at its own scale but underflows to zero at the equilibrated one (`Q = 1e300 I`, `R = 1e-300`). It does not depend on `A`.
 
 The state bounds are soft when `x_min` or `x_max` is set and `hard_state_constraints` is false; only then are the penalties inspected. `soft_penalty` is checked even while a per-state `soft_state_penalty` replaces it, because it is a configuration field with a valid default and an invalid value there is a mistake either way.
 
@@ -204,9 +205,9 @@ It also carries one disposition that is not about a solve at all:
 
 | Field | Meaning |
 |-------|---------|
-| `used_state_weight_terminal_cost` | No terminal weight was configured, and the Riccati solve that would have supplied one produced no solution, so `Q` (mapped to state space) stands in for the terminal cost |
+| `used_state_weight_terminal_cost` | No terminal weight was configured, and the Riccati solve that would have supplied one produced no solution, so `Q` (mapped to state space) stands in for the terminal cost. A singular `R` never reaches this: `create` refuses it with `singular_input_weight` |
 
-When `Qf` is not set, the infinite-horizon Riccati solution is what the terminal cost is meant to be. That solve can fail, for instance on a rank-deficient `A`. The controller then substitutes the state weight, which is a usable cost but a different problem from the configured one: every solve after it optimizes that different problem, and a stability argument resting on the terminal cost no longer holds. Nothing about a solve's success distinguishes the two, so the substitution is reported here instead.
+When `Qf` is not set, the infinite-horizon Riccati solution is what the terminal cost is meant to be. That solve can still fail after `create` has refused a singular `R`: on a rank-deficient `A`, on a pair with no stabilizing solution, or on a pose whose solution the solve cannot verify. The controller then substitutes the state weight, which is a usable cost but a different problem from the configured one: every solve after it optimizes that different problem, and a stability argument resting on the terminal cost no longer holds. Nothing about a solve's success distinguishes the two, so the substitution is reported here instead.
 
 The flag is latched when the terminal cost is computed, which happens at construction rather than per solve. It is therefore readable before the first solve, and reads the same on every solve afterwards.
 
@@ -241,7 +242,7 @@ auto terminal_ingredients(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, 
 | `set` | `ellipsoidal_set<Scalar, NX>` | The ellipsoid `{x : x^T P x <= alpha}` with the largest `alpha` inside the input and state faces. The QP encodes its inscribed box in `P`'s eigenbasis, which is not positively invariant under `u = K x` and gives no recursive-feasibility guarantee |
 | `invariant_set` | `expected<polytopic_set<Scalar, NX>, terminal_set_error>` | The maximal output admissible set of `A + B K` inside `{x_min <= x <= x_max, u_min <= K x <= u_max}`: the invariant terminal set of the LQR law, as a minimal set of unit rows |
 
-The function's own error channel carries `dare_failed`, `input_zero_not_interior` and `empty_terminal_set`, the failures of `Qf` and `set`. The output admissible set has its own outcome in its field, so its refusal never fails the call:
+The function's own error channel carries `singular_input_weight`, `dare_failed`, `input_zero_not_interior` and `empty_terminal_set`, the failures of `Qf` and `set`. `singular_input_weight` is checked first, with the same rank test as `mpc::create` and independently of `A`; `dare_failed` covers the Riccati solve's remaining failures. The output admissible set has its own outcome in its field, so its refusal never fails the call:
 
 | `invariant_set` error | Cause |
 |-----------------------|-------|

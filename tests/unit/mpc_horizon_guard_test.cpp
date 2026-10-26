@@ -1341,6 +1341,7 @@ constexpr double denorm = std::numeric_limits<double>::denorm_min();
 
 using constrained_nonlinear_config = ctrlpp::nmpc_config<double, NX, NU, 1, 1>;
 using constrained_nonlinear_controller = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp_test::stub_nlp_solver<double>, decltype(double_integrator), 1, 1>;
+using static_nonlinear_controller = ctrlpp::nmpc_static<double, NX, NU, static_cast<std::size_t>(shape_horizon), ctrlpp_test::stub_nlp_solver<double>, decltype(double_integrator)>;
 
 template <typename Result>
 auto agreed_outcome(const Result& two_argument, const Result& solver_taking) -> construction_outcome
@@ -1591,14 +1592,28 @@ TEST_CASE("Predictive factories refuse a non-finite, structurally asymmetric or 
     require_both_predictive([](auto& cfg) { cfg.Qf.reset(); }, accepted);
 }
 
-TEST_CASE("Predictive factories refuse a non-finite or negative input weight and accept a singular one", "[mpc][nmpc][configuration][hardening]")
+TEST_CASE("Predictive factories refuse a non-finite or negative input weight", "[mpc][nmpc][configuration][hardening]")
 {
     require_both_predictive(input_weight(not_a_number), ctrlpp::controller_construction_error::non_finite_cost_weight);
     require_both_predictive(input_weight(-infinity), ctrlpp::controller_construction_error::non_finite_cost_weight);
     require_both_predictive(input_weight(-1.0), ctrlpp::controller_construction_error::indefinite_cost_weight);
 
-    require_both_predictive(input_weight(0.0), accepted);
     require_both_predictive(input_weight(1.0), accepted);
+}
+
+// The QP needs only a convex Hessian, so a singular R is refused only where the
+// Riccati solve that supplies a missing terminal weight has to invert it.
+TEST_CASE("A singular input weight is refused only where the Riccati solve inverts it", "[mpc][nmpc][configuration][hardening]")
+{
+    CHECK(linear_outcome(input_weight(0.0)) == ctrlpp::controller_construction_error::singular_input_weight);
+    CHECK(linear_outcome([](auto& cfg) {
+              input_weight(0.0)(cfg);
+              cfg.Qf = 10.0 * Eigen::Matrix2d::Identity();
+          })
+          == accepted);
+
+    CHECK(nonlinear_outcome(input_weight(0.0)) == accepted);
+    CHECK(nonlinear_outcome<static_nonlinear_controller>(input_weight(0.0)) == accepted);
 }
 
 TEST_CASE("Runtime-horizon nonlinear MPC poses one symmetric weight when the configured one drifts by rounding", "[nmpc][configuration][hardening]")
@@ -1701,6 +1716,8 @@ TEST_CASE("Predictive factories report the first violated rule in the documented
 
     CHECK(constrained_outcome(both(path_constrained(0.0, true), nan_state_weight)) == ctrlpp::controller_construction_error::non_finite_cost_weight);
     CHECK(linear_outcome(both(soft_state_box(0.0, false, false), nan_state_weight)) == ctrlpp::controller_construction_error::non_finite_cost_weight);
+    CHECK(linear_outcome(both(input_weight(0.0), inverted_input)) == ctrlpp::controller_construction_error::invalid_input_bounds);
+    CHECK(linear_outcome(both(input_weight(0.0), soft_state_box(0.0, false, false))) == ctrlpp::controller_construction_error::invalid_constraint_penalty);
 
     auto negative_horizon = [](auto& cfg) { cfg.horizon = -1; };
     require_both_predictive(both(inverted_input, negative_horizon), ctrlpp::controller_construction_error::non_positive_horizon);

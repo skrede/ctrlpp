@@ -571,6 +571,64 @@ TEST_CASE("mpc reports a substituted terminal cost", "[mpc][diagnostics]")
         REQUIRE(controller.diagnostics().used_state_weight_terminal_cost);
     }
 
+    SECTION("a singular input weight is refused whatever A is")
+    {
+        // The Riccati solve tests A before R, so a nilpotent A would otherwise
+        // hide the singular R behind a substitution.
+        Eigen::Matrix2d A;
+        A << 0.0, 1.0, 0.0, 0.0;
+        Eigen::Vector2d B;
+        B << 0.0, 1.0;
+        ctrlpp::discrete_state_space<double, NX, NU, NX> singular_sys{A, B, Eigen::Matrix2d::Identity(), Eigen::Matrix<double, 2, 1>::Zero()};
+
+        auto cfg = make_config(N);
+        cfg.R.setZero();
+
+        auto created = Mpc::create(singular_sys, cfg);
+        REQUIRE_FALSE(created.has_value());
+        CHECK(created.error() == ctrlpp::controller_construction_error::singular_input_weight);
+    }
+
+    SECTION("an input weight positive at its own scale is singular at the scale the Riccati solve inverts")
+    {
+        auto cfg    = make_config(N);
+        cfg.Q       = 1e300 * Eigen::Matrix2d::Identity();
+        cfg.R(0, 0) = 1e-300;
+
+        auto created = Mpc::create(make_double_integrator(), cfg);
+        REQUIRE_FALSE(created.has_value());
+        CHECK(created.error() == ctrlpp::controller_construction_error::singular_input_weight);
+    }
+
+    SECTION("a rank-deficient input weight with no zero diagonal block is refused")
+    {
+        using two_input_mpc = ctrlpp::mpc<double, NX, 2, mock_qp_solver>;
+        auto const plant = make_double_integrator();
+        ctrlpp::discrete_state_space<double, NX, 2, NX> sys{plant.A, Eigen::Matrix2d::Identity(), plant.C, Eigen::Matrix2d::Zero()};
+
+        ctrlpp::mpc_config<double, NX, 2> cfg{.horizon = N, .Q = Eigen::Matrix2d::Identity(), .R = Eigen::Matrix2d::Ones()};
+        auto const coupled = two_input_mpc::create(sys, cfg);
+        REQUIRE_FALSE(coupled.has_value());
+        CHECK(coupled.error() == ctrlpp::controller_construction_error::singular_input_weight);
+
+        cfg.R = Eigen::Vector2d{1.0, 0.0}.asDiagonal();
+        auto const diagonal = two_input_mpc::create(sys, cfg);
+        REQUIRE_FALSE(diagonal.has_value());
+        CHECK(diagonal.error() == ctrlpp::controller_construction_error::singular_input_weight);
+    }
+
+    SECTION("a singular input weight is accepted when a terminal weight is configured")
+    {
+        auto cfg = make_config(N);
+        cfg.R.setZero();
+        cfg.Qf = 10.0 * Eigen::Matrix2d::Identity();
+
+        auto controller = make_controller<Mpc>(make_double_integrator(), cfg);
+        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+        REQUIRE(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+    }
+
     SECTION("a successful Riccati solve reports no substitution")
     {
         auto sys = make_double_integrator();

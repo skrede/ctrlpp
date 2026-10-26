@@ -28,7 +28,9 @@ namespace ctrlpp
 ///                              yields a non-positive or non-finite alpha, i.e. no
 ///                              consistent bounded ellipsoid exists (the set is empty).
 ///  * dare_failed             : the terminal cost and gain could not be formed because
-///                              the discrete algebraic Riccati solve failed.
+///                              the discrete algebraic Riccati solve failed on non-finite
+///                              data, a rank-deficient A, or a stabilizing solution it
+///                              cannot find or verify. A singular R is singular_input_weight.
 ///  * halfplanes_truncated    : the polytopic invariant-set halfplane count hit the
 ///                              resource bound, so the returned representation is a
 ///                              truncated (and therefore unsound) outer approximation.
@@ -52,6 +54,9 @@ namespace ctrlpp
 ///                              full-dimensional polytope; no set is returned.
 ///  * non_finite_input        : A_K or K contains NaN/Inf, or a bound is NaN. An infinite
 ///                              bound is an absent side, not corrupt data.
+///  * singular_input_weight   : R is rank-deficient to the reciprocal-pivot test the
+///                              Riccati solve applies to its equilibrated weighting, so the
+///                              terminal cost and gain cannot be formed.
 enum class terminal_set_error : std::uint8_t
 {
     input_zero_not_interior,
@@ -65,6 +70,7 @@ enum class terminal_set_error : std::uint8_t
     dimension_unsupported,
     certification_failed,
     non_finite_input,
+    singular_input_weight,
 };
 
 /// @brief Ellipsoid {x : x^T P x <= alpha}, P positive definite, alpha > 0.

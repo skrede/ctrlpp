@@ -4,12 +4,11 @@
 #include "ctrlpp/types.h"
 #include "ctrlpp/expected.h"
 
-#include "ctrlpp/control/dare.h"
-
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/qp_solver.h"
 #include "ctrlpp/mpc/diagnostics.h"
 #include "ctrlpp/mpc/terminal_set.h"
+#include "ctrlpp/mpc/terminal_cost.h"
 #include "ctrlpp/mpc/qp_formulation.h"
 #include "ctrlpp/mpc/config_validation.h"
 
@@ -87,6 +86,8 @@ public:
     ///    soft_state_penalty, while the state
     ///    bounds are soft: non-finite or not
     ///    strictly positive                    -> invalid_constraint_penalty
+    ///  * with Qf unset, an R the Riccati
+    ///    solve cannot invert                  -> singular_input_weight
     /// A weight whose asymmetry is rounding drift is symmetrized in the
     /// controller's own copy, so the posed cost uses one symmetric weight
     /// rather than whichever triangle the QP assembly reads.
@@ -118,8 +119,12 @@ public:
         auto admitted = detail::admit_mpc_config(config);
         if(!admitted)
             return unexpected(admitted.error());
+        Matrix<Scalar, NX, NX> Q_state = system.C.transpose() * admitted->Q * system.C;
+        auto terminal = detail::mpc_terminal_cost<Scalar, NX, NU, NY>(system, Q_state, admitted->R, admitted->Qf);
+        if(!terminal)
+            return unexpected(terminal.error());
 
-        return mpc{unchecked_t{}, system, *admitted, std::move(solver)};
+        return mpc{unchecked_t{}, system, *admitted, std::move(Q_state), std::move(*terminal), std::move(solver)};
     }
 
     // Unified soft-constraint / failure contract (shared by mpc and nmpc).
@@ -214,12 +219,17 @@ private:
         explicit unchecked_t() = default;
     };
 
-    /// @brief Construct from a configuration already validated by `create`.
-    mpc(unchecked_t, const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver) : solver_{std::move(solver)}, config_{config}, system_{system}, u_prev_{Vector<Scalar, NU>::Zero()}
+    /// @brief Construct from a configuration and a terminal cost already validated by `create`.
+    ///
+    /// The terminal cost is latched into the diagnostics here, so a substitution is readable before
+    /// the first solve and carried on every aggregate the solve path emits.
+    mpc(unchecked_t, const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Matrix<Scalar, NX, NX> Q_state,
+        detail::mpc_terminal_weights<Scalar, NX, NY> terminal, Solver solver)
+        : solver_{std::move(solver)}, config_{config}, system_{system}, Q_state_{std::move(Q_state)}, Qf_state_{std::move(terminal.state)}, CtQ_{system.C.transpose() * config.Q},
+          Qf_linear_{std::move(terminal.linear)}, last_diagnostics_{.used_state_weight_terminal_cost = terminal.substituted}, u_prev_{Vector<Scalar, NU>::Zero()},
+          terminal_cost_substituted_{terminal.substituted}
     {
-        precompute_output_weights();
         compute_dimensions();
-        compute_terminal_cost();
         build_initial_qp();
         allocate_update_vectors();
     }
@@ -265,47 +275,6 @@ private:
     auto constraint_layout() const -> detail::qp_constraint_layout
     {
         return detail::constraint_layout<Scalar, NX, NU>(config_.horizon, config_.x_min, config_.x_max, config_.u_min, config_.u_max, config_.du_max, config_.terminal_constraint_set);
-    }
-
-    void precompute_output_weights()
-    {
-        Q_state_ = system_.C.transpose() * config_.Q * system_.C;
-        CtQ_ = system_.C.transpose() * config_.Q;
-    }
-
-    /// @brief Establish the terminal cost, and record when it is not the one the
-    /// configuration implies.
-    ///
-    /// With no terminal weight configured, the infinite-horizon Riccati solution
-    /// is what the terminal cost is meant to be. That solve can fail, and the
-    /// state weight then stands in for it: a usable cost, but a different problem
-    /// from the one the caller posed, and one no stability argument built on the
-    /// terminal cost survives. The substitution is latched here and carried on
-    /// every diagnostics aggregate the solve path emits, because this runs at
-    /// construction and reconfiguration rather than per solve, and a caller that
-    /// only ever reads the diagnostics would otherwise never learn of it.
-    void compute_terminal_cost()
-    {
-        if(config_.Qf.has_value())
-        {
-            Qf_state_ = system_.C.transpose() * (*config_.Qf) * system_.C;
-            Qf_linear_ = system_.C.transpose() * (*config_.Qf);
-        }
-        else
-        {
-            auto dare_result = dare<Scalar, NX, NU>(system_.A, system_.B, Q_state_, config_.R);
-            terminal_cost_substituted_ = !dare_result.has_value();
-            Qf_state_ = dare_result ? dare_result->P : Q_state_;
-            // Map state-space Qf back to output space for the linear tracking term:
-            // linear term = -Qf_state * C_pinv * y_ref, where C_pinv = C' * (C*C')^{-1}
-            Matrix<Scalar, NY, NY> CCt = system_.C * system_.C.transpose();
-            Qf_linear_ = Qf_state_ * system_.C.transpose() * CCt.colPivHouseholderQr().solve(Matrix<Scalar, NY, NY>::Identity());
-        }
-
-        // Readable before the first solve: the substitution happened here, not
-        // in a solve, and a caller checking its controller after construction
-        // should not have to run one to find out.
-        last_diagnostics_ = mpc_diagnostics<Scalar>{.used_state_weight_terminal_cost = terminal_cost_substituted_};
     }
 
     void build_initial_qp()
@@ -471,19 +440,19 @@ private:
     Solver solver_{};
     mpc_config<Scalar, NX, NU, NY> config_;
     discrete_state_space<Scalar, NX, NU, NY> system_;
-    Matrix<Scalar, NX, NX> Q_state_{};
-    Matrix<Scalar, NX, NX> Qf_state_{};
-    Matrix<Scalar, NX, NY> CtQ_{};
-    Matrix<Scalar, NX, NY> Qf_linear_{};
+    Matrix<Scalar, NX, NX> Q_state_;
+    Matrix<Scalar, NX, NX> Qf_state_;
+    Matrix<Scalar, NX, NY> CtQ_;
+    Matrix<Scalar, NX, NY> Qf_linear_;
 
     qp_update<Scalar> update_{};
     Eigen::VectorX<Scalar> last_primal_{};
     Eigen::VectorX<Scalar> last_dual_{};
-    mpc_diagnostics<Scalar> last_diagnostics_{};
+    mpc_diagnostics<Scalar> last_diagnostics_;
     Vector<Scalar, NU> u_prev_;
     bool has_solution_{false};
     bool setup_failed_{false};
-    bool terminal_cost_substituted_{false};
+    bool terminal_cost_substituted_;
 
     int n_dec_{};
     int n_con_{};

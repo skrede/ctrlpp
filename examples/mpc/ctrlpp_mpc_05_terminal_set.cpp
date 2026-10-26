@@ -42,6 +42,8 @@ std::string_view name_of(ctrlpp::terminal_set_error e)
             return "certification_failed";
         case ctrlpp::terminal_set_error::non_finite_input:
             return "non_finite_input";
+        case ctrlpp::terminal_set_error::singular_input_weight:
+            return "singular_input_weight";
     }
     return "unknown";
 }
