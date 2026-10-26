@@ -12,7 +12,8 @@
 //      to a controller factory's solver-taking overload. The stub is moved in.
 //   2. setup() records the decision dimension of the problem, so a later
 //      solve() can size its result from the problem rather than from a
-//      hard-coded number.
+//      hard-coded number. With `fail_setup` set it refuses instead, with
+//      stub_setup_error::rejected.
 //   3. solve() reports solve_status::optimal and returns a zero decision vector
 //      of `primal_length()` entries.
 //
@@ -50,6 +51,7 @@ struct stub_nlp_solver
     ctrlpp::solve_status status{Status};
     int n_vars{0};
     int solve_count{0};
+    bool fail_setup{false};
 
     stub_nlp_solver() = default;
 
@@ -69,6 +71,8 @@ struct stub_nlp_solver
 
     auto setup(const ctrlpp::nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, stub_setup_error>
     {
+        if(fail_setup)
+            return ctrlpp::unexpected(stub_setup_error::rejected);
         n_vars = problem.n_vars;
         return {};
     }
@@ -79,6 +83,8 @@ struct stub_nlp_solver
     template <int NV>
     auto setup(const ctrlpp::nlp_problem_static<Scalar, NV>& problem) -> ctrlpp::expected<void, stub_setup_error>
     {
+        if(fail_setup)
+            return ctrlpp::unexpected(stub_setup_error::rejected);
         n_vars = problem.n_vars;
         return {};
     }

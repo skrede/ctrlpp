@@ -262,13 +262,19 @@ constructor is private and which only the class can make. `ctrlpp::expected`
 can then construct the object in its own storage through its `std::in_place`
 constructor, and guaranteed copy elision carries that storage to the caller, so
 the factory never holds a whole object in its frame. `particle_filter` uses it,
-because its object holds the whole particle set. When a step can only run on the
-constructed object, the factory builds one named result with `std::in_place`,
+because its object holds the whole particle set. `nmpc_dynamic` uses it too,
+because its solver lives inline and can only be set up once the controller
+exists: the solver is set up on the object built in place, and a setup failure
+is assigned into that same result. When a step can only run on the constructed
+object in this way, the factory builds one named result with `std::in_place`,
 assigns `ctrlpp::unexpected(cause)` to it if that step fails, and returns the
 result from its only return statement. The single return statement is what lets
 the compiler elide the copy (GCC elides it only when every return names the same
-variable), and `ctrlpp::expected` assigns an `unexpected` in place, as
-`std::expected` does, so the failure path builds no second object either.
+variable, including returns that precede the result's declaration), so the
+refusals that need no object are returned by the caller of the function that
+builds the result, never from that function itself. `ctrlpp::expected` assigns
+an `unexpected` in place, as `std::expected` does, so the failure path builds no
+second object either.
 
 The three filters share `filter_error`, which gained
 `non_finite_process_noise`, `non_finite_measurement_noise`,

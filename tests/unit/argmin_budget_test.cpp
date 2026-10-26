@@ -167,7 +167,7 @@ TEST_CASE("the unconstrained argmin bridge refuses a problem with constraint row
 }
 
 // The transcription always poses the dynamics as equality rows, so no NMPC problem fits the unconstrained bridge.
-TEST_CASE("nmpc on the unconstrained argmin bridge reports its setup as incomplete", "[argmin][setup][hardening]")
+TEST_CASE("nmpc on the unconstrained argmin bridge is refused at construction", "[argmin][setup][hardening]")
 {
     using controller_type = ctrlpp::nmpc_dynamic<double, 2, 1, step_solver, double_integrator>;
     const ctrlpp::nmpc_config<double, 2, 1> config{
@@ -176,16 +176,10 @@ TEST_CASE("nmpc on the unconstrained argmin bridge reports its setup as incomple
         .R = Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    auto controller = controller_type::create(double_integrator{}, config);
-    REQUIRE(controller.has_value());
-    REQUIRE(controller->problem().n_constraints > 0);
+    const auto controller = controller_type::create(double_integrator{}, config);
 
-    const Eigen::Vector2d x0{1.0, 0.0};
-    for(int attempt = 0; attempt < 2; ++attempt)
-    {
-        const auto u = controller->solve(x0);
-
-        REQUIRE_FALSE(u.has_value());
-        CHECK(u.error() == ctrlpp::solver_error::setup_incomplete);
-    }
+    REQUIRE_FALSE(controller.has_value());
+    const auto* cause = std::get_if<ctrlpp::argmin_setup_error>(&controller.error());
+    REQUIRE(cause != nullptr);
+    CHECK(*cause == ctrlpp::argmin_setup_error::constraints_unsupported);
 }

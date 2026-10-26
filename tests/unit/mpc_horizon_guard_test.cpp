@@ -56,6 +56,7 @@
 #include <variant>
 #include <optional>
 #include <algorithm>
+#include <type_traits>
 
 namespace
 {
@@ -351,6 +352,15 @@ void require_moving_horizon_configuration_error(
     REQUIRE(*error == expected);
 }
 
+template <typename Alternative, typename Result>
+void require_nonlinear_construction_error(const Result& result, Alternative expected)
+{
+    REQUIRE_FALSE(result.has_value());
+    auto const* error = std::get_if<Alternative>(&result.error());
+    REQUIRE(error != nullptr);
+    REQUIRE(*error == expected);
+}
+
 }
 
 TEST_CASE("Refused moving-horizon measurements invalidate and refill the window",
@@ -640,17 +650,13 @@ TEST_CASE("Linear MPC rejects a horizon whose derived dimensions would overflow"
 TEST_CASE("Nonlinear MPC rejects a negative horizon at construction", "[nmpc][horizon][hardening]")
 {
     auto result = nonlinear_controller::create(double_integrator, nonlinear_config(-1), ctrlpp_test::stub_nlp_solver<double>{});
-
-    REQUIRE(!result.has_value());
-    REQUIRE(result.error() == ctrlpp::controller_construction_error::non_positive_horizon);
+    require_nonlinear_construction_error(result, ctrlpp::controller_construction_error::non_positive_horizon);
 }
 
 TEST_CASE("Nonlinear MPC rejects a zero horizon at construction", "[nmpc][horizon][hardening]")
 {
     auto result = nonlinear_controller::create(double_integrator, nonlinear_config(0), ctrlpp_test::stub_nlp_solver<double>{});
-
-    REQUIRE(!result.has_value());
-    REQUIRE(result.error() == ctrlpp::controller_construction_error::non_positive_horizon);
+    require_nonlinear_construction_error(result, ctrlpp::controller_construction_error::non_positive_horizon);
 }
 
 TEST_CASE("Nonlinear MPC accepts a horizon of one and solves", "[nmpc][horizon][hardening]")
@@ -672,12 +678,19 @@ TEST_CASE("Nonlinear MPC accepts a horizon of one and solves", "[nmpc][horizon][
 TEST_CASE("Nonlinear MPC rejects a horizon whose derived dimensions would overflow", "[nmpc][horizon][hardening]")
 {
     auto just_past = nonlinear_controller::create(double_integrator, nonlinear_config(nonlinear_horizon_bound + 1), ctrlpp_test::stub_nlp_solver<double>{});
-    REQUIRE(!just_past.has_value());
-    REQUIRE(just_past.error() == ctrlpp::controller_construction_error::horizon_overflow);
+    require_nonlinear_construction_error(just_past, ctrlpp::controller_construction_error::horizon_overflow);
 
     auto largest = nonlinear_controller::create(double_integrator, nonlinear_config(std::numeric_limits<int>::max()), ctrlpp_test::stub_nlp_solver<double>{});
-    REQUIRE(!largest.has_value());
-    REQUIRE(largest.error() == ctrlpp::controller_construction_error::horizon_overflow);
+    require_nonlinear_construction_error(largest, ctrlpp::controller_construction_error::horizon_overflow);
+}
+
+TEST_CASE("Runtime-horizon nonlinear MPC reports a solver setup failure at construction with the backend's cause", "[nmpc][setup][hardening]")
+{
+    ctrlpp_test::stub_nlp_solver<double> solver;
+    solver.fail_setup = true;
+    auto result = nonlinear_controller::create(double_integrator, nonlinear_config(shape_horizon), std::move(solver));
+
+    require_nonlinear_construction_error(result, ctrlpp_test::stub_setup_error::rejected);
 }
 
 TEST_CASE("Compile-time-horizon NLP formulation rejects a disagreeing runtime horizon", "[nmpc][horizon][hardening]")
@@ -1246,7 +1259,14 @@ auto agreed_outcome(const Result& two_argument, const Result& solver_taking) -> 
     if(two_argument.has_value())
         return std::nullopt;
     REQUIRE(two_argument.error() == solver_taking.error());
-    return two_argument.error();
+    if constexpr(std::is_same_v<typename Result::error_type, ctrlpp::controller_construction_error>)
+        return two_argument.error();
+    else
+    {
+        auto const* refusal = std::get_if<ctrlpp::controller_construction_error>(&two_argument.error());
+        REQUIRE(refusal != nullptr);
+        return *refusal;
+    }
 }
 
 template <typename Configure>

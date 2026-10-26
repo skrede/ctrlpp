@@ -77,12 +77,14 @@ enum class report_values
     negative_infinity
 };
 
-// The stubs have no setup failure mode, so their setup-error type carries no
-// enumerators. The solver concepts accept one setup shape, a fallible one, so a
-// stub writes a trivially succeeding fallible setup rather than an infallible
+// The stubs' setup fails only when asked to (stub_nlp_solver's fail_setup), so a
+// test can drive a typed setup failure through a controller factory. The solver
+// concepts accept one setup shape, a fallible one, so a stub that is not asked
+// to fail writes a trivially succeeding fallible setup rather than an infallible
 // one. Shared with stub_nlp_solver.h.
 enum class stub_setup_error
 {
+    rejected,
 };
 
 template <typename Scalar,

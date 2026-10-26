@@ -8,6 +8,8 @@
 
 #include <span>
 #include <cmath>
+#include <utility>
+#include <variant>
 #include <concepts>
 #include <functional>
 
@@ -96,6 +98,13 @@ concept nlp_solver = requires { typename S::scalar_type; }
         { solver.setup(prob).has_value() } -> std::convertible_to<bool>;
     };
 
+/// @brief Construction error of the nonlinear MPC factories: a configuration
+/// refusal (`controller_construction_error`), a formulation refusal
+/// (`nlp_formulation_error`), or the bound solver's own setup error, kept as the
+/// backend's enum so the cause of a setup failure survives construction.
+template <typename SetupError>
+using nmpc_construction_error = std::variant<controller_construction_error, nlp_formulation_error, SetupError>;
+
 namespace detail
 {
 
@@ -112,6 +121,9 @@ auto setup_nlp_solver(Solver& solver, const Problem& problem) -> decltype(solver
 {
     return solver.setup(problem);
 }
+
+template <typename Solver, typename Problem>
+using nlp_setup_error_t = typename decltype(setup_nlp_solver(std::declval<Solver&>(), std::declval<const Problem&>()))::error_type;
 
 /// @brief Whether an NLP result reported under an accepted status can be
 /// consumed: the primal covers the posed dimension, its consumed prefix and the

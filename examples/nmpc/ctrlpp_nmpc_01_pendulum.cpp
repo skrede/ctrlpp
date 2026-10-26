@@ -39,9 +39,10 @@ int main()
                                             .u_min = Eigen::Matrix<double, 1, 1>::Constant(-5.0),
                                             .u_max = Eigen::Matrix<double, 1, 1>::Constant(5.0)};
 
-    // create validates the configuration and reports a rejection through
-    // ctrlpp::expected<nmpc_dynamic, controller_construction_error> instead of
-    // throwing.
+    // create validates the configuration and sets the solver up, and reports a
+    // rejection through ctrlpp::expected<nmpc_dynamic, construction_error>
+    // instead of throwing; the error is a variant holding the configuration
+    // refusal or the solver's own setup error.
     auto controller_result =
         ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)>::create(dynamics, cfg);
     if(!controller_result.has_value())

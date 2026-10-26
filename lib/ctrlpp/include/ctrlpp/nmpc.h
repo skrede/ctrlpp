@@ -22,6 +22,7 @@
 #include <utility>
 #include <optional>
 #include <algorithm>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -43,14 +44,51 @@ class nmpc_dynamic
     static constexpr int nc = static_cast<int>(NC);
     static constexpr int ntc = static_cast<int>(NTC);
 
+    using setup_error = detail::nlp_setup_error_t<Solver, nlp_problem<Scalar>>;
+
+    /// @brief Passkey for the non-validating constructor: only the controller
+    /// can make one, which is what keeps `create` the only way to originate a
+    /// controller and the validation and solver setup impossible to bypass.
+    class validated_tag
+    {
+        friend nmpc_dynamic;
+        validated_tag() = default;
+    };
+
 public:
-    /// @brief Validating factory; the only construction path on an
-    /// exception-free build. Builds the solver with its own defaults and chains
-    /// into the solver-taking overload below.
+    using construction_error = nmpc_construction_error<setup_error>;
+
+    // Equal alternative types would make the variant's construction by type ambiguous.
+    static_assert(!std::is_same_v<setup_error, controller_construction_error> && !std::is_same_v<setup_error, nlp_formulation_error>,
+                  "the solver's setup-error type must differ from controller_construction_error and nlp_formulation_error");
+
+    // Public so ctrlpp::expected can construct the controller in the caller's
+    // storage; unreachable without the validated_tag only the controller can make.
+    nmpc_dynamic(validated_tag, Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver&& solver)
+        : m_dynamics{std::move(dynamics)}
+        , m_config{config}
+        , m_N{config.horizon}
+        , m_has_path_slack{config.soft_constraints && NC > 0 && config.path_constraint.has_value()}
+        , m_has_term_slack{config.soft_constraints && NTC > 0 && config.terminal_constraint.has_value()}
+        , m_num_path_slack{m_has_path_slack ? m_N * nc : 0}
+        , m_num_term_slack{m_has_term_slack ? ntc : 0}
+        , m_num_vars{(m_N + 1) * nx + m_N * nu + m_num_path_slack + m_num_term_slack}
+        , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>()}
+        , m_solver{std::move(solver)}
+    {
+        m_state->x_ref.resize(static_cast<std::size_t>(m_N + 1), Vector<Scalar, NX>::Zero());
+        m_problem = std::make_unique<nlp_problem<Scalar>>(
+            detail::build_nmpc_problem<Scalar, NX, NU, NC, NTC>(m_dynamics, m_config, m_state));
+        m_warm_z = Eigen::VectorX<Scalar>::Zero(m_num_vars);
+    }
+
+    /// @brief Validating factory, and the only way to originate a controller.
+    /// Builds the solver with its own defaults and chains into the
+    /// solver-taking overload below.
     ///
     /// Rejections and their order are those of the solver-taking overload.
     static auto create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
-        -> expected<nmpc_dynamic, controller_construction_error>
+        -> expected<nmpc_dynamic, construction_error>
     {
         return create(std::move(dynamics), config, Solver{});
     }
@@ -61,7 +99,7 @@ public:
     ///
     /// The configuration is validated here, before any dimension product is
     /// formed and before any storage is reserved. Rejections, checked in order,
-    /// as controller_construction_error enumerators:
+    /// as the controller_construction_error alternative of construction_error:
     ///  * horizon <= 0                        -> non_positive_horizon
     ///  * horizon > horizon_bound              -> horizon_overflow
     ///  * u_min / u_max: NaN, lower +inf,
@@ -77,6 +115,13 @@ public:
     /// A weight whose asymmetry is rounding drift is symmetrized in the
     /// controller's own copy, so the posed cost and its analytic gradient use
     /// one symmetric weight.
+    ///
+    /// The controller is then constructed in the returned result and its solver
+    /// is set up against the posed problem; a refused setup turns that result
+    /// into the solver's own setup-error alternative, so the backend's typed
+    /// cause reaches the caller. The nlp_formulation_error alternative is never
+    /// produced here, since the runtime-horizon formulation has no refusal; it
+    /// exists so both nonlinear MPC classes share one error shape.
     ///
     /// The overflow bound is a representability condition on the horizon's own
     /// type, not a chosen ceiling. At the worst-case configuration (path slack,
@@ -96,25 +141,31 @@ public:
     /// step, the worst possible moment. Clamping the horizon to one would turn a
     /// caller mistake into a silently different controller.
     static auto create(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
-        -> expected<nmpc_dynamic, controller_construction_error>
+        -> expected<nmpc_dynamic, construction_error>
     {
         if(config.horizon <= 0)
-            return unexpected(controller_construction_error::non_positive_horizon);
+            return unexpected(construction_error{controller_construction_error::non_positive_horizon});
         if(config.horizon > horizon_bound())
-            return unexpected(controller_construction_error::horizon_overflow);
+            return unexpected(construction_error{controller_construction_error::horizon_overflow});
         auto admitted = detail::admit_nmpc_config(config);
         if(!admitted)
-            return unexpected(admitted.error());
-
-        return nmpc_dynamic{unchecked_t{}, std::move(dynamics), *admitted, std::move(solver)};
+            return unexpected(construction_error{admitted.error()});
+        return construct_and_set_up(std::move(dynamics), *admitted, std::move(solver));
     }
 
 private:
-    /// @brief Tag selecting the non-validating constructor reserved for `create`.
-    struct unchecked_t
+    // The setup failure is assigned into the one named result, and that result is
+    // this function's only return: gcc elides a named result only when every
+    // return names it, so the refusals above live in create instead.
+    static auto construct_and_set_up(Dynamics&& dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver&& solver)
+        -> expected<nmpc_dynamic, construction_error>
     {
-        explicit unchecked_t() = default;
-    };
+        expected<nmpc_dynamic, construction_error> result{std::in_place, validated_tag{}, std::move(dynamics), config, std::move(solver)};
+        auto setup = detail::setup_nlp_solver(result->m_solver, *result->m_problem);
+        if(!setup.has_value())
+            result = unexpected(construction_error{setup.error()});
+        return result;
+    }
 
     /// @brief Largest horizon whose derived decision and constraint dimensions
     /// are still representable in the horizon's own type. See `create` for
@@ -124,26 +175,6 @@ private:
         constexpr int per_step = nx + 2 * nu + nc;
         constexpr int constant_dimensions = nx + ntc;
         return (std::numeric_limits<int>::max() - constant_dimensions) / per_step;
-    }
-
-    /// @brief Construct from a configuration already validated by `create`.
-    nmpc_dynamic(unchecked_t, Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
-        : m_dynamics{std::move(dynamics)}
-        , m_config{config}
-        , m_N{config.horizon}
-        , m_has_path_slack{config.soft_constraints && NC > 0 && config.path_constraint.has_value()}
-        , m_has_term_slack{config.soft_constraints && NTC > 0 && config.terminal_constraint.has_value()}
-        , m_num_path_slack{m_has_path_slack ? m_N * nc : 0}
-        , m_num_term_slack{m_has_term_slack ? ntc : 0}
-        , m_num_vars{(m_N + 1) * nx + m_N * nu + m_num_path_slack + m_num_term_slack}
-        , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>()}
-        , m_solver{std::move(solver)}
-    {
-        m_state->x_ref.resize(static_cast<std::size_t>(m_N + 1), Vector<Scalar, NX>::Zero());
-        m_problem = std::make_unique<nlp_problem<Scalar>>(
-            detail::build_nmpc_problem<Scalar, NX, NU, NC, NTC>(m_dynamics, m_config, m_state));
-        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem).has_value();
-        m_warm_z = Eigen::VectorX<Scalar>::Zero(m_num_vars);
     }
 
 public:

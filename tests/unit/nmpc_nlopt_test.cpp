@@ -12,6 +12,7 @@
 #include <vector>
 #include <cstddef>
 #include <utility>
+#include <variant>
 #include <optional>
 #include <stdexcept>
 
@@ -474,7 +475,9 @@ TEST_CASE("nmpc on nlopt refuses inverted input bounds at construction", "[nlopt
     std::optional<decltype(NmpcDI::create(double_integrator, config))> created;
     REQUIRE_NOTHROW(created.emplace(NmpcDI::create(double_integrator, config)));
     REQUIRE_FALSE(created->has_value());
-    CHECK(created->error() == ctrlpp::controller_construction_error::invalid_input_bounds);
+    const auto* refusal = std::get_if<ctrlpp::controller_construction_error>(&created->error());
+    REQUIRE(refusal != nullptr);
+    CHECK(*refusal == ctrlpp::controller_construction_error::invalid_input_bounds);
 }
 
 TEST_CASE("nlopt_solver setup reports a bound vector of the wrong length as backend_rejected", "[nlopt][containment]")

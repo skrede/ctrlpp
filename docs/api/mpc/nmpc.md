@@ -97,23 +97,41 @@ Calling the formulation factory directly surfaces the reason instead:
 ### nmpc_dynamic (runtime horizon)
 
 ```cpp
+using construction_error = nmpc_construction_error<SetupError>;
+// = std::variant<controller_construction_error, nlp_formulation_error, SetupError>
+
 static auto create(Dynamics dynamics,
                        const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
-    -> expected<nmpc_dynamic, controller_construction_error>;
+    -> expected<nmpc_dynamic, construction_error>;
 
 static auto create(Dynamics dynamics,
                        const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
                        Solver solver)
-    -> expected<nmpc_dynamic, controller_construction_error>;
+    -> expected<nmpc_dynamic, construction_error>;
 ```
 
-`create` is the only construction path for the runtime-horizon controller. There is no non-fallible constructor, so a rejected configuration is a value the caller has to inspect and never a controller that quietly stands in for one. The two-argument form default-constructs the solver and chains into the three-argument form; both move the dynamics and the solver in before the NLP is posed.
+`create` is the only construction path for the runtime-horizon controller. Its constructor is public only so `ctrlpp::expected` can build the controller in the caller's storage, and it takes a passkey that only the class can make, so a rejected configuration or a refused solver setup is a value the caller has to inspect and never a controller that quietly stands in for one. The two-argument form default-constructs the solver and chains into the three-argument form; both move the dynamics and the solver in before the NLP is posed.
+
+`SetupError` is the error type of the bound solver's own `setup`, so the backend's cause of a setup failure reaches the caller unflattened. The error is one of three alternatives:
+
+| Alternative | Carries |
+|-------------|---------|
+| `controller_construction_error` | a configuration refusal, in the order of the table below |
+| `nlp_formulation_error` | never produced by `nmpc_dynamic`, whose runtime-horizon formulation has no refusal; it is there so both nonlinear MPC classes share one error shape |
+| `SetupError` | the solver refused the posed problem: `argmin_setup_error` for `argmin_solver`, `nlopt_setup_error` for `nlopt_solver`, or a custom backend's own enum |
+
+The configuration is checked first, then the controller is built in place and its solver is set up against the posed problem; a refused setup turns the result into the `SetupError` alternative, so no controller exists whose every solve would fail. The three alternative types must differ (a `static_assert` says so), because a variant whose alternatives repeat a type cannot be built from a value of that type.
 
 ```cpp
-auto created = ctrlpp::nmpc_dynamic<double, NX, NU, Solver, Dynamics>::create(
+auto created = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, Dynamics>::create(
     dynamics, cfg);
 if (!created)
-    return handle(created.error());
+{
+    if (const auto* refusal = std::get_if<ctrlpp::controller_construction_error>(&created.error()))
+        return handle_configuration(*refusal);
+    if (const auto* cause = std::get_if<ctrlpp::nlopt_setup_error>(&created.error()))
+        return handle_setup(*cause);
+}
 auto controller = *std::move(created);
 ```
 
@@ -278,8 +296,8 @@ Returns solver diagnostics including constraint violation metrics and total slac
 The third template parameter, `Constrained` (default `true`), selects the bridge. With `false` the bridge handles
 variable bounds only, and its `setup` refuses a problem with general constraint rows with
 `argmin_setup_error::constraints_unsupported` instead of solving it without them. The transcription always poses the
-dynamics as equality rows, so a controller on the unconstrained bridge has its setup refused and every `solve` returns
-`solver_error::setup_incomplete`; controllers use the default.
+dynamics as equality rows, so `Constrained = false` cannot back an NMPC: `create` refuses it with the
+`argmin_setup_error` alternative holding `constraints_unsupported`. Controllers use the default.
 
 The budget is the sixth template parameter, and it is chosen at compile time. The default instantiates only the
 step-budget driver, so the solver reads no clock, and its settings have no `max_time`: setting one is a compile
@@ -365,7 +383,8 @@ int main()
                                         pendulum_dynamics>::create(dynamics, cfg);
     if(!created)
     {
-        // created.error() carries the controller_construction_error.
+        // created.error() is the construction_error variant: a configuration
+        // refusal or the solver's own nlopt_setup_error.
         return 1;
     }
     auto controller = *std::move(created);

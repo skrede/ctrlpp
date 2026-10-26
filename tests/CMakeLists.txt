@@ -185,6 +185,23 @@ if (CTRLPP_BUILD_TESTS)
         message(FATAL_ERROR "A direct particle filter construction failed for another reason than the passkey.\n${output}")
     endif ()
 
+    # The runtime-horizon NMPC's constructor is public for the same reason, and the factory also sets the solver
+    # up on the object it built in place, so the passkey is all that keeps an unvalidated, unset controller out.
+    ctrlpp_try_canary(CTRLPP_NMPC_PASSKEY_BASELINE_COMPILED nmpc_passkey_canary.cpp)
+    if (NOT CTRLPP_NMPC_PASSKEY_BASELINE_COMPILED)
+        message(FATAL_ERROR
+            "The nmpc passkey canary is not a valid positive control: "
+            "its create arm does not compile.\n"
+            "${CTRLPP_NMPC_PASSKEY_BASELINE_COMPILED_OUTPUT}")
+    endif ()
+    ctrlpp_try_canary(CTRLPP_NMPC_DIRECT_CONSTRUCTION_COMPILED nmpc_passkey_canary.cpp -DCTRLPP_CANARY_NMPC_DYNAMIC_DIRECT_CONSTRUCTION)
+    set(output "${CTRLPP_NMPC_DIRECT_CONSTRUCTION_COMPILED_OUTPUT}")
+    if (CTRLPP_NMPC_DIRECT_CONSTRUCTION_COMPILED)
+        message(FATAL_ERROR "A direct nmpc_dynamic construction compiled; the passkey is not enforced.\n${output}")
+    elseif (NOT output MATCHES "validated_tag::validated_tag|constructor of class '[^']*::validated_tag'")
+        message(FATAL_ERROR "A direct nmpc_dynamic construction failed for another reason than the passkey.\n${output}")
+    endif ()
+
     # A composed policy or a setter that does nothing is invisible at run time, so each anti-windup strategy
     # and set_integral must fail to compile with velocity_form, and for the stated reason.
     ctrlpp_try_canary(CTRLPP_PID_VELOCITY_BASELINE_COMPILED pid_velocity_anti_windup_canary.cpp)

@@ -395,7 +395,8 @@ otherwise produce silent corruption through intermediate overflow:
   the last accepted solve.
 
 - **Predictive-control configuration:** `mpc::create` and `nmpc_dynamic::create`
-  refuse, with a typed `controller_construction_error`, input or state bounds
+  refuse, with a typed `controller_construction_error` (for `nmpc_dynamic`, that
+  alternative of its construction-error variant), input or state bounds
   that hold a NaN, a lower bound of `+inf`, an upper bound of `-inf` or a lower
   bound above its upper bound; a rate bound with a NaN or negative entry; a
   non-finite, structurally asymmetric or indefinite cost weight; and a
