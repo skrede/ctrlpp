@@ -194,26 +194,23 @@ public:
 
     void constraints(const decision_vector& x, Eigen::VectorX<Scalar>& c_out) const
     {
-        // Defensive size check: c_out is caller/argmin-provided and must hold
-        // exactly the partitioned constraint count (equalities + upper/lower
-        // inequalities) before any write below. A debug-only assert (compiled
-        // out under NDEBUG, no allocation, no throw) prevents an out-of-bounds
-        // write on the hot path without disturbing the RT/no-exceptions posture.
         assert(c_out.size()
             == static_cast<Eigen::Index>(n_eq + n_ineq_upper + n_ineq_lower));
 
         eval_raw(x);
 
+        // argmin takes an inequality row as satisfied when it is non-negative
+        // (argmin/test_functions/hock_schittkowski.h, "Inequality convention").
         int idx = 0;
 
         for(auto i : eq_indices)
             c_out[idx++] = raw_buf_[static_cast<std::size_t>(i)] - base::problem_->c_lower[i];
 
         for(auto i : ineq_upper_indices)
-            c_out[idx++] = raw_buf_[static_cast<std::size_t>(i)] - base::problem_->c_upper[i];
+            c_out[idx++] = base::problem_->c_upper[i] - raw_buf_[static_cast<std::size_t>(i)];
 
         for(auto i : ineq_lower_indices)
-            c_out[idx++] = base::problem_->c_lower[i] - raw_buf_[static_cast<std::size_t>(i)];
+            c_out[idx++] = raw_buf_[static_cast<std::size_t>(i)] - base::problem_->c_lower[i];
     }
 
     auto num_equality() const -> int
@@ -244,9 +241,9 @@ public:
             for(auto i : eq_indices)
                 J.row(idx++) = J_raw_.row(i);
             for(auto i : ineq_upper_indices)
-                J.row(idx++) = J_raw_.row(i);
-            for(auto i : ineq_lower_indices)
                 J.row(idx++) = -J_raw_.row(i);
+            for(auto i : ineq_lower_indices)
+                J.row(idx++) = J_raw_.row(i);
 
             return;
         }
