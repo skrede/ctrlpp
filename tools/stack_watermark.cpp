@@ -159,6 +159,7 @@
 #include <cstdio>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <pthread.h>
 
@@ -700,9 +701,9 @@ struct controller_chain
     using controller_type =
         ctrlpp::nmpc_static<double, NX, NU, NH, solver_type, chain_dynamics<NX, NU>>;
 
-    chain_dynamics<NX, NU>     dynamics;
-    controller_type            controller;
-    ctrlpp::Vector<double, NX> state;
+    chain_dynamics<NX, NU>                                                       dynamics;
+    ctrlpp::expected<controller_type, typename controller_type::construction_error> controller;
+    ctrlpp::Vector<double, NX>                                                   state;
 };
 
 /// The measured call: one steady-state solve followed by the caller's own plant
@@ -715,12 +716,15 @@ template<std::size_t NX, std::size_t NU, std::size_t NH>
 {
     std::uint64_t bits = 1;
 
-    const auto stepped = chain.controller.solve(chain.state);
-    if(stepped)
+    if(chain.controller)
     {
-        const double reduction = stepped->input.sum();
-        std::memcpy(&bits, &reduction, sizeof(bits));
-        chain.state = chain.dynamics(chain.state, stepped->input);
+        const auto stepped = chain.controller->solve(chain.state);
+        if(stepped)
+        {
+            const double reduction = stepped->input.sum();
+            std::memcpy(&bits, &reduction, sizeof(bits));
+            chain.state = chain.dynamics(chain.state, stepped->input);
+        }
     }
     chain_sink.store(bits, std::memory_order_relaxed);
 }
@@ -746,8 +750,16 @@ auto build_controller_chain(int warm_up_solves) -> controller_chain<NX, NU, NH>
 
     controller_chain<NX, NU, NH> chain{
         dynamics,
-        typename controller_chain<NX, NU, NH>::controller_type{dynamics, config},
+        controller_chain<NX, NU, NH>::controller_type::create(dynamics, config),
         initial_state};
+
+    // A refused configuration has no chain to measure, and a row reported
+    // without one would read as a measurement of nothing.
+    if(!chain.controller)
+    {
+        std::fprintf(stderr, "stack_watermark: the controller configuration was refused at construction\n");
+        std::exit(EXIT_FAILURE);
+    }
 
     for(int solve = 0; solve < warm_up_solves; ++solve)
         run_controller(chain);

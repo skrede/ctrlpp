@@ -262,10 +262,14 @@ constructor is private and which only the class can make. `ctrlpp::expected`
 can then construct the object in its own storage through its `std::in_place`
 constructor, and guaranteed copy elision carries that storage to the caller, so
 the factory never holds a whole object in its frame. `particle_filter` uses it,
-because its object holds the whole particle set. `nmpc_dynamic` uses it too,
-because its solver lives inline and can only be set up once the controller
-exists: the solver is set up on the object built in place, and a setup failure
-is assigned into that same result. When a step can only run on the constructed
+because its object holds the whole particle set. Both nonlinear MPC classes use
+it too, `nmpc_dynamic` and `nmpc_static` (the default `nmpc`), because their
+solver lives inline and can only be set up once the controller exists: the
+solver is set up on the object built in place, and a setup failure is assigned
+into that same result. `nmpc_static`'s solver carries its whole workspace inline,
+so its passkey constructor also takes the solver by rvalue reference, where a
+by-value parameter would hold a second solver in the in-place construction's
+own frame at `-O0`. When a step can only run on the constructed
 object in this way, the factory builds one named result with `std::in_place`,
 assigns `ctrlpp::unexpected(cause)` to it if that step fails, and returns the
 result from its only return statement. The single return statement is what lets

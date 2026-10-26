@@ -518,6 +518,25 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
                                .c_upper = std::move(c_upper)};
 }
 
+/// @brief The configurations the compile-time-horizon formulation cannot pose,
+/// checked in order, before any dependent data is built:
+///  * config.horizon != NH        -> nlp_formulation_error::horizon_mismatch
+///  * a slack-introducing config  -> nlp_formulation_error::slack_not_supported
+/// A configuration adds slack when soft constraints are on and a path or
+/// terminal constraint is set on a nonzero constraint dimension. Shared by the
+/// formulation and by the controller's factory, so both refuse the same set.
+template <std::size_t NH, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NC, std::size_t NTC>
+auto static_formulation_refusal(const nmpc_config<Scalar, NX, NU, NC, NTC>& config) -> ctrlpp::expected<void, nlp_formulation_error>
+{
+    if(config.horizon != static_cast<int>(NH))
+        return ctrlpp::unexpected(nlp_formulation_error::horizon_mismatch);
+    const bool has_path_slack = config.soft_constraints && NC > 0 && config.path_constraint.has_value();
+    const bool has_term_slack = config.soft_constraints && NTC > 0 && config.terminal_constraint.has_value();
+    if(has_path_slack || has_term_slack)
+        return ctrlpp::unexpected(nlp_formulation_error::slack_not_supported);
+    return {};
+}
+
 /// @brief Compile-time-horizon factory for the allocation-free static NMPC
 /// path. The horizon NH is a template parameter, so the decision
 /// dimension NV = (NH+1)*NX + NH*NU is a compile-time constant threaded into an
@@ -530,12 +549,11 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
 /// runtime (as on argmin's fixed-N floor), so slack-free path/terminal hard
 /// constraints are supported.
 ///
-/// Both preconditions are checked unconditionally, before any of the dependent
-/// problem data is built, and are reported through the error branch rather than
-/// through a debug-only assertion that a release build would step over:
-///  * config.horizon != NH        -> nlp_formulation_error::horizon_mismatch
-///  * a slack-introducing config  -> nlp_formulation_error::slack_not_supported
-/// The compile-time-slack tier is future work.
+/// Both preconditions of `static_formulation_refusal` are checked
+/// unconditionally, before any of the dependent problem data is built, and are
+/// reported through the error branch rather than through a debug-only assertion
+/// that a release build would step over. The compile-time-slack tier is future
+/// work.
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NH, std::size_t NC = 0, std::size_t NTC = 0, typename Dynamics>
 auto build_nmpc_problem_static(const Dynamics& dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, std::shared_ptr<nmpc_formulation_state<Scalar, NX, NU>> state)
     -> ctrlpp::expected<nlp_problem_static<Scalar, static_cast<int>((NH + 1) * NX + NH * NU)>, nlp_formulation_error>
@@ -547,13 +565,8 @@ auto build_nmpc_problem_static(const Dynamics& dynamics, const nmpc_config<Scala
     // Checked BEFORE build_nmpc_problem runs: the dependent data (bounds,
     // offsets, and the captured callables) is all sized from config.horizon, so
     // a mismatch must be rejected before any of it exists.
-    if(config.horizon != static_cast<int>(NH))
-        return ctrlpp::unexpected(nlp_formulation_error::horizon_mismatch);
-
-    const bool has_path_slack = config.soft_constraints && NC > 0 && config.path_constraint.has_value();
-    const bool has_term_slack = config.soft_constraints && NTC > 0 && config.terminal_constraint.has_value();
-    if(has_path_slack || has_term_slack)
-        return ctrlpp::unexpected(nlp_formulation_error::slack_not_supported);
+    if(auto refused = static_formulation_refusal<NH>(config); !refused.has_value())
+        return ctrlpp::unexpected(refused.error());
 
     auto dyn = build_nmpc_problem<Scalar, NX, NU, NC, NTC>(dynamics, config, state);
 

@@ -59,17 +59,19 @@ struct run_record
 
 run_record run(const ctrlpp::argmin_settings<double>& settings)
 {
-    controller_type controller{double_integrator{}, make_config(), solver_type{settings}};
-    run_record record{Eigen::Vector2d{1.0, 0.0}, 0, 0, 0, true};
+    auto controller = controller_type::create(double_integrator{}, make_config(), solver_type{settings});
+    run_record record{Eigen::Vector2d{1.0, 0.0}, 0, 0, 0, controller.has_value()};
+    if(!controller.has_value())
+        return record;
     for(int k = 0; k < run_length; ++k)
     {
-        const auto solved = controller.solve(record.final_state);
+        const auto solved = controller->solve(record.final_state);
         if(!solved.has_value())
         {
             record.all_solved = false;
             return record;
         }
-        const auto diagnostics = controller.diagnostics();
+        const auto diagnostics = controller->diagnostics();
         record.iterations += diagnostics.iterations;
         record.stationarity_stops += diagnostics.stop_criterion == ctrlpp::nlp_stop_criterion::stationarity ? 1 : 0;
         record.iteration_limit_stops += diagnostics.stop_criterion == ctrlpp::nlp_stop_criterion::iteration_limit ? 1 : 0;

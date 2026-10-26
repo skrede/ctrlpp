@@ -97,7 +97,7 @@ this table was written.
 | trajectory time scaling: `rescale_to` / `can_rescale_to` / `synchronize` (trapezoidal, double-S) | YES (two-pass over a `std::span`, no owning copy, no allocation; the trapezoidal solve's boundary-duration helper returns a two-scalar aggregate by value and owns no storage) | YES (closed form on the trapezoidal and the rest-to-rest double-S paths -- the trapezoidal plateau and valley shapes are each a single quadratic in the cruise velocity's distance from that shape's own boundary, straight-line with no iteration; bracket exhaustion on the nonzero-boundary-velocity double-S path, bounded by one more than the significand width, so 25 evaluations for `float` and 54 for `double`, plus one step per binary exponent the bracket spans) | YES | YES | YES (no random source; identical inputs exhaust the bracket at the identical step) | `trajectory_nomalloc_test`; `trajectory_rescale_anchor_test` and the rescaling cases in `trajectory_hardening_test`; leg 1 + `embedded_core_float` |
 | `recursive_arx` / `rls` | YES (the update's result is a `ctrlpp::expected<void, rls_update_error>` holding one enumerator and no owning member; the two norms feeding the resolution floor are unevaluated Eigen expressions over existing storage) | YES (rank-one update, no loop; the refusal guard adds a fixed count of reads per cycle, every dimension a compile-time template parameter -- `NP*NP + NP` for the carried-state scan, `NP` for the regressor scan, and two `NP`-term norms for the denominator's scale) | YES | not covered (the leg 1 witness does not include the sysid headers) | YES (the guard is a pure predicate on the operands and the carried members; no random source, no clock) | `sysid_nomalloc_test` (rls and recursive_arx update cases, re-run green with the guard on every cycle of both 256-cycle armed windows); the typed refusals asserted in `sysid_hardening_test` |
 | `mpc` / `nmpc_dynamic` / `mhe` / `nmhe` (runtime-horizon, dynamic solver) | NO (soft real-time: the solve allocates and iterates) | YES when capped (`max_eval`, OSQP `max_iter`) | YES with NLopt's `max_time = 0` (the default) and argmin's default step budget, which has no `max_time`; a wall-clock budget is non-RT | not covered (opt-in OSQP/NLopt/argmin backends sit outside the embedded core witness) | solver-dependent | labeled soft real-time; caps and defaults in `mpc/nlopt_solver.h`, `mpc/argmin_policies.h`, `mpc/osqp_solver.h`, `mpc/argmin_qp_solver.h` |
-| `nmpc` (the DEFAULT; = `nmpc_static`, compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES below a decision dimension `NV` of 48, strict-zero at 0.00 allocs/step in steady state on a converging trajectory (`nw_sqp`) and at an exact regulation equilibrium, where every solve takes the SQP null step (`nw_sqp` and `filter_nw_sqp`, static path), and **NO at and above it**, where the solve crosses the same blocked-Householder boundary the estimator rows do (see "The heap claim's boundary" below). **The heap is not the binding cost here either** (see "Stack cost of the predictive controller row" below, which a hard-real-time caller must read before sizing a task stack: the configuration this cell's own evidence pins needs 21,480 bytes of stack in steady state and 33,432 on its first solve, and constructing it needs 48,040) | YES when capped (`max_eval`) | YES: the default step budget instantiates no clock read; the opt-in `argmin_step_and_time_budget` is non-RT | not covered by this witness (argmin's `-fno-exceptions` instantiation is clean upstream; the ctrlpp-side no-exceptions dogfood is a separate witness) | YES: the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test`: the shipped pin (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; sentinel `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`), plus a two-configuration bracket over the damped chain that walks the boundary, at `NV` 47 and 48. **That is 2 of the 25 configurations this row publishes a figure for**, and the reason is measured: a unit holding all 25 peaked at 21.9 GB of compiler resident set and was killed by the kernel, and one holding 8 built and ran green at all 8 but cost 17.4 GB to compile and 232 s to run against roughly a second for the pin alone. Its equilibrium case holds the pin's controller at the origin for both `nw_sqp` and `filter_nw_sqp` on the static path, asserts the sentinel and the counter, and fails against argmin revisions before the null-step fix through the sentinel alone. The NUCLEO-H753ZI image, run on the board, reports 0 allocations over 201 armed steps behind a passing allocation canary. Every one of its solves stops on the stationarity test, and its realized closed-loop cost lies within a derived bound of the exact finite-horizon law's (`scripts/board_capture_fixtures/evidence.txt`, image `ba73821bdebbe972555b60a0291eee0fa8fde0fb`, `arm-none-eabi-gcc` 16.2.0). Its stack high-water, cycle counts and compile ceiling on that board are in "On silicon: the NUCLEO-H753ZI leg" below |
+| `nmpc` (the DEFAULT; = `nmpc_static`, compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES below a decision dimension `NV` of 48, strict-zero at 0.00 allocs/step in steady state on a converging trajectory (`nw_sqp`) and at an exact regulation equilibrium, where every solve takes the SQP null step (`nw_sqp` and `filter_nw_sqp`, static path), and **NO at and above it**, where the solve crosses the same blocked-Householder boundary the estimator rows do (see "The heap claim's boundary" below). **The heap is not the binding cost here either** (see "Stack cost of the predictive controller row" below, which a hard-real-time caller must read before sizing a task stack: the configuration this cell's own evidence pins needs 21,560 bytes of stack in steady state and 33,512 on its first solve, and constructing it through `create` needs 48,304) | YES when capped (`max_eval`) | YES: the default step budget instantiates no clock read; the opt-in `argmin_step_and_time_budget` is non-RT | not covered by this witness (argmin's `-fno-exceptions` instantiation is clean upstream; the ctrlpp-side no-exceptions dogfood is a separate witness) | YES: the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test`: the shipped pin (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; sentinel `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`), plus a two-configuration bracket over the damped chain that walks the boundary, at `NV` 47 and 48. **That is 2 of the 25 configurations this row publishes a figure for**, and the reason is measured: a unit holding all 25 peaked at 21.9 GB of compiler resident set and was killed by the kernel, and one holding 8 built and ran green at all 8 but cost 17.4 GB to compile and 232 s to run against roughly a second for the pin alone. Its equilibrium case holds the pin's controller at the origin for both `nw_sqp` and `filter_nw_sqp` on the static path, asserts the sentinel and the counter, and fails against argmin revisions before the null-step fix through the sentinel alone. The NUCLEO-H753ZI image, run on the board, reports 0 allocations over 201 armed steps behind a passing allocation canary. Every one of its solves stops on the stationarity test, and its realized closed-loop cost lies within a derived bound of the exact finite-horizon law's (`scripts/board_capture_fixtures/evidence.txt`, image `ba73821bdebbe972555b60a0291eee0fa8fde0fb`, `arm-none-eabi-gcc` 16.2.0). Its stack high-water, cycle counts and compile ceiling on that board are in "On silicon: the NUCLEO-H753ZI leg" below |
 | static-memory linear MPC | planned | planned | planned | planned | planned | not implemented; the future hard real-time path (see below) |
 | the estimator `update` rejection guard (`kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf`, `luenberger_observer`, `complementary_filter`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<void, E>` holding one enumerator and no owning member) | YES (a fixed count of reads per step: state + covariance + measurement, every dimension a compile-time template parameter -- `NX + NX*NX + NY` for the covariance filters, `NX + NY` for the observer, `4 + NB + NE*NE + NY` for the MEKF, at most `7 + 9 + 1` for the complementary filter) | YES | YES | YES (a pure predicate on the operands; no random source and no state read beyond the members it scans) | `estimation_nomalloc_test` re-run green with the guard on every step of all six converted cases (128-step armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{kalman,ekf,ukf,mekf,manifold_ukf,luenberger,complementary_filter}_hardening_test`; `scripts/cross_compile_check.sh` all three legs PASS |
 | the controller step rejection guard (`pid::compute` both overloads, `mrac_controller::evaluate`, `l1_controller::evaluate`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<vector_t, E>` whose payload is the same by-value vector the surface already returned, so no owning member is added) | YES (a fixed count of reads per cycle, every dimension a compile-time template parameter: `pid` scans only the members its policy composition makes live, at most `11*NY` plus one scalar test on the step; `mrac` scans `NX + NU` vector and `NU*(NX + NU)` matrix entries; `l1` scans `2*NX + 2*NU`. The `l1` cycle additionally scans `NU` more for the pre-projection finiteness test that feeds `health()`) | YES | YES | YES (a pure predicate on the operands and the carried members; no random source, no clock) | `pid_nomalloc_test` re-run green with the guard on every cycle of all three composed cases (256-cycle armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{pid,mrac,l1}_hardening_test`, each proven to fail with its guard deleted; both standing trees green at baseline (90/90, 129/129) |
@@ -690,8 +690,8 @@ The board builds the controller in static storage, so 2,704 bytes is the
 constructor chain alone; the host table builds the controller as a local and so
 counts the object and its inline solver. The first-solve and steady-state
 figures measure the corresponding chains on a different toolchain and
-instruction set; they do not replace the host's 33,432 bytes on the first solve
-and 21,480 in steady state, which "Stack cost of the predictive controller row"
+instruction set; they do not replace the host's 33,512 bytes on the first solve
+and 21,560 in steady state, which "Stack cost of the predictive controller row"
 below measures against the same backend sources.
 
 **Compile ceiling.** At `EIGEN_STACK_ALLOCATION_LIMIT=8192` and `double`, with
@@ -1274,13 +1274,14 @@ Unlike every other row in this document, this one carries three whole-chain
 peaks, and at the larger configurations the deepest and the shallowest of them
 differ by a factor of more than four:
 
-- **construction** -- `nmpc_static`'s constructor, which builds the formulation
-  and sets the backend up. It is offline and it is excluded from both figures
-  below, exactly as the `allocation-free?` column excludes it. It is measured
-  and published anyway, because a caller that constructs the controller on the
-  task's own stack pays it, and because from `NV = 8` upward it is the largest
-  of the three. The figure includes the controller object itself, built as a
-  local, and with it the solver's inline workspace.
+- **construction** -- `nmpc_static::create`, the only construction path, which
+  admits the configuration, builds the controller in place in its result, poses
+  the formulation and sets the backend up. It is offline and it is excluded from
+  both figures below, exactly as the `allocation-free?` column excludes it. It is
+  measured and published anyway, because a caller that constructs the controller
+  on the task's own stack pays it, and because from `NV = 5` upward it is the
+  largest of the three. The figure includes the controller object itself, held
+  in the factory's result as a local, and with it the solver's inline workspace.
 - **first solve** -- the backend's solver instance is emplaced lazily on the
   first solve and only reset on every later one, so the first solve enters a
   setup path that no steady-state solve enters.
@@ -1299,13 +1300,13 @@ is printed with its owner named so a reader can see which.
 
 | `NX` | `NU` | `NH` | `NV` | `MaxM` | deepest single frame | function owning it | peak, construction | peak, first solve | peak, steady state |
 |---:|---:|---:|---:|---:|---:|---|---:|---:|---:|
-| 1 | 1 | 1 | 3 | 2 | 6,736 | `argmin_solver::emplace_step_solver` | 10,848 | 14,048 | 14,048 |
-| 2 | 2 | 2 | 10 | 6 | 15,296 | `argmin_solver::emplace_step_solver` | 25,088 | 17,320 | 16,776 |
-| 3 | 3 | 3 | 21 | 12 | 44,064 | `argmin_solver::emplace_step_solver` | 67,680 | 46,408 | 26,072 |
-| 4 | 4 | 4 | 36 | 20 | 109,904 | `nw_sqp_policy::init` | 171,120 | 117,544 | 49,976 |
-| 5 | 5 | 5 | 55 | 30 | 250,544 | `nw_sqp_policy::init` | 372,864 | 259,256 | 94,624 |
-| 6 | 6 | 6 | 78 | 42 | 498,496 | `nw_sqp_policy::init` | 726,704 | 507,848 | 172,896 |
-| 7 | 7 | 7 | 105 | 56 | 897,152 | `nw_sqp_policy::init` | 1,291,984 | 908,312 | 296,552 |
+| 1 | 1 | 1 | 3 | 2 | 6,736 | `argmin_solver::emplace_step_solver` | 11,472 | 14,112 | 14,112 |
+| 2 | 2 | 2 | 10 | 6 | 15,296 | `argmin_solver::emplace_step_solver` | 25,600 | 17,400 | 16,856 |
+| 3 | 3 | 3 | 21 | 12 | 44,064 | `argmin_solver::emplace_step_solver` | 68,368 | 46,424 | 26,088 |
+| 4 | 4 | 4 | 36 | 20 | 109,904 | `nw_sqp_policy::init` | 172,224 | 117,560 | 49,992 |
+| 5 | 5 | 5 | 55 | 30 | 250,544 | `nw_sqp_policy::init` | 374,272 | 259,272 | 94,640 |
+| 6 | 6 | 6 | 78 | 42 | 498,496 | `nw_sqp_policy::init` | 728,656 | 507,864 | 172,912 |
+| 7 | 7 | 7 | 105 | 56 | 897,152 | `nw_sqp_policy::init` | 1,294,432 | 908,328 | 296,568 |
 | 8 | 8 | 8 | 136 | 72 | -- | does not instantiate | does not instantiate | does not instantiate | does not instantiate |
 
 The frame column belongs to the equal-dimension build. The three held-dimension
@@ -1313,21 +1314,21 @@ lines, steady-state peak first, first-solve peak second and construction third:
 
 | rung | `NX` swept, `NU` held at 1, `NH` held at 5 | `NU` swept, `NX` held at 2, `NH` held at 5 | `NH` swept, `NX` held at 2, `NU` held at 1 |
 |---:|---|---|---|
-| 1 | `NV` 11: 16,184 / 18,920 / 26,352 | `NV` 17: 21,480 / 33,432 / 48,040 | `NV` 5: 14,720 / 14,720 / 14,336 |
-| 2 | `NV` 17: 21,480 / 33,432 / 48,040 | `NV` 22: 26,896 / 50,424 / 72,488 | `NV` 8: 15,928 / 15,928 / 19,856 |
-| 4 | `NV` 29: 36,248 / 79,864 / 115,776 | `NV` 32: 40,440 / 95,288 / 137,384 | `NV` 14: 19,568 / 25,736 / 36,816 |
-| 8 | `NV` 53: 88,968 / 241,656 / 351,056 | `NV` 52: 87,064 / 232,952 / 335,184 | `NV` 26: 32,224 / 66,536 / 95,104 |
-| 16 | `NV` 101: 276,680 / 841,656 / 1,221,712 | `NV` 92: 231,688 / 700,696 / 1,003,856 | `NV` 50: 82,432 / 216,200 / 309,056 |
-| 20 / 23 / 32 | `NV` 125: 409,592 / 1,279,088 / 1,855,872 | `NV` 127: 420,880 / 1,319,688 / 1,888,816 | `NV` 98: 261,328 / 792,776 / 1,123,904 |
-| 21 / 24 / 42 | `NV` 131: does not instantiate | `NV` 132: does not instantiate | `NV` 128: 429,792 / 1,340,280 / 1,895,248 |
+| 1 | `NV` 11: 16,264 / 19,000 / 26,608 | `NV` 17: 21,560 / 33,512 / 48,304 | `NV` 5: 14,736 / 14,736 / 14,784 |
+| 2 | `NV` 17: 21,560 / 33,512 / 48,304 | `NV` 22: 26,912 / 50,440 / 72,880 | `NV` 8: 16,008 / 16,008 / 20,592 |
+| 4 | `NV` 29: 36,264 / 79,880 / 116,544 | `NV` 32: 40,456 / 95,304 / 138,000 | `NV` 14: 19,648 / 25,816 / 37,152 |
+| 8 | `NV` 53: 88,984 / 241,672 / 353,776 | `NV` 52: 87,080 / 232,968 / 337,952 | `NV` 26: 32,240 / 66,552 / 95,472 |
+| 16 | `NV` 101: 276,696 / 841,672 / 1,229,600 | `NV` 92: 231,688 / 700,712 / 1,011,632 | `NV` 50: 82,448 / 216,216 / 309,392 |
+| 20 / 23 / 32 | `NV` 125: 409,608 / 1,279,104 / 1,867,520 | `NV` 127: 420,896 / 1,319,704 / 1,903,664 | `NV` 98: 261,328 / 792,792 / 1,124,240 |
+| 21 / 24 / 42 | `NV` 131: does not instantiate | `NV` 132: does not instantiate | `NV` 128: 429,792 / 1,340,296 / 1,895,632 |
 | 43 | -- | -- | `NV` 131: does not instantiate |
 
 **The first solve costs up to 3.14 times the steady-state solve**, and the
 ratio climbs to between 3.06 and 3.14 at the top of all four lines, while the
 two are equal at the smallest configurations, `NV` 3, 5 and 8. **Construction
-costs between 4.36 and 4.53 times the steady-state solve, and between 1.41 and
-1.45 times the first solve,** at the top of every line. At the two smallest
-configurations, `NV` 3 and 5, it is the cheapest of the three.
+costs between 4.36 and 4.56 times the steady-state solve, and between 1.41 and
+1.46 times the first solve,** at the top of every line. At the smallest
+configuration, `NV` 3, it is the cheapest of the three.
 
 ### Supported maximum by task stack
 
@@ -1351,15 +1352,15 @@ down: read from the steady-state figure, the 64 KiB row would be 4, 4, 4 and 8.
 
 **THE FIRST TWO ROWS SAY "NONE EXISTS" RATHER THAN "NO MEASURED RUNG", AND THE
 DIFFERENCE IS THE POINT.** The smallest configuration this row has is
-`NX = NU = NH = 1`, which induces `NV = 3`, and it needs 14,048 bytes. No
+`NX = NU = NH = 1`, which induces `NV = 3`, and it needs 14,112 bytes. No
 configuration of the predictive controller fits a 4 KiB or an 8 KiB task stack,
 and that is a statement about every configuration rather than about the rungs
 that were measured.
 
 The shipped allocation proof's own configuration, `NX = 2`, `NU = 1`, `NH = 5`,
-so `NV = 17` and `MaxM = 12`, needs 21,480 bytes in steady state and 33,432 on
+so `NV = 17` and `MaxM = 12`, needs 21,560 bytes in steady state and 33,512 on
 its first solve. It wants a 48 KiB task and does not fit a 32 KiB one: the first
-solve exceeds 32 KiB by 664 bytes, while the steady state alone would fit. This
+solve exceeds 32 KiB by 744 bytes, while the steady state alone would fit. This
 is the row where the heap statement and the stack statement diverge most
 sharply: its steady-state solve allocates exactly nothing and still needs more
 than six times the stack a `kalman_filter` needs at four states and four
@@ -1367,14 +1368,14 @@ outputs, and its first solve nearly ten times.
 
 **If the controller is CONSTRUCTED on the same task stack, the ladder above is
 not the answer.** The task then has to hold the larger of the construction and
-first-solve peaks, which is the construction peak from `NV = 8` upward. Read
-that way: at 16 KiB the smallest equal rung (14,048 bytes, its first solve) and
-a one-step horizon (14,720, its first solve) fit; at 32 KiB the equal line
-reaches rung 2 (25,088), the state line rung 1 (26,352) and the horizon line
-rung 2 (19,856), and the input line has nothing; at 48 KiB the state line
-reaches rung 2 (48,040), the input line rung 1 (48,040) and the horizon line
-rung 4 (36,816), while the equal line stays at rung 2; at 64 KiB none of the
-four lines moves further, because the equal line's rung 3 needs 67,680.
+first-solve peaks, which is the construction peak from `NV = 5` upward. Read
+that way: at 16 KiB the smallest equal rung (14,112 bytes, its first solve) and
+a one-step horizon (14,784, its construction) fit; at 32 KiB the equal line
+reaches rung 2 (25,600), the state line rung 1 (26,608) and the horizon line
+rung 2 (20,592), and the input line has nothing; at 48 KiB the state line
+reaches rung 2 (48,304), the input line rung 1 (48,304) and the horizon line
+rung 4 (37,152), while the equal line stays at rung 2; at 64 KiB none of the
+four lines moves further, because the equal line's rung 3 needs 68,368.
 Construct off the real-time task, or size the task for construction rather than
 for the solve.
 
@@ -1452,8 +1453,8 @@ are read from, is about `82 bytes * NV * NV` over the same seven points, between
 81.8 and 82.8.
 
 At moderate dimensions the decision dimension predicts the steady-state peak
-nearly as well. `NX = 8, NU = 1, NH = 5` induces `NV = 53` and needs 88,968
-bytes; `NX = 2, NU = 8, NH = 5` induces `NV = 52` and needs 87,064. A 1.9
+nearly as well. `NX = 8, NU = 1, NH = 5` induces `NV = 53` and needs 88,984
+bytes; `NX = 2, NU = 8, NH = 5` induces `NV = 52` and needs 87,080. A 1.9
 percent difference in the decision dimension comes with a 2.2 percent difference
 in the peak, and the coefficient there lies between 31.3 and 33.0: 32.2 to 33.0
 for the configurations with `NX = 2` and 31.3 to 31.7 for those with `NX >= 5`.
@@ -1463,8 +1464,8 @@ percent at every larger one.
 
 The additive-separability test the estimator rows use refuses, and not with one
 sign. Predicting the equal-dimension peak at rung `d` from the three held lines
-as `W(d,1,5) + W(2,d,5) + W(2,1,d) - 2*W(2,1,5)` gives 9,424 against 14,048
-measured at `d = 1`, 21,344 against 16,776 at `d = 2` and 53,296 against 49,976
+as `W(d,1,5) + W(2,d,5) + W(2,1,d) - 2*W(2,1,5)` gives 9,440 against 14,112
+measured at `d = 1`, 21,360 against 16,856 at `d = 2` and 53,248 against 49,992
 at `d = 4`, so the measured peak is 1.49, 0.79 and 0.94 times the prediction. A
 cost that grows quadratically in a sum of the three dimensions is not a sum of
 three one-dimensional costs, and the three-axis null over-subtracts the fixed
@@ -1480,8 +1481,12 @@ between two adjacent values of its stride of four.
 
 `g++ (GCC) 16.2.1 20260810`, `-std=c++20 -O2 -fno-exceptions -fno-rtti -pthread`,
 no `-march` (driver default `-mtune=generic -march=x86-64`), x86-64 Linux,
-`double`, Eigen 3.4.1, taken on 2026-10-20. Every figure in this section belongs
-to that compiler. The same commands run on the library as it was before its port
+`double`, Eigen 3.4.1. The three ladders, the frame column and every figure read
+from them were taken on 2026-10-26, with construction through
+`nmpc_static::create`; the interior fill, the supported maxima read from it and
+the compile-ceiling walks were taken on 2026-10-20, when the controller was
+built through its constructor. Every figure in this section belongs to that
+compiler. The same commands run on the library as it was before its port
 to the backend's scalar-first interface, against argmin
 `30a2cd4`, reproduced every cell published under `g++ (GNU) 16.1.1 20260728`
 exactly, so the compiler change moves none of them: what moved these figures is

@@ -97,11 +97,14 @@ constexpr bool in_predictive_window(std::size_t k)
 }
 
 // The hooks bracket the solve and the plant step alone, on every step, and are
-// told which step it is.
+// told which step it is. A refused construction returns before any hook runs,
+// since the hooks may read the controller.
 template<class Enter, class Leave>
 ctrlpp::expected<void, solver_error> run_predictive(predictive_demo<double> &demo, predictive_record &record, Enter enter, Leave leave)
 {
     record = predictive_record{{}, 0.0, 0.0, 0};
+    if(!demo.constructed())
+        return ctrlpp::unexpected(solver_error::setup_incomplete);
     for(std::size_t k = 0; k < kPredictiveRunSteps; ++k)
     {
         const Eigen::Vector2d before = demo.state();

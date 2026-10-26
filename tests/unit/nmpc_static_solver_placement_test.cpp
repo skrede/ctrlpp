@@ -73,24 +73,40 @@ ctrlpp::nmpc_config<double, NX, NU> config()
 
 }
 
-TEST_CASE("The default-solver constructor builds its solver in place", "[nmpc][static][construction]")
+TEST_CASE("The default-solver factory builds its solver in place", "[nmpc][static][construction]")
 {
     counted = {0, 0, 0};
-    controller built{double_integrator{}, config()};
+    auto built = controller::create(double_integrator{}, config());
 
     REQUIRE(counted.defaults == 1);
     REQUIRE(counted.copies == 0);
     REQUIRE(counted.moves == 0);
-    REQUIRE(built.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+    REQUIRE(built.has_value());
+    REQUIRE(built->solve(Eigen::Vector2d{1.0, 0.0}).has_value());
 }
 
-TEST_CASE("The solver-taking constructor moves the caller's solver and never copies it", "[nmpc][static][construction]")
+// The parameter takes one move from the caller's object and the member one more;
+// the passkey constructor's rvalue reference adds none.
+TEST_CASE("The solver-taking factory moves the caller's solver and never copies it", "[nmpc][static][construction]")
 {
     counting_solver supplied;
     counted = {0, 0, 0};
-    controller built{double_integrator{}, config(), std::move(supplied)};
+    auto built = controller::create(double_integrator{}, config(), std::move(supplied));
 
     REQUIRE(counted.defaults == 0);
     REQUIRE(counted.copies == 0);
-    REQUIRE(built.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+    REQUIRE(counted.moves == 2);
+    REQUIRE(built.has_value());
+    REQUIRE(built->solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+}
+
+TEST_CASE("The solver-taking factory moves a temporary solver once", "[nmpc][static][construction]")
+{
+    counted = {0, 0, 0};
+    auto built = controller::create(double_integrator{}, config(), counting_solver{});
+
+    REQUIRE(counted.defaults == 1);
+    REQUIRE(counted.copies == 0);
+    REQUIRE(counted.moves == 1);
+    REQUIRE(built.has_value());
 }

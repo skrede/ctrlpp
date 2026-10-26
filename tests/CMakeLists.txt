@@ -202,6 +202,23 @@ if (CTRLPP_BUILD_TESTS)
         message(FATAL_ERROR "A direct nmpc_dynamic construction failed for another reason than the passkey.\n${output}")
     endif ()
 
+    # The compile-time-horizon NMPC is the default nmpc alias; its value constructors are gone, so the former
+    # two-argument form must fail for want of a constructor, and a direct construction must fail on the tag.
+    ctrlpp_try_canary(CTRLPP_NMPC_STATIC_DIRECT_CONSTRUCTION_COMPILED nmpc_passkey_canary.cpp -DCTRLPP_CANARY_NMPC_STATIC_DIRECT_CONSTRUCTION)
+    set(output "${CTRLPP_NMPC_STATIC_DIRECT_CONSTRUCTION_COMPILED_OUTPUT}")
+    if (CTRLPP_NMPC_STATIC_DIRECT_CONSTRUCTION_COMPILED)
+        message(FATAL_ERROR "A direct nmpc_static construction compiled; the passkey is not enforced.\n${output}")
+    elseif (NOT output MATCHES "validated_tag::validated_tag|constructor of class '[^']*::validated_tag'")
+        message(FATAL_ERROR "A direct nmpc_static construction failed for another reason than the passkey.\n${output}")
+    endif ()
+    ctrlpp_try_canary(CTRLPP_NMPC_STATIC_VALUE_CONSTRUCTION_COMPILED nmpc_passkey_canary.cpp -DCTRLPP_CANARY_NMPC_STATIC_VALUE_CONSTRUCTION)
+    set(output "${CTRLPP_NMPC_STATIC_VALUE_CONSTRUCTION_COMPILED_OUTPUT}")
+    if (CTRLPP_NMPC_STATIC_VALUE_CONSTRUCTION_COMPILED)
+        message(FATAL_ERROR "The former two-argument nmpc_static construction compiled; a value constructor is still public.\n${output}")
+    elseif (NOT output MATCHES "no matching function for call to|no matching constructor for initialization of")
+        message(FATAL_ERROR "The former two-argument nmpc_static construction failed for another reason than a missing constructor.\n${output}")
+    endif ()
+
     # A composed policy or a setter that does nothing is invisible at run time, so each anti-windup strategy
     # and set_integral must fail to compile with velocity_form, and for the stated reason.
     ctrlpp_try_canary(CTRLPP_PID_VELOCITY_BASELINE_COMPILED pid_velocity_anti_windup_canary.cpp)

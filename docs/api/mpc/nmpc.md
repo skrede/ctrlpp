@@ -77,22 +77,51 @@ Configuration struct `nmpc_config<Scalar, NX, NU, NC, NTC>` passed at constructi
 ### nmpc (compile-time horizon)
 
 ```cpp
-nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config);
+using construction_error = nmpc_construction_error<SetupError>;
+// = std::variant<controller_construction_error, nlp_formulation_error, SetupError>
 
-nmpc(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
-     Solver solver);
+static auto create(Dynamics dynamics,
+                   const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
+    -> expected<nmpc, construction_error>;
+
+static auto create(Dynamics dynamics,
+                   const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
+                   Solver solver)
+    -> expected<nmpc, construction_error>;
 ```
 
-Constructs the controller from a dynamics model and configuration. Builds the NLP formulation and initializes the solver. The two-argument form value-initializes the solver directly in the controller, so no second solver exists during construction. The three-argument form takes the solver by value, so a whole solver sits on the caller's stack as the parameter until it is moved into the controller. This matters for a solver that holds its workspace inline, such as the fixed-dimension argmin solver, which is about 41 KB at `NV = 17` on a 32-bit target. On a constrained stack the two-argument form avoids that copy; a solver with non-default settings has to come through the three-argument form and pays for it. The horizon is the template parameter `NH`, so it carries a compile-time domain: `NH == 0` fails to compile, because a zero horizon leaves no input to apply and makes the warm-start shift and the input offset read outside the decision vector.
+`create` is the only construction path for the compile-time-horizon controller, and so for the default `nmpc`. Its constructors are public only so `ctrlpp::expected` can build the controller in the caller's storage, and they take a passkey that only the class can make, so a configuration the controller cannot solve is a value the caller has to inspect, never a controller whose every solve fails. The horizon is the template parameter `NH`, so it carries a compile-time domain: `NH == 0` fails to compile, because a zero horizon leaves no input to apply and makes the warm-start shift and the input offset read outside the decision vector.
 
-`config.horizon` must equal `NH`, and the configuration must be slack-free (`soft_constraints` off, or no path/terminal constraint set), so the runtime decision dimension equals the compile-time `NV = (NH+1)*NX + NH*NU`. Both preconditions are checked unconditionally, in a release build as well as a debug build, before any of the dependent problem data is built. A violation is reported through the controller's existing error channel: setup is marked incomplete, so every subsequent `solve` returns `solver_error::setup_incomplete`.
+This is the slack-free cut: `config.horizon` must equal `NH`, and the configuration must not add slack decision variables, so the decision dimension equals the compile-time `NV = (NH+1)*NX + NH*NU`. **The shared `soft_constraints` default is `true`, so a compile-time-horizon controller with a path or terminal constraint needs `soft_constraints = false`** (or the runtime-horizon `nmpc_dynamic`, which poses the slack); `create` refuses it otherwise. A configuration without a path or terminal constraint adds no slack and is accepted with the default. Checked in order, each refusal returned before any controller exists:
 
-Calling the formulation factory directly surfaces the reason instead:
+| Check | Alternative | Value |
+|-------|-------------|-------|
+| the configuration rules of `nmpc_dynamic::create` below, from the bounds on, in the same order | `controller_construction_error` | `invalid_input_bounds` through `invalid_constraint_penalty` |
+| `config.horizon != NH` | `nlp_formulation_error` | `horizon_mismatch` |
+| soft constraints with a path or terminal constraint set, which would add slack | `nlp_formulation_error` | `slack_not_supported` |
+| the solver refused the posed problem | `SetupError` | `argmin_setup_error`, `nlopt_setup_error`, or a custom backend's own enum |
 
-| Condition | `nlp_formulation_error` |
-|-----------|--------------------------|
-| `config.horizon != NH` | `horizon_mismatch` |
-| a configuration that would add slack decision variables | `slack_not_supported` |
+The horizon rules of the runtime-horizon class do not apply: a non-positive or oversized `config.horizon` is a `horizon_mismatch` here. A penalty is inspected while its soft constraint is active, so an invalid penalty on a slack-adding configuration is reported as `invalid_constraint_penalty`, ahead of `slack_not_supported`. The formulation factory `detail::build_nmpc_problem_static` applies the same two formulation refusals, through the same check.
+
+```cpp
+using controller = ctrlpp::nmpc<double, NX, NU, NH, solver, plant, NC>;
+
+nmpc_config<double, NX, NU, NC> cfg;
+cfg.horizon = NH;
+cfg.path_constraint = path;
+cfg.soft_constraints = false;  // the default true would be refused with slack_not_supported
+
+auto created = controller::create(plant{}, cfg);
+if (!created)
+{
+    if (const auto* refusal = std::get_if<ctrlpp::nlp_formulation_error>(&created.error()))
+        return handle_formulation(*refusal);
+}
+```
+
+The controller is built once, in place, in the returned result: the two-argument form value-initializes the solver directly in the controller, and the three-argument form moves the caller's solver into it through an rvalue reference, so construction holds no second controller. The solver-taking form still takes its parameter by value, so a whole solver sits on the caller's stack as the argument until it is moved in. This matters for a solver that holds its workspace inline, such as the fixed-dimension argmin solver, which is about 41 KB at `NV = 17` on a 32-bit target; a solver with non-default settings has to come through the three-argument form and pays for it. Measured with `-fstack-usage` on the board demo's configuration (`NV = 17`, controller object 45,104 bytes on x86-64 and 44,104 on the Cortex-M7), built into static storage as the board image does, g++ 16.2.1 and arm-none-eabi-g++ 16.2.0 at `-O0`, `-Og`, `-Os` and `-O2`: no frame on the construction chain through `create` holds a controller, the out-of-line chain is between 1,400 and 3,904 bytes, and a demo built as a local takes a frame that exceeds the controller object by at most 96 bytes.
+
+To keep the result in place, initialize the holding object directly from `create`'s prvalue (a member initializer or `auto created = controller::create(...)`); guaranteed elision then builds the controller in it. Moving the controller out of the result afterwards moves its inline solver workspace.
 
 ### nmpc_dynamic (runtime horizon)
 
@@ -213,9 +242,10 @@ solve(const Vector<Scalar, NX>& x0);
 ```
 
 Solves the NLP for regulating state to the origin. Returns the success branch with
-the first input and a soft status, or the error branch on failure. If solver setup
-failed at construction (reported through the solver's `setup`), every `solve`
-overload returns the error branch with `solver_error::setup_incomplete`.
+the first input and a soft status, or the error branch on failure. A solver setup
+failure is a construction error returned by `create`, so a created controller is
+always set up; only a copy whose re-setup of its forked solver failed returns the
+error branch with `solver_error::setup_incomplete` from every `solve` overload.
 
 ### solve (constant reference)
 
@@ -324,10 +354,12 @@ using solver = ctrlpp::argmin_solver<double, ctrlpp::argmin_nw_sqp, true, NV, Ma
 solver::settings_type settings;
 settings.kkt_tol = 1e-9;
 
-ctrlpp::nmpc<double, NX, NU, NH, solver, plant> controller{plant{}, config, solver{settings}};
+auto controller = ctrlpp::nmpc<double, NX, NU, NH, solver, plant>::create(plant{}, config, solver{settings});
+if(!controller)
+    return handle_construction(controller.error());
 
-auto u = controller.solve(x);
-if(u && controller.diagnostics().stop_criterion == ctrlpp::nlp_stop_criterion::stationarity)
+auto u = controller->solve(x);
+if(u && controller->diagnostics().stop_criterion == ctrlpp::nlp_stop_criterion::stationarity)
 {
     // The KKT residual is below 1e-9 at this answer.
 }

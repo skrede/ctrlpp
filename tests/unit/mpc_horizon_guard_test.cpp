@@ -11,7 +11,8 @@
 // Configuration domain. Bounds, the rate bound, the cost weights and the
 // constraint penalties are each pinned from both sides of their boundary, on
 // the linear and the runtime-horizon nonlinear factory, through both overloads
-// of each.
+// of each. The compile-time-horizon factory shares the admission; its cases pin
+// the order of admission, formulation refusal and solver setup.
 //
 // Result-shape domain. A valid horizon is not enough: the solve extracts fixed
 // width slices out of whatever vector the backend returns, at offsets derived
@@ -729,16 +730,105 @@ TEST_CASE("Compile-time-horizon NLP formulation rejects a disagreeing runtime ho
     }
 }
 
-TEST_CASE("Compile-time-horizon controller reports setup_incomplete on a disagreeing runtime horizon", "[nmpc][horizon][hardening]")
+TEST_CASE("Compile-time-horizon controller refuses a disagreeing runtime horizon at construction", "[nmpc][horizon][hardening]")
 {
     constexpr std::size_t NH = 4;
     using static_controller = ctrlpp::nmpc_static<double, NX, NU, NH, ctrlpp_test::stub_nlp_solver<double>, decltype(double_integrator)>;
 
-    static_controller controller{double_integrator, nonlinear_config(static_cast<int>(NH) + 1)};
+    for(const int runtime_horizon : {static_cast<int>(NH) - 1, static_cast<int>(NH) + 1, 0})
+    {
+        CAPTURE(runtime_horizon);
+        require_nonlinear_construction_error(static_controller::create(double_integrator, nonlinear_config(runtime_horizon)), ctrlpp::nlp_formulation_error::horizon_mismatch);
+        require_nonlinear_construction_error(static_controller::create(double_integrator, nonlinear_config(runtime_horizon), ctrlpp_test::stub_nlp_solver<double>{}),
+                                             ctrlpp::nlp_formulation_error::horizon_mismatch);
+    }
+}
 
-    auto solved = controller.solve(Eigen::Vector2d{1.0, 0.0});
-    REQUIRE(!solved.has_value());
-    REQUIRE(solved.error() == ctrlpp::solver_error::setup_incomplete);
+namespace
+{
+
+using constrained_default_alias = ctrlpp::nmpc<double, NX, NU, 5, ctrlpp_test::stub_nlp_solver<double>, decltype(double_integrator), 1>;
+
+auto path_constrained_config() -> ctrlpp::nmpc_config<double, NX, NU, 1>
+{
+    ctrlpp::nmpc_config<double, NX, NU, 1> cfg;
+    cfg.horizon = shape_horizon;
+    cfg.path_constraint = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>&) { return Eigen::Matrix<double, 1, 1>{x(0) - 10.0}; };
+    return cfg;
+}
+
+}
+
+TEST_CASE("The default nmpc refuses the default configuration with a path constraint at construction", "[nmpc][configuration][hardening]")
+{
+    const auto cfg = path_constrained_config();
+    REQUIRE(cfg.soft_constraints);
+
+    require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg), ctrlpp::nlp_formulation_error::slack_not_supported);
+    require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg, ctrlpp_test::stub_nlp_solver<double>{}),
+                                         ctrlpp::nlp_formulation_error::slack_not_supported);
+}
+
+TEST_CASE("The default nmpc solves the configurations it can pose", "[nmpc][configuration][hardening]")
+{
+    SECTION("a path constraint with soft constraints turned off")
+    {
+        auto cfg = path_constrained_config();
+        cfg.soft_constraints = false;
+        auto controller = constrained_default_alias::create(double_integrator, cfg);
+        REQUIRE(controller.has_value());
+        REQUIRE(controller->solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+    }
+
+    SECTION("the default configuration without a constraint")
+    {
+        ctrlpp::nmpc_config<double, NX, NU, 1> cfg;
+        cfg.horizon = shape_horizon;
+        REQUIRE(cfg.soft_constraints);
+        auto controller = constrained_default_alias::create(double_integrator, cfg, ctrlpp_test::stub_nlp_solver<double>{});
+        REQUIRE(controller.has_value());
+        REQUIRE(controller->solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+    }
+}
+
+TEST_CASE("Compile-time-horizon nonlinear MPC reports a solver setup failure at construction with the backend's cause", "[nmpc][setup][hardening]")
+{
+    ctrlpp_test::stub_nlp_solver<double> solver;
+    solver.fail_setup = true;
+    auto cfg = path_constrained_config();
+    cfg.soft_constraints = false;
+    require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg, std::move(solver)), ctrlpp_test::stub_setup_error::rejected);
+}
+
+TEST_CASE("Compile-time-horizon nonlinear MPC checks admission, then the formulation, then setup", "[nmpc][configuration][hardening]")
+{
+    auto cfg = path_constrained_config();
+    cfg.horizon = shape_horizon + 1;
+
+    SECTION("an inverted input bound is reported before the formulation refusals")
+    {
+        cfg.u_min = Eigen::Matrix<double, 1, 1>{1.0};
+        cfg.u_max = Eigen::Matrix<double, 1, 1>{-1.0};
+        ctrlpp_test::stub_nlp_solver<double> refusing;
+        refusing.fail_setup = true;
+        require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg), ctrlpp::controller_construction_error::invalid_input_bounds);
+        require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg, std::move(refusing)),
+                                             ctrlpp::controller_construction_error::invalid_input_bounds);
+    }
+
+    SECTION("a horizon mismatch is reported before the slack refusal")
+    {
+        require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg), ctrlpp::nlp_formulation_error::horizon_mismatch);
+    }
+
+    SECTION("a formulation refusal is reported before the solver is set up")
+    {
+        cfg.horizon = shape_horizon;
+        ctrlpp_test::stub_nlp_solver<double> refusing;
+        refusing.fail_setup = true;
+        require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg, std::move(refusing)),
+                                             ctrlpp::nlp_formulation_error::slack_not_supported);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -874,7 +964,7 @@ TEST_CASE("Compile-time-horizon nonlinear MPC rejects a backend primal too short
 {
     SECTION("a primal one entry short of the compile-time dimension")
     {
-        compile_time_controller<ctrlpp_test::report_lengths::short_primal> controller{double_integrator, nonlinear_config(shape_horizon)};
+        auto controller = ctrlpp::test::constructed(compile_time_controller<ctrlpp_test::report_lengths::short_primal>::create(double_integrator, nonlinear_config(shape_horizon)));
 
         auto solved = controller.solve(Eigen::Vector2d{1.0, 0.0});
         REQUIRE(!solved.has_value());
@@ -883,7 +973,7 @@ TEST_CASE("Compile-time-horizon nonlinear MPC rejects a backend primal too short
 
     SECTION("a primal that is empty despite the reported optimal status")
     {
-        compile_time_controller<ctrlpp_test::report_lengths::empty> controller{double_integrator, nonlinear_config(shape_horizon)};
+        auto controller = ctrlpp::test::constructed(compile_time_controller<ctrlpp_test::report_lengths::empty>::create(double_integrator, nonlinear_config(shape_horizon)));
 
         auto solved = controller.solve(Eigen::Vector2d{1.0, 0.0});
         REQUIRE(!solved.has_value());
@@ -893,7 +983,7 @@ TEST_CASE("Compile-time-horizon nonlinear MPC rejects a backend primal too short
 
 TEST_CASE("Compile-time-horizon nonlinear MPC accepts a conforming backend result unchanged", "[nmpc][result-shape][hardening]")
 {
-    compile_time_controller<ctrlpp_test::report_lengths::conforming> controller{double_integrator, nonlinear_config(shape_horizon)};
+    auto controller = ctrlpp::test::constructed(compile_time_controller<ctrlpp_test::report_lengths::conforming>::create(double_integrator, nonlinear_config(shape_horizon)));
 
     auto solved = controller.solve(Eigen::Vector2d{1.0, 0.0});
     REQUIRE(solved.has_value());
@@ -1077,7 +1167,7 @@ auto make_scripted_dynamic(std::shared_ptr<scripted_record> record, const ctrlpp
 template <bool SolveInto>
 auto make_scripted_static(std::shared_ptr<scripted_record> record, const ctrlpp::nmpc_config<double, NX, NU>& cfg) -> scripted_static_controller<SolveInto>
 {
-    return scripted_static_controller<SolveInto>{double_integrator, cfg, ctrlpp_test::scripted_nlp_solver<double, SolveInto>{std::move(record)}};
+    return ctrlpp::test::constructed(scripted_static_controller<SolveInto>::create(double_integrator, cfg, ctrlpp_test::scripted_nlp_solver<double, SolveInto>{std::move(record)}));
 }
 
 auto bitwise_equal(const Eigen::VectorXd& a, const Eigen::VectorXd& b) -> bool

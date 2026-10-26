@@ -204,7 +204,9 @@ void arm_configuration(Configuration)
     config.Q       = ctrlpp::Matrix<double, states, states>::Identity() * 10.0;
     config.R       = ctrlpp::Matrix<double, inputs, inputs>::Identity() * 0.1;
 
-    controller_type controller{dynamics, config};
+    auto created = controller_type::create(dynamics, config);
+    REQUIRE(created.has_value());
+    auto& controller = *created;
 
     ctrlpp::Vector<double, states> x = ctrlpp::Vector<double, states>::Zero();
     x(0)                             = 1.0;
@@ -281,7 +283,9 @@ TEST_CASE("nmpc_static steady-state solve performs zero heap allocation",
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    NmpcStaticDI controller{double_integrator, config};
+    auto created = NmpcStaticDI::create(double_integrator, config);
+    REQUIRE(created.has_value());
+    auto& controller = *created;
 
     Eigen::Vector2d x{1.0, 0.0};
 
@@ -306,7 +310,8 @@ TEST_CASE("nmpc_static steady-state solve performs zero heap allocation",
         {
             auto u = controller.solve(x);
             all_ok = all_ok && u.has_value();
-            x = double_integrator(x, u->input);
+            if(u)
+                x = double_integrator(x, u->input);
         }
         allocations = guard.allocations();
         eigen_ok = !guard.eigen_violation();
@@ -346,7 +351,9 @@ TEMPLATE_TEST_CASE("nmpc_static solves held at the regulation equilibrium perfor
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    Controller controller{double_integrator, config};
+    auto created = Controller::create(double_integrator, config);
+    REQUIRE(created.has_value());
+    auto& controller = *created;
 
     Eigen::Vector2d x = Eigen::Vector2d::Zero();
 

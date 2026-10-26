@@ -533,7 +533,11 @@ private:
 ///
 /// This is the slack-free (hard-constraint) cut: config.horizon must equal the
 /// compile-time NH and the formulation must not introduce slack decision
-/// variables, so n_vars == NV exactly (enforced by build_nmpc_problem_static).
+/// variables, so n_vars == NV exactly. `create` is the only way to originate a
+/// controller, and it refuses a configuration outside that cut with a typed
+/// construction error rather than building a controller whose every solve fails.
+/// The shared `soft_constraints` default is true, so a path or terminal
+/// constraint on this class needs `soft_constraints = false`.
 ///
 /// Solver-generic by design: the caller supplies the static solver type already
 /// parameterized on the matching NV (e.g. `argmin_solver<Scalar, argmin_nw_sqp,
@@ -555,10 +559,32 @@ public:
 
     using problem_type = nlp_problem_static<Scalar, problem_dimension>;
 
-    // Builds the solver in place rather than delegating with a default-built
-    // one: a solver that carries its workspace inline (argmin's fixed-N policies,
-    // tens of kilobytes) would otherwise exist twice on the caller's stack.
-    nmpc_static(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
+private:
+    using config_type = nmpc_config<Scalar, NX, NU, NC, NTC>;
+    using setup_error = detail::nlp_setup_error_t<Solver, problem_type>;
+
+    /// @brief Passkey for the non-validating constructors: only the controller
+    /// can make one, which is what keeps `create` the only way to originate a
+    /// controller and the validation, formulation refusals and solver setup
+    /// impossible to bypass.
+    class validated_tag
+    {
+        friend nmpc_static;
+        validated_tag() = default;
+    };
+
+public:
+    using construction_error = nmpc_construction_error<setup_error>;
+
+    // Equal alternative types would make the variant's construction by type ambiguous.
+    static_assert(!std::is_same_v<setup_error, controller_construction_error> && !std::is_same_v<setup_error, nlp_formulation_error>,
+                  "the solver's setup-error type must differ from controller_construction_error and nlp_formulation_error");
+
+    // Public so ctrlpp::expected can construct the controller in the caller's
+    // storage; unreachable without the validated_tag only the controller can make.
+    // The solver is built in place: a solver that carries its workspace inline
+    // (argmin's fixed-N policies, tens of kilobytes) would otherwise exist twice.
+    nmpc_static(validated_tag, Dynamics dynamics, const config_type& config)
         : m_dynamics{std::move(dynamics)}
         , m_config{config}
         , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>()}
@@ -567,7 +593,9 @@ public:
         initialize();
     }
 
-    nmpc_static(Dynamics dynamics, const nmpc_config<Scalar, NX, NU, NC, NTC>& config, Solver solver)
+    // Taken by rvalue reference: a by-value parameter would hold a second
+    // solver in the in-place construction's own frame at -O0.
+    nmpc_static(validated_tag, Dynamics dynamics, const config_type& config, Solver&& solver)
         : m_dynamics{std::move(dynamics)}
         , m_config{config}
         , m_state{std::make_shared<nmpc_formulation_state<Scalar, NX, NU>>()}
@@ -576,6 +604,68 @@ public:
         initialize();
     }
 
+    /// @brief Validating factory, and the only way to originate a controller.
+    /// The solver is built with its own defaults, in place in the returned
+    /// controller.
+    ///
+    /// Rejections and their order are those of the solver-taking overload.
+    static auto create(Dynamics dynamics, const config_type& config) -> expected<nmpc_static, construction_error>
+    {
+        return admit_and_construct(std::move(dynamics), config);
+    }
+
+    /// @brief Validating factory taking a caller-supplied, pre-configured
+    /// solver, which is moved into the controller before the NLP is posed, so
+    /// its settings govern setup.
+    ///
+    /// Checked in order, each refusal returned before any controller exists:
+    ///  * the shared configuration admission, as the controller_construction_error
+    ///    alternative: bounds, the rate bound, the cost weights and the penalties
+    ///    of an active soft constraint, with the rules and order documented on
+    ///    `nmpc_dynamic::create`. A weight whose asymmetry is rounding drift is
+    ///    symmetrized in the controller's own copy;
+    ///  * the formulation refusals, as the nlp_formulation_error alternative:
+    ///    horizon != NH -> horizon_mismatch, then a configuration that adds slack
+    ///    (soft constraints with a path or terminal constraint set)
+    ///    -> slack_not_supported;
+    ///  * the solver setup against the posed problem, on the controller already
+    ///    built in the returned result; a refusal turns that result into the
+    ///    solver's own setup-error alternative.
+    static auto create(Dynamics dynamics, const config_type& config, Solver solver) -> expected<nmpc_static, construction_error>
+    {
+        return admit_and_construct(std::move(dynamics), config, std::move(solver));
+    }
+
+private:
+    // The pack is empty for the default solver and one solver otherwise, so both
+    // overloads share one admission sequence without a default-built solver.
+    template <typename... SolverArgument>
+    static auto admit_and_construct(Dynamics&& dynamics, const config_type& config, SolverArgument&&... solver)
+        -> expected<nmpc_static, construction_error>
+    {
+        auto admitted = detail::admit_nmpc_config(config);
+        if(!admitted.has_value())
+            return unexpected(construction_error{admitted.error()});
+        if(auto refused = detail::static_formulation_refusal<NH>(*admitted); !refused.has_value())
+            return unexpected(construction_error{refused.error()});
+        return construct_and_set_up(std::move(dynamics), *admitted, std::forward<SolverArgument>(solver)...);
+    }
+
+    // The setup failure is assigned into the one named result, and that result is
+    // this function's only return: gcc elides a named result only when every
+    // return names it, so the refusals live in the caller instead.
+    template <typename... SolverArgument>
+    static auto construct_and_set_up(Dynamics&& dynamics, const config_type& config, SolverArgument&&... solver)
+        -> expected<nmpc_static, construction_error>
+    {
+        expected<nmpc_static, construction_error> result{std::in_place, validated_tag{}, std::move(dynamics), config, std::forward<SolverArgument>(solver)...};
+        auto setup = detail::setup_nlp_solver(result->m_solver, *result->m_problem);
+        if(!setup.has_value())
+            result = unexpected(construction_error{setup.error()});
+        return result;
+    }
+
+public:
     // Move is correct-by-default for the same reason as runtime-horizon nmpc:
     // `m_problem` lives behind a unique_ptr (stable heap address), so the solver
     // bridge's by-reference back-pointer stays valid across a defaulted move.
@@ -632,7 +722,7 @@ private:
     void initialize()
     {
         m_state->x_ref.resize(static_cast<std::size_t>(horizon) + 1, Vector<Scalar, NX>::Zero());
-        build_problem_and_setup();
+        pose_problem();
         // Pre-size the reused solve buffers ONCE (construction may allocate), so
         // the steady-state assignments below hit the same-size fast path and the
         // hot solve loop stays allocation-free.
@@ -642,18 +732,11 @@ private:
         m_candidate = Eigen::VectorX<Scalar>::Zero(problem_dimension);
     }
 
-    // Pose the compile-time-dimension problem and set the solver up against it.
-    //
-    // The formulation factory rejects a configuration whose runtime horizon
-    // disagrees with the compile-time NH, or that would introduce slack decision
-    // variables, and it does so before building any of the dependent problem
-    // data. That rejection is unconditional (a release build no longer steps
-    // over it), and it is reported to the caller through the controller's
-    // existing error channel: the setup flag, which turns every subsequent
-    // solve() into solver_error::setup_incomplete. On rejection the problem
-    // holder is still populated with an empty problem so problem() has something
-    // valid to reference.
-    void build_problem_and_setup()
+    // Every configuration posed here has passed the formulation refusals, in
+    // create or in the creation of a copy's source, so the refused branch is not
+    // reached; it still leaves a valid empty problem behind problem() and the
+    // setup flag set instead of reading a refused result.
+    void pose_problem()
     {
         auto problem = detail::build_nmpc_problem_static<Scalar, NX, NU, NH, NC, NTC>(m_dynamics, m_config, m_state);
         if(!problem.has_value())
@@ -662,9 +745,17 @@ private:
             m_setup_failed = true;
             return;
         }
-
         m_problem = std::make_unique<problem_type>(*std::move(problem));
-        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem).has_value();
+    }
+
+    // A copy re-sets its forked solver up against its own problem. A constructor
+    // cannot return an error, so a refused re-setup is the flag that turns every
+    // solve of the copy into solver_error::setup_incomplete.
+    void build_problem_and_setup()
+    {
+        pose_problem();
+        if(!m_setup_failed)
+            m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem).has_value();
     }
 
     expected<solve_output<Scalar, NU>, solver_error> solve_impl(const Vector<Scalar, NX>& x0)

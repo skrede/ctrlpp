@@ -57,12 +57,12 @@ public:
     using solver_type     = argmin_solver<Scalar, argmin_nw_sqp, true, kPredictiveNv, kPredictiveMaxM>;
     using controller_type = nmpc_static<Scalar, kPredictiveNx, kPredictiveNu, kPredictiveNh, solver_type, plant_type>;
 
-    // The controller carries its solver workspace inline, about 42 KB here, and
-    // the project's expected type moves a value in through a temporary, so a
-    // by-value factory would hold it twice. The demo is built in place instead,
-    // and the first solve is where a refused formulation surfaces.
+    // The controller carries its solver workspace inline, about 42 KB here. The
+    // factory's result initializes the member directly, so the controller is
+    // built once, in place, and a refused configuration is a value the demo
+    // reports rather than a controller it runs.
     predictive_demo()
-            : controller_(plant_type{}, config())
+            : controller_(controller_type::create(plant_type{}, config()))
             , x_(Scalar{1}, Scalar{0})
             , u_(input_type::Zero())
     {
@@ -81,7 +81,9 @@ public:
     // arms, so the board's figure and the host's cover the same body.
     ctrlpp::expected<void, solver_error> advance()
     {
-        const auto solved = controller_.solve(x_);
+        if(!constructed())
+            return ctrlpp::unexpected(solver_error::setup_incomplete);
+        const auto solved = controller_->solve(x_);
         if(!solved.has_value())
             return ctrlpp::unexpected(solved.error());
         u_ = solved->input;
@@ -89,9 +91,15 @@ public:
         return {};
     }
 
+    bool constructed() const
+    {
+        return controller_.has_value();
+    }
+
+    // Valid only when constructed().
     const controller_type &controller() const
     {
-        return controller_;
+        return *controller_;
     }
 
     const state_type &state() const
@@ -105,7 +113,7 @@ public:
     }
 
 private:
-    controller_type controller_;
+    ctrlpp::expected<controller_type, typename controller_type::construction_error> controller_;
     state_type x_;
     input_type u_;
 };

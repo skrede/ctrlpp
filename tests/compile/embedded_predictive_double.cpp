@@ -1,6 +1,6 @@
 // Embedded-clean compile witness for the predictive surface: instantiates
 // nmpc_static over the fixed-dimension argmin solver at the configuration the
-// allocation test pins, and exercises one construction and one solve. Every
+// allocation test pins, and exercises one creation and one solve. Every
 // fallible result is handled through has_value() plus operator*, so the unit
 // stays free of the exception machinery and compiles under -fno-exceptions with
 // CTRLPP_NO_EXCEPTIONS defined. It needs the optional nonlinear-programming
@@ -57,11 +57,13 @@ int main()
     ctrlpp::nmpc_config<scalar, nx, nu> config;
     config.horizon = static_cast<int>(nh);
 
-    controller_type controller{double_integrator{}, config};
+    auto controller = controller_type::create(double_integrator{}, config);
+    if(!controller.has_value())
+        return 1;
 
     ctrlpp::Vector<scalar, nx> x0 = ctrlpp::Vector<scalar, nx>::Zero();
     x0[0] = scalar{1};
 
-    const auto u = controller.solve(x0);
+    const auto u = (*controller).solve(x0);
     return (u.has_value() && (*u).input.allFinite()) ? 0 : 1;
 }
