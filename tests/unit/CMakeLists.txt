@@ -401,6 +401,11 @@ if (CTRLPP_BUILD_ARGMIN)
 
     add_executable(mpc_mhe_argmin_qp_test "${CMAKE_CURRENT_LIST_DIR}/mpc_mhe_argmin_qp_test.cpp")
     target_link_libraries(mpc_mhe_argmin_qp_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
+    # The OSQP agreement legs need the throwing OSQP backend, so they join only where exceptions are on.
+    if (CTRLPP_BUILD_OSQP AND CTRLPP_TESTS_WITH_EXCEPTIONS)
+        target_link_libraries(mpc_mhe_argmin_qp_test PRIVATE ctrlpp::osqp)
+        target_compile_definitions(mpc_mhe_argmin_qp_test PRIVATE CTRLPP_HAS_OSQP)
+    endif ()
     target_compile_options(mpc_mhe_argmin_qp_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
     add_test(NAME mpc_mhe_argmin_qp_test COMMAND mpc_mhe_argmin_qp_test)
 
