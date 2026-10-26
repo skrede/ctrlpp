@@ -328,6 +328,11 @@ if (CTRLPP_BUILD_NLOPT AND CTRLPP_TESTS_WITH_EXCEPTIONS)
     target_compile_options(nmpc_nlopt_test PRIVATE ${CTRLPP_WARNING_FLAGS})
     add_test(NAME nmpc_nlopt_test COMMAND nmpc_nlopt_test)
 
+    add_executable(nlopt_containment_test "${CMAKE_CURRENT_LIST_DIR}/nlopt_containment_test.cpp")
+    target_link_libraries(nlopt_containment_test PRIVATE ctrlpp::nlopt Catch2::Catch2WithMain)
+    target_compile_options(nlopt_containment_test PRIVATE ${CTRLPP_WARNING_FLAGS})
+    add_test(NAME nlopt_containment_test COMMAND nlopt_containment_test)
+
     add_executable(nmpc_constraint_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_constraint_test.cpp")
     target_link_libraries(nmpc_constraint_test PRIVATE ctrlpp::nlopt Catch2::Catch2WithMain)
     target_compile_options(nmpc_constraint_test PRIVATE ${CTRLPP_WARNING_FLAGS})

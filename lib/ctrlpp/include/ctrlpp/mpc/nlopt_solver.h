@@ -5,9 +5,9 @@
 ///
 /// Setup fallibility is reported through `setup` returning
 /// `ctrlpp::expected<void, nlopt_setup_error>`. Note that NLopt's C++ API throws
-/// by upstream design (`setup` and `solve` contain every standard exception and
-/// report it as `nlopt_setup_error::backend_rejected` or `solve_status::error`),
-/// so this opt-in backend requires exception support and is exempt from the
+/// by upstream design (`setup` and `solve` contain every exception, standard or
+/// not, and report it as an `nlopt_setup_error` or as `solve_status::error`), so
+/// this opt-in backend requires exception support and is exempt from the
 /// library's embedded no-exceptions floor.
 
 #include "ctrlpp/expected.h"
@@ -15,14 +15,17 @@
 #include "ctrlpp/mpc/nlp_types.h"
 #include "ctrlpp/mpc/nlp_solver.h"
 
+#include "ctrlpp/mpc/detail/nlopt_constraint_rows.h"
+
 #include <nlopt.hpp>
 
+#include <new>
 #include <span>
-#include <cmath>
 #include <chrono>
 #include <vector>
+#include <cstddef>
 #include <cstdint>
-#include <algorithm>
+#include <utility>
 #include <exception>
 #include <type_traits>
 
@@ -64,23 +67,15 @@ class nlopt_solver
 public:
     using scalar_type = Scalar;
 
-    explicit nlopt_solver(nlopt_settings<Scalar> settings = {}) : settings_{settings}, ready_{false} {}
+    explicit nlopt_solver(nlopt_settings<Scalar> settings = {}) : rows_{}, problem_{nullptr}, settings_{settings}, opt_{}, ready_{false} {}
 
-    // Every NLopt callback is registered with the ADDRESS of this solver
-    // (`set_min_objective(objective_callback, this)` and the three mconstraint
-    // registrations), so a bitwise copy or move would leave the new object's
-    // optimizer calling back into the old one. That is silent memory corruption
-    // once the source dies, not a diagnosable failure, and it is reachable
-    // through any controller that is moved after construction -- which every
-    // fallible factory does, since the constructed controller is returned by
-    // value. Both the copy and the move therefore re-run setup against the same
-    // problem, which rebuilds the optimizer and rebinds every callback to the
-    // new address. The problem is referenced, not owned; the caller keeps it at
-    // a stable address for the lifetime of the solver, so re-running setup
-    // against it is well defined.
-    nlopt_solver(const nlopt_solver& other) : settings_{other.settings_}, problem_{other.problem_}, ready_{false} { rebind_callbacks(); }
+    // Every NLopt callback is registered with the ADDRESS of this solver or of its constraint rows, so a
+    // bitwise copy or move would leave the new optimizer calling back into the source, which every fallible
+    // factory's return by value would reach. The copy and the move therefore re-run setup against the same
+    // referenced problem, which the caller keeps at a stable address for the lifetime of the solver.
+    nlopt_solver(const nlopt_solver& other) : rows_{}, problem_{other.problem_}, settings_{other.settings_}, opt_{}, ready_{false} { rebind_callbacks(); }
 
-    nlopt_solver(nlopt_solver&& other) : settings_{other.settings_}, problem_{other.problem_}, ready_{false} { rebind_callbacks(); }
+    nlopt_solver(nlopt_solver&& other) : rows_{}, problem_{other.problem_}, settings_{other.settings_}, opt_{}, ready_{false} { rebind_callbacks(); }
 
     auto operator=(const nlopt_solver& other) -> nlopt_solver&
     {
@@ -109,25 +104,21 @@ public:
     /// @brief Fallible setup: configures the NLopt optimizer from the problem
     /// definition. Returns an empty expected on success,
     /// `nlopt_setup_error::incompatible_equality_constraints` when the selected
-    /// algorithm rejects the constraint structure, and
-    /// `nlopt_setup_error::backend_rejected` when NLopt raises any error while
-    /// building or configuring the optimizer. A failed setup leaves the solver
-    /// unusable: `solve` reports `solve_status::error` until a setup succeeds.
-    /// This is the only setup shape.
+    /// algorithm rejects the constraint structure,
+    /// `nlopt_setup_error::allocation_failed` when an allocation fails while the
+    /// optimizer is built or configured, and `nlopt_setup_error::backend_rejected`
+    /// for any other error raised meanwhile, standard or not. A failed setup
+    /// leaves the solver unusable: `solve` reports `solve_status::error` until a
+    /// setup succeeds. This is the only setup shape.
     auto setup(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
     {
+        using outcome = ctrlpp::expected<void, nlopt_setup_error>;
         ready_ = false;
         problem_ = &problem;
-        try
-        {
-            auto configured = configure(problem);
-            ready_ = configured.has_value();
-            return configured;
-        }
-        catch(const std::exception&)
-        {
-            return ctrlpp::unexpected(nlopt_setup_error::backend_rejected);
-        }
+        const outcome configured = contained<outcome>([&] { return configure(problem); }, ctrlpp::unexpected(nlopt_setup_error::allocation_failed),
+                                                      ctrlpp::unexpected(nlopt_setup_error::backend_rejected));
+        ready_ = configured.has_value();
+        return configured;
     }
 
     auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
@@ -139,6 +130,12 @@ public:
     }
 
 private:
+    detail::nlopt_constraint_rows<Scalar> rows_;
+    const nlp_problem<Scalar>* problem_;
+    nlopt_settings<Scalar> settings_;
+    nlopt::opt opt_;
+    bool ready_;
+
     static auto to_nlopt_algorithm(nlopt_algorithm alg) -> nlopt::algorithm
     {
         switch(alg)
@@ -176,14 +173,14 @@ private:
 
     auto configure(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
     {
+        const bool rejects_equalities = settings_.algorithm == nlopt_algorithm::mma || settings_.algorithm == nlopt_algorithm::ccsaq;
+        if(auto partitioned = rows_.partition(problem, rejects_equalities); !partitioned.has_value())
+            return partitioned;
+
         opt_ = nlopt::opt(to_nlopt_algorithm(settings_.algorithm), static_cast<unsigned>(problem.n_vars));
         configure_variable_bounds(problem);
         opt_.set_min_objective(objective_callback, this);
-
-        if(auto partitioned = partition_constraints(problem); !partitioned.has_value())
-            return partitioned;
-
-        configure_constraint_callbacks();
+        rows_.register_callbacks(opt_, static_cast<double>(settings_.constraint_tol));
         configure_stopping_criteria();
         if(settings_.algorithm == nlopt_algorithm::auglag_mma || settings_.algorithm == nlopt_algorithm::auglag_ccsaq)
             configure_local_optimizer(problem);
@@ -201,23 +198,43 @@ private:
         opt_.set_local_optimizer(local);
     }
 
-    // Consumers read solve through an expected-based API, so nothing may escape it: every NLopt
-    // call, allocation and callback of a solve, including the cost re-evaluation that
-    // run_optimizer's roundoff handler performs, runs under this guard.
-    auto guarded_solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
+    // The catch-all also catches a forced unwind (glibc's thread cancellation) and does not re-raise it, as
+    // NLopt's own callback wrappers already do, so cancelling a thread inside setup or solve aborts the process.
+    template <typename Result, typename Fn>
+    static auto contained(Fn&& fn, Result on_allocation_failure, Result on_other_failure) -> Result
     {
         try
         {
-            auto x = to_stdvec(update.x0);
-            project_onto_bounds(x);
-            double opt_f{};
-            const solve_status status = run_optimizer(x, opt_f);
-            return solved_result(x, opt_f, status);
+            return std::forward<Fn>(fn)();
+        }
+        catch(const std::bad_alloc&)
+        {
+            return on_allocation_failure;
         }
         catch(const std::exception&)
         {
-            return failed_result();
+            return on_other_failure;
         }
+        catch(...)
+        {
+            return on_other_failure;
+        }
+    }
+
+    // solve reports every failure through nlp_result::status, so no exception may cross it; run_optimizer's
+    // round-off cost re-evaluation and the violation evaluation in solved_result run inside this guard.
+    auto guarded_solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
+    {
+        return contained<nlp_result<Scalar>>(
+            [&]
+            {
+                auto x = to_stdvec(update.x0);
+                project_onto_bounds(x);
+                double opt_f{};
+                const solve_status status = run_optimizer(x, opt_f);
+                return solved_result(x, opt_f, status);
+            },
+            failed_result(), failed_result());
     }
 
     // NLopt refuses a start outside the bounds, so a valid box that excludes the previous
@@ -260,7 +277,7 @@ private:
             result.x[i] = static_cast<Scalar>(x[static_cast<std::size_t>(i)]);
         result.objective = static_cast<Scalar>(opt_f);
         result.iterations = opt_.get_numevals();
-        result.primal_residual = compute_max_violation(x);
+        result.primal_residual = rows_.max_violation(x);
         return result;
     }
 
@@ -279,37 +296,6 @@ private:
             opt_.set_upper_bounds(to_stdvec(problem.x_upper));
     }
 
-    auto partition_constraints(const nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, nlopt_setup_error>
-    {
-        if(problem.n_constraints == 0)
-            return {};
-
-        eq_indices_.clear();
-        ineq_lower_indices_.clear();
-        ineq_upper_indices_.clear();
-
-        for(int i = 0; i < problem.n_constraints; ++i)
-        {
-            if(problem.c_lower[i] == problem.c_upper[i])
-            {
-                eq_indices_.push_back(i);
-            }
-            else
-            {
-                if(std::isfinite(static_cast<double>(problem.c_upper[i])))
-                    ineq_upper_indices_.push_back(i);
-                if(std::isfinite(static_cast<double>(problem.c_lower[i])))
-                    ineq_lower_indices_.push_back(i);
-            }
-        }
-
-        const bool rejects_equalities = settings_.algorithm == nlopt_algorithm::mma || settings_.algorithm == nlopt_algorithm::ccsaq;
-        if(rejects_equalities && !eq_indices_.empty())
-            return ctrlpp::unexpected(nlopt_setup_error::incompatible_equality_constraints);
-
-        return {};
-    }
-
     // Re-register every callback against this object's address. The re-setup can
     // fail when the referenced problem changed since the source's setup; the copy
     // or move cannot report it, so it stays unready and its next solve reports
@@ -319,25 +305,6 @@ private:
         ready_ = false;
         if(problem_ != nullptr)
             static_cast<void>(setup(*problem_));
-    }
-
-    void configure_constraint_callbacks()
-    {
-        if(!eq_indices_.empty())
-        {
-            std::vector<double> eq_tol(eq_indices_.size(), static_cast<double>(settings_.constraint_tol));
-            opt_.add_equality_mconstraint(equality_callback, this, eq_tol);
-        }
-        if(!ineq_upper_indices_.empty())
-        {
-            std::vector<double> tol(ineq_upper_indices_.size(), static_cast<double>(settings_.constraint_tol));
-            opt_.add_inequality_mconstraint(ineq_upper_callback, this, tol);
-        }
-        if(!ineq_lower_indices_.empty())
-        {
-            std::vector<double> tol(ineq_lower_indices_.size(), static_cast<double>(settings_.constraint_tol));
-            opt_.add_inequality_mconstraint(ineq_lower_callback, this, tol);
-        }
     }
 
     void configure_stopping_criteria()
@@ -395,156 +362,6 @@ private:
 
         return self->problem_->cost(x_span);
     }
-
-    static void equality_callback(unsigned m, double* result, unsigned n, const double* x, double* grad, void* data)
-    {
-        auto* self = static_cast<nlopt_solver*>(data);
-
-        // Evaluate all constraints
-        self->eval_constraints(n, x);
-
-        // Extract equality constraints: c(x) - target = 0
-        for(unsigned i = 0; i < m; ++i)
-        {
-            auto idx = self->eq_indices_[i];
-            result[i] = self->constraint_buf_[static_cast<std::size_t>(idx)] - static_cast<double>(self->problem_->c_lower[idx]);
-        }
-
-        if(grad)
-        {
-            self->fd_mconstraint_grad(m, n, x, grad, self->eq_indices_, [](double ci, double bound) { return ci - bound; }, [self](int idx) { return static_cast<double>(self->problem_->c_lower[idx]); });
-        }
-    }
-
-    static void ineq_upper_callback(unsigned m, double* result, unsigned n, const double* x, double* grad, void* data)
-    {
-        auto* self = static_cast<nlopt_solver*>(data);
-        self->eval_constraints(n, x);
-
-        // c(x) - c_upper <= 0
-        for(unsigned i = 0; i < m; ++i)
-        {
-            auto idx = self->ineq_upper_indices_[i];
-            result[i] = self->constraint_buf_[static_cast<std::size_t>(idx)] - static_cast<double>(self->problem_->c_upper[idx]);
-        }
-
-        if(grad)
-        {
-            self->fd_mconstraint_grad(m, n, x, grad, self->ineq_upper_indices_, [](double ci, double bound) { return ci - bound; }, [self](int idx) { return static_cast<double>(self->problem_->c_upper[idx]); });
-        }
-    }
-
-    static void ineq_lower_callback(unsigned m, double* result, unsigned n, const double* x, double* grad, void* data)
-    {
-        auto* self = static_cast<nlopt_solver*>(data);
-        self->eval_constraints(n, x);
-
-        // c_lower - c(x) <= 0
-        for(unsigned i = 0; i < m; ++i)
-        {
-            auto idx = self->ineq_lower_indices_[i];
-            result[i] = static_cast<double>(self->problem_->c_lower[idx]) - self->constraint_buf_[static_cast<std::size_t>(idx)];
-        }
-
-        if(grad)
-        {
-            self->fd_mconstraint_grad(m, n, x, grad, self->ineq_lower_indices_, [](double ci, double bound) { return bound - ci; }, [self](int idx) { return static_cast<double>(self->problem_->c_lower[idx]); });
-        }
-    }
-
-    template <typename TransformFn, typename BoundFn>
-    void fd_mconstraint_grad(unsigned m, unsigned n, const double* x, double* grad, const std::vector<int>& indices, TransformFn transform, BoundFn get_bound)
-    {
-        const auto step_scale = std::cbrt(std::numeric_limits<double>::epsilon());
-        fd_x_buf_.assign(x, x + n);
-        fd_c_plus_.resize(static_cast<std::size_t>(problem_->n_constraints));
-        fd_c_minus_.resize(static_cast<std::size_t>(problem_->n_constraints));
-
-        for(unsigned j = 0; j < n; ++j)
-        {
-            const double h_raw = step_scale * std::max(1.0, std::abs(x[j]));
-            const double temp = x[j] + h_raw;
-            const double h = temp - x[j];
-            const double orig = fd_x_buf_[j];
-
-            fd_x_buf_[j] = orig + h;
-            std::span<const double> xp{fd_x_buf_.data(), n};
-            std::span<double> cp{fd_c_plus_.data(), fd_c_plus_.size()};
-            problem_->constraints(xp, cp);
-
-            fd_x_buf_[j] = orig - h;
-            std::span<const double> xm{fd_x_buf_.data(), n};
-            std::span<double> cm{fd_c_minus_.data(), fd_c_minus_.size()};
-            problem_->constraints(xm, cm);
-
-            for(unsigned i = 0; i < m; ++i)
-            {
-                auto idx = indices[i];
-                double bound = get_bound(idx);
-                double fp = transform(fd_c_plus_[static_cast<std::size_t>(idx)], bound);
-                double fm = transform(fd_c_minus_[static_cast<std::size_t>(idx)], bound);
-                grad[static_cast<std::size_t>(i) * n + j] = (fp - fm) / (2.0 * h);
-            }
-
-            fd_x_buf_[j] = orig;
-        }
-    }
-
-    void eval_constraints(unsigned n, const double* x)
-    {
-        constraint_buf_.resize(static_cast<std::size_t>(problem_->n_constraints));
-        std::span<const double> x_span{x, n};
-        std::span<double> c_span{constraint_buf_.data(), constraint_buf_.size()};
-        problem_->constraints(x_span, c_span);
-    }
-
-    auto compute_max_violation(const std::vector<double>& x) const -> Scalar
-    {
-        if(problem_->n_constraints == 0)
-        {
-            return Scalar{0};
-        }
-
-        eval_constraints_const(x);
-
-        Scalar max_viol{0};
-        for(int i = 0; i < problem_->n_constraints; ++i)
-        {
-            auto ci = static_cast<Scalar>(constraint_buf_[static_cast<std::size_t>(i)]);
-            Scalar viol{0};
-            if(ci > problem_->c_upper[i])
-            {
-                viol = ci - problem_->c_upper[i];
-            }
-            else if(ci < problem_->c_lower[i])
-            {
-                viol = problem_->c_lower[i] - ci;
-            }
-            max_viol = std::max(max_viol, viol);
-        }
-        return max_viol;
-    }
-
-    void eval_constraints_const(const std::vector<double>& x) const
-    {
-        constraint_buf_.resize(static_cast<std::size_t>(problem_->n_constraints));
-        std::span<const double> x_span{x.data(), x.size()};
-        std::span<double> c_span{constraint_buf_.data(), constraint_buf_.size()};
-        problem_->constraints(x_span, c_span);
-    }
-
-    nlopt_settings<Scalar> settings_;
-    const nlp_problem<Scalar>* problem_{nullptr};
-    nlopt::opt opt_{};
-    bool ready_;
-
-    std::vector<int> eq_indices_;
-    std::vector<int> ineq_upper_indices_;
-    std::vector<int> ineq_lower_indices_;
-    mutable std::vector<double> constraint_buf_;
-    mutable std::vector<double> fd_x_buf_;
-    mutable std::vector<double> fd_c_plus_;
-    mutable std::vector<double> fd_c_minus_;
 };
 
 }
