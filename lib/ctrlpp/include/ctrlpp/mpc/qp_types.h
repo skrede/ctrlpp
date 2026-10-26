@@ -160,6 +160,12 @@ enum class solver_error : std::uint8_t
 ///                                 weighting, so the terminal cost that solve
 ///                                 supplies cannot be formed. A singular positive
 ///                                 semidefinite R is accepted everywhere else.
+///  * non_finite_system          : raised by `mpc::create` only: A, B or C holds
+///                                 a NaN or an infinity. D is not used by the
+///                                 controller and is not checked.
+///  * non_finite_state_space_weight : raised by `mpc::create` only: Q, or a set
+///                                 Qf, mapped to state space as C^T Q C overflows
+///                                 although every configured entry is finite.
 enum class controller_construction_error : std::uint8_t
 {
     non_positive_horizon,
@@ -171,7 +177,9 @@ enum class controller_construction_error : std::uint8_t
     asymmetric_cost_weight,
     indefinite_cost_weight,
     invalid_constraint_penalty,
-    singular_input_weight
+    singular_input_weight,
+    non_finite_system,
+    non_finite_state_space_weight
 };
 
 /// @brief Success payload of a controller `solve()`.

@@ -9,6 +9,8 @@
 
 #include "ctrlpp/types.h"
 
+#include "ctrlpp/control/dare_types.h"
+
 #include <Eigen/Dense>
 
 #include <cstddef>
@@ -27,10 +29,6 @@ namespace ctrlpp
 ///  * empty_terminal_set      : capping alpha against the input and state faces
 ///                              yields a non-positive or non-finite alpha, i.e. no
 ///                              consistent bounded ellipsoid exists (the set is empty).
-///  * dare_failed             : the terminal cost and gain could not be formed because
-///                              the discrete algebraic Riccati solve failed on non-finite
-///                              data, a rank-deficient A, or a stabilizing solution it
-///                              cannot find or verify. A singular R is singular_input_weight.
 ///  * halfplanes_truncated    : the polytopic invariant-set halfplane count hit the
 ///                              resource bound, so the returned representation is a
 ///                              truncated (and therefore unsound) outer approximation.
@@ -61,7 +59,6 @@ enum class terminal_set_error : std::uint8_t
 {
     input_zero_not_interior,
     empty_terminal_set,
-    dare_failed,
     halfplanes_truncated,
     not_converged,
     closed_loop_not_stable,
@@ -72,6 +69,10 @@ enum class terminal_set_error : std::uint8_t
     non_finite_input,
     singular_input_weight,
 };
+
+/// @brief Error of `terminal_ingredients`: a terminal-set refusal (a singular R, or the ellipsoid's), or the
+/// Riccati solve's own refusal of the terminal cost and gain.
+using terminal_ingredients_error = std::variant<terminal_set_error, dare_error>;
 
 /// @brief Ellipsoid {x : x^T P x <= alpha}, P positive definite, alpha > 0.
 ///

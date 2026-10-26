@@ -379,25 +379,25 @@ struct terminal_ingredients_result
 ///
 /// `set` is the largest ellipsoid {x : x^T P x <= alpha} inside the input and state faces; the box the QP encodes is not invariant.
 /// `invariant_set` is the maximal output admissible set of A + B K under the default step budget, or dimension_unsupported for NX > 4.
-/// The error channel carries singular_input_weight, dare_failed and compute_ellipsoidal_set's refusals.
+/// The error is singular_input_weight or compute_ellipsoidal_set's refusal, or the Riccati solve's own dare_error.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto terminal_ingredients(
     const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R,
     const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max, const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max)
-    -> ctrlpp::expected<terminal_ingredients_result<Scalar, NX, NU>, terminal_set_error>
+    -> ctrlpp::expected<terminal_ingredients_result<Scalar, NX, NU>, terminal_ingredients_error>
 {
     if(detail::riccati_input_weight_singular<Scalar, NX, NU>(B, Q, R))
-        return ctrlpp::unexpected(terminal_set_error::singular_input_weight);
+        return ctrlpp::unexpected(terminal_ingredients_error{terminal_set_error::singular_input_weight});
     auto P_result = dare<Scalar, NX, NU>(A, B, Q, R);
     if(!P_result)
-        return ctrlpp::unexpected(terminal_set_error::dare_failed);
+        return ctrlpp::unexpected(terminal_ingredients_error{P_result.error()});
 
     auto P = P_result->P;
     Matrix<Scalar, NU, NU> RpBtPB = R + B.transpose() * P * B;
     Matrix<Scalar, NU, NX> K = -(RpBtPB.ldlt().solve(B.transpose() * P * A));
     auto eset = compute_ellipsoidal_set<Scalar, NX, NU>(P, K, u_min, u_max, x_min, x_max);
     if(!eset)
-        return ctrlpp::unexpected(eset.error());
+        return ctrlpp::unexpected(terminal_ingredients_error{eset.error()});
 
     terminal_ingredients_result<Scalar, NX, NU> result{.Qf = P, .set = *eset, .invariant_set = ctrlpp::unexpected(terminal_set_error::dimension_unsupported)};
     if constexpr(NX <= 4)

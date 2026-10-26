@@ -61,7 +61,12 @@ auto mpc_terminal_cost(const discrete_state_space<Scalar, NX, NU, NY>& system, c
                        const std::optional<Matrix<Scalar, NY, NY>>& Qf) -> expected<mpc_terminal_weights<Scalar, NX, NY>, mpc_construction_error>
 {
     if(Qf.has_value())
-        return mpc_terminal_weights<Scalar, NX, NY>{.state = system.C.transpose() * (*Qf) * system.C, .linear = system.C.transpose() * (*Qf)};
+    {
+        Matrix<Scalar, NX, NX> state = system.C.transpose() * (*Qf) * system.C;
+        if(!state.allFinite())
+            return ctrlpp::unexpected(mpc_construction_error{controller_construction_error::non_finite_state_space_weight});
+        return mpc_terminal_weights<Scalar, NX, NY>{.state = std::move(state), .linear = system.C.transpose() * (*Qf)};
+    }
     if(riccati_input_weight_singular<Scalar, NX, NU>(system.B, Q_state, R))
         return ctrlpp::unexpected(mpc_construction_error{controller_construction_error::singular_input_weight});
 

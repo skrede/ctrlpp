@@ -16,6 +16,17 @@
 #include <malloc.h>
 #endif
 
+#if defined(__GLIBC__) && defined(__GLIBCXX__)
+#include <array>
+#include <cstdio>
+#include <string>
+#include <csignal>
+
+#include <unistd.h>
+#include <pthread.h>
+#include <sys/wait.h>
+#endif
+
 namespace
 {
 
@@ -292,7 +303,8 @@ struct throw_at
     std::int32_t at{0};
 };
 
-auto counted_cost(throw_at& trigger) -> ctrlpp::nlp_problem<double>
+template <typename Trigger>
+auto counted_cost(Trigger& trigger) -> ctrlpp::nlp_problem<double>
 {
     auto problem = three_row_problem();
     problem.cost = [&trigger](std::span<const double> z) -> double
@@ -303,7 +315,8 @@ auto counted_cost(throw_at& trigger) -> ctrlpp::nlp_problem<double>
     return problem;
 }
 
-auto counted_rows(throw_at& trigger) -> ctrlpp::nlp_problem<double>
+template <typename Trigger>
+auto counted_rows(Trigger& trigger) -> ctrlpp::nlp_problem<double>
 {
     auto problem = three_row_problem();
     problem.constraints = [&trigger](std::span<const double> z, std::span<double> c)
@@ -315,7 +328,8 @@ auto counted_rows(throw_at& trigger) -> ctrlpp::nlp_problem<double>
 }
 
 // SLSQP stops round-off limited on a rank-deficient equality Jacobian, here two identical rows.
-auto duplicate_equality(throw_at& trigger) -> ctrlpp::nlp_problem<double>
+template <typename Trigger>
+auto duplicate_equality(Trigger& trigger) -> ctrlpp::nlp_problem<double>
 {
     return {
         .n_vars = 2,
@@ -466,3 +480,131 @@ TEST_CASE("nlopt_solver setup reports an allocation failure as allocation_failed
     REQUIRE_NOTHROW(result = solver.solve(interior_start()));
     CHECK(accepted(result.status));
 }
+
+#if defined(__GLIBC__) && defined(__GLIBCXX__)
+
+namespace
+{
+
+struct cancel_at
+{
+    void tick()
+    {
+        if(++calls == at)
+        {
+            pthread_cancel(pthread_self());
+            pthread_testcancel();
+        }
+    }
+
+    std::int32_t calls{0};
+    std::int32_t at{0};
+};
+
+struct cancellation_run
+{
+    const ctrlpp::nlp_problem<double>& problem;
+    const ctrlpp::nlp_update<double>& start;
+};
+
+struct child_outcome
+{
+    int status;
+    std::string diagnostics;
+};
+
+void* solve_on_thread(void* argument)
+{
+    auto const& run = *static_cast<const cancellation_run*>(argument);
+    NloptSolver solver;
+    if(solver.setup(run.problem).has_value())
+        static_cast<void>(solver.solve(run.start));
+    return nullptr;
+}
+
+// The test framework's abort handler is inherited across fork and is reset so the abort reaches the exit status.
+// LIBC_FATAL_STDERR_ makes glibc write its fatal message to the redirected stderr rather than to the terminal.
+void run_child(int diagnostics_pipe, cancellation_run run)
+{
+    std::signal(SIGABRT, SIG_DFL);
+    dup2(diagnostics_pipe, STDERR_FILENO);
+    setenv("LIBC_FATAL_STDERR_", "1", 1);
+    pthread_t thread{};
+    if(pthread_create(&thread, nullptr, solve_on_thread, &run) != 0)
+        _exit(2);
+    void* exit_value = nullptr;
+    if(pthread_join(thread, &exit_value) != 0)
+        _exit(3);
+    _exit(exit_value == PTHREAD_CANCELED ? 0 : 1);
+}
+
+// The solve runs in a forked child that reports through its exit status, so a process abort is observed rather than suffered.
+auto cancel_in_child(const ctrlpp::nlp_problem<double>& problem, const ctrlpp::nlp_update<double>& start) -> child_outcome
+{
+    std::array<int, 2> pipe_ends{};
+    REQUIRE(pipe(pipe_ends.data()) == 0);
+    const pid_t child = fork();
+    REQUIRE(child >= 0);
+    if(child == 0)
+    {
+        close(pipe_ends[0]);
+        run_child(pipe_ends[1], {.problem = problem, .start = start});
+    }
+    close(pipe_ends[1]);
+    child_outcome outcome{.status = 0, .diagnostics = {}};
+    std::array<char, 256> buffer{};
+    for(ssize_t n = 0; (n = read(pipe_ends[0], buffer.data(), buffer.size())) > 0;)
+        outcome.diagnostics.append(buffer.data(), static_cast<std::size_t>(n));
+    close(pipe_ends[0]);
+    REQUIRE(waitpid(child, &outcome.status, 0) == child);
+    std::fputs(outcome.diagnostics.c_str(), stderr);
+    return outcome;
+}
+
+auto unwound(const child_outcome& outcome) -> bool
+{
+    return WIFEXITED(outcome.status) && WEXITSTATUS(outcome.status) == 0;
+}
+
+auto aborted_unrethrown(const child_outcome& outcome) -> bool
+{
+    return WIFSIGNALED(outcome.status) && WTERMSIG(outcome.status) == SIGABRT && outcome.diagnostics.find("FATAL: exception not rethrown") != std::string::npos;
+}
+
+void replay_last_call(cancel_at& trigger)
+{
+    const std::int32_t recorded = trigger.calls;
+    REQUIRE(recorded > 0);
+    trigger = {.calls = 0, .at = recorded};
+}
+
+}
+
+TEST_CASE("nlopt_solver lets a thread cancelled in the round-off cost re-evaluation unwind", "[nlopt][cancellation]")
+{
+    cancel_at trigger;
+    const auto problem = duplicate_equality(trigger);
+    const ctrlpp::nlp_update<double> start{.x0 = Eigen::Vector2d::Zero()};
+    REQUIRE(solve_fresh(problem, start).status == ctrlpp::solve_status::solved_inaccurate);
+    replay_last_call(trigger);
+    CHECK(unwound(cancel_in_child(problem, start)));
+}
+
+TEST_CASE("nlopt_solver lets a thread cancelled in the violation evaluation after optimize unwind", "[nlopt][cancellation]")
+{
+    cancel_at trigger;
+    const auto problem = counted_rows(trigger);
+    REQUIRE(solve_fresh(problem, interior_start()).status == ctrlpp::solve_status::optimal);
+    replay_last_call(trigger);
+    CHECK(unwound(cancel_in_child(problem, interior_start())));
+}
+
+// NLopt's own callback wrapper catches the unwind inside optimize and does not re-raise it, so glibc aborts.
+TEST_CASE("A thread cancelled in a callback NLopt invokes during optimize still aborts the process", "[nlopt][cancellation]")
+{
+    cancel_at trigger{.calls = 0, .at = 1};
+    const auto problem = counted_cost(trigger);
+    CHECK(aborted_unrethrown(cancel_in_child(problem, interior_start())));
+}
+
+#endif

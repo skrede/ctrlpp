@@ -11,7 +11,8 @@
 // Configuration domain. Bounds, the rate bound, the cost weights and the
 // constraint penalties are each pinned from both sides of their boundary, on
 // the linear and the runtime-horizon nonlinear factory, through both overloads
-// of each. The compile-time-horizon factory shares the admission; its cases pin
+// of each. The linear factory's plant and the weights it maps through the
+// plant's output matrix are pinned the same way. The compile-time-horizon factory shares the admission; its cases pin
 // the order of admission, formulation refusal and solver setup.
 //
 // Result-shape domain. A valid horizon is not enough: the solve extracts fixed
@@ -1375,11 +1376,17 @@ auto agreed_outcome(const Result& two_argument, const Result& solver_taking) -> 
 }
 
 template <typename Configure>
-auto linear_outcome(Configure configure) -> linear_construction_outcome
+auto linear_outcome_on(const ctrlpp::discrete_state_space<double, NX, NU, NX>& system, Configure configure) -> linear_construction_outcome
 {
     auto cfg = linear_config(shape_horizon);
     configure(cfg);
-    return agreed_refusal(linear_controller::create(make_system(), cfg), linear_controller::create(make_system(), cfg, ctrlpp_test::stub_qp_solver<double>{}));
+    return agreed_refusal(linear_controller::create(system, cfg), linear_controller::create(system, cfg, ctrlpp_test::stub_qp_solver<double>{}));
+}
+
+template <typename Configure>
+auto linear_outcome(Configure configure) -> linear_construction_outcome
+{
+    return linear_outcome_on(make_system(), configure);
 }
 
 template <typename Controller = nonlinear_controller, typename Config = ctrlpp::nmpc_config<double, NX, NU>, typename Configure>
@@ -1642,6 +1649,83 @@ TEST_CASE("A singular input weight is refused only where the Riccati solve inver
     CHECK(nonlinear_outcome<static_nonlinear_controller>(input_weight(0.0)) == accepted);
 }
 
+namespace
+{
+
+template <typename Corrupt>
+auto corrupted_system(Corrupt corrupt) -> ctrlpp::discrete_state_space<double, NX, NU, NX>
+{
+    auto system = make_system();
+    corrupt(system);
+    return system;
+}
+
+auto scaled_output_map(double scale) -> ctrlpp::discrete_state_space<double, NX, NU, NX>
+{
+    return corrupted_system([scale](auto& system) { system.C *= scale; });
+}
+
+auto nan_dynamics() -> ctrlpp::discrete_state_space<double, NX, NU, NX>
+{
+    return corrupted_system([](auto& system) { system.A(0, 1) = not_a_number; });
+}
+
+void leave_configuration(ctrlpp::mpc_config<double, NX, NU>&) {}
+
+void require_plant_outcome(const ctrlpp::discrete_state_space<double, NX, NU, NX>& system, const linear_construction_outcome& expected)
+{
+    CHECK(linear_outcome_on(system, leave_configuration) == expected);
+    CHECK(linear_outcome_on(system, terminal_weight(Eigen::Matrix2d::Identity())) == expected);
+}
+
+}
+
+TEST_CASE("Linear MPC refuses a non-finite plant with or without a terminal weight", "[mpc][configuration][hardening]")
+{
+    auto const refused = linear_refusal(ctrlpp::controller_construction_error::non_finite_system);
+    require_plant_outcome(nan_dynamics(), refused);
+    require_plant_outcome(corrupted_system([](auto& system) { system.A(1, 1) = -infinity; }), refused);
+    require_plant_outcome(corrupted_system([](auto& system) { system.B(1) = infinity; }), refused);
+    require_plant_outcome(corrupted_system([](auto& system) { system.C(1, 0) = not_a_number; }), refused);
+
+    // The controller never reads D.
+    require_plant_outcome(corrupted_system([](auto& system) { system.D(0) = not_a_number; }), linear_refusal(accepted));
+}
+
+TEST_CASE("Linear MPC refuses a state-space weight that overflows from finite operands", "[mpc][configuration][hardening]")
+{
+    // C = 1e200 I maps Q = I to 1e400 I, which overflows. C = 1e150 I keeps C^T Q C = 1e300 I representable,
+    // and then only Qf = 1e10 I overflows.
+    auto const refused = linear_refusal(ctrlpp::controller_construction_error::non_finite_state_space_weight);
+    require_plant_outcome(scaled_output_map(1e200), refused);
+    CHECK(linear_outcome_on(scaled_output_map(1e150), terminal_weight(1e10 * Eigen::Matrix2d::Identity())) == refused);
+    CHECK(linear_outcome_on(scaled_output_map(1e150), terminal_weight(Eigen::Matrix2d::Identity())) == linear_refusal(accepted));
+}
+
+// Admission accepts q22 = -2 eps, exactly its floor. The second mode is stable at 0.6 and uncontrollable, so the exact
+// stabilizing solution has p22 = q22 / (1 - 0.6^2) = -3.125 eps, below the Riccati solve's own floor of about 2.01 eps.
+TEST_CASE("Linear MPC with Qf unset refuses a state weight admitted at its floor once the Riccati solution amplifies it", "[mpc][nmpc][configuration][hardening]")
+{
+    auto plant = make_system();
+    plant.A = Eigen::Vector2d{0.1, 0.6}.asDiagonal();
+    plant.B = Eigen::Vector2d{1.0, 0.0};
+    const Eigen::Matrix2d at_floor = weight_2x2(1.0, 0.0, 0.0, -rounding_bound_2x2(1.0));
+    auto const weight = state_weight(at_floor);
+
+    CHECK(nonlinear_outcome(weight) == accepted);
+    CHECK(nonlinear_outcome<static_nonlinear_controller>(weight) == accepted);
+    CHECK(linear_outcome_on(plant, [&](auto& cfg) {
+              weight(cfg);
+              cfg.Qf = Eigen::Matrix2d::Identity();
+          })
+          == linear_refusal(accepted));
+
+    auto const riccati = ctrlpp::dare<double, NX, NU>(plant.A, plant.B, at_floor, Eigen::Matrix<double, 1, 1>::Identity());
+    REQUIRE_FALSE(riccati.has_value());
+    CHECK(riccati.error() == ctrlpp::dare_error::non_psd_solution);
+    CHECK(linear_outcome_on(plant, weight) == riccati_refusal(ctrlpp::dare_error::non_psd_solution));
+}
+
 TEST_CASE("Runtime-horizon nonlinear MPC poses one symmetric weight when the configured one drifts by rounding", "[nmpc][configuration][hardening]")
 {
     const double drift = std::nextafter(2.0, infinity) - 2.0;
@@ -1748,6 +1832,16 @@ TEST_CASE("Predictive factories report the first violated rule in the documented
     auto zero_state_weight = state_weight(Eigen::Matrix2d::Zero());
     CHECK(linear_outcome(both(zero_state_weight, inverted_input)) == linear_refusal(ctrlpp::controller_construction_error::invalid_input_bounds));
     CHECK(linear_outcome(both(zero_state_weight, input_weight(0.0))) == linear_refusal(ctrlpp::controller_construction_error::singular_input_weight));
+
+    CHECK(linear_outcome_on(nan_dynamics(), inverted_input) == linear_refusal(ctrlpp::controller_construction_error::invalid_input_bounds));
+    CHECK(linear_outcome_on(nan_dynamics(), input_weight(0.0)) == linear_refusal(ctrlpp::controller_construction_error::non_finite_system));
+    CHECK(linear_outcome_on(nan_dynamics(), zero_state_weight) == linear_refusal(ctrlpp::controller_construction_error::non_finite_system));
+    auto const nan_dynamics_overflowing_map = corrupted_system([](auto& system) {
+        system.A(0, 1) = not_a_number;
+        system.C *= 1e200;
+    });
+    CHECK(linear_outcome_on(nan_dynamics_overflowing_map, leave_configuration) == linear_refusal(ctrlpp::controller_construction_error::non_finite_system));
+    CHECK(linear_outcome_on(scaled_output_map(1e200), input_weight(0.0)) == linear_refusal(ctrlpp::controller_construction_error::non_finite_state_space_weight));
 
     auto negative_horizon = [](auto& cfg) { cfg.horizon = -1; };
     require_both_predictive(both(inverted_input, negative_horizon), ctrlpp::controller_construction_error::non_positive_horizon);

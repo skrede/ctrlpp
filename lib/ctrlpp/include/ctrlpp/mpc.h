@@ -86,6 +86,9 @@ public:
     ///    soft_state_penalty, while the state
     ///    bounds are soft: non-finite or not
     ///    strictly positive                    -> invalid_constraint_penalty
+    ///  * A, B or C: NaN or infinity           -> non_finite_system
+    ///  * C^T Q C, then with Qf set C^T Qf C:
+    ///    not all finite                       -> non_finite_state_space_weight
     ///  * with Qf unset, an R the Riccati
     ///    solve cannot invert                  -> singular_input_weight
     ///  * with Qf unset, a Riccati solve that
@@ -122,7 +125,11 @@ public:
         auto admitted = detail::admit_mpc_config(config);
         if(!admitted)
             return unexpected(mpc_construction_error{admitted.error()});
+        if(!system.A.allFinite() || !system.B.allFinite() || !system.C.allFinite())
+            return unexpected(mpc_construction_error{controller_construction_error::non_finite_system});
         Matrix<Scalar, NX, NX> Q_state = system.C.transpose() * admitted->Q * system.C;
+        if(!Q_state.allFinite())
+            return unexpected(mpc_construction_error{controller_construction_error::non_finite_state_space_weight});
         auto terminal = detail::mpc_terminal_cost<Scalar, NX, NU, NY>(system, Q_state, admitted->R, admitted->Qf);
         if(!terminal)
             return unexpected(terminal.error());

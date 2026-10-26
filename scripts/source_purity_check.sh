@@ -17,7 +17,12 @@
 #   Rule 2  No throw statement. Scans lib/ and examples/. The backport header is
 #           exempt at FILE level, because it holds two throw statements -- the
 #           gated one its contract names and a bare rethrow beside it. A
-#           line-level exemption would miss the second.
+#           line-level exemption would miss the second. One construct is
+#           sanctioned anywhere, at CONSTRUCT level: a bare rethrow whose nearest
+#           enclosing handler, opened on a preceding line, catches the runtime's
+#           forced-unwind type. It raises nothing new; it lets thread
+#           cancellation pass through a catch-all instead of aborting the
+#           process. A file-level exemption would admit any later throw there.
 #
 #   Rule 3  No run-time type identification. Scans lib/ and examples/. Already
 #           at zero; the rule makes that permanent.
@@ -137,7 +142,12 @@
 #      script's own path excluded by NAME rather than by extension -- extension
 #      is precisely the exclusion that lets documentation pages through.
 #
-#   8. Rule 8 matches identifier FORMS, never the English words around them.
+#   8. Rule 2's sanctioned rethrow is located by counting braces on lines with
+#      their line comment removed, not by parsing. A brace inside a string or
+#      character literal shifts the count, and a handler written on one line
+#      with its rethrow is not recognized, so that rethrow is reported.
+#
+#   9. Rule 8 matches identifier FORMS, never the English words around them.
 #      That is a measurement, not a preference: a pattern keyed on the word
 #      "phase" reported 41 hits of which 20 were motion-profile phases, a stage
 #      of a reference linear-algebra routine, and tutorial headings. It carries
@@ -169,7 +179,7 @@ for arg in "$@"; do
             self_test=1
             ;;
         -h|--help)
-            sed -n '2,70p' "${BASH_SOURCE[0]}"
+            sed -n '2,75p' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         -*)
@@ -429,15 +439,60 @@ rule_1_unwrap()
     return 0
 }
 
+# Prints file:line for each bare rethrow whose innermost open handler catches
+# the forced-unwind type, tracking handler scopes by brace depth.
+forced_unwind_rethrows()
+{
+    local files
+    files="$(grep -rlE --include='*.h' --include='*.hpp' --include='*.cpp' '__forced_unwind' \
+        "${scan_exclusions[@]}" "${scan_dirs[@]}" 2>/dev/null || true)"
+    [ -z "${files}" ] && return 0
+    printf '%s\n' "${files}" | while IFS= read -r file; do
+        awk '
+            FNR == 1 { depth = 0; top = 0; pending = "" }
+            {
+                line = $0
+                sub(/\/\/.*/, "", line)
+                if (match(line, /(^|[^[:alnum:]_])catch[[:space:]]*\([^)]*\)/)) {
+                    handler = substr(line, RSTART, RLENGTH)
+                    sub(/^.*catch[[:space:]]*\(/, "", handler)
+                    sub(/\)$/, "", handler)
+                    gsub(/[[:space:]]+/, "", handler)
+                    pending = handler
+                }
+                if (line ~ /^[[:space:]]*throw[[:space:]]*;[[:space:]]*$/ && top > 0 \
+                    && (kind[top] == "abi::__forced_unwind&" || kind[top] == "constabi::__forced_unwind&"))
+                    print FILENAME ":" FNR
+                for (i = 1; i <= length(line); i++) {
+                    c = substr(line, i, 1)
+                    if (c == "{") {
+                        depth++
+                        if (pending != "") { top++; opened[top] = depth; kind[top] = pending; pending = "" }
+                    } else if (c == "}") {
+                        if (top > 0 && opened[top] == depth) top--
+                        depth--
+                    }
+                }
+            }
+        ' "${file}"
+    done
+}
+
 rule_2_throw()
 {
     select_scan_dirs lib examples
     [ ${#scan_dirs[@]} -eq 0 ] && return 0
+    local sanctioned
+    sanctioned="$(forced_unwind_rethrows)"
     grep -rn --include='*.h' --include='*.hpp' --include='*.cpp' \
         -E '(^|[^[:alnum:]_])throw([[:space:]]|;|$)' \
         "${scan_exclusions[@]}" "${scan_dirs[@]}" 2>/dev/null \
         | comment_filter \
         | grep -v '/detail/expected\.h:' \
+        | awk -v sanctioned="${sanctioned}" '
+            BEGIN { n = split(sanctioned, entries, "\n"); for (i = 1; i <= n; i++) if (entries[i] != "") keep[entries[i]] = 1 }
+            { split($0, field, ":"); if (!((field[1] ":" field[2]) in keep)) print }
+        ' \
         || true
     return 0
 }
@@ -632,7 +687,7 @@ run_rule()
     fi
 
     local expected_count=1
-    if [ "${id}" = "8" ]; then
+    if [ "${id}" = "2" ] || [ "${id}" = "8" ]; then
         expected_count=2
     fi
 

@@ -702,11 +702,14 @@ TEST_CASE("mpc with Qf unset refuses every Riccati failure with the solve's own 
         require_riccati_refusal(nilpotent_plant(), cfg, ctrlpp::dare_error::singular_a);
     }
 
-    SECTION("non_finite_input: a state weight that overflows when mapped through C")
+    SECTION("non_finite_input never arrives: a state weight that overflows when mapped through C is refused first")
     {
         auto sys = make_double_integrator();
         sys.C *= 1e200;
-        require_riccati_refusal(sys, cfg, ctrlpp::dare_error::non_finite_input);
+        CHECK(refusal_as<ctrlpp::dare_error>(riccati_on(sys, cfg)) == ctrlpp::dare_error::non_finite_input);
+
+        auto const created = Mpc::create(sys, cfg);
+        CHECK(refusal_as<ctrlpp::controller_construction_error>(created) == ctrlpp::controller_construction_error::non_finite_state_space_weight);
     }
 
     SECTION("non_stabilizable: a zero state weight on a Jordan block at one")

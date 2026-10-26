@@ -6,9 +6,10 @@
 /// Setup fallibility is reported through `setup` returning
 /// `ctrlpp::expected<void, nlopt_setup_error>`. Note that NLopt's C++ API throws
 /// by upstream design (`setup` and `solve` contain every exception, standard or
-/// not, and report it as an `nlopt_setup_error` or as `solve_status::error`), so
-/// this opt-in backend requires exception support and is exempt from the
-/// library's embedded no-exceptions floor.
+/// not, and report it as an `nlopt_setup_error` or as `solve_status::error`,
+/// except a forced unwind on libstdc++, which is re-raised), so this opt-in
+/// backend requires exception support and is exempt from the library's embedded
+/// no-exceptions floor.
 
 #include "ctrlpp/expected.h"
 
@@ -28,6 +29,10 @@
 #include <utility>
 #include <exception>
 #include <type_traits>
+
+#if defined(__GLIBCXX__)
+#include <cxxabi.h>
+#endif
 
 namespace ctrlpp
 {
@@ -198,8 +203,8 @@ private:
         opt_.set_local_optimizer(local);
     }
 
-    // The catch-all also catches a forced unwind (glibc's thread cancellation) and does not re-raise it, as
-    // NLopt's own callback wrappers already do, so cancelling a thread inside setup or solve aborts the process.
+    // A forced unwind (glibc thread cancellation) is re-raised; one raised inside optimize is still ended by NLopt's callback wrapper.
+    // https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_exceptions.html#intro.using.exception.compat
     template <typename Result, typename Fn>
     static auto contained(Fn&& fn, Result on_allocation_failure, Result on_other_failure) -> Result
     {
@@ -207,6 +212,12 @@ private:
         {
             return std::forward<Fn>(fn)();
         }
+#if defined(__GLIBCXX__)
+        catch(const abi::__forced_unwind&)
+        {
+            throw;
+        }
+#endif
         catch(const std::bad_alloc&)
         {
             return on_allocation_failure;

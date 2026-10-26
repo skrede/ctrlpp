@@ -18,7 +18,7 @@ and the likely response would be to weaken the gate.
 | File | Rule it violates |
 |---|---|
 | `lib/fixture_unwrap.h` | 1, the unwrap accessor |
-| `lib/fixture_throw.h` | 2, a throw statement |
+| `lib/fixture_throw.h` | 2, a throw statement and a bare rethrow in a catch-all, beside the sanctioned forced-unwind rethrow |
 | `lib/fixture_rtti.h` | 3, run-time type identification |
 | `lib/fixture_missing_class_annotation.h` | 4a, a manifest declaration missing its class-level attribute |
 | `lib/fixture_site_annotation.h` | 4b, a site-level attribute on a trivial getter |
@@ -35,13 +35,17 @@ bash scripts/source_purity_check.sh --self-test
 ```
 
 It asserts a nonzero detection count and, more importantly, the exact expected
-count for each rule. Every rule expects one violation except the
-planning-identifier rule, which expects its two distinct fixture families. The
+count for each rule. Every rule expects one violation except two. The
+planning-identifier rule expects its two distinct fixture families. The throw
+rule expects two: the throw statement and the rethrow in the catch-all. The
+rethrow inside the forced-unwind handler before it is the one construct the
+rule sanctions, so it must not count, and the catch-all's must, which shows
+the sanction is scoped to that handler and nothing else. The
 exact counts make this a real self-test rather than a check that something went
 wrong: a script that crashed before scanning would also exit nonzero, and only
 the counts distinguish the two. They also catch the removal of a comment
 filter, because the fixtures for rules 1, 2, 3 and 4b each carry the banned
-pattern once in a comment as well as once in code.
+pattern once in a comment as well as in code.
 
 Rules 5 and 8 have no comment filter and their fixtures carry the banned pattern
 once in total. That is deliberate in both cases: a mention of the exception-mode

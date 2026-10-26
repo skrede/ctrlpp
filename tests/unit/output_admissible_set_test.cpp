@@ -20,8 +20,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <iomanip>
+#include <variant>
 #include <optional>
 #include <algorithm>
+#include <type_traits>
 
 namespace
 {
@@ -336,6 +338,33 @@ ctrlpp::Matrix<double, 1, 1> scalar(double value)
     return ctrlpp::Matrix<double, 1, 1>::Constant(value);
 }
 
+template <typename Refusal, typename Result>
+std::optional<Refusal> refusal_as(const Result& result)
+{
+    if(result.has_value())
+        return std::nullopt;
+    if constexpr(std::is_same_v<typename Result::error_type, Refusal>)
+        return result.error();
+    else if(auto const* cause = std::get_if<Refusal>(&result.error()))
+        return *cause;
+    return std::nullopt;
+}
+
+// The pose is proved by the Riccati solve on the same operands, and terminal_ingredients must carry that solve's own cause.
+void require_riccati_cause(const plant<2, 1>& sys, const ctrlpp::Matrix<double, 2, 2>& Q, ctrlpp::dare_error cause)
+{
+    auto const b = symmetric_bounds<2, 1>(1.0, 10.0);
+    CHECK(refusal_as<ctrlpp::dare_error>(ctrlpp::dare<double, 2, 1>(sys.A, sys.B, Q, scalar(1.0))) == cause);
+    auto const ingredients = ctrlpp::terminal_ingredients<double, 2, 1>(sys.A, sys.B, Q, scalar(1.0), b.u_min, b.u_max, b.x_min, b.x_max);
+    CHECK_FALSE(ingredients.has_value());
+    CHECK(refusal_as<ctrlpp::dare_error>(ingredients) == cause);
+}
+
+plant<2, 1> diagonal_plant(double a1, double a2, double b1, double b2)
+{
+    return {.A = ctrlpp::Vector<double, 2>(a1, a2).asDiagonal(), .B = (ctrlpp::Matrix<double, 2, 1>() << b1, b2).finished()};
+}
+
 }
 
 TEST_CASE("The ellipsoid option's QP box is not invariant under the LQR law", "[terminal_set][output_admissible]")
@@ -561,23 +590,52 @@ TEST_CASE("terminal_ingredients refuses a singular input weight whatever A is", 
 
     SECTION("a zero input weight")
     {
-        auto const ingredients = ingredients_of(double_integrator(), 0.0);
-        REQUIRE_FALSE(ingredients.has_value());
-        CHECK(ingredients.error() == ctrlpp::terminal_set_error::singular_input_weight);
+        CHECK(refusal_as<ctrlpp::terminal_set_error>(ingredients_of(double_integrator(), 0.0)) == ctrlpp::terminal_set_error::singular_input_weight);
     }
 
-    SECTION("a rank-deficient A with a definite input weight is still a failed Riccati solve")
+    SECTION("a rank-deficient A with a definite input weight is the Riccati solve's own refusal")
     {
-        auto const ingredients = ingredients_of(nilpotent, 1.0);
-        REQUIRE_FALSE(ingredients.has_value());
-        CHECK(ingredients.error() == ctrlpp::terminal_set_error::dare_failed);
+        CHECK(refusal_as<ctrlpp::dare_error>(ingredients_of(nilpotent, 1.0)) == ctrlpp::dare_error::singular_a);
     }
 
     SECTION("a rank-deficient A does not hide a zero input weight")
     {
-        auto const ingredients = ingredients_of(nilpotent, 0.0);
-        REQUIRE_FALSE(ingredients.has_value());
-        CHECK(ingredients.error() == ctrlpp::terminal_set_error::singular_input_weight);
+        CHECK(refusal_as<ctrlpp::terminal_set_error>(ingredients_of(nilpotent, 0.0)) == ctrlpp::terminal_set_error::singular_input_weight);
+    }
+}
+
+TEST_CASE("terminal_ingredients carries the Riccati solve's own refusal", "[terminal_set][riccati_refusal]")
+{
+    ctrlpp::Matrix<double, 2, 2> const Q = ctrlpp::Matrix<double, 2, 2>::Identity();
+
+    SECTION("singular_a: a nilpotent A")
+    {
+        require_riccati_cause({.A = (ctrlpp::Matrix<double, 2, 2>() << 0.0, 1.0, 0.0, 0.0).finished(), .B = (ctrlpp::Matrix<double, 2, 1>() << 0.0, 1.0).finished()}, Q,
+                              ctrlpp::dare_error::singular_a);
+    }
+
+    SECTION("non_stabilizable: a zero state weight on a Jordan block at one")
+    {
+        require_riccati_cause(double_integrator(), ctrlpp::Matrix<double, 2, 2>::Zero(), ctrlpp::dare_error::non_stabilizable);
+    }
+
+    SECTION("arithmetic_limit: a controllable pair whose solution keeps less than half the significand")
+    {
+        require_riccati_cause(diagonal_plant(2.0, 0.5, 1e-6, 1.0), Q, ctrlpp::dare_error::arithmetic_limit);
+    }
+
+    SECTION("singular_u11: an exactly uncontrollable unstable mode")
+    {
+        require_riccati_cause(diagonal_plant(2.0, 0.5, 0.0, 1.0), Q, ctrlpp::dare_error::singular_u11);
+    }
+
+    SECTION("an ellipsoid refusal stays a terminal-set refusal")
+    {
+        auto b = symmetric_bounds<2, 1>(1.0, 10.0);
+        b.u_min = scalar(0.5);
+        auto const sys = double_integrator();
+        auto const ingredients = ctrlpp::terminal_ingredients<double, 2, 1>(sys.A, sys.B, Q, scalar(1.0), b.u_min, b.u_max, b.x_min, b.x_max);
+        CHECK(refusal_as<ctrlpp::terminal_set_error>(ingredients) == ctrlpp::terminal_set_error::input_zero_not_interior);
     }
 }
 

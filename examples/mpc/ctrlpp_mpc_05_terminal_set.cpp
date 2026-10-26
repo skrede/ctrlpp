@@ -10,6 +10,7 @@
 
 #include <cstdlib>
 #include <iomanip>
+#include <variant>
 #include <iostream>
 #include <string_view>
 
@@ -24,8 +25,6 @@ std::string_view name_of(ctrlpp::terminal_set_error e)
             return "input_zero_not_interior";
         case ctrlpp::terminal_set_error::empty_terminal_set:
             return "empty_terminal_set";
-        case ctrlpp::terminal_set_error::dare_failed:
-            return "dare_failed";
         case ctrlpp::terminal_set_error::halfplanes_truncated:
             return "halfplanes_truncated";
         case ctrlpp::terminal_set_error::not_converged:
@@ -44,6 +43,30 @@ std::string_view name_of(ctrlpp::terminal_set_error e)
             return "non_finite_input";
         case ctrlpp::terminal_set_error::singular_input_weight:
             return "singular_input_weight";
+    }
+    return "unknown";
+}
+
+std::string_view name_of(ctrlpp::dare_error e)
+{
+    switch(e)
+    {
+        case ctrlpp::dare_error::non_stabilizable:
+            return "non_stabilizable";
+        case ctrlpp::dare_error::non_finite_input:
+            return "non_finite_input";
+        case ctrlpp::dare_error::singular_a:
+            return "singular_a";
+        case ctrlpp::dare_error::singular_r:
+            return "singular_r";
+        case ctrlpp::dare_error::singular_u11:
+            return "singular_u11";
+        case ctrlpp::dare_error::non_psd_solution:
+            return "non_psd_solution";
+        case ctrlpp::dare_error::schur_failed:
+            return "schur_failed";
+        case ctrlpp::dare_error::arithmetic_limit:
+            return "arithmetic_limit";
     }
     return "unknown";
 }
@@ -73,7 +96,7 @@ int main()
     auto ingredients = ctrlpp::terminal_ingredients<double, NX, NU>(sys.A, sys.B, Q, R, -u_max, u_max, -x_max, x_max);
     if(!ingredients)
     {
-        std::cerr << "terminal ingredients refused: " << name_of(ingredients.error()) << "\n";
+        std::cerr << "terminal ingredients refused: " << std::visit([](auto cause) { return name_of(cause); }, ingredients.error()) << "\n";
         return EXIT_FAILURE;
     }
     if(!ingredients->invariant_set)
