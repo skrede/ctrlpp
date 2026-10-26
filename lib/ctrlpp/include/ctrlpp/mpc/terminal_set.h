@@ -45,6 +45,11 @@ namespace ctrlpp
 ///                              zero, or a bound is NaN, so the origin is not interior.
 ///  * dimension_unsupported   : the state dimension exceeds the four that vertex
 ///                              enumeration is restricted to.
+///  * certification_failed    : the constructed set failed its own check on its vertices
+///                              (bounded, inside Y, mapped into itself by A_K, each within
+///                              the construction's rounding bounds), or a vertex enumeration
+///                              returned fewer than NX + 1 vertices, too few to describe a
+///                              full-dimensional polytope; no set is returned.
 enum class terminal_set_error : std::uint8_t
 {
     input_zero_not_interior,
@@ -56,6 +61,7 @@ enum class terminal_set_error : std::uint8_t
     unbounded_terminal_set,
     origin_not_interior,
     dimension_unsupported,
+    certification_failed,
 };
 
 /// @brief Ellipsoid {x : x^T P x <= alpha}, P positive definite, alpha > 0.

@@ -4,6 +4,8 @@
 #include "ctrlpp/mpc/invariant_set.h"
 #include "ctrlpp/mpc/output_admissible_set.h"
 
+#include "ctrlpp/mpc/detail/output_admissible_rows.h"
+
 #include "ctrlpp/types.h"
 
 #include <Eigen/Dense>
@@ -77,6 +79,27 @@ void require_no_violation(const ctrlpp::polytopic_set<double, N>& set, const ora
 }
 
 template <std::size_t N>
+bool certified(const ctrlpp::polytopic_set<double, N>& set, const square<N>& A_K, const ctrlpp::Matrix<double, 1, N>& K, const box_bounds<N, 1>& b)
+{
+    auto const outputs = ctrlpp::detail::finite_outputs<double, N, 1>(K, b.u_min, b.u_max, b.x_min, b.x_max);
+    return ctrlpp::detail::certified_admissible<double, N>(set, outputs, A_K, 1.0);
+}
+
+template <std::size_t N>
+ctrlpp::polytopic_set<double, N> without_row(const ctrlpp::polytopic_set<double, N>& set, Eigen::Index removed)
+{
+    ctrlpp::polytopic_set<double, N> kept{.H = Eigen::Matrix<double, Eigen::Dynamic, static_cast<int>(N)>(set.H.rows() - 1, static_cast<Eigen::Index>(N)), .h = Eigen::VectorXd(set.H.rows() - 1)};
+    for(Eigen::Index i = 0, k = 0; i < set.H.rows(); ++i)
+    {
+        if(i == removed)
+            continue;
+        kept.H.row(k) = set.H.row(i);
+        kept.h(k++) = set.h(i);
+    }
+    return kept;
+}
+
+template <std::size_t N>
 void require_recession_refusal(const square<N>& A_K, const box_bounds<N, 1>& b)
 {
     ctrlpp::Matrix<double, 1, N> const K = ctrlpp::Matrix<double, 1, N>::Zero();
@@ -104,6 +127,56 @@ plant<2, 1> double_integrator()
     return {.A = (square<2>() << 1.0, dt, 0.0, 1.0).finished(), .B = (ctrlpp::Matrix<double, 2, 1>() << 0.5 * dt * dt, dt).finished()};
 }
 
+plant<2, 1> rotation_plant()
+{
+    return {.A = (square<2>() << 0.0, -1.0, 1.0, 0.0).finished(), .B = (ctrlpp::Matrix<double, 2, 1>() << -1.0, 1.0).finished()};
+}
+
+template <std::size_t N>
+struct lqr_set
+{
+    ctrlpp::polytopic_set<double, N> set;
+    ctrlpp::Matrix<double, 1, N> K;
+    square<N> A_K;
+};
+
+template <std::size_t N>
+lqr_set<N> invariant_set_of(const plant<N, 1>& sys, double r, const box_bounds<N, 1>& b)
+{
+    ctrlpp::Matrix<double, 1, 1> const R = ctrlpp::Matrix<double, 1, 1>::Constant(r);
+    auto const ingredients = ctrlpp::terminal_ingredients<double, N, 1>(sys.A, sys.B, square<N>::Identity(), R, b.u_min, b.u_max, b.x_min, b.x_max);
+    REQUIRE(ingredients.has_value());
+    REQUIRE(ingredients->invariant_set.has_value());
+    auto const K = lqr_gain<N, 1>(sys, ingredients->Qf, R);
+    return {.set = *ingredients->invariant_set, .K = K, .A_K = sys.A + sys.B * K};
+}
+
+ctrlpp::polytopic_set<double, 2> vertexless_set(bool contradictory)
+{
+    ctrlpp::polytopic_set<double, 2> set{.H = Eigen::Matrix<double, Eigen::Dynamic, 2>(1, 2), .h = Eigen::VectorXd::Constant(1, 1.0)};
+    set.H << 1.0, 0.0;
+    if(!contradictory)
+        return set;
+    set.H.resize(4, 2);
+    set.H << 1.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, -1.0;
+    set.h.resize(4);
+    set.h << -1.0, -1.0, 1.0, 1.0;
+    return set;
+}
+
+void require_vertexless_refusal(const ctrlpp::polytopic_set<double, 2>& set)
+{
+    square<2> const A_K = (square<2>() << 0.5, 1.0, 0.0, 0.5).finished();
+    ctrlpp::Matrix<double, 1, 2> const K(-0.2, -0.4);
+    auto const b = symmetric_bounds<2, 1>(1.0, 1.0);
+    auto const outputs = ctrlpp::detail::finite_outputs<double, 2, 1>(K, b.u_min, b.u_max, b.x_min, b.x_max);
+    auto const X = ctrlpp::detail::stein_lyapunov_matrix<double, 2>(A_K);
+    REQUIRE(X.has_value());
+    auto const result = ctrlpp::detail::grow_to_fixed_point<double, 2>(set, outputs, A_K, A_K * A_K, *X, 1.0);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == ctrlpp::terminal_set_error::certification_failed);
+}
+
 struct sweep_counts
 {
     std::int32_t returned = 0;
@@ -111,6 +184,7 @@ struct sweep_counts
     std::int32_t unbounded = 0;
     std::int32_t unbounded_although_spanning = 0;
     std::int32_t not_converged = 0;
+    std::int32_t certification_failed = 0;
     std::int32_t other_refusal = 0;
 };
 
@@ -120,6 +194,8 @@ void tally_refusal(sweep_counts& counts, ctrlpp::terminal_set_error error)
         ++counts.unbounded;
     else if(error == ctrlpp::terminal_set_error::not_converged)
         ++counts.not_converged;
+    else if(error == ctrlpp::terminal_set_error::certification_failed)
+        ++counts.certification_failed;
     else
         ++counts.other_refusal;
 }
@@ -151,6 +227,7 @@ void run_case(const plant<N, 1>& sys, const box_bounds<N, 1>& b, bool two_sided,
     }
     ++counts.returned;
     CHECK(first_steps_span<N>(loop));
+    CHECK(certified<N>(*ingredients->invariant_set, sys.A + sys.B * K, K, b));
     require_no_violation<N>(*ingredients->invariant_set, loop, sampler, sweep_samples);
 }
 
@@ -213,7 +290,7 @@ box_bounds<N, 1> one_sided_box(std::mt19937& g, bool inputs_too)
 void report(const char* name, const sweep_counts& counts)
 {
     WARN(name << ": returned " << counts.returned << ", unbounded_terminal_set " << counts.unbounded << " (" << counts.unbounded_although_spanning << " although the first steps span), not_converged "
-              << counts.not_converged << ", other refusals " << counts.other_refusal << ", terminal_ingredients refusals " << counts.ingredients_refused);
+              << counts.not_converged << ", certification_failed " << counts.certification_failed << ", other refusals " << counts.other_refusal << ", terminal_ingredients refusals " << counts.ingredients_refused);
 }
 
 template <std::size_t N>
@@ -243,7 +320,7 @@ void two_sided_sweep(const char* name, std::uint32_t seed, std::int32_t cases, b
         run_case<N>(sys, b, true, sampler, counts);
     }
     report(name, counts);
-    CHECK(counts.unbounded + counts.not_converged + counts.other_refusal == 0);
+    CHECK(counts.unbounded + counts.not_converged + counts.certification_failed + counts.other_refusal == 0);
 }
 
 }
@@ -313,7 +390,7 @@ TEST_CASE("One-sided state and input bounds at four states", "[output_admissible
 
 TEST_CASE("A rotation whose degenerate corners repeat vertices yields a bounded admissible set", "[output_admissible][property][degenerate]")
 {
-    plant<2, 1> const sys{.A = (square<2>() << 0.0, -1.0, 1.0, 0.0).finished(), .B = (ctrlpp::Matrix<double, 2, 1>() << -1.0, 1.0).finished()};
+    auto const sys = rotation_plant();
     auto const b = symmetric_bounds<2, 1>(1.0, 1.0);
     ctrlpp::Matrix<double, 1, 1> const R = ctrlpp::Matrix<double, 1, 1>::Identity();
     auto const ingredients = ctrlpp::terminal_ingredients<double, 2, 1>(sys.A, sys.B, square<2>::Identity(), R, b.u_min, b.u_max, b.x_min, b.x_max);
@@ -355,4 +432,44 @@ TEST_CASE("Half-integer plants at three states", "[output_admissible][property][
 TEST_CASE("Generic plants with asymmetric boxes at four states", "[output_admissible][property][sweep]")
 {
     two_sided_sweep<4>("four states, generic", 42U, 100, false);
+}
+
+TEST_CASE("The double integrator's output admissible set certifies on its own vertices and fails with any facet removed", "[output_admissible][property][certify]")
+{
+    auto const b = symmetric_bounds<2, 1>(1.0, 10.0);
+    auto const solved = invariant_set_of<2>(double_integrator(), 1.0, b);
+    REQUIRE(solved.set.H.rows() == 30);
+    CHECK(certified<2>(solved.set, solved.A_K, solved.K, b));
+    for(Eigen::Index i = 0; i < solved.set.H.rows(); ++i)
+    {
+        INFO("removed row " << i);
+        CHECK_FALSE(certified<2>(without_row<2>(solved.set, i), solved.A_K, solved.K, b));
+    }
+}
+
+TEST_CASE("The output admissible set without state bounds certifies on its own vertices", "[output_admissible][property][certify]")
+{
+    auto const b = symmetric_bounds<2, 1>(1.0, inf);
+    auto const solved = invariant_set_of<2>(double_integrator(), 0.1, b);
+    REQUIRE(solved.set.H.rows() == 16);
+    CHECK(certified<2>(solved.set, solved.A_K, solved.K, b));
+}
+
+TEST_CASE("The rotation plant's output admissible set certifies on its own vertices", "[output_admissible][property][certify]")
+{
+    auto const b = symmetric_bounds<2, 1>(1.0, 1.0);
+    auto const solved = invariant_set_of<2>(rotation_plant(), 1.0, b);
+    CHECK(certified<2>(solved.set, solved.A_K, solved.K, b));
+}
+
+TEST_CASE("A set without vertices is refused and never taken as a fixed point", "[output_admissible][property][certify]")
+{
+    SECTION("rows that contradict each other")
+    {
+        require_vertexless_refusal(vertexless_set(true));
+    }
+    SECTION("fewer rows than states")
+    {
+        require_vertexless_refusal(vertexless_set(false));
+    }
 }
