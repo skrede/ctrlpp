@@ -17,6 +17,7 @@
 
 #include <utility>
 #include <type_traits>
+#include <initializer_list>
 
 namespace
 {
@@ -28,6 +29,16 @@ int live_probes = 0;
 
 struct probe_failure
 {
+};
+
+// An error cause a probe converts from, as an unexpected<G> whose G is not E.
+// Armed, the conversion throws before any storage is touched, which is the only
+// way an assignment over an error state can throw here: the probe's own
+// assignment never does.
+struct probe_cause
+{
+    int payload;
+    bool fails;
 };
 
 // Which constructor of a copy made FROM an instance throws. Armed per instance,
@@ -96,6 +107,13 @@ public:
         ++live_probes;
     }
 
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    probe(probe_cause cause)
+        : m_cell(adopt(cause))
+    {
+        ++live_probes;
+    }
+
     // Assignment never throws: the same-state control cells assign rather than
     // reinitialize, and they must stay a clean baseline against which the
     // cross-state cells are read.
@@ -139,6 +157,13 @@ public:
     }
 
 private:
+    static int* adopt(probe_cause cause)
+    {
+        if (cause.fails)
+            throw probe_failure{};
+        return new int(cause.payload);
+    }
+
     trip trip_after_copy_check() const
     {
         if constexpr (!NothrowCopy)
@@ -395,6 +420,123 @@ void check_void_transition_rolls_back(const char* label, assign_kind kind)
     CHECK(live_probes == baseline);
 }
 
+template <typename G>
+ctrlpp::unexpected<G> make_source()
+{
+    if constexpr (std::is_same_v<G, probe_cause>)
+        return ctrlpp::unexpected<G>{probe_cause{source_payload, false}};
+    else
+        return ctrlpp::unexpected<G>{G{source_payload}};
+}
+
+void arm_source(ctrlpp::unexpected<probe_cause>& source, assign_kind)
+{
+    source.error().fails = true;
+}
+
+template <typename G>
+void arm_source(ctrlpp::unexpected<G>& source, assign_kind kind)
+{
+    source.error().arm(kind == assign_kind::copy ? trip::on_copy : trip::on_move);
+}
+
+template <typename X>
+X make_subject(held which, int payload)
+{
+    if constexpr (std::is_void_v<typename X::value_type>)
+        return make_void_in_state<typename X::error_type>(which, payload);
+    else
+        return make_in_state<typename X::value_type, typename X::error_type>(which, payload);
+}
+
+template <typename X>
+bool holds_payload(const X& subject, int payload)
+{
+    if constexpr (std::is_void_v<typename X::value_type>)
+        return subject.has_value() || subject.error().payload() == payload;
+    else
+        return active_payload(subject) == payload;
+}
+
+template <typename X, typename G>
+void assign_from(X& destination, ctrlpp::unexpected<G>& source, assign_kind kind)
+{
+    if (kind == assign_kind::copy)
+        destination = std::as_const(source);
+    else
+        destination = std::move(source);
+}
+
+template <typename X, typename G>
+void check_error_assignment_completes(const char* label, held from, assign_kind kind)
+{
+    INFO(label << ": unexpected " << describe(kind) << " over a " << describe(from) << " state");
+
+    const int baseline = live_probes;
+    {
+        auto destination = make_subject<X>(from, destination_payload);
+        auto source      = make_source<G>();
+        assign_from(destination, source, kind);
+
+        REQUIRE(!destination.has_value());
+        CHECK(destination.error().payload() == source_payload);
+    }
+    CHECK(live_probes == baseline);
+}
+
+// The constructed or assigned error throws. The destination must keep its
+// original state and payload, and no instance is created or destroyed on net.
+template <typename X, typename G>
+void check_error_assignment_rolls_back(const char* label, held from, assign_kind kind)
+{
+    INFO(label << ": throwing unexpected " << describe(kind) << " over a " << describe(from) << " state");
+
+    const int baseline = live_probes;
+    {
+        auto destination = make_subject<X>(from, destination_payload);
+        auto source      = make_source<G>();
+        arm_source(source, kind);
+
+        const int before = live_probes;
+        bool propagated  = false;
+        try
+        {
+            assign_from(destination, source, kind);
+        }
+        catch (const probe_failure&)
+        {
+            propagated = true;
+        }
+
+        CHECK(propagated);
+        CHECK(destination.has_value() == (from == held::value));
+        CHECK(holds_payload(destination, destination_payload));
+        CHECK(live_probes == before);
+    }
+    CHECK(live_probes == baseline);
+}
+
+// Over a value the error is constructed from G, so a cell is armed wherever
+// that construction can throw; over an error only the cause's conversion can.
+template <typename X, typename G>
+void drive_error_assignment(const char* label)
+{
+    using E = typename X::error_type;
+    for (held from : {held::value, held::error})
+        for (assign_kind kind : {assign_kind::copy, assign_kind::move})
+            check_error_assignment_completes<X, G>(label, from, kind);
+
+    if constexpr (!std::is_nothrow_constructible_v<E, const G&>)
+        check_error_assignment_rolls_back<X, G>(label, held::value, assign_kind::copy);
+    if constexpr (!std::is_nothrow_constructible_v<E, G>)
+        check_error_assignment_rolls_back<X, G>(label, held::value, assign_kind::move);
+    if constexpr (std::is_same_v<G, probe_cause>)
+    {
+        check_error_assignment_rolls_back<X, G>(label, held::error, assign_kind::copy);
+        check_error_assignment_rolls_back<X, G>(label, held::error, assign_kind::move);
+    }
+}
+
 }
 
 // Both members construct without throwing from either flavor's argument, so
@@ -450,4 +592,34 @@ TEST_CASE("expected<void, E> assignment transitions are a no-regression control"
 
     check_void_transition_rolls_back<throwing_both_error_probe>("void control", assign_kind::copy);
     check_void_transition_rolls_back<throwing_both_error_probe>("void control", assign_kind::move);
+}
+
+// Assigning an unexpected over a value reinitializes the union through the same
+// three branches as a cross-state assignment, chosen by how the error is built
+// from G: in place when that cannot throw, through a staged error when the error
+// moves without throwing, and by staging the value out and restoring it
+// otherwise.
+TEST_CASE("expected assigns an unexpected with the strong guarantee", "[expected][transition]")
+{
+    using staged_error = ctrlpp::expected<throwing_copy_value_probe, throwing_copy_error_probe>;
+    using staged_value = ctrlpp::expected<throwing_copy_value_probe, throwing_both_error_probe>;
+    using pinned_value = ctrlpp::expected<throwing_both_value_probe, throwing_copy_error_probe>;
+    using no_fallback  = ctrlpp::expected<throwing_both_value_probe, throwing_both_error_probe>;
+
+    static_assert(!std::is_assignable_v<no_fallback&, ctrlpp::unexpected<probe_cause>>);
+    static_assert(!std::is_assignable_v<no_fallback&, const ctrlpp::unexpected<throwing_both_error_probe>&>);
+
+    drive_error_assignment<staged_error, throwing_copy_error_probe>("staged error, same type");
+    drive_error_assignment<staged_value, throwing_both_error_probe>("staged value, same type");
+    drive_error_assignment<staged_error, probe_cause>("staged error, converted cause");
+    drive_error_assignment<staged_value, probe_cause>("staged value, converted cause");
+    drive_error_assignment<pinned_value, probe_cause>("throwing value, converted cause");
+}
+
+// The void specialization has no value to preserve: the error is constructed
+// before the flag flips, so a throw leaves it reporting success.
+TEST_CASE("expected<void, E> assigns an unexpected with the strong guarantee", "[expected][transition]")
+{
+    drive_error_assignment<ctrlpp::expected<void, throwing_both_error_probe>, throwing_both_error_probe>("void, same type");
+    drive_error_assignment<ctrlpp::expected<void, throwing_both_error_probe>, probe_cause>("void, converted cause");
 }

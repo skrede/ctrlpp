@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <utility>
 #include <version>
+#include <type_traits>
 
 #if defined(__cpp_lib_expected)
     #include <expected>
@@ -39,6 +40,24 @@ struct pinned
 
     std::int32_t id;
     double gain;
+};
+
+struct tallied
+{
+    explicit tallied(std::int32_t& destructions)
+        : destroyed{destructions}
+    {
+    }
+
+    tallied(const tallied&) = delete;
+    tallied(tallied&&) = delete;
+
+    ~tallied()
+    {
+        ++destroyed;
+    }
+
+    std::int32_t& destroyed;
 };
 
 auto make_pinned(std::int32_t id) -> ctrlpp::expected<pinned, fetch_error>
@@ -195,6 +214,69 @@ TEST_CASE("expected move assignment crosses value and error states", "[expected]
     CHECK(target.error() == fetch_error::timed_out);
 }
 
+TEST_CASE("expected assigns an error over a value it can neither copy nor move", "[expected]")
+{
+    static_assert(!std::is_copy_constructible_v<pinned> && !std::is_move_constructible_v<pinned>);
+    static_assert(!std::is_copy_assignable_v<pinned> && !std::is_move_assignable_v<pinned>);
+
+    ctrlpp::expected<pinned, fetch_error> moved_in{std::in_place, 7, 0.5};
+    moved_in = ctrlpp::unexpected(fetch_error::timed_out);
+    REQUIRE(!moved_in.has_value());
+    CHECK(moved_in.error() == fetch_error::timed_out);
+
+    const auto refusal = ctrlpp::unexpected(fetch_error::not_found);
+    ctrlpp::expected<pinned, fetch_error> copied_in{std::in_place, 8, 1.5};
+    copied_in = refusal;
+    REQUIRE(!copied_in.has_value());
+    CHECK(copied_in.error() == fetch_error::not_found);
+}
+
+TEST_CASE("expected destroys the value exactly once when an error is assigned over it", "[expected]")
+{
+    std::int32_t destructions = 0;
+    {
+        ctrlpp::expected<tallied, fetch_error> result{std::in_place, destructions};
+        result = ctrlpp::unexpected(fetch_error::not_found);
+        CHECK(destructions == 1);
+        REQUIRE(!result.has_value());
+
+        result = ctrlpp::unexpected(fetch_error::timed_out);
+        CHECK(destructions == 1);
+        CHECK(result.error() == fetch_error::timed_out);
+    }
+    CHECK(destructions == 1);
+}
+
+TEST_CASE("expected replaces the error when an error is assigned over an error", "[expected]")
+{
+    ctrlpp::expected<pinned, fetch_error> result{ctrlpp::unexpect, fetch_error::not_found};
+
+    result = ctrlpp::unexpected(fetch_error::timed_out);
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == fetch_error::timed_out);
+
+    const auto refusal = ctrlpp::unexpected(fetch_error::not_found);
+    result = refusal;
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == fetch_error::not_found);
+}
+
+TEST_CASE("expected assigns an unexpected whose error converts to its error type", "[expected]")
+{
+    using described = ctrlpp::expected<std::int32_t, std::string>;
+    static_assert(!std::is_assignable_v<described&, ctrlpp::unexpected<payload>>);
+
+    described result{3};
+    result = ctrlpp::unexpected("setup refused");
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == "setup refused");
+
+    const ctrlpp::unexpected<const char*> again{"setup refused twice"};
+    result = again;
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == "setup refused twice");
+}
+
 TEST_CASE("expected value_or returns the fallback on error", "[expected]")
 {
     ctrlpp::expected<int, fetch_error> bad{ctrlpp::unexpected(fetch_error::not_found)};
@@ -241,6 +323,53 @@ TEST_CASE("expected void specialization copies and assigns across states", "[exp
 
     target = ctrlpp::expected<void, fetch_error>{}; // error -> value
     CHECK(target.has_value());
+}
+
+TEST_CASE("expected void specialization assigns an error over success and over an error", "[expected]")
+{
+    ctrlpp::expected<void, fetch_error> result{};
+
+    result = ctrlpp::unexpected(fetch_error::timed_out);
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == fetch_error::timed_out);
+
+    const auto refusal = ctrlpp::unexpected(fetch_error::not_found);
+    result = refusal;
+    REQUIRE(!result.has_value());
+    CHECK(result.error() == fetch_error::not_found);
+
+    ctrlpp::expected<void, fetch_error> copied_in{};
+    copied_in = refusal;
+    REQUIRE(!copied_in.has_value());
+    CHECK(copied_in.error() == fetch_error::not_found);
+
+    copied_in = ctrlpp::unexpected(fetch_error::timed_out);
+    REQUIRE(!copied_in.has_value());
+    CHECK(copied_in.error() == fetch_error::timed_out);
+
+    ctrlpp::expected<void, std::string> described{};
+    described = ctrlpp::unexpected("setup refused");
+    REQUIRE(!described.has_value());
+    CHECK(described.error() == "setup refused");
+
+    const ctrlpp::unexpected<const char*> again{"setup refused twice"};
+    described = again;
+    REQUIRE(!described.has_value());
+    CHECK(described.error() == "setup refused twice");
+}
+
+TEST_CASE("expected exposes the std member types on both specializations", "[expected]")
+{
+    using valued = ctrlpp::expected<pinned, fetch_error>;
+    static_assert(std::is_same_v<valued::value_type, pinned>);
+    static_assert(std::is_same_v<valued::error_type, fetch_error>);
+    static_assert(std::is_same_v<valued::unexpected_type, ctrlpp::unexpected<fetch_error>>);
+
+    using empty = ctrlpp::expected<void, std::string>;
+    static_assert(std::is_same_v<empty::value_type, void>);
+    static_assert(std::is_same_v<empty::error_type, std::string>);
+    static_assert(std::is_same_v<empty::unexpected_type, ctrlpp::unexpected<std::string>>);
+    SUCCEED();
 }
 
 #if defined(__cpp_lib_expected)

@@ -262,7 +262,13 @@ constructor is private and which only the class can make. `ctrlpp::expected`
 can then construct the object in its own storage through its `std::in_place`
 constructor, and guaranteed copy elision carries that storage to the caller, so
 the factory never holds a whole object in its frame. `particle_filter` uses it,
-because its object holds the whole particle set.
+because its object holds the whole particle set. When a step can only run on the
+constructed object, the factory builds one named result with `std::in_place`,
+assigns `ctrlpp::unexpected(cause)` to it if that step fails, and returns the
+result from its only return statement. The single return statement is what lets
+the compiler elide the copy (GCC elides it only when every return names the same
+variable), and `ctrlpp::expected` assigns an `unexpected` in place, as
+`std::expected` does, so the failure path builds no second object either.
 
 The three filters share `filter_error`, which gained
 `non_finite_process_noise`, `non_finite_measurement_noise`,

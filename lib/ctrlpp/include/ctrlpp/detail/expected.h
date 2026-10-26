@@ -108,6 +108,10 @@ struct bad_expected_access : std::exception
 #endif
 }
 
+template <typename T, typename E, typename GF>
+concept error_reinitializable = std::is_constructible_v<E, GF> && std::is_assignable_v<E&, GF> &&
+                                (std::is_nothrow_constructible_v<E, GF> || std::is_nothrow_move_constructible_v<T> || std::is_nothrow_move_constructible_v<E>);
+
 template <typename T, typename E>
 class [[nodiscard]] expected
 {
@@ -119,6 +123,10 @@ class [[nodiscard]] expected
     };
 
 public:
+    using value_type      = T;
+    using error_type      = E;
+    using unexpected_type = unexpected<E>;
+
     // NOLINTNEXTLINE(google-explicit-constructor)
     constexpr expected(T val)
         : m_has_value(true)
@@ -235,6 +243,29 @@ public:
             reinit_as_value(std::move(other.m_value));
         else
             reinit_as_error(std::move(other.m_error));
+        return *this;
+    }
+
+    // [expected.object.assign]: the error is built in the union itself, so a factory that constructs in place and then fails holds no second T.
+    template <typename G>
+        requires error_reinitializable<T, E, const G&>
+    constexpr expected& operator=(const unexpected<G>& err)
+    {
+        if (m_has_value)
+            reinit_as_error(err.error());
+        else
+            m_error = err.error();
+        return *this;
+    }
+
+    template <typename G>
+        requires error_reinitializable<T, E, G>
+    constexpr expected& operator=(unexpected<G>&& err)
+    {
+        if (m_has_value)
+            reinit_as_error(std::move(err).error());
+        else
+            m_error = std::move(err).error();
         return *this;
     }
 
@@ -423,6 +454,10 @@ class [[nodiscard]] expected<void, E>
     };
 
 public:
+    using value_type      = void;
+    using error_type      = E;
+    using unexpected_type = unexpected<E>;
+
     constexpr expected() noexcept
         : m_has_value(true)
     {
@@ -513,6 +548,30 @@ public:
         else
             std::construct_at(std::addressof(m_error), std::move(other.m_error));
         m_has_value = other.m_has_value;
+        return *this;
+    }
+
+    template <typename G>
+        requires(std::is_constructible_v<E, const G&> && std::is_assignable_v<E&, const G&>)
+    constexpr expected& operator=(const unexpected<G>& err)
+    {
+        if (m_has_value)
+            std::construct_at(std::addressof(m_error), err.error());
+        else
+            m_error = err.error();
+        m_has_value = false;
+        return *this;
+    }
+
+    template <typename G>
+        requires(std::is_constructible_v<E, G> && std::is_assignable_v<E&, G>)
+    constexpr expected& operator=(unexpected<G>&& err)
+    {
+        if (m_has_value)
+            std::construct_at(std::addressof(m_error), std::move(err).error());
+        else
+            m_error = std::move(err).error();
+        m_has_value = false;
         return *this;
     }
 
