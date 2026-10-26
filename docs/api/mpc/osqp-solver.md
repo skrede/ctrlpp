@@ -29,7 +29,7 @@ concept qp_solver = requires { typename S::scalar_type; }
     };
 ```
 
-Any type satisfying this concept can replace `osqp_solver` as the solver backend. There is one setup shape: `setup(problem)` returns a `ctrlpp::expected<void, E>` over the backend's own setup-error enum, through which the backend reports its setup failures. A backend with no setup failure mode writes a trivially succeeding fallible setup rather than an infallible one. `argmin_solver` built with `Constrained = false` handles variable bounds only, so its setup refuses a problem with general constraint rows with `argmin_setup_error::constraints_unsupported`. `osqp_solver` provides `setup` in every build mode, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
+Any type satisfying this concept can replace `osqp_solver` as the solver backend. There is one setup shape: `setup(problem)` returns a `ctrlpp::expected<void, E>` over the backend's own setup-error enum, through which the backend reports its setup failures. A backend with no setup failure mode writes a trivially succeeding fallible setup rather than an infallible one. `argmin_solver`'s setup refuses the problems its bridge cannot hold, with the `argmin_setup_error` enumerators listed under [argmin setup refusals](nmpc.md#argmin-setup-refusals). `osqp_solver` provides `setup` in every build mode, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
 
 ## Constructors
 

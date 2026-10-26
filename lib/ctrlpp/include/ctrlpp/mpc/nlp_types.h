@@ -82,15 +82,29 @@ enum class nlp_stop_criterion : std::uint8_t
     other
 };
 
-/// @brief Structured failure modes for `argmin_solver::setup`.
+/// @brief Structured failure modes for `argmin_solver::setup`, listed in the
+/// order setup checks them, so a problem that fails more than one check is
+/// refused with the first.
 ///
 ///  * constraints_unsupported : the problem poses general constraint rows
 ///    (`n_constraints > 0`) on the unconstrained bridge (Constrained = false),
 ///    which handles variable bounds only, so it is refused rather than solved
 ///    without them.
+///  * dimension_mismatch : the fixed-dimension bridge is sized for the
+///    compile-time decision dimension NV, and the problem declares another
+///    `n_vars`.
+///  * constraint_cap_exceeded : the problem's partitioned constraint row count
+///    (equality rows plus one per finite inequality side, so a two-sided row
+///    counts twice) exceeds the compile-time cap MaxM, so argmin's inline
+///    result-multiplier storage could not hold the multipliers.
+///  * equality_rows_exceed_dimension : the problem poses more equality rows than
+///    decision variables. argmin's active-set QP needs at most n equality rows.
 enum class argmin_setup_error : std::uint8_t
 {
-    constraints_unsupported
+    constraints_unsupported,
+    constraint_cap_exceeded,
+    dimension_mismatch,
+    equality_rows_exceed_dimension
 };
 
 }

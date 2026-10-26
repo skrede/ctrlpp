@@ -329,6 +329,25 @@ variable bounds only, and its `setup` refuses a problem with general constraint 
 dynamics as equality rows, so `Constrained = false` cannot back an NMPC: `create` refuses it with the
 `argmin_setup_error` alternative holding `constraints_unsupported`. Controllers use the default.
 
+### argmin setup refusals
+
+`argmin_solver`'s `setup` refuses a problem its bridge cannot hold and leaves the solver as it was. It checks in
+this order and reports the first refusal:
+
+| Refusal | The problem |
+|---------|-------------|
+| `constraints_unsupported` | poses general constraint rows on the bridge built with `Constrained = false` |
+| `dimension_mismatch` | declares an `n_vars` other than the fixed decision dimension `NV` |
+| `constraint_cap_exceeded` | poses more partitioned rows than the fixed cap `MaxM` |
+| `equality_rows_exceed_dimension` | poses more equality rows than decision variables, which argmin's active-set QP cannot take |
+
+The partitioned row count is the equality rows plus one per finite inequality side, so a two-sided row counts twice.
+Bounds on the decision variables do not count. With horizon `N`, the transcription poses `NX * (N + 1)` dynamics
+equalities, so `MaxM = NX * (NH + 1)` covers a controller with no other rows. Every other row has one finite side: a
+rate limit (`du_max`) adds `2 * NU` rows per stage, a path constraint adds `NC` per stage, and a terminal constraint
+adds `NTC`, so `2 * NU * N`, `NC * N` and `NTC` in total. An undersized `MaxM` is refused at construction: `create`
+returns the `argmin_setup_error` alternative holding `constraint_cap_exceeded`.
+
 The budget is the sixth template parameter, and it is chosen at compile time. The default instantiates only the
 step-budget driver, so the solver reads no clock, and its settings have no `max_time`: setting one is a compile
 error, not a value the solver ignores. A wall-clock budget is opt-in:

@@ -8,6 +8,8 @@
 #include "ctrlpp/mpc/argmin_problem.h"
 #include "ctrlpp/mpc/argmin_policies.h"
 
+#include "ctrlpp/mpc/detail/argmin_setup_admission.h"
+
 #include <argmin/result/status.h>
 
 #include <argmin/solver/options.h>
@@ -38,9 +40,9 @@ namespace ctrlpp
 //   * MaxM != Eigen::Dynamic additionally pins the CONSTRAINT axis: the
 //     bridge carries a compile-time constraint_count cap so
 //     argmin's per-call result-multiplier storage is inline. Binding BOTH NV and
-//     MaxM gives the strict-zero steady-state solve. MaxM is an upper bound
-//     (runtime_m <= MaxM), counting equality + general-inequality rows only (box
-//     bounds are free via argmin's +2N slack).
+//     MaxM gives the strict-zero steady-state solve. MaxM is an upper bound on
+//     the equality rows plus one per finite inequality side (box bounds are free
+//     via argmin's +2N slack); setup refuses a problem that exceeds it.
 //   * Budget selects the drivers: argmin_step_budget (the DEFAULT) instantiates
 //     only the step-budget driver, so the solver reads no clock;
 //     argmin_step_and_time_budget adds the wall-clock driver, which a solve runs
@@ -122,20 +124,16 @@ public:
         return *this;
     }
 
-    /// @brief Setup: binds the problem into the bridge. The one failure is a
-    /// problem with general constraint rows on the unconstrained bridge
-    /// (Constrained = false), which handles variable bounds only: it returns
-    /// `argmin_setup_error::constraints_unsupported` and leaves the solver as it
-    /// was. Every other problem is bound and setup succeeds. It works in all
-    /// build modes, including `-fno-exceptions`.
+    /// @brief Setup: binds the problem into the bridge, or refuses a problem the
+    /// bridge cannot hold and leaves the solver as it was. The refusals, in order:
+    /// `constraints_unsupported`, `dimension_mismatch`, `constraint_cap_exceeded`
+    /// and `equality_rows_exceed_dimension` (see `argmin_setup_error`). It works
+    /// in all build modes, including `-fno-exceptions`.
     auto setup(const problem_type& problem)
         -> ctrlpp::expected<void, argmin_setup_error>
     {
-        if constexpr(!Constrained)
-        {
-            if(problem.n_constraints > 0)
-                return ctrlpp::unexpected(argmin_setup_error::constraints_unsupported);
-        }
+        if(const auto refusal = detail::argmin_setup_refusal<Constrained, NV, MaxM>(problem))
+            return ctrlpp::unexpected(*refusal);
 
         problem_ = &problem;
         solver_.template emplace<std::monostate>();

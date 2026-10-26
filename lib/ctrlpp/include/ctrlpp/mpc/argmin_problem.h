@@ -3,6 +3,8 @@
 
 #include "ctrlpp/mpc/nlp_solver.h"
 
+#include "ctrlpp/mpc/detail/argmin_setup_admission.h"
+
 #include <Eigen/Core>
 
 #include <span>
@@ -64,7 +66,7 @@ struct argmin_constraint_bound<Eigen::Dynamic>
 //     flipping bounds_fit_inline true so the result-multiplier storage is inline.
 //     Binding BOTH axes (NV and MaxM) yields the strict-zero steady-state solve
 //     (`strict_allocation_free`). Box bounds are free via argmin's +2N slack, so
-//     MaxM counts equality + general-inequality rows only.
+//     MaxM counts equality rows plus one per finite inequality side.
 template <typename Scalar, int NV = Eigen::Dynamic, int MaxM = Eigen::Dynamic>
 class argmin_problem : public detail::argmin_constraint_bound<MaxM>
 {
@@ -161,19 +163,18 @@ public:
         ineq_upper_indices.clear();
         ineq_lower_indices.clear();
 
+        // The same classification as detail::count_constraint_rows, which setup admits against MaxM.
         for(int i = 0; i < prob.n_constraints; ++i)
         {
-            if(prob.c_lower[i] == prob.c_upper[i])
+            if(detail::is_equality_row(prob.c_lower[i], prob.c_upper[i]))
             {
                 eq_indices.push_back(i);
+                continue;
             }
-            else
-            {
-                if(std::isfinite(static_cast<double>(prob.c_upper[i])))
-                    ineq_upper_indices.push_back(i);
-                if(std::isfinite(static_cast<double>(prob.c_lower[i])))
-                    ineq_lower_indices.push_back(i);
-            }
+            if(detail::is_finite_side(prob.c_upper[i]))
+                ineq_upper_indices.push_back(i);
+            if(detail::is_finite_side(prob.c_lower[i]))
+                ineq_lower_indices.push_back(i);
         }
 
         n_eq = static_cast<int>(eq_indices.size());
