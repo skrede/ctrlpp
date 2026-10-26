@@ -26,6 +26,13 @@ on:
       - ".planning/**"
   workflow_dispatch:
 
+# A newer push to a pull request or milestone branch cancels the run it supersedes. Every other
+# run gets a group of its own (run_id), because a group holds only one pending run and would
+# otherwise drop a queued develop run.
+concurrency:
+  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/milestone/'))) && github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: windows-2022
