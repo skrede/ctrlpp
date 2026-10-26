@@ -78,11 +78,15 @@ enum class nlp_stop_criterion : std::uint8_t
     other
 };
 
-/// @brief Structured failure modes for `argmin_solver::setup`. The argmin
-/// adapter has no setup failure mode, so this carries no enumerators; the
-/// fallible signature is what the solver concept requires of every backend.
+/// @brief Structured failure modes for `argmin_solver::setup`.
+///
+///  * constraints_unsupported : the problem poses general constraint rows
+///    (`n_constraints > 0`) on the unconstrained bridge (Constrained = false),
+///    which handles variable bounds only, so it is refused rather than solved
+///    without them.
 enum class argmin_setup_error : std::uint8_t
 {
+    constraints_unsupported
 };
 
 }

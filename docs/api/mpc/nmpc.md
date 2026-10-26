@@ -275,6 +275,12 @@ Returns solver diagnostics including constraint violation metrics and total slac
 | `warm_start` | `curvature` | what a re-solve keeps from the previous one |
 | `kkt_tol` | `1e-5` | threshold on the composite KKT residual, the largest of the stationarity and feasibility legs in the infinity norm |
 
+The third template parameter, `Constrained` (default `true`), selects the bridge. With `false` the bridge handles
+variable bounds only, and its `setup` refuses a problem with general constraint rows with
+`argmin_setup_error::constraints_unsupported` instead of solving it without them. The transcription always poses the
+dynamics as equality rows, so a controller on the unconstrained bridge has its setup refused and every `solve` returns
+`solver_error::setup_incomplete`; controllers use the default.
+
 The budget is the sixth template parameter, and it is chosen at compile time. The default instantiates only the
 step-budget driver, so the solver reads no clock, and its settings have no `max_time`: setting one is a compile
 error, not a value the solver ignores. A wall-clock budget is opt-in:

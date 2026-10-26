@@ -122,15 +122,21 @@ public:
         return *this;
     }
 
-    /// @brief Setup: binds the problem into the bridge. The argmin adapter has no
-    /// setup failure mode, so this always succeeds; the fallible signature (an
-    /// empty-error `ctrlpp::expected`) is what the solver concept requires of
-    /// every backend, so a backend with nothing to fail at writes a trivially
-    /// succeeding fallible setup rather than an infallible one. It works in all
+    /// @brief Setup: binds the problem into the bridge. The one failure is a
+    /// problem with general constraint rows on the unconstrained bridge
+    /// (Constrained = false), which handles variable bounds only: it returns
+    /// `argmin_setup_error::constraints_unsupported` and leaves the solver as it
+    /// was. Every other problem is bound and setup succeeds. It works in all
     /// build modes, including `-fno-exceptions`.
     auto setup(const problem_type& problem)
         -> ctrlpp::expected<void, argmin_setup_error>
     {
+        if constexpr(!Constrained)
+        {
+            if(problem.n_constraints > 0)
+                return ctrlpp::unexpected(argmin_setup_error::constraints_unsupported);
+        }
+
         problem_ = &problem;
         solver_.template emplace<std::monostate>();
 

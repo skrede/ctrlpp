@@ -32,7 +32,7 @@ concept nlp_solver = requires { typename S::scalar_type; }
     };
 ```
 
-There is one setup shape: `setup(problem)` returns a `ctrlpp::expected<void, E>` over the backend's own setup-error enum. A backend with no setup failure mode writes a trivially succeeding fallible setup rather than an infallible one, which is what `argmin_solver` does with its empty `argmin_setup_error`.
+There is one setup shape: `setup(problem)` returns a `ctrlpp::expected<void, E>` over the backend's own setup-error enum, through which the backend reports its setup failures. A backend with no setup failure mode writes a trivially succeeding fallible setup rather than an infallible one. `argmin_solver` built with `Constrained = false` handles variable bounds only, so its setup refuses a problem with general constraint rows with `argmin_setup_error::constraints_unsupported`.
 
 > **Note:** NLopt's C++ API throws by upstream design. `setup` and `solve` contain every standard exception that NLopt or a problem callable raises (`std::bad_alloc`, `std::invalid_argument`, `std::runtime_error` and any other `std::exception`) and report it as `nlopt_setup_error::backend_rejected` or `solve_status::error`, so the containment lives in this adapter rather than in the controllers and estimators that consume it. The adapter itself still requires exception support and is exempt from the library's embedded no-exceptions floor.
 >

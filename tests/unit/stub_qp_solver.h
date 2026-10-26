@@ -79,9 +79,8 @@ enum class report_values
 
 // The stubs have no setup failure mode, so their setup-error type carries no
 // enumerators. The solver concepts accept one setup shape, a fallible one, so a
-// backend with nothing to fail at writes a trivially succeeding fallible setup
-// rather than an infallible one -- which is what the shipped argmin adapter and
-// its empty argmin_setup_error do. Shared with stub_nlp_solver.h.
+// stub writes a trivially succeeding fallible setup rather than an infallible
+// one. Shared with stub_nlp_solver.h.
 enum class stub_setup_error
 {
 };

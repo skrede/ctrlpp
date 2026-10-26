@@ -1,11 +1,16 @@
+#include "ctrlpp/nmpc.h"
+
 #include "ctrlpp/mpc/argmin_solver.h"
 #include "ctrlpp/mpc/argmin_policies.h"
 
 #include <Eigen/Dense>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <span>
+#include <limits>
+#include <utility>
 #include <variant>
 #include <type_traits>
 
@@ -63,6 +68,34 @@ auto make_rosenbrock() -> ctrlpp::nlp_problem<double>
     return prob;
 }
 
+auto make_constrained_rosenbrock() -> ctrlpp::nlp_problem<double>
+{
+    auto prob = make_rosenbrock();
+    prob.n_constraints = 2;
+    prob.constraints = [](std::span<const double> x, std::span<double> c) {
+        c[0] = x[0] + x[1];
+        c[1] = x[0] - x[1];
+    };
+    prob.constraint_jacobian = [](std::span<const double>, std::span<double> jac) {
+        jac[0] = 1.0;
+        jac[1] = 1.0;
+        jac[2] = 1.0;
+        jac[3] = -1.0;
+    };
+    prob.c_lower = Eigen::Vector2d::Constant(-std::numeric_limits<double>::infinity());
+    prob.c_upper = Eigen::Vector2d::Constant(1.0);
+    return prob;
+}
+
+struct double_integrator
+{
+    auto operator()(const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>& u) const -> Eigen::Vector2d
+    {
+        constexpr double dt = 0.1;
+        return Eigen::Vector2d{x(0) + dt * x(1), x(1) + dt * u(0)};
+    }
+};
+
 template <typename Solver>
 auto solve_rosenbrock(Solver solver) -> ctrlpp::nlp_result<double>
 {
@@ -110,5 +143,49 @@ TEST_CASE("argmin step-and-time budget selects its driver by max_time", "[argmin
         CHECK(result.solve_time > 0.0);
         CHECK(result.iterations == stepped.iterations);
         CHECK(result.x == stepped.x);
+    }
+}
+
+TEST_CASE("the unconstrained argmin bridge refuses a problem with constraint rows", "[argmin][setup][hardening]")
+{
+    step_solver solver;
+    const auto constrained = make_constrained_rosenbrock();
+
+    const auto refused = solver.setup(constrained);
+
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error() == ctrlpp::argmin_setup_error::constraints_unsupported);
+
+    SECTION("a problem without constraint rows still sets up and solves")
+    {
+        const auto result = solve_rosenbrock(std::move(solver));
+
+        REQUIRE(result.status == ctrlpp::solve_status::optimal);
+        CHECK_THAT(result.x(0), Catch::Matchers::WithinAbs(1.0, 1e-3));
+        CHECK_THAT(result.x(1), Catch::Matchers::WithinAbs(1.0, 1e-3));
+    }
+}
+
+// The transcription always poses the dynamics as equality rows, so no NMPC problem fits the unconstrained bridge.
+TEST_CASE("nmpc on the unconstrained argmin bridge reports its setup as incomplete", "[argmin][setup][hardening]")
+{
+    using controller_type = ctrlpp::nmpc_dynamic<double, 2, 1, step_solver, double_integrator>;
+    const ctrlpp::nmpc_config<double, 2, 1> config{
+        .horizon = 5,
+        .Q = Eigen::Matrix2d::Identity(),
+        .R = Eigen::Matrix<double, 1, 1>::Identity(),
+    };
+
+    auto controller = controller_type::create(double_integrator{}, config);
+    REQUIRE(controller.has_value());
+    REQUIRE(controller->problem().n_constraints > 0);
+
+    const Eigen::Vector2d x0{1.0, 0.0};
+    for(int attempt = 0; attempt < 2; ++attempt)
+    {
+        const auto u = controller->solve(x0);
+
+        REQUIRE_FALSE(u.has_value());
+        CHECK(u.error() == ctrlpp::solver_error::setup_incomplete);
     }
 }
