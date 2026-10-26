@@ -7,6 +7,7 @@
 /// @cite ossareh2023 -- Ossareh & Kolmanovsky, "On complexity bounds for the maximal admissible set of linear time-invariant systems", 2023 (a-priori step bound)
 
 #include "ctrlpp/mpc/terminal_set.h"
+#include "ctrlpp/mpc/detail/polytope_recession.h"
 #include "ctrlpp/mpc/detail/polytope_redundancy.h"
 
 #include "ctrlpp/types.h"
@@ -163,7 +164,7 @@ ctrlpp::expected<polytopic_set<Scalar, NX>, terminal_set_error> grow_to_fixed_po
 /// `rounding_factor` (positive, order one) scales the prefactor of every rounding bound. Rejections, in order:
 ///  * a finite bound side that does not strictly straddle zero, or a NaN bound -> origin_not_interior
 ///  * A_K not strictly stable, or A_K or K not finite                          -> closed_loop_not_stable
-///  * the finitely bounded outputs do not observe A_K                          -> unbounded_terminal_set
+///  * the rows C A_K^k, k < NX, leave a direction in which the set recedes     -> unbounded_terminal_set
 ///  * no fixed point within the Lyapunov step bound                            -> not_converged
 template <typename Scalar, std::size_t NX, std::size_t NU>
 ctrlpp::expected<polytopic_set<Scalar, NX>, terminal_set_error> compute_output_admissible_set(
@@ -181,7 +182,7 @@ ctrlpp::expected<polytopic_set<Scalar, NX>, terminal_set_error> compute_output_a
     Matrix<Scalar, NX, NX> power = Matrix<Scalar, NX, NX>::Identity();
     for(std::size_t k = 0; k < NX; ++k, power = power * A_K)
         detail::append_output_rows<Scalar, NX>(set, outputs, power);
-    if(set.H.rows() < static_cast<Eigen::Index>(NX) || set.H.colPivHouseholderQr().rank() < static_cast<Eigen::Index>(NX))
+    if(set.H.rows() < static_cast<Eigen::Index>(NX) || detail::has_recession_direction<Scalar, NX>(set, rounding_factor))
         return ctrlpp::unexpected(terminal_set_error::unbounded_terminal_set);
     return detail::grow_to_fixed_point<Scalar, NX>(std::move(set), outputs, A_K, power, *X, rounding_factor);
 }

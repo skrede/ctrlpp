@@ -86,11 +86,8 @@ template <typename Scalar, std::size_t NX>
 bool admits(const polytopic_set<Scalar, NX>& set, const std::array<Eigen::Index, NX>& subset, const polytope_vertex<Scalar, NX>& v, Scalar factor)
 {
     for(Eigen::Index j = 0; j < set.H.rows(); ++j)
-    {
-        bool const defining = std::find(subset.begin(), subset.end(), j) != subset.end();
-        if(!defining && set.H.row(j).dot(v.point) - set.h(j) > comparison_bound<Scalar, NX>(set.H.row(j), set.h(j), v, factor))
+        if(std::find(subset.begin(), subset.end(), j) == subset.end() && set.H.row(j).dot(v.point) - set.h(j) > comparison_bound<Scalar, NX>(set.H.row(j), set.h(j), v, factor))
             return false;
-    }
     return true;
 }
 
@@ -98,7 +95,6 @@ template <std::size_t NX>
 bool next_subset(std::array<Eigen::Index, NX>& subset, Eigen::Index m)
 {
     for(std::size_t i = NX; i-- > 0;)
-    {
         if(subset[i] < m - static_cast<Eigen::Index>(NX - i))
         {
             ++subset[i];
@@ -106,7 +102,6 @@ bool next_subset(std::array<Eigen::Index, NX>& subset, Eigen::Index m)
                 subset[j] = subset[j - 1] + 1;
             return true;
         }
-    }
     return false;
 }
 
@@ -130,8 +125,7 @@ std::vector<polytope_vertex<Scalar, NX>> enumerate_vertices(const polytopic_set<
 template <typename Scalar, std::size_t NX>
 bool implied(const polytope_row<Scalar, NX>& row, Scalar bound, const std::vector<polytope_vertex<Scalar, NX>>& vertices, Scalar factor)
 {
-    return std::all_of(vertices.begin(), vertices.end(),
-                       [&](const polytope_vertex<Scalar, NX>& v) { return row.dot(v.point) - bound <= comparison_bound<Scalar, NX>(row, bound, v, factor); });
+    return std::all_of(vertices.begin(), vertices.end(), [&](const polytope_vertex<Scalar, NX>& v) { return row.dot(v.point) - bound <= comparison_bound<Scalar, NX>(row, bound, v, factor); });
 }
 
 template <typename Scalar, std::size_t NX>
@@ -144,26 +138,47 @@ std::vector<std::size_t> tight_vertices(const polytope_row<Scalar, NX>& row, Sca
     return tight;
 }
 
-/// A row of a bounded polytope is irredundant exactly when the vertices on it span a face of dimension NX - 1;
-/// the rank is decided at the QR's default dimension-scaled threshold.
 template <typename Scalar, std::size_t NX>
-bool spans_facet(const std::vector<std::size_t>& tight, const std::vector<polytope_vertex<Scalar, NX>>& vertices)
+bool certifies_facet(const polytope_row<Scalar, NX>& row, const std::array<Eigen::Index, NX>& chosen, const std::vector<std::size_t>& tight,
+                     const std::vector<polytope_vertex<Scalar, NX>>& vertices)
 {
-    if(tight.size() < NX)
-        return false;
     if constexpr(NX == 1)
         return true;
     else
     {
-        Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)> offsets(static_cast<Eigen::Index>(tight.size() - 1), static_cast<Eigen::Index>(NX));
-        for(std::size_t k = 1; k < tight.size(); ++k)
-            offsets.row(static_cast<Eigen::Index>(k - 1)) = (vertices[tight[k]].point - vertices[tight[0]].point).transpose();
-        return offsets.colPivHouseholderQr().rank() == static_cast<Eigen::Index>(NX - 1);
+        constexpr int nx = static_cast<int>(NX);
+        auto const& base = vertices[tight[static_cast<std::size_t>(chosen[0])]];
+        Eigen::Matrix<Scalar, nx - 1, nx> projected;
+        Scalar noise{0};
+        for(std::size_t k = 1; k < NX; ++k)
+        {
+            auto const& v = vertices[tight[static_cast<std::size_t>(chosen[k])]];
+            polytope_row<Scalar, NX> const offset = (v.point - base.point).transpose();
+            projected.row(static_cast<Eigen::Index>(k - 1)) = offset - row.dot(offset) * row;
+            noise = std::max(noise, v.error.norm() + base.error.norm());
+        }
+        return Eigen::JacobiSVD<Eigen::Matrix<Scalar, nx - 1, nx>>(projected).singularValues()(nx - 2) > std::sqrt(static_cast<Scalar>(nx - 1)) * noise;
     }
 }
 
-/// Keeps the rows that are facets on `vertices`, the vertices of `set`. Rows defining the same facet have the same
-/// tight vertices, so only the first of them is kept.
+/// A row is a facet exactly when NX of its tight vertices are affinely independent in its hyperplane: for each NX of them the offsets are
+/// projected onto it and sigma_{NX-1} is compared with the Frobenius bound of their forward errors (@cite golub2013, Sec. 8.6.1), so no badly located vertex can veto.
+template <typename Scalar, std::size_t NX>
+bool spans_facet(const polytope_row<Scalar, NX>& row, const std::vector<std::size_t>& tight, const std::vector<polytope_vertex<Scalar, NX>>& vertices)
+{
+    if(tight.size() < NX)
+        return false;
+    std::array<Eigen::Index, NX> chosen{};
+    std::iota(chosen.begin(), chosen.end(), Eigen::Index{0});
+    do
+    {
+        if(certifies_facet<Scalar, NX>(row, chosen, tight, vertices))
+            return true;
+    } while(next_subset<NX>(chosen, static_cast<Eigen::Index>(tight.size())));
+    return false;
+}
+
+/// Keeps the rows of `set` that are facets on its `vertices`; rows defining the same facet have the same tight vertices, so only the first is kept.
 template <typename Scalar, std::size_t NX>
 polytopic_set<Scalar, NX> minimal_rows(const polytopic_set<Scalar, NX>& set, const std::vector<polytope_vertex<Scalar, NX>>& vertices, Scalar factor)
 {
@@ -172,7 +187,7 @@ polytopic_set<Scalar, NX> minimal_rows(const polytopic_set<Scalar, NX>& set, con
     for(Eigen::Index i = 0; i < set.H.rows(); ++i)
     {
         auto tight = tight_vertices<Scalar, NX>(set.H.row(i), set.h(i), vertices, factor);
-        if(!spans_facet<Scalar, NX>(tight, vertices) || std::find(facets.begin(), facets.end(), tight) != facets.end())
+        if(!spans_facet<Scalar, NX>(set.H.row(i), tight, vertices) || std::find(facets.begin(), facets.end(), tight) != facets.end())
             continue;
         facets.push_back(std::move(tight));
         append_row<Scalar, NX>(kept, set.H.row(i), set.h(i));

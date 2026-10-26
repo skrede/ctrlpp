@@ -142,10 +142,17 @@ positively invariant under that law once it is encoded in the QP:
 - **Maximal output admissible set**
   $\mathcal{O}_\infty = \{x : A_K^k x \in \mathcal{X},\ K A_K^k x \in \mathcal{U}\ \text{for all}\ k \ge 0\}$
   with $A_K = A + B K$: the largest set inside $\{x \in \mathcal{X},\ K x \in \mathcal{U}\}$
-  that $A_K$ maps into itself [4]. When $A_K$ is strictly stable, the finitely
-  bounded outputs observe $A_K$, and the bounds form a compact polytope with the
-  origin in its interior, $\mathcal{O}_\infty$ is a compact polytope described by
-  finitely many of the rows $C A_K^k$, $C = [I;\ K]$ [4], [5].
+  that $A_K$ maps into itself [4]. The construction relies on three hypotheses:
+  $A_K$ is strictly stable, the origin is in the interior of
+  $\mathcal{Y} = \{x \in \mathcal{X},\ K x \in \mathcal{U}\}$, and the rows
+  $C A_K^k$, $C = [I;\ K]$, of the first $n_x$ steps bound a polytope. Under them
+  $\mathcal{O}_\infty$ is a compact polytope described by finitely many of the
+  rows $C A_K^k$ [4], and the last row it needs has an a-priori bound
+  [5, Theorem 5]. Neither argument needs $\mathcal{Y}$ itself to be bounded, so
+  one-sided bounds are admitted when the first $n_x$ steps close the set. One-sided
+  bounds that would close it only at later steps are refused
+  (`unbounded_terminal_set`), conservatively, because whether they do has no
+  finite test in general.
   `terminal_ingredients` returns it as `invariant_set`, and
   `compute_output_admissible_set` builds it for any stable closed loop with
   $n_x \le 4$, by vertex enumeration and with a step bound from a Lyapunov

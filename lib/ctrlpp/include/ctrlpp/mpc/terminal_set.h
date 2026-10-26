@@ -37,8 +37,10 @@ namespace ctrlpp
 ///  * closed_loop_not_stable  : the closed loop A + B K is not strictly stable (the Stein
 ///                              equation has no positive definite solution), or it or K
 ///                              is not finite, so no bounded output admissible set exists.
-///  * unbounded_terminal_set  : the finitely bounded outputs do not observe the closed
-///                              loop, so the output admissible set is unbounded.
+///  * unbounded_terminal_set  : the rows C A_K^k for k < NX leave a direction in which
+///                              the set recedes, so the polytope the construction starts
+///                              from is unbounded. One-sided bounds that would close the
+///                              set only at later steps are refused as well, conservatively.
 ///  * origin_not_interior     : a finite state or input bound does not strictly straddle
 ///                              zero, or a bound is NaN, so the origin is not interior.
 ///  * dimension_unsupported   : the state dimension exceeds the four that vertex
