@@ -97,7 +97,7 @@ this table was written.
 | trajectory time scaling: `rescale_to` / `can_rescale_to` / `synchronize` (trapezoidal, double-S) | YES (two-pass over a `std::span`, no owning copy, no allocation; the trapezoidal solve's boundary-duration helper returns a two-scalar aggregate by value and owns no storage) | YES (closed form on the trapezoidal and the rest-to-rest double-S paths -- the trapezoidal plateau and valley shapes are each a single quadratic in the cruise velocity's distance from that shape's own boundary, straight-line with no iteration; bracket exhaustion on the nonzero-boundary-velocity double-S path, bounded by one more than the significand width, so 25 evaluations for `float` and 54 for `double`, plus one step per binary exponent the bracket spans) | YES | YES | YES (no random source; identical inputs exhaust the bracket at the identical step) | `trajectory_nomalloc_test`; `trajectory_rescale_anchor_test` and the rescaling cases in `trajectory_hardening_test`; leg 1 + `embedded_core_float` |
 | `recursive_arx` / `rls` | YES (the update's result is a `ctrlpp::expected<void, rls_update_error>` holding one enumerator and no owning member; the two norms feeding the resolution floor are unevaluated Eigen expressions over existing storage) | YES (rank-one update, no loop; the refusal guard adds a fixed count of reads per cycle, every dimension a compile-time template parameter -- `NP*NP + NP` for the carried-state scan, `NP` for the regressor scan, and two `NP`-term norms for the denominator's scale) | YES | not covered (the leg 1 witness does not include the sysid headers) | YES (the guard is a pure predicate on the operands and the carried members; no random source, no clock) | `sysid_nomalloc_test` (rls and recursive_arx update cases, re-run green with the guard on every cycle of both 256-cycle armed windows); the typed refusals asserted in `sysid_hardening_test` |
 | `mpc` / `nmpc_dynamic` / `mhe` / `nmhe` (runtime-horizon, dynamic solver) | NO (soft real-time: the solve allocates and iterates) | YES when capped (`max_eval`, OSQP `max_iter`) | YES with NLopt's `max_time = 0` (the default) and argmin's default step budget, which has no `max_time`; a wall-clock budget is non-RT | not covered (opt-in OSQP/NLopt/argmin backends sit outside the embedded core witness) | solver-dependent | labeled soft real-time; caps and defaults in `mpc/nlopt_solver.h`, `mpc/argmin_policies.h`, `mpc/osqp_solver.h`, `mpc/argmin_qp_solver.h` |
-| `nmpc` (the DEFAULT; = `nmpc_static`, compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES below a decision dimension `NV` of 48, strict-zero at 0.00 allocs/step in steady state on a converging trajectory (`nw_sqp`) and at an exact regulation equilibrium, where every solve takes the SQP null step (`nw_sqp` and `filter_nw_sqp`, static path), and **NO at and above it**, where the solve crosses the same blocked-Householder boundary the estimator rows do (see "The heap claim's boundary" below). **The heap is not the binding cost here either** (see "Stack cost of the predictive controller row" below, which a hard-real-time caller must read before sizing a task stack: the configuration this cell's own evidence pins needs 21,560 bytes of stack in steady state and 33,512 on its first solve, and constructing it through `create` needs 48,304) | YES when capped (`max_eval`) | YES: the default step budget instantiates no clock read; the opt-in `argmin_step_and_time_budget` is non-RT | not covered by this witness (argmin's `-fno-exceptions` instantiation is clean upstream; the ctrlpp-side no-exceptions dogfood is a separate witness) | YES: the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test`: the shipped pin (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; sentinel `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`), plus a two-configuration bracket over the damped chain that walks the boundary, at `NV` 47 and 48. **That is 2 of the 25 configurations this row publishes a figure for**, and the reason is measured: a unit holding all 25 peaked at 21.9 GB of compiler resident set and was killed by the kernel, and one holding 8 built and ran green at all 8 but cost 17.4 GB to compile and 232 s to run against roughly a second for the pin alone. Its equilibrium case holds the pin's controller at the origin for both `nw_sqp` and `filter_nw_sqp` on the static path, asserts the sentinel and the counter, and fails against argmin revisions before the null-step fix through the sentinel alone. The NUCLEO-H753ZI image, run on the board, reports 0 allocations over 201 armed steps behind a passing allocation canary. Every one of its solves stops on the stationarity test, and its realized closed-loop cost lies within a derived bound of the exact finite-horizon law's (`scripts/board_capture_fixtures/evidence.txt`, image `ba73821bdebbe972555b60a0291eee0fa8fde0fb`, `arm-none-eabi-gcc` 16.2.0). Its stack high-water, cycle counts and compile ceiling on that board are in "On silicon: the NUCLEO-H753ZI leg" below |
+| `nmpc` (the DEFAULT; = `nmpc_static`, compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES below a decision dimension `NV` of 48, strict-zero at 0.00 allocs/step in steady state on a converging trajectory (`nw_sqp`) and at an exact regulation equilibrium, where every solve takes the SQP null step (`nw_sqp` and `filter_nw_sqp`, static path), and **NO at and above it**, where the solve crosses the same blocked-Householder boundary the estimator rows do (see "The heap claim's boundary" below). **The heap is not the binding cost here either** (see "Stack cost of the predictive controller row" below, which a hard-real-time caller must read before sizing a task stack: the configuration this cell's own evidence pins needs 21,560 bytes of stack in steady state and 33,512 on its first solve, and constructing it through `create` needs 48,304) | YES when capped (`max_eval`) | YES: the default step budget instantiates no clock read; the opt-in `argmin_step_and_time_budget` is non-RT | not covered by this witness (argmin's `-fno-exceptions` instantiation is clean upstream; the ctrlpp-side no-exceptions dogfood is a separate witness) | YES: the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test`: the shipped pin (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; sentinel `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`), plus a two-configuration bracket over the damped chain that walks the boundary, at `NV` 47 and 48. **That is 2 of the 25 configurations this row publishes a figure for**, and the reason is measured: a unit holding all 25 peaked at 21.9 GB of compiler resident set and was killed by the kernel, and one holding 8 built and ran green at all 8 but cost 17.4 GB to compile and 232 s to run against roughly a second for the pin alone. Its equilibrium case holds the pin's controller at the origin for both `nw_sqp` and `filter_nw_sqp` on the static path, asserts the sentinel and the counter, and fails against argmin revisions before the null-step fix through the sentinel alone. The NUCLEO-H753ZI image, run on the board, reports 0 allocations over 201 armed steps behind a passing allocation canary. Every one of its solves stops on the stationarity test, and its realized closed-loop cost lies within a derived bound of the exact finite-horizon law's (`scripts/board_capture_fixtures/evidence.txt`, image `e46841994c7e64645d5dc2771632a4b13ab5a4eb`, `arm-none-eabi-gcc` 16.2.0). Its stack high-water, cycle counts and compile ceiling on that board are in "On silicon: the NUCLEO-H753ZI leg" below |
 | static-memory linear MPC | planned | planned | planned | planned | planned | not implemented; the future hard real-time path (see below) |
 | the estimator `update` rejection guard (`kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf`, `luenberger_observer`, `complementary_filter`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<void, E>` holding one enumerator and no owning member) | YES (a fixed count of reads per step: state + covariance + measurement, every dimension a compile-time template parameter -- `NX + NX*NX + NY` for the covariance filters, `NX + NY` for the observer, `4 + NB + NE*NE + NY` for the MEKF, at most `7 + 9 + 1` for the complementary filter) | YES | YES | YES (a pure predicate on the operands; no random source and no state read beyond the members it scans) | `estimation_nomalloc_test` re-run green with the guard on every step of all six converted cases (128-step armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{kalman,ekf,ukf,mekf,manifold_ukf,luenberger,complementary_filter}_hardening_test`; `scripts/cross_compile_check.sh` all three legs PASS |
 | the controller step rejection guard (`pid::compute` both overloads, `mrac_controller::evaluate`, `l1_controller::evaluate`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<vector_t, E>` whose payload is the same by-value vector the surface already returned, so no owning member is added) | YES (a fixed count of reads per cycle, every dimension a compile-time template parameter: `pid` scans only the members its policy composition makes live, at most `11*NY` plus one scalar test on the step; `mrac` scans `NX + NU` vector and `NU*(NX + NU)` matrix entries; `l1` scans `2*NX + 2*NU`. The `l1` cycle additionally scans `NU` more for the pre-projection finiteness test that feeds `health()`) | YES | YES | YES (a pure predicate on the operands and the carried members; no random source, no clock) | `pid_nomalloc_test` re-run green with the guard on every cycle of all three composed cases (256-cycle armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{pid,mrac,l1}_hardening_test`, each proven to fail with its guard deleted; both standing trees green at baseline (90/90, 129/129) |
@@ -313,7 +313,7 @@ They moved by as much as 296 bytes (`NX = 2`, from 3,100) and by at most 40 byte
 elsewhere, and the accepted and refused dimensions did not change. A figure here
 belongs to this toolchain, this framework version and this image, not to the
 source. The current allocation-evidence image, whose ELF has the sha256 digest
-`77ce95b6fe743e256028f76a284247df90ef26d9eb606933434b1f430f3933be`, still runs
+`e51b4873562a9697c3a911df5dbd27849bb6b8964b377b7e55df4e266ea2b1b5`, still runs
 the probe, and it reads 2,772, 4,120, 6,076, 8,344, 11,612 and 20,712 bytes,
 within 152 bytes of the column with the sensor at every dimension. Its pass at
 the control task's own 8,192 bytes accepts `NX = 4` with 2,120 bytes free and
@@ -437,18 +437,18 @@ leg builds two images from the same sources, the stack probe's aside, which only
 the evidence image compiles, and every figure below names the one it came from:
 
 - the allocation-evidence image, `ctrlpp_esp32`, whose ELF has the sha256 digest
-  `77ce95b6fe743e256028f76a284247df90ef26d9eb606933434b1f430f3933be`. It keeps
+  `e51b4873562a9697c3a911df5dbd27849bb6b8964b377b7e55df4e266ea2b1b5`. It keeps
   the framework's default assertions and task watchdog on, as the demonstration
   ships, and runs the stack probe after its report. Its boot report is committed
   as `scripts/board_capture_fixtures/esp32-evidence.txt`.
 - the timing image, `ctrlpp_esp32_timing`, digest
-  `bba15cf8157edd4f0e01aef22ccd3ffa06a40f96f28b0861e37a3cca91dc9d70`, built
+  `47cdef5ab35f93819987de98c5733439bd5abaa17f58ae0200633a8379ba2e01`, built
   without the allocation sensor and without the probe, with assertions off, and
   with the task watchdog released before it reports, so neither a check nor a
   watchdog interrupt lands inside a timed region. Its boot report is committed as
   `scripts/board_capture_fixtures/esp32-timing.txt`.
 
-Both were built from this repository at commit `6a89099`, and both were built
+Both were built from this repository at commit `0aa0fd7`, and both were built
 with ESP-IDF v6.0.2 and `xtensa-esp-elf-gcc` 15.2.0
 (crosstool-NG esp-15.2.0_20251204) at `-Os`, and both report running at 160 MHz,
 on core 0 at priority 5 under a 100 Hz FreeRTOS tick, with code in flash behind
@@ -478,7 +478,7 @@ The designed gain departs from the host's by `[8.943e-04, 2.766e-04]` against a
 tolerance of `2.292e-02`, which at 3.9 percent of its bound is the tightest
 margin on the board. Both images print the same verdicts. The predictive family
 is declared absent on every report: the backend's solver computes in `double`
-only, and its first solve's measured stack on the NUCLEO-H753ZI, 32,004 bytes,
+only, and its first solve's measured stack on the NUCLEO-H753ZI, 32,316 bytes,
 exceeds this leg's 8,192-byte control task. These figures replace those of the
 first capture on this leg, taken under an unreleased framework, on a different
 ESP32 module and with an older library: the gain departure was then
@@ -533,8 +533,8 @@ misses and the other core's flash traffic, which the image does not separate.
 Outside the overhead region, the cold figure runs from 1.06 times the warm
 median (estimation) to 1.66 times (trajectory). The overhead region's own cold
 figure, its first sample after the counter's proof, reads 656 cycles against 24
-warm, and it repeats exactly in every run of both series below. The leg's
-previous timing image, ELF sha256
+warm, and it repeats exactly in every run of both series below. An earlier
+timing image of this leg, ELF sha256
 `c74bb5a35d5af9752fb4b727d64b11a437b13bc5628af552aff775b481ad4bff`, read the same
 656 cycles, and there it was traced to one instruction-cache refill from
 external flash: the bracket's closing half began on a 32-byte line that nothing
@@ -559,23 +559,28 @@ collection, each on a timing image built with assertions off and with the task
 watchdog released before it reports:
 
 - 20 runs of the current timing image, ELF sha256
-  `bba15cf8157edd4f0e01aef22ccd3ffa06a40f96f28b0861e37a3cca91dc9d70` (its
+  `47cdef5ab35f93819987de98c5733439bd5abaa17f58ae0200633a8379ba2e01` (its
   allocation-evidence twin is
-  `77ce95b6fe743e256028f76a284247df90ef26d9eb606933434b1f430f3933be`), each
+  `e51b4873562a9697c3a911df5dbd27849bb6b8964b377b7e55df4e266ea2b1b5`), each
   restarted by a pulse on the chip's enable pin through the console bridge, with
   no operator action;
-- 5 runs of the same image, each after the operator unplugged and replugged the
-  board's own USB cable. Four were accepted on their first replug; the fourth
-  run's report lost its head on two replugs and was accepted on the third, the
-  last attempt the capture allows. Both refused attempts are listed in the
-  series summary and neither is counted.
+- 5 runs of the earlier timing image, ELF sha256
+  `bba15cf8157edd4f0e01aef22ccd3ffa06a40f96f28b0861e37a3cca91dc9d70`, built at
+  commit `6a89099` (its allocation-evidence twin is
+  `77ce95b6fe743e256028f76a284247df90ef26d9eb606933434b1f430f3933be`), each
+  after the operator unplugged and replugged the board's own USB cable. Four
+  were accepted on their first replug; the fourth run's report lost its head on
+  two replugs and was accepted on the third, the last attempt the capture
+  allows. Both refused attempts are listed in the series summary and neither is
+  counted. The current timing image's power-on series has not been taken.
 
 Every run in both series decoded `reset=power_on reset_reason=1 reset_rom=1`.
 The block was byte-identical in all 25 runs (sha256
 `512113e3b1844698fca4ac90bc779044081be75e19d073b016d50ef7916ae8df`), the same
 block the leg's earlier images printed with the probe and assertions on. Every
 timing figure in every region had zero spread across each series, and both
-series measured the figures in the table above.
+series measured the figures in the table above: the earlier image's flash
+capture differs from the current image's only in its build id.
 
 **WHAT THE LABEL CANNOT SAY.** This chip reports a power cycle and an
 enable-pin pulse with the same reset reason, so on this board, unlike the
@@ -620,15 +625,15 @@ under ESP-IDF v6.0.2 at `float`; the two legs are not interchangeable.
 | trajectory | `double_s_trajectory::create`, then 201 evaluations | trajectory evaluation |
 | predictive | the default `nmpc` at the shipped pin (`NX = 2`, `NU = 1`, `NH = 5`, so `NV = 17` and `MaxM = 12`), 20 warm-up solves, then 201 solve-and-plant steps | `nmpc` |
 
-Two images are built from this repository at commit `6a89099` with the backend
+Two images are built from this repository at commit `0aa0fd7` with the backend
 above, and every figure below names the one it came from:
 
 - the allocation-evidence image, `ctrlpp_nucleo_h753zi`, build id
-  `ba73821bdebbe972555b60a0291eee0fa8fde0fb`, which carries an allocation
+  `e46841994c7e64645d5dc2771632a4b13ab5a4eb`, which carries an allocation
   sensor. Its boot report is committed as
   `scripts/board_capture_fixtures/evidence.txt`.
 - the timing image, `ctrlpp_nucleo_h753zi_timing`, build id
-  `114c55e3cb2ad75719dfebcc83aabbdf970dd630`, linked without the sensor so the
+  `c397c0ad7ccb91a2a9252e1311e528f1f974cd1d`, linked without the sensor so the
   timed code carries none of its checks. Its boot report is committed as
   `scripts/board_capture_fixtures/timing.txt`.
 
@@ -665,29 +670,29 @@ watches (a C allocation, a C++ `new` and an Eigen heap vector) and reads
 and 0 sentinel trips over its 201 steps. The canary does not extend the sensor's
 sight to the C library's reentrant allocator entry points, which never pass
 through the wrapped symbols. Setup heap: 1,088 bytes before the predictive
-family is built, then 76,720 bytes after its construction and its 20 warm-up
+family is built, then 76,836 bytes after its construction and its 20 warm-up
 solves. That is exactly the heap the image reserves: the reserve is set to the
 measured requirement, and a request past it is refused by name on the console.
 
 **Stack, on the evidence image.** The watermark paints the stack below each
-region's origin, down to the end of bss, 70,564 bytes below the stack top, and
+region's origin, down to the end of bss, 70,548 bytes below the stack top, and
 walks it after the region. Every line reports a zero harness floor and an
 unsaturated window:
 
 | region | high-water below the stack top, bytes |
 |---|---:|
-| startup: reset, static constructors, entry to `main` | 468 |
-| predictive construction | 2,704 |
-| predictive first solve | 32,848 |
-| predictive steady state, the 201 window solves | 17,020 |
-| whole program | 32,848 |
+| startup: reset, static constructors, entry to `main` | 508 |
+| predictive construction | 3,336 |
+| predictive first solve | 33,008 |
+| predictive steady state, the 201 window solves | 17,188 |
+| whole program | 33,008 |
 
 The whole program's high-water is the first solve, and the image's link-time
 stack reserve, `_Min_Stack_Size`, is set to exactly that figure. The capture
 refuses any report whose high-water exceeds the reserve it reads out of the
 image. **The construction figure is not the host table's construction figure.**
-The board builds the controller in static storage, so 2,704 bytes is the
-constructor chain alone; the host table builds the controller as a local and so
+The board holds `create`'s result in static storage, so 3,336 bytes is the
+construction chain alone; the host table holds that result as a local and so
 counts the object and its inline solver. The first-solve and steady-state
 figures measure the corresponding chains on a different toolchain and
 instruction set; they do not replace the host's 33,512 bytes on the first solve
@@ -705,9 +710,9 @@ assertion reads `8712 <= 8192`. This is the mechanism behind the host ceiling of
 sixteen times smaller. No stack figure on this board covers a configuration
 other than the shipped pin.
 
-**Timing, on the timing image.** Every figure in this part, both reset series
-below included, belongs to timing image
-`114c55e3cb2ad75719dfebcc83aabbdf970dd630`, linked against argmin
+**Timing, on the timing image.** Every figure in this part, the warm-reset
+series below included, belongs to timing image
+`c397c0ad7ccb91a2a9252e1311e528f1f974cd1d`, linked against argmin
 `0a638cb87b6e959f7cb7b49f0afa34f137b93b69`. Cycles from the core's DWT cycle
 counter, which the image proves live before printing any figure. Every figure is
 raw: the sampling overhead is published as its own region and never subtracted.
@@ -717,20 +722,20 @@ per-iteration figure divides by that block:
 
 | region | block | cold | warm min | warm median | warm max | warm max per iteration | at 64 MHz |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| sampling overhead | 1 | 121 | 97 | 97 | 121 | 121 | 1.89 us |
-| control: gain design (`lqr_gain`) | 1 | 317,694 | 317,556 | 317,558 | 317,558 | 317,558 | 4.96 ms |
-| control: closed-loop step | 201 | 84,047 | 83,998 | 83,998 | 84,047 | 418.1 | 6.53 us |
-| estimation: `kalman_filter` step | 201 | 1,822,736 | 1,822,757 | 1,822,757 | 1,822,764 | 9,068.5 | 141.7 us |
-| dsp: `biquad` sample | 201 | 11,928 | 11,904 | 11,904 | 11,928 | 59.3 | 0.93 us |
-| trajectory: double-S evaluation | 201 | 32,970 | 32,970 | 32,991 | 32,991 | 164.1 | 2.56 us |
-| predictive: one solve and plant step | 1 | 141,790,059 | 4,861,859 | 4,880,740 | 9,669,296 | 9,669,296 | 151.1 ms |
+| sampling overhead | 1 | 108 | 92 | 92 | 108 | 108 | 1.69 us |
+| control: gain design (`lqr_gain`) | 1 | 348,560 | 348,433 | 348,436 | 348,436 | 348,436 | 5.44 ms |
+| control: closed-loop step | 201 | 83,999 | 83,972 | 83,972 | 83,999 | 417.9 | 6.53 us |
+| estimation: `kalman_filter` step | 201 | 1,816,514 | 1,816,538 | 1,816,538 | 1,816,539 | 9,037.5 | 141.2 us |
+| dsp: `biquad` sample | 201 | 11,903 | 11,895 | 11,895 | 11,903 | 59.2 | 0.93 us |
+| trajectory: double-S evaluation | 201 | 33,405 | 33,372 | 33,372 | 33,405 | 166.2 | 2.60 us |
+| predictive: one solve and plant step | 1 | 154,710,532 | 5,362,797 | 5,385,290 | 10,578,490 | 10,578,490 | 165.3 ms |
 
-In the cheap regions cold and warm differ by at most 138 cycles, and with both
+In the cheap regions cold and warm differ by at most 127 cycles, and with both
 caches off none of that is a cache effect. The predictive band is solver work:
 the cold solve ran 30 iterations against 1 to 2 for a window solve. At this
-posture the worst window solve, 151.1 ms, is longer than the demonstration's
-100 ms sample period, the median of 76.3 ms is shorter, and the cold first solve
-takes 2.22 s. A faster posture is not measured here.
+posture the worst window solve, 165.3 ms, is longer than the demonstration's
+100 ms sample period, the median of 84.1 ms is shorter, and the cold first solve
+takes 2.42 s. A faster posture is not measured here.
 
 **Determinism across warm resets.** The control family's closed loop is printed
 as 201 rows of binary64 bit patterns, so a one-bit difference anywhere in the
@@ -748,14 +753,18 @@ confidence; the count is part of the result.
 **Determinism across power cycles.** Both images wait at boot, before printing
 anything, for at most 30 s, for a byte the capture sends once its reader is
 attached, so a report read after a replug keeps its head, and a report whose
-wait expired is refused. The operator unplugged and replugged the board's USB
+wait expired is refused. The power-on series was taken on the earlier timing
+image `114c55e3cb2ad75719dfebcc83aabbdf970dd630`, built at commit `6a89099`
+from the same backend; the current timing image's power-on series has not been
+taken. The operator unplugged and replugged the board's USB
 cable once per run. All 5 runs decoded their own reset as a power-on reset,
 `reset=power_on reset_flags=cpu+d1+d2+bor+pin+por reset_rsr=0x00FE0000`, no run
 decoded another class, every run was accepted on its first attempt, and the
 image waited 177 to 189 ms for the handshake byte. The block was byte-identical
 in all 5 runs, and it is the same block as the warm series above. Every timing
 figure in every region had zero spread across the 5 runs, against a bound of 0
-cycles stated before collection, and every figure equals the table above. Zero
+cycles stated before collection, and every figure equals that image's own flash
+capture, not the table above. Zero
 differences in 5 runs leaves a per-run difference rate up to about
 60 percent plausible at 95 percent confidence, so the power-on half of this
 claim is much weaker than the warm half.
@@ -1577,13 +1586,13 @@ runtime-horizon `nmpc_dynamic` path cannot.
 period at the worst case.** No runtime-horizon optimizer runs on either board.
 The one predictive figure on silicon is the default `nmpc` at the shipped pin
 (`NV = 17`, `MaxM = 12`), on the NUCLEO-H753ZI's timing image (build id
-`114c55e3cb2ad75719dfebcc83aabbdf970dd630`, linked against the pinned argmin
+`c397c0ad7ccb91a2a9252e1311e528f1f974cd1d`, linked against the pinned argmin
 revision `0a638cb87b6e959f7cb7b49f0afa34f137b93b69`;
 `scripts/board_capture_fixtures/timing.txt`,
 `arm-none-eabi-gcc` 16.2.0, 64 MHz with both caches off; see "On silicon: the
 NUCLEO-H753ZI leg" above). There, one solve and its plant step took a median of
-76.3 ms and a worst of 151.1 ms over the 201 window solves, and the cold first
-solve after reset took 2.22 s. The
+84.1 ms and a worst of 165.3 ms over the 201 window solves, and the cold first
+solve after reset took 2.42 s. The
 demonstration's control period is 100 ms (`kPredictiveDt` in
 `examples/embedded/shared/golden_reference.h`). **The worst window solve
 overruns that period, and so does the cold first solve; only the median fits
@@ -1592,9 +1601,9 @@ bound the solve's time inside a given period, so a caller on a deadline sizes it
 against the measured worst case at its own posture. The ESP32-POE-EA has no
 predictive figure: both of its images declare the predictive family absent
 (`scripts/board_capture_fixtures/esp32-evidence.txt`, ELF sha256
-`77ce95b6fe743e256028f76a284247df90ef26d9eb606933434b1f430f3933be`, and
+`e51b4873562a9697c3a911df5dbd27849bb6b8964b377b7e55df4e266ea2b1b5`, and
 `scripts/board_capture_fixtures/esp32-timing.txt`, ELF sha256
-`bba15cf8157edd4f0e01aef22ccd3ffa06a40f96f28b0861e37a3cca91dc9d70`), because
+`47cdef5ab35f93819987de98c5733439bd5abaa17f58ae0200633a8379ba2e01`), because
 the backend's solver computes in `double` only and its first solve's stack
 exceeds that leg's 8,192-byte control task.
 
