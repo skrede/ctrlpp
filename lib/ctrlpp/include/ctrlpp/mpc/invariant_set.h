@@ -14,6 +14,7 @@
 #include "ctrlpp/control/dare.h"
 
 #include "ctrlpp/mpc/terminal_set.h"
+#include "ctrlpp/mpc/output_admissible_set.h"
 
 #include <Eigen/Dense>
 
@@ -327,8 +328,9 @@ auto backward_reachability_step(Eigen::Matrix<Scalar, Eigen::Dynamic, static_cas
 /// Compute the polytopic ROBUST control-invariant set via backward reachability.
 ///
 /// Each iteration intersects the robust (for-all-u) pre-image with the current set, so the
-/// fixed point is the robust control-invariant set (the states kept inside the state box under
-/// every admissible input), not the maximal control-invariant set. Returns
+/// fixed point is the robust control-invariant set: the states kept inside the state box under
+/// every input in U, not the maximal control-invariant set and not the terminal set of the LQR
+/// law (that is the output admissible set, compute_output_admissible_set). Returns
 /// terminal_set_error::halfplanes_truncated if the halfplane resource cap fires (the set is only
 /// an outer approximation), terminal_set_error::not_converged if the iteration budget is exhausted
 /// before a fixed point, and terminal_set_error::empty_terminal_set if the input polytope has no
@@ -369,12 +371,18 @@ struct terminal_ingredients_result
 {
     Matrix<Scalar, NX, NX> Qf;
     ellipsoidal_set<Scalar, NX> set;
+    ctrlpp::expected<polytopic_set<Scalar, NX>, terminal_set_error> invariant_set;
 };
 
-/// @cite mayne2000 -- Terminal cost and constraint set from DARE + LQR
+/// @cite mayne2000 -- Terminal cost and constraint sets from DARE + LQR
 ///
-/// Returns terminal_set_error::dare_failed if the Riccati solve fails, or propagates the
-/// terminal_set_error from compute_ellipsoidal_set (input-sign / empty-set) on the error channel.
+/// Qf is the DARE solution P. `set` is the ellipsoid {x : x^T P x <= alpha} with the largest alpha
+/// inside the input and state faces; the QP encodes its inscribed box, which is not invariant.
+/// `invariant_set` is the maximal output admissible set of A + B K, the invariant terminal set of
+/// the LQR law, with its own outcome: compute_output_admissible_set's refusals, or
+/// terminal_set_error::dimension_unsupported for NX > 4. Returns terminal_set_error::dare_failed if
+/// the Riccati solve fails, or propagates the terminal_set_error from compute_ellipsoidal_set
+/// (input-sign / empty-set) on the error channel.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto terminal_ingredients(
     const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R,
@@ -392,7 +400,10 @@ auto terminal_ingredients(
     if(!eset)
         return ctrlpp::unexpected(eset.error());
 
-    return terminal_ingredients_result<Scalar, NX, NU>{.Qf = P, .set = *eset};
+    terminal_ingredients_result<Scalar, NX, NU> result{.Qf = P, .set = *eset, .invariant_set = ctrlpp::unexpected(terminal_set_error::dimension_unsupported)};
+    if constexpr(NX <= 4)
+        result.invariant_set = compute_output_admissible_set<Scalar, NX, NU>(A + B * K, K, u_min, u_max, x_min, x_max);
+    return result;
 }
 
 }

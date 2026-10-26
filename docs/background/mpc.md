@@ -133,17 +133,41 @@ $$
 
 ### Terminal Constraint Set $\mathcal{X}_f$
 
-A terminal constraint $x_N \in \mathcal{X}_f$ ensures the state reaches an
-invariant region where the unconstrained LQR controller $u = -K_\infty x$
-keeps the state feasible [3, Sec. 4, pp. 800--808]:
+A terminal constraint $x_N \in \mathcal{X}_f$ asks the horizon to end in a set
+where the LQR law $u = K x$, with $K = -(R + B^\top P B)^{-1} B^\top P A$ and
+$P$ the DARE solution, keeps the state and the input admissible from then on
+[3, Sec. 4, pp. 800--808]. The library offers three sets, and only the first is
+positively invariant under that law once it is encoded in the QP:
 
-- **Ellipsoidal sets**: $\{x : x^\top P^{-1} x \le 1\}$ where $P$ is the
-  DARE solution
-- **Polytopic sets**: $\{x : F x \le g\}$ computed from the maximal positive
-  invariant set under $u = -K_\infty x$
+- **Maximal output admissible set**
+  $\mathcal{O}_\infty = \{x : A_K^k x \in \mathcal{X},\ K A_K^k x \in \mathcal{U}\ \text{for all}\ k \ge 0\}$
+  with $A_K = A + B K$: the largest set inside $\{x \in \mathcal{X},\ K x \in \mathcal{U}\}$
+  that $A_K$ maps into itself [4]. When $A_K$ is strictly stable, the finitely
+  bounded outputs observe $A_K$, and the bounds form a compact polytope with the
+  origin in its interior, $\mathcal{O}_\infty$ is a compact polytope described by
+  finitely many of the rows $C A_K^k$, $C = [I;\ K]$ [4], [5].
+  `terminal_ingredients` returns it as `invariant_set`, and
+  `compute_output_admissible_set` builds it for any stable closed loop with
+  $n_x \le 4$, by vertex enumeration and with a step bound from a Lyapunov
+  contraction of $A_K$ [5, Theorem 5].
+- **Ellipsoid** $\{x : x^\top P x \le \alpha\}$, with $\alpha$ the largest level
+  inside the input and state faces (`terminal_ingredients`' `set`). A QP cannot
+  hold a quadric, so the controller encodes the ellipsoid's inscribed box in
+  $P$'s eigenbasis. That box is not positively invariant under $u = K x$ and
+  carries no recursive-feasibility guarantee.
+- **Robust polytope** (`compute_polytopic_invariant_set`): the states that stay
+  inside the state box under every input in $\mathcal{U}$, a robust
+  control-invariant set. It is a valid object for robust MPC, but it is not the
+  terminal set of the LQR law.
 
-Together, the DARE terminal cost and a positive invariant terminal set
-guarantee recursive feasibility and asymptotic stability of the origin.
+With the DARE terminal cost, the same gain $K$, $\mathcal{X}_f = \mathcal{O}_\infty$,
+a nominal model, regulation to the origin, and hard state constraints, the
+closed loop is recursively feasible and the origin is asymptotically stable
+[3]. The controller softens state constraints by default
+(`hard_state_constraints = false`). With softened state constraints the
+optimization admits state-bound violations at a penalty, so the feasibility and
+cost-decrease argument changes and the statement does not apply as written.
+Tracking a nonzero reference is also outside it.
 
 ## Reference Tracking
 
@@ -169,3 +193,10 @@ Theory, Computation, and Design," 2nd ed., Nob Hill Publishing, 2017.
 [3] D. Q. Mayne, J. B. Rawlings, C. V. Rao, and P. O. M. Scokaert,
 "Constrained Model Predictive Control: Stability and Optimality," Automatica,
 vol. 36, no. 6, pp. 789--814, 2000.
+
+[4] E. G. Gilbert and K. T. Tan, "Linear Systems with State and Control
+Constraints: The Theory and Application of Maximal Output Admissible Sets,"
+IEEE Transactions on Automatic Control, vol. 36, no. 9, pp. 1008--1020, 1991.
+
+[5] H. R. Ossareh and I. Kolmanovsky, "On Complexity Bounds for the Maximal
+Admissible Set of Linear Time-Invariant Systems," arXiv:2302.02246, 2023.

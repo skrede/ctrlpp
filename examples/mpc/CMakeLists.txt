@@ -13,3 +13,7 @@ target_compile_options(ctrlpp_mpc_03_trajectory PRIVATE ${CTRLPP_WARNING_FLAGS})
 add_executable(ctrlpp_mpc_04_mobile_robot ctrlpp_mpc_04_mobile_robot.cpp)
 target_link_libraries(ctrlpp_mpc_04_mobile_robot PRIVATE ctrlpp::osqp)
 target_compile_options(ctrlpp_mpc_04_mobile_robot PRIVATE ${CTRLPP_WARNING_FLAGS})
+
+add_executable(ctrlpp_mpc_05_terminal_set ctrlpp_mpc_05_terminal_set.cpp)
+target_link_libraries(ctrlpp_mpc_05_terminal_set PRIVATE ctrlpp::osqp)
+target_compile_options(ctrlpp_mpc_05_terminal_set PRIVATE ${CTRLPP_WARNING_FLAGS})

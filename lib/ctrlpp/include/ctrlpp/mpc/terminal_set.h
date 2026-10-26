@@ -12,6 +12,7 @@
 #include <Eigen/Dense>
 
 #include <cstddef>
+#include <cstdint>
 #include <variant>
 
 namespace ctrlpp
@@ -31,19 +32,36 @@ namespace ctrlpp
 ///  * halfplanes_truncated    : the polytopic invariant-set halfplane count hit the
 ///                              resource bound, so the returned representation is a
 ///                              truncated (and therefore unsound) outer approximation.
-///  * not_converged           : backward reachability did not converge within the
-///                              iteration budget; the returned set is not invariant.
-enum class terminal_set_error
+///  * not_converged           : the construction reached its iteration bound without a
+///                              fixed point; no set is returned.
+///  * closed_loop_not_stable  : the closed loop A + B K is not strictly stable (the Stein
+///                              equation has no positive definite solution), or it or K
+///                              is not finite, so no bounded output admissible set exists.
+///  * unbounded_terminal_set  : the finitely bounded outputs do not observe the closed
+///                              loop, so the output admissible set is unbounded.
+///  * origin_not_interior     : a finite state or input bound does not strictly straddle
+///                              zero, or a bound is NaN, so the origin is not interior.
+///  * dimension_unsupported   : the state dimension exceeds the four that vertex
+///                              enumeration is restricted to.
+enum class terminal_set_error : std::uint8_t
 {
     input_zero_not_interior,
     empty_terminal_set,
     dare_failed,
     halfplanes_truncated,
     not_converged,
+    closed_loop_not_stable,
+    unbounded_terminal_set,
+    origin_not_interior,
+    dimension_unsupported,
 };
 
-// Ellipsoidal set: {x : x'Px <= alpha}
-// P must be positive definite, alpha > 0.
+/// @brief Ellipsoid {x : x^T P x <= alpha}, P positive definite, alpha > 0.
+///
+/// A QP cannot hold a quadric, so the MPC encodes this set as its inscribed box in P's
+/// eigenbasis. That box is not positively invariant under the LQR law and gives no
+/// recursive-feasibility guarantee; for an invariant terminal set use the output
+/// admissible set (terminal_ingredients_result::invariant_set).
 template <typename Scalar, std::size_t NX>
 struct ellipsoidal_set
 {

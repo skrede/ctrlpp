@@ -41,7 +41,7 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 | `du_max` | `optional<Vector<Scalar, NU>>` | none | Maximum input rate of change per step |
 | `soft_penalty` | `Scalar` | `1e4` | L1 penalty for soft state constraints |
 | `soft_state_penalty` | `optional<Vector<Scalar, NX>>` | none | Per-state soft constraint penalty |
-| `terminal_constraint_set` | `optional<terminal_set<Scalar, NX>>` | none | Ellipsoidal or polyhedral terminal set |
+| `terminal_constraint_set` | `optional<terminal_set<Scalar, NX>>` | none | Ellipsoidal or polyhedral terminal set; see [Terminal sets](#terminal-sets) for which one is invariant |
 | `hard_state_constraints` | `bool` | `false` | When true, state constraints are hard (not softened) |
 
 ## Construction
@@ -204,6 +204,80 @@ if (controller.diagnostics().used_state_weight_terminal_cost)
     // explicitly, or accept that the horizon is doing all the work.
 }
 ```
+
+## Terminal sets
+
+```cpp
+#include <ctrlpp/mpc/invariant_set.h>
+
+template <typename Scalar, std::size_t NX, std::size_t NU>
+auto terminal_ingredients(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B,
+                          const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R,
+                          const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max,
+                          const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max)
+    -> expected<terminal_ingredients_result<Scalar, NX, NU>, terminal_set_error>;
+```
+
+`terminal_ingredients` solves the DARE for `P`, forms the LQR gain `K = -(R + B^T P B)^{-1} B^T P A`, and returns three fields. An infinite bound side is absent, so pass `+/-infinity` to leave a state or input unbounded on that side.
+
+| Field | Type | What it is |
+|-------|------|------------|
+| `Qf` | `Matrix<Scalar, NX, NX>` | The DARE solution `P`, the terminal cost |
+| `set` | `ellipsoidal_set<Scalar, NX>` | The ellipsoid `{x : x^T P x <= alpha}` with the largest `alpha` inside the input and state faces. The QP encodes its inscribed box in `P`'s eigenbasis, which is not positively invariant under `u = K x` and gives no recursive-feasibility guarantee |
+| `invariant_set` | `expected<polytopic_set<Scalar, NX>, terminal_set_error>` | The maximal output admissible set of `A + B K` inside `{x_min <= x <= x_max, u_min <= K x <= u_max}`: the invariant terminal set of the LQR law, as a minimal set of unit rows |
+
+The function's own error channel carries `dare_failed`, `input_zero_not_interior` and `empty_terminal_set`, the failures of `Qf` and `set`. The output admissible set has its own outcome in its field, so its refusal never fails the call:
+
+| `invariant_set` error | Cause |
+|-----------------------|-------|
+| `origin_not_interior` | A finite state or input bound side does not strictly straddle zero, or a bound is NaN |
+| `closed_loop_not_stable` | `A + B K` is not strictly stable (the Stein equation `A_K^T X A_K - X = -I` has no positive definite solution), or it or `K` is not finite |
+| `unbounded_terminal_set` | The finitely bounded outputs do not observe `A + B K`, so the set is unbounded |
+| `not_converged` | No fixed point within the step bound derived from the Lyapunov contraction of `A + B K` |
+| `dimension_unsupported` | `NX > 4` |
+
+### compute_output_admissible_set
+
+```cpp
+#include <ctrlpp/mpc/output_admissible_set.h>
+
+template <typename Scalar, std::size_t NX, std::size_t NU>
+auto compute_output_admissible_set(const Matrix<Scalar, NX, NX>& A_K, const Matrix<Scalar, NU, NX>& K,
+                                   const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max,
+                                   const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max,
+                                   Scalar rounding_factor = Scalar{1})
+    -> expected<polytopic_set<Scalar, NX>, terminal_set_error>;
+```
+
+Builds the maximal output admissible set `O_inf = {x : C A_K^k x in Y for all k >= 0}` of `x+ = A_K x`, with `C = [I; K]` and `Y` the finite bound sides, for any closed loop (the `invariant_set` field calls it with `A_K = A + B K`). Its hypotheses are checked in this order: every finite bound side strictly straddles zero (else `origin_not_interior`), `A_K` is strictly stable and `A_K` and `K` are finite (else `closed_loop_not_stable`), and the finitely bounded outputs observe `A_K` (else `unbounded_terminal_set`). `not_converged` is reported if the construction passes its derived step bound. `NX <= 4` is a compile-time requirement.
+
+The construction stacks the rows `C A_K^k` until they bound the set, then appends, step by step, the rows that the current set's vertices do not imply, prunes redundant rows every step, and stops at the first step that appends nothing. There is no linear program: every implication and facet test runs on enumerated vertices, which costs `C(m, NX)` small solves per step for `m` rows. Each comparison of a row with a vertex carries its own rounding bound (the residual as an inner product, plus the vertex's forward error from the residual of its defining rows); `rounding_factor` scales the order-one prefactor of every such bound and must be positive. A row declared implied within its bound can leave the result larger than the exact set by at most that bound; a looser feasibility test only keeps more rows. On the double integrator with `dt = 0.1`, `Q = I`, `R = 1`, `|u| <= 1` and `|x_i| <= 10`, the set has 30 rows, the last needed at step 14.
+
+### compute_polytopic_invariant_set
+
+`compute_polytopic_invariant_set(A, B, state_constraints, input_constraints, max_iterations, convergence_tol)` iterates the robust pre-image to the set of states that stay inside the state polytope under every input in the input polytope. That is a robust control-invariant set, a valid object for robust MPC; it is not the terminal set of the LQR law. Use `invariant_set` for that.
+
+### Using the invariant terminal set
+
+```cpp
+auto ingredients = ctrlpp::terminal_ingredients<double, NX, NU>(A, B, Q, R, u_min, u_max, x_min, x_max);
+if(!ingredients || !ingredients->invariant_set)
+    return EXIT_FAILURE;
+
+ctrlpp::mpc_config<double, NX, NU> cfg{
+    .horizon                 = 30,
+    .Q                       = Q,
+    .R                       = R,
+    .Qf                      = ingredients->Qf,
+    .u_min                   = u_min,
+    .u_max                   = u_max,
+    .x_min                   = x_min,
+    .x_max                   = x_max,
+    .terminal_constraint_set = ctrlpp::terminal_set<double, NX>{*ingredients->invariant_set},
+    .hard_state_constraints  = true};
+```
+
+Recursive feasibility and stability of the origin follow from this configuration only with hard state constraints, a nominal model and regulation to the origin; see [background/mpc](../../background/mpc.md). The full closed loop is in `examples/mpc/ctrlpp_mpc_05_terminal_set.cpp`.
 
 ## Usage Example
 

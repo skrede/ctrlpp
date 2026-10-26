@@ -465,7 +465,7 @@ auto build_bounds_vectors(int N,
     if(terminal_constraint.has_value())
         set_terminal_bounds<Scalar, NX>(l, u, row, *terminal_constraint);
 
-    return {l, u};
+    return {std::move(l), std::move(u)};
 }
 
 // --- Cost vector building ---
