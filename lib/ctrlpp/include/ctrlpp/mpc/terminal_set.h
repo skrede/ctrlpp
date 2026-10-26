@@ -35,14 +35,14 @@ namespace ctrlpp
 ///  * not_converged           : the construction reached its iteration bound without a
 ///                              fixed point; no set is returned.
 ///  * closed_loop_not_stable  : the closed loop A + B K is not strictly stable (the Stein
-///                              equation has no positive definite solution), or it or K
-///                              is not finite, so no bounded output admissible set exists.
+///                              equation has no positive definite solution), so no bounded
+///                              output admissible set exists.
 ///  * unbounded_terminal_set  : the rows C A_K^k for k < NX leave a direction in which
 ///                              the set recedes, so the polytope the construction starts
 ///                              from is unbounded. One-sided bounds that would close the
 ///                              set only at later steps are refused as well, conservatively.
 ///  * origin_not_interior     : a finite state or input bound does not strictly straddle
-///                              zero, or a bound is NaN, so the origin is not interior.
+///                              zero, so the origin is not interior.
 ///  * dimension_unsupported   : the state dimension exceeds the four that vertex
 ///                              enumeration is restricted to.
 ///  * certification_failed    : the constructed set failed its own check on its vertices
@@ -50,6 +50,8 @@ namespace ctrlpp
 ///                              the construction's rounding bounds), or a vertex enumeration
 ///                              returned fewer than NX + 1 vertices, too few to describe a
 ///                              full-dimensional polytope; no set is returned.
+///  * non_finite_input        : A_K or K contains NaN/Inf, or a bound is NaN. An infinite
+///                              bound is an absent side, not corrupt data.
 enum class terminal_set_error : std::uint8_t
 {
     input_zero_not_interior,
@@ -62,6 +64,7 @@ enum class terminal_set_error : std::uint8_t
     origin_not_interior,
     dimension_unsupported,
     certification_failed,
+    non_finite_input,
 };
 
 /// @brief Ellipsoid {x : x^T P x <= alpha}, P positive definite, alpha > 0.

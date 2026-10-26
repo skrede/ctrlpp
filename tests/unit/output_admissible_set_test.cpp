@@ -445,7 +445,29 @@ TEST_CASE("The output admissible set refuses each failed hypothesis by name", "[
         ctrlpp::Matrix<double, 1, 2> const broken = (ctrlpp::Matrix<double, 1, 2>() << -1.0, std::numeric_limits<double>::quiet_NaN()).finished();
         auto const result = ctrlpp::compute_output_admissible_set<double, 2, 1>(stable, broken, b.u_min, b.u_max, b.x_min, b.x_max);
         REQUIRE_FALSE(result.has_value());
-        CHECK(result.error() == ctrlpp::terminal_set_error::closed_loop_not_stable);
+        CHECK(result.error() == ctrlpp::terminal_set_error::non_finite_input);
+    }
+    SECTION("an infinite closed-loop entry")
+    {
+        ctrlpp::Matrix<double, 2, 2> broken = stable;
+        broken(0, 1) = inf;
+        auto const result = ctrlpp::compute_output_admissible_set<double, 2, 1>(broken, K, b.u_min, b.u_max, b.x_min, b.x_max);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::terminal_set_error::non_finite_input);
+    }
+    SECTION("a NaN bound with an unstable closed loop is reported as non-finite data first")
+    {
+        ctrlpp::Matrix<double, 2, 2> const unstable = 1.1 * ctrlpp::Matrix<double, 2, 2>::Identity();
+        ctrlpp::Vector<double, 2> const x_min(std::numeric_limits<double>::quiet_NaN(), -10.0);
+        auto const result = ctrlpp::compute_output_admissible_set<double, 2, 1>(unstable, K, b.u_min, b.u_max, x_min, b.x_max);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error() == ctrlpp::terminal_set_error::non_finite_input);
+    }
+    SECTION("an infinite bound side is absent, not corrupt")
+    {
+        ctrlpp::Vector<double, 2> const x_min(-inf, -10.0);
+        auto const result = ctrlpp::compute_output_admissible_set<double, 2, 1>(stable, K, b.u_min, b.u_max, x_min, b.x_max);
+        CHECK(result.has_value());
     }
     SECTION("a finite state bound that does not straddle zero")
     {
@@ -459,7 +481,7 @@ TEST_CASE("The output admissible set refuses each failed hypothesis by name", "[
         ctrlpp::Vector<double, 2> const x_max(10.0, std::numeric_limits<double>::quiet_NaN());
         auto const result = ctrlpp::compute_output_admissible_set<double, 2, 1>(stable, K, b.u_min, b.u_max, b.x_min, x_max);
         REQUIRE_FALSE(result.has_value());
-        CHECK(result.error() == ctrlpp::terminal_set_error::origin_not_interior);
+        CHECK(result.error() == ctrlpp::terminal_set_error::non_finite_input);
     }
     SECTION("finitely bounded outputs that do not observe the closed loop")
     {
@@ -470,6 +492,42 @@ TEST_CASE("The output admissible set refuses each failed hypothesis by name", "[
         REQUIRE_FALSE(result.has_value());
         CHECK(result.error() == ctrlpp::terminal_set_error::unbounded_terminal_set);
     }
+}
+
+TEST_CASE("The step budget refuses only below the last step the set needs, and its default changes nothing", "[terminal_set][output_admissible]")
+{
+    auto const b = symmetric_bounds<2, 1>(1.0, 10.0);
+    auto const solved = solve_case<2, 1>(double_integrator(), scalar(1.0), b);
+    auto const within = [&](std::int64_t budget)
+    { return ctrlpp::compute_output_admissible_set<double, 2, 1>(solved.A_K, solved.K, b.u_min, b.u_max, b.x_min, b.x_max, 1.0, budget); };
+
+    auto const by_default = ctrlpp::compute_output_admissible_set<double, 2, 1>(solved.A_K, solved.K, b.u_min, b.u_max, b.x_min, b.x_max);
+    REQUIRE(by_default.has_value());
+    CHECK(by_default->H.rows() == 30);
+    auto const unbounded = within(std::numeric_limits<std::int64_t>::max());
+    REQUIRE(unbounded.has_value());
+    CHECK(unbounded->H == by_default->H);
+    CHECK(unbounded->h == by_default->h);
+
+    auto const cap = step_cap<2>(solved.A_K, output_rows<2, 1>(solved.K, b));
+    std::int64_t smallest = -1;
+    for(std::int64_t budget = 0; budget <= cap && smallest < 0; ++budget)
+    {
+        auto const result = within(budget);
+        if(result.has_value())
+            smallest = budget;
+        else
+            CHECK(result.error() == ctrlpp::terminal_set_error::not_converged);
+    }
+    INFO("smallest admitted budget " << smallest << ", step bound " << cap);
+    REQUIRE(smallest > 0);
+    auto const at = within(smallest);
+    REQUIRE(at.has_value());
+    CHECK(at->H == by_default->H);
+    CHECK(at->h == by_default->h);
+    auto const below = within(smallest - 1);
+    REQUIRE_FALSE(below.has_value());
+    CHECK(below.error() == ctrlpp::terminal_set_error::not_converged);
 }
 
 TEST_CASE("terminal_ingredients reports an unsupported dimension through the invariant set alone", "[terminal_set][output_admissible]")

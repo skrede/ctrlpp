@@ -11,6 +11,42 @@
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
+#include <string_view>
+
+namespace
+{
+
+std::string_view name_of(ctrlpp::terminal_set_error e)
+{
+    switch(e)
+    {
+        case ctrlpp::terminal_set_error::input_zero_not_interior:
+            return "input_zero_not_interior";
+        case ctrlpp::terminal_set_error::empty_terminal_set:
+            return "empty_terminal_set";
+        case ctrlpp::terminal_set_error::dare_failed:
+            return "dare_failed";
+        case ctrlpp::terminal_set_error::halfplanes_truncated:
+            return "halfplanes_truncated";
+        case ctrlpp::terminal_set_error::not_converged:
+            return "not_converged";
+        case ctrlpp::terminal_set_error::closed_loop_not_stable:
+            return "closed_loop_not_stable";
+        case ctrlpp::terminal_set_error::unbounded_terminal_set:
+            return "unbounded_terminal_set";
+        case ctrlpp::terminal_set_error::origin_not_interior:
+            return "origin_not_interior";
+        case ctrlpp::terminal_set_error::dimension_unsupported:
+            return "dimension_unsupported";
+        case ctrlpp::terminal_set_error::certification_failed:
+            return "certification_failed";
+        case ctrlpp::terminal_set_error::non_finite_input:
+            return "non_finite_input";
+    }
+    return "unknown";
+}
+
+}
 
 int main()
 {
@@ -30,13 +66,17 @@ int main()
     Eigen::Matrix<double, 1, 1> const u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0);
     Eigen::Vector2d const x_max = Eigen::Vector2d::Constant(10.0);
 
-    // Qf is the Riccati solution, and invariant_set is the maximal output admissible set of the
-    // LQR law: the terminal set under which recursive feasibility and stability hold with hard
-    // state constraints. The ellipsoid in ingredients->set is not invariant once encoded in the QP.
+    // Recursive feasibility and stability need hard state constraints and a terminal set invariant under the LQR law.
+    // That is invariant_set; the ellipsoid in ingredients->set is not invariant once encoded in the QP.
     auto ingredients = ctrlpp::terminal_ingredients<double, NX, NU>(sys.A, sys.B, Q, R, -u_max, u_max, -x_max, x_max);
-    if(!ingredients || !ingredients->invariant_set)
+    if(!ingredients)
     {
-        std::cerr << "terminal ingredients refused\n";
+        std::cerr << "terminal ingredients refused: " << name_of(ingredients.error()) << "\n";
+        return EXIT_FAILURE;
+    }
+    if(!ingredients->invariant_set)
+    {
+        std::cerr << "invariant terminal set refused: " << name_of(ingredients->invariant_set.error()) << "\n";
         return EXIT_FAILURE;
     }
     std::cerr << "terminal set rows: " << ingredients->invariant_set->H.rows() << "\n";

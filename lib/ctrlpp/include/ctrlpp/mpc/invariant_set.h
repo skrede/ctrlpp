@@ -378,11 +378,10 @@ struct terminal_ingredients_result
 ///
 /// Qf is the DARE solution P. `set` is the ellipsoid {x : x^T P x <= alpha} with the largest alpha
 /// inside the input and state faces; the QP encodes its inscribed box, which is not invariant.
-/// `invariant_set` is the maximal output admissible set of A + B K, the invariant terminal set of
-/// the LQR law, with its own outcome: compute_output_admissible_set's refusals, or
-/// terminal_set_error::dimension_unsupported for NX > 4. Returns terminal_set_error::dare_failed if
-/// the Riccati solve fails, or propagates the terminal_set_error from compute_ellipsoidal_set
-/// (input-sign / empty-set) on the error channel.
+/// `invariant_set` is the maximal output admissible set of A + B K with its own outcome, or
+/// dimension_unsupported for NX > 4. It runs compute_output_admissible_set with the default step
+/// budget; a caller who needs to bound the construction's time calls that function directly.
+/// The error channel carries dare_failed and compute_ellipsoidal_set's refusals.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto terminal_ingredients(
     const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R,

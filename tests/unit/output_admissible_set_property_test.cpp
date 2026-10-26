@@ -172,7 +172,7 @@ void require_vertexless_refusal(const ctrlpp::polytopic_set<double, 2>& set)
     auto const outputs = ctrlpp::detail::finite_outputs<double, 2, 1>(K, b.u_min, b.u_max, b.x_min, b.x_max);
     auto const X = ctrlpp::detail::stein_lyapunov_matrix<double, 2>(A_K);
     REQUIRE(X.has_value());
-    auto const result = ctrlpp::detail::grow_to_fixed_point<double, 2>(set, outputs, A_K, A_K * A_K, *X, 1.0);
+    auto const result = ctrlpp::detail::grow_to_fixed_point<double, 2>(set, outputs, A_K, A_K * A_K, *X, 1.0, std::numeric_limits<std::int64_t>::max());
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == ctrlpp::terminal_set_error::certification_failed);
 }

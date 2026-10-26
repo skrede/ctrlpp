@@ -245,11 +245,12 @@ The function's own error channel carries `dare_failed`, `input_zero_not_interior
 
 | `invariant_set` error | Cause |
 |-----------------------|-------|
-| `origin_not_interior` | A finite state or input bound side does not strictly straddle zero, or a bound is NaN |
-| `closed_loop_not_stable` | `A + B K` is not strictly stable (the Stein equation `A_K^T X A_K - X = -I` has no positive definite solution), or it or `K` is not finite |
+| `non_finite_input` | `A + B K` or `K` contains NaN or Inf, or a bound is NaN. An infinite bound side is absent, not corrupt |
+| `origin_not_interior` | A finite state or input bound side does not strictly straddle zero |
+| `closed_loop_not_stable` | `A + B K` is not strictly stable (the Stein equation `A_K^T X A_K - X = -I` has no positive definite solution) |
 | `unbounded_terminal_set` | The rows `C A_K^k` of the first `NX` steps leave a direction in which the set recedes, so the polytope the construction starts from is unbounded. One-sided bounds that would close the set only at later steps are refused as well, conservatively |
 | `not_converged` | No fixed point within the step bound derived from the Lyapunov contraction of `A + B K` |
-| `certification_failed` | The constructed set failed its own check on its vertices (bounded, inside `Y`, mapped into itself by `A + B K`, each within the construction's rounding bounds), or a vertex enumeration returned fewer than `NX + 1` vertices, too few to describe a full-dimensional polytope |
+| `certification_failed` | The constructed set failed its own check on its vertices (bounded, inside `Y`, mapped into itself by `A + B K`, each within the construction's rounding bounds), or a vertex enumeration returned fewer than `NX + 1` vertices, too few to describe a full-dimensional polytope. Plants with large gains can be refused this way, because the rounding error that accumulates in the output rows `C A_K^t` can exceed the certificate's bound |
 | `dimension_unsupported` | `NX > 4` |
 
 ### compute_output_admissible_set
@@ -261,15 +262,18 @@ template <typename Scalar, std::size_t NX, std::size_t NU>
 auto compute_output_admissible_set(const Matrix<Scalar, NX, NX>& A_K, const Matrix<Scalar, NU, NX>& K,
                                    const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max,
                                    const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max,
-                                   Scalar rounding_factor = Scalar{1})
+                                   Scalar rounding_factor = Scalar{1},
+                                   std::int64_t max_steps = std::numeric_limits<std::int64_t>::max())
     -> expected<polytopic_set<Scalar, NX>, terminal_set_error>;
 ```
 
-Builds the maximal output admissible set `O_inf = {x : C A_K^k x in Y for all k >= 0}` of `x+ = A_K x`, with `C = [I; K]` and `Y` the finite bound sides, for any closed loop (the `invariant_set` field calls it with `A_K = A + B K`). Its hypotheses are checked in this order: every finite bound side strictly straddles zero (else `origin_not_interior`), `A_K` is strictly stable and `A_K` and `K` are finite (else `closed_loop_not_stable`), and the rows `C A_K^k` of the first `NX` steps bound a polytope (else `unbounded_terminal_set`). `not_converged` is reported if the construction passes its derived step bound. The result is checked on its own vertices before it is returned, and an enumeration too small to describe a full-dimensional polytope is refused; either failure is `certification_failed`. `NX <= 4` is a compile-time requirement.
+Builds the maximal output admissible set `O_inf = {x : C A_K^k x in Y for all k >= 0}` of `x+ = A_K x`, with `C = [I; K]` and `Y` the finite bound sides, for any closed loop (the `invariant_set` field calls it with `A_K = A + B K`). `A_K` must be the closed loop `A + B K` of the `K` passed: the input rows are formed from `K` and the dynamics from `A_K`, so a mismatched pair describes a law that is never applied. Its hypotheses are checked in this order: every entry of `A_K` and `K` is finite and no bound is NaN (else `non_finite_input`), every finite bound side strictly straddles zero (else `origin_not_interior`), `A_K` is strictly stable (else `closed_loop_not_stable`), and the rows `C A_K^k` of the first `NX` steps bound a polytope (else `unbounded_terminal_set`). `not_converged` is reported if the construction passes its derived step bound. The result is checked on its own vertices before it is returned, and an enumeration too small to describe a full-dimensional polytope is refused; either failure is `certification_failed`. `NX <= 4` is a compile-time requirement.
 
 The finite determination of `O_inf` and its step bound need only a bounded starting polytope and the origin interior to `Y`; `Y` itself need not be bounded. One-sided bounds are therefore accepted whenever the rows of the first `NX` steps close the set, as two-sided input bounds do whenever `(K, A)` is observable. Whether one-sided rows that leave a direction open close the set at some later step is a positivity question about the sequence `C A_K^k d`, which has no finite test in general, so such a configuration is refused conservatively. The recession test compares each row with each candidate direction within that comparison's rounding bound plus the direction's own forward error, so its tolerance leans toward refusal; rows that are linearly dependent to working precision define no candidate direction.
 
 The construction stacks the rows `C A_K^k` until they bound the set, then appends, step by step, the rows that the current set's vertices do not imply, prunes redundant rows every step, and stops at the first step that appends nothing. There is no linear program: every implication and facet test runs on enumerated vertices, which costs `C(m, NX)` small solves per step for `m` rows. Each comparison of a row with a vertex carries its own rounding bound (the residual as an inner product, plus the vertex's forward error from the residual of its defining rows); `rounding_factor` scales the order-one prefactor of every such bound and must be positive. A row declared implied within its bound can leave the result larger than the exact set by at most that bound; a looser feasibility test only keeps more rows. A row is kept as a facet when some `NX` of the vertices on it, projected onto its hyperplane, span `NX - 1` dimensions by more than their forward errors can move a singular value, so a vertex that is located only roughly, such as a near-duplicate at a degenerate corner, cannot remove a facet. On the double integrator with `dt = 0.1`, `Q = I`, `R = 1`, `|u| <= 1` and `|x_i| <= 10`, the set has 30 rows, the last needed at step 14.
+
+`max_steps` bounds the construction's wall time. The derived step bound grows with the Lyapunov matrix of `A_K`, so a closed loop near the unit circle can need very many steps, each enumerating `C(m, NX)` subsets. A step index `t > max_steps` that still appends rows is refused with `not_converged`; the rows of the first `NX` steps are always stacked, so a value below `NX` refuses as soon as a later step is needed. The default leaves only the derived bound, so omitting the argument gives the same result. There is no row budget, because rows are pruned to facets every step, so the step budget already bounds the work of each step. On the case above, `max_steps = 14` returns the same 30 rows and `max_steps = 13` is refused. `terminal_ingredients` runs the construction with the default budget; a caller who needs to bound the time calls `compute_output_admissible_set` directly.
 
 ### compute_polytopic_invariant_set
 
@@ -279,8 +283,10 @@ The construction stacks the rows `C A_K^k` until they bound the set, then append
 
 ```cpp
 auto ingredients = ctrlpp::terminal_ingredients<double, NX, NU>(A, B, Q, R, u_min, u_max, x_min, x_max);
-if(!ingredients || !ingredients->invariant_set)
-    return EXIT_FAILURE;
+if(!ingredients)
+    return report(ingredients.error());
+if(!ingredients->invariant_set)
+    return report(ingredients->invariant_set.error());
 
 ctrlpp::mpc_config<double, NX, NU> cfg{
     .horizon                 = 30,
@@ -295,7 +301,7 @@ ctrlpp::mpc_config<double, NX, NU> cfg{
     .hard_state_constraints  = true};
 ```
 
-Recursive feasibility and stability of the origin follow from this configuration only with hard state constraints, a nominal model and regulation to the origin; see [background/mpc](../../background/mpc.md). The full closed loop is in `examples/mpc/ctrlpp_mpc_05_terminal_set.cpp`.
+Both channels carry a `terminal_set_error`, so a refusal names its cause; `report` stands for the caller's handling, which in the example prints the enumerator's name through an exhaustive `switch` and exits. Recursive feasibility and stability of the origin follow from this configuration only with hard state constraints, a nominal model and regulation to the origin; see [background/mpc](../../background/mpc.md). The full closed loop is in `examples/mpc/ctrlpp_mpc_05_terminal_set.cpp`.
 
 ## Usage Example
 
