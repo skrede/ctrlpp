@@ -79,27 +79,20 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     cfg.u_min = umin;
     cfg.u_max = umax;
 
-    try
-    {
-        // A rejected horizon is a typed outcome, not a finding.
-        auto controller = ctrlpp::mpc<double, 2, 1, ctrlpp::osqp_solver>::create(sys, cfg);
-        if(!controller.has_value())
-            return 0;
-        auto result = controller->solve(x0, x_ref);
+    // A refused configuration is a typed outcome, not a finding.
+    auto controller = ctrlpp::mpc<double, 2, 1, ctrlpp::osqp_solver>::create(sys, cfg);
+    if(!controller.has_value())
+        return 0;
+    auto result = controller->solve(x0, x_ref);
 
-        if(result.has_value())
-        {
-            const auto& u = result.value().input;
-            for(int i = 0; i < 1; ++i)
-            {
-                if(!std::isfinite(u(i)))
-            return 0;
-            }
-        }
-    }
-    catch(...)
+    if(result.has_value())
     {
-        // OSQP setup or solve may throw for degenerate inputs; that is acceptable
+        const auto& u = result.value().input;
+        for(int i = 0; i < 1; ++i)
+        {
+            if(!std::isfinite(u(i)))
+                return 0;
+        }
     }
 
     return 0;

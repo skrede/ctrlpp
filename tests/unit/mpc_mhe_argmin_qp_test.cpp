@@ -349,7 +349,6 @@ template <typename Solver>
 auto controller_answer_on(const ctrlpp::discrete_state_space<double, NX, NU, NX>& sys, const ctrlpp::mpc_config<double, NX, NU>& cfg, Solver solver, const Eigen::Vector2d& x0) -> controller_answer
 {
     auto controller = ctrlpp::test::constructed(ctrlpp::mpc<double, NX, NU, Solver>::create(sys, cfg, std::move(solver)));
-    REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
     const auto out = controller.solve(x0);
     REQUIRE(out.has_value());
     const auto trajectory = controller.trajectory();

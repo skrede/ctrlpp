@@ -60,6 +60,38 @@ struct tallied
     std::int32_t& destroyed;
 };
 
+struct guarded
+{
+    explicit guarded(std::int32_t identifier)
+        : id{identifier}
+    {
+    }
+
+    guarded(const guarded& other) noexcept(false)
+        : id{other.id}
+    {
+    }
+
+    guarded(guarded&& other) noexcept(false)
+        : id{other.id}
+    {
+    }
+
+    auto operator=(const guarded& other) noexcept(false) -> guarded&
+    {
+        id = other.id;
+        return *this;
+    }
+
+    auto operator=(guarded&& other) noexcept(false) -> guarded&
+    {
+        id = other.id;
+        return *this;
+    }
+
+    std::int32_t id;
+};
+
 auto make_pinned(std::int32_t id) -> ctrlpp::expected<pinned, fetch_error>
 {
     if(id < 0)
@@ -212,6 +244,35 @@ TEST_CASE("expected move assignment crosses value and error states", "[expected]
     target = ctrlpp::expected<std::string, fetch_error>{ctrlpp::unexpected(fetch_error::timed_out)};
     REQUIRE(!target.has_value());
     CHECK(target.error() == fetch_error::timed_out);
+}
+
+// A value type whose copy and move may both throw sends every error-to-value assignment through the
+// path that has to keep the old error recoverable, which is the one an exception-free build reduces.
+TEST_CASE("expected assigns across states when the value type's copy and move may throw", "[expected]")
+{
+    static_assert(!std::is_nothrow_copy_constructible_v<guarded> && !std::is_nothrow_move_constructible_v<guarded>);
+    using guarded_result = ctrlpp::expected<guarded, fetch_error>;
+
+    guarded_result moved_into{ctrlpp::unexpected(fetch_error::not_found)};
+    moved_into = guarded_result{guarded{1}};
+    REQUIRE(moved_into.has_value());
+    CHECK(moved_into->id == 1);
+
+    const guarded_result source{guarded{2}};
+    guarded_result copied_into{ctrlpp::unexpected(fetch_error::not_found)};
+    copied_into = source;
+    REQUIRE(copied_into.has_value());
+    CHECK(copied_into->id == 2);
+
+    const guarded value{3};
+    guarded_result assigned{ctrlpp::unexpected(fetch_error::timed_out)};
+    assigned = value;
+    REQUIRE(assigned.has_value());
+    CHECK(assigned->id == 3);
+
+    assigned = ctrlpp::unexpected(fetch_error::not_found);
+    REQUIRE(!assigned.has_value());
+    CHECK(assigned.error() == fetch_error::not_found);
 }
 
 TEST_CASE("expected assigns an error over a value it can neither copy nor move", "[expected]")

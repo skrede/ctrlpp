@@ -396,8 +396,7 @@ otherwise produce silent corruption through intermediate overflow:
 
 - **Predictive-control configuration:** `mpc::create`, `nmpc_dynamic::create`
   and `nmpc_static::create` refuse, with a typed `controller_construction_error`
-  (for the two nonlinear classes, that alternative of their construction-error
-  variant), input or state bounds
+  (the alternative of each class's construction-error variant), input or state bounds
   that hold a NaN, a lower bound of `+inf`, an upper bound of `-inf` or a lower
   bound above its upper bound; a rate bound with a NaN or negative entry; a
   non-finite, structurally asymmetric or indefinite cost weight; and a
@@ -476,7 +475,9 @@ semidefinite, so the same verdict serves, and the symmetrized copy is what the
 posed cost and its gradient use. The one exception is `R` where the Riccati
 solve inverts it: `mpc::create` with `Qf` unset refuses a singular `R`
 (`singular_input_weight`), by the solve's own rank test on its equilibrated
-weighting, and so does `terminal_ingredients`. It does not yet apply to the weight matrices
+weighting, and so does `terminal_ingredients`. With `Qf` unset, `mpc::create`
+also refuses every other Riccati failure, carrying the solve's own `dare_error`,
+rather than pose another terminal cost. The convention does not yet apply to the weight matrices
 of the regulators and the Riccati solvers, nor to
 the moving-horizon estimators' own copies of `Q`, `R` and `P0`: `mhe` and
 `nmhe` forward the embedded filter's refusal, but the copies they keep for

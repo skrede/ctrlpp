@@ -372,25 +372,22 @@ public:
     }
 
 private:
-    /// Ends the lifetime of *old_member and constructs *new_member from args in
-    /// the same union storage. Precondition: the union currently holds
-    /// *old_member, and m_has_value still says so.
+    /// Ends the lifetime of *old_member and constructs *new_member from args in the same union
+    /// storage. Precondition: the union currently holds *old_member, and m_has_value still says so.
     ///
-    /// Three branches, so that a construction which throws never leaves the union
-    /// holding a member whose lifetime already ended:
-    ///  1. the new member cannot throw when built from args -- destroy, then
-    ///     construct;
-    ///  2. it can throw but moves without throwing -- build a temporary first, so
-    ///     a throw leaves the union untouched, then destroy and move in;
-    ///  3. neither -- stage the OLD member into a local, destroy it, construct the
-    ///     new one, and restore the local into its slot if that throws. The
-    ///     assignment operators' constraints guarantee that at least one of the
-    ///     two members moves without throwing, which is what makes the staging in
-    ///     this branch itself unable to fail.
+    /// Three branches, so that a construction which throws never leaves the union holding a member
+    /// whose lifetime already ended:
+    ///  1. the new member cannot throw when built from args -- destroy, then construct;
+    ///  2. it can throw but moves without throwing -- build a temporary first, so a throw leaves the
+    ///     union untouched, then destroy and move in;
+    ///  3. neither -- with exceptions, stage the OLD member into a local, destroy it, construct the
+    ///     new one, and restore the local into its slot if that throws; without them nothing can
+    ///     throw, so destroy and construct. The assignment operators' constraints guarantee that at
+    ///     least one of the two members moves without throwing, which is what makes the staging
+    ///     itself unable to fail.
     ///
-    /// Every branch leaves m_has_value alone; the caller flips it only after this
-    /// returns, so an unwound assignment cannot leave the flag disagreeing with
-    /// the union's real occupant.
+    /// Every branch leaves m_has_value alone; the caller flips it only after this returns, so an
+    /// unwound assignment cannot leave the flag disagreeing with the union's real occupant.
     template <typename NewT, typename OldT, typename... Args>
     static constexpr void reinit_member(NewT* new_member, OldT* old_member, Args&&... args)
     {
@@ -410,10 +407,10 @@ private:
         else
         {
             static_assert(std::is_nothrow_move_constructible_v<OldT>, "the assignment constraints guarantee the staged member moves back into the union without throwing");
+#if CTRLPP_HAS_EXCEPTIONS
             OldT staged(std::move(*old_member));
             if constexpr (!std::is_trivially_destructible_v<OldT>)
                 std::destroy_at(old_member);
-#if CTRLPP_HAS_EXCEPTIONS
             try
             {
                 std::construct_at(new_member, std::forward<Args>(args)...);
@@ -424,6 +421,8 @@ private:
                 throw;
             }
 #else
+            if constexpr (!std::is_trivially_destructible_v<OldT>)
+                std::destroy_at(old_member);
             std::construct_at(new_member, std::forward<Args>(args)...);
 #endif
         }

@@ -33,7 +33,7 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 | `horizon` | `int` | `1` | Prediction horizon length N |
 | `Q` | `Matrix<Scalar, NX, NX>` | Identity | State cost weight |
 | `R` | `Matrix<Scalar, NU, NU>` | Identity | Input cost weight |
-| `Qf` | `optional<Matrix<Scalar, NX, NX>>` | DARE solution | Terminal cost weight. Computed from DARE when not provided; if that solve fails the state weight stands in and [`diagnostics()`](#diagnostics) reports it. |
+| `Qf` | `optional<Matrix<Scalar, NX, NX>>` | DARE solution | Terminal cost weight. Computed from the DARE solve when not provided; `create` refuses the configuration if that solve declines. |
 | `u_min` | `optional<Vector<Scalar, NU>>` | none | Element-wise lower input bound |
 | `u_max` | `optional<Vector<Scalar, NU>>` | none | Element-wise upper input bound |
 | `x_min` | `optional<Vector<Scalar, NX>>` | none | Element-wise lower state bound |
@@ -49,12 +49,15 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 ```cpp
 static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
                        const mpc_config<Scalar, NX, NU>& config)
-    -> expected<mpc, controller_construction_error>;
+    -> expected<mpc, mpc_construction_error>;
 
 static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
                        const mpc_config<Scalar, NX, NU>& config,
                        Solver solver)
-    -> expected<mpc, controller_construction_error>;
+    -> expected<mpc, mpc_construction_error>;
+
+// in ctrlpp/mpc/terminal_cost.h
+using mpc_construction_error = std::variant<controller_construction_error, dare_error>;
 ```
 
 `create` is the only construction path. There is no non-fallible constructor, so a rejected configuration is a value the caller has to inspect and never a controller that quietly stands in for one. It validates the configuration, computes the terminal cost (via DARE if `Qf` is not set), then builds the QP matrices and initializes the solver. The two-argument form default-constructs the solver and chains into the three-argument form, which injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset:
@@ -64,16 +67,20 @@ static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
 auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(
     sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
 if (!created)
-    return handle(created.error());
+{
+    if (const auto* cause = std::get_if<ctrlpp::dare_error>(&created.error()))
+        return handle_riccati_refusal(*cause);
+    return handle(std::get<ctrlpp::controller_construction_error>(created.error()));
+}
 auto controller = *std::move(created);
 ```
 
 ### Rejections
 
-The configuration is validated once here, before any dimension product is formed and before any storage is reserved. Rejections, checked in order:
+The configuration is validated once here, before any dimension product is formed and before any storage is reserved. Rejections, checked in order. Every row but the last is the `controller_construction_error` alternative of `mpc_construction_error`:
 
-| Condition | `controller_construction_error` |
-|-----------|----------------------------------|
+| Condition | Refusal |
+|-----------|---------|
 | `config.horizon <= 0` | `non_positive_horizon` |
 | `config.horizon` above the representable bound of the derived dimensions | `horizon_overflow` |
 | `u_min` or `u_max` holds a NaN, `u_min` holds `+inf`, `u_max` holds `-inf`, or `u_min > u_max` in some entry | `invalid_input_bounds` |
@@ -84,12 +91,15 @@ The configuration is validated once here, before any dimension product is formed
 | that weight is not positive semidefinite | `indefinite_cost_weight` |
 | `soft_penalty`, or a set `soft_state_penalty`, is non-finite or non-positive in some entry while the state bounds are soft | `invalid_constraint_penalty` |
 | `Qf` is not set and `R` is singular to the Riccati solve that supplies the terminal cost, checked after every rule above | `singular_input_weight` |
+| `Qf` is not set and the Riccati solve declines, checked after `singular_input_weight` | the `dare_error` alternative, carrying the solve's own enumerator |
 
 Each weight is checked completely (finite, symmetric, semidefinite) before the next one, so an indefinite `Q` is reported ahead of a non-finite `R`.
 
 Equal bounds pin a variable and are accepted, as is an infinite bound in its open direction (`u_min = -inf`, `u_max = +inf`). A rate bound of zero, `-0.0` or `+inf` is accepted.
 
 The weights follow the library's symmetry convention. An asymmetry within the rounding bound `N * eps * max|W_ij|` (never below `N * denorm_min`) of an `N x N` weight `W` is drift: it is symmetrized in the controller's own copy of the configuration before the QP is assembled. The cost assembly passes only the upper triangle to the backend, so without that step the backend would see the reflection of the upper triangle rather than the symmetric part the configured cost denotes. A larger asymmetry is structure and is refused, never silently symmetrized. Semidefiniteness is decided by the symmetric eigensolver with the floor `N * eps * max|W_ij|`, the order of its backward error. `R` is required positive semidefinite in general: the QP needs only a semidefinite Hessian to be convex, so a singular `R` is accepted when `Qf` is set. With `Qf` unset, the Riccati solve that supplies the terminal cost inverts `R`, so `create` refuses a singular `R` there with `singular_input_weight` rather than build a controller with a different terminal cost. The verdict is the solve's own: the reciprocal-pivot rank test at `NU * eps` on the equilibrated weighting `R / max(max|Q_ij|, max|R_ij|)`, with `Q` mapped to state space. It is a rank test, not a zero test, so `R = diag(1, 0)` is refused, and so is a weighting that is positive at its own scale but underflows to zero at the equilibrated one (`Q = 1e300 I`, `R = 1e-300`). It does not depend on `A`.
+
+With `Qf` unset, no other terminal cost is ever posed in place of the Riccati solution: a solve that declines refuses the configuration with the solve's own `dare_error`. Setting `Qf` poses a terminal cost of the caller's own choosing; `Qf = Q` poses the stage weight. A rank-deficient `A`, such as an input delay carried as states or a deadbeat or FIR model, is refused as `singular_a`, because the symplectic method the Riccati solve uses inverts `A`. That is a limit of the method and not of the plant, so such a plant needs an explicit `Qf`. Of the remaining enumerators, `singular_r` never arrives, because `singular_input_weight` is checked first with the same test on the same operand; `schur_failed` has no known input that reaches it; and `non_psd_solution` arrives through the rounding allowance the semidefiniteness check grants `Q`, which the Riccati solution can amplify past the solve's own floor on a stable, uncontrollable mode. Branch on `has_value()` and read the enumerator as a diagnostic; see [how far the enumerator can be relied on](../control/dare.md#how-far-the-enumerator-can-be-relied-on).
 
 The state bounds are soft when `x_min` or `x_max` is set and `hard_state_constraints` is false; only then are the penalties inspected. `soft_penalty` is checked even while a per-state `soft_state_penalty` replaces it, because it is a configuration field with a valid default and an invalid value there is a mistake either way.
 
@@ -200,26 +210,6 @@ auto diagnostics() const -> mpc_diagnostics<Scalar>;
 ```
 
 Returns solver diagnostics from the last solve, including status, iteration count, solve time, cost, and residuals.
-
-It also carries one disposition that is not about a solve at all:
-
-| Field | Meaning |
-|-------|---------|
-| `used_state_weight_terminal_cost` | No terminal weight was configured, and the Riccati solve that would have supplied one produced no solution, so `Q` (mapped to state space) stands in for the terminal cost. A singular `R` never reaches this: `create` refuses it with `singular_input_weight` |
-
-When `Qf` is not set, the infinite-horizon Riccati solution is what the terminal cost is meant to be. That solve can still fail after `create` has refused a singular `R`: on a rank-deficient `A`, on a pair with no stabilizing solution, or on a pose whose solution the solve cannot verify. The controller then substitutes the state weight, which is a usable cost but a different problem from the configured one: every solve after it optimizes that different problem, and a stability argument resting on the terminal cost no longer holds. Nothing about a solve's success distinguishes the two, so the substitution is reported here instead.
-
-The flag is latched when the terminal cost is computed, which happens at construction rather than per solve. It is therefore readable before the first solve, and reads the same on every solve afterwards.
-
-```cpp
-auto controller = *ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(system, config);
-
-if (controller.diagnostics().used_state_weight_terminal_cost)
-{
-    // Not the terminal cost the configuration implies. Either supply Qf
-    // explicitly, or accept that the horizon is doing all the work.
-}
-```
 
 ## Terminal sets
 
@@ -340,7 +330,7 @@ int main()
     auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
     if(!created)
     {
-        // created.error() carries the controller_construction_error.
+        // created.error() carries the mpc_construction_error.
         return 1;
     }
     auto controller = *std::move(created);

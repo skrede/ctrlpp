@@ -146,7 +146,7 @@ int main()
         sys, cfg, ctrlpp::argmin_qp_solver{ctrlpp::qp_preset::speed});
     if(!created)
     {
-        // created.error() carries the controller_construction_error.
+        // created.error() carries the mpc_construction_error.
         return EXIT_FAILURE;
     }
     auto controller = *std::move(created);

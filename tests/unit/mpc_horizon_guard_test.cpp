@@ -354,7 +354,7 @@ void require_moving_horizon_configuration_error(
 }
 
 template <typename Alternative, typename Result>
-void require_nonlinear_construction_error(const Result& result, Alternative expected)
+void require_construction_error(const Result& result, Alternative expected)
 {
     REQUIRE_FALSE(result.has_value());
     auto const* error = std::get_if<Alternative>(&result.error());
@@ -604,16 +604,14 @@ TEST_CASE("Linear MPC rejects a negative horizon at construction", "[mpc][horizo
 {
     auto result = linear_controller::create(make_system(), linear_config(-1), ctrlpp_test::stub_qp_solver<double>{});
 
-    REQUIRE(!result.has_value());
-    REQUIRE(result.error() == ctrlpp::controller_construction_error::non_positive_horizon);
+    require_construction_error(result, ctrlpp::controller_construction_error::non_positive_horizon);
 }
 
 TEST_CASE("Linear MPC rejects a zero horizon at construction", "[mpc][horizon][hardening]")
 {
     auto result = linear_controller::create(make_system(), linear_config(0), ctrlpp_test::stub_qp_solver<double>{});
 
-    REQUIRE(!result.has_value());
-    REQUIRE(result.error() == ctrlpp::controller_construction_error::non_positive_horizon);
+    require_construction_error(result, ctrlpp::controller_construction_error::non_positive_horizon);
 }
 
 TEST_CASE("Linear MPC accepts a horizon of one and solves", "[mpc][horizon][hardening]")
@@ -640,24 +638,22 @@ TEST_CASE("Linear MPC rejects a horizon whose derived dimensions would overflow"
     // valid horizon, so it would genuinely try to reserve a decision vector of
     // roughly two billion entries.
     auto just_past = linear_controller::create(make_system(), linear_config(linear_horizon_bound + 1), ctrlpp_test::stub_qp_solver<double>{});
-    REQUIRE(!just_past.has_value());
-    REQUIRE(just_past.error() == ctrlpp::controller_construction_error::horizon_overflow);
+    require_construction_error(just_past, ctrlpp::controller_construction_error::horizon_overflow);
 
     auto largest = linear_controller::create(make_system(), linear_config(std::numeric_limits<int>::max()), ctrlpp_test::stub_qp_solver<double>{});
-    REQUIRE(!largest.has_value());
-    REQUIRE(largest.error() == ctrlpp::controller_construction_error::horizon_overflow);
+    require_construction_error(largest, ctrlpp::controller_construction_error::horizon_overflow);
 }
 
 TEST_CASE("Nonlinear MPC rejects a negative horizon at construction", "[nmpc][horizon][hardening]")
 {
     auto result = nonlinear_controller::create(double_integrator, nonlinear_config(-1), ctrlpp_test::stub_nlp_solver<double>{});
-    require_nonlinear_construction_error(result, ctrlpp::controller_construction_error::non_positive_horizon);
+    require_construction_error(result, ctrlpp::controller_construction_error::non_positive_horizon);
 }
 
 TEST_CASE("Nonlinear MPC rejects a zero horizon at construction", "[nmpc][horizon][hardening]")
 {
     auto result = nonlinear_controller::create(double_integrator, nonlinear_config(0), ctrlpp_test::stub_nlp_solver<double>{});
-    require_nonlinear_construction_error(result, ctrlpp::controller_construction_error::non_positive_horizon);
+    require_construction_error(result, ctrlpp::controller_construction_error::non_positive_horizon);
 }
 
 TEST_CASE("Nonlinear MPC accepts a horizon of one and solves", "[nmpc][horizon][hardening]")
@@ -679,10 +675,10 @@ TEST_CASE("Nonlinear MPC accepts a horizon of one and solves", "[nmpc][horizon][
 TEST_CASE("Nonlinear MPC rejects a horizon whose derived dimensions would overflow", "[nmpc][horizon][hardening]")
 {
     auto just_past = nonlinear_controller::create(double_integrator, nonlinear_config(nonlinear_horizon_bound + 1), ctrlpp_test::stub_nlp_solver<double>{});
-    require_nonlinear_construction_error(just_past, ctrlpp::controller_construction_error::horizon_overflow);
+    require_construction_error(just_past, ctrlpp::controller_construction_error::horizon_overflow);
 
     auto largest = nonlinear_controller::create(double_integrator, nonlinear_config(std::numeric_limits<int>::max()), ctrlpp_test::stub_nlp_solver<double>{});
-    require_nonlinear_construction_error(largest, ctrlpp::controller_construction_error::horizon_overflow);
+    require_construction_error(largest, ctrlpp::controller_construction_error::horizon_overflow);
 }
 
 TEST_CASE("Runtime-horizon nonlinear MPC reports a solver setup failure at construction with the backend's cause", "[nmpc][setup][hardening]")
@@ -691,7 +687,7 @@ TEST_CASE("Runtime-horizon nonlinear MPC reports a solver setup failure at const
     solver.fail_setup = true;
     auto result = nonlinear_controller::create(double_integrator, nonlinear_config(shape_horizon), std::move(solver));
 
-    require_nonlinear_construction_error(result, ctrlpp_test::stub_setup_error::rejected);
+    require_construction_error(result, ctrlpp_test::stub_setup_error::rejected);
 }
 
 TEST_CASE("Compile-time-horizon NLP formulation rejects a disagreeing runtime horizon", "[nmpc][horizon][hardening]")
@@ -738,8 +734,8 @@ TEST_CASE("Compile-time-horizon controller refuses a disagreeing runtime horizon
     for(const int runtime_horizon : {static_cast<int>(NH) - 1, static_cast<int>(NH) + 1, 0})
     {
         CAPTURE(runtime_horizon);
-        require_nonlinear_construction_error(static_controller::create(double_integrator, nonlinear_config(runtime_horizon)), ctrlpp::nlp_formulation_error::horizon_mismatch);
-        require_nonlinear_construction_error(static_controller::create(double_integrator, nonlinear_config(runtime_horizon), ctrlpp_test::stub_nlp_solver<double>{}),
+        require_construction_error(static_controller::create(double_integrator, nonlinear_config(runtime_horizon)), ctrlpp::nlp_formulation_error::horizon_mismatch);
+        require_construction_error(static_controller::create(double_integrator, nonlinear_config(runtime_horizon), ctrlpp_test::stub_nlp_solver<double>{}),
                                              ctrlpp::nlp_formulation_error::horizon_mismatch);
     }
 }
@@ -764,8 +760,8 @@ TEST_CASE("The default nmpc refuses the default configuration with a path constr
     const auto cfg = path_constrained_config();
     REQUIRE(cfg.soft_constraints);
 
-    require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg), ctrlpp::nlp_formulation_error::slack_not_supported);
-    require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg, ctrlpp_test::stub_nlp_solver<double>{}),
+    require_construction_error(constrained_default_alias::create(double_integrator, cfg), ctrlpp::nlp_formulation_error::slack_not_supported);
+    require_construction_error(constrained_default_alias::create(double_integrator, cfg, ctrlpp_test::stub_nlp_solver<double>{}),
                                          ctrlpp::nlp_formulation_error::slack_not_supported);
 }
 
@@ -797,7 +793,7 @@ TEST_CASE("Compile-time-horizon nonlinear MPC reports a solver setup failure at 
     solver.fail_setup = true;
     auto cfg = path_constrained_config();
     cfg.soft_constraints = false;
-    require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg, std::move(solver)), ctrlpp_test::stub_setup_error::rejected);
+    require_construction_error(constrained_default_alias::create(double_integrator, cfg, std::move(solver)), ctrlpp_test::stub_setup_error::rejected);
 }
 
 TEST_CASE("Compile-time-horizon nonlinear MPC checks admission, then the formulation, then setup", "[nmpc][configuration][hardening]")
@@ -811,14 +807,14 @@ TEST_CASE("Compile-time-horizon nonlinear MPC checks admission, then the formula
         cfg.u_max = Eigen::Matrix<double, 1, 1>{-1.0};
         ctrlpp_test::stub_nlp_solver<double> refusing;
         refusing.fail_setup = true;
-        require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg), ctrlpp::controller_construction_error::invalid_input_bounds);
-        require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg, std::move(refusing)),
+        require_construction_error(constrained_default_alias::create(double_integrator, cfg), ctrlpp::controller_construction_error::invalid_input_bounds);
+        require_construction_error(constrained_default_alias::create(double_integrator, cfg, std::move(refusing)),
                                              ctrlpp::controller_construction_error::invalid_input_bounds);
     }
 
     SECTION("a horizon mismatch is reported before the slack refusal")
     {
-        require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg), ctrlpp::nlp_formulation_error::horizon_mismatch);
+        require_construction_error(constrained_default_alias::create(double_integrator, cfg), ctrlpp::nlp_formulation_error::horizon_mismatch);
     }
 
     SECTION("a formulation refusal is reported before the solver is set up")
@@ -826,7 +822,7 @@ TEST_CASE("Compile-time-horizon nonlinear MPC checks admission, then the formula
         cfg.horizon = shape_horizon;
         ctrlpp_test::stub_nlp_solver<double> refusing;
         refusing.fail_setup = true;
-        require_nonlinear_construction_error(constrained_default_alias::create(double_integrator, cfg, std::move(refusing)),
+        require_construction_error(constrained_default_alias::create(double_integrator, cfg, std::move(refusing)),
                                              ctrlpp::nlp_formulation_error::slack_not_supported);
     }
 }
@@ -1343,29 +1339,47 @@ using constrained_nonlinear_config = ctrlpp::nmpc_config<double, NX, NU, 1, 1>;
 using constrained_nonlinear_controller = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp_test::stub_nlp_solver<double>, decltype(double_integrator), 1, 1>;
 using static_nonlinear_controller = ctrlpp::nmpc_static<double, NX, NU, static_cast<std::size_t>(shape_horizon), ctrlpp_test::stub_nlp_solver<double>, decltype(double_integrator)>;
 
+using linear_construction_outcome = std::optional<ctrlpp::mpc_construction_error>;
+
+auto linear_refusal(construction_outcome outcome) -> linear_construction_outcome
+{
+    if(!outcome)
+        return std::nullopt;
+    return ctrlpp::mpc_construction_error{*outcome};
+}
+
+auto riccati_refusal(ctrlpp::dare_error cause) -> linear_construction_outcome
+{
+    return ctrlpp::mpc_construction_error{cause};
+}
+
 template <typename Result>
-auto agreed_outcome(const Result& two_argument, const Result& solver_taking) -> construction_outcome
+auto agreed_refusal(const Result& two_argument, const Result& solver_taking) -> std::optional<typename Result::error_type>
 {
     REQUIRE(two_argument.has_value() == solver_taking.has_value());
     if(two_argument.has_value())
         return std::nullopt;
     REQUIRE(two_argument.error() == solver_taking.error());
-    if constexpr(std::is_same_v<typename Result::error_type, ctrlpp::controller_construction_error>)
-        return two_argument.error();
-    else
-    {
-        auto const* refusal = std::get_if<ctrlpp::controller_construction_error>(&two_argument.error());
-        REQUIRE(refusal != nullptr);
-        return *refusal;
-    }
+    return two_argument.error();
+}
+
+template <typename Result>
+auto agreed_outcome(const Result& two_argument, const Result& solver_taking) -> construction_outcome
+{
+    auto const refusal = agreed_refusal(two_argument, solver_taking);
+    if(!refusal)
+        return std::nullopt;
+    auto const* configuration = std::get_if<ctrlpp::controller_construction_error>(&*refusal);
+    REQUIRE(configuration != nullptr);
+    return *configuration;
 }
 
 template <typename Configure>
-auto linear_outcome(Configure configure) -> construction_outcome
+auto linear_outcome(Configure configure) -> linear_construction_outcome
 {
     auto cfg = linear_config(shape_horizon);
     configure(cfg);
-    return agreed_outcome(linear_controller::create(make_system(), cfg), linear_controller::create(make_system(), cfg, ctrlpp_test::stub_qp_solver<double>{}));
+    return agreed_refusal(linear_controller::create(make_system(), cfg), linear_controller::create(make_system(), cfg, ctrlpp_test::stub_qp_solver<double>{}));
 }
 
 template <typename Controller = nonlinear_controller, typename Config = ctrlpp::nmpc_config<double, NX, NU>, typename Configure>
@@ -1380,7 +1394,7 @@ auto nonlinear_outcome(Configure configure) -> construction_outcome
 template <typename Configure>
 void require_both_predictive(Configure configure, construction_outcome expected)
 {
-    CHECK(linear_outcome(configure) == expected);
+    CHECK(linear_outcome(configure) == linear_refusal(expected));
     CHECK(nonlinear_outcome(configure) == expected);
 }
 
@@ -1492,7 +1506,6 @@ void require_square_weight_rules(Weight weight)
     require_both_predictive(weight(weight_2x2(2.0, 0.5, 0.5 + (std::nextafter(2.0, infinity) - 2.0), 1.0)), accepted);
     require_both_predictive(weight(weight_2x2(1.0, 0.0, 0.0, -rounding_bound_2x2(1.0))), accepted);
     require_both_predictive(weight(weight_2x2(1.0, 1.0, 1.0, 1.0)), accepted);
-    require_both_predictive(weight(weight_2x2(0.0, 0.0, 0.0, 0.0)), accepted);
 }
 
 auto path_constrained(double penalty, bool soft)
@@ -1584,11 +1597,24 @@ TEST_CASE("Predictive factories refuse a NaN or negative rate bound", "[mpc][nmp
 TEST_CASE("Predictive factories refuse a non-finite, structurally asymmetric or indefinite state weight", "[mpc][nmpc][configuration][hardening]")
 {
     require_square_weight_rules([](const Eigen::Matrix2d& weight) { return state_weight(weight); });
+
+    // A zero state weight poses a convex program, but no stabilizing Riccati solution exists for it on
+    // this plant, so only the linear MPC with Qf unset refuses it, with the solve's own cause.
+    auto const zero_state_weight = state_weight(Eigen::Matrix2d::Zero());
+    CHECK(nonlinear_outcome(zero_state_weight) == accepted);
+    CHECK(nonlinear_outcome<static_nonlinear_controller>(zero_state_weight) == accepted);
+    CHECK(linear_outcome([&](auto& cfg) {
+              zero_state_weight(cfg);
+              cfg.Qf = Eigen::Matrix2d::Identity();
+          })
+          == linear_refusal(accepted));
+    CHECK(linear_outcome(zero_state_weight) == riccati_refusal(ctrlpp::dare_error::non_stabilizable));
 }
 
 TEST_CASE("Predictive factories refuse a non-finite, structurally asymmetric or indefinite terminal weight when one is set", "[mpc][nmpc][configuration][hardening]")
 {
     require_square_weight_rules([](const Eigen::Matrix2d& weight) { return terminal_weight(weight); });
+    require_both_predictive(terminal_weight(Eigen::Matrix2d::Zero()), accepted);
     require_both_predictive([](auto& cfg) { cfg.Qf.reset(); }, accepted);
 }
 
@@ -1605,12 +1631,12 @@ TEST_CASE("Predictive factories refuse a non-finite or negative input weight", "
 // Riccati solve that supplies a missing terminal weight has to invert it.
 TEST_CASE("A singular input weight is refused only where the Riccati solve inverts it", "[mpc][nmpc][configuration][hardening]")
 {
-    CHECK(linear_outcome(input_weight(0.0)) == ctrlpp::controller_construction_error::singular_input_weight);
+    CHECK(linear_outcome(input_weight(0.0)) == linear_refusal(ctrlpp::controller_construction_error::singular_input_weight));
     CHECK(linear_outcome([](auto& cfg) {
               input_weight(0.0)(cfg);
               cfg.Qf = 10.0 * Eigen::Matrix2d::Identity();
           })
-          == accepted);
+          == linear_refusal(accepted));
 
     CHECK(nonlinear_outcome(input_weight(0.0)) == accepted);
     CHECK(nonlinear_outcome<static_nonlinear_controller>(input_weight(0.0)) == accepted);
@@ -1673,15 +1699,15 @@ TEST_CASE("Linear MPC refuses an invalid slack penalty only while its soft state
         for(const double penalty : invalid_penalties)
         {
             INFO("penalty " << penalty << (per_state ? " per state" : " uniform"));
-            CHECK(linear_outcome(soft_state_box(penalty, false, per_state)) == ctrlpp::controller_construction_error::invalid_constraint_penalty);
+            CHECK(linear_outcome(soft_state_box(penalty, false, per_state)) == linear_refusal(ctrlpp::controller_construction_error::invalid_constraint_penalty));
 
-            CHECK(linear_outcome(soft_state_box(penalty, true, per_state)) == accepted);
-            CHECK(linear_outcome(unbounded_state_penalty(penalty, per_state)) == accepted);
+            CHECK(linear_outcome(soft_state_box(penalty, true, per_state)) == linear_refusal(accepted));
+            CHECK(linear_outcome(unbounded_state_penalty(penalty, per_state)) == linear_refusal(accepted));
         }
         for(const double penalty : valid_penalties)
         {
             INFO("penalty " << penalty << (per_state ? " per state" : " uniform"));
-            CHECK(linear_outcome(soft_state_box(penalty, false, per_state)) == accepted);
+            CHECK(linear_outcome(soft_state_box(penalty, false, per_state)) == linear_refusal(accepted));
         }
     }
 
@@ -1691,7 +1717,7 @@ TEST_CASE("Linear MPC refuses an invalid slack penalty only while its soft state
               soft_state_box(1.0, false, true)(cfg);
               cfg.soft_penalty = not_a_number;
           })
-          == ctrlpp::controller_construction_error::invalid_constraint_penalty);
+          == linear_refusal(ctrlpp::controller_construction_error::invalid_constraint_penalty));
 }
 
 TEST_CASE("Predictive factories report the first violated rule in the documented order", "[mpc][nmpc][configuration][hardening]")
@@ -1715,9 +1741,13 @@ TEST_CASE("Predictive factories report the first violated rule in the documented
     require_both_predictive(both(terminal_weight(weight_2x2(1.0, 0.5, 0.4, 1.0)), input_weight(-1.0)), ctrlpp::controller_construction_error::indefinite_cost_weight);
 
     CHECK(constrained_outcome(both(path_constrained(0.0, true), nan_state_weight)) == ctrlpp::controller_construction_error::non_finite_cost_weight);
-    CHECK(linear_outcome(both(soft_state_box(0.0, false, false), nan_state_weight)) == ctrlpp::controller_construction_error::non_finite_cost_weight);
-    CHECK(linear_outcome(both(input_weight(0.0), inverted_input)) == ctrlpp::controller_construction_error::invalid_input_bounds);
-    CHECK(linear_outcome(both(input_weight(0.0), soft_state_box(0.0, false, false))) == ctrlpp::controller_construction_error::invalid_constraint_penalty);
+    CHECK(linear_outcome(both(soft_state_box(0.0, false, false), nan_state_weight)) == linear_refusal(ctrlpp::controller_construction_error::non_finite_cost_weight));
+    CHECK(linear_outcome(both(input_weight(0.0), inverted_input)) == linear_refusal(ctrlpp::controller_construction_error::invalid_input_bounds));
+    CHECK(linear_outcome(both(input_weight(0.0), soft_state_box(0.0, false, false))) == linear_refusal(ctrlpp::controller_construction_error::invalid_constraint_penalty));
+
+    auto zero_state_weight = state_weight(Eigen::Matrix2d::Zero());
+    CHECK(linear_outcome(both(zero_state_weight, inverted_input)) == linear_refusal(ctrlpp::controller_construction_error::invalid_input_bounds));
+    CHECK(linear_outcome(both(zero_state_weight, input_weight(0.0))) == linear_refusal(ctrlpp::controller_construction_error::singular_input_weight));
 
     auto negative_horizon = [](auto& cfg) { cfg.horizon = -1; };
     require_both_predictive(both(inverted_input, negative_horizon), ctrlpp::controller_construction_error::non_positive_horizon);

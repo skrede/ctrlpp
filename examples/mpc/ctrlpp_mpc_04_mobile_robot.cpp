@@ -37,7 +37,7 @@ int main()
                                            .hard_state_constraints = false};
 
     // create validates the configuration and reports a rejection through
-    // ctrlpp::expected<mpc, controller_construction_error> instead of throwing.
+    // ctrlpp::expected<mpc, mpc_construction_error> instead of throwing.
     auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
     if(!controller_result.has_value())
     {

@@ -65,7 +65,7 @@ int main()
             std::numeric_limits<double>::infinity(), 2.0)};
 
     // Create MPC with OSQP solver backend. create validates the configuration
-    // and returns ctrlpp::expected<mpc, controller_construction_error>.
+    // and returns ctrlpp::expected<mpc, mpc_construction_error>.
     auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
     if (!created)
     {

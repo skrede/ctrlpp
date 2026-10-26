@@ -22,14 +22,6 @@ struct mpc_diagnostics
     Scalar max_path_constraint_violation{};
     Scalar max_terminal_constraint_violation{};
     Scalar total_slack{};
-    /// Set when no terminal weight was configured AND the Riccati solve that
-    /// would have supplied one did not produce a solution, so the state weight
-    /// stands in for the terminal cost. Every solve after that optimizes a
-    /// different problem than an infinite-horizon terminal cost poses, and any
-    /// stability argument resting on that terminal cost no longer holds.
-    /// Latched at construction, so it reads the same on every solve. A singular
-    /// R never sets it: mpc::create refuses one with singular_input_weight.
-    bool used_state_weight_terminal_cost{false};
     /// Which stopping test ended the last nonlinear solve, where the backend
     /// reports it; `unreported` for the QP-backed controllers and for backends
     /// that do not say.

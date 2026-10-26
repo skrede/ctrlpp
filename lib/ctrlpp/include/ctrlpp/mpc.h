@@ -60,7 +60,7 @@ public:
     ///
     /// Rejections and their order are those of the solver-taking overload.
     static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config)
-        -> expected<mpc, controller_construction_error>
+        -> expected<mpc, mpc_construction_error>
     {
         return create(system, config, Solver{});
     }
@@ -72,7 +72,7 @@ public:
     ///
     /// The configuration is validated here, before any dimension product is
     /// formed and before any storage is reserved. Rejections, checked in order,
-    /// as controller_construction_error enumerators:
+    /// as the controller_construction_error alternative except the last:
     ///  * horizon <= 0                        -> non_positive_horizon
     ///  * horizon > horizon_bound(config)      -> horizon_overflow
     ///  * u_min / u_max: NaN, lower +inf,
@@ -88,6 +88,9 @@ public:
     ///    strictly positive                    -> invalid_constraint_penalty
     ///  * with Qf unset, an R the Riccati
     ///    solve cannot invert                  -> singular_input_weight
+    ///  * with Qf unset, a Riccati solve that
+    ///    declines                             -> the dare_error alternative,
+    ///                                            the solve's own enumerator
     /// A weight whose asymmetry is rounding drift is symmetrized in the
     /// controller's own copy, so the posed cost uses one symmetric weight
     /// rather than whichever triangle the QP assembly reads.
@@ -110,15 +113,15 @@ public:
     /// step, the worst possible moment. Clamping the horizon to one would turn a
     /// caller mistake into a silently different controller.
     static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver)
-        -> expected<mpc, controller_construction_error>
+        -> expected<mpc, mpc_construction_error>
     {
         if(config.horizon <= 0)
-            return unexpected(controller_construction_error::non_positive_horizon);
+            return unexpected(mpc_construction_error{controller_construction_error::non_positive_horizon});
         if(config.horizon > horizon_bound(config))
-            return unexpected(controller_construction_error::horizon_overflow);
+            return unexpected(mpc_construction_error{controller_construction_error::horizon_overflow});
         auto admitted = detail::admit_mpc_config(config);
         if(!admitted)
-            return unexpected(admitted.error());
+            return unexpected(mpc_construction_error{admitted.error()});
         Matrix<Scalar, NX, NX> Q_state = system.C.transpose() * admitted->Q * system.C;
         auto terminal = detail::mpc_terminal_cost<Scalar, NX, NU, NY>(system, Q_state, admitted->R, admitted->Qf);
         if(!terminal)
@@ -220,14 +223,10 @@ private:
     };
 
     /// @brief Construct from a configuration and a terminal cost already validated by `create`.
-    ///
-    /// The terminal cost is latched into the diagnostics here, so a substitution is readable before
-    /// the first solve and carried on every aggregate the solve path emits.
     mpc(unchecked_t, const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Matrix<Scalar, NX, NX> Q_state,
         detail::mpc_terminal_weights<Scalar, NX, NY> terminal, Solver solver)
         : solver_{std::move(solver)}, config_{config}, system_{system}, Q_state_{std::move(Q_state)}, Qf_state_{std::move(terminal.state)}, CtQ_{system.C.transpose() * config.Q},
-          Qf_linear_{std::move(terminal.linear)}, last_diagnostics_{.used_state_weight_terminal_cost = terminal.substituted}, u_prev_{Vector<Scalar, NU>::Zero()},
-          terminal_cost_substituted_{terminal.substituted}
+          Qf_linear_{std::move(terminal.linear)}, last_diagnostics_{}, u_prev_{Vector<Scalar, NU>::Zero()}
     {
         compute_dimensions();
         build_initial_qp();
@@ -383,8 +382,7 @@ private:
                                                     .cost = result.objective,
                                                     .primal_residual = result.primal_residual,
                                                     .dual_residual = result.dual_residual,
-                                                    .max_constraint_violation = Scalar{0},
-                                                    .used_state_weight_terminal_cost = terminal_cost_substituted_};
+                                                    .max_constraint_violation = Scalar{0}};
     }
 
     /// @brief Consume an accepted backend result: validate its shape and
@@ -452,7 +450,6 @@ private:
     Vector<Scalar, NU> u_prev_;
     bool has_solution_{false};
     bool setup_failed_{false};
-    bool terminal_cost_substituted_;
 
     int n_dec_{};
     int n_con_{};

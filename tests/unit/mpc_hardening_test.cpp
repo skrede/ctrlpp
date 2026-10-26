@@ -35,19 +35,15 @@
 //    backend's polished solve at the weighting's own condition number, which is
 //    formed from the configured weights.
 //
-// What they deliberately do not decide, and one thing they cannot. The scaling
-// case stops at two decades. At a state weight of 1e10 the controller does not
-// receive the right terminal cost: the Riccati solve reports SUCCESS while
-// returning a solution whose residual is seven tenths of the weight's own norm,
-// and the command it produces is wrong by a factor of fourteen against the same
-// ratio posed at unit scale. That is a solver defect outside this file, so the
-// case asserts the invariance that holds and records where it stops, rather
-// than pinning a value the terminal cost makes meaningless.
+// What they deliberately do not decide. The scaling case compares two
+// magnitudes, unity and a hundred, and does not sweep the magnitude further.
 
 #include "hardening_helpers.h"
 
 #include "ctrlpp/mpc.h"
 #include "ctrlpp/mpc/osqp_solver.h"
+
+#include "ctrlpp/control/dare.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -58,6 +54,7 @@
 #include <cstddef>
 #include <limits>
 #include <vector>
+#include <variant>
 
 namespace
 {
@@ -131,7 +128,9 @@ TEST_CASE("MPC infeasible constraints: lower > upper", "[mpc][hardening][negativ
 
     auto controller_result = OsqpMpc::create(sys, cfg);
     REQUIRE_FALSE(controller_result.has_value());
-    CHECK(controller_result.error() == ctrlpp::controller_construction_error::invalid_input_bounds);
+    auto const* refusal = std::get_if<ctrlpp::controller_construction_error>(&controller_result.error());
+    REQUIRE(refusal != nullptr);
+    CHECK(*refusal == ctrlpp::controller_construction_error::invalid_input_bounds);
 }
 
 TEST_CASE("MPC minimal horizon N=1", "[mpc][hardening][negative]")
@@ -157,10 +156,6 @@ TEST_CASE("MPC minimal horizon N=1", "[mpc][hardening][negative]")
     REQUIRE(shortest_result.has_value());
     auto& shortest = *shortest_result;
 
-    // The premise: the terminal cost really is the Riccati solution and not the
-    // state weight standing in for it. The controller says so itself.
-    REQUIRE_FALSE(shortest.diagnostics().used_state_weight_terminal_cost);
-
     auto shortest_input = shortest.solve(x);
     REQUIRE(shortest_input.has_value());
     const double shortest_value = shortest.diagnostics().cost;
@@ -180,7 +175,6 @@ TEST_CASE("MPC minimal horizon N=1", "[mpc][hardening][negative]")
         auto longer_result = OsqpMpc::create(sys, longer);
         REQUIRE(longer_result.has_value());
         auto& controller = *longer_result;
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
 
         auto input = controller.solve(x);
         REQUIRE(input.has_value());
@@ -210,7 +204,9 @@ TEST_CASE("MPC with NaN in weight matrices", "[mpc][hardening][negative]")
 
     auto controller_result = OsqpMpc::create(sys, cfg);
     REQUIRE_FALSE(controller_result.has_value());
-    CHECK(controller_result.error() == ctrlpp::controller_construction_error::non_finite_cost_weight);
+    auto const* refusal = std::get_if<ctrlpp::controller_construction_error>(&controller_result.error());
+    REQUIRE(refusal != nullptr);
+    CHECK(*refusal == ctrlpp::controller_construction_error::non_finite_cost_weight);
 }
 
 // ── MPC hardening: precision ───────────────────────────────────────────────────
@@ -241,7 +237,6 @@ TEST_CASE("MPC 1D regulation matches known optimal", "[mpc][hardening][precision
     auto controller_result = ctrlpp::mpc<double, NX1, NU1, ctrlpp::osqp_solver>::create(sys, cfg);
     REQUIRE(controller_result.has_value());
     auto& controller = *controller_result;
-    REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
 
     Eigen::Matrix<double, 1, 1> x;
     x << 1.0;
@@ -281,7 +276,6 @@ TEST_CASE("MPC closed-loop stabilizes double integrator", "[mpc][hardening][stab
     auto controller_result = OsqpMpc::create(sys, cfg);
     REQUIRE(controller_result.has_value());
     auto& controller = *controller_result;
-    REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
 
     constexpr int cycles = 100;
     Eigen::Vector2d x{1.0, 0.5};
@@ -399,7 +393,6 @@ TEST_CASE("MPC command is invariant under a common scaling of both weights",
             .R = input_weight(scale * near_deadbeat_ratio),
         };
         auto controller = ctrlpp::test::constructed(OsqpMpc::create(sys, cfg));
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
         auto u = controller.solve(x);
         REQUIRE(u.has_value());
         REQUIRE(controller.diagnostics().status == ctrlpp::solve_status::optimal);
@@ -425,22 +418,24 @@ TEST_CASE("MPC command is invariant under a common scaling of both weights",
     CHECK(std::abs(at_unit_scale) > std::abs(x(0)));
 
     // The edge, asserted rather than described. One decade deeper the Riccati
-    // solve declines and the predictive controller substitutes the state weight
-    // and reports that it did. That is a repair and not a shortfall: at that
-    // ratio the solve used to return an answer whose relative forward error is
-    // 6.28e-08 against an independent extended-precision solution of the
-    // identical pose -- four times past the point where half of binary64's
-    // significand survives -- while its residual sat comfortably inside the
-    // envelope the postcondition then compared against. A finite-horizon
-    // program carrying the state weight as its terminal cost is not
-    // horizon-invariant, so a caller who sees this diagnostic set has been told
-    // exactly which property it no longer has.
-    auto past_the_edge = ctrlpp::test::constructed(OsqpMpc::create(
-        sys, ctrlpp::mpc_config<double, NX, NU>{
-                 .horizon = 10,
-                 .Q = Eigen::Matrix2d::Identity(),
-                 .R = input_weight(1e-10)}));
-    CHECK(past_the_edge.diagnostics().used_state_weight_terminal_cost);
+    // solve declines, because the answer it would return keeps less than half
+    // of binary64's significand, and the controller is refused with the solve's
+    // own cause rather than built on a terminal cost the configuration does not
+    // pose.
+    const ctrlpp::mpc_config<double, NX, NU> past_the_edge{
+        .horizon = 10,
+        .Q = Eigen::Matrix2d::Identity(),
+        .R = input_weight(1e-10)};
+    const Eigen::Matrix2d Q_state = sys.C.transpose() * past_the_edge.Q * sys.C;
+    auto const solved = ctrlpp::dare<double, NX, NU>(sys.A, sys.B, Q_state, past_the_edge.R);
+    REQUIRE_FALSE(solved.has_value());
+    CHECK(solved.error() == ctrlpp::dare_error::arithmetic_limit);
+
+    auto const refused = OsqpMpc::create(sys, past_the_edge);
+    REQUIRE_FALSE(refused.has_value());
+    auto const* cause = std::get_if<ctrlpp::dare_error>(&refused.error());
+    REQUIRE(cause != nullptr);
+    CHECK(*cause == solved.error());
 }
 
 TEST_CASE("MPC horizon invariance survives a near-deadbeat weight ratio",
@@ -455,9 +450,9 @@ TEST_CASE("MPC horizon invariance survives a near-deadbeat weight ratio",
     // program carrying the INFINITE-horizon cost-to-go at its end, so it is
     // claimable only where that cost-to-go is available; one decade deeper the
     // Riccati solve declines, because the answer it would return there has lost
-    // more than half of binary64's significand, and the substituted state weight
-    // is not horizon-invariant. Nine decades is the deepest ratio on this plant
-    // where the property under test exists to be tested.
+    // more than half of binary64's significand, and the controller is refused.
+    // Nine decades is the deepest ratio on this plant where the property under
+    // test exists to be tested.
     auto sys = make_double_integrator();
     const Eigen::Vector2d x{1.0, 0.0};
 
@@ -472,14 +467,12 @@ TEST_CASE("MPC horizon invariance survives a near-deadbeat weight ratio",
     };
 
     auto shortest = ctrlpp::test::constructed(OsqpMpc::create(sys, configured(1)));
-    REQUIRE_FALSE(shortest.diagnostics().used_state_weight_terminal_cost);
     auto shortest_input = shortest.solve(x);
     REQUIRE(shortest_input.has_value());
 
     for(const int horizon : {2, 5, 10, 20})
     {
         auto controller = ctrlpp::test::constructed(OsqpMpc::create(sys, configured(horizon)));
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
         auto input = controller.solve(x);
         REQUIRE(input.has_value());
         REQUIRE(controller.diagnostics().status == ctrlpp::solve_status::optimal);

@@ -1,4 +1,5 @@
 #include "ctrlpp/mpc.h"
+#include "ctrlpp/control/dare.h"
 #include "ctrlpp/model/state_space.h"
 
 #include <Eigen/Dense>
@@ -7,9 +8,13 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <span>
+#include <limits>
 #include <vector>
 #include <cstddef>
 #include <utility>
+#include <variant>
+#include <optional>
+#include <type_traits>
 
 namespace {
 
@@ -471,7 +476,7 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
         constexpr std::size_t SYSID_NY = 1;
 
         ctrlpp::discrete_state_space<double, SYSID_NX, SYSID_NU, SYSID_NY> sysid_sys{
-                .A = Eigen::Matrix2d::Identity(), .B = Eigen::Vector2d::Ones(), .C = (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(), .D = Eigen::Matrix<double, 1, 1>::Zero()};
+                .A = make_double_integrator().A, .B = make_double_integrator().B, .C = (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(), .D = Eigen::Matrix<double, 1, 1>::Zero()};
 
         ctrlpp::mpc_config<double, SYSID_NX, SYSID_NU, SYSID_NY> cfg{
                 .horizon = 5,
@@ -533,60 +538,83 @@ TEST_CASE("mpc trajectory is guarded before the first valid solve", "[mpc][traje
     CHECK(controller.trajectory().has_value());
 }
 
-// The terminal cost is the one place the controller answers a different
-// question than the one it was configured with. With no terminal weight given,
-// the infinite-horizon Riccati solution IS the terminal cost; when that solve
-// has no solution the state weight stands in for it, and every solve afterwards
-// optimizes a different problem. The substituted cost is usable, so nothing
-// about a solve's success distinguishes the two. The disposition does.
-TEST_CASE("mpc reports a substituted terminal cost", "[mpc][diagnostics]")
+namespace
+{
+
+template <typename Refusal, typename Result>
+auto refusal_as(const Result& result) -> std::optional<Refusal>
+{
+    if(result.has_value())
+        return std::nullopt;
+    if constexpr(std::is_same_v<typename Result::error_type, Refusal>)
+        return result.error();
+    else if(auto const* cause = std::get_if<Refusal>(&result.error()))
+        return *cause;
+    return std::nullopt;
+}
+
+auto plant(const Eigen::Matrix2d& A, const Eigen::Vector2d& B, const Eigen::Matrix2d& C = Eigen::Matrix2d::Identity()) -> ctrlpp::discrete_state_space<double, NX, NU, NX>
+{
+    return {A, B, C, Eigen::Matrix<double, 2, 1>::Zero()};
+}
+
+auto nilpotent_plant() -> ctrlpp::discrete_state_space<double, NX, NU, NX>
+{
+    return plant((Eigen::Matrix2d() << 0.0, 1.0, 0.0, 0.0).finished(), Eigen::Vector2d{0.0, 1.0});
+}
+
+auto riccati_on(const ctrlpp::discrete_state_space<double, NX, NU, NX>& sys, const ctrlpp::mpc_config<double, NX, NU>& cfg)
+    -> ctrlpp::expected<ctrlpp::dare_result<double, NX, NU>, ctrlpp::dare_error>
+{
+    const Eigen::Matrix2d Q_state = sys.C.transpose() * cfg.Q * sys.C;
+    return ctrlpp::dare<double, NX, NU>(sys.A, sys.B, Q_state, cfg.R);
+}
+
+// The pose is proved by the Riccati solve on the operands create hands it, and create must carry that solve's own cause.
+void require_riccati_refusal(const ctrlpp::discrete_state_space<double, NX, NU, NX>& sys, const ctrlpp::mpc_config<double, NX, NU>& cfg, ctrlpp::dare_error cause)
+{
+    REQUIRE_FALSE(cfg.Qf.has_value());
+    auto const solved = riccati_on(sys, cfg);
+    CHECK(refusal_as<ctrlpp::dare_error>(solved) == cause);
+
+    auto const created = Mpc::create(sys, cfg);
+    CHECK_FALSE(created.has_value());
+    CHECK(refusal_as<ctrlpp::dare_error>(created) == cause);
+}
+
+}
+
+// With no terminal weight configured, the infinite-horizon Riccati solution is the terminal cost, so a
+// controller is built only on that solution, and a solve that declines refuses the configuration.
+TEST_CASE("mpc with Qf unset never substitutes the terminal cost", "[mpc][terminal_cost]")
 {
     constexpr int N = 5;
 
-    SECTION("a failed Riccati solve reports the state weight standing in")
+    SECTION("a rank-deficient A is refused with the Riccati solve's cause")
     {
-        // A nilpotent A is exactly rank-deficient, and the symplectic pencil the
-        // Riccati solve is built on needs A invertible. There is no solution to
-        // fall back from, so the state weight stands in for the terminal cost.
-        Eigen::Matrix2d A;
-        A << 0.0, 1.0, 0.0, 0.0;
-        Eigen::Vector2d B;
-        B << 0.0, 1.0;
-        Eigen::Matrix2d C             = Eigen::Matrix2d::Identity();
-        Eigen::Matrix<double, 2, 1> D = Eigen::Matrix<double, 2, 1>::Zero();
-        ctrlpp::discrete_state_space<double, NX, NU, NX> singular_sys{A, B, C, D};
-
-        auto cfg = make_config(N);
-        REQUIRE_FALSE(cfg.Qf.has_value());
-
-        auto controller = make_controller<Mpc>(singular_sys, cfg);
-
-        // Readable before any solve: the substitution happened at construction.
-        REQUIRE(controller.diagnostics().used_state_weight_terminal_cost);
-
-        // And carried on the aggregate every solve emits, so a caller reading
-        // only the solve-path diagnostics still sees it.
-        Eigen::Vector2d x0{1.0, 0.0};
-        REQUIRE(controller.solve(x0).has_value());
-        REQUIRE(controller.diagnostics().used_state_weight_terminal_cost);
+        auto const created = Mpc::create(nilpotent_plant(), make_config(N));
+        CHECK(refusal_as<ctrlpp::dare_error>(created) == ctrlpp::dare_error::singular_a);
     }
 
     SECTION("a singular input weight is refused whatever A is")
     {
         // The Riccati solve tests A before R, so a nilpotent A would otherwise
-        // hide the singular R behind a substitution.
-        Eigen::Matrix2d A;
-        A << 0.0, 1.0, 0.0, 0.0;
-        Eigen::Vector2d B;
-        B << 0.0, 1.0;
-        ctrlpp::discrete_state_space<double, NX, NU, NX> singular_sys{A, B, Eigen::Matrix2d::Identity(), Eigen::Matrix<double, 2, 1>::Zero()};
-
+        // hide the singular R behind its own refusal.
         auto cfg = make_config(N);
         cfg.R.setZero();
 
-        auto created = Mpc::create(singular_sys, cfg);
-        REQUIRE_FALSE(created.has_value());
-        CHECK(created.error() == ctrlpp::controller_construction_error::singular_input_weight);
+        auto const created = Mpc::create(nilpotent_plant(), cfg);
+        CHECK(refusal_as<ctrlpp::controller_construction_error>(created) == ctrlpp::controller_construction_error::singular_input_weight);
+    }
+
+    SECTION("a singular input weight is refused when the state weight is zero")
+    {
+        auto cfg = make_config(N);
+        cfg.Q.setZero();
+        cfg.R.setZero();
+
+        auto const created = Mpc::create(make_double_integrator(), cfg);
+        CHECK(refusal_as<ctrlpp::controller_construction_error>(created) == ctrlpp::controller_construction_error::singular_input_weight);
     }
 
     SECTION("an input weight positive at its own scale is singular at the scale the Riccati solve inverts")
@@ -595,26 +623,23 @@ TEST_CASE("mpc reports a substituted terminal cost", "[mpc][diagnostics]")
         cfg.Q       = 1e300 * Eigen::Matrix2d::Identity();
         cfg.R(0, 0) = 1e-300;
 
-        auto created = Mpc::create(make_double_integrator(), cfg);
-        REQUIRE_FALSE(created.has_value());
-        CHECK(created.error() == ctrlpp::controller_construction_error::singular_input_weight);
+        auto const created = Mpc::create(make_double_integrator(), cfg);
+        CHECK(refusal_as<ctrlpp::controller_construction_error>(created) == ctrlpp::controller_construction_error::singular_input_weight);
     }
 
     SECTION("a rank-deficient input weight with no zero diagonal block is refused")
     {
         using two_input_mpc = ctrlpp::mpc<double, NX, 2, mock_qp_solver>;
-        auto const plant = make_double_integrator();
-        ctrlpp::discrete_state_space<double, NX, 2, NX> sys{plant.A, Eigen::Matrix2d::Identity(), plant.C, Eigen::Matrix2d::Zero()};
+        auto const di = make_double_integrator();
+        ctrlpp::discrete_state_space<double, NX, 2, NX> sys{di.A, Eigen::Matrix2d::Identity(), di.C, Eigen::Matrix2d::Zero()};
 
         ctrlpp::mpc_config<double, NX, 2> cfg{.horizon = N, .Q = Eigen::Matrix2d::Identity(), .R = Eigen::Matrix2d::Ones()};
         auto const coupled = two_input_mpc::create(sys, cfg);
-        REQUIRE_FALSE(coupled.has_value());
-        CHECK(coupled.error() == ctrlpp::controller_construction_error::singular_input_weight);
+        CHECK(refusal_as<ctrlpp::controller_construction_error>(coupled) == ctrlpp::controller_construction_error::singular_input_weight);
 
         cfg.R = Eigen::Vector2d{1.0, 0.0}.asDiagonal();
         auto const diagonal = two_input_mpc::create(sys, cfg);
-        REQUIRE_FALSE(diagonal.has_value());
-        CHECK(diagonal.error() == ctrlpp::controller_construction_error::singular_input_weight);
+        CHECK(refusal_as<ctrlpp::controller_construction_error>(diagonal) == ctrlpp::controller_construction_error::singular_input_weight);
     }
 
     SECTION("a singular input weight is accepted when a terminal weight is configured")
@@ -624,68 +649,90 @@ TEST_CASE("mpc reports a substituted terminal cost", "[mpc][diagnostics]")
         cfg.Qf = 10.0 * Eigen::Matrix2d::Identity();
 
         auto controller = make_controller<Mpc>(make_double_integrator(), cfg);
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
-        REQUIRE(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+        CHECK(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
     }
 
-    SECTION("a successful Riccati solve reports no substitution")
+    SECTION("a successful Riccati solve constructs and solves")
     {
-        auto sys = make_double_integrator();
         auto cfg = make_config(N);
-        REQUIRE_FALSE(cfg.Qf.has_value());
+        REQUIRE(riccati_on(make_double_integrator(), cfg).has_value());
 
-        auto controller = make_controller<Mpc>(sys, cfg);
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
-
-        Eigen::Vector2d x0{1.0, 0.0};
-        REQUIRE(controller.solve(x0).has_value());
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+        auto controller = make_controller<Mpc>(make_double_integrator(), cfg);
+        CHECK(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
     }
 
-    SECTION("an unverified Riccati terminal cost reports substitution")
+    SECTION("a Riccati solution the solve cannot verify is refused")
     {
-        auto sys    = make_double_integrator();
         auto cfg    = make_config(N);
         cfg.Q       = 1e10 * Eigen::Matrix2d::Identity();
         cfg.R(0, 0) = 0.1;
-        REQUIRE_FALSE(cfg.Qf.has_value());
 
-        auto controller = make_controller<Mpc>(sys, cfg);
-        REQUIRE(controller.diagnostics().used_state_weight_terminal_cost);
-
-        Eigen::Vector2d x0{1.0, 0.0};
-        REQUIRE(controller.solve(x0).has_value());
-        REQUIRE(controller.diagnostics().used_state_weight_terminal_cost);
+        require_riccati_refusal(make_double_integrator(), cfg, ctrlpp::dare_error::arithmetic_limit);
     }
 
-    SECTION("an equilibrated Riccati terminal cost reports no substitution")
+    SECTION("an equilibrated Riccati solve constructs and solves")
     {
-        auto sys    = make_double_integrator();
         auto cfg    = make_config(N);
         cfg.Q       = 1e8 * Eigen::Matrix2d::Identity();
         cfg.R(0, 0) = 0.1;
-        REQUIRE_FALSE(cfg.Qf.has_value());
+        REQUIRE(riccati_on(make_double_integrator(), cfg).has_value());
 
-        auto controller = make_controller<Mpc>(sys, cfg);
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
-
-        Eigen::Vector2d x0{1.0, 0.0};
-        REQUIRE(controller.solve(x0).has_value());
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+        auto controller = make_controller<Mpc>(make_double_integrator(), cfg);
+        CHECK(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
     }
 
-    SECTION("a configured terminal weight is never a substitution")
+    SECTION("a configured terminal weight constructs whatever the Riccati solve would say")
+    {
+        auto cfg = make_config(N);
+        REQUIRE(refusal_as<ctrlpp::dare_error>(riccati_on(nilpotent_plant(), cfg)) == ctrlpp::dare_error::singular_a);
+        cfg.Qf = Eigen::Matrix2d::Identity() * 10.0;
+
+        auto controller = make_controller<Mpc>(nilpotent_plant(), cfg);
+        CHECK(controller.solve(Eigen::Vector2d{1.0, 0.0}).has_value());
+    }
+}
+
+TEST_CASE("mpc with Qf unset refuses every Riccati failure with the solve's own cause", "[mpc][riccati_refusal]")
+{
+    constexpr int N = 5;
+    auto cfg = make_config(N);
+
+    SECTION("singular_a: a nilpotent A")
+    {
+        require_riccati_refusal(nilpotent_plant(), cfg, ctrlpp::dare_error::singular_a);
+    }
+
+    SECTION("non_finite_input: a state weight that overflows when mapped through C")
     {
         auto sys = make_double_integrator();
-        auto cfg = make_config(N);
-        cfg.Qf   = Eigen::Matrix2d::Identity() * 10.0;
-
-        auto controller = make_controller<Mpc>(sys, cfg);
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
-
-        Eigen::Vector2d x0{1.0, 0.0};
-        REQUIRE(controller.solve(x0).has_value());
-        REQUIRE_FALSE(controller.diagnostics().used_state_weight_terminal_cost);
+        sys.C *= 1e200;
+        require_riccati_refusal(sys, cfg, ctrlpp::dare_error::non_finite_input);
     }
+
+    SECTION("non_stabilizable: a zero state weight on a Jordan block at one")
+    {
+        cfg.Q.setZero();
+        require_riccati_refusal(make_double_integrator(), cfg, ctrlpp::dare_error::non_stabilizable);
+    }
+
+    SECTION("singular_u11: an exactly uncontrollable unstable mode")
+    {
+        require_riccati_refusal(plant(Eigen::Vector2d{2.0, 0.5}.asDiagonal(), Eigen::Vector2d{0.0, 1.0}), cfg, ctrlpp::dare_error::singular_u11);
+    }
+
+    SECTION("arithmetic_limit: a controllable pair whose solution keeps less than half the significand")
+    {
+        require_riccati_refusal(plant(Eigen::Vector2d{2.0, 0.5}.asDiagonal(), Eigen::Vector2d{1e-6, 1.0}), cfg, ctrlpp::dare_error::arithmetic_limit);
+    }
+
+    SECTION("non_psd_solution: a state weight negative within admission's rounding allowance")
+    {
+        // Admission accepts Q22 = -2 eps, exactly its floor. On the stable uncontrollable mode p22 = Q22 / (1 - 0.6^2) falls 55% below
+        // the solve's semidefiniteness floor, and its coupling -A^-T Q clears the real Schur deflation test by 47%: the pose relies on both margins.
+        cfg.Q = Eigen::Vector2d{1.0, -2.0 * std::numeric_limits<double>::epsilon()}.asDiagonal();
+        require_riccati_refusal(plant(Eigen::Vector2d{0.1, 0.6}.asDiagonal(), Eigen::Vector2d{1.0, 0.0}), cfg, ctrlpp::dare_error::non_psd_solution);
+    }
+
+    // No section for singular_r: create refuses that R first, as singular_input_weight, by the same test on the same operand.
+    // No section for schur_failed: no finite input is known on which the real Schur iteration fails to converge.
 }
