@@ -21,3 +21,19 @@ add_executable(moving_horizon_factory_compile moving_horizon_factory_compile.cpp
 target_link_libraries(moving_horizon_factory_compile PRIVATE ctrlpp::ctrlpp)
 target_compile_options(moving_horizon_factory_compile PRIVATE ${CTRLPP_WARNING_FLAGS})
 add_test(NAME moving_horizon_factory_compile COMMAND moving_horizon_factory_compile)
+
+# The linear MPC's constructor is public so create can build it in place and set its solver up there; the passkey alone keeps an unvalidated, unset controller out.
+ctrlpp_try_canary(CTRLPP_MPC_PASSKEY_BASELINE_COMPILED mpc_passkey_canary.cpp)
+if (NOT CTRLPP_MPC_PASSKEY_BASELINE_COMPILED)
+    message(FATAL_ERROR
+        "The mpc passkey canary is not a valid positive control: "
+        "its create arm does not compile.\n"
+        "${CTRLPP_MPC_PASSKEY_BASELINE_COMPILED_OUTPUT}")
+endif ()
+ctrlpp_try_canary(CTRLPP_MPC_DIRECT_CONSTRUCTION_COMPILED mpc_passkey_canary.cpp -DCTRLPP_CANARY_MPC_DIRECT_CONSTRUCTION)
+set(output "${CTRLPP_MPC_DIRECT_CONSTRUCTION_COMPILED_OUTPUT}")
+if (CTRLPP_MPC_DIRECT_CONSTRUCTION_COMPILED)
+    message(FATAL_ERROR "A direct mpc construction compiled; the passkey is not enforced.\n${output}")
+elseif (NOT output MATCHES "validated_tag::validated_tag|constructor of class '[^']*::validated_tag'")
+    message(FATAL_ERROR "A direct mpc construction failed for another reason than the passkey.\n${output}")
+endif ()

@@ -20,9 +20,10 @@
 namespace ctrlpp
 {
 
-/// @brief Construction error of the linear MPC factory: a configuration refusal, or, with Qf unset,
-/// the Riccati solve's own refusal of the terminal cost it supplies.
-using mpc_construction_error = std::variant<controller_construction_error, dare_error>;
+/// @brief Construction error of the linear MPC factory: a configuration refusal, with Qf unset the Riccati
+/// solve's own refusal, or the bound solver's own setup error kept as the backend's enum.
+template <typename SetupError>
+using mpc_construction_error = std::variant<controller_construction_error, dare_error, SetupError>;
 
 }
 
@@ -56,23 +57,24 @@ struct mpc_terminal_weights
 /// With no terminal weight configured, the infinite-horizon Riccati solution is the terminal cost.
 /// A singular R is refused first, because that solve inverts it, and a solve that declines for any
 /// other cause is refused with its own enumerator: no other terminal cost is ever posed in its place.
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <typename SetupError, typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 auto mpc_terminal_cost(const discrete_state_space<Scalar, NX, NU, NY>& system, const Matrix<Scalar, NX, NX>& Q_state, const Matrix<Scalar, NU, NU>& R,
-                       const std::optional<Matrix<Scalar, NY, NY>>& Qf) -> expected<mpc_terminal_weights<Scalar, NX, NY>, mpc_construction_error>
+                       const std::optional<Matrix<Scalar, NY, NY>>& Qf) -> expected<mpc_terminal_weights<Scalar, NX, NY>, mpc_construction_error<SetupError>>
 {
+    using construction_error = mpc_construction_error<SetupError>;
     if(Qf.has_value())
     {
         Matrix<Scalar, NX, NX> state = system.C.transpose() * (*Qf) * system.C;
         if(!state.allFinite())
-            return ctrlpp::unexpected(mpc_construction_error{controller_construction_error::non_finite_state_space_weight});
+            return ctrlpp::unexpected(construction_error{controller_construction_error::non_finite_state_space_weight});
         return mpc_terminal_weights<Scalar, NX, NY>{.state = std::move(state), .linear = system.C.transpose() * (*Qf)};
     }
     if(riccati_input_weight_singular<Scalar, NX, NU>(system.B, Q_state, R))
-        return ctrlpp::unexpected(mpc_construction_error{controller_construction_error::singular_input_weight});
+        return ctrlpp::unexpected(construction_error{controller_construction_error::singular_input_weight});
 
     auto riccati = dare<Scalar, NX, NU>(system.A, system.B, Q_state, R);
     if(!riccati)
-        return ctrlpp::unexpected(mpc_construction_error{riccati.error()});
+        return ctrlpp::unexpected(construction_error{riccati.error()});
     // The tracking term maps the state weight to output space through the pseudo-inverse C^T (C C^T)^{-1}.
     Matrix<Scalar, NY, NY> CCt = system.C * system.C.transpose();
     Matrix<Scalar, NX, NY> linear = riccati->P * system.C.transpose() * CCt.colPivHouseholderQr().solve(Matrix<Scalar, NY, NY>::Identity());

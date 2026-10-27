@@ -39,8 +39,9 @@ int main()
     // Inject a solver tuned for speed: on the warm-resolve MPC path the
     // per-step polish refinement is unnecessary, so qp_preset::speed skips it.
     // Omit the third argument (or pass qp_preset::accuracy) to keep polishing.
-    // create validates the configuration and reports a rejection through
-    // ctrlpp::expected<mpc, mpc_construction_error> instead of throwing.
+    // create validates the configuration and reports a configuration refusal or
+    // the solver's own setup refusal through ctrlpp::expected<mpc, construction_error>
+    // instead of throwing.
     auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
     if(!controller_result.has_value())
     {

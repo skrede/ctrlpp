@@ -36,8 +36,9 @@ int main()
                                            .soft_penalty = 1e4,
                                            .hard_state_constraints = false};
 
-    // create validates the configuration and reports a rejection through
-    // ctrlpp::expected<mpc, mpc_construction_error> instead of throwing.
+    // create validates the configuration and reports a configuration refusal or
+    // the solver's own setup refusal through ctrlpp::expected<mpc, construction_error>
+    // instead of throwing.
     auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
     if(!controller_result.has_value())
     {

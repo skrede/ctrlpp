@@ -11,6 +11,8 @@
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/terminal_set.h"
 
+#include "ctrlpp/detail/covariance_ops.h"
+
 #include "ctrlpp/util/concepts.h"
 
 #include <Eigen/Dense>
@@ -400,17 +402,15 @@ template <typename Scalar, std::size_t NX>
 inline void set_ellipsoidal_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, const ellipsoidal_set<Scalar, NX>& s)
 {
     constexpr int nx = static_cast<int>(NX);
+    const Scalar floor = rounding_bound(nx, s.P.cwiseAbs().maxCoeff(), Scalar{1});
     Eigen::SelfAdjointEigenSolver<Matrix<Scalar, NX, NX>> eig(s.P);
     auto D = eig.eigenvalues();
+    // Inscribed box of {x : x^T P x <= alpha} in P's eigenbasis y = V^T x: |y_i| <= sqrt(alpha / (NX lambda_i)) keeps
+    // sum_i lambda_i y_i^2 <= alpha. An eigenvalue within the eigensolver's rounding floor of zero (Golub and Van Loan,
+    // 4th ed., Sec. 8.1) is a null direction of P, along which the set is open for every alpha >= 0.
     for(int i = 0; i < nx; ++i)
     {
-        // Inscribed axis-aligned box of {x : x^T P x <= alpha}. In eigen-coordinates
-        // y = V^T x the ellipsoid is sum_i lambda_i y_i^2 <= alpha; the largest box with
-        // |y_i| <= sqrt(alpha / (NX * lambda_i)) satisfies sum_i lambda_i y_i^2 <=
-        // NX * (alpha / NX) = alpha, so every box vertex stays inside the ellipsoid. The
-        // previous sqrt(alpha / lambda_i) was the circumscribing box, which admitted
-        // terminal states outside the set. NX is the state dimension, not a tuned constant.
-        Scalar bound = std::sqrt(s.alpha / (Scalar{nx} * D(i)));
+        Scalar bound = D(i) <= floor ? std::numeric_limits<Scalar>::infinity() : std::sqrt(s.alpha / (Scalar{nx} * D(i)));
         l(row + i) = -bound;
         u(row + i) = bound;
     }

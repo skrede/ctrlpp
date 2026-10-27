@@ -263,10 +263,10 @@ can then construct the object in its own storage through its `std::in_place`
 constructor, and guaranteed copy elision carries that storage to the caller, so
 the factory never holds a whole object in its frame. `particle_filter` uses it,
 because its object holds the whole particle set. Both nonlinear MPC classes use
-it too, `nmpc_dynamic` and `nmpc_static` (the default `nmpc`), because their
-solver lives inline and can only be set up once the controller exists: the
-solver is set up on the object built in place, and a setup failure is assigned
-into that same result. `nmpc_static`'s solver carries its whole workspace inline,
+it too, `nmpc_dynamic` and `nmpc_static` (the default `nmpc`), and so does the
+linear `mpc`, for the same reason: their solver lives inline and can only be set
+up once the controller exists, so the solver is set up on the object built in
+place, and a setup failure is assigned into that same result. `nmpc_static`'s solver carries its whole workspace inline,
 so its passkey constructor also takes the solver by rvalue reference, where a
 by-value parameter would hold a second solver in the in-place construction's
 own frame at `-O0`. When a step can only run on the constructed

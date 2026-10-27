@@ -24,6 +24,7 @@
 #include <utility>
 #include <variant>
 #include <optional>
+#include <type_traits>
 
 namespace ctrlpp
 {
@@ -53,14 +54,42 @@ class mpc
     static constexpr int nu = static_cast<int>(NU);
     static constexpr int ny = static_cast<int>(NY);
 
+    using setup_error = detail::qp_setup_error_t<Solver, qp_problem<Scalar>>;
+
+    /// @brief Passkey for the non-validating constructor: only the controller
+    /// can make one, which is what keeps `create` the only way to originate a
+    /// controller and the validation and solver setup impossible to bypass.
+    class validated_tag
+    {
+        friend mpc;
+        validated_tag() = default;
+    };
+
 public:
+    using construction_error = mpc_construction_error<setup_error>;
+
+    // Equal alternative types would make the variant's construction by type ambiguous.
+    static_assert(!std::is_same_v<setup_error, controller_construction_error> && !std::is_same_v<setup_error, dare_error>,
+                  "the solver's setup-error type must differ from controller_construction_error and dare_error");
+
+    // Public so ctrlpp::expected can construct the controller in the caller's
+    // storage; unreachable without the validated_tag only the controller can make.
+    mpc(validated_tag, const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Matrix<Scalar, NX, NX> Q_state,
+        detail::mpc_terminal_weights<Scalar, NX, NY> terminal, Solver&& solver)
+        : solver_{std::move(solver)}, config_{config}, system_{system}, Q_state_{std::move(Q_state)}, Qf_state_{std::move(terminal.state)}, CtQ_{system.C.transpose() * config.Q},
+          Qf_linear_{std::move(terminal.linear)}, last_diagnostics_{}, u_prev_{Vector<Scalar, NU>::Zero()}
+    {
+        compute_dimensions();
+        allocate_update_vectors();
+    }
+
     /// @brief Validating factory; the only construction path on an
     /// exception-free build. Builds the solver with its own defaults and chains
     /// into the solver-taking overload below.
     ///
     /// Rejections and their order are those of the solver-taking overload.
     static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config)
-        -> expected<mpc, mpc_construction_error>
+        -> expected<mpc, construction_error>
     {
         return create(system, config, Solver{});
     }
@@ -72,7 +101,7 @@ public:
     ///
     /// The configuration is validated here, before any dimension product is
     /// formed and before any storage is reserved. Rejections, checked in order,
-    /// as the controller_construction_error alternative except the last:
+    /// as the controller_construction_error alternative except the last two:
     ///  * horizon <= 0                        -> non_positive_horizon
     ///  * horizon > horizon_bound(config)      -> horizon_overflow
     ///  * u_min / u_max: NaN, lower +inf,
@@ -86,6 +115,11 @@ public:
     ///    soft_state_penalty, while the state
     ///    bounds are soft: non-finite or not
     ///    strictly positive                    -> invalid_constraint_penalty
+    ///  * terminal polytope: H, h rows differ  -> mismatched_terminal_set,
+    ///    H non-finite or a NaN in h           -> non_finite_terminal_set
+    ///  * terminal ellipsoid: P as a weight    -> non_finite_, asymmetric_, indefinite_terminal_set,
+    ///    then alpha non-finite                -> non_finite_terminal_set,
+    ///    alpha negative                       -> negative_terminal_set_level
     ///  * A, B or C: NaN or infinity           -> non_finite_system
     ///  * C^T Q C, then with Qf set C^T Qf C:
     ///    not all finite                       -> non_finite_state_space_weight
@@ -94,9 +128,12 @@ public:
     ///  * with Qf unset, a Riccati solve that
     ///    declines                             -> the dare_error alternative,
     ///                                            the solve's own enumerator
-    /// A weight whose asymmetry is rounding drift is symmetrized in the
-    /// controller's own copy, so the posed cost uses one symmetric weight
-    /// rather than whichever triangle the QP assembly reads.
+    ///  * the solver's setup refuses the
+    ///    posed problem                        -> the SetupError alternative,
+    ///                                            the backend's own enumerator
+    /// A weight or terminal P whose asymmetry is rounding drift is symmetrized
+    /// in the controller's own copy, so the posed problem uses one symmetric
+    /// matrix rather than whichever triangle the QP assembly reads.
     ///
     /// The overflow bound is a representability condition on the horizon's own
     /// type, not a chosen ceiling. At the worst-case configuration (soft state
@@ -116,25 +153,24 @@ public:
     /// step, the worst possible moment. Clamping the horizon to one would turn a
     /// caller mistake into a silently different controller.
     static auto create(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Solver solver)
-        -> expected<mpc, mpc_construction_error>
+        -> expected<mpc, construction_error>
     {
         if(config.horizon <= 0)
-            return unexpected(mpc_construction_error{controller_construction_error::non_positive_horizon});
+            return unexpected(construction_error{controller_construction_error::non_positive_horizon});
         if(config.horizon > horizon_bound(config))
-            return unexpected(mpc_construction_error{controller_construction_error::horizon_overflow});
+            return unexpected(construction_error{controller_construction_error::horizon_overflow});
         auto admitted = detail::admit_mpc_config(config);
         if(!admitted)
-            return unexpected(mpc_construction_error{admitted.error()});
+            return unexpected(construction_error{admitted.error()});
         if(!system.A.allFinite() || !system.B.allFinite() || !system.C.allFinite())
-            return unexpected(mpc_construction_error{controller_construction_error::non_finite_system});
+            return unexpected(construction_error{controller_construction_error::non_finite_system});
         Matrix<Scalar, NX, NX> Q_state = system.C.transpose() * admitted->Q * system.C;
         if(!Q_state.allFinite())
-            return unexpected(mpc_construction_error{controller_construction_error::non_finite_state_space_weight});
-        auto terminal = detail::mpc_terminal_cost<Scalar, NX, NU, NY>(system, Q_state, admitted->R, admitted->Qf);
+            return unexpected(construction_error{controller_construction_error::non_finite_state_space_weight});
+        auto terminal = detail::mpc_terminal_cost<setup_error, Scalar, NX, NU, NY>(system, Q_state, admitted->R, admitted->Qf);
         if(!terminal)
             return unexpected(terminal.error());
-
-        return mpc{unchecked_t{}, system, *admitted, std::move(Q_state), std::move(*terminal), std::move(solver)};
+        return construct_and_set_up(system, *admitted, std::move(Q_state), std::move(*terminal), std::move(solver));
     }
 
     // Unified soft-constraint / failure contract (shared by mpc and nmpc).
@@ -150,7 +186,6 @@ public:
     //   * ERROR branch: a hard failure with NO input.
     //     - infeasible                     -> infeasible
     //     - unbounded / non_convex / error -> invalid_problem
-    //     - one-time solver setup failed   -> setup_incomplete
     //     - result too short for the problem -> invalid_backend_result
     //     On the error branch the controller does NOT update its internal u_prev
     //     and applies no hidden fallback input, so a failed solve never warms the
@@ -223,21 +258,17 @@ public:
     auto diagnostics() const -> mpc_diagnostics<Scalar> { return last_diagnostics_; }
 
 private:
-    /// @brief Tag selecting the non-validating constructor reserved for `create`.
-    struct unchecked_t
+    // The setup failure is assigned into the one named result, and that result is
+    // this function's only return: gcc elides a named result only when every
+    // return names it, so the configuration refusals live in create instead.
+    static auto construct_and_set_up(const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Matrix<Scalar, NX, NX>&& Q_state,
+                                     detail::mpc_terminal_weights<Scalar, NX, NY>&& terminal, Solver&& solver) -> expected<mpc, construction_error>
     {
-        explicit unchecked_t() = default;
-    };
-
-    /// @brief Construct from a configuration and a terminal cost already validated by `create`.
-    mpc(unchecked_t, const discrete_state_space<Scalar, NX, NU, NY>& system, const mpc_config<Scalar, NX, NU, NY>& config, Matrix<Scalar, NX, NX> Q_state,
-        detail::mpc_terminal_weights<Scalar, NX, NY> terminal, Solver solver)
-        : solver_{std::move(solver)}, config_{config}, system_{system}, Q_state_{std::move(Q_state)}, Qf_state_{std::move(terminal.state)}, CtQ_{system.C.transpose() * config.Q},
-          Qf_linear_{std::move(terminal.linear)}, last_diagnostics_{}, u_prev_{Vector<Scalar, NU>::Zero()}
-    {
-        compute_dimensions();
-        build_initial_qp();
-        allocate_update_vectors();
+        expected<mpc, construction_error> result{std::in_place, validated_tag{}, system, config, std::move(Q_state), std::move(terminal), std::move(solver)};
+        auto setup = detail::setup_qp_solver(result->solver_, result->initial_problem());
+        if(!setup.has_value())
+            result = unexpected(construction_error{setup.error()});
+        return result;
     }
 
     /// @brief Largest horizon whose derived decision and constraint dimensions
@@ -283,7 +314,7 @@ private:
         return detail::constraint_layout<Scalar, NX, NU>(config_.horizon, config_.x_min, config_.x_max, config_.u_min, config_.u_max, config_.du_max, config_.terminal_constraint_set);
     }
 
-    void build_initial_qp()
+    auto initial_problem() const -> qp_problem<Scalar>
     {
         int N = config_.horizon;
         bool use_soft = uses_soft_state_constraints();
@@ -298,8 +329,7 @@ private:
 
         auto q = detail::build_cost_vector<Scalar, NX, NU>(N, n_dec_, Q_state_, Qf_state_);
 
-        qp_problem<Scalar> problem{.P = std::move(P), .q = std::move(q), .A = std::move(A), .l = std::move(l), .u = std::move(u)};
-        setup_failed_ = !detail::setup_qp_solver(solver_, problem).has_value();
+        return qp_problem<Scalar>{.P = std::move(P), .q = std::move(q), .A = std::move(A), .l = std::move(l), .u = std::move(u)};
     }
 
     void allocate_update_vectors()
@@ -314,9 +344,6 @@ private:
 
     auto solve_impl(const Vector<Scalar, NX>& x0) -> expected<solve_output<Scalar, NU>, solver_error>
     {
-        if(setup_failed_)
-            return unexpected(solver_error::setup_incomplete);
-
         rebuild_bounds(x0);
         apply_rate_constraint_update();
         apply_warm_start();
@@ -456,7 +483,6 @@ private:
     mpc_diagnostics<Scalar> last_diagnostics_;
     Vector<Scalar, NU> u_prev_;
     bool has_solution_{false};
-    bool setup_failed_{false};
 
     int n_dec_{};
     int n_con_{};

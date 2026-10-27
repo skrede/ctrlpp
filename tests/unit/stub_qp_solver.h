@@ -13,7 +13,9 @@
 //   1. Construct the stub (optionally with a report_lengths knob) and hand it
 //      to a controller factory's solver-taking overload. The stub is moved in.
 //   2. setup() records the problem dimensions, so a later solve() can size its
-//      result from the problem rather than from a hard-coded number.
+//      result from the problem rather than from a hard-coded number. With
+//      `fail_setup` set it refuses instead, with stub_setup_error::rejected.
+//      With `posed` set, it copies the problem into that caller-owned sink.
 //   3. solve() reports solve_status::optimal and returns a zero primal of
 //      `primal_length()` entries and a zero dual of `dual_length()` entries.
 //
@@ -56,7 +58,9 @@
 #include <Eigen/Core>
 
 #include <limits>
+#include <optional>
 #include <algorithm>
+#include <functional>
 
 namespace ctrlpp_test
 {
@@ -77,8 +81,8 @@ enum class report_values
     negative_infinity
 };
 
-// The stubs' setup fails only when asked to (stub_nlp_solver's fail_setup), so a
-// test can drive a typed setup failure through a controller factory. The solver
+// The stubs' setup fails only when asked to (each stub's fail_setup), so a test
+// can drive a typed setup failure through a controller factory. The solver
 // concepts accept one setup shape, a fallible one, so a stub that is not asked
 // to fail writes a trivially succeeding fallible setup rather than an infallible
 // one. Shared with stub_nlp_solver.h.
@@ -101,6 +105,8 @@ struct stub_qp_solver
     int n_dec{0};
     int n_con{0};
     int solve_count{0};
+    bool fail_setup{false};
+    std::optional<std::reference_wrapper<ctrlpp::qp_problem<Scalar>>> posed{};
 
     stub_qp_solver() = default;
 
@@ -120,8 +126,12 @@ struct stub_qp_solver
 
     auto setup(const ctrlpp::qp_problem<Scalar>& problem) -> ctrlpp::expected<void, stub_setup_error>
     {
+        if(fail_setup)
+            return ctrlpp::unexpected(stub_setup_error::rejected);
         n_dec = static_cast<int>(problem.P.cols());
         n_con = static_cast<int>(problem.A.rows());
+        if(posed)
+            posed->get() = problem;
         return {};
     }
 

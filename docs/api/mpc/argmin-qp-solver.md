@@ -146,7 +146,8 @@ int main()
         sys, cfg, ctrlpp::argmin_qp_solver{ctrlpp::qp_preset::speed});
     if(!created)
     {
-        // created.error() carries the mpc_construction_error.
+        // created.error() carries the construction_error: a configuration
+        // refusal, the Riccati solve's refusal, or argmin_qp_setup_error.
         return EXIT_FAILURE;
     }
     auto controller = *std::move(created);

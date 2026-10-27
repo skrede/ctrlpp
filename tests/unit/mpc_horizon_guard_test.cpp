@@ -49,8 +49,10 @@
 #include <span>
 #include <array>
 #include <cmath>
+#include <tuple>
 #include <limits>
 #include <memory>
+#include <random>
 #include <vector>
 #include <cstddef>
 #include <cstring>
@@ -58,6 +60,7 @@
 #include <variant>
 #include <optional>
 #include <algorithm>
+#include <functional>
 #include <type_traits>
 
 namespace
@@ -643,6 +646,15 @@ TEST_CASE("Linear MPC rejects a horizon whose derived dimensions would overflow"
 
     auto largest = linear_controller::create(make_system(), linear_config(std::numeric_limits<int>::max()), ctrlpp_test::stub_qp_solver<double>{});
     require_construction_error(largest, ctrlpp::controller_construction_error::horizon_overflow);
+}
+
+TEST_CASE("Linear MPC reports a solver setup failure at construction with the backend's cause", "[mpc][setup][hardening]")
+{
+    ctrlpp_test::stub_qp_solver<double> solver;
+    solver.fail_setup = true;
+    auto result = linear_controller::create(make_system(), linear_config(shape_horizon), std::move(solver));
+
+    require_construction_error(result, ctrlpp_test::stub_setup_error::rejected);
 }
 
 TEST_CASE("Nonlinear MPC rejects a negative horizon at construction", "[nmpc][horizon][hardening]")
@@ -1340,18 +1352,18 @@ using constrained_nonlinear_config = ctrlpp::nmpc_config<double, NX, NU, 1, 1>;
 using constrained_nonlinear_controller = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp_test::stub_nlp_solver<double>, decltype(double_integrator), 1, 1>;
 using static_nonlinear_controller = ctrlpp::nmpc_static<double, NX, NU, static_cast<std::size_t>(shape_horizon), ctrlpp_test::stub_nlp_solver<double>, decltype(double_integrator)>;
 
-using linear_construction_outcome = std::optional<ctrlpp::mpc_construction_error>;
+using linear_construction_outcome = std::optional<linear_controller::construction_error>;
 
 auto linear_refusal(construction_outcome outcome) -> linear_construction_outcome
 {
     if(!outcome)
         return std::nullopt;
-    return ctrlpp::mpc_construction_error{*outcome};
+    return linear_controller::construction_error{*outcome};
 }
 
 auto riccati_refusal(ctrlpp::dare_error cause) -> linear_construction_outcome
 {
-    return ctrlpp::mpc_construction_error{cause};
+    return linear_controller::construction_error{cause};
 }
 
 template <typename Result>
@@ -1804,6 +1816,217 @@ TEST_CASE("Linear MPC refuses an invalid slack penalty only while its soft state
           == linear_refusal(ctrlpp::controller_construction_error::invalid_constraint_penalty));
 }
 
+namespace
+{
+
+template <typename Configure>
+auto refusing_setup_outcome_on(const ctrlpp::discrete_state_space<double, NX, NU, NX>& system, Configure configure) -> linear_construction_outcome
+{
+    auto cfg = linear_config(shape_horizon);
+    configure(cfg);
+    ctrlpp_test::stub_qp_solver<double> solver;
+    solver.fail_setup = true;
+    auto refused = linear_controller::create(system, cfg, std::move(solver));
+    if(refused.has_value())
+        return std::nullopt;
+    return refused.error();
+}
+
+template <typename Configure>
+void require_refused_before_setup(const ctrlpp::discrete_state_space<double, NX, NU, NX>& system, Configure configure, const linear_construction_outcome& expected)
+{
+    CHECK(linear_outcome_on(system, configure) == expected);
+    CHECK(refusing_setup_outcome_on(system, configure) == expected);
+}
+
+}
+
+TEST_CASE("Linear MPC checks every configuration rule before setting its solver up", "[mpc][setup][configuration][hardening]")
+{
+    require_refused_before_setup(make_system(), [](auto& cfg) { input_bounds::set(cfg, 1.0, -1.0); }, linear_refusal(ctrlpp::controller_construction_error::invalid_input_bounds));
+    require_refused_before_setup(nan_dynamics(), leave_configuration, linear_refusal(ctrlpp::controller_construction_error::non_finite_system));
+    require_refused_before_setup(make_system(), input_weight(0.0), linear_refusal(ctrlpp::controller_construction_error::singular_input_weight));
+
+    auto const plant = make_system();
+    auto const riccati = ctrlpp::dare<double, NX, NU>(plant.A, plant.B, Eigen::Matrix2d::Zero(), Eigen::Matrix<double, 1, 1>::Identity());
+    REQUIRE_FALSE(riccati.has_value());
+    CHECK(riccati.error() == ctrlpp::dare_error::non_stabilizable);
+    require_refused_before_setup(plant, state_weight(Eigen::Matrix2d::Zero()), riccati_refusal(riccati.error()));
+}
+
+namespace
+{
+
+using halfplanes = Eigen::Matrix<double, Eigen::Dynamic, 2>;
+
+auto ellipsoid(const Eigen::Matrix2d& P, double alpha)
+{
+    return [=](ctrlpp::mpc_config<double, NX, NU>& cfg) { cfg.terminal_constraint_set = ctrlpp::ellipsoidal_set<double, NX>{P, alpha}; };
+}
+
+auto polytope(const halfplanes& H, const Eigen::VectorXd& h)
+{
+    return [=](ctrlpp::mpc_config<double, NX, NU>& cfg) { cfg.terminal_constraint_set = ctrlpp::polytopic_set<double, NX>{H, h}; };
+}
+
+auto box_rows() -> halfplanes
+{
+    halfplanes H(4, 2);
+    H << 1.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, -1.0;
+    return H;
+}
+
+auto box_levels() -> Eigen::VectorXd
+{
+    return Eigen::VectorXd::Constant(4, 0.08);
+}
+
+auto box_with_level(Eigen::Index row, double level)
+{
+    Eigen::VectorXd h = box_levels();
+    h(row) = level;
+    return polytope(box_rows(), h);
+}
+
+auto nan_level_box()
+{
+    Eigen::VectorXd h = box_levels();
+    h(0) = h(2) = not_a_number;
+    return polytope(box_rows(), h);
+}
+
+auto refused_terminal(ctrlpp::controller_construction_error cause) -> linear_construction_outcome
+{
+    return linear_refusal(cause);
+}
+
+template <typename Configure>
+auto posed_problem(Configure configure) -> ctrlpp::qp_problem<double>
+{
+    REQUIRE(linear_outcome(configure) == linear_refusal(accepted));
+    auto cfg = linear_config(shape_horizon);
+    configure(cfg);
+    ctrlpp::qp_problem<double> problem;
+    ctrlpp_test::stub_qp_solver<double> solver;
+    solver.posed = std::ref(problem);
+    REQUIRE(linear_controller::create(make_system(), cfg, std::move(solver)).has_value());
+    return problem;
+}
+
+template <typename Configure>
+void require_posed_without_nan(Configure configure)
+{
+    auto const problem = posed_problem(configure);
+    CHECK_FALSE(problem.l.array().isNaN().any());
+    CHECK_FALSE(problem.u.array().isNaN().any());
+    CHECK((problem.l.array() <= problem.u.array()).all());
+}
+
+auto dense_entries(const Eigen::SparseMatrix<double>& sparse) -> Eigen::VectorXd
+{
+    const Eigen::MatrixXd dense{sparse};
+    return Eigen::Map<const Eigen::VectorXd>(dense.data(), dense.size());
+}
+
+auto random_unit_interval(std::mt19937_64& generator) -> double
+{
+    return 2.0 * (static_cast<double>(generator() >> 11) * 0x1.0p-53) - 1.0;
+}
+
+}
+
+TEST_CASE("Linear MPC refuses a terminal set it cannot pose", "[mpc][configuration][terminal_set][hardening]")
+{
+    using enum ctrlpp::controller_construction_error;
+    const double past_symmetry = std::nextafter(rounding_bound_2x2(2.0), infinity);
+    const double past_floor = std::nextafter(rounding_bound_2x2(1.0), infinity);
+    const Eigen::Matrix2d identity = Eigen::Matrix2d::Identity();
+
+    CHECK(linear_outcome(ellipsoid(weight_2x2(not_a_number, 0.0, 0.0, 1.0), 1.0)) == refused_terminal(non_finite_terminal_set));
+    CHECK(linear_outcome(ellipsoid(weight_2x2(1.0, infinity, infinity, 1.0), 1.0)) == refused_terminal(non_finite_terminal_set));
+    CHECK(linear_outcome(ellipsoid(identity, not_a_number)) == refused_terminal(non_finite_terminal_set));
+    CHECK(linear_outcome(ellipsoid(identity, infinity)) == refused_terminal(non_finite_terminal_set));
+    CHECK(linear_outcome(ellipsoid(weight_2x2(1.0, 0.5, 0.4, 1.0), 1.0)) == refused_terminal(asymmetric_terminal_set));
+    CHECK(linear_outcome(ellipsoid(weight_2x2(2.0, 0.0, past_symmetry, 1.0), 1.0)) == refused_terminal(asymmetric_terminal_set));
+    CHECK(linear_outcome(ellipsoid(weight_2x2(1.0, 0.0, 0.0, -1.0), 1.0)) == refused_terminal(indefinite_terminal_set));
+    CHECK(linear_outcome(ellipsoid(weight_2x2(1.0, 0.0, 0.0, -past_floor), 1.0)) == refused_terminal(indefinite_terminal_set));
+    CHECK(linear_outcome(ellipsoid(identity, -1.0)) == refused_terminal(negative_terminal_set_level));
+    CHECK(linear_outcome(ellipsoid(identity, -denorm)) == refused_terminal(negative_terminal_set_level));
+
+    CHECK(linear_outcome(polytope(box_rows(), Eigen::VectorXd::Constant(3, 0.08))) == refused_terminal(mismatched_terminal_set));
+    halfplanes nan_rows = box_rows();
+    nan_rows(1, 0) = not_a_number;
+    CHECK(linear_outcome(polytope(nan_rows, box_levels())) == refused_terminal(non_finite_terminal_set));
+    halfplanes infinite_rows = box_rows();
+    infinite_rows(2, 1) = infinity;
+    CHECK(linear_outcome(polytope(infinite_rows, box_levels())) == refused_terminal(non_finite_terminal_set));
+    CHECK(linear_outcome(nan_level_box()) == refused_terminal(non_finite_terminal_set));
+}
+
+TEST_CASE("Linear MPC poses every terminal set it admits with no NaN bound", "[mpc][configuration][terminal_set][hardening]")
+{
+    const Eigen::Matrix2d singular = Eigen::Vector2d{1.0, 0.0}.asDiagonal();
+    const Eigen::Matrix2d at_floor = weight_2x2(1.0, 0.0, 0.0, -rounding_bound_2x2(1.0));
+    for(const double alpha : {1.0, 0.0})
+    {
+        INFO("alpha " << alpha);
+        require_posed_without_nan(ellipsoid(singular, alpha));
+        require_posed_without_nan(ellipsoid(at_floor, alpha));
+    }
+    require_posed_without_nan(ellipsoid(Eigen::Matrix2d::Identity(), 0.0));
+    require_posed_without_nan(ellipsoid(Eigen::Matrix2d::Zero(), 0.0));
+
+    std::mt19937_64 generator{1};
+    bool negative_eigenvalue_seen = false;
+    for(int draw = 0; draw < 64; ++draw)
+    {
+        const Eigen::Vector2d v{random_unit_interval(generator), random_unit_interval(generator)};
+        const Eigen::Matrix2d rank_one = v * v.transpose();
+        negative_eigenvalue_seen = negative_eigenvalue_seen || Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d>{rank_one}.eigenvalues()(0) < 0.0;
+        INFO("draw " << draw << ", v = (" << v(0) << ", " << v(1) << ")");
+        require_posed_without_nan(ellipsoid(rank_one, 0.0));
+        require_posed_without_nan(ellipsoid(rank_one, 1.0));
+    }
+    REQUIRE(negative_eigenvalue_seen);
+
+    require_posed_without_nan(box_with_level(0, infinity));
+
+    // Emptiness is not tested at construction: the row poses u = -inf, which the backend refuses at setup.
+    auto const empty_row = posed_problem(box_with_level(0, -infinity));
+    const Eigen::Index terminal_row = empty_row.u.size() - 4;
+    CHECK_FALSE(empty_row.l.array().isNaN().any());
+    CHECK_FALSE(empty_row.u.array().isNaN().any());
+    CHECK(empty_row.u(terminal_row) == -infinity);
+    CHECK((empty_row.l.head(terminal_row).array() <= empty_row.u.head(terminal_row).array()).all());
+    CHECK((empty_row.l.tail(3).array() <= empty_row.u.tail(3).array()).all());
+}
+
+TEST_CASE("Linear MPC poses one symmetric ellipsoid weight when the configured one drifts by rounding", "[mpc][configuration][terminal_set][hardening]")
+{
+    const double drift = std::nextafter(2.0, infinity) - 2.0;
+    const Eigen::Matrix2d drifted = weight_2x2(2.0, 0.5, 0.5 + drift, 1.0);
+    REQUIRE(drifted(0, 1) != drifted(1, 0));
+    const Eigen::Matrix2d symmetric = weight_2x2(2.0, 0.5 + drift / 2.0, 0.5 + drift / 2.0, 1.0);
+
+    auto const posed = posed_problem(ellipsoid(drifted, 1.0));
+
+    auto const plant = make_system();
+    auto encoded = [&](const Eigen::Matrix2d& P)
+    {
+        const std::optional<ctrlpp::terminal_set<double, NX>> set{ctrlpp::ellipsoidal_set<double, NX>{P, 1.0}};
+        auto A = ctrlpp::detail::build_constraint_matrix<double, NX, NU>(shape_horizon, plant.A, plant.B, std::nullopt, std::nullopt, false, std::nullopt, std::nullopt, std::nullopt, set);
+        auto [l, u] = ctrlpp::detail::build_bounds_vectors<double, NX, NU>(shape_horizon, Eigen::Vector2d::Zero(), std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, set);
+        return std::tuple{dense_entries(A), l, u};
+    };
+    auto const [A_symmetric, l_symmetric, u_symmetric] = encoded(symmetric);
+    auto const [A_raw, l_raw, u_raw] = encoded(drifted);
+    REQUIRE_FALSE((bitwise_equal(A_raw, A_symmetric) && bitwise_equal(l_raw, l_symmetric) && bitwise_equal(u_raw, u_symmetric)));
+
+    CHECK(bitwise_equal(dense_entries(posed.A), A_symmetric));
+    CHECK(bitwise_equal(posed.l, l_symmetric));
+    CHECK(bitwise_equal(posed.u, u_symmetric));
+}
+
 TEST_CASE("Predictive factories report the first violated rule in the documented order", "[mpc][nmpc][configuration][hardening]")
 {
     auto both = [](auto first, auto second) {
@@ -1842,6 +2065,17 @@ TEST_CASE("Predictive factories report the first violated rule in the documented
     });
     CHECK(linear_outcome_on(nan_dynamics_overflowing_map, leave_configuration) == linear_refusal(ctrlpp::controller_construction_error::non_finite_system));
     CHECK(linear_outcome_on(scaled_output_map(1e200), input_weight(0.0)) == linear_refusal(ctrlpp::controller_construction_error::non_finite_state_space_weight));
+
+    auto const nan_box = nan_level_box();
+    auto const non_finite_set = linear_refusal(ctrlpp::controller_construction_error::non_finite_terminal_set);
+    CHECK(linear_outcome(both(nan_box, inverted_input)) == linear_refusal(ctrlpp::controller_construction_error::invalid_input_bounds));
+    CHECK(linear_outcome(both(nan_box, soft_state_box(0.0, false, false))) == linear_refusal(ctrlpp::controller_construction_error::invalid_constraint_penalty));
+    CHECK(linear_outcome_on(nan_dynamics(), nan_box) == non_finite_set);
+    CHECK(refusing_setup_outcome_on(make_system(), nan_box) == non_finite_set);
+    halfplanes nan_rows = box_rows();
+    nan_rows(0, 0) = not_a_number;
+    CHECK(linear_outcome(polytope(nan_rows, Eigen::VectorXd::Constant(3, 0.08))) == linear_refusal(ctrlpp::controller_construction_error::mismatched_terminal_set));
+    CHECK(linear_outcome(ellipsoid(weight_2x2(1.0, 0.0, 0.0, -1.0), not_a_number)) == linear_refusal(ctrlpp::controller_construction_error::indefinite_terminal_set));
 
     auto negative_horizon = [](auto& cfg) { cfg.horizon = -1; };
     require_both_predictive(both(inverted_input, negative_horizon), ctrlpp::controller_construction_error::non_positive_horizon);

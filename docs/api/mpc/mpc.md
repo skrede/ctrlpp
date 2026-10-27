@@ -41,26 +41,36 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 | `du_max` | `optional<Vector<Scalar, NU>>` | none | Maximum input rate of change per step |
 | `soft_penalty` | `Scalar` | `1e4` | L1 penalty for soft state constraints |
 | `soft_state_penalty` | `optional<Vector<Scalar, NX>>` | none | Per-state soft constraint penalty |
-| `terminal_constraint_set` | `optional<terminal_set<Scalar, NX>>` | none | Ellipsoidal or polyhedral terminal set; see [Terminal sets](#terminal-sets) for which one is invariant |
+| `terminal_constraint_set` | `optional<terminal_set<Scalar, NX>>` | none | Ellipsoidal or polyhedral terminal set, validated at construction (see [Rejections](#rejections)); see [Terminal sets](#terminal-sets) for which one is invariant |
 | `hard_state_constraints` | `bool` | `false` | When true, state constraints are hard (not softened) |
 
 ## Construction
 
 ```cpp
-static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
-                       const mpc_config<Scalar, NX, NU>& config)
-    -> expected<mpc, mpc_construction_error>;
+using construction_error = mpc_construction_error<SetupError>;
+// = std::variant<controller_construction_error, dare_error, SetupError>
 
 static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
-                       const mpc_config<Scalar, NX, NU>& config,
-                       Solver solver)
-    -> expected<mpc, mpc_construction_error>;
+                   const mpc_config<Scalar, NX, NU>& config)
+    -> expected<mpc, construction_error>;
 
-// in ctrlpp/mpc/terminal_cost.h
-using mpc_construction_error = std::variant<controller_construction_error, dare_error>;
+static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
+                   const mpc_config<Scalar, NX, NU>& config,
+                   Solver solver)
+    -> expected<mpc, construction_error>;
 ```
 
-`create` is the only construction path. There is no non-fallible constructor, so a rejected configuration is a value the caller has to inspect and never a controller that quietly stands in for one. It validates the configuration, computes the terminal cost (via DARE if `Qf` is not set), then builds the QP matrices and initializes the solver. The two-argument form default-constructs the solver and chains into the three-argument form, which injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset:
+`create` is the only construction path. Its constructor is public only so `ctrlpp::expected` can build the controller in the caller's storage, and it takes a passkey that only the class can make, so a rejected configuration or a refused solver setup is a value the caller has to inspect and never a controller that quietly stands in for one. It validates the configuration, computes the terminal cost (via DARE if `Qf` is not set), then builds the controller in place and sets its solver up against the posed QP. The two-argument form default-constructs the solver and chains into the three-argument form, which injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset.
+
+`SetupError` is the error type of the bound solver's own `setup`, so the backend's cause of a setup failure reaches the caller unflattened. The error is one of three alternatives:
+
+| Alternative | Carries |
+|-------------|---------|
+| `controller_construction_error` | a configuration refusal, in the order of the table below |
+| `dare_error` | with `Qf` unset, the Riccati solve's own refusal of the terminal cost it supplies |
+| `SetupError` | the solver refused the posed problem: `osqp_setup_error` for `osqp_solver`, `argmin_qp_setup_error` for `argmin_qp_solver`, or a custom backend's own enum |
+
+The three alternative types must differ (a `static_assert` says so), because a variant whose alternatives repeat a type cannot be built from a value of that type.
 
 ```cpp
 // Skip per-step polishing on the warm-resolve path -- see qp_preset.
@@ -68,6 +78,8 @@ auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(
     sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
 if (!created)
 {
+    if (const auto* cause = std::get_if<ctrlpp::osqp_setup_error>(&created.error()))
+        return handle_setup_refusal(*cause);
     if (const auto* cause = std::get_if<ctrlpp::dare_error>(&created.error()))
         return handle_riccati_refusal(*cause);
     return handle(std::get<ctrlpp::controller_construction_error>(created.error()));
@@ -77,25 +89,35 @@ auto controller = *std::move(created);
 
 ### Rejections
 
-The configuration is validated once here, before any dimension product is formed and before any storage is reserved. Rejections, checked in order. Every row but the last is the `controller_construction_error` alternative of `mpc_construction_error`:
+The configuration is validated once here, before any dimension product is formed and before any storage is reserved. Rejections, checked in order; every refusal but the last is returned before any controller exists:
 
-| Condition | Refusal |
-|-----------|---------|
-| `config.horizon <= 0` | `non_positive_horizon` |
-| `config.horizon` above the representable bound of the derived dimensions | `horizon_overflow` |
-| `u_min` or `u_max` holds a NaN, `u_min` holds `+inf`, `u_max` holds `-inf`, or `u_min > u_max` in some entry | `invalid_input_bounds` |
-| the same on `x_min` and `x_max` | `invalid_state_bounds` |
-| `du_max` holds a NaN or a negative entry | `invalid_rate_bound` |
-| `Q`, then `R`, then `Qf` when set, holds a NaN or an infinity | `non_finite_cost_weight` |
-| that weight is asymmetric beyond rounding drift | `asymmetric_cost_weight` |
-| that weight is not positive semidefinite | `indefinite_cost_weight` |
-| `soft_penalty`, or a set `soft_state_penalty`, is non-finite or non-positive in some entry while the state bounds are soft | `invalid_constraint_penalty` |
-| `system.A`, `system.B` or `system.C` holds a NaN or an infinity, whether or not `Qf` is set. `system.D` is not used by the controller and is not checked | `non_finite_system` |
-| `C^T Q C`, then `C^T Qf C` when `Qf` is set, is not all finite: the weight mapped to state space overflows although every configured entry is finite | `non_finite_state_space_weight` |
-| `Qf` is not set and `R` is singular to the Riccati solve that supplies the terminal cost, checked after every rule above | `singular_input_weight` |
-| `Qf` is not set and the Riccati solve declines, checked after `singular_input_weight` | the `dare_error` alternative, carrying the solve's own enumerator |
+| Condition | Alternative | Refusal |
+|-----------|-------------|---------|
+| `config.horizon <= 0` | `controller_construction_error` | `non_positive_horizon` |
+| `config.horizon` above the representable bound of the derived dimensions | `controller_construction_error` | `horizon_overflow` |
+| `u_min` or `u_max` holds a NaN, `u_min` holds `+inf`, `u_max` holds `-inf`, or `u_min > u_max` in some entry | `controller_construction_error` | `invalid_input_bounds` |
+| the same on `x_min` and `x_max` | `controller_construction_error` | `invalid_state_bounds` |
+| `du_max` holds a NaN or a negative entry | `controller_construction_error` | `invalid_rate_bound` |
+| `Q`, then `R`, then `Qf` when set, holds a NaN or an infinity | `controller_construction_error` | `non_finite_cost_weight` |
+| that weight is asymmetric beyond rounding drift | `controller_construction_error` | `asymmetric_cost_weight` |
+| that weight is not positive semidefinite | `controller_construction_error` | `indefinite_cost_weight` |
+| `soft_penalty`, or a set `soft_state_penalty`, is non-finite or non-positive in some entry while the state bounds are soft | `controller_construction_error` | `invalid_constraint_penalty` |
+| a polytopic `terminal_constraint_set` has `H.rows() != h.size()` | `controller_construction_error` | `mismatched_terminal_set` |
+| that polytope's `H` holds a NaN or an infinity, or its `h` holds a NaN | `controller_construction_error` | `non_finite_terminal_set` |
+| an ellipsoidal `terminal_constraint_set` has a `P` that holds a NaN or an infinity | `controller_construction_error` | `non_finite_terminal_set` |
+| that `P` is asymmetric beyond rounding drift | `controller_construction_error` | `asymmetric_terminal_set` |
+| that `P` is not positive semidefinite | `controller_construction_error` | `indefinite_terminal_set` |
+| that set's `alpha` is a NaN or an infinity | `controller_construction_error` | `non_finite_terminal_set` |
+| that `alpha` is negative | `controller_construction_error` | `negative_terminal_set_level` |
+| `system.A`, `system.B` or `system.C` holds a NaN or an infinity, whether or not `Qf` is set. `system.D` is not used by the controller and is not checked | `controller_construction_error` | `non_finite_system` |
+| `C^T Q C`, then `C^T Qf C` when `Qf` is set, is not all finite: the weight mapped to state space overflows although every configured entry is finite | `controller_construction_error` | `non_finite_state_space_weight` |
+| `Qf` is not set and `R` is singular to the Riccati solve that supplies the terminal cost, checked after every rule above | `controller_construction_error` | `singular_input_weight` |
+| `Qf` is not set and the Riccati solve declines, checked after `singular_input_weight` | `dare_error` | the solve's own enumerator |
+| the solver's `setup` refuses the posed problem, checked after every rule above | `SetupError` | `osqp_setup_error`, `argmin_qp_setup_error`, or a custom backend's own enum |
 
 Each weight is checked completely (finite, symmetric, semidefinite) before the next one, so an indefinite `Q` is reported ahead of a non-finite `R`.
+
+The terminal set is checked after the penalties and before the plant. An ellipsoid `{x : x^T P x <= alpha}` needs `P` positive semidefinite, not definite, under the weights' own rules: drift within their rounding bound is symmetrized in the controller's copy, so the posed rows use one symmetric `P`. The QP holds the ellipsoid as its inscribed box in `P`'s eigenbasis, `|v_i^T x| <= sqrt(alpha / (NX lambda_i))`. An eigenvalue within the admission's semidefiniteness floor of zero is a null direction of `P`, and the box is left open along it, which is exact for every `alpha >= 0`; `alpha = 0` pins the other directions to zero. In a polytope, an entry of `h` that is `+inf` leaves its row vacuous. An entry of `-inf` poses an empty set, which `create` does not test for: both shipped backends refuse its bounds at setup, so `create` returns their setup error (`osqp_setup_error::setup_failed`, `argmin_qp_setup_error::pose_failed`). Emptiness of finite rows is not tested either; it shows up as an infeasible solve.
 
 Equal bounds pin a variable and are accepted, as is an infinite bound in its open direction (`u_min = -inf`, `u_max = +inf`). A rate bound of zero, `-0.0` or `+inf` is accepted.
 
@@ -126,7 +148,9 @@ Both `mpc` and `nmpc` share one soft-constraint and failure contract. Every
   - `infeasible`: the problem as posed has no feasible point.
   - `invalid_problem`: the problem is unbounded, non-convex, the solver reported an
     internal error, or a reference span was too short.
-  - `setup_incomplete`: the one-time solver setup failed, so no solve can run.
+  - `setup_incomplete`: never returned by `mpc`'s `solve`, because a refused
+    solver setup refuses `create`. Among the solves, only an `nmpc` copy whose
+    re-setup failed returns it.
   - `invalid_backend_result`: the solver reported a status the controller accepts
     and then returned a primal shorter than the decision dimension, or a dual
     shorter than the constraint count, of the problem posed at construction. The
@@ -155,9 +179,9 @@ auto solve(const Vector<Scalar, NX>& x0)
 ```
 
 Solves the QP for regulating state to the origin. Returns the success branch with
-the first input and a soft status, or the error branch on failure. If solver setup
-failed at construction (reported through the solver's `setup`), every `solve`
-overload returns the error branch with `solver_error::setup_incomplete`.
+the first input and a soft status, or the error branch on failure. A controller
+always holds a solver that accepted its problem at setup: a refused setup refuses
+`create` with the `SetupError` alternative instead.
 
 ### solve (constant reference)
 
@@ -335,7 +359,8 @@ int main()
     auto created = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
     if(!created)
     {
-        // created.error() carries the mpc_construction_error.
+        // created.error() carries the construction_error: a configuration
+        // refusal, the Riccati solve's refusal, or the solver's setup refusal.
         return 1;
     }
     auto controller = *std::move(created);

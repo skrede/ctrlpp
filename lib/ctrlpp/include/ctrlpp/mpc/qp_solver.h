@@ -16,6 +16,7 @@
 
 #include "ctrlpp/mpc/qp_types.h"
 
+#include <utility>
 #include <concepts>
 
 namespace ctrlpp
@@ -45,6 +46,9 @@ auto setup_qp_solver(Solver& solver, const Problem& problem) -> decltype(solver.
 {
     return solver.setup(problem);
 }
+
+template <typename Solver, typename Problem>
+using qp_setup_error_t = typename decltype(setup_qp_solver(std::declval<Solver&>(), std::declval<const Problem&>()))::error_type;
 
 }
 

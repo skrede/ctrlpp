@@ -39,6 +39,7 @@ TEST_CASE("mpc and mhe on argmin_qp_solver gate", "[mpc][mhe][argmin][qp]")
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <variant>
 #include <optional>
 #include <algorithm>
 #include <type_traits>
@@ -107,6 +108,11 @@ using argmin_mpc = ctrlpp::mpc<double, NX, NU, ctrlpp::argmin_qp_solver>;
 using argmin_mhe = ctrlpp::mhe<double, NX, NU, NY, N, ctrlpp::argmin_qp_solver, linear_dynamics, position_measurement>;
 
 }
+
+static_assert(!std::is_copy_constructible_v<argmin_mpc>, "a controller copy would never re-run its solver's setup");
+#if defined(CTRLPP_HAS_OSQP)
+static_assert(!std::is_copy_constructible_v<ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>>, "a controller copy would never re-run its solver's setup");
+#endif
 
 TEST_CASE("mpc on argmin_qp_solver regulates the double integrator", "[mpc][argmin][qp]")
 {
@@ -537,6 +543,152 @@ TEST_CASE("mhe on argmin_qp_solver agrees with the Kalman filter at the window e
     CHECK((osqp - reference).cwiseAbs().maxCoeff() <= tol);
     CHECK((argmin - osqp).cwiseAbs().maxCoeff() <= 2.0 * tol);
 #endif
+}
+
+namespace
+{
+
+constexpr double eps_terminal = 1e-3;
+constexpr double infinity = std::numeric_limits<double>::infinity();
+constexpr double not_a_number = std::numeric_limits<double>::quiet_NaN();
+
+const Eigen::Vector2d reproducer_state{0.1, 0.0};
+
+using halfplanes = Eigen::Matrix<double, Eigen::Dynamic, static_cast<int>(NX)>;
+
+template <typename Solver>
+using terminal_mpc = ctrlpp::mpc<double, NX, NU, Solver>;
+
+template <typename Solver>
+using terminal_outcome = ctrlpp::expected<terminal_mpc<Solver>, typename terminal_mpc<Solver>::construction_error>;
+
+auto terminal_config(const std::optional<ctrlpp::terminal_set<double, NX>>& set) -> ctrlpp::mpc_config<double, NX, NU>
+{
+    ctrlpp::mpc_config<double, NX, NU> cfg;
+    cfg.horizon = horizon;
+    cfg.u_min = ctrlpp::Vector<double, NU>::Constant(-1.0);
+    cfg.u_max = ctrlpp::Vector<double, NU>::Constant(1.0);
+    cfg.terminal_constraint_set = set;
+    return cfg;
+}
+
+auto reproducer_box(Eigen::Index row, double level) -> ctrlpp::terminal_set<double, NX>
+{
+    halfplanes H(4, 2);
+    H << 1.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, -1.0;
+    Eigen::VectorXd h = Eigen::VectorXd::Constant(4, 0.08);
+    h(row) = level;
+    return ctrlpp::polytopic_set<double, NX>{std::move(H), std::move(h)};
+}
+
+auto finite_box() -> ctrlpp::terminal_set<double, NX>
+{
+    return reproducer_box(0, 0.08);
+}
+
+auto nan_level_box() -> ctrlpp::terminal_set<double, NX>
+{
+    auto set = reproducer_box(0, not_a_number);
+    std::get<ctrlpp::polytopic_set<double, NX>>(set).h(2) = not_a_number;
+    return set;
+}
+
+auto ellipsoid(const Eigen::Vector2d& eigenvalues, double alpha) -> ctrlpp::terminal_set<double, NX>
+{
+    return ctrlpp::ellipsoidal_set<double, NX>{eigenvalues.asDiagonal(), alpha};
+}
+
+template <typename Solver>
+auto create_on(const std::optional<ctrlpp::terminal_set<double, NX>>& set, Solver solver) -> terminal_outcome<Solver>
+{
+    return terminal_mpc<Solver>::create(make_double_integrator(), terminal_config(set), std::move(solver));
+}
+
+template <typename Alternative, typename Result>
+void require_refusal(const Result& result, Alternative expected)
+{
+    REQUIRE_FALSE(result.has_value());
+    const auto* cause = std::get_if<Alternative>(&result.error());
+    REQUIRE(cause != nullptr);
+    CHECK(*cause == expected);
+}
+
+// The posed terminal rows, checked against the backends' primal stopping rule eps_abs + eps_rel * max(|H x_N|, |h|).
+void require_terminal_rows_hold(const ctrlpp::terminal_set<double, NX>& set, const Eigen::Vector2d& x_N)
+{
+    const auto cfg = terminal_config(set);
+    const auto sys = make_double_integrator();
+    const Eigen::MatrixXd A{ctrlpp::detail::build_constraint_matrix<double, NX, NU>(horizon, sys.A, sys.B, cfg.x_min, cfg.x_max, false, cfg.u_min, cfg.u_max, cfg.du_max, cfg.terminal_constraint_set)};
+    const auto [l, u] = ctrlpp::detail::build_bounds_vectors<double, NX, NU>(horizon, reproducer_state, cfg.x_min, cfg.x_max, cfg.u_min, cfg.u_max, cfg.du_max, cfg.terminal_constraint_set);
+    const Eigen::Index rows = ctrlpp::detail::terminal_constraint_rows<double, NX>(cfg.terminal_constraint_set);
+    const Eigen::VectorXd posed = A.bottomRows(rows).middleCols(horizon * static_cast<int>(NX), static_cast<int>(NX)) * x_N;
+    const Eigen::VectorXd upper = u.tail(rows);
+    const double level = upper.array().isFinite().select(upper.cwiseAbs(), 0.0).maxCoeff();
+    const double tolerance = eps_terminal + eps_terminal * std::max(posed.lpNorm<Eigen::Infinity>(), level);
+    INFO("terminal rows " << posed.transpose() << ", tolerance " << tolerance);
+    CHECK((posed.array() <= upper.array() + tolerance).all());
+    CHECK((posed.array() >= l.tail(rows).array() - tolerance).all());
+}
+
+template <typename Solver>
+void require_terminal_solve(const ctrlpp::terminal_set<double, NX>& set, Solver solver)
+{
+    auto controller = ctrlpp::test::constructed(create_on(set, std::move(solver)));
+    const auto out = controller.solve(reproducer_state);
+    REQUIRE(out.has_value());
+    INFO("iterations " << controller.diagnostics().iterations);
+    CHECK(out->status == ctrlpp::solve_result_status::converged);
+    const auto trajectory = controller.trajectory();
+    REQUIRE(trajectory.has_value());
+    require_terminal_rows_hold(set, trajectory->first.back());
+}
+
+}
+
+TEST_CASE("mpc refuses at construction a problem its QP backend refuses at setup", "[mpc][qp][setup]")
+{
+    const auto empty_row = reproducer_box(0, -infinity);
+    require_refusal(create_on(std::nullopt, ctrlpp::argmin_qp_solver{eps_terminal, eps_terminal, 0}), ctrlpp::argmin_qp_setup_error::invalid_options);
+    require_refusal(create_on(empty_row, ctrlpp::argmin_qp_solver{}), ctrlpp::argmin_qp_setup_error::pose_failed);
+#if defined(CTRLPP_HAS_OSQP)
+    require_refusal(create_on(std::nullopt, ctrlpp::osqp_solver{eps_terminal, eps_terminal, 0}), ctrlpp::osqp_setup_error::setup_failed);
+    require_refusal(create_on(empty_row, ctrlpp::osqp_solver{}), ctrlpp::osqp_setup_error::setup_failed);
+#endif
+
+    auto controller = ctrlpp::test::constructed(terminal_mpc<ctrlpp::argmin_qp_solver>::create(make_double_integrator(), terminal_config(finite_box())));
+    CHECK(controller.solve(reproducer_state).has_value());
+}
+
+TEST_CASE("mpc refuses the non-finite terminal set that used to fail every solve", "[mpc][qp][terminal_set]")
+{
+    const auto nan_level = ellipsoid(Eigen::Vector2d::Ones(), not_a_number);
+    const auto non_finite = ctrlpp::controller_construction_error::non_finite_terminal_set;
+    require_refusal(create_on(nan_level_box(), ctrlpp::argmin_qp_solver{}), non_finite);
+    require_refusal(create_on(nan_level, ctrlpp::argmin_qp_solver{}), non_finite);
+    require_terminal_solve(finite_box(), ctrlpp::argmin_qp_solver{eps_terminal, eps_terminal});
+#if defined(CTRLPP_HAS_OSQP)
+    require_refusal(create_on(nan_level_box(), ctrlpp::osqp_solver{}), non_finite);
+    require_refusal(create_on(nan_level, ctrlpp::osqp_solver{}), non_finite);
+    require_terminal_solve(finite_box(), ctrlpp::osqp_solver{eps_terminal, eps_terminal});
+#endif
+}
+
+TEST_CASE("mpc solves the semidefinite, zero-level and vacuous-row terminal sets it admits", "[mpc][qp][terminal_set]")
+{
+    const std::vector<std::pair<const char*, ctrlpp::terminal_set<double, NX>>> sets{
+        {"P = diag(1, 0), alpha = 1", ellipsoid(Eigen::Vector2d{1.0, 0.0}, 1.0)},
+        {"P = I, alpha = 0", ellipsoid(Eigen::Vector2d::Ones(), 0.0)},
+        {"P = diag(1, 0), alpha = 0", ellipsoid(Eigen::Vector2d{1.0, 0.0}, 0.0)},
+        {"box with h(0) = +inf", reproducer_box(0, infinity)},
+    };
+    for(const auto& [name, set] : sets)
+    {
+        INFO(name);
+        require_terminal_solve(set, ctrlpp::argmin_qp_solver{eps_terminal, eps_terminal});
+#if defined(CTRLPP_HAS_OSQP)
+        require_terminal_solve(set, ctrlpp::osqp_solver{eps_terminal, eps_terminal});
+#endif
+    }
 }
 
 #endif

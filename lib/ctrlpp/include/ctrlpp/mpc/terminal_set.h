@@ -74,10 +74,10 @@ enum class terminal_set_error : std::uint8_t
 /// Riccati solve's own refusal of the terminal cost and gain.
 using terminal_ingredients_error = std::variant<terminal_set_error, dare_error>;
 
-/// @brief Ellipsoid {x : x^T P x <= alpha}, P positive definite, alpha > 0.
+/// @brief Ellipsoid {x : x^T P x <= alpha}, P positive semidefinite, alpha >= 0.
 ///
 /// A QP cannot hold a quadric, so the MPC encodes this set as its inscribed box in P's
-/// eigenbasis. That box is not positively invariant under the LQR law and gives no
+/// eigenbasis, open along a null direction of P. That box is not positively invariant under the LQR law and gives no
 /// recursive-feasibility guarantee; for an invariant terminal set use the output
 /// admissible set (terminal_ingredients_result::invariant_set).
 template <typename Scalar, std::size_t NX>
@@ -89,6 +89,7 @@ struct ellipsoidal_set
 
 // Polytopic set in halfplane representation: {x : Hx <= h}
 // Dynamic row count (halfplane count varies), fixed NX columns.
+// An infinite entry of h leaves its row vacuous, and -inf poses an empty set.
 template <typename Scalar, std::size_t NX>
 struct polytopic_set
 {

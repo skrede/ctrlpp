@@ -115,11 +115,12 @@ enum class solver_error : std::uint8_t
 /// The configuration is validated once, at construction, before any dimension
 /// product is formed or any storage is reserved: first the runtime prediction
 /// horizon, which scales every derived dimension of the posed problem, then
-/// the bounds, the rate bound, the cost weights and the constraint penalties,
-/// each of which would otherwise pose a different or poisoned problem. The
-/// horizon is deliberately kept signed: a mistaken negative value stays
-/// representable as negative and is therefore rejectable, whereas an unsigned
-/// field would silently turn the same mistake into an enormous allocation.
+/// the bounds, the rate bound, the cost weights, the constraint penalties and
+/// the terminal set, each of which would otherwise pose a different or
+/// poisoned problem. The horizon is deliberately kept signed: a mistaken
+/// negative value stays representable as negative and is therefore rejectable,
+/// whereas an unsigned field would silently turn the same mistake into an
+/// enormous allocation.
 ///
 ///  * non_positive_horizon       : the prediction horizon is zero or negative.
 ///                                 A horizon of zero poses no input to optimize
@@ -166,6 +167,17 @@ enum class solver_error : std::uint8_t
 ///  * non_finite_state_space_weight : raised by `mpc::create` only: Q, or a set
 ///                                 Qf, mapped to state space as C^T Q C overflows
 ///                                 although every configured entry is finite.
+///  * mismatched_terminal_set    : raised by `mpc::create` only: a polytopic
+///                                 terminal set's H and h differ in row count.
+///  * non_finite_terminal_set    : raised by `mpc::create` only: the terminal set's
+///                                 P, alpha or H holds a NaN or an infinity, or its
+///                                 h holds a NaN. An infinity in h is admitted.
+///  * asymmetric_terminal_set    : raised by `mpc::create` only: an ellipsoidal
+///                                 set's P is asymmetric beyond rounding drift.
+///  * indefinite_terminal_set    : raised by `mpc::create` only: that P has an
+///                                 eigenvalue below the eigensolver's rounding floor.
+///  * negative_terminal_set_level : raised by `mpc::create` only: alpha is negative,
+///                                 so the ellipsoid is empty.
 enum class controller_construction_error : std::uint8_t
 {
     non_positive_horizon,
@@ -179,7 +191,12 @@ enum class controller_construction_error : std::uint8_t
     invalid_constraint_penalty,
     singular_input_weight,
     non_finite_system,
-    non_finite_state_space_weight
+    non_finite_state_space_weight,
+    mismatched_terminal_set,
+    non_finite_terminal_set,
+    asymmetric_terminal_set,
+    indefinite_terminal_set,
+    negative_terminal_set_level
 };
 
 /// @brief Success payload of a controller `solve()`.

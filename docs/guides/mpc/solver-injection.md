@@ -187,6 +187,11 @@ three-argument form takes a preconfigured instance:
 auto created = ctrlpp::mpc<double, NX, NU, my_qp_solver>::create(sys, cfg);
 ```
 
+A refused `setup()` refuses `create`: `created.error()` then holds the
+`my_setup_error` alternative of the controller's `construction_error`, so the
+backend's own cause reaches the caller and no controller exists whose every
+solve would fail.
+
 The `static_assert` catches concept mismatches at compile time with clear
 diagnostics.
 
