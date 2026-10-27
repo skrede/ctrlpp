@@ -29,6 +29,8 @@ public:
         : p_upper_{}
         , solver_{}
         , a_{}
+        , osqp_lower_{}
+        , osqp_upper_{}
         , max_iter_{max_iter}
         , warm_starting_{warm_starting}
         , eps_abs_{eps_abs}
@@ -62,17 +64,27 @@ public:
     {
         solver_.reset();
         prepare_sparse_matrices(problem);
+        if(problem.l.size() != m_ || problem.u.size() != m_)
+            return ctrlpp::unexpected(osqp_setup_error::setup_failed);
+        osqp_lower_.resize(m_);
+        osqp_upper_.resize(m_);
+        detail::to_osqp_lower(problem.l, osqp_lower_);
+        detail::to_osqp_upper(problem.u, osqp_upper_);
         return configure_and_create_solver(problem);
     }
 
     auto solve(const qp_update<double>& update) -> qp_result<double>
     {
-        osqp_update_data_vec(solver_.get(), update.q.size() > 0 ? update.q.data() : nullptr, update.l.size() > 0 ? update.l.data() : nullptr, update.u.size() > 0 ? update.u.data() : nullptr);
+        if(!solver_ || !accepts_bound(update.l) || !accepts_bound(update.u))
+            return qp_result<double>{.status = solve_status::error};
+
+        // OSQP refuses l > u before touching q, l or u, so a refusal left unchecked would solve the previous problem.
+        const OSQPFloat* q = update.q.size() > 0 ? update.q.data() : nullptr;
+        if(osqp_update_data_vec(solver_.get(), q, stage(update.l, osqp_lower_, detail::to_osqp_lower), stage(update.u, osqp_upper_, detail::to_osqp_upper)) != 0)
+            return qp_result<double>{.status = solve_status::error};
 
         if(update.warm_x.size() > 0 || update.warm_y.size() > 0)
-        {
             osqp_warm_start(solver_.get(), update.warm_x.size() > 0 ? update.warm_x.data() : nullptr, update.warm_y.size() > 0 ? update.warm_y.data() : nullptr);
-        }
 
         osqp_solve(solver_.get());
         return detail::read_osqp_result(*solver_, n_, m_);
@@ -82,6 +94,8 @@ private:
     detail::osqp_sparse_matrix p_upper_;
     detail::osqp_workspace solver_;
     detail::osqp_sparse_matrix a_;
+    Eigen::VectorXd osqp_lower_;
+    Eigen::VectorXd osqp_upper_;
     std::int32_t max_iter_;
     bool warm_starting_;
     double eps_abs_;
@@ -101,6 +115,16 @@ private:
 
         n_ = static_cast<OSQPInt>(problem.P.cols());
         m_ = static_cast<OSQPInt>(problem.A.rows());
+    }
+
+    auto accepts_bound(const Eigen::VectorXd& bound) const -> bool { return bound.size() == 0 || bound.size() == m_; }
+
+    static auto stage(const Eigen::VectorXd& bound, Eigen::VectorXd& buffer, void (&map)(const Eigen::VectorXd&, Eigen::VectorXd&)) -> const OSQPFloat*
+    {
+        if(bound.size() == 0)
+            return nullptr;
+        map(bound, buffer);
+        return buffer.data();
     }
 
     auto make_settings() const -> detail::osqp_settings
@@ -128,7 +152,7 @@ private:
             return ctrlpp::unexpected(osqp_setup_error::settings_allocation_failed);
 
         OSQPSolver* solver = nullptr;
-        auto exit_flag = osqp_setup(&solver, &p_csc, const_cast<OSQPFloat*>(problem.q.data()), &a_csc, const_cast<OSQPFloat*>(problem.l.data()), const_cast<OSQPFloat*>(problem.u.data()), m_, n_, settings.get());
+        auto exit_flag = osqp_setup(&solver, &p_csc, const_cast<OSQPFloat*>(problem.q.data()), &a_csc, osqp_lower_.data(), osqp_upper_.data(), m_, n_, settings.get());
         solver_.reset(solver);
 
         if(exit_flag != 0)

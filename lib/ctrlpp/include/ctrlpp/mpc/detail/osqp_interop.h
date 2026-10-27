@@ -70,6 +70,18 @@ constexpr auto map_osqp_status(OSQPInt status_val) -> solve_status
     }
 }
 
+// OSQP 1.0.0 reads a side as absent only when its scaled value is beyond OSQP_INFTY * OSQP_MIN_SCALING, and never maps an
+// IEEE infinity itself (auxil.c); the impossible direction, lower +inf or upper -inf, is left for its l <= u check to refuse.
+inline void to_osqp_lower(const Eigen::VectorXd& lower, Eigen::VectorXd& osqp_lower)
+{
+    osqp_lower.array() = lower.array().unaryExpr([](double v) { return v < -OSQP_INFTY ? -OSQP_INFTY : v; });
+}
+
+inline void to_osqp_upper(const Eigen::VectorXd& upper, Eigen::VectorXd& osqp_upper)
+{
+    osqp_upper.array() = upper.array().unaryExpr([](double v) { return v > OSQP_INFTY ? OSQP_INFTY : v; });
+}
+
 inline auto read_osqp_result(const OSQPSolver& solver, OSQPInt n, OSQPInt m) -> qp_result<double>
 {
     qp_result<double> result;

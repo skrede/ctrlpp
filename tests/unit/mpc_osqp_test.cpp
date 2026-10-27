@@ -1,6 +1,7 @@
 #include "ctrlpp/mpc.h"
 #include "ctrlpp/expected.h"
 #include "ctrlpp/mpc/osqp_solver.h"
+#include "ctrlpp/model/propagate.h"
 
 #include <Eigen/Dense>
 
@@ -49,6 +50,35 @@ auto make_simple_qp() -> ctrlpp::qp_problem<double>
     A.makeCompressed();
 
     return {.P = P, .q = Eigen::Vector2d::Zero(), .A = A, .l = Eigen::Vector2d::Constant(-1.0), .u = Eigen::Vector2d::Constant(1.0)};
+}
+
+constexpr double inf = std::numeric_limits<double>::infinity();
+constexpr std::int32_t osqp_default_max_iter = 4000;
+
+void require_every_solve_converges(OsqpMpc& controller, const ctrlpp::discrete_state_space<double, NX, NU, NX>& sys, std::int32_t budget)
+{
+    Eigen::Vector2d x{1.0, 0.0};
+    for(int step = 0; step < 20; ++step)
+    {
+        auto u = controller.solve(x);
+        REQUIRE(u.has_value());
+        CHECK(u->status == ctrlpp::solve_result_status::converged);
+        CHECK(controller.diagnostics().iterations < budget);
+        x = ctrlpp::propagate(sys, x, u->input);
+    }
+}
+
+auto example_config() -> ctrlpp::mpc_config<double, NX, NU>
+{
+    return {
+        .horizon = 20,
+        .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
+        .R = Eigen::Matrix<double, 1, 1>::Identity(),
+        .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
+        .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
+        .x_min = Eigen::Vector2d(-inf, -2.0),
+        .x_max = Eigen::Vector2d(inf, 2.0),
+    };
 }
 
 } // namespace
@@ -455,4 +485,130 @@ TEST_CASE("mpc with OSQP solver", "[mpc][osqp]")
         REQUIRE(u1.has_value());
         CHECK(std::abs(u1->input(0) - applied(0)) <= 0.2 + 1e-2);
     }
+}
+
+TEST_CASE("mpc on osqp_solver converges with an infinite bound side", "[mpc][osqp][infinity]")
+{
+    auto sys = make_double_integrator();
+    ctrlpp::mpc_config<double, NX, NU> cfg{
+        .horizon = 10,
+        .Q = Eigen::Matrix2d::Identity(),
+        .R = (Eigen::Matrix<double, 1, 1>() << 0.1).finished(),
+        .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
+        .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
+    };
+
+    SECTION("a one-sided state bound")
+    {
+        cfg.x_max = Eigen::Vector2d(5.0, 5.0);
+        auto controller = OsqpMpc::create(sys, cfg, ctrlpp::osqp_solver{1e-3, 1e-3, osqp_default_max_iter});
+        REQUIRE(controller.has_value());
+        require_every_solve_converges(*controller, sys, osqp_default_max_iter);
+    }
+
+    SECTION("the regulation example's configuration")
+    {
+        auto controller = OsqpMpc::create(sys, example_config(), ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
+        REQUIRE(controller.has_value());
+        require_every_solve_converges(*controller, sys, osqp_default_max_iter);
+    }
+
+    SECTION("the observer example's state bounds with the default solver")
+    {
+        auto controller = OsqpMpc::create(sys, example_config());
+        REQUIRE(controller.has_value());
+        require_every_solve_converges(*controller, sys, osqp_default_max_iter);
+    }
+
+    SECTION("an infinite rate bound with finite input bounds")
+    {
+        cfg.du_max = Eigen::Matrix<double, 1, 1>::Constant(inf);
+        auto controller = OsqpMpc::create(sys, cfg, ctrlpp::osqp_solver{1e-3, 1e-3, osqp_default_max_iter});
+        REQUIRE(controller.has_value());
+        require_every_solve_converges(*controller, sys, osqp_default_max_iter);
+    }
+}
+
+TEST_CASE("osqp_solver solves a problem whose rows have an absent side", "[mpc][osqp][infinity]")
+{
+    auto problem = make_simple_qp();
+    problem.l = Eigen::Vector2d(-inf, -1.0);
+    problem.u = Eigen::Vector2d(inf, 1.0);
+
+    ctrlpp::osqp_solver solver;
+    REQUIRE(solver.setup(problem).has_value());
+    ctrlpp::qp_update<double> update{.q = Eigen::Vector2d(1.0, -1.0), .l = problem.l, .u = problem.u, .warm_x = {}, .warm_y = {}};
+    CHECK(solver.solve(update).status == ctrlpp::solve_status::optimal);
+}
+
+TEST_CASE("osqp_solver refuses an empty row and reports every refused update", "[mpc][osqp][infinity]")
+{
+    const auto make_update = [](const Eigen::Vector2d& l, const Eigen::Vector2d& u) {
+        return ctrlpp::qp_update<double>{.q = Eigen::Vector2d(1.0, -1.0), .l = l, .u = u, .warm_x = {}, .warm_y = {}};
+    };
+
+    SECTION("an impossible side is refused at setup")
+    {
+        const std::pair<double, double> empty_rows[] = {{-1e20, -inf}, {-inf, -inf}, {inf, inf}, {inf, 1.0}};
+        for(const auto& [lower, upper] : empty_rows)
+        {
+            auto problem = make_simple_qp();
+            problem.l(0) = lower;
+            problem.u(0) = upper;
+            ctrlpp::osqp_solver solver;
+            auto result = solver.setup(problem);
+            REQUIRE_FALSE(result.has_value());
+            CHECK(result.error() == ctrlpp::osqp_setup_error::setup_failed);
+        }
+    }
+
+    SECTION("an update OSQP refuses is an error, not the previous problem's answer")
+    {
+        ctrlpp::osqp_solver solver;
+        REQUIRE(solver.setup(make_simple_qp()).has_value());
+        REQUIRE(solver.solve(make_update(Eigen::Vector2d::Constant(-1.0), Eigen::Vector2d::Constant(1.0))).status == ctrlpp::solve_status::optimal);
+
+        CHECK(solver.solve(make_update(Eigen::Vector2d(inf, -1.0), Eigen::Vector2d(inf, 1.0))).status == ctrlpp::solve_status::error);
+
+        CHECK(solver.solve(make_update(Eigen::Vector2d(-inf, -1.0), Eigen::Vector2d(inf, 1.0))).status == ctrlpp::solve_status::optimal);
+    }
+
+    SECTION("a bound vector of the wrong length is an error and reaches no solve")
+    {
+        ctrlpp::osqp_solver solver;
+        REQUIRE(solver.setup(make_simple_qp()).has_value());
+
+        auto update = make_update(Eigen::Vector2d::Constant(-1.0), Eigen::Vector2d::Constant(1.0));
+        update.l = Eigen::Vector3d::Constant(-1.0);
+        auto result = solver.solve(update);
+        CHECK(result.status == ctrlpp::solve_status::error);
+        CHECK(result.iterations == 0);
+    }
+}
+
+TEST_CASE("osqp_solver solve before setup is an error", "[mpc][osqp][infinity][no-workspace]")
+{
+    ctrlpp::osqp_solver solver;
+    ctrlpp::qp_update<double> update{.q = Eigen::Vector2d::Zero(), .l = Eigen::Vector2d::Constant(-1.0), .u = Eigen::Vector2d::Constant(1.0), .warm_x = {}, .warm_y = {}};
+    CHECK(solver.solve(update).status == ctrlpp::solve_status::error);
+}
+
+TEST_CASE("mpc on osqp_solver reports an infinite initial state instead of answering the previous one", "[mpc][osqp][infinity]")
+{
+    auto sys = make_double_integrator();
+    auto controller = OsqpMpc::create(sys, example_config());
+    REQUIRE(controller.has_value());
+
+    const Eigen::Vector2d x{1.0, 0.0};
+    auto first = controller->solve(x);
+    REQUIRE(first.has_value());
+    REQUIRE(first->status == ctrlpp::solve_result_status::converged);
+
+    auto refused = controller->solve(Eigen::Vector2d(inf, 0.0));
+    REQUIRE_FALSE(refused.has_value());
+    CHECK(refused.error() == ctrlpp::solver_error::invalid_problem);
+
+    auto next = controller->solve(x);
+    REQUIRE(next.has_value());
+    CHECK(next->status == ctrlpp::solve_result_status::converged);
 }

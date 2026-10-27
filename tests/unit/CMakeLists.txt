@@ -318,6 +318,10 @@ if (CTRLPP_BUILD_OSQP AND CTRLPP_TESTS_WITH_EXCEPTIONS)
     target_link_libraries(mpc_coverage_test PRIVATE ctrlpp::osqp Catch2::Catch2WithMain)
     target_compile_options(mpc_coverage_test PRIVATE ${CTRLPP_WARNING_FLAGS})
     add_test(NAME mpc_coverage_test COMMAND mpc_coverage_test)
+    if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
+        make_nomalloc_test(osqp_bounds_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/osqp_bounds_nomalloc_test.cpp")
+        target_link_libraries(osqp_bounds_nomalloc_test PRIVATE ctrlpp::osqp)
+    endif()
 endif ()
 
 # NLopt links a throwing solver, so these TUs belong to the exceptions carve-out

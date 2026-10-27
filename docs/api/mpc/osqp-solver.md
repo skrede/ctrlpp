@@ -96,13 +96,23 @@ auto setup(const qp_problem<double>& problem)
 
 Fallible setup: initializes the OSQP workspace from a QP problem (cost matrices P, q and constraint matrices A, l, u). Returns an empty `expected` on success and an `osqp_setup_error` on failure. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS` builds.
 
+An absent bound side is passed to OSQP in its own convention, `OSQP_INFTY` (1e30 in a double build). A lower bound at or below `-OSQP_INFTY`, including `-inf`, is passed as `-OSQP_INFTY`, and an upper bound at or above `+OSQP_INFTY`, including `+inf`, as `+OSQP_INFTY`. OSQP does not map an IEEE infinity itself: its duality gap would evaluate `inf * 0` to NaN, and every solve would run to `max_iter`. Every other value, NaN included, is passed unchanged. A lower bound of `+inf` or an upper bound of `-inf` poses an empty row rather than an absent side, so it is passed unchanged and OSQP's `l <= u` check refuses it with `osqp_setup_error::setup_failed`. A problem whose `l` or `u` length differs from the row count of A is refused the same way.
+
+OSQP reads `OSQP_INFTY` as absent through its Ruiz equilibration, so on a row whose entries are far above 1e4 an absent side can read as a very large finite bound instead.
+
 ### solve
 
 ```cpp
 auto solve(const qp_update<double>& update) -> qp_result<double>;
 ```
 
-Solves the QP with updated cost vector, bounds, and optional warm-start vectors. Returns a `qp_result` containing the primal/dual solution, solver status, objective value, iteration count, solve time, and residuals.
+Solves the QP with updated cost vector, bounds, and optional warm-start vectors. Returns a `qp_result` containing the primal/dual solution, solver status, objective value, iteration count, solve time, and residuals. An empty vector in the update leaves that part of the problem as it was.
+
+The bounds are mapped to `OSQP_INFTY` as at setup, into buffers sized at setup, so a solve allocates nothing for them. The result is `solve_status::error`, with no solve run, when:
+
+- `l` or `u` has a length other than 0 or the posed row count;
+- OSQP refuses the update, for example an empty row from an infinite initial state. OSQP keeps the previous q, l and u on a refused update, so solving anyway would answer the previous problem;
+- no setup has succeeded yet.
 
 ## Type Aliases
 

@@ -208,6 +208,11 @@ TEST_CASE("mhe soft box constraint does not drag the estimate to the box floor",
         // that was not applied fails here instead of leaving the assertions
         // below to read an estimate the window never saw.
         REQUIRE(estimator.update(z).has_value());
+        if(i >= static_cast<int>(N))
+        {
+            CHECK_FALSE(estimator.diagnostics().used_ekf_fallback);
+            CHECK(estimator.diagnostics().status == solve_status::optimal);
+        }
     }
 
     auto est = estimator.state();
