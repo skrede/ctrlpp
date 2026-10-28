@@ -66,6 +66,8 @@ Constructs the solver from a backend-agnostic accuracy/speed preset instead of i
 | `qp_preset::accuracy` | on | The QP solution feeds a tolerance-sensitive consumer, or tight constraint feasibility is required. |
 | `qp_preset::speed` | off | Warm-resolve linear MPC, where the unpolished iterate already meets the control tolerance and the per-step polish refinement is unnecessary. |
 
+Without polishing, OSQP stops once the primal residual is within `eps_abs + eps_rel * max(‖Ax‖∞, ‖z‖∞)`, so a constraint can be exceeded by up to that amount. The regulation example's first input is -1.0016 against `|u| <= 1`. Polishing re-solves on the active set and normally lands on the bound, but when polishing fails OSQP keeps the unpolished iterate. Use `qp_preset::accuracy` together with a tighter `eps_abs` and `eps_rel` when a bound must hold to a tighter tolerance.
+
 `qp_preset` (defined in `ctrlpp/mpc/qp_types.h`) is shared across every backend modeling the `qp_solver` concept, so a call site can pick the accuracy/speed tradeoff independently of the chosen solver:
 
 ```cpp
