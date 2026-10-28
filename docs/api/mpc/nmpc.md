@@ -101,7 +101,7 @@ This is the slack-free cut: `config.horizon` must equal `NH`, and the configurat
 | soft constraints with a path or terminal constraint set, which would add slack | `nlp_formulation_error` | `slack_not_supported` |
 | the solver refused the posed problem | `SetupError` | `argmin_setup_error`, `nlopt_setup_error`, or a custom backend's own enum |
 
-The horizon rules of the runtime-horizon class do not apply: a non-positive or oversized `config.horizon` is a `horizon_mismatch` here. A penalty is inspected while its soft constraint is active, so an invalid penalty on a slack-adding configuration is reported as `invalid_constraint_penalty`, ahead of `slack_not_supported`. The formulation factory `detail::build_nmpc_problem_static` applies the same two formulation refusals, through the same check.
+The horizon rules of the runtime-horizon class do not apply: a non-positive or oversized `config.horizon` is a `horizon_mismatch` here. A penalty is inspected while its soft constraint is active, so an invalid penalty on a slack-adding configuration is reported as `invalid_constraint_penalty`, ahead of `slack_not_supported`. The formulation factory `detail::build_nmpc_problem_static` applies the same two formulation refusals, through the same check. The controller sets its solver up only against a problem that formulation posed: should posing refuse, `create` returns that refusal with the same alternative and value, never a controller whose solves report `setup_incomplete`.
 
 ```cpp
 using controller = ctrlpp::nmpc<double, NX, NU, NH, solver, plant, NC>;
@@ -244,8 +244,9 @@ solve(const Vector<Scalar, NX>& x0);
 Solves the NLP for regulating state to the origin. Returns the success branch with
 the first input and a soft status, or the error branch on failure. A solver setup
 failure is a construction error returned by `create`, so a created controller is
-always set up; only a copy whose re-setup of its forked solver failed returns the
-error branch with `solver_error::setup_incomplete` from every `solve` overload.
+always set up; only a copy whose re-posing of its problem or re-setup of its forked
+solver was refused returns the error branch with `solver_error::setup_incomplete`
+from every `solve` overload.
 
 ### solve (constant reference)
 

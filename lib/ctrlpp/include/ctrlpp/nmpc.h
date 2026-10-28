@@ -651,16 +651,18 @@ private:
         return construct_and_set_up(std::move(dynamics), *admitted, std::forward<SolverArgument>(solver)...);
     }
 
-    // The setup failure is assigned into the one named result, and that result is
-    // this function's only return: gcc elides a named result only when every
-    // return names it, so the refusals live in the caller instead.
+    // The posing and setup refusals are assigned into the one named result, its only
+    // return: gcc elides a named result only when every return names it. Posing
+    // repeats the formulation refusals the caller already ran, so a divergence
+    // between the two is refused here, not set up against an empty problem.
     template <typename... SolverArgument>
     static auto construct_and_set_up(Dynamics&& dynamics, const config_type& config, SolverArgument&&... solver)
         -> expected<nmpc_static, construction_error>
     {
         expected<nmpc_static, construction_error> result{std::in_place, validated_tag{}, std::move(dynamics), config, std::forward<SolverArgument>(solver)...};
-        auto setup = detail::setup_nlp_solver(result->m_solver, *result->m_problem);
-        if(!setup.has_value())
+        if(auto posed = result->pose_problem(); !posed.has_value())
+            result = unexpected(construction_error{posed.error()});
+        else if(auto setup = detail::setup_nlp_solver(result->m_solver, *result->m_problem); !setup.has_value())
             result = unexpected(construction_error{setup.error()});
         return result;
     }
@@ -722,7 +724,6 @@ private:
     void initialize()
     {
         m_state->x_ref.resize(static_cast<std::size_t>(horizon) + 1, Vector<Scalar, NX>::Zero());
-        pose_problem();
         // Pre-size the reused solve buffers ONCE (construction may allocate), so
         // the steady-state assignments below hit the same-size fast path and the
         // hot solve loop stays allocation-free.
@@ -732,30 +733,24 @@ private:
         m_candidate = Eigen::VectorX<Scalar>::Zero(problem_dimension);
     }
 
-    // Every configuration posed here has passed the formulation refusals, in
-    // create or in the creation of a copy's source, so the refused branch is not
-    // reached; it still leaves a valid empty problem behind problem() and the
-    // setup flag set instead of reading a refused result.
-    void pose_problem()
+    auto pose_problem() -> expected<void, nlp_formulation_error>
     {
         auto problem = detail::build_nmpc_problem_static<Scalar, NX, NU, NH, NC, NTC>(m_dynamics, m_config, m_state);
         if(!problem.has_value())
         {
             m_problem = std::make_unique<problem_type>();
-            m_setup_failed = true;
-            return;
+            return unexpected(problem.error());
         }
         m_problem = std::make_unique<problem_type>(*std::move(problem));
+        return {};
     }
 
-    // A copy re-sets its forked solver up against its own problem. A constructor
-    // cannot return an error, so a refused re-setup is the flag that turns every
-    // solve of the copy into solver_error::setup_incomplete.
+    // A copy re-poses its own problem and re-sets its forked solver up against it.
+    // A constructor cannot return an error, so a refused re-pose or re-setup is the
+    // flag that turns every solve of the copy into solver_error::setup_incomplete.
     void build_problem_and_setup()
     {
-        pose_problem();
-        if(!m_setup_failed)
-            m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem).has_value();
+        m_setup_failed = !pose_problem().has_value() || !detail::setup_nlp_solver(m_solver, *m_problem).has_value();
     }
 
     expected<solve_output<Scalar, NU>, solver_error> solve_impl(const Vector<Scalar, NX>& x0)
