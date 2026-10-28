@@ -28,12 +28,12 @@ ENTRY(Reset_Handler)
 _estack = ORIGIN(DTCM) + LENGTH(DTCM);
 
 /* The heap reserve is the high-water the board reported for this image with
- * the predictive family linked in, measured under a 256 KiB reserve: 76,836 B
+ * the predictive family linked in, measured under a 256 KiB reserve: 76,872 B
  * after the family's setup, and the same at the end of the run, since the armed
  * steady state allocates nothing. No margin is added: the figure is exact and
  * repeats for a given image, and a requirement that grows is refused by name at
  * setup instead of running into anything. */
-_Min_Heap_Size  = 76836;
+_Min_Heap_Size  = 76872;
 
 /* The stack reserve is the whole-program stack high-water the board reported
  * for this image, painted from before static construction to the end of the
