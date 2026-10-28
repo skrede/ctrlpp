@@ -151,8 +151,10 @@ if (CTRLPP_HAVE_FLOAT128)
     # The binary128 reference lives beside the fuzz targets that consume it, and is
     # included as "fuzz/care_quad_reference.h"; this is what resolves that quote.
     target_include_directories(care_quad_reference_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")
+    make_test(care_entitlement_test)
+    target_include_directories(care_entitlement_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")
 else ()
-    message(STATUS "ctrlpp: no __float128 on this toolchain, skipping care_quad_reference_test (the binary128 reference has no lower-precision substitute)")
+    message(STATUS "ctrlpp: no __float128 on this toolchain, skipping care_quad_reference_test and care_entitlement_test (the binary128 reference has no lower-precision substitute)")
 endif ()
 # MemorySanitizer ships its own strong operator new/delete in
 # libclang_rt.msan_cxx, which collides at link time with the replacements in

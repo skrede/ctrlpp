@@ -1,5 +1,6 @@
 #include "ctrlpp/control/care.h"
 
+#include "care_entitlement.h"
 #include "care_quad_reference.h"
 
 #include <Eigen/Dense>
@@ -294,59 +295,17 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
 
     const auto reference = ctrlpp::fuzz::quad_refine_care(A_reference, B_reference, Q_reference, R(0, 0), P_reference, reference_step_budget);
 
-    // A reference that has not converged is not a reference. Its distance to the
-    // answer measures nothing, so this pose yields no verdict. An absence of
-    // evidence is not evidence of a defect, and it is emphatically not an abort.
-    // The same disposition covers a distance that does not resolve because the
-    // reference's own magnitude is zero: there is no scale to be relative to.
+    // A reference that has not converged, or whose magnitude is zero, is not a reference, and a pose
+    // not entitled to the criterion below is not asked for it: either yields no accuracy verdict.
     ctrlpp::fuzz::quad distance_squared{};
-    if(reference.converged && ctrlpp::fuzz::quad_relative_distance_squared(P_reference, reference.P, distance_squared))
+    if(reference.converged && ctrlpp::fuzz::care_forward_error_entitled(A_reference, B_reference, Q_reference, R(0, 0), reference)
+       && ctrlpp::fuzz::quad_relative_distance_squared(P_reference, reference.P, distance_squared))
     {
-        // The half-significand criterion, derived from the radix in one
-        // movement. Retaining more than half of a radix-two type's fractional
-        // significand bits means a relative forward error below two to the minus
-        // half that width; for binary64 that is 2^-26, which is exactly the
-        // square root of the type's own epsilon, 2^-52. Squaring both sides
-        // removes the square root -- one at binary128 would be a library call
-        // and so a new dependency -- and leaves the comparison below. Nothing
-        // here is fitted, and NO CONDITIONING FACTOR APPEARS ANYWHERE.
-        //
-        // THAT HAS A CONSEQUENCE THIS TARGET DOES NOT YET HANDLE, AND SAYING SO
-        // HERE IS THE POINT. A criterion with no conditioning factor is not
-        // neutral about conditioning; it is unconditionally TIGHT. The forward
-        // error of any backward-stable algorithm at binary64 is about kappa*eps,
-        // so a half-significand answer stops being attainable by ANY such
-        // algorithm once kappa exceeds 1/sqrt(eps), about 6.7e7. Past that point
-        // this comparison aborts on an answer sitting at the arithmetic's own
-        // floor. An infinite tolerance would be an oracle that cannot fail; an
-        // unconditionally tight one is an oracle that fails on correct behavior,
-        // and the two are the same mistake pointed in opposite directions.
-        //
-        // A campaign found such a pose rather than one being built to make the
-        // point. A = [0 0 ; -2 -2], whose marginal mode at zero has eigenvector
-        // [1, -1]/sqrt(2) and is visible through the weight factor at 3.3e-8,
-        // giving a closed-loop abscissa of -2.05e-9 and a Lyapunov separation
-        // whose reciprocal is 2.44e8 -- well past the 6.7e7 above. The returned
-        // answer's relative forward error there is 3.5e-8 against a
-        // backward-stable prediction of kappa*eps = 5.4e-8, so the answer is AT
-        // the bound, and this comparison aborts at 2.33 times the criterion. The
-        // reference converged in five steps, its own answer is positive
-        // semi-definite, and both other gates pass, so none of that is a
-        // reference artifact. Walking one weight entry across 41 units in the
-        // last place at that same visibility, the solver declines on 37 rungs and
-        // answers on 4, and all four fail here: at this conditioning the
-        // acceptance decision is selected by rounding rather than by what is
-        // attainable.
-        //
-        // WHAT IS MISSING IS AN ENTITLEMENT TEST, NOT A LOOSER CRITERION. The
-        // filters above decide entitlement on the OPEN-loop state matrix and on
-        // the pair (A, B); neither sees the closed loop's distance to the
-        // imaginary axis, which is what governs this solution's conditioning. A
-        // target that demands a half-significand answer has to establish first
-        // that it is asking for one that exists in the arithmetic it asks in.
-        // Choosing that test's form, and its constant, on the single pose above
-        // would be fitting to a population of one, which is why it is recorded
-        // here and not written here.
+        // A relative forward error of at most 2^-26, sqrt(eps) for binary64, compared squared so
+        // binary128 needs no square root. care() promises a residual bound and a stabilizing closed
+        // loop, not a forward error, so this oracle demands half a significand only where a
+        // backward-stable answer is entitled to it, by the continuous Riccati condition number as
+        // SLICOT SB02QD documents it.
         const ctrlpp::fuzz::quad margin_squared{std::numeric_limits<double>::epsilon()};
         if(distance_squared > margin_squared)
             abort();
