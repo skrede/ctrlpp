@@ -1,23 +1,23 @@
-[meta] build_id=c397c0ad7ccb91a2a9252e1311e528f1f974cd1d
+[meta] build_id=c75a91ac5ba4e8fe6d92469d5cf5171de9822199
 [meta] kind=timing
 [meta] board=NUCLEO-H753ZI loop=bare-superloop scalar=double
-[meta] boot_handshake state=received waited_ms=6859 timeout_ms=30000
+[meta] boot_handshake state=received waited_ms=6797 timeout_ms=30000
 [meta] posture reset=pin reset_flags=cpu+pin reset_rsr=0x00460000 core_hz=64000000 axi_hz=64000000 clock_source=hsi icache=off dcache=off flash_latency_ws=7 cycle_wrap_ms=67108 code=flash data=dtcm stack=dtcm heap=axi_sram optimize=size compiler=gcc-16.2.0
 [spread] region,regime,n,n_basis,block,raw_min,raw_median,raw_max,max_at,per_iteration_raw_max,wraps
 [canary] cycle_counter PASS state=live
-[spread] overhead,cold,1,first_after_proof,1,108,108,108,0,108.0,0
-[spread] overhead,warm,201,golden_window,1,92,92,108,0,108.0,0
-[spread] control.design,cold,1,first_after_reset,1,348560,348560,348560,0,348560.0,0
-[spread] control.design,warm,201,golden_window,1,348433,348436,348436,1,348436.0,0
-[spread] control.step,cold,1,first_after_reset,201,83999,83999,83999,0,417.9,0
-[spread] control.step,warm,201,golden_window,201,83972,83972,83999,0,417.9,0
-[spread] estimation.step,cold,1,first_after_reset,201,1816514,1816514,1816514,0,9037.4,0
-[spread] estimation.step,warm,201,golden_window,201,1816538,1816538,1816539,0,9037.5,0
-[spread] dsp.step,cold,1,first_after_reset,201,11903,11903,11903,0,59.2,0
-[spread] dsp.step,warm,201,golden_window,201,11895,11895,11903,0,59.2,0
-[spread] trajectory.step,cold,1,first_after_reset,201,33405,33405,33405,0,166.2,0
-[spread] trajectory.step,warm,201,golden_window,201,33372,33372,33405,0,166.2,0
-[verdict] heap setup_high_water=1032 reserve=76836 bytes
+[spread] overhead,cold,1,first_after_proof,1,144,144,144,0,144.0,0
+[spread] overhead,warm,201,golden_window,1,113,113,144,0,144.0,0
+[spread] control.design,cold,1,first_after_reset,1,322099,322099,322099,0,322099.0,0
+[spread] control.design,warm,201,golden_window,1,321955,321955,321963,0,321963.0,0
+[spread] control.step,cold,1,first_after_reset,201,82254,82254,82254,0,409.2,0
+[spread] control.step,warm,201,golden_window,201,82212,82212,82254,0,409.2,0
+[spread] estimation.step,cold,1,first_after_reset,201,1816153,1816153,1816153,0,9035.6,0
+[spread] estimation.step,warm,201,golden_window,201,1816198,1816218,1816218,1,9035.9,0
+[spread] dsp.step,cold,1,first_after_reset,201,11943,11943,11943,0,59.4,0
+[spread] dsp.step,warm,201,golden_window,201,11911,11911,11943,0,59.4,0
+[spread] trajectory.step,cold,1,first_after_reset,201,31507,31507,31507,0,156.8,0
+[spread] trajectory.step,warm,201,golden_window,201,31435,31435,31507,0,156.8,0
+[verdict] heap setup_high_water=1032 reserve=76872 bytes
 [verdict] gain device=9.4670936721530019,5.2817396380397534 host=9.4670936721545083,5.281739638040154
 [exact] k,t_s,x0,x1,u
 [exact] 0,0000000000000000,3FEFF07D368EA7D4,BFC83C5AC119C4A7,C022EF26E6DC21A2
@@ -225,11 +225,11 @@
 [verdict] family estimation value=1.3104323528650408 golden=1.3104323528650401 departure=6.661e-16 bound=2.226e-11 verdict=PASS allocations=unmeasured
 [verdict] family dsp value=-0.86508002466156531 golden=-0.86508002466156531 departure=0.000e+00 bound=2.503e-11 verdict=PASS allocations=unmeasured
 [verdict] family trajectory value=6.744791666666667 golden=6.744791666666667 departure=0.000e+00 bound=2.303e-11 verdict=PASS allocations=unmeasured
-[spread] predictive.step,cold,1,first_after_reset,1,154710532,154710532,154710532,0,154710532.0,0
-[spread] predictive.step,warm,201,golden_window,1,5362797,5385290,10578490,3,10578490.0,0
+[spread] predictive.step,cold,1,first_after_reset,1,139964790,139964790,139964790,0,139964790.0,0
+[spread] predictive.step,warm,201,golden_window,1,4887024,4907480,9626177,3,9626177.0,0
 [verdict] work region=predictive.step regime=cold iterations=30
 [verdict] work region=predictive.step regime=warm n=201 iterations_min=1 iterations_max=2 max_at_iterations=2
-[verdict] heap predictive_setup_high_water=76836 reserve=76836 bytes
+[verdict] heap predictive_setup_high_water=76872 reserve=76872 bytes
 [verdict] predictive stationarity_stops=221 of 221 worst_gate=6.083e-02 run_steps=221 armed_steps=201 premise=PASS gate=PASS
 [verdict] family predictive value=189.50207885337679 golden=189.50222139218934 departure=1.425e-04 bound=1.134e+00 verdict=PASS allocations=unmeasured
 [verdict] gain check PASS: dev = [-1.506e-12, -4.006e-13], tol = 8.538e-11

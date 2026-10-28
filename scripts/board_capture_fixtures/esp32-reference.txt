@@ -1,12 +1,12 @@
 # What esp32-evidence.txt and esp32-timing.txt are checked against in place of a
 # built image. Each value was read from the build that produced the recording,
-# built from commit 0aa0fd7 under ESP-IDF v6.0.2 and flashed to an ESP32-POE-EA
+# built from commit 03db8b2 under ESP-IDF v6.0.2 and flashed to an ESP32-POE-EA
 # (ESP32-D0WD-V3, revision v3.1) before the capture: the build ids with
 # sha256sum of each ELF, which equals the digest the framework wrote into the
 # image descriptor; the stack as kControlTaskStackBytes in
 # examples/embedded/esp32/main/stack_probe.h; the toolchain line with the
 # --version of the compiler named in the build's project_description.json.
-evidence_build_id=e51b4873562a9697c3a911df5dbd27849bb6b8964b377b7e55df4e266ea2b1b5
-timing_build_id=47cdef5ab35f93819987de98c5733439bd5abaa17f58ae0200633a8379ba2e01
+evidence_build_id=9299023d54075ff28de99129f03fab51dbcdfd49ce7ca09f367b8c8416c9c782
+timing_build_id=317979f5ff8c7342c1f37416b75b111974ce6adccfa23fd34a08d2fa3be5f288
 stack_reserve=8192
 toolchain=xtensa-esp-elf-gcc (crosstool-NG esp-15.2.0_20251204) 15.2.0

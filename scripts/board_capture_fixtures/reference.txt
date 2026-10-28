@@ -1,11 +1,11 @@
 # What evidence.txt and timing.txt are checked against in place of a built
 # image. Each value was read out of the image that produced the recording,
 # flashed to a NUCLEO-H753ZI before the capture. Both images were built from
-# commit 0aa0fd7, with the backend fetched at the root project's pinned argmin
+# commit 03db8b2, with the backend fetched at the root project's pinned argmin
 # revision, 0a638cb87b6e959f7cb7b49f0afa34f137b93b69. The build ids with
 # arm-none-eabi-readelf -n, the stack reserve as the _Min_Stack_Size symbol with
 # arm-none-eabi-nm, the toolchain line with arm-none-eabi-gcc --version.
-evidence_build_id=e46841994c7e64645d5dc2771632a4b13ab5a4eb
-timing_build_id=c397c0ad7ccb91a2a9252e1311e528f1f974cd1d
+evidence_build_id=1d0ec3b3c2bb1d0b9dc9499084fedb08e3b0f3c5
+timing_build_id=c75a91ac5ba4e8fe6d92469d5cf5171de9822199
 stack_reserve=33008
 toolchain=arm-none-eabi-gcc (Arch Repository) 16.2.0
