@@ -113,6 +113,9 @@ derived floor, so the input weight the solve receives is never the number stored
 | `fuzz_care` | `stable_pair_full_rank_weight.bin` | every mode strictly stable and the factor full rank, so the entitlement loop tests no mode at all. The complementary branch to the two above: a pose whose filter is vacuous by construction and which must still be judged by the forward error | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
 | `fuzz_care` | `zero_weight_zero_solution_no_verdict.bin` | a weight factor flushed to exact zero against a stable pair, so the returned solution is the exact zero matrix and a RELATIVE forward error has no scale to be relative to. The reference converges and the oracle then declines, which is the largest single abstention class this target's population carries and is neither ill-conditioning nor an exhausted budget | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
 | `fuzz_care` | `refusal_unobservable_unstable_mode.bin` | a mode of positive real part invisible through the weight factor, so the pair is undetectable and no stabilizing solution is unique. The target refuses before it is entitled to demand an answer, which is a typed refusal and not an oracle verdict | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_care` | `definiteness_rank_one_diagnosis_pose.bin` | the diagnosis input below: a solution that is rank one in exact arithmetic, so the definiteness check's smallest pivot is pure cancellation, on a pose the binary128 reference converges on. The check must accept a matrix within one rounding per entry of a positive semi-definite one, and the solution must reach the target as an exact power-of-two multiple of the one the solver's check accepted | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_care` | `definiteness_rank_one_campaign_pose.bin` | the campaign input below: the same rank-one cancellation on a pose where the binary128 reference does not converge, so there is no accuracy verdict and the definiteness check and the closed-loop spectrum are the checks the pose reaches | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
+| `fuzz_care` | `definiteness_rank_one_seedless_pose.bin` | the second definiteness input below, found independently of the other two: the same rank-one cancellation on a different state and input matrix, again with no converged reference | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
 | `fuzz_dare` | `unstable_mode_weakly_controllable.bin` | the one-parameter family the error enumerator's own reliance statement is measured on, at the weakest input coupling this target's controllability-conditioning filter admits. It pins a pose reaching toward the resolution boundary rather than only well-conditioned ones, and it is 2.4 decades above that boundary because the filter, not the arithmetic, is what stops it going lower | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
 | `fuzz_dare` | `stable_pair_full_rank_weight.bin` | an ordinary well-conditioned pose with both modes inside the unit disk, so the forward error against the binary128 reference resolves and passes with the whole solve exercised | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
 | `fuzz_dare` | `unstable_mode_well_conditioned.bin` | a mode outside the unit disk on a well-conditioned pair, so the invariant-subspace reordering has a genuine separation to make rather than a trivial one | `ef911e5` | 11 little-endian binary64: `A(0,0), A(0,1), A(1,0), A(1,1), B(0), B(1), Q(0,0), Q(0,1), Q(1,0), Q(1,1), R`; minimum 88 bytes |
@@ -227,10 +230,11 @@ independently of the retiming.
 
 `fuzz_care`
 
-Decimal, because every stored field is an ordinary named quantity and each is the binary64 nearest
-the decimal shown. The last column is derived rather than stored: it is the input weight the solve
-actually receives, which is the stored eleventh field squared plus the floor the decoder derives from
-the clamp bound.
+Decimal for the first five, because every stored field there is an ordinary named quantity and each
+is the binary64 nearest the decimal shown. Hexadecimal for the three `definiteness_rank_one_*.bin`
+seeds, because they are recorded inputs and bit-specific, exactly as stored. The last column is
+derived rather than stored: it is the input weight the solve actually receives, which is the stored
+eleventh field squared plus the floor the decoder derives from the clamp bound.
 
 | seed file | A(0,0) | A(0,1) | A(1,0) | A(1,1) | B(0) | B(1) | Q(0,0) | Q(0,1) | Q(1,0) | Q(1,1) | R stored | R solved with |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -239,9 +243,12 @@ the clamp bound.
 | `stable_pair_full_rank_weight.bin` | -0.5 | 1 | 0 | -1.5 | 0 | 1 | 1 | 0 | 0.5 | 1 | 1 | 1.004 |
 | `zero_weight_zero_solution_no_verdict.bin` | -0.5 | 1 | 0 | -1.5 | 0 | 1 | 0 | 0 | 0 | 0 | 1 | 1.004 |
 | `refusal_unobservable_unstable_mode.bin` | 0.5 | 0 | 0 | -1 | 1 | 1 | 0 | 0 | 0 | 1 | 1 | 1.004 |
+| `definiteness_rank_one_diagnosis_pose.bin` | `-0x1p+1` | `0x0p+0` | `0x1p+1` | `0x0p+0` | `-0x1.fbfbfbf01p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbfbf60ffp-4` | `-0x1.fbfbfbfbfbfbfp-4` | `0x0p+0` | `0x0p+0` | `0x0p+0` | `0x1.0624dd2f1a9fcp-8` |
+| `definiteness_rank_one_campaign_pose.bin` | `0x0p+0` | `0x1p+1` | `0x1p+1` | `0x0p+0` | `0x0p+0` | `-0x1.fbfbf02p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbf002fbfp-4` | `-0x1.fbfbfbfp-4` | `0x0p+0` | `0x1.0624dd2f1a9fcp-8` |
+| `definiteness_rank_one_seedless_pose.bin` | `0x0p+0` | `0x1p+1` | `0x0p+0` | `-0x1p+1` | `0x0p+0` | `-0x1p+1` | `-0x1.fbfbfbfe3e3e3p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1p+1` | `-0x1p+1` | `0x0p+0` | `0x1.0624dd2f1a9fcp-8` |
 
-Every entry is inside the clamp bound and above the zero floor or exactly zero already, so the
-decoded configuration is the configuration above with nothing altered.
+Every entry is within the clamp bound, the bound itself included, and above the zero floor or exactly
+zero already, so the decoded configuration is the configuration above with nothing altered.
 
 `fuzz_dare`
 
@@ -266,48 +273,47 @@ identically under four builds, `clang++ 22.1.8` at `-O0`, `-O2` and `-O3` and `g
 -- and the seed sits at `0.085`, the first admitted rung, which is 2.4 decades above the boundary.
 Written down here so nobody reads this corpus as pinning the boundary itself.
 
-## Recorded reproducing inputs, which are deliberately NOT seeds
+## Recorded inputs
 
-Four inputs that abort this tree's continuous target are recorded here in full and are **not** in
-`fuzz_care/`, for one reason: the replay leg is a deterministic regression gate over the curated
-directory, so a curated seed that aborts turns that gate red by construction and would replace a
-regression signal with a permanent failure. An input that aborts is a defect to triage or an
-entitlement question to answer; it is not a corpus entry. They are recorded rather than dropped
-because the first of them is the one input a whole oracle rewrite was diagnosed from, and until now
-it existed only as an opaque blob.
+Four inputs found by exploring the continuous target are recorded here in full. Three are curated
+seeds; the fourth is recorded and is deliberately not a seed.
 
-**They do not all abort at the same place, and the difference is the point.** Three reach the
-pre-existing positive semi-definiteness pivot check; each carries a solution that is rank one in
-exact arithmetic, so its smallest pivot is pure cancellation, and on all three that pivot is exactly
-THREE units in the last place of the solution's largest entry against a floor standing at just over
-two. The fourth aborts at the **accuracy** gate instead, on a pose whose closed loop sits `2.05e-9`
-from the imaginary axis: there the conditioning exceeds `1/sqrt(eps)`, so a half-significand answer
-is not attainable at binary64 by any backward-stable algorithm, and the target has no entitlement
-test that would decline to ask for one. Two different questions, and neither is a seed.
+**The three definiteness inputs are seeds.** Each carries a solution that is rank one in exact
+arithmetic, so the smallest pivot of a definiteness check on it is pure cancellation. The solver
+divides the weights by an exact power of two, decides definiteness on the equilibrated solution with a
+check that accepts every matrix within one rounding per entry of a positive semi-definite one, and
+returns an exact power-of-two multiple of the solution that check accepted. The target applies the
+same check to the returned solution, and an exact power-of-two scaling does not change its verdict,
+so the two agree. All three reach that check and replay clean, which makes them its regression
+inputs: they are the `definiteness_rank_one_*.bin` rows of the tables above.
 
-Hexadecimal, because these are bit-specific: a decimal rendering of either does not survive the
-round trip, and the exact bits are what the diagnosis rested on. The values are the pose AFTER the
-decoder's clamp and zero-flush, which is what the target solves; the raw stored fields behind the
-clamped entries are not recoverable beyond the bound they exceeded.
+**The accuracy-gate input is not a seed.** The library declines the pose, and the target's
+conditioning entitlement excludes it independently: the condition number `care_condition_number`
+estimates for it (SLICOT SB02QD), times eps, exceeds sqrt(eps), so a half-significand forward error is not attainable at binary64 by a
+backward-stable algorithm and the target does not ask for one. `tests/unit/care_entitlement_test.cpp`
+asserts that classification from the binary128 reference alone. As a seed it would replay the
+solver's decline and nothing else, so it stays a recorded input that the unit test pins.
+
+Hexadecimal, because these are bit-specific: a decimal rendering does not survive the round trip.
+The values are the pose AFTER the decoder's clamp and zero-flush, which is what the target solves;
+the raw stored fields behind the clamped entries are not recoverable beyond the bound they exceeded.
 
 | input | A(0,0) | A(0,1) | A(1,0) | A(1,1) | B(0) | B(1) | Q(0,0) | Q(0,1) | Q(1,0) | Q(1,1) | R solved with |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| the oracle-rewrite diagnosis input | `-0x1p+1` | `0x0p+0` | `0x1p+1` | `0x0p+0` | `-0x1.fbfbfbf01p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbfbf60ffp-4` | `-0x1.fbfbfbfbfbfbfp-4` | `0x0p+0` | `0x0p+0` | `0x1.0624dd2f1a9fcp-8` |
+| the diagnosis input | `-0x1p+1` | `0x0p+0` | `0x1p+1` | `0x0p+0` | `-0x1.fbfbfbf01p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbfbf60ffp-4` | `-0x1.fbfbfbfbfbfbfp-4` | `0x0p+0` | `0x0p+0` | `0x1.0624dd2f1a9fcp-8` |
 | the campaign input | `0x0p+0` | `0x1p+1` | `0x1p+1` | `0x0p+0` | `0x0p+0` | `-0x1.fbfbf02p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1.fbfbfbf002fbfp-4` | `-0x1.fbfbfbfp-4` | `0x1.0624dd2f1a9fcp-8` |
 | the accuracy-gate input | `0x0p+0` | `0x0p+0` | `-0x1p+1` | `-0x1p+1` | `-0x1.fbdbfbfbebfbfp-4` | `0x0p+0` | `-0x1.fbfbf31bfbf00p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `0x0p+0` | `0x0p+0` | `0x1.004189374bc6ap+2` |
 | the second definiteness input | `0x0p+0` | `0x1p+1` | `0x0p+0` | `-0x1p+1` | `0x0p+0` | `-0x1p+1` | `-0x1.fbfbfbfe3e3e3p-4` | `-0x1.fbfbfbfbfbfbfp-4` | `-0x1p+1` | `-0x1p+1` | `0x1.0624dd2f1a9fcp-8` |
 
 The same eleven values per input, one to a line, as the encoder invocation that regenerates each
-pose. This is the useful form: it is a command, not a transcription. It reproduces an input the
-target decodes to the pose above, which is not the same as reproducing the recorded input's own
-bytes -- a clamped entry hides which value above the bound produced it, and the recorded inputs
-carry such entries. Both invocations were run and both abort at the same check with the same pivot
-as the recorded inputs do.
+pose. It reproduces an input the target decodes to the pose above, which is not the same as
+reproducing the recorded input's own bytes: a clamped entry hides which value above the bound
+produced it. The three definiteness invocations write the curated seed files themselves.
 
-The oracle-rewrite diagnosis input:
+The diagnosis input:
 
 ```sh
-tools/fuzz_corpus_encode.py --out oracle_rewrite_diagnosis.bin \
+tools/fuzz_corpus_encode.py --out tests/fuzz/corpus/fuzz_care/definiteness_rank_one_diagnosis_pose.bin \
   --a00 -0x1p+1 \
   --a01 0x0p+0 \
   --a10 0x1p+1 \
@@ -321,16 +327,13 @@ tools/fuzz_corpus_encode.py --out oracle_rewrite_diagnosis.bin \
   --r 0x0p+0
 ```
 
-Its solution's four entries are all `0.031622776623…`, its smallest pivot is
-`-2.0816681711721685e-17` against a floor of `-1.4043333884132805e-17`, a ratio of `1.4823`, and the
-binary128 reference converges in two steps to a relative forward error squared of `6.82e-31`, which
-is fifteen decades inside the accuracy criterion. **The answer is accurate and the target aborts on
-it.**
+Its solution's four entries are all `0.031622776623…`. The binary128 reference converges in two
+steps, so this pose carries an accuracy verdict as well as the definiteness check.
 
 The campaign input:
 
 ```sh
-tools/fuzz_corpus_encode.py --out campaign_input.bin \
+tools/fuzz_corpus_encode.py --out tests/fuzz/corpus/fuzz_care/definiteness_rank_one_campaign_pose.bin \
   --a00 0x0p+0 \
   --a01 0x1p+1 \
   --a10 0x1p+1 \
@@ -344,12 +347,10 @@ tools/fuzz_corpus_encode.py --out campaign_input.bin \
   --r 0x0p+0
 ```
 
-Its smallest pivot is `-6.6613381477509392e-16` against a floor of `-4.653561350979949e-16`, a ratio
-of `1.4315`. Here the binary128 reference **withdraws its own verdict**, because its own determinant
-is negative too, so whether that answer is right is not settled by anything in this tree.
+Here the binary128 reference does not converge, so the target reaches no accuracy verdict and
+whether this answer is accurate is not settled by anything in this tree.
 
-The accuracy-gate input, which is the only one of the four that does not reach the definiteness
-check:
+The accuracy-gate input, the one of the four that does not reach the definiteness check:
 
 ```sh
 tools/fuzz_corpus_encode.py --out accuracy_gate.bin \
@@ -367,20 +368,14 @@ tools/fuzz_corpus_encode.py --out accuracy_gate.bin \
 ```
 
 Its state matrix has a marginal mode at zero whose eigenvector is `[1, -1]/sqrt(2)`, so the mode's
-visibility through the weight factor is `|Q(0,0) - Q(0,1)| = 3.3061954049506959e-08`. The returned
-solution places the closed loop at an abscissa of `-2.0478149176383909e-09`, giving a Lyapunov
-separation whose reciprocal is `2.44e8` against the `6.71e7` past which a half-significand answer is
-unattainable at binary64. The relative forward error squared is `1.2006016725322539e-15`, `2.33`
-times the criterion, so the accuracy gate aborts -- while the definiteness pivot is strictly positive
-and the closed loop is resolvably stable. The measured forward error `3.5e-8` sits just inside the
-backward-stable prediction `kappa * eps = 5.4e-8`, so **the answer is at the arithmetic's own bound
-and the criterion is below it.** Walking `Q(0,0)` across 41 units in the last place at that same
-visibility, the solver declines on 37 rungs and answers on 4, and all four abort here.
+visibility through the weight factor is `|Q(0,0) - Q(0,1)| = 3.3061954049506959e-08`. That weak
+visibility is what puts the stabilizing closed loop next to the imaginary axis and the conditioning
+past the entitlement.
 
-The second definiteness input, which is the same class as the first two and was found independently:
+The second definiteness input, the same class as the diagnosis and campaign inputs:
 
 ```sh
-tools/fuzz_corpus_encode.py --out second_definiteness.bin \
+tools/fuzz_corpus_encode.py --out tests/fuzz/corpus/fuzz_care/definiteness_rank_one_seedless_pose.bin \
   --a00 0x0p+0 \
   --a01 0x1p+1 \
   --a10 0x0p+0 \
@@ -394,16 +389,12 @@ tools/fuzz_corpus_encode.py --out second_definiteness.bin \
   --r 0x0p+0
 ```
 
-Its smallest pivot is `-4.163336342344337e-17` against a floor of `-2.8140615587208564e-17`, a ratio
-of `1.4795`. Its solution's largest entry is `0.06336703293626443`, whose unit in the last place is
-`1.3877787807814457e-17`, so the pivot is **exactly three** of those units and the floor stands at
-`2.0277` of them. The binary128 reference withdraws its own verdict here, as it does on the campaign
-input, and the forward error computed for triage is `1.03e-30`, 14.3 decades inside the criterion.
+Its solution's largest entry is `0.06336703293626454`. The binary128 reference does not converge
+here either.
 
-**All four invocations were run and each reproduces its recorded pose, pivot, floor and forward error
-exactly.** The four inputs the bytes were recovered from are 88, 104, 102 and 95 bytes. The decoder
-copies exactly 88 and ignores anything past them, so the trailing bytes of the longer ones carry
-nothing; a mutation length is not a field.
+The inputs these poses were recorded from are 88, 104, 102 and 95 bytes. The decoder copies exactly
+88 and ignores anything past them, so the trailing bytes of the longer ones carry nothing and each
+88-byte encoding above decodes to the same pose; a mutation length is not a field.
 
 ## Adding a seed
 

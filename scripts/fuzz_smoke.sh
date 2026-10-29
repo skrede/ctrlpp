@@ -59,7 +59,7 @@ if [ ! -d "${build_dir}" ]; then
     echo "ERROR: build directory '${build_dir}' does not exist." >&2
     echo "  Configure and build the fuzz targets first, for example:" >&2
     echo "    cmake -S . -B ${build_dir} -G \"Unix Makefiles\" -DCMAKE_BUILD_TYPE=Debug \\" >&2
-    echo "      -DCTRLPP_BUILD_FUZZ_TESTS=ON -DCTRLPP_CMAKE_FETCH_DEPS=ON -DCMAKE_CXX_COMPILER=clang++" >&2
+    echo "      -DCTRLPP_BUILD_FUZZ_TESTS=ON -DCTRLPP_CMAKE_FETCH_DEPS=ON -DCTRLPP_INSTALL=OFF -DCMAKE_CXX_COMPILER=clang++" >&2
     echo "    cmake --build ${build_dir}" >&2
     exit 1
 fi
