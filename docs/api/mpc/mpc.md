@@ -321,7 +321,7 @@ ctrlpp::mpc_config<double, NX, NU> cfg{
     .hard_state_constraints  = true};
 ```
 
-Both channels carry a `terminal_set_error`, so a refusal names its cause; `report` stands for the caller's handling, which in the example prints the enumerator's name through an exhaustive `switch` and exits. Recursive feasibility and stability of the origin follow from this configuration only with hard state constraints, a nominal model and regulation to the origin; see [background/mpc](../../background/mpc.md). The full closed loop is in `examples/mpc/ctrlpp_mpc_05_terminal_set.cpp`.
+The outer channel carries a `terminal_ingredients_error`, the `std::variant` of a `terminal_set_error` (a singular `R`, or the ellipsoid's refusal) and the Riccati solve's own `dare_error`; the `invariant_set` channel carries a `terminal_set_error`. Either way a refusal names its cause; `report` stands for the caller's handling, which in the example visits the variant, prints the enumerator's name through an exhaustive `switch` for each error type, and exits. Recursive feasibility and stability of the origin follow from this configuration only with hard state constraints, a nominal model and regulation to the origin; see [background/mpc](../../background/mpc.md). The full closed loop is in `examples/mpc/ctrlpp_mpc_05_terminal_set.cpp`.
 
 ## Usage Example
 
