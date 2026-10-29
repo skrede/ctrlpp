@@ -284,6 +284,32 @@ otherwise produce silent corruption through intermediate overflow:
   need to select a tag to get an answer; see
   [lqr](../../api/control/lqr.md) for what the tags cost in arithmetic.
 
+  **Both Riccati solvers decide definiteness with one check,
+  `detail::psd_within_rounding`**, at the extraction, at the discrete
+  verification and at the discrete re-check at the caller's scale. It divides an
+  `n x n` solution `P` by the power of two `s` at or above its largest entry, so
+  its verdict does not depend on `P`'s scale, adds a shift `tau` to the diagonal
+  of `P_s = P / s`, and accepts when a Cholesky factorization of `P_s + tau I`
+  completes. With `u = eps / 2`, `gamma_k = k u / (1 - k u)`,
+  `f = ||P_s||_F` and `d = max(0, max_i (P_s)_ii)`:
+
+      tau = (u f / (1 - u) + w d) / ((1 - w) (1 - (m + 1) u)),
+      w = u + c_n (1 + u),   c_n = n gamma_(n+1) / (1 - gamma_(n+1))
+
+  `u f / (1 - u)` bounds how far one rounding per entry moves the smallest
+  eigenvalue (Weyl's inequality); `w d` covers the one rounding of each shifted
+  diagonal entry and Demmel's completion condition `lambda_min(H) > c_n` on the
+  diagonally scaled matrix `H` (Higham, *Accuracy and Stability of Numerical
+  Algorithms*, 2nd ed., 2002, Thm 10.7, p. 200); and `m = ceil(n^2 / 2) + 7` counts
+  the roundings in evaluating `tau` itself, the norm's included, so the computed
+  shift lies strictly above the real one. The factorization therefore completes
+  on every matrix within one rounding per entry of a positive semi-definite
+  matrix. The theorem's failure clause bounds what is accepted: a matrix passes
+  only if `lambda_min(P) > -s (tau + (c_n (1 + u) + u) (d + tau))`, a band of
+  order `n^2 u max|P_ij|`. A solution whose own forward error leaves it indefinite
+  beyond that band is refused as `non_psd_solution`, because a consumer such as
+  the MPC terminal weight needs a positive semi-definite matrix.
+
   **The acceptance check's cost is now TIMED, and the counted figure it replaces
   was not a cost.** The operation count put the continuous check at "at most
   8.3 percent" of the solve; timed with the check as the independent variable it
@@ -487,18 +513,20 @@ the moving-horizon estimators' own copies of `Q`, `R` and `P0`: `mhe` and
 `nmhe` forward the embedded filter's refusal, but the copies they keep for
 their own cost are stored as given.
 
-The cost weights' floor and the Riccati solve's own floor on its solution `P`
-are each the order of the backward error of a symmetric decomposition of their
-own matrix, but they do not compose. The admitted negative part of `Q` reaches
+The cost weights' floor and the Riccati solve's definiteness band on its
+solution `P` each grant their own matrix its rounding, but they do not compose.
+The admitted negative part of `Q` reaches
 `P` through the inverse of the Stein operator `X -> X - A_K^T X A_K`: on a stable mode with
 eigenvalue `a` that `B` cannot reach, that is an amplification by
-`1 / (1 - a^2)`, which grows without bound as `a -> 1`, while `P`'s floor scales
-only with `max|P_ij|`. A `Q` accepted at its floor can therefore give a `P` the
-solve refuses as `non_psd_solution`. With `A = diag(0.1, 0.6)`, `B = [1; 0]`,
+`1 / (1 - a^2)`, which grows without bound as `a -> 1`, while `P`'s band scales
+only with `P`'s own magnitude. A `Q` accepted at its floor can therefore give a `P` the
+solve refuses as `non_psd_solution`. With `A = diag(0.1, 0.8125)`, `B = [1; 0]`,
 `Q = diag(1, -2 eps)` and `R = 1`, admission accepts `Q`, whose eigenvalue
-`-2 eps` is exactly its floor, and the exact `p22 = -2 eps / (1 - 0.36)` is
-`-3.125 eps`, below `P`'s floor of about `2.01 eps`. Both checks stay as they
-are. The refusal is the exact-arithmetic verdict on the admitted `Q`. A floor on
+`-2 eps` is exactly its floor, and the exact `p22 = -2 eps / (1 - 0.8125^2)` is
+`-512 eps / 87`, about `-5.89 eps`. `P` is diagonal, so the check refuses it
+exactly when `p22 <= -s tau`, and with `p11 = 1.005` that band is about
+`4.02 eps` (`8 u p11` to first order). Both checks stay as they
+are. The refusal is the exact-arithmetic verdict on the admitted `Q`. A band on
 `P` wide enough to accept every `P` an admitted `Q` can produce would grow with
 the amplification and hand the QP an indefinite terminal weight. A floor on `Q`
 strict enough to guarantee a semidefinite `P` would refuse singular semidefinite

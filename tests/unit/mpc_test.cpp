@@ -730,10 +730,10 @@ TEST_CASE("mpc with Qf unset refuses every Riccati failure with the solve's own 
 
     SECTION("non_psd_solution: a state weight negative within admission's rounding allowance")
     {
-        // Admission accepts Q22 = -2 eps, exactly its floor. On the stable uncontrollable mode p22 = Q22 / (1 - 0.6^2) falls 55% below
-        // the solve's semidefiniteness floor, and its coupling -A^-T Q clears the real Schur deflation test by 47%: the pose relies on both margins.
+        // Admission accepts Q22 = -2 eps, exactly its floor. On the stable uncontrollable mode p22 = Q22 / (1 - 0.8125^2) lies 46% beyond
+        // the solve's definiteness band, and its coupling -A^-T Q clears the real Schur deflation test by 20%: the pose relies on both margins.
         cfg.Q = Eigen::Vector2d{1.0, -2.0 * std::numeric_limits<double>::epsilon()}.asDiagonal();
-        require_riccati_refusal(plant(Eigen::Vector2d{0.1, 0.6}.asDiagonal(), Eigen::Vector2d{1.0, 0.0}), cfg, ctrlpp::dare_error::non_psd_solution);
+        require_riccati_refusal(plant(Eigen::Vector2d{0.1, 0.8125}.asDiagonal(), Eigen::Vector2d{1.0, 0.0}), cfg, ctrlpp::dare_error::non_psd_solution);
     }
 
     // No section for singular_r: create refuses that R first, as singular_input_weight, by the same test on the same operand.

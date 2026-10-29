@@ -36,6 +36,7 @@
 #include "hardening_helpers.h"
 #include "ctrlpp/control/dare.h"
 #include "ctrlpp/control/lqr.h"
+#include "ctrlpp/detail/psd_acceptance.h"
 #include "ctrlpp/detail/riccati_solution.h"
 #include "ctrlpp/detail/power_of_two_scale.h"
 
@@ -754,11 +755,9 @@ TEST_CASE("DARE carries a representable common-scaled pose", "[dare][hardening][
     CAPTURE(unit_gain, scaled_gain);
     CHECK((unit_gain - scaled_gain).norm() <= relative_margin * unit_gain.norm());
 
-    // Positive semi-definiteness holds at the scale actually returned, against
-    // the shared pivot floor rather than a copy of it.
-    Eigen::LDLT<Eigen::Matrix<double, 1, 1>> returned_psd(scaled->P);
-    REQUIRE(returned_psd.info() == Eigen::Success);
-    CHECK(returned_psd.vectorD().minCoeff() >= ctrlpp::detail::psd_pivot_floor<double, 1>(scaled->P));
+    // Positive semi-definiteness holds at the scale actually returned, by the
+    // solver's own check rather than a copy of it.
+    CHECK(ctrlpp::detail::psd_within_rounding<double, 1>(scaled->P));
 }
 
 TEST_CASE("DARE accepts inside the representable ceiling and declines outside it", "[dare][hardening][precision]")

@@ -1,7 +1,7 @@
 #include "ctrlpp/control/care.h"
 #include "ctrlpp/control/dare.h"
 
-#include "ctrlpp/detail/riccati_solution.h"
+#include "ctrlpp/detail/psd_acceptance.h"
 #include "ctrlpp/detail/power_of_two_scale.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -31,12 +31,6 @@ auto is_exact_multiple(const matrix<Rows, Cols> &returned, double scale, const m
             if(std::fma(scale, checked(row, col), -returned(row, col)) != 0.0)
                 return false;
     return true;
-}
-
-auto passes_target_definiteness(const matrix<2, 2> &P) -> bool
-{
-    Eigen::LDLT<matrix<2, 2>> ldlt(P);
-    return ldlt.info() == Eigen::Success && ldlt.vectorD().minCoeff() >= ctrlpp::detail::psd_pivot_floor<double, 2>(P);
 }
 
 template<std::size_t NX, std::size_t NU>
@@ -183,7 +177,7 @@ TEST_CASE("The recorded continuous definiteness inputs reach the same verdict at
         if(returned.has_value())
         {
             CHECK(is_exact_multiple(returned->P, scale, checked->P));
-            CHECK(passes_target_definiteness(returned->P));
+            CHECK(ctrlpp::detail::psd_within_rounding<double, 2>(returned->P));
         }
         else
         {

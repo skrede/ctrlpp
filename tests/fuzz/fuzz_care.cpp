@@ -342,60 +342,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
                      resid.norm(), reference.steps, reference.converged ? 1 : 0);
     }
 
-    // P must be positive semi-definite: LDLT pivot-sign check against the same
-    // floor the library's own extraction uses, called rather than re-spelled so
-    // the two cannot drift apart again (see the fuzz_dare twin).
-    //
-    // THIS CHECK IS WHY THIS TARGET IS LISTED AS KNOWN RED, AND IT IS NEITHER OF
-    // THE TWO GATES ABOVE. What it refuses is characterized here rather than left
-    // to be recovered from a recorded artifact, because the characterization is
-    // what says a longer campaign cannot settle it.
-    //
-    //  * On a returned solution that is rank one to within rounding, this pivot
-    //    is a Schur complement of two nearly equal quantities, so it takes only
-    //    INTEGER multiples of one unit in the last place of the largest entry of
-    //    P. Measured to five significant figures on both recorded refusals.
-    //  * The floor is a RELATIVE quantity, floor_factor * N * eps * max|P_ij|.
-    //    Its width in those same integer units runs from exactly two at the
-    //    bottom of a binade to just under four at the top, because eps times a
-    //    value is a fixed fraction of it while a unit in the last place is a
-    //    step. So the check admits a pivot of one or two units and refuses at
-    //    three -- but only while the largest entry sits in the lower half of its
-    //    binade. The identical three-unit pivot on the identical matrix shape is
-    //    admitted higher up: measured on the floor primitive alone, refused at
-    //    1.05 and 1.25 and admitted at 1.50, 1.75 and 1.99. Both recorded
-    //    refusals sit within five percent of the bottom, where it is tightest.
-    //  * The refusal is therefore a BAND and not a knife edge. Walking one input
-    //    field in units in the last place around a refusing pose refuses on
-    //    thirteen consecutive rungs in one band and five in another, while a
-    //    census of 298,112 poses drawn by a campaign of 1,200,000 executions
-    //    produced none at all. The region is one a random draw essentially never
-    //    enters and a plateau once entered, which is why refusals arrive in
-    //    clusters or not at all, and why one clean campaign settles nothing.
-    //  * THE ANSWERS INSIDE THAT BAND ARE ACCURATE. Across every swept rung the
-    //    forward error squared sits between 5.4e-33 and 3.4e-28, eleven to
-    //    sixteen decades inside the accuracy criterion above, and on six rungs
-    //    the accuracy oracle ISSUED its verdict, the verdict PASSED, and this
-    //    check refused the same solution anyway.
-    //  * Six build configurations reproduce the whole band byte for byte --
-    //    three optimization levels, two compilers, both linear-algebra patch
-    //    releases and the sanitizer configuration this tree builds -- so it is a
-    //    property of the arithmetic rather than of instruction selection. Fused
-    //    multiply-add contraction removes every refusal, which is the mechanism
-    //    confirming itself: the three-unit pivot exists because three separate
-    //    roundings accumulate, and fusing them collapses it.
-    //
-    // THE FLOOR WAS NOT WIDENED, and its exposed factor is left at its default.
-    // A coefficient chosen after observing pivots at three units is a constant
-    // fitted to a measured population whatever derivation is written beside it.
-    // The open question is whether the floor should carry a second term for the
-    // rounding already present in P as the solver returned it, since today it
-    // counts only the factorization's own. That is a question about a library
-    // primitive both solvers' acceptance machinery calls rather than about this
-    // target, which is why it is not answered here.
-    Eigen::LDLT<Eigen::Matrix<double, 2, 2>> ldlt(P);
-    if(ldlt.info() != Eigen::Success
-       || ldlt.vectorD().minCoeff() < ctrlpp::detail::psd_pivot_floor<double, 2>(P))
+    // The solver accepted this P's equilibrated counterpart with the same check and the rescale is an exact power of
+    // two, so this guards the transport and is not a second opinion; the closed-loop spectrum below and the binary128
+    // forward error above are the independent evidence.
+    if(!ctrlpp::detail::psd_within_rounding<double, 2>(P))
         abort();
 
     // THE CLOSED-LOOP STABILITY CHECK, ONE-SIDED AND WITH A STATED RESOLUTION.

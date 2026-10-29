@@ -262,7 +262,7 @@ Refusals:
 | `dare_error::singular_a` | A is rank-deficient to a scale-relative reciprocal-pivot tolerance, so the `A^{-T}` the pencil build needs does not exist |
 | `dare_error::singular_r` | R is rank-deficient to the same tolerance, so the `R^{-1}` the same pencil build needs for `G = B R^{-1} B'` does not exist. The test is applied to the **equilibrated** weighting, the operand the solve actually inverts, so it also covers a weighting that is nonzero on its own but vanishes against the state weighting -- `Q = 1e300 I` with `R = 1e-300` divides to a weighting that underflows to zero, and relative to the posed problem the input weighting is zero |
 | `dare_error::singular_u11` | the top-left block of the reordered invariant-subspace basis is singular; P cannot be extracted. **Covers two different situations -- see below** |
-| `dare_error::non_psd_solution` | the extracted P is not positive semi-definite. The test is an LDLT pivot-sign test against `N * eps * max\|P_ij\|`, the order of the factorization's own backward error, below which a pivot carries no sign information |
+| `dare_error::non_psd_solution` | the extracted P is not positive semi-definite to rounding: a Cholesky factorization of P, scaled by an exact power of two and shifted by a derived multiple of the identity, fails. The check accepts every matrix within one rounding per entry of a positive semi-definite one; see [the definiteness check](../../guides/patterns/numerical-behavior.md#what-the-library-does-guard-against) for the shift and the band it accepts |
 | `dare_error::schur_failed` | the real Schur factorization did not converge |
 | `dare_error::arithmetic_limit` | finite inputs could not produce a verified stabilizing solution at the scalar type's precision. Specifically: the equilibrated answer's estimated relative forward error exceeded `sqrt(eps)`, so it retains less than half the significand; its closed-loop spectrum or gain solve did not verify; a magnitude the equilibrated verification needs could not be formed; the weights overflowed while being equilibrated; the solution overflowed while being rescaled; the rescaled solution failed the positive-semi-definiteness test at its returned scale; the direct check at the caller's scale resolved and refuted the carried claim; the direct check failed to resolve for any reason other than the gain leaving the range at the caller's scale; or the equilibrated and returned gains, both formed, disagreed by more than the counted-operation margin |
 
@@ -279,8 +279,8 @@ to be a refusal; it is now an absence of evidence with a known cause, and the
 carried claim is what decides. Every *other* magnitude the direct check fails to
 form is still a refusal.
 
-Positive semi-definiteness is tested on both matrices that exist, and
-deliberately so. The extraction primitive tests the P the solve produced; when
+Positive semi-definiteness is tested on both matrices that exist, by the same
+check, and deliberately so. The extraction primitive tests the P the solve produced; when
 common-weight equilibration is active that P is the *equilibrated* one, and the
 value handed back to the caller is `P * weight_scale`, which the first test never
 saw. The rescale is therefore re-tested at the returned scale. The divisor is a

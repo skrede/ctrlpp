@@ -22,6 +22,7 @@
 #include "ctrlpp/control/dare_types.h"
 
 #include "ctrlpp/detail/schur_reorder.h"
+#include "ctrlpp/detail/psd_acceptance.h"
 #include "ctrlpp/detail/riccati_solution.h"
 #include "ctrlpp/detail/power_of_two_scale.h"
 
@@ -222,9 +223,7 @@ auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, cons
     // At the caller's scale P is an exact power-of-two multiple of the matrix the
     // extraction checked, so this verdict repeats that one except where an entry
     // left the normal range in the rescale.
-    Eigen::LDLT<MatNxN> psd_ldlt(P);
-    if(psd_ldlt.info() != Eigen::Success
-       || psd_ldlt.vectorD().minCoeff() < detail::psd_pivot_floor<Scalar, n>(P))
+    if(!detail::psd_within_rounding<Scalar, n>(P))
         return dare_verification::refuted;
 
     const MatNxN AtPA     = (A.transpose() * P * A).eval();
@@ -471,9 +470,7 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<
     // Second, definiteness is re-established at the scale actually returned. An
     // overflow is declined above and the rescale is otherwise exact, so this guards
     // only the edge where it is not: an entry the rescale puts in the subnormal range.
-    Eigen::LDLT<Eigen::Matrix<Scalar, int(NX), int(NX)>> returned_psd(result->P);
-    if(returned_psd.info() != Eigen::Success
-       || returned_psd.vectorD().minCoeff() < detail::psd_pivot_floor<Scalar, int(NX)>(result->P))
+    if(!detail::psd_within_rounding<Scalar, int(NX)>(result->P))
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
 
     // Third, the direct check is kept, and it declines on EVERY outcome but two:

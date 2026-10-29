@@ -4,20 +4,10 @@
 /// @brief Riccati invariant-subspace P extraction: P = U21 * U11^-1 on real U.
 ///
 /// Given a reordered orthogonal real basis U of size 2n x 2n (the output of
-/// ctrlpp::detail::reorder_real_schur), this header provides the single
-/// routine required to recover the stabilizing Riccati solution P.
-/// P is computed as U21 * U11^-1 directly on real arithmetic, symmetrized
-/// via ctrlpp::detail::symmetrize, and checked for finiteness and positive
-/// semi-definiteness. The positive semi-definiteness floor is the bound
-/// ctrlpp::detail::psd_pivot_floor computes: the floor factor times the state
-/// dimension times std::numeric_limits<Scalar>::epsilon() times the LARGEST
-/// ABSOLUTE ENTRY of P, negated. It is neither a row-sum norm nor
-/// dimension-free; that function's docblock carries the derivation and the
-/// measured solution the dimension factor exists for, and is not restated here.
-/// No calibrated constant appears anywhere in the primitive: every numeric in
-/// it is either a structural count fixed by the problem's shape or the
-/// order-one prefactor the backward-error bound leaves unspecified, which is
-/// exposed as a defaulted parameter rather than fixed in the body.
+/// ctrlpp::detail::reorder_real_schur), this header recovers the stabilizing
+/// Riccati solution P = U21 * U11^-1 in real arithmetic, symmetrizes it via
+/// ctrlpp::detail::symmetrize, and refuses it unless it is finite and
+/// ctrlpp::detail::psd_within_rounding accepts it.
 ///
 /// Errors surface through ctrlpp::expected with a three-variant enum shared
 /// between DARE and CARE; the public dare_error / care_error enums map
@@ -28,6 +18,7 @@
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/detail/covariance_ops.h"
+#include "ctrlpp/detail/psd_acceptance.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
@@ -39,32 +30,6 @@
 
 namespace ctrlpp::detail
 {
-
-/// @brief Negative-pivot floor below which an LDLT pivot of a symmetric N x N
-/// matrix carries no sign information.
-///
-/// The bound is `floor_factor * N * eps * max|P_ij|`. LDLT of a symmetric
-/// matrix is backward stable with a perturbation of order `N * eps * ||P||`
-/// (Golub & Van Loan, Sec. 4.1), so a pivot inside that band is
-/// indistinguishable from zero and must not be read as evidence of an
-/// indefinite matrix. `floor_factor` is the leading order-one prefactor the
-/// bound leaves unspecified, exposed for the same reason `covariance_sqrt`
-/// exposes it, and this is the same `floor_factor * N * eps * max|P_ij|` form
-/// that primitive already uses.
-///
-/// The `N` factor is load-bearing rather than cosmetic. Without it the floor
-/// reads `1 * eps * max|P_ij|`, which demands a factorization carrying exactly
-/// zero rounding error; a measured DARE solution missed that floor by 1.4% of a
-/// single ulp while being positive semi-definite to within one ulp.
-///
-/// @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 4.1
-template <typename Scalar, int N>
-auto psd_pivot_floor(const Eigen::Matrix<Scalar, N, N>& P,
-                     Scalar floor_factor = Scalar{1}) -> Scalar
-{
-    return -floor_factor * static_cast<Scalar>(N)
-           * std::numeric_limits<Scalar>::epsilon() * P.cwiseAbs().maxCoeff();
-}
 
 /// @brief A Frobenius magnitude together with whether the arithmetic resolved it.
 ///
@@ -258,8 +223,7 @@ constexpr int dare_residual_ops = 6 * (2 * static_cast<int>(NX) - 1) + 2 * (2 * 
 /// This is the single definition. It exists so that the solver's agreement check
 /// and the anchors that pin it read the same expression rather than five copies
 /// of it: a hand-copy is a second definition, and a second definition of a bound
-/// is the drift path the shared positive-semi-definiteness floor was consolidated
-/// to close.
+/// is a drift path.
 template <typename Scalar, std::size_t NX, std::size_t NU>
 auto dare_gain_agreement_margin() -> Scalar
 {
@@ -647,14 +611,8 @@ enum class riccati_extract_error
 /// The implementation prefers a back-substitution against U11 (solving
 /// U11^T * P^T = U21^T) over an explicit inverse for numerical accuracy.
 ///
-/// The positive semi-definiteness floor is the one psd_pivot_floor computes:
-/// the floor factor times the state dimension times unit roundoff times the
-/// largest absolute entry of P, negated. The operand is the largest entry and
-/// NOT a row-sum norm -- the two differ by up to a factor of the dimension --
-/// and the dimension factor is load-bearing rather than decorative. See that
-/// function's docblock for the backward-error argument and for the measured
-/// solution that missed the dimension-free floor while being positive
-/// semi-definite to within one ulp; it is not restated here.
+/// Definiteness is decided by psd_within_rounding, which accepts every matrix
+/// within one rounding per entry of a positive semi-definite one.
 ///
 /// @returns ctrlpp::expected<void, riccati_extract_error>.
 template <typename Scalar, int N2>
@@ -682,13 +640,7 @@ auto extract_riccati_solution_into(
     if (!P_out.allFinite())
         return ctrlpp::unexpected(riccati_extract_error::non_finite);
 
-    // PSD check via LDLT: by Sylvester's law of inertia, the signs of the pivots
-    // in the D diagonal match the signs of the eigenvalues of a symmetric P.
-    // Detects non-PSD at ~1/10 the instruction cost of a full eigendecomposition
-    // while preserving the same eps-scaled rejection threshold.
-    Eigen::LDLT<MatNxN> ldlt(P_out);
-    if (ldlt.info() != Eigen::Success
-        || ldlt.vectorD().minCoeff() < psd_pivot_floor<Scalar, n>(P_out))
+    if (!psd_within_rounding<Scalar, n>(P_out))
         return ctrlpp::unexpected(riccati_extract_error::non_psd);
 
     return {};

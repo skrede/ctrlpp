@@ -1714,12 +1714,12 @@ TEST_CASE("Linear MPC refuses a state-space weight that overflows from finite op
     CHECK(linear_outcome_on(scaled_output_map(1e150), terminal_weight(Eigen::Matrix2d::Identity())) == linear_refusal(accepted));
 }
 
-// Admission accepts q22 = -2 eps, exactly its floor. The second mode is stable at 0.6 and uncontrollable, so the exact
-// stabilizing solution has p22 = q22 / (1 - 0.6^2) = -3.125 eps, below the Riccati solve's own floor of about 2.01 eps.
+// Admission accepts q22 = -2 eps, exactly its floor. The second mode is stable at 0.8125 and uncontrollable, so the exact
+// stabilizing solution has p22 = q22 / (1 - 0.8125^2) = -512 eps / 87, beyond the Riccati check's band of about 4.02 eps.
 TEST_CASE("Linear MPC with Qf unset refuses a state weight admitted at its floor once the Riccati solution amplifies it", "[mpc][nmpc][configuration][hardening]")
 {
     auto plant = make_system();
-    plant.A = Eigen::Vector2d{0.1, 0.6}.asDiagonal();
+    plant.A = Eigen::Vector2d{0.1, 0.8125}.asDiagonal();
     plant.B = Eigen::Vector2d{1.0, 0.0};
     const Eigen::Matrix2d at_floor = weight_2x2(1.0, 0.0, 0.0, -rounding_bound_2x2(1.0));
     auto const weight = state_weight(at_floor);
