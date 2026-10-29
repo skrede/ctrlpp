@@ -37,6 +37,7 @@
 #include "ctrlpp/control/dare.h"
 #include "ctrlpp/control/lqr.h"
 #include "ctrlpp/detail/riccati_solution.h"
+#include "ctrlpp/detail/power_of_two_scale.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -547,8 +548,11 @@ TEST_CASE("DARE gain is invariant under common weight scaling", "[dare][hardenin
 
     auto compare_common_scale = [&](const Eigen::Matrix<double, 2, 2> &Q, const Eigen::Matrix<double, 1, 1> &R, double common_scale)
     {
-        const auto direct = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
-        const auto scaled = ctrlpp::dare<double, 2, 1>(A, B, (Q / common_scale).eval(), (R / common_scale).eval());
+        // A power-of-two divisor leaves the solver's equilibrated problem bitwise unchanged, so both posings must
+        // reach the same verdict; any other divisor poses a different floating-point problem near the refusal edge.
+        const double divisor = ctrlpp::detail::power_of_two_ceiling(common_scale);
+        const auto direct    = ctrlpp::dare<double, 2, 1>(A, B, Q, R);
+        const auto scaled    = ctrlpp::dare<double, 2, 1>(A, B, (Q / divisor).eval(), (R / divisor).eval());
 
         if(!direct || !scaled)
         {
@@ -556,18 +560,9 @@ TEST_CASE("DARE gain is invariant under common weight scaling", "[dare][hardenin
             REQUIRE_FALSE(scaled.has_value());
             CHECK(direct.error() == scaled.error());
             // This equality is a PREDICATE, not a check: it classifies a
-            // decline rather than asserting one, so it decides which branch
-            // runs. It is kept as an equality deliberately, and it is not
-            // widened, because the census it feeds is asserted only to be
-            // non-empty. Which individual points reach the accuracy enumerator
-            // does move with the arithmetic -- six of the forty-two swept
-            // points on some configurations and seven on others, measured
-            // across four compilers, four optimization levels, fused
-            // multiply-add off and on, and two releases of the linear-algebra
-            // library -- but the count is at least six in every one of those
-            // sixty-four, so the assertion below it holds on all of them. The
-            // two posings agreeing on the enumerator, checked above, holds in
-            // all sixty-four as well.
+            // decline for the census below, which is asserted only to be
+            // non-empty because which points reach the accuracy enumerator
+            // moves with the arithmetic.
             if(direct.error() == ctrlpp::dare_error::arithmetic_limit)
                 ++arithmetic_declines;
             return;
@@ -575,9 +570,9 @@ TEST_CASE("DARE gain is invariant under common weight scaling", "[dare][hardenin
 
         ++accepted;
         const auto direct_gain  = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, R, direct->P);
-        const auto scaled_gain  = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, (R / common_scale).eval(), scaled->P);
+        const auto scaled_gain  = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, (R / divisor).eval(), scaled->P);
         const double gain_scale = std::max(direct_gain.norm(), scaled_gain.norm());
-        CAPTURE(common_scale, direct_gain, scaled_gain, gain_scale);
+        CAPTURE(common_scale, divisor, direct_gain, scaled_gain, gain_scale);
         CHECK((direct_gain - scaled_gain).norm() <= gain_relative_margin * gain_scale);
     };
 
@@ -920,13 +915,15 @@ TEST_CASE("DARE keeps the band whose only failing check is the gain's own scale"
     // Nothing here is hardcoded. The ceiling is derived from the type's range,
     // the band's lower edge is found by walking down until the direct check
     // starts resolving again, and the correctness bar is exact equality against
-    // the homogeneous truth rather than a tolerance.
+    // the solver's own equilibrated solve plus agreement with the homogeneous
+    // truth.
     const auto pose = common_scale_pose();
     const auto unit = ctrlpp::dare<double, 1, 1>(pose.A, pose.B, weight_at(1.0), weight_at(1.0));
     REQUIRE(unit.has_value());
 
     const double p_unit  = unit->P(0, 0);
     const double ceiling = std::numeric_limits<double>::max() / p_unit;
+    const double margin  = ctrlpp::test::riccati_gain_agreement_margin<double, 1, 1>();
 
     int in_band = 0;
     for(double scale = ceiling; scale > 1.0; scale /= 2.0)
@@ -941,11 +938,23 @@ TEST_CASE("DARE keeps the band whose only failing check is the gain's own scale"
             break;
 
         ++in_band;
-        // Homogeneity of degree one: the answer is exactly `scale * p_unit`, and
-        // the rescale is a single multiplication, so the returned matrix carries
-        // the unit answer's every bit. Checked by division to stay in range.
-        CAPTURE(scale, result->P(0, 0), p_unit);
-        CHECK(result->P(0, 0) / scale == p_unit);
+        // At the clamp the equilibrated weight lies above one, where a public
+        // call would re-equilibrate it, so the reference is the solver's own
+        // pipeline at that weight.
+        const double divisor = ctrlpp::detail::dare_weight_scale<double, 1, 1>(weight, weight);
+        const auto weight_eq = weight_at(scale / divisor);
+        const auto operands  = ctrlpp::detail::factor_dare_symplectic_operands<double, 1, 1>(pose.A, pose.B, weight_eq);
+        REQUIRE(operands.has_value());
+        const auto symplectic = ctrlpp::detail::build_dare_symplectic<double, 1>(pose.A, weight_eq, *operands);
+        REQUIRE(symplectic.has_value());
+        const auto equilibrated = ctrlpp::detail::dare_solve_from_symplectic<double, 1, 1>(*symplectic);
+        REQUIRE(equilibrated.has_value());
+
+        // The homogeneous truth `scale * p_unit` holds only to the solver's
+        // accuracy, and is compared by division to stay in range.
+        CAPTURE(scale, divisor, result->P(0, 0), equilibrated->P(0, 0), p_unit);
+        CHECK(result->P(0, 0) == divisor * equilibrated->P(0, 0));
+        CHECK(std::abs(result->P(0, 0) / scale - p_unit) <= margin * p_unit);
     }
 
     // The band exists and the walk entered it, so neither half passes vacuously.

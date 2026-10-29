@@ -264,22 +264,24 @@ otherwise produce silent corruption through intermediate overflow:
   one the arithmetic can form but not verify.
 
   **`ctrlpp::care` equilibrates both weightings before it builds the
-  Hamiltonian**, for every method tag. It divides `Q` and `R` by their largest
-  entry, solves at that scale, and multiplies the solution back. The equation is
-  homogeneous of degree one in `(P, Q, R)` taken together, so the rescale changes
-  nothing about the answer, and the gain `K = R^-1 B' P` does not move at all.
+  Hamiltonian**, for every method tag. It divides `Q` and `R` by the smallest
+  power of two at or above their largest entry, solves at that scale, and
+  multiplies the solution back, exactly, because a power of two changes only the
+  exponent. The equation is homogeneous of degree one in `(P, Q, R)` taken
+  together, so the rescale changes nothing about the answer, and the gain
+  `K = R^-1 B' P` does not move at all.
   What it changes is which poses have an answer: the rescale is a block-diagonal
   similarity of the Hamiltonian -- with `D = diag(I, sI)`, `D^-1 H D` is exactly
   the Hamiltonian of the divided pose -- so it cannot move the spectrum, and the
   divisor is chosen to land both off-diagonal blocks at unit order at once.
 
   Swept over eighteen decades of a common rescale in both directions, on a
-  comfortably damped family and a structurally simple one: **all three tags now
-  answer all 1,152 draws of each population.** Before the equilibration the
-  default answered 652 and 655 and only `balanced_schur_care_method` answered
-  every draw, because its DGEBAL-style balance was the only equilibration the
-  library had. A caller whose weights sit far from their dynamics' own scale no
-  longer needs to select a tag to get an answer -- see
+  comfortably damped family and a structurally simple one: **all three tags
+  answer all 1,152 draws of each population.** Without the equilibration the
+  default answers 652 and 655, and only `balanced_schur_care_method`, whose
+  DGEBAL-style balance is the same similarity by a different route, answers every
+  draw. A caller whose weights sit far from their dynamics' own scale does not
+  need to select a tag to get an answer; see
   [lqr](../../api/control/lqr.md) for what the tags cost in arithmetic.
 
   **The acceptance check's cost is now TIMED, and the counted figure it replaces
@@ -309,7 +311,8 @@ otherwise produce silent corruption through intermediate overflow:
   `p^2 + 2sp - s^2 = 0`, giving `P = s(sqrt(2) - 1) I` and a gain of
   `(sqrt(2) - 1) I` at every `s`. That criterion owes the solver nothing. Zero
   disagreements under either, for all three tags, with a worst relative error
-  against the closed form of `4.02e-16`.
+  against the closed form of `8.04e-16` for the default tag and `6.70e-16` for
+  the two Schur tags.
 
   **This does not mean the balanced variant answers everything.** It answers the
   poses a bad weight scale would otherwise lose. On the near-axis band -- where a

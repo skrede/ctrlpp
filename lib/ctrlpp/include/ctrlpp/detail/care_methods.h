@@ -122,26 +122,20 @@
 ///
 /// ## Where a Schur variant is the better choice, measured
 ///
-/// The instruction count is not the whole selection argument, and it used to be
-/// decisive: swept over eighteen decades of a common rescale of Q and R, on a
-/// comfortably damped family and on a structurally simple one, the balanced
-/// variant answered every one of the 1,152 draws in each population while the
-/// default answered 652 and 655 and declined the rest. **That difference no
-/// longer exists.** `ctrlpp::care` now equilibrates both weightings before the
-/// Hamiltonian is built, which is the same similarity the balance performs by a
-/// different route, so ALL THREE TAGS ANSWER ALL 1,152 DRAWS OF EACH POPULATION.
+/// Swept over eighteen decades of a common rescale of Q and R, on a comfortably
+/// damped family and on a structurally simple one, ALL THREE TAGS ANSWER ALL
+/// 1,152 DRAWS OF EACH POPULATION, because `ctrlpp::care` equilibrates both
+/// weightings before the Hamiltonian is built. Without that equilibration the
+/// default answers 652 and 655, and only the balanced variant, whose balance is
+/// the same similarity by a different route, answers every draw.
 ///
 /// ## What each tag equilibrates, stated by the object it rescales
 ///
-/// The three are no longer distinguished by whether they equilibrate at all,
-/// which is what the previous version of this paragraph said and what is now
-/// wrong. They are distinguished by WHAT they rescale:
-///
 ///  * `ctrlpp::care` itself, for every tag: the WEIGHTINGS, by one common
-///    divisor -- their largest entry -- with the solution multiplied back
-///    afterwards. That divisor is a block-diagonal similarity of the
-///    Hamiltonian, so it cannot move the spectrum; see `care_weight_scale` for
-///    the derivation.
+///    divisor (the smallest power of two at or above their largest entry),
+///    with the solution multiplied back exactly afterwards. That divisor is a
+///    block-diagonal similarity of the Hamiltonian, so it cannot move the
+///    spectrum; see `care_weight_scale` for the derivation.
 ///  * `balanced_schur_care_method` additionally: the HAMILTONIAN, by a
 ///    DGEBAL-style diagonal similarity over all 2n indices. That is strictly
 ///    more general than the two-block scaling above and reaches asymmetries a
@@ -149,9 +143,9 @@
 ///    real-time properties are in the real-time matrix rather than here.
 ///  * the other two tags rescale nothing further.
 ///
-/// A caller whose weights sit far from their dynamics' own scale no longer needs
-/// to select a tag to get an answer. The selection argument is now the
-/// instruction count above and, for the balanced variant, the sweep it runs.
+/// A caller whose weights sit far from their dynamics' own scale does not need
+/// to select a tag to get an answer. The selection argument is the instruction
+/// count above and, for the balanced variant, the sweep it runs.
 ///
 /// Unlike the instruction figures above, THESE ACCEPTANCE COUNTS ARE PINNED
 /// rather than recorded. `CARE keeps the same promise under every method tag`

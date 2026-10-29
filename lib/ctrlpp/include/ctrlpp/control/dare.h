@@ -23,6 +23,7 @@
 
 #include "ctrlpp/detail/schur_reorder.h"
 #include "ctrlpp/detail/riccati_solution.h"
+#include "ctrlpp/detail/power_of_two_scale.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Eigenvalues>
@@ -84,18 +85,15 @@ auto factor_dare_symplectic_operands(const Eigen::Matrix<Scalar, int(NX), int(NX
     return operands;
 }
 
-/// @brief Choose the common weight divisor from the largest weight entry.
+/// @brief Choose the common weight divisor: the smallest power of two at or above the largest weight entry.
 ///
-/// Dividing Q and R by the same positive value preserves the Riccati gain.
-/// Selecting max(||Q||_max, ||R||_max) gives the equivalent posed problem a
-/// canonical scale and keeps at least one weight entry near unity.
+/// Dividing Q and R by the same positive value preserves the Riccati gain. A
+/// power of two keeps the largest weight entry near unity and makes the
+/// division of the weights and the multiplication of the solution back exact.
 template<typename Scalar, std::size_t NX, std::size_t NU>
 auto dare_weight_scale(const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q, const Eigen::Matrix<Scalar, int(NU), int(NU)> &R) -> Scalar
 {
-    const Scalar q_magnitude      = Q.cwiseAbs().maxCoeff();
-    const Scalar r_magnitude      = R.cwiseAbs().maxCoeff();
-    const Scalar weight_magnitude = std::max(q_magnitude, r_magnitude);
-    return weight_magnitude > Scalar{0} ? weight_magnitude : Scalar{1};
+    return power_of_two_ceiling(std::max(Q.cwiseAbs().maxCoeff(), R.cwiseAbs().maxCoeff()));
 }
 
 /// @brief Build the equilibrated symplectic matrix Z per Laub 1979 Eq. 7.
@@ -136,15 +134,15 @@ auto build_dare_symplectic(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, con
 /// `gain_unavailable` says exactly one thing: the gain could not be formed at
 /// the scale being checked, because `R + B'PB` left the range there. That is a
 /// property of the scale, not of the answer, and it is reached routinely at the
-/// top of the representable range on answers that are bit-exact -- measured on
-/// the scalar pose `A = 0.5`, `B = 1`, `Q = R = c`, the topmost 0.2748 decades
-/// of the accepted range report it, and every answer in that band matches the
-/// homogeneous truth `c * P_unit` to zero relative error.
+/// top of the representable range on accurate answers. Measured on the scalar
+/// pose `A = 0.5`, `B = 1`, `Q = R = c`, the topmost 0.2748 decades of the
+/// accepted range report it, and every answer in that band matches the
+/// homogeneous truth `c * P_unit` to a worst relative error of `9.7e-16`.
 ///
 /// `unresolved` covers every other way a quantity failed to form, including the
 /// forward-error estimator declining to resolve. Those have no such account, so
 /// a caller may not treat them as benign. Merging the two would force a single
-/// disposition on both: either discard the bit-exact band or accept an absence
+/// disposition on both: either discard the accurate band or accept an absence
 /// of evidence whose cause is unknown.
 enum class dare_verification
 {
@@ -221,13 +219,9 @@ auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, cons
     if(gain_state != dare_verification::verified)
         return gain_state;
 
-    // Positive semi-definiteness is re-established on the P that is actually
-    // being verified. The extraction primitive checks it on the solve's own P,
-    // but common-weight equilibration solves a scaled problem and rescales the
-    // result afterwards, so the returned P is not the matrix that check saw.
-    // Scaling by a positive factor preserves definiteness mathematically and
-    // perturbs the pivots only by rounding, which is exactly why the floor has
-    // to carry the factorization's backward error rather than assume none.
+    // At the caller's scale P is an exact power-of-two multiple of the matrix the
+    // extraction checked, so this verdict repeats that one except where an entry
+    // left the normal range in the rescale.
     Eigen::LDLT<MatNxN> psd_ldlt(P);
     if(psd_ldlt.info() != Eigen::Success
        || psd_ldlt.vectorD().minCoeff() < detail::psd_pivot_floor<Scalar, n>(P))
@@ -460,26 +454,12 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<
     // established, rather than re-formed at a scale where the evidence itself
     // leaves the range while the answer does not.
     //
-    // The equation is homogeneous of degree one in (P, Q, R) taken together.
-    // Replacing P by sP, Q by sQ and R by sR multiplies
-    // A'PA - P - A'PB (R + B'PB)^-1 B'PA + Q by exactly s: the inverted factor
-    // is homogeneous of degree one and the term containing it is homogeneous of
-    // degree two, so the quotient carries a single factor like every other term.
-    // The gain (R + B'PB)^-1 B'PA is therefore homogeneous of degree ZERO, the
-    // closed loop A - BK is unchanged, and a positive factor cannot move an
-    // eigenvalue across zero. Residual bound, stabilizing spectrum and
-    // definiteness all transport across the rescale unchanged in relative terms.
-    //
-    // What does not transport for free is the rounding of the two steps that
-    // move between the scales: one division per weight entry on the way in, and
-    // one multiplication per solution entry on the way out. Two roundings along
-    // the longest chain from a caller weight entry to the corresponding returned
-    // entry, so the carried bound is the equilibrated margin widened by two units
-    // of epsilon relative to the returned matrix's own magnitude. The margin it
-    // widens is sqrt(counted_ops * eps), so the widening is smaller than the
-    // margin by a factor of sqrt(counted_ops / eps) / 2 -- above 1e8 for binary64
-    // at the smallest count this file carries -- and is absorbed rather than
-    // tracked as a separate term.
+    // The equation is homogeneous of degree one in (P, Q, R), so the gain is
+    // homogeneous of degree zero and residual bound, stabilizing spectrum and
+    // definiteness carry across a positive rescale unchanged in relative terms.
+    // The weight scale is a power of two, so the division on the way in and the
+    // multiplication on the way out are exact unless an entry leaves the normal
+    // range, and the carried bound needs no widening for them.
     //
     // Three things homogeneity cannot supply, so all three are checked. First,
     // the rescale can leave the top of the range, and an answer that is not
@@ -488,10 +468,9 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<
     if(!result->P.allFinite())
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
 
-    // Second, definiteness is re-established at the scale actually returned:
-    // scaling by a positive factor preserves it mathematically but perturbs the
-    // pivots by rounding, which is why the floor has to carry the
-    // factorization's backward error rather than assume there is none.
+    // Second, definiteness is re-established at the scale actually returned. An
+    // overflow is declined above and the rescale is otherwise exact, so this guards
+    // only the edge where it is not: an entry the rescale puts in the subnormal range.
     Eigen::LDLT<Eigen::Matrix<Scalar, int(NX), int(NX)>> returned_psd(result->P);
     if(returned_psd.info() != Eigen::Success
        || returned_psd.vectorD().minCoeff() < detail::psd_pivot_floor<Scalar, int(NX)>(result->P))
@@ -508,8 +487,8 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<
     // marginal: on the scalar pose `A = 0.5`, `B = 1`, `Q = R = c` the topmost
     // 0.2748 decades of the accepted range report it (ceiling 1.586972e+308
     // against 8.428864e+307 for a rule that declines it) and every answer in
-    // that band reproduces the homogeneous truth `c * P_unit` to ZERO relative
-    // error. Declining it would discard bit-exact answers to buy nothing.
+    // that band reproduces the homogeneous truth `c * P_unit` to a worst relative
+    // error of 9.7e-16. Declining it would discard accurate answers to buy nothing.
     //
     // `unresolved` is the opposite case and it declines. It covers every other
     // way a quantity failed to form, including the forward-error estimator
@@ -525,9 +504,9 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<
     // the same regime. The structural reason is that the closed loop is
     // homogeneous of degree zero in (P, Q, R) and the estimator's operator
     // depends on nothing but the closed loop, so such a pose is already declined
-    // at the first site -- an argument that turns on the rounding of the two
-    // rescaling steps, which is not zero, so it is measured-unreached rather
-    // than proven, and the rule declines instead of leaning on it.
+    // at the first site. That argument holds only while every rescaled entry
+    // stays in the normal range, so it is measured-unreached rather than proven,
+    // and the rule declines instead of leaning on it.
     //
     // AND ON A REFUTATION THE DIRECT CHECK DECLINES: a resolved contradiction is
     // evidence against the carried claim's premise, not a tie to break.

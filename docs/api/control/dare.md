@@ -34,9 +34,11 @@ auto dare(const Matrix<Scalar, NX, NX>& A,
 Solves the standard DARE. Before forming the 2n x 2n symplectic matrix, it
 applies a common positive divisor to Q and R. This does not change the optimal
 gain: the equilibrated solution is multiplied by the divisor before it is
-returned. The divisor is the largest-magnitude entry across both weights, so
-one weight entry is near unity and independently common-scaled poses reduce to
-the same canonical problem.
+returned. The divisor is the smallest power of two at or above the
+largest-magnitude entry across both weights, so one weight entry is near unity
+and the round trip is exact: dividing by a power of two changes only the
+exponent, so the returned matrix is exactly the divisor times the matrix the
+acceptance checks examined, unless an entry leaves the normal range.
 
 The divisor is chosen **before** anything is factorized, and the symplectic
 operands are then factorized once, from the equilibrated weighting. That order
@@ -185,7 +187,7 @@ two cases are deliberately not merged:
 - **The gain could not be formed at your scale**, because `R + B'PB` left the
   range there. That is a statement about the scale rather than about the answer,
   it is exactly the band the carried claim was written to cover, and the answers
-  in it are bit-exact (see below). The carried claim stands and the answer is
+  in it are accurate (see below). The carried claim stands and the answer is
   returned.
 - **Anything else failed to resolve**, including the forward-error estimator
   declining. These come with no account of why, and the carried claim's premise
@@ -216,11 +218,13 @@ that pose -- because the gain it recomputes needs the sum `R + B'PB` formed at
 your scale, and that sum leaves the range before the answer does. That is
 exactly the band the carried claim covers, and the band is not a marginal one:
 across it every returned answer reproduces the homogeneous truth `c * P_unit` to
-**zero** relative error. Measured, a rule that declined it instead would drop the
-ceiling from `1.586972e+308` to `8.428864e+307` and give up bit-exact answers for
-nothing. `dare_hardening_test` pins this band, checking both that it is accepted
-and that its lower edge is found by walking until the direct check resolves again
-rather than by a hardcoded bound.
+a worst relative error of `9.7e-16`, measured over 200,001 log-spaced poses. A
+rule that declined it instead would drop the ceiling from `1.586972e+308` to
+`8.428864e+307` and give up accurate answers for nothing. `dare_hardening_test`
+pins this band, checking that it is accepted, that each answer is exactly the
+power-of-two multiple of the solver's own equilibrated solve, and that its lower
+edge is found by walking until the direct check resolves again rather than by a
+hardcoded bound.
 
 At the bottom the binding quantity is different again, and it is the rescale
 itself: multiplying the equilibrated solution by the divisor keeps full relative
@@ -279,11 +283,12 @@ Positive semi-definiteness is tested on both matrices that exist, and
 deliberately so. The extraction primitive tests the P the solve produced; when
 common-weight equilibration is active that P is the *equilibrated* one, and the
 value handed back to the caller is `P * weight_scale`, which the first test never
-saw. The rescale is therefore re-tested at the returned scale. Scaling by a
-positive factor preserves definiteness mathematically, so this second test only
-ever fires on the rounding the rescale itself introduces -- which is why it
-reports `arithmetic_limit` rather than `non_psd_solution`, and why the floor has
-to carry the factorization's backward error rather than assume there is none.
+saw. The rescale is therefore re-tested at the returned scale. The divisor is a
+power of two, so the returned matrix is exactly the divisor times the tested one
+and the two tests agree, except where the rescale puts an entry in the subnormal
+range; the second test guards that edge. It is a limit of the arithmetic rather
+than of the answer, which is why it reports `arithmetic_limit` rather than
+`non_psd_solution`.
 
 An indefinite state weighting is not a supported input. `Q = -I` on an otherwise
 well-posed pair leaves fewer than n eigenvalues of the symplectic spectrum inside
