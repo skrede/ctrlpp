@@ -354,9 +354,8 @@ TEST_CASE("lqr_gain with a cross weight refuses an unstabilizable pair")
     // the linear-algebra library's patch release alone: the enumerator this
     // case used to pin is returned by twenty-one of thirty-two configurations
     // against one release and by exactly one of thirty-two against the next.
-    // Pinning it asserted a toolchain. arm64 is not among the sixty-four, and
-    // the continuous solver's twin measurement produced an enumerator there
-    // that no covered configuration produced.
+    // Pinning it asserted a toolchain. Every one of the sixty-four is x86-64;
+    // arm64 and MSVC are not measured.
     //
     // What the input DOES determine is the three diagnoses it can never carry:
     // the state matrix is diagonal with a condition number of 4, the input

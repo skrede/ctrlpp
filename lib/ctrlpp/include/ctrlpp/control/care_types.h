@@ -102,26 +102,28 @@ namespace ctrlpp
 /// **Branch on `has_value()`. The enumerator is a diagnostic for a human reader, not a
 /// control signal.**
 ///
-/// Whether an input is refused is a property of the input. WHICH refusal it carries is
-/// not, once the input sits below the precision's resolution boundary -- the point at
-/// which the quantity that decides the problem falls under the square root of the scalar
-/// type's epsilon relative to the operands that carry it. Below that boundary the refusal
-/// is reproducible and the enumerator is decided by instruction selection.
+/// WHICH refusal an input carries is not a property of the input once it sits below the
+/// precision's resolution boundary -- the point at which the quantity that decides the
+/// problem falls under the square root of the scalar type's epsilon relative to the
+/// operands that carry it. Below that boundary the enumerator is decided by rounding.
 ///
-/// Measured, on one bit-identical continuous input whose imaginary-axis mode is visible
+/// Measured on one bit-identical continuous input whose imaginary-axis mode is visible
 /// through Q at 4.2e-25 relative -- a stabilizing solution that exists and is not
-/// determined in binary64:
+/// determined in binary64 -- over g++ 16.2.1 and clang 23.1.3, 21.1.8 and 18.1.8 on
+/// x86-64, -O0 to -O3, FMA contraction off and on, and Eigen 3.4.0 and 3.4.1:
 ///
-///  * `sign_function_stagnated` under g++ at every optimization level, with or without
-///    contraction.
-///  * `non_psd_solution` under clang on x86-64 at -O1 and above with FMA contraction
-///    enabled.
-///  * `non_lhp_stabilizable` under Apple clang on arm64.
+///  * the input itself returns `non_lhp_stabilizable` on all 64 configurations;
+///  * its thirty-point three-ulp neighborhood (A(1,0), A(1,1), B(0), B(1) and R each moved
+///    by one to three units in the last place) returns all three of
+///    `non_lhp_stabilizable`, `non_psd_solution` and `sign_function_stagnated` on every
+///    configuration with zero acceptances, and 27 of the 30 neighbors return different
+///    enumerators on different configurations.
 ///
-/// A thirty-point three-ulp neighborhood of that input produces all three enumerators and
-/// zero acceptances. Sweeping the visibility across thirty-one decades puts the
-/// accept/refuse transition at 1e-8 against sqrt(epsilon) = 1.5e-8, and every decade below
-/// 1e-11 refuses in all thirty neighbors while the enumerator continues to move.
+/// arm64 and MSVC are not measured. Sweeping the visibility across thirty-one decades puts
+/// the accept/refuse transition at 1e-8 against sqrt(epsilon) = 1.5e-8. Below it, 1e-13
+/// still accepts two of the thirty neighbors on 42 of the 64 configurations (under g++ -O2
+/// both agree with a binary128 reference to 1.3e-10 relative), and every decade from 1e-14
+/// down refuses all thirty on every configuration while the enumerator continues to move.
 ///
 /// Two enumerators do stay meaningful at any distance from the boundary, because they
 /// report a property of the operands rather than of an iteration: `non_finite_input` and

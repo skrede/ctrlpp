@@ -241,8 +241,8 @@ CONTROLLER_DECISION_LIMIT=128
 # dimension, at input dimension 1 against the system linear-algebra release.
 # These are the values THIS instrument measures on THIS tree; the control asks
 # that an extension to the instrument leaves them alone.
-declare -A CONTROL_PEAK_CHECKED=([2]=4552 [4]=11176 [6]=21912 [8]=41304)
-declare -A CONTROL_PEAK_UNCHECKED=([2]=3368 [4]=8176 [6]=13560 [8]=25416)
+declare -A CONTROL_PEAK_CHECKED=([2]=4584 [4]=10968 [6]=21592 [8]=40728)
+declare -A CONTROL_PEAK_UNCHECKED=([2]=3368 [4]=8144 [6]=13464 [8]=25416)
 declare -A CONTROL_FRAME=([2]=864 [4]=2400 [6]=6432 [8]=15056)
 
 # The published frame column carries THIS function's frame, and it is not in

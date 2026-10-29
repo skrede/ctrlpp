@@ -87,12 +87,12 @@ state dimension. The decomposition factorizes into the operator's own array
 rather than a copy of it, which removes the second live `M x M` array: the
 estimator's stack frame is 864, 2,400, 6,432 and 15,056 bytes at
 `NX = 2, 4, 6, 8`, and the peak of the whole `dare` call chain -- the quantity a
-hard-real-time caller budgets -- is 4,552, 11,176, 21,912 and 41,304 bytes for an
-`NX`-state, SINGLE-INPUT pose under g++ 16.1.1 at `-O2` against Eigen 3.4.1. The
+hard-real-time caller budgets -- is 4,584, 10,968, 21,592 and 40,728 bytes for an
+`NX`-state, SINGLE-INPUT pose under g++ 16.2.1 at `-O2` against Eigen 3.4.1. The
 input dimension and the linear-algebra release are part of that figure; re-run
 `tools/stack_watermark.sh` at your own rather than reading across. The same chain
 with the acceptance check and the gain formation taken off it peaks at 3,368,
-8,176, 13,560 and 25,416 bytes at the same four dimensions, so the estimator
+8,144, 13,464 and 25,416 bytes at the same four dimensions, so the estimator
 costs exactly one rung of the supported-maximum ladder on every task stack from
 4 KB through 32 KB and nothing above that. `docs/rt-safety-matrix.md` carries
 both ladders.
@@ -323,12 +323,12 @@ So `singular_u11` covers a pair with no stabilizing solution **and** a numerical
 
 The tables above say which condition produces which enumerator, and they hold wherever the condition itself is decidable in the scalar type. They stop holding below the precision's resolution boundary -- the point at which the quantity deciding the problem falls under `sqrt(epsilon)` relative to the operands carrying it, which for the family above is where the two transitions in the previous section sit. Below the boundary the solve is refused, and *which* refusal it carries is decided by instruction selection and by the linear-algebra implementation rather than by the input.
 
-Both transitions were located to one unit in the last place per configuration, and the configurations disagree. Over four compilers (g++ 16.1.1, clang 22.1.8, 21.1.8 and 18.1.8), four optimization levels, fused multiply-add off and on, and two patch releases of Eigen:
+Both transitions were located to one unit in the last place per configuration, and the configurations disagree. Over four compilers (g++ 16.2.1, clang 23.1.3, 21.1.8 and 18.1.8), four optimization levels, fused multiply-add off and on, and two patch releases of Eigen:
 
 | Boundary | Located between | Band width |
 | --- | --- | --- |
 | accepted to `arithmetic_limit` | `3.279e-04` and `3.738e-04` | 0.057 decades, 14% of the value |
-| `arithmetic_limit` to `singular_u11` | `4.740e-08` and `5.741e-08` | 0.084 decades, 21% of the value |
+| `arithmetic_limit` to `singular_u11` | `4.729e-08` and `5.741e-08` | 0.084 decades, 21% of the value |
 
 Outside that band every configuration agrees, including at both ends of the family. Inside it, the answer belongs to the build. Measured on one bit-identical input inside the band -- the pair `A = diag(2, 1/2)`, `B = [0; 1]`, `Q = I`, `R = 1` with the cross weight `N = [0.1; 0.2]`, whose unstable mode is exactly uncontrollable so that no stabilizing solution exists:
 
@@ -343,7 +343,7 @@ Outside that band every configuration agrees, including at both ends of the fami
 
 Three enumerators over sixty-four configurations on one input -- `singular_u11` on 33, `non_psd_solution` on 22, `arithmetic_limit` on 9 -- and the majority verdict flips with a patch release of a dependency.
 
-**Every configuration in that table is x86-64, and a green column is not evidence of stability on arm64.** The continuous solver's twin of this measurement produced a third enumerator on arm64 that neither x86-64 compiler produced. The axis that moves the discrete answer is fused multiply-add contraction, which is enabled by default on that architecture, so the contracting rows are the closest available proxy -- a prediction, not a measurement, and not a substitute for running it.
+**Every configuration in that table is x86-64. arm64 and MSVC are not among the measured toolchains, and a green column is not evidence of stability on either.** The axis that moves the discrete answer is fused multiply-add contraction, which is enabled by default on arm64, so the contracting rows are the closest available proxy there -- a prediction, not a measurement, and not a substitute for running it.
 
 Three enumerators report a property of the operands rather than of an iteration and stay meaningful at any distance from the boundary: `non_finite_input`, `singular_a` and `singular_r`. The first is an exact predicate on the entries; the other two are rank tests relative to the operand's own largest pivot, so they are decided by the input wherever that operand is not itself near rank deficiency, and on an exactly rank-deficient operand the threshold is exactly zero and the verdict is exact. A finite, well-formed input with a nonsingular `A` and a nonsingular `R` never carries any of the three.
 

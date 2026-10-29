@@ -105,17 +105,18 @@ See [dare](dare.md) for what `care_error::singular_u11` covers; the continuous e
 
 **Branch on `has_value()`. Treat the enumerator as a diagnostic for a human reader rather than as a control signal.**
 
-The tables above say which condition produces which enumerator, and they hold wherever the condition itself is decidable in the scalar type. They stop holding below the precision's resolution boundary -- the point at which the quantity deciding the problem falls under `sqrt(epsilon)` relative to the operands carrying it. Below it the solve is refused reproducibly, and *which* refusal it carries is decided by instruction selection rather than by the input.
+The tables above say which condition produces which enumerator, and they hold wherever the condition itself is decidable in the scalar type. They stop holding below the precision's resolution boundary -- the point at which the quantity deciding the problem falls under `sqrt(epsilon)` relative to the operands carrying it. Below it, *which* refusal the solve carries is decided by rounding rather than by the input.
 
-Measured on one bit-identical input whose imaginary-axis mode is visible through `Q` at `4.2e-25` relative, a stabilizing solution that exists and is not determined in binary64:
+Measured on one bit-identical input whose imaginary-axis mode is visible through `Q` at `4.2e-25` relative, a stabilizing solution that exists and is not determined in binary64, and on its thirty-point three-ulp neighborhood (`A(1,0)`, `A(1,1)`, `B(0)`, `B(1)` and `R` each moved by one to three units in the last place), over g++ 16.2.1 and clang 23.1.3, 21.1.8 and 18.1.8 on x86-64, `-O0` to `-O3`, fused multiply-add off and on, and Eigen 3.4.0 and 3.4.1:
 
-| Toolchain | Enumerator |
+| Input | Enumerator, over all 64 configurations |
 | --- | --- |
-| g++, every optimization level, contraction on or off | `sign_function_stagnated` |
-| clang on x86-64, `-O1` and above, FMA contraction enabled | `non_psd_solution` |
-| Apple clang on arm64 | `non_lhp_stabilizable` |
+| the input itself | `non_lhp_stabilizable` on every configuration |
+| its thirty neighbors | all three of `non_lhp_stabilizable`, `non_psd_solution` and `sign_function_stagnated` on every configuration, zero acceptances; 27 of the 30 neighbors return different enumerators on different configurations |
 
-A thirty-point three-ulp neighborhood of that input produces all three enumerators and zero acceptances. Sweeping the visibility across thirty-one decades puts the accept/refuse transition at `1e-8`, against `sqrt(epsilon) = 1.5e-8`, and every decade below `1e-11` refuses in all thirty neighbors while the enumerator keeps moving.
+arm64 and MSVC are not among the measured toolchains.
+
+Sweeping the visibility across thirty-one decades, with the same neighborhood at each, puts the accept/refuse transition at `1e-8`, against `sqrt(epsilon) = 1.5e-8`: every neighbor is accepted down to `1e-7` on every configuration, and from `1e-8` to `1e-10` the verdict flips inside the neighborhood. `1e-11` and `1e-12` refuse all thirty neighbors on every configuration. `1e-13` accepts two of the thirty on 42 of the 64 configurations, every build without contraction or at `-O0` and g++ at `-O1` with it; under g++ at `-O2` those two answers agree with a binary128 Newton refinement to `1.3e-10` relative. Every decade from `1e-14` down refuses all thirty neighbors on every configuration while the enumerator keeps moving.
 
 Two enumerators stay meaningful at any distance from the boundary, because they report a property of the operands rather than of an iteration: `non_finite_input` and `singular_r`. A finite, well-formed input with a nonsingular `R` never carries either.
 

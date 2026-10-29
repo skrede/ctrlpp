@@ -146,11 +146,10 @@ namespace ctrlpp {
 ///  * `non_psd_solution` : 22 of 64
 ///  * `arithmetic_limit` :  9 of 64
 ///
-/// and the majority verdict flips with Eigen's patch release alone. **Every one of those configurations is x86-64, and a green column here is not
-/// evidence of stability on arm64**: the continuous solver's twin of this measurement
-/// produced an enumerator on arm64 that no x86-64 compiler produced. Fused
-/// multiply-add, which is the axis that moves the discrete answer here, is on by
-/// default on that architecture.
+/// and the majority verdict flips with Eigen's patch release alone. **Every one of those
+/// configurations is x86-64; arm64 and MSVC are not measured, and a green column here
+/// is not evidence of stability on either.** Fused multiply-add, the axis that moves
+/// the discrete answer here, is on by default on arm64.
 ///
 /// Three enumerators report a property of the operands rather than of an iteration, and
 /// stay meaningful at any distance from the boundary: `non_finite_input`, `singular_a`

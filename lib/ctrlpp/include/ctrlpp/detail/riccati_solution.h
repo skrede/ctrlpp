@@ -408,9 +408,9 @@ enum class riccati_accuracy
 /// WHOLE discrete solve chain, which `-fstack-usage` cannot give because it
 /// attributes nothing to callees. Measured directly by `tools/stack_watermark.sh`,
 /// which paints a region below the frame and reads back the deepest disturbed
-/// word (harness floor zero on every configuration), that peak is 4,552, 11,176,
-/// 21,912 and 41,304 bytes at `N = 2, 4, 6, 8` for an `N`-state, SINGLE-INPUT
-/// pose under g++ 16.1.1 at `-O2` against Eigen 3.4.1. The input dimension and
+/// word (harness floor zero on every configuration), that peak is 4,584, 10,968,
+/// 21,592 and 40,728 bytes at `N = 2, 4, 6, 8` for an `N`-state, SINGLE-INPUT
+/// pose under g++ 16.2.1 at `-O2` against Eigen 3.4.1. The input dimension and
 /// the linear-algebra release are part of that figure and not a detail of it:
 /// re-run the instrument at your own rather than reading across. So, strictly
 /// and with no margin left for the caller's own frames, interrupt context or
@@ -426,7 +426,7 @@ enum class riccati_accuracy
 ///
 /// THE ESTIMATOR COSTS ONE RUNG OF THAT LADDER AT EVERY SIZE FROM 4 KB THROUGH
 /// 32 KB. The same chain with the acceptance check and the gain formation taken
-/// off it peaks at 3,368, 8,176, 13,560 and 25,416 bytes at the same four
+/// off it peaks at 3,368, 8,144, 13,464 and 25,416 bytes at the same four
 /// dimensions, so the solve alone supports `N = 2` on a 4 KB stack where the
 /// shipped chain supports nothing, and `N = 8` on 32 KB where the shipped chain
 /// supports `N = 6`. Above 32 KB the check is free in these terms, both

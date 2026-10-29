@@ -718,12 +718,11 @@ TEST_CASE("CARE sign iteration declines an unresolved regenerated input",
     REQUIRE_FALSE(result.has_value());
 
     // WHICH refusal is not asserted, because it is not a property of the input.
-    // Below the resolution boundary the enumerator is decided by instruction
-    // selection: this input alone yields sign_function_stagnated under g++,
-    // non_psd_solution under clang with contraction enabled, and
-    // non_lhp_stabilizable under Apple clang on arm64, and a thirty-point
-    // three-ulp neighborhood of it produces all three. Pinning one of them
-    // asserted a toolchain.
+    // Below the resolution boundary the enumerator is decided by rounding: a
+    // thirty-point three-ulp neighborhood of this input returns three different
+    // enumerators, and most of those neighbors return different ones under
+    // different compilers, optimization levels and contraction settings.
+    // Pinning one of them asserted a rounding outcome.
     //
     // What the input DOES determine is the two diagnoses it can never carry: R
     // is nonsingular and every entry of every operand is finite. Either of those
