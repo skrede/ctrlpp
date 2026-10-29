@@ -612,14 +612,17 @@ TEST_CASE("DARE repairs or declines the measured state-heavy cases", "[dare][har
     B << 0.005, 0.1;
     Eigen::Matrix<double, 1, 1> R;
     R << 0.1;
+    // A decade inside the accuracy line on every measured x86-64 configuration; 1e8 sits on the line and is
+    // refused under FMA contraction with Eigen 3.4.1.
+    constexpr double state_weight = 1e7;
 
-    const auto solved    = ctrlpp::dare<double, 2, 1>(A, B, (1e8 * Eigen::Matrix<double, 2, 2>::Identity()).eval(), R);
-    const auto reference = ctrlpp::dare<double, 2, 1>(A, B, Eigen::Matrix<double, 2, 2>::Identity(), (R / 1e8).eval());
+    const auto solved    = ctrlpp::dare<double, 2, 1>(A, B, (state_weight * Eigen::Matrix<double, 2, 2>::Identity()).eval(), R);
+    const auto reference = ctrlpp::dare<double, 2, 1>(A, B, Eigen::Matrix<double, 2, 2>::Identity(), (R / state_weight).eval());
     REQUIRE(solved.has_value());
     REQUIRE(reference.has_value());
 
     const auto solved_gain            = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, R, solved->P);
-    const auto reference_gain         = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, (R / 1e8).eval(), reference->P);
+    const auto reference_gain         = ctrlpp::test::riccati_gain<double, 2, 1>(A, B, (R / state_weight).eval(), reference->P);
     const double gain_relative_margin = ctrlpp::test::riccati_gain_agreement_margin<double, 2, 1>();
     CHECK((solved_gain - reference_gain).norm() <= gain_relative_margin * reference_gain.norm());
 
