@@ -31,9 +31,9 @@
 # leaves an artifact and is reported as a finding like any other.
 #
 # Targets listed in tests/fuzz/known_red.txt carry an unsound oracle and a
-# named repair. That list exists once and is read by both of its consumers --
-# the fuzz workflow and scripts/fuzz_smoke.sh -- and this script reads the same
-# one rather than carrying a second copy. A listed target is explored and
+# named repair. That list exists once and is read by each of its three
+# consumers -- the fuzz workflow, scripts/fuzz_smoke.sh and this script -- so
+# none of them carries a second copy. A listed target is explored and
 # reported like any other: a finding there is a KNOWN RED rather than a
 # failure, and a listed target that produces none across the whole campaign is
 # reported as a STALE WAIVER.
