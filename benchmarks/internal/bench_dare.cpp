@@ -21,12 +21,13 @@
 // continuous chain the CARE bakeoff sweeps, so the two harnesses describe the
 // same family. It is built at two weight scales. Q = I and R = 0.1 I put the
 // weight scale at exactly one, so equilibration is inactive and the solve runs
-// the acceptance check ONCE. Multiplying both weights by s puts the weight
-// scale at exactly s, and the entry point then runs the whole equilibrated
-// path: the acceptance check at the equilibrated scale, the rescale of the
-// answer, a definiteness factorization of the rescaled answer, the acceptance
-// check again at the caller's scale, and a gain agreement between the two
-// scales. That is the fourth quantity above.
+// the acceptance check ONCE. Multiplying both weights by a power of two s puts
+// the weight scale at exactly s, the equilibrated weights are the scale-one
+// weights bitwise, and the entry point then runs the whole equilibrated path:
+// the acceptance check at the equilibrated scale, the rescale of the answer, a
+// definiteness factorization of the rescaled answer, the acceptance check again
+// at the caller's scale, and a gain agreement between the two scales. That is
+// the fourth quantity above.
 //
 // THE EQUILIBRATED PATH'S COST IS THE DIFFERENCE between the scaled row and the
 // scale-one row at the same size. It is not timed separately and it is not

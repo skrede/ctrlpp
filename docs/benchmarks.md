@@ -211,16 +211,30 @@ When the weight scale is anything other than one the entry point takes a longer
 route: the acceptance check at the equilibrated scale, a rescale of the answer, a
 definiteness factorization of the rescaled answer, the acceptance check **again**
 at the caller's scale, and a gain agreement between the two scales. Both weights
-are multiplied by `s` rather than `Q` alone, so `Q/s` is the identity exactly and
-the Schur solve underneath is the same work at every rung; scaling `Q` alone would
-move the weight ratio with the scale and confound this path's cost with a change
-in the solve.
+are multiplied by `s` rather than `Q` alone; scaling `Q` alone would move the
+weight ratio with the scale and confound this path's cost with a change in the
+solve.
 
-The scale was swept over a geometric ladder of **exactly 7 rungs** -- three
-decades below one, three above, and one rung immediately beside it. The near-one
-rung is `1 + 2^-16`, which is exactly representable, so its weight scale is that
-value and not a rounding of it; it separates "the gate is open" from "the pose is
-far from equilibrated".
+The harness sweeps the scale over a geometric ladder of **exactly 7 rungs, all
+powers of two**: `2^-20`, `2^-13`, `2^-7`, `2`, `2^7`, `2^13` and `2^20`. Six are
+the power of two nearest in exponent to `1e-06`, `1e-04`, `1e-02`, `1e+02`,
+`1e+04` and `1e+06`; the seventh, `2`, is the smallest power of two above one and
+separates "the gate is open" from "the pose is far from equilibrated". `dare`
+divides both weights by the smallest power of two at or above the largest weight
+entry, which at every rung is `s` itself, so the equilibrated weights are the
+scale-one weights bitwise -- `Q/s` is the identity and `R/s` is `fl(0.1)` -- and
+the Schur solve underneath is the scale-one solve. That is checked without timing
+anything: at every rung and every `NX` below, the equilibrated symplectic matrix
+is bitwise the scale-one matrix and its real Schur decomposition takes the
+scale-one iteration count.
+
+**Every scaled figure in this section comes from the earlier rung set and is
+pending re-measurement.** The tables below were measured on the decimal rungs
+`1e-06`, `1e-04`, `1e-02`, `1 + 2^-16`, `1e+02`, `1e+04` and `1e+06`, on a build
+whose divisor was the largest weight entry itself rather than a power of two;
+under that divisor those rungs also equilibrated bitwise to the scale-one corpus.
+The tables keep the labels they were measured under. The power-of-two rungs have
+not been timed or counted.
 
 **The equilibrated path's cost is the difference between the two whole-entry-point
 rows at the same size.** It is not timed separately and it is not asserted
@@ -275,12 +289,14 @@ recomputes all 42 of them from published figures.
 
 ### Does the overhead depend on the weight scale?
 
-**No. It is flat in the weight scale over the twelve decades from `1e-06` to
-`1e+06`, and it depends on the state dimension instead.** Budget it against `NX`
-and ignore how far from equilibrated the pose is.
+**On the earlier rung set, no. It was flat in the weight scale over the twelve
+decades from `1e-06` to `1e+06`, and it depended on the state dimension
+instead.** On those figures, budget it against `NX` and ignore how far from
+equilibrated the pose is; the power-of-two rungs are pending re-measurement.
 
-The retired-instruction counters settle this more sharply than the times can. The
-scaled call retires the same instruction count at every rung:
+The retired-instruction counters settle this more sharply than the times can. On
+the earlier rung set the scaled call retired the same instruction count at every
+rung:
 
 | `NX` | scale-one call | scaled call, all 7 rungs | equilibrated path |
 |---|---:|---:|---:|
@@ -291,9 +307,9 @@ scaled call retires the same instruction count at every rung:
 | 12 | 4,030,252 | 5,797,741 | 1,767,489 |
 | 15 | 8,734,242 | 13,923,238 | 5,188,996 |
 
-At five of the six sizes the count is one value across all 7 rungs. Only `NX = 8`
-resolves into three distinct values, spanning 456 instructions out of 1,415,862,
-which is 0.032% of the row. The equilibrated path executes the same work at
+At five of the six sizes the count was one value across all 7 rungs. Only `NX = 8`
+resolved into three distinct values, spanning 456 instructions out of 1,415,862,
+which is 0.032% of the row. The equilibrated path executed the same work at
 `1e-06` as at `1e+06`.
 
 The per-rung spread in the timed share is 0.11 to 1.45 percentage points across
@@ -303,7 +319,7 @@ and not a trend.
 
 What the overhead does depend on is `NX`: 19.3% at `NX = 2`, 30.6% at `NX = 4`,
 24.9% at `NX = 6`, 32.9% at `NX = 8`, 45.3% at `NX = 12` and 59.6% at `NX = 15`,
-taking the near-one rung as the representative. The rise is not monotone -- `NX = 6`
+taking the near-one rung `1 + 2^-16` as the representative. The rise is not monotone -- `NX = 6`
 sits below `NX = 4` in both runs and in the instruction counts, so that dip is a
 property of the work and not of the timing.
 
@@ -338,7 +354,7 @@ and never differenced against it. Each run's overhead is a difference of two row
 taken inside that same run, so the two give independently computed answers to the
 same question.
 
-| `NX` | overhead band over the 7 rungs, published run | overhead band over the 7 rungs, control run |
+| `NX` | overhead band over the earlier 7 rungs, published run | overhead band over the earlier 7 rungs, control run |
 |---|---:|---:|
 | 2 | 19.1% to 19.3% | 20.2% to 21.7% |
 | 4 | 30.4% to 30.9% | 30.5% to 30.8% |
@@ -352,7 +368,7 @@ The bands overlap at `NX = 4`, `NX = 6` and `NX = 15` and do not overlap at
 therefore wider than the within-run dispersion, and wider than the per-rung
 spread the ladder shows.** Read the shares to about two percentage points and no
 finer. The instruction counts, which are identical in both runs, carry the
-scale-independence conclusion; the times do not have to.
+earlier rung set's scale-independence conclusion; the times do not have to.
 
 ## Competitive comparisons
 

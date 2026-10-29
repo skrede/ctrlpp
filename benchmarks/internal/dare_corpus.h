@@ -46,18 +46,19 @@ auto build_discrete_damped_chain()
 
 /// The same chain at a weight scale of `s` instead of one.
 ///
-/// `dare_weight_scale` returns max(||Q||_max, ||R||_max), so multiplying both
-/// weights by a positive `s` makes it return exactly `s`, and the entry point's
-/// gate on that value being different from one opens.
+/// `dare_weight_scale` returns the smallest power of two at or above
+/// max(||Q||_max, ||R||_max). For `s` a power of two the largest entry is `s`
+/// itself, so it returns exactly `s`, and the entry point's gate on that value
+/// being different from one opens.
 ///
 /// BOTH WEIGHTS ARE MULTIPLIED AND NOT ONLY Q, deliberately. Scaling Q alone
 /// moves the weight ratio with the scale, so the equilibrated problem the solve
 /// actually sees would be a different problem at every rung and the difference
 /// against the scale-one row would confound the equilibrated path's cost with a
-/// change in the work underneath it. With both scaled, Q/s is the identity
-/// exactly and R/s reproduces the scale-one corpus to within one rounding of
-/// 0.1*s, so the Schur solve underneath is the same work at every rung and the
-/// difference is the equilibrated path plus the two rescaling passes.
+/// change in the work underneath it. Multiplying and dividing by a power of two
+/// are exact in the normal range, so Q/s is the identity and R/s is fl(0.1)
+/// bitwise: the Schur solve underneath is the scale-one solve at every rung and
+/// the difference is the equilibrated path plus the two rescaling passes.
 template <std::size_t NX, std::size_t NU>
 auto build_scaled_damped_chain(double s)
 {
@@ -73,27 +74,29 @@ struct weight_scale_rung
     char const* label;
 };
 
-/// A geometric ladder in the weight scale, three decades either side of one,
-/// plus one rung immediately beside it.
+/// A geometric ladder of powers of two in the weight scale: the power of two
+/// nearest in exponent to each of 1e-6, 1e-4, 1e-2, 1e2, 1e4 and 1e6, plus one
+/// rung immediately beside one.
 ///
-/// The overhead is not scale-independent by construction: dividing the weights
-/// by the scale moves the operands' exponents, and both the definiteness
-/// factorization's iteration count and the gain agreement's resolution can move
-/// with them. A ladder answers whether the cost depends on the scale; one value
-/// would answer whether it depends on that value.
+/// The overhead is not scale-independent by construction: the equilibrated
+/// operands are the scale-one corpus at every rung, but the rescaled answer,
+/// its definiteness factorization, the caller-scale acceptance check and the
+/// gain agreement run on operands whose exponents move with the scale. A ladder
+/// answers whether that cost depends on the scale; one value would answer
+/// whether it depends on that value.
 ///
-/// The near-one rung separates two different statements -- "the gate is open"
-/// and "the pose is far from equilibrated" -- because everything below the gate
-/// runs at 1 + 2^-16 exactly as it runs at 1e+06. That rung is exactly
-/// representable, so its weight scale is that value and not a rounding of it.
+/// The rung at 2 separates two different statements -- "the gate is open" and
+/// "the pose is far from equilibrated" -- because everything below the gate
+/// runs there exactly as it runs at 2^20. It is the smallest power of two
+/// above one.
 constexpr weight_scale_rung scale_rungs[] = {
-    {1e-06,          "1e-06"  },
-    {1e-04,          "1e-04"  },
-    {1e-02,          "1e-02"  },
-    {1.0 + 0x1p-16,  "1+2^-16"},
-    {1e+02,          "1e+02"  },
-    {1e+04,          "1e+04"  },
-    {1e+06,          "1e+06"  },
+    {0x1p-20, "2^-20"},
+    {0x1p-13, "2^-13"},
+    {0x1p-7,  "2^-7" },
+    {0x1p+1,  "2"    },
+    {0x1p+7,  "2^7"  },
+    {0x1p+13, "2^13" },
+    {0x1p+20, "2^20" },
 };
 
 /// The fourth quantity, one row per rung: the same entry point on weights whose
