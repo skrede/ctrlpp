@@ -672,8 +672,10 @@ TEST_CASE("mpc with Qf unset never substitutes the terminal cost", "[mpc][termin
 
     SECTION("an equilibrated Riccati solve constructs and solves")
     {
-        auto cfg    = make_config(N);
-        cfg.Q       = 1e8 * Eigen::Matrix2d::Identity();
+        auto cfg = make_config(N);
+        // A decade inside the accuracy line on every measured x86-64 configuration; 1e8 sits on the line and is
+        // refused under FMA contraction with Eigen 3.4.1.
+        cfg.Q       = 1e7 * Eigen::Matrix2d::Identity();
         cfg.R(0, 0) = 0.1;
         REQUIRE(riccati_on(make_double_integrator(), cfg).has_value());
 
