@@ -112,25 +112,25 @@ produced anything to compare.
 <!-- results:begin: generated from a harness run; edit the harness, not this region -->
 | Component | Octave function | Worst-case digits | Max abs error | Verdict |
 |-----------|----------------|:-----------------:|:-------------:|:-------:|
-| `dare` | `dare()` | 13.7 | 2.79e-12 | PASS |
+| `dare` | `dare()` | 13.7 | 7.25e-13 | PASS |
 | `care` | `care()` | 14.7 | 4.00e-15 | PASS |
-| `lqr` (infinite horizon) | `dlqr()` | 10.9 | 5.11e-15 | PASS |
+| `lqr` (infinite horizon) | `dlqr()` | 10.4 | 3.43e-15 | PASS |
 | `lqr` (finite horizon) | backward Riccati | 12.6 | 9.10e-15 | PASS |
-| `lqi` | `dlqr()` augmented | 2.9 | 9.02e-14 | PASS |
+| `lqi` | `dlqr()` augmented | 2.8 | 4.15e-14 | PASS |
 | `pid` (linear PI) | `lsim()` | 10.8 | 1.05e-14 | PASS |
 | `place` | `place()` | 13.7 | 2.21e-15 | PASS |
-| `lqr` (board closed loop) | `dare()`, gain for `u = -Kx` | 11.6 | 2.03e-17 | PASS |
+| `lqr` (board closed loop) | `dare()`, gain for `u = -Kx` | 11.7 | 1.61e-17 | PASS |
 | `discretize` (ZOH) | `c2d()` | 15.6 | 1.39e-17 | PASS |
 | `analysis` (poles) | `pole()`, `ctrb()`, `obsv()` | 15.4 | 2.08e-17 | PASS |
 | `tf2ss` / `ss2tf` | `tf2ss()`, `ss2tf()` | 15.0 | 1.11e-15 | PASS |
-| `kalman_filter` | time-varying KF | 10.9 | 2.68e-15 | PASS |
-| `luenberger_observer` | `place()` on dual | 13.0 | 4.61e-15 | PASS |
-| `butterworth` (4th order) | `butter()`, `filter()` | 13.2 | 5.94e-14 | PASS |
+| `kalman_filter` | time-varying KF | 10.6 | 4.81e-15 | PASS |
+| `luenberger_observer` | `place()` on dual | 12.9 | 4.72e-15 | PASS |
+| `butterworth` (4th order) | `butter()`, `filter()` | 13.2 | 6.02e-14 | PASS |
 | `fir` | `filter()` | 15.0 | 1.11e-15 | PASS |
 | `cubic_spline` (natural) | `csape()`, `ppder()` | 12.5 | 1.11e-15 | PASS |
 | `so3::exp` / `so3::log` | `rot2q()`, `q2rot()` | 15.5 | 1.11e-16 | PASS |
-| `batch_arx` | `arx()` | 13.8 | 4.50e-15 | PASS |
-| `moesp` (cross-algorithm) | `n4sid()` | 10.7 | 2.65e-13 | PASS |
+| `batch_arx` | `arx()` | 13.8 | 3.08e-15 | PASS |
+| `moesp` (cross-algorithm) | `n4sid()` | 10.6 | 2.88e-13 | PASS |
 <!-- results:end -->
 
 Census for that run: all 19 rows carry PASS, none carries FAIL, and none carries
