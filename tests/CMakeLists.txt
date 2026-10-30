@@ -215,7 +215,7 @@ if (CTRLPP_BUILD_TESTS)
     set(output "${CTRLPP_NMPC_STATIC_VALUE_CONSTRUCTION_COMPILED_OUTPUT}")
     if (CTRLPP_NMPC_STATIC_VALUE_CONSTRUCTION_COMPILED)
         message(FATAL_ERROR "The former two-argument nmpc_static construction compiled; a value constructor is still public.\n${output}")
-    elseif (NOT output MATCHES "no matching function for call to|no matching constructor for initialization of")
+    elseif (NOT output MATCHES "no matching function for call to|no matching constructor for initialization of|cannot convert from 'initializer list' to 'ctrlpp::nmpc_static<")
         message(FATAL_ERROR "The former two-argument nmpc_static construction failed for another reason than a missing constructor.\n${output}")
     endif ()
 

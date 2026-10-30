@@ -890,8 +890,8 @@ TEST_CASE("PF factory samples a drift-asymmetric process noise through the facto
     std::normal_distribution<double> prior(0.0, 1.0);
     for(std::size_t i = 0; i < NP; ++i)
     {
-        prior(rng);
-        prior(rng);
+        static_cast<void>(prior(rng));
+        static_cast<void>(prior(rng));
     }
     for(std::size_t i = 0; i < NP; ++i)
     {
