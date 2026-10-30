@@ -123,6 +123,12 @@ if (CTRLPP_BUILD_TESTS)
     endif ()
     get_target_property(CTRLPP_CANARY_EIGEN_INCLUDE
         ${CTRLPP_CANARY_EIGEN_TARGET} INTERFACE_INCLUDE_DIRECTORIES)
+    # A canary must exceed no limit the real units are spared, or MSVC refuses it for the object format
+    # rather than for the diagnostic under test.
+    set(CTRLPP_CANARY_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    if (MSVC)
+        string(APPEND CTRLPP_CANARY_CXX_FLAGS " /bigobj")
+    endif ()
     function(ctrlpp_try_canary result source)
         try_compile(${result}
             SOURCES ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/compile/${source}
@@ -130,6 +136,7 @@ if (CTRLPP_BUILD_TESTS)
                 "-DCMAKE_CXX_STANDARD=20"
                 "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
                 "-DCMAKE_CXX_EXTENSIONS=OFF"
+                "-DCMAKE_CXX_FLAGS=${CTRLPP_CANARY_CXX_FLAGS}"
                 "-DINCLUDE_DIRECTORIES=${CMAKE_SOURCE_DIR}/lib/ctrlpp/include;${CTRLPP_CANARY_EIGEN_INCLUDE}"
             COMPILE_DEFINITIONS ${ARGN}
             OUTPUT_VARIABLE output)
