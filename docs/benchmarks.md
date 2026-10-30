@@ -222,7 +222,7 @@ the power of two nearest in exponent to `1e-06`, `1e-04`, `1e-02`, `1e+02`,
 separates "the gate is open" from "the pose is far from equilibrated". `dare`
 divides both weights by the smallest power of two at or above the largest weight
 entry, which at every rung is `s` itself, so the equilibrated weights are the
-scale-one weights bitwise -- `Q/s` is the identity and `R/s` is `fl(0.1)` -- and
+scale-one weights bitwise (`Q/s` is the identity and `R/s` is `fl(0.1)`), and
 the Schur solve underneath is the scale-one solve. That is checked without timing
 anything: at every rung and every `NX` below, the equilibrated symplectic matrix
 is bitwise the scale-one matrix and its real Schur decomposition takes the
