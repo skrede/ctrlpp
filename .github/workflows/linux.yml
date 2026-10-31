@@ -102,11 +102,15 @@ jobs:
             --gcov-ignore-errors=source_not_found \
             --xml coverage.xml
 
+      # Without disable_search and the noop plugin, the action re-runs gcov over
+      # every .gcno in the tree, third-party included, and the runner is killed.
       - name: Upload to Codecov
         if: matrix.coverage
         uses: codecov/codecov-action@v5
         with:
           files: coverage.xml
+          disable_search: true
+          plugins: noop
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
@@ -610,6 +614,8 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: coverage.xml
+          disable_search: true
+          plugins: noop
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
