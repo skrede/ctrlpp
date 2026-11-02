@@ -201,6 +201,131 @@ INCLUDE_CASES = [
 ]
 
 
+NAMING_CASES = [
+    ("a private member without m_ fails", lib("x.h", "class probe\n{\n    int count_;\n};\n"),
+     14, ("x.h:6: member-naming: probe::count_: a private member takes the m_ prefix; no member name ends in an "
+          "underscore",)),
+    ("a private member with m_ passes", lib("x.h", "class probe\n{\n    int m_count;\n};\n"), 0, ("no findings",)),
+    ("a public aggregate field takes no prefix", lib("x.h", "struct probe\n{\n    int horizon;\n};\n"), 0,
+     ("no findings",)),
+    ("a protected member without m_ fails", lib("x.h", "class probe\n{\nprotected:\n    int count;\n};\n"), 14,
+     ("probe::count: a protected member takes the m_ prefix",)),
+    ("a static constexpr member with a trailing underscore fails",
+     lib("x.h", "class probe\n{\n    static constexpr int max_phases_ = 11;\n};\n"), 14,
+     ("probe::max_phases_: no member name ends in an underscore",)),
+    ("a static constexpr member in snake_case passes",
+     lib("x.h", "class probe\n{\n    static constexpr int max_phases = 11;\n};\n"), 0, ("no findings",)),
+    ("a static inline member with m_ fails", lib("x.h", "class probe\n{\n    static inline int m_count = 0;\n};\n"),
+     14, ("probe::m_count: a static member takes no m_ prefix",)),
+    ("a public std::function field without _cb fails",
+     lib("x.h", "struct probe\n{\n    std::function<void(int, int)> cost;\n};\n"), 14,
+     ("probe::cost: a callback member takes the _cb suffix",)),
+    ("a public std::function field with _cb passes",
+     lib("x.h", "struct probe\n{\n    std::function<void()> cost_cb;\n};\n"), 0, ("no findings",)),
+    ("a private optional callback without _cb fails",
+     lib("x.h", "class probe\n{\n    std::optional<std::function<void()>> m_hook;\n};\n"), 14,
+     ("probe::m_hook: a callback member takes the _cb suffix",)),
+    ("a private move-only callback with m_ and _cb passes",
+     lib("x.h", "class probe\n{\n    std::move_only_function<void()> m_feed_forward_cb;\n};\n"), 0, ("no findings",)),
+    ("a function-pointer member without _cb fails", lib("x.h", "struct probe\n{\n    void (*on_done)(int);\n};\n"),
+     14, ("probe::on_done: a callback member takes the _cb suffix",)),
+    ("a container of callbacks is not itself a callback",
+     lib("x.h", "struct probe\n{\n    std::vector<std::function<void()>> hooks;\n};\n"), 0, ("no findings",)),
+    ("each name of a multi-declarator line is reported",
+     lib("x.h", "template <typename Scalar>\nclass probe\n{\n    Scalar q0_{}, q1_{};\n    std::array<Scalar, 3> a_, "
+                "b_;\n};\n"), 14, ("probe::q0_", "probe::q1_", "probe::a_", "probe::b_")),
+    ("function bodies, lambdas and parameters inside a class are not members",
+     lib("x.h", "class probe\n{\npublic:\n    void f(int n_ = int{3})\n    {\n        int local_ = n_;\n        auto l = "
+                "[](int a_) { int b_ = a_; return b_; };\n        local_ = l(local_);\n    }\n\n    static constexpr "
+                "auto make = [](int x_) { return x_; };\n    probe(int c, std::function<void()> f = {}) : m_c{c} {}\n\n"
+                "private:\n    int m_c;\n};\n"), 0, ("no findings",)),
+    ("an anonymous union's members take the access of their place in the class",
+     lib("x.h", "class probe\n{\n    union\n    {\n        int value;\n        float other;\n    };\n};\n"), 14,
+     ("probe::<anonymous>::value: a private member takes the m_ prefix",)),
+]
+
+INIT_CASES = [
+    ("a configuration aggregate keeps its defaults",
+     lib("x.h", "struct probe_config\n{\n    int horizon{10};\n    double tol = 1e-9;\n};\n"), 0, ("no findings",)),
+    ("the same aggregate named as a result fails",
+     lib("x.h", "struct probe_result\n{\n    int horizon{10};\n    double tol = 1e-9;\n};\n"), 13,
+     ("x.h:6: member-init: probe_result::horizon is initialized in its declaration", "x.h:7: member-init")),
+    ("a configuration struct with a constructor fails",
+     lib("x.h", "struct probe_config\n{\n    probe_config() {}\n    int horizon{10};\n};\n"), 13,
+     ("probe_config::horizon",)),
+    ("a configuration struct with a private member fails",
+     lib("x.h", "struct probe_options\n{\n    int horizon{10};\n\nprivate:\n    int m_x;\n};\n"), 13,
+     ("probe_options::horizon",)),
+    ("a configuration class fails", lib("x.h", "class probe_settings\n{\npublic:\n    int horizon{10};\n};\n"), 13,
+     ("probe_settings::horizon",)),
+    ("a nested config passes", lib("x.h", "class planner\n{\npublic:\n    struct config\n    {\n        double v_max{1.0};"
+                                          "\n    };\n};\n"), 0, ("no findings",)),
+    ("a config struct at namespace scope is not the nested carve-out",
+     lib("x.h", "struct config\n{\n    double v_max{1.0};\n};\n"), 13, ("config::v_max",)),
+    ("a class member initializer fails", lib("x.h", "class probe\n{\n    int m_x{};\n};\n"), 13,
+     ("probe::m_x is initialized in its declaration",)),
+    ("static constexpr and static inline members are not in-declaration initializers",
+     lib("x.h", "class probe\n{\n    static constexpr int n = 3;\n    static inline int k{4};\n};\n"), 0,
+     ("no findings",)),
+    ("defaulted functions and bit-fields are not members",
+     lib("x.h", "struct probe_point\n{\n    probe_point() = default;\n    probe_point& operator=(const probe_point&) = "
+                "delete;\n    unsigned ready : 1 {0};\n    double x;\n};\n"), 0, ("no findings",)),
+    ("braced default arguments are not member initializers",
+     lib("x.h", "class probe\n{\npublic:\n    static int create(int rng = int{}, int likelihood = int{})\n    {\n"
+                "        return rng + likelihood;\n    }\n\n    explicit probe(int s = {})\n        : m_s{s}\n    {}\n\n"
+                "private:\n    int m_s;\n};\n"), 0, ("no findings",)),
+    ("a template argument holding parentheses does not hide an initializer",
+     lib("x.h", "template <int N>\nclass probe\n{\n    Eigen::Matrix<double, static_cast<int>(N), 1> m_v{};\n};\n"), 13,
+     ("probe::m_v",)),
+]
+
+RETURN_CASES = [
+    ("a trailing return type fails", lib("x.h", "auto f() -> int;\n"), 12,
+     ("x.h:4: return-type: f: a trailing return type counts as auto; spell the return type int in front",)),
+    ("a decltype trailing return passes", lib("x.h", "auto f(int x) -> decltype(g(x));\n"), 0, ("no findings",)),
+    ("a wrapped head with its arrow on the next line fails",
+     lib("x.h", "template <typename T>\ninline auto f(const T& a,\n              const T& b)\n    -> T\n{\n    return a;\n}\n"),
+     12, ("x.h:5: return-type: f: a trailing return type",)),
+    ("a deduced auto& member fails", lib("x.h", "struct probe\n{\n    constexpr auto& policy();\n};\n"), 12,
+     ("probe" if False else "policy: deduced return type; spell it",)),
+    ("decltype(auto) fails", lib("x.h", "decltype(auto) get();\n"), 12, ("get: deduced return type",)),
+    ("a trailing return on an operator fails",
+     lib("x.h", "struct probe\n{\n    auto operator()(int a) const noexcept -> int;\n};\n"), 12,
+     ("operator()", "spell the return type int in front")),
+    ("an out-of-class definition fails",
+     lib("x.h", "template <typename T>\nauto box<T>::get() const -> T\n{\n    return {};\n}\n"), 12, ("box<T>::get",)),
+    ("auto variables, auto parameters and lambdas pass",
+     lib("x.h", "auto x = 3;\nvoid f(auto x);\ninline auto l = [](int a) -> int { return a; };\nvoid g()\n{\n    auto "
+                "h = [](int a) { return a; };\n    auto r = h(1);\n}\n"), 0, ("no findings",)),
+]
+
+CALL_CASES = [
+    ("a bare fallible call in a body fails", lib("x.h", "void f(int x)\n{\n    create(x);\n}\n"), 19,
+     ("x.h:6: discarded-result: the result of create(...) is discarded",)),
+    ("a bare call wrapped over two lines fails",
+     lib("x.h", "void f(int x)\n{\n    probe::create(x,\n                  x);\n}\n"), 19, ("x.h:6: discarded-result",)),
+    ("a qualified bare call fails", lib("x.h", "void f(int a, int b)\n{\n    detail::dare(a, b, a, b);\n}\n"), 19,
+     ("dare(...)",)),
+    ("a bare call after a condition fails", lib("x.h", "void f(int x)\n{\n    if(x > 0)\n        obj.setup(x);\n}\n"),
+     19, ("x.h:7: discarded-result: the result of setup(...)",)),
+    ("a leading-return declaration in a class passes",
+     lib("x.h", "class pid\n{\npublic:\n    static expected<pid, pid_error> create(const cfg&);\n    static expected<pid, "
+                "pid_error>\n        try_create(const cfg&);\n};\n"), 0, ("no findings",)),
+    ("a return type on the preceding line at namespace scope passes",
+     lib("x.h", "expected<foo, err>\ncreate(int args);\n"), 0, ("no findings",)),
+    ("an out-of-class definition head passes",
+     lib("x.h", "template <typename T>\nexpected<T, E> type<T>::create(int args)\n{\n    return {};\n}\n"), 0,
+     ("no findings",)),
+    ("a used result passes",
+     lib("x.h", "int f(int x)\n{\n    auto r = create(x);\n    (void)create(x);\n    if(auto s = create(x); s)\n"
+                "        return 1;\n    expected<a, b> create(int);\n    update(x);\n    return create(x);\n}\n"), 0,
+     ("no findings",)),
+    ("a requires-expression is not a body",
+     lib("x.h", "template <typename S>\nconcept solver = requires(S s) {\n    s.setup(1);\n};\nvoid f()\n{\n    if "
+                "constexpr(requires { place(1); })\n        return;\n}\n"), 0, ("no findings",)),
+]
+
+
 def check(label: str, code: int, output: str, want_code: int, want_text: str) -> bool:
     if code == want_code and want_text in output:
         return True
@@ -219,6 +344,38 @@ def run_cases(root: Path, cases: list, extra: dict | None = None) -> int:
     return failures
 
 
+def run_rule_cases(root: Path, rule: str, cases: list) -> int:
+    failures = 0
+    for index, (label, files, want_code, wanted) in enumerate(cases):
+        case = root / f"{rule}-{index}"
+        case.mkdir()
+        build(case, files)
+        code, output = run_lint(case, "--rule", rule)
+        failures += not all(check(label, code, output, want_code, text) for text in wanted)
+    return failures
+
+
+def run_list_members(root: Path) -> int:
+    case = root / "list-members"
+    case.mkdir()
+    build(case, lib("x.h", "class outer\n{\n    struct inner\n    {\n        int a{1};\n    };\n    double q0_{}, "
+                           "q1_ = 2.0;\n    int m_n;\n};\nstruct outer_config\n{\n    int b{2};\n};\n"))
+    code, output = run_lint(case, "--rule", "member-init", "--list-members")
+    failures = not all(check("--list-members prints each flagged member with its initializer", code, output, 0, text)
+                       for text in (f"{LIB}x.h:8: outer::inner: a {{1}}\n", f"{LIB}x.h:10: outer: q0_ {{}}\n",
+                                    f"{LIB}x.h:10: outer: q1_ = 2.0\n"))
+    failures += "m_n" in output or "outer_config" in output
+    return failures + (not check("--list-members needs --rule member-init", *run_lint(case, "--list-members"), 2,
+                                 "--list-members goes with --rule member-init"))
+
+
+def run_purity_parity() -> int:
+    code, output = run_lint(LINT.parent / "purity_fixtures", "--rule", "discarded-result")
+    return sum(not check(label, code, output, 19, text) for label, text in (
+        ("the purity fixture's discarded call is the one finding", "checked 7 files; 1 findings (discarded-result: 1)"),
+        ("and it is the line purity reports", "lib/fixture_discarded_fallible.h:26: discarded-result")))
+
+
 def run_cli(root: Path) -> int:
     case = root / "cli"
     case.mkdir()
@@ -228,7 +385,8 @@ def run_cli(root: Path) -> int:
     failures += not check("an unknown rule is a usage error", *run_lint(case, "--rule", "nope"), 2, "invalid choice")
     failures += not check("a given path that cannot be read", *run_lint(case, LIB + "gone.h"), 6, "cannot read")
     failures += not check("--list-rules names every rule and its code", *run_lint(case, "--list-rules"), 0,
-                          "include-order 10\nattributes 11\npragma-once 15\nguard 16\nclosing-comment 17\nspelling 18")
+                          "include-order 10\nattributes 11\nreturn-type 12\nmember-init 13\nmember-naming 14\n"
+                          "pragma-once 15\nguard 16\nclosing-comment 17\nspelling 18\ndiscarded-result 19\n")
     empty = root / "empty"
     empty.mkdir()
     build(empty, {})
@@ -248,6 +406,10 @@ def run_in_process() -> int:
     return failures + (not check("an allowed quoted title passes", 0, str(found), 0, "[]"))
 
 
+STRUCTURAL = (("member-naming", NAMING_CASES), ("member-init", INIT_CASES), ("return-type", RETURN_CASES),
+              ("discarded-result", CALL_CASES))
+
+
 def main() -> int:
     groups = (ATTRIBUTE_CASES, TEXT_CASES, INCLUDE_CASES)
     with tempfile.TemporaryDirectory() as workspace:
@@ -256,7 +418,10 @@ def main() -> int:
         failures += run_cases(root, INCLUDE_CASES, {"given paths are linted alone": ("--rule", "include-order",
                                                                                       LIB + "x.h")})
         failures += run_cli(root) + run_in_process()
-    total = sum(len(cases) for cases in groups) + 5 + 4
+        for rule, cases in STRUCTURAL:
+            failures += run_rule_cases(root, rule, cases)
+        failures += run_list_members(root) + run_purity_parity()
+    total = sum(len(cases) for cases in groups) + 5 + 4 + sum(len(cases) for _, cases in STRUCTURAL) + 3 + 2
     if failures:
         print(f"{failures} of {total} cases failed")
         return 1

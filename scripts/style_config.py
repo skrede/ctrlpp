@@ -86,3 +86,31 @@ BRITISH_PATTERNS = (
 
 # (phrase, reason): exact text the spelling rule skips, such as the title of a British publication.
 ALLOWED_PHRASES = ()
+
+# Matched from the start of a data member's type, after any leading static, inline, constexpr, mutable or const; a
+# function-pointer member's type is its whole declarator.
+CALLBACK_TYPE_PATTERNS = (
+    r"std::function\s*<",
+    r"std::move_only_function\s*<",
+    r"std::optional\s*<\s*std::(?:move_only_)?function\s*<",
+    r"[^()]*\(\s*\*\s*\w+\s*\)\s*\(",
+)
+
+CARVE_OUT_SUFFIXES = ("_config", "_options", "_settings")
+CARVE_OUT_NESTED = "config"
+
+# (path, function, reason): a deduced or trailing return type that cannot be written in front.
+UNSPELLABLE_RETURNS = ()
+
+FALLIBLE_CALL_NAMES = (
+    "create", "setup", "place_observer", "place", "lqr_gain_continuous", "lqr_gain", "partition_lqi_gain", "lqi_gain",
+    "validate_biquad_design", "can_rescale_to", "rescale_to", "dare", "care", "set_params", "set_integral",
+    "lqr_tv_gains", "lqr_cost", "validate_resolution_factor", "check_coefficient_resolution", "prewarped_frequency",
+    "validated_prewarp", "resolved_coefficients", "chebyshev1_section", "moesp", "moesp_singular_values", "tf2ss",
+    "ss2tf", "try_create", "make_particle_filter", "set_noise", "reset_covariance",
+)
+
+# Each name is fallible on some surfaces and infallible on others (the online planners' update, the constant LQR
+# gain's compute, the trajectories' evaluate, the solver adapters' solve, Eigen's in-place normalize), and a call
+# site's name cannot tell them apart; the compiler is their only guard.
+EXCLUDED_CALL_NAMES = frozenset({"update", "compute", "evaluate", "solve", "normalize"})

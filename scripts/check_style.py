@@ -9,8 +9,11 @@ import sys
 from pathlib import Path
 from typing import Callable, NamedTuple
 
+from style_rules_calls import check_discarded_result
+from style_rules_returns import check_return_type
 from style_rules_includes import check_include_order
 from style_source import Source, blank, in_cpp_scope, in_spelling_scope, tracked_files
+from style_rules_members import check_member_init, check_member_naming, list_members
 from style_rules_text import check_attributes, check_closing_comment, check_guard, check_pragma_once, check_spelling
 
 EXIT_USAGE = 2
@@ -26,10 +29,14 @@ class Rule(NamedTuple):
 RULES = {
     "include-order": Rule(10, check_include_order, in_cpp_scope),
     "attributes": Rule(11, check_attributes, in_cpp_scope),
+    "return-type": Rule(12, check_return_type, in_cpp_scope),
+    "member-init": Rule(13, check_member_init, in_cpp_scope),
+    "member-naming": Rule(14, check_member_naming, in_cpp_scope),
     "pragma-once": Rule(15, check_pragma_once, in_cpp_scope),
     "guard": Rule(16, check_guard, in_cpp_scope),
     "closing-comment": Rule(17, check_closing_comment, in_cpp_scope),
     "spelling": Rule(18, check_spelling, in_spelling_scope),
+    "discarded-result": Rule(19, check_discarded_result, in_cpp_scope),
 }
 
 EXIT_HELP = "exit codes:\n  0  no findings\n" + "".join(
@@ -85,10 +92,23 @@ def summary(checked: int, findings: list) -> str:
     return f"checked {checked} files; {len(findings)} findings ({tally})"
 
 
+def print_members(root: Path, names: list[str]) -> int:
+    for name in (name for name in names if in_cpp_scope(name)):
+        try:
+            raw = read_text(root / name)
+        except OSError as exc:
+            print(f"error: cannot read {name}: {exc.strerror}", file=sys.stderr)
+            return EXIT_NO_INPUT
+        print("".join(line + "\n" for line in list_members(Source(name, raw, blank(raw), frozenset()))), end="")
+    return 0
+
+
 def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if args.list_rules:
         print("".join(f"{name} {rule.code}\n" for name, rule in RULES.items()), end="")
         return 0
+    if args.list_members and args.rule != ["member-init"]:
+        parser.error("--list-members goes with --rule member-init and no other rule")
     rules = {name: RULES[name] for name in RULES if not args.rule or name in args.rule}
     names = requested(args.source_root, args.paths, parser)
     try:
@@ -96,6 +116,8 @@ def run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     except (OSError, subprocess.CalledProcessError) as exc:
         print(f"error: cannot list the tracked files under {args.source_root}: {exc}", file=sys.stderr)
         return EXIT_NO_INPUT
+    if args.list_members:
+        return print_members(args.source_root, names or sorted(tracked))
     findings, checked, failure = lint(args.source_root, names or sorted(tracked), tracked, rules)
     if failure:
         return failure
@@ -116,6 +138,9 @@ def parser_for() -> argparse.ArgumentParser:
     parser.add_argument("--rule", action="append", choices=list(RULES), metavar="ID",
                         help="run only this rule; repeat for more (default: every rule)")
     parser.add_argument("--list-rules", action="store_true", help="print each rule's id and exit code, then exit")
+    parser.add_argument("--list-members", action="store_true",
+                        help="with --rule member-init, print each member the rule flags with its initializer, "
+                             "then exit 0")
     parser.add_argument("paths", nargs="*", metavar="PATH",
                         help="files to lint, relative to the source root (default: every tracked file in scope)")
     return parser
