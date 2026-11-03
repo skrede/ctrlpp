@@ -47,7 +47,7 @@ Header: `#include <ctrlpp/control/mrac_config.h>`
 | `theta_r_0` | `Matrix<Scalar, NU, NU>` | zero | Initial reference parameter estimate |
 | `x_model_0` | `Vector<Scalar, NX>` | zero | Initial reference model state |
 | `W` | `Matrix<Scalar, NX, NX>` | Identity | Error weight matrix for weighted norm in robustification (defaults to identity for standard Euclidean norm) |
-| `robustification` | (policy-dependent) | &mdash; | Robustification options (see below) |
+| `robustification` | `Robustification::config` (`Robustification::config<Scalar>` for `dead_zone`, `sigma_modification` and `e_modification`) | &mdash; | Robustification options (see below) |
 
 The adaptation gains `gamma_x` and `gamma_r` must be symmetric positive definite for Lyapunov stability guarantees. Larger values give faster adaptation but may cause oscillation. The `sign_b` matrix captures the sign structure of the unknown plant input matrix; for most applications with positive-definite B_p, the default identity suffices.
 
@@ -121,8 +121,7 @@ Constructs the controller from a configuration struct. Stores the reference mode
 ### evaluate
 
 ```cpp
-auto evaluate(const state_type& x, const input_type& r)
-    -> expected<input_type, mrac_step_error>;
+expected<input_type, mrac_step_error> evaluate(const state_type& x, const input_type& r);
 ```
 
 Computes the control output `u = theta_x * x + theta_r * r` and updates the adapted parameter matrices using the Lyapunov-based adaptation law. Call once per time step. The reference model is propagated internally. On success the result carries the control vector.
@@ -145,7 +144,7 @@ The enumerators follow the adaptation's own data flow, so the cause named is alw
 ### health
 
 ```cpp
-auto health() const -> mrac_health;
+mrac_health health() const;
 ```
 
 Reports whether the controller is still carrying non-finite state from an earlier cycle. Latches until `reset` restores the configured initial parameters.
@@ -155,7 +154,7 @@ A **rejected cycle does not set it**: a rejection mutates nothing. The routes in
 ### theta_x
 
 ```cpp
-auto theta_x() const -> const theta_x_type&;
+const theta_x_type& theta_x() const;
 ```
 
 Returns a const reference to the current state parameter estimate matrix (NU x NX).
@@ -163,7 +162,7 @@ Returns a const reference to the current state parameter estimate matrix (NU x N
 ### theta_r
 
 ```cpp
-auto theta_r() const -> const theta_r_type&;
+const theta_r_type& theta_r() const;
 ```
 
 Returns a const reference to the current reference parameter estimate matrix (NU x NU).
@@ -171,7 +170,7 @@ Returns a const reference to the current reference parameter estimate matrix (NU
 ### tracking_error
 
 ```cpp
-auto tracking_error() const -> const state_type&;
+const state_type& tracking_error() const;
 ```
 
 Returns a const reference to the current tracking error vector (x - x_model).
@@ -179,7 +178,7 @@ Returns a const reference to the current tracking error vector (x - x_model).
 ### x_model
 
 ```cpp
-auto x_model() const -> const state_type&;
+const state_type& x_model() const;
 ```
 
 Returns a const reference to the current reference model state vector.

@@ -13,28 +13,31 @@
 namespace ctrlpp
 {
 
-/// @brief Structured failure modes for `l1_controller::create`.
-///
-///  * singular_predictor    : (I - A_m) is singular; the predictor model has a
-///                            unit eigenvalue, so the DC gain (I - A_m)^{-1} B
-///                            does not exist.
-///  * singular_dc_gain      : the predictor DC gain (I - A_m)^{-1} B is
-///                            singular or non-finite; the reference feedforward
-///                            gain K_r cannot be formed.
-///  * non_finite_gain       : the computed feedforward gain K_r contains
-///                            NaN/Inf (ill-conditioned predictor model).
-///  * invalid_filter_config : the output low-pass filter design was rejected
-///                            by the dsp factory (see `ctrlpp::dsp_error`):
-///                            non-finite parameter, non-positive sample rate,
-///                            cutoff outside (0, sample_hz / 2), or cutoff
-///                            below the coefficient-resolution floor of the
-///                            scalar type.
 enum class l1_error
 {
     singular_predictor,
     singular_dc_gain,
     non_finite_gain,
     invalid_filter_config,
+};
+
+// Listed in the order l1_controller::evaluate tests them, which follows the controller's data flow, so the cause named
+// is the most upstream one.
+enum class l1_step_error
+{
+    non_finite_predictor_state,
+    non_finite_adaptation,
+    non_finite_state,
+    non_finite_reference,
+    non_finite_result,
+};
+
+// Declared in severity order: the controller only ever raises its status, so a lesser fault cannot mask a greater one.
+enum class l1_health
+{
+    ok,
+    projection_clamped_non_finite,
+    non_finite_carried_state,
 };
 
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
@@ -44,12 +47,8 @@ struct l1_config
     static_assert(NU > 0, "Input dimension NU must be positive");
     discrete_state_space<Scalar, NX, NU, NX> predictor_model{};
     Matrix<Scalar, NU, NU> gamma = Matrix<Scalar, NU, NU>::Identity();
-    // Projection bounds default to an unbounded range so a default-constructed
-    // config adapts freely. Set finite bounds to enable elementwise projection.
-    Vector<Scalar, NU> theta_min =
-        Vector<Scalar, NU>::Constant(-std::numeric_limits<Scalar>::infinity());
-    Vector<Scalar, NU> theta_max =
-        Vector<Scalar, NU>::Constant(std::numeric_limits<Scalar>::infinity());
+    Vector<Scalar, NU> theta_min = Vector<Scalar, NU>::Constant(-std::numeric_limits<Scalar>::infinity());
+    Vector<Scalar, NU> theta_max = Vector<Scalar, NU>::Constant(std::numeric_limits<Scalar>::infinity());
     Vector<Scalar, NX> x_hat_0 = Vector<Scalar, NX>::Zero();
     Vector<Scalar, NU> sigma_hat_0 = Vector<Scalar, NU>::Zero();
 };
