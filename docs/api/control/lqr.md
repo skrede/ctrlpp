@@ -127,12 +127,15 @@ Two enumerators stay meaningful at any distance from the boundary, because they 
 ```cpp
 struct sign_function_care_method
 {
-    int warmup_iterations = 3;
+    sign_function_care_method(); // warmup_iterations{3}
+
+    std::int32_t warmup_iterations;
 };
 
 // Give a badly scaled Hamiltonian more room before the guard arms.
-auto K = ctrlpp::lqr_gain_continuous<double, 2, 2>(
-    A, B, Q, R, ctrlpp::detail::sign_function_care_method{.warmup_iterations = 8});
+ctrlpp::detail::sign_function_care_method method;
+method.warmup_iterations = 8;
+auto K = ctrlpp::lqr_gain_continuous<double, 2, 2>(A, B, Q, R, method);
 ```
 
 `warmup_iterations` is the number of Newton steps taken before the non-contraction guard arms. After the window, a step whose change grows rather than shrinks ends the solve with `care_error::sign_function_stagnated`; inside it, growth is allowed, because the determinantal scaling makes large corrections in the early steps. Raising it trades a later decline for a chance at an answer; lowering it declines sooner.

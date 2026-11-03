@@ -34,20 +34,6 @@ void balance_hamiltonian(Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>& H, Eig
     balance_diagonal<Scalar, 2 * int(NX)>(H, D_out);
 }
 
-inline care_error care_error_from_extract(riccati_extract_error error)
-{
-    switch(error)
-    {
-        case riccati_extract_error::singular_u11:
-            return care_error::singular_u11;
-        case riccati_extract_error::non_finite:
-            return care_error::non_finite_input;
-        case riccati_extract_error::non_psd:
-            return care_error::non_psd_solution;
-    }
-    return care_error::non_finite_input;
-}
-
 template <typename Scalar, int N, typename Cond>
 reorder_result<Scalar> reorder_left_half_plane(Eigen::Matrix<Scalar, N, N>& T, Eigen::Matrix<Scalar, N, N>& U)
 {
