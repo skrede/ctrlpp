@@ -1,0 +1,127 @@
+name: Quality
+
+# No path filter: the exceptions register the size gates read is a markdown file, so ignoring '**.md'
+# would skip exactly the edit that can turn a gate red.
+on:
+  push:
+    branches: [ develop,'milestone/**' ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/milestone/'))) && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+# Both jobs report without blocking while the library is brought to the conventions; every step after
+# the checkout runs even when an earlier gate fails, so one red gate never hides another.
+jobs:
+  static-checks:
+    runs-on: ubuntu-24.04
+    name: size gate (files) and style lint
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Python
+        run: python3 --version
+
+      - name: File-size fixtures
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check_file_size_test.py
+
+      - name: File sizes against the register
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check_file_size.py
+
+      - name: Style-lint fixtures
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check_style_test.py
+
+      - name: Style lint
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check_style.py
+
+      - name: File-size negative control
+        if: ${{ !cancelled() }}
+        run: bash scripts/size_gate_negative_control.sh files
+
+      - name: Style-lint negative control
+        if: ${{ !cancelled() }}
+        run: bash scripts/style_lint_negative_control.sh
+
+  function-size:
+    runs-on: ubuntu-24.04
+    name: size gate (functions)
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Function lengths can move between clang-tidy releases, so the release is pinned.
+      - name: Install clang-tidy 18 and Eigen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 clang-tidy-18 libeigen3-dev
+          clang-tidy-18 --version
+
+      # The backend headers come from the commits the build itself pins, so the gate measures the
+      # argmin-, OSQP- and NLopt-gated bodies against the same interfaces the library compiles with.
+      - name: Fetch the backend headers at the repository's pins
+        run: |
+          fetch() {
+            git init -q "$1"
+            git -C "$1" fetch -q --depth 1 "$2" "$3"
+            git -C "$1" checkout -q FETCH_HEAD
+          }
+          deps="$RUNNER_TEMP/deps"
+          mkdir -p "$deps"
+          PIN=$(sed -n 's/^set(CTRLPP_ARGMIN_GIT_TAG "\([^"]*\)".*/\1/p' CMakeLists.txt)
+          test -n "$PIN"
+          fetch "$deps/src-argmin" https://github.com/skrede/argmin.git "$PIN"
+          fetch "$deps/src-osqp" https://github.com/osqp/osqp.git 236713ce9a56c182ac3230d52108f952afce1523
+          cmake -S "$deps/src-osqp" -B "$deps/build-osqp" -DOSQP_BUILD_DEMO=OFF
+          fetch "$deps/src-nlopt" https://github.com/stevengj/nlopt.git 9e44e525370646def8152e73bb5c53a6531f6f7e
+          cmake -S "$deps/src-nlopt" -B "$deps/build-nlopt" -DNLOPT_PYTHON=OFF -DNLOPT_OCTAVE=OFF \
+            -DNLOPT_MATLAB=OFF -DNLOPT_GUILE=OFF -DNLOPT_SWIG=OFF
+          cmake --build "$deps/build-nlopt" --target generate-cpp
+
+      # A missing header would shorten the measured translation unit without any error, so each one is
+      # required by name before the gate runs.
+      - name: Locate the backend headers
+        run: |
+          deps="$RUNNER_TEMP/deps"
+          dir_of() {
+            found=$(find "$deps" -name "$1" -not -path '*/_deps/*' | head -1)
+            if [ -z "$found" ]; then
+              echo "::error::$1 not found under $deps" >&2
+              exit 1
+            fi
+            dirname "$found"
+          }
+          osqp_configure=$(dir_of osqp_configure.h)
+          osqp_export=$(dir_of osqp_export_define.h)
+          nlopt_generated=$(dir_of nlopt.hpp)
+          test -f "$deps/src-nlopt/src/api/nlopt.h"
+          test -f "$deps/src-argmin/lib/argmin/include/argmin/argmin.h"
+          flags="-isystem$osqp_export -isystem$osqp_configure -I$nlopt_generated -I$deps/src-nlopt/src/api"
+          flags="$flags -I$deps/src-argmin/lib/argmin/include -DCTRLPP_HAS_ARGMIN=1 -DCTRLPP_HAS_OSQP=1 -DCTRLPP_HAS_NLOPT=1"
+          echo "CTRLPP_TIDY_EXTRA_ARG=$flags" >> "$GITHUB_ENV"
+
+      - name: Function-size fixtures
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check_function_size_test.py
+
+      - name: Function sizes against the register
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check_function_size.py --clang-tidy clang-tidy-18 --eigen-include /usr/include/eigen3
+
+      - name: Function-size negative control
+        if: ${{ !cancelled() }}
+        env:
+          CLANG_TIDY: clang-tidy-18
+        run: bash scripts/size_gate_negative_control.sh functions

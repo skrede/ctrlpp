@@ -1,18 +1,12 @@
-# Derived from the project's CLion code style (.idea/codeStyles/Project.xml),
-# refined so a format run reproduces the codebase's authored shape: each case
-# label and its body on their own lines, a single space before a declared name
-# (names are not aligned into a column), but consecutive assignments aligned on the
-# `=`. The fixed ColumnLimit of 185 keeps wide signatures and aligned assignments on
-# one line (horizontal space is cheaper than vertical here).
-# SortIncludes is off because the project's include order (grouped by folder,
-# sorted by file-name length then alphabetically) is not expressible here; see
-# conventions.md. SortUsingDeclarations is off for the same reason: the project
-# authors declaration order deliberately and the formatter must not reorder tokens.
+# Tuned to reproduce the code's authored shape with clang-format 18; CONVENTIONS.md owns every rule
+# this file cannot express. SortIncludes and SortUsingDeclarations are off because the include order
+# (by folder, then file-name length) and the authored declaration order are not expressible here.
 ---
 Language: Cpp
 BasedOnStyle: LLVM
 AccessModifierOffset: -4
-AlignConsecutiveAssignments: Consecutive
+AlignAfterOpenBracket: DontAlign
+AlignConsecutiveAssignments: None
 AlignConsecutiveDeclarations: None
 AlignOperands: false
 AlignTrailingComments: true
@@ -22,7 +16,7 @@ AlignConsecutiveShortCaseStatements:
   AcrossComments: false
   AlignCaseColons: false
 AllowShortCaseLabelsOnASingleLine: false
-AllowShortFunctionsOnASingleLine: None
+AllowShortFunctionsOnASingleLine: InlineOnly
 AllowShortEnumsOnASingleLine: false
 AlwaysBreakAfterDefinitionReturnType: false
 AlwaysBreakTemplateDeclarations: Yes
@@ -32,7 +26,7 @@ BraceWrapping:
   AfterControlStatement: true
   AfterEnum: true
   AfterFunction: true
-  AfterNamespace: false
+  AfterNamespace: true
   AfterStruct: true
   AfterUnion: true
   AfterExternBlock: false
@@ -48,7 +42,7 @@ BreakConstructorInitializers: BeforeComma
 FixNamespaceComments: false
 ColumnLimit: 185
 ReflowComments: false
-ConstructorInitializerIndentWidth: 8
+ConstructorInitializerIndentWidth: 4
 ContinuationIndentWidth: 8
 IndentCaseBlocks: true
 IndentCaseLabels: true
@@ -59,11 +53,11 @@ InsertNewlineAtEOF: true
 KeepEmptyLinesAtTheStartOfBlocks: true
 MacroBlockBegin: ''
 MacroBlockEnd: ''
-PointerAlignment: Right
-ReferenceAlignment: Pointer
+PointerAlignment: Left
+ReferenceAlignment: Left
 SortIncludes: Never
 SortUsingDeclarations: Never
-SpaceAfterTemplateKeyword: false
+SpaceAfterTemplateKeyword: true
 SpaceBeforeCtorInitializerColon: false
 SpaceBeforeParens: Never
 SpaceBeforeRangeBasedForLoopColon: true
