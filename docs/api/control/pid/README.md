@@ -84,7 +84,7 @@ cfg.template policy<feed_forward<FF>>().ff_func = my_ff_func;
 ## create
 
 ```cpp
-static auto create(const config_type& cfg) -> expected<pid, pid_config_error>;
+static expected<pid, pid_config_error> create(const config_type& cfg);
 ```
 
 Validates the configuration and constructs the controller, or reports the first fault it finds. A configuration that cannot work is refused where it is given rather than discovered on the first cycle. The checks run in the order of the table, so a configuration with several faults reports the earliest; a check on a policy field runs only when that policy is composed. `create` is the only construction path: the constructor is private, so no configuration reaches the controller without these checks.
@@ -118,8 +118,7 @@ if(!made) {
 ### compute
 
 ```cpp
-auto compute(const vector_t& sp, const vector_t& meas, Scalar dt)
-    -> expected<vector_t, pid_step_error>;
+expected<vector_t, pid_step_error> compute(const vector_t& sp, const vector_t& meas, Scalar dt);
 ```
 
 Computes the control output given a setpoint, measurement, and time step. On success the result carries the clamped output vector.
@@ -141,9 +140,8 @@ A non-positive step used to be answered with the previous output on the success 
 ### compute (with tracking signal)
 
 ```cpp
-auto compute(const vector_t& sp, const vector_t& meas, Scalar dt,
-             const vector_t& tracking_signal)
-    -> expected<vector_t, pid_step_error>;
+expected<vector_t, pid_step_error> compute(const vector_t& sp, const vector_t& meas, Scalar dt,
+                                           const vector_t& tracking_signal);
 ```
 
 Overload for controller output tracking (bumpless transfer in cascade configurations). After the cycle succeeds the controller is re-seeded so its output tracks an external signal, and the returned value is that cycle's own computed command, or increment in velocity form. Position form re-seeds the integrator; velocity form re-seeds the accumulated output.
@@ -164,7 +162,7 @@ The tracking signal is checked *before* the cycle is delegated, because it is wr
 ### health
 
 ```cpp
-auto health() const -> pid_health;
+pid_health health() const;
 ```
 
 Reports whether the controller is still carrying non-finite state from an earlier cycle -- a question a per-cycle result cannot answer, because it outlives the call. Latches until `reset`.
@@ -174,7 +172,7 @@ A **rejected cycle does not set it**: a rejection mutates nothing, so it leaves 
 ### set_params
 
 ```cpp
-auto set_params(const config_type& new_cfg) -> expected<void, pid_config_error>;
+expected<void, pid_config_error> set_params(const config_type& new_cfg);
 ```
 
 Refuses the configuration with the same checks, in the same order, as `create`; a refusal leaves the current configuration, the integrator and every other piece of state bitwise unchanged. On success it updates tuning parameters with bumpless transfer. The integral state is stored in output units and enters the output directly, so its contribution is already continuous across a gain change; `set_params` leaves the integral state untouched, which is what makes gain scheduling bumpless. No rescaling is applied (rescaling would step the integral contribution instead of preserving it).
@@ -230,7 +228,7 @@ Freezes or unfreezes the integral accumulator. While frozen, the integral term d
 ### set_integral
 
 ```cpp
-auto set_integral(const vector_t& val) -> expected<void, pid_config_error>;
+expected<void, pid_config_error> set_integral(const vector_t& val);
 ```
 
 Directly sets the integral accumulator to a given value. A `NaN` or infinite component is refused with `pid_config_error::non_finite_integral`, and the integrator is left bitwise unchanged.
