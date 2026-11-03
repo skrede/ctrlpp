@@ -18,7 +18,7 @@ namespace ctrlpp::detail
 {
 
 template <template <typename...> class PolicyBase, typename Selected, typename... Policies>
-constexpr auto selects_policy() -> bool
+constexpr bool selects_policy()
 {
     if constexpr(has_policy_v<PolicyBase, Policies...>)
         return std::is_same_v<find_policy_t<PolicyBase, Policies...>, Selected>;
@@ -27,7 +27,7 @@ constexpr auto selects_policy() -> bool
 }
 
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto gains_finite(const pid_config<Scalar, NY, Policies...>& cfg) -> bool
+bool gains_finite(const pid_config<Scalar, NY, Policies...>& cfg)
 {
     if(!cfg.kp.allFinite() || !cfg.kd.allFinite())
         return false;
@@ -39,7 +39,7 @@ auto gains_finite(const pid_config<Scalar, NY, Policies...>& cfg) -> bool
 }
 
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto integral_times_nonzero(const pid_config<Scalar, NY, Policies...>& cfg) -> bool
+bool integral_times_nonzero(const pid_config<Scalar, NY, Policies...>& cfg)
 {
     if constexpr(contains_v<isa_form, Policies...>)
         return (cfg.ki.array() != Scalar{0}).all();
@@ -48,17 +48,16 @@ auto integral_times_nonzero(const pid_config<Scalar, NY, Policies...>& cfg) -> b
 }
 
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto output_limits_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> bool
+bool output_limits_valid(const pid_config<Scalar, NY, Policies...>& cfg)
 {
     constexpr Scalar inf = std::numeric_limits<Scalar>::infinity();
     const auto lo = cfg.output_min.array();
     const auto hi = cfg.output_max.array();
-    return !cfg.output_min.hasNaN() && !cfg.output_max.hasNaN() && (lo <= hi).all() && (lo != inf).all()
-        && (hi != -inf).all();
+    return !cfg.output_min.hasNaN() && !cfg.output_max.hasNaN() && (lo <= hi).all() && (lo != inf).all() && (hi != -inf).all();
 }
 
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto check_base_fields(const pid_config<Scalar, NY, Policies...>& cfg) -> ctrlpp::expected<void, pid_config_error>
+ctrlpp::expected<void, pid_config_error> check_base_fields(const pid_config<Scalar, NY, Policies...>& cfg)
 {
     if(!gains_finite(cfg))
         return ctrlpp::unexpected(pid_config_error::non_finite_gain);
@@ -72,13 +71,13 @@ auto check_base_fields(const pid_config<Scalar, NY, Policies...>& cfg) -> ctrlpp
 }
 
 template <typename Scalar>
-auto filter_time_constant_valid(Scalar tf) -> bool
+bool filter_time_constant_valid(Scalar tf)
 {
     return tf >= Scalar{0} && tf != std::numeric_limits<Scalar>::infinity();
 }
 
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto input_filters_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> bool
+bool input_filters_valid(const pid_config<Scalar, NY, Policies...>& cfg)
 {
     if constexpr(contains_v<setpoint_filter, Policies...>)
     {
@@ -92,7 +91,7 @@ auto input_filters_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> bool
 }
 
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto rate_limit_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> bool
+bool rate_limit_valid(const pid_config<Scalar, NY, Policies...>& cfg)
 {
     if constexpr(contains_v<rate_limit, Policies...>)
         return std::ranges::all_of(cfg.template policy<rate_limit>().rate_max, [](Scalar r) { return r >= Scalar{0}; });
@@ -101,7 +100,7 @@ auto rate_limit_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> bool
 }
 
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto anti_windup_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> ctrlpp::expected<void, pid_config_error>
+ctrlpp::expected<void, pid_config_error> anti_windup_valid(const pid_config<Scalar, NY, Policies...>& cfg)
 {
     using back_calc_t = anti_windup<back_calc>;
     using conditional_t = anti_windup<conditional_integration>;
@@ -119,32 +118,31 @@ auto anti_windup_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> ctrlpp
 }
 
 template <typename Scalar>
-auto explicit_filter_time_valid(const std::optional<Scalar>& tf) -> bool
+bool explicit_filter_time_valid(const std::optional<Scalar>& tf)
 {
     return !tf || (*tf > Scalar{0} && std::isfinite(*tf));
 }
 
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto derivative_filter_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> bool
+bool derivative_filter_valid(const pid_config<Scalar, NY, Policies...>& cfg)
 {
     if constexpr(contains_v<deriv_filter, Policies...>)
     {
         const auto& filter = cfg.template policy<deriv_filter>();
-        return std::ranges::all_of(filter.n, [](Scalar n) { return std::isfinite(n); })
-            && std::ranges::all_of(filter.tf, explicit_filter_time_valid<Scalar>);
+        return std::ranges::all_of(filter.n, [](Scalar n) { return std::isfinite(n); }) && std::ranges::all_of(filter.tf, explicit_filter_time_valid<Scalar>);
     }
     else
         return true;
 }
 
 template <typename Scalar>
-auto positive_finite(Scalar value) -> bool
+bool positive_finite(Scalar value)
 {
     return value > Scalar{0} && std::isfinite(value);
 }
 
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto oscillation_detector_valid(const pid_config<Scalar, NY, Policies...>& cfg) -> ctrlpp::expected<void, pid_config_error>
+ctrlpp::expected<void, pid_config_error> oscillation_detector_valid(const pid_config<Scalar, NY, Policies...>& cfg)
 {
     if constexpr(has_policy_v<perf_assessment, Policies...>)
     {
@@ -152,8 +150,7 @@ auto oscillation_detector_valid(const pid_config<Scalar, NY, Policies...>& cfg) 
         if constexpr(perf_has_metric_v<oscillation_detect, PA>)
         {
             const auto& detector = cfg.template policy<PA>();
-            if(!std::ranges::all_of(detector.amplitude, positive_finite<Scalar>)
-               || !std::ranges::all_of(detector.ultimate_frequency, positive_finite<Scalar>))
+            if(!std::ranges::all_of(detector.amplitude, positive_finite<Scalar>) || !std::ranges::all_of(detector.ultimate_frequency, positive_finite<Scalar>))
                 return ctrlpp::unexpected(pid_config_error::missing_oscillation_parameters);
             if(!positive_finite(detector.load_count_limit) || !positive_finite(detector.supervision_periods))
                 return ctrlpp::unexpected(pid_config_error::invalid_oscillation_supervision);
@@ -163,7 +160,7 @@ auto oscillation_detector_valid(const pid_config<Scalar, NY, Policies...>& cfg) 
 }
 
 template <typename Scalar, std::size_t NY, typename... Policies>
-auto check_policy_fields(const pid_config<Scalar, NY, Policies...>& cfg) -> ctrlpp::expected<void, pid_config_error>
+ctrlpp::expected<void, pid_config_error> check_policy_fields(const pid_config<Scalar, NY, Policies...>& cfg)
 {
     if(!input_filters_valid(cfg))
         return ctrlpp::unexpected(pid_config_error::invalid_filter_time_constant);

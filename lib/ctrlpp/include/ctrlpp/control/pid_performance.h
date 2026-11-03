@@ -1,15 +1,13 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_PID_PERFORMANCE_H
 #define HPP_GUARD_CTRLPP_CONTROL_PID_PERFORMANCE_H
 
-/// @brief PID performance assessment: IAE, ISE, ITAE, oscillation detection.
-///
-/// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE, ISE, ITAE)
-/// @cite hagglund1995 -- Hagglund, "A control-loop performance monitor", 1995 (oscillation detection)
-
-#include "ctrlpp/types.h"
+// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE, ISE, ITAE)
+// @cite hagglund1995 -- Hagglund, "A control-loop performance monitor", 1995 (oscillation detection)
 
 #include "ctrlpp/control/pid_config.h"
 #include "ctrlpp/control/pid_policies.h"
+
+#include "ctrlpp/types.h"
 
 #include <cmath>
 #include <cstddef>
@@ -26,6 +24,17 @@ class pid_performance_tracker
     using config_t = pid_config<Scalar, NY, Policies...>;
 
 public:
+    pid_performance_tracker()
+        : m_iae{vector_t::Zero()}
+        , m_ise{vector_t::Zero()}
+        , m_itae{vector_t::Zero()}
+        , m_load_rate{vector_t::Zero()}
+        , m_crossing_iae{vector_t::Zero()}
+        , m_accumulated_time{0}
+        , m_prev_error_sign{vector_t::Zero()}
+    {
+    }
+
     void accumulate(const vector_t& e, Scalar dt, const config_t& cfg)
     {
         if constexpr(detail::has_policy_v<perf_assessment, Policies...>)
@@ -45,7 +54,7 @@ public:
     }
 
     template <typename Metric>
-    auto metric() const -> const vector_t&
+    const vector_t& metric() const
         requires detail::has_policy_v<perf_assessment, Policies...>
     {
         using PA = detail::find_policy_t<perf_assessment, Policies...>;
@@ -61,7 +70,7 @@ public:
             return m_load_rate;
     }
 
-    auto oscillating(const config_t& cfg) const -> bool
+    bool oscillating(const config_t& cfg) const
         requires detail::has_policy_v<perf_assessment, Policies...>
     {
         using PA = detail::find_policy_t<perf_assessment, Policies...>;
@@ -88,19 +97,22 @@ public:
         m_accumulated_time = Scalar{0};
     }
 
-    auto all_finite() const -> bool
+    bool all_finite() const
     {
-        return m_iae.allFinite()
-            && m_ise.allFinite()
-            && m_itae.allFinite()
-            && m_crossing_iae.allFinite()
-            && m_load_rate.allFinite()
-            && m_prev_error_sign.allFinite()
-            && std::isfinite(m_accumulated_time);
+        return m_iae.allFinite() && m_ise.allFinite() && m_itae.allFinite() && m_crossing_iae.allFinite() && m_load_rate.allFinite() && m_prev_error_sign.allFinite() &&
+                std::isfinite(m_accumulated_time);
     }
 
 private:
-    /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE)
+    vector_t m_iae;
+    vector_t m_ise;
+    vector_t m_itae;
+    vector_t m_load_rate;
+    vector_t m_crossing_iae;
+    Scalar m_accumulated_time;
+    vector_t m_prev_error_sign;
+
+    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE)
     void accumulate_iae(const vector_t& e, Scalar dt)
     {
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
@@ -110,14 +122,14 @@ private:
         }
     }
 
-    /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (ISE)
+    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (ISE)
     void accumulate_ise(const vector_t& e, Scalar dt)
     {
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             m_ise[i] += e[i] * e[i] * dt;
     }
 
-    /// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (ITAE)
+    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (ITAE)
     void accumulate_itae(const vector_t& e, Scalar dt)
     {
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
@@ -127,7 +139,7 @@ private:
         }
     }
 
-    /// @cite hagglund2002 -- Hagglund, "Industrial applications of automatic performance monitoring tools", 2002, Sec. 2.1
+    // @cite hagglund2002 -- Hagglund, "Industrial applications of automatic performance monitoring tools", 2002, Sec. 2.1
     void accumulate_oscillation(const vector_t& e, Scalar dt, const config_t& cfg)
     {
         using PA = detail::find_policy_t<perf_assessment, Policies...>;
@@ -149,19 +161,11 @@ private:
 
     // Eq. (2) of hagglund2002 assumes a step much shorter than the window; a step spanning the whole window
     // leaves nothing older, so the factor stops at zero instead of turning negative.
-    static auto forgetting_factor(Scalar supervision_periods, Scalar ultimate_frequency, Scalar dt) -> Scalar
+    static Scalar forgetting_factor(Scalar supervision_periods, Scalar ultimate_frequency, Scalar dt)
     {
         const Scalar supervision_time = supervision_periods * Scalar{2} * std::numbers::pi_v<Scalar> / ultimate_frequency;
         return std::max(Scalar{0}, Scalar{1} - dt / supervision_time);
     }
-
-    vector_t m_iae = vector_t::Zero();
-    vector_t m_ise = vector_t::Zero();
-    vector_t m_itae = vector_t::Zero();
-    vector_t m_crossing_iae = vector_t::Zero();
-    vector_t m_load_rate = vector_t::Zero();
-    vector_t m_prev_error_sign = vector_t::Zero();
-    Scalar m_accumulated_time{0};
 };
 
 }

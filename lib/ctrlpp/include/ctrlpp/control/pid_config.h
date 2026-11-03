@@ -1,11 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_PID_CONFIG_H
 #define HPP_GUARD_CTRLPP_CONTROL_PID_CONFIG_H
 
+#include "ctrlpp/control/pid_policies.h"
+
 #include "ctrlpp/types.h"
 
 #include "ctrlpp/util/concepts.h"
-
-#include "ctrlpp/control/pid_policies.h"
 
 #include <tuple>
 #include <limits>
@@ -18,10 +18,8 @@ namespace ctrlpp
 namespace detail
 {
 
-// --- Detect whether a policy P has a nested config type ---
-// Policies may have either P::config (non-template) or P::template config<Scalar, N> (template).
-
-// Detector for P::template config<Scalar, N>
+// A policy's configuration is P::template config<Scalar, N> or P::config; a policy with neither takes no
+// slot in pid_config::policies.
 template <typename P, typename Scalar, std::size_t N, typename = void>
 struct has_template_config : std::false_type
 {
@@ -32,7 +30,6 @@ struct has_template_config<P, Scalar, N, std::void_t<typename P::template config
 {
 };
 
-// Detector for P::config (non-template)
 template <typename P, typename = void>
 struct has_plain_config : std::false_type
 {
@@ -43,7 +40,6 @@ struct has_plain_config<P, std::void_t<typename P::config>> : std::true_type
 {
 };
 
-// Resolve the config type for a given policy
 template <typename P, typename Scalar, std::size_t N, typename = void>
 struct policy_config_type;
 
@@ -59,18 +55,15 @@ struct policy_config_type<P, Scalar, N, std::enable_if_t<!has_template_config<P,
     using type = typename P::config;
 };
 
-// Check if policy has any config at all
 template <typename P, typename Scalar, std::size_t N>
 inline constexpr bool has_any_config_v = has_template_config<P, Scalar, N>::value || has_plain_config<P>::value;
 
-// Check if a type appears in a tuple
 template <typename T, typename Tuple>
 inline constexpr bool tuple_has_v = false;
 
 template <typename T, typename... Ts>
 inline constexpr bool tuple_has_v<T, std::tuple<Ts...>> = (std::is_same_v<T, Ts> || ...);
 
-// Build a tuple of config types from policies, filtering out those without config
 template <typename Scalar, std::size_t N, typename EnabledList, typename... Policies>
 struct policy_configs_builder;
 
@@ -82,7 +75,8 @@ struct policy_configs_builder<Scalar, N, std::tuple<Collected...>>
 
 template <typename Scalar, std::size_t N, typename... Collected, typename P, typename... Rest>
     requires has_any_config_v<P, Scalar, N>
-struct policy_configs_builder<Scalar, N, std::tuple<Collected...>, P, Rest...> : policy_configs_builder<Scalar, N, std::tuple<Collected..., typename policy_config_type<P, Scalar, N>::type>, Rest...>
+struct policy_configs_builder<Scalar, N, std::tuple<Collected...>, P, Rest...>
+    : policy_configs_builder<Scalar, N, std::tuple<Collected..., typename policy_config_type<P, Scalar, N>::type>, Rest...>
 {
 };
 
@@ -117,7 +111,7 @@ struct pid_config
 
     template <typename P>
         requires(detail::has_any_config_v<P, Scalar, NY> && detail::tuple_has_v<typename detail::policy_config_type<P, Scalar, NY>::type, policies_tuple_t>)
-    constexpr auto& policy()
+    typename detail::policy_config_type<P, Scalar, NY>::type& policy()
     {
         using cfg_t = typename detail::policy_config_type<P, Scalar, NY>::type;
         return std::get<cfg_t>(policies);
@@ -125,7 +119,7 @@ struct pid_config
 
     template <typename P>
         requires(detail::has_any_config_v<P, Scalar, NY> && detail::tuple_has_v<typename detail::policy_config_type<P, Scalar, NY>::type, policies_tuple_t>)
-    constexpr const auto& policy() const
+    const typename detail::policy_config_type<P, Scalar, NY>::type& policy() const
     {
         using cfg_t = typename detail::policy_config_type<P, Scalar, NY>::type;
         return std::get<cfg_t>(policies);
