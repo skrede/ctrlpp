@@ -1,9 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_EKF_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_EKF_H
 
-/// @brief Extended Kalman Filter with analytical/numerical Jacobian dispatch.
-///
-/// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13
+// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13
+
+#include "ctrlpp/estimation/ekf_types.h"
+#include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/expected.h"
@@ -12,329 +14,123 @@
 
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/model/measurement_model.h"
-#include "ctrlpp/model/differentiable_dynamics.h"
-#include "ctrlpp/model/differentiable_measurement.h"
 
-#include "ctrlpp/detail/covariance_ops.h"
-#include "ctrlpp/detail/numerical_diff.h"
-
-#include "ctrlpp/estimation/observer_policy.h"
-#include "ctrlpp/estimation/estimation_types.h"
-
+#include "ctrlpp/estimation/detail/ekf_steps.h"
 #include "ctrlpp/estimation/detail/filter_configuration.h"
 
 #include <cmath>
-#include <limits>
 #include <cstddef>
 #include <utility>
 
 namespace ctrlpp
 {
 
-/// @brief Structured failure modes of an `ekf` measurement update.
-///
-/// Each enumerator is an exact domain condition, not a tuning preference: a
-/// non-finite operand makes every downstream product non-finite, so the step
-/// cannot produce an estimate at all.
-///
-///  * non_finite_state       : the carried state estimate is already non-finite
-///                             when the step begins. It is reported ahead of the
-///                             measurement because the fault is upstream of it,
-///                             and because the measurement Jacobian is evaluated
-///                             AT the carried state, so a poisoned state makes
-///                             the linearization meaningless before the
-///                             measurement is ever used.
-///  * non_finite_covariance  : the carried covariance is already non-finite when
-///                             the step begins. A distinguishable cause from a
-///                             non-finite state because the covariance recursion
-///                             is driven by the linearized dynamics and by Q and
-///                             R, never by the measurement.
-///  * non_finite_measurement : the supplied measurement vector has a non-finite
-///                             component. The gain carries it into the state,
-///                             which is the filter's carried memory, so a single
-///                             such sample destroys the estimate permanently.
-enum class ekf_update_error
-{
-    non_finite_state,
-    non_finite_covariance,
-    non_finite_measurement,
-    non_finite_result,
-};
-
-/// @brief Persistent state-health status of an `ekf`.
-///
-/// A per-call result cannot answer whether the carried estimate is still
-/// degraded from a step several samples ago, because that question outlives the
-/// call. The status latches: it never returns to a lower rung on its own.
-///
-///  * ok                  : every step so far began from a finite estimate.
-///  * non_finite_estimate : a step found the carried state or the carried
-///                          covariance already non-finite. `predict` does not
-///                          reject its input, so this is how a poisoned control
-///                          vector or a dynamics model that returned a
-///                          non-finite state becomes visible. A rejected
-///                          measurement does NOT set it: the rejection mutates
-///                          nothing, so it leaves the filter healthy.
-enum class ekf_health
-{
-    ok,
-    non_finite_estimate,
-};
-
-template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-struct ekf_config
-{
-    static_assert(NX > 0, "State dimension NX must be positive");
-    static_assert(NU > 0, "Input dimension NU must be positive");
-    static_assert(NY > 0, "Output dimension NY must be positive");
-    Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
-    Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
-    Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};
-    Matrix<Scalar, NX, NX> P0{Matrix<Scalar, NX, NX>::Identity()};
-    Scalar numerical_eps{std::cbrt(std::numeric_limits<Scalar>::epsilon())};
-};
-
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Dynamics, typename Measurement>
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY>
-class ekf
+class ekf : private detail::ekf_steps<Scalar, NX, NU, NY, Dynamics, Measurement>
 {
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
     static_assert(NY > 0, "Output dimension NY must be positive");
 
-    static constexpr int nx = static_cast<int>(NX);
-    static constexpr int nu = static_cast<int>(NU);
-    static constexpr int ny = static_cast<int>(NY);
+    using base = detail::ekf_steps<Scalar, NX, NU, NY, Dynamics, Measurement>;
+
+    struct validated_tag
+    {
+    };
 
 public:
     using observer_tag = struct ekf_tag;
-    using state_vector_t = Vector<Scalar, NX>;
-    using input_vector_t = Vector<Scalar, NU>;
-    using output_vector_t = Vector<Scalar, NY>;
-    using cov_matrix_t = Matrix<Scalar, NX, NX>;
-    using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
+    using typename base::state_vector_t;
+    using typename base::input_vector_t;
+    using typename base::output_vector_t;
+    using typename base::cov_matrix_t;
+    using typename base::meas_cov_matrix_t;
 
-    /// @brief Fallible factory, and the only way to originate a filter.
-    ///
-    /// Rejects a configuration whose process noise, measurement noise, initial
-    /// state or initial covariance carries a non-finite entry, or whose Q, R or
-    /// P0 is not positive semidefinite, naming the field and the fault. Such a
-    /// configuration is a mistake the caller made before the filter ever ran:
-    /// an infinite Q makes the predicted covariance infinite, the gain a ratio
-    /// of infinities and the estimate non-finite at the first step, which
-    /// surfaces the fault as far as possible from where it was introduced.
-    ///
-    /// A matrix with an eigenvalue below the eigensolver's backward-error floor
-    /// is not a covariance and is refused (see `filter_error`). A singular
-    /// positive semidefinite matrix (a point-mass P0, a rank-one Q, a noiseless
-    /// R) and a merely ill-conditioned one are legitimately posed problems and
-    /// are accepted: the recursion inverts only the innovation covariance, and
-    /// conditioning is a numerical-behavior question, not a domain violation.
-    ///
-    /// An asymmetry within the rounding bound is drift and is stored as its
-    /// symmetrized matrix, on which the definiteness check runs; a structural
-    /// asymmetry is refused with the matrix's `asymmetric_*` enumerator.
-    ///
-    /// `numerical_eps` is NOT validated here. It is the finite-difference step
-    /// used only when the model is not analytically differentiable, and it
-    /// carries its own domain condition (finite and strictly positive, since the
-    /// central-difference stencil divides by it); converting that condition is
-    /// separately owned work.
-    static auto create(Dynamics dynamics, Measurement measurement, ekf_config<Scalar, NX, NU, NY> config) -> ctrlpp::expected<ekf, filter_error>
+    // numerical_eps is not validated: it is read only when a model is not analytically differentiable.
+    static ctrlpp::expected<ekf, filter_error> create(Dynamics dynamics, Measurement measurement, ekf_config<Scalar, NX, NU, NY> config)
     {
         if(const auto valid = detail::validate_filter_configuration(config.Q, config.R, config.x0, config.P0); !valid)
             return ctrlpp::unexpected(valid.error());
         return ekf{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config)};
     }
 
+    // Not fallible: the plant already took the command. A prediction that poisons the estimate is latched
+    // in health() by the next update.
     void predict(const input_vector_t& u)
     {
-        auto x_prev = m_x;
-        propagate_state(x_prev, u);
-        propagate_covariance(x_prev, u);
+        auto x_prev = this->m_x;
+        this->propagate_state(x_prev, u);
+        this->propagate_covariance(x_prev, u);
     }
 
-    /// @brief Update state and covariance with a measurement.
-    ///
-    /// The step is rejected before any member is assigned when the carried
-    /// estimate or the measurement is non-finite, so a rejected step leaves the
-    /// state, the covariance, the innovation and the NIS bitwise unchanged and
-    /// the caller may retry with the next sample.
-    ///
-    /// `predict` is deliberately not fallible: its input is a control vector the
-    /// caller already commanded and owns, and rejecting it would leave the
-    /// filter with no propagation for a step the plant did take. A prediction
-    /// that poisons the state is instead reported by `health()`, which the next
-    /// update latches.
-    auto update(const output_vector_t& z) -> ctrlpp::expected<void, ekf_update_error>
+    // A refused step leaves the state, the covariance, the innovation and the NIS bitwise unchanged, so the
+    // caller may retry with the next sample.
+    ctrlpp::expected<void, ekf_update_error> update(const output_vector_t& z)
     {
         if(const auto step = check_step(z); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
 
-        auto const previous_x = m_x;
-        auto const previous_P = m_P;
-        auto const previous_innovation = m_innovation;
-        auto const previous_nis = m_nis;
-        auto z_pred = m_measurement(m_x);
-        m_innovation = (z - z_pred).eval();
+        auto const previous_x = this->m_x;
+        auto const previous_P = this->m_P;
+        auto const previous_innovation = this->m_innovation;
+        auto const previous_nis = this->m_nis;
+        auto z_pred = this->m_measurement(this->m_x);
+        this->m_innovation = (z - z_pred).eval();
 
-        auto H = compute_measurement_jacobian();
-        auto S = compute_innovation_covariance(H);
-        auto K = compute_kalman_gain(H, S);
+        auto H = this->compute_measurement_jacobian();
+        auto S = this->compute_innovation_covariance(H);
+        auto K = this->compute_kalman_gain(H, S);
 
-        apply_state_correction(K, z, z_pred);
-        update_covariance(K, H);
+        this->apply_state_correction(K, z, z_pred);
+        this->update_covariance(K, H);
 
-        m_nis = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
-        if(!m_x.allFinite() || !m_P.allFinite()
-            || !m_innovation.allFinite() || !std::isfinite(m_nis))
+        this->m_nis = (this->m_innovation.transpose() * S.colPivHouseholderQr().solve(this->m_innovation))(0, 0);
+        if(!this->m_x.allFinite() || !this->m_P.allFinite() || !this->m_innovation.allFinite() || !std::isfinite(this->m_nis))
         {
-            m_x = previous_x;
-            m_P = previous_P;
-            m_innovation = previous_innovation;
-            m_nis = previous_nis;
+            this->m_x = previous_x;
+            this->m_P = previous_P;
+            this->m_innovation = previous_innovation;
+            this->m_nis = previous_nis;
             return ctrlpp::unexpected(ekf_update_error::non_finite_result);
         }
         return {};
     }
 
-    const state_vector_t& state() const { return m_x; }
+    const state_vector_t& state() const { return this->m_x; }
 
-    const cov_matrix_t& covariance() const { return m_P; }
+    const cov_matrix_t& covariance() const { return this->m_P; }
 
-    const output_vector_t& innovation() const { return m_innovation; }
+    const output_vector_t& innovation() const { return this->m_innovation; }
 
-    /// @brief Normalized Innovation Squared: innovation^T S^{-1} innovation
-    /// (chi-square distributed with dof = NY under a consistent filter).
-    Scalar nis() const { return m_nis; }
+    Scalar nis() const { return this->m_nis; }
 
-    /// @brief Report whether the carried estimate is still degraded from an
-    /// earlier step. Latches; a rejected measurement does not set it.
-    ekf_health health() const { return m_health; }
+    ekf_health health() const { return this->m_health; }
 
 private:
-    /// @brief Tag selecting the non-validating constructor reserved for
-    /// `create`, which is what makes the factory the only public path and the
-    /// validation impossible to bypass.
-    struct validated_tag
-    {
-    };
-
     ekf(validated_tag, Dynamics dynamics, Measurement measurement, ekf_config<Scalar, NX, NU, NY> config)
-        : m_eps{config.numerical_eps}
-        , m_dynamics{std::move(dynamics)}
-        , m_P{std::move(config.P0)}
-        , m_Q{std::move(config.Q)}
-        , m_x{std::move(config.x0)}
-        , m_R{std::move(config.R)}
-        , m_measurement{std::move(measurement)}
-        , m_innovation{output_vector_t::Zero()}
+        : base{std::move(dynamics), std::move(measurement), std::move(config)}
     {
     }
 
-    /// @brief Classify a step's operands without touching a single member.
-    ///
-    /// The order is the severity order documented on `ekf_update_error`: the
-    /// carried estimate first, the supplied measurement last. The cost is one
-    /// finiteness scan of each operand -- NX + NX*NX + NY reads, no branches on
-    /// data and no allocation, all dimensions being compile-time constants.
-    auto check_step(const output_vector_t& z) const -> ctrlpp::expected<void, ekf_update_error>
+    // Classifies before anything is mutated, the carried estimate ahead of the measurement.
+    ctrlpp::expected<void, ekf_update_error> check_step(const output_vector_t& z) const
     {
-        if(!m_x.allFinite())
+        if(!this->m_x.allFinite())
             return ctrlpp::unexpected(ekf_update_error::non_finite_state);
-        if(!m_P.allFinite())
+        if(!this->m_P.allFinite())
             return ctrlpp::unexpected(ekf_update_error::non_finite_covariance);
         if(!z.allFinite())
             return ctrlpp::unexpected(ekf_update_error::non_finite_measurement);
         return {};
     }
 
-    /// @brief Latch the persistent status for the faults that describe the
-    /// carried estimate, and pass the fault through so the caller still receives
-    /// the specific cause on the failure channel.
-    auto latch_health(ekf_update_error fault) -> ekf_update_error
+    ekf_update_error latch_health(ekf_update_error fault)
     {
         if(fault != ekf_update_error::non_finite_measurement)
-            m_health = ekf_health::non_finite_estimate;
+            this->m_health = ekf_health::non_finite_estimate;
         return fault;
     }
-
-    /// @brief Propagate state through dynamics model.
-    void propagate_state(const state_vector_t& x_prev, const input_vector_t& u)
-    {
-        m_x = m_dynamics(x_prev, u);
-    }
-
-    /// @brief Propagate covariance through linearized dynamics: P = F*P*F^T + Q.
-    ///
-    /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.1
-    void propagate_covariance(const state_vector_t& x_prev, const input_vector_t& u)
-    {
-        Matrix<Scalar, NX, NX> F;
-        if constexpr(differentiable_dynamics<Dynamics, Scalar, NX, NU>)
-            F = m_dynamics.jacobian_x(x_prev, u);
-        else
-            F = detail::numerical_jacobian_x<Scalar, NX, NU>(m_dynamics, x_prev, u, m_eps);
-
-        m_P = detail::symmetrize((F * m_P * F.transpose() + m_Q).eval());
-    }
-
-    /// @brief Compute measurement Jacobian H at current state (analytical or numerical).
-    auto compute_measurement_jacobian() const -> Matrix<Scalar, NY, NX>
-    {
-        if constexpr(differentiable_measurement<Measurement, Scalar, NX, NY>)
-            return m_measurement.jacobian(m_x);
-        else
-            return detail::numerical_jacobian_h<Scalar, NX, NY>(m_measurement, m_x, m_eps);
-    }
-
-    /// @brief Compute innovation covariance: S = H*P*H^T + R.
-    ///
-    /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.2
-    auto compute_innovation_covariance(const Matrix<Scalar, NY, NX>& H) const -> meas_cov_matrix_t
-    {
-        return (H * m_P * H.transpose() + m_R).eval();
-    }
-
-    /// @brief Compute Kalman gain: K = P*H^T*S^{-1} via column-pivoting QR solve.
-    ///
-    /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.2
-    auto compute_kalman_gain(const Matrix<Scalar, NY, NX>& H, const meas_cov_matrix_t& S) const -> Eigen::Matrix<Scalar, nx, ny>
-    {
-        if constexpr(ny == 1)
-            return detail::one_output_gain_transpose(S(0, 0), H * m_P).transpose().eval();
-        else
-        {
-            Eigen::Matrix<Scalar, ny, nx> KT_solved = S.transpose().colPivHouseholderQr().solve(H * m_P);
-            return KT_solved.transpose().eval();
-        }
-    }
-
-    /// @brief Apply state correction: x += K * innovation.
-    void apply_state_correction(const Eigen::Matrix<Scalar, nx, ny>& K, const output_vector_t& /*z*/, const output_vector_t& /*z_pred*/)
-    {
-        m_x = (m_x + K * m_innovation).eval();
-    }
-
-    /// @brief Joseph-form covariance update: P = (I-KH)*P*(I-KH)^T + K*R*K^T.
-    ///
-    /// @cite simon2006 -- Simon, "Optimal State Estimation", 2006, Ch. 13, Eq. 13.3
-    void update_covariance(const Eigen::Matrix<Scalar, nx, ny>& K, const Matrix<Scalar, NY, NX>& H)
-    {
-        cov_matrix_t IKH = cov_matrix_t::Identity() - K * H;
-        m_P = detail::symmetrize((IKH * m_P * IKH.transpose() + K * m_R * K.transpose()).eval());
-    }
-
-    Scalar m_eps;
-    Scalar m_nis{0};
-    Dynamics m_dynamics;
-    cov_matrix_t m_P;
-    cov_matrix_t m_Q;
-    state_vector_t m_x;
-    meas_cov_matrix_t m_R;
-    Measurement m_measurement;
-    output_vector_t m_innovation;
-    ekf_health m_health{ekf_health::ok};
 };
 
 namespace detail

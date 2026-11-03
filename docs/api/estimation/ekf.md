@@ -7,6 +7,7 @@ Extended Kalman Filter with compile-time dispatch between analytical and numeric
 | Form | Header |
 |------|--------|
 | `ctrlpp::ekf<Scalar, NX, NU, NY, Dynamics, Measurement>` | `#include <ctrlpp/estimation/ekf.h>` |
+| `ctrlpp::ekf_config`, `ctrlpp::ekf_update_error`, `ctrlpp::ekf_health` | `#include <ctrlpp/estimation/ekf_types.h>` (included by `ekf.h`) |
 
 No convenience header exists for this type. Use the categorical path.
 
@@ -44,9 +45,8 @@ using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 ## Construction
 
 ```cpp
-static auto create(Dynamics dynamics, Measurement measurement,
-                   ekf_config<Scalar, NX, NU, NY> config)
-    -> ctrlpp::expected<ekf, filter_error>;
+static ctrlpp::expected<ekf, filter_error> create(Dynamics dynamics, Measurement measurement,
+                                                  ekf_config<Scalar, NX, NU, NY> config);
 ```
 
 `create` is the only construction path; there is no public constructor. A
@@ -115,8 +115,7 @@ Propagates state through the dynamics model and linearizes to propagate covarian
 ### update
 
 ```cpp
-auto update(const output_vector_t& z)
-    -> ctrlpp::expected<void, ekf_update_error>;
+ctrlpp::expected<void, ekf_update_error> update(const output_vector_t& z);
 ```
 
 Incorporates a measurement. Computes the measurement Jacobian H (analytically if `differentiable_measurement` is satisfied, numerically otherwise), then performs the standard Kalman gain computation with Joseph-form covariance update.

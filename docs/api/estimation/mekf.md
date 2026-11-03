@@ -7,6 +7,7 @@ Multiplicative Extended Kalman Filter for attitude estimation on SO(3). Maintain
 | Form | Header |
 |------|--------|
 | `ctrlpp::mekf<Scalar, NB, NY, Measurement>` | `#include <ctrlpp/estimation/mekf.h>` |
+| `ctrlpp::mekf_config`, `ctrlpp::mekf_update_error`, `ctrlpp::mekf_health`, `ctrlpp::mekf_measurement_model`, `ctrlpp::differentiable_mekf_measurement` | `#include <ctrlpp/estimation/mekf_types.h>` (included by `mekf.h`) |
 
 No convenience header exists for this type. Use the categorical path.
 
@@ -59,8 +60,7 @@ Where NE = 3 + NB (3 rotation dimensions + NB bias dimensions).
 ### create
 
 ```cpp
-static auto create(Measurement measurement, mekf_config<Scalar, NB, NY> config)
-    -> ctrlpp::expected<mekf, filter_error>;
+static ctrlpp::expected<mekf, filter_error> create(Measurement measurement, mekf_config<Scalar, NB, NY> config);
 ```
 
 `create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion first, before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. A `q0` whose norm differs from one by more than the rounding bound `max(4 eps, 4 denorm_min)` is rejected with `filter_error::non_unit_quaternion`: a rotation quaternion is unit by definition, so `(2, 0, 0, 0)` names no attitude. A norm defect within the bound is rounding drift, the residue of the arithmetic that formed `q0`, and is normalized away; every quaternion produced by a working-precision normalization, an angle-axis conversion, `so3::exp` or a composition of such rotations is within it. The convention and its count are in [Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused). As a static member of a class template, `create` requires explicit template arguments, e.g. `mekf<double, 3, 3, Measurement>::create(m, cfg)`.
@@ -90,8 +90,7 @@ Propagates the nominal quaternion by integrating bias-corrected angular velocity
 ### update
 
 ```cpp
-auto update(const output_vector_t& z)
-    -> ctrlpp::expected<void, mekf_update_error>;
+ctrlpp::expected<void, mekf_update_error> update(const output_vector_t& z);
 ```
 
 The step is rejected **before any member is assigned**, so a rejected step leaves the attitude, the bias, the covariance and the innovation bitwise unchanged, preserves the attitude quaternion's unit norm exactly, and the caller may retry with the next sample. Each cause is an exact domain condition, not a tuning preference.
@@ -109,7 +108,7 @@ On a step that runs: computes the measurement Jacobian H (analytically if `diffe
 ### state
 
 ```cpp
-auto state() const -> const state_vector_t&;
+const state_vector_t& state() const;
 ```
 
 Returns the full state vector: [w, x, y, z, bias_0, ..., bias_{NB-1}].
@@ -117,19 +116,19 @@ Returns the full state vector: [w, x, y, z, bias_0, ..., bias_{NB-1}].
 ### covariance
 
 ```cpp
-auto covariance() const -> const cov_matrix_t&;
+const cov_matrix_t& covariance() const;
 ```
 
 ### innovation
 
 ```cpp
-auto innovation() const -> const output_vector_t&;
+const output_vector_t& innovation() const;
 ```
 
 ### attitude
 
 ```cpp
-auto attitude() const -> Eigen::Quaternion<Scalar>;
+Eigen::Quaternion<Scalar> attitude() const;
 ```
 
 Returns the current quaternion estimate.
@@ -137,7 +136,7 @@ Returns the current quaternion estimate.
 ### bias
 
 ```cpp
-auto bias() const -> const Vector<Scalar, NB>&;
+const Vector<Scalar, NB>& bias() const;
 ```
 
 Returns the current gyroscope bias estimate.
@@ -145,7 +144,7 @@ Returns the current gyroscope bias estimate.
 ### health
 
 ```cpp
-auto health() const -> mekf_health;
+mekf_health health() const;
 ```
 
 Returns the persistent state-health status, one of `mekf_health::ok` or `mekf_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The status starts at `ok` and latches to `non_finite_estimate` the first time a step finds the carried nominal state or covariance already non-finite, which is how a poisoned gyro rate or a non-finite timestep reaching `predict` becomes visible. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.

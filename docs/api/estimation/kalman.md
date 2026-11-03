@@ -8,6 +8,7 @@ Linear discrete-time Kalman filter with Joseph-form covariance update. Operates 
 |------|--------|
 | `ctrlpp::kalman_filter<Scalar, NX, NU, NY>` | `#include <ctrlpp/estimation/kalman.h>` |
 | `ctrlpp::kalman_filter<Scalar, NX, NU, NY>` | `#include <ctrlpp/kalman.h>` (convenience) |
+| `ctrlpp::kalman_config`, `ctrlpp::kalman_update_error`, `ctrlpp::kalman_health` | `#include <ctrlpp/estimation/kalman_types.h>` (included by `kalman.h`) |
 
 ## Template Parameters
 
@@ -41,8 +42,7 @@ using system_t          = discrete_state_space<Scalar, NX, NU, NY>;
 ## Construction
 
 ```cpp
-static auto create(system_t sys, kalman_config<Scalar, NX, NU, NY> config)
-    -> ctrlpp::expected<kalman_filter, filter_error>;
+static ctrlpp::expected<kalman_filter, filter_error> create(system_t sys, kalman_config<Scalar, NX, NU, NY> config);
 ```
 
 `create` is the only construction path; there is no public constructor. A
@@ -107,8 +107,7 @@ Propagates state and covariance one step forward: x = Ax + Bu, P = APA' + Q.
 ### update
 
 ```cpp
-auto update(const output_vector_t& z)
-    -> ctrlpp::expected<void, kalman_update_error>;
+ctrlpp::expected<void, kalman_update_error> update(const output_vector_t& z);
 ```
 
 Incorporates a measurement via the Kalman gain. Uses Joseph-form covariance update: P = (I-KC)P(I-KC)' + KRK'. Computes and stores the innovation and NIS.
@@ -174,7 +173,7 @@ Returns true if the covariance has converged (relative change below tolerance).
 ### reset_covariance
 
 ```cpp
-auto reset_covariance(cov_matrix_t P0) -> ctrlpp::expected<void, filter_error>;
+ctrlpp::expected<void, filter_error> reset_covariance(cov_matrix_t P0);
 ```
 
 Resets the covariance to a new initial value. A `P0` that `create` would refuse
@@ -196,7 +195,7 @@ Replaces the state-space model (for adaptive or switched systems).
 ### set_noise
 
 ```cpp
-auto set_noise(cov_matrix_t Q, meas_cov_matrix_t R) -> ctrlpp::expected<void, filter_error>;
+ctrlpp::expected<void, filter_error> set_noise(cov_matrix_t Q, meas_cov_matrix_t R);
 ```
 
 Updates the process and measurement noise covariances. `Q` and then `R` are
