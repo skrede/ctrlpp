@@ -1190,7 +1190,7 @@ auto constraint_rows_at_origin(const Controller& controller) -> Eigen::VectorXd
     const auto& problem = controller.problem();
     const Eigen::VectorXd z = Eigen::VectorXd::Zero(problem.n_vars);
     Eigen::VectorXd rows = Eigen::VectorXd::Zero(problem.n_constraints);
-    problem.constraints(std::span<const double>{z.data(), static_cast<std::size_t>(z.size())}, std::span<double>{rows.data(), static_cast<std::size_t>(rows.size())});
+    problem.constraints_cb(std::span<const double>{z.data(), static_cast<std::size_t>(z.size())}, std::span<double>{rows.data(), static_cast<std::size_t>(rows.size())});
     return rows;
 }
 
@@ -1757,7 +1757,7 @@ TEST_CASE("Runtime-horizon nonlinear MPC poses one symmetric weight when the con
     {
         std::fill(z.begin(), z.end(), 0.0);
         z[static_cast<std::size_t>(column)] = 1.0;
-        problem.gradient(z, gradient);
+        problem.gradient_cb(z, gradient);
         posed.col(column) = Eigen::Vector2d{gradient[0], gradient[1]};
     }
     CHECK((posed.array() == symmetric.array()).all());
@@ -1765,7 +1765,7 @@ TEST_CASE("Runtime-horizon nonlinear MPC poses one symmetric weight when the con
     std::fill(z.begin(), z.end(), 0.0);
     z[0] = z[1] = 1.0;
     const Eigen::Vector2d dx{1.0, 1.0};
-    CHECK(problem.cost(z) == 0.5 * dx.dot(symmetric * dx));
+    CHECK(problem.cost_cb(z) == 0.5 * dx.dot(symmetric * dx));
 }
 
 TEST_CASE("Runtime-horizon nonlinear MPC refuses an invalid penalty only while its soft constraint is active", "[nmpc][configuration][hardening]")

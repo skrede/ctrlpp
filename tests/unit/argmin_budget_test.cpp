@@ -54,10 +54,10 @@ auto make_rosenbrock() -> ctrlpp::nlp_problem<double>
     ctrlpp::nlp_problem<double> prob;
     prob.n_vars = 2;
     prob.n_constraints = 0;
-    prob.cost = [](std::span<const double> x) {
+    prob.cost_cb = [](std::span<const double> x) {
         return (1.0 - x[0]) * (1.0 - x[0]) + 100.0 * (x[1] - x[0] * x[0]) * (x[1] - x[0] * x[0]);
     };
-    prob.gradient = [](std::span<const double> x, std::span<double> g) {
+    prob.gradient_cb = [](std::span<const double> x, std::span<double> g) {
         g[0] = -2.0 * (1.0 - x[0]) - 400.0 * x[0] * (x[1] - x[0] * x[0]);
         g[1] = 200.0 * (x[1] - x[0] * x[0]);
     };
@@ -72,11 +72,11 @@ auto make_constrained_rosenbrock() -> ctrlpp::nlp_problem<double>
 {
     auto prob = make_rosenbrock();
     prob.n_constraints = 2;
-    prob.constraints = [](std::span<const double> x, std::span<double> c) {
+    prob.constraints_cb = [](std::span<const double> x, std::span<double> c) {
         c[0] = x[0] + x[1];
         c[1] = x[0] - x[1];
     };
-    prob.constraint_jacobian = [](std::span<const double>, std::span<double> jac) {
+    prob.constraint_jacobian_cb = [](std::span<const double>, std::span<double> jac) {
         jac[0] = 1.0;
         jac[1] = 1.0;
         jac[2] = 1.0;

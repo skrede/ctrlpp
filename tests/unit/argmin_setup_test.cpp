@@ -42,13 +42,13 @@ auto make_projection(const Eigen::VectorXd& target, const linear_rows& rows) -> 
     Problem problem{};
     problem.n_vars        = static_cast<int>(target.size());
     problem.n_constraints = static_cast<int>(rows.coefficients.rows());
-    problem.cost          = [target](std::span<const double> x) { return 0.5 * (as_vector(x) - target).squaredNorm(); };
-    problem.gradient      = [target](std::span<const double> x, std::span<double> g)
+    problem.cost_cb          = [target](std::span<const double> x) { return 0.5 * (as_vector(x) - target).squaredNorm(); };
+    problem.gradient_cb      = [target](std::span<const double> x, std::span<double> g)
     { Eigen::Map<Eigen::VectorXd>(g.data(), target.size()) = as_vector(x) - target; };
-    problem.constraints = [a = rows.coefficients](std::span<const double> x, std::span<double> c)
+    problem.constraints_cb = [a = rows.coefficients](std::span<const double> x, std::span<double> c)
     { Eigen::Map<Eigen::VectorXd>(c.data(), a.rows()) = a * as_vector(x); };
     // The raw Jacobian is column-major, n_constraints x n_vars.
-    problem.constraint_jacobian = [a = rows.coefficients](std::span<const double>, std::span<double> jac)
+    problem.constraint_jacobian_cb = [a = rows.coefficients](std::span<const double>, std::span<double> jac)
     { Eigen::Map<Eigen::MatrixXd>(jac.data(), a.rows(), a.cols()) = a; };
     problem.x_lower = decltype(problem.x_lower)::Constant(target.size(), -10.0);
     problem.x_upper = decltype(problem.x_upper)::Constant(target.size(), 10.0);

@@ -87,7 +87,7 @@ auto build_problems(const Dynamics& dynamics, int horizon)
     auto differenced = ctrlpp::detail::build_nmpc_problem<double, NX, NU>(
         dynamics, problems::make_nmpc_quadratic_config<NX, NU>(horizon), state);
     auto analytic = differenced;
-    analytic.constraint_jacobian = ctrlpp::bench::build_shooting_jacobian<NX, NU>(dynamics, horizon);
+    analytic.constraint_jacobian_cb = ctrlpp::bench::build_shooting_jacobian<NX, NU>(dynamics, horizon);
     return {differenced, analytic};
 }
 

@@ -29,16 +29,16 @@ auto make_problem(double lower, double upper, jacobian_path path) -> ctrlpp::nlp
     ctrlpp::nlp_problem<double> problem{};
     problem.n_vars        = 2;
     problem.n_constraints = 1;
-    problem.cost          = [](std::span<const double> x) { return 0.5 * ((x[0] - 1.0) * (x[0] - 1.0) + (x[1] - 1.0) * (x[1] - 1.0)); };
-    problem.gradient      = [](std::span<const double> x, std::span<double> g)
+    problem.cost_cb          = [](std::span<const double> x) { return 0.5 * ((x[0] - 1.0) * (x[0] - 1.0) + (x[1] - 1.0) * (x[1] - 1.0)); };
+    problem.gradient_cb      = [](std::span<const double> x, std::span<double> g)
     {
         g[0] = x[0] - 1.0;
         g[1] = x[1] - 1.0;
     };
-    problem.constraints = [](std::span<const double> x, std::span<double> c) { c[0] = x[0] + x[1]; };
+    problem.constraints_cb = [](std::span<const double> x, std::span<double> c) { c[0] = x[0] + x[1]; };
     if(path == jacobian_path::analytic)
     {
-        problem.constraint_jacobian = [](std::span<const double>, std::span<double> jac)
+        problem.constraint_jacobian_cb = [](std::span<const double>, std::span<double> jac)
         {
             jac[0] = 1.0;
             jac[1] = 1.0;

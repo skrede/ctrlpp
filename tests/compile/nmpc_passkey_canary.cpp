@@ -21,7 +21,10 @@ struct canary_solver
 
     auto solve(const ctrlpp::nlp_update<double>&) -> ctrlpp::nlp_result<double>
     {
-        return ctrlpp::nlp_result<double>{.status = ctrlpp::solve_status::optimal, .x = Eigen::VectorXd::Zero(3), .objective = 0.0, .solve_time = 0.0, .iterations = 0, .primal_residual = 0.0};
+        ctrlpp::nlp_result<double> result;
+        result.status = ctrlpp::solve_status::optimal;
+        result.x = Eigen::VectorXd::Zero(3);
+        return result;
     }
 };
 

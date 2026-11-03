@@ -150,7 +150,7 @@ void run_step_budget(const std::string& system_name,
             std::exit(EXIT_FAILURE);
         }
 
-        int n_vars = problem.n_vars;
+        Eigen::Index n_vars = problem.n_vars;
         ctrlpp::nlp_update<double> update{};
         update.x0 = Eigen::VectorXd::Zero(n_vars);
 
@@ -176,7 +176,7 @@ void run_step_budget(const std::string& system_name,
             std::exit(EXIT_FAILURE);
         }
 
-        int n_vars = problem.n_vars;
+        Eigen::Index n_vars = problem.n_vars;
         ctrlpp::nlp_update<double> update{};
         update.x0 = Eigen::VectorXd::Zero(n_vars);
 

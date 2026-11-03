@@ -473,14 +473,14 @@ TEST_CASE("nmpc returns nullopt on solver failure via mock", "[nmpc][coverage]")
 
         auto solve(const ctrlpp::nlp_update<double>&) -> ctrlpp::nlp_result<double>
         {
-            return {
-                .status = ctrlpp::solve_status::error,
-                .x = Eigen::VectorXd::Zero(prob.n_vars),
-                .objective = 0.0,
-                .solve_time = 0.0,
-                .iterations = 0,
-                .primal_residual = 0.0,
-            };
+            ctrlpp::nlp_result<double> result;
+            result.status = ctrlpp::solve_status::error;
+            result.x = Eigen::VectorXd::Zero(prob.n_vars);
+            result.objective = 0.0;
+            result.solve_time = 0.0;
+            result.iterations = 0;
+            result.primal_residual = 0.0;
+            return result;
         }
     };
 
@@ -515,14 +515,14 @@ TEST_CASE("nmpc accepts solved_inaccurate status", "[nmpc][coverage]")
 
         auto solve(const ctrlpp::nlp_update<double>&) -> ctrlpp::nlp_result<double>
         {
-            return {
-                .status = ctrlpp::solve_status::solved_inaccurate,
-                .x = Eigen::VectorXd::Zero(prob.n_vars),
-                .objective = 0.5,
-                .solve_time = 0.001,
-                .iterations = 10,
-                .primal_residual = 1e-4,
-            };
+            ctrlpp::nlp_result<double> result;
+            result.status = ctrlpp::solve_status::solved_inaccurate;
+            result.x = Eigen::VectorXd::Zero(prob.n_vars);
+            result.objective = 0.5;
+            result.solve_time = 0.001;
+            result.iterations = 10;
+            result.primal_residual = 1e-4;
+            return result;
         }
     };
 

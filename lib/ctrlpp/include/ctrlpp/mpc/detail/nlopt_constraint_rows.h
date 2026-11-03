@@ -148,14 +148,14 @@ private:
     {
         const double original = step_x_[j];
         step_x_[j] = shifted;
-        problem_->constraints(std::span<const double>{step_x_.data(), n}, std::span<double>{out.data(), out.size()});
+        problem_->constraints_cb(std::span<const double>{step_x_.data(), n}, std::span<double>{out.data(), out.size()});
         step_x_[j] = original;
     }
 
     void evaluate(std::span<const double> x) const
     {
         values_.resize(static_cast<std::size_t>(problem_->n_constraints));
-        problem_->constraints(x, std::span<double>{values_.data(), values_.size()});
+        problem_->constraints_cb(x, std::span<double>{values_.data(), values_.size()});
     }
 };
 

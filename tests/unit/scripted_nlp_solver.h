@@ -106,14 +106,14 @@ public:
 
     auto setup(const ctrlpp::nlp_problem<Scalar>& problem) -> ctrlpp::expected<void, stub_setup_error>
     {
-        m_n_vars = problem.n_vars;
+        m_n_vars = static_cast<int>(problem.n_vars);
         return {};
     }
 
     template <int NV>
     auto setup(const ctrlpp::nlp_problem_static<Scalar, NV>& problem) -> ctrlpp::expected<void, stub_setup_error>
     {
-        m_n_vars = problem.n_vars;
+        m_n_vars = static_cast<int>(problem.n_vars);
         return {};
     }
 

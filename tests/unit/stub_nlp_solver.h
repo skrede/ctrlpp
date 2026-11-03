@@ -73,7 +73,7 @@ struct stub_nlp_solver
     {
         if(fail_setup)
             return ctrlpp::unexpected(stub_setup_error::rejected);
-        n_vars = problem.n_vars;
+        n_vars = static_cast<int>(problem.n_vars);
         return {};
     }
 
@@ -85,7 +85,7 @@ struct stub_nlp_solver
     {
         if(fail_setup)
             return ctrlpp::unexpected(stub_setup_error::rejected);
-        n_vars = problem.n_vars;
+        n_vars = static_cast<int>(problem.n_vars);
         return {};
     }
 

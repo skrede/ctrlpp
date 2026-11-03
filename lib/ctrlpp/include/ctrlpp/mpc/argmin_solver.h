@@ -358,15 +358,14 @@ private:
     template <typename Result>
     auto translate_meta(const Result& r) const -> nlp_result<Scalar>
     {
-        return nlp_result<Scalar>{
-            .status = map_status(r.status),
-            .x = {},
-            .objective = r.objective_value,
-            .solve_time = result_wall_time(r),
-            .iterations = static_cast<int>(r.iterations),
-            .primal_residual = r.constraint_violation,
-            .stop_criterion = map_stop_criterion(r.status),
-        };
+        nlp_result<Scalar> out;
+        out.status = map_status(r.status);
+        out.objective = r.objective_value;
+        out.solve_time = result_wall_time(r);
+        out.iterations = static_cast<int>(r.iterations);
+        out.primal_residual = r.constraint_violation;
+        out.stop_criterion = map_stop_criterion(r.status);
+        return out;
     }
 
     template <typename Result>
@@ -398,15 +397,9 @@ private:
             using solver_t = std::decay_t<decltype(solver)>;
             if constexpr(std::is_same_v<solver_t, std::monostate>)
             {
-                return nlp_result<Scalar>{
-                    .status = solve_status::error,
-                    .x = {},
-                    .objective = Scalar{0},
-                    .solve_time = Scalar{0},
-                    .iterations = 0,
-                    .primal_residual = Scalar{0},
-                    .stop_criterion = nlp_stop_criterion::unreported,
-                };
+                nlp_result<Scalar> failed;
+                failed.status = solve_status::error;
+                return failed;
             }
             else
             {

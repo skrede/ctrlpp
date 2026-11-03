@@ -56,10 +56,10 @@ auto scalar_problem(double lower, double upper) -> ctrlpp::nlp_problem<double>
     return {
         .n_vars = 1,
         .n_constraints = 0,
-        .cost = [](std::span<const double> x) -> double { return (x[0] - 0.75) * (x[0] - 0.75); },
-        .gradient = [](std::span<const double> x, std::span<double> g) { g[0] = 2.0 * (x[0] - 0.75); },
-        .constraints = [](std::span<const double>, std::span<double>) {},
-        .constraint_jacobian = [](std::span<const double>, std::span<double>) {},
+        .cost_cb = [](std::span<const double> x) -> double { return (x[0] - 0.75) * (x[0] - 0.75); },
+        .gradient_cb = [](std::span<const double> x, std::span<double> g) { g[0] = 2.0 * (x[0] - 0.75); },
+        .constraints_cb = [](std::span<const double>, std::span<double>) {},
+        .constraint_jacobian_cb = [](std::span<const double>, std::span<double>) {},
         .x_lower = Eigen::VectorXd::Constant(1, lower),
         .x_upper = Eigen::VectorXd::Constant(1, upper),
         .c_lower = {},
@@ -423,11 +423,11 @@ TEST_CASE("nlopt_solver reports a cost that throws as an error status", "[nlopt]
 
     SECTION("std::invalid_argument")
     {
-        problem.cost = [](std::span<const double>) -> double { throw std::invalid_argument{"cost refused the iterate"}; };
+        problem.cost_cb = [](std::span<const double>) -> double { throw std::invalid_argument{"cost refused the iterate"}; };
     }
     SECTION("std::bad_alloc")
     {
-        problem.cost = [](std::span<const double>) -> double { throw std::bad_alloc{}; };
+        problem.cost_cb = [](std::span<const double>) -> double { throw std::bad_alloc{}; };
     }
 
     NloptSolver solver;

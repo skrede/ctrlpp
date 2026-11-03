@@ -76,9 +76,9 @@ inline auto build_single_shooting_problem(
     return ctrlpp::nlp_problem<double>{
         .n_vars = n_vars,
         .n_constraints = 0,
-        .cost = std::move(cost),
-        .gradient = std::move(gradient),
-        .constraints = std::move(constraints),
+        .cost_cb = std::move(cost),
+        .gradient_cb = std::move(gradient),
+        .constraints_cb = std::move(constraints),
         .x_lower = std::move(x_lower),
         .x_upper = std::move(x_upper),
         .c_lower = std::move(c_lower),

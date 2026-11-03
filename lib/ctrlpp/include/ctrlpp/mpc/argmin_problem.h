@@ -106,13 +106,13 @@ public:
 
     auto value(const decision_vector& x) const -> Scalar
     {
-        return problem_->cost(
+        return problem_->cost_cb(
             std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())});
     }
 
     auto dimension() const -> int
     {
-        return problem_->n_vars;
+        return static_cast<int>(problem_->n_vars);
     }
 
     void gradient(const decision_vector& x, decision_vector& g) const
@@ -123,7 +123,7 @@ public:
         // path without disturbing the RT/no-exceptions posture.
         assert(g.size() == static_cast<Eigen::Index>(dimension()));
 
-        problem_->gradient(
+        problem_->gradient_cb(
             std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
             std::span<Scalar>{g.data(), static_cast<std::size_t>(g.size())});
     }
@@ -227,14 +227,14 @@ public:
     void constraint_jacobian(const decision_vector& x, Eigen::MatrixX<Scalar>& J) const
     {
         const int m = n_eq + n_ineq_upper + n_ineq_lower;
-        const int n = base::problem_->n_vars;
+        const int n = static_cast<int>(base::problem_->n_vars);
         J.resize(m, n);
 
-        if(base::problem_->constraint_jacobian)
+        if(base::problem_->constraint_jacobian_cb)
         {
             // J_raw_ is a pre-sized member (partition() sized it to
             // n_constraints x n_vars), so this reorder path allocates nothing.
-            base::problem_->constraint_jacobian(
+            base::problem_->constraint_jacobian_cb(
                 std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
                 std::span<Scalar>{J_raw_.data(), static_cast<std::size_t>(J_raw_.size())});
 
@@ -282,7 +282,7 @@ public:
 private:
     void eval_raw(const decision_vector& x) const
     {
-        base::problem_->constraints(
+        base::problem_->constraints_cb(
             std::span<const Scalar>{x.data(), static_cast<std::size_t>(x.size())},
             std::span<Scalar>{raw_buf_.data(), raw_buf_.size()});
     }

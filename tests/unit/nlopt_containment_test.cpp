@@ -219,10 +219,10 @@ auto three_row_problem() -> ctrlpp::nlp_problem<double>
     return {
         .n_vars = 2,
         .n_constraints = 3,
-        .cost = bowl,
-        .gradient = bowl_gradient,
-        .constraints = three_rows,
-        .constraint_jacobian = [](std::span<const double>, std::span<double>) {},
+        .cost_cb = bowl,
+        .gradient_cb = bowl_gradient,
+        .constraints_cb = three_rows,
+        .constraint_jacobian_cb = [](std::span<const double>, std::span<double>) {},
         .x_lower = {},
         .x_upper = {},
         .c_lower = Eigen::VectorXd::Constant(3, -1.0),
@@ -233,7 +233,7 @@ auto three_row_problem() -> ctrlpp::nlp_problem<double>
 auto three_row_problem(std::int32_t& calls) -> ctrlpp::nlp_problem<double>
 {
     auto problem = three_row_problem();
-    problem.constraints = [&calls](std::span<const double> z, std::span<double> c)
+    problem.constraints_cb = [&calls](std::span<const double> z, std::span<double> c)
     {
         ++calls;
         three_rows(z, c);
@@ -246,10 +246,10 @@ auto rowless_problem(std::int32_t& calls) -> ctrlpp::nlp_problem<double>
     return {
         .n_vars = 2,
         .n_constraints = 0,
-        .cost = bowl,
-        .gradient = bowl_gradient,
-        .constraints = [&calls](std::span<const double>, std::span<double>) { ++calls; },
-        .constraint_jacobian = [](std::span<const double>, std::span<double>) {},
+        .cost_cb = bowl,
+        .gradient_cb = bowl_gradient,
+        .constraints_cb = [&calls](std::span<const double>, std::span<double>) { ++calls; },
+        .constraint_jacobian_cb = [](std::span<const double>, std::span<double>) {},
         .x_lower = {},
         .x_upper = {},
         .c_lower = {},
@@ -307,7 +307,7 @@ template <typename Trigger>
 auto counted_cost(Trigger& trigger) -> ctrlpp::nlp_problem<double>
 {
     auto problem = three_row_problem();
-    problem.cost = [&trigger](std::span<const double> z) -> double
+    problem.cost_cb = [&trigger](std::span<const double> z) -> double
     {
         trigger.tick();
         return bowl(z);
@@ -319,7 +319,7 @@ template <typename Trigger>
 auto counted_rows(Trigger& trigger) -> ctrlpp::nlp_problem<double>
 {
     auto problem = three_row_problem();
-    problem.constraints = [&trigger](std::span<const double> z, std::span<double> c)
+    problem.constraints_cb = [&trigger](std::span<const double> z, std::span<double> c)
     {
         trigger.tick();
         three_rows(z, c);
@@ -334,25 +334,25 @@ auto duplicate_equality(Trigger& trigger) -> ctrlpp::nlp_problem<double>
     return {
         .n_vars = 2,
         .n_constraints = 2,
-        .cost =
+        .cost_cb =
             [&trigger](std::span<const double> z) -> double
         {
             trigger.tick();
             return (z[0] - 1.0) * (z[0] - 1.0) + (z[1] - 1.0) * (z[1] - 1.0);
         },
-        .gradient =
+        .gradient_cb =
             [](std::span<const double> z, std::span<double> g)
         {
             g[0] = 2.0 * (z[0] - 1.0);
             g[1] = 2.0 * (z[1] - 1.0);
         },
-        .constraints =
+        .constraints_cb =
             [](std::span<const double> z, std::span<double> c)
         {
             c[0] = z[0] + z[1];
             c[1] = z[0] + z[1];
         },
-        .constraint_jacobian = [](std::span<const double>, std::span<double>) {},
+        .constraint_jacobian_cb = [](std::span<const double>, std::span<double>) {},
         .x_lower = {},
         .x_upper = {},
         .c_lower = Eigen::Vector2d{1.0, 1.0},

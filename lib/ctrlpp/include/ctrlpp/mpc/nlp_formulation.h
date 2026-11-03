@@ -508,10 +508,10 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
 
     return nlp_problem<Scalar>{.n_vars = n_vars,
                                .n_constraints = n_constraints,
-                               .cost = std::move(cost),
-                               .gradient = std::move(gradient),
-                               .constraints = std::move(constraints),
-                               .constraint_jacobian = std::move(constraint_jacobian),
+                               .cost_cb = std::move(cost),
+                               .gradient_cb = std::move(gradient),
+                               .constraints_cb = std::move(constraints),
+                               .constraint_jacobian_cb = std::move(constraint_jacobian),
                                .x_lower = std::move(x_lower),
                                .x_upper = std::move(x_upper),
                                .c_lower = std::move(c_lower),
@@ -573,10 +573,10 @@ auto build_nmpc_problem_static(const Dynamics& dynamics, const nmpc_config<Scala
     nlp_problem_static<Scalar, NV> prob;
     prob.n_vars = dyn.n_vars;
     prob.n_constraints = dyn.n_constraints;
-    prob.cost = std::move(dyn.cost);
-    prob.gradient = std::move(dyn.gradient);
-    prob.constraints = std::move(dyn.constraints);
-    prob.constraint_jacobian = std::move(dyn.constraint_jacobian);
+    prob.cost_cb = std::move(dyn.cost_cb);
+    prob.gradient_cb = std::move(dyn.gradient_cb);
+    prob.constraints_cb = std::move(dyn.constraints_cb);
+    prob.constraint_jacobian_cb = std::move(dyn.constraint_jacobian_cb);
     prob.x_lower = dyn.x_lower;
     prob.x_upper = dyn.x_upper;
     prob.c_lower = std::move(dyn.c_lower);

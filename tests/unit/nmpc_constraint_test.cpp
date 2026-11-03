@@ -344,7 +344,7 @@ TEST_CASE("nmpc analytic cost gradient matches central difference", "[nmpc][cons
     }
 
     auto prob = ctrlpp::detail::build_nmpc_problem<double, NX, NU, NC, NTC_1>(double_integrator, config, state);
-    const int n = prob.n_vars;
+    const int n = static_cast<int>(prob.n_vars);
 
     const double eps = std::numeric_limits<double>::epsilon();
     // Central-difference total error is O(eps^(2/3)) (see detail/numerical_diff.h).
@@ -368,9 +368,9 @@ TEST_CASE("nmpc analytic cost gradient matches central difference", "[nmpc][cons
         }
 
         std::vector<double> ga(z.size());
-        prob.gradient(std::span<const double>{z.data(), z.size()}, std::span<double>{ga.data(), ga.size()});
+        prob.gradient_cb(std::span<const double>{z.data(), z.size()}, std::span<double>{ga.data(), ga.size()});
 
-        // Central-difference reference of prob.cost.
+        // Central-difference reference of prob.cost_cb.
         std::vector<double> gfd(z.size());
         std::vector<double> zp = z;
         for(std::size_t j = 0; j < z.size(); ++j)
@@ -381,9 +381,9 @@ TEST_CASE("nmpc analytic cost gradient matches central difference", "[nmpc][cons
             const double o = zp[j];
 
             zp[j] = o + h;
-            const double fp = prob.cost(std::span<const double>{zp.data(), zp.size()});
+            const double fp = prob.cost_cb(std::span<const double>{zp.data(), zp.size()});
             zp[j] = o - h;
-            const double fm = prob.cost(std::span<const double>{zp.data(), zp.size()});
+            const double fm = prob.cost_cb(std::span<const double>{zp.data(), zp.size()});
 
             gfd[j] = (fp - fm) / (2.0 * h);
             zp[j] = o;
@@ -399,7 +399,7 @@ TEST_CASE("nmpc analytic cost gradient matches central difference", "[nmpc][cons
     {
         std::vector<double> z(static_cast<std::size_t>(n), 0.0);
         std::vector<double> ga(z.size());
-        prob.gradient(std::span<const double>{z.data(), z.size()}, std::span<double>{ga.data(), ga.size()});
+        prob.gradient_cb(std::span<const double>{z.data(), z.size()}, std::span<double>{ga.data(), ga.size()});
 
         constexpr int nx = static_cast<int>(NX);
         constexpr int nu = static_cast<int>(NU);
@@ -433,8 +433,8 @@ TEST_CASE("nmpc constraint_jacobian matches central difference with exact struct
     }
 
     auto prob = ctrlpp::detail::build_nmpc_problem<double, NX, NU, NC, NTC_1>(double_integrator, config, state);
-    const int n = prob.n_vars;
-    const int m = prob.n_constraints;
+    const int n = static_cast<int>(prob.n_vars);
+    const int m = static_cast<int>(prob.n_constraints);
 
     // Constraint / variable offset map (mirrors build_nmpc_problem).
     constexpr int nx = static_cast<int>(NX);
@@ -475,9 +475,9 @@ TEST_CASE("nmpc constraint_jacobian matches central difference with exact struct
             zi = dist(rng);
         }
 
-        prob.constraint_jacobian(std::span<const double>{z.data(), z.size()}, std::span<double>{jac.data(), jac.size()});
+        prob.constraint_jacobian_cb(std::span<const double>{z.data(), z.size()}, std::span<double>{jac.data(), jac.size()});
 
-        // Central-difference reference of prob.constraints (column-major layout).
+        // Central-difference reference of prob.constraints_cb (column-major layout).
         std::vector<double> ref(jac.size());
         std::vector<double> zp = z;
         std::vector<double> cp(static_cast<std::size_t>(m));
@@ -491,9 +491,9 @@ TEST_CASE("nmpc constraint_jacobian matches central difference with exact struct
             const double o = zp[jz];
 
             zp[jz] = o + h;
-            prob.constraints(std::span<const double>{zp.data(), zp.size()}, std::span<double>{cp.data(), cp.size()});
+            prob.constraints_cb(std::span<const double>{zp.data(), zp.size()}, std::span<double>{cp.data(), cp.size()});
             zp[jz] = o - h;
-            prob.constraints(std::span<const double>{zp.data(), zp.size()}, std::span<double>{cm.data(), cm.size()});
+            prob.constraints_cb(std::span<const double>{zp.data(), zp.size()}, std::span<double>{cm.data(), cm.size()});
 
             for(int i = 0; i < m; ++i)
             {

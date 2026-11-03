@@ -187,9 +187,9 @@ TEST_CASE("argmin ftol_rel/xtol_rel drive the relative convergence criteria", "[
         ctrlpp::nlp_problem<double> prob;
         prob.n_vars = 2;
         prob.n_constraints = 0;
-        prob.cost = [](std::span<const double> x)
+        prob.cost_cb = [](std::span<const double> x)
         { return (1.0 - x[0]) * (1.0 - x[0]) + 100.0 * (x[1] - x[0] * x[0]) * (x[1] - x[0] * x[0]); };
-        prob.gradient = [](std::span<const double> x, std::span<double> g)
+        prob.gradient_cb = [](std::span<const double> x, std::span<double> g)
         {
             g[0] = -2.0 * (1.0 - x[0]) - 400.0 * x[0] * (x[1] - x[0] * x[0]);
             g[1] = 200.0 * (x[1] - x[0] * x[0]);
@@ -296,13 +296,13 @@ TEST_CASE("nlopt setup reports equality-constraint rejection as an expected erro
     ctrlpp::nlp_problem<double> problem{};
     problem.n_vars = 2;
     problem.n_constraints = 1;
-    problem.cost = [](std::span<const double> x) { return x[0] * x[0] + x[1] * x[1]; };
-    problem.gradient = [](std::span<const double> x, std::span<double> g)
+    problem.cost_cb = [](std::span<const double> x) { return x[0] * x[0] + x[1] * x[1]; };
+    problem.gradient_cb = [](std::span<const double> x, std::span<double> g)
     {
         g[0] = 2.0 * x[0];
         g[1] = 2.0 * x[1];
     };
-    problem.constraints = [](std::span<const double> x, std::span<double> c) { c[0] = x[0] + x[1]; };
+    problem.constraints_cb = [](std::span<const double> x, std::span<double> c) { c[0] = x[0] + x[1]; };
     problem.c_lower = Eigen::VectorXd::Constant(1, 1.0);
     problem.c_upper = Eigen::VectorXd::Constant(1, 1.0);
 
@@ -493,9 +493,9 @@ TEST_CASE("argmin_solver survives move-then-solve", "[argmin][move-safety]")
     ctrlpp::nlp_problem<double> prob;
     prob.n_vars = 2;
     prob.n_constraints = 0;
-    prob.cost = [](std::span<const double> x)
+    prob.cost_cb = [](std::span<const double> x)
     { return (1.0 - x[0]) * (1.0 - x[0]) + 100.0 * (x[1] - x[0] * x[0]) * (x[1] - x[0] * x[0]); };
-    prob.gradient = [](std::span<const double> x, std::span<double> g)
+    prob.gradient_cb = [](std::span<const double> x, std::span<double> g)
     {
         g[0] = -2.0 * (1.0 - x[0]) - 400.0 * x[0] * (x[1] - x[0] * x[0]);
         g[1] = 200.0 * (x[1] - x[0] * x[0]);

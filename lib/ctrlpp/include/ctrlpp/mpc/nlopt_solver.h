@@ -274,7 +274,7 @@ private:
         }
         catch(const nlopt::roundoff_limited&)
         {
-            opt_f = problem_->cost({x.data(), x.size()});
+            opt_f = problem_->cost_cb({x.data(), x.size()});
             return solve_status::solved_inaccurate;
         }
     }
@@ -365,13 +365,13 @@ private:
         auto* self = static_cast<nlopt_solver*>(data);
         std::span<const double> x_span{x.data(), x.size()};
 
-        if(!grad.empty() && self->problem_->gradient)
+        if(!grad.empty() && self->problem_->gradient_cb)
         {
             std::span<double> grad_span{grad.data(), grad.size()};
-            self->problem_->gradient(x_span, grad_span);
+            self->problem_->gradient_cb(x_span, grad_span);
         }
 
-        return self->problem_->cost(x_span);
+        return self->problem_->cost_cb(x_span);
     }
 };
 

@@ -36,7 +36,7 @@ inline auto max_constraint_violation(const ctrlpp::nlp_problem<double>& problem,
 
     auto nc = static_cast<std::size_t>(problem.n_constraints);
     std::vector<double> c(nc);
-    problem.constraints(x, std::span<double>{c.data(), nc});
+    problem.constraints_cb(x, std::span<double>{c.data(), nc});
 
     double worst = 0.0;
     for(std::size_t i = 0; i < nc; ++i)
@@ -62,7 +62,7 @@ inline auto compute_quality_metrics(const ctrlpp::nlp_problem<double>& problem,
     std::vector<double> grad(n);
     std::vector<double> x_buf(result.x.data(), result.x.data() + result.x.size());
     ctrlpp::detail::finite_diff_gradient<double>(
-        problem.cost,
+        problem.cost_cb,
         std::span<const double>{x_buf.data(), n},
         std::span<double>{grad.data(), n});
     m.gradient_norm = Eigen::Map<Eigen::VectorXd>(grad.data(), static_cast<Eigen::Index>(n)).norm();
@@ -106,7 +106,7 @@ auto compute_gradient_norm(const NmpcType& controller) -> double
     std::vector<double> grad(n);
     std::vector<double> x_buf(z.data(), z.data() + z.size());
     ctrlpp::detail::finite_diff_gradient<double>(
-        prob.cost,
+        prob.cost_cb,
         std::span<const double>{x_buf.data(), n},
         std::span<double>{grad.data(), n});
     return Eigen::Map<Eigen::VectorXd>(grad.data(), static_cast<Eigen::Index>(n)).norm();

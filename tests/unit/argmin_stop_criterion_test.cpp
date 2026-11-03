@@ -146,9 +146,9 @@ TEST_CASE("a line search that accepts no step reports an inaccurate solve that s
     ctrlpp::nlp_problem<double> uphill;
     uphill.n_vars        = 2;
     uphill.n_constraints = 0;
-    uphill.cost          = [](std::span<const double> x) { return x[0] * x[0] + x[1] * x[1]; };
+    uphill.cost_cb          = [](std::span<const double> x) { return x[0] * x[0] + x[1] * x[1]; };
     // The reported gradient has the wrong sign, so every search direction climbs the cost.
-    uphill.gradient = [](std::span<const double> x, std::span<double> g)
+    uphill.gradient_cb = [](std::span<const double> x, std::span<double> g)
     {
         g[0] = -2.0 * x[0];
         g[1] = -2.0 * x[1];
