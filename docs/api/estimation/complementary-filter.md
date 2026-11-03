@@ -49,8 +49,7 @@ struct cf_config
 ### create
 
 ```cpp
-static auto create(cf_config<Scalar> config)
-    -> ctrlpp::expected<complementary_filter, filter_error>;
+static ctrlpp::expected<complementary_filter, filter_error> create(cf_config<Scalar> config);
 ```
 
 `create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion before it seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the filter state. A `q0` whose norm differs from one by more than the rounding bound `max(4 eps, 4 denorm_min)` is rejected with `filter_error::non_unit_quaternion`: a rotation quaternion is unit by definition, so `(2, 0, 0, 0)` names no attitude. A norm defect within the bound is rounding drift and is normalized away at construction, so the gravity and magnetic correction terms, which treat the stored quaternion as a unit rotation, start from one; every quaternion produced by a working-precision normalization, an angle-axis conversion, `so3::exp` or a composition of such rotations is within it. The convention and its count are in [Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused). As a static member of a class template, `create` requires explicit template arguments, e.g. `complementary_filter<double>::create(cfg)`.
@@ -60,8 +59,7 @@ static auto create(cf_config<Scalar> config)
 ### update (IMU: 6&ndash;DOF)
 
 ```cpp
-auto update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt)
-    -> ctrlpp::expected<void, cf_update_error>;
+ctrlpp::expected<void, cf_update_error> update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel, Scalar dt);
 ```
 
 Natural IMU update fusing gyroscope angular velocity with accelerometer gravity reference. Computes the rotation error between the expected and measured gravity direction in body frame via cross product, applies PI correction to the gyroscope, and integrates the corrected angular velocity via the SO(3) exponential map.
@@ -69,9 +67,8 @@ Natural IMU update fusing gyroscope angular velocity with accelerometer gravity 
 ### update (MARG: 9&ndash;DOF)
 
 ```cpp
-auto update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel,
-            const Vector<Scalar, 3>& mag, Scalar dt)
-    -> ctrlpp::expected<void, cf_update_error>;
+ctrlpp::expected<void, cf_update_error> update(const Vector<Scalar, 3>& gyro, const Vector<Scalar, 3>& accel,
+                                               const Vector<Scalar, 3>& mag, Scalar dt);
 ```
 
 MARG update adding magnetometer heading correction to the IMU update. The magnetic field reference direction is computed in the world frame, and the magnetometer error is combined with the accelerometer error for full 3D orientation correction. Falls back to IMU-only update if the magnetometer reading is degenerate.
@@ -94,8 +91,7 @@ Both overloads reject **before any member is assigned**, so a rejected step leav
 
 ```cpp
 void predict(const input_vector_t& u);   // stores gyro for next update
-auto update(const output_vector_t& z)    // calls update(gyro_buf, z, dt)
-    -> ctrlpp::expected<void, cf_update_error>;
+ctrlpp::expected<void, cf_update_error> update(const output_vector_t& z);   // calls update(gyro_buf, z, dt)
 ```
 
 These wrappers satisfy the `ObserverPolicy` concept for composition with controllers. The single-measurement form **forwards** the IMU overload's result rather than swallowing it, so the caller sees the same cause it would have seen through the three-argument form.
@@ -105,7 +101,7 @@ These wrappers satisfy the `ObserverPolicy` concept for composition with control
 ### state
 
 ```cpp
-auto state() const -> const state_vector_t&;
+const state_vector_t& state() const;
 ```
 
 Returns the 7D state: [w, x, y, z, bias_x, bias_y, bias_z].
@@ -113,7 +109,7 @@ Returns the 7D state: [w, x, y, z, bias_x, bias_y, bias_z].
 ### attitude
 
 ```cpp
-auto attitude() const -> Eigen::Quaternion<Scalar>;
+Eigen::Quaternion<Scalar> attitude() const;
 ```
 
 Returns the quaternion estimate.
@@ -121,7 +117,7 @@ Returns the quaternion estimate.
 ### bias
 
 ```cpp
-auto bias() const -> const Vector<Scalar, 3>&;
+const Vector<Scalar, 3>& bias() const;
 ```
 
 Returns the estimated gyroscope bias.
@@ -129,7 +125,7 @@ Returns the estimated gyroscope bias.
 ### health
 
 ```cpp
-auto health() const -> cf_health;
+cf_health health() const;
 ```
 
 Returns the persistent state-health status, one of `cf_health::ok` or `cf_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried attitude is still degraded from a step several samples ago. The status starts at `ok` and latches to `non_finite_estimate` the first time a step finds the carried attitude or bias already non-finite. A **rejected update does not set it**: the rejection mutates nothing, so it leaves the filter healthy. The query carries no discard warning; asking it is optional.

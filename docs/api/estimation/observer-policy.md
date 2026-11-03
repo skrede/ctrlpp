@@ -83,7 +83,7 @@ struct null_observer
 
     void predict(const std::monostate&) {}
     void update(const std::monostate&) {}
-    auto state() const -> const std::monostate&;
+    const std::monostate& state() const;
 };
 ```
 

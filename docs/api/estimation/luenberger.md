@@ -49,8 +49,7 @@ Propagates the state estimate: x = Ax + Bu.
 ### update
 
 ```cpp
-auto update(const output_vector_t& z)
-    -> ctrlpp::expected<void, luenberger_update_error>;
+ctrlpp::expected<void, luenberger_update_error> update(const output_vector_t& z);
 ```
 
 Corrects the state estimate with measurement: x = x + L(z - Cx).
@@ -67,7 +66,7 @@ The step is rejected **before the state is assigned**, so a rejected step leaves
 ### state
 
 ```cpp
-auto state() const -> const state_vector_t&;
+const state_vector_t& state() const;
 ```
 
 Returns the current state estimate.
@@ -75,7 +74,7 @@ Returns the current state estimate.
 ### health
 
 ```cpp
-auto health() const -> luenberger_health;
+luenberger_health health() const;
 ```
 
 Returns the persistent state-health status, one of `luenberger_health::ok` or `luenberger_health::non_finite_estimate`. It answers a question a per-call result cannot, because the question outlives the call: whether the carried estimate is still degraded from a step several samples ago. The status starts at `ok` and latches to `non_finite_estimate` the first time a step finds the carried state already non-finite, which is how a poisoned `predict` becomes visible; [`reset`](#reset) clears it, because it replaces the very state the status describes. A **rejected measurement does not set it**: the rejection mutates nothing, so it leaves the observer healthy. The query carries no discard warning; asking it is optional.
