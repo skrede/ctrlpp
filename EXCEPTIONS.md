@@ -54,6 +54,7 @@ count deliberately or decompose the unit.
 
 | Path | Lines at registration | Why |
 | --- | --- | --- |
+| lib/ctrlpp/include/ctrlpp/estimation/particle_filter.h | 641 | Every decomposition of the filter into weight, likelihood, sampling and estimate components that was measured raises the worst-path stack of one per-step update. Merging the log-weight and linear-weight resamplings into one function gives a linear-weight update the log-weight frame: for 100 double particles it rises from 1848 to 2664 bytes on the host at -O3 and from 1440 to 2240 bytes on the ESP32 (Xtensa, -Os). Keeping one resampling per weight mode inside the weight component raises every host update by 16 to 48 bytes, the 100-particle double one from 2648 to 2664, and the multinomial one from 3056 to 3136 bytes on Cortex-M7 at -O3. Keeping the per-mode resamplings as filter members instead raises the 10-particle log-weight update from 472 to 712 bytes on the host and from 600 to 800 bytes on Cortex-M7 at -O3, and the multinomial one from 3472 to 3584 bytes on the host. |
 
 ## Functions
 

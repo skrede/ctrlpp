@@ -1,9 +1,10 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_PARTICLE_FILTER_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_PARTICLE_FILTER_H
 
-/// @brief Bootstrap SIR particle filter with ESS-adaptive resampling and roughening.
-///
-/// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993
+// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993
+
+#include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 
 #include "ctrlpp/types.h"
 
@@ -14,8 +15,6 @@
 
 #include "ctrlpp/detail/covariance_ops.h"
 
-#include "ctrlpp/estimation/observer_policy.h"
-#include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/estimation/resampling/resampling_strategy.h"
 #include "ctrlpp/estimation/resampling/systematic_resampling.h"
 
@@ -48,24 +47,6 @@ enum class weight_representation
     linear
 };
 
-/// @brief Structured failure modes of a `particle_filter` measurement update.
-///
-/// The order is severity: the carried estimate is reported ahead of the
-/// measurement, because the fault is upstream of it. Every refusal leaves the
-/// particles, the weights and the random generator bitwise unchanged.
-///
-///  * non_finite_state       : a carried particle is already non-finite when
-///                             the step begins, so no weight computed from it
-///                             means anything.
-///  * non_finite_measurement : the supplied measurement has a non-finite
-///                             component. It would make every weight
-///                             non-finite and discard the posterior, so it is
-///                             refused and the caller may continue with the
-///                             next sample.
-///  * non_finite_result      : the measurement is finite but its likelihood is
-///                             NaN or +inf for some particle (a custom
-///                             likelihood policy, or a measurement model that
-///                             returned NaN).
 enum class pf_update_error
 {
     non_finite_state,
@@ -73,28 +54,7 @@ enum class pf_update_error
     non_finite_result
 };
 
-/// @brief Persistent health status of a `particle_filter`, ordered by severity
-/// and latching: it never returns to a lower rung on its own.
-///
-///  * ok                     : every update so far conditioned the particles
-///                             on its measurement.
-///  * weights_reset          : a measurement no particle explains (every
-///                             likelihood is zero, or the linear weights' total
-///                             underflows) reset the weights to uniform. The
-///                             step succeeded and left a valid but uninformed
-///                             posterior, so this is reported here rather than
-///                             as an error.
-///  * resampling_rolled_back : a resampling whose roughened particles would
-///                             have been non-finite (a cloud whose coordinate
-///                             range or jitter overflows) was undone. The step
-///                             succeeded with its weighted posterior, and the
-///                             set is no longer being resampled while the
-///                             condition persists.
-///  * non_finite_estimate    : a step found the particles already non-finite.
-///                             `predict` does not reject its input, so this is
-///                             how a poisoned control or a dynamics model that
-///                             returned a non-finite state becomes visible. A
-///                             refused measurement does not set it.
+// Ordered by severity; the status latches, so it never returns to a lower rung.
 enum class pf_health
 {
     ok,
@@ -125,10 +85,7 @@ namespace detail
 template <ctrlpp_floating_scalar Scalar, std::size_t NY>
 struct gaussian_likelihood
 {
-    /// Log Gaussian likelihood of the innovation z - z_pred under measurement
-    /// covariance R, given precomputed R^-1 and log((2 pi)^NY det R).
-    Scalar operator()(const Vector<Scalar, NY>& z, const Vector<Scalar, NY>& z_pred,
-                      const Matrix<Scalar, NY, NY>& R_inv, Scalar log_det_2piR) const
+    Scalar operator()(const Vector<Scalar, NY>& z, const Vector<Scalar, NY>& z_pred, const Matrix<Scalar, NY, NY>& R_inv, Scalar log_det_2piR) const
     {
         Vector<Scalar, NY> innov = z - z_pred;
         Scalar mahal = (innov.transpose() * R_inv * innov)(0, 0);
@@ -138,17 +95,15 @@ struct gaussian_likelihood
 
 }
 
-/// @brief Constrains a measurement-likelihood policy usable by particle_filter.
-///
-/// A policy maps an innovation (z, z_pred) plus the precomputed measurement
-/// precision R^-1 and log normalizer to a scalar log-likelihood.
 template <typename L, typename Scalar, std::size_t NY>
 concept pf_likelihood_model = requires(const L& l, const Vector<Scalar, NY>& v, const Matrix<Scalar, NY, NY>& Rinv, Scalar s) {
     { l(v, v, Rinv, s) } -> std::convertible_to<Scalar>;
 };
 
-template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t NP, typename Dynamics, typename Measurement, typename Resampler = systematic_resampling, typename Rng = std::mt19937_64, typename Likelihood = detail::gaussian_likelihood<Scalar, NY>>
-    requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY> && std::uniform_random_bit_generator<Rng> && resampling_strategy<Resampler, Rng, NP> && pf_likelihood_model<Likelihood, Scalar, NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t NP, typename Dynamics, typename Measurement,
+        typename Resampler = systematic_resampling, typename Rng = std::mt19937_64, typename Likelihood = detail::gaussian_likelihood<Scalar, NY>>
+    requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY> && std::uniform_random_bit_generator<Rng> &&
+        resampling_strategy<Resampler, Rng, NP> && pf_likelihood_model<Likelihood, Scalar, NY>
 class particle_filter
 {
     static_assert(NX > 0, "State dimension NX must be positive");
@@ -159,16 +114,14 @@ class particle_filter
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int ny = static_cast<int>(NY);
 
-    /// @brief Passkey for the non-validating constructor: only the filter can
-    /// make one, which is what keeps `create` the only way to originate a
-    /// filter and the validation impossible to bypass.
+    // Only the filter can make the passkey, so create is the only way to originate a filter.
     class validated_tag
     {
         friend particle_filter;
         validated_tag() = default;
     };
 
-    /// @brief Square roots S with S*S^T equal to Q and to P0.
+    // Factors S with S S^T equal to Q (process) and to P0 (prior).
     struct sampling_factors
     {
         Matrix<Scalar, NX, NX> process;
@@ -183,8 +136,8 @@ public:
 
     // Public so ctrlpp::expected can construct the filter in the caller's
     // storage; unreachable without the validated_tag only the filter can make.
-    particle_filter(validated_tag, Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, sampling_factors factors, Resampler resampler,
-                    Rng rng, Likelihood likelihood)
+    particle_filter(validated_tag, Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, sampling_factors factors, Resampler resampler, Rng rng,
+            Likelihood likelihood)
         : m_dynamics{std::move(dynamics)}
         , m_measurement{std::move(measurement)}
         , m_resampler{std::move(resampler)}
@@ -208,65 +161,27 @@ public:
         initialize_particles(config.x0, factors.prior);
     }
 
-    /// @brief Fallible factory, and the only way to originate a filter.
-    ///
-    /// Refuses, in the order `pf_config` declares the fields: a non-finite,
-    /// structurally asymmetric or indefinite Q; a non-finite, structurally
-    /// asymmetric, indefinite or singular R; a non-finite x0; and a non-finite,
-    /// structurally asymmetric or indefinite P0. A drift-level asymmetry is not
-    /// refused: the matrix is symmetrized, then judged, sampled and scored as
-    /// that symmetrized matrix. Definiteness is a domain condition here rather
-    /// than a numerical-behavior one, because the filter samples from N(0, Q)
-    /// and N(x0, P0) and scores every particle with R's inverse and
-    /// log-determinant: a matrix with a negative eigenvalue has no Gaussian to
-    /// sample, and a singular R has no density to score.
-    ///
-    /// A singular but positive semidefinite Q or P0 is accepted, since a
-    /// rank-one process noise and a point-mass prior are legitimate models. Its
-    /// sampling factor keeps every zero eigenvalue at zero, so the particles
-    /// carry exactly the covariance they were given.
-    ///
-    /// Every refusal happens before any filter state exists. On success the
-    /// filter is constructed directly in the storage the caller initializes
-    /// from the result, so no whole-filter temporary lives in the factory's
-    /// frame.
-    static auto create(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
-        -> ctrlpp::expected<particle_filter, filter_error>
+    static ctrlpp::expected<particle_filter, filter_error> create(
+            Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
     {
         return create(std::move(dynamics), std::move(measurement), std::move(config), Resampler{}, std::move(rng), std::move(likelihood));
     }
 
-    /// @brief Fallible factory taking the resampling strategy; refuses exactly
-    /// what the overload above refuses.
-    static auto create(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Resampler resampler, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
-        -> ctrlpp::expected<particle_filter, filter_error>
+    static ctrlpp::expected<particle_filter, filter_error> create(
+            Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Resampler resampler, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
     {
         auto factors = validated_sampling_factors(config);
         if(!factors)
             return ctrlpp::unexpected(factors.error());
-        return ctrlpp::expected<particle_filter, filter_error>{std::in_place, validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config),
-                                                              std::move(*factors), std::move(resampler), std::move(rng), std::move(likelihood)};
+        return ctrlpp::expected<particle_filter, filter_error>{std::in_place, validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config), std::move(*factors),
+                std::move(resampler), std::move(rng), std::move(likelihood)};
     }
 
-    /// @brief Propagate all particles through dynamics with process noise.
-    ///
-    /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Eq. 6
-    void predict(const input_vector_t& u)
-    {
-        propagate_particles(u);
-    }
+    // @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Eq. 6
+    void predict(const input_vector_t& u) { propagate_particles(u); }
 
-    /// @brief Update particle weights with measurement and resample if ESS is low.
-    ///
-    /// The step is refused, with the particles, the weights and the random
-    /// generator untouched, when a particle or the measurement is non-finite or
-    /// a new weight would be; the caller may continue with the next sample. A
-    /// resampling whose roughening would leave a particle non-finite is undone,
-    /// and the step succeeds with its conditioned weights over the set before
-    /// the resampling, reported through `health()`.
-    ///
-    /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Alg. 1
-    auto update(const output_vector_t& z) -> ctrlpp::expected<void, pf_update_error>
+    // @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Alg. 1
+    ctrlpp::expected<void, pf_update_error> update(const output_vector_t& z)
     {
         if(const auto step = check_step(z); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
@@ -282,7 +197,7 @@ public:
         return weighted_mean();
     }
 
-    auto weighted_mean() const -> state_vector_t
+    state_vector_t weighted_mean() const
     {
         state_vector_t mean = state_vector_t::Zero();
         if(m_weight_mode == weight_representation::log)
@@ -299,33 +214,8 @@ public:
         return mean;
     }
 
-    /// @brief Weighted second central moment of the particle set: the posterior
-    /// covariance the cloud and its weights represent.
-    ///
-    /// This is the uncertainty half of the estimate, and without it a caller has
-    /// no way to learn how much to trust `state()`. The particle array alone
-    /// does not answer the question: its unweighted dispersion ignores the
-    /// weights entirely and therefore describes the PRIOR spread whenever the
-    /// last update did not trigger a resampling.
-    ///
-    /// Three properties of the definition, each chosen rather than defaulted:
-    ///
-    ///  * The center is the WEIGHTED MEAN, always, including when the extraction
-    ///    method is the maximum a posteriori particle. A second moment about any
-    ///    other point is larger than the covariance and is not one; a caller who
-    ///    wants the dispersion about the MAP estimate can form it from
-    ///    `particles()` and `map_estimate()`.
-    ///  * There is no Bessel correction. The weights sum to one, so this is the
-    ///    weighted second moment, matching the convention the unscented filter's
-    ///    own sigma-point covariance uses.
-    ///  * Uniform weights need no special case and get none. The expression then
-    ///    reduces exactly to the plain second moment of the particles about their
-    ///    plain mean, which is the honest answer after the weight-degeneracy
-    ///    guard fires: the measurement carried no information, so the reported
-    ///    uncertainty is the dispersion the filter was already carrying.
-    ///
-    /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Sec. III-A
-    auto covariance() const -> Matrix<Scalar, NX, NX>
+    // @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Sec. III-A
+    Matrix<Scalar, NX, NX> covariance() const
     {
         const state_vector_t mean = weighted_mean();
         Matrix<Scalar, NX, NX> P = Matrix<Scalar, NX, NX>::Zero();
@@ -351,7 +241,7 @@ public:
         return detail::symmetrize(P);
     }
 
-    auto map_estimate() const -> state_vector_t
+    state_vector_t map_estimate() const
     {
         std::size_t best = 0;
         if(m_weight_mode == weight_representation::log)
@@ -373,12 +263,9 @@ public:
         return m_particles[best];
     }
 
-    auto particles() const -> const std::array<state_vector_t, NP>& { return m_particles; }
+    const std::array<state_vector_t, NP>& particles() const { return m_particles; }
 
-    /// @brief Report whether an earlier step reset the weights, rolled back a
-    /// resampling or found the particles non-finite. Latches; a refused
-    /// measurement does not set it.
-    auto health() const -> pf_health { return m_health; }
+    pf_health health() const { return m_health; }
 
 private:
     Dynamics m_dynamics;
@@ -408,7 +295,7 @@ private:
     // than a local keeps the update's stack frame independent of NP.
     std::array<Scalar, NP> m_staged_weights;
 
-    static auto validated_sampling_factors(pf_config<Scalar, NX, NU, NY>& config) -> ctrlpp::expected<sampling_factors, filter_error>
+    static ctrlpp::expected<sampling_factors, filter_error> validated_sampling_factors(pf_config<Scalar, NX, NU, NY>& config)
     {
         const auto Q = detail::checked_covariance(config.Q, detail::process_noise_faults);
         if(!Q)
@@ -426,10 +313,9 @@ private:
         return sampling_factors{sampling_factor(config.Q, *Q), sampling_factor(config.P0, *P0)};
     }
 
-    /// Eigen's LLT leaves the input's entries in the columns after a
-    /// non-positive pivot, so its factor is read only after a successful
-    /// factorization.
-    static auto sampling_factor(const Matrix<Scalar, NX, NX>& M, const detail::psd_decomposition_result<Scalar, nx>& decomposition) -> Matrix<Scalar, NX, NX>
+    // Eigen's LLT leaves the input's entries in the columns after a non-positive pivot, so its
+    // factor is read only after a successful factorization.
+    static Matrix<Scalar, NX, NX> sampling_factor(const Matrix<Scalar, NX, NX>& M, const detail::psd_decomposition_result<Scalar, nx>& decomposition)
     {
         Eigen::LLT<Matrix<Scalar, NX, NX>> llt(M);
         if(llt.info() == Eigen::Success)
@@ -451,7 +337,7 @@ private:
         {
             state_vector_t noise;
             for(std::size_t d = 0; d < NX; ++d)
-                noise(static_cast<int>(d)) = normal(m_rng);
+                noise(static_cast<Eigen::Index>(d)) = normal(m_rng);
             m_particles[i] = x0 + P0_sqrt * noise;
         }
 
@@ -466,13 +352,10 @@ private:
         std::normal_distribution<Scalar> normal(Scalar{0}, Scalar{1});
         state_vector_t noise;
         for(std::size_t d = 0; d < NX; ++d)
-            noise(static_cast<int>(d)) = normal(m_rng);
+            noise(static_cast<Eigen::Index>(d)) = normal(m_rng);
         return m_Q_sqrt * noise;
     }
 
-    /// @brief Propagate all particles through dynamics model with additive process noise.
-    ///
-    /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Eq. 6
     void propagate_particles(const input_vector_t& u)
     {
         for(std::size_t i = 0; i < NP; ++i)
@@ -482,21 +365,11 @@ private:
         }
     }
 
-    /// @brief Compute measurement log-likelihood of the innovation via the policy.
-    ///
-    /// The default policy reproduces the Gaussian log-likelihood exactly; a
-    /// custom policy (for example a bearing wrap) sees the same precomputed
-    /// precision m_R_inv and log normalizer m_log_det_2piR.
-    ///
-    /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Eq. 63
-    Scalar log_likelihood(const output_vector_t& z, const output_vector_t& z_pred) const
-    {
-        return m_likelihood(z, z_pred, m_R_inv, m_log_det_2piR);
-    }
+    // @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Eq. 63
+    Scalar log_likelihood(const output_vector_t& z, const output_vector_t& z_pred) const { return m_likelihood(z, z_pred, m_R_inv, m_log_det_2piR); }
 
-    /// @brief Classify a step's operands without touching a member: the
-    /// carried particles first, the measurement last.
-    auto check_step(const output_vector_t& z) const -> ctrlpp::expected<void, pf_update_error>
+    // Classifies without touching a member: the carried particles first, the measurement last.
+    ctrlpp::expected<void, pf_update_error> check_step(const output_vector_t& z) const
     {
         for(const auto& particle : m_particles)
         {
@@ -508,7 +381,7 @@ private:
         return {};
     }
 
-    auto latch_health(pf_update_error fault) -> pf_update_error
+    pf_update_error latch_health(pf_update_error fault)
     {
         if(fault != pf_update_error::non_finite_measurement)
             m_health = pf_health::non_finite_estimate;
@@ -527,9 +400,8 @@ private:
             m_health = pf_health::resampling_rolled_back;
     }
 
-    /// @brief Stage the new log-weights; false when one is NaN or +inf. A -inf
-    /// entry is a legitimate zero likelihood.
-    auto stage_log_weights(const output_vector_t& z) -> bool
+    // A -inf log-weight is a legitimate zero likelihood, so only NaN and +inf refuse the step.
+    bool stage_log_weights(const output_vector_t& z)
     {
         bool admissible = true;
         for(std::size_t i = 0; i < NP; ++i)
@@ -541,12 +413,8 @@ private:
         return admissible;
     }
 
-    /// @brief Normalize log-weights via log-sum-exp trick.
-    ///
-    /// When all particles have zero likelihood (max log-weight is -inf),
-    /// resets to uniform weights and reports the depletion through health.
-    ///
-    /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Sec. III-A
+    // Log-sum-exp normalization.
+    // @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Sec. III-A
     void normalize_log_weights()
     {
         Scalar max_log_w = *std::max_element(m_log_weights.begin(), m_log_weights.end());
@@ -565,9 +433,8 @@ private:
             lw -= log_sum;
     }
 
-    /// @brief Stage the new linear weights; false when their total, summed in
-    /// the order normalization sums them, is not finite.
-    auto stage_linear_weights(const output_vector_t& z) -> bool
+    // The total is summed in the order normalization sums it, so the two agree on finiteness.
+    bool stage_linear_weights(const output_vector_t& z)
     {
         Scalar total = Scalar{0};
         for(std::size_t i = 0; i < NP; ++i)
@@ -580,11 +447,6 @@ private:
         return std::isfinite(total);
     }
 
-    /// @brief Normalize linear weights.
-    ///
-    /// On total underflow (every likelihood collapsed to zero, so the sum is
-    /// not positive) the weights are reset to uniform 1/NP, mirroring the log
-    /// path's reset, and the depletion is reported through health.
     void normalize_linear_weights()
     {
         Scalar sum = Scalar{0};
@@ -600,9 +462,7 @@ private:
         note_weights_reset();
     }
 
-    /// @brief Compute Effective Sample Size from current weights.
-    ///
-    /// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Eq. 51
+    // @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002, Eq. 51
     Scalar compute_ess_from_log() const
     {
         Scalar sum_w2 = Scalar{0};
@@ -614,7 +474,6 @@ private:
         return Scalar{1} / sum_w2;
     }
 
-    /// @brief Compute Effective Sample Size from linear weights.
     Scalar compute_ess_from_linear() const
     {
         Scalar sum_w2 = Scalar{0};
@@ -623,7 +482,6 @@ private:
         return Scalar{1} / sum_w2;
     }
 
-    /// @brief Resample particles and reset to uniform weights (log mode).
     void resample_log()
     {
         auto lin = log_to_linear();
@@ -638,7 +496,6 @@ private:
         m_log_weights.fill(log_uniform);
     }
 
-    /// @brief Resample particles and reset to uniform weights (linear mode).
     void resample_linear()
     {
         std::array<std::size_t, NP> indices{};
@@ -652,9 +509,7 @@ private:
         m_linear_weights.fill(uniform);
     }
 
-    /// @brief Log-weight update: stage weights, commit if admissible,
-    /// normalize, resample if ESS low.
-    auto update_log(const output_vector_t& z) -> ctrlpp::expected<void, pf_update_error>
+    ctrlpp::expected<void, pf_update_error> update_log(const output_vector_t& z)
     {
         if(!stage_log_weights(z))
             return ctrlpp::unexpected(pf_update_error::non_finite_result);
@@ -665,9 +520,7 @@ private:
         return {};
     }
 
-    /// @brief Linear-weight update: stage weights, commit if admissible,
-    /// normalize, resample if ESS low.
-    auto update_linear(const output_vector_t& z) -> ctrlpp::expected<void, pf_update_error>
+    ctrlpp::expected<void, pf_update_error> update_linear(const output_vector_t& z)
     {
         if(!stage_linear_weights(z))
             return ctrlpp::unexpected(pf_update_error::non_finite_result);
@@ -693,13 +546,9 @@ private:
             m_particles[i] = m_previous_particles[indices[i]];
     }
 
-    /// @brief True when the roughened set is finite; otherwise restores the set
-    /// before the resampling, latches the health rung and returns false.
-    ///
-    /// The caller then keeps the step's conditioned weights: they are the
-    /// posterior over the restored set, whose particles passed the step's own
-    /// finiteness check.
-    auto roughened_particles_kept() -> bool
+    // On a non-finite roughening the set before the resampling is restored, and the caller keeps
+    // the step's weights, which are the posterior over that set.
+    bool roughened_particles_kept()
     {
         for(const auto& particle : m_particles)
         {
@@ -713,9 +562,7 @@ private:
         return true;
     }
 
-    /// @brief Roughening: add jitter to resampled particles to prevent degeneracy.
-    ///
-    /// @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Sec. 5
+    // @cite gordon1993 -- Gordon et al., "Novel approach to nonlinear/non-Gaussian Bayesian state estimation", 1993, Sec. 5
     void apply_roughening()
     {
         if(m_roughening_scale <= Scalar{0})
@@ -734,7 +581,7 @@ private:
 
     Scalar compute_roughening_sigma(std::size_t d, Scalar np_factor) const
     {
-        int di = static_cast<int>(d);
+        const auto di = static_cast<Eigen::Index>(d);
         Scalar min_val = m_particles[0](di);
         Scalar max_val = min_val;
         for(std::size_t i = 1; i < NP; ++i)
@@ -745,7 +592,7 @@ private:
         }
         Scalar sigma = m_roughening_scale * (max_val - min_val) * np_factor;
 
-        // Fallback: if all particles collapsed, use process noise scale
+        // A collapsed coordinate falls back to the process-noise scale.
         if(sigma <= Scalar{0})
             sigma = m_roughening_scale * std::sqrt(m_Q(di, di));
         return sigma;
@@ -753,24 +600,22 @@ private:
 
     void apply_particle_jitter(std::size_t d, Scalar sigma, std::normal_distribution<Scalar>& normal)
     {
-        int di = static_cast<int>(d);
+        const auto di = static_cast<Eigen::Index>(d);
         for(std::size_t i = 0; i < NP; ++i)
             m_particles[i](di) += sigma * normal(m_rng);
     }
 };
 
-/// @brief `particle_filter::create` with the particle count named first, since
-/// NP cannot be deduced from the arguments.
-template <std::size_t NP, typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64, typename Likelihood = detail::gaussian_likelihood<Scalar, NY>>
-auto make_particle_filter(Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{},
-                          Likelihood likelihood = Likelihood{})
-    -> ctrlpp::expected<particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng, Likelihood>, filter_error>
+// NP leads because it cannot be deduced from the arguments.
+template <std::size_t NP, typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64,
+        typename Likelihood = detail::gaussian_likelihood<Scalar, NY>>
+ctrlpp::expected<particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng, Likelihood>, filter_error> make_particle_filter(
+        Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
 {
     using filter_type = particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, systematic_resampling, Rng, Likelihood>;
     return filter_type::create(std::move(dynamics), std::move(measurement), std::move(config), std::move(rng), std::move(likelihood));
 }
 
-// Static assert helpers
 namespace detail
 {
 

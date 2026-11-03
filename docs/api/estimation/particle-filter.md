@@ -49,15 +49,13 @@ using output_vector_t = Vector<Scalar, NY>;
 ## Construction
 
 ```cpp
-static auto create(Dynamics dynamics, Measurement measurement,
-                   pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{},
-                   Likelihood likelihood = Likelihood{})
-    -> ctrlpp::expected<particle_filter, filter_error>;
+static ctrlpp::expected<particle_filter, filter_error> create(
+    Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config,
+    Rng rng = Rng{}, Likelihood likelihood = Likelihood{});
 
-static auto create(Dynamics dynamics, Measurement measurement,
-                   pf_config<Scalar, NX, NU, NY> config, Resampler resampler,
-                   Rng rng = Rng{}, Likelihood likelihood = Likelihood{})
-    -> ctrlpp::expected<particle_filter, filter_error>;
+static ctrlpp::expected<particle_filter, filter_error> create(
+    Dynamics dynamics, Measurement measurement, pf_config<Scalar, NX, NU, NY> config,
+    Resampler resampler, Rng rng = Rng{}, Likelihood likelihood = Likelihood{});
 ```
 
 `create` is the only construction path. The second overload takes the
@@ -99,12 +97,12 @@ locals of NP entries each.
 template <std::size_t NP, typename Dynamics, typename Measurement, typename Scalar,
           std::size_t NX, std::size_t NU, std::size_t NY, typename Rng = std::mt19937_64,
           typename Likelihood = detail::gaussian_likelihood<Scalar, NY>>
-auto make_particle_filter(Dynamics dynamics, Measurement measurement,
-                          pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{},
-                          Likelihood likelihood = Likelihood{})
-    -> ctrlpp::expected<particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement,
-                                        systematic_resampling, Rng, Likelihood>,
-                        filter_error>;
+ctrlpp::expected<particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement,
+                                 systematic_resampling, Rng, Likelihood>,
+                 filter_error>
+make_particle_filter(Dynamics dynamics, Measurement measurement,
+                     pf_config<Scalar, NX, NU, NY> config, Rng rng = Rng{},
+                     Likelihood likelihood = Likelihood{});
 ```
 
 `make_particle_filter` is `create` with the particle count named first, since NP
@@ -160,8 +158,7 @@ Propagates all NP particles through the dynamics model with additive Gaussian pr
 ### update
 
 ```cpp
-auto update(const output_vector_t& z)
-    -> ctrlpp::expected<void, pf_update_error>;
+ctrlpp::expected<void, pf_update_error> update(const output_vector_t& z);
 ```
 
 The step is refused **before any weight is committed and before the random generator is drawn from**, so a refused step leaves the particles, the weights and the generator bitwise unchanged and the caller may continue with the next sample. The checks run in this order, the carried estimate ahead of the measurement:
@@ -191,7 +188,7 @@ Returns the state estimate using the configured extraction method (weighted mean
 ### weighted_mean
 
 ```cpp
-auto weighted_mean() const -> state_vector_t;
+state_vector_t weighted_mean() const;
 ```
 
 Returns the weighted mean of all particles.
@@ -199,7 +196,7 @@ Returns the weighted mean of all particles.
 ### covariance
 
 ```cpp
-auto covariance() const -> Matrix<Scalar, NX, NX>;
+Matrix<Scalar, NX, NX> covariance() const;
 ```
 
 Returns the weighted second central moment of the particle set about its weighted mean: the posterior covariance the cloud and its weights represent. This is the uncertainty half of the estimate, and it is not recoverable from `particles()` alone, because the unweighted dispersion of the array ignores the weights and therefore describes the prior spread whenever the last `update` did not trigger a resampling.
@@ -213,7 +210,7 @@ Three properties of the definition:
 ### map_estimate
 
 ```cpp
-auto map_estimate() const -> state_vector_t;
+state_vector_t map_estimate() const;
 ```
 
 Returns the particle with the highest weight (maximum a posteriori).
@@ -221,7 +218,7 @@ Returns the particle with the highest weight (maximum a posteriori).
 ### particles
 
 ```cpp
-auto particles() const -> const std::array<state_vector_t, NP>&;
+const std::array<state_vector_t, NP>& particles() const;
 ```
 
 Returns a const reference to the particle array for inspection or visualization.
@@ -229,7 +226,7 @@ Returns a const reference to the particle array for inspection or visualization.
 ### health
 
 ```cpp
-auto health() const -> pf_health;
+pf_health health() const;
 ```
 
 Returns the persistent health status. The enumerators are ordered by severity and the status latches, never returning to a lower rung on its own.

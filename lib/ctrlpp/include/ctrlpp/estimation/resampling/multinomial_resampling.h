@@ -1,9 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_RESAMPLING_MULTINOMIAL_RESAMPLING_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_RESAMPLING_MULTINOMIAL_RESAMPLING_H
 
-/// @brief Multinomial resampling for particle filters.
-///
-/// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002
+// @cite arulampalam2002 -- Arulampalam et al., "A Tutorial on Particle Filters", 2002
 
 #include <array>
 #include <random>
