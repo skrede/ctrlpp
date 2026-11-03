@@ -111,10 +111,10 @@ Checks if all eigenvalues of `A - L*C` are inside the unit circle (discrete-time
 int main()
 {
     ctrlpp::continuous_state_space<double, 2, 1, 1> sys{
-        .A = (Eigen::Matrix2d() << 0.0, 1.0, -2.0, -3.0).finished(),
-        .B = (Eigen::Vector2d() << 0.0, 1.0).finished(),
-        .C = (Eigen::RowVector2d() << 1.0, 0.0).finished(),
-        .D = Eigen::Matrix<double, 1, 1>::Zero()};
+        (Eigen::Matrix2d() << 0.0, 1.0, -2.0, -3.0).finished(),
+        (Eigen::Vector2d() << 0.0, 1.0).finished(),
+        (Eigen::RowVector2d() << 1.0, 0.0).finished(),
+        Eigen::Matrix<double, 1, 1>::Zero()};
 
     // Poles
     auto p = ctrlpp::poles(sys);

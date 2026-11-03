@@ -64,10 +64,10 @@ int main()
     constexpr double dt = 0.1;
 
     ctrlpp::discrete_state_space<double, 2, 1, 1> sys{
-        .A = (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(),
-        .B = (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished(),
-        .C = (Eigen::RowVector2d() << 1.0, 0.0).finished(),
-        .D = Eigen::Matrix<double, 1, 1>::Zero()};
+        (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(),
+        (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished(),
+        (Eigen::RowVector2d() << 1.0, 0.0).finished(),
+        Eigen::Matrix<double, 1, 1>::Zero()};
 
     Eigen::Vector2d x(0.0, 0.0);
     Eigen::Matrix<double, 1, 1> u;

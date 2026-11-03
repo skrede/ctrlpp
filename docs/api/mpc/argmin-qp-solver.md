@@ -131,10 +131,10 @@ int main()
     constexpr double dt = 0.1;
 
     ctrlpp::discrete_state_space<double, NX, NU, NX> sys{
-        .A = (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(),
-        .B = (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished(),
-        .C = Eigen::Matrix2d::Identity(),
-        .D = Eigen::Matrix<double, 2, 1>::Zero()};
+        (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(),
+        (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished(),
+        Eigen::Matrix2d::Identity(),
+        Eigen::Matrix<double, 2, 1>::Zero()};
 
     ctrlpp::mpc_config<double, NX, NU> cfg{
         .horizon = 15,

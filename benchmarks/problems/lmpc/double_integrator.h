@@ -27,10 +27,10 @@ inline auto make_double_integrator_4_2_state_space()
     B(3, 1) = double_integrator_dt;
 
     return {
-        .A = A,
-        .B = B,
-        .C = Eigen::Matrix4d::Identity(),
-        .D = Eigen::Matrix<double, 4, 2>::Zero(),
+        A,
+        B,
+        Eigen::Matrix4d::Identity(),
+        Eigen::Matrix<double, 4, 2>::Zero(),
     };
 }
 

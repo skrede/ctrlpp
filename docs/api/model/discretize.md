@@ -111,10 +111,10 @@ int main()
     // Mass-spring-damper: m=1, k=4, b=1
     // x = [position, velocity], u = force
     ctrlpp::continuous_state_space<double, 2, 1, 1> sys{
-        .A = (Eigen::Matrix2d() << 0.0, 1.0, -4.0, -1.0).finished(),
-        .B = (Eigen::Vector2d() << 0.0, 1.0).finished(),
-        .C = (Eigen::RowVector2d() << 1.0, 0.0).finished(),
-        .D = Eigen::Matrix<double, 1, 1>::Zero()};
+        (Eigen::Matrix2d() << 0.0, 1.0, -4.0, -1.0).finished(),
+        (Eigen::Vector2d() << 0.0, 1.0).finished(),
+        (Eigen::RowVector2d() << 1.0, 0.0).finished(),
+        Eigen::Matrix<double, 1, 1>::Zero()};
 
     std::cout << "Continuous stable: " << ctrlpp::is_stable(sys) << "\n";
 

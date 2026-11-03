@@ -53,9 +53,9 @@ Both types are aggregates whose matrices default to zero. `{}` is the zero syste
 
 ```cpp
 ctrlpp::discrete_state_space<double, 2, 1, 1> sys{
-    .A = (Eigen::Matrix2d() << 1.0, 0.1, 0.0, 1.0).finished(),
-    .B = (Eigen::Vector2d() << 0.005, 0.1).finished(),
-    .C = (Eigen::RowVector2d() << 1.0, 0.0).finished()};  // D is zero
+    (Eigen::Matrix2d() << 1.0, 0.1, 0.0, 1.0).finished(),
+    (Eigen::Vector2d() << 0.005, 0.1).finished(),
+    (Eigen::RowVector2d() << 1.0, 0.0).finished()};  // D is zero
 ```
 
 ## Type Aliases
@@ -85,10 +85,10 @@ int main()
 {
     // Double integrator: position and velocity states, force input
     ctrlpp::continuous_state_space<double, 2, 1, 1> sys{
-        .A = (Eigen::Matrix2d() << 0.0, 1.0, 0.0, 0.0).finished(),
-        .B = (Eigen::Vector2d() << 0.0, 1.0).finished(),
-        .C = (Eigen::RowVector2d() << 1.0, 0.0).finished(),
-        .D = Eigen::Matrix<double, 1, 1>::Zero()};
+        (Eigen::Matrix2d() << 0.0, 1.0, 0.0, 0.0).finished(),
+        (Eigen::Vector2d() << 0.0, 1.0).finished(),
+        (Eigen::RowVector2d() << 1.0, 0.0).finished(),
+        Eigen::Matrix<double, 1, 1>::Zero()};
 
     std::cout << "Continuous system:\n"
               << "  A =\n" << sys.A << "\n"

@@ -47,10 +47,10 @@ int main()
 
     // Discrete state-space: constant velocity model
     ctrlpp::discrete_state_space<double, NX, NU, NY> sys{
-        .A = (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(),
-        .B = Eigen::Vector2d::Zero(),
-        .C = (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(),
-        .D = Eigen::Matrix<double, 1, 1>::Zero()};
+        (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(),
+        Eigen::Vector2d::Zero(),
+        (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(),
+        Eigen::Matrix<double, 1, 1>::Zero()};
 
     // Process and measurement noise covariances
     Eigen::Matrix2d Q = Eigen::Matrix2d::Identity() * 0.01;
