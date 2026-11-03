@@ -7,6 +7,7 @@ Unscented Kalman Filter on the SO(3) manifold with geodesic mean computation. Si
 | Form | Header |
 |------|--------|
 | `ctrlpp::manifold_ukf<Scalar, NY, Dynamics, Measurement, Strategy>` | `#include <ctrlpp/estimation/manifold_ukf.h>` |
+| `ctrlpp::manifold_ukf_config`, `ctrlpp::manifold_ukf_update_error`, `ctrlpp::manifold_ukf_health`, the two model concepts | `#include <ctrlpp/estimation/manifold_ukf_types.h>` (included by `manifold_ukf.h`) |
 
 No convenience header exists for this type. Use the categorical path.
 
@@ -47,10 +48,9 @@ using cov_matrix_t    = Matrix<Scalar, 3, 3>;   // tangent-space covariance
 ### create
 
 ```cpp
-static auto create(Dynamics dynamics, Measurement measurement,
-                                     manifold_ukf_config<Scalar, NY> config,
-                                     Strategy strategy = Strategy{})
-    -> ctrlpp::expected<manifold_ukf, filter_error>;
+static ctrlpp::expected<manifold_ukf, filter_error> create(Dynamics dynamics, Measurement measurement,
+                                                           manifold_ukf_config<Scalar, NY> config,
+                                                           Strategy strategy = Strategy{});
 ```
 
 `create` is the only construction path. There is no non-fallible constructor, so a degenerate configuration is a value the caller has to inspect and never a filter that quietly stands in for one; there is no CTAD deduction guide either, since nothing is left to deduce from. Validates the initial quaternion first, before the normalization that seeds the filter state: a `q0` with zero or non-finite norm is rejected with `filter_error::degenerate_quaternion` (from `<ctrlpp/estimation/estimation_types.h>`), since normalizing such a quaternion produces NaN and silently poisons the whole filter state. A `q0` whose norm differs from one by more than the rounding bound `max(4 eps, 4 denorm_min)` is rejected with `filter_error::non_unit_quaternion`: a rotation quaternion is unit by definition, so `(2, 0, 0, 0)` names no attitude. A norm defect within the bound is rounding drift, the residue of the arithmetic that formed `q0`, and is normalized away; every quaternion produced by a working-precision normalization, an angle-axis conversion, `so3::exp` or a composition of such rotations is within it. The convention and its count are in [Rounding drift is accepted, structure is refused](../../guides/patterns/numerical-behavior.md#rounding-drift-is-accepted-structure-is-refused). As a static member of a class template, `create` requires explicit template arguments, e.g. `manifold_ukf<double, 3, Dynamics, Measurement>::create(d, m, cfg)`.
@@ -78,8 +78,7 @@ Generates manifold sigma points around the current quaternion, propagates each t
 ### update
 
 ```cpp
-auto update(const output_vector_t& z)
-    -> ctrlpp::expected<void, manifold_ukf_update_error>;
+ctrlpp::expected<void, manifold_ukf_update_error> update(const output_vector_t& z);
 ```
 
 The step is rejected **before any member is assigned**, so a rejected step leaves the attitude, the covariance and the innovation bitwise unchanged, preserves the attitude quaternion's unit norm exactly, and the caller may retry with the next sample. Each cause is an exact domain condition, not a tuning preference.
@@ -145,8 +144,7 @@ Header: `#include <ctrlpp/estimation/sigma_points/so3_sigma_points.h>`
 It shares `merwe_options` with the tangent-space strategy it lifts, and forwards that strategy's parameter-domain check unchanged through its own fallible factory:
 
 ```cpp
-static auto try_create(options_t opts = options_t{})
-    -> ctrlpp::expected<so3_merwe_sigma_points, filter_error>;
+static ctrlpp::expected<so3_merwe_sigma_points, filter_error> try_create(options_t opts = options_t{});
 ```
 
 See [ukf](ukf.md) for the two rejections and the reason each parameter has an exact domain. This strategy keeps the `try_` prefix because it has a real non-fallible counterpart: default construction takes in-domain defaults and cannot fail, so the prefix distinguishes two genuine alternatives rather than restating the return type.

@@ -1,9 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_MANIFOLD_UKF_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_MANIFOLD_UKF_H
 
-/// @brief Unscented Kalman Filter on SO(3) manifold with geodesic mean computation.
-///
-/// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+
+#include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
+#include "ctrlpp/estimation/manifold_ukf_types.h"
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/expected.h"
@@ -14,10 +16,9 @@
 
 #include "ctrlpp/detail/covariance_ops.h"
 
-#include "ctrlpp/estimation/observer_policy.h"
-#include "ctrlpp/estimation/estimation_types.h"
 #include "ctrlpp/estimation/sigma_points/so3_sigma_points.h"
 
+#include "ctrlpp/estimation/detail/geodesic_mean.h"
 #include "ctrlpp/estimation/detail/filter_configuration.h"
 
 #include <Eigen/Cholesky>
@@ -31,152 +32,6 @@
 namespace ctrlpp
 {
 
-template <typename M, typename Scalar, std::size_t NY>
-concept manifold_ukf_measurement_model = requires(const M& m, const Eigen::Quaternion<Scalar>& q) {
-    { m(q) } -> std::convertible_to<Vector<Scalar, NY>>;
-};
-
-template <typename D, typename Scalar>
-concept manifold_ukf_dynamics_model = requires(const D& d, const Eigen::Quaternion<Scalar>& q, const Vector<Scalar, 3>& u) {
-    { d(q, u) } -> std::convertible_to<Eigen::Quaternion<Scalar>>;
-};
-
-/// @brief Structured failure modes of a `manifold_ukf` measurement update.
-///
-/// Each enumerator is an exact domain condition, not a tuning preference: a
-/// non-finite operand makes every downstream product non-finite, so the step
-/// cannot produce an estimate at all.
-///
-///  * non_finite_state       : the carried attitude quaternion is already
-///                             non-finite when the step begins. It is reported
-///                             ahead of the measurement because the fault is
-///                             upstream of it, and because the sigma points are
-///                             generated AROUND that quaternion, so every one of
-///                             them is non-finite before the measurement is used.
-///  * non_finite_covariance  : the carried tangent-space covariance is already
-///                             non-finite when the step begins. A distinguishable
-///                             cause from a non-finite attitude because the
-///                             covariance recursion is driven by the geodesic
-///                             mean and by Q and R, never by the measurement.
-///  * non_finite_measurement : the supplied measurement vector has a non-finite
-///                             component. The gain carries it into the tangent
-///                             correction, so a single such sample makes the
-///                             attitude quaternion non-finite and no later
-///                             normalization recovers it.
-enum class manifold_ukf_update_error
-{
-    non_finite_state,
-    non_finite_covariance,
-    non_finite_measurement,
-    non_finite_result,
-};
-
-/// @brief Persistent state-health status of a `manifold_ukf`.
-///
-/// A per-call result cannot answer whether the carried estimate is still
-/// degraded from a step several samples ago, because that question outlives the
-/// call. The enumerators are ordered by severity and the status latches: it
-/// never returns to a lower rung on its own.
-///
-///  * ok                  : every geodesic (Karcher) mean converged within the
-///                          configured tolerance, every tangent covariance
-///                          predicted, committed by an update or factored so
-///                          far was positive definite and every estimate was
-///                          finite.
-///  * covariance_repaired : `predict` or a committed update produced a tangent
-///                          covariance that is not positive definite, or a
-///                          sigma-point generation had to repair one to the
-///                          nearest symmetric positive definite matrix, so the
-///                          estimate has entered a numerically degraded but
-///                          still usable regime.
-///  * mean_not_converged  : a geodesic-mean iteration exhausted its budget
-///                          without meeting the tolerance, so the predicted
-///                          attitude may be a non-converged iterate rather than
-///                          the true mean.
-///  * non_finite_estimate : the carried attitude or covariance is non-finite,
-///                          which is not recoverable by any further step.
-///                          `predict` does not reject its input but judges what
-///                          it produced, so a poisoned angular rate or a
-///                          dynamics model that returned a non-finite
-///                          quaternion is reported as soon as `predict`
-///                          returns, and the next update refuses to start from
-///                          it. A rejected measurement does NOT set it: the
-///                          rejection mutates nothing, so it leaves the filter
-///                          healthy.
-enum class manifold_ukf_health
-{
-    ok,
-    covariance_repaired,
-    mean_not_converged,
-    non_finite_estimate
-};
-
-template <ctrlpp_floating_scalar Scalar, std::size_t NY>
-struct manifold_ukf_config
-{
-    static_assert(NY > 0, "Output dimension NY must be positive");
-    Matrix<Scalar, 3, 3> Q{Matrix<Scalar, 3, 3>::Identity()};
-    Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
-    Eigen::Quaternion<Scalar> q0{Eigen::Quaternion<Scalar>::Identity()};
-    Matrix<Scalar, 3, 3> P0{Matrix<Scalar, 3, 3>::Identity()};
-    std::size_t geodesic_mean_max_iter{30};
-    Scalar geodesic_mean_tol{static_cast<Scalar>(1e-9)};
-};
-
-namespace detail
-{
-
-/// @brief Outcome of a geodesic-mean iteration: the mean plus whether the
-/// tangent-space update converged within tolerance and the final residual norm.
-template <typename Scalar>
-struct geodesic_mean_result
-{
-    Eigen::Quaternion<Scalar> mean;
-    bool converged;
-    Scalar residual;
-};
-
-/// @brief Compute geodesic (intrinsic) mean on SO(3) via iterative tangent-space averaging.
-///
-/// Reports whether the tangent-space correction fell below tolerance within the
-/// iteration budget so the caller can flag a non-converged mean rather than
-/// silently accepting the last iterate.
-///
-/// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Alg. 1
-template <typename Scalar, std::size_t NP>
-geodesic_mean_result<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<Scalar>, NP>& qs, const std::array<Scalar, NP>& Wm, std::size_t max_iter, Scalar tol)
-{
-    auto q_mean = qs[0];
-    Scalar residual = Scalar{0};
-    bool converged = false;
-    for(std::size_t iter = 0; iter < max_iter; ++iter)
-    {
-        Vector<Scalar, 3> eps = Vector<Scalar, 3>::Zero();
-        for(std::size_t i = 0; i < NP; ++i)
-        {
-            Eigen::Quaternion<Scalar> qi = qs[i];
-            if(qi.dot(q_mean) < Scalar{0})
-            {
-                qi.w() = -qi.w();
-                qi.x() = -qi.x();
-                qi.y() = -qi.y();
-                qi.z() = -qi.z();
-            }
-            eps += Wm[i] * so3::log(q_mean.conjugate() * qi);
-        }
-        residual = eps.norm();
-        if(residual < tol)
-        {
-            converged = true;
-            break;
-        }
-        q_mean = (q_mean * so3::exp(eps)).normalized();
-    }
-    return {q_mean, converged, residual};
-}
-
-}
-
 template <ctrlpp_floating_scalar Scalar, std::size_t NY, typename Dynamics, typename Measurement, typename Strategy = so3_merwe_sigma_points<Scalar>>
     requires manifold_ukf_dynamics_model<Dynamics, Scalar> && manifold_ukf_measurement_model<Measurement, Scalar, NY> && manifold_sigma_point_strategy<Strategy, Scalar>
 class manifold_ukf
@@ -186,6 +41,10 @@ class manifold_ukf
     static constexpr int ny = static_cast<int>(NY);
     static constexpr std::size_t num_sigma = Strategy::num_points;
 
+    struct validated_tag
+    {
+    };
+
 public:
     using observer_tag = struct manifold_ukf_tag;
     using state_vector_t = Vector<Scalar, 4>;
@@ -194,23 +53,7 @@ public:
     using cov_matrix_t = Matrix<Scalar, 3, 3>;
     using meas_cov_t = Matrix<Scalar, NY, NY>;
 
-    /// @brief Fallible factory. Validates the initial quaternion before the
-    /// normalization that seeds the filter state, then Q, R and P0.
-    ///
-    /// A zero or non-finite `config.q0` norm makes `q0.normalized()` produce
-    /// NaN, which would silently poison the whole filter state at construction;
-    /// such a config is rejected with `filter_error::degenerate_quaternion`. A
-    /// q0 whose norm differs from one by more than the rounding bound
-    /// max(4 eps, 4 denorm_min) is rejected with
-    /// `filter_error::non_unit_quaternion`; a norm defect within it is drift
-    /// and is normalized away.
-    ///
-    /// Q, R and P0 are then refused, in that order, when non-finite,
-    /// structurally asymmetric or indefinite, as every Kalman-family factory
-    /// refuses them (see `filter_error`). A drift-level asymmetry is stored as
-    /// its symmetrized matrix, on which the definiteness check runs, and a
-    /// singular positive semidefinite matrix is accepted.
-    static auto create(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<manifold_ukf, filter_error>
+    static ctrlpp::expected<manifold_ukf, filter_error> create(Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy = Strategy{})
     {
         if(const auto attitude = detail::checked_unit_quaternion(config.q0); !attitude)
             return ctrlpp::unexpected(attitude.error());
@@ -221,6 +64,8 @@ public:
         return manifold_ukf{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config), std::move(strategy)};
     }
 
+    // Not fallible: the body already performed the rotation. A prediction that poisons the attitude or is
+    // not positive definite is latched in health() instead.
     void predict(const input_vector_t& omega)
     {
         auto sigma = m_strategy.generate(m_q, m_P);
@@ -234,23 +79,8 @@ public:
         note_prediction(mean_result.converged);
     }
 
-    /// @brief Update the attitude and the tangent-space covariance with a
-    /// measurement.
-    ///
-    /// The step is rejected before any member is assigned when the carried
-    /// estimate or the measurement is non-finite, so a rejected step leaves the
-    /// attitude, the covariance and the innovation bitwise unchanged and the
-    /// caller may retry with the next sample.
-    ///
-    /// `predict` is deliberately not fallible: its input is an angular rate the
-    /// caller already owns, and rejecting it would leave the filter with no
-    /// propagation for a rotation the body did perform. A prediction that
-    /// poisons the attitude or whose tangent covariance is not positive
-    /// definite is instead reported by `health()`, which `predict` latches
-    /// itself. A committed update judges the tangent covariance it leaves the
-    /// same way: a negative center weight can make that posterior indefinite
-    /// from a positive definite prior.
-    auto update(const output_vector_t& z) -> ctrlpp::expected<void, manifold_ukf_update_error>
+    // A refused step leaves every member bitwise unchanged, so the caller may retry with the next sample.
+    ctrlpp::expected<void, manifold_ukf_update_error> update(const output_vector_t& z)
     {
         if(const auto step = check_step(z); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
@@ -269,13 +99,7 @@ public:
         apply_manifold_correction(K, S, reduction_base(sigma));
         update_state_cache();
         if(!m_q.coeffs().allFinite() || !m_P.allFinite() || !m_innovation.allFinite() || !m_state_cache.allFinite())
-        {
-            m_q = previous_q;
-            m_P = previous_P;
-            m_innovation = previous_innovation;
-            m_state_cache = previous_state;
-            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_result);
-        }
+            return roll_back(previous_q, previous_P, previous_innovation, previous_state);
         note_health(sigma);
         note_definiteness();
         return {};
@@ -289,93 +113,21 @@ public:
 
     const Eigen::Quaternion<Scalar>& attitude() const { return m_q; }
 
-    /// @brief Report whether the carried estimate is still degraded from an
-    /// earlier step: a tangent covariance that `predict` or a committed update
-    /// left, or a generation repaired, that was not positive definite, a
-    /// non-converged geodesic mean, or a non-finite estimate. Latches; a
-    /// rejected measurement does not set it.
     manifold_ukf_health health() const { return m_health; }
 
 private:
-    struct validated_tag
-    {
-    };
-
-    /// @brief Classify a step's operands without touching a single member.
-    ///
-    /// The order is the severity order documented on
-    /// `manifold_ukf_update_error`: the carried estimate first, the supplied
-    /// measurement last. The cost is one finiteness scan of each operand --
-    /// 4 + 9 + NY reads, no branches on data and no allocation, all dimensions
-    /// being compile-time constants.
-    auto check_step(const output_vector_t& z) const -> ctrlpp::expected<void, manifold_ukf_update_error>
-    {
-        if(!m_q.coeffs().allFinite())
-            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_state);
-        if(!m_P.allFinite())
-            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_covariance);
-        if(!z.allFinite())
-            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_measurement);
-        return {};
-    }
-
-    /// @brief Latch the persistent status for the faults that describe the
-    /// carried estimate, and pass the fault through so the caller still receives
-    /// the specific cause on the failure channel.
-    ///
-    /// `non_finite_estimate` is the top rung and is never downgraded by a later
-    /// step.
-    auto latch_health(manifold_ukf_update_error fault) -> manifold_ukf_update_error
-    {
-        if(fault != manifold_ukf_update_error::non_finite_measurement)
-            m_health = manifold_ukf_health::non_finite_estimate;
-        return fault;
-    }
-
-    /// @brief Latch `covariance_repaired` when a sigma-point generation had to
-    /// repair a non-positive-definite tangent covariance. Latches only from
-    /// `ok`, so it never lowers a more severe rung.
-    template <typename Sigma>
-    void note_health(const Sigma& sigma)
-    {
-        if(sigma.spd_repaired && m_health == manifold_ukf_health::ok)
-            m_health = manifold_ukf_health::covariance_repaired;
-    }
-
-    /// @brief Latch the rung the predicted attitude and tangent covariance
-    /// warrant, never lowering one already latched.
-    void note_prediction(bool mean_converged)
-    {
-        if(!m_q.coeffs().allFinite() || !m_P.allFinite())
-            m_health = manifold_ukf_health::non_finite_estimate;
-        else if(!mean_converged && m_health < manifold_ukf_health::mean_not_converged)
-            m_health = manifold_ukf_health::mean_not_converged;
-        else
-            note_definiteness();
-    }
-
-    /// @brief Latch `covariance_repaired` from `ok` when the carried tangent
-    /// covariance is not positive definite.
-    ///
-    /// Definiteness is judged by the unpivoted Cholesky factorization, the one
-    /// the next sigma-point generation attempts first on this same matrix, so
-    /// the status never disagrees with the repair that generation makes.
-    void note_definiteness()
-    {
-        if(m_health == manifold_ukf_health::ok && Eigen::LLT<cov_matrix_t>{m_P}.info() != Eigen::Success)
-            m_health = manifold_ukf_health::covariance_repaired;
-    }
-
-    /// @brief The tangent covariance a sigma set represents: the repaired
-    /// matrix `factor * factor^T` when the generation had to repair, the carried
-    /// covariance otherwise.
-    template <typename Sigma>
-    auto reduction_base(const Sigma& sigma) const -> cov_matrix_t
-    {
-        if(sigma.spd_repaired)
-            return (sigma.factor * sigma.factor.transpose()).eval();
-        return m_P;
-    }
+    Scalar m_tol;
+    meas_cov_t m_R;
+    cov_matrix_t m_P;
+    cov_matrix_t m_Q;
+    Strategy m_strategy;
+    Dynamics m_dynamics;
+    Measurement m_measurement;
+    std::size_t m_max_iter;
+    Eigen::Quaternion<Scalar> m_q;
+    state_vector_t m_state_cache;
+    output_vector_t m_innovation;
+    manifold_ukf_health m_health;
 
     manifold_ukf(validated_tag, Dynamics dynamics, Measurement measurement, manifold_ukf_config<Scalar, NY> config, Strategy strategy)
         : m_tol{config.geodesic_mean_tol}
@@ -389,13 +141,76 @@ private:
         , m_q{config.q0.normalized()}
         , m_state_cache{so3::to_vec(m_q)}
         , m_innovation{output_vector_t::Zero()}
+        , m_health{manifold_ukf_health::ok}
     {
     }
 
-    /// @brief Propagate sigma point quaternions through dynamics model.
-    ///
-    /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Sec. 3.2
-    auto propagate_manifold_sigma_points(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& points, const input_vector_t& omega) const -> std::array<Eigen::Quaternion<Scalar>, num_sigma>
+    ctrlpp::expected<void, manifold_ukf_update_error> roll_back(
+            const Eigen::Quaternion<Scalar>& q, const cov_matrix_t& P, const output_vector_t& innovation, const state_vector_t& state)
+    {
+        m_q = q;
+        m_P = P;
+        m_innovation = innovation;
+        m_state_cache = state;
+        return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_result);
+    }
+
+    // Classifies before anything is mutated, the carried estimate ahead of the measurement.
+    ctrlpp::expected<void, manifold_ukf_update_error> check_step(const output_vector_t& z) const
+    {
+        if(!m_q.coeffs().allFinite())
+            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_state);
+        if(!m_P.allFinite())
+            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_covariance);
+        if(!z.allFinite())
+            return ctrlpp::unexpected(manifold_ukf_update_error::non_finite_measurement);
+        return {};
+    }
+
+    manifold_ukf_update_error latch_health(manifold_ukf_update_error fault)
+    {
+        if(fault != manifold_ukf_update_error::non_finite_measurement)
+            m_health = manifold_ukf_health::non_finite_estimate;
+        return fault;
+    }
+
+    template <typename Sigma>
+    void note_health(const Sigma& sigma)
+    {
+        if(sigma.spd_repaired && m_health == manifold_ukf_health::ok)
+            m_health = manifold_ukf_health::covariance_repaired;
+    }
+
+    void note_prediction(bool mean_converged)
+    {
+        if(!m_q.coeffs().allFinite() || !m_P.allFinite())
+            m_health = manifold_ukf_health::non_finite_estimate;
+        else if(!mean_converged && m_health < manifold_ukf_health::mean_not_converged)
+            m_health = manifold_ukf_health::mean_not_converged;
+        else
+            note_definiteness();
+    }
+
+    // Judged by the unpivoted Cholesky factorization the next sigma-point generation attempts first on this
+    // same matrix, so the status never disagrees with the repair that generation makes.
+    void note_definiteness()
+    {
+        if(m_health == manifold_ukf_health::ok && Eigen::LLT<cov_matrix_t>{m_P}.info() != Eigen::Success)
+            m_health = manifold_ukf_health::covariance_repaired;
+    }
+
+    template <typename Sigma>
+    cov_matrix_t reduction_base(const Sigma& sigma) const
+    {
+        if(sigma.spd_repaired)
+            return (sigma.factor * sigma.factor.transpose()).eval();
+        return m_P;
+    }
+
+    void update_state_cache() { m_state_cache = so3::to_vec(m_q); }
+
+    // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Sec. 3.2
+    std::array<Eigen::Quaternion<Scalar>, num_sigma> propagate_manifold_sigma_points(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& points, const input_vector_t& omega) const
     {
         std::array<Eigen::Quaternion<Scalar>, num_sigma> q_prop;
         for(std::size_t i = 0; i < num_sigma; ++i)
@@ -406,18 +221,15 @@ private:
         return q_prop;
     }
 
-    /// @brief Compute geodesic mean of propagated quaternions.
-    ///
-    /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Alg. 1
-    auto compute_manifold_predicted_mean(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& q_prop, const std::array<Scalar, num_sigma>& Wm) const -> detail::geodesic_mean_result<Scalar>
+    // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Alg. 1
+    detail::geodesic_mean_result<Scalar> compute_manifold_predicted_mean(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& q_prop, const std::array<Scalar, num_sigma>& Wm) const
     {
         return detail::geodesic_mean_impl(q_prop, Wm, m_max_iter, m_tol);
     }
 
-    /// @brief Compute tangent-space covariance around geodesic mean.
-    ///
-    /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Eq. 10
-    auto compute_manifold_predicted_covariance(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& q_prop, const Eigen::Quaternion<Scalar>& q_mean, const std::array<Scalar, num_sigma>& Wc) const -> cov_matrix_t
+    // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Eq. 10
+    cov_matrix_t compute_manifold_predicted_covariance(
+            const std::array<Eigen::Quaternion<Scalar>, num_sigma>& q_prop, const Eigen::Quaternion<Scalar>& q_mean, const std::array<Scalar, num_sigma>& Wc) const
     {
         cov_matrix_t P_pred = cov_matrix_t::Zero();
         for(std::size_t i = 0; i < num_sigma; ++i)
@@ -437,8 +249,7 @@ private:
         return detail::symmetrize(P_pred);
     }
 
-    /// @brief Transform sigma point quaternions through measurement model.
-    auto compute_measurement_sigma_points(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& points) const -> std::array<output_vector_t, num_sigma>
+    std::array<output_vector_t, num_sigma> compute_measurement_sigma_points(const std::array<Eigen::Quaternion<Scalar>, num_sigma>& points) const
     {
         std::array<output_vector_t, num_sigma> z_sigma;
         for(std::size_t i = 0; i < num_sigma; ++i)
@@ -446,10 +257,8 @@ private:
         return z_sigma;
     }
 
-    /// @brief Compute weighted mean of measurement sigma points.
-    ///
-    /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
-    auto compute_predicted_measurement(const std::array<Scalar, num_sigma>& Wm, const std::array<output_vector_t, num_sigma>& z_sigma) const -> output_vector_t
+    // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+    output_vector_t compute_predicted_measurement(const std::array<Scalar, num_sigma>& Wm, const std::array<output_vector_t, num_sigma>& z_sigma) const
     {
         output_vector_t z_pred = output_vector_t::Zero();
         for(std::size_t i = 0; i < num_sigma; ++i)
@@ -457,11 +266,9 @@ private:
         return z_pred;
     }
 
-    /// @brief Compute innovation covariance S and manifold cross-covariance Pxz.
-    ///
-    /// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Eq. 12-13
-    auto compute_innovation_and_cross_covariance(const auto& sigma, const std::array<output_vector_t, num_sigma>& z_sigma, const output_vector_t& z_pred) const
-        -> std::pair<meas_cov_t, Eigen::Matrix<Scalar, 3, ny>>
+    // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Eq. 12-13
+    std::pair<meas_cov_t, Eigen::Matrix<Scalar, 3, ny>> compute_innovation_and_cross_covariance(
+            const auto& sigma, const std::array<output_vector_t, num_sigma>& z_sigma, const output_vector_t& z_pred) const
     {
         meas_cov_t S = meas_cov_t::Zero();
         Eigen::Matrix<Scalar, 3, ny> Pxz = Eigen::Matrix<Scalar, 3, ny>::Zero();
@@ -487,10 +294,8 @@ private:
         return {S, Pxz};
     }
 
-    /// @brief Compute Kalman gain via column-pivoting QR solve.
-    ///
-    /// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
-    auto compute_kalman_gain(const Eigen::Matrix<Scalar, 3, ny>& Pxz, const meas_cov_t& S) const -> Eigen::Matrix<Scalar, 3, ny>
+    // @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
+    Eigen::Matrix<Scalar, 3, ny> compute_kalman_gain(const Eigen::Matrix<Scalar, 3, ny>& Pxz, const meas_cov_t& S) const
     {
         if constexpr(ny == 1)
             return detail::one_output_gain_transpose(S(0, 0), Pxz.transpose()).transpose().eval();
@@ -501,40 +306,19 @@ private:
         }
     }
 
-    /// @brief Apply manifold correction and update covariance.
-    ///
-    /// The reduction is taken from `base`, the tangent covariance the sigma set
-    /// represents. After a repair that is the repaired matrix: K and S describe
-    /// it, so reducing the unrepaired one would keep its negative eigenvalues.
-    ///
-    /// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
+    // The reduction starts from the tangent covariance the sigma set represents, the repaired one after a
+    // repair, since K and S describe that one.
+    // @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
     void apply_manifold_correction(const Eigen::Matrix<Scalar, 3, ny>& K, const meas_cov_t& S, const cov_matrix_t& base)
     {
         Vector<Scalar, 3> delta_phi = K * m_innovation;
         m_q = (m_q * so3::exp(delta_phi)).normalized();
 
-        // Transport the tangent covariance into the corrected frame with the
-        // reset Jacobian G = I - 0.5 * skew(delta_phi), mirroring the MEKF reset.
-        // Without it the covariance stays anchored to the pre-correction frame
-        // and misreports confidence after a large correction.
+        // The reset Jacobian G = I - 0.5 skew(delta_phi), as in the MEKF reset, carries the covariance into the
+        // corrected frame; without it the covariance stays anchored to the pre-correction frame.
         cov_matrix_t G = cov_matrix_t::Identity() - Scalar{0.5} * so3::skew(delta_phi);
         m_P = detail::symmetrize((G * (base - K * S * K.transpose()) * G.transpose()).eval());
     }
-
-    Scalar m_tol;
-    meas_cov_t m_R;
-    cov_matrix_t m_P;
-    cov_matrix_t m_Q;
-    Strategy m_strategy;
-    Dynamics m_dynamics;
-    Measurement m_measurement;
-    std::size_t m_max_iter;
-    Eigen::Quaternion<Scalar> m_q;
-    state_vector_t m_state_cache;
-    output_vector_t m_innovation;
-    manifold_ukf_health m_health{manifold_ukf_health::ok};
-
-    void update_state_cache() { m_state_cache = so3::to_vec(m_q); }
 };
 
 namespace detail
@@ -542,12 +326,12 @@ namespace detail
 
 struct mukf_sa_dynamics
 {
-    auto operator()(const Eigen::Quaternion<double>& q, const Vector<double, 3>&) const -> Eigen::Quaternion<double> { return q; }
+    Eigen::Quaternion<double> operator()(const Eigen::Quaternion<double>& q, const Vector<double, 3>&) const { return q; }
 };
 
 struct mukf_sa_measurement
 {
-    auto operator()(const Eigen::Quaternion<double>&) const -> Vector<double, 3> { return Vector<double, 3>::Zero(); }
+    Vector<double, 3> operator()(const Eigen::Quaternion<double>&) const { return Vector<double, 3>::Zero(); }
 };
 
 }

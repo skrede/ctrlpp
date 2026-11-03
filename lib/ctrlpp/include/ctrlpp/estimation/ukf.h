@@ -1,9 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_UKF_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_UKF_H
 
-/// @brief Unscented Kalman Filter with swappable sigma point strategies.
-///
-/// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001
+// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001
+
+#include "ctrlpp/estimation/ukf_types.h"
+#include "ctrlpp/estimation/observer_policy.h"
+#include "ctrlpp/estimation/estimation_types.h"
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/config.h"
@@ -16,8 +18,6 @@
 
 #include "ctrlpp/detail/covariance_ops.h"
 
-#include "ctrlpp/estimation/estimation_types.h"
-#include "ctrlpp/estimation/observer_policy.h"
 #include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
 #include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
 
@@ -32,88 +32,6 @@
 namespace ctrlpp
 {
 
-enum class gain_decomposition
-{
-    ldlt,
-    qr
-};
-
-/// @brief Structured failure modes of a `ukf` measurement update.
-///
-/// Each enumerator is an exact domain condition, not a tuning preference: a
-/// non-finite operand makes every downstream product non-finite, so the step
-/// cannot produce an estimate at all.
-///
-///  * non_finite_state       : the carried state estimate is already non-finite
-///                             when the step begins. It is reported ahead of the
-///                             measurement because the fault is upstream of it,
-///                             and because the sigma points are generated AROUND
-///                             the carried state, so a poisoned state makes
-///                             every sigma point non-finite before the
-///                             measurement is ever used.
-///  * non_finite_covariance  : the carried covariance is already non-finite when
-///                             the step begins. A distinguishable cause from a
-///                             non-finite state because the covariance is what
-///                             the sigma-point spread factors, and it is driven
-///                             by the model and by Q and R, never by the
-///                             measurement.
-///  * non_finite_measurement : the supplied measurement vector has a non-finite
-///                             component. The gain carries it into the state,
-///                             which is the filter's carried memory, so a single
-///                             such sample destroys the estimate permanently.
-enum class ukf_update_error
-{
-    non_finite_state,
-    non_finite_covariance,
-    non_finite_measurement,
-    non_finite_result,
-};
-
-/// @brief Persistent state-health status of a `ukf`.
-///
-/// A per-call result cannot answer whether the carried estimate is still
-/// degraded from a step several samples ago, because that question outlives the
-/// call. The enumerators are ordered by severity and the status latches: it
-/// never returns to a lower rung on its own.
-///
-///  * ok                  : every covariance predicted, committed by an update
-///                          or factored so far was positive definite and every
-///                          estimate was finite.
-///  * covariance_repaired : `predict` or a committed update produced a
-///                          covariance that is not positive definite, or a
-///                          sigma-point generation had to repair one to the
-///                          nearest symmetric positive definite matrix, so the
-///                          estimate has entered a numerically degraded but
-///                          still usable regime.
-///  * non_finite_estimate : the carried state or covariance is non-finite,
-///                          which is not recoverable by any further step.
-///                          `predict` does not reject its input but judges what
-///                          it produced, so a poisoned control vector or a
-///                          dynamics model that returned a non-finite state is
-///                          reported as soon as `predict` returns, and the next
-///                          update refuses to start from it. A rejected
-///                          measurement does NOT set it: the rejection mutates
-///                          nothing, so it leaves the filter healthy.
-enum class ukf_health
-{
-    ok,
-    covariance_repaired,
-    non_finite_estimate
-};
-
-template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-struct ukf_config
-{
-    static_assert(NX > 0, "State dimension NX must be positive");
-    static_assert(NU > 0, "Input dimension NU must be positive");
-    static_assert(NY > 0, "Output dimension NY must be positive");
-    Matrix<Scalar, NX, NX> Q{Matrix<Scalar, NX, NX>::Identity()};
-    Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
-    Vector<Scalar, NX> x0{Vector<Scalar, NX>::Zero()};
-    Matrix<Scalar, NX, NX> P0{Matrix<Scalar, NX, NX>::Identity()};
-    gain_decomposition decomposition{gain_decomposition::ldlt};
-};
-
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY, typename Dynamics, typename Measurement, typename Strategy = merwe_sigma_points<Scalar, NX>>
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY> && sigma_point_strategy<Strategy, Scalar, NX>
 class ukf
@@ -126,6 +44,10 @@ class ukf
     static constexpr int ny = static_cast<int>(NY);
     static constexpr std::size_t num_sigma = Strategy::num_points;
 
+    struct validated_tag
+    {
+    };
+
 public:
     using observer_tag = struct ukf_tag;
     using state_vector_t = Vector<Scalar, NX>;
@@ -134,52 +56,14 @@ public:
     using cov_matrix_t = Matrix<Scalar, NX, NX>;
     using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 
-    /// @brief Fallible factory, and the only way to originate a filter.
-    ///
-    /// Rejects a configuration whose process noise, measurement noise, initial
-    /// state or initial covariance carries a non-finite entry, or whose Q, R or
-    /// P0 is not positive semidefinite, naming the field and the fault. Such a
-    /// configuration is a mistake the caller made before the filter ever ran:
-    /// an infinite Q makes the predicted covariance infinite, the gain a ratio
-    /// of infinities and the estimate non-finite at the first step, which
-    /// surfaces the fault as far as possible from where it was introduced.
-    ///
-    /// A matrix with an eigenvalue below the eigensolver's backward-error floor
-    /// is not a covariance and is refused (see `filter_error`). A singular
-    /// positive semidefinite matrix (a point-mass P0, a rank-one Q, a noiseless
-    /// R) and a merely ill-conditioned one are legitimately posed problems and
-    /// are accepted: whether the sigma-point factorization of a singular or
-    /// near-singular covariance needs a repair is reported by `health()`, not
-    /// refused here.
-    ///
-    /// An asymmetry within the rounding bound is drift and is stored as its
-    /// symmetrized matrix, on which the definiteness check runs; a structural
-    /// asymmetry is refused with the matrix's `asymmetric_*` enumerator.
-    ///
-    /// The strategy is taken already built, so it was validated where it was
-    /// built; the overload below takes its options instead and forwards the
-    /// strategy's own rejection.
-    static auto create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, Strategy strategy = Strategy{}) -> ctrlpp::expected<ukf, filter_error>
+    static ctrlpp::expected<ukf, filter_error> create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, Strategy strategy = Strategy{})
     {
         if(const auto valid = detail::validate_filter_configuration(config.Q, config.R, config.x0, config.P0); !valid)
             return ctrlpp::unexpected(valid.error());
         return ukf{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(config), std::move(strategy)};
     }
 
-    /// @brief Fallible factory taking the sigma-point strategy's options rather
-    /// than a built strategy, and the only way to build the strategy inside the
-    /// filter.
-    ///
-    /// This is the path where an out-of-domain parameter set would otherwise
-    /// pass unreported, so the strategy's own rejection is forwarded verbatim
-    /// rather than swallowed, and it is reported before the configuration's own
-    /// fields: a strategy that cannot be built leaves nothing for the
-    /// configuration to be a configuration of. It requires the strategy to
-    /// expose a `try_create` returning `ctrlpp::expected<Strategy,
-    /// filter_error>`, which is the name a strategy keeps because its own plain
-    /// constructor is genuinely non-fallible.
-    static auto create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
-        -> ctrlpp::expected<ukf, filter_error>
+    static ctrlpp::expected<ukf, filter_error> create(Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, typename Strategy::options_t strategy_options)
     {
         auto strategy = Strategy::try_create(std::move(strategy_options));
         if(!strategy)
@@ -187,6 +71,8 @@ public:
         return create(std::move(dynamics), std::move(measurement), std::move(config), std::move(*strategy));
     }
 
+    // Not fallible: the plant already took the command. A prediction that poisons the estimate or is not
+    // positive definite is latched in health() instead.
     void predict(const input_vector_t& u)
     {
         auto sigma = m_strategy.generate(m_x, m_P);
@@ -198,23 +84,9 @@ public:
         note_prediction();
     }
 
-    /// @brief Update state and covariance with a measurement.
-    ///
-    /// The step is rejected before any member is assigned when the carried
-    /// estimate or the measurement is non-finite, so a rejected step leaves the
-    /// state, the covariance, the innovation and the NIS bitwise unchanged and
-    /// the caller may retry with the next sample.
-    ///
-    /// `predict` is deliberately not fallible: its input is a control vector the
-    /// caller already commanded and owns, and rejecting it would leave the
-    /// filter with no propagation for a step the plant did take. A prediction
-    /// that poisons the state or is not positive definite is instead reported
-    /// by `health()`, which `predict` latches itself. A committed update judges
-    /// the covariance it leaves the same way: a negative center weight can make
-    /// that posterior indefinite from a positive definite prior. An update
-    /// refused for a non-finite result restores the health it began with,
-    /// `predict`'s verdict included.
-    auto update(const output_vector_t& z) -> ctrlpp::expected<void, ukf_update_error>
+    // A refused step leaves every member bitwise unchanged, the health included, so the caller may retry
+    // with the next sample.
+    ctrlpp::expected<void, ukf_update_error> update(const output_vector_t& z)
     {
         if(const auto step = check_step(z); !step)
             return ctrlpp::unexpected(latch_health(step.error()));
@@ -234,16 +106,8 @@ public:
         m_innovation = (z - z_pred).eval();
         m_nis = (m_innovation.transpose() * S.colPivHouseholderQr().solve(m_innovation))(0, 0);
         apply_correction_and_update_covariance(K, S, reduction_base(sigma));
-        if(!m_x.allFinite() || !m_P.allFinite()
-            || !m_innovation.allFinite() || !std::isfinite(m_nis))
-        {
-            m_x = previous_x;
-            m_P = previous_P;
-            m_innovation = previous_innovation;
-            m_nis = previous_nis;
-            m_health = previous_health;
-            return ctrlpp::unexpected(ukf_update_error::non_finite_result);
-        }
+        if(!m_x.allFinite() || !m_P.allFinite() || !m_innovation.allFinite() || !std::isfinite(m_nis))
+            return roll_back(previous_x, previous_P, previous_innovation, previous_nis, previous_health);
         note_definiteness();
         return {};
     }
@@ -254,23 +118,22 @@ public:
 
     const output_vector_t& innovation() const { return m_innovation; }
 
-    /// @brief Normalized Innovation Squared: innovation^T S^{-1} innovation
-    /// (chi-square distributed with dof = NY under a consistent filter).
     Scalar nis() const { return m_nis; }
 
-    /// @brief Report whether the carried estimate is still degraded from an
-    /// earlier step: a covariance that `predict` or a committed update left,
-    /// or a generation repaired, that was not positive definite, or a
-    /// non-finite estimate. Latches; a rejected measurement does not set it.
     ukf_health health() const { return m_health; }
 
 private:
-    /// @brief Tag selecting the non-validating constructor reserved for
-    /// `create`, which is what makes the factory the only public path and the
-    /// validation impossible to bypass.
-    struct validated_tag
-    {
-    };
+    Dynamics m_dynamics;
+    Measurement m_measurement;
+    state_vector_t m_x;
+    cov_matrix_t m_P;
+    cov_matrix_t m_Q;
+    meas_cov_matrix_t m_R;
+    gain_decomposition m_decomposition;
+    Strategy m_strategy;
+    output_vector_t m_innovation;
+    Scalar m_nis;
+    ukf_health m_health;
 
     ukf(validated_tag, Dynamics dynamics, Measurement measurement, ukf_config<Scalar, NX, NU, NY> config, Strategy strategy)
         : m_dynamics{std::move(dynamics)}
@@ -282,16 +145,23 @@ private:
         , m_decomposition{config.decomposition}
         , m_strategy{std::move(strategy)}
         , m_innovation{output_vector_t::Zero()}
+        , m_nis{0}
+        , m_health{ukf_health::ok}
     {
     }
 
-    /// @brief Classify a step's operands without touching a single member.
-    ///
-    /// The order is the severity order documented on `ukf_update_error`: the
-    /// carried estimate first, the supplied measurement last. The cost is one
-    /// finiteness scan of each operand -- NX + NX*NX + NY reads, no branches on
-    /// data and no allocation, all dimensions being compile-time constants.
-    auto check_step(const output_vector_t& z) const -> ctrlpp::expected<void, ukf_update_error>
+    ctrlpp::expected<void, ukf_update_error> roll_back(const state_vector_t& x, const cov_matrix_t& P, const output_vector_t& innovation, Scalar nis, ukf_health health)
+    {
+        m_x = x;
+        m_P = P;
+        m_innovation = innovation;
+        m_nis = nis;
+        m_health = health;
+        return ctrlpp::unexpected(ukf_update_error::non_finite_result);
+    }
+
+    // Classifies before anything is mutated, the carried estimate ahead of the measurement.
+    ctrlpp::expected<void, ukf_update_error> check_step(const output_vector_t& z) const
     {
         if(!m_x.allFinite())
             return ctrlpp::unexpected(ukf_update_error::non_finite_state);
@@ -302,25 +172,13 @@ private:
         return {};
     }
 
-    /// @brief Latch the persistent status for the faults that describe the
-    /// carried estimate, and pass the fault through so the caller still receives
-    /// the specific cause on the failure channel.
-    ///
-    /// `non_finite_estimate` is the top rung and is never downgraded to
-    /// `covariance_repaired` by a later step: a repaired covariance is a
-    /// degraded but usable estimate, a non-finite one is not an estimate at all.
-    auto latch_health(ukf_update_error fault) -> ukf_update_error
+    ukf_update_error latch_health(ukf_update_error fault)
     {
         if(fault != ukf_update_error::non_finite_measurement)
             m_health = ukf_health::non_finite_estimate;
         return fault;
     }
 
-    /// @brief Latch a degraded health status when a sigma-point generation had
-    /// to repair a non-positive-definite covariance.
-    ///
-    /// Never lowers an already-latched `non_finite_estimate`, which is the more
-    /// severe rung.
     template <typename Sigma>
     void note_health(const Sigma& sigma)
     {
@@ -328,7 +186,6 @@ private:
             m_health = ukf_health::covariance_repaired;
     }
 
-    /// @brief Latch the rung the predicted state and covariance warrant.
     void note_prediction()
     {
         if(!m_x.allFinite() || !m_P.allFinite())
@@ -337,34 +194,24 @@ private:
             note_definiteness();
     }
 
-    /// @brief Latch `covariance_repaired` from `ok` when the carried covariance
-    /// is not positive definite.
-    ///
-    /// Definiteness is judged by the unpivoted Cholesky factorization, the one
-    /// the Merwe and Julier generations attempt first on this same matrix, so
-    /// the status never disagrees with the repair the next generation makes; a
-    /// strategy that factors otherwise still gets this verdict on definiteness.
+    // Judged by the unpivoted Cholesky factorization the Merwe and Julier generations attempt first on this
+    // same matrix, so the status never disagrees with the repair the next generation makes.
     void note_definiteness()
     {
         if(m_health == ukf_health::ok && Eigen::LLT<cov_matrix_t>{m_P}.info() != Eigen::Success)
             m_health = ukf_health::covariance_repaired;
     }
 
-    /// @brief The covariance a sigma set represents: the repaired matrix
-    /// `factor * factor^T` when the generation had to repair, the carried
-    /// covariance otherwise.
     template <typename Sigma>
-    auto reduction_base(const Sigma& sigma) const -> cov_matrix_t
+    cov_matrix_t reduction_base(const Sigma& sigma) const
     {
         if(sigma.spd_repaired)
             return (sigma.factor * sigma.factor.transpose()).eval();
         return m_P;
     }
 
-    /// @brief Propagate sigma points through dynamics model.
-    ///
-    /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Sec. 3.1
-    auto propagate_sigma_points(const std::array<state_vector_t, num_sigma>& points, const input_vector_t& u) const -> std::array<state_vector_t, num_sigma>
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Sec. 3.1
+    std::array<state_vector_t, num_sigma> propagate_sigma_points(const std::array<state_vector_t, num_sigma>& points, const input_vector_t& u) const
     {
         std::array<state_vector_t, num_sigma> propagated;
         for(std::size_t i = 0; i < num_sigma; ++i)
@@ -372,10 +219,8 @@ private:
         return propagated;
     }
 
-    /// @brief Compute weighted mean of propagated sigma points.
-    ///
-    /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 17
-    auto compute_predicted_mean(const std::array<Scalar, num_sigma>& Wm, const std::array<state_vector_t, num_sigma>& propagated) const -> state_vector_t
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 17
+    state_vector_t compute_predicted_mean(const std::array<Scalar, num_sigma>& Wm, const std::array<state_vector_t, num_sigma>& propagated) const
     {
         state_vector_t x_pred = state_vector_t::Zero();
         for(std::size_t i = 0; i < num_sigma; ++i)
@@ -383,10 +228,8 @@ private:
         return x_pred;
     }
 
-    /// @brief Compute weighted covariance of propagated sigma points + process noise Q.
-    ///
-    /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 18
-    auto compute_predicted_covariance(const std::array<Scalar, num_sigma>& Wc, const std::array<state_vector_t, num_sigma>& propagated, const state_vector_t& x_pred) const -> cov_matrix_t
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 18
+    cov_matrix_t compute_predicted_covariance(const std::array<Scalar, num_sigma>& Wc, const std::array<state_vector_t, num_sigma>& propagated, const state_vector_t& x_pred) const
     {
         cov_matrix_t P_pred = cov_matrix_t::Zero();
         for(std::size_t i = 0; i < num_sigma; ++i)
@@ -398,8 +241,7 @@ private:
         return detail::symmetrize(P_pred);
     }
 
-    /// @brief Transform sigma points through measurement model.
-    auto compute_measurement_sigma_points(const std::array<state_vector_t, num_sigma>& points) const -> std::array<output_vector_t, num_sigma>
+    std::array<output_vector_t, num_sigma> compute_measurement_sigma_points(const std::array<state_vector_t, num_sigma>& points) const
     {
         std::array<output_vector_t, num_sigma> z_sigma;
         for(std::size_t i = 0; i < num_sigma; ++i)
@@ -407,10 +249,8 @@ private:
         return z_sigma;
     }
 
-    /// @brief Compute weighted mean of measurement sigma points.
-    ///
-    /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 22
-    auto compute_predicted_measurement(const std::array<Scalar, num_sigma>& Wm, const std::array<output_vector_t, num_sigma>& z_sigma) const -> output_vector_t
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 22
+    output_vector_t compute_predicted_measurement(const std::array<Scalar, num_sigma>& Wm, const std::array<output_vector_t, num_sigma>& z_sigma) const
     {
         output_vector_t z_pred = output_vector_t::Zero();
         for(std::size_t i = 0; i < num_sigma; ++i)
@@ -418,11 +258,9 @@ private:
         return z_pred;
     }
 
-    /// @brief Compute innovation covariance S and cross-covariance Pxz.
-    ///
-    /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 23-24
-    auto compute_innovation_and_cross_covariance(const auto& sigma, const std::array<output_vector_t, num_sigma>& z_sigma, const output_vector_t& z_pred) const
-        -> std::pair<meas_cov_matrix_t, Eigen::Matrix<Scalar, nx, ny>>
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 23-24
+    std::pair<meas_cov_matrix_t, Eigen::Matrix<Scalar, nx, ny>> compute_innovation_and_cross_covariance(
+            const auto& sigma, const std::array<output_vector_t, num_sigma>& z_sigma, const output_vector_t& z_pred) const
     {
         meas_cov_matrix_t S = meas_cov_matrix_t::Zero();
         Eigen::Matrix<Scalar, nx, ny> Pxz = Eigen::Matrix<Scalar, nx, ny>::Zero();
@@ -440,10 +278,8 @@ private:
         return {S, Pxz};
     }
 
-    /// @brief Compute Kalman gain: K = Pxz * S^{-1} via LDLT or QR decomposition.
-    ///
-    /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 25
-    auto compute_kalman_gain(const Eigen::Matrix<Scalar, nx, ny>& Pxz, const meas_cov_matrix_t& S) const -> Eigen::Matrix<Scalar, nx, ny>
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 25
+    Eigen::Matrix<Scalar, nx, ny> compute_kalman_gain(const Eigen::Matrix<Scalar, nx, ny>& Pxz, const meas_cov_matrix_t& S) const
     {
         Eigen::Matrix<Scalar, ny, nx> KT;
         if(m_decomposition == gain_decomposition::ldlt)
@@ -455,38 +291,16 @@ private:
         return KT.transpose().eval();
     }
 
-    /// @brief Apply the state correction and reduce the covariance.
-    ///
-    /// The posterior covariance is the minimum mean-square-error reduction
-    /// P = P - K*S*K^T, with the innovation covariance S = Pzz + R and gain
-    /// K = Pxz*S^{-1}. Since K*S*K^T = K*Pxz^T, this is exactly the amount of
-    /// uncertainty the measurement removes; no extra term is added.
-    ///
-    /// The reduction is taken from `base`, the covariance the sigma set
-    /// represents. After a repair that is the repaired matrix: K and S describe
-    /// it, so reducing the unrepaired one would keep its negative eigenvalues.
-    ///
-    /// @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 26-27
+    // The reduction P - K S K^T equals P - K Pxz^T, so no K R K^T term is added. It starts from the
+    // covariance the sigma set represents, the repaired one after a repair, since K and S describe that one.
+    // @cite wan2001 -- Wan & van der Merwe, "The Unscented Kalman Filter", 2001, Eq. 26-27
     void apply_correction_and_update_covariance(const Eigen::Matrix<Scalar, nx, ny>& K, const meas_cov_matrix_t& S, const cov_matrix_t& base)
     {
         m_x = (m_x + K * m_innovation).eval();
         m_P = detail::symmetrize((base - K * S * K.transpose()).eval());
     }
-
-    Dynamics m_dynamics;
-    Measurement m_measurement;
-    state_vector_t m_x;
-    cov_matrix_t m_P;
-    cov_matrix_t m_Q;
-    meas_cov_matrix_t m_R;
-    gain_decomposition m_decomposition;
-    Strategy m_strategy;
-    output_vector_t m_innovation;
-    Scalar m_nis{0};
-    ukf_health m_health{ukf_health::ok};
 };
 
-// CTAD deduction guide
 template <typename Dynamics, typename Measurement, ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 ukf(Dynamics, Measurement, ukf_config<Scalar, NX, NU, NY>) -> ukf<Scalar, NX, NU, NY, Dynamics, Measurement, merwe_sigma_points<Scalar, NX>>;
 
@@ -495,12 +309,12 @@ namespace detail
 
 struct ukf_sa_dynamics
 {
-    auto operator()(const Vector<double, 2>&, const Vector<double, 1>&) const -> Vector<double, 2> { return Vector<double, 2>::Zero(); }
+    Vector<double, 2> operator()(const Vector<double, 2>&, const Vector<double, 1>&) const { return Vector<double, 2>::Zero(); }
 };
 
 struct ukf_sa_measurement
 {
-    auto operator()(const Vector<double, 2>&) const -> Vector<double, 1> { return Vector<double, 1>::Zero(); }
+    Vector<double, 1> operator()(const Vector<double, 2>&) const { return Vector<double, 1>::Zero(); }
 };
 
 }

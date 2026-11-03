@@ -1,10 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_SO3_SIGMA_POINTS_H
 #define HPP_GUARD_CTRLPP_ESTIMATION_SIGMA_POINTS_SO3_SIGMA_POINTS_H
 
-/// @brief SO(3) manifold sigma point generation via tangent-space lifting.
-///
-/// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
-/// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+// @cite sola2018 -- Sola et al., "A micro Lie theory for state estimation in robotics", 2018
+// @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013
+
+#include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
+#include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/expected.h"
@@ -12,15 +13,13 @@
 #include "ctrlpp/lie/so3.h"
 
 #include "ctrlpp/estimation/estimation_types.h"
-#include "ctrlpp/estimation/sigma_points/merwe_sigma_points.h"
-#include "ctrlpp/estimation/sigma_points/sigma_point_strategy.h"
 
 #include <Eigen/Geometry>
 
 #include <array>
 #include <cstddef>
-#include <concepts>
 #include <utility>
+#include <concepts>
 
 namespace ctrlpp
 {
@@ -36,15 +35,9 @@ struct manifold_sigma_result
     std::array<Eigen::Quaternion<Scalar>, NP> points;
     std::array<Scalar, NP> Wm;
     std::array<Scalar, NP> Wc;
-
-    /// Set when the tangent covariance was not positive definite and had to be
-    /// repaired to the nearest symmetric positive definite matrix before
-    /// factoring.
     bool spd_repaired;
-
-    /// The matrix S with S*S^T equal to the tangent covariance the points were
-    /// built from, which is the repaired one after a repair. Read only when
-    /// `spd_repaired` is set, so a strategy that sets the flag must fill it.
+    // S with S*S^T equal to the tangent covariance the points were built from, the repaired one after a
+    // repair. Read only when spd_repaired is set, so a strategy that sets the flag must fill it.
     Matrix<Scalar, 3, 3> factor;
 };
 
@@ -61,18 +54,19 @@ class so3_merwe_sigma_points
 {
     static constexpr std::size_t tangent_dim = 3;
 
+    struct unchecked_t
+    {
+        explicit unchecked_t() = default;
+    };
+
 public:
     static constexpr std::size_t num_points = merwe_sigma_points<Scalar, tangent_dim>::num_points;
     using options_t = merwe_options<Scalar>;
 
-    /// @brief Construct from the default options, which the tangent-space
-    /// strategy accepts by construction.
     so3_merwe_sigma_points() = default;
 
-    /// @brief Fallible factory. Forwards the tangent-space strategy's parameter
-    /// domain check unchanged, since the lifted points are generated from that
-    /// strategy and inherit its weights.
-    static auto try_create(options_t opts = options_t{}) -> ctrlpp::expected<so3_merwe_sigma_points, filter_error>
+    // The lifted points inherit the tangent-space strategy's weights, so its domain check is forwarded unchanged.
+    static ctrlpp::expected<so3_merwe_sigma_points, filter_error> try_create(options_t opts = options_t{})
     {
         auto inner = merwe_sigma_points<Scalar, tangent_dim>::try_create(opts);
         if(!inner)
@@ -81,7 +75,6 @@ public:
     }
 
     manifold_sigma_result<Scalar, num_points> generate(const Eigen::Quaternion<Scalar>& q_mean, const Matrix<Scalar, 3, 3>& P) const
-
     {
         auto tangent = m_inner.generate(Vector<Scalar, tangent_dim>::Zero(), P);
 
@@ -102,16 +95,12 @@ public:
     }
 
 private:
-    /// @brief Tag selecting the non-validating constructor reserved for `try_create`.
-    struct unchecked_t
-    {
-        explicit unchecked_t() = default;
-    };
-
-    /// @brief Construct from a tangent-space strategy already validated by `try_create`.
-    so3_merwe_sigma_points(unchecked_t, merwe_sigma_points<Scalar, tangent_dim> inner) : m_inner{std::move(inner)} {}
-
     merwe_sigma_points<Scalar, tangent_dim> m_inner;
+
+    so3_merwe_sigma_points(unchecked_t, merwe_sigma_points<Scalar, tangent_dim> inner)
+        : m_inner{std::move(inner)}
+    {
+    }
 };
 
 static_assert(manifold_sigma_point_strategy<so3_merwe_sigma_points<double>, double>);

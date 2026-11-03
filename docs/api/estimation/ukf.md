@@ -7,6 +7,7 @@ Unscented Kalman Filter with swappable sigma point strategies and configurable g
 | Form | Header |
 |------|--------|
 | `ctrlpp::ukf<Scalar, NX, NU, NY, Dynamics, Measurement, Strategy>` | `#include <ctrlpp/estimation/ukf.h>` |
+| `ctrlpp::ukf_config`, `ctrlpp::gain_decomposition`, `ctrlpp::ukf_update_error`, `ctrlpp::ukf_health` | `#include <ctrlpp/estimation/ukf_types.h>` (included by `ukf.h`) |
 
 No convenience header exists for this type. Use the categorical path.
 
@@ -45,15 +46,13 @@ using meas_cov_matrix_t = Matrix<Scalar, NY, NY>;
 ## Construction
 
 ```cpp
-static auto create(Dynamics dynamics, Measurement measurement,
-                   ukf_config<Scalar, NX, NU, NY> config,
-                   Strategy strategy = Strategy{})
-    -> ctrlpp::expected<ukf, filter_error>;
+static ctrlpp::expected<ukf, filter_error> create(Dynamics dynamics, Measurement measurement,
+                                                  ukf_config<Scalar, NX, NU, NY> config,
+                                                  Strategy strategy = Strategy{});
 
-static auto create(Dynamics dynamics, Measurement measurement,
-                   ukf_config<Scalar, NX, NU, NY> config,
-                   typename Strategy::options_t strategy_options)
-    -> ctrlpp::expected<ukf, filter_error>;
+static ctrlpp::expected<ukf, filter_error> create(Dynamics dynamics, Measurement measurement,
+                                                  ukf_config<Scalar, NX, NU, NY> config,
+                                                  typename Strategy::options_t strategy_options);
 ```
 
 `create` is the only construction path; there is no public constructor. A
@@ -147,8 +146,7 @@ Generates sigma points from current (x, P), propagates them through dynamics, an
 ### update
 
 ```cpp
-auto update(const output_vector_t& z)
-    -> ctrlpp::expected<void, ukf_update_error>;
+ctrlpp::expected<void, ukf_update_error> update(const output_vector_t& z);
 ```
 
 The step is rejected **before any member is assigned**, so a rejected step leaves the state, the covariance, the innovation and the NIS bitwise unchanged and the caller may retry with the next sample. Each cause is an exact domain condition, not a tuning preference.
@@ -222,8 +220,7 @@ Header: `#include <ctrlpp/estimation/sigma_points/merwe_sigma_points.h>`
 The strategy is constructed through a fallible factory, because two of its three parameters have an exact admissible domain:
 
 ```cpp
-static auto try_create(options_t opts = options_t{})
-    -> ctrlpp::expected<merwe_sigma_points, filter_error>;
+static ctrlpp::expected<merwe_sigma_points, filter_error> try_create(options_t opts = options_t{});
 ```
 
 The scaling term is `lambda = alpha^2 (n + kappa) - n`, so the weight denominator `n + lambda` and the squared sigma-point offset scale `gamma^2 = n + lambda` both collapse to `alpha^2 (n + kappa)`. The divisor and the radicand are the same expression, which fixes the domain exactly. There is no tolerance and no fitted constant.
@@ -258,8 +255,7 @@ Header: `#include <ctrlpp/estimation/sigma_points/julier_sigma_points.h>`
 The strategy is constructed through a fallible factory, because kappa has an exact admissible domain:
 
 ```cpp
-static auto try_create(options_t opts = options_t{})
-    -> ctrlpp::expected<julier_sigma_points, filter_error>;
+static ctrlpp::expected<julier_sigma_points, filter_error> try_create(options_t opts = options_t{});
 ```
 
 The sum `n + kappa` is both the radicand of the offset scale `gamma = sqrt(n + kappa)` and the weight denominator, which fixes the domain exactly. There is no tolerance and no fitted constant.
@@ -280,10 +276,12 @@ A strategy satisfies `sigma_point_strategy` by exposing `num_points`, an `option
 template <typename Scalar, std::size_t NX, std::size_t NumPoints>
 struct sigma_result
 {
+    sigma_result();   // spd_repaired = false; the other fields are left for the strategy to fill
+
     std::array<Vector<Scalar, NX>, NumPoints> points;
     std::array<Scalar, NumPoints> Wm;
     std::array<Scalar, NumPoints> Wc;
-    bool spd_repaired{false};
+    bool spd_repaired;
     Matrix<Scalar, NX, NX> factor;
 };
 ```

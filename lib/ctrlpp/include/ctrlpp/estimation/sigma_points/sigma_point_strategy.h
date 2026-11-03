@@ -13,17 +13,17 @@ namespace ctrlpp
 template <typename Scalar, std::size_t NX, std::size_t NumPoints>
 struct sigma_result
 {
+    sigma_result()
+        : spd_repaired{false}
+    {
+    }
+
     std::array<Vector<Scalar, NX>, NumPoints> points;
     std::array<Scalar, NumPoints> Wm;
     std::array<Scalar, NumPoints> Wc;
-
-    /// Set when the covariance was not positive definite and had to be repaired
-    /// to the nearest symmetric positive definite matrix before factoring.
-    bool spd_repaired{false};
-
-    /// The matrix S with S*S^T equal to the covariance the points were built
-    /// from, which is the repaired one after a repair. Read only when
-    /// `spd_repaired` is set, so a strategy that sets the flag must fill it.
+    bool spd_repaired;
+    // S with S*S^T equal to the covariance the points were built from, the repaired one after a repair.
+    // Read only when spd_repaired is set, so a strategy that sets the flag must fill it.
     Matrix<Scalar, NX, NX> factor;
 };
 
