@@ -18,7 +18,7 @@ All functions live in the `ctrlpp::so3` namespace.
 ### exp
 
 ```cpp
-template <typename Scalar>
+template <ctrlpp_floating_scalar Scalar>
 Eigen::Quaternion<Scalar> exp(const Vector<Scalar, 3>& phi);
 ```
 
@@ -56,8 +56,7 @@ Quaternion conjugate (inverse for unit quaternions).
 
 ```cpp
 template <typename Scalar>
-auto normalize(const Eigen::Quaternion<Scalar>& q)
-    -> ctrlpp::expected<Eigen::Quaternion<Scalar>, so3_error>;
+ctrlpp::expected<Eigen::Quaternion<Scalar>, so3_error> normalize(const Eigen::Quaternion<Scalar>& q);
 ```
 
 Scales a quaternion onto the unit sphere, or reports why it has no unit
