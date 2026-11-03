@@ -686,7 +686,7 @@ the measured ratio to any one of them.
 - **Arithmetic**: both factor a `2n x 2n` matrix in real arithmetic.  On the
   continuous rows both apply `Eigen::RealSchur` to the Hamiltonian.  On the
   discrete row `ctrlpp::dare` applies `Eigen::RealSchur` to the symplectic
-  matrix (`lib/ctrlpp/include/ctrlpp/control/dare.h`) while ct iterates the
+  matrix (`lib/ctrlpp/include/ctrlpp/control/detail/dare_symplectic.h`) while ct iterates the
   recursion rather than factoring at all.
 - **Schur reordering**: ct hands its real Schur factor to the system LAPACK
   library's reordering routine, taking that path only when the toolbox is

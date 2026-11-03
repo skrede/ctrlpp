@@ -1,361 +1,93 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_DARE_H
 #define HPP_GUARD_CTRLPP_CONTROL_DARE_H
 
-/// @brief Discrete Algebraic Riccati Equation solver via real-Schur Bai-Demmel reorder.
-///
-/// Solves A^T P A - P - A^T P B (R + B^T P B)^{-1} B^T P A + Q = 0 for the stabilizing P.
-///
-/// Builds the 2n x 2n symplectic matrix Z (Laub 1979 Eq. 7), computes its real Schur
-/// decomposition Z = U T U^T, reorders T with a predicate `|lambda| < 1 - eps * scale`
-/// via the Bai-Demmel 1993 swap kernel, and extracts P = U21 * U11^-1 from the resulting
-/// invariant subspace basis. The conditioning of each adjacent-block swap is policed by
-/// a compile-time policy (default `pivot_ratio_conditioning`).
-///
-/// @cite laub1979       -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
-/// @cite bai_demmel_1993 -- Bai & Demmel, "On swapping diagonal blocks in real Schur form", 1993
+// Schur method on the symplectic matrix, with the eigenvalues inside the unit disk reordered to the leading block by the
+// Bai-Demmel swap kernel and P = U21 U11^-1 extracted from the resulting invariant subspace basis.
+// @cite laub1979 -- Laub, "A Schur Method for Solving Algebraic Riccati Equations", 1979
+// @cite bai_demmel_1993 -- Bai & Demmel, "On swapping diagonal blocks in real Schur form", 1993
+
+#include "ctrlpp/control/dare_types.h"
+
+#include "ctrlpp/control/detail/dare_symplectic.h"
+#include "ctrlpp/control/detail/dare_verification.h"
+
+#include "ctrlpp/detail/schur_reorder.h"
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
-#include "ctrlpp/control/dare_types.h"
-
-#include "ctrlpp/detail/schur_reorder.h"
-#include "ctrlpp/detail/psd_acceptance.h"
-#include "ctrlpp/detail/riccati_solution.h"
-#include "ctrlpp/detail/power_of_two_scale.h"
-
 #include <Eigen/Dense>
-#include <Eigen/Eigenvalues>
 
 #include <cmath>
 #include <limits>
-#include <complex>
 #include <cstddef>
-#include <algorithm>
 
-namespace ctrlpp {
-
-namespace detail {
-
-template<typename Scalar, std::size_t NX>
-struct dare_symplectic_operands
+namespace ctrlpp
 {
-    Eigen::Matrix<Scalar, int(NX), int(NX)> A_inverse_transpose;
-    Eigen::Matrix<Scalar, int(NX), int(NX)> G;
-};
 
-template<typename Scalar, std::size_t NX, std::size_t NU>
-auto factor_dare_g(const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NU), int(NU)> &R)
-        -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NX), int(NX)>, dare_error>
+namespace detail
 {
-    // G requires a genuine inverse of R. A rank-deficient factor would make
-    // solve() return a least-squares result and silently pose a different
-    // control problem, so apply a dimension-scaled reciprocal-pivot test first.
+
+template <typename Scalar, std::size_t NX, std::size_t NU>
+bool equilibrate_dare_weights(Scalar weight_scale, Eigen::Matrix<Scalar, int(NX), int(NX)>& Q_scaled, Eigen::Matrix<Scalar, int(NU), int(NU)>& R_scaled)
+{
+    if(!(weight_scale > Scalar{0}) || !std::isfinite(weight_scale))
+        return false;
+    if(weight_scale == Scalar{1})
+        return true;
+
+    Q_scaled /= weight_scale;
+    R_scaled /= weight_scale;
+    return Q_scaled.allFinite() && R_scaled.allFinite();
+}
+
+// Equilibration exists to make the check's quantities formable, so at this scale only a verified verdict is accepted
+// and gain_unavailable declines. The gain is homogeneous of degree zero in (P, Q, R), so the equilibrated gain is the
+// caller's gain unscaled.
+template <typename Scalar, std::size_t NX, std::size_t NU, conditioning_policy Cond>
+ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error> solve_equilibrated_dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+        const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q_scaled, const Eigen::Matrix<Scalar, int(NU), int(NU)>& R_scaled)
+{
+    auto operands_result = factor_dare_symplectic_operands<Scalar, NX, NU>(A, B, R_scaled);
+    if(!operands_result)
+        return ctrlpp::unexpected(operands_result.error());
+
+    auto Z_result = build_dare_symplectic<Scalar, NX>(A, Q_scaled, *operands_result);
+    if(!Z_result)
+        return ctrlpp::unexpected(Z_result.error());
+
+    auto result = dare_solve_from_symplectic<Scalar, NX, NU, Cond>(*Z_result);
+    if(!result)
+        return ctrlpp::unexpected(result.error() == dare_error::non_finite_input ? dare_error::arithmetic_limit : result.error());
+
+    if(!Q_scaled.allFinite() || !R_scaled.allFinite() || verify_dare_solution<Scalar, NX, NU>(A, B, Q_scaled, R_scaled, result->P, result->K) != dare_verification::verified)
+        return ctrlpp::unexpected(dare_error::arithmetic_limit);
+    return result;
+}
+
+// The reduction inverts R before the symplectic build sees it; without this test a singular R would reach the inner
+// solve as a non-finite Q' and A' and be reported as a non-finite input.
+template <typename Scalar, std::size_t NX, std::size_t NU>
+ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error> dare_cross_weight_correction(
+        const Eigen::Matrix<Scalar, int(NU), int(NU)>& R, const Eigen::Matrix<Scalar, int(NX), int(NU)>& N)
+{
     auto qr_R = R.colPivHouseholderQr();
     qr_R.setThreshold(Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon());
     if(!qr_R.isInvertible())
         return ctrlpp::unexpected(dare_error::singular_r);
 
-    return Eigen::Matrix<Scalar, int(NX), int(NX)>{(B * qr_R.solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(B.transpose()))).eval()};
-}
-
-/// @brief Factor the scale-invariant operands used by the DARE symplectic matrix.
-template<typename Scalar, std::size_t NX, std::size_t NU>
-auto factor_dare_symplectic_operands(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B,
-                                     const Eigen::Matrix<Scalar, int(NU), int(NU)> &R) -> ctrlpp::expected<dare_symplectic_operands<Scalar, NX>, dare_error>
-{
-    constexpr int n = static_cast<int>(NX);
-    using MatNxN    = Eigen::Matrix<Scalar, n, n>;
-
-    // A^{-T} exists only when A has full rank. The state dimension times unit
-    // roundoff supplies the scale-relative reciprocal-pivot threshold.
-    auto qr_At = A.transpose().colPivHouseholderQr();
-    qr_At.setThreshold(Scalar{static_cast<int>(NX)} * std::numeric_limits<Scalar>::epsilon());
-    if(!qr_At.isInvertible())
-        return ctrlpp::unexpected(dare_error::singular_a);
-
-    auto G_result = factor_dare_g<Scalar, NX, NU>(B, R);
-    if(!G_result)
-        return ctrlpp::unexpected(G_result.error());
-
-    dare_symplectic_operands<Scalar, NX> operands;
-    operands.A_inverse_transpose = qr_At.solve(MatNxN::Identity()).eval();
-    operands.G                   = *G_result;
-    return operands;
-}
-
-/// @brief Choose the common weight divisor: the smallest power of two at or above the largest weight entry.
-///
-/// Dividing Q and R by the same positive value preserves the Riccati gain. A
-/// power of two keeps the largest weight entry near unity and makes the
-/// division of the weights and the multiplication of the solution back exact.
-template<typename Scalar, std::size_t NX, std::size_t NU>
-auto dare_weight_scale(const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q, const Eigen::Matrix<Scalar, int(NU), int(NU)> &R) -> Scalar
-{
-    return power_of_two_ceiling(std::max(Q.cwiseAbs().maxCoeff(), R.cwiseAbs().maxCoeff()));
-}
-
-/// @brief Build the equilibrated symplectic matrix Z per Laub 1979 Eq. 7.
-///
-/// Z = [[A + G A^{-T} Q,  -G A^{-T}],
-///      [-A^{-T} Q,         A^{-T}  ]]   where G = B R^{-1} B^T
-template<typename Scalar, std::size_t NX>
-auto build_dare_symplectic(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q, const dare_symplectic_operands<Scalar, NX> &operands)
-        -> ctrlpp::expected<Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)>, dare_error>
-{
-    constexpr int n  = static_cast<int>(NX);
-    constexpr int n2 = 2 * n;
-    using Mat2Nx2N   = Eigen::Matrix<Scalar, n2, n2>;
-
-    Mat2Nx2N Z;
-    Z.template block<n, n>(0, 0) = A + operands.G * operands.A_inverse_transpose * Q;
-    Z.template block<n, n>(0, n) = -operands.G * operands.A_inverse_transpose;
-    Z.template block<n, n>(n, 0) = -operands.A_inverse_transpose * Q;
-    Z.template block<n, n>(n, n) = operands.A_inverse_transpose;
-
-    if(!Z.allFinite())
-        return ctrlpp::unexpected(dare_error::arithmetic_limit);
-
-    return Z;
-}
-
-/// @brief What an acceptance check decided about one posing of the problem.
-///
-/// The last two values are the ones that matter and neither is a failure. A
-/// check that could not form the quantity it needed has produced no evidence,
-/// and an absence of evidence is neither a certificate nor a refutation.
-/// Collapsing it into either is how a comparison between two infinities ends up
-/// certifying, and how a comparison that could never be formed ends up refusing
-/// an answer the solver can represent perfectly well.
-///
-/// `unresolved` and `gain_unavailable` are both absences of evidence, and they
-/// are kept apart because ONE OF THEM HAS A KNOWN CAUSE AND THE OTHER DOES NOT.
-/// `gain_unavailable` says exactly one thing: the gain could not be formed at
-/// the scale being checked, because `R + B'PB` left the range there. That is a
-/// property of the scale, not of the answer, and it is reached routinely at the
-/// top of the representable range on accurate answers. Measured on the scalar
-/// pose `A = 0.5`, `B = 1`, `Q = R = c`, the topmost 0.2748 decades of the
-/// accepted range report it, and every answer in that band matches the
-/// homogeneous truth `c * P_unit` to a worst relative error of `9.7e-16`.
-///
-/// `unresolved` covers every other way a quantity failed to form, including the
-/// forward-error estimator declining to resolve. Those have no such account, so
-/// a caller may not treat them as benign. Merging the two would force a single
-/// disposition on both: either discard the accurate band or accept an absence
-/// of evidence whose cause is unknown.
-enum class dare_verification
-{
-    verified,
-    refuted,
-    unresolved,
-    gain_unavailable,
-};
-
-template<typename Scalar, std::size_t NX, std::size_t NU>
-auto compute_dare_gain(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NU), int(NU)> &R,
-                       const Eigen::Matrix<Scalar, int(NX), int(NX)> &P, Eigen::Matrix<Scalar, int(NU), int(NX)> &gain) -> dare_verification
-{
-    const auto BtP = (B.transpose() * P).eval();
-    // The input weighting plus the input-projected solution is formed at the
-    // scale of the P handed in. On a pose whose answer is representable that
-    // sum can still leave the top of the range, and when it does the gain is
-    // simply not available at this scale -- which says nothing about whether
-    // the answer solves the equation.
-    const auto gain_operand = (R + BtP * B).eval();
-    if(!BtP.allFinite() || !gain_operand.allFinite())
-        return dare_verification::gain_unavailable;
-
-    auto gain_qr = gain_operand.colPivHouseholderQr();
-    gain_qr.setThreshold(Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon());
-    if(!gain_qr.isInvertible())
-        return dare_verification::refuted;
-
-    // A rank-revealing solve that produced a non-finite gain from a finite,
-    // invertible operand is the same statement about the scale as the operand
-    // leaving the range: the gain does not exist HERE, which says nothing about
-    // whether the answer solves the equation.
-    gain = gain_qr.solve(BtP * A).eval();
-    return gain.allFinite() ? dare_verification::verified : dare_verification::gain_unavailable;
-}
-
-/// @brief Verify that P solves the posed DARE and produces a stabilizing gain.
-///
-/// Three claims are established here, in this order: the gain the solution
-/// implies exists and is finite; the solution is positive semi-definite at the
-/// scale it is being verified at; the solution retains more than half the
-/// scalar type's significand; and the closed loop it produces is inside the unit
-/// disk by more than its own backward error.
-///
-/// The accuracy claim is the one that carries a margin, and that margin is a
-/// property of the answer rather than of the residual -- see the derivation at
-/// `riccati_forward_error_verdict`, which is where the rule is defined and from
-/// where the unit anchors and the randomized oracle take it as well.
-///
-/// Every magnitude that does enter a comparison is resolved through the shared
-/// both-ends-safe helpers rather than formed as a plain sum of squares. Two
-/// separate failures follow from the plain form. At the top a matrix of finite
-/// entries whose sum of squares leaves the range gives an infinite magnitude, and
-/// `inf <= inf` certifies whatever it was handed -- or, where the comparison is
-/// written to fail closed as it is here, refuses an answer that is an ordinary
-/// normal number. At the bottom a magnitude underflows to zero against a scale
-/// that has also underflowed to zero, and the test degenerates to `0 <= 0` and
-/// asserts nothing. The accuracy estimate meets both ends by dividing the answer
-/// and its residual through by the answer's own largest entry before anything is
-/// squared, so its denominator cannot leave the range on a finite solution.
-template<typename Scalar, std::size_t NX, std::size_t NU>
-auto verify_dare_solution(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q,
-                          const Eigen::Matrix<Scalar, int(NU), int(NU)> &R, const Eigen::Matrix<Scalar, int(NX), int(NX)> &P,
-                          Eigen::Matrix<Scalar, int(NU), int(NX)> *verified_gain = nullptr) -> dare_verification
-{
-    constexpr int n = static_cast<int>(NX);
-    using MatNxN    = Eigen::Matrix<Scalar, n, n>;
-
-    if(!P.allFinite())
-        return dare_verification::unresolved;
-
-    Eigen::Matrix<Scalar, int(NU), int(NX)> gain;
-    const dare_verification gain_state = compute_dare_gain<Scalar, NX, NU>(A, B, R, P, gain);
-    if(gain_state != dare_verification::verified)
-        return gain_state;
-
-    // At the caller's scale P is an exact power-of-two multiple of the matrix the
-    // extraction checked, so this verdict repeats that one except where an entry
-    // left the normal range in the rescale.
-    if(!detail::psd_within_rounding<Scalar, n>(P))
-        return dare_verification::refuted;
-
-    const MatNxN AtPA     = (A.transpose() * P * A).eval();
-    const MatNxN AtPBK    = (A.transpose() * P * B * gain).eval();
-    const MatNxN residual = (AtPA - P - AtPBK + Q).eval();
-    if(!AtPA.allFinite() || !AtPBK.allFinite() || !residual.allFinite())
-        return dare_verification::unresolved;
-
-    const MatNxN closed_loop = (A - B * gain).eval();
-    if(!closed_loop.allFinite())
-        return dare_verification::unresolved;
-
-    // THE ACCEPTANCE QUANTITY IS THE ANSWER'S FORWARD ERROR, NOT THE RESIDUAL.
-    //
-    // A bound on the residual cannot decide this. Measured over 2.5 million
-    // poses, the answers that keep more than half the significand and the
-    // answers that do not are CONTIGUOUS on the residual, with the worst kept
-    // and the best lost adjacent and the distribution unimodal across ten
-    // decades; the residual margin this replaced refused none of the answers
-    // that had lost half their significand, on any threshold, because there is
-    // no dichotomy on that quantity for a threshold to find.
-    //
-    // The residual is still what the estimate is built from -- it is the only
-    // evidence available at run time -- but it enters through the inverse of the
-    // residual map's own derivative, which turns it into an estimate of the
-    // error in the returned matrix. The margin it is then compared against is
-    // the half-significand criterion `sqrt(eps)`, which is a property of the
-    // scalar type's radix rather than a constant fitted to a population.
-    //
-    // The rule lives in exactly one place; this is a call to it, and so are the
-    // unit anchors and the randomized oracle.
-    switch(riccati_forward_error_verdict<Scalar, n>(closed_loop, residual, P))
-    {
-        case riccati_accuracy::within:
-            break;
-        case riccati_accuracy::exceeded:
-            return dare_verification::refuted;
-        case riccati_accuracy::unresolved:
-            return dare_verification::unresolved;
-    }
-
-    Eigen::EigenSolver<MatNxN> eigensolver(closed_loop, false);
-    if(eigensolver.info() != Eigen::Success || !eigensolver.eigenvalues().allFinite())
-        return dare_verification::unresolved;
-
-    const Scalar closed_loop_scale = std::max(Scalar{1}, closed_loop.cwiseAbs().maxCoeff());
-    // Each closed-loop eigenvalue carries the standard n * eps * ||A-BK||
-    // backward-error margin. A pole inside the disk by less than this amount
-    // cannot support the solver's stabilizing claim at the represented scale.
-    const Scalar unit_margin = Scalar{static_cast<int>(NX)} * std::numeric_limits<Scalar>::epsilon() * closed_loop_scale;
-    for(int index = 0; index < n; ++index)
-    {
-        if(!(std::abs(eigensolver.eigenvalues()(index)) < Scalar{1} - unit_margin))
-            return dare_verification::refuted;
-    }
-    if(verified_gain != nullptr)
-        *verified_gain = gain;
-    return dare_verification::verified;
-}
-
-/// @brief Solve DARE from a pre-built symplectic Z: real-Schur, Bai-Demmel reorder inside
-/// the unit disk, Riccati extract.
-/// The gain member of the result it returns is left default-constructed: this
-/// entry point sees only the symplectic matrix, and the gain is a function of the
-/// operands that built it. `dare` fills it from the verification that decided the
-/// acceptance.
-template<typename Scalar, std::size_t NX, std::size_t NU, conditioning_policy Cond = pivot_ratio_conditioning>
-auto dare_solve_from_symplectic(const Eigen::Matrix<Scalar, 2 * int(NX), 2 * int(NX)> &Z, Cond /*tag*/ = {}) -> ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>
-{
-    constexpr int n  = static_cast<int>(NX);
-    constexpr int n2 = 2 * n;
-    using Mat2N      = Eigen::Matrix<Scalar, n2, n2>;
-
-    Eigen::RealSchur<Mat2N> schur(Z);
-    if(schur.info() != Eigen::Success)
-        return ctrlpp::unexpected(dare_error::schur_failed);
-
-    Mat2N T = schur.matrixT();
-    Mat2N U = schur.matrixU();
-    if(!T.allFinite() || !U.allFinite())
-        return ctrlpp::unexpected(dare_error::non_finite_input);
-
-    const Scalar scale = T.cwiseAbs().maxCoeff();
-    const Scalar eps   = std::numeric_limits<Scalar>::epsilon();
-    // Eigenvalues of a backward-stable real Schur factor carry a perturbation
-    // on the order of the matrix size times unit roundoff times the factor
-    // norm, so the unit-disk predicate margin is that backward error: 2n times
-    // epsilon times the largest magnitude of T.
-    const Scalar unit_margin = Scalar{n2} * eps * scale;
-    auto predicate           = [unit_margin](std::complex<Scalar> lam) -> bool { return std::abs(lam) < Scalar{1} - unit_margin; };
-
-    auto rr = reorder_real_schur<Scalar, n2>(T, U, predicate, Cond{});
-    if(rr.placed < n)
-        return ctrlpp::unexpected(dare_error::non_stabilizable);
-    if(!T.allFinite() || !U.allFinite())
-        return ctrlpp::unexpected(dare_error::non_finite_input);
-
-    dare_result<Scalar, NX, NU> out;
-    auto P_err = extract_riccati_solution_into<Scalar, n2>(out.P, U);
-    if(!P_err)
-    {
-        switch(P_err.error())
-        {
-            case riccati_extract_error::singular_u11:
-                return ctrlpp::unexpected(dare_error::singular_u11);
-            case riccati_extract_error::non_finite:
-                return ctrlpp::unexpected(dare_error::non_finite_input);
-            case riccati_extract_error::non_psd:
-                return ctrlpp::unexpected(dare_error::non_psd_solution);
-        }
-        return ctrlpp::unexpected(dare_error::non_finite_input);
-    }
-
-    out.K.setZero();
-    out.subspace_separation = rr.subspace_separation;
-    out.reorder_complete    = rr.complete;
-    return out;
+    return Eigen::Matrix<Scalar, int(NU), int(NX)>{qr_R.solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(N.transpose())).eval()};
 }
 
 }
 
-/// @brief Discrete Algebraic Riccati Equation solver.
-///
-/// Returns `ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>`. On success,
-/// `result->P` is the stabilizing solution; `result->K` is the feedback gain the
-/// solve formed and verified while accepting that solution;
-/// `result->subspace_separation` is the min pivot ratio across accepted swaps
-/// (LAPACK SEP analogue); `result->reorder_complete` is true iff every swap was
-/// accepted by the conditioning test.
-template<ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
-auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q,
-          const Eigen::Matrix<Scalar, int(NU), int(NU)> &R, Cond /*tag*/ = {}) -> ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>
+// Equilibrates before factorizing: on a subnormal weighting R^{-1} overflows and B R^{-1} B' is infinite at the caller's
+// scale while finite at the equilibrated one, so only the equilibrated R is ever factorized.
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
+ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error> dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+        const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q, const Eigen::Matrix<Scalar, int(NU), int(NU)>& R, Cond /*tag*/ = {})
 {
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
@@ -363,200 +95,36 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<
     if(!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite())
         return ctrlpp::unexpected(dare_error::non_finite_input);
 
-    // EQUILIBRATE FIRST, FACTORIZE ONCE, AND FACTORIZE THE OPERAND THE SOLVE
-    // ACTUALLY USES.
-    //
-    // The order here is the whole of the fix. The weights used to be equilibrated
-    // AFTER the symplectic operands had been factorized at the caller's scale,
-    // which meant the input Gramian G = B R^-1 B' was formed twice on every call
-    // whose weight scale is not exactly one -- the common case, since the scale
-    // exists precisely because weights are usually not normalized. The first
-    // result was then discarded, and its failure was reported as an arithmetic
-    // limit rather than as the `singular_r` the callee had returned.
-    //
-    // Rescaling the already-formed Gramian instead of refactorizing it is exact
-    // in exact arithmetic -- G is homogeneous of degree minus one in R, so R/s
-    // gives exactly s*G -- but it is NOT a valid substitute here, and measurement
-    // says so rather than analysis. The caller-scale Gramian is the one quantity
-    // in this function that equilibration exists to avoid forming: on a weighting
-    // whose entries are subnormal, R^-1 overflows and G is infinite at the
-    // caller's scale while being an ordinary number at the equilibrated one.
-    // Carrying that infinity forward by a multiplication declines 56 poses of the
-    // scalar weight-ratio sweep -- every accepted point from 10^-323 to 10^-309 at
-    // all three ratios -- that the two-factorization version returned bit-exact
-    // answers for. An identity that is exact in R cannot repair an operand that
-    // left the range before it was applied.
-    //
-    // Equilibrating first removes the duplication without that cost: one
-    // factorization, performed on the operand the symplectic build consumes,
-    // never on a scale the solve does not use. The rank verdict on R is now made
-    // once, at the equilibrated scale, and reaches the caller as the callee's own
-    // enumerator instead of being remapped.
     const Scalar weight_scale = detail::dare_weight_scale<Scalar, NX, NU>(Q, R);
-    if(!(weight_scale > Scalar{0}) || !std::isfinite(weight_scale))
-        return ctrlpp::unexpected(dare_error::arithmetic_limit);
-
     auto Q_scaled = Q;
     auto R_scaled = R;
-    if(weight_scale != Scalar{1})
-    {
-        Q_scaled /= weight_scale;
-        R_scaled /= weight_scale;
-        if(!Q_scaled.allFinite() || !R_scaled.allFinite())
-            return ctrlpp::unexpected(dare_error::arithmetic_limit);
-    }
-
-    auto operands_result = detail::factor_dare_symplectic_operands<Scalar, NX, NU>(A, B, R_scaled);
-    if(!operands_result)
-        return ctrlpp::unexpected(operands_result.error());
-
-    auto Z_result = detail::build_dare_symplectic<Scalar, NX>(A, Q_scaled, *operands_result);
-    if(!Z_result)
-        return ctrlpp::unexpected(Z_result.error());
-
-    auto result = detail::dare_solve_from_symplectic<Scalar, NX, NU, Cond>(*Z_result);
-    if(!result)
-    {
-        if(result.error() == dare_error::non_finite_input)
-            return ctrlpp::unexpected(dare_error::arithmetic_limit);
-        return ctrlpp::unexpected(result.error());
-    }
-
-    // The equilibrated-scale check accepts NOTHING BUT a verified verdict, and
-    // that strictness is not the same rule relaxed at the other site -- it is
-    // the rule that fits this scale. Equilibration exists precisely to put the
-    // weights where the quantities the check needs are formable, so an absence
-    // of evidence HERE is anomalous rather than expected, and there is no
-    // second opinion behind it to fall back on. `gain_unavailable` is therefore
-    // a decline here even though it is an accept after the rescale, where the
-    // scale is the caller's and the equilibrated verdict already stands.
-    Eigen::Matrix<Scalar, int(NU), int(NX)> scaled_gain;
-    if(!Q_scaled.allFinite() || !R_scaled.allFinite()
-       || detail::verify_dare_solution<Scalar, NX, NU>(A, B, Q_scaled, R_scaled, result->P, &scaled_gain) != detail::dare_verification::verified)
+    if(!detail::equilibrate_dare_weights<Scalar, NX, NU>(weight_scale, Q_scaled, R_scaled))
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
 
-    // THE GAIN THE ACCEPTANCE WAS DECIDED ON IS THE GAIN THE CALLER RECEIVES.
-    //
-    // It is the equilibrated gain and it is returned unscaled, because the gain
-    // is homogeneous of degree ZERO in (P, Q, R): the equilibrated scale poses
-    // the same feedback law, not a scaled one. It is also the better-conditioned
-    // of the two available spellings, and the only one that exists on every
-    // accepted pose -- the caller-scale re-forming below can find `R + B'PB`
-    // outside the range on answers that are ordinary normal numbers, which is
-    // exactly the `gain_unavailable` band the carried claim covers.
-    result->K = scaled_gain;
-
-    if(weight_scale == Scalar{1})
+    auto result = detail::solve_equilibrated_dare<Scalar, NX, NU, Cond>(A, B, Q_scaled, R_scaled);
+    if(!result || weight_scale == Scalar{1})
         return result;
 
-    // The claim about the caller's own scale is CARRIED from the claim just
-    // established, rather than re-formed at a scale where the evidence itself
-    // leaves the range while the answer does not.
-    //
-    // The equation is homogeneous of degree one in (P, Q, R), so the gain is
-    // homogeneous of degree zero and residual bound, stabilizing spectrum and
-    // definiteness carry across a positive rescale unchanged in relative terms.
-    // The weight scale is a power of two, so the division on the way in and the
-    // multiplication on the way out are exact unless an entry leaves the normal
-    // range, and the carried bound needs no widening for them.
-    //
-    // Three things homogeneity cannot supply, so all three are checked. First,
-    // the rescale can leave the top of the range, and an answer that is not
-    // representable is not an answer.
-    result->P *= weight_scale;
-    if(!result->P.allFinite())
+    if(!detail::carry_dare_solution<Scalar, NX, NU>(A, B, Q, R, weight_scale, *result))
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
-
-    // Second, definiteness is re-established at the scale actually returned. An
-    // overflow is declined above and the rescale is otherwise exact, so this guards
-    // only the edge where it is not: an entry the rescale puts in the subnormal range.
-    if(!detail::psd_within_rounding<Scalar, int(NX)>(result->P))
-        return ctrlpp::unexpected(dare_error::arithmetic_limit);
-
-    // Third, the direct check is kept, and it declines on EVERY outcome but two:
-    // a verified verdict, and the one absence of evidence whose cause is known.
-    //
-    // The distinction is the whole of the rule. `gain_unavailable` says the gain
-    // could not be formed at the caller's scale because `R + B'PB` left the
-    // range there -- a statement about the scale, not about the answer. That is
-    // exactly the band the carried claim was written to cover, it is reached on
-    // ordinary poses rather than contrived ones, and the answers in it are not
-    // marginal: on the scalar pose `A = 0.5`, `B = 1`, `Q = R = c` the topmost
-    // 0.2748 decades of the accepted range report it (ceiling 1.586972e+308
-    // against 8.428864e+307 for a rule that declines it) and every answer in
-    // that band reproduces the homogeneous truth `c * P_unit` to a worst relative
-    // error of 9.7e-16. Declining it would discard accurate answers to buy nothing.
-    //
-    // `unresolved` is the opposite case and it declines. It covers every other
-    // way a quantity failed to form, including the forward-error estimator
-    // declining to resolve, and none of those come with an account of why. The
-    // carried claim's premise is that the two scales pose the same problem, and
-    // an unexplained dissolution of the direct check is the weakest place to
-    // assume it. Measurement agrees that nothing is given up by declining: over
-    // all ten weight-ratio populations, 3,464,634 poses, no disposition and no
-    // returned bit differs, and a targeted hunt of 24,040 adversarial draws with
-    // closed loops pushed against the unit circle across weight ratios from
-    // 10^-300 to 10^300 produced 860 accepted poses and NOT ONE reaching this
-    // site unresolved, against a reachability control that fired 31,610 times in
-    // the same regime. The structural reason is that the closed loop is
-    // homogeneous of degree zero in (P, Q, R) and the estimator's operator
-    // depends on nothing but the closed loop, so such a pose is already declined
-    // at the first site. That argument holds only while every rescaled entry
-    // stays in the normal range, so it is measured-unreached rather than proven,
-    // and the rule declines instead of leaning on it.
-    //
-    // AND ON A REFUTATION THE DIRECT CHECK DECLINES: a resolved contradiction is
-    // evidence against the carried claim's premise, not a tie to break.
-    Eigen::Matrix<Scalar, int(NU), int(NX)> returned_gain;
-    const detail::dare_verification direct = detail::verify_dare_solution<Scalar, NX, NU>(A, B, Q, R, result->P, &returned_gain);
-    if(direct != detail::dare_verification::verified && direct != detail::dare_verification::gain_unavailable)
-        return ctrlpp::unexpected(dare_error::arithmetic_limit);
-
-    if(direct == detail::dare_verification::verified)
-    {
-        // Both scales produced a gain, and the gain is what two posings of the
-        // same problem share as an identity, so they are held to each other.
-        const detail::resolved_magnitude<Scalar> gain_scale = detail::largest_magnitude<Scalar>({detail::resolve_magnitude(scaled_gain), detail::resolve_magnitude(returned_gain)});
-        const detail::resolved_magnitude<Scalar> gain_margin = detail::scaled_magnitude(gain_scale, detail::dare_gain_agreement_margin<Scalar, NX, NU>());
-        if(!detail::magnitude_within(detail::resolve_magnitude((scaled_gain - returned_gain).eval()), gain_margin))
-            return ctrlpp::unexpected(dare_error::arithmetic_limit);
-    }
-
     return result;
 }
 
-/// @brief DARE with cross-weight N: reduces to standard form via
-/// Q' = Q - N R^{-1} N^T, A' = A - B R^{-1} N^T, then forwards.
-///
-/// `result->P` is shared by both posings -- the reduction changes the equation's
-/// operands, not its solution. `result->K` is NOT, and is corrected here to the
-/// gain of the problem the CALLER posed. The reduced problem's gain is
-/// K' = (R + B'PB)^{-1} B'PA', and the posed problem's is
-/// K = (R + B'PB)^{-1} (B'PA + N'). Substituting A' = A - B R^{-1} N' and
-/// expanding (R + B'PB) R^{-1} N' collapses the difference to exactly
-/// K = K' + R^{-1} N'. That correction term is `Rinv_Nt`, which this overload
-/// has already formed for the reduction, so the caller's gain costs one addition
-/// and no second factorization.
-template<typename Scalar, std::size_t NX, std::size_t NU, detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
-auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<Scalar, int(NX), int(NU)> &B, const Eigen::Matrix<Scalar, int(NX), int(NX)> &Q,
-          const Eigen::Matrix<Scalar, int(NU), int(NU)> &R, const Eigen::Matrix<Scalar, int(NX), int(NU)> &N, Cond tag = {}) -> ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>
+// Reduces to standard form with Q' = Q - N R^{-1} N' and A' = A - B R^{-1} N'. P is shared by both posings, and the
+// posed problem's gain is K = K' + R^{-1} N'.
+template <typename Scalar, std::size_t NX, std::size_t NU, detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
+ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error> dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+        const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q, const Eigen::Matrix<Scalar, int(NU), int(NU)>& R, const Eigen::Matrix<Scalar, int(NX), int(NU)>& N, Cond tag = {})
 {
     if(!A.allFinite() || !B.allFinite() || !Q.allFinite() || !R.allFinite() || !N.allFinite())
         return ctrlpp::unexpected(dare_error::non_finite_input);
 
-    // The reduction to standard form inverts R before the symplectic build ever sees
-    // it, so the same test is applied to the factorization this overload already forms
-    // rather than deferring to the build's. Without it a singular R would reach the
-    // inner solve as a non-finite Q' and A' and be reported as a non-finite input.
-    auto qr_R = R.colPivHouseholderQr();
-    qr_R.setThreshold(Scalar{static_cast<int>(NU)} * std::numeric_limits<Scalar>::epsilon());
-    if(!qr_R.isInvertible())
-        return ctrlpp::unexpected(dare_error::singular_r);
+    const auto Rinv_Nt = detail::dare_cross_weight_correction<Scalar, NX, NU>(R, N);
+    if(!Rinv_Nt)
+        return ctrlpp::unexpected(Rinv_Nt.error());
 
-    auto Rinv_Nt = qr_R.solve(Eigen::Matrix<Scalar, int(NU), int(NX)>(N.transpose())).eval();
-
-    Eigen::Matrix<Scalar, int(NX), int(NX)> Qp = (Q - N * Rinv_Nt).eval();
-    Eigen::Matrix<Scalar, int(NX), int(NX)> Ap = (A - B * Rinv_Nt).eval();
+    Eigen::Matrix<Scalar, int(NX), int(NX)> Qp = (Q - N * *Rinv_Nt).eval();
+    Eigen::Matrix<Scalar, int(NX), int(NX)> Ap = (A - B * *Rinv_Nt).eval();
     if(!Qp.allFinite() || !Ap.allFinite())
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
 
@@ -564,7 +132,7 @@ auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)> &A, const Eigen::Matrix<
     if(!reduced)
         return reduced;
 
-    reduced->K += Rinv_Nt;
+    reduced->K += *Rinv_Nt;
     if(!reduced->K.allFinite())
         return ctrlpp::unexpected(dare_error::arithmetic_limit);
 

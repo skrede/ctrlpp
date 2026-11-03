@@ -85,7 +85,7 @@ void run_acceptance_rows(ankerl::nanobench::Bench& bench, const ctrlpp::bench::r
     {
         Eigen::Matrix<double, int(NU), int(NX)> verified_gain;
         auto v = ctrlpp::detail::verify_dare_solution<double, NX, NU>(plant.A, plant.B, plant.Q, plant.R, P,
-                                                                      &verified_gain);
+                                                                      verified_gain);
         ankerl::nanobench::doNotOptimizeAway(v);
         ankerl::nanobench::doNotOptimizeAway(verified_gain);
     });

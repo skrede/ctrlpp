@@ -86,7 +86,7 @@ void check_scaled_corpus(std::size_t& rungs_checked, std::size_t& gate_open, std
 
         Eigen::Matrix<double, nu, n>            caller_gain;
         const ctrlpp::detail::dare_verification caller_verdict =
-                ctrlpp::detail::verify_dare_solution<double, NX, NU>(A_s, B_s, Q_s, R_s, scaled->P, &caller_gain);
+                ctrlpp::detail::verify_dare_solution<double, NX, NU>(A_s, B_s, Q_s, R_s, scaled->P, caller_gain);
 
         std::printf("CHECK NX=%2zu s=%-7s weight_scale=%.17g gate=%-6s rescale_rel_dev=%.3e caller_scale_verdict=%s\n", NX, rung.label, weight_scale,
                     open ? "open" : "closed", relative, verification_name(caller_verdict));

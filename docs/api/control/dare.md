@@ -14,7 +14,7 @@ Discrete Algebraic Riccati Equation solver using symplectic Schur decomposition.
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | arithmetic type | Numeric type (e.g. `double`, `float`) |
+| `Scalar` | `ctrlpp_floating_scalar` | Floating-point type (e.g. `double`, `float`) |
 | `NX` | `std::size_t` | State dimension |
 | `NU` | `std::size_t` | Input dimension |
 
@@ -23,12 +23,11 @@ Discrete Algebraic Riccati Equation solver using symplectic Schur decomposition.
 ### dare
 
 ```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU>
-auto dare(const Matrix<Scalar, NX, NX>& A,
-          const Matrix<Scalar, NX, NU>& B,
-          const Matrix<Scalar, NX, NX>& Q,
-          const Matrix<Scalar, NU, NU>& R)
-    -> ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>;
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
+ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error> dare(const Matrix<Scalar, NX, NX>& A,
+                                                               const Matrix<Scalar, NX, NU>& B,
+                                                               const Matrix<Scalar, NX, NX>& Q,
+                                                               const Matrix<Scalar, NU, NU>& R);
 ```
 
 Solves the standard DARE. Before forming the 2n x 2n symplectic matrix, it
@@ -47,7 +46,11 @@ equilibration exists to keep representable: on a weighting whose entries are
 subnormal, `R^{-1}` overflows and `G` is infinite at the caller's scale while
 being an ordinary number at the equilibrated one. Forming it at the caller's
 scale first and correcting afterwards cannot recover those poses, because the
-correction would be applied to an infinity.
+correction would be applied to an infinity. Rescaling a caller-scale Gramian by
+the divisor, exact in exact arithmetic since `G` is homogeneous of degree minus
+one in `R`, declines 56 poses of the scalar weight-ratio sweep -- every accepted
+point from `1e-323` to `1e-309` at all three ratios -- that factorizing the
+equilibrated weighting answers bit-exactly.
 
 The solver computes a real Schur decomposition, reorders eigenvalues inside the
 unit disk to the top-left block, and extracts P = U21 * U11^{-1}. Before
@@ -193,6 +196,16 @@ two cases are deliberately not merged:
   declining. These come with no account of why, and the carried claim's premise
   is that both scales pose the same problem -- an unexplained dissolution of the
   direct check is the weakest place to assume it. **The solver declines.**
+  Nothing measured is given up by declining: over all ten weight-ratio
+  populations, 3,464,634 poses, no disposition and no returned bit differs, and
+  a targeted hunt of 24,040 adversarial draws with closed loops pushed against
+  the unit circle, across weight ratios from `1e-300` to `1e300`, produced 860
+  accepted poses and none reaching the direct check unresolved, against a
+  reachability control that fired 31,610 times in the same regime. The closed
+  loop is homogeneous of degree zero in `(P, Q, R)` and the estimator's
+  operator depends only on the closed loop, so such a pose is declined at the
+  equilibrated check already; that argument holds only while every rescaled
+  entry stays normal, so it is measured rather than proven.
 
 Merging the two would force one disposition on both: either discard a band of
 exactly-correct answers, or accept an absence of evidence whose cause is unknown.
@@ -351,15 +364,14 @@ Three enumerators report a property of the operands rather than of an iteration 
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto dare(const Matrix<Scalar, NX, NX>& A,
-          const Matrix<Scalar, NX, NU>& B,
-          const Matrix<Scalar, NX, NX>& Q,
-          const Matrix<Scalar, NU, NU>& R,
-          const Matrix<Scalar, NX, NU>& N)
-    -> ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>;
+ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error> dare(const Matrix<Scalar, NX, NX>& A,
+                                                               const Matrix<Scalar, NX, NU>& B,
+                                                               const Matrix<Scalar, NX, NX>& Q,
+                                                               const Matrix<Scalar, NU, NU>& R,
+                                                               const Matrix<Scalar, NX, NU>& N);
 ```
 
-DARE with state-input cross-weight N. Transforms to standard form via Q' = Q - NR^{-1}N', A' = A - BR^{-1}N' and delegates to the standard solver.
+DARE with state-input cross-weight N. Transforms to standard form via Q' = Q - NR^{-1}N', A' = A - BR^{-1}N' and delegates to the standard solver. `result->P` is shared by both posings; `result->K` is the gain of the problem the caller posed, `K = K' + R^{-1}N'`, where `K'` is the reduced problem's gain.
 
 ## Usage Example
 
