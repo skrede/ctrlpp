@@ -1,10 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_SYSID_DETAIL_BATCH_ARX_DETAIL_H
 #define HPP_GUARD_CTRLPP_SYSID_DETAIL_BATCH_ARX_DETAIL_H
 
-/// @brief Stages of batch ARX identification: regressor assembly, observer
-/// canonical realization and open-loop simulation.
-///
-/// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999, Ch. 4
+// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999, Ch. 4
 
 #include "ctrlpp/types.h"
 
@@ -27,22 +24,27 @@ namespace detail
 template <typename Scalar, std::size_t NP>
 struct arx_regression
 {
-    Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NP)> Phi{};
-    Eigen::VectorX<Scalar> target{};
+    arx_regression()
+        : Phi{}
+        , target{}
+    {
+    }
+
+    Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NP)> Phi;
+    Eigen::VectorX<Scalar> target;
 };
 
 template <std::size_t NA, std::size_t NB, typename Derived1, typename Derived2>
-auto assemble_arx_regression(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U)
-    -> arx_regression<typename Derived1::Scalar, NA + NB>
+arx_regression<typename Derived1::Scalar, NA + NB> assemble_arx_regression(const Eigen::MatrixBase<Derived1>& Y, const Eigen::MatrixBase<Derived2>& U)
 {
     using Scalar = typename Derived1::Scalar;
     static constexpr std::size_t NP = NA + NB;
     static constexpr auto k = static_cast<Eigen::Index>(std::max(NA, NB));
 
     auto const n_eff = Y.cols() - k;
-    arx_regression<Scalar, NP> regression{
-        Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NP)>(n_eff, static_cast<int>(NP)),
-        Eigen::VectorX<Scalar>(n_eff)};
+    arx_regression<Scalar, NP> regression;
+    regression.Phi.resize(n_eff, Eigen::NoChange);
+    regression.target.resize(n_eff);
 
     for(Eigen::Index i = 0; i < n_eff; ++i)
     {
@@ -59,24 +61,21 @@ auto assemble_arx_regression(const Eigen::MatrixBase<Derived1>& Y, const Eigen::
 template <typename Scalar, std::size_t NP>
 struct arx_least_squares_fit
 {
-    Eigen::Matrix<Scalar, static_cast<int>(NP), 1> theta{};
-    arx_diagnostics<Scalar> diagnostics{};
+    arx_least_squares_fit()
+        : theta{}
+        , diagnostics{}
+    {
+    }
+
+    Eigen::Matrix<Scalar, static_cast<int>(NP), 1> theta;
+    arx_diagnostics<Scalar> diagnostics;
 };
 
-/// The threshold reaches `rank()` only. Eigen decides how many pivots to solve
-/// through from a separate count fixed during the factorization from epsilon
-/// alone, so a caller-supplied threshold changes what is reported and never
-/// what is returned.
-///
-/// Left disengaged, `setThreshold` is not called and Eigen's own default
-/// applies: epsilon times the runtime diagonal size, which its source
-/// attributes to Higham's LDLT formula
-/// (Eigen/src/QR/ColPivHouseholderQR.h, threshold()). Omitting the argument
-/// therefore reproduces that default exactly. The value is compared against the
-/// largest pivot, so it is a relative, dimensionless multiplier.
+// The threshold reaches rank() only: Eigen fixes the number of pivots the solve uses from epsilon during the
+// factorization, so the threshold changes what is reported and never what is returned. Left disengaged, Eigen's
+// default applies (Eigen/src/QR/ColPivHouseholderQR.h, threshold()).
 template <typename Scalar, std::size_t NP>
-auto solve_arx_least_squares(const arx_regression<Scalar, NP>& regression, std::optional<Scalar> rank_threshold)
-    -> arx_least_squares_fit<Scalar, NP>
+arx_least_squares_fit<Scalar, NP> solve_arx_least_squares(const arx_regression<Scalar, NP>& regression, std::optional<Scalar> rank_threshold)
 {
     Eigen::ColPivHouseholderQR<Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NP)>> qr(regression.Phi);
     if(rank_threshold)
@@ -91,12 +90,10 @@ auto solve_arx_least_squares(const arx_regression<Scalar, NP>& regression, std::
     return fit;
 }
 
-/// Observer canonical realization dimension = max(deg A, deg B) (Ljung 1999, Ch. 4).
-/// When NB > NA the extra b-coefficients b_{NA+1..NB} require additional states;
-/// truncating to NA states would silently drop them from the transfer function.
+// Observer canonical realization of dimension max(deg A, deg B) (Ljung 1999, Ch. 4): when NB > NA the extra
+// b-coefficients need states of their own, and truncating to NA states would drop them from the transfer function.
 template <std::size_t NA, std::size_t NB, typename Scalar>
-auto realize_arx_observer_form(const Eigen::Matrix<Scalar, static_cast<int>(NA + NB), 1>& theta)
-    -> discrete_state_space<Scalar, std::max(NA, NB), 1, 1>
+discrete_state_space<Scalar, std::max(NA, NB), 1, 1> realize_arx_observer_form(const Eigen::Matrix<Scalar, static_cast<int>(NA + NB), 1>& theta)
 {
     static constexpr std::size_t NX = std::max(NA, NB);
 
@@ -106,24 +103,21 @@ auto realize_arx_observer_form(const Eigen::Matrix<Scalar, static_cast<int>(NA +
     Matrix<Scalar, 1, 1> D = Matrix<Scalar, 1, 1>::Zero();
 
     for(std::size_t i = 0; i < NA; ++i)
-        A(static_cast<int>(i), 0) = theta(static_cast<int>(i));
+        A(static_cast<Eigen::Index>(i), 0) = theta(static_cast<Eigen::Index>(i));
 
     for(std::size_t i = 0; i + 1 < NX; ++i)
-        A(static_cast<int>(i), static_cast<int>(i + 1)) = Scalar{1};
+        A(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(i + 1)) = Scalar{1};
 
     for(std::size_t i = 0; i < NB; ++i)
-        B(static_cast<int>(i), 0) = theta(static_cast<int>(NA + i));
+        B(static_cast<Eigen::Index>(i), 0) = theta(static_cast<Eigen::Index>(NA + i));
 
     C(0, 0) = Scalar{1};
 
     return {A, B, C, D};
 }
 
-/// The state starts at zero, so the first max(deg A, deg B) predictions are
-/// produced from a state the identification never estimated.
 template <typename Scalar, std::size_t NX, typename Derived>
-auto simulate_arx_open_loop(const discrete_state_space<Scalar, NX, 1, 1>& sys, const Eigen::MatrixBase<Derived>& U)
-    -> Eigen::VectorX<Scalar>
+Eigen::VectorX<Scalar> simulate_arx_open_loop(const discrete_state_space<Scalar, NX, 1, 1>& sys, const Eigen::MatrixBase<Derived>& U)
 {
     Eigen::Matrix<Scalar, static_cast<int>(NX), 1> x = Eigen::Matrix<Scalar, static_cast<int>(NX), 1>::Zero();
     Eigen::VectorX<Scalar> y_predicted(U.cols());

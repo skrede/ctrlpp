@@ -27,8 +27,7 @@ class recursive_arx;
 ## Construction
 
 ```cpp
-static auto create(rls_config<Scalar, NP> config = {})
-    -> ctrlpp::expected<recursive_arx, rls_error>;
+static ctrlpp::expected<recursive_arx, rls_error> create(rls_config<Scalar, NP> config = {});
 ```
 
 Where `NP = NA + NB`. `create` is the only construction path; there is

@@ -34,8 +34,7 @@ Configuration struct `rls_config<Scalar, NP>` passed at construction.
 ## Construction
 
 ```cpp
-static auto create(rls_config<Scalar, NP> config = {})
-    -> ctrlpp::expected<rls, rls_error>;
+static ctrlpp::expected<rls, rls_error> create(rls_config<Scalar, NP> config = {});
 ```
 
 `create` is the only construction path; there is no public constructor. A

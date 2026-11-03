@@ -14,10 +14,14 @@ Goodness-of-fit metrics for evaluating identified system models. Computes NRMSE 
 ```cpp
 template <typename Scalar>
 struct fit_metrics {
+    fit_metrics();
+
     Scalar nrmse;  // Normalized root mean square error (0 = perfect fit)
     Scalar vaf;    // Variance accounted for, in percent (100 = perfect fit)
 };
 ```
+
+The default constructor value-initializes both fields; `compute_fit_metrics` assigns them.
 
 ## compute_fit_metrics
 
@@ -36,7 +40,7 @@ reduction is evaluated.
 
 **VAF:** `(1 - var(error) / var(y_actual)) * 100`. A value of 100% indicates the model explains all variance; values near 0% indicate no explanatory power.
 
-Edge cases: constant signals (zero variance) return NRMSE = 0 and VAF = 100% when the prediction is also perfect, or infinity/-infinity otherwise. Whether a quantity counts as vanishing is decided against a resolution floor **derived from the record's own magnitude** -- the counted rounding of the mean and the centring, `sqrt(n) * (n + 1)` operations, times the machine epsilon, times the largest sample -- and never against an absolute constant. An absolute one is wrong in both directions: at a record scale of 1e-17 it calls a genuinely varying record constant and reports a perfect fit for a predictor that explains nothing, and at a large scale it calls a constant record varying and then divides one rounding-level quantity by another.
+Edge cases: constant signals (zero variance) return NRMSE = 0 and VAF = 100% when the prediction is also perfect, or infinity/-infinity otherwise. Whether a quantity counts as vanishing is decided against a resolution floor **derived from the record's own magnitude** -- the counted rounding of the mean and the centering, `sqrt(n) * (n + 1)` operations, times the machine epsilon, times the largest sample -- and never against an absolute constant. An absolute one is wrong in both directions: at a record scale of 1e-17 it calls a genuinely varying record constant and reports a perfect fit for a predictor that explains nothing, and at a large scale it calls a constant record varying and then divides one rounding-level quantity by another.
 
 ## Usage Example
 

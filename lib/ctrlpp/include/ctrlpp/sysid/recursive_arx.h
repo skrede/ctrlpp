@@ -1,14 +1,12 @@
 #ifndef HPP_GUARD_CTRLPP_SYSID_RECURSIVE_ARX_H
 #define HPP_GUARD_CTRLPP_SYSID_RECURSIVE_ARX_H
 
-/// @brief Recursive ARX model identification using RLS with state-space conversion.
-///
-/// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999, Ch. 11
+// @cite ljung1999 -- Ljung, "System Identification: Theory for the User", 1999, Ch. 11
+
+#include "ctrlpp/sysid/rls.h"
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/expected.h"
-
-#include "ctrlpp/sysid/rls.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -42,17 +40,15 @@ class recursive_arx
 {
     static_assert(NA >= 1 && NB >= 1, "recursive_arx requires NA >= 1 and NB >= 1");
 
+    // Only create() can name the tag, so the estimator's validation cannot be bypassed.
+    struct validated_tag
+    {
+    };
+
 public:
     static constexpr std::size_t NP = NA + NB;
 
-    /// @brief Fallible factory, and the only way to originate an estimator.
-    ///
-    /// This type owns a recursive least-squares estimator and configures it from
-    /// the same aggregate, so it has no configuration condition of its own to
-    /// state: it forwards that estimator's rejection verbatim rather than
-    /// restating the conditions here, where a second copy could drift out of
-    /// step with the arithmetic it describes. See `rls_error`.
-    static auto create(rls_config<Scalar, NP> config = {}) -> ctrlpp::expected<recursive_arx, rls_error>
+    static ctrlpp::expected<recursive_arx, rls_error> create(rls_config<Scalar, NP> config = {})
     {
         auto estimator = rls<Scalar, NP>::create(std::move(config));
         if(!estimator)
@@ -60,35 +56,23 @@ public:
         return recursive_arx{validated_tag{}, std::move(*estimator)};
     }
 
-    /// @brief Incorporate one input-output sample, or report why the cycle was
-    /// refused.
-    ///
-    /// This wrapper previously called the estimator and discarded its answer, so
-    /// a refused sample was swallowed here and no caller could learn that the
-    /// model had stopped moving.
-    ///
-    /// A refused cycle also leaves the regressor history, the write index and the
-    /// sample count untouched. That is not tidiness: the history IS the next
-    /// cycle's regressor, so recording a sample the estimator refused as
-    /// non-finite would poison every regressor built afterwards -- the poison
-    /// would latch in the wrapper after the estimator had correctly declined it.
-    auto update(Scalar y, Scalar u) -> ctrlpp::expected<void, recursive_arx_update_error>
+    // The history is written only once the estimator accepts the sample, since it is the next cycle's regressor.
+    ctrlpp::expected<void, recursive_arx_update_error> update(Scalar y, Scalar u)
     {
         if(!std::isfinite(u))
             return ctrlpp::unexpected(recursive_arx_update_error::non_finite_input);
 
         Vector<Scalar, NP> phi = Vector<Scalar, NP>::Zero();
 
-        // Build regressor: [y(t-1), ..., y(t-NA), u(t-1), ..., u(t-NB)]
         for(std::size_t i = 0; i < NA; ++i)
         {
             std::size_t idx = (m_write_idx + NA - 1 - i) % NA;
-            phi(static_cast<int>(i)) = m_y_hist[idx];
+            phi(static_cast<Eigen::Index>(i)) = m_y_hist[idx];
         }
         for(std::size_t i = 0; i < NB; ++i)
         {
             std::size_t idx = (m_write_idx + NB - 1 - i) % NB;
-            phi(static_cast<int>(NA + i)) = m_u_hist[idx];
+            phi(static_cast<Eigen::Index>(NA + i)) = m_u_hist[idx];
         }
 
         if(const auto applied = m_rls.update(y, phi); !applied)
@@ -109,8 +93,8 @@ public:
     {
         auto theta = m_rls.parameters();
 
-        // Observer canonical realization dimension = max(deg A, deg B) (Ljung 1999, Ch. 4).
-        // When NB > NA the extra b-coefficients b_{NA+1..NB} require additional states.
+        // Observer canonical realization of dimension max(deg A, deg B) (Ljung 1999, Ch. 4): when NB > NA the extra
+        // b-coefficients need states of their own.
         static constexpr std::size_t NX = std::max(NA, NB);
 
         Matrix<Scalar, NX, NX> A = Matrix<Scalar, NX, NX>::Zero();
@@ -118,32 +102,36 @@ public:
         Matrix<Scalar, 1, NX> C = Matrix<Scalar, 1, NX>::Zero();
         Matrix<Scalar, 1, 1> D = Matrix<Scalar, 1, 1>::Zero();
 
-        // Observer canonical form for ARX (NX = max(NA, NB) states):
-        //   y(t) = a1*y(t-1) + ... + aNa*y(t-NA) + b1*u(t-1) + ... + bNb*u(t-NB)
-        //
-        //   A = [a1  1  0 ...]    B = [b1]    C = [1 0 ... 0]    D = [0]
-        //       [a2  0  1 ...]        [b2]
-        //       [... ... ...]         [...]
-        //       [ .  0  0 ...]        [bNx (or 0)]
-        //
-        // A: first column = a-coefficients (rows NA..NX-1 stay zero), superdiagonal = 1
         for(std::size_t i = 0; i < NA; ++i)
-            A(static_cast<int>(i), 0) = theta(static_cast<int>(i));
+            A(static_cast<Eigen::Index>(i), 0) = theta(static_cast<Eigen::Index>(i));
         for(std::size_t i = 0; i + 1 < NX; ++i)
-            A(static_cast<int>(i), static_cast<int>(i + 1)) = Scalar{1};
+            A(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(i + 1)) = Scalar{1};
 
-        // B column: all b-coefficients (rows NB..NX-1 stay zero)
         for(std::size_t i = 0; i < NB; ++i)
-            B(static_cast<int>(i), 0) = theta(static_cast<int>(NA + i));
+            B(static_cast<Eigen::Index>(i), 0) = theta(static_cast<Eigen::Index>(NA + i));
 
-        // C = [1, 0, ..., 0]
         C(0, 0) = Scalar{1};
 
         return {A, B, C, D};
     }
 
 private:
-    static constexpr auto forward_error(rls_update_error error) -> recursive_arx_update_error
+    rls<Scalar, NP> m_rls;
+    std::size_t m_write_idx;
+    std::size_t m_sample_count;
+    std::array<Scalar, NA> m_y_hist;
+    std::array<Scalar, NB> m_u_hist;
+
+    recursive_arx(validated_tag, rls<Scalar, NP> estimator)
+        : m_rls{std::move(estimator)}
+        , m_write_idx{0}
+        , m_sample_count{0}
+        , m_y_hist{}
+        , m_u_hist{}
+    {
+    }
+
+    static constexpr recursive_arx_update_error forward_error(rls_update_error error)
     {
         switch(error)
         {
@@ -164,21 +152,6 @@ private:
         }
         return recursive_arx_update_error::non_finite_state;
     }
-
-    /// @brief Tag selecting the non-validating constructor reserved for
-    /// `create`, which is what makes the factory the only public path and the
-    /// validation impossible to bypass.
-    struct validated_tag
-    {
-    };
-
-    recursive_arx(validated_tag, rls<Scalar, NP> estimator) : m_rls{std::move(estimator)} {}
-
-    rls<Scalar, NP> m_rls;
-    std::array<Scalar, NA> m_y_hist{};
-    std::array<Scalar, NB> m_u_hist{};
-    std::size_t m_write_idx{0};
-    std::size_t m_sample_count{0};
 };
 
 }

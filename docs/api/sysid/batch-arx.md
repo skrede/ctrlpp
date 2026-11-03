@@ -13,12 +13,10 @@ The routine validates its data records and returns `ctrlpp::expected<arx_result<
 
 ```cpp
 template <std::size_t NA, std::size_t NB, typename Derived1, typename Derived2>
-auto
+ctrlpp::expected<arx_result<typename Derived1::Scalar, std::max(NA, NB), 1, 1>, sysid_error>
 batch_arx(const Eigen::MatrixBase<Derived1>& Y,
           const Eigen::MatrixBase<Derived2>& U,
-          std::optional<typename Derived1::Scalar> rank_threshold = std::nullopt)
-    -> ctrlpp::expected<arx_result<typename Derived1::Scalar, std::max(NA, NB), 1, 1>,
-                        sysid_error>;
+          std::optional<typename Derived1::Scalar> rank_threshold = std::nullopt);
 ```
 
 ## Template Parameters
@@ -41,6 +39,8 @@ batch_arx(const Eigen::MatrixBase<Derived1>& Y,
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct arx_result {
+    arx_result();
+
     discrete_state_space<Scalar, NX, NU, NY> system;
     fit_metrics<Scalar> metrics;
     arx_diagnostics<Scalar> diagnostics;
@@ -91,7 +91,7 @@ The checks run in the order listed, all of them before any index arithmetic, so 
 | `too_few_samples` | `Y.cols() <= max(NA, NB)`. One regressor row is formed per sample beyond `max(NA, NB)`, so a strictly greater sample count is exactly the condition for a nonempty regressor matrix. At the order the matrix is empty; below it the row count would be the result of an unsigned subtraction that wraps |
 | `non_finite_sample` | A sample in either record is NaN or infinite. Samples enter the regressor and the least-squares solve directly, which propagates the value into every identified coefficient |
 
-Every bound is an exact precondition of the routine's index arithmetic or data layout, not a tolerance. None of them is a quality judgement about the fit: `batch_arx` does **not** require the regressor row count to reach the parameter count `NA + NB`, so a record that passes all four checks can still yield an under-determined or rank-deficient fit. Judge that from the returned `arx_diagnostics`.
+Every bound is an exact precondition of the routine's index arithmetic or data layout, not a tolerance. None of them is a quality judgment about the fit: `batch_arx` does **not** require the regressor row count to reach the parameter count `NA + NB`, so a record that passes all four checks can still yield an under-determined or rank-deficient fit. Judge that from the returned `arx_diagnostics`.
 
 ## Usage Example
 

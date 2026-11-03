@@ -2,6 +2,8 @@
 
 Result containers returned by the system identification algorithms. Each result type bundles the identified state-space model with algorithm-specific metadata and fit metrics.
 
+Each type has a default constructor only: it value-initializes every field except `moesp_result::initial_state`, which is left uninitialized, and the identification routine assigns the fields it fills.
+
 ## Header and Alias
 
 | Form | Header |
@@ -16,6 +18,8 @@ Result containers returned by the system identification algorithms. Each result 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct arx_result {
+    arx_result();
+
     discrete_state_space<Scalar, NX, NU, NY> system;
     fit_metrics<Scalar> metrics;
     arx_diagnostics<Scalar> diagnostics;
@@ -35,6 +39,8 @@ Carried on the value branch of the `ctrlpp::expected<arx_result<...>, sysid_erro
 ```cpp
 template <typename Scalar>
 struct arx_diagnostics {
+    arx_diagnostics();
+
     std::size_t effective_samples;
     std::size_t parameter_count;
     std::size_t numerical_rank;
@@ -62,6 +68,8 @@ A `numerical_rank` below `parameter_count` means the record did not determine ev
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct moesp_result {
+    moesp_result();
+
     discrete_state_space<Scalar, NX, NU, NY> system;
     Eigen::VectorX<Scalar> singular_values;
     fit_metrics<Scalar> metrics;

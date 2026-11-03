@@ -11,10 +11,10 @@ Subspace system identification using the PO-MOESP algorithm. Identifies a discre
 
 ```cpp
 template <std::size_t NX, typename Derived1, typename Derived2>
-auto moesp(const Eigen::MatrixBase<Derived1>& Y,
-           const Eigen::MatrixBase<Derived2>& U,
-           std::size_t block_rows = 0)
-    -> ctrlpp::expected<moesp_result<typename Derived1::Scalar, NX, 1, 1>, sysid_error>;
+ctrlpp::expected<moesp_result<typename Derived1::Scalar, NX, 1, 1>, sysid_error>
+moesp(const Eigen::MatrixBase<Derived1>& Y,
+      const Eigen::MatrixBase<Derived2>& U,
+      std::size_t block_rows = 0);
 ```
 
 ## Template Parameters
@@ -36,6 +36,8 @@ auto moesp(const Eigen::MatrixBase<Derived1>& Y,
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct moesp_result {
+    moesp_result();
+
     discrete_state_space<Scalar, NX, NU, NY> system;
     Eigen::VectorX<Scalar> singular_values;
     fit_metrics<Scalar> metrics;
@@ -66,10 +68,10 @@ After the projection, the identification is refused with `sysid_error::model_not
 
 ```cpp
 template <typename Derived1, typename Derived2>
-auto moesp_singular_values(const Eigen::MatrixBase<Derived1>& Y,
-                           const Eigen::MatrixBase<Derived2>& U,
-                           std::size_t block_rows = 0)
-    -> ctrlpp::expected<Eigen::VectorX<typename Derived1::Scalar>, sysid_error>;
+ctrlpp::expected<Eigen::VectorX<typename Derived1::Scalar>, sysid_error>
+moesp_singular_values(const Eigen::MatrixBase<Derived1>& Y,
+                      const Eigen::MatrixBase<Derived2>& U,
+                      std::size_t block_rows = 0);
 ```
 
 Returns just the singular values without performing full identification. Useful for model order selection. It refuses the records `moesp` refuses, in the same order, checked at the smallest order `NX = 1`.
