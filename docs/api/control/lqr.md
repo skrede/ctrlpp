@@ -31,11 +31,11 @@ using input_type = Eigen::Matrix<Scalar, int(NU), 1>;
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto lqr_gain(const Matrix<Scalar, NX, NX>& A,
-              const Matrix<Scalar, NX, NU>& B,
-              const Matrix<Scalar, NX, NX>& Q,
-              const Matrix<Scalar, NU, NU>& R)
-    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error>;
+ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error>
+lqr_gain(const Matrix<Scalar, NX, NX>& A,
+         const Matrix<Scalar, NX, NU>& B,
+         const Matrix<Scalar, NX, NX>& Q,
+         const Matrix<Scalar, NU, NU>& R);
 ```
 
 Computes the infinite-horizon LQR gain K = (R + B'PB)^{-1} B'PA where P is the stabilizing solution of the DARE.
@@ -48,12 +48,12 @@ Computes the infinite-horizon LQR gain K = (R + B'PB)^{-1} B'PA where P is the s
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto lqr_gain(const Matrix<Scalar, NX, NX>& A,
-              const Matrix<Scalar, NX, NU>& B,
-              const Matrix<Scalar, NX, NX>& Q,
-              const Matrix<Scalar, NU, NU>& R,
-              const Matrix<Scalar, NX, NU>& N)
-    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error>;
+ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, dare_error>
+lqr_gain(const Matrix<Scalar, NX, NX>& A,
+         const Matrix<Scalar, NX, NU>& B,
+         const Matrix<Scalar, NX, NX>& Q,
+         const Matrix<Scalar, NU, NU>& R,
+         const Matrix<Scalar, NX, NU>& N);
 ```
 
 Infinite-horizon LQR gain with state-input cross-weight N: K = (R + B'PB)^{-1} (B'PA + N'). Forwards `dare_error` for the same reason, and returns the solver's own gain for the same reason. The cross-weight Riccati solve reduces the problem to standard form and then corrects the reduced problem's gain K' back to the posed problem's by `K = K' + R^{-1}N'`, using the `R^{-1}N'` it already formed for the reduction -- so the caller's gain costs one addition here and no second factorization.
@@ -63,12 +63,12 @@ Infinite-horizon LQR gain with state-input cross-weight N: K = (R + B'PB)^{-1} (
 ```cpp
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
           detail::care_solve_method Method = detail::sign_function_care_method>
-auto lqr_gain_continuous(const Matrix<Scalar, NX, NX>& A,
-                         const Matrix<Scalar, NX, NU>& B,
-                         const Matrix<Scalar, NX, NX>& Q,
-                         const Matrix<Scalar, NU, NU>& R,
-                         Method method_tag = {})
-    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, care_error>;
+ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, care_error>
+lqr_gain_continuous(const Matrix<Scalar, NX, NX>& A,
+                    const Matrix<Scalar, NX, NU>& B,
+                    const Matrix<Scalar, NX, NX>& Q,
+                    const Matrix<Scalar, NU, NU>& R,
+                    Method method_tag = {});
 ```
 
 Continuous-time gain `K = R^{-1} B' P` where P solves `A'P + PA - PBR^{-1}B'P + Q = 0`. Reports through `care_error`, forwarding the continuous solver's enumerator.
@@ -163,12 +163,12 @@ Finite-horizon LQR via backward Riccati recursion. Returns gain sequence {K_0, K
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto lqr_tv_gains(const std::vector<Matrix<Scalar, NX, NX>>& As,
-                  const std::vector<Matrix<Scalar, NX, NU>>& Bs,
-                  const std::vector<Matrix<Scalar, NX, NX>>& Qs,
-                  const std::vector<Matrix<Scalar, NU, NU>>& Rs,
-                  const Matrix<Scalar, NX, NX>& Qf)
-    -> ctrlpp::expected<std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>>, lqr_error>;
+ctrlpp::expected<std::vector<Eigen::Matrix<Scalar, int(NU), int(NX)>>, lqr_error>
+lqr_tv_gains(const std::vector<Matrix<Scalar, NX, NX>>& As,
+             const std::vector<Matrix<Scalar, NX, NU>>& Bs,
+             const std::vector<Matrix<Scalar, NX, NX>>& Qs,
+             const std::vector<Matrix<Scalar, NU, NU>>& Rs,
+             const Matrix<Scalar, NX, NX>& Qf);
 ```
 
 Time-varying LQR via backward Riccati recursion with per-step system and cost matrices. The horizon is the common length of the four sequences; empty sequences give an empty gain sequence. Refuses with:
@@ -180,12 +180,12 @@ Time-varying LQR via backward Riccati recursion with per-step system and cost ma
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-auto lqi_gain(const Matrix<Scalar, NX, NX>& A,
-              const Matrix<Scalar, NX, NU>& B,
-              const Matrix<Scalar, NY, NX>& C,
-              const Matrix<Scalar, NX + NY, NX + NY>& Q_aug,
-              const Matrix<Scalar, NU, NU>& R)
-    -> ctrlpp::expected<lqi_result<Scalar, NX, NU, NY>, dare_error>;
+ctrlpp::expected<lqi_result<Scalar, NX, NU, NY>, dare_error>
+lqi_gain(const Matrix<Scalar, NX, NX>& A,
+         const Matrix<Scalar, NX, NU>& B,
+         const Matrix<Scalar, NY, NX>& C,
+         const Matrix<Scalar, NX + NY, NX + NY>& Q_aug,
+         const Matrix<Scalar, NU, NU>& R);
 ```
 
 LQR with integral action. Augments the state with integral of tracking error and returns `lqi_result` containing partitioned gains Kx (NU x NX) and Ki (NU x NY), or the augmented Riccati solve's `dare_error` verbatim.
@@ -194,11 +194,11 @@ LQR with integral action. Augments the state with integral of tracking error and
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto lqr_cost(std::span<const Vector<Scalar, NX>> xs,
-              std::span<const Vector<Scalar, NU>> us,
-              const Matrix<Scalar, NX, NX>& Q,
-              const Matrix<Scalar, NU, NU>& R)
-    -> ctrlpp::expected<Scalar, lqr_error>;
+ctrlpp::expected<Scalar, lqr_error>
+lqr_cost(std::span<const Vector<Scalar, NX>> xs,
+         std::span<const Vector<Scalar, NU>> us,
+         const Matrix<Scalar, NX, NX>& Q,
+         const Matrix<Scalar, NU, NU>& R);
 ```
 
 Evaluates the quadratic trajectory cost: sum of x'Qx + u'Ru. `xs` holds either as many states as `us` holds inputs, or one more, in which case the terminal state cost is included. Refuses with:
@@ -221,7 +221,7 @@ Constructs a controller from a precomputed gain matrix.
 #### compute
 
 ```cpp
-auto compute(const state_type& x) const -> input_type;
+input_type compute(const state_type& x) const;
 ```
 
 Returns u = -Kx.
@@ -229,7 +229,7 @@ Returns u = -Kx.
 #### gain
 
 ```cpp
-auto gain() const -> const gain_type&;
+const gain_type& gain() const;
 ```
 
 Returns a const reference to the stored gain matrix.
@@ -249,7 +249,7 @@ Constructs a time-varying controller from a precomputed gain sequence.
 #### compute
 
 ```cpp
-auto compute(const state_type& x, std::size_t k) const -> ctrlpp::expected<input_type, lqr_error>;
+ctrlpp::expected<input_type, lqr_error> compute(const state_type& x, std::size_t k) const;
 ```
 
 Returns u = -K_k * x at time step k, or `lqr_error::step_out_of_range` when `k >= horizon()`.
@@ -257,7 +257,7 @@ Returns u = -K_k * x at time step k, or `lqr_error::step_out_of_range` when `k >
 #### gain
 
 ```cpp
-auto gain(std::size_t k) const -> ctrlpp::expected<gain_type, lqr_error>;
+ctrlpp::expected<gain_type, lqr_error> gain(std::size_t k) const;
 ```
 
 Returns a copy of the gain matrix at step k, or `lqr_error::step_out_of_range` when `k >= horizon()`.
@@ -265,7 +265,7 @@ Returns a copy of the gain matrix at step k, or `lqr_error::step_out_of_range` w
 #### horizon
 
 ```cpp
-auto horizon() const -> std::size_t;
+std::size_t horizon() const;
 ```
 
 Returns the number of time steps in the gain sequence.
@@ -289,13 +289,15 @@ Declared in `ctrlpp/control/lqr_types.h` and included by `ctrlpp/control/lqr.h`.
 ### lqi_result
 
 ```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct lqi_result
 {
     Eigen::Matrix<Scalar, int(NU), int(NX)> Kx;  // state feedback gain
     Eigen::Matrix<Scalar, int(NU), int(NY)> Ki;  // integral feedback gain
 };
 ```
+
+Declared in `ctrlpp/control/lqr_types.h` beside `lqr_error`, and included by `ctrlpp/control/lqr.h`.
 
 ## Usage Example
 

@@ -23,20 +23,22 @@ Pole placement via Ackermann's formula for single-input systems. Computes a stat
 ### place
 
 ```cpp
-template <typename Scalar, std::size_t NX, std::size_t NU>
-auto place(const Matrix<Scalar, NX, NX>& A,
-           const Matrix<Scalar, NX, NU>& B,
-           const std::array<std::complex<Scalar>, NX>& desired_poles)
-    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, place_error>;
+template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
+ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, place_error>
+place(const Matrix<Scalar, NX, NX>& A,
+      const Matrix<Scalar, NX, NU>& B,
+      const std::array<std::complex<Scalar>, NX>& desired_poles,
+      Scalar conj_tol_scale = Scalar{2} * Scalar{NX});
 ```
 
-Computes K such that eig(A - BK) = desired_poles using Ackermann's formula. Complex poles must appear in conjugate pairs.
+Computes K such that eig(A - BK) = desired_poles using Ackermann's formula. Complex poles must appear in conjugate pairs. A pole counts as real, and two poles as a conjugate pair, within `conj_tol_scale` times machine epsilon times the pole magnitude (floored at epsilon); the default `2 * NX` reflects the rounding that accumulates across the NX poles.
 
 Refusals, checked in order:
 
 | Condition | Enumerator |
 | --- | --- |
 | `NU > 1` | `place_error::multi_input_not_supported` |
+| a matrix entry, a pole component or `conj_tol_scale` is NaN or infinite | `place_error::non_finite_input` |
 | the pole set is not closed under conjugation | `place_error::poles_not_conjugate_symmetric` |
 | the controllability matrix is rank-deficient | `place_error::uncontrollable_pair` |
 
@@ -44,10 +46,11 @@ Refusals, checked in order:
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NY>
-auto place_observer(const Matrix<Scalar, NX, NX>& A,
-                    const Matrix<Scalar, NY, NX>& C,
-                    const std::array<std::complex<Scalar>, NX>& desired_poles)
-    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NX), int(NY)>, place_error>;
+ctrlpp::expected<Eigen::Matrix<Scalar, int(NX), int(NY)>, place_error>
+place_observer(const Matrix<Scalar, NX, NX>& A,
+               const Matrix<Scalar, NY, NX>& C,
+               const std::array<std::complex<Scalar>, NX>& desired_poles,
+               Scalar conj_tol_scale = Scalar{2} * Scalar{NX});
 ```
 
 Computes observer gain L via the duality L = place(A', C', poles)'. Requires NY = 1 (single-output). The observer update becomes x_hat += L * (z - C * x_hat).
@@ -61,6 +64,7 @@ enum class place_error
 {
     multi_input_not_supported,
     multi_output_not_supported,
+    non_finite_input,
     poles_not_conjugate_symmetric,
     uncontrollable_pair,
 };
@@ -68,7 +72,7 @@ enum class place_error
 
 Declared in `<ctrlpp/control/place_types.h>`, which `place.h` includes.
 
-The first two are **structural**: no choice of data or poles makes them succeed, because the single-channel Ackermann formula does not cover the shape at all. Multi-input assignment is not even a unique problem -- it has a free subspace, which is what a robust-assignment method exists to choose within. The last two are **conditions on the data**, which a different pole set or a different pair can satisfy. They are separate enumerators because telling a caller to change the poles when the input dimension is the obstacle sends them after something that cannot help.
+The first two are **structural**: no choice of data or poles makes them succeed, because the single-channel Ackermann formula does not cover the shape at all. Multi-input assignment is not even a unique problem -- it has a free subspace, which is what a robust-assignment method exists to choose within. The other three are **conditions on the data**, which a different pole set or a different pair can satisfy. They are separate enumerators because telling a caller to change the poles when the input dimension is the obstacle sends them after something that cannot help.
 
 ## Usage Example
 

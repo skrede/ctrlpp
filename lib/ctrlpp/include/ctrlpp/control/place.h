@@ -1,22 +1,24 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_PLACE_H
 #define HPP_GUARD_CTRLPP_CONTROL_PLACE_H
 
-/// @brief Pole placement via Ackermann's formula for single-input systems.
-///
-/// @cite kautsky1985 -- Kautsky, Nichols & Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
+// Ackermann's formula K = e_n^T C_ctrl^{-1} alpha(A): transform (A, B) into controller canonical form, assign the
+// desired characteristic polynomial alpha(s), and transform the gain back.
+// @cite kautsky1985 -- Kautsky, Nichols & Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
+// @cite franklin2015 -- Franklin, Powell & Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (Ackermann's formula)
+
+#include "ctrlpp/control/place_types.h"
+
+#include "ctrlpp/control/detail/place_poles.h"
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
-#include "ctrlpp/control/place_types.h"
-
 #include <Eigen/Dense>
 
 #include <array>
 #include <cmath>
-#include <limits>
 #include <complex>
 #include <cstddef>
 #include <algorithm>
@@ -27,209 +29,88 @@ namespace ctrlpp
 namespace detail
 {
 
-/// Validate that complex poles come in conjugate pairs (required for real coefficients).
-///
-/// A real-coefficient polynomial has roots that are either real or appear in
-/// complex-conjugate pairs; any other configuration would force complex
-/// coefficients in the closed-loop characteristic polynomial.
-///
-/// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7
-///
-/// The conjugate-pair and real-pole tests are relative: a pole's imaginary part
-/// and the residual between a candidate pair are judged against the pole
-/// magnitude scaled by the instantiated Scalar's machine epsilon and an exposed
-/// dimensionless coefficient. This keeps the test correct at both float and
-/// double precision and for large-magnitude poles, where a fixed absolute
-/// tolerance would either reject valid float pairs or accept spurious double
-/// ones. The coefficient defaults to twice the pole count, reflecting the
-/// rounding that accumulates across the N pole values being compared, and is
-/// overridable by the caller.
-template <typename Scalar, std::size_t N>
-bool validate_conjugate_pairs(const std::array<std::complex<Scalar>, N>& poles,
-                              Scalar conj_tol_scale = Scalar{2} * Scalar{N})
+template <typename Scalar, std::size_t NX, std::size_t NU>
+bool place_inputs_finite(
+        const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const std::array<std::complex<Scalar>, NX>& poles, Scalar conj_tol_scale)
 {
-    const Scalar eps = std::numeric_limits<Scalar>::epsilon();
-    // Magnitude floor so a zero-magnitude pole still receives an epsilon-level
-    // tolerance instead of a tolerance that collapses to zero; the floor is
-    // itself the Scalar's epsilon, so no absolute magic constant is introduced.
-    const Scalar mag_floor = eps;
-
-    // Track which poles have been matched
-    std::array<bool, N> matched{};
-
-    for(std::size_t i = 0; i < N; ++i)
-    {
-        if(matched[i])
-            continue;
-
-        const Scalar tol_i = conj_tol_scale * eps * std::max(std::abs(poles[i]), mag_floor);
-        if(std::abs(poles[i].imag()) <= tol_i)
-        {
-            // Real pole, no conjugate needed
-            matched[i] = true;
-            continue;
-        }
-
-        // Complex pole: find its conjugate
-        bool found = false;
-        for(std::size_t j = i + 1; j < N; ++j)
-        {
-            if(matched[j])
-                continue;
-            const Scalar scale = std::max(std::abs(poles[i]), std::abs(poles[j]));
-            const Scalar tol = conj_tol_scale * eps * std::max(scale, mag_floor);
-            if(std::abs(poles[i].real() - poles[j].real()) <= tol && std::abs(poles[i].imag() + poles[j].imag()) <= tol)
-            {
-                matched[i] = true;
-                matched[j] = true;
-                found = true;
-                break;
-            }
-        }
-        if(!found)
-            return false;
-    }
-    return true;
+    const auto finite_pole = [](const std::complex<Scalar>& pole) { return std::isfinite(pole.real()) && std::isfinite(pole.imag()); };
+    return A.allFinite() && B.allFinite() && std::isfinite(conj_tol_scale) && std::all_of(poles.begin(), poles.end(), finite_pole);
 }
 
-/// Compute characteristic polynomial coefficients from desired poles.
-/// Returns coefficients [a_0, a_1, ..., a_{N-1}] of:
-/// p(s) = s^N + a_{N-1} s^{N-1} + ... + a_1 s + a_0.
-///
-/// Implements the standard expansion p(s) = prod_i (s - p_i) by repeated
-/// polynomial multiplication, which is the constructive form of Vieta's
-/// formulas relating elementary symmetric functions of the roots to the
-/// signed coefficients.
-///
-/// @cite strang2016 -- Strang, "Introduction to Linear Algebra", 2016, Ch. 6 (eigenvalues and characteristic polynomial)
-template <typename Scalar, std::size_t N>
-std::array<Scalar, N> char_poly_coeffs(const std::array<std::complex<Scalar>, N>& poles)
+template <typename Scalar, std::size_t NX>
+Eigen::Matrix<Scalar, int(NX), int(NX)> controllability_matrix(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), 1>& B)
 {
-    // Start with p(s) = 1, multiply by (s - p_i) one at a time.
-    // coeffs[k] stores coefficient of s^k in the accumulated polynomial.
-    // We use complex arithmetic internally and take real parts at the end.
-    std::array<std::complex<Scalar>, N + 1> c{};
-    c[0] = std::complex<Scalar>{1, 0};
-
-    for(std::size_t i = 0; i < N; ++i)
+    Eigen::Matrix<Scalar, int(NX), int(NX)> C_ctrl;
+    Eigen::Matrix<Scalar, int(NX), 1> AkB = B;
+    C_ctrl.col(0) = AkB;
+    for(Eigen::Index k = 1; k < Eigen::Index(NX); ++k)
     {
-        // Multiply current poly by (s - poles[i])
-        // New poly degree is i+1
-        // Process from high to low to avoid overwriting
-        for(std::size_t k = i + 1; k > 0; --k)
-            c[k] = c[k - 1] - poles[i] * c[k];
-        c[0] = -poles[i] * c[0];
+        AkB = (A * AkB).eval();
+        C_ctrl.col(k) = AkB;
     }
+    return C_ctrl;
+}
 
-    // c[N] = 1 (leading coeff), c[k] = coeff of s^k for k=0..N-1
-    // Return [a_0, ..., a_{N-1}]
-    std::array<Scalar, N> result;
-    for(std::size_t k = 0; k < N; ++k)
-        result[k] = c[k].real();
-    return result;
+// alpha(A) = A^n + alpha_{n-1} A^{n-1} + ... + alpha_0 I by Horner's method.
+template <typename Scalar, std::size_t NX>
+Eigen::Matrix<Scalar, int(NX), int(NX)> characteristic_polynomial_of(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const std::array<std::complex<Scalar>, NX>& poles)
+{
+    using MatN = Eigen::Matrix<Scalar, int(NX), int(NX)>;
+
+    const std::array<Scalar, NX> alpha = char_poly_coeffs(poles);
+    MatN alphaA = MatN::Identity();
+    for(std::size_t k = NX; k > 0; --k)
+        alphaA = (alphaA * A + alpha[k - 1] * MatN::Identity()).eval();
+    return alphaA;
+}
+
+template <typename Scalar, std::size_t NX>
+Eigen::Matrix<Scalar, 1, int(NX)> ackermann_gain(const Eigen::ColPivHouseholderQR<Eigen::Matrix<Scalar, int(NX), int(NX)>>& qr, const Eigen::Matrix<Scalar, int(NX), int(NX)>& alphaA)
+{
+    constexpr int n = static_cast<int>(NX);
+
+    Eigen::Matrix<Scalar, n, n> C_ctrl_inv = qr.inverse();
+    Eigen::Matrix<Scalar, 1, n> en_T = Eigen::Matrix<Scalar, 1, n>::Zero();
+    en_T(0, n - 1) = Scalar{1};
+
+    Eigen::Matrix<Scalar, 1, n> K = en_T * C_ctrl_inv * alphaA;
+    return K;
 }
 
 }
 
-/// Pole placement using Ackermann's formula for single-input systems (NU == 1).
-/// Computes K such that eigenvalues of (A - B*K) equal the desired poles.
-///
-/// Refusals, checked in order:
-///  * an input dimension above one -> place_error::multi_input_not_supported
-///  * a non-finite matrix entry, pole component, or tolerance ->
-///    place_error::non_finite_input
-///  * a pole set not closed under conjugation ->
-///    place_error::poles_not_conjugate_symmetric
-///  * a rank-deficient controllability matrix ->
-///    place_error::uncontrollable_pair
-///
-/// The single-input formula K = e_n^T * C_ctrl^{-1} * alpha(A) follows from
-/// transforming (A, B) into controller canonical form, assigning the desired
-/// characteristic polynomial alpha(s), and back-transforming the gain.
-///
-/// @cite kautsky1985 -- Kautsky, Nichols &amp; Van Dooren, "Robust Pole Assignment in Linear State Feedback", 1985
-/// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (Ackermann's formula)
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
-auto place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B, const std::array<std::complex<Scalar>, NX>& desired_poles, Scalar conj_tol_scale = Scalar{2} * Scalar{NX})
-    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, place_error>
+ctrlpp::expected<Eigen::Matrix<Scalar, int(NU), int(NX)>, place_error> place(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+        const std::array<std::complex<Scalar>, NX>& desired_poles, Scalar conj_tol_scale = Scalar{2} * Scalar{NX})
 {
     static_assert(NX > 0, "State dimension NX must be positive");
     static_assert(NU > 0, "Input dimension NU must be positive");
 
-    constexpr int n = static_cast<int>(NX);
-
     if constexpr(NU != 1)
-    {
-        // Multi-input placement not yet supported
         return ctrlpp::unexpected(place_error::multi_input_not_supported);
-    }
     else
     {
-        if(!A.allFinite() || !B.allFinite() || !std::isfinite(conj_tol_scale)
-           || !std::all_of(desired_poles.begin(), desired_poles.end(), [](const auto& pole) {
-                  return std::isfinite(pole.real()) && std::isfinite(pole.imag());
-              }))
+        if(!detail::place_inputs_finite<Scalar, NX, NU>(A, B, desired_poles, conj_tol_scale))
             return ctrlpp::unexpected(place_error::non_finite_input);
-
-        // Validate conjugate pairs
         if(!detail::validate_conjugate_pairs(desired_poles, conj_tol_scale))
             return ctrlpp::unexpected(place_error::poles_not_conjugate_symmetric);
 
-        // Build controllability matrix: C_ctrl = [B, AB, A^2 B, ..., A^{n-1} B]
-        Eigen::Matrix<Scalar, n, n> C_ctrl;
-        Eigen::Matrix<Scalar, n, 1> AkB = B;
-        C_ctrl.col(0) = AkB;
-        for(int k = 1; k < n; ++k)
-        {
-            AkB = (A * AkB).eval();
-            C_ctrl.col(k) = AkB;
-        }
-
-        // Check controllability
+        const Eigen::Matrix<Scalar, int(NX), int(NX)> C_ctrl = detail::controllability_matrix<Scalar, NX>(A, B);
         auto qr = C_ctrl.colPivHouseholderQr();
-        if(qr.rank() < n)
+        if(qr.rank() < Eigen::Index(NX))
             return ctrlpp::unexpected(place_error::uncontrollable_pair);
 
-        // Compute characteristic polynomial coefficients
-        auto alpha = detail::char_poly_coeffs(desired_poles);
-
-        // Evaluate alpha(A) using Horner's method:
-        // alpha(A) = A^n + alpha_{n-1} A^{n-1} + ... + alpha_1 A + alpha_0 I
-        Eigen::Matrix<Scalar, n, n> alphaA = Eigen::Matrix<Scalar, n, n>::Identity();
-        // Horner: start from highest power
-        for(int k = n - 1; k >= 0; --k)
-            alphaA = (alphaA * A + alpha[static_cast<std::size_t>(k)] * Eigen::Matrix<Scalar, n, n>::Identity()).eval();
-
-        // K = e_n^T * C_ctrl^{-1} * alpha(A)
-        // e_n^T = last row of identity = [0, 0, ..., 0, 1]
-        Eigen::Matrix<Scalar, n, n> C_ctrl_inv = qr.inverse();
-        Eigen::Matrix<Scalar, 1, n> en_T = Eigen::Matrix<Scalar, 1, n>::Zero();
-        en_T(0, n - 1) = Scalar{1};
-
-        Eigen::Matrix<Scalar, 1, n> K = en_T * C_ctrl_inv * alphaA;
-        return K;
+        return detail::ackermann_gain<Scalar, NX>(qr, detail::characteristic_polynomial_of<Scalar, NX>(A, desired_poles));
     }
 }
 
-/// Convenience: compute observer gain L via duality.
-/// L = place(A^T, C^T, desired_poles)^T.
-///
-/// Refusals: an output dimension above one is
-/// place_error::multi_output_not_supported, a structural refusal the caller
-/// cannot lift by changing the data; everything else is the dual placement's
-/// own refusal forwarded, so place_error::uncontrollable_pair on the transposed
-/// pair reports that (A, C) is unobservable.
-///
-/// @cite franklin2015 -- Franklin, Powell &amp; Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (observer/regulator duality)
+// @cite franklin2015 -- Franklin, Powell & Emami-Naeini, "Feedback Control of Dynamic Systems", 2015, Ch. 7 (observer/regulator duality)
 template <typename Scalar, std::size_t NX, std::size_t NY>
-auto place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NY), int(NX)>& C, const std::array<std::complex<Scalar>, NX>& desired_poles, Scalar conj_tol_scale = Scalar{2} * Scalar{NX})
-    -> ctrlpp::expected<Eigen::Matrix<Scalar, int(NX), int(NY)>, place_error>
+ctrlpp::expected<Eigen::Matrix<Scalar, int(NX), int(NY)>, place_error> place_observer(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A, const Eigen::Matrix<Scalar, int(NY), int(NX)>& C,
+        const std::array<std::complex<Scalar>, NX>& desired_poles, Scalar conj_tol_scale = Scalar{2} * Scalar{NX})
 {
     if constexpr(NY != 1)
-    {
-        // Multi-output observer placement not yet supported (duality requires single-output)
         return ctrlpp::unexpected(place_error::multi_output_not_supported);
-    }
     else
     {
         Eigen::Matrix<Scalar, int(NX), int(NX)> At = A.transpose().eval();
