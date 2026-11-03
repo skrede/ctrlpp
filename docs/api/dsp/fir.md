@@ -38,7 +38,7 @@ fir(std::array<Scalar, N>) -> fir<Scalar, N>;
 ### process
 
 ```cpp
-auto process(Scalar x) -> Scalar;
+Scalar process(Scalar x);
 ```
 
 Shifts the new sample into the delay line and computes the convolution sum. Returns the filtered output.
@@ -54,7 +54,7 @@ Clears the delay line to zero.
 ### taps
 
 ```cpp
-auto taps() const -> std::array<Scalar, N> const&;
+std::array<Scalar, N> const& taps() const;
 ```
 
 Returns the tap coefficient array.

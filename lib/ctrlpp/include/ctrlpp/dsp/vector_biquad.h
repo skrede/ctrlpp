@@ -1,16 +1,14 @@
 #ifndef HPP_GUARD_CTRLPP_DSP_VECTOR_BIQUAD_H
 #define HPP_GUARD_CTRLPP_DSP_VECTOR_BIQUAD_H
 
-/// @brief Vector-valued biquad filters wrapping N scalar biquads behind Eigen vector interface.
-///
-/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6 (DF-II / TDF-II structures)
-
-#include "ctrlpp/types.h"
-#include "ctrlpp/expected.h"
+// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6 (DF-II / TDF-II structures)
 
 #include "ctrlpp/dsp/biquad.h"
 #include "ctrlpp/dsp/dsp_types.h"
 #include "ctrlpp/dsp/discrete_filter.h"
+
+#include "ctrlpp/types.h"
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
@@ -25,13 +23,13 @@ namespace detail
 {
 
 template <typename T, std::size_t N, std::size_t... Is>
-constexpr auto filled_array_impl(T const& value, std::index_sequence<Is...>) -> std::array<T, N>
+constexpr std::array<T, N> filled_array_impl(T const& value, std::index_sequence<Is...>)
 {
     return {{(static_cast<void>(Is), value)...}};
 }
 
 template <typename T, std::size_t N>
-constexpr auto filled_array(T const& value) -> std::array<T, N>
+constexpr std::array<T, N> filled_array(T const& value)
 {
     return filled_array_impl<T, N>(value, std::make_index_sequence<N>{});
 }
@@ -45,22 +43,29 @@ class vector_biquad
 public:
     using scalar_type = Scalar;
 
-    constexpr vector_biquad() = default;
-    explicit constexpr vector_biquad(std::array<biquad<Scalar>, N> channels) : channels_{channels} {}
+    constexpr vector_biquad()
+        : m_channels{}
+    {
+    }
 
-    auto process(Vector<Scalar, N> x) -> Vector<Scalar, N>
+    explicit constexpr vector_biquad(std::array<biquad<Scalar>, N> channels)
+        : m_channels{channels}
+    {
+    }
+
+    Vector<Scalar, N> process(Vector<Scalar, N> x)
     {
         Vector<Scalar, N> y;
         for(std::size_t i = 0; i < N; ++i)
         {
-            y[static_cast<int>(i)] = channels_[i].process(x[static_cast<int>(i)]);
+            y[static_cast<Eigen::Index>(i)] = m_channels[i].process(x[static_cast<Eigen::Index>(i)]);
         }
         return y;
     }
 
     void reset()
     {
-        for(auto& ch : channels_)
+        for(auto& ch : m_channels)
             ch.reset();
     }
 
@@ -68,12 +73,11 @@ public:
     {
         for(std::size_t i = 0; i < N; ++i)
         {
-            channels_[i].reset(value[static_cast<int>(i)]);
+            m_channels[i].reset(value[static_cast<Eigen::Index>(i)]);
         }
     }
 
-    static auto low_pass(Scalar cutoff_hz, Scalar sample_hz, Scalar resolution_factor = detail::second_order_resolution_count<Scalar>())
-        -> expected<vector_biquad, dsp_error>
+    static expected<vector_biquad, dsp_error> low_pass(Scalar cutoff_hz, Scalar sample_hz, Scalar resolution_factor = detail::second_order_resolution_count<Scalar>())
     {
         auto const proto = biquad<Scalar>::low_pass(cutoff_hz, sample_hz, resolution_factor);
         if(!proto.has_value())
@@ -81,8 +85,7 @@ public:
         return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};
     }
 
-    static auto notch(Scalar freq_hz, Scalar sample_hz, Scalar q, Scalar resolution_factor = detail::notch_resolution_count<Scalar>())
-        -> expected<vector_biquad, dsp_error>
+    static expected<vector_biquad, dsp_error> notch(Scalar freq_hz, Scalar sample_hz, Scalar q, Scalar resolution_factor = detail::notch_resolution_count<Scalar>())
     {
         auto const proto = biquad<Scalar>::notch(freq_hz, sample_hz, q, resolution_factor);
         if(!proto.has_value())
@@ -90,8 +93,7 @@ public:
         return vector_biquad{detail::filled_array<biquad<Scalar>, N>(*proto)};
     }
 
-    static auto dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz, Scalar resolution_factor = detail::first_order_resolution_count<Scalar>())
-        -> expected<vector_biquad, dsp_error>
+    static expected<vector_biquad, dsp_error> dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz, Scalar resolution_factor = detail::first_order_resolution_count<Scalar>())
     {
         auto const proto = biquad<Scalar>::dirty_derivative(bandwidth_hz, sample_hz, resolution_factor);
         if(!proto.has_value())
@@ -100,7 +102,7 @@ public:
     }
 
 private:
-    std::array<biquad<Scalar>, N> channels_{};
+    std::array<biquad<Scalar>, N> m_channels;
 };
 
 template <ctrlpp_floating_scalar Scalar, std::size_t N, std::size_t Sections>
@@ -111,23 +113,23 @@ public:
     using scalar_type = Scalar;
 
     explicit constexpr vector_cascaded_biquad(std::array<cascaded_biquad<Scalar, Sections>, N> channels)
-        : channels_{channels}
+        : m_channels{channels}
     {
     }
 
-    auto process(Vector<Scalar, N> x) -> Vector<Scalar, N>
+    Vector<Scalar, N> process(Vector<Scalar, N> x)
     {
         Vector<Scalar, N> y;
         for(std::size_t i = 0; i < N; ++i)
         {
-            y[static_cast<int>(i)] = channels_[i].process(x[static_cast<int>(i)]);
+            y[static_cast<Eigen::Index>(i)] = m_channels[i].process(x[static_cast<Eigen::Index>(i)]);
         }
         return y;
     }
 
     void reset()
     {
-        for(auto& ch : channels_)
+        for(auto& ch : m_channels)
             ch.reset();
     }
 
@@ -135,36 +137,34 @@ public:
     {
         for(std::size_t i = 0; i < N; ++i)
         {
-            channels_[i].reset(value[static_cast<int>(i)]);
+            m_channels[i].reset(value[static_cast<Eigen::Index>(i)]);
         }
     }
 
 private:
-    std::array<cascaded_biquad<Scalar, Sections>, N> channels_;
+    std::array<cascaded_biquad<Scalar, Sections>, N> m_channels;
 };
 
 template <std::size_t Order, std::size_t N, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-auto make_vector_butterworth(Scalar cutoff_hz, Scalar sample_hz, Scalar resolution_factor = detail::second_order_resolution_count<Scalar>())
-    -> expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error>
+expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error> make_vector_butterworth(
+        Scalar cutoff_hz, Scalar sample_hz, Scalar resolution_factor = detail::second_order_resolution_count<Scalar>())
 {
     auto const proto = make_butterworth<Order>(cutoff_hz, sample_hz, resolution_factor);
     if(!proto.has_value())
         return unexpected(proto.error());
-    return vector_cascaded_biquad<Scalar, N, Order / 2>{
-        detail::filled_array<cascaded_biquad<Scalar, Order / 2>, N>(*proto)};
+    return vector_cascaded_biquad<Scalar, N, Order / 2>{detail::filled_array<cascaded_biquad<Scalar, Order / 2>, N>(*proto)};
 }
 
 template <std::size_t Order, std::size_t N, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
-auto make_vector_chebyshev1(Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db, Scalar resolution_factor = detail::second_order_resolution_count<Scalar>())
-    -> expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error>
+expected<vector_cascaded_biquad<Scalar, N, Order / 2>, dsp_error> make_vector_chebyshev1(
+        Scalar cutoff_hz, Scalar sample_hz, Scalar ripple_db, Scalar resolution_factor = detail::second_order_resolution_count<Scalar>())
 {
     auto const proto = make_chebyshev1<Order>(cutoff_hz, sample_hz, ripple_db, resolution_factor);
     if(!proto.has_value())
         return unexpected(proto.error());
-    return vector_cascaded_biquad<Scalar, N, Order / 2>{
-        detail::filled_array<cascaded_biquad<Scalar, Order / 2>, N>(*proto)};
+    return vector_cascaded_biquad<Scalar, N, Order / 2>{detail::filled_array<cascaded_biquad<Scalar, Order / 2>, N>(*proto)};
 }
 
 namespace detail

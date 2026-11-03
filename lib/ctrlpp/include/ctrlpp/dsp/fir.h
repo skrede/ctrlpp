@@ -1,9 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_DSP_FIR_H
 #define HPP_GUARD_CTRLPP_DSP_FIR_H
 
-/// @brief Finite Impulse Response filter.
-///
-/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 5 (FIR convolution)
+// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 5 (FIR convolution)
 
 #include "ctrlpp/dsp/discrete_filter.h"
 
@@ -23,31 +21,35 @@ class fir
 public:
     using scalar_type = Scalar;
 
-    explicit constexpr fir(std::array<Scalar, N> taps) : taps_{taps} {}
+    explicit constexpr fir(std::array<Scalar, N> taps)
+        : m_taps{taps}
+        , m_delay{}
+    {
+    }
 
-    auto process(Scalar x) -> Scalar
+    Scalar process(Scalar x)
     {
         for(std::size_t i = N - 1; i > 0; --i)
         {
-            delay_[i] = delay_[i - 1];
+            m_delay[i] = m_delay[i - 1];
         }
-        delay_[0] = x;
+        m_delay[0] = x;
 
         Scalar y{};
         for(std::size_t i = 0; i < N; ++i)
         {
-            y += taps_[i] * delay_[i];
+            y += m_taps[i] * m_delay[i];
         }
         return y;
     }
 
-    void reset() { delay_.fill(Scalar{0}); }
+    void reset() { m_delay.fill(Scalar{0}); }
 
-    auto taps() const -> std::array<Scalar, N> const& { return taps_; }
+    std::array<Scalar, N> const& taps() const { return m_taps; }
 
 private:
-    std::array<Scalar, N> taps_{};
-    std::array<Scalar, N> delay_{};
+    std::array<Scalar, N> m_taps;
+    std::array<Scalar, N> m_delay;
 };
 
 template <typename Scalar, std::size_t N>

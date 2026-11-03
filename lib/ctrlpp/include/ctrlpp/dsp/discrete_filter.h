@@ -1,9 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_DSP_DISCRETE_FILTER_H
 #define HPP_GUARD_CTRLPP_DSP_DISCRETE_FILTER_H
 
-/// @brief Discrete filter concept: minimal interface for composable digital filters.
-///
-/// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 2 (LTI difference equations and convolution)
+// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 2 (LTI difference equations and convolution)
 
 #include <concepts>
 

@@ -247,7 +247,7 @@ TEST_CASE("Biquad with unstable poles diverges", "[biquad][hardening][negative]"
 {
     // Poles at z = +2.0 and z = +1.5 -- well outside unit circle
     // Denominator: z^2 - 3.5z + 3 => a1 = -3.5, a2 = 3.0
-    ctrlpp::biquad_coeffs<double> c{.b0 = 1.0, .b1 = 0.0, .b2 = 0.0, .a1 = -3.5, .a2 = 3.0};
+    ctrlpp::biquad_coeffs<double> c{1.0, 0.0, 0.0, -3.5, 3.0};
     ctrlpp::biquad<double> filter(c);
 
     // Feed constant input; output magnitude should grow
@@ -282,7 +282,7 @@ TEST_CASE("Biquad with unstable poles diverges", "[biquad][hardening][negative]"
 
 TEST_CASE("Unity gain biquad passes input through exactly", "[biquad][hardening][precision]")
 {
-    ctrlpp::biquad_coeffs<double> c{.b0 = 1.0, .b1 = 0.0, .b2 = 0.0, .a1 = 0.0, .a2 = 0.0};
+    ctrlpp::biquad_coeffs<double> c{1.0, 0.0, 0.0, 0.0, 0.0};
     ctrlpp::biquad<double> filter(c);
 
     // The direct coefficient is one and every other is zero, so the output is the
@@ -715,7 +715,7 @@ TEST_CASE("Biquad reset with a degenerate denominator zeroes the state",
     // 1 + a1 + a2 is exactly zero here, so the steady state the reset would place
     // the filter in does not exist and the documented fallback is to zero the
     // state instead.
-    ctrlpp::biquad_coeffs<double> c{.b0 = 1.0, .b1 = 0.0, .b2 = 0.0, .a1 = -0.5, .a2 = -0.5};
+    ctrlpp::biquad_coeffs<double> c{1.0, 0.0, 0.0, -0.5, -0.5};
     ctrlpp::biquad<double> filter(c);
 
     filter.process(1.0);

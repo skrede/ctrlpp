@@ -19,7 +19,7 @@ computation.
 Pick **fir** for linear-phase filtering or when you have specific impulse response
 coefficients.
 
-Use **cascaded_biquad** (from biquad.h) when you need higher-order IIR responses
+Use **cascaded_biquad** (from cascaded_biquad.h, which biquad.h includes) when you need higher-order IIR responses
 built from cascaded second-order sections. The **discrete_filter** concept lets
 you write generic code that accepts any filter type.
 
