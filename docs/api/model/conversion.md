@@ -18,8 +18,8 @@ Conversion between transfer function and state-space representations. `tf2ss` pr
 ```cpp
 template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
     requires (NumDeg <= DenDeg)
-auto tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
-    -> ctrlpp::expected<continuous_state_space<Scalar, DenDeg, 1, 1>, conversion_error>;
+ctrlpp::expected<continuous_state_space<Scalar, DenDeg, 1, 1>, conversion_error>
+tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf);
 ```
 
 Converts a transfer function to controllable canonical form state-space. Requires a proper transfer function (`NumDeg <= DenDeg`). The state dimension equals `DenDeg`. Coefficients are normalized to a monic denominator.
@@ -36,8 +36,8 @@ Refusals, checked in order:
 
 ```cpp
 template <typename Scalar, std::size_t NX>
-auto ss2tf(const continuous_state_space<Scalar, NX, 1, 1>& sys)
-    -> ctrlpp::expected<transfer_function<Scalar, NX, NX>, conversion_error>;
+ctrlpp::expected<transfer_function<Scalar, NX, NX>, conversion_error>
+ss2tf(const continuous_state_space<Scalar, NX, 1, 1>& sys);
 ```
 
 Converts a SISO continuous state-space to H(s) = C (sI - A)^-1 B + D, coefficients highest-degree-first.

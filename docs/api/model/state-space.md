@@ -26,10 +26,15 @@ Represents a continuous-time LTI system: `x_dot = A*x + B*u`, `y = C*x + D*u`.
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct continuous_state_space {
-    Matrix<Scalar, NX, NX> A = Matrix<Scalar, NX, NX>::Zero();
-    Matrix<Scalar, NX, NU> B = Matrix<Scalar, NX, NU>::Zero();
-    Matrix<Scalar, NY, NX> C = Matrix<Scalar, NY, NX>::Zero();
-    Matrix<Scalar, NY, NU> D = Matrix<Scalar, NY, NU>::Zero();
+    continuous_state_space();
+    continuous_state_space(const Matrix<Scalar, NX, NX>& a, const Matrix<Scalar, NX, NU>& b,
+        const Matrix<Scalar, NY, NX>& c = Matrix<Scalar, NY, NX>::Zero(),
+        const Matrix<Scalar, NY, NU>& d = Matrix<Scalar, NY, NU>::Zero());
+
+    Matrix<Scalar, NX, NX> A;
+    Matrix<Scalar, NX, NU> B;
+    Matrix<Scalar, NY, NX> C;
+    Matrix<Scalar, NY, NU> D;
 };
 ```
 
@@ -40,16 +45,21 @@ Represents a discrete-time LTI system: `x[k+1] = A*x[k] + B*u[k]`, `y[k] = C*x[k
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
 struct discrete_state_space {
-    Matrix<Scalar, NX, NX> A = Matrix<Scalar, NX, NX>::Zero();
-    Matrix<Scalar, NX, NU> B = Matrix<Scalar, NX, NU>::Zero();
-    Matrix<Scalar, NY, NX> C = Matrix<Scalar, NY, NX>::Zero();
-    Matrix<Scalar, NY, NU> D = Matrix<Scalar, NY, NU>::Zero();
+    discrete_state_space();
+    discrete_state_space(const Matrix<Scalar, NX, NX>& a, const Matrix<Scalar, NX, NU>& b,
+        const Matrix<Scalar, NY, NX>& c = Matrix<Scalar, NY, NX>::Zero(),
+        const Matrix<Scalar, NY, NU>& d = Matrix<Scalar, NY, NU>::Zero());
+
+    Matrix<Scalar, NX, NX> A;
+    Matrix<Scalar, NX, NU> B;
+    Matrix<Scalar, NY, NX> C;
+    Matrix<Scalar, NY, NU> D;
 };
 ```
 
 ## Initialization
 
-Both types are aggregates whose matrices default to zero. `{}` is the zero system, and a designated initializer zeroes every matrix it does not name, so a model with no feedthrough can omit `D`:
+The default constructor zeroes all four matrices, so `{}` is the zero system. The other constructor takes the matrices in the order `A, B, C, D`; `C` and `D` default to zero, so a model with no feedthrough can omit `D`. The matrices stay public fields and can be assigned after construction:
 
 ```cpp
 ctrlpp::discrete_state_space<double, 2, 1, 1> sys{

@@ -7,7 +7,7 @@
 using DSS = ctrlpp::discrete_state_space<double, 2, 1, 1>;
 using CSS = ctrlpp::continuous_state_space<double, 2, 1, 1>;
 
-TEST_CASE("discrete_state_space aggregate initialization", "[state_space]")
+TEST_CASE("discrete_state_space default construction and member assignment", "[state_space]")
 {
     DSS sys{};
     sys.A << 1.0, 1.0, 0.0, 1.0;
@@ -91,8 +91,6 @@ TEST_CASE("SISO alias template works", "[state_space]")
 
 TEST_CASE("value-initialized state-space models are the zero system", "[state_space]")
 {
-    static_assert(std::is_aggregate_v<DSS> && std::is_aggregate_v<CSS>);
-
     const ctrlpp::discrete_state_space<double, 3, 2, 4> dsys{};
     REQUIRE(dsys.A.isZero(0.0));
     REQUIRE(dsys.B.isZero(0.0));

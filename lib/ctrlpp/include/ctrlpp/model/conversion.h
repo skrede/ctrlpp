@@ -1,18 +1,17 @@
 #ifndef HPP_GUARD_CTRLPP_MODEL_CONVERSION_H
 #define HPP_GUARD_CTRLPP_MODEL_CONVERSION_H
 
-/// @brief Transfer-function to/from state-space conversion (controllable canonical form; characteristic
-/// polynomials from the eigenvalues of a diagonally balanced matrix).
-///
-/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Ch. 2-3
-/// @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 7.5 (QR algorithm, backward stable)
-/// @cite lapack_dgebal : Reference LAPACK SRC/dgebal.f phase 2 algorithm (balancing)
-
-#include "ctrlpp/expected.h"
+// Controllable canonical form one way; characteristic polynomials from the eigenvalues of a diagonally
+// balanced matrix the other.
+// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Ch. 2-3
+// @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 7.5 (QR algorithm, backward stable)
+// @cite lapack_dgebal : Reference LAPACK SRC/dgebal.f phase 2 algorithm (balancing)
 
 #include "ctrlpp/model/state_space.h"
 #include "ctrlpp/model/conversion_types.h"
 #include "ctrlpp/model/transfer_function.h"
+
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/detail/characteristic_polynomial.h"
 
@@ -29,13 +28,13 @@ namespace detail
 {
 
 template <typename Scalar, std::size_t N>
-auto coefficients_finite(const std::array<Scalar, N>& coefficients) -> bool
+bool coefficients_finite(const std::array<Scalar, N>& coefficients)
 {
     return std::ranges::all_of(coefficients, [](Scalar c) { return std::isfinite(c); });
 }
 
 template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
-auto check_transfer_function(const transfer_function<Scalar, NumDeg, DenDeg>& tf) -> ctrlpp::expected<void, conversion_error>
+ctrlpp::expected<void, conversion_error> check_transfer_function(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
 {
     if(!coefficients_finite(tf.numerator) || !coefficients_finite(tf.denominator))
         return ctrlpp::unexpected(conversion_error::non_finite_input);
@@ -45,7 +44,7 @@ auto check_transfer_function(const transfer_function<Scalar, NumDeg, DenDeg>& tf
 }
 
 template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
-auto monic_padded(const transfer_function<Scalar, NumDeg, DenDeg>& tf) -> transfer_function<Scalar, DenDeg, DenDeg>
+transfer_function<Scalar, DenDeg, DenDeg> monic_padded(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
 {
     const Scalar a0 = tf.denominator[0];
     transfer_function<Scalar, DenDeg, DenDeg> monic{};
@@ -57,14 +56,14 @@ auto monic_padded(const transfer_function<Scalar, NumDeg, DenDeg>& tf) -> transf
 }
 
 template <bool Biproper, typename Scalar, std::size_t N>
-auto companion_realization(const transfer_function<Scalar, N, N>& monic) -> continuous_state_space<Scalar, N, 1, 1>
+continuous_state_space<Scalar, N, 1, 1> companion_realization(const transfer_function<Scalar, N, N>& monic)
 {
     constexpr int n = static_cast<int>(N);
     continuous_state_space<Scalar, N, 1, 1> sys{};
-    for(int i = 0; i + 1 < n; ++i)
+    for(Eigen::Index i = 0; i + 1 < n; ++i)
         sys.A(i, i + 1) = Scalar{1};
     sys.B(n - 1, 0) = Scalar{1};
-    for(int j = 0; j < n; ++j)
+    for(Eigen::Index j = 0; j < n; ++j)
     {
         const std::size_t k = N - static_cast<std::size_t>(j);
         sys.A(n - 1, j) = -monic.denominator[k];
@@ -78,10 +77,10 @@ auto companion_realization(const transfer_function<Scalar, N, N>& monic) -> cont
     return sys;
 }
 
-/// 2^round(log2(||A|| / (||B|| ||C||))), formed from the logarithms so no product of norms overflows and
-/// clamped to the normal exponent range so alpha stays a finite, exact power of two.
+// 2^round(log2(||A|| / (||B|| ||C||))), formed from the logarithms so no product of norms overflows and
+// clamped to the normal exponent range so alpha stays a finite, exact power of two.
 template <typename Scalar>
-auto rank_one_scale(Scalar norm_a, Scalar norm_b, Scalar norm_c) -> Scalar
+Scalar rank_one_scale(Scalar norm_a, Scalar norm_b, Scalar norm_c)
 {
     if(norm_a == Scalar{0})
         return Scalar{1};
@@ -91,11 +90,10 @@ auto rank_one_scale(Scalar norm_a, Scalar norm_b, Scalar norm_c) -> Scalar
     return std::ldexp(Scalar{1}, std::clamp(e, lowest, highest));
 }
 
-/// The rank-one identity det(sI - A + alpha B C) = det(sI - A) (1 + alpha C (sI - A)^{-1} B) makes the
-/// strictly proper numerator (poly(A - alpha B C) - poly(A)) / alpha for every alpha != 0.
+// The rank-one identity det(sI - A + alpha B C) = det(sI - A) (1 + alpha C (sI - A)^{-1} B) makes the
+// strictly proper numerator (poly(A - alpha B C) - poly(A)) / alpha for every alpha != 0.
 template <typename Scalar, std::size_t NX>
-auto transfer_numerator(const continuous_state_space<Scalar, NX, 1, 1>& sys, const std::array<Scalar, NX + 1>& den)
-    -> ctrlpp::expected<std::array<Scalar, NX + 1>, conversion_error>
+ctrlpp::expected<std::array<Scalar, NX + 1>, conversion_error> transfer_numerator(const continuous_state_space<Scalar, NX, 1, 1>& sys, const std::array<Scalar, NX + 1>& den)
 {
     const Scalar d = sys.D(0, 0);
     std::array<Scalar, NX + 1> num{};
@@ -116,23 +114,11 @@ auto transfer_numerator(const continuous_state_space<Scalar, NX, 1, 1>& sys, con
 
 }
 
-/// @brief Transfer function to controllable canonical form state-space.
-///
-/// H(s) = num(s) / den(s), coefficients highest-degree-first, normalized to a
-/// monic denominator. Returns continuous_state_space with NX = DenDeg states.
-///
-/// Refusals, checked in order:
-///  * a NaN or infinite coefficient -> conversion_error::non_finite_input.
-///  * denominator[0] == 0 -> conversion_error::zero_leading_coefficient.
-///  * a realization entry overflows (a tiny leading coefficient's quotient)
-///    -> conversion_error::unrepresentable_result.
-///
-/// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Sec. 2.1 (controllable canonical form)
-/// @cite franklin2015 -- Franklin et al., "Feedback Control of Dynamic Systems", 2015, Ch. 7
+// @cite kailath1980 -- Kailath, "Linear Systems", 1980, Sec. 2.1 (controllable canonical form)
+// @cite franklin2015 -- Franklin et al., "Feedback Control of Dynamic Systems", 2015, Ch. 7
 template <typename Scalar, std::size_t NumDeg, std::size_t DenDeg>
     requires(NumDeg <= DenDeg)
-auto tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
-    -> ctrlpp::expected<continuous_state_space<Scalar, DenDeg, 1, 1>, conversion_error>
+ctrlpp::expected<continuous_state_space<Scalar, DenDeg, 1, 1>, conversion_error> tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
 {
     static_assert(DenDeg >= 1, "Denominator degree must be at least 1");
     if(auto const gate = detail::check_transfer_function(tf); !gate)
@@ -143,21 +129,8 @@ auto tf2ss(const transfer_function<Scalar, NumDeg, DenDeg>& tf)
     return sys;
 }
 
-/// @brief State-space to transfer function, H(s) = C (sI - A)^{-1} B + D, for SISO systems.
-///
-/// Returns transfer_function<Scalar, NX, NX>, coefficients highest-degree-first. The denominator is the
-/// characteristic polynomial of A from the eigenvalues of a diagonally balanced copy; the numerator is
-/// D poly(A) plus (poly(A - alpha B C) - poly(A)) / alpha through the same routine, with alpha the power
-/// of two nearest ||A||_F / (||B|| ||C||). The leading numerator coefficient is D exactly; B = 0 or C = 0
-/// gives D poly(A).
-///
-/// Refusals, checked in order:
-///  * a NaN or infinite entry in A, B, C or D -> conversion_error::non_finite_input.
-///  * the eigensolver does not converge -> conversion_error::eigenvalues_not_converged.
-///  * a coefficient is not finite -> conversion_error::unrepresentable_result.
 template <typename Scalar, std::size_t NX>
-auto ss2tf(const continuous_state_space<Scalar, NX, 1, 1>& sys)
-    -> ctrlpp::expected<transfer_function<Scalar, NX, NX>, conversion_error>
+ctrlpp::expected<transfer_function<Scalar, NX, NX>, conversion_error> ss2tf(const continuous_state_space<Scalar, NX, 1, 1>& sys)
 {
     if(!sys.A.allFinite() || !sys.B.allFinite() || !sys.C.allFinite() || !sys.D.allFinite())
         return ctrlpp::unexpected(conversion_error::non_finite_input);

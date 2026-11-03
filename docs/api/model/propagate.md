@@ -16,7 +16,7 @@ State propagation and output computation utilities for discrete and continuous s
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-constexpr Vector<Scalar, NX>
+Vector<Scalar, NX>
 propagate(const discrete_state_space<Scalar, NX, NU, NY>& sys,
           const Vector<Scalar, NX>& x,
           const Vector<Scalar, NU>& u);
@@ -28,7 +28,7 @@ Computes `x[k+1] = A*x[k] + B*u[k]`.
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-constexpr Vector<Scalar, NY>
+Vector<Scalar, NY>
 output(const discrete_state_space<Scalar, NX, NU, NY>& sys,
        const Vector<Scalar, NX>& x,
        const Vector<Scalar, NU>& u);
@@ -40,7 +40,7 @@ Computes `y[k] = C*x[k] + D*u[k]`.
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY>
-constexpr Vector<Scalar, NY>
+Vector<Scalar, NY>
 output(const continuous_state_space<Scalar, NX, NU, NY>& sys,
        const Vector<Scalar, NX>& x,
        const Vector<Scalar, NU>& u);
