@@ -68,8 +68,8 @@ public:
         : m_dynamics{std::move(dynamics)}
         , m_config{config}
         , m_N{config.horizon}
-        , m_has_path_slack{config.soft_constraints && NC > 0 && config.path_constraint.has_value()}
-        , m_has_term_slack{config.soft_constraints && NTC > 0 && config.terminal_constraint.has_value()}
+        , m_has_path_slack{config.soft_constraints && NC > 0 && config.path_constraint_cb.has_value()}
+        , m_has_term_slack{config.soft_constraints && NTC > 0 && config.terminal_constraint_cb.has_value()}
         , m_num_path_slack{m_has_path_slack ? m_N * nc : 0}
         , m_num_term_slack{m_has_term_slack ? ntc : 0}
         , m_num_vars{(m_N + 1) * nx + m_N * nu + m_num_path_slack + m_num_term_slack}
@@ -388,9 +388,9 @@ private:
     {
         if constexpr(NC > 0)
         {
-            if(m_config.path_constraint)
+            if(m_config.path_constraint_cb)
             {
-                const auto& g = *m_config.path_constraint;
+                const auto& g = *m_config.path_constraint_cb;
                 Scalar max_viol{0};
 
                 for(int k = 0; k < m_N; ++k)
@@ -412,9 +412,9 @@ private:
     {
         if constexpr(NTC > 0)
         {
-            if(m_config.terminal_constraint)
+            if(m_config.terminal_constraint_cb)
             {
-                const auto& h = *m_config.terminal_constraint;
+                const auto& h = *m_config.terminal_constraint_cb;
                 Eigen::Map<const Vector<Scalar, NX>> xN(z.data() + m_N * nx);
                 Vector<Scalar, NTC> hN = h(xN);
 

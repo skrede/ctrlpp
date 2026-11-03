@@ -762,7 +762,7 @@ auto path_constrained_config() -> ctrlpp::nmpc_config<double, NX, NU, 1>
 {
     ctrlpp::nmpc_config<double, NX, NU, 1> cfg;
     cfg.horizon = shape_horizon;
-    cfg.path_constraint = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>&) { return Eigen::Matrix<double, 1, 1>{x(0) - 10.0}; };
+    cfg.path_constraint_cb = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>&) { return Eigen::Matrix<double, 1, 1>{x(0) - 10.0}; };
     return cfg;
 }
 
@@ -1532,7 +1532,7 @@ auto path_constrained(double penalty, bool soft)
     return [=](constrained_nonlinear_config& cfg)
     {
         cfg.soft_constraints = soft;
-        cfg.path_constraint = [](const Eigen::Vector2d&, const Eigen::Matrix<double, 1, 1>&) -> Eigen::Matrix<double, 1, 1> { return Eigen::Matrix<double, 1, 1>::Zero(); };
+        cfg.path_constraint_cb = [](const Eigen::Vector2d&, const Eigen::Matrix<double, 1, 1>&) -> Eigen::Matrix<double, 1, 1> { return Eigen::Matrix<double, 1, 1>::Zero(); };
         cfg.path_penalty << penalty;
     };
 }
@@ -1542,7 +1542,7 @@ auto terminal_constrained(double penalty, bool soft)
     return [=](constrained_nonlinear_config& cfg)
     {
         cfg.soft_constraints = soft;
-        cfg.terminal_constraint = [](const Eigen::Vector2d&) -> Eigen::Matrix<double, 1, 1> { return Eigen::Matrix<double, 1, 1>::Zero(); };
+        cfg.terminal_constraint_cb = [](const Eigen::Vector2d&) -> Eigen::Matrix<double, 1, 1> { return Eigen::Matrix<double, 1, 1>::Zero(); };
         cfg.terminal_penalty << penalty;
     };
 }

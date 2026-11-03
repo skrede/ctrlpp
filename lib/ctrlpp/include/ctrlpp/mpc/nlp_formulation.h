@@ -53,8 +53,8 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
     //   [x_0, ..., x_N, u_0, ..., u_{N-1}, s_path_0, ..., s_path_{N-1}, s_term]
     // where s_path_k is Vector<NC> slack at node k, s_term is Vector<NTC> slack at terminal.
     // Slack variables only present when soft_constraints=true and NC>0 / NTC>0.
-    const bool has_path_slack = config.soft_constraints && NC > 0 && config.path_constraint;
-    const bool has_term_slack = config.soft_constraints && NTC > 0 && config.terminal_constraint;
+    const bool has_path_slack = config.soft_constraints && NC > 0 && config.path_constraint_cb;
+    const bool has_term_slack = config.soft_constraints && NTC > 0 && config.terminal_constraint_cb;
     const int n_path_slack = has_path_slack ? N * nc : 0;
     const int n_term_slack = has_term_slack ? ntc : 0;
     const int n_vars = (N + 1) * nx + N * nu + n_path_slack + n_term_slack;
@@ -68,12 +68,12 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
     // Constraint count
     //   Equality: (N+1)*NX (initial state + continuity)
     //   Rate inequality: du_max ? N*NU*2 : 0
-    //   Path constraint inequality: path_constraint ? N*NC : 0
-    //   Terminal constraint inequality: terminal_constraint ? NTC : 0
+    //   Path constraint inequality: path_constraint_cb ? N*NC : 0
+    //   Terminal constraint inequality: terminal_constraint_cb ? NTC : 0
     const int n_eq = (N + 1) * nx;
     const int n_rate = config.du_max ? N * nu * 2 : 0;
-    const int n_path_con = config.path_constraint ? N * nc : 0;
-    const int n_term_con = config.terminal_constraint ? ntc : 0;
+    const int n_path_con = config.path_constraint_cb ? N * nc : 0;
+    const int n_term_con = config.terminal_constraint_cb ? ntc : 0;
     const int n_constraints = n_eq + n_rate + n_path_con + n_term_con;
 
     // Constraint offset map:
@@ -96,9 +96,9 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
             Eigen::Map<const Vector<Scalar, NX>> xk(z.data() + x_offset + k * nx);
             Eigen::Map<const Vector<Scalar, NU>> uk(z.data() + u_offset + k * nu);
 
-            if(config.stage_cost)
+            if(config.stage_cost_cb)
             {
-                total += (*config.stage_cost)(xk, uk);
+                total += (*config.stage_cost_cb)(xk, uk);
             }
             else
             {
@@ -110,9 +110,9 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
 
         // Terminal cost
         Eigen::Map<const Vector<Scalar, NX>> xN(z.data() + x_offset + N * nx);
-        if(config.terminal_cost)
+        if(config.terminal_cost_cb)
         {
-            total += (*config.terminal_cost)(xN);
+            total += (*config.terminal_cost_cb)(xN);
         }
         else
         {
@@ -152,10 +152,10 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
     // on the terminal-slack block). Evaluating the blocks directly is exactly the
     // H z + q form without materializing H, and allocates nothing per evaluation.
     //
-    // When a custom stage_cost or terminal_cost override is supplied the closed
+    // When a custom stage_cost_cb or terminal_cost_cb override is supplied the closed
     // form no longer applies, so the finite-difference gradient is retained for
     // that path. Its perturbation scratch is owned by the callback and sized once.
-    const bool cost_is_quadratic = !config.stage_cost && !config.terminal_cost;
+    const bool cost_is_quadratic = !config.stage_cost_cb && !config.terminal_cost_cb;
 
     std::function<void(std::span<const Scalar>, std::span<Scalar>)> gradient;
     if(cost_is_quadratic)
@@ -260,9 +260,9 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
         }
 
         // Path constraints: g(x_k, u_k) - s_k <= 0 (soft) or g(x_k, u_k) <= 0 (hard)
-        if(config.path_constraint)
+        if(config.path_constraint_cb)
         {
-            const auto& g = *config.path_constraint;
+            const auto& g = *config.path_constraint_cb;
             for(int k = 0; k < N; ++k)
             {
                 Eigen::Map<const Vector<Scalar, NX>> xk(z.data() + x_offset + k * nx);
@@ -284,9 +284,9 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
         }
 
         // Terminal constraints: h(x_N) - s_N <= 0 (soft) or h(x_N) <= 0 (hard)
-        if(config.terminal_constraint)
+        if(config.terminal_constraint_cb)
         {
-            const auto& h = *config.terminal_constraint;
+            const auto& h = *config.terminal_constraint_cb;
             Eigen::Map<const Vector<Scalar, NX>> xN(z.data() + x_offset + N * nx);
 
             Vector<Scalar, NTC> hN = h(xN);
@@ -484,7 +484,7 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
 
         // Path constraint slack columns: c = g(xk,uk) - s_path_k  =>  d/ds_path = -1.
         // dg/dx, dg/du stay finite-differenced.
-        if(config.path_constraint && has_path_slack)
+        if(config.path_constraint_cb && has_path_slack)
         {
             for(int k = 0; k < N; ++k)
             {
@@ -497,7 +497,7 @@ auto build_nmpc_problem(const Dynamics& dynamics, const nmpc_config<Scalar, NX, 
 
         // Terminal constraint slack columns: c = h(xN) - s_term  =>  d/ds_term = -1.
         // dh/dx stays finite-differenced.
-        if(config.terminal_constraint && has_term_slack)
+        if(config.terminal_constraint_cb && has_term_slack)
         {
             for(int i = 0; i < ntc; ++i)
             {
@@ -530,8 +530,8 @@ auto static_formulation_refusal(const nmpc_config<Scalar, NX, NU, NC, NTC>& conf
 {
     if(config.horizon != static_cast<int>(NH))
         return ctrlpp::unexpected(nlp_formulation_error::horizon_mismatch);
-    const bool has_path_slack = config.soft_constraints && NC > 0 && config.path_constraint.has_value();
-    const bool has_term_slack = config.soft_constraints && NTC > 0 && config.terminal_constraint.has_value();
+    const bool has_path_slack = config.soft_constraints && NC > 0 && config.path_constraint_cb.has_value();
+    const bool has_term_slack = config.soft_constraints && NTC > 0 && config.terminal_constraint_cb.has_value();
     if(has_path_slack || has_term_slack)
         return ctrlpp::unexpected(nlp_formulation_error::slack_not_supported);
     return {};

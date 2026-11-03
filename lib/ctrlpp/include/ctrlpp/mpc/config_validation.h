@@ -121,8 +121,8 @@ auto refused_terminal_set(const polytopic_set<Scalar, NX>& set) -> construction_
 template <typename Config>
 auto nmpc_penalties_are_valid(const Config& config) -> bool
 {
-    const bool path_slack = config.soft_constraints && config.path_penalty.size() > 0 && config.path_constraint;
-    const bool terminal_slack = config.soft_constraints && config.terminal_penalty.size() > 0 && config.terminal_constraint;
+    const bool path_slack = config.soft_constraints && config.path_penalty.size() > 0 && config.path_constraint_cb;
+    const bool terminal_slack = config.soft_constraints && config.terminal_penalty.size() > 0 && config.terminal_constraint_cb;
     return (!path_slack || penalty_is_valid(config.path_penalty)) && (!terminal_slack || penalty_is_valid(config.terminal_penalty));
 }
 

@@ -137,7 +137,7 @@ TEST_CASE("custom stage cost with asymmetric weighting", "[nmpc][coverage][nlp]"
     };
 
     // Custom: penalize position heavily, ignore velocity entirely
-    config.stage_cost = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>& u) -> double
+    config.stage_cost_cb = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>& u) -> double
     { return 50.0 * x(0) * x(0) + 0.01 * u(0) * u(0); };
 
     auto controller_result = NmpcDI::create(double_integrator, config);
@@ -160,7 +160,7 @@ TEST_CASE("custom terminal cost only (stage cost from Q/R)", "[nmpc][coverage][n
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    config.terminal_cost = [](const Eigen::Vector2d& x) -> double
+    config.terminal_cost_cb = [](const Eigen::Vector2d& x) -> double
     { return 200.0 * x.squaredNorm(); };
 
     auto controller_result = NmpcDI::create(double_integrator, config);
@@ -216,7 +216,7 @@ TEST_CASE("soft path constraint with custom penalty weight", "[nmpc][coverage][n
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
 
-    config.path_constraint = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>&)
+    config.path_constraint_cb = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>&)
         -> ctrlpp::Vector<double, NC>
     { return ctrlpp::Vector<double, NC>{x(0) - 0.5}; };
 

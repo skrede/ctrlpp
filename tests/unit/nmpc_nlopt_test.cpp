@@ -270,8 +270,8 @@ TEST_CASE("nmpc nlopt custom cost", "[nmpc][nlopt]")
 
     // Custom cost: heavily penalize position, ignore velocity
     auto custom_config = make_config(10);
-    custom_config.stage_cost = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>& u) -> double { return 100.0 * x(0) * x(0) + 0.01 * u(0) * u(0); };
-    custom_config.terminal_cost = [](const Eigen::Vector2d& x) -> double { return 100.0 * x(0) * x(0); };
+    custom_config.stage_cost_cb = [](const Eigen::Vector2d& x, const Eigen::Matrix<double, 1, 1>& u) -> double { return 100.0 * x(0) * x(0) + 0.01 * u(0) * u(0); };
+    custom_config.terminal_cost_cb = [](const Eigen::Vector2d& x) -> double { return 100.0 * x(0) * x(0); };
 
     auto custom_ctrl_result = NmpcDI::create(double_integrator, custom_config);
     REQUIRE(custom_ctrl_result.has_value());

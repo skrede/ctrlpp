@@ -55,7 +55,7 @@ Configuration struct `nmpc_config<Scalar, NX, NU, NC, NTC>` passed at constructi
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `horizon` | `int` | `1` | Prediction horizon length N |
+| `horizon` | `std::int32_t` | `1` | Prediction horizon length N |
 | `Q` | `Matrix<Scalar, NX, NX>` | Identity | State cost weight |
 | `R` | `Matrix<Scalar, NU, NU>` | Identity | Input cost weight |
 | `Qf` | `optional<Matrix<Scalar, NX, NX>>` | none | Terminal cost weight |
@@ -64,10 +64,10 @@ Configuration struct `nmpc_config<Scalar, NX, NU, NC, NTC>` passed at constructi
 | `x_min` | `optional<Vector<Scalar, NX>>` | none | Element-wise lower state bound |
 | `x_max` | `optional<Vector<Scalar, NX>>` | none | Element-wise upper state bound |
 | `du_max` | `optional<Vector<Scalar, NU>>` | none | Maximum input rate of change per step |
-| `stage_cost` | `optional<function<Scalar(x, u)>>` | none | Custom stage cost override (replaces Q/R quadratic) |
-| `terminal_cost` | `optional<function<Scalar(x)>>` | none | Custom terminal cost override (replaces Qf quadratic) |
-| `path_constraint` | `optional<function<Vector<NC>(x, u)>>` | none | Path constraint g(x,u) <= 0 element-wise |
-| `terminal_constraint` | `optional<function<Vector<NTC>(x)>>` | none | Terminal constraint h(x_N) <= 0 element-wise |
+| `stage_cost_cb` | `optional<function<Scalar(x, u)>>` | none | Custom stage cost override (replaces Q/R quadratic) |
+| `terminal_cost_cb` | `optional<function<Scalar(x)>>` | none | Custom terminal cost override (replaces Qf quadratic) |
+| `path_constraint_cb` | `optional<function<Vector<NC>(x, u)>>` | none | Path constraint g(x,u) <= 0 element-wise |
+| `terminal_constraint_cb` | `optional<function<Vector<NTC>(x)>>` | none | Terminal constraint h(x_N) <= 0 element-wise |
 | `soft_constraints` | `bool` | `true` | Soften constraints with slack variables |
 | `path_penalty` | `Vector<Scalar, NC>` | `1e4` each | Per-constraint L1 penalty for path constraints |
 | `terminal_penalty` | `Vector<Scalar, NTC>` | `1e4` each | Per-constraint L1 penalty for terminal constraints |
@@ -108,7 +108,7 @@ using controller = ctrlpp::nmpc<double, NX, NU, NH, solver, plant, NC>;
 
 nmpc_config<double, NX, NU, NC> cfg;
 cfg.horizon = NH;
-cfg.path_constraint = path;
+cfg.path_constraint_cb = path;
 cfg.soft_constraints = false;  // the default true would be refused with slack_not_supported
 
 auto created = controller::create(plant{}, cfg);
@@ -182,7 +182,7 @@ Each weight is checked completely (finite, symmetric, semidefinite) before the n
 
 Equal bounds pin a variable and are accepted, as is an infinite bound in its open direction (`u_min = -inf`, `u_max = +inf`). A rate bound of zero, `-0.0` or `+inf` is accepted.
 
-The weights follow the library's symmetry convention. An asymmetry within the rounding bound `N * eps * max|W_ij|` (never below `N * denorm_min`) of an `N x N` weight `W` is drift: it is symmetrized in the controller's own copy of the configuration, before the formulation captures it, so the posed cost and its analytic gradient `Q (x - x_ref)` use one symmetric weight. Without that, the gradient would not be the gradient of the cost, which depends only on the symmetric part. A larger asymmetry is structure and is refused, never silently symmetrized. Semidefiniteness is decided by the symmetric eigensolver with the floor `N * eps * max|W_ij|`, the order of its backward error. `R` is required positive semidefinite, not definite: no transcription needs it nonsingular. The weights are validated even when a custom `stage_cost` or `terminal_cost` replaces the quadratic cost, because they are configuration fields with valid defaults.
+The weights follow the library's symmetry convention. An asymmetry within the rounding bound `N * eps * max|W_ij|` (never below `N * denorm_min`) of an `N x N` weight `W` is drift: it is symmetrized in the controller's own copy of the configuration, before the formulation captures it, so the posed cost and its analytic gradient `Q (x - x_ref)` use one symmetric weight. Without that, the gradient would not be the gradient of the cost, which depends only on the symmetric part. A larger asymmetry is structure and is refused, never silently symmetrized. Semidefiniteness is decided by the symmetric eigensolver with the floor `N * eps * max|W_ij|`, the order of its backward error. `R` is required positive semidefinite, not definite: no transcription needs it nonsingular. The weights are validated even when a custom `stage_cost_cb` or `terminal_cost_cb` replaces the quadratic cost, because they are configuration fields with valid defaults.
 
 A penalty is inspected only while the soft constraint it weights is active, that is, when `soft_constraints` is true, the constraint dimension is nonzero and the matching constraint callable is set. Otherwise it weights nothing and is accepted whatever it holds.
 

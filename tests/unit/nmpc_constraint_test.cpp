@@ -102,7 +102,7 @@ TEST_CASE("soft path constraint is approximately satisfied", "[nmpc][constraint]
         .Q = 10.0 * Eigen::Matrix2d::Identity(),
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
-    config.path_constraint = make_upper_bound_constraint(upper_bound);
+    config.path_constraint_cb = make_upper_bound_constraint(upper_bound);
     // soft_constraints defaults to true
 
     auto controller_result = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0>::create(double_integrator, config);
@@ -137,7 +137,7 @@ TEST_CASE("hard path constraint enforced tightly", "[nmpc][constraint][hard]")
         .Q = 10.0 * Eigen::Matrix2d::Identity(),
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
-    config.path_constraint = make_upper_bound_constraint(upper_bound);
+    config.path_constraint_cb = make_upper_bound_constraint(upper_bound);
     config.soft_constraints = false;
 
     auto controller_result = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0>::create(double_integrator, config);
@@ -177,7 +177,7 @@ TEST_CASE("terminal constraint drives final state", "[nmpc][constraint][terminal
         .Q = 1.0 * Eigen::Matrix2d::Identity(),
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
-    config.terminal_constraint = make_terminal_constraint(target);
+    config.terminal_constraint_cb = make_terminal_constraint(target);
     config.soft_constraints = false;
 
     auto controller_result = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), 0, NTC_1>::create(double_integrator, config);
@@ -213,8 +213,8 @@ TEST_CASE("combined path and terminal constraints", "[nmpc][constraint][combined
         .Q = 5.0 * Eigen::Matrix2d::Identity(),
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
-    config.path_constraint = make_upper_bound_constraint(upper_bound);
-    config.terminal_constraint = make_terminal_constraint(target);
+    config.path_constraint_cb = make_upper_bound_constraint(upper_bound);
+    config.terminal_constraint_cb = make_terminal_constraint(target);
 
     auto controller_result = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, NTC_1>::create(double_integrator, config);
     REQUIRE(controller_result.has_value());
@@ -248,7 +248,7 @@ TEST_CASE("infeasible constraints with soft mode does not crash", "[nmpc][constr
         .Q = 10.0 * Eigen::Matrix2d::Identity(),
         .R = 0.1 * Eigen::Matrix<double, 1, 1>::Identity(),
     };
-    config.path_constraint = make_upper_bound_constraint(-10.0);
+    config.path_constraint_cb = make_upper_bound_constraint(-10.0);
     // soft_constraints defaults to true
 
     auto controller_result = ctrlpp::nmpc_dynamic<double, NX, NU, NloptSolver, decltype(double_integrator), NC, 0>::create(double_integrator, config);
@@ -328,8 +328,8 @@ TEST_CASE("nmpc analytic cost gradient matches central difference", "[nmpc][cons
     config.Q = (Eigen::Matrix2d() << 3.0, 0.0, 0.0, 2.0).finished();
     config.R = 0.5 * Eigen::Matrix<double, 1, 1>::Identity();
     config.Qf = (Eigen::Matrix2d() << 4.0, 0.0, 0.0, 5.0).finished();
-    config.path_constraint = make_upper_bound_constraint(0.8);
-    config.terminal_constraint = make_terminal_constraint(0.3);
+    config.path_constraint_cb = make_upper_bound_constraint(0.8);
+    config.terminal_constraint_cb = make_terminal_constraint(0.3);
     config.du_max = ctrlpp::Vector<double, NU>(0.5);
     config.path_penalty = ctrlpp::Vector<double, NC>::Constant(5.0);
     config.terminal_penalty = ctrlpp::Vector<double, NTC_1>::Constant(7.0);
@@ -419,8 +419,8 @@ TEST_CASE("nmpc constraint_jacobian matches central difference with exact struct
     ctrlpp::nmpc_config<double, NX, NU, NC, NTC_1> config{.horizon = N};
     config.Q = 2.0 * Eigen::Matrix2d::Identity();
     config.R = 0.5 * Eigen::Matrix<double, 1, 1>::Identity();
-    config.path_constraint = make_upper_bound_constraint(0.8);
-    config.terminal_constraint = make_terminal_constraint(0.3);
+    config.path_constraint_cb = make_upper_bound_constraint(0.8);
+    config.terminal_constraint_cb = make_terminal_constraint(0.3);
     config.du_max = ctrlpp::Vector<double, NU>(0.5);
     // soft_constraints defaults to true, so path/terminal slack columns exist.
 
