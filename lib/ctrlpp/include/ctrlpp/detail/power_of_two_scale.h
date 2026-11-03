@@ -4,15 +4,14 @@
 #include <cmath>
 #include <limits>
 
-namespace ctrlpp::detail {
+namespace ctrlpp::detail
+{
 
-/// @brief The smallest power of two at or above a positive magnitude, clamped to the largest finite power of two.
-///
-/// Dividing by a power of two changes only the exponent, so dividing the weights by it and multiplying the
-/// solution back are exact unless a result leaves the normal range. A zero or NaN magnitude gives one and an
-/// infinite magnitude is returned unchanged, so callers that decline a non-finite scale still do.
-template<typename Scalar>
-auto power_of_two_ceiling(Scalar magnitude) -> Scalar
+// The smallest power of two at or above a positive magnitude, clamped to the largest finite one, so dividing
+// by it changes only the exponent. A zero or NaN magnitude gives one and an infinite magnitude is returned
+// unchanged, so callers that decline a non-finite scale still do.
+template <typename Scalar>
+Scalar power_of_two_ceiling(Scalar magnitude)
 {
     if(!(magnitude > Scalar{0}))
         return Scalar{1};

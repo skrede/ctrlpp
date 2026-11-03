@@ -1,17 +1,14 @@
 #ifndef HPP_GUARD_CTRLPP_DETAIL_CHARACTERISTIC_POLYNOMIAL_H
 #define HPP_GUARD_CTRLPP_DETAIL_CHARACTERISTIC_POLYNOMIAL_H
 
-/// @brief Characteristic polynomial of a real square matrix from the eigenvalues of its balanced copy.
-///
-/// The balance is an exact power-of-two similarity, so the eigenvalues are the matrix's own; the QR
-/// algorithm computes them backward stably, and the monic product of their real linear and quadratic
-/// factors forms the coefficients, highest degree first.
-///
-/// @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 7.5 (QR algorithm)
-
-#include "ctrlpp/expected.h"
+// The characteristic polynomial, highest degree first, as the monic product of the real linear and quadratic
+// factors of the eigenvalues of a balanced copy: the balance is an exact power-of-two similarity, and the QR
+// algorithm computes the eigenvalues backward stably.
+// @cite golub2013 -- Golub & Van Loan, "Matrix Computations", 4th ed., 2013, Sec. 7.5 (QR algorithm)
 
 #include "ctrlpp/detail/diagonal_balance.h"
+
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/model/conversion_types.h"
 
@@ -25,16 +22,15 @@
 namespace ctrlpp::detail
 {
 
-/// Real eigenvalues contribute (s - lambda); a conjugate pair a +- b i, adjacent in Eigen's output,
-/// contributes s^2 - 2 a s + (a^2 + b^2) once. Coefficients above the running degree are zero, so each
-/// factor sweeps the whole array without changing them.
+// A conjugate pair a +- b i, adjacent in Eigen's output, contributes s^2 - 2 a s + (a^2 + b^2) once.
+// Coefficients above the running degree are zero, so each factor sweeps the whole array without changing them.
 template <typename Scalar, int N>
-auto monic_from_eigenvalues(const Eigen::Matrix<std::complex<Scalar>, N, 1>& lambda) -> std::array<Scalar, std::size_t(N) + 1>
+std::array<Scalar, std::size_t(N) + 1> monic_from_eigenvalues(const Eigen::Matrix<std::complex<Scalar>, N, 1>& lambda)
 {
     constexpr auto n = static_cast<std::size_t>(N);
     std::array<Scalar, n + 1> p{};
     p[0] = Scalar{1};
-    for(int i = 0; i < N; ++i)
+    for(Eigen::Index i = 0; i < N; ++i)
     {
         const Scalar a = lambda(i).real();
         const Scalar b = lambda(i).imag();
@@ -55,8 +51,7 @@ auto monic_from_eigenvalues(const Eigen::Matrix<std::complex<Scalar>, N, 1>& lam
 }
 
 template <typename Scalar, int N>
-auto characteristic_polynomial(Eigen::Matrix<Scalar, N, N> M)
-    -> ctrlpp::expected<std::array<Scalar, std::size_t(N) + 1>, conversion_error>
+ctrlpp::expected<std::array<Scalar, std::size_t(N) + 1>, conversion_error> characteristic_polynomial(Eigen::Matrix<Scalar, N, N> M)
 {
     if(!M.allFinite())
         return ctrlpp::unexpected(conversion_error::unrepresentable_result);
