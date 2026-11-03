@@ -36,14 +36,8 @@ auto& ctrl = *ctrl_result;
 A rejection is `return ctrlpp::unexpected(<enum>::<value>);`. Success for an
 operation that produces no value is `return {};`.
 
-`ctrlpp::expected` carries `[[nodiscard]]` at class level (see the two class
-declarations in `ctrlpp/detail/expected.h`), on both the
-primary template and the `void` partial specialization, so ignoring a failure is
-a compile-time diagnostic rather than a silent runtime no-op. ctrlpp's own build
-promotes that diagnostic to an error on its own targets, so a discarded fallible
-return does not build here at all. Because the attribute sits on the type, every
-fallible return in the library inherits it; nothing has to be annotated per
-function, and nothing can drift out of sync.
+A discarded `ctrlpp::expected` compiles, so a failure the caller ignores is a
+silent runtime no-op; see [section 4](#4-discarded-results).
 
 ## 2. Disposition
 
@@ -136,36 +130,22 @@ filter judges the covariance it leaves the same way, so a caller reading
 `covariance()` after either call never sees an indefinite matrix beside `ok`,
 nor a non-finite prediction.
 
-These queries carry **no** `[[nodiscard]]`. Discarding one is
-harmless: it is a
-question the caller may ask whenever it wants, and never asking it is a legitimate
-choice.
+Discarding one of these queries is harmless: it is a question the caller may ask
+whenever it wants, and never asking it is a legitimate choice.
 
-## 4. Where the attribute goes, and where it does not
+## 4. Discarded results
 
-`[[nodiscard]]` is written at class level on the result type and on
-the disposition aggregates, and nowhere else in the library. It is never written
-at a call site or on an individual function declaration.
-
-It is **forbidden** on:
-
-- accessors and getters
-- size and empty queries
-- state-health predicates
-- any other return whose discard is harmless
-
-The attribute is earned where discarding the result silently breaks correctness.
+Neither the result type nor any other library type carries an attribute that
+makes discarding it a diagnostic, so a discarded `ctrlpp::expected` compiles.
 Dropping a reported failure inside a control loop leaves a step that did nothing
 while the caller believes it succeeded, and destroys the enumerator that named
-the cause; dropping a substitution report leaves the caller acting on a command
-the library quietly changed. Those are real misuse, and stopping them at compile
-time is worth the ceremony it costs.
+the cause. Branch on every fallible return.
 
-Putting the same attribute on a trivial return buys none of that and charges the
-caller for it anyway. A caller who wants the size and then decides not to use it
-has done nothing wrong, and making them write a cast to say so is noise that
-trains them to write the cast reflexively, including at the one call site where it
-mattered.
+Within the repository, the style lint flags a call to a fallible library function
+made as a bare statement, discarding its result, in the library and in the
+examples. A name shared with an infallible surface (`update`, `compute`,
+`evaluate`, `solve`, `normalize`) cannot be told apart at the call site, so a
+discarded result of one of those goes unflagged.
 
 ## Current state of the conversion
 
@@ -191,7 +171,6 @@ the channel-3 state-health query: `health()`, returning a per-module latching
 enumeration, so a caller can ask whether the estimate it is carrying is still
 degraded from an earlier step. Two of those queries predate this convention
 (`ukf_health`, `manifold_ukf_health`) and were extended rather than replaced.
-None of the seven carries a discard annotation on `health()`.
 
 `particle_filter::update` is on channel 1 as well, returning
 `ctrlpp::expected<void, pf_update_error>` (`non_finite_state`,
@@ -220,7 +199,7 @@ are on channel 1 as well: `pid::compute` (both overloads),
 because a controller step produces the command it was asked for and channel 1 is
 the result type over whatever the operation produces. Each carries a per-module
 enumeration (`pid_step_error`, `mrac_step_error`, `l1_step_error`), rejects
-before mutating anything, and carries an unannotated channel-3 `health()` query
+before mutating anything, and carries a channel-3 `health()` query
 (`pid_health`, `mrac_health`, `l1_health`).
 
 A refusal on these three is not the same event as a refusal on an estimator

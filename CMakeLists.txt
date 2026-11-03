@@ -11,12 +11,8 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 # vendored test framework and the third-party backends are compiled with their
 # own options and never receive these.
 #
-# The discarded-result diagnostic is promoted to an ERROR rather than left a
-# warning: ctrlpp::expected is annotated at class level, so dropping it on the
-# floor turns a reported failure into a silent no-op, and in a control loop that
-# is a step which did nothing while the caller believes it succeeded. A warning
-# is scrollback; an error is a gate. Both trees were measured to emit zero such
-# diagnostics before the promotion, so nothing pre-existing is caught by it.
+# The discard promotions make a discarded standard-library [[nodiscard]] result,
+# and an expression statement whose value is unused, an error on ctrlpp's targets.
 #
 # /bigobj raises the object file's section-count ceiling from 65,279 to 2^32. Two
 # Riccati test translation units crossed the lower ceiling on MSVC and stopped
@@ -57,7 +53,6 @@ set(CTRLPP_WARNING_FLAGS
         -Wimplicit-fallthrough
         -Wformat=2
         -Werror=unused-result
-        # gcc reports a discarded value of an attributed class TYPE under the promotion above, while clang reports it under the promotion below and reserves the one above for a discarded attributed FUNCTION result, so neither promotion alone enforces the gate on every supported compiler.
         -Werror=unused-value
     >
     # gcc reports provably dead one-row branches of Eigen 3.4's Householder solves

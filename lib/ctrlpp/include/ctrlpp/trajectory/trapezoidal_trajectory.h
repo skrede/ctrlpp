@@ -51,7 +51,7 @@ enum class acceleration_limit_policy
 ///
 /// @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.14)-(3.15), p.72
 template <typename Scalar>
-struct [[nodiscard]] trapezoidal_disposition
+struct trapezoidal_disposition
 {
     Scalar commanded_acceleration{};  ///< the acceleration limit passed to `create`
     Scalar realized_acceleration{};   ///< the magnitude every ramp of the profile actually uses

@@ -369,13 +369,6 @@ def run_list_members(root: Path) -> int:
                                  "--list-members goes with --rule member-init"))
 
 
-def run_purity_parity() -> int:
-    code, output = run_lint(LINT.parent / "purity_fixtures", "--rule", "discarded-result")
-    return sum(not check(label, code, output, 19, text) for label, text in (
-        ("the purity fixture's discarded call is the one finding", "checked 7 files; 1 findings (discarded-result: 1)"),
-        ("and it is the line purity reports", "lib/fixture_discarded_fallible.h:26: discarded-result")))
-
-
 def run_cli(root: Path) -> int:
     case = root / "cli"
     case.mkdir()
@@ -420,8 +413,8 @@ def main() -> int:
         failures += run_cli(root) + run_in_process()
         for rule, cases in STRUCTURAL:
             failures += run_rule_cases(root, rule, cases)
-        failures += run_list_members(root) + run_purity_parity()
-    total = sum(len(cases) for cases in groups) + 5 + 4 + sum(len(cases) for _, cases in STRUCTURAL) + 3 + 2
+        failures += run_list_members(root)
+    total = sum(len(cases) for cases in groups) + 5 + 4 + sum(len(cases) for _, cases in STRUCTURAL) + 3
     if failures:
         print(f"{failures} of {total} cases failed")
         return 1

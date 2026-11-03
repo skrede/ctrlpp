@@ -205,7 +205,7 @@ enum class online_planner_substitution_reason
 };
 
 template <typename Scalar>
-struct [[nodiscard]] online_planner_diagnostics
+struct online_planner_diagnostics
 {
     online_planner_disposition          disposition;
     online_planner_substitution_reason  substitution_reason;

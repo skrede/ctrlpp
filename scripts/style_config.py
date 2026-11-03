@@ -112,5 +112,5 @@ FALLIBLE_CALL_NAMES = (
 
 # Each name is fallible on some surfaces and infallible on others (the online planners' update, the constant LQR
 # gain's compute, the trajectories' evaluate, the solver adapters' solve, Eigen's in-place normalize), and a call
-# site's name cannot tell them apart; the compiler is their only guard.
+# site's name cannot tell them apart, so a discarded result of one of them goes unflagged.
 EXCLUDED_CALL_NAMES = frozenset({"update", "compute", "evaluate", "solve", "normalize"})

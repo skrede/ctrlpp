@@ -27,7 +27,7 @@ enum class online_planner_substitution_reason
 
 /// Disposition of the last update: what was commanded, against what was planned.
 template <typename Scalar>
-struct [[nodiscard]] online_planner_diagnostics
+struct online_planner_diagnostics
 {
     online_planner_disposition          disposition{online_planner_disposition::settled};
     online_planner_substitution_reason  substitution_reason{online_planner_substitution_reason::none};
