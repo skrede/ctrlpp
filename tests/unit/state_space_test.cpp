@@ -106,15 +106,15 @@ TEST_CASE("value-initialized state-space models are the zero system", "[state_sp
     REQUIRE(csys.D.isZero(0.0F));
 }
 
-TEST_CASE("designated initialization sets the named matrices and zeroes the rest", "[state_space]")
+TEST_CASE("brace construction sets the given matrices and zeroes the rest", "[state_space]")
 {
-    const DSS sys{.A = ctrlpp::Matrix<double, 2, 2>::Identity(), .C = ctrlpp::Matrix<double, 1, 2>::Ones()};
+    const DSS sys{ctrlpp::Matrix<double, 2, 2>::Identity(), ctrlpp::Matrix<double, 2, 1>::Zero(), ctrlpp::Matrix<double, 1, 2>::Ones()};
     REQUIRE(sys.A.isIdentity(0.0));
     REQUIRE(sys.B.isZero(0.0));
     REQUIRE((sys.C.array() == 1.0).all());
     REQUIRE(sys.D.isZero(0.0));
 
-    const CSS csys{.B = ctrlpp::Vector<double, 2>::Ones()};
+    const CSS csys{ctrlpp::Matrix<double, 2, 2>::Zero(), ctrlpp::Vector<double, 2>::Ones()};
     REQUIRE(csys.A.isZero(0.0));
     REQUIRE((csys.B.array() == 1.0).all());
     REQUIRE(csys.C.isZero(0.0));

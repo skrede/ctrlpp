@@ -263,7 +263,7 @@ auto moesp_system(moesp_subspace<Scalar> subspace, const Eigen::MatrixBase<Deriv
     if(!fit.B.allFinite() || !fit.D.allFinite() || !fit.x0.allFinite())
         return unexpected(sysid_error::model_not_identified);
 
-    discrete_state_space<Scalar, NX, 1, 1> const sys{.A = A, .B = fit.B, .C = C, .D = fit.D};
+    discrete_state_space<Scalar, NX, 1, 1> const sys{A, fit.B, C, fit.D};
     return moesp_result<Scalar, NX, 1, 1>{.system = sys,
                                           .singular_values = std::move(subspace.singular_values),
                                           .metrics = compute_moesp_metrics(sys, fit.x0, Y, U),

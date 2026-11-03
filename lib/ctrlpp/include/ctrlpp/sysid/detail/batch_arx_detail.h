@@ -116,7 +116,7 @@ auto realize_arx_observer_form(const Eigen::Matrix<Scalar, static_cast<int>(NA +
 
     C(0, 0) = Scalar{1};
 
-    return {.A = A, .B = B, .C = C, .D = D};
+    return {A, B, C, D};
 }
 
 /// The state starts at zero, so the first max(deg A, deg B) predictions are

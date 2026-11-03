@@ -24,10 +24,10 @@ int main()
     Eigen::Vector2d Bd = (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished();
 
     // Observer system: position-only measurement (NY=1)
-    ctrlpp::discrete_state_space<double, NX, NU, NY_OBS> obs_sys{.A = Ad, .B = Bd, .C = (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(), .D = Eigen::Matrix<double, 1, 1>::Zero()};
+    ctrlpp::discrete_state_space<double, NX, NU, NY_OBS> obs_sys{Ad, Bd, (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(), Eigen::Matrix<double, 1, 1>::Zero()};
 
     // MPC system: full-state output (NY=NX=2)
-    ctrlpp::discrete_state_space<double, NX, NU, NX> mpc_sys{.A = Ad, .B = Bd, .C = Eigen::Matrix2d::Identity(), .D = Eigen::Matrix<double, 2, 1>::Zero()};
+    ctrlpp::discrete_state_space<double, NX, NU, NX> mpc_sys{Ad, Bd, Eigen::Matrix2d::Identity(), Eigen::Matrix<double, 2, 1>::Zero()};
 
     // Kalman filter setup
     auto kf_result = ctrlpp::kalman_filter<double, NX, NU, NY_OBS>::create(

@@ -476,7 +476,7 @@ TEST_CASE("mpc with NY < NX output tracking", "[mpc][output_tracking]")
         constexpr std::size_t SYSID_NY = 1;
 
         ctrlpp::discrete_state_space<double, SYSID_NX, SYSID_NU, SYSID_NY> sysid_sys{
-                .A = make_double_integrator().A, .B = make_double_integrator().B, .C = (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(), .D = Eigen::Matrix<double, 1, 1>::Zero()};
+                make_double_integrator().A, make_double_integrator().B, (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(), Eigen::Matrix<double, 1, 1>::Zero()};
 
         ctrlpp::mpc_config<double, SYSID_NX, SYSID_NU, SYSID_NY> cfg{
                 .horizon = 5,

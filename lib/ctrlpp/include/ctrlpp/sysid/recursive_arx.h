@@ -139,7 +139,7 @@ public:
         // C = [1, 0, ..., 0]
         C(0, 0) = Scalar{1};
 
-        return {.A = A, .B = B, .C = C, .D = D};
+        return {A, B, C, D};
     }
 
 private:

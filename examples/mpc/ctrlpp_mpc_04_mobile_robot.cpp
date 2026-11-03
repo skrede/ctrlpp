@@ -19,10 +19,10 @@ int main()
     constexpr double v0 = 1.0;
 
     // Linearized unicycle about straight-line motion (theta=0, v=v0)
-    ctrlpp::discrete_state_space<double, NX, NU, NX> sys{.A = (Eigen::Matrix3d() << 1.0, 0.0, 0.0, 0.0, 1.0, v0 * dt, 0.0, 0.0, 1.0).finished(),
-                                                         .B = (Eigen::Matrix<double, 3, 2>() << dt, 0.0, 0.0, 0.0, 0.0, dt).finished(),
-                                                         .C = Eigen::Matrix3d::Identity(),
-                                                         .D = Eigen::Matrix<double, 3, 2>::Zero()};
+    ctrlpp::discrete_state_space<double, NX, NU, NX> sys{(Eigen::Matrix3d() << 1.0, 0.0, 0.0, 0.0, 1.0, v0 * dt, 0.0, 0.0, 1.0).finished(),
+                                                         (Eigen::Matrix<double, 3, 2>() << dt, 0.0, 0.0, 0.0, 0.0, dt).finished(),
+                                                         Eigen::Matrix3d::Identity(),
+                                                         Eigen::Matrix<double, 3, 2>::Zero()};
 
     ctrlpp::mpc_config<double, NX, NU> cfg{.horizon = 15,
                                            .Q = Eigen::Vector3d(1.0, 10.0, 5.0).asDiagonal(),
