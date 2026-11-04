@@ -208,15 +208,7 @@ class online_planner_3rd
         n_phases_ = 0;
         T_ = Scalar{0};
         settled_ = true;
-        diagnostics_ = online_planner_diagnostics<Scalar>{
-            .disposition = online_planner_disposition::settled,
-            .substitution_reason = online_planner_substitution_reason::none,
-            .commanded_target = q0,
-            .initial_velocity = Scalar{0},
-            .planned_duration = Scalar{0},
-            .brake_duration = Scalar{0},
-            .replan_start_position = q0,
-        };
+        record(online_planner_disposition::settled, online_planner_substitution_reason::none, Scalar{0}, Scalar{0}, q0);
     }
 
   private:
@@ -270,9 +262,9 @@ class online_planner_3rd
     Scalar target_{};
     Scalar t_ref_{};
 
-    // Disposition of the profile built at the last update. Assigned as a whole
-    // aggregate on every branch that completes a plan, which is what keeps a
-    // field from one branch surviving into the report of another.
+    // Disposition of the profile built at the last update. Every branch that
+    // completes a plan assigns every field through record(), which is what keeps
+    // a field from one branch surviving into the report of another.
     online_planner_diagnostics<Scalar> diagnostics_{};
 
     // At most nulling 1 + brake 3 + ramp 3 + cruise 1 + deceleration 3; an emptied group stores one pinned phase.
@@ -292,6 +284,18 @@ class online_planner_3rd
     // Upper bound on the roundings in the nulling-end speed: the duration's division, the product a T, the three products of
     // the jerk term (its exact halving counted anyway) and the two sums. A plan straight from the snapshot performs none.
     static constexpr std::int32_t speed_rounding_ops = 7;
+
+    void record(online_planner_disposition disposition, online_planner_substitution_reason reason, Scalar planned_duration,
+                Scalar brake_duration, Scalar replan_start_position)
+    {
+        diagnostics_.disposition = disposition;
+        diagnostics_.substitution_reason = reason;
+        diagnostics_.commanded_target = target_;
+        diagnostics_.initial_velocity = v_ref_;
+        diagnostics_.planned_duration = planned_duration;
+        diagnostics_.brake_duration = brake_duration;
+        diagnostics_.replan_start_position = replan_start_position;
+    }
 
     /// @brief Compute jerk-limited profile from current state to target.
     ///
@@ -314,15 +318,7 @@ class online_planner_3rd
         if (target_ == q_ref_ && v_ref_ == Scalar{0} && a_ref_ == Scalar{0}) {
             T_ = Scalar{0};
             settled_ = true;
-            diagnostics_ = online_planner_diagnostics<Scalar>{
-                .disposition = online_planner_disposition::settled,
-                .substitution_reason = online_planner_substitution_reason::none,
-                .commanded_target = target_,
-                .initial_velocity = v_ref_,
-                .planned_duration = Scalar{0},
-                .brake_duration = Scalar{0},
-                .replan_start_position = q_ref_,
-            };
+            record(online_planner_disposition::settled, online_planner_substitution_reason::none, Scalar{0}, Scalar{0}, q_ref_);
             return;
         }
 
@@ -344,25 +340,9 @@ class online_planner_3rd
         }
 
         if (outcome.reason == online_planner_substitution_reason::none) {
-            diagnostics_ = online_planner_diagnostics<Scalar>{
-                .disposition = online_planner_disposition::commanded_profile,
-                .substitution_reason = online_planner_substitution_reason::none,
-                .commanded_target = target_,
-                .initial_velocity = v_ref_,
-                .planned_duration = T_,
-                .brake_duration = Scalar{0},
-                .replan_start_position = q_ref_,
-            };
+            record(online_planner_disposition::commanded_profile, online_planner_substitution_reason::none, T_, Scalar{0}, q_ref_);
         } else {
-            diagnostics_ = online_planner_diagnostics<Scalar>{
-                .disposition = online_planner_disposition::braked_and_replanned,
-                .substitution_reason = outcome.reason,
-                .commanded_target = target_,
-                .initial_velocity = v_ref_,
-                .planned_duration = T_,
-                .brake_duration = outcome.brake_duration,
-                .replan_start_position = outcome.replan_start_position,
-            };
+            record(online_planner_disposition::braked_and_replanned, outcome.reason, T_, outcome.brake_duration, outcome.replan_start_position);
         }
     }
 

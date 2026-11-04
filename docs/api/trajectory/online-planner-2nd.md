@@ -102,8 +102,7 @@ The agreement is measured as well, in `double` and in `float`: 13,499 commanded 
 ## Construction
 
 ```cpp
-static auto create(config const& cfg)
-    -> ctrlpp::expected<online_planner_2nd, trajectory_error>;
+static ctrlpp::expected<online_planner_2nd, trajectory_error> create(config const& cfg);
 ```
 
 `create` is the only construction path. There is no non-fallible constructor: a rejected configuration is a value the caller has to inspect, never an object that quietly stands in for one. It validates the kinematic limits and constructs a planner with initial state at rest at q = 0. Rejections, checked in order:
@@ -118,7 +117,7 @@ static auto create(config const& cfg)
 ### update
 
 ```cpp
-auto update(Scalar target) -> ctrlpp::expected<void, trajectory_error>;
+ctrlpp::expected<void, trajectory_error> update(Scalar target);
 ```
 
 Set a new target position and replan from the current state. Computes a time-optimal trapezoidal profile from (q, v) to (target, 0) respecting `v_max` and `a_max`. A velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and the move is replanned from the stopping point.
@@ -132,7 +131,7 @@ what changes is the time it takes.
 ### diagnostics
 
 ```cpp
-auto diagnostics() const -> online_planner_diagnostics<Scalar> const&;
+online_planner_diagnostics<Scalar> const& diagnostics() const;
 ```
 
 Report what the last `update` (or `reset`) planned, against what it was commanded. This describes the plan, not the state reached since; `is_settled()` answers that.
@@ -140,7 +139,7 @@ Report what the last `update` (or `reset`) planned, against what it was commande
 ### sample
 
 ```cpp
-auto sample(Scalar t) const -> trajectory_point<Scalar, 1>;
+trajectory_point<Scalar, 1> sample(Scalar t) const;
 ```
 
 Evaluate the planned trajectory at absolute time `t`. Returns position, velocity, and acceleration. Updates internal state for future `update()` calls. Call this once per control loop timestep.
@@ -148,7 +147,7 @@ Evaluate the planned trajectory at absolute time `t`. Returns position, velocity
 ### is_settled
 
 ```cpp
-auto is_settled() const -> bool;
+bool is_settled() const;
 ```
 
 Returns true when the planner has reached the target with zero velocity.
@@ -197,6 +196,8 @@ enum class online_planner_substitution_reason
 template <typename Scalar>
 struct online_planner_diagnostics
 {
+    online_planner_diagnostics();  // settled, none, every Scalar zero
+
     online_planner_disposition          disposition;
     online_planner_substitution_reason  substitution_reason;
     Scalar commanded_target;

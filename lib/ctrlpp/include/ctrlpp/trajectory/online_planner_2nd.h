@@ -1,596 +1,123 @@
 #ifndef HPP_GUARD_CTRLPP_TRAJECTORY_ONLINE_PLANNER_2ND_H
 #define HPP_GUARD_CTRLPP_TRAJECTORY_ONLINE_PLANNER_2ND_H
 
-/// @brief 2nd-order online trajectory planner (velocity and acceleration bounded).
-///
-/// Stateful filter that generates trapezoidal-like velocity profiles in real time.
-/// On each update(target), the planner computes a time-optimal profile from the
-/// current state (position, velocity) to the target position, respecting v_max and
-/// a_max constraints. sample(t) evaluates the profile at arbitrary times for servo
-/// control or lookahead.
-///
-/// Unlike pre-computed trajectory segments, online planners have no fixed duration
-/// and do NOT satisfy trajectory_segment. They are stateful filters.
-///
-/// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-/// Automatic Machines and Robots", 2009, Sec. 4.6.2
-/// @cite lambrechts2005 -- Lambrechts, Boerlage & Steinbuch, "Trajectory Planning and Feedforward Design for Electromechanical Motion Systems", Control Engineering Practice 13(2), 2005
-
-#include "ctrlpp/expected.h"
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic Machines and Robots", 2009, Sec. 4.6.2
+// @cite lambrechts2005 -- Lambrechts, Boerlage & Steinbuch, "Trajectory Planning and Feedforward Design for Electromechanical Motion Systems", Control Engineering Practice 13(2), 2005
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/online_planner_diagnostics.h"
 
-#include "ctrlpp/trajectory/detail/ramp_anchor.h"
+#include "ctrlpp/trajectory/detail/planner_2nd_evaluation.h"
+
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
 #include <cmath>
-#include <limits>
-#include <cstddef>
 #include <algorithm>
 
 namespace ctrlpp
 {
 
-/// @brief 2nd-order online planner producing trapezoidal velocity profiles.
-///
-/// Generates bounded-velocity, bounded-acceleration trajectories that can be
-/// replanned mid-motion when a new target arrives.
-///
-/// Construction goes through `create`, which validates the kinematic
-/// limits and reports rejections through
-/// `ctrlpp::expected<online_planner_2nd, trajectory_error>`.
-///
-/// @cite biagiotti2009 -- Sec. 4.6.2
+// @cite biagiotti2009 -- Sec. 4.6.2
 template <ctrlpp_floating_scalar Scalar>
-class online_planner_2nd
+class online_planner_2nd : private detail::planner_2nd_evaluation<Scalar>
 {
-  public:
-    /// @brief Kinematic limits, and the distances at which a sampled state
-    /// counts as arrived.
-    ///
-    /// The two settle tolerances are policy, not rounding guards, and they are
-    /// separate fields because they are compared against two quantities in two
-    /// different units: a length and a speed. Their defaults sit roughly seven
-    /// decades above `double` rounding on the quantities they test, so they
-    /// state when the application considers the axis arrived rather than when
-    /// the arithmetic can still tell two numbers apart. No derivation is offered
-    /// for them because none exists: the distance at which a machine is "there"
-    /// is a property of the machine.
-    ///
-    /// The defaults are the values the planner used before the fields existed,
-    /// so omitting them reproduces that behavior exactly for every choice of
-    /// limits. They are chosen for `double`; a `float` instantiation should set
-    /// them, because the defaults sit below `float`'s own resolution near unity.
-    ///
-    /// There is no acceleration tolerance. This planner bounds no jerk and
-    /// carries no acceleration state to settle, so a third field would be
-    /// surface with nothing behind it.
-    ///
-    /// No setting of them changes what the planner computes. They decide only
-    /// when `is_settled()` reports true; the profile, its phase durations and
-    /// every value `sample()` returns are identical under any value.
-    struct config
-    {
-        Scalar v_max;
-        Scalar a_max;
+    using base = detail::planner_2nd_evaluation<Scalar>;
 
-        /// @brief Position error below which the axis counts as arrived.
-        Scalar position_settle_tol = static_cast<Scalar>(1e-9);
-
-        /// @brief Speed below which the axis counts as stopped.
-        Scalar velocity_settle_tol = static_cast<Scalar>(1e-9);
-    };
-
-    /// @brief Validate the kinematic limits and construct a planner.
-    ///
-    /// Both limits are divisors in the planner math (stopping distance
-    /// v^2 / (2 a_max), phase durations v_v / a_max and h / v_v), so the exact
-    /// mathematical domain of each is finite and strictly positive. Rejections,
-    /// checked in order:
-    ///  * NaN/Inf or non-positive v_max -> trajectory_error::non_positive_velocity_limit
-    ///  * NaN/Inf or non-positive a_max -> trajectory_error::non_positive_acceleration_limit
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.6.2
-    static auto create(config const& cfg)
-        -> ctrlpp::expected<online_planner_2nd, trajectory_error>
-    {
-        if (!std::isfinite(cfg.v_max) || cfg.v_max <= Scalar{0}) {
-            return ctrlpp::unexpected(trajectory_error::non_positive_velocity_limit);
-        }
-        if (!std::isfinite(cfg.a_max) || cfg.a_max <= Scalar{0}) {
-            return ctrlpp::unexpected(trajectory_error::non_positive_acceleration_limit);
-        }
-        return online_planner_2nd{unchecked_t{}, cfg};
-    }
-
-    /// @brief Set new target position. Replans from current state.
-    ///
-    /// Computes time-optimal trapezoidal profile from (q_, v_) to (target, 0)
-    /// respecting v_max and a_max. A velocity pointing away from the target, or
-    /// too large to stop in the available distance, is braked to rest first and
-    /// the move is replanned from the stopping point.
-    ///
-    /// A non-finite target is rejected before any member changes. For a finite
-    /// target, the commanded shape is not always the one realized: which
-    /// profile was built is read back from `diagnostics()`, where `disposition`
-    /// names the branch taken and
-    /// `substitution_reason` names the condition that selected it. The motion
-    /// respects every limit either way; what changes is the time it takes, which
-    /// `planned_duration` and `brake_duration` are there to account for.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.6.2
-    auto update(Scalar target) -> ctrlpp::expected<void, trajectory_error>
-    {
-        if(!std::isfinite(target))
-            return ctrlpp::unexpected(trajectory_error::non_finite_input);
-
-        target_ = target;
-        t_ref_ = t_last_;
-
-        // Snapshot current state
-        q_ref_ = q_;
-        v_ref_ = v_;
-
-        compute_profile();
-        return {};
-    }
-
-    /// @brief Evaluate trajectory at time t.
-    ///
-    /// Returns trajectory_point<Scalar, 1> with position, velocity, acceleration.
-    /// Updates internal state for future update() calls.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.6.2
-    auto sample(Scalar t) const -> trajectory_point<Scalar, 1>
-    {
-        auto const dt = std::max(t - t_ref_, Scalar{0});
-
-        Scalar q{};
-        Scalar v{};
-        Scalar a{};
-
-        evaluate_profile(dt, q, v, a);
-
-        // Update mutable state for future update() calls
-        q_ = q;
-        v_ = v;
-        t_last_ = t;
-
-        // Check settled state. Each dimension is tested against its own
-        // configured distance, because the two quantities carry two different
-        // units.
-        settled_ = (std::abs(q - target_) < position_settle_tol_)
-                   && (std::abs(v) < velocity_settle_tol_);
-
-        return {
-            .position = Vector<Scalar, 1>{q},
-            .velocity = Vector<Scalar, 1>{v},
-            .acceleration = Vector<Scalar, 1>{a},
-        };
-    }
-
-    /// @brief True when at target with zero velocity.
-    auto is_settled() const -> bool { return settled_; }
-
-    /// @brief What the last update planned, against what it was commanded.
-    ///
-    /// Describes the profile built by the last `update` or `reset`, not the
-    /// state reached since: `is_settled()` answers that. This planner bounds no
-    /// jerk, so it never reports
-    /// `online_planner_substitution_reason::carry_velocity_shape_unavailable`.
-    auto diagnostics() const -> online_planner_diagnostics<Scalar> const& { return diagnostics_; }
-
-    /// @brief Reset state to position q0 with zero velocity.
-    void reset(Scalar q0)
-    {
-        q_ = q0;
-        v_ = Scalar{0};
-        q_ref_ = q0;
-        v_ref_ = Scalar{0};
-        target_ = q0;
-        t_ref_ = Scalar{0};
-        t_last_ = Scalar{0};
-        T_a_ = Scalar{0};
-        T_v_ = Scalar{0};
-        T_d_ = Scalar{0};
-        T_ = Scalar{0};
-        settled_ = true;
-        diagnostics_ = online_planner_diagnostics<Scalar>{
-            .disposition = online_planner_disposition::settled,
-            .substitution_reason = online_planner_substitution_reason::none,
-            .commanded_target = q0,
-            .initial_velocity = Scalar{0},
-            .planned_duration = Scalar{0},
-            .brake_duration = Scalar{0},
-            .replan_start_position = q0,
-        };
-    }
-
-  private:
-    /// @brief Tag selecting the non-validating constructor reserved for `create`.
     struct unchecked_t
     {
         explicit unchecked_t() = default;
     };
 
-    /// @brief Construct from a configuration already validated by `create`.
-    /// Initial state at rest at q=0.
+public:
+    struct config
+    {
+        Scalar v_max;
+        Scalar a_max;
+        Scalar position_settle_tol = static_cast<Scalar>(1e-9);
+        Scalar velocity_settle_tol = static_cast<Scalar>(1e-9);
+    };
+
+    // @cite biagiotti2009 -- Sec. 4.6.2
+    static ctrlpp::expected<online_planner_2nd, trajectory_error> create(config const& cfg)
+    {
+        if(!std::isfinite(cfg.v_max) || cfg.v_max <= Scalar{0})
+        {
+            return ctrlpp::unexpected(trajectory_error::non_positive_velocity_limit);
+        }
+        if(!std::isfinite(cfg.a_max) || cfg.a_max <= Scalar{0})
+        {
+            return ctrlpp::unexpected(trajectory_error::non_positive_acceleration_limit);
+        }
+        return online_planner_2nd{unchecked_t{}, cfg};
+    }
+
+    // @cite biagiotti2009 -- Sec. 4.6.2
+    ctrlpp::expected<void, trajectory_error> update(Scalar target)
+    {
+        if(!std::isfinite(target))
+            return ctrlpp::unexpected(trajectory_error::non_finite_input);
+
+        this->m_target = target;
+        this->m_t_ref = this->m_t_last;
+
+        this->m_q_ref = this->m_q;
+        this->m_v_ref = this->m_v;
+
+        this->compute_profile();
+        return {};
+    }
+
+    // @cite biagiotti2009 -- Sec. 4.6.2
+    trajectory_point<Scalar, 1> sample(Scalar t) const
+    {
+        auto const dt = std::max(t - this->m_t_ref, Scalar{0});
+
+        Scalar q{};
+        Scalar v{};
+        Scalar a{};
+
+        this->evaluate_profile(dt, q, v, a);
+
+        this->m_q = q;
+        this->m_v = v;
+        this->m_t_last = t;
+
+        this->m_settled = (std::abs(q - this->m_target) < this->m_position_settle_tol) && (std::abs(v) < this->m_velocity_settle_tol);
+
+        return {
+                .position = Vector<Scalar, 1>{q},
+                .velocity = Vector<Scalar, 1>{v},
+                .acceleration = Vector<Scalar, 1>{a},
+        };
+    }
+
+    bool is_settled() const { return this->m_settled; }
+
+    online_planner_diagnostics<Scalar> const& diagnostics() const { return this->m_diagnostics; }
+
+    void reset(Scalar q0)
+    {
+        this->m_q = q0;
+        this->m_v = Scalar{0};
+        this->m_q_ref = q0;
+        this->m_v_ref = Scalar{0};
+        this->m_target = q0;
+        this->m_t_ref = Scalar{0};
+        this->m_t_last = Scalar{0};
+        this->m_accel_duration = Scalar{0};
+        this->m_cruise_duration = Scalar{0};
+        this->m_decel_duration = Scalar{0};
+        this->m_duration = Scalar{0};
+        this->m_settled = true;
+        this->record(online_planner_disposition::settled, online_planner_substitution_reason::none, Scalar{0}, Scalar{0}, q0);
+    }
+
+private:
     online_planner_2nd(unchecked_t, config const& cfg)
-        : v_max_{cfg.v_max}
-        , a_max_{cfg.a_max}
-        , position_settle_tol_{cfg.position_settle_tol}
-        , velocity_settle_tol_{cfg.velocity_settle_tol}
+        : base{cfg}
     {
-    }
-
-    Scalar v_max_{};
-    Scalar a_max_{};
-
-    // Settle policy, read only by sample(). Never a divisor and never a loop
-    // bound, so no value of either of them can make the planner run unboundedly.
-    Scalar position_settle_tol_{};
-    Scalar velocity_settle_tol_{};
-
-    // Internal state (mutable for const sample)
-    mutable Scalar q_{};
-    mutable Scalar v_{};
-    mutable Scalar t_last_{};
-    mutable bool settled_{true};
-
-    // Reference state at last update()
-    Scalar q_ref_{};
-    Scalar v_ref_{};
-    Scalar target_{};
-    Scalar t_ref_{};
-
-    // Disposition of the profile built at the last update. Assigned as a whole
-    // aggregate on every branch that completes a plan, which is what keeps a
-    // field from one branch surviving into the report of another.
-    online_planner_diagnostics<Scalar> diagnostics_{};
-
-    // Profile parameters
-    Scalar sigma_{1};
-    Scalar v_v_{};       ///< cruise velocity (positive frame)
-    Scalar a_a_{};       ///< acceleration magnitude
-    Scalar a_d_{};       ///< deceleration magnitude
-    Scalar T_a_{};       ///< acceleration phase duration
-    Scalar T_v_{};       ///< cruise phase duration
-    Scalar T_d_{};       ///< deceleration phase duration
-    Scalar T_{};         ///< total duration
-    Scalar q_stop_{};    ///< position where braking from v_ref ends (for overshoot)
-    bool needs_brake_{false};  ///< whether we need to brake first
-    Scalar T_brake_{};   ///< braking duration
-    Scalar q_after_brake_{};
-    Scalar v_after_brake_{};
-
-    /// @brief Zero out all profile parameters and mark as settled.
-    void set_settled_profile()
-    {
-        sigma_ = Scalar{1};
-        v_v_ = Scalar{0};
-        a_a_ = Scalar{0};
-        a_d_ = Scalar{0};
-        T_a_ = Scalar{0};
-        T_v_ = Scalar{0};
-        T_d_ = Scalar{0};
-        T_ = Scalar{0};
-        needs_brake_ = false;
-        settled_ = true;
-    }
-
-    /// @brief Compute trapezoidal profile from (q_ref_, v_ref_) to (target_, 0).
-    ///
-    /// Handles overshoot recovery when current velocity points away from target
-    /// or is too large to decelerate in time.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.6.2
-    void compute_profile()
-    {
-        auto const h_signed = target_ - q_ref_;
-
-        // A command at the target is a no-op only from rest: removing any nonzero speed takes |v| / a_max, and the
-        // planner is never told the sample period, so no magnitude exists below which dropping it respects a_max.
-        if (h_signed == Scalar{0} && v_ref_ == Scalar{0}) {
-            set_settled_profile();
-            diagnostics_ = online_planner_diagnostics<Scalar>{
-                .disposition = online_planner_disposition::settled,
-                .substitution_reason = online_planner_substitution_reason::none,
-                .commanded_target = target_,
-                .initial_velocity = v_ref_,
-                .planned_duration = Scalar{0},
-                .brake_duration = Scalar{0},
-                .replan_start_position = q_ref_,
-            };
-            return;
-        }
-
-        settled_ = false;
-        auto const v0 = v_ref_;
-
-        // One braking distance serves the overshoot decision and the stop placement, so the two cannot
-        // disagree; the mean-speed form is kept because it forms no square of the speed.
-        auto const T_brake = std::abs(v0) / a_max_;
-        auto const brake_dist = std::abs(v0) * T_brake / Scalar{2};
-
-        // The two floors below ask questions about quantities in two different
-        // units, and one number cannot be the right answer to both. Each gets
-        // the scale of the quantity it tests and a count of the operations that
-        // formed it.
-
-        // Speed floor. The scale is the velocity limit: it is the only velocity
-        // the planner is given, and every velocity the profile carries is
-        // bounded by it. The count is one because this planner performs no
-        // arithmetic on the speed before the test -- it bounds no jerk, so it
-        // has no acceleration-nulling phase, and the speed the direction and
-        // overshoot tests see is the one the caller sampled. That is why this
-        // count is one where the jerk-limited planner's is seven: the chains
-        // differ, and importing that planner's number would be an unexplained
-        // constant wearing a different name.
-        constexpr int speed_rounding_ops = 1;
-        auto const speed_floor = Scalar{speed_rounding_ops}
-                                 * std::numeric_limits<Scalar>::epsilon() * v_max_;
-
-        // Length floor. The scale is the planner's own stopping distance from
-        // full speed, v_max^2 / (2 a_max). That is the right length because it
-        // is intrinsic to the two limits the planner was given and requires no
-        // knowledge of the sample period, which the planner is never told. It
-        // is also the largest operand that enters the comparison rather than
-        // the cancelled result of it: the commanded displacement is a
-        // difference of two positions and inherits their scale, not its own.
-        // One operation forms the displacement, the subtraction above, and
-        // three form the scale: the squared velocity limit, the doubled
-        // acceleration limit and the division.
-        constexpr int displacement_rounding_ops = 1;
-        constexpr int length_scale_rounding_ops = 3;
-        constexpr int length_rounding_ops = displacement_rounding_ops
-                                            + length_scale_rounding_ops;
-        auto const length_scale = v_max_ * v_max_ / (Scalar{2} * a_max_);
-        auto const length_floor = Scalar{length_rounding_ops}
-                                  * std::numeric_limits<Scalar>::epsilon() * length_scale;
-
-        bool const wrong_direction = (h_signed > Scalar{0} && v0 < Scalar{0})
-                                     || (h_signed < Scalar{0} && v0 > Scalar{0})
-                                     || (std::abs(h_signed) < length_floor
-                                         && std::abs(v0) > speed_floor);
-        bool const overshoot = !wrong_direction
-                               && brake_dist > std::abs(h_signed)
-                               && std::abs(v0) > speed_floor;
-
-        if (wrong_direction || overshoot) {
-            needs_brake_ = true;
-            T_brake_ = T_brake;
-            q_after_brake_ = q_ref_ + v0 * T_brake_ / Scalar{2};
-            v_after_brake_ = Scalar{0};
-            compute_rest_to_rest(q_after_brake_, target_);
-            diagnostics_ = online_planner_diagnostics<Scalar>{
-                .disposition = online_planner_disposition::braked_and_replanned,
-                .substitution_reason = online_planner_substitution_reason::reversal_or_overshoot,
-                .commanded_target = target_,
-                .initial_velocity = v_ref_,
-                .planned_duration = T_,
-                .brake_duration = T_brake_,
-                .replan_start_position = q_after_brake_,
-            };
-        } else {
-            needs_brake_ = false;
-            T_brake_ = Scalar{0};
-            compute_with_initial_velocity(q_ref_, v0, target_);
-            diagnostics_ = online_planner_diagnostics<Scalar>{
-                .disposition = online_planner_disposition::commanded_profile,
-                .substitution_reason = online_planner_substitution_reason::none,
-                .commanded_target = target_,
-                .initial_velocity = v_ref_,
-                .planned_duration = T_,
-                .brake_duration = Scalar{0},
-                .replan_start_position = q_ref_,
-            };
-        }
-    }
-
-    /// @brief Plan a rest-to-rest trapezoidal profile.
-    void compute_rest_to_rest(Scalar q0, Scalar target)
-    {
-        auto const h = target - q0;
-        sigma_ = (h >= Scalar{0}) ? Scalar{1} : Scalar{-1};
-        auto const abs_h = std::abs(h);
-
-        if (abs_h == Scalar{0}) {
-            v_v_ = Scalar{0};
-            a_a_ = Scalar{0};
-            a_d_ = Scalar{0};
-            T_a_ = Scalar{0};
-            T_v_ = Scalar{0};
-            T_d_ = Scalar{0};
-            T_ = T_brake_;
-            return;
-        }
-
-        auto const v = v_max_;
-        auto const a = a_max_;
-
-        // Check triangular degenerate: h < v^2/a
-        auto const v_tri_sq = a * abs_h;
-        auto const v_tri = std::sqrt(v_tri_sq);
-
-        if (v_tri < v) {
-            // Triangular
-            v_v_ = v_tri;
-        } else {
-            v_v_ = v;
-        }
-
-        a_a_ = a;
-        a_d_ = a;
-        T_a_ = v_v_ / a_a_;
-        T_d_ = v_v_ / a_d_;
-
-        if (v_tri >= v) {
-            T_v_ = abs_h / v_v_ - T_a_ / Scalar{2} - T_d_ / Scalar{2};
-            if (T_v_ < Scalar{0}) {
-                T_v_ = Scalar{0};
-            }
-        } else {
-            T_v_ = Scalar{0};
-        }
-
-        T_ = T_brake_ + T_a_ + T_v_ + T_d_;
-    }
-
-    /// @brief Plan profile with non-zero initial velocity.
-    ///
-    /// Uses the same direction as h_signed and accounts for v0.
-    void compute_with_initial_velocity(Scalar q0, Scalar v0, Scalar target)
-    {
-        auto const h = target - q0;
-        sigma_ = (h >= Scalar{0}) ? Scalar{1} : Scalar{-1};
-        auto const abs_h = std::abs(h);
-        auto const sv0 = sigma_ * v0; // v0 in positive frame (should be >= 0 here)
-
-        auto const a = a_max_;
-        auto const v = v_max_;
-
-        // Deceleration phase: from v_v_ to 0
-        // Acceleration phase: from sv0 to v_v_
-
-        // Check if cruise velocity can be reached
-        // h = sv0*T_a + 0.5*a*T_a^2 + v_v*T_v + v_v*T_d - 0.5*a*T_d^2
-        // With T_a = (v_v - sv0)/a, T_d = v_v/a
-        // Triangular: v_v = sqrt((2*a*abs_h + sv0^2)/2)
-
-        auto const v_tri_sq = (Scalar{2} * a * abs_h + sv0 * sv0) / Scalar{2};
-        auto const v_tri = std::sqrt(v_tri_sq);
-
-        if (v_tri < v) {
-            v_v_ = v_tri;
-        } else {
-            v_v_ = v;
-        }
-
-        // Ensure v_v >= sv0 (otherwise we'd need to decelerate first, handled above)
-        if (v_v_ < sv0) {
-            v_v_ = sv0;
-        }
-
-        a_a_ = a;
-        a_d_ = a;
-        T_a_ = (v_v_ - sv0) / a_a_;
-        T_d_ = v_v_ / a_d_;
-
-        if (v_tri >= v) {
-            // Cruise phase: abs_h = area under velocity curve
-            // area = sv0*T_a + 0.5*a*T_a^2 + v_v*T_v + v_v*T_d - 0.5*a*T_d^2
-            auto const area_accel = sv0 * T_a_ + Scalar{0.5} * a * T_a_ * T_a_;
-            auto const area_decel = v_v_ * T_d_ - Scalar{0.5} * a * T_d_ * T_d_;
-            T_v_ = (abs_h - area_accel - area_decel) / v_v_;
-            if (T_v_ < Scalar{0}) {
-                T_v_ = Scalar{0};
-            }
-        } else {
-            T_v_ = Scalar{0};
-        }
-
-        T_ = T_a_ + T_v_ + T_d_;
-    }
-
-    /// @brief Evaluate the stored profile at relative time dt.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.6.2
-    void evaluate_profile(Scalar dt, Scalar& q, Scalar& v, Scalar& a) const
-    {
-        if (T_ <= Scalar{0} || dt >= T_) {
-            // At or past the end: settled
-            q = target_;
-            v = Scalar{0};
-            a = Scalar{0};
-            return;
-        }
-
-        if (needs_brake_) {
-            if (dt < T_brake_) {
-                // Braking phase: decelerate from v_ref_ to 0
-                auto const brake_sign = (v_ref_ >= Scalar{0}) ? Scalar{-1} : Scalar{1};
-                a = brake_sign * a_max_;
-                v = v_ref_ + a * dt;
-                q = q_ref_ + v_ref_ * dt + Scalar{0.5} * a * dt * dt;
-                return;
-            }
-            // Past braking: evaluate rest-to-rest from q_after_brake_
-            dt -= T_brake_;
-            evaluate_rest_to_rest(dt, q_after_brake_, q, v, a);
-            return;
-        }
-
-        // Profile with initial velocity
-        evaluate_with_velocity(dt, q, v, a);
-    }
-
-    /// @brief Evaluate rest-to-rest trapezoidal profile at time dt.
-    void evaluate_rest_to_rest(Scalar dt, Scalar q0, Scalar& q, Scalar& v, Scalar& a) const
-    {
-        auto const T_total = T_a_ + T_v_ + T_d_;
-        if (dt >= T_total) {
-            q = target_;
-            v = Scalar{0};
-            a = Scalar{0};
-            return;
-        }
-
-        auto const s = sigma_;
-        auto const aa = a_a_;
-        auto const dt_end = T_total - dt;
-
-        if (dt < T_a_) {
-            // Acceleration phase
-            a = s * aa;
-            v = s * aa * dt;
-            q = q0 + s * Scalar{0.5} * aa * dt * dt;
-        } else if (dt_end >= T_d_) {
-            // Cruise phase
-            auto const dt_c = dt - T_a_;
-            auto const q_end_accel = q0 + s * Scalar{0.5} * aa * T_a_ * T_a_;
-            a = Scalar{0};
-            v = s * v_v_;
-            q = q_end_accel + s * v_v_ * dt_c;
-        } else {
-            // T_total is a rounded sum, so deceleration is used only strictly inside T_d_, timed back from the end.
-            a = -s * a_d_;
-            v = s * a_d_ * dt_end;
-            q = target_ - s * Scalar{0.5} * a_d_ * dt_end * dt_end;
-        }
-    }
-
-    /// @brief Evaluate profile with non-zero initial velocity.
-    void evaluate_with_velocity(Scalar dt, Scalar& q, Scalar& v, Scalar& a) const
-    {
-        auto const s = sigma_;
-        auto const aa = a_a_;
-        auto const T_total = T_a_ + T_v_ + T_d_;
-
-        if (dt >= T_total) {
-            q = target_;
-            v = Scalar{0};
-            a = Scalar{0};
-            return;
-        }
-        auto const dt_end = T_total - dt;
-        auto const q_end_accel = q_ref_ + v_ref_ * T_a_ + s * Scalar{0.5} * aa * T_a_ * T_a_;
-
-        if (dt < T_a_) {
-            a = s * aa;
-            v = detail::nearer_anchor_velocity(v_ref_, s * v_v_, s * aa, dt, T_a_ - dt);
-            q = detail::nearer_anchor_position(q_ref_, v_ref_, q_end_accel, s * v_v_, s * aa, dt, T_a_ - dt);
-        } else if (dt_end >= T_d_) {
-            a = Scalar{0};
-            v = s * v_v_;
-            q = q_end_accel + s * v_v_ * (dt - T_a_);
-        } else {
-            // T_total is a rounded sum, so deceleration is used only strictly inside T_d_, timed back from the end.
-            a = -s * a_d_;
-            v = s * a_d_ * dt_end;
-            q = target_ - s * Scalar{0.5} * a_d_ * dt_end * dt_end;
-        }
     }
 };
 

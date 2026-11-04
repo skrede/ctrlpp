@@ -207,6 +207,8 @@ enum class online_planner_substitution_reason
 template <typename Scalar>
 struct online_planner_diagnostics
 {
+    online_planner_diagnostics();  // settled, none, every Scalar zero
+
     online_planner_disposition          disposition;
     online_planner_substitution_reason  substitution_reason;
     Scalar commanded_target;
