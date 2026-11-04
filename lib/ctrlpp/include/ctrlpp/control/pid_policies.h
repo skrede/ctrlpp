@@ -92,7 +92,7 @@ struct feed_forward
 {
     struct config
     {
-        Callable ff_func;
+        Callable feed_forward_cb;
     };
 };
 

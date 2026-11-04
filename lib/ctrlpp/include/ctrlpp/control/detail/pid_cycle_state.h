@@ -145,7 +145,7 @@ private:
             if constexpr(!std::is_same_v<ff_policy_t, feed_forward<void>>)
             {
                 // The feed-forward callable may be stateful, so it is evaluated once per cycle.
-                const vector_t ff = cfg.template policy<ff_policy_t>().ff_func(sp, dt);
+                const vector_t ff = cfg.template policy<ff_policy_t>().feed_forward_cb(sp, dt);
                 last_non_integral += ff;
                 return (u_raw + ff).eval();
             }

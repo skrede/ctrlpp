@@ -15,7 +15,7 @@ Adds a feed-forward term to the PID output. Feed-forward injects a control actio
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `ff_func` | `Callable` | &mdash; | A callable that computes the feed-forward contribution. Signature depends on the user's model. |
+| `feed_forward_cb` | `Callable` | &mdash; | A callable that computes the feed-forward contribution. Signature depends on the user's model. |
 
 ### feed_forward\<void\>
 
@@ -53,7 +53,7 @@ int main()
     cfg.kp = Vec::Constant(2.0);
     cfg.ki = Vec::Constant(0.5);
     cfg.kd = Vec::Constant(0.0);
-    cfg.template policy<ctrlpp::feed_forward<FF>>().ff_func = ff;
+    cfg.template policy<ctrlpp::feed_forward<FF>>().feed_forward_cb = ff;
 
     auto created = Pid::create(cfg);
     if (!created.has_value()) return 1;

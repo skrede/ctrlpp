@@ -74,13 +74,13 @@ TEST_CASE("pv_filter smooths step measurement", "[pid][siso][pv-filter]")
 TEST_CASE("feed_forward adds callable output to control signal", "[pid][siso][feed-forward]")
 {
     // Feed-forward: ff(sp, Ts) = sp (identity)
-    auto ff_func = [](const Vec1& sp, double) -> Vec1 { return sp; };
-    using FF = ctrlpp::feed_forward<decltype(ff_func)>;
+    auto feed_forward_cb = [](const Vec1& sp, double) -> Vec1 { return sp; };
+    using FF = ctrlpp::feed_forward<decltype(feed_forward_cb)>;
     using FfPid = ctrlpp::pid<double, 1, FF>;
 
     FfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
-    cfg.template policy<FF>().ff_func = ff_func;
+    cfg.template policy<FF>().feed_forward_cb = feed_forward_cb;
     auto pid = ctrlpp::test::constructed(FfPid::create(cfg));
 
     // P = 1.0 * (1.0 - 0.0) = 1.0, FF = sp = 1.0, total = 2.0

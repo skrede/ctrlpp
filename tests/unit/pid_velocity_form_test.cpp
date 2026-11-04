@@ -212,14 +212,14 @@ TEST_CASE("velocity_form reset clears history", "[pid][siso][velocity-form][rese
 TEST_CASE("velocity_form injects the change in feed-forward so a constant feed-forward does not drift",
     "[pid][siso][velocity-form][feed-forward]")
 {
-    auto ff_func = [](const Vec1& sp, double) -> Vec1 { return sp * 0.5; };
-    using FF = ctrlpp::feed_forward<decltype(ff_func)>;
+    auto feed_forward_cb = [](const Vec1& sp, double) -> Vec1 { return sp * 0.5; };
+    using FF = ctrlpp::feed_forward<decltype(feed_forward_cb)>;
     using VFfPid = ctrlpp::pid<double, 1, ctrlpp::velocity_form, FF>;
 
     VFfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.0);
-    cfg.template policy<FF>().ff_func = ff_func;
+    cfg.template policy<FF>().feed_forward_cb = feed_forward_cb;
     auto pid = ctrlpp::test::constructed(VFfPid::create(cfg));
 
     // Step 1: dP = 1*(1-0) = 1.0. The feed-forward level rises from 0 to sp*0.5 = 0.5,
@@ -423,9 +423,9 @@ TEMPLATE_TEST_CASE("velocity_form running sum equals the position form output wh
     }
     SECTION("feed-forward")
     {
-        auto ff_func = [](const ctrlpp::Vector<S, 1>& sp, S) -> ctrlpp::Vector<S, 1> { return sp / S{4}; };
-        using FF = ctrlpp::feed_forward<decltype(ff_func)>;
-        const auto feed = [&](auto& cfg) { cfg.template policy<FF>().ff_func = ff_func; };
+        auto feed_forward_cb = [](const ctrlpp::Vector<S, 1>& sp, S) -> ctrlpp::Vector<S, 1> { return sp / S{4}; };
+        using FF = ctrlpp::feed_forward<decltype(feed_forward_cb)>;
+        const auto feed = [&](auto& cfg) { cfg.template policy<FF>().feed_forward_cb = feed_forward_cb; };
         CHECK(velocity_position_mismatches<S, FF>(feed, feed, false) == 0);
     }
     SECTION("non-uniform sampling")

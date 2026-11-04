@@ -97,7 +97,7 @@ public:
             using ff_policy_t = find_policy_t<feed_forward, Policies...>;
             if constexpr(!std::is_same_v<ff_policy_t, feed_forward<void>>)
             {
-                auto ff = cfg.template policy<ff_policy_t>().ff_func(sp, dt).eval();
+                auto ff = cfg.template policy<ff_policy_t>().feed_forward_cb(sp, dt).eval();
                 auto delta_ff = (ff - m_prev_ff).eval();
                 m_prev_ff = ff;
                 return (delta_u + delta_ff).eval();

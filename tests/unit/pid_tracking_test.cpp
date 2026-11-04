@@ -91,14 +91,14 @@ TEST_CASE("Tracking enables bumpless manual-to-auto transition",
 TEST_CASE("Tracking with feed_forward: integral accounts for ff contribution",
     "[pid][siso][tracking][feed-forward]")
 {
-    auto ff_func = [](const Vec1& sp, double) -> Vec1 { return sp * 2.0; };
-    using FF = ctrlpp::feed_forward<decltype(ff_func)>;
+    auto feed_forward_cb = [](const Vec1& sp, double) -> Vec1 { return sp * 2.0; };
+    using FF = ctrlpp::feed_forward<decltype(feed_forward_cb)>;
     using FfPid = ctrlpp::pid<double, 1, FF>;
 
     FfPid::config_type cfg{};
     cfg.kp = vec1(1.0);
     cfg.ki = vec1(0.5);
-    cfg.template policy<FF>().ff_func = ff_func;
+    cfg.template policy<FF>().feed_forward_cb = feed_forward_cb;
     auto pid = ctrlpp::test::constructed(FfPid::create(cfg));
 
     // Step with tracking signal = 10.0

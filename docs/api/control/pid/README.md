@@ -62,7 +62,7 @@ cfg.template policy<deriv_filter>().n = {10.0};
 cfg.template policy<setpoint_filter>().tf = {0.1};
 cfg.template policy<pv_filter>().tf = {0.05};
 cfg.template policy<rate_limit>().rate_max = {0.5};
-cfg.template policy<feed_forward<FF>>().ff_func = my_ff_func;
+cfg.template policy<feed_forward<FF>>().feed_forward_cb = my_feed_forward;
 ```
 
 ## Available Policies
@@ -77,7 +77,7 @@ cfg.template policy<feed_forward<FF>>().ff_func = my_ff_func;
 | `pv_filter` | Process variable filter | `tf` | [setpoint-filter](setpoint-filter.md) |
 | `velocity_form` | Incremental output form; does not compose with `anti_windup` | (none) | [velocity-form](velocity-form.md) |
 | `isa_form` | ISA standard form (Kp, Ti, Td) | (none) | [isa-form](isa-form.md) |
-| `feed_forward<Callable>` | Additive feed-forward | `ff_func` | [feed-forward](feed-forward.md) |
+| `feed_forward<Callable>` | Additive feed-forward | `feed_forward_cb` | [feed-forward](feed-forward.md) |
 | `rate_limit` | Output rate limiting | `rate_max` | [rate-limit](rate-limit.md) |
 | `perf_assessment<Metrics...>` | Online performance metrics | `amplitude`, `ultimate_frequency`, `load_count_limit`, `supervision_periods` (read only by `oscillation_detect`) | [performance](performance.md) |
 
