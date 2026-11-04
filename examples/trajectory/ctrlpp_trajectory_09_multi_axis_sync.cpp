@@ -1,29 +1,21 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_trajectory_09_multi_axis_sync' using 1:2 with lines title 'x_pos', '' using 1:4 with lines title 'y_pos', '' using 1:6 with lines title 'z_pos'"
 // Redirect: ./ctrlpp_trajectory_09_multi_axis_sync > output.csv
 
-#include <ctrlpp/trajectory/synchronize.h>
-#include <ctrlpp/trajectory/trapezoidal_trajectory.h>
+#include "ctrlpp/trajectory/synchronize.h"
+#include "ctrlpp/trajectory/trapezoidal_trajectory.h"
 
-#include <algorithm>
 #include <iomanip>
 #include <iostream>
+#include <algorithm>
 
 int main()
 {
-    // 3-axis robot move: X 0->100mm, Y 0->50mm, Z 0->200mm.
-    // All axes share v_max=80mm/s, a_max=400mm/s^2.
-    // Synchronize so all axes finish simultaneously.
-    //
-    // Construction is fallible too: create() is the only way to build a profile,
-    // and a command with no profile is reported here rather than standing in as
-    // an axis that never moves.
-    auto const built_x = ctrlpp::trapezoidal_trajectory<double>::create(
-        {.q0 = 0.0, .q1 = 100.0, .v_max = 80.0, .a_max = 400.0});
-    auto const built_y = ctrlpp::trapezoidal_trajectory<double>::create(
-        {.q0 = 0.0, .q1 = 50.0, .v_max = 80.0, .a_max = 400.0});
-    auto const built_z = ctrlpp::trapezoidal_trajectory<double>::create(
-        {.q0 = 0.0, .q1 = 200.0, .v_max = 80.0, .a_max = 400.0});
-    if (!built_x || !built_y || !built_z)
+    // Three axes in mm, mm/s and mm/s^2. A command with no profile is reported here rather than standing
+    // in as an axis that never moves.
+    auto const built_x = ctrlpp::trapezoidal_trajectory<double>::create({.q0 = 0.0, .q1 = 100.0, .v_max = 80.0, .a_max = 400.0});
+    auto const built_y = ctrlpp::trapezoidal_trajectory<double>::create({.q0 = 0.0, .q1 = 50.0, .v_max = 80.0, .a_max = 400.0});
+    auto const built_z = ctrlpp::trapezoidal_trajectory<double>::create({.q0 = 0.0, .q1 = 200.0, .v_max = 80.0, .a_max = 400.0});
+    if(!built_x || !built_y || !built_z)
     {
         std::cerr << "At least one commanded axis move has no trapezoidal profile\n";
         return 1;
@@ -33,12 +25,10 @@ int main()
     auto ax_y = *built_y;
     auto ax_z = *built_z;
 
-    // Synchronization is fallible: an axis whose displacement and boundary
-    // velocities cannot stretch to the slowest axis's duration is reported rather
-    // than quietly retimed to something else. Nothing is retimed unless every
-    // axis can be, so the set is never left half synchronized.
+    // An axis that cannot stretch to the slowest axis's duration is reported rather than retimed to
+    // something else, and nothing is retimed unless every axis can be.
     auto const synced = ctrlpp::synchronize(ax_x, ax_y, ax_z);
-    if (!synced)
+    if(!synced)
     {
         std::cerr << "Synchronization rejected: the slowest axis duration is not "
                      "reachable for every axis\n";
@@ -52,12 +42,13 @@ int main()
 
     std::cout << "time,x_pos,x_vel,y_pos,y_vel,z_pos,z_vel\n";
 
-    for (double t = 0.0; t <= total; t += dt)
+    for(double t = 0.0; t <= total; t += dt)
     {
         auto const px = ax_x.evaluate(t);
         auto const py = ax_y.evaluate(t);
         auto const pz = ax_z.evaluate(t);
 
-        std::cout << std::fixed << std::setprecision(4) << t << "," << px.position[0] << "," << px.velocity[0] << "," << py.position[0] << "," << py.velocity[0] << "," << pz.position[0] << "," << pz.velocity[0] << "\n";
+        std::cout << std::fixed << std::setprecision(4) << t << "," << px.position[0] << "," << px.velocity[0] << "," << py.position[0] << "," << py.velocity[0] << "," << pz.position[0]
+                  << "," << pz.velocity[0] << "\n";
     }
 }

@@ -1,17 +1,18 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_nmpc_01_pendulum' using 1:2 with lines title 'theta', '' using 1:3 with lines title 'theta_dot', '' using 1:4 with lines title 'torque'"
 // Redirect: ./ctrlpp_nmpc_01_pendulum > output.csv
 
-#include "ctrlpp/mpc/nlopt_solver.h"
-#include "ctrlpp/mpc/nmpc_config.h"
 #include "ctrlpp/nmpc.h"
+
+#include "ctrlpp/mpc/nmpc_config.h"
+#include "ctrlpp/mpc/nlopt_solver.h"
 
 #include <Eigen/Dense>
 
 #include <cmath>
 #include <cstdlib>
 #include <iomanip>
-#include <iostream>
 #include <numbers>
+#include <iostream>
 
 int main()
 {
@@ -33,18 +34,13 @@ int main()
     };
 
     ctrlpp::nmpc_config<double, NX, NU> cfg{.horizon = 30,
-                                            .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
-                                            .R = Eigen::Matrix<double, 1, 1>::Constant(0.01),
-                                            .Qf = Eigen::Vector2d(100.0, 10.0).asDiagonal(),
-                                            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-5.0),
-                                            .u_max = Eigen::Matrix<double, 1, 1>::Constant(5.0)};
+            .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
+            .R = Eigen::Matrix<double, 1, 1>::Constant(0.01),
+            .Qf = Eigen::Vector2d(100.0, 10.0).asDiagonal(),
+            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-5.0),
+            .u_max = Eigen::Matrix<double, 1, 1>::Constant(5.0)};
 
-    // create validates the configuration and sets the solver up, and reports a
-    // rejection through ctrlpp::expected<nmpc_dynamic, construction_error>
-    // instead of throwing; the error is a variant holding the configuration
-    // refusal or the solver's own setup error.
-    auto controller_result =
-        ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)>::create(dynamics, cfg);
+    auto controller_result = ctrlpp::nmpc_dynamic<double, NX, NU, ctrlpp::nlopt_solver<double>, decltype(dynamics)>::create(dynamics, cfg);
     if(!controller_result.has_value())
     {
         std::cerr << "invalid NMPC configuration\n";

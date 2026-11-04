@@ -3,7 +3,8 @@
 
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 enum class counter_state
 {
@@ -11,14 +12,13 @@ enum class counter_state
     not_counting
 };
 
-const char *describe(counter_state state) noexcept;
+const char* describe(counter_state state) noexcept;
 
 inline constexpr std::uint32_t kCounterBits = 32;
 
-// The other leg enables its counter and then proves it. This core's CCOUNT runs
-// from reset with no trace enable and no software lock, so there is no enable
-// sequence to run or to fail, and the proof is the measurement half alone. It is
-// still mandatory: any state other than live means no figure may be printed.
+// This core's CCOUNT runs from reset with no trace enable and no software lock, so the proof is the
+// measurement half alone; it is still mandatory, since any state other than live means no figure may be
+// printed.
 counter_state prove_cycle_counter() noexcept;
 
 // Each core has its own counter, so both samples of a region must come from one
@@ -43,11 +43,9 @@ inline cycle_span cycles_between(std::uint32_t start, std::uint32_t end) noexcep
     return {end - start, end < start, false};
 }
 
-// A region's opening mark carries the scheduler tick beside the cycle count.
-// The tick catches what the count alone cannot: a region that ran longer than a
-// whole wrap period, and a region the tick interrupt landed in. It is read
-// outside the cycle samples, so the figure excludes its cost and a crossing is
-// reported for a bracket a few instructions wider than the region.
+// The scheduler tick beside the cycle count catches what the count alone cannot: a region longer than a
+// whole wrap period, and one the tick interrupt landed in. It is read outside the cycle samples, so the
+// figure excludes its cost and a crossing covers a bracket a few instructions wider than the region.
 struct cycle_mark
 {
     std::uint32_t tick;
@@ -64,8 +62,8 @@ cycle_span measure_overhead() noexcept;
 
 // Forces an object into memory with its stores complete, so the work that
 // produced it cannot be removed or moved past the closing sample.
-template<class T>
-void keep(const T &object) noexcept
+template <class T>
+void keep(const T& object) noexcept
 {
     __asm__ __volatile__("" : : "r"(&object) : "memory");
 }

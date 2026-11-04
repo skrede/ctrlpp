@@ -8,12 +8,12 @@
 
 #include <Eigen/Dense>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-// Name the cause a refused gain design reported. The design forwards the
-// Riccati solver's own enumerator rather than flattening it, so a board leg can
-// print which of six conditions refused the plant instead of guessing at one.
-inline const char *describe(dare_error e)
+// The gain design forwards the Riccati solver's own enumerator rather than flattening it, so a board can
+// print which condition refused the plant.
+inline const char* describe(dare_error e)
 {
     switch(e)
     {
@@ -37,10 +37,9 @@ inline const char *describe(dare_error e)
     return "unknown";
 }
 
-// Passive Scalar-parameterized control-loop kernel shared verbatim by every board
-// leg: it owns the plant build and the on-device gain design, but no clock, no IO
-// and no heap on step() -- the wrappers own the loop, cadence and telemetry.
-template<class Scalar>
+// Shared verbatim by every board: it owns the plant and the on-device gain design but no clock, no IO and
+// no heap on step(); the board wrappers own the loop, cadence and telemetry.
+template <class Scalar>
 struct control_loop_demo
 {
     Eigen::Matrix<Scalar, 2, 2> A;
@@ -68,7 +67,7 @@ struct control_loop_demo
         R << static_cast<Scalar>(0.1);
 
         control_loop_demo demo = plant();
-        const auto gain        = ctrlpp::lqr_gain<Scalar, 2, 1>(demo.A, demo.B, Q, R);
+        const auto gain = ctrlpp::lqr_gain<Scalar, 2, 1>(demo.A, demo.B, Q, R);
         if(!gain.has_value())
             return ctrlpp::unexpected(gain.error());
 
@@ -79,7 +78,7 @@ struct control_loop_demo
     Scalar step()
     {
         const Scalar u = -(K * x)(0);
-        x              = A * x + B * u;
+        x = A * x + B * u;
         return u;
     }
 };

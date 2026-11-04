@@ -7,17 +7,16 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ctrlpp::probe {
+namespace ctrlpp::probe
+{
 
-inline constexpr const char *kProbeTag = "ctrlpp_esp32";
+inline constexpr const char* kProbeTag = "ctrlpp_esp32";
 
-// Solves the chain at one dimension in a task of its own with `stack` bytes and
-// returns once that task has reported. Each dimension below is instantiated in a
-// translation unit of its own, generated from stack_probe_dimension.cpp.in by
-// main/CMakeLists.txt: one unit holding every dimension needed 11 GB to compile
-// for Xtensa, past a hosted runner's memory. A dimension declared here but not
-// generated there fails the link.
-template<std::size_t NX, std::size_t NU>
+// Returns once the dimension's own task, given stack bytes, has reported. Each dimension below is
+// instantiated in its own translation unit, generated from stack_probe_dimension.cpp.in by
+// main/CMakeLists.txt, since one unit holding every dimension needed 11 GB to compile for Xtensa; a
+// dimension declared here but not generated there fails the link.
+template <std::size_t NX, std::size_t NU>
 void run_one(std::uint32_t stack, SemaphoreHandle_t done);
 
 extern template void run_one<2, 1>(std::uint32_t, SemaphoreHandle_t);

@@ -3,7 +3,8 @@
 
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 // ESP-IDF FreeRTOS stack sizes are in bytes, not words.
 inline constexpr std::uint32_t kControlTaskStackBytes = 8 * 1024;

@@ -41,10 +41,9 @@ int main()
 
         auto sp = Vec::Constant(setpoint);
         auto meas = Vec::Constant(y + disturbance);
-        // A refused cycle produced no command. This example stops, because a
-        // refusal here would mean the example itself is wrong. A real caller
-        // must instead decide what the actuator does: hold the last command,
-        // drive a configured safe value, or fail over.
+        // A refused cycle produces no command. This example stops, since a refusal here would mean the example
+        // is wrong; a real caller decides whether the actuator holds the last command, drives a safe value or
+        // fails over.
         auto step = ctrl.compute(sp, meas, dt);
         if(!step.has_value())
         {

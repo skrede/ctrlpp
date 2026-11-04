@@ -12,9 +12,10 @@
 #include <cstdint>
 #include <utility>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-inline const char *describe(filter_error e)
+inline const char* describe(filter_error e)
 {
     switch(e)
     {
@@ -54,16 +55,15 @@ inline const char *describe(filter_error e)
     return "unknown";
 }
 
-// kalman_filter at two states, one input and one output is the instantiation the
-// embedded compile witness builds for this family, and the one the allocation
-// matrix's estimation rows make their claim about.
-template<class Scalar>
+// The instantiation the embedded compile witness builds for this family, so the family's allocation
+// claims cover this demo.
+template <class Scalar>
 class estimation_demo
 {
 public:
-    using filter_type     = kalman_filter<Scalar, kKalmanNx, 1, kKalmanNy>;
-    using input_type      = typename filter_type::input_vector_t;
-    using output_type     = typename filter_type::output_vector_t;
+    using filter_type = kalman_filter<Scalar, kKalmanNx, 1, kKalmanNy>;
+    using input_type = typename filter_type::input_vector_t;
+    using output_type = typename filter_type::output_vector_t;
     using covariance_type = typename filter_type::cov_matrix_t;
 
     static ctrlpp::expected<estimation_demo, filter_error> make()
@@ -74,22 +74,19 @@ public:
         return estimation_demo(std::move(*filter));
     }
 
-    // The compared quantity is the velocity variance, the largest entry the
-    // covariance settles to. A refused update returns NaN, which no bound admits.
+    // The compared quantity is the velocity variance, the largest entry the covariance settles to. A
+    // refused update returns NaN, which no bound admits.
     Scalar step()
     {
-        const Scalar position = static_cast<Scalar>(index_) * static_cast<Scalar>(kDt);
-        ++index_;
-        filter_.predict(input_type::Zero());
-        if(!filter_.update(output_type{position}).has_value())
+        const Scalar position = static_cast<Scalar>(m_index) * static_cast<Scalar>(kDt);
+        ++m_index;
+        m_filter.predict(input_type::Zero());
+        if(!m_filter.update(output_type{position}).has_value())
             return std::numeric_limits<Scalar>::quiet_NaN();
-        return filter_.covariance()(1, 1);
+        return m_filter.covariance()(1, 1);
     }
 
-    const covariance_type &covariance() const
-    {
-        return filter_.covariance();
-    }
+    const covariance_type& covariance() const { return m_filter.covariance(); }
 
     static typename filter_type::system_t plant()
     {
@@ -115,12 +112,12 @@ public:
     }
 
 private:
-    filter_type filter_;
-    std::int32_t index_;
+    filter_type m_filter;
+    std::int32_t m_index;
 
     explicit estimation_demo(filter_type filter)
-            : filter_(std::move(filter))
-            , index_(0)
+        : m_filter(std::move(filter))
+        , m_index(0)
     {
     }
 };

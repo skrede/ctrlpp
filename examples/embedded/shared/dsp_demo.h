@@ -11,9 +11,10 @@
 #include <cstdint>
 #include <numbers>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-inline const char *describe(dsp_error e)
+inline const char* describe(dsp_error e)
 {
     switch(e)
     {
@@ -35,10 +36,9 @@ inline const char *describe(dsp_error e)
     return "unknown";
 }
 
-// biquad from its low-pass factory is what the embedded compile witness builds
-// for this family, and the dsp row of the allocation matrix makes its claim
-// about it.
-template<class Scalar>
+// The instantiation the embedded compile witness builds for this family, so the family's allocation
+// claims cover this demo.
+template <class Scalar>
 class dsp_demo
 {
 public:
@@ -50,40 +50,34 @@ public:
         return dsp_demo(*filter);
     }
 
-    // A square wave below the cutoff, exact at either precision; the run ends on
-    // the first sample after an edge, where the output is furthest from settled.
-    static Scalar input(std::int32_t k)
-    {
-        return (k / kHalfPeriod) % 2 == 0 ? Scalar{1} : Scalar{-1};
-    }
+    // A square wave below the cutoff, exact at either precision; the run ends on the first sample after an
+    // edge, where the output is furthest from settled.
+    static Scalar input(std::int32_t k) { return (k / kHalfPeriod) % 2 == 0 ? Scalar{1} : Scalar{-1}; }
 
     Scalar step()
     {
-        const Scalar x = input(index_);
-        ++index_;
-        return filter_.process(x);
+        const Scalar x = input(m_index);
+        ++m_index;
+        return m_filter.process(x);
     }
 
-    const biquad_coeffs<Scalar> &coefficients() const
-    {
-        return filter_.coefficients();
-    }
+    const biquad_coeffs<Scalar>& coefficients() const { return m_filter.coefficients(); }
 
 private:
-    static constexpr Scalar kCutoffHz         = Scalar{100};
-    static constexpr Scalar kSampleHz         = Scalar{1000};
+    static constexpr Scalar kCutoffHz = Scalar{100};
+    static constexpr Scalar kSampleHz = Scalar{1000};
     static constexpr std::int32_t kHalfPeriod = 25;
 
-    // biquad_roundings_per_step charges the design's tangent through its slope
-    // for a normalized cutoff of at most one radian.
+    // biquad_roundings_per_step charges the design's tangent through its slope for a normalized cutoff of
+    // at most one radian.
     static_assert(Scalar{2} * std::numbers::pi_v<Scalar> * kCutoffHz <= kSampleHz);
 
-    biquad<Scalar> filter_;
-    std::int32_t index_;
+    biquad<Scalar> m_filter;
+    std::int32_t m_index;
 
     explicit dsp_demo(biquad<Scalar> filter)
-            : filter_(filter)
-            , index_(0)
+        : m_filter(filter)
+        , m_index(0)
     {
     }
 };

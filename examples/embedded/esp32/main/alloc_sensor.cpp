@@ -15,12 +15,11 @@
 #include <cstdlib>
 #include <algorithm>
 
-// The host harness's pairing, not the other board's. This leg's default build
-// does not wrap the C allocation family, so the replaced operator new is the
-// primary counter and the Eigen sentinel covers the allocations Eigen makes
-// through the C allocator, which the counter cannot see.
+// This leg's default build does not wrap the C allocation family, so the replaced operator new is the
+// primary counter and the Eigen sentinel covers the allocations Eigen makes through the C allocator.
 
-namespace {
+namespace
+{
 
 #if CTRLPP_MCU_ALLOC_SENTINEL
 
@@ -30,7 +29,7 @@ namespace {
 std::atomic<TaskHandle_t> armed_task{nullptr};
 std::atomic<std::uint32_t> allocations{0};
 
-std::size_t free_at_arm  = 0;
+std::size_t free_at_arm = 0;
 ctrlpp::heap_view window = {0, 0, 0};
 
 void count_allocation() noexcept
@@ -49,17 +48,18 @@ std::size_t free_bytes() noexcept
 
 }
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 #if CTRLPP_MCU_ALLOC_SENTINEL
 
-void *allocate_for_new(std::size_t size) noexcept
+void* allocate_for_new(std::size_t size) noexcept
 {
     count_allocation();
     return std::malloc(size);
 }
 
-void *allocate_aligned_for_new(std::size_t size, std::size_t alignment) noexcept
+void* allocate_aligned_for_new(std::size_t size, std::size_t alignment) noexcept
 {
     count_allocation();
     return heap_caps_aligned_alloc(alignment, size, MALLOC_CAP_DEFAULT);
@@ -77,7 +77,7 @@ void alloc_sensor_disarm() noexcept
 {
     armed_task.store(nullptr, std::memory_order_relaxed);
     const std::size_t minimum = heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT);
-    const std::size_t now     = free_bytes();
+    const std::size_t now = free_bytes();
     heap_caps_monitor_local_minimum_free_size_stop();
     window.retained += static_cast<std::int32_t>(free_at_arm) - static_cast<std::int32_t>(now);
     window.dip = std::max(window.dip, static_cast<std::uint32_t>(free_at_arm - std::min(minimum, free_at_arm)));
@@ -109,12 +109,12 @@ heap_view alloc_sensor_heap() noexcept
 
 #else
 
-void *allocate_for_new(std::size_t size) noexcept
+void* allocate_for_new(std::size_t size) noexcept
 {
     return std::malloc(size);
 }
 
-void *allocate_aligned_for_new(std::size_t size, std::size_t alignment) noexcept
+void* allocate_aligned_for_new(std::size_t size, std::size_t alignment) noexcept
 {
     return heap_caps_aligned_alloc(alignment, size, MALLOC_CAP_DEFAULT);
 }
@@ -134,7 +134,7 @@ void alloc_sensor_reset() noexcept
 #endif
 
 // The framework's free accepts a block from either allocation call.
-void release_for_delete(void *pointer) noexcept
+void release_for_delete(void* pointer) noexcept
 {
     std::free(pointer);
 }

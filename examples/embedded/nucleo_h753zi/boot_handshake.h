@@ -3,17 +3,16 @@
 
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 // ASCII SYN: a control byte that the AT probes a modem manager writes to a
 // newly attached serial port never contain, so a probe cannot release the wait.
 inline constexpr std::uint8_t kBootHandshakeByte = 0x16;
 
-// The wait must outlast the host's side of a restart: after drag-and-drop
-// programming the ST-LINK took about 11 s to re-enumerate before the capture
-// could reopen its port. A longer wait costs nothing with the host attached,
-// whose byte lands about 1 s after the port returns, so the default leaves a
-// wide margin. Configured with CTRLPP_MCU_BOOT_HANDSHAKE_MS.
+// The wait must outlast the host's side of a restart, about 11 s for the ST-LINK to re-enumerate after
+// drag-and-drop programming, and costs nothing with the host attached, whose byte lands about 1 s after the
+// port returns. Configured with CTRLPP_MCU_BOOT_HANDSHAKE_MS.
 inline constexpr std::uint32_t kBootHandshakeTimeoutMs = CTRLPP_MCU_BOOT_HANDSHAKE_MS;
 
 // Waits for the host's byte on USART3, then turns the receiver off again. The

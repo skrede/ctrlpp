@@ -3,7 +3,8 @@
 
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 enum class reset_class : std::uint8_t
 {
@@ -38,7 +39,7 @@ void clear_reset_cause() noexcept;
 
 // Prints the decoded class, every set flag by name and the raw register, as
 // fields of the line the caller has open.
-void print_reset_cause(const reset_cause &cause);
+void print_reset_cause(const reset_cause& cause);
 
 }
 

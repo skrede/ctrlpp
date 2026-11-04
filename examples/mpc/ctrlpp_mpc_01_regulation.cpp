@@ -2,15 +2,17 @@
 // Redirect: ./ctrlpp_mpc_01_regulation > output.csv
 
 #include "ctrlpp/mpc.h"
-#include "ctrlpp/mpc/osqp_solver.h"
+
 #include "ctrlpp/model/propagate.h"
+
+#include "ctrlpp/mpc/osqp_solver.h"
 
 #include <Eigen/Dense>
 
+#include <limits>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
-#include <limits>
 
 int main()
 {
@@ -19,29 +21,19 @@ int main()
     constexpr double dt = 0.1;
 
     ctrlpp::discrete_state_space<double, NX, NU, NX> sys{
-        (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(),
-        (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished(),
-        Eigen::Matrix2d::Identity(),
-        Eigen::Matrix<double, 2, 1>::Zero()
-    };
+            (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(), (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished(), Eigen::Matrix2d::Identity(), Eigen::Matrix<double, 2, 1>::Zero()};
 
-    ctrlpp::mpc_config<double, NX, NU> cfg{
-        .horizon = 20,
-        .Q       = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
-        .R       = Eigen::Matrix<double, 1, 1>::Identity(),
-        .Qf      = std::nullopt,
-        .u_min   = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
-        .u_max   = Eigen::Matrix<double, 1, 1>::Constant(1.0),
-        .x_min   = Eigen::Vector2d(-std::numeric_limits<double>::infinity(), -2.0),
-        .x_max   = Eigen::Vector2d(std::numeric_limits<double>::infinity(), 2.0)
-    };
+    ctrlpp::mpc_config<double, NX, NU> cfg{.horizon = 20,
+            .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
+            .R = Eigen::Matrix<double, 1, 1>::Identity(),
+            .Qf = std::nullopt,
+            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
+            .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
+            .x_min = Eigen::Vector2d(-std::numeric_limits<double>::infinity(), -2.0),
+            .x_max = Eigen::Vector2d(std::numeric_limits<double>::infinity(), 2.0)};
 
-    // Inject a solver tuned for speed: on the warm-resolve MPC path the
-    // per-step polish refinement is unnecessary, so qp_preset::speed skips it.
-    // Omit the third argument (or pass qp_preset::accuracy) to keep polishing.
-    // create validates the configuration and reports a configuration refusal or
-    // the solver's own setup refusal through ctrlpp::expected<mpc, construction_error>
-    // instead of throwing.
+    // qp_preset::speed skips the per-step polish, which the warm-resolved MPC path does not need; omitting
+    // the solver argument, or passing qp_preset::accuracy, keeps it.
     auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg, ctrlpp::osqp_solver{ctrlpp::qp_preset::speed});
     if(!controller_result.has_value())
     {

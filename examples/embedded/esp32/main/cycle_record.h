@@ -10,7 +10,8 @@
 #include <cstdint>
 #include <algorithm>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 // The largest sample set any region records: one warm repeat per golden step.
 inline constexpr std::size_t kTimingCapacity = kGoldenSteps;
@@ -28,9 +29,9 @@ struct cycle_distribution
 
 struct timing_region
 {
-    const char *name;
-    const char *regime;
-    const char *basis;
+    const char* name;
+    const char* regime;
+    const char* basis;
     std::uint32_t block;
 };
 
@@ -42,50 +43,50 @@ class cycle_record
 {
 public:
     cycle_record()
-            : cycles_{}
-            , n_(0)
-            , wraps_(0)
-            , max_at_(0)
-            , tick_crossed_(0)
+        : m_cycles{}
+        , m_n(0)
+        , m_wraps(0)
+        , m_max_at(0)
+        , m_tick_crossed(0)
     {
     }
 
     void clear() noexcept
     {
-        n_            = 0;
-        wraps_        = 0;
-        max_at_       = 0;
-        tick_crossed_ = 0;
+        m_n = 0;
+        m_wraps = 0;
+        m_max_at = 0;
+        m_tick_crossed = 0;
     }
 
     void add(cycle_span span) noexcept
     {
-        tick_crossed_ += span.tick_crossed ? 1U : 0U;
+        m_tick_crossed += span.tick_crossed ? 1U : 0U;
         if(span.wrapped)
         {
-            ++wraps_;
+            ++m_wraps;
             return;
         }
-        if(n_ > 0 && span.cycles > cycles_[max_at_])
-            max_at_ = n_;
-        cycles_[n_++] = span.cycles;
+        if(m_n > 0 && span.cycles > m_cycles[m_max_at])
+            m_max_at = m_n;
+        m_cycles[m_n++] = span.cycles;
     }
 
     cycle_distribution summarize() noexcept
     {
-        if(n_ == 0)
-            return {0, wraps_, 0, 0, 0, 0, tick_crossed_};
-        const std::uint32_t max_at = max_at_;
-        std::sort(cycles_.begin(), cycles_.begin() + n_);
-        return {n_, wraps_, cycles_[0], cycles_[n_ / 2], cycles_[n_ - 1], max_at, tick_crossed_};
+        if(m_n == 0)
+            return {0, m_wraps, 0, 0, 0, 0, m_tick_crossed};
+        const std::uint32_t max_at = m_max_at;
+        std::sort(m_cycles.begin(), m_cycles.begin() + m_n);
+        return {m_n, m_wraps, m_cycles[0], m_cycles[m_n / 2], m_cycles[m_n - 1], max_at, m_tick_crossed};
     }
 
 private:
-    std::array<std::uint32_t, kTimingCapacity> cycles_;
-    std::uint32_t n_;
-    std::uint32_t wraps_;
-    std::uint32_t max_at_;
-    std::uint32_t tick_crossed_;
+    std::array<std::uint32_t, kTimingCapacity> m_cycles;
+    std::uint32_t m_n;
+    std::uint32_t m_wraps;
+    std::uint32_t m_max_at;
+    std::uint32_t m_tick_crossed;
 };
 
 }

@@ -4,7 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 struct canary_verdict
 {
@@ -21,9 +22,9 @@ inline constexpr bool kAllocSensorPresent = CTRLPP_MCU_ALLOC_SENTINEL != 0;
 
 // The C++ allocation operators' route to the C library's allocator: counted
 // and past the wrapper in the evidence image, the plain allocator otherwise.
-void *allocate_for_new(std::size_t size) noexcept;
+void* allocate_for_new(std::size_t size) noexcept;
 
-void release_for_delete(void *pointer) noexcept;
+void release_for_delete(void* pointer) noexcept;
 
 // Counting is off until armed, so setup allocation is never charged to the
 // window being measured. Arming also forbids Eigen allocation, which is what

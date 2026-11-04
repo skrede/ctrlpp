@@ -1,11 +1,13 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_lqr_03_observer_comparison' using 1:2 with lines title 'true x0', '' using 1:6 with lines title 'kalman x0', '' using 1:10 with lines title 'luenberger x0'"
 // Redirect: ./ctrlpp_lqr_03_observer_comparison > output.csv
 
-#include "ctrlpp/model/discretize.h"
+#include "ctrlpp/control/lqr.h"
+
 #include "ctrlpp/estimation/kalman.h"
 #include "ctrlpp/estimation/luenberger.h"
-#include "ctrlpp/control/lqr.h"
+
 #include "ctrlpp/model/propagate.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/state_space.h"
 
 #include <iomanip>
@@ -28,16 +30,10 @@ int main()
     constexpr Scalar denom = M_cart + m_pend;
 
     ctrlpp::continuous_state_space<Scalar, NX, NU, NY> sys_c{};
-    sys_c.A <<
-        0.0, 1.0, 0.0, 0.0,
-        0.0, 0.0, -m_pend * g / denom, 0.0,
-        0.0, 0.0, 0.0, 1.0,
-        0.0, 0.0, (denom * g) / (denom * l), 0.0;
+    sys_c.A << 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -m_pend * g / denom, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, (denom * g) / (denom * l), 0.0;
 
     sys_c.B << 0.0, 1.0 / denom, 0.0, -1.0 / (denom * l);
-    sys_c.C <<
-        1.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0;
+    sys_c.C << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0;
     sys_c.D.setZero();
 
     auto sys_d = ctrlpp::discretize(ctrlpp::zoh{}, sys_c, dt);
@@ -87,10 +83,10 @@ int main()
     x_true << 0.1, 0.0, 0.05, 0.0;
 
     std::cout << "time,"
-        << "x_true_0,x_true_1,x_true_2,x_true_3,"
-        << "kalman_0,kalman_1,kalman_2,kalman_3,"
-        << "luenberger_0,luenberger_1,luenberger_2,luenberger_3,"
-        << "control\n";
+              << "x_true_0,x_true_1,x_true_2,x_true_3,"
+              << "kalman_0,kalman_1,kalman_2,kalman_3,"
+              << "luenberger_0,luenberger_1,luenberger_2,luenberger_3,"
+              << "control\n";
 
     for(Scalar t = 0.0; t < duration; t += dt)
     {
@@ -100,8 +96,8 @@ int main()
 
         Eigen::Matrix<Scalar, 2, 1> z = sys_d.C * x_true;
 
-        std::cout << std::fixed << std::setprecision(4) << t << "," << x_true(0) << "," << x_true(1) << "," << x_true(2) << "," << x_true(3) << "," << x_kf(0) << "," << x_kf(1) << "," << x_kf(2) << "," << x_kf(3) << ","
-            << x_lu(0) << "," << x_lu(1) << "," << x_lu(2) << "," << x_lu(3) << "," << u(0) << "\n";
+        std::cout << std::fixed << std::setprecision(4) << t << "," << x_true(0) << "," << x_true(1) << "," << x_true(2) << "," << x_true(3) << "," << x_kf(0) << "," << x_kf(1) << ","
+                  << x_kf(2) << "," << x_kf(3) << "," << x_lu(0) << "," << x_lu(1) << "," << x_lu(2) << "," << x_lu(3) << "," << u(0) << "\n";
 
         kf.predict(u);
         luen.predict(u);

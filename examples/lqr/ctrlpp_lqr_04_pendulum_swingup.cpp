@@ -1,32 +1,27 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_lqr_04_pendulum_swingup' using 1:2 with lines title 'theta', '' using 1:3 with lines title 'theta_dot', '' using 1:4 with lines title 'torque', '' using 1:5 with lines title 'mode'"
 // Redirect: ./ctrlpp_lqr_04_pendulum_swingup > output.csv
 
-// This example self-verifies at the end of main and returns a nonzero exit code
-// if the pendulum did not reach and hold upright.
+// The example checks itself at the end of main and exits nonzero if the pendulum did not reach and hold
+// upright.
 
 #include "ctrlpp/control/lqr.h"
+
 #include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/state_space.h"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iomanip>
 #include <numbers>
 #include <iostream>
 #include <algorithm>
 
-// Classical two-mode pendulum swing-up: an energy-shaping law pumps the
-// pendulum toward the upright energy level, then an LQR stabilizer catches and
-// holds it near the top.
-//
-// Energy-shaping law after:
-//   K. J. Astrom and K. Furuta, "Swinging up a pendulum by energy control",
-//   Automatica 36(2), 2000, pp. 287-295.
-//
-// Model convention matches the NMPC swing-up example:
-//   theta_ddot = +(g/l) sin(theta) - b*theta_dot + torque/(m l^2),
-// so theta = 0 is the unstable upright equilibrium and theta = pi is the
-// stable hanging one.
+// Two-mode swing-up: an energy-shaping law pumps the pendulum to the upright energy level, then an LQR
+// stabilizer catches and holds it. The energy law follows K. J. Astrom and K. Furuta, "Swinging up a
+// pendulum by energy control", Automatica 36(2), 2000, pp. 287-295.
+// As in the NMPC swing-up example, theta_ddot = +(g/l) sin(theta) - b*theta_dot + torque/(m l^2), so
+// theta = 0 is the unstable upright equilibrium and theta = pi the stable hanging one.
 int main()
 {
     using Scalar = double;
@@ -41,24 +36,19 @@ int main()
     constexpr Scalar dt = 0.05;
     constexpr Scalar duration = 12.0;
 
-    // Torque authority is deliberately below the gravity torque m*g*l = 2.4525,
-    // so the controller must pump energy over several swings instead of lifting
-    // the pendulum directly.
+    // Torque authority is deliberately below the gravity torque m*g*l = 2.4525, so the controller must pump
+    // energy over several swings instead of lifting the pendulum directly.
     constexpr Scalar u_max = 2.0;
 
-    // Energy at the upright equilibrium (theta = 0, theta_dot = 0).
     constexpr Scalar E_ref = m * g * l;
 
-    // Energy-pump gain: sets how aggressively the shaping law drives the energy
-    // error to zero. Positive by construction of the Astrom-Furuta law.
+    // The Astrom-Furuta law needs a positive energy-pump gain.
     constexpr Scalar k_e = 1.0;
 
-    // Catch region around the upright: hand off to the LQR stabilizer once the
-    // pendulum is both close to upright and slow enough to be captured.
-    constexpr Scalar theta_catch = 0.35;  // rad, about 20 degrees from upright
-    constexpr Scalar omega_catch = 3.0;   // rad/s
+    constexpr Scalar theta_catch = 0.35; // rad, about 20 degrees from upright
+    constexpr Scalar omega_catch = 3.0;  // rad/s
 
-    // Nonlinear pendulum dynamics, forward-Euler integrated at dt.
+    // Forward-Euler integration of the nonlinear dynamics.
     auto step = [&](const Eigen::Matrix<Scalar, NX, 1>& x, Scalar torque) -> Eigen::Matrix<Scalar, NX, 1>
     {
         const Scalar theta = x(0);
@@ -67,19 +57,14 @@ int main()
         return (Eigen::Matrix<Scalar, NX, 1>() << theta + theta_dot * dt, theta_dot + theta_ddot * dt).finished();
     };
 
-    // Total mechanical energy with the sign consistent with the +(g/l) sin
-    // dynamics: minimal (-m g l) hanging, maximal (+m g l) upright.
-    auto energy = [&](const Eigen::Matrix<Scalar, NX, 1>& x) -> Scalar
-    {
-        return 0.5 * m * l * l * x(1) * x(1) + m * g * l * std::cos(x(0));
-    };
+    // Total mechanical energy with the sign of the +(g/l) sin dynamics: minimal (-m g l) hanging, maximal
+    // (+m g l) upright.
+    auto energy = [&](const Eigen::Matrix<Scalar, NX, 1>& x) -> Scalar { return 0.5 * m * l * l * x(1) * x(1) + m * g * l * std::cos(x(0)); };
 
     // Wrap an angle into (-pi, pi] so that "near upright" is measured against 0.
     auto wrap = [](Scalar angle) -> Scalar { return std::remainder(angle, 2.0 * std::numbers::pi_v<Scalar>); };
 
-    // LQR stabilizer built from the discrete-time linearization about upright.
-    // Linearizing theta_ddot about theta = 0 gives sin(theta) ~ theta, hence
-    // A_c = [[0, 1], [g/l, -b]] and B_c = [[0], [1/(m l^2)]].
+    // The stabilizer is designed on the linearization about upright, sin(theta) ~ theta.
     ctrlpp::continuous_state_space<Scalar, NX, NU, NY> sys_c{};
     sys_c.A << 0.0, 1.0, g / l, -b;
     sys_c.B << 0.0, 1.0 / (m * l * l);
@@ -102,7 +87,6 @@ int main()
     }
     ctrlpp::lqr<Scalar, NX, NU> stabilizer(*K_opt);
 
-    // Start hanging at the stable equilibrium and swing up.
     Eigen::Matrix<Scalar, NX, 1> x(std::numbers::pi_v<Scalar>, 0.0);
 
     std::cout << "time,theta,theta_dot,torque,mode\n";
@@ -113,20 +97,18 @@ int main()
         const Scalar theta_dot = x(1);
 
         Scalar torque = 0.0;
-        int mode = 0;  // 0 = energy pump, 1 = LQR stabilizer
+        std::int32_t mode = 0; // 0 = energy pump, 1 = LQR stabilizer
 
         if(std::abs(theta_wrapped) < theta_catch && std::abs(theta_dot) < omega_catch)
         {
-            // Near upright: stabilize with LQR on the wrapped state.
             mode = 1;
             Eigen::Matrix<Scalar, NX, 1> x_lin(theta_wrapped, theta_dot);
             torque = stabilizer.compute(x_lin)(0);
         }
         else
         {
-            // Energy-shaping law. The drive direction is sign(theta_dot cos theta);
-            // ties (including the initial rest at the hanging point) resolve to +1
-            // so the pendulum is kicked off the stable equilibrium.
+            // The drive direction is sign(theta_dot cos theta); ties, the initial rest at the hanging point
+            // included, resolve to +1 so the pendulum is kicked off the stable equilibrium.
             const Scalar drive = (theta_dot * std::cos(x(0)) >= 0.0) ? 1.0 : -1.0;
             torque = k_e * (energy(x) - E_ref) * drive;
         }
@@ -138,14 +120,12 @@ int main()
         x = step(x, torque);
     }
 
-    // Self-check: the pendulum must have reached and be holding near upright.
-    constexpr Scalar hold_theta = 0.1;  // rad
-    constexpr Scalar hold_omega = 0.5;  // rad/s
+    constexpr Scalar hold_theta = 0.1; // rad
+    constexpr Scalar hold_omega = 0.5; // rad/s
     const Scalar theta_final = wrap(x(0));
     if(std::abs(theta_final) >= hold_theta || std::abs(x(1)) >= hold_omega)
     {
-        std::cerr << "swing-up self-check FAILED: |theta|=" << std::abs(theta_final)
-                  << " rad, |theta_dot|=" << std::abs(x(1)) << " rad/s\n";
+        std::cerr << "swing-up self-check FAILED: |theta|=" << std::abs(theta_final) << " rad, |theta_dot|=" << std::abs(x(1)) << " rad/s\n";
         return EXIT_FAILURE;
     }
 

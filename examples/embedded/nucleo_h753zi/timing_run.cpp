@@ -14,12 +14,14 @@
 #include <cstdio>
 #include <cstddef>
 #include <cstdint>
-#include <cinttypes>
 #include <algorithm>
+#include <cinttypes>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-namespace {
+namespace
+{
 
 // A warm figure repeats its region as many times as the golden window has
 // steps, so every warm worst-of-N, the predictive solves' included, shares N.
@@ -27,8 +29,8 @@ constexpr std::uint32_t kWarmRepeats = static_cast<std::uint32_t>(kGoldenSteps);
 
 static_assert(kWarmRepeats <= kTimingCapacity);
 
-template<class Region>
-void time_region(const char *name, const char *cold_basis, std::uint32_t block, Region region)
+template <class Region>
+void time_region(const char* name, const char* cold_basis, std::uint32_t block, Region region)
 {
     cycle_record cold;
     cold.add(region());
@@ -43,15 +45,15 @@ void time_region(const char *name, const char *cold_basis, std::uint32_t block, 
 cycle_span time_design()
 {
     const std::uint32_t start = cycle_sample();
-    const auto demo           = control_loop_demo<double>::make();
+    const auto demo = control_loop_demo<double>::make();
     keep(demo);
     return cycles_between(start, cycle_sample());
 }
 
 // Every block starts from the same copy, so the blocks repeat identical
 // arithmetic and their spread is the hardware's alone.
-template<class Demo>
-cycle_span time_block(const Demo &pristine)
+template <class Demo>
+cycle_span time_block(const Demo& pristine)
 {
     Demo demo = pristine;
     keep(demo);
@@ -62,8 +64,8 @@ cycle_span time_block(const Demo &pristine)
     return cycles_between(start, cycle_sample());
 }
 
-template<template<class> class Demo>
-void time_steps(const char *name)
+template <template <class> class Demo>
+void time_steps(const char* name)
 {
     const auto demo = Demo<double>::make();
     if(!demo.has_value())
@@ -93,21 +95,21 @@ counter_state run_timing()
 }
 
 solve_timer::solve_timer()
-        : spans_{}
-        , iterations_{}
-        , start_(0)
+    : m_spans{}
+    , m_iterations{}
+    , m_start(0)
 {
 }
 
 void solve_timer::enter(std::size_t) noexcept
 {
-    start_ = cycle_sample();
+    m_start = cycle_sample();
 }
 
 void solve_timer::leave(std::size_t k, std::int32_t iterations) noexcept
 {
-    spans_[k]      = cycles_between(start_, cycle_sample());
-    iterations_[k] = iterations;
+    m_spans[k] = cycles_between(m_start, cycle_sample());
+    m_iterations[k] = iterations;
 }
 
 void solve_timer::report() const
@@ -115,12 +117,12 @@ void solve_timer::report() const
     if(prove_cycle_counter() != counter_state::live)
         return;
     cycle_record cold;
-    cold.add(spans_[0]);
+    cold.add(m_spans[0]);
     emit_spread_row({"predictive.step", "cold", "first_after_reset", 1U}, cold.summarize());
 
     cycle_record warm;
     for(std::size_t k = static_cast<std::size_t>(kPredictiveWarmupSolves); k < kPredictiveRunSteps; ++k)
-        warm.add(spans_[k]);
+        warm.add(m_spans[k]);
     const cycle_distribution window = warm.summarize();
     emit_spread_row({"predictive.step", "warm", "golden_window", 1U}, window);
     report_work(window.max_at);
@@ -130,13 +132,13 @@ void solve_timer::report() const
 // are printed beside the figures they explain.
 void solve_timer::report_work(std::uint32_t slowest_at) const
 {
-    const auto first  = iterations_.begin() + kPredictiveWarmupSolves;
-    const auto bounds = std::minmax_element(first, iterations_.end());
+    const auto first = m_iterations.begin() + kPredictiveWarmupSolves;
+    const auto bounds = std::minmax_element(first, m_iterations.end());
     open_line(stream_tag::verdict);
-    std::printf("work region=predictive.step regime=cold iterations=%" PRId32 "\n", iterations_[0]);
+    std::printf("work region=predictive.step regime=cold iterations=%" PRId32 "\n", m_iterations[0]);
     open_line(stream_tag::verdict);
     std::printf("work region=predictive.step regime=warm n=%" PRIu32 " iterations_min=%" PRId32 " iterations_max=%" PRId32 " max_at_iterations=%" PRId32 "\n",
-                static_cast<std::uint32_t>(iterations_.end() - first), *bounds.first, *bounds.second, *(first + slowest_at));
+            static_cast<std::uint32_t>(m_iterations.end() - first), *bounds.first, *bounds.second, *(first + slowest_at));
 }
 
 }

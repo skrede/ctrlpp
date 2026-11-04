@@ -2,41 +2,41 @@
 // Redirect: ./ctrlpp_mpc_03_trajectory > output.csv
 
 #include "ctrlpp/mpc.h"
-#include "ctrlpp/mpc/osqp_solver.h"
+
 #include "ctrlpp/model/propagate.h"
+
+#include "ctrlpp/mpc/osqp_solver.h"
 
 #include <Eigen/Dense>
 
-#include <algorithm>
+#include <span>
+#include <vector>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
-#include <span>
-#include <vector>
+#include <algorithm>
 
 int main()
 {
     constexpr std::size_t NX = 2;
     constexpr std::size_t NU = 1;
     constexpr double dt = 0.1;
-    constexpr int horizon = 20;
+    constexpr std::int32_t horizon = 20;
     constexpr double duration = 10.0;
-    constexpr int sim_steps = static_cast<int>(duration / dt);
+    constexpr std::int32_t sim_steps = static_cast<std::int32_t>(duration / dt);
 
     ctrlpp::discrete_state_space<double, NX, NU, NX> sys{
-        (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(), (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished(), Eigen::Matrix2d::Identity(), Eigen::Matrix<double, 2, 1>::Zero()};
+            (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(), (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished(), Eigen::Matrix2d::Identity(), Eigen::Matrix<double, 2, 1>::Zero()};
 
     ctrlpp::mpc_config<double, NX, NU> cfg{.horizon = horizon,
-                                           .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
-                                           .R = Eigen::Matrix<double, 1, 1>::Constant(0.1),
-                                           .Qf = std::nullopt,
-                                           .u_min = Eigen::Matrix<double, 1, 1>::Constant(-2.0),
-                                           .u_max = Eigen::Matrix<double, 1, 1>::Constant(2.0)};
+            .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
+            .R = Eigen::Matrix<double, 1, 1>::Constant(0.1),
+            .Qf = std::nullopt,
+            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-2.0),
+            .u_max = Eigen::Matrix<double, 1, 1>::Constant(2.0)};
 
-    // create validates the configuration and reports a configuration refusal or
-    // the solver's own setup refusal through ctrlpp::expected<mpc, construction_error>
-    // instead of throwing.
     auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
     if(!controller_result.has_value())
     {
@@ -45,13 +45,12 @@ int main()
     }
     auto& controller = *controller_result;
 
-    // Pre-compute reference trajectory: ramp from 0 to 5 over 5s, then hold
     constexpr double ramp_duration = 5.0;
     constexpr double target_pos = 5.0;
-    int total_refs = sim_steps + horizon + 1;
+    std::int32_t total_refs = sim_steps + horizon + 1;
     std::vector<Eigen::Vector2d> trajectory(static_cast<std::size_t>(total_refs));
 
-    for(int k = 0; k < total_refs; ++k)
+    for(std::int32_t k = 0; k < total_refs; ++k)
     {
         double tk = k * dt;
         double pos = (tk < ramp_duration) ? target_pos * tk / ramp_duration : target_pos;
@@ -63,7 +62,7 @@ int main()
 
     std::cout << "time,x_0,x_1,x_ref_0,control\n";
 
-    for(int k = 0; k < sim_steps; ++k)
+    for(std::int32_t k = 0; k < sim_steps; ++k)
     {
         auto ref_start = static_cast<std::size_t>(k);
         std::span<const Eigen::Vector2d> ref_span(trajectory.data() + ref_start, static_cast<std::size_t>(horizon + 1));

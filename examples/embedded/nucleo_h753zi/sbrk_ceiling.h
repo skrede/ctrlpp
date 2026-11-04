@@ -3,7 +3,8 @@
 
 #include <cstddef>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 std::size_t heap_reserve_bytes() noexcept;
 

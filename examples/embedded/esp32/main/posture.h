@@ -3,12 +3,13 @@
 
 #include "reset_reason.h"
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 // Two lines: the build and clock the figures were taken under, and the
 // scheduling they ran beside. Read from the calling task, which is the one the
 // figures time.
-void emit_posture(const reset_cause &cause);
+void emit_posture(const reset_cause& cause);
 
 }
 

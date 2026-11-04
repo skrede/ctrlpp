@@ -10,9 +10,10 @@
 
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-inline const char *describe(trajectory_error e)
+inline const char* describe(trajectory_error e)
 {
     switch(e)
     {
@@ -44,10 +45,9 @@ inline const char *describe(trajectory_error e)
     return "unknown";
 }
 
-// double_s_trajectory from its fallible factory is what the embedded compile
-// witness builds for this family, and the profile construction and evaluation
-// rows of the allocation matrix make their claims about it.
-template<class Scalar>
+// The instantiation the embedded compile witness builds for this family, so the family's allocation
+// claims for construction and evaluation cover this demo.
+template <class Scalar>
 class trajectory_demo
 {
 public:
@@ -61,37 +61,30 @@ public:
         return trajectory_demo(*profile);
     }
 
-    // Dyadic limits that reach the velocity limit, so construction is closed
-    // form and exact at either precision. The run's last sample, at 4 s of
-    // 4.125 s, lies in the final jerk segment.
-    static typename profile_type::config command()
-    {
-        return {.q0 = Scalar{0}, .q1 = Scalar{6.75}, .v_max = Scalar{2}, .a_max = Scalar{4}, .j_max = Scalar{16}};
-    }
+    // Dyadic limits that reach the velocity limit, so construction is closed form and exact at either
+    // precision. The run's last sample, at 4 s of 4.125 s, lies in the final jerk segment.
+    static typename profile_type::config command() { return {.q0 = Scalar{0}, .q1 = Scalar{6.75}, .v_max = Scalar{2}, .a_max = Scalar{4}, .j_max = Scalar{16}}; }
 
     Scalar step()
     {
-        const Scalar t = static_cast<Scalar>(index_) * static_cast<Scalar>(kDt);
-        ++index_;
+        const Scalar t = static_cast<Scalar>(m_index) * static_cast<Scalar>(kDt);
+        ++m_index;
         Scalar position{};
         Scalar velocity{};
         Scalar acceleration{};
-        profile_.evaluate(t, position, velocity, acceleration);
+        m_profile.evaluate(t, position, velocity, acceleration);
         return position;
     }
 
-    const profile_type &profile() const
-    {
-        return profile_;
-    }
+    const profile_type& profile() const { return m_profile; }
 
 private:
-    profile_type profile_;
-    std::int32_t index_;
+    profile_type m_profile;
+    std::int32_t m_index;
 
     explicit trajectory_demo(profile_type profile)
-            : profile_(profile)
-            , index_(0)
+        : m_profile(profile)
+        , m_index(0)
     {
     }
 };

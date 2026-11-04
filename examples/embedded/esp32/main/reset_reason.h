@@ -3,7 +3,8 @@
 
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 enum class reset_class : std::uint8_t
 {
@@ -38,7 +39,7 @@ struct reset_cause
 // hint while it reads it at startup.
 reset_cause read_reset_cause() noexcept;
 
-const char *name_of(reset_class event) noexcept;
+const char* name_of(reset_class event) noexcept;
 
 }
 

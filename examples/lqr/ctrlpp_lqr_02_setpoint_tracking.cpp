@@ -1,10 +1,12 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_lqr_02_setpoint_tracking' using 1:2 with lines title 'true x0', '' using 1:6 with lines title 'reference', '' using 1:7 with lines title 'control'"
 // Redirect: ./ctrlpp_lqr_02_setpoint_tracking > output.csv
 
-#include "ctrlpp/model/discretize.h"
-#include "ctrlpp/estimation/kalman.h"
 #include "ctrlpp/control/lqr.h"
+
+#include "ctrlpp/estimation/kalman.h"
+
 #include "ctrlpp/model/propagate.h"
+#include "ctrlpp/model/discretize.h"
 #include "ctrlpp/model/state_space.h"
 
 #include <iomanip>
@@ -75,11 +77,9 @@ int main()
 
     for(Scalar t = 0.0; t < duration; t += dt)
     {
-        // Propagate the estimate and the true plant with the previous control.
         kf.predict(u);
         x_true = ctrlpp::propagate(sys_d, x_true, u);
 
-        // Fuse a measurement sampled from the freshly propagated true state.
         Eigen::Matrix<Scalar, 1, 1> z = sys_d.C * x_true;
         if(const auto stepped = kf.update(z); !stepped)
         {
@@ -87,7 +87,6 @@ int main()
             return 1;
         }
 
-        // Compute the control from the freshly updated estimate.
         auto x_est = kf.state();
         u = controller.compute(x_est - x_ref) + u_ff;
 

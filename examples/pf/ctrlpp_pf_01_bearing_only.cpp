@@ -1,36 +1,31 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_pf_01_bearing_only' using 1:2 with lines title 'true px', '' using 1:3 with lines title 'estimated px'"
 // Redirect: ./ctrlpp_pf_01_bearing_only > output.csv
-/// @file ctrlpp_pf_01_bearing_only.cpp
-/// @brief Demonstrates particle filter tracking a target from bearing-only measurements.
-///
-/// System: state = [px, py, vx, vy] (2D position + velocity), input = zero,
-/// measurement = bearing angle from a known sensor position. The bearing-only
-/// measurement creates a banana-shaped posterior that KF/EKF/UKF cannot represent
-/// well, making this the classic particle filter showcase.
+// A bearing-only measurement gives a banana-shaped posterior that a Kalman-type filter cannot represent,
+// which is why this example uses a particle filter.
 
 #include "ctrlpp/estimation/particle_filter.h"
 
 #include <cmath>
-#include <cstddef>
-#include <iostream>
-#include <numbers>
 #include <random>
+#include <cstddef>
+#include <cstdint>
+#include <numbers>
+#include <iostream>
 
 namespace
 {
 
 constexpr double dt = 0.1;
-constexpr std::size_t n_steps = 200;
+constexpr std::int32_t n_steps = 200;
 constexpr std::size_t n_particles = 1000;
 
-// Sensor position (known)
 constexpr double sensor_x = 0.0;
 constexpr double sensor_y = 0.0;
 
-/// Constant velocity dynamics: x_{k+1} = A * x_k (no control input used).
+// Constant-velocity model; the input is unused.
 struct cv_dynamics
 {
-    auto operator()(const ctrlpp::Vector<double, 4>& x, const ctrlpp::Vector<double, 1>& /*u*/) const -> ctrlpp::Vector<double, 4>
+    ctrlpp::Vector<double, 4> operator()(const ctrlpp::Vector<double, 4>& x, const ctrlpp::Vector<double, 1>& /*u*/) const
     {
         ctrlpp::Vector<double, 4> x_next;
         x_next(0) = x(0) + x(2) * dt;
@@ -41,13 +36,12 @@ struct cv_dynamics
     }
 };
 
-/// Bearing measurement: theta = atan2(py - sy, px - sx).
 struct bearing_measurement
 {
     double sx;
     double sy;
 
-    auto operator()(const ctrlpp::Vector<double, 4>& x) const -> ctrlpp::Vector<double, 1>
+    ctrlpp::Vector<double, 1> operator()(const ctrlpp::Vector<double, 4>& x) const
     {
         ctrlpp::Vector<double, 1> z;
         z(0) = std::atan2(x(1) - sy, x(0) - sx);
@@ -55,18 +49,12 @@ struct bearing_measurement
     }
 };
 
-/// Wrapped bearing likelihood policy.
-///
-/// Bearing measurements live on a circle, so an innovation formed as a plain
-/// difference is wrong across the +/-pi cut: a prediction near +pi and a
-/// measurement near -pi are physically adjacent yet differ by nearly 2*pi. With
-/// the default Gaussian likelihood those particles are penalized as if they were
-/// maximally wrong, which collapses the filter whenever the target crosses the
-/// cut. This policy wraps the scalar innovation into (-pi, pi] with
-/// std::remainder before forming the Gaussian, keeping the posterior coherent.
+// A bearing innovation formed as a plain difference is wrong across the +/-pi cut, where the default
+// Gaussian likelihood treats adjacent angles as maximally wrong and collapses the filter whenever the target
+// crosses it. This policy wraps the innovation with std::remainder before forming the Gaussian.
 struct wrapped_bearing_likelihood
 {
-    auto operator()(const ctrlpp::Vector<double, 1>& z, const ctrlpp::Vector<double, 1>& z_pred, const ctrlpp::Matrix<double, 1, 1>& R_inv, double log_det_2piR) const -> double
+    double operator()(const ctrlpp::Vector<double, 1>& z, const ctrlpp::Vector<double, 1>& z_pred, const ctrlpp::Matrix<double, 1, 1>& R_inv, double log_det_2piR) const
     {
         double innov = std::remainder(z(0) - z_pred(0), 2.0 * std::numbers::pi);
         double mahal = innov * R_inv(0, 0) * innov;
@@ -74,73 +62,73 @@ struct wrapped_bearing_likelihood
     }
 };
 
-/// Simple deterministic pseudo-noise for reproducibility (linear congruential).
+// Linear congruential generator with the Numerical Recipes constants, deterministic so every run prints
+// the same output.
 struct lcg_noise
 {
     std::uint32_t state;
 
-    explicit lcg_noise(std::uint32_t seed) : state{seed} {}
+    explicit lcg_noise(std::uint32_t seed)
+        : state{seed}
+    {
+    }
 
-    auto next() -> double
+    double next()
     {
         state = state * 1664525u + 1013904223u;
         return static_cast<double>(static_cast<std::int32_t>(state)) / 2147483648.0;
     }
 };
 
-auto refusal_cause(ctrlpp::pf_update_error error) -> const char*
+const char* refusal_cause(ctrlpp::pf_update_error error)
 {
     switch(error)
     {
-    case ctrlpp::pf_update_error::non_finite_state:
-        return "the particles are non-finite";
-    case ctrlpp::pf_update_error::non_finite_measurement:
-        return "the measurement is non-finite";
-    case ctrlpp::pf_update_error::non_finite_result:
-        return "the likelihood is non-finite";
+        case ctrlpp::pf_update_error::non_finite_state:
+            return "the particles are non-finite";
+        case ctrlpp::pf_update_error::non_finite_measurement:
+            return "the measurement is non-finite";
+        case ctrlpp::pf_update_error::non_finite_result:
+            return "the likelihood is non-finite";
     }
     return "unknown";
 }
 
-auto health_name(ctrlpp::pf_health health) -> const char*
+const char* health_name(ctrlpp::pf_health health)
 {
     switch(health)
     {
-    case ctrlpp::pf_health::ok:
-        return "ok";
-    case ctrlpp::pf_health::weights_reset:
-        return "weights reset by a measurement no particle explained";
-    case ctrlpp::pf_health::resampling_rolled_back:
-        return "resampling rolled back after a non-finite roughening";
-    case ctrlpp::pf_health::non_finite_estimate:
-        return "non-finite estimate";
+        case ctrlpp::pf_health::ok:
+            return "ok";
+        case ctrlpp::pf_health::weights_reset:
+            return "weights reset by a measurement no particle explained";
+        case ctrlpp::pf_health::resampling_rolled_back:
+            return "resampling rolled back after a non-finite roughening";
+        case ctrlpp::pf_health::non_finite_estimate:
+            return "non-finite estimate";
     }
     return "unknown";
 }
 
-} // namespace
+}
 
 int main()
 {
     cv_dynamics dyn;
     bearing_measurement meas{.sx = sensor_x, .sy = sensor_y};
 
-    // Process noise: small velocity perturbations
     ctrlpp::Matrix<double, 4, 4> Q = ctrlpp::Matrix<double, 4, 4>::Zero();
     Q(0, 0) = 0.01; // position noise
     Q(1, 1) = 0.01;
     Q(2, 2) = 0.001; // velocity noise
     Q(3, 3) = 0.001;
 
-    // Bearing measurement noise: ~0.1 rad std dev
     ctrlpp::Matrix<double, 1, 1> R;
-    R << 0.01; // 0.1^2
+    R << 0.01; // (0.1 rad)^2
 
-    // Initial state estimate: target starts at (10, 5) moving (1, 0.5) m/s
     ctrlpp::Vector<double, 4> x0;
     x0 << 10.0, 5.0, 1.0, 0.5;
 
-    // Fairly uncertain initial covariance
     ctrlpp::Matrix<double, 4, 4> P0 = ctrlpp::Matrix<double, 4, 4>::Identity() * 4.0;
 
     ctrlpp::pf_config<double, 4, 1, 1> config{.Q = Q, .R = R, .x0 = x0, .P0 = P0};
@@ -153,35 +141,29 @@ int main()
     }
     auto& filter = *filter_result;
 
-    // True initial state (offset from estimate to test convergence)
+    // Offset from the initial estimate, so the output shows the filter converging.
     ctrlpp::Vector<double, 4> x_true;
     x_true << 12.0, 4.0, 0.8, 0.6;
 
     lcg_noise noise_gen{123};
 
-    // CSV header
     std::cout << "# time,true_px,est_px,true_py,est_py,true_vx,est_vx,true_vy,est_vy\n";
 
-    for(std::size_t k = 0; k < n_steps; ++k)
+    for(std::int32_t k = 0; k < n_steps; ++k)
     {
-        // Zero input (constant velocity model)
         ctrlpp::Vector<double, 1> u = ctrlpp::Vector<double, 1>::Zero();
 
-        // Propagate true state with small process noise
         double px = x_true(0) + x_true(2) * dt + 0.1 * noise_gen.next();
         double py = x_true(1) + x_true(3) * dt + 0.1 * noise_gen.next();
         double vx = x_true(2) + 0.01 * noise_gen.next();
         double vy = x_true(3) + 0.01 * noise_gen.next();
         x_true << px, py, vx, vy;
 
-        // PF predict
         filter.predict(u);
 
-        // Noisy bearing measurement
         double true_bearing = std::atan2(x_true(1) - sensor_y, x_true(0) - sensor_x);
         double meas_bearing = true_bearing + 0.1 * noise_gen.next();
 
-        // Wrap to [-pi, pi]
         while(meas_bearing > std::numbers::pi)
             meas_bearing -= 2.0 * std::numbers::pi;
         while(meas_bearing < -std::numbers::pi)
@@ -190,8 +172,8 @@ int main()
         ctrlpp::Vector<double, 1> z;
         z << meas_bearing;
 
-        // A refused measurement leaves the particles, weights and generator
-        // untouched, so the filter carries on with the next sample.
+        // A refused measurement leaves the particles, weights and generator untouched, so the filter carries
+        // on with the next sample.
         if(const auto stepped = filter.update(z); !stepped)
         {
             std::cerr << "Measurement refused at step " << k << ": " << refusal_cause(stepped.error()) << '\n';
@@ -200,13 +182,12 @@ int main()
 
         auto est = filter.state();
 
-        std::cout << static_cast<double>(k) * dt << ',' << x_true(0) << ',' << est(0) << ',' << x_true(1) << ',' << est(1) << ',' << x_true(2) << ',' << est(2) << ',' << x_true(3) << ',' << est(3) << '\n';
+        std::cout << static_cast<double>(k) * dt << ',' << x_true(0) << ',' << est(0) << ',' << x_true(1) << ',' << est(1) << ',' << x_true(2) << ',' << est(2) << ',' << x_true(3)
+                  << ',' << est(3) << '\n';
     }
 
-    // Final position error, reported beside the uncertainty the filter itself
-    // claims. An error is only interpretable against that: the same number is a
-    // healthy result for a filter reporting a meter of spread and a failure for
-    // one reporting a centimeter.
+    // The final error is reported beside the spread the filter claims, since it is only interpretable
+    // against it: the same error is healthy for a meter of spread and a failure for a centimeter.
     auto est_final = filter.state();
     double err_pos = std::sqrt((x_true(0) - est_final(0)) * (x_true(0) - est_final(0)) + (x_true(1) - est_final(1)) * (x_true(1) - est_final(1)));
     auto P_final = filter.covariance();

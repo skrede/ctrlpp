@@ -12,7 +12,8 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 struct window_figures
 {
@@ -23,7 +24,7 @@ struct window_figures
 
 struct family_result
 {
-    const char *name;
+    const char* name;
     double value;
     double golden;
     double departure;
@@ -33,16 +34,16 @@ struct family_result
 
 window_figures read_window() noexcept;
 
-void report_allocations(const window_figures &figures);
+void report_allocations(const window_figures& figures);
 
 // One line per family, so a family that ran and printed nothing is a missing
 // tag to the capture script rather than an omission it cannot see.
-void report_family(const family_result &result, const window_figures &figures);
+void report_family(const family_result& result, const window_figures& figures);
 
 // Armed around the steps alone and reset per family, so a nonzero count belongs
 // to this family and not to the program.
-template<class Demo>
-void run_family(const char *name, Demo &demo, double golden, double bound)
+template <class Demo>
+void run_family(const char* name, Demo& demo, double golden, double bound)
 {
     alloc_sensor_reset();
     alloc_sensor_arm();
@@ -54,8 +55,8 @@ void run_family(const char *name, Demo &demo, double golden, double bound)
     report_family({name, value, golden, departure, bound, within_bound(departure, bound)}, read_window());
 }
 
-template<template<class> class Demo>
-void drive_family(const char *name, double golden, double bound)
+template <template <class> class Demo>
+void drive_family(const char* name, double golden, double bound)
 {
     auto demo = Demo<double>::make();
     if(!demo.has_value())

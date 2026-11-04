@@ -1,21 +1,10 @@
-// How large a state dimension the discrete solve fits in a task's stack.
-// Every stack figure this project publishes for the Riccati path so far comes
-// from a host compiler's -fstack-usage report. That is a PREDICTION about a
-// different architecture, a different calling convention and a different
-// register file. This probe is the test.
-// Two passes, because "what does this dimension cost" and "does this dimension
-// fit" are different questions and one sweep cannot answer both.
-// PASS 1 gives every dimension a generous stack, so each one returns and
-// reports what it actually needs. PASS 2 gives each dimension the control
-// task's own stack size, so the figures share that denominator and the first
-// dimension that does not fit establishes the supported maximum.
-// Each dimension runs in ITS OWN task. The high-water mark is a running
-// minimum over a task's life, so one task sweeping every dimension would report
-// the deepest dimension's figure against all of them. One task per dimension
-// makes each figure that dimension's own.
-// Dimensions run in INCREASING order and each reports before the next is
-// attempted, so a dimension that does not fit leaves a complete record of every
-// dimension below it.
+// Measures on the target how large a state dimension the discrete solve fits in a task's stack, where a
+// host compiler's -fstack-usage report only predicts it for another architecture and calling convention.
+// Pass one gives every dimension a generous stack, so each reports what it needs; pass two gives each the
+// control task's stack size, so the first dimension that does not fit establishes the supported maximum.
+// Each dimension runs in its own task, since the high-water mark is a running minimum over a task's life,
+// and in increasing order, each reporting before the next starts, so an overflow leaves a complete record
+// of every dimension below it.
 
 #include "stack_probe.h"
 #include "stack_probe_dimension.h"
@@ -30,7 +19,8 @@
 #include <cstdint>
 #include <cinttypes>
 
-namespace {
+namespace
+{
 
 using ctrlpp::probe::kProbeTag;
 
@@ -66,7 +56,7 @@ void limit_pass(SemaphoreHandle_t done)
     ESP_LOGI(kProbeTag, "PASS 2 complete -- no dimension overflowed, which was not expected");
 }
 
-void stack_probe_task(void *)
+void stack_probe_task(void*)
 {
     SemaphoreHandle_t done = xSemaphoreCreateBinary();
     headroom_pass(done);
@@ -76,7 +66,8 @@ void stack_probe_task(void *)
 
 }
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 // The driver task itself needs almost no stack: every solve happens in a task
 // this one creates, and it only waits on them.
@@ -87,17 +78,13 @@ void start_stack_probe()
 
 }
 
-// Name the task that overflowed instead of letting the board reset unexplained.
-// The framework supplies a weak default; this overrides it so a negative result
-// is evidence rather than an absence of output.
-// A ROM print and not a log line: the log path takes locks and allocates, and a
-// task that has just overrun its stack is the last context that should be
-// trusted to complete it. `esp_rom_printf` writes the console UART directly and
-// is what survives if the log path does not. Its conversions are the ROM
-// printer's own, which is why the figure goes through %u.
-extern "C" void vApplicationStackOverflowHook(TaskHandle_t, char *name)
+// Overrides the framework's weak default so an overflow names its task rather than resetting the board
+// unexplained. esp_rom_printf writes the console UART directly, since the log path takes locks and
+// allocates and a task that has just overrun its stack cannot be trusted to complete it; its conversions
+// are the ROM printer's own, hence %u.
+extern "C" void vApplicationStackOverflowHook(TaskHandle_t, char* name)
 {
     esp_rom_printf("STACK OVERFLOW in task '%s' -- the dimension above the last "
                    "reported probe line does not fit %u bytes\n",
-                   name != nullptr ? name : "<unnamed>", static_cast<unsigned>(ctrlpp::kControlTaskStackBytes));
+            name != nullptr ? name : "<unnamed>", static_cast<unsigned>(ctrlpp::kControlTaskStackBytes));
 }

@@ -14,12 +14,13 @@
 // The heap's base, placed by the linker script.
 extern "C" char end[];
 
-namespace {
+namespace
+{
 
 constexpr std::uint64_t kCounterStates = std::uint64_t{1} << 32;
-constexpr std::uint64_t kMillisecond   = 1000;
+constexpr std::uint64_t kMillisecond = 1000;
 
-const char *clock_source() noexcept
+const char* clock_source() noexcept
 {
     switch(RCC->CFGR & RCC_CFGR_SWS)
     {
@@ -37,7 +38,7 @@ const char *clock_source() noexcept
 
 // The device header gives each region's base but not its size; a valid address
 // lies below the next region's base.
-const char *region_of(std::uintptr_t address) noexcept
+const char* region_of(std::uintptr_t address) noexcept
 {
     if(address >= D1_AXIFLASH_BASE && address <= FLASH_END)
         return "flash";
@@ -48,18 +49,18 @@ const char *region_of(std::uintptr_t address) noexcept
     return "other";
 }
 
-template<class T>
-const char *region_of(T *object) noexcept
+template <class T>
+const char* region_of(T* object) noexcept
 {
     return region_of(reinterpret_cast<std::uintptr_t>(object));
 }
 
-const char *bit_state(std::uint32_t reg, std::uint32_t mask) noexcept
+const char* bit_state(std::uint32_t reg, std::uint32_t mask) noexcept
 {
     return (reg & mask) != 0U ? "on" : "off";
 }
 
-const char *optimization() noexcept
+const char* optimization() noexcept
 {
 #if defined(__OPTIMIZE_SIZE__)
     return "size";
@@ -72,27 +73,28 @@ const char *optimization() noexcept
 
 }
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 void report_posture()
 {
     const reset_cause cause = read_reset_cause();
     SystemCoreClockUpdate();
-    const std::uint32_t ccr      = SCB->CCR;
-    const std::uint32_t latency  = (FLASH->ACR & FLASH_ACR_LATENCY_Msk) >> FLASH_ACR_LATENCY_Pos;
+    const std::uint32_t ccr = SCB->CCR;
+    const std::uint32_t latency = (FLASH->ACR & FLASH_ACR_LATENCY_Msk) >> FLASH_ACR_LATENCY_Pos;
     const std::uint64_t clock_hz = SystemCoreClock != 0U ? SystemCoreClock : 1U;
-    const std::uint32_t wrap_ms  = static_cast<std::uint32_t>(kCounterStates * kMillisecond / clock_hz);
-    char frame_marker            = 0;
+    const std::uint32_t wrap_ms = static_cast<std::uint32_t>(kCounterStates * kMillisecond / clock_hz);
+    char frame_marker = 0;
     open_line(stream_tag::meta);
     std::printf("posture ");
     print_reset_cause(cause);
     std::printf(" core_hz=%" PRIu32 " axi_hz=%" PRIu32 " clock_source=%s icache=%s dcache=%s flash_latency_ws=%" PRIu32 " cycle_wrap_ms=%" PRIu32, SystemCoreClock, SystemD2Clock,
-                clock_source(), bit_state(ccr, SCB_CCR_IC_Msk), bit_state(ccr, SCB_CCR_DC_Msk), latency, wrap_ms);
+            clock_source(), bit_state(ccr, SCB_CCR_IC_Msk), bit_state(ccr, SCB_CCR_DC_Msk), latency, wrap_ms);
 #ifdef CTRLPP_MCU_TUNED_POSTURE
     print_clock_tree();
 #endif
     std::printf(" code=%s data=%s stack=%s heap=%s optimize=%s compiler=gcc-%s\n", region_of(&report_posture), region_of(&SystemCoreClock), region_of(&frame_marker), region_of(end),
-                optimization(), __VERSION__);
+            optimization(), __VERSION__);
 }
 
 }

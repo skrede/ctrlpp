@@ -2,11 +2,14 @@
 // Redirect: ./ctrlpp_mpc_04_mobile_robot > output.csv
 
 #include "ctrlpp/mpc.h"
-#include "ctrlpp/mpc/osqp_solver.h"
+
 #include "ctrlpp/model/propagate.h"
+
+#include "ctrlpp/mpc/osqp_solver.h"
 
 #include <Eigen/Dense>
 
+#include <cstdint>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -18,27 +21,22 @@ int main()
     constexpr double dt = 0.1;
     constexpr double v0 = 1.0;
 
-    // Linearized unicycle about straight-line motion (theta=0, v=v0)
+    // Unicycle linearized about straight-line motion at theta = 0, v = v0.
     ctrlpp::discrete_state_space<double, NX, NU, NX> sys{(Eigen::Matrix3d() << 1.0, 0.0, 0.0, 0.0, 1.0, v0 * dt, 0.0, 0.0, 1.0).finished(),
-                                                         (Eigen::Matrix<double, 3, 2>() << dt, 0.0, 0.0, 0.0, 0.0, dt).finished(),
-                                                         Eigen::Matrix3d::Identity(),
-                                                         Eigen::Matrix<double, 3, 2>::Zero()};
+            (Eigen::Matrix<double, 3, 2>() << dt, 0.0, 0.0, 0.0, 0.0, dt).finished(), Eigen::Matrix3d::Identity(), Eigen::Matrix<double, 3, 2>::Zero()};
 
     ctrlpp::mpc_config<double, NX, NU> cfg{.horizon = 15,
-                                           .Q = Eigen::Vector3d(1.0, 10.0, 5.0).asDiagonal(),
-                                           .R = Eigen::Vector2d(0.1, 0.1).asDiagonal(),
-                                           .Qf = std::nullopt,
-                                           .u_min = Eigen::Vector2d(0.0, -1.0),
-                                           .u_max = Eigen::Vector2d(2.0, 1.0),
-                                           .x_min = std::nullopt,
-                                           .x_max = std::nullopt,
-                                           .du_max = std::nullopt,
-                                           .soft_penalty = 1e4,
-                                           .hard_state_constraints = false};
+            .Q = Eigen::Vector3d(1.0, 10.0, 5.0).asDiagonal(),
+            .R = Eigen::Vector2d(0.1, 0.1).asDiagonal(),
+            .Qf = std::nullopt,
+            .u_min = Eigen::Vector2d(0.0, -1.0),
+            .u_max = Eigen::Vector2d(2.0, 1.0),
+            .x_min = std::nullopt,
+            .x_max = std::nullopt,
+            .du_max = std::nullopt,
+            .soft_penalty = 1e4,
+            .hard_state_constraints = false};
 
-    // create validates the configuration and reports a configuration refusal or
-    // the solver's own setup refusal through ctrlpp::expected<mpc, construction_error>
-    // instead of throwing.
     auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
     if(!controller_result.has_value())
     {
@@ -47,16 +45,14 @@ int main()
     }
     auto& controller = *controller_result;
 
-    // Initial state: offset from straight-line path
     Eigen::Vector3d x(0.0, 0.5, 0.1);
     constexpr double duration = 10.0;
-    constexpr int sim_steps = static_cast<int>(duration / dt);
+    constexpr std::int32_t sim_steps = static_cast<std::int32_t>(duration / dt);
 
     std::cout << "time,x,y,theta,v,omega\n";
 
-    for(int k = 0; k < sim_steps; ++k)
+    for(std::int32_t k = 0; k < sim_steps; ++k)
     {
-        // Reference: straight line at nominal speed, y=0, theta=0
         Eigen::Vector3d x_ref(v0 * k * dt, 0.0, 0.0);
 
         auto u_opt = controller.solve(x, x_ref);

@@ -3,6 +3,7 @@
 
 #include "ctrlpp/control/pid.h"
 
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 
@@ -41,7 +42,7 @@ int main()
     constexpr double coulomb_friction = 0.02;
     constexpr double dt_inner = 0.001;
     constexpr double dt_outer = 0.01;
-    constexpr int decimation = 10;
+    constexpr std::int32_t decimation = 10;
     constexpr double target_pos = 1.5707963267948966;
     constexpr double ramp_time = 2.0;
     constexpr double duration = 5.0;
@@ -49,7 +50,7 @@ int main()
     double position = 0.0;
     double velocity = 0.0;
     double vel_sp = 0.0;
-    int counter = 0;
+    std::int32_t counter = 0;
 
     std::cout << "time,pos_sp,position,velocity,vel_sp,torque\n";
 
@@ -73,12 +74,9 @@ int main()
 
         auto sp_inner = Vec::Constant(vel_sp);
         auto meas_inner = Vec::Constant(velocity);
-        // A refused cycle produced no command. This example stops, because a
-        // refusal here would mean the example itself is wrong. A real caller
-        // must instead decide what the actuator does: hold the last command,
-        // drive a configured safe value, or fail over. In a cascade the outer
-        // loop's refusal also leaves the inner loop without a fresh setpoint,
-        // so the decision has to cover both.
+        // A refused cycle produces no command, and in a cascade an outer refusal also leaves the inner loop
+        // without a fresh setpoint. This example stops; a real caller decides for both loops whether the
+        // actuator holds the last command, drives a safe value or fails over.
         auto torque_vec = inner.compute(sp_inner, meas_inner, dt_inner);
         if(!torque_vec.has_value())
         {

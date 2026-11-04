@@ -14,15 +14,17 @@
 extern "C" char end[];
 extern "C" char _eheap[];
 
-namespace {
+namespace
+{
 
-std::size_t heap_used        = 0;
+std::size_t heap_used = 0;
 std::size_t heap_used_record = 0;
-std::size_t first_refusal    = 0;
+std::size_t first_refusal = 0;
 
 }
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 std::size_t heap_reserve_bytes() noexcept
 {
@@ -41,19 +43,19 @@ std::size_t heap_first_refusal_bytes() noexcept
 
 }
 
-extern "C" void *_sbrk(std::ptrdiff_t increment)
+extern "C" void* _sbrk(std::ptrdiff_t increment)
 {
     const std::size_t previous = heap_used;
-    const bool shrinks         = increment < 0;
+    const bool shrinks = increment < 0;
     // Unsigned negation, so the most negative increment has a magnitude too.
     const std::size_t magnitude = shrinks ? std::size_t{0} - static_cast<std::size_t>(increment) : static_cast<std::size_t>(increment);
-    const std::size_t room      = shrinks ? previous : ctrlpp::heap_reserve_bytes() - previous;
+    const std::size_t room = shrinks ? previous : ctrlpp::heap_reserve_bytes() - previous;
     if(magnitude > room)
     {
         if(first_refusal == 0)
             first_refusal = magnitude;
         errno = ENOMEM;
-        return reinterpret_cast<void *>(-1);
+        return reinterpret_cast<void*>(-1);
     }
 
     heap_used = shrinks ? previous - magnitude : previous + magnitude;

@@ -20,9 +20,11 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-namespace {
+namespace
+{
 
 // A warm figure repeats its region as many times as the golden window has
 // steps, so every warm worst-of-N shares N.
@@ -34,20 +36,18 @@ static_assert(kWarmRepeats <= kTimingCapacity);
 // the rest of the report.
 cycle_record samples;
 
-void report(const timing_region &region)
+void report(const timing_region& region)
 {
     const cycle_distribution d = samples.summarize();
     emit_spread_row(region, d);
     emit_interruption(region, d);
 }
 
-// The code and the constants it reads come from external flash through the
-// cache, so the cold figure pays the misses a warm one may not; within the warm
-// series the spread is interrupts landing in a sample and the other core
-// competing for the same flash interface. The task yields between regions and
-// never inside one.
-template<class Region>
-void time_region(const char *name, const char *cold_basis, std::uint32_t block, Region region)
+// Code and constants come from external flash through the cache, so the cold figure pays misses a warm
+// one may not, and the warm spread is interrupts landing in a sample and the other core competing for the
+// flash interface. The task yields between regions and never inside one.
+template <class Region>
+void time_region(const char* name, const char* cold_basis, std::uint32_t block, Region region)
 {
     samples.clear();
     samples.add(region());
@@ -63,15 +63,15 @@ void time_region(const char *name, const char *cold_basis, std::uint32_t block, 
 cycle_span time_design()
 {
     const cycle_mark start = open_region();
-    const auto demo        = control_loop_demo<float>::make();
+    const auto demo = control_loop_demo<float>::make();
     keep(demo);
     return close_region(start);
 }
 
 // Every block starts from the same copy, so the blocks repeat identical
 // arithmetic and their spread is the hardware's and the scheduler's alone.
-template<class Demo>
-cycle_span time_block(const Demo &pristine)
+template <class Demo>
+cycle_span time_block(const Demo& pristine)
 {
     Demo demo = pristine;
     keep(demo);
@@ -82,8 +82,8 @@ cycle_span time_block(const Demo &pristine)
     return close_region(start);
 }
 
-template<template<class> class Demo>
-void time_steps(const char *name)
+template <template <class> class Demo>
+void time_steps(const char* name)
 {
     const auto demo = Demo<float>::make();
     if(!demo.has_value())

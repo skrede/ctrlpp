@@ -2,24 +2,27 @@
 // Descriptors 0, 1 and 2 are the USART3 console, a write-only character device,
 // and nothing else is ever open; the image is the only process.
 
+#include <unistd.h>
+
+#include <sys/stat.h>
+
 #include <span>
 #include <array>
 #include <cerrno>
 #include <csignal>
 #include <cstddef>
 #include <cstdlib>
-#include <unistd.h>
 
-#include <sys/stat.h>
-
-namespace ctrlpp {
+namespace ctrlpp
+{
 void usart3_write(std::span<const char> text) noexcept;
 }
 
-namespace {
+namespace
+{
 
 constexpr int kConsoleDescriptors = 3;
-constexpr pid_t kImageProcess     = 1;
+constexpr pid_t kImageProcess = 1;
 
 std::array<bool, kConsoleDescriptors> console_open{true, true, true};
 
@@ -36,15 +39,15 @@ int refuse(int code) noexcept
 
 }
 
-extern "C" ssize_t _write(int descriptor, const void *data, std::size_t length)
+extern "C" ssize_t _write(int descriptor, const void* data, std::size_t length)
 {
     if(!is_console(descriptor))
         return refuse(EBADF);
-    ctrlpp::usart3_write({static_cast<const char *>(data), length});
+    ctrlpp::usart3_write({static_cast<const char*>(data), length});
     return static_cast<ssize_t>(length);
 }
 
-extern "C" ssize_t _read(int descriptor, void *, std::size_t)
+extern "C" ssize_t _read(int descriptor, void*, std::size_t)
 {
     return is_console(descriptor) ? 0 : refuse(EBADF);
 }
@@ -64,11 +67,11 @@ extern "C" int _close(int descriptor)
 
 // The stream buffering setup reads the device type here and line-buffers a
 // character device.
-extern "C" int _fstat(int descriptor, struct stat *status)
+extern "C" int _fstat(int descriptor, struct stat* status)
 {
     if(!is_console(descriptor))
         return refuse(EBADF);
-    *status         = {};
+    *status = {};
     status->st_mode = S_IFCHR;
     return 0;
 }

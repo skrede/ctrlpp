@@ -5,7 +5,8 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 // The evidence image measures its stack. The timing image paints nothing, so
 // the code it times runs without the instrument beside it.
@@ -14,7 +15,7 @@ inline constexpr bool kStackWatermarkPresent = CTRLPP_MCU_ALLOC_SENTINEL != 0;
 struct stack_window
 {
     std::uintptr_t reference;
-    std::uint32_t *top;
+    std::uint32_t* top;
 };
 
 // used is the depth below the region's reference, the host tables' quantity;
@@ -42,19 +43,19 @@ void paint_stack_at_startup() noexcept;
 // it and used understates that chain by those bytes; from_top does not.
 stack_window open_stack_window() noexcept;
 
-stack_reading close_stack_window(const stack_window &window, std::uint32_t floor) noexcept;
+stack_reading close_stack_window(const stack_window& window, std::uint32_t floor) noexcept;
 
 // Everything since the startup paint, as deep as any region has reached.
 stack_reading read_program_stack() noexcept;
 
-void report_stack(const char *region, const stack_reading &reading);
+void report_stack(const char* region, const stack_reading& reading);
 
 // A floor pass, then the measured pass: the same paint and the same walk, with
 // nothing between them the first time. The call must not be inlined: a chain
 // merged into this frame sits above the origin, where the paint cannot see it,
 // and the figure would then report the harness.
-template<class Call>
-stack_reading painted_pass(Call &&call) noexcept
+template <class Call>
+stack_reading painted_pass(Call&& call) noexcept
 {
     const std::uint32_t floor = close_stack_window(open_stack_window(), 0).used;
     const stack_window window = open_stack_window();
@@ -75,14 +76,14 @@ public:
 
     void leave(std::size_t k) noexcept;
 
-    const stack_reading &reading() const noexcept;
+    const stack_reading& reading() const noexcept;
 
 private:
-    stack_reading reading_;
-    stack_window window_;
-    std::uint32_t floor_;
-    std::size_t first_;
-    std::size_t last_;
+    stack_reading m_reading;
+    stack_window m_window;
+    std::uint32_t m_floor;
+    std::size_t m_first;
+    std::size_t m_last;
 };
 
 }

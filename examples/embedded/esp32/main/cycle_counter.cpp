@@ -9,10 +9,11 @@
 #include <cstdint>
 #include <algorithm>
 
-namespace {
+namespace
+{
 
-constexpr std::uint64_t kCounterStates         = std::uint64_t{1} << ctrlpp::kCounterBits;
-constexpr std::uint64_t kMicrosecondsPerMs     = 1000;
+constexpr std::uint64_t kCounterStates = std::uint64_t{1} << ctrlpp::kCounterBits;
+constexpr std::uint64_t kMicrosecondsPerMs = 1000;
 constexpr std::uint64_t kMillisecondsPerSecond = 1000;
 
 static_assert(sizeof(TickType_t) == sizeof(std::uint32_t), "a mark stores the tick count in 32 bits");
@@ -32,9 +33,10 @@ std::uint32_t wrap_ticks() noexcept
 
 }
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-const char *describe(counter_state state) noexcept
+const char* describe(counter_state state) noexcept
 {
     switch(state)
     {
@@ -78,11 +80,11 @@ cycle_mark open_region() noexcept
 
 cycle_span close_region(cycle_mark start) noexcept
 {
-    const std::uint32_t end     = cycle_sample();
+    const std::uint32_t end = cycle_sample();
     const std::uint32_t elapsed = tick_now() - start.tick;
-    cycle_span span             = cycles_between(start.cycles, end);
-    span.wrapped                = span.wrapped || elapsed >= wrap_ticks();
-    span.tick_crossed           = elapsed > 0U;
+    cycle_span span = cycles_between(start.cycles, end);
+    span.wrapped = span.wrapped || elapsed >= wrap_ticks();
+    span.tick_crossed = elapsed > 0U;
     return span;
 }
 

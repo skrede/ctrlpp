@@ -8,9 +8,11 @@
 #include <cstdint>
 #include <cinttypes>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-namespace {
+namespace
+{
 
 constexpr std::uint64_t kTenthsPerCycle = 10;
 
@@ -46,11 +48,11 @@ void emit_identity()
     std::printf("board=NUCLEO-H753ZI loop=bare-superloop scalar=double\n");
 }
 
-void emit_allocation_canary(const canary_verdict &verdict)
+void emit_allocation_canary(const canary_verdict& verdict)
 {
     open_line(stream_tag::canary);
     std::printf("allocation %s observed=%" PRIu32 " expected=%" PRIu32 " eigen_trips=%" PRIu32 "\n", verdict.live ? "PASS" : "FAIL", verdict.observed, verdict.expected,
-                verdict.eigen_trips);
+            verdict.eigen_trips);
 }
 
 void emit_counter_canary(counter_state state)
@@ -65,8 +67,8 @@ void emit_counter_canary(counter_state state)
 void emit_header(claim_class claim)
 {
     open_line(tag_of(claim));
-    const char *separator = "";
-    for(const claim_field &field : kClaimFields)
+    const char* separator = "";
+    for(const claim_field& field : kClaimFields)
     {
         if(field.claim != claim)
             continue;
@@ -77,7 +79,7 @@ void emit_header(claim_class claim)
     std::printf("\n");
 }
 
-void emit_exact_row(std::int32_t k, const std::array<double, kExactValues> &values)
+void emit_exact_row(std::int32_t k, const std::array<double, kExactValues>& values)
 {
     open_line(stream_tag::exact);
     std::printf("%" PRId32, k);
@@ -86,7 +88,7 @@ void emit_exact_row(std::int32_t k, const std::array<double, kExactValues> &valu
     std::printf("\n");
 }
 
-void emit_spread_row(const timing_region &region, const cycle_distribution &d)
+void emit_spread_row(const timing_region& region, const cycle_distribution& d)
 {
     open_line(stream_tag::spread);
     std::printf("%s,%s,%" PRIu32 ",%s,%" PRIu32, region.name, region.regime, d.n, region.basis, region.block);

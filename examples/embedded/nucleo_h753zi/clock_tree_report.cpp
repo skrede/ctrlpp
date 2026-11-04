@@ -6,7 +6,8 @@
 #include <cstdint>
 #include <cinttypes>
 
-namespace {
+namespace
+{
 
 std::uint32_t voltage_scale() noexcept
 {
@@ -16,7 +17,7 @@ std::uint32_t voltage_scale() noexcept
     return 4U - ((PWR->D3CR & PWR_D3CR_VOS) >> PWR_D3CR_VOS_Pos);
 }
 
-const char *pll_source() noexcept
+const char* pll_source() noexcept
 {
     switch(RCC->PLLCKSELR & RCC_PLLCKSELR_PLLSRC)
     {
@@ -30,7 +31,7 @@ const char *pll_source() noexcept
     return "none";
 }
 
-const char *console_kernel() noexcept
+const char* console_kernel() noexcept
 {
     const std::uint32_t selected = (RCC->D2CCIP2R & RCC_D2CCIP2R_USART28SEL) >> RCC_D2CCIP2R_USART28SEL_Pos;
     return selected == 0U ? "pclk1" : selected == ctrlpp::kUsartKernelHsi ? "hsi" : "other";
@@ -38,7 +39,8 @@ const char *console_kernel() noexcept
 
 }
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 void print_clock_tree()
 {

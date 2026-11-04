@@ -3,7 +3,8 @@
 
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 // The USART234578SEL code for hsi_ker_ck (RM0433, RCC_D2CCIP2R).
 inline constexpr std::uint32_t kUsartKernelHsi = 3U;

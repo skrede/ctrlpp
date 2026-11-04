@@ -2,9 +2,11 @@
 // Redirect: ./ctrlpp_mpc_05_terminal_set > output.csv
 
 #include "ctrlpp/mpc.h"
+
+#include "ctrlpp/model/propagate.h"
+
 #include "ctrlpp/mpc/osqp_solver.h"
 #include "ctrlpp/mpc/invariant_set.h"
-#include "ctrlpp/model/propagate.h"
 
 #include <Eigen/Dense>
 
@@ -80,11 +82,7 @@ int main()
     constexpr double dt = 0.1;
 
     ctrlpp::discrete_state_space<double, NX, NU, NX> sys{
-        (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(),
-        (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished(),
-        Eigen::Matrix2d::Identity(),
-        Eigen::Matrix<double, 2, 1>::Zero()
-    };
+            (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished(), (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished(), Eigen::Matrix2d::Identity(), Eigen::Matrix<double, 2, 1>::Zero()};
 
     Eigen::Matrix2d const Q = Eigen::Matrix2d::Identity();
     Eigen::Matrix<double, 1, 1> const R = Eigen::Matrix<double, 1, 1>::Identity();
@@ -106,18 +104,16 @@ int main()
     }
     std::cerr << "terminal set rows: " << ingredients->invariant_set->H.rows() << "\n";
 
-    ctrlpp::mpc_config<double, NX, NU> cfg{
-        .horizon                 = 30,
-        .Q                       = Q,
-        .R                       = R,
-        .Qf                      = ingredients->Qf,
-        .u_min                   = -u_max,
-        .u_max                   = u_max,
-        .x_min                   = -x_max,
-        .x_max                   = x_max,
-        .terminal_constraint_set = ctrlpp::terminal_set<double, NX>{*ingredients->invariant_set},
-        .hard_state_constraints  = true
-    };
+    ctrlpp::mpc_config<double, NX, NU> cfg{.horizon = 30,
+            .Q = Q,
+            .R = R,
+            .Qf = ingredients->Qf,
+            .u_min = -u_max,
+            .u_max = u_max,
+            .x_min = -x_max,
+            .x_max = x_max,
+            .terminal_constraint_set = ctrlpp::terminal_set<double, NX>{*ingredients->invariant_set},
+            .hard_state_constraints = true};
 
     auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, cfg);
     if(!controller_result.has_value())

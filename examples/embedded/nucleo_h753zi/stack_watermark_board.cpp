@@ -10,9 +10,11 @@ extern "C" std::uint32_t _ebss[];
 extern "C" std::uint32_t _estack[];
 extern "C" std::uint32_t _Min_Stack_Size[];
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-namespace {
+namespace
+{
 
 // The harness's own reach below the origin: the walk's caller pushes three
 // words below it. A build that deepens the harness reads a nonzero floor, which
@@ -32,18 +34,17 @@ constexpr std::uint32_t kPaintSeed = static_cast<std::uint32_t>(0x5FC3A96E1D47B2
 
 struct program_record
 {
-    std::uint32_t *top;
-    std::uint32_t *deepest;
+    std::uint32_t* top;
+    std::uint32_t* deepest;
     std::uint32_t floor;
 };
 
 constinit program_record program{nullptr, nullptr, 0};
 
-// The heap lives in AXI SRAM, so nothing in DTCM sits between the end of bss
-// and the stack. The stack descends through that memory long before it reaches
-// the nominal reserve, so the reserve is not the window's honest lower bound and
-// the end of bss is.
-std::uint32_t *window_bottom() noexcept
+// The heap lives in AXI SRAM, so nothing in DTCM sits between the end of bss and the stack, and the stack
+// descends through that memory long before it reaches the nominal reserve: the end of bss, not the
+// reserve, is the window's honest lower bound.
+std::uint32_t* window_bottom() noexcept
 {
     return _ebss;
 }
@@ -60,25 +61,23 @@ std::uint32_t stack_reserve() noexcept
     return static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(_Min_Stack_Size));
 }
 
-std::uint32_t paint_word(const std::uint32_t *address) noexcept
+std::uint32_t paint_word(const std::uint32_t* address) noexcept
 {
     return kPaintSeed ^ static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(address));
 }
 
-[[gnu::noinline]] void paint_below(std::uint32_t *top) noexcept
+[[gnu::noinline]] void paint_below(std::uint32_t* top) noexcept
 {
-    for(std::uint32_t *word = window_bottom(); word != top; ++word)
+    for(std::uint32_t* word = window_bottom(); word != top; ++word)
         *word = paint_word(word);
 }
 
-// The scan runs upward from the bottom of the window and stops at the first
-// word that no longer holds its pattern. That word is by construction the
-// deepest disturbed one, which is stronger than walking down from the origin
-// and stopping at the first undisturbed word: the latter assumes the disturbed
-// region is contiguous, and this does not.
-[[gnu::noinline]] std::uint32_t *deepest_below(std::uint32_t *top) noexcept
+// The scan runs upward from the bottom of the window and stops at the first word that no longer holds its
+// pattern, by construction the deepest disturbed one; walking down from the origin to the first undisturbed
+// word would assume the disturbed region is contiguous.
+[[gnu::noinline]] std::uint32_t* deepest_below(std::uint32_t* top) noexcept
 {
-    for(std::uint32_t *word = window_bottom(); word != top; ++word)
+    for(std::uint32_t* word = window_bottom(); word != top; ++word)
     {
         if(*word != paint_word(word))
             return word;
@@ -92,20 +91,20 @@ void fold_program() noexcept
 {
     if(program.top == nullptr)
         return;
-    std::uint32_t *const deepest = deepest_below(program.top);
+    std::uint32_t* const deepest = deepest_below(program.top);
     if(deepest < program.deepest)
         program.deepest = deepest;
 }
 
-stack_reading reading_of(const stack_window &window, const std::uint32_t *deepest, std::uint32_t floor) noexcept
+stack_reading reading_of(const stack_window& window, const std::uint32_t* deepest, std::uint32_t floor) noexcept
 {
     const auto address = reinterpret_cast<std::uintptr_t>(deepest);
-    const auto top     = reinterpret_cast<std::uintptr_t>(window.top);
-    const auto bottom  = reinterpret_cast<std::uintptr_t>(window_bottom());
+    const auto top = reinterpret_cast<std::uintptr_t>(window.top);
+    const auto bottom = reinterpret_cast<std::uintptr_t>(window_bottom());
     const bool touched = address != top;
-    const auto room    = static_cast<std::uint32_t>(stack_top() - bottom);
-    const auto from    = touched ? static_cast<std::uint32_t>(stack_top() - address) : 0U;
-    const auto used    = touched ? static_cast<std::uint32_t>(window.reference - address) : 0U;
+    const auto room = static_cast<std::uint32_t>(stack_top() - bottom);
+    const auto from = touched ? static_cast<std::uint32_t>(stack_top() - address) : 0U;
+    const auto used = touched ? static_cast<std::uint32_t>(window.reference - address) : 0U;
     return {used, from, room - from, room, static_cast<std::uint32_t>(window.reference - top), static_cast<std::uint32_t>(top - bottom), floor, touched && address == bottom};
 }
 
@@ -117,21 +116,21 @@ void paint_stack_at_startup() noexcept
     {
         const std::uint32_t floor = close_stack_window(open_stack_window(), 0).used;
         const stack_window window = open_stack_window();
-        program                   = {window.top, window.top, floor};
+        program = {window.top, window.top, floor};
     }
 }
 
 [[gnu::noinline]] stack_window open_stack_window() noexcept
 {
     fold_program();
-    std::uint32_t anchor        = 0;
+    std::uint32_t anchor = 0;
     const std::uintptr_t origin = reinterpret_cast<std::uintptr_t>(&anchor) & ~std::uintptr_t{sizeof(std::uint32_t) - 1};
-    std::uint32_t *const top    = reinterpret_cast<std::uint32_t *>(origin - kGapBytes);
+    std::uint32_t* const top = reinterpret_cast<std::uint32_t*>(origin - kGapBytes);
     paint_below(top);
     return {origin, top};
 }
 
-stack_reading close_stack_window(const stack_window &window, std::uint32_t floor) noexcept
+stack_reading close_stack_window(const stack_window& window, std::uint32_t floor) noexcept
 {
     return reading_of(window, deepest_below(window.top), floor);
 }
@@ -142,7 +141,7 @@ stack_reading read_program_stack() noexcept
     return reading_of({stack_top(), program.top}, program.deepest, program.floor);
 }
 
-void report_stack(const char *region, const stack_reading &r)
+void report_stack(const char* region, const stack_reading& r)
 {
     if constexpr(!kStackWatermarkPresent)
         return;
@@ -157,31 +156,31 @@ void report_stack(const char *region, const stack_reading &r)
 }
 
 stack_step_region::stack_step_region(std::size_t first, std::size_t last)
-        : reading_{}
-        , window_{0, nullptr}
-        , floor_(0)
-        , first_(first)
-        , last_(last)
+    : m_reading{}
+    , m_window{0, nullptr}
+    , m_floor(0)
+    , m_first(first)
+    , m_last(last)
 {
 }
 
 void stack_step_region::enter(std::size_t k) noexcept
 {
-    if(k != first_)
+    if(k != m_first)
         return;
-    floor_  = close_stack_window(open_stack_window(), 0).used;
-    window_ = open_stack_window();
+    m_floor = close_stack_window(open_stack_window(), 0).used;
+    m_window = open_stack_window();
 }
 
 void stack_step_region::leave(std::size_t k) noexcept
 {
-    if(k == last_)
-        reading_ = close_stack_window(window_, floor_);
+    if(k == m_last)
+        m_reading = close_stack_window(m_window, m_floor);
 }
 
-const stack_reading &stack_step_region::reading() const noexcept
+const stack_reading& stack_step_region::reading() const noexcept
 {
-    return reading_;
+    return m_reading;
 }
 
 }

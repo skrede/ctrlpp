@@ -3,20 +3,16 @@
 
 #include "cycle_counter.h"
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-// Proves the counter live, then times the instrument's own overhead, the gain
-// design and a golden-length block of each family's steps. Each region's first
-// execution after reset is its cold figure, taken before anything else runs it,
-// so this must run ahead of the control loop and the families' golden runs.
-// Interrupts and the scheduler are left as the demonstration runs them.
+// Each region's first execution after reset is its cold figure, so this runs ahead of the control loop and
+// the families' golden runs; interrupts and the scheduler are left as the demonstration runs them.
 counter_state run_timing();
 
-// The estimation family's warm block runs for longer than the task watchdog's
-// timeout without yielding, and the watchdog's report would then land inside a
-// timed sample. Feeding it or yielding inside the block would change what the
-// block measures, so the timing image stops the watchdog before it reports and
-// the posture line says so; the evidence image keeps the shipped watchdog.
+// The estimation family's warm block outlasts the task watchdog's timeout without yielding, and feeding
+// the watchdog or yielding inside the block would change what it measures, so the timing image stops the
+// watchdog (the posture line says so) while the evidence image keeps the shipped one.
 void stop_task_watchdog() noexcept;
 
 }

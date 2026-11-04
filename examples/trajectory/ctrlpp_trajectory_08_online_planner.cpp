@@ -1,21 +1,17 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_trajectory_08_online_planner' using 1:2 with lines title 'position', '' using 1:4 with lines title 'target'"
 // Redirect: ./ctrlpp_trajectory_08_online_planner > output.csv
 
-#include <ctrlpp/trajectory/online_planner_2nd.h>
+#include "ctrlpp/trajectory/online_planner_2nd.h"
 
 #include <iomanip>
 #include <iostream>
 
 int main()
 {
-    // 2nd-order online planner tracking a sequence of target changes.
-    // Simulates real-time joystick or sensor-driven commands.
-    // create validates the kinematic limits (finite and strictly positive,
-    // because they divide in the planner math) and reports rejections through
-    // ctrlpp::expected; unwrap after checking.
-    auto planner_result =
-        ctrlpp::online_planner_2nd<double>::create({.v_max = 2.0, .a_max = 5.0});
-    if (!planner_result.has_value())
+    // The retargets stand in for joystick or sensor commands arriving in real time. create refuses limits
+    // that are not finite and strictly positive, since the planner divides by them.
+    auto planner_result = ctrlpp::online_planner_2nd<double>::create({.v_max = 2.0, .a_max = 5.0});
+    if(!planner_result.has_value())
     {
         std::cerr << "invalid planner limits\n";
         return 1;
@@ -25,34 +21,29 @@ int main()
     constexpr double dt = 0.005;
     constexpr double total_time = 10.0;
 
-    // Target change schedule
     double current_target = 5.0;
-    if (!planner.update(current_target).has_value())
+    if(!planner.update(current_target).has_value())
     {
         std::cerr << "invalid target\n";
         return 1;
     }
 
-    // A retarget mid-motion does not always produce the commanded profile: a
-    // reversal or an overshoot is braked to rest and replanned from the stopping
-    // point instead. A finite accepted target still reports the resulting
-    // disposition through diagnostics(). The motion respects the same limits
-    // either way; what changes is how long the move takes.
+    // A reversal or overshoot mid-motion is braked to rest and replanned from the stopping point, which
+    // diagnostics() reports; the limits hold either way, only the move takes longer.
     std::cout << "time,position,velocity,target,substituted\n";
 
-    for (double t = 0.0; t <= total_time; t += dt)
+    for(double t = 0.0; t <= total_time; t += dt)
     {
-        // Change target at specified times
-        if (t >= 6.0 && current_target != 8.0)
+        if(t >= 6.0 && current_target != 8.0)
         {
             current_target = 8.0;
-            if (!planner.update(current_target).has_value())
+            if(!planner.update(current_target).has_value())
                 return 1;
         }
-        else if (t >= 3.0 && t < 6.0 && current_target != 2.0)
+        else if(t >= 3.0 && t < 6.0 && current_target != 2.0)
         {
             current_target = 2.0;
-            if (!planner.update(current_target).has_value())
+            if(!planner.update(current_target).has_value())
                 return 1;
         }
 

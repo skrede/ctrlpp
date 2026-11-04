@@ -17,14 +17,15 @@
 // library's originals as __real_. Calls the C library makes through its
 // reentrant entry points (_malloc_r, _calloc_r: the stdio buffer and the float
 // formatter's big integers) never name these symbols and are not seen.
-extern "C" void *__real_malloc(std::size_t size);
-extern "C" void *__real_calloc(std::size_t count, std::size_t size);
-extern "C" void *__real_realloc(void *pointer, std::size_t size);
-extern "C" void __real_free(void *pointer);
+extern "C" void* __real_malloc(std::size_t size);
+extern "C" void* __real_calloc(std::size_t count, std::size_t size);
+extern "C" void* __real_realloc(void* pointer, std::size_t size);
+extern "C" void __real_free(void* pointer);
 
 #endif
 
-namespace {
+namespace
+{
 
 #if CTRLPP_MCU_ALLOC_SENTINEL
 
@@ -33,7 +34,7 @@ std::atomic<std::uint32_t> allocations{0};
 
 constexpr std::size_t kCanaryBytes = sizeof(double);
 // A dynamic-size vector always takes heap storage, so one element is enough.
-constexpr Eigen::Index kCanaryElements     = 1;
+constexpr Eigen::Index kCanaryElements = 1;
 constexpr std::uint32_t kCanaryAllocations = 3;
 
 void count_allocation() noexcept
@@ -44,7 +45,7 @@ void count_allocation() noexcept
 
 // Hands the address to an opaque consumer so the compiler cannot prove a
 // deliberate allocation unused and remove it together with its free.
-void escape(void *pointer) noexcept
+void escape(void* pointer) noexcept
 {
     __asm__ __volatile__("" : : "r"(pointer) : "memory");
 }
@@ -55,45 +56,46 @@ void escape(void *pointer) noexcept
 
 #if CTRLPP_MCU_ALLOC_SENTINEL
 
-extern "C" void *__wrap_malloc(std::size_t size)
+extern "C" void* __wrap_malloc(std::size_t size)
 {
     count_allocation();
     return __real_malloc(size);
 }
 
-extern "C" void *__wrap_calloc(std::size_t count, std::size_t size)
+extern "C" void* __wrap_calloc(std::size_t count, std::size_t size)
 {
     count_allocation();
     return __real_calloc(count, size);
 }
 
-extern "C" void *__wrap_realloc(void *pointer, std::size_t size)
+extern "C" void* __wrap_realloc(void* pointer, std::size_t size)
 {
     count_allocation();
     return __real_realloc(pointer, size);
 }
 
-extern "C" void __wrap_free(void *pointer)
+extern "C" void __wrap_free(void* pointer)
 {
     __real_free(pointer);
 }
 
 #endif
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 #if CTRLPP_MCU_ALLOC_SENTINEL
 
 // Forwarded to __real_malloc and never to malloc: inside this image malloc IS
 // the wrapped, counting one, so going through it would count every C++
 // allocation twice.
-void *allocate_for_new(std::size_t size) noexcept
+void* allocate_for_new(std::size_t size) noexcept
 {
     count_allocation();
     return __real_malloc(size);
 }
 
-void release_for_delete(void *pointer) noexcept
+void release_for_delete(void* pointer) noexcept
 {
     __real_free(pointer);
 }
@@ -132,8 +134,8 @@ canary_verdict run_alloc_canary() noexcept
 {
     alloc_sensor_reset();
     alloc_sensor_arm();
-    void *c_block   = std::malloc(kCanaryBytes);
-    void *cpp_block = ::operator new(kCanaryBytes);
+    void* c_block = std::malloc(kCanaryBytes);
+    void* cpp_block = ::operator new(kCanaryBytes);
     escape(c_block);
     escape(cpp_block);
     {
@@ -143,7 +145,7 @@ canary_verdict run_alloc_canary() noexcept
     alloc_sensor_disarm();
 
     const std::uint32_t observed = alloc_sensor_observed();
-    const std::uint32_t eigen    = alloc_sensor_eigen_trips();
+    const std::uint32_t eigen = alloc_sensor_eigen_trips();
     ::operator delete(cpp_block);
     std::free(c_block);
     return {observed == kCanaryAllocations && eigen > 0, observed, kCanaryAllocations, eigen};
@@ -151,12 +153,12 @@ canary_verdict run_alloc_canary() noexcept
 
 #else
 
-void *allocate_for_new(std::size_t size) noexcept
+void* allocate_for_new(std::size_t size) noexcept
 {
     return std::malloc(size);
 }
 
-void release_for_delete(void *pointer) noexcept
+void release_for_delete(void* pointer) noexcept
 {
     std::free(pointer);
 }

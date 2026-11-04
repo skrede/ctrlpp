@@ -3,7 +3,8 @@
 
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 enum class counter_state
 {
@@ -13,7 +14,7 @@ enum class counter_state
     not_counting
 };
 
-const char *describe(counter_state state) noexcept;
+const char* describe(counter_state state) noexcept;
 
 // Runs the enable sequence from a forced-off state and then proves the counter
 // is running; any state other than live means no figure may be printed.
@@ -45,8 +46,8 @@ cycle_span measure_overhead() noexcept;
 
 // Forces an object into memory with its stores complete, so the work that
 // produced it cannot be removed or moved past the closing sample.
-template<class T>
-void keep(const T &object) noexcept
+template <class T>
+void keep(const T& object) noexcept
 {
     __asm__ __volatile__("" : : "r"(&object) : "memory");
 }

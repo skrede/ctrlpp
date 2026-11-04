@@ -1,19 +1,16 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./rls_example' using 1:2 with lines title 'param 1', '' using 1:3 with lines title 'param 2'"
 // Redirect: ./rls_example > output.csv
-/// @file rls_example.cpp
-/// @brief Online RLS identification: converges to true parameters [2.0, 0.5]
-///        and outputs parameter estimates over time for gnuplot visualization.
 
 #include "ctrlpp/sysid.h"
 
 #include <Eigen/Dense>
 
-#include <iostream>
 #include <random>
+#include <cstdint>
+#include <iostream>
 
 int main()
 {
-    // Online RLS identification of y = 2.0*x1 + 0.5*x2
     constexpr std::size_t NP = 2;
     constexpr double lambda = 0.98;
 
@@ -36,16 +33,14 @@ int main()
 
     std::cout << "# step,param_1,param_2,cov_1,cov_2\n";
 
-    for(int t = 1; t <= 200; ++t)
+    for(std::int32_t t = 1; t <= 200; ++t)
     {
         Eigen::Vector2d phi;
         phi << input(gen), input(gen);
         double y = true_params.dot(phi) + noise(gen);
 
-        // The update is fallible and its result is branched on, never discarded:
-        // a refused cycle leaves the estimate exactly where it was, so a caller
-        // that ignored the refusal would keep plotting a model that had silently
-        // stopped moving.
+        // A refused update leaves the estimate where it was, so a caller that ignored the refusal would keep
+        // plotting a model that had silently stopped moving.
         if(const auto applied = estimator.update(y, phi); !applied)
         {
             std::cerr << "RLS refused sample " << t << '\n';
@@ -57,10 +52,8 @@ int main()
         std::cout << t << ',' << theta(0) << ',' << theta(1) << ',' << P(0, 0) << ',' << P(1, 1) << '\n';
     }
 
-    // Print final info to stderr
     auto final_params = estimator.parameters();
-    std::cerr << "Final parameters: [" << final_params.transpose()
-              << "] error: [" << (final_params - true_params).transpose() << "]\n";
+    std::cerr << "Final parameters: [" << final_params.transpose() << "] error: [" << (final_params - true_params).transpose() << "]\n";
 
     return 0;
 }

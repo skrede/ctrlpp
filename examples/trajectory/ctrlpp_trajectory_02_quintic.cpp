@@ -1,15 +1,14 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_trajectory_02_quintic' using 1:2 with lines title 'position', '' using 1:3 with lines title 'velocity', '' using 1:4 with lines title 'acceleration'"
 // Redirect: ./ctrlpp_trajectory_02_quintic > output.csv
 
-#include <ctrlpp/trajectory/quintic_trajectory.h>
+#include "ctrlpp/trajectory/quintic_trajectory.h"
 
 #include <iomanip>
 #include <iostream>
 
 int main()
 {
-    // 1-DOF joint move: 0 -> 3.14 rad over 3 seconds
-    // Zero velocity and acceleration at both ends
+    // Joint positions in rad, the duration in s.
     using Vec = Eigen::Matrix<double, 1, 1>;
 
     Vec const q0 = Vec::Constant(0.0);
@@ -20,10 +19,8 @@ int main()
     Vec const a1 = Vec::Zero();
     constexpr double duration = 3.0;
 
-    // The factory validates its domain (finite inputs, duration > 0) and
-    // reports rejections through ctrlpp::expected; unwrap after checking.
     auto const result = ctrlpp::make_quintic_trajectory(q0, q1, v0, v1, a0, a1, duration);
-    if (!result.has_value())
+    if(!result.has_value())
     {
         std::cerr << "invalid trajectory configuration\n";
         return 1;
@@ -33,12 +30,9 @@ int main()
     constexpr double dt = 0.01;
     std::cout << "time,position,velocity,acceleration\n";
 
-    for (double t = 0.0; t <= trajectory.duration(); t += dt)
+    for(double t = 0.0; t <= trajectory.duration(); t += dt)
     {
         auto const pt = trajectory.evaluate(t);
-        std::cout << std::fixed << std::setprecision(4)
-                  << t << ","
-                  << pt.position[0] << "," << pt.velocity[0] << ","
-                  << pt.acceleration[0] << "\n";
+        std::cout << std::fixed << std::setprecision(4) << t << "," << pt.position[0] << "," << pt.velocity[0] << "," << pt.acceleration[0] << "\n";
     }
 }

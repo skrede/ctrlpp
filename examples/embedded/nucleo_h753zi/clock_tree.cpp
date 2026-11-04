@@ -7,7 +7,8 @@
 
 extern "C" void __real_SystemInit();
 
-namespace {
+namespace
+{
 
 struct clock_plan
 {
@@ -31,13 +32,13 @@ constexpr std::uint32_t kRevisionV = 0x2003U;
 constexpr clock_plan kRevisionVPlan = {60U, 4U, 2U, true};
 constexpr clock_plan kRevisionYPlan = {50U, 2U, 2U, false};
 
-constexpr std::uint32_t kPllM          = 4U;
-constexpr std::uint32_t kPllP          = 2U;
-constexpr std::uint32_t kInput8To16    = 3U;
+constexpr std::uint32_t kPllM = 4U;
+constexpr std::uint32_t kPllP = 2U;
+constexpr std::uint32_t kInput8To16 = 3U;
 constexpr std::uint32_t kVoltageScale1 = 3U;
-constexpr std::uint32_t kSupplyConfig  = PWR_CR3_SCUEN | PWR_CR3_LDOEN | PWR_CR3_BYPASS;
-constexpr std::uint32_t kPllShape      = RCC_PLLCFGR_PLL1FRACEN | RCC_PLLCFGR_PLL1VCOSEL | RCC_PLLCFGR_PLL1RGE | RCC_PLLCFGR_DIVQ1EN | RCC_PLLCFGR_DIVR1EN;
-constexpr std::uint32_t kFlashTiming   = FLASH_ACR_LATENCY | FLASH_ACR_WRHIGHFREQ;
+constexpr std::uint32_t kSupplyConfig = PWR_CR3_SCUEN | PWR_CR3_LDOEN | PWR_CR3_BYPASS;
+constexpr std::uint32_t kPllShape = RCC_PLLCFGR_PLL1FRACEN | RCC_PLLCFGR_PLL1VCOSEL | RCC_PLLCFGR_PLL1RGE | RCC_PLLCFGR_DIVQ1EN | RCC_PLLCFGR_DIVR1EN;
+constexpr std::uint32_t kFlashTiming = FLASH_ACR_LATENCY | FLASH_ACR_WRHIGHFREQ;
 
 std::optional<clock_plan> plan_for(std::uint32_t revision) noexcept
 {
@@ -86,8 +87,8 @@ void raise_voltage(bool overdrive) noexcept
 void start_pll1(std::uint32_t n) noexcept
 {
     RCC->PLLCKSELR = (RCC->PLLCKSELR & ~(RCC_PLLCKSELR_PLLSRC | RCC_PLLCKSELR_DIVM1)) | RCC_PLLCKSELR_PLLSRC_HSI | (kPllM << RCC_PLLCKSELR_DIVM1_Pos);
-    RCC->PLLCFGR   = (RCC->PLLCFGR & ~kPllShape) | (kInput8To16 << RCC_PLLCFGR_PLL1RGE_Pos) | RCC_PLLCFGR_DIVP1EN;
-    RCC->PLL1DIVR  = (RCC->PLL1DIVR & ~(RCC_PLL1DIVR_N1 | RCC_PLL1DIVR_P1)) | ((n - 1U) << RCC_PLL1DIVR_N1_Pos) | ((kPllP - 1U) << RCC_PLL1DIVR_P1_Pos);
+    RCC->PLLCFGR = (RCC->PLLCFGR & ~kPllShape) | (kInput8To16 << RCC_PLLCFGR_PLL1RGE_Pos) | RCC_PLLCFGR_DIVP1EN;
+    RCC->PLL1DIVR = (RCC->PLL1DIVR & ~(RCC_PLL1DIVR_N1 | RCC_PLL1DIVR_P1)) | ((n - 1U) << RCC_PLL1DIVR_N1_Pos) | ((kPllP - 1U) << RCC_PLL1DIVR_P1_Pos);
     RCC->CR |= RCC_CR_PLL1ON;
     while((RCC->CR & RCC_CR_PLL1RDY) == 0U)
     {
@@ -104,7 +105,7 @@ void set_bus_prescalers() noexcept
     RCC->D3CFGR = RCC_D3CFGR_D3PPRE_DIV2;
 }
 
-void set_flash_wait_states(const clock_plan &plan) noexcept
+void set_flash_wait_states(const clock_plan& plan) noexcept
 {
     FLASH->ACR = (FLASH->ACR & ~kFlashTiming) | plan.flash_latency | (plan.flash_write_delay << FLASH_ACR_WRHIGHFREQ_Pos);
     while((FLASH->ACR & FLASH_ACR_LATENCY) != plan.flash_latency)
@@ -126,7 +127,7 @@ void keep_console_on_hsi() noexcept
     RCC->D2CCIP2R = (RCC->D2CCIP2R & ~RCC_D2CCIP2R_USART28SEL) | (ctrlpp::kUsartKernelHsi << RCC_D2CCIP2R_USART28SEL_Pos);
 }
 
-void raise_core_clock(const clock_plan &plan) noexcept
+void raise_core_clock(const clock_plan& plan) noexcept
 {
     raise_voltage(plan.overdrive);
     start_pll1(plan.pll_n);
@@ -158,7 +159,8 @@ extern "C" void __wrap_SystemInit()
     enable_caches();
 }
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 std::uint32_t silicon_revision() noexcept
 {

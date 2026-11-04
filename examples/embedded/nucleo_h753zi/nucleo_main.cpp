@@ -1,20 +1,6 @@
 // Armed before Eigen is parsed, or the Eigen allocation sentinel is never compiled in.
 #include "eigen_alloc_sentinel.h"
 
-// ctrlpp NUCLEO-H753ZI on-device leg (bare superloop, double FPU).
-//
-// CMSIS startup runs SystemInit + C++ static ctors, then calls main(). This
-// waits, bounded, for the host's handshake byte, prints the reset that started
-// the run and the posture it is taken under, then either proves the allocation
-// sensor is not blind (the evidence image) or proves the cycle counter live and
-// times every family cold and warm (the timing image).
-// It then designs the infinite-horizon LQR gain once, runs the closed loop with
-// the sensor armed around each step, streams the trajectory's exact rows over
-// USART3 -> ST-Link VCP, runs the estimation, signal-processing, trajectory and
-// predictive families each inside its own armed window, diffs every family's
-// double result against its host-double golden, and halts for the operator to
-// read the console.
-
 #include "posture.h"
 #include "telemetry.h"
 #include "timing_run.h"
@@ -36,11 +22,13 @@
 #include <cstdio>
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 void usart3_console_init() noexcept;
 }
 
-namespace {
+namespace
+{
 
 using demo_type = ctrlpp::control_loop_demo<double>;
 
@@ -65,7 +53,7 @@ void prove_instrument()
 
 // The sensor is armed around step() alone, so the figure is the controller's
 // and the telemetry formatting between steps is not charged to it.
-void run_loop(demo_type &demo)
+void run_loop(demo_type& demo)
 {
     ctrlpp::emit_header(ctrlpp::claim_class::exact);
     ctrlpp::alloc_sensor_reset();
@@ -78,7 +66,7 @@ void run_loop(demo_type &demo)
     }
 }
 
-void report_golden(const demo_type &demo, const ctrlpp::golden_verdict &verdict, const ctrlpp::window_figures &figures)
+void report_golden(const demo_type& demo, const ctrlpp::golden_verdict& verdict, const ctrlpp::window_figures& figures)
 {
     const double final_norm = demo.x.norm();
     ctrlpp::open_line(ctrlpp::stream_tag::verdict);
@@ -92,11 +80,9 @@ void report_golden(const demo_type &demo, const ctrlpp::golden_verdict &verdict,
 
 }
 
-// The startup figure is read before main does anything else, so it covers reset
-// and static construction; the program figure is read after the last family and
-// the golden judgment, ahead of the closing report. The boot handshake waits
-// after the startup read and before the first line, so a reader that attaches
-// late still gets the report's head. The reset flags are cleared only once the
+// The startup figure is read first, so it covers reset and static construction, and the program figure
+// after the last family and the golden judgment. The boot handshake waits before the first line, so a
+// reader that attaches late still gets the report's head, and the reset flags are cleared only once the
 // posture line carrying them has been printed.
 int main()
 {

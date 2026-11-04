@@ -4,7 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 // The framework's own free-heap figures across the armed windows, a view
 // independent of both sensors: what the windows kept, and the deepest dip below
@@ -29,13 +30,11 @@ struct canary_verdict
     std::uint32_t heap_self;
 };
 
-// The view's start call allocates a snapshot of every heap's minimum after the
-// window's opening free size is read, and its stop call frees it after the
-// closing one, so each window keeps and dips by exactly that block, its
-// self-count, when nothing else in the window touched the heap. The self-count
-// is measured by an empty window, so it follows the framework rather than a
-// figure copied from one version of it.
-inline bool heap_view_clean(const heap_view &view, std::uint32_t self) noexcept
+// The view's start call allocates a snapshot of every heap's minimum after the window's opening free size
+// is read, and its stop call frees it after the closing one, so a window nothing else touched keeps and dips
+// by exactly that block, its self-count. An empty window measures the self-count, so it follows the
+// framework rather than a figure copied from one version of it.
+inline bool heap_view_clean(const heap_view& view, std::uint32_t self) noexcept
 {
     const std::uint32_t dip = view.windows == 0 ? 0 : self;
     return std::int64_t{view.retained} == std::int64_t{view.windows} * self && view.dip == dip;
@@ -48,11 +47,11 @@ inline constexpr bool kAllocSensorPresent = CTRLPP_MCU_ALLOC_SENTINEL != 0;
 
 // The replaced operators' route to the framework's allocator: counted in the
 // evidence image, the plain allocator otherwise.
-void *allocate_for_new(std::size_t size) noexcept;
+void* allocate_for_new(std::size_t size) noexcept;
 
-void *allocate_aligned_for_new(std::size_t size, std::size_t alignment) noexcept;
+void* allocate_aligned_for_new(std::size_t size, std::size_t alignment) noexcept;
 
-void release_for_delete(void *pointer) noexcept;
+void release_for_delete(void* pointer) noexcept;
 
 // Counting is off until armed, so setup allocation is never charged to the
 // window being measured. Arming also forbids Eigen allocation, which is what
@@ -72,11 +71,9 @@ heap_view alloc_sensor_heap() noexcept;
 // The empty window's figure, read when the canary runs.
 std::uint32_t alloc_sensor_heap_self() noexcept;
 
-// Measures the heap view's self-count, then makes one deliberate allocation
-// through each path the sensor claims to see inside an armed window, and one
-// through the C allocator that only the heap view can see. A zero the sensor
-// reports later is evidence only if this came back live; the heap view is live
-// if the window kept the requested bytes beyond its self-count.
+// One deliberate allocation through each path the sensor claims to see inside an armed window, and one
+// through the C allocator that only the heap view sees. A zero the sensor reports later is evidence only if
+// this came back live; the heap view is live if the window kept the requested bytes beyond its self-count.
 canary_verdict run_alloc_canary() noexcept;
 
 }

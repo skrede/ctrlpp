@@ -16,18 +16,20 @@
 #include <cinttypes>
 #include <string_view>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
-namespace {
+namespace
+{
 
 // Telemetry UART (UART2): ESP TX GPIO5 -> USB RX, ESP RX GPIO4 <- USB TX. The
 // Olimex ESP32-POE boards drive the Ethernet PHY clock from GPIO17, and GPIO3 is
 // the console UART's RX from the on-board USB bridge, so neither may carry it.
 // GPIO5 is a strapping pin that must be high at boot, which an idle UART line is.
 constexpr uart_port_t kTelemetryUart = UART_NUM_2;
-constexpr std::int32_t kTxPin        = 5;
-constexpr std::int32_t kRxPin        = 4;
-constexpr std::int32_t kBaud         = 115200;
+constexpr std::int32_t kTxPin = 5;
+constexpr std::int32_t kRxPin = 4;
+constexpr std::int32_t kBaud = 115200;
 
 constexpr std::size_t kShaBytes = sizeof(esp_app_desc_t::app_elf_sha256);
 
@@ -49,11 +51,11 @@ std::size_t append(std::span<char> line, std::size_t used, std::string_view text
 std::array<char, 2 * kShaBytes + 1> elf_sha256_text()
 {
     constexpr std::string_view digits = "0123456789abcdef";
-    const esp_app_desc_t *desc        = esp_app_get_description();
+    const esp_app_desc_t* desc = esp_app_get_description();
     std::array<char, 2 * kShaBytes + 1> text{};
     for(std::size_t i = 0; i < kShaBytes; ++i)
     {
-        text[2 * i]     = digits[desc->app_elf_sha256[i] >> 4U];
+        text[2 * i] = digits[desc->app_elf_sha256[i] >> 4U];
         text[2 * i + 1] = digits[desc->app_elf_sha256[i] & 0xFU];
     }
     return text;
@@ -64,11 +66,11 @@ std::array<char, 2 * kShaBytes + 1> elf_sha256_text()
 void telemetry_init()
 {
     uart_config_t cfg{};
-    cfg.baud_rate  = kBaud;
-    cfg.data_bits  = UART_DATA_8_BITS;
-    cfg.parity     = UART_PARITY_DISABLE;
-    cfg.stop_bits  = UART_STOP_BITS_1;
-    cfg.flow_ctrl  = UART_HW_FLOWCTRL_DISABLE;
+    cfg.baud_rate = kBaud;
+    cfg.data_bits = UART_DATA_8_BITS;
+    cfg.parity = UART_PARITY_DISABLE;
+    cfg.stop_bits = UART_STOP_BITS_1;
+    cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
     cfg.source_clk = UART_SCLK_DEFAULT;
 
     uart_driver_install(kTelemetryUart, 512, 0, 0, nullptr, 0);
@@ -76,7 +78,7 @@ void telemetry_init()
     uart_set_pin(kTelemetryUart, kTxPin, kRxPin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 }
 
-void send_line(stream_tag tag, const char *body)
+void send_line(stream_tag tag, const char* body)
 {
     write(tag_text(tag));
     write(body);
@@ -93,14 +95,14 @@ void emit_identity()
     send_line(stream_tag::meta, body);
 }
 
-void emit_allocation_canary(const canary_verdict &verdict)
+void emit_allocation_canary(const canary_verdict& verdict)
 {
     char body[kLineBytes];
     std::snprintf(body, sizeof(body), "allocation %s observed=%" PRIu32 " expected=%" PRIu32 " eigen_trips=%" PRIu32, verdict.live ? "PASS" : "FAIL", verdict.observed, verdict.expected,
-                  verdict.eigen_trips);
+            verdict.eigen_trips);
     send_line(stream_tag::canary, body);
     std::snprintf(body, sizeof(body), "heap_view %s retained=%" PRId32 " requested=%" PRIu32 " dip=%" PRIu32 " self=%" PRIu32, verdict.heap_live ? "PASS" : "FAIL",
-                  verdict.heap.retained, verdict.requested, verdict.heap.dip, verdict.heap_self);
+            verdict.heap.retained, verdict.requested, verdict.heap.dip, verdict.heap_self);
     send_line(stream_tag::canary, body);
 }
 
@@ -117,20 +119,20 @@ void emit_counter_canary(counter_state state)
 void emit_header(claim_class claim)
 {
     char body[kLineBytes] = {};
-    std::size_t used      = 0;
+    std::size_t used = 0;
     std::string_view separator;
-    for(const claim_field &field : kClaimFields)
+    for(const claim_field& field : kClaimFields)
     {
         if(field.claim != claim)
             continue;
-        used      = append(body, used, separator);
-        used      = append(body, used, field.name);
+        used = append(body, used, separator);
+        used = append(body, used, field.name);
         separator = ",";
     }
     send_line(tag_of(claim), body);
 }
 
-void emit_exact_row(std::int32_t k, const std::array<float, kExactValues> &values)
+void emit_exact_row(std::int32_t k, const std::array<float, kExactValues>& values)
 {
     static_assert(kExactValues == 4, "the row's format names four values");
     std::array<std::array<char, kBitsTextLength<float>>, kExactValues> bits{};
@@ -141,23 +143,23 @@ void emit_exact_row(std::int32_t k, const std::array<float, kExactValues> &value
     send_line(stream_tag::exact, body);
 }
 
-void emit_spread_row(const timing_region &region, const cycle_distribution &d)
+void emit_spread_row(const timing_region& region, const cycle_distribution& d)
 {
     static_assert(column_count(claim_class::spread) == 11, "emit_spread_row prints eleven values in the table's order");
     constexpr std::uint64_t kTenthsPerCycle = 10;
-    char figures[kLineBytes / 2]            = ",,,,,";
+    char figures[kLineBytes / 2] = ",,,,,";
     if(d.n > 0)
     {
         const std::uint64_t tenths = (std::uint64_t{d.max} * kTenthsPerCycle + region.block / 2U) / region.block;
         std::snprintf(figures, sizeof(figures), ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ",%" PRIu32 ".%" PRIu32, d.min, d.median, d.max, d.max_at,
-                      static_cast<std::uint32_t>(tenths / kTenthsPerCycle), static_cast<std::uint32_t>(tenths % kTenthsPerCycle));
+                static_cast<std::uint32_t>(tenths / kTenthsPerCycle), static_cast<std::uint32_t>(tenths % kTenthsPerCycle));
     }
     char body[kLineBytes];
     std::snprintf(body, sizeof(body), "%s,%s,%" PRIu32 ",%s,%" PRIu32 "%s,%" PRIu32, region.name, region.regime, d.n, region.basis, region.block, figures, d.wraps);
     send_line(stream_tag::spread, body);
 }
 
-void emit_interruption(const timing_region &region, const cycle_distribution &d)
+void emit_interruption(const timing_region& region, const cycle_distribution& d)
 {
     char body[kLineBytes];
     std::snprintf(body, sizeof(body), "interruption region=%s regime=%s tick_crossed=%" PRIu32 " of=%" PRIu32, region.name, region.regime, d.tick_crossed, d.n + d.wraps);
@@ -171,7 +173,7 @@ void emit_gain(float k0, float k1)
     send_line(stream_tag::verdict, body);
 }
 
-void emit_stack(const char *region, std::uint32_t free_bytes, std::uint32_t stack_bytes)
+void emit_stack(const char* region, std::uint32_t free_bytes, std::uint32_t stack_bytes)
 {
     char body[kLineBytes];
     std::snprintf(body, sizeof(body), "stack region=%s used=%" PRIu32 " free=%" PRIu32 " of=%" PRIu32 " bytes", region, stack_bytes - free_bytes, free_bytes, stack_bytes);

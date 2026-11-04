@@ -10,6 +10,7 @@
 
 #if CTRLPP_MCU_PREDICTIVE
     #include "timing_run.h"
+
     #include "predictive_demo.h"
     #include "predictive_verdict.h"
 #endif
@@ -19,7 +20,8 @@
 #include <cstdint>
 #include <cinttypes>
 
-namespace ctrlpp {
+namespace ctrlpp
+{
 
 window_figures read_window() noexcept
 {
@@ -29,7 +31,7 @@ window_figures read_window() noexcept
         return {false, 0, 0};
 }
 
-void report_allocations(const window_figures &figures)
+void report_allocations(const window_figures& figures)
 {
     const std::uint32_t steps = static_cast<std::uint32_t>(kGoldenSteps);
     if(!figures.measured)
@@ -40,32 +42,33 @@ void report_allocations(const window_figures &figures)
     }
     open_line(stream_tag::verdict);
     std::printf("alloc steady_state allocations=%" PRIu32 " steps=%" PRIu32 " per_step=%.2f eigen_sentinel=%s trips=%" PRIu32 "\n", figures.allocations, steps,
-                static_cast<double>(figures.allocations) / steps, figures.eigen_trips == 0 ? "clean" : "TRIPPED", figures.eigen_trips);
+            static_cast<double>(figures.allocations) / steps, figures.eigen_trips == 0 ? "clean" : "TRIPPED", figures.eigen_trips);
 }
 
-void report_family(const family_result &result, const window_figures &figures)
+void report_family(const family_result& result, const window_figures& figures)
 {
     const std::uint32_t steps = static_cast<std::uint32_t>(kGoldenSteps);
     open_line(stream_tag::verdict);
     std::printf("family %s value=%.17g golden=%.17g departure=%.3e bound=%.3e verdict=%s", result.name, result.value, result.golden, result.departure, result.bound,
-                result.pass ? "PASS" : "FAIL");
+            result.pass ? "PASS" : "FAIL");
     if(!figures.measured)
     {
         std::printf(" allocations=unmeasured\n");
         return;
     }
     std::printf(" allocations=%" PRIu32 " steps=%" PRIu32 " per_step=%.2f eigen_trips=%" PRIu32 "\n", figures.allocations, steps, static_cast<double>(figures.allocations) / steps,
-                figures.eigen_trips);
+            figures.eigen_trips);
 }
 
 #if CTRLPP_MCU_PREDICTIVE
 
-namespace {
+namespace
+{
 
 // The controller carries its solver's workspace inline, about 41 KB, so the
 // instance lives in static storage rather than on the stack. The call stays out
 // of line so its construction runs below the painted origin that measures it.
-[[gnu::noinline]] predictive_demo<double> &predictive_instance()
+[[gnu::noinline]] predictive_demo<double>& predictive_instance()
 {
     static predictive_demo<double> demo;
     return demo;
@@ -74,12 +77,12 @@ namespace {
 predictive_record predictive_run{};
 predictive_workspace predictive_bound = make_predictive_workspace();
 
-void report_predictive(const predictive_verdict &verdict)
+void report_predictive(const predictive_verdict& verdict)
 {
     open_line(stream_tag::verdict);
     std::printf("predictive stationarity_stops=%" PRIu32 " of %" PRIu32 " worst_gate=%.3e run_steps=%" PRIu32 " armed_steps=%" PRIu32 " premise=%s gate=%s\n",
-                predictive_run.stationarity_stops, static_cast<std::uint32_t>(kPredictiveRunSteps), verdict.worst_gate, static_cast<std::uint32_t>(kPredictiveRunSteps),
-                static_cast<std::uint32_t>(kGoldenSteps), verdict.premise ? "PASS" : "FAIL", verdict.gate ? "PASS" : "FAIL");
+            predictive_run.stationarity_stops, static_cast<std::uint32_t>(kPredictiveRunSteps), verdict.worst_gate, static_cast<std::uint32_t>(kPredictiveRunSteps),
+            static_cast<std::uint32_t>(kGoldenSteps), verdict.premise ? "PASS" : "FAIL", verdict.gate ? "PASS" : "FAIL");
 }
 
 void construct_predictive()
@@ -95,7 +98,7 @@ stack_step_region steady_stack{kPredictiveWarmupSolves, kPredictiveRunSteps - 1}
 
 // The stack regions open before the sensor arms and close after it disarms, so
 // neither instrument runs inside the other's window.
-ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double> &demo)
+ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double>& demo)
 {
     const auto arm = [](std::size_t k)
     {
@@ -121,11 +124,11 @@ ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double> &d
 
 solve_timer predictive_timer;
 
-ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double> &demo)
+ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double>& demo)
 {
     const auto enter = [](std::size_t k) { predictive_timer.enter(k); };
     const auto leave = [&demo](std::size_t k) { predictive_timer.leave(k, demo.controller().diagnostics().iterations); };
-    const auto ran   = run_predictive(demo, predictive_run, enter, leave);
+    const auto ran = run_predictive(demo, predictive_run, enter, leave);
     predictive_timer.report();
     return ran;
 }
@@ -139,13 +142,13 @@ ctrlpp::expected<void, solver_error> run_instrumented(predictive_demo<double> &d
 void drive_predictive_family()
 {
     construct_predictive();
-    predictive_demo<double> &demo = predictive_instance();
+    predictive_demo<double>& demo = predictive_instance();
     alloc_sensor_reset();
-    const auto ran               = run_instrumented(demo);
+    const auto ran = run_instrumented(demo);
     const window_figures figures = read_window();
     open_line(stream_tag::verdict);
     std::printf("heap predictive_setup_high_water=%" PRIu32 " reserve=%" PRIu32 " bytes\n", static_cast<std::uint32_t>(heap_high_water_bytes()),
-                static_cast<std::uint32_t>(heap_reserve_bytes()));
+            static_cast<std::uint32_t>(heap_reserve_bytes()));
     if(!ran.has_value())
     {
         open_line(stream_tag::verdict);

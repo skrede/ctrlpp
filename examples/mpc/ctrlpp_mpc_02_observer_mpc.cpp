@@ -1,17 +1,20 @@
 // Usage: gnuplot -p -e "set datafile separator ','; set key autotitle columnheader; plot '<./ctrlpp_mpc_02_observer_mpc' using 1:2 with lines title 'true x0', '' using 1:4 with lines title 'est x0', '' using 1:6 with lines title 'control'"
 // Redirect: ./ctrlpp_mpc_02_observer_mpc > output.csv
 
-#include "ctrlpp/estimation/kalman.h"
 #include "ctrlpp/mpc.h"
-#include "ctrlpp/mpc/osqp_solver.h"
+
+#include "ctrlpp/estimation/kalman.h"
+
 #include "ctrlpp/model/propagate.h"
+
+#include "ctrlpp/mpc/osqp_solver.h"
 
 #include <Eigen/Dense>
 
+#include <limits>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
-#include <limits>
 
 int main()
 {
@@ -23,15 +26,13 @@ int main()
     Eigen::Matrix2d Ad = (Eigen::Matrix2d() << 1.0, dt, 0.0, 1.0).finished();
     Eigen::Vector2d Bd = (Eigen::Vector2d() << 0.5 * dt * dt, dt).finished();
 
-    // Observer system: position-only measurement (NY=1)
+    // The observer measures position only, while the MPC needs the full state as its output.
     ctrlpp::discrete_state_space<double, NX, NU, NY_OBS> obs_sys{Ad, Bd, (Eigen::Matrix<double, 1, 2>() << 1.0, 0.0).finished(), Eigen::Matrix<double, 1, 1>::Zero()};
 
-    // MPC system: full-state output (NY=NX=2)
     ctrlpp::discrete_state_space<double, NX, NU, NX> mpc_sys{Ad, Bd, Eigen::Matrix2d::Identity(), Eigen::Matrix<double, 2, 1>::Zero()};
 
-    // Kalman filter setup
     auto kf_result = ctrlpp::kalman_filter<double, NX, NU, NY_OBS>::create(
-        obs_sys, {.Q = Eigen::Matrix2d::Identity() * 0.01, .R = Eigen::Matrix<double, 1, 1>::Constant(0.1), .x0 = Eigen::Vector2d::Zero(), .P0 = Eigen::Matrix2d::Identity()});
+            obs_sys, {.Q = Eigen::Matrix2d::Identity() * 0.01, .R = Eigen::Matrix<double, 1, 1>::Constant(0.1), .x0 = Eigen::Vector2d::Zero(), .P0 = Eigen::Matrix2d::Identity()});
     if(!kf_result.has_value())
     {
         std::cerr << "invalid Kalman filter configuration\n";
@@ -39,19 +40,15 @@ int main()
     }
     auto& kf = *kf_result;
 
-    // MPC setup
     ctrlpp::mpc_config<double, NX, NU> cfg{.horizon = 20,
-                                           .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
-                                           .R = Eigen::Matrix<double, 1, 1>::Identity(),
-                                           .Qf = std::nullopt,
-                                           .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
-                                           .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
-                                           .x_min = Eigen::Vector2d(-std::numeric_limits<double>::infinity(), -2.0),
-                                           .x_max = Eigen::Vector2d(std::numeric_limits<double>::infinity(), 2.0)};
+            .Q = Eigen::Vector2d(10.0, 1.0).asDiagonal(),
+            .R = Eigen::Matrix<double, 1, 1>::Identity(),
+            .Qf = std::nullopt,
+            .u_min = Eigen::Matrix<double, 1, 1>::Constant(-1.0),
+            .u_max = Eigen::Matrix<double, 1, 1>::Constant(1.0),
+            .x_min = Eigen::Vector2d(-std::numeric_limits<double>::infinity(), -2.0),
+            .x_max = Eigen::Vector2d(std::numeric_limits<double>::infinity(), 2.0)};
 
-    // create validates the configuration and reports a configuration refusal or
-    // the solver's own setup refusal through ctrlpp::expected<mpc, construction_error>
-    // instead of throwing.
     auto controller_result = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(mpc_sys, cfg);
     if(!controller_result.has_value())
     {
@@ -68,17 +65,13 @@ int main()
 
     for(double t = 0.0; t < duration; t += dt)
     {
-        // Predict observer with previous control
         kf.predict(u);
 
-        // Propagate true state
         x_true = ctrlpp::propagate(mpc_sys, x_true, u);
 
-        // Simulate position-only measurement
         Eigen::Matrix<double, 1, 1> z = obs_sys.C * x_true;
 
-        // Update observer with measurement. The step reports whether it ran,
-        // so a non-finite sample cannot silently poison the estimate the MPC
+        // update reports whether it ran, so a non-finite sample cannot silently poison the estimate the MPC
         // then solves against.
         if(const auto stepped = kf.update(z); !stepped)
         {
@@ -86,7 +79,6 @@ int main()
             return EXIT_FAILURE;
         }
 
-        // MPC solves using estimated state from Kalman filter
         auto u_opt = controller.solve(kf.state());
         if(!u_opt)
         {
