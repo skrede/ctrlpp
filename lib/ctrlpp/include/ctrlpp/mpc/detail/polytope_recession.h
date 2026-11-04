@@ -1,13 +1,12 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_DETAIL_POLYTOPE_RECESSION_H
 #define HPP_GUARD_CTRLPP_MPC_DETAIL_POLYTOPE_RECESSION_H
 
-/// @brief Whether a polytope {x : H x <= h} recedes, that is whether some nonzero d has H d <= 0.
-///
-/// A rank-deficient H leaves a line. Otherwise the cone {d : H d <= 0} is pointed, and a pointed cone other than {0}
-/// has an extreme ray: the null direction of NX - 1 independent rows of H, which no row of H has on its positive side.
-/// Each row is compared with a candidate direction within the NX-term inner-product bound (@cite higham2002, Sec. 3.1)
-/// plus the row applied to the direction's forward error, the residual of its defining rows mapped back through their
-/// pseudo-inverse (as for a vertex, @cite higham2002, Sec. 7.2).
+// A polytope {x : H x <= h} recedes when some nonzero d has H d <= 0. A rank-deficient H leaves a line. Otherwise the
+// cone {d : H d <= 0} is pointed, and a pointed cone other than {0} has an extreme ray: the null direction of NX - 1
+// independent rows of H, which no row of H has on its positive side. Each row is compared with a candidate direction
+// within the NX-term inner-product bound (@cite higham2002, Sec. 3.1) plus the row applied to the direction's forward
+// error, the residual of its defining rows mapped back through their pseudo-inverse (as for a vertex, @cite higham2002,
+// Sec. 7.2).
 
 #include "ctrlpp/mpc/detail/polytope_redundancy.h"
 
@@ -36,8 +35,8 @@ struct recession_candidate
     Vector<Scalar, NX> error;
 };
 
-/// The tolerance can only report a direction exact arithmetic might lack, never hide one it has: it errs toward
-/// refusing a bounded set, which is the sound side.
+// The tolerance can only report a direction exact arithmetic might lack, never hide one it has: it errs toward
+// refusing a bounded set, which is the sound side.
 template <typename Scalar, std::size_t NX>
 bool recedes_along(const polytopic_set<Scalar, NX>& set, const recession_candidate<Scalar, NX>& candidate, Scalar sign, Scalar factor)
 {
@@ -51,9 +50,9 @@ bool recedes_along(const polytopic_set<Scalar, NX>& set, const recession_candida
     return true;
 }
 
-/// The unit null direction of the rows `subset`, from the last column of Q in the QR of their transpose S^T = Q R. A
-/// subset whose sigma_min is within the QR's backward error (@cite higham2002, Sec. 19.3) is singular as far as the
-/// factorization can tell, and determines no direction.
+// The unit null direction of the rows `subset`, from the last column of Q in the QR of their transpose S^T = Q R. A
+// subset whose sigma_min is within the QR's backward error (@cite higham2002, Sec. 19.3) is singular as far as the
+// factorization can tell, and determines no direction.
 template <typename Scalar, std::size_t NX>
 std::optional<recession_candidate<Scalar, NX>> null_direction(const polytopic_set<Scalar, NX>& set, const std::array<Eigen::Index, NX - 1>& subset, Scalar factor)
 {

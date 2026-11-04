@@ -1,10 +1,8 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_DETAIL_OUTPUT_ADMISSIBLE_ROWS_H
 #define HPP_GUARD_CTRLPP_MPC_DETAIL_OUTPUT_ADMISSIBLE_ROWS_H
 
-/// @brief Output rows C A_K^t, the step bound and the vertex certificate of the maximal output admissible set.
-///
-/// @cite gilbert1991 -- Gilbert & Tan, "Linear systems with state and control constraints: the theory and application of maximal output admissible sets", IEEE TAC 36(9), 1991
-/// @cite ossareh2023 -- Ossareh & Kolmanovsky, "On complexity bounds for the maximal admissible set of linear time-invariant systems", 2023 (a-priori step bound)
+// @cite gilbert1991 -- Gilbert & Tan, "Linear systems with state and control constraints: the theory and application of maximal output admissible sets", IEEE TAC 36(9), 1991
+// @cite ossareh2023 -- Ossareh & Kolmanovsky, "On complexity bounds for the maximal admissible set of linear time-invariant systems", 2023 (a-priori step bound)
 
 #include "ctrlpp/mpc/detail/polytope_recession.h"
 #include "ctrlpp/mpc/detail/polytope_redundancy.h"
@@ -35,10 +33,10 @@ bool straddles_zero(const Vector<Scalar, N>& lower, const Vector<Scalar, N>& upp
     return ((lower.array() < Scalar{0}) && (upper.array() > Scalar{0})).all();
 }
 
-/// The output map y = [I; K] x with one row per finite bound side, unnormalized; an infinite side constrains nothing.
+// The output map y = [I; K] x with one row per finite bound side, unnormalized; an infinite side constrains nothing.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-polytopic_set<Scalar, NX> finite_outputs(const Matrix<Scalar, NU, NX>& K, const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max,
-                                         const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max)
+polytopic_set<Scalar, NX> finite_outputs(
+        const Matrix<Scalar, NU, NX>& K, const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max, const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max)
 {
     polytopic_set<Scalar, NX> outputs{.H = Eigen::Matrix<Scalar, Eigen::Dynamic, static_cast<int>(NX)>(0, static_cast<Eigen::Index>(NX)), .h = Eigen::VectorX<Scalar>(0)};
     auto add = [&outputs](const polytope_row<Scalar, NX>& row, Scalar lower, Scalar upper)
@@ -55,7 +53,7 @@ polytopic_set<Scalar, NX> finite_outputs(const Matrix<Scalar, NU, NX>& K, const 
     return outputs;
 }
 
-/// A zero row is dropped: the origin-interior hypothesis makes its bound positive, so it holds everywhere.
+// A zero row is dropped: the origin-interior hypothesis makes its bound positive, so it holds everywhere.
 template <typename Scalar, std::size_t NX>
 std::optional<std::pair<polytope_row<Scalar, NX>, Scalar>> unit_output_row(const polytopic_set<Scalar, NX>& outputs, Eigen::Index i, const Matrix<Scalar, NX, NX>& power)
 {
@@ -76,7 +74,7 @@ void append_output_rows(polytopic_set<Scalar, NX>& set, const polytopic_set<Scal
 
 template <typename Scalar, std::size_t NX>
 bool append_unimplied_rows(polytopic_set<Scalar, NX>& set, const polytopic_set<Scalar, NX>& outputs, const Matrix<Scalar, NX, NX>& power,
-                           const std::vector<polytope_vertex<Scalar, NX>>& vertices, Scalar factor)
+        const std::vector<polytope_vertex<Scalar, NX>>& vertices, Scalar factor)
 {
     bool appended = false;
     for(Eigen::Index i = 0; i < outputs.H.rows(); ++i)
@@ -90,16 +88,16 @@ bool append_unimplied_rows(polytopic_set<Scalar, NX>& set, const polytopic_set<S
     return appended;
 }
 
-/// Stein equation A_K^T X A_K - X = -I in Kronecker form, (A_K^T kron A_K^T - I) vec(X) = -vec(I). Its solution is
-/// positive definite exactly when A_K is strictly stable, so it is the stability test as well as the Lyapunov matrix.
+// Stein equation A_K^T X A_K - X = -I in Kronecker form, (A_K^T kron A_K^T - I) vec(X) = -vec(I). Its solution is
+// positive definite exactly when A_K is strictly stable, so it is the stability test as well as the Lyapunov matrix.
 template <typename Scalar, std::size_t NX>
 std::optional<Matrix<Scalar, NX, NX>> stein_lyapunov_matrix(const Matrix<Scalar, NX, NX>& A_K)
 {
     constexpr int nx = static_cast<int>(NX);
     using kronecker = Eigen::Matrix<Scalar, nx * nx, nx * nx>;
     kronecker M;
-    for(int i = 0; i < nx; ++i)
-        for(int j = 0; j < nx; ++j)
+    for(Eigen::Index i = 0; i < nx; ++i)
+        for(Eigen::Index j = 0; j < nx; ++j)
             M.template block<nx, nx>(i * nx, j * nx) = A_K(j, i) * A_K.transpose();
     Eigen::FullPivLU<kronecker> const lu(M - kronecker::Identity());
     if(!lu.isInvertible())
@@ -112,10 +110,10 @@ std::optional<Matrix<Scalar, NX, NX>> stein_lyapunov_matrix(const Matrix<Scalar,
     return X;
 }
 
-/// V(x) = x^T X x contracts by 1 - 1 / lambda_max(X) per step; with r2 the largest V on the vertices of O_{n-1}
-/// and r1 the largest level of V inside Y, the last index O_inf needs is at most log(r1 / r2) / log(1 - 1 / lambda_max(X))
-/// (@cite ossareh2023, Theorem 5, with the Stein matrix, so the bound exists for every strictly stable A_K). Rounded
-/// up rather than down, so rounding in r1, r2 and lambda_max cannot cut it short.
+// V(x) = x^T X x contracts by 1 - 1 / lambda_max(X) per step; with r2 the largest V on the vertices of O_{n-1}
+// and r1 the largest level of V inside Y, the last index O_inf needs is at most log(r1 / r2) / log(1 - 1 / lambda_max(X))
+// (@cite ossareh2023, Theorem 5, with the Stein matrix, so the bound exists for every strictly stable A_K). Rounded
+// up rather than down, so rounding in r1, r2 and lambda_max cannot cut it short.
 template <typename Scalar, std::size_t NX>
 Scalar admissible_step_bound(const Matrix<Scalar, NX, NX>& X, const polytopic_set<Scalar, NX>& outputs, const std::vector<polytope_vertex<Scalar, NX>>& vertices)
 {
@@ -132,8 +130,8 @@ Scalar admissible_step_bound(const Matrix<Scalar, NX, NX>& X, const polytopic_se
     return std::ceil(std::log(r1 / r2) / std::log1p(-Scalar{1} / lambda_max));
 }
 
-/// A_K v with its forward error: the vertex's own error mapped through |A_K|, plus each component's NX-term inner-product
-/// bound (@cite higham2002, Sec. 3.1), which is what a row of A_K that cancels heavily contributes.
+// A_K v with its forward error: the vertex's own error mapped through |A_K|, plus each component's NX-term inner-product
+// bound (@cite higham2002, Sec. 3.1), which is what a row of A_K that cancels heavily contributes.
 template <typename Scalar, std::size_t NX>
 std::vector<polytope_vertex<Scalar, NX>> mapped_vertices(const std::vector<polytope_vertex<Scalar, NX>>& vertices, const Matrix<Scalar, NX, NX>& A_K, Scalar factor)
 {
@@ -150,10 +148,10 @@ std::vector<polytope_vertex<Scalar, NX>> mapped_vertices(const std::vector<polyt
     return images;
 }
 
-/// The set, checked on its own vertices, recedes in no direction, lies inside Y, and contains the image under A_K of
-/// every vertex, so A_K maps it into itself. Each implication carries the comparison bound the construction decides
-/// with, so this checks the result against Y and A_K rather than adding a tolerance model. A bounded full-dimensional
-/// polytope has at least NX + 1 vertices.
+// The set, checked on its own vertices, recedes in no direction, lies inside Y, and contains the image under A_K of
+// every vertex, so A_K maps it into itself. Each implication carries the comparison bound the construction decides
+// with, so this checks the result against Y and A_K rather than adding a tolerance model. A bounded full-dimensional
+// polytope has at least NX + 1 vertices.
 template <typename Scalar, std::size_t NX>
 bool certified_admissible(const polytopic_set<Scalar, NX>& set, const polytopic_set<Scalar, NX>& outputs, const Matrix<Scalar, NX, NX>& A_K, Scalar factor)
 {
@@ -173,6 +171,7 @@ bool certified_admissible(const polytopic_set<Scalar, NX>& set, const polytopic_
             return false;
     return true;
 }
+
 }
 
 #endif

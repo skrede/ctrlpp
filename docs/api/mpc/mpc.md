@@ -239,11 +239,11 @@ Returns solver diagnostics from the last solve, including status, iteration coun
 #include <ctrlpp/mpc/invariant_set.h>
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto terminal_ingredients(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B,
-                          const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R,
-                          const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max,
-                          const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max)
-    -> expected<terminal_ingredients_result<Scalar, NX, NU>, terminal_ingredients_error>;
+expected<terminal_ingredients_result<Scalar, NX, NU>, terminal_ingredients_error>
+terminal_ingredients(const Matrix<Scalar, NX, NX>& A, const Matrix<Scalar, NX, NU>& B,
+                     const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R,
+                     const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max,
+                     const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max);
 
 // in ctrlpp/mpc/terminal_set.h
 using terminal_ingredients_error = std::variant<terminal_set_error, dare_error>;
@@ -293,12 +293,12 @@ Every terminal-set construction reports its refusals as one `terminal_set_error`
 #include <ctrlpp/mpc/output_admissible_set.h>
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto compute_output_admissible_set(const Matrix<Scalar, NX, NX>& A_K, const Matrix<Scalar, NU, NX>& K,
-                                   const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max,
-                                   const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max,
-                                   Scalar rounding_factor = Scalar{1},
-                                   std::int64_t max_steps = std::numeric_limits<std::int64_t>::max())
-    -> expected<polytopic_set<Scalar, NX>, terminal_set_error>;
+expected<polytopic_set<Scalar, NX>, terminal_set_error>
+compute_output_admissible_set(const Matrix<Scalar, NX, NX>& A_K, const Matrix<Scalar, NU, NX>& K,
+                              const Vector<Scalar, NU>& u_min, const Vector<Scalar, NU>& u_max,
+                              const Vector<Scalar, NX>& x_min, const Vector<Scalar, NX>& x_max,
+                              Scalar rounding_factor = Scalar{1},
+                              std::int64_t max_steps = std::numeric_limits<std::int64_t>::max());
 ```
 
 Builds the maximal output admissible set `O_inf = {x : C A_K^k x in Y for all k >= 0}` of `x+ = A_K x`, with `C = [I; K]` and `Y` the finite bound sides, for any closed loop (the `invariant_set` field calls it with `A_K = A + B K`). `A_K` must be the closed loop `A + B K` of the `K` passed: the input rows are formed from `K` and the dynamics from `A_K`, so a mismatched pair describes a law that is never applied. Its hypotheses are checked in this order: every entry of `A_K` and `K` is finite and no bound is NaN (else `non_finite_input`), every finite bound side strictly straddles zero (else `origin_not_interior`), `A_K` is strictly stable (else `closed_loop_not_stable`), and the rows `C A_K^k` of the first `NX` steps bound a polytope (else `unbounded_terminal_set`). `not_converged` is reported if the construction passes its derived step bound. The result is checked on its own vertices before it is returned, and an enumeration too small to describe a full-dimensional polytope is refused; either failure is `certification_failed`. `NX <= 4` is a compile-time requirement.

@@ -1,13 +1,11 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_DETAIL_POLYTOPE_REDUNDANCY_H
 #define HPP_GUARD_CTRLPP_MPC_DETAIL_POLYTOPE_REDUNDANCY_H
 
-/// @brief Vertex enumeration and row redundancy for a bounded polytope {x : G x <= g} with unit rows.
-///
-/// Each comparison of a row with a vertex carries its own rounding bound: the residual G_i v - g_i as an
-/// (n + 1)-term inner product (@cite higham2002, Sec. 3.1), plus the vertex's forward error bounded from the
-/// residual of its n defining rows (@cite higham2002, Sec. 7.2). A looser feasibility bound only admits
-/// near-vertices, which keeps more rows and stays sound; the implication bound is what can admit a set larger
-/// than the exact one, by at most that bound.
+// In a bounded polytope {x : G x <= g} with unit rows, each comparison of a row with a vertex carries its own rounding
+// bound: the residual G_i v - g_i as an (n + 1)-term inner product (@cite higham2002, Sec. 3.1), plus the vertex's
+// forward error bounded from the residual of its n defining rows (@cite higham2002, Sec. 7.2). A looser feasibility
+// bound only admits near-vertices, which keeps more rows and stays sound; the implication bound is what can admit a set
+// larger than the exact one, by at most that bound.
 
 #include "ctrlpp/mpc/terminal_set.h"
 
@@ -105,7 +103,7 @@ bool next_subset(std::array<Eigen::Index, NX>& subset, Eigen::Index m)
     return false;
 }
 
-/// Vertex enumeration over every NX-row subset, so the cost is C(m, NX) small solves.
+// Vertex enumeration over every NX-row subset, so the cost is C(m, NX) small solves.
 template <typename Scalar, std::size_t NX>
 std::vector<polytope_vertex<Scalar, NX>> enumerate_vertices(const polytopic_set<Scalar, NX>& set, Scalar factor)
 {
@@ -125,7 +123,8 @@ std::vector<polytope_vertex<Scalar, NX>> enumerate_vertices(const polytopic_set<
 template <typename Scalar, std::size_t NX>
 bool implied(const polytope_row<Scalar, NX>& row, Scalar bound, const std::vector<polytope_vertex<Scalar, NX>>& vertices, Scalar factor)
 {
-    return std::all_of(vertices.begin(), vertices.end(), [&](const polytope_vertex<Scalar, NX>& v) { return row.dot(v.point) - bound <= comparison_bound<Scalar, NX>(row, bound, v, factor); });
+    return std::all_of(
+            vertices.begin(), vertices.end(), [&](const polytope_vertex<Scalar, NX>& v) { return row.dot(v.point) - bound <= comparison_bound<Scalar, NX>(row, bound, v, factor); });
 }
 
 template <typename Scalar, std::size_t NX>
@@ -139,8 +138,8 @@ std::vector<std::size_t> tight_vertices(const polytope_row<Scalar, NX>& row, Sca
 }
 
 template <typename Scalar, std::size_t NX>
-bool certifies_facet(const polytope_row<Scalar, NX>& row, const std::array<Eigen::Index, NX>& chosen, const std::vector<std::size_t>& tight,
-                     const std::vector<polytope_vertex<Scalar, NX>>& vertices)
+bool certifies_facet(
+        const polytope_row<Scalar, NX>& row, const std::array<Eigen::Index, NX>& chosen, const std::vector<std::size_t>& tight, const std::vector<polytope_vertex<Scalar, NX>>& vertices)
 {
     if constexpr(NX == 1)
         return true;
@@ -161,8 +160,8 @@ bool certifies_facet(const polytope_row<Scalar, NX>& row, const std::array<Eigen
     }
 }
 
-/// A row is a facet exactly when NX of its tight vertices are affinely independent in its hyperplane: for each NX of them the offsets are
-/// projected onto it and sigma_{NX-1} is compared with the Frobenius bound of their forward errors (@cite golub2013, Sec. 8.6.1), so no badly located vertex can veto.
+// A row is a facet exactly when NX of its tight vertices are affinely independent in its hyperplane: for each NX of them the offsets are
+// projected onto it and sigma_{NX-1} is compared with the Frobenius bound of their forward errors (@cite golub2013, Sec. 8.6.1), so no badly located vertex can veto.
 template <typename Scalar, std::size_t NX>
 bool spans_facet(const polytope_row<Scalar, NX>& row, const std::vector<std::size_t>& tight, const std::vector<polytope_vertex<Scalar, NX>>& vertices)
 {
@@ -178,7 +177,7 @@ bool spans_facet(const polytope_row<Scalar, NX>& row, const std::vector<std::siz
     return false;
 }
 
-/// Keeps the rows of `set` that are facets on its `vertices`; rows defining the same facet have the same tight vertices, so only the first is kept.
+// Keeps the rows of `set` that are facets on its `vertices`; rows defining the same facet have the same tight vertices, so only the first is kept.
 template <typename Scalar, std::size_t NX>
 polytopic_set<Scalar, NX> minimal_rows(const polytopic_set<Scalar, NX>& set, const std::vector<polytope_vertex<Scalar, NX>>& vertices, Scalar factor)
 {
