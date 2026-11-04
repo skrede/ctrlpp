@@ -52,23 +52,27 @@ stylistic. Forcing a caller to unwrap a non-failure through the failure path
 teaches the caller that the failure path is usually noise, and a caller who has
 learned that will eventually ignore a real failure.
 
-The moving-horizon estimator is the worked example. Its diagnostics aggregate
-lives in `ctrlpp/mhe/mhe_diagnostics.h`:
+The moving-horizon estimator is the worked example. Its diagnostics type
+lives in `ctrlpp/mhe/mhe_diagnostics.h`; the default constructor sets `status`
+to `solve_status::error`, `used_ekf_fallback` to `false` and every other field
+to zero:
 
 ```cpp
 template <typename Scalar>
 struct mhe_diagnostics
 {
-    solve_status status{solve_status::error};
-    int iterations{};
-    Scalar solve_time{};
-    Scalar cost{};
-    Scalar primal_residual{};
-    Scalar dual_residual{};
-    Scalar max_constraint_violation{};
-    Scalar max_residual_bound_violation{};
-    Scalar total_slack{};
-    bool used_ekf_fallback{false};
+    mhe_diagnostics();
+
+    solve_status status;
+    std::int32_t iterations;
+    Scalar solve_time;
+    Scalar cost;
+    Scalar primal_residual;
+    Scalar dual_residual;
+    Scalar max_constraint_violation;
+    Scalar max_residual_bound_violation;
+    Scalar total_slack;
+    bool used_ekf_fallback;
 };
 ```
 

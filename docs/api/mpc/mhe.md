@@ -54,11 +54,10 @@ Configuration struct `mhe_config<Scalar, NX, NU, NY, N>` passed to `create`.
 ## Creation
 
 ```cpp
-static auto create(
+static ctrlpp::expected<mhe, moving_horizon_construction_error> create(
     Dynamics dynamics,
     Measurement measurement,
-    const mhe_config<Scalar, NX, NU, NY, N>& config)
-    -> ctrlpp::expected<mhe, moving_horizon_construction_error>;
+    const mhe_config<Scalar, NX, NU, NY, N>& config);
 ```
 
 Validates the embedded EKF and the moving-horizon formulation before constructing the estimator. On success, initializes the internal EKF for arrival-cost propagation and the measurement/input windows.
@@ -80,8 +79,7 @@ Propagates the internal EKF one step and records the input in the sliding window
 ### update
 
 ```cpp
-auto update(const output_vector_t& z)
-    -> ctrlpp::expected<void, ekf_update_error>;
+ctrlpp::expected<void, ekf_update_error> update(const output_vector_t& z);
 ```
 
 Incorporates a new measurement, or reports why it could not. During fill-up (fewer than N steps), delegates to the internal EKF. Once the window is full, solves the estimation problem to refine the state trajectory over the entire window. A solver setup failure (reported through the solver's `setup`) or a non-optimal solve falls back to the internal EKF; `diagnostics()` reports the fallback.

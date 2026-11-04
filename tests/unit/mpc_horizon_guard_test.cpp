@@ -576,7 +576,7 @@ TEST_CASE("Nonlinear moving-horizon factory validates path-constraint operands",
           "[nmhe][configuration][hardening]")
 {
     ctrlpp::nmhe_config<double, NX, NU, NY, window, 1> config;
-    config.path_constraint = [](const Eigen::Vector2d&) {
+    config.path_constraint_cb = [](const Eigen::Vector2d&) {
         return Eigen::Matrix<double, 1, 1>::Zero();
     };
 
@@ -593,7 +593,7 @@ TEST_CASE("Nonlinear moving-horizon factory validates path-constraint operands",
         ctrlpp::moving_horizon_configuration_error::invalid_path_penalty);
 
     config.path_penalty << 1.0;
-    config.path_constraint = [](const Eigen::Vector2d&) {
+    config.path_constraint_cb = [](const Eigen::Vector2d&) {
         return Eigen::Matrix<double, 1, 1>::Constant(
             std::numeric_limits<double>::quiet_NaN());
     };

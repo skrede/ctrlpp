@@ -110,13 +110,13 @@ public:
 
         if constexpr(NC > 0)
         {
-            if(config.path_constraint)
+            if(config.path_constraint_cb)
             {
                 if(!config.path_penalty.allFinite()
                     || !(config.path_penalty.array() > Scalar{0}).all())
                     return ctrlpp::unexpected(moving_horizon_construction_error{
                         moving_horizon_configuration_error::invalid_path_penalty});
-                if(!(*config.path_constraint)(config.x0).allFinite())
+                if(!(*config.path_constraint_cb)(config.x0).allFinite())
                     return ctrlpp::unexpected(moving_horizon_construction_error{
                         moving_horizon_configuration_error::non_finite_path_constraint});
             }
@@ -222,7 +222,7 @@ public:
                 m_x_window[m_step_count] = m_ekf.state();
             m_x_window[N] = m_ekf.state();
             m_innovation = m_ekf.innovation();
-            m_diagnostics = mhe_diagnostics<Scalar>{.status = solve_status::optimal, .used_ekf_fallback = true};
+            m_diagnostics = detail::ekf_fallback_diagnostics<Scalar>(solve_status::optimal);
             return {};
         }
 
@@ -350,8 +350,14 @@ private:
 
     void populate_solve_diagnostics(const nlp_result<Scalar>& result)
     {
-        m_diagnostics = mhe_diagnostics<Scalar>{
-            .status = result.status, .iterations = result.iterations, .solve_time = result.solve_time, .cost = result.objective, .primal_residual = result.primal_residual, .used_ekf_fallback = false};
+        mhe_diagnostics<Scalar> diagnostics;
+        diagnostics.status = result.status;
+        diagnostics.iterations = result.iterations;
+        diagnostics.solve_time = result.solve_time;
+        diagnostics.cost = result.objective;
+        diagnostics.primal_residual = result.primal_residual;
+        diagnostics.used_ekf_fallback = false;
+        m_diagnostics = diagnostics;
 
         compute_total_slack(result);
     }
@@ -360,7 +366,7 @@ private:
     {
         if constexpr(NC > 0)
         {
-            bool has_path_slack = m_config.soft_constraints && m_config.path_constraint.has_value();
+            bool has_path_slack = m_config.soft_constraints && m_config.path_constraint_cb.has_value();
             if(has_path_slack)
             {
                 int slack_off = (Ni + 1) * nx;
@@ -383,7 +389,7 @@ private:
     {
         m_x_window[N] = m_ekf.state();
         m_innovation = m_ekf.innovation();
-        m_diagnostics = mhe_diagnostics<Scalar>{.status = reason, .used_ekf_fallback = true};
+        m_diagnostics = detail::ekf_fallback_diagnostics<Scalar>(reason);
     }
 
     // The slices below need no length check of their own: this runs only from
@@ -402,7 +408,7 @@ private:
     {
         if constexpr(NC > 0)
         {
-            bool has_path_slack = m_config.soft_constraints && m_config.path_constraint.has_value();
+            bool has_path_slack = m_config.soft_constraints && m_config.path_constraint_cb.has_value();
             if(has_path_slack)
             {
                 int slack_off = (Ni + 1) * nx;

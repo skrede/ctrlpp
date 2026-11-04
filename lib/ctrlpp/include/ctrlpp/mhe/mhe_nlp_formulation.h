@@ -88,7 +88,7 @@ auto build_nmhe_problem(const Dynamics& dynamics,
     constexpr int Ni = static_cast<int>(N);
 
     // Decision variable layout
-    const bool has_path_constraint = NC > 0 && config.path_constraint.has_value();
+    const bool has_path_constraint = NC > 0 && config.path_constraint_cb.has_value();
     const bool has_path_slack = config.soft_constraints && has_path_constraint;
     const bool has_residual = config.residual_bound.has_value();
 
@@ -161,9 +161,9 @@ auto build_nmhe_problem(const Dynamics& dynamics,
         // Path constraints: g(x_k) - s_k <= 0 (soft) or g(x_k) <= 0 (hard)
         if constexpr(NC > 0)
         {
-            if(config.path_constraint)
+            if(config.path_constraint_cb)
             {
-                const auto& g = *config.path_constraint;
+                const auto& g = *config.path_constraint_cb;
                 for(int k = 0; k <= Ni; ++k)
                 {
                     Eigen::Map<const Vector<Scalar, NX>> xk(z.data() + x_offset + k * nx);

@@ -52,7 +52,7 @@ Configuration struct `nmhe_config<Scalar, NX, NU, NY, N, NC>` passed to `create`
 | `soft_constraints` | `bool` | `true` | Soften constraints with slack variables |
 | `soft_penalty` | `Scalar` | `1e4` | L1 penalty for soft constraints |
 | `numerical_eps` | `Scalar` | `sqrt(eps)` | Perturbation for numerical Jacobians |
-| `path_constraint` | `optional<function<Vector<NC>(x)>>` | none | Nonlinear path constraint g(x) <= 0 |
+| `path_constraint_cb` | `optional<function<Vector<NC>(x)>>` | none | Nonlinear path constraint g(x) <= 0 |
 | `path_penalty` | `Vector<Scalar, NC>` | `1e4` each | Per-constraint L1 penalty |
 
 ## Creation
