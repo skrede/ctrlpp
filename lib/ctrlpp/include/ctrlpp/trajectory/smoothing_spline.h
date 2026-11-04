@@ -1,35 +1,27 @@
 #ifndef HPP_GUARD_CTRLPP_TRAJECTORY_SMOOTHING_SPLINE_H
 #define HPP_GUARD_CTRLPP_TRAJECTORY_SMOOTHING_SPLINE_H
 
-/// @brief Smoothing spline with configurable mu tradeoff parameter.
-///
-/// Constructs a C2-continuous smoothing spline that approximates noisy waypoint
-/// data. The mu parameter controls the tradeoff between data fidelity and
-/// smoothness: mu=1 yields exact interpolation (passes through all waypoints),
-/// while mu near 0 maximizes smoothness at the cost of data fit.
-///
-/// The regularization weight lambda = 2*(1-mu)/(3*mu) maps mu in (0,1] to
-/// lambda in [0, inf). The system (R + lambda * Q^T * Q) * d = Q^T * q is
-/// solved for second derivatives at interior knots, then smoothed positions
-/// and cubic polynomial coefficients are computed per span.
-///
-/// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-/// Automatic Machines and Robots", 2009, Sec. 4.4.5
-/// @cite reinsch1967 -- Reinsch, "Smoothing by Spline Functions", Numerische Mathematik 10:177-183, 1967 (original smoothing-spline derivation)
-/// @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (cubic smoothing splines)
-
-#include "ctrlpp/expected.h"
+// Cubic smoothing spline: (R + lambda Q^T Q) d = Q^T q, with lambda = 2 (1 - mu) / (3 mu), is solved for the second
+// derivatives at the interior knots, d_0 = d_n = 0, and the coefficients follow from the smoothed positions q - lambda Q d.
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
+// Automatic Machines and Robots", 2009, Sec. 4.4.5
+// @cite reinsch1967 -- Reinsch, "Smoothing by Spline Functions", Numerische Mathematik 10:177-183, 1967 (original smoothing-spline derivation)
+// @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (cubic smoothing splines)
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
+
+#include "ctrlpp/trajectory/detail/spline_checks.h"
+#include "ctrlpp/trajectory/detail/smoothing_spline_solve.h"
+
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
 #include <Eigen/Dense>
 
-#include <cmath>
 #include <array>
-#include <limits>
+#include <cmath>
 #include <vector>
 #include <cstddef>
 #include <algorithm>
@@ -37,418 +29,157 @@
 namespace ctrlpp
 {
 
-/// @brief Smoothing spline approximation with mu tradeoff parameter.
-///
-/// mu=1.0 degenerates to interpolation (passes through all waypoints).
-/// mu near 0 biases toward smoothness (deviates from data).
-/// Natural-like endpoint conditions: d_0 = d_n = 0.
-///
-/// Construction goes through `create`, which validates the waypoint
-/// configuration and the smoothing-parameter domain mu in (0, 1], reporting
-/// rejections through `ctrlpp::expected<smoothing_spline, spline_error>`.
-///
-/// @cite biagiotti2009 -- Sec. 4.4.5
 template <ctrlpp_floating_scalar Scalar>
 class smoothing_spline
 {
-  public:
-    struct config
-    {
-        std::vector<Scalar> times;       ///< Knot times t_0 ... t_n (n+1 entries)
-        std::vector<Scalar> positions;   ///< Waypoint positions q_0 ... q_n (n+1 entries)
-        Scalar mu{Scalar{0.5}};          ///< Tradeoff in (0, 1]: 1 = interpolation, near 0 = max smoothness
-    };
-
-    /// @brief Validate the configuration and construct a smoothing spline.
-    ///
-    /// Rejections, checked in order:
-    ///  * fewer than 2 waypoints             -> spline_error::too_few_points
-    ///  * times/positions length mismatch    -> spline_error::size_mismatch
-    ///  * a non-finite knot or waypoint      -> spline_error::non_finite_input
-    ///  * knot times not strictly increasing -> spline_error::non_increasing_times
-    ///  * mu outside (0, 1] or NaN           -> spline_error::mu_out_of_range
-    ///  * a regularized system, or resulting
-    ///    coefficients, outside the
-    ///    representable range of Scalar      -> spline_error::unrepresentable_spline
-    ///
-    /// The mu domain follows from the regularization weight
-    /// lambda = 2*(1-mu)/(3*mu): mu = 1 is the exact interpolation limit
-    /// (lambda = 0) and lambda diverges as mu approaches 0, so mu <= 0 has no
-    /// defined weight.
-    ///
-    /// A mu inside that domain can still ask for a weight the arithmetic cannot
-    /// carry, and the two ways it fails are different enough that one test does
-    /// not see both. The system matrix is R + lambda * Q^T * Q, dominated by the
-    /// second term, and it is solved by a decomposition that forms sums of squares
-    /// of its entries; an entry whose square overflows turns the decomposition's
-    /// pivots into infinities and every coefficient into a NaN. On the smallest
-    /// system the same weight instead overflows the single entry itself, the
-    /// solve divides by that infinity, the interior second derivatives come back
-    /// as exact zeros, and the smoothed positions collapse onto the raw
-    /// waypoints -- a straight-line-through-the-data answer, finite and plausible
-    /// and not the least-squares limit the weight asked for, with nothing to
-    /// distinguish it from a correct one after the fact. The entries are therefore
-    /// bounded BEFORE the solve, by the square root of the largest representable
-    /// value, which is the condition that the squaring survives; the bound is
-    /// derived from the type rather than chosen, and it covers the smallest system
-    /// conservatively because it is the larger ones that set it.
-    ///
-    /// Both terms of that sum can reach the bound on their own and both are
-    /// therefore counted. The regularization term does it through a small mu, and
-    /// the smoothness term R does it through a large knot spacing alone -- at a
-    /// spacing of 1e200 its diagonal is 6.7e199, whose square is not
-    /// representable, and the solve returns NaN for every coefficient on data as
-    /// ordinary as a straight line. Q^T * Q is a Gram matrix and R is diagonally
-    /// dominant, so neither exceeds its own largest diagonal entry, and both
-    /// diagonals follow from the knot spacing and mu alone.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.4.5
-    static auto create(config const& cfg)
-        -> ctrlpp::expected<smoothing_spline, spline_error>
-    {
-        auto const n_pts = cfg.times.size();
-        if (n_pts < 2) {
-            return ctrlpp::unexpected(spline_error::too_few_points);
-        }
-        if (cfg.positions.size() != n_pts) {
-            return ctrlpp::unexpected(spline_error::size_mismatch);
-        }
-        if (!std::all_of(cfg.times.begin(), cfg.times.end(),
-                         [](Scalar value) { return std::isfinite(value); })
-            || !std::all_of(cfg.positions.begin(), cfg.positions.end(),
-                            [](Scalar value) { return std::isfinite(value); })) {
-            return ctrlpp::unexpected(spline_error::non_finite_input);
-        }
-        for (std::size_t i = 0; i + 1 < n_pts; ++i) {
-            auto const span = cfg.times[i + 1] - cfg.times[i];
-            if (!std::isfinite(span)) {
-                return ctrlpp::unexpected(spline_error::unrepresentable_spline);
-            }
-            if (!(span > Scalar{0})) {
-                return ctrlpp::unexpected(spline_error::non_increasing_times);
-            }
-        }
-        // Written as a negated conjunction so a NaN mu fails both comparisons
-        // and is rejected.
-        if (!(cfg.mu > Scalar{0} && cfg.mu <= Scalar{1})) {
-            return ctrlpp::unexpected(spline_error::mu_out_of_range);
-        }
-        if (!regularized_system_representable(cfg)) {
-            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
-        }
-
-        smoothing_spline spline{unchecked_t{}, cfg};
-        if (!spline.coefficients_representable_) {
-            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
-        }
-        if (!std::isfinite(spline.duration())) {
-            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
-        }
-        auto const start = spline.evaluate(cfg.times.front());
-        auto const end = spline.evaluate(cfg.times.back());
-        if (!start.position.allFinite() || !start.velocity.allFinite()
-            || !start.acceleration.allFinite() || !end.position.allFinite()
-            || !end.velocity.allFinite() || !end.acceleration.allFinite()) {
-            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
-        }
-        return spline;
-    }
-
-    /// @brief Evaluate smoothing spline at time t, clamped to [t_0, t_n].
-    ///
-    /// Uses binary search to find the active span, then Horner evaluation
-    /// for position, velocity, and acceleration.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.4.5
-    auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>
-    {
-        auto const tc = std::clamp(t, times_.front(), times_.back());
-        auto const span = find_span(tc);
-
-        auto const s = tc - times_[span];
-        auto const& c = coeffs_[span];
-
-        // Horner evaluation: q = a + s*(b + s*(c + s*d))
-        auto const q = c[0] + s * (c[1] + s * (c[2] + s * c[3]));
-        auto const dq = c[1] + s * (Scalar{2} * c[2] + Scalar{3} * c[3] * s);
-        auto const ddq = Scalar{2} * c[2] + Scalar{6} * c[3] * s;
-
-        return {
-            .position = Vector<Scalar, 1>{q},
-            .velocity = Vector<Scalar, 1>{dq},
-            .acceleration = Vector<Scalar, 1>{ddq},
-        };
-    }
-
-    /// @brief Total spline duration: t_n - t_0.
-    auto duration() const -> Scalar { return times_.back() - times_.front(); }
-
-  private:
-    /// @brief Tag selecting the non-validating constructor reserved for `create`.
     struct unchecked_t
     {
         explicit unchecked_t() = default;
     };
 
-    /// Chained rounding operations behind one evaluated position: three
-    /// multiply-adds in the Horner form, and the quadratic and cubic coefficients
-    /// it runs on, which chain six operations each. Each is worth up to one unit
-    /// in the last place at the scale of the waypoint positions, so together they
-    /// are the resolution at which an evaluated position is known at all.
-    static constexpr int position_rounding_ops = 3 * 2 + 6 + 6;
-
-    /// @brief Whether the regularized system's entries can be squared in Scalar.
-    ///
-    /// Two waypoints leave no interior knot, so no system is built and there is
-    /// nothing to bound. Otherwise the largest entry of R + lambda * Q^T * Q is
-    /// bounded by the largest diagonal entry of lambda * Q^T * Q, and the
-    /// diagonal of the Gram matrix at interior knot j is
-    ///
-    ///     1/h_j^2 + (1/h_j + 1/h_{j+1})^2 + 1/h_{j+1}^2
-    ///
-    /// read straight off the three nonzero entries of Q's j-th column. An
-    /// infinite product answers the question the same way a finite one over the
-    /// bound does, so no separate test for the weight itself is needed.
-    static auto regularized_system_representable(config const& cfg) -> bool
+public:
+    struct config
     {
-        auto const n_pts = cfg.times.size();
-        if (n_pts < 3) {
-            return true;
+        std::vector<Scalar> times;     // t_0 ... t_n
+        std::vector<Scalar> positions; // q_0 ... q_n
+        Scalar mu{Scalar{0.5}};        // in (0, 1]: 1 interpolates, near 0 is smoothest
+    };
+
+    // The system's entries are bounded before the solve, by the square root of the largest Scalar, since the decomposition
+    // squares them; on the smallest system an overflowed entry gives a finite, plausible and wrong answer rather than a NaN.
+    // @cite biagiotti2009 -- Sec. 4.4.5
+    static ctrlpp::expected<smoothing_spline, spline_error> create(config const& cfg)
+    {
+        if(auto const knots = detail::check_spline_knots(cfg.times, cfg.positions, Scalar{0}, Scalar{0}); !knots)
+        {
+            return ctrlpp::unexpected(knots.error());
+        }
+        // Written as a negated conjunction so a NaN mu fails both comparisons and is rejected.
+        if(!(cfg.mu > Scalar{0} && cfg.mu <= Scalar{1}))
+        {
+            return ctrlpp::unexpected(spline_error::mu_out_of_range);
+        }
+        if(!detail::regularized_system_representable(cfg.times, cfg.mu))
+        {
+            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
         }
 
-        auto const lambda = Scalar{2} * (Scalar{1} - cfg.mu) / (Scalar{3} * cfg.mu);
-        auto const bound = std::sqrt(std::numeric_limits<Scalar>::max());
-
-        Scalar largest_diagonal{0};
-        for (std::size_t j = 0; j + 2 < n_pts; ++j) {
-            auto const first = cfg.times[j + 1] - cfg.times[j];
-            auto const second = cfg.times[j + 2] - cfg.times[j + 1];
-            auto const inv_first = Scalar{1} / first;
-            auto const inv_second = Scalar{1} / second;
-            auto const middle = inv_first + inv_second;
-
-            auto const gram = inv_first * inv_first + middle * middle + inv_second * inv_second;
-            auto const smoothness = (first + second) / Scalar{3};
-            largest_diagonal = std::max(largest_diagonal, smoothness + lambda * gram);
+        smoothing_spline spline{unchecked_t{}, cfg};
+        if(!spline.representable(cfg))
+        {
+            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
         }
-        return largest_diagonal <= bound;
+        return spline;
     }
 
-    /// @brief Construct from a configuration already validated by `create`.
-    ///
-    /// Solves the regularized system for second derivatives, computes smoothed
-    /// positions, then derives cubic polynomial coefficients per span.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.4.5
-    smoothing_spline(unchecked_t, config const& cfg)
-        : times_{cfg.times}
+    // @cite biagiotti2009 -- Sec. 4.4.5
+    trajectory_point<Scalar, 1> evaluate(Scalar t) const
     {
-        auto const n_pts = times_.size();
-        auto const n = n_pts - 1; // number of spans
+        auto const tc = std::clamp(t, m_times.front(), m_times.back());
+        auto const span = find_span(tc);
 
-        // Regularization weight: lambda = 2*(1-mu)/(3*mu), mu validated in (0, 1]
-        // @cite biagiotti2009 -- Sec. 4.4.5
-        auto const lambda = Scalar{2} * (Scalar{1} - cfg.mu) / (Scalar{3} * cfg.mu);
+        auto const s = tc - m_times[span];
+        auto const& c = m_coeffs[span];
 
-        // Compute span durations h_i
+        auto const q = c[0] + s * (c[1] + s * (c[2] + s * c[3]));
+        auto const dq = c[1] + s * (Scalar{2} * c[2] + Scalar{3} * c[3] * s);
+        auto const ddq = Scalar{2} * c[2] + Scalar{6} * c[3] * s;
+
+        return {
+                .position = Vector<Scalar, 1>{q},
+                .velocity = Vector<Scalar, 1>{dq},
+                .acceleration = Vector<Scalar, 1>{ddq},
+        };
+    }
+
+    Scalar duration() const { return m_times.back() - m_times.front(); }
+
+private:
+    std::vector<Scalar> m_times;
+    std::vector<std::array<Scalar, 4>> m_coeffs; // {a, b, c, d} of a + b s + c s^2 + d s^3, s = t - t_i
+    bool m_coefficients_representable;
+
+    // @cite biagiotti2009 -- Sec. 4.4.5
+    smoothing_spline(unchecked_t, config const& cfg)
+        : m_times{cfg.times}
+        , m_coefficients_representable{true}
+    {
+        auto const n_pts = m_times.size();
+        auto const n = n_pts - 1;
+
+        auto const lambda = detail::smoothing_weight(cfg.mu);
+
         std::vector<Scalar> h(n);
-        for (std::size_t i = 0; i < n; ++i) {
-            h[i] = times_[i + 1] - times_[i];
+        for(std::size_t i = 0; i < n; ++i)
+        {
+            h[i] = m_times[i + 1] - m_times[i];
         }
 
-        // For n_pts == 2, no interior knots -- degenerate to linear segment
-        if (n_pts == 2) {
-            build_linear(cfg.positions, h);
+        // Two waypoints leave no interior knot: the spline is the line through them.
+        if(n_pts == 2)
+        {
+            m_coefficients_representable = detail::build_linear_coefficients(m_coeffs, cfg.positions, h);
             return;
         }
 
-        // Build and solve the system for interior second derivatives d_1..d_{n-1}
-        // Natural-like endpoints: d_0 = d_n = 0
-        // System: (R + lambda * Q^T * Q) * d = Q^T * q
-        // where R is (n-1)x(n-1) tridiagonal, Q is (n+1)x(n-1) second-difference
-        // @cite biagiotti2009 -- Sec. 4.4.5
-        auto const m = n - 1; // interior knot count
-
+        auto const m = n - 1;
         solve_and_build_coeffs(cfg.positions, h, lambda, n_pts, n, m);
     }
 
-    /// @brief Build linear segment for 2-point case.
-    void build_linear(std::vector<Scalar> const& pos,
-                      std::vector<Scalar> const& h)
+    void solve_and_build_coeffs(std::vector<Scalar> const& pos, std::vector<Scalar> const& h, Scalar lambda, std::size_t n_pts, std::size_t n, std::size_t m)
     {
-        auto const slope = (pos[1] - pos[0]) / h[0];
-        coeffs_.resize(1);
-        coeffs_[0][0] = pos[0];
-        coeffs_[0][1] = slope;
-        coeffs_[0][2] = Scalar{0};
-        coeffs_[0][3] = Scalar{0};
-
-        // The curvature terms are assigned rather than divided, so only the slope
-        // can leave the type here.
-        coefficients_representable_ = std::isfinite(pos[0]) && std::isfinite(slope);
-    }
-
-    /// @brief Solve regularized system and compute cubic coefficients.
-    ///
-    /// Builds (R + lambda * Q^T * Q) for the interior second derivatives,
-    /// solves via Eigen dense QR, then computes smoothed positions and
-    /// cubic polynomial coefficients per span.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.4.5
-    void solve_and_build_coeffs(std::vector<Scalar> const& pos,
-                                std::vector<Scalar> const& h,
-                                Scalar lambda,
-                                std::size_t n_pts,
-                                std::size_t n,
-                                std::size_t m)
-    {
-        using MatX = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
-        using VecX = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
-
         auto const mi = static_cast<Eigen::Index>(m);
         auto const ni = static_cast<Eigen::Index>(n_pts);
 
-        // Build R: (m x m) tridiagonal matrix
-        // R[i][i] = (h_{i} + h_{i+1}) / 3  (using 1-based interior indexing -> h[i], h[i+1])
-        // R[i][i+1] = R[i+1][i] = h_{i+1} / 6
-        // @cite biagiotti2009 -- Sec. 4.4.5
-        MatX R = MatX::Zero(mi, mi);
-        for (Eigen::Index i = 0; i < mi; ++i) {
-            auto const ii = static_cast<std::size_t>(i);
-            R(i, i) = (h[ii] + h[ii + 1]) / Scalar{3};
-            if (i + 1 < mi) {
-                R(i, i + 1) = h[ii + 1] / Scalar{6};
-                R(i + 1, i) = h[ii + 1] / Scalar{6};
-            }
-        }
+        detail::smoothing_matrix<Scalar> const R = detail::smoothness_matrix(h, mi);
+        detail::smoothing_matrix<Scalar> const Q = detail::second_difference_matrix(h, ni, mi);
+        detail::smoothing_matrix<Scalar> const QtQ = Q.transpose() * Q;
+        detail::smoothing_matrix<Scalar> const A = R + lambda * QtQ;
+        detail::smoothing_vector<Scalar> const q = detail::knot_vector(pos);
+        detail::smoothing_vector<Scalar> const rhs = Q.transpose() * q;
+        detail::smoothing_vector<Scalar> const d_int = A.colPivHouseholderQr().solve(rhs);
 
-        // Build Q: (n_pts x m) second-difference matrix
-        // Q[i][j] relates position i to interior second derivative j+1
-        // For interior knot j (0-based), affecting positions j, j+1, j+2:
-        //   Q[j][j]   = 1/h[j]
-        //   Q[j+1][j] = -(1/h[j] + 1/h[j+1])
-        //   Q[j+2][j] = 1/h[j+1]
-        // @cite biagiotti2009 -- Sec. 4.4.5
-        MatX Q = MatX::Zero(ni, mi);
-        for (Eigen::Index j = 0; j < mi; ++j) {
-            auto const jj = static_cast<std::size_t>(j);
-            Q(j, j) = Scalar{1} / h[jj];
-            Q(j + 1, j) = -(Scalar{1} / h[jj] + Scalar{1} / h[jj + 1]);
-            Q(j + 2, j) = Scalar{1} / h[jj + 1];
-        }
-
-        // Build system matrix A = R + lambda * Q^T * Q
-        MatX const QtQ = Q.transpose() * Q;
-        MatX const A = R + lambda * QtQ;
-
-        // Build RHS: Q^T * q
-        VecX q(ni);
-        for (Eigen::Index i = 0; i < ni; ++i) {
-            q(i) = pos[static_cast<std::size_t>(i)];
-        }
-        VecX const rhs = Q.transpose() * q;
-
-        // Solve for interior second derivatives d_1..d_{m}
-        VecX const d_int = A.colPivHouseholderQr().solve(rhs);
-
-        // Full second derivative vector (with d_0 = d_n = 0)
         std::vector<Scalar> d(n_pts, Scalar{0});
-        for (Eigen::Index i = 0; i < mi; ++i) {
+        for(Eigen::Index i = 0; i < mi; ++i)
+        {
             d[static_cast<std::size_t>(i) + 1] = d_int(i);
         }
-
-        // Compute smoothed positions: s = q - lambda * Q * d_int
-        // @cite biagiotti2009 -- Sec. 4.4.5
-        VecX const s_vec = q - lambda * Q * d_int;
+        detail::smoothing_vector<Scalar> const s_vec = q - lambda * Q * d_int;
         std::vector<Scalar> s(n_pts);
-        for (Eigen::Index i = 0; i < ni; ++i) {
+        for(Eigen::Index i = 0; i < ni; ++i)
+        {
             s[static_cast<std::size_t>(i)] = s_vec(i);
         }
-
-        // Compute cubic coefficients per span from smoothed positions and
-        // second derivatives, using the standard cubic spline formula:
-        //   q(t) = a + b*s + c*s^2 + d_coeff*s^3  where s = t - t_i
-        // @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-        // The scale an evaluated position is known at, and therefore the scale a
-        // term has to reach to be able to move one.
-        Scalar position_scale{0};
-        for (auto const position : pos) {
-            position_scale = std::max(position_scale, std::abs(position));
-        }
-
-        coeffs_.resize(n);
-        for (std::size_t i = 0; i < n; ++i) {
-            auto const si = s[i];
-            auto const si1 = s[i + 1];
-            auto const di = d[i];
-            auto const di1 = d[i + 1];
-            auto const hi = h[i];
-
-            // Standard cubic spline coefficients from second derivatives (moments)
-            // a = s_i
-            // b = (s_{i+1} - s_i)/h_i - h_i*(2*d_i + d_{i+1})/6
-            // c = d_i / 2
-            // d_coeff = (d_{i+1} - d_i) / (6 * h_i)
-            auto const cubic_numerator = di1 - di;
-
-            coeffs_[i][0] = si;
-            coeffs_[i][1] = (si1 - si) / hi - hi * (Scalar{2} * di + di1) / Scalar{6};
-            coeffs_[i][2] = di / Scalar{2};
-            coeffs_[i][3] = cubic_numerator / (Scalar{6} * hi);
-
-            // As for the interpolating spline: an overflowing coefficient
-            // announces itself, and one that fell through the bottom of the
-            // exponent range does not -- it comes back subnormal, carrying fewer
-            // than the type's significand, and the cubic term is then known to a
-            // few bits or has left the polynomial.
-            //
-            // And, as there, whether that matters depends on how far the term
-            // reaches rather than on the numerator's own magnitude. This numerator
-            // is a DIFFERENCE OF SECOND DERIVATIVES, so on data of constant
-            // curvature it is mathematically zero and arrives as the residual the
-            // solve leaves behind rather than as an exact zero; dividing that
-            // residual by a large span sends it subnormal, which costs nothing
-            // because there was nothing in it. Here the coefficient divides the
-            // numerator by the span once and the term multiplies by three powers,
-            // so the reach is the numerator times the square of the span, over
-            // six. Below the resolution of the position it contributes to, the
-            // term cannot move the answer and its precision is irrelevant.
-            // Ordered so the span is never squared on its own: at the largest
-            // span the bound above admits, that square is not representable, and
-            // an infinite intermediate would turn an exactly-zero numerator into
-            // a NaN and refuse a spline of constant curvature.
-            auto const reach = (std::abs(cubic_numerator) * hi / Scalar{6}) * hi;
-            auto const resolution = static_cast<Scalar>(position_rounding_ops)
-                                    * std::numeric_limits<Scalar>::epsilon() * position_scale;
-
-            bool const finite = std::isfinite(coeffs_[i][0]) && std::isfinite(coeffs_[i][1])
-                                && std::isfinite(coeffs_[i][2]) && std::isfinite(coeffs_[i][3]);
-            bool const cubic_survived = (reach <= resolution) || std::isnormal(coeffs_[i][3]);
-            coefficients_representable_ = coefficients_representable_ && finite && cubic_survived;
-        }
+        m_coefficients_representable = detail::build_smoothing_coefficients(m_coeffs, pos, h, d, s, n);
     }
 
-    /// @brief Find span index for time t using binary search.
-    auto find_span(Scalar t) const -> std::size_t
+    bool representable(config const& cfg) const
     {
-        auto const n_spans = coeffs_.size();
-        auto it = std::upper_bound(times_.begin(), times_.end(), t);
-        if (it == times_.begin()) {
+        if(!m_coefficients_representable || !std::isfinite(duration()))
+        {
+            return false;
+        }
+        auto const start = evaluate(cfg.times.front());
+        auto const end = evaluate(cfg.times.back());
+        return start.position.allFinite() && start.velocity.allFinite() && start.acceleration.allFinite() && end.position.allFinite() && end.velocity.allFinite() &&
+                end.acceleration.allFinite();
+    }
+
+    std::size_t find_span(Scalar t) const
+    {
+        auto const n_spans = m_coeffs.size();
+        auto it = std::upper_bound(m_times.begin(), m_times.end(), t);
+        if(it == m_times.begin())
+        {
             return 0;
         }
-        auto idx = static_cast<std::size_t>(it - times_.begin()) - 1;
-        if (idx >= n_spans) {
+        auto idx = static_cast<std::size_t>(it - m_times.begin()) - 1;
+        if(idx >= n_spans)
+        {
             idx = n_spans - 1;
         }
         return idx;
     }
-
-    std::vector<Scalar> times_;
-    std::vector<std::array<Scalar, 4>> coeffs_; ///< {a, b, c, d} per span
-
-    /// Whether every coefficient the construction formed stayed inside the type.
-    /// Read once, by `create`, which is the only caller that can still refuse.
-    bool coefficients_representable_{true};
 };
 
 static_assert(trajectory_segment<smoothing_spline<double>, double, 1>);

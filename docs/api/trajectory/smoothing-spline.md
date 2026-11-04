@@ -39,8 +39,7 @@ The domain of `mu` is the half-open interval (0, 1]: mu = 1 is the exact interpo
 ## Factory
 
 ```cpp
-static auto create(config const& cfg)
-    -> ctrlpp::expected<smoothing_spline, spline_error>;
+static ctrlpp::expected<smoothing_spline, spline_error> create(config const& cfg);
 ```
 
 `create` is the only construction path. There is no non-fallible constructor: a rejected configuration is a value the caller has to inspect, never an object that quietly stands in for one. It validates the configuration and constructs a smoothing spline. Solves the regularized system (R + lambda * Q^T * Q) * d = Q^T * q for interior second derivatives using dense QR factorization. Requires at least 2 waypoints. For 2 waypoints, degenerates to a linear segment.
@@ -64,7 +63,7 @@ The accepted band of knot spacings is therefore bounded at both ends, and for `m
 ### evaluate
 
 ```cpp
-auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>;
+trajectory_point<Scalar, 1> evaluate(Scalar t) const;
 ```
 
 Evaluate position, velocity, and acceleration at time `t`. Time is clamped to [t_0, t_n].
@@ -72,7 +71,7 @@ Evaluate position, velocity, and acceleration at time `t`. Time is clamped to [t
 ### duration
 
 ```cpp
-auto duration() const -> Scalar;
+Scalar duration() const;
 ```
 
 Returns total spline duration: t_n - t_0.

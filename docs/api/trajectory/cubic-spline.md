@@ -41,8 +41,7 @@ struct config {
 ## Factory
 
 ```cpp
-static auto create(config const& cfg)
-    -> ctrlpp::expected<cubic_spline, spline_error>;
+static ctrlpp::expected<cubic_spline, spline_error> create(config const& cfg);
 ```
 
 `create` is the only construction path. There is no non-fallible constructor: a rejected configuration is a value the caller has to inspect, never an object that quietly stands in for one. It validates the configuration and constructs a cubic spline. Requires at least 2 waypoints and strictly increasing time values. Periodic boundary conditions additionally require at least 3 waypoints and matching first/last positions: with only 2 waypoints the cyclic system for the interior velocities is empty and the closed curve degenerates, so that configuration is rejected.
@@ -68,7 +67,7 @@ What decides it is how far the term **reaches** across its own span, measured ag
 ### evaluate
 
 ```cpp
-auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>;
+trajectory_point<Scalar, 1> evaluate(Scalar t) const;
 ```
 
 Evaluate position, velocity, and acceleration at time `t`. Time is clamped to [t_0, t_n]. Uses binary search to find the active span followed by Horner polynomial evaluation.
@@ -76,7 +75,7 @@ Evaluate position, velocity, and acceleration at time `t`. Time is clamped to [t
 ### duration
 
 ```cpp
-auto duration() const -> Scalar;
+Scalar duration() const;
 ```
 
 Returns total spline duration: t_n - t_0.

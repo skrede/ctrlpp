@@ -1,28 +1,23 @@
 #ifndef HPP_GUARD_CTRLPP_TRAJECTORY_CUBIC_SPLINE_H
 #define HPP_GUARD_CTRLPP_TRAJECTORY_CUBIC_SPLINE_H
 
-/// @brief Cubic spline interpolation with natural, clamped, and periodic BCs.
-///
-/// Constructs a C2-continuous cubic spline through waypoints using the
-/// velocity-based formulation. Three boundary condition types are supported:
-/// natural (zero endpoint acceleration), clamped (assigned endpoint velocities),
-/// and periodic (cyclic with matching start/end derivatives).
-///
-/// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
-/// Automatic Machines and Robots", 2009, Sec. 4.4, eq. (4.10)-(4.11)
-/// @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (canonical reference for cubic-spline interpolation)
-
-#include "ctrlpp/expected.h"
+// C2 cubic spline interpolation in the velocity formulation: one tridiagonal system for the knot velocities.
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for
+// Automatic Machines and Robots", 2009, Sec. 4.4, eq. (4.10)-(4.11)
+// @cite deboor2001 -- de Boor, "A Practical Guide to Splines", Springer, 2001 (canonical reference for cubic-spline interpolation)
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
 
-#include "ctrlpp/trajectory/detail/tridiagonal.h"
+#include "ctrlpp/trajectory/detail/spline_checks.h"
+#include "ctrlpp/trajectory/detail/cubic_spline_solve.h"
+
+#include "ctrlpp/expected.h"
 
 #include "ctrlpp/util/concepts.h"
 
-#include <cmath>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <vector>
 #include <cstddef>
@@ -31,462 +26,164 @@
 namespace ctrlpp
 {
 
-/// @brief Boundary condition type for cubic spline interpolation.
 enum class boundary_condition
 {
-    natural,   ///< Zero acceleration at endpoints (M_0 = M_n = 0)
-    clamped,   ///< Assigned endpoint velocities (v_0 and v_n specified)
-    periodic   ///< Cyclic: v_0 = v_n and a_0 = a_n (requires q_0 = q_n)
+    natural, // zero acceleration at the ends (M_0 = M_n = 0)
+    clamped, // assigned end velocities v0 and vn
+    periodic // v_0 = v_n and a_0 = a_n, requiring q_0 = q_n
 };
 
-/// @brief Cubic spline interpolation through waypoints.
-///
-/// Evaluates position, velocity, and acceleration at arbitrary time t using
-/// piecewise cubic polynomials with C2 continuity at interior knots.
-///
-/// Construction goes through `create`, which validates the waypoint
-/// configuration and reports rejections through
-/// `ctrlpp::expected<cubic_spline, spline_error>`. Periodic boundary conditions
-/// require at least 3 waypoints: with only 2 the cyclic system for the interior
-/// velocities is empty and the closed curve degenerates, so that configuration
-/// is rejected rather than special-cased.
-///
-/// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
 template <ctrlpp_floating_scalar Scalar>
 class cubic_spline
 {
-  public:
-    struct config
-    {
-        std::vector<Scalar> times;       ///< Knot times t_0 ... t_n (n+1 entries)
-        std::vector<Scalar> positions;   ///< Waypoint positions q_0 ... q_n (n+1 entries)
-        boundary_condition bc{boundary_condition::natural};
-        Scalar v0{};                     ///< Endpoint velocity for clamped BC
-        Scalar vn{};                     ///< Endpoint velocity for clamped BC
-    };
-
-    /// @brief Validate the configuration and construct a cubic spline.
-    ///
-    /// Rejections, checked in order:
-    ///  * fewer than 2 waypoints                    -> spline_error::too_few_points
-    ///  * times/positions length mismatch           -> spline_error::size_mismatch
-    ///  * a non-finite knot, waypoint, or endpoint
-    ///    velocity                                  -> spline_error::non_finite_input
-    ///  * knot times not strictly increasing        -> spline_error::non_increasing_times
-    ///  * periodic BC with fewer than 3 waypoints   -> spline_error::periodic_too_few_points
-    ///  * periodic BC with q_0 != q_n beyond budget -> spline_error::periodic_endpoint_mismatch
-    ///  * a velocity system whose elimination meets
-    ///    a pivot indistinguishable from zero       -> spline_error::unrepresentable_spline
-    ///  * coefficients outside the representable
-    ///    range of Scalar                           -> spline_error::unrepresentable_spline
-    ///
-    /// The last check is made on the coefficients themselves, after they are
-    /// formed, rather than predicted from the knot spacing. It cannot be
-    /// predicted from the spacing: the cubic coefficient is a difference of
-    /// slopes divided by the square of the span, so its magnitude runs with the
-    /// waypoint separation divided by the CUBE of the span, and the numerator
-    /// carries a waypoint scale that cancels away entirely on collinear data. A
-    /// span whose square is perfectly representable can still drive that quotient
-    /// out of range in either direction, so the square of the span is not the
-    /// bound and testing it would pass configurations that go on to evaluate to
-    /// infinity. The realized coefficients are therefore checked directly rather
-    /// than inferred from a test on the inputs, which is what the trapezoidal
-    /// profile does with its realized phase durations for the same reason.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-    static auto create(config const& cfg)
-        -> ctrlpp::expected<cubic_spline, spline_error>
-    {
-        auto const n_pts = cfg.times.size();
-        if (n_pts < 2) {
-            return ctrlpp::unexpected(spline_error::too_few_points);
-        }
-        if (cfg.positions.size() != n_pts) {
-            return ctrlpp::unexpected(spline_error::size_mismatch);
-        }
-        if (!std::all_of(cfg.times.begin(), cfg.times.end(),
-                         [](Scalar value) { return std::isfinite(value); })
-            || !std::all_of(cfg.positions.begin(), cfg.positions.end(),
-                            [](Scalar value) { return std::isfinite(value); })
-            || !std::isfinite(cfg.v0) || !std::isfinite(cfg.vn)) {
-            return ctrlpp::unexpected(spline_error::non_finite_input);
-        }
-        for (std::size_t i = 0; i + 1 < n_pts; ++i) {
-            auto const span = cfg.times[i + 1] - cfg.times[i];
-            if (!std::isfinite(span)) {
-                return ctrlpp::unexpected(spline_error::unrepresentable_spline);
-            }
-            if (!(span > Scalar{0})) {
-                return ctrlpp::unexpected(spline_error::non_increasing_times);
-            }
-        }
-        if (cfg.bc == boundary_condition::periodic) {
-            if (n_pts < 3) {
-                return ctrlpp::unexpected(spline_error::periodic_too_few_points);
-            }
-            // Periodic boundary conditions require matching end positions. Compare
-            // relative to the endpoint magnitude (not a bare absolute tolerance) so
-            // the check is correct across position scales and float precisions; the
-            // margin is the rounding budget of the endpoint difference.
-            constexpr Scalar periodic_match_ulps = Scalar{4};
-            auto const periodic_scale = std::max(
-                {Scalar{1}, std::abs(cfg.positions.front()), std::abs(cfg.positions.back())});
-            auto const endpoint_difference =
-                std::abs(cfg.positions.front() - cfg.positions.back());
-            if (!std::isfinite(endpoint_difference)
-                || endpoint_difference
-                       > periodic_match_ulps * std::numeric_limits<Scalar>::epsilon()
-                             * periodic_scale) {
-                return ctrlpp::unexpected(spline_error::periodic_endpoint_mismatch);
-            }
-        }
-
-        cubic_spline spline{unchecked_t{}, cfg};
-        if (!spline.system_solved_ || !spline.coefficients_representable_) {
-            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
-        }
-        return spline;
-    }
-
-    /// @brief Evaluate spline at time t, clamped to [t_0, t_n].
-    ///
-    /// Uses binary search to find the active span, then Horner evaluation
-    /// for position, velocity, and acceleration.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.4
-    auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>
-    {
-        auto const tc = std::clamp(t, times_.front(), times_.back());
-        auto const span = find_span(tc);
-
-        auto const s = tc - times_[span];
-        auto const& c = coeffs_[span];
-
-        // Horner evaluation: q = a + s*(b + s*(c + s*d))
-        auto const q = c[0] + s * (c[1] + s * (c[2] + s * c[3]));
-        auto const dq = c[1] + s * (Scalar{2} * c[2] + Scalar{3} * c[3] * s);
-        auto const ddq = Scalar{2} * c[2] + Scalar{6} * c[3] * s;
-
-        return {
-            .position = Vector<Scalar, 1>{q},
-            .velocity = Vector<Scalar, 1>{dq},
-            .acceleration = Vector<Scalar, 1>{ddq},
-        };
-    }
-
-    /// @brief Total spline duration: t_n - t_0.
-    auto duration() const -> Scalar { return times_.back() - times_.front(); }
-
-  private:
-    /// @brief Tag selecting the non-validating constructor reserved for `create`.
     struct unchecked_t
     {
         explicit unchecked_t() = default;
     };
 
-    /// @brief Construct from a configuration already validated by `create`.
-    ///
-    /// Sets up and solves the tridiagonal system for spline velocities,
-    /// then computes polynomial coefficients for each span.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-    cubic_spline(unchecked_t, config const& cfg)
-        : times_{cfg.times}
-        , system_solved_{true}
+public:
+    struct config
     {
-        auto const n_pts = times_.size();
-        auto const n = n_pts - 1; // number of spans
+        std::vector<Scalar> times;     // t_0 ... t_n
+        std::vector<Scalar> positions; // q_0 ... q_n
+        boundary_condition bc{boundary_condition::natural};
+        Scalar v0{}; // clamped only
+        Scalar vn{}; // clamped only
+    };
 
-        // Compute span durations h_i and slopes delta_i
+    // The realized coefficients are checked rather than predicted from the knot spacing: the cubic coefficient runs with the
+    // waypoint separation over the cube of the span, and its numerator carries a waypoint scale that collinear data cancels.
+    // @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
+    static ctrlpp::expected<cubic_spline, spline_error> create(config const& cfg)
+    {
+        if(auto const checked = check_config(cfg); !checked)
+        {
+            return ctrlpp::unexpected(checked.error());
+        }
+
+        cubic_spline spline{unchecked_t{}, cfg};
+        if(!spline.m_system_solved || !spline.m_coefficients_representable)
+        {
+            return ctrlpp::unexpected(spline_error::unrepresentable_spline);
+        }
+        return spline;
+    }
+
+    // @cite biagiotti2009 -- Sec. 4.4
+    trajectory_point<Scalar, 1> evaluate(Scalar t) const
+    {
+        auto const tc = std::clamp(t, m_times.front(), m_times.back());
+        auto const span = find_span(tc);
+
+        auto const s = tc - m_times[span];
+        auto const& c = m_coeffs[span];
+
+        auto const q = c[0] + s * (c[1] + s * (c[2] + s * c[3]));
+        auto const dq = c[1] + s * (Scalar{2} * c[2] + Scalar{3} * c[3] * s);
+        auto const ddq = Scalar{2} * c[2] + Scalar{6} * c[3] * s;
+
+        return {
+                .position = Vector<Scalar, 1>{q},
+                .velocity = Vector<Scalar, 1>{dq},
+                .acceleration = Vector<Scalar, 1>{ddq},
+        };
+    }
+
+    Scalar duration() const { return m_times.back() - m_times.front(); }
+
+private:
+    std::vector<Scalar> m_times;
+    std::vector<std::array<Scalar, 4>> m_coeffs; // {a, b, c, d} of a + b s + c s^2 + d s^3, s = t - t_i
+    bool m_system_solved;
+    bool m_coefficients_representable;
+
+    // @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
+    cubic_spline(unchecked_t, config const& cfg)
+        : m_times{cfg.times}
+        , m_system_solved{true}
+        , m_coefficients_representable{true}
+    {
+        auto const n_pts = m_times.size();
+        auto const n = n_pts - 1;
         std::vector<Scalar> h(n);
         std::vector<Scalar> delta(n);
-        for (std::size_t i = 0; i < n; ++i) {
-            h[i] = times_[i + 1] - times_[i];
+        for(std::size_t i = 0; i < n; ++i)
+        {
+            h[i] = m_times[i + 1] - m_times[i];
             delta[i] = (cfg.positions[i + 1] - cfg.positions[i]) / h[i];
         }
-
-        // Solve for velocities at each waypoint
         std::vector<Scalar> vel(n_pts);
-        auto const solved = (cfg.bc == boundary_condition::natural)   ? solve_natural(h, delta, cfg.positions, vel, n_pts, n)
-                            : (cfg.bc == boundary_condition::clamped) ? solve_clamped(h, delta, cfg.positions, vel, n_pts, n, cfg.v0, cfg.vn)
-                                                                      : solve_periodic(h, delta, cfg.positions, vel, n_pts, n);
-        if (!solved) {
-            system_solved_ = false;
+        auto const solved = (cfg.bc == boundary_condition::natural) ? detail::solve_natural(h, delta, cfg.positions, vel, n_pts, n)
+                : (cfg.bc == boundary_condition::clamped)           ? detail::solve_clamped(h, delta, cfg.positions, vel, n_pts, n, cfg.v0, cfg.vn)
+                                                                    : detail::solve_periodic(h, delta, cfg.positions, vel, n_pts, n);
+        if(!solved)
+        {
+            m_system_solved = false;
             return;
         }
-
-        // Compute polynomial coefficients for each span
-        // q(s) = a + b*s + c*s^2 + d*s^3  where s = t - t_i
-        // @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-        // The scale an evaluated position is known at, and therefore the scale a
-        // term has to reach to be able to move one.
-        Scalar position_scale{0};
-        for (auto const position : cfg.positions) {
-            position_scale = std::max(position_scale, std::abs(position));
-        }
-
-        coeffs_.resize(n);
-        for (std::size_t i = 0; i < n; ++i) {
-            auto const qi = cfg.positions[i];
-            auto const qi1 = cfg.positions[i + 1];
-            auto const vi = vel[i];
-            auto const vi1 = vel[i + 1];
-            auto const hi = h[i];
-
-            auto const quadratic_numerator = Scalar{3} * (qi1 - qi) / hi - Scalar{2} * vi - vi1;
-            auto const cubic_numerator = Scalar{2} * (qi - qi1) / hi + vi + vi1;
-
-            coeffs_[i][0] = qi;                                    // a
-            coeffs_[i][1] = vi;                                    // b
-            coeffs_[i][2] = quadratic_numerator / hi;              // c
-            coeffs_[i][3] = cubic_numerator / (hi * hi);           // d
-
-            note_representable(coeffs_[i], quadratic_numerator, cubic_numerator, hi,
-                               position_scale);
+        auto const position_scale = detail::largest_magnitude(cfg.positions);
+        m_coeffs.resize(n);
+        for(std::size_t i = 0; i < n; ++i)
+        {
+            set_span(i, cfg.positions, h, vel, position_scale);
         }
     }
 
-    /// Chained rounding operations behind one evaluated position: three
-    /// multiply-adds in the Horner form, and the quadratic and cubic coefficients
-    /// it runs on, which chain six operations each. Each is worth up to one unit
-    /// in the last place at the scale of the waypoint positions, so together they
-    /// are the resolution at which an evaluated position is known at all.
-    static constexpr int position_rounding_ops = 3 * 2 + 6 + 6;
-
-    /// @brief Whether one coefficient carries the significance its term needs.
-    ///
-    /// A quotient that overflows announces itself as an infinity. A quotient that
-    /// falls through the bottom of the exponent range does not: it comes back
-    /// subnormal, carrying fewer than the type's significand and in the limit none
-    /// of it, so the power it multiplies is known to a few bits or has left the
-    /// polynomial altogether -- a cubic answering as a quadratic, finite and
-    /// plausible and not the spline the waypoints describe.
-    ///
-    /// Whether that matters is not a property of the coefficient alone, and this
-    /// is the part a test on the numerator's own magnitude gets wrong. Both
-    /// numerators here are DIFFERENCES OF SLOPES, so on collinear waypoints they
-    /// are mathematically zero and arrive as the rounding residual of that
-    /// cancellation rather than as an exact zero. That residual is an ordinary
-    /// normal number, and dividing it by the square of a large span sends it
-    /// subnormal -- which is not a loss, because there was nothing there to lose.
-    /// Asking it to stay normal refuses the best-conditioned input there is: a
-    /// constant-velocity segment, whose curvature genuinely is zero.
-    ///
-    /// The question is therefore how far the term REACHES across its own span,
-    /// against the resolution at which the position it contributes to is known.
-    /// Both coefficients divide the numerator by a power of the span and are then
-    /// multiplied by one power more, so each term's reach is the numerator times
-    /// the span. Below the resolution of the answer the term cannot move it and
-    /// its precision is irrelevant; above it, the coefficient has to carry a full
-    /// significand. Measured across fifteen decades of span, the two situations
-    /// separate by sixteen orders of magnitude -- a cancellation residual reaches
-    /// about a fiftieth of the resolution, a genuine coefficient about 1e14 times
-    /// it -- so this is a wide gap, not a boundary anything sits near.
-    static auto term_survived(Scalar numerator, Scalar quotient, Scalar span, Scalar scale)
-        -> bool
+    void set_span(std::size_t i, std::vector<Scalar> const& pos, std::vector<Scalar> const& h, std::vector<Scalar> const& vel, Scalar position_scale)
     {
-        auto const reach = std::abs(numerator * span);
-        auto const resolution = static_cast<Scalar>(position_rounding_ops)
-                                * std::numeric_limits<Scalar>::epsilon() * scale;
-        return (reach <= resolution) || std::isnormal(quotient);
+        auto const qi = pos[i];
+        auto const qi1 = pos[i + 1];
+        auto const vi = vel[i];
+        auto const vi1 = vel[i + 1];
+        auto const hi = h[i];
+
+        auto const quadratic_numerator = Scalar{3} * (qi1 - qi) / hi - Scalar{2} * vi - vi1;
+        auto const cubic_numerator = Scalar{2} * (qi - qi1) / hi + vi + vi1;
+
+        m_coeffs[i][0] = qi;
+        m_coeffs[i][1] = vi;
+        m_coeffs[i][2] = quadratic_numerator / hi;
+        m_coeffs[i][3] = cubic_numerator / (hi * hi);
+
+        m_coefficients_representable = m_coefficients_representable && detail::cubic_coefficients_representable(m_coeffs[i], quadratic_numerator, cubic_numerator, hi, position_scale);
     }
 
-    void note_representable(std::array<Scalar, 4> const& c,
-                            Scalar quadratic_numerator,
-                            Scalar cubic_numerator,
-                            Scalar span,
-                            Scalar scale)
+    static ctrlpp::expected<void, spline_error> check_config(config const& cfg)
     {
-        bool const finite = std::isfinite(c[0]) && std::isfinite(c[1]) && std::isfinite(c[2])
-                            && std::isfinite(c[3]);
-
-        coefficients_representable_ = coefficients_representable_ && finite
-                                      && term_survived(quadratic_numerator, c[2], span, scale)
-                                      && term_survived(cubic_numerator, c[3], span, scale);
+        if(auto const knots = detail::check_spline_knots(cfg.times, cfg.positions, cfg.v0, cfg.vn); !knots || cfg.bc != boundary_condition::periodic)
+        {
+            return knots;
+        }
+        if(cfg.times.size() < 3)
+        {
+            return ctrlpp::unexpected(spline_error::periodic_too_few_points);
+        }
+        // Relative to the endpoint magnitude, so it holds across scales and precisions; the margin is the difference's rounding budget.
+        constexpr Scalar periodic_match_ulps = Scalar{4};
+        auto const periodic_scale = std::max({Scalar{1}, std::abs(cfg.positions.front()), std::abs(cfg.positions.back())});
+        auto const endpoint_difference = std::abs(cfg.positions.front() - cfg.positions.back());
+        if(!std::isfinite(endpoint_difference) || endpoint_difference > periodic_match_ulps * std::numeric_limits<Scalar>::epsilon() * periodic_scale)
+        {
+            return ctrlpp::unexpected(spline_error::periodic_endpoint_mismatch);
+        }
+        return {};
     }
 
-    /// @brief Find span index for time t using binary search.
-    ///
-    /// Clamps to valid span range [0, n_spans-1].
-    auto find_span(Scalar t) const -> std::size_t
+    std::size_t find_span(Scalar t) const
     {
-        auto const n_spans = coeffs_.size();
-        // upper_bound gives first element > t
-        auto it = std::upper_bound(times_.begin(), times_.end(), t);
-        if (it == times_.begin()) {
+        auto const n_spans = m_coeffs.size();
+        auto it = std::upper_bound(m_times.begin(), m_times.end(), t);
+        if(it == m_times.begin())
+        {
             return 0;
         }
-        auto idx = static_cast<std::size_t>(it - times_.begin()) - 1;
-        if (idx >= n_spans) {
+        auto idx = static_cast<std::size_t>(it - m_times.begin()) - 1;
+        if(idx >= n_spans)
+        {
             idx = n_spans - 1;
         }
         return idx;
     }
-
-    /// @brief Solve natural BC: full (n+1)x(n+1) tridiagonal for all velocities.
-    ///
-    /// Row 0: 2*h_0 * v_0 + h_0 * v_1 = 3*(q_1 - q_0)  (from M_0=0)
-    /// Row n: h_{n-1} * v_{n-1} + 2*h_{n-1} * v_n = 3*(q_n - q_{n-1})  (from M_n=0)
-    /// Interior: h_i * v_{i-1} + 2*(h_{i-1}+h_i) * v_i + h_{i-1} * v_{i+1} = RHS_i
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.4, eq. (4.10)-(4.11)
-    static auto solve_natural(std::vector<Scalar> const& h,
-                              std::vector<Scalar> const& delta,
-                              std::vector<Scalar> const& /*pos*/,
-                              std::vector<Scalar>& vel,
-                              std::size_t n_pts,
-                              std::size_t n) -> ctrlpp::expected<void, spline_error>
-    {
-        // Full system of size n+1
-        std::vector<Scalar> a(n_pts, Scalar{0});
-        std::vector<Scalar> b(n_pts, Scalar{0});
-        std::vector<Scalar> c(n_pts, Scalar{0});
-        std::vector<Scalar> d(n_pts, Scalar{0});
-
-        // Row 0: natural BC (M_0 = 0 => 2*h_0*v_0 + h_0*v_1 = 3*(q_1 - q_0))
-        b[0] = Scalar{2} * h[0];
-        c[0] = h[0];
-        d[0] = Scalar{3} * delta[0] * h[0];
-
-        // Interior rows
-        for (std::size_t i = 1; i < n; ++i) {
-            a[i] = h[i];
-            b[i] = Scalar{2} * (h[i - 1] + h[i]);
-            c[i] = h[i - 1];
-            d[i] = Scalar{3} * (h[i] * delta[i - 1] + h[i - 1] * delta[i]);
-        }
-
-        // Row n: natural BC (M_n = 0 => h_{n-1}*v_{n-1} + 2*h_{n-1}*v_n = 3*(q_n - q_{n-1}))
-        a[n] = h[n - 1];
-        b[n] = Scalar{2} * h[n - 1];
-        d[n] = Scalar{3} * delta[n - 1] * h[n - 1];
-
-        auto solved = detail::thomas_solve(a, b, c, d);
-        if (!solved) {
-            return solved;
-        }
-
-        for (std::size_t i = 0; i < n_pts; ++i) {
-            vel[i] = d[i];
-        }
-        return {};
-    }
-
-    /// @brief Solve clamped BC: (n-1)x(n-1) system for interior velocities.
-    ///
-    /// v_0 and v_n are known from config. Interior system moves known terms to RHS.
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.4.1
-    static auto solve_clamped(std::vector<Scalar> const& h,
-                              std::vector<Scalar> const& delta,
-                              std::vector<Scalar> const& /*pos*/,
-                              std::vector<Scalar>& vel,
-                              std::size_t /*n_pts*/,
-                              std::size_t n,
-                              Scalar v0,
-                              Scalar vn) -> ctrlpp::expected<void, spline_error>
-    {
-        vel[0] = v0;
-        vel[n] = vn;
-
-        if (n <= 1) {
-            // Only 2 waypoints -- no interior unknowns
-            return {};
-        }
-
-        auto const n_int = n - 1; // number of interior unknowns (v_1 .. v_{n-1})
-        std::vector<Scalar> a(n_int, Scalar{0});
-        std::vector<Scalar> b(n_int, Scalar{0});
-        std::vector<Scalar> c(n_int, Scalar{0});
-        std::vector<Scalar> d(n_int, Scalar{0});
-
-        for (std::size_t j = 0; j < n_int; ++j) {
-            auto const i = j + 1; // original index
-            a[j] = (j > 0) ? h[i] : Scalar{0};
-            b[j] = Scalar{2} * (h[i - 1] + h[i]);
-            c[j] = (j < n_int - 1) ? h[i - 1] : Scalar{0};
-            d[j] = Scalar{3} * (h[i] * delta[i - 1] + h[i - 1] * delta[i]);
-
-            // Move known endpoint velocities to RHS
-            if (i == 1) {
-                d[j] -= h[i] * v0;
-            }
-            if (i == n - 1) {
-                d[j] -= h[i - 1] * vn;
-            }
-        }
-
-        auto solved = detail::thomas_solve(a, b, c, d);
-        if (!solved) {
-            return solved;
-        }
-
-        for (std::size_t j = 0; j < n_int; ++j) {
-            vel[j + 1] = d[j];
-        }
-        return {};
-    }
-
-    /// @brief Solve periodic BC: n x n cyclic tridiagonal for v_0 .. v_{n-1}.
-    ///
-    /// Requires q_0 == q_n. Velocity v_n = v_0 (periodic wrap-around).
-    /// Uses cyclic Thomas solver (Sherman-Morrison).
-    ///
-    /// @cite biagiotti2009 -- Sec. 4.4.2
-    static auto solve_periodic(std::vector<Scalar> const& h,
-                               std::vector<Scalar> const& delta,
-                               std::vector<Scalar> const& /*pos*/,
-                               std::vector<Scalar>& vel,
-                               std::size_t /*n_pts*/,
-                               std::size_t n) -> ctrlpp::expected<void, spline_error>
-    {
-        // System of size n for v_0 .. v_{n-1} (v_n = v_0)
-        std::vector<Scalar> a(n, Scalar{0});
-        std::vector<Scalar> b(n, Scalar{0});
-        std::vector<Scalar> c(n, Scalar{0});
-        std::vector<Scalar> d(n, Scalar{0});
-
-        // Row 0: wraps around -- v_{n-1} appears as sub-diagonal corner
-        b[0] = Scalar{2} * (h[n - 1] + h[0]);
-        c[0] = h[n - 1];
-        d[0] = Scalar{3} * (h[0] * delta[n - 1] + h[n - 1] * delta[0]);
-
-        // Interior rows 1..n-2
-        for (std::size_t i = 1; i < n - 1; ++i) {
-            a[i] = h[i];
-            b[i] = Scalar{2} * (h[i - 1] + h[i]);
-            c[i] = h[i - 1];
-            d[i] = Scalar{3} * (h[i] * delta[i - 1] + h[i - 1] * delta[i]);
-        }
-
-        // Row n-1: wraps around -- v_0 appears as super-diagonal corner
-        a[n - 1] = h[n - 1];
-        b[n - 1] = Scalar{2} * (h[n - 2] + h[n - 1]);
-        d[n - 1] = Scalar{3} * (h[n - 1] * delta[n - 2] + h[n - 2] * delta[n - 1]);
-
-        // Corner elements: alpha = A[0][n-1] = h[0], beta = A[n-1][0] = h[n-2]
-        auto const alpha = h[0];
-        auto const beta = h[n - 2];
-
-        auto solved = detail::cyclic_thomas_solve(a, b, c, d, alpha, beta);
-        if (!solved) {
-            return solved;
-        }
-
-        for (std::size_t i = 0; i < n; ++i) {
-            vel[i] = d[i];
-        }
-        vel[n] = vel[0]; // periodic wrap
-        return {};
-    }
-
-    std::vector<Scalar> times_;
-    std::vector<std::array<Scalar, 4>> coeffs_; ///< {a, b, c, d} per span
-
-    /// Whether every coefficient the construction formed stayed inside the type.
-    /// Read once, by `create`, which is the only caller that can still refuse.
-    bool coefficients_representable_{true};
-    bool system_solved_;
 };
 
 static_assert(trajectory_segment<cubic_spline<double>, double, 1>);
