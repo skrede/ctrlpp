@@ -22,7 +22,7 @@ namespace ctrlpp::detail
 using construction_refusal = std::optional<controller_construction_error>;
 
 template <typename Bound>
-auto bounds_are_consistent(const std::optional<Bound>& lower, const std::optional<Bound>& upper) -> bool
+bool bounds_are_consistent(const std::optional<Bound>& lower, const std::optional<Bound>& upper)
 {
     using scalar_type = typename Bound::Scalar;
     constexpr scalar_type infinity = std::numeric_limits<scalar_type>::infinity();
@@ -34,13 +34,13 @@ auto bounds_are_consistent(const std::optional<Bound>& lower, const std::optiona
 }
 
 template <typename Bound>
-auto rate_bound_is_valid(const std::optional<Bound>& du_max) -> bool
+bool rate_bound_is_valid(const std::optional<Bound>& du_max)
 {
     return !du_max || (du_max->array() >= 0).all();
 }
 
 template <typename Penalty>
-auto penalty_is_valid(const Penalty& penalty) -> bool
+bool penalty_is_valid(const Penalty& penalty)
 {
     return penalty.allFinite() && (penalty.array() > 0).all();
 }
@@ -52,14 +52,14 @@ struct weight_refusals
     controller_construction_error indefinite;
 };
 
-inline constexpr weight_refusals cost_weight_refusals{controller_construction_error::non_finite_cost_weight, controller_construction_error::asymmetric_cost_weight,
-                                                      controller_construction_error::indefinite_cost_weight};
+inline constexpr weight_refusals cost_weight_refusals{
+        controller_construction_error::non_finite_cost_weight, controller_construction_error::asymmetric_cost_weight, controller_construction_error::indefinite_cost_weight};
 
-inline constexpr weight_refusals terminal_set_refusals{controller_construction_error::non_finite_terminal_set, controller_construction_error::asymmetric_terminal_set,
-                                                       controller_construction_error::indefinite_terminal_set};
+inline constexpr weight_refusals terminal_set_refusals{
+        controller_construction_error::non_finite_terminal_set, controller_construction_error::asymmetric_terminal_set, controller_construction_error::indefinite_terminal_set};
 
 template <typename Scalar, int N>
-auto refused_weight(Eigen::Matrix<Scalar, N, N>& weight, const weight_refusals& refusals) -> construction_refusal
+construction_refusal refused_weight(Eigen::Matrix<Scalar, N, N>& weight, const weight_refusals& refusals)
 {
     if(!weight.allFinite())
         return refusals.non_finite;
@@ -73,7 +73,7 @@ auto refused_weight(Eigen::Matrix<Scalar, N, N>& weight, const weight_refusals& 
 }
 
 template <typename Config>
-auto refused_bounds(const Config& config) -> construction_refusal
+construction_refusal refused_bounds(const Config& config)
 {
     if(!bounds_are_consistent(config.u_min, config.u_max))
         return controller_construction_error::invalid_input_bounds;
@@ -85,7 +85,7 @@ auto refused_bounds(const Config& config) -> construction_refusal
 }
 
 template <typename Config>
-auto refused_cost_weights(Config& config) -> construction_refusal
+construction_refusal refused_cost_weights(Config& config)
 {
     if(const auto refusal = refused_weight(config.Q, cost_weight_refusals))
         return refusal;
@@ -97,7 +97,7 @@ auto refused_cost_weights(Config& config) -> construction_refusal
 }
 
 template <typename Scalar, std::size_t NX>
-auto refused_terminal_set(ellipsoidal_set<Scalar, NX>& set) -> construction_refusal
+construction_refusal refused_terminal_set(ellipsoidal_set<Scalar, NX>& set)
 {
     if(const auto refusal = refused_weight(set.P, terminal_set_refusals))
         return refusal;
@@ -109,7 +109,7 @@ auto refused_terminal_set(ellipsoidal_set<Scalar, NX>& set) -> construction_refu
 }
 
 template <typename Scalar, std::size_t NX>
-auto refused_terminal_set(const polytopic_set<Scalar, NX>& set) -> construction_refusal
+construction_refusal refused_terminal_set(const polytopic_set<Scalar, NX>& set)
 {
     if(set.H.rows() != set.h.size())
         return controller_construction_error::mismatched_terminal_set;
@@ -119,7 +119,7 @@ auto refused_terminal_set(const polytopic_set<Scalar, NX>& set) -> construction_
 }
 
 template <typename Config>
-auto nmpc_penalties_are_valid(const Config& config) -> bool
+bool nmpc_penalties_are_valid(const Config& config)
 {
     const bool path_slack = config.soft_constraints && config.path_penalty.size() > 0 && config.path_constraint_cb;
     const bool terminal_slack = config.soft_constraints && config.terminal_penalty.size() > 0 && config.terminal_constraint_cb;
@@ -129,20 +129,17 @@ auto nmpc_penalties_are_valid(const Config& config) -> bool
 // The uniform penalty is checked even while a per-state one replaces it: it is
 // a configuration field with a valid default, so an invalid value is a mistake.
 template <typename Config>
-auto mpc_penalties_are_valid(const Config& config) -> bool
+bool mpc_penalties_are_valid(const Config& config)
 {
     const bool soft = (config.x_min || config.x_max) && !config.hard_state_constraints;
     const bool uniform = std::isfinite(config.soft_penalty) && config.soft_penalty > 0;
     return !soft || (uniform && (!config.soft_state_penalty || penalty_is_valid(*config.soft_state_penalty)));
 }
 
-/// @brief Admit a nonlinear MPC configuration, or name the first rule it
-/// violates. Rules, checked in order: input bounds, state bounds, rate bound,
-/// then Q, R and a set Qf (each finite, symmetric within rounding drift,
-/// positive semidefinite), then the penalties of the active soft constraints.
-/// The admitted copy carries the drift-symmetrized weights.
+// The first violated rule is returned, in the order checked here; the admitted copy carries the drift-symmetrized
+// weights.
 template <typename Config>
-auto admit_nmpc_config(const Config& config) -> expected<Config, controller_construction_error>
+expected<Config, controller_construction_error> admit_nmpc_config(const Config& config)
 {
     Config admitted{config};
     if(const auto refusal = refused_bounds(admitted))
@@ -154,13 +151,9 @@ auto admit_nmpc_config(const Config& config) -> expected<Config, controller_cons
     return admitted;
 }
 
-/// @brief Admit a linear MPC configuration under the same rules and order as
-/// `admit_nmpc_config`, the penalties being the slack weights of the soft state
-/// constraints, then a set terminal set: a polytope's H and h of one row count,
-/// H finite and h free of NaN; an ellipsoid's P under the weights' rule, alpha
-/// finite and nonnegative. The admitted copy carries the symmetrized P.
+// The nonlinear admission's rules and order, then the terminal set; the admitted copy carries the symmetrized P.
 template <typename Config>
-auto admit_mpc_config(const Config& config) -> expected<Config, controller_construction_error>
+expected<Config, controller_construction_error> admit_mpc_config(const Config& config)
 {
     Config admitted{config};
     if(const auto refusal = refused_bounds(admitted))

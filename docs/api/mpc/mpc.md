@@ -30,7 +30,7 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `horizon` | `int` | `1` | Prediction horizon length N |
+| `horizon` | `std::int32_t` | `1` | Prediction horizon length N |
 | `Q` | `Matrix<Scalar, NX, NX>` | Identity | State cost weight |
 | `R` | `Matrix<Scalar, NU, NU>` | Identity | Input cost weight |
 | `Qf` | `optional<Matrix<Scalar, NX, NX>>` | DARE solution | Terminal cost weight. Computed from the DARE solve when not provided; `create` refuses the configuration if that solve declines. |
@@ -50,14 +50,12 @@ Configuration struct `mpc_config<Scalar, NX, NU>` passed at construction.
 using construction_error = mpc_construction_error<SetupError>;
 // = std::variant<controller_construction_error, dare_error, SetupError>
 
-static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
-                   const mpc_config<Scalar, NX, NU>& config)
-    -> expected<mpc, construction_error>;
+static expected<mpc, construction_error> create(const discrete_state_space<Scalar, NX, NU, NX>& system,
+                                                const mpc_config<Scalar, NX, NU>& config);
 
-static auto create(const discrete_state_space<Scalar, NX, NU, NX>& system,
-                   const mpc_config<Scalar, NX, NU>& config,
-                   Solver solver)
-    -> expected<mpc, construction_error>;
+static expected<mpc, construction_error> create(const discrete_state_space<Scalar, NX, NU, NX>& system,
+                                                const mpc_config<Scalar, NX, NU>& config,
+                                                Solver solver);
 ```
 
 `create` is the only construction path. Its constructor is public only so `ctrlpp::expected` can build the controller in the caller's storage, and it takes a passkey that only the class can make, so a rejected configuration or a refused solver setup is a value the caller has to inspect and never a controller that quietly stands in for one. It validates the configuration, computes the terminal cost (via DARE if `Qf` is not set), then builds the controller in place and sets its solver up against the posed QP. The two-argument form default-constructs the solver and chains into the three-argument form, which injects a caller-supplied, pre-configured solver (moved in before the initial QP is posed), letting you choose the accuracy/speed tradeoff via a preset.
@@ -127,7 +125,7 @@ With `Qf` unset, no other terminal cost is ever posed in place of the Riccati so
 
 The state bounds are soft when `x_min` or `x_max` is set and `hard_state_constraints` is false; only then are the penalties inspected. `soft_penalty` is checked even while a per-state `soft_state_penalty` replaces it, because it is a configuration field with a valid default and an invalid value there is a mistake either way.
 
-`horizon` stays a signed `int` deliberately: a mistaken negative value remains representable as negative and is therefore rejectable, whereas an unsigned field would turn the same mistake into an enormous allocation. The overflow bound is a representability condition on `int`, not a chosen ceiling. At the worst-case configuration the horizon `N` scales the decision vector as `N*(2*NX + NU) + NX` and the constraint rows as `N*(2*NX + 2*NU) + NX + n_terminal`, so both stay representable exactly when `horizon <= (INT_MAX - (NX + n_terminal)) / (2*NX + 2*NU)`.
+`horizon` stays a signed `std::int32_t` deliberately: a mistaken negative value remains representable as negative and is therefore rejectable, whereas an unsigned field would turn the same mistake into an enormous allocation. The overflow bound is a representability condition on `std::int32_t`, not a chosen ceiling. At the worst-case configuration the horizon `N` scales the decision vector as `N*(2*NX + NU) + NX` and the constraint rows as `N*(2*NX + 2*NU) + NX + n_terminal`, so both stay representable exactly when `horizon <= (INT32_MAX - (NX + n_terminal)) / (2*NX + 2*NU)`.
 
 Two alternatives are deliberately not implemented. Validating at the first solve would surface a configuration error at the first control step, the worst possible moment. Clamping the horizon to one would turn a caller mistake into a silently different controller.
 
@@ -153,7 +151,9 @@ Both `mpc` and `nmpc` share one soft-constraint and failure contract. Every
     re-setup failed returns it.
   - `invalid_backend_result`: the solver reported a status the controller accepts
     and then returned a primal shorter than the decision dimension, or a dual
-    shorter than the constraint count, of the problem posed at construction. The
+    shorter than the constraint count, of the problem posed at construction, or
+    a non-finite entry in the consumed primal or dual prefix, a non-finite
+    objective, solve time or residual, or a negative iteration count. The
     controller checks both reported lengths before it consumes either vector, so
     the fixed-width slices it takes out of the primal cannot read past the end of
     the solver's own storage, and an undersized dual is never handed back as the
@@ -174,8 +174,7 @@ commanded.
 ### solve (regulation)
 
 ```cpp
-auto solve(const Vector<Scalar, NX>& x0)
-    -> ctrlpp::expected<solve_output<Scalar, NU>, solver_error>;
+ctrlpp::expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scalar, NX>& x0);
 ```
 
 Solves the QP for regulating state to the origin. Returns the success branch with
@@ -186,9 +185,8 @@ always holds a solver that accepted its problem at setup: a refused setup refuse
 ### solve (constant reference)
 
 ```cpp
-auto solve(const Vector<Scalar, NX>& x0,
-                         const Vector<Scalar, NY>& y_ref)
-    -> ctrlpp::expected<solve_output<Scalar, NU>, solver_error>;
+ctrlpp::expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scalar, NX>& x0,
+                                                               const Vector<Scalar, NY>& y_ref);
 ```
 
 Solves the QP for tracking a constant output reference across the entire horizon.
@@ -196,9 +194,8 @@ Solves the QP for tracking a constant output reference across the entire horizon
 ### solve (trajectory reference)
 
 ```cpp
-auto solve(const Vector<Scalar, NX>& x0,
-                         std::span<const Vector<Scalar, NY>> y_ref)
-    -> ctrlpp::expected<solve_output<Scalar, NU>, solver_error>;
+ctrlpp::expected<solve_output<Scalar, NU>, solver_error> solve(const Vector<Scalar, NX>& x0,
+                                                               std::span<const Vector<Scalar, NY>> y_ref);
 ```
 
 Solves the QP for tracking a time-varying output reference trajectory. The span
@@ -219,10 +216,9 @@ different input, for example after an error branch or external saturation.
 ### trajectory
 
 ```cpp
-auto trajectory() const
-    -> ctrlpp::expected<std::pair<std::vector<Vector<Scalar, NX>>,
-                                  std::vector<Vector<Scalar, NU>>>,
-                        solver_error>;
+ctrlpp::expected<std::pair<std::vector<Vector<Scalar, NX>>,
+                           std::vector<Vector<Scalar, NU>>>,
+                 solver_error> trajectory() const;
 ```
 
 Returns the full predicted state and input trajectories from the last solve. It is
@@ -232,7 +228,7 @@ guarded: before the first valid solve it returns the error branch
 ### diagnostics
 
 ```cpp
-auto diagnostics() const -> mpc_diagnostics<Scalar>;
+mpc_diagnostics<Scalar> diagnostics() const;
 ```
 
 Returns solver diagnostics from the last solve, including status, iteration count, solve time, cost, and residuals.
@@ -272,6 +268,24 @@ The function's own error channel carries the failures of `Qf` and `set`, as one 
 | `not_converged` | No fixed point within the step bound derived from the Lyapunov contraction of `A + B K` |
 | `certification_failed` | The constructed set failed its own check on its vertices (bounded, inside `Y`, mapped into itself by `A + B K`, each within the construction's rounding bounds), or a vertex enumeration returned fewer than `NX + 1` vertices, too few to describe a full-dimensional polytope. Plants with large gains can be refused this way, because the rounding error that accumulates in the output rows `C A_K^t` can exceed the certificate's bound |
 | `dimension_unsupported` | `NX > 4` |
+
+### terminal_set_error
+
+Every terminal-set construction reports its refusals as one `terminal_set_error` (in `ctrlpp/mpc/terminal_set.h`):
+
+| Enumerator | Meaning |
+|------------|---------|
+| `input_zero_not_interior` | Some input component has `u_min(i) >= 0` or `u_max(i) <= 0`, so `u = 0`, the LQR input at the origin, is not strictly interior to `[u_min, u_max]` and the input-face `alpha` bound would be meaningless |
+| `empty_terminal_set` | Capping `alpha` against the input and state faces yields a non-positive or non-finite `alpha`: no consistent bounded ellipsoid exists |
+| `halfplanes_truncated` | The polytopic invariant-set halfplane count hit its resource bound, so the representation would be a truncated, and therefore unsound, outer approximation |
+| `not_converged` | The construction reached its iteration bound without a fixed point; no set is returned |
+| `closed_loop_not_stable` | `A + B K` is not strictly stable (the Stein equation has no positive definite solution), so no bounded output admissible set exists |
+| `unbounded_terminal_set` | The rows `C A_K^k` for `k < NX` leave a direction in which the set recedes, so the starting polytope is unbounded; one-sided bounds that would close the set only at later steps are refused as well, conservatively |
+| `origin_not_interior` | A finite state or input bound does not strictly straddle zero |
+| `dimension_unsupported` | The state dimension exceeds the four that vertex enumeration is restricted to |
+| `certification_failed` | The constructed set failed its own check on its vertices, or a vertex enumeration returned fewer than `NX + 1` vertices; no set is returned |
+| `non_finite_input` | `A_K` or `K` contains NaN or Inf, or a bound is NaN; an infinite bound is an absent side, not corrupt data |
+| `singular_input_weight` | `R` is rank-deficient to the reciprocal-pivot test the Riccati solve applies to its equilibrated weighting, so the terminal cost and gain cannot be formed |
 
 ### compute_output_admissible_set
 

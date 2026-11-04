@@ -32,17 +32,19 @@ protected:
 
     void populate_diagnostics(const nlp_result<Scalar>& result)
     {
-        this->m_last_diagnostics = mpc_diagnostics<Scalar>{.status = result.status,
-                .iterations = result.iterations,
-                .solve_time = result.solve_time,
-                .cost = result.objective,
-                .primal_residual = result.primal_residual,
-                .dual_residual = Scalar{0},
-                .max_constraint_violation = result.primal_residual,
-                .max_path_constraint_violation = Scalar{0},
-                .max_terminal_constraint_violation = Scalar{0},
-                .total_slack = Scalar{0},
-                .stop_criterion = result.stop_criterion};
+        mpc_diagnostics<Scalar> d;
+        d.status = result.status;
+        d.iterations = result.iterations;
+        d.solve_time = result.solve_time;
+        d.cost = result.objective;
+        d.primal_residual = result.primal_residual;
+        d.dual_residual = Scalar{0};
+        d.max_constraint_violation = result.primal_residual;
+        d.max_path_constraint_violation = Scalar{0};
+        d.max_terminal_constraint_violation = Scalar{0};
+        d.total_slack = Scalar{0};
+        d.stop_criterion = result.stop_criterion;
+        this->m_last_diagnostics = d;
     }
 
     void populate_constraint_diagnostics(const Eigen::VectorX<Scalar>& z)
