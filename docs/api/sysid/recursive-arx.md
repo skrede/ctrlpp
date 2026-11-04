@@ -58,7 +58,7 @@ Processes a new input/output pair. Builds the regressor vector from the internal
 
 The underlying estimator's refusal is **forwarded verbatim**: every enumerator of [`rls_update_error`](rls.md#update) has a same-named counterpart in `recursive_arx_update_error`, so the reason is never restated under a name that could drift out of step with the arithmetic it describes. One enumerator is the wrapper's own: `non_finite_input`, reported when `u` is not finite, before the regressor is built.
 
-A refused cycle also leaves the regressor history, the write index and the sample count untouched -- recording a sample the estimator refused as non-finite would poison every regressor built afterwards, so the poison would latch here after the estimator had correctly declined it.
+A refused cycle also leaves the regressor history and the write index untouched -- recording a sample the estimator refused as non-finite would poison every regressor built afterwards, so the poison would latch here after the estimator had correctly declined it.
 
 ### parameters
 

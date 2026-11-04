@@ -81,7 +81,6 @@ public:
         m_y_hist[m_write_idx % NA] = y;
         m_u_hist[m_write_idx % NB] = u;
         ++m_write_idx;
-        ++m_sample_count;
         return {};
     }
 
@@ -118,14 +117,12 @@ public:
 private:
     rls<Scalar, NP> m_rls;
     std::size_t m_write_idx;
-    std::size_t m_sample_count;
     std::array<Scalar, NA> m_y_hist;
     std::array<Scalar, NB> m_u_hist;
 
     recursive_arx(validated_tag, rls<Scalar, NP> estimator)
         : m_rls{std::move(estimator)}
         , m_write_idx{0}
-        , m_sample_count{0}
         , m_y_hist{}
         , m_u_hist{}
     {
