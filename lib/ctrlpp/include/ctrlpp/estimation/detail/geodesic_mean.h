@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 namespace ctrlpp::detail
 {
@@ -23,12 +24,12 @@ struct geodesic_mean_result
 
 // @cite hauberg2013 -- Hauberg et al., "Unscented Kalman Filtering on (Sub)Riemannian Manifolds", 2013, Alg. 1
 template <typename Scalar, std::size_t NP>
-geodesic_mean_result<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<Scalar>, NP>& qs, const std::array<Scalar, NP>& Wm, std::size_t max_iter, Scalar tol)
+geodesic_mean_result<Scalar> geodesic_mean_impl(const std::array<Eigen::Quaternion<Scalar>, NP>& qs, const std::array<Scalar, NP>& Wm, std::int32_t max_iter, Scalar tol)
 {
     auto q_mean = qs[0];
     Scalar residual = Scalar{0};
     bool converged = false;
-    for(std::size_t iter = 0; iter < max_iter; ++iter)
+    for(std::int32_t iter = 0; iter < max_iter; ++iter)
     {
         Vector<Scalar, 3> eps = Vector<Scalar, 3>::Zero();
         for(std::size_t i = 0; i < NP; ++i)

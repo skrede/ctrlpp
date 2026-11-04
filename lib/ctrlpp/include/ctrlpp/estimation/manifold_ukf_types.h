@@ -8,6 +8,7 @@
 #include <Eigen/Geometry>
 
 #include <cstddef>
+#include <cstdint>
 #include <concepts>
 
 namespace ctrlpp
@@ -48,7 +49,7 @@ struct manifold_ukf_config
     Matrix<Scalar, NY, NY> R{Matrix<Scalar, NY, NY>::Identity()};
     Eigen::Quaternion<Scalar> q0{Eigen::Quaternion<Scalar>::Identity()};
     Matrix<Scalar, 3, 3> P0{Matrix<Scalar, 3, 3>::Identity()};
-    std::size_t geodesic_mean_max_iter{30};
+    std::int32_t geodesic_mean_max_iter{30};
     Scalar geodesic_mean_tol{static_cast<Scalar>(1e-9)};
 };
 

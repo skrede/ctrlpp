@@ -27,6 +27,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 
 namespace ctrlpp
@@ -123,7 +124,7 @@ private:
     Strategy m_strategy;
     Dynamics m_dynamics;
     Measurement m_measurement;
-    std::size_t m_max_iter;
+    std::int32_t m_max_iter;
     Eigen::Quaternion<Scalar> m_q;
     state_vector_t m_state_cache;
     output_vector_t m_innovation;

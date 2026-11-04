@@ -40,7 +40,7 @@ using cov_matrix_t    = Matrix<Scalar, 3, 3>;   // tangent-space covariance
 | `R` | `Matrix<Scalar, NY, NY>` | Identity | Measurement noise covariance |
 | `q0` | `Eigen::Quaternion<Scalar>` | Identity | Initial quaternion estimate, unit within rounding |
 | `P0` | `Matrix<Scalar, 3, 3>` | Identity | Initial tangent-space covariance |
-| `geodesic_mean_max_iter` | `std::size_t` | `30` | Maximum iterations for geodesic mean computation |
+| `geodesic_mean_max_iter` | `std::int32_t` | `30` | Maximum iterations for geodesic mean computation |
 | `geodesic_mean_tol` | `Scalar` | `1e-9` | Convergence tolerance for geodesic mean |
 
 ## Construction
