@@ -277,7 +277,7 @@ private:
     static auto horizon_bound(const mpc_config<Scalar, NX, NU, NY>& config) -> int
     {
         constexpr int per_step = 2 * nx + 2 * nu;
-        const int constant_dimensions = nx + detail::terminal_constraint_rows<Scalar, NX>(config.terminal_constraint_set);
+        const int constant_dimensions = nx + static_cast<int>(detail::terminal_constraint_rows<Scalar, NX>(config.terminal_constraint_set));
         return (std::numeric_limits<int>::max() - constant_dimensions) / per_step;
     }
 
@@ -484,11 +484,11 @@ private:
     Vector<Scalar, NU> u_prev_;
     bool has_solution_{false};
 
-    int n_dec_{};
-    int n_con_{};
+    Eigen::Index n_dec_{};
+    Eigen::Index n_con_{};
     int n_x_total_{};
     int n_u_total_{};
-    int rate_row_{};
+    Eigen::Index rate_row_{};
 };
 
 }

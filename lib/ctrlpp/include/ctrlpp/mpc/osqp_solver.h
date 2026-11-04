@@ -76,12 +76,12 @@ public:
     auto solve(const qp_update<double>& update) -> qp_result<double>
     {
         if(!solver_ || !accepts_bound(update.l) || !accepts_bound(update.u))
-            return qp_result<double>{.status = solve_status::error};
+            return {};
 
         // OSQP refuses l > u before touching q, l or u, so a refusal left unchecked would solve the previous problem.
         const OSQPFloat* q = update.q.size() > 0 ? update.q.data() : nullptr;
         if(osqp_update_data_vec(solver_.get(), q, stage(update.l, osqp_lower_, detail::to_osqp_lower), stage(update.u, osqp_upper_, detail::to_osqp_upper)) != 0)
-            return qp_result<double>{.status = solve_status::error};
+            return {};
 
         if(update.warm_x.size() > 0 || update.warm_y.size() > 0)
             osqp_warm_start(solver_.get(), update.warm_x.size() > 0 ? update.warm_x.data() : nullptr, update.warm_y.size() > 0 ? update.warm_y.data() : nullptr);

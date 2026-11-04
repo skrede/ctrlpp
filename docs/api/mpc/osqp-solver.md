@@ -83,7 +83,7 @@ Defined in `<ctrlpp/mpc/qp_types.h>` beside `solve_status` (which is unchanged; 
 ```cpp
 enum class osqp_setup_error : std::uint8_t {
     settings_allocation_failed,  // OSQPSettings_new returned null
-    setup_failed                 // osqp_setup rejected the data or settings
+    setup_failed                 // osqp_setup rejected the data or settings, or could not allocate its workspace
 };
 ```
 

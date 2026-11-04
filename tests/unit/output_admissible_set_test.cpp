@@ -174,7 +174,7 @@ polytope<N> qp_terminal_rows(const ctrlpp::terminal_set<double, N>& tset, const 
     Eigen::MatrixXd const matrix(ctrlpp::detail::build_constraint_matrix<double, N, M>(horizon, sys.A, sys.B, x_min, x_max, false, u_min, u_max, du_max, terminal));
     auto const [lower, upper] = ctrlpp::detail::build_bounds_vectors<double, N, M>(horizon, ctrlpp::Vector<double, N>::Zero(), x_min, x_max, u_min, u_max, du_max, terminal);
     polytope<N> rows{.H = Eigen::Matrix<double, Eigen::Dynamic, static_cast<int>(N)>(0, N), .h = Eigen::VectorXd(0)};
-    for(int r = layout.terminal_row; r < layout.n_con; ++r)
+    for(Eigen::Index r = layout.terminal_row; r < layout.n_con; ++r)
     {
         row_vector<N> const row = matrix.block(r, horizon * static_cast<int>(N), 1, static_cast<int>(N));
         if(std::isfinite(upper(r)))

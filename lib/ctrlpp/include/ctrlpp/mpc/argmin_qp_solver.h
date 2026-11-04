@@ -107,13 +107,13 @@ public:
     auto solve(const qp_update<double>& update) -> qp_result<double>
     {
         if(!posed_)
-            return qp_result<double>{.status = solve_status::error};
+            return {};
 
         if(update.warm_x.size() > 0 && update.warm_y.size() > 0)
             solver_.warm_start(update.warm_x, update.warm_y);
 
         if(auto err = solver_.resolve_into(update.q, update.l, update.u, last_, opts_))
-            return qp_result<double>{.status = solve_status::error};
+            return {};
 
         return translate(last_);
     }

@@ -1,460 +1,104 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_QP_FORMULATION_H
 #define HPP_GUARD_CTRLPP_MPC_QP_FORMULATION_H
 
-/// @brief Sparse QP formulation for linear MPC (condensed/sparse form).
-///
-/// @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017, Ch. 2 (sparse condensing)
-/// @cite borrelli2017 -- Borrelli, Bemporad & Morari, "Predictive Control for Linear and Hybrid Systems", 2017, Ch. 11 (linear MPC, soft-constraint slack penalties)
-
-#include "ctrlpp/types.h"
+// @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017, Ch. 2 (sparse condensing)
+// @cite borrelli2017 -- Borrelli, Bemporad & Morari, "Predictive Control for Linear and Hybrid Systems", 2017, Ch. 11 (linear MPC, soft-constraint slack penalties)
 
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/terminal_set.h"
 
-#include "ctrlpp/detail/covariance_ops.h"
+#include "ctrlpp/types.h"
 
 #include "ctrlpp/util/concepts.h"
+
+#include "ctrlpp/mpc/detail/qp_bounds.h"
+#include "ctrlpp/mpc/detail/qp_layout.h"
+#include "ctrlpp/mpc/detail/qp_cost_triplets.h"
+#include "ctrlpp/mpc/detail/qp_constraint_triplets.h"
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
 #include <span>
-#include <cmath>
-#include <limits>
 #include <vector>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
-#include <variant>
 #include <optional>
-#include <type_traits>
 
 namespace ctrlpp::detail
 {
 
-// --- Terminal constraint row count helper ---
-
-template <typename Scalar, std::size_t NX>
-inline int terminal_constraint_rows(const std::optional<terminal_set<Scalar, NX>>& terminal_constraint)
-{
-    constexpr int nx = static_cast<int>(NX);
-    if(!terminal_constraint.has_value())
-        return 0;
-    return std::visit(
-        [](const auto& s) -> int
-        {
-            using T = std::decay_t<decltype(s)>;
-            if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
-                return nx;
-            else
-                return static_cast<int>(s.H.rows());
-        },
-        *terminal_constraint);
-}
-
-// --- QP dimensions ---
-
-/// @brief Where each constraint block starts, and how many rows the whole QP has.
-///
-/// The constraint matrix and the bounds vectors must be exactly as tall as each
-/// other, and the per-solve rate-bound refresh must write at the row the rate
-/// block actually starts at. All three quantities are decided here, from the
-/// optionals that decide whether a block exists at all, so there is no presence
-/// flag traveling beside an optional that could disagree with it.
-struct qp_constraint_layout
-{
-    int state_row;    ///< First state-bound row; equals the dynamics block height.
-    int input_row;    ///< First input-bound row.
-    int rate_row;     ///< First input-rate row.
-    int terminal_row; ///< First terminal-set row.
-    int n_con;        ///< Total constraint rows.
-};
-
-template <typename Scalar, std::size_t NX, std::size_t NU>
-inline auto constraint_layout(int N,
-                              const std::optional<Vector<Scalar, NX>>& x_min,
-                              const std::optional<Vector<Scalar, NX>>& x_max,
-                              const std::optional<Vector<Scalar, NU>>& u_min,
-                              const std::optional<Vector<Scalar, NU>>& u_max,
-                              const std::optional<Vector<Scalar, NU>>& du_max,
-                              const std::optional<terminal_set<Scalar, NX>>& terminal_constraint) -> qp_constraint_layout
-{
-    constexpr int nx = static_cast<int>(NX);
-    constexpr int nu = static_cast<int>(NU);
-
-    int const state_row = (N + 1) * nx;
-    int const input_row = state_row + ((x_min.has_value() || x_max.has_value()) ? N * nx : 0);
-    int const rate_row = input_row + ((u_min.has_value() || u_max.has_value()) ? N * nu : 0);
-    int const terminal_row = rate_row + (du_max.has_value() ? N * nu : 0);
-
-    return {state_row, input_row, rate_row, terminal_row, terminal_row + terminal_constraint_rows<Scalar, NX>(terminal_constraint)};
-}
-
-/// @brief Slack columns carried by the softened state-bound formulation.
-///
-/// The cost matrix and the constraint matrix must agree on the decision width or
-/// they describe two different problems, so the count is decided in one place.
-template <std::size_t NX>
-inline int slack_columns(int N, bool has_soft_constraints)
-{
-    constexpr int nx = static_cast<int>(NX);
-    return has_soft_constraints ? N * nx : 0;
-}
-
-// --- Cost matrix building ---
-
-template <typename Scalar, std::size_t NX, std::size_t NU>
-inline void add_diagonal_block(std::vector<Eigen::Triplet<Scalar>>& trips, int offset, const auto& block, int size)
-{
-    for(int i = 0; i < size; ++i)
-        for(int j = i; j < size; ++j)
-            if(block(i, j) != Scalar{0})
-                trips.emplace_back(offset + i, offset + j, block(i, j));
-}
-
-template <typename Scalar, std::size_t NX, std::size_t NU>
-inline void add_soft_constraint_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int N, int slack_offset,
-                                         Scalar soft_penalty, const std::optional<Vector<Scalar, NX>>& soft_state_penalty)
-{
-    constexpr int nx = static_cast<int>(NX);
-    for(int k = 0; k < N; ++k)
-        for(int i = 0; i < nx; ++i)
-        {
-            Scalar penalty = soft_state_penalty.has_value() ? (*soft_state_penalty)(i) : soft_penalty;
-            trips.emplace_back(slack_offset + k * nx + i, slack_offset + k * nx + i, penalty);
-        }
-}
-
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU>
-auto build_cost_matrix(int N,
-                                     const Matrix<Scalar, NX, NX>& Q,
-                                     const Matrix<Scalar, NU, NU>& R,
-                                     const Matrix<Scalar, NX, NX>& Qf,
-                                     bool has_soft_constraints,
-                                     Scalar soft_penalty,
-                                     const std::optional<Vector<Scalar, NX>>& soft_state_penalty = {}) -> Eigen::SparseMatrix<Scalar, Eigen::ColMajor>
+Eigen::SparseMatrix<Scalar, Eigen::ColMajor> build_cost_matrix(std::int32_t N, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NU, NU>& R, const Matrix<Scalar, NX, NX>& Qf,
+        bool has_soft_constraints, Scalar soft_penalty, const std::optional<Vector<Scalar, NX>>& soft_state_penalty = {})
 {
     static_assert(NX >= 1 && NU >= 1, "QP formulation requires NX >= 1 and NU >= 1");
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
 
-    int n_x_total = (N + 1) * nx;
-    int n_u_total = N * nu;
-    int n_slack = slack_columns<NX>(N, has_soft_constraints);
-    int n_dec = n_x_total + n_u_total + n_slack;
+    const auto decision = decision_layout<NX, NU>(N, has_soft_constraints);
 
     std::vector<Eigen::Triplet<Scalar>> triplets;
-    triplets.reserve(static_cast<std::size_t>((N + 1) * nx * (nx + 1) / 2 + N * nu * (nu + 1) / 2 + n_slack));
+    triplets.reserve(static_cast<std::size_t>((N + 1) * nx * (nx + 1) / 2 + N * nu * (nu + 1) / 2 + decision.n_slack));
 
-    for(int k = 0; k < N; ++k)
+    for(std::int32_t k = 0; k < N; ++k)
         add_diagonal_block<Scalar, NX, NU>(triplets, k * nx, Q, nx);
     add_diagonal_block<Scalar, NX, NU>(triplets, N * nx, Qf, nx);
-    for(int k = 0; k < N; ++k)
-        add_diagonal_block<Scalar, NX, NU>(triplets, n_x_total + k * nu, R, nu);
+    for(std::int32_t k = 0; k < N; ++k)
+        add_diagonal_block<Scalar, NX, NU>(triplets, decision.n_x_total + k * nu, R, nu);
     if(has_soft_constraints)
-        add_soft_constraint_triplets<Scalar, NX, NU>(triplets, N, n_x_total + n_u_total, soft_penalty, soft_state_penalty);
+        add_soft_constraint_triplets<Scalar, NX, NU>(triplets, N, decision.n_x_total + decision.n_u_total, soft_penalty, soft_state_penalty);
 
-    Eigen::SparseMatrix<Scalar, Eigen::ColMajor> P(n_dec, n_dec);
+    Eigen::SparseMatrix<Scalar, Eigen::ColMajor> P(decision.n_dec, decision.n_dec);
     P.setFromTriplets(triplets.begin(), triplets.end());
     return P;
 }
 
-// --- Constraint matrix building: sub-steps ---
-
+// has_soft_constraints is a parameter rather than read off an optional: present state bounds may still be enforced
+// hard, which is the caller's policy choice.
 template <typename Scalar, std::size_t NX, std::size_t NU>
-inline void add_dynamics_triplets(std::vector<Eigen::Triplet<Scalar>>& trips,
-                                  int& row,
-                                  int N,
-                                  int n_x_total,
-                                  const Matrix<Scalar, NX, NX>& A_sys,
-                                  const Matrix<Scalar, NX, NU>& B_sys)
+Eigen::SparseMatrix<Scalar, Eigen::ColMajor> build_constraint_matrix(std::int32_t N, const Matrix<Scalar, NX, NX>& A_sys, const Matrix<Scalar, NX, NU>& B_sys,
+        const std::optional<Vector<Scalar, NX>>& x_min, const std::optional<Vector<Scalar, NX>>& x_max, bool has_soft_constraints, const std::optional<Vector<Scalar, NU>>& u_min,
+        const std::optional<Vector<Scalar, NU>>& u_max, const std::optional<Vector<Scalar, NU>>& du_max, const std::optional<terminal_set<Scalar, NX>>& terminal_constraint = {})
 {
     constexpr int nx = static_cast<int>(NX);
     constexpr int nu = static_cast<int>(NU);
 
-    for(int i = 0; i < nx; ++i)
-        trips.emplace_back(row + i, i, Scalar{1});
-    row += nx;
-
-    for(int k = 1; k <= N; ++k)
-    {
-        int x_k = k * nx;
-        int x_km1 = (k - 1) * nx;
-        int u_km1 = n_x_total + (k - 1) * nu;
-
-        for(int i = 0; i < nx; ++i)
-            for(int j = 0; j < nx; ++j)
-                if(A_sys(i, j) != Scalar{0})
-                    trips.emplace_back(row + i, x_km1 + j, -A_sys(i, j));
-
-        for(int i = 0; i < nx; ++i)
-            trips.emplace_back(row + i, x_k + i, Scalar{1});
-
-        for(int i = 0; i < nx; ++i)
-            for(int j = 0; j < nu; ++j)
-                if(B_sys(i, j) != Scalar{0})
-                    trips.emplace_back(row + i, u_km1 + j, -B_sys(i, j));
-
-        row += nx;
-    }
-}
-
-template <typename Scalar, std::size_t NX, std::size_t NU>
-inline void add_state_bound_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int N, int n_x_total, int n_u_total, bool has_soft)
-{
-    constexpr int nx = static_cast<int>(NX);
-    for(int k = 1; k <= N; ++k)
-    {
-        int x_k = k * nx;
-        for(int i = 0; i < nx; ++i)
-            trips.emplace_back(row + i, x_k + i, Scalar{1});
-
-        if(has_soft)
-        {
-            int slack = n_x_total + n_u_total + (k - 1) * nx;
-            for(int i = 0; i < nx; ++i)
-                trips.emplace_back(row + i, slack + i, Scalar{-1});
-        }
-        row += nx;
-    }
-}
-
-template <typename Scalar, std::size_t NX, std::size_t NU>
-inline void add_input_bound_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int N, int n_x_total)
-{
-    constexpr int nu = static_cast<int>(NU);
-    for(int k = 0; k < N; ++k)
-    {
-        int u_k = n_x_total + k * nu;
-        for(int i = 0; i < nu; ++i)
-            trips.emplace_back(row + i, u_k + i, Scalar{1});
-        row += nu;
-    }
-}
-
-template <typename Scalar, std::size_t NX, std::size_t NU>
-inline void add_rate_bound_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int N, int n_x_total)
-{
-    constexpr int nu = static_cast<int>(NU);
-    for(int k = 0; k < N; ++k)
-    {
-        int u_k = n_x_total + k * nu;
-        for(int i = 0; i < nu; ++i)
-            trips.emplace_back(row + i, u_k + i, Scalar{1});
-        if(k > 0)
-        {
-            int u_km1 = n_x_total + (k - 1) * nu;
-            for(int i = 0; i < nu; ++i)
-                trips.emplace_back(row + i, u_km1 + i, Scalar{-1});
-        }
-        row += nu;
-    }
-}
-
-template <typename Scalar, std::size_t NX>
-inline void add_ellipsoidal_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int x_N_offset, const ellipsoidal_set<Scalar, NX>& s)
-{
-    constexpr int nx = static_cast<int>(NX);
-    Eigen::SelfAdjointEigenSolver<Matrix<Scalar, NX, NX>> eig(s.P);
-    auto V = eig.eigenvectors();
-
-    // Emit one two-sided row v_i^T x in [-bound, +bound] per eigen-direction. The paired
-    // -v_i^T x row of the old encoding was a redundant duplicate (the two-sided box on
-    // -v_i^T x is identical to the one on v_i^T x), so nx rows fully encode the box.
-    for(int i = 0; i < nx; ++i)
-        for(int j = 0; j < nx; ++j)
-            if(V(j, i) != Scalar{0})
-                trips.emplace_back(row + i, x_N_offset + j, V(j, i));
-    row += nx;
-}
-
-template <typename Scalar, std::size_t NX>
-inline void add_polytopic_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int x_N_offset, const polytopic_set<Scalar, NX>& s)
-{
-    constexpr int nx = static_cast<int>(NX);
-    int n_faces = static_cast<int>(s.H.rows());
-    for(int i = 0; i < n_faces; ++i)
-        for(int j = 0; j < nx; ++j)
-            if(s.H(i, j) != Scalar{0})
-                trips.emplace_back(row + i, x_N_offset + j, s.H(i, j));
-    row += n_faces;
-}
-
-template <typename Scalar, std::size_t NX>
-inline void add_terminal_set_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, int& row, int x_N_offset, const terminal_set<Scalar, NX>& tset)
-{
-    std::visit([&](const auto& s) {
-        using T = std::decay_t<decltype(s)>;
-        if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
-            add_ellipsoidal_triplets<Scalar, NX>(trips, row, x_N_offset, s);
-        else
-            add_polytopic_triplets<Scalar, NX>(trips, row, x_N_offset, s);
-    }, tset);
-}
-
-template <typename Scalar, std::size_t NX, std::size_t NU>
-auto build_constraint_matrix(int N,
-                                           const Matrix<Scalar, NX, NX>& A_sys,
-                                           const Matrix<Scalar, NX, NU>& B_sys,
-                                           const std::optional<Vector<Scalar, NX>>& x_min,
-                                           const std::optional<Vector<Scalar, NX>>& x_max,
-                                           bool has_soft_constraints,
-                                           const std::optional<Vector<Scalar, NU>>& u_min,
-                                           const std::optional<Vector<Scalar, NU>>& u_max,
-                                           const std::optional<Vector<Scalar, NU>>& du_max,
-                                           const std::optional<terminal_set<Scalar, NX>>& terminal_constraint = {}) -> Eigen::SparseMatrix<Scalar, Eigen::ColMajor>
-{
-    constexpr int nx = static_cast<int>(NX);
-    constexpr int nu = static_cast<int>(NU);
-
-    // Which blocks exist is read straight off the optionals, so the matrix built
-    // below and the bounds vectors built from the same optionals are the same
-    // height by construction. `has_soft_constraints` stays a parameter because it
-    // is not derived from an optional: it is the caller's policy choice between
-    // softening the state bounds and enforcing them hard.
-    auto const layout = constraint_layout<Scalar, NX, NU>(N, x_min, x_max, u_min, u_max, du_max, terminal_constraint);
-
-    int n_x_total = (N + 1) * nx;
-    int n_u_total = N * nu;
-    int n_slack = slack_columns<NX>(N, has_soft_constraints);
-    int n_dec = n_x_total + n_u_total + n_slack;
+    const auto layout = constraint_layout<Scalar, NX, NU>(N, x_min, x_max, u_min, u_max, du_max, terminal_constraint);
+    const auto decision = decision_layout<NX, NU>(N, has_soft_constraints);
 
     std::vector<Eigen::Triplet<Scalar>> triplets;
-    triplets.reserve(static_cast<std::size_t>((N + 1) * nx + N * nx * nx + N * nx * nu + (layout.input_row - layout.state_row) + n_slack + (layout.rate_row - layout.input_row) + 2 * (layout.terminal_row - layout.rate_row)));
+    triplets.reserve(static_cast<std::size_t>((N + 1) * nx + N * nx * nx + N * nx * nu + (layout.input_row - layout.state_row) + decision.n_slack +
+            (layout.rate_row - layout.input_row) + 2 * (layout.terminal_row - layout.rate_row)));
 
-    int row = 0;
-    add_dynamics_triplets<Scalar, NX, NU>(triplets, row, N, n_x_total, A_sys, B_sys);
+    Eigen::Index row = 0;
+    add_dynamics_triplets<Scalar, NX, NU>(triplets, row, N, decision.n_x_total, A_sys, B_sys);
     if(x_min.has_value() || x_max.has_value())
-        add_state_bound_triplets<Scalar, NX, NU>(triplets, row, N, n_x_total, n_u_total, has_soft_constraints);
+        add_state_bound_triplets<Scalar, NX, NU>(triplets, row, N, decision.n_x_total, decision.n_u_total, has_soft_constraints);
     if(u_min.has_value() || u_max.has_value())
-        add_input_bound_triplets<Scalar, NX, NU>(triplets, row, N, n_x_total);
+        add_input_bound_triplets<Scalar, NX, NU>(triplets, row, N, decision.n_x_total);
     if(du_max.has_value())
-        add_rate_bound_triplets<Scalar, NX, NU>(triplets, row, N, n_x_total);
+        add_rate_bound_triplets<Scalar, NX, NU>(triplets, row, N, decision.n_x_total);
     if(terminal_constraint.has_value())
         add_terminal_set_triplets<Scalar, NX>(triplets, row, N * nx, *terminal_constraint);
 
-    Eigen::SparseMatrix<Scalar, Eigen::ColMajor> A(layout.n_con, n_dec);
+    Eigen::SparseMatrix<Scalar, Eigen::ColMajor> A(layout.n_con, decision.n_dec);
     A.setFromTriplets(triplets.begin(), triplets.end());
     return A;
 }
 
-// --- Bounds vector building: sub-steps ---
-
-template <typename Scalar, std::size_t NX>
-inline void set_dynamics_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, int N, const Vector<Scalar, NX>& x0)
-{
-    constexpr int nx = static_cast<int>(NX);
-    l.segment(row, nx) = x0;
-    u.segment(row, nx) = x0;
-    row += nx;
-    for(int k = 1; k <= N; ++k)
-    {
-        l.segment(row, nx).setZero();
-        u.segment(row, nx).setZero();
-        row += nx;
-    }
-}
-
-template <typename Scalar, std::size_t NX>
-inline void set_state_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, int N,
-                             const std::optional<Vector<Scalar, NX>>& x_min, const std::optional<Vector<Scalar, NX>>& x_max)
-{
-    constexpr int nx = static_cast<int>(NX);
-    constexpr auto inf = std::numeric_limits<Scalar>::infinity();
-    Vector<Scalar, NX> lb = x_min.has_value() ? *x_min : Vector<Scalar, NX>::Constant(-inf);
-    Vector<Scalar, NX> ub = x_max.has_value() ? *x_max : Vector<Scalar, NX>::Constant(inf);
-    for(int k = 0; k < N; ++k)
-    {
-        l.segment(row, nx) = lb;
-        u.segment(row, nx) = ub;
-        row += nx;
-    }
-}
-
-template <typename Scalar, std::size_t NU>
-inline void set_input_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, int N,
-                             const std::optional<Vector<Scalar, NU>>& u_min, const std::optional<Vector<Scalar, NU>>& u_max)
-{
-    constexpr int nu = static_cast<int>(NU);
-    constexpr auto inf = std::numeric_limits<Scalar>::infinity();
-    Vector<Scalar, NU> lb = u_min.has_value() ? *u_min : Vector<Scalar, NU>::Constant(-inf);
-    Vector<Scalar, NU> ub = u_max.has_value() ? *u_max : Vector<Scalar, NU>::Constant(inf);
-    for(int k = 0; k < N; ++k)
-    {
-        l.segment(row, nu) = lb;
-        u.segment(row, nu) = ub;
-        row += nu;
-    }
-}
-
-template <typename Scalar, std::size_t NU>
-inline void set_rate_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, int N, const Vector<Scalar, NU>& du_max)
-{
-    constexpr int nu = static_cast<int>(NU);
-    for(int k = 0; k < N; ++k)
-    {
-        l.segment(row, nu) = -du_max;
-        u.segment(row, nu) = du_max;
-        row += nu;
-    }
-}
-
-template <typename Scalar, std::size_t NX>
-inline void set_ellipsoidal_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, const ellipsoidal_set<Scalar, NX>& s)
-{
-    constexpr int nx = static_cast<int>(NX);
-    const Scalar floor = rounding_bound(nx, s.P.cwiseAbs().maxCoeff(), Scalar{1});
-    Eigen::SelfAdjointEigenSolver<Matrix<Scalar, NX, NX>> eig(s.P);
-    auto D = eig.eigenvalues();
-    // Inscribed box of {x : x^T P x <= alpha} in P's eigenbasis y = V^T x: |y_i| <= sqrt(alpha / (NX lambda_i)) keeps
-    // sum_i lambda_i y_i^2 <= alpha. An eigenvalue within the eigensolver's rounding floor of zero (Golub and Van Loan,
-    // 4th ed., Sec. 8.1) is a null direction of P, along which the set is open for every alpha >= 0.
-    for(int i = 0; i < nx; ++i)
-    {
-        Scalar bound = D(i) <= floor ? std::numeric_limits<Scalar>::infinity() : std::sqrt(s.alpha / (Scalar{nx} * D(i)));
-        l(row + i) = -bound;
-        u(row + i) = bound;
-    }
-    row += nx;
-}
-
-template <typename Scalar, std::size_t NX>
-inline void set_polytopic_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, const polytopic_set<Scalar, NX>& s)
-{
-    constexpr Scalar large_bound = Scalar{1e20};
-    int n_faces = static_cast<int>(s.H.rows());
-    l.segment(row, n_faces).setConstant(-large_bound);
-    u.segment(row, n_faces) = s.h;
-    row += n_faces;
-}
-
-template <typename Scalar, std::size_t NX>
-inline void set_terminal_bounds(Eigen::VectorX<Scalar>& l, Eigen::VectorX<Scalar>& u, int& row, const terminal_set<Scalar, NX>& tset)
-{
-    std::visit([&](const auto& s) {
-        using T = std::decay_t<decltype(s)>;
-        if constexpr(std::is_same_v<T, ellipsoidal_set<Scalar, NX>>)
-            set_ellipsoidal_bounds<Scalar, NX>(l, u, row, s);
-        else
-            set_polytopic_bounds<Scalar, NX>(l, u, row, s);
-    }, tset);
-}
-
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto build_bounds_vectors(int N,
-                                        const Vector<Scalar, NX>& x0,
-                                        const std::optional<Vector<Scalar, NX>>& x_min,
-                                        const std::optional<Vector<Scalar, NX>>& x_max,
-                                        const std::optional<Vector<Scalar, NU>>& u_min,
-                                        const std::optional<Vector<Scalar, NU>>& u_max,
-                                        const std::optional<Vector<Scalar, NU>>& du_max,
-                                        const std::optional<terminal_set<Scalar, NX>>& terminal_constraint = {}) -> std::pair<Eigen::VectorX<Scalar>, Eigen::VectorX<Scalar>>
+std::pair<Eigen::VectorX<Scalar>, Eigen::VectorX<Scalar>> build_bounds_vectors(std::int32_t N, const Vector<Scalar, NX>& x0, const std::optional<Vector<Scalar, NX>>& x_min,
+        const std::optional<Vector<Scalar, NX>>& x_max, const std::optional<Vector<Scalar, NU>>& u_min, const std::optional<Vector<Scalar, NU>>& u_max,
+        const std::optional<Vector<Scalar, NU>>& du_max, const std::optional<terminal_set<Scalar, NX>>& terminal_constraint = {})
 {
-    auto const layout = constraint_layout<Scalar, NX, NU>(N, x_min, x_max, u_min, u_max, du_max, terminal_constraint);
+    const auto layout = constraint_layout<Scalar, NX, NU>(N, x_min, x_max, u_min, u_max, du_max, terminal_constraint);
 
     Eigen::VectorX<Scalar> l(layout.n_con);
     Eigen::VectorX<Scalar> u(layout.n_con);
 
-    int row = 0;
+    Eigen::Index row = 0;
     set_dynamics_bounds<Scalar, NX>(l, u, row, N, x0);
     if(x_min.has_value() || x_max.has_value())
         set_state_bounds<Scalar, NX>(l, u, row, N, x_min, x_max);
@@ -468,32 +112,31 @@ auto build_bounds_vectors(int N,
     return {std::move(l), std::move(u)};
 }
 
-// --- Cost vector building ---
-
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto build_cost_vector(int /*N*/, int n_dec, const Matrix<Scalar, NX, NX>& /*Q*/, const Matrix<Scalar, NX, NX>& /*Qf*/) -> Eigen::VectorX<Scalar>
+Eigen::VectorX<Scalar> build_cost_vector(std::int32_t /*N*/, Eigen::Index n_dec, const Matrix<Scalar, NX, NX>& /*Q*/, const Matrix<Scalar, NX, NX>& /*Qf*/)
 {
     return Eigen::VectorX<Scalar>::Zero(n_dec);
 }
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto build_cost_vector(int N, int n_dec, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NX, NX>& Qf, const Vector<Scalar, NX>& x_ref) -> Eigen::VectorX<Scalar>
+Eigen::VectorX<Scalar> build_cost_vector(std::int32_t N, Eigen::Index n_dec, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NX, NX>& Qf, const Vector<Scalar, NX>& x_ref)
 {
     constexpr int nx = static_cast<int>(NX);
     Eigen::VectorX<Scalar> q = Eigen::VectorX<Scalar>::Zero(n_dec);
     Vector<Scalar, NX> Qxr = Q * x_ref;
-    for(int k = 0; k < N; ++k)
+    for(std::int32_t k = 0; k < N; ++k)
         q.segment(k * nx, nx) = -Qxr;
     q.segment(N * nx, nx) = -(Qf * x_ref);
     return q;
 }
 
 template <typename Scalar, std::size_t NX, std::size_t NU>
-auto build_cost_vector(int N, int n_dec, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NX, NX>& Qf, std::span<const Vector<Scalar, NX>> x_ref) -> Eigen::VectorX<Scalar>
+Eigen::VectorX<Scalar> build_cost_vector(
+        std::int32_t N, Eigen::Index n_dec, const Matrix<Scalar, NX, NX>& Q, const Matrix<Scalar, NX, NX>& Qf, std::span<const Vector<Scalar, NX>> x_ref)
 {
     constexpr int nx = static_cast<int>(NX);
     Eigen::VectorX<Scalar> q = Eigen::VectorX<Scalar>::Zero(n_dec);
-    for(int k = 0; k < N; ++k)
+    for(std::int32_t k = 0; k < N; ++k)
         q.segment(k * nx, nx) = -(Q * x_ref[static_cast<std::size_t>(k)]);
     q.segment(N * nx, nx) = -(Qf * x_ref[static_cast<std::size_t>(N)]);
     return q;

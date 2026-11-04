@@ -90,7 +90,7 @@ inline auto read_osqp_result(const OSQPSolver& solver, OSQPInt n, OSQPInt m) -> 
     result.status = map_osqp_status(solver.info->status_val);
     result.objective = solver.info->obj_val;
     result.solve_time = solver.info->solve_time;
-    result.iterations = static_cast<int>(solver.info->iter);
+    result.iterations = static_cast<std::int32_t>(solver.info->iter);
     result.primal_residual = solver.info->prim_res;
     result.dual_residual = solver.info->dual_res;
     return result;
