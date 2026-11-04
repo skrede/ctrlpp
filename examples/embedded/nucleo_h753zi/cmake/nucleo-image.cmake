@@ -1,6 +1,5 @@
-# One flashable image of the leg. Both images share every source, definition
-# and option below; `sentinel` switches the allocation sensor's two halves -- the
-# Eigen sentinel define and the malloc-wrapping link options -- and nothing else.
+# `sentinel` switches the allocation sensor's two halves, the Eigen sentinel define and the
+# malloc-wrapping link options, and nothing else.
 
 function(ctrlpp_nucleo_image target sentinel)
     add_executable(${target}
@@ -31,11 +30,9 @@ function(ctrlpp_nucleo_image target sentinel)
         "${CMSIS_DEV_INC}"
         $<$<BOOL:${CTRLPP_MCU_PREDICTIVE}>:${CTRLPP_MCU_ARGMIN_INC}>)
 
-    # EIGEN_ALLOCA must be explicit on newlib targets: at strict -std=c++20
-    # (extensions OFF) Eigen's alloca auto-detection finds nothing, so every
-    # internal kernel temporary would heap-allocate instead of landing on the
-    # stack. FPv5 is scalar, so EIGEN_MAX_ALIGN_BYTES=8 (natural double) removes
-    # the aligned-allocation path.
+    # EIGEN_ALLOCA must be explicit on newlib: under strict -std=c++20 Eigen's alloca detection finds
+    # nothing, so every kernel temporary would heap-allocate. FPv5 is scalar, so
+    # EIGEN_MAX_ALIGN_BYTES=8 (natural double) removes the aligned-allocation path.
     target_compile_definitions(${target} PRIVATE
         STM32H753xx
         EIGEN_DONT_VECTORIZE
@@ -52,20 +49,17 @@ function(ctrlpp_nucleo_image target sentinel)
         -ffunction-sections -fdata-sections
         -fstack-usage)
 
-    # newlib-nano trims printf, so the float-capable variant is pulled in for
-    # the verdict lines' %g and %e. No system-call stub library is linked:
-    # syscalls.cpp defines every system call the image reaches, so one it does
-    # not define is a link error rather than a call that fails at run time. The
-    # build id is computed by the linker over the image's own contents, so it
-    # cannot fail to change when the image does; the firmware prints it and a
-    # host capture refuses a report whose fingerprint is not the one it just
-    # built.
+    # No system-call stub library is linked, so a system call syscalls.cpp does not define is a link
+    # error rather than a call that fails at run time.
     target_link_options(${target} PRIVATE
         ${CTRLPP_M7_LINK_ARCH}
         -T "${CMAKE_CURRENT_SOURCE_DIR}/stm32h753zi_flash.ld"
         -nostartfiles
         --specs=nano.specs
+        # newlib-nano trims printf; the float-capable variant serves the verdict lines' %g and %e.
         -u _printf_float
+        # Hashed over the image's own contents, so the fingerprint a host capture checks changes
+        # whenever the image does.
         -Wl,--build-id=sha1
         -Wl,--gc-sections
         -Wl,-Map=${target}.map)

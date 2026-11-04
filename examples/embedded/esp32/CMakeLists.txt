@@ -36,9 +36,6 @@ cmake_minimum_required(VERSION 3.16)
 
 set(CTRLPP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
 
-# Expose ctrlpp's public include tree to every component in this project as a
-# system include, so the strict warning surface does not trip on Eigen or the
-# ctrlpp template depth.
 list(APPEND CMAKE_INCLUDE_PATH "${CTRLPP_ROOT}/lib/ctrlpp/include")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)

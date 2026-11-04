@@ -1,24 +1,13 @@
 if (CTRLPP_BUILD_TESTS)
-    # Prove with the active compiler that a single-to-double promotion and a
-    # narrowing into single precision are errors under the promotions the
-    # single-precision targets carry when CTRLPP_FLOAT_TIER_STRICT is on. A text
-    # search for the options cannot establish that the compiler recognizes them
-    # or that it still emits the diagnostics they promote, and the tier is clean,
-    # so a green build says nothing on its own.
-    #
-    # The clang branch carries a third promotion because the two compilers group
-    # these diagnostics differently: gcc's float-conversion covers both the
-    # narrowing into single precision and a float-to-integer conversion, while
-    # clang keeps the narrowing in a group gcc has no option for at all -- so one
-    # shared list either misses the narrowing on clang or fails to parse on gcc.
-    # The Microsoft compiler promotes neither diagnostic on its own, and a pair
-    # run with no promotion to apply would report the absence of an option as an
-    # unenforced gate.
+    # The single-precision tier is clean, so a green build cannot show that the compiler recognizes
+    # these promotions or still emits what they promote; this canary pair proves both.
     if (MSVC)
         message(STATUS
             "ctrlpp: the Microsoft compiler has no single-warning promotion for the "
             "single-precision diagnostics, skipping the float promotion canary pair.")
     else ()
+        # clang keeps the narrowing into single precision in a group gcc has no option for, while
+        # gcc's float-conversion covers it.
         if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
             set(CTRLPP_FLOAT_WARNING_ERROR_FLAG "-Werror=double-promotion"
                 "-Werror=float-conversion" "-Werror=implicit-float-conversion")
@@ -61,11 +50,6 @@ if (CTRLPP_BUILD_TESTS)
         endif ()
     endif ()
 
-    # Every runtime test of the recursive ARX estimator passes whether or not the
-    # estimator accepts input- and output-count template arguments, because no
-    # legal instantiation ever supplied them. A refusal to compile is therefore
-    # the only observable evidence that the unimplemented multi-channel surface
-    # is gone.
     get_target_property(CTRLPP_CANARY_EIGEN_TARGET Eigen3::Eigen ALIASED_TARGET)
     if (NOT CTRLPP_CANARY_EIGEN_TARGET)
         set(CTRLPP_CANARY_EIGEN_TARGET Eigen3::Eigen)
@@ -91,6 +75,9 @@ if (CTRLPP_BUILD_TESTS)
         set(${result} ${${result}} PARENT_SCOPE)
         set(${result}_OUTPUT "${output}" PARENT_SCOPE)
     endfunction()
+
+    # Every runtime test of the recursive ARX estimator passes whether or not it accepts input- and
+    # output-count arguments, so only a refusal to compile shows the multi-channel surface is gone.
     ctrlpp_try_canary(CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_COMPILED recursive_arx_arity_canary.cpp)
     if (NOT CTRLPP_RECURSIVE_ARX_ARITY_BASELINE_COMPILED)
         message(FATAL_ERROR
@@ -209,12 +196,8 @@ if (CTRLPP_BUILD_TESTS)
         FetchContent_MakeAvailable(Catch2)
     else ()
         find_package(Catch2 CONFIG REQUIRED)
-        # An imported Catch2 binary cannot be recompiled with
-        # CATCH_CONFIG_DISABLE_EXCEPTIONS, so the default no-exceptions tree cannot
-        # honor its posture on it: -fno-exceptions test TUs would link an
-        # exceptions-on Catch2 whose failure path throws and unwinds through
-        # -fno-exceptions frames, terminating without a report. Require building
-        # Catch2 from source instead.
+        # An imported Catch2 cannot be rebuilt with CATCH_CONFIG_DISABLE_EXCEPTIONS, and its throwing
+        # failure path would unwind through -fno-exceptions test frames and terminate without a report.
         if (NOT CTRLPP_TESTS_WITH_EXCEPTIONS)
             message(FATAL_ERROR
                 "The default no-exceptions test tree (CTRLPP_TESTS_WITH_EXCEPTIONS=OFF) "
@@ -225,16 +208,10 @@ if (CTRLPP_BUILD_TESTS)
         endif ()
     endif ()
 
-    # Match Catch2's exception posture to the tree so ctrlpp's own tests and their
-    # test framework share one setting. The default tree compiles the fetched
-    # Catch2 -fno-exceptions with CATCH_CONFIG_DISABLE_EXCEPTIONS, so its failure
-    # path reports-and-aborts (REQUIRE_THROWS* / CHECK_THROWS* become
-    # unavailable); the exceptions carve-out tree leaves Catch2 exceptions-on. The
-    # PUBLIC definition reaches every test TU through Catch2WithMain.
-    #
-    # Catch2 shares the test TUs' -fno-rtti: a mixed program keeps whichever COMDAT
-    # copy of an inline vtable it links first, and a -fno-rtti copy's null typeinfo
-    # slot is then read by RTTI-enabled Catch2 code (UBSan: "invalid vptr").
+    # The fetched Catch2 takes the test TUs' posture, and the PUBLIC definition reaches every test TU
+    # through Catch2WithMain. A mixed-RTTI program keeps whichever COMDAT copy of an inline vtable it
+    # links first, and RTTI-enabled Catch2 code then reads a -fno-rtti copy's null typeinfo slot
+    # (UBSan: "invalid vptr").
     if (CTRLPP_CMAKE_FETCH_DEPS AND NOT CTRLPP_TESTS_WITH_EXCEPTIONS AND NOT MSVC)
         target_compile_definitions(Catch2 PUBLIC CATCH_CONFIG_DISABLE_EXCEPTIONS)
         target_compile_options(Catch2 PRIVATE -fno-exceptions -fno-rtti)
@@ -258,7 +235,6 @@ if (CTRLPP_BUILD_TESTS)
         FetchContent_MakeAvailable(rapidcheck)
         add_subdirectory(${rapidcheck_SOURCE_DIR}/extras/catch ${rapidcheck_BINARY_DIR}/extras/catch)
 
-        # Suppress warnings from RapidCheck headers (third-party code)
         get_target_property(_rc_inc rapidcheck INTERFACE_INCLUDE_DIRECTORIES)
         if (_rc_inc)
             set_target_properties(rapidcheck PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_rc_inc}")
@@ -268,24 +244,9 @@ if (CTRLPP_BUILD_TESTS)
             set_target_properties(rapidcheck_catch PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_rc_catch_inc}")
         endif ()
     endif ()
-    # The source purity gate and the self-test that proves it can fail.
-    #
-    # Neither carries a target dependency, unlike every other registration in
-    # this tree: the gate reads source and consumes no build product. The
-    # working directory is set because the script resolves its scan roots
-    # relative to the repository root.
-    #
-    # Registration lives under the build-tests guard, so the gate is absent from
-    # a library-only consumer build. That matches the intent -- it runs on every
-    # test run, locally and in every workflow -- and is stated rather than
-    # engineered around.
-    # The interpreter is named explicitly rather than relying on the shebang,
-    # because CTest launches the command directly and Windows cannot execute a
-    # shell script that way. Where no interpreter exists the two tests are
-    # skipped with a visible status line instead of registered and then failing
-    # for a reason that has nothing to do with source purity. The gate checks
-    # source text, which is platform-independent, so one platform running it
-    # ratchets the property for all of them.
+    # The purity gate reads source rather than a build product, so it has no target dependency. The
+    # interpreter is named because CTest cannot launch a shell script directly on Windows; the source
+    # text is platform-independent, so a platform without bash loses nothing.
     find_program(CTRLPP_PURITY_SHELL bash)
     if (CTRLPP_PURITY_SHELL)
         add_test(

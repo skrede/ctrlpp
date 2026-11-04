@@ -1,9 +1,4 @@
-# CMake toolchain file for bare-metal Cortex-M7 (NUCLEO-H753ZI) cross-compile.
-#
-# Used by the standalone nucleo_h753zi/ project() to build the full flashable
-# image. It never touches the host build of the library or its tests. The
-# compilers are not FetchContent-able; an arm-none-eabi GCC (14.x+) must be on
-# PATH.
+# An arm-none-eabi GCC 14 or newer must be on PATH; a compiler cannot be fetched.
 
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR arm)

@@ -6,11 +6,9 @@ if (Eigen3_VERSION VERSION_LESS "3.4")
     message(FATAL_ERROR "ctrlpp requires Eigen >= 3.4, found ${Eigen3_VERSION}")
 endif ()
 
-# No version floor: osqp's own listfile declares no project version, so every osqp config
-# package reports 0.0.0 and a floor would reject every install that exists. Gated on the flag
-# the build recorded, so an install without the backend does not force the requirement. Every
-# find_dependency has to precede the targets include below, because find_dependency returns
-# out of this file on failure.
+# No version floor: osqp's listfile declares no project version, so every osqp package reports
+# 0.0.0. Every find_dependency precedes the targets include, since it returns from this file on
+# failure.
 if (@CTRLPP_OSQP_INSTALLED@)
     find_dependency(osqp)
 endif ()

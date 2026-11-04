@@ -1,5 +1,3 @@
-# Internal benchmarks -- one executable per component family
-
 set(INTERNAL_BENCHMARKS
     bench_pid
     bench_lqr
@@ -15,12 +13,8 @@ set(INTERNAL_BENCHMARKS
     bench_so3
 )
 
-# These link only ctrlpp + nanobench. The ctrlpp bench logic is throw-free, but
-# each TU embeds nanobench's implementation (ANKERL_NANOBENCH_IMPLEMENT), and
-# nanobench throws internally with no disable-exceptions mode (unlike Catch2's
-# CATCH_CONFIG_DISABLE_EXCEPTIONS). So -fno-exceptions cannot be honored here and
-# CTRLPP_BENCH_NOEXCEPT_FLAGS stays empty until nanobench is compiled out of the
-# bench TUs; the throw-free dogfood is enforced on the unit-test tree instead.
+# Both branches are empty: each TU embeds nanobench's implementation, which throws internally and
+# has no disable-exceptions mode.
 if(NOT CTRLPP_TESTS_WITH_EXCEPTIONS AND NOT MSVC)
     set(CTRLPP_BENCH_NOEXCEPT_FLAGS "")
 else()
@@ -33,7 +27,7 @@ foreach(bench IN LISTS INTERNAL_BENCHMARKS)
     target_compile_options(${bench} PRIVATE ${CTRLPP_BENCH_NOEXCEPT_FLAGS})
 endforeach()
 
-# Profile benches for CARE performance analysis; require ct_optcon; built under -fno-omit-frame-pointer
+# CARE profiling benches, built with frame pointers for the profiler's call stacks.
 find_package(ct_optcon QUIET)
 if(ct_optcon_FOUND)
     foreach(bench bench_care_vs_ct_nx16 bench_care_vs_ct_nx30 bench_care_methods)

@@ -1,9 +1,5 @@
-# HPIPM comparison benchmark.
-#
-# Wires the HPIPM C API directly (the upstream hpipm-cpp wrapper does not
-# build against current HPIPM struct definitions) and FetchContents both
-# HPIPM and BLASFEO from upstream because the Arch hpipm-git / blasfeo-git
-# packages ship LTO-only static archives with no usable symbol table.
+# The HPIPM C API is wired directly because the upstream hpipm-cpp wrapper does not build against
+# current HPIPM structs; HPIPM and BLASFEO are fetched because the Arch packages ship LTO-only archives.
 
 if(NOT CTRLPP_FETCH_BENCHMARK_DEPS)
     message(FATAL_ERROR "The HPIPM comparison benchmark has no usable system package (upstream ships LTO-only archives) and must be fetched; re-run with -DCTRLPP_FETCH_BENCHMARK_DEPS=ON.")

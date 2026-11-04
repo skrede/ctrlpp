@@ -1,10 +1,5 @@
-# Provisions the nonlinear-programming backend the predictive family needs, as
-# the leg provisions CMSIS and Eigen: a pre-provisioned source root skips the
-# fetch, and otherwise the backend is fetched for its headers only.
-#
-# The leg is its own project and cannot see the root project's cache, so the
-# revision and the repository are read out of the files that declare them.
-# Restating either here would make two pins that can drift apart.
+# This project cannot see the root project's cache, so the revision and the repository are read
+# from the files that declare them rather than restated as a second pin that could drift.
 
 set(CTRLPP_MCU_ARGMIN_DIR "" CACHE PATH
     "Pre-provisioned argmin source root; when set, skips the argmin FetchContent")

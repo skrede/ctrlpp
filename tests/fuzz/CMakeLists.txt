@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-# MSan fuzz builds require Clang with MSan-instrumented libc++.
-# See LLVM docs for building libc++ with -fsanitize=memory.
+# MSan fuzz builds require Clang with an MSan-instrumented libc++.
 option(CTRLPP_BUILD_FUZZ_MSAN "Build fuzz targets with MSan instead of ASan (separate build)" OFF)
 
 function(make_fuzz_target TARGET_NAME)

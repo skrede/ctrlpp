@@ -8,8 +8,7 @@ FetchContent_Declare(qpoases
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(QPOASES_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-# qpOASES ships cmake_minimum_required(VERSION 2.6); lift to 3.5 so the
-# configure step does not error on modern CMake.
+# qpOASES declares cmake_minimum_required(VERSION 2.6), which modern CMake rejects.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 
 FetchContent_MakeAvailable(qpoases)

@@ -25,15 +25,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 
-# ctrlpp headers, consumed header-only, plus the shared board-agnostic kernel.
 set(CTRLPP_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../lib/ctrlpp/include")
 set(CTRLPP_SHARED_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
-# --- CMSIS-Core 6.x + STM32H7 device pack (headers + gcc startup + system) ---
-# An integrator porting this onto their own board almost always already has a
-# CMSIS core + device pack from their SDK; set CTRLPP_MCU_CMSIS_CORE_DIR and/or
-# CTRLPP_MCU_CMSIS_DEVICE_DIR to those source roots to bypass the clone. Re-check
-# the release tags before bumping them.
+# An integrator porting this onto their own board usually has CMSIS from their SDK already, so
+# either pack can come from a local source root instead of the clone.
 set(CTRLPP_MCU_CMSIS_CORE_DIR "" CACHE PATH
     "Pre-provisioned CMSIS-Core source root; when set, skips the cmsis_core FetchContent")
 set(CTRLPP_MCU_CMSIS_DEVICE_DIR "" CACHE PATH
@@ -73,8 +69,7 @@ set(CMSIS_DEV_INC  "${cmsis_device_h7_SOURCE_DIR}/Include")
 set(CMSIS_STARTUP  "${cmsis_device_h7_SOURCE_DIR}/Source/Templates/gcc/startup_stm32h753xx.s")
 set(CMSIS_SYSTEM   "${cmsis_device_h7_SOURCE_DIR}/Source/Templates/system_stm32h7xx.c")
 
-# Eigen, pinned to 3.4.0. Fetch is the default so a bare configure needs no setup;
-# an integrator with their own Eigen sets CTRLPP_MCU_EIGEN_DIR to that source root.
+# Fetched by default so a bare configure needs no setup.
 set(CTRLPP_MCU_EIGEN_DIR "" CACHE PATH
     "Pre-provisioned Eigen source root; when set, skips the Eigen FetchContent")
 if(CTRLPP_MCU_EIGEN_DIR)
@@ -98,20 +93,15 @@ if(CTRLPP_MCU_PREDICTIVE)
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/predictive-backend.cmake")
 endif()
 
-# How long each image waits at boot for the host's handshake byte on USART3
-# before it reports anyway; boot_handshake.h states why the default is 30 s.
 set(CTRLPP_MCU_BOOT_HANDSHAKE_MS 30000 CACHE STRING
     "Milliseconds the image waits at boot for the host's handshake byte before reporting anyway")
 if(NOT CTRLPP_MCU_BOOT_HANDSHAKE_MS MATCHES "^[0-9]+$")
     message(FATAL_ERROR "CTRLPP_MCU_BOOT_HANDSHAKE_MS must be a whole number of milliseconds, not '${CTRLPP_MCU_BOOT_HANDSHAKE_MS}'")
 endif()
 
-# The reference posture is the reset clock tree: 64 MHz HSI, both caches off,
-# seven flash wait states, -Os. CTRLPP_MCU_TUNED_POSTURE raises the core to the
-# highest clock its silicon revision supports and turns both caches on
-# (clock_tree.cpp). CTRLPP_MCU_OPTIMIZE sets the C++ optimization flag apart
-# from it, so the clock's share of a difference and the compiler's can be
-# measured separately.
+# The reference posture is the reset clock tree (64 MHz HSI, both caches off, seven flash wait
+# states) at -Os. The optimization flag is set apart from the clock posture so that the clock's share
+# of a difference and the compiler's can be measured separately.
 option(CTRLPP_MCU_TUNED_POSTURE "Run the images on PLL1 at the silicon's highest core clock with both caches on" OFF)
 set(CTRLPP_MCU_OPTIMIZE "" CACHE STRING
     "C++ optimization flag; empty selects -O2 under CTRLPP_MCU_TUNED_POSTURE and -Os otherwise")
@@ -126,16 +116,13 @@ if(NOT CTRLPP_MCU_OPTIMIZE_FLAG MATCHES "^-O[0-3sgz]$")
     message(FATAL_ERROR "CTRLPP_MCU_OPTIMIZE must be one optimization flag such as -Os or -O2, not '${CTRLPP_MCU_OPTIMIZE}'")
 endif()
 
-# Cortex-M7 hard-float arch flags. The toolchain file applies these at compile
-# time; the gcc driver also needs them on the link line to select the correct
-# newlib-nano multilib.
+# The toolchain file applies these at compile time; the gcc driver also needs them on the link line
+# to select the right newlib-nano multilib.
 set(CTRLPP_M7_LINK_ARCH
     -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb)
 
-# Two images from the same sources. The evidence image carries the allocation
-# sensor: the Eigen sentinel and the wrapped C allocation family. The timing
-# image is built without both, so the code it times carries none of the
-# sentinel's checks; each prints its kind and has its own fingerprint.
+# The evidence image carries the allocation sensor (the Eigen sentinel and the wrapped C allocation
+# family); the timing image omits both, so the code it times carries none of their checks.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/nucleo-image.cmake")
 ctrlpp_nucleo_image(ctrlpp_nucleo_h753zi ON)
 ctrlpp_nucleo_image(ctrlpp_nucleo_h753zi_timing OFF)

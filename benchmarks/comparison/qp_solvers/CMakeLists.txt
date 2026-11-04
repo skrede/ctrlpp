@@ -9,10 +9,10 @@ include(${CMAKE_CURRENT_LIST_DIR}/../deps/hpipm.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/../deps/tinympc.cmake)
 find_package(proxsuite 0.7.3 EXACT REQUIRED)
 
-# TinyMPC compiles against the Eigen it bundles (3.4.90), the rest of the suite against the system one,
-# and both instantiate same-named Eigen templates whose definitions differ, which crashed the first
-# build once the linker kept one copy for both. TinyMPC and the one unit that talks to it therefore
-# live in a shared object that binds its own symbols and exports only the session interface.
+# TinyMPC compiles against its bundled Eigen (3.4.90) and the rest of the suite against the system
+# one, so same-named Eigen templates differ and a single linker-kept copy crashes one side. TinyMPC
+# and its session unit therefore live in a shared object that binds its own symbols and exports only
+# the session interface.
 add_library(ctrlpp_qp_solvers_tinympc SHARED tinympc_session.cpp)
 target_link_libraries(ctrlpp_qp_solvers_tinympc PRIVATE tinympcstatic)
 set_target_properties(ctrlpp_qp_solvers_tinympc PROPERTIES VISIBILITY_INLINES_HIDDEN ON)

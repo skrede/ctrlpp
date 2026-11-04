@@ -1,10 +1,7 @@
-# The default (no-exceptions) tree dogfoods the throw-free discipline: ctrlpp's
-# own test targets compile -fno-exceptions -fno-rtti. Empty in the exceptions
-# carve-out tree and on MSVC (which needs /EHsc for its own runtime).
+# Empty on MSVC, which needs /EHsc for its own runtime.
 if (NOT CTRLPP_TESTS_WITH_EXCEPTIONS AND NOT MSVC)
     # Under -fno-exceptions Eigen 3.4's size-overflow check falls through to operator new(SIZE_MAX) instead of throwing,
     # so gcc keeps an impossible negative SimplicialLDLT workspace size live into aligned_malloc and reports it.
-    # Remove once the fetched Eigen's no-exceptions allocation path no longer leaves that range reachable.
     set(CTRLPP_NOEXCEPT_FLAGS -fno-exceptions -fno-rtti $<$<CXX_COMPILER_ID:GNU>:-Wno-alloc-size-larger-than>)
 else ()
     set(CTRLPP_NOEXCEPT_FLAGS "")
@@ -17,10 +14,7 @@ function(make_test TEST_FILE)
     add_test(NAME ${TEST_FILE} COMMAND ${TEST_FILE})
 endfunction()
 
-# Registers a carve-out test that genuinely needs exceptions (a throwing-wrapper
-# assertion via REQUIRE_THROWS*, or a link against a throwing solver). It builds
-# ONLY in the exceptions tree (CTRLPP_TESTS_WITH_EXCEPTIONS=ON), where Catch2
-# keeps exceptions on; in the default -fno-exceptions tree it is a no-op.
+# For a test that needs exceptions: a REQUIRE_THROWS* assertion, or a link against a throwing solver.
 function(make_test_exceptions TEST_FILE)
     if (NOT CTRLPP_TESTS_WITH_EXCEPTIONS)
         return()
@@ -63,7 +57,8 @@ make_test(luenberger_test)
 make_test(lqr_test)
 make_test(mpc_test)
 make_test(output_admissible_set_test)
-# Runtime budgets, not tolerances: the O_inf unit test's ~460 s in the Debug sanitizer tree sets the explicit cases' order; the sweeps stay out of Debug trees.
+# The timeout is a runtime budget, not a tolerance: the explicit cases run on the order of the O_inf
+# unit test's ~460 s in the Debug sanitizer tree, and the sweeps stay out of Debug trees.
 add_executable(output_admissible_set_property_test "${CMAKE_CURRENT_LIST_DIR}/output_admissible_set_property_test.cpp")
 target_link_libraries(output_admissible_set_property_test PRIVATE ctrlpp::ctrlpp Catch2::Catch2WithMain)
 target_compile_options(output_admissible_set_property_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
@@ -134,12 +129,9 @@ make_test(care_error_test)
 make_test(care_convergence_anchor_test)
 make_test(embedded_golden_tolerance_test)
 make_test(embedded_telemetry_format_test)
-# The reference's `quad` is `__float128`, which Apple clang on arm64 rejects and
-# MSVC does not have. Substituting `long double` would be worse than skipping the
-# target: it is binary64 on both of those toolchains, so the reference would carry
-# no more precision than the answer it judges and would stop being an oracle while
-# still reporting verdicts. The probe asserts the same condition the header does,
-# and compiles the type rather than trusting the macro alone.
+# The reference's `quad` is `__float128`, which Apple clang on arm64 and MSVC lack; `long double` is
+# binary64 there, so a substitute would stop being an oracle while still reporting verdicts. The probe
+# compiles the type rather than trusting the macro alone.
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles("
 #if !defined(__SIZEOF_FLOAT128__)
@@ -151,21 +143,16 @@ int main() { return static_cast<int>(x); }
 
 if (CTRLPP_HAVE_FLOAT128)
     make_test(care_quad_reference_test)
-    # The binary128 reference lives beside the fuzz targets that consume it, and is
-    # included as "fuzz/care_quad_reference.h"; this is what resolves that quote.
+    # The binary128 reference lives beside the fuzz targets, included as "fuzz/care_quad_reference.h".
     target_include_directories(care_quad_reference_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")
     make_test(care_entitlement_test)
     target_include_directories(care_entitlement_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}/..")
 else ()
     message(STATUS "ctrlpp: no __float128 on this toolchain, skipping care_quad_reference_test and care_entitlement_test (the binary128 reference has no lower-precision substitute)")
 endif ()
-# MemorySanitizer ships its own strong operator new/delete in
-# libclang_rt.msan_cxx, which collides at link time with the replacements in
-# nomalloc_harness.cpp ("multiple definition of operator new"). AddressSanitizer
-# intercepts allocation instead of replacing these operators, so only MSan is
-# affected. These targets are skipped there rather than having the harness drop
-# its replacements under MSan: without them the counter would see nothing and
-# the allocation guarantee would silently pass instead of being tested.
+# MemorySanitizer's own strong operator new/delete collide at link time with nomalloc_harness.cpp's
+# replacements (AddressSanitizer intercepts instead). The targets are skipped there because without the
+# replacements the counter would see nothing and the allocation guarantee would pass untested.
 string(FIND "${CMAKE_CXX_FLAGS}" "-fsanitize=memory" CTRLPP_MSAN_FLAG_POS)
 if(CTRLPP_MSAN_FLAG_POS EQUAL -1)
     set(CTRLPP_NOMALLOC_TESTS_SUPPORTED TRUE)
@@ -214,26 +201,16 @@ if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
     make_nomalloc_test(sysid_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/sysid_nomalloc_test.cpp")
     make_nomalloc_test(estimation_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/estimation_nomalloc_test.cpp")
     make_nomalloc_test(trajectory_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/trajectory_nomalloc_test.cpp")
-    # The five estimator rows whose frames a caller's dimensions size carry a
-    # no-allocation dimension grid. A grid point costs its own instantiation
-    # chain, so each row is one executable whose grid is cut into units of at
-    # most max_points_per_unit points (estimation_nomalloc_grid.h); in one unit
-    # the kalman_filter row peaked at 12.3 GiB. Measured one unit at a time with
-    # gcc 16.2, the heaviest grid unit is ukf's, at 5.2 GiB at full -g and 3.7
-    # GiB at -g1, below dare_care_nomalloc_test at 6.4 and 4.6.
+    # A grid point costs its own instantiation chain, so each row's grid is cut into units of at most
+    # max_points_per_unit points (estimation_nomalloc_grid.h); compiled as one unit the kalman_filter
+    # row peaked at 12.3 GiB.
     make_nomalloc_grid_test(kalman kalman_filter kalman 5)
     make_nomalloc_grid_test(ekf ekf ekf 5)
     make_nomalloc_grid_test(ukf ukf ukf 6)
     make_nomalloc_grid_test(manifold_ukf manifold_ukf manifold_ukf 3)
     make_nomalloc_grid_test(mekf mekf mekf 4)
-    # These five arm dimensions whose whole-chain stack cost is published in
-    # docs/rt-safety-matrix.md, and at the top of both axes that cost is above
-    # the 1 MB main-thread stack MSVC reserves by default: the kalman_filter row
-    # measures 71,224 bytes at 32 states against 4 outputs and grows
-    # quadratically from there, so the 128-state points cost roughly a megabyte
-    # on their own and the 128 x 128 corner several times that. The reserve
-    # below is address space, committed on demand. Other toolchains here get 8 MB
-    # from the operating system and need nothing.
+    # At the top of both axes these grids' whole-chain stack cost (docs/rt-safety-matrix.md) exceeds the
+    # 1 MB main-thread stack MSVC reserves by default; the reserve is address space, committed on demand.
     if (MSVC)
         foreach (nomalloc_grid_target estimation_kalman_nomalloc_test estimation_ekf_nomalloc_test
                                       estimation_ukf_nomalloc_test estimation_manifold_ukf_nomalloc_test
@@ -275,19 +252,14 @@ make_test(float_instantiation_test)
 target_compile_options(float_tier_test PRIVATE ${CTRLPP_FLOAT_TIER_STRICT_FLAGS})
 target_compile_options(float_instantiation_test PRIVATE ${CTRLPP_FLOAT_TIER_STRICT_FLAGS})
 make_test(expected_test)
-# The owned expected's throwing value() accessor is asserted with CHECK_THROWS,
-# which is unavailable under CATCH_CONFIG_DISABLE_EXCEPTIONS, so this TU lives in
-# the exceptions carve-out tree; the throw-free surface and std interop run in the
-# default tree via expected_test.
+# The owned expected's throwing value() is asserted with CHECK_THROWS; its throw-free surface runs
+# in the default tree through expected_test.
 make_test_exceptions(expected_throws_test)
-# The cross-state assignment matrix arms fixture members to throw from their copy
-# and move constructors, so it needs exceptions; the carve-out tree is also the
-# one CI builds under the address and undefined-behavior sanitizers, which is what
-# makes a surviving double destruction a hard failure.
+# The assignment matrix arms fixture members to throw from their copy and move constructors; CI builds
+# the exceptions tree under the address and undefined-behavior sanitizers, so a double destruction fails.
 make_test_exceptions(expected_transition_test)
 
-# OSQP links a throwing solver, so these TUs belong to the exceptions carve-out
-# tree and cannot compile in the default -fno-exceptions tree.
+# OSQP links a throwing solver.
 if (CTRLPP_BUILD_OSQP AND CTRLPP_TESTS_WITH_EXCEPTIONS)
     add_executable(mpc_osqp_test "${CMAKE_CURRENT_LIST_DIR}/mpc_osqp_test.cpp")
     target_link_libraries(mpc_osqp_test PRIVATE ctrlpp::osqp Catch2::Catch2WithMain)
@@ -329,8 +301,7 @@ if (CTRLPP_BUILD_OSQP AND CTRLPP_TESTS_WITH_EXCEPTIONS)
     endif()
 endif ()
 
-# NLopt links a throwing solver, so these TUs belong to the exceptions carve-out
-# tree and cannot compile in the default -fno-exceptions tree.
+# NLopt links a throwing solver.
 if (CTRLPP_BUILD_NLOPT AND CTRLPP_TESTS_WITH_EXCEPTIONS)
     add_executable(nmpc_nlopt_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_nlopt_test.cpp")
     target_link_libraries(nmpc_nlopt_test PRIVATE ctrlpp::nlopt Catch2::Catch2WithMain)
@@ -360,9 +331,8 @@ if (CTRLPP_BUILD_NLOPT AND CTRLPP_TESTS_WITH_EXCEPTIONS)
 endif ()
 
 if (CTRLPP_BUILD_ARGMIN)
-    # nmpc_argmin_test asserts the throwing wrappers throw (REQUIRE_THROWS*), so
-    # it and its AddressSanitizer twin live in the exceptions carve-out tree; the
-    # remaining argmin tests are throw-free and run in the default tree.
+    # nmpc_argmin_test and its AddressSanitizer twin assert that the throwing wrappers throw
+    # (REQUIRE_THROWS*); the other argmin tests are throw-free.
     if (CTRLPP_TESTS_WITH_EXCEPTIONS)
         add_executable(nmpc_argmin_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_argmin_test.cpp")
         target_link_libraries(nmpc_argmin_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
@@ -376,9 +346,8 @@ if (CTRLPP_BUILD_ARGMIN)
         target_compile_options(nmpc_argmin_test PRIVATE ${CTRLPP_WARNING_FLAGS})
         add_test(NAME nmpc_argmin_test COMMAND nmpc_argmin_test)
 
-        # AddressSanitizer variant of the move/copy safety suite. Same source, built
-        # with -fsanitize=address so the move-then-solve / copy-then-solve cases turn
-        # a dangling argmin back-pointer into a hard ASAN failure.
+        # Turns a dangling argmin back-pointer in the move-then-solve and copy-then-solve cases into a
+        # hard failure.
         add_executable(nmpc_argmin_asan_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_argmin_test.cpp")
         target_link_libraries(nmpc_argmin_asan_test PRIVATE ctrlpp::argmin Catch2::Catch2WithMain)
         if (CTRLPP_BUILD_NLOPT)
@@ -388,8 +357,7 @@ if (CTRLPP_BUILD_ARGMIN)
             target_link_libraries(nmpc_argmin_asan_test PRIVATE ctrlpp::osqp)
             target_compile_definitions(nmpc_argmin_asan_test PRIVATE CTRLPP_HAS_OSQP)
         endif ()
-        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=116026, independent of Eigen, so this outlives the shared Eigen
-        # flags; remove once the supported gcc releases carry the fix.
+        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=116026, independent of Eigen, so this outlives the shared Eigen flags.
         target_compile_options(nmpc_argmin_asan_test PRIVATE ${CTRLPP_WARNING_FLAGS} -fsanitize=address -g
                                $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
         target_link_options(nmpc_argmin_asan_test PRIVATE -fsanitize=address)
@@ -444,11 +412,6 @@ if (CTRLPP_BUILD_ARGMIN)
     target_compile_options(mpc_mhe_argmin_qp_test PRIVATE ${CTRLPP_WARNING_FLAGS} ${CTRLPP_NOEXCEPT_FLAGS})
     add_test(NAME mpc_mhe_argmin_qp_test COMMAND mpc_mhe_argmin_qp_test)
 
-    # Proof that the static NMPC path allocates nothing in steady state:
-    # nmpc_static's solve is allocation-free at argmin's fixed-N floor. Consumes
-    # the process-global allocation counter from nomalloc_harness.h, so it must
-    # run serially, and is skipped under MemorySanitizer for the same
-    # link-collision reason as the other *_nomalloc_test targets above.
     if(CTRLPP_NOMALLOC_TESTS_SUPPORTED)
         make_nomalloc_test(nmpc_static_nomalloc_test "${CMAKE_CURRENT_LIST_DIR}/nmpc_static_nomalloc_test.cpp")
         target_link_libraries(nmpc_static_nomalloc_test PRIVATE ctrlpp::argmin)

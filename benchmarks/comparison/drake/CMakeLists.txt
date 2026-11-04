@@ -1,7 +1,5 @@
-# Drake comparison benchmarks
-# Drake uses Bazel as its build system and has no CMake FetchContent support.
-# support (pre-built tar.gz available for Ubuntu/macOS only).
-# See benchmarks/README.md for installation instructions.
+# Drake builds with Bazel and has no FetchContent support; its pre-built archives cover Ubuntu and
+# macOS only.
 find_package(drake REQUIRED)
 
 add_executable(bench_lqr_vs_drake bench_lqr_vs_drake.cpp)

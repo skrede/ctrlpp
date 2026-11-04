@@ -1,7 +1,6 @@
-# One recorded fact per acquired dependency, in a global property rather than a scoped
-# variable because the decision that reads them back is taken in a directory that ran none
-# of these sites. An empty install_option means the dependency has no setting that would
-# place it in this build's prefix at all, so it can never belong to an export set.
+# A global property rather than a scoped variable, because the install decision that reads these
+# facts runs in a directory none of the recording sites ran in. An empty install_option means no
+# setting places the dependency in this build's prefix, so it can never join an export set.
 function(_ctrlpp_record_dependency_install name install_option source_dir)
     set(_fetched FALSE)
     set(_installs FALSE)
@@ -18,12 +17,10 @@ function(_ctrlpp_record_dependency_install name install_option source_dir)
     )
 endfunction()
 
-# Eigen's are the only third-party headers this library puts in its own interface, and the
-# warning set every target here compiles with draws roughly twelve thousand diagnostics out of
-# them the moment they stop being treated as system headers -- a wall of noise no source change
-# explains. An imported target carries that treatment by default and the interface target this
-# build makes asks for it, so the outcome is asserted rather than left to a default a policy could
-# flip. A target a parent project supplies is held to the same requirement.
+# Eigen's are the only third-party headers in this library's interface, and without system-header
+# treatment the project's warning set draws about twelve thousand diagnostics from them. The
+# treatment is asserted, for a parent project's target too, rather than left to a default a policy
+# could flip.
 function(_ctrlpp_require_system_eigen target)
     get_target_property(_aliased ${target} ALIASED_TARGET)
     if (_aliased)

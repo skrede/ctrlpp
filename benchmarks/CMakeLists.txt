@@ -5,24 +5,14 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Benchmark dependencies are resolved with find_package by default (assume the
-# dependency is installed on the system). Set CTRLPP_FETCH_BENCHMARK_DEPS=ON to
-# instead download and build the missing ones via FetchContent.
 option(CTRLPP_FETCH_BENCHMARK_DEPS "Fetch missing benchmark dependencies via FetchContent instead of only using installed ones" OFF)
 
-# This benchmarks project is standalone (the root CMakeLists never adds it), so
-# the root CTRLPP_TESTS_WITH_EXCEPTIONS is invisible here and the bench tree
-# carries its own switch mirroring the unit trees. The ctrlpp bench logic is
-# throw-free, but every internal bench TU embeds nanobench's implementation, and
-# nanobench has no disable-exceptions mode, so -fno-exceptions cannot currently be
-# honored on the benches (see benchmarks/internal/CMakeLists.txt). The switch is
-# kept for parity and for when a no-exceptions microbench path exists; the
-# comparison/profiling benches link throwing solvers and stay exceptions-on.
+# The root never adds this project, so it mirrors the unit trees' switch. nanobench, embedded in
+# every internal bench TU, has no disable-exceptions mode, so the benches build exceptions-on either way.
 option(CTRLPP_TESTS_WITH_EXCEPTIONS "Mirror of the unit trees' switch for the standalone bench project (see note: nanobench currently forces exceptions-on)" OFF)
 
 find_package(Eigen3 CONFIG REQUIRED)
 
-# ctrlpp is header-only; create a lightweight interface target
 add_library(ctrlpp_benchmarks_lib INTERFACE)
 add_library(ctrlpp::ctrlpp ALIAS ctrlpp_benchmarks_lib)
 # The benchmark root is on the path too, so every harness can reach the shared
@@ -33,8 +23,6 @@ target_include_directories(ctrlpp_benchmarks_lib INTERFACE
 )
 target_link_libraries(ctrlpp_benchmarks_lib INTERFACE Eigen3::Eigen)
 
-# Shared problem corpus consumed by both comparison/ and profiling/ harnesses.
-# Header-only; do not put cpp files here.
 add_library(ctrlpp_bench_problems INTERFACE)
 add_library(ctrlpp::bench_problems ALIAS ctrlpp_bench_problems)
 target_include_directories(ctrlpp_bench_problems INTERFACE
@@ -42,7 +30,6 @@ target_include_directories(ctrlpp_bench_problems INTERFACE
 )
 target_link_libraries(ctrlpp_bench_problems INTERFACE ctrlpp::ctrlpp)
 
-# nanobench microbenchmark framework
 if(CTRLPP_FETCH_BENCHMARK_DEPS)
     include(FetchContent)
     FetchContent_Declare(nanobench
@@ -54,9 +41,8 @@ else()
     find_package(nanobench CONFIG REQUIRED)
 endif()
 
-# Optional solver backends for MPC/MHE benchmarks. The cross-solver QP suite builds OSQP from source
-# so that every solver it compares shares one set of compiler flags; every other configuration keeps
-# the installed package, which other installed wrappers (osqp-eigen) also link against.
+# The cross-solver QP suite builds OSQP from source so that every solver it compares shares one set
+# of compiler flags; every other configuration keeps the installed package, which osqp-eigen also links.
 if(CTRLPP_FETCH_BENCHMARK_DEPS AND CTRLPP_BENCH_QP_SOLVERS)
     include(${CMAKE_CURRENT_SOURCE_DIR}/comparison/deps/osqp.cmake)
     set(ctrlpp_bench_osqp_target osqp::osqpstatic)

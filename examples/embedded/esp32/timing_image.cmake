@@ -1,10 +1,6 @@
-# The timing image: a second executable linked from the same component libraries
-# as the project's own image, with the main component's copy built without the
-# allocation sensor in its place. The framework builds one executable per
-# project, so this repeats what its project() does for that one: every
-# component, whole-archive where the component asks for it, the framework's link
-# options, and an elf2image pass that writes the ELF's digest into the image's
-# descriptor, so the image has its own fingerprint.
+# The framework builds one executable per project, so the timing image repeats what its project()
+# does: every component, whole-archive where the component asks, the framework's link options, and
+# an elf2image pass that writes the ELF's digest into the image descriptor as its own fingerprint.
 
 function(ctrlpp_esp32_link_components elf main_lib)
     idf_build_get_property(components BUILD_COMPONENT_ALIASES)
@@ -20,10 +16,8 @@ function(ctrlpp_esp32_link_components elf main_lib)
     target_link_libraries(${elf} PRIVATE "-Wl,--whole-archive" ${main_lib} "-Wl,--no-whole-archive")
 endfunction()
 
-# The project's executable carries every option and linker-script dependency the
-# framework version adds, so they are copied rather than restated; only the map
-# file is this image's own. Linking after that executable guarantees the
-# generated section-placement script both depend on exists.
+# Copied from the project's executable rather than restated, since the framework version adds
+# them; linking after it guarantees the generated section-placement script both depend on exists.
 function(ctrlpp_esp32_copy_link_setup elf map)
     set(project_elf ${CMAKE_PROJECT_NAME}.elf)
     get_target_property(link_options ${project_elf} LINK_OPTIONS)

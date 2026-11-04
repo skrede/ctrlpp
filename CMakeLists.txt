@@ -7,35 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
-# Applied to ctrlpp's own targets only (tests, compile tests, examples); the
-# vendored test framework and the third-party backends are compiled with their
-# own options and never receive these.
-#
-# The discard promotions make a discarded standard-library [[nodiscard]] result,
-# and an expression statement whose value is unused, an error on ctrlpp's targets.
-#
-# /bigobj raises the object file's section-count ceiling from 65,279 to 2^32. Two
-# Riccati test translation units crossed the lower ceiling on MSVC and stopped
-# compiling at all. The switch sits on this shared block rather than on those two
-# targets because the rest of the set is close behind, and that closeness was
-# measured rather than assumed: compiling the same sources with g++ and
-# per-function/per-data sections, and counting the COMDAT groups against the same
-# 65,279, the two that failed emit 59,881 and 57,586, the heaviest one that still
-# compiled emits 47,398, and three more sit between 41,799 and 47,398. A single
-# added state dimension is worth roughly 7,700 groups, so the next unit to cross
-# is one instantiation away and a per-target switch would have to be re-argued
-# every time it happened. The g++ group count is a stand-in for the format's own
-# count, not that count.
-#
-# What /bigobj does NOT fix is the compiler's peak resident set. Those same two
-# units cost 4.55 GiB and 4.37 GiB to compile with no debug info, and this switch
-# moves neither figure: it widens a field in the object file and does nothing
-# else. The instantiation cost that made them heavy is untouched. Splitting the
-# heavier one along its method tag was measured as an alternative and does not
-# clear the ceiling either, because the piece that has to keep the shared cases
-# still emits 55,125 groups -- an 8% reduction -- while the three pieces together
-# cost 38% more compile time than the single unit does.
+# Applied to ctrlpp's own targets only, never to the vendored test framework or the backends. The
+# discard promotions make a discarded standard-library [[nodiscard]] result, and an expression
+# statement whose value is unused, an error on ctrlpp's targets.
 set(CTRLPP_WARNING_FLAGS
+    # /bigobj lifts MSVC's 65,279-section object ceiling, which two Riccati test units crossed. It is
+    # on the shared set because the other units sit about one instantiation below the ceiling, and
+    # splitting a failing unit was measured not to clear it.
     $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /utf-8 /EHsc /we4834 /bigobj>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:
         -fPIC
@@ -59,7 +37,6 @@ set(CTRLPP_WARNING_FLAGS
     # (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=106247; Eigen issues 2506 and 2906, fixed on Eigen master by f7772e3)
     # and LDLT solves (unfixed, GCC PR56456) under either flag. Tree-wide because the need follows from instantiated
     # dimensions the build cannot see; clang's -Wsometimes-uninitialized and -Warray-bounds remain the backstop.
-    # Remove once the fetched Eigen is clean.
     $<$<CXX_COMPILER_ID:GNU>:-Wno-array-bounds -Wno-maybe-uninitialized>
 )
 
@@ -76,28 +53,14 @@ option(CTRLPP_BUILD_TESTS "Build unit and compile tests" OFF)
 option(CTRLPP_BUILD_FUZZ_TESTS "Build fuzz test targets" OFF)
 option(CTRLPP_BUILD_PROPERTY_TESTS "Build property-based test targets (requires RapidCheck and CTRLPP_TESTS_WITH_EXCEPTIONS)" OFF)
 
-# Selects which posture ctrlpp's own root test targets compile in. This is
-# self-imposed dogfood of the throw-free discipline, not a consumer mandate: the
-# library/interface/install targets never carry -fno-exceptions. OFF (default)
-# builds ctrlpp's tests and Catch2 under -fno-exceptions -fno-rtti with
-# CATCH_CONFIG_DISABLE_EXCEPTIONS. ON builds the exceptions carve-out: tests
-# asserting that throwing convenience wrappers throw (they need REQUIRE_THROWS*,
-# unavailable under disabled-exceptions Catch2) plus every OSQP/NLopt-linked test
-# with Catch2 exceptions on. Benchmarks are a separate project whose embedded
-# nanobench implementation currently requires exceptions.
+# The -fno-exceptions -fno-rtti default is self-imposed on ctrlpp's own tests, not a consumer
+# mandate: the library and install targets never carry it. ON builds the tests that need exceptions
+# (REQUIRE_THROWS*, unavailable in disabled-exceptions Catch2) and every OSQP/NLopt-linked test.
 option(CTRLPP_TESTS_WITH_EXCEPTIONS "Build ctrlpp's root tests in the exceptions carve-out instead of the default -fno-exceptions tree" OFF)
 
-# Raises the promotion and narrowing diagnostics from warnings to errors on the
-# three targets that instantiate the library at single precision, and on nothing
-# else. The promotion is target-scoped rather than global because the volume
-# outside that tier has never been measured: promoting across the whole tree
-# would turn an unmeasured population of pre-existing diagnostics into build
-# failures. Default OFF, so an ordinary build sees exactly what it saw before.
-#
-# The clang list carries a third promotion because the compilers group these
-# diagnostics differently: gcc's float-conversion covers both the narrowing into
-# single precision and a float-to-integer conversion, while clang keeps the
-# narrowing in a group gcc has no option for at all.
+# Scoped to the three single-precision targets because the volume of these diagnostics elsewhere has
+# never been measured. clang needs a third flag: gcc's float-conversion also covers the narrowing
+# into single precision, which clang keeps in a group of its own.
 option(CTRLPP_FLOAT_TIER_STRICT "Promote the promotion and narrowing diagnostics to errors on the single-precision targets" OFF)
 set(CTRLPP_FLOAT_TIER_STRICT_FLAGS "")
 if (CTRLPP_FLOAT_TIER_STRICT AND NOT MSVC)
@@ -111,12 +74,9 @@ option(CTRLPP_BUILD_EXAMPLES "Build examples" OFF)
 
 option(CTRLPP_BUILD_VALIDATION "Build the Octave cross-validation harness" OFF)
 
-# Deliberately not following the default-OFF convention the CTRLPP_BUILD_* options above
-# share: those decide what this build contains, and this decides where it ends up. Standalone
-# builds are asked to be installed often enough that OFF would be a trap; a parent that adds
-# ctrlpp as a subproject gets OFF, so a consumer's prefix carries only what the consumer
-# asked for. A parent overrides the default by setting the variable before the
-# add_subdirectory that adds ctrlpp; setting it afterwards is too late.
+# Not default-OFF like the build options: a standalone build is usually installed, while a
+# subproject's default keeps a parent's prefix to what the parent asked for. A parent overrides it
+# by setting the variable before the add_subdirectory that adds ctrlpp; afterwards is too late.
 option(CTRLPP_INSTALL "Install ctrlpp into the install prefix" ${PROJECT_IS_TOP_LEVEL})
 
 # Config-package gate flags. lib/ctrlpp/ raises each to TRUE when the backend joins the

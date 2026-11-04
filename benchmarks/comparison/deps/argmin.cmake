@@ -1,5 +1,3 @@
-# A local checkout (CTRLPP_ARGMIN_SOURCE_DIR) always wins; otherwise fetch only
-# when opted in, else expect an installed argmin via find_package.
 include(FetchContent)
 
 if(CTRLPP_ARGMIN_SOURCE_DIR)
