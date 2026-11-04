@@ -80,14 +80,12 @@ Configuration struct `nmpc_config<Scalar, NX, NU, NC, NTC>` passed at constructi
 using construction_error = nmpc_construction_error<SetupError>;
 // = std::variant<controller_construction_error, nlp_formulation_error, SetupError>
 
-static auto create(Dynamics dynamics,
-                   const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
-    -> expected<nmpc, construction_error>;
+static expected<nmpc, construction_error> create(Dynamics dynamics,
+                                                 const nmpc_config<Scalar, NX, NU, NC, NTC>& config);
 
-static auto create(Dynamics dynamics,
-                   const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
-                   Solver solver)
-    -> expected<nmpc, construction_error>;
+static expected<nmpc, construction_error> create(Dynamics dynamics,
+                                                 const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
+                                                 Solver solver);
 ```
 
 `create` is the only construction path for the compile-time-horizon controller, and so for the default `nmpc`. Its constructors are public only so `ctrlpp::expected` can build the controller in the caller's storage, and they take a passkey that only the class can make, so a configuration the controller cannot solve is a value the caller has to inspect, never a controller whose every solve fails. The horizon is the template parameter `NH`, so it carries a compile-time domain: `NH == 0` fails to compile, because a zero horizon leaves no input to apply and makes the warm-start shift and the input offset read outside the decision vector.
@@ -129,14 +127,12 @@ To keep the result in place, initialize the holding object directly from `create
 using construction_error = nmpc_construction_error<SetupError>;
 // = std::variant<controller_construction_error, nlp_formulation_error, SetupError>
 
-static auto create(Dynamics dynamics,
-                       const nmpc_config<Scalar, NX, NU, NC, NTC>& config)
-    -> expected<nmpc_dynamic, construction_error>;
+static expected<nmpc_dynamic, construction_error> create(Dynamics dynamics,
+                                                         const nmpc_config<Scalar, NX, NU, NC, NTC>& config);
 
-static auto create(Dynamics dynamics,
-                       const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
-                       Solver solver)
-    -> expected<nmpc_dynamic, construction_error>;
+static expected<nmpc_dynamic, construction_error> create(Dynamics dynamics,
+                                                         const nmpc_config<Scalar, NX, NU, NC, NTC>& config,
+                                                         Solver solver);
 ```
 
 `create` is the only construction path for the runtime-horizon controller. Its constructor is public only so `ctrlpp::expected` can build the controller in the caller's storage, and it takes a passkey that only the class can make, so a rejected configuration or a refused solver setup is a value the caller has to inspect and never a controller that quietly stands in for one. The two-argument form default-constructs the solver and chains into the three-argument form; both move the dynamics and the solver in before the NLP is posed.
@@ -186,7 +182,7 @@ The weights follow the library's symmetry convention. An asymmetry within the ro
 
 A penalty is inspected only while the soft constraint it weights is active, that is, when `soft_constraints` is true, the constraint dimension is nonzero and the matching constraint callable is set. Otherwise it weights nothing and is accepted whatever it holds.
 
-`horizon` stays a signed `int` deliberately: a mistaken negative value remains representable as negative and is therefore rejectable, whereas an unsigned field would turn the same mistake into an enormous allocation. The overflow bound is a representability condition on `int`, not a chosen ceiling. At the worst-case configuration the horizon `N` scales the decision vector as `N*(NX + NU + NC) + NX + NTC` and the constraint rows as `N*(NX + 2*NU + NC) + NX + NTC`, so both stay representable exactly when `horizon <= (INT_MAX - (NX + NTC)) / (NX + 2*NU + NC)`.
+`horizon` stays a signed `std::int32_t` deliberately: a mistaken negative value remains representable as negative and is therefore rejectable, whereas an unsigned field would turn the same mistake into an enormous allocation. The overflow bound is a representability condition on `std::int32_t`, not a chosen ceiling. At the worst-case configuration the horizon `N` scales the decision vector as `N*(NX + NU + NC) + NX + NTC` and the constraint rows as `N*(NX + 2*NU + NC) + NX + NTC`, so both stay representable exactly when `horizon <= (INT32_MAX - (NX + NTC)) / (NX + 2*NU + NC)`.
 
 Two alternatives are deliberately not implemented. Validating at the first solve would surface a configuration error at the first control step, the worst possible moment. Clamping the horizon to one would turn a caller mistake into a silently different controller.
 
