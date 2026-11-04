@@ -9,6 +9,7 @@ NLopt-based NLP solver backend for nonlinear MPC and NMHE. Satisfies the `nlp_so
 | Form | Header |
 |------|--------|
 | `nlopt_solver<Scalar>` | `#include <ctrlpp/mpc/nlopt_solver.h>` |
+| `nlopt_algorithm`, `nlopt_settings<Scalar>` | `#include <ctrlpp/mpc/nlopt_types.h>` (also included by `nlopt_solver.h`) |
 
 ```cpp
 template <typename Scalar>
@@ -42,6 +43,8 @@ There is one setup shape: `setup(problem)` returns a `ctrlpp::expected<void, E>`
 
 ### nlopt_algorithm
 
+Defined in `<ctrlpp/mpc/nlopt_types.h>`.
+
 ```cpp
 enum class nlopt_algorithm : std::uint8_t {
     slsqp,         // Sequential Least Squares Programming (gradient-based, supports equality)
@@ -74,13 +77,15 @@ enum class nlopt_setup_error : std::uint8_t {
 
 ### nlopt_settings
 
+Defined in `<ctrlpp/mpc/nlopt_types.h>`.
+
 ```cpp
 template <typename Scalar>
 struct nlopt_settings {
     nlopt_algorithm algorithm{nlopt_algorithm::slsqp};
     Scalar ftol_rel{1e-6};
     Scalar xtol_rel{1e-6};
-    int max_eval{500};
+    std::int32_t max_eval{500};
     Scalar max_time{0};          // 0 = no time limit
     Scalar constraint_tol{1e-8};
 };
@@ -101,8 +106,7 @@ The solver is copyable and movable. NLopt registers every callback with the solv
 ### setup
 
 ```cpp
-auto setup(const nlp_problem<Scalar>& problem)
-    -> ctrlpp::expected<void, nlopt_setup_error>;
+ctrlpp::expected<void, nlopt_setup_error> setup(const nlp_problem<Scalar>& problem);
 ```
 
 Fallible setup: configures the NLopt optimizer from an NLP problem definition and partitions constraints into equality and inequality groups automatically. Returns an empty `expected` on success, `nlopt_setup_error::incompatible_equality_constraints` if raw MMA or raw CCSAQ is selected on a problem with equality constraints, `nlopt_setup_error::allocation_failed` if an allocation fails while the optimizer is built or configured, and `nlopt_setup_error::backend_rejected` for any other error raised meanwhile, standard or not. After a failed setup the solver holds no usable optimizer, and `solve` reports `solve_status::error` until a later `setup` succeeds. This is the only setup API.
@@ -110,7 +114,7 @@ Fallible setup: configures the NLopt optimizer from an NLP problem definition an
 ### solve
 
 ```cpp
-auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>;
+nlp_result<Scalar> solve(const nlp_update<Scalar>& update);
 ```
 
 Solves the NLP from the initial guess in `update.x0`. Returns the solution, objective value, solver status, iteration count, solve time, and maximum constraint violation.

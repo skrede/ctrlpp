@@ -92,8 +92,7 @@ enum class osqp_setup_error : std::uint8_t {
 ### setup
 
 ```cpp
-auto setup(const qp_problem<double>& problem)
-    -> ctrlpp::expected<void, osqp_setup_error>;
+ctrlpp::expected<void, osqp_setup_error> setup(const qp_problem<double>& problem);
 ```
 
 Fallible setup: initializes the OSQP workspace from a QP problem (cost matrices P, q and constraint matrices A, l, u). Returns an empty `expected` on success and an `osqp_setup_error` on failure. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS` builds.
@@ -105,7 +104,7 @@ OSQP reads `OSQP_INFTY` as absent through its Ruiz equilibration, so on a row wh
 ### solve
 
 ```cpp
-auto solve(const qp_update<double>& update) -> qp_result<double>;
+qp_result<double> solve(const qp_update<double>& update);
 ```
 
 Solves the QP with updated cost vector, bounds, and optional warm-start vectors. Returns a `qp_result` containing the primal/dual solution, solver status, objective value, iteration count, solve time, and residuals. An empty vector in the update leaves that part of the problem as it was.

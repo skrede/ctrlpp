@@ -30,7 +30,7 @@ struct osqp_settings_deleter
 using osqp_workspace = std::unique_ptr<OSQPSolver, osqp_workspace_deleter>;
 using osqp_settings = std::unique_ptr<OSQPSettings, osqp_settings_deleter>;
 
-inline auto make_csc(const osqp_sparse_matrix& mat) -> OSQPCscMatrix
+inline OSQPCscMatrix make_csc(const osqp_sparse_matrix& mat)
 {
     OSQPCscMatrix csc{};
     csc.m = static_cast<OSQPInt>(mat.rows());
@@ -43,30 +43,30 @@ inline auto make_csc(const osqp_sparse_matrix& mat) -> OSQPCscMatrix
     return csc;
 }
 
-constexpr auto map_osqp_status(OSQPInt status_val) -> solve_status
+constexpr solve_status map_osqp_status(OSQPInt status_val)
 {
     switch(status_val)
     {
-    case OSQP_SOLVED:
-        return solve_status::optimal;
-    case OSQP_SOLVED_INACCURATE:
-        return solve_status::solved_inaccurate;
-    case OSQP_PRIMAL_INFEASIBLE:
-        [[fallthrough]];
-    case OSQP_PRIMAL_INFEASIBLE_INACCURATE:
-        return solve_status::infeasible;
-    case OSQP_DUAL_INFEASIBLE:
-        [[fallthrough]];
-    case OSQP_DUAL_INFEASIBLE_INACCURATE:
-        return solve_status::unbounded;
-    case OSQP_MAX_ITER_REACHED:
-        return solve_status::max_iterations;
-    case OSQP_TIME_LIMIT_REACHED:
-        return solve_status::time_limit;
-    case OSQP_NON_CVX:
-        return solve_status::non_convex;
-    default:
-        return solve_status::error;
+        case OSQP_SOLVED:
+            return solve_status::optimal;
+        case OSQP_SOLVED_INACCURATE:
+            return solve_status::solved_inaccurate;
+        case OSQP_PRIMAL_INFEASIBLE:
+            [[fallthrough]];
+        case OSQP_PRIMAL_INFEASIBLE_INACCURATE:
+            return solve_status::infeasible;
+        case OSQP_DUAL_INFEASIBLE:
+            [[fallthrough]];
+        case OSQP_DUAL_INFEASIBLE_INACCURATE:
+            return solve_status::unbounded;
+        case OSQP_MAX_ITER_REACHED:
+            return solve_status::max_iterations;
+        case OSQP_TIME_LIMIT_REACHED:
+            return solve_status::time_limit;
+        case OSQP_NON_CVX:
+            return solve_status::non_convex;
+        default:
+            return solve_status::error;
     }
 }
 
@@ -82,7 +82,7 @@ inline void to_osqp_upper(const Eigen::VectorXd& upper, Eigen::VectorXd& osqp_up
     osqp_upper.array() = upper.array().unaryExpr([](double v) { return v > OSQP_INFTY ? OSQP_INFTY : v; });
 }
 
-inline auto read_osqp_result(const OSQPSolver& solver, OSQPInt n, OSQPInt m) -> qp_result<double>
+inline qp_result<double> read_osqp_result(const OSQPSolver& solver, OSQPInt n, OSQPInt m)
 {
     qp_result<double> result;
     result.x = Eigen::Map<const Eigen::VectorXd>(solver.solution->x, n);
