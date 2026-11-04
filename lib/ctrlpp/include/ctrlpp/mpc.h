@@ -6,6 +6,7 @@
 
 #include "ctrlpp/mpc/qp_types.h"
 #include "ctrlpp/mpc/qp_solver.h"
+#include "ctrlpp/mpc/mpc_config.h"
 #include "ctrlpp/mpc/diagnostics.h"
 #include "ctrlpp/mpc/terminal_set.h"
 #include "ctrlpp/mpc/terminal_cost.h"
@@ -25,36 +26,16 @@
 #include <cstdint>
 #include <utility>
 #include <variant>
-#include <optional>
 #include <type_traits>
 
 namespace ctrlpp
 {
-
-template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY = NX>
-struct mpc_config
-{
-    std::int32_t horizon{1};
-    Matrix<Scalar, NY, NY> Q{Matrix<Scalar, NY, NY>::Identity()};
-    Matrix<Scalar, NU, NU> R{Matrix<Scalar, NU, NU>::Identity()};
-    std::optional<Matrix<Scalar, NY, NY>> Qf{};
-    std::optional<Vector<Scalar, NU>> u_min{};
-    std::optional<Vector<Scalar, NU>> u_max{};
-    std::optional<Vector<Scalar, NX>> x_min{};
-    std::optional<Vector<Scalar, NX>> x_max{};
-    std::optional<Vector<Scalar, NU>> du_max{};
-    Scalar soft_penalty{Scalar{1e4}};
-    std::optional<Vector<Scalar, NX>> soft_state_penalty{};
-    std::optional<terminal_set<Scalar, NX>> terminal_constraint_set{};
-    bool hard_state_constraints{false};
-};
 
 template <typename Scalar, std::size_t NX, std::size_t NU, qp_solver Solver, std::size_t NY = NX>
 class mpc : private detail::mpc_solve<Scalar, NX, NU, Solver, NY, mpc_config<Scalar, NX, NU, NY>>
 {
     static constexpr int nx = static_cast<int>(NX);
     static constexpr int nu = static_cast<int>(NU);
-    static constexpr int ny = static_cast<int>(NY);
 
     using setup_error = detail::qp_setup_error_t<Solver, qp_problem<Scalar>>;
     using base = detail::mpc_solve<Scalar, NX, NU, Solver, NY, mpc_config<Scalar, NX, NU, NY>>;

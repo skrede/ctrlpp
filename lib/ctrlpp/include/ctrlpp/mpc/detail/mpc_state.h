@@ -46,7 +46,6 @@ protected:
     Eigen::Index m_n_dec;
     Eigen::Index m_n_con;
     Eigen::Index m_n_x_total;
-    Eigen::Index m_n_u_total;
     Eigen::Index m_rate_row;
 
     mpc_state(const discrete_state_space<Scalar, NX, NU, NY>& system, const Config& config, Matrix<Scalar, NX, NX>&& Q_state, mpc_terminal_weights<Scalar, NX, NY>&& terminal,
@@ -67,7 +66,6 @@ protected:
         , m_n_dec{}
         , m_n_con{}
         , m_n_x_total{}
-        , m_n_u_total{}
         , m_rate_row{}
     {
         compute_dimensions();
@@ -80,9 +78,7 @@ protected:
     {
         std::int32_t N = m_config.horizon;
         m_n_x_total = (N + 1) * nx;
-        m_n_u_total = N * nu;
-
-        m_n_dec = m_n_x_total + m_n_u_total + detail::slack_columns<NX>(N, uses_soft_state_constraints());
+        m_n_dec = m_n_x_total + N * nu + detail::slack_columns<NX>(N, uses_soft_state_constraints());
 
         auto const layout = constraint_layout();
         m_n_con = layout.n_con;

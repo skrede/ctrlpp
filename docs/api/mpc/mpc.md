@@ -9,6 +9,7 @@ Linear Model Predictive Controller using sparse QP optimization. Solves a recedi
 | Form | Header |
 |------|--------|
 | `mpc<Scalar, NX, NU, Solver>` | `#include <ctrlpp/mpc.h>` |
+| `mpc_config<Scalar, NX, NU>` | `#include <ctrlpp/mpc/mpc_config.h>` (also included by `ctrlpp/mpc.h`) |
 
 ```cpp
 template <typename Scalar, std::size_t NX, std::size_t NU, qp_solver Solver>
