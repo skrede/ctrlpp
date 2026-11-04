@@ -2682,7 +2682,7 @@ self_test_cases_green()
 
 do_self_test()
 {
-    local file="" status="" implemented="" missing="" counts=""
+    local file="" status="" implemented="" seen="" missing="" counts=""
     for file in evidence.txt timing.txt reference.txt esp32-evidence.txt esp32-timing.txt esp32-reference.txt; do
         [ -f "${fixture_dir}/${file}" ] || fail 3 "the fixture ${fixture_dir}/${file} is missing."
     done
@@ -2697,11 +2697,14 @@ do_self_test()
     self_test_cases_esp32
     self_test_cases_current
 
+    # Here-strings rather than pipes: grep -q and head stop reading early, which
+    # under pipefail can fail the pipeline with SIGPIPE.
     implemented="$(implemented_refusals)"
+    seen="$(printf '%s\n' "${self_test_red[@]+"${self_test_red[@]}"}")"
     for status in ${implemented}; do
-        printf '%s\n' "${self_test_red[@]+"${self_test_red[@]}"}" | grep -qx "${status}" || missing="${missing} ${status}"
+        grep -qx "${status}" <<< "${seen}" || missing="${missing} ${status}"
     done
-    counts="${#self_test_red[@]} refusal assertions seen red against the $(printf '%s\n' "${implemented}" | wc -l) refusal statuses this script implements ($(printf '%s\n' "${implemented}" | head -1) to $(printf '%s\n' "${implemented}" | tail -1)); ${self_test_green} acceptance assertions seen green"
+    counts="${#self_test_red[@]} refusal assertions seen red against the $(wc -l <<< "${implemented}") refusal statuses this script implements ($(head -1 <<< "${implemented}") to $(tail -1 <<< "${implemented}")); ${self_test_green} acceptance assertions seen green"
     if [ "${self_test_failures}" -ne 0 ] || [ -n "${missing}" ]; then
         echo "self-test FAILED: ${counts}; ${self_test_failures} assertion(s) did not hold; statuses with no red case:${missing:- none}." >&2
         exit 1
