@@ -30,7 +30,7 @@ protected:
     {
         // Exact equality first: a synchronized set passes the slowest axis a bit-exact copy of its own
         // duration, so that axis lands here rather than in the shortening rejection below.
-        if(T_new == this->m_T)
+        if(T_new == this->m_duration)
         {
             return this->current_state();
         }
@@ -38,7 +38,7 @@ protected:
         {
             return ctrlpp::unexpected(trajectory_error::non_positive_duration);
         }
-        if(T_new < this->m_T)
+        if(T_new < this->m_duration)
         {
             return ctrlpp::unexpected(trajectory_error::duration_shorter_than_current);
         }

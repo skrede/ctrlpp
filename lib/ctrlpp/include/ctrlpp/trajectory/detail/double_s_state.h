@@ -31,12 +31,12 @@ protected:
     Scalar m_v_max;
     Scalar m_a_max;
     Scalar m_j_max;
-    Scalar m_T_j1;
-    Scalar m_T_a;
-    Scalar m_T_v;
-    Scalar m_T_d;
-    Scalar m_T_j2;
-    Scalar m_T;
+    Scalar m_accel_jerk_duration;
+    Scalar m_accel_duration;
+    Scalar m_cruise_duration;
+    Scalar m_decel_duration;
+    Scalar m_decel_jerk_duration;
+    Scalar m_duration;
     bool m_degenerate;
 
     template <typename Config>
@@ -54,12 +54,12 @@ protected:
         , m_v_max{cfg.v_max}
         , m_a_max{cfg.a_max}
         , m_j_max{cfg.j_max}
-        , m_T_j1{}
-        , m_T_a{}
-        , m_T_v{}
-        , m_T_d{}
-        , m_T_j2{}
-        , m_T{}
+        , m_accel_jerk_duration{}
+        , m_accel_duration{}
+        , m_cruise_duration{}
+        , m_decel_duration{}
+        , m_decel_jerk_duration{}
+        , m_duration{}
         , m_degenerate{false}
     {
     }
@@ -106,11 +106,11 @@ protected:
 
     void set_ramps(velocity_ramp<Scalar> const& accel, velocity_ramp<Scalar> const& decel)
     {
-        m_T_j1 = accel.T_j;
-        m_T_a = accel.T;
+        m_accel_jerk_duration = accel.T_j;
+        m_accel_duration = accel.T;
         m_a_lim_a = accel.a_lim;
-        m_T_j2 = decel.T_j;
-        m_T_d = decel.T;
+        m_decel_jerk_duration = decel.T_j;
+        m_decel_duration = decel.T;
         m_a_lim_d = decel.a_lim;
     }
 };

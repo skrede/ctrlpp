@@ -84,19 +84,19 @@ public:
     // @cite biagiotti2009 -- Sec. 3.2.7, eq. (3.13a)-(3.13c), p.71
     trajectory_point<Scalar, 1> evaluate(Scalar t) const
     {
-        auto const tc = std::clamp(t, Scalar{0}, this->m_T);
-        if(tc >= this->m_T)
+        auto const tc = std::clamp(t, Scalar{0}, this->m_duration);
+        if(tc >= this->m_duration)
         {
             return {
                     .position = Vector<Scalar, 1>{this->m_q1},
                     .velocity = Vector<Scalar, 1>{this->m_sigma * this->m_v1},
-                    .acceleration = Vector<Scalar, 1>{this->m_sigma * last_phase_acceleration()},
+                    .acceleration = Vector<Scalar, 1>{this->m_sigma * this->last_phase_acceleration()},
             };
         }
-        // The stored total is a rounded sum, so the time back from it can exceed m_T_d at the switch;
+        // The stored total is a rounded sum, so the time back from it can exceed m_decel_duration at the switch;
         // each ramp's formula is used only strictly inside that ramp, timed from its own anchor.
-        auto const dt_end = this->m_T - tc;
-        auto const s = (tc < this->m_T_a) ? acceleration_ramp(tc) : (dt_end >= this->m_T_d) ? cruise(tc) : deceleration_ramp(dt_end);
+        auto const dt_end = this->m_duration - tc;
+        auto const s = (tc < this->m_accel_duration) ? acceleration_ramp(tc) : (dt_end >= this->m_decel_duration) ? cruise(tc) : deceleration_ramp(dt_end);
         return {
                 .position = Vector<Scalar, 1>{this->m_q0 + this->m_sigma * s.q},
                 .velocity = Vector<Scalar, 1>{this->m_sigma * s.dq},
@@ -104,14 +104,14 @@ public:
         };
     }
 
-    Scalar duration() const { return this->m_T; }
+    Scalar duration() const { return this->m_duration; }
 
     // @cite biagiotti2009 -- Sec. 3.2.5, p.69
     bool is_triangular() const { return this->m_triangular; }
 
     Scalar peak_velocity() const { return this->m_sigma * this->m_v_v; }
 
-    std::array<Scalar, 3> phase_durations() const { return {this->m_T_a, this->m_T_v, this->m_T_d}; }
+    std::array<Scalar, 3> phase_durations() const { return {this->m_accel_duration, this->m_cruise_duration, this->m_decel_duration}; }
 
     trapezoidal_disposition<Scalar> const& disposition() const { return this->m_disposition; }
 
@@ -145,30 +145,28 @@ private:
     {
     }
 
-    Scalar last_phase_acceleration() const { return (this->m_T_d > Scalar{0}) ? -this->m_a_d : (this->m_T_v > Scalar{0} || !(this->m_T_a > Scalar{0})) ? Scalar{0} : this->m_a_a; }
-
-    Scalar ramp_end_position() const { return this->m_v0 * this->m_T_a + Scalar{0.5} * this->m_a_a * this->m_T_a * this->m_T_a; }
+    Scalar ramp_end_position() const { return this->m_v0 * this->m_accel_duration + Scalar{0.5} * this->m_a_a * this->m_accel_duration * this->m_accel_duration; }
 
     frame_sample acceleration_ramp(Scalar tc) const
     {
-        auto const to_end = this->m_T_a - tc;
+        auto const to_end = this->m_accel_duration - tc;
         return {detail::nearer_anchor_position(Scalar{0}, this->m_v0, ramp_end_position(), this->m_v_v, this->m_a_a, tc, to_end),
                 detail::nearer_anchor_velocity(this->m_v0, this->m_v_v, this->m_a_a, tc, to_end), this->m_a_a};
     }
 
-    frame_sample cruise(Scalar tc) const { return {ramp_end_position() + this->m_v_v * (tc - this->m_T_a), this->m_v_v, Scalar{0}}; }
+    frame_sample cruise(Scalar tc) const { return {ramp_end_position() + this->m_v_v * (tc - this->m_accel_duration), this->m_v_v, Scalar{0}}; }
 
     frame_sample deceleration_ramp(Scalar dt_end) const
     {
-        auto const from_start = this->m_T_d - dt_end;
-        auto const q_start = ramp_end_position() + this->m_v_v * this->m_T_v;
+        auto const from_start = this->m_decel_duration - dt_end;
+        auto const q_start = ramp_end_position() + this->m_v_v * this->m_cruise_duration;
         return {detail::nearer_anchor_position(q_start, this->m_v_v, std::abs(this->m_q1 - this->m_q0), this->m_v1, -this->m_a_d, from_start, dt_end),
                 detail::nearer_anchor_velocity(this->m_v_v, this->m_v1, -this->m_a_d, from_start, dt_end), -this->m_a_d};
     }
 
     static ctrlpp::expected<trapezoidal_trajectory, trajectory_error> checked(trapezoidal_trajectory const& profile, config const& cfg)
     {
-        for(auto const span : std::array{profile.m_T_a, profile.m_T_v, profile.m_T_d, profile.m_T})
+        for(auto const span : std::array{profile.m_accel_duration, profile.m_cruise_duration, profile.m_decel_duration, profile.m_duration})
         {
             if(span < Scalar{0})
             {
@@ -181,7 +179,7 @@ private:
         }
         // A nonzero displacement or velocity change takes nonzero time at finite limits, so a total
         // that underflowed to zero describes no commanded motion. The predicate carries no threshold.
-        if((cfg.q1 != cfg.q0 || cfg.v0 != cfg.v1) && !(profile.m_T > Scalar{0}))
+        if((cfg.q1 != cfg.q0 || cfg.v0 != cfg.v1) && !(profile.m_duration > Scalar{0}))
         {
             return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
         }

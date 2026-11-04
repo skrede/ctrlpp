@@ -18,7 +18,7 @@ protected:
     {
         Scalar dist; // signed
         Scalar T_j;
-        Scalar T_a; // total braking duration
+        Scalar brake_duration;
         bool a_max_reached;
     };
 
@@ -70,7 +70,7 @@ protected:
         this->append_phase(info.T_j, -sign_v * this->m_j_max);
         if(info.a_max_reached)
         {
-            this->append_phase(info.T_a - Scalar{2} * info.T_j, Scalar{0});
+            this->append_phase(info.brake_duration - Scalar{2} * info.T_j, Scalar{0});
         }
         this->append_phase(info.T_j, sign_v * this->m_j_max);
         this->pin_group_end(first, Scalar{0}, Scalar{0});

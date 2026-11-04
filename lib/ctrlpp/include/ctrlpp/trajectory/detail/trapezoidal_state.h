@@ -20,10 +20,10 @@ struct trapezoidal_rescaled_state
         : v_v{}
         , a_a{}
         , a_d{}
-        , T_a{}
-        , T_v{}
-        , T_d{}
-        , T{}
+        , accel_duration{}
+        , cruise_duration{}
+        , decel_duration{}
+        , duration{}
         , triangular{}
     {
     }
@@ -31,10 +31,10 @@ struct trapezoidal_rescaled_state
     Scalar v_v;
     Scalar a_a;
     Scalar a_d;
-    Scalar T_a;
-    Scalar T_v;
-    Scalar T_d;
-    Scalar T;
+    Scalar accel_duration;
+    Scalar cruise_duration;
+    Scalar decel_duration;
+    Scalar duration;
     bool triangular;
 };
 
@@ -52,10 +52,10 @@ protected:
     Scalar m_a;
     Scalar m_a_a;
     Scalar m_a_d;
-    Scalar m_T_a;
-    Scalar m_T_v;
-    Scalar m_T_d;
-    Scalar m_T;
+    Scalar m_accel_duration;
+    Scalar m_cruise_duration;
+    Scalar m_decel_duration;
+    Scalar m_duration;
     bool m_triangular;
     trapezoidal_disposition<Scalar> m_disposition;
 
@@ -72,10 +72,10 @@ protected:
         , m_a{solve_trapezoidal_acceleration<Scalar>(cfg)}
         , m_a_a{}
         , m_a_d{}
-        , m_T_a{}
-        , m_T_v{}
-        , m_T_d{}
-        , m_T{}
+        , m_accel_duration{}
+        , m_cruise_duration{}
+        , m_decel_duration{}
+        , m_duration{}
         , m_triangular{}
         , m_disposition{}
     {
@@ -86,7 +86,7 @@ protected:
         auto const sv0 = m_sigma * cfg.v0;
         auto const sv1 = m_sigma * cfg.v1;
         set_phases(std::abs(h), sv0, sv1, cfg.v_max);
-        m_T = m_T_a + m_T_v + m_T_d;
+        m_duration = m_accel_duration + m_cruise_duration + m_decel_duration;
         m_v0 = sv0;
         m_v1 = sv1;
     }
@@ -101,9 +101,9 @@ protected:
         m_a_d = a;
         if(m_triangular)
         {
-            m_T_a = triangular_ramp_duration(abs_h, v_tri, sv0, sv1, a);
-            m_T_d = triangular_ramp_duration(abs_h, v_tri, sv1, sv0, a);
-            m_T_v = Scalar{0};
+            m_accel_duration = triangular_ramp_duration(abs_h, v_tri, sv0, sv1, a);
+            m_decel_duration = triangular_ramp_duration(abs_h, v_tri, sv1, sv0, a);
+            m_cruise_duration = Scalar{0};
             return;
         }
         set_cruise_phases(abs_h, sv0, sv1);
@@ -113,16 +113,18 @@ protected:
     // chosen, so the clamp below is a rounding guard and not a stand-in for a rejected command.
     void set_cruise_phases(Scalar abs_h, Scalar sv0, Scalar sv1)
     {
-        m_T_a = (m_v_v - sv0) / m_a_a;
-        m_T_d = (m_v_v - sv1) / m_a_d;
-        auto const d_a = sv0 * m_T_a + Scalar{0.5} * m_a_a * m_T_a * m_T_a;
-        auto const d_d = sv1 * m_T_d + Scalar{0.5} * m_a_d * m_T_d * m_T_d;
-        m_T_v = (abs_h - d_a - d_d) / m_v_v;
-        if(m_T_v < Scalar{0})
+        m_accel_duration = (m_v_v - sv0) / m_a_a;
+        m_decel_duration = (m_v_v - sv1) / m_a_d;
+        auto const d_a = sv0 * m_accel_duration + Scalar{0.5} * m_a_a * m_accel_duration * m_accel_duration;
+        auto const d_d = sv1 * m_decel_duration + Scalar{0.5} * m_a_d * m_decel_duration * m_decel_duration;
+        m_cruise_duration = (abs_h - d_a - d_d) / m_v_v;
+        if(m_cruise_duration < Scalar{0})
         {
-            m_T_v = Scalar{0};
+            m_cruise_duration = Scalar{0};
         }
     }
+
+    Scalar last_phase_acceleration() const { return (m_decel_duration > Scalar{0}) ? -m_a_d : (m_cruise_duration > Scalar{0} || !(m_accel_duration > Scalar{0})) ? Scalar{0} : m_a_a; }
 
     trapezoidal_rescaled_state<Scalar> current_state() const
     {
@@ -130,10 +132,10 @@ protected:
         current.v_v = m_v_v;
         current.a_a = m_a_a;
         current.a_d = m_a_d;
-        current.T_a = m_T_a;
-        current.T_v = m_T_v;
-        current.T_d = m_T_d;
-        current.T = m_T;
+        current.accel_duration = m_accel_duration;
+        current.cruise_duration = m_cruise_duration;
+        current.decel_duration = m_decel_duration;
+        current.duration = m_duration;
         current.triangular = m_triangular;
         return current;
     }
@@ -143,10 +145,10 @@ protected:
         m_v_v = s.v_v;
         m_a_a = s.a_a;
         m_a_d = s.a_d;
-        m_T_a = s.T_a;
-        m_T_v = s.T_v;
-        m_T_d = s.T_d;
-        m_T = s.T;
+        m_accel_duration = s.accel_duration;
+        m_cruise_duration = s.cruise_duration;
+        m_decel_duration = s.decel_duration;
+        m_duration = s.duration;
         m_triangular = s.triangular;
     }
 
@@ -167,10 +169,10 @@ protected:
         solved.v_v = v;
         solved.a_a = (v >= m_v0) ? a : -a;
         solved.a_d = (v >= m_v1) ? a : -a;
-        solved.T_a = T_a;
-        solved.T_v = T_v;
-        solved.T_d = T_d;
-        solved.T = T_a + T_v + T_d;
+        solved.accel_duration = T_a;
+        solved.cruise_duration = T_v;
+        solved.decel_duration = T_d;
+        solved.duration = T_a + T_v + T_d;
         solved.triangular = (T_v <= Scalar{0});
         return solved;
     }

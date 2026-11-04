@@ -31,18 +31,18 @@ protected:
             set_zero_bc_no_cruise(c, h, v_max, a_max, j_max, a_max_reached);
         }
 
-        this->m_T = this->m_T_a + this->m_T_v + this->m_T_d;
+        this->m_duration = this->m_accel_duration + this->m_cruise_duration + this->m_decel_duration;
     }
 
     void set_zero_bc_cruise(velocity_ramp<Scalar> const& ramp, Scalar c, Scalar v_max, bool a_max_reached)
     {
-        this->m_T_j1 = ramp.T_j;
-        this->m_T_j2 = ramp.T_j;
+        this->m_accel_jerk_duration = ramp.T_j;
+        this->m_decel_jerk_duration = ramp.T_j;
         this->m_a_lim_a = ramp.a_lim;
         this->m_a_lim_d = ramp.a_lim;
-        this->m_T_a = ramp.T;
-        this->m_T_d = ramp.T;
-        this->m_T_v = -c / v_max;
+        this->m_accel_duration = ramp.T;
+        this->m_decel_duration = ramp.T;
+        this->m_cruise_duration = -c / v_max;
         this->m_v_lim = v_max;
         this->m_degenerate = !a_max_reached;
     }
@@ -51,19 +51,19 @@ protected:
     void set_zero_bc_no_cruise(Scalar c, Scalar h, Scalar v_max, Scalar a_max, Scalar j_max, bool a_max_reached)
     {
         this->m_degenerate = true;
-        this->m_T_v = Scalar{0};
+        this->m_cruise_duration = Scalar{0};
 
         if(a_max_reached)
         {
             this->m_v_lim = no_cruise_peak(c, h, v_max, a_max, j_max);
-            this->m_T_j1 = a_max / j_max;
-            this->m_T_j2 = this->m_T_j1;
-            this->m_T_a = this->m_T_j1 + this->m_v_lim / a_max;
-            this->m_T_d = this->m_T_a;
+            this->m_accel_jerk_duration = a_max / j_max;
+            this->m_decel_jerk_duration = this->m_accel_jerk_duration;
+            this->m_accel_duration = this->m_accel_jerk_duration + this->m_v_lim / a_max;
+            this->m_decel_duration = this->m_accel_duration;
             this->m_a_lim_a = a_max;
             this->m_a_lim_d = a_max;
 
-            if(this->m_T_a < Scalar{2} * this->m_T_j1)
+            if(this->m_accel_duration < Scalar{2} * this->m_accel_jerk_duration)
             {
                 solve_doubly_degenerate(h, a_max, j_max);
             }
@@ -79,11 +79,11 @@ protected:
     {
         auto const T_j = doubly_degenerate_jerk_time(h, this->m_v_max, a_max, j_max);
 
-        this->m_T_j1 = T_j;
-        this->m_T_j2 = T_j;
-        this->m_T_a = Scalar{2} * T_j;
-        this->m_T_d = Scalar{2} * T_j;
-        this->m_T_v = Scalar{0};
+        this->m_accel_jerk_duration = T_j;
+        this->m_decel_jerk_duration = T_j;
+        this->m_accel_duration = Scalar{2} * T_j;
+        this->m_decel_duration = Scalar{2} * T_j;
+        this->m_cruise_duration = Scalar{0};
         this->m_a_lim_a = j_max * T_j;
         this->m_a_lim_d = this->m_a_lim_a;
         this->m_v_lim = this->m_a_lim_a * T_j;

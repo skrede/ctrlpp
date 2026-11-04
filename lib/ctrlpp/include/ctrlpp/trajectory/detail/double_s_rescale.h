@@ -29,7 +29,7 @@ protected:
     {
         // A synchronized set passes the slowest axis a bit-exact copy of its own duration, so equality is
         // tested first and that axis never reaches the shortening rejection.
-        if(T_new == this->m_T)
+        if(T_new == this->m_duration)
         {
             return self;
         }
@@ -37,18 +37,18 @@ protected:
         {
             return ctrlpp::unexpected(trajectory_error::non_positive_duration);
         }
-        if(T_new < this->m_T)
+        if(T_new < this->m_duration)
         {
             return ctrlpp::unexpected(trajectory_error::duration_shorter_than_current);
         }
-        if(!(this->m_T > Scalar{0}))
+        if(!(this->m_duration > Scalar{0}))
         {
             return ctrlpp::unexpected(trajectory_error::unreachable_duration);
         }
         auto const cfg = command<typename Profile::config>();
         if(this->m_v0 == Scalar{0} && this->m_v1 == Scalar{0})
         {
-            return rebuild_scaled<Profile>(cfg, this->m_T / T_new);
+            return rebuild_scaled<Profile>(cfg, this->m_duration / T_new);
         }
         return bisect_rescale<Profile>(cfg, T_new);
     }

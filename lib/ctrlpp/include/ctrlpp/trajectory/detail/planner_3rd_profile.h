@@ -174,7 +174,7 @@ protected:
         this->plan_rest_to_rest(q_after);
         substitution_outcome outcome;
         outcome.reason = reason;
-        outcome.brake_duration = stop_info.T_a;
+        outcome.brake_duration = stop_info.brake_duration;
         outcome.replan_start_position = q_after;
         return outcome;
     }

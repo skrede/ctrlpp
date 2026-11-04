@@ -32,8 +32,8 @@ protected:
     // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30g), p.85-86
     void evaluate_positive_frame(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
-        auto const t3 = this->m_T_a;
-        auto const t4 = this->m_T_a + this->m_T_v;
+        auto const t3 = this->m_accel_duration;
+        auto const t4 = this->m_accel_duration + this->m_cruise_duration;
 
         if(tc < t3)
         {
@@ -42,7 +42,7 @@ protected:
         else if(tc < t4)
         {
             auto const q_at_Ta = compute_q_at_Ta();
-            auto const t = tc - this->m_T_a;
+            auto const t = tc - this->m_accel_duration;
             q = q_at_Ta + this->m_v_lim * t;
             dq = this->m_v_lim;
             ddq = Scalar{0};
@@ -57,17 +57,17 @@ protected:
     void eval_accel_phase(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
         auto const j = this->m_j_max;
-        auto const dt = this->m_T_a - tc;
+        auto const dt = this->m_accel_duration - tc;
 
         // The stored switch times are rounded sums, so each jerk segment's formula is used only strictly
         // within that segment, timed from the end it is anchored at; between them the stored peak is held.
-        if(tc < this->m_T_j1)
+        if(tc < this->m_accel_jerk_duration)
         {
             q = this->m_pv0 * tc + j * tc * tc * tc / Scalar{6};
             dq = this->m_pv0 + j * tc * tc / Scalar{2};
             ddq = j * tc;
         }
-        else if(dt < this->m_T_j1)
+        else if(dt < this->m_accel_jerk_duration)
         {
             q = compute_q_at_Ta() - this->m_v_lim * dt + j * dt * dt * dt / Scalar{6};
             dq = this->m_v_lim - j * dt * dt / Scalar{2};
@@ -75,7 +75,7 @@ protected:
         }
         else
         {
-            eval_constant_accel(tc - this->m_T_j1, dt - this->m_T_j1, q, dq);
+            eval_constant_accel(tc - this->m_accel_jerk_duration, dt - this->m_accel_jerk_duration, q, dq);
             ddq = this->m_a_lim_a;
         }
     }
@@ -83,10 +83,11 @@ protected:
     void eval_constant_accel(Scalar t_from_start, Scalar t_to_end, Scalar& q, Scalar& dq) const
     {
         auto const j = this->m_j_max;
-        auto const q_start = this->m_pv0 * this->m_T_j1 + j * this->m_T_j1 * this->m_T_j1 * this->m_T_j1 / Scalar{6};
-        auto const v_start = this->m_pv0 + j * this->m_T_j1 * this->m_T_j1 / Scalar{2};
-        auto const q_end = compute_q_at_Ta() - this->m_v_lim * this->m_T_j1 + j * this->m_T_j1 * this->m_T_j1 * this->m_T_j1 / Scalar{6};
-        auto const v_end = this->m_v_lim - j * this->m_T_j1 * this->m_T_j1 / Scalar{2};
+        auto const q_start = this->m_pv0 * this->m_accel_jerk_duration + j * this->m_accel_jerk_duration * this->m_accel_jerk_duration * this->m_accel_jerk_duration / Scalar{6};
+        auto const v_start = this->m_pv0 + j * this->m_accel_jerk_duration * this->m_accel_jerk_duration / Scalar{2};
+        auto const q_end = compute_q_at_Ta() - this->m_v_lim * this->m_accel_jerk_duration +
+                j * this->m_accel_jerk_duration * this->m_accel_jerk_duration * this->m_accel_jerk_duration / Scalar{6};
+        auto const v_end = this->m_v_lim - j * this->m_accel_jerk_duration * this->m_accel_jerk_duration / Scalar{2};
         q = nearer_anchor_position(q_start, v_start, q_end, v_end, this->m_a_lim_a, t_from_start, t_to_end);
         dq = nearer_anchor_velocity(v_start, v_end, this->m_a_lim_a, t_from_start, t_to_end);
     }
@@ -95,16 +96,16 @@ protected:
     void eval_decel_phase(Scalar tc, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
         auto const j = this->m_j_max;
-        auto const dt_end = this->m_T - tc;
-        auto const t = tc - (this->m_T_a + this->m_T_v);
+        auto const dt_end = this->m_duration - tc;
+        auto const t = tc - (this->m_accel_duration + this->m_cruise_duration);
 
-        if(t < this->m_T_j2)
+        if(t < this->m_decel_jerk_duration)
         {
-            q = compute_q_at_Ta() + this->m_v_lim * this->m_T_v + this->m_v_lim * t - j * t * t * t / Scalar{6};
+            q = compute_q_at_Ta() + this->m_v_lim * this->m_cruise_duration + this->m_v_lim * t - j * t * t * t / Scalar{6};
             dq = this->m_v_lim - j * t * t / Scalar{2};
             ddq = -j * t;
         }
-        else if(dt_end < this->m_T_j2)
+        else if(dt_end < this->m_decel_jerk_duration)
         {
             q = std::abs(this->m_q1 - this->m_q0) - this->m_pv1 * dt_end - j * dt_end * dt_end * dt_end / Scalar{6};
             dq = this->m_pv1 + j * dt_end * dt_end / Scalar{2};
@@ -114,7 +115,7 @@ protected:
         {
             // Timed from the selection tests' own differences, so neither is negative; tc - t5 could be, since t5
             // is a separately rounded sum.
-            eval_constant_decel(t - this->m_T_j2, dt_end - this->m_T_j2, q, dq);
+            eval_constant_decel(t - this->m_decel_jerk_duration, dt_end - this->m_decel_jerk_duration, q, dq);
             ddq = -this->m_a_lim_d;
         }
     }
@@ -122,17 +123,19 @@ protected:
     void eval_constant_decel(Scalar t_from_start, Scalar t_to_end, Scalar& q, Scalar& dq) const
     {
         auto const j = this->m_j_max;
-        auto const q_start = compute_q_at_Ta() + this->m_v_lim * this->m_T_v + this->m_v_lim * this->m_T_j2 - j * this->m_T_j2 * this->m_T_j2 * this->m_T_j2 / Scalar{6};
-        auto const v_start = this->m_v_lim - j * this->m_T_j2 * this->m_T_j2 / Scalar{2};
-        auto const q_end = std::abs(this->m_q1 - this->m_q0) - this->m_pv1 * this->m_T_j2 - j * this->m_T_j2 * this->m_T_j2 * this->m_T_j2 / Scalar{6};
-        auto const v_end = this->m_pv1 + j * this->m_T_j2 * this->m_T_j2 / Scalar{2};
+        auto const q_start = compute_q_at_Ta() + this->m_v_lim * this->m_cruise_duration + this->m_v_lim * this->m_decel_jerk_duration -
+                j * this->m_decel_jerk_duration * this->m_decel_jerk_duration * this->m_decel_jerk_duration / Scalar{6};
+        auto const v_start = this->m_v_lim - j * this->m_decel_jerk_duration * this->m_decel_jerk_duration / Scalar{2};
+        auto const q_end = std::abs(this->m_q1 - this->m_q0) - this->m_pv1 * this->m_decel_jerk_duration -
+                j * this->m_decel_jerk_duration * this->m_decel_jerk_duration * this->m_decel_jerk_duration / Scalar{6};
+        auto const v_end = this->m_pv1 + j * this->m_decel_jerk_duration * this->m_decel_jerk_duration / Scalar{2};
         q = nearer_anchor_position(q_start, v_start, q_end, v_end, -this->m_a_lim_d, t_from_start, t_to_end);
         dq = nearer_anchor_velocity(v_start, v_end, -this->m_a_lim_d, t_from_start, t_to_end);
     }
 
     // The acceleration profile is symmetric about the ramp's midpoint, so the velocity ramp is point-symmetric
     // and the trapezoidal area is exact for any initial velocity.
-    Scalar compute_q_at_Ta() const { return (this->m_pv0 + this->m_v_lim) * this->m_T_a / Scalar{2}; }
+    Scalar compute_q_at_Ta() const { return (this->m_pv0 + this->m_v_lim) * this->m_accel_duration / Scalar{2}; }
 };
 
 }

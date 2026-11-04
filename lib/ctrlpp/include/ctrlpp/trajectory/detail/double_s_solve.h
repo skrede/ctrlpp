@@ -83,10 +83,10 @@ protected:
             return false;
         }
         this->set_ramps(accel, decel);
-        this->m_T_v = T_v;
+        this->m_cruise_duration = T_v;
         this->m_v_lim = v_max;
         this->m_degenerate = (accel.a_lim < a_max) || (decel.a_lim < a_max);
-        this->m_T = this->m_T_a + this->m_T_v + this->m_T_d;
+        this->m_duration = this->m_accel_duration + this->m_cruise_duration + this->m_decel_duration;
         return true;
     }
 
@@ -128,10 +128,10 @@ protected:
         auto const& decel = (this->m_pv0 >= this->m_pv1) ? far_ramp : near_ramp;
 
         this->set_ramps(accel, decel);
-        this->m_T_v = Scalar{0};
+        this->m_cruise_duration = Scalar{0};
         this->m_v_lim = v_peak;
         this->m_degenerate = true;
-        this->m_T = this->m_T_a + this->m_T_v + this->m_T_d;
+        this->m_duration = this->m_accel_duration + this->m_cruise_duration + this->m_decel_duration;
     }
 
     // Bisection on the rise of the cruise-free profile that sweeps exactly h, where the two ramps carry

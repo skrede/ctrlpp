@@ -67,12 +67,12 @@ public:
     // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30g), p.85-86
     trajectory_point<Scalar, 1> evaluate(Scalar t) const
     {
-        if(this->m_T <= Scalar{0})
+        if(this->m_duration <= Scalar{0})
         {
             return this->make_point(this->m_q0, Scalar{0}, Scalar{0});
         }
-        auto const tc = std::clamp(t, Scalar{0}, this->m_T);
-        if(tc >= this->m_T)
+        auto const tc = std::clamp(t, Scalar{0}, this->m_duration);
+        if(tc >= this->m_duration)
         {
             return this->make_point(this->m_q1, this->m_v1, Scalar{0});
         }
@@ -94,13 +94,13 @@ public:
     // @cite biagiotti2009 -- Sec. 3.4, eq. (3.30a)-(3.30g), p.85-86
     void evaluate(Scalar t, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
-        if(this->m_T <= Scalar{0})
+        if(this->m_duration <= Scalar{0})
         {
             this->store_point(q, dq, ddq, this->m_q0, Scalar{0}, Scalar{0});
             return;
         }
-        auto const tc = std::clamp(t, Scalar{0}, this->m_T);
-        if(tc >= this->m_T)
+        auto const tc = std::clamp(t, Scalar{0}, this->m_duration);
+        if(tc >= this->m_duration)
         {
             this->store_point(q, dq, ddq, this->m_q1, this->m_v1, Scalar{0});
             return;
@@ -116,7 +116,7 @@ public:
         this->store_point(q, dq, ddq, this->m_q0 + this->m_sigma * (pq - Scalar{0}), this->m_sigma * pdq, this->m_sigma * pddq);
     }
 
-    Scalar duration() const { return this->m_T; }
+    Scalar duration() const { return this->m_duration; }
 
     bool is_degenerate() const { return this->m_degenerate; }
 
@@ -150,9 +150,9 @@ public:
     // triangular boundary; a negative ramp duration is rejected by `create`, not hidden here.
     std::array<Scalar, 7> phase_durations() const
     {
-        auto const const_accel = std::max(this->m_T_a - Scalar{2} * this->m_T_j1, Scalar{0});
-        auto const const_decel = std::max(this->m_T_d - Scalar{2} * this->m_T_j2, Scalar{0});
-        return {this->m_T_j1, const_accel, this->m_T_j1, this->m_T_v, this->m_T_j2, const_decel, this->m_T_j2};
+        auto const const_accel = std::max(this->m_accel_duration - Scalar{2} * this->m_accel_jerk_duration, Scalar{0});
+        auto const const_decel = std::max(this->m_decel_duration - Scalar{2} * this->m_decel_jerk_duration, Scalar{0});
+        return {this->m_accel_jerk_duration, const_accel, this->m_accel_jerk_duration, this->m_cruise_duration, this->m_decel_jerk_duration, const_decel, this->m_decel_jerk_duration};
     }
 
 private:
@@ -165,7 +165,8 @@ private:
     // each constant-acceleration remainder at zero, and a negative ramp duration would vanish into the floor.
     static ctrlpp::expected<double_s_trajectory, trajectory_error> checked(double_s_trajectory const& profile, config const& cfg)
     {
-        for(auto const stored : std::array<Scalar, 6>{profile.m_T_j1, profile.m_T_a, profile.m_T_v, profile.m_T_d, profile.m_T_j2, profile.m_T})
+        for(auto const stored : std::array<Scalar, 6>{
+                    profile.m_accel_jerk_duration, profile.m_accel_duration, profile.m_cruise_duration, profile.m_decel_duration, profile.m_decel_jerk_duration, profile.m_duration})
         {
             if(stored < Scalar{0})
             {
@@ -182,7 +183,7 @@ private:
         }
         // A nonzero displacement takes nonzero time at finite limits, so a total that underflowed to zero
         // describes no commanded motion. The predicate carries no threshold.
-        if(cfg.q1 - cfg.q0 != Scalar{0} && !(profile.m_T > Scalar{0}))
+        if(cfg.q1 - cfg.q0 != Scalar{0} && !(profile.m_duration > Scalar{0}))
         {
             return ctrlpp::unexpected(trajectory_error::unrepresentable_duration);
         }
