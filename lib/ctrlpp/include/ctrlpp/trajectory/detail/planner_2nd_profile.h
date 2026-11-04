@@ -76,7 +76,6 @@ protected:
         this->m_needs_brake = true;
         this->m_brake_duration = brake_duration;
         this->m_q_after_brake = this->m_q_ref + v0 * this->m_brake_duration / Scalar{2};
-        this->m_v_after_brake = Scalar{0};
         compute_rest_to_rest(this->m_q_after_brake, this->m_target);
         this->record(online_planner_disposition::braked_and_replanned, online_planner_substitution_reason::reversal_or_overshoot, this->m_duration, this->m_brake_duration,
                 this->m_q_after_brake);

@@ -33,11 +33,9 @@ protected:
     Scalar m_cruise_duration;
     Scalar m_decel_duration;
     Scalar m_duration;
-    Scalar m_q_stop;
     bool m_needs_brake;
     Scalar m_brake_duration;
     Scalar m_q_after_brake;
-    Scalar m_v_after_brake;
 
     template <typename Config>
     explicit planner_2nd_state(Config const& cfg)
@@ -62,11 +60,9 @@ protected:
         , m_cruise_duration{}
         , m_decel_duration{}
         , m_duration{}
-        , m_q_stop{}
         , m_needs_brake{false}
         , m_brake_duration{}
         , m_q_after_brake{}
-        , m_v_after_brake{}
     {
     }
 
