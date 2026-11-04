@@ -4,7 +4,7 @@ Trapezoidal velocity profile (LSPB) with three phases: acceleration, cruise, dec
 
 | Property | Value |
 |----------|-------|
-| **Header** | `ctrlpp/trajectory/trapezoidal_trajectory.h` (also declares `acceleration_limit_policy` and `trapezoidal_disposition`) |
+| **Header** | `ctrlpp/trajectory/trapezoidal_trajectory.h` (includes `ctrlpp/trajectory/trapezoidal_types.h`, which declares `acceleration_limit_policy` and `trapezoidal_disposition`) |
 
 ## Template Parameters
 
@@ -63,10 +63,14 @@ With `.acceleration_policy = ctrlpp::acceleration_limit_policy::raise_to_feasibl
 template <typename Scalar>
 struct trapezoidal_disposition
 {
-    Scalar commanded_acceleration{};  // the a_max passed to create
-    Scalar realized_acceleration{};   // the magnitude every ramp actually uses
+    trapezoidal_disposition();        // both fields zero
+
+    Scalar commanded_acceleration;    // the a_max passed to create
+    Scalar realized_acceleration;     // the magnitude every ramp actually uses
 };
 ```
+
+A default-constructed disposition holds zero in both fields; `create` fills both in.
 
 ```cpp
 auto cfg = ctrlpp::trapezoidal_trajectory<double>::config{
