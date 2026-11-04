@@ -11,6 +11,7 @@
 
 #include "ctrlpp/expected.h"
 
+#include <span>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -19,12 +20,11 @@
 namespace ctrlpp::detail
 {
 
-// The three solves share one parameter list, unused entries included: with them GCC inlines all three into the constructor,
-// and without them it keeps the larger two out of line, which deepens construction's stack.
+// The solves write through a span, not a vector reference: GCC clones them without the unused extent and inlines the clones
+// into the constructor, while with a vector reference it keeps the periodic solve out of line at -O3, deepening construction's stack.
 // The natural end rows follow from M_0 = 0 and M_n = 0.
 template <typename Scalar>
-inline ctrlpp::expected<void, spline_error> solve_natural(
-        std::vector<Scalar> const& h, std::vector<Scalar> const& delta, std::vector<Scalar> const& /*pos*/, std::vector<Scalar>& vel, std::size_t n_pts, std::size_t n)
+inline ctrlpp::expected<void, spline_error> solve_natural(std::vector<Scalar> const& h, std::vector<Scalar> const& delta, std::span<Scalar> vel, std::size_t n_pts, std::size_t n)
 {
     std::vector<Scalar> a(n_pts, Scalar{0});
     std::vector<Scalar> b(n_pts, Scalar{0});
@@ -74,8 +74,7 @@ inline void set_clamped_row(std::vector<Scalar>& a, std::vector<Scalar>& b, std:
 
 // @cite biagiotti2009 -- Sec. 4.4.1
 template <typename Scalar>
-inline ctrlpp::expected<void, spline_error> solve_clamped(std::vector<Scalar> const& h, std::vector<Scalar> const& delta, std::vector<Scalar> const& /*pos*/, std::vector<Scalar>& vel,
-        std::size_t /*n_pts*/, std::size_t n, Scalar v0, Scalar vn)
+inline ctrlpp::expected<void, spline_error> solve_clamped(std::vector<Scalar> const& h, std::vector<Scalar> const& delta, std::span<Scalar> vel, std::size_t n, Scalar v0, Scalar vn)
 {
     vel[0] = v0;
     vel[n] = vn;
@@ -102,8 +101,7 @@ inline ctrlpp::expected<void, spline_error> solve_clamped(std::vector<Scalar> co
 
 // @cite biagiotti2009 -- Sec. 4.4.2
 template <typename Scalar>
-inline ctrlpp::expected<void, spline_error> solve_periodic(
-        std::vector<Scalar> const& h, std::vector<Scalar> const& delta, std::vector<Scalar> const& /*pos*/, std::vector<Scalar>& vel, std::size_t /*n_pts*/, std::size_t n)
+inline ctrlpp::expected<void, spline_error> solve_periodic(std::vector<Scalar> const& h, std::vector<Scalar> const& delta, std::span<Scalar> vel, std::size_t n)
 {
     std::vector<Scalar> a(n, Scalar{0});
     std::vector<Scalar> b(n, Scalar{0});

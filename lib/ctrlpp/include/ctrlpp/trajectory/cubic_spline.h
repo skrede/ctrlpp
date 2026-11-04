@@ -113,9 +113,9 @@ private:
             delta[i] = (cfg.positions[i + 1] - cfg.positions[i]) / h[i];
         }
         std::vector<Scalar> vel(n_pts);
-        auto const solved = (cfg.bc == boundary_condition::natural) ? detail::solve_natural(h, delta, cfg.positions, vel, n_pts, n)
-                : (cfg.bc == boundary_condition::clamped)           ? detail::solve_clamped(h, delta, cfg.positions, vel, n_pts, n, cfg.v0, cfg.vn)
-                                                                    : detail::solve_periodic(h, delta, cfg.positions, vel, n_pts, n);
+        auto const solved = (cfg.bc == boundary_condition::natural) ? detail::solve_natural<Scalar>(h, delta, vel, n_pts, n)
+                : (cfg.bc == boundary_condition::clamped)           ? detail::solve_clamped<Scalar>(h, delta, vel, n, cfg.v0, cfg.vn)
+                                                                    : detail::solve_periodic<Scalar>(h, delta, vel, n);
         if(!solved)
         {
             m_system_solved = false;
