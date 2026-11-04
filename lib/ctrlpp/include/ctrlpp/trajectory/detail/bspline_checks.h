@@ -14,23 +14,26 @@ namespace ctrlpp::detail
 {
 
 template <typename Scalar>
-auto all_finite(std::vector<Scalar> const& values) -> bool
+bool all_finite(std::vector<Scalar> const& values)
 {
     return std::all_of(values.begin(), values.end(), [](Scalar value) { return std::isfinite(value); });
 }
 
 template <typename Scalar>
-auto check_interpolation_input(std::vector<Scalar> const& times, std::vector<Scalar> const& positions)
-    -> ctrlpp::expected<void, spline_error>
+ctrlpp::expected<void, spline_error> check_interpolation_input(std::vector<Scalar> const& times, std::vector<Scalar> const& positions)
 {
-    if (!all_finite(times) || !all_finite(positions)) {
+    if(!all_finite(times) || !all_finite(positions))
+    {
         return ctrlpp::unexpected(spline_error::non_finite_input);
     }
-    for (std::size_t i = 0; i + 1 < times.size(); ++i) {
-        if (!(times[i + 1] > times[i])) {
+    for(std::size_t i = 0; i + 1 < times.size(); ++i)
+    {
+        if(!(times[i + 1] > times[i]))
+        {
             return ctrlpp::unexpected(spline_error::non_increasing_times);
         }
-        if (!std::isfinite(times[i + 1] - times[i])) {
+        if(!std::isfinite(times[i + 1] - times[i]))
+        {
             return ctrlpp::unexpected(spline_error::unrepresentable_spline);
         }
     }
@@ -38,22 +41,26 @@ auto check_interpolation_input(std::vector<Scalar> const& times, std::vector<Sca
 }
 
 template <int Degree, typename Scalar>
-auto check_knots(std::size_t control_point_count, std::vector<Scalar> const& knot_vector)
-    -> ctrlpp::expected<void, spline_error>
+ctrlpp::expected<void, spline_error> check_knots(std::size_t control_point_count, std::vector<Scalar> const& knot_vector)
 {
-    if (knot_vector.empty()) {
+    if(knot_vector.empty())
+    {
         return {};
     }
-    if (knot_vector.size() != control_point_count + static_cast<std::size_t>(Degree) + 1) {
+    if(knot_vector.size() != control_point_count + static_cast<std::size_t>(Degree) + 1)
+    {
         return ctrlpp::unexpected(spline_error::bad_knot_count);
     }
-    if (!std::is_sorted(knot_vector.begin(), knot_vector.end())) {
+    if(!std::is_sorted(knot_vector.begin(), knot_vector.end()))
+    {
         return ctrlpp::unexpected(spline_error::non_monotonic_knots);
     }
-    if (!std::isfinite(knot_vector.back() - knot_vector.front())) {
+    if(!std::isfinite(knot_vector.back() - knot_vector.front()))
+    {
         return ctrlpp::unexpected(spline_error::unrepresentable_spline);
     }
-    if (!(knot_vector[static_cast<std::size_t>(Degree)] < knot_vector[control_point_count])) {
+    if(!(knot_vector[static_cast<std::size_t>(Degree)] < knot_vector[control_point_count]))
+    {
         return ctrlpp::unexpected(spline_error::non_increasing_times);
     }
     return {};

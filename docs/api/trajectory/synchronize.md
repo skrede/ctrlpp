@@ -34,8 +34,7 @@ The following trajectory types satisfy `syncable_profile`:
 
 ```cpp
 template <syncable_profile... Profiles>
-auto synchronize(Profiles&... profiles)
-    -> ctrlpp::expected<void, trajectory_error>;
+ctrlpp::expected<void, trajectory_error> synchronize(Profiles&... profiles);
 ```
 
 Synchronize a heterogeneous set of axis profiles. Finds the maximum duration across all profiles and retimes each to it.
@@ -44,8 +43,7 @@ Synchronize a heterogeneous set of axis profiles. Finds the maximum duration acr
 
 ```cpp
 template <syncable_profile Profile>
-auto synchronize(std::span<Profile> profiles)
-    -> ctrlpp::expected<void, trajectory_error>;
+ctrlpp::expected<void, trajectory_error> synchronize(std::span<Profile> profiles);
 ```
 
 Runtime-sized variant for a contiguous run of identical profile types. The view carries no ownership, so the same call serves a `std::vector`, a plain array, or a statically allocated buffer, and nothing on this path allocates. Construct the view at the call site:

@@ -29,8 +29,7 @@ If `knot_vector` is left empty, a uniform clamped knot vector is generated autom
 ## Factory
 
 ```cpp
-static auto create(config const& cfg)
-    -> ctrlpp::expected<bspline_trajectory, spline_error>;
+static ctrlpp::expected<bspline_trajectory, spline_error> create(config const& cfg);
 ```
 
 `create` is the only construction path. There is no non-fallible constructor: a rejected configuration is a value the caller has to inspect, never an object that quietly stands in for one. It validates the configuration and constructs a B-spline trajectory from control points and an optional knot vector. Requires at least `Degree + 1` control points. An empty knot vector skips the knot checks; a uniform clamped knot vector is generated instead, which is valid by construction.
@@ -54,7 +53,7 @@ The last check reads the derivative control points that `evaluate` uses for velo
 ### evaluate
 
 ```cpp
-auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>;
+trajectory_point<Scalar, 1> evaluate(Scalar t) const;
 ```
 
 Evaluate position, velocity, and acceleration at parameter `t` using de Boor's algorithm. The parameter is clamped to the active range [U[p], U[n+1]]. Velocity and acceleration are computed from derivative control points. Repeated knots are handled by the 0/0 := 0 convention of the B-spline recurrences, and any strictly positive knot span is evaluated as given, however short.
@@ -62,7 +61,7 @@ Evaluate position, velocity, and acceleration at parameter `t` using de Boor's a
 ### duration
 
 ```cpp
-auto duration() const -> Scalar;
+Scalar duration() const;
 ```
 
 Returns the active parameter range: U[n+1] - U[p].
@@ -73,10 +72,9 @@ Returns the active parameter range: U[n+1] - U[p].
 
 ```cpp
 template <typename Scalar, int Degree>
-auto make_bspline_interpolation(
+ctrlpp::expected<bspline_trajectory<Scalar, Degree>, spline_error> make_bspline_interpolation(
     std::vector<Scalar> const& times,
-    std::vector<Scalar> const& positions)
-    -> ctrlpp::expected<bspline_trajectory<Scalar, Degree>, spline_error>;
+    std::vector<Scalar> const& positions);
 ```
 
 Constructs a B-spline that passes through all waypoints at the given parameter values. Generates a clamped knot vector using de Boor's averaging method and solves the interpolation matrix N * P = Q for control points.
@@ -102,7 +100,7 @@ Any downstream `bspline_trajectory::create` failure is propagated.
 
 ```cpp
 template <typename Scalar>
-auto basis_function(int i, int p, Scalar t, std::vector<Scalar> const& U) -> Scalar;
+Scalar basis_function(std::int32_t i, std::int32_t p, Scalar t, std::vector<Scalar> const& U);
 ```
 
 Evaluate the B-spline basis function B_{i,p}(t) using Cox-de Boor recursion. Primarily used internally by the interpolation factory.

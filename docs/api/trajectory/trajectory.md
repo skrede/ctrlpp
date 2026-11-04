@@ -36,11 +36,11 @@ where `h = q1 - q0`, `T = duration`, and `tau = clamp(t, 0, T) / T`.
 
 ```cpp
 template <typename Law, typename Scalar, int Rows>
-auto make_trajectory(
+ctrlpp::expected<trajectory<Law, Scalar, ND>, trajectory_error> make_trajectory(
     Law law,
     Eigen::Matrix<Scalar, Rows, 1> const& q0,
     Eigen::Matrix<Scalar, Rows, 1> const& q1,
-    Scalar duration) -> ctrlpp::expected<trajectory<Law, Scalar, ND>, trajectory_error>;
+    Scalar duration);
 ```
 
 Computes displacement `h = q1 - q0` internally.

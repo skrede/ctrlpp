@@ -1,14 +1,8 @@
 #ifndef HPP_GUARD_CTRLPP_TRAJECTORY_DETAIL_PIECEWISE_DISPATCH_H
 #define HPP_GUARD_CTRLPP_TRAJECTORY_DETAIL_PIECEWISE_DISPATCH_H
 
-/// @brief Shared dispatch logic for piecewise path and trajectory compositions.
-///
-/// Provides a CRTP base template containing breakpoint computation, time dispatch,
-/// and segment evaluation. Both piecewise_path and piecewise_trajectory inherit
-/// from this base, differing only in their point type and concept constraints.
-///
-/// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-/// Machines and Robots", 2009, Ch. 4 (composite trajectories)
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
+// Machines and Robots", 2009, Ch. 4 (composite trajectories)
 
 #include <array>
 #include <tuple>
@@ -19,67 +13,67 @@
 namespace ctrlpp::detail
 {
 
-/// @brief CRTP base for piecewise compositions with shared dispatch logic.
-///
-/// Derived must provide a type alias `point_type` for the return type of evaluate().
 template <typename Derived, typename Scalar, typename PointType, typename... Segments>
 class piecewise_base
 {
 public:
     explicit piecewise_base(Segments... segs)
-        : segments_{std::move(segs)...}
+        : m_segments{std::move(segs)...}
+        , m_breakpoints{}
+        , m_total_duration{}
     {
         compute_breakpoints(std::index_sequence_for<Segments...>{});
     }
 
-    auto evaluate(Scalar t) const -> PointType
+    PointType evaluate(Scalar t) const
     {
-        auto const tc = std::clamp(t, Scalar{0}, total_dur_);
+        auto const tc = std::clamp(t, Scalar{0}, m_total_duration);
         return dispatch(tc, std::index_sequence_for<Segments...>{});
     }
 
-    auto duration() const -> Scalar { return total_dur_; }
+    Scalar duration() const { return m_total_duration; }
 
     static constexpr std::size_t segment_count = sizeof...(Segments);
 
 protected:
-    std::tuple<Segments...> segments_;
-    std::array<Scalar, sizeof...(Segments)> breakpoints_{};
-    Scalar total_dur_{};
+    std::tuple<Segments...> m_segments;
+    std::array<Scalar, sizeof...(Segments)> m_breakpoints;
+    Scalar m_total_duration;
 
 private:
     template <std::size_t... Is>
     void compute_breakpoints(std::index_sequence<Is...>)
     {
         Scalar cumulative{0};
-        ((breakpoints_[Is] = (cumulative += std::get<Is>(segments_).duration())), ...);
-        total_dur_ = cumulative;
+        ((m_breakpoints[Is] = (cumulative += std::get<Is>(m_segments).duration())), ...);
+        m_total_duration = cumulative;
     }
 
     template <std::size_t I>
-    auto evaluate_segment(Scalar t) const -> PointType
+    PointType evaluate_segment(Scalar t) const
     {
-        Scalar local_t = (I == 0) ? t : t - breakpoints_[I - 1];
-        return std::get<I>(segments_).evaluate(local_t);
+        Scalar local_t = (I == 0) ? t : t - m_breakpoints[I - 1];
+        return std::get<I>(m_segments).evaluate(local_t);
     }
 
-    auto evaluate_last() const -> PointType
+    PointType evaluate_last() const
     {
         constexpr auto last = sizeof...(Segments) - 1;
-        return std::get<last>(segments_).evaluate(std::get<last>(segments_).duration());
+        return std::get<last>(m_segments).evaluate(std::get<last>(m_segments).duration());
     }
 
     template <std::size_t... Is>
-    auto dispatch(Scalar t, std::index_sequence<Is...>) const -> PointType
+    PointType dispatch(Scalar t, std::index_sequence<Is...>) const
     {
         PointType result{};
         bool found = false;
         auto try_seg = [&]<std::size_t I>(std::integral_constant<std::size_t, I>)
         {
-            if (found) return;
-            if constexpr (I < sizeof...(Segments) - 1)
+            if(found)
+                return;
+            if constexpr(I < sizeof...(Segments) - 1)
             {
-                if (t < breakpoints_[I])
+                if(t < m_breakpoints[I])
                 {
                     result = evaluate_segment<I>(t);
                     found = true;
@@ -92,10 +86,8 @@ private:
             }
         };
         (try_seg(std::integral_constant<std::size_t, Is>{}), ...);
-        if (!found)
-        {
+        if(!found)
             result = evaluate_last();
-        }
         return result;
     }
 };
