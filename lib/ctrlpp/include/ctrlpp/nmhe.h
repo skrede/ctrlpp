@@ -1,23 +1,9 @@
 #ifndef HPP_GUARD_CTRLPP_NMHE_H
 #define HPP_GUARD_CTRLPP_NMHE_H
 
-/// @file nmhe.h
-/// @brief Nonlinear Moving Horizon Estimator with NLP solver injection.
-///
-/// Implements constrained nonlinear state estimation over a sliding window
-/// using multiple shooting NLP optimization. Reuses the nlp_solver concept
-/// for solver injection and satisfies CovarianceObserver for drop-in
-/// replacement of EKF or UKF.
-///
-/// References:
-///   - M. Diehl, H.J. Ferreau, N. Haverbeke, "Efficient Numerical Methods
-///     for Nonlinear MPC and Moving Horizon Estimation," in Nonlinear Model
-///     Predictive Control, Springer, 2009.
-///   - V.M. Zavala, L.T. Biegler, "The advanced-step NMPC controller:
-///     Optimality, stability and robustness," Automatica, 45(1), 2009.
-///   - C.V. Rao, J.B. Rawlings, D.Q. Mayne, "Constrained state estimation
-///     for nonlinear discrete-time systems: stability and moving horizon
-///     approximations," IEEE Trans. Automat. Control, 48(2), 2003.
+// @cite diehl2009 -- Diehl, Ferreau & Haverbeke, "Efficient Numerical Methods for Nonlinear MPC and Moving Horizon Estimation", 2009
+// V. M. Zavala, L. T. Biegler, "The advanced-step NMPC controller: Optimality, stability and robustness", Automatica 45(1), 2009.
+// @cite rao2003 -- Rao, Rawlings & Mayne, "Constrained State Estimation for Nonlinear Discrete-Time Systems", 2003
 
 #include "ctrlpp/types.h"
 #include "ctrlpp/expected.h"
@@ -32,14 +18,12 @@
 #include "ctrlpp/mhe/mhe_diagnostics.h"
 #include "ctrlpp/mhe/mhe_nlp_formulation.h"
 
+#include "ctrlpp/mhe/detail/nmhe_solve.h"
+
 #include "ctrlpp/model/dynamics_model.h"
 #include "ctrlpp/model/measurement_model.h"
 
-#include <Eigen/Dense>
-
 #include <span>
-#include <array>
-#include <memory>
 #include <cstddef>
 #include <utility>
 #include <algorithm>
@@ -49,14 +33,18 @@ namespace ctrlpp
 
 template <typename Scalar, std::size_t NX, std::size_t NU, std::size_t NY, std::size_t N, nlp_solver Solver, typename Dynamics, typename Measurement, std::size_t NC = 0>
     requires dynamics_model<Dynamics, Scalar, NX, NU> && measurement_model<Measurement, Scalar, NX, NY>
-class nmhe
+class nmhe : private detail::nmhe_solve<Scalar, NX, NU, NY, N, NC, Solver, Dynamics, Measurement>
 {
-    static_assert(N > 0, "Window length N must be positive: it sizes the fixed estimation window arrays, which the update rotates and reads the trailing element of, neither of which is defined for an empty window");
+    static_assert(N > 0,
+            "Window length N must be positive: it sizes the fixed estimation window arrays, which the update rotates and reads the trailing element of, neither of which is defined for "
+            "an empty window");
 
-    static constexpr int nx = static_cast<int>(NX);
-    static constexpr int ny = static_cast<int>(NY);
-    static constexpr int nc = static_cast<int>(NC);
-    static constexpr int Ni = static_cast<int>(N);
+    using base = detail::nmhe_solve<Scalar, NX, NU, NY, N, NC, Solver, Dynamics, Measurement>;
+
+    // Selects the non-validating constructor reserved for create, so the factory's validation cannot be bypassed.
+    struct validated_tag
+    {
+    };
 
 public:
     using observer_tag = struct nmhe_tag;
@@ -65,392 +53,100 @@ public:
     using output_vector_t = Vector<Scalar, NY>;
     using cov_matrix_t = Matrix<Scalar, NX, NX>;
 
-    /// @brief Fallible factory, and the only way to originate an estimator.
-    ///
-    /// The error is a variant: embedded-filter configuration failures retain
-    /// their `filter_error` type, while formulation-specific failures use
-    /// `moving_horizon_configuration_error`. The latter rejects singular Q, R,
-    /// or P0 before solving for inverse weights, and validates every constraint,
-    /// penalty, path operand, and finite-difference step consumed by the NLP.
-    static auto create(Dynamics dynamics, Measurement measurement,
-                       const nmhe_config<Scalar, NX, NU, NY, N, NC>& config)
-        -> ctrlpp::expected<nmhe, moving_horizon_construction_error>
+    static ctrlpp::expected<nmhe, moving_horizon_construction_error> create(Dynamics dynamics, Measurement measurement, const nmhe_config<Scalar, NX, NU, NY, N, NC>& config)
     {
         auto filter = ekf<Scalar, NX, NU, NY, Dynamics, Measurement>::create(
-            dynamics, measurement, ekf_config<Scalar, NX, NU, NY>{.Q = config.Q, .R = config.R, .x0 = config.x0, .P0 = config.P0, .numerical_eps = config.numerical_eps});
+                dynamics, measurement, ekf_config<Scalar, NX, NU, NY>{.Q = config.Q, .R = config.R, .x0 = config.x0, .P0 = config.P0, .numerical_eps = config.numerical_eps});
         if(!filter)
-            return ctrlpp::unexpected(
-                moving_horizon_construction_error{filter.error()});
+            return ctrlpp::unexpected(moving_horizon_construction_error{filter.error()});
 
-        auto q_inv = detail::finite_full_piv_inverse(
-            config.Q,
-            moving_horizon_configuration_error::
-                non_invertible_process_noise);
+        auto q_inv = detail::finite_full_piv_inverse(config.Q, moving_horizon_configuration_error::non_invertible_process_noise);
         if(!q_inv)
-            return ctrlpp::unexpected(
-                moving_horizon_construction_error{q_inv.error()});
-        auto r_inv = detail::finite_full_piv_inverse(
-            config.R,
-            moving_horizon_configuration_error::
-                non_invertible_measurement_noise);
+            return ctrlpp::unexpected(moving_horizon_construction_error{q_inv.error()});
+        auto r_inv = detail::finite_full_piv_inverse(config.R, moving_horizon_configuration_error::non_invertible_measurement_noise);
         if(!r_inv)
-            return ctrlpp::unexpected(
-                moving_horizon_construction_error{r_inv.error()});
-        auto p0_inv = detail::finite_full_piv_inverse(
-            config.P0,
-            moving_horizon_configuration_error::
-                non_invertible_initial_covariance);
+            return ctrlpp::unexpected(moving_horizon_construction_error{r_inv.error()});
+        auto p0_inv = detail::finite_full_piv_inverse(config.P0, moving_horizon_configuration_error::non_invertible_initial_covariance);
         if(!p0_inv)
-            return ctrlpp::unexpected(
-                moving_horizon_construction_error{p0_inv.error()});
+            return ctrlpp::unexpected(moving_horizon_construction_error{p0_inv.error()});
         auto options = detail::validate_moving_horizon_options(config);
         if(!options)
-            return ctrlpp::unexpected(
-                moving_horizon_construction_error{options.error()});
+            return ctrlpp::unexpected(moving_horizon_construction_error{options.error()});
+        auto path = validate_path_constraint(config);
+        if(!path)
+            return ctrlpp::unexpected(moving_horizon_construction_error{path.error()});
 
+        return nmhe{validated_tag{}, std::move(dynamics), std::move(measurement), std::move(*filter), config, std::move(*q_inv), std::move(*r_inv), std::move(*p0_inv)};
+    }
+
+    void predict(const input_vector_t& u)
+    {
+        this->m_ekf.predict(u);
+        std::rotate(this->m_u_window.begin(), this->m_u_window.begin() + 1, this->m_u_window.end());
+        this->m_u_window.back() = u;
+        this->m_state->u_window = this->m_u_window;
+        ++this->m_step_count;
+    }
+
+    // The prior is captured before the correction: shifted into the window, the oldest entry is then the estimate at the
+    // window head from data strictly before the window, the arrival prior that does not double-count.
+    ctrlpp::expected<void, ekf_update_error> update(const output_vector_t& z)
+    {
+        const state_vector_t prior_state = this->m_ekf.state();
+        const cov_matrix_t prior_cov = this->m_ekf.covariance();
+
+        if(const auto stepped = this->m_ekf.update(z); !stepped)
+        {
+            this->invalidate_window_after_refusal();
+            return ctrlpp::unexpected(stepped.error());
+        }
+
+        this->shift_priors(prior_state, prior_cov);
+        this->shift_measurements(z);
+        if(this->m_update_count <= N)
+        {
+            if(this->m_step_count < N)
+                this->m_x_window[this->m_step_count] = this->m_ekf.state();
+            this->m_x_window[N] = this->m_ekf.state();
+            this->m_innovation = this->m_ekf.innovation();
+            this->m_diagnostics = detail::ekf_fallback_diagnostics<Scalar>(solve_status::optimal);
+            return {};
+        }
+
+        this->solve_nmhe();
+        return {};
+    }
+
+    const state_vector_t& state() const { return this->m_x_window[N]; }
+    const cov_matrix_t& covariance() const { return this->m_ekf.covariance(); }
+    const output_vector_t& innovation() const { return this->m_innovation; }
+    std::span<const state_vector_t> trajectory() const { return {this->m_x_window.data(), N + 1}; }
+    const state_vector_t& arrival_state() const { return this->m_x_window[0]; }
+    const cov_matrix_t& arrival_covariance() const { return this->m_prior_cov_window[0]; }
+    bool is_initialized() const { return this->m_update_count > N; }
+    const mhe_diagnostics<Scalar>& diagnostics() const { return this->m_diagnostics; }
+
+private:
+    nmhe(validated_tag, Dynamics dynamics, Measurement measurement, ekf<Scalar, NX, NU, NY, Dynamics, Measurement> filter, const nmhe_config<Scalar, NX, NU, NY, N, NC>& config,
+            cov_matrix_t q_inv, Matrix<Scalar, NY, NY> r_inv, cov_matrix_t p0_inv)
+        : base{std::move(dynamics), std::move(measurement), std::move(filter), config, std::move(q_inv), std::move(r_inv), std::move(p0_inv)}
+    {
+    }
+
+    static ctrlpp::expected<void, moving_horizon_configuration_error> validate_path_constraint(const nmhe_config<Scalar, NX, NU, NY, N, NC>& config)
+    {
         if constexpr(NC > 0)
         {
             if(config.path_constraint_cb)
             {
-                if(!config.path_penalty.allFinite()
-                    || !(config.path_penalty.array() > Scalar{0}).all())
-                    return ctrlpp::unexpected(moving_horizon_construction_error{
-                        moving_horizon_configuration_error::invalid_path_penalty});
+                if(!config.path_penalty.allFinite() || !(config.path_penalty.array() > Scalar{0}).all())
+                    return ctrlpp::unexpected(moving_horizon_configuration_error::invalid_path_penalty);
                 if(!(*config.path_constraint_cb)(config.x0).allFinite())
-                    return ctrlpp::unexpected(moving_horizon_construction_error{
-                        moving_horizon_configuration_error::non_finite_path_constraint});
+                    return ctrlpp::unexpected(moving_horizon_configuration_error::non_finite_path_constraint);
             }
         }
-
-        return nmhe{validated_tag{},
-                    std::move(dynamics),
-                    std::move(measurement),
-                    std::move(*filter),
-                    config,
-                    std::move(*q_inv),
-                    std::move(*r_inv),
-                    std::move(*p0_inv)};
-    }
-
-private:
-    /// @brief Tag selecting the non-validating constructor reserved for
-    /// `create`, which is what makes the factory the only public path and the
-    /// validation impossible to bypass.
-    struct validated_tag
-    {
-    };
-
-    nmhe(validated_tag, Dynamics dynamics, Measurement measurement,
-         ekf<Scalar, NX, NU, NY, Dynamics, Measurement> filter,
-         const nmhe_config<Scalar, NX, NU, NY, N, NC>& config,
-         cov_matrix_t q_inv,
-         Matrix<Scalar, NY, NY> r_inv,
-         cov_matrix_t p0_inv)
-        : m_dynamics{std::move(dynamics)}
-        , m_measurement{std::move(measurement)}
-        , m_ekf{std::move(filter)}
-        , m_arrival_cost_weight{config.arrival_cost_weight}
-        , m_Q_inv{std::move(q_inv)}
-        , m_R_inv{std::move(r_inv)}
-        , m_config{config}
-        , m_state{std::make_shared<nmhe_formulation_state<Scalar, NX, NU, NY, N>>()}
-        , m_innovation{output_vector_t::Zero()}
-    {
-        initialize_buffers(config, std::move(p0_inv));
-        build_nlp_problem();
-        initialize_warm_start(config.x0);
-    }
-
-public:
-    void predict(const input_vector_t& u)
-    {
-        m_ekf.predict(u);
-        std::rotate(m_u_window.begin(), m_u_window.begin() + 1, m_u_window.end());
-        m_u_window.back() = u;
-        m_state->u_window = m_u_window;
-        ++m_step_count;
-    }
-
-    /// @brief Incorporate a measurement, or report why it could not be.
-    ///
-    /// The embedded filter classifies the measurement against the carried
-    /// estimate, and this type FORWARDS that verdict verbatim rather than naming
-    /// the same three conditions a second time. The estimator has no rejection of
-    /// its own -- every operand it could refuse is one the filter already
-    /// refuses -- and a second enumeration would be free to drift from the one
-    /// that actually decides.
-    ///
-    /// A refusal cannot undo the prediction: its input was already applied to
-    /// the plant, so the embedded filter keeps that finite prior. The fixed-step
-    /// window cannot represent the missing measurement, however, and must not
-    /// retain the input beside an older measurement history. The estimator
-    /// therefore invalidates the complete window and uses the embedded filter
-    /// until N new accepted measurements refill a coherent horizon.
-    ///
-    /// `diagnostics()` stays what it is: a report on a step that SUCCEEDED --
-    /// which of the two estimators produced the estimate, and how the solve
-    /// went. After a refusal it still describes the last accepted measurement,
-    /// while `state()` exposes the current predicted prior. The return value is
-    /// what distinguishes that uncorrected prior from an accepted estimate.
-    auto update(const output_vector_t& z) -> ctrlpp::expected<void, ekf_update_error>
-    {
-        // Capture the predicted (prior) estimate at the current time, before the
-        // measurement correction, so the oldest entry holds the window-head prior
-        // formed only from data strictly before the window (no double-count).
-        const state_vector_t prior_state = m_ekf.state();
-        const cov_matrix_t prior_cov = m_ekf.covariance();
-
-        if(const auto stepped = m_ekf.update(z); !stepped)
-        {
-            invalidate_window_after_refusal();
-            return ctrlpp::unexpected(stepped.error());
-        }
-
-        std::rotate(m_prior_state_window.begin(), m_prior_state_window.begin() + 1, m_prior_state_window.end());
-        std::rotate(m_prior_cov_window.begin(), m_prior_cov_window.begin() + 1, m_prior_cov_window.end());
-        m_prior_state_window.back() = prior_state;
-        m_prior_cov_window.back() = prior_cov;
-
-        std::rotate(m_z_window.begin(), m_z_window.begin() + 1, m_z_window.end());
-        m_z_window.back() = z;
-        m_state->z_window = m_z_window;
-        ++m_update_count;
-
-        if(m_update_count <= N)
-        {
-            if(m_step_count < N)
-                m_x_window[m_step_count] = m_ekf.state();
-            m_x_window[N] = m_ekf.state();
-            m_innovation = m_ekf.innovation();
-            m_diagnostics = detail::ekf_fallback_diagnostics<Scalar>(solve_status::optimal);
-            return {};
-        }
-
-        solve_nmhe();
         return {};
     }
-
-    const state_vector_t& state() const { return m_x_window[N]; }
-    const cov_matrix_t& covariance() const { return m_ekf.covariance(); }
-    const output_vector_t& innovation() const { return m_innovation; }
-    std::span<const state_vector_t> trajectory() const { return {m_x_window.data(), N + 1}; }
-    const state_vector_t& arrival_state() const { return m_x_window[0]; }
-    const cov_matrix_t& arrival_covariance() const { return m_prior_cov_window[0]; }
-    bool is_initialized() const { return m_update_count > N; }
-    const mhe_diagnostics<Scalar>& diagnostics() const { return m_diagnostics; }
-
-private:
-    void invalidate_window_after_refusal()
-    {
-        auto const state = m_ekf.state();
-        auto const covariance = m_ekf.covariance();
-        m_x_window.fill(state);
-        m_u_window.fill(input_vector_t::Zero());
-        m_z_window.fill(output_vector_t::Zero());
-        m_prior_state_window.fill(state);
-        m_prior_cov_window.fill(covariance);
-        m_state->arrival_state = state;
-        m_state->u_window = m_u_window;
-        m_state->z_window = m_z_window;
-        m_step_count = 0;
-        m_update_count = 0;
-        initialize_warm_start(state);
-    }
-
-    void initialize_buffers(
-        const nmhe_config<Scalar, NX, NU, NY, N, NC>& config,
-        cov_matrix_t p0_inv)
-    {
-        m_x_window.fill(config.x0);
-        m_u_window.fill(input_vector_t::Zero());
-        m_z_window.fill(output_vector_t::Zero());
-        m_prior_state_window.fill(config.x0);
-        m_prior_cov_window.fill(config.P0);
-        m_state->arrival_state = config.x0;
-        m_state->arrival_P_inv = std::move(p0_inv);
-    }
-
-    void build_nlp_problem()
-    {
-        m_problem = std::make_unique<nlp_problem<Scalar>>(
-            detail::build_nmhe_problem<Scalar, NX, NU, NY, N, NC>(m_dynamics, m_measurement, m_config, m_state, m_Q_inv, m_R_inv));
-        m_setup_failed = !detail::setup_nlp_solver(m_solver, *m_problem).has_value();
-    }
-
-    void initialize_warm_start(const state_vector_t& x0)
-    {
-        m_warm_z = Eigen::VectorX<Scalar>::Zero(m_problem->n_vars);
-        for(int k = 0; k <= Ni; ++k)
-            m_warm_z.segment(k * nx, nx) = x0;
-    }
-
-    void solve_nmhe()
-    {
-        if(m_setup_failed)
-        {
-            fallback_to_ekf();
-            return;
-        }
-
-        if(!update_arrival_cost())
-        {
-            fallback_to_ekf();
-            return;
-        }
-
-        attempt_nmhe_solve();
-    }
-
-    void attempt_nmhe_solve()
-    {
-        nlp_update<Scalar> update{.x0 = m_warm_z};
-        auto result = m_solver.solve(update);
-
-        if(result.status == solve_status::optimal || result.status == solve_status::solved_inaccurate)
-        {
-            // A status is not a numerical postcondition; the check precedes
-            // every state and warm-start write.
-            auto const primal_size = static_cast<Eigen::Index>(m_problem->n_vars);
-            if(!detail::nlp_result_is_usable(result, result.x, primal_size))
-            {
-                fallback_to_ekf(solve_status::invalid_backend_result);
-                return;
-            }
-
-            extract_nmhe_solution(result);
-            return;
-        }
-
-        fallback_to_ekf();
-    }
-
-    auto update_arrival_cost() -> bool
-    {
-        auto inverse =
-            detail::finite_full_piv_inverse(
-                m_prior_cov_window[0],
-                moving_horizon_configuration_error::
-                    non_invertible_initial_covariance);
-        if(!inverse)
-            return false;
-        m_state->arrival_state = m_prior_state_window[0];
-        m_state->arrival_P_inv = std::move(*inverse);
-        return true;
-    }
-
-    void extract_nmhe_solution(const nlp_result<Scalar>& result)
-    {
-        for(int k = 0; k <= Ni; ++k)
-            m_x_window[static_cast<std::size_t>(k)] = result.x.segment(k * nx, nx);
-
-        m_innovation = (m_z_window[N] - m_measurement(state())).eval();
-        shift_warm_start(result.x);
-        populate_solve_diagnostics(result);
-    }
-
-    void populate_solve_diagnostics(const nlp_result<Scalar>& result)
-    {
-        mhe_diagnostics<Scalar> diagnostics;
-        diagnostics.status = result.status;
-        diagnostics.iterations = result.iterations;
-        diagnostics.solve_time = result.solve_time;
-        diagnostics.cost = result.objective;
-        diagnostics.primal_residual = result.primal_residual;
-        diagnostics.used_ekf_fallback = false;
-        m_diagnostics = diagnostics;
-
-        compute_total_slack(result);
-    }
-
-    void compute_total_slack(const nlp_result<Scalar>& result)
-    {
-        if constexpr(NC > 0)
-        {
-            bool has_path_slack = m_config.soft_constraints && m_config.path_constraint_cb.has_value();
-            if(has_path_slack)
-            {
-                int slack_off = (Ni + 1) * nx;
-                Scalar total{0};
-                for(int k = 0; k <= Ni; ++k)
-                {
-                    Eigen::Map<const Vector<Scalar, NC>> sk(result.x.data() + slack_off + k * nc);
-                    total += sk.sum();
-                }
-                m_diagnostics.total_slack = total;
-            }
-        }
-    }
-
-    /// @brief Abandon the window solve and report the embedded filter's estimate
-    /// instead. This is the estimator's whole failure channel: `update` returns
-    /// nothing, so a caller learns what happened from `used_ekf_fallback` plus
-    /// the reported status, and `reason` is what names the condition there.
-    void fallback_to_ekf(solve_status reason = solve_status::error)
-    {
-        m_x_window[N] = m_ekf.state();
-        m_innovation = m_ekf.innovation();
-        m_diagnostics = detail::ekf_fallback_diagnostics<Scalar>(reason);
-    }
-
-    // The slices below need no length check of their own: this runs only from
-    // the extraction, which the solve attempt reaches only after confirming the
-    // result covers the posed problem.
-    void shift_warm_start(const Eigen::VectorX<Scalar>& sol)
-    {
-        for(int k = 0; k < Ni; ++k)
-            m_warm_z.segment(k * nx, nx) = sol.segment((k + 1) * nx, nx);
-        m_warm_z.segment(Ni * nx, nx) = m_ekf.state();
-
-        shift_path_slack(sol);
-    }
-
-    void shift_path_slack(const Eigen::VectorX<Scalar>& sol)
-    {
-        if constexpr(NC > 0)
-        {
-            bool has_path_slack = m_config.soft_constraints && m_config.path_constraint_cb.has_value();
-            if(has_path_slack)
-            {
-                int slack_off = (Ni + 1) * nx;
-                for(int k = 0; k < Ni; ++k)
-                    m_warm_z.segment(slack_off + k * nc, nc) = sol.segment(slack_off + (k + 1) * nc, nc);
-                m_warm_z.segment(slack_off + Ni * nc, nc).setZero();
-            }
-        }
-    }
-
-    Dynamics m_dynamics;
-    Measurement m_measurement;
-    ekf<Scalar, NX, NU, NY, Dynamics, Measurement> m_ekf;
-
-    Scalar m_arrival_cost_weight;
-    cov_matrix_t m_Q_inv;
-    Matrix<Scalar, NY, NY> m_R_inv;
-    nmhe_config<Scalar, NX, NU, NY, N, NC> m_config;
-
-    std::shared_ptr<nmhe_formulation_state<Scalar, NX, NU, NY, N>> m_state;
-    // Held behind a stable heap address so the defaulted move does not relocate
-    // the object the solver's bridge caches by pointer: `nlopt_solver::setup`
-    // stores `&problem` and its own copy/move rebind to that same address. The
-    // estimator is now produced by a factory and therefore IS moved on the way
-    // out of it, which the in-place constructor it replaced never was. Matches
-    // the nonlinear predictive controller, which holds its problem the same way
-    // for the same reason.
-    std::unique_ptr<nlp_problem<Scalar>> m_problem;
-    Solver m_solver{};
-
-    std::array<state_vector_t, N + 1> m_x_window;
-    std::array<input_vector_t, N> m_u_window;
-    std::array<output_vector_t, N + 1> m_z_window;
-    std::array<state_vector_t, N + 1> m_prior_state_window;
-    std::array<cov_matrix_t, N + 1> m_prior_cov_window;
-
-    std::size_t m_step_count{0};
-    std::size_t m_update_count{0};
-    Eigen::VectorX<Scalar> m_warm_z;
-    mhe_diagnostics<Scalar> m_diagnostics{};
-    output_vector_t m_innovation;
-    bool m_setup_failed{false};
 };
 
 namespace detail
@@ -466,10 +162,8 @@ struct nmhe_sa_measurement
     Vector<double, 1> operator()(const Vector<double, 2>& x) const { return x.template head<1>(); }
 };
 
-// This solver exists only to instantiate the observer-policy static assertions
-// below. It has no setup failure mode, so its setup-error type carries no
-// enumerators: the solver concept accepts one setup shape, a fallible one, and a
-// backend with nothing to fail at writes a trivially succeeding fallible setup.
+// Exists only to instantiate the observer-policy assertions below. The solver concept accepts only a fallible setup,
+// so a backend with nothing to fail at declares an error type without enumerators.
 enum class nmhe_sa_setup_error
 {
 };
@@ -478,7 +172,7 @@ struct nmhe_sa_solver
 {
     using scalar_type = double;
 
-    auto setup(const nlp_problem<double>&) -> ctrlpp::expected<void, nmhe_sa_setup_error> { return {}; }
+    ctrlpp::expected<void, nmhe_sa_setup_error> setup(const nlp_problem<double>&) { return {}; }
 
     nlp_result<double> solve(const nlp_update<double>&) { return {}; }
 };
