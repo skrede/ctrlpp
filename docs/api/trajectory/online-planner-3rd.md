@@ -103,8 +103,7 @@ From a state with nonzero acceleration the acceleration-nulling phase runs first
 ## Construction
 
 ```cpp
-static auto create(config const& cfg)
-    -> ctrlpp::expected<online_planner_3rd, trajectory_error>;
+static ctrlpp::expected<online_planner_3rd, trajectory_error> create(config const& cfg);
 ```
 
 `create` is the only construction path. There is no non-fallible constructor: a rejected configuration is a value the caller has to inspect, never an object that quietly stands in for one. It validates the kinematic limits and constructs a planner with initial state at rest at q = 0 with zero acceleration. Rejections, checked in order:
@@ -120,7 +119,7 @@ static auto create(config const& cfg)
 ### update
 
 ```cpp
-auto update(Scalar target) -> ctrlpp::expected<void, trajectory_error>;
+ctrlpp::expected<void, trajectory_error> update(Scalar target);
 ```
 
 Set a new target position and replan from the current state. Computes a time-optimal double-S profile from (q, v, a) to (target, 0, 0) respecting `v_max`, `a_max`, and `j_max`. A same-direction move carries the current velocity through the profile (no full-stop dip); a velocity pointing away from the target, or too large to stop in the available distance, is braked to rest first and then replanned. "Too large to stop" is the carry-velocity shape's own displacement test, and the carried speed is exact by construction, so the shape refuses a command the planner admitted only through an arithmetic rejection. Such a state is braked to rest and replanned with `carry_velocity_shape_unavailable` reported.
@@ -134,7 +133,7 @@ what changes is the time it takes.
 ### diagnostics
 
 ```cpp
-auto diagnostics() const -> online_planner_diagnostics<Scalar> const&;
+online_planner_diagnostics<Scalar> const& diagnostics() const;
 ```
 
 Report what the last `update` (or `reset`) planned, against what it was commanded. This describes the plan, not the state reached since; `is_settled()` answers that.
@@ -142,7 +141,7 @@ Report what the last `update` (or `reset`) planned, against what it was commande
 ### sample
 
 ```cpp
-auto sample(Scalar t) const -> trajectory_point<Scalar, 1>;
+trajectory_point<Scalar, 1> sample(Scalar t) const;
 ```
 
 Evaluate the planned trajectory at absolute time `t`. Returns position, velocity, and acceleration. Updates internal state for future `update()` calls.
@@ -150,7 +149,7 @@ Evaluate the planned trajectory at absolute time `t`. Returns position, velocity
 ### is_settled
 
 ```cpp
-auto is_settled() const -> bool;
+bool is_settled() const;
 ```
 
 Returns true when the planner has reached the target with zero velocity and zero acceleration.
