@@ -13,18 +13,18 @@ namespace ctrlpp::detail
 {
 
 template <typename Scalar>
-auto is_equality_row(Scalar lower, Scalar upper) -> bool
+bool is_equality_row(Scalar lower, Scalar upper)
 {
     return lower == upper;
 }
 
 template <typename Scalar>
-auto is_finite_side(Scalar bound) -> bool
+bool is_finite_side(Scalar bound)
 {
     return std::isfinite(static_cast<double>(bound));
 }
 
-// 64-bit so that two sides per row cannot overflow for any int n_constraints.
+// 64-bit, so counting two sides per row cannot overflow where Eigen::Index is 32-bit.
 struct constraint_row_count
 {
     std::int64_t equality;
@@ -32,10 +32,10 @@ struct constraint_row_count
 };
 
 template <typename Problem>
-auto count_constraint_rows(const Problem& problem) -> constraint_row_count
+constraint_row_count count_constraint_rows(const Problem& problem)
 {
     constraint_row_count count{0, 0};
-    for(int i = 0; i < problem.n_constraints; ++i)
+    for(Eigen::Index i = 0; i < problem.n_constraints; ++i)
     {
         if(is_equality_row(problem.c_lower[i], problem.c_upper[i]))
             ++count.equality;
@@ -47,7 +47,7 @@ auto count_constraint_rows(const Problem& problem) -> constraint_row_count
 
 // The order is the bridge's kind, then the fixed shapes, then the row counts.
 template <bool Constrained, int NV, int MaxM, typename Problem>
-auto argmin_setup_refusal(const Problem& problem) -> std::optional<argmin_setup_error>
+std::optional<argmin_setup_error> argmin_setup_refusal(const Problem& problem)
 {
     if(!Constrained && problem.n_constraints > 0)
         return argmin_setup_error::constraints_unsupported;

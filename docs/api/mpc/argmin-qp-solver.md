@@ -87,8 +87,7 @@ enum class argmin_qp_setup_error : std::uint8_t {
 ### setup
 
 ```cpp
-auto setup(const qp_problem<double>& problem)
-    -> ctrlpp::expected<void, argmin_qp_setup_error>;
+ctrlpp::expected<void, argmin_qp_setup_error> setup(const qp_problem<double>& problem);
 ```
 
 Fallible setup: poses and factorizes the problem once from the cost matrices P, q and constraint matrices A, l, u. P is read as upper-triangular, the same convention `osqp_solver` uses and `build_cost_matrix` emits; setup expands it to the full symmetric matrix argmin's solver requires. Returns an empty `expected` on success and an `argmin_qp_setup_error` on failure: `invalid_options` when an option lies outside argmin's domain (the budget or tolerances above), checked before the problem is posed, and `pose_failed` when argmin rejects the problem data. Either way no factorization exists, so `solve` returns `solve_status::error` until a `setup` succeeds. This is the only setup API and is available in every build, including `-fno-exceptions` and `CTRLPP_NO_EXCEPTIONS`.
@@ -96,7 +95,7 @@ Fallible setup: poses and factorizes the problem once from the cost matrices P, 
 ### solve
 
 ```cpp
-auto solve(const qp_update<double>& update) -> qp_result<double>;
+qp_result<double> solve(const qp_update<double>& update);
 ```
 
 Vectors-only resolve reusing the frozen factorization: warm-starts from the retained iterate (or from `update.warm_x`/`update.warm_y` when supplied) and runs argmin's `resolve_into`. Returns a `qp_result` with the primal/dual solution, solver status, objective value, iteration count, and residuals. Calling `solve` before a successful `setup` returns `solve_status::error`. Note `qp_result::solve_time` is always `0`: argmin's solver takes no timing measurements.

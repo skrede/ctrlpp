@@ -1,24 +1,20 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_ARGMIN_SOLVER_H
 #define HPP_GUARD_CTRLPP_MPC_ARGMIN_SOLVER_H
 
-#include "ctrlpp/expected.h"
-
 #include "ctrlpp/mpc/nlp_types.h"
 #include "ctrlpp/mpc/nlp_solver.h"
 #include "ctrlpp/mpc/argmin_problem.h"
 #include "ctrlpp/mpc/argmin_policies.h"
 
+#include "ctrlpp/mpc/detail/argmin_options.h"
+#include "ctrlpp/mpc/detail/argmin_solver_state.h"
 #include "ctrlpp/mpc/detail/argmin_setup_admission.h"
+
+#include "ctrlpp/expected.h"
 
 #include <argmin/result/status.h>
 
-#include <argmin/solver/options.h>
-#include <argmin/solver/step_budget_solver.h>
-#include <argmin/solver/time_budget_options.h>
-#include <argmin/solver/step_and_time_budget_solver.h>
-
 #include <chrono>
-#include <memory>
 #include <cstdint>
 #include <variant>
 #include <stdexcept>
@@ -27,349 +23,99 @@
 namespace ctrlpp
 {
 
-// argmin_solver<Scalar, Policy, Constrained, NV, MaxM>: the trailing NV and MaxM
-// select the solve path along two independent axes.
-//   * NV == Eigen::Dynamic (the DEFAULT) is the original runtime-erased solver,
-//     byte-for-byte: it binds an nlp_problem<Scalar>, instantiates argmin's
-//     dynamic step_budget_solver, and every existing caller compiles unchanged.
-//   * NV != Eigen::Dynamic pins the DECISION axis: the policy
-//     algorithm is rebound to the compile-time dimension NV, argmin's
-//     compile-time-N step_budget_solver is instantiated, the bridge uses
-//     fixed-size decision-vector storage, and setup binds an
-//     nlp_problem_static<Scalar, NV>.
-//   * MaxM != Eigen::Dynamic additionally pins the CONSTRAINT axis: the
-//     bridge carries a compile-time constraint_count cap so
-//     argmin's per-call result-multiplier storage is inline. Binding BOTH NV and
-//     MaxM gives the strict-zero steady-state solve. MaxM is an upper bound on
-//     the equality rows plus one per finite inequality side (box bounds are free
-//     via argmin's +2N slack); setup refuses a problem that exceeds it.
-//   * Budget selects the drivers: argmin_step_budget (the DEFAULT) instantiates
-//     only the step-budget driver, so the solver reads no clock;
-//     argmin_step_and_time_budget adds the wall-clock driver, which a solve runs
-//     when settings_type::max_time is positive.
-template <typename Scalar, typename Policy, bool Constrained = true, int NV = Eigen::Dynamic,
-          int MaxM = Eigen::Dynamic, argmin_budget Budget = argmin_step_budget>
-class argmin_solver
+// A fixed NV rebinds the policy and the bridge to fixed-size decision storage and binds an nlp_problem_static; a fixed
+// MaxM also makes argmin's result multipliers inline. Binding both gives the allocation-free steady-state solve.
+template <typename Scalar, typename Policy, bool Constrained = true, int NV = Eigen::Dynamic, int MaxM = Eigen::Dynamic, argmin_budget Budget = argmin_step_budget>
+class argmin_solver : private detail::argmin_solver_state<Scalar, Policy, Constrained, NV, MaxM, Budget>
 {
-    static constexpr bool time_budgeted = std::is_same_v<Budget, argmin_step_and_time_budget>;
+    using base = detail::argmin_solver_state<Scalar, Policy, Constrained, NV, MaxM, Budget>;
 
 public:
     using scalar_type = Scalar;
-    // On the static path (NV != Eigen::Dynamic) the policy algorithm is rebound
-    // to the compile-time dimension so argmin's fixed-N NW-SQP state sizes its
-    // decision-vector buffers with fixed-size Eigen types. On the dynamic default
-    // the rebind resolves to the same type as Policy::algorithm (byte-identical).
-    using argmin_policy = rebind_argmin_algorithm_t<typename Policy::algorithm, NV>;
-    using bridge_type = std::conditional_t<Constrained,
-        argmin_constrained_problem<Scalar, NV, MaxM>,
-        argmin_problem<Scalar, NV, MaxM>>;
-    // The bound problem type follows NV: nlp_problem_static on the static path,
-    // the runtime-erased nlp_problem on the dynamic default.
-    using problem_type = typename bridge_type::problem_type;
-    using step_solver_type =
-        argmin::step_budget_solver<argmin_policy, NV, bridge_type,
-            argmin_ctrlpp_convergence>;
-    using timed_solver_type =
-        argmin::step_and_time_budget_solver<argmin_policy, NV, bridge_type,
-            argmin_ctrlpp_convergence>;
-    using solver_storage_type = std::conditional_t<time_budgeted,
-        std::variant<std::monostate, step_solver_type, timed_solver_type>,
-        std::variant<std::monostate, step_solver_type>>;
-    using settings_type = typename Budget::template settings_type<Scalar>;
+    using argmin_policy = typename base::argmin_policy;
+    using bridge_type = typename base::bridge_type;
+    using problem_type = typename base::problem_type;
+    using step_solver_type = typename base::step_solver_type;
+    using timed_solver_type = typename base::timed_solver_type;
+    using solver_storage_type = typename base::solver_storage_type;
+    using settings_type = typename base::settings_type;
 
-    explicit argmin_solver(settings_type settings = {})
-        : settings_{settings}
-        , bridge_{std::make_unique<bridge_type>()}
-    {}
+    // Inherited rather than forwarded: a forwarding constructor leaves a copy of the settings in the creating frame.
+    using base::base;
 
-    // Move is correct-by-default: `bridge_` lives behind a `unique_ptr` (a stable
-    // heap address), so moving relocates only the owning pointer while the
-    // pointed-to bridge stays put. argmin's `detail::solver_core` caches the problem
-    // BY REFERENCE through its `problem_ptr_` member and its policy state likewise
-    // caches `&problem`; both back-pointers therefore remain valid across a
-    // defaulted move. A hand-written move ctor is deliberately avoided.
-    argmin_solver(argmin_solver&&) = default;
-    argmin_solver& operator=(argmin_solver&&) = default;
-
-    // Fork-copy: the ONE deliberately hand-written special member. argmin's
-    // `detail::solver_core` deletes its copy constructor and copy assignment, so a
-    // defaulted copy is ill-formed. This snapshots the settings and the external problem pointer,
-    // allocates a FRESH bridge rebound to the same problem, and leaves `solver_`
-    // as `std::monostate` so it is re-emplaced lazily on the next solve()/step()
-    // via prepare_solver's monostate branch. The result is a clean independent
-    // fork, matching the intended clean-snapshot copy semantics, with no argmin copy support.
-    argmin_solver(const argmin_solver& other)
-        : settings_{other.settings_}
-        , problem_{other.problem_}
-        , bridge_{std::make_unique<bridge_type>()}
-        , solver_{}
+    explicit argmin_solver()
+        : base{settings_type{}}
     {
-        rebind_bridge();
     }
 
-    argmin_solver& operator=(const argmin_solver& other)
-    {
-        if(this != &other)
-        {
-            auto fresh = std::make_unique<bridge_type>();
-            settings_ = other.settings_;
-            problem_ = other.problem_;
-            // Drop the stale solver (which caches the old bridge address) BEFORE
-            // swapping in the fresh bridge, so no argmin back-pointer ever
-            // observes a freed object.
-            solver_.template emplace<std::monostate>();
-            bridge_ = std::move(fresh);
-            rebind_bridge();
-        }
-        return *this;
-    }
-
-    /// @brief Setup: binds the problem into the bridge, or refuses a problem the
-    /// bridge cannot hold and leaves the solver as it was. The refusals, in order:
-    /// `constraints_unsupported`, `dimension_mismatch`, `constraint_cap_exceeded`
-    /// and `equality_rows_exceed_dimension` (see `argmin_setup_error`). It works
-    /// in all build modes, including `-fno-exceptions`.
-    auto setup(const problem_type& problem)
-        -> ctrlpp::expected<void, argmin_setup_error>
+    ctrlpp::expected<void, argmin_setup_error> setup(const problem_type& problem)
     {
         if(const auto refusal = detail::argmin_setup_refusal<Constrained, NV, MaxM>(problem))
             return ctrlpp::unexpected(*refusal);
 
-        problem_ = &problem;
-        solver_.template emplace<std::monostate>();
+        this->m_problem = &problem;
+        this->m_solver.template emplace<std::monostate>();
 
         if constexpr(Constrained)
-            bridge_->partition(problem);
+            this->m_bridge->partition(problem);
         else
-            bridge_->bind(problem);
+            this->m_bridge->bind(problem);
 
         return {};
     }
 
-    auto solve(const nlp_update<Scalar>& update) -> nlp_result<Scalar>
+    nlp_result<Scalar> solve(const nlp_update<Scalar>& update)
     {
-        prepare_solver(update.x0);
-        return with_solver([&](auto& solver)
-        {
-            auto result = solver.solve();
-            return translate_result(result);
-        });
+        this->prepare_solver(update.x0);
+        return with_solver(
+                [&](auto& solver)
+                {
+                    auto result = solver.solve();
+                    return translate_result(result);
+                });
     }
 
-    // Zero-allocation solve for the static (strict-zero) path. Writes the primal
-    // solution IN PLACE into the caller's pre-sized `solution` buffer and returns
-    // the scalar diagnostics in an nlp_result whose `.x` is left EMPTY, so no
-    // dynamic decision vector is heap-allocated on the hot path -- unlike solve(),
-    // which must materialize nlp_result::x by value. `solution` must already be
-    // sized to the problem dimension; on the fixed-NV bridge that is the
-    // compile-time NV. The runtime-erased consumers keep using solve(); the static
-    // NMPC path prefers solve_into when the bridge exposes it.
-    auto solve_into(const nlp_update<Scalar>& update,
-                    Eigen::Ref<Eigen::VectorX<Scalar>> solution) -> nlp_result<Scalar>
+    // Writes the primal into the caller's solution, which must already have the problem's dimension, and leaves the
+    // result's x empty, so the static path allocates no decision vector.
+    nlp_result<Scalar> solve_into(const nlp_update<Scalar>& update, Eigen::Ref<Eigen::VectorX<Scalar>> solution)
     {
-        prepare_solver(update.x0);
-        return with_solver([&](auto& solver)
-        {
-            auto result = solver.solve();
-            solution = result.x;
-            return translate_meta(result);
-        });
+        this->prepare_solver(update.x0);
+        return with_solver(
+                [&](auto& solver)
+                {
+                    auto result = solver.solve();
+                    solution = result.x;
+                    return translate_meta(result);
+                });
     }
 
-    auto step(const nlp_update<Scalar>& update, int max_steps) -> nlp_result<Scalar>
+    nlp_result<Scalar> step(const nlp_update<Scalar>& update, std::int32_t max_steps)
     {
-        prepare_solver(update.x0);
-        return with_solver([&](auto& solver)
-        {
-            auto result = solver.step_n(static_cast<std::uint32_t>(max_steps));
-            return translate_result(result);
-        });
+        this->prepare_solver(update.x0);
+        return with_solver(
+                [&](auto& solver)
+                {
+                    auto result = solver.step_n(static_cast<std::uint32_t>(max_steps));
+                    return translate_result(result);
+                });
     }
 
 private:
-    // Rebind the (fresh) bridge to the retained external problem. Shared by the
-    // fork-copy ctor and copy-assignment. A null problem_ (never set up) leaves
-    // the bridge unbound, exactly as a default-constructed solver would be.
-    void rebind_bridge()
-    {
-        if(problem_ == nullptr)
-            return;
-
-        if constexpr(Constrained)
-            bridge_->partition(*problem_);
-        else
-            bridge_->bind(*problem_);
-    }
-
-    void prepare_solver(const Eigen::VectorX<Scalar>& x0)
-    {
-        if(std::holds_alternative<std::monostate>(solver_))
-        {
-            emplace_solver(x0);
-            return;
-        }
-
-        const auto ws = settings_.warm_start;
-
-        std::visit([&](auto& solver)
-        {
-            using solver_t = std::decay_t<decltype(solver)>;
-            if constexpr(!std::is_same_v<solver_t, std::monostate>)
-            {
-                if(ws == warm_start_mode::curvature)
-                    solver.reset(x0);
-                else
-                    solver.reset_clear(x0);
-            }
-        }, solver_);
-    }
-
-    auto make_solver_options() const -> argmin::solver_options<argmin_ctrlpp_convergence>
-    {
-        argmin::solver_options<argmin_ctrlpp_convergence> opts;
-
-        auto const& s = settings_;
-
-        opts.max_iterations = static_cast<std::uint32_t>(s.max_eval);
-
-        if constexpr(Constrained)
-        {
-            if(s.constraint_tol > Scalar{0})
-            {
-                opts.constraint_tolerance = static_cast<double>(s.constraint_tol);
-                opts.feasibility_tolerance = static_cast<double>(s.constraint_tol);
-            }
-        }
-
-        // ftol_rel / xtol_rel are relative tolerances: wire them to argmin's
-        // RELATIVE criteria via the _rel setters. argmin_ctrlpp_convergence
-        // carries objective_tolerance_rel_criterion / step_tolerance_rel_criterion
-        // so these requires-guarded setters are well-formed. This is a
-        // deliberate convergence-behavior change from argmin's default absolute
-        // criteria (see argmin_ctrlpp_convergence in argmin_policies.h).
-        opts.set_objective_threshold_rel(static_cast<double>(s.ftol_rel));
-        opts.set_step_threshold_rel(static_cast<double>(s.xtol_rel));
-        opts.set_gradient_threshold(static_cast<double>(s.kkt_tol));
-
-        return opts;
-    }
-
-    auto make_time_budget_options() const -> argmin::time_budget_options<argmin_ctrlpp_convergence>
-    {
-        argmin::time_budget_options<argmin_ctrlpp_convergence> opts;
-        opts.core = make_solver_options();
-
-        auto const& s = settings_;
-
-        opts.max_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::duration<double>(static_cast<double>(s.max_time)));
-
-        return opts;
-    }
-
-    void emplace_solver(const Eigen::VectorX<Scalar>& x0)
-    {
-        if constexpr(time_budgeted)
-        {
-            if(settings_.max_time > Scalar{0})
-            {
-                emplace_timed_solver(x0);
-                return;
-            }
-        }
-        emplace_step_solver(x0);
-    }
-
-    void emplace_step_solver(const Eigen::VectorX<Scalar>& x0)
-    {
-        solver_.template emplace<step_solver_type>(
-            argmin_policy{}, *bridge_, x0, make_solver_options());
-    }
-
-    void emplace_timed_solver(const Eigen::VectorX<Scalar>& x0)
-    {
-        solver_.template emplace<timed_solver_type>(
-            argmin_policy{}, *bridge_, x0, make_time_budget_options());
-    }
-
-    static constexpr auto map_status(argmin::solver_status s) -> solve_status
-    {
-        switch(s)
-        {
-        case argmin::solver_status::converged:
-        case argmin::solver_status::ftol_reached:
-        case argmin::solver_status::xtol_reached:
-            return solve_status::optimal;
-        case argmin::solver_status::max_iterations:
-        case argmin::solver_status::budget_exhausted:
-        case argmin::solver_status::maxeval_reached:
-            return solve_status::max_iterations;
-        case argmin::solver_status::time_limit_reached:
-            return solve_status::time_limit;
-        case argmin::solver_status::stalled:
-        case argmin::solver_status::roundoff_limited:
-        case argmin::solver_status::objective_stalled:
-        case argmin::solver_status::line_search_failed:
-        case argmin::solver_status::trust_region_step_rejected:
-            return solve_status::solved_inaccurate;
-        case argmin::solver_status::invalid_problem:
-        case argmin::solver_status::diverged:
-        case argmin::solver_status::aborted:
-        case argmin::solver_status::running:
-            return solve_status::error;
-        }
-        return solve_status::error;
-    }
-
-    static constexpr auto map_stop_criterion(argmin::solver_status s) -> nlp_stop_criterion
-    {
-        switch(s)
-        {
-        case argmin::solver_status::converged:
-            return nlp_stop_criterion::stationarity;
-        case argmin::solver_status::ftol_reached:
-            return nlp_stop_criterion::objective_change;
-        case argmin::solver_status::xtol_reached:
-            return nlp_stop_criterion::step_size;
-        case argmin::solver_status::stalled:
-        case argmin::solver_status::objective_stalled:
-        case argmin::solver_status::line_search_failed:
-            return nlp_stop_criterion::stalled;
-        case argmin::solver_status::max_iterations:
-        case argmin::solver_status::budget_exhausted:
-        case argmin::solver_status::maxeval_reached:
-            return nlp_stop_criterion::iteration_limit;
-        case argmin::solver_status::time_limit_reached:
-            return nlp_stop_criterion::time_limit;
-        case argmin::solver_status::roundoff_limited:
-        case argmin::solver_status::trust_region_step_rejected:
-        case argmin::solver_status::invalid_problem:
-        case argmin::solver_status::diverged:
-        case argmin::solver_status::aborted:
-        case argmin::solver_status::running:
-            return nlp_stop_criterion::other;
-        }
-        return nlp_stop_criterion::other;
-    }
-
-    // Scalar-only translation: fills every diagnostic field but leaves `.x` empty
-    // (default-constructed, size 0), so it allocates nothing. solve_into returns
-    // this directly; translate_result layers the by-value `.x` copy on top.
     template <typename Result>
-    auto translate_meta(const Result& r) const -> nlp_result<Scalar>
+    nlp_result<Scalar> translate_meta(const Result& r) const
     {
         nlp_result<Scalar> out;
-        out.status = map_status(r.status);
+        out.status = detail::map_argmin_status(r.status);
         out.objective = r.objective_value;
         out.solve_time = result_wall_time(r);
-        out.iterations = static_cast<int>(r.iterations);
+        out.iterations = static_cast<std::int32_t>(r.iterations);
         out.primal_residual = r.constraint_violation;
-        out.stop_criterion = map_stop_criterion(r.status);
+        out.stop_criterion = detail::map_argmin_stop_criterion(r.status);
         return out;
     }
 
     template <typename Result>
-    auto translate_result(const Result& r) const -> nlp_result<Scalar>
+    nlp_result<Scalar> translate_result(const Result& r) const
     {
         auto out = translate_meta(r);
         out.x = r.x;
@@ -377,7 +123,7 @@ private:
     }
 
     template <typename Result>
-    static auto result_wall_time(const Result& r) -> Scalar
+    static Scalar result_wall_time(const Result& r)
     {
         if constexpr(requires { r.wall_time; })
         {
@@ -390,32 +136,25 @@ private:
     }
 
     template <typename SolverFn>
-    auto with_solver(SolverFn&& fn) -> nlp_result<Scalar>
+    nlp_result<Scalar> with_solver(SolverFn&& fn)
     {
-        return std::visit([&](auto& solver) -> nlp_result<Scalar>
-        {
-            using solver_t = std::decay_t<decltype(solver)>;
-            if constexpr(std::is_same_v<solver_t, std::monostate>)
-            {
-                nlp_result<Scalar> failed;
-                failed.status = solve_status::error;
-                return failed;
-            }
-            else
-            {
-                return fn(solver);
-            }
-        }, solver_);
+        return std::visit(
+                [&](auto& solver) -> nlp_result<Scalar>
+                {
+                    using solver_t = std::decay_t<decltype(solver)>;
+                    if constexpr(std::is_same_v<solver_t, std::monostate>)
+                    {
+                        nlp_result<Scalar> failed;
+                        failed.status = solve_status::error;
+                        return failed;
+                    }
+                    else
+                    {
+                        return fn(solver);
+                    }
+                },
+                this->m_solver);
     }
-
-    settings_type settings_;
-    const problem_type* problem_{nullptr};
-    // Held behind a stable heap address so a defaulted move keeps argmin's
-    // by-reference problem back-pointer (`detail::solver_core::problem_ptr_`) valid. Declared
-    // before `solver_` so that, at destruction, `solver_` (which caches this
-    // bridge) is torn down first.
-    std::unique_ptr<bridge_type> bridge_;
-    solver_storage_type solver_;
 };
 
 }
