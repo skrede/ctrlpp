@@ -54,6 +54,8 @@ Output of trajectory segment evaluation.
 | `velocity` | `Vector<Scalar, ND>` | Velocity vector |
 | `acceleration` | `Vector<Scalar, ND>` | Acceleration vector |
 
+An aggregate with no constructor, built with designated initializers (`{.position = p, .velocity = v, .acceleration = a}`). Like any fixed-size Eigen vector, the fields of a default-constructed point are uninitialized.
+
 ## Type: `path_point<Scalar>`
 
 Output of normalized path evaluation. Fields represent derivatives of the normalized position with respect to normalized time tau in [0,1].
@@ -64,6 +66,11 @@ Output of normalized path evaluation. Fields represent derivatives of the normal
 | `dq` | `Scalar` | First derivative dq/dtau |
 | `ddq` | `Scalar` | Second derivative d2q/dtau2 |
 | `dddq` | `Scalar` | Third derivative d3q/dtau3 |
+
+| Constructor | Description |
+|-------------|-------------|
+| `path_point()` | Every field zero |
+| `path_point(Scalar q, Scalar dq, Scalar ddq, Scalar dddq)` | Every field, in declaration order; not `explicit`, so `return {q, dq, ddq, dddq};` builds one |
 
 Physical values are obtained via kinematic scaling: `vel = h/T * dq`, `acc = h/T^2 * ddq`, `jerk = h/T^3 * dddq`.
 

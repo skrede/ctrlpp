@@ -27,10 +27,10 @@ auto septic_path(Scalar tau) -> path_point<Scalar>
     auto const tau3 = tau2 * tau;
     auto const tau4 = tau2 * tau2;
     return {
-        .q = tau4 * (Scalar{35} + tau * (Scalar{-84} + tau * (Scalar{70} + tau * Scalar{-20}))),
-        .dq = tau3 * (Scalar{140} + tau * (Scalar{-420} + tau * (Scalar{420} + tau * Scalar{-140}))),
-        .ddq = tau2 * (Scalar{420} + tau * (Scalar{-1680} + tau * (Scalar{2100} + tau * Scalar{-840}))),
-        .dddq = tau * (Scalar{840} + tau * (Scalar{-5040} + tau * (Scalar{8400} + tau * Scalar{-4200}))),
+        tau4 * (Scalar{35} + tau * (Scalar{-84} + tau * (Scalar{70} + tau * Scalar{-20}))),
+        tau3 * (Scalar{140} + tau * (Scalar{-420} + tau * (Scalar{420} + tau * Scalar{-140}))),
+        tau2 * (Scalar{420} + tau * (Scalar{-1680} + tau * (Scalar{2100} + tau * Scalar{-840}))),
+        tau * (Scalar{840} + tau * (Scalar{-5040} + tau * (Scalar{8400} + tau * Scalar{-4200}))),
     };
 }
 

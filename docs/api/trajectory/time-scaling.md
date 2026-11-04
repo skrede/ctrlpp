@@ -14,10 +14,10 @@ Kinematic time scaling for normalized paths. Computes the minimum trajectory dur
 
 ```cpp
 template <typename Scalar>
-auto compute_min_duration(
+Scalar compute_min_duration(
     Scalar h,
     std::array<Scalar, 3> const& peak_derivs,
-    Scalar v_max, Scalar a_max, Scalar j_max) -> Scalar;
+    Scalar v_max, Scalar a_max, Scalar j_max);
 ```
 
 Computes minimum duration for a single DOF:
@@ -38,10 +38,10 @@ T = max(h*dq_max/v_max, sqrt(h*ddq_max/a_max), cbrt(h*dddq_max/j_max))
 
 ```cpp
 template <typename Scalar, std::size_t N>
-auto compute_min_duration(
+std::array<Scalar, N> compute_min_duration(
     std::array<Scalar, N> const& h,
     std::array<Scalar, 3> const& peak_derivs,
-    Scalar v_max, Scalar a_max, Scalar j_max) -> std::array<Scalar, N>;
+    Scalar v_max, Scalar a_max, Scalar j_max);
 ```
 
 Returns per-DOF minimum durations. Each DOF is independently computed.
@@ -50,10 +50,10 @@ Returns per-DOF minimum durations. Each DOF is independently computed.
 
 ```cpp
 template <typename Scalar, std::size_t N>
-auto compute_min_duration_sync(
+Scalar compute_min_duration_sync(
     std::array<Scalar, N> const& h,
     std::array<Scalar, 3> const& peak_derivs,
-    Scalar v_max, Scalar a_max, Scalar j_max) -> Scalar;
+    Scalar v_max, Scalar a_max, Scalar j_max);
 ```
 
 Returns a single T (maximum of per-DOF durations) suitable for synchronizing all joints.

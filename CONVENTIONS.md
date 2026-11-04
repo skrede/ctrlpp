@@ -206,7 +206,7 @@ kept by hand.
   constructor taking every field in declaration order, plus a default constructor carrying the defaults,
   so positional construction keeps compiling and no field is left indeterminate. A trailing parameter of
   the member-wise constructor may take a default where callers commonly omit it, as the state-space pair's
-  `C` and `D` default to zero. `trajectory_point` and `path_point` are of this kind.
+  `C` and `D` default to zero. `path_point` is of this kind.
 - The init list is written in member-declaration order, since members initialize in declaration order
   regardless (no `-Wreorder`). A member consumed by another member's constructor is declared before its
   consumer, and that dependency overrides the member triangle below.

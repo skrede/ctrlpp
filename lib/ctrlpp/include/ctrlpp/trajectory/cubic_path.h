@@ -24,10 +24,10 @@ auto cubic_path(Scalar tau) -> path_point<Scalar>
 {
     auto const tau2 = tau * tau;
     return {
-        .q = tau2 * (Scalar{3} - Scalar{2} * tau),
-        .dq = Scalar{6} * tau * (Scalar{1} - tau),
-        .ddq = Scalar{6} - Scalar{12} * tau,
-        .dddq = Scalar{-12},
+        tau2 * (Scalar{3} - Scalar{2} * tau),
+        Scalar{6} * tau * (Scalar{1} - tau),
+        Scalar{6} - Scalar{12} * tau,
+        Scalar{-12},
     };
 }
 

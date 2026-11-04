@@ -31,10 +31,10 @@ auto harmonic_path(Scalar tau) -> path_point<Scalar>
     auto const pi2 = pi * pi;
     auto const pi3 = pi2 * pi;
     return {
-        .q = (Scalar{1} - cos_val) / Scalar{2},
-        .dq = pi / Scalar{2} * sin_val,
-        .ddq = pi2 / Scalar{2} * cos_val,
-        .dddq = -pi3 / Scalar{2} * sin_val,
+        (Scalar{1} - cos_val) / Scalar{2},
+        pi / Scalar{2} * sin_val,
+        pi2 / Scalar{2} * cos_val,
+        -pi3 / Scalar{2} * sin_val,
     };
 }
 

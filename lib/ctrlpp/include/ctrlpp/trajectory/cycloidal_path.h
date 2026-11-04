@@ -31,10 +31,10 @@ auto cycloidal_path(Scalar tau) -> path_point<Scalar>
     auto const cos_val = std::cos(two_pi_tau);
     auto const pi2 = pi * pi;
     return {
-        .q = tau - sin_val / two_pi,
-        .dq = Scalar{1} - cos_val,
-        .ddq = two_pi * sin_val,
-        .dddq = Scalar{4} * pi2 * cos_val,
+        tau - sin_val / two_pi,
+        Scalar{1} - cos_val,
+        two_pi * sin_val,
+        Scalar{4} * pi2 * cos_val,
     };
 }
 

@@ -50,7 +50,7 @@ TEST_CASE("path_point default-initializes to zero", "[trajectory][types]")
 
 TEST_CASE("path_point stores assigned values", "[trajectory][types]")
 {
-    path_point<double> pt{.q = 0.5, .dq = 1.5, .ddq = -3.0, .dddq = 12.0};
+    path_point<double> pt{0.5, 1.5, -3.0, 12.0};
     CHECK_THAT(pt.q, WithinAbs(0.5, 1e-15));
     CHECK_THAT(pt.dq, WithinAbs(1.5, 1e-15));
     CHECK_THAT(pt.ddq, WithinAbs(-3.0, 1e-15));

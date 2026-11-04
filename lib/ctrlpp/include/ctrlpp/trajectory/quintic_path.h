@@ -26,10 +26,10 @@ auto quintic_path(Scalar tau) -> path_point<Scalar>
     auto const tau2 = tau * tau;
     auto const tau3 = tau2 * tau;
     return {
-        .q = tau3 * (Scalar{10} + tau * (Scalar{-15} + tau * Scalar{6})),
-        .dq = tau2 * (Scalar{30} + tau * (Scalar{-60} + tau * Scalar{30})),
-        .ddq = tau * (Scalar{60} + tau * (Scalar{-180} + tau * Scalar{120})),
-        .dddq = Scalar{60} + tau * (Scalar{-360} + tau * Scalar{360}),
+        tau3 * (Scalar{10} + tau * (Scalar{-15} + tau * Scalar{6})),
+        tau2 * (Scalar{30} + tau * (Scalar{-60} + tau * Scalar{30})),
+        tau * (Scalar{60} + tau * (Scalar{-180} + tau * Scalar{120})),
+        Scalar{60} + tau * (Scalar{-360} + tau * Scalar{360}),
     };
 }
 
