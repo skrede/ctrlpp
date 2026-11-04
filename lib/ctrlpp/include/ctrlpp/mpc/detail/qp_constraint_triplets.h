@@ -22,7 +22,7 @@ inline void add_initial_state_triplets(std::vector<Eigen::Triplet<Scalar>>& trip
 {
     constexpr int nx = static_cast<int>(NX);
     for(Eigen::Index i = 0; i < nx; ++i)
-        trips.emplace_back(row + i, i, Scalar{1});
+        trips.emplace_back(static_cast<int>(row + i), static_cast<int>(i), Scalar{1});
     row += nx;
 }
 
@@ -43,13 +43,13 @@ inline void add_dynamics_triplets(
         for(Eigen::Index i = 0; i < nx; ++i)
             for(Eigen::Index j = 0; j < nx; ++j)
                 if(A_sys(i, j) != Scalar{0})
-                    trips.emplace_back(row + i, x_km1 + j, -A_sys(i, j));
+                    trips.emplace_back(static_cast<int>(row + i), static_cast<int>(x_km1 + j), -A_sys(i, j));
         for(Eigen::Index i = 0; i < nx; ++i)
-            trips.emplace_back(row + i, x_k + i, Scalar{1});
+            trips.emplace_back(static_cast<int>(row + i), static_cast<int>(x_k + i), Scalar{1});
         for(Eigen::Index i = 0; i < nx; ++i)
             for(Eigen::Index j = 0; j < nu; ++j)
                 if(B_sys(i, j) != Scalar{0})
-                    trips.emplace_back(row + i, u_km1 + j, -B_sys(i, j));
+                    trips.emplace_back(static_cast<int>(row + i), static_cast<int>(u_km1 + j), -B_sys(i, j));
         row += nx;
     }
 }
@@ -62,13 +62,13 @@ inline void add_state_bound_triplets(std::vector<Eigen::Triplet<Scalar>>& trips,
     {
         Eigen::Index x_k = k * nx;
         for(Eigen::Index i = 0; i < nx; ++i)
-            trips.emplace_back(row + i, x_k + i, Scalar{1});
+            trips.emplace_back(static_cast<int>(row + i), static_cast<int>(x_k + i), Scalar{1});
 
         if(has_soft)
         {
             Eigen::Index slack = n_x_total + n_u_total + (k - 1) * nx;
             for(Eigen::Index i = 0; i < nx; ++i)
-                trips.emplace_back(row + i, slack + i, Scalar{-1});
+                trips.emplace_back(static_cast<int>(row + i), static_cast<int>(slack + i), Scalar{-1});
         }
         row += nx;
     }
@@ -82,7 +82,7 @@ inline void add_input_bound_triplets(std::vector<Eigen::Triplet<Scalar>>& trips,
     {
         Eigen::Index u_k = n_x_total + k * nu;
         for(Eigen::Index i = 0; i < nu; ++i)
-            trips.emplace_back(row + i, u_k + i, Scalar{1});
+            trips.emplace_back(static_cast<int>(row + i), static_cast<int>(u_k + i), Scalar{1});
         row += nu;
     }
 }
@@ -95,12 +95,12 @@ inline void add_rate_bound_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, 
     {
         Eigen::Index u_k = n_x_total + k * nu;
         for(Eigen::Index i = 0; i < nu; ++i)
-            trips.emplace_back(row + i, u_k + i, Scalar{1});
+            trips.emplace_back(static_cast<int>(row + i), static_cast<int>(u_k + i), Scalar{1});
         if(k > 0)
         {
             Eigen::Index u_km1 = n_x_total + (k - 1) * nu;
             for(Eigen::Index i = 0; i < nu; ++i)
-                trips.emplace_back(row + i, u_km1 + i, Scalar{-1});
+                trips.emplace_back(static_cast<int>(row + i), static_cast<int>(u_km1 + i), Scalar{-1});
         }
         row += nu;
     }
@@ -118,7 +118,7 @@ inline void add_ellipsoidal_triplets(std::vector<Eigen::Triplet<Scalar>>& trips,
     for(Eigen::Index i = 0; i < nx; ++i)
         for(Eigen::Index j = 0; j < nx; ++j)
             if(V(j, i) != Scalar{0})
-                trips.emplace_back(row + i, x_N_offset + j, V(j, i));
+                trips.emplace_back(static_cast<int>(row + i), static_cast<int>(x_N_offset + j), V(j, i));
     row += nx;
 }
 
@@ -130,7 +130,7 @@ inline void add_polytopic_triplets(std::vector<Eigen::Triplet<Scalar>>& trips, E
     for(Eigen::Index i = 0; i < n_faces; ++i)
         for(Eigen::Index j = 0; j < nx; ++j)
             if(s.H(i, j) != Scalar{0})
-                trips.emplace_back(row + i, x_N_offset + j, s.H(i, j));
+                trips.emplace_back(static_cast<int>(row + i), static_cast<int>(x_N_offset + j), s.H(i, j));
     row += n_faces;
 }
 
