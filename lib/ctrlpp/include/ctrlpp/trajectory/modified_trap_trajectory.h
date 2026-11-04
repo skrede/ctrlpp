@@ -1,22 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_TRAJECTORY_MODIFIED_TRAP_TRAJECTORY_H
 #define HPP_GUARD_CTRLPP_TRAJECTORY_MODIFIED_TRAP_TRAJECTORY_H
 
-/// @brief Modified trapezoidal velocity profile with cycloidal acceleration phases.
-///
-/// Replaces the constant-acceleration ramps of a standard trapezoidal profile with
-/// cycloidal (sinusoidal) transition phases, producing continuous acceleration and
-/// reduced vibration excitation. The profile has 6 phases with fixed T/8 boundaries.
-///
-/// The first half [0, T/2] has three regions:
-///   Phase A-B [0, T/8):     Cycloidal acceleration ramp-up
-///   Phase B-C [T/8, 3T/8):  Constant acceleration (linear velocity)
-///   Phase C-D [3T/8, T/2]:  Cycloidal acceleration ramp-down
-///
-/// The second half [T/2, T] is computed via symmetry: q(t) = h - q(T-t).
-///
-/// Key constants: max vel = 2h/T, max acc = 2h(2+pi)/(pi*T^2).
-///
-/// @cite biagiotti2009 -- Sec. 3.7, eq. (3.49)-(3.51), p.119-122
+// @cite biagiotti2009 -- Sec. 3.7, eq. (3.49)-(3.51), p.119-122
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 #include "ctrlpp/trajectory/trajectory_segment.h"
@@ -30,144 +15,112 @@
 namespace ctrlpp
 {
 
-/// @brief Modified trapezoidal trajectory with cycloidal acceleration phases.
-///
-/// @cite biagiotti2009 -- Sec. 3.7, p.119-122
+// @cite biagiotti2009 -- Sec. 3.7, p.119-122
 template <ctrlpp_floating_scalar Scalar>
 class modified_trap_trajectory
 {
 public:
     struct config
     {
-        Scalar q0; ///< Start position
-        Scalar q1; ///< End position
-        Scalar T;  ///< Total duration (user-specified)
+        Scalar q0;
+        Scalar q1;
+        Scalar T;
     };
 
     explicit modified_trap_trajectory(config const& cfg)
-        : q0_{cfg.q0}
-        , h_{std::abs(cfg.q1 - cfg.q0)}
-        , sigma_{cfg.q1 >= cfg.q0 ? Scalar{1} : Scalar{-1}}
-        , T_{cfg.T}
+        : m_q0{cfg.q0}
+        , m_h{std::abs(cfg.q1 - cfg.q0)}
+        , m_sigma{cfg.q1 >= cfg.q0 ? Scalar{1} : Scalar{-1}}
+        , m_T{cfg.T}
     {
     }
 
-    /// @brief Evaluate position, velocity, acceleration at time t.
-    ///
-    /// Uses six-phase structure with symmetry about T/2.
-    ///
-    /// @cite biagiotti2009 -- Sec. 3.7, eq. (3.49)-(3.51), p.119-122
-    auto evaluate(Scalar t) const -> trajectory_point<Scalar, 1>
+    // @cite biagiotti2009 -- Sec. 3.7, eq. (3.49)-(3.51), p.119-122
+    trajectory_point<Scalar, 1> evaluate(Scalar t) const
     {
-        auto const tc = std::clamp(t, Scalar{0}, T_);
+        auto const tc = std::clamp(t, Scalar{0}, m_T);
 
         Scalar q{};
         Scalar dq{};
         Scalar ddq{};
 
-        if (tc <= T_ / Scalar{2}) {
+        if(tc <= m_T / Scalar{2})
+        {
             eval_first_half(tc, q, dq, ddq);
         }
-        else {
-            // Symmetry: q(t) = h - q(T-t), dq(t) = dq(T-t), ddq(t) = -ddq(T-t)
+        else
+        {
             // @cite biagiotti2009 -- Sec. 5.1
-            auto const t_mirror = T_ - tc;
+            auto const t_mirror = m_T - tc;
             eval_first_half(t_mirror, q, dq, ddq);
-            q = h_ - q;
-            // dq stays same (velocity is symmetric)
+            q = m_h - q;
             ddq = -ddq;
         }
 
         return {
-            .position = Vector<Scalar, 1>{q0_ + sigma_ * q},
-            .velocity = Vector<Scalar, 1>{sigma_ * dq},
-            .acceleration = Vector<Scalar, 1>{sigma_ * ddq},
+                .position = Vector<Scalar, 1>{m_q0 + m_sigma * q},
+                .velocity = Vector<Scalar, 1>{m_sigma * dq},
+                .acceleration = Vector<Scalar, 1>{m_sigma * ddq},
         };
     }
 
-    auto duration() const -> Scalar { return T_; }
+    Scalar duration() const { return m_T; }
 
-    /// @brief Peak velocity magnitude = 2*h/T.
-    /// @cite biagiotti2009 -- Sec. 3.7, p.121
-    auto peak_velocity() const -> Scalar { return Scalar{2} * h_ / T_; }
+    // @cite biagiotti2009 -- Sec. 3.7, p.121
+    Scalar peak_velocity() const { return Scalar{2} * m_h / m_T; }
 
 private:
-    Scalar q0_;
-    Scalar h_;
-    Scalar sigma_;
-    Scalar T_;
+    Scalar m_q0;
+    Scalar m_h;
+    Scalar m_sigma;
+    Scalar m_T;
 
-    /// @brief Evaluate the first half [0, T/2] of the normalized profile.
-    ///
-    /// The displacement scale factor is hp = h / (2 + pi).
-    /// Phase boundaries at T/8, 3T/8, T/2.
-    ///
-    /// @cite biagiotti2009 -- Sec. 3.7, eq. (3.49)-(3.51), p.120
+    // @cite biagiotti2009 -- Sec. 3.7, eq. (3.49)-(3.51), p.120
     void eval_first_half(Scalar t, Scalar& q, Scalar& dq, Scalar& ddq) const
     {
         constexpr auto pi = std::numbers::pi_v<Scalar>;
-        auto const hp = h_ / (Scalar{2} + pi);
-        auto const T_sq = T_ * T_;
-        auto const T8 = T_ / Scalar{8};
-
-        // Max acceleration in the constant-accel region
-        // a_max = hp * 8*pi / T^2 = 2*h*(2+pi) / (pi*T^2) ... wait, let me compute:
-        // From Phase A-B: ddq = hp * 8*pi/T^2 * sin(4*pi*t/T)
-        // Peak of sin is 1, so a_max = hp * 8*pi / T^2
+        auto const hp = m_h / (Scalar{2} + pi);
+        auto const T_sq = m_T * m_T;
+        auto const T8 = m_T / Scalar{8};
         auto const a_max = hp * Scalar{8} * pi / T_sq;
 
-        if (t < T8) {
-            // Phase A-B [0, T/8): Cycloidal acceleration ramp-up
+        if(t < T8)
+        {
             // @cite biagiotti2009 -- Sec. 3.7, eq. (3.49), p.120
-            auto const w = Scalar{4} * pi * t / T_;
-            q = hp * (Scalar{2} * t / T_ - std::sin(w) / (Scalar{2} * pi));
-            dq = hp / T_ * (Scalar{2} - Scalar{2} * std::cos(w));
+            auto const w = Scalar{4} * pi * t / m_T;
+            q = hp * (Scalar{2} * t / m_T - std::sin(w) / (Scalar{2} * pi));
+            dq = hp / m_T * (Scalar{2} - Scalar{2} * std::cos(w));
             ddq = a_max * std::sin(w);
         }
-        else if (t < Scalar{3} * T8) {
-            // Phase B-C [T/8, 3T/8): Constant acceleration
+        else if(t < Scalar{3} * T8)
+        {
+            // q_b and dq_b are the ramp-up's position and velocity at T/8, where sin(w) = 1 and cos(w) = 0.
             // @cite biagiotti2009 -- Sec. 3.7, eq. (3.50), p.121
-            //
-            // Values at t = T/8 (end of Phase A-B):
-            //   w(T/8) = 4*pi*(T/8)/T = pi/2
-            //   q(T/8) = hp*(1/4 - 1/(2*pi))   [sin(pi/2)=1]
-            //   dq(T/8) = hp/T * (2 - 2*cos(pi/2)) = hp*2/T
             auto const dt = t - T8;
             auto const q_b = hp * (Scalar{1} / Scalar{4} - Scalar{1} / (Scalar{2} * pi));
-            auto const dq_b = hp * Scalar{2} / T_;
+            auto const dq_b = hp * Scalar{2} / m_T;
 
             ddq = a_max;
             dq = dq_b + a_max * dt;
             q = q_b + dq_b * dt + Scalar{0.5} * a_max * dt * dt;
         }
-        else {
-            // Phase C-D [3T/8, T/2]: Cycloidal acceleration ramp-down from a_max to 0
+        else
+        {
+            // q_c and dq_c are the constant phase's position and velocity at 3T/8, after T/4 at a_max.
             // @cite biagiotti2009 -- Sec. 3.7, eq. (3.51), p.121
-            //
-            // Values at t = 3T/8 (end of Phase B-C):
-            //   dt_bc = 3T/8 - T/8 = T/4
-            //   dq(3T/8) = dq_b + a_max * T/4
-            //   q(3T/8) = q_b + dq_b*T/4 + 0.5*a_max*(T/4)^2
-            auto const dt_bc = T_ / Scalar{4};
+            auto const dt_bc = m_T / Scalar{4};
             auto const q_b = hp * (Scalar{1} / Scalar{4} - Scalar{1} / (Scalar{2} * pi));
-            auto const dq_b = hp * Scalar{2} / T_;
+            auto const dq_b = hp * Scalar{2} / m_T;
             auto const q_c = q_b + dq_b * dt_bc + Scalar{0.5} * a_max * dt_bc * dt_bc;
             auto const dq_c = dq_b + a_max * dt_bc;
 
             auto const dt = t - Scalar{3} * T8;
-            auto const w = Scalar{4} * pi * dt / T_;
+            auto const w = Scalar{4} * pi * dt / m_T;
 
-            // Acceleration: a_max * cos(w), ramps from a_max to 0 over [0, T/8]
-            // At dt=0: cos(0)=1 -> a_max. At dt=T/8: cos(pi/2)=0 -> 0.
             ddq = a_max * std::cos(w);
+            dq = dq_c + a_max * m_T / (Scalar{4} * pi) * std::sin(w);
 
-            // Velocity: integral of a_max*cos(4*pi*dt/T) = a_max*T/(4*pi)*sin(w)
-            dq = dq_c + a_max * T_ / (Scalar{4} * pi) * std::sin(w);
-
-            // Position: double integral
-            //   integral of velocity above = dq_c*dt + a_max*T/(4*pi) * [-T/(4*pi)*cos(w) + T/(4*pi)]
-            //   = dq_c*dt + a_max*(T/(4*pi))^2 * (1 - cos(w))
-            auto const k = T_ / (Scalar{4} * pi);
+            auto const k = m_T / (Scalar{4} * pi);
             q = q_c + dq_c * dt + a_max * k * k * (Scalar{1} - std::cos(w));
         }
     }

@@ -18,7 +18,7 @@ Normalized cubic polynomial path: `q(tau) = 3*tau^2 - 2*tau^3`. C1-continuous wi
 
 ```cpp
 template <typename Scalar>
-auto cubic_path(Scalar tau) -> path_point<Scalar>;
+path_point<Scalar> cubic_path(Scalar tau);
 ```
 
 Evaluate the cubic motion law at normalized time `tau` in [0,1]. Returns position, velocity, acceleration, and jerk.
@@ -27,7 +27,7 @@ Evaluate the cubic motion law at normalized time `tau` in [0,1]. Returns positio
 
 ```cpp
 template <typename Scalar>
-auto cubic_path_peak_derivatives() -> std::array<Scalar, 3>;
+std::array<Scalar, 3> cubic_path_peak_derivatives();
 ```
 
 Returns `{dq_max, ddq_max, dddq_max}` = `{1.5, 6.0, 12.0}`. Used by `compute_min_duration` for time scaling.

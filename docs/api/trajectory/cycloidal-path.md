@@ -18,7 +18,7 @@ Cycloidal motion law: `q(tau) = tau - sin(2*pi*tau) / (2*pi)`. Zero acceleration
 
 ```cpp
 template <typename Scalar>
-auto cycloidal_path(Scalar tau) -> path_point<Scalar>;
+path_point<Scalar> cycloidal_path(Scalar tau);
 ```
 
 Evaluate the cycloidal motion law at normalized time `tau` in [0,1].
@@ -27,7 +27,7 @@ Evaluate the cycloidal motion law at normalized time `tau` in [0,1].
 
 ```cpp
 template <typename Scalar>
-auto cycloidal_path_peak_derivatives() -> std::array<Scalar, 3>;
+std::array<Scalar, 3> cycloidal_path_peak_derivatives();
 ```
 
 Returns `{dq_max, ddq_max, dddq_max}` = `{2, 2*pi, 4*pi^2}`.

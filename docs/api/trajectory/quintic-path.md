@@ -18,7 +18,7 @@ Normalized quintic polynomial path: `q(tau) = 10*tau^3 - 15*tau^4 + 6*tau^5`. C2
 
 ```cpp
 template <typename Scalar>
-auto quintic_path(Scalar tau) -> path_point<Scalar>;
+path_point<Scalar> quintic_path(Scalar tau);
 ```
 
 Evaluate the quintic motion law at normalized time `tau` in [0,1].
@@ -27,7 +27,7 @@ Evaluate the quintic motion law at normalized time `tau` in [0,1].
 
 ```cpp
 template <typename Scalar>
-auto quintic_path_peak_derivatives() -> std::array<Scalar, 3>;
+std::array<Scalar, 3> quintic_path_peak_derivatives();
 ```
 
 Returns `{dq_max, ddq_max, dddq_max}` = `{15/8, 10*sqrt(3)/3, 60}`. Not constexpr due to `sqrt`.

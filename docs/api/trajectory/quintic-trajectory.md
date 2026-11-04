@@ -32,7 +32,8 @@ Quintic polynomial trajectory segment with arbitrary velocity and acceleration b
 
 ```cpp
 template <typename Scalar, int Rows>
-auto make_quintic_trajectory(
+ctrlpp::expected<quintic_trajectory<Scalar, static_cast<std::size_t>(Rows)>, trajectory_error>
+make_quintic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,   // start position
     Eigen::Matrix<Scalar, Rows, 1> const& q1,   // end position
     Eigen::Matrix<Scalar, Rows, 1> const& v0,   // start velocity
@@ -40,7 +41,7 @@ auto make_quintic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& a0,   // start acceleration
     Eigen::Matrix<Scalar, Rows, 1> const& a1,   // end acceleration
     Scalar duration
-) -> ctrlpp::expected<quintic_trajectory<Scalar, ND>, trajectory_error>;
+);
 ```
 
 The duration is a divisor (`evaluate` scales derivatives by `1/T`), so its exact domain is finite and strictly positive. Rejections, checked in order:

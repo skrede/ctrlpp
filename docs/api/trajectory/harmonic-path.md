@@ -18,7 +18,7 @@ Harmonic motion law: `q(tau) = (1 - cos(pi*tau)) / 2`. Produces a sinusoidal vel
 
 ```cpp
 template <typename Scalar>
-auto harmonic_path(Scalar tau) -> path_point<Scalar>;
+path_point<Scalar> harmonic_path(Scalar tau);
 ```
 
 Evaluate the harmonic motion law at normalized time `tau` in [0,1].
@@ -27,7 +27,7 @@ Evaluate the harmonic motion law at normalized time `tau` in [0,1].
 
 ```cpp
 template <typename Scalar>
-auto harmonic_path_peak_derivatives() -> std::array<Scalar, 3>;
+std::array<Scalar, 3> harmonic_path_peak_derivatives();
 ```
 
 Returns `{dq_max, ddq_max, dddq_max}` = `{pi/2, pi^2/2, pi^3/2}`.

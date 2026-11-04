@@ -1,13 +1,8 @@
 #ifndef HPP_GUARD_CTRLPP_TRAJECTORY_CYCLOIDAL_PATH_H
 #define HPP_GUARD_CTRLPP_TRAJECTORY_CYCLOIDAL_PATH_H
 
-/// @brief Cycloidal path: q_N(tau) = tau - sin(2*pi*tau) / (2*pi)
-///
-/// Zero acceleration at endpoints. Smooth sinusoidal acceleration profile.
-/// Peak normalized derivatives: dq_max = 2.0, ddq_max = 2*pi, dddq_max = 4*pi^2.
-///
-/// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-/// Machines and Robots", 2009, Sec. 2.2.2, eq. (2.22), p.44; p.235
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
+// Machines and Robots", 2009, Sec. 2.2.2, eq. (2.22), p.44; p.235
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 
@@ -18,11 +13,9 @@
 namespace ctrlpp
 {
 
-/// @brief Cycloidal path: q_N(tau) = tau - sin(2*pi*tau) / (2*pi)
-///
-/// @cite biagiotti2009 -- Sec. 2.2.2, eq. (2.22), p.44
+// @cite biagiotti2009 -- Sec. 2.2.2, eq. (2.22), p.44
 template <typename Scalar>
-auto cycloidal_path(Scalar tau) -> path_point<Scalar>
+path_point<Scalar> cycloidal_path(Scalar tau)
 {
     auto const pi = std::numbers::pi_v<Scalar>;
     auto const two_pi = Scalar{2} * pi;
@@ -31,18 +24,16 @@ auto cycloidal_path(Scalar tau) -> path_point<Scalar>
     auto const cos_val = std::cos(two_pi_tau);
     auto const pi2 = pi * pi;
     return {
-        tau - sin_val / two_pi,
-        Scalar{1} - cos_val,
-        two_pi * sin_val,
-        Scalar{4} * pi2 * cos_val,
+            tau - sin_val / two_pi,
+            Scalar{1} - cos_val,
+            two_pi * sin_val,
+            Scalar{4} * pi2 * cos_val,
     };
 }
 
-/// @brief Peak normalized derivatives for cycloidal path: {dq_max, ddq_max, dddq_max}.
-///
-/// @cite biagiotti2009 -- p.235
+// @cite biagiotti2009 -- p.235
 template <typename Scalar>
-auto cycloidal_path_peak_derivatives() -> std::array<Scalar, 3>
+std::array<Scalar, 3> cycloidal_path_peak_derivatives()
 {
     auto const pi = std::numbers::pi_v<Scalar>;
     auto const pi2 = pi * pi;

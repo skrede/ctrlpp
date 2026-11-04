@@ -1,13 +1,8 @@
 #ifndef HPP_GUARD_CTRLPP_TRAJECTORY_HARMONIC_PATH_H
 #define HPP_GUARD_CTRLPP_TRAJECTORY_HARMONIC_PATH_H
 
-/// @brief Harmonic path: q_N(tau) = (1 - cos(pi*tau)) / 2
-///
-/// Sinusoidal velocity profile. Non-zero acceleration at endpoints.
-/// Peak normalized derivatives: dq_max = pi/2, ddq_max = pi^2/2, dddq_max = pi^3/2.
-///
-/// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
-/// Machines and Robots", 2009, Sec. 2.2.1, eq. (2.21), p.43; p.236
+// @cite biagiotti2009 -- Biagiotti & Melchiorri, "Trajectory Planning for Automatic
+// Machines and Robots", 2009, Sec. 2.2.1, eq. (2.21), p.43; p.236
 
 #include "ctrlpp/trajectory/trajectory_types.h"
 
@@ -18,11 +13,9 @@
 namespace ctrlpp
 {
 
-/// @brief Harmonic path: q_N(tau) = (1 - cos(pi*tau)) / 2
-///
-/// @cite biagiotti2009 -- Sec. 2.2.1, eq. (2.21), p.43
+// @cite biagiotti2009 -- Sec. 2.2.1, eq. (2.21), p.43
 template <typename Scalar>
-auto harmonic_path(Scalar tau) -> path_point<Scalar>
+path_point<Scalar> harmonic_path(Scalar tau)
 {
     auto const pi = std::numbers::pi_v<Scalar>;
     auto const pi_tau = pi * tau;
@@ -31,18 +24,16 @@ auto harmonic_path(Scalar tau) -> path_point<Scalar>
     auto const pi2 = pi * pi;
     auto const pi3 = pi2 * pi;
     return {
-        (Scalar{1} - cos_val) / Scalar{2},
-        pi / Scalar{2} * sin_val,
-        pi2 / Scalar{2} * cos_val,
-        -pi3 / Scalar{2} * sin_val,
+            (Scalar{1} - cos_val) / Scalar{2},
+            pi / Scalar{2} * sin_val,
+            pi2 / Scalar{2} * cos_val,
+            -pi3 / Scalar{2} * sin_val,
     };
 }
 
-/// @brief Peak normalized derivatives for harmonic path: {dq_max, ddq_max, dddq_max}.
-///
-/// @cite biagiotti2009 -- p.236
+// @cite biagiotti2009 -- p.236
 template <typename Scalar>
-auto harmonic_path_peak_derivatives() -> std::array<Scalar, 3>
+std::array<Scalar, 3> harmonic_path_peak_derivatives()
 {
     auto const pi = std::numbers::pi_v<Scalar>;
     auto const pi2 = pi * pi;

@@ -32,7 +32,8 @@ Septic polynomial trajectory segment with arbitrary boundary conditions up to je
 
 ```cpp
 template <typename Scalar, int Rows>
-auto make_septic_trajectory(
+ctrlpp::expected<septic_trajectory<Scalar, static_cast<std::size_t>(Rows)>, trajectory_error>
+make_septic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,   // start position
     Eigen::Matrix<Scalar, Rows, 1> const& q1,   // end position
     Eigen::Matrix<Scalar, Rows, 1> const& v0,   // start velocity
@@ -42,7 +43,7 @@ auto make_septic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& j0,   // start jerk
     Eigen::Matrix<Scalar, Rows, 1> const& j1,   // end jerk
     Scalar duration
-) -> ctrlpp::expected<septic_trajectory<Scalar, ND>, trajectory_error>;
+);
 ```
 
 The duration is a divisor (`evaluate` scales derivatives by `1/T`), so its exact domain is finite and strictly positive. Rejections, checked in order:

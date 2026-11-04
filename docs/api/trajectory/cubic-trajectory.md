@@ -34,13 +34,14 @@ Evaluation uses Horner's method for numerical stability. Time is clamped to `[0,
 
 ```cpp
 template <typename Scalar, int Rows>
-auto make_cubic_trajectory(
+ctrlpp::expected<cubic_trajectory<Scalar, static_cast<std::size_t>(Rows)>, trajectory_error>
+make_cubic_trajectory(
     Eigen::Matrix<Scalar, Rows, 1> const& q0,   // start position
     Eigen::Matrix<Scalar, Rows, 1> const& q1,   // end position
     Eigen::Matrix<Scalar, Rows, 1> const& v0,   // start velocity
     Eigen::Matrix<Scalar, Rows, 1> const& v1,   // end velocity
     Scalar duration
-) -> ctrlpp::expected<cubic_trajectory<Scalar, ND>, trajectory_error>;
+);
 ```
 
 Coefficients are computed in normalized time to prevent ill-conditioning.

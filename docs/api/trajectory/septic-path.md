@@ -18,7 +18,7 @@ Normalized septic polynomial path: `q(tau) = 35*tau^4 - 84*tau^5 + 70*tau^6 - 20
 
 ```cpp
 template <typename Scalar>
-auto septic_path(Scalar tau) -> path_point<Scalar>;
+path_point<Scalar> septic_path(Scalar tau);
 ```
 
 Evaluate the septic motion law at normalized time `tau` in [0,1].
@@ -27,7 +27,7 @@ Evaluate the septic motion law at normalized time `tau` in [0,1].
 
 ```cpp
 template <typename Scalar>
-auto septic_path_peak_derivatives() -> std::array<Scalar, 3>;
+std::array<Scalar, 3> septic_path_peak_derivatives();
 ```
 
 Returns `{dq_max, ddq_max, dddq_max}` = `{35/16, ~7.5132, 52.5}`. The ddq_max value involves nested radicals without a simple closed form.
