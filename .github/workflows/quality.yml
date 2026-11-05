@@ -20,7 +20,7 @@ concurrency:
 jobs:
   static-checks:
     runs-on: ubuntu-24.04
-    name: size gate (files) and style lint
+    name: size gate (files), style lint and source purity
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -43,6 +43,15 @@ jobs:
       - name: Style lint
         if: ${{ !cancelled() }}
         run: python3 scripts/check_style.py
+
+      # The purity gate is also a ctest, but the workflows that run the tests skip docs-only pushes.
+      - name: Source purity
+        if: ${{ !cancelled() }}
+        run: bash scripts/source_purity_check.sh
+
+      - name: Source-purity self-test
+        if: ${{ !cancelled() }}
+        run: bash scripts/source_purity_check.sh --self-test
 
       - name: File-size negative control
         if: ${{ !cancelled() }}

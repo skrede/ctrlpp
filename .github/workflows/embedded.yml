@@ -100,14 +100,24 @@ jobs:
             cmake --build "build-arm-${predictive}"
           done
 
+      # The tuned clock tree's sources compile only under CTRLPP_MCU_TUNED_POSTURE, so without this
+      # configuration no job builds them. The predictive family stays at its default, on.
+      - name: Cross-compile the tuned-posture NUCLEO-H753ZI images
+        run: |
+          cmake -S examples/embedded/nucleo_h753zi -B build-arm-tuned \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/examples/embedded/nucleo_h753zi/cmake/toolchain-arm-none-eabi.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCTRLPP_MCU_TUNED_POSTURE=ON
+          cmake --build build-arm-tuned
+
       # Each configuration links two images from the same sources: the
       # allocation-evidence image and the timing image built without the
       # allocation sensor. Both are what a board runs, so both must resolve.
       - name: Assert fully resolved images and report their size
         run: |
-          for predictive in ON OFF; do
+          for build in build-arm-ON build-arm-OFF build-arm-tuned; do
             for image in ctrlpp_nucleo_h753zi ctrlpp_nucleo_h753zi_timing; do
-              elf="build-arm-${predictive}/${image}.elf"
+              elf="${build}/${image}.elf"
               test -f "$elf"
               undefined=$(arm-none-eabi-nm --undefined-only "$elf")
               if [ -n "$undefined" ]; then
