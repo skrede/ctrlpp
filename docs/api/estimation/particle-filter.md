@@ -7,6 +7,7 @@ Bootstrap Sequential Importance Resampling (SIR) particle filter with compile-ti
 | Form | Header |
 |------|--------|
 | `ctrlpp::particle_filter<Scalar, NX, NU, NY, NP, Dynamics, Measurement, Resampler, Rng, Likelihood>` | `#include <ctrlpp/estimation/particle_filter.h>` |
+| `ctrlpp::pf_config`, `ctrlpp::extraction_method`, `ctrlpp::weight_representation`, `ctrlpp::pf_update_error`, `ctrlpp::pf_health`, `ctrlpp::pf_likelihood_model` | `#include <ctrlpp/estimation/particle_filter_types.h>` (included by `particle_filter.h`) |
 
 No convenience header exists for this type. Use the categorical path.
 
