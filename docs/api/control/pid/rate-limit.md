@@ -14,17 +14,17 @@ Fields added to `pid_config` when this policy is active:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `rate_max` | `std::array<Scalar, N>` | `{}` (zeros) | Maximum rate of change of the output per channel, in output units per second; a cycle of step `dt` moves the output by at most `rate_max * dt`. Zero and `+inf` leave the channel unlimited. `create` refuses a `NaN` or negative `rate_max` with `invalid_rate_limit`. |
+| `rate_max` | `std::array<Scalar, N>` | `{}` (zeros) | Maximum rate of change of the output per channel, in output units per time unit of `dt`; a cycle of step `dt` moves the output by at most `rate_max * dt`. Zero and `+inf` leave the channel unlimited. `create` refuses a `NaN` or negative `rate_max` with `invalid_rate_limit`. |
 
 ## Behavior
 
-The limiter runs per channel, after the PID command is formed and before the output clamp. `rate_max` is in output units per second, so the bound for one cycle is `rate_max * dt`. When the requested change `u_new - u_prev` exceeds `+rate_max * dt`, the output becomes `u_prev + rate_max * dt`; when it falls below `-rate_max * dt`, it becomes `u_prev - rate_max * dt`; either way the channel is reported as clipped. A channel within its bound, or with `rate_max` at zero or `+inf`, passes the command through bit for bit, so composing a limiter that never binds changes neither the output nor the integrator.
+The limiter runs per channel, after the PID command (feed-forward included) is formed and before the output clamp. `rate_max` is in output units per time unit of `dt`, so the bound for one cycle is `rate_max * dt`. When the requested change `u_new - u_prev` exceeds `+rate_max * dt`, the output becomes `u_prev + rate_max * dt`; when it falls below `-rate_max * dt`, it becomes `u_prev - rate_max * dt`; either way the channel is reported as clipped. A channel within its bound, or with `rate_max` at zero or `+inf`, passes the command through bit for bit, so composing a limiter that never binds changes neither the output nor the integrator.
 
 In velocity form the limiter clips the emitted increment itself: each channel's increment is bounded to `+-rate_max * dt` before it is added to the accumulated output, and the clipped part is not carried into later cycles. The output clamp then applies to the accumulated output as usual. See [velocity-form](velocity-form.md).
 
-The anchor `u_prev` is the previous cycle's applied output. After a cycle of the tracking overload of `compute`, the position form sets it to the tracking signal clamped to `output_min` and `output_max` instead, since that is the command the actuator received, so the first automatic cycle after a manual-to-automatic switch rate-limits from the tracked command rather than from the discarded automatic one. See [compute (with tracking signal)](README.md#compute-with-tracking-signal).
+The anchor `u_prev` is the previous cycle's applied output, after the clamp. After `create` and `reset` it is zero, so the first cycles ramp from zero rather than from the actuator's position; use the tracking overload of `compute` to start from the actuator. After a cycle of the tracking overload of `compute`, the position form sets it to the tracking signal clamped to `output_min` and `output_max` instead, since that is the command the actuator received, so the first automatic cycle after a manual-to-automatic switch rate-limits from the tracked command rather than from the discarded automatic one. See [compute (with tracking signal)](README.md#compute-with-tracking-signal).
 
-Rate limiting interacts with anti-windup: the constraint verdict is the limiter's own clip report together with the output clamp's, per channel, so a channel the limiter did not clip never engages clamping anti-windup. Back-calculation feeds back against the command taken before the limiter, so a rate-limited ramp drives the integrator back just as output saturation does.
+Rate limiting interacts with anti-windup: the constraint verdict is the limiter's own clip report together with the output clamp's, per channel, so a channel that neither the limiter clipped nor the clamp saturated never engages clamping anti-windup. Back-calculation feeds back against the command taken before the limiter, so a rate-limited ramp drives the integrator back just as output saturation does.
 
 ## Usage Example
 
@@ -44,7 +44,7 @@ int main()
     cfg.kp = Vec::Constant(10.0);   // aggressive gain
     cfg.ki = Vec::Constant(1.0);
     cfg.kd = Vec::Constant(0.0);
-    cfg.template policy<ctrlpp::rate_limit>().rate_max = {0.1};  // max 0.1 output units per second
+    cfg.template policy<ctrlpp::rate_limit>().rate_max = {0.1};  // output units per second
 
     auto created = Pid::create(cfg);
     if (!created.has_value()) return 1;

@@ -1,6 +1,6 @@
 # setpoint_filter / pv_filter
 
-Two complementary filtering policies for shaping the PID reference path. `setpoint_filter` applies setpoint weighting (b, c parameters) to reduce overshoot on setpoint changes without affecting disturbance rejection. `pv_filter` applies a first-order low-pass filter to the process variable before it enters the PID computation.
+Two first-order low-pass filters on the PID inputs. `setpoint_filter` filters the setpoint, which softens the response to setpoint steps without affecting disturbance rejection. `pv_filter` filters the process variable before it enters the PID computation. Setpoint weighting, the `b` and `c` fields, is part of every `pid_config` and needs neither policy; it is described here because it shapes the same reference path.
 
 ## Header
 
@@ -11,31 +11,32 @@ Two complementary filtering policies for shaping the PID reference path. `setpoi
 
 ## Config Fields
 
+### Setpoint weights (base fields)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `b` | `Vector<Scalar, NY>` | `1.0` (all channels) | Proportional setpoint weight. The proportional term uses b*r - y instead of r - y. `create` refuses a `NaN` or infinite component with `non_finite_setpoint_weight`. |
+| `c` | `Vector<Scalar, NY>` | `1.0` (all channels) | Derivative setpoint weight. With `derivative_on_error` set, the derivative term uses c*r - y instead of r - y; without it the derivative acts on -y alone and `c` is not read. `create` refuses a `NaN` or infinite component with `non_finite_setpoint_weight`. |
+
 ### setpoint_filter
 
-Uses the base `pid_config` fields `b` and `c` (already present in all PID configurations):
-
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `b` | `Vector<Scalar, N>` | `1.0` (all channels) | Proportional setpoint weight. The proportional term uses b*r - y instead of r - y. `create` refuses a `NaN` or infinite component with `non_finite_setpoint_weight`. |
-| `c` | `Vector<Scalar, N>` | `1.0` (all channels) | Derivative setpoint weight. The derivative term uses c*r - y instead of r - y. `create` refuses a `NaN` or infinite component with `non_finite_setpoint_weight`. |
-
-Additionally, the policy adds a filter time constant:
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `tf` | `std::array<Scalar, N>` | `{}` (zeros) | Setpoint prefilter time constant per channel. Zero leaves the channel unfiltered. `create` refuses a `NaN`, negative or `+inf` `tf` with `invalid_filter_time_constant`. |
+| `tf` | `std::array<Scalar, N>` | `{}` (zeros) | Setpoint prefilter time constant per channel, in the time unit of `dt`. Zero leaves the channel unfiltered. `create` refuses a `NaN`, negative or `+inf` `tf` with `invalid_filter_time_constant`. |
 
 ### pv_filter
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `tf` | `std::array<Scalar, N>` | `{}` (zeros) | Process variable filter time constant per channel. Larger values mean heavier smoothing. Zero leaves the channel unfiltered. `create` refuses a `NaN`, negative or `+inf` `tf` with `invalid_filter_time_constant`. |
+| `tf` | `std::array<Scalar, N>` | `{}` (zeros) | Process variable filter time constant per channel, in the time unit of `dt`. Larger values mean heavier smoothing. Zero leaves the channel unfiltered. `create` refuses a `NaN`, negative or `+inf` `tf` with `invalid_filter_time_constant`. |
 
 ## Behavior
 
-- **setpoint_filter**: Weights b and c scale the setpoint contribution to the proportional and derivative terms respectively. Setting b < 1 reduces the proportional kick on setpoint changes. Setting c = 0 eliminates derivative kick entirely. The filter time constant `tf` applies a first-order prefilter to the setpoint signal.
-- **pv_filter**: Applies a first-order low-pass filter to the process variable measurement before it enters the PID error computation. Useful for reducing measurement noise without modifying the derivative filter coefficient.
+- **Setpoint weights**: b and c scale the setpoint contribution to the proportional and derivative terms respectively. Setting b < 1 reduces the proportional kick on setpoint changes. The derivative acts on the measurement by default, which already avoids a derivative kick; with `derivative_on_error` set, c = 0 restores that. The integral always acts on the unweighted error r - y.
+- **setpoint_filter**: each channel with a positive `tf` is filtered as `r_f = alpha * r_f + (1 - alpha) * r` with `alpha = tf / (tf + dt)`. The filtered setpoint replaces the setpoint in the error, the proportional and derivative terms and the performance metrics; the feed-forward callable still receives the unfiltered one.
+- **pv_filter**: the same first-order filter on the measurement, which then replaces it in the error, the proportional and derivative terms and the metrics. Useful for reducing measurement noise without modifying the derivative filter coefficient.
+
+Both filter states start at zero after `create` and `reset`, so the first cycles see a setpoint or measurement rising from zero, not the signal's current value.
 
 ## Usage Example
 
@@ -56,7 +57,7 @@ int main()
     cfg.ki = Vec::Constant(1.0);
     cfg.kd = Vec::Constant(0.5);
     cfg.b = Vec::Constant(0.7);   // reduce proportional kick
-    cfg.c = Vec::Constant(0.0);   // no derivative kick
+    cfg.template policy<ctrlpp::setpoint_filter>().tf = {0.2};  // soften the step
 
     auto created = Pid::create(cfg);
     if (!created.has_value()) return 1;

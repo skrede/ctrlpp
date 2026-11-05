@@ -73,48 +73,63 @@ int main()
 
 ## What Is Happening
 
-1. **Template parameters** `pid<double, 1>`<br/> Scalar type `double`,
-   one state, one input, one output. This is the SISO specialization.
+1. **Template parameters** `pid<double, 1>`<br/> Scalar type `double` and
+   `NY = 1`, a single control channel. The same template serves every channel
+   count; there is no separate SISO type.
 
-2. **Configuration**<br/>`kp`, `ki`, `kd` are `Eigen::Vector` types (here
-   1-dimensional). Output limits prevent actuator saturation.
+2. **Configuration**<br/>`kp`, `ki`, `kd` are `Vector<double, 1>` (Eigen
+   column vectors with one entry per channel). The output limits clamp the
+   command to the actuator's range.
 
 3. **Control loop**<br/>`ctrl.compute(setpoint, measurement, dt)` returns a
    result carrying the control signal, because a cycle can fail: a non-finite
    setpoint or measurement, or a step that is not a positive finite duration, is
-   rejected before any carried state is touched. A refusal means there is no
+   rejected before any carried state is touched, and a cycle whose result would
+   be non-finite is rolled back. A refusal means there is no
    command for this cycle, so the caller decides what the actuator does -- hold
    the last successful command, drive a configured safe value, or fail over. On
    success the plant model advances one step and the loop repeats.
 
-4. **CSV output**<br/>Pipe to gnuplot or load in a spreadsheet to visualise the
+4. **CSV output**<br/>Pipe to gnuplot or load in a spreadsheet to visualize the
    step response.
 
 ## Adding a Policy
 
 The bare `pid` has no anti-windup or derivative filtering. Adding a policy is
-a compile-time template parameter &mdash; zero runtime cost when not used:
+a compile-time template parameter, and the code of a policy that is not
+composed is compiled out:
 
 ```cpp
 #include <ctrlpp/control/pid.h>
 
-using Pid = ctrlpp::pid<double, 1,
-                         ctrlpp::anti_windup<ctrlpp::back_calc>,
-                         ctrlpp::deriv_filter>;
+int main()
+{
+    using Pid = ctrlpp::pid<double, 1,
+                             ctrlpp::anti_windup<ctrlpp::back_calc>,
+                             ctrlpp::deriv_filter>;
+    using Vec = Pid::vector_t;
 
-Pid::config_type cfg{};
-cfg.kp = Vec::Constant(3.0);
-cfg.ki = Vec::Constant(1.5);
-cfg.kd = Vec::Constant(0.5);
-cfg.output_min = Vec::Constant(-5.0);
-cfg.output_max = Vec::Constant(5.0);
+    Pid::config_type cfg{};
+    cfg.kp = Vec::Constant(3.0);
+    cfg.ki = Vec::Constant(1.5);
+    cfg.kd = Vec::Constant(0.5);
+    cfg.output_min = Vec::Constant(-5.0);
+    cfg.output_max = Vec::Constant(5.0);
 
-// Configure the derivative filter bandwidth
-cfg.template policy<ctrlpp::deriv_filter>().n = {10.0};
+    // Default derivative filter time constant Tf = kd / (kp * n)
+    cfg.template policy<ctrlpp::deriv_filter>().n = {10.0};
+
+    auto created = Pid::create(cfg);
+    if (!created.has_value()) return 1;
+    return 0;
+}
 ```
 
-The config struct automatically gains fields for each policy. See
-[PID Composition](../pid/composition.md) for a details on composing
+The back-calculation gain `kb` is left at zero here, which selects its
+default, so only the derivative filter needs a value. Each composed policy
+that declares a configuration struct adds it to `cfg`, reached through
+`cfg.template policy<Policy>()`. See
+[PID Composition](../pid/composition.md) for details on composing
 multiple policies together.
 
 ## Next Steps

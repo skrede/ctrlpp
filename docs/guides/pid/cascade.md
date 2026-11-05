@@ -76,8 +76,12 @@ int main()
         {
             auto sp = Vec::Constant(pos_sp);
             auto meas = Vec::Constant(position);
+            // While the inner loop is saturated, the outer loop tracks the
+            // velocity actually reached instead of winding up.
             auto tracking = Vec::Constant(velocity);
-            auto u_outer = outer.compute(sp, meas, dt_outer, tracking);
+            auto u_outer = inner.saturated()
+                    ? outer.compute(sp, meas, dt_outer, tracking)
+                    : outer.compute(sp, meas, dt_outer);
             if (!u_outer.has_value()) return 1;
             vel_sp = (*u_outer)[0];
         }
@@ -110,17 +114,26 @@ int main()
 - **Decimation**<br/>the outer loop runs every `decimation` inner steps.
   The inner loop sees a piecewise-constant setpoint between outer updates.
 
-- **Tracking signal**<br/>`outer.compute(sp, meas, dt, tracking)` accepts an
-  optional fourth argument: the actual inner-loop measurement. This enables
-  bumpless transfer when the inner loop saturates. The tracking signal is checked
-  before the cycle runs, because it is back-assigned into the integrator once the
-  cycle succeeds; a non-finite one is rejected as
-  `pid_step_error::non_finite_tracking_signal` and the integrator is left
-  untouched.
+- **Tracking signal**<br/>the overload `outer.compute(sp, meas, dt, tracking)`
+  re-seeds the outer integrator after the cycle to the tracking signal
+  (clamped to the outer limits) less the cycle's proportional and derivative
+  terms, the value with which that cycle's command would have equaled the
+  signal. It does this on every call and does not
+  look at the inner loop itself, so the program calls it only while
+  `inner.saturated()` reports that the inner loop could not follow its
+  setpoint, with the velocity actually reached as the signal. The outer
+  integrator then stays consistent with what the inner loop achieves instead
+  of winding up. Calling it on every cycle would replace the outer integrator
+  each time and leave the outer loop without integral action of its own. The
+  tracking signal is checked before the cycle runs, because it is
+  back-assigned into the integrator once the cycle succeeds; a non-finite one
+  is rejected as `pid_step_error::non_finite_tracking_signal` and the
+  integrator is left untouched.
 
-- **Gain separation**<br/>the outer loop has larger proportional gain to
-  command aggressive velocity changes; the inner loop has smaller gains
-  appropriate for the faster sampling rate.
+- **Gain separation**<br/>the outer gains map position error to a velocity
+  command, the inner gains velocity error to torque, so their sizes are not
+  comparable. The integral is formed as `ki * e * dt`, so the gains are
+  continuous-time values and do not change with the sampling rate.
 
 ## When to Use Cascade
 

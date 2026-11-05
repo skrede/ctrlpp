@@ -1,6 +1,6 @@
 # deriv_filter
 
-First-order low-pass filter on the derivative term to attenuate high-frequency noise amplification. Without filtering, the derivative action amplifies measurement noise proportionally to frequency. The filter time constant Tf sets the bandwidth. By default it is derived from the divisor N as Tf = Td/N: larger N allows more high-frequency content through (less filtering), while smaller N provides heavier smoothing at the cost of slower derivative response. A channel can instead state Tf directly in seconds.
+First-order low-pass filter on the derivative term to attenuate high-frequency noise amplification. Without filtering, the derivative action amplifies measurement noise proportionally to frequency. The filter time constant Tf sets the bandwidth. By default it is derived from the divisor N as Tf = Td/N: larger N allows more high-frequency content through (less filtering), while smaller N provides heavier smoothing at the cost of slower derivative response. A channel can instead state Tf directly, in the time unit of `dt`.
 
 ## Header
 
@@ -15,7 +15,7 @@ Fields added to `pid_config` when this policy is active:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `n` | `std::array<Scalar, N>` | `{}` (zeros) | Derivative filter divisor N per channel, giving the default time constant Tf = kd/(kp*N). Typical values are 8 to 20. Higher values mean less filtering. `create` refuses a `NaN` or infinite `n` with `invalid_derivative_filter`. |
-| `tf` | `std::array<std::optional<Scalar>, N>` | `{}` (absent) | Explicit filter time constant Tf per channel, in seconds. When present it replaces the default kd/(kp*N) and `n` is not used for that channel. It must be finite and positive; `create` refuses a `NaN`, infinite, zero or negative `tf` with `invalid_derivative_filter`. |
+| `tf` | `std::array<std::optional<Scalar>, N>` | `{}` (absent) | Explicit filter time constant Tf per channel, in the time unit of `dt`. When present it replaces the default kd/(kp*N) and `n` is not used for that channel. It must be finite and positive; `create` refuses a `NaN`, infinite, zero or negative `tf` with `invalid_derivative_filter`. |
 
 The gains in this page are the internal parallel gains (in ISA form `kd = Kp*Td`). A channel without derivative action (`kd == 0`) is not filtered, and any finite `n` is accepted for it. A channel with derivative action and no `tf` must have a default time constant that is a positive time, so `create` and `set_params` refuse it with `undefined_derivative_filter` when:
 
@@ -32,12 +32,12 @@ using Vec = Pid::vector_t;
 Pid::config_type cfg{};
 cfg.ki = Vec::Constant(0.5);
 cfg.kd = Vec::Constant(0.1);
-cfg.template policy<ctrlpp::deriv_filter>().tf = {0.02};  // seconds; kp is zero, so there is no default
+cfg.template policy<ctrlpp::deriv_filter>().tf = {0.02};  // kp is zero, so there is no default
 ```
 
 ## Behavior
 
-The ideal derivative s*Td is filtered by a first-order system with time constant Tf = Td/N, so the derivative term becomes Kp*Td*s / (1 + s*Td/N), or kd*s / (1 + s*Tf) in parallel gains. Its gain at high frequencies is limited to kd/Tf, which is Kp*N with the default time constant, rather than growing without bound (Astrom and Hagglund, *Advanced PID Control*, 2006). In discrete time the filter is the backward-difference form D_k = alpha*D_(k-1) + (1 - alpha)*D_raw with alpha = Tf/(Tf + dt), which lies between 0 and 1 for every positive Tf and dt, so the filter is stable for all accepted parameters.
+The ideal derivative s*Td is filtered by a first-order system with time constant Tf = Td/N, so the derivative term becomes Kp*Td*s / (1 + s*Td/N), or kd*s / (1 + s*Tf) in parallel gains. Its gain at high frequencies is limited to kd/Tf, which is Kp*N with the default time constant, rather than growing without bound (Astrom and Hagglund, *Advanced PID Control*, 2006). In discrete time the filter is the backward-difference form D_k = alpha*D_(k-1) + (1 - alpha)*D_raw with alpha = Tf/(Tf + dt), which lies between 0 and 1 for every positive Tf and dt, so the filter is stable for all accepted parameters. `D_raw` is the derivative of `-y`, or of `c*r - y` with `derivative_on_error`. The first cycle after `create` or `reset` has no derivative and starts the filter state at zero.
 
 ## Usage Example
 

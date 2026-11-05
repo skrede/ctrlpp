@@ -17,17 +17,18 @@ template packs.
 |------|--------|
 | `ctrlpp::pid<Scalar, NY, Policies...>` | `#include <ctrlpp/control/pid.h>` |
 | (convenience) | `#include <ctrlpp/pid.h>` |
+| `ctrlpp::pid_config<Scalar, NY, Policies...>` | `#include <ctrlpp/control/pid_config.h>` (convenience `<ctrlpp/pid_config.h>`; included by `pid.h`) |
+| the policy tags | `#include <ctrlpp/control/pid_policies.h>` (convenience `<ctrlpp/pid_policies.h>`; included by `pid.h`) |
 | `pid_config_error`, `pid_step_error`, `pid_health` | `#include <ctrlpp/control/pid_error.h>` (included by `pid.h`) |
+| `ctrlpp::pid_performance_tracker` | `#include <ctrlpp/control/pid_performance.h>` (included by `pid.h`; see [performance](performance.md)) |
 
 ## Template Parameters
 
 | Parameter | Constraint | Description |
 |-----------|------------|-------------|
-| `Scalar` | arithmetic type | Numeric type (`double`, `float`, `long double`) |
-| `NX` | `std::size_t` | State dimension (unused by PID internals, present for interface uniformity) |
-| `NU` | `std::size_t` | Input dimension (unused by PID internals, present for interface uniformity) |
-| `NY` | `std::size_t` | Output/measurement dimension &mdash; determines the vector size for gains, setpoints, and measurements |
-| `Policies...` | policy types | Zero or more policy types from `pid_policies.h` |
+| `Scalar` | `ctrlpp_floating_scalar` | A floating-point type (`float`, `double`, `long double`). The constraint sits on `pid_config`, so `pid` with any other type does not compile. |
+| `NY` | `std::size_t`, positive | Number of channels &mdash; the size of the gain, setpoint, measurement and output vectors. `pid_config` refuses `NY = 0` with a `static_assert`. |
+| `Policies...` | policy types | Zero or more policy tags from `pid_policies.h`, or the integration tags `forward_euler` and `tustin` (see [Integral discretization](#integral-discretization)) |
 
 ## Type Aliases
 
@@ -50,9 +51,12 @@ via `cfg.template policy<PolicyType>()`.
 | `kd` | `Vector<Scalar, NY>` | Zero | Derivative gain per channel (or Td when `isa_form` active) |
 | `output_min` | `Vector<Scalar, NY>` | `lowest()` | Lower output clamp per channel |
 | `output_max` | `Vector<Scalar, NY>` | `max()` | Upper output clamp per channel |
-| `derivative_on_error` | `bool` | `false` | If true, differentiates error; if false, differentiates measurement (avoids derivative kick) |
+| `derivative_on_error` | `bool` | `false` | If true, the D term differentiates the weighted error `c*r - y`; if false, it differentiates `-y` only, so a setpoint step causes no derivative kick and `c` is not read |
 | `b` | `Vector<Scalar, NY>` | `1.0` | Proportional setpoint weight: P term uses `b*r - y` |
-| `c` | `Vector<Scalar, NY>` | `1.0` | Derivative setpoint weight: D term uses `c*r - y` |
+| `c` | `Vector<Scalar, NY>` | `1.0` | Derivative setpoint weight: D term uses `c*r - y` when `derivative_on_error` is true |
+| `policies` | `std::tuple` of the policy configs | each value-initialized | One configuration struct per composed policy that declares one; read and written through `policy<P>()` |
+
+`r` and `y` are the setpoint and measurement after the `setpoint_filter` and `pv_filter` policies, when those are composed. The derivative term is zero on the first cycle after `create` or `reset`, since there is no previous sample to difference.
 
 ### Policy Config Access
 
@@ -81,13 +85,25 @@ cfg.template policy<feed_forward<FF>>().feed_forward_cb = my_feed_forward;
 | `rate_limit` | Output rate limiting | `rate_max` | [rate-limit](rate-limit.md) |
 | `perf_assessment<Metrics...>` | Online performance metrics | `amplitude`, `ultimate_frequency`, `load_count_limit`, `supervision_periods` (read only by `oscillation_detect`) | [performance](performance.md) |
 
+## Integral discretization
+
+The integral increment per cycle is chosen by an optional tag from `ctrlpp/model/discretize.h` (included by `pid_policies.h`) in the policy pack, with `e` the error after the input filters and `ki` the internal parallel integral gain:
+
+| Tag | Increment |
+|-----|-----------|
+| none (default) | `ki * e[k] * dt`, the backward Euler rule |
+| `ctrlpp::forward_euler` | `ki * e[k-1] * dt`, so the first cycle after `create` or `reset` adds nothing |
+| `ctrlpp::tustin` | `ki * (e[k] + e[k-1]) / 2 * dt`, the trapezoidal rule |
+
+The other tags of that header have no effect on `pid`. The increment is the same in velocity form.
+
 ## create
 
 ```cpp
 static expected<pid, pid_config_error> create(const config_type& cfg);
 ```
 
-Validates the configuration and constructs the controller, or reports the first fault it finds. A configuration that cannot work is refused where it is given rather than discovered on the first cycle. The checks run in the order of the table, so a configuration with several faults reports the earliest; a check on a policy field runs only when that policy is composed. `create` is the only construction path: the constructor is private, so no configuration reaches the controller without these checks.
+Validates the configuration and constructs the controller, or reports the first fault it finds. A configuration that cannot work is refused where it is given rather than discovered on the first cycle. The checks run in the order of the table, so a configuration with several faults reports the earliest; a check on a policy field runs only when that policy is composed. A condition on a derived gain reads the internal parallel gains: in ISA form `kp/Ti` and `kp*Td`. `create` is the only construction path: the constructor is private, so no configuration reaches the controller without these checks. The table lists every enumerator of `pid_config_error` in declaration order; `create` and `set_params` test the first fourteen, and the last belongs to `set_integral`.
 
 ```cpp
 auto made = ctrlpp::pid<double, 1>::create(cfg);
@@ -112,6 +128,7 @@ if(!made) {
 | `undefined_tracking_time` | `anti_windup<back_calc>` leaves a channel's `kb` at zero, the channel has integral action (`ki != 0`), and either it has neither proportional nor derivative action or its nonzero gains do not share a sign, so the default tracking time does not exist. A channel with `ki = 0` keeps `kb = 0`, the limit of an infinite tracking time. | An explicit positive `kb`, or gains of one sign. |
 | `undefined_derivative_filter` | `deriv_filter` is composed, a channel has derivative action (`kd != 0`) and no `tf`, and its default Tf = kd/(kp*n) is not a positive time: `kp` is zero, `n` is zero or negative, or `kd` and `kp` differ in sign. | An explicit `tf`, or a positive `n`. |
 | `unrepresentable_gain` | The fields are well posed, but a quantity derived from them is not representable in `Scalar`: in ISA form `kp` over the integral time, or `kp` times the derivative time, overflows, or rounds to zero while both factors are nonzero (an integral time of `+inf` excepted); the default derivative filter time constant kd/(kp*n) is not a positive finite number; or the default back-calculation gain is not finite, or rounds to zero on a channel with integral action. | Gains of less extreme magnitude, an explicit `tf` or `kb`, or a wider `Scalar`. |
+| `non_finite_integral` | Returned only by `set_integral`: a component of the value is `NaN` or infinite. | A finite integrator value. |
 
 ## Methods
 
@@ -121,21 +138,24 @@ if(!made) {
 expected<vector_t, pid_step_error> compute(const vector_t& sp, const vector_t& meas, Scalar dt);
 ```
 
-Computes the control output given a setpoint, measurement, and time step. On success the result carries the clamped output vector.
+Computes the control output given a setpoint, measurement, and time step. On success the result carries the clamped output vector, or in velocity form the increment.
 
-The cycle is classified before any member is written, so a rejected cycle leaves every piece of carried state -- the integrator, the error and derivative histories, the input filter states, the accumulated output -- bitwise unchanged, and the caller may retry on the next sample.
+The first four causes in the table are tested before any member is written. A cycle whose result turns out non-finite is rolled back from a snapshot taken when it began. Either way a rejected cycle leaves every piece of carried state -- the integrator, the error and derivative histories, the input filter states, the accumulated output, the performance metrics -- bitwise unchanged, and the caller may retry on the next sample.
 
 **A refused cycle produced no command.** That is a different situation from an estimator declining a measurement, where the estimate simply stands: an actuator will be driven by something regardless of what `compute` returns, and the caller must choose what. The three defensible responses are to hold the command the last successful cycle returned, to command a configured safe value, or to fail over to a redundant channel. The controller does not choose, because the right answer is a property of the plant: holding is correct for a slow thermal loop and dangerous for an unstable attitude loop.
 
-A non-positive step used to be answered with the previous output on the success path, which the caller could not distinguish from a freshly computed command -- so a stopped clock read as a steady loop. It is now `invalid_timestep`.
+A non-positive step is refused with `invalid_timestep` rather than answered with the previous output, which the caller could not tell from a freshly computed command: a stopped clock would read as a steady loop.
+
+The table lists every enumerator of `pid_step_error` in declaration order. A cycle tests the first four in that order, the most upstream cause first.
 
 | Enumerator | Cause | Where the caller repairs it |
 |---|---|---|
-| `non_finite_state` | Some piece of carried state is already non-finite when the cycle begins. | `reset`, or `set_integral` with a finite value for the integrator alone. Reported first because it is upstream of every argument. |
+| `non_finite_state` | Some piece of carried state is already non-finite when the cycle begins. This refusal latches `health()`. | `reset`, or `set_integral` with a finite value for the integrator alone. Reported first because it is upstream of every argument. |
 | `invalid_timestep` | The step is not a positive finite duration. A `NaN` step cannot be caught by `dt <= 0` alone, because every comparison against a `NaN` is false. | The caller's clock. |
 | `non_finite_setpoint` | The commanded setpoint has a non-finite component. | The trajectory, outer loop, or operator input that generates the reference. |
 | `non_finite_measurement` | The process variable has a non-finite component. | The sensor or estimator. Separate from the setpoint even though the error is their difference, because the two arrive from different subsystems. |
-| `non_finite_tracking_signal` | The tracking signal handed to the four-argument overload is non-finite. | The signal being tracked. |
+| `non_finite_tracking_signal` | The tracking signal handed to the four-argument overload is non-finite. That overload tests it before it runs the cycle, so it is reported ahead of the four causes above. | The signal being tracked. |
+| `non_finite_result` | The cycle ran on finite inputs, but its output, a piece of the state it would carry into the next cycle, or a performance metric came out non-finite: for example an integrator that overflows `Scalar`, or a `NaN` from an infinite term meeting its opposite. A proportional, derivative or feed-forward term that overflows to infinity is clamped to the output limit like any other command, so it fails the cycle only where it reaches carried state. In the tracking overload it is also returned when the re-seeded integrator would be non-finite. The cycle is rolled back. | Gains, limits or signals of less extreme magnitude, or a wider `Scalar`. |
 
 ### compute (with tracking signal)
 
@@ -165,9 +185,9 @@ The tracking signal is checked *before* the cycle is delegated, because it is wr
 pid_health health() const;
 ```
 
-Reports whether the controller is still carrying non-finite state from an earlier cycle -- a question a per-cycle result cannot answer, because it outlives the call. Latches until `reset`.
+Reports whether the controller has found itself carrying non-finite state -- a question a per-cycle result cannot answer, because it outlives the call. It is `pid_health::ok` after `create` and `reset`.
 
-A **rejected cycle does not set it**: a rejection mutates nothing, so it leaves the controller exactly as healthy as it was. No known public route leads to `non_finite_carried_state`: `create`, `set_params` and `set_integral` refuse non-finite values, and a cycle whose result is non-finite is rejected and leaves no state behind. The latch is kept as defense in depth.
+It changes to `non_finite_carried_state` only when a cycle is refused with `non_finite_state`, and then latches until `reset`; neither `set_params` nor `set_integral` clears it. Every other refusal, `non_finite_result` included, leaves it as it was, since those cycles leave no state behind. No known public route leads to `non_finite_carried_state`: `create`, `set_params` and `set_integral` refuse non-finite values, and a cycle whose result is non-finite is rolled back. The latch is kept as defense in depth.
 
 ### set_params
 
@@ -175,7 +195,7 @@ A **rejected cycle does not set it**: a rejection mutates nothing, so it leaves 
 expected<void, pid_config_error> set_params(const config_type& new_cfg);
 ```
 
-Refuses the configuration with the same checks, in the same order, as `create`; a refusal leaves the current configuration, the integrator and every other piece of state bitwise unchanged. On success it updates tuning parameters with bumpless transfer. The integral state is stored in output units and enters the output directly, so its contribution is already continuous across a gain change; `set_params` leaves the integral state untouched, which is what makes gain scheduling bumpless. No rescaling is applied (rescaling would step the integral contribution instead of preserving it).
+Refuses the configuration with the same checks, in the same order, as `create`; a refusal leaves the current configuration, the integrator and every other piece of state bitwise unchanged. On success it updates tuning parameters with bumpless transfer. The integral state is stored in output units and enters the output directly, so its contribution is already continuous across a gain change; `set_params` leaves the integral state untouched, which is what makes gain scheduling bumpless. No rescaling is applied (rescaling would step the integral contribution instead of preserving it). The filter states, the histories and the performance metrics are kept as well. `set_params` copy-assigns the configuration, so it compiles only when `config_type` is copy-assignable; see [feed-forward](feed-forward.md#limitations) for the one policy where that can fail.
 
 ### error
 
@@ -191,7 +211,7 @@ Returns the most recent error vector (setpoint minus measurement, after filterin
 const vector_t& integral() const;
 ```
 
-Returns the current integral accumulator state.
+Returns the current integral accumulator state, in output units. In velocity form there is no integrator and it stays zero.
 
 ### params
 
@@ -207,7 +227,7 @@ Returns a const reference to the current config.
 bool saturated() const;
 ```
 
-Returns true if the output was clipped on the most recent `compute()` call. In velocity form it is true when the accumulated output was clamped to the output limits on that call.
+Returns true if the most recent successful `compute()` call clamped the output to `output_min` or `output_max` in some channel; rate limiting alone does not set it. In velocity form it is true when the accumulated output was clamped to the output limits on that call. A refused cycle leaves it as it was.
 
 ### reset
 
@@ -215,7 +235,7 @@ Returns true if the output was clipped on the most recent `compute()` call. In v
 void reset();
 ```
 
-Resets all internal state (integral, previous error, filter states, performance metrics) to zero.
+Resets all internal state (integral, previous error, setpoint and measurement, derivative and filter states, accumulated output, performance metrics) to zero, so the next cycle is treated as the first. It also releases `freeze_integral`, clears `saturated()` and returns `health()` to `ok`. The configuration is kept.
 
 ### freeze_integral
 
@@ -258,7 +278,7 @@ Returns true while the weighted load-disturbance count `x` exceeds `load_count_l
 void reset_metrics();
 ```
 
-Resets all performance metric accumulators to zero.
+Resets all performance metric accumulators to zero, together with the time base `ITAE` weights by. The controller state is not touched.
 
 ## Usage Example
 
@@ -313,7 +333,7 @@ int main()
 
 - [anti-windup](anti-windup.md)<br/> back-calculation, clamping, and conditional integration
 - [derivative-filter](derivative-filter.md)<br/>low-pass filtered derivative term
-- [setpoint-filter](setpoint-filter.md)<br/>setpoint weighting and process variable filtering
+- [setpoint-filter](setpoint-filter.md)<br/>setpoint and process variable filtering, and the setpoint weights
 - [velocity-form](velocity-form.md)<br/>incremental (velocity) form PID
 - [isa-form](isa-form.md)<br/>ISA standard form (Ti, Td parametrization)
 - [feed-forward](feed-forward.md)<br/>additive feed-forward policy

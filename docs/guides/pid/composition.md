@@ -2,8 +2,8 @@
 
 ctrlpp's PID controller uses compile-time policy composition. Each policy
 adds a specific behavior &mdash; anti-windup, derivative filtering, rate limiting
--- as a template parameter. You pay zero runtime cost for policies you do not
-use.
+-- as a template parameter. The code of a policy you do not compose is
+compiled out.
 
 ## How It Works
 
@@ -13,9 +13,11 @@ The `pid` class template accepts a variadic policy pack:
 ctrlpp::pid<Scalar, NY, Policies...>
 ```
 
-Each policy type in `Policies...` extends the controller's `config_type` with
-policy-specific fields. When you compose multiple policies, the config struct
-merges all their fields automatically.
+Each policy type in `Policies...` that declares a configuration struct adds
+it to the `policies` tuple of the controller's `config_type`, and
+`cfg.template policy<Policy>()` returns a reference to it. The base fields
+(`kp`, `ki`, `kd`, the limits and the setpoint weights) are the same for every
+composition.
 
 ## Composing Three Policies
 
@@ -105,42 +107,45 @@ composition above, `cfg` includes:
 | Base PID                 | `kd`         | Derivative gain                      |
 | Base PID                 | `output_min` | Lower output clamp                   |
 | Base PID                 | `output_max` | Upper output clamp                   |
+| Base PID                 | `derivative_on_error` | Differentiate `c*r - y` instead of `-y` |
+| Base PID                 | `b`, `c`     | Proportional and derivative setpoint weights |
 | `anti_windup<back_calc>` | `kb`         | Back-calculation gain                |
-| `anti_windup<conditional_integration>` | `error_threshold` | Error magnitude above which integration is suspended; must be positive |
-| `deriv_filter`           | `n`          | Derivative filter bandwidth          |
+| `deriv_filter`           | `n`          | Derivative filter divisor N (default Tf = kd/(kp*N)) |
 | `deriv_filter`           | `tf`         | Explicit derivative filter time      |
 | `rate_limit`             | `rate_max`   | Maximum output rate of change        |
 
-Access policy fields through `cfg.template policy<PolicyType>()`.
+Access policy fields through `cfg.template policy<PolicyType>()`. Composing
+`anti_windup<conditional_integration>` instead would add its
+`error_threshold`, which must be set positive in every channel.
 
 ## Available Policies
 
 | Policy                                    | Purpose                                  |
 | ----------------------------------------- | ---------------------------------------- |
 | `anti_windup<back_calc>`                  | Back-calculation anti-windup             |
-| `anti_windup<clamping>`                   | Clamping (conditional) anti-windup       |
-| `anti_windup<conditional_integration>`    | Conditional integration anti-windup      |
+| `anti_windup<clamping>`                   | Clamping anti-windup                     |
+| `anti_windup<conditional_integration>`    | Integration suspended above an error threshold |
 | `deriv_filter`                            | Low-pass filter on derivative term       |
 | `setpoint_filter`                         | Setpoint pre-filter                      |
 | `pv_filter`                               | Process variable filter                  |
-| `feed_forward<Callable>`                  | Feed-forward from setpoint               |
+| `feed_forward<Callable>`                  | Feed-forward from a callable of setpoint and step |
 | `rate_limit`                              | Rate-of-change output limiter            |
 | `velocity_form`                           | Incremental (velocity) PID form          |
 | `isa_form`                                | ISA standard form (Ti, Td parameters)    |
 | `perf_assessment<Metrics...>`             | Online performance metrics (IAE, ISE, ITAE, oscillation detection) |
+| `forward_euler`, `tustin`                 | Integral discretization (default backward Euler) |
 
 `velocity_form` does not compose with `anti_windup`: the combination is a compile error, because clamping
 the accumulated output already prevents windup.
 
-## Zero-Cost Abstraction
+## Compile-Time Composition
 
-Policies are resolved entirely at compile time. A `pid<double, 1>` with
-no policies compiles to a minimal P+I+D computation. Adding `deriv_filter`
-adds only the filter arithmetic &mdash; no virtual dispatch, no branch on policy
-presence.
-
-The optimizer sees through the template instantiation and inlines everything
-into a single function body.
+Policies are resolved entirely at compile time with `if constexpr`: adding
+`deriv_filter` adds only the filter arithmetic, with no virtual dispatch and
+no run-time branch on policy presence. Every composition still carries the
+same set of state members, checks its inputs and the finiteness of its state,
+and snapshots its carried state at the start of each cycle so that a refused
+cycle can be rolled back.
 
 ## Next Steps
 

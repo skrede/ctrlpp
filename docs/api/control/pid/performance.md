@@ -7,6 +7,7 @@ Online performance assessment policy that computes control loop quality metrics 
 | Form | Header |
 |------|--------|
 | `ctrlpp::perf_assessment<Metrics...>` | `#include <ctrlpp/control/pid_policies.h>` |
+| `ctrlpp::pid_performance_tracker<Scalar, NY, Policies...>` | `#include <ctrlpp/control/pid_performance.h>` (the accumulator a `pid` holds; included by `pid.h`) |
 
 ## Template Variants
 
@@ -27,8 +28,8 @@ ctrlpp::perf_assessment<ctrlpp::IAE, ctrlpp::oscillation_detect>  // mixed
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `amplitude` | `std::array<Scalar, NY>` | none (required) | `a`, in error units: the lower limit of an oscillation amplitude worth reporting, at the ultimate frequency. Hagglund suggests 1% of the signal range [2, Sec. 2.1]. Zero is the unset value and is refused. |
-| `ultimate_frequency` | `std::array<Scalar, NY>` | none (required) | `omega_u`, in rad/s: the loop's ultimate frequency, for example from a relay autotuning experiment. Zero is the unset value and is refused. |
+| `amplitude` | `std::array<Scalar, NY>` | `{}` (zeros, refused) | `a`, in error units: the lower limit of an oscillation amplitude worth reporting, at the ultimate frequency. Hagglund suggests 1% of the signal range [2, Sec. 2.1]. Zero is the unset value and is refused. |
+| `ultimate_frequency` | `std::array<Scalar, NY>` | `{}` (zeros, refused) | `omega_u`, in rad/s: the loop's ultimate frequency, for example from a relay autotuning experiment. Zero is the unset value and is refused. |
 | `load_count_limit` | `Scalar` | `10` | `n_lim`: the weighted load count above which a channel is oscillating [1], as restated in [2, Sec. 2.1]. |
 | `supervision_periods` | `Scalar` | `50` | The supervision window `T_sup` in ultimate periods `T_u = 2*pi/omega_u`. The published window is `T_sup = 5 * n_lim * T_u` [1], [2, Sec. 2.1], so the default 50 belongs to the default `n_lim = 10`: changing `load_count_limit` means changing this field too if the published coupling is to be kept. |
 
@@ -45,7 +46,7 @@ struct oscillation_detect {};  // weighted count of load disturbances
 
 ## Behavior
 
-The performance assessment policy accumulates metrics passively during each `compute()` call. It does not modify the PID output &mdash; it is read-only observation. The accumulated metrics can be queried at any time for logging, tuning evaluation, or online diagnostics.
+The performance assessment policy accumulates metrics during each `compute()` call that passes the input checks, before the output is formed. `e` is the control error after the input filters, setpoint minus measurement without the setpoint weights, `dt` the cycle's step, and `t` the time accumulated since `create`, `reset` or `reset_metrics`, including the current step. The metrics never enter the output, but a metric that turns non-finite refuses the cycle (see [Limitations](#limitations)). The accumulated metrics can be queried at any time for logging, tuning evaluation, or online diagnostics.
 
 ### Oscillation detection
 
@@ -112,6 +113,12 @@ int main()
     std::cout << "Oscillating: " << std::boolalpha << ctrl.oscillating() << "\n";
 }
 ```
+
+## Limitations
+
+### A non-finite metric refuses the control cycle
+
+The metrics are part of the state a cycle carries, so a cycle in which one of them overflows to infinity, for example `ISE` under a huge error, is refused with `non_finite_result` and rolled back, although the command it formed was finite. So is every later cycle in which the metric would overflow again; when the overflow comes from the accumulated sum rather than from a single cycle's term, `reset_metrics` clears it.
 
 ## See Also
 
