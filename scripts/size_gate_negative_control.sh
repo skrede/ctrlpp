@@ -25,6 +25,7 @@ esac
 cd "$(dirname "$0")/.."
 
 PROBE="lib/ctrlpp/include/ctrlpp/size_gate_probe.h"
+REGISTERED_PROBE="lib/ctrlpp/include/ctrlpp/size_gate_registered.h"
 CMAKE_PROBE="lib/probe.cmake"
 GUIDELINE_PROBE="tests/probe/CMakeLists.txt"
 REGISTER="EXCEPTIONS.md"
@@ -156,6 +157,8 @@ git ls-files -z -- lib scripts EXCEPTIONS.md CMakeLists.txt cmake validation \
     | tar --null -T - -cf - | tar -xf - -C "$WORK"
 in_copy init -q
 in_copy add -A
+# The real register may hold no file row, so the copy always carries one over-limit file to register.
+plant_lines "$REGISTERED_PROBE" 220 '// probe'
 
 FILE_GATE=(python3 scripts/check_file_size.py)
 TIDY="$(find_tidy)"
