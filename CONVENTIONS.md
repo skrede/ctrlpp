@@ -284,6 +284,13 @@ from `git ls-files`.
   call made as a bare statement that discards a `ctrlpp::expected`, which no attribute guards.
 - **Source purity.** `bash scripts/source_purity_check.sh` holds the library and the examples to the
   error policy above.
+- **The doc snippet build.** `python3 scripts/check_doc_snippets.py [PATH ...]` compiles, syntax-only,
+  every fenced `cpp` block that contains an `#include` in the tracked `docs/` pages and `README.md`, each as
+  a translation unit of its own; a failure is reported at its page and line. A deliberately partial block
+  carries `<!-- snippet: fragment -->` on the line before its fence and is skipped, and a block that needs
+  exceptions carries `<!-- snippet: exceptions -->` there. The `CTRLPP_TIDY_EXTRA_ARG` variable carries the
+  backend include paths and defines, as for the function-size gate, and
+  `python3 scripts/check_doc_snippets_test.py` proves the build can fail.
 
 A rule's legitimate carve-outs (a header that must precede another, a quoted title in British spelling, the
 list of fallible calls) live in the lint's configuration, `scripts/style_config.py`, each with its reason.
