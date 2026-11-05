@@ -693,9 +693,8 @@ the measured ratio to any one of them.
   built against LAPACK and falling back to a matrix-sign iteration when it is
   not.  ctrlpp reorders in the repository, in
   `lib/ctrlpp/include/ctrlpp/detail/schur_reorder.h`: the Bai and Demmel 1993
-  predicated swap kernel over all four adjacent-block configurations
-  (`detail/schur_swap.h`), with Murnaghan standardization of every `2x2` block
-  a swap touches (`detail/schur_standardize.h`).  The
+  predicated swap kernel over all four adjacent-block configurations, with
+  Murnaghan standardization of every `2x2` block a swap touches.  The
   eigenvalues it moves to the leading position are the ones the discrete
   solver's predicate accepts, `|lambda| < 1 - 2n eps ||T||_max`: inside the
   unit disk by more than the Schur factor's own backward error.

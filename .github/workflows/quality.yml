@@ -16,13 +16,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/milestone/'))) && github.ref || github.run_id }}
   cancel-in-progress: true
 
-# Both jobs report without blocking while the library is brought to the conventions; every step after
-# the checkout runs even when an earlier gate fails, so one red gate never hides another.
+# Every step after the checkout runs even when an earlier gate fails, so one red gate never hides another.
 jobs:
   static-checks:
     runs-on: ubuntu-24.04
     name: size gate (files) and style lint
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -57,7 +55,6 @@ jobs:
   function-size:
     runs-on: ubuntu-24.04
     name: size gate (functions)
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
