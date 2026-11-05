@@ -85,9 +85,10 @@ the comment rule still applies to them.
 
 ### Exceptions
 
-Decomposition is the presumption, even for a unit that reads as one piece. An exception is admitted only
-when decomposing is measured to cost something: wall time, instruction count or stack use that rises, or
-numerical output that moves. Readability, or line-by-line comparability with a reference implementation
+Decomposition is the presumption, even for a unit that reads as one piece. An exception is admitted only when
+decomposing is measured to cost something: wall time, instruction count or stack use that rises, or numerical
+output that gets less accurate, measured against a reference. Output that moves within rounding and is as
+accurate as before is not a cost. Readability, or line-by-line comparability with a reference implementation
 such as LAPACK or Reflexxes, is not a reason. An admitted unit is registered in `EXCEPTIONS.md`, and its
 reason names the measured effect itself rather than pointing at a document that holds it. A registered unit
 may grow to its recorded count plus ten percent before the gate fails.
