@@ -75,7 +75,7 @@ private:
 };
 
 // Section k is the unit-scale section with g1 = 2 cos(theta_k) = 1 / q_k.
-// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (analog-prototype Butterworth, bilinear pre-warp)
+// @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (analog-prototype Butterworth, bilinear pre-warp)
 // @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (per-section LPF coefficients)
 template <std::size_t Order, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
@@ -102,7 +102,7 @@ namespace detail
 
 // An even-order Chebyshev Type I response starts at its ripple trough, so the DC gain is set to 1 / sqrt(1 + eps^2)
 // for a 0 dB passband peak.
-// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I passband normalization)
+// @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I passband normalization)
 // @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005
 template <typename Scalar, std::size_t N>
 void normalize_chebyshev1_dc(std::array<biquad<Scalar>, N>& sections, Scalar eps)
@@ -135,7 +135,7 @@ bool sections_all_finite(std::array<biquad<Scalar>, N> const& sections)
 
 }
 
-// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I IIR design)
+// @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I IIR design)
 template <std::size_t Order, typename Scalar>
     requires(Order % 2 == 0 && Order >= 2)
 expected<cascaded_biquad<Scalar, Order / 2>, dsp_error> make_chebyshev1(

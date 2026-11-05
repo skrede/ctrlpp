@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_DSP_DISCRETE_FILTER_H
 #define HPP_GUARD_CTRLPP_DSP_DISCRETE_FILTER_H
 
-// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 2 (LTI difference equations and convolution)
+// @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 2 (LTI difference equations and convolution)
 
 #include <concepts>
 

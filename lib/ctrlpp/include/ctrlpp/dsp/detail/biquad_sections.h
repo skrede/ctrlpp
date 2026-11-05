@@ -84,7 +84,7 @@ ctrlpp::expected<biquad_coeffs<Scalar>, dsp_error> resolved_coefficients(offset_
 
 // The unit-scale bilinear section of the prototype pole pair sigma +- j imag, g1 = -2 sigma and g0 = sigma^2 + imag^2,
 // which is the bilinear map divided through by (2 fs)^2.
-// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I analog prototype, bilinear pre-warp)
+// @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (Chebyshev Type I analog prototype, bilinear pre-warp)
 template <typename Scalar, std::size_t Order>
 ctrlpp::expected<biquad_coeffs<Scalar>, dsp_error> chebyshev1_section(std::size_t k, Scalar sinh_v, Scalar cosh_v, Scalar omega, Scalar resolution_factor)
 {

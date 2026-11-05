@@ -86,38 +86,9 @@ public:
 
         Vector<Scalar, NP> P_phi = m_P * phi;
         Scalar denom = m_lambda + phi.dot(P_phi);
-
-        if(!std::isfinite(denom))
-            return ctrlpp::unexpected(rls_update_error::non_finite_denominator);
-
-        Scalar const relative_floor = static_cast<Scalar>(denominator_rounding_ops) * std::numeric_limits<Scalar>::epsilon();
-        Scalar const abs_denom = std::abs(denom);
-        Scalar const phi_norm = phi.stableNorm();
-        Scalar const P_phi_norm = P_phi.stableNorm();
-
-        if(at_or_below_product(abs_denom, relative_floor, m_lambda, Scalar{1}) || at_or_below_product(abs_denom, relative_floor, phi_norm, P_phi_norm))
-            return ctrlpp::unexpected(rls_update_error::denominator_below_resolution);
-        if(denom < Scalar{0})
-            return ctrlpp::unexpected(rls_update_error::indefinite_covariance);
-
-        Scalar e = y - phi.dot(m_theta);
-        Vector<Scalar, NP> k = P_phi / denom;
-
-        auto next_theta = (m_theta + k * e).eval();
-        auto next_P = ((m_P - k * P_phi.transpose()).eval() / m_lambda).eval();
-        next_P = ((next_P + next_P.transpose()) * Scalar{0.5}).eval();
-
-        Scalar trace = next_P.trace();
-        Scalar trace_bound = m_cov_upper_bound * static_cast<Scalar>(NP);
-        if(trace > trace_bound)
-            next_P *= trace_bound / trace;
-
-        if(!std::isfinite(e) || !k.allFinite() || !next_theta.allFinite() || !next_P.allFinite() || !std::isfinite(trace) || !std::isfinite(trace_bound))
-            return ctrlpp::unexpected(rls_update_error::non_finite_result);
-
-        m_theta = std::move(next_theta);
-        m_P = std::move(next_P);
-        return {};
+        if(auto const resolved = check_denominator(denom, phi, P_phi); !resolved)
+            return resolved;
+        return apply_update(y, phi, P_phi, denom);
     }
 
     const Vector<Scalar, NP>& parameters() const { return m_theta; }
@@ -136,6 +107,45 @@ private:
         , m_theta{Vector<Scalar, NP>::Zero()}
         , m_P{std::move(config.P0)}
     {
+    }
+
+    ctrlpp::expected<void, rls_update_error> check_denominator(Scalar denom, const Vector<Scalar, NP>& phi, const Vector<Scalar, NP>& P_phi) const
+    {
+        if(!std::isfinite(denom))
+            return ctrlpp::unexpected(rls_update_error::non_finite_denominator);
+
+        Scalar const relative_floor = static_cast<Scalar>(denominator_rounding_ops) * std::numeric_limits<Scalar>::epsilon();
+        Scalar const abs_denom = std::abs(denom);
+        Scalar const phi_norm = phi.stableNorm();
+        Scalar const P_phi_norm = P_phi.stableNorm();
+
+        if(at_or_below_product(abs_denom, relative_floor, m_lambda, Scalar{1}) || at_or_below_product(abs_denom, relative_floor, phi_norm, P_phi_norm))
+            return ctrlpp::unexpected(rls_update_error::denominator_below_resolution);
+        if(denom < Scalar{0})
+            return ctrlpp::unexpected(rls_update_error::indefinite_covariance);
+        return {};
+    }
+
+    ctrlpp::expected<void, rls_update_error> apply_update(Scalar y, const Vector<Scalar, NP>& phi, const Vector<Scalar, NP>& P_phi, Scalar denom)
+    {
+        Scalar e = y - phi.dot(m_theta);
+        Vector<Scalar, NP> k = P_phi / denom;
+
+        auto next_theta = (m_theta + k * e).eval();
+        auto next_P = ((m_P - k * P_phi.transpose()).eval() / m_lambda).eval();
+        next_P = ((next_P + next_P.transpose()) * Scalar{0.5}).eval();
+
+        Scalar trace = next_P.trace();
+        Scalar trace_bound = m_cov_upper_bound * static_cast<Scalar>(NP);
+        if(trace > trace_bound)
+            next_P *= trace_bound / trace;
+
+        if(!std::isfinite(e) || !k.allFinite() || !next_theta.allFinite() || !next_P.allFinite() || !std::isfinite(trace) || !std::isfinite(trace_bound))
+            return ctrlpp::unexpected(rls_update_error::non_finite_result);
+
+        m_theta = std::move(next_theta);
+        m_P = std::move(next_P);
+        return {};
     }
 
     static bool at_or_below_product(Scalar value, Scalar factor, Scalar lhs, Scalar rhs)

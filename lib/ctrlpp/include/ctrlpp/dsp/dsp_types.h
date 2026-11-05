@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_DSP_DSP_TYPES_H
 #define HPP_GUARD_CTRLPP_DSP_DSP_TYPES_H
 
-// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 4 (sampling and the Nyquist criterion)
+// @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 4 (sampling and the Nyquist criterion)
 
 namespace ctrlpp
 {

@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_DSP_BIQUAD_H
 #define HPP_GUARD_CTRLPP_DSP_BIQUAD_H
 
-// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6 (DF-II / TDF-II structures)
+// @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6 (DF-II / TDF-II structures)
 // @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae for Audio EQ Biquad Filter Coefficients", 2005
 
 #include "ctrlpp/dsp/dsp_types.h"
@@ -67,7 +67,7 @@ public:
     biquad_coeffs<Scalar> const& coefficients() const { return m_c; }
 
     // @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (LPF section)
-    // @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform of analog prototypes)
+    // @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform of analog prototypes)
     static expected<biquad, dsp_error> low_pass(Scalar cutoff_hz, Scalar sample_hz, Scalar resolution_factor = detail::second_order_resolution_count<Scalar>())
     {
         auto const omega = detail::validated_prewarp(cutoff_hz, sample_hz, resolution_factor);
@@ -81,7 +81,7 @@ public:
     }
 
     // @cite bristowjohnson2005 -- Bristow-Johnson, "Cookbook Formulae", 2005 (notch section)
-    // @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6
+    // @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 6
     static expected<biquad, dsp_error> notch(Scalar freq_hz, Scalar sample_hz, Scalar q, Scalar resolution_factor = detail::notch_resolution_count<Scalar>())
     {
         if(!std::isfinite(q))
@@ -101,7 +101,7 @@ public:
         return biquad{*section};
     }
 
-    // @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform with pre-warping)
+    // @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 7 (bilinear transform with pre-warping)
     static expected<biquad, dsp_error> dirty_derivative(Scalar bandwidth_hz, Scalar sample_hz, Scalar resolution_factor = detail::first_order_resolution_count<Scalar>())
     {
         auto const omega = detail::validated_prewarp(bandwidth_hz, sample_hz, resolution_factor);

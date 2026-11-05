@@ -100,14 +100,7 @@ class nmpc_static : private detail::nmpc_static_solve<Scalar, NX, NU, NH, Solver
 
     using base = detail::nmpc_static_solve<Scalar, NX, NU, NH, Solver, Dynamics, NC, NTC>;
     using config_type = nmpc_config<Scalar, NX, NU, NC, NTC>;
-
-public:
-    using base::horizon;
-    using base::problem_dimension;
-    using typename base::problem_type;
-
-private:
-    using setup_error = detail::nlp_setup_error_t<Solver, problem_type>;
+    using setup_error = detail::nlp_setup_error_t<Solver, typename base::problem_type>;
 
     // Only the controller can make the passkey, so create stays the only way to originate a controller and the
     // validation, the formulation refusals and the solver setup cannot be bypassed.
@@ -118,6 +111,9 @@ private:
     };
 
 public:
+    using base::horizon;
+    using base::problem_dimension;
+    using typename base::problem_type;
     using construction_error = nmpc_construction_error<setup_error>;
 
     // Equal alternative types would make the variant's construction by type ambiguous.

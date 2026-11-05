@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_DSP_FIR_H
 #define HPP_GUARD_CTRLPP_DSP_FIR_H
 
-// @cite oppenheim2010dsp -- Oppenheim &amp; Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 5 (FIR convolution)
+// @cite oppenheim2010dsp -- Oppenheim & Schafer, "Discrete-Time Signal Processing", 3rd ed., 2010, Ch. 5 (FIR convolution)
 
 #include "ctrlpp/dsp/discrete_filter.h"
 
