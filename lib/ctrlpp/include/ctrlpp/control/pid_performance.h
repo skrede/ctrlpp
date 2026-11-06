@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_CONTROL_PID_PERFORMANCE_H
 #define HPP_GUARD_CTRLPP_CONTROL_PID_PERFORMANCE_H
 
-// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE, ISE, ITAE)
+// @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Sec. 4.9, Eqs. (4.49)-(4.52), pp. 128-129
 // @cite hagglund1995 -- Hagglund, "A control-loop performance monitor", 1995 (oscillation detection)
 
 #include "ctrlpp/control/pid_config.h"
@@ -112,7 +112,7 @@ private:
     Scalar m_accumulated_time;
     vector_t m_prev_error_sign;
 
-    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (IAE)
+    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Sec. 4.9, Eq. (4.49), p. 128
     void accumulate_iae(const vector_t& e, Scalar dt)
     {
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
@@ -122,14 +122,14 @@ private:
         }
     }
 
-    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (ISE)
+    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Sec. 4.9, Eq. (4.52), p. 129
     void accumulate_ise(const vector_t& e, Scalar dt)
     {
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)
             m_ise[i] += e[i] * e[i] * dt;
     }
 
-    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3 (ITAE)
+    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Sec. 4.9, Eq. (4.51) with n = 1, p. 128
     void accumulate_itae(const vector_t& e, Scalar dt)
     {
         for(Eigen::Index i = 0; i < static_cast<Eigen::Index>(NY); ++i)

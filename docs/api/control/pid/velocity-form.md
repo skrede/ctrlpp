@@ -27,7 +27,7 @@ Instead of computing u(k) directly, the controller computes the change delta_u(k
 - Feed-forward is injected incrementally: the emitted increment carries the change in the feed-forward level, so a constant feed-forward adds nothing to the increment and the actuator does not drift.
 - With `rate_limit` composed, each channel's increment, feed-forward increment included, is clipped to `+-rate_max * dt` before it is accumulated. A channel within its bound, or with `rate_max` at zero or `+inf`, passes its increment through bit for bit. The clipped part of an increment is dropped, not carried into later cycles: the controller does not catch up on a change the limiter refused.
 - The tracking overload of `compute` re-seeds the accumulated output to the tracking signal clamped to `output_min` and `output_max`, after the cycle succeeds. It returns that cycle's computed increment, and the next cycle accumulates from the re-seeded value. `integral()` stays zero.
-- Composing `velocity_form` with any `anti_windup` strategy is a compile error: clamping the accumulated output already prevents windup. The accumulated output never moves past a limit, so inhibiting integration while the output saturates, which is equivalent to back-calculation (Astrom, *Control System Design*, 2002, Sec. 6.5), is built into the form.
+- Composing `velocity_form` with any `anti_windup` strategy is a compile error: clamping the accumulated output already prevents windup. The accumulated output never moves past a limit, so inhibiting integration while the output saturates, which is equivalent to back-calculation (Astrom and Hagglund, *Advanced PID Control*, 2006, Sec. 3.5, p. 78), is built into the form.
 
 ## Usage Example
 

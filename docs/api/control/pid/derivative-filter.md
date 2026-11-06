@@ -37,7 +37,7 @@ cfg.template policy<ctrlpp::deriv_filter>().tf = {0.02};  // kp is zero, so ther
 
 ## Behavior
 
-The ideal derivative s*Td is filtered by a first-order system with time constant Tf = Td/N, so the derivative term becomes Kp*Td*s / (1 + s*Td/N), or kd*s / (1 + s*Tf) in parallel gains. Its gain at high frequencies is limited to kd/Tf, which is Kp*N with the default time constant, rather than growing without bound (Astrom and Hagglund, *Advanced PID Control*, 2006). In discrete time the filter is the backward-difference form D_k = alpha*D_(k-1) + (1 - alpha)*D_raw with alpha = Tf/(Tf + dt), which lies between 0 and 1 for every positive Tf and dt, so the filter is stable for all accepted parameters. `D_raw` is the derivative of `-y`, or of `c*r - y` with `derivative_on_error`. The first cycle after `create` or `reset` has no derivative and starts the filter state at zero.
+The ideal derivative s*Td is filtered by a first-order system with time constant Tf = Td/N, so the derivative term becomes Kp*Td*s / (1 + s*Td/N), or kd*s / (1 + s*Tf) in parallel gains. Its gain at high frequencies is limited to kd/Tf, which is Kp*N with the default time constant, rather than growing without bound (Astrom and Hagglund, *Advanced PID Control*, 2006, Sec. 3.3, Eq. (3.14), p. 73). In discrete time the filter is the backward-difference form D_k = alpha*D_(k-1) + (1 - alpha)*D_raw with alpha = Tf/(Tf + dt), which lies between 0 and 1 for every positive Tf and dt, so the filter is stable for all accepted parameters. `D_raw` is the derivative of `-y`, or of `c*r - y` with `derivative_on_error`. The first cycle after `create` or `reset` has no derivative and starts the filter state at zero.
 
 ## Usage Example
 

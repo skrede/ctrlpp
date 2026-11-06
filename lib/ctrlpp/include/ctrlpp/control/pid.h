@@ -418,7 +418,7 @@ private:
         return delta_u;
     }
 
-    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Ch. 3-4
+    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Sec. 3.4, Eq. (3.17), p. 74; Sec. 13.3, Eq. (13.23), p. 420
     vector_t compute_position_form(const vector_t& e, const vector_t& sp, const vector_t& filtered_sp, const vector_t& filtered_meas, Scalar dt)
     {
         auto p = compute_proportional_term(filtered_sp, filtered_meas);
@@ -436,7 +436,7 @@ private:
         return u_sat;
     }
 
-    // @cite astrom2006 -- Ch. 3.5 (setpoint weighting b parameter)
+    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Sec. 3.4, Eq. (3.18), p. 74
     vector_t compute_proportional_term(const vector_t& filtered_sp, const vector_t& filtered_meas)
     {
         vector_t ep;
@@ -445,7 +445,7 @@ private:
         return m_gains.kp.cwiseProduct(ep).eval();
     }
 
-    // @cite astrom2006 -- Ch. 3.3 (integral action, discretization methods)
+    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Sec. 13.3, Eqs. (13.7)-(13.9), pp. 415-416
     vector_t integral_increment(const vector_t& e, Scalar dt) const
     {
         if(m_integral_frozen)
@@ -487,7 +487,7 @@ private:
         return increment;
     }
 
-    // @cite astrom2006 -- Ch. 3.4 (derivative action, setpoint weighting c parameter)
+    // @cite astrom2006 -- Astrom & Hagglund, "Advanced PID Control", 2006, Sec. 3.4, Eq. (3.19), p. 74; Sec. 13.3, Eq. (13.13), p. 416
     vector_t compute_derivative_term(const vector_t& filtered_sp, const vector_t& filtered_meas, Scalar dt)
     {
         vector_t d = vector_t::Zero();

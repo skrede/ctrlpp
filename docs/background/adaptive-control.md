@@ -6,14 +6,14 @@ such as PID or LQR that require accurate plant models, adaptive controllers
 adjust their parameters online to maintain desired performance despite model
 uncertainty. The key insight is that while the exact plant parameters may be
 unknown, the plant structure (order, relative degree, sign of the input gain)
-is assumed known [1, Ch. 8, pp. 309--312].
+is assumed known [1, Sec. 8.4, p. 340].
 
 The importance of robustification in adaptive control was dramatically
 illustrated by the Rohrs counterexample (1985), which showed that even small
 unmodeled dynamics or bounded disturbances could drive an unrobustified
 adaptive controller unstable. This result motivated the development of
-robust adaptive laws including dead-zone modification, sigma-modification,
-and e-modification [1, Sec. 8.6, pp. 367--380].
+robust adaptive laws including dead-zone modification and sigma-modification
+[1, Sec. 8.6, pp. 354--358], and e-modification.
 
 ## MRAC
 
@@ -51,7 +51,7 @@ converges to zero as $k \to \infty$, despite the unknown plant parameters.
 ### Adaptation Law
 
 The control law takes the form of a linear state-feedback plus reference
-feedforward with adaptive gains [1, Sec. 8.4, pp. 339--346]:
+feedforward with adaptive gains [1, Sec. 8.2, eqs. (8.22)--(8.24), p. 327]:
 
 $$
 u_k = \theta_{x,k} \, x_k + \theta_{r,k} \, r_k
@@ -66,7 +66,7 @@ $b_p$ are unknown, the parameters must be adapted online.
 The Lyapunov-based adaptation law is derived by constructing a positive
 definite function of the tracking error and parameter errors, then choosing
 update rules that guarantee the function is non-increasing
-[1, Sec. 8.4, pp. 342--345]. The derivation is in continuous time; ctrlpp
+[1, Sec. 8.2, eqs. (8.28)--(8.29), pp. 328--329]. The derivation is in continuous time; ctrlpp
 implements the law as a per-sample update with the sample time absorbed into the
 gains:
 
@@ -109,7 +109,7 @@ parameter boundedness.
 
 Dead-zone modification freezes adaptation when the tracking error is small,
 preventing parameter drift driven by noise or modeling errors rather than
-genuine tracking deviation [1, Sec. 8.6.1, pp. 368--371]:
+genuine tracking deviation [1, Sec. 8.6, eq. (8.76), p. 357]:
 
 $$
 \theta_{x,k+1} = \begin{cases}

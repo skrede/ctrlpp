@@ -26,7 +26,7 @@ Fields added to `pid_config` when this policy is active:
 |-------|------|---------|-------------|
 | `kb` | `std::array<Scalar, N>` | `{}` (zeros) | Back-calculation gain per channel (units of 1/time). Controls how fast the integrator is driven back when saturated. Leaving a channel at zero selects the automatic default described below. `create` refuses a `NaN`, infinite or negative `kb` with `invalid_back_calculation_gain`, since a negative gain drives the integrator away from the limit, and a default it cannot form with `undefined_tracking_time` or `unrepresentable_gain`. |
 
-The back-calculation gain multiplies the saturation error (the clipped minus unclipped output, in output units) into the integrator, whose rate is in output-per-time, so `kb` must carry units of 1/time: each cycle adds `kb * (u_sat - u) * dt` to the integrator after the output is formed. When a channel's `kb` is left at zero, it is auto-computed using the Astrom tracking-time-constant form `kb = 1/Tt` with `Tt = sqrt(Ti*Td)`:
+The back-calculation gain multiplies the saturation error (the clipped minus unclipped output, in output units) into the integrator, whose rate is in output-per-time, so `kb` must carry units of 1/time: each cycle adds `kb * (u_sat - u) * dt` to the integrator after the output is formed. When a channel's `kb` is left at zero, it is auto-computed using the tracking-time-constant form `kb = 1/Tt` with `Tt = sqrt(Ti*Td)` (Astrom and Hagglund, *Advanced PID Control*, 2006, Sec. 3.5, p. 80):
 
 - with derivative action (`kd != 0`): `kb = sqrt(ki/kd)`,
 - without derivative action (`kd == 0`): the tracking time collapses to the integral time, giving the fallback `kb = ki/kp`,
