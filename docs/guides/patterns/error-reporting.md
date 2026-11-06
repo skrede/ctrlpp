@@ -13,12 +13,12 @@ construction, setup, solve, update, reconfigure.
 ```cpp
 template <ctrlpp_floating_scalar Scalar, std::size_t NX, std::size_t NU,
           detail::conditioning_policy Cond = detail::pivot_ratio_conditioning>
-auto dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
-          const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
-          const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
-          const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
-          Cond                                           /*tag*/ = {})
-    -> ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>;
+ctrlpp::expected<dare_result<Scalar, NX, NU>, dare_error>
+dare(const Eigen::Matrix<Scalar, int(NX), int(NX)>& A,
+     const Eigen::Matrix<Scalar, int(NX), int(NU)>& B,
+     const Eigen::Matrix<Scalar, int(NX), int(NX)>& Q,
+     const Eigen::Matrix<Scalar, int(NU), int(NU)>& R,
+     Cond /*tag*/ = {});
 ```
 
 The caller branches on the result and reaches the value through `operator*`:
@@ -120,12 +120,15 @@ enum class ukf_health
 ```
 
 ```cpp
-/// @brief Report whether the carried estimate is still degraded from an
-/// earlier step: a covariance that `predict` or a committed update left,
-/// or a generation repaired, that was not positive definite, or a
-/// non-finite estimate. Latches; a rejected measurement does not set it.
 ukf_health health() const { return m_health; }
 ```
+
+It reports whether the carried estimate is still degraded from an earlier step:
+`covariance_repaired` for a covariance that a sigma-point generation repaired, or
+that `predict` or a committed `update` left not positive definite, and
+`non_finite_estimate` for a non-finite estimate. A measurement refused because it
+is itself non-finite does not set it; an update refused because the carried
+estimate or covariance is already non-finite latches `non_finite_estimate`.
 
 The status is latched where the degradation happens, not where it is first
 consumed: `ukf::predict` and `manifold_ukf::predict` judge the estimate they
@@ -162,7 +165,9 @@ Every solver backend adapter reports setup failure through a fallible
 `setup_qp_solver` and `setup_nlp_solver` forward that typed error rather than
 flattening it, so the cause of a setup failure is readable at the seam. The
 moving-horizon and nonlinear moving-horizon estimators report their EKF fallback
-through `diagnostics()` (channel 2).
+through `diagnostics()` (channel 2), and the two online planners report what each
+`update` planned, including a braked replan or a substituted shape, through their
+own `diagnostics()`.
 
 The per-step measurement `update` on all seven estimator types is on channel 1:
 `kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf`, `luenberger_observer`,
@@ -196,15 +201,42 @@ success path and are **not** rejections. They are channel-2 shaped -- the step
 ran and produced a valid attitude, it simply had no correction to apply -- and
 they are candidates for an explicit disposition report rather than for channel 1.
 
+The recursive least-squares estimator is on channel 1 too. `rls::update` returns
+`ctrlpp::expected<void, rls_update_error>` and decides every refusal before it
+writes a member, so a refused sample leaves the parameters and the covariance
+bitwise unchanged and the enumerator says why the sample was skipped:
+
+| Enumerator | Condition |
+| --- | --- |
+| `non_finite_state` | the carried parameters or covariance hold a non-finite entry |
+| `non_finite_observation` | the observation `y` is not finite |
+| `non_finite_regressor` | the regressor `phi` holds a non-finite entry |
+| `non_finite_denominator` | the gain denominator `lambda + phi' P phi` overflowed |
+| `indefinite_covariance` | the denominator is negative beyond rounding, so `P` is not positive semidefinite along `phi` |
+| `denominator_below_resolution` | the denominator cannot be told from zero: it is at or below `denominator_rounding_ops * eps` times `lambda` or times `\|phi\| \|P phi\|` |
+| `non_finite_result` | the prediction error, the gain, the next parameters, the next covariance, its trace or the trace bound is not finite |
+
+The table is in declaration order; the checks run in the order state,
+observation, regressor, a non-finite denominator, resolution, sign, result.
+`recursive_arx::update` refuses a non-finite input `u` as `non_finite_input` and
+forwards the embedded estimator's refusal as the `recursive_arx_update_error`
+enumerator of the same name, writing its regressor history only once the sample
+is accepted. The online planners' `update` refuses a non-finite target with
+`trajectory_error::non_finite_input` before it writes anything.
+
 The per-step `compute` and `evaluate` surfaces on the three stateful controllers
 are on channel 1 as well: `pid::compute` (both overloads),
 `mrac_controller::evaluate` and `l1_controller::evaluate` return
-`ctrlpp::expected<vector_t, E>` -- the result **carries the control vector**,
-because a controller step produces the command it was asked for and channel 1 is
-the result type over whatever the operation produces. Each carries a per-module
-enumeration (`pid_step_error`, `mrac_step_error`, `l1_step_error`), rejects
-before mutating anything, and carries a channel-3 `health()` query
-(`pid_health`, `mrac_health`, `l1_health`).
+`ctrlpp::expected<vector_t, pid_step_error>`,
+`ctrlpp::expected<input_type, mrac_step_error>` and
+`ctrlpp::expected<input_type, l1_step_error>` -- the result **carries the control
+vector**, because a controller step produces the command it was asked for and
+channel 1 is the result type over whatever the operation produces. Each rejects
+a non-finite operand before mutating anything, commits nothing from a cycle whose
+result is non-finite (`pid` restores the state it captured before the cycle), and
+carries a channel-3 `health()` query (`pid_health`, `mrac_health`, `l1_health`)
+that latches `non_finite_carried_state` when a cycle is refused because the
+controller's own carried state is non-finite.
 
 A refusal on these three is not the same event as a refusal on an estimator
 update. A refused estimator step leaves the estimate standing; a refused
@@ -224,20 +256,18 @@ from a meaningless estimate. `health()` latches
 
 ### Configuration validated at construction
 
-`kalman_filter`, `ekf`, `ukf` and `rls` now validate their configuration on
+`kalman_filter`, `ekf`, `ukf` and `rls` validate their configuration on
 channel 1 at construction, so a mistake made before the object ever ran is
 reported where it was made rather than as a non-finite estimate at the first
-step. Two of the four had **no factory at all** and gained one; a third had a
-`try_create`; only `rls` had an infallible construction to convert.
+step.
 
 Each of the four exposes `create` as its **only** construction path -- the plain
 constructors are private, reachable solely through a `validated_tag` the factory
 holds. A validating factory beside a public constructor validates nothing,
-because any caller can take the other door. That also settled the naming: the
-`try_` prefix marks a fallible factory that contrasts with a genuinely
-non-fallible constructor, so with `ukf`'s constructors gone the prefix
-contrasted with nothing and the member became `create`. The sigma-point
-strategies keep `try_create`, because their own plain constructors do survive.
+because any caller can take the other door. That also sets the naming: the
+`try_` prefix marks a fallible factory beside a non-fallible constructor, so the
+four, which have no such constructor, name theirs `create`, and the sigma-point
+strategies, whose default constructors stay public, keep `try_create`.
 
 A variant keeps the factory the only door while letting the result be built in
 place: the constructor is public, but its tag is a passkey whose default
@@ -268,8 +298,12 @@ The three filters share `filter_error`, which gained
 `non_finite_initial_state` and `non_finite_initial_covariance` -- one shared
 enumeration rather than three identical copies, because the three configuration
 aggregates declare the same four fields and feed them into the same recursion.
-`rls` carries its own `rls_error`, whose conditions are read off the covariance
-update rather than asserted as a range.
+`rls` carries its own `rls_error`: `non_positive_forgetting_factor` for a
+forgetting factor that is not finite or not above zero,
+`forgetting_factor_above_unity`, `non_finite_initial_covariance` and
+`non_positive_covariance_bound` for a covariance bound that is not finite or not
+above zero. It checks `P0` for finiteness only, not for symmetry or
+definiteness.
 
 **Every filter that takes a `Q`, `R` or `P0` refuses one that is non-finite,
 structurally asymmetric or indefinite.** A matrix with an eigenvalue below
@@ -294,9 +328,8 @@ noiseless `R` are legitimate models, and the Kalman-family recursions invert
 only the innovation covariance, never `R` alone. An ill-conditioned
 configuration, such as a covariance with entries many orders of magnitude
 apart, is accepted too: conditioning is a numerical-behavior question, not a
-domain violation. `rls_error` keeps one enumerator that is explicitly *not* a
-domain condition, `forgetting_factor_above_unity`, and says so: the arithmetic
-there is well defined and the consequence is an estimator that silently stops
+domain violation. `rls_error` keeps one enumerator that is *not* a domain
+condition, `forgetting_factor_above_unity`: the arithmetic there is well defined and the consequence is an estimator that silently stops
 adapting, so it is enforced as the type's stated `(0, 1]` contract, not as
 arithmetic.
 
@@ -322,8 +355,9 @@ noise fields, so `mhe` and `nmhe` became fallible too and forward that filter's
 rejection verbatim, the symmetry and definiteness refusals included. That is not plumbing:
 both also invert `Q` and `R` to form the arrival-cost and stage weights, so a
 non-finite entry poisons the posed problem as well as the filter, and a
-singular `Q` or `R`, which the filter accepts, is refused by their own
-`moving_horizon_configuration_error`.
+singular `Q`, `R` or `P0`, which the filter accepts, is refused by their own
+`moving_horizon_configuration_error` (`non_invertible_process_noise`,
+`non_invertible_measurement_noise`, `non_invertible_initial_covariance`).
 
 `particle_filter` validates its configuration on channel 1 as well, through
 `particle_filter::create` and `make_particle_filter`, which return
@@ -342,38 +376,45 @@ Gaussian to sample.
 `pid_config_error` and leave the controller untouched. `create` is its only
 construction path; the constructor is private.
 
-Not yet converted: `predict` on those seven estimator types (the two unscented
-filters' `predict` latches `health()` on what it produced, but still refuses
-nothing); the configuration
-and reset paths of the two adaptive controllers (their construction and
-`reset`), through which a non-finite value still enters silently and is caught
-only by the next cycle's rejection and the `health()` latch; `rls::update`, which still returns a bare `bool` and so
-cannot say why a sample was skipped; `ekf_config::numerical_eps`, whose own
-domain condition (finite and strictly positive, since the central-difference
-stencil divides by it) is not yet checked at construction; the remaining
-configuration fields of the quaternion filters, `mekf_config::dt` and
-`numerical_eps`, the geodesic-mean options of `manifold_ukf_config`, and the
-gains and step of `cf_config`, whose `complementary_filter` factory validates
-only the initial quaternion; and the online planners' `update`. Those surfaces are
-being moved onto channel 1. Until each one is, the NaN and Inf propagation
-contract described in [numerical-behavior.md](numerical-behavior.md) is what
-governs them.
+Not on channel 1: `predict` on those seven estimator types (the two unscented
+filters' `predict` latches `health()` on what it produced, but refuses nothing);
+the construction of `mrac_controller` and of `luenberger_observer`, the `reset`
+of both adaptive controllers and of the observer, `luenberger_observer::set_gain`
+and `set_model`, and `kalman_filter::set_model`, through which a non-finite value
+enters silently and is caught only by the next step's rejection, and by the
+`health()` latch when it seeds the carried state; the rest of `l1_controller`'s configuration, since its
+`create` checks only the filter design and the predictor's DC-gain inversion;
+`ekf_config::numerical_eps`, whose own domain condition (finite and strictly
+positive, since the central-difference stencil divides by it) is not checked at
+construction; the remaining configuration fields of the quaternion filters,
+`mekf_config::dt` and `numerical_eps`, the geodesic-mean options of
+`manifold_ukf_config`, and the gains and step of `cf_config`, whose
+`complementary_filter` factory validates only the initial quaternion; and the
+online planners' `reset` and `sample`, whose position and time arguments are
+not checked. The NaN and Inf propagation contract described in
+[numerical-behavior.md](numerical-behavior.md) is what governs those surfaces.
 
-### No failure is signalled by an empty optional any more
+### No failure is signaled by an empty optional any more
 
-`std::optional` no longer carries a failure anywhere in `lib/`. Eight surfaces
-moved onto channel 1:
+No public surface of `lib/` reports a failure through `std::optional`. These
+surfaces moved onto channel 1:
 
 | Surface | Enumeration | What the empty result used to discard |
 | --- | --- | --- |
-| `lqr_gain` (both discrete overloads) | `dare_error`, **forwarded** | which of six conditions refused the pair |
+| `lqr_gain` (both discrete overloads) | `dare_error`, **forwarded** | which condition refused the pair |
 | `lqr_gain_continuous` | `care_error`, forwarded | the same, plus its own non-finite rejection |
-| `detail::partition_lqi_gain`, `lqi_gain` | `dare_error`, forwarded | the augmented solve's cause |
+| `lqi_gain` | `dare_error`, forwarded | the augmented solve's cause |
 | `place`, `place_observer` | `place_error`, **new** | a structural refusal versus a numerical one |
 | `so3::normalize` | `so3_error`, new | that the postcondition was not met at all |
 | `dsp::detail::validate_biquad_design` | `dsp_error` | nothing -- see below |
 
-The three LQR forms and both LQI forms **forward** an enumeration that already
+Two internal helpers still carry a refusal as an engaged `std::optional`, the
+inverted shape described below: the predictive controllers' configuration
+admission and the argmin adapter's setup admission. Both are in
+`ctrlpp::detail`, and their callers return the refusal through
+`ctrlpp::expected`.
+
+The three LQR forms and `lqi_gain` **forward** an enumeration that already
 existed one call below rather than inventing a name for it. The cause was
 computed and typed by the Riccati solver and then thrown away at the seam; the
 repair is to stop throwing it away, not to describe it a second time where the
@@ -388,7 +429,7 @@ data. Sharing an enumerator across that line would send a caller to change the
 one thing that cannot help.
 
 `validate_biquad_design` is the exception that proves the rule and is recorded
-as such: it returned `std::optional<dsp_error>`, an **inverted** channel where
+as such: it returned `std::optional<dsp_error>`, an **inverted** shape where
 an empty result meant success and an engaged one carried the error. It lost no
 information. It was converted so the library has one channel shape rather than
 two, and that is its only justification: it is not a defect fix.
@@ -398,9 +439,10 @@ result, because relocating a dishonesty is not removing it.
 
 ### Two enumerators added, for causes that were being reported as something else
 
-Both Riccati enumerations gained `singular_r`. Their pencil and Hamiltonian
-builds invert the input weighting exactly as they invert the state matrix, and
-`singular_a` already existed for the latter; the missing counterpart meant a
+Both Riccati enumerations gained `singular_r`. The discrete pencil and the
+continuous Hamiltonian both invert the input weighting, and the discrete pencil
+also inverts the state matrix, for which `singular_a` already existed; the
+missing counterpart meant a
 caller who set a weighting to zero deliberately was told their input was
 non-finite. Worse, a weighting that is **rank-deficient but nonzero** never went
 non-finite at all -- the rank-revealing solve returns a least-squares answer over
@@ -445,3 +487,29 @@ with the profile correct under the raised limit, and the raise is channel 2,
 reported through `disposition()` -- carrying the commanded and the realized
 acceleration, not a flag. See
 [trapezoidal_trajectory](../../api/trajectory/trapezoidal-trajectory.md).
+
+## Limitations
+
+### ctrlpp::expected implements part of the std::expected interface
+
+`ctrlpp::expected` is the library's own class template at every language level:
+`ctrlpp/expected.h` names it whether or not the standard library ships
+`<expected>`, and where it does, `ctrlpp::expected` and `ctrlpp::unexpected`
+only gain explicit conversions to and from `std::expected` and
+`std::unexpected`. The members it has are construction from a value, from a
+`ctrlpp::unexpected`, and in place through `std::in_place` (for a non-void value
+type) or `ctrlpp::unexpect`; copy, move and assignment from a
+`ctrlpp::unexpected`; `has_value()` and `operator bool`; `error()`; and, for a
+non-void value type, `operator*`, `operator->`, `value()` and `value_or()`.
+`value()` on an error throws `ctrlpp::detail::bad_expected_access` when
+exceptions are enabled and calls `std::abort` when they are not.
+
+It does not have `swap`, `emplace`, the monadic operations `and_then`,
+`or_else`, `transform` and `transform_error`, `error_or`, equality comparison,
+or a default constructor for a non-void value type; `ctrlpp::expected<void, E>`
+has no `value()` and no `operator*`, and `ctrlpp::unexpected` has no `swap` and
+no equality comparison. Code that must compile under both C++20 and C++23 uses
+only the members listed above; code built as C++23 that wants the rest converts
+the result explicitly to `std::expected`. The storage and its interaction with
+the standard type are described in the [real-time safety
+matrix](../../rt-safety-matrix.md).

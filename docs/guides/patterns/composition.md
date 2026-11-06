@@ -6,9 +6,10 @@ can be combined freely.
 
 ## 1. Policy Composition (PID)
 
-Template parameter packs add behaviors at compile time. Each policy extends
-the config struct with its own fields. You compose exactly the features you
-need; unused policies cost nothing.
+Template parameter packs add behaviors at compile time. A policy that has
+settings adds its own configuration struct to the controller's `pid_config`,
+reached through `cfg.policy<P>()`. You compose exactly the features you need;
+unused policies cost nothing.
 
 ```cpp
 using Pid = ctrlpp::pid<double, 1,
@@ -18,14 +19,15 @@ using Pid = ctrlpp::pid<double, 1,
 ```
 
 The compiler resolves all policies at instantiation, with no virtual dispatch and
-no runtime branching.
+no runtime branching on which policies are present.
 
 **Details:** [PID Composition Guide](../pid/composition.md)
 
 ## 2. Concept-Based Injection (Solver Backends)
 
-C++20 concepts define what a solver backend must provide. MPC and NMPC accept
-any type satisfying `qp_solver` or `nlp_solver` as a template parameter:
+C++20 concepts define what a solver backend must provide. `mpc` constrains its
+solver parameter with `qp_solver`, and `nmpc_dynamic` constrains its own with
+`nlp_solver`:
 
 ```cpp
 auto linear_mpc = ctrlpp::mpc<double, NX, NU, ctrlpp::osqp_solver>::create(sys, mpc_cfg);
@@ -44,8 +46,10 @@ fails surfaces the error on the same channel the caller already handles.
 ## 3. Observer-Controller Composition
 
 Observers and controllers are separate objects connected at the application
-level. The `ObserverPolicy` concept ensures any observer can feed any
-controller:
+level. Every ctrlpp estimator satisfies the `ObserverPolicy` concept, which
+requires `predict(u)`, `update(z)` and `state()`, so the loop below is written
+the same way whichever estimator it holds. No controller takes an observer as a
+parameter; the application passes the estimate on:
 
 ```cpp
 kf.predict(u);
@@ -54,11 +58,17 @@ if(!kf.update(z))
     std::cerr << "Kalman filter rejected the measurement\n";
     return EXIT_FAILURE;
 }
-auto u_next = controller.compute(kf.state());
+auto u_next = pid.compute(setpoint, kf.state(), dt);
+if(!u_next)
+{
+    std::cerr << "PID rejected the cycle\n";
+    return EXIT_FAILURE;
+}
 ```
 
-This works with `kalman_filter`, `ekf`, `ukf`, `particle_filter`, or any
-custom type satisfying `ObserverPolicy`.
+This works with `kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf`,
+`luenberger_observer`, `complementary_filter`, `particle_filter`, `mhe`, `nmhe`,
+or any custom type satisfying `ObserverPolicy`.
 
 **Details:** [Observer-Controller Guide](../estimation/observer-controller.md)
 

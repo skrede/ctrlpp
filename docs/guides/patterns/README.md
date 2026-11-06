@@ -5,6 +5,6 @@ families.
 
 ## Guides
 
-- [composition.md](composition.md)<br/> Composition patterns: observer + controller, sysid + model + control, and policy stacking
+- [composition.md](composition.md)<br/> Composition patterns: policy stacking, solver injection, and observer + controller
 - [numerical-behavior.md](numerical-behavior.md)<br/> NaN propagation contract, numerical guards, and input validation responsibilities
-- [error-reporting.md](error-reporting.md)<br/> The two reporting channels, state-health queries, and discarded results
+- [error-reporting.md](error-reporting.md)<br/> The failure and disposition channels, state-health queries, discarded results, and what `ctrlpp::expected` omits

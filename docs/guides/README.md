@@ -14,5 +14,5 @@ Detailed tutorials build on the introductions and explore advanced patterns.
 - [Estimation Guides](estimation/README.md)<br/> Observer-controller patterns
 - [MPC Guides](mpc/README.md)<br/> Concept-based solver injection
 - [System Identification Guides](sysid/README.md)<br/> Identify, model, and control workflow
-- [Design Pattern Guides](patterns/README.md)<br/> Cross-cutting composition patterns
+- [Design Pattern Guides](patterns/README.md)<br/> Composition, error reporting and numerical behavior
 - [Trajectory Guides](trajectory/README.md)<br/> Trajectory generation and motion planning

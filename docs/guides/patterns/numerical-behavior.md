@@ -43,6 +43,9 @@ failure channel):
 | `nmhe::update` | `expected<void, ekf_update_error>` (forwarded from the embedded filter) |
 | `complementary_filter::update`, all three overloads | `expected<void, cf_update_error>` |
 | `particle_filter::update` | `expected<void, pf_update_error>` (particles, weights and random generator unchanged on refusal) |
+| `rls::update` | `expected<void, rls_update_error>` |
+| `recursive_arx::update` | `expected<void, recursive_arx_update_error>` (forwarded from the embedded `rls`, plus a non-finite input) |
+| `online_planner_2nd::update`, `online_planner_3rd::update` | `expected<void, trajectory_error>` (a non-finite target) |
 | `pid::set_params`, `pid::set_integral` | `expected<void, pid_config_error>` |
 | `pid::compute`, both overloads | `expected<vector_t, pid_step_error>` |
 | `mrac_controller::evaluate` | `expected<input_type, mrac_step_error>` |
@@ -70,7 +73,7 @@ integrator once the cycle succeeds.
 which is their only construction path, and which rejects a configuration
 carrying a non-finite `Q`, `R`, `x0` or `P0` (`filter_error`), or -- for `rls` --
 a forgetting factor outside `(0, 1]`, a non-finite initial covariance, or a
-non-positive covariance bound (`rls_error`). `mhe`, `nmhe` and `recursive_arx`
+covariance bound that is not finite or not positive (`rls_error`). `mhe`, `nmhe` and `recursive_arx`
 embed one of those types and forward its rejection. This is the earliest point
 at which such a mistake can be reported, and reporting it here is what keeps it
 from surfacing as a non-finite estimate several steps later, in a place that
@@ -104,23 +107,32 @@ positive semidefinite `Q` or `P0` is still accepted. The refusals are listed in
 
 **Still propagate faithfully,** with no rejection channel:
 
-- **`predict` on every one of those seven types.** Its input is a command the
+- **`predict` on every estimator in the table.** Its input is a command the
   caller already owns and the plant already took, so refusing it would leave the
   filter with no propagation for a step that happened. A prediction that poisons
   the carried estimate is not silent: the next `update` rejects, names the cause,
-  and latches the type's `health()` query to `non_finite_estimate`. The two
+  and, on a type with a `health()` query, latches it to `non_finite_estimate`. The two
   unscented filters, `ukf` and `manifold_ukf`, report it earlier: their
   `predict` judges what it produced and latches `non_finite_estimate` as soon as
   it returns.
-- **The configuration and reset paths of all ten converted types.** The adaptive
-  controllers' construction and `reset` are not fallible, so a non-finite initial
-  parameter matrix or reference model still enters through them. The first cycle
-  that follows rejects and latches the type's `health()` query, which is what
-  that query exists for. `pid` is the exception: `create`, `set_params` and
-  `set_integral` refuse a non-finite or contradictory value with a
-  `pid_config_error`, and `freeze_integral` and `reset` take no value that could
-  be non-finite. `create` is its only construction path; the constructor is
-  private.
+- **The configuration and reset paths that are not fallible.**
+  `mrac_controller`'s constructor and the `reset` of both adaptive controllers
+  take their values unchecked, and `l1_controller::create` checks only the
+  filter design (`invalid_filter_config`) and the predictor's DC-gain
+  inversion, so a non-finite initial parameter matrix, adaptation estimate or
+  reference model still enters through them. `luenberger_observer`'s
+  constructor, `set_gain`, `set_model` and `reset`, and
+  `kalman_filter::set_model`, likewise assign what they are given. A value
+  that seeds the carried state, such as an initial parameter matrix, is refused
+  by the next step, which latches the type's `health()` query, which is what
+  that query exists for. A value the step only multiplies by, such as an
+  observer gain or an adaptation rate, makes every step's result non-finite, so
+  every step is refused as `non_finite_result` and `health()` is not latched.
+  `pid` is the exception: `create`, `set_params`
+  and `set_integral` refuse a non-finite or contradictory value with a
+  `pid_config_error`, and `freeze_integral` and `reset` take no value that
+  could be non-finite. `create` is its only construction path; the
+  constructor is private.
 - **`l1_controller`'s projection, in one specific case.** The elementwise clamp
   propagates a `NaN` unchanged, but it *replaces* an infinity with the configured
   bound whenever that bound is finite -- so a finite, in-range command can come
@@ -129,19 +141,15 @@ positive semidefinite `Q` or `P0` is still accepted. The refusals are listed in
   `projection_clamped_non_finite` rather than through the failure channel,
   because the cycle did produce the command the algorithm prescribes. See the
   L1 API page for the mechanism.
-- **`rls::update`.** It returns a bare `bool` and skips a sample whose
-  denominator is non-finite or near zero, so the caller learns that something was
-  skipped but never why. Its *construction* is now validated; its per-step
-  surface is not yet on the failure channel.
 - **`ekf_config::numerical_eps`, and the scalar options of the quaternion
   filters** (`mekf_config::dt` and `numerical_eps`, the geodesic-mean options of
   `manifold_ukf_config`, and the gains and step of `cf_config`). Their factories
-  validate the initial quaternion and the noise and initial covariances, but not
-  these scalars; they are the same defect class, on surfaces this change did
-  not open.
-- Every other surface in the library, including the online planners. These are
-  being moved onto the failure channel too, but they have not been moved yet,
-  and until they are the propagation contract above is what governs them.
+  validate the initial quaternion, the noise and initial covariances, or both,
+  but not these scalars.
+- **The online planners' `reset` and `sample`.** Their position and time
+  arguments are not checked; only `update`'s target is.
+- Every other surface in the library not named above. The propagation contract
+  above is what governs them.
 
 ## What the library does guard against
 
@@ -353,8 +361,10 @@ otherwise produce silent corruption through intermediate overflow:
   `ctrlpp::expected<l1_controller, l1_error>` and reports
   `l1_error::singular_predictor` when (I - A_m) is singular,
   `l1_error::singular_dc_gain` when the DC gain (I - A_m)^{-1} B is singular or
-  non-finite, and `l1_error::non_finite_gain` when `K_r` is non-finite. It does
-  not throw.
+  non-finite, and `l1_error::non_finite_gain` when `K_r` is non-finite. The
+  overload that takes a cutoff and a sample rate also reports
+  `l1_error::invalid_filter_config` when the low-pass filter cannot be designed.
+  It does not throw.
 
 - **Particle filter weight depletion:** When no particle explains a finite
   measurement (every likelihood is zero), the normalizer resets to uniform
@@ -405,10 +415,20 @@ otherwise produce silent corruption through intermediate overflow:
   returns no sentinel model, so a returned model always has a finite
   condition number.
 
-- **RLS overflow guard:** The recursive least squares estimator skips the
-  update step when the quadratic form `phi^T * P * phi` overflows, preventing
-  NaN from `0 * Inf` in the gain computation. The `update()` method returns
-  `false` when this occurs so the caller can detect skipped updates.
+- **RLS denominator guard:** The recursive least-squares estimator forms the
+  gain denominator `lambda + phi^T P phi` and refuses the sample, before it
+  writes anything, when that denominator is not finite
+  (`rls_update_error::non_finite_denominator`), cannot be told from zero
+  (`denominator_below_resolution`: at or below
+  `denominator_rounding_ops * eps` times `lambda` or times
+  `||phi|| ||P phi||`, with `denominator_rounding_ops = 2 (2 NP - 1) + 1`
+  counted from the two products and the addition, in `ctrlpp/sysid/rls.h`), or
+  is negative (`indefinite_covariance`). A candidate update whose result is not
+  finite is refused as `non_finite_result`. `update` returns
+  `ctrlpp::expected<void, rls_update_error>`, so the caller learns that a sample
+  was skipped and why; see
+  [error-reporting.md](error-reporting.md#current-state-of-the-conversion)
+  for every enumerator.
 
 - **Predictive-control backend results:** A solver can report an accepted status
   and still return a result that is not usable. `nmpc_dynamic` and `nmpc_static`
@@ -491,7 +511,7 @@ A covariance is symmetric positive semidefinite by definition. Each `Q`, `R` and
 Across matrices the order is the order the configuration declares its fields;
 the particle filter's singular-`R` check follows `R`'s definiteness.
 
-This applies today to `Q`, `R` and `P0` at every filter factory
+This applies to `Q`, `R` and `P0` at every filter factory
 (`kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf` and `particle_filter`,
 whose sampling factors, inverse and log-determinant are formed from the
 symmetrized matrices) and at `kalman_filter::set_noise` and
@@ -500,13 +520,16 @@ weights `Q`, `R` and a set `Qf` at `mpc::create`, `nmpc_dynamic::create` and
 `nmpc_static::create` (`non_finite_cost_weight`, `asymmetric_cost_weight`,
 `indefinite_cost_weight`); a cost weight needs only to be positive
 semidefinite, so the same verdict serves, and the symmetrized copy is what the
-posed cost and its gradient use. The one exception is `R` where the Riccati
+posed cost and its gradient use. `mpc::create` applies the same order to the
+`P` of an ellipsoidal terminal set (`non_finite_terminal_set`,
+`asymmetric_terminal_set`, `indefinite_terminal_set`). The one exception is `R`
+where the Riccati
 solve inverts it: `mpc::create` with `Qf` unset refuses a singular `R`
 (`singular_input_weight`), by the solve's own rank test on its equilibrated
 weighting, and so does `terminal_ingredients`. With `Qf` unset, `mpc::create`
 also refuses every other Riccati failure, carrying the solve's own `dare_error`,
 rather than pose another terminal cost, and `terminal_ingredients` reports a
-declined solve with the same `dare_error`. The convention does not yet apply to the weight matrices
+declined solve with the same `dare_error`. The convention does not apply to the weight matrices
 of the regulators and the Riccati solvers, nor to
 the moving-horizon estimators' own copies of `Q`, `R` and `P0`: `mhe` and
 `nmhe` forward the embedded filter's refusal, but the copies they keep for
@@ -580,11 +603,10 @@ structure, not drift.
 | Constructor/config | Library rejects or falls back on degenerate configs. `kalman_filter`, `ekf`, `ukf` and `rls` reject a non-finite noise or initial-condition field through a fallible `create`, which is their only construction path; `kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf` and `particle_filter` also refuse a structurally asymmetric or indefinite `Q`, `R` or `P0` and store a drift-asymmetric one symmetrized ([the drift convention](#rounding-drift-is-accepted-structure-is-refused)), and `kalman_filter::set_noise` and `reset_covariance` do the same before assigning. `mekf`, `manifold_ukf` and `complementary_filter` refuse an initial quaternion whose norm is not one within rounding and normalize one whose norm is. A singular positive semidefinite or an ill-conditioned configuration is accepted. `particle_filter` (through `create` or `make_particle_filter`, likewise its only path) additionally refuses a singular `R`, because it scores with `R`'s inverse and log-determinant; a singular positive semidefinite `Q` or `P0` is accepted and sampled without lifting its zero eigenvalues. Of the predictive controllers, `mpc`, `nmpc_dynamic` and `nmpc_static` (through `create`, their only path) refuse inconsistent or non-finite bounds, a NaN or negative rate bound, a non-finite, structurally asymmetric or indefinite cost weight, storing a drift-asymmetric one symmetrized, and an invalid penalty on an active soft constraint; `mpc` also refuses a plant whose `A`, `B` or `C` is not finite and a weight that overflows when mapped to state space |
 | Algorithm internals | Library uses numerically stable formulations |
 | Outputs | NaN/Inf propagates faithfully, never silently clamped, except on the surfaces named above |
-| Carried estimator state | The seven `update` surfaces named above reject a non-finite operand before mutating anything |
+| Carried estimator state | The estimator, identification and planner `update` surfaces in the table above reject a non-finite operand before mutating anything |
 | Carried controller state | `pid::compute` (both overloads), `mrac_controller::evaluate` and `l1_controller::evaluate` reject before mutating anything, and return the command on the success channel. `mpc`, `nmpc_dynamic` and `nmpc_static` refuse a non-finite or short backend result as `solver_error::invalid_backend_result` and commit nothing from it |
 
-The outputs row is still being narrowed for the per-step surfaces under
-conversion: where a surface gains a typed failure return, a degenerate step is
-reported through that return instead of being left to propagate as NaN. See
-[error-reporting.md](error-reporting.md) for the two reporting channels and for
-which surfaces have been converted so far.
+Where a surface has a typed failure return, a degenerate step is reported
+through that return instead of being left to propagate as NaN. See
+[error-reporting.md](error-reporting.md) for the reporting channels and for
+which surfaces have one.
