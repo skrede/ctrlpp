@@ -1,6 +1,6 @@
 # Benchmarks
 
-Performance measurements for ctrlpp components and comparison comparisons
+Performance measurements for ctrlpp components and competitive comparisons
 against other C++ control libraries.
 
 ## Running benchmarks
@@ -9,10 +9,13 @@ The benchmark suite is a standalone CMake project under `benchmarks/`.
 
 ### Prerequisites
 
-- C++20 compiler
+- C++23 compiler (the benchmark project sets C++23; the library itself needs only
+  C++20)
 - Eigen 3.4+
-- OSQP 1.0+ and NLopt (for MPC/MHE benchmarks)
-- nanobench (fetched automatically via FetchContent)
+- OSQP 1.0+ for the libmpc++ and osqp-eigen comparisons, and NLopt for the
+  nonlinear predictive control comparison; the internal benchmarks need neither
+- nanobench, found with `find_package`, or fetched through FetchContent when
+  the tree is configured with `-DCTRLPP_FETCH_BENCHMARK_DEPS=ON`
 
 ### Internal benchmarks
 
@@ -37,17 +40,26 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DCTRLPP_BENCH_HPIPM=ON \
   -DCTRLPP_BENCH_DRAKE=ON
 cmake --build build -j$(nproc)
-./bench.sh --comparison
+./bench.sh
 ```
+
+`bench.sh` configures, builds and runs the tree in `build`, the comparison
+targets included unless it is given `--internal-only`; `--comparison` takes a
+comma-separated list (`libmpc,osqp_eigen,hpipm,ct,ruckig,drake`) and turns those
+options on for that configure.
 
 | Option | Library | Install (Arch) | Notes |
 |--------|---------|----------------|-------|
-| `CTRLPP_BENCH_RUCKIG` | ruckig | `yay -S ruckig` | Online trajectory generation |
+| `CTRLPP_BENCH_RUCKIG` | ruckig | `yay -S ruckig`, or fetched with `-DCTRLPP_FETCH_BENCHMARK_DEPS=ON` | Online trajectory generation |
 | `CTRLPP_BENCH_OSQP_EIGEN` | osqp-eigen | `yay -S osqp-eigen` | Eigen wrapper for OSQP QP solver |
-| `CTRLPP_BENCH_LIBMPC` | libmpc++ | FetchContent (automatic) | Linear MPC library |
+| `CTRLPP_BENCH_LIBMPC` | libmpc++ | installed, or fetched with `-DCTRLPP_FETCH_BENCHMARK_DEPS=ON` | Linear MPC library |
 | `CTRLPP_BENCH_CT` | ETH Control Toolbox | `yay -S control-toolbox-optcon` | LQR, iLQR, MPC |
 | `CTRLPP_BENCH_HPIPM` | HPIPM | `yay -S hpipm-git blasfeo-git` | High-performance interior-point QP |
 | `CTRLPP_BENCH_DRAKE` | Drake | Manual (Bazel) | `find_package` only, no FetchContent |
+
+No figure on this page comes from the HPIPM or Drake targets, nor from the
+argmin, ProxSuite, DAQP, TinyMPC, qpOASES and cross-solver QP options the
+comparison tree also defines.
 
 ## Internal benchmark results
 
@@ -88,8 +100,8 @@ The **spread** column is the cross-pass spread on wall time,
 | `double_s_trajectory` | `evaluate()` out-parameter | 4.29 | 233M | 62.2 | GCC 16.2.1 | 0.24% |
 | `dare` | solve + acceptance check | 10.78 us | 92.8K | 153K | GCC 16.1.1 | 2.08% |
 | `lqr_gain` | DARE + gain | 3.01 us | 333K | 36.4K | GCC 16.1.1 | 0.34% |
-| `batch_arx` | `identify()` | 4.38 us | 228K | 58.1K | GCC 16.1.1 | 0.51% |
-| `moesp` | `identify()` | 567 us | 1.8K | 6.88M | GCC 16.1.1 | 0.68% |
+| `batch_arx` | `batch_arx<2, 2>(Y, U)` | 4.38 us | 228K | 58.1K | GCC 16.1.1 | 0.51% |
+| `moesp` | `moesp<2>(Y, U)` | 567 us | 1.8K | 6.88M | GCC 16.1.1 | 0.68% |
 
 System dimensions: NX=2 for estimators and sysid, NX=4/NU=2 for LQR/DARE,
 5-tap for FIR, 5-knot natural cubic spline.
@@ -123,8 +135,8 @@ processor contention.
 | `double_s_trajectory::evaluate` (both forms) | max relative deviation between the by-value and out-parameter evaluations of one profile over the sampled horizon | 0.0 |
 | `dare` | relative residual of its own discrete Riccati solution | 2.7e-15 |
 | `lqr_gain` | discrete closed-loop spectral radius of its own gain (below one certifies stability) | 0.9914 |
-| `batch_arx::identify` | max relative deviation of its Markov parameters from the generating system's | 2.3e-15 |
-| `moesp::identify` | same metric | 6.4e-11 |
+| `batch_arx` | max relative deviation of its Markov parameters from the generating system's | 2.3e-15 |
+| `moesp` | same metric | 6.4e-11 |
 
 `pid`, `lqr::compute`, `mrac`, `l1` and the six estimator rows carry **no such
 figure, and the omission is deliberate**.  Each times one step of a recursion,
@@ -155,10 +167,9 @@ run a directory of its own.  Substitute any other target name on the last line.
 
 ## Discrete Riccati: the acceptance check and the equilibrated path
 
-The figures in this section were taken on their own machine settings and their
-own toolchain, both stated below, and are not read across to the table above,
-which was taken on the compiler and optimization level named under
-[Environment](#environment).
+The figures in this section were taken in a window of their own, under the
+machine settings and toolchain stated below, and are not read across to the
+table above, which [Environment](#environment) describes.
 
 **What each figure is per.** Every number below is one `ctrlpp::dare` call at the
 stated `NX` / `NU`, on the discrete damped chain the benchmark builds -- a
@@ -228,9 +239,9 @@ anything: at every rung and every `NX` below, the equilibrated symplectic matrix
 is bitwise the scale-one matrix and its real Schur decomposition takes the
 scale-one iteration count.
 
-**Every scaled figure in this section comes from the earlier rung set and is
-pending re-measurement.** The tables below were measured on the decimal rungs
-`1e-06`, `1e-04`, `1e-02`, `1 + 2^-16`, `1e+02`, `1e+04` and `1e+06`, on a build
+**Every scaled figure in this section comes from the earlier rung set, and none
+has been re-measured on the current one.** The tables below were measured on the
+decimal rungs `1e-06`, `1e-04`, `1e-02`, `1 + 2^-16`, `1e+02`, `1e+04` and `1e+06`, on a build
 whose divisor was the largest weight entry itself rather than a power of two;
 under that divisor those rungs also equilibrated bitwise to the scale-one corpus.
 The tables keep the labels they were measured under. The power-of-two rungs have
@@ -292,7 +303,7 @@ recomputes all 42 of them from published figures.
 **On the earlier rung set, no. It was flat in the weight scale over the twelve
 decades from `1e-06` to `1e+06`, and it depended on the state dimension
 instead.** On those figures, budget it against `NX` and ignore how far from
-equilibrated the pose is; the power-of-two rungs are pending re-measurement.
+equilibrated the pose is; the power-of-two rungs have not been measured.
 
 The retired-instruction counters settle this more sharply than the times can. On
 the earlier rung set the scaled call retired the same instruction count at every
@@ -459,7 +470,9 @@ mkdir -p run && cd run && taskset -c 2 ../build-bench/comparison/ruckig/bench_tr
 |-----------|-------:|---------:|-------:|------------:|----------|----------:|
 | Linear MPC solve (NX=4, NU=2, N=10) | 57.2 us (863K ins) | 7553 us (127M ins) | 132 | **147** | GCC 16.1.1 | 2.3e-12 |
 
-Cross-pass spread at or below 1.73%.
+Cross-pass spread at or below 1.73%.  The target is compiled with
+`EIGEN_STACK_ALLOCATION_LIMIT=300000`, because libmpc++ holds a fixed-size
+matrix above Eigen's default limit, and the definition applies to both arms.
 
 **ctrlpp is about 147x fewer instructions.**  Both use OSQP as the QP backend.
 The difference is in the QP formulation layer: ctrlpp builds the sparse QP
@@ -550,11 +563,12 @@ each arm's own closed loop realizes agree to 1.7e-4 relative, with ctrlpp's
 marginally lower (1.04935 against 1.04953) under one objective the benchmark
 harness owns rather than either library's internal cost.
 
-**This is the one row on this page built with a different compiler.**  The
-competitor's umbrella header assigns to a `const` member at
-`ct/optcon/dms/dms_core/TimeGrid.h:53`, which GCC 13 accepts and later releases
+**This is the one row on this page built with a compiler other than GCC 16.**
+The competitor's umbrella header assigns to a `const` member at
+`ct/optcon/dms/dms_core/TimeGrid.h:53`, which GCC 13 accepts and GCC 15 and 16
 reject, so this target gets its own build tree and its own compiler.  Do not
-compare its absolute times against any other row here.
+compare its absolute times against any other row here.  The target is defined
+only when NLopt is found.
 
 Two further disclosures the ratio depends on: the ctrlpp arm is the
 **runtime-horizon** controller, not the compile-time-horizon default, and the
@@ -605,7 +619,7 @@ value is negative, so both gains stabilize the plant.
 
 **On the gain rows, accuracy is one shared upper bound and not a per-arm
 discriminator.**  Both arms measure between 1.4e-16 and 9.5e-16, and the reason
-is algebraic rather than a matter of judgement: the residual is reconstructed
+is algebraic rather than a matter of judgment: the residual is reconstructed
 from the gain, and that reconstruction is **quadratic** in the gain error.  At a
 gain error near 1e-15 the true suboptimality term is of order 1e-30, far below
 what double precision represents, so what is measured is the reconstruction's
@@ -616,9 +630,9 @@ per-arm split is a real and reportable difference.
 
 The sweep stops at NX=30 because that is where the library as shipped stops.
 The stack-allocation ceiling is a compile-time property of the default build,
-and **no compile definition raising it appears in any benchmark source or build
-file**, so every rung above is reproducible against ctrlpp as a user receives
-it.  A figure that needs a non-default compile definition is a figure a reader
+and **no compile definition raising it is set on any Riccati comparison
+target**, so every rung above is reproducible against ctrlpp as a user receives
+it; the one benchmark target that raises it is the libmpc++ comparison.  A figure that needs a non-default compile definition is a figure a reader
 cannot reproduce.
 
 ```bash
@@ -745,7 +759,8 @@ was taken separately and states its own machine settings and toolchain in place.
 | Pinning | `taskset -c 2`, one core, every run |
 | Exclusivity | full.  Load average 0.27 before the first run and 0.82 after the last; processor pressure at or below 0.01 throughout.  No compile or competing process ran during the window. |
 | Passes | 3 serial passes per target, medians reported |
-| Compiler | GCC 16.1.1 (`-O2`, Release) for every row except the nonlinear predictive control row, which needs GCC 13.4.1 and is marked as such |
+| Compiler | GCC 16.1.1 for every row except the rows marked GCC 16.2.1 and the nonlinear predictive control row, which needs GCC 13.4.1 and is marked as such; every tree is CMake `Release`, so `-O3 -DNDEBUG`, at C++23 |
+| Library revision | `6c2cb9d`; the rows marked GCC 16.2.1 were taken at `6c13d26`.  The figures describe those revisions and are not re-measured on each later change to the library |
 | OS | EndeavourOS (Arch Linux), kernel 6.18.42-1-lts |
 | Eigen | 3.4.1 |
 | OSQP | 1.0.0 |

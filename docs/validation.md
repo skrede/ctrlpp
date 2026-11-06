@@ -47,10 +47,13 @@ The reference scripts collectively require four Octave packages: **control**,
 `signal` by 2, and `splines` and `quaternion` by 1 each; one case
 (`fir_filter`) loads no package at all.
 
-Separately from the cases, `validation/oracles/linear_kalman/` holds a pair of
-mutually independent Octave and Python implementations of the linear Kalman
-recursion; they are not a cross-validation case but the external oracle for the
-golden state an EKF unit test asserts against.
+Separately from the cases, `validation/oracles/` holds two external oracles that
+are not cross-validation cases. `linear_kalman/` is a pair of mutually
+independent Octave and Python implementations of the linear Kalman recursion, the
+oracle for the golden state an EKF unit test asserts against. `chebyshev1/` is a
+Python script that evaluates the Chebyshev Type I low-pass design at 60
+significant digits, the reference for the two Chebyshev precision cases in
+`tests/unit/dsp_hardening_test.cpp`.
 
 Run the suite:
 
@@ -184,7 +187,7 @@ claim about every environment.
 | `ukf` | 1 | Nonlinear; no Octave equivalent |
 | `particle_filter` | 1 | Stochastic; no Octave equivalent |
 | `mekf` | 1 | SO(3) error-state; no Octave equivalent. Monte Carlo NEES validated |
-| `manifold_ukf` | 1 | SO(3) manifold; no Octave equivalent. Monte Carlo NEES validated |
+| `manifold_ukf` | 1 | SO(3) manifold; no Octave equivalent. Unit tested; no Monte Carlo NEES ensemble covers it |
 | `complementary_filter` | 1 | Mahony filter; no Octave equivalent |
 | **Model** | | |
 | `discretize` (ZOH) | 2 | Cross-validated against Octave `c2d()` |
@@ -198,8 +201,10 @@ claim about every environment.
 | `nmpc` | 1 | Optimization-based; requires solver integration |
 | `mhe` | 1 | Optimization-based estimation |
 | `nmhe` | 1 | Optimization-based estimation |
+| `terminal_ingredients` / `compute_output_admissible_set` | 1 | Terminal cost and constraint sets; unit and property tested |
 | **Signal Processing** | | |
 | `butterworth` (cascaded biquad) | 2 | Cross-validated against Octave `butter()` + `filter()`; the case needs the `signal` package |
+| `make_chebyshev1` (cascaded biquad) | 1 | Unit tested against the exact design `validation/oracles/chebyshev1/` prints; not compared against Octave |
 | `fir` | 2 | Cross-validated against Octave `filter()` |
 | `biquad` (low-pass, notch, dirty derivative) | 1 | RBJ cookbook coefficients; no direct Octave equivalent |
 | `vector_biquad` | 1 | Multi-channel wrapper over biquad |
@@ -208,6 +213,7 @@ claim about every environment.
 | `moesp` | 2 | Cross-algorithm comparison against Octave `n4sid()`, a different subspace method; agreement is on input-output behavior, not on MOESP internals |
 | `rls` | 1 | No RLS in any Octave package |
 | `recursive_arx` | 1 | No recursive ARX in any Octave package |
+| `compute_fit_metrics` | 1 | NRMSE and VAF of a prediction; unit tested |
 | **Lie Groups** | | |
 | `so3` (exp, log, quaternion) | 2 | Cross-validated against Octave quaternion package |
 | **Trajectory** | | |
@@ -220,6 +226,7 @@ claim about every environment.
 | `double_s_trajectory` | 1 | 7-segment S-curve; no Octave equivalent |
 | `modified_sin_trajectory` / `modified_trap_trajectory` | 1 | Specialized profiles; no Octave equivalent |
 | `bspline_trajectory` | 1 | B-spline evaluation; unit tested |
+| `piecewise_path` / `piecewise_trajectory` | 1 | Segment sequencing; unit tested |
 | `smoothing_spline` | 1 | Regularized spline; unit tested |
 | `online_planner_2nd` / `online_planner_3rd` | 1 | Real-time planners; unit tested |
 | `rescale_to` / `synchronize` | 1 | Trajectory time scaling; unit tested. `rescale_to` returns `expected<void, trajectory_error>` and `synchronize` returns the same over a variadic pack or a `std::span<Profile>`, rejecting all-or-nothing with nothing mutated |

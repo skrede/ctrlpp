@@ -28,8 +28,9 @@ this table was written.
   `tests/unit/CMakeLists.txt`, run serially because the counter is
   process-global, and compile in the default `-fno-exceptions` tree; a twelfth,
   `nmpc_static_nomalloc_test`, needs the optional nonlinear-programming backend
-  and is registered with it.  Verified green: `ctest --test-dir build/dev -R
-  nomalloc` passes 11 of 11.
+  and is registered with it, and `osqp_bounds_nomalloc_test` is registered only
+  in the exceptions tree with the OSQP backend.  When this table was written,
+  `ctest --test-dir build/dev -R nomalloc` passed 11 of 11.
   - **Neither mechanism substitutes for the other, and that is measured on this
     library rather than argued.**  The allocations the caller-dimensioned rows
     make above the boundary described below go through Eigen's `aligned_malloc`,
@@ -52,8 +53,8 @@ this table was written.
 - **`scripts/cross_compile_check.sh` leg 1**: host build of the core surface
   with `-fno-exceptions -fno-rtti -DCTRLPP_NO_EXCEPTIONS` at Scalar `double`
   and `float`.  This is the authoritative exceptions-off evidence; verified
-  PASS.  Leg 2 (host `-std=c++20`, exceptions on) also passes and covers the
-  `ctrlpp::detail::expected` fallback.
+  PASS.  Leg 2 (host `-std=c++20`, exceptions on) also passes and covers
+  `ctrlpp::detail::expected` with exceptions enabled.
 - **`tests/compile/embedded_core_float.cpp`**: the exception-free
   instantiation witness.  It compiles the `control`, `estimation`, `dsp`,
   `trajectory`, and `state_space` umbrellas and instantiates at least one
@@ -99,7 +100,7 @@ this table was written.
 | `mpc` / `nmpc_dynamic` / `mhe` / `nmhe` (runtime-horizon, dynamic solver) | NO (soft real-time: the solve allocates and iterates) | YES when capped (`max_eval`, OSQP `max_iter`) | YES with NLopt's `max_time = 0` (the default) and argmin's default step budget, which has no `max_time`; a wall-clock budget is non-RT | not covered (opt-in OSQP/NLopt/argmin backends sit outside the embedded core witness) | solver-dependent | labeled soft real-time; caps and defaults in `mpc/nlopt_solver.h`, `mpc/argmin_policies.h`, `mpc/osqp_solver.h`, `mpc/argmin_qp_solver.h` |
 | `nmpc` (the DEFAULT; = `nmpc_static`, compile-time horizon, argmin `nw_sqp`, bounded decision `NV` + constraint `MaxM`) | YES below a decision dimension `NV` of 48, strict-zero at 0.00 allocs/step in steady state on a converging trajectory (`nw_sqp`) and at an exact regulation equilibrium, where every solve takes the SQP null step (`nw_sqp` and `filter_nw_sqp`, static path), and **NO at and above it**, where the solve crosses the same blocked-Householder boundary the estimator rows do (see "The heap claim's boundary" below). **The heap is not the binding cost here either** (see "Stack cost of the predictive controller row" below, which a hard-real-time caller must read before sizing a task stack: the configuration this cell's own evidence pins needs 21,560 bytes of stack in steady state and 33,512 on its first solve, and constructing it through `create` needs 48,336) | YES when capped (`max_eval`) | YES: the default step budget instantiates no clock read; the opt-in `argmin_step_and_time_budget` is non-RT | not covered by this witness (argmin's `-fno-exceptions` instantiation is clean upstream; the ctrlpp-side no-exceptions dogfood is a separate witness) | YES: the constraint bound feeds only the QP result-multiplier storage, never the compute workspace, so argmin's `nw_sqp` bit-identity golden is unchanged | `nmpc_static_nomalloc_test`: the shipped pin (double_integrator NX=2 NU=1 NH=5 → NV=17, MaxM=12; sentinel `eigen_assert` + `EIGEN_RUNTIME_NO_MALLOC` + global `operator new` counter; `static_assert(strict_allocation_free)`), plus a two-configuration bracket over the damped chain that walks the boundary, at `NV` 47 and 48. **That is 2 of the 25 configurations this row publishes a figure for**, and the reason is measured: a unit holding all 25 peaked at 21.9 GB of compiler resident set and was killed by the kernel, and one holding 8 built and ran green at all 8 but cost 17.4 GB to compile and 232 s to run against roughly a second for the pin alone. Its equilibrium case holds the pin's controller at the origin for both `nw_sqp` and `filter_nw_sqp` on the static path, asserts the sentinel and the counter, and fails against argmin revisions before the null-step fix through the sentinel alone. The NUCLEO-H753ZI image, run on the board, reports 0 allocations over 201 armed steps behind a passing allocation canary. Every one of its solves stops on the stationarity test, and its realized closed-loop cost lies within a derived bound of the exact finite-horizon law's (`scripts/board_capture_fixtures/evidence.txt`, image `a32dbaf06dce9ed4f1e48f795c99e07feda982bf`, `arm-none-eabi-gcc` 16.2.0). Its stack high-water, cycle counts and compile ceiling on that board are in "On silicon: the NUCLEO-H753ZI leg" below |
 | static-memory linear MPC | planned | planned | planned | planned | planned | not implemented; the future hard real-time path (see below) |
-| the estimator `update` rejection guard (`kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf`, `luenberger_observer`, `complementary_filter`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<void, E>` holding one enumerator and no owning member) | YES (a fixed count of reads per step: state + covariance + measurement, every dimension a compile-time template parameter -- `NX + NX*NX + NY` for the covariance filters, `NX + NY` for the observer, `4 + NB + NE*NE + NY` for the MEKF, at most `7 + 9 + 1` for the complementary filter) | YES | YES | YES (a pure predicate on the operands; no random source and no state read beyond the members it scans) | `estimation_nomalloc_test` re-run green with the guard on every step of all six converted cases (128-step armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{kalman,ekf,ukf,mekf,manifold_ukf,luenberger,complementary_filter}_hardening_test`; `scripts/cross_compile_check.sh` all three legs PASS |
+| the estimator `update` rejection guard (`kalman_filter`, `ekf`, `ukf`, `mekf`, `manifold_ukf`, `luenberger_observer`, `complementary_filter`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<void, E>` holding one enumerator and no owning member) | YES (a fixed count of reads per step: state + covariance + measurement, every dimension a compile-time template parameter -- `NX + NX*NX + NY` for the covariance filters, `NX + NY` for the observer, `4 + NB + NE*NE + NY` for the MEKF, at most `7 + 9 + 1` for the complementary filter) | YES | YES | YES (a pure predicate on the operands; no random source and no state read beyond the members it scans) | `estimation_nomalloc_test` re-run green with the guard on every step of all six converted cases (128-step armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{kalman,ekf,ukf,mekf,manifold_ukf,luenberger,complementary_filter}_hardening_test`; `scripts/cross_compile_check.sh` legs 1 to 3 PASS |
 | the controller step rejection guard (`pid::compute` both overloads, `mrac_controller::evaluate`, `l1_controller::evaluate`) | YES (an `allFinite()` scan is an unevaluated Eigen expression over existing storage; the result is a `ctrlpp::expected<vector_t, E>` whose payload is the same by-value vector the surface already returned, so no owning member is added) | YES (a fixed count of reads per cycle, every dimension a compile-time template parameter: `pid` scans only the members its policy composition makes live, at most `11*NY` plus one scalar test on the step; `mrac` scans `NX + NU` vector and `NU*(NX + NU)` matrix entries; `l1` scans `2*NX + 2*NU`. The `l1` cycle additionally scans `NU` more for the pre-projection finiteness test that feeds `health()`) | YES | YES | YES (a pure predicate on the operands and the carried members; no random source, no clock) | `pid_nomalloc_test` re-run green with the guard on every cycle of all three composed cases (256-cycle armed window each, 0 allocations, sentinel clean); the four-part rejection asserted in `{pid,mrac,l1}_hardening_test`, each proven to fail with its guard deleted; both standing trees green at baseline (90/90, 129/129) |
 
 ## The heap claim's boundary on the caller-dimensioned rows
@@ -199,9 +200,9 @@ The `allocation-free?` column is a **heap** statement. For most rows in this
 table that is the whole resource story, because their hot paths hold a handful
 of fixed-size matrices. It is not the whole story for the Riccati solve: it
 runs a fixed-size decomposition whose dimension is the caller's `NX`, its frames
-grow fast in that dimension, and on the four-to-sixteen-kibibyte task stacks this
-milestone's own targets run, **the stack is what will break a caller, not the
-heap.** How fast is measured below rather than asserted: the acceptance check's
+grow fast in that dimension, and on the four-to-sixteen-kibibyte task stacks the
+embedded targets under `examples/embedded/` run, **the stack is what will break a
+caller, not the heap.** How fast is measured below rather than asserted: the acceptance check's
 dominant object is the `M x M` forward-error operator with `M = NX(NX+1)/2`, so
 its ASYMPTOTIC growth is the fourth power of `NX`, but over the measured range
 the frame grows 17.4-fold for a four-fold increase in `NX`, which sits between
@@ -259,7 +260,11 @@ than out of stack.
 discrete damped chain at **input dimension 1**, runtime watermarks taken on a
 pthread with a 64 MiB stack against a zero-byte harness floor and a 1,024-byte
 harness gap. A target's own frames differ with its ABI, register file and
-calling convention.
+calling convention. The table and the ladder above were taken on 2026-10-29 on
+the library at commit `426ef37`; the variation table below was taken earlier, at
+`98c130a` under `g++ (GNU) 16.1.1 20260728`, and was not re-taken. **The figures
+describe those revisions and are not re-measured on each later change to the
+library, so a later revision can differ from them.**
 
 **The input dimension and the linear-algebra release are part of that provenance
 and not details of it, and both were varied rather than assumed fixed.** Same
@@ -282,7 +287,7 @@ reading across.
 
 ### On silicon, and what it does to the table above
 
-The host figures above were a PREDICTION. They have now been tested on a board,
+The host figures above are a PREDICTION for a target, tested here on a board,
 and they hold once the one variable that separates the two measurements is
 accounted for: **the host table is `double` and the board runs `float`.**
 
@@ -309,8 +314,9 @@ reproduced by the current one:
 | 8 | 20,552 | 20,560 | 40,728 | 1.98x | refused |
 
 The host column is the host chain at the library revision the board images were
-built from, measured under the provenance of the host table above; the host
-table itself is the current library.
+built from, measured under the provenance of the host table above; the library
+code at `aae2e74` is that of `426ef37`, so the two columns' host figures are the
+same measurement.
 
 These figures replace earlier ones whose framework version could not be pinned.
 They moved by as much as 296 bytes (`NX = 2`, from 3,100) and by at most 40 bytes
@@ -1155,13 +1161,17 @@ Riccati row was not measured there.
 
 `g++ (GCC) 16.2.1 20260810`, `-std=c++20 -O2 -fno-exceptions -fno-rtti -pthread`,
 no `-march` (driver default `-mtune=generic -march=x86-64`), x86-64 Linux,
-`double`, Eigen 3.4.1, taken on 2026-10-20. Every figure in this section belongs
-to that compiler: the three-line tables, the fill, the limits and every ratio and
-exponent drawn from them. The same three-line commands run on the library as it
+`double`, Eigen 3.4.1, taken on 2026-10-20 on the library at commit `31c0d6c`;
+`1e994f1`, which published the figures, changes no library file, and the two
+unscented rows were re-taken at `55f1dae` and `c3c15bd`, as below. **The figures
+describe those revisions and are not re-measured on each later change to the
+library, so a later revision can differ from them.** Every figure in this section
+also belongs to that compiler: the three-line tables, the fill, the limits and
+every ratio and exponent drawn from them. The same three-line commands run on the library as it
 was before the sigma-point factor and the covariance checks reproduced every
 cell published under `g++ (GNU) 16.1.1 20260728` exactly, so the compiler change
-moves none of them. The `ukf` row was re-taken on 2026-10-21 under the same
-compiler, flags and Eigen, after its `predict` began factoring the covariance it
+moves none of them. The `ukf` row was re-taken on 2026-10-21, at `55f1dae`,
+under the same compiler, flags and Eigen, after its `predict` began factoring the covariance it
 predicted: its three lines, its fill (`--rows ukf`, 1,089 points) and its limits,
 and every `ukf` ratio and exponent above. The factorization in `predict` changes
 which Eigen routines the compiler inlines into the sigma-point square root, so
@@ -1171,8 +1181,8 @@ the square root's own frame falls from 58,800 to 25,712 bytes. 943 of the 1,089
 fill points moved, by -262,048 to +80 bytes. No supported-maximum entry and no
 limit moved. The `manifold_ukf` row was
 re-measured at the same time and no figure of it moved, fill included. Both
-unscented rows were re-measured again later on 2026-10-21, after every one-output
-gain began solving without a one-by-one QR factorization and `update` began
+unscented rows were re-measured again later on 2026-10-21, at `c3c15bd`, after
+every one-output gain began solving without a one-by-one QR factorization and `update` began
 factoring the covariance it commits: `manifold_ukf` moved nowhere, and `ukf` moved
 by +16 bytes at seven cells of its three lines (2 and 4 on the equal line, the
 frame at 4, 8 and 4 on the `NY` line, 2 and 4 on the `NX` line). 113 of its 1,089
@@ -1506,13 +1516,16 @@ between two adjacent values of its stride of four.
 `g++ (GCC) 16.2.1 20260810`, `-std=c++20 -O2 -fno-exceptions -fno-rtti -pthread`,
 no `-march` (driver default `-mtune=generic -march=x86-64`), x86-64 Linux,
 `double`, Eigen 3.4.1. The three ladders, the frame column and every figure read
-from them were taken on 2026-10-28, with construction through
-`nmpc_static::create`; the interior fill, the supported maxima read from it and
-the compile-ceiling walks were taken on 2026-10-20, when the controller was
-built through its constructor. Every figure in this section belongs to that
-compiler. The same commands run on the library as it was before its port
-to the backend's scalar-first interface, against argmin
-`30a2cd4`, reproduced every cell published under `g++ (GNU) 16.1.1 20260728`
+from them were taken on 2026-10-28 on the library at commit `03db8b2`, with
+construction through `nmpc_static::create`; `3ec1f1b`, which published them,
+changes no library file. The interior fill, the supported maxima read from it
+and the compile-ceiling walks were taken on 2026-10-20 on the library at commit
+`62b4873`, when the controller was built through its constructor. **The figures
+describe those two revisions and are not re-measured on each later change to the
+library, so a later revision can differ from them.** Every figure in this section
+also belongs to that compiler. The same commands run on the library as it was
+before its port to the backend's scalar-first interface, against argmin
+`30a2cd4ea2fdab5b548080644908db640542eacd`, reproduced every cell published under `g++ (GNU) 16.1.1 20260728`
 exactly, so the compiler change moves none of them: what moved these figures is
 the backend revision together with this library's port to it. HOST
 measurements. Runtime watermarks taken on a pthread
@@ -1689,11 +1702,13 @@ exceptions are enabled and aborts when they are disabled.  Callers must branch o
 the `expected` before using `operator*` or `operator->`; code that needs a checked
 accessor must keep `value()` out of a real-time failure path.
 
-It is a faithful-API result type, **not** bit-for-bit `std::expected`: the owned copy
-and move special members make it non-trivially-copyable even when `T` and `E` are both
-trivial, so triviality is not propagated to the ABI.  In practice `T` is usually a
-non-trivial Eigen type, so the cost rarely bites; the conditional-triviality path is
-deliberately deferred until a caller needs a trivially-relocatable expected.  Boundary
+It implements part of the `std::expected` interface and is **not** bit-for-bit
+`std::expected`: it has no `swap`, `emplace`, monadic operations or equality (the
+[error-reporting guide](guides/patterns/error-reporting.md) lists what it has), and the owned
+copy and move special members make it non-trivially-copyable even when `T` and `E` are
+both trivial, so triviality is not propagated to the ABI.  In practice `T` is usually a
+non-trivial Eigen type, so the cost rarely bites; conditional triviality is not
+implemented.  Boundary
 interop with `std::expected` / `std::unexpected` is provided through explicit converting
 constructors and conversion operators, guarded by `__cpp_lib_expected`, so results still
 cross any `std` boundary without forcing the owned type onto that boundary.
