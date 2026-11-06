@@ -6,7 +6,7 @@
 // independent rows of H, which no row of H has on its positive side. Each row is compared with a candidate direction
 // within the NX-term inner-product bound (@cite higham2002, Sec. 3.1) plus the row applied to the direction's forward
 // error, the residual of its defining rows mapped back through their pseudo-inverse (as for a vertex, @cite higham2002,
-// Sec. 7.2).
+// Sec. 7.7, Eq. 7.31).
 
 #include "ctrlpp/mpc/detail/polytope_redundancy.h"
 

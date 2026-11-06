@@ -1,7 +1,7 @@
 #ifndef HPP_GUARD_CTRLPP_MPC_QP_FORMULATION_H
 #define HPP_GUARD_CTRLPP_MPC_QP_FORMULATION_H
 
-// @cite rawlings2017 -- Rawlings et al., "Model Predictive Control: Theory, Computation, and Design", 2017, Ch. 2 (sparse condensing)
+// @cite rawlings2017 -- Rawlings, Mayne & Diehl, "Model Predictive Control: Theory, Computation, and Design", 2nd ed., 2017, Sec. 8.8.2
 // @cite borrelli2017 -- Borrelli, Bemporad & Morari, "Predictive Control for Linear and Hybrid Systems", 2017, Ch. 11 (linear MPC, soft-constraint slack penalties)
 
 #include "ctrlpp/mpc/qp_types.h"

@@ -7,10 +7,10 @@ step. This receding horizon approach handles state and input constraints
 naturally and provides a systematic way to balance tracking performance
 against control effort [1, Ch. 11, pp. 187--220].
 
-MPC has become the dominant advanced control strategy in the process
-industries and is increasingly used in aerospace, automotive, and robotics
-applications where constraint satisfaction is critical
-[2, Preface, pp. ii--iii].
+MPC owes its wide adoption in the chemical process industry to the fact that
+solving an optimization online for the measured state is practical where an
+explicit control law is not [2, Sec. 7.1, p. 451]; vehicle and robotic motion
+guidance are typical tracking applications [2, Sec. 2.8, p. 153].
 
 ## Receding Horizon Principle
 
@@ -140,7 +140,7 @@ sufficient conditions for stability:
 
 Setting $Q_f$ to the solution of the discrete algebraic Riccati equation
 (DARE) makes the terminal cost approximate the infinite-horizon LQR cost
-[3, Sec. 3, pp. 795--800]:
+[3, Sec. 3.7.4.1, pp. 800--801]:
 
 $$
 Q_f = A^\top Q_f A - A^\top Q_f B (R + B^\top Q_f B)^{-1} B^\top Q_f A + Q
@@ -151,8 +151,9 @@ $$
 A terminal constraint $x_N \in \mathcal{X}_f$ asks the horizon to end in a set
 where the LQR law $u = K x$, with $K = -(R + B^\top P B)^{-1} B^\top P A$ and
 $P$ the DARE solution, keeps the state and the input admissible from then on
-[3, Sec. 4, pp. 800--808]. The library offers three sets, and only the first is
-positively invariant under that law once it is encoded in the QP:
+[3, Secs. 3.3 and 3.7.4.1, pp. 797, 800--801]. The library offers three sets,
+and only the first is positively invariant under that law once it is encoded in
+the QP:
 
 - **Maximal output admissible set**
   $\mathcal{O}_\infty = \{x : A_K^k x \in \mathcal{X},\ K A_K^k x \in \mathcal{U}\ \text{for all}\ k \ge 0\}$

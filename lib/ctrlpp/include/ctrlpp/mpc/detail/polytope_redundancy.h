@@ -3,7 +3,7 @@
 
 // In a bounded polytope {x : G x <= g} with unit rows, each comparison of a row with a vertex carries its own rounding
 // bound: the residual G_i v - g_i as an (n + 1)-term inner product (@cite higham2002, Sec. 3.1), plus the vertex's
-// forward error bounded from the residual of its n defining rows (@cite higham2002, Sec. 7.2). A looser feasibility
+// forward error bounded from the residual of its n defining rows (@cite higham2002, Sec. 7.7, Eq. 7.31). A looser feasibility
 // bound only admits near-vertices, which keeps more rows and stays sound; the implication bound is what can admit a set
 // larger than the exact one, by at most that bound.
 
